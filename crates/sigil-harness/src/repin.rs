@@ -1487,13 +1487,21 @@ pub fn build_dir_of_this_run() -> Option<std::path::PathBuf> {
 
 /// The remediation a staleness report prints: THE COMMAND THAT ACTUALLY WORKS.
 ///
-/// `cargo run -p sigil-harness --bin repin` on its own does not regenerate anything.
-/// The resolve builds the sound-on shape, so `repin` refuses without `SIGIL_EMIT`:
-/// measured, it exits 2 and prints `repin: set SIGIL_EMIT to ...`, writing nothing.
-/// That is a clear failure with a pointer rather than a silent no-op, so the old
-/// one-line hint cost a reader a round trip rather than misleading them into a bad
-/// state; it is still the wrong command to print, and printing the right one costs
-/// two lines.
+/// `cargo run -p sigil-harness --bin repin` on its own regenerates nothing, and it
+/// takes TWO variables rather than one to make it work. Measured on 2026-09-05 in
+/// all three conditions rather than reasoned about:
+///
+///   * Neither variable set, which is what a reader copying the old one-line hint
+///     into a fresh shell has: `main` resolves the reference tree BEFORE it checks
+///     `SIGIL_EMIT`, so the run panics at exit 101 on the missing tree and never
+///     names `SIGIL_EMIT` at all.
+///   * `AEON_DIR` set, `SIGIL_EMIT` unset: exit 2, `repin: set SIGIL_EMIT to ...`,
+///     nothing written. The resolve builds the sound-on shape and says so.
+///   * Both set, plus the emitter actually built: exit 0, `pins.rs unchanged`.
+///
+/// So the old hint was a papercut and not a trap: every failure is loud and names
+/// something actionable. It was still the wrong command to print, and the reader who
+/// followed it was told about one missing variable at a time.
 ///
 /// `build_dir` and `aeon` are filled in when the caller knows them (the gate does:
 /// it has just resolved both), and stand in as named placeholders when it does not.
@@ -1510,10 +1518,12 @@ pub fn regenerate_command(
         None => "$AEON_DIR".to_string(),
     };
     format!(
-        "TO FIX: regenerate the file. SIGIL_EMIT IS PART OF THE COMMAND, not an optional\n\
-         extra: the resolve builds the sound-on shape, and `repin` with SIGIL_EMIT unset\n\
-         exits 2 naming the variable and writes nothing. From the sigil checkout whose\n\
-         pins.rs is stale:\n\
+        "TO FIX: regenerate the file. BOTH VARIABLES BELOW ARE PART OF THE COMMAND, not\n\
+         optional extras. `repin` alone regenerates nothing: with no reference tree it\n\
+         panics at exit 101 naming AEON_DIR and never reaches its second check, and with\n\
+         a tree but no SIGIL_EMIT it exits 2 naming SIGIL_EMIT (the resolve builds the\n\
+         sound-on shape) and writes nothing. From the sigil checkout whose pins.rs is\n\
+         stale:\n\
          \n  \
          cargo build --release -p sigil-harness --bin emit_sound_blob\n  \
          SIGIL_EMIT={emit} \\\n  \

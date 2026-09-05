@@ -238,11 +238,13 @@ fn a_reordering_is_named_rather_than_reported_as_zeroes() {
 
 /// THE PRINTED COMMAND MUST BE THE COMMAND THAT WORKS.
 ///
-/// `cargo run -p sigil-harness --bin repin` on its own does not regenerate anything:
-/// the resolve builds the sound-on shape, so with `SIGIL_EMIT` unset `repin` exits 2
-/// and writes nothing. The gate used to print exactly that line and no more.
+/// The gate used to print `run: cargo run -p sigil-harness --bin repin` and no more,
+/// which regenerates nothing. Measured in all three conditions on 2026-09-05: with
+/// neither variable set it panics at exit 101 on the missing reference tree and never
+/// names `SIGIL_EMIT`; with `AEON_DIR` only it exits 2 naming `SIGIL_EMIT`; with both
+/// and the emitter built it exits 0. TWO variables, and the old hint named neither.
 #[test]
-fn the_remediation_carries_sigil_emit_and_the_emitter_build() {
+fn the_remediation_carries_both_variables_and_the_emitter_build() {
     let (build, aeon) = where_();
     let cmd = regenerate_command(Some(build), Some(aeon));
 
@@ -260,8 +262,18 @@ fn the_remediation_carries_sigil_emit_and_the_emitter_build() {
         "the regeneration command itself must be present, got:\n{cmd}"
     );
     assert!(
-        cmd.contains("SIGIL_EMIT IS PART OF THE COMMAND"),
-        "the reader must be told why the extra variable is there, got:\n{cmd}"
+        cmd.contains("BOTH VARIABLES BELOW ARE PART OF THE COMMAND"),
+        "the reader must be told the extra variables are not optional, got:\n{cmd}"
+    );
+    // The two measured refusals, so an edit that drops either variable back out of the
+    // command also has to delete the sentence explaining why it was there.
+    assert!(
+        cmd.contains("panics at exit 101 naming AEON_DIR"),
+        "the first refusal a bare run hits must be named, got:\n{cmd}"
+    );
+    assert!(
+        cmd.contains("it exits 2 naming SIGIL_EMIT"),
+        "the second refusal must be named, got:\n{cmd}"
     );
 }
 
