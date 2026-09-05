@@ -197,6 +197,13 @@ marker was written by the run itself**, so this is a completed run rather than a
 killed one that happened to stop somewhere clean. `.aeon-ref` was read only; no
 ROM in it was rebuilt.
 
+**Run twice, and the second one is the landing run.** The stamp above is `95a29bf3`,
+which is the tree WITHOUT this note, because a run cannot stamp a commit that does
+not exist yet. The suite was then re-run whole on `49c4d237`, the tree with the note
+committed and `DIRTY 0 path(s)`: same figures, **4631 passed / 0 failed / 2 ignored,
+408 blocks, exit 0, end marker present**, this parcel's test `ok` at log line 6281.
+Neither run was segmented and neither was killed.
+
 ## Reported, not fixed
 
 **`cargo clippy --workspace --all-targets -D warnings` is RED on master today**,
