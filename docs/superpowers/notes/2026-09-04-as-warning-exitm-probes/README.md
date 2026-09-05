@@ -80,6 +80,12 @@ and decimal agree — which is how it survived. NOT fixed here: `interp_text` al
 feeds `str_env`, so changing it is byte-changing and needs its own aeon byte
 re-proof.
 
+**FIXED 2026-09-05** by `parcel/as-interp-radix`. Sigil renders hex now, negatives
+as 64-bit two's complement, and the four author diagnostics moved together. The
+full radix measurement — including the cell this note did not reach, that `{expr}`
+SYMBOL-NAME composition renders in DECIMAL in the same assembler — is in
+`../2026-09-05-as-interp-radix-probes/`.
+
 ## Corpus effect of implementing them: ZERO, and the reason is worth writing down
 
 Both disassembly corpora walked with a MASTER-built `sigil` (`c97385f0`, exported with

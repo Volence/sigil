@@ -1767,7 +1767,7 @@ impl Asm {
         self.exec(&lines);
     }
 
-    /// Fold `\{expr}` sequences in the first string token to their decimal value.
+    /// Fold `\{expr}` sequences in the first string token to their rendered value.
     fn interp_string(&mut self, rest: &[Token]) -> String {
         let raw = match rest.iter().find_map(|t| {
             if let Tok::Str(s) = &t.tok {
@@ -1782,10 +1782,19 @@ impl Asm {
         self.interp_text(&raw)
     }
 
-    /// Fold every `\{expr}` sequence in `raw` to the expression's decimal value.
+    /// Fold every `\{expr}` sequence in `raw` to the expression's value, rendered
+    /// by `render_interp_int` — bare uppercase HEX (asl-verified, probes `r1`,
+    /// `r2`, `r12`; see `render_interp_int`).
+    ///
     /// A sequence whose expression does not resolve is left verbatim, so a later
     /// pass (or a diagnostic at the use site) still sees the original text.
     /// Idempotent on text that carries no `\{`.
+    ///
+    /// Every caller wants this radix: `error`/`fatal`/`message`/`warning` message
+    /// text, the string-binding branches of `equ` and `set`, and the STRING half
+    /// of `{…}` symbol-name composition (probe `r10`). The INTEGER half of name
+    /// composition does not, and does not come through here — see
+    /// `eval_name_brace`.
     fn interp_text(&mut self, raw: &str) -> String {
         let mut out = String::new();
         let mut cur = raw;
@@ -1796,7 +1805,7 @@ impl Asm {
                 Some(end) => {
                     let expr_text = &after[..end];
                     match self.fold_text(expr_text) {
-                        Some(v) => out.push_str(&v.to_string()),
+                        Some(v) => out.push_str(&render_interp_int(v)),
                         None => {
                             out.push_str("\\{");
                             out.push_str(expr_text);
@@ -1837,7 +1846,13 @@ impl Asm {
     /// (`zone_id_{cur_str} = $55` defines `zone_id_3`) (asl-verified).
     ///
     /// A string-valued expression pastes its characters; an integer pastes its
-    /// decimal digits. Text inside a `"…"`/`'…'` literal is NOT composed — `dc.b
+    /// DECIMAL digits — `name_{n}` with `n := 42` defines `name_42`, not
+    /// `name_2A` (asl-verified, probe `r9`; the `name_2A` spelling of the same
+    /// probe is `symbol undefined`). That is the OPPOSITE radix from `\{expr}`
+    /// string interpolation, which is hex, and asl applies both in one file: a
+    /// `\{…}` written inside a literal INSIDE a group is the string construct
+    /// nested, and renders hex (`name_{"\{n}"}` defines `name_2A`, probe `r10`).
+    /// Text inside a `"…"`/`'…'` literal is NOT composed — `dc.b
     /// "brace {cur}"` emits the eight characters `brace {cur}` (asl-verified) —
     /// and a `;` ends the scan, so a brace in a trailing comment is inert. The
     /// literal-skipping rule is the lexer's own (an unescaped closing quote ends
@@ -1917,8 +1932,17 @@ impl Asm {
 
     /// Render one `{…}` group's contents as the text AS pastes into the name:
     /// a string expression contributes its characters (with any `\{…}` inside a
-    /// literal folded first, so `{"\{n}"}` composes), an integer expression its
-    /// decimal digits. `None` when neither shape resolves.
+    /// literal folded first — in HEX, because that is the string construct — so
+    /// `{"\{n}"}` with `n := 42` composes `2A`, probe `r10`), an integer
+    /// expression its DECIMAL digits (`{n}` with the same `n` composes `42`,
+    /// probe `r9`). `None` when neither shape resolves.
+    ///
+    /// The two radices are deliberate and asl-verified, not an oversight: the
+    /// integer arm below must NOT be routed through `render_interp_int`, and
+    /// `s2disasm`'s zone tables depend on the pair — `zone_id_{cur_zone_str}`
+    /// composes off a string built by `cur_zone_str := "\{cur_zone_id}"`, so its
+    /// defining and reading sides only agree while both go through the string
+    /// arm.
     fn eval_name_brace(&mut self, inner: &str, line: &SrcLine) -> Option<String> {
         let toks = lex_line(inner, self.state.cpu, line.source, line.base).ok()?;
         if toks.is_empty() {
@@ -4156,10 +4180,12 @@ impl Asm {
         // resolve. The int XOR string invariant per pass still holds.
         if let Some(s) = self.eval_str(rest) {
             // `\{expr}` folds where the string is BOUND, not where it is read:
-            // `s := "\{n}"` with `n := 3` binds `s` to `"3"` for good, and a
-            // later `n := 42` leaves `s` alone (asl-verified). Folding here also
-            // makes `strlen(s)` see the rendered text rather than the source
-            // spelling.
+            // `s equ "\{n}"` with `n equ 42` binds `s` to `"2A"` for good, and a
+            // later `n := 255` leaves `s` alone (asl-verified, probe `r13` — the
+            // image is `32 41` either side of the reassignment, and the value is
+            // rendered in HEX, so neither claim rests on a digit that reads the
+            // same in both radices). Folding here also makes `strlen(s)` see the
+            // rendered text rather than the source spelling.
             let s = self.interp_text(&s);
             self.float_env.remove(&q);
             self.str_env.insert(q, s);
@@ -4467,8 +4493,11 @@ impl Asm {
         // deliberately NOT done here.
         if let Some(s) = self.eval_str(rest) {
             // `\{expr}` folds where the string is BOUND, not where it is read
-            // (asl-verified): `s := "\{n}"` captures `n`'s value at this
-            // assignment, and a later reassignment of `n` does not reach `s`.
+            // (asl-verified, probe `r13`): `s := "\{n}"` with `n := 42` captures
+            // `2A` at this assignment, and a later `n := 255` does not reach `s`
+            // — the image stays `32 41`. Both halves of that claim need a value
+            // whose hex and decimal spellings differ, which is why the probe uses
+            // 42 rather than a single digit.
             let s = self.interp_text(&s);
             self.float_env.remove(&q);
             self.str_env.insert(q, s);
@@ -7238,6 +7267,22 @@ impl MacroFrame {
         }
         self.shifted += 1;
     }
+}
+
+/// The text asl pastes for an INTEGER folded out of a `\{expr}` interpolation:
+/// bare UPPERCASE HEXADECIMAL, no radix prefix, no sign, no leading zeros, and a
+/// negative value as its 64-bit two's complement (asl 1.42 Beta [Bld 212]).
+///
+/// Measured, probes under `docs/superpowers/notes/2026-09-05-as-interp-radix-probes/`,
+/// three identical runs each: `42` → `2A`, `255` → `FF`, `4095` → `FFF`,
+/// `4660` → `1234`, `0` → `0` (probes `r1`, `r12`); `-1` → `FFFFFFFFFFFFFFFF`,
+/// `-42` → `FFFFFFFFFFFFFFD6` (probe `r2`, width corroborated independently by
+/// `strlen` in probe `r11`). A `function` return takes the same path (`r3`).
+///
+/// This is NOT the rendering for `{expr}` symbol-name composition, which asl
+/// renders in DECIMAL in the same file (probe `r9`) — see `eval_name_brace`.
+fn render_interp_int(v: i64) -> String {
+    format!("{:X}", v as u64)
 }
 
 /// Index of the `}` closing the `{` at `open` in `bytes`, or `None` if the group

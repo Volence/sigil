@@ -3851,9 +3851,54 @@ Found while implementing `warning`, whose message text goes through the same hel
 Deliberately not fixed there: the fix is byte-changing, it moves `error`/`fatal`/`message`
 at the same time, and that parcel's whole safety property was that it could not change the
 bytes of anything that already assembled.
-— OPEN (kill: `interp_text` renders hex, behind fresh asl probes for the radix of a
-NEGATIVE value and of a value a `function` returns — x1/x2 measured neither — plus a
-four-shape CRC32+size re-proof)
+— **CLOSED 2026-09-05 (`parcel/as-interp-radix`): `interp_text` renders hex, and every
+condition the kill named was measured.** Probes `r1`–`r13` under
+`docs/superpowers/notes/2026-09-05-as-interp-radix-probes/`, three stable runs each. The
+two cells the kill required: a NEGATIVE value renders as its 64-BIT TWO'S COMPLEMENT with
+no sign (`-1` → `FFFFFFFFFFFFFFFF`, `-42` → `FFFFFFFFFFFFFFD6`; the width corroborated by
+`strlen` = 16 rather than by re-reading the digits), and a `function` RETURN takes the
+same path with no special case (`twice(21)` → `2A`). The renderer is one free function,
+`render_interp_int`, so all four of `warning`/`error`/`fatal`/`message` moved together
+along with the string-binding branches of `equ` and `set`. Gated by
+`crates/sigil-frontend-as/tests/as_interp_radix.rs` (10 tests, 8 of them red on the
+pre-fix tree).
+
+**The finding that changed the shape of the fix: `{expr}` SYMBOL-NAME composition renders
+in DECIMAL in the same assembler, in the same file** (probe `r9`: `n := 42` then
+`name_{n} equ $55` defines `name_42`, and `name_2A` is `symbol undefined`), while a `\{}`
+written inside a literal inside such a group is the string construct nested and renders
+HEX (probe `r10`: `name_{"\{n}"}` defines `name_2A`). Sigil's `eval_name_brace` already
+kept the two on separate arms, so the fix was a one-line change — but a "fix" that routed
+the integer arm through the new renderer would have passed every message-text test and
+silently split `s2disasm`'s `zone_id_{cur_zone_str}` idiom apart at zone 10.
+`symbol_name_composition_stays_decimal` now pins it.
+
+The two `asl-verified` code comments in `directive_equate`/`directive_set` were re-verified
+with a distinguishing value rather than deleted (probe `r13`): the bind-time claim holds,
+and the comments now cite a 42/255 pair whose hex and decimal spellings differ in both
+halves of the claim.
+
+**Byte-neutral, and the vacuity of that is measured rather than assumed.** All four aeon
+shapes rebuilt at aeon `483b3e12` are CRC32+size identical to the tree's committed ROMs —
+`s4.bin 1c09fbfc/819131`, `s4.debug.bin e2144057/840324`, `demo.bin 11ebd7ab/96602`,
+`demo.debug.bin 9b0d2ce7/102818`. A NON-VACUITY CONTROL says how much that proves: with
+`render_interp_int` replaced by `panic!`, all four shapes still built and still produced
+those exact CRCs, so **no `\{expr}` interpolation is evaluated anywhere in the aeon build**.
+The four-shape identity therefore attests that nothing ELSE in `eval.rs` moved; it does not
+exercise the change. Aeon's only `\{}` sites are two `error` lines in
+`engine/debug/debugger.asm`, which no shape reaches.
+
+**The corpora are where the population actually is, and the earlier row's account of it was
+wrong.** The same control over `s2disasm/s2.asm` counts **2125** evaluations — exactly
+125 each of the values 1 through 17, i.e. the `cur_zone_str := "\{cur_zone_id}"` zone
+counters — and **none** of them is message text. Eight of those values (10..17) render
+differently in the two radices (`A`..`11` against `10`..`17`), so the composed symbol names
+`zone_id_A`..`zone_id_11` genuinely replaced `zone_id_10`..`zone_id_17`; the defining and
+reading sides moved together, which is why nothing surfaced. `s1disasm/sonic.asm` reaches
+the helper **zero** times. Diagnostic sets, compared in both directions with a
+single-file-controlled A/B (the same tree, `eval.rs` alone reverted): s2 5762 lines / 5115
+distinct on both sides, s1 58 / 34 on both, **0 in master-not-branch and 0 in
+branch-not-master** for each.
 
 ### A label in a macro BODY binds in sigil and does not in asl (2026-09-04)
 `2026-09-04-as-warning-exitm-probes/e12.asm`: a macro whose body is `lbl12: dc.b $A1`,
@@ -3877,3 +3922,32 @@ inconsistency. Pinned by `as_warning_exitm.rs::warning_without_a_quoted_message_
 so closing it changes a test rather than surprising a reader.
 — OPEN (kill: a shared operand-count check across all four directives, behind asl probes
 for what each does with two operands — only `warning` was measured)
+
+### `\{expr}` folds only INTEGERS; asl folds floats, strings and character values too (2026-09-05)
+Measured while implementing the radix, probes `r4`/`r5`/`r7` under
+`2026-09-05-as-interp-radix-probes/`, three stable runs each, and sigil's side measured
+against the branch build rather than read off the code:
+
+| shape | asl | sigil |
+|---|---|---|
+| `f equ 1.5` → `\{f}`; `g equ 42.0` → `\{g}` | `1.5`, `42` — **DECIMAL**, not hex | not folded; `\{f}` left verbatim |
+| `\{n/1.0}` with `n equ 42` | `42` | not folded; verbatim |
+| `c equ 'z'` → `\{c}`, `\{c+0}`, `\{'z'+1}` | `z`, `z`, `{` — a character value stays a CHARACTER through arithmetic | `7A`, `7A`, `7B` |
+| `s equ "abc"` → `\{s}` | `abc` | not folded; verbatim |
+| `\{substr(s,1,2)}` | `bc` | not folded, AND a spurious `trailing tokens in expression` error |
+
+`fold_text` resolves through `eval_all`, which answers only for integers, so every
+non-integer falls into the leave-it-verbatim arm. Three separate divergences share that
+one cause, and the float row is the one with a real population: `\{x/1.0}` is the
+corpora's IDIOM for "print this in decimal" (`s2.macrosetup.asm` trace lines,
+`s2.macros.asm`'s `zoneTableEnd`, `s1disasm/MacroSetup.asm`), and every such site renders
+as literal `\{…}` text in sigil today. The `substr` row is the worst-behaved: it does not
+merely fail to fold, it manufactures an error on source asl accepts.
+
+Deliberately out of scope of the radix parcel, which changed the RENDERING of a value
+already folded and proved byte-neutrality on that basis; folding new shapes would change
+what resolves, which is a different proof.
+— OPEN (kill: `fold_text` returns a value type rather than `i64`, rendering floats in
+decimal and strings/character values as their characters, behind a census of every
+`\{}` site in both corpora and a four-shape CRC32+size re-proof — note the aeon
+population is measurably ZERO, so the corpora are the only evidence a fix would have)

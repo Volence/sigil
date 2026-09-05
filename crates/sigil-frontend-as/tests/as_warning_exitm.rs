@@ -106,17 +106,17 @@ fn warning_carries_the_as_warning_lint_id() {
 /// `error`/`fatal`/`message` — `s2.sounddriver.asm(301)` and five of the six
 /// s1disasm sites write one.
 ///
-/// The VALUE asserted here is sigil's, and sigil's differs from asl's: asl folds
-/// `\{expr}` to HEX (probe `x1`, `v equ 42` → `2A`) and sigil's `interp_text`
-/// renders decimal. That divergence is older than this directive, is shared by
-/// `error`/`fatal`/`message`, and reaches BYTES through `str_env` (probe `x2`) —
-/// so it is recorded in the probe note and NOT changed here. This test pins what
-/// sigil does today so the fix, when it comes, has to walk past a red line
-/// rather than silently re-render every message.
+/// The RADIX is hex — `val equ 42` renders `2A`, asl-verified (probe `x1` here,
+/// and probes `r1`/`r12` under
+/// `docs/superpowers/notes/2026-09-05-as-interp-radix-probes/`). When this test
+/// was written sigil rendered decimal and it pinned the divergence so the fix
+/// would have to walk past a red line; the fix landed, so it now pins the match.
+/// The radix rule itself, its negative and function-return cells and its
+/// byte-reaching consequence live in `tests/as_interp_radix.rs`.
 #[test]
 fn warning_interpolates_its_message() {
     let w = warnings("\tcpu 68000\n\tpadding off\n\tphase 0\nval equ 42\n\twarning \"val is \\{val} here\"\n");
-    assert_eq!(w[0].message, "[as.warning] val is 42 here");
+    assert_eq!(w[0].message, "[as.warning] val is 2A here");
 }
 
 /// A `warning` in a FALSE conditional arm is not reached (asl, probe `w5`).
