@@ -473,6 +473,24 @@ an unidentified instrument was always the bigger defect — but the ruling was b
 contrast (`303C 8000` "every run" against four random draws) whose stable half is itself a
 carry-over, and **a right conclusion does not license the evidence that was offered for it.**
 
+**⚠ AND A THIRD FACE, WHICH THE MD5 GUARD DOES NOT COVER AT ALL: AN ASL RUN CARRYING ANY ERROR IS
+NOT A SOURCE OF VALUES FOR THE LINES THAT DID ASSEMBLE** *(found 2026-09-05 by the S2 decomposition
+parcel, against its own probe; landed at sigil `49acd05d`)*. Its first probe file had one invalid
+line (`bra.s /`, where `/` is definition only in AS). That single unrelated error **changed a value
+elsewhere in the same file**: a macro expanded `beq.s +` came back `67FE`, a branch to itself,
+instead of the correct `6702`. The listing looked complete.
+
+**So the selection ritual is now two checks, not one.** The md5 says WHICH PROGRAM ran. The exit
+status says WHETHER ITS ANSWERS MEAN ANYTHING. A session that pins the digest perfectly, reads a
+listing that looks complete, and quotes a value out of a run that exited non zero has done
+everything this document previously asked and still carried a fabricated number. Note the direction:
+the corrupted value was plausible, in range, and of the right shape, which is why nothing announced
+it.
+
+**`asl_ref.sh` checks the binary and NOT the run** (verified here: its four `exit` sites are all
+about selecting the digest). Until that is fixed, checking the exit status is the caller's job on
+every asl invocation. Booked as `ASL-GUARD-EXIT-STATUS`.
+
 *(Counting note, and it has now been wrong TWICE. "Four binaries, one bad" was four PATHS and
 TWO PROGRAMS — and that correction was itself a count of what someone happened to check.
 **Measured 2026-09-05 by running every `asl` on the machine: SEVEN paths execute here under FOUR
