@@ -33,12 +33,14 @@
 //!    debugger can read in the shipping ROM and not in the shape people debug with —
 //!    and a count-difference check passes it straight through as long as some
 //!    debug-only equate appears alongside it.
-//!  * THE COUNT DIFFERENCE IS NOT EVEN CONSTANT ACROSS GAMES. Measured on this tree:
-//!    sonic4 is 737/738 (release/debug) and demo is 555/555 — the demo pair's equate
-//!    sets are EQUAL. A `debug == release + 1` gate is red on demo the day it is
-//!    written; a `debug > release` gate is red on demo too. Containment is the
-//!    property that is true of both games and stays true when a game grows a
-//!    debug-only module.
+//!  * THE COUNT DIFFERENCE IS NOT EVEN CONSTANT ACROSS GAMES. Measured against the
+//!    reference tree at the time this was written: sonic4 is 747/748
+//!    (release/debug) and demo is 565/565 — the demo pair's equate sets are EQUAL.
+//!    A `debug == release + 1` gate is red on demo the day it is written; a
+//!    `debug > release` gate is red on demo too. Containment is the property that is
+//!    true of both games and stays true when a game grows a debug-only module.
+//!    Those totals are an illustration and go stale by design — the gate itself
+//!    reads both populations and pins neither count.
 //!
 //! BOTH DIRECTIONS ARE COMPUTED. `release \ debug` is the fault set and fails the
 //! gate; `debug \ release` is computed and REPORTED, so a reader sees the actual
