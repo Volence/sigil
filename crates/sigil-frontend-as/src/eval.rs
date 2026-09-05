@@ -36,6 +36,15 @@ const LATER_PASS: i64 = 2;
 /// hanging. Generous relative to any real `while`-driven table-fill idiom.
 const WHILE_CAP: usize = 10_000;
 
+/// Bound on the character count a single `substr(str, pos, len)` may produce.
+/// Only a NEGATIVE `pos` can drive this above the source string's own length
+/// (asl reads below its buffer and so counts `strlen - pos` characters), and
+/// asl itself does not survive a large one: `substr("a",-1000000,0)` segfaults
+/// it (exit 139, measured 2026-09-05). Sigil refuses past this bound rather
+/// than attempt the allocation. No real source approaches it, `pos` being an
+/// offset derived from a string the same expression just measured.
+const MAX_SUBSTR_CHARS: i64 = 65_536;
+
 #[derive(Clone)]
 struct SrcLine {
     text: String,
@@ -2059,23 +2068,63 @@ impl Asm {
         let s = self.eval_str(s_toks)?;
         let pos = self.fold_const(pos_toks)?;
         let len = self.fold_const(len_toks)?;
-        if pos < 0 {
+        let chars: Vec<char> = s.chars().collect();
+        // asl edge semantics, every value below re-derived from an exit-0 `asl -L`
+        // listing (md5 61e672562465725a8c102288a7da9098) on 2026-09-05; see
+        // docs/superpowers/notes/2026-09-05-as-if-refusal-diag-vector.md.
+        //
+        // asl computes an available count `avail = max(0, strlen - pos)` and then
+        // takes `len == 0` as "all of it", `len < 0` as "none of it", and any
+        // positive `len` clamped to `avail`:
+        //     substr("abcde",7,2)   = ""    (pos past the end is NOT an error)
+        //     substr("abcde",5,2)   = ""    (pos at the end)
+        //     substr("abcde",3,10)  = "de"  (len past the end clamps to the tail)
+        //     substr("abcde",1,-1)  = ""    (negative len)
+        // The negative-len case is load-bearing: `debugger.asm`'s `%<...>` decoder
+        // reaches `substr(string, len, -1)` when a token carries no trailing param
+        // (`%<.w d0>`), and the "" it yields is what selects the "hex" default.
+        //
+        // A NEGATIVE `pos` is where asl stops having a semantics. It does not clamp;
+        // it copies `avail` characters starting at an unchecked offset BELOW the
+        // string's buffer, so `avail` grows rather than shrinks:
+        //     strlen(substr("wxyz",-4,0))  = 8   (= strlen - pos, not 4)
+        //     strlen(substr("wxyz",-4,20)) = 8   (positive len still clamps to avail)
+        //     substr("wxyz",-3,4)          = 00 00 00 'w'
+        //     substr("",-4,4)              = 00 00 00 00
+        // The bytes read below the buffer are whatever asl's allocator left there:
+        // measured NUL at offsets -1..-7, -9 and -10, but $91 at offset -8, stable
+        // across runs and across source files. That is an out-of-bounds read, not a
+        // defined result, so sigil reproduces the LENGTH law exactly and models the
+        // out-of-range prefix as NUL. That matches asl byte-for-byte everywhere the
+        // measured prefix was NUL, and it decides every comparison the same way asl
+        // does regardless of the garbage, because an AS string literal cannot
+        // contain a NUL and so can never equal a NUL-prefixed substring.
+        //
+        // Refusing here instead is what made `debugger.asm:572` unassemblable:
+        //     elseif (strlen(OPERAND)>4)&&(substr(OPERAND,strlen(OPERAND)-4,4)="(pc)")
+        // asl evaluates BOTH operands of `&&` (it does not short-circuit: `(0)&&(1/0)`
+        // is a hard "division by 0"), so the right operand runs with pos < 0 whenever
+        // the left is false, and folds to 0.
+        let avail = (chars.len() as i64).saturating_sub(pos).max(0);
+        let count = match len {
+            0 => avail,
+            n if n > 0 => n.min(avail),
+            _ => 0,
+        };
+        // asl would read `count` bytes below its own heap here and is free to crash;
+        // sigil refuses instead of attempting the allocation. No real source reaches
+        // this, `pos` being an offset derived from a string it just measured.
+        if count > MAX_SUBSTR_CHARS {
             return None;
         }
-        let chars: Vec<char> = s.chars().collect();
-        // asl edge semantics (probe `probe_substr` 2026-07-05): a `pos` at OR past
-        // the end yields "" (not an error — `substr("abc",5,0)`=""), and a NEGATIVE
-        // len also yields "" (`substr("abc",3,-1)`=""). Both are hit by
-        // `debugger.asm`'s `%<…>` decoder when a token has no trailing param (e.g.
-        // `%<.w d0>` → `.__param: set substr(string, len, -1)` → "" → defaults to
-        // "hex"). A len past the end clamps to the available tail (already matched).
-        let pos = (pos as usize).min(chars.len());
-        let end = match len {
-            0 => chars.len(),                             // len 0 = to end
-            n if n > 0 => (pos + n as usize).min(chars.len()),
-            _ => pos,                                      // negative len = empty
-        };
-        Some(chars[pos..end].iter().collect())
+        let mut out = String::new();
+        for i in 0..count {
+            let idx = pos + i;
+            // idx < 0 only when pos < 0; idx < chars.len() holds by construction of
+            // `count` in both directions, so the index below cannot be out of range.
+            out.push(if idx < 0 { '\0' } else { chars[idx as usize] });
+        }
+        Some(out)
     }
 
     /// `val(str)`: lex `text` fresh (under the CURRENT cpu context) and fold
@@ -11278,6 +11327,54 @@ C:\n";
         // asl-verified: `substr("hello",1,2)` = "el".
         let src = "        cpu 68000\n        padding off\n        phase 0\n        dc.b strlen(substr(\"hello\",1,2))\n";
         assert_eq!(image(src), vec![2]);
+    }
+
+    /// A NEGATIVE `pos` is not an error in asl and must not be one here. asl
+    /// does not clamp: it copies `strlen - pos` characters from an unchecked
+    /// offset below the string buffer, so the count GROWS. Every value below
+    /// comes from one exit-0 `asl -L` listing (md5
+    /// 61e672562465725a8c102288a7da9098, 2026-09-05):
+    ///
+    ///     dc.b strlen(substr("wxyz",-4,0))  -> 08
+    ///     dc.b strlen(substr("wxyz",-4,3))  -> 03
+    ///     dc.b strlen(substr("wxyz",-4,20)) -> 08
+    ///
+    /// Refusing this is what left `aeon/engine/debug/debugger.asm:572`
+    /// unassemblable once an unresolved `if` became loud rather than silently
+    /// false. The three lengths discriminate the three candidate readings:
+    /// clamping `pos` to 0 would give 4/3/4, and yielding "" would give 0/0/0.
+    #[test]
+    fn substr_negative_pos_counts_below_the_buffer() {
+        let src = "        cpu 68000\n        padding off\n        phase 0\n        dc.b strlen(substr(\"wxyz\",-4,0))\n        dc.b strlen(substr(\"wxyz\",-4,3))\n        dc.b strlen(substr(\"wxyz\",-4,20))\n";
+        assert_eq!(image(src), vec![8, 3, 8]);
+    }
+
+    /// The out-of-range prefix. asl reads whatever its allocator left below the
+    /// buffer, measured NUL at offsets -1..-7 across four different strings
+    /// (including the empty one), and sigil models it as NUL. asl listing:
+    ///
+    ///     dc.b "[", substr("wxyz",-3,4), "]" -> 5B 00 00 00 77 5D
+    ///     dc.b "[", substr("",-4,4), "]"     -> 5B 00 00 00 00 5D
+    ///
+    /// The `[`/`]` sentinels are what make an empty result distinguishable from
+    /// a NUL-only one, which is the confound this shape exists to defeat.
+    #[test]
+    fn substr_negative_pos_prefix_is_nul() {
+        let src = "        cpu 68000\n        padding off\n        phase 0\n        dc.b \"[\", substr(\"wxyz\",-3,4), \"]\"\n        dc.b \"[\", substr(\"\",-4,4), \"]\"\n";
+        assert_eq!(
+            image(src),
+            vec![0x5B, 0, 0, 0, 0x77, 0x5D, 0x5B, 0, 0, 0, 0, 0x5D]
+        );
+    }
+
+    /// The `debugger.asm:572` site itself, reduced. asl takes the else branch
+    /// (`dc.b $BB`), because `&&` does NOT short-circuit (`(0)&&(1/0)` is a hard
+    /// "division by 0" in asl), so the right operand is evaluated with a
+    /// negative `pos` and folds to 0 rather than refusing.
+    #[test]
+    fn substr_negative_pos_decides_a_guarded_if() {
+        let src = "        cpu 68000\n        padding off\n        phase 0\n        if (strlen(\"ab\")>4)&&(substr(\"ab\",strlen(\"ab\")-4,4)=\"(pc)\")\n        dc.b $AA\n        else\n        dc.b $BB\n        endif\n";
+        assert_eq!(image(src), vec![0xBB]);
     }
 
     #[test]
