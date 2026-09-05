@@ -57,6 +57,23 @@ An `include`d file needs no line of its own: the declaration is the unit's, and 
 it. A caller driving this front-end directly declares it by setting `Options::initial_cpu` \
 instead.";
 
+/// How many `include` levels may be open at once before the next one is
+/// refused. **199, measured off asl**, not chosen: a chain of 199 distinct
+/// files each including the next assembles clean and the 200th is refused
+/// (`docs/superpowers/notes/2026-09-05-as-include-repeat-probes/depth.sh 199`
+/// exits 0 at deepest level 199; `depth.sh 200` raises asl's
+/// `error #10008: INCLUDE nested too deeply` and terminates with exit 3). The
+/// same 199 bounds a file that includes ITSELF, so the number is a property of
+/// DEPTH and not of repetition. It is not the `NESTMAX` builtin, which reads
+/// 100 and which `nestmax 5` moves without moving this bound at all (probe
+/// `p8`).
+pub const INCLUDE_NEST_MAX: u32 = 199;
+
+/// The refusal raised when [`INCLUDE_NEST_MAX`] is exceeded — asl's own wording
+/// for its `error #10008`, so a reader who meets it in a sigil log finds the
+/// same phrase in an asl log for the same source.
+pub const INCLUDE_NEST_TOO_DEEP: &str = "INCLUDE nested too deeply";
+
 /// Every processor spelling a `cpu` directive may name, and the target each one
 /// selects. The single source of truth: [`cpu_for_spelling`] resolves against
 /// it and [`unsupported_cpu`] lists it back to the reader, so the refusal can

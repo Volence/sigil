@@ -453,6 +453,23 @@ fn one_pass_with_defer(
     if std::env::var_os("SIGIL_CENSUS_EXPLABEL").is_some() {
         eprintln!("CENSUS-EXPLABEL\tinstances-with-labels={}", asm.expansion_label_used);
     }
+    // ENGAGEMENT WITNESS for the include rule, and the whole reason it is a
+    // count rather than a diff: an empty before/after diff of two diagnostic
+    // streams reads the same whether the changed code ran on every site and
+    // agreed, or never ran at all. `repeats=0` beside an empty diff is the
+    // honest reading of a tree that includes nothing twice; `executed=0` beside
+    // one says the tree does not exercise `include` at all and the identity
+    // attests only that the plumbing moved no byte. Env-gated, so a normal build
+    // pays three increments and no output.
+    if asm.include_census.on {
+        eprintln!(
+            "CENSUS-INCLUDE\tseen={}\texecuted={}\trepeats={}\trefused-too-deep={}",
+            asm.include_census.seen_total,
+            asm.include_census.executed,
+            asm.include_census.repeats,
+            asm.include_census.refused_too_deep,
+        );
+    }
     PassOutput {
         module,
         env: asm.env,
@@ -556,6 +573,41 @@ fn label_span(line: &SrcLine, name: &str) -> Span {
         start: line.base,
         end: line.base + name.len() as u32,
     }
+}
+
+/// What the include rule DID this pass, as counts.
+///
+/// This exists because of a method defect, not because the numbers are
+/// interesting on their own. The natural way to check that a rule change moved
+/// nothing is to diff the diagnostic stream before and after — and that diff is
+/// empty in two completely different worlds: the one where the rule engaged on
+/// every site and every site agreed, and the one where the rule was never
+/// reached at all. An empty diff reported next to `executed=0` says nothing; an
+/// empty diff reported next to `executed=1741 repeats=0` says the population was
+/// walked and is genuinely uniform.
+///
+/// `repeats` is the population the OLD rule silently dropped: an `include` whose
+/// canonical path had already been executed once in this pass. Under the old
+/// `visited`-set guard every one of these emitted nothing; under asl every one
+/// of them assembles again. Its `seen` set is therefore a MEASUREMENT and not a
+/// rule — nothing consults it to decide anything — and it is only allocated when
+/// the census is switched on, so a normal build carries three counters and no
+/// set.
+#[derive(Default)]
+struct IncludeCensus {
+    /// `SIGIL_CENSUS_INCLUDE` was set when this `Asm` was built.
+    on: bool,
+    /// Every `include` that resolved a path, refused or not.
+    seen_total: u32,
+    /// Includes that read and executed a file.
+    executed: u32,
+    /// Includes naming a path this pass had already executed. Zero of these and
+    /// the once-vs-twice change cannot have moved a byte, whatever else ran.
+    repeats: u32,
+    /// Includes refused because [`crate::INCLUDE_NEST_MAX`] was already reached.
+    refused_too_deep: u32,
+    /// Canonical paths executed so far, kept only to compute `repeats`.
+    seen: std::collections::BTreeSet<std::path::PathBuf>,
 }
 
 struct Asm {
@@ -665,7 +717,19 @@ struct Asm {
     /// each pass (fresh `Asm`), so expansion order — hence scope names — is stable
     /// across passes once conditionals converge.
     macro_expansion_seq: u32,
-    visited: std::collections::BTreeSet<std::path::PathBuf>,
+    /// How many `include` levels are open at this point. asl bounds nesting by
+    /// DEPTH and by nothing else — see [`crate::INCLUDE_NEST_MAX`] — so this
+    /// counter, not a set of paths, is the whole rule. It is also what keeps a
+    /// runaway include from being a native stack overflow: `directive_include`
+    /// re-enters [`Asm::exec`], so an unbounded chain crashes the process where
+    /// asl prints a diagnostic and stops.
+    include_depth: u32,
+    /// ENGAGEMENT COUNTERS for the include rule, and the reason they exist: a
+    /// before/after diff of two diagnostic streams cannot tell "the rule ran
+    /// and changed nothing" from "the rule never ran" — both print an empty
+    /// diff. These make the second case visible. Reported by
+    /// `SIGIL_CENSUS_INCLUDE`; see `census_include` below.
+    include_census: IncludeCensus,
     include_root: Option<std::path::PathBuf>,
     aborted: bool,
     /// `exitm` raised, and no expansion driver has consumed it yet. Checked at
@@ -952,7 +1016,11 @@ impl Asm {
             macro_depth: 0,
             macro_frames: Vec::new(),
             macro_expansion_seq: 0,
-            visited: std::collections::BTreeSet::new(),
+            include_depth: 0,
+            include_census: IncludeCensus {
+                on: std::env::var_os("SIGIL_CENSUS_INCLUDE").is_some(),
+                ..Default::default()
+            },
             include_root: opts.include_root.clone(),
             aborted: false,
             exit_expansion: false,
@@ -2069,7 +2137,44 @@ impl Asm {
     }
 
     /// `include "path"`: read a file relative to `include_root`, exec its lines
-    /// inline. A visited-set prevents re-inclusion (DAG, not tree).
+    /// inline. A TREE, not a DAG — the same file included twice assembles twice
+    /// — bounded by [`crate::INCLUDE_NEST_MAX`] levels of nesting.
+    ///
+    /// **asl has no re-inclusion guard of any kind, and the difference was
+    /// silent.** Measured, all seven shapes in
+    /// `docs/superpowers/notes/2026-09-05-as-include-repeat-probes/`:
+    ///
+    /// - a two-byte header included twice emits four bytes, at $1000 and $1002
+    ///   (`p1`);
+    /// - a DIAMOND — `a` includes `b` and `c`, both include `d` — assembles `d`
+    ///   twice (`p4`);
+    /// - three spellings of one path (`x`, `./x`, `sub/../x`) are three
+    ///   inclusions (`p5`), so there is no canonical-path identity to appeal to
+    ///   either;
+    /// - a header holding `count set count+1 / dc.b count` included three times
+    ///   emits `01 02 03` (`p7`) — the copies are not even required to agree.
+    ///
+    /// The only thing that stops an `include` is DEPTH. A file that includes
+    /// itself is not refused by name: asl opens it 199 times, emitting its bytes
+    /// each time, and refuses the 200th with `INCLUDE nested too deeply`, fatal,
+    /// exit 3 (`p2`). Mutual recursion between two files ends the same way
+    /// (`p3`), and a chain of 199 DISTINCT files — a cycle rule would never
+    /// touch it — hits exactly the same wall at 200 (`depth.sh`). So the bound
+    /// belongs on the depth counter, and a cycle test would be both unfaithful
+    /// (different message, different point of refusal) and insufficient (it
+    /// would let a generated 5000-deep chain of distinct files recurse into a
+    /// native stack overflow, where asl prints a diagnostic and stops).
+    ///
+    /// What the old `visited` set cost, on those same probes: `p1` emitted 8
+    /// bytes where asl emits 10, `p4` dropped a byte, `p7` emitted `01 99` where
+    /// asl emits `01 02 03 99` — all four exiting 0 with nothing said. It also
+    /// ran the wrong way on the cycles: `p2` and `p3` are programs asl REFUSES,
+    /// and sigil accepted both silently and wrote a ROM.
+    ///
+    /// One divergence this does NOT close: `p6` (a repeated include that defines
+    /// a PC label) is `error #1000: symbol double defined` under asl, which
+    /// emits the bytes anyway and exits 2. sigil now emits the same bytes; the
+    /// diagnostic is a property of its symbol table, not of this directive.
     fn directive_include(&mut self, rest: &[Token], span: Span) {
         let rel = match rest.iter().find_map(|t| {
             if let Tok::Str(s) = &t.tok {
@@ -2088,9 +2193,30 @@ impl Asm {
             Some(root) => root.join(&rel),
             None => std::path::PathBuf::from(&rel),
         };
-        let canon = path.canonicalize().unwrap_or_else(|_| path.clone());
-        if !self.visited.insert(canon) {
-            return; // already included (DAG guard)
+        self.include_census.seen_total += 1;
+        if self.include_census.on {
+            // Canonicalize for the census only. asl does not (probe `p5`), and
+            // nothing here reads this to decide anything — it exists so the
+            // count of "includes the old rule would have dropped" is the count
+            // of what the old rule actually did, which keyed on the canonical
+            // path.
+            let canon = path.canonicalize().unwrap_or_else(|_| path.clone());
+            if !self.include_census.seen.insert(canon) {
+                self.include_census.repeats += 1;
+            }
+        }
+        // asl's bound, and the reason it is checked BEFORE the read: the file
+        // exists in the runaway case, so a missing-file error would never fire
+        // and the recursion is unbounded until the native stack goes.
+        if self.include_depth >= crate::INCLUDE_NEST_MAX {
+            self.include_census.refused_too_deep += 1;
+            self.err(span, crate::INCLUDE_NEST_TOO_DEEP);
+            // asl calls this fatal and terminates the assembly (`ASL_EXIT=3`),
+            // rather than unwinding one level and carrying on. Unwinding would
+            // re-raise the same refusal at every one of the 199 open levels on
+            // the way out, burying the one true error under 199 copies of it.
+            self.aborted = true;
+            return;
         }
         match std::fs::read_to_string(&path) {
             Ok(text) => {
@@ -2116,7 +2242,14 @@ impl Asm {
                 // inside a macro body.
                 let outer_labels = std::mem::take(&mut self.expansion_labels);
                 let lines = split_src_lines(self.sources.text(id), id);
+                self.include_census.executed += 1;
+                // Paired with the decrement below rather than with a guard type:
+                // `exec` cannot unwind past here (it returns on `aborted`, it
+                // does not panic), so the restore is reached on every path a
+                // depth counter needs it on, exactly like the three saves above.
+                self.include_depth += 1;
                 self.exec(&lines);
+                self.include_depth -= 1;
                 self.expansion_labels = outer_labels;
                 self.expansion_depth = outer_depth;
                 self.source = outer;
