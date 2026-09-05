@@ -314,7 +314,19 @@ and should be closed.
 
 ---
 
-## 8. Left open
+## 8. Verification, with the tree named
+
+Run from `/home/volence/sonic_hacks/sigil/.claude/worktrees/agent-aa6cafeb749d800b3`,
+branch `parcel/source-gate-pipefail-classes`, at `dd7026f8` — and the log itself
+carries that path, so it cannot be a green from somewhere else:
+
+| bar | result |
+|---|---|
+| `cargo test --workspace` (`SIGIL_ALLOW_PARTIAL=1`) | exit 0 — **4551 passed, 0 failed, 2 ignored**, and `no_pipefail_decision_rests_on_an_early_exiting_reader ... ok` is IN that log |
+| `cargo clippy --workspace --all-targets -- -D warnings` | exit 0, zero `error:`/`warning:` lines |
+| `scripts/nightly_source_gates.sh --audit` | exit 0 — `SOURCE_GATES=46 scanned=138 source=45 artifact=87 no-reference=6 unclassified=0`. The new lint names no reference tree, so it does not enter that population at all. |
+
+## 9. Left open
 
 - **`$(…)` pipelines under `set -e` are outside the lint's reach** (§6). Zero
   instances today; the population is one `set -e` away from being large. Closing it
