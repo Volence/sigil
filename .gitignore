@@ -25,6 +25,15 @@ crates/sigil-harness/golden/.staging/
 # ABSENCE is what says a freeze completed; `refreeze --check` refuses while it is here.
 crates/sigil-harness/golden/.freeze-journal
 
+# The asl-oracle sweep scripts' default target dir (docs/superpowers/notes/
+# 2026-09-05-asl-nondeterminism-sweep-probes/*.sh and 2026-09-05-asl-gen-vector-
+# provenance-probes/*.sh all default CARGO_TARGET_DIR to $REPO/.cargo-target).
+# It is per-worktree rather than the shared target/ on purpose: those sweeps
+# build the vector generators, and a build landing in target/ relinks the
+# assembler another lane's freeze pins by md5. Ignored so a sweep cannot leave
+# untracked artifacts for a later `git add` to sweep into a commit.
+/.cargo-target/
+
 # dedicated landing-verification target dir — never share target/ between worktrees
 /.target-land/
 
