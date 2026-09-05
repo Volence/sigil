@@ -144,6 +144,6 @@ fn named_section_labels_follow_placed_lma() {
         bytes,
         vec![0x00, 0x00, 0x00, 0x04, 0xAA],
         "P's pointer field must fix up to X's PLACED address (4), not the \
-         silently-defaulted vma:0 — X's own byte ($AA) follows at offset 4"
+         silently-defaulted vma:0, X's own byte ($AA) follows at offset 4"
     );
 }

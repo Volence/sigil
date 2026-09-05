@@ -178,7 +178,7 @@ impl<'a> Evaluator<'a> {
                     self.warn(
                         *span,
                         "[patch.unwired] `patch`/`bind` parse but are NOT connected to the \
-                         back-patch mechanism — this statement emits nothing and patches \
+                         back-patch mechanism, this statement emits nothing and patches \
                          nothing. The `lower::patch` slot table exists and is tested; wiring \
                          these statements to it is unfinished surface integration.",
                     );

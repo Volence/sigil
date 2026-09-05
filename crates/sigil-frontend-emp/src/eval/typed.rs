@@ -271,7 +271,7 @@ impl<'a> Evaluator<'a> {
         self.error(
             span,
             format!(
-                "[scale mismatch] cannot combine {} (fixed<{il},{fl}>) and {} (fixed<{ir},{fr}>) — \
+                "[scale mismatch] cannot combine {} (fixed<{il},{fl}>) and {} (fixed<{ir},{fr}>), \
                  rescale one to a common scale, e.g. rescale<{ir},{fr}>(..)",
                 tl.describe(),
                 tr.describe()

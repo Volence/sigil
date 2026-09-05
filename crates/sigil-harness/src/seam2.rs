@@ -133,7 +133,7 @@ pub fn require_named_reference_tree(aeon: &Path) -> Result<(), String> {
     };
     Err(format!(
         "AEON_DIR is not set, so the reference tree written into is one nobody named. Unset, it \
-         resolves to {default} — the live aeon working checkout — whose \
+         resolves to {default}, the live aeon working checkout, whose \
          engine/sound/generated/ is gitignored, so a write there leaves no trace in `git status` \
          and nothing records which process produced the bytes a later read picks up. Set AEON_DIR \
          to a reference tree you provisioned (scripts/provision-aeon-ref.sh). Nothing was created. \
@@ -166,7 +166,7 @@ pub fn require_reference_tree(aeon: &Path) -> Result<(), String> {
         return Ok(());
     }
     Err(format!(
-        "reference tree not at {} (no {SOUND_PLACEMENT_MAP_REL}) — set AEON_DIR to an aeon \
+        "reference tree not at {} (no {SOUND_PLACEMENT_MAP_REL}), set AEON_DIR to an aeon \
          checkout. Nothing was created: a sound emitter writes UNDER this tree, and creating a \
          directory inside an absent tree makes the tree's root exist, which turns every \
          root-probing skip guard in the suite into a run against an empty tree.",
@@ -743,7 +743,7 @@ fn emit_sfx_body_and_head_at(
     let sfx_size = bank_top.checked_sub(sfx_base).ok_or_else(|| {
         format!(
             "SFX block base {sfx_base:#X} is above the sound-bank top {bank_top:#X} \
-             (bank {bank_start:#X} + {BANK_WINDOW_SIZE:#X}) — the block cannot fit its bank"
+             (bank {bank_start:#X} + {BANK_WINDOW_SIZE:#X}), the block cannot fit its bank"
         )
     })?;
 

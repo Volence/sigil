@@ -179,7 +179,7 @@ const CORPUS_OPEN_FINDINGS: &[OpenFinding] = &[
             ("lean", 1),
         ],
         owner: "sigil language lane (the spelling); aeon adopts it",
-        anchor: "aeon docs/DEFERRED_WORK.md — the `[import.no-names]` closure-edge gap",
+        anchor: "aeon docs/DEFERRED_WORK.md, the `[import.no-names]` closure-edge gap",
         kill: "the spelling exists (`use base._`); when this `use` line adopts it the lint \
                stops firing here, at which point this row goes red and is deleted. Widening \
                the baseline instead is the move this register replaces.",
@@ -197,7 +197,7 @@ const CORPUS_OPEN_FINDINGS: &[OpenFinding] = &[
             ("lean", 1),
         ],
         owner: "sigil language lane (the spelling); aeon adopts it",
-        anchor: "aeon docs/DEFERRED_WORK.md — the `[import.no-names]` closure-edge gap",
+        anchor: "aeon docs/DEFERRED_WORK.md, the `[import.no-names]` closure-edge gap",
         kill: "the spelling exists (`use base._`); when this `use` line adopts it the lint \
                stops firing here, at which point this row goes red and is deleted. Widening \
                the baseline instead is the move this register replaces.",
@@ -334,7 +334,7 @@ fn every_open_finding_is_completely_specified() {
         assert!(missing.is_empty(), "open finding `{}` @ {}: blank {missing:?}", f.id, f.file);
         assert!(
             !f.sites.is_empty(),
-            "open finding `{}` @ {}: no shape sites — an entry that pins nothing gates nothing",
+            "open finding `{}` @ {}: no shape sites, an entry that pins nothing gates nothing",
             f.id,
             f.file
         );
@@ -358,7 +358,7 @@ fn every_open_finding_is_completely_specified() {
         assert!(
             !f.anchor.contains(".md:") && !f.anchor.contains(".emp:") && !f.anchor.contains(".rs:"),
             "open finding `{}` @ {}: the anchor carries a line number ({:?}). Anchor to a \
-             symbol or a path and let a SHA date the claim — an anchor outlives what it \
+             symbol or a path and let a SHA date the claim, an anchor outlives what it \
              points at, so a coordinate in one is guaranteed to go stale.",
             f.id,
             f.file,
@@ -387,7 +387,7 @@ fn every_open_finding_is_completely_specified() {
 fn corpus_open_findings_fire_exactly_where_registered() {
     let Some(aeon) = aeon_dir() else { return };
     let Some(shapes) = corpus_warnings() else { return };
-    assert!(!shapes.is_empty(), "no shape was lowered — measure before trusting");
+    assert!(!shapes.is_empty(), "no shape was lowered, measure before trusting");
 
     // The rendered register, printed whether or not anything is wrong.
     let today = today_days();
@@ -454,7 +454,7 @@ fn corpus_open_findings_fire_exactly_where_registered() {
         unregistered.is_empty(),
         "a registered lint id fired at {} site(s) NO open-findings row claims. The id is \
          admitted in WARN_ID_BASELINE, so the id-set gate stays green and this is the only \
-         thing that sees it — which is the whole reason the register is site-pinned. \
+         thing that sees it, which is the whole reason the register is site-pinned. \
          Adjudicate each and either fix it or add a CORPUS_OPEN_FINDINGS row (owner, anchor \
          and kill condition included) in the same commit:\n{}",
         unregistered.len(),
@@ -469,7 +469,7 @@ fn corpus_open_findings_fire_exactly_where_registered() {
             drift.push(if actual == 0 {
                 format!(
                     "  RESOLVED: [{shape}] {id} @ {file} ({detail}) no longer fires (was {n}). \
-                     Delete the row — or, if it was ruled DELIBERATE, move the id into \
+                     Delete the row, or, if it was ruled DELIBERATE, move the id into \
                      WARN_ID_BASELINE citing the ruling. Same commit either way."
                 )
             } else {
@@ -568,7 +568,7 @@ fn debug_shape_sr_writes_are_author_checked() {
             "shape `{label}`: L1 bind errors: {bind_diags:?}"
         );
         let r = analyze_corpus_with_contracts(&files, &defines, &iface_env);
-        assert!(!r.sr_writes.is_empty(), "`{label}`: no SR write examined — measure before trusting");
+        assert!(!r.sr_writes.is_empty(), "`{label}`: no SR write examined, measure before trusting");
         for (proc, author, _span) in &r.sr_writes {
             match author {
                 ItemAuthor::AssertDesugar => seen_desugar += 1,
@@ -579,7 +579,7 @@ fn debug_shape_sr_writes_are_author_checked() {
                 // corpus has none today; the arm keeps the match exhaustive).
                 ItemAuthor::User | ItemAuthor::Splice { .. } | ItemAuthor::IrqFrame => {}
                 ItemAuthor::EntrySynth => panic!(
-                    "`{label}`: an EntrySynth-authored SR write in `{proc}` — the entry \
+                    "`{label}`: an EntrySynth-authored SR write in `{proc}`, the entry \
                      synthesis emits no instructions today, and no obligation home exists \
                      for one that writes SR; build the receiving contract before shipping it"
                 ),
@@ -587,7 +587,7 @@ fn debug_shape_sr_writes_are_author_checked() {
         }
     }
     assert_eq!(walked_debug_shapes, 3, "the three DEBUG == 1 shapes are the class's home");
-    assert!(seen_desugar > 0, "no desugar-authored SR write was seen — the exemption is vacuous");
+    assert!(seen_desugar > 0, "no desugar-authored SR write was seen, the exemption is vacuous");
     // Context-authored SR traffic is corpus-real too (`ints_off` brackets); its
     // count is reported, not pinned (adoption moves it).
     eprintln!("sr-write census: desugar-authored {seen_desugar}, context-authored {seen_context}");
@@ -604,7 +604,7 @@ fn every_corpus_warning_carries_a_lint_id() {
     let Some(shapes) = corpus_warnings() else { return };
 
     for (label, warnings) in shapes {
-        assert!(!warnings.is_empty(), "`{label}` reported no warnings — measure before trusting");
+        assert!(!warnings.is_empty(), "`{label}` reported no warnings, measure before trusting");
         let bare: Vec<&str> =
             warnings.iter().filter(|w| w.id.is_empty()).map(|w| w.message.as_str()).collect();
         assert!(

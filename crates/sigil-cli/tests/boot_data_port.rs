@@ -63,7 +63,7 @@ fn config_b_boot_data_hole_filled() {
     // Z80 program; its first opcode is `xor a` = $AF).
     assert_eq!(rom[0x3c8], 0xAF, "config_b: z80 idle head opcode at the $3c8 hole start");
     let idle_nonzero = (0x3c8..0x3f0).any(|i| rom[i] != 0);
-    assert!(idle_nonzero, "config_b: the $3c8..$3f0 hole is empty — z80_init did not fill it");
+    assert!(idle_nonzero, "config_b: the $3c8..$3f0 hole is empty, z80_init did not fill it");
     // The tail resumes at $3f0 with the first PSG-silence byte ($9F).
     assert_eq!(rom[0x3f0], 0x9F, "config_b: boot_tail did not resume at $3f0 (post-hole PSG byte)");
 }

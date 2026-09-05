@@ -238,7 +238,7 @@ fn derive_rerun(root: &std::path::Path, changes: &[sigil_harness::repin::PinChan
     // of zero means the walk missed them.
     if files.is_empty() {
         eprintln!(
-            "repin: warning: no `crates/*/tests/*.rs` found under {} — the rerun hint below \
+            "repin: warning: no `crates/*/tests/*.rs` found under {}, the rerun hint below \
              is DERIVED from those files, so it is not a claim that nothing reads these pins",
             crates_dir.display()
         );

@@ -71,7 +71,7 @@ fn guarded_define_folds_identically_to_in_file_equate() {
         a, b,
         "a guarded -D-injected value must fold byte-identically to an in-file `=` \
          equate in every consuming position (ds count, if guard, shifted dc.b, \
-         derived equate, dc.w) — got in-file {a:x?} vs injected {b:x?}"
+         derived equate, dc.w), got in-file {a:x?} vs injected {b:x?}"
     );
     // And the bytes are actually the expected fold (non-vacuous): DERIVED = 193
     // clamps to $C1; 1<<3 = $08; if 96>90 → $AA (the `if K > 90` comptime guard

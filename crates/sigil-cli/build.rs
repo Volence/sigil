@@ -264,7 +264,7 @@ fn main() {
         .ok()
         .and_then(|out| PathBuf::from(out).parent().map(|p| p.join("output")))
         .map(|p| p.display().to_string())
-        .unwrap_or_else(|| "unavailable — cargo set no OUT_DIR".to_string());
+        .unwrap_or_else(|| "unavailable, cargo set no OUT_DIR".to_string());
 
     let p = probe(&manifest_dir);
 
@@ -376,11 +376,11 @@ fn probe(manifest_dir: &Path) -> Provenance {
             // Unreachable while `root` is `Some`, and answered rather than
             // asserted: an undetermined closure has no finite trigger set.
             Triggers::Undetermined => {
-                "nothing — the closure could not be derived, so every path is material".to_string()
+                "nothing, the closure could not be derived, so every path is material".to_string()
             }
         },
         None => format!(
-            "nothing — the closure was not derived ({})",
+            "nothing, the closure was not derived ({})",
             if closure.error.is_empty() { "reason not reported" } else { &closure.error }
         ),
     };
@@ -400,7 +400,7 @@ fn probe(manifest_dir: &Path) -> Provenance {
         )
     } else {
         format!(
-            "NOT DERIVED ({}) — every uncommitted change is counted as material and no \
+            "NOT DERIVED ({}), every uncommitted change is counted as material and no \
              closure revision is available",
             closure.error
         )
@@ -498,7 +498,7 @@ fn upstream_ref(manifest_dir: &Path) -> Upstream {
 /// not a verdict, because a check that fires on correct work teaches people to delete it.
 fn published(manifest_dir: &Path, revision: &str, upstream: &Upstream) -> String {
     if upstream.name.is_empty() {
-        return format!("unknown — {}", upstream.why);
+        return format!("unknown, {}", upstream.why);
     }
     let at = format!("{} ({})", upstream.name, upstream.tip);
     let cache = format!(
@@ -512,13 +512,13 @@ fn published(manifest_dir: &Path, revision: &str, upstream: &Upstream) -> String
         .status();
     match contained {
         Ok(s) if s.success() => {
-            format!("yes — this revision is contained in {at}. {cache}")
+            format!("yes, this revision is contained in {at}. {cache}")
         }
         Ok(_) => format!(
-            "not yet — this revision is NOT contained in {at}, which is the ordinary state of a \
+            "not yet, this revision is NOT contained in {at}, which is the ordinary state of a \
              lane's own commits before they are pushed, not a fault. {cache}"
         ),
-        Err(e) => format!("unknown — git could not answer whether this revision is on {} ({e})", upstream.name),
+        Err(e) => format!("unknown, git could not answer whether this revision is on {} ({e})", upstream.name),
     }
 }
 
@@ -554,18 +554,18 @@ fn drift_check(source_dir: &str, closure: &Closure) -> String {
 /// failure the whole-command form exists to prevent.
 fn drift_check_at(source_dir: &str, closure: &Closure, upstream: &Upstream) -> String {
     if upstream.name.is_empty() {
-        return format!("unavailable — {}", upstream.why);
+        return format!("unavailable, {}", upstream.why);
     }
     drift_check_rev(source_dir, closure, &upstream.name)
 }
 
 fn drift_check_rev(source_dir: &str, closure: &Closure, rev: &str) -> String {
     if !closure.error.is_empty() {
-        return format!("unavailable — {}", closure.error);
+        return format!("unavailable, {}", closure.error);
     }
     let paths = closure.sources.paths();
     if paths.is_empty() {
-        return "unavailable — no closure path was derived, so there is nothing to compare"
+        return "unavailable, no closure path was derived, so there is nothing to compare"
             .to_string();
     }
     let mut cmd =
@@ -885,7 +885,7 @@ fn cargo_metadata(manifest_dir: &Path) -> Result<serde_json::Value, String> {
 /// on every commit in the repository including ones no compilation can see.
 fn closure_revision(manifest_dir: &Path, closure: &Closure) -> String {
     if !closure.error.is_empty() {
-        return format!("unavailable — {}", closure.error);
+        return format!("unavailable, {}", closure.error);
     }
     // `:(top)` on every pathspec: git resolves a bare pathspec against the
     // current directory, and this runs from the crate directory rather than the
@@ -899,7 +899,7 @@ fn closure_revision(manifest_dir: &Path, closure: &Closure) -> String {
     }
     match git(manifest_dir, &args) {
         Ok(sha) => sha,
-        Err(why) => format!("unavailable — {why}"),
+        Err(why) => format!("unavailable, {why}"),
     }
 }
 

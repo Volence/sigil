@@ -47,7 +47,7 @@ fn an_unclosed_bracket_is_refused_by_name() {
     ] {
         let diags = assemble(&src(tail), &Options::default())
             .err()
-            .unwrap_or_else(|| panic!("`{label}`: an unclosed bracket must be refused, not assembled — AS accepts this and that acceptance is the defect being diverged from"));
+            .unwrap_or_else(|| panic!("`{label}`: an unclosed bracket must be refused, not assembled, AS accepts this and that acceptance is the defect being diverged from"));
 
         // Matched on wording unique to THIS rule. A looser matcher would pass on
         // any refusal, including the "expected mnemonic or directive after label"

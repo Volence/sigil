@@ -57,7 +57,7 @@ fn compress_round_trip_is_not_truncated() {
     // and PASSES under the rewinding one (recon measured 218 bytes).
     assert!(
         compressed.len() > 50,
-        "compressed output ({} bytes) looks truncated — the read callback likely did not rewind on EOF",
+        "compressed output ({} bytes) looks truncated, the read callback likely did not rewind on EOF",
         compressed.len()
     );
 

@@ -112,7 +112,7 @@ fn every_region_end_contract_holds_against_the_live_layout() {
     // is information, not a defect. Judging it per shape would demand a conversion that
     // moves the other shape's pin.
     let declared = declared_allotments();
-    assert!(!declared.is_empty(), "the manifest declares no allotments — did the parse break?");
+    assert!(!declared.is_empty(), "the manifest declares no allotments, did the parse break?");
     let carries_pad = |name: &str| {
         resolved
             .warnings
@@ -122,7 +122,7 @@ fn every_region_end_contract_holds_against_the_live_layout() {
     let stale: Vec<&String> = declared.iter().filter(|n| !carries_pad(n)).collect();
     assert!(
         stale.is_empty(),
-        "{} region(s) declare an allotment they no longer have in ANY shape — convert each \
+        "{} region(s) declare an allotment they no longer have in ANY shape, convert each \
          to `end = \"section:<name>\"` and drop the declaration (the pin does not move): {}",
         stale.len(),
         stale.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(", ")
@@ -143,7 +143,7 @@ fn deleting_an_allotment_declaration_refuses_the_live_manifest() {
         return;
     };
     let declared = declared_allotments();
-    assert!(!declared.is_empty(), "the manifest declares no allotments — did the parse break?");
+    assert!(!declared.is_empty(), "the manifest declares no allotments, did the parse break?");
     for name in &declared {
         let doctored = strip_one_declaration(name);
         assert_ne!(doctored, MANIFEST, "region `{name}`: nothing was stripped");
@@ -153,7 +153,7 @@ fn deleting_an_allotment_declaration_refuses_the_live_manifest() {
             Err(e) => e,
             Ok(_) => panic!(
                 "region `{name}`: the manifest resolved with its allotment declaration \
-                 REMOVED — the strict default is not reaching this region, or its pad has \
+                 REMOVED, the strict default is not reaching this region, or its pad has \
                  gone to zero (in which case convert it to `end = \"section:<name>\"`)"
             ),
         };

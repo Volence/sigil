@@ -104,7 +104,7 @@ pub fn merge_builtin_and_game(
         if let Some((_, bv)) = builtin.iter().find(|(bk, _)| *bk == key) {
             return Err(format!(
                 "define `{key}` is declared twice: {origin} [defines] (= {gv}) and the \
-                 built-in profile row in crates/sigil-harness/src/native.rs (= {bv}) — \
+                 built-in profile row in crates/sigil-harness/src/native.rs (= {bv}), \
                  a game config must not shadow a built-in row (and a built-in must not \
                  silently override a game config); delete one of the two declarations"
             ));
@@ -158,7 +158,7 @@ pub fn audit_game_declared_polarity(
         if reason.trim().is_empty() {
             return Err(format!(
                 "the polarity exemption for game-declared define `{key}` carries no \
-                 reason — an exemption records WHY a blind arm is acceptable, so an \
+                 reason, an exemption records WHY a blind arm is acceptable, so an \
                  empty one is the silent absence it exists to replace"
             ));
         }
@@ -195,7 +195,7 @@ pub fn audit_game_declared_polarity(
         };
         return Err(format!(
             "game-declared define `{key}` takes {values:?} across the shipped shapes \
-             ({}) — it {kind}. Pinned to one value it carries a comptime arm no shape \
+             ({}), it {kind}. Pinned to one value it carries a comptime arm no shape \
              walk reaches, and the built-in polarity gate cannot see it because that \
              gate reads `profile.emp_defines`. Either declare the other value in a \
              second game's `[defines]`, or name `{key}` in the polarity exemption list \
@@ -246,7 +246,7 @@ fn duplicate_define_key_message(src: &str, origin: &str) -> Option<String> {
         if let Some((_, first_line)) = seen.iter().find(|(k, _)| k == key) {
             return Some(format!(
                 "{origin}: [defines] key `{key}` is declared twice (lines {first_line} \
-                 and {}) — a define has exactly one row",
+                 and {}), a define has exactly one row",
                 idx + 1
             ));
         }
@@ -355,7 +355,7 @@ pub fn define_listing_rows(
         // caller a future one may not use.
         if !emitted.insert(key.as_str()) {
             faults.push(format!(
-                "define `{key}` appears twice in one shape's merged define env — a \
+                "define `{key}` appears twice in one shape's merged define env, a \
                  define has exactly one row, and two rows would put one name in the \
                  listing twice with (potentially) two values"
             ));
@@ -366,7 +366,7 @@ pub fn define_listing_rows(
                 "define `{key}` collides with a name the linked program already \
                  publishes. Two origins claim it: the command-line define (= {value}, \
                  declared by {}) and {}. The listing answers \"what is this name \
-                 worth\", so one name must have one origin — sigil will not silently \
+                 worth\", so one name must have one origin, sigil will not silently \
                  pick either row. Delete the define, or rename one of the two \
                  declarations",
                 define_origin(key, builtin, map_origin),

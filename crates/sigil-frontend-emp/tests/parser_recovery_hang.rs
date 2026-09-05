@@ -109,7 +109,7 @@ fn parse_within(src: &str) -> Vec<sigil_span::Diagnostic> {
         let _ = tx.send(diags);
     });
     rx.recv_timeout(std::time::Duration::from_secs(20))
-        .unwrap_or_else(|_| panic!("parse did not terminate — recovery is spinning on:\n{src}"))
+        .unwrap_or_else(|_| panic!("parse did not terminate, recovery is spinning on:\n{src}"))
 }
 
 #[test]

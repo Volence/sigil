@@ -41,7 +41,7 @@ fn audit() -> (bool, String) {
     let script = root.join("scripts/nightly_source_gates.sh");
     assert!(
         script.is_file(),
-        "{} is missing — the lane this gate speaks for cannot be audited",
+        "{} is missing, the lane this gate speaks for cannot be audited",
         script.display()
     );
     let out = Command::new("bash")
@@ -79,7 +79,7 @@ fn every_selected_test_file_is_classified() {
         "the source-gate lane cannot classify this tree, so it will refuse to run and \
          produce no coverage until this is fixed. Put each named file in the run list in \
          scripts/nightly_source_gates.sh if it reads the tree, or leave it alone if it \
-         only names one — the lane derives that half itself. Audit output:\n{text}"
+         only names one, the lane derives that half itself. Audit output:\n{text}"
     );
 }
 
@@ -99,11 +99,11 @@ fn the_bucket_counts_reconcile_against_the_scanned_population() {
             .unwrap_or_else(|| panic!("the audit printed no `{k}=` count:\n{text}"))
     };
     let scanned = get("scanned");
-    assert!(scanned > 0, "the selector matched no test file — a classification over an empty population is not one:\n{text}");
+    assert!(scanned > 0, "the selector matched no test file, a classification over an empty population is not one:\n{text}");
     let source = get("source");
     assert!(source > 0, "no file is classified as a source gate, so the lane would run nothing:\n{text}");
     let sum = source + get("artifact") + get("no-reference") + get("unclassified");
-    assert_eq!(sum, scanned, "the buckets hold {sum} of {scanned} scanned files — the classification lost some:\n{text}");
+    assert_eq!(sum, scanned, "the buckets hold {sum} of {scanned} scanned files, the classification lost some:\n{text}");
 }
 
 /// THE LANE'S DERIVED ACCESSOR SET IS THE ONE THE HARNESS DECLARES.
@@ -132,7 +132,7 @@ fn the_derived_accessor_set_is_the_declared_guard_set() {
         .unwrap_or_else(|| {
             panic!(
                 "the audit printed no `accessors:` line, so the closure's answer cannot be \
-                 checked at all — and an unchecked closure is exactly the silent direction this \
+                 checked at all, and an unchecked closure is exactly the silent direction this \
                  gate exists for:\n{text}"
             )
         });
@@ -152,6 +152,6 @@ fn the_derived_accessor_set_is_the_declared_guard_set() {
         "the source-gate lane derives its reference-tree accessors from test_support.rs by \
          closure, and the harness declares the same set as GUARDS. They disagree. Whichever \
          side is short, some test file that reads the reference tree is about to be classified \
-         as reading nothing — which the lane reports as green coverage.\n{text}"
+         as reading nothing, which the lane reports as green coverage.\n{text}"
     );
 }

@@ -251,7 +251,7 @@ impl StrictRun {
         // the strict gate exists to prove" — never "a small run".
         if self.strict_bodies == 0 {
             d.push(
-                "strict_bodies = 0 — no strict-gated body executed, which is the signature \
+                "strict_bodies = 0, no strict-gated body executed, which is the signature \
                  of a suite run WITHOUT SIGIL_STRICT_GATE=1; an attestation of such a run \
                  is vacuous"
                     .to_string(),
@@ -259,10 +259,10 @@ impl StrictRun {
         }
         // Loud on unmeasurable: a run nobody could count is not a run that passed.
         if self.suites == 0 {
-            d.push("suites = 0 — no test binary reported a result line".to_string());
+            d.push("suites = 0, no test binary reported a result line".to_string());
         }
         if self.passed == 0 {
-            d.push("passed = 0 — no test executed".to_string());
+            d.push("passed = 0, no test executed".to_string());
         }
         match self.outcome.as_str() {
             OUTCOME_PASSED => {
@@ -280,7 +280,7 @@ impl StrictRun {
             // non-matching guard falls through to exactly the same nothing.
             OUTCOME_FAILED if self.failed == 0 => {
                 d.push(
-                    "outcome = \"failed\" but failed = 0 — a red run must say what was red"
+                    "outcome = \"failed\" but failed = 0, a red run must say what was red"
                         .to_string(),
                 );
             }
@@ -294,7 +294,7 @@ impl StrictRun {
             match self.goldens.get(key) {
                 None => d.push(format!("goldens has no `{key}`, but the entry freezes one")),
                 Some(got) if *got != want => d.push(format!(
-                    "goldens.{key} = \"{got}\" but the entry freezes \"{want}\" — this \
+                    "goldens.{key} = \"{got}\" but the entry freezes \"{want}\", this \
                      attestation is about different bytes"
                 )),
                 Some(_) => {}
@@ -310,7 +310,7 @@ impl StrictRun {
         if let Some(want) = entry_aeon_rev.filter(|r| is_full_sha(r)) {
             if self.aeon_rev != want {
                 d.push(format!(
-                    "aeon_rev = \"{}\" but the entry was frozen from \"{want}\" — the suite \
+                    "aeon_rev = \"{}\" but the entry was frozen from \"{want}\", the suite \
                      ran against a different aeon tree than these goldens came from",
                     self.aeon_rev
                 ));
@@ -412,7 +412,7 @@ pub fn append_gate(chain: &Chain) -> AppendGate {
     AppendGate::Refused(format!(
         "the tip `{}` (entry #{}) carries no strict run, and entry #{} `{}` already \
          records one, so the strict-attestation rule is in force. A refreeze must not be \
-         built on top of goldens whose strict suite never ran — that is exactly how chains \
+         built on top of goldens whose strict suite never ran, that is exactly how chains \
          169 and 170 landed a stale constant. Run `refreeze --attest` first. If that run \
          comes back RED, it is recorded as such and `--supersede-tip` becomes available.",
         tip.name,
@@ -551,7 +551,7 @@ pub fn plan_freeze(
 /// kept verbatim after it.
 pub fn byte_neutral_note(abandoned: &str, author_note: &str) -> String {
     let head = format!(
-        "goldens byte-identical to `{abandoned}` — this entry exists to abandon it: the fix \
+        "goldens byte-identical to `{abandoned}`, this entry exists to abandon it: the fix \
          for what turned its strict run red moved no bytes."
     );
     if author_note.trim().is_empty() {
@@ -700,7 +700,7 @@ pub fn check(golden_dir: &Path, chain: &Chain) -> Vec<String> {
         for (i, e) in chain.entry.iter().enumerate().skip(first + 1) {
             if e.aeon_rev.is_none() {
                 errs.push(format!(
-                    "entry #{} `{}`: no aeon_rev, but entry #{} `{}` already names one — \
+                    "entry #{} `{}`: no aeon_rev, but entry #{} `{}` already names one, \
                      once the chain records the aeon revision it cannot stop \
                      (aeon-rev-monotonic)",
                     i + 1,
@@ -731,14 +731,14 @@ pub fn check(golden_dir: &Path, chain: &Chain) -> Vec<String> {
             let n = i + 1;
             if sup.by.trim().is_empty() {
                 errs.push(format!(
-                    "entry #{n} `{}`: superseded.by is empty — abandoning an entry must NAME \
+                    "entry #{n} `{}`: superseded.by is empty, abandoning an entry must NAME \
                      the entry that replaced it (superseded-well-formed)",
                     e.name
                 ));
             }
             match chain.entry.get(i + 1) {
                 None => errs.push(format!(
-                    "entry #{n} `{}`: is the TIP but claims to be superseded by `{}` — \
+                    "entry #{n} `{}`: is the TIP but claims to be superseded by `{}`, \
                      nothing follows it (superseded-well-formed)",
                     e.name, sup.by
                 )),
@@ -779,7 +779,7 @@ pub fn check(golden_dir: &Path, chain: &Chain) -> Vec<String> {
             }
             errs.push(format!(
                 "entry #{} `{}`: was built on by entry #{} but records no passing strict \
-                 run and is not superseded — entry #{} `{}` already records a run, so the \
+                 run and is not superseded, entry #{} `{}` already records a run, so the \
                  rule is in force (strict-attest-monotonic)",
                 i + 1,
                 e.name,
@@ -1169,7 +1169,7 @@ pub fn freeze_into(
             .collect();
         if !moved.is_empty() {
             return Err(format!(
-                "anchor(s) moved {:?} but --ab is empty/sentinel — a byte-changing freeze needs an A/B evidence ref",
+                "anchor(s) moved {:?} but --ab is empty/sentinel, a byte-changing freeze needs an A/B evidence ref",
                 moved
             ));
         }
@@ -1358,7 +1358,7 @@ mod tests {
         let chain = chain_with(&[None, None, None, None]);
         assert!(
             aeon_rev_errs(&chain).is_empty(),
-            "a pre-field entry appended by an older refreeze must pass — this is the \
+            "a pre-field entry appended by an older refreeze must pass, this is the \
              merge race the derived boundary exists to survive"
         );
     }
@@ -1503,7 +1503,7 @@ mod tests {
         let chain = attested_chain(&[None, Some(green()), None]);
         assert!(
             strict_errs(&chain).is_empty(),
-            "an entry appended by an older refreeze on top of an attested tip must pass — \
+            "an entry appended by an older refreeze on top of an attested tip must pass, \
              it is the tip, and its strict run has not happened yet"
         );
     }

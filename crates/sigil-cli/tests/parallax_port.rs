@@ -90,7 +90,7 @@ fn ram_block_vma(name: &'static str) -> (&'static str, u32, u32) {
         let path = listing_path(debug);
         sigil_harness::test_support::listing_symbol_addr(&path, name).unwrap_or_else(|| {
             panic!(
-                "no listing at {} — this gate derives every `Parallax_*` RAM address from \
+                "no listing at {}, this gate derives every `Parallax_*` RAM address from \
                  the listing beside the reference ROM, so a source-only checkout cannot \
                  serve it. Point AEON_DIR at a tree with all four shapes built.",
                 path.display()
@@ -466,7 +466,7 @@ fn assert_region_matches(candidate: &[u8], expected: &[u8], what: &str) {
     // OJZ_BG_ANIM, a 14-byte all-zero plain window (lens sweep, seat GATE, S15).
     assert!(
         !candidate.is_empty(),
-        "{what}: the module emitted NO BYTES — a region gate over an empty window \
+        "{what}: the module emitted NO BYTES, a region gate over an empty window \
          proves nothing. Either the module stopped emitting, or this pin should not exist."
     );
     // Packed placement (Wave-B B-0) may end a region window in ALIGNMENT FILL: the
@@ -483,7 +483,7 @@ fn assert_region_matches(candidate: &[u8], expected: &[u8], what: &str) {
     assert_eq!(
         candidate.len(),
         expected.len(),
-        "{what}: length mismatch — candidate {} bytes, expected {} bytes",
+        "{what}: length mismatch, candidate {} bytes, expected {} bytes",
         candidate.len(),
         expected.len()
     );

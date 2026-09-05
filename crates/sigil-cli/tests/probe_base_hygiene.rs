@@ -203,7 +203,7 @@ fn real_region_map_bases_are_derived_never_hand_typed() {
     // pass by finding nothing to check.
     assert!(
         pinned.len() > 50,
-        "pins.rs must yield the region-name authority — got {} names, so the scan \
+        "pins.rs must yield the region-name authority, got {} names, so the scan \
          below would silently check nothing",
         pinned.len()
     );
@@ -218,7 +218,7 @@ fn real_region_map_bases_are_derived_never_hand_typed() {
     // LOUD ON UNMEASURABLE: a broken glob must not read as a clean sweep.
     assert!(
         files.len() > 100,
-        "expected the sigil-cli test corpus — found {} .rs files under {}",
+        "expected the sigil-cli test corpus, found {} .rs files under {}",
         files.len(),
         dir.display()
     );
@@ -233,7 +233,7 @@ fn real_region_map_bases_are_derived_never_hand_typed() {
     // for the wrong reason.
     assert!(
         real.len() > 40,
-        "the scanner paired only {} real-region map blocks — the map-TOML spelling \
+        "the scanner paired only {} real-region map blocks, the map-TOML spelling \
          it keys on must have changed, so a hand-typed base could pass unseen",
         real.len()
     );
@@ -252,7 +252,7 @@ fn real_region_map_bases_are_derived_never_hand_typed() {
         offenders.is_empty(),
         "a map region named after a real gated cartridge region must take its base from \
          `pins::` (repin regenerates those from the build's own listing), never a hex \
-         literal — a typed base goes stale at the next re-layout and no `assert_ne!` \
+         literal, a typed base goes stale at the next re-layout and no `assert_ne!` \
          probe can notice. If the region is only PARKED here so a neighbouring gate \
          can link, say so with a ``{} `<region>` `` comment on the line or above it:\n{}",
         CARRIER_MARKER,

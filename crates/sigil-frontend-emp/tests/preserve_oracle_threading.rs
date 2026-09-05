@@ -216,7 +216,7 @@ fn the_word_obligation_survives_an_unrelated_clause_error() {
     );
     assert!(
         word_empty.iter().any(|r| r.to_string() == "d5"),
-        "but the word OBLIGATION must survive it — dropping it would leave the `.w` \
+        "but the word OBLIGATION must survive it, dropping it would leave the `.w` \
          claim unverified by anything: {word_empty:?}"
     );
 }

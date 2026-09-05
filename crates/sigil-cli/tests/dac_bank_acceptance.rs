@@ -114,7 +114,7 @@ fn assert_window_identical(expected: &[u8], actual: &[u8], base: usize, what: &s
         );
     }
     panic!(
-        "{what}: lengths differ — expected {} bytes, got {} bytes (common prefix matches)",
+        "{what}: lengths differ, expected {} bytes, got {} bytes (common prefix matches)",
         expected.len(),
         actual.len()
     );

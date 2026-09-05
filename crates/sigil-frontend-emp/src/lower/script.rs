@@ -186,7 +186,7 @@ pub(super) fn lower_script_item(
             level: Level::Warning,
             message: format!(
                 "[script.fallthrough] script `{}` can reach its closing `}}` without an \
-                 unconditional terminator — it will run into whatever follows it",
+                 unconditional terminator, it will run into whatever follows it",
                 decl.name
             ),
             primary: decl.span,
@@ -259,7 +259,7 @@ fn discover_resume_slot(
                         *pspan,
                         format!(
                             "[script.ambiguous-resume-slot] script `{}` param `{pname}` points at \
-                             `{sname}`, which has more than one `ScriptPc` field — the resume slot \
+                             `{sname}`, which has more than one `ScriptPc` field, the resume slot \
                              must be unique",
                             decl.name
                         ),
@@ -275,7 +275,7 @@ fn discover_resume_slot(
                     decl.span,
                     format!(
                         "[script.no-resume-slot] script `{}` has no address-register `*Struct` \
-                         param whose pointee has a `ScriptPc` field — a script needs a typed \
+                         param whose pointee has a `ScriptPc` field, a script needs a typed \
                          resume slot to save its yield point (D9.3)",
                         decl.name
                     ),
@@ -291,7 +291,7 @@ fn discover_resume_slot(
                         diags,
                         *span,
                         format!(
-                            "[script.resume-width] script `{}`'s resume slot is {size} bytes wide — \
+                            "[script.resume-width] script `{}`'s resume slot is {size} bytes wide, \
                              a `ScriptPc` resume slot must be 2 bytes (a word)",
                             decl.name
                         ),
@@ -306,7 +306,7 @@ fn discover_resume_slot(
                     decl.span,
                     format!(
                         "[script.ambiguous-resume-slot] script `{}` has more than one \
-                         address-register `*Struct` param whose pointee has a `ScriptPc` field — \
+                         address-register `*Struct` param whose pointee has a `ScriptPc` field, \
                          the resume slot must be unique",
                         decl.name
                     ),
@@ -399,7 +399,7 @@ impl Desugar<'_> {
                 self.diags,
                 span,
                 format!(
-                    "`yield .{}` names a resume label that is not defined in this script's body — the next frame must land on a label of THIS script",
+                    "`yield .{}` names a resume label that is not defined in this script's body, the next frame must land on a label of THIS script",
                     r.name
                 ),
             );
@@ -412,7 +412,7 @@ impl Desugar<'_> {
             err(
                 self.diags,
                 span,
-                "[script.no-epilogue] `yield .label` needs an epilogue in scope — declare one with `shows <label>` on the script (D9.6)"
+                "[script.no-epilogue] `yield .label` needs an epilogue in scope, declare one with `shows <label>` on the script (D9.6)"
                     .to_string(),
             );
             self.refuse_script = true;
@@ -455,7 +455,7 @@ impl Desugar<'_> {
             err(
                 self.diags,
                 span,
-                "internal: wait_frames width queue exhausted — the pre-pass and the \
+                "internal: wait_frames width queue exhausted, the pre-pass and the \
                  desugar walk disagree about statement order (compiler bug)"
                     .to_string(),
             );
@@ -490,7 +490,7 @@ impl Desugar<'_> {
                     span,
                     format!(
                         "`wait_frames #{v}` is outside this {}-bit timer slot's range \
-                         (1..={max}) — 0/negative wraps into a ~{}-frame park, and an \
+                         (1..={max}), 0/negative wraps into a ~{}-frame park, and an \
                          over-wide value truncates silently",
                         8 * width,
                         max + 1
@@ -504,7 +504,7 @@ impl Desugar<'_> {
             err(
                 self.diags,
                 span,
-                "[script.no-epilogue] `wait_frames` draws the object every parked frame — declare an epilogue with `shows <label>` on the script (D9.6)"
+                "[script.no-epilogue] `wait_frames` draws the object every parked frame, declare an epilogue with `shows <label>` on the script (D9.6)"
                     .to_string(),
             );
             self.refuse_script = true;
@@ -552,7 +552,7 @@ impl Desugar<'_> {
             err(
                 self.diags,
                 span,
-                "[script.no-epilogue] a bare `yield` needs an epilogue — declare one with \
+                "[script.no-epilogue] a bare `yield` needs an epilogue, declare one with \
                  `shows <label>` on the script or write `yield <label>` per site; an object \
                  that never draws is the footgun (D9.6)"
                     .to_string(),
@@ -686,7 +686,7 @@ fn wait_slot_width(
                     diags,
                     span,
                     format!(
-                        "`wait_frames` slot `{field}` is {other} bytes — a park timer \
+                        "`wait_frames` slot `{field}` is {other} bytes, a park timer \
                          must be a u8 or u16 field"
                     ),
                 );
@@ -698,7 +698,7 @@ fn wait_slot_width(
         diags,
         span,
         format!(
-            "`wait_frames` slot register `{reg}` is not one of this script's `*Struct` params — the timer must live in the object's own state"
+            "`wait_frames` slot register `{reg}` is not one of this script's `*Struct` params, the timer must live in the object's own state"
         ),
     );
     None
@@ -730,7 +730,7 @@ fn collect_body_labels(
                             diags,
                             *span,
                             format!(
-                                "label `.{name}` is defined twice in this script body — \
+                                "label `.{name}` is defined twice in this script body, \
                                  resume targets and branches need one definition"
                             ),
                         );
@@ -763,7 +763,7 @@ fn collect_body_labels(
                             *span,
                             format!(
                                 "label `.{first}` is defined inside a comptime `if` \
-                                 in a script body — a resume/branch target must \
+                                 in a script body, a resume/branch target must \
                                  exist unconditionally; define it outside the `if`"
                             ),
                         );

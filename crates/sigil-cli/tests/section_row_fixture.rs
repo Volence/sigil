@@ -47,10 +47,10 @@ impl Spellings {
             .labels
             .iter()
             .min_by_key(|l| l.offset)
-            .unwrap_or_else(|| panic!("section `{SECTION}` has no labels — its head label is unmeasurable"));
+            .unwrap_or_else(|| panic!("section `{SECTION}` has no labels, its head label is unmeasurable"));
         assert!(
             !sec.image_bytes().is_empty(),
-            "section `{SECTION}` emits zero bytes in the live build — the identity below would be vacuous"
+            "section `{SECTION}` emits zero bytes in the live build, the identity below would be vacuous"
         );
         Spellings { label: format!("\"{}\"", head.name), section: format!("\"section:{SECTION}\"") }
     }
@@ -63,7 +63,7 @@ impl Spellings {
             (1, 0) => (&self.label, &self.section),
             (0, 1) => (&self.section, &self.label),
             _ => panic!(
-                "games/sonic4/map.toml must declare `{SECTION}` by exactly one spelling — found {nl} × {} and {ns} × {}",
+                "games/sonic4/map.toml must declare `{SECTION}` by exactly one spelling, found {nl} × {} and {ns} × {}",
                 self.label, self.section
             ),
         }

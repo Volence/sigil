@@ -441,7 +441,7 @@ pub fn compute_verified_z80_outs(
         round += 1;
         assert!(
             round <= cap,
-            "Z80 verified-out fixpoint did not stabilize in {cap} rounds — monotonicity regression"
+            "Z80 verified-out fixpoint did not stabilize in {cap} rounds, monotonicity regression"
         );
     }
     verified
@@ -452,7 +452,7 @@ pub fn compute_verified_z80_outs(
 pub fn z80_out_message(f: &Z80OutFiring) -> String {
     format!(
         "[proc.out-unverified] `{}` declares `out({})` but does not PRODUCE `{}` on every \
-         required return path — {}",
+         required return path, {}",
         f.proc, f.unit, f.unit, f.reason
     )
 }

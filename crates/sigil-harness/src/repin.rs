@@ -144,14 +144,14 @@ impl Listing {
         if self.sections.is_empty() {
             return Err(format!(
                 "`{SECTION_PREFIX}{name}`: the listing carries no section table (attach one \
-                 with `Listing::with_sections`) — the spelling cannot be measured"
+                 with `Listing::with_sections`), the spelling cannot be measured"
             ));
         }
         let hits: Vec<&SectionExtent> = self.sections.iter().filter(|s| s.name == name).collect();
         match hits.as_slice() {
             [one] => Ok(one),
             [] => Err(format!("section `{name}` not found in the resolved layout")),
-            many => Err(format!("section `{name}` names {} sections — ambiguous", many.len())),
+            many => Err(format!("section `{name}` names {} sections, ambiguous", many.len())),
         }
     }
 
@@ -427,13 +427,13 @@ pub fn load_manifest(src: &str) -> Result<Manifest, String> {
         }
         if r.debug_len.is_some() && r.len.is_none() {
             return Err(format!(
-                "region `{}`: `debug_len` is a per-shape override for a literal-`len` region — set `len` too (or use an `end` symbol for per-shape lengths)",
+                "region `{}`: `debug_len` is a per-shape override for a literal-`len` region, set `len` too (or use an `end` symbol for per-shape lengths)",
                 r.name
             ));
         }
         if r.debug_only && r.plain_anchor.is_none() {
             return Err(format!(
-                "region `{}`: `debug_only` needs `plain_anchor` (the plain-listing symbol of the next placement — a debug-only region's start never appears in the plain listing)",
+                "region `{}`: `debug_only` needs `plain_anchor` (the plain-listing symbol of the next placement, a debug-only region's start never appears in the plain listing)",
                 r.name
             ));
         }
@@ -445,7 +445,7 @@ pub fn load_manifest(src: &str) -> Result<Manifest, String> {
         }
         if r.plain_only && r.debug_anchor.is_none() {
             return Err(format!(
-                "region `{}`: `plain_only` needs `debug_anchor` (the debug-listing symbol of the next placement — a plain-only region's start never appears in the debug listing)",
+                "region `{}`: `plain_only` needs `debug_anchor` (the debug-listing symbol of the next placement, a plain-only region's start never appears in the debug listing)",
                 r.name
             ));
         }
@@ -463,7 +463,7 @@ pub fn load_manifest(src: &str) -> Result<Manifest, String> {
         }
         if r.debug_end.is_some() && r.end.is_none() {
             return Err(format!(
-                "region `{}`: `debug_end` is a per-shape end SYMBOL override — set `end` too (it is the plain-shape end)",
+                "region `{}`: `debug_end` is a per-shape end SYMBOL override, set `end` too (it is the plain-shape end)",
                 r.name
             ));
         }
@@ -472,7 +472,7 @@ pub fn load_manifest(src: &str) -> Result<Manifest, String> {
             None | Some(END_MEASURES_CONTENT) | Some(END_MEASURES_ALLOTMENT) => {}
             Some(other) => {
                 return Err(format!(
-                    "region `{}`: `end_measures` must be `{END_MEASURES_CONTENT}` (the default — \
+                    "region `{}`: `end_measures` must be `{END_MEASURES_CONTENT}` (the default, \
                      the window holds this region's bytes and nothing past them) or \
                      `{END_MEASURES_ALLOTMENT}` (the end is the next placement; the width is not a \
                      size), got `{other}`",
@@ -482,7 +482,7 @@ pub fn load_manifest(src: &str) -> Result<Manifest, String> {
         }
         if r.end_measures.is_some() && r.end.is_none() {
             return Err(format!(
-                "region `{}`: `end_measures` describes an `end` symbol — a `len` region already \
+                "region `{}`: `end_measures` describes an `end` symbol, a `len` region already \
                  declares its own width",
                 r.name
             ));
@@ -492,7 +492,7 @@ pub fn load_manifest(src: &str) -> Result<Manifest, String> {
                 if spec.starts_with(SECTION_PREFIX) {
                     return Err(format!(
                         "region `{}`: `end_measures = \"{END_MEASURES_ALLOTMENT}\"` contradicts \
-                         `end = \"{spec}\"` — a `{SECTION_PREFIX}` end IS the content end, so there \
+                         `end = \"{spec}\"`, a `{SECTION_PREFIX}` end IS the content end, so there \
                          is no allotment to declare",
                         r.name
                     ));
@@ -667,7 +667,7 @@ fn judge_end(
         PadVerdict::NoTable => Ok(None),
         PadVerdict::Unmeasurable => Err(format!(
             "region `{region}` ({shape}): end `{spec}` spans {:#X} byte(s) at {lo:#X}..{hi:#X} that \
-             overlap NO placed section — the width cannot be measured, so it is not asserted. A \
+             overlap NO placed section, the width cannot be measured, so it is not asserted. A \
              region whose bytes the section table cannot find is a manifest error, not a pass: \
              check `start`/`end` name this region's own labels.",
             hi - lo
@@ -687,7 +687,7 @@ fn judge_end(
             Err(format!(
                 "region `{region}` ({shape}): end `{spec}` is defined in section `{owner}`, not in \
                  `{section}` where this region's bytes end. The window is flush TODAY ({hi:#X}), so \
-                 nothing is mis-measured yet — but the value is the neighbour's placement and moves \
+                 nothing is mis-measured yet, but the value is the neighbour's placement and moves \
                  with it. Spell `end = \"{SECTION_PREFIX}{section}\"` to pin this region's own extent \
                  (the pin does not move), or declare `end_measures = \"{END_MEASURES_ALLOTMENT}\"` if \
                  the gap to the neighbour really is what this pin means."
@@ -695,13 +695,13 @@ fn judge_end(
         }
         PadVerdict::Exact { section } if allotment => Ok(Some(format!(
             "region `{region}` ({shape}): `end_measures = \"{END_MEASURES_ALLOTMENT}\"` but the \
-             window ends exactly at section `{section}`'s last byte — the allotment is zero-width \
+             window ends exactly at section `{section}`'s last byte, the allotment is zero-width \
              IN THIS SHAPE. If every shape says so, re-spell `end = \"{SECTION_PREFIX}{section}\"` \
              and drop the declaration; the pin does not move."
         ))),
         PadVerdict::Exact { .. } => Ok(None),
         PadVerdict::Pad { section, pad, content_end } if allotment => Ok(Some(format!(
-            "region `{region}` ({shape}): declared allotment — end `{spec}` is the next placement, \
+            "region `{region}` ({shape}): declared allotment, end `{spec}` is the next placement, \
              {pad:#X} byte(s) past section `{section}`'s last byte ({hi:#X} vs {content_end:#X}). \
              The pin's WIDTH IS NOT A SIZE and moves when the neighbour moves."
         ))),
@@ -709,7 +709,7 @@ fn judge_end(
             "region `{region}` ({shape}): end `{spec}` measures {pad:#X} byte(s) of placer pad past \
              section `{section}`'s last byte ({hi:#X} vs {content_end:#X}); the gap between labels \
              is an allotment, not a size. Either spell `end = \"{SECTION_PREFIX}{section}\"` to pin \
-             the content (preferred — the pin then states this region's own extent), or declare \
+             the content (preferred, the pin then states this region's own extent), or declare \
              `end_measures = \"{END_MEASURES_ALLOTMENT}\"` to say in the manifest that this width is \
              the gap to a neighbour and not a size."
         )),
@@ -885,7 +885,7 @@ pub fn resolve(m: &Manifest, plain: &Listing, debug: &Listing) -> Result<Resolve
             }
             (None, Some(len)) => {
                 let dl = r.debug_len.unwrap_or(len);
-                (len, dl, format!("start + {len:#X} plain / {dl:#X} debug (literal — no end symbol)"))
+                (len, dl, format!("start + {len:#X} plain / {dl:#X} debug (literal, no end symbol)"))
             }
             // load_manifest already rejected the other arms.
             _ => unreachable!("load_manifest validates end/len exclusivity"),
@@ -1006,7 +1006,7 @@ fn tests_suffix(tests: &[String]) -> String {
 pub fn render(r: &Resolved, prov: &Provenance) -> String {
     let mut s = String::new();
     let w = &mut s;
-    let _ = writeln!(w, "//! GENERATED FILE — DO NOT EDIT BY HAND.");
+    let _ = writeln!(w, "//! GENERATED FILE, DO NOT EDIT BY HAND.");
     let _ = writeln!(w, "//!");
     let _ = writeln!(w, "//! Emitted by `cargo run -p sigil-harness --bin repin` from `repin.toml`");
     let _ = writeln!(w, "//! + SIGIL'S OWN resolved layout (Stage-3 P4c; the asl-`.lst` parse retired).");
@@ -1031,7 +1031,7 @@ pub fn render(r: &Resolved, prov: &Provenance) -> String {
     let _ = writeln!(w, "    pub debug: u32,");
     let _ = writeln!(w, "}}");
     let _ = writeln!(w);
-    let _ = writeln!(w, "/// A gated region's geometry. Slice as `base..base + len` — the lens are");
+    let _ = writeln!(w, "/// A gated region's geometry. Slice as `base..base + len`, the lens are");
     let _ = writeln!(w, "/// computed `end − start` at generation, PER SHAPE (core's debug len ≠");
     let _ = writeln!(w, "/// plain len), so the slice-end bug class is unwritable.");
     let _ = writeln!(w, "#[derive(Debug, Clone, Copy, PartialEq, Eq)]");
@@ -1065,7 +1065,7 @@ pub fn render(r: &Resolved, prov: &Provenance) -> String {
         let gate = reg
             .gate
             .as_ref()
-            .map(|g| format!(" — gate `{g}`"))
+            .map(|g| format!(", gate `{g}`"))
             .unwrap_or_default();
         let _ = writeln!(
             w,
@@ -1097,7 +1097,7 @@ pub fn render(r: &Resolved, prov: &Provenance) -> String {
             SymbolValue::DebugOnly(v) => {
                 let _ = writeln!(
                     w,
-                    "/// `{}` — debug-shape consumer only (`debug_only`).{}",
+                    "/// `{}`, debug-shape consumer only (`debug_only`).{}",
                     sym.name,
                     tests_suffix(&sym.tests)
                 );

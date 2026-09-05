@@ -150,7 +150,7 @@ proc read() {
     let diags = build(&[("m.emp", PRELUDE_SRC), ("app.emp", consumer)], "app", Some("m"));
     let f = with(&diags, IMPORT);
     assert_eq!(f.len(), 1, "firings: {diags:?}");
-    assert_eq!(f[0].level, Level::Warning, "the local item still wins — this only says so");
+    assert_eq!(f[0].level, Level::Warning, "the local item still wins, this only says so");
     assert!(f[0].message.contains("`Player_1`"), "names the item: {}", f[0].message);
     assert!(
         diags.iter().all(|d| d.level != Level::Error),

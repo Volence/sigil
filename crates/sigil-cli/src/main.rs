@@ -239,11 +239,11 @@ fn run_version() {
     println!("sigil {} ({tag})", env!("CARGO_PKG_VERSION"));
 
     if revision == "unknown" {
-        println!("  revision:  unknown — {error}");
-        println!("  tree:      unknown — {tree_detail}");
+        println!("  revision:  unknown, {error}");
+        println!("  tree:      unknown, {tree_detail}");
         println!("  source:    unknown");
-        println!("  closure:   unknown — {closure_note}");
-        println!("  published: unknown — no revision was captured, so nothing can say whether it reached a remote");
+        println!("  closure:   unknown, {closure_note}");
+        println!("  published: unknown, no revision was captured, so nothing can say whether it reached a remote");
         println!(
             "  freshness: this binary carries NO revision, so nothing here can confirm it \
              matches any source tree. Do not treat it as current."
@@ -254,7 +254,7 @@ fn run_version() {
     println!("  revision:  {revision}");
     println!("  branch:    {branch}");
     println!("  committed: {date}");
-    println!("  tree:      {tree_state} at capture — {tree_detail}");
+    println!("  tree:      {tree_state} at capture, {tree_detail}");
     // Deliberately `tree-tracked`, not `tree tracked`: aeon's gate reads the
     // state word with `sed -n 's/^ *tree: *//p' | head -1`, and a label sharing
     // that prefix would be a second candidate line for it to pick up.
@@ -270,7 +270,7 @@ fn run_version() {
     println!(
         "             tree state is still a build-time snapshot: the tracking is path-scoped, so\n\
          \x20            it can only under-report, and only where no mtime under a watched path\n\
-         \x20            moves — dirt OUTSIDE the closure (so `clean` may stand where\n\
+         \x20            moves, dirt OUTSIDE the closure (so `clean` may stand where\n\
          \x20            `clean-sources` is true; neither word is a reason to distrust this\n\
          \x20            binary), a closure path that does not exist yet and so cannot be watched\n\
          \x20            (`tree-tracked` names any), an edit landing inside the cargo invocation\n\
@@ -285,8 +285,8 @@ fn run_version() {
          \x20            `closure-paths` is what cargo compiles this binary from, walked from\n\
          \x20            cargo's own dependency graph rather than listed by hand, and\n\
          \x20            `closure-revision` is the last commit that touched it. To check this\n\
-         \x20            binary against a tree, run the `drift-check` line above — it is a whole\n\
-         \x20            command, paths included — and compare what it prints against\n\
+         \x20            binary against a tree, run the `drift-check` line above, it is a whole\n\
+         \x20            command, paths included, and compare what it prints against\n\
          \x20            `closure-revision`. Equal means no commit in that tree can have reached\n\
          \x20            this binary. It is printed whole rather than as a recipe over\n\
          \x20            `closure-paths` because the obvious assembly of such a recipe puts the\n\
@@ -302,7 +302,7 @@ fn run_version() {
          \x20            adds a package to the graph edits a manifest, which is itself in the\n\
          \x20            closure, so growth is reported rather than missed.\n\
          \x20            What this proves is `cannot affect this binary`, never `the output did\n\
-         \x20            not change` — only a rebuild and a byte compare supports the second."
+         \x20            not change`, only a rebuild and a byte compare supports the second."
     );
     println!(
         "  anchors:   the two drift checks differ only in what they ask ABOUT. `drift-check`\n\
@@ -310,7 +310,7 @@ fn run_version() {
          \x20            anchors at the remote-tracking ref named in `published`. On a machine\n\
          \x20            where a sibling checkout is a peer's live working tree, that HEAD can be\n\
          \x20            ahead of, behind, or divergent from anything another lane can see, so\n\
-         \x20            `behind HEAD` is not a fact until something names what it is behind —\n\
+         \x20            `behind HEAD` is not a fact until something names what it is behind,\n\
          \x20            which is why both lines say which revision they compare against rather\n\
          \x20            than leaving a reader to guess. The tracking ref is a LOCAL cache of the\n\
          \x20            remote: `git fetch` is what moves it, and `git ls-remote` is what would\n\
@@ -341,7 +341,7 @@ fn run_parse() {
     let (file, diags) = sigil_frontend_emp::parse_str(&src);
     if diags.is_empty() {
         println!(
-            "{path}: OK — module {}, {} items",
+            "{path}: OK, module {}, {} items",
             file.module.path.segments.join("."),
             file.items.len()
         );
@@ -1054,7 +1054,7 @@ fn shape_defines_or_exit(
 /// reports — `MAX_RING_BUFFER` sizes the RAM regions as surely as it gates the
 /// contract walk — so a pasted report always carries its own provenance.
 fn print_report_header(kind: &str, label: &str, defines: &[(String, i128)]) {
-    println!("{kind} — {label}");
+    println!("{kind}, {label}");
     let ds: Vec<String> = defines.iter().map(|(k, v)| format!("{k}={v}")).collect();
     println!("defines: {}", if ds.is_empty() { "(none)".to_string() } else { ds.join(" ") });
     println!();
@@ -1181,7 +1181,7 @@ fn run_contract_gate(aeon: &std::path::Path, target: &BuildTarget) {
     if std::env::var("SIGIL_CONTRACTS").is_ok_and(|v| v == "0") {
         eprintln!(
             "warning: contract closure gate SKIPPED (SIGIL_CONTRACTS=0). This is the \
-             emergency opt-out — the build is not contract-checked."
+             emergency opt-out, the build is not contract-checked."
         );
         return;
     }
@@ -1227,7 +1227,7 @@ fn run_contract_gate(aeon: &std::path::Path, target: &BuildTarget) {
     // two must therefore fail with their own message, before any diff runs.
     if report.dropped_instrs != 0 {
         eprintln!(
-            "error: the contract closure DROPPED {} instruction(s) — the analysis is \
+            "error: the contract closure DROPPED {} instruction(s), the analysis is \
              under-approximating, so every finding below it is unreliable. This is NOT a \
              baseline change; do not adjudicate rows against it.",
             report.dropped_instrs
@@ -1239,7 +1239,7 @@ fn run_contract_gate(aeon: &std::path::Path, target: &BuildTarget) {
     }
     if !report.comptime_unresolved.is_empty() {
         eprintln!(
-            "error: {} comptime condition(s) did not resolve — a poisoned condition \
+            "error: {} comptime condition(s) did not resolve, a poisoned condition \
              discards BOTH arms, so the closure never saw that code. NOT a baseline change.",
             report.comptime_unresolved.len()
         );
@@ -1250,7 +1250,7 @@ fn run_contract_gate(aeon: &std::path::Path, target: &BuildTarget) {
     }
     if failed {
         eprintln!(
-            "error: contract closure gate FAILED — the analysis is blind. Fix the drops \
+            "error: contract closure gate FAILED, the analysis is blind. Fix the drops \
              or the unresolved conditions; the baselines mean nothing until it can see."
         );
         process::exit(1);
@@ -1260,7 +1260,7 @@ fn run_contract_gate(aeon: &std::path::Path, target: &BuildTarget) {
     // would have made "the closure gates the build" true of a quarter of it.
     let mut empty_gate = |name: &str, n: usize| {
         if n != 0 {
-            eprintln!("error: {name} — {n} firing(s); this family is zero-firing by contract.");
+            eprintln!("error: {name}, {n} firing(s); this family is zero-firing by contract.");
             failed = true;
         }
     };
@@ -1340,7 +1340,7 @@ fn run_contract_gate(aeon: &std::path::Path, target: &BuildTarget) {
     // finding and must stop the build rather than start a pin.
     if !report.context_unsatisfied.is_empty() {
         eprintln!(
-            "error: [context.unsatisfied] — {} unsatisfied requirement(s); this family is \
+            "error: [context.unsatisfied], {} unsatisfied requirement(s); this family is \
              zero-firing by contract, so a firing is a defect, not a baseline candidate:",
             report.context_unsatisfied.len()
         );
@@ -1351,12 +1351,12 @@ fn run_contract_gate(aeon: &std::path::Path, target: &BuildTarget) {
     }
     if !report.survives_firings.is_empty() {
         eprintln!(
-            "error: [proc.out-cond-survives-unverifiable] — {} firing(s); zero-firing by \
+            "error: [proc.out-cond-survives-unverifiable], {} firing(s); zero-firing by \
              contract:",
             report.survives_firings.len()
         );
         for f in &report.survives_firings {
-            eprintln!("  {} :: out({} if {}) — {}", f.proc, f.reg, f.cc, f.reason);
+            eprintln!("  {} :: out({} if {}), {}", f.proc, f.reg, f.cc, f.reason);
         }
         failed = true;
     }
@@ -1364,7 +1364,7 @@ fn run_contract_gate(aeon: &std::path::Path, target: &BuildTarget) {
     if failed {
         eprintln!(
             "error: contract closure gate FAILED. Set SIGIL_CONTRACTS=0 (aeon: CONTRACTS=0) \
-             to build anyway — that is an emergency hatch, not a fix."
+             to build anyway, that is an emergency hatch, not a fix."
         );
         process::exit(1);
     }
@@ -1407,7 +1407,7 @@ fn print_contract_report(report: &sigil_frontend_emp::corpus_contracts::Contract
     }
 
     let holes = &report.closure.unresolved_callees;
-    println!("\n-- unresolved callees (holes — missing extern proc?): {} --", holes.len());
+    println!("\n-- unresolved callees (holes, missing extern proc?): {} --", holes.len());
     for h in holes {
         println!("  HOLE  {h}");
     }
@@ -1451,12 +1451,12 @@ fn print_contract_report(report: &sigil_frontend_emp::corpus_contracts::Contract
 
     println!("\n-- [proc.out-unverified] firings (§G4.5, {}): --", report.out_firings.len());
     for f in &report.out_firings {
-        println!("  {:<28} out({}) — {}", f.proc, f.reg, f.reason);
+        println!("  {:<28} out({}), {}", f.proc, f.reg, f.reason);
     }
 
     println!("\n-- [proc.inout-unverified] firings ({}): --", report.inout_firings.len());
     for f in &report.inout_firings {
-        println!("  {:<28} inout({}) — {}", f.proc, f.reg, f.reason);
+        println!("  {:<28} inout({}), {}", f.proc, f.reg, f.reason);
     }
 
     println!(
@@ -1465,7 +1465,7 @@ fn print_contract_report(report: &sigil_frontend_emp::corpus_contracts::Contract
         report.z80_out_claims.len()
     );
     for f in &report.z80_out_firings {
-        println!("  {:<28} out({}) — {}", f.proc, f.unit, f.reason);
+        println!("  {:<28} out({}), {}", f.proc, f.unit, f.reason);
     }
 
     println!(
@@ -1504,7 +1504,7 @@ fn print_contract_report(report: &sigil_frontend_emp::corpus_contracts::Contract
         // a distinct id is telling the author the ONE thing that fixes it.
         let remedy = match f.kind {
             FiringKind::OptionUnguarded => format!(
-                " — the sentinel is never ruled out on this path; guard it \
+                ", the sentinel is never ruled out on this path; guard it \
                  (`cmpi #{}.none, {}` / branch away) then `assume_some! {}, {}`",
                 found, f.reg, f.reg, f.expected
             ),
@@ -1856,7 +1856,7 @@ fn warning_summary(warnings: &[sigil_harness::native::BuildWarning]) -> Option<S
     let mut rows: Vec<(&str, usize)> = counts.into_iter().collect();
     rows.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(b.0)));
     let breakdown = rows.iter().map(|(id, n)| format!("{id} {n}")).collect::<Vec<_>>().join(", ");
-    Some(format!("{head} — {breakdown}"))
+    Some(format!("{head}, {breakdown}"))
 }
 
 /// The exact stderr lines `report_warnings` emits for `warnings` under `view`.
@@ -2049,7 +2049,7 @@ fn run_build_native(aeon: &std::path::Path, opts: &BuildOpts) {
             process::exit(1);
         }
     }
-    println!("built: {label} native ROM — crc={:08x} len={}", native::crc32(&full), full.len());
+    println!("built: {label} native ROM, crc={:08x} len={}", native::crc32(&full), full.len());
 }
 
 #[cfg(test)]
@@ -2201,7 +2201,7 @@ mod tests {
 
         // `b.b` twice, `a.a` and `c.c` once: count DESCENDING, then id ascending.
         let ws = [w(warn, "c.c"), w(warn, "b.b"), w(warn, "a.a"), w(warn, "b.b")];
-        assert_eq!(crate::warning_summary(&ws).unwrap(), "4 warnings — b.b 2, a.a 1, c.c 1");
+        assert_eq!(crate::warning_summary(&ws).unwrap(), "4 warnings, b.b 2, a.a 1, c.c 1");
 
         // A message with no `[id]` prefix is not a category — it shows as the
         // defect it is.
@@ -2212,7 +2212,7 @@ mod tests {
             message: "no bracket".into(),
             primary: sigil_span::Span { source: sigil_span::SourceId(0), start: 0, end: 0 },
         };
-        assert_eq!(crate::warning_summary(&[bare]).unwrap(), "1 warning — unclassified 1");
+        assert_eq!(crate::warning_summary(&[bare]).unwrap(), "1 warning, unclassified 1");
     }
 
     /// The Note tier counts and renders SEPARATELY from warnings. The corpus fires
@@ -2232,9 +2232,9 @@ mod tests {
 
         assert_eq!(
             crate::warning_summary(&[d(warn, "a.a"), d(note, "b.b")]).unwrap(),
-            "1 warning, 1 note — a.a 1, b.b 1"
+            "1 warning, 1 note, a.a 1, b.b 1"
         );
-        assert_eq!(crate::warning_summary(&[d(note, "b.b")]).unwrap(), "1 note — b.b 1");
+        assert_eq!(crate::warning_summary(&[d(note, "b.b")]).unwrap(), "1 note, b.b 1");
     }
 
     /// The rendered surface, per view. [`WarningView::Full`] emits one located row
@@ -2267,14 +2267,14 @@ mod tests {
 
         assert_eq!(
             lines(WarningView::Summary, &ws),
-            ["warning: 2 warnings — a.a 2; SIGIL_WARNINGS=full to list"]
+            ["warning: 2 warnings, a.a 2; SIGIL_WARNINGS=full to list"]
         );
         assert_eq!(
             lines(WarningView::Full, &ws),
             [
                 "x.emp:1:2: warning: [a.a] whatever",
                 "warning: [a.a] whatever",
-                "warning: 2 warnings — a.a 2",
+                "warning: 2 warnings, a.a 2",
             ]
         );
     }

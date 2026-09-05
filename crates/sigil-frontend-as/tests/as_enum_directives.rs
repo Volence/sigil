@@ -253,7 +253,7 @@ fn enumconf_is_not_retroactive() {
     assert_eq!(
         image("\tenumconf 4\n\tenum a=0,b\n\tenumconf 1\n\tnextenum c,d\n\tdc.b a,b,c,d\n"),
         vec![0x00, 0x04, 0x08, 0x09],
-        "asl binds c=$8, not $5 — listing: =$0..$4 then =$8..$9"
+        "asl binds c=$8, not $5, listing: =$0..$4 then =$8..$9"
     );
 }
 

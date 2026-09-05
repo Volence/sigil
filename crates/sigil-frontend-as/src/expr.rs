@@ -196,7 +196,7 @@ mod depth_guard_tests {
         let out = rx
             .recv_timeout(std::time::Duration::from_secs(60))
             .expect("parse did not terminate");
-        h.join().expect("parser thread died — stack-overflow regression");
+        h.join().expect("parser thread died, stack-overflow regression");
         out
     }
 

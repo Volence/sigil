@@ -68,7 +68,7 @@ impl<'a> Evaluator<'a> {
                 self.error(
                     *span,
                     "`default` is only meaningful as a struct-literal field value \
-                     (`field: default` — the field takes its declared default)",
+                     (`field: default`, the field takes its declared default)",
                 );
                 Value::Poison
             }
@@ -253,7 +253,7 @@ impl<'a> Evaluator<'a> {
                             span,
                             format!(
                                 "[index.uncommitted-byte] byte {i} of this Data is not a \
-                                 comptime-known raw byte — a multi-byte scalar's byte order, \
+                                 comptime-known raw byte, a multi-byte scalar's byte order, \
                                  and a symbol reference's value, are committed at link time \
                                  (raw `embed` bytes and byte-width cells index fine)"
                             ),
@@ -266,7 +266,7 @@ impl<'a> Evaluator<'a> {
                 self.error(
                     span,
                     format!(
-                        "[index.base] {} is not indexable — comptime `[i]` reads array \
+                        "[index.base] {} is not indexable, comptime `[i]` reads array \
                          elements and raw Data bytes",
                         other.type_name()
                     ),
@@ -292,7 +292,7 @@ impl<'a> Evaluator<'a> {
             self.error(
                 span,
                 format!(
-                    "`.{name}` is a proc-local label reference — it is only valid as a \
+                    "`.{name}` is a proc-local label reference, it is only valid as a \
                      label-value argument, not in a comptime expression"
                 ),
             );
@@ -302,7 +302,7 @@ impl<'a> Evaluator<'a> {
             self.error(
                 span,
                 format!(
-                    "`.{name}` has no enclosing proc body — a proc-local label reference \
+                    "`.{name}` has no enclosing proc body, a proc-local label reference \
                      only resolves inside a proc/asm body"
                 ),
             );
@@ -457,7 +457,7 @@ impl<'a> Evaluator<'a> {
                         self.error(
                             path.span,
                             format!(
-                                "[contract.member-kind] `{a}.{b}` is a hook — invoke it \
+                                "[contract.member-kind] `{a}.{b}` is a hook, invoke it \
                                  (`invoke {a}.{b}`), it is not a value to reference"
                             ),
                         );
@@ -539,7 +539,7 @@ impl<'a> Evaluator<'a> {
                             self.error(
                                 path.span,
                                 format!(
-                                    "table `{a}` has no key domain — `.{b}` needs a `key:` attribute"
+                                    "table `{a}` has no key domain, `.{b}` needs a `key:` attribute"
                                 ),
                             );
                             return Value::Poison;
@@ -595,7 +595,7 @@ impl<'a> Evaluator<'a> {
                     self.error(
                         path.span,
                         format!(
-                            "newtype `{a}` is not a niche-option, so it has no `.none` — declare \
+                            "newtype `{a}` is not a niche-option, so it has no `.none`, declare \
                              it as `newtype {a} = <payload> ? <sentinel>` to carve a niche"
                         ),
                     );
@@ -915,7 +915,7 @@ impl<'a> Evaluator<'a> {
         if let Err((a, b)) = eq_compatible(lhs, rhs) {
             let always = if op == BinOp::Eq { "false" } else { "true" };
             let mut msg = format!(
-                "[eq.cross-type] `{}` not defined for {a} and {b} — no value of one \
+                "[eq.cross-type] `{}` not defined for {a} and {b}, no value of one \
                  can equal a value of the other, so this comparison is always {always}; \
                  compare same-typed values (or their fields)",
                 binop_symbol(op)
@@ -1129,7 +1129,7 @@ impl<'a> Evaluator<'a> {
             span,
             "[here.provisional] `here()` after a size-relaxable instruction (jbra/jbsr, an \
              unsized branch, or a bare jmp/jsr) is a link-time value; it cannot size or steer \
-             comptime evaluation — pin branch sizes (bra.s/bra.w, jmp) before this point, or \
+             comptime evaluation, pin branch sizes (bra.s/bra.w, jmp) before this point, or \
              restructure so the value is only emitted or guarded"
                 .to_string(),
         );
@@ -1146,7 +1146,7 @@ impl<'a> Evaluator<'a> {
         self.error(
             span,
             "[bank.provisional] bankid() is a link-time value; it cannot size or steer comptime \
-             evaluation — emit it into a data cell or guard it with ensure"
+             evaluation, emit it into a data cell or guard it with ensure"
                 .to_string(),
         );
         Value::Poison
@@ -1302,7 +1302,7 @@ fn values_equal(a: &Value, b: &Value) -> bool {
 const UNIT_FOLD_HINT: &str = ". One operand is `unit`, which is a value nothing \
     produced deliberately: a LIKELY cause is an `if` in value position whose taken \
     branch yields nothing, which folds to `()` silently (see the `.emp` pitfalls, \
-    §1 — the silent unit fold). Check what produced the `unit` side; `unit` has \
+    §1, the silent unit fold). Check what produced the `unit` side; `unit` has \
     other sources, so treat this as a lead rather than the answer";
 
 /// Whether `==`/`!=` is DEFINED on this operand pair (D-EQ.1), and if not, the

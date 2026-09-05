@@ -1,20 +1,20 @@
 #!/usr/bin/env python3
-"""Wave-C parallax row-35 A/B state capture — two scenes per ROM (debug shape).
+"""Wave-C parallax row-35 A/B state capture, two scenes per ROM (debug shape).
 
 The parcel moves the per-frame VDP reg $0B (Mode Set 3) re-assert from the ojz
 harness force-write into Parallax_Update (shadow + direct hardware write). These
 two scenes are the t41 named checks:
 
-Scene RENDER (check a) — "engine writes the same mode; no render regression on
+Scene RENDER (check a), "engine writes the same mode; no render regression on
   the ojz boot scene." Boot 60f, hold RIGHT (debug-fly camera scroll → parallax
   runs + the mode write fires every frame; Debug_Scene_Freeze=0 so camera/entity
-  are normal). Code-point anchors at GameState_OJZScroll_Update entry (0x5E42C —
+  are normal). Code-point anchors at GameState_OJZScroll_Update entry (0x5E42C,
   identical OLD/NEW) at frames 220/280/340. Captures state_hash
   (vram/cram/vsram/regs/fb) + full-RAM crc + a screenshot. VRAM/CRAM/VSRAM = the
   render INPUTS; the VDP register file (regs) contains reg $0B itself, so an
   OLD==NEW regs hash IS the "same mode" proof.
 
-Scene SOAK (check b) — "the extra per-frame write does not perturb the
+Scene SOAK (check b), "the extra per-frame write does not perturb the
   deterministic Debug_Scene_Freeze cache-fill soak." Boot 60f, set
   Debug_Scene_Freeze=1 (0xFF8A10) then poke Camera_X to a fixed ascending
   sequence, running frames at each stop to drive Tile_Cache_Fill deterministically

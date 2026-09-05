@@ -86,7 +86,7 @@ fn classify(mnemonic: &str, ops: &[CodeOperand]) -> Option<String> {
         // a computed `jmp (aN)` continuation, never a return.
         "rts" | "rte" | "rtr" | "rtd" => {
             return Some(format!(
-                "`{mnemonic}` reads a return address off the stack — a resumable proc exits \
+                "`{mnemonic}` reads a return address off the stack, a resumable proc exits \
                  by `jmp (aN)`, not `{mnemonic}`"
             ));
         }

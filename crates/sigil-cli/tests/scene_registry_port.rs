@@ -83,7 +83,7 @@ fn gate(debug: bool, rom_name: &str, base: usize) {
     assert!(
         emitted <= region_len && region_len - emitted < 16
             && expected[emitted..].iter().all(|&b| b == 0),
-        "parallax block emitted {emitted:#x} bytes vs pin span {region_len:#x} — beyond align-pad tolerance"
+        "parallax block emitted {emitted:#x} bytes vs pin span {region_len:#x}, beyond align-pad tolerance"
     );
     if let Some(i) = (0..emitted).find(|&i| section.bytes[i] != expected[i]) {
         panic!(

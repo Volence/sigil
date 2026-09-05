@@ -162,7 +162,7 @@ fn block_stage_keys_has_exactly_three_touchers() {
     emp_got.dedup();
     assert_eq!(
         emp_got, want,
-        "\n{SYM} .emp toucher set changed — the memoize gen-bump audit must be redone.\n  \
+        "\n{SYM} .emp toucher set changed, the memoize gen-bump audit must be redone.\n  \
          expected exactly: {want:?}\n  found:            {emp_got:?}\n  \
          A new toucher is a staging-claim path; every claim MUST bump Block_Stage_Gen \
          or the Pfx/Cs memos become unsound."

@@ -43,7 +43,7 @@ fn every_decodable_word_reencodes_to_the_consumed_bytes() {
                 &buf[..used]
             )),
             Err(e) => failures.push(format!(
-                "word {w:04X}: decodes to {inst:?} but the encoder REJECTS it ({e}) — \
+                "word {w:04X}: decodes to {inst:?} but the encoder REJECTS it ({e}), \
                  the decoder accepts a word the encoder cannot emit"
             )),
         }
@@ -62,7 +62,7 @@ fn every_decodable_word_reencodes_to_the_consumed_bytes() {
     // than that has lost whole instruction lines.
     assert!(
         decodable >= 2048,
-        "only {decodable} of 65536 words decoded — the decoder lost whole lines"
+        "only {decodable} of 65536 words decoded, the decoder lost whole lines"
     );
     println!("opcode sweep: {decodable} of 65536 words decodable, all re-encode byte-exact");
 }

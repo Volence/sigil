@@ -10,7 +10,7 @@ conclusion nobody drew:
 
   * A RED settles the question in a SINGLE observation. The byte-identity gate caught
     something a landing would have caught, so it is load-bearing. N is irrelevant to
-    this state — one red at k=1 says exactly what one red at k=N says.
+    this state, one red at k=1 says exactly what one red at k=N says.
   * QUIET ACCUMULATES AND NEVER CONCLUDES. N quiet chains are "no drift was observed in
     N chains", which is not "there is none" and not "the gate is spent". This tool
     therefore reports `N reached, quiet` and `N reached, verdict` as DISTINCT states and
@@ -19,7 +19,7 @@ conclusion nobody drew:
     `selftest` proves it.
 
 ANYTHING UNMEASURED IS NAMED. A shape that was not built, a record that does not exist,
-a reader that could not answer — each is its own state with its own non-zero exit. None
+a reader that could not answer, each is its own state with its own non-zero exit. None
 of them is rendered as 0, green, or clean, and none of them advances N.
 
 Verbs:
@@ -80,7 +80,7 @@ def tree_state_disqualifies(tree_state):
 
     A `dirty` tree makes the key non-identifying: the bytes correspond to no committed
     revision, so a match against a record entry cannot be attributed to one either. Any
-    state this job does not recognise disqualifies for the same reason — an unknown word
+    state this job does not recognise disqualifies for the same reason, an unknown word
     is not evidence of cleanliness.
     """
     return tree_state not in IDENTIFYING_TREE_STATES
@@ -139,9 +139,9 @@ FORBIDDEN_ON_QUIET = [
 
 REFUSAL = (
     "  THIS JOB CANNOT CONCLUDE FROM QUIET. Quiet is the absence of evidence and no\n"
-    "  number of quiet chains becomes evidence: the reading it would support — that the\n"
-    "  coupling has stopped catching anything — and its opposite — that the engine is\n"
-    "  clean for reasons of its own — produce the same clean rows, which is why aeon's\n"
+    "  number of quiet chains becomes evidence: the reading it would support, that the\n"
+    "  coupling has stopped catching anything, and its opposite, that the engine is\n"
+    "  clean for reasons of its own, produce the same clean rows, which is why aeon's\n"
     "  own plan says neither lane can distinguish them from inside. Only a RED settles\n"
     "  this, and a red settles it in one observation.\n"
     "  WHAT THIS REPORTS: no drift was OBSERVED in the chains below.\n"
@@ -277,7 +277,7 @@ def classify(cmd, aeon_rev, sigil_rev, measured):
                 else:
                     entry.update(verdict=V_DRIFT_SIGIL_MOVED, expected=f"{want[0]}/{want[1]}",
                                  why="the assembler moved bytes under engine source the "
-                                     "record already covers — the drift a landing would "
+                                     "record already covers, the drift a landing would "
                                      "have caught")
             out[shape] = entry
             continue
@@ -350,7 +350,7 @@ def chain_key(o):
 def render(obs, bad_lines, n, n_source, ledger_path):
     lines = []
     w = lines.append
-    w("sigil <-> aeon byte-identity drift — nightly, NON-BLOCKING")
+    w("sigil <-> aeon byte-identity drift, nightly, NON-BLOCKING")
     w("")
     w(f"  ledger:       {ledger_path}")
     w(f"                {len(obs)} observation(s); MACHINE-LOCAL and outside every repo, so")
@@ -392,12 +392,12 @@ def render(obs, bad_lines, n, n_source, ledger_path):
                    for o in group for s in o.get("shapes", {}).values()):
                 quiet_evidence.append((k, group))
 
-    w("CHAINS (distinct revision pairs — the unit N counts; a repeated night is not a chain)")
+    w("CHAINS (distinct revision pairs, the unit N counts; a repeated night is not a chain)")
     # A count of reds is only a number when something was measured. With no chain
     # carrying an expectation, `red 0` is not a fact about the engine, and printing it
     # as one is the render-the-unmeasured-as-zero failure this job is built to refuse.
     measured_any = bool(quiet or red or unverified)
-    zero = (lambda n: str(n)) if measured_any else (lambda n: "— nothing measured")
+    zero = (lambda n: str(n)) if measured_any else (lambda n: ", nothing measured")
     w(f"  red, drift observed .................... {zero(len(red))}")
     w(f"  quiet ................................. {zero(len(quiet))}")
     w(f"  quiet AND evidence-bearing ............ {zero(len(quiet_evidence))}"
@@ -417,7 +417,7 @@ def render(obs, bad_lines, n, n_source, ledger_path):
             for k in ks[-5:]:
                 w(f"    aeon {k[0][:8]} / sigil {k[1][:8]}")
         w(f"  These {held} chain(s) HIT a real expectation and MATCHED it. They are not")
-        w("  counted, because this job does not treat these tree states as identifying —")
+        w("  counted, because this job does not treat these tree states as identifying,")
         w("  which is a DELIBERATE and CONTESTED narrowness, not a measurement. Whether")
         w("  `clean-sources` should count is the owner's call, parked as aeon's")
         w("  DRIFT-KEY-CLOSURE-REV and touching d-48; admitting it here would err toward")
@@ -427,7 +427,7 @@ def render(obs, bad_lines, n, n_source, ledger_path):
         w("")
         w("  AND THIS IS NOT THE ONLY SILENT CAUSE. A non-advancing N now has MORE THAN ONE,")
         w("  and they compound rather than alternate: this one, and the record's key missing")
-        w("  on docs-only commits (aeon's measurement — four consecutive misses on a tree")
+        w("  on docs-only commits (aeon's measurement, four consecutive misses on a tree")
         w("  whose ROM never moved). Read a flat N as EITHER, and never as an engine result.")
         w("")
 
@@ -435,7 +435,7 @@ def render(obs, bad_lines, n, n_source, ledger_path):
     k_quiet = len(quiet)
 
     if red:
-        w("STATUS: VERDICT AVAILABLE — DRIFT OBSERVED")
+        w("STATUS: VERDICT AVAILABLE, DRIFT OBSERVED")
         w("  verdict: available")
         w(f"  {len(red)} chain(s) drifted. A red settles this question in a SINGLE")
         w("  observation and N IS IRRELEVANT TO IT: the byte-identity gate caught")
@@ -455,21 +455,21 @@ def render(obs, bad_lines, n, n_source, ledger_path):
         w("STATUS: NOTHING MEASURED")
         w("  verdict: none")
         w("  No chain has been measured against a real expectation. This is not a pass,")
-        w("  not a zero and not green — it is the absence of a measurement.")
+        w("  not a zero and not green, it is the absence of a measurement.")
         if unmeasured:
             for k, group in unmeasured[-5:]:
                 why = "; ".join(sorted({o.get("note", "") for o in group if o.get("note")}))
                 w(f"    aeon {k[0][:8]} / sigil {k[1][:8]}: {why or 'nothing recorded'}")
         state = S_NOTHING_MEASURED
     elif k_evidence >= n:
-        w("STATUS: N REACHED, QUIET — THIS IS NOT A VERDICT")
+        w("STATUS: N REACHED, QUIET, THIS IS NOT A VERDICT")
         w("  verdict: none")
         w(f"  {k_evidence} of {n} evidence-bearing chains carried a real expectation and none")
         w("  drifted.")
         w(REFUSAL.rstrip("\n"))
         state = S_QUIET
     elif k_quiet >= n:
-        w("STATUS: N REACHED ON THE WEAK POPULATION ONLY — NOT A VERDICT")
+        w("STATUS: N REACHED ON THE WEAK POPULATION ONLY, NOT A VERDICT")
         w("  verdict: none")
         w(f"  {k_quiet} of {n} chains are quiet, but only {k_evidence} of them are")
         w("  EVIDENCE-BEARING. A chain in which the assembler did not move says nothing")
@@ -480,7 +480,7 @@ def render(obs, bad_lines, n, n_source, ledger_path):
         w(REFUSAL.rstrip("\n"))
         state = S_QUIET
     else:
-        w("STATUS: N NOT REACHED, QUIET — NO EVIDENCE YET")
+        w("STATUS: N NOT REACHED, QUIET, NO EVIDENCE YET")
         w("  verdict: none")
         w(f"  {k_evidence} of {n} evidence-bearing chains "
           f"({k_quiet} quiet in total). Quiet accumulates and never concludes.")
@@ -579,7 +579,7 @@ def norm(text):
 
     Line wrapping is not a defence. A rendering that says `the gate\\n  is spent`
     reads to a person exactly as the unwrapped phrase does, and a raw substring scan
-    would clear it — an accidental pass that depends on where a line happened to
+    would clear it, an accidental pass that depends on where a line happened to
     break.
     """
     return " ".join(text.split())
@@ -631,7 +631,7 @@ def _selftest_body(failures):
     block("state: N reached with no reds")
     at_n = [_obs("a" * 40, f"{i}" * 40, S_QUIET, quiet_shape) for i in range(5)]
     text, state = render(at_n, [], 5, "selftest", "/dev/null")
-    check("N-reached quiet is its own state", "N REACHED, QUIET — THIS IS NOT A VERDICT" in text)
+    check("N-reached quiet is its own state", "N REACHED, QUIET, THIS IS NOT A VERDICT" in text)
     check("N-reached quiet declares no verdict", "verdict: none" in text)
     check("N-reached quiet carries the refusal", "THIS JOB CANNOT CONCLUDE FROM QUIET" in text)
     for phrase in FORBIDDEN_ON_QUIET:
@@ -664,7 +664,7 @@ def _selftest_body(failures):
     block("state: quiet below N")
     text, state = render([_obs("a" * 40, "1" * 40, S_QUIET, quiet_shape)], [], 5,
                          "selftest", "/dev/null")
-    check("below N reads as no evidence yet", "N NOT REACHED, QUIET — NO EVIDENCE YET" in text)
+    check("below N reads as no evidence yet", "N NOT REACHED, QUIET, NO EVIDENCE YET" in text)
     check("below N counts evidence-bearing chains", "1 of 5 evidence-bearing chains" in text)
     for phrase in FORBIDDEN_ON_QUIET:
         check(f"below-N quiet never renders `{phrase}`", phrase not in norm(text))
@@ -702,7 +702,7 @@ def _selftest_body(failures):
     # `unverified` line reading "no expectation existed", which is FALSE for this cause:
     # the expectation existed and was met. The night was then indistinguishable from a
     # night with nothing to say.
-    check("clean-sources is NOT identifying — the counting is unchanged",
+    check("clean-sources is NOT identifying, the counting is unchanged",
           observation_state(quiet_shape, "clean-sources") == S_UNVERIFIED)
     check("an unrecognised tree state disqualifies too",
           observation_state(quiet_shape, "probably-clean") == S_UNVERIFIED)
@@ -728,7 +728,7 @@ def _selftest_body(failures):
           "DELIBERATE and CONTESTED" in text)
     check("the report names whose call it is",
           "d-48" in text and "owner" in text)
-    check("the report states the compounding — more than one silent cause",
+    check("the report states the compounding, more than one silent cause",
           "MORE THAN ONE" in text and "docs-only commits" in text)
     check("a held-back chain still exits UNVERIFIED, never quiet",
           STATE_EXIT[state] == EXIT_UNVERIFIED)

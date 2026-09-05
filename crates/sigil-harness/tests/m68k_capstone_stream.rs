@@ -64,7 +64,7 @@ fn every_emitted_m68k_instruction_agrees_with_capstone() {
         let pairs = session.drain();
         assert!(
             !pairs.is_empty(),
-            "shape `{label}` captured 0 instructions — the capture tap is disconnected \
+            "shape `{label}` captured 0 instructions, the capture tap is disconnected \
              (or the build encoded nothing), which must never read as a pass"
         );
         for (_, bytes) in &pairs {
@@ -93,7 +93,7 @@ fn every_emitted_m68k_instruction_agrees_with_capstone() {
     // are families has lost the stream rather than found a smaller one.
     assert!(
         buffers.len() >= sigil_isa::m68k::ALL_FAMILY_NAMES.len(),
-        "only {} distinct byte strings captured — fewer than the {} encodable families, \
+        "only {} distinct byte strings captured, fewer than the {} encodable families, \
          so the capture lost the stream",
         buffers.len(),
         sigil_isa::m68k::ALL_FAMILY_NAMES.len()
@@ -133,7 +133,7 @@ fn every_emitted_m68k_instruction_agrees_with_capstone() {
     println!("capstone decoded {cap_decodable} of {} emitted byte strings", keys.len());
     assert!(
         cap_decodable > 0,
-        "capstone decoded none of the emitted stream — the oracle is not answering"
+        "capstone decoded none of the emitted stream, the oracle is not answering"
     );
 
     report(&excl, &hits, &bad, "emitted stream", Accounting::CountsAreInformational);

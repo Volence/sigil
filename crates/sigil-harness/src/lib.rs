@@ -164,7 +164,7 @@ pub fn assert_rom_matches_release(rom: &[u8], refrom: &[u8], expected_len: usize
     assert_eq!(
         refrom.len(),
         expected_len,
-        "{label}: the release reference is {} bytes but EndOfRom is {expected_len:#x} — a \
+        "{label}: the release reference is {} bytes but EndOfRom is {expected_len:#x}, a \
          non-DEBUG build must ship the assembled image with NOTHING appended (has the deb2 \
          symbol appendix leaked back into release?)",
         refrom.len()
@@ -192,7 +192,7 @@ pub fn assert_rom_matches_convsym(rom: &[u8], refrom: &[u8], expected_len: usize
         assert!(
             allow.iter().any(|i| range.contains(i)),
             "{label}: expected the convsym/fixheader post-steps to rewrite the header {field} \
-             field ({range:#X?}), but assembled and final ROMs match there — did the reference \
+             field ({range:#X?}), but assembled and final ROMs match there, did the reference \
              lose its deb2 append?"
         );
     }

@@ -292,8 +292,8 @@ fn a_doctored_indexed_mode_changes_the_bytes() {
     assert!(
         main.contains(needle),
         "probe (a) has gone stale: `{needle}` is no longer in raster.emp. This probe must \
-         doctor one of the module's INDEXED addressing modes — the instructions hand-decoded \
-         from ROM in Parcel P-b — so re-point it rather than deleting it."
+         doctor one of the module's INDEXED addressing modes, the instructions hand-decoded \
+         from ROM in Parcel P-b, so re-point it rather than deleting it."
     );
     let doctored = main.replacen(needle, "move.w  (a2, d3.w), d2", 1);
 
@@ -308,7 +308,7 @@ fn a_doctored_indexed_mode_changes_the_bytes() {
     assert_eq!(clean_b.as_slice(), expected.as_slice(), "the CLEAN build must match the reference");
     assert_ne!(
         dirty_b, clean_b,
-        "probe (a): doctoring the index register of `{needle}` produced IDENTICAL bytes — \
+        "probe (a): doctoring the index register of `{needle}` produced IDENTICAL bytes, \
          raster_port's byte-diff would then be vacuous for this instruction class"
     );
 }
@@ -352,7 +352,7 @@ fn c_wrong_base_stops_matching() {
     assert_ne!(
         bytes.as_slice(),
         expected.as_slice(),
-        "probe (c): the module linked at a WRONG base still matched the reference window — \
+        "probe (c): the module linked at a WRONG base still matched the reference window, \
          raster_port would then not be checking placement at all"
     );
 }

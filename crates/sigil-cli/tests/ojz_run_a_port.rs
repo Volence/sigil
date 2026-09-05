@@ -258,7 +258,7 @@ fn gate(debug: bool, rom_name: &str) {
         let shape_len = if debug { region.debug_len } else { region.plain_len };
         assert!(
             shape_len >= len,
-            "`{section}` ({}) region is {shape_len:#x} but the module emits {len:#x} bytes — the \
+            "`{section}` ({}) region is {shape_len:#x} but the module emits {len:#x} bytes, the \
              next section starts INSIDE this one. Either this shape's level data really is \
              SHORTER (a shape leak in the emitter), or the OTHER shape grew and this is the \
              baseline. Both are real; neither is placer slack. Do not re-baseline.",
@@ -284,8 +284,8 @@ fn gate(debug: bool, rom_name: &str) {
         // data whatever its bytes are) and pure map fill. See the block above.
         assert!(
             shape_len - len <= MAX_PLACER_SLACK,
-            "`{section}` ({}) emits {len:#x} bytes but the next section starts {shape_len:#x} in \
-             — a {:#x}-byte gap, past the {MAX_PLACER_SLACK:#x} the placer can leave. That is \
+            "`{section}` ({}) emits {len:#x} bytes but the next section starts {shape_len:#x} in, \
+             a {:#x}-byte gap, past the {MAX_PLACER_SLACK:#x} the placer can leave. That is \
              emitted level DATA, not slack, even if it reads as fill (the knuckles-c4 \
              DEBUG-entity failure mode was 0x30 bytes). Level data must be shape-identical: \
              fix the emitter, do not raise the bound.",
@@ -296,7 +296,7 @@ fn gate(debug: bool, rom_name: &str) {
         if let Some(i) = slack.iter().position(|&b| b != MAP_FILL) {
             panic!(
                 "`{section}` ({}) emits {len:#x} bytes but the next section starts {shape_len:#x} \
-                 in, and the gap is NOT map fill — first non-fill at gap offset {i:#x} \
+                 in, and the gap is NOT map fill, first non-fill at gap offset {i:#x} \
                  (ROM {:#x}): {:02x?}. Non-fill slack means this shape emitted extra level DATA \
                  (the knuckles-c4 DEBUG-entity failure mode). Level data must be shape-identical: \
                  fix the emitter, do not re-baseline.",

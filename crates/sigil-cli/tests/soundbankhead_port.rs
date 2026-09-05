@@ -154,7 +154,7 @@ fn soundbankhead_pin_is_the_lma_not_the_vma() {
         let pin = if debug { pins::SOUNDBANKHEAD.debug_base } else { pins::SOUNDBANKHEAD.plain_base };
         assert_eq!(
             pin, sec.lma,
-            "pins::SOUNDBANKHEAD base (debug={debug}) must be the bank's LMA {:#x} — where the shipped layout loads it — not its phase VMA {vma:#x}",
+            "pins::SOUNDBANKHEAD base (debug={debug}) must be the bank's LMA {:#x}, where the shipped layout loads it, not its phase VMA {vma:#x}",
             sec.lma
         );
     }

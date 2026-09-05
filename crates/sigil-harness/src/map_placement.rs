@@ -143,7 +143,7 @@ pub fn load_placement_map(toml_src: &str) -> Result<PlacementMap, String> {
     // A `section:` row must name something; the bare prefix is a typo, not a row.
     if let Some(row) = doc.order.iter().find(|r| section_row(r).is_some_and(|n| n.is_empty())) {
         return Err(format!(
-            "[map.order-section-row-empty] `order` row `{row}` names no section — spell it `section:<name>`"
+            "[map.order-section-row-empty] `order` row `{row}` names no section, spell it `section:<name>`"
         ));
     }
     Ok(PlacementMap {

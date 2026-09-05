@@ -226,8 +226,8 @@ impl GameProfile {
     pub fn assembled_len(&self) -> usize {
         *self.frozen_sizes.get("EndOfRom").unwrap_or_else(|| {
             panic!(
-                "profile `{}`: its frozen boundary table carries no `EndOfRom` row \
-                 — the assembled bar is unmeasurable, not zero",
+                "profile `{}`: its frozen boundary table carries no `EndOfRom` row, \
+                 the assembled bar is unmeasurable, not zero",
                 self.name
             )
         }) as usize
@@ -1035,7 +1035,7 @@ pub fn shape_defines(profile: &GameProfile, aeon: &Path) -> Result<Vec<(String, 
         Ok(src) => crate::game_defines::parse_game_defines(&src, &origin)?,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
             return Err(format!(
-                "shape `{}`: no game config at {origin} — a game homes its `[defines]` \
+                "shape `{}`: no game config at {origin}, a game homes its `[defines]` \
                  rows there, so a missing or renamed map is a MISSING config, not an \
                  empty one, and no shape may walk with the built-in rows alone. A \
                  synthetic fixture tree supplies the file; a map with no `[defines]` \
@@ -1337,7 +1337,7 @@ pub fn harvest_engine_struct_offsets(aeon: &Path) -> Result<Vec<(String, i64)>, 
             // different (loud) problem than one that moved it.
             assert!(
                 layout.fields.iter().any(|f| f.name == "frame_off"),
-                "harvest_engine_struct_offsets: Sst lost frame_off — \
+                "harvest_engine_struct_offsets: Sst lost frame_off, \
                  re-derive SST_interact against sst.emp's interact_off()"
             );
             out.push(("SST_interact".to_string(), layout.size as i64 - 2));
@@ -1653,7 +1653,7 @@ fn resolve_extra_entry(
     }
 
     Err(format!(
-        "--extra-entry `{arg}`: no such module under the scan root {} — it names \
+        "--extra-entry `{arg}`: no such module under the scan root {}, it names \
          neither a scanned module id nor a scanned `.emp` file path",
         aeon.display()
     ))
@@ -2128,7 +2128,7 @@ fn enforce_inapplicable_allowlist_against(
             Some((i, _)) => matched[i] = true,
             None => {
                 return Err(format!(
-                    "unresolvable-extern drift guard NOT in the allowlist — either the \
+                    "unresolvable-extern drift guard NOT in the allowlist, either the \
                      extern name is wrong or a new twin-parity guard needs a ruling.\n  \
                      externs: {externs:?}\n  site: {site}"
                 ));
@@ -2138,7 +2138,7 @@ fn enforce_inapplicable_allowlist_against(
     if let Some(i) = matched.iter().position(|m| !m) {
         return Err(format!(
             "inapplicable-guard allowlist is STALE: the guard {:?} \
-             (extern, site) no longer folds to an unresolvable-extern Poison — it now resolves \
+             (extern, site) no longer folds to an unresolvable-extern Poison, it now resolves \
              (or drifted to a Value(0) fail). Re-verify and update the allowlist.",
             allowlist[i],
         ));
@@ -2435,7 +2435,7 @@ pub fn packed_chained_base(running: u32, head_label: &str) -> Result<u32, String
             "[layout.undeclared-alignment] section headed by `{head_label}` has NO declared \
              alignment in `sigil_harness::section_align::DECLARED`, and the packing walk \
              has no other alignment input for it. Add one row naming the alignment the \
-             section REQUIRES and the source that requires it — not the number the \
+             section REQUIRES and the source that requires it, not the number the \
              current layout happens to give it"
         ));
     };
@@ -2469,7 +2469,7 @@ fn validate_declared_alignment(sections: &[Section]) -> Result<(), String> {
                 "section `{}` (head label `{head}`) has NO declared alignment in \
                  `sigil_harness::section_align::DECLARED`. The packing walk has no other \
                  alignment input for it. Add one row naming the alignment the section \
-                 REQUIRES and the source that requires it — not the number the current \
+                 REQUIRES and the source that requires it, not the number the current \
                  layout happens to give it",
                 s.name
             ));
@@ -2504,7 +2504,7 @@ pub fn validate_resolved_alignment(resolved: &[Section]) -> Result<(), String> {
         let Some(decl) = crate::section_align::required_for(head) else {
             faults.push(format!(
                 "section `{}` (head label `{head}`, resolved base {:#x}) has NO declared \
-                 alignment in `sigil_harness::section_align::DECLARED` — add one row \
+                 alignment in `sigil_harness::section_align::DECLARED`, add one row \
                  naming the alignment it REQUIRES and the source that requires it",
                 s.name, s.lma
             ));
@@ -2512,7 +2512,7 @@ pub fn validate_resolved_alignment(resolved: &[Section]) -> Result<(), String> {
         };
         if !s.lma.is_multiple_of(decl.required) {
             faults.push(format!(
-                "section `{}` (head label `{head}`) declares alignment {} — {} — but the \
+                "section `{}` (head label `{head}`) declares alignment {}, {}, but the \
                  resolved layout places it at {:#x} (base % {} = {})",
                 s.name,
                 decl.required,
@@ -2741,7 +2741,7 @@ fn packed_true_bases(
             if let Some(prev) = &prev_islands {
                 if *prev != islands {
                     return Err(
-                        "island classification changed between packing rounds — growth ate an org hole; hand ruling needed"
+                        "island classification changed between packing rounds, growth ate an org hole; hand ruling needed"
                             .to_string(),
                     );
                 }
@@ -2781,7 +2781,7 @@ fn packed_true_bases(
             // whatever innocent pair the stale lengths implied.
             if let Err(collision) = image_lens_pinned(sections, &remeasure) {
                 return Err(format!(
-                    "packed layout overlaps at its real bases — a run grew into a declared anchor; \
+                    "packed layout overlaps at its real bases, a run grew into a declared anchor; \
                      the anchor is hardware-fixed, so this content does not fit and needs a hand ruling \
                      (the map's re-layout parcel, or less content). {collision}"
                 ));
@@ -2799,7 +2799,7 @@ fn packed_true_bases(
     // form implies). Name it — the flip report from the last two rounds — instead of
     // any pair of sections the transient layout happened to collide.
     Err(format!(
-        "packed_true_bases did not converge in 8 rounds (relaxation oscillation) — hand ruling needed.{}",
+        "packed_true_bases did not converge in 8 rounds (relaxation oscillation), hand ruling needed.{}",
         last_flip.map(|f| format!(" {f}")).unwrap_or_default()
     ))
 }
@@ -2874,7 +2874,7 @@ fn provisional_drift_warning(sec: &Section, packed: i64, prov: i64) -> BuildWarn
         id: "layout.provisional-drift".to_string(),
         location: None,
         message: format!(
-            "[layout.provisional-drift] section `{}`{head} packed at {packed:#x}, frozen provisional {prov:#x} (delta {delta:+#x}); the frozen placement tables are stale against this content — refreeze at landing",
+            "[layout.provisional-drift] section `{}`{head} packed at {packed:#x}, frozen provisional {prov:#x} (delta {delta:+#x}); the frozen placement tables are stale against this content, refreeze at landing",
             sec.name
         ),
         primary: sigil_span::Span { source: sigil_span::SourceId(0), start: 0, end: 0 },
@@ -3370,7 +3370,7 @@ pub fn validate_placement(
             inferred.insert(*lma);
             if !declared.contains_key(lma) {
                 return Err(format!(
-                    "[map.undeclared-island] ROM section at {lma:#X} is an ANCHOR_GAP-inferred island but no `[[anchor]] at = {lma:#X}` is declared — add it to the placement map"
+                    "[map.undeclared-island] ROM section at {lma:#X} is an ANCHOR_GAP-inferred island but no `[[anchor]] at = {lma:#X}` is declared, add it to the placement map"
                 ));
             }
         }
@@ -3379,7 +3379,7 @@ pub fn validate_placement(
     for a in pmap.anchors_for(sound_on) {
         if !inferred.contains(&a.at) {
             return Err(format!(
-                "[map.anchor-absent] declared anchor `{}` at {:#X} is not an inferred island in this build — the layout no longer anchors it (stale map or shape gate)",
+                "[map.anchor-absent] declared anchor `{}` at {:#X} is not an inferred island in this build, the layout no longer anchors it (stale map or shape gate)",
                 a.name, a.at
             ));
         }
@@ -3403,7 +3403,7 @@ pub fn validate_placement(
             if let Some(name) = crate::map_placement::section_row(row) {
                 if !rows.iter().any(|r| r.1 == name) {
                     return Err(format!(
-                        "[map.order-unknown-section] `order` row `{row}` names no ROM section in this build — the name is the `module … in <name>` target; fix the spelling or drop the row"
+                        "[map.order-unknown-section] `order` row `{row}` names no ROM section in this build, the name is the `module … in <name>` target; fix the spelling or drop the row"
                     ));
                 }
             }
@@ -3412,7 +3412,7 @@ pub fn validate_placement(
             let key = crate::map_placement::section_row_key(name);
             if !id.is_empty() && pos.contains_key(id.as_str()) && pos.contains_key(key.as_str()) {
                 return Err(format!(
-                    "[map.order-double-declared] section `{name}` is declared twice in `order` — by its head label `{id}` and by `{key}`; keep exactly one row"
+                    "[map.order-double-declared] section `{name}` is declared twice in `order`, by its head label `{id}` and by `{key}`; keep exactly one row"
                 ));
             }
         }
@@ -3430,13 +3430,13 @@ pub fn validate_placement(
             }
             let Some(&p) = pos.get(declared_as.as_str()) else {
                 return Err(format!(
-                    "[map.order-undeclared] byte-emitting section `{id}` is not in the declared `order` — the map DRIVES placement now, so every emitter must be declared; add it in its layout position"
+                    "[map.order-undeclared] byte-emitting section `{id}` is not in the declared `order`, the map DRIVES placement now, so every emitter must be declared; add it in its layout position"
                 ));
             };
             if let Some((lp, lid)) = &last {
                 if p <= *lp {
                     return Err(format!(
-                        "[map.order-diverged] the resolved layout places `{declared_as}` after `{lid}`, but the declared `order` has `{declared_as}` before it — the packer did not honour the driving order (packer bug)"
+                        "[map.order-diverged] the resolved layout places `{declared_as}` after `{lid}`, but the declared `order` has `{declared_as}` before it, the packer did not honour the driving order (packer bug)"
                     ));
                 }
             }
@@ -3454,7 +3454,7 @@ pub fn validate_placement(
         let present = resolved.iter().any(|s| s.labels.iter().any(|l| l.name == h.after));
         if !present {
             return Err(format!(
-                "[map.hole-anchor-missing] declared hole after `{}` (at {:#X}) — its `after` label is not in the resolved layout",
+                "[map.hole-anchor-missing] declared hole after `{}` (at {:#X}), its `after` label is not in the resolved layout",
                 h.after, h.at
             ));
         }
@@ -3530,19 +3530,19 @@ pub fn hole_interior_faults(
         });
         let Some(start) = sites.next() else {
             return Err(format!(
-                "[map.hole-anchor-unresolved] declared hole after `{}` (at {:#X}) has no left edge — its `after` label is in no resolved section, so the span it reserves cannot be measured and NOTHING about the hole was checked",
+                "[map.hole-anchor-unresolved] declared hole after `{}` (at {:#X}) has no left edge, its `after` label is in no resolved section, so the span it reserves cannot be measured and NOTHING about the hole was checked",
                 h.after, h.at
             ));
         };
         if let Some(other) = sites.next() {
             return Err(format!(
-                "[map.hole-anchor-ambiguous] declared hole after `{}` (at {:#X}) opens at two addresses ({start:#X} and {other:#X}) — one label resolved in more than one section, so the reserved span has no single left edge",
+                "[map.hole-anchor-ambiguous] declared hole after `{}` (at {:#X}) opens at two addresses ({start:#X} and {other:#X}), one label resolved in more than one section, so the reserved span has no single left edge",
                 h.after, h.at
             ));
         }
         if h.at <= start {
             return Err(format!(
-                "[map.hole-bounds-degenerate] declared hole after `{}` opens at {start:#X} but declares `at = {:#X}`, which is at or before it — the declared interior is empty, so this hole can never refuse anything and reads as checked while checking nothing",
+                "[map.hole-bounds-degenerate] declared hole after `{}` opens at {start:#X} but declares `at = {:#X}`, which is at or before it, the declared interior is empty, so this hole can never refuse anything and reads as checked while checking nothing",
                 h.after, h.at
             ));
         }
@@ -3552,13 +3552,13 @@ pub fn hole_interior_faults(
             registry.iter().filter(|m| m.module_id == h.filled_by).map(|m| m.section).collect();
         if permitted.is_empty() {
             return Err(format!(
-                "[map.hole-filler-unknown] declared hole after `{}` (at {:#X}) is filled_by `{}`, which names no module in this shape's registry — the permitted-occupant set is empty, so the intended filler itself would read as an intruder and the answer would be a fault about the wrong thing",
+                "[map.hole-filler-unknown] declared hole after `{}` (at {:#X}) is filled_by `{}`, which names no module in this shape's registry, the permitted-occupant set is empty, so the intended filler itself would read as an intruder and the answer would be a fault about the wrong thing",
                 h.after, h.at, h.filled_by
             ));
         }
         if !resolved.iter().any(|s| permitted.contains(&s.name.as_str())) {
             return Err(format!(
-                "[map.hole-filler-absent] declared hole after `{}` (at {:#X}) is filled_by `{}` (section(s) {:?}), and this build placed none of them — the hole's filler is not in the layout, so an empty interior would mean the hole is UNFILLED rather than reserved",
+                "[map.hole-filler-absent] declared hole after `{}` (at {:#X}) is filled_by `{}` (section(s) {:?}), and this build placed none of them, the hole's filler is not in the layout, so an empty interior would mean the hole is UNFILLED rather than reserved",
                 h.after, h.at, h.filled_by, permitted
             ));
         }
@@ -3574,7 +3574,7 @@ pub fn hole_interior_faults(
                 continue;
             }
             faults.push(format!(
-                "[map.hole-interior-occupied] the hole declared after `{}` — interior [{start:#X},{:#X}), reserved for `{}` — is occupied at [{lo:#X},{hi:#X}) by byte-emitting section `{}` (head `{}`). Either that section drifted into the reserved span, or the hole's declared `at` no longer matches this layout; either way the post-hole data does not resume at {:#X} the way the map says it does.",
+                "[map.hole-interior-occupied] the hole declared after `{}`, interior [{start:#X},{:#X}), reserved for `{}`, is occupied at [{lo:#X},{hi:#X}) by byte-emitting section `{}` (head `{}`). Either that section drifted into the reserved span, or the hole's declared `at` no longer matches this layout; either way the post-hole data does not resume at {:#X} the way the map says it does.",
                 h.after,
                 h.at,
                 h.filled_by,
@@ -3910,7 +3910,7 @@ pub fn derive_frozen_table(
             many => {
                 return Err(format!(
                     "derive_frozen_table({}): section-end label `{name}` stem `{stem}` names \
-                     {} sections — ambiguous",
+                     {} sections, ambiguous",
                     profile.name,
                     many.len()
                 ));
@@ -3922,7 +3922,7 @@ pub fn derive_frozen_table(
     if !missing.is_empty() {
         return Err(format!(
             "derive_frozen_table({}): {} committed boundary label(s) absent from the resolved \
-             layout (first: {:?}) — a real regression, not a silent drop",
+             layout (first: {:?}), a real regression, not a silent drop",
             profile.name,
             missing.len(),
             missing.first()
@@ -4312,7 +4312,7 @@ pub fn declares_error_handler_island(profile: &GameProfile) -> Result<bool, Stri
     let lean_handler = profile.registry.iter().any(|m| m.module_id == RELEASE_FAULT_MODULE_ID);
     if island == lean_handler {
         return Err(format!(
-            "shape `{}`: the fault-handler split is EXCLUSIVE — `{ERROR_HANDLER_MODULE_ID}` \
+            "shape `{}`: the fault-handler split is EXCLUSIVE, `{ERROR_HANDLER_MODULE_ID}` \
              and `{RELEASE_FAULT_MODULE_ID}` are the two arms of one `if` in `registry()` \
              and share the same tail placement slot, but this registry places {}. Whichever \
              answer this function returned would be meaningless, so it returns none.",
@@ -4326,7 +4326,7 @@ pub fn declares_error_handler_island(profile: &GameProfile) -> Result<bool, Stri
              Debugger island. `debug || crash_report` = {axis} (debug = {}, crash_report = \
              {}), but the registry {} `{ERROR_HANDLER_MODULE_ID}` and {} \
              `{RELEASE_FAULT_MODULE_ID}`. These are two independent declarations of one \
-             shape fact — the profile literal and the module list the build is handed — so \
+             shape fact, the profile literal and the module list the build is handed, so \
              a mismatch means one of them was changed alone. Reconcile them before any \
              gate reads either.",
             profile.name,
@@ -4458,7 +4458,7 @@ fn check_error_handler_is_last(
                  island, yet its listing defines `{ERROR_HANDLER_BLOB_LABEL}` at {:#x}. \
                  The island and the lean fault handler are the two arms of one registry \
                  `if` and share a placement slot, so a shape carrying both has lost the \
-                 split — and the deb2 appendix this shape is not supposed to need would \
+                 split, and the deb2 appendix this shape is not supposed to need would \
                  land somewhere the blob's baked `lea` displacements do not point.",
                 b.value,
             ));
@@ -4473,19 +4473,19 @@ fn check_error_handler_is_last(
     Err(format!(
         "MDDBG blob-end contract VIOLATED: the deb2 appendix starts at EndOfRom \
          {appendix_start:#x}, but `{ERROR_HANDLER_BLOB_LABEL}` ({:#x}) + blob length \
-         {ERROR_HANDLER_BLOB_LEN:#x} = {expect:#x} — a drift of {drift:+} byte(s). \
+         {ERROR_HANDLER_BLOB_LEN:#x} = {expect:#x}, a drift of {drift:+} byte(s). \
          The MD Debugger locates its symbol table with two `lea` displacements BAKED \
          into the vendored blob bytes, both pointing at blob end, so the appendix must \
          start exactly there. {} Fix the `order` list in games/<game>/map.toml so the \
          error_handler island (BusError../ErrorHandlerBlob) is the FINAL byte-emitting \
-         section, immediately before EndOfRom — do not touch the blob bytes.",
+         section, immediately before EndOfRom, do not touch the blob bytes.",
         blob.value,
         if drift > 0 {
             "Some section is placed AFTER the blob; the blob's `cmpi.w #$DEB2,(a1)+` will \
              read those bytes instead of the table, fail, and every crash-screen \
              Offset/Caller line will silently print `<unknown>`."
         } else {
-            "The appendix starts BEFORE blob end — the blob is truncated or \
+            "The appendix starts BEFORE blob end, the blob is truncated or \
              ERROR_HANDLER_BLOB_LEN no longer matches the vendored binary."
         }
     ))
@@ -5553,7 +5553,7 @@ mod entry_synth_tests {
         for item in &file.items {
             assert!(
                 matches!(item, sigil_frontend_emp::ast::Item::Use(_)),
-                "the synthetic entry holds a non-`use` item — it now emits code, so its \
+                "the synthetic entry holds a non-`use` item, it now emits code, so its \
                  items must be `ItemAuthor::EntrySynth`-stamped with a declared \
                  obligation home before shipping: {item:?}"
             );

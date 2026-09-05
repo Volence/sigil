@@ -258,7 +258,7 @@ fn workspace() -> PathBuf {
 fn read(ws: &Path, rel: &str) -> String {
     std::fs::read_to_string(ws.join(rel)).unwrap_or_else(|e| {
         panic!(
-            "COULD NOT MEASURE: {rel} is unreadable ({e}) — that is not the same as the \
+            "COULD NOT MEASURE: {rel} is unreadable ({e}), that is not the same as the \
              property holding"
         )
     })
@@ -415,7 +415,7 @@ fn the_record_seam_is_empty_and_absence_is_not_a_pass() {
         "an absent record must render as an absence of measurement:\n{text}"
     );
     assert!(
-        !text.contains("nothing measured   (the assembler moved") || text.contains("— nothing"),
+        !text.contains("nothing measured   (the assembler moved") || text.contains(", nothing"),
         "with nothing measured the counts must not render as zeroes:\n{text}"
     );
 }
@@ -640,7 +640,7 @@ fn no_landing_path_invokes_the_drift_job() {
     );
     assert!(
         offenders.is_empty(),
-        "the drift job must be reachable only from its own timer — it blocks nothing by \
+        "the drift job must be reachable only from its own timer, it blocks nothing by \
          construction, and being named in something executable is how that stops being \
          true. Named by: {offenders:?}"
     );

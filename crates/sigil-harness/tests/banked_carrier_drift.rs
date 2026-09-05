@@ -58,7 +58,7 @@ fn the_derivation_produces_the_three_head_members_in_order() {
     for (name, vma) in &vmas {
         assert!(
             (0x8000..0xA000).contains(vma),
-            "{name} at {vma:#06x} is outside the $8000 window — the derivation is not producing a VMA"
+            "{name} at {vma:#06x} is outside the $8000 window, the derivation is not producing a VMA"
         );
         assert!(*vma > prev, "{name} at {vma:#06x} must follow the previous head member ({prev:#06x})");
         prev = *vma;

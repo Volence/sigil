@@ -154,7 +154,7 @@ fn doctored_control(t: &Target) {
     assert_eq!(
         doctored.get(probe),
         Some(&0x00BEEF),
-        "{}: t24 — convsym must reflect the doctored `{probe}` (else the spot-check is vacuous)",
+        "{}: t24, convsym must reflect the doctored `{probe}` (else the spot-check is vacuous)",
         t.name
     );
 }

@@ -450,7 +450,7 @@ fn resolve_use(
             diags.push(Diagnostic {
                 level: Level::Warning,
                 message: format!(
-                    "[import.no-names] whole-module `use {base}` imports no names — use `use {base}.{{…}}` or `use {base}.*` to bring names into scope, or `use {base}._` to pull `{base}` into the build while binding nothing"
+                    "[import.no-names] whole-module `use {base}` imports no names, use `use {base}.{{…}}` or `use {base}.*` to bring names into scope, or `use {base}._` to pull `{base}` into the build while binding nothing"
                 ),
                 primary: u.span,
             });

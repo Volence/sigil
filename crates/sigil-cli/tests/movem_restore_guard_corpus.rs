@@ -152,7 +152,7 @@ fn scan(
                         for r in mask_to_names(m) {
                             if !saved.contains(&r) && !declared.contains(&r) {
                                 violations.push(format!(
-                                    "{}::{} — `movem (sp)+, …` loads `{r}` with a FRESH value \
+                                    "{}::{}, `movem (sp)+, …` loads `{r}` with a FRESH value \
                                      (no matching `-(sp)` save, not in clobbers/out): the (sp)+ \
                                      clobber-lint exemption would silently drop a real clobber",
                                     path.display(),
@@ -218,7 +218,7 @@ fn every_stack_movem_restore_has_a_matching_save() {
         let (viol, count) = scan(&files, &defines, &iface_env);
         assert!(
             viol.is_empty(),
-            "(sp)+ movem-restore exemption tripwire under shape `{label}` — {} hidden fresh-pop(s); \
+            "(sp)+ movem-restore exemption tripwire under shape `{label}`, {} hidden fresh-pop(s); \
              re-adjudicate the exemption before shipping:\n{}",
             viol.len(),
             viol.join("\n")
@@ -236,7 +236,7 @@ fn every_stack_movem_restore_has_a_matching_save() {
     // emptily).
     assert!(
         widest >= 20,
-        "expected 32+ `movem (sp)+, …` restores in the widest shape, visited only {widest} — \
+        "expected 32+ `movem (sp)+, …` restores in the widest shape, visited only {widest}, \
          the guard has gone (near-)vacuous"
     );
 
@@ -248,7 +248,7 @@ fn every_stack_movem_restore_has_a_matching_save() {
     assert!(
         widest > base_count,
         "the per-shape scan visited {widest} restores, no more than the define-free baseline \
-         {base_count} — the define-gated arms are no longer widening coverage; a gated \
+         {base_count}, the define-gated arms are no longer widening coverage; a gated \
          `movem (sp)+` restore has stopped lowering and its exemption is unguarded again"
     );
 }

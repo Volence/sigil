@@ -1748,7 +1748,7 @@ fn definition_site_ambiguous_bare_window_reports_once_at_lib() {
     );
     assert!(
         ambiguous[0].contains("lib.emp"),
-        "the ambiguity is the lib author's error — anchor in lib.emp, got: {}",
+        "the ambiguity is the lib author's error, anchor in lib.emp, got: {}",
         ambiguous[0]
     );
     assert!(
@@ -1806,7 +1806,7 @@ fn struct_size_mismatch_reports_once_across_modules() {
     );
     assert!(
         stderr.contains("types.emp"),
-        "the mismatch is the struct's own declaration — anchor in lib/types.emp, got: {stderr}"
+        "the mismatch is the struct's own declaration, anchor in lib/types.emp, got: {stderr}"
     );
 }
 
@@ -1862,7 +1862,7 @@ fn overlay_odd_field_warning_reports_once_across_modules() {
     );
     assert!(
         stderr.contains("lib.emp"),
-        "the warning is the overlay's own field declaration — anchor in lib.emp, got: {stderr}"
+        "the warning is the overlay's own field declaration, anchor in lib.emp, got: {stderr}"
     );
 }
 
@@ -2032,7 +2032,7 @@ fn pub_equ_is_importable_and_keeps_its_bare_link_name() {
     assert_eq!(
         bytes,
         vec![0x30, 0x3C, 0x00, 0x20, 0x4E, 0x75],
-        "move.w #$0020,d0 + rts — the imported equ folded to its declared value"
+        "move.w #$0020,d0 + rts, the imported equ folded to its declared value"
     );
 }
 

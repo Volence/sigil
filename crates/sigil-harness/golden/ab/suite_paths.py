@@ -1,4 +1,4 @@
-"""suite_paths.py — contract/SUITE_PATHS.md for the A/B scripts.
+"""suite_paths.py, contract/SUITE_PATHS.md for the A/B scripts.
 
 Eighteen scripts under `ab/*/` reached empyrean's Aether client by writing one
 person's home directory into a `sys.path.insert`. This is the same precedence the
@@ -6,7 +6,7 @@ shell half implements in `scripts/lib/suite_paths.sh`, and the two are meant to 
 read together: same steps, same announce format, same refusal shape, same meaning
 of "set but wrong".
 
-  1. the explicit checkout variable  — EMPYREAN_DIR, AEON_DIR;
+  1. the explicit checkout variable , EMPYREAN_DIR, AEON_DIR;
   2. EMPYREAN_SUITE_ROOT joined with the repo's directory name;
   3. derivation from THIS repo's own location, via `git rev-parse --git-common-dir`;
   4. refuse, naming every variable consulted and every path tried.
@@ -78,10 +78,10 @@ def _why_not(name, path):
     # A linked worktree's `.git` is a FILE, not a directory. Testing for a directory
     # would refuse every worktree, which is the shape most of this suite runs in.
     if not os.path.exists(os.path.join(path, ".git")):
-        return "no .git — that is not a checkout"
+        return "no .git, that is not a checkout"
     for marker in _MARKERS.get(name, ()):
         if not os.path.exists(os.path.join(path, marker)):
-            return "no %s — that is not the %s checkout" % (marker, name)
+            return "no %s, that is not the %s checkout" % (marker, name)
     return None
 
 
@@ -110,7 +110,7 @@ def _derived_root():
 
 
 def resolve_root():
-    """The suite root. Steps 1 and 3 — step 2 IS the root."""
+    """The suite root. Steps 1 and 3, step 2 IS the root."""
     named = os.environ.get(SUITE_ROOT_VAR)
     if named:
         if not os.path.isdir(named):

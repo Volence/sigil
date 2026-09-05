@@ -86,7 +86,7 @@ impl Manifest {
                     diags.push(Diagnostic {
                         level: Level::Warning,
                         message: format!(
-                            "[module.path-mismatch] module `{id}` ends in `{last}` but its file is `{}` — the last id segment and the file stem must agree (rename the file or the header)",
+                            "[module.path-mismatch] module `{id}` ends in `{last}` but its file is `{}`, the last id segment and the file stem must agree (rename the file or the header)",
                             path.strip_prefix(root).unwrap_or(path).display()
                         ),
                         primary: file.module.span,

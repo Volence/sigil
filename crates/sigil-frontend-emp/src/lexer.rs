@@ -340,7 +340,7 @@ fn lex_char(src: &str, b: &[u8], mut i: usize, source: SourceId,
             } else {
                 errs.push(LexError {
                     message: format!(
-                        "char literal must be ASCII; {ch:?} is not — use a numeric literal or an escape"
+                        "char literal must be ASCII; {ch:?} is not, use a numeric literal or an escape"
                     ),
                     span: span(i, i + ch.len_utf8()),
                 });

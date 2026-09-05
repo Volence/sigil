@@ -43,7 +43,7 @@ fn shell_include() -> PathBuf {
     let p = repo_root().join("scripts/lib/suite_paths.sh");
     assert!(
         p.is_file(),
-        "COULD NOT MEASURE: the shell resolver is not at {} — every case below would be \
+        "COULD NOT MEASURE: the shell resolver is not at {}, every case below would be \
          asserting about a file that is not there",
         p.display()
     );
@@ -420,7 +420,7 @@ fn step_three_derives_the_sibling_from_inside_a_linked_worktree() {
     let (out, text) = ask_shell(&bed.worktree(), &inc, &[]);
     assert!(
         out.status.success(),
-        "step 3 refused a sibling that is present — the derivation is answering from the \
+        "step 3 refused a sibling that is present, the derivation is answering from the \
          worktree's own root rather than from the common git directory:\n{text}"
     );
     assert!(
@@ -458,7 +458,7 @@ fn step_four_refuses_naming_every_variable_and_every_path() {
     let (out, text) = ask_shell(&bed.worktree(), &inc, &[]);
     assert!(
         !out.status.success(),
-        "there is no engine checkout in this bed, and something answered anyway — a silent \
+        "there is no engine checkout in this bed, and something answered anyway, a silent \
          fallback is the defect this step exists to end:\n{text}"
     );
     assert_eq!(out.status.code(), Some(3), "step 4 has its own exit code:\n{text}");
@@ -568,7 +568,7 @@ fn no_resolver_caller_regrows_a_home_literal() {
     assert!(
         !announced.is_empty(),
         "COULD NOT MEASURE: the resolver announces no variable under a literal name, so a \
-         file that consumes a resolution without calling anything — a sourced config — \
+         file that consumes a resolution without calling anything, a sourced config, \
          cannot be reached by this population at all"
     );
 

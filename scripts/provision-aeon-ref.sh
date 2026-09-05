@@ -172,7 +172,7 @@ else:
             "provision: the provenance tail carries NEITHER `[entry.targets.*]` (written by "
             "--freeze) NOR `[entry.strict.goldens]` (written by --attest), so this entry "
             "names no expected ROMs and there is nothing to place or verify. That is a "
-            "malformed tip, not a missing tool — inspect golden/provenance.toml's last entry.")
+            "malformed tip, not a missing tool, inspect golden/provenance.toml's last entry.")
     exp = {k: (c, int(s)) for k, c, s in
            re.findall(r'(\w+)\s*=\s*"([0-9a-f]{8})/(\d+)"', m.group(1))}
 names = {"s4": "s4.bin", "s4_debug": "s4.debug.bin",

@@ -92,7 +92,7 @@ fn extern_of_fn_ref_argument_captures_the_name() {
     assert_eq!(
         buf.expect("data buf").cells,
         vec![sigil_frontend_emp::value::Cell::SymRef { name: "sfx".into(), width: 2, windowed: false }],
-        "extern(sfx) must build a bare Sym(\"sfx\") — no mask/shift",
+        "extern(sfx) must build a bare Sym(\"sfx\"), no mask/shift",
     );
 }
 

@@ -69,7 +69,7 @@ fn an_undeclared_unit_is_refused_by_the_cli() {
 
     assert!(
         !out.status.success(),
-        "an undeclared unit must FAIL, not warn — a run that reports what it \
+        "an undeclared unit must FAIL, not warn, a run that reports what it \
          skipped still exits 0. status: {:?}",
         out.status
     );
@@ -118,7 +118,7 @@ fn an_included_file_beneath_a_declaring_root_does_not_trip_the_refusal() {
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(
         !stderr.contains(refusal_head()),
-        "the refusal fired on an included file beneath a declaring root — the \
+        "the refusal fired on an included file beneath a declaring root, the \
          scope has slipped from the unit to the file, which breaks every aeon \
          shape. stderr:\n{stderr}"
     );
@@ -197,7 +197,7 @@ fn the_refusal_is_reported_before_the_diagnostics_it_explains() {
     assert_eq!(
         diags.first().map(|d| d.message.as_str()),
         Some(CPU_UNDECLARED),
-        "the refusal must be reported FIRST — every other diagnostic an \
+        "the refusal must be reported FIRST, every other diagnostic an \
          undeclared unit produces is a consequence of it. Got: {:?}",
         diags.iter().map(|d| &d.message).collect::<Vec<_>>()
     );

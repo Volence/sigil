@@ -176,7 +176,7 @@ fn doctored_shift_count_produces_different_bytes_than_genuine() {
     let doctored_bytes = &doctored.section("dplc").expect("dplc section").bytes;
     assert_ne!(
         genuine_bytes, doctored_bytes,
-        "a doctored `lsr.w #3` must emit different bytes than the genuine `lsr.w #4` — \
+        "a doctored `lsr.w #3` must emit different bytes than the genuine `lsr.w #4`, \
          else the byte gate could never catch this transcription class"
     );
 }
@@ -238,7 +238,7 @@ fn wrong_base_map_places_the_section_at_a_different_address() {
     assert_eq!(wrong_dplc.lma, 0x2700, "the doctored map must place dplc at $2700");
     assert_ne!(
         real_dplc.lma, wrong_dplc.lma,
-        "placement must genuinely move with the map base — not be an echo/hardcode"
+        "placement must genuinely move with the map base, not be an echo/hardcode"
     );
 
     let real_linked = link_placed(real_sections);
@@ -250,11 +250,11 @@ fn wrong_base_map_places_the_section_at_a_different_address() {
     // abs.w `jsr`, which is placement-invariant).
     assert_ne!(
         real_bytes, wrong_bytes,
-        "the pc-relative jbsr disp must track placement — bytes differ with the base"
+        "the pc-relative jbsr disp must track placement, bytes differ with the base"
     );
     assert_ne!(
         real_linked.section("dplc").unwrap().lma,
         wrong_linked.section("dplc").unwrap().lma,
-        "the LMA must differ between the two placements — placement is real, not an echo"
+        "the LMA must differ between the two placements, placement is real, not an echo"
     );
 }

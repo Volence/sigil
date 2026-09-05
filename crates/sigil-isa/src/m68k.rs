@@ -441,7 +441,7 @@ fn encode_alu_ea(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
                         _ => "no address-register-destination form exists for this operation",
                     };
                     return Err(IsaError::UnsupportedForm(format!(
-                        "{:?}.{:?} with an address-register destination is not encodable — {hint}",
+                        "{:?}.{:?} with an address-register destination is not encodable, {hint}",
                         inst.mnemonic, inst.size
                     )));
                 }
@@ -1236,7 +1236,7 @@ fn encode_branch(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
             Ok(out)
         }
         Size::L | Size::B => Err(IsaError::UnsupportedForm(format!(
-            "{:?} is short (.s) or word (.w) only — 2-wide branch, no .l/.b",
+            "{:?} is short (.s) or word (.w) only, 2-wide branch, no .l/.b",
             inst.mnemonic
         ))),
     }
@@ -1485,7 +1485,7 @@ fn encode_movea(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
         Size::L => 0b10,
         Size::B | Size::S => {
             return Err(IsaError::UnsupportedForm(
-                "movea is word (.w) or long (.l) only — no byte form".into(),
+                "movea is word (.w) or long (.l) only, no byte form".into(),
             ))
         }
     };

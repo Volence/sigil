@@ -821,7 +821,7 @@ fn negative_pad_count_is_refused() {
     assert_eq!(diags.len(), 1, "expected exactly one diagnostic, got {diags:?}");
     assert_eq!(diags[0].level, Level::Error);
     assert!(
-        diags[0].message.contains("[layout.pad-count] struct S: pad(-1) — a pad count must be a non-negative comptime int"),
+        diags[0].message.contains("[layout.pad-count] struct S: pad(-1), a pad count must be a non-negative comptime int"),
         "was {:?}",
         diags[0].message
     );
@@ -839,7 +839,7 @@ fn negative_pad_to_target_is_refused_and_says_target_not_count() {
     let (_layout, diags) = layout_struct(&file, "S");
     assert_eq!(diags.len(), 1, "expected exactly one diagnostic, got {diags:?}");
     assert!(
-        diags[0].message.contains("[layout.pad-count] struct S: pad_to(-1) — a pad target must be a non-negative comptime int"),
+        diags[0].message.contains("[layout.pad-count] struct S: pad_to(-1), a pad target must be a non-negative comptime int"),
         "was {:?}",
         diags[0].message
     );

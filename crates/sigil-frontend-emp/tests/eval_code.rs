@@ -141,11 +141,11 @@ fn patch_and_bind_warn_that_they_are_unwired() {
     assert!(pdiags.is_empty(), "must still parse cleanly: {pdiags:?}");
 
     let (value, diags) = sigil_frontend_emp::eval::eval_const_with_root(&file, "X", None, &[]);
-    assert!(value.is_some(), "the fn still evaluates — this is a warning, not a failure");
+    assert!(value.is_some(), "the fn still evaluates, this is a warning, not a failure");
     let unwired = diags.iter().filter(|d| d.message.contains("[patch.unwired]")).count();
     assert_eq!(unwired, 2, "one per unwired statement (`patch` and `bind`), got: {diags:?}");
     assert!(
         diags.iter().all(|d| d.level != sigil_span::Level::Error),
-        "reserved, not rejected — it must not be an error: {diags:?}"
+        "reserved, not rejected, it must not be an error: {diags:?}"
     );
 }

@@ -21,13 +21,13 @@ attributed wrongly" into "named here, the morning after".
 WHICH FILES ARE SWEPT IS DERIVED, NOT LISTED. Only files that actually READ the
 reference tree are swept, and the pattern deciding that is EXTRACTED from
 `nightly_source_gates.sh`, which already classifies files by exactly that question. A
-retyped second copy drifts from the first and the drift is invisible — the same lesson
+retyped second copy drifts from the first and the drift is invisible, the same lesson
 that script records about its own skip marker. Sweeping everything instead costs
 precision that matters: across all 445 source files the sweep reports 8 misses of which
 7 are synthetic fixtures written into a test's own temp tree, and a report that is
 mostly false is a report nobody reads.
 
-BOTH DIRECTIONS. A path a test asserts ABSENT is drift when it starts existing — the
+BOTH DIRECTIONS. A path a test asserts ABSENT is drift when it starts existing, the
 case that quietly stops testing what it claims while continuing to pass. Those live in
 the expected-absent file, each row naming the test file that asserts the absence, and a
 row whose naming file no longer names the path is itself reported: an allowlist nothing

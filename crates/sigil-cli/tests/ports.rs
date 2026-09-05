@@ -108,7 +108,7 @@ fn assert_byte_identical(reference: &[u8], candidate: &[u8], what: &str) {
         );
     }
     panic!(
-        "{what}: lengths differ — reference {} bytes, candidate {} bytes (common prefix matches)",
+        "{what}: lengths differ, reference {} bytes, candidate {} bytes (common prefix matches)",
         reference.len(),
         candidate.len()
     );

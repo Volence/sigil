@@ -354,14 +354,14 @@ fn no_test_reads_a_reference_tree_variable_for_itself() {
 
     let report: Vec<String> = found
         .iter()
-        .map(|v| format!("{}:{} — env read of {}", v.file, v.line, v.argument))
+        .map(|v| format!("{}:{}, env read of {}", v.file, v.line, v.argument))
         .collect();
     assert!(
         report.is_empty(),
         "{} test source(s) read a reference-tree variable directly:\n  {}\n\nA private read walks \
          around `test_support::aeon_dir`, which is where a run that named no tree REFUSES (d-18) \
          and where a declared partial run gets its derived not-measured count. Unnamed, such a \
-         read resolves the owner's live working checkout, whose revision moves under a run — the \
+         read resolves the owner's live working checkout, whose revision moves under a run, the \
          state the refusal exists to end, reached by not using the door.\n\nUse the door: \
          `test_support::aeon_dir` for a tree to measure against, `aeon_checkout` for the \
          checkout and the step that answered, `checkout_var_is_set` \
@@ -370,7 +370,7 @@ fn no_test_reads_a_reference_tree_variable_for_itself() {
          names above are written WITHOUT their parentheses on purpose: \
          `scripts/nightly_source_gates.sh` classifies a test file by whether its code text \
          calls one, and a file that merely NAMES an accessor in a message would be read as \
-         a file that obtains a reference tree — which would leave it in neither of that \
+         a file that obtains a reference tree, which would leave it in neither of that \
          lane's buckets and make the whole lane refuse to run.",
         report.len(),
         report.join("\n  ")

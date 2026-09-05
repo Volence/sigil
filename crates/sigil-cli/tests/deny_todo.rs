@@ -94,7 +94,7 @@ fn deny_todo_leaves_unreachable_alone() {
 
     assert!(
         out.status.success(),
-        "unreachable! is a permanent trap, not a hole — --deny-todo ignores it; stderr: {}",
+        "unreachable! is a permanent trap, not a hole, --deny-todo ignores it; stderr: {}",
         String::from_utf8_lossy(&out.stderr)
     );
     let _ = std::fs::remove_dir_all(&dir);

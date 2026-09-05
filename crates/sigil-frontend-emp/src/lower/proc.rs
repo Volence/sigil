@@ -170,7 +170,7 @@ pub(super) fn lower_proc(
                 format!(
                     "[resumable.extent-reserved] `@resumable` proc `{}` defines an exported \
                      `.__end` label, but that name is reserved for the generated extent symbol \
-                     `{end_sym}` (the `[Proc, Proc.__end)` range bound) — rename the label",
+                     `{end_sym}` (the `[Proc, Proc.__end)` range bound), rename the label",
                     proc.name
                 ),
             );
@@ -375,7 +375,7 @@ fn check_stack_balance(
             K::Unbalanced { depth } => (
                 "stack.unbalanced",
                 format!(
-                    "this path returns with {depth} bytes still on the stack — sp is below its \
+                    "this path returns with {depth} bytes still on the stack, sp is below its \
                      entry value, so the return reads its address from the wrong word"
                 ),
             ),
@@ -383,7 +383,7 @@ fn check_stack_balance(
                 "stack.merge-mismatch",
                 format!(
                     "paths reach this point holding different amounts of stack ({existing} and \
-                     {incoming} bytes) — the code past the merge runs at an sp that depends on \
+                     {incoming} bytes), the code past the merge runs at an sp that depends on \
                      the branch taken"
                 ),
             ),
@@ -434,7 +434,7 @@ fn check_resumable(
             proc.span,
             format!(
                 "[resumable.contract-required] `@resumable` proc `{}` must declare its \
-                 register-state set with `clobbers(...)` — it is what bounds the body's \
+                 register-state set with `clobbers(...)`, it is what bounds the body's \
                  liveness (a touch outside params/clobbers/out is `[proc.clobber-undeclared]`)",
                 proc.name
             ),
@@ -446,7 +446,7 @@ fn check_resumable(
             Level::Error,
             f.span,
             format!(
-                "[resumable.stack-op] in `{}`: {} — a `@resumable` proc must keep all live \
+                "[resumable.stack-op] in `{}`: {}, a `@resumable` proc must keep all live \
                  state in registers and touch the stack nowhere (it exits by `jmp (aN)`)",
                 proc.name, f.what
             ),
@@ -491,7 +491,7 @@ fn check_continuation(proc: &ast::ProcDecl, cpu: Cpu, diags: &mut Vec<Diagnostic
             proc.span,
             format!(
                 "[continuation.contract-required] `@continuation` proc `{}` must declare its \
-                 register-state set with `clobbers(...)` — it is entered mid-transfer with live \
+                 register-state set with `clobbers(...)`, it is entered mid-transfer with live \
                  registers the checker cannot prove, so the declared set is the trusted contract",
                 proc.name
             ),
@@ -557,7 +557,7 @@ fn check_noreturn(
                     Level::Error,
                     *span,
                     format!(
-                        "[noreturn.returns] `{}` is declared `@noreturn` but a path {why} — a \
+                        "[noreturn.returns] `{}` is declared `@noreturn` but a path {why}, a \
                          `@noreturn` body must leave only by a tail transfer or a loop (a \
                          `falls_into` a `@noreturn` successor composes)",
                         proc.name
@@ -605,7 +605,7 @@ fn check_cycle_budget(
             Level::Error,
             dup.span,
             format!(
-                "[cycles.form] in `{}`: `@{}` is declared more than once — one declaration \
+                "[cycles.form] in `{}`: `@{}` is declared more than once, one declaration \
                  states the whole contract",
                 proc.name, dup.name
             ),
@@ -638,7 +638,7 @@ fn check_cycle_budget(
             ) => {
                 format!(
                     "control falls through into `{next}`, so this proc's paths do not end \
-                     here — a cycle budget needs every path to end at a return"
+                     here, a cycle budget needs every path to end at a return"
                 )
             }
             _ => f.kind.message(),
@@ -736,7 +736,7 @@ fn check_context_clauses(
                 *span,
                 format!(
                     "[context.unknown] `{}` requires/grants `{ctx}`, which names no context \
-                     in scope — declare `context {ctx} {{ … }}` or import it",
+                     in scope, declare `context {ctx} {{ … }}` or import it",
                     proc.name
                 ),
             );
@@ -749,7 +749,7 @@ fn check_context_clauses(
                 Level::Error,
                 *span,
                 format!(
-                    "[context.not-grantable] `{ctx}` is an ACQUIRED context — it is entered by \
+                    "[context.not-grantable] `{ctx}` is an ACQUIRED context, it is entered by \
                      a `with {ctx} {{ … }}` bracket, not asserted. Only a `granted` context is \
                      a trust root"
                 ),
@@ -809,7 +809,7 @@ fn check_context_brackets(
             K::Escape => (
                 "context.escape",
                 format!(
-                    "this path leaves the `with {}` region without reaching its release — \
+                    "this path leaves the `with {}` region without reaching its release, \
                      the context stays held past the bracket",
                     f.ctx
                 ),
@@ -817,7 +817,7 @@ fn check_context_brackets(
             K::EntrySkip => (
                 "context.entry-skip",
                 format!(
-                    "this branch enters the `with {}` region past its acquire — the context \
+                    "this branch enters the `with {}` region past its acquire, the context \
                      would be released without ever being taken",
                     f.ctx
                 ),
@@ -825,7 +825,7 @@ fn check_context_brackets(
             K::Reacquire => (
                 "context.reacquire",
                 format!(
-                    "`{}` is already active here — an acquired context is not reentrant, so \
+                    "`{}` is already active here, an acquired context is not reentrant, so \
                      the inner release would free the outer hold",
                     f.ctx
                 ),
@@ -833,7 +833,7 @@ fn check_context_brackets(
             K::RteUndischarged => (
                 "context.rte-undischarged",
                 format!(
-                    "this path leaves the `with {}` region without reaching an `rte` — the \
+                    "this path leaves the `with {}` region without reaching an `rte`, the \
                      context is `released_by_rte`, so the exception return IS its release \
                      and there is no spliced restore behind it. Every exit from the bracket \
                      must be, or fall straight onto, an `rte`; an `rts`/`rtr`/`rtd` or a \
@@ -969,7 +969,7 @@ fn check_z80_preserves(
                 Level::Error,
                 proc.span,
                 if inherited {
-                    format!("[proc.preserves-unverifiable] `{}` breaks the module invariant `preserves({reg})` — `{reg}` is written and not restored", proc.name)
+                    format!("[proc.preserves-unverifiable] `{}` breaks the module invariant `preserves({reg})`, `{reg}` is written and not restored", proc.name)
                 } else {
                     format!("[proc.preserves-unverifiable] `{}` declares `preserves({reg})` but `{reg}` is written and not restored", proc.name)
                 },
@@ -1019,7 +1019,7 @@ fn check_out_flags_cond(
                 Level::Error,
                 f.span,
                 format!(
-                    "[proc.out-flag-invalid] `{proc_name}` declares `out({}: …)` — `{}` is not a \
+                    "[proc.out-flag-invalid] `{proc_name}` declares `out({}: …)`, `{}` is not a \
                      status flag (expected one of {})",
                     f.flag,
                     f.flag,
@@ -1035,7 +1035,7 @@ fn check_out_flags_cond(
                 Level::Error,
                 c.span,
                 format!(
-                    "[proc.out-cond-invalid] `{proc_name}` declares `out({} if {})` — `{}` is not a \
+                    "[proc.out-cond-invalid] `{proc_name}` declares `out({} if {})`, `{}` is not a \
                      condition code",
                     c.reg, c.cc, c.cc,
                 ),
@@ -1064,7 +1064,7 @@ fn check_fallthrough_adjacent(
             proc.span,
             format!(
                 "[proc.fallthrough-separated] `{}` declares `falls_into {next}`, but `{next}` is \
-                 not the immediately-following proc in the section — declared fallthrough requires \
+                 not the immediately-following proc in the section, declared fallthrough requires \
                  the two procs to be adjacent (nothing may sit between them)",
                 proc.name
             ),
@@ -1090,7 +1090,7 @@ fn check_undeclared_fallthrough(
             proc.span,
             format!(
                 "[proc.undeclared-fallthrough] `{}` can reach its closing `}}` without an \
-                 unconditional terminator and does not declare `falls_into` — it will run into \
+                 unconditional terminator and does not declare `falls_into`, it will run into \
                  whatever follows it",
                 proc.name
             ),
@@ -1135,7 +1135,7 @@ pub(super) fn check_member_body_fallthrough(
             member.span,
             format!(
                 "[dispatch.body-fallthrough] dispatch `{table}` member `{}`'s inline body can \
-                 reach its closing `}}` without an unconditional terminator — it will run into \
+                 reach its closing `}}` without an unconditional terminator, it will run into \
                  whatever follows it",
                 member.name
             ),
@@ -1277,7 +1277,7 @@ fn check_clobbers(
                 proc.span,
                 format!(
                     "[proc.clobber-undeclared] `{}` writes `{w}`, which is not in its \
-                     contract — add it to `clobbers(...)`, or `preserves({w})` if the \
+                     contract, add it to `clobbers(...)`, or `preserves({w})` if the \
                      body save/restores it",
                     proc.name
                 ),
@@ -1369,7 +1369,7 @@ fn check_clobbers(
                 *span,
                 format!(
                     "[proc.sr-undeclared] `{}` writes `sr` (interrupt mask / condition \
-                     codes), which is not in its contract — declare `clobbers(sr)`, or \
+                     codes), which is not in its contract, declare `clobbers(sr)`, or \
                      `preserves(sr)` if the body save/restores it",
                     proc.name
                 ),
@@ -1404,7 +1404,7 @@ fn check_clobbers(
                     *span,
                     format!(
                         "[proc.clobber-undeclared] `{}` writes `{name}`, which is not in its \
-                         `clobbers(...)` set or parameter list (heuristic lint — full register \
+                         `clobbers(...)` set or parameter list (heuristic lint, full register \
                          dataflow is deferred to S2-D6)",
                         proc.name
                     ),
@@ -1607,7 +1607,7 @@ fn check_preserves(
                 Level::Error,
                 proc.span,
                 format!(
-                    "[proc.preserves-invalid] `{}` declares `preserves(ccr)` — the \
+                    "[proc.preserves-invalid] `{}` declares `preserves(ccr)`, the \
                      condition-code half of SR is spelled `preserves(sr.ccr)` (bare `sr` \
                      covers both halves)",
                     proc.name
@@ -1632,13 +1632,13 @@ fn check_preserves(
                             format!("`{regtok}` is not a register (d0-d7/a0-a7/sp)")
                         }
                         WordFacetError::AddressWord => {
-                            "a word facet is a DATA-register form only — an address-register `.w` \
+                            "a word facet is a DATA-register form only, an address-register `.w` \
                              write sign-extends into the whole register, so it is not a \
                              partial-width claim"
                                 .to_string()
                         }
                         WordFacetError::Byte => {
-                            "there is no `.b` facet — the only partial-width facet is `.w`, the \
+                            "there is no `.b` facet, the only partial-width facet is `.w`, the \
                              low word"
                                 .to_string()
                         }
@@ -1658,7 +1658,7 @@ fn check_preserves(
                         Level::Error,
                         proc.span,
                         format!(
-                            "[proc.preserves-invalid] `{}` declares `preserves({lo})` — {reason}",
+                            "[proc.preserves-invalid] `{}` declares `preserves({lo})`, {reason}",
                             proc.name
                         ),
                     );
@@ -1673,7 +1673,7 @@ fn check_preserves(
                 Level::Error,
                 proc.span,
                 format!(
-                    "[proc.preserves-invalid] `{}` declares `preserves({lo}{})` — `{lo}` is \
+                    "[proc.preserves-invalid] `{}` declares `preserves({lo}{})`, `{lo}` is \
                      not a register (d0-d7/a0-a7/sp)",
                     proc.name,
                     hi.as_deref().map(|h| format!("-{h}")).unwrap_or_default(),
@@ -1693,7 +1693,7 @@ fn check_preserves(
                         proc.span,
                         format!(
                             "[proc.preserves-invalid] `{}` declares the reversed range \
-                             `{lo}-{h}` — a reglist range runs low to high",
+                             `{lo}-{h}`, a reglist range runs low to high",
                             proc.name
                         ),
                     );
@@ -1706,7 +1706,7 @@ fn check_preserves(
                         Level::Error,
                         proc.span,
                         format!(
-                            "[proc.preserves-invalid] `{}` declares `preserves({lo}-{h})` — \
+                            "[proc.preserves-invalid] `{}` declares `preserves({lo}-{h})`, \
                              `{h}` is not a register (d0-d7/a0-a7/sp)",
                             proc.name
                         ),
@@ -1746,7 +1746,7 @@ fn check_preserves(
                 proc.span,
                 format!(
                     "[proc.preserves-clobbers-overlap] `{}` declares the `{half}` half of SR \
-                     both preserved and clobbered (bare `sr` covers both halves) — a machine \
+                     both preserved and clobbered (bare `sr` covers both halves), a machine \
                      state cannot be in both sets",
                     proc.name
                 ),
@@ -1763,7 +1763,7 @@ fn check_preserves(
                     proc.span,
                     format!(
                         "[proc.preserves-clobbers-overlap] `{}` declares `{c}` both preserved \
-                         and clobbered — a register cannot be in both sets",
+                         and clobbered, a register cannot be in both sets",
                         proc.name
                     ),
                 );
@@ -1780,7 +1780,7 @@ fn check_preserves(
                     proc.span,
                     format!(
                         "[proc.preserves-clobbers-overlap] `{}` declares `{c}` both word-preserved \
-                         (`{c}.w`) and clobbered — a register cannot be in both sets",
+                         (`{c}.w`) and clobbered, a register cannot be in both sets",
                         proc.name
                     ),
                 );
@@ -1865,7 +1865,7 @@ fn check_preserves(
                     proc.span,
                     format!(
                         "[proc.preserves-unverifiable] `{}` declares `preserves({})` but {} not \
-                         provably preserved — no `.w` (or `.l`) save/restore round-trips the low \
+                         provably preserved, no `.w` (or `.l`) save/restore round-trips the low \
                          word on every return path (a `.b` restore round-trips only the byte, or an \
                          unmodeled sp op blocks the proof)",
                         proc.name,
@@ -1940,7 +1940,7 @@ fn check_preserves(
             proc.span,
             format!(
                 "[proc.preserves-unverifiable] `{}` declares `preserves({})` but {} not \
-                 provably preserved — no `.l` save/restore round-trips {} FULL entry value on \
+                 provably preserved, no `.l` save/restore round-trips {} FULL entry value on \
                  every return path (individual push/pop, `movem.l` pair, or `(sp)` peek), or an \
                  unmodeled sp op blocks the proof. A `.w` save/restore round-trips only the LOW \
                  WORD: if that is what the code guarantees, declare `preserves(dN.w)`",
@@ -2013,7 +2013,7 @@ pub(crate) fn check_inout_partition(
                 span,
                 format!(
                     "[proc.inout-not-param] `{owner}` declares `inout({name})` but `{name}` is not \
-                     a param — an in-out register is a caller-provided input, so it must be \
+                     a param, an in-out register is a caller-provided input, so it must be \
                      declared in the param list"
                 ),
             );
@@ -2025,7 +2025,7 @@ pub(crate) fn check_inout_partition(
                 span,
                 format!(
                     "[proc.inout-clobbers-overlap] `{owner}` declares `{name}` both in-out and \
-                     clobbered — an in-out register's exit value is promised to the caller, so it \
+                     clobbered, an in-out register's exit value is promised to the caller, so it \
                      cannot also be destroyed scratch"
                 ),
             );
@@ -2038,7 +2038,7 @@ pub(crate) fn check_inout_partition(
                     span,
                     format!(
                         "[proc.inout-preserves-overlap] `{owner}` declares `{name}` both in-out and \
-                         preserved — an in-out register's exit value need not equal its entry \
+                         preserved, an in-out register's exit value need not equal its entry \
                          value, so it cannot also be promised unchanged"
                     ),
                 );
@@ -2050,7 +2050,7 @@ pub(crate) fn check_inout_partition(
                 Level::Error,
                 span,
                 format!(
-                    "[proc.inout-out-overlap] `{owner}` declares `{name}` both `inout` and `out` — \
+                    "[proc.inout-out-overlap] `{owner}` declares `{name}` both `inout` and `out`, \
                      an in-out register is checked as a threaded cursor (pass-through valid), an \
                      out as a produced result; a register takes exactly one"
                 ),
@@ -2089,7 +2089,7 @@ pub(crate) fn validate_boundary_inout(
                 span,
                 format!(
                     "[proc.inout-z80-unsupported] `{owner}` declares `inout(...)` on a Z80 \
-                     declaration — the in-out facet is 68k-only"
+                     declaration, the in-out facet is 68k-only"
                 ),
             );
         }
@@ -2166,7 +2166,7 @@ fn check_out(
                 Level::Error,
                 proc.span,
                 format!(
-                    "[proc.inout-z80-unsupported] `{}` declares `inout(...)` on a Z80 proc — the \
+                    "[proc.inout-z80-unsupported] `{}` declares `inout(...)` on a Z80 proc, the \
                      in-out facet is 68k-only",
                     proc.name
                 ),
@@ -2199,7 +2199,7 @@ fn check_out(
                     proc.span,
                     format!(
                         "[proc.out-clobbers-overlap] `{}` declares `{name}` both output and \
-                         clobbered — a register is either a returned result or destroyed scratch, \
+                         clobbered, a register is either a returned result or destroyed scratch, \
                          not both",
                         proc.name
                     ),
@@ -2212,7 +2212,7 @@ fn check_out(
                     proc.span,
                     format!(
                         "[proc.out-preserves-overlap] `{}` declares `{name}` both output and \
-                         preserved — a register is either a returned result or left untouched, \
+                         preserved, a register is either a returned result or left untouched, \
                          not both",
                         proc.name
                     ),
@@ -2257,7 +2257,7 @@ fn check_out(
                 proc.span,
                 format!(
                     "[proc.out-preserves-overlap] `{}` declares {flag_result} and preserves the \
-                     flags (`preserves({pres_token})` covers `f`) — a flag result lives in `f`, \
+                     flags (`preserves({pres_token})` covers `f`), a flag result lives in `f`, \
                      so `f` either carries the result or is restored to entry, not both",
                     proc.name
                 ),
@@ -2291,7 +2291,7 @@ fn check_out(
                 proc.span,
                 format!(
                     "[proc.out-clobbers-overlap] `{}` declares `{name}` both output and \
-                     clobbered — a register is either a returned result or destroyed scratch, \
+                     clobbered, a register is either a returned result or destroyed scratch, \
                      not both",
                     proc.name
                 ),
@@ -2331,7 +2331,7 @@ fn check_out(
                     proc.span,
                     format!(
                         "[proc.out-preserves-overlap] `{}` declares `{name}` both output and \
-                         preserved — a register is either a returned result or left untouched, \
+                         preserved, a register is either a returned result or left untouched, \
                          not both",
                         proc.name
                     ),
@@ -2343,7 +2343,7 @@ fn check_out(
                     proc.span,
                     format!(
                         "[proc.out-preserves-overlap] `{}` declares `{name}` both output and \
-                         word-preserved (`{name}.w`) — the low word is either a returned result \
+                         word-preserved (`{name}.w`), the low word is either a returned result \
                          or the caller's entry value, not both",
                         proc.name
                     ),
@@ -2411,7 +2411,7 @@ fn check_out(
             proc.span,
             format!(
                 "[proc.out-preserves-overlap] `{}` declares {ccr_result} and preserves the \
-                 condition codes (bare `sr` covers both halves) — a flag result lives in CCR, \
+                 condition codes (bare `sr` covers both halves), a flag result lives in CCR, \
                  so CCR either carries the result or is restored to entry, not both (declare \
                  `preserves(sr.mask)` if only the interrupt mask round-trips)",
                 proc.name
@@ -2425,7 +2425,7 @@ fn check_out(
             proc.span,
             format!(
                 "[proc.out-clobbers-overlap] `{}` declares {ccr_result} and clobbers the \
-                 condition codes (bare `sr` covers both halves) — a flag result lives in CCR, \
+                 condition codes (bare `sr` covers both halves), a flag result lives in CCR, \
                  so CCR either carries the result or is destroyed scratch, not both",
                 proc.name
             ),
@@ -2438,7 +2438,7 @@ fn check_out(
             proc.span,
             format!(
                 "[proc.out-preserves-overlap] `{}` declares the `sr.mask` half of SR both \
-                 output and preserved (bare `sr` covers both halves) — a machine state is \
+                 output and preserved (bare `sr` covers both halves), a machine state is \
                  either a returned result or left untouched, not both",
                 proc.name
             ),
@@ -2451,7 +2451,7 @@ fn check_out(
             proc.span,
             format!(
                 "[proc.out-clobbers-overlap] `{}` declares the `sr.mask` half of SR both \
-                 output and clobbered (bare `sr` covers both halves) — a machine state is \
+                 output and clobbered (bare `sr` covers both halves), a machine state is \
                  either a returned result or destroyed scratch, not both",
                 proc.name
             ),
@@ -2506,8 +2506,8 @@ fn check_out(
                 Level::Warning,
                 proc.span,
                 format!(
-                    "[proc.out-unwritten] `{}` declares `out({name})` but never writes `{name}` \
-                     — a declared output register must be written (a false result claim, or a \
+                    "[proc.out-unwritten] `{}` declares `out({name})` but never writes `{name}`, \
+                     a declared output register must be written (a false result claim, or a \
                      stale `out()` after a refactor)",
                     proc.name
                 ),
@@ -2690,7 +2690,7 @@ fn sr_mask_preservers_credit(map: &BTreeMap<String, BTreeSet<String>>, target: &
 /// bare-`sr` proc falling into its successor must not read as silently green).
 fn sr_tail_refusal(proc: &ast::ProcDecl, buf: &crate::value::CodeBuf, cpu: Cpu) -> Option<String> {
     if proc.falls_into.is_some() {
-        Some("the proc falls into its successor — the flags the caller sees are the successor's".to_string())
+        Some("the proc falls into its successor, the flags the caller sees are the successor's".to_string())
     } else if !ends_in_terminator(buf, cpu) {
         Some("control can run off the end of the body into whatever follows".to_string())
     } else {
@@ -2753,7 +2753,7 @@ fn check_ccr_advisory(
             proc.span,
             format!(
                 "[proc.ccr-advisory] `{}` declares bare `preserves(sr)` (both halves), but its \
-                 condition codes are not provably the caller's at return: {why} — declare \
+                 condition codes are not provably the caller's at return: {why}, declare \
                  `preserves(sr.mask)` if only the interrupt mask round-trips (path-sensitive \
                  flag liveness is S2-D7)",
                 proc.name
@@ -2835,7 +2835,7 @@ fn ccr_bracket_refusal(items: &[CodeItem], noreturn: &BTreeSet<String>) -> Optio
                     Some(t) if noreturn.contains(t) => {}
                     _ => {
                         return Some(format!(
-                            "control leaves through `{mnemonic}` — the flags the caller sees \
+                            "control leaves through `{mnemonic}`, the flags the caller sees \
                              are the target's"
                         ));
                     }
@@ -3061,7 +3061,7 @@ fn reglist_expand(segs: &[(String, Option<String>)], mut on_error: impl FnMut(St
                 }
                 if lo == "ccr" {
                     on_error(
-                        "`ccr` is not a contract token — the condition-code half of SR is \
+                        "`ccr` is not a contract token, the condition-code half of SR is \
                          spelled `sr.ccr` (bare `sr` covers both halves)"
                             .to_string(),
                     );
@@ -3085,7 +3085,7 @@ fn reglist_expand(segs: &[(String, Option<String>)], mut on_error: impl FnMut(St
                     continue;
                 };
                 if hi_bit < lo_bit {
-                    on_error(format!("the range `{lo}-{h}` is reversed — a reglist range runs low to high"));
+                    on_error(format!("the range `{lo}-{h}` is reversed, a reglist range runs low to high"));
                     continue;
                 }
                 for bit in lo_bit..=hi_bit {

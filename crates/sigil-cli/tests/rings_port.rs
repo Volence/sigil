@@ -413,7 +413,7 @@ fn assert_region_matches(candidate: &[u8], expected: &[u8], what: &str) {
     // OJZ_BG_ANIM, a 14-byte all-zero plain window (lens sweep, seat GATE, S15).
     assert!(
         !candidate.is_empty(),
-        "{what}: the module emitted NO BYTES — a region gate over an empty window \
+        "{what}: the module emitted NO BYTES, a region gate over an empty window \
          proves nothing. Either the module stopped emitting, or this pin should not exist."
     );
     // Packed placement (Wave-B B-0) may end a region window in ALIGNMENT FILL: the
@@ -430,7 +430,7 @@ fn assert_region_matches(candidate: &[u8], expected: &[u8], what: &str) {
     assert_eq!(
         candidate.len(),
         expected.len(),
-        "{what}: length mismatch — candidate {} bytes, expected {} bytes",
+        "{what}: length mismatch, candidate {} bytes, expected {} bytes",
         candidate.len(),
         expected.len()
     );
@@ -597,7 +597,7 @@ fn zero_disp_collapse_probe() {
     let collapsed: &[u8] = &[0x92, 0x50, 0x34, 0x01]; // sub.w (a0),d1; move.w d1,d2
     assert!(
         bytes.windows(4).any(|w| w == collapsed),
-        "zero-disp splice must collapse `sub.w 0(a0), d1` to `sub.w (a0), d1` — got {bytes:02x?}"
+        "zero-disp splice must collapse `sub.w 0(a0), d1` to `sub.w (a0), d1`, got {bytes:02x?}"
     );
 }
 

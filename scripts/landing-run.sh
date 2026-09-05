@@ -165,7 +165,7 @@ set -uo pipefail
 # ---------------------------------------------------------------------------------------
 # Refusals speak in one voice, and each names what to do about it.
 # ---------------------------------------------------------------------------------------
-die() { echo "landing-run: REFUSING — $*" >&2; exit 2; }
+die() { echo "landing-run: REFUSING, $*" >&2; exit 2; }
 say() { echo "landing-run: $*" >&2; }
 
 abspath() { realpath -m -- "$1"; }
@@ -223,9 +223,9 @@ fi
 # (0) Where we are. Everything below is derived from this, never from the caller's cwd.
 # ---------------------------------------------------------------------------------------
 ROOT=$(git rev-parse --show-toplevel 2>/dev/null) \
-    || die "not inside a git checkout — this must run from a sigil worktree"
+    || die "not inside a git checkout, this must run from a sigil worktree"
 ROOT=$(abspath "$ROOT")
-[[ -f $ROOT/Cargo.toml ]] || die "$ROOT has no Cargo.toml — that is not the sigil workspace"
+[[ -f $ROOT/Cargo.toml ]] || die "$ROOT has no Cargo.toml, that is not the sigil workspace"
 
 # The MAIN checkout, which for a linked worktree is the parent of the common git dir. Its
 # `target/` is the shared one, and it is the directory refusal (2) is really about: this
@@ -253,7 +253,7 @@ for forbidden in "$ROOT/target" "$MAIN/target"; do
        their fixtures in a DIFFERENT tree. That surfaces as dozens of
        \`read <file>: No such file or directory\` failures on files that are present, and
        it reads exactly like golden divergence.
-       Use a dedicated directory — the default \`$ROOT/.target-land\` is gitignored — or
+       Use a dedicated directory, the default \`$ROOT/.target-land\` is gitignored, or
        pass --target <dir>."
     fi
 done
@@ -302,7 +302,7 @@ printf '%s\n' "$ROOT" > "$OWNER_FILE" || die "cannot write the ownership marker 
 # something nobody chose.
 # shellcheck source=lib/suite_paths.sh
 source "$ROOT/scripts/lib/suite_paths.sh" \
-    || die "cannot source $ROOT/scripts/lib/suite_paths.sh — the reference tree cannot be
+    || die "cannot source $ROOT/scripts/lib/suite_paths.sh, the reference tree cannot be
        resolved without it, and guessing is what this script exists to stop."
 
 if [[ -n $AEON_ARG ]]; then
@@ -328,7 +328,7 @@ else
 fi
 [[ -d $AEON ]] || die "AEON_DIR resolves to $AEON, which is not a directory.
        Pass --aeon <path to a built aeon checkout>, or export AEON_DIR."
-[[ -f $AEON/build.sh ]] || die "AEON_DIR resolves to $AEON, which has no build.sh — that is
+[[ -f $AEON/build.sh ]] || die "AEON_DIR resolves to $AEON, which has no build.sh, that is
        not an aeon checkout. Pass --aeon <path to a built aeon checkout>."
 
 AEON_HEAD=$(git -C "$AEON" rev-parse HEAD 2>/dev/null || echo '?')
@@ -364,7 +364,7 @@ fi
 # the unmeasurable one is refused here BY NAME rather than rendered as a lint count later.
 CLIPPY_VERSION=$(cargo clippy --version 2>/dev/null) \
     || die "\`cargo clippy\` is not available on this toolchain, so the lint bar cannot be
-       measured — and an unmeasurable bar is not a passing one. Install it with
+       measured, and an unmeasurable bar is not a passing one. Install it with
        \`rustup component add clippy\` and re-run."
 say "clippy available: $CLIPPY_VERSION"
 
@@ -383,10 +383,10 @@ fi
 # claimed success without producing them.
 [[ -x $SIGIL_BUILD_RESOLVED ]] \
     || die "SIGIL_BUILD is $SIGIL_BUILD_RESOLVED ($BUILD_ORIGIN), which is not an executable
-       file — the pre-flight build reported success without producing it."
+       file, the pre-flight build reported success without producing it."
 [[ -x $SIGIL_EMIT_RESOLVED ]] \
     || die "SIGIL_EMIT is $SIGIL_EMIT_RESOLVED ($EMIT_ORIGIN), which is not an executable
-       file — the pre-flight build reported success without producing it."
+       file, the pre-flight build reported success without producing it."
 
 # THE CHECK THAT ACTUALLY PREDICTS THE ARTIFACT GATES. The suite does not read SIGIL_EMIT
 # or SIGIL_BUILD (it emits the sound blob in-process); what the ~80 port and golden gates
@@ -402,7 +402,7 @@ ROM_STATE="all four present"
 if (( ${#MISSING_ROMS[@]} )); then
     ROM_STATE="MISSING: ${MISSING_ROMS[*]}"
     if (( SCOPED )); then
-        say "WARNING — the reference tree $AEON is missing ${#MISSING_ROMS[@]} built ROM(s):
+        say "WARNING, the reference tree $AEON is missing ${#MISSING_ROMS[@]} built ROM(s):
        ${MISSING_ROMS[*]}. This is a --scoped run so it is not refused, but every
        artifact-dependent gate that runs will be red for this reason and not for yours."
     else
@@ -456,7 +456,7 @@ CLIPPY_ARGS=(clippy --release --workspace --all-targets
     echo "# TARGET_DIR     $TARGET"
     echo "# SIGIL_BUILD    $SIGIL_BUILD_RESOLVED ($BUILD_ORIGIN)"
     echo "# SIGIL_EMIT     $SIGIL_EMIT_RESOLVED ($EMIT_ORIGIN)"
-    echo "# scoped         $( ((SCOPED)) && echo 'YES — this is a PARTIAL run, not a landing' || echo 'no (full workspace)')"
+    echo "# scoped         $( ((SCOPED)) && echo 'YES, this is a PARTIAL run, not a landing' || echo 'no (full workspace)')"
     echo "# baseline       ${BASELINE:-<none stated>}"
     # The suite's own partial-run opt-in, stamped as CLEARED rather than left to be
     # assumed: the log has to be answerable about whether the reference-dependent rows
@@ -479,7 +479,7 @@ say "(tail it: tail -f $LOG)"
 # independent measurements and a landing wants both; short-circuiting here would hand back
 # a verdict with the test half unmeasured, which is the shape (2) already refuses.
 # ---------------------------------------------------------------------------------------
-echo "##### CLIPPY SPAN — cargo ${CLIPPY_ARGS[*]}" >> "$LOG"
+echo "##### CLIPPY SPAN, cargo ${CLIPPY_ARGS[*]}" >> "$LOG"
 say "lint bar: cargo ${CLIPPY_ARGS[*]}"
 CARGO_TARGET_DIR="$TARGET" cargo "${CLIPPY_ARGS[@]}" 2>&1 | tee -a "$LOG"
 # PIPESTATUS[0] for the same reason (6) gives: with `tee` in the pipeline `$?` is tee's.
@@ -498,12 +498,12 @@ mapfile -t CLIPPY_SITES < <(awk '
         print loc "  " msg
         msg = ""
     }
-    /^##### CLIPPY SPAN —/ { inspan = 1 }' "$LOG")
+    /^##### CLIPPY SPAN,/ { inspan = 1 }' "$LOG")
 
 # ---------------------------------------------------------------------------------------
 # (3)+(6) The run. The strict flag is INSIDE the command span; the exit code is cargo's.
 # ---------------------------------------------------------------------------------------
-echo "##### TEST SPAN — cargo ${CARGO_ARGS[*]}" >> "$LOG"
+echo "##### TEST SPAN, cargo ${CARGO_ARGS[*]}" >> "$LOG"
 SIGIL_STRICT_GATE=1 \
 CARGO_TARGET_DIR="$TARGET" \
 AEON_DIR="$AEON" \
@@ -550,7 +550,7 @@ read -r SUITES PASSED FAILED IGNORED < <(awk '
 # emits and clippy does not — and that is a fact about those patterns, so it is written
 # here rather than left to be re-derived.
 SKIPS=$(awk '
-    /^##### TEST SPAN —/ { inspan = 1; next }
+    /^##### TEST SPAN,/ { inspan = 1; next }
     inspan && /skip:|skipping/ { n++ }
     END { print n+0 }' "$LOG")
 
@@ -562,12 +562,12 @@ echo
 echo "=============================== LANDING RUN VERDICT ==============================="
 echo "  log             $LOG"
 echo "  tree            $ROOT @ ${HEAD_SHA:0:8} ($BRANCH, $DIRTY)"
-echo "  reference       $AEON @ ${AEON_HEAD:0:8} ($AEON_BRANCH, $AEON_DIRTY) — $ROM_STATE"
+echo "  reference       $AEON @ ${AEON_HEAD:0:8} ($AEON_BRANCH, $AEON_DIRTY), $ROM_STATE"
 echo "  target dir      $TARGET"
 echo "  started/ended   $STARTED -> $FINISHED (UTC)"
 echo "  CARGO_EXIT      $CARGO_RC"
-echo "  CLIPPY_EXIT     $CLIPPY_RC   ($( (( CLIPPY_RC == 0 )) && echo 'lint bar clean' || echo "LINT BAR RED — ${#CLIPPY_SITES[@]} site(s)" ))"
-(( SCOPED )) && echo "  ** SCOPED RUN — PARTIAL. This is not a landing verdict. **"
+echo "  CLIPPY_EXIT     $CLIPPY_RC   ($( (( CLIPPY_RC == 0 )) && echo 'lint bar clean' || echo "LINT BAR RED, ${#CLIPPY_SITES[@]} site(s)" ))"
+(( SCOPED )) && echo "  ** SCOPED RUN, PARTIAL. This is not a landing verdict. **"
 
 # Before the unmeasurable branches below, because a run whose tests could not be measured
 # still measured the lint bar, and dropping that finding on the way out would make the
@@ -580,28 +580,28 @@ if (( ${#CLIPPY_SITES[@]} )); then
     echo "  crate to fail aborts and cargo stops scheduling the rest, so every unchecked"
     echo "  target contributes nothing here. Measured on this repo: 10 sites, then 35 more,"
     echo "  then 71 more, as each round of fixes let the next target compile. To size the"
-    echo "  work, re-run the same command WITHOUT \`-- -D warnings\` — nothing aborts and"
-    echo "  everything is checked — and count from that."
+    echo "  work, re-run the same command WITHOUT \`-- -D warnings\`, nothing aborts and"
+    echo "  everything is checked, and count from that."
     echo "  Silence the SPECIFIC item with a comment saying why, or change the code. A"
     echo "  workspace-wide or crate-wide allow turns a correct lint off everywhere to"
     echo "  settle one site, and is not a fix."
 elif (( CLIPPY_RC != 0 )); then
     echo
     echo "  CLIPPY EXITED $CLIPPY_RC WITH NO PARSEABLE LINT SITE. The bar is red for a"
-    echo "  reason this verdict could not name — read the CLIPPY SPAN in the log. Do not"
+    echo "  reason this verdict could not name, read the CLIPPY SPAN in the log. Do not"
     echo "  read an unnamed red as a lint that can be waived."
 fi
 
 # UNMEASURABLE IS NOT GREEN. Both branches below are runs whose result cannot be
 # classified, and neither may be rendered as a count.
 if (( SUITES == 0 )); then
-    echo "  RESULT          COULD NOT RUN — no \`test result:\` line in the log."
+    echo "  RESULT          COULD NOT RUN, no \`test result:\` line in the log."
     echo "                  Nothing about this run can be measured. cargo exited $CARGO_RC."
     echo "==================================================================================="
     exit 2
 fi
 if (( PASSED == 0 )); then
-    echo "  RESULT          COULD NOT RUN — $SUITES suite(s) reported, 0 tests passed."
+    echo "  RESULT          COULD NOT RUN, $SUITES suite(s) reported, 0 tests passed."
     echo "                  That is a run that could not be measured, not a green one."
     echo "==================================================================================="
     exit 2
@@ -649,7 +649,7 @@ fi
 RECONCILED=1
 if [[ -n $BASELINE ]]; then
     if [[ ! $BASELINE =~ ^[0-9]+$ ]]; then
-        echo "  baseline        INVALID (\`$BASELINE\` is not a number) — nothing reconciled."
+        echo "  baseline        INVALID (\`$BASELINE\` is not a number), nothing reconciled."
         RECONCILED=0
     else
         # Reconcile on tests that RETURNED A VERDICT — passed plus failed — never on
@@ -674,13 +674,13 @@ if [[ -n $BASELINE ]]; then
             echo "  reconciles      MISMATCH: baseline $BASELINE, observed $RAN returning a verdict"
             echo "                  ($PASSED passed + $FAILED failed). ${DELTA#-} test(s) FEWER than the"
             echo "                  stated baseline, and the failures above do NOT account for"
-            echo "                  them — these did not run at all. Something stopped being"
+            echo "                  them, these did not run at all. Something stopped being"
             echo "                  built, was filtered out, or was marked #[ignore]."
             RECONCILED=0
         fi
     fi
 else
-    echo "  reconciles      NOT CHECKED — no --baseline stated. A bare pass count is not a"
+    echo "  reconciles      NOT CHECKED, no --baseline stated. A bare pass count is not a"
     echo "                  result; state the baseline you expect."
 fi
 
@@ -697,18 +697,18 @@ if (( CARGO_RC != 0 || FAILED > 0 || CLIPPY_RC != 0 )); then
     if (( CLIPPY_RC != 0 && CARGO_RC == 0 && FAILED == 0 )); then
         # Named separately because the two halves disagreeing is the informative case, and
         # "$FAILED test(s) red" printed as 0 over a red run reads as a script mistake.
-        echo "  RESULT          FAILED — the LINT BAR is red (clippy exit $CLIPPY_RC,"
+        echo "  RESULT          FAILED, the LINT BAR is red (clippy exit $CLIPPY_RC,"
         echo "                  ${#CLIPPY_SITES[@]} site(s)). Every test that ran passed; the suite is not"
         echo "                  the reason this is not green. Do not land on this."
     else
-        echo "  RESULT          FAILED — $FAILED test(s) red, cargo exit $CARGO_RC, clippy exit $CLIPPY_RC."
+        echo "  RESULT          FAILED, $FAILED test(s) red, cargo exit $CARGO_RC, clippy exit $CLIPPY_RC."
     fi
     echo "==================================================================================="
     exit 1
 fi
 if (( ! RECONCILED )); then
     echo
-    echo "  RESULT          GREEN BUT UNRECONCILED — every test that ran passed, and the"
+    echo "  RESULT          GREEN BUT UNRECONCILED, every test that ran passed, and the"
     echo "                  population is not the one you stated. Do not land on this."
     echo "==================================================================================="
     exit 3

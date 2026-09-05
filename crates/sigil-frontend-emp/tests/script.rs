@@ -855,7 +855,7 @@ script brain (a0: *S) (encoding: word_offsets) {{
     let msgs = msgs(&src);
     assert!(
         msgs.iter().any(|m| m.contains("[script.no-epilogue]")),
-        "a park draws every frame — it needs the epilogue: {msgs:?}"
+        "a park draws every frame, it needs the epilogue: {msgs:?}"
     );
 }
 

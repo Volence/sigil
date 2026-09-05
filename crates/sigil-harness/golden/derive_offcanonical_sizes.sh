@@ -41,7 +41,7 @@ if [[ -z "${CARGO_TARGET_DIR:-}" ]]; then
     echo "ERROR: this derivation has no build directory, and it will not pick one." >&2
     echo "       consulted  CARGO_TARGET_DIR   (unset)" >&2
     echo "       declined   $SIGIL_ROOT/target" >&2
-    echo "                  — a checkout's shared target/, written and relinked by" >&2
+    echo "                 , a checkout's shared target/, written and relinked by" >&2
     echo "                    whichever lane last built there. The size tables are golden" >&2
     echo "                    provenance: derived with a foreign binary they do not fail," >&2
     echo "                    they freeze wrong expectations under this tree's name." >&2
@@ -70,7 +70,7 @@ elif [[ -n "${AEON_DIR:-}" ]]; then
     printf '# AEON_DIR=%s (step 1: explicit AEON_DIR; %s is not reachable from this copy)\n' \
         "$AEON" "$SUITE_PATHS" >&2
 else
-    printf 'suite-paths: REFUSING — cannot locate the aeon checkout.\n' >&2
+    printf 'suite-paths: REFUSING, cannot locate the aeon checkout.\n' >&2
     printf '       consulted  AEON_DIR              (unset)\n' >&2
     printf '       tried      %s   (not readable, so the full precedence is unavailable)\n' "$SUITE_PATHS" >&2
     printf '       Export AEON_DIR to the aeon checkout. This does NOT fall back to a live\n' >&2
@@ -85,7 +85,7 @@ if [[ -z "${SIGIL_EMIT:-}" || ! -x "${SIGIL_EMIT:-}" ]]; then
     exit 1
 fi
 
-echo "== Stage-3 P4a — sigil-native off-canonical size derivation (asl-free) =="
+echo "== Stage-3 P4a, sigil-native off-canonical size derivation (asl-free) =="
 echo "   aeon: $AEON  ($(cd "$AEON" && git rev-parse --short HEAD 2>/dev/null || echo '?'))"
 
 # TARGET_DIR was resolved at the top of this script, before anything was reached for.
@@ -95,4 +95,4 @@ echo "   aeon: $AEON  ($(cd "$AEON" && git rev-parse --short HEAD 2>/dev/null ||
 AEON_DIR="$AEON" SIGIL_EMIT="$SIGIL_EMIT" \
     "$TARGET_DIR/release/derive_offcanon" "$HERE/offcanonical_sizes"
 
-echo "== done — tables in $HERE/offcanonical_sizes (commit them; sigil-native provenance) =="
+echo "== done, tables in $HERE/offcanonical_sizes (commit them; sigil-native provenance) =="

@@ -36,7 +36,7 @@ use sigil_harness::test_support::reference_tree_for_profile;
 #[test]
 fn every_shipped_shape_satisfies_its_declared_alignment() {
     let shapes = native::shipped_shapes();
-    assert!(!shapes.is_empty(), "shipped_shapes() enumerated nothing — a gate over no shapes gates nothing");
+    assert!(!shapes.is_empty(), "shipped_shapes() enumerated nothing, a gate over no shapes gates nothing");
 
     let mut aeon = None;
     for (_, profile) in &shapes {
@@ -120,7 +120,7 @@ fn a_doctored_pin_residue_does_not_move_a_packed_section() {
     let doctored_base = listed_addr(&built.listing, PROBE);
     assert_eq!(
         doctored_base, control_base,
-        "`{PROBE}` moved with the pin's residue — the frozen table is still an alignment input"
+        "`{PROBE}` moved with the pin's residue, the frozen table is still an alignment input"
     );
     assert_eq!(built.rom, control.rom, "the doctored pin must not move a byte");
 }

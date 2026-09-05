@@ -144,7 +144,7 @@ impl PatchTable {
         if slot.bound {
             self.diags.push(err(
                 span,
-                format!("[patch.double-bound] patch slot `{name}` is already bound — a slot may be bound only once"),
+                format!("[patch.double-bound] patch slot `{name}` is already bound, a slot may be bound only once"),
             ));
             return;
         }

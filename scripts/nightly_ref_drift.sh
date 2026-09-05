@@ -134,7 +134,7 @@ resolve_or_die() {           # resolve_or_die <var-to-set> <what> <fn> [args…]
     err=$(mktemp); out=$("$@" 2>"$err"); rc=$?
     if (( rc != 0 )); then
         sed 's/^/    /' "$err" >> "$LOG"
-        note "COULD NOT RUN: $what could not be resolved — $(tr '\n' ' ' < "$err" | cut -c1-300)"
+        note "COULD NOT RUN: $what could not be resolved, $(tr '\n' ' ' < "$err" | cut -c1-300)"
         rm -f "$err"; exit 2
     fi
     rm -f "$err"; printf -v "$__var" '%s' "$out"
@@ -209,7 +209,7 @@ git -C "$SIGIL_DRIFT" checkout --force --detach "$SIGIL_SHA" >> "$LOG" 2>&1 \
 # after a docs-only commit is the normal steady state.
 ( cd "$SIGIL_DRIFT" && cargo build --release --bin sigil --bin emit_sound_blob ) \
     >> "$STATE/build.log" 2>&1 \
-    || { note "COULD NOT RUN: the assembler did not build at sigil ${SIGIL_SHA:0:8} — see $STATE/build.log"; exit 2; }
+    || { note "COULD NOT RUN: the assembler did not build at sigil ${SIGIL_SHA:0:8}, see $STATE/build.log"; exit 2; }
 SIGIL_BIN="$CARGO_TARGET_DIR/release/sigil"
 VERSION_OUT=$("$SIGIL_BIN" --version 2>&1) \
     || { note "COULD NOT RUN: the built assembler cannot report its version"; exit 2; }
@@ -265,7 +265,7 @@ PY
     [[ "$out" != "unmeasured" ]] && MEASURED=$((MEASURED + 1))
 done
 if (( MEASURED == 0 )); then
-    record_unmeasured "no shape was built at $AT (provisioning exited $PROVISION_RC) — see $STATE/provision.log"
+    record_unmeasured "no shape was built at $AT (provisioning exited $PROVISION_RC), see $STATE/provision.log"
 fi
 
 # ── the reference-path sweep ─────────────────────────────────────────────────────
@@ -312,8 +312,8 @@ STATUS=$(sed -n 's/^STATUS: //p' <<< "$REPORT_OUT" | head -1)
 SWEEP_LINE=$(head -1 <<< "$SWEEP_OUT")
 case "$SWEEP_RC" in
     0) SWEEP_WORD="paths clean" ;;
-    1) SWEEP_WORD="PATH DRIFT — $SWEEP_LINE" ;;
-    *) SWEEP_WORD="paths NOT SWEPT — $SWEEP_LINE" ;;
+    1) SWEEP_WORD="PATH DRIFT, $SWEEP_LINE" ;;
+    *) SWEEP_WORD="paths NOT SWEPT, $SWEEP_LINE" ;;
 esac
 
 # Both halves are named in one line, because a green half must never stand in for the

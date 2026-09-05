@@ -87,7 +87,7 @@ fn a_variable_may_be_reassigned_and_the_three_spellings_are_one_class() {
         assert_eq!(
             diags(body),
             Vec::<String>::new(),
-            "asl lists `{}` clean — a reassignable symbol MUST stay reassignable",
+            "asl lists `{}` clean, a reassignable symbol MUST stay reassignable",
             body.replace('\n', " / ")
         );
     }
@@ -159,7 +159,7 @@ fn the_class_is_the_directive_and_not_the_value_type() {
     ] {
         assert!(
             !accepted(body),
-            "asl reports #2030 for {what} — the value's TYPE does not enter the rule"
+            "asl reports #2030 for {what}, the value's TYPE does not enter the rule"
         );
     }
     for (body, what) in [
@@ -168,7 +168,7 @@ fn the_class_is_the_directive_and_not_the_value_type() {
     ] {
         assert!(
             accepted(body),
-            "asl lists {what} clean — a string or float variable reassigns like any other"
+            "asl lists {what} clean, a string or float variable reassigns like any other"
         );
     }
 }
@@ -254,7 +254,7 @@ fn a_macro_body_declares_into_the_callers_class_space() {
 fn a_repeated_set_and_a_seeded_define_are_not_crossings() {
     assert!(
         accepted("Cm\tset\t0\n\trept\t2\nCm\tset\tCm+1\n\tendm\n\tdc.b\tCm"),
-        "asl lists a `rept`ed `set` clean — the same line running twice is reassignment"
+        "asl lists a `rept`ed `set` clean, the same line running twice is reassignment"
     );
     let opts = Options {
         defines: vec![("Seeded".to_string(), 1)],
@@ -263,7 +263,7 @@ fn a_repeated_set_and_a_seeded_define_are_not_crossings() {
     assert!(
         assemble(&format!("{HEAD}Seeded\tequ\t2\n\tdc.b\tSeeded\n"), &opts).is_ok(),
         "a seeded define carries no class, so an in-source `equ` of it establishes one \
-         rather than colliding with a seed — `Options::defines`' own doc says an in-file \
+         rather than colliding with a seed, `Options::defines`' own doc says an in-file \
          `=`/`equ` of such a name WINS, which the code-gate and game-config overrides rely on"
     );
 }
@@ -330,7 +330,7 @@ fn a_declaration_the_pass_never_reaches_is_not_a_redefinition() {
         diags("Bi\tequ\t7\n\tif\t1\nBi\tequ\t9\n\tendif\n\tdc.w\tBi")
             .iter()
             .any(|m| m == "symbol double defined: `Bi`"),
-        "the EXECUTED twin of the same shape IS #1000 — without this row the test above \
+        "the EXECUTED twin of the same shape IS #1000, without this row the test above \
          proves only that the front end refuses nothing"
     );
 }
@@ -386,7 +386,7 @@ fn an_expansion_localizes_a_pc_label_and_an_enum_member_but_not_an_equ() {
         assert_eq!(
             diags(body),
             Vec::<String>::new(),
-            "asl lists {what} clean — the name is local to the expansion and never enters \
+            "asl lists {what} clean, the name is local to the expansion and never enters \
              its symbol table, so refusing it refuses source the reference assembler builds \
              (this exact shape is 97 sites in the s2 corpus)"
         );
@@ -406,7 +406,7 @@ fn an_expansion_localizes_a_pc_label_and_an_enum_member_but_not_an_equ() {
         let want = format!("symbol double defined: `{name}`");
         assert!(
             diags(body).contains(&want),
-            "asl reports #1000 for {what} — the exemption is for PC labels and `enum` \
+            "asl reports #1000 for {what}, the exemption is for PC labels and `enum` \
              members, NOT for everything an expansion happens to contain. Got: {:?}",
             diags(body)
         );

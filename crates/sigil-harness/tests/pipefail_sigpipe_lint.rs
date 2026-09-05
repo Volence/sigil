@@ -834,7 +834,7 @@ fn no_pipefail_decision_rests_on_an_early_exiting_reader() {
     // that is the exact shape of failure this whole class is about.
     assert!(
         units > 20,
-        "COULD NOT MEASURE: only {units} shell unit(s) found — the walk did not reach \
+        "COULD NOT MEASURE: only {units} shell unit(s) found, the walk did not reach \
          this repo's scripts, so its silence says nothing"
     );
     assert!(
@@ -863,9 +863,9 @@ fn no_pipefail_decision_rests_on_an_early_exiting_reader() {
              across {units} shell unit(s).\n\n\
              The last stage exits before its input is exhausted, the writer is killed by \
              SIGPIPE and exits 141, and `pipefail` hands 141 back as the pipeline's \
-             status — so a MATCH reads as a NON-MATCH.\n\n\
+             status, so a MATCH reads as a NON-MATCH.\n\n\
              It fires when the writer still owes output past the earliest match, and \
-             that — NOT machine load — is what decides it. Measured serially with no \
+             that, NOT machine load, is what decides it. Measured serially with no \
              concurrency at all, a bash `printf` writer gives 0/400 at 4.8 KB and \
              394/400 at 14.4 KB. Do not excuse a site because it runs once, alone, in \
              a nightly lane: a writer enumerating a large corpus there is in the \
@@ -999,7 +999,7 @@ fn a_substitution_assignment_really_does_carry_141_under_errexit() {
         aborted > 0,
         "COULD NOT MEASURE: `v=$(yes hello | head -1)` under `set -euo pipefail` reached \
          the next statement all 5 times (exit codes {codes:?}). Either SIGPIPE is being \
-         suppressed on this box or the shell is not bash — in both cases this file's \
+         suppressed on this box or the shell is not bash, in both cases this file's \
          premise went unverified, which is not the same as safe"
     );
     assert!(

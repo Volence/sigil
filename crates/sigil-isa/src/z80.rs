@@ -693,7 +693,7 @@ pub fn encode(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
                 Ok(vec![0xC7 | (*p & 0x38)])
             } else {
                 Err(IsaError::OperandRange(format!(
-                    "rst target must be one of $00,$08,$10,$18,$20,$28,$30,$38 — got {p:#04X}"
+                    "rst target must be one of $00,$08,$10,$18,$20,$28,$30,$38, got {p:#04X}"
                 )))
             }
         }

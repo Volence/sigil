@@ -81,7 +81,7 @@ fn scanned_files() -> Vec<PathBuf> {
     let crates = crates_dir();
     assert!(
         crates.is_dir(),
-        "COULD NOT MEASURE: the crates tree is not at {} — this lint scanned nothing, \
+        "COULD NOT MEASURE: the crates tree is not at {}, this lint scanned nothing, \
          which is not the same as finding nothing",
         crates.display()
     );
@@ -247,7 +247,7 @@ fn announcement_sites() -> (Vec<Site>, usize) {
 fn every_announced_early_return_carries_the_skip_marker() {
     assert!(
         !SKIP_MARKER.is_empty(),
-        "SKIP_MARKER is empty — every string starts with it and this lint is vacuous"
+        "SKIP_MARKER is empty, every string starts with it and this lint is vacuous"
     );
 
     let (sites, files) = announcement_sites();
@@ -257,7 +257,7 @@ fn every_announced_early_return_carries_the_skip_marker() {
     // failure this whole file exists to prevent.
     assert!(
         files > 0,
-        "COULD NOT MEASURE: no .rs file in scope — the walker found no test tree"
+        "COULD NOT MEASURE: no .rs file in scope, the walker found no test tree"
     );
     assert!(
         !sites.is_empty(),
@@ -329,7 +329,7 @@ fn the_nightly_script_derives_the_marker_from_the_constant() {
     let script_path = ws.join("scripts/nightly_source_gates.sh");
     let script = std::fs::read_to_string(&script_path).unwrap_or_else(|e| {
         panic!(
-            "COULD NOT MEASURE: {} unreadable ({e}) — the second enforcer of the \
+            "COULD NOT MEASURE: {} unreadable ({e}), the second enforcer of the \
              zero-skip bar could not be checked, which is not the same as it being correct",
             script_path.display()
         )
@@ -362,7 +362,7 @@ fn the_nightly_script_derives_the_marker_from_the_constant() {
 
     assert!(
         script.contains("SKIP_MARKER") && script.contains(support_rel),
-        "{} no longer derives the marker from {support_rel} — the two enforcers of the \
+        "{} no longer derives the marker from {support_rel}, the two enforcers of the \
          zero-skip bar have gone back to independent copies that can drift",
         script_path.display()
     );
@@ -371,7 +371,7 @@ fn the_nightly_script_derives_the_marker_from_the_constant() {
     for retyped in ["grep -q 'skip:'", "grep -qF 'skip:'", "grep -c 'skip:'"] {
         assert!(
             !script.contains(retyped),
-            "{} still greps a retyped {retyped:?} — that copy is what drifts away from the constant",
+            "{} still greps a retyped {retyped:?}, that copy is what drifts away from the constant",
             script_path.display()
         );
     }

@@ -48,7 +48,7 @@ impl<'a> Evaluator<'a> {
                         span,
                         format!(
                             "[{tag}.byte-order] {tag} input has a multi-byte scalar with no committed \
-                             byte order — build it from raw bytes (embed/bytes)"
+                             byte order, build it from raw bytes (embed/bytes)"
                         ),
                     );
                     return None;

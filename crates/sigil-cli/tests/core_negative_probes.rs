@@ -200,7 +200,7 @@ fn doctored_shift_count_produces_different_bytes_than_genuine() {
     let doctored_bytes = &doctored.section("core").expect("core section").bytes;
     assert_ne!(
         genuine_bytes, doctored_bytes,
-        "a doctored `asl.l #7` must emit different bytes than the genuine `asl.l #8` — \
+        "a doctored `asl.l #7` must emit different bytes than the genuine `asl.l #8`, \
          else the byte gate could never catch this transcription class"
     );
 }
@@ -246,7 +246,7 @@ fn wrong_base_map_places_the_section_at_a_different_address() {
     assert_eq!(wrong_core.lma, 0x2798, "the doctored map must place core at $2798");
     assert_ne!(
         real_core.lma, wrong_core.lma,
-        "placement must genuinely move with the map base — not be an echo/hardcode"
+        "placement must genuinely move with the map base, not be an echo/hardcode"
     );
 
     let real_linked = link_placed(real_sections);
@@ -261,11 +261,11 @@ fn wrong_base_map_places_the_section_at_a_different_address() {
     // reference window would fail loudly).
     assert_ne!(
         real_bytes, wrong_bytes,
-        "a wrong base must shift the pc-relative branch displacements — placement is real"
+        "a wrong base must shift the pc-relative branch displacements, placement is real"
     );
     assert_ne!(
         real_linked.section("core").unwrap().lma,
         wrong_linked.section("core").unwrap().lma,
-        "the LMA must differ between the two placements — placement is real, not an echo"
+        "the LMA must differ between the two placements, placement is real, not an echo"
     );
 }

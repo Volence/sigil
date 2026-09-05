@@ -568,7 +568,7 @@ fn collision_lookup_undoctored_compile_equals_the_reference_window() {
     assert_eq!(
         section.bytes,
         collision_ref_window(&refrom),
-        "the genuine fixtures must reproduce the reference window — otherwise every \
+        "the genuine fixtures must reproduce the reference window, otherwise every \
          assert_ne! probe in this file passes for the wrong reason"
     );
 }
@@ -585,7 +585,7 @@ fn vdp_init_undoctored_compile_equals_the_reference_window() {
     assert_eq!(
         section.bytes,
         vdp_init_ref_window(&refrom),
-        "the genuine fixtures must reproduce the reference window — otherwise every \
+        "the genuine fixtures must reproduce the reference window, otherwise every \
          assert_ne! probe in this file passes for the wrong reason"
     );
 }

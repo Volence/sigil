@@ -99,7 +99,7 @@ fn every_comptime_toggle_is_walked_in_both_polarities() {
             .unwrap_or_else(|| panic!("no shipped shape defines `{value}`"));
         assert!(
             vals.len() >= 2,
-            "`{value}` is {vals:?} in every shipped shape — the game-config axis \
+            "`{value}` is {vals:?} in every shipped shape, the game-config axis \
              collapsed, so a size-dependent lowering is walked in one shape only"
         );
     }

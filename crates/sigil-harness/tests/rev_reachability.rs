@@ -478,7 +478,7 @@ fn the_git_oracle_reads_the_remote_rather_than_the_local_tracking_ref() {
     assert_ne!(moved, tip);
 
     let cached = git(&clone, &["rev-parse", "refs/remotes/origin/master"]);
-    assert_eq!(cached, tip, "the tracking ref is still the old answer — that is the point");
+    assert_eq!(cached, tip, "the tracking ref is still the old answer, that is the point");
 
     // The remote has moved and this clone has not fetched it, so the tip is not here to
     // compute ancestry against. That is unmeasurable, and it must SAY so.

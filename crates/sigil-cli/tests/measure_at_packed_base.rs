@@ -96,7 +96,7 @@ fn fourteen_bytes_of_upstream_code_growth_still_builds() {
         .expect("shadow copy with the injected growth");
     let grown_rom = build(grown.root(), label, &profile).unwrap_or_else(|e| {
         panic!(
-            "14 bytes of upstream code growth must BUILD — the layout walk measured a \
+            "14 bytes of upstream code growth must BUILD, the layout walk measured a \
              section at a substitute base and refused an innocent pair: {e}"
         )
     })

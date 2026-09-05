@@ -349,7 +349,7 @@ pub fn resolve_program_region_ends(
                 level: Level::Error,
                 message: format!(
                     "[region.chain-cycle] a cross-module `after(..)` chain does not converge \
-                     (regions: {}) — an `after(..)` cycle spans modules",
+                     (regions: {}), an `after(..)` cycle spans modules",
                     names.join(", ")
                 ),
                 primary: region_modules[0].1.module.span,
@@ -465,7 +465,7 @@ fn resolve_one(
                 level: Level::Error,
                 message: format!(
                     "[region.not-w-addressable] region `{name}` `[${base:08X}, ${limit:08X})` is not \
-                     fully `.w`-addressable — some byte's low word has bit 15 clear (would resolve to ROM)"
+                     fully `.w`-addressable, some byte's low word has bit 15 clear (would resolve to ROM)"
                 ),
                 primary: decl.span,
             });
@@ -596,7 +596,7 @@ impl Layout {
                         level: Level::Warning,
                         message: format!(
                             "[layout.odd-field] field `{}` needs an even address but lands at \
-                             ${:08X} (odd) — add an explicit `pad(1)` or `@align(2)` before it",
+                             ${:08X} (odd), add an explicit `pad(1)` or `@align(2)` before it",
                             f.name, self.cursor
                         ),
                         primary: f.span,
@@ -631,7 +631,7 @@ impl Layout {
                         message: format!(
                             "[vars.shape-divergent] this conditional field group's arms differ in size \
                              ({then_sz} vs {else_sz} bytes), so every field after it moves between \
-                             build shapes — declare the divergence with `@shape_divergent`"
+                             build shapes, declare the divergence with `@shape_divergent`"
                         ),
                         primary: *span,
                     });
@@ -738,7 +738,7 @@ pub fn check_single_owner(modules: &[(&str, &ast::File)]) -> Vec<Diagnostic> {
                                 level: Level::Error,
                                 message: format!(
                                     "[region.multiple-owners] region `{region}` has `vars` blocks in \
-                                     both module `{prev}` and module `{mid}` — all `vars` for a region \
+                                     both module `{prev}` and module `{mid}`, all `vars` for a region \
                                      must live in one module"
                                 ),
                                 primary: v.span,

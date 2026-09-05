@@ -473,7 +473,7 @@ impl<'a> Evaluator<'a> {
             (true, false) => self.error(
                 span,
                 format!(
-                    "a register is not a valid `{}` argument — only a `Reg` parameter accepts a register",
+                    "a register is not a valid `{}` argument, only a `Reg` parameter accepts a register",
                     type_display(pty)
                 ),
             ),
@@ -489,7 +489,7 @@ impl<'a> Evaluator<'a> {
             (true, false) => self.error(
                 span,
                 format!(
-                    "a label is not a valid `{}` argument — only a `Label` parameter accepts a label",
+                    "a label is not a valid `{}` argument, only a `Label` parameter accepts a label",
                     type_display(pty)
                 ),
             ),
@@ -549,8 +549,8 @@ impl<'a> Evaluator<'a> {
                     if seen_named {
                         self.error(
                             arg.span,
-                            "a positional argument after a named argument is not allowed \
-                             — positional arguments must come first",
+                            "a positional argument after a named argument is not allowed, \
+                             positional arguments must come first",
                         );
                     } else if pos >= n {
                         self.error(arg.span, "too many arguments");

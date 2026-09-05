@@ -225,7 +225,7 @@ impl Parser {
     fn warn_dangling_doc(&mut self, span: Span) {
         self.warn_at(
             span,
-            "[doc.dangling] this `///` doc comment attaches to nothing — docs go on \
+            "[doc.dangling] this `///` doc comment attaches to nothing, docs go on \
              the line(s) directly above an item (use `//` for an ordinary comment)",
         );
     }
@@ -327,7 +327,7 @@ impl Parser {
                 self.diag_at(
                     a.span,
                     format!(
-                        "[attr.form] `@{}` takes positional arguments — a `name:` here is \
+                        "[attr.form] `@{}` takes positional arguments, a `name:` here is \
                          read by nothing",
                         attr.name
                     ),
@@ -351,14 +351,14 @@ impl Parser {
         if attr.name == "cycles_exact" && !attr.args.is_empty() {
             self.diag_at(
                 attr.span,
-                "[cycles.form] `@cycles_exact` takes no arguments — it proves every \
+                "[cycles.form] `@cycles_exact` takes no arguments, it proves every \
                  path through the proc costs the same, whatever that cost is",
             );
         }
         if attr.name == "noreturn" && !attr.args.is_empty() {
             self.diag_at(
                 attr.span,
-                "[attr.form] `@noreturn` takes no arguments — it is a checked claim that \
+                "[attr.form] `@noreturn` takes no arguments, it is a checked claim that \
                  no path returns (`[noreturn.returns]` proves it on the body)",
             );
         }
@@ -369,7 +369,7 @@ impl Parser {
         if attr.name == "resumable" && !attr.args.is_empty() {
             self.diag_at(
                 attr.span,
-                "[attr.form] `@resumable` takes no arguments — its register-state set is \
+                "[attr.form] `@resumable` takes no arguments, its register-state set is \
                  the proc's own `clobbers(...)`/`out(...)` contract, and the stackless \
                  guarantee is proven on the body (`[resumable.stack-op]`)",
             );
@@ -381,7 +381,7 @@ impl Parser {
         if attr.name == "continuation" && !attr.args.is_empty() {
             self.diag_at(
                 attr.span,
-                "[attr.form] `@continuation` takes no arguments — its register-state set is \
+                "[attr.form] `@continuation` takes no arguments, its register-state set is \
                  the proc's own `clobbers(...)` contract, declared (trusted), not proven",
             );
         }
@@ -1564,7 +1564,7 @@ impl Parser {
                 self.diag_at(
                     esp,
                     format!(
-                        "unknown dispatch encoding `{other}` — valid encodings are \
+                        "unknown dispatch encoding `{other}`, valid encodings are \
                          `word_offsets` and `long_ptrs`"
                     ),
                 );
@@ -1699,7 +1699,7 @@ impl Parser {
             self.diag_at(
                 sp,
                 "`pad_to(N)` derives its width from a struct-relative offset and belongs to a \
-                 struct body; a `vars` region places at an address — use `pad(N)` for a \
+                 struct body; a `vars` region places at an address, use `pad(N)` for a \
                  fixed-width run, or `@align(N)` to move the region cursor",
             );
             let span = fspan.merge(self.prev_span());
@@ -2078,7 +2078,7 @@ impl Parser {
                 let sp = self.prev_span();
                 let (regs, flags, conds, types) = self.out_list();
                 if !flags.is_empty() || !conds.is_empty() {
-                    self.diag_at(sp, "`inout(...)` takes only registers and `rN: T` types — no `carry:`/`if cc` forms (an in-out value is unconditional)".to_string());
+                    self.diag_at(sp, "`inout(...)` takes only registers and `rN: T` types, no `carry:`/`if cc` forms (an in-out value is unconditional)".to_string());
                 }
                 inout = Some(regs);
                 inout_types = types;
@@ -2109,7 +2109,7 @@ impl Parser {
         let mut out = Vec::new();
         if self.at(&Tok::RParen) {
             let sp = self.span();
-            self.diag_at(sp, format!("`{what}()` is empty — name at least one context, or drop the clause"));
+            self.diag_at(sp, format!("`{what}()` is empty, name at least one context, or drop the clause"));
         } else {
             loop {
                 let sp = self.span();
@@ -2180,7 +2180,7 @@ impl Parser {
                 other => {
                     self.diag_at(
                         field_span,
-                        format!("unknown `context` field `{other}` — a context body is `acquire = …` + `release = …` (or `released_by_rte`), or `granted`"),
+                        format!("unknown `context` field `{other}`, a context body is `acquire = …` + `release = …` (or `released_by_rte`), or `granted`"),
                     );
                     // Consume a `= expr` if one follows so recovery stays in step.
                     if self.eat(&Tok::Eq) { let _ = self.expr(); }
@@ -2194,11 +2194,11 @@ impl Parser {
         // answers the same question `release` does, and it is meaningless on a
         // granted context (nothing is acquired, so nothing is released).
         if rte_released && granted {
-            self.diag_at(span, format!("`context {name}` is `granted` AND `released_by_rte` — a granted context has no bracket to release, and no `rte` can discharge a hold nothing took"));
+            self.diag_at(span, format!("`context {name}` is `granted` AND `released_by_rte`, a granted context has no bracket to release, and no `rte` can discharge a hold nothing took"));
             rte_released = false;
         }
         if rte_released && release.is_some() {
-            self.diag_at(span, format!("`context {name}` names BOTH `release = …` and `released_by_rte` — the release is either spliced code or the exception return, and a context that names both says the hold ends twice. Drop one."));
+            self.diag_at(span, format!("`context {name}` names BOTH `release = …` and `released_by_rte`, the release is either spliced code or the exception return, and a context that names both says the hold ends twice. Drop one."));
             release = None;
         }
         let kind = match (granted, rte_released, acquire, release) {
@@ -2210,12 +2210,12 @@ impl Parser {
             }
             (true, _, None, None) => ContextKind::Granted,
             (true, ..) => {
-                self.diag_at(span, format!("`context {name}` is `granted` AND names acquire/release — a granted context has no compiler-owned bracket"));
+                self.diag_at(span, format!("`context {name}` is `granted` AND names acquire/release, a granted context has no compiler-owned bracket"));
                 ContextKind::Granted
             }
             (false, _, a, _) => {
                 let missing = if a.is_none() { "acquire" } else { "release" };
-                self.diag_at(span, format!("`context {name}` is missing `{missing} = …` — an acquired context needs both halves (or spell the release half `released_by_rte`, or the whole context `granted`)"));
+                self.diag_at(span, format!("`context {name}` is missing `{missing} = …`, an acquired context needs both halves (or spell the release half `released_by_rte`, or the whole context `granted`)"));
                 // Recover as granted: the name still resolves, so downstream
                 // reports name it rather than an avalanche of "unknown context".
                 ContextKind::Granted
@@ -2255,7 +2255,7 @@ impl Parser {
                 let sp = self.prev_span();
                 let (regs, flags, conds, types) = self.out_list();
                 if !flags.is_empty() || !conds.is_empty() {
-                    self.diag_at(sp, "`inout(...)` takes only registers and `rN: T` types — no `carry:`/`if cc` forms (an in-out value is unconditional)".to_string());
+                    self.diag_at(sp, "`inout(...)` takes only registers and `rN: T` types, no `carry:`/`if cc` forms (an in-out value is unconditional)".to_string());
                 }
                 inout = Some(regs);
                 inout_types = types;
@@ -2600,7 +2600,7 @@ impl Parser {
                     let sp = self.span();
                     self.diag_at(
                         sp,
-                        "`yield <label>` was retired (D2.30) — write `yield shows <label>` to override the per-frame epilogue, or `yield .label` to name where the next frame resumes",
+                        "`yield <label>` was retired (D2.30), write `yield shows <label>` to override the per-frame epilogue, or `yield .label` to name where the next frame resumes",
                     );
                     self.bump(); // consume the label so the line recovers
                 }
@@ -2976,7 +2976,7 @@ impl Parser {
                                 self.diag_at(
                                     flag_span,
                                     format!(
-                                        "flag `{name}` {reason} — accepted per-site flags: {}",
+                                        "flag `{name}` {reason}, accepted per-site flags: {}",
                                         accepted.join(", ")
                                     ),
                                 );
@@ -3257,7 +3257,7 @@ impl Parser {
                 let sp = self.prev_span();
                 self.diag_at(
                     sp,
-                    "[dispatch.targets-empty] `targets()` names no labels — an enumerated \
+                    "[dispatch.targets-empty] `targets()` names no labels, an enumerated \
                      dispatch that enumerates nothing is a contradiction; drop the clause or \
                      name the reachable labels"
                         .to_string(),
@@ -3909,7 +3909,7 @@ impl Parser {
                         self.diag_at(
                             t.span,
                             format!(
-                                "[test.in-section] comptime test `{}` is inside a section                                  body — tests have no placement; declare it at module level",
+                                "[test.in-section] comptime test `{}` is inside a section                                  body, tests have no placement; declare it at module level",
                                 t.name
                             ),
                         );
@@ -3924,8 +3924,8 @@ impl Parser {
                         self.diag_at(
                             inner.span,
                             format!(
-                                "[section.nested] section `{}` is nested inside section `{name}` \
-                                 — sections do not nest; declare it at module level",
+                                "[section.nested] section `{}` is nested inside section `{name}`, \
+                                 sections do not nest; declare it at module level",
                                 inner.name
                             ),
                         );
@@ -4193,7 +4193,7 @@ impl Parser {
                         let sp = self.span();
                         self.diag_at(
                             sp,
-                            "method calls on an expression result are not supported — \
+                            "method calls on an expression result are not supported, \
                              bind the receiver to a `const` first, then call through the name",
                         );
                         return e;
@@ -4384,7 +4384,7 @@ impl Parser {
                                     let sp = self.prev_span();
                                     self.diag_at(
                                         sp,
-                                        "`..` rest-fill was retired — name each elided field \
+                                        "`..` rest-fill was retired, name each elided field \
                                          instead: `field: default` (S2-D13(h), checkpoint \
                                          ruling)",
                                     );

@@ -68,7 +68,7 @@ pub fn bind_with_ambient(
                     idecl.span,
                     format!(
                         "[contract.unimplemented] interface `{iname}` (declared in `{iowner}`) has \
-                         no `implement` block in this build — a game must implement it"
+                         no `implement` block in this build, a game must implement it"
                     ),
                 ));
             }
@@ -85,7 +85,7 @@ pub fn bind_with_ambient(
                     impls[1].0.span,
                     format!(
                         "[contract.duplicate-impl] interface `{iname}` is implemented more than \
-                         once ({}) — exactly one `implement` is allowed per build",
+                         once ({}), exactly one `implement` is allowed per build",
                         sites.join(", ")
                     ),
                 ));
@@ -259,7 +259,7 @@ fn collect<'a>(
                         d.span,
                         format!(
                             "[contract.duplicate-impl] interface `{}` is declared twice (`{prev}` \
-                             and `{id}`) — an interface name must be unique",
+                             and `{id}`), an interface name must be unique",
                             d.name
                         ),
                     ));

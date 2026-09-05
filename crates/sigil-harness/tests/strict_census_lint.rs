@@ -67,7 +67,7 @@ fn the_strict_gate_census_can_be_taken_and_classifies_every_occurrence() {
     );
     assert!(
         !c.tests.is_empty(),
-        "COULD NOT MEASURE: {} declared site(s) but zero tests attributed to their files — \
+        "COULD NOT MEASURE: {} declared site(s) but zero tests attributed to their files, \
          detector B is inert",
         c.sites.len()
     );
@@ -78,7 +78,7 @@ fn the_strict_gate_census_can_be_taken_and_classifies_every_occurrence() {
     assert!(
         c.missing_reference_paths > c.sites.len(),
         "the missing-reference population ({}) is no longer larger than the unconditional \
-         one ({}) — one of the two classifications has drifted",
+         one ({}), one of the two classifications has drifted",
         c.missing_reference_paths,
         c.sites.len()
     );

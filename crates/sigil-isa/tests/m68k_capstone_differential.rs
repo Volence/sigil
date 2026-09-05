@@ -104,11 +104,11 @@ fn run_pass(pad_word: u16, mode: Accounting, what: &str) {
     // has lost whole instruction lines and is comparing nothing.
     assert!(
         sigil_decodable >= 2048,
-        "{what}: only {sigil_decodable} words decoded by sigil — the decoder lost whole lines"
+        "{what}: only {sigil_decodable} words decoded by sigil, the decoder lost whole lines"
     );
     assert!(
         cap_decodable >= 2048,
-        "{what}: capstone decoded only {cap_decodable} words — the oracle is not answering"
+        "{what}: capstone decoded only {cap_decodable} words, the oracle is not answering"
     );
 
     report(&excl, &hits, &bad, what, mode);

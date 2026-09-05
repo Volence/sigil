@@ -141,7 +141,7 @@ fn ea(rd: &mut Rd, mode: u16, reg: u16, size: Size, allowed: EaSet) -> Result<Op
     if !allowed.contains(class) {
         return Err(unknown(
             rd.word,
-            format!("EA {} is not legal for this operand position — sigil never emits this word", class.spelling()),
+            format!("EA {} is not legal for this operand position, sigil never emits this word", class.spelling()),
         ));
     }
     if class == EaClass::An && size == Size::B {
@@ -860,7 +860,7 @@ fn canonicalize_imms(m: Mnemonic, size: Size, ops: &mut [Operand]) {
 pub fn roundtrip_check(inst: &Instruction, bytes: &[u8]) -> Result<(), String> {
     if let Some(bad) = out_of_range_register(inst) {
         return Err(format!(
-            "round-trip REJECTED: {bad} is out of range (registers are 3-bit, 0..=7) — \
+            "round-trip REJECTED: {bad} is out of range (registers are 3-bit, 0..=7), \
              the encoder masks it into a different register silently\n  instruction: {inst:?}\n  bytes: {bytes:02X?}"
         ));
     }

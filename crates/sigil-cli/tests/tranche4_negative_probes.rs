@@ -154,7 +154,7 @@ fn doctored_af_delete_produces_different_bytes() {
     assert_eq!(
         link_bytes(&genuine),
         window,
-        "control: the UNDOCTORED compile must byte-match s4.debug.bin[{base:#X}..{:#X}] — \
+        "control: the UNDOCTORED compile must byte-match s4.debug.bin[{base:#X}..{:#X}], \
          if it does not, the window address is wrong and the doctored arm below proves nothing",
         base + len
     );

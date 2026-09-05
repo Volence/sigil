@@ -264,7 +264,7 @@ fn run_shape(debug: bool, refname: &str, key: &str) {
     assert_eq!(&full[eor..eor + 2], &native::DEB2_MAGIC, "{shape}: deb2 magic at EndOfRom");
     assert!(
         appendix >= 0x2000,
-        "{shape}: appendix {appendix:#x} too small — has the deb2 symbol table been \
+        "{shape}: appendix {appendix:#x} too small, has the deb2 symbol table been \
          dropped or collapsed? Both canonical shapes must ship it."
     );
 

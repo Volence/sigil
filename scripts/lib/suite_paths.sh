@@ -56,7 +56,7 @@ suite_paths_announce() {
 }
 
 suite_paths_error() {
-    printf 'suite-paths: REFUSING — %s\n' "$1" >&2
+    printf 'suite-paths: REFUSING, %s\n' "$1" >&2
 }
 
 # ── What makes a directory a checkout of a named repo ─────────────────────────────
@@ -84,10 +84,10 @@ suite_paths_why_not() {
     [[ -d $dir ]] || { printf 'no such directory'; return 0; }
     # A linked worktree's `.git` is a FILE, not a directory. Testing for a directory
     # would refuse every worktree, which is the shape most of this suite runs in.
-    [[ -e $dir/.git ]] || { printf 'no .git — that is not a checkout'; return 0; }
+    [[ -e $dir/.git ]] || { printf 'no .git, that is not a checkout'; return 0; }
     while IFS= read -r m; do
         [[ -n $m ]] || continue
-        [[ -e $dir/$m ]] || { printf 'no %s — that is not the %s checkout' "$m" "$name"; return 0; }
+        [[ -e $dir/$m ]] || { printf 'no %s, that is not the %s checkout' "$m" "$name"; return 0; }
     done < <(suite_paths_markers "$name")
     printf ''
 }

@@ -79,6 +79,6 @@ fn include_resolves_against_the_source_file_not_the_current_directory() {
     assert!(
         bytes.windows(2).any(|w| w == [0x12, 0x34]),
         "the included `dc.w $1234` is absent from the output, so the include did not \
-         contribute — a pass here would be vacuous. bytes: {bytes:02x?}"
+         contribute, a pass here would be vacuous. bytes: {bytes:02x?}"
     );
 }

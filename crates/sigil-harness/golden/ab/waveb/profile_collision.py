@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Wave-B collision-heavy profiler drive — deterministic grounded run on s4.debug.bin.
+"""Wave-B collision-heavy profiler drive, deterministic grounded run on s4.debug.bin.
 
 The OJZ scroll test boots Player_1 in DEBUG-FLY (yellow square, no collision), so
 the max-H camera-scroll drive never exercises the sensor lever (Player_Main ~668
 cyc/f, Collision_GetType absent). This drive presses B once to drop into PHYSICS,
 lets Sonic fall onto the OJZ terrain, then holds right so the floor/wall/ceiling
-sensor pairs probe real collision every frame — the BEFORE the collision_lookup
+sensor pairs probe real collision every frame, the BEFORE the collision_lookup
 parcel needs.
 
 Sequence (deterministic from reset, frame-anchored):

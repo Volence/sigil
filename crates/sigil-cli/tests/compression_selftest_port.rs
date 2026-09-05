@@ -204,7 +204,7 @@ fn compression_selftest_debug_region_matches_reference() {
     assert!(
         diags.iter().all(|d| d.level != sigil_span::Level::Error),
         "the module's link asserts must PASS at the real addresses (the abs.w \
-         fit-lock retired at cd8cd15 — any surviving assert is not it): {diags:?}"
+         fit-lock retired at cd8cd15, any surviving assert is not it): {diags:?}"
     );
     let expected = &refrom[base as usize..base as usize + len];
     let section =
@@ -227,7 +227,7 @@ fn compression_selftest_debug_region_matches_reference() {
     assert!(
         fill <= 0x20 && expected[section.bytes.len()..].iter().all(|&b| b == 0),
         "compression_selftest (debug): {fill}-byte window tail is not short all-zero \
-         alignment fill — that is a real length mismatch, not packing"
+         alignment fill, that is a real length mismatch, not packing"
     );
     let expected = &expected[..section.bytes.len()];
     if let Some(i) = (0..expected.len()).find(|&i| section.bytes[i] != expected[i]) {
@@ -271,7 +271,7 @@ fn doctored_cself_sum_diverges_from_reference() {
         linked.section("compression_selftest").expect("linked image must carry the region");
     assert_ne!(
         section.bytes, expected,
-        "a doctored CSELF_PAYLOAD_SUM must change the emitted bytes — the value seam is dead if this matches"
+        "a doctored CSELF_PAYLOAD_SUM must change the emitted bytes, the value seam is dead if this matches"
     );
 }
 

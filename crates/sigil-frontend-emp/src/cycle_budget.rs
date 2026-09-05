@@ -219,21 +219,21 @@ impl BudgetFindingKind {
                  from {min} to {max} cycles"
             ),
             Self::UnboundedLoop => "a loop reaches this instruction again, so the worst-case \
-                 path cost is unbounded — a cycle budget needs a loop-free body"
+                 path cost is unbounded, a cycle budget needs a loop-free body"
                 .to_string(),
             Self::OpaqueCall { mnemonic } => format!(
                 "`{mnemonic}` costs whatever its callee costs, which is not a fact about \
-                 this proc — a cycle budget needs a call-free body"
+                 this proc, a cycle budget needs a call-free body"
             ),
             Self::UnboundedTransfer { mnemonic } => format!(
                 "`{mnemonic}` continues into code outside this proc, so the path's cost is \
-                 not accounted here — a cycle budget needs every path to end at a return \
+                 not accounted here, a cycle budget needs every path to end at a return \
                  (a computed dispatch landing on LOCAL labels can be enumerated with a \
                  `targets(...)` clause; a transfer to a `@noreturn` target ends the path)"
             ),
             Self::ComputedTransfer { mnemonic } => format!(
                 "`{mnemonic}` transfers to a COMPUTED target, so where this path goes is \
-                 data, not structure — the walk cannot enumerate destinations the program \
+                 data, not structure, the walk cannot enumerate destinations the program \
                  text does not name; name the reachable LOCAL labels with a `targets(...)` \
                  clause on the transfer to budget it"
             ),
@@ -242,21 +242,21 @@ impl BudgetFindingKind {
                  not distinguishable here"
             ),
             Self::UnknownOp { mnemonic } => format!(
-                "`{mnemonic}` is not in this CPU's cycle table — add it to `z80_cycles` / \
+                "`{mnemonic}` is not in this CPU's cycle table, add it to `z80_cycles` / \
                  `m68k_cycles` if a budgeted proc legitimately needs it"
             ),
             Self::InlineData => "this body splices data into the code stream, and those \
-                 bytes DECODE as instructions if control reaches them — the control-flow \
+                 bytes DECODE as instructions if control reaches them, the control-flow \
                  model steps over them, so no path through this proc can be costed"
                 .to_string(),
             Self::EmptyBody => "this body has no instructions, so its one path never \
-                 executes a return and there is no path cost to bound — control entering \
+                 executes a return and there is no path cost to bound, control entering \
                  it continues into whatever follows"
                 .to_string(),
             Self::InexactCost { mnemonic } => format!(
                 "`@cycles_exact` needs every instruction to cost one exact number, but \
                  `{mnemonic}`'s charge is a ceiling (data-dependent, or decided by the \
-                 linker's width choice) — a maximum can hold a budget, not an equality"
+                 linker's width choice), a maximum can hold a budget, not an equality"
             ),
         }
     }
@@ -524,7 +524,7 @@ impl DispatchFindingKind {
     pub fn message(&self) -> String {
         match self {
             Self::OnCall { mnemonic } => format!(
-                "`targets(...)` names where control GOES, but `{mnemonic}` is a call — its \
+                "`targets(...)` names where control GOES, but `{mnemonic}` is a call, its \
                  cost is the callee's, which is the opaque-call problem, not this form"
             ),
             Self::Redundant { mnemonic } => format!(
@@ -536,16 +536,16 @@ impl DispatchFindingKind {
                 "`targets(...)` names `{label}`, but no such local label is defined in this proc"
             ),
             Self::Nonlocal { label } => format!(
-                "`targets(...)` names `{label}`, which is not a LOCAL label of this proc — a \
+                "`targets(...)` names `{label}`, which is not a LOCAL label of this proc, a \
                  cross-proc target would also need the callee's cost, so v1 refuses it"
             ),
             Self::Duplicate { label } => format!(
-                "`targets(...)` names `{label}` more than once — an enumeration lists each \
+                "`targets(...)` names `{label}` more than once, an enumeration lists each \
                  reachable label once"
             ),
             Self::Trailing { label } => format!(
                 "`targets(...)` names `{label}`, which closes the proc with no instruction \
-                 after it — a trailing label is a fall-off, not a landing point, so control \
+                 after it, a trailing label is a fall-off, not a landing point, so control \
                  never arrives there through the dispatch"
             ),
         }

@@ -260,7 +260,7 @@ pub fn announce_root(tool: &str, root: &Path) {
     eprintln!("{tool}:   operating on: {operating}");
     eprintln!(
         "{tool}: they differ. A prebuilt binary is a snapshot of its source at link \
-         time — its paths, its flags and its defaults all date from when it was built, \
+         time, its paths, its flags and its defaults all date from when it was built, \
          not from now. If it predates what you are about to ask it, rebuild it in the \
          tree above before trusting this run."
     );
@@ -280,7 +280,7 @@ mod root_derivation {
             .arg(dir)
             .args(args)
             .output()
-            .unwrap_or_else(|e| panic!("git {args:?} could not run in {}: {e} — this gate measures what git resolves, so it cannot be skipped", dir.display()));
+            .unwrap_or_else(|e| panic!("git {args:?} could not run in {}: {e}, this gate measures what git resolves, so it cannot be skipped", dir.display()));
         assert!(
             out.status.success(),
             "git {args:?} failed in {}: {}",
@@ -682,7 +682,7 @@ mod root_derivation {
             assert!(
                 unguarded.is_empty(),
                 "every regeneration step must be followed by aeon_head_unmoved() before the \
-                 next one — the reference tree can move between steps and the resulting \
+                 next one, the reference tree can move between steps and the resulting \
                  mixed-revision freeze is green to every downstream gate. Unguarded: \
                  {unguarded:#?}"
             );

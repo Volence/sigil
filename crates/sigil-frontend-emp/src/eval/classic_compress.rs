@@ -193,7 +193,7 @@ impl<'a> Evaluator<'a> {
                 self.error(
                     span,
                     format!(
-                        "[{name}.data-too-large] {name} input is {len} bytes — the 16-bit moduled \
+                        "[{name}.data-too-large] {name} input is {len} bytes, the 16-bit moduled \
                          header cannot represent more than {max} bytes at this module_size"
                     ),
                 );
@@ -210,7 +210,7 @@ impl<'a> Evaluator<'a> {
             Error::NotWordEven { len } => {
                 self.error(
                     span,
-                    format!("[{name}.word-even] {name} input is {len} bytes — must be word-even (a multiple of 2)"),
+                    format!("[{name}.word-even] {name} input is {len} bytes, must be word-even (a multiple of 2)"),
                 );
             }
             Error::Overflow => {
@@ -470,7 +470,7 @@ impl<'a> Evaluator<'a> {
                 self.error(
                     span,
                     format!(
-                        "[nemesis.tile-granularity] nemesis input is {len} bytes — must be a multiple of \
+                        "[nemesis.tile-granularity] nemesis input is {len} bytes, must be a multiple of \
                          $20 (one 8x8 4bpp tile)"
                     ),
                 );

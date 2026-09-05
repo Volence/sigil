@@ -1752,7 +1752,7 @@ fn cond_out_survives_claim_proves_when_the_test_precedes_the_write() {
     let (_module, diags) = lower(src);
     assert!(
         !has_tag(&diags, "[proc.out-cond-survives-unverifiable]"),
-        "a1 is never written on the !eq path — the survives claim holds: {diags:?}"
+        "a1 is never written on the !eq path, the survives claim holds: {diags:?}"
     );
 }
 
@@ -1906,7 +1906,7 @@ fn a_save_restore_round_trip_carries_the_survives_claim() {
     let (_module, diags) = lower(src);
     assert!(
         !has_tag(&diags, "[proc.out-cond-survives-unverifiable]"),
-        "a1 is restored on the !eq path — the round-trip proof carries: {diags:?}"
+        "a1 is restored on the !eq path, the round-trip proof carries: {diags:?}"
     );
 }
 
@@ -1990,7 +1990,7 @@ fn the_survives_skip_expands_the_clobbers_reglist() {
     let (_module, diags) = lower(src);
     assert!(
         !has_tag(&diags, "[proc.out-cond-survives-unverifiable]"),
-        "a range mention puts d1 in clobbers — no claim to check: {diags:?}"
+        "a range mention puts d1 in clobbers, no claim to check: {diags:?}"
     );
 }
 
@@ -2165,7 +2165,7 @@ fn out_is_byte_neutral() {
     assert_eq!(
         flatten(&m_with),
         flatten(&m_without),
-        "out is metadata — the emitted bytes must be identical"
+        "out is metadata, the emitted bytes must be identical"
     );
 }
 
@@ -2312,7 +2312,7 @@ fn preserves_trailing_preserving_call_defers_not_errors() {
     let (_module, diags) = lower(src);
     assert!(
         !has_tag(&diags, "[proc.preserves-unverifiable]"),
-        "a call-only preserves failure DEFERS to the closure — no per-file error: {diags:?}"
+        "a call-only preserves failure DEFERS to the closure, no per-file error: {diags:?}"
     );
 }
 
@@ -2418,7 +2418,7 @@ fn a_cc_guarded_result_contradicts_preserved_flags() {
     let (_module, diags) = lower(src);
     assert!(
         has_tag(&diags, "[proc.out-preserves-overlap]"),
-        "a cc guard demands CCR carry exit state — preserved flags contradict it: {diags:?}"
+        "a cc guard demands CCR carry exit state, preserved flags contradict it: {diags:?}"
     );
 }
 
@@ -2543,7 +2543,7 @@ fn preserves_sr_ccr_refuses_a_call_outside_the_bracket() {
     let (_module, diags) = lower(src);
     assert!(
         has_tag(&diags, "[proc.preserves-unverifiable]"),
-        "a call returns with the callee's flags — the claim must refuse: {diags:?}"
+        "a call returns with the callee's flags, the claim must refuse: {diags:?}"
     );
 }
 
@@ -3088,7 +3088,7 @@ fn sr_mask_tail_into_owner_label_after_save_fires() {
     let (_m, diags) = lower(src);
     assert!(
         has_tag(&diags, "[proc.preserves-sr-unbalanced]"),
-        "a label past the owner's save is not a safe entry — the mask claim is refused: {diags:?}"
+        "a label past the owner's save is not a safe entry, the mask claim is refused: {diags:?}"
     );
 }
 

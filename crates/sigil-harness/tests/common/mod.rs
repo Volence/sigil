@@ -81,7 +81,7 @@ pub fn reconcile_arms(declared: &[String], exercised: &[&str]) {
         assert!(
             exercised.contains(&name.as_str()),
             "`ensure_generated` drives `{name}`, which this gate does not exercise. Its writes \
-             into the reference tree are unmeasured — add it to the arm table. (derived from {})",
+             into the reference tree are unmeasured, add it to the arm table. (derived from {})",
             native_rs().display()
         );
     }

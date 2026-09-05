@@ -106,7 +106,7 @@ fn a_member_filtered_out_of_the_env_is_reported_by_name() {
     }
     assert!(
         !declared.is_empty(),
-        "the probe swept no members — an empty contract would make it vacuous"
+        "the probe swept no members, an empty contract would make it vacuous"
     );
 }
 

@@ -37,7 +37,7 @@ impl<'a> Evaluator<'a> {
                         *dspan,
                         format!(
                             "bitfield `{ty_name}` field `{fname}`: bitfields have no \
-                             declared defaults — omitted bitfield fields are always 0 \
+                             declared defaults, omitted bitfield fields are always 0 \
                              (just omit it)"
                         ),
                     );
@@ -56,7 +56,7 @@ impl<'a> Evaluator<'a> {
                 self.error(
                     *dspan,
                     format!(
-                        "`{ty_name}` is not a declared struct — `{fname}: default` has no \
+                        "`{ty_name}` is not a declared struct, `{fname}: default` has no \
                          declared default to take"
                     ),
                 );
@@ -161,7 +161,7 @@ impl<'a> Evaluator<'a> {
                                         *dspan,
                                         format!(
                                             "[struct.no-default] struct {ty_name}: field \
-                                             `{fname}` declares no default — give it a value"
+                                             `{fname}` declares no default, give it a value"
                                         ),
                                     );
                                 }
@@ -202,7 +202,7 @@ impl<'a> Evaluator<'a> {
                         let msg = if field.default.is_some() {
                             format!(
                                 "[struct.missing-field] struct {ty_name}: field `{}` was not \
-                                 provided — give it a value, or write `{}: default` to take \
+                                 provided, give it a value, or write `{}: default` to take \
                                  its declared default",
                                 field.name, field.name
                             )

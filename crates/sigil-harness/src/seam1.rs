@@ -178,7 +178,7 @@ pub fn check_banked_carrier_drift(aeon: &Path) -> Result<(), String> {
     for (name, want) in derived {
         let Some((_, got)) = pinned.iter().find(|(n, _)| *n == name) else {
             return Err(format!(
-                "banked_carriers is missing `{name}`, which seam-2 derives — the carrier list \
+                "banked_carriers is missing `{name}`, which seam-2 derives, the carrier list \
                  and the layout have diverged in SHAPE, not just value"
             ));
         };
@@ -756,7 +756,7 @@ pub fn emit_sound_blob(aeon: &Path, out_dir: &Path) -> Result<(), String> {
             return Ok(());
         }
         let msg = format!(
-            "{shape} blob is {got} bytes, expected {want} (${want:X}) — the module bases are \
+            "{shape} blob is {got} bytes, expected {want} (${want:X}), the module bases are \
              DERIVED, so this is the size tripwire, not a placement input: if the size change \
              is intended, re-pin {konst} and the Z80_SOUND_SIZE mirrors"
         );

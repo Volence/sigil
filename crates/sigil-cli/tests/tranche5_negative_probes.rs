@@ -174,7 +174,7 @@ fn misspelled_cross_seam_symbol_is_loud() {
     assert!(
         msgs.iter().any(|m| m.contains("Sound_DrainSfxRungg")),
         "a misspelled cross-seam symbol must fail resolve or link NAMING the typo, not \
-         emit — and not fail for some unrelated unresolved symbol: {msgs:?}"
+         emit, and not fail for some unrelated unresolved symbol: {msgs:?}"
     );
 }
 

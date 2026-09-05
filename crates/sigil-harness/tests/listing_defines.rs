@@ -81,7 +81,7 @@ fn containment_faults(
     } else {
         vec![format!(
             "game `{game}`: {} equate(s) exist in the RELEASE listing and NOT in the \
-             DEBUG listing: {:?}. Release must be a subset of debug — an equate the \
+             DEBUG listing: {:?}. Release must be a subset of debug, an equate the \
              shipping ROM publishes and the shape people debug with does not is a \
              symbol a crash report can name and no debug session can resolve. \
              (Totals: release {} / debug {}. A count check would have passed this \
@@ -123,7 +123,7 @@ fn every_shipped_shape_publishes_its_command_line_defines_in_its_listing() {
     let shapes = native::shipped_shapes();
     assert!(
         !shapes.is_empty(),
-        "shipped_shapes() enumerated nothing — a walk over an empty set is green for \
+        "shipped_shapes() enumerated nothing, a walk over an empty set is green for \
          the one reason that proves nothing"
     );
 
@@ -261,7 +261,7 @@ fn every_games_release_equates_are_contained_in_its_debug_equates() {
         // property.
         if release.is_empty() || debug.is_empty() {
             unmeasured.push(format!(
-                "game `{game}`: equate populations are release {} / debug {} — a \
+                "game `{game}`: equate populations are release {} / debug {}, a \
                  containment check needs both sides to exist",
                 release.len(),
                 debug.len(),

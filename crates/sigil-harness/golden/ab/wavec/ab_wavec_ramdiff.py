@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Wave-C RAM pinpoint — dump full 64K RAM at the two anchors whose crc diverged
+"""Wave-C RAM pinpoint, dump full 64K RAM at the two anchors whose crc diverged
 (render fc=340, soak cam_x=576), so OLD vs NEW can be byte-diffed locally to
 classify the diff (expected: moved return-address bytes in the stack region below
 SSP 0xFFFF00). Saves <NAME>.render340.ram.bin and <NAME>.soak576.ram.bin.

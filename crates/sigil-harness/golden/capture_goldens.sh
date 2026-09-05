@@ -123,7 +123,7 @@ if [[ "$WRITE" == "1" ]]; then
             echo "       read-only golden directory is the usual cause) and re-run." >&2
             exit 1
         fi
-        echo ">> UNJOURNALLED WRITE acknowledged — recorded in $UNJOURNALLED_TRACE"
+        echo ">> UNJOURNALLED WRITE acknowledged, recorded in $UNJOURNALLED_TRACE"
         ;;
     *)
         cat >&2 <<GATE
@@ -136,7 +136,7 @@ ERROR: refusing an unjournalled golden write.
   the tree records that the bar moved, or which aeon revision it was built from.
 
   THE JOURNALLED PATH runs this script for you, then the size tables, then the pins, then
-  the provenance append — and records each step as it completes:
+  the provenance append, and records each step as it completes:
 
     SIGIL_EMIT=<a build dir of this run's own>/release/emit_sound_blob \\
     SIGIL_BUILD=<a build dir of this run's own>/release/sigil \\
@@ -185,7 +185,7 @@ elif [[ -n "${AEON_DIR:-}" ]]; then
     printf '# AEON_DIR=%s (step 1: explicit AEON_DIR; %s is not reachable from this copy)\n' \
         "$AEON" "$SUITE_PATHS" >&2
 else
-    printf 'suite-paths: REFUSING — cannot locate the aeon checkout.\n' >&2
+    printf 'suite-paths: REFUSING, cannot locate the aeon checkout.\n' >&2
     printf '       consulted  AEON_DIR              (unset)\n' >&2
     printf '       tried      %s   (not readable, so the full precedence is unavailable)\n' "$SUITE_PATHS" >&2
     printf '       Export AEON_DIR to the aeon checkout. This does NOT fall back to a live\n' >&2
@@ -225,7 +225,7 @@ else
     echo "       consulted  SIGIL_BUILD        (unset)" >&2
     echo "       consulted  CARGO_TARGET_DIR   (unset)" >&2
     echo "       declined   $SIGIL_ROOT/target/release/sigil" >&2
-    echo "                  — a checkout's shared target/, relinked by whichever lane last" >&2
+    echo "                 , a checkout's shared target/, relinked by whichever lane last" >&2
     echo "                    built there. Goldens captured with it would be attributed to" >&2
     echo "                    this tree and describe whatever binary happened to be sitting" >&2
     echo "                    in that directory." >&2
@@ -320,7 +320,7 @@ on_exit() {
 }
 trap on_exit EXIT
 
-echo "== Flip Stage 1 golden capture — all seven, fresh-build =="
+echo "== Flip Stage 1 golden capture, all seven, fresh-build =="
 echo "   aeon: $AEON  ($(cd "$AEON" && git rev-parse --short HEAD 2>/dev/null || echo '?'))"
 
 # 1-4: the canonical + demo goldens (each writes its own filename; no clobber).
@@ -374,4 +374,4 @@ echo "   restored: $(cd "$AEON" && python3 -c "import zlib;print('s4.bin',f'{zli
 
 # The expected full-file bars live in golden/provenance.toml (the chain tip) —
 # `refreeze --check` is the gate; no CRC literals are maintained here.
-echo "== done — expected bars = the provenance chain tip (golden/provenance.toml; refreeze --check) =="
+echo "== done, expected bars = the provenance chain tip (golden/provenance.toml; refreeze --check) =="

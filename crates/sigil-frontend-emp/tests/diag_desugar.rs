@@ -189,7 +189,7 @@ fn core_long_form_matches_transliteration() {
 module m
 section s (cpu: m68000) {
     // golden = sr.mask, construct = bare sr (byte-identical): the asymmetry is the
-    // model — see the rings-form fixture above.
+    // model, see the rings-form fixture above.
     proc golden () clobbers() preserves(sr.mask) {
         move.w  sr, -(sp)
         cmp.l   #Object_RAM, a0
@@ -227,7 +227,7 @@ fn core_word_form_matches_transliteration() {
 module m
 section s (cpu: m68000) {
     // golden = sr.mask, construct = bare sr (byte-identical): the asymmetry is the
-    // model — see the rings-form fixture above.
+    // model, see the rings-form fixture above.
     proc golden () clobbers(d7) preserves(sr.mask) {
         move.w  sr, -(sp)
         cmp.w   #NUM_DYNAMIC, d7
@@ -268,7 +268,7 @@ fn tst_form_uses_tst_not_cmp() {
 module m
 section s (cpu: m68000) {
     // golden = sr.mask, construct = bare sr (byte-identical): the asymmetry is the
-    // model — see the rings-form fixture above.
+    // model, see the rings-form fixture above.
     proc golden () clobbers(d1) preserves(sr.mask) {
         move.w  sr, -(sp)
         tst.w   d1
@@ -296,7 +296,7 @@ section s (cpu: m68000) {
     assert!(msgs.is_empty(), "clean lower: {msgs:?}");
     let golden = proc_bytes(&m, "s", "golden");
     let construct = proc_bytes(&m, "s", "construct");
-    assert_eq!(construct, golden, "tst form must emit tst.w, not cmp — bytes must match the tst transliteration");
+    assert_eq!(construct, golden, "tst form must emit tst.w, not cmp, bytes must match the tst transliteration");
 }
 
 // ---------------------------------------------------------------------------
@@ -657,13 +657,13 @@ fn the_assert_desugar_rails_diverge_the_exclusions_structural_pin() {
             assert!(
                 target == HANDLER || target == PAGES,
                 "`{stmt}`: an AssertDesugar `{mnemonic}` targets `{target}`, not a rail \
-                 boundary — a returning helper call into a real proc would be silently \
+                 boundary, a returning helper call into a real proc would be silently \
                  dropped from the closure"
             );
             rail_calls += 1;
         }
     }
-    assert!(rail_calls >= 3, "non-vacuity: each rail emits its call+terminal — saw only {rail_calls}");
+    assert!(rail_calls >= 3, "non-vacuity: each rail emits its call+terminal, saw only {rail_calls}");
 
     // (b) assert only: the surviving path is bounded by the divergent terminal.
     let src = "\
@@ -685,7 +685,7 @@ section s (cpu: m68000) {
             assert!(
                 i < skip_idx,
                 "an AssertDesugar `{mnemonic}` at index {i} is at/after `$skip` (index \
-                 {skip_idx}) — a rail call/tail leaked onto the surviving path"
+                 {skip_idx}), a rail call/tail leaked onto the surviving path"
             );
         }
     }

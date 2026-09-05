@@ -198,16 +198,16 @@ pub(crate) fn expand_item(
             // `.b`/`.s` would be a NEW, unratified narrow contract — different
             // refusals for different reasons.
             let tail = if other == Width::L {
-                "there is no `.l` — bare already IS the long form, so a second name \
+                "there is no `.l`, bare already IS the long form, so a second name \
                  for one meaning is a reader tax"
             } else {
-                "there is no `.b`/`.s` — a byte- or short-width multiply would be an \
+                "there is no `.b`/`.s`, a byte- or short-width multiply would be an \
                  unratified THIRD contract, not a duplicate spelling (no consumer yet)"
             };
             return Err(err(
                 span,
                 format!(
-                    "[mul.size] `{mnemonic}.{sfx}` — bare `{mnemonic}` IS the LONG form \
+                    "[mul.size] `{mnemonic}.{sfx}`, bare `{mnemonic}` IS the LONG form \
                      (dst.l = u16(dst.w) × n, all 32 bits) and `.w` is the WORD form \
                      (dst.w = the low word of the product; the upper word is undefined); \
                      {tail}"
@@ -251,7 +251,7 @@ fn expand_mul_const(
         return Err(err(
             span,
             format!(
-                "[mul.const-range] `mul_const` multiplier must fit u16 (0..=$FFFF), got {n} — \
+                "[mul.const-range] `mul_const` multiplier must fit u16 (0..=$FFFF), got {n}, \
                  16×16→32 is the m68k multiply domain (a 32-bit multiplier is a deferred, \
                  rarer problem)"
             ),
@@ -468,7 +468,7 @@ fn expand_mul_bounded(
             return Err(err(
                 span,
                 "[mul.operands] `mul_bounded` takes `dDst, dSrc, #bound` or \
-                 `dDst, dSrc, #bound, dScratch` — the bound is mandatory (an \
+                 `dDst, dSrc, #bound, dScratch`, the bound is mandatory (an \
                  unbounded operand's cost is undecidable: refusal, not a guess)",
             ));
         }
@@ -1345,7 +1345,7 @@ mod tests {
         assert_ne!(
             regs[&Reg::D0] & 0xFFFF_0000,
             0xDEAD_0000,
-            "mulu writes the full product — the upper word is trashed (contract-legal)"
+            "mulu writes the full product, the upper word is trashed (contract-legal)"
         );
     }
 

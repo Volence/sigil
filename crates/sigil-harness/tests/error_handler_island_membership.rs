@@ -66,7 +66,7 @@ fn membership_faults(rows: &[Shape]) -> Vec<String> {
                 format!(
                     "shape `{}`: DECLARES the error_handler island, but its build \
                      defines no `{}` among {} listing symbol(s). The island is not \
-                     placed, its blob label was renamed, or the harvest lost the row — \
+                     placed, its blob label was renamed, or the harvest lost the row, \
                      each of those ships a ROM whose crash screen prints `<unknown>` \
                      for every Offset/Caller and reports nothing else.",
                     r.label,
@@ -78,7 +78,7 @@ fn membership_faults(rows: &[Shape]) -> Vec<String> {
                     "shape `{}`: declares NO error_handler island, yet its build \
                      defines `{}` among {} listing symbol(s). The island and the lean \
                      fault handler are the two arms of one registry `if` sharing a \
-                     placement slot, so this shape has lost the split — and it takes \
+                     placement slot, so this shape has lost the split, and it takes \
                      the no-appendix path, so the blob it now carries would find no \
                      symbol table at all.",
                     r.label,
@@ -111,7 +111,7 @@ fn every_shipped_shape_emits_the_island_label_exactly_when_it_declares_one() {
     let shapes = native::shipped_shapes();
     assert!(
         !shapes.is_empty(),
-        "shipped_shapes() enumerated nothing — a set diff over an empty set is green \
+        "shipped_shapes() enumerated nothing, a set diff over an empty set is green \
          for the one reason that proves nothing"
     );
 
@@ -229,7 +229,7 @@ fn renaming_the_blob_label_in_the_engine_tree_makes_the_gate_red() {
         .unwrap_or_else(|e| panic!("shadow tree: {e}"));
 
     let row = measure(shadow.root(), "demo debug", &profile)
-        .unwrap_or_else(|e| panic!("the doctored tree must still BUILD — a build failure \
+        .unwrap_or_else(|e| panic!("the doctored tree must still BUILD, a build failure \
                                     would make this witness prove something else: {e}"));
     assert!(row.declared, "the profile is untouched, so it still declares the island");
     assert!(!row.emitted, "the label was renamed, so the old name is defined nowhere");

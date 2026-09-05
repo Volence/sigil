@@ -217,7 +217,7 @@ fn assert_region_matches(candidate: &[u8], expected: &[u8], what: &str) {
     // OJZ_BG_ANIM, a 14-byte all-zero plain window (lens sweep, seat GATE, S15).
     assert!(
         !candidate.is_empty(),
-        "{what}: the module emitted NO BYTES — a region gate over an empty window \
+        "{what}: the module emitted NO BYTES, a region gate over an empty window \
          proves nothing. Either the module stopped emitting, or this pin should not exist."
     );
     // Packed placement (Wave-B B-0) may end a region window in ALIGNMENT FILL: the
@@ -234,7 +234,7 @@ fn assert_region_matches(candidate: &[u8], expected: &[u8], what: &str) {
     assert_eq!(
         candidate.len(),
         expected.len(),
-        "{what}: length mismatch — candidate {} bytes, expected {} bytes",
+        "{what}: length mismatch, candidate {} bytes, expected {} bytes",
         candidate.len(),
         expected.len()
     );
@@ -260,7 +260,7 @@ fn sfx_bank_region_matches_reference() {
     assert_eq!(
         guard_assert_count(&link_asserts),
         1,
-        "sfx_bank.emp's ONE surviving ensure must be captured (the bankid co-residency; the SFX_ID_BASE/SFX_COUNT/SFX_TABLE_LEN drift guards retired at F2 — sfx_bank is the derived authority)"
+        "sfx_bank.emp's ONE surviving ensure must be captured (the bankid co-residency; the SFX_ID_BASE/SFX_COUNT/SFX_TABLE_LEN drift guards retired at F2, sfx_bank is the derived authority)"
     );
     assert!(
         assert_diags.iter().all(|d| d.level != sigil_span::Level::Error),
@@ -284,7 +284,7 @@ fn sfx_bank_debug_region_matches_reference() {
     assert_eq!(
         guard_assert_count(&link_asserts),
         1,
-        "sfx_bank.emp's ONE surviving ensure must be captured (the bankid co-residency; the SFX_ID_BASE/SFX_COUNT/SFX_TABLE_LEN drift guards retired at F2 — sfx_bank is the derived authority)"
+        "sfx_bank.emp's ONE surviving ensure must be captured (the bankid co-residency; the SFX_ID_BASE/SFX_COUNT/SFX_TABLE_LEN drift guards retired at F2, sfx_bank is the derived authority)"
     );
     assert!(
         assert_diags.iter().all(|d| d.level != sigil_span::Level::Error),

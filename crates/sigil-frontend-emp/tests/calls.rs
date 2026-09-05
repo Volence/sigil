@@ -193,7 +193,7 @@ fn caller_param_is_defined_on_entry_passes() {
         "Anim",
         &["d3"],
     );
-    assert!(f.is_empty(), "d3 is the caller's own declared input — defined on entry: {f:?}");
+    assert!(f.is_empty(), "d3 is the caller's own declared input, defined on entry: {f:?}");
 }
 
 /// The input is defined on ONE branch of an if but not the other; the call after
@@ -463,7 +463,7 @@ fn movem_save_restore_around_clobbering_call_passes() {
     eff.insert("Munge".to_string(), effect(&["d5", "d7"]));
     let outs: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
     let f = check_live_clobbered(&name, &params, &items, &eff, &outs, &outs);
-    assert!(f.is_empty(), "d5/d7 saved+restored across Munge — not live-clobbered: {f:?}");
+    assert!(f.is_empty(), "d5/d7 saved+restored across Munge, not live-clobbered: {f:?}");
 }
 
 /// A partial save: only d5 is saved/restored, d7 is NOT — d7 held across the same
@@ -514,7 +514,7 @@ fn intervening_out_call_redefines_and_suppresses() {
     let mut outs: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
     outs.insert("FillRow".to_string(), regset(&["d0"])); // ... as its declared OUTPUT
     let f = check_live_clobbered(&name, &params, &items, &eff, &outs, &outs);
-    assert!(f.is_empty(), "FillRow's out(d0) redefines d0 before the read — VSlide must not fire: {f:?}");
+    assert!(f.is_empty(), "FillRow's out(d0) redefines d0 before the read, VSlide must not fire: {f:?}");
 }
 
 /// An unbounded (⊤) effective set clobbers every register — a held value read

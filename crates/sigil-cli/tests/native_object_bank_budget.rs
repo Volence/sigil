@@ -97,6 +97,6 @@ fn doctored_tiny_budget_fails_the_check() {
         .expect("map must declare object_bank");
     region.size = 0x100;
     let err = native::check_object_bank_budget(&resolved, &doctored, &pmap)
-        .expect_err("t24: a 0x100 object-bank budget must overflow — the check is vacuous otherwise");
+        .expect_err("t24: a 0x100 object-bank budget must overflow, the check is vacuous otherwise");
     assert!(err.contains("over by"), "expected an actionable overflow message, got: {err}");
 }

@@ -71,7 +71,7 @@ fn an_undefined_symbol_is_refused_even_where_the_body_ignores_it() {
     let msgs = refusal(&format!("{PRELUDE}\tmove.w\t#fi(zz),d0\n"));
     assert!(
         msgs.iter().any(|m| m.contains("zz")),
-        "the refusal must name the undefined symbol `zz` — got {msgs:?}"
+        "the refusal must name the undefined symbol `zz`, got {msgs:?}"
     );
 }
 
@@ -85,7 +85,7 @@ fn an_undefined_symbol_is_refused_through_a_nested_ignoring_call() {
     let msgs = refusal(&format!("{PRELUDE}\tmove.w\t#hu(zz),d0\n"));
     assert!(
         msgs.iter().any(|m| m.contains("zz")),
-        "the refusal must name the undefined symbol `zz` — got {msgs:?}"
+        "the refusal must name the undefined symbol `zz`, got {msgs:?}"
     );
 }
 
@@ -105,11 +105,11 @@ fn a_register_argument_is_refused_as_a_register_not_as_a_missing_symbol() {
     let msgs = refusal(&format!("{PRELUDE}\tmove.w\t#fi(a1),d0\n"));
     assert!(
         msgs.iter().any(|m| m.contains("register") && m.contains("a1")),
-        "the refusal must name `a1` AS A REGISTER — got {msgs:?}"
+        "the refusal must name `a1` AS A REGISTER, got {msgs:?}"
     );
     assert!(
         !msgs.iter().any(|m| m.contains("unresolved symbol")),
-        "`a1` is a register in value position, not a missing definition — got {msgs:?}"
+        "`a1` is a register in value position, not a missing definition, got {msgs:?}"
     );
 }
 

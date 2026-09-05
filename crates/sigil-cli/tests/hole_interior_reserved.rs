@@ -68,7 +68,7 @@ fn some_shipped_shape_declares_a_live_hole() {
     let names: Vec<&str> = live.iter().map(|(n, _, _)| *n).collect();
     assert!(
         !live.is_empty(),
-        "no shipped shape declares a live `[[hole]]` — every assertion in this file is \
+        "no shipped shape declares a live `[[hole]]`, every assertion in this file is \
          vacuous, and the hole contract has no subject to be checked against"
     );
     eprintln!("live-hole shapes: {names:?}");
@@ -93,7 +93,7 @@ fn every_live_hole_holds_only_its_filler() {
             .unwrap_or_else(|e| panic!("{name}: {e}"));
         checked += 1;
     }
-    assert!(checked > 0, "no shape was measured — see the population guard");
+    assert!(checked > 0, "no shape was measured, see the population guard");
 }
 
 /// RED-FIRST, through the same call the ROM build makes: a hole whose declared right
@@ -194,5 +194,5 @@ fn a_right_edge_past_the_post_hole_data_is_refused() {
             proven += 1;
         }
     }
-    assert!(proven > 0, "no hole was driven red — see the population guard");
+    assert!(proven > 0, "no hole was driven red, see the population guard");
 }

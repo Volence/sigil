@@ -981,7 +981,7 @@ pub fn report(
     mode: Accounting,
 ) {
     for (e, h) in excl.iter().zip(hits) {
-        println!("  excluded `{}`: {h} hit(s) — {}", e.name, e.derivation);
+        println!("  excluded `{}`: {h} hit(s), {}", e.name, e.derivation);
     }
 
     if std::env::var("SIGIL_CAPSTONE_INVENTORY").is_ok() {
@@ -1002,7 +1002,7 @@ pub fn report(
         for (e, h) in excl.iter().zip(hits) {
             assert!(
                 *h > 0,
-                "exclusion `{}` matched nothing in the {what} — a carve-out that no longer \
+                "exclusion `{}` matched nothing in the {what}, a carve-out that no longer \
                  covers anything is a hole waiting to widen; delete it",
                 e.name
             );
@@ -1010,7 +1010,7 @@ pub fn report(
                 assert_eq!(
                     *h, e.sweep_words,
                     "exclusion `{}` covered {h} words but its derivation says the class is {} \
-                     words — the class moved and the derivation no longer describes it",
+                     words, the class moved and the derivation no longer describes it",
                     e.name, e.sweep_words
                 );
             }
