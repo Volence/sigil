@@ -35,7 +35,7 @@
 use std::collections::HashMap;
 use std::path::Path;
 
-use sigil_frontend_as::{assemble_root_relocating, Options as AsOptions};
+use sigil_frontend_as::{assemble_root_relocating_warned, Options as AsOptions};
 use sigil_frontend_emp::lower::LowerOptions;
 use sigil_frontend_emp::resolve::{self, place_sections};
 use sigil_ir::{Cpu, Fragment, Module, Section, SectionPlacement, SymbolTable};
@@ -1469,7 +1469,7 @@ pub fn harvest_engine_ram_addresses(
     Ok(out)
 }
 
-pub fn assemble_as_side(aeon: &Path, profile: &GameProfile) -> Result<Module, String> {
+pub fn assemble_as_side(aeon: &Path, profile: &GameProfile) -> Result<AsSide, String> {
     let root = profile.game_root(aeon);
     // The `.emp`→residual-AS export (Stage-3 P5): harvest the `.emp`-owned engine
     // constants FIRST, then seed them as GUARDED defines so the residual AS reads
@@ -1536,14 +1536,19 @@ pub fn assemble_as_side(aeon: &Path, profile: &GameProfile) -> Result<Module, St
     };
     // Every build CHAINS: sections move after assembly, so the residual AS must keep
     // section-label references SYMBOLIC to relocate (the row-94 parallax pointer).
-    assemble_root_relocating(&root, &opts).map_err(|d| {
-        format!(
-            "assemble (native AS side, {}): {} diagnostics; first: {:?}",
-            profile.name,
-            d.len(),
-            d.first()
-        )
-    })
+    assemble_root_relocating_warned(&root, &opts)
+        .map(|a| AsSide {
+            warnings: a.warnings.iter().map(|d| BuildWarning::from_as(d, &a.sources)).collect(),
+            module: a.module,
+        })
+        .map_err(|f| {
+            format!(
+                "assemble (native AS side, {}): {} diagnostics; first: {:?}",
+                profile.name,
+                f.diags.len(),
+                f.diags.first()
+            )
+        })
 }
 
 /// The FROZEN-source emp placement map: one nominal region per DISTINCT section name
@@ -1782,6 +1787,46 @@ impl BuildWarning {
             primary: d.primary,
         }
     }
+
+    /// The same pairing for a diagnostic raised by the AS front end, located
+    /// through ITS [`SourceMap`](sigil_span::SourceMap).
+    ///
+    /// A separate constructor rather than a second [`collect_warnings`] call,
+    /// because the two location authorities are NOT interchangeable: a
+    /// [`SourceIndex`](sigil_frontend_emp::resolve::manifest::SourceIndex) keys
+    /// paths by `SourceId` from the `.emp` manifest, and an AS span's id counts
+    /// the AS root and its `include` splices. Feeding one map's span to the
+    /// other's index does not fail — it names a DIFFERENT FILE, confidently.
+    fn from_as(d: &sigil_span::Diagnostic, sources: &sigil_span::SourceMap) -> BuildWarning {
+        let id = d
+            .message
+            .strip_prefix('[')
+            .and_then(|rest| rest.split_once(']'))
+            .map(|(id, _)| id.to_string())
+            .unwrap_or_default();
+        BuildWarning {
+            level: d.level,
+            id,
+            location: sources.label(d.primary),
+            message: d.message.clone(),
+            primary: d.primary,
+        }
+    }
+}
+
+/// A finished AS-side assembly: its sections plus any warn-tier diagnostic the
+/// residual AS source raised (an author-written `warning` directive), already
+/// located against the AS front end's own source map.
+///
+/// The warnings ride out of here rather than being dropped at the seam because
+/// the whole point of the warn tier is that the build SUCCEEDS and still says
+/// something. Aeon writes no `warning` today (measured 2026-09-04: zero
+/// directive-column sites across its residual `.asm` files), so this vector is
+/// empty on every shipped shape — which makes the first one anybody adds
+/// visible in the build's tally line the day it is written, instead of silent.
+pub struct AsSide {
+    pub module: Module,
+    pub warnings: Vec<BuildWarning>,
 }
 
 impl std::fmt::Display for BuildWarning {
@@ -3569,7 +3614,11 @@ pub fn build_rom_chained_with_listing(
     let as_side = assemble_as_side(aeon, profile)?;
     let EmpProgram { sections: emp_sections, link_asserts, mut warnings, sources } =
         build_emp(aeon, profile)?;
-    let mut sections: Vec<Section> = as_side.sections;
+    // An author-written `warning` in the residual AS joins the build's warn tier
+    // through the same vector as every `.emp` lint, so it reaches the CLI banner
+    // and the tally line rather than stopping at the seam.
+    warnings.extend(as_side.warnings);
+    let mut sections: Vec<Section> = as_side.module.sections;
     sections.extend(emp_sections);
 
     // Parcel K5: the per-game placement map (`games/<g>/map.toml`) is loaded UP FRONT — its
@@ -3726,8 +3775,11 @@ fn resolve_frozen_sections(aeon: &Path, profile: &GameProfile) -> Result<Vec<Sec
     if profile.sound_on {
         ensure_generated(aeon);
     }
+    // Warnings are the BUILD's to print; this resolve is a placement helper and
+    // renders nothing, so `as_side.warnings` is dropped here on purpose — the
+    // same throwaway treatment the drift warnings below get.
     let as_side = assemble_as_side(aeon, profile)?;
-    let mut sections: Vec<Section> = as_side.sections;
+    let mut sections: Vec<Section> = as_side.module.sections;
     sections.extend(build_emp(aeon, profile)?.sections);
     // K5: the declared map order drives the walk, and the declared anchors are its
     // islands — the SAME inputs the emit path feeds it, so this resolve and the build

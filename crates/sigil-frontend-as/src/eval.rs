@@ -79,14 +79,40 @@ struct MacroDef {
 /// Collected function definitions: name → (params, body tokens).
 type FunctionTable = std::collections::BTreeMap<String, (Vec<String>, Vec<Token>)>;
 
+/// A SUCCESSFUL assembly: the module, plus the warn-tier diagnostics the
+/// converged pass raised and the map their spans resolve against.
+///
+/// The warnings exist because `warning` is a directive the SOURCE AUTHOR writes
+/// to be read (`s2.macros.asm(62)`, `s2.sounddriver.asm(301)`, nine more across
+/// the two disassemblies). A run that raises one still SUCCEEDS — that is the
+/// tier — so `Result::Ok` is the only place it can be carried out, and a plain
+/// `Ok(Module)` would drop the author's message on the floor. The
+/// module-only entry points still exist and still drop them; every one of them
+/// is a caller that renders nothing.
+pub struct Assembled {
+    pub module: Module,
+    /// Every non-error diagnostic the converged pass raised, in raise order.
+    /// One entry per firing, not per PASS: only the converged pass's
+    /// diagnostics are returned, so a `warning` reached twice by sigil's
+    /// two-pass convergence still appears once (asl, which reports per pass,
+    /// prints it twice and counts it once — probe `w4`).
+    pub warnings: Vec<Diagnostic>,
+    /// The root source and every `include`d file, under the ids the warnings'
+    /// spans carry — the half a caller cannot reconstruct, exactly as for
+    /// [`Failure`].
+    pub sources: sigil_span::SourceMap,
+}
+
 pub fn run(src: &str, opts: &Options) -> Result<Module, Vec<Diagnostic>> {
-    run_impl(src, "", opts, false).map_err(|f| f.diags)
+    run_impl(src, "", opts, false)
+        .map(|a| a.module)
+        .map_err(|f| f.diags)
 }
 
 /// Like [`run`] but keeps the [`SourceMap`](sigil_span::SourceMap) the diagnostics'
 /// spans resolve against, so a caller can render each one as `file(line)`.
 /// `root_name` is the file `src` was read from; every `include`d file names itself.
-pub fn run_located(src: &str, root_name: &str, opts: &Options) -> Result<Module, Failure> {
+pub fn run_located(src: &str, root_name: &str, opts: &Options) -> Result<Assembled, Failure> {
     run_impl(src, root_name, opts, false)
 }
 
@@ -97,7 +123,7 @@ pub fn run_located(src: &str, root_name: &str, opts: &Options) -> Result<Module,
 /// base — otherwise a poison-free residual (config_a) bakes a stale this-pass VMA (the
 /// row-94 parallax `P_DBG := DeformTable_Zero` pointer). A PINNED build never needs this
 /// (sections don't move → bake == relocate), so ordinary `run` stays byte-for-byte asl.
-pub fn run_relocating(src: &str, root_name: &str, opts: &Options) -> Result<Module, Failure> {
+pub fn run_relocating(src: &str, root_name: &str, opts: &Options) -> Result<Assembled, Failure> {
     run_impl(src, root_name, opts, true)
 }
 
@@ -106,7 +132,7 @@ fn run_impl(
     root_name: &str,
     opts: &Options,
     force_relocate: bool,
-) -> Result<Module, Failure> {
+) -> Result<Assembled, Failure> {
     // Seed pass 0 with the provided defines; each later pass is seeded with the
     // previous pass's discovered symbols so forward references resolve. Macro and
     // function definitions are carried forward too, so an `ifndef`-guarded
@@ -186,7 +212,7 @@ fn run_impl(
                 return if diags.iter().any(|d| d.level == Level::Error) {
                     Err(Failure { diags, sources: last_sources })
                 } else {
-                    Ok(module)
+                    Ok(Assembled { module, warnings: diags, sources: last_sources })
                 };
             }
             let bonus = one_pass_with_defer(
@@ -214,7 +240,7 @@ fn run_impl(
             return if diags.iter().any(|d| d.level == Level::Error) {
                 Err(Failure { diags, sources: bonus.sources })
             } else {
-                Ok(bonus_module)
+                Ok(Assembled { module: bonus_module, warnings: diags, sources: bonus.sources })
             };
         }
         prev = env.clone();
@@ -633,6 +659,21 @@ struct Asm {
     visited: std::collections::BTreeSet<std::path::PathBuf>,
     include_root: Option<std::path::PathBuf>,
     aborted: bool,
+    /// `exitm` raised, and no expansion driver has consumed it yet. Checked at
+    /// the top of [`Asm::exec`] exactly like `aborted`, so the rest of the body
+    /// it was written in is skipped — but UNLIKE `aborted` it is CLEARED by the
+    /// innermost expansion driver, which is what makes it end one expansion
+    /// rather than the pass.
+    exit_expansion: bool,
+    /// How many expansion frames are running at this point of THIS file — a
+    /// macro expansion, a `rept`, a `while`, an `irp`/`irpc`. `exitm` is an
+    /// error at zero (asl: `EXITM not called from within macro`), and the count
+    /// is what makes that check dynamic rather than a `macro_frames` test: a
+    /// bare top-level `rept` accepts `exitm` with no macro anywhere in sight
+    /// (probe `e6`). Saved and RESET TO ZERO across an `include`, because asl
+    /// refuses an `exitm` in an included file even when the `include` itself
+    /// sits inside a macro body (probe `e14`).
+    expansion_depth: usize,
     /// Whether this pass already raised [`crate::CPU_UNDECLARED`]. One refusal
     /// per pass: the condition is a property of the whole unit, so repeating it
     /// per emit site would say the same thing hundreds of times. Its own flag
@@ -883,6 +924,8 @@ impl Asm {
             visited: std::collections::BTreeSet::new(),
             include_root: opts.include_root.clone(),
             aborted: false,
+            exit_expansion: false,
+            expansion_depth: 0,
             cpu_refused: false,
             poison_refs: Vec::new(),
             while_budget: GLOBAL_WHILE_CAP,
@@ -1926,8 +1969,16 @@ impl Asm {
                 let id = self.sources.add_named(path.display().to_string(), text);
                 let outer = self.source;
                 self.source = id;
+                // An `include` is NOT an expansion, and it HIDES the ones it sits
+                // inside: asl refuses an `exitm` written in an included file even
+                // when the `include` line is in a macro body, and neither the
+                // include nor the macro stops (probe `e14`). Zeroing the count
+                // for the splice is what reproduces that; restoring it after is
+                // what lets the macro's own body keep using `exitm` afterwards.
+                let outer_depth = std::mem::take(&mut self.expansion_depth);
                 let lines = split_src_lines(self.sources.text(id), id);
                 self.exec(&lines);
+                self.expansion_depth = outer_depth;
                 self.source = outer;
             }
             Err(e) => self.err(span, format!("cannot include {}: {e}", path.display())),
@@ -1976,7 +2027,12 @@ impl Asm {
     fn exec(&mut self, lines: &[SrcLine]) {
         let mut i = 0;
         while i < lines.len() {
-            if self.aborted {
+            // `aborted` ends the PASS; `exit_expansion` ends one EXPANSION. Both
+            // stop the current line run here, and they differ only in who clears
+            // them: nobody clears `aborted`, while the innermost expansion driver
+            // (`exec_rept`/`exec_irp`/`exec_while`/`expand_macro_inner`) clears
+            // `exit_expansion` and then carries on with the line after itself.
+            if self.aborted || self.exit_expansion {
                 return;
             }
             match self.line_keyword(&lines[i]).as_deref() {
@@ -2656,11 +2712,22 @@ impl Asm {
                 // Guarded on the keyword because `find_block_end` falls back to
                 // the last line of an UNTERMINATED region, which is a body line
                 // the arm never reached rather than a closer.
+                //
+                // An `exitm` inside the arm means asl never READ the closer, so
+                // its label binds nothing: probe `e18` puts `LC:` on the `endif`
+                // closing an exitm'd arm and `dc.l LC` afterwards is `symbol
+                // undefined`. NOT extended to `aborted` here: `end`/`fatal` reach
+                // this line the same way and asl presumably drops that label too,
+                // but that is an untouched pre-existing arm and widening the
+                // guard to it would change bytes for a case this parcel did not
+                // measure.
                 let closer = &lines[heads[w + 1]];
-                if matches!(
-                    self.line_keyword(closer).as_deref(),
-                    Some("elseif" | "else" | "endif")
-                ) {
+                if !self.exit_expansion
+                    && matches!(
+                        self.line_keyword(closer).as_deref(),
+                        Some("elseif" | "else" | "endif")
+                    )
+                {
                     self.bind_head_label(&lines[heads[w + 1]]);
                 }
                 break;
@@ -2744,6 +2811,9 @@ impl Asm {
         let end = self.find_block_end(lines, start);
         let captured = self.capture_loop_body(&lines[start + 1..end]);
         let body: &[SrcLine] = captured.as_deref().unwrap_or(&lines[start + 1..end]);
+        // A `rept` IS an expansion for `exitm`'s purposes, top-level one included
+        // (probe `e6`), so it counts here and clears the flag below.
+        self.expansion_depth += 1;
         for _ in 0..n {
             // `end` (and `fatal`) inside the body stop the unit, so the
             // remaining iterations must not run. `exec` already returns
@@ -2754,7 +2824,11 @@ impl Asm {
                 break;
             }
             self.exec(body);
+            if self.take_exit_expansion() {
+                break;
+            }
         }
+        self.expansion_depth -= 1;
         self.release_loop_body(captured.is_some());
         end + 1
     }
@@ -2822,6 +2896,10 @@ impl Asm {
         let body: Vec<SrcLine> = captured
             .clone()
             .unwrap_or_else(|| lines[start + 1..end].to_vec());
+        // Counted as a frame like `rept`/`while` — see [`Asm::directive_exitm`]
+        // for why this one arm has NO asl oracle behind it (asl segfaults on
+        // `exitm` inside an `irp`).
+        self.expansion_depth += 1;
         for item in &items {
             if self.aborted {
                 break;
@@ -2835,7 +2913,11 @@ impl Asm {
                 })
                 .collect();
             self.exec(&iter);
+            if self.take_exit_expansion() {
+                break;
+            }
         }
+        self.expansion_depth -= 1;
         self.release_loop_body(captured.is_some());
         end + 1
     }
@@ -2958,6 +3040,9 @@ impl Asm {
         let captured = self.capture_loop_body(&lines[start + 1..end]);
         let body: &[SrcLine] = captured.as_deref().unwrap_or(&lines[start + 1..end]);
         let mut iterations = 0usize;
+        // A `while` IS an expansion for `exitm` (probe `e7`: `A0 C0 A1 FF` — one
+        // iteration, then the enclosing macro's own trailing line).
+        self.expansion_depth += 1;
         loop {
             if self.aborted {
                 break;
@@ -2982,6 +3067,9 @@ impl Asm {
                     }
                     self.while_budget -= 1;
                     self.exec(body);
+                    if self.take_exit_expansion() {
+                        break;
+                    }
                     iterations += 1;
                 }
                 None => {
@@ -2990,6 +3078,7 @@ impl Asm {
                 }
             }
         }
+        self.expansion_depth -= 1;
         self.release_loop_body(captured.is_some());
         end + 1
     }
@@ -3571,6 +3660,42 @@ impl Asm {
             "message" => {
                 let _ = self.interp_string(rest);
             }
+            // `warning "text"` — a diagnostic the SOURCE AUTHOR wrote, at the
+            // warn tier: asl prints it and the assembly still SUCCEEDS (probe
+            // `w1`: `> > > w1.asm(5): warning: hello from warning`, exit 0, `1
+            // warning`, and the bytes either side of it are untouched). Its
+            // `\{expr}` sequences interpolate like `error`/`fatal`/`message`'s
+            // do — `s2.sounddriver.asm(301)` and five of the six s1disasm sites
+            // write one — which is why this shares `interp_string`.
+            //
+            // The `[as.warning]` prefix is the id the warn-tier tally and the
+            // corpus register key on (`sigil-cli/tests/warn_tier_corpus.rs`);
+            // without it an author's warning renders as `unclassified` there.
+            // It costs the message its byte-for-byte match with asl's line,
+            // which was never identical anyway (asl leads with `> > > `).
+            //
+            // It takes exactly ONE string operand: asl refuses a bare word
+            // (`warning bareword` → it evaluates the word as a SYMBOL, probe
+            // `w6`), refuses none (`wrong number of operands`, probe `w7`) and
+            // refuses two (same message, probe `w8`). The no-string case is
+            // refused here rather than warning empty — a `warning` that says
+            // nothing is the one outcome the author certainly did not write.
+            // The two-operand case is NOT caught (sigil takes the first string
+            // and ignores the rest, as its `error`/`fatal`/`message` siblings
+            // already do) — a known gap, and the accepting direction.
+            "warning" => {
+                if !rest.iter().any(|t| matches!(t.tok, Tok::Str(_))) {
+                    self.err(span, "`warning` needs a quoted message");
+                    return;
+                }
+                let m = self.interp_string(rest);
+                self.diags.push(Diagnostic {
+                    level: Level::Warning,
+                    message: format!("[as.warning] {m}"),
+                    primary: span,
+                });
+            }
+            "exitm" => self.directive_exitm(span),
             "include" => self.directive_include(rest, span),
             // Real Aeon source spells this directive uppercase at all 43 call
             // sites (`grep -rn BINCLUDE aeon/games aeon/engine`); the AS
@@ -6435,6 +6560,56 @@ impl Asm {
         }
     }
 
+    /// AS's `exitm`: end the INNERMOST running expansion early. The enclosing
+    /// one is untouched and resumes at the line after the construct.
+    ///
+    /// An "expansion" here is what asl treats as one, measured against asl 1.42
+    /// Beta Bld 212 (probes under `docs/superpowers/notes/2026-09-04-as-warning-exitm-probes/`):
+    /// a macro expansion, a `rept`, a `while` — NOT an `if`/`switch` arm, which
+    /// is a region of the enclosing expansion rather than one of its own, and
+    /// NOT an `include`.
+    ///
+    ///   e2  `exitm` in a macro called from a macro ends only the CALLEE
+    ///       (`B0 A0 B1 FF` — the caller's `B1` still lands)
+    ///   e3  `exitm` in a `rept` inside a macro ends the REPT, and the macro
+    ///       carries on (`A0 C0 A1 FF` — one of three iterations, then `A1`)
+    ///   e13 the same one level deeper: an inner `rept` exits per outer
+    ///       iteration and the outer still runs both (`A0 D0 C0 D1 D0 C0 D1 A1 FF`)
+    ///   e16 `exitm` in a `case` arm ends the whole MACRO (`switch` is no frame)
+    ///   e6  a bare TOP-LEVEL `rept` accepts it with no macro in sight —
+    ///       hence the dynamic depth count and not a `macro_frames` test
+    ///   e14 in an INCLUDED file it is an error even when the `include` sits in
+    ///       a macro body, and neither the include nor the macro stops
+    ///
+    /// UNMEASURABLE: `exitm` inside an `irp`/`irpc` — asl SEGFAULTS on it (exit
+    /// 139, core dumped), at top level and nested in a macro alike (probes e8,
+    /// e11), so there is no reference answer to match. `exec_irp` treats it as
+    /// the frame the other two loops are, which is the only reading consistent
+    /// with `rept`/`while`; it is a DELIBERATE choice with no oracle behind it,
+    /// not a verified behaviour.
+    ///
+    /// Outside every frame asl errors (`EXITM not called from within macro`) and
+    /// KEEPS GOING — the line after still assembles (probe e5) — so this raises a
+    /// diagnostic and sets nothing.
+    fn directive_exitm(&mut self, span: Span) {
+        if self.expansion_depth == 0 {
+            self.err(
+                span,
+                "`exitm` outside a macro expansion or `rept`/`while` body",
+            );
+            return;
+        }
+        self.exit_expansion = true;
+    }
+
+    /// Consume a pending `exitm` if there is one, reporting whether this frame
+    /// is the one that must stop. Called by each expansion driver after a body
+    /// run: the FIRST driver to unwind takes the flag, which is what confines
+    /// `exitm` to one level.
+    fn take_exit_expansion(&mut self) -> bool {
+        std::mem::take(&mut self.exit_expansion)
+    }
+
     fn expand_macro_inner(&mut self, name: &str, arg_toks: &[Token], attribute: Option<&str>) {
         // TAKEN FIRST, before any early return. `exec_one` parks the invocation
         // line's label here and this is the only consumer; a return that left it
@@ -6701,7 +6876,13 @@ impl Asm {
             dot_labels,
             int_label,
         });
+        self.expansion_depth += 1;
         self.exec(&body);
+        // An `exitm` still pending here was written for THIS expansion (any
+        // nested frame would have taken it already), so it stops here and goes
+        // no further: the caller's next line runs (probe `e2`).
+        self.take_exit_expansion();
+        self.expansion_depth -= 1;
         self.macro_frames.pop();
         self.macro_depth -= 1;
         // A `label` directive inside the body opens the CALLER's scope, and the
@@ -7120,6 +7301,8 @@ fn is_op_keyword(s: &str) -> bool {
             | "error"
             | "fatal"
             | "message"
+            | "warning"
+            | "exitm"
             | "ds.b"
             | "ds.w"
             | "ds.l"

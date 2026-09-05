@@ -20,6 +20,8 @@ use sigil_ir::backend::Cpu;
 use sigil_ir::Module;
 use sigil_span::{Diagnostic, SourceMap};
 
+pub use eval::Assembled;
+
 /// A failed assembly: the diagnostics, plus the [`SourceMap`] their spans resolve
 /// against.
 ///
@@ -181,6 +183,14 @@ pub fn assemble_root(root: &Path, opts: &Options) -> Result<Module, Vec<Diagnost
 /// diagnostic renders as `file(line): error: …` — the root file under the name it
 /// was opened with, and every `include`d file under its own.
 pub fn assemble_root_located(root: &Path, opts: &Options) -> Result<Module, Failure> {
+    assemble_root_impl(root, opts, false).map(|a| a.module)
+}
+
+/// [`assemble_root_located`] keeping the WARN-tier diagnostics a successful run
+/// raised — an `warning` directive the source author wrote. Use this wherever
+/// the caller renders diagnostics; the module-only form above drops them, which
+/// is right only for a caller with nothing to render them to.
+pub fn assemble_root_located_warned(root: &Path, opts: &Options) -> Result<Assembled, Failure> {
     assemble_root_impl(root, opts, false)
 }
 
@@ -189,10 +199,21 @@ pub fn assemble_root_located(root: &Path, opts: &Options) -> Result<Module, Fail
 /// resolves them against each label's placed base. Use for a build whose sections will
 /// MOVE after assembly; a pinned build must use [`assemble_root`] (byte-for-byte asl).
 pub fn assemble_root_relocating(root: &Path, opts: &Options) -> Result<Module, Vec<Diagnostic>> {
-    assemble_root_impl(root, opts, true).map_err(|f| f.diags)
+    assemble_root_impl(root, opts, true)
+        .map(|a| a.module)
+        .map_err(|f| f.diags)
 }
 
-fn assemble_root_impl(root: &Path, opts: &Options, relocate: bool) -> Result<Module, Failure> {
+/// [`assemble_root_relocating`] keeping the WARN-tier diagnostics a successful
+/// run raised, and the [`SourceMap`] that locates them.
+pub fn assemble_root_relocating_warned(
+    root: &Path,
+    opts: &Options,
+) -> Result<Assembled, Failure> {
+    assemble_root_impl(root, opts, true)
+}
+
+fn assemble_root_impl(root: &Path, opts: &Options, relocate: bool) -> Result<Assembled, Failure> {
     let text = std::fs::read_to_string(root).map_err(|e| Failure {
         diags: vec![sigil_span::Diagnostic {
             level: sigil_span::Level::Error,
