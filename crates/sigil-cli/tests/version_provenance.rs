@@ -218,9 +218,16 @@ fn no_banner_field_is_blank_or_a_bare_placeholder() {
             !matches!(value, "-" | "n/a" | "N/A" | "0" | "null" | "none"),
             "field `{label}` rendered the placeholder `{value}` instead of stating what it is\n{stdout}"
         );
-        // A dangling em-dash means a reason was promised and not supplied.
+        // A dangling separator means a reason was promised and not supplied.
+        // KEYED TO THE PRODUCER'S CURRENT SEPARATOR, which is a comma:
+        // `build.rs` renders `format!("unknown, {}", why)`. It said
+        // `"unknown — {}"` until the 2026-09-05 dash sweep, and this
+        // assertion still read `ends_with('—')` afterwards, so it could no
+        // longer fire at all. A negative assertion whose needle the producer
+        // has stopped emitting does not fail, it stops testing, and nothing
+        // announces it. If the separator moves again, move this with it.
         assert!(
-            !value.ends_with('—'),
+            !value.trim_end().ends_with(','),
             "field `{label}` promises a reason and gives none: `{value}`\n{stdout}"
         );
     }

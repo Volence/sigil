@@ -1400,3 +1400,44 @@ because the exit code disagreed with a landing run that had reported `CLIPPY_EXI
 an exit code alone cannot tell a tool's failure from the tool never running.** Print `pwd` and `HEAD`
 beside any verdict you intend to act on. This lane already stamps its suite logs that way; the same
 discipline was missing from one-line checks.
+
+### A SWEEP KILLS ANY NEGATIVE ASSERTION KEYED TO WHAT IT CHANGED, AND NOTHING ANNOUNCES IT
+
+*(Raised by the aurora lane from their own dash sweep; **checked here and it had happened**, one
+instance, fixed at the same time.)*
+
+**`crates/sigil-cli/tests/version_provenance.rs` asserted `!value.ends_with('—')`** with the comment
+*"a dangling em-dash means a reason was promised and not supplied"*. The producer, `build.rs`, rendered
+`format!("unknown — {}", why)` until the 2026-09-05 dash sweep and renders `format!("unknown, {}", why)`
+after it. **The sweep did not touch the assertion, so from that moment it could not fail.** A negative
+assertion whose needle the producer has stopped emitting **does not go red, it stops testing**, and it
+keeps printing `ok` forever.
+
+**Re-pointed at the producer's current separator with the reasoning written beside it**, and **proved
+it can fire**: injecting a dangling comma into the live `tree_detail` path reds
+`no_banner_field_is_blank_or_a_bare_placeholder`, naming the field and quoting the value.
+
+**⚠ MY FIRST RED-FIRST ATTEMPT WAS VACUOUS AND PRINTED A FULL PAGE OF `ok`.** I mutated
+`format!("unknown, {}", upstream.why)`, which is only reached when the upstream probe fails, and it
+never runs in this repo. **The mutation applied, the suite passed, and nothing distinguished that
+from a working assertion** until I asked which of the rendered fields the mutated line actually
+produces. That is face 2 of the three vacuous-proof shapes already banked here, met while proving a
+fix for face 3. **Mutate a path you have CONFIRMED renders in the artifact under test**, not one that
+merely looks like the right function.
+
+**The general rule, which is broader than dashes: a sweep's blast radius includes every NEGATIVE
+assertion keyed to the text it changed.** A positive assertion reds loudly and gets fixed in the same
+hour; a negative one goes quiet and is indistinguishable from a passing test forever. **After any
+mechanical text change, grep the tests for negations keyed to the old text**, which for this lane was
+`git grep -P '!\s*\w[\w.()]*\.(contains|find|starts_with|ends_with)\([^)]*<old-text>'` against the
+PRE-sweep revision, because the post-sweep tree no longer contains the evidence.
+
+**A control is what makes that grep mean anything:** the same pattern without the negation returned
+7 hits pre-sweep, so a zero from the negated form would have been a finding rather than a broken
+pattern. It returned 1.
+
+**And the sibling finding, also aurora's, checked here: a dash inside a CHAR literal is neither
+comment nor string.** `tool_text_dash_lint` tracks char-literal state deliberately and excludes it,
+which is right for user-facing prose and means `'—'` survives a sweep by design. That is exactly how
+this dead assertion kept its needle. Their instance was a regex literal; ours was a char literal;
+**the class is "a token the lexer classifies as neither of the two things the gate looks at".**
