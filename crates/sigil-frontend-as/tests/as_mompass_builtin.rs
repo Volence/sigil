@@ -219,6 +219,36 @@ fn one_pass_asl_file_is_a_known_divergence() {
     );
 }
 
+/// The one shape that decides the design, and the reason it is a saturation
+/// rather than a running count. It mirrors `s2.asm:91270`: an `if MOMPASS=2`
+/// whose body emits NO bytes (it sets a `:=` that a later `dc.b` reads), in a
+/// file whose iteration count is set by a forward `:=` chain rather than by
+/// MOMPASS itself. So the guard cannot perturb the layout, and sigil's
+/// iteration count exceeds asl's pass count for a reason unrelated to MOMPASS.
+/// That is exactly the corpus situation: asl takes 2 passes on `s2.asm` where
+/// sigil takes 4.
+///
+/// asl, probe `m_flag2`, exit 0, `2 passes`, `0 errors`:
+///
+/// ```text
+///        9/       0 : AA                      dc.b FLAG
+///       10/       1 : 11                      dc.b $11
+///       11/       2 : 03                      dc.b V
+///       12/       3 : EE                  W:  dc.b $EE
+/// ```
+///
+/// Measured, not argued: the same source built with `pass as i64 + 1` in place
+/// of the saturation emits `00 11 03 EE`, which is a byte divergence from asl
+/// at the corpus's own `=2` shape. The saturation emits asl's bytes.
+#[test]
+fn mompass_eq_two_decides_the_corpus_shape_the_way_asl_does() {
+    let src = format!(
+        "{HEAD}FLAG := 0\nV := W\n\tif MOMPASS=2\nFLAG := $AA\n\tendif\n\
+         \tdc.b FLAG\n\tdc.b $11\n\tdc.b V\nW:\tdc.b $EE\n\tend\n"
+    );
+    assert_eq!(bytes(&src), vec![0xAA, 0x11, 0x03, 0xEE]);
+}
+
 /// DIVERGENCE. `if MOMPASS=<n>` guarding a body that EMITS is self
 /// destabilising under asl: emitting moves the layout, which forces another
 /// pass, on which `MOMPASS` is no longer `<n>`, so asl settles with the body
@@ -226,9 +256,11 @@ fn one_pass_asl_file_is_a_known_divergence() {
 /// sigil saturates at 2, so the condition stays TRUE and the fixpoint is stable
 /// with the body IN: `AA 11 00 02`.
 ///
-/// A running count would not fix this and would be worse: the value would
-/// oscillate with period two and never satisfy `env == prev`, so the run would
-/// exhaust `PASS_CAP` and report non-convergence instead of bytes.
+/// A running count WOULD match asl here, and that was measured rather than
+/// assumed: built with `pass as i64 + 1` this same source emits asl's `11 00
+/// 02`. The saturation is chosen anyway, because the shape it gets right
+/// instead (`mompass_eq_two_decides_the_corpus_shape_the_way_asl_does`) is the
+/// one the corpus contains and this one is not.
 ///
 /// The corpus's one `=2` site, `s2.asm:91270`, guards a `message` and emits
 /// nothing, so it is decided identically by both.
