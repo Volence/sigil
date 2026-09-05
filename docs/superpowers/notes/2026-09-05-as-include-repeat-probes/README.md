@@ -10,12 +10,27 @@ Nothing here runs in the suite.
 ```
 ./run.sh   p1.asm                                  # one probe through asl
 ./depth.sh 199                                     # asl: a chain of N distinct files
+./siblings.sh 250 [sigil]                          # N includes IN SEQUENCE, both tools
 ./sigil.sh <sigil-binary>                          # the same sources through sigil
 ./depth_sigil.sh <sigil-binary> 199                # sigil: the same chain
 ./fourshapes.sh <sigil> <aeon> <out>               # landing condition: 4 shapes, CRC32+size
 ./corpora.sh <sigil> <out>                         # both corpora, CRC/size/diagnostic count
 ./census.sh <sigil> <aeon> <out>                   # the ENGAGEMENT COUNTER over the population
+./census_selfcheck.sh <sigil>                      # calibrate that counter against known values
+./mutations.sh <worktree> <target-dir>             # red-first, six mutations
+./reach.sh <worktree> <target-dir> <aeon> <out>    # the two panic! reachability controls
+./poscontrol.sh <base> <parcel> <aeon> <out>       # the divergence, on real aeon source
 ```
+
+`census.sh`, `reach.sh` and `poscontrol.sh` write a second aeon tree or build
+ROMs; **keep their out-dirs outside the sigil worktree and outside any cargo
+target dir.** `scripts_name_their_tree` and the drift harness both scan for
+exactly one `tools/suite_paths.py`, and a second aeon under either makes both
+answer `COULD NOT MEASURE` — a failure that looks nothing like its cause.
+
+`mutations.sh` and `reach.sh` build a MUTATED assembler into the target dir and
+rebuild it from restored source before exiting. If either is interrupted, rebuild
+before trusting that binary.
 
 `run.sh` is the macro-body-label set's runner plus one thing: **every asl
 invocation is under `timeout`.** This set deliberately asks asl what it does
