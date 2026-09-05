@@ -388,7 +388,7 @@ pub fn game_contract_declared_members(aeon: &std::path::Path) -> Vec<String> {
         .collect();
     assert!(
         !members.is_empty(),
-        "{} declares no `interface Game` members — the contract moved or the parse \
+        "{} declares no `interface Game` members, the contract moved or the parse \
          stopped seeing it; an empty member list would make every coverage gate vacuous",
         path.display()
     );
@@ -425,7 +425,7 @@ pub fn game_contract_env_from_aeon(
         gid,
         profile.manifest_module,
         "manifest at {} declares module `{gid}`, but profile `{}` names \
-         `{}` — the derivation found the wrong file",
+         `{}`, the derivation found the wrong file",
         impl_path.display(),
         profile.name,
         profile.manifest_module
@@ -485,8 +485,8 @@ pub fn game_contract_env_from_aeon(
     let missing = game_contract_missing_members(aeon, &env);
     assert!(
         missing.is_empty(),
-        "the derived env is missing {} of the {} members `interface Game` declares in {}: {missing:?} \
-         — an env that under-covers the contract lets an engine module's `Game.MEMBER` \
+        "the derived env is missing {} of the {} members `interface Game` declares in {}: {missing:?}, \
+         an env that under-covers the contract lets an engine module's `Game.MEMBER` \
          fail at lower instead of here",
         missing.len(),
         game_contract_declared_members(aeon).len(),
@@ -659,7 +659,7 @@ pub fn listing_symbols_with_prefix(debug: bool, prefixes: &[&str]) -> Vec<(Strin
     }
     assert!(
         !out.is_empty(),
-        "listing {} carries no symbol matching {prefixes:?} — a sweep that matches nothing \
+        "listing {} carries no symbol matching {prefixes:?}, a sweep that matches nothing \
          measures nothing, so this is a broken scan rather than an empty family",
         path.display()
     );
@@ -671,7 +671,7 @@ pub fn listing_vma(debug: bool, name: &str) -> u32 {
     let path = listing_path(debug);
     listing_symbol_addr(&path, name).unwrap_or_else(|| {
         panic!(
-            "no listing at {} — this gate derives its cross-seam addresses from the \
+            "no listing at {}, this gate derives its cross-seam addresses from the \
              listing beside the reference ROM, so a source-only checkout cannot serve \
              it. Point AEON_DIR at a tree with the shapes built.",
             path.display()
@@ -785,7 +785,7 @@ impl PathStep {
         match self {
             PathStep::CheckoutVar => "named by AEON_DIR",
             PathStep::SuiteRootVar => "named by EMPYREAN_SUITE_ROOT",
-            PathStep::Derived => "DERIVED from this checkout's own location — nobody named it",
+            PathStep::Derived => "DERIVED from this checkout's own location, nobody named it",
         }
     }
 
@@ -820,7 +820,7 @@ impl ResolvedCheckout {
     /// one wrong number for another.
     pub fn announcement(&self) -> String {
         format!(
-            "reference-tree: {} (SUITE_PATHS step {} — {})",
+            "reference-tree: {} (SUITE_PATHS step {}, {})",
             self.path.display(),
             self.step.number(),
             self.step.describe()
@@ -929,7 +929,7 @@ pub fn derive_suite_root_from(here: &std::path::Path) -> Result<PathBuf, String>
     })?;
     if !is_suite_root(root) {
         return Err(format!(
-            "{} is this repository's parent but holds no {} — it is not a suite root",
+            "{} is this repository's parent but holds no {}, it is not a suite root",
             root.display(),
             SUITE_ROOT_MARKERS.map(|m| format!("{m}/")).join(" + ")
         ));
@@ -1027,7 +1027,7 @@ pub fn aeon_checkout() -> Result<ResolvedCheckout, String> {
                     "{AEON_DIR_VAR}={v} does not name a directory. A checkout variable that \
                      is set but wrong is a hard error at its own step (SUITE_PATHS, \
                      'Precedence, the same in every resolver'), not a null that lets \
-                     {SUITE_ROOT_VAR} or a derivation answer in its place — falling through \
+                     {SUITE_ROOT_VAR} or a derivation answer in its place, falling through \
                      would measure against a tree nobody asked for and call it a pass."
                 ));
             }
@@ -1047,7 +1047,7 @@ pub fn aeon_checkout() -> Result<ResolvedCheckout, String> {
 /// guard.
 pub fn unnamed_default_tree() -> Result<ResolvedCheckout, String> {
     resolve_from_step_2(vec![format!(
-        "{AEON_DIR_VAR} deliberately not consulted — this is the tree a run resolves to when \
+        "{AEON_DIR_VAR} deliberately not consulted, this is the tree a run resolves to when \
          nobody names one"
     )])
 }
@@ -1168,8 +1168,8 @@ pub fn bare_run_refusal(context: &str, derived: Option<&ResolvedCheckout>) -> St
     format!(
         "NO REFERENCE TREE IS NAMED, so this run can measure nothing it could attribute, and \
          STOPS. {declined}\n\nThe resolver's own answer: {context}\n\nEither name a provisioned \
-         tree — {AEON_DIR_VAR}=<aeon checkout> (scripts/provision-aeon-ref.sh), or \
-         {SUITE_ROOT_VAR}=<the directory holding the suite> — or declare a partial run with \
+         tree, {AEON_DIR_VAR}=<aeon checkout> (scripts/provision-aeon-ref.sh), or \
+         {SUITE_ROOT_VAR}=<the directory holding the suite>, or declare a partial run with \
          {ALLOW_PARTIAL_VAR}=1, in which case every reference-dependent row is left unmeasured \
          and the run says how many. Ruled d-18 (docs/OVERSEER-REFERENCE.md, 2026-09-02): a run \
          that only PRINTS how much it did not measure still exits 0, and a green is trusted the \
@@ -1225,7 +1225,7 @@ pub fn partial_run_banner(context: &str) -> String {
         format!(
             "the derivation of how many test binaries are reference-dependent returned only {} \
              and COULD NOT BE ESTABLISHED (floor {}), so the size below is unknown rather than \
-             small —",
+             small,",
             gated.len(),
             crate::reference_dependence::FLOOR
         )
@@ -1233,7 +1233,7 @@ pub fn partial_run_banner(context: &str) -> String {
     format!(
         "PARTIAL RUN ({ALLOW_PARTIAL_VAR} is set). No reference tree is named, so {size} every \
          row in them is left UNMEASURED. A green result from this run does NOT mean those rows \
-         passed — it means they were not run. Name a tree with {AEON_DIR_VAR} to measure them.\
+         passed, it means they were not run. Name a tree with {AEON_DIR_VAR} to measure them.\
          \n{context}"
     )
 }
@@ -1446,12 +1446,12 @@ pub fn emp_const_rhs(path: &std::path::Path, name: &str) -> String {
     match hits.len() {
         1 => hits.pop().unwrap(),
         0 => panic!(
-            "emp_const_rhs: no `const {name} = …` in {} — the const was renamed or moved, \
+            "emp_const_rhs: no `const {name} = …` in {}, the const was renamed or moved, \
              and this gate's expectation is derived from it",
             path.display()
         ),
         n => panic!(
-            "emp_const_rhs: {n} declarations of `const {name}` in {} — ambiguous, refuse to guess",
+            "emp_const_rhs: {n} declarations of `const {name}` in {}, ambiguous, refuse to guess",
             path.display()
         ),
     }
@@ -1476,7 +1476,7 @@ pub fn emp_const_literal(path: &std::path::Path, name: &str) -> i128 {
     parse_emp_int_literal(&rhs).unwrap_or_else(|| {
         panic!(
             "emp_const_literal: `const {name}` in {} has a NON-LITERAL right-hand side `{rhs}`. \
-             This helper parses a literal and CANNOT follow a computed const — the live case is \
+             This helper parses a literal and CANNOT follow a computed const, the live case is \
              SCANLINE_CAPS flipping from the `$001F` literal to `= SceneRegistry_CapsFolded`. \
              When that flip lands, this helper must be replaced by a real evaluation of the \
              const (lower the declaring module and read the folded value), not given a default.",
@@ -1527,7 +1527,7 @@ pub fn scene_dsl_cap_bits(aeon: &std::path::Path) -> Vec<(String, i128)> {
     }
     assert!(
         !out.is_empty(),
-        "scene_dsl_cap_bits: {} declared NO `pub const CAP_*` — the capability bits are the \
+        "scene_dsl_cap_bits: {} declared NO `pub const CAP_*`, the capability bits are the \
          authority this seam derives from; an empty set would silently elide every gated block",
         path.display()
     );
@@ -1782,7 +1782,7 @@ pub fn shadow_aeon_tree(
     }
     if let Some((rel, _)) = overrides.iter().find(|(r, _)| !written.iter().any(|w| w == r)) {
         return Err(format!(
-            "override `{rel}` names no file under a copied directory of {} — nothing was doctored",
+            "override `{rel}` names no file under a copied directory of {}, nothing was doctored",
             aeon.display()
         ));
     }
@@ -1940,7 +1940,7 @@ mod tests {
         for name in [super::AEON_DIR_VAR, super::SUITE_ROOT_VAR, super::ALLOW_PARTIAL_VAR] {
             assert!(
                 notice.contains(name),
-                "the refusal must name `{name}` — the variables that would have answered and \
+                "the refusal must name `{name}`, the variables that would have answered and \
                  the opt-in that takes the partial run are the whole of what a reader can do \
                  about it; got: {notice}"
             );
@@ -1999,7 +1999,7 @@ mod tests {
             assert!(
                 names.contains(name),
                 "test_support.rs supplies `{name}`, which no longer exists in \
-                 engine/structs.emp — a renamed Act/Sec/DMAEntry/parallax_config field \
+                 engine/structs.emp, a renamed Act/Sec/DMAEntry/parallax_config field \
                  leaves this blob supplying a DEAD equ that standalone port test oracles \
                  then resolve against nothing (EFX-6)"
             );

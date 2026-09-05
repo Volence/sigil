@@ -368,7 +368,7 @@ pub fn adjudication_message(family: &str, d: &BaselineDiff) -> String {
     format!(
         "{family} moved against the frozen baseline.\n  \
          NEW firings (a real violation, or an analysis that just got sharper): {:?}\n  \
-         GONE firings (a STALE pin — or the analysis NARROWED, which is the \
+         GONE firings (a STALE pin, or the analysis NARROWED, which is the \
          destructive direction: the same closure feeds find_dead_saves, so a dropped \
          row can mean a load-bearing save is now reported dead): {:?}\n  \
          If the change is intended, adjudicate each row and update the baseline in \

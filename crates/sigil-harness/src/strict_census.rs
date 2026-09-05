@@ -312,7 +312,7 @@ fn collect_rs(dir: &Path, out: &mut Vec<PathBuf>) {
 pub fn scanned_files(crates_dir: &Path) -> Result<Vec<PathBuf>, String> {
     if !crates_dir.is_dir() {
         return Err(format!(
-            "COULD NOT MEASURE: the crates tree is not at {} — the census scanned nothing, \
+            "COULD NOT MEASURE: the crates tree is not at {}, the census scanned nothing, \
              which is not the same as finding nothing",
             crates_dir.display()
         ));
@@ -412,7 +412,7 @@ pub fn census(crates_dir: &Path) -> Result<Census, String> {
                         owner_is_test: cur_fn_is_test,
                     }),
                     None => unclassified.push(format!(
-                        "{rel}:{} (occurrence {}) — {:?}",
+                        "{rel}:{} (occurrence {}), {:?}",
                         i + 1,
                         n + 1,
                         t
@@ -438,14 +438,14 @@ pub fn census(crates_dir: &Path) -> Result<Census, String> {
 
     if c.files_scanned == 0 {
         return Err(
-            "COULD NOT MEASURE: no .rs file in scope — the census walked no test tree".to_string(),
+            "COULD NOT MEASURE: no .rs file in scope, the census walked no test tree".to_string(),
         );
     }
     if !nested_mods.is_empty() {
         // A `#[test]` inside a `mod` is named `mod::test` by libtest, and detector B
         // keys on the bare name. Rather than mis-derive, say so.
         return Err(format!(
-            "COULD NOT MEASURE: {} nested module(s) in scanned files — libtest names a test \
+            "COULD NOT MEASURE: {} nested module(s) in scanned files, libtest names a test \
              inside a module `mod::name`, which detector B's bare-name key would miss. Teach \
              the census the module path before adding one:\n  {}",
             nested_mods.len(),
@@ -456,7 +456,7 @@ pub fn census(crates_dir: &Path) -> Result<Census, String> {
         return Err(format!(
             "COULD NOT MEASURE: {} `strict_gate()` occurrence(s) the census cannot CLASSIFY. \
              An unrecognised idiom shrinks the expectation silently, which is the floor defect \
-             wearing a scanner's clothes — so it refuses instead. Teach `classify_line` the \
+             wearing a scanner's clothes, so it refuses instead. Teach `classify_line` the \
              shape, or write the guard in the established one:\n  {}",
             unclassified.len(),
             unclassified.join("\n  ")

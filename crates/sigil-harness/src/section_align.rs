@@ -105,7 +105,7 @@ const MT_MOD8: &str = "aeon games/sonic4/data/sound/mt_bank.emp MT_TAIL_PAD: the
 /// hardware fact)". Every object's SST `code_addr` is a 16-bit `label - ObjCodeBase`
 /// displacement, so the whole object-code span must sit in one 64 KB window off that base.
 const OBJ_BANK_64K: &str = "aeon R1 ruling 2026-08-26: ObjCodeBase requires a 64 KB-aligned \
-                            base — SST code_addr is a 16-bit `label - ObjCodeBase`.";
+                            base, SST code_addr is a 16-bit `label - ObjCodeBase`.";
 
 const fn d(label: &'static str, required: u32, why: &'static str) -> AlignDecl {
     AlignDecl { label, required, why }
@@ -274,7 +274,7 @@ mod tests {
         for row in DECLARED {
             assert!(
                 row.required >= 1 && row.required.is_power_of_two(),
-                "`{}` declares alignment {} — not a power of two",
+                "`{}` declares alignment {}, not a power of two",
                 row.label,
                 row.required
             );

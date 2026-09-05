@@ -89,9 +89,9 @@ fn main() -> std::process::ExitCode {
         let anchor = native::assembled_anchor_crc(&golden, eor);
 
         let mut out = String::new();
-        out.push_str("# GENERATED — derive_offcanon. SIGIL-NATIVE region-boundary addresses (Stage-3 P4a).\n");
+        out.push_str("# GENERATED, derive_offcanon. SIGIL-NATIVE region-boundary addresses (Stage-3 P4a).\n");
         out.push_str("# Derived from sigil's OWN resolved layout (each label's ROM LMA), NOT an asl\n");
-        out.push_str("# listing — THE LAST asl-derived constants retire here (kill-list rows 34/95).\n");
+        out.push_str("# listing, THE LAST asl-derived constants retire here (kill-list rows 34/95).\n");
         out.push_str("# Section-END markers (`*_End`) are synthesized from the owning section's resolved\n");
         out.push_str("# geometry (lma + image_len); the phased z80 idle reports its ROM LMA. The declared\n");
         out.push_str("# per-region sizes (addr[end]-addr[start]) reproduce the golden below. On any ruled\n");
@@ -116,6 +116,6 @@ fn main() -> std::process::ExitCode {
             out_path.display()
         );
     }
-    println!("== done — sigil-native size tables derived (asl-free); commit them =");
+    println!("== done, sigil-native size tables derived (asl-free); commit them =");
     std::process::ExitCode::SUCCESS
 }

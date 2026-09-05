@@ -173,13 +173,13 @@ impl RevState {
                     .to_string()
             }
             RevState::AheadOfRemote => format!(
-                "present, and {against} is an ancestor of it — a local commit that has not \
+                "present, and {against} is an ancestor of it, a local commit that has not \
                  been pushed. Not yet a defect, and not yet durable: a rebase before the \
                  push orphans it and nothing else would notice. PUSH IT."
             ),
             RevState::Divergent => format!(
                 "present in this clone, but NOT reachable from {against}, and {against} does \
-                 not reach it either — the two histories have diverged. Orphaned by a rebase \
+                 not reach it either, the two histories have diverged. Orphaned by a rebase \
                  or a force-push. PERMANENT: fetching cannot fix this, because the history \
                  that carried this commit is not the history the branch has."
             ),
@@ -227,7 +227,7 @@ impl RevFinding {
     /// CHAIN POSITION, names the field, names the revision, and says which state it is
     /// in — everything the reader would otherwise have to re-derive.
     pub fn line(&self) -> String {
-        format!("{} — {}", self.site(), self.state.describe(self.tip.as_ref()))
+        format!("{}, {}", self.site(), self.state.describe(self.tip.as_ref()))
     }
 
     /// Just the coordinate: entry, chain position, field, repository, revision. What a
@@ -397,7 +397,7 @@ impl GitRevOracle {
         if t_code != 0 || t_out != "commit" {
             return Err(format!(
                 "COULD NOT MEASURE: {label} is at {sha}, which this clone at {} does not hold \
-                 as a commit. Ancestry cannot be computed against a tip that is not here — \
+                 as a commit. Ancestry cannot be computed against a tip that is not here, \
                  run `git fetch {}` and re-run.",
                 self.dir.display(),
                 self.remote
@@ -566,7 +566,7 @@ impl Audit {
                 .map(|t| format!("{} {}", t.label, t.sha))
                 .unwrap_or_else(|| "no remote tip".to_string());
             out.push(format!(
-                "{}: {} revision(s) vs {against} — {} reachable, {} OBJECT ABSENT, {} AHEAD OF \
+                "{}: {} revision(s) vs {against}, {} reachable, {} OBJECT ABSENT, {} AHEAD OF \
                  REMOTE, {} DIVERGENT, {} COULD NOT MEASURE",
                 repo.as_str(),
                 c.total,
@@ -634,7 +634,7 @@ impl Audit {
             return s;
         }
         for (text, findings) in groups {
-            let _ = writeln!(s, "  {} revision(s) — {text}", findings.len());
+            let _ = writeln!(s, "  {} revision(s), {text}", findings.len());
             for f in findings {
                 let _ = writeln!(s, "    {}", f.site());
             }

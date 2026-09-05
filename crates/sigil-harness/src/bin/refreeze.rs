@@ -220,7 +220,7 @@ fn aeon_head_unmoved(expected: &str, after: &str) -> Result<(), String> {
             "AEON_DIR={dir} MOVED DURING THE FREEZE: it was {expected} when this run named its \
              revision and is {now} after {after}. The artifacts already written came from \
              {expected} and everything after this point would come from {now}, while the ledger \
-             would record {expected} — a mixed-revision freeze that every downstream gate reads \
+             would record {expected}, a mixed-revision freeze that every downstream gate reads \
              as green, because step 4 derives from steps 1-3's outputs rather than from the tree. \
              Refusing. Re-run the whole freeze against a tree nobody else is moving; the journal \
              names what this run already wrote."
@@ -672,7 +672,7 @@ fn strict_bodies_ratchet(
         (Some(p), None) if now < p => Err(format!(
             "strict_bodies FELL from {p} to {now} since the last strict run that PASSED. The \
              census is green, which means the tree no longer DECLARES the missing gate(s) \
-             either — a whole strict-gated test or file was removed, which no source-derived \
+             either, a whole strict-gated test or file was removed, which no source-derived \
              census can see. That may be a deliberate retirement, but it is not something an \
              attestation may record silently. Restore the gate, or say why it is gone: \
              `--retired-strict-gates \"<one line>\"`. Nothing was recorded."
@@ -763,7 +763,7 @@ fn do_attest(
     let census = match strict_census::census(&root.join("crates")) {
         Ok(c) => c,
         Err(e) => return fail(format!(
-            "refusing to attest — the strict-gate census could not be derived, so there is \
+            "refusing to attest, the strict-gate census could not be derived, so there is \
              nothing to hold the run's witness to. {e}"
         )),
     };
@@ -776,11 +776,11 @@ fn do_attest(
     // (1) WHICH TREES. Both resolved and vetted before anything expensive runs.
     let sigil_rev = match resolve_sigil_rev(&root) {
         Ok(r) => r,
-        Err(e) => return fail(format!("refusing to attest — {e}")),
+        Err(e) => return fail(format!("refusing to attest, {e}")),
     };
     let aeon_rev = match resolve_aeon_rev() {
         Ok(r) => r,
-        Err(e) => return fail(format!("refusing to attest — {e}")),
+        Err(e) => return fail(format!("refusing to attest, {e}")),
     };
     let aeon_dir = std::env::var("AEON_DIR").unwrap_or_default();
     if let Some(want) = tip.aeon_rev.as_deref() {
@@ -816,7 +816,7 @@ fn do_attest(
                 eprintln!("refreeze --attest: {label} {rev} is {}", state.explain(tip.as_ref()));
             }
             other => {
-                eprintln!("refreeze --attest: ⚠ {label} {rev} — {}", other.describe(tip.as_ref()));
+                eprintln!("refreeze --attest: ⚠ {label} {rev}, {}", other.describe(tip.as_ref()));
                 eprintln!(
                     "refreeze --attest:   this record is about to name that revision as the tree \
                      the suite ran on. PUSH IT FIRST if you can: a revision already in the \
@@ -918,7 +918,7 @@ fn do_attest(
     }
     if run.passed == 0 {
         return fail(format!(
-            "the run executed {} test binaries but 0 tests passed — that is a run that could \
+            "the run executed {} test binaries but 0 tests passed, that is a run that could \
              not be measured, not a green one. See {}.",
             run.suites,
             log_path.display()
@@ -932,7 +932,7 @@ fn do_attest(
     if run.strict_bodies == 0 {
         return fail(format!(
             "the run reached ZERO strict-gated bodies, so `SIGIL_STRICT_GATE=1` did not take \
-             effect in the test processes — every `strict_gate()`-guarded port and co-link \
+             effect in the test processes, every `strict_gate()`-guarded port and co-link \
              gate early-returned and the green means nothing. This is precisely the state \
              chains 169 and 170 landed in. Witness file: {} (expected one `file:line` per \
              strict-gated body reached). Nothing was recorded.",
@@ -980,7 +980,7 @@ fn do_attest(
                     return fail(format!(
                         "the run accounted for {ran} test(s) ({} passed + {} failed + {} \
                          ignored) but the binaries declare {listed}. {} test(s) were never \
-                         reported by any `test result:` line — a binary that did not run takes \
+                         reported by any `test result:` line, a binary that did not run takes \
                          its whole population out of the totals while every other suite still \
                          says `ok`. Nothing was recorded. Log: {}",
                         run.passed,
@@ -1042,7 +1042,7 @@ fn do_attest(
         provenance::OUTCOME_FAILED
     } else if !run.exit_ok {
         return fail(format!(
-            "cargo exited {status} but no test reported a failure across {} binaries — the run \
+            "cargo exited {status} but no test reported a failure across {} binaries, the run \
              could not be classified as pass or fail (a build error, a harness abort, or a \
              linker failure). See {}.",
             run.suites,
@@ -1059,7 +1059,7 @@ fn do_attest(
     // worth.
     if run.skips > 0 {
         eprintln!(
-            "refreeze --attest: WARNING — {} `skip:` line(s) in a STRICT run. Each is a gate \
+            "refreeze --attest: WARNING, {} `skip:` line(s) in a STRICT run. Each is a gate \
              that reported green while measuring nothing. Recording the count in the chain; \
              this lane's bar is zero.",
             run.skips
@@ -1099,7 +1099,7 @@ fn do_attest(
         return ExitCode::from(2);
     }
     println!(
-        "refreeze --attest: recorded {outcome} on tip `{}` (entry #{number}) — {} strict bodies, \
+        "refreeze --attest: recorded {outcome} on tip `{}` (entry #{number}), {} strict bodies, \
          {} suites, {} passed / {} failed / {} ignored, {} skip: line(s).",
         chain2.tip().unwrap().name,
         record.strict_bodies,
@@ -1204,7 +1204,7 @@ fn do_reachability(root: &Path) -> ExitCode {
         .sum();
     if unmeasured > 0 {
         eprintln!(
-            "refreeze --reachability: {unmeasured} revision(s) COULD NOT BE MEASURED — that is \
+            "refreeze --reachability: {unmeasured} revision(s) COULD NOT BE MEASURED, that is \
              not a pass; the reasons are printed above."
         );
         return ExitCode::from(2);
@@ -1212,7 +1212,7 @@ fn do_reachability(root: &Path) -> ExitCode {
     if orphans > 0 || absent > 0 {
         eprintln!(
             "refreeze --reachability: {orphans} orphaned and {absent} absent revision(s). An \
-             orphan is PERMANENT and is not repaired by re-attesting — a re-attestation would \
+             orphan is PERMANENT and is not repaired by re-attesting, a re-attestation would \
              record a different tree's run under the same entry's name."
         );
         return ExitCode::from(1);
@@ -1234,7 +1234,7 @@ fn announce_reachability(root: &Path, chain: &provenance::Chain) {
         println!("refreeze --check: reachability · {line}");
     }
     for (text, findings) in result.groups() {
-        println!("refreeze --check: reachability · {} revision(s) — {text}", findings.len());
+        println!("refreeze --check: reachability · {} revision(s), {text}", findings.len());
         // A repository that could not be asked yields one fact, not one fact per
         // revision; the count above is the whole of it, and `--reachability` lists the
         // entries for whoever wants them. Every OTHER state is a per-revision finding and
@@ -1323,7 +1323,7 @@ fn do_freeze(root: &Path, name: &str, ab: &str, note: &str, supersede: Option<&s
             (AppendGate::Allowed, Some(_)) => return fail(SUPERSEDE_OF_A_GREEN_TIP),
             (AppendGate::Refused(m), Some(_)) => return fail(m),
             (AppendGate::Refused(m), None) | (AppendGate::NeedsSupersede(m), None) => eprintln!(
-                "refreeze: WARNING — if this freeze moves bytes it will REFUSE to append: {m}"
+                "refreeze: WARNING, if this freeze moves bytes it will REFUSE to append: {m}"
             ),
             _ => {}
         }
@@ -1334,7 +1334,7 @@ fn do_freeze(root: &Path, name: &str, ab: &str, note: &str, supersede: Option<&s
     // is no longer a question that can be asked.
     let aeon_rev = match resolve_aeon_rev() {
         Ok(r) => r,
-        Err(e) => return fail(format!("refusing to freeze — {e}")),
+        Err(e) => return fail(format!("refusing to freeze, {e}")),
     };
     eprintln!("refreeze: freezing from aeon {aeon_rev} (clean)");
 
@@ -1344,7 +1344,7 @@ fn do_freeze(root: &Path, name: &str, ab: &str, note: &str, supersede: Option<&s
     // is the one sitting in this directory.
     match child_target_dir() {
         Ok(t) => eprintln!("refreeze: child scripts build into {}", t.display()),
-        Err(e) => return fail(format!("refusing to freeze — {e}")),
+        Err(e) => return fail(format!("refusing to freeze, {e}")),
     }
 
     // (0.5) THE JOURNAL. Opened after the tree is known — it records which one — and
@@ -1364,7 +1364,7 @@ fn do_freeze(root: &Path, name: &str, ab: &str, note: &str, supersede: Option<&s
         } else {
             eprintln!("refreeze: {}", l.report());
             eprintln!(
-                "refreeze: PROCEEDING — this freeze regenerates every artifact above, so it is \
+                "refreeze: PROCEEDING, this freeze regenerates every artifact above, so it is \
                  the recovery; the journal is replaced."
             );
         }
@@ -1460,7 +1460,7 @@ fn report_ledger_half(
     match provenance::freeze_into(golden, name, ab, aeon_rev, note, fresh, supersede) {
         Err(m) => Err(m),
         Ok(Applied::Fixpoint { tip }) => {
-            println!("refreeze: FIXPOINT — the regenerated goldens match tip `{tip}`; nothing appended.");
+            println!("refreeze: FIXPOINT, the regenerated goldens match tip `{tip}`; nothing appended.");
             println!("          (byte-neutral re-freeze; the tree stays git-clean.)");
             Ok(())
         }
@@ -1472,12 +1472,12 @@ fn report_ledger_half(
             }
             if let Some(old) = &abandoned {
                 eprintln!(
-                    "refreeze: ABANDONING tip `{old}` — its strict run was red; this entry \
+                    "refreeze: ABANDONING tip `{old}`, its strict run was red; this entry \
                      `{name}` is recorded as its successor."
                 );
                 if byte_neutral {
                     println!(
-                        "refreeze: FIXPOINT PASSED — the regenerated goldens are UNCHANGED: \
+                        "refreeze: FIXPOINT PASSED, the regenerated goldens are UNCHANGED: \
                          byte-identical to tip `{old}`."
                     );
                     println!(
@@ -1608,7 +1608,7 @@ mod child_handover {
         );
         assert!(
             body.contains("Command::new(&inv.program)") && body.contains(".args(&inv.args)"),
-            "the spawn must use the built program AND the built arguments — using one \
+            "the spawn must use the built program AND the built arguments, using one \
              without the other is how the root gets dropped on a shape: {body}"
         );
         // Split so this gate does not count its own prose. Measured over the CODE only —
@@ -1678,7 +1678,7 @@ mod step_journal {
         let want: Vec<&str> = (0..STEPS.len()).flat_map(|_| ["wrap", "work"]).collect();
         assert_eq!(
             shape, want,
-            "each step must be one wrapper immediately followed by its work — anything \
+            "each step must be one wrapper immediately followed by its work, anything \
              else is work whose completion is never recorded: {events:?}"
         );
     }
