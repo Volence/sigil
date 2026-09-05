@@ -167,12 +167,216 @@ the reading that only Knuckles straddles, one boundary at `0x60000`, frame `$88`
 
 ---
 
-## §2 — Coverage, per source
+## §2 — Coverage, per source, with the positive control for each
 
-<!-- FILLED BELOW ONCE AGENT RESULTS LAND -->
+Aeon will confirm this list and needs to check coverage **per source**, because a list complete
+against one source and silent about the other two reads identically to a complete one.
+
+### Source 1 — `build.sh` and the tools it invokes
+
+**Rows from this source: 24** (B4, B6–B9, C1, D1–D7, E1–E6, F1–F7, G1–G5, H1–H6 — counting each
+table row once; the classes overlap where a constraint is declared in the map and checked by a
+tool).
+
+**Population, measured not assumed.** `grep -oE '\$\{TOOLS\}/[a-z_0-9]+\.(py|sh)' build.sh | sort -u`
+→ 24 tools, plus `tools/regenerate-level.sh` (FAST / `STRESS_ART` lanes only) and
+`games/<game>/prebuild.sh` (a documented no-op for sonic4). Eight further address-arithmetic
+tools were skimmed and confirmed **not** on the build path (zero hits in `build.sh` and
+`regenerate-level.sh`).
+
+**Positive control: PASSED, and the numbers match.** Target chosen before looking: `bganim_room.py --gate`
+enforcing that free room under the `dac_banks` anchor stays at or above `DATA_GROWTH_RESERVE`,
+with `packed_data_end` derived as `LMA(Art_Sonic) + len(sonic.bin)`. Re-found in the tool's own
+code: `rom_room()` computes `packed_end = labels[LAST_PACKED_LABEL] + blob_len`;
+`art_sonic_bytes()` parses `const _art_sonic = embed("art/optimized/characters/sonic.bin")` out
+of `collision_data.emp` and `getsize`s it (101,056 B present); the gate arm in `report()`
+compares the declared anchor against `rule_anchor(packed_end)` =
+`align_up(packed_end + DATA_GROWTH_RESERVE + DATA_GROWTH_GRACE, BANK_ALIGN)` with
+`DATA_GROWTH_RESERVE = 0xC000`, `DATA_GROWTH_GRACE = 0x8000`, `BANK_ALIGN = 0x8000`. Those match
+`map.toml`'s own worked derivation exactly: `align_up(0x8C01E + 0xC000 + 0x8000) = 0xA8000`,
+which is the declared `[[anchor]] dac_banks at = 0xA8000`. **The method reaches the build side
+and the arithmetic reconciles across two independently-maintained artifacts.**
+
+**A second, sharper control on the same source.** Aeon's own plan doc
+(`docs/superpowers/plans/2026-08-27-sigil-decouple-steps-1-4.md`) states the enumeration it did
+from this source **and its axis**: *"searched `room|reserve|guarantee|_CEILING` across `tools/`,
+`map.toml`, `engine/` and `config/`. That is ONE spelling axis — a guarantee phrased in none of
+those words would not appear. Three found and all enforced, NOT proof there are exactly three.
+Given the day's record, treat it as a floor."* This pass ran a **different axis** — hardcoded
+address constants (`grep -rnE '^[A-Z_]+ *= *0x[0-9A-Fa-f]{4,}' tools/*.py`), adjacency-pin
+spellings (`NEXT_SYM`, `routine_extent`), terminus proxies, and `rom[… & 0xFFFFFF]` — and it
+recovers all three of aeon's rows **and** classes F, G and H, which the word axis could not
+reach because none of them is spelled `room`, `reserve`, `guarantee` or `_CEILING`. **Aeon's own
+floor was correct and its stated limit was the right limit.**
+
+### Source 2 — `ensure(...)` inside `.emp` sources
+
+**Rows from this source: 8** (A1–A5, A8's declaration half, B1, B2).
+
+**Population, measured.** `1,324` `ensure(` / `ensure_fatal(` call sites tree-wide; `1,246`
+outside `games/sonic4/test/poison/`. Of these, **exactly 7 constrain ROM placement**: the six
+`bankid`/`winptr` bank walls (A1×5, A2, A3 — seven statements across three files) and the two
+`extern("EndOfRom")` walls (B1, B2). Every other `ensure` in the tree is a RAM-layout, Z80-RAM,
+VRAM, struct-offset, opcode-encoding, cycle-count or gameplay-constant fact.
+
+**That number is itself a finding.** `build.sh`'s own comment states the mechanism —
+*"a link-time fact no comptime `ensure` can see, because `dplc_peak_entries` parses the blob and
+never learns the base"* — and the seven exceptions are exactly the statements that reach a
+placed address through a link-deferred builtin (`bankid`, `winptr`, `extern`), which sigil defers
+to a `LinkAssert` (`sigil-link/src/lib.rs`, D-H.4). **Source 2 is a narrow but perfectly
+trustworthy source: every constraint it carries is evaluated against the placed address, so
+every one of them survives decouple untouched.**
+
+**Positive control: PASSED with a measured method failure, which is the useful half.** Two
+independent queries were run over the population:
+
+- **Q1** (placement-term filter: `bankid|winptr|span|align|$8000|$20000|straddle|boundary|window|lma`)
+  → found A1–A5 and A8's neighbourhood. **It missed B1 and B2.**
+- **Q2** (a differently-shaped blind query: identifiers containing `BASE|ADDR|LMA|BANK|ALIGN|ORG`,
+  plus `align|straddl|boundar|contiguous|adjacen|EndOfRom|_END|LAST|precede|follow`)
+  → found B1 and B2, the `EndOfRom` walls.
+
+**Q1 alone would have under-counted this source by 2 of 7 — 29%.** So a third query shape could
+find more, and this row of the coverage table should be read as a floor, not a total. Reported
+because the brief asked for a control's *result*, and a control that only ever confirms is not
+an instrument.
+
+**A control whose target was named by an outside source before I looked.** Sigil's own
+2026-08-27 note says commit `2c49f538` *"invalidated aeon's mod-8 pads"* — a claim about a repo
+this pass enumerated independently. The sweep surfaced **both** pads without being pointed at
+them: `ensure((winptr(Sfx_33) & 7) == 0, …)` in `sfx_bank_blob.emp` and
+`ensure((… + _dacsamp.len) % 8 == 0, …)` in `soundbankhead.emp`. That control could have failed
+and did not.
+
+### Source 3 — commit prose in aeon's history
+
+<!-- FILLED WHEN THE HISTORY WALK LANDS -->
 
 ## §3 — What this did NOT cover
 
-## §4 — Where the brief I was given was wrong
+Stated rather than implied, in the prior note's spirit, and **none of it should be read as
+clean**.
+
+- **No ROM was built and no tool was run.** There is no listing in the detached pin worktree, so
+  every source-1 row is confirmed from the tool's code and from `map.toml`'s committed worked
+  example, never from a live measurement. B6/B8/C1's *firing* is unexercised here.
+- **`scripts/landing-run.sh` was not run.** This branch's whole diff is one new markdown file
+  under `docs/superpowers/notes/`; nothing under `crates/` was touched, so there is no path by
+  which it could move. That is a reason not to spend the run, not evidence that it is green.
+- **Not read in full, only docstring + targeted grep:** `s4lint.py` (2,000+ lines),
+  `effects_gen.py` (3,000+ lines), `collision_consistency.py`, `emp_expect_fail.py`,
+  `gen_compression_vectors.py`, `suite_paths.py`, `editor_palette_golden.py`,
+  `row_remap_gate.py`, `waterline_art_gate.py`, `sprite_tilt_gate.py`, `instashield_gate.py`,
+  `loop_crossover_gate.py`, `plane_role_swap_gate.py`. The grep axes were address arithmetic,
+  `NEXT_SYM`/adjacency, `align`, boundary constants and `rom[…]` indexing — which is how G1–G5
+  were found, so **a full read would very likely surface more of that class.**
+- **The pytest lane was not enumerated.** `python3 -m pytest ${TOOLS}` sweeps `tools/test_*.py`
+  (skipped under `FAST=1` and when pytest is absent); what placement facts those pin is unmeasured.
+  `tools/test_bg_emit.py` at minimum asserts on `rom_room()`'s outputs.
+- **The off-canonical shapes were not read shape-by-shape.** They did not need separate map
+  reads — verified firsthand that `GameProfile::map_path` derives the map from `game_root_rel`'s
+  parent, so `s4`, `s4_debug`, `config_a`, `config_b` and `lean` all read
+  `games/sonic4/map.toml` and only `demo`/`demo_debug` read `games/demo/map.toml`. **Both maps
+  were read in full at the pin** — which is a coverage improvement on the prior note, and is not
+  the same as checking what each shape *places*.
+- **`when`-gated facts were reasoned about, not exercised.** The four sound-off arms and the
+  `sonic4`-only / `DEBUG`-only gate conditions were read out of `build.sh`'s nesting
+  structurally, not traced line-by-line through all 1,162 lines.
+- **Sigil-side claims are firsthand where stated as such.** `check_error_handler_is_last`,
+  `validate_placement`, `hole_interior_faults`, `validate_resolved_alignment`,
+  `section_align::DECLARED`, `check_object_bank_budget` and `frozen_sizes`' doc were read
+  directly at sigil master `311ded5a`. Nothing about sigil in this note is relayed.
+- **`AEON_DIR = /home/volence/sonic_hacks/.aeon-verify-483` was not used at all.** It is 164
+  commits behind the pin, and no fact in this note comes from it. Stated because the brief
+  offered it and a reader will want to know which tree each fact came from: **every aeon fact
+  here comes from `.aeon-decouple-inv` at `9e3d2861`, and nothing else.**
+
+## §4 — Where the brief this parcel was dispatched with was wrong
+
+Four items. None of them changes the parcel's shape; two change its ledger.
+
+### 4.1 — Two of the five "not implemented" predicates HAVE landed, so the residue is three, not five
+
+The brief says `HOLE_INTERIOR_RESERVED` and `SECTION_ALIGN_DECLARED` are the two predicates from
+the 2026-08-26 inventory that are implemented in sigil, and that *"the other five it derived
+(`ANCHOR_BINDS_SECTION`, `OBJ_BANK_ALIGN`, `SOUND_BANK_ALIGN`, `SOUND_BANK_WINDOW_PHASE`,
+`REGION_END_IS_OWN_SECTION`) are not."* It also said to verify rather than trust, and that is
+what caught this.
+
+**`OBJ_BANK_ALIGN` and `SOUND_BANK_ALIGN` are implemented**, and by the same landing that
+implemented `SECTION_ALIGN_DECLARED`. Verified firsthand at sigil master `311ded5a`:
+`crates/sigil-harness/src/section_align.rs` holds a 107-row `DECLARED` table keyed on head
+label, of which five rows require more than the `WORD` baseline —
+
+```
+d("Dac_Temp_Blip",       0x8000,  Z80_BANK_WINDOW)
+d("SoundTablesZ80_Head", 0x8000,  Z80_BANK_WINDOW)
+d("Sfx_33",              8,       SFX_MOD8)
+d("Song_MovingTrucks",   8,       MT_MOD8)
+d("ObjCodeBase",         0x10000, OBJ_BANK_64K)
+```
+
+— and `native::validate_resolved_alignment` asserts `required` divides every section's
+**resolved** LMA, called from `build_rom_chained_with_listing` on the shipped path (alongside
+`validate_placement`, `validate_sound_fold` and `check_object_bank_budget`). The module's own
+doc says the anchor rows exist precisely so this pass *"measures the anchors against what the
+sections actually need."* `native::packed_align_of` — the residue-of-address inference the
+2026-08-27 note's R7 was about — **no longer exists**; the walk reads `required_for(head_label)`.
+Sigil's provenance ledger dates the flip to chain 196.
+
+So: **four of the seven old predicates are now in, three remain** — `ANCHOR_BINDS_SECTION`,
+`SOUND_BANK_WINDOW_PHASE`, `REGION_END_IS_OWN_SECTION`. Rows D6, A7 and (in its build-side
+reincarnation) F1/F3 are their live instances.
+
+Two further notes on the same landing, because they matter to this list. First, `Sfx_33` and
+`Song_MovingTrucks` are declared at 8 with named reasons — the sigil-side counterpart of aeon's
+A3/A4 mod-8 `ensure`s, so that requirement is now stated on both sides of the seam. Second, the
+predicate **names** in the brief appear nowhere in sigil's crates; they are the prior note's
+proposed spellings, and `hole_interior_faults` / `section_align::DECLARED` are the
+implementations. Searching for the names finds nothing and reads as "not implemented".
+
+### 4.2 — The three-source population omits the source that carries the most unrecaptured constraint
+
+The stated population is `build.sh` + its tools, `.emp` `ensure`s, and commit prose. **The
+densest single source of stated-but-unenforced placement constraint in aeon is
+`games/sonic4/map.toml`'s PROSE**, which is none of the three: not `build.sh`, not a tool, not
+an `ensure`, not a commit message. It carries the BANK PLACEMENT RULE and its derivation, the
+`DATA_GROWTH_RESERVE`/`GRACE` reasoning, the fault-handler-island-is-last INVARIANT, the
+`[[budget]] cursor` rationale, the `Art_Sonic`-is-the-last-packed-blob statement, and the
+bank-id upper bounds (A9, A10, B7, F1–F3, F6, F7, D7 all trace back to it).
+
+It reached this list only because the tools read the *tables* in that file, so I read the file.
+That is an accident of my route, not a property of the stated population. The brief is
+internally ambiguous here — it names the prior note's "only read `games/sonic4/map.toml`" as a
+*limit*, which implies the map is in scope, while the numbered list excludes it — and a stricter
+reading by the next agent would drop those rows. **If this list is re-run or extended, name
+`games/*/map.toml` prose as a fourth source explicitly.**
+
+### 4.3 — "Don't re-enumerate sigil" is right for the rows and wrong for the WHERE-CHECKED column
+
+The brief's reasoning — *"two enumerations sharing a parameter are one enumeration run twice"* —
+is correct about which constraints exist. But the deliverable also asks **"whether a check exists
+today, and WHERE"**, and that column cannot be answered from aeon at all. Taken literally, the
+instruction would have produced a list whose where-checked column was wrong on four rows (A8,
+B5, and the two alignment predicates in 4.1), because the prior note's account of sigil is a
+snapshot that has since moved.
+
+The general form, which is the useful half: **the ledger of what is already CHECKED ages faster
+than the ledger of what EXISTS.** A constraint's existence changes when someone writes a new
+rule; its enforcement changes every time either side lands a gate. So a "don't re-do the other
+side" rule needs a standing exception for the enforcement column, and this parcel needed roughly
+an hour of sigil reading it was told it did not need.
+
+### 4.4 — The staleness figure is understated, in the direction that strengthens the brief
+
+The brief says the prior note's map read was from *"a tree 814 commits behind current aeon
+master."* Measured at the pin: `git rev-list --count 9bba8700..9e3d2861` = **978**. The
+companion figure is exact — `games/sonic4/map.toml` changed **four** times in that range
+(`af4f5098`, `4c62294e`, `446a27d9`, `5875e60e`), and `games/demo/map.toml` twice, which the
+prior note never read at all.
+
+Flagged rather than silently corrected because the error is in the direction that never gets
+caught: a stale-basis argument overstated is challenged, understated is banked. The conclusion
+is unchanged and stronger than stated.
 
 ## §5 — Is the precondition satisfiable from this list?
