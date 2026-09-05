@@ -1302,10 +1302,15 @@ appears on one side and not the other.** `repin` reported `0 pin(s) changed` and
 Gate green after.
 
 **Also worth fixing separately, and STATED SMALLER THAN I FIRST BANKED IT.** The remediation the
-failing gate prints, `run: cargo run -p sigil-harness --bin repin`, is INCOMPLETE: it does nothing
-unless `SIGIL_EMIT` is also set. **My first wording here said it did so "reporting no error", and that
-was wrong: measured, it exits 2 and prints a hint naming the missing variable.** So a reader who
-copies the printed command gets a clear failure and a pointer, not a silent no-op and not a circle.
+failing gate prints, `run: cargo run -p sigil-harness --bin repin`, is INCOMPLETE: **TWO** variables
+are missing, not one. **I got this wrong THREE times and each correction was still wrong.** First I
+banked that it "does nothing and reports no error". Then, measured, "it exits 2 naming `SIGIL_EMIT`".
+**That second version holds only when `AEON_DIR` is ALREADY SET.** With neither variable, measured at
+this seat, it exits **101** about the reference tree and **`SIGIL_EMIT` appears ZERO times in either
+stream**. Two missing variables, and the one the reader hears about first is the other one. So a
+reader who copies the printed command gets a clear failure and a pointer, just a pointer to a
+different missing thing than I twice claimed. FIXED at `81d92f80`: the message now names both and
+gives the build step.
 The defect is a papercut, not a trap, and the correction matters because I had relayed the stronger
 version to the hub. Booked `PINS-GATE-MESSAGE-MISLEADS` with both halves: make the count and the
 verdict describe the same comparison, and make the printed command the command that works.

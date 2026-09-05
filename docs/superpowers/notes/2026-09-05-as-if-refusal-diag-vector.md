@@ -246,6 +246,8 @@ branch=parcel/as-if-refusal-diag-vector
 
 Exactly one `test result: FAILED` line in the whole log, so nothing else hid behind the known row.
 
+**⚠ CORRECTED 2026-09-05: the sentence below reads a number that does not describe the failing verdict.** That gate's verdict came from a WHOLE-FILE comparison and its `0 changed pin(s)` count from a values-only one, so on that very run the same output declared the file STALE. The conclusion happened to be true and the evidence offered for it was the wrong number. Byte identity here rests on the strict run and the golden gates, not on that count. Original text follows.
+
 The `0 changed pin(s)` is also positive evidence in its own right: this parcel moved no pinned
 aeon bytes.
 
@@ -358,4 +360,4 @@ expected to be available.
 **5. Not checked.** The claim that `SIGIL_ALLOW_PARTIAL=1` skips 127 reference-dependent binaries
 was taken as background and not verified; nothing here depends on the number. The claim that
 `repin_pins::pins_rs_is_current` fails on master independently was likewise not re-measured, though
-its own `0 changed pin(s)` output is consistent with it and shows this parcel moved no pins.
+its own `0 changed pin(s)` output is consistent with it. **CORRECTED: that count does NOT show the parcel moved no pins, because it describes a different comparison from the verdict that was failing beside it.**
