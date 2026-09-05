@@ -764,12 +764,14 @@ broader words: *"get rid of all current emdashes and update so no more emdashes 
 agents"*. No U+2014 and no U+2013 in any text a tool shows a person: diagnostics, warnings, panic
 messages, generated help. Use a comma, a colon, a period, or parentheses.
 
-**⚠ THE SPEC TEXT ITSELF NAMES ORACLE, AURORA AND SERAPH, AND NOT SIGIL.** The extension to this lane
-came through the relay, carrying his own broader sentence, so the ruling binds. But a future sigil
-session reading `CHROME_SPEC.md` cold will find a rule that does not name its own tool, which is the
-shape this document already rejects twice: a ruling that reaches only the sessions alive when it was
-sent. Flagged to the hub; if their spec still omits sigil when you read this, that omission is a
-known gap and not a scope limit.
+**SCOPE IS SETTLED IN THE SPEC ITSELF, so do not re-litigate it.** At `24cdd17` the spec named only
+Oracle, Aurora and Seraph, and the extension to this lane arrived through the relay carrying his
+broader sentence. That gap was flagged to the hub and CLOSED at empyrean `f9fbfc9` (verified here
+reachable from their `origin/main`, and the line read back): the rule now names every tool in the
+suite, with **Sigil (the assembler's diagnostics, warnings and help)** explicit. Recorded because
+the fix is the interesting half: the ruling bound this lane either way, but a cold session reading
+a spec that does not name its own tool reads scope as a limit, which is the failure where a ruling
+reaches only the sessions alive when it was sent.
 
 **Half (b) is in force NOW, for everything anyone writes here**: strings, docs, lane logs, commit
 messages, peer messages. This section is written under it.
