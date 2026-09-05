@@ -244,14 +244,26 @@ FAILING TESTS (1), all of them:
   the_boot_read_is_inside_its_byte_bound     (crates/sigil-harness/tests/boot_read_bound.rs)
 ```
 
+Run twice, both segmented with an end marker this lane wrote itself, so a killed
+run could not read as a completed one. Second run is the one that names the tree
+that gets merged.
+
 ```
-tree        <worktree> @ f5dab209 (parcel/asl-guard-exit-status)
-reference   /home/volence/sonic_hacks/.aeon-ref @ 483b3e12 (HEAD, clean), all four present
-started     2026-09-05T23:43:29Z -> 23:49:42Z UTC
-CARGO_EXIT  101      CLIPPY_EXIT 0 (lint bar clean)
-suites 410   passed 4649   failed 1   ignored 2   skip lines 0
-reconciles  4650 baseline + 0 new = 4650 returned a verdict
+run 1   tree @ f5dab209   23:43:29Z -> 23:49:42Z UTC
+run 2   tree @ 055fc9e5   23:51:54Z -> 23:56:55Z UTC   <- the final tip
+
+both:   reference /home/volence/sonic_hacks/.aeon-ref @ 483b3e12 (HEAD, clean), all four present
+        CARGO_EXIT 101      CLIPPY_EXIT 0 (lint bar clean)
+        suites 410   passed 4649   failed 1   ignored 2   skip lines 0
+        reconciles 4650 baseline + 0 new = 4650 returned a verdict
+        FAILING TESTS (1): the_boot_read_is_inside_its_byte_bound
 ```
+
+The reference tree was read and not written: `git status --short` in
+`/home/volence/sonic_hacks/.aeon-ref` returns zero lines afterwards, still
+detached at `483b3e12`. The verdict's `DIRTY` on this worktree is two untracked
+scratch scripts of this lane's own (`.landing-go.sh`, `.wait.sh`), removed after
+the run; no tracked file was uncommitted at either verdict.
 
 **THE BASELINE IN THE BRIEF IS WRONG, AND THIS IS A FINDING, NOT AN EXCUSE.**
 `the_boot_read_is_inside_its_byte_bound` gates `docs/OVERSEER.md` at 100,000 B.
