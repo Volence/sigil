@@ -2046,3 +2046,62 @@ clearRAM macro  startaddr,endaddr
         dc.b $33
 --- bytes ---
 11 C0 22 33
+=== as_disp_name_that_is_also_a_function ===
+        cpu 68000
+        padding off
+        phase 0
+dsp     = $2A
+dsp     function p,(p*7)+$100
+k       = $0B
+        move.w  #$1234,dsp(a1)
+        move.w  #$1234,1+dsp(a1)
+        move.w  #$1234,dsp(k)+2(a1)
+        move.w  #$1234,1+dsp(a1,d2.w)
+        move.w  #dsp(k),d0
+        move.w  #dsp+1,d0
+--- bytes ---
+33 7C 12 34 00 2A 33 7C 12 34 00 2B 33 7C 12 34 01 4F 33 BC 12 34 20 2B 30 3C 01 4D 30 3C 00 2B
+=== as_insn2op_zero_offset_arms_with_id_also_a_function ===
+        cpu 68000
+        padding off
+        phase 0
+id      = 0
+offset  := $40
+ptrsize := 2
+idstart := 6
+id      function ptr,((ptr-offset)/ptrsize+idstart)
+ObjID_Ring = $B7
+chkop   function op,ref,(substr(lowstring(op),0,strlen(ref))<>ref)
+insn2op macro oper,x,y
+        if (chkop("x","0(") && chkop("x","id("))
+          if (chkop("y","0(") && chkop("y","id("))
+            !oper       x,y
+          else
+            !oper       x,1+y
+            !org        *-1
+            !dc.b       0
+          endif
+        else
+          if chkop("y","d")
+            !oper       1+x,1+y
+            !org        *-3
+            !dc.b       0
+            !org        *+1
+            !dc.b       0
+          else
+            !oper       1+x,y
+            !org        *-1
+            !dc.b       0
+          endif
+        endif
+        endm
+_move   macro
+        insn2op move.ATTRIBUTE, ALLARGS
+        endm
+        _move.b #ObjID_Ring,id(a1)
+        _move.b d4,id(a1)
+        _move.b id(a0),d4
+        _move.b id(a0),id(a1)
+        dc.w    id($1C6)
+--- bytes ---
+13 7C 00 B7 00 00 13 44 00 00 18 28 00 00 13 68 00 00 00 00 00 C9
