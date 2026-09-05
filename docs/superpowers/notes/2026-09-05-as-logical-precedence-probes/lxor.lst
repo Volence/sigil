@@ -1,0 +1,65 @@
+ AS V1.42 Beta [Bld 212] - Source File lxor.asm - Page 1 - 09/05/2026 02:50:55 PM
+
+
+       1/       0 :                     	cpu	68000
+       2/       0 :                     	padding	off
+       3/       0 :                     	org	0
+       4/       0 : 01                  	dc.b	1!!0
+       5/       1 : 00                  	dc.b	5!!3
+       6/       2 : 01                  	dc.b	~~0
+       7/       3 : 00                  	dc.b	~~7
+       8/       4 :                     ; PROBE lxor_vs_andand
+       9/       4 : 01                  	dc.b	1!!0&&0
+      10/       5 : 00                  	dc.b	(1!!0)&&0
+      11/       6 : 01                  	dc.b	1!!(0&&0)
+      12/       7 :                     ; PROBE lxor_vs_oror
+      13/       7 : 00                  	dc.b	1!!1||1
+      14/       8 : 01                  	dc.b	(1!!1)||1
+      15/       9 : 00                  	dc.b	1!!(1||1)
+      16/       A :                     ; PROBE lxor_vs_eq
+      17/       A : 00                  	dc.b	2=2!!0
+      18/       B : 01                  	dc.b	(2=2)!!0
+      19/       C : 00                  	dc.b	2=(2!!0)
+      20/       D :                     
+ AS V1.42 Beta [Bld 212] - Source File lxor.asm - Page 2 - 09/05/2026 02:50:55 PM
+
+
+  Symbol Table (* = unused):
+  --------------------------
+
+*ARCHITECTURE :                                      "x86_64-unknown-linux" - |
+*BIGENDIAN :                      0 - | *BRANCHEXT :                      0 - |
+*CASESENSITIVE :                  1 - | *COMPMODE :                       0 - |
+*CONSTPI :        3.141592653589793 - | *CUSTOM :                         0 - |
+*DATE :                "09/05/2026" - | *FALSE :                          0 - |
+*FULLPMMU :                       1 - | *HAS64 :                          1 - |
+*HASDSP :                         0 - | *HASFPU :                         0 - |
+*HASPMMU :                        0 - | *INEXTMODE :                      0 - |
+*INLWORDMODE :                    0 - | *INMAXMODE :                      0 - |
+*INSRCMODE :                      0 - | *INSUPMODE :                      0 - |
+*LISTON :                         1 - | *MACEXP :                         7 - |
+*MOMCPU :                     68000 - | *MOMCPUNAME :               "68000" - |
+*NESTMAX :                      100 - | *PACKING :                        0 - |
+*PADDING :                        0 - | *RELAXED :                        0 - |
+*TIME :               "02:50:55 PM" - | *TRUE :                           1 - |
+*VERSION :                     142F - | *Z80SYNTAX :                      0 - |
+
+     31 symbols
+     31 unused symbols
+
+ AS V1.42 Beta [Bld 212] - Source File lxor.asm - Page 3 - 09/05/2026 02:50:55 PM
+
+
+  Code Pages:
+  ----------
+
+STANDARD (0 changed characters)
+
+1 code page
+
+0.00 seconds assembly time
+
+     20 lines source file
+      1 pass
+      0 errors
+      0 warnings

@@ -1,0 +1,158 @@
+ AS V1.42 Beta [Bld 212] - Source File golden.asm - Page 1 - 09/05/2026 02:54:21 PM
+
+
+       1/       0 :                     	cpu	68000
+       2/       0 :                     	padding	off
+       3/       0 : =$6                  A	equ	6
+       4/       0 : =$2                  B	equ	2
+       5/       0 : =$3                  C	equ	3
+       6/       0 : =$3                  K	equ	3
+       7/       0 : =$7                  J	equ	7
+       8/       0 :                     	org	0
+       9/       0 :                     ; --- semantics: && / || are NORMALISING logical operators, not bitwise ------
+      10/       0 : 01                  	dc.b	6&&3
+      11/       1 : 01                  	dc.b	4&&2
+      12/       2 : 01                  	dc.b	4||2
+      13/       3 : 00                  	dc.b	0&&5
+      14/       4 : 00                  	dc.b	0||0
+      15/       5 : 01                  	dc.b	2=2
+      16/       6 :                     ; --- && against every other tier -------------------------------------------
+      17/       6 : 00                  	dc.b	1&&12&3
+      18/       7 : 01                  	dc.b	6&4&&2
+      19/       8 : 00                  	dc.b	0&&8|4
+      20/       9 : 01                  	dc.b	4|0&&8
+      21/       A : 00                  	dc.b	0&&8!4
+      22/       B : 01                  	dc.b	4!0&&8
+      23/       C : 01                  	dc.b	1&&1<<3
+      24/       D : 00                  	dc.b	1<<3&&0
+      25/       E : 01                  	dc.b	1&&2+3
+      26/       F : 00                  	dc.b	3+0&&0
+      27/      10 : 01                  	dc.b	2&&3*4
+      28/      11 : 00                  	dc.b	1&&2=2
+      29/      12 : 00                  	dc.b	2=2&&1
+      30/      13 : 01                  	dc.b	7<>3&&0
+      31/      14 : 01                  	dc.b	5>1&&0
+      32/      15 : 01                  	dc.b	0<=1&&0
+      33/      16 : 01                  	dc.b	0>=1&&0
+      34/      17 :                     ; --- || against every other tier -------------------------------------------
+      35/      17 : 01                  	dc.b	1||0&&0
+      36/      18 : 01                  	dc.b	0&&0||1
+      37/      19 : 00                  	dc.b	0||12&3
+      38/      1A : 01                  	dc.b	6&4||0
+      39/      1B : 01                  	dc.b	0||8|4
+      40/      1C : 01                  	dc.b	8|0||4
+      41/      1D : 01                  	dc.b	0||8!4
+      42/      1E : 01                  	dc.b	1||1<<3
+      43/      1F : 01                  	dc.b	1||2+3
+      44/      20 : 00                  	dc.b	1||2=2
+      45/      21 : 00                  	dc.b	2=2||0
+      46/      22 :                     ; --- bitwise tier internal order, and against shifts / arithmetic ----------
+      47/      22 : 03                  	dc.b	1|2&2
+      48/      23 : 03                  	dc.b	1&6|3
+      49/      24 : 03                  	dc.b	1!3&2
+      50/      25 : 00                  	dc.b	3!1|2
+      51/      26 : 00                  	dc.b	3|1!3
+      52/      27 : 00                  	dc.b	1&3<<1
+      53/      28 : 01                  	dc.b	1&3>>1
+      54/      29 : 07                  	dc.b	1|3<<1
+      55/      2A : 07                  	dc.b	1!3<<1
+      56/      2B : 02                  	dc.b	1&3+1
+      57/      2C : 03                  	dc.b	1+3&2
+      58/      2D : 05                  	dc.b	3|2+2
+      59/      2E : 08                  	dc.b	1+3|4
+      60/      2F : 03                  	dc.b	3!2+2
+ AS V1.42 Beta [Bld 212] - Source File golden.asm - Page 2 - 09/05/2026 02:54:21 PM
+
+
+      61/      30 : 02                  	dc.b	1+3!2
+      62/      31 : 06                  	dc.b	3&2*3
+      63/      32 : 00                  	dc.b	3*2&5
+      64/      33 : 15                  	dc.b	3*2|5
+      65/      34 : 15                  	dc.b	3*2!5
+      66/      35 : 02                  	dc.b	3!2*2
+      67/      36 :                     ; --- shifts against the arithmetic tier ------------------------------------
+      68/      36 : 09                  	dc.b	1+1<<3
+      69/      37 : 03                  	dc.b	1+8>>2
+      70/      38 : 04                  	dc.b	8-1<<2
+      71/      39 : 0C                  	dc.b	2<<1*3
+      72/      3A : 03                  	dc.b	12/2<<1
+      73/      3B : 08                  	dc.b	12<<1/3
+      74/      3C : 02                  	dc.b	12#5<<1
+      75/      3D : 10                  	dc.b	8>>1<<2
+      76/      3E :                     ; --- the multiplicative tier is one left-associative tier ------------------
+      77/      3E : 04                  	dc.b	7#5*2
+      78/      3F : 12                  	dc.b	12/2*3
+      79/      40 : 08                  	dc.b	12*2/3
+      80/      41 : 01                  	dc.b	12#5/2
+      81/      42 : 0C                  	dc.b	6+2*3
+      82/      43 :                     ; --- comparisons are ONE tier, and the loosest tier ------------------------
+      83/      43 : 01                  	dc.b	1<2=1
+      84/      44 : 01                  	dc.b	2=1<2
+      85/      45 : 00                  	dc.b	4=1+1
+      86/      46 : 01                  	dc.b	6&2=2
+      87/      47 : 01                  	dc.b	6<<1=12
+      88/      48 : 01                  	dc.b	3!1=2
+      89/      49 : 01                  	dc.b	1=3!2
+      90/      4A :                     ; --- the rows this parcel was opened on, re-derived here -------------------
+      91/      4A : 01                  	dc.b	A=6&&C<>3
+      92/      4B : 00                  	dc.b	A=6||C=3
+      93/      4C : 01                  	dc.b	A&B=2
+      94/      4D : 00                  	dc.b	A|B=2
+      95/      4E : 01                  	dc.b	A>4&&B<5
+      96/      4F : 01                  	dc.b	A<<1=12
+      97/      50 : 0C                  	dc.b	A+B*C
+      98/      51 : 00                  	dc.b	(K*2)=6&&(J<>3)
+      99/      52 :                     ; --- the TYPED evaluator surface (int(...) routes through it) --------------
+     100/      52 : 00                  	dc.b	int(1&&2=2)
+     101/      53 : 09                  	dc.b	int(1+1<<3)
+     102/      54 : 00                  	dc.b	int(3!1|2)
+     103/      55 : 00                  	dc.b	int(2=2&&1)
+     104/      56 : 00                  	dc.b	int(1||2=2)
+     105/      57 : 09                  	dc.b	int(1.0+1<<3)
+     106/      58 : 09                  	dc.b	int(6.0/2*3)
+     107/      59 :                     
+ AS V1.42 Beta [Bld 212] - Source File golden.asm - Page 3 - 09/05/2026 02:54:21 PM
+
+
+  Symbol Table (* = unused):
+  --------------------------
+
+ A :                              6 - |
+*ARCHITECTURE :                                      "x86_64-unknown-linux" - |
+ B :                              2 - | *BIGENDIAN :                      0 - |
+*BRANCHEXT :                      0 - |  C :                              3 - |
+*CASESENSITIVE :                  1 - | *COMPMODE :                       0 - |
+*CONSTPI :        3.141592653589793 - | *CUSTOM :                         0 - |
+*DATE :                "09/05/2026" - | *FALSE :                          0 - |
+*FULLPMMU :                       1 - | *HAS64 :                          1 - |
+*HASDSP :                         0 - | *HASFPU :                         0 - |
+*HASPMMU :                        0 - | *INEXTMODE :                      0 - |
+*INLWORDMODE :                    0 - | *INMAXMODE :                      0 - |
+*INSRCMODE :                      0 - | *INSUPMODE :                      0 - |
+ J :                              7 - |  K :                              3 - |
+*LISTON :                         1 - | *MACEXP :                         7 - |
+*MOMCPU :                     68000 - | *MOMCPUNAME :               "68000" - |
+*NESTMAX :                      100 - | *PACKING :                        0 - |
+*PADDING :                        0 - | *RELAXED :                        0 - |
+*TIME :               "02:54:21 PM" - | *TRUE :                           1 - |
+*VERSION :                     142F - | *Z80SYNTAX :                      0 - |
+
+     36 symbols
+     31 unused symbols
+
+ AS V1.42 Beta [Bld 212] - Source File golden.asm - Page 4 - 09/05/2026 02:54:21 PM
+
+
+  Code Pages:
+  ----------
+
+STANDARD (0 changed characters)
+
+1 code page
+
+0.00 seconds assembly time
+
+    107 lines source file
+      1 pass
+      0 errors
+      0 warnings
