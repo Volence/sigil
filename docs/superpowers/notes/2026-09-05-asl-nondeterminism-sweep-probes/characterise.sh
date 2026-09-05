@@ -58,15 +58,27 @@
 # Read the two halves of the table together. On the 61e672 build
 # `s_fn_defined_reg` is exit 0, no diagnostic, and `303C 0000` — SILENTLY WRONG,
 # just deterministically so. The defect both builds share is that `#f(<reg>)` is
-# accepted at all; they differ only in the placeholder, 0 against uninitialized
-# memory. So "our pinned asl is stable here" is a statement about
-# REPRODUCIBILITY and about nothing else: a vector minted from this shape on the
-# good build is a reproducible wrong answer, which a stability sweep cannot see
-# and no number of runs will surface.
+# accepted at all; they differ only in the placeholder. So "our pinned asl is
+# stable here" is a statement about REPRODUCIBILITY and about nothing else: a
+# vector minted from this shape on the good build is a reproducible wrong
+# answer, which a stability sweep cannot see and no number of runs will surface.
+#
+# AND THE 61e672 PLACEHOLDER IS NOT A ZERO — this comment used to say it was
+# "0 against uninitialized memory", which is the right conclusion off a wrong
+# mechanism. It is THE LAST VALUE THAT BUILD COMPUTED, and the `0000` above is
+# only what that slot holds when nothing has been computed yet, which is the
+# case in these single-line probes. Put a successful call above the declined one
+# and the declined one echoes it: `../2026-09-05-disp-or-call-probes/d9.asm`
+# returns 0111 / 0222 / 0333 for three declined immediates following three
+# accepted calls of those values. The range-refusal path does the same —
+# `../2026-09-04-as-end-probes/wcarry.asm`. So the placeholder is a stale value
+# against an uninitialized one, and the stale one is the more freezable of the
+# two because re-running it agrees with itself.
 #
 # `s_fline_shape` is the same story with a second twist: the `F83C` F-line word
 # reported for `1+dsp(d3).w` is a property of the 0dee1f98 build, where it also
-# ALTERNATES with `783C`; the 61e672 build emits a stable `343C 1234` instead.
+# ALTERNATES with `783C`; the 61e672 build returns a stable `343C 1234`, which
+# is that build's stale placeholder and not an emission either.
 set -uo pipefail
 declare -a ASL_DIRS=("${ASL_DIRS[@]:-}")
 [[ -n ${ASL_DIRS[0]:-} ]] || ASL_DIRS=()
