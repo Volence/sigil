@@ -3922,3 +3922,32 @@ inconsistency. Pinned by `as_warning_exitm.rs::warning_without_a_quoted_message_
 so closing it changes a test rather than surprising a reader.
 — OPEN (kill: a shared operand-count check across all four directives, behind asl probes
 for what each does with two operands — only `warning` was measured)
+
+### `\{expr}` folds only INTEGERS; asl folds floats, strings and character values too (2026-09-05)
+Measured while implementing the radix, probes `r4`/`r5`/`r7` under
+`2026-09-05-as-interp-radix-probes/`, three stable runs each, and sigil's side measured
+against the branch build rather than read off the code:
+
+| shape | asl | sigil |
+|---|---|---|
+| `f equ 1.5` → `\{f}`; `g equ 42.0` → `\{g}` | `1.5`, `42` — **DECIMAL**, not hex | not folded; `\{f}` left verbatim |
+| `\{n/1.0}` with `n equ 42` | `42` | not folded; verbatim |
+| `c equ 'z'` → `\{c}`, `\{c+0}`, `\{'z'+1}` | `z`, `z`, `{` — a character value stays a CHARACTER through arithmetic | `7A`, `7A`, `7B` |
+| `s equ "abc"` → `\{s}` | `abc` | not folded; verbatim |
+| `\{substr(s,1,2)}` | `bc` | not folded, AND a spurious `trailing tokens in expression` error |
+
+`fold_text` resolves through `eval_all`, which answers only for integers, so every
+non-integer falls into the leave-it-verbatim arm. Three separate divergences share that
+one cause, and the float row is the one with a real population: `\{x/1.0}` is the
+corpora's IDIOM for "print this in decimal" (`s2.macrosetup.asm` trace lines,
+`s2.macros.asm`'s `zoneTableEnd`, `s1disasm/MacroSetup.asm`), and every such site renders
+as literal `\{…}` text in sigil today. The `substr` row is the worst-behaved: it does not
+merely fail to fold, it manufactures an error on source asl accepts.
+
+Deliberately out of scope of the radix parcel, which changed the RENDERING of a value
+already folded and proved byte-neutrality on that basis; folding new shapes would change
+what resolves, which is a different proof.
+— OPEN (kill: `fold_text` returns a value type rather than `i64`, rendering floats in
+decimal and strings/character values as their characters, behind a census of every
+`\{}` site in both corpora and a four-shape CRC32+size re-proof — note the aeon
+population is measurably ZERO, so the corpora are the only evidence a fix would have)
