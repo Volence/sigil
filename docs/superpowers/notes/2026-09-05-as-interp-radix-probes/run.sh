@@ -1,6 +1,19 @@
 #!/bin/sh
 # Run one probe against the reference assembler, three times, and print each run
 # verbatim. Usage: run.sh <probe-stem>
+#
+# THE THREE RUNS CARRY NO CLOCK READING, AND THAT IS AN ACCIDENT OF THE FLAGS.
+# asl stamps the wall clock into its output in three places — the page banner's
+# date and time, the DATE/TIME builtins in the symbol table, and
+# `N.NN seconds assembly time` in the trailer — and all three live in the
+# LISTING, which `-L` writes and `-q` keeps off stdout. This invocation passes
+# `-q` and no `-L`, so the only stream it prints is stderr, which carries none of
+# them: comparing the three runs here compares asl and nothing else.
+#
+# Add `-L` (or drop `-q`) and that stops being true: the trailer's duration is a
+# DURATION, so a batch straddling a tick reports the assembler disagreeing with
+# itself when only the clock moved. Filter the stream through
+# `../asl-declock/declock.sed` if this runner ever grows a listing.
 set -u
 DIR=$(dirname "$0")
 TOOLS=/home/volence/sonic_hacks/s2disasm/build_tools/Linux-x86_64
