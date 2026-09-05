@@ -8,10 +8,17 @@
 #
 # Writes into a scratch dir under /home, never /tmp (tmpfs), so the committed
 # probe directory does not fill with generated files.
+#
+# The assembler is selected by MD5, not by path and not by version banner: four
+# `asl` binaries in this workspace print the same banner and are not the same
+# program, and one of them answers refused operands from uninitialized memory.
+# `asl_ref.sh` refuses anything but the reference build; `|| exit $?` is
+# load-bearing because `set -uo pipefail` is not `set -e`.
 set -uo pipefail
+HERE="$(cd "$(dirname "$0")" && pwd)"
+. "$HERE/../asl-reference/asl_ref.sh" || exit $?
 N="${1:?usage: depth.sh <N> [dir]}"
 DIR="${2:-$(mktemp -d /home/volence/sonic_hacks/.parcel-include-scratch/depth.XXXXXX)}"
-ASLDIR=/home/volence/sonic_hacks/s1disasm/build_tools/Linux-x86_64
 mkdir -p "$DIR"
 {
     printf '\tcpu\t68000\n'

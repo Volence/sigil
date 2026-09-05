@@ -1,7 +1,14 @@
 #!/usr/bin/env bash
 # Compare sigil's image against asl's for one probe file, by CRC32+size.
-ASL=/home/volence/sonic_hacks/s1disasm/build_tools/Linux-x86_64/asl
-P2BIN=/home/volence/sonic_hacks/s1disasm/build_tools/Linux-x86_64/p2bin
+#
+# The assembler is selected by MD5, not by path and not by version banner: four
+# `asl` binaries in this workspace print the same banner and are not the same
+# program, and one of them answers refused operands from uninitialized memory.
+# `asl_ref.sh` refuses anything but the reference build; `|| exit $?` is
+# load-bearing because this script does not set `-e`.
+HERE="$(cd "$(dirname "$0")" && pwd)"
+. "$HERE/../asl-reference/asl_ref.sh" || exit $?
+P2BIN="$ASLDIR/p2bin"
 SIGIL=${SIGIL:-/home/volence/sonic_hacks/.sigil-struct/.target-land/release/sigil}
 crc() { python3 -c "import zlib,sys;d=open(sys.argv[1],'rb').read();print('%08x/%d'%(zlib.crc32(d)&0xffffffff,len(d)))" "$1"; }
 d=$(cd "$(dirname "$1")" && pwd); f=$(basename "$1" .asm)

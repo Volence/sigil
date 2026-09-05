@@ -11,9 +11,12 @@
 # Usage:  scripts/z80_byte_sweep.sh <s1-corpus-dir> <s2-corpus-dir> [sigil-binary]
 #
 # The two corpus directories are checkouts of `s1disasm` and `s2disasm`. `asl`
-# and `p2bin` are taken from the S1 corpus's own `build_tools/Linux-x86_64/`
-# (upstream AS, md5 61e672562465725a8c102288a7da9098) — S2 ships the flamewing
-# fork under the same version string, so the binary is named, not assumed.
+# and `p2bin` are taken from the S1 corpus's own `build_tools/Linux-x86_64/`,
+# and that binary's MD5 IS CHECKED, not merely printed: S2 ships the flamewing
+# fork under the same version string, and that fork answers any operand it
+# declined to value from uninitialized memory. Naming the path pins nothing when
+# the path is an argument, so `asl_ref.sh` is pointed at the corpus's own
+# directory and refuses it if the digest is not the reference build's.
 # `-U` is passed on every invocation.
 #
 # Exit status: 0 when every line's bytes agree; 1 when any line DIFFERS or when
@@ -30,11 +33,12 @@ if [ -z "$S1_DIR" ] || [ -z "$S2_DIR" ]; then
     exit 2
 fi
 
-ASL="$S1_DIR/build_tools/Linux-x86_64/asl"
-P2BIN="$S1_DIR/build_tools/Linux-x86_64/p2bin"
-for t in "$ASL" "$P2BIN"; do
-    [ -x "$t" ] || { echo "FATAL: missing tool $t" >&2; exit 2; }
-done
+# The digest check. `|| exit $?` is load-bearing — `set -u` is not `set -e`, so a
+# sourced guard that merely returns non-zero would stop nothing.
+ASLDIR="$S1_DIR/build_tools/Linux-x86_64"
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/docs/superpowers/notes/asl-reference/asl_ref.sh" || exit $?
+P2BIN="$ASLDIR/p2bin"
+[ -x "$P2BIN" ] || { echo "FATAL: missing tool $P2BIN" >&2; exit 2; }
 
 if [ -z "$SIGIL" ]; then
     SIGIL="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/target/release/sigil"

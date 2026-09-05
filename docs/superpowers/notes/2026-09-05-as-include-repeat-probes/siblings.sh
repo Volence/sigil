@@ -9,10 +9,17 @@
 # and an implementation that increments a depth counter and forgets to decrement
 # it passes every nested test and fails here at N=200. That mutation (`m5`)
 # survived the first version of `as_include_repeat.rs` untouched.
+#
+# The assembler is selected by MD5, not by path and not by version banner: four
+# `asl` binaries in this workspace print the same banner and are not the same
+# program, and one of them answers refused operands from uninitialized memory.
+# `asl_ref.sh` refuses anything but the reference build; `|| exit $?` is
+# load-bearing because `set -uo pipefail` is not `set -e`.
 set -uo pipefail
+HERE="$(cd "$(dirname "$0")" && pwd)"
+. "$HERE/../asl-reference/asl_ref.sh" || exit $?
 N="${1:?usage: siblings.sh <N> [sigil-binary]}"
 SIGIL="${2:-}"
-ASLDIR=/home/volence/sonic_hacks/s1disasm/build_tools/Linux-x86_64
 DIR="$(mktemp -d /home/volence/sonic_hacks/.parcel-include-scratch/sib.XXXXXX)"
 {
     printf '\tcpu\t68000\n'
