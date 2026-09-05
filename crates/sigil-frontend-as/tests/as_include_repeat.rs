@@ -23,7 +23,20 @@
 //! given; a fixture in this file that cannot name one is decoration and should
 //! be deleted rather than kept.
 
-use sigil_frontend_as::{assemble, Options, INCLUDE_NEST_MAX};
+use sigil_frontend_as::{assemble, Options};
+
+/// asl's bound, WRITTEN OUT rather than imported from
+/// [`sigil_frontend_as::INCLUDE_NEST_MAX`].
+///
+/// The first version of this file built its chains from the crate constant, and
+/// the mutation that moves the constant to 198 left every test green: a fixture
+/// whose input is derived from the value under test cannot disagree with it.
+/// These two numbers are read off asl and belong to asl —
+/// `docs/superpowers/notes/2026-09-05-as-include-repeat-probes/depth.sh 199`
+/// exits 0, `depth.sh 200` raises `error #10008`. If sigil's constant ever
+/// disagrees with them, that is the disagreement these tests exist to report.
+const ASL_DEEPEST_CLEAN: u32 = 199;
+const ASL_FIRST_REFUSED: u32 = 200;
 
 /// A scratch tree of `(name, contents)` files, assembled from `root`.
 ///
@@ -282,35 +295,94 @@ fn borrow(files: &[(String, String)]) -> Vec<(&str, &str)> {
 /// being seen twice.
 #[test]
 fn nesting_is_clean_at_the_bound_and_refused_one_level_past() {
-    let deep = chain(INCLUDE_NEST_MAX);
+    let deep = chain(ASL_DEEPEST_CLEAN);
     let img = bytes(&borrow(&deep), "root.asm");
-    assert_eq!(img.len(), INCLUDE_NEST_MAX as usize);
+    assert_eq!(img.len(), ASL_DEEPEST_CLEAN as usize);
     assert!(img.iter().all(|&b| b == 0xAA));
 
-    let too_deep = chain(INCLUDE_NEST_MAX + 1);
+    let too_deep = chain(ASL_FIRST_REFUSED);
     let msgs = refusal(&borrow(&too_deep), "root.asm");
     assert!(
         msgs.iter().any(|m| m.contains("INCLUDE nested too deeply")),
-        "expected asl's depth refusal at {} levels, got {msgs:?}",
-        INCLUDE_NEST_MAX + 1
+        "expected asl's depth refusal at {ASL_FIRST_REFUSED} levels, got {msgs:?}"
     );
 }
 
-/// The refusal is raised ONCE, not once per open level.
+/// probe `siblings.sh`. 250 includes IN SEQUENCE, none nested inside another.
 ///
-/// WHAT OTHER ANSWER COULD THIS HAVE GIVEN: 199 copies of it. Unwinding one
-/// level and carrying on is the obvious implementation of "refuse this include",
-/// and it re-raises the same message at every frame on the way out — which is
-/// what asl's `fatal error, assembly terminated` exists to avoid. The count is
-/// the assertion, so a change that turns the abort back into a return fails here
-/// rather than merely making logs noisier.
+/// WHAT OTHER ANSWER COULD THIS HAVE GIVEN: a refusal at the 200th, which is
+/// what an implementation that increments the depth on the way in and forgets to
+/// restore it on the way out produces. That mutation passes every nested fixture
+/// in this file — the diamond reaches depth 2, the two cycles are refused
+/// anyway, and the 199-chain is at the bound either way — so without this test
+/// the whole `include_depth -= 1` is unpinned. Measured on asl: 250 sibling
+/// includes assemble clean and emit 250 bytes, because asl's bound is on how
+/// many includes are OPEN AT ONCE and nothing counts how many have run.
+///
+/// 250 rather than 200: a count that only just crosses the bound would still
+/// pass under an off-by-one in the accumulation, and the margin costs nothing.
 #[test]
-fn the_depth_refusal_is_raised_once_not_once_per_open_level() {
-    let too_deep = chain(INCLUDE_NEST_MAX + 1);
-    let msgs = refusal(&borrow(&too_deep), "root.asm");
-    let n = msgs
-        .iter()
-        .filter(|m| m.contains("INCLUDE nested too deeply"))
-        .count();
-    assert_eq!(n, 1, "expected exactly one depth refusal, got {msgs:?}");
+fn sibling_includes_do_not_accumulate_depth() {
+    const N: u32 = 250;
+    let mut files = vec![("root.asm".to_string(), String::new())];
+    let mut root = head().to_string();
+    for i in 1..=N {
+        root.push_str(&format!("\tinclude\t\"s{i}.inc\"\n"));
+        files.push((format!("s{i}.inc"), "\tdc.b\t$AA\n".to_string()));
+    }
+    files[0].1 = root;
+    let img = bytes(&borrow(&files), "root.asm");
+    assert_eq!(img.len(), N as usize);
+    assert!(img.iter().all(|&b| b == 0xAA));
+}
+
+/// The depth refusal TERMINATES the assembly; it does not unwind one level and
+/// carry on.
+///
+/// WHAT OTHER ANSWER COULD THIS HAVE GIVEN: 200 diagnostics instead of 1, and
+/// that is measured, not predicted. The included file here carries a line AFTER
+/// its own `include` that is itself an error. With the abort, sigil reports the
+/// one depth refusal and stops — asl's answer exactly (`fatal error, assembly
+/// terminated`, and it never reaches line 3 either). With `self.aborted = true`
+/// removed and only the `return` left, each of the 199 open frames resumes at
+/// its line 3 on the way out and the log is one true error buried under 199
+/// copies of its consequences: measured at 200 diagnostics against this same
+/// source.
+///
+/// The trailing line has to be an error the front end raises IMMEDIATELY. An
+/// undefined symbol does not work here and the first draft of this test was
+/// vacuous because of it: undefined names are poisoned and promoted at the end
+/// of the converged pass, so the run that already holds an error never reaches
+/// the promotion and reports 1 either way.
+#[test]
+fn the_depth_refusal_terminates_the_assembly() {
+    let msgs = refusal(
+        &[
+            ("root.asm", &format!("{}\tinclude\t\"s.inc\"\n", head())),
+            (
+                "s.inc",
+                "\tdc.b\t$AA\n\tinclude\t\"s.inc\"\n\tnotamnemonic\td0,d1\n",
+            ),
+        ],
+        "root.asm",
+    );
+    assert_eq!(
+        msgs.len(),
+        1,
+        "the refusal must stop the pass, not unwind through 199 frames: {msgs:?}"
+    );
+    assert!(msgs[0].contains("INCLUDE nested too deeply"), "{msgs:?}");
+}
+
+/// Sigil's constant agrees with the numbers this file read off asl.
+///
+/// This is the only place the crate constant is imported, and it is imported to
+/// be COMPARED rather than to build an input. Every fixture above states asl's
+/// bound literally, so a wrong constant shows up as a failing behaviour test;
+/// this one names the disagreement directly so the failure says which number
+/// moved instead of only that a 199-file chain stopped assembling.
+#[test]
+fn the_bound_constant_matches_what_asl_measured() {
+    assert_eq!(sigil_frontend_as::INCLUDE_NEST_MAX, ASL_DEEPEST_CLEAN);
+    assert_eq!(ASL_FIRST_REFUSED, ASL_DEEPEST_CLEAN + 1);
 }
