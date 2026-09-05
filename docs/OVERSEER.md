@@ -453,6 +453,18 @@ not an identity either. **Select and cite by MD5.** The shared guard is
 `docs/superpowers/notes/asl-reference/asl_ref.sh`, whose own `selfcheck.sh` proves it refuses
 the varying build rather than merely claiming to.
 
+**AND THE DIGEST SAYS WHICH PROGRAM RAN; THE EXIT STATUS SAYS WHETHER ITS ANSWERS MEAN
+ANYTHING** *(measured 2026-09-05, `docs/superpowers/notes/asl-reference/partial_failure.asm`)*.
+A run carrying **any** error is not a source of values for the lines that DID assemble: a
+single invalid `bra.s /` in an otherwise valid file makes a macro's `beq.s +` come back `67FE`,
+a branch to itself, where the same file without that one line gives `6702`. asl exits 2 and
+still prints a **full byte column** for every line, so the listing looks complete and nothing
+announces the corrupted value. **Assemble through `asl_run`**, which the guard defines: it
+refuses out loud on a non-zero status and returns it. Calling `"$ASL"` directly still works and
+is the unblessed path. Note the limit stated immediately below applies to `asl_run` too: **a
+zero exit is not sufficient either**, so digest plus status answer *which program ran* and *did
+the run as a whole fail*, never *did the build answer this line*.
+
 **⚠ AND THE PIN IDENTIFIES THE INSTRUMENT WITHOUT MAKING ITS ANSWER REAL — A STABLE VALUE IS
 NOT AN ANSWER** *(measured 2026-09-05, reproduced firsthand at this seat on
 `docs/superpowers/notes/2026-09-05-disp-or-call-probes/d9.asm`, three runs)*. For an operand it

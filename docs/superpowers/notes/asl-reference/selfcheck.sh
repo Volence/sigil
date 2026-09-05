@@ -257,9 +257,20 @@ echo "--- case 9: with asl_run's STATUS PROPAGATION stubbed, case 8 must go RED"
 # about the other.
 ASLSTUB="$(mktemp)"
 sed 's/^    return "\$asl_rc"$/    return 0/' "$GUARD" > "$ASLSTUB"
-if ! grep -q '^    return 0$' "$ASLSTUB"; then
+# THE STUB MUST HAVE CHANGED SOMETHING, and "the output contains `return 0`" does
+# not establish that: it is also true of a guard that ALREADY said `return 0`,
+# which is the very defect this case exists to detect. So both halves are asked:
+# the guard carries the line before, and the stub does not carry it after.
+if ! grep -q '^    return "\$asl_rc"$' "$GUARD"; then
+    bad "the guard has no 'return \$asl_rc' line to stub: either asl_run's status \
+propagation is already gone (which case 8 should be reporting) or the line was \
+renamed and this case is stubbing nothing"
+elif grep -q '^    return "\$asl_rc"$' "$ASLSTUB"; then
     bad "the stub did not apply: case 9 would have passed by running the ORIGINAL \
 guard, which is indistinguishable from a working stub"
+elif ! grep -q '^    return 0$' "$ASLSTUB"; then
+    bad "the stub removed the line without substituting 'return 0' for it, so the \
+stubbed guard is not the program this case means to run"
 else
     out="$(run_probe pf.asm "$ASLSTUB")"; rc="${out%%$'\n'*}"
     if [ "$rc" = 0 ]; then
