@@ -2148,3 +2148,16 @@ Al      label   $100
         dc.w    $4444
 --- bytes ---
 01 00 01 00 44 44
+=== as_label_directive_constant_reached_by_a_deferred_fixup ===
+        cpu 68000
+        padding off
+        phase 0
+mk      macro
+Al      label   $100
+        nop
+        endm
+        bra.w   Al
+        mk
+        dc.w    Al
+--- bytes ---
+60 00 00 FE 4E 71 01 00

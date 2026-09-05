@@ -374,3 +374,34 @@ fn two_expansions_declaring_the_same_label_directive_collide() {
         "expected a double-definition refusal naming `Xl`, got: {msgs:?}"
     );
 }
+
+/// probe `p13`. A CONSTANT-valued `label` in a macro body reached by a fixup the
+/// front end must DEFER — and the only fixture in this file whose reference is
+/// not folded in-pass.
+///
+/// EVERY OTHER FIXTURE HERE READS ITS NAME WITH A BACKWARD `dc.w`, WHICH IS
+/// EXACTLY WHY THIS ONE EXISTS. `directive_label` writes the name into the
+/// symbol environment either way; a `dc.w` behind the definition folds straight
+/// out of that environment, so no such fixture can see whether the name was
+/// ALSO placed as a relocatable label at the expansion's address. A `bra.w`
+/// resolves from the SECTION's symbol table instead, and the two readings are
+/// different displacements: `$0100` is the directive's value, `$0004` is where
+/// the expansion sits.
+///
+/// This was found by a mutation that made every `label` claim a position at the
+/// current PC. It applied cleanly and left the whole crate green, which reads
+/// exactly like a line nothing depends on.
+///
+/// WHAT OTHER ANSWER COULD THIS HAVE GIVEN: `60 00 00 02`, the displacement to
+/// the expansion, which is what a `label` that claims a position produces; and
+/// a refusal, if the deferred reference found no symbol at all.
+#[test]
+fn a_constant_valued_label_directive_is_not_placed_at_the_expansion() {
+    let src = "\tcpu\t68000\n\tpadding\toff\n\tphase\t0\n\
+               mk\tmacro\nAl\tlabel\t$100\n\tnop\n\tendm\n\tbra.w\tAl\n\tmk\n\tdc.w\tAl\n";
+    assert_eq!(
+        bytes(src),
+        vec![0x60, 0x00, 0x00, 0xFE, 0x4E, 0x71, 0x01, 0x00],
+        "asl p13: bra.w to $0100 (6000 00FE) / nop / 0100"
+    );
+}
