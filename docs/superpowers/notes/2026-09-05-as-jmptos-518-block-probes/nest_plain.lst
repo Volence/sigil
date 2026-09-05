@@ -1,0 +1,52 @@
+ AS V1.42 Beta [Bld 212] - Source File nest_plain.asm - Page 1 - 09/05/2026 12:20:30 PM
+
+
+       1/       0 :                     	cpu	68000
+       2/    1000 :                     	org	$1000
+       3/    1000 : =$6                  Six:	equ	4+2
+       4/    1000 :                     Foo:
+       5/    1000 : 0000 1000           	dc.l	val(substr("JmpTo_Foo", Six, 3))
+       6/    1004 :                     	end
+ AS V1.42 Beta [Bld 212] - Source File nest_plain.asm - Page 2 - 09/05/2026 12:20:30 PM
+
+
+  Symbol Table (* = unused):
+  --------------------------
+
+*ARCHITECTURE :                                      "x86_64-unknown-linux" - |
+*BIGENDIAN :                      0 - | *BRANCHEXT :                      0 - |
+*CASESENSITIVE :                  1 - | *COMPMODE :                       0 - |
+*CONSTPI :        3.141592653589793 - | *CUSTOM :                         0 - |
+*DATE :                "09/05/2026" - | *FALSE :                          0 - |
+*FULLPMMU :                       1 - |  Foo :                         1000 C |
+*HAS64 :                          1 - | *HASDSP :                         0 - |
+*HASFPU :                         0 - | *HASPMMU :                        0 - |
+*INEXTMODE :                      0 - | *INLWORDMODE :                    0 - |
+*INMAXMODE :                      0 - | *INSRCMODE :                      0 - |
+*INSUPMODE :                      0 - | *LISTON :                         1 - |
+*MACEXP :                         7 - | *MOMCPU :                     68000 - |
+*MOMCPUNAME :               "68000" - | *NESTMAX :                      100 - |
+*PACKING :                        0 - | *PADDING :                        1 - |
+*RELAXED :                        0 - |  Six :                            6 - |
+*TIME :               "12:20:30 PM" - | *TRUE :                           1 - |
+*VERSION :                     142F - | *Z80SYNTAX :                      0 - |
+
+     33 symbols
+     31 unused symbols
+
+ AS V1.42 Beta [Bld 212] - Source File nest_plain.asm - Page 3 - 09/05/2026 12:20:30 PM
+
+
+  Code Pages:
+  ----------
+
+STANDARD (0 changed characters)
+
+1 code page
+
+0.00 seconds assembly time
+
+      7 lines source file
+      1 pass
+      0 errors
+      0 warnings

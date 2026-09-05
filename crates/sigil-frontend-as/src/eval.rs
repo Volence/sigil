@@ -1562,7 +1562,45 @@ impl Asm {
     /// of these three, which is how `strlen(substr(...))` /
     /// `strstr(substr(s,p,0),">")` nesting works.
     fn expand_str_builtins(&mut self, toks: &[Token]) -> Vec<Token> {
+        let (out, failures) = self.scan_str_builtins(toks);
+        for (span, name) in failures {
+            self.err(span, format!("{name}(): could not evaluate string builtin"));
+        }
+        out
+    }
+
+    /// [`Self::expand_str_builtins`] without the diagnostics: `None` when any
+    /// call in `toks` could not be evaluated, so the caller's own `None` is
+    /// what a reader sees rather than two messages for one cause.
+    ///
+    /// This is the form the NESTED evaluator needs. `fold_const` backs
+    /// `substr`'s `pos`/`len` arguments and `val`'s re-lexed text, and both of
+    /// those are reached from inside an outer builtin that is already going to
+    /// report its own failure; an inner message here would name a call the
+    /// source did not get wrong.
+    fn expand_str_builtins_opt(&self, toks: &[Token]) -> Option<Vec<Token>> {
+        let (out, failures) = self.scan_str_builtins(toks);
+        failures.is_empty().then_some(out)
+    }
+
+    /// The one scan both forms above share, returning the rewritten tokens and
+    /// the `(span, builtin name)` of every call that could not be evaluated.
+    ///
+    /// It walks `toks` linearly and descends into an unrecognized head's
+    /// argument list as a side effect of that walk, which is why a `substr` at
+    /// TOP level has its own nested `strstr`/`strlen` arguments folded before
+    /// `substr` is ever evaluated. A `substr` consumed by an outer `val` is
+    /// taken whole by that outer call instead and never gets this treatment,
+    /// which is exactly the asymmetry `expand_str_builtins_opt` exists to
+    /// remove from `fold_const`.
+    ///
+    /// **It is the identity on any slice that does not spell `strlen`,
+    /// `strstr` or `val` immediately before a `(`**: every other token is
+    /// cloned through untouched and no failure is recorded. That is the whole
+    /// inertness argument for wiring it into a new caller.
+    fn scan_str_builtins(&self, toks: &[Token]) -> (Vec<Token>, Vec<(Span, String)>) {
         let mut out = Vec::new();
+        let mut failures = Vec::new();
         let mut i = 0;
         while i < toks.len() {
             if let Tok::Ident(name) = &toks[i].tok {
@@ -1580,10 +1618,7 @@ impl Asm {
                                 span,
                             }),
                             None => {
-                                self.err(
-                                    span,
-                                    format!("{name}(): could not evaluate string builtin"),
-                                );
+                                failures.push((span, name.clone()));
                                 out.push(Token {
                                     tok: Tok::Int(0),
                                     span,
@@ -1598,7 +1633,7 @@ impl Asm {
             out.push(toks[i].clone());
             i += 1;
         }
-        out
+        (out, failures)
     }
 
     /// Fold `<string-expr> (= | <>) "literal"` sub-patterns to a `Tok::Int(0/1)`
@@ -1813,6 +1848,13 @@ impl Asm {
     /// `pos`/`len` arguments, and `val`'s re-lexed expression text).
     fn fold_const(&self, toks: &[Token]) -> Option<i64> {
         let expanded = self.expand_calls(toks, 0);
+        // A string builtin may appear here: `substr(s, strstr(s,"_")+1,
+        // strlen(s))` is Sonic 2's whole jump-table generator
+        // (`s2.macrosetup.asm:280`), and asl evaluates those arguments as
+        // ordinary constant expressions, which in asl includes the builtins.
+        // Identity when no builtin head is present, so an ordinary arithmetic
+        // `pos`/`len` reaches `parse_expr` exactly as it did before.
+        let expanded = self.expand_str_builtins_opt(&expanded)?;
         let (e, rest) = crate::expr::parse_expr(&expanded)?;
         if !rest.is_empty() {
             return None;
