@@ -1,0 +1,53 @@
+ AS V1.42 Beta [Bld 212] - Source File smoke.asm - Page 1 - 09/05/2026 02:47:22 PM
+
+
+       1/       0 :                     	cpu	68000
+       2/       0 :                     	padding	off
+       3/       0 :                     	org	0
+       4/       0 : 01                  	dc.b	2=2
+       5/       1 : 01                  	dc.b	6&&3
+       6/       2 : 01                  	dc.b	4&&2
+       7/       3 : 01                  	dc.b	4||2
+       8/       4 :                     
+ AS V1.42 Beta [Bld 212] - Source File smoke.asm - Page 2 - 09/05/2026 02:47:22 PM
+
+
+  Symbol Table (* = unused):
+  --------------------------
+
+*ARCHITECTURE :                                      "x86_64-unknown-linux" - |
+*BIGENDIAN :                      0 - | *BRANCHEXT :                      0 - |
+*CASESENSITIVE :                  1 - | *COMPMODE :                       0 - |
+*CONSTPI :        3.141592653589793 - | *CUSTOM :                         0 - |
+*DATE :                "09/05/2026" - | *FALSE :                          0 - |
+*FULLPMMU :                       1 - | *HAS64 :                          1 - |
+*HASDSP :                         0 - | *HASFPU :                         0 - |
+*HASPMMU :                        0 - | *INEXTMODE :                      0 - |
+*INLWORDMODE :                    0 - | *INMAXMODE :                      0 - |
+*INSRCMODE :                      0 - | *INSUPMODE :                      0 - |
+*LISTON :                         1 - | *MACEXP :                         7 - |
+*MOMCPU :                     68000 - | *MOMCPUNAME :               "68000" - |
+*NESTMAX :                      100 - | *PACKING :                        0 - |
+*PADDING :                        0 - | *RELAXED :                        0 - |
+*TIME :               "02:47:22 PM" - | *TRUE :                           1 - |
+*VERSION :                     142F - | *Z80SYNTAX :                      0 - |
+
+     31 symbols
+     31 unused symbols
+
+ AS V1.42 Beta [Bld 212] - Source File smoke.asm - Page 3 - 09/05/2026 02:47:22 PM
+
+
+  Code Pages:
+  ----------
+
+STANDARD (0 changed characters)
+
+1 code page
+
+0.00 seconds assembly time
+
+      8 lines source file
+      1 pass
+      0 errors
+      0 warnings

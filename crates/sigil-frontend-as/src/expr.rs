@@ -26,11 +26,37 @@ pub fn parse_expr(toks: &[Token]) -> Option<(Expr, &[Token])> {
     parse_bp(toks, 0, 0)
 }
 
-/// Binding-power ladder: higher binds tighter.
+/// Binding-power ladder: higher binds tighter. It is asl's, tier for tier, and
+/// it is NOT C's:
 ///
-/// `||` is loosest, `&&` binds tighter than `||` but looser than comparisons,
-/// mirroring AS's real operator surface (empirically confirmed against `asl`:
-/// both fold to a neutral `1`/`0`, same as the comparison tier).
+/// ```text
+///   9  <<  >>                 tightest
+///   8  &
+///   7  |
+///   6  !                      (bitwise xor)
+///   5  *  /  #
+///   4  +  -
+///   3  &&
+///   2  ||
+///   1  =  <>  <  >  <=  >=    loosest
+/// ```
+///
+/// Three things about it are surprising if you are reading it as C. The SHIFTS
+/// and the BITWISE operators bind tighter than multiplication, so `1+1<<3` is
+/// `1+(1<<3)` = 9 and `3*2|5` is `3*(2|5)` = 21. `!` is its OWN tier, looser
+/// than `|`, so `3!1|2` is `3!(1|2)` = 0. And the COMPARISONS are the loosest
+/// tier of all, looser than `&&` and `||`, so `A=6&&C<>3` is `(A=(6&&C))<>3`,
+/// not the C reading `(A=6)&&(C<>3)`.
+///
+/// Every tier boundary above is measured, not inferred: the probes are in
+/// `docs/superpowers/notes/2026-09-05-as-logical-precedence-probes/` and the
+/// bytes are asserted in `tests/as_operator_precedence.rs`. A tier that is
+/// merely PLAUSIBLE here is a silent wrong answer in a folded integer, since
+/// sigil and asl both exit 0 and neither mentions the expression.
+///
+/// `&&` and `||` are NORMALISING logical operators, not bitwise ones: asl folds
+/// `6&&3` to `1` and `4||2` to `1`, so a nonzero operand contributes only its
+/// truth. That is a claim about VALUES, and it is independent of the tiers above.
 ///
 /// `pub(crate)` because the front-end-only TYPED evaluator
 /// (`eval.rs::eval_num`, which backs `int(...)`/`sin(...)` and float-valued
@@ -41,33 +67,44 @@ pub fn parse_expr(toks: &[Token]) -> Option<(Expr, &[Token])> {
 pub(crate) fn infix_bp(p: Punct) -> Option<(u8, BinOp)> {
     use Punct::*;
     Some(match p {
-        Star => (8, BinOp::Mul),
-        Slash => (8, BinOp::Div),
-        // `#` infix modulo — same precedence tier as `*`/`/` (asl-verified:
-        // `7#5*2`=4, `5+7#2`=6). Distinct from the OPERAND-level `#expr`
-        // immediate marker, which `operands.rs::classify` consumes from the
-        // front of an operand group before this parser ever sees it — by the
-        // time `parse_expr` runs, any remaining `#` is unambiguously infix.
-        Hash => (8, BinOp::Mod),
-        Plus => (7, BinOp::Add),
-        Minus => (7, BinOp::Sub),
-        Shl => (6, BinOp::Shl),
-        Shr => (6, BinOp::Shr),
-        Amp => (5, BinOp::And),
-        Pipe => (4, BinOp::Or),
+        // The shifts are the TIGHTEST binary tier, above `*` and `/`: asl folds
+        // `12/2<<1` to 3, which is `12/(2<<1)`, and `1+1<<3` to 9. They share
+        // one left-associative tier with each other (`8>>1<<2`=16).
+        Shl => (9, BinOp::Shl),
+        Shr => (9, BinOp::Shr),
+        // The bitwise tier is three SEPARATE tiers, all above `*`: `3*2&5`=0 is
+        // `3*(2&5)`, `1|2&2`=3 is `1|(2&2)`, and `3!1|2`=0 is `3!(1|2)`.
+        Amp => (8, BinOp::And),
+        Pipe => (7, BinOp::Or),
         // `!` — AS's infix bitwise XOR (asl-verified 2026-07-04: `1!1`=0,
-        // `3!1`=2, `5!3`=6; the earlier bitwise-OR reading was wrong — the
-        // only prior golden `3!4`=7 can't tell OR from XOR). Same tier as `|`.
-        // Drives `__ErrorMessage`'s `.__align_flag: set (((*)&1)!1)*$80`.
-        Bang => (4, BinOp::Xor),
-        Eq => (3, BinOp::Eq),
-        Ne => (3, BinOp::Ne),
-        Lt => (3, BinOp::Lt),
-        Gt => (3, BinOp::Gt),
-        Le => (3, BinOp::Le),
-        Ge => (3, BinOp::Ge),
-        AndAnd => (2, BinOp::LogAnd),
-        OrOr => (1, BinOp::LogOr),
+        // `3!1`=2, `5!3`=6; the earlier bitwise-OR reading was wrong, since the
+        // only prior golden `3!4`=7 cannot tell OR from XOR). Its own tier,
+        // LOOSER than `|`. Drives `__ErrorMessage`'s
+        // `.__align_flag: set (((*)&1)!1)*$80`.
+        Bang => (6, BinOp::Xor),
+        Star => (5, BinOp::Mul),
+        Slash => (5, BinOp::Div),
+        // `#` infix modulo — same left-associative tier as `*`/`/` (asl-verified:
+        // `7#5*2`=4, `12#5/2`=1, `5+7#2`=6). Distinct from the OPERAND-level
+        // `#expr` immediate marker, which `operands.rs::classify` consumes from
+        // the front of an operand group before this parser ever sees it: by the
+        // time `parse_expr` runs, any remaining `#` is unambiguously infix.
+        Hash => (5, BinOp::Mod),
+        Plus => (4, BinOp::Add),
+        Minus => (4, BinOp::Sub),
+        // The logical pair binds TIGHTER than every comparison, and `&&`
+        // tighter than `||`: `2=2&&1` is `2=(2&&1)`=0, and `1||0&&0` is
+        // `1||(0&&0)`=1.
+        AndAnd => (3, BinOp::LogAnd),
+        OrOr => (2, BinOp::LogOr),
+        // The comparisons are ONE left-associative tier and the loosest one:
+        // `1<2=1`=1 is `(1<2)=1` and `2=1<2`=1 is `(2=1)<2`.
+        Eq => (1, BinOp::Eq),
+        Ne => (1, BinOp::Ne),
+        Lt => (1, BinOp::Lt),
+        Gt => (1, BinOp::Gt),
+        Le => (1, BinOp::Le),
+        Ge => (1, BinOp::Ge),
         _ => return None,
     })
 }

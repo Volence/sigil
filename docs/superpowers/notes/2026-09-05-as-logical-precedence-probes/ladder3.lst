@@ -1,0 +1,109 @@
+ AS V1.42 Beta [Bld 212] - Source File ladder3.asm - Page 1 - 09/05/2026 02:50:04 PM
+
+
+       1/       0 :                     	cpu	68000
+       2/       0 :                     	padding	off
+       3/       0 :                     	org	0
+       4/       0 :                     ; PROBE mul_vs_div
+       5/       0 : 12                  	dc.b	12/2*3
+       6/       1 : 12                  	dc.b	(12/2)*3
+       7/       2 : 02                  	dc.b	12/(2*3)
+       8/       3 :                     ; PROBE div_vs_mul
+       9/       3 : 08                  	dc.b	12*2/3
+      10/       4 : 08                  	dc.b	(12*2)/3
+      11/       5 : 00                  	dc.b	12*(2/3)
+      12/       6 :                     ; PROBE mod_vs_div
+      13/       6 : 01                  	dc.b	12#5/2
+      14/       7 : 01                  	dc.b	(12#5)/2
+      15/       8 : 00                  	dc.b	12#(5/2)
+      16/       9 :                     ; PROBE bitand_vs_mul_R
+      17/       9 : 00                  	dc.b	3*2&5
+      18/       A : 04                  	dc.b	(3*2)&5
+      19/       B : 00                  	dc.b	3*(2&5)
+      20/       C :                     ; PROBE bitor_vs_mul_R
+      21/       C : 15                  	dc.b	3*2|5
+      22/       D : 07                  	dc.b	(3*2)|5
+      23/       E : 15                  	dc.b	3*(2|5)
+      24/       F :                     ; PROBE bitxor_vs_mul_R
+      25/       F : 15                  	dc.b	3*2!5
+      26/      10 : 03                  	dc.b	(3*2)!5
+      27/      11 : 15                  	dc.b	3*(2!5)
+      28/      12 :                     ; PROBE bitxor_vs_mul_L
+      29/      12 : 02                  	dc.b	3!2*2
+      30/      13 : 02                  	dc.b	(3!2)*2
+      31/      14 : 07                  	dc.b	3!(2*2)
+      32/      15 :                     ; PROBE add_vs_bitxor
+      33/      15 : 02                  	dc.b	1+3!2
+      34/      16 : 06                  	dc.b	(1+3)!2
+      35/      17 : 02                  	dc.b	1+(3!2)
+      36/      18 :                     ; PROBE eq_vs_bitxor_R
+      37/      18 : 01                  	dc.b	1=3!2
+      38/      19 : 02                  	dc.b	(1=3)!2
+      39/      1A : 01                  	dc.b	1=(3!2)
+      40/      1B :                     ; PROBE bitand_vs_shr
+      41/      1B : 01                  	dc.b	1&3>>1
+      42/      1C : 00                  	dc.b	(1&3)>>1
+      43/      1D : 01                  	dc.b	1&(3>>1)
+      44/      1E :                     ; PROBE bitor_vs_shl
+      45/      1E : 07                  	dc.b	1|3<<1
+      46/      1F : 06                  	dc.b	(1|3)<<1
+      47/      20 : 07                  	dc.b	1|(3<<1)
+      48/      21 :                     ; PROBE bitxor_vs_shl
+      49/      21 : 07                  	dc.b	1!3<<1
+      50/      22 : 04                  	dc.b	(1!3)<<1
+      51/      23 : 07                  	dc.b	1!(3<<1)
+      52/      24 :                     ; PROBE bitand_vs_bitor_R
+      53/      24 : 03                  	dc.b	1&6|3
+      54/      25 : 03                  	dc.b	(1&6)|3
+      55/      26 : 01                  	dc.b	1&(6|3)
+      56/      27 :                     ; PROBE bitor_vs_bitxor_R
+      57/      27 : 00                  	dc.b	3|1!3
+      58/      28 : 00                  	dc.b	(3|1)!3
+      59/      29 : 03                  	dc.b	3|(1!3)
+      60/      2A :                     
+ AS V1.42 Beta [Bld 212] - Source File ladder3.asm - Page 2 - 09/05/2026 02:50:04 PM
+
+
+      61/      2A :                     
+ AS V1.42 Beta [Bld 212] - Source File ladder3.asm - Page 3 - 09/05/2026 02:50:04 PM
+
+
+  Symbol Table (* = unused):
+  --------------------------
+
+*ARCHITECTURE :                                      "x86_64-unknown-linux" - |
+*BIGENDIAN :                      0 - | *BRANCHEXT :                      0 - |
+*CASESENSITIVE :                  1 - | *COMPMODE :                       0 - |
+*CONSTPI :        3.141592653589793 - | *CUSTOM :                         0 - |
+*DATE :                "09/05/2026" - | *FALSE :                          0 - |
+*FULLPMMU :                       1 - | *HAS64 :                          1 - |
+*HASDSP :                         0 - | *HASFPU :                         0 - |
+*HASPMMU :                        0 - | *INEXTMODE :                      0 - |
+*INLWORDMODE :                    0 - | *INMAXMODE :                      0 - |
+*INSRCMODE :                      0 - | *INSUPMODE :                      0 - |
+*LISTON :                         1 - | *MACEXP :                         7 - |
+*MOMCPU :                     68000 - | *MOMCPUNAME :               "68000" - |
+*NESTMAX :                      100 - | *PACKING :                        0 - |
+*PADDING :                        0 - | *RELAXED :                        0 - |
+*TIME :               "02:50:04 PM" - | *TRUE :                           1 - |
+*VERSION :                     142F - | *Z80SYNTAX :                      0 - |
+
+     31 symbols
+     31 unused symbols
+
+ AS V1.42 Beta [Bld 212] - Source File ladder3.asm - Page 4 - 09/05/2026 02:50:04 PM
+
+
+  Code Pages:
+  ----------
+
+STANDARD (0 changed characters)
+
+1 code page
+
+0.00 seconds assembly time
+
+     61 lines source file
+      1 pass
+      0 errors
+      0 warnings

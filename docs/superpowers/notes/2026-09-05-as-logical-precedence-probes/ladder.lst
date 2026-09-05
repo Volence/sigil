@@ -1,0 +1,204 @@
+ AS V1.42 Beta [Bld 212] - Source File ladder.asm - Page 1 - 09/05/2026 02:47:49 PM
+
+
+       1/       0 :                     	cpu	68000
+       2/       0 :                     	padding	off
+       3/       0 :                     	org	0
+       4/       0 :                     ; PROBE andand_vs_bitand_L
+       5/       0 : 00                  	dc.b	1&&12&3
+       6/       1 : 01                  	dc.b	(1&&12)&3
+       7/       2 : 00                  	dc.b	1&&(12&3)
+       8/       3 :                     ; PROBE andand_vs_bitand_R
+       9/       3 : 01                  	dc.b	6&4&&2
+      10/       4 : 01                  	dc.b	(6&4)&&2
+      11/       5 : 00                  	dc.b	6&(4&&2)
+      12/       6 :                     ; PROBE andand_vs_bitor_L
+      13/       6 : 00                  	dc.b	0&&8|4
+      14/       7 : 04                  	dc.b	(0&&8)|4
+      15/       8 : 00                  	dc.b	0&&(8|4)
+      16/       9 :                     ; PROBE andand_vs_bitor_R
+      17/       9 : 01                  	dc.b	4|0&&8
+      18/       A : 01                  	dc.b	(4|0)&&8
+      19/       B : 04                  	dc.b	4|(0&&8)
+      20/       C :                     ; PROBE andand_vs_bitxor_L
+      21/       C : 00                  	dc.b	0&&8!4
+      22/       D : 04                  	dc.b	(0&&8)!4
+      23/       E : 00                  	dc.b	0&&(8!4)
+      24/       F :                     ; PROBE andand_vs_bitxor_R
+      25/       F : 01                  	dc.b	4!0&&8
+      26/      10 : 01                  	dc.b	(4!0)&&8
+      27/      11 : 04                  	dc.b	4!(0&&8)
+      28/      12 :                     ; PROBE andand_vs_shl_L
+      29/      12 : 01                  	dc.b	1&&1<<3
+      30/      13 : 08                  	dc.b	(1&&1)<<3
+      31/      14 : 01                  	dc.b	1&&(1<<3)
+      32/      15 :                     ; PROBE andand_vs_shl_R
+      33/      15 : 00                  	dc.b	1<<3&&0
+      34/      16 : 00                  	dc.b	(1<<3)&&0
+      35/      17 : 01                  	dc.b	1<<(3&&0)
+      36/      18 :                     ; PROBE andand_vs_add_L
+      37/      18 : 01                  	dc.b	1&&2+3
+      38/      19 : 04                  	dc.b	(1&&2)+3
+      39/      1A : 01                  	dc.b	1&&(2+3)
+      40/      1B :                     ; PROBE andand_vs_add_R
+      41/      1B : 00                  	dc.b	3+0&&0
+      42/      1C : 00                  	dc.b	(3+0)&&0
+      43/      1D : 03                  	dc.b	3+(0&&0)
+      44/      1E :                     ; PROBE andand_vs_mul_L
+      45/      1E : 01                  	dc.b	2&&3*4
+      46/      1F : 04                  	dc.b	(2&&3)*4
+      47/      20 : 01                  	dc.b	2&&(3*4)
+      48/      21 :                     ; PROBE andand_vs_mul_R
+      49/      21 : 00                  	dc.b	3*1&&0
+      50/      22 : 00                  	dc.b	(3*1)&&0
+      51/      23 : 00                  	dc.b	3*(1&&0)
+      52/      24 :                     ; PROBE andand_vs_eq_L
+      53/      24 : 00                  	dc.b	1&&2=2
+      54/      25 : 00                  	dc.b	(1&&2)=2
+      55/      26 : 01                  	dc.b	1&&(2=2)
+      56/      27 :                     ; PROBE andand_vs_eq_R
+      57/      27 : 00                  	dc.b	2=2&&1
+      58/      28 : 01                  	dc.b	(2=2)&&1
+      59/      29 : 00                  	dc.b	2=(2&&1)
+      60/      2A :                     ; PROBE andand_vs_ne_R
+ AS V1.42 Beta [Bld 212] - Source File ladder.asm - Page 2 - 09/05/2026 02:47:49 PM
+
+
+      61/      2A : 01                  	dc.b	7<>3&&0
+      62/      2B : 00                  	dc.b	(7<>3)&&0
+      63/      2C : 01                  	dc.b	7<>(3&&0)
+      64/      2D :                     ; PROBE andand_vs_lt_R
+      65/      2D : 00                  	dc.b	1<5&&0
+      66/      2E : 00                  	dc.b	(1<5)&&0
+      67/      2F : 00                  	dc.b	1<(5&&0)
+      68/      30 :                     ; PROBE oror_vs_andand_L
+      69/      30 : 01                  	dc.b	1||0&&0
+      70/      31 : 00                  	dc.b	(1||0)&&0
+      71/      32 : 01                  	dc.b	1||(0&&0)
+      72/      33 :                     ; PROBE oror_vs_andand_R
+      73/      33 : 01                  	dc.b	0&&0||1
+      74/      34 : 01                  	dc.b	(0&&0)||1
+      75/      35 : 00                  	dc.b	0&&(0||1)
+      76/      36 :                     ; PROBE oror_vs_bitand_L
+      77/      36 : 00                  	dc.b	0||12&3
+      78/      37 : 01                  	dc.b	(0||12)&3
+      79/      38 : 00                  	dc.b	0||(12&3)
+      80/      39 :                     ; PROBE oror_vs_bitand_R
+      81/      39 : 01                  	dc.b	6&4||0
+      82/      3A : 01                  	dc.b	(6&4)||0
+      83/      3B : 00                  	dc.b	6&(4||0)
+      84/      3C :                     ; PROBE oror_vs_bitor_L
+      85/      3C : 01                  	dc.b	0||8|4
+      86/      3D : 05                  	dc.b	(0||8)|4
+      87/      3E : 01                  	dc.b	0||(8|4)
+      88/      3F :                     ; PROBE oror_vs_bitor_R
+      89/      3F : 01                  	dc.b	8|0||4
+      90/      40 : 01                  	dc.b	(8|0)||4
+      91/      41 : 09                  	dc.b	8|(0||4)
+      92/      42 :                     ; PROBE oror_vs_shl_L
+      93/      42 : 01                  	dc.b	1||1<<3
+      94/      43 : 08                  	dc.b	(1||1)<<3
+      95/      44 : 01                  	dc.b	1||(1<<3)
+      96/      45 :                     ; PROBE oror_vs_add_L
+      97/      45 : 01                  	dc.b	1||2+3
+      98/      46 : 04                  	dc.b	(1||2)+3
+      99/      47 : 01                  	dc.b	1||(2+3)
+     100/      48 :                     ; PROBE oror_vs_eq_L
+     101/      48 : 00                  	dc.b	1||2=2
+     102/      49 : 00                  	dc.b	(1||2)=2
+     103/      4A : 01                  	dc.b	1||(2=2)
+     104/      4B :                     ; PROBE oror_vs_eq_R
+     105/      4B : 00                  	dc.b	2=2||0
+     106/      4C : 01                  	dc.b	(2=2)||0
+     107/      4D : 00                  	dc.b	2=(2||0)
+     108/      4E :                     ; PROBE bitand_vs_bitor
+     109/      4E : 03                  	dc.b	1|2&2
+     110/      4F : 02                  	dc.b	(1|2)&2
+     111/      50 : 03                  	dc.b	1|(2&2)
+     112/      51 :                     ; PROBE bitxor_vs_bitand
+     113/      51 : 03                  	dc.b	1!3&2
+     114/      52 : 02                  	dc.b	(1!3)&2
+     115/      53 : 03                  	dc.b	1!(3&2)
+     116/      54 :                     ; PROBE bitxor_vs_bitor
+     117/      54 : 00                  	dc.b	3!1|2
+     118/      55 : 02                  	dc.b	(3!1)|2
+     119/      56 : 00                  	dc.b	3!(1|2)
+     120/      57 :                     ; PROBE bitand_vs_shl
+ AS V1.42 Beta [Bld 212] - Source File ladder.asm - Page 3 - 09/05/2026 02:47:49 PM
+
+
+     121/      57 : 00                  	dc.b	1&3<<1
+     122/      58 : 02                  	dc.b	(1&3)<<1
+     123/      59 : 00                  	dc.b	1&(3<<1)
+     124/      5A :                     ; PROBE shl_vs_add
+     125/      5A : 09                  	dc.b	1+1<<3
+     126/      5B : 10                  	dc.b	(1+1)<<3
+     127/      5C : 09                  	dc.b	1+(1<<3)
+     128/      5D :                     ; PROBE shl_vs_mul
+     129/      5D : 0C                  	dc.b	2<<1*3
+     130/      5E : 0C                  	dc.b	(2<<1)*3
+     131/      5F : 10                  	dc.b	2<<(1*3)
+     132/      60 :                     ; PROBE eq_vs_add
+     133/      60 : 00                  	dc.b	4=1+1
+     134/      61 : 01                  	dc.b	(4=1)+1
+     135/      62 : 00                  	dc.b	4=(1+1)
+     136/      63 :                     ; PROBE eq_vs_bitand
+     137/      63 : 01                  	dc.b	6&2=2
+     138/      64 : 01                  	dc.b	(6&2)=2
+     139/      65 : 00                  	dc.b	6&(2=2)
+     140/      66 :                     ; PROBE eq_vs_shl
+     141/      66 : 01                  	dc.b	6<<1=12
+     142/      67 : 01                  	dc.b	(6<<1)=12
+     143/      68 : 06                  	dc.b	6<<(1=12)
+     144/      69 :                     ; PROBE lt_vs_eq
+     145/      69 : 01                  	dc.b	1<2=1
+     146/      6A : 01                  	dc.b	(1<2)=1
+     147/      6B : 00                  	dc.b	1<(2=1)
+     148/      6C :                     ; PROBE mul_vs_add
+     149/      6C : 0C                  	dc.b	6+2*3
+     150/      6D : 18                  	dc.b	(6+2)*3
+     151/      6E : 0C                  	dc.b	6+(2*3)
+     152/      6F :                     
+     153/      6F :                     
+ AS V1.42 Beta [Bld 212] - Source File ladder.asm - Page 4 - 09/05/2026 02:47:49 PM
+
+
+  Symbol Table (* = unused):
+  --------------------------
+
+*ARCHITECTURE :                                      "x86_64-unknown-linux" - |
+*BIGENDIAN :                      0 - | *BRANCHEXT :                      0 - |
+*CASESENSITIVE :                  1 - | *COMPMODE :                       0 - |
+*CONSTPI :        3.141592653589793 - | *CUSTOM :                         0 - |
+*DATE :                "09/05/2026" - | *FALSE :                          0 - |
+*FULLPMMU :                       1 - | *HAS64 :                          1 - |
+*HASDSP :                         0 - | *HASFPU :                         0 - |
+*HASPMMU :                        0 - | *INEXTMODE :                      0 - |
+*INLWORDMODE :                    0 - | *INMAXMODE :                      0 - |
+*INSRCMODE :                      0 - | *INSUPMODE :                      0 - |
+*LISTON :                         1 - | *MACEXP :                         7 - |
+*MOMCPU :                     68000 - | *MOMCPUNAME :               "68000" - |
+*NESTMAX :                      100 - | *PACKING :                        0 - |
+*PADDING :                        0 - | *RELAXED :                        0 - |
+*TIME :               "02:47:49 PM" - | *TRUE :                           1 - |
+*VERSION :                     142F - | *Z80SYNTAX :                      0 - |
+
+     31 symbols
+     31 unused symbols
+
+ AS V1.42 Beta [Bld 212] - Source File ladder.asm - Page 5 - 09/05/2026 02:47:49 PM
+
+
+  Code Pages:
+  ----------
+
+STANDARD (0 changed characters)
+
+1 code page
+
+0.00 seconds assembly time
+
+    153 lines source file
+      1 pass
+      0 errors
+      0 warnings
