@@ -309,9 +309,15 @@ def main(argv=None):
         if at_zero:
             print("    MARGIN: ZERO — the current base is itself inside a forbidden band")
         else:
-            print(f"    MARGIN to the nearest band edge: "
-                  f"{earlier if earlier is not None else 'none in range'} B earlier, "
-                  f"{later if later is not None else 'none in range'} B later")
+            # BOTH conventions are printed because the difference is one byte and
+            # P6's doc states its margins in the LAST-SAFE form without saying so.
+            # Comparing a first-failing number against a last-safe one produces a
+            # 2 B discrepancy in the round trip and invites the conclusion that
+            # the two measurements disagree, which they do not.
+            def _m(v):
+                return "none in range" if v is None else f"first fail at {v} B (last safe {v - 1} B)"
+            print(f"    MARGIN earlier (shrink upstream): {_m(earlier)}")
+            print(f"    MARGIN later   (grow upstream):   {_m(later)}")
         near = [b for b in bands if b[1] < 0][-2:] + [b for b in bands if b[0] > 0][:2]
         if near:
             print(f"      nearest bands: "
