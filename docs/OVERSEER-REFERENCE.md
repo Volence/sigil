@@ -223,6 +223,45 @@ survive unreferenced is the signature of a MERGE**, exactly as an empty commit r
 
 *(Origin, and the n=3 caveat in full: `docs/OVERSEER-LOG.md`, 2026-09-03 cut, original lines
 466-488.)*
+
+### THE THREE FACES OF A CHECK THAT CANNOT COME OUT OTHER THAN GREEN (2026-09-05)
+
+**All three were found in one night, all by DELIBERATELY BREAKING THE CODE, and none by the test
+suite.** They are one defect wearing three costumes, and a brief should name all three because an
+agent that guards against one walks into the others.
+
+1. **THE INPUT CANNOT DISTINGUISH THE TWO ANSWERS.** `\{expr}` interpolation renders hex in asl and
+   decimal here — a live byte divergence that survived months because **every probe behind that
+   helper used a SINGLE-DIGIT value, where hex and decimal are the same characters.** Two carried
+   comments calling them *asl-verified*. Single digits, zero, one, identity permutations,
+   single-element lists and symmetric operand pairs are where this hides.
+2. **THE SUBJECT IS NEVER REACHED.** Four aeon shapes rebuilt byte-identical looks like the
+   strongest evidence available. Replace the new function with `panic!` and rebuild: if all four
+   still build, **the identity attests that nothing ELSE moved and nothing whatever about the
+   change.** Two parcels had to volunteer this after the fact; ask for it in the brief instead.
+3. **THE FIXTURE DERIVES FROM THE SUBJECT.** Depth fixtures built their include chains *from*
+   `INCLUDE_NEST_MAX`, so mutating that constant moved the expectation with it and the test could
+   never disagree. **Write expected values out as the REFERENCE'S own numbers**, never computed
+   from the constant under test. Three of six mutations landed green on that parcel's first run.
+
+**THE ONE CLAUSE THAT CATCHES ALL THREE is invariant 6(c): applied-and-still-green is a RUNNER
+DEFECT, never a pass.** It is not a formality and it must never be softened — it is the only step
+that discovers a fixture cannot fail, because a fixture that cannot fail is silent by construction.
+
+### A BEFORE/AFTER STREAM DIFF NEEDS AN ENGAGEMENT COUNTER BESIDE IT
+
+**Diffing diagnostic streams before and after a change CANNOT distinguish "the rule engaged and
+changed nothing" from "the rule never ran".** Both print an empty diff. This overseer prescribed
+that method twice and it was benign both times by luck: one tree's population was zero, and the
+other died 5,761 front-end diagnostics before the stage under test.
+
+So a census reports **how many times the changed code was ENGAGED**, beside the diff. An empty diff
+with a non-zero engagement count means something; an empty diff alone means nothing.
+
+**And the counter is NECESSARY, NOT SUFFICIENT** *(the agent's correction, accepted)*: a counter
+reporting `repeats=0` beside a green suite still proves nothing if the fixtures cannot fail. Pair
+it with 6(c) or it becomes face 2 with a number attached.
+
 ## Quality bars
 
 **⚠ THE REFERENCE TREE IS WHATEVER `golden/provenance.toml`'s TIP PAIRS WITH — and every
