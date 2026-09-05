@@ -15,17 +15,17 @@ Everything below is read off `asl` 1.42 Beta Bld 212 —
 asl -xx -n -q -A -L -U -i . <root>.asm
 ```
 
-Probes are `p1.asm`–`p10.asm` under `2026-09-05-as-macro-body-label-probes/`,
+Probes are `p1.asm`–`p11.asm` under `2026-09-05-as-macro-body-label-probes/`,
 run by `all.sh` / `digest.sh` and hashed by `stability.sh`.
 
-**Oracle stability, and a correction to how it was being measured.** All ten
+**Oracle stability, and a correction to how it was being measured.** All eleven
 probes were run **three times** and the whole stream hashed, twice over, in two
 independent batches minutes apart. Identical, all six runs each:
 
 ```
 p1  12080cb158bb   p5  68d67a4d9012   p9  a51bab817f7f
 p2  67f255c3782a   p6  b8fd3813a15a   p10 4e29be4b2732
-p3  2c5d55726ae7   p7  9acdc359e805
+p3  2c5d55726ae7   p7  9acdc359e805   p11 890e0683ea54
 p4  4717a201b6e4   p8  f9e93a0acd76
 ```
 
@@ -300,33 +300,57 @@ moved.
 
 ## 6. Gates
 
-`crates/sigil-frontend-as/tests/as_macro_body_label.rs`, ten fixtures, run by
+`crates/sigil-frontend-as/tests/as_macro_body_label.rs`, ELEVEN fixtures, run by
 `cargo test -p sigil-frontend-as` and by the landing run. Acceptance and refusal
 are asserted in the same file, so a front end that refuses everything fails
 exactly as hard as one that refuses nothing.
 
 Five mutations, each applied to the COMMITTED baseline by a patcher that asserts
 its anchor matched exactly once (`mutations.sh`), each shown landed with
-`git diff --stat` before the run, each restored with `git checkout HEAD --` and
-the restore verified empty. A mutation that fails to apply runs the ORIGINAL file
-and prints ok, which is indistinguishable from a clean restore — which is why the
-anchor assertion and the printed diff are not decoration.
+`git diff --stat` and the changed lines before the run, each restored with
+`git checkout HEAD --` and the restore verified empty. A mutation that fails to
+apply runs the ORIGINAL file and prints ok, which is indistinguishable from a
+clean restore — which is why the anchor assertion and the printed diff are not
+decoration.
 
-| mutation | what it removes | must fail |
-|---|---|---|
-| M1 | `plain_label_scope` always `None` — no localization at all | a build that binds a macro-body label globally, so a name asl says does not exist resolves and a macro invoked twice is a linker duplicate |
-| M4 | every plain name keys under the innermost instance, declared or not | a build that makes a FILE-LEVEL label unreadable from inside a macro — nothing would assemble |
-| M2 | the chain does not walk outward, innermost instance only | a build where a nested macro cannot see the label its caller's body wrote |
-| M3 | `rept` gets no namespace | a build where two iterations of one loop share a label, so the first iteration reads the second's address |
-| M5 | the `label` DIRECTIVE is scanned as a PC label | a build that hides a GLOBAL declaration inside the expansion that wrote it — `Al label $100` unreadable from outside |
+| mutation | what it removes | red | must fail |
+|---|---|---|---|
+| M1 | `plain_label_scope` always `None` — no localization at all | 5 of 11 | a build that binds a macro-body label globally, so a name asl says does not exist resolves and a macro invoked twice is a linker duplicate |
+| M4 | every plain name keys under the innermost instance, declared or not | 3 | a build that makes a FILE-LEVEL label unreadable from inside a macro — nothing would assemble |
+| M2 | the chain does not walk outward, innermost instance only | 1 | a build where a nested macro cannot see the label its caller's body wrote |
+| M3 | `rept` gets no namespace | 1 | a build where two iterations of one loop share a label, so the first iteration reads the second's address |
+| M5 | the `label` DIRECTIVE is scanned as a PC label | 1 | a build that hides a GLOBAL declaration inside the expansion that wrote it, unreadable even from the body's own next line |
+
+**M5 WALKED STRAIGHT THROUGH THE FIRST TIME, AND THAT IS THE MOST USEFUL THING
+THIS GATE DID.** It applied cleanly and the file stayed green, because the
+exclusion is INERT on the read the fixture used: `directive_label` binds through
+the builder rather than through `define_label`, so the name is written bare
+whichever way the scan goes, and by the time the OUTSIDE read happens the
+namespace stack is empty, so the reference is bare too — both halves agree by
+accident. The INSIDE read is what breaks. `p11` was measured against asl
+(`0100 0100 4444`) and added, and M5 is red on it.
 
 **What other answer could each fixture have given** is written on each test in
 the file, one paragraph per test, and each names a concrete alternative BYTE
-STRING or refusal rather than "it could have been wrong". The three that carry
-the most weight: `p3`/`p4` are opposites that no single wrong rule passes
-together (one demands the chain walk outward, the other demands it stop at the
-live stack); `p8` is the only fixture that fails under the
-"reference-evaluated-inside-an-expansion" mis-rule, which passes every other
-test here; and `a_value_binding_form_in_a_macro_body_stays_global` is the one
-that separates "labels" from "the `label` directive", one word apart and on
-opposite sides of the rule.
+STRING or refusal rather than "it could have been wrong". The four that carry
+the most weight:
+
+* `p3`/`p4` are opposites that no single wrong rule passes together — one demands
+  the chain walk outward, the other demands it stop at the live stack.
+* `p8` is the only fixture that fails under the
+  "reference-evaluated-inside-an-expansion" mis-rule, which passes every other
+  test here.
+* `a_value_binding_form_in_a_macro_body_stays_global` separates "labels" from
+  "the `label` directive", one word apart and on opposite sides of the rule —
+  and `p11` is what makes that separation FALSIFIABLE rather than stated.
+* every byte fixture invokes its macro twice at DIFFERENT addresses, so
+  "resolves" and "resolves to the other expansion" are different byte strings.
+  `p11` is the one exception and says why on itself.
+
+**Where this bar is NOT met.** Nothing fixtures the other names in
+`scan_plain_labels`' exclusion list (`function`, `struct`, `reg`, `xref`,
+`xdef`, `public`, `shared`) or the column-0 directive list. The M5 finding says
+exactly what such a fixture would have to look like — an INSIDE-the-body read —
+and none of those forms has a corpus site to hang one on. They are reasoned, not
+measured, and they are listed here rather than left to look like the measured
+rows above them.
