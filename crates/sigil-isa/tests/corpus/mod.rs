@@ -23,7 +23,7 @@ use Cond::{Nz, Z};
 use IndexReg::{Ix as IxR, Iy as IyR};
 use Mnemonic::*;
 use Operand::{
-    AfShadow, Cc, Imm16, Imm8, IndBc, IndDe, IndHl, Indexed, Mem, Pair, Reg, RegI, RegR, Rel,
+    AfShadow, Cc, Imm16, Imm8, IndBc, IndC, IndDe, IndHl, Indexed, Mem, Pair, Reg, RegI, RegR, Rel,
 };
 use Reg16::{Af, Bc, De, Hl, Ix, Iy, Sp};
 use Reg8::{A, B, C, D, H, L}; // no E: the canonical corpus uses `rrc a`, not `rrc e`
@@ -127,9 +127,51 @@ pub fn corpus() -> Vec<(&'static str, Instruction)> {
         ("ld sp,(1234h)", inst(Ld, vec![Pair(Sp), Mem(0x1234)])),
         ("neg", inst(Neg, vec![])),
         ("im 1", inst(Im, vec![Imm8(1)])),
+        ("im 0", inst(Im, vec![Imm8(0)])),
+        ("im 2", inst(Im, vec![Imm8(2)])),
+        // The ED block-op grid, all sixteen. They differ from each other by a
+        // single bit in two independent axes, so the corpus carries the whole
+        // grid rather than a representative: a transposed table still answers
+        // with legal bytes for any subset of it.
+        ("ldi", inst(Ldi, vec![])),
+        ("cpi", inst(Cpi, vec![])),
+        ("ini", inst(Ini, vec![])),
+        ("outi", inst(Outi, vec![])),
+        ("ldd", inst(Ldd, vec![])),
+        ("cpd", inst(Cpd, vec![])),
+        ("ind", inst(Ind, vec![])),
+        ("outd", inst(Outd, vec![])),
         ("ldir", inst(Ldir, vec![])),
+        ("cpir", inst(Cpir, vec![])),
+        ("inir", inst(Inir, vec![])),
+        ("otir", inst(Otir, vec![])),
+        ("lddr", inst(Lddr, vec![])),
+        ("cpdr", inst(Cpdr, vec![])),
+        ("indr", inst(Indr, vec![])),
+        ("otdr", inst(Otdr, vec![])),
+        ("retn", inst(Retn, vec![])),
+        ("reti", inst(Reti, vec![])),
+        ("rrd", inst(Rrd, vec![])),
+        ("rld", inst(Rld, vec![])),
+        // I/O. Register A is code 7, so `in a,(c)` is at the TOP of the ED
+        // column and `in b,(c)` at the bottom; both ends are carried so the
+        // register shift is exercised, and the direct-port pair uses 0FEh
+        // rather than a single digit so a radix or dropped-operand slip shows.
+        ("in b,(c)", inst(In, vec![Reg(B), IndC])),
+        ("in a,(c)", inst(In, vec![Reg(A), IndC])),
+        ("out (c),b", inst(Out, vec![IndC, Reg(B)])),
+        ("out (c),a", inst(Out, vec![IndC, Reg(A)])),
+        ("in a,(0FEh)", inst(In, vec![Reg(A), Mem(0xFE)])),
+        ("out (0FEh),a", inst(Out, vec![Mem(0xFE), Reg(A)])),
+        // The ED 16-bit arithmetic, both operations across the pair axis.
+        ("sbc hl,bc", inst(Sbc, vec![Pair(Hl), Pair(Bc)])),
+        ("sbc hl,sp", inst(Sbc, vec![Pair(Hl), Pair(Sp)])),
+        ("adc hl,bc", inst(Adc, vec![Pair(Hl), Pair(Bc)])),
+        ("adc hl,sp", inst(Adc, vec![Pair(Hl), Pair(Sp)])),
         ("ld i,a", inst(Ld, vec![RegI, Reg(A)])),
         ("ld r,a", inst(Ld, vec![RegR, Reg(A)])),
+        ("ld a,i", inst(Ld, vec![Reg(A), RegI])),
+        ("ld a,r", inst(Ld, vec![Reg(A), RegR])),
         // --- DD (ix) ---
         ("ld ix,1234h", inst(Ld, vec![Pair(Ix), Imm16(0x1234)])),
         ("ld l,(ix+3)", inst(Ld, vec![Reg(L), Indexed { reg: IxR, disp: 3 }])),
