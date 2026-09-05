@@ -18,12 +18,38 @@
 # selfcheck that stays green when the guard is disabled is measuring nothing,
 # which is the same defect one level up.
 #
+# ── CASES 6 TO 9: THE RUN, NOT THE BUILD ─────────────────────────────────────
+# Cases 0 to 5 all ask WHICH PROGRAM RAN. Cases 6 to 9 ask WHETHER ITS ANSWERS
+# MEAN ANYTHING, which is `asl_run`, and they are built around the shape that is
+# actually dangerous rather than the easy one.
+#
+# THE EASY CASE IS A FILE THAT DOES NOT ASSEMBLE. Nobody quotes a listing that
+# is not there. The dangerous case is `partial_failure.asm` beside this file: it
+# MOSTLY assembles, asl exits 2, and the listing carries a full byte column for
+# every line that succeeded, one of which the error silently changed. Case 7
+# measures that property directly rather than assuming it, by assembling the
+# same file with the one bad line deleted and requiring the value to MOVE. If it
+# ever stops moving, case 7 fails and says the fixture is no longer the shape
+# this is here to cover.
+#
+# Case 6 is the not-always-red side: `asl_run` must ACCEPT a clean assembly
+# without the banner. A check that fires on correct input trains people to
+# weaken it, so it is fenced from that direction too.
+#
+# Case 8 is the load-bearing new one: `asl_run` REFUSES the partial failure.
+# Case 9 is its honesty check, and it is stubbed at a different place from case
+# 5 on purpose: case 5 stubs the DIGEST comparison, case 9 stubs `asl_run`'s
+# status propagation, because those are two separate checks and a stub of one
+# says nothing about the other.
+#
 # ── WHAT MUST FAIL ───────────────────────────────────────────────────────────
 # This script MUST FAIL if: the guard accepts the varying build; the guard
 # accepts a missing binary; the guard's literal digest is edited to match
-# whatever is on disk; a runner drops the `|| exit $?`; or the guard is stubbed
-# out. If any of those leaves this green, the guard is decoration and the
-# selfcheck is too.
+# whatever is on disk; a runner drops the `|| exit $?`; the guard is stubbed
+# out; `asl_run` returns zero on a failed assembly; `asl_run` reports a clean
+# assembly as failed; the fixture stops being a PARTIAL failure; or `asl_run`'s
+# status propagation is stubbed away. If any of those leaves this green, the
+# guard is decoration and the selfcheck is too.
 set -uo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 GUARD="$HERE/asl_ref.sh"
@@ -38,6 +64,18 @@ VARYING_MD5=0dee1f98e6480a4783d27ffd8b90896f
 pass=0; fail=0
 ok()   { echo "  PASS  $1"; pass=$((pass+1)); }
 bad()  { echo "  FAIL  $1"; fail=$((fail+1)); }
+
+# One EXIT trap for every temporary this file makes. A second `trap ... EXIT`
+# REPLACES the first rather than adding to it, so the cases below register their
+# temporaries here instead of each installing a trap of its own.
+STUB=""; ASLSTUB=""; SCRATCH=""
+cleanup() {
+    [ -n "$STUB" ]    && rm -f "$STUB"
+    [ -n "$ASLSTUB" ] && rm -f "$ASLSTUB"
+    [ -n "$SCRATCH" ] && rm -rf "$SCRATCH"
+    return 0
+}
+trap cleanup EXIT
 
 # Run the guard in a child shell with $ASLDIR set to $1; echo its exit status.
 probe() {
@@ -103,7 +141,7 @@ else
 fi
 
 echo "--- case 5: with the comparison STUBBED TO ACCEPT, case 2 must go RED"
-STUB="$(mktemp)"; trap 'rm -f "$STUB"' EXIT
+STUB="$(mktemp)"
 sed 's/^if \[ "\$ASL_REF_GOT" != "\$ASL_REF_MD5" \]; then$/if false; then/' "$GUARD" > "$STUB"
 if ! grep -q '^if false; then$' "$STUB"; then
     bad "the stub did not apply — case 5 would have passed by running the ORIGINAL guard, \
@@ -112,6 +150,126 @@ elif [ "$(probe "$VARYING_DIR" "$STUB")" = 0 ]; then
     ok "stubbed guard accepts the varying build, so case 2 is measuring the comparison"
 else
     bad "stubbed guard still refused — case 2 is passing for some reason other than the md5 test"
+fi
+
+
+# ── CASES 6 TO 9: THE RUN ────────────────────────────────────────────────────
+SCRATCH="$(mktemp -d)"
+FIXTURE="$HERE/partial_failure.asm"
+if [ ! -f "$FIXTURE" ]; then
+    bad "no partial_failure.asm beside this file: cases 6 to 9 cannot run, and \
+a missing fixture is not a pass"
+else
+cp "$FIXTURE" "$SCRATCH/pf.asm"
+# The control is the fixture MINUS its one bad instruction line, and nothing
+# else. It is derived from the subject on purpose: the expectations below are
+# written-out literals, so deriving the control does not move them.
+sed '/^[[:blank:]]*bra\.s/d' "$FIXTURE" > "$SCRATCH/ctl.asm"
+
+# The values this build assembles `beq.s +` to in the two files. Written out,
+# not read off either listing: an expectation taken from the subject moves with
+# the subject and can never come out red.
+BEQ_BROKEN=67FE     # branch to ITSELF, the corrupted value
+BEQ_CORRECT=6702    # the correct forward branch over the `nop`
+
+# Assemble $1 through `asl_run`, guard at $2 (default $GUARD). Line 1 is the
+# return status; the rest is asl_run's stderr. NO PIPE ANYWHERE, deliberately:
+# an early-exiting reader under this file's `pipefail` is exactly the fault
+# case 3's comment records.
+run_probe() {
+    (
+        cd "$SCRATCH" || exit 90
+        export USEANSI=n
+        . "${2:-$GUARD}" >/dev/null 2>&1 || exit $?
+        err="$(asl_run -xx -n -q -A -L -U -i "$SCRATCH" "$1" 2>&1 >/dev/null)"
+        rc=$?
+        printf '%s\n%s\n' "$rc" "$err"
+    )
+}
+# The same assembly through the UNBLESSED path, so case 7 measures what a caller
+# who never adopted `asl_run` actually sees.
+raw_probe() {
+    (
+        cd "$SCRATCH" || exit 90
+        export USEANSI=n
+        . "$GUARD" >/dev/null 2>&1 || exit $?
+        "$ASL" -xx -n -q -A -L -U -i "$SCRATCH" "$1" >/dev/null 2>&1
+        exit $?
+    )
+}
+# The byte column asl printed for the macro-expanded `beq.s`. Read from the file
+# directly rather than through a pipe, for the same reason as above.
+beq_bytes() { awk '/beq\.s/ && $4 ~ /^[0-9A-F]+$/ { print $4; exit }' "$1"; }
+
+echo "--- case 6: asl_run ACCEPTS a clean assembly, with no banner"
+out="$(run_probe ctl.asm)"; rc="${out%%$'\n'*}"; msg="${out#*$'\n'}"
+if [ "$rc" != 0 ]; then
+    bad "asl_run returned $rc on a file that assembles cleanly: a check that \
+fires on correct input is the shape people weaken: [$msg]"
+elif [[ $msg == *REFUSED* ]]; then
+    bad "asl_run printed REFUSED on a clean assembly: [$msg]"
+elif [ "$(beq_bytes "$SCRATCH/ctl.lst")" != "$BEQ_CORRECT" ]; then
+    bad "the control assembles beq.s to $(beq_bytes "$SCRATCH/ctl.lst"), not \
+$BEQ_CORRECT: this build no longer agrees with the pinned values, fix the pin \
+rather than the expectation"
+else
+    ok "clean run: exit 0, no banner, beq.s = $BEQ_CORRECT"
+fi
+
+echo "--- case 7: THE FIXTURE IS A PARTIAL FAILURE, not a file that fails to assemble"
+raw_probe pf.asm; raw_rc=$?
+lst="$(cat "$SCRATCH/pf.lst" 2>/dev/null || true)"
+got_broken="$(beq_bytes "$SCRATCH/pf.lst" 2>/dev/null || true)"
+if [ "$raw_rc" = 0 ]; then
+    bad "asl exited 0 on the fixture: it is supposed to carry an error"
+elif [ -z "$lst" ]; then
+    bad "no listing at all: the fixture became the EASY case (nothing to quote), \
+which is not the shape cases 8 and 9 exist to cover"
+elif [[ $lst != *4E75* ]]; then
+    bad "the listing has no byte column past the error (no 4E75 for the rts): \
+the fixture stopped being the dangerous shape"
+elif [ "$got_broken" != "$BEQ_BROKEN" ]; then
+    bad "beq.s came back $got_broken, not the corrupted $BEQ_BROKEN: the fixture \
+no longer demonstrates one error changing another line's value"
+elif [ "$BEQ_BROKEN" = "$BEQ_CORRECT" ]; then
+    bad "the broken and correct values are the same literal, so this case cannot fail"
+else
+    ok "exit $raw_rc, full byte column (4E75 present), and beq.s reads \
+$BEQ_BROKEN here against $BEQ_CORRECT in the control: one error, another line's \
+value changed, nothing announcing it"
+fi
+
+echo "--- case 8: asl_run REFUSES the partial failure (the load-bearing new case)"
+out="$(run_probe pf.asm)"; rc="${out%%$'\n'*}"; msg="${out#*$'\n'}"
+if [ "$rc" = 0 ]; then
+    bad "ASL_RUN RETURNED 0 ON A FAILED ASSEMBLY: the exit check is decoration"
+elif [[ $msg != *REFUSED* ]]; then
+    bad "asl_run returned $rc but printed no refusal: [$msg]"
+elif [[ $msg != *"ASL_EXIT=$rc"* ]]; then
+    bad "the refusal does not name the status it saw, so it is not diagnosable: [$msg]"
+else
+    ok "asl_run returns $rc and refuses out loud, naming ASL_EXIT=$rc"
+fi
+
+echo "--- case 9: with asl_run's STATUS PROPAGATION stubbed, case 8 must go RED"
+# Stubbed at a different point from case 5 on purpose: case 5 disables the DIGEST
+# comparison, this disables the EXIT check, and a stub of one proves nothing
+# about the other.
+ASLSTUB="$(mktemp)"
+sed 's/^    return "\$asl_rc"$/    return 0/' "$GUARD" > "$ASLSTUB"
+if ! grep -q '^    return 0$' "$ASLSTUB"; then
+    bad "the stub did not apply: case 9 would have passed by running the ORIGINAL \
+guard, which is indistinguishable from a working stub"
+else
+    out="$(run_probe pf.asm "$ASLSTUB")"; rc="${out%%$'\n'*}"
+    if [ "$rc" = 0 ]; then
+        ok "stubbed asl_run returns 0 on the failed assembly, so case 8 is \
+measuring the exit check and not something else"
+    else
+        bad "stubbed asl_run still returned $rc: case 8 is passing for some \
+reason other than the status test"
+    fi
+fi
 fi
 
 echo

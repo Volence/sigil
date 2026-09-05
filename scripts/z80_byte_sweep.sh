@@ -102,7 +102,13 @@ while IFS= read -r line; do
     printf '\tCPU Z80UNDOC\n\torg 0\n\t%s\n' "$line" > "$WORK/t.asm"
 
     rm -f "$WORK/t.p" "$WORK/t.bin"
-    ( cd "$WORK" && "$ASL" -xx -n -q -A -U -i . t.asm ) >"$WORK/asl.log" 2>&1
+    # Through `asl_run`, so the log carries the exit status and the refusal
+    # rather than only the assembler's own output. A NON-ZERO STATUS IS THE
+    # EXPECTED ANSWER AT THIS SITE for lines the reference build does not
+    # assemble, and the correct response to it is the skip below: the whole
+    # point of the refusal is that a failed run's byte column is not a value,
+    # and this loop takes no bytes from one.
+    ( cd "$WORK" && asl_run -xx -n -q -A -U -i . t.asm ) >"$WORK/asl.log" 2>&1
     asl_rc=$?
     if [ $asl_rc -ne 0 ] || [ ! -f "$WORK/t.p" ]; then
         skipped=$((skipped+1))
