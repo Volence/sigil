@@ -397,10 +397,17 @@ worktree itself ends at `git status --porcelain` empty.
 ## Suite
 
 `cargo test --workspace --release --no-fail-fast` with `SIGIL_ALLOW_PARTIAL=1`,
-from this worktree, log stamped with pwd / HEAD `570896d2` / branch:
+from this worktree. Run twice, at `570896d2` (fix plus gate) and again at
+`30100a13` (with this note added), and both logs are stamped with pwd, HEAD and
+branch on their first three lines:
 
-**4577 passed, 0 failed, 2 ignored, across 403 test binaries. Exit 0.**
-Zero ` FAILED` lines in the log, so there are no failure names to list.
+**4577 passed, 0 failed, 2 ignored, across 403 test binaries. Exit 0.** Both
+runs, identical. Zero ` FAILED` lines in either log, so there are no failure
+names to list.
+
+A green log is not by itself evidence that the log came from the right tree, so
+the second one was also grepped for this parcel's OWN test binary:
+`as_register_in_value_position` is present with all 9 of its tests `ok`.
 
 ## What did NOT execute
 
