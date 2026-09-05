@@ -82,7 +82,14 @@ fi
 
 echo "--- case 3: the refusal NAMES the digest it saw, so the message is diagnosable"
 msg="$(probe_msg "$VARYING_DIR")"
-if printf '%s' "$msg" | grep -q "$VARYING_MD5" && printf '%s' "$msg" | grep -q "$STABLE_MD5"; then
+# THE TEST IS ASKED IN THE SHELL, WITH NO PIPE, and that is load-bearing. This was
+# `printf '%s' "$msg" | grep -q "$VARYING_MD5" && …`, which is wrong under this
+# file's own `set -o pipefail`: `grep -q` exits the moment it MATCHES, `printf` is
+# then killed by SIGPIPE, and `pipefail` hands the pipeline back 141 — so a match
+# reads as a NON-match and case 3 fails on a message that was correct. Whether
+# printf's write lands before grep exits is a scheduling race, so it fires only
+# sometimes, and only in the direction that reports a false FAIL.
+if [[ $msg == *"$VARYING_MD5"* && $msg == *"$STABLE_MD5"* ]]; then
     ok "message carries both the wanted and the seen digest"
 else
     bad "refusal message does not name both digests: [$msg]"
