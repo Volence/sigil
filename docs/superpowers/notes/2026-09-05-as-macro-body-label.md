@@ -29,6 +29,24 @@ p3  2c5d55726ae7   p7  9acdc359e805   p11 890e0683ea54
 p4  4717a201b6e4   p8  f9e93a0acd76
 ```
 
+> **⚠ EVERY HASH ABOVE IS SUPERSEDED AND NO LONGER REPRODUCES** *(2026-09-05)*.
+> The de-clock parcel found a SECOND clock stamp this table's filter left
+> standing — the banner's meridiem: asl prints `09/05/2026 04:12:02 AM`, and the
+> old rule blanked `NN:NN:NN` while leaving ` AM`/` PM`. A batch straddling noon
+> or midnight therefore false-alarms on four banner lines, **guaranteed twice a
+> day**, where the duration's tick-straddle is only intermittent. Repairing it
+> moves every hash. **The finding this table supports is unchanged** — the probes
+> were and are stable — but the numbers are kept rather than deleted so the
+> supersession is visible instead of silent. Re-taken with the repaired filter,
+> `stability.sh`, three runs each, all identical:
+>
+> ```
+> p1  0cef342db0c8   p5  05aeb381fc2b   p9  4ce3f6197f3c
+> p2  a3e4c12a68ab   p6  35d332b166f9   p10 7dbc69f841f9
+> p3  4c9d3434bac5   p7  511b0e7ec04a   p11 e95f1cb4ca99
+> p4  9f90db17e10a   p8  ad23476fbed7
+> ```
+
 The hash is taken over the stream with THREE clock readings blanked, and the
 third of them is a correction to the inherited method rather than a refinement
 of it. asl stamps the wall clock into the page banner and into the `DATE`/`TIME`

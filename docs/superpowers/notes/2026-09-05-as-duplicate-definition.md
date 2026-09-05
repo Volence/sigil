@@ -16,7 +16,21 @@ beside the crossing parcel's `m1`–`m11`.
 **Oracle stability.** Every probe this note relies on — `m1`–`m6`, `m9`,
 `m12`–`m20`, sixteen files — was run **three times** and the whole diagnostic
 stream hashed. One hash, `544d9b7ecf094dd1fa0dc71ccd63cce3`, all three runs.
-No measurement here sits on an unstable shape. (The known non-determinism, a
+No measurement here sits on an unstable shape.
+
+> **⚠ THAT HASH IS UNVERIFIABLE AS WRITTEN, and the defect is provenance rather
+> than arithmetic** *(2026-09-05, found by the de-clock parcel)*. **This note named
+> no runner**, so "the whole diagnostic stream" is not a defined quantity. Three
+> plausible readings were hashed and NONE reproduces it — stderr alone
+> `350912c01482`, stderr+exit `5a03c71bca12`, `run.sh`-shaped with the listing
+> `7bc5cc26506d`. **The claim is not contradicted; it is uncheckable**, which is
+> the weaker and more corrosive state, because it reads exactly like a verified
+> one. THE CONCLUSION STANDS on its own logic — identical output across runs
+> implies identical content, whatever was hashed — so nothing measured here is
+> withdrawn. What is withdrawn is this line's status as EVIDENCE anyone can
+> re-run. A committed `stability.sh` now exists beside these probes (19 of the 20,
+> `m8` excepted for needing `-D` defines the runner does not pass): all STABLE,
+> zero unstable, and re-runnable. **Cite that, not this paragraph.** (The known non-determinism, a
 function call in an immediate whose argument is a register name, is not in any
 of these probes.)
 
