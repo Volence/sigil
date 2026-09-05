@@ -61,6 +61,12 @@ for build in "${BUILDS[@]}"; do
             sed -n '/Symbol Table/q;p' "$base.lst" 2>/dev/null \
                 | grep -E '^ *[0-9]+/ +[0-9A-F]+ :' | sed 's/[[:space:]]*$//'
             printf '%s\n' "$out" | grep -E '> > >|Assertion'
+            # See run.sh for what this line means. Short version: an error found
+            # earlier in the file stops asl's pass loop, and every later
+            # `symbol undefined` is then silently emitted as a masked
+            # provisional value. asl announces it in the listing footer.
+            grep -q 'Additional necessary passes not started' "$base.lst" 2>/dev/null \
+                && echo "INCOMPLETE: pass loop stopped early — later 'symbol undefined' reports SUPPRESSED"
         done
     done
 done

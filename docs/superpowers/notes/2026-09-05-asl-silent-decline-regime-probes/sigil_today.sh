@@ -89,6 +89,12 @@ while IFS=$'\t' read -r id line; do
     echo "    aslref exit=$rc"
     codelines "$WORK/$id.lst" | sed 's/^/    aslref | /'
     grep '> > >' "$WORK/$id.ref.out" | sed 's/^/    aslref ! /'
+    # An error found EARLIER in a file stops asl's pass loop, after which every
+    # later `symbol undefined` is emitted as a masked provisional value with no
+    # diagnostic — see run.sh. One shape per file is the structural defence
+    # against that, and this line is the check that the defence held.
+    grep -q 'Additional necessary passes not started' "$WORK/$id.lst" 2>/dev/null \
+        && echo "    aslref ! INCOMPLETE: pass loop stopped early — 'symbol undefined' reports SUPPRESSED"
     rm -f "$WORK/$id.lst" "$WORK/$id.p"
 
     # --- asl, varying build, N times: an unstable word is a declined operand ---
