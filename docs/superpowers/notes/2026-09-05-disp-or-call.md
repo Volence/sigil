@@ -8,10 +8,31 @@ Ninth in the AS-frontend arc for the public Sonic 2 disassembly
 of `insn2op`, the two-operand wrapper, newly reachable since the setup file's
 conditionals began picking the right processor.
 
-Ground truth throughout is an `asl -L` listing (AS V1.42 Beta [Bld 212],
-`s2disasm/build_tools/Linux-x86_64/asl`) run with the Sonic 2 build's own flags
-minus the two that only redirect output: `asl -xx -n -q -A -L -U -i .`. Every
-rule below is stated with the row that establishes it.
+Ground truth throughout is an `asl -L` listing run with the Sonic 2 build's own
+flags minus the two that only redirect output: `asl -xx -n -q -A -L -U -i .`.
+Every rule below is stated with the row that establishes it.
+
+> **THE INSTRUMENT, CORRECTED (2026-09-05).** This note first cited its
+> assembler as *AS V1.42 Beta [Bld 212], `s2disasm/build_tools/Linux-x86_64/asl`*
+> — a version banner and a path. **The banner identifies nothing**: four `asl`
+> binaries in this workspace print it verbatim and are not the same program, and
+> the one this note used, md5 `0dee1f98e6480a4783d27ffd8b90896f`, answers any
+> operand it declined to value from an uninitialized word. Cite the digest.
+>
+> Every row below has since been **re-measured on the reference build, md5
+> `61e672562465725a8c102288a7da9098`** (`s1disasm/build_tools/Linux-x86_64/asl`),
+> four runs each, against the same flags. The probes are committed at
+> `2026-09-05-disp-or-call-probes/` — they were not, when this note was written,
+> which is why re-measuring meant reconstructing them from the listings quoted
+> here. Where a row moved it is marked SUPERSEDED in place and the old value is
+> left visible.
+>
+> **No rule in this note rested on an unstable draw.** Every row that carries a
+> rule — the structural peel, the `1+konst(a1)` bytes, `dsp(k)+2(a1)`, and both
+> refusals with their carets — is byte-identical on both builds and stable
+> across four runs. The two rows that move are the two the note already declined
+> to build a rule on, and they move for a reason that makes that decision
+> stronger rather than weaker: see *An asl defect found on the way*.
 
 ## What the arm is
 
@@ -179,10 +200,16 @@ name — makes AS V1.42 Beta 212 emit a **different value on every run**, with
 >
 > **It is a property of a BUILD, not of a version.** Four asl binaries in this
 > workspace print `1.42 Beta [Bld 212]` verbatim; only s2disasm's
-> (md5 `0dee1f98`) varies, while s1disasm's (`61e67256`) is a stable zero —
+> (md5 `0dee1f98`) varies, while s1disasm's (`61e67256`) is stable —
 > confirmed here by md5 against identical banners. **`ASL_BIN` accepts any of
 > them and the version string cannot tell them apart**, so citing the version
 > has not identified the instrument. Cite the md5.
+>
+> *(Amended 2026-09-05: this said "a stable ZERO". It is stable but it is not a
+> zero — probe `d9` shows the reference build returning the last value it
+> computed, so what it substitutes depends on the lines above. The zero that
+> was observed was the initial state of that slot. Nothing else in this
+> paragraph changes.)*
 >
 > **And the trigger is neither the function, the register, nor the immediate.**
 > Minimal form is `move.w #zz,d0` with `zz` UNDEFINED; `#zz(qq)`, `#zz(5)`,
@@ -194,7 +221,11 @@ name — makes AS V1.42 Beta 212 emit a **different value on every run**, with
 >
 > The `1+dsp(d3).w` → `F83C` F-line claim below is subject to the same
 > correction: it is build-specific AND itself unstable (alternating
-> `F83C`/`783C`), while the stable build emits `343C 1234`.
+> `F83C`/`783C`), while the stable build emits `343C 1234`. *(Re-measured
+> 2026-09-05 from `2026-09-05-asl-nondeterminism-sweep-probes/s_fline_shape.asm`
+> — reference `343C 1234` 4/4, varying `783C` ×3 then `F83C` ×1. Confirmed. The
+> reference build's `343C` is a substituted stale value, not an F-line and not
+> an answer; see `d9`.)*
 >
 > **The decision this note recorded — build no rule on the shape — stands, and
 > stands more firmly**: the silent arm (`#f(<reg>)` with `f` defined) is exit 0
@@ -215,6 +246,40 @@ existing behaviour for that shape is left alone rather than pinned.
 
 A second degenerate shape, `1+dsp(d3).w`, has asl emitting `F83C 1234` — an
 F-line word — silently. Also excluded, for the same reason.
+
+> **SUPERSEDED, and the decision survives on better evidence (2026-09-05).**
+> Those three `$55xx` words are the VARYING build's uninitialized read and are
+> kept above so the supersession is visible rather than silent. Re-measured on
+> the reference build (md5 `61e67256…`, probes `d6`/`d7`/`d8`/`d9`):
+>
+> | row | varying `0dee1f98` | reference `61e67256` |
+> |---|---|---|
+> | `#konst(a1)` after a `#konst(5)` line | `55A2`/`55B7`/`5612`, new each run | `03C7`, 20/20 runs and 5/5 under `setarch -R` |
+> | `1+dsp(d3).w` | `783C 1234` ×3, `F83C 1234` ×1 | `343C 1234`, 4/4 runs |
+>
+> **The reference build's stability here is not an answer.** `d9` puts three
+> declined `#f(<reg>)` immediates after three successful `#f(5)` calls holding
+> `$0111`, `$0222`, `$0333`, and the reference build returns `0111`, `0222`,
+> `0333` — each declined operand **echoes the last value that build computed**.
+> `d8` reads `0000` in all four cells only because no call had succeeded above
+> them. Which is to say: the reference build substitutes a STALE VALUE and the
+> varying build substitutes an UNINITIALIZED one, and the paragraph above was
+> right that there is no answer to match — it was wrong only in thinking the
+> reference build had one. Exit 0 and no diagnostic on both.
+>
+> That is the worse of the two failure modes to inherit, because a stale value
+> is reproducible: re-run it and it agrees with itself, so it reads as a
+> measurement. **A value taken off the reference build for an operand asl
+> declined is an artifact of the lines above it, not of the line it is on.**
+>
+> `d8` also refutes a plausible reading of `d6` that I held for one measurement:
+> that the presence of an EQUATE of the same name is what makes `#name(<reg>)`
+> expand. All four of `d8`'s cells — function-only and function-plus-equate,
+> body using its parameter and body ignoring it — return the same word. The
+> discriminator is source order, nothing about the name.
+>
+> The exclusion of immediates from the peel therefore stands, and stands on the
+> stronger ground that NEITHER build answers this shape.
 
 ## Gates
 

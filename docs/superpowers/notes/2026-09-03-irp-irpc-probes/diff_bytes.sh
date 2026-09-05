@@ -2,9 +2,18 @@
 # Differential BYTE comparison: asl vs sigil on one source file.
 # Usage: diff_bytes.sh <file.asm>
 # Prints:  <name> asl=<crc32/size|ERR> sigil=<crc32/size|ERR> <SAME|DIFFER|...>
+#
+# The assembler is selected by MD5, not by path and not by version banner: four
+# `asl` binaries in this workspace print the same banner and are not the same
+# program, and one of them answers refused operands from uninitialized memory.
+# `asl_ref.sh` refuses anything but the reference build; `|| exit $?` is
+# load-bearing because `set -u` is not `set -e`. There is deliberately no `$ASL`
+# override any more — a differential runner that can be pointed at the varying
+# build reports a difference the second build invented.
 set -u
-ASL=${ASL:-/home/volence/sonic_hacks/s1disasm/build_tools/Linux-x86_64/asl}
-P2BIN=${P2BIN:-/home/volence/sonic_hacks/s1disasm/build_tools/Linux-x86_64/p2bin}
+HERE="$(cd "$(dirname "$0")" && pwd)"
+. "$HERE/../asl-reference/asl_ref.sh" || exit $?
+P2BIN=${P2BIN:-$ASLDIR/p2bin}
 SIG=${SIG:-/home/volence/sonic_hacks/.sigil-irpc/.target-land/release/sigil}
 f=$1; b=${f%.asm}
 rm -f "$b.p" "$b.log" "$b.lst" "$b.asl.bin" "$b.sig.bin"

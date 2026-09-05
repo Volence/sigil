@@ -3,18 +3,32 @@
 # is SILENT, and which builds of asl carry it.
 #
 # ── WHAT THE DEFECT IS ───────────────────────────────────────────────────────
-# Where a well-behaved build of AS substitutes 0 for an operand it could not
-# resolve, one build substitutes an UNINITIALIZED MEMORY VALUE. `aslr.sh` beside
-# this file is the proof of that mechanism: under `setarch -R` (address-space
-# randomization off) the "varying" value collapses to a constant $5555, and with
-# randomization on it is a fresh value essentially every run.
+# Where the reference build of AS substitutes A STALE VALUE for an operand it
+# could not resolve, one build substitutes an UNINITIALIZED MEMORY VALUE.
+# `aslr.sh` beside this file is the proof of the second mechanism: under
+# `setarch -R` (address-space randomization off) the "varying" value collapses to
+# a constant $5555, and with randomization on it is a fresh value essentially
+# every run.
+#
+# THE REFERENCE BUILD'S PLACEHOLDER IS NOT A ZERO, and this header used to say it
+# was. It is THE LAST VALUE THAT BUILD COMPUTED. Every probe in this directory
+# reads `0000` only because each is a couple of lines that compute nothing before
+# the declined operand, so the slot still holds its initial state — see the
+# `303C 0000` column below, against `n_fn_num`'s `303C 03C7` and
+# `n_bare_paren_num`'s `303C 0005`, which are ACCEPTED calls. Put a successful
+# computation above a declined operand and the declined one echoes it:
+# `../2026-09-05-disp-or-call-probes/d9.asm` returns 0111 / 0222 / 0333, and the
+# loud range-refusal path does the same in `../2026-09-04-as-end-probes/wcarry.asm`.
+#
+# So both builds substitute; they differ in WHAT, and the stale one is the more
+# freezable because re-running it agrees with itself.
 #
 # ── IT IS BUILD-SPECIFIC, AND THE BANNER DOES NOT SEPARATE THE BUILDS ────────
 # Four `asl` binaries sit in this workspace. All four print the same banner,
 # `Macro Assembler 1.42 Beta [Bld 212]`, and they are NOT the same program:
 #
-#   61e672562465725a8c102288a7da9098   s1disasm, skdisasm, sonic_hack   STABLE, substitutes 0
-#   0dee1f98e6480a4783d27ffd8b90896f   s2disasm                          UNSTABLE
+#   61e672562465725a8c102288a7da9098   s1disasm, skdisasm, sonic_hack   STABLE (stale value)
+#   0dee1f98e6480a4783d27ffd8b90896f   s2disasm                          UNSTABLE (uninit read)
 #
 # Every probe runner committed in this tree is pinned to the s1disasm path, and
 # the three golden-vector generators take their binary from `ASL_BIN`. So the
@@ -58,15 +72,27 @@
 # Read the two halves of the table together. On the 61e672 build
 # `s_fn_defined_reg` is exit 0, no diagnostic, and `303C 0000` — SILENTLY WRONG,
 # just deterministically so. The defect both builds share is that `#f(<reg>)` is
-# accepted at all; they differ only in the placeholder, 0 against uninitialized
-# memory. So "our pinned asl is stable here" is a statement about
-# REPRODUCIBILITY and about nothing else: a vector minted from this shape on the
-# good build is a reproducible wrong answer, which a stability sweep cannot see
-# and no number of runs will surface.
+# accepted at all; they differ only in the placeholder. So "our pinned asl is
+# stable here" is a statement about REPRODUCIBILITY and about nothing else: a
+# vector minted from this shape on the good build is a reproducible wrong
+# answer, which a stability sweep cannot see and no number of runs will surface.
+#
+# AND THE 61e672 PLACEHOLDER IS NOT A ZERO — this comment used to say it was
+# "0 against uninitialized memory", which is the right conclusion off a wrong
+# mechanism. It is THE LAST VALUE THAT BUILD COMPUTED, and the `0000` above is
+# only what that slot holds when nothing has been computed yet, which is the
+# case in these single-line probes. Put a successful call above the declined one
+# and the declined one echoes it: `../2026-09-05-disp-or-call-probes/d9.asm`
+# returns 0111 / 0222 / 0333 for three declined immediates following three
+# accepted calls of those values. The range-refusal path does the same —
+# `../2026-09-04-as-end-probes/wcarry.asm`. So the placeholder is a stale value
+# against an uninitialized one, and the stale one is the more freezable of the
+# two because re-running it agrees with itself.
 #
 # `s_fline_shape` is the same story with a second twist: the `F83C` F-line word
 # reported for `1+dsp(d3).w` is a property of the 0dee1f98 build, where it also
-# ALTERNATES with `783C`; the 61e672 build emits a stable `343C 1234` instead.
+# ALTERNATES with `783C`; the 61e672 build returns a stable `343C 1234`, which
+# is that build's stale placeholder and not an emission either.
 set -uo pipefail
 declare -a ASL_DIRS=("${ASL_DIRS[@]:-}")
 [[ -n ${ASL_DIRS[0]:-} ]] || ASL_DIRS=()

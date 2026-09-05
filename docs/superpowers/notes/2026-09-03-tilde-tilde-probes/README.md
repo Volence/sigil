@@ -20,14 +20,22 @@ Every probe here is committed so the next reader MEASURES rather than inherits.
 ## Running them
 
 ```sh
-./run.sh <path-to-asl> p1.asm out          # listing + log, for reading byte columns
-ASL=… P2BIN=… SIG=… ./diff_bytes.sh p3.asm # asl vs sigil, CRC32/size
+./run.sh ref p1.asm out                     # listing + log, for reading byte columns
+./run.sh /path/to/other/asl p1.asm out      # the same, through a second build
+SIG=… ./diff_bytes.sh p3.asm                # asl vs sigil, CRC32/size
+ASL_CROSSCHECK_DIR=… SIG=… ./diff_bytes.sh p3.asm   # the same, through a second build
 ./mutate.sh                                 # the five red-first proofs
 ```
 
 Run every probe through BOTH shipped `asl` builds. They agree here on every byte
 column and every error line, which is what licenses using either one — but that
 agreement is a measurement, not an assumption, and it is cheap to re-take.
+
+**Neither runner is anonymous.** `ref` is the digest-pinned reference build
+(`../asl-reference/`); an explicit path or `ASL_CROSSCHECK_DIR` reaches a second
+build and prints its md5 above the result. The version banner cannot tell the
+shipped builds apart, so a log that names only `Macro Assembler 1.42 Beta [Bld
+212]` has identified nothing.
 
 `PREDICTIONS.md` is the Sonic 1 / aeon / Sonic 2 predictions as written BEFORE
 any run, kept so the record shows which held and which did not.

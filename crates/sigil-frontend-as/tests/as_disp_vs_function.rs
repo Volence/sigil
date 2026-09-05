@@ -8,12 +8,30 @@
 //! about a source asl refuses, and silent about WHICH of two candidate names a
 //! refusal names — and that name is the whole rule here.
 //!
-//! THE RULE, and the asl rows it is derived from (AS V1.42 Beta [Bld 212],
-//! `s2disasm/build_tools/Linux-x86_64/asl`, md5
-//! `0dee1f98e6480a4783d27ffd8b90896f`, run `-xx -n -q -A -L -U -i .`). The
-//! digest is the identity; four builds in this workspace print that same version
-//! string, and this one substitutes an uninitialized word for any operand it
-//! declined to give a value — see `docs/superpowers/notes/asl-reference/`.
+//! THE RULE, and the asl rows it is derived from. Those rows were first taken
+//! on md5 `0dee1f98e6480a4783d27ffd8b90896f`
+//! (`s2disasm/build_tools/Linux-x86_64/asl`), which substitutes an uninitialized
+//! word for any operand it declined to give a value. **Every row quoted below
+//! has since been re-taken on the reference build, md5
+//! `61e672562465725a8c102288a7da9098`
+//! (`s1disasm/build_tools/Linux-x86_64/asl`), four runs each, and is
+//! byte-identical on both** — probes and the comparison runner at
+//! `docs/superpowers/notes/2026-09-05-disp-or-call-probes/`. The digest is the
+//! identity: four builds in this workspace print `AS V1.42 Beta [Bld 212]`
+//! verbatim, so a version string identifies nothing — see
+//! `docs/superpowers/notes/asl-reference/`. Flags `-xx -n -q -A -L -U -i .`.
+//!
+//! Nothing asserted here is a shape either build declines to value, which is
+//! what makes the two agree: the assertions are the peel, and the NAME a
+//! refusal blames. `#f(<register>)` — the shape that varies — is deliberately
+//! not among them.
+//!
+//! The `ta.asm` / `te.asm` filenames in the quoted diagnostics are the
+//! originals, kept verbatim; those files were never committed. The probes that
+//! reproduce these rows are `d1.asm` (the peel and the immediate), `d2.asm`
+//! (the `konst` refusal), `d3.asm` (the two-element group) and `d4.asm` (the
+//! call in the displacement), in the directory named above.
+//!
 //! In a 68000 operand asl peels the trailing `(An)`/`(An,Xn)` addressing-mode
 //! group off BEFORE it evaluates anything, so the name in front of it is looked
 //! up as a SYMBOL and never as a user `function`:

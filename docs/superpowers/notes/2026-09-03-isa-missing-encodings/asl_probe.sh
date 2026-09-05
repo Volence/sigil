@@ -1,7 +1,29 @@
 #!/bin/bash
-# asl_probe.sh <asl-binary-dir> ; reads snippets one per line on stdin,
+# asl_probe.sh [asl-binary-dir] ; reads snippets one per line on stdin,
 # prints "<snippet>\tOK <hex>" or "<snippet>\tERR <first-error>"
-BINDIR="$1"
+#
+# THE ASSEMBLER IS IDENTIFIED BY DIGEST, NOT BY BANNER — see
+# `../asl-reference/`. Four `asl` binaries in this workspace print
+# `Macro Assembler 1.42 Beta [Bld 212]` verbatim and are not the same program,
+# and one of them answers any operand it declined to value from uninitialized
+# memory. The predecessor took the directory as a required bare path and printed
+# nothing about it, so a matrix said only that "an asl" produced it.
+#
+# The argument SURVIVES, because this probe exists to fill `matrix.s1.tsv` and
+# `matrix.s2.tsv` — one per shipped build — and a digest pin would delete that.
+# With no argument it uses the reference build. Either way the md5 of the binary
+# that ran is announced ON STDERR, so it never lands in the TSV, and no matrix is
+# minted anonymously.
+if [ $# -ge 1 ]; then
+    BINDIR="$1"
+    [ -x "$BINDIR/asl" ] || { echo "FATAL: no executable asl at $BINDIR/asl" >&2; exit 2; }
+    echo "# CROSS-CHECK BUILD: $BINDIR/asl md5 $(md5sum "$BINDIR/asl" | cut -d' ' -f1)" >&2
+else
+    HERE="$(cd "$(dirname "$0")" && pwd)"
+    . "$HERE/../asl-reference/asl_ref.sh" || exit $?
+    BINDIR="$ASLDIR"
+    echo "# reference build: $BINDIR/asl md5 $(md5sum "$BINDIR/asl" | cut -d' ' -f1)" >&2
+fi
 ASL="$BINDIR/asl"
 P2BIN="$BINDIR/p2bin"
 W=$(mktemp -d /home/volence/sonic_hacks/.isa-cov-work/probe/run.XXXXXX)

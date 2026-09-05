@@ -2,9 +2,29 @@
 # Differential BYTE comparison: asl vs sigil on one source file.
 # Usage: diff_bytes.sh <file.asm>
 # Prints:  <name> asl=<crc32/size|ERR> sigil=<crc32/size|ERR> <SAME|DIFFER|...>
+#
+# THE DEFAULT ASSEMBLER IS SELECTED BY DIGEST, NOT BY BANNER — see
+# `../asl-reference/`. Four `asl` binaries in this workspace print the same
+# version string and are not the same program, so nothing in a listing said
+# which had run. `|| exit $?` is load-bearing: `set -u` is not `set -e`.
+#
+# `ASL_CROSSCHECK_DIR` SURVIVES, because this directory's whole claim is that
+# both shipped builds agree on every byte column here, and that agreement is a
+# measurement to re-take rather than an assumption. The defect was never a
+# second build — it was an UNIDENTIFIED instrument — so an explicit dir bypasses
+# the digest pin and prints the md5 of whatever it was handed. It replaces the
+# old `$ASL` override, which was a path with no digest attached.
 set -u
-ASL=${ASL:-/home/volence/sonic_hacks/s1disasm/build_tools/Linux-x86_64/asl}
-P2BIN=${P2BIN:-/home/volence/sonic_hacks/s1disasm/build_tools/Linux-x86_64/p2bin}
+HERE="$(cd "$(dirname "$0")" && pwd)"
+if [[ -n ${ASL_CROSSCHECK_DIR:-} ]]; then
+    ASLDIR="$ASL_CROSSCHECK_DIR"
+    ASL="$ASLDIR/asl"
+    [[ -x $ASL ]] || { echo "FATAL: no executable asl at $ASL" >&2; exit 2; }
+    echo "# CROSS-CHECK BUILD: $ASL md5 $(md5sum "$ASL" | cut -d' ' -f1)"
+else
+    . "$HERE/../asl-reference/asl_ref.sh" || exit $?
+fi
+P2BIN=${P2BIN:-$ASLDIR/p2bin}
 SIG=${SIG:-/home/volence/sonic_hacks/.sigil-irpc/.target-land/release/sigil}
 f=$1; b=${f%.asm}
 rm -f "$b.p" "$b.log" "$b.lst" "$b.asl.bin" "$b.sig.bin"

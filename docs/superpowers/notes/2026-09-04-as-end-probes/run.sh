@@ -8,6 +8,17 @@
 # UNINITIALIZED WORD for a refused operand — `303C 5602`, `303C 55B1`,
 # `303C 5655`, `303C 557F` on four consecutive runs of `wrange.asm`, against
 # `303C 8000` every time from the reference build. See `../asl-reference/`.
+#
+# THAT `303C 8000` IS NOT AN ANSWER EITHER, and this comment used to read as
+# though it were. It is `wrange.asm`'s line 5 — `move.w #-32768,d0`, in range,
+# ACCEPTED, legitimately $8000 — leaking into the four refused lines below it,
+# which echo the last value asl computed. `wcarry.asm` beside `wrange.asm` is
+# the control: same file, line 5's accepted value changed to $1234, refused
+# lines untouched, and all four then read `303C 1234`. `wcarry0.asm` has nothing
+# accepted above its refused lines and reads `0000`.
+#
+# So the digest picks WHICH build answered; it cannot make a refused line have
+# an answer. Do not pin the byte column of a refused line from either build.
 set -uo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 . "$HERE/../asl-reference/asl_ref.sh" || exit $?

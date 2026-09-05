@@ -1,6 +1,13 @@
 #!/usr/bin/env bash
-# Run S1's asl on a probe file; print exit, listing body, and any errors.
-ASL=/home/volence/sonic_hacks/s1disasm/build_tools/Linux-x86_64/asl
+# Run the reference asl on a probe file; print exit, listing body, and any errors.
+#
+# The assembler is selected by MD5, not by path and not by version banner: four
+# `asl` binaries in this workspace print the same banner and are not the same
+# program, and one of them answers refused operands from uninitialized memory.
+# `asl_ref.sh` refuses anything but the reference build; `|| exit $?` is
+# load-bearing because this script does not set `-e`.
+HERE="$(cd "$(dirname "$0")" && pwd)"
+. "$HERE/../asl-reference/asl_ref.sh" || exit $?
 d=$(dirname "$1"); f=$(basename "$1" .asm)
 rm -f "$d/$f.p" "$d/$f.lst" "$d/$f.log"
 ( cd "$d" && "$ASL" -xx -n -q -A -L -U -E -i . "$f.asm" >/dev/null 2>&1 )

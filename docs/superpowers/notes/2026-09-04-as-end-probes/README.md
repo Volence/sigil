@@ -34,6 +34,23 @@ builds**, at the same lines, so every rule this directory states still holds —
 what does not reproduce is the byte column of a REFUSED line, which no rule here
 rests on and which the tables below deliberately do not quote.
 
+> **THE REFERENCE BUILD'S `8000` AND `0000` ARE ARTIFACTS TOO** *(2026-09-05)*.
+> The paragraph above reads as a contrast between a real answer and garbage. It
+> is not; it is stale-and-stable against fresh-and-random, and the two controls
+> for that are committed here.
+>
+> `wcarry.asm` is `wrange.asm` with line 5's ACCEPTED value changed from
+> `-32768` (`$8000`) to `$1234`, lines 6-9 untouched. All four refused lines
+> then read `303C 1234` — so the `8000` was line 5 leaking downward, not a value
+> for the lines it appeared on. `wcarry0.asm` has two refused immediates and
+> nothing accepted above them, and reads `0000` — which is what `wimm.asm`'s
+> "steady `0000`" is: the slot's initial state, never overwritten because
+> `wimm.asm` accepts no immediate before its refused ones.
+>
+> The conclusion above is unchanged and is now better supported: no rule here
+> rests on the byte column of a refused line, and on EITHER build that column is
+> an artifact of the lines above it.
+
 ```
 ./run.sh end1.asm        # listing + p2bin image for one probe
 ```
