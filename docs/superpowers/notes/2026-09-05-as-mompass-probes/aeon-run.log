@@ -1,0 +1,19 @@
+aeon HEAD: 2be6020ae6340e734d2e2c419fe0de50408b226b
+aeon dirty paths BEFORE: 2
+MOMPASS in aeon .asm/.inc/.emp (tracked, excluding agent worktrees):
+
+engine/debug/debugger.asm
+   before: exit=1  diagnostics=23  MOMPASS firings=0
+   after : exit=1  diagnostics=23  MOMPASS firings=0
+   stdout AND stderr byte-identical before vs after: YES
+games/demo/game_root.asm
+   before: exit=0  diagnostics=0  MOMPASS firings=0
+   after : exit=0  diagnostics=0  MOMPASS firings=0
+   stdout AND stderr byte-identical before vs after: YES
+games/sonic4/game_root.asm
+   before: exit=0  diagnostics=0  MOMPASS firings=0
+   after : exit=0  diagnostics=0  MOMPASS firings=0
+   stdout AND stderr byte-identical before vs after: YES
+
+aeon dirty paths AFTER: 2
+AEON-ASSERT-END
