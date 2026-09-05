@@ -27,18 +27,41 @@
 # and cannot rot away from it. A run against that binary reporting zero UNSTABLE
 # is a broken sweep, not a clean corpus.
 #
-# NATIVE=1 keeps a control too, and a different one: `2026-09-04-as-end-probes`
-# names the s2disasm build itself, so `wimm.asm` and `wrange.asm` must come back
-# UNSTABLE in native mode as well. (The `s_*`/`u_*` probes here do NOT fire under
-# NATIVE=1 — this directory's own scripts name s1disasm first, so native mode
-# assembles them with the stable build. That is correct behaviour and not a
-# regression; the live control in native mode is the `as-end` pair.)
+# NATIVE=1 USED TO KEEP A CONTROL OF ITS OWN, AND NO LONGER HAS ONE.
+# It was: `2026-09-04-as-end-probes` names the s2disasm build itself, so
+# `wimm.asm` and `wrange.asm` must come back UNSTABLE in native mode as well.
+# That directory has since been repinned onto `asl-reference/asl_ref.sh`, and so
+# has every other corpus, so native mode now resolves all of them to the ONE
+# reference build and asks exactly the same question a plain run asks. Measured
+# 2026-09-05: `NATIVE=1 ./sweep_probes.sh 3` sweeps 204 probes and reports 0
+# UNSTABLE, and there is no longer any input under which it could report
+# otherwise.
+#
+# A control that cannot fire must not be allowed to read as a pass, so native
+# mode now COUNTS the distinct binaries it resolved and prints a loud degenerate
+# banner above the totals when there is only one. The live control is the
+# plain-mode one above: re-run with ASLDIR pointed at the s2disasm build.
+#
+# The capability is kept rather than deleted because a corpus added later may
+# name its own binary again, and then the count goes above one and the banner
+# reports the control as live.
 set -uo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 REPO="$(cd "$HERE/../../../.." && pwd)"   # docs/superpowers/notes/<this dir>/ → repo root
 ASLDIR="${ASLDIR:-/home/volence/sonic_hacks/s1disasm/build_tools/Linux-x86_64}"
 DECLOCK="$REPO/docs/superpowers/notes/asl-declock/declock.sed"
 N="${1:-5}"
+# N=1 CANNOT MEASURE STABILITY. One run has nothing to disagree with, so every
+# probe reports "not seen to vary in 1 runs" and the totals come back green on a
+# corpus that is in fact unstable — including the deliberately unstable probes in
+# this very directory. That is a vacuous pass, not a cheap one; refuse it.
+if [[ $N -lt 2 ]]; then
+    echo "FATAL: N=$N cannot detect variation — one run has nothing to compare against." >&2
+    echo "  A single-run sweep reports every probe stable BY CONSTRUCTION, including" >&2
+    echo "  this directory's own s_*/u_* probes, which are unstable on purpose." >&2
+    echo "  Use N>=2; the positive controls are documented above." >&2
+    exit 2
+fi
 # OUTSIDE the swept tree: this script's own directory matches `*-probes` and is
 # therefore one of the corpora it sweeps, so a work dir under $HERE would be
 # copied into itself.
@@ -97,7 +120,30 @@ native_asldir() {
         printf '%s' "$ASL_REF_DIR_FOR_SWEEP"
         return
     fi
-    hit="$(grep -rhoE '/home/volence/sonic_hacks/[a-z_0-9.-]+/(build_tools/[A-Za-z0-9_-]+|tools/as)' "$dir" --include='*.sh' 2>/dev/null | sort | uniq -c | sort -rn | head -1 | awk '{print $2}')"
+    # COMMENT LINES ARE STRIPPED FIRST, and this is not tidiness. The path grep
+    # used to read every line of every script, prose included, and pick the
+    # most-mentioned path — so DOCUMENTING a build made the sweep RUN it. Adding
+    # one sentence about the s2disasm binary to this file's own header flipped
+    # this directory's resolution from 61e67256 to 0dee1f98 between two runs
+    # (measured 2026-09-05), which is an instrument selected by how often a
+    # comment names it. Only lines that actually assign or invoke count.
+    local counts
+    counts="$(grep -rh --include='*.sh' -vE '^[[:space:]]*#' "$dir" 2>/dev/null \
+        | grep -oE '/home/volence/sonic_hacks/[a-z_0-9.-]+/(build_tools/[A-Za-z0-9_-]+|tools/as)' \
+        | sort | uniq -c | sort -rn)"
+    [[ -z $counts ]] && { printf '%s' "$ASL_REF_DIR_FOR_SWEEP"; return; }
+    # A TIE IS AMBIGUOUS, NOT A WINNER. `sort -rn` breaks ties arbitrarily, so a
+    # directory naming two builds equally often would silently get one of them,
+    # differently on different runs.
+    local top second
+    top="$(printf '%s\n' "$counts" | sed -n '1s/^ *\([0-9]*\).*/\1/p')"
+    second="$(printf '%s\n' "$counts" | sed -n '2s/^ *\([0-9]*\).*/\1/p')"
+    if [[ -n $second && $top == "$second" ]]; then
+        echo "# AMBIGUOUS $(basename "$dir"): $top mentions each of two builds — falling back to \$ASLDIR, not guessing" >&2
+        printf '%s' "$ASLDIR"
+        return
+    fi
+    hit="$(printf '%s\n' "$counts" | head -1 | awk '{print $2}')"
     if [[ -n $hit && -x $hit/asl ]]; then printf '%s' "$hit"; else printf '%s' "$ASLDIR"; fi
 }
 # The guard's own reference directory, read out of the guard rather than
@@ -105,12 +151,16 @@ native_asldir() {
 ASL_REF_DIR_FOR_SWEEP="$(sed -n 's/^ASL_REF_DIR=//p' "$REPO/docs/superpowers/notes/asl-reference/asl_ref.sh")"
 [[ -x $ASL_REF_DIR_FOR_SWEEP/asl ]] || { echo "FATAL: asl_ref.sh names no usable ASL_REF_DIR ($ASL_REF_DIR_FOR_SWEEP)" >&2; exit 2; }
 
+declare -a NATIVE_DIGESTS=()
+
 for dir in "$WORK"/*-probes; do
     dname="$(basename "$dir")"
     DIR_ASLDIR="$ASLDIR"
     if [[ $NATIVE == 1 ]]; then
         DIR_ASLDIR="$(native_asldir "$dir")"
-        printf '# %-42s asl %s\n' "$dname" "$(md5sum "$DIR_ASLDIR/asl" | cut -d' ' -f1)"
+        d="$(md5sum "$DIR_ASLDIR/asl" | cut -d' ' -f1)"
+        NATIVE_DIGESTS+=("$d")
+        printf '# %-42s asl %s\n' "$dname" "$d"
     fi
     for path in "$dir"/*.asm; do
         [[ -e $path ]] || continue
@@ -151,6 +201,31 @@ for dir in "$WORK"/*-probes; do
 done
 
 echo
+if [[ $NATIVE == 1 ]]; then
+    # NATIVE MODE'S CONTROL, AND WHETHER IT CAN STILL FIRE.
+    #
+    # Native mode exists because the corpora were pinned to DIFFERENT builds, and
+    # its stated positive control is that `2026-09-04-as-end-probes` — which used
+    # to name the s2disasm build — must return `wimm.asm` and `wrange.asm`
+    # UNSTABLE. That directory has since been repinned onto the digest guard, so
+    # if every corpus now resolves to one binary the control is INERT and a green
+    # native run distinguishes nothing. Say so rather than report the green.
+    distinct="$(printf '%s\n' "${NATIVE_DIGESTS[@]}" | sort -u | wc -l)"
+    if [[ $distinct -le 1 ]]; then
+        echo "=== NATIVE MODE IS DEGENERATE — ITS CONTROL CANNOT FIRE ==="
+        echo "  All ${#NATIVE_DIGESTS[@]} corpora resolved to ONE binary"
+        echo "  (md5 ${NATIVE_DIGESTS[0]}), so native mode asked exactly the"
+        echo "  same question as a plain run and its positive control — the"
+        echo "  as-end pair coming back UNSTABLE — has nothing to fire on."
+        echo "  A zero-UNSTABLE result below is therefore NOT evidence."
+        echo "  Use the plain-mode control instead:"
+        echo "    ASLDIR=/home/volence/sonic_hacks/s2disasm/build_tools/Linux-x86_64 ./sweep_probes.sh $N"
+        echo
+    else
+        echo "native mode: $distinct distinct binaries across ${#NATIVE_DIGESTS[@]} corpora — the control is live"
+        echo
+    fi
+fi
 echo "=== SWEEP 1 TOTALS ==="
 echo "probes swept   : $total"
 echo "not seen to vary in $N runs : $stable"
