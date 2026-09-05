@@ -1301,8 +1301,17 @@ changed lines are punctuation-only after stripping dashes and punctuation, and N
 appears on one side and not the other.** `repin` reported `0 pin(s) changed` and the diff proves it.
 Gate green after.
 
-**Also true and worth fixing separately: the remediation the failing gate PRINTS does not work as
-printed.** `run: cargo run -p sigil-harness --bin repin` bails out with a hint unless `SIGIL_EMIT` is
-also set, doing nothing and reporting no error. A gate whose own advice is incomplete sends its reader
-in a circle. Booked `PINS-GATE-MESSAGE-MISLEADS` with both halves: make the count and the verdict
-describe the same comparison, and make the printed command the command that works.
+**Also worth fixing separately, and STATED SMALLER THAN I FIRST BANKED IT.** The remediation the
+failing gate prints, `run: cargo run -p sigil-harness --bin repin`, is INCOMPLETE: it does nothing
+unless `SIGIL_EMIT` is also set. **My first wording here said it did so "reporting no error", and that
+was wrong: measured, it exits 2 and prints a hint naming the missing variable.** So a reader who
+copies the printed command gets a clear failure and a pointer, not a silent no-op and not a circle.
+The defect is a papercut, not a trap, and the correction matters because I had relayed the stronger
+version to the hub. Booked `PINS-GATE-MESSAGE-MISLEADS` with both halves: make the count and the
+verdict describe the same comparison, and make the printed command the command that works.
+
+**The general form, since I have now done this twice in one day:** an over-stated defect is still a
+defect report that has to be retracted, and it costs the same as an under-stated one. **The check is
+the same one this document applies to everything else, aimed at the severity rather than the
+existence: what would the run have to print for my claim to be false, and did I look?** Here it was
+one command, `echo $?`, and I banked the claim without it.
