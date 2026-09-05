@@ -66,7 +66,7 @@ refuses a violation; a dashboard that prints a number is not a check.
 | **B4** | The object bank's used cursor (the resolved LMA of `DeformTable_Zero`, the first section past the bank) must not exceed `0x20000`. | **1** | `games/sonic4/map.toml` `[[budget]] region = "object_bank" ceiling = 0x20000 cursor = "DeformTable_Zero"`; enforced sigil-side by `native::check_object_bank_budget` → `map.check_budget`, and reported build-side by `tools/s4budget.py --map` | **sigil gate** (pack time, on the shipped path) **+ an aeon-side dashboard** | Nothing — the ceiling and the cursor are both *declared in the map*, not read off a frozen row. This one is already decoupled. |
 | **B5** | `ObjCodeBase` requires a 64 KB-aligned base (`0x10000` itself is a kept design choice, not a hardware fact) — every object's SST `code_addr` is a 16-bit `label − ObjCodeBase`. | **1** (map anchor) + aeon's R1 ruling | `games/sonic4/map.toml` and `games/demo/map.toml` `[[anchor]] name = "object_bank" at = 0x10000` | **sigil gate** — `section_align::DECLARED` row `d("ObjCodeBase", 0x10000, OBJ_BANK_64K)`, enforced by `native::validate_resolved_alignment` on the shipped path | Nothing. **This is the prior note's `OBJ_BANK_ALIGN` and it has since LANDED** (see §4 — the brief I was given says it has not). |
 | **B6** | The free room under the `dac_banks` anchor must stay at or above `DATA_GROWTH_RESERVE`; the anchors are derived, not fixed — `dac_banks = align_up(max over sound-on shapes of packed_data_end + DATA_GROWTH_RESERVE + DATA_GROWTH_GRACE, 0x8000)`, `sound_bank = dac_banks + 2 × 0x8000`. | **1** | `tools/bganim_room.py` constants `DATA_GROWTH_RESERVE = 0xC000`, `DATA_GROWTH_GRACE = 0x8000`, `BANK_ALIGN = 0x8000`, run as `--gate` from `build.sh`; declared in `games/sonic4/map.toml`'s BANK PLACEMENT RULE | **aeon build-side gate**, post-sigil, both canonical shapes, `sonic4` only, **skipped under `FAST=1`** | See **B7** — the gate is real but its *instrument* is an unasserted placement assumption. |
-| **B7** | **`Art_Sonic` must be the last packed blob before the banks, and its section must have exactly one embed.** `bganim_room.py` derives `packed_data_end` as `LMA(Art_Sonic) + len(art/optimized/characters/sonic.bin)`. | **1** (tool) + **1** (map prose) | `tools/bganim_room.py`; `games/sonic4/map.toml` — *"`Art_Sonic` is the last packed blob before the banks by `order`"* and *"they go BEFORE collision_data … on purpose: a section with several embeds has no such instrument"* | **nowhere.** Nothing asserts that `Art_Sonic` is the terminus, nor that its section stays single-embed. The map's `order` puts it there; violating that changes the derived end silently. | **This is the sharpest row in the list.** If placement is re-derived and anything lands between `Art_Sonic` and `Dac_Temp_Blip`, `bganim_room.py` measures a `packed_data_end` that is too low, computes MORE room than exists, and the reserve gate goes green while the reserve is gone. An always-green gate on a real breach. It is exactly the prior note's R6 shape — *"the gap between two labels is an allotment"* — reappearing in a live build gate rather than in `repin`. |
+| **B7** | *(not a separate row — the instrument B6 and B8 both rest on)* | | | **see F1 and F2** | **This is the sharpest thing in the list and it is stated once, in Class F.** In short: nothing asserts `Art_Sonic` is the terminus. If placement is re-derived and anything lands between `Art_Sonic` and `Dac_Temp_Blip`, `bganim_room.py` measures a `packed_data_end` that is too low, computes MORE room than exists, and **both** B6 and B8 go green while the reserve is gone. An always-green gate on a real breach — exactly the prior note's R6 shape (*"the gap between two labels is an allotment"*), reappearing in a live build gate instead of in `repin`. |
 | **B8** | `BGANIM_SECTION_CEILINGS` — the ruled 12,288 B BG-animation budget, re-derived from each build's listing rather than pinned. | **1** | `tools/bganim_room.py --gate`, invoked from `build.sh` | **aeon build-side gate**; `sonic4` only, skipped under `FAST=1` | It rides B7's instrument, so it inherits B7's failure mode. |
 | **B9** | The ROM total must fit its declared `[[region]] rom` size (`0x400000`), cross-checked by `EndOfRom`. | **1** | `games/*/map.toml` `[[region]] name = "rom" size = 0x400000`; `tools/s4budget.py` `_MAX_ROM_ADDR = 0x400000` | **`ensure`** (B1) is the hard one; `s4budget` is the dashboard | Nothing. |
 
@@ -136,6 +136,33 @@ firsthand: `grep -rnE '\["order"\]|get\("order"' tools/*.py build.sh` returns **
 **Seven aeon-side assumptions (F1, F3, F7, G1–G4) cite `order` as their justification. Nothing
 on aeon's side reads it.** Today that is harmless because the frozen tables hold the order still;
 the moment they stop, the justification and the mechanism are in different repos with no link.
+
+### Class P — from the history walk
+
+The headline for source 3 is a **negative with a caveat**: across the whole reachable ancestry
+(4,434 commits) and ~45 query shapes, **nothing was found whose only home is a commit message.**
+That is a real property of this tree, not an empty result — aeon's K1 parcel
+(`a7375682`, *"K1: the declared placement maps"*, 2026-08-01) deliberately moved the implicit
+placement contract into declared files, and the sweep confirms it took. Every rule the history
+states is also in `map.toml`, an `ensure`, a gate tool, or a `.emp` header. Coverage limits in §2.
+
+Two rows survive anyway, in the weaker but still-fatal sense: stated in a doc plus its commit,
+executed by nothing.
+
+| # | Constraint | Source | Anchor | Where checked | What lapses |
+|---|---|---|---|---|---|
+| **P1** | **Something in the sound region sits hard against ROM `0x8000`, the 68000 `abs.w` ceiling.** A parcel that *shrinks* the image upstream drags it below the line, every absolute reference in that neighbourhood re-encodes `abs.l`→`abs.w`, and lengths cascade — presenting as a test failure in a region nobody edited. **Growth is safe; shrink is dangerous.** | **3** | commit `9c8117ed` *"book: the sound tables sit exactly on the abs.w ceiling, and a one-byte shrink is enough"*; text lives in `docs/DEFERRED_WORK.md` §*"A LANDING HAZARD FOR EVERY BYTE-MOVER…"* | **nowhere.** No gate, no `ensure`, no `map.toml` row, no tool reads it. Its own stated "durable half" is a `grep` a human is asked to run by hand. | Today the frozen per-label LMAs are the only thing holding `Sound_PlaySFX` and its neighbourhood on their side of `0x8000`. Retire them, let those bases float, and one shrink upstream flips 14 real transfer sites' encoding with no diagnostic. **Direct hit on the precondition.** |
+| **P1-b** | ⚠ **P1's prescribed check is VACUOUS, and its binding symbol is misidentified.** Verified firsthand. | **3** | same booking | — | The booking says *"`SoundTablesZ80_Head` at `0x8000` exactly — margin ZERO … A shrink of ONE byte upstream is enough"* and prescribes *"`SoundTablesZ80_Head` at `8000` or above = clear."* **`SoundTablesZ80_Head` is a PHASED section head** — `soundbankhead.emp` declares `section soundbankhead (cpu: m68000, vma: $8000)`, and `map.toml`'s own anchor row reads `at = 0xB8000, vma = 0x8000`. So `0x8000` is its declared **VMA**, not its ROM LMA; **no upstream shrink can move it and the prescribed grep always prints `8000`.** The symbol with a real ROM address is `Sound_PlaySFX` (`engine/sound/sound_api.emp`, `module engine.sound_api in sound_api` — **no `vma:`**), at `0x8024`: **the margin is 36 bytes, not zero.** This is the exact class aeon itself named four days later in `9d7cefd5` *"merge: a phased section's VMA was being read as a ROM address"*, which removed a by-name allowlist that had been patching the same confusion one symbol at a time. **Verified the booking stands unamended at the pin**: `git log -S` on its heading returns only `9c8117ed`, so the 09-03 correction was never back-applied. **Take P1's shape; re-derive its coordinate from a non-phased symbol.** |
+| **P2** | Only **DATA** tables may live in the Z80 `$8000` banked window; **all in-frame code must be resident**, because a banked opcode fetch traverses the 68k bus and corrupts under DMA/BUSREQ contention. | **3** | commit `3b186623` *"fix(sound): relocate Fm_FnumApplyDelta resident; delete banked-code file (T0.3)"* | **prose only**, but in four live `.emp` headers (`z80_sound_driver.emp`, `sound_sequencer.emp`, `sound_fm.emp`, `seq_opcode_tab.emp`) | **A near-miss worth its own line.** The commit says the rule was written into `main.asm`'s window block. **`main.asm` was deleted 2026-08-01 (`f7405d63`).** The rule survived only because someone had also copied it into the `.emp` headers — nothing structural preserved it. That is the failure mode this whole inventory exists to prevent, and it already happened once and was caught by luck. |
+| **P3** | A page-aligned optimisation in the Z80 DAC lookup was deliberately **NOT TAKEN** because `ensure((DacSampleTable & $FF) == 0)` would fail — the table sits at `$85AD`, after the other engine-head tables, not at the `$8000` window head. | **3** (booked in `e4e173eb` *"book: two placement findings from sigil's alignment parcel"*) | verified firsthand: the `// NOT TAKEN —` block in `engine/sound/z80_sound_driver.emp` | **n/a — it is a constraint that was declined rather than incurred** | **This is the named counterexample to source 2's completeness, and it is worth more to the decouple lane than most rows above.** It is a placement requirement that **an `ensure` sweep cannot find, because it has no comptime wall to find**: the requirement exists only as the reason a faster form was rejected. If someone later takes the optimisation without writing the ensure alongside it, a silent alignment requirement is created that no source enumerates. |
+| **P4** | The replay fixture is placed after **all** gameplay content so a re-record shifts zero gameplay addresses; `EndOfRom` is named last so the terminus encloses it. | **3** | `a74b7427`, `806bc2de` | also in `games/sonic4/test/replay_fixture.emp` header + the `map.toml` order tail; enforced by D1/D7 | Nothing beyond D1/D7. |
+| **P5** | The parallax/scene block's **emission order is load-bearing** — the shipped block interleaves the six deform tables with the twenty records that attach them; grouping them elsewhere rewrites the table pointer inside all twenty. | **3** | `d673bad0`, `0634e79f` | also in `map.toml`'s `DeformTable_Zero` comment, `scene_registry.emp`, `ojz_scenes.emp`; enforced by D1 (the map drives order) | Nothing today. Named because it is a case where `order` is load-bearing for *content correctness*, not just for a proxy's arithmetic — so D1's enforcement is doing real work here, not bookkeeping. |
+| **P6** | **How constrained the packer actually is, measured.** Sweeping `Art_Sonic`'s base one byte at a time across ±64 KB: **2,773 of 131,073 shifts FAIL, in 43 forbidden bands**, worst peak 17 slots. Current margin **5,188 B**. An append is *not* tail-only — `DPLC_Sonic` sits immediately before `Art_Sonic`, so a shrink moves the art base and every DMA source with it. Two parcels ruled independent are **coupled**: both land safe only inside the combined band `[−29,796, −15,300]`. | **3** | `15cb42f7` *"measure: the d-47 append condition, discharged with an instrument"*, corrected by `9f82779a` *"correct: three subjects' art straddles, not one"* | `tools/dplc_straddle.py --gate` (C1) is the instrument and it is on the build path | Nothing lapses — but **this is the number §5 turns on**, and its commit states the source-2 finding independently and in aeon's own words: *"`dplc_peak_entries` parses the blob and never learns the base address, so **every ensure in this tree is structurally blind to it**."* |
+
+**Also confirmed retired rather than missing** (so a future reader does not go looking): the
+`SIGIL_EMP_*` mixed-build resume-org constraints (`ae1de4d1` + ~30 siblings) died with
+`main.asm`/`engine.inc` on 2026-08-01 (`f7405d63`); the 64 KB object-bank overflow guard
+`if * > $20000 / error` migrated to the map `[[budget]]` in `8fb3a85f` (it is B4/F3 now).
 
 ### Class E — the ROM-only-answerable gates that a re-derivation must keep working
 
@@ -250,7 +277,39 @@ and did not.
 
 ### Source 3 — commit prose in aeon's history
 
-<!-- FILLED WHEN THE HISTORY WALK LANDS -->
+**Rows from this source: 7** (P1, P1-b, P2, P3, P4, P5, P6).
+
+**Range walked, and it is the whole ancestry.** `git log --since=2026-06-01` = **4,005**
+commits; `git log --until=2026-06-01` = **429** (the repo starts 2026-04-24). Total reachable
+from the pin: **4,434**, walked in two passes over **bodies as well as subjects**, merge commits
+included. Plus `git log --follow` on `games/sonic4/map.toml` (52 commits) and
+`games/demo/map.toml` (17). ~45 distinct query shapes.
+
+**Positive control: PASSED.** Target chosen before looking: the BANK PLACEMENT RULE introduced
+by the 2026-08-26 and 2026-09-04 re-layouts. Three independent queries (`--grep='BANK PLACEMENT RULE'`,
+`--grep='align_up'`, `--grep='DATA_GROWTH_RESERVE'`) each surfaced it, at
+`446a27d9` *"relayout(rom): the banks move to 0xA8000/0xB8000, the reserve triples, and the rule
+grows the term that makes 'extra room' a guarantee"*, `0cddcaa9` (the 08-26 predecessor at
+`0x90000`/`0xA0000`) and `dddfbf0a` (*"bganim_room enforces the bank placement rule"*).
+
+**The result, in the sentence that means what it says.** *Searched 4,434 commits with ~45 query
+shapes and found nothing whose only home is a commit message.* That is **not** "there is nothing
+of this shape". The residual risk is concentrated in two places, both stated:
+
+- **High-population terms were narrowed, not exhausted** — `boundary` (271 hits), `reserve`
+  (364), `placement` (232), `align` (163), `load-bearing` (132), `headroom` (103). A constraint
+  buried in one of those and phrased outside the narrowing patterns would be missed.
+- **A rule stated as a bare address relation with no relational word** (*"`X` at `$5BB10`, `Y`
+  right after"*) matches none of the ~45 vocabulary terms and would not surface. Three long-context
+  regexes hit `ugrep` complexity limits and had to be simplified, costing some recall.
+- Unmerged branch tips were not swept. `--grep` over `--all` for the three control queries
+  returned nothing outside the pin's ancestry, but that is three queries, not the sweep.
+
+**The interesting part of a null result is what it implies about the other sources.** Source 3
+being empty of *sole-home* constraints is aeon's K1 parcel working as designed. But the walk
+surfaced **P3** — a placement requirement whose only trace is *the comment explaining why a
+faster form was rejected* — which is a shape **none of the three sources can enumerate**: it has
+no gate, no `ensure`, and no commit that states it as a rule. That is source 3's real yield.
 
 ## §3 — What this did NOT cover
 
@@ -286,6 +345,14 @@ clean**.
   `validate_placement`, `hole_interior_faults`, `validate_resolved_alignment`,
   `section_align::DECLARED`, `check_object_bank_budget` and `frozen_sizes`' doc were read
   directly at sigil master `311ded5a`. Nothing about sigil in this note is relayed.
+- **`docs/DEFERRED_WORK.md` (17,500+ lines) was searched, not read.** Only the entries the
+  history walk's commit hits pointed at were opened. P1 was found that way; **there may be
+  further prose-only placement rules booked in that file that no commit message names.** Given
+  P1 is one of exactly two prose-only rows and it was found by following a commit, a direct
+  sweep of that file is a cheap and probably productive next query.
+- **Unmerged branch tips were not swept.** The history walk covered the pin's ancestry;
+  `--grep` over `--all` for the three control queries returned nothing outside it, which is
+  three queries, not a sweep.
 - **`AEON_DIR = /home/volence/sonic_hacks/.aeon-verify-483` was not used at all.** It is 164
   commits behind the pin, and no fact in this note comes from it. Stated because the brief
   offered it and a reader will want to know which tree each fact came from: **every aeon fact
@@ -379,4 +446,109 @@ Flagged rather than silently corrected because the error is in the direction tha
 caught: a stale-basis argument overstated is challenged, understated is banked. The conclusion
 is unchanged and stronger than stated.
 
-## §5 — Is the precondition satisfiable from this list?
+## §5 — Counts, and where the checks live
+
+**45 distinct constraint rows** (Class E's six are instruments, not constraints, and are excluded;
+H1–H5 are a cross-cutting view of rows counted elsewhere; P1-b is a defect *on* P1, not a row).
+
+| | count |
+|---|---|
+| Rows with a check that **fails the build** | **22** |
+| Rows that are structural, declined, or dashboard-only-but-covered-elsewhere (A9, B9, D2, P3) | 4 |
+| **Rows with NO check anywhere** | **19** |
+
+**Where the 22 checks live — this distribution is the finding.**
+
+| Enforcer | rows | which |
+|---|---|---|
+| an `ensure` in aeon's own `.emp`, deferred to a `LinkAssert` and evaluated by **sigil's linker** | 7 | A1–A5, B1, B2 |
+| a **sigil** gate on the shipped build path | 9 | A6, A8, B3, B4, B5, D1, D3, D5, D7 |
+| an **aeon build-side** gate on `build.sh` | 3 | B6, B8, C1 |
+| covered transitively by one of the above | 3 | P4, P5, P6 |
+
+**Only three hard placement checks live on aeon's build side.** All three are post-sigil listing
+readers; all three are `sonic4`-only; all three are skipped under `FAST=1`. And two of those
+three — B6 (the `DATA_GROWTH_RESERVE` floor) and B8 (the BG-animation ceiling) — **rest on F1
+and F2, which nothing checks.** So the aeon-side enforcement surface is effectively *one*
+independently-grounded gate: C1, `dplc_straddle.py`, which derives its boundary from source and
+reads the built ROM.
+
+**The 19 unchecked rows are not evenly distributed.** Twelve of them (F1–F7, G1–G5) are the same
+two mistakes made twelve times: **a named label standing in for a position** — either "the end of
+a region" (terminus proxies) or "the next thing emitted" (adjacency pins). They are unchecked
+*because they are not constraints anyone wrote down*; they are assumptions that fell out of the
+frozen order being stable, and they are load-bearing for gates that then pass.
+
+## §6 — Is the precondition satisfiable from this list?
+
+**No. Not from this list, and the reason is structural rather than a matter of length.**
+
+The precondition asks that *every constraint the frozen tables encode be recaptured as an
+explicit rule before the tables stop being authority.* This list is a good-faith enumeration
+from aeon's side with per-source controls, and it still cannot discharge that, for three
+reasons — in increasing order of how much they matter.
+
+**1. Two of the three sources are near-empty, and their emptiness is structural, so the
+enumeration's confidence should not be spread evenly across them.** Source 2 carries 8 rows out
+of 1,246 `ensure` sites, and all of them are already safe: they evaluate against the *placed*
+address. Source 3 carries no sole-home constraints at all. Almost the entire result is source 1,
+and within source 1 almost the entire *risk* is the F/G/H classes. A future pass should not
+budget three equal source sweeps; it should budget one deep source-1 read and two shallow
+confirmations.
+
+**2. The most dangerous class cannot be enumerated by asking "what constraints exist".** P3 is
+the proof: a real alignment requirement whose only trace is a comment explaining why a faster
+form was **rejected**. It has no gate, no `ensure`, and no commit stating it as a rule; none of
+the three sources contains it, and it surfaced only as a by-catch of a history walk looking for
+something else. F1–F7 and G1–G5 are the same shape one step further along — **requirements that
+were never stated because nothing ever made anyone state them.** The question that finds this
+class is not *"what constraints exist"* but **"what does this code compute that nothing
+verifies"**, and that question has to be asked file by file over the consuming end. This
+inventory found twelve by asking it of `tools/`; it has not been asked of the `test_*.py` lane,
+of `s4lint.py`, or of `effects_gen.py`.
+
+**3. The measured answer to "how free is the packer, really" is that it is not very free, and
+nobody has re-measured it since.** P6: sweeping `Art_Sonic`'s base ±64 KB, **2,773 of 131,073
+one-byte positions fail, in 43 forbidden bands.** That is 2.1% of positions, and the tree
+currently sits **5,188 B** from a band edge. Retiring the frozen tables means handing the packer
+a freedom it has been measured, once, not to have — and that measurement was taken at a
+different layout, before the 09-04 re-layout moved the banks 96 KB. **Whatever else DECOUPLE
+does, that sweep needs re-running at the current layout before the tables come out.**
+
+### What is actually needed, and from what parameter
+
+Three passes, none of which is another *"enumerate constraints from repo X"*:
+
+- **(a) A consuming-end pass over the aeon tools that this one only skimmed** — `s4lint.py`,
+  `effects_gen.py`, the `tools/test_*.py` pytest lane, and the seven gates read by docstring
+  only. Parameter: **not** "find constraints" but *"find every place a position is inferred from
+  a name"* — the F/G shapes. Twelve were found in the tools that were read in full; the tools
+  read only by docstring are the same kind of code.
+- **(b) Re-run P6's sweep at the current layout**, and extend it from `Art_Sonic` to the other
+  three straddle subjects. Until that number exists for `0xA8000`, "the packer may float" is
+  unpriced.
+- **(c) Close F1/F3 structurally rather than by writing a rule.** Both are terminus proxies, and
+  a proxy cannot be fixed by declaring the proxy correct — that is the maintenance-act shape:
+  the fix would be a hand-edited assertion indistinguishable from enshrining the accident.
+  `bganim_room.py` should take `packed_data_end` from **the maximum LMA+extent over every
+  section below the anchor in the listing**, which needs no label named and no population
+  enumerated; `s4budget.py` should take the object bank's used cursor the same way. Both are
+  small changes to tools aeon owns, and both convert an assumption into a measurement that
+  cannot go quietly wrong.
+
+Do (c) first: it is the cheapest, it is entirely aeon-side, it retires seven of the nineteen
+unchecked rows at a stroke, and unlike the rest of this list it does not depend on anyone
+agreeing with an enumeration.
+
+### The three old predicates that still stand
+
+Of the 2026-08-26 inventory's seven, four have landed (§4.1). The residue maps onto this list:
+
+- **`ANCHOR_BINDS_SECTION`** → D6, and the pressure on it has risen: `seam2::bank_anchors_from_str`
+  now looks up `dac_banks` and `sound_bank` **by name** on the shipped path, so the "nothing keys
+  anchors by name" premise the old ledger comment rests on is spent.
+- **`SOUND_BANK_WINDOW_PHASE`** → A7, unchanged, and its `at` has moved twice since it was written.
+- **`REGION_END_IS_OWN_SECTION`** → F1/F3, and this is the one that got *worse*. The 2026-08-27
+  note found it in `repin`, a maintenance binary no ROM build consults, and could reasonably
+  price it low. It is now the instrument under two live `build.sh` gates.
+
