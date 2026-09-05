@@ -453,6 +453,26 @@ not an identity either. **Select and cite by MD5.** The shared guard is
 `docs/superpowers/notes/asl-reference/asl_ref.sh`, whose own `selfcheck.sh` proves it refuses
 the varying build rather than merely claiming to.
 
+**⚠ AND THE PIN IDENTIFIES THE INSTRUMENT WITHOUT MAKING ITS ANSWER REAL — A STABLE VALUE IS
+NOT AN ANSWER** *(measured 2026-09-05, reproduced firsthand at this seat on
+`docs/superpowers/notes/2026-09-05-disp-or-call-probes/d9.asm`, three runs)*. For an operand it
+declines to value, the **reference** build substitutes **the last value it computed**. Three
+declined `#f(<register>)` immediates, each preceded by a successful call holding `$0111` /
+`$0222` / `$0333`, come back `0111` / `0222` / `0333` — each echoing the line above it, **exit 0
+and no diagnostic**. So its stability on this shape is a property of SOURCE ORDER, and the
+uniform `0000` measured elsewhere was the initial state of that slot rather than a policy.
+
+**This inverts which build is dangerous to freeze from.** The varying build's defect announces
+itself on the second run; the reference build's agrees with itself forever and therefore reads
+as a measurement — which is exactly the value that gets minted into a golden, a note's table or
+a test's module doc. **Both builds are wrong on this shape and we match neither** (queue row
+`ASL-SILENT-WRONG-ON-BOTH-BUILDS`). Before quoting any asl value, ask whether the shape is one
+asl DECLINES; if it is, the number is an artifact under either digest, and the digest tells you
+only which build produced the artifact. This does not weaken the md5 ruling above by one inch —
+an unidentified instrument was always the bigger defect — but the ruling was banked with a
+contrast (`303C 8000` "every run" against four random draws) whose stable half is itself a
+carry-over, and **a right conclusion does not license the evidence that was offered for it.**
+
 *(Counting note, since this lane published a wrong one: "four binaries, one bad" was four PATHS
 and TWO PROGRAMS. The ratio is one bad build of two, and four was a count of what someone
 happened to check rather than a population.)*
