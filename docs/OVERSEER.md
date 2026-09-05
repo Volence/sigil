@@ -1358,3 +1358,45 @@ green was real, immediate, and would have shipped a quiet meaning change under a
 **The tell was that I could not say what the lint was complaining ABOUT, only that it stopped
 complaining.** Read the surrounding prose before satisfying any formatting lint that offers two ways
 out, because usually only one of them preserves the text.
+
+### I FIXED THE SUBSET PROBLEM AND THEN VERIFIED THE FIX WITH A SUBSET (2026-09-05)
+
+**Within the hour of banking "`landing-run.sh` IS the gate and I ran `cargo test` instead", I did the
+same thing one level down.** Told that clippy was red, I fixed it and confirmed with:
+
+```
+cargo clippy --release --workspace -- -D warnings        ->  exit 0
+```
+
+The gate runs `--all-targets` (`scripts/landing-run.sh:65`). **Measured on the same tree, same
+moment:**
+
+```
+cargo clippy --release --workspace --all-targets -- -D warnings  ->  exit 101, 27 error lines
+```
+
+`--all-targets` is what lints TEST files, and the residue was 36 `tabs_in_doc_comments` in two
+untouched files from `33ceea3a`, a different parcel of mine. **So my "clippy is green" was true of a
+command nobody runs.**
+
+**The lesson did not transfer because I applied it to the PROCEDURE and not to the COMMANDS INSIDE
+IT.** Reading a gate's precondition and then re-typing it from memory is the same omission the wrapper
+exists to prevent, one layer in. **Copy the invocation out of the script; never retype a gate's
+command.**
+
+**And the tabs are EVIDENCE, which decides the remedy.** `docs/OVERSEER.md` already records that the
+116 clippy sites in seven files are quoted `asl` listings whose tabs are the evidence. Reformatting
+them to satisfy a lint would destroy what they exist to preserve, so the correct remedy is a
+scoped `allow`, not a reflow. That is bar 9 again: change the instrument, not the subject.
+
+### A DIRECTORY CHANGE CONTAMINATED A VERDICT IN THE SAME SESSION
+
+Immediately after, a compound command left the shell in `s2disasm` and my next clippy invocation
+reported **exit 101** from there. With stderr discarded that reads as a lint failure on the merged
+tree; it was `could not find Cargo.toml`. **Re-run from the right tree it is exit 0.** Caught only
+because the exit code disagreed with a landing run that had reported `CLIPPY_EXIT 0` minutes earlier.
+
+**The rule: a verdict from a compound command inherits wherever the previous part left the shell, and
+an exit code alone cannot tell a tool's failure from the tool never running.** Print `pwd` and `HEAD`
+beside any verdict you intend to act on. This lane already stamps its suite logs that way; the same
+discipline was missing from one-line checks.
