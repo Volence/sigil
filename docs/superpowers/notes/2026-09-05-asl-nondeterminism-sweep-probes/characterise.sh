@@ -3,18 +3,32 @@
 # is SILENT, and which builds of asl carry it.
 #
 # ── WHAT THE DEFECT IS ───────────────────────────────────────────────────────
-# Where a well-behaved build of AS substitutes 0 for an operand it could not
-# resolve, one build substitutes an UNINITIALIZED MEMORY VALUE. `aslr.sh` beside
-# this file is the proof of that mechanism: under `setarch -R` (address-space
-# randomization off) the "varying" value collapses to a constant $5555, and with
-# randomization on it is a fresh value essentially every run.
+# Where the reference build of AS substitutes A STALE VALUE for an operand it
+# could not resolve, one build substitutes an UNINITIALIZED MEMORY VALUE.
+# `aslr.sh` beside this file is the proof of the second mechanism: under
+# `setarch -R` (address-space randomization off) the "varying" value collapses to
+# a constant $5555, and with randomization on it is a fresh value essentially
+# every run.
+#
+# THE REFERENCE BUILD'S PLACEHOLDER IS NOT A ZERO, and this header used to say it
+# was. It is THE LAST VALUE THAT BUILD COMPUTED. Every probe in this directory
+# reads `0000` only because each is a couple of lines that compute nothing before
+# the declined operand, so the slot still holds its initial state — see the
+# `303C 0000` column below, against `n_fn_num`'s `303C 03C7` and
+# `n_bare_paren_num`'s `303C 0005`, which are ACCEPTED calls. Put a successful
+# computation above a declined operand and the declined one echoes it:
+# `../2026-09-05-disp-or-call-probes/d9.asm` returns 0111 / 0222 / 0333, and the
+# loud range-refusal path does the same in `../2026-09-04-as-end-probes/wcarry.asm`.
+#
+# So both builds substitute; they differ in WHAT, and the stale one is the more
+# freezable because re-running it agrees with itself.
 #
 # ── IT IS BUILD-SPECIFIC, AND THE BANNER DOES NOT SEPARATE THE BUILDS ────────
 # Four `asl` binaries sit in this workspace. All four print the same banner,
 # `Macro Assembler 1.42 Beta [Bld 212]`, and they are NOT the same program:
 #
-#   61e672562465725a8c102288a7da9098   s1disasm, skdisasm, sonic_hack   STABLE, substitutes 0
-#   0dee1f98e6480a4783d27ffd8b90896f   s2disasm                          UNSTABLE
+#   61e672562465725a8c102288a7da9098   s1disasm, skdisasm, sonic_hack   STABLE (stale value)
+#   0dee1f98e6480a4783d27ffd8b90896f   s2disasm                          UNSTABLE (uninit read)
 #
 # Every probe runner committed in this tree is pinned to the s1disasm path, and
 # the three golden-vector generators take their binary from `ASL_BIN`. So the

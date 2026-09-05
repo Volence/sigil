@@ -9,9 +9,19 @@
 # uninitialized read from, say, a clock or a hash seed, and it is why no amount of
 # re-minting makes such a value reproducible on a normal machine.
 #
-# Against the 61e672 build both columns are a constant 0, so running this script
-# on the pinned assembler shows two identical columns and proves nothing; point
-# ASLDIR at the build where the shape is live.
+# Against the 61e672 build both columns are a constant 0 FOR THIS PROBE, so
+# running this script on the pinned assembler shows two identical columns and
+# proves nothing; point ASLDIR at the build where the shape is live.
+#
+# THAT 0 IS NOT THAT BUILD'S ANSWER AND NOT ITS POLICY. The reference build
+# substitutes THE LAST VALUE IT COMPUTED for a declined operand, and `u_bare.asm`
+# is three lines that compute nothing before line 3, so the slot still holds its
+# initial state. Put a successful computation above the declined operand and the
+# declined one echoes it — `../2026-09-05-disp-or-call-probes/d9.asm` returns
+# 0111 / 0222 / 0333, and `../2026-09-04-as-end-probes/wcarry.asm` shows the same
+# on the loud range-refusal path. This script's own conclusion is unaffected: it
+# measures whether a value MOVES, and a stale value does not, which is exactly
+# why the reference build is the wrong instrument for it.
 set -uo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ASLDIR="${ASLDIR:-/home/volence/sonic_hacks/s2disasm/build_tools/Linux-x86_64}"

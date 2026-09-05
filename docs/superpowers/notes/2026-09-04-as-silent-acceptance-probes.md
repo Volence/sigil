@@ -269,6 +269,24 @@ asl refuses and then takes TRUE, emitting `11 11`. This front end takes the
 ELSE branch and emits `22 22`, exit 0, no diagnostic. **Different code from the
 same source, in silence.**
 
+> **`=>TRUE` HERE IS A BRANCH CHOICE, NOT A SUBSTITUTED VALUE** *(control added
+> 2026-09-05)*. It is worth stating because the inference is inviting and wrong:
+> elsewhere in this tree asl fills an operand it declined to value with the LAST
+> VALUE IT COMPUTED (`asl-reference/README.md`), and `Undefined1` is declined, so
+> `=>TRUE` looks like it could be `0=0` off a zeroed slot. It is not. Two
+> controls beside `d1.asm`:
+>
+> | probe | change from `d1.asm` | value theory predicts | asl does |
+> |---|---|---|---|
+> | `d1a.asm` | `dc.w $3333` computed on the line above | `$3333=0` → FALSE → `2222` | TRUE → `1111` |
+> | `d1b.asm` | the comparison inverted, `Undefined1=1` | `0=1` → FALSE → `2222` | TRUE → `1111` |
+>
+> `d1b` is decisive on its own: no numeric placeholder satisfies both `x=0` and
+> `x=1`. So a refused `#1820` condition is not evaluated against a placeholder at
+> all — asl takes the THEN arm unconditionally. Both controls are identical on
+> both shipped builds and stable across three runs each, so nothing in this
+> section is build-dependent and the divergence claim above stands as written.
+
 It cannot simply be closed, because asl's rule is FIRST-PASS evaluability, not
 resolvability: a **forward-defined** name is refused too (probe `d3.asm`,
 `if Later=0` with `Later: equ 0` below it → #1820), while this front end
