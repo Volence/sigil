@@ -119,12 +119,38 @@ declined lines come before any successful call, reads `0000` in all four cells �
 that zero is the initial state of the slot, not a policy. Exit 0 and no
 diagnostic on both builds.
 
+**Two different refusal paths, one mechanism.** `d9` is the function-call path
+(`#f(<register>)`, exit 0, no diagnostic). `../2026-09-04-as-end-probes/wcarry.asm`
+is the RANGE path (`move.w #65536,d0`, exit 2, a loud `range overflow`), and it
+behaves identically: it is `wrange.asm` with line 5's accepted value changed
+from `$8000` to `$1234`, and its four refused lines follow from `303C 8000` to
+`303C 1234`. `wcarry0.asm` is the same with nothing accepted above, reading
+`0000`. A silent refusal and a loud one leak the same way, so this is a property
+of how a declined operand is filled in, not of one diagnostic class.
+
 This is why the rule above says a stable value is not an answer. The varying
 build's defect announces itself the second time you run it. The reference
 build's does not, which makes it the one that gets frozen into a golden or a
 note's table. The digest tells you WHICH build answered; it does not tell you
 that the build answered at all. For that, ask whether the shape is one asl
 declines — and if it is, the number is an artifact either way.
+
+### Sweeping for it, which the banner sweep cannot do
+
+The version-string sweep below asks *was the instrument identified*. It cannot
+find these sites: `asl_ref.sh`, this file, `../2026-09-04-as-end-probes/README.md`
+and `crates/sigil-frontend-as/tests/as_word_immediate_range.rs` all cited the
+digest correctly and still printed a reference-build artifact as an answer. The
+second parameter is:
+
+> **Does this text quote a byte column for a line asl REFUSED?**
+
+and the population is derivable rather than guessable. The probes that come back
+UNSTABLE when `../2026-09-05-asl-nondeterminism-sweep-probes/sweep_probes.sh` is
+pointed at the varying build ARE the declined-operand set — 22 of them as of
+2026-09-05 — so any committed text quoting a value for one of those probes'
+refused lines is a candidate. Run the control, take its unstable list, grep the
+tree for those probe names and for substitute-shaped words next to a refusal.
 
 ## The guard
 
