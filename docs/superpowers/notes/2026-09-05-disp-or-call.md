@@ -173,6 +173,34 @@ use. `id` is the only one.
 name — makes AS V1.42 Beta 212 emit a **different value on every run**, with
 `0 errors` and `0 warnings`:
 
+> **⚠ THIS PARAGRAPH NAMES THE WRONG THING AS THE CAUSE, TWICE OVER**
+> *(corrected 2026-09-05 by the nondeterminism sweep; the observation above is
+> real and reproduces, the attribution does not).*
+>
+> **It is a property of a BUILD, not of a version.** Four asl binaries in this
+> workspace print `1.42 Beta [Bld 212]` verbatim; only s2disasm's
+> (md5 `0dee1f98`) varies, while s1disasm's (`61e67256`) is a stable zero —
+> confirmed here by md5 against identical banners. **`ASL_BIN` accepts any of
+> them and the version string cannot tell them apart**, so citing the version
+> has not identified the instrument. Cite the md5.
+>
+> **And the trigger is neither the function, the register, nor the immediate.**
+> Minimal form is `move.w #zz,d0` with `zz` UNDEFINED; `#zz(qq)`, `#zz(5)`,
+> `#(a1)` and bare `#zz` are equally unstable, while `#(5)`, `#f(5)` and a
+> defined `#zz` are stable. The class is wider than symbols — range-refused
+> immediates containing no symbol at all vary too. **The rule is ANY OPERAND
+> ASL DECLINED TO GIVE A VALUE**, and the mechanism is an uninitialized read,
+> collapsing to a constant `$5555` under `setarch -R`.
+>
+> The `1+dsp(d3).w` → `F83C` F-line claim below is subject to the same
+> correction: it is build-specific AND itself unstable (alternating
+> `F83C`/`783C`), while the stable build emits `343C 1234`.
+>
+> **The decision this note recorded — build no rule on the shape — stands, and
+> stands more firmly**: the silent arm (`#f(<reg>)` with `f` defined) is exit 0
+> with no diagnostic on BOTH builds, so it is silently wrong even where it is
+> reproducible. That is a correctness defect, not a reproducibility one.
+
 ```text
        6/    1004 : 303C 55A2           	move.w	#konst(a1),d0     ; run 1
        6/    1004 : 303C 55B7           	move.w	#konst(a1),d0     ; run 2
