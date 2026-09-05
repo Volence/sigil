@@ -3825,3 +3825,55 @@ risk, and the crossing parcel measured neither.
 — OPEN (kill: `declare_class` reports on a same-class second declaration too, behind a
 census of every duplicated constant name in aeon's four shapes and both corpora, and
 fresh asl probes for `rept`, `phase`/`dephase` and a twice-included header)
+
+### asl folds `\{expr}` to HEX; sigil folds it to DECIMAL, and it reaches BYTES (2026-09-04)
+`2026-09-04-as-warning-exitm-probes/x1.asm`, asl 1.42 Beta Bld 212: `v equ 42` then
+`message "msg \{v}"` and `warning "warn \{v}"` both print `2A`. Sigil's `interp_text`
+renders `42`, and its own doc comment says "fold … to their decimal value".
+
+This is not confined to message text. `interp_text` also folds where a STRING SYMBOL is
+bound, so `x2.asm` — `n := 42`, `s := "\{n}"`, `dc.b s` — is a byte divergence:
+
+```
+asl:    32 41 ff      (the characters "2A")
+sigil:  34 32 FF      (the characters "42")
+```
+
+It survived because every probe behind that code path used a single-digit value, where
+hex and decimal agree — the two asl-verified rows in `directive_equate`'s own comments
+are `n := 3` binding `"3"`. Population in aeon today is zero (the four shapes are
+byte-identical across the parcel that found this), and both disassembly corpora write
+their `\{}` sites inside `warning`/`fatal` message text, where the consequence is a wrong
+number in a message — including `s2.sounddriver.asm(301)`, which appends a literal `h` to
+the interpolated value and therefore reads as hex by construction.
+
+Found while implementing `warning`, whose message text goes through the same helper.
+Deliberately not fixed there: the fix is byte-changing, it moves `error`/`fatal`/`message`
+at the same time, and that parcel's whole safety property was that it could not change the
+bytes of anything that already assembled.
+— OPEN (kill: `interp_text` renders hex, behind fresh asl probes for the radix of a
+NEGATIVE value and of a value a `function` returns — x1/x2 measured neither — plus a
+four-shape CRC32+size re-proof)
+
+### A label in a macro BODY binds in sigil and does not in asl (2026-09-04)
+`2026-09-04-as-warning-exitm-probes/e12.asm`: a macro whose body is `lbl12: dc.b $A1`,
+called once, then `dc.l lbl12`. asl reports `symbol undefined` and the symbol table holds
+nothing; sigil emits `A0 A1 FF 00 00 00 01`, having bound `lbl12` at address 1.
+
+Noted because it looked at first like an `exitm` finding — probe `e9` puts a label on the
+`exitm` line itself and asl leaves it undefined — and the control shows it is not: asl
+leaves an ORDINARY macro-body label undefined too. So `exitm` needs no label special case,
+and the real divergence is the macro-body label scope rule, which this parcel did not
+measure beyond the single control.
+— OPEN (kill: a fresh probe set for asl's macro-body label scoping — a `.`-local vs a
+plain name, one expansion vs several, and whether `PUBLIC`/`GLOBAL` changes it — before any
+code moves; the population is every macro in both corpora, so the census comes first)
+
+### `warning "a","b"` is accepted where asl says `wrong number of operands` (2026-09-04)
+Probe `w8`. Sigil takes the first string and ignores the rest. Its
+`error`/`fatal`/`message` siblings do the same, so this is one instance of a shared shape
+rather than a `warning`-only gap, and fixing it for one of the four would be the
+inconsistency. Pinned by `as_warning_exitm.rs::warning_without_a_quoted_message_is_refused`
+so closing it changes a test rather than surprising a reader.
+— OPEN (kill: a shared operand-count check across all four directives, behind asl probes
+for what each does with two operands — only `warning` was measured)

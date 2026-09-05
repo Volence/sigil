@@ -1823,3 +1823,226 @@ align   macro   alignment
         dc.b $44
 --- bytes ---
 11 00 00 00 22 00 00 00 00 00 33 00 00 00 00 00 44
+=== as_exitm_ends_the_macro_expansion ===
+        cpu 68000
+        padding off
+        phase 0
+m1      macro   v
+        dc.b $A0
+        if v==1
+        exitm
+        endif
+        dc.b $B0
+        endm
+        dc.b $11
+        m1 0
+        dc.b $22
+        m1 1
+        dc.b $33
+--- bytes ---
+11 A0 B0 22 A0 33
+=== as_exitm_ends_only_the_innermost_macro ===
+        cpu 68000
+        padding off
+        phase 0
+inner   macro
+        dc.b $A0
+        exitm
+        dc.b $A1
+        endm
+outer   macro
+        dc.b $B0
+        inner
+        dc.b $B1
+        endm
+        outer
+        dc.b $FF
+--- bytes ---
+B0 A0 B1 FF
+=== as_exitm_in_a_rept_ends_the_rept_not_the_macro ===
+        cpu 68000
+        padding off
+        phase 0
+m3      macro
+        dc.b $A0
+        rept 3
+        dc.b $C0
+        exitm
+        dc.b $C1
+        endr
+        dc.b $A1
+        endm
+        m3
+        dc.b $FF
+--- bytes ---
+A0 C0 A1 FF
+=== as_exitm_in_a_false_arm_is_not_reached ===
+        cpu 68000
+        padding off
+        phase 0
+m4      macro
+        dc.b $A0
+        if 0
+        exitm
+        endif
+        dc.b $A1
+        endm
+        m4
+        dc.b $FF
+--- bytes ---
+A0 A1 FF
+=== as_exitm_in_a_bare_top_level_rept ===
+        cpu 68000
+        padding off
+        phase 0
+        dc.b $11
+        rept 3
+        dc.b $C0
+        exitm
+        dc.b $C1
+        endr
+        dc.b $22
+--- bytes ---
+11 C0 22
+=== as_exitm_in_a_while_ends_the_while_not_the_macro ===
+        cpu 68000
+        padding off
+        phase 0
+m7      macro
+        dc.b $A0
+w7      set 0
+        while w7<3
+        dc.b $C0
+        exitm
+        dc.b $C1
+w7      set w7+1
+        endm
+        dc.b $A1
+        endm
+        m7
+        dc.b $FF
+--- bytes ---
+A0 C0 A1 FF
+=== as_exitm_pops_one_of_two_nested_repts ===
+        cpu 68000
+        padding off
+        phase 0
+m13     macro
+        dc.b $A0
+        rept 2
+        dc.b $D0
+        rept 2
+        dc.b $C0
+        exitm
+        dc.b $C1
+        endr
+        dc.b $D1
+        endr
+        dc.b $A1
+        endm
+        m13
+        dc.b $FF
+--- bytes ---
+A0 D0 C0 D1 D0 C0 D1 A1 FF
+=== as_exitm_in_a_called_macro_leaves_the_rept_running ===
+        cpu 68000
+        padding off
+        phase 0
+m15     macro
+        dc.b $A0
+        rept 3
+        dc.b $C0
+        m15b
+        dc.b $C1
+        endr
+        dc.b $A1
+        endm
+m15b    macro
+        dc.b $B0
+        exitm
+        dc.b $B1
+        endm
+        m15
+        dc.b $FF
+--- bytes ---
+A0 C0 B0 C1 C0 B0 C1 C0 B0 C1 A1 FF
+=== as_exitm_in_a_case_arm_ends_the_macro ===
+        cpu 68000
+        padding off
+        phase 0
+m20     macro   sel
+        dc.b $A0
+        switch sel
+        case "stop"
+        exitm
+        case "go"
+        dc.b $C2
+        endcase
+        dc.b $A1
+        endm
+        m20 "stop"
+        m20 "go"
+        dc.b $FF
+--- bytes ---
+A0 A0 C2 A1 FF
+=== as_exitm_in_a_macro_inside_a_top_level_rept ===
+        cpu 68000
+        padding off
+        phase 0
+        dc.b $11
+mz      macro
+        dc.b $A0
+        exitm
+        dc.b $A1
+        endm
+        rept 2
+        dc.b $C0
+        mz
+        dc.b $C1
+        endr
+        dc.b $22
+--- bytes ---
+11 C0 A0 C1 C0 A0 C1 22
+=== as_exitm_leaves_the_label_after_the_loop_placed ===
+        cpu 68000
+        padding off
+        phase 0
+        rept 2
+        dc.b $C0
+        if 1
+        exitm
+        endif
+        endr
+LD:     dc.b $FF
+        dc.l LD
+--- bytes ---
+C0 FF 00 00 00 01
+=== as_warning_is_byte_inert ===
+        cpu 68000
+        padding off
+        phase 0
+        dc.b $11
+        warning "hello from warning"
+        dc.b $22
+--- bytes ---
+11 22
+=== as_warning_and_exitm_the_clearram_shape ===
+        cpu 68000
+        padding off
+        phase 0
+clearRAM macro  startaddr,endaddr
+        if startaddr>endaddr
+        fatal "Starting address of clearRAM is after ending address."
+        elseif startaddr==endaddr
+        warning "clearRAM is clearing zero bytes. Turning this into a nop instead."
+        exitm
+        endif
+        dc.b $C0
+        endm
+        dc.b $11
+        clearRAM 4,8
+        dc.b $22
+        clearRAM 8,8
+        dc.b $33
+--- bytes ---
+11 C0 22 33

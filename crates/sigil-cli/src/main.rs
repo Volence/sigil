@@ -95,10 +95,21 @@ fn main() {
     // into an unnamed source and the report says only what went wrong, never where
     // — against a 91k-line multi-file program that is not a usable answer, and it
     // is behind what AS itself reports (`smps-bug.asm(9): error: …`).
+    // `assemble_root_located_warned` rather than `assemble_root_located`: a
+    // `warning` directive is a message the SOURCE AUTHOR wrote to be read, and
+    // the run that raises one still SUCCEEDS. The module-only entry point
+    // returns `Ok(Module)` and drops it, so the author's line would never reach
+    // anyone — the failure mode is silent, which is the one the directive
+    // exists to prevent.
     let opts = sigil_frontend_as::Options::default();
-    let module = match sigil_frontend_as::assemble_root_located(std::path::Path::new(&input), &opts)
-    {
-        Ok(m) => m,
+    let module = match sigil_frontend_as::assemble_root_located_warned(
+        std::path::Path::new(&input),
+        &opts,
+    ) {
+        Ok(a) => {
+            render_as_warnings(&a);
+            a.module
+        }
         Err(failure) => {
             render_as_diags(&failure);
             process::exit(1);
@@ -142,6 +153,22 @@ fn main() {
 fn render_as_diags(failure: &sigil_frontend_as::Failure) {
     for d in &failure.diags {
         match failure.sources.label(d.primary) {
+            Some(loc) => eprintln!("{loc}: {}: {}", d.level, d.message),
+            None => eprintln!("{}: {}", d.level, d.message),
+        }
+    }
+}
+
+/// The same rendering for a SUCCESSFUL run's warn-tier diagnostics — an AS
+/// `warning` directive. Same shape as [`render_as_diags`] on purpose: a reader
+/// should not have to learn two formats to tell what the assembler is saying,
+/// and asl prints its own warnings and errors in one format too.
+///
+/// The exit status is untouched: a warning does not fail the assembly (asl exits
+/// 0 with `1 warning`, probe `w1`), so this prints and returns.
+fn render_as_warnings(assembled: &sigil_frontend_as::Assembled) {
+    for d in &assembled.warnings {
+        match assembled.sources.label(d.primary) {
             Some(loc) => eprintln!("{loc}: {}: {}", d.level, d.message),
             None => eprintln!("{}: {}", d.level, d.message),
         }
