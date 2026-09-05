@@ -476,11 +476,27 @@ SIGIL-DECOUPLE section below (what the coupling buys) and in
 
 **COMPARE THE SETS, NOT THE TOTALS — a summary statistic answers a question nobody asked.**
 Two populations can differ by one member in each direction and total identically, so a count
-difference is consistent with a change it cannot see. Measured instance (2026-09-04, jointly with
-the aeon lane): across five aeon trees spanning 155 commits, the debug listing carries exactly one
-more equate than release — but the assertion worth gating is not `debug = release + 1`, it is
-**`release` is a strict SUBSET of `debug`**, reverse set empty. A future release-only equate is a
-genuine anomaly, and a count-difference check passes straight through it. The same shape is why
+difference is consistent with a change it cannot see. The assertion worth gating is therefore not
+`debug = release + 1` but **`release` is CONTAINED IN `debug`** — `release \ debug` empty, with
+`debug \ release` computed and REPORTED rather than asserted. A future release-only equate is a
+genuine anomaly, and a count-difference check passes straight through it.
+
+**⚠ THE MEASUREMENT THIS RULE ORIGINALLY CITED WAS WRONG IN BOTH HALVES, and the rule is stated
+above WITHOUT it on purpose** *(refuted 2026-09-05 by the parcel that implemented it; verified
+firsthand here on the reference tree at `483b3e12`)*. It read: *"across five aeon trees spanning
+155 commits, the debug listing carries exactly one more equate than release"*, and prescribed
+**strict** subset. Both fail on a SHIPPED SHAPE: **demo is 555/555, sets IDENTICAL** (sonic4 is
+737/738). The cited pairs were five revisions of **sonic4 alone**, so one game's property was
+written down as a property of the shapes.
+
+**The consequence is the failure this document warns about elsewhere, aimed at itself:** a gate
+built to this text — `debug == release + 1`, `debug > release`, or `release ⊂ debug` strictly —
+would have been **RED ON DEMO the day it was written**, on correct code, and the remedy a
+reasonable person reaches for is weakening the check. **A right conclusion does not launder the
+evidence offered for it:** the set-comparison rule survives entirely, and it survives on its own
+argument (two populations can differ by one member each way and total identically), never on the
+figure that was attached to it. Assert containment; never strictness; and derive the shapes'
+counts when you need them rather than reading any number off this page. The same shape is why
 this project compares unresolved-symbol *name sets in both directions* rather than their sizes.
 
 **So: a falling diagnostic count is evidence that noise was removed, never that correctness
