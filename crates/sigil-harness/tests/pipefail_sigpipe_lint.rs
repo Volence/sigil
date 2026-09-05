@@ -251,7 +251,7 @@ fn top_level_positions(s: &str, needle: u8) -> Vec<usize> {
 fn split_on_logic(line: &str) -> Vec<(String, Option<&'static str>)> {
     let b = line.as_bytes();
     let mut cuts: Vec<(usize, &'static str)> = Vec::new();
-    for op in [b'&', b'|'] {
+    for op in *b"&|" {
         let (mut sq, mut dq) = (false, false);
         let (mut paren, mut brack) = (0i32, 0i32);
         let mut i = 0;
