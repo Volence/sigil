@@ -308,3 +308,69 @@ fn the_label_directive_reads_back_from_inside_its_own_body() {
         "asl p11: 0100 (inside the body) / 0100 (outside) / 4444"
     );
 }
+
+/// probe `p12`. The `label` directive with `*` — the PROGRAM COUNTER — as its
+/// operand, read from outside the body that declares it. `p11` and the m18/m19
+/// pair use `$100`, a constant nowhere near the PC; this is the spelling where
+/// "the directive escaped the expansion" and "the reference fell back to
+/// something else" can land on the same number.
+///
+/// THE EXPANSION SITS AT `$4`, NOT AT `$0`, AND THAT IS THE WHOLE FIXTURE. With
+/// the macro first in a file at `org 0`, `*` is `$0000_0000` — and so is a
+/// global default, so is an unresolved fixup left zeroed, and so is a zero-fill.
+/// A pass at address zero is indistinguishable from three separate failures.
+/// Four bytes of filler make the correct answer `$0000_0004`, which none of
+/// them produces.
+///
+/// INVOKED ONCE, forced by the same measurement `p11` records: a second
+/// `Xl label *` is `#1000 symbol double defined` under asl even though the two
+/// expansions sit at different addresses. That refusal is its own test below.
+///
+/// WHAT OTHER ANSWER COULD THIS HAVE GIVEN: `00 00 00 00`, from any of the
+/// three failures above; `00 00 00 0A`, if `*` were read at the `dc.l` rather
+/// than at the expansion; and a refusal, if the directive were localized to the
+/// expansion that wrote it.
+///
+/// The same source is minted from asl as snippet vector
+/// `as_label_directive_star_escapes_the_macro_body`; that vector carries asl's
+/// own bytes, this test carries the rule and what else it could have said.
+#[test]
+fn the_label_directive_with_a_pc_operand_escapes_the_macro_body() {
+    let src = format!(
+        "{}\tdc.w\t$1111\n\tdc.w\t$2222\nmx\tmacro\nXl\tlabel\t*\n\tendm\n\tmx\n\tdc.l\tXl\n\tdc.w\t$4444\n",
+        head()
+    );
+    assert_eq!(
+        bytes(&src),
+        vec![0x11, 0x11, 0x22, 0x22, 0x00, 0x00, 0x00, 0x04, 0x44, 0x44],
+        "asl p12: 1111 / 2222 / 0000 0004 / 4444"
+    );
+}
+
+/// The refusal half of the rule above, and the only evidence that reaches a
+/// question BYTES cannot ask. A byte vector shows where the name resolved; it
+/// cannot show the name lives in ONE namespace rather than one per expansion,
+/// because a per-expansion `Xl` and a global `Xl` read back the same value
+/// inside the body that wrote it.
+///
+/// Two expansions each declaring `Xl label *` collide: asl answers
+/// `#1000 symbol double defined` and keeps the FIRST binding (`$2`), sigil
+/// answers `symbol double defined: Xl`. Under an expansion-local rule there is
+/// no collision to report at all, so the refusal is the discriminator.
+///
+/// WHAT OTHER ANSWER COULD THIS HAVE GIVEN: a clean assembly emitting
+/// `00 00 00 02` or `00 00 00 04` — which is exactly what localizing the
+/// `label` directive produces, and what this test exists to refuse.
+#[test]
+fn two_expansions_declaring_the_same_label_directive_collide() {
+    let src = format!(
+        "{}mx\tmacro\nXl\tlabel\t*\n\tendm\n\tdc.w\t$1111\n\tmx\n\tdc.w\t$2222\n\tmx\n\tdc.l\tXl\n",
+        head()
+    );
+    let msgs = refusal(&src);
+    assert!(
+        msgs.iter()
+            .any(|m| m.contains("Xl") && m.contains("double defined")),
+        "expected a double-definition refusal naming `Xl`, got: {msgs:?}"
+    );
+}
