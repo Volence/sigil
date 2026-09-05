@@ -84,7 +84,7 @@ pub(crate) fn infix_bp(p: Punct) -> Option<(u8, BinOp)> {
         Bang => (6, BinOp::Xor),
         Star => (5, BinOp::Mul),
         Slash => (5, BinOp::Div),
-        // `#` infix modulo — same left-associative tier as `*`/`/` (asl-verified:
+        // `#` infix modulo, same left-associative tier as `*`/`/` (asl-verified:
         // `7#5*2`=4, `12#5/2`=1, `5+7#2`=6). Distinct from the OPERAND-level
         // `#expr` immediate marker, which `operands.rs::classify` consumes from
         // the front of an operand group before this parser ever sees it: by the
