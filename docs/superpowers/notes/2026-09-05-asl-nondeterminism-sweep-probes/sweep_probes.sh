@@ -70,23 +70,40 @@ declare -a UNSTABLE_ROWS=()
 declare -a OVERSTRIP_ROWS=()
 
 # ── NATIVE MODE: sweep each corpus with the binary ITS OWN RUNNER NAMES ──────
-# The probe directories are NOT all pinned to the same assembler. Three of them
+# The probe directories were not all pinned to the same assembler: three of them
 # — `2026-09-04-as-end-probes`, `2026-09-04-as-warning-exitm-probes` and
-# `2026-09-05-as-interp-radix-probes` — hard-code the s2disasm path, which is
-# the build that carries the value instability; the rest use s1disasm. Sweeping
-# every corpus with one binary therefore answers the wrong question for three of
-# them: it can report a corpus stable under an assembler its own note never ran.
+# `2026-09-05-as-interp-radix-probes` — hard-coded the s2disasm path, the build
+# that carries the value instability, while the rest hard-coded s1disasm.
+# Sweeping every corpus with one binary answered the wrong question for those
+# three: it could report a corpus stable under an assembler its own note never
+# ran.
 #
 #     NATIVE=1 ./sweep_probes.sh 20
 #
-# reads each directory's runner and uses the binary named there, falling back to
-# $ASLDIR for a directory whose scripts name none.
+# resolves each directory's assembler the way that directory's own runner does.
+#
+# **Both hard-coded groups are gone** — the s2disasm three were repinned onto
+# `asl-reference/asl_ref.sh`, and so were the s1disasm ones. A directory whose
+# runners source that guard is pinned BY DIGEST to the reference build, which is
+# a stronger statement than the path grep ever made, so it is reported as such
+# rather than being allowed to fall through to the default and come out right
+# for the wrong reason. The path grep is kept for a directory that still names a
+# binary outright, and for corpora added later.
 NATIVE="${NATIVE:-0}"
 native_asldir() {
     local dir="$1" hit
+    if grep -rqlE '\.[[:space:]]+"[^"]*asl-reference/asl_ref\.sh"' "$dir" --include='*.sh' 2>/dev/null; then
+        # Digest-pinned to the reference build by the guard itself.
+        printf '%s' "$ASL_REF_DIR_FOR_SWEEP"
+        return
+    fi
     hit="$(grep -rhoE '/home/volence/sonic_hacks/[a-z_0-9.-]+/(build_tools/[A-Za-z0-9_-]+|tools/as)' "$dir" --include='*.sh' 2>/dev/null | sort | uniq -c | sort -rn | head -1 | awk '{print $2}')"
     if [[ -n $hit && -x $hit/asl ]]; then printf '%s' "$hit"; else printf '%s' "$ASLDIR"; fi
 }
+# The guard's own reference directory, read out of the guard rather than
+# duplicated here, so this file cannot drift from it.
+ASL_REF_DIR_FOR_SWEEP="$(sed -n 's/^ASL_REF_DIR=//p' "$REPO/docs/superpowers/notes/asl-reference/asl_ref.sh")"
+[[ -x $ASL_REF_DIR_FOR_SWEEP/asl ]] || { echo "FATAL: asl_ref.sh names no usable ASL_REF_DIR ($ASL_REF_DIR_FOR_SWEEP)" >&2; exit 2; }
 
 for dir in "$WORK"/*-probes; do
     dname="$(basename "$dir")"
