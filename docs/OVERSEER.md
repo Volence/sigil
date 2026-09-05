@@ -802,12 +802,12 @@ tracks Rust string, raw-string, line-comment and block-comment state rather than
 
 | population | occurrences | note |
 |---|---|---|
-| `crates/*/src` STRING literals | **582** across 64 files | the producer side, the actual subject |
+| `crates` src STRING literals | **595** across 64 files | the producer side, the actual subject |
 | `crates/*/tests` STRING literals | **556** | the CONSUMING end, see below |
 | `crates` comments | 10,840 | NOT in scope by the ruling's own words; touching them is churn |
 | `docs` | 28,938 | out of scope for the sweep; half (b) governs new writing |
 
-**⚠ THE SWEEP IS NOT 582 EDITS. It is 582 producer edits that must move in lockstep with 556
+**⚠ THE SWEEP IS NOT 595 EDITS. It is 595 producer edits that must move in lockstep with 556
 consumer assertions**, and this lane's own bar says a wording change is exactly how a matcher starts
 passing for the wrong reason. Both directions need enumerating before anything is edited: a test
 that asserts a full string goes RED (loud, fine), a test that matches a substring on the untouched
@@ -816,8 +816,68 @@ half goes GREEN while no longer testing what it names (silent, the whole problem
 **nothing at all**, so part of the producer side has no consumer to red at all. Enumerate the
 consuming end, per the standing rule; never size this off the producer count.
 
+**Correction to my own first figure, kept rather than silently patched:** this table said **582** for two
+hours. That count took only files under a `/src/` path and dropped `build.rs` and `src/bin/`. The
+figure is **595**. Same defect family as the zero below, one layer milder: a pathspec that answers a
+narrower question than the one asked, with nothing in the output saying so.
+
 **⚠ AND THE FIRST MEASUREMENT OF THIS RETURNED ZERO.** `git grep -- 'crates/*/src'` matched no paths
 and reported 0 occurrences in 0 files, which reads exactly like a clean tool. It was caught only by
 running a positive control (the same pattern found 28,938 in `docs`, so the pattern worked and the
 PATHSPEC did not). Same family as the zsh word-split instance already banked: an empty result read
 as a pass. Any re-measure of this row carries a positive control.
+
+### AS-NAMELESS-LABELS-RC1: the sizing, asked for by the owner before dispatch
+
+**Size: L.** The single highest-value row in SIGIL-AS-REPLACEMENT, measured rather than estimated:
+one unimplemented feature is the sole root cause of **4,985 diagnostic rows across four message
+classes, 86.5 percent of the entire Sonic 2 run** (landed measurement, `49acd05d`, note at
+`docs/superpowers/notes/2026-09-05-s2-top-blocks-decompose.md`). Ruled **ACCEPT** by `d-22` on
+2026-09-03 for the AS surface only; zero of 5,003 constructs are accepted today, so this is not
+started rather than half done.
+
+**What has to change, all in `crates/sigil-frontend-as/`:**
+
+1. **Definition side.** A run of `+`, `-` or `/` in column 1 becomes a label. Today it is refused at
+   `eval.rs:2697`, "expected mnemonic, directive, or label". 2,309 sites.
+2. **Reference side.** A bare `+`, `++`, `-` as a branch operand. Today refused at
+   `operands.rs:345`, "bad operand expression". About 2,600 sites. **This is the hard part and the
+   reason the row is L**: `+` and `-` are also arithmetic operators, so this is context sensitive
+   disambiguation inside the operand parser, not a token added to a table.
+3. **The parenthesized forms `(+)` and `(++)` occur**, as `offsetTableEntry` arguments, so it cannot
+   be a bare-token special case. The measurement note records that a regex over bare tokens misses
+   them and they were nearly lost from the count.
+4. **Ordinal resolution.** `+` is the next following definition, `++` the second, `-` the nearest
+   preceding. Position ordered, and it has to stay stable across the existing multi-pass convergence
+   loop, where a forward reference is resolved on a later pass.
+5. **Macro interaction, already measured rather than anticipated.** References arrive through macro
+   ARGUMENTS (14 calls at 2 sites, plus 49 through `offsetTableEntry`) and inside macro BODIES (11
+   calls at 1 site). Scoping is per expansion instance, the same shape the plain-label half already
+   has.
+6. **The reference population is LARGER than the diagnostics show.** 18 references emit no row at all
+   today because the definition on their line already failed. They become live the moment
+   definitions parse, so a count taken from the diagnostic stream understates the work.
+
+**Why L and not XL:** the machinery this needs mostly exists. `sym_key`, `plain_label_scope` and
+`expansion_labels` (`eval.rs:1160-1210`) already implement "reader and writer agree about where a
+name lives", per expansion instance, with the walk outward and the stop at the live stack both
+measured against asl. The ordinal half is new; the scoping half has a working model to follow.
+
+**THE RISK THAT DECIDES THE GATE, and it is not the feature.** Making `+` and `-` label-capable in
+operand position can silently change how existing ARITHMETIC parses. That is a change to code that
+is correct today, in a crate that sits in aeon's shipping build path, and it would not announce
+itself. Every currently-correct expression must be proven unchanged, by artifact and not by argument.
+
+**Landing condition (hub's, and its premise is now ASSERTED here rather than assumed):** the four
+aeon shapes stay CRC32 and size identical. **Population in aeon is ZERO, measured at the CONSUMING
+end** and not merely in a file listing: aeon tracks exactly three `.asm` files, which are exactly the
+three `build.sh` routes through this frontend, and their include closure is self-contained (both
+`game_root.asm` include only `engine/debug/debugger.asm`, which includes nothing). Zero definitions,
+zero references. So the CRC condition should hold trivially, **which is precisely why it is worth
+gating**: it costs nothing when the feature is clean and it is the tripwire for the arithmetic
+regression above.
+
+**⚠ PROHIBITION, carried into this row from the measurement: `5,761 - 4,985 = 776` is NOT a
+post-fix prediction and must not be quoted as one.** Closing this resolves symbols that are
+currently unresolved and lets the assembler reach code it currently abandons, which can remove rows
+and add them. The only way to know the number after is to measure after.
