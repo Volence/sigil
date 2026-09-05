@@ -48,7 +48,7 @@
 //! weaken it.
 
 use sigil_harness::native::{self, GameProfile};
-use sigil_harness::test_support::reference_tree_for_profile;
+use sigil_harness::test_support::{reference_tree_for_profile, shadow_aeon_tree};
 use sigil_link::ListingSymbol;
 use std::collections::BTreeSet;
 use std::path::Path;
@@ -327,4 +327,85 @@ fn identical_equate_sets_are_contained_and_not_a_fault() {
     let (faults, debug_only) = containment_faults("witness", &both, &both);
     assert!(faults.is_empty(), "{faults:?}");
     assert!(debug_only.is_empty(), "{debug_only:?}");
+}
+
+/// The demo's residual-AS root, and the anchor the witness below appends after.
+/// Spelled as the file's own path so the doctoring names a real file:
+/// `shadow_aeon_tree` refuses an override that matches nothing, which is what makes
+/// "the mutation was applied" a fact rather than an assumption.
+const DEMO_AS_ROOT_REL: &str = "games/demo/game_root.asm";
+const DEMO_AS_ANCHOR: &str = "__Aeon_AS_Carrier:  equ 0";
+
+/// RED-FIRST FOR THE COLLISION REFUSAL, END TO END, ON ITS REAL POPULATION.
+///
+/// WHICH POPULATION THAT IS, because it is narrower than it first looks. A `-D` name
+/// also declared by an `.emp` module item is ALREADY refused upstream, by
+/// `sigil_frontend_emp::lower::validate_defines`, at the colliding item's own span
+/// (`[defines.collision] '<name>' is provided by -D and declared by the module`), and
+/// that check covers every named `.emp` item kind. So the population left for this
+/// refusal is the RESIDUAL-AS side: an `=`/`equ` or a label in the `.asm` residual
+/// exports an `EquSym`/label into the same listing, and nothing upstream compares it
+/// against the define env — the shape defines are seeded into the `.emp` lowering
+/// (`LowerOptions::defines`), not into `AsOptions::defines`, so the two names simply
+/// coexist and both reach the listing.
+///
+/// That is the silent-wrong-value shape this refuses: below, the define says 16 and
+/// the AS equate says 5, and without the refusal a `.lst` consumer's regex would make
+/// whichever row it hit first into "the" answer.
+///
+/// MUST FAIL: this test fails if the doctored build SUCCEEDS, or if it fails for any
+/// reason that does not name both origins.
+#[test]
+fn a_residual_as_equate_named_like_a_define_refuses_the_build_naming_both_origins() {
+    let profile = native::demo_profile(false);
+    let Some(aeon) = reference_tree_for_profile(&profile) else { return };
+
+    // CONTROL, on the undoctored tree: the copy mechanism is not what makes the
+    // doctored build red, and today's tree has no such collision.
+    let clean = shadow_aeon_tree(&aeon, &[]).expect("shadow copy of the reference tree");
+    native::build_rom_chained_with_listing(clean.root(), &profile)
+        .unwrap_or_else(|e| panic!("undoctored shadow build must succeed, got: {e}"));
+
+    let src = std::fs::read_to_string(aeon.join(DEMO_AS_ROOT_REL))
+        .unwrap_or_else(|e| panic!("read {DEMO_AS_ROOT_REL}: {e}"));
+    assert_eq!(
+        src.matches(DEMO_AS_ANCHOR).count(),
+        1,
+        "the witness anchors on `{DEMO_AS_ANCHOR}`; it is no longer in \
+         {DEMO_AS_ROOT_REL} exactly once, so this test would doctor nothing"
+    );
+    // The name is read from the profile rather than typed, so the witness cannot
+    // outlive the define it collides with.
+    let key = profile
+        .emp_defines
+        .iter()
+        .find(|(k, _)| *k == "MAX_RING_BUFFER")
+        .map(|(k, _)| *k)
+        .expect("the demo profile declares MAX_RING_BUFFER");
+    let doctored = src.replace(
+        DEMO_AS_ANCHOR,
+        &format!("{DEMO_AS_ANCHOR}\n\n; RED-FIRST WITNESS\n{key} = 5"),
+    );
+    assert_ne!(doctored, src, "the doctoring changed nothing");
+
+    let tree = shadow_aeon_tree(&aeon, &[(DEMO_AS_ROOT_REL, doctored.as_str())])
+        .expect("doctored shadow copy");
+    let err = match native::build_rom_chained_with_listing(tree.root(), &profile) {
+        Err(e) => e,
+        Ok(_) => panic!(
+            "the doctored build SUCCEEDED: `{key}` is declared both as a command-line \
+             define and as a residual-AS equate, so the listing carries that one name \
+             with two different values and a consumer reads whichever its regex hits \
+             first. The refusal is not wired into the listing derivation."
+        ),
+    };
+    assert!(err.contains(key), "the refusal does not name the define: {err}");
+    assert!(
+        err.contains("crates/sigil-harness/src/native.rs"),
+        "the refusal does not name the DEFINE's origin: {err}"
+    );
+    assert!(
+        err.contains("the program's own equate") && err.contains("$00000005"),
+        "the refusal does not name the PROGRAM's origin and its differing value: {err}"
+    );
 }
