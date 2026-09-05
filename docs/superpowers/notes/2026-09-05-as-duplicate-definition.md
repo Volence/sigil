@@ -213,3 +213,37 @@ catches it. It is relabelled.
 
 Acceptance and refusal are asserted as a pair in every new test, so a front end
 that refuses everything fails exactly as hard as one that refuses nothing.
+
+Four mutations, each applied to the COMMITTED baseline by a patcher that asserts
+its anchor matched exactly once, each shown landed with `git diff --stat` before
+the run, each restored with `git checkout HEAD --` and the restore verified
+empty:
+
+| mutation | what it removes | red |
+|---|---|---|
+| M1 | the `Some(SymClass::Const)` arm — no `#1000` at all | 3 of 11 |
+| M2 | the narrowing — refuse EVERY second constant declaration | 1, naming the expansion test |
+| M3 | the narrowing RECORDS the class instead of recording nothing | 1, on the mixed-order rows alone |
+| M4 | the per-pass reset — seed each pass's class map from the last | 4, incl. the multi-pass test |
+
+**What each MUST FAIL:** a build that silently rebinds a name asl leaves at its
+first value (M1); a build that refuses the 97 s2 sites asl assembles (M2); a
+build that treats an expansion-local name as a symbol that exists, so a later
+file-level constant of that name is a redefinition (M3); a build that turns the
+second pass of every forward-referencing program into a wall of refusals (M4).
+
+M3 is the one worth keeping: it is a ONE-LINE mutation that leaves every other
+row green, and the three mixed-order fixtures in the expansion test are the only
+thing standing between the narrowing and a half-right version of it.
+
+**What other answer could each fixture have given.** Every `#1000` shape is
+written twice, once with the value CHANGED and once with it IDENTICAL, so a
+front end that refused only on a changed value passes one row and fails the
+other — the two are not decoration for each other. The `if 0` / `if 1` pair
+distinguishes "a declaration ran" from "the name appears twice". The expansion
+test's two loops are opposites: the accepting loop fails under the un-narrowed
+rule, the refusing loop fails under an exemption drawn around "anything inside
+an expansion", and no single wrong rule passes both. The one place this bar is
+NOT met is the phase/dephase row, which can only distinguish `#1000` from
+nothing — `phase` has no candidate rule of its own that would accept it; it is
+in the table as the record of a probe, not as a discriminator.
