@@ -1196,7 +1196,37 @@ not "watch out for greps", it is that AN EMPTINESS IS NEVER A FINDING WITHOUT AN
 COULD HAVE RETURNED NON-EMPTY.** Same family as `cmd | sed ... || echo`, where the `||` binds to the
 whole pipeline.
 
-## ⚠ MASTER IS RED UNDER THE STRICT GATE, AND I CAUSED FOUR OF THE FIVE (2026-09-05)
+## MASTER'S STRICT RED: FOUR OF FIVE WERE MINE AND ARE NOW CLOSED (2026-09-05)
+
+**RESOLVED at `34dad07c`. Merged-tree strict gate: 4,616 passed, 1 failed**, the survivor being the
+pre-booked `pins_rs_is_current` row. The four `diag_assert_vector` failures are green. The history
+below is kept because the reasoning error that caused them is the transferable part, and because the
+fix changed what the failure MEANT.
+
+**The refusal was an OVER-FIRE and the underlying defect PREDATES the parcel by two months**: the
+`pos < 0` guard came from `d59bab36` (2026-07-04) and is present at `742c7366`, where the tests
+passed. `d9f00a3e` converted an accidentally-right SILENT answer into a visibly-wrong LOUD one, since
+the silent-false read produced the same verdict asl gives on that site. **It exposed a latent bug
+rather than creating one. That does NOT retract the enumeration error below, which stands on its own
+terms and was a real mistake in reasoning.**
+
+**⚠ AND THE FOUR RED TESTS COULD NOT HAVE DISTINGUISHED A CORRECT FIX FROM A WRONG ONE** *(the
+agent's finding, and the most important thing in the parcel)*. `diag_assert_vector`'s "AS reference"
+is **sigil's own AS front end**, not `asl`, so clamping the position to 0 would have turned all four
+green while disagreeing with asl's actual length law. **Their green proves the regression is gone and
+proves nothing about correctness**; the grounding lives entirely in three new asl-derived unit tests.
+A red test going green is evidence about the regression, never about the fix, whenever the test's
+oracle is the tool under repair.
+
+**asl has no SEMANTICS for a negative position, only BEHAVIOUR.** It does not clamp; it reads below
+the buffer, so `strlen(substr("wxyz",-4,0))` is **8**, longer than its source, which is what makes
+that probe discriminating (no clamping model can exceed the input). `substr("a",-1000000,0)`
+**segfaults asl, exit 139**. There was never a correct value to copy: the fix reproduces the length
+law and models the unreadable prefix as NUL, which decides every comparison as asl does because an AS
+string literal cannot contain a NUL.
+
+### The original entry, kept for the reasoning error
+
 
 **Read this before landing anything or reading a green partial run as safety.** `SIGIL_STRICT_GATE=1`
 with a verified `AEON_DIR` returns **5 failures** at `33aeee96`. Every parcel today ran
