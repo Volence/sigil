@@ -1562,7 +1562,45 @@ impl Asm {
     /// of these three, which is how `strlen(substr(...))` /
     /// `strstr(substr(s,p,0),">")` nesting works.
     fn expand_str_builtins(&mut self, toks: &[Token]) -> Vec<Token> {
+        let (out, failures) = self.scan_str_builtins(toks);
+        for (span, name) in failures {
+            self.err(span, format!("{name}(): could not evaluate string builtin"));
+        }
+        out
+    }
+
+    /// [`Self::expand_str_builtins`] without the diagnostics: `None` when any
+    /// call in `toks` could not be evaluated, so the caller's own `None` is
+    /// what a reader sees rather than two messages for one cause.
+    ///
+    /// This is the form the NESTED evaluator needs. `fold_const` backs
+    /// `substr`'s `pos`/`len` arguments and `val`'s re-lexed text, and both of
+    /// those are reached from inside an outer builtin that is already going to
+    /// report its own failure; an inner message here would name a call the
+    /// source did not get wrong.
+    fn expand_str_builtins_opt(&self, toks: &[Token]) -> Option<Vec<Token>> {
+        let (out, failures) = self.scan_str_builtins(toks);
+        failures.is_empty().then_some(out)
+    }
+
+    /// The one scan both forms above share, returning the rewritten tokens and
+    /// the `(span, builtin name)` of every call that could not be evaluated.
+    ///
+    /// It walks `toks` linearly and descends into an unrecognized head's
+    /// argument list as a side effect of that walk, which is why a `substr` at
+    /// TOP level has its own nested `strstr`/`strlen` arguments folded before
+    /// `substr` is ever evaluated. A `substr` consumed by an outer `val` is
+    /// taken whole by that outer call instead and never gets this treatment,
+    /// which is exactly the asymmetry `expand_str_builtins_opt` exists to
+    /// remove from `fold_const`.
+    ///
+    /// **It is the identity on any slice that does not spell `strlen`,
+    /// `strstr` or `val` immediately before a `(`**: every other token is
+    /// cloned through untouched and no failure is recorded. That is the whole
+    /// inertness argument for wiring it into a new caller.
+    fn scan_str_builtins(&self, toks: &[Token]) -> (Vec<Token>, Vec<(Span, String)>) {
         let mut out = Vec::new();
+        let mut failures = Vec::new();
         let mut i = 0;
         while i < toks.len() {
             if let Tok::Ident(name) = &toks[i].tok {
@@ -1580,10 +1618,7 @@ impl Asm {
                                 span,
                             }),
                             None => {
-                                self.err(
-                                    span,
-                                    format!("{name}(): could not evaluate string builtin"),
-                                );
+                                failures.push((span, name.clone()));
                                 out.push(Token {
                                     tok: Tok::Int(0),
                                     span,
@@ -1598,7 +1633,7 @@ impl Asm {
             out.push(toks[i].clone());
             i += 1;
         }
-        out
+        (out, failures)
     }
 
     /// Fold `<string-expr> (= | <>) "literal"` sub-patterns to a `Tok::Int(0/1)`
@@ -1813,6 +1848,13 @@ impl Asm {
     /// `pos`/`len` arguments, and `val`'s re-lexed expression text).
     fn fold_const(&self, toks: &[Token]) -> Option<i64> {
         let expanded = self.expand_calls(toks, 0);
+        // A string builtin may appear here: `substr(s, strstr(s,"_")+1,
+        // strlen(s))` is Sonic 2's whole jump-table generator
+        // (`s2.macrosetup.asm:280`), and asl evaluates those arguments as
+        // ordinary constant expressions, which in asl includes the builtins.
+        // Identity when no builtin head is present, so an ordinary arithmetic
+        // `pos`/`len` reaches `parse_expr` exactly as it did before.
+        let expanded = self.expand_str_builtins_opt(&expanded)?;
         let (e, rest) = crate::expr::parse_expr(&expanded)?;
         if !rest.is_empty() {
             return None;
@@ -5467,8 +5509,32 @@ impl Asm {
     /// `movem` routes to [`Self::lower_m68k_movem`] (register-list operand);
     /// every other in-scope mnemonic (incl. `movep`) flows through the shared
     /// branch/dbcc/jmp-jsr/generic paths below.
-    /// [`Self::expand_calls`] over a 68000 operand list, with every trailing EA
-    /// base group held back.
+    /// [`Self::expand_operand_builtins`] over a 68000 operand list, with every
+    /// trailing EA base group held back.
+    ///
+    /// It ran `expand_calls_checked` ALONE until 2026-09-05, which is one of
+    /// the four layers `dc.b`/`dc.w`/`dc.l` have always run, so a builtin
+    /// worked in a data operand and not in an instruction operand:
+    /// `dc.l strlen("ab")+Foo` assembled and `move.l strlen("ab")+Foo,d0` did
+    /// not. Sonic 2 lands on that 518 times from the single line
+    /// `s2.macrosetup.asm:304`, `jmp (extractJmpToName("op")).l`. asl has no
+    /// such split (probe `insn_operands.asm`, exit 0: `int`, `val` and
+    /// `strlen` all answer in an immediate, in a long-absolute address and in
+    /// a bare absolute), so the two positions now share one function rather
+    /// than diverging.
+    ///
+    /// This cannot perturb an operand that assembles today. The added layers
+    /// are the identity on any slice that does not spell a builtin head
+    /// immediately before a `(`, and an operand that DOES spell one is
+    /// currently a hard refusal in every non-held position: there is no call
+    /// syntax in `parse_expr`, so `name(...)` outside a held-back EA base
+    /// group leaves trailing tokens and is diagnosed. A program that
+    /// assembles today therefore contains no such operand, which is the whole
+    /// argument that the shipping build is untouched.
+    ///
+    /// The held-back group is what keeps `val(a0)` a displacement rather than
+    /// a call: the `(a0)` is never offered to a builtin, and the `val` in
+    /// front of it is a bare identifier with no `(` after it.
     ///
     /// A name may be both an equate and an AS `function` — `s2disasm` spells
     /// `id` both ways, an object-record offset (`s2.constants.asm:15`) and a
@@ -5490,20 +5556,20 @@ impl Asm {
     fn expand_calls_m68k_operands(&mut self, toks: &[Token]) -> Vec<Token> {
         let held = crate::operands::m68k_ea_base_spans(toks);
         if held.is_empty() {
-            return self.expand_calls_checked(toks);
+            return self.expand_operand_builtins(toks);
         }
         let mut out = Vec::new();
         let mut i = 0usize;
         for r in held {
             if r.start > i {
-                let head = self.expand_calls_checked(&toks[i..r.start]);
+                let head = self.expand_operand_builtins(&toks[i..r.start]);
                 out.extend(head);
             }
             out.extend_from_slice(&toks[r.start..r.end]);
             i = r.end;
         }
         if i < toks.len() {
-            let tail = self.expand_calls_checked(&toks[i..]);
+            let tail = self.expand_operand_builtins(&toks[i..]);
             out.extend(tail);
         }
         out
