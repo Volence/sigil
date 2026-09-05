@@ -6420,3 +6420,121 @@ the deliverable here, exactly inverted from the source-map parcel where holding 
 Expect new diagnostics to appear behind the fixed ones — a corpus that has been assembling as
 the wrong processor has never had its 68000 path exercised at all.
 
+
+## 2026-09-05T09:16:28Z QUEUE ROW DETAIL MOVED OUT OF `docs/lane-status.json` (contract rule 7)
+
+Every row's full text at the moment of the cut, preserved verbatim because the titles carried
+measurements and rulings, not just labels. The board now holds one- or two-sentence titles and
+points here. Cause, stated plainly: this lane wrote essays into console titles all night —
+22 of 27 rows over the 240-character cap, 15,408 bytes of title against a 12 KB whole-file
+bound, and 27 rows against a 20-row cap. That is the exact shape the owner ruled against on
+2026-09-02, regressed by me within three days of the ruling.
+
+
+### ASL-BIN-PINNED-BY-MD5 — state `open`, size `S`
+
+Four copies of the reference assembler sit on this machine, all printing the same version string, and ONE of them answers inconsistently. Nothing in our setup distinguishes them: the variable that selects one accepts any, and every note that cites 'version 1.42 Beta 212' has therefore not identified its instrument. THREE committed probe runners currently name the bad copy. Wants: runners repinned to the stable md5 or a written reason not to, and the standing rule that a probe cites the binary's MD5 rather than its banner. One note is already amended as the worked example.
+
+### ASL-SILENT-WRONG-ON-BOTH-BUILDS — state `open`, size `M`
+
+The deeper hole the stability sweep is structurally blind to, and worth more than the instability it was sent after: a function call in an immediate taking a register name is accepted with NO complaint and produces a WRONG value on BOTH copies of the reference assembler - on the good one it is merely wrong the same way every time. Reproducibility and correctness are different questions, and no amount of re-running answers the second. We match neither behaviour today. Wants its own measurement of what the right answer even is.
+
+### STABILITY-RUNNER-MISSING-WHERE-CLAIMED — state `open`, size `S`
+
+A gap the de-clock parcel found by looking for runners: at least one note asserts the reference assembler was checked for consistency and names NO command that produced the check. That is not a wrong number, it is an unrunnable one, and it reads on the page exactly like a verified result. A committed runner now exists beside those probes and the note points at it. The row is for the SWEEP: any other note asserting stability without naming a runner is in the same state, and the standing fix is that a stability claim cites a committed script or is not made.
+
+### DECLOCK-DATE-RULES-BROAD — state `open`, size `S`
+
+Left open deliberately by the parcel and worth keeping visible: the date and time rules in the shared clock filter are BROAD - any NN/NN/NNNN and any NN:NN:NN anywhere in the stream, not anchored to the banner. No probe in the tree has such text today so nothing is being over-stripped now, but that is a property of the current probes rather than of the filter. Narrowing it re-takes every published hash, so it wants its own fixture and its own decision rather than a drive-by tightening.
+
+### INTERP-FOLD-CELLS-UNADOPTED — state `open`, size `S`
+
+Three things the real assembler folds into an embedded string that we do not fold at all, measured while fixing the radix and deliberately left: a FLOAT (rendered in decimal, unlike an integer), a string pasted character by character, and a character kept a character through arithmetic. We answer only for integers, and one of the three additionally produces a spurious error about trailing tokens. Both disassemblies contain an idiom that divides by 1.0 specifically to opt into decimal - so those sites render as literal uninterpreted text today and always have. Worth stating clearly because it would be easy to describe the radix fix as having made those sites right: it did not touch them.
+
+### AS-SET-OPENS-SCOPE — state `open`, size `S`
+
+A NEW silent divergence, found while probing the one above and booked rather than fixed. Declaring a variable opens the local-label scope in the real assembler, so a following local name attaches to it; we attach it to a different scope and produce a different qualified NAME. Neither assembler complains, so no complaint count anywhere can see it - the exact class this project keeps finding. Zero population today: the ROMs are byte-identical and both disassemblies are unmoved. Not fixed in the parcel that found it because that parcel measured the redefinition rule and took no measurement of save/restore, pushv/popv or macro-frame scope, and guessing at scope rules is how you move something that depends on them.
+
+### SOURCE-GATE-PIPEFAIL-CLASSES — state `open`, size `S`
+
+A defect we found by accident, now fixed, whose CLASS is not swept. Our nightly backstop asked 'is this name in the list' by piping into a search that quits as soon as it matches - which kills the writer, and the shell then reports the whole thing as failed. So a MATCH read as a NON-match, only under load, only ever in the direction that drops a real entry out of its bucket and darkens the whole nightly lane. Reproduced independently here over a synthetic list: 9 of 9,600 concurrent, every one the same signal; 0 of 400 run serially, which is why it survived - running the check on its own can never show it. The one site is fixed. What is NOT done is the sweep: the same construct in any other script we run under the same shell setting has the same fault, and two more pipelines in that one file were examined by hand and argued safe rather than mechanically ruled out.
+
+### PARTIAL-RUN-DISCLOSURE-CAPTURED — state `open`, size `S`
+
+A partial test run announces how much it did not measure, and the announcement is swallowed. The disclosure is printed by the very test that produces it, so the test framework captures it on a passing run - which means a saved log of a partial run reads as unqualified green, with all 126 unmeasured rows showing 'ok'. The mechanism works and its legibility in a log does not, which is the exact shape we refuse elsewhere: a check that reports nothing reads like a check that found nothing. Found by the banner agent and explicitly not its work.
+
+### FMT-WORKSPACE-UNFORMATTED — state `open`, size `S`
+
+The formatter is red across the workspace and has been for some time: about 350 files and 6,400 differences, with no formatter configuration file in the tree. Confirmed pre-existing rather than introduced, by checking that it fires on files the banner parcel never opened. It is not on our stated bar, so nothing is broken - but a permanently-red check is one nobody can read, and the honest options are to format the tree once or to say in writing that we do not gate on it.
+
+### S1-BUILD-PROFILE — state `open`, size `S`
+
+Why we take about 1.3 seconds on Sonic 1 where a batch assembler takes half a second - answered with a measurement rather than a story. You asked and the honest answer is that nobody here has profiled it. ONE LEG IS ALREADY ANSWERED and it removes a suspect: a trivial three-line file costs 0.002 seconds, so there is essentially NO fixed startup cost - not process launch, not database warm-up. Whatever we spend is proportional to the input, not a constant toll. What the profile still owes: how much is formatting error messages against actually assembling, which needs a run over input we assemble cleanly rather than one producing 368 messages; and the split between reading, evaluating and emitting. The question worth more than the seconds: is any phase doing work a batch assembler does not need to do at all - we are built to answer incremental queries about a program, which is not free, and if that is the cost it is a design trade rather than a defect and should be named as one. Deliverable is a table of seconds per phase on a QUIET box, three runs, and one sentence with its evidence.
+
+### S1-RETAIL-BYTE-GATE — state `open`, size `M`
+
+CORRECTED 2026-09-04 by measurement, and the correction is the point: replacing the assembler is NECESSARY BUT NOT SUFFICIENT to produce the retail cartridge. The disassembly's own build script hands a second tool two arguments that are not assembler features - it pads gaps with FF where we fill with zero, and it Kosinski-COMPRESSES the sound driver inside the finished image after assembly. That second item alone is 82% of everything still differing, and no assembler-side work can produce it. So this gate has to decide what it is judging: our assembler's output against what the real assembler emits, or the whole pipeline's output against the cartridge. Those are different gates and only the second is the owner's stated milestone. The gate is still the single most valuable thing the corpus switch bought - it is a judge from OUTSIDE this project - but it now needs a scope decision first.
+
+### AS-JMPTOS-518-BLOCK — state `open`, size `M`
+
+518 jump-table entries in Sonic 2 that our assembler had never once looked at, now visible because the operator gating them was fixed. They need a string-returning function used in a long address, which we do not support. This is the largest single remaining block in that corpus and it is newly reachable rather than newly broken.
+
+### AS-Z80-INSTRUCTION-COVERAGE — state `open`, size `M`
+
+22 sound-processor instructions we never encoded, now VISIBLE rather than silently swallowed. Exactly one is used by either game - a block-copy instruction at 17 sites in Sonic 2's sound driver - so it blocks that corpus and not Sonic 1, whose vocabulary is fully covered. Cherry-picking the one was deliberately rejected: the point of the row that exposed this was to make the gap measurable, and it now is.
+
+### AS-LEADING-DIGIT-IDENTIFIER — state `open`, size `S`
+
+NOT a silent wrong answer any more - the original one-byte-short defect is closed and the refusal is loud. What remains SPLITS: whether the AS-compatibility frontend accepts a name beginning with a digit is a compatibility call and mine to rule (same ground as the case-folding ruling: a compatibility surface's job is to be the thing it is compatible with); whether .emp proper accepts one is language surface and parks for the owner. Wants its own probe of what the reference actually accepts; deliberately not bundled into another parcel.
+
+### AS-FLOAT-FREQ-TABLE — state `open`, size `S`
+
+84 complaints - seven octaves of twelve notes - from a frequency table computed with floating-point arithmetic we cannot fold. Newly visible for the same reason as the block above.
+
+### AS-ASSIGN-UNRESOLVED-BINDS-ZERO — state `open`, size `S`
+
+REFUTED AND RE-BOOKED 2026-09-04: we do not bind zero. The linker already refuses loudly, but only on the path the engine uses; a single-file command-line assembly takes a different route where a deliberate and correct partial-link decision swallows it. A seam, not a missing check. Closing it needs either an option saying nothing will be joined to this unit, or moving the command-line seam onto the full pipeline - which puts relaxation into a path that has none, so it needs its own byte gate. Moves no corpus number either way: both corpora die in the front end and never reach link.
+
+### ISA-CYCLE-TABLE-GAP — state `open`, size `S`
+
+The cycle-cost table prices none of the five instructions just added; they resolve to Unknown, which is the loud direction rather than a wrong number. Worth closing before anything reasons about timing.
+
+### EMP-USP-CCR-SURFACE — state `open`, size `S`
+
+Two of the new instructions are deliberately NOT exposed in our own language - they need a new operand kind, which is language surface and your call rather than mine. Nothing depends on it today.
+
+### EMP-ALIGN-SHARED-RULE — state `open`, size `S`
+
+Our own language's align still rounds up plainly. That is correct for every ROM section, which is all the engine currently has, so nothing is wrong today - but the moment anything aligns on the RAM side it needs the signed rule the assembler-compatibility side just learned. Booked so the two do not drift apart silently.
+
+### AS-STR-CONCAT — state `open`, size `S`
+
+String expressions have no concatenation operator, so a character loop over a joined string is refused where the real assembler accepts it. Unreachable in both disassemblies today; booked so it is not rediscovered.
+
+### AS-MACRO-LABEL-EXPORT — state `doing`, size `S`
+
+NARROWED 2026-09-05 after re-measuring against the current binary, which is what the re-measure-first warning on this row asked for. BOTH halves as written are DISCHARGED: a plain label in a macro body read from outside is now refused by us and by the reference alike (we say 'unresolved symbol lbl', it says 'symbol undefined'), and the explicit-export spelling the row claimed we had no support for is the 'label' directive, which we accept and resolve - the per-instance parcel at 634a520c closed the first half and the second was never true. WHAT IS ACTUALLY LEFT is smaller and was never the row's claim: I confirmed both assemblers RESOLVE the exported form but did not confirm they resolve it to the SAME VALUE, and resolving is not agreeing. So this is now a pin-it parcel - mint vectors from the reference for both behaviours so neither can drift back - folded together with the ruling that our probe runners must select the reference assembler by MD5 rather than by its version banner, since that is the same set of files.
+
+### AS-Z80-UNDOC-REGISTER-NAMES — state `open`, size `S`
+
+Accepting 'cpu z80undoc' is safe today only because the undocumented index-register halves happen to be undefined symbols, so they refuse. That refusal says 'unresolved symbol ixl' rather than 'this register is unimplemented' - so a source that defined a symbol with one of those six names would get a silently wrong encoding instead of a refusal. Nothing in the Sonic 2 disassembly defines one, which is why this is booked rather than urgent.
+
+### PER-PARCEL-TERM-FEED-CUT — state `blocked`, size `M`
+
+Three records stopped being kept when you cut the joint freeze ritual in August, and none of them could say so - a record nobody adds to looks exactly like one with nothing to add. The tempting fix, a list of every record and who feeds it, is the same defect again, so I stopped short and left you the choice.
+
+### CLOBBER-UNEXERCISED — state `open`, size `L`
+
+Measured: 76 of 387 procs claim to destroy registers they never touch, and one checked by hand claims ten while touching one. Every caller has to believe them, so it costs real optimisation.
+
+### SIGIL-DECOUPLE — state `open`, size `L`
+
+MEASURED 2026-09-05 in answer to the hub, and the row's own figure does not survive. I CANNOT REPRODUCE 'twelve gaps' from any artifact - what exists is the 2026-08-27 constraint re-check: eight inventoried constraints plus one found in passing, from which SEVEN predicates were derived for the aeon lane. Of those seven, TWO are implemented (hole-interior-reserved and section-alignment-declared) and FIVE are not; all five are aeon-side by the note's own framing, since their subject is aeon's map and anchors. BUT THE COUNT IS NOT THE BLOCKER AND COUNTING IT WOULD MISLEAD. The precondition, in aeon's own words, is that EVERY constraint the frozen tables encode is recaptured as an explicit rule BEFORE the tables stop being authority - and the inventory explicitly disclaims being closed: it enumerated only from sigil's own crates, says a pass from aeon's build-side gates 'is still owed and would very likely find more', built no ROM, and read only sonic4's map. Worse, and this is the decisive measurement: it read that map from a freeze 814 COMMITS BEHIND today's tip, and games/sonic4/map.toml was modified four times in between - including by TODAY's ROM re-layout moving the sound banks, and by two corrections to a reserved hole's boundary. So the inventory's basis is stale in exactly the dimension it exists to measure. THE HONEST NEXT STEP IS A RE-INVENTORY ENUMERATED FROM AEON'S BUILD SIDE against the current tip, not the five predicates. RE-INVENTORY PINNED 2026-09-05: aeon origin/master 9e3d2861, confirmed two ways (ls-remote and the fetched ref agree) and to be READ ONLY AT THAT COMMIT, never the live checkout. Enumeration parameter is aeon's BUILD SIDE (build.sh and its tools), deliberately different from the 2026-08-27 pass which enumerated from sigil's own crates - two enumerations sharing a parameter are one enumeration run twice, so the difference is the whole value. Context the re-inventory needs: the frozen tables now describe a tree 164 COMMITS behind aeon master, so staleness is not a one-off of the old survey but the standing condition the decoupling exists to end.
+
+### AGENT-WORKTREE-TARGET-DIRS — state `open`, size `S`
+
+About 3.4 GB more is reclaimable from three finished agent copies whose only uncommitted thing is an untracked build-output directory. Their work IS in master, so they are safe by content - I left them because the rule that made tonight's sweep safe is 'tree clean', and widening a deleting rule half way through a sweep, after seeing what it would catch, is how sweeps go wrong. Wants the narrower rule stated first (ignore untracked build output, keep every other check), then applied.
+
+### S4BUDGET-STALE-ASSUMPTION — state `open`, size `S`
+
+For the engine lane, not us: their budget tool prints 'VRAM: UNMEASURED - a sigil listing emits no constants' while 17 such constants are sitting in the listing it just read. It is their tool holding a stale assumption about what our listings contain, not a defect here. Found incidentally; worth telling them because the tool reports UNMEASURED in a grammar that reads like a measured zero.
