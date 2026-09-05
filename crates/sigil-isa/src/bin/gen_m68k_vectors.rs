@@ -4,12 +4,19 @@
 //! canonical `corpus_m68k()`; for each it assembles a `cpu 68000 / org 0` snippet with
 //! the real `asl` (asl 1.42, out-of-repo — see ASL_BIN, P4d/OQ-A), extracts bytes with `p2bin`, and
 //! (over)writes `tests/m68k_golden_vectors.txt` as `<snippet> => <uppercase hex>` in
-//! `corpus_m68k()` order. Commit the result. CI reads the committed file (never asl).
+//! `corpus_m68k()` order, under a provenance header naming the asl build that
+//! answered. Commit the result. CI reads the committed file (never asl).
+//!
+//! **It refuses to write a golden it cannot stamp.** `ASL_BIN` still names any
+//! build — that hook is the point, since asl is out-of-repo since the P4d flip —
+//! but an unidentified instrument is what made the old goldens unable to say
+//! which independent implementation witnessed them. See `sigil_isa::asl_provenance`.
 //!
 //! ```text
 //! ASL_BIN=/opt/asl/bin/asl cargo run -p sigil-isa --bin gen-m68k-vectors
 //! ```
 
+use sigil_isa::asl_provenance::Provenance;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -38,10 +45,28 @@ fn main() {
     assert!(asl.is_file(), "ASL_BIN not a file: {} (install AS, set ASL_BIN)", asl.display());
     assert!(p2bin.is_file(), "p2bin not found at {} (set P2BIN_BIN)", p2bin.display());
 
+    // Identify the instrument BEFORE minting anything: a golden that cannot be
+    // stamped must not be written at all, and the refusal must land before the
+    // committed file is touched.
+    let prov = match Provenance::capture("gen-m68k-vectors", &asl, &p2bin) {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!(
+                "gen-m68k-vectors: cannot identify the toolchain, so nothing was written.\n  \
+                 {e}\n  A golden whose instrument is unrecorded is the defect this refuses."
+            );
+            std::process::exit(4);
+        }
+    };
+    // The paths go to stderr, not into the file: they are context for whoever is
+    // running the mint, and are not a property of the binary (see asl_provenance).
+    eprintln!("gen-m68k-vectors: asl   {} md5 {}", asl.display(), prov.asl.md5);
+    eprintln!("gen-m68k-vectors: p2bin {} md5 {}", p2bin.display(), prov.p2bin.md5);
+
     let work = std::env::temp_dir().join("sigil_m68k_gen");
     fs::create_dir_all(&work).expect("create work dir");
 
-    let mut out = String::new();
+    let mut out = prov.header();
     let mut count = 0usize;
     for (snippet, _inst) in corpus_m68k::corpus_m68k() {
         let bytes = assemble(&asl, &p2bin, &work, snippet);

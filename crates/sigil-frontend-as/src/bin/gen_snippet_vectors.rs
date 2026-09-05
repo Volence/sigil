@@ -22,8 +22,23 @@
 //! regenerate byte-identically (running this tool on the committed file is a
 //! git-clean no-op — the non-circularity invariant: each new snippet block must
 //! churn ONLY its own bytes, proving every committed golden is authentic asl
-//! output, not a value the implementation happened to emit).
+//! output, not a value the implementation happened to emit). That no-op holds
+//! **for the build named in the file's provenance header**; run under a
+//! different asl the header churns too, which is the header earning its place —
+//! it makes a silent dependency visible rather than adding one.
+//!
+//! **It refuses to write a golden it cannot stamp.** `ASL_BIN` still names any
+//! build; an unidentified instrument is what made the old goldens unable to say
+//! which independent implementation witnessed them. See `asl_provenance`.
 
+// `sigil-frontend-as` does not depend on `sigil-isa` and neither crate carries
+// third-party dependencies, so the provenance helper is shared by path — the
+// same device the isa generators use for their corpus modules. The module is
+// self-contained std-only code, so both inclusion modes compile it identically.
+#[path = "../../../sigil-isa/src/asl_provenance.rs"]
+mod asl_provenance;
+
+use asl_provenance::Provenance;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -64,10 +79,28 @@ fn main() {
         p2bin.display()
     );
 
+    // Identify the instrument BEFORE minting anything: a golden that cannot be
+    // stamped must not be written at all, and the refusal must land before the
+    // committed file is touched.
+    let prov = match Provenance::capture("gen_snippet_vectors", &asl, &p2bin) {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!(
+                "gen-snippet-vectors: cannot identify the toolchain, so nothing was written.\n  \
+                 {e}\n  A golden whose instrument is unrecorded is the defect this refuses."
+            );
+            std::process::exit(4);
+        }
+    };
+    // The paths go to stderr, not into the file: they are context for whoever is
+    // running the mint, and are not a property of the binary (see asl_provenance).
+    eprintln!("gen-snippet-vectors: asl   {} md5 {}", asl.display(), prov.asl.md5);
+    eprintln!("gen-snippet-vectors: p2bin {} md5 {}", p2bin.display(), prov.p2bin.md5);
+
     let work = std::env::temp_dir().join("sigil_snippet_gen");
     fs::create_dir_all(&work).expect("create work dir");
 
-    let mut out = String::new();
+    let mut out = prov.header();
     for b in &blocks {
         let bytes = assemble(&asl, &p2bin, &work, &b.asm);
         let hex = bytes
@@ -94,16 +127,26 @@ fn main() {
 
 /// Parse the `=== name ===` / `--- bytes ---` block file into (name, asm) pairs,
 /// dropping the existing golden byte lines (this tool regenerates them).
+///
+/// Everything before the first `=== ` header is the provenance header and is
+/// dropped: this run writes a fresh one describing the asl it was handed, which
+/// is the whole point — the header must describe THIS mint, never be carried
+/// over from the previous one.
 fn parse_blocks(text: &str) -> Vec<Block> {
     let mut out = Vec::new();
     let mut name = String::new();
     let mut asm = String::new();
     let mut in_bytes = false;
+    let mut seen_first_block = false;
     for line in text.lines() {
+        if !seen_first_block && !line.starts_with("=== ") {
+            continue;
+        }
         if let Some(n) = line
             .strip_prefix("=== ")
             .and_then(|s| s.strip_suffix(" ==="))
         {
+            seen_first_block = true;
             if !name.is_empty() {
                 out.push(Block {
                     name: name.clone(),
