@@ -79,3 +79,31 @@ Every existing probe behind that code path used a single-digit value, where hex
 and decimal agree — which is how it survived. NOT fixed here: `interp_text` also
 feeds `str_env`, so changing it is byte-changing and needs its own aeon byte
 re-proof.
+
+## Corpus effect of implementing them: ZERO, and the reason is worth writing down
+
+Both disassembly corpora walked with a MASTER-built `sigil` (`c97385f0`, exported with
+`git archive` into a scratch tree and built into its own target dir) and a BRANCH-built
+one, and the diagnostic SETS compared in both directions:
+
+| corpus | HEAD | diagnostics OLD | NEW | newly resolved | newly unresolved |
+|---|---|---|---|---|---|
+| `s2disasm` (`s2.asm`) | `e45ebf3` | 6035 | 6035 | **0** | **0** |
+| `s1disasm` (`sonic.asm`) | `f6ece65` | 57 | 57 | **0** | **0** |
+
+Zero is a convenient answer, so here is how it was produced rather than the number alone.
+The OLD walks contain **no `warning` or `exitm` refusal at all** — not one line of either
+corpus's eleven sites was ever EXECUTED. They are all inside macro bodies or `if` arms
+that a correct build does not take: `s2.macros.asm`'s `clearRAM` writes them under
+`elseif startaddr==endaddr`, and every one of `s2.asm`'s ~30 `clearRAM` calls passes a
+non-empty range.
+
+The walk demonstrably REACHES those calls — `s2.asm` alone accounts for 5180 of the 6035
+diagnostics, spread past line 4267 — so this is "the guard is false", not "the walk
+stopped short of them".
+
+**Do not read the 6035/57 totals as complete-walk figures.** They name only five and six
+distinct files respectively, well short of the committed baselines
+(`2026-09-03-s1-corpus-baseline.md`: 9,739 over 444 files, at an older sigil). What the
+table above supports is the DELTA — identical binaries-apart runs, identical sets — and
+nothing about absolute corpus coverage.
