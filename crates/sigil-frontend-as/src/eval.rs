@@ -26,6 +26,11 @@ use sigil_span::{Diagnostic, Level, SourceId, Span};
 
 const EXPAND_CAP: usize = 64;
 const PASS_CAP: usize = 16;
+/// What the `MOMPASS` builtin reports on the FIRST iteration of the fixpoint,
+/// and on every LATER one. See [`Asm::builtin_num`] for the measurement that
+/// chose two values rather than a running count.
+const FIRST_PASS: i64 = 1;
+const LATER_PASS: i64 = 2;
 /// Bound for `while … endm` (T9.2): caps re-evaluation/body-expansion
 /// iterations so a non-convergent condition diagnoses (A5) instead of
 /// hanging. Generous relative to any real `while`-driven table-fill idiom.
@@ -182,7 +187,17 @@ fn run_impl(
             labels: pass_labels,
             label_ref_equs: pass_label_ref_equs,
             sources,
-        } = one_pass(src, root_name, opts, &seed, &macros, &functions, &labels, &label_ref_equs);
+        } = one_pass(
+            src,
+            root_name,
+            opts,
+            &seed,
+            &macros,
+            &functions,
+            &labels,
+            &label_ref_equs,
+            if pass == 0 { FIRST_PASS } else { LATER_PASS },
+        );
         last_sources = sources;
         for sec in &module.sections {
             for eq in &sec.equ_syms {
@@ -225,6 +240,7 @@ fn run_impl(
                 &pass_labels,
                 &pass_label_ref_equs,
                 true,
+                LATER_PASS,
             );
             let mut diags = bonus.diags;
             for (name, span) in bonus.poison {
@@ -381,10 +397,11 @@ fn one_pass(
     seed_functions: &FunctionTable,
     seed_labels: &std::collections::HashSet<String>,
     seed_label_ref_equs: &std::collections::HashSet<String>,
+    mompass: i64,
 ) -> PassOutput {
     one_pass_with_defer(
         src, root_name, opts, seed_env, seed_macros, seed_functions, seed_labels,
-        seed_label_ref_equs, false,
+        seed_label_ref_equs, false, mompass,
     )
 }
 
@@ -403,8 +420,10 @@ fn one_pass_with_defer(
     seed_labels: &std::collections::HashSet<String>,
     seed_label_ref_equs: &std::collections::HashSet<String>,
     defer_unresolved_jsr_jmp: bool,
+    mompass: i64,
 ) -> PassOutput {
     let mut asm = Asm::new_with_defer(opts, defer_unresolved_jsr_jmp);
+    asm.mompass = mompass;
     asm.env = seed_env.clone();
     asm.macros = seed_macros.clone();
     asm.functions = seed_functions.clone();
@@ -826,6 +845,10 @@ struct Asm {
     /// joined only at LINK time) is not an error here — it becomes one only
     /// if `resolve_layout`/`link` can't find it either.
     defer_unresolved_jsr_jmp: bool,
+    /// The value the `MOMPASS` builtin reports on THIS pass: 1 on the first,
+    /// 2 on every later one. See [`Asm::builtin_num`] for why it saturates
+    /// rather than counting.
+    mompass: i64,
     /// Every fully-qualified LABEL name known to this pass — seeded from the
     /// previous pass (so a FORWARD-referenced label is already present) and
     /// grown as `define_label` sees each definition. `fixup_target` consults
@@ -1057,6 +1080,7 @@ impl Asm {
             while_budget: GLOBAL_WHILE_CAP,
             pending_equ_syms: Vec::new(),
             defer_unresolved_jsr_jmp,
+            mompass: LATER_PASS,
             known_labels: std::collections::HashSet::new(),
             sym_class: std::collections::HashMap::new(),
             label_ref_equs: std::collections::HashSet::new(),
@@ -1273,6 +1297,34 @@ impl Asm {
     ///   that file read FALSE, so the Z80 arm of `org`, `cnop`, `align`,
     ///   `even` and `ds` is what gets assembled under the 68000. That is a
     ///   wrong branch, not a missing symbol — it emits bytes.
+    /// - `MOMPASS`: 1 on the FIRST iteration of the fixpoint, 2 on every
+    ///   later one. asl's own `MOMPASS` is its 1-based pass counter and it is
+    ///   not bounded by 2: a file whose operand GROWS between passes (an
+    ///   absolute address that turns out not to fit in a word) runs three,
+    ///   and `dc.w MOMPASS` in it emits `0003` (probe `pI`, exit 0, 0 errors).
+    ///   sigil cannot report that number, because sigil's iteration count is
+    ///   measurably not asl's pass count: over six probes the two differ in
+    ///   three, in BOTH directions (asl 1 / sigil 2 for a file with no forward
+    ///   reference, asl 2 / sigil 3 for a forward `:=`), and on the s2disasm
+    ///   root asl takes 2 passes where sigil takes 4. A running count would
+    ///   therefore make `if MOMPASS=2` answer differently from asl for a
+    ///   reason that is a property of the fixpoint, not of the program.
+    ///
+    ///   What IS portable is the distinction the number is used for, and the
+    ///   corpus writes it down: `s2.constants.asm:972` says "Avoid undefined
+    ///   symbol errors by checking only after the first pass." Reporting 1 then
+    ///   2 makes that distinction exact, and it decides every one of the three
+    ///   idioms the corpora actually contain (`=1`, `>1`, `=2`) the same way a
+    ///   2-pass asl decides them. Across s2disasm, s1disasm and skdisasm no
+    ///   `MOMPASS` comparison names a pass number above 2, and aeon names
+    ///   `MOMPASS` in no file at all.
+    ///
+    ///   The cost is stated rather than hidden: `dc.b MOMPASS` read as a NUMBER
+    ///   is reading the assembler's internal schedule, and in a file asl
+    ///   assembles in one pass (`01`) or three (`03`) sigil answers `02`. The
+    ///   one-pass half of that is not the saturation's doing: convergence here
+    ///   requires `pass > 0`, so the iteration that emits bytes is never the
+    ///   first, and no definition of `MOMPASS` could make it report 1.
     /// - `TRUE` / `FALSE` — 1 and 0 (`dc.b TRUE,FALSE` ⇒ `0100`). Undefined,
     ///   they take the same shape as `MOMCPU`: `s2.macrosetup.asm:76`'s
     ///   `if TRUE` reads FALSE and drops the block it guards without a word.
@@ -1288,6 +1340,7 @@ impl Asm {
                 Cpu::M68000 => 0x68000,
                 Cpu::Z80 => 0x80,
             }),
+            "MOMPASS" => Some(self.mompass),
             "TRUE" => Some(1),
             "FALSE" => Some(0),
             _ => None,
