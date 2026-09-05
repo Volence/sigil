@@ -9467,6 +9467,7 @@ fn body_mentions(body: &[Token], param: &str) -> bool {
 ///   `ld bc,fu(hl)` and `dw hl` are `#1010 symbol undefined`: z80 register names
 ///   are not expression-level register symbols, and a z80 program is free to
 ///   define a symbol called `sp`.
+///
 /// THE sentence for a register written where a value belongs, wherever it was
 /// written. One fault gets one story: a `dc.l a0`, a `dc.w a0+1`, a
 /// `move.w #a0,d0`, an `org a0` and a `#fi(a1)` are the same mistake in five

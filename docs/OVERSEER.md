@@ -1320,3 +1320,41 @@ defect report that has to be retracted, and it costs the same as an under-stated
 the same one this document applies to everything else, aimed at the severity rather than the
 existence: what would the run have to print for my claim to be false, and did I look?** Here it was
 one command, `echo $?`, and I banked the claim without it.
+
+### I RAN A SUBSET OF THE LANDING GATE ALL DAY AND IT COST ME TWICE (2026-09-05)
+
+**`scripts/landing-run.sh` is the landing gate. I ran `cargo test` instead, ten parcels running.** Both
+things that escaped today escaped through exactly that gap, and neither was subtle once the real gate
+was run:
+
+- **The strict suite.** Every parcel ran `SIGIL_ALLOW_PARTIAL=1`, which skips 127 reference-dependent
+  binaries. Four `diag_assert_vector` failures sat red for hours.
+- **Clippy.** `landing-run.sh` runs `--release --workspace --all-targets -- -D warnings` as
+  precondition (7), and a red bar makes its `RESULT` not-green. Measured tonight: **exit 101**, six
+  `doc_lazy_continuation` errors, attributed by `git log -L` to **`392503fe`, my own register-diagnostic
+  landing this afternoon.**
+
+**The failure was not disclosure and it was not the agents.** Every parcel reported honestly and
+prominently which gates had not executed. I read those disclosures and landed anyway, ten times.
+**A rule that names a script and a session that runs the script's constituent parts are not the same
+thing**, and the difference is invisible until something the script does and you did not catches
+something.
+
+**Standing rule for this lane, in force: run `scripts/landing-run.sh`, not a hand-assembled subset.**
+If it cannot run (machine load killed two monolithic suites tonight), segment it, give each segment
+its own end marker, and say in the landing which preconditions did not execute. Naming the gap is the
+minimum; running the gate is the job.
+
+### AND THE FIX FOR THAT CLIPPY RED NEARLY BENT THE DOCUMENT TO SUIT THE LINT
+
+`doc_lazy_continuation` fires on a line that continues a list item without indentation. **My first fix
+indented six lines, clippy went green, and it was wrong.** The paragraph beginning *"THE sentence for
+a register written where a value belongs"* is a NEW paragraph about the diagnostic's wording; the
+bullet above it is about z80 register names. **Indenting it folds one claim into an unrelated one and
+changes what the document says.** The correct fix is a blank `///` line, which ENDS the list.
+
+**This is bar 9 aimed at its own enforcer: never change the subject to suit the instrument.** The
+green was real, immediate, and would have shipped a quiet meaning change under a tidy-up commit.
+**The tell was that I could not say what the lint was complaining ABOUT, only that it stopped
+complaining.** Read the surrounding prose before satisfying any formatting lint that offers two ways
+out, because usually only one of them preserves the text.
