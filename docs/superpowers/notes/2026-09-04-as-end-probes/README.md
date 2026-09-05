@@ -1,9 +1,38 @@
 # asl probes: `END`, word-sized immediates, and `cnop`
 
 The differential oracle for these three booked rows. Every probe here is run
-against the **committed** `asl` 1.42 Beta Bld 212 at
-`s2disasm/build_tools/Linux-x86_64/asl`, whose answer does not pass through
-sigil — which is the whole reason the answers are worth anything.
+against `s1disasm/build_tools/Linux-x86_64/asl`, md5
+`61e672562465725a8c102288a7da9098`, whose answer does not pass through sigil —
+which is the whole reason the answers are worth anything.
+
+**⚠ THIS CORPUS IS THE ONE WHERE THE BUILD MATTERS, AND ITS RUNNER USED TO NAME
+THE WRONG ONE** *(2026-09-05)*. `run.sh` named
+`s2disasm/build_tools/Linux-x86_64/asl` (md5
+`0dee1f98e6480a4783d27ffd8b90896f`). That build substitutes an UNINITIALIZED
+MEMORY WORD for any operand it declined to give a value, and `wrange.asm` and
+`wimm.asm` exist precisely to write operands asl refuses. Both builds print
+`AS 1.42 Beta [Bld 212]` verbatim, so nothing in a listing said which had run;
+the runner now selects by digest (`../asl-reference/`) and refuses anything else.
+
+Measured rather than assumed: all 71 probes across the four repinned corpora
+were assembled under BOTH builds and their emitted code lines compared.
+**Exactly two differ, and both are here** — `wrange.asm` and `wimm.asm`, the two
+that carry refused operands. Every other committed answer in this file, and in
+the other three corpora, is identical under either build.
+
+The four range-refused lines of `wrange.asm` read, on four consecutive runs of
+the varying build:
+
+```
+       6/       8 : 303C 5602 / 303C 55B1 / 303C 5655 / 303C 557F
+```
+
+and `303C 8000` on every run of the reference build. `wimm.asm`'s three refused
+lines behave the same way: `5570` / `5632` / `555B` / `561E` against a steady
+`0000`. **The `> > > range overflow` diagnostics are identical under both
+builds**, at the same lines, so every rule this directory states still holds —
+what does not reproduce is the byte column of a REFUSED line, which no rule here
+rests on and which the tables below deliberately do not quote.
 
 ```
 ./run.sh end1.asm        # listing + p2bin image for one probe

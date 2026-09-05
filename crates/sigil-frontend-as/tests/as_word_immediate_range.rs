@@ -41,6 +41,26 @@
 //!        9/      14 : 303C 55F5           	move.w	#$FFFFF700,d0
 //! ```
 //!
+//! **⚠ THE FOUR `303C 55F5` WORDS ABOVE ARE UNINITIALIZED MEMORY, NOT ASL'S
+//! ANSWER, AND THEY DO NOT REPRODUCE** *(2026-09-05)*. The listing was taken
+//! with `s2disasm/build_tools/Linux-x86_64/asl` (md5
+//! `0dee1f98e6480a4783d27ffd8b90896f`), which substitutes an UNINITIALIZED READ
+//! for any operand it declined to give a value. The word is different on every
+//! run — `5602`, `55B1`, `5655`, `557F` on four consecutive ones — and the
+//! `55F5` here is one draw from that, frozen into a comment as though it were
+//! output. `s1disasm`'s build (md5 `61e672562465725a8c102288a7da9098`) prints
+//! `303C 8000` on all four lines, every run, and is what the probe runner now
+//! selects; both builds print `AS 1.42 Beta [Bld 212]` verbatim, which is why
+//! the binary is cited by digest here and not by version.
+//!
+//! **The rule and every assertion below are UNAFFECTED, and that is measured
+//! rather than argued.** The four `> > > range overflow` diagnostics come back
+//! identical from both builds, at the same lines; the two ACCEPTED rows
+//! (`303C FFFF`, `303C 8000`) are identical too. The tests here assert
+//! acceptance and refusal, never the byte column of a refused line — nothing
+//! reads the varying word. The stale listing is kept rather than swapped so the
+//! supersession is visible instead of silent.
+//!
 //! asl's word immediate spans `-32768..=65535`: the signed floor and the
 //! unsigned ceiling, both inclusive. `-65536` is the value the booked
 //! `AS-WORD-IMM-RAM-LABEL` row was named after — `$FFFF0000` read as a signed

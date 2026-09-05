@@ -43,6 +43,22 @@ $80000000    n=256    s2/flamewing=80000100     s1/upstream=80000100     agree
 Every listing row below was taken with the flamewing build `0dee1f98…`, and the
 four rows the 2026-07-08 note recorded were re-taken under BOTH.
 
+**The runners no longer default to that build** *(2026-09-05)*. `0dee1f98…`
+substitutes an uninitialized word for any operand it declined to give a value,
+so `gen_org.sh` and `run.sh` now select `61e67256…` by DIGEST and refuse
+anything else; `run.sh`'s `[asl-dir]` argument still reaches a second build, and
+now prints that build's md5 above the listing. `gen_org_both.sh` is unpinned on
+purpose — putting the question to both builds is its whole job — and names each
+by md5 in its own header.
+
+The rows below are NOT re-taken, and the evidence they carry over is in this
+file already: the agreement sweep above, re-run 2026-09-05 on four of its rows
+(`$FFFFB02A n=256`, `$0000B02A n=100`, `$FFFFFF00 n=256`, `$80000000 n=256`,
+all still `agree`), plus a whole-corpus cross-build diff — all twelve `p*.asm`
+probes here assemble to identical code lines under either build. The `align`
+shapes give asl a value every time, which is why they never enter the regime
+where the two builds part company.
+
 ## The rule
 
 `align n` moves the program counter by a delta computed on the **low 32 bits of

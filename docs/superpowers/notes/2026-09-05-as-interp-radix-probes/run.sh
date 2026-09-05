@@ -14,11 +14,17 @@
 # DURATION, so a batch straddling a tick reports the assembler disagreeing with
 # itself when only the clock moved. Filter the stream through
 # `../asl-declock/declock.sed` if this runner ever grows a listing.
+#
+# THE ASSEMBLER IS SELECTED BY DIGEST, NOT BY BANNER — see `../asl-reference/`.
+# It matters here for the same reason the three runs do: this runner exists to
+# show asl agreeing with itself, and the build it used to name disagrees with
+# itself on any operand it declined to give a value. Three identical runs from
+# THAT binary would have been a statement about which operands happened to
+# resolve, not about the assembler.
 set -u
-DIR=$(dirname "$0")
-TOOLS=/home/volence/sonic_hacks/s2disasm/build_tools/Linux-x86_64
-AS_MSGPATH=$TOOLS
-export AS_MSGPATH
+DIR=$(cd "$(dirname "$0")" && pwd)
+. "$DIR/../asl-reference/asl_ref.sh" || exit $?
+TOOLS="$ASLDIR"
 cd "$DIR" || exit 1
 for run in 1 2 3; do
 	echo "=== $1 run $run ==="

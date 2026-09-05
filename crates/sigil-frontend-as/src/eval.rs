@@ -11752,7 +11752,9 @@ C:\n";
 
     /// AS symbol-name composition. Every expected value below is READ OFF an
     /// `asl -L` listing of the same source (AS V1.42 Beta Bld 212,
-    /// `s2disasm/build_tools/Linux-x86_64/asl`), never off sigil's own output:
+    /// `s2disasm/build_tools/Linux-x86_64/asl`, md5 `0dee1f98e6480a4783d27ffd8b90896f`
+    /// — the digest, because four builds here print that same version string),
+    /// never off sigil's own output:
     ///
     /// ```text
     ///   7/     100 : 0055                    dc.w zone_id_{cur_str}
@@ -11885,7 +11887,9 @@ C:\n";
     // ── `shift`: the variadic macro argument walk ───────────────────────────
     //
     // Every expected value below is read off an `asl -L -U` listing row
-    // (AS V1.42 Beta Bld 212, `s2disasm/build_tools/Linux-x86_64/asl`), quoted
+    // (AS V1.42 Beta Bld 212, `s2disasm/build_tools/Linux-x86_64/asl`, md5
+    // `0dee1f98e6480a4783d27ffd8b90896f` — the version string identifies no
+    // binary here), quoted
     // in each test. `-U` is the invocation: it sets asl's `CASESENSITIVE` to 1,
     // which is the namespace this front-end implements and the flag every asl
     // oracle in this repo passes. Without it asl folds every identifier —
@@ -12297,7 +12301,8 @@ C:\n";
     // ── `.`-local scope inside a macro expansion ────────────────────────────
     //
     // Every expected value below is an `asl -L` row from AS V1.42 Beta Bld 212
-    // (`s2disasm/build_tools/Linux-x86_64/asl`) run with the Sonic 2 build's own
+    // (`s2disasm/build_tools/Linux-x86_64/asl`, md5
+    // `0dee1f98e6480a4783d27ffd8b90896f`) run with the Sonic 2 build's own
     // flags, `-xx -n -q -A -L -U -i .` — `-U` above all, which forces the
     // case-sensitive namespace this front-end implements.
 

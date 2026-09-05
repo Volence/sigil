@@ -1,11 +1,23 @@
 # The radix of `\{expr}` interpolation, measured against asl — 2026-09-05
 
-Reference assembler: `s2disasm/build_tools/Linux-x86_64/asl`, **AS 1.42 Beta
-[Bld 212]**. `run.sh <stem>` runs one probe THREE TIMES and prints asl's stderr,
-its exit code, and the `p2bin` image verbatim; every row below was stable across
-all three runs. asl 1.42 is known to answer differently run-to-run for at least
-one shape (a `function` call in an immediate whose argument is a register name),
-so three runs is the bar for anything a gate is pinned to, not a formality.
+Reference assembler: `s1disasm/build_tools/Linux-x86_64/asl`, md5
+`61e672562465725a8c102288a7da9098`. `run.sh <stem>` runs one probe THREE TIMES
+and prints asl's stderr, its exit code, and the `p2bin` image verbatim; every
+row below was stable across all three runs.
+
+**The run-to-run instability that motivates the three runs belongs to a BUILD,
+not to a version, and the rows below were taken with the build that has it.**
+`run.sh` named `s2disasm/build_tools/Linux-x86_64/asl` (md5
+`0dee1f98e6480a4783d27ffd8b90896f`) when this table was written; it substitutes
+an uninitialized word for any operand it declined to give a value. Both builds
+print **AS 1.42 Beta [Bld 212]** verbatim, so three identical runs from that one
+were a statement about which operands happened to resolve. The runner now
+selects by digest (`../asl-reference/`) and refuses anything else.
+
+The rows are NOT re-taken. All 13 probes here were run under both builds and
+their emitted code lines are identical under each — which is the expected
+result, since this directory's shapes all resolve and the instability only
+reaches operands asl refused.
 
 ## Why every value here is multi-digit
 
