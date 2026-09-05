@@ -232,6 +232,13 @@ fn collect_rs(dir: &Path, out: &mut Vec<PathBuf>) {
 /// The lexer's own positive control. A scan that walks nothing, or that loses
 /// comment state, reports a clean tree in the same words a clean tree does; this
 /// fixture has a known right answer, so only one of those two can pass it.
+///
+/// EACH LINE OF THE FIXTURE EARNS ITS PLACE, and two of them were added after the
+/// first version failed to catch a mutation it should have. Blinding the
+/// line-comment branch left this fixture green, because its comments held no
+/// quote character for a blinded lexer to open a string on. The comments that
+/// QUOTE a dashed phrase are the ones that turn that mutation red, and they are
+/// also the shape the real tree is full of.
 #[test]
 fn lexer_finds_dashes_in_strings_and_only_in_strings() {
     // Built from escapes so this file stays clean under its own scan.
@@ -239,7 +246,9 @@ fn lexer_finds_dashes_in_strings_and_only_in_strings() {
     let en = EN;
     let fixture = format!(
         "// a line comment with an em dash {em} must not count\n\
+         // a comment that quotes \"a phrase {em} with a dash\" must not count either\n\
          /// a doc comment with an en dash {en} must not count\n\
+         /// a doc comment quoting \"another phrase {en} with a dash\" must not count\n\
          /* a block comment {em} with a /* nested {en} */ tail {em} */\n\
          fn f() {{\n\
          let lifetime: &'static str = \"no dash\";\n\
