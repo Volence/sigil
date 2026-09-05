@@ -119,7 +119,7 @@ impl Evaluator<'_> {
                     *span,
                     format!(
                         "label `.{name}` is defined both `export` and non-`export` \
-                         across comptime-`if` arms — pick one flavor"
+                         across comptime-`if` arms, pick one flavor"
                     ),
                 );
             }
@@ -151,7 +151,7 @@ impl Evaluator<'_> {
                 self.error(
                     span,
                     format!(
-                        "unknown local label `.{name}` — no `.{name}:` is defined in this \
+                        "unknown local label `.{name}`, no `.{name}:` is defined in this \
                          proc body"
                     ),
                 );
@@ -230,7 +230,7 @@ impl Evaluator<'_> {
                     self.dropped_instrs += 1;
                     self.error(
                         instr.span,
-                        "instruction dropped — a mnemonic, size, or operand did not resolve \
+                        "instruction dropped, a mnemonic, size, or operand did not resolve \
                          (a missing import or type in scope?)",
                     );
                 }
@@ -389,7 +389,7 @@ impl Evaluator<'_> {
                         *span,
                         format!(
                             "[option.assume-not-option] `{payload}` is not a declared newtype, so \
-                             `assume_some! {reg}, {payload}` extracts nothing — name the option's \
+                             `assume_some! {reg}, {payload}` extracts nothing, name the option's \
                              PAYLOAD type (the `T` in `newtype Opt = T ? sentinel`)"
                         ),
                     );
@@ -403,7 +403,7 @@ impl Evaluator<'_> {
                         *span,
                         format!(
                             "[option.assume-not-option] no niche-option has `{payload}` as its \
-                             payload — `assume_some!` extracts an option, so `{payload}` must be \
+                             payload, `assume_some!` extracts an option, so `{payload}` must be \
                              the `T` of some `newtype Opt = {payload} ? sentinel`"
                         ),
                     );
@@ -525,7 +525,7 @@ impl Evaluator<'_> {
                     Value::Poison => {}
                     Value::Data(_) => self.error(
                         expr_span(expr),
-                        "a `{expr}` splice must be Code — data belongs in `dc`/`bytes()`; \
+                        "a `{expr}` splice must be Code, data belongs in `dc`/`bytes()`; \
                          a Data splice is unbuilt (ledger the demand if you hit this)"
                             .to_string(),
                     ),
@@ -631,7 +631,7 @@ impl Evaluator<'_> {
             self.error(
                 span,
                 format!(
-                    "[context.unknown] no context named `{ctx}` is in scope — declare \
+                    "[context.unknown] no context named `{ctx}` is in scope, declare \
                      `context {ctx} {{ … }}` or import it"
                 ),
             );
@@ -642,7 +642,7 @@ impl Evaluator<'_> {
             self.error(
                 span,
                 format!(
-                    "[context.not-acquirable] `{ctx}` is a GRANTED context — it has no \
+                    "[context.not-acquirable] `{ctx}` is a GRANTED context, it has no \
                      acquire/release pair to bracket with. A granted context is asserted at a \
                      root proc with `grants({ctx})`"
                 ),
@@ -752,7 +752,7 @@ impl Evaluator<'_> {
                         *isp,
                         format!(
                             "[context.rte-acquire-pushes] context `{ctx}`'s acquire PUSHES to \
-                             the stack, but it is `released_by_rte` — there is no release to \
+                             the stack, but it is `released_by_rte`, there is no release to \
                              pop it, and the `rte` that discharges the hold reads its \
                              exception frame from the stack top, so it would return through \
                              whatever this pushed. An rte-released acquire must leave the \
@@ -774,7 +774,7 @@ impl Evaluator<'_> {
                 decl_span,
                 format!(
                     "[proc.sr-undeclared] context `{ctx}`'s acquire and release do not \
-                     round-trip `sr` — the spliced traffic leaves every consumer's \
+                     round-trip `sr`, the spliced traffic leaves every consumer's \
                      interrupt mask changed; save SR in `acquire` and make the \
                      `move.w (sp)+, sr` restore the release's last SR write"
                 ),
@@ -890,7 +890,7 @@ impl Evaluator<'_> {
             Some(_) => self.error(
                 span,
                 format!(
-                    "[contract.member-kind] `{iface}.{member}` is not a hook — only a \
+                    "[contract.member-kind] `{iface}.{member}` is not a hook, only a \
                      `hook` member may be `invoke`d"
                 ),
             ),
@@ -939,7 +939,7 @@ impl Evaluator<'_> {
             self.error(
                 span,
                 format!(
-                    "unknown assert condition `{}` — expected one of {}",
+                    "unknown assert condition `{}`, expected one of {}",
                     p.cond,
                     Self::ASSERT_CONDS.join(", ")
                 ),
@@ -953,7 +953,7 @@ impl Evaluator<'_> {
             self.error(
                 span,
                 format!(
-                    "assert `src` must be a register (dn/an) in v1, got `{}` — \
+                    "assert `src` must be a register (dn/an) in v1, got `{}`, \
                      move the value to a register first (debugger.asm's message expansion \
                      cannot take a parenthesised memory operand; matches the rings.emp \
                      precedent / AS error #1300)",
@@ -1027,7 +1027,7 @@ impl Evaluator<'_> {
                     span,
                     format!(
                         "{kw} argument `{}` must be a register or immediate in v1 \
-                         (§5) — a memory/EA operand arg is a recorded extension",
+                         (§5), a memory/EA operand arg is a recorded extension",
                         arg.operand_spelling
                     ),
                 );
@@ -1082,7 +1082,7 @@ impl Evaluator<'_> {
             self.error(
                 span,
                 "`assert` requires `DEBUG` to be defined (house convention: the debug \
-                 shape is explicit) — define it (`-D DEBUG=1`, a `const DEBUG`, or an \
+                 shape is explicit), define it (`-D DEBUG=1`, a `const DEBUG`, or an \
                  `equ`) so the gate is unambiguous",
             );
             return None;
@@ -1195,7 +1195,7 @@ impl Evaluator<'_> {
                     self.error(
                         instr.span,
                         format!(
-                            "a bare statement call must evaluate to Code, got {} — only a \
+                            "a bare statement call must evaluate to Code, got {}, only a \
                              comptime fn returning Code is legal in statement position",
                             other.type_name()
                         ),
@@ -1212,7 +1212,7 @@ impl Evaluator<'_> {
             self.error(
                 instr.span,
                 format!(
-                    "`{name}` names {kind}, not a comptime fn — only comptime fn calls are legal \
+                    "`{name}` names {kind}, not a comptime fn, only comptime fn calls are legal \
                      in statement position"
                 ),
             );
@@ -1276,7 +1276,7 @@ impl Evaluator<'_> {
                 self.error(
                     instr.span,
                     "[dispatch.targets-on-data] `targets(...)` names where control lands, \
-                     but `dc` emits DATA, not a transfer — a data directive has no landing \
+                     but `dc` emits DATA, not a transfer, a data directive has no landing \
                      points to enumerate",
                 );
             }
@@ -1408,7 +1408,7 @@ impl Evaluator<'_> {
                 span,
                 format!(
                     "[option.raw-sentinel] the `{option}` sentinel {sentinel} is written as a raw \
-                     immediate at a `{option}`-typed field — write `#{option}.none` (the option's \
+                     immediate at a `{option}`-typed field, write `#{option}.none` (the option's \
                      typed sentinel) so the niche stays greppable"
                 ),
             );
@@ -1463,7 +1463,7 @@ impl Evaluator<'_> {
     ) -> Option<CodeItem> {
         use crate::value::{Cell, DataBuf};
         let Some(width) = size else {
-            self.error(instr.span, "[dc.missing-size] `dc` needs an explicit width — `dc.b`, `dc.w`, or `dc.l`");
+            self.error(instr.span, "[dc.missing-size] `dc` needs an explicit width, `dc.b`, `dc.w`, or `dc.l`");
             return None;
         };
         let width_bytes: usize = match width {
@@ -1471,7 +1471,7 @@ impl Evaluator<'_> {
             Width::W => 2,
             Width::L => 4,
             Width::S => {
-                self.error(instr.span, "[dc.missing-size] `.s` is a branch width — `dc` takes `.b`, `.w`, or `.l`");
+                self.error(instr.span, "[dc.missing-size] `.s` is a branch width, `dc` takes `.b`, `.w`, or `.l`");
                 return None;
             }
         };
@@ -1488,7 +1488,7 @@ impl Evaluator<'_> {
                 _ => {
                     self.error(
                         instr.span,
-                        "[dc.operand] `dc` elements are plain comptime expressions — addressing-mode operands have no meaning here",
+                        "[dc.operand] `dc` elements are plain comptime expressions, addressing-mode operands have no meaning here",
                     );
                     return None;
                 }
@@ -1512,7 +1512,7 @@ impl Evaluator<'_> {
                     if width != Width::W {
                         self.error(
                             expr_span(expr),
-                            "[dc.self-rel-width] a `<local> - <local>` self-relative offset is a signed word — `dc.w`-only",
+                            "[dc.self-rel-width] a `<local> - <local>` self-relative offset is a signed word, `dc.w`-only",
                         );
                         return None;
                     }
@@ -2452,7 +2452,7 @@ impl Evaluator<'_> {
             if p.segments.len() == 1 && reg_from_name(&p.segments[0]).is_some() {
                 self.error(
                     span,
-                    "register indirect takes no size suffix — `(a0).w` is not a 68000 form"
+                    "register indirect takes no size suffix, `(a0).w` is not a 68000 form"
                         .to_string(),
                 );
                 return None;
@@ -2464,7 +2464,7 @@ impl Evaluator<'_> {
                 self.error(
                     span,
                     format!(
-                        "`({0}).w` is not a 68000 form — `{0}` is the status-register operand, not an address",
+                        "`({0}).w` is not a 68000 form, `{0}` is the status-register operand, not an address",
                         p.segments[0]
                     ),
                 );
@@ -2480,7 +2480,7 @@ impl Evaluator<'_> {
         if matches!(v, Value::Reg(_)) {
             self.error(
                 span,
-                "register indirect takes no size suffix — `(a0).w` is not a 68000 form"
+                "register indirect takes no size suffix, `(a0).w` is not a 68000 form"
                     .to_string(),
             );
             return None;
@@ -2507,7 +2507,7 @@ impl Evaluator<'_> {
                     span,
                     format!(
                         "address {addr:#X} has no abs.w spelling (the 24-bit address must \
-                         sign-extend losslessly from 16 bits) — use `.l`"
+                         sign-extend losslessly from 16 bits), use `.l`"
                     ),
                 );
                 return None;
@@ -2540,7 +2540,7 @@ impl Evaluator<'_> {
             if p.segments.len() == 1 && p.segments[0] == "pc" {
                 self.error(
                     span,
-                    "`pc` cannot be an indexed base without a target — pc-relative \
+                    "`pc` cannot be an indexed base without a target, pc-relative \
                      indexed addressing is spelled `Sym(pc,Xn.size)`"
                         .to_string(),
                 );
@@ -2686,7 +2686,7 @@ impl Evaluator<'_> {
                 self.error(
                     span,
                     format!(
-                        "[operand.ambiguous-field] field `{field}` is ambiguous across {candidates} — qualify it as `Overlay.{field}`"
+                        "[operand.ambiguous-field] field `{field}` is ambiguous across {candidates}, qualify it as `Overlay.{field}`"
                     ),
                 );
                 Err(())
@@ -2930,7 +2930,7 @@ impl Evaluator<'_> {
             self.error(
                 span,
                 format!(
-                    "[irqframe.unknown-field] `irq_frame.{field}` is not an intrinsic — the only \
+                    "[irqframe.unknown-field] `irq_frame.{field}` is not an intrinsic, the only \
                      stacked-frame accessor is `irq_frame.pc` (the interrupted return PC)"
                 ),
             );
@@ -2947,7 +2947,7 @@ impl Evaluator<'_> {
             self.error(
                 span,
                 "[irqframe.not-handler] `irq_frame.pc` is only valid inside an interrupt handler \
-                 (a proc with a `grants(...)` clause) — an ordinary proc has no hardware-pushed \
+                 (a proc with a `grants(...)` clause), an ordinary proc has no hardware-pushed \
                  exception frame to address",
             );
         }
@@ -2956,7 +2956,7 @@ impl Evaluator<'_> {
                 self.error(
                     span,
                     "[irqframe.no-save] `irq_frame.pc` needs a prior full-save `movem.<sz> \
-                     <list>, -(sp)` in this handler — the stacked-PC displacement is derived from \
+                     <list>, -(sp)` in this handler, the stacked-PC displacement is derived from \
                      it (saved-register bytes + the exception frame's SR word)",
                 );
                 // Best-effort fallback (d0-a6.l = 62) so the instruction still
@@ -2972,7 +2972,7 @@ impl Evaluator<'_> {
                     span,
                     "[irqframe.sp-mutated] the stack moved between the anchoring `movem …,-(sp)` \
                      and `irq_frame.pc` (a second save, a push, `pea`/`link`, or a direct sp \
-                     write) — the derived displacement would be wrong; keep the full-save movem \
+                     write), the derived displacement would be wrong; keep the full-save movem \
                      immediately before the accessor (only non-sp code between them)",
                 );
                 save as i128 + 2
@@ -3000,7 +3000,7 @@ impl Evaluator<'_> {
         if matches!(expr, ast::Expr::Index { .. }) {
             self.error(
                 expr_span(expr),
-                "[asm.index-operand] comptime element indexing is not an address operand —                  use `#Tbl[i]` for the element's VALUE as an immediate, or bind the                  address math to a `const` first",
+                "[asm.index-operand] comptime element indexing is not an address operand,                  use `#Tbl[i]` for the element's VALUE as an immediate, or bind the                  address math to a `const` first",
             );
             return None;
         }

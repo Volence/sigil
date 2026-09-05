@@ -3500,7 +3500,7 @@ impl Asm {
                     if self.while_budget == 0 {
                         self.err(
                             span,
-                            format!("total `while` iterations exceeded the per-pass budget ({GLOBAL_WHILE_CAP}) — a non-convergent (possibly nested) loop"),
+                            format!("total `while` iterations exceeded the per-pass budget ({GLOBAL_WHILE_CAP}), a non-convergent (possibly nested) loop"),
                         );
                         self.aborted = true;
                         break;
@@ -4605,7 +4605,7 @@ impl Asm {
                 span,
                 format!(
                     "[defines.collision] `{q}` is an .emp-owned constant injected as a guarded define; \
-                     it must not be redefined in the residual AS (delete this in-file definition — \
+                     it must not be redefined in the residual AS (delete this in-file definition, \
                      the .emp module engine.constants is the sole author)"
                 ),
             );
@@ -5996,7 +5996,7 @@ impl Asm {
                 return;
             }
             None => {
-                self.err(span, "branch needs an explicit size suffix (.s or .w) — Aeon pins branch width, no relaxation");
+                self.err(span, "branch needs an explicit size suffix (.s or .w), Aeon pins branch width, no relaxation");
                 return;
             }
         };
@@ -11850,7 +11850,7 @@ C:\n";
         assert_eq!(
             image(&format!("{head}        IF 1\n        DC.B $AA\n        ELSE\n        DC.B $BB\n        ENDIF\n")),
             vec![0xAA],
-            "IF/ELSE/ENDIF must fold — the taken arm is the `1` arm"
+            "IF/ELSE/ENDIF must fold, the taken arm is the `1` arm"
         );
         assert_eq!(
             image(&format!("{head}        IF 0\n        DC.B $AA\n        ELSE\n        DC.B $BB\n        ENDIF\n")),

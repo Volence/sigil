@@ -551,7 +551,7 @@ impl<'a> Evaluator<'a> {
                     span,
                     format!(
                         "[cycles.wrong-cpu] `{builtin}` measures Z80 T-states and this proc is \
-                         68000 code — `z80_cycles` is the only cost table it reads, so any count \
+                         68000 code, `z80_cycles` is the only cost table it reads, so any count \
                          it returned here would be a T-state at 3.58 MHz reported as a 68000 \
                          cycle at 7.67 MHz. Some mnemonics (`nop`, for one) are spelled the same \
                          on both chips, so that wrong number would look right. There is no 68000 \
@@ -566,7 +566,7 @@ impl<'a> Evaluator<'a> {
                     span,
                     format!(
                         "[cycles.wrong-cpu] `{builtin}` measures Z80 T-states and no section CPU \
-                         is in scope here, so there is nothing to measure against — it is valid \
+                         is in scope here, so there is nothing to measure against, it is valid \
                          only inside a proc in a `(cpu: z80)` section. Refusing rather than \
                          assuming Z80: an assumed CPU is how a T-state count ends up denominated \
                          as a 68000 cycle."
@@ -622,14 +622,14 @@ impl<'a> Evaluator<'a> {
             return Value::Poison;
         };
         let Some(items) = self.cycle_scope.clone() else {
-            self.error(span, "`cycles(...)` is only valid inside a proc-body `ensure` — no CodeBuf span is in scope here".to_string());
+            self.error(span, "`cycles(...)` is only valid inside a proc-body `ensure`, no CodeBuf span is in scope here".to_string());
             return Value::Poison;
         };
         let Some(span_items) = crate::z80_cycles::label_span(&items, &l1, &l2) else {
             self.error(
                 span,
                 format!(
-                    "`cycles`: could not carve the span [`{l1}` .. `{l2}`) — both labels must be \
+                    "`cycles`: could not carve the span [`{l1}` .. `{l2}`), both labels must be \
                      defined textually BEFORE this `ensure` and `{l2}` must follow `{l1}`"
                 ),
             );
@@ -640,7 +640,7 @@ impl<'a> Evaluator<'a> {
             Err(crate::z80_cycles::CycleBail::AmbiguousBranch { mnemonic, span: isp }) => {
                 self.error(
                     isp,
-                    format!("[cycles.ambiguous-branch] `{mnemonic}` has different taken/not-taken cost — a timed span must use `jp`/`jp cc` (constant), never `jr cc`/`djnz`/`ret cc`/`call cc`"),
+                    format!("[cycles.ambiguous-branch] `{mnemonic}` has different taken/not-taken cost, a timed span must use `jp`/`jp cc` (constant), never `jr cc`/`djnz`/`ret cc`/`call cc`"),
                 );
                 Value::Poison
             }
@@ -648,7 +648,7 @@ impl<'a> Evaluator<'a> {
                 self.error(
                     isp,
                     format!(
-                        "[cycles.path-end] `{mnemonic}` ends the path — a `cycles(L1, L2)` span \
+                        "[cycles.path-end] `{mnemonic}` ends the path, a `cycles(L1, L2)` span \
                          is a straight-line sum and cannot reach past a return; cut the span \
                          before it, or use `@budget(cycles: N)` for a whole-proc bound"
                     ),
@@ -662,7 +662,7 @@ impl<'a> Evaluator<'a> {
                     // runs first), so pointing at the Z80 table is the right
                     // advice here rather than a misdirection. It says so, because
                     // this message used to be what a 68000 author was told.
-                    format!("[cycles.unknown-op] `{mnemonic}` is Z80 code this proc's timed-region T-state table does not price — add it to `z80_cycles` if a timed span legitimately needs it"),
+                    format!("[cycles.unknown-op] `{mnemonic}` is Z80 code this proc's timed-region T-state table does not price, add it to `z80_cycles` if a timed span legitimately needs it"),
                 );
                 Value::Poison
             }
@@ -778,7 +778,7 @@ impl<'a> Evaluator<'a> {
             self.error(
                 span,
                 format!(
-                    "`pad_to_cycles`: the measured cost {measured} exceeds the target {target} — \
+                    "`pad_to_cycles`: the measured cost {measured} exceeds the target {target}, \
                      the path is already over budget, no pad fits"
                 ),
             );
@@ -795,7 +795,7 @@ impl<'a> Evaluator<'a> {
                 span,
                 format!(
                     "`pad_to_cycles`: the pad {rem} T-states ({target} - {measured}) is not a \
-                     multiple of {nop_t} (a `nop` is {nop_t} T-states) — the target is unreachable with nop padding"
+                     multiple of {nop_t} (a `nop` is {nop_t} T-states), the target is unreachable with nop padding"
                 ),
             );
             return Value::Poison;
@@ -929,7 +929,7 @@ impl<'a> Evaluator<'a> {
                 args[0].span,
                 format!(
                     "`span({name})`: a body element did not lower (a missing import or type in \
-                     scope?) — cannot measure its span"
+                     scope?), cannot measure its span"
                 ),
             );
             return Value::Poison;
@@ -943,7 +943,7 @@ impl<'a> Evaluator<'a> {
                     self.error(
                         *isp,
                         format!(
-                            "[span.not-data] `span({name})` measures a pure-data proc body — \
+                            "[span.not-data] `span({name})` measures a pure-data proc body, \
                              `{name}` emits an instruction, whose length is a link-time fact"
                         ),
                     );

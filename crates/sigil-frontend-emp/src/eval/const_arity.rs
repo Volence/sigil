@@ -240,7 +240,7 @@ impl Evaluator<'_> {
                     self.error(
                         span,
                         format!(
-                            "array length mismatch: expected {n} element(s), got {} — {what} is \
+                            "array length mismatch: expected {n} element(s), got {}, {what} is \
                              declared with a fixed length",
                             elems.len()
                         ),

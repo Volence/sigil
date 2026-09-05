@@ -626,7 +626,7 @@ fn transfer(cfg: &Cfg, idx: usize, st: &mut State, callee_map: &CalleePreserves)
     if mnem == "pop" {
         if let Some(CodeOperand::Z80Pair(p)) = ops.first() {
             let Some(slot) = st.stack.pop() else {
-                return Some("stack underflow — pop drains more than was pushed".to_string());
+                return Some("stack underflow, pop drains more than was pushed".to_string());
             };
             for u in pair_units(*p) {
                 // The popped register holds ITS entry value iff the slot held the

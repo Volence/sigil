@@ -383,7 +383,7 @@ fn lower_m68k_branch(
             push_err(
                 diags,
                 span,
-                "[branch.missing-size] branch needs an explicit size suffix (.s or .w) — \
+                "[branch.missing-size] branch needs an explicit size suffix (.s or .w), \
                  Aeon pins branch width, no relaxation",
             );
             return;
@@ -485,7 +485,7 @@ fn lower_jbra_jbsr(
             diags,
             span,
             format!(
-                "[jbra.sized] `{mnemonic}` sizes itself — drop the suffix \
+                "[jbra.sized] `{mnemonic}` sizes itself, drop the suffix \
                  (pin with bra.s/bra.w, or use jmp for computed targets)"
             ),
         );
@@ -845,7 +845,7 @@ fn lower_m68k_imm_link(
             diags,
             span,
             "[lower.imm-link] this instruction embeds its immediate in the opcode word \
-             (quick/shift-count forms) — no link-time deferral; mirror the value \
+             (quick/shift-count forms), no link-time deferral; mirror the value \
              into a comptime const instead",
         );
         return;
@@ -966,7 +966,7 @@ fn lower_m68k_imm_link(
             diags,
             span,
             "[lower.imm-link] this instruction embeds its immediate in the opcode word \
-             (quick/shift-count forms) — no link-time deferral; mirror the value \
+             (quick/shift-count forms), no link-time deferral; mirror the value \
              into a comptime const instead",
         );
         return;

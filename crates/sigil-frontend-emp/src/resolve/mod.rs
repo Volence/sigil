@@ -504,7 +504,7 @@ pub fn build_ram_report(
             diags.push(Diagnostic {
                 level: Level::Warning,
                 message: format!(
-                    "[ram.no-region] --report ram: module `{id}` declares no `region` — skipped"
+                    "[ram.no-region] --report ram: module `{id}` declares no `region`, skipped"
                 ),
                 primary: seed_span,
             });
@@ -661,11 +661,11 @@ fn build_program_with(
                 level: Level::Warning,
                 message: format!(
                     "[module.unreachable] module `{}` is outside this profile's `use` closure, \
-                     so its {n} `ensure` guard(s) are never evaluated for this target — they \
+                     so its {n} `ensure` guard(s) are never evaluated for this target, they \
                      cannot fail here, whatever they assert. (A module lowered through another \
                      seam evaluates them THERE: the Z80 sound modules reach lowering via \
                      seam-1/seam-2, not this closure. Check which applies before treating it as \
-                     a defect — and do not `use` a module merely to silence this.)",
+                     a defect, and do not `use` a module merely to silence this.)",
                     pm.id
                 ),
                 primary: pm.file.module.span,
@@ -825,7 +825,7 @@ fn build_program_with(
                     level: Level::Error,
                     message: format!(
                         "[equ.collision] `pub equ {equ_name}` is declared by both module `{prev}` \
-                         and module `{}` — a `pub equ` is a plain cross-seam link symbol, so its \
+                         and module `{}`, a `pub equ` is a plain cross-seam link symbol, so its \
                          name must be unique across the program; rename one, or make one non-`pub` \
                          (a private equ is module-scoped)",
                         pm.id
@@ -1165,7 +1165,7 @@ fn report_unresolved(
                     continue; // already reported this name.
                 }
                 let message = match env.suggest_use(&s) {
-                    Some(fixit) => format!("unresolved name `{s}` — {fixit}"),
+                    Some(fixit) => format!("unresolved name `{s}`, {fixit}"),
                     None => format!("unknown symbol `{s}`"),
                 };
                 diags.push(Diagnostic {

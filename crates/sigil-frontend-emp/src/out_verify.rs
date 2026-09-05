@@ -955,7 +955,7 @@ pub fn compute_verified_outs(
         round += 1;
         assert!(
             round <= cap,
-            "verified-out fixpoint did not stabilize in {cap} rounds — monotonicity regression"
+            "verified-out fixpoint did not stabilize in {cap} rounds, monotonicity regression"
         );
     }
     (v_uncond, v_cond)
@@ -1006,23 +1006,23 @@ impl InBroke {
         match self {
             InBroke::Partial(w) => format!(
                 "`{reg}` is written only {} wide on a required exit path, and the in-out \
-                 declaration claims {} — a narrower write breaks the threaded value",
+                 declaration claims {}, a narrower write breaks the threaded value",
                 w.suffix(),
                 need.suffix()
             ),
             InBroke::SubSize => format!(
                 "`{reg}` is written by a form that does not cover its declared width on a \
-                 required exit path — the in-out value is left partial"
+                 required exit path, the in-out value is left partial"
             ),
             InBroke::CalleeClobber => {
                 format!("`{reg}` is destroyed by a callee on a required exit path")
             }
             InBroke::CalleeCond => format!(
-                "`{reg}` is produced only conditionally by a callee on a required exit path \
-                 — a conditional result is not a threaded in-out value"
+                "`{reg}` is produced only conditionally by a callee on a required exit path, \
+                 a conditional result is not a threaded in-out value"
             ),
             InBroke::UnknownCallee => format!(
-                "`{reg}` crosses an indirect or unknown callee on a required exit path — \
+                "`{reg}` crosses an indirect or unknown callee on a required exit path, \
                  nothing proves it survives"
             ),
         }
@@ -1510,7 +1510,7 @@ pub fn survives_message(f: &CondOutSurvivesFiring) -> String {
     format!(
         "[proc.out-cond-survives-unverifiable] `{}` declares `out({} if {})` with `{}` absent \
          from `clobbers(...)`, which claims `{}` still holds its entry value on every `!{}` \
-         return path — but {}. Add `{}` to `clobbers(...)` if it is destroyed on the failure \
+         return path, but {}. Add `{}` to `clobbers(...)` if it is destroyed on the failure \
          edges (the conditional result stands either way), or save/restore it across them",
         f.proc, f.reg, f.cc, f.reg, f.reg, f.cc, f.reason, f.reg,
     )

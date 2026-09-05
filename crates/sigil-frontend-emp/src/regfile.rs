@@ -103,7 +103,7 @@ pub fn expand_reglist(
             Some(h) => {
                 if !rf.allows_range() {
                     on_error(format!(
-                        "[contract.reglist-range] `{lo}-{h}`: Z80 reglists enumerate — there is no \
+                        "[contract.reglist-range] `{lo}-{h}`: Z80 reglists enumerate, there is no \
                          ordinal range form (a pair name expands to its halves instead)"
                     ));
                     continue;

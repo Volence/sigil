@@ -1469,7 +1469,7 @@ impl<'a> Evaluator<'a> {
                     span,
                     format!(
                         "[operand.const-as-address] `{name}` is {kind}, so this reads memory at \
-                         its VALUE — write `#{name}` for the constant itself"
+                         its VALUE, write `#{name}` for the constant itself"
                     ),
                 );
             }
@@ -1846,7 +1846,7 @@ pub fn run_module_tests(
                 if leaked {
                     d.push(Diagnostic {
                         level: Level::Error,
-                        message: "a test body deferred a link-time condition — `sigil test` \
+                        message: "a test body deferred a link-time condition, `sigil test` \
                                   never links, so it can never be decided; test against \
                                   comptime-exact values"
                             .to_string(),

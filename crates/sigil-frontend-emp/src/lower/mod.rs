@@ -486,7 +486,7 @@ fn lower_module_inner(
                             sec.span,
                             format!(
                                 "[module.cpu-mismatch] module `{}` declares `(cpu: {})` but opens \
-                                 section `{}` as `{}` — a module and the sections it opens must \
+                                 section `{}` as `{}`, a module and the sections it opens must \
                                  agree on CPU",
                                 file.module.path.segments.join("."),
                                 cpu_name(mcpu),
@@ -996,7 +996,7 @@ fn emit_align_pad(
             diags,
             span,
             "[align.provisional] alignment pad at a provisional position (a size-relaxable \
-             instruction sits earlier in this section) — pin the earlier branch sizes \
+             instruction sits earlier in this section), pin the earlier branch sizes \
              (`bra.w`/`bra.s`), move the item, or use a per-item `(align: N)` whose N is \
              relaxation-invariant (word alignment on 68k)"
                 .to_string(),
@@ -1033,7 +1033,7 @@ fn emit_align_pad(
             )),
             MsgPart::Expr(Expr::Sym(anchor)),
             MsgPart::Text(
-                ") — pin the section base (`vma:`) or align the map region".to_string(),
+                "), pin the section base (`vma:`) or align the map region".to_string(),
             ),
         ],
         fatal: false,
@@ -1108,7 +1108,7 @@ pub(super) fn record_odd_item_assert(
             MsgPart::Text(format!("[layout.odd-item] `{name}` lands at odd address ")),
             MsgPart::Expr(Expr::Sym(name.to_string())),
             MsgPart::Text(format!(
-                " — {why}; insert `align 2` before it (or, if the pad lands \
+                ", {why}; insert `align 2` before it (or, if the pad lands \
                  wrong, pin the section base with `vma:` / align the map region)"
             )),
         ],
@@ -1146,7 +1146,7 @@ fn validate_allow_attrs(file: &ast::File, diags: &mut Vec<Diagnostic>) {
                 diags.push(Diagnostic {
                     level: Level::Warning,
                     message: "[attr.allow-form] `@allow` takes string lint ids \
-                              (e.g. `@allow(\"layout.odd-item\")`) — this argument is ignored"
+                              (e.g. `@allow(\"layout.odd-item\")`), this argument is ignored"
                         .to_string(),
                     primary: a.span,
                 });
@@ -1752,7 +1752,7 @@ fn section_attrs(
             sec.span,
             format!(
                 "[section.bank-vma] section `{}`: a bank: section's labels must follow its \
-                 placed LMA — an explicit vma: can decouple bankid()/winptr() (VMA) from the \
+                 placed LMA, an explicit vma: can decouple bankid()/winptr() (VMA) from the \
                  no-straddle check (LMA), yielding a wrong latch value on hardware. Drop vma: \
                  (labels follow placement) or drop bank:.",
                 sec.name
@@ -2122,7 +2122,7 @@ fn validate_out_types(items: &[ast::Item], diags: &mut Vec<Diagnostic>) {
                 primary: *span,
                 message: format!(
                     "[proc.{facet}-invalid] `{owner}` declares the address-register {noun} \
-                     `{reg}` with a type narrower than an address register — every 68k \
+                     `{reg}` with a type narrower than an address register, every 68k \
                      address write covers all 32 bits, so the claim can never be violated \
                      and would cap callers below what the hardware produces. Use a \
                      domain newtype whose width is a long (`{reg}: T`, which the slot \
@@ -2335,7 +2335,7 @@ fn validate_table_names(items: &[ast::Item], diags: &mut Vec<Diagnostic>) {
                         Level::Error
                     },
                     message: format!(
-                        "[table.name-collision] `{name}` is {both} in this module — \
+                        "[table.name-collision] `{name}` is {both} in this module, \
                          `{name}.MEMBER` silently resolves against the {winner} table"
                     ),
                     primary: span,
@@ -2403,7 +2403,7 @@ fn validate_shadowed_mnemonics(items: &[ast::Item], diags: &mut Vec<Diagnostic>)
                     level: Level::Warning,
                     message: format!(
                         "[name.shadows-mnemonic] comptime fn `{}` is spelled like a {cpu} \
-                         mnemonic — the mnemonic wins in statement position, so the bare \
+                         mnemonic, the mnemonic wins in statement position, so the bare \
                          `{} …` call form is unreachable",
                         f.name, f.name
                     ),
@@ -2436,7 +2436,7 @@ fn validate_shadowed_imports(items: &[ast::Item], diags: &mut Vec<Diagnostic>) {
             diags.push(Diagnostic {
                 level: Level::Warning,
                 message: format!(
-                    "[name.shadows-import] `{name}` is also imported from another module — \
+                    "[name.shadows-import] `{name}` is also imported from another module, \
                      this local `data` item shadows it for every reference in this file"
                 ),
                 primary: span,

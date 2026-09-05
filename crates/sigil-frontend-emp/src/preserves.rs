@@ -913,7 +913,7 @@ fn apply_sp_cleanup(st: &mut State, n: i64) -> Option<String> {
                 remaining -= slot.bytes as i64;
                 if remaining < 0 {
                     return Some(
-                        "sp cleanup lands mid-slot — a partial-slot drop cannot be modeled"
+                        "sp cleanup lands mid-slot, a partial-slot drop cannot be modeled"
                             .to_string(),
                     );
                 }
@@ -1038,14 +1038,14 @@ fn transfer(
         let mut popped: Vec<Slot> = Vec::with_capacity(regs.len());
         while got < want {
             let Some(slot) = st.stack.pop() else {
-                return Some("stack underflow — pop drains more than was pushed".to_string());
+                return Some("stack underflow, pop drains more than was pushed".to_string());
             };
             got += slot.bytes as i64;
             popped.push(slot);
         }
         if got != want {
             return Some(
-                "pop width disagrees with the slots beneath it — sp lands mid-slot".to_string(),
+                "pop width disagrees with the slots beneath it, sp lands mid-slot".to_string(),
             );
         }
         for (r, slot) in regs.iter().zip(popped) {
@@ -1139,7 +1139,7 @@ fn apply_link(st: &mut State, ops: &[CodeOperand]) -> Option<String> {
         return Some("`link` with a non-register frame pointer".to_string());
     };
     if *fp == Reg::A7 {
-        return Some("`link a7` — the frame pointer is sp itself".to_string());
+        return Some("`link a7`, the frame pointer is sp itself".to_string());
     }
     let Some(CodeOperand::Imm(disp)) = ops.last() else {
         return Some("`link` with a non-immediate frame size".to_string());
@@ -1192,7 +1192,7 @@ fn apply_unlk(st: &mut State, ops: &[CodeOperand]) -> Option<String> {
             None
         }
         _ => Some(
-            "`unlk` with no matching `link` on this path — sp becomes an unmodeled value"
+            "`unlk` with no matching `link` on this path, sp becomes an unmodeled value"
                 .to_string(),
         ),
     }
@@ -1846,7 +1846,7 @@ mod frame_tests {
         assert_eq!(
             check_stack_balance(&items, true),
             Vec::new(),
-            "an unmatched unlk leaves sp unmodeled — reporting a delta would be a guess"
+            "an unmatched unlk leaves sp unmodeled, reporting a delta would be a guess"
         );
     }
 

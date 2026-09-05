@@ -52,7 +52,7 @@ pub struct Failure {
 /// reports nothing.
 pub const CPU_UNDECLARED: &str = "no processor declared: this assembly unit never says which \
 processor it is for, and sigil will not choose one for it. Declare it on its own line at the top \
-of the root source, before any code — `cpu 68000` for a 68000 program, `cpu z80` for a Z80 one. \
+of the root source, before any code, `cpu 68000` for a 68000 program, `cpu z80` for a Z80 one. \
 An `include`d file needs no line of its own: the declaration is the unit's, and the root's covers \
 it. A caller driving this front-end directly declares it by setting `Options::initial_cpu` \
 instead.";

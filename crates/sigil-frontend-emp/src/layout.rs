@@ -715,7 +715,7 @@ impl<'a> Evaluator<'a> {
                 self.error(
                     span,
                     format!(
-                        "[layout.pad-count] struct {name}: {spelling}({}) — a pad {noun} must be a non-negative comptime int",
+                        "[layout.pad-count] struct {name}: {spelling}({}), a pad {noun} must be a non-negative comptime int",
                         v.type_name()
                     ),
                 );
@@ -726,7 +726,7 @@ impl<'a> Evaluator<'a> {
             self.error(
                 span,
                 format!(
-                    "[layout.pad-count] struct {name}: {spelling}({n}) — a pad {noun} must be a non-negative comptime int"
+                    "[layout.pad-count] struct {name}: {spelling}({n}), a pad {noun} must be a non-negative comptime int"
                 ),
             );
             return 0;
@@ -751,7 +751,7 @@ impl<'a> Evaluator<'a> {
                     span,
                     format!(
                         "[layout.pad-overflow] struct {name}: pad_to({n}) {site}, but the fields \
-                         above it already reach offset {cursor} — over by {over} byte(s). Raise \
+                         above it already reach offset {cursor}, over by {over} byte(s). Raise \
                          the target to {cursor}, or remove {over} byte(s) above it. Do not convert \
                          this to a hand-counted width; that is the number that goes stale."
                     ),
@@ -808,7 +808,7 @@ impl<'a> Evaluator<'a> {
             pad.span,
             format!(
                 "[layout.pad-hand-counted] struct {name}: pad({width}) is followed by field {}, \
-                 which declares (align: {align}) — this width was counted off the fields above it \
+                 which declares (align: {align}), this width was counted off the fields above it \
                  and goes stale when any of them changes. Write pad_to({end}) instead; the \
                  compiler computes the width and the assertion still proves it.",
                 field.name
@@ -882,7 +882,7 @@ impl<'a> Evaluator<'a> {
                 self.error(
                     decl.span,
                     format!(
-                        "[overlay.bad-window] overlay `{name}` window path `{}` has too many segments — use `Struct.window`",
+                        "[overlay.bad-window] overlay `{name}` window path `{}` has too many segments, use `Struct.window`",
                         decl.region.join(".")
                     ),
                 );
@@ -919,7 +919,7 @@ impl<'a> Evaluator<'a> {
                 self.error(
                     decl.span,
                     format!(
-                        "[overlay.window-not-bytes] overlay `{name}` window `{base_struct}.{window_field}` is `{}` — overlay windows must be `[u8; N]` (v1)",
+                        "[overlay.window-not-bytes] overlay `{name}` window `{base_struct}.{window_field}` is `{}`, overlay windows must be `[u8; N]` (v1)",
                         window.ty.describe()
                     ),
                 );
@@ -1034,7 +1034,7 @@ impl<'a> Evaluator<'a> {
             self.error(
                 decl.span,
                 format!(
-                    "[overlay.window-overflow] overlay `{name}` is {total} bytes — exceeds `{}` window of {} bytes (over by {})",
+                    "[overlay.window-overflow] overlay `{name}` is {total} bytes, exceeds `{}` window of {} bytes (over by {})",
                     win.desc(),
                     win.size,
                     total - win.size
@@ -1103,7 +1103,7 @@ impl<'a> Evaluator<'a> {
                 self.error(
                     span,
                     format!(
-                        "[overlay.ambiguous-window] window `{w}` is ambiguous across {candidates} — qualify it as `Struct.{w}`"
+                        "[overlay.ambiguous-window] window `{w}` is ambiguous across {candidates}, qualify it as `Struct.{w}`"
                     ),
                 );
                 None
@@ -1241,8 +1241,8 @@ impl<'a> Evaluator<'a> {
             self.error(
                 span,
                 format!(
-                    "struct {name}: field {} declares (align: {align}) but lands at offset {computed} \
-                     — add {} or remove {slack} byte(s) of padding above it.{hazard} Do not pin an \
+                    "struct {name}: field {} declares (align: {align}) but lands at offset {computed}, \
+                     add {} or remove {slack} byte(s) of padding above it.{hazard} Do not pin an \
                      @offset to satisfy this; a hand-written offset is the number that goes stale.",
                     field_layout.name,
                     align - slack
@@ -1467,7 +1467,7 @@ impl<'a> Evaluator<'a> {
                 decl.span,
                 format!(
                     "[option.niche-overlap] sentinel {sentinel}{as_stored} is a valid `{}` value \
-                     ({lo}..{hi}) — an option needs the niche carved out (narrow the payload's \
+                     ({lo}..{hi}), an option needs the niche carved out (narrow the payload's \
                      `where` range to exclude {sentinel})",
                     payload.describe()
                 ),
@@ -1503,7 +1503,7 @@ impl<'a> Evaluator<'a> {
                 span,
                 format!(
                     "[option.niche-overlap] sentinel {written} is not representable in the \
-                     {}-byte payload storage ({lo_repr}..{hi_repr}) — it would truncate to a \
+                     {}-byte payload storage ({lo_repr}..{hi_repr}), it would truncate to a \
                      valid payload value, carving no niche",
                     bits / 8
                 ),
@@ -1750,7 +1750,7 @@ impl<'a> Evaluator<'a> {
             self.error(
                 span,
                 format!(
-                    "fixed<{i},{f}> is {width_bytes} bytes; too wide to store as a scalar (max 4) — rescale before storing"
+                    "fixed<{i},{f}> is {width_bytes} bytes; too wide to store as a scalar (max 4), rescale before storing"
                 ),
             );
         }
@@ -2020,7 +2020,7 @@ fn check_max_size(ev: &mut Evaluator, name: &str, buf_len: usize, span: Span) {
                 ev.error(
                     span,
                     format!(
-                        "data `{name}` is {buf_len} bytes — exceeds max_size {n} (over by {} bytes)",
+                        "data `{name}` is {buf_len} bytes, exceeds max_size {n} (over by {} bytes)",
                         buf_len as i128 - n
                     ),
                 );
@@ -2199,7 +2199,7 @@ pub fn eval_offsets_with_root(
                         ev.error(
                             member.span,
                             format!(
-                                "offset entry `{}`: `{}` is a type, not a label — an inline \
+                                "offset entry `{}`: `{}` is a type, not a label, an inline \
                                  body is spelled `{}: {} = <value>` (§4.7)",
                                 member.name, p.segments[0], member.name, p.segments[0]
                             ),
@@ -2376,7 +2376,7 @@ pub fn eval_table(
         }
         if attrs.body.is_some() && !index_mode {
             ev.error(attrs.span, format!(
-                "table `{}`: `body:` places the payload vs the cell table — index-mode only (`cell:`)",
+                "table `{}`: `body:` places the payload vs the cell table, index-mode only (`cell:`)",
                 decl.name
             ));
         }
@@ -2472,7 +2472,7 @@ pub fn eval_table(
                     row_first_label.push(None);
                     if index_mode {
                         ev.error(row.span, format!(
-                            "table `{}`: index-mode rows need explicit part labels — auto-labeled \
+                            "table `{}`: index-mode rows need explicit part labels, auto-labeled \
                              record rows are deferred (design decision 6)", decl.name
                         ));
                     }
@@ -2663,7 +2663,7 @@ pub fn eval_dispatch_with_root(
                                 ev.error(
                                     member.span,
                                     format!(
-                                        "[dispatch.target-not-code] dispatch `{}` member `{}` targets {kind} `{}` — a dispatch table must point at code",
+                                        "[dispatch.target-not-code] dispatch `{}` member `{}` targets {kind} `{}`, a dispatch table must point at code",
                                         decl.name, member.name, p.segments[0]
                                     ),
                                 );

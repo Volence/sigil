@@ -277,7 +277,7 @@ impl<'a> Evaluator<'a> {
                 self.error(
                     span,
                     format!(
-                        "[emit.non-ascii] string byte must be ASCII; {ch:?} is not — use a numeric literal or an escape"
+                        "[emit.non-ascii] string byte must be ASCII; {ch:?} is not, use a numeric literal or an escape"
                     ),
                 );
                 return None;
@@ -465,7 +465,7 @@ impl<'a> Evaluator<'a> {
             if width == 1 {
                 self.error(
                     span,
-                    "[here.provisional] a provisional `here()` cannot emit into a 1-byte field — \
+                    "[here.provisional] a provisional `here()` cannot emit into a 1-byte field, \
                      an absolute address needs 2 or 4 bytes (u16/u32 or a pointer)"
                         .to_string(),
                 );
@@ -511,7 +511,7 @@ impl<'a> Evaluator<'a> {
                 self.error(
                     span,
                     format!(
-                        "[here.provisional] a provisional `here()` cannot emit into a {} field — \
+                        "[here.provisional] a provisional `here()` cannot emit into a {} field, \
                          it needs a u16/u32 or a pointer field to hold its link-time address",
                         other.describe()
                     ),
@@ -577,7 +577,7 @@ impl<'a> Evaluator<'a> {
             return String::new();
         }
         let joined = self.emit_path.join("");
-        format!(" — in `{}`", joined.trim_start_matches('.'))
+        format!(", in `{}`", joined.trim_start_matches('.'))
     }
 
     /// Lower one CHILD of a composite value: descend into `seg` of the breadcrumb
@@ -681,7 +681,7 @@ impl<'a> Evaluator<'a> {
                         self.error(
                             decl.span,
                             format!(
-                                "[data.view-le] data `{}`: a Data initializer's bytes are                                  BIG-endian file content — a `le` annotation would                                  misdescribe them (use the plain-width type)",
+                                "[data.view-le] data `{}`: a Data initializer's bytes are                                  BIG-endian file content, a `le` annotation would                                  misdescribe them (use the plain-width type)",
                                 decl.name
                             ),
                         );
@@ -701,7 +701,7 @@ impl<'a> Evaluator<'a> {
                                     decl.span,
                                     format!(
                                         "[data.view-le] data `{}`: a Data view's element type \
-                                         is read as BIG-endian file bytes — a `le` element \
+                                         is read as BIG-endian file bytes, a `le` element \
                                          type would misdescribe them (use the plain-width \
                                          type, or restructure the source file)",
                                         decl.name
@@ -714,7 +714,7 @@ impl<'a> Evaluator<'a> {
                                     format!(
                                         "[data.view-elem] data `{}`: a Data view's element \
                                          type must be a plain scalar (u8/i8/u16/i16/u32/i32), \
-                                         got {} — decode structured layouts through their own \
+                                         got {}, decode structured layouts through their own \
                                          typed items instead",
                                         decl.name,
                                         other.describe()
