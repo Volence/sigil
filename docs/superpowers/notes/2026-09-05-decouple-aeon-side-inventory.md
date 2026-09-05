@@ -634,3 +634,51 @@ on the build path, but re-running was outside their parcel. **So the 2,773-of-13
 the 5,188 B margin carry this survey's measurement alone**, at the revision named in §1, and no
 second party has reproduced them. Stated here because a confirmation that covers most of a
 document gets read as covering all of it.
+
+### 7.6 — P6 RE-SWEPT: the counts could not have moved, and §6(b) was wrong about why
+
+Measured at aeon `305af222`; full result in `2026-09-05-p6-resweep-current-layout.md` and the
+band data in `2026-09-05-p6-resweep-305af222.json`, re-runnable via `scripts/p6_resweep.py`.
+
+**§6 point 3 and item (b) said this sweep needed re-running because the layout had moved. That
+is true of ONE of the five figures they quote.** The straddle predicate depends on the base only
+through `(base + offset + d) mod 0x20000`, so the failing set is **periodic with period
+131,072** and a base move merely *translates* it. P6's ±64 KB window is **131,073 positions —
+exactly one period plus one — so it is a COMPLETE CENSUS of every residue class**, not a
+neighbourhood sample. Verified at this seat: the arithmetic holds, and the landed band data sums
+to exactly **2,773 over 43 bands with 43 distinct starts mod the period**, so nothing is
+double-counted across the wrap.
+
+So `2,773 / 131,073`, the 43 bands, the 31/31/415 widths and the peak of 17 are **invariant by
+construction**. Only the **margin** is layout-dependent, and it moved: **+3,102 B** in the
+shrink direction (5,188 → 8,290) and **−3,102 B** in the growth direction (36,092 → 32,990).
+
+**This also makes the unfreedom a STRONGER claim than §6 made, not a weaker one.** 2.1% of
+positions forbidden is a property of `DPLC_Sonic` mod 128 KB — **permanent, not contingent**. No
+re-layout can improve it.
+
+**Extending to the other three subjects is a null result and a structural one.** Slot cost is
+≤ 2× entry count, putting the ceilings at Tails 4, appendage 2, Knuckles 10 against a bar of 10:
+**three of four cannot fail at any base in the address space.** The enumeration was carrying
+priced risk that does not exist. *(Knuckles' ceiling equals the bar exactly, and nothing states
+it — one 6-entry frame added to `DPLC_Knuckles` changes that. Routed to aeon.)*
+
+**And the 09-04 re-layout is not what moved the margin** — this document implied it did. The
+anchors are `0xA8000`/`0xB8000`, `Art_Sonic` *ends* at `0x8C402` below both, and `map.toml`
+derives the anchors *from* `packed_data_end`: **the banks moved because the data grew, not the
+reverse.** What moved the phase is seven days of ordinary upstream growth, ~440 B/day, unwatched.
+
+**THE VERDICT SURVIVES AND THE ARGUMENT FOR IT DOES NOT.** §5's "not yet" stands, but not on
+this row's reasoning. The live risk here is not a stale census — it is a **decaying margin**:
+`BLOCK-STREAM-DEDUP`'s slack above its safe band fell **5,686 → 2,584 B in seven days**, because
+`Art_Sonic` is the terminus of the packed region and every byte added anywhere below it moves
+the base. At the observed drift, that parcel's approved **−20,986 B** shift walks into a
+forbidden band in **under a week of unrelated data growth**, with no gate that says so before
+the build reds. Routed to aeon; it wants a monitor, not a survey row.
+
+**New since P6, and not a budget question:** one 31 B band at `[+45,567, +45,597]` where a
+*reachable* Sonic frame splits seven ways and `.split_reject` drops the transfer — **art that
+would not load.**
+
+**Not swept and not sweepable by this instrument:** VERDICT C is a property of every subject's
+base *at once*, and this sweep moves one at a time. 0 of 2 today, unpriced under a re-layout.
