@@ -93,10 +93,16 @@ mutate "m4 the filter is a sink (delete every line)" "$SED_F" \
 # m5 — not a filter mutation: prove the symbol-class runner's UNSTABLE arm is
 # live at all. A stability runner that can only ever print STABLE is the same
 # defect wearing different clothes, and no ordinary run distinguishes them.
+#
+# THE NONCE HAS TO ACTUALLY VARY. The first version of this mutation wrote
+# `echo "nonce "` — perl ate the `$RANDOM` as one of its own variables — and the
+# patch landed, changed every hash, and still reported STABLE, because a
+# CONSTANT addition is not instability. It read as a runner defect and was a
+# mutation defect: `\$RANDOM` is what reaches the file as shell text.
 mutate "m5 the probe runner emits a nonce" "$SYM_RUN" \
   "$SYM_STAB — every probe must read UNSTABLE and the runner must exit non-zero" \
   "$SYM_STAB" \
-  perl -0pi -e 's{(cat "\$base\.lst" 2>/dev/null\n)}{$1echo "nonce $$RANDOM"\n}' "$SYM_RUN"
+  perl -0pi -e 's{(cat "\$base\.lst" 2>/dev/null\n)}{$1echo "nonce \$RANDOM"\n}' "$SYM_RUN"
 
 echo
 echo "########## restored"
