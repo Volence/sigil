@@ -111,6 +111,37 @@ Two consequences, and the second is the one that generalises:
 
 ---
 
+## THE DERIVED HANDLE AGREES, AND ITS POPULATION MOVED
+
+`../2026-09-05-asl-nondeterminism-sweep-probes/sweep_probes.sh` enumerates the
+declined-operand set by running the varying build over every `*-probes`
+directory and reporting what changes between runs. It was not guessed at here,
+it was run:
+
+```sh
+ASLDIR=/home/volence/sonic_hacks/s2disasm/build_tools/Linux-x86_64 ./sweep_probes.sh 3
+```
+
+220 probes swept, **30 UNSTABLE**, up from the 22 that directory's README
+records. This parcel's probe directory matches `*-probes`, so it joined the
+corpus without being told to, and **8 of its 12 files came back UNSTABLE**:
+`r02`, `r03`, `r04`, `r05`, `r08`, `r09`, `r11`, `r11b`. That is an independent
+classification of the same shapes by a runner written before this parcel, and it
+agrees — every probe here that carries a declined operand is in its set.
+
+**The four absentees are the four that should be.** `r07_z80.asm` carries no
+declined operand, because z80 is outside the regime. `r01`, `r06` and `r10` all
+contain `dc.w a1` and so ABORT the varying build, identically on every run — a
+crash is perfectly stable, and the sweep quite correctly files them under "not
+seen to vary". One more reason a stable stream is not an answer. (The two
+`SIGSEGV` rows in that run's totals are pre-existing, in
+`2026-09-04-as-warning-exitm-probes`, and are exit 139, not this abort.)
+
+The sweep's own positive control fires on this run, so a zero from it would have
+been a zero it could have failed to report.
+
+---
+
 ## THE REGIME
 
 33 shapes plus 7 controls, one shape per file, both assemblers, four runs of the
@@ -414,6 +445,9 @@ like enough.
   digests**, and its "the path is context beside it" line is too kind to a path
   that actively lies. Not edited here: that file is the subject of its own
   standing rule and an edit to it wants its own review.
+- **`../asl-reference/README.md` records the declined-operand population as "22
+  of them as of 2026-09-05".** This parcel's probes joined that corpus and the
+  number is now **30**. Not edited there, for the same reason as the row above.
 - **The four builds' substitution behaviour is characterised only on this
   regime.** `a8cd8b80` and `aa6de52f` were measured on the shapes in this note,
   not on the 22-probe declined-operand set the nondeterminism sweep enumerates.
