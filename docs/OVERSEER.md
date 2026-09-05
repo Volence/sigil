@@ -1195,3 +1195,47 @@ by a char literal; a peer's `\|` alternation inside `$'...'` under zsh; and now 
 not "watch out for greps", it is that AN EMPTINESS IS NEVER A FINDING WITHOUT AN INSTRUMENT THAT
 COULD HAVE RETURNED NON-EMPTY.** Same family as `cmd | sed ... || echo`, where the `||` binds to the
 whole pipeline.
+
+## ⚠ MASTER IS RED UNDER THE STRICT GATE, AND I CAUSED FOUR OF THE FIVE (2026-09-05)
+
+**Read this before landing anything or reading a green partial run as safety.** `SIGIL_STRICT_GATE=1`
+with a verified `AEON_DIR` returns **5 failures** at `33aeee96`. Every parcel today ran
+`SIGIL_ALLOW_PARTIAL=1`, which skips 127 reference-dependent binaries, so none of them could see this.
+
+| failure | attribution | state |
+|---|---|---|
+| `diag_assert_vector` x4 | **MY OWN if-condition parcel `d9f00a3e`.** Bisected: **15 passed / 0 failed at its parent `742c7366`** | booked `AS-IF-REFUSAL-DIAG-VECTOR`, top of queue |
+| `repin_pins::pins_rs_is_current` | fails on master too; **declares STALE while reporting ZERO changed pins** | booked `PINS-GATE-CONTRADICTS-ITSELF` |
+
+**The four are the hazard I warned an agent about, landed by me.** The `if` parcel makes the
+assembler refuse a condition it cannot decide. I cleared its blast radius with this argument:
+*"aeon's AS-routed surface is three files, zero firings, and a standalone run defines FEWER symbols
+than the real build so it can only OVER-report; a clean standalone result therefore implies a clean
+real one."*
+
+**The argument was wrong, and the flaw is exactly the bar this document enforces on everyone else:
+THE POPULATION TO ENUMERATE IS THE CONSUMING END.** I enumerated aeon's three roots as the consumers
+of `debugger.asm`. **Sigil's own test harness is a fourth consumer**, and it does not assemble that
+file either standalone or as aeon builds it: `diag_assert_vector` SYNTHESIZES a third context, its
+own header plus stub `equ`s, and assembles the real `debugger.asm` inside it. My two-case reasoning
+("standalone" versus "the real build") did not contain that case, so the implication never held.
+
+**And "fewer symbols can only over-report" is itself false in general:** a synthesized context does
+not define a SUBSET of the real one, it defines a DIFFERENT one, and a stub set to a particular value
+can make a condition undecidable that would decide either way elsewhere.
+
+**The failing site is `debugger.asm:572`,
+`elseif (strlen(OPERAND)>4)&&(substr(OPERAND, strlen(OPERAND)-4, 4)="(pc)")`. Do not diagnose it from
+that line alone**: reduced to a standalone macro with the same condition, sigil and asl AGREE
+(`AA BB`), so the fault is context-specific and is NOT the obvious nested-string-builtin reading.
+**Whether the refusal is CORRECT (the synthesized context genuinely cannot decide it, and the test's
+golden was being produced by the silent-false bug this parcel removed) or an OVER-FIRE is the first
+question of that parcel, and it decides whether the fix is in the test or in the assembler.** If it
+is the former, re-baselining the test is the move this document forbids twice over; the expectations
+would have to be re-derived from `asl`.
+
+**What this costs, stated rather than softened: a partial run is not a landing gate, and I treated it
+as one six times today.** Every one of those parcels reported honestly that the byte gates had not
+executed. The reporting was correct and the LANDING DECISION still went ahead on it. The rule this
+lane needs is not better disclosure, which was already perfect, but that **a parcel touching the AS
+frontend gets a strict run before it lands, or it lands knowing the gate is owed.**
