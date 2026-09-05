@@ -98,7 +98,11 @@ Two consequences, and the second is the one that generalises:
 
 - Every measurement in this note comes from `sigil_today.sh`, which puts **one
   shape per file**. That is the structural defence, and `classify.py` verifies
-  it held: **0 of 40** shape files stopped their pass loop early.
+  it held: **0 of 40** shape files stopped their pass loop early. The
+  multi-shape `r*.asm` probes beside them are illustrative, not the authority,
+  and **2 of the 12 do trip it** — `r11`, which exists to, and `r08`, which
+  fell into it and is how this was found. `both.sh` names both, on all four
+  builds.
 - `run.sh`, `both.sh` and `sigil_today.sh` now grep every listing for that footer
   line and print `INCOMPLETE` when it appears. It fires on `r11` (2 lines) and
   not on `r11b` (0) — a red/green pair from committed inputs, no mutation
