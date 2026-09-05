@@ -4928,13 +4928,50 @@ impl Asm {
     /// `movem` routes to [`Self::lower_m68k_movem`] (register-list operand);
     /// every other in-scope mnemonic (incl. `movep`) flows through the shared
     /// branch/dbcc/jmp-jsr/generic paths below.
+    /// [`Self::expand_calls`] over a 68000 operand list, with every trailing EA
+    /// base group held back.
+    ///
+    /// A name may be both an equate and an AS `function` — `s2disasm` spells
+    /// `id` both ways, an object-record offset (`s2.constants.asm:15`) and a
+    /// pointer-table index function (`:438`) — and the two readings of
+    /// `id(a1)` are a displacement of `id` and a call with `a1` as the
+    /// argument. asl settles it structurally: the addressing mode is peeled
+    /// off first, so in an operand the name is a symbol. Expanding over the
+    /// whole operand instead handed `a1` to the function body, which is why
+    /// `!oper x,1+y` (`s2.macrosetup.asm:127`, the zero-offset-defeating
+    /// `insn2op` wrapper) reported `unresolved symbol \`a1\` in operand`.
+    ///
+    /// Holding the group back can only NARROW what expands, and only for an
+    /// operand that ends in a register base group, so an operand carrying no
+    /// such group takes the unchanged whole-slice path.
+    fn expand_calls_m68k_operands(&self, toks: &[Token]) -> Vec<Token> {
+        let held = crate::operands::m68k_ea_base_spans(toks);
+        if held.is_empty() {
+            return self.expand_calls(toks, 0);
+        }
+        let mut out = Vec::new();
+        let mut i = 0usize;
+        for r in held {
+            if r.start > i {
+                out.extend(self.expand_calls(&toks[i..r.start], 0));
+            }
+            out.extend_from_slice(&toks[r.start..r.end]);
+            i = r.end;
+        }
+        if i < toks.len() {
+            out.extend(self.expand_calls(&toks[i..], 0));
+        }
+        out
+    }
+
     fn lower_m68k(&mut self, mn: &str, rest: &[Token], span: Span) {
         // Expand AS `function` calls in the operands FIRST (e.g. the immediate
         // `#vram_art(tile,0,0)` / `#vdpComm(addr,VRAM,DMA)` / `#dmaLength(N)`
-        // forms — `macros.asm`'s single-expression functions). `expand_calls`
-        // only rewrites `name(args)` where `name` is a known function, so
-        // register-indirect EAs (`(a0)`, `(4,a0,d1.w)`) pass through untouched.
-        let expanded = self.expand_calls(rest, 0);
+        // forms — `macros.asm`'s single-expression functions), EXCEPT over a
+        // trailing `(An)`/`(An,Xn)` base group: asl peels the addressing mode
+        // before it evaluates anything, so `dsp(a1)` is `disp(An)` even when a
+        // function named `dsp` exists. See `m68k_ea_base_spans`.
+        let expanded = self.expand_calls_m68k_operands(rest);
         let rest = expanded.as_slice();
         let (base, suffix_size) = split_mnemonic_and_size(mn);
         let mnemonic = match m68k_mnemonic(base) {

@@ -488,6 +488,70 @@ fn trailing_group_open(g: &[Token]) -> Option<usize> {
     None
 }
 
+/// The index ranges of every trailing 68000 EA BASE group — `(An)`, `(An,Xn)`,
+/// `(pc)`, `(sp)` — inside a whole operand LIST, in ascending order.
+///
+/// AS peels this group off the end of an operand BEFORE it evaluates anything:
+/// what precedes the group is the displacement expression, and the group itself
+/// is an addressing mode, never an expression. That ordering is what decides a
+/// name spelled both ways. Given
+///
+/// ```text
+/// dsp      = $2A
+/// dsp      function p,(p*7)+$100
+///          move.w  #$1234,1+dsp(a1)
+/// ```
+///
+/// asl emits `337C 1234 002B` — displacement `1+$2A`, from the EQUATE. The
+/// user function named `dsp` is not consulted, because `(a1)` was already gone
+/// by the time `1+dsp` was evaluated. With no equate of that name asl reports
+/// `error #1010: symbol undefined` underlining `dsp`, which is the same rule
+/// stated the other way: in this position the name is a symbol or it is
+/// nothing. The peel is driven by the BASE alone — `1+dsp(a1,zz)` is
+/// `error #1350: addressing mode not allowed here`, an invalid index register,
+/// not a two-argument call.
+///
+/// Function calls in the DISPLACEMENT still expand: asl assembles
+/// `#$1234,dsp(k)+2(a1)` to `337C 1234 0117`, calling `dsp(k)` and taking
+/// `(a1)` as the base. So the exclusion is the trailing group, not the operand.
+///
+/// An operand opening with `#` is excluded: an immediate is a plain expression
+/// to asl, and its `f(a1)` form has no stable meaning to match (AS V1.42
+/// Beta 212 emits a different, time-varying immediate on each run).
+pub(crate) fn m68k_ea_base_spans(toks: &[Token]) -> Vec<std::ops::Range<usize>> {
+    fn base_span(g: &[Token], at: usize) -> Option<std::ops::Range<usize>> {
+        if matches!(g.first().map(|t| &t.tok), Some(Tok::Punct(Punct::Hash))) {
+            return None;
+        }
+        let open = trailing_group_open(g)?;
+        // Nothing precedes the group — no displacement expression to protect,
+        // and `(a0)` / `(4,a0,d1.w)` already pass through expansion untouched.
+        if open == 0 {
+            return None;
+        }
+        let inner = &g[open + 1..g.len() - 1];
+        disp_base_reg(split_commas(inner)[0])?;
+        Some(at + open..at + g.len())
+    }
+
+    let mut spans = Vec::new();
+    let mut depth = 0i32;
+    let mut start = 0usize;
+    for (i, t) in toks.iter().enumerate() {
+        match t.tok {
+            Tok::Punct(Punct::LParen) => depth += 1,
+            Tok::Punct(Punct::RParen) => depth -= 1,
+            Tok::Punct(Punct::Comma) if depth == 0 => {
+                spans.extend(base_span(&toks[start..i], start));
+                start = i + 1;
+            }
+            _ => {}
+        }
+    }
+    spans.extend(base_span(&toks[start..], start));
+    spans
+}
+
 /// Build a 68k displacement EA from an already-parsed displacement and the raw
 /// `(...)` inner tokens: a single address register (`M68kDisp`) or an address
 /// register plus an index register (`M68kIdx`). Returns `Ok(None)` when `inner`
