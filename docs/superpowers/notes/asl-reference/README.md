@@ -178,18 +178,76 @@ tree for those probe names and for substitute-shaped words next to a refusal.
 
 ```sh
 . "$(dirname "$0")/../asl-reference/asl_ref.sh" || exit $?
+asl_run -xx -n -q -A -L -U -i . probe.asm
 ```
 
 The `|| exit $?` is load-bearing — these runners do not set `-e`, so a sourced
 guard that merely returns non-zero stops nothing. It exports `$ASLDIR`, `$ASL`
-and `AS_MSGPATH`, and refuses (exit 3) any binary whose md5 is not the literal
-in the file. `ASLDIR` may be overridden, and pointing it at another build is how
-the refusal is demonstrated; there is no escape hatch, because a runner that can
-be talked into the varying build has the defect back.
+and `AS_MSGPATH`, defines `asl_run`, and refuses (exit 3) any binary whose md5 is
+not the literal in the file. `ASLDIR` may be overridden, and pointing it at
+another build is how the refusal is demonstrated; there is no escape hatch,
+because a runner that can be talked into the varying build has the defect back.
 
 The expected digest is **written out**, never computed from the binary being
 checked: a guard whose expectation derives from its subject moves with the
 subject and can never come out red.
+
+## The run: `asl_run`
+
+**The md5 says WHICH PROGRAM ran. The exit status says WHETHER ITS ANSWERS MEAN
+ANYTHING.** The digest check answers only the first, and always did; its own
+header says so. `asl_run` answers the second: it runs the pinned binary, writes
+`ASL_EXIT=<n>` to stderr whether or not the caller thought to look, refuses out
+loud on a non-zero status, and **returns that status**, so `|| exit $?` works the
+same way it does for the digest.
+
+**Why the gap is not academic**, measured on `partial_failure.asm` beside the
+guard. That file has one invalid line, `bra.s /` (in AS, `/` is a nameless label
+*definition* and not a reference). asl reports the one error, exits 2, and prints
+a full byte column for every other line. One of those other lines is wrong
+because of it: the macro's `beq.s +` assembles to
+
+| | `beq.s +` |
+|---|---|
+| with the bad line present | `67FE`, a branch to **itself** |
+| with the bad line deleted | `6702`, the correct forward branch |
+
+The listing looks complete. The corrupted value is plausible, in range, and the
+right shape, and nothing announces it. A reader who pinned the digest perfectly
+and quoted `67FE` would have carried a fabricated number while obeying every rule
+then written down. **A run carrying any error is not a source of values for the
+lines that did assemble.**
+
+### What `asl_run` still cannot tell you
+
+**A zero exit is not sufficient either.** For an operand the reference build
+*declines* to value, it substitutes the last value it computed, exits 0, and
+prints no diagnostic: that is the `303C 8000` finding above, where four
+range-refused immediates echo an accepted line five rows up. Digest plus exit
+status answer *which program ran* and *did the run as a whole fail*. **They do
+not answer "did the build answer this line"**, and nothing here does. For a shape
+asl declines, the byte column is an artifact on a clean exit too. Do not pin it.
+
+Two further limits, stated because an unstated one reads as covered:
+
+* **It cannot make itself get used.** A script that sources the guard and then
+  calls `"$ASL"` directly gets none of this, and nothing reddens. `"$ASL"` still
+  works and is the **unblessed** path; see *Why there is no adoption lint* below.
+* **A caller who redirects stderr loses the banner.** The return status survives
+  that, which is why the status and not the banner is the load-bearing half.
+
+### Why there is no adoption lint
+
+A lint requiring every guard-sourcing script to use `asl_run` was considered and
+rejected. Six of the thirty shell callers deliberately run a **second, non-pinned
+build** as a cross-check (`run.sh <asl-dir>`), and several treat a non-zero exit
+as the *answer* rather than a failure (`z80_byte_sweep.sh` counts lines asl
+declines to assemble). A lint would fire on all of those, which is the
+always-red shape: it trains people to weaken the check. The alternative, an
+allowlist of the historical probe runners, is a hand-maintained population, and
+editing it to go green is indistinguishable from hiding a defect. **So adoption
+here is documentation and migration, not enforcement, and that is a real cost of
+this design rather than an oversight.**
 
 ## Proof it fires
 
@@ -202,11 +260,29 @@ case 2  THE VARYING BUILD IS REFUSED                      ← the load-bearing c
 case 3  the refusal names both the wanted and the seen digest
 case 4  a missing binary is refused, not silently skipped
 case 5  with the comparison STUBBED TO ACCEPT, case 2 goes RED
+case 6  asl_run ACCEPTS a clean assembly, with no banner
+case 7  the fixture is a PARTIAL failure: exit 2, full byte column, 67FE vs 6702
+case 8  asl_run REFUSES the partial failure               ← the load-bearing case
+case 9  with asl_run's STATUS PROPAGATION stubbed, case 8 goes RED
 ```
+
+Cases 0 to 5 ask which program ran; cases 6 to 9 ask whether its answers mean
+anything.
 
 Case 5 is the selfcheck's own honesty check, and it verifies the stub APPLIED
 before drawing a conclusion from it — a stub that fails to apply runs the
-original guard and produces the same "refused" answer as a working one.
+original guard and produces the same "refused" answer as a working one. Case 9
+is the same check for `asl_run`, and it stubs a **different** line on purpose:
+case 5 disables the digest comparison, case 9 disables the exit check, and a
+stub of one says nothing about the other.
+
+Case 7 exists because **the easy case is a file that does not assemble** and
+nobody quotes a listing that is not there. It measures the dangerous property
+directly rather than assuming it: it assembles the same fixture with the one bad
+line deleted and requires the `beq.s` value to *move*. If it ever stops moving,
+case 7 fails and says the fixture is no longer the shape this covers. Case 6
+fences the other side, because a check that fires on correct input is the shape
+people weaken.
 
 ## Which runners were pinned OFF the varying build
 
