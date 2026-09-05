@@ -233,11 +233,77 @@ Two further limits, stated because an unstated limit reads as covered:
 
 ## Landing run
 
-Recorded below in the commit that carries it. Failures first, with names.
+`scripts/landing-run.sh --baseline 4650 --aeon /home/volence/sonic_hacks/.aeon-ref`,
+copied out of the brief, run through the script itself rather than as a
+hand-assembled subset. Log stamped and segmented with its own end marker.
+
+**FAILURES FIRST, WITH NAMES. One test red, and it is not this parcel's:**
+
+```
+FAILING TESTS (1), all of them:
+  the_boot_read_is_inside_its_byte_bound     (crates/sigil-harness/tests/boot_read_bound.rs)
+```
+
+```
+tree        <worktree> @ f5dab209 (parcel/asl-guard-exit-status)
+reference   /home/volence/sonic_hacks/.aeon-ref @ 483b3e12 (HEAD, clean), all four present
+started     2026-09-05T23:43:29Z -> 23:49:42Z UTC
+CARGO_EXIT  101      CLIPPY_EXIT 0 (lint bar clean)
+suites 410   passed 4649   failed 1   ignored 2   skip lines 0
+reconciles  4650 baseline + 0 new = 4650 returned a verdict
+```
+
+**THE BASELINE IN THE BRIEF IS WRONG, AND THIS IS A FINDING, NOT AN EXCUSE.**
+`the_boot_read_is_inside_its_byte_bound` gates `docs/OVERSEER.md` at 100,000 B.
+**Master's own copy at `a0cc6997` is 100,102 B, over by 102 B**, so master is
+4649 passed and 1 failed on this test, not 4650 passed. Verified as behaviour and
+not as arithmetic: master's `docs/OVERSEER.md` was put in place and the built
+test binary run directly against it.
+
+```
+boot read .../docs/OVERSEER.md is 100102 B / 100000 B: OVER by 102 B (1402 lines).
+test the_boot_read_is_inside_its_byte_bound ... FAILED
+```
+
+**What this parcel did about it.** A 12-line entry had been added to
+`docs/OVERSEER.md` carrying the finding, which took the file to 101,100 B, from
+102 B over to **1,100 B over**. A pre-existing red is not a licence to make it
+redder, so **that hunk was reverted**: `docs/OVERSEER.md` on this branch is
+byte-identical to master's, and the parcel leaves exactly master's failure set
+rather than adding to it.
+
+**BLOCKED, and tagged for the owner rather than attempted here.** The test's own
+message names the remedy: move closed history to `docs/OVERSEER-LOG.md` verbatim
+under its original line spans, in one cut, leaving every rule in place, and prove
+the cut lossless by set difference AND by reading every seam. That is a parcel of
+its own with a real losslessness bar, on a document this lane does not own, and
+doing it hastily at the end of an unrelated change is the exact shape that bar
+exists to prevent. **The consequence is that the `asl_run` finding does NOT
+appear in the boot doc**, only in the guard header, `asl-reference/README.md` and
+this note. The existing OVERSEER pointer to `asl_ref.sh` still reaches it,
+because the guard's header now leads with `asl_run`. Adding the entry should be
+the first thing done once the overflow is cut.
+
+Everything else: `CLIPPY_EXIT 0` on the script's own
+`clippy --workspace --all-targets -- -D warnings` invocation, read out of the
+script rather than retyped. 0 skip lines. 0 new tests, so 4650 is the whole
+population both before and after, and no count moved.
+
+`asl-reference/selfcheck.sh` is not part of the suite (see the limits above), and
+was run separately: **pass=10 fail=0, exit 0.**
 
 ## Anything in this brief you concluded was wrong
 
-Three things.
+Four things.
+
+**0. "4650 is master's current pass count."** It is master's TEST count. Master's
+pass count is 4649, because `the_boot_read_is_inside_its_byte_bound` is red at
+`a0cc6997`: `docs/OVERSEER.md` is 100,102 B against a 100,000 B bound. Measured,
+not inferred, by running the built test binary against master's own copy of the
+file. The brief's instruction that "any other delta is a finding" is what caught
+it, so the rule worked even though the number in it did not, and the same
+sentence would have had me report a legitimate pre-existing red as a regression
+of my own if I had not checked which side of the branch point it came from.
 
 **1. "A change that breaks them is not acceptable" was aimed at the wrong
 risk.** The brief framed the 36 call sites as a thing a migration might break by
