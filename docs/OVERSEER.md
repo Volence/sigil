@@ -754,3 +754,50 @@ For live next-work, read newest-first: the most recent dated `HANDOFF`/packet no
 in `docs/superpowers/notes/`, then `docs/superpowers/notes/campaign-gap-ledger.md`
 for banked nice-to-haves. Keep this section's "current state" paragraph fresh when
 landing an arc — a stale queue snapshot misleads the next boot more than no snapshot.
+
+### NO EM OR EN DASHES IN TOOL TEXT (owner ruling, 2026-09-05): booked, and the count is measured
+
+**Verified firsthand at empyrean `24cdd17`, reachable from their `origin/main`**, a 9-line addition to
+`design/CHROME_SPEC.md` under "Text in the tools". The owner, verbatim in the spec: *"Can we add no
+emdashess to the design list, like no emdashes in an of our tools."* Relayed to this lane with his
+broader words: *"get rid of all current emdashes and update so no more emdashes to all the tool
+agents"*. No U+2014 and no U+2013 in any text a tool shows a person: diagnostics, warnings, panic
+messages, generated help. Use a comma, a colon, a period, or parentheses.
+
+**⚠ THE SPEC TEXT ITSELF NAMES ORACLE, AURORA AND SERAPH, AND NOT SIGIL.** The extension to this lane
+came through the relay, carrying his own broader sentence, so the ruling binds. But a future sigil
+session reading `CHROME_SPEC.md` cold will find a rule that does not name its own tool, which is the
+shape this document already rejects twice: a ruling that reaches only the sessions alive when it was
+sent. Flagged to the hub; if their spec still omits sigil when you read this, that omission is a
+known gap and not a scope limit.
+
+**Half (b) is in force NOW, for everything anyone writes here**: strings, docs, lane logs, commit
+messages, peer messages. This section is written under it.
+
+**Half (a), the sweep, is booked as `TOOLTEXT-DASH-SWEEP` and takes its turn AFTER the S2
+decomposition.** Sequenced by what a person reads first.
+
+**The count, measured here 2026-09-05 over tracked files at master `297dcd8f`, with a lexer that
+tracks Rust string, raw-string, line-comment and block-comment state rather than a line grep:**
+
+| population | occurrences | note |
+|---|---|---|
+| `crates/*/src` STRING literals | **582** across 64 files | the producer side, the actual subject |
+| `crates/*/tests` STRING literals | **556** | the CONSUMING end, see below |
+| `crates` comments | 10,840 | NOT in scope by the ruling's own words; touching them is churn |
+| `docs` | 28,938 | out of scope for the sweep; half (b) governs new writing |
+
+**⚠ THE SWEEP IS NOT 582 EDITS. It is 582 producer edits that must move in lockstep with 556
+consumer assertions**, and this lane's own bar says a wording change is exactly how a matcher starts
+passing for the wrong reason. Both directions need enumerating before anything is edited: a test
+that asserts a full string goes RED (loud, fine), a test that matches a substring on the untouched
+half goes GREEN while no longer testing what it names (silent, the whole problem). And
+`docs/OVERSEER.md` already records that several `(align: N)` diagnostic strings are pinned by
+**nothing at all**, so part of the producer side has no consumer to red at all. Enumerate the
+consuming end, per the standing rule; never size this off the producer count.
+
+**⚠ AND THE FIRST MEASUREMENT OF THIS RETURNED ZERO.** `git grep -- 'crates/*/src'` matched no paths
+and reported 0 occurrences in 0 files, which reads exactly like a clean tool. It was caught only by
+running a positive control (the same pattern found 28,938 in `docs`, so the pattern worked and the
+PATHSPEC did not). Same family as the zsh word-split instance already banked: an empty result read
+as a pass. Any re-measure of this row carries a positive control.
