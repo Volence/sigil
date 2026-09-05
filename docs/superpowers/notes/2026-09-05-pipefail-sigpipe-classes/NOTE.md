@@ -237,10 +237,22 @@ if printf '%s' "$msg" | grep -q "$VARYING_MD5" && printf '%s' "$msg" | grep -q "
 ```
 
 All three conditions. The file's own `set -uo pipefail` (line 27); the pipeline's
-status IS the `if`; `grep -q` matches on the first line of a short message, which is
-the WIDEST window for the writer to still be pending, not the narrowest. Failure
-direction: **case 3 reports FAIL on a refusal message that was correct** — the
-selfcheck for the asl reference guard turning red on itself.
+status IS the `if`. Failure direction: **case 3 reports FAIL on a refusal message
+that was correct** — the selfcheck for the asl reference guard turning red on itself.
+
+> **CORRECTED — this verdict's REASON was wrong, its conclusion was not.** The
+> struck sentence below prices the site by the mechanism §1b refutes.
+>
+> ~~`grep -q` matches on the first line of a short message, which is the WIDEST
+> window for the writer to still be pending, not the narrowest.~~
+>
+> Backwards. `$msg` is ~200 bytes, far below the bash-builtin turnover of ~5–14 KB,
+> so a short message puts this site in the **racing band** — the *rare* regime, not
+> the widest window. That is consistent with what I measured and did not think
+> about at the time: 30/9600 needed 64 workers, and the site is one that runs once.
+> The verdict is unchanged (all three conditions present; fix it), and it never
+> depended on the size: it is a defect because (a) and (c) hold, and the size only
+> ever set how often it would bite.
 
 Fixed to `if [[ $msg == *"$VARYING_MD5"* && $msg == *"$STABLE_MD5"* ]]`. Proven by
 `selfcheck_case3_proof.sh`, which lifts BOTH constructs out of the two versions of
@@ -264,10 +276,24 @@ grep '^skip: ' test-output.txt \
   | sort | uniq -c | sort -rn | head -40
 ```
 
-Conditions (a) and (c) unambiguously; (b) needs `sort -rn`'s output to exceed a pipe
-buffer, so on today's ~150 skip lines it is latent rather than live. It is fixed
-anyway, because the cost is zero and the safety rests on a number nobody checks.
-Two things were wrong at that one site:
+Conditions (a) and (c) unambiguously.
+
+> **CORRECTED — the pricing of (b) here was the clearest instance of the wrong
+> mechanism in this whole note.**
+>
+> ~~(b) needs `sort -rn`'s output to exceed a pipe buffer, so on today's ~150 skip
+> lines it is latent rather than live.~~
+>
+> "Exceed a pipe buffer" is not the boundary (§1b), and `sort`'s own turnover was
+> never measured here — the sweep covered `printf`, `seq` and `cat`, and `sort`
+> buffers differently again. What can be said without measuring it: `sort -rn`'s
+> output is `uniq -c` groups, which **grows with the corpus**, and the entire
+> purpose of this step is to make that growth visible. So the quantity my "latent"
+> verdict rested on is one the site exists to let increase, and nobody re-checks it
+> when it does. Pricing a defect by a number that is designed to grow is not a
+> mitigation.
+
+It is fixed either way, because the cost is zero. Two things were wrong at the site:
 
 - **the SIGPIPE**: `head -40` exits, `sort -rn` takes 141, `set -e` fails the step —
   a red that says nothing about the code under test and arrives only when there was
@@ -298,6 +324,62 @@ two beds — one with no skip lines, one with 100,000 distinct ones:
 
 `exit=141` on the committed baseline is the class's own signature, produced by the
 file as committed, not by a construct retyped for the occasion.
+
+---
+
+## 5c. All 39 verdicts re-read under the corrected mechanism
+
+The question asked of every site: **did I price this low because it runs serially,
+once, or over a small input?** Under the size mechanism none of those is mitigation.
+
+**No verdict changed. Two REASONS did, and both were mine** (§5 R1 and R2 above).
+Reading the list again, in the order the population was derived:
+
+| group | count | did the mechanism move it? |
+|---|---|---|
+| `v=$(… \| head -1)`, status discarded, no `set -e` | 16 | **No.** Ruled out on (c), which the mechanism does not touch. The value is complete for a structural reason — `head` writes its lines *before* it exits — not a probabilistic one. Size is irrelevant to both halves. |
+| display-only mid-body, no `set -e` | 21 | **No.** Same: (c) absent. |
+| `scripts/lib/sigil_tool.sh:291` (argument position under inherited `set -e`) | 1 | **No.** Ruled out because a command substitution in an argument list does not trip errexit — a fact about bash, not about `head -3`'s input. |
+| `accessor_closure`'s four pipelines | (within the 21) | **No.** `sort -u` cannot emit before EOF, so it cannot exit before EOF. Structural, and if anything the size mechanism *strengthens* it: there is no size at which `sort` acquires an early exit. |
+| `reference_env_var` | 1 | **No** — but see the sharpened note below. |
+| `nightly_source_gates.sh:413` (`<<<` here-string) | 1 | **No.** A redirection is not a pipeline; `pipefail` has nothing to modify. |
+| R1 `selfcheck.sh:85` | 1 | **Verdict no, reason yes.** I called a short message the "widest window"; it is the *rare* band. Still a defect, still fixed. |
+| R2 `ci.yml` | 1 | **Verdict no, reason yes.** I called it "latent" on a pipe-buffer threshold that is not the boundary, using a number the step exists to let grow. Still a defect, still fixed. |
+
+**One verdict I want to sharpen rather than change, because the corrected mechanism
+makes its margin much thinner than I wrote it.** `REGISTER=$(sed -n … | grep -v '^test ' | head -20)`
+at `nightly_source_gates.sh:620`: the writer feeding `head -20` is a `grep -v`
+streaming a `sed` range over the **whole strict suite log**. Under the size
+mechanism that is not a borderline case — it is squarely in the **near-certain**
+SIGPIPE regime, and it runs once, serially, in the nightly lane, which is exactly
+the shape I would previously have called low-risk. It is safe **only** because (c)
+is absent: the script sets `set -uo pipefail` with no `-e`, and the assignment's
+status is never read. That is a one-word margin. **If anyone ever adds `-e` to
+`scripts/nightly_source_gates.sh`, that line is in the near-certain regime from the
+first run.**
+
+I first wrote here that the lint already flags that transition. **I tested it
+instead of asserting it, and I was wrong** — the mutation is worth recording because
+it makes the `$(…)` residual concrete rather than theoretical. Adding `-e` to line
+29 and running the lint:
+
+```
+1 pipeline(s) let SIGPIPE decide, out of 18 …
+  scripts/nightly_source_gates.sh:233: sed … | sed -n … | sort -u | head -1
+      `set -e` consumes every command's status, so a 141 from SIGPIPE aborts the script
+```
+
+Line **233** is caught. Line **620 is not** — it is `REGISTER=$(… | head -20)`, a
+pipeline inside a command substitution, and §6 records that the lint does not read
+inside those at all. So the transition is not silent (the script would go red on 233
+and never ship), but **anyone who "fixed" 233 alone would leave 620 invisible and
+believe the file was clear** — which is this parcel's founding failure shape,
+one level up. That raises the `$(…)` hole from a documented residual to the item I
+would close first (§9).
+
+Same shape, same reasoning, lower stakes: `reference_env_var`'s `head -1` is fed by
+`sort -u` over a handful of environment-variable names, so it is small *and* (c) is
+absent at its single enumerated caller. Two independent reasons, either sufficient.
 
 ---
 
@@ -391,10 +473,16 @@ carries that path, so it cannot be a green from somewhere else:
 
 ## 9. Left open
 
-- **`$(…)` pipelines under `set -e` are outside the lint's reach** (§6). Zero
-  instances today; the population is one `set -e` away from being large. Closing it
-  needs the reader to recurse into command substitutions and decide whether the
-  substitution is a whole assignment RHS — real work, and not this parcel.
+- **`$(…)` pipelines under `set -e` are outside the lint's reach** (§6) — **and
+  this is now the item I would close first, demoted from "residual" by a measurement
+  rather than a guess.** Zero instances today, but §5c shows the failure mode
+  concretely: mutating `-e` into `nightly_source_gates.sh` reds line 233 and leaves
+  line 620 — `REGISTER=$(… | head -20)`, whose writer is a `grep -v` streaming the
+  whole suite log, i.e. squarely near-certain — completely invisible. Anyone who
+  fixed the flagged line alone would believe the file was clear, which is the
+  founding defect's shape one level up. Closing it needs the reader to recurse into
+  command substitutions and decide whether the substitution is a whole assignment
+  RHS — real work, and not this parcel.
 - **Condition (b) is unjudgeable from source.** The lint flags (a)+(c) and says so.
   A site with (a) and (c) but a tiny writer is not currently faulty; it is one input
   size from being faulty, which is why it is flagged rather than excused.
