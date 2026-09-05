@@ -473,9 +473,14 @@ an unidentified instrument was always the bigger defect — but the ruling was b
 contrast (`303C 8000` "every run" against four random draws) whose stable half is itself a
 carry-over, and **a right conclusion does not license the evidence that was offered for it.**
 
-*(Counting note, since this lane published a wrong one: "four binaries, one bad" was four PATHS
-and TWO PROGRAMS. The ratio is one bad build of two, and four was a count of what someone
-happened to check rather than a population.)*
+*(Counting note, and it has now been wrong TWICE. "Four binaries, one bad" was four PATHS and
+TWO PROGRAMS — and that correction was itself a count of what someone happened to check.
+**Measured 2026-09-05 by running every `asl` on the machine: SEVEN paths execute here under FOUR
+distinct digests**, all printing the same banner. The reference digest is reached by three paths,
+and `s2disasm/build_tools/Linux-x86/asl` is an **ELF 64-bit binary in the 32-bit slot** with a
+digest of its own — so selecting by architecture directory gets a program neither its path nor
+its banner describes. The guard is unaffected: it pins one digest and refuses the other three.
+Population and `file` output in `docs/superpowers/notes/asl-reference/README.md`.)*
 
 **Why it survived four parcels:** `git grep asl` **in the sigil repo** returns the 68000 shift
 mnemonic, so a true local finding hardened into a claim about the workspace. The rule is protocol

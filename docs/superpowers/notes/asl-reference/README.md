@@ -19,9 +19,29 @@ the selfcheck that proves the guard refuses.
 | `skdisasm/build_tools/Linux-x86_64/asl` | `61e672562465725a8c102288a7da9098` | same binary | `(x86_64-unknown-linux)` |
 | `sonic_hack/tools/as/asl` | `61e672562465725a8c102288a7da9098` | same binary | `(x86_64-unknown-linux)` |
 | `s2disasm/build_tools/Linux-x86_64/asl` | `0dee1f98e6480a4783d27ffd8b90896f` | flamewing | `(x86_64-Linux)` |
+| `s1disasm/build_tools/Linux-x86/asl` | `a8cd8b80b765686b2e9266c31ffa6987` | upstream, genuine i386 | `(x86_64-unknown-linux)` |
+| `skdisasm/build_tools/Linux-x86/asl` | `a8cd8b80b765686b2e9266c31ffa6987` | same binary | — |
+| `s2disasm/build_tools/Linux-x86/asl` | `aa6de52f266cef0a7f60a748919ab1d3` | flamewing, **ELF 64-bit in the 32-bit slot** | `(x86_64-Linux)` |
 
-`61e67256…` is the **reference build**. `0dee1f98…` is the **varying build** and
-is refused.
+`61e67256…` is the **reference build**. Every other digest is **refused**.
+
+**⚠ THE COUNT IN THIS SECTION WAS WRONG TWICE, AND THE SECOND TIME WAS THE
+CORRECTION.** This file said *"four binaries"*; a counting note then corrected that
+to *"four PATHS and TWO PROGRAMS"* — and that correction was itself a count of what
+someone happened to check. **Measured 2026-09-05 by running every `asl` on the
+machine and reading `file` on each: SEVEN paths execute here, under FOUR distinct
+digests**, all printing `Macro Assembler 1.42 Beta [Bld 212]` verbatim. The table
+above is now the population rather than a sample.
+
+Two things that only the enumeration shows. `s2disasm/build_tools/**Linux-x86**/asl`
+is an **ELF 64-bit x86-64 executable sitting in the 32-bit slot** — so a runner that
+picked a build by *architecture directory* would get a program neither its path nor
+its banner describes. And the reference digest is reached by **three** paths, so
+"which repo's copy" was never the question; the digest always was.
+
+*(The lesson this file already teaches, arriving at the file itself: a population
+you did not enumerate is a sample, and correcting a count without enumerating
+produces another sample wearing a correction's clothes.)*
 
 ## THE RULE
 
