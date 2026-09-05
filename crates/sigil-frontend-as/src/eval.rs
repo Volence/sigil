@@ -7303,6 +7303,11 @@ impl Asm {
                     "hl" => Operand::IndHl,
                     "bc" => Operand::IndBc,
                     "de" => Operand::IndDe,
+                    // `(c)` is an I/O PORT, not a memory address, and is legal
+                    // only in `in r,(c)` / `out (c),r`. It is spelled the same
+                    // way as an indirect register, so the mnemonic is what
+                    // separates it from a `(bc)`-style memory access.
+                    "c" if matches!(m, Mnemonic::In | Mnemonic::Out) => Operand::IndC,
                     // `ex (sp),hl` — the encoder special-cases [Pair(Sp), Pair(Hl)] -> E3.
                     "sp" if matches!(m, Mnemonic::Ex) => Operand::Pair(Reg16::Sp),
                     _ => {
@@ -7316,6 +7321,20 @@ impl Asm {
                         reg: *reg,
                         disp: d as i8,
                     }
+                }
+                // `(c)` in `in r,(c)` / `out (c),r` is the I/O PORT held in
+                // register C, not a memory reference through a symbol named
+                // `c`. It arrives here as a `Mem` rather than an `IndReg`
+                // because the operand classifier is CPU-agnostic and `c` is a
+                // perfectly ordinary 68k symbol name; the decision therefore
+                // belongs where the CPU and the mnemonic are both known, which
+                // is here. Only `in`/`out` are affected, so a 68k `move.w
+                // (c),d0` still reads `c` as the symbol it is.
+                OperandAtom::Mem(e)
+                    if matches!(m, Mnemonic::In | Mnemonic::Out)
+                        && matches!(e, Expr::Sym(s) if s == "c") =>
+                {
+                    Operand::IndC
                 }
                 OperandAtom::Mem(e) => {
                     let v = self.fold_imm(e, span, 0, 0xFFFF);
@@ -8649,8 +8668,29 @@ fn mnemonic(s: &str) -> Option<Mnemonic> {
         "sra" => Sra,
         "neg" => Neg,
         "im" => Im,
+        // The ED block-op grid: four families crossed with four steppings.
         "ldi" => Ldi,
         "ldir" => Ldir,
+        "ldd" => Ldd,
+        "lddr" => Lddr,
+        "cpi" => Cpi,
+        "cpd" => Cpd,
+        "cpir" => Cpir,
+        "cpdr" => Cpdr,
+        "ini" => Ini,
+        "ind" => Ind,
+        "inir" => Inir,
+        "indr" => Indr,
+        "outi" => Outi,
+        "outd" => Outd,
+        "otir" => Otir,
+        "otdr" => Otdr,
+        "in" => In,
+        "out" => Out,
+        "reti" => Reti,
+        "retn" => Retn,
+        "rrd" => Rrd,
+        "rld" => Rld,
         _ => return None,
     })
 }

@@ -90,10 +90,15 @@ pub enum Operand {
     Rel(i8),
     /// `af'` (only in `ex af,af'`).
     AfShadow,
-    /// `i` (only in `ld i,a`).
+    /// `i` (`ld i,a` and `ld a,i`).
     RegI,
-    /// `r` (only in `ld r,a`).
+    /// `r` (`ld r,a` and `ld a,r`).
     RegR,
+    /// `(c)`, the I/O port addressed by register C, in `in r,(c)` and
+    /// `out (c),r`. Distinct from [`IndBc`](Operand::IndBc): `(bc)` is a MEMORY
+    /// address through the whole pair, `(c)` is a port, and on the Z80 the
+    /// whole of BC reaches the bus with B on the high half.
+    IndC,
 }
 
 /// The mnemonic set the driver uses.
@@ -142,6 +147,37 @@ pub enum Mnemonic {
     /// says "the block copy" names whichever of them it happens to mean.
     Ldi,
     Ldir,
+    /// The rest of the ED block-op grid: the LD, CP, IN and OUT families, each
+    /// in a step-up, step-down, repeat-up and repeat-down form. Only `Ldir` and
+    /// `Ldi` have a live population in the corpus; the other fourteen are here
+    /// so the grid has no holes for an author to fall into.
+    Ldd,
+    Lddr,
+    Cpi,
+    Cpd,
+    Cpir,
+    Cpdr,
+    Ini,
+    Ind,
+    Inir,
+    Indr,
+    Outi,
+    Outd,
+    Otir,
+    Otdr,
+    /// The two I/O port instructions. `In`/`Out` cover BOTH the unprefixed
+    /// direct-port forms (`in a,(n)` / `out (n),a`) and the ED register-indirect
+    /// forms through `(c)`; the operand shape selects between them.
+    In,
+    Out,
+    /// Return from interrupt / from NMI. Distinct instructions with distinct
+    /// opcodes; `reti` additionally signals the daisy chain.
+    Reti,
+    Retn,
+    /// The two BCD nibble rotates through `(hl)` and the accumulator's low
+    /// nibble, in opposite directions.
+    Rrd,
+    Rld,
     LdIA,
     LdRA,
     // The accumulator/flag 1-byte primitives and `halt`/`rst`. These appeared in
@@ -348,6 +384,21 @@ fn encode_cb_bit(base: u8, ops: &[Operand]) -> Result<Vec<u8>, IsaError> {
 
 /// The Z80 `ED` instruction-group prefix byte.
 const ED_PREFIX: u8 = 0xED;
+
+/// Narrow a direct-port operand to the 8 bits `in a,(n)` / `out (n),a` encode.
+///
+/// The operand arrives as a [`Operand::Mem`], which is 16 bits wide because that
+/// is what a parenthesised address is everywhere else in the ISA. There is no
+/// wider port encoding, so a value that does not fit is REFUSED rather than
+/// truncated: truncating would silently address a DIFFERENT, perfectly legal
+/// port. The reference asl answers `range overflow` and exits 2 on the same
+/// input, so refusing keeps this front end from being the more permissive of
+/// the two.
+fn port8(n: u16) -> Result<u8, IsaError> {
+    u8::try_from(n).map_err(|_| {
+        IsaError::OperandRange(format!("port must be 0..=0FFh, got {n:#06X}"))
+    })
+}
 
 /// ED sub-opcode for `ld (nn),rr` (store): `0x43 | (rp_code(rp) << 4)`.
 /// Yields bc=`43`, de=`53`, hl=`63`, sp=`73`. NOTE: the `hl` value (`63`) is
@@ -614,9 +665,13 @@ pub fn encode(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
             let [lo, hi] = le16(*nn);
             Ok(vec![ED_PREFIX, ed_ld_pair_mem_sub(*rp), lo, hi])
         }
-        // ld i,a = ED 47 ; ld r,a = ED 4F  (catalog §2.3, A0 idle stub)
+        // `i` and `r`, both directions. The write and the read of the same
+        // register are one bit apart (ED 47 against ED 57), so getting them
+        // backwards swaps a store for a load with no other symptom.
         (Mnemonic::Ld, [Operand::RegI, Operand::Reg(Reg8::A)]) => Ok(vec![ED_PREFIX, 0x47]),
         (Mnemonic::Ld, [Operand::RegR, Operand::Reg(Reg8::A)]) => Ok(vec![ED_PREFIX, 0x4F]),
+        (Mnemonic::Ld, [Operand::Reg(Reg8::A), Operand::RegI]) => Ok(vec![ED_PREFIX, 0x57]),
+        (Mnemonic::Ld, [Operand::Reg(Reg8::A), Operand::RegR]) => Ok(vec![ED_PREFIX, 0x5F]),
         (Mnemonic::Ld, [Operand::Mem(nn), Operand::Pair(Reg16::Hl)]) => {
             let [lo, hi] = le16(*nn);
             Ok(vec![0x22, lo, hi])
@@ -641,6 +696,22 @@ pub fn encode(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
             if matches!(rr, Reg16::Bc | Reg16::De | Reg16::Hl | Reg16::Sp) =>
         {
             Ok(vec![0x09 | (rp_code(*rr) << 4)])
+        }
+        // The carry-aware siblings of the arm above. `add hl,rr` is unprefixed
+        // base-page 09 while `adc`/`sbc hl,rr` are ED-prefixed, so the three
+        // live in the same mnemonic family but not the same page; the PAIR
+        // operand shape is what reaches these arms instead of the 8-bit
+        // accumulator ALU ones. `sbc` and `adc` are one bit apart with the pair
+        // in bits 5..4, both axes taken from asl rather than from each other.
+        (Mnemonic::Sbc, [Operand::Pair(Reg16::Hl), Operand::Pair(rr)])
+            if matches!(rr, Reg16::Bc | Reg16::De | Reg16::Hl | Reg16::Sp) =>
+        {
+            Ok(vec![ED_PREFIX, 0x42 | (rp_code(*rr) << 4)])
+        }
+        (Mnemonic::Adc, [Operand::Pair(Reg16::Hl), Operand::Pair(rr)])
+            if matches!(rr, Reg16::Bc | Reg16::De | Reg16::Hl | Reg16::Sp) =>
+        {
+            Ok(vec![ED_PREFIX, 0x4A | (rp_code(*rr) << 4)])
         }
         (Mnemonic::Inc, [Operand::Pair(rr)])
             if matches!(rr, Reg16::Bc | Reg16::De | Reg16::Hl | Reg16::Sp) =>
@@ -726,10 +797,55 @@ pub fn encode(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
         // answer rather than that arithmetic, because the arithmetic is what a
         // wrong table would also produce.
         (Mnemonic::Ldi, []) => Ok(vec![ED_PREFIX, 0xA0]),
+        (Mnemonic::Cpi, []) => Ok(vec![ED_PREFIX, 0xA1]),
+        (Mnemonic::Ini, []) => Ok(vec![ED_PREFIX, 0xA2]),
+        (Mnemonic::Outi, []) => Ok(vec![ED_PREFIX, 0xA3]),
+        (Mnemonic::Ldd, []) => Ok(vec![ED_PREFIX, 0xA8]),
+        (Mnemonic::Cpd, []) => Ok(vec![ED_PREFIX, 0xA9]),
+        (Mnemonic::Ind, []) => Ok(vec![ED_PREFIX, 0xAA]),
+        (Mnemonic::Outd, []) => Ok(vec![ED_PREFIX, 0xAB]),
         (Mnemonic::Ldir, _) => Ok(vec![ED_PREFIX, 0xB0]),
-        // im 1 = ED 56 (only mode 1 is in catalog scope; other modes not oracled).
+        (Mnemonic::Cpir, []) => Ok(vec![ED_PREFIX, 0xB1]),
+        (Mnemonic::Inir, []) => Ok(vec![ED_PREFIX, 0xB2]),
+        (Mnemonic::Otir, []) => Ok(vec![ED_PREFIX, 0xB3]),
+        (Mnemonic::Lddr, []) => Ok(vec![ED_PREFIX, 0xB8]),
+        (Mnemonic::Cpdr, []) => Ok(vec![ED_PREFIX, 0xB9]),
+        (Mnemonic::Indr, []) => Ok(vec![ED_PREFIX, 0xBA]),
+        (Mnemonic::Otdr, []) => Ok(vec![ED_PREFIX, 0xBB]),
+        // The two returns. ED 45 and ED 4D are one bit apart and the rest of
+        // that ED column is undocumented `retn` aliases, so neither is derived
+        // from the other.
+        (Mnemonic::Retn, []) => Ok(vec![ED_PREFIX, 0x45]),
+        (Mnemonic::Reti, []) => Ok(vec![ED_PREFIX, 0x4D]),
+        (Mnemonic::Rrd, []) => Ok(vec![ED_PREFIX, 0x67]),
+        (Mnemonic::Rld, []) => Ok(vec![ED_PREFIX, 0x6F]),
+        // I/O. The `(c)` forms put the register in bits 5..3 with direction in
+        // bit 0; note register A is code 7, so `in a,(c)` is ED 78 and not the
+        // low end of the column. The direct-port forms are unprefixed and take
+        // an 8-bit port: a wider value has no encoding at all, and asl answers
+        // `range overflow` rather than truncating, so this refuses too.
+        (Mnemonic::In, [Operand::Reg(r), Operand::IndC]) => {
+            Ok(vec![ED_PREFIX, 0x40 | (reg8_code(*r) << 3)])
+        }
+        (Mnemonic::Out, [Operand::IndC, Operand::Reg(r)]) => {
+            Ok(vec![ED_PREFIX, 0x41 | (reg8_code(*r) << 3)])
+        }
+        (Mnemonic::In, [Operand::Reg(Reg8::A), Operand::Mem(n)]) => {
+            Ok(vec![0xDB, port8(*n)?])
+        }
+        (Mnemonic::Out, [Operand::Mem(n), Operand::Reg(Reg8::A)]) => {
+            Ok(vec![0xD3, port8(*n)?])
+        }
+        // The three interrupt modes. These are NOT `0x46 | mode << 4`: that
+        // arithmetic gives 46/56/66, and ED 66 is a real undocumented `im 0`
+        // alias, so a table built from the pattern would emit bytes that read
+        // back as a plausible instruction. Each is asl's own answer. A mode
+        // outside 0..2 has no encoding and is refused, exactly as asl refuses
+        // `im 3` ("instruction not supported on Z80").
         (Mnemonic::Im, ops) => match ops {
+            [Operand::Imm8(0)] => Ok(vec![ED_PREFIX, 0x46]),
             [Operand::Imm8(1)] => Ok(vec![ED_PREFIX, 0x56]),
+            [Operand::Imm8(2)] => Ok(vec![ED_PREFIX, 0x5E]),
             _ => Err(IsaError::UnsupportedForm(format!("im {:?}", inst.ops))),
         },
         // Task 7: IX/IY indexed forms (DD/FD prefix)
@@ -1094,11 +1210,24 @@ mod tests {
             .unwrap(),
             vec![0xED, 0x56]
         );
-        // only mode 1 is in catalog scope; other modes are unsupported for M0.
+        // All three modes are in scope now, and they are NOT a linear series:
+        // 46/56/5E, where the pattern-derived 46/56/66 would put mode 2 on an
+        // undocumented `im 0` alias. Each is asl's own answer.
+        assert_eq!(
+            encode(&Instruction { mnemonic: Mnemonic::Im, ops: vec![Operand::Imm8(0)] }).unwrap(),
+            vec![0xED, 0x46]
+        );
+        assert_eq!(
+            encode(&Instruction { mnemonic: Mnemonic::Im, ops: vec![Operand::Imm8(2)] }).unwrap(),
+            vec![0xED, 0x5E]
+        );
+        // A mode outside 0..2 has no encoding; asl answers "instruction not
+        // supported on Z80" for `im 3`, and this refuses rather than masking it
+        // into one of the three that do exist.
         assert!(matches!(
             encode(&Instruction {
                 mnemonic: Mnemonic::Im,
-                ops: vec![Operand::Imm8(2)],
+                ops: vec![Operand::Imm8(3)],
             }),
             Err(IsaError::UnsupportedForm(_))
         ));

@@ -199,7 +199,27 @@ fn z80_writes_regs(mnem: &str, ops: &[CodeOperand]) -> Vec<usize> {
         // named here but absent would be claimed to preserve every register it
         // clobbers. That is why an arm lands in the SAME change as the encoder that
         // makes the mnemonic assemblable, never after it.
-        "ldi" | "ldir" => vec![idx("b"), idx("c"), idx("d"), idx("e"), idx("h"), idx("l")],
+        "ldi" | "ldd" | "ldir" | "lddr" => {
+            vec![idx("b"), idx("c"), idx("d"), idx("e"), idx("h"), idx("l")]
+        }
+        // The CP block searches compare against the accumulator and step hl
+        // while counting bc down. They never touch de, and never write `a`
+        // either: the accumulator is the value being searched FOR.
+        "cpi" | "cpd" | "cpir" | "cpdr" => vec![idx("b"), idx("c"), idx("h"), idx("l")],
+        // The IN and OUT block transfers step hl and decrement B ALONE (`c`
+        // holds the port and survives), so the counter half of bc is written
+        // and the port half is not.
+        "ini" | "ind" | "inir" | "indr" | "outi" | "outd" | "otir" | "otdr" => {
+            vec![idx("b"), idx("h"), idx("l")]
+        }
+        // The nibble rotates move a nibble between `a` and `(hl)`: the register
+        // half of that is a write to `a`, and the memory half is no register.
+        "rrd" | "rld" => vec![idx("a")],
+        // `in r,(c)` and `in a,(n)` both write their destination register, which
+        // is the first operand. `out` reads a register and writes none, and is
+        // named here rather than left to the default so it reads as a decision.
+        "in" => dst_units(ops.first()),
+        "out" => vec![],
         _ => vec![],
     }
 }
@@ -236,12 +256,14 @@ pub(crate) fn z80_produced_units(mnem: &str, ops: &[CodeOperand]) -> Vec<usize> 
 /// single carry table would miss the flag-ONLY writers (`inc`/`dec`/`bit`),
 /// reopening the hole.
 ///
-/// Flag-neutral: `ld` (moves never touch flags — the ISA's `ld i,a`/`ld r,a`
-/// (`LdIA`/`LdRA`) write `i`/`r`, not the flags. The flag-writing `ld a,i`/`ld a,r`
-/// READ forms — which load `a` and set S/Z + copy IFF2 into P/V — are unassemblable
-/// today (no `LdAI`/`LdAR` variant in the ISA `Mnemonic` enum) and MUST enter the
-/// F-writer set the day those forms land; see the gap ledger's kill condition. This
-/// is why `Psg_EnvCursorReset () preserves(af)` with a `ld (ix+d), 0` body stays green);
+/// Flag-neutral: `ld` (moves never touch flags: `ld i,a`/`ld r,a` write `i`/`r`,
+/// not the flags). The EXCEPTION is the two READ forms `ld a,i`/`ld a,r`, which
+/// load `a` and set S/Z while copying IFF2 into P/V: they are flag WRITERS, and
+/// the arm below carves exactly those two operand shapes back out of the `ld`
+/// allowlist. They landed with the ISA coverage work, so the kill condition this
+/// paragraph used to carry is spent. The carve-out is by OPERAND SHAPE and not by
+/// mnemonic, which is why `Psg_EnvCursorReset () preserves(af)` with a
+/// `ld (ix+d), 0` body stays green;
 /// `push`/`pop` (the preserve idiom — `pop af`'s `f` load is modeled through the
 /// slot machinery, not here, so `SndDrv_ISR preserves(af)` stays green via its
 /// `push af`/`pop af` bracket); `ex`/`exx` (data moves); the control transfers
@@ -251,6 +273,14 @@ pub(crate) fn z80_produced_units(mnem: &str, ops: &[CodeOperand]) -> Vec<usize> 
 /// rotate, `scf`/`ccf`, `ldir`&block ops. 16-bit `inc`/`dec` of a PAIR is
 /// flag-neutral; the 8-bit and memory forms write flags.
 fn z80_flag_neutral(mnem: &str, ops: &[CodeOperand]) -> bool {
+    // `ld a,i` and `ld a,r` are the two `ld` forms that WRITE the flags. Carved
+    // out by operand shape, before the mnemonic allowlist below can claim them.
+    if mnem == "ld"
+        && matches!(ops.first(), Some(CodeOperand::Z80Reg8(Z80Reg8::A)))
+        && matches!(ops.get(1), Some(CodeOperand::Z80RegI) | Some(CodeOperand::Z80RegR))
+    {
+        return false;
+    }
     match mnem {
         "ld" | "push" | "pop" | "ex" | "exx" | "jp" | "jr" | "djnz" | "call" | "rst" | "ret"
         | "reti" | "retn" | "set" | "res" | "out" | "nop" | "di" | "ei" | "halt" | "im" => true,
