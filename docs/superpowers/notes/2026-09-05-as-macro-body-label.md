@@ -161,6 +161,30 @@ MUT_HITS=3
 REF_NAMED=0
 ```
 
+**The stronger control — inject a macro-body label REFERENCED FROM OUTSIDE and
+watch the aeon build refuse it by name — CANNOT BE BUILT, and that is a finding
+rather than an omission.** Aeon's AS residual root is declared to emit nothing,
+and any PC label in it opens a section, so the build stops at
+`[layout.undeclared-alignment]` before symbol resolution is reached. Two
+injections were tried (a `dc.w` read and a byte-free `equ` read) and both
+produced that red. `poscontrol-refuse.sh` keeps the attempt together with the
+measurement that refutes it: a BARE FILE-LEVEL label, no macro anywhere, nothing
+this parcel touches, produces the IDENTICAL diagnostic.
+
+```text
+STEP 1  macro-body label + outside `equ` read
+        error: native build (sonic4 plain): [layout.undeclared-alignment] 1 section(s)
+STEP 2  a bare file-level label, nothing else
+        error: native build (sonic4 plain): [layout.undeclared-alignment] 1 section(s)
+STEP 3  unmutated
+        built: sonic4 plain native ROM — crc=1c09fbfc len=819131   BUILD_EXIT=0
+```
+
+So the refusal path is unreachable in the aeon build BY CONSTRUCTION, not merely
+absent from the source, and a step-1 red could never have been read as evidence
+for this rule. The refusal evidence lives entirely in the fixture file and its
+mutation gate.
+
 **s1's zero carries a caveat the aeon zero does not.** s1disasm produces 57
 front-end diagnostics, four of them on `MacroSetup.asm(98)` — its own macro
 definitions do not all survive the parse — so some macro bodies in that tree are
