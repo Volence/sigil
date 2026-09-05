@@ -3695,6 +3695,14 @@ impl Asm {
                     primary: span,
                 });
             }
+            // `exitm` takes NO operand. asl reports one as `wrong number of
+            // operands` and — the part worth reproducing — does NOT perform the
+            // exit: probe `e10`'s `exitm 1,2,junk` leaves the macro running and
+            // its trailing `dc.b $A1` still lands. Silently exiting on a line
+            // asl refuses would end an expansion early on a typo.
+            "exitm" if !rest.is_empty() => {
+                self.err(span, "`exitm` takes no operand");
+            }
             "exitm" => self.directive_exitm(span),
             "include" => self.directive_include(rest, span),
             // Real Aeon source spells this directive uppercase at all 43 call
