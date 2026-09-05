@@ -255,6 +255,154 @@ fn duplicate_define_key_message(src: &str, origin: &str) -> Option<String> {
     None
 }
 
+/// Where a merged define row was declared, as a phrase a diagnostic can paste in.
+///
+/// The merge ([`merge_builtin_and_game`]) guarantees the two sources are disjoint,
+/// so membership in `builtin` decides the answer with no ambiguity. This is derived
+/// from the same table the merge read rather than carried alongside the rows,
+/// because a carried origin is a second record of one fact and can go stale
+/// against it.
+fn define_origin(key: &str, builtin: &[(&'static str, i128)], map_origin: &str) -> String {
+    if builtin.iter().any(|(k, _)| *k == key) {
+        "the built-in profile row in crates/sigil-harness/src/native.rs".to_string()
+    } else {
+        format!("{map_origin} [defines]")
+    }
+}
+
+/// How the linked program already publishes a name — the OTHER origin a collision
+/// diagnostic has to name. Read off the listing row itself, so the phrase describes
+/// what the build actually produced rather than where it is believed to come from.
+fn published_origin(sym: &sigil_link::ListingSymbol) -> String {
+    if sym.is_equate {
+        format!(
+            "the program's own equate `{}` = ${:08X} (an `.emp` `pub equ`, a harvested \
+             engine/game constant, or a residual-AS `=`)",
+            sym.name, sym.value
+        )
+    } else {
+        format!("the program's own ADDRESS label `{}` at ${:08X}", sym.name, sym.value)
+    }
+}
+
+/// The `.lst` EQUATE rows for a shape's command-line define env — the game→engine
+/// `-D` interface values ([`crate::native::shape_defines`]) rendered so a
+/// `.lst`-reading tool can ask what `MAX_RING_BUFFER` is worth in THIS ROM instead of
+/// hardcoding a number that is wrong for the other game by construction (sonic4
+/// declares 128, demo declares 16).
+///
+/// # Listing-only, and why that is the whole ask
+///
+/// These rows are appended to the LISTING. They do not become link-level `EquSym`s
+/// the way the harvested `.emp`-owned constants do
+/// (`sigil_frontend_as::eval::attach_guarded_equ_exports`), and that is a deliberate
+/// narrowing rather than a shortcut:
+///
+///  * A reader — a debugger panel, `s4budget`, a person — needs the VALUE. Everything
+///    past the value is surface with no consumer.
+///  * A link-level symbol would let a bare `MAX_RING_BUFFER` in some `.asm`/`.emp`
+///    operand RESOLVE where it does not today. That is a language-surface change, and
+///    a silent one: an operand that is currently a loud unresolved-symbol error would
+///    start assembling. Bytes could move for a reason nothing in this parcel asked for.
+///  * The seeded-define contract says an in-file `=`/`equ` of the same name WINS over
+///    a command-line define (aeon's code-gate and game-config overrides depend on it).
+///    A link symbol has no such precedence rule — it would either duplicate or shadow,
+///    and the value a reader saw would stop being the value the code compiled against.
+///
+/// A listing row carries none of that: `sigil_link::emit_listing` puts equates in
+/// their own section after the address table, and `native::append_deb2_appendix`
+/// filters every equate out at the deb2 boundary, so the appendix — which IS ROM
+/// bytes — cannot grow. Byte-neutrality is therefore structural here, not measured.
+/// (It is measured anyway; see the parcel's four-shape CRC comparison.)
+///
+/// # Collision is a refusal, never a pick
+///
+/// A define whose name the linked program ALREADY publishes — as an address label or
+/// as an equate — is an error naming BOTH origins. One name with two origins in one
+/// listing is exactly the silent-wrong-value class: whichever row a consumer's regex
+/// hit first would become "the" answer, and the two answers can differ. The refusal
+/// says which declaration is which so the fix is a deletion or a rename, not a guess.
+///
+/// A value outside the `.lst` word — below `-0x8000_0000` or above `0xFFFF_FFFF` — is
+/// likewise refused rather than truncated. A negative value inside it renders as its
+/// two's-complement pattern, matching the emitter's existing policy for a negative
+/// equate.
+///
+/// `defines` is the merged env; `builtin` is the profile's built-in table (used only
+/// to name which of the two sources declared a colliding key); `published` is the
+/// listing built from the resolved sections; `map_origin` names the game's map file.
+/// EVERY fault is collected and reported, never the first.
+pub fn define_listing_rows(
+    defines: &[(String, i128)],
+    builtin: &[(&'static str, i128)],
+    published: &[sigil_link::ListingSymbol],
+    map_origin: &str,
+) -> Result<Vec<sigil_link::ListingSymbol>, String> {
+    use std::collections::HashMap;
+
+    let by_name: HashMap<&str, &sigil_link::ListingSymbol> =
+        published.iter().map(|s| (s.name.as_str(), s)).collect();
+
+    let mut faults: Vec<String> = Vec::new();
+    let mut rows: Vec<sigil_link::ListingSymbol> = Vec::with_capacity(defines.len());
+    let mut emitted: std::collections::HashSet<&str> = std::collections::HashSet::new();
+
+    for (key, value) in defines {
+        // A key twice in the merged env cannot happen through `shape_defines`
+        // (`merge_builtin_and_game` refuses it and TOML forbids a duplicate row), so
+        // this arm needs no population to be worth stating: it is the assertion that
+        // makes the guarantee local to this function instead of inherited from a
+        // caller a future one may not use.
+        if !emitted.insert(key.as_str()) {
+            faults.push(format!(
+                "define `{key}` appears twice in one shape's merged define env — a \
+                 define has exactly one row, and two rows would put one name in the \
+                 listing twice with (potentially) two values"
+            ));
+            continue;
+        }
+        if let Some(sym) = by_name.get(key.as_str()) {
+            faults.push(format!(
+                "define `{key}` collides with a name the linked program already \
+                 publishes. Two origins claim it: the command-line define (= {value}, \
+                 declared by {}) and {}. The listing answers \"what is this name \
+                 worth\", so one name must have one origin — sigil will not silently \
+                 pick either row. Delete the define, or rename one of the two \
+                 declarations",
+                define_origin(key, builtin, map_origin),
+                published_origin(sym),
+            ));
+            continue;
+        }
+        if *value < i128::from(i32::MIN) || *value > i128::from(u32::MAX) {
+            faults.push(format!(
+                "define `{key}` = {value} (declared by {}) does not fit the `.lst` \
+                 equate word: a listing value is 32 bits, and a truncated row would \
+                 read as a real answer. Narrow the declaration",
+                define_origin(key, builtin, map_origin),
+            ));
+            continue;
+        }
+        rows.push(sigil_link::ListingSymbol {
+            name: key.clone(),
+            // Two's complement for a negative value — the same rendering
+            // `emit_listing` documents for a negative equate.
+            value: (*value as i64) as u32,
+            is_equate: true,
+            unused: false,
+        });
+    }
+
+    if faults.is_empty() {
+        return Ok(rows);
+    }
+    Err(format!(
+        "{} define row(s) cannot reach the symbol listing:\n  {}",
+        faults.len(),
+        faults.join("\n  "),
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -516,5 +664,135 @@ at = 0x0
         )
         .unwrap_err();
         assert!(err.contains("GONE") && err.contains("STALE"), "{err}");
+    }
+
+    // ---------------------------------------------------------------------------
+    // `define_listing_rows` — the define→listing rows and their refusals.
+    // ---------------------------------------------------------------------------
+
+    fn addr(name: &str, value: u32) -> sigil_link::ListingSymbol {
+        sigil_link::ListingSymbol { name: name.into(), value, is_equate: false, unused: false }
+    }
+
+    fn equ(name: &str, value: u32) -> sigil_link::ListingSymbol {
+        sigil_link::ListingSymbol { name: name.into(), value, is_equate: true, unused: false }
+    }
+
+    fn rows(pairs: &[(&str, i128)]) -> Vec<(String, i128)> {
+        pairs.iter().map(|(k, v)| ((*k).to_string(), *v)).collect()
+    }
+
+    const BUILTIN: &[(&str, i128)] = &[("DEBUG", 0), ("MAX_RING_BUFFER", 128)];
+
+    #[test]
+    fn a_define_becomes_an_equate_row_carrying_its_value() {
+        // THE ASK: the value a `.lst` reader could not otherwise get. `is_equate`
+        // is what keeps it out of the Oracle address view and out of deb2.
+        let out = define_listing_rows(
+            &rows(&[("MAX_RING_BUFFER", 128)]),
+            BUILTIN,
+            &[addr("EntryPoint", 0x200)],
+            "games/sonic4/map.toml",
+        )
+        .unwrap();
+        assert_eq!(out.len(), 1, "{out:?}");
+        assert_eq!(out[0].name, "MAX_RING_BUFFER");
+        assert_eq!(out[0].value, 128);
+        assert!(out[0].is_equate, "a define is a VALUE, never an address row: {out:?}");
+    }
+
+    #[test]
+    fn a_define_colliding_with_a_published_equate_names_both_origins() {
+        // The harvested-constant collision — the case the parcel was asked to
+        // refuse. BOTH origins must appear, or the reader cannot tell which
+        // declaration to delete.
+        let err = define_listing_rows(
+            &rows(&[("MAX_RING_BUFFER", 128)]),
+            BUILTIN,
+            &[equ("MAX_RING_BUFFER", 64)],
+            "games/sonic4/map.toml",
+        )
+        .unwrap_err();
+        assert!(err.contains("MAX_RING_BUFFER"), "{err}");
+        assert!(
+            err.contains("crates/sigil-harness/src/native.rs"),
+            "the DEFINE's origin is missing: {err}"
+        );
+        assert!(
+            err.contains("the program's own equate") && err.contains("$00000040"),
+            "the PUBLISHED origin (and its differing value) is missing: {err}"
+        );
+        assert!(err.contains("will not silently pick"), "{err}");
+    }
+
+    #[test]
+    fn a_game_declared_define_collision_names_the_map_file_not_the_profile() {
+        // The other define origin. A key absent from the built-in table came from
+        // the game's own map, and the message must send the reader THERE.
+        let err = define_listing_rows(
+            &rows(&[("SCANLINE_CAPS", 20)]),
+            BUILTIN,
+            &[addr("SCANLINE_CAPS", 0x1234)],
+            "games/demo/map.toml",
+        )
+        .unwrap_err();
+        assert!(err.contains("games/demo/map.toml [defines]"), "{err}");
+        assert!(
+            !err.contains("crates/sigil-harness/src/native.rs"),
+            "a game row must not be attributed to the built-in table: {err}"
+        );
+        assert!(err.contains("ADDRESS label") && err.contains("$00001234"), "{err}");
+    }
+
+    #[test]
+    fn every_colliding_define_is_reported_never_just_the_first() {
+        let err = define_listing_rows(
+            &rows(&[("DEBUG", 1), ("MAX_RING_BUFFER", 128), ("SCANLINE_CAPS", 20)]),
+            BUILTIN,
+            &[equ("DEBUG", 0), addr("SCANLINE_CAPS", 8)],
+            "games/demo/map.toml",
+        )
+        .unwrap_err();
+        assert!(err.contains("2 define row(s)"), "{err}");
+        assert!(err.contains("DEBUG") && err.contains("SCANLINE_CAPS"), "{err}");
+    }
+
+    #[test]
+    fn a_value_wider_than_the_listing_word_is_refused_not_truncated() {
+        // A truncated row reads exactly like a real answer, which is the whole
+        // reason the collision above is a refusal too.
+        let err = define_listing_rows(
+            &rows(&[("HUGE", i128::from(u32::MAX) + 1)]),
+            BUILTIN,
+            &[],
+            "games/demo/map.toml",
+        )
+        .unwrap_err();
+        assert!(err.contains("HUGE") && err.contains("32 bits"), "{err}");
+    }
+
+    #[test]
+    fn a_negative_define_renders_as_its_twos_complement_pattern() {
+        // The emitter's existing policy for a negative equate; a define follows it
+        // rather than inventing a second rendering.
+        let out =
+            define_listing_rows(&rows(&[("BIAS", -1)]), BUILTIN, &[], "games/demo/map.toml")
+                .unwrap();
+        assert_eq!(out[0].value, 0xFFFF_FFFF, "{out:?}");
+    }
+
+    #[test]
+    fn a_name_the_program_does_not_publish_is_not_a_collision() {
+        // CONTROL: the shipped state. Every define name today is absent from every
+        // shipped listing, so a refusal here would fire on correct trees — the
+        // always-red shape this must not have.
+        let out = define_listing_rows(
+            &rows(&[("DEBUG", 0), ("MAX_RING_BUFFER", 16)]),
+            BUILTIN,
+            &[addr("EntryPoint", 0x200), equ("MDDBG__Foo", 0x400)],
+            "games/demo/map.toml",
+        )
+        .unwrap();
+        assert_eq!(out.len(), 2, "{out:?}");
     }
 }

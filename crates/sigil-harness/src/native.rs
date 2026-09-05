@@ -3641,8 +3641,28 @@ pub fn build_rom_chained_with_listing(
     enforce_inapplicable_allowlist_against(&inapplicable, &link_asserts, &profile.inapplicable_guards)?;
 
     // Sigil-canonical listing from the resolved image: one `C` row per label VMA
-    // plus one `-` row per folded equate.
-    let listing = listing_from_resolved(&resolved, &stubs);
+    // plus one `-` row per folded equate, plus one `-` row per COMMAND-LINE define.
+    //
+    // The define rows are the third population, and they come from a different place
+    // than the other two: a define is supplied BY THE BUILD (`shape_defines` — the
+    // profile's built-in rows merged with the game's `map.toml [defines]`), so it is
+    // in no source file the resolver walks and had no listing row at all. Its value
+    // is exactly what a reader cannot derive from the ROM: `MAX_RING_BUFFER` is 128
+    // for sonic4 and 16 for demo, and a tool that wants the ceiling had to hardcode
+    // one of the two and be wrong for the other. Listing-only, and refused on a
+    // collision — see `game_defines::define_listing_rows`.
+    let listing = {
+        let mut listing = listing_from_resolved(&resolved, &stubs);
+        let defines = shape_defines(profile, aeon)?;
+        let rows = crate::game_defines::define_listing_rows(
+            &defines,
+            &profile.emp_defines,
+            &listing,
+            &profile.map_path(aeon).display().to_string(),
+        )?;
+        listing.extend(rows);
+        listing
+    };
 
     let linked = sigil_link::link(&resolved, &stubs)
         .map_err(|d| format!("declared-chain: link: {} diag(s); first {:?}", d.len(), d.first()))?;
