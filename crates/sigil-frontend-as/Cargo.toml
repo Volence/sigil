@@ -11,3 +11,7 @@ sigil-span = { path = "../sigil-span" }
 
 [dev-dependencies]
 sigil-link = { path = "../sigil-link" }
+# `include` reads the filesystem, so an include fixture cannot be a string
+# literal — `as_include_repeat.rs` builds a real scratch tree per test. Already
+# in the lock via `sigil-cli`.
+tempfile = "3"
