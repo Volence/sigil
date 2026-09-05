@@ -3951,3 +3951,42 @@ what resolves, which is a different proof.
 decimal and strings/character values as their characters, behind a census of every
 `\{}` site in both corpora and a four-shape CRC32+size re-proof — note the aeon
 population is measurably ZERO, so the corpora are the only evidence a fix would have)
+
+### `MOMPASS` is not implemented, so every `if MOMPASS...` was a branch chosen with no basis (2026-09-05)
+Found by the `if`-condition refusal in `2026-09-05-as-undefined-sym-panic-and-silent-if.md`,
+which turned the silent choice into a loud one: 7 of the 11 corpus sites the refusal
+newly reports are `MOMPASS`, at `s2.asm(88574)` / `(91270)`, `s2.constants.asm(972)`,
+`s2.macros.asm(119)` / `(224)`, `s2.sounddriver.asm(297)` and
+`sound/_smps2asm_inc.asm(258)`. asl's `MOMPASS` is the current pass number, and the
+corpus idiom is `if MOMPASS>1` / `if MOMPASS=1` guarding a sanity check or a `message`.
+Sigil left the name undefined, so `eval_all` poisoned and the `if` read FALSE: the guarded
+block was dropped every time, silently, exactly as the `resolve_sym` doc comment predicted
+for `MOMCPU`/`TRUE`/`FALSE` before those were implemented.
+
+Not implemented by that parcel deliberately. Sigil iterates to a fixpoint rather than
+running asl's fixed two passes, so what `MOMPASS` should REPORT is a design question, and
+answering it wrong changes bytes in whichever direction it moves the guarded blocks. aeon
+names `MOMPASS` in 0 files, so the corpora are the only population.
+-- OPEN (kill: decide what `MOMPASS` means for a convergence-iterating assembler, seed it
+beside `MOMCPU`/`TRUE`/`FALSE` in the builtin resolver, and re-run the s2disasm corpus
+decomposition expecting those 7 rows to go GONE with nothing appearing)
+
+### `&&` binds TIGHTER than `=` in asl and looser in sigil (2026-09-05)
+Probe `prec.asm` under `2026-09-05-as-undefined-sym-panic-and-silent-if-probes/`, asl
+exit 0 so its values are usable:
+
+| written (`K equ 3`, `J equ 4`) | asl | sigil |
+|---|---|---|
+| `dc.l (K*2)=6&&(J<>3)` | `00000000` | `00000001` |
+| `dc.l ((K*2)=6)&&((J<>3))` | `00000001` | `00000001` |
+| `dc.l (K*2)=6` | `00000001` | `00000001` |
+| `dc.l 6&&(J<>3)` | `00000001` | `00000001` |
+
+asl reads the first as `6 = (6 && 1)` = `6 = 1` = 0. The three parenthesised rows agree,
+which isolates it to precedence rather than to any operator's own semantics. Same
+silent-wrong-answer class as the `if` fault, and byte-affecting wherever it appears in a
+condition. Population is effectively zero in the disassemblies, which parenthesise both
+sides of `&&`/`||` throughout, which is also why no byte gate has ever caught it.
+-- OPEN (kill: an asl precedence probe over the full operator table, not just this pair,
+then one change to `expr.rs`'s binding powers behind that table; the census comes first
+because a precedence change is global and this is one measured cell of it)

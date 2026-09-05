@@ -107,6 +107,59 @@ pub fn link(sections: &[Section], stubs: &SymbolTable) -> Result<LinkedImage, Ve
         }
     }
 
+    // Pass 1c: refuse any WIDTH-DEFERRED fragment that reached here still
+    // un-lowered, as a diagnostic rather than a panic.
+    //
+    // `JmpJsrSym`/`RelaxAbsSym`/`RelaxLadder` are `resolve_layout`'s input and
+    // never its output, so one arriving at `link()` means either the caller
+    // skipped `resolve_layout` or the target names a symbol nothing in this link
+    // defines. The second is an ordinary user mistake (`jsr Nowhere` in a
+    // hand-written file), and it used to reach the user as
+    // `internal error: entered unreachable code`, exit 101, from the write-cursor
+    // replay in `Section::image_bytes` a few lines below. An internal-error
+    // message with no source location is not an answer to "which line is wrong",
+    // and a panic exit status is not one either.
+    //
+    // Both halves are distinguished here rather than merged, because they ask
+    // different people for different things: an unresolved target names the
+    // symbol and the section, in the same voice as `resolve_layout`'s own
+    // refusal, so the two seams say the same thing about the same source; a
+    // target that DOES fold is a caller-contract violation, and says so.
+    //
+    // This runs before `Section::image_bytes` (Pass 2) so the panic is
+    // unreachable from `link()` by construction rather than by convention. The
+    // `unreachable!`s stay where they are: `image_bytes` has no way to report,
+    // and its other callers are internal.
+    let no_overlay = std::collections::HashMap::new();
+    for sec in sections {
+        for frag in &sec.fragments {
+            let (what, target) = match frag {
+                Fragment::JmpJsrSym { target, .. } => ("jmp/jsr target", target),
+                Fragment::RelaxAbsSym { target, .. } => ("symbolic absolute operand", target),
+                Fragment::RelaxLadder { target, .. } => ("branch/ladder target", target),
+                _ => continue,
+            };
+            let span = relax::frag_span(frag);
+            let message = match target.fold(&|n| syms.resolve(n, None)) {
+                Fold::Poison => {
+                    let name = relax::first_unresolved_sym(target, &syms, &no_overlay)
+                        .unwrap_or_else(|| "<unknown>".to_string());
+                    format!(
+                        "unresolved {what} in section {} references symbol `{name}` \
+                         not defined in this link",
+                        sec.name
+                    )
+                }
+                Fold::Value(_) => format!(
+                    "internal: a width-deferred {what} in section {} reached link() \
+                     un-lowered; the caller must run resolve_layout first",
+                    sec.name
+                ),
+            };
+            diags.push(diag(message, span));
+        }
+    }
+
     if diags.iter().any(|d| d.level == Level::Error) {
         return Err(diags);
     }
@@ -896,6 +949,72 @@ mod tests {
         assert_eq!(
             linked.sections[0].bytes,
             vec![0x11, 0x00, 0x00, 0x00, 0x00, 0x11, 0x22, 0x33, 0x44]
+        );
+    }
+
+    /// A section carrying one un-lowered `JmpJsrSym`, for the two halves of the
+    /// Pass-1c refusal. `target` decides which half: an absent symbol is the
+    /// user's mistake, a present one is the caller's.
+    fn unlowered_jmpjsr_section(target: &str) -> Section {
+        Section {
+            name: "s".into(),
+            cpu: Cpu::M68000,
+            vma_base: Some(0),
+            lma: 0,
+            labels: vec![],
+            fragments: vec![Fragment::JmpJsrSym {
+                is_jsr: true,
+                target: Expr::Sym(target.into()),
+                span: span(),
+            }],
+            placement: SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
+            bank: None,
+            equ_syms: Vec::new(),
+        }
+    }
+
+    /// The fault this parcel closes, at the layer it lives on. A width-deferred
+    /// `jsr` whose target names nothing used to reach `Section::image_bytes` and
+    /// die there on `unreachable!`; it is a diagnostic naming the symbol.
+    ///
+    /// The assertion is on `link` RETURNING at all: a panic fails this test by
+    /// unwinding, so no message match is needed to catch a regression to the old
+    /// behaviour. The message match is the second half, that the answer is about
+    /// the user's symbol rather than about the linker.
+    #[test]
+    fn an_unlowered_jmpjsr_with_an_absent_target_is_a_diagnostic() {
+        let diags = link(&[unlowered_jmpjsr_section("Nowhere")], &SymbolTable::new())
+            .expect_err("an absent jmp/jsr target must be refused");
+        assert_eq!(diags.len(), 1, "one fragment, one diagnostic: {diags:?}");
+        assert!(
+            diags[0].message.contains("`Nowhere`"),
+            "the refusal must name the symbol: {}",
+            diags[0].message
+        );
+        assert!(
+            !diags[0].message.contains("internal"),
+            "an absent symbol is the user's mistake, not an internal one: {}",
+            diags[0].message
+        );
+    }
+
+    /// The other half: the target folds, so the fragment is un-lowered because
+    /// the CALLER skipped `resolve_layout`. That is a contract violation and
+    /// says so, but it is still a diagnostic rather than a panic, because a
+    /// library that aborts the process denies its caller any way to report.
+    #[test]
+    fn an_unlowered_jmpjsr_with_a_resolvable_target_names_the_contract() {
+        let mut syms = SymbolTable::new();
+        syms.define("Here", SymbolValue::Int(0x1000));
+        let diags = link(&[unlowered_jmpjsr_section("Here")], &syms)
+            .expect_err("an un-lowered fragment must be refused");
+        assert_eq!(diags.len(), 1, "one fragment, one diagnostic: {diags:?}");
+        assert!(
+            diags[0].message.contains("resolve_layout"),
+            "the refusal must tell the caller what it skipped: {}",
+            diags[0].message
         );
     }
 

@@ -791,6 +791,14 @@ struct Asm {
     /// one source position, not one per expansion. Keyed by NAME as well as
     /// span, so `dc.l a0+a1` still names both registers.
     reg_faults_seen: std::collections::HashSet<(u32, u32, u32, String)>,
+    /// `(source, start, end)` triples [`Self::report_unresolved_cond`] has
+    /// already ruled on this pass, for the same reason the two sets above exist.
+    /// One `if MOMPASS=1` inside a macro that the corpus expands 81 times is one
+    /// condition at one source position; without this the s2disasm run printed
+    /// that one line 81 times and the 11 distinct positions were unreadable
+    /// under 114 rows. Not keyed by name: a condition has one verdict, unlike
+    /// `dc.l a0+a1`, which names two registers.
+    cond_faults_seen: std::collections::HashSet<(u32, u32, u32)>,
     /// Remaining `while`-body-execution budget for THIS pass (per-`Asm`, so it
     /// resets each pass). Complements the per-loop `WHILE_CAP`: two NESTED
     /// non-convergent `while`s each bounded at `WHILE_CAP` still multiply to
@@ -1045,6 +1053,7 @@ impl Asm {
             poison_refs: Vec::new(),
             arg_faults_seen: std::collections::HashSet::new(),
             reg_faults_seen: std::collections::HashSet::new(),
+            cond_faults_seen: std::collections::HashSet::new(),
             while_budget: GLOBAL_WHILE_CAP,
             pending_equ_syms: Vec::new(),
             defer_unresolved_jsr_jmp,
@@ -3209,13 +3218,30 @@ impl Asm {
         for w in 0..(heads.len() - 1) {
             let head = heads[w];
             let (kw, argtoks, span) = self.line_kw_args_checked(&lines[head]);
-            let take = match kw.as_deref() {
+            let verdict = match kw.as_deref() {
                 Some("if") | Some("ifdef") | Some("ifndef") => {
                     self.eval_cond(kw.as_deref().unwrap(), &argtoks, span)
                 }
                 Some("elseif") => self.eval_if_expr(&argtoks, span),
-                Some("else") => true,
-                _ => false,
+                Some("else") => Some(true),
+                _ => Some(false),
+            };
+            // A condition with no verdict is REFUSED, not read as false. The
+            // arm is still skipped so the rest of the pass has a shape to walk
+            // (and so the error is one line rather than a cascade), but the run
+            // now fails: silently taking the false branch made a typo in a
+            // condition name delete the code it guarded, byte-for-byte
+            // identical to an explicit `if 0`, with exit 0 and nothing said.
+            let take = match verdict {
+                Some(t) => t,
+                None => {
+                    self.report_unresolved_cond(
+                        kw.as_deref().unwrap_or("if"),
+                        &argtoks,
+                        span,
+                    );
+                    false
+                }
             };
             if take {
                 let body = &lines[head + 1..heads[w + 1]];
@@ -3942,10 +3968,16 @@ impl Asm {
         Some((field, width, count))
     }
 
-    fn eval_cond(&mut self, kw: &str, arg_toks: &[Token], span: Span) -> bool {
+    /// The verdict of one `if`/`ifdef`/`ifndef` head, or `None` when the
+    /// condition does not evaluate at all.
+    ///
+    /// `ifdef`/`ifndef` always answer: not-defined IS their answer, and asl
+    /// prints `=>UNDEFINED` and exits 0 for `ifdef Nowhere` (probe
+    /// `ifdef_undef`). Only the numeric/string `if` can fail to produce one.
+    fn eval_cond(&mut self, kw: &str, arg_toks: &[Token], span: Span) -> Option<bool> {
         match kw {
-            "ifdef" => self.cond_defined(arg_toks),
-            "ifndef" => !self.cond_defined(arg_toks),
+            "ifdef" => Some(self.cond_defined(arg_toks)),
+            "ifndef" => Some(!self.cond_defined(arg_toks)),
             _ => self.eval_if_expr(arg_toks, span),
         }
     }
@@ -3958,7 +3990,15 @@ impl Asm {
     /// (in)equality, else numeric `!= 0`. Strings never enter `sigil_ir::Expr`
     /// (§7.4: no AS-specific concept in IR) — the shape is detected and folded
     /// to a bool directly here, before any numeric `Expr` is built.
-    fn eval_if_expr(&mut self, toks: &[Token], span: Span) -> bool {
+    ///
+    /// `None` means the condition produced NO verdict: the string shape did not
+    /// match and the numeric fold did not resolve. It used to be spelled `false`
+    /// here, and `false` is a verdict: an undefined condition was then
+    /// byte-for-byte indistinguishable from an explicit `if 0`, so a typo in a
+    /// condition name deleted the code it guarded and the build exited 0. The
+    /// caller ([`Self::exec_if`]) is what turns `None` into a refusal, because
+    /// only the caller knows which keyword to name.
+    fn eval_if_expr(&mut self, toks: &[Token], span: Span) -> Option<bool> {
         if let Some(pos) = toks
             .iter()
             .position(|t| matches!(t.tok, Tok::Punct(Punct::Eq) | Tok::Punct(Punct::Ne)))
@@ -3976,11 +4016,64 @@ impl Asm {
                 if let Some(lhs) = lhs {
                     let eq = lhs == *rhs;
                     let is_ne = matches!(toks[pos].tok, Tok::Punct(Punct::Ne));
-                    return if is_ne { !eq } else { eq };
+                    return Some(if is_ne { !eq } else { eq });
                 }
             }
         }
-        self.eval_all(toks, span).map(|v| v != 0).unwrap_or(false)
+        self.eval_all(toks, span).map(|v| v != 0)
+    }
+
+    /// Refuse an `if`/`elseif` head whose condition produced no verdict.
+    ///
+    /// The refusal fires at the site, on every pass, and only the CONVERGED
+    /// pass's diagnostics are returned, the same arrangement `rept` and `while`
+    /// already use for their own unresolved-count/condition words. That is what
+    /// keeps a legitimate FORWARD reference legal: sigil resolves `if Later` by
+    /// iterating to a fixpoint, so a name defined later in the file, or in a file
+    /// included after the `if`, or by a later `set`, has a value by the time the
+    /// returned pass runs and no refusal is raised. (asl is stricter here, not
+    /// looser: its rule is `expression must be evaluatable in first pass`, and it
+    /// refuses all four of those shapes with exit 2. Refusing only what is still
+    /// unresolved at convergence is therefore strictly weaker than the reference,
+    /// and cannot red a program asl accepts.)
+    ///
+    /// A register already reported at this span keeps its own word and gets no
+    /// second line about a missing definition, exactly as `org` and `rept` do.
+    fn report_unresolved_cond(&mut self, kw: &str, toks: &[Token], span: Span) {
+        if self.register_reported_at(span) {
+            return;
+        }
+        if !self
+            .cond_faults_seen
+            .insert((span.source.0, span.start, span.end))
+        {
+            return;
+        }
+        let name = self.first_unresolved_cond_name(toks);
+        let msg = match name {
+            Some(n) => format!(
+                "unresolved {kw} condition: `{n}` has no value, so this condition \
+                 cannot decide whether the code it guards is assembled"
+            ),
+            None => format!(
+                "unresolved {kw} condition: it does not evaluate, so it cannot \
+                 decide whether the code it guards is assembled"
+            ),
+        };
+        self.err(span, msg);
+    }
+
+    /// The first symbol in a condition that has no value, for the refusal's
+    /// message. Parsed the same way [`Self::eval_all`] parses it (the builtin
+    /// expansions first, so a `strlen(...)`-style call is not mistaken for an
+    /// undefined name), and `None` when the tokens do not parse at all.
+    fn first_unresolved_cond_name(&mut self, toks: &[Token]) -> Option<String> {
+        let expanded = self.expand_calls(toks, 0);
+        let expanded = self.expand_int_builtin(&expanded);
+        let expanded = self.expand_str_builtins(&expanded);
+        let expanded = self.expand_str_comparisons(&expanded);
+        let (e, _) = crate::expr::parse_expr(&expanded)?;
+        self.unresolved_names(&e).into_iter().next()
     }
 
     /// The string value of a builtin like MOMCPUNAME (else None).
