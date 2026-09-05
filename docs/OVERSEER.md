@@ -1105,3 +1105,48 @@ argument than a green run, because a green run samples inputs while this quantif
 and was silently reading FALSE and dropping its block at 7 of the corpus's 11 firing sites; and `&&`
 binds tighter than `=` in asl and looser here, so `(K*2)=6&&(J<>3)` is `0` there and `1` here, with
 near-zero corpus population only because the disassemblies parenthesise.
+
+### A CONTROL CAN BE CONFOUNDED BY THE VERY THING IT CONTROLS FOR (MOMPASS, 2026-09-05)
+
+*(Landed `f1673ba2`, after this seat HELD the first version. Three lessons, and the first is the one
+this document did not already have.)*
+
+**1. "Pre-existing" is a CLAIM, and it needs its own control, which can itself be confounded.** The
+parcel booked a discarded `fatal` as a pre-existing fault it merely widened, supported by a control
+file whose before/after behaviour was identical. **The control was confounded by the fault it
+existed to isolate:** its `fatal` sat behind a condition that folded to `Poison` on the first
+iteration, so the arm was skipped and **the `fatal` never executed at all**. Identical before and
+after was perfectly real and meant nothing.
+
+Re-controlled three other ways, the truth was the opposite and sharper: **the parcel did not widen
+that fault, it CREATED THE ONLY POPULATION THERE IS.** The structural reason is worth keeping: a
+`fatal` aborts its pass, which truncates the environment, so whatever would flip its condition never
+runs and it re-fires on every pass. Anything preceding it has the same value every iteration.
+`MOMPASS` is the sole exception, because it flips for a reason internal to the assembler rather than
+to the program. **A "this was already broken" finding is exactly as falsifiable as a "this is newly
+broken" one and deserves the same instrument.**
+
+**2. FIDELITY IS A COST, NOT A GOAL, AND THE COST IS MEASURABLE.** `asl` literally terminates on a
+`fatal`, so the faithful hard stop is the obvious implementation and was written first. Measured, it
+**cut s1disasm from 50 located diagnostics to 1 and skdisasm from 2132 to 1**, the survivor in each
+being a line already printed. Matching the reference exactly would have destroyed the tool's own
+diagnostic output. The shipped design CARRIES the diagnostic instead, deduped: **strictly additive,
+louder never quieter**, which is the property to reach for whenever a change touches reporting.
+**Implement the faithful reading first BECAUSE it is cheap to measure, then let the measurement
+choose.**
+
+**3. HOLDING A PARCEL OVER A LOUDNESS REGRESSION COST ONE MESSAGE AND WAS RIGHT.** The first version
+was silent at exit 0 on a shape where master was loud at exit 1 and asl loud at exit 3. The hold
+named the shape, gave the three measurements, offered three acceptable outcomes including "your
+reading is wrong", and refused to design the fix. What came back was a narrow fix, a refutation of
+the parcel's own framing, **and a defect in the fix itself found on disk rather than in theory**: ids
+are handed out in splice order, so a carried span reported a `fatal` written in `inc/c.asm` as
+`inc/b.asm(1)`, a real file and a real line and the wrong one. **Do not accept a report's own
+severity classification when the landing consequence is checkable in three commands.**
+
+**Both remaining divergences are pinned AS NAMED TESTS** (`one_pass_asl_file_is_a_known_divergence`,
+`mompass_eq_two_guarding_an_emission_diverges_from_asl`) so they read as decisions rather than as
+oversights a later session might "fix" without knowing they were chosen. `warning` and `message` on a
+non-final pass are still dropped, deliberately: unlike `fatal`, asl keeps assembling past a `warning`
+and prints it once per pass, so a later pass genuinely does supersede it. Booked with a kill
+condition rather than left implicit.
