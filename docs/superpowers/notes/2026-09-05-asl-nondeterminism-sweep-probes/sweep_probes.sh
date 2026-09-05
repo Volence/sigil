@@ -26,6 +26,13 @@
 # is itself swept (it matches `*-probes`), so the control travels with the sweep
 # and cannot rot away from it. A run against that binary reporting zero UNSTABLE
 # is a broken sweep, not a clean corpus.
+#
+# NATIVE=1 keeps a control too, and a different one: `2026-09-04-as-end-probes`
+# names the s2disasm build itself, so `wimm.asm` and `wrange.asm` must come back
+# UNSTABLE in native mode as well. (The `s_*`/`u_*` probes here do NOT fire under
+# NATIVE=1 — this directory's own scripts name s1disasm first, so native mode
+# assembles them with the stable build. That is correct behaviour and not a
+# regression; the live control in native mode is the `as-end` pair.)
 set -uo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 REPO="$(cd "$HERE/../../../.." && pwd)"   # docs/superpowers/notes/<this dir>/ → repo root
@@ -51,8 +58,9 @@ cp -r "$REPO"/docs/superpowers/notes/*-probes "$WORK"/
 # one asl invocation, whole stream, declocked
 stream() {
     local dir="$1" f="$2" base="${2%.asm}"
+    local A="${DIR_ASLDIR:-$ASLDIR}"
     rm -f "$dir/$base.p" "$dir/$base.lst"
-    ( cd "$dir" && AS_MSGPATH="$ASLDIR" timeout 60 "$ASLDIR/asl" -xx -n -q -A -L -U -i "$dir" "$f" 2>&1; echo "ASL_EXIT=$?" ) 2>/dev/null
+    ( cd "$dir" && AS_MSGPATH="$A" timeout 60 "$A/asl" -xx -n -q -A -L -U -i "$dir" "$f" 2>&1; echo "ASL_EXIT=$?" ) 2>/dev/null
     echo "=== LISTING ==="
     cat "$dir/$base.lst" 2>/dev/null
 }
@@ -61,8 +69,32 @@ total=0; stable=0; unstable=0; timedout=0; crashed=0
 declare -a UNSTABLE_ROWS=()
 declare -a OVERSTRIP_ROWS=()
 
+# ── NATIVE MODE: sweep each corpus with the binary ITS OWN RUNNER NAMES ──────
+# The probe directories are NOT all pinned to the same assembler. Three of them
+# — `2026-09-04-as-end-probes`, `2026-09-04-as-warning-exitm-probes` and
+# `2026-09-05-as-interp-radix-probes` — hard-code the s2disasm path, which is
+# the build that carries the value instability; the rest use s1disasm. Sweeping
+# every corpus with one binary therefore answers the wrong question for three of
+# them: it can report a corpus stable under an assembler its own note never ran.
+#
+#     NATIVE=1 ./sweep_probes.sh 20
+#
+# reads each directory's runner and uses the binary named there, falling back to
+# $ASLDIR for a directory whose scripts name none.
+NATIVE="${NATIVE:-0}"
+native_asldir() {
+    local dir="$1" hit
+    hit="$(grep -rhoE '/home/volence/sonic_hacks/[a-z_0-9.-]+/(build_tools/[A-Za-z0-9_-]+|tools/as)' "$dir" --include='*.sh' 2>/dev/null | sort | uniq -c | sort -rn | head -1 | awk '{print $2}')"
+    if [[ -n $hit && -x $hit/asl ]]; then printf '%s' "$hit"; else printf '%s' "$ASLDIR"; fi
+}
+
 for dir in "$WORK"/*-probes; do
     dname="$(basename "$dir")"
+    DIR_ASLDIR="$ASLDIR"
+    if [[ $NATIVE == 1 ]]; then
+        DIR_ASLDIR="$(native_asldir "$dir")"
+        printf '# %-42s asl %s\n' "$dname" "$(md5sum "$DIR_ASLDIR/asl" | cut -d' ' -f1)"
+    fi
     for path in "$dir"/*.asm; do
         [[ -e $path ]] || continue
         f="$(basename "$path")"
