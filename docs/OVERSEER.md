@@ -1150,3 +1150,48 @@ oversights a later session might "fix" without knowing they were chosen. `warnin
 non-final pass are still dropped, deliberately: unlike `fatal`, asl keeps assembling past a `warning`
 and prints it once per pass, so a later pass genuinely does supersede it. Booked with a kill
 condition rather than left implicit.
+
+### SHELL `grep -r` IS A FUNCTION HERE AND SKIPS GITIGNORED FILES, RETURNING A CLEAN ZERO
+
+*(Reported by the aeon lane at aeon `56e42f00`, reproduced by aurora with a canary, and REPRODUCED
+HERE before being banked. It had already put a false "symbol appears nowhere" into one lane's brief.)*
+
+`type grep` on this machine returns **"grep is a shell function"**, sourced from the harness's shell
+snapshot. That function's `-r` **skips gitignored paths and reports success with no output and no
+error**. Everything this lane generates is gitignored: listings, ROMs, build directories, generated
+corpus files, probe output.
+
+**Reproduced here, and the first attempt was VOID, which is the part worth carrying.** The canary
+went into a file that turned out not to be gitignored, so both greps found it and the test could not
+have come out any other way. Redone with `git check-ignore -v` confirming the path first:
+
+```
+canary in a verified-ignored path
+  shell `grep -r CANARY .`      ->  0 matches, exit 0, no error
+  /usr/bin/grep -r CANARY .     ->  FOUND IT
+```
+
+**Pick the instrument by what the subject IS:**
+
+- **tracked source** (corpus `.asm`/`.inc`, our `.rs`, docs): `git grep`, which is also faster and
+  respects the repo boundary;
+- **ignored artifacts** (a listing, an output binary, anything under a build dir): `/usr/bin/grep -r`
+  by absolute path, never bare `grep -r`;
+- **either, when a zero would be a finding**: plant a canary of the same class, confirm it is ignored,
+  and confirm the instrument finds it *before* believing the zero.
+
+**AUDIT OF THIS LANE'S 2026-09-05 MEASUREMENTS, run rather than asserted.** No reported zero came
+through this path. The dash counts used `git grep -l` plus a Rust-aware lexer; the aeon
+nameless-label and MOMPASS populations used `git ls-files` and `git grep`; the corpus logical-operator
+count used `git grep`; the aeon three-root assertions ran the assembler over named files rather than
+searching text; and the one bare `grep -r` over a directory (`crates/sigil-frontend-emp/src/`)
+returned a NON-zero result and holds only tracked source anyway. **This audit is worth the five
+minutes precisely because the failure is invisible: a lane that had been bitten would look exactly
+like a lane that had not.**
+
+**And it is the FOURTH instrument that returned a confident wrong zero to this lane in one day**, all
+different mechanisms: a `git grep` pathspec that matched no files; a hand-rolled lexer desynchronised
+by a char literal; a peer's `\|` alternation inside `$'...'` under zsh; and now this. **The rule is
+not "watch out for greps", it is that AN EMPTINESS IS NEVER A FINDING WITHOUT AN INSTRUMENT THAT
+COULD HAVE RETURNED NON-EMPTY.** Same family as `cmd | sed ... || echo`, where the `||` binds to the
+whole pipeline.
