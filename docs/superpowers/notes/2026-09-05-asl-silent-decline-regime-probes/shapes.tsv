@@ -1,0 +1,61 @@
+# id <TAB> the one source line under test
+#
+# Every shape is assembled ALONE, in the preamble `sigil_today.sh` builds, with
+# an accepted `move.w #$A101,d0` above it and `move.w #$A202,d0` below. Its own
+# emitted word is therefore self-classifying on asl: `A101` means asl DECLINED
+# to value the operand and substituted the last word it computed; anything else
+# is an answer; nothing at all means the line emitted no code.
+#
+# Names in the preamble:
+#   fu  function p,(p*7)+$100     body USES its parameter          fu(5)=$123
+#   fi  function p,$3C7           body IGNORES its parameter       fi(5)=$3C7
+#   g   function q,q+$10                                           g(5)=$15
+#   f2  function p,q,(p*7)+q      two parameters                   f2(5,7)=$2A
+#   k   = 3                       an ordinary equate
+#   dsp = $2A / dsp function p,(p*7)+$100   a name spelled BOTH ways
+#
+# The values share no digits with each other or with the $Annn carry setters, so
+# no two readings of a line can produce the same word.
+imm_fn_reg_body_uses	\tmove.w\t#fu(a1),d0
+imm_fn_reg_body_ignores	\tmove.w\t#fi(a1),d0
+imm_fn_reg_data	\tmove.w\t#fu(d3),d0
+imm_fn_reg_sp	\tmove.w\t#fu(sp),d0
+imm_fn_reg_a7	\tmove.w\t#fu(a7),d0
+imm_fn_reg_uppercase	\tmove.w\t#fu(A1),d0
+imm_fn_reg_pc	\tmove.w\t#fu(pc),d0
+imm_fn_reg_sr	\tmove.w\t#fu(sr),d0
+imm_fn_reg_ccr	\tmove.w\t#fu(ccr),d0
+imm_fn_reg_usp	\tmove.w\t#fu(usp),d0
+imm_fn_reg_sized	\tmove.w\t#fu(a1.w),d0
+imm_fn_reg_in_expr	\tmove.w\t#fu(1+a1),d0
+imm_fn_reg_nested_inner	\tmove.w\t#fu(g(a1)),d0
+imm_fn_reg_nested_outer	\tmove.w\t#g(fu(a1)),d0
+imm_fn_reg_arg1_of_2	\tmove.w\t#f2(a1,5),d0
+imm_fn_reg_arg2_of_2	\tmove.w\t#f2(5,a1),d0
+imm_fn_reg_plus_good_call	\tmove.w\t#fu(a1)+fu(5),d0
+imm_bare_reg	\tmove.w\t#a1,d0
+imm_reg_in_expr	\tmove.w\t#1+a1,d0
+dcw_fn_reg	\tdc.w\tfu(a1)
+dcb_fn_reg	\tdc.b\tfu(a1)
+dcl_fn_reg	\tdc.l\tfu(a1)
+dcw_bare_reg	\tdc.w\ta1
+dcw_reg_in_expr	\tdc.w\ta1+0
+equ_fn_reg_then_use	eq\t=\tfu(a1)\n\tdc.w\teq
+equ_bare_reg_then_use	rs\t=\ta1\n\tdc.w\trs
+ea_dst_fn_reg	\tmove.w\t#$1234,fu(a1)
+ea_dst_fn_reg_insn2op	\tmove.w\t#$1234,1+fu(a1)
+ea_src_fn_reg	\tmove.w\tfu(a1),d0
+imm_fn_string_arg	\tmove.w\t#fu('ab'),d0
+imm_fn_undef_arg	\tmove.w\t#fu(zz),d0
+imm_fn_undef_arg_body_ignores	\tmove.w\t#fi(zz),d0
+imm_undef_fn_reg_arg	\tmove.w\t#nofn(a1),d0
+# ---- CONTROLS. Every one of these has an answer, and it is stated in the
+# ---- expectation column of the note's table. A control that comes back as a
+# ---- carry-over word means the harness itself is broken.
+ctl_imm_fn_int	\tmove.w\t#fu(5),d0
+ctl_imm_fn_nested	\tmove.w\t#fu(fu(5)),d0
+ctl_imm_f2_int	\tmove.w\t#f2(5,7),d0
+ctl_dcw_fn_int	\tdc.w\tfu(5)
+ctl_ea_dsp_equate	\tmove.w\t#$1234,dsp(a1)
+ctl_ea_dsp_insn2op	\tmove.w\t#$1234,1+dsp(a1)
+ctl_ea_call_in_disp	\tmove.w\t#$1234,dsp(k)+2(a1)
