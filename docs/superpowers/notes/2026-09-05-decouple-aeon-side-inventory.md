@@ -88,6 +88,55 @@ refuses a violation; a dashboard that prints a number is not a check.
 | **D6** | An anchor must hold **that particular section** — anchor identity is address-only. | **1** (the declaration carries a `name` that means nothing) | `games/*/map.toml` `[[anchor]] name = …` | **nowhere.** `validate_placement` keys anchors by `a.at` in a `HashMap<u32, &str>`; the name is carried only into diagnostic text. | Prior note's `ANCHOR_BINDS_SECTION`, still unimplemented. A re-layout that lands a different section on an anchor address satisfies every existing check. **The pressure on this rose since the prior note**: `seam2::bank_anchors_from_str` now looks up `dac_banks` and `sound_bank` **by name**, so a name-keyed consumer already exists on the shipped path. |
 | **D7** | The error_handler island must be the FINAL byte-emitting section in every shape carrying it — the vendored MDDBG blob locates its deb2 appendix through PC-relative displacements baked into opaque bytes pointing at `ErrorHandlerBlob + $F56`. | **1** (map prose) + **2** (`.emp` header) | `games/sonic4/map.toml`, the INVARIANT block; `engine/debug/error_handler.emp` header WARNING | sigil `native::check_error_handler_is_last` | Nothing. R8 again. |
 
+### Class F — TERMINUS PROXIES: a named label standing in for "the end of the region"
+
+**This is the class the sigil-side inventories could not see, and it is the reason this pass was
+owed.** Each row computes a region's high-water mark from *one hardcoded label*, and each then
+feeds a gate that passes. Violate the proxy and the number is wrong-but-plausible; the gate goes
+green on a real breach.
+
+| # | Proxy | Source | Anchor | Status | What lapses |
+|---|---|---|---|---|---|
+| **F1** | `Art_Sonic` stands for "the end of the packed data run". | **1** | `tools/bganim_room.py` `LAST_PACKED_LABEL` (a bare module constant), consumed by `rom_room()` | **ASSUMPTION** — nothing verifies it. See B7. | B6 and B8 both pass while the reserve is gone. |
+| **F2** | `Art_Sonic`'s ROM extent equals `len(art/optimized/characters/sonic.bin)` exactly — i.e. its section holds exactly one embed and nothing (pad, trailing content) follows it inside the section. | **1** | `tools/bganim_room.py` `rom_room()` (`end = LMA + blob_len`), length via `art_sonic_bytes()` parsing `const _art_sonic = embed(...)` out of `collision_data.emp` | **ASSUMPTION** | Understates `packed_end` by the pad; same green-on-breach as F1. `map.toml` concedes the fragility in its own words — *"a section with several embeds has no such instrument"* — which is why the character-data sections were ordered before `collision_data`. |
+| **F3** | `DeformTable_Zero` stands for "the object bank's high-water mark" — the bank and the data region pack contiguously, so the head of the first section *past* the bank is the bank terminus. | **1** | `games/sonic4/map.toml` `[[budget]] cursor`, consumed by `tools/s4budget.py` `resolve_budgets()` (`used = addr − region.lma_base`) | **ASSUMPTION**, and an explicit one — the map comment names its ancestry: this proxy replaced the AS-era `if * > $20000 / error` guard and the retired `__BUDGET_DATA` sentinel. A real terminus was traded for a proxy label. | If the bank and data stop packing contiguously, or any bank content lands after the cursor, `used` is wrong and the `$20000` ceiling is silently unenforced. **Note this is the same value B4 reports as already-decoupled: the *ceiling* is declared, the *measurement of what is under it* is not.** |
+| **F4** | `EndOfRom` equals the ROM file size. | **1** | `tools/s4budget.py` `format_rom_report()` | **ASSUMPTION, and structurally un-failable** — the disagreement is printed as `NOTE: EndOfRom and the ROM file differ by …` and is **never appended to `breaches`**, so it cannot fail a build. Verified firsthand: the note is emitted in `format_rom_report`; `breaches` is built separately and takes only the ROM-limit and budget rows. | Padding, a stale file, and a real placement error read identically. |
+| **F5** | The three sound-bank art regions' extents equal their embed lengths (`Art_Sonic`, `Art_Tails`, `Art_TailsAppendage`, `Art_Knuckles`). | **1** | `tools/dplc_straddle.py` `SUBJECTS` / `load_subjects()` | **ASSUMPTION** for the extent (a missing label is a loud `Unmeasurable`) | Feeds the straddle calculation C1, so a pad silently shifts which frames are judged to cross a boundary. |
+| **F6** | `sound_bank == dac_banks + 0x10000`. | **1** | `tools/bganim_room.py` `SOUND_BANK_OFFSET = 2 * BANK_ALIGN` | **ASSUMPTION, and not even that** — verified firsthand: the constant appears at its definition and **twice inside one f-string in the failure message**, and nowhere else. There is no comparison against the declared `sound_bank` anchor. | The two anchors can drift apart with nothing on aeon's side noticing. The relation is stated in `map.toml`'s BANK PLACEMENT RULE and asserted by no one. |
+| **F7** | Growth in `ojz_bg_anim` shifts the whole run `Map_TestObj .. Art_Sonic` downstream into the room under `dac_banks`. | **1** | docstrings of `tools/bganim_room.py` ("WHAT LIMITS THE SECTION") and `tools/inject_editor_bg.py` | **ASSUMPTION** — the ordering premise that makes the ceiling arithmetic mean anything | If the section stops being upstream of `Art_Sonic`, or a gap absorbs its growth, B8 measures the wrong room. |
+
+### Class G — ADJACENCY PINS: a hardcoded neighbour name standing in for "the next thing emitted"
+
+Seven instances across five gates. Each derives a symbol's **size** from the *address of a
+named neighbour*, which is an assertion about emission order that nothing verifies. All are
+source **1**, all **ASSUMPTION**, all post-sigil, all `sonic4`-only, all skipped under `FAST=1`.
+
+| # | Pinned adjacency | Anchor |
+|---|---|---|
+| **G1** | `ObjDef_Static` immediately follows `OJZ_Reels_Fill`; `OJZ_Reel_Speed` immediately precedes it. | `tools/reels_gate.py` `NEXT_SYM` / `SPEED_SYM` / `FILL_SYM`. Its own comment grounds the claim in `map.toml`'s `order`, and records that it *"measured red the first time this file was drafted"* when a block landed between two symbols another gate depended on. |
+| **G2** | `OJZ_TestPal` immediately follows `OJZ_BaseSwap`. | `tools/plane_base_swap_gate.py` `SYM` / `NEXT_SYM`. Its comment explicitly **rejects** "the next label in address order" as a derivation and pins the name instead. |
+| **G3** | `Parallax_Update` immediately follows the routine under test. | `tools/plane_role_swap_gate.py` `NEXT_SYM` |
+| **G4** | `ParallaxConfig_OJZ_Default` → `ParallaxConfig_OJZ_Underwater` → `DeformTable_OJZ_Calm` are three consecutively emitted symbols, in that order. | `tools/band_drift_golden.py` `CFG_SYM` / `NEXT_SYM` / `CHECK_SYM` — `sizeof(parallax_config)` is **derived** from `(nxt − cfg) − count*stride`. Partially self-defending: two independent pairs must agree, so a re-order usually surfaces as a loud `Unmeasurable`. **Only usually** — a re-derivation moving all three by equal amounts agrees and is wrong. |
+| **G5** | A routine's ROM extent is `[LMA, next non-local symbol above it)`. | `routine_extent()` in `tools/instashield_gate.py`, `tools/sprite_tilt_gate.py`, `tools/loop_crossover_gate.py`. **Its violation is LOUD but MISATTRIBUTED**: alignment inserted by a re-derivation makes capstone decode fill bytes, and these gates' own comments describe the symptom (*"the extent is not a clean instruction run"*, *"execution left the extent"*) as a code defect, not a layout change. |
+
+### Class H — declared on aeon's side, consumed by nothing on aeon's side
+
+**This is the structural finding, and it is what makes the precondition answerable.** Verified
+firsthand: `grep -rnE '\["order"\]|get\("order"' tools/*.py build.sh` returns **zero hits**.
+
+| # | Declaration | Read by any aeon tool? | Enforced where |
+|---|---|---|---|
+| **H1** | `map.toml`'s root `order` array | **no** | sigil `native::validate_placement` only |
+| **H2** | `[[hole]]` after `Z80_IdleProgram` | **no** | sigil `native::hole_interior_faults` only |
+| **H3** | the `object_bank` (`0x10000`) and `boot_head` (`0x0`) anchors | **no** — `bganim_room.anchor_addr()` takes a `name` defaulting to `"dac_banks"` and is only ever called with the default | sigil `validate_placement` + `validate_resolved_alignment` |
+| **H4** | the `sound_bank` anchor | **no** (F6: named only in a message string) | sigil `validate_placement` + `validate_resolved_alignment`; its `vma`↔`at` phase: **nowhere** (A7) |
+| **H5** | the fault-handler-island-is-last INVARIANT block | **no** — grep of `tools/` for `deb2`/`convsym`/`EndOfRom` finds no consumer | sigil `native::check_error_handler_is_last` only (verified firsthand at sigil master) |
+| **H6** | the `z80_sound_bank` region (`lma_base = 0xB8000`, `vma_base = 0x8000`) | **no** | **nothing** — the map marks it DESCRIPTIVE ONLY and records that it sat wrong (mid-`Map_Tails`) for months with nothing noticing. Not a constraint today; named because **retiring the frozen tables is exactly when a descriptive-only region becomes either load-bearing or a lie again.** |
+
+**Seven aeon-side assumptions (F1, F3, F7, G1–G4) cite `order` as their justification. Nothing
+on aeon's side reads it.** Today that is harmless because the frozen tables hold the order still;
+the moment they stop, the justification and the mechanism are in different repos with no link.
+
 ### Class E — the ROM-only-answerable gates that a re-derivation must keep working
 
 These are not placement *constraints*; they are placement-*dependent instruments*. They are here
@@ -100,6 +149,21 @@ wrong thing is worse than no gate.
 | **E2** | `tools/s4budget.py` | 1 | `parse_listing`'s `ListingFormatError` | The listing format. Its docstring records the prior defect: a dead parser reported `RAM: 0KB/64KB (0%)` for a long time. It now validates and refuses; UNMEASURED is never rendered as a number. |
 | **E3** | `tools/dplc_straddle.py` | 1 | `boundary_from_source()` | That `dma_queue.emp` still spells the split with `blo .split`. Deliberately derives rather than pins — the pattern the other tools should follow. |
 | **E4** | the listing-presence guard in `build.sh` | 1 | the `[[ "$FAST" == "0" && ! -f "${ROM_NAME}.lst" ]]` refusal | Named as a build bug, with *"Do not convert this to a skip"* in the source. It exists because a `-f` guard once made a missing listing a silent skip of `s4budget`, the seam gate and the BG-anim ceiling together. |
+| **E5** | every ROM-reading gate's `rom[sym & 0xFFFFFF]` | 1 | 43 files under `tools/` spell `& 0xFFFFFF` (measured); the gates among them are `row_remap_gate.py`, `sprite_tilt_gate.py`, `instashield_gate.py`, `loop_crossover_gate.py`, `reels_gate.py`, `band_drift_golden.py`, `editor_palette_golden.py`, `plane_base_swap_gate.py`, `waterline_art_gate.py` | **A symbol's LMA masked to 24 bits is its byte offset in the ROM file.** The mask itself is correct — the 68000 address bus is 24 bits — so this is *not* a defect. It is a **latent** assumption: it is already conditionally false in this tree, because `map.toml`'s `sound_bank` anchor declares `vma = 0x8000` ≠ its LMA. No gate reads a banked symbol today, so it holds by luck of subject choice rather than by construction. Recorded so a future gate over a banked symbol does not inherit it silently. |
+| **E6** | `tools/gen_sound_tables.py` `emit_emp_z80()`, `tools/song_packer.py` | 1, **off the build path** | the emitted `section sound_tables_z80 (cpu: z80, vma: $8000)` and its *"the byte-exact $8000-based layout is load-bearing"*; `song_packer`'s 16-bit stream offsets the loader adds the `$8000`-window pointer to | The Z80 bank's one-window co-residency (A1/A2's runtime premise). These are **authoring-time generators whose output is committed** — `build.sh` never re-runs them, so nothing on the build path re-checks that the bank still fits one window or that `bankid()` folding still lands. The `ensure`s A1–A5 are what catch it, which is the right place; noted so nobody mistakes the generators for a gate. |
+
+**Read and genuinely clean of ROM-placement constraints** (stated rather than omitted, because
+"I found nothing" and "I could not look" are different sentences): `art_rom_report.py` — a byte
+*footprint* budget (`ART_ROM_SOFT_KB`/`ART_ROM_HARD_KB`), no address ever appears;
+`effects_budget_check.py` — `.emp` constants against `effects_budget_model.toml`, cycle budgets;
+`effects_seam_gate.py` — uses the listing for symbol *presence* as reachability evidence, never
+for addresses; `verify_level_bin.py` — referential integrity of the generated tree, and its
+`(align: N)` appears only in a regex that *tolerates* the annotation, never parses it;
+`level_staleness.py` — mtime + sha256, no addresses at all; `build.sh` itself — `stat`s the ROM
+and prints a percentage of 4 MB with no comparison. Also read and clean: `dac_encode.py`,
+`dac_verify.py`, `sfx_transcode.py`, `dplc_layout.py`, `vram_map.py` (format/encode/VRAM tools),
+and `dma_straddle_reading.py` (an emulator-driven measurement *session*, not a gate — it records
+the reading that only Knuckles straddles, one boundary at `0x60000`, frame `$88`).
 
 ---
 
