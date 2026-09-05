@@ -1065,3 +1065,43 @@ reads identically whether the code ran and agreed or never ran at all.
 **Over-firing is the dangerous direction for a new refusal and was checked here on both binaries**: a
 symbol legitimately named `a0` still assembles, real addressing modes are untouched, and a genuine
 forward reference still defers instead of being called a register.
+
+### THE `if` REFUSAL: how a new refusal on the shipping path was cleared without an aeon build
+
+*(Landed `d9f00a3e`. Recorded because the clearing argument is reusable and because the agent
+escalated correctly rather than pushing through.)*
+
+Fault 1 made the assembler **refuse** what it had accepted, which is the direction that reds correct
+code. The agent answered the design question with evidence and it **inverted the assumption in the
+brief**: **sigil is the MORE permissive assembler here.** It resolves a forward reference in an `if`
+by iterating passes to a fixpoint; `asl` refuses a forward `equ`, a forward label, a forward `set`
+and an include-after-the-`if`, all four at exit 2. **So keying the refusal on CONVERGENCE rather than
+on asl's first-pass rule is strictly weaker than the reference and cannot red anything asl accepts.**
+Keyed on asl's own rule it would have red four legitimate shapes. That is a BLOCKED question answered
+rather than assumed, and the answer chose the design.
+
+**The agent TAGGED an aeon risk it could not close and named the settling command (a strict landing
+run on a provisioned tree). It was closed here two cheaper ways, and both are reusable:**
+
+- **By MEASUREMENT, on the whole population rather than a sample.** Aeon's AS-routed surface is three
+  files and **its include closure was verified self-contained earlier the same day** (both
+  `game_root.asm` include only `engine/debug/debugger.asm`, which includes nothing). The new binary
+  over all three gives **zero firings**, and both game roots assemble at **exit 0 with zero rows**,
+  which is conclusive for the third file because each of them includes it. **The direction is sound
+  too:** a standalone run defines FEWER symbols than the real build, so it can only OVER-report; a
+  clean standalone result therefore implies a clean real one. State that direction, because a
+  standalone run is otherwise easy to dismiss as unrepresentative.
+- **By CONSTRUCTION, from the code being replaced.** All three width-deferred arms in the old
+  `link()` were `unreachable!`, so **any build reaching them PANICKED**. The change is strictly panic
+  to diagnostic and **cannot turn a green build red**. Reading the OLD code settled in one command
+  what a build would have cost hours to demonstrate.
+
+**The generalisable move: when a change makes something newly refuse, ask what the OLD code did on
+the same path.** If the old path was a panic, an `unreachable!`, or an already-failing branch, the
+new refusal cannot regress a working build and no build is needed to prove it. That is a stronger
+argument than a green run, because a green run samples inputs while this quantifies over them.
+
+**Two rows opened rather than closed, both silent-wrong-answer class:** `MOMPASS` is unimplemented
+and was silently reading FALSE and dropping its block at 7 of the corpus's 11 firing sites; and `&&`
+binds tighter than `=` in asl and looser here, so `(K*2)=6&&(J<>3)` is `0` there and `1` here, with
+near-zero corpus population only because the disassemblies parenthesise.
