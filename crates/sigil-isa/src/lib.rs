@@ -72,3 +72,13 @@ pub mod m68k_decode;
 /// rung ladder) is the front-end's ruling — this table prices resolved
 /// categories only.
 pub mod m68k_cycles;
+
+/// Identify the `asl` build behind a golden-vector mint, at the point of use.
+///
+/// Used by the `gen-*-vectors` generators to stamp the file they write with the
+/// digest of the assembler they were handed, and to refuse to write one they
+/// cannot identify. It stamps rather than constrains: `ASL_BIN` still names any
+/// build, the choice is just no longer unrecorded. `sigil-frontend-as`'s
+/// `gen_snippet_vectors` includes this same source by path — the two crates
+/// share no dependency edge and neither carries third-party dependencies.
+pub mod asl_provenance;
