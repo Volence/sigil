@@ -431,10 +431,31 @@ alternative, not taken.**
 
 **⚠ THE ORACLE EXISTS, AND THIS PARAGRAPH SAID IT DID NOT — corrected 2026-09-03 after four
 parcels had been run without it.** A working **`asl` 1.42 Beta Bld 212** is committed in the
-corpus repo at `s2disasm/build_tools/Linux-x86_64/asl` (with `as.msg` beside it, and `p2bin` /
-`saxman`). It runs. It is a **differential oracle for the entire AS-replacement project** — the
-name-composition parcel used `asl -L` for every expected value in every new test, which is why
-that delivery could quote listings instead of asserting semantics. **Use it.**
+corpus repos. It runs. It is a **differential oracle for the entire AS-replacement project** —
+the name-composition parcel used `asl -L` for every expected value in every new test, which is
+why that delivery could quote listings instead of asserting semantics. **Use it.**
+
+**⚠ BUT NOT THE COPY THIS PARAGRAPH USED TO NAME. It said
+`s2disasm/build_tools/Linux-x86_64/asl`, which is the ONE BUILD HERE THAT ANSWERS
+INCONSISTENTLY** *(measured 2026-09-05; this file was pointing every fresh session at it, by
+path, with the words "Use it")*.
+
+- **USE** `s1disasm/build_tools/Linux-x86_64/asl`, md5 **`61e672562465725a8c102288a7da9098`**.
+  `skdisasm`'s copy is the identical binary.
+- **REFUSE** `s2disasm/build_tools/…/asl`, md5 **`0dee1f98e6480a4783d27ffd8b90896f`**. For any
+  operand it declined to give a value — an undefined symbol, a range-refused immediate — it
+  returns a **different answer every run** with zero errors reported. The mechanism is an
+  uninitialized read; it collapses to a constant under `setarch -R`.
+
+**THE BANNER CANNOT DISCRIMINATE: both print `Macro Assembler 1.42 Beta [Bld 212]` verbatim.**
+So a runner or a note that names the VERSION has not identified its instrument, and a path is
+not an identity either. **Select and cite by MD5.** The shared guard is
+`docs/superpowers/notes/asl-reference/asl_ref.sh`, whose own `selfcheck.sh` proves it refuses
+the varying build rather than merely claiming to.
+
+*(Counting note, since this lane published a wrong one: "four binaries, one bad" was four PATHS
+and TWO PROGRAMS. The ratio is one bad build of two, and four was a count of what someone
+happened to check rather than a population.)*
 
 **Why it survived four parcels:** `git grep asl` **in the sigil repo** returns the 68000 shift
 mnemonic, so a true local finding hardened into a claim about the workspace. The rule is protocol
