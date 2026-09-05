@@ -364,7 +364,7 @@ mod tests {
         let addr = emit_listing(&[sym("OJZ_GradientStream", 0x10AF2, false, false)]);
         assert!(
             addr.lines().any(head_re),
-            "the transcribed LST_HEAD_RE matches no address row — the control is broken:\n{addr}"
+            "the transcribed LST_HEAD_RE matches no address row, the control is broken:\n{addr}"
         );
         assert!(addr.lines().any(gate_probe), "the transcribed gate probe is broken:\n{addr}");
         assert!(addr.lines().any(sym_row), "the transcribed _SYM_ROW_RE is broken:\n{addr}");

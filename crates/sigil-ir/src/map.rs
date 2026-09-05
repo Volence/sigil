@@ -66,7 +66,7 @@ impl MemoryMap {
         let cap = r.lma_base as u64 + r.size as u64;
         if cursor_lma as u64 > cap {
             return Err(format!(
-                "budget region `{}` [{:#X},{cap:#X}) overflows — cursor {cursor_lma:#X} over by {} bytes",
+                "budget region `{}` [{:#X},{cap:#X}) overflows, cursor {cursor_lma:#X} over by {} bytes",
                 r.name, r.lma_base, cursor_lma as u64 - cap
             ));
         }
@@ -84,7 +84,7 @@ impl MemoryMap {
             // §7.3: report the overflow amount ("over by N bytes") so the budget
             // miss is actionable, naming the region and its end address.
             return Err(format!(
-                "section `{name}` [{lma:#X},{end:#X}) overflows region `{}` (ends {region_end:#X}) — over by {} bytes",
+                "section `{name}` [{lma:#X},{end:#X}) overflows region `{}` (ends {region_end:#X}), over by {} bytes",
                 r.name, end - region_end
             ));
         }

@@ -225,7 +225,7 @@ fn bank_diag(placed: &[Section], rungs: &[Vec<usize>]) -> Option<Diagnostic> {
             return Some(Diagnostic {
                 level: Level::Error,
                 message: format!(
-                    "section `{}` ({:#X} bytes) cannot fit a {:#X} bank — over by {} bytes",
+                    "section `{}` ({:#X} bytes) cannot fit a {:#X} bank, over by {} bytes",
                     sec.name,
                     final_sz,
                     n,
@@ -340,7 +340,7 @@ fn run_overrun_diag(sec: &Section, rungs: &[usize]) -> Option<Diagnostic> {
                     return Some(Diagnostic {
                         level: Level::Error,
                         message: format!(
-                            "section `{}`: content before `org {:#X}` grew to {:#X} — it overruns the org target by {} bytes (a relaxable instruction widened past the org barrier)",
+                            "section `{}`: content before `org {:#X}` grew to {:#X}, it overruns the org target by {} bytes (a relaxable instruction widened past the org barrier)",
                             sec.name,
                             target,
                             cursor,
@@ -530,7 +530,7 @@ fn rung_reaches(
         other => Err(Diagnostic {
             level: Level::Error,
             message: format!(
-                "internal: RelaxLadder candidate carries unsupported fixup kind {other:?} in section {section} — a ladder rung's reach must be one of PcRel8/PcRelDisp16/Abs16Be/Abs32Be/Z80JrRel8/Value16Le (construction-contract violation)"
+                "internal: RelaxLadder candidate carries unsupported fixup kind {other:?} in section {section}, a ladder rung's reach must be one of PcRel8/PcRelDisp16/Abs16Be/Abs32Be/Z80JrRel8/Value16Le (construction-contract violation)"
             ),
             primary: span,
         }),
@@ -616,7 +616,7 @@ fn resolve_layout_impl(
                     construction_errs.push(Diagnostic {
                         level: Level::Error,
                         message: format!(
-                            "internal: empty RelaxLadder (zero candidates) in section {} — the front-end must emit at least one candidate encoding",
+                            "internal: empty RelaxLadder (zero candidates) in section {}, the front-end must emit at least one candidate encoding",
                             sec.name
                         ),
                         primary: *span,
@@ -627,7 +627,7 @@ fn resolve_layout_impl(
                     construction_errs.push(Diagnostic {
                         level: Level::Error,
                         message: format!(
-                            "internal: mis-ordered RelaxLadder in section {} — candidate lengths must be non-decreasing (found {} bytes followed by {}); the front-end must order candidates smallest → largest",
+                            "internal: mis-ordered RelaxLadder in section {}, candidate lengths must be non-decreasing (found {} bytes followed by {}); the front-end must order candidates smallest → largest",
                             sec.name,
                             w[0].bytes.len(),
                             w[1].bytes.len()
@@ -685,7 +685,7 @@ fn resolve_layout_impl(
             return Err(vec![Diagnostic {
                 level: Level::Error,
                 message: format!(
-                    "section `{}` mixes an `org` back-patch with a `ds`/reserve — unsupported (reserve advances VMA but not image bytes, so the org target's image offset diverges)",
+                    "section `{}` mixes an `org` back-patch with a `ds`/reserve, unsupported (reserve advances VMA but not image bytes, so the org target's image offset diverges)",
                     sec.name
                 ),
                 primary: org_span,
@@ -1264,7 +1264,7 @@ fn unresolved_abs_target_diag(
     } else {
         format!(
             "unresolved {what} in section {section} references symbol \
-             `{name}` not defined in this link — expected when compiling a cross-seam module \
+             `{name}` not defined in this link, expected when compiling a cross-seam module \
              standalone; supply the map/harness composition that defines it"
         )
     };
@@ -1289,7 +1289,7 @@ fn unresolved_ladder_target_diag(
     let is_equ = placed.iter().any(|s| s.equ_syms.iter().any(|e| e.name == name));
     let message = if is_equ {
         format!(
-            "unresolved branch/ladder target in section {section}: `{name}` is an equ — \
+            "unresolved branch/ladder target in section {section}: `{name}` is an equ, \
              branch targets must be labels; use jmp/jsr for an absolute target"
         )
     } else {
@@ -1318,7 +1318,7 @@ fn out_of_reach_diag(cand: &RelaxCandidate, frag_start: u32, target: i64, span: 
             // bra/bsr should switch to jbra/jbsr (which fall back to jmp/jsr).
             let disp = target - site_vma;
             format!(
-                "[branch.out-of-reach] branch target in section {section} is {disp} bytes away (max \u{00B1}32766); a conditional branch has no far form (jbcc trampolines are deferred, D2.18) — for an unconditional bra/bsr, use jbra/jbsr instead"
+                "[branch.out-of-reach] branch target in section {section} is {disp} bytes away (max \u{00B1}32766); a conditional branch has no far form (jbcc trampolines are deferred, D2.18), for an unconditional bra/bsr, use jbra/jbsr instead"
             )
         }
         FixupKind::PcRel8 => {
@@ -1843,7 +1843,7 @@ mod tests {
         assert!(d(-128), "-128 is the last reachable backward displacement");
         assert!(!d(-129), "-129 must NOT reach");
         // The two special cases the arithmetic alone would not give you.
-        assert!(!d(0), "disp 0 is the word-form escape — unencodable as `.s`");
+        assert!(!d(0), "disp 0 is the word-form escape, unencodable as `.s`");
         assert!(d(1) && d(-1), "±1 are ordinary reachable displacements");
     }
 
@@ -1868,7 +1868,7 @@ mod tests {
         assert!(!d(128), "+128 must NOT reach");
         assert!(d(-128), "-128 is the last reachable backward displacement");
         assert!(!d(-129), "-129 must NOT reach");
-        assert!(d(0), "disp 0 IS encodable on Z80 — no word-form escape to collide with");
+        assert!(d(0), "disp 0 IS encodable on Z80, no word-form escape to collide with");
     }
 
     /// The always-reaching rungs really do always reach — the top of each ladder,

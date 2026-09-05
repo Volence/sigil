@@ -340,7 +340,7 @@ pub fn check_link_asserts(
                 let missing = unresolved_sym_leaves(&a.cond, &lookup);
                 let message = if missing.iter().any(|n| n.starts_with("__here$")) {
                     "internal: deferred link assertion has an unresolvable condition \
-                     (an anchor label was never defined) — this is a compiler bug in the \
+                     (an anchor label was never defined), this is a compiler bug in the \
                      `here()`-relaxation fix, not a source error"
                         .to_string()
                 } else if missing.is_empty() {
@@ -351,7 +351,7 @@ pub fn check_link_asserts(
                     let names: Vec<String> = missing.iter().map(|n| format!("`{n}`")).collect();
                     format!(
                         "link assertion condition references symbol(s) {} not defined in this \
-                         link — expected when compiling a cross-seam module standalone; supply \
+                         link, expected when compiling a cross-seam module standalone; supply \
                          the map/harness composition that defines them",
                         names.join(", ")
                     )
@@ -390,7 +390,7 @@ fn unexported_label_hint(name: &str, syms: &SymbolTable) -> Option<String> {
     let suffix = format!("${owner}${label}");
     if syms.any_key_with_suffix(&suffix) {
         Some(format!(
-            " — `{owner}` defines a label `.{label}` but it is not exported; add \
+            ", `{owner}` defines a label `.{label}` but it is not exported; add \
              `export .{label}:` at its definition to reference it as `{owner}.{label}`"
         ))
     } else {
@@ -594,7 +594,7 @@ fn apply_fixup(
             // PcRel8 fixups), so AS-port byte-exactness is untouched.
             if disp == 0 {
                 diags.push(diag(
-                    format!("bra.s/Bcc.s displacement{target_name} is 0 in section {section} — a 0x00 byte displacement is the 68000 word-form escape, not a branch to the next instruction (use .w, or pick a real target)"),
+                    format!("bra.s/Bcc.s displacement{target_name} is 0 in section {section}, a 0x00 byte displacement is the 68000 word-form escape, not a branch to the next instruction (use .w, or pick a real target)"),
                     span,
                 ));
                 return;

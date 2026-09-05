@@ -103,10 +103,10 @@ fn push_banner(s: &mut String, tool: &str, banner: &[String]) {
         push_field(
             s,
             &label,
-            "(none — this tool prints no version string, so its digest is its",
+            "(none, this tool prints no version string, so its digest is its",
         );
         s.push_str(&format!(
-            "# {:<LABEL_W$}  only identity — which is the general case, stated plainly)\n",
+            "# {:<LABEL_W$}  only identity, which is the general case, stated plainly)\n",
             ""
         ));
     } else {
@@ -121,19 +121,19 @@ fn push_banner(s: &mut String, tool: &str, banner: &[String]) {
 /// for a correctness claim has made the exact error this header exists to
 /// prevent, so the header says so rather than merely qualifying itself.
 const PREAMBLE: &[&str] = &[
-    "PROVENANCE — generated. This records WHICH BUILD ANSWERED.",
+    "PROVENANCE, generated. This records WHICH BUILD ANSWERED.",
     "",
     "Do NOT read it as a claim that the answer is correct, and do not cite it as one.",
     "asl substitutes a value for an operand it declines to evaluate rather than",
-    "refusing to emit, and on a given build that substitute is stable — it echoes the",
-    "last value that build computed — so it re-mints identically and reads like a",
+    "refusing to emit, and on a given build that substitute is stable, it echoes the",
+    "last value that build computed, so it re-mints identically and reads like a",
     "measurement. Re-derivability is evidence about the INSTRUMENT and never about",
     "the vectors. The question a digest cannot answer is whether asl answered at all;",
     "for that see docs/superpowers/notes/2026-09-05-asl-gen-vector-provenance-probes/.",
     "",
     "Identity is the digest. Four asl builds in this workspace print the same version",
     "banner and are different programs, so the banner below discriminates nothing; it",
-    "is human context. The install path is deliberately absent — it is not a property",
+    "is human context. The install path is deliberately absent, it is not a property",
     "of the binary and would churn this header between machines holding the identical",
     "build. Regenerate with the generator named below; a diff here means the",
     "instrument changed.",
@@ -150,7 +150,7 @@ fn identify(path: &Path, banner: BannerSource) -> Result<ToolIdentity, String> {
     let bytes = std::fs::read(path)
         .map_err(|e| format!("cannot read {} to identify it: {e}", path.display()))?;
     if bytes.is_empty() {
-        return Err(format!("{} is empty — refusing to stamp it", path.display()));
+        return Err(format!("{} is empty, refusing to stamp it", path.display()));
     }
     let md5 = md5_hex(&bytes);
     let banner = match banner {
@@ -167,7 +167,7 @@ fn identify(path: &Path, banner: BannerSource) -> Result<ToolIdentity, String> {
                 text.lines().take(2).map(|l| l.trim_end().to_string()).collect();
             if lines.is_empty() || lines[0].is_empty() {
                 return Err(format!(
-                    "{} printed no banner on stdout — refusing to stamp a tool it \
+                    "{} printed no banner on stdout, refusing to stamp a tool it \
                      cannot describe",
                     path.display()
                 ));
@@ -354,7 +354,7 @@ mod tests {
         }
         assert!(
             found.is_empty(),
-            "{} hex-digest literal(s) outside the RFC test block — a stamp must be \
+            "{} hex-digest literal(s) outside the RFC test block, a stamp must be \
              derived from the binary, never quoted:\n{}",
             found.len(),
             found.join("\n")
