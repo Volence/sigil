@@ -21,8 +21,9 @@ Branch `parcel/as-register-diagnostic-residue`, off master `742c7366`.
 | sigil AFTER | branch tip `570896d2`, md5 `c12fb02a702af8c7c8407b29c24467b3`, `--version` reports revision `570896d2`, closure-revision `392503fe` |
 | corpus | `s2disasm` at `e45ebf332f39987424ca3102e50c717628f71269`, detached worktree `/home/volence/sonic_hacks/.s2-reg-diag`, `git status --porcelain` empty. The owner's live checkout at `/home/volence/sonic_hacks/s2disasm` was read (for the revision) but never written. |
 | reference assembler | NOT INVOKED in this parcel. The asl measurements quoted below are the ones the dispatching brief carried, taken with md5 `61e672562465725a8c102288a7da9098` and exit status checked. `s2disasm`'s own asl build (`0dee1f98e6480a4783d27ffd8b90896f`) was never invoked. |
-| suite log | `.runlogs/suite.log`, stamped with pwd, HEAD `570896d2` and branch on its first three lines |
-| corpus log | `.runlogs/corpus.log`, ends `CORPUS-END-MARKER` |
+| suite log | `.runlogs/suite.log` in this worktree, stamped with pwd, HEAD `570896d2` and branch on its first three lines. NOT COMMITTED and it dies with the worktree, so every number taken from it is quoted in full below rather than pointed at. |
+| corpus log | `.runlogs/corpus.log`, same, ends `CORPUS-END-MARKER`. `corpus.sh` beside this note regenerates it. |
+| scratch trees | Both were created for this run and REMOVED afterwards, so the owner's `s2disasm` ends with the worktree list it started with. Recreate with `git -C /home/volence/sonic_hacks/s2disasm worktree add --detach <path> e45ebf33` and `git -C <sigil> archive 742c7366 \| tar -x -C <path>`. |
 
 **Freshness witness for the BEFORE binary**, which carries no revision because a
 `git archive`d tree is not a repository. Two independent ones:
