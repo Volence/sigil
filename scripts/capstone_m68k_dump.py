@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Capstone MC68000 disassembly dump — the raw side of sigil's differential gate.
+"""Capstone MC68000 disassembly dump, the raw side of sigil's differential gate.
 
 This script makes NO judgement. It disassembles byte buffers with capstone in
 `CS_ARCH_M68K` / `CS_MODE_M68K_000` and prints what capstone said, verbatim.
@@ -22,7 +22,7 @@ Output is TSV, one record per input, on stdout:
 
 `<key>` is the four-hex-digit opcode word in sweep mode and the input hex
 string in bytes mode. `reject` covers both "capstone consumed nothing" and
-"capstone produced its `dc.w` data placeholder" (instruction id 0) — the two
+"capstone produced its `dc.w` data placeholder" (instruction id 0), the two
 ways capstone says a word is not an MC68000 instruction.
 
 The first stdout line is a banner: `#capstone <python-binding-version> <core>`.

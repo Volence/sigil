@@ -138,7 +138,7 @@ freeze_commit() {
 freeze_abandon() {
     [[ -n "$FREEZE_STAGE_DIR" ]] || return 0
     if [[ -e "$FREEZE_STAGE_DIR/$FREEZE_COMMIT_MARKER" ]]; then
-        echo "ERROR: not discarding $FREEZE_STAGE_DIR — the commit loop had begun and the" >&2
+        echo "ERROR: not discarding $FREEZE_STAGE_DIR, the commit loop had begun and the" >&2
         echo "       staged blobs are the only copy of what it did not install." >&2
         return 1
     fi

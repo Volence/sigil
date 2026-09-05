@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""G9 d7-high-word witness — break at Ground_Move_Cap's probe-direction decode
+"""G9 d7-high-word witness, break at Ground_Move_Cap's probe-direction decode
 on the collision drive's grounded-moving approach frames and record D7/D2.
 
-OLD (chain-8): the decode `move.b (a1,d2.w), d7` at 0x1079C — D7's high word
+OLD (chain-8): the decode `move.b (a1,d2.w), d7` at 0x1079C, D7's high word
 must be observed CLEAN naturally (benign-under-current-dispatch made concrete).
-NEW (G9): the decode at 0x1079E, after the inserted `moveq #0, d7` — D7 == 0
+NEW (G9): the decode at 0x1079E, after the inserted `moveq #0, d7`, D7 == 0
 by construction. No register injection (ledger row 21): the guard is reached
 by the drive alone.
 

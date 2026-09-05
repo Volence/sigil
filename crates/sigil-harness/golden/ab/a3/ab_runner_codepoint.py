@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""A/B runner v3 — fc-exact code-point capture at Frame_Counter==470 (closes the
+"""A/B runner v3, fc-exact code-point capture at Frame_Counter==470 (closes the
 v2 anchor-480 one-frame misalignment). Loops run_to(GameState_ObjectTest) until
 Frame_Counter reaches the target, so OLD and NEW are captured at the identical
 PC AND identical Frame_Counter."""

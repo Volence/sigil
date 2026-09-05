@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""A/B runner — animate A3 tail-call (Wave-A pathfinder), PS state-identity bar.
+"""A/B runner, animate A3 tail-call (Wave-A pathfinder), PS state-identity bar.
 
 Drives the oracle over the Aether bus with a byte-identical deterministic script
 per ROM, capturing at fixed Frame_Counter anchors:

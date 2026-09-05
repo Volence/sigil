@@ -30,7 +30,7 @@ file="${1:?capture file}"
 want="${2:-}"
 n="$(wc -c <"$file")"
 if [[ -n "$want" && "$n" != "$want" ]]; then
-    echo "LENGTH FAIL: $file is ${n}B, expected ${want}B (dropped/dupe capture — reject this evidence)" >&2
+    echo "LENGTH FAIL: $file is ${n}B, expected ${want}B (dropped/dupe capture, reject this evidence)" >&2
     exit 2
 fi
 crc="$(python3 -c "import zlib,sys;print(f'{zlib.crc32(open(sys.argv[1],\"rb\").read())&0xffffffff:08x}')" "$file")"

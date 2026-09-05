@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""collision_lookup #1 (fusion) PS state-identity capture — the collision-heavy drive.
+"""collision_lookup #1 (fusion) PS state-identity capture, the collision-heavy drive.
 
 Captures ONE ROM (already booted via ab_current.bin content-swap or an MCP reload;
 SKIP_RELOAD identity-checks the booted cart against the target size). Writes
@@ -7,7 +7,7 @@ manifest_coll_<name>.json. Run once for OLD, once for NEW, then diff the manifes
 
 Scene (deterministic from reset): reset-paused -> 60 boot frames -> B press edge
 (drop debug-fly -> physics) -> 120 fall/land frames -> hold right -> CODE-POINT
-anchors at the GameState_OJZScroll_Update entry (a deterministic PC — kills the
+anchors at the GameState_OJZScroll_Update entry (a deterministic PC, kills the
 mid-VBlank / interrupted-pc capture-alias class) at settled frames 220/280/340.
 Each ROM runs twice (determinism) via reset (no reload between passes).
 

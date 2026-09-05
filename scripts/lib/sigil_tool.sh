@@ -171,7 +171,7 @@ sigil_tool_ref_target() {
             "That directory is shared: other lanes relink it on purpose and some pin its" \
             "binary by hash. Cargo's unit hash is checkout-independent, so a build there" \
             "from a second worktree hands a later run artifacts compiled against a" \
-            "DIFFERENT checkout's absolute paths — missing fixtures on files that are" \
+            "DIFFERENT checkout's absolute paths, missing fixtures on files that are" \
             "present, which reads exactly like golden divergence, and which \`cargo clean\`" \
             "does not fix." \
             "" \
@@ -247,7 +247,7 @@ sigil_tool_anchor() {
         [ -n "$tip" ] && standing="$standing; $upstream is a LOCAL remote-tracking ref, refreshed only by \`git fetch\`"
     fi
 
-    printf 'HEAD %s on %s in %s — %s\n' "${head:-unknown}" "$branch" "$root" "$standing"
+    printf 'HEAD %s on %s in %s, %s\n' "${head:-unknown}" "$branch" "$root" "$standing"
 }
 
 # sigil_tool_resolve <sigil-root> <ref-target>
@@ -291,7 +291,7 @@ sigil_tool_resolve() {
         "$(printf '%s' "$version_out" | head -3 | tr '\n' ' ')"
 
     echo
-    echo "==> THE ASSEMBLER THIS RUN WILL JUDGE — $origin"
+    echo "==> THE ASSEMBLER THIS RUN WILL JUDGE, $origin"
     echo "    $SIGIL_BIN"
     printf '%s\n' "$version_out" | sed 's/^/    | /'
     echo
@@ -318,12 +318,12 @@ sigil_tool_resolve() {
         "cannot derive this tree's closure revision at $root" \
         "Asked: git log -1 --format=%H HEAD -- <the ${#paths[@]} paths the binary names>" \
         "Either $root is not a git checkout, or the binary names paths this tree" \
-        "has never had — both mean the two cannot be compared, so neither is assumed."
+        "has never had, both mean the two cannot be compared, so neither is assumed."
 
     if [ "$closure_rev" = "$tree_rev" ]; then
         # Silent-by-design on the correct case beyond this one line: the check must
         # cost a correct run nothing, or it becomes the thing people delete.
-        echo "==> tool closure ${closure_rev:0:8} == this tree's closure at HEAD — no commit here can have affected it"
+        echo "==> tool closure ${closure_rev:0:8} == this tree's closure at HEAD, no commit here can have affected it"
         echo "    compared against $(sigil_tool_anchor "$root")"
         echo "    (that is 'cannot have affected', not 'the output is identical'; only a rebuild and a byte compare says the second)"
     elif [ -n "${SIGIL_BIN_CLOSURE:-}" ] && [ "$SIGIL_BIN_CLOSURE" = "$closure_rev" ]; then
@@ -332,7 +332,7 @@ sigil_tool_resolve() {
     else
         # A WRONG declaration is its own diagnosis, and a distinct one: it means the
         # caller believed something specific about this binary that is not true.
-        local declared="(SIGIL_BIN_CLOSURE is unset — no off-tree measurement was declared.)"
+        local declared="(SIGIL_BIN_CLOSURE is unset, no off-tree measurement was declared.)"
         if [ -n "${SIGIL_BIN_CLOSURE:-}" ]; then
             declared="SIGIL_BIN_CLOSURE says $SIGIL_BIN_CLOSURE, which is NOT what this binary reports. A declaration is checked, not trusted."
         fi
@@ -346,7 +346,7 @@ sigil_tool_resolve() {
             "" \
             "A commit that this binary could not have seen has touched the sources it is" \
             "compiled from. This over-reports and never under-reports: it proves 'cannot" \
-            "have been affected', so a mismatch is not proof the output differs — but a" \
+            "have been affected', so a mismatch is not proof the output differs, but a" \
             "control built by an unknown compiler is not a control, and four matching CRCs" \
             "cannot tell a byte-neutral parcel from a compiler that never had the parcel." \
             "" \
@@ -354,7 +354,7 @@ sigil_tool_resolve() {
             "    or point SIGIL_BIN at a binary built from it;" \
             "  * to measure with an OFF-TREE compiler on purpose (the base arm of an A/B):" \
             "        SIGIL_BIN_CLOSURE=$closure_rev" \
-            "    which is checked against the binary, not trusted — a wrong sha still refuses." \
+            "    which is checked against the binary, not trusted, a wrong sha still refuses." \
             "" \
             "  $declared"
     fi

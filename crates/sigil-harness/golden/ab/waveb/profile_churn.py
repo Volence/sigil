@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Wave-B profiler drive — deterministic max-H scroll on s4.debug.bin.
+"""Wave-B profiler drive, deterministic max-H scroll on s4.debug.bin.
 
 Boot 60 frames -> hold right -> 400 frames to reach steady max-speed scroll ->
 profile a 150-frame steady window -> report top routines + Lag_Frame_Count +

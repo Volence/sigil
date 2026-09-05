@@ -128,19 +128,19 @@ restore() {
     local left
     left="$(git status --porcelain=v1 -- "$VICTIM")"
     if [[ -n "$left" ]]; then
-        printf '\nWARNING: could not restore %s — it is still modified:\n%s\n' "$VICTIM" "$left" >&2
+        printf '\nWARNING: could not restore %s, it is still modified:\n%s\n' "$VICTIM" "$left" >&2
     fi
 }
 trap restore EXIT
 
-MARK="tree-state capture gate mutation $$ — if this line survives, the gate was killed; git checkout it"
+MARK="tree-state capture gate mutation $$, if this line survives, the gate was killed; git checkout it"
 printf '\n// %s\n' "$MARK" >> "$VICTIM"
 
 say "    the mutation is on disk:"
 git diff --stat -- "$VICTIM" | sed 's/^/      /'
 grep -n "$MARK" "$VICTIM" | sed 's/^/      /'
 STATUS_LINE="$(git status --porcelain=v1 -- "$VICTIM")"
-say "    git status: ${STATUS_LINE:-<NOTHING — the mutation did not land>}"
+say "    git status: ${STATUS_LINE:-<NOTHING, the mutation did not land>}"
 [[ -n "$STATUS_LINE" ]] || refuse \
     "the mutation did not reach git's view of $VICTIM, so a green below would prove nothing" \
     "A proof whose mutation failed to apply runs the original file and prints ok."
@@ -178,7 +178,7 @@ fi
 [[ "$TAG_DIRTY" == *-dirty\) ]] || fail \
     "the tree word says \`$WORD_DIRTY\` but the first line's tag does not carry \`-dirty\`: $TAG_DIRTY" \
     "The two are renderings of one fact and a reader may key on either."
-say "    OK — the capture followed the edit"
+say "    OK, the capture followed the edit"
 
 # ── 5. and back, so the word is following the tree rather than latching ─────────
 say
@@ -197,6 +197,6 @@ say "    tree: $WORD_AGAIN"
     "A word that latches dirty is a warning that is always on, which is a warning nobody reads."
 
 say
-say "PASS — the tree word followed a closure-source edit and followed it back."
-say "       (\`cannot have been built from uncommitted sources\` — not \`the output is identical\`.)"
+say "PASS, the tree word followed a closure-source edit and followed it back."
+say "       (\`cannot have been built from uncommitted sources\`, not \`the output is identical\`.)"
 exit 0

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""p6_resweep — re-measure how free the ROM packer is, at whatever layout a given
+"""p6_resweep, re-measure how free the ROM packer is, at whatever layout a given
 aeon tree currently has, for EVERY straddle subject rather than for `Art_Sonic`
 alone.
 
@@ -20,7 +20,7 @@ WHAT IT DOES NOT DO
 -------------------
 It does not reimplement the measurement. Every constant, every subject, every
 cost is aeon's `tools/dplc_straddle.py`, imported as a module from the tree under
-test — this file only drives it over a range and reduces the result. Two
+test, this file only drives it over a range and reduces the result. Two
 consequences worth stating:
 
   * A layout fact this reports is aeon's own tool's answer, not a second
@@ -97,7 +97,7 @@ def load_tool(aeon_tree):
 def straddle_mask(base, offset, length, boundary, shifts):
     """Boolean over `shifts`: does this entry cross a boundary at that shift?
 
-    Mirrors dplc_straddle.straddles exactly — `(src % B) + len > B`, so touching
+    Mirrors dplc_straddle.straddles exactly, `(src % B) + len > B`, so touching
     a boundary is not crossing. The control re-derives this through the tool.
     """
     return ((base + offset + shifts) % boundary) + length > boundary
@@ -256,7 +256,7 @@ def main(argv=None):
           f"+ subject_bindings(): {', '.join(derived)}")
     print(f"  sweep          : [{lo}, {hi}] B, {n_shifts} one-byte positions per subject")
     if a.control <= 0:
-        print("  CONTROL        : DISABLED (--control 0) — the fast path is unverified here")
+        print("  CONTROL        : DISABLED (--control 0), the fast path is unverified here")
 
     out = {"aeon_tree": str(tree), "lst": lst, "rom": rom, "range": [lo, hi],
            "n_shifts": n_shifts, "tile_size": tile_size, "slots": slots,
@@ -307,7 +307,7 @@ def main(argv=None):
         print(f"    VERDICT B (reachable split > {reserve}): "
               f"{int(fail_b.sum())} of {n_shifts} positions FAIL")
         if at_zero:
-            print("    MARGIN: ZERO — the current base is itself inside a forbidden band")
+            print("    MARGIN: ZERO, the current base is itself inside a forbidden band")
         else:
             # BOTH conventions are printed because the difference is one byte and
             # P6's doc states its margins in the LAST-SAFE form without saying so.

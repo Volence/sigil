@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""pb#4 PS state-identity A/B — quantum captures on the SCROLL drive (plain shape).
+"""pb#4 PS state-identity A/B, quantum captures on the SCROLL drive (plain shape).
 
 Scene: reset-paused -> 60 boot frames -> hold right -> anchors at frames 240/420/700
 (two mid-scroll, one post-clamp). OLD = the committed golden, NEW = the pb#4 build.

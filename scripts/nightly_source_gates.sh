@@ -326,7 +326,7 @@ classify() {
     CLS_SCANNED=0; CLS_REFUSAL=""; CLS_ACCESSORS=""
     src="$tree/$SUPPORT_RS"
     [[ -r $src ]] || {
-        CLS_REFUSAL="$SUPPORT_RS is unreadable in $tree — the reference-tree rule is \
+        CLS_REFUSAL="$SUPPORT_RS is unreadable in $tree, the reference-tree rule is \
 derived from it, so this run cannot tell a file that READS the tree from one that only \
 names it"
         return 2
@@ -334,12 +334,12 @@ names it"
     var=$(reference_env_var "$src")
     [[ -n $var ]] || {
         CLS_REFUSAL="no reference-tree environment variable is extractable from \
-$SUPPORT_RS in $tree — half the read rule has no pattern"
+$SUPPORT_RS in $tree, half the read rule has no pattern"
         return 2
     }
     accessors=$(accessor_closure "$src") || {
         CLS_REFUSAL="the reference-tree accessor set over $SUPPORT_RS in $tree did not \
-reach a fixed point — a truncated closure is short accessors, and each one it is short \
+reach a fixed point, a truncated closure is short accessors, and each one it is short \
 makes some file look like it reads nothing"
         return 2
     }
@@ -352,8 +352,8 @@ makes some file look like it reads nothing"
     # names `sigil_harness::reference_dependence::GUARDS` declares.
     CLS_ACCESSORS=$(tr '\n' ' ' <<< "$accessors")
     [[ -n $accessors ]] || {
-        CLS_REFUSAL="no reference-tree accessor is derivable from $SUPPORT_RS in $tree \
-— the read rule has no pattern, so every file would falsely look like it reads nothing"
+        CLS_REFUSAL="no reference-tree accessor is derivable from $SUPPORT_RS in $tree, \
+the read rule has no pattern, so every file would falsely look like it reads nothing"
         return 2
     }
     obtains="(^|[^A-Za-z0-9_])($(paste -sd'|' <<< "$accessors"))[[:space:]]*\("
@@ -417,7 +417,7 @@ makes some file look like it reads nothing"
         fi
     done < <(grep -rlE 'AEON_DIR|aeon_dir|reference_tree|--aeon' "$tree"/crates/*/tests/*.rs)
     (( scanned )) || {
-        CLS_REFUSAL="the detector matched no test file under $tree/crates/*/tests — a \
+        CLS_REFUSAL="the detector matched no test file under $tree/crates/*/tests, a \
 classification over an empty population is not a classification"
         return 2
     }
@@ -521,12 +521,12 @@ rm -f "$AEON_GATES"/*.bin "$AEON_GATES"/*.lst "$AEON_GATES"/*.p "$AEON_GATES"/*.
 if [[ ! -x "$AEON_GATES/tools/bin/salvador" ]]; then
     mkdir -p "$AEON_GATES/tools/bin"
     make -C "$AEON_GATES/tools/salvador" -s > "$STATE/prepare.log" 2>&1 \
-        || { note "COULD NOT RUN: salvador build failed at $AT — see $STATE/prepare.log"; exit 2; }
+        || { note "COULD NOT RUN: salvador build failed at $AT, see $STATE/prepare.log"; exit 2; }
     cp "$AEON_GATES/tools/salvador/salvador" "$AEON_GATES/tools/bin/salvador" \
         || { note "COULD NOT RUN: salvador install failed at $AT"; exit 2; }
 fi
 ( cd "$AEON_GATES" && python3 tools/gen_compression_vectors.py ) >> "$STATE/prepare.log" 2>&1 \
-    || { note "COULD NOT RUN: compression vectors at $AT — see $STATE/prepare.log"; exit 2; }
+    || { note "COULD NOT RUN: compression vectors at $AT, see $STATE/prepare.log"; exit 2; }
 # NOT redundant with the `||` above: gen_compression_vectors.py prints `FAIL: …` and
 # exits 0 when the packer is missing, so its exit code cannot be trusted to mean it
 # wrote anything. The output is checked instead of the status.
@@ -556,7 +556,7 @@ if ! classify "$SIGIL_GATES"; then
 fi
 if (( ${#CLS_UNCLASSIFIED[@]} )); then
     note "COULD NOT RUN: ${#CLS_UNCLASSIFIED[@]} aeon-reading gate(s) are in none of the \
-three buckets — each reads the reference tree, is not in SOURCE_GATES, and names no \
+three buckets, each reads the reference tree, is not in SOURCE_GATES, and names no \
 built artifact. Classify each at $AT: ${CLS_UNCLASSIFIED[*]}"
     exit 2
 fi
@@ -580,13 +580,13 @@ rc=$?
 # run by exit code alone.
 binaries=$(grep -c '^test result:' "$OUT")
 if (( binaries != ${#SOURCE_GATES[@]} )); then
-    note "COULD NOT RUN: ${#SOURCE_GATES[@]} gates named but $binaries ran at $AT — see $OUT"
+    note "COULD NOT RUN: ${#SOURCE_GATES[@]} gates named but $binaries ran at $AT, see $OUT"
     exit 2
 fi
 passed=$(awk '/^test result:/ {p += $4} END {print p+0}' "$OUT")
 failed=$(awk '/^test result:/ {f += $6} END {print f+0}' "$OUT")
 if (( passed == 0 )); then
-    note "COULD NOT RUN: no test executed at $AT — see $OUT"
+    note "COULD NOT RUN: no test executed at $AT, see $OUT"
     exit 2
 fi
 # A skip line is a reference gate that measured nothing while reporting green.
@@ -605,13 +605,13 @@ SKIP_MARKER=$(sed -n 's/^pub const SKIP_MARKER: &str = "\(.*\)";$/\1/p' \
 # Loud on unmeasurable: an empty marker makes `grep -F` match every line and a
 # wrong one makes it match none. Neither may be rendered as a green run.
 if [[ -z "$SKIP_MARKER" ]]; then
-    note "COULD NOT RUN: SKIP_MARKER not extractable from $SUPPORT_RS at $AT — the \
+    note "COULD NOT RUN: SKIP_MARKER not extractable from $SUPPORT_RS at $AT, the \
 skip check has no pattern, so this run cannot say whether a gate skipped"
     exit 2
 fi
 if grep -qF "$SKIP_MARKER" "$OUT"; then
-    note "COULD NOT RUN: $(grep -cF "$SKIP_MARKER" "$OUT") gate(s) SKIPPED under strict at $AT \
-— see $OUT"
+    note "COULD NOT RUN: $(grep -cF "$SKIP_MARKER" "$OUT") gate(s) SKIPPED under strict at $AT, \
+see $OUT"
     exit 2
 fi
 
@@ -625,7 +625,7 @@ REGISTER=$(sed -n '/^open warn-tier findings:/,/^test /p' "$OUT" | grep -v '^tes
 # failure class no refreeze clears was measured here; the rest is the refreeze ritual's.
 SKIPPED="${#artifact[@]} aeon-reading gates skipped as artifact-lane (CRC/region oracles \
 against committed artifacts, not measured here; build bricks witnessed by corpus_builds); \
-${#CLS_NOREF[@]} no-reference (name the tree, obtain none — the workspace suite runs them)"
+${#CLS_NOREF[@]} no-reference (name the tree, obtain none, the workspace suite runs them)"
 
 if (( rc == 0 && failed == 0 )); then
     {
@@ -643,5 +643,5 @@ names=$(awk '/^failures:$/ {f=1; next} /^test result:/ {f=0} f && /^    [a-z]/ {
 kind="SOURCE GATES FAILED"
 grep -q 'shipped shapes do NOT build from aeon source' "$OUT" \
     && kind="BUILD BRICK (the corpus does not build from source); SOURCE GATES FAILED"
-note "$kind at $AT — $failed failed / $passed passed: $names ($SKIPPED; see $OUT)"
+note "$kind at $AT, $failed failed / $passed passed: $names ($SKIPPED; see $OUT)"
 exit 1
