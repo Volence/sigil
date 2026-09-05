@@ -358,6 +358,44 @@ status is never read. That is a one-word margin. **If anyone ever adds `-e` to
 `scripts/nightly_source_gates.sh`, that line is in the near-certain regime from the
 first run.**
 
+> **CORRECTED 2026-09-05 by the follow-on parcel (§10), which MEASURED this site
+> instead of pricing it. The band above is wrong; the verdict it supports is not.**
+>
+> ~~the writer feeding `head -20` is a `grep -v` streaming a `sed` range over the
+> whole strict suite log … squarely in the near-certain SIGPIPE regime … that line
+> is in the near-certain regime from the first run.~~
+>
+> Two errors, both in the permissive-sounding direction being dressed as the alarming
+> one. **`sed -n '/A/,/B/p'` writes only the RANGE.** It reads the whole log, but
+> `grep -v` — the writer that actually feeds `head` — never sees more than the
+> `open warn-tier findings:` block. And **`head -20` does not exit until it has 20
+> lines**, which that block does not today have: `CORPUS_OPEN_FINDINGS` holds 2 rows,
+> so the block is 3 lines and `head` reads to EOF without ever exiting early.
+>
+> Measured with the construct lifted from line 620 and beds carrying K register rows,
+> 200 runs each (§10):
+>
+> ```
+>   K=2      sigpipe=  0/200   (today's register)
+>   K=19     sigpipe=  0/200   head never fills, so it never exits early
+>   K=20..25 sigpipe=  0/200   head DOES exit; grep had already finished writing
+>   K=100    sigpipe= 19/200   the racing band
+>   K=5000   sigpipe=200/200   NEAR-CERTAIN
+> ```
+>
+> So the site is in the **IMPOSSIBLE** band today, not the near-certain one, and the
+> governing quantity is the REGISTER'S ROW COUNT — not the suite log's size.
+>
+> **The verdict does not move, and the reason it does not move is this note's own
+> rule.** A register of open findings is a thing designed to grow; pricing it at
+> K=2 is exactly the mitigation §5's R2 correction refuses to accept. The site is a
+> defect the moment (c) arrives, and it is flagged for that, not for its size.
+>
+> This is the fourth mechanism story in this class's history to be wrong while its
+> verdict stood. The pattern is worth naming: **the size argument has never once
+> changed a verdict here, and has been wrong three times out of four.** It is
+> decoration on a ruling that rests entirely on (a) and (c).
+
 I first wrote here that the lint already flags that transition. **I tested it
 instead of asserting it, and I was wrong** — the mutation is worth recording because
 it makes the `$(…)` residual concrete rather than theoretical. Adding `-e` to line
@@ -419,7 +457,9 @@ check that would establish it are separable:
 
 - a pipeline inside a heredoc body — skipped wholesale, because the evidence files
   for this very class quote the defective construct inside one;
-- **a pipeline inside `$(…)` — not read at all.** Under `set -uo pipefail` that is
+- ~~**a pipeline inside `$(…)` — not read at all.**~~ **CLOSED — see §10.** The
+  paragraph below is left standing because §10's proof is that the lint used to
+  behave exactly as it describes. Under `set -uo pipefail` not reading them is
   correct (status discarded); under `set -e`, `x=$(… | head -1)` IS a defect and the
   lint would miss it. Currently ZERO instances, because the only `set -e` bodies in
   the repo are the four pipeline-free golden scripts, `provision-aeon-ref.sh`, and
@@ -473,16 +513,12 @@ carries that path, so it cannot be a green from somewhere else:
 
 ## 9. Left open
 
-- **`$(…)` pipelines under `set -e` are outside the lint's reach** (§6) — **and
-  this is now the item I would close first, demoted from "residual" by a measurement
-  rather than a guess.** Zero instances today, but §5c shows the failure mode
-  concretely: mutating `-e` into `nightly_source_gates.sh` reds line 233 and leaves
-  line 620 — `REGISTER=$(… | head -20)`, whose writer is a `grep -v` streaming the
-  whole suite log, i.e. squarely near-certain — completely invisible. Anyone who
-  fixed the flagged line alone would believe the file was clear, which is the
-  founding defect's shape one level up. Closing it needs the reader to recurse into
-  command substitutions and decide whether the substitution is a whole assignment
-  RHS — real work, and not this parcel.
+- ~~**`$(…)` pipelines under `set -e` are outside the lint's reach**~~ — **CLOSED
+  by §10 on the same day.** The prediction of what closing it would need was half
+  right and half wrong, which is recorded there: the recursion was needed, and
+  "decide whether the substitution is a whole assignment RHS" is not the right test —
+  bash propagates through `x="pre $(…)"` too, and does NOT propagate through
+  `local x=$(…)`.
 - **Condition (b) is unjudgeable from source.** The lint flags (a)+(c) and says so.
   A site with (a) and (c) but a tiny writer is not currently faulty; it is one input
   size from being faulty, which is why it is flagged rather than excused.
@@ -494,3 +530,233 @@ carries that path, so it cannot be a green from somewhere else:
   was not executed end-to-end (it needs two pinned `asl` builds at absolute paths
   outside this worktree); its case-3 construct was proven in isolation instead, and
   the file's other cases are untouched by this change.
+
+---
+
+# 10. PIPEFAIL-CMDSUBST-HOLE — the `$( … )` hole closed, and the size story wrong a fourth time
+
+§9's first item was booked as the thing to close first. This is that parcel, run from
+`/home/volence/sonic_hacks/sigil/.claude/worktrees/agent-ab17a08466fecfc17`, branch
+`parcel/pipefail-cmdsubst-hole`, off `a8d3c5c1`.
+
+## 10.1 The hole, reproduced before it was fixed
+
+§5c reported it from a mutation. It was re-run here rather than inherited, because a
+hole that is not there is a fix built on a report. `sed -i '29s/set -uo pipefail/set
+-euo pipefail/'` on `scripts/nightly_source_gates.sh` (`git diff --stat` → 1 insertion,
+1 deletion; md5 moved `8548f212…` → `c3675745…`), lint **as committed at `a8d3c5c1`**:
+
+```
+1 pipeline(s) let SIGPIPE decide, out of 18 …
+  scripts/nightly_source_gates.sh:233: sed 's@^[[:space:]]*//.*@@' "$1"  | sed -n 's/.*env::var("\(AEON[A-Z0-9_]*\)").*/\1/p' | sort -u | head -1
+      `set -e` consumes every command's status, so a 141 from SIGPIPE aborts the script
+```
+
+The line it names, and the line it does not:
+
+```sh
+233:  sed 's@^[[:space:]]*//.*@@' "$1" \
+          | sed -n 's/.*env::var("\(AEON[A-Z0-9_]*\)").*/\1/p' | sort -u | head -1     ← FLAGGED
+620:  REGISTER=$(sed -n '/^open warn-tier findings:/,/^test /p' "$OUT" \
+          | grep -v '^test ' | head -20)                                               ← MISSED
+```
+
+**Confirmed. The report was right.** Under the same mutation the lint now names both.
+
+## 10.2 What decides a status inside `$( … )` — asked of bash, not of memory
+
+§9 predicted the test would be "whether the substitution is a whole assignment RHS".
+That is not the test. Measured with `bash -c 'set -e; f() { STMT; echo REACHED; }; f'`:
+
+| statement | exit | propagates? |
+|---|---|---|
+| `x=$(exit 7)` | 7 | yes |
+| `x="pre $(exit 7)"` | 7 | **yes — concatenation does not stop it** |
+| `a=1 b=$(exit 7)` | 7 | yes |
+| `local x=$(exit 7)` | 0 | **no — the declaration BUILTIN's own status masks it** |
+| `export` / `declare` / `readonly` `x=$(exit 7)` | 0 | no |
+| `echo "$(exit 7)"` | 0 | no — argument position |
+| `true "$(exit 7)"` | 0 | no |
+
+And without `set -e`, a plain assignment hands its status out of a function
+(`f() { x=$(exit 7); }; f` → 7) while a `local` one does not (→ 0).
+
+So the rule the lint implements is: **the statement is a plain assignment and the
+substitution sits somewhere in its value.** Both halves of the §9 guess were live
+hazards — believing `local x=$(…)` propagates makes the lint cry wolf until someone
+weakens it; believing `x="pre $(…)"` does not makes it green over a live defect —
+and **neither shows up in a corpus run, because the corpus is clean.** That is why the
+table above is now a standing test that RUNS BASH and compares
+(`the_substitution_position_rule_agrees_with_bash`), rather than a comment.
+
+## 10.3 What changed in the lint
+
+- a substitution scanner that reads `$( … )` **inside double quotes** (`x="$(cmd | head -1)"`
+  is the shape this repo writes, and the old `top_level_positions` skipped all quoted
+  text), steps over `$(( … ))`, recurses, and scans backticks too. This tree has **no
+  backtick substitution** — all 37 backtick lines are prose inside quoted strings or a
+  `sed` pattern, enumerated — and scanning them anyway keeps the lint off that snapshot;
+- a substitution's status is taken from its **last `;`-statement**, since that is the
+  one whose status it exits with;
+- the position rule of §10.2, and then the lint's EXISTING consumption model unchanged
+  (`if`/`elif`/`while`/`until`/`!`, an `&&` that gates what follows, a bare statement
+  under `set -e`);
+- **two censuses, counted separately** — 18 top-level, 10 inside `$( … )` — each with
+  its own `COULD NOT MEASURE`. A single total would let one reader break while the
+  other kept the number above zero, which is precisely how this lint shipped blind.
+
+## 10.4 The undecidable cases, and the direction chosen
+
+Whether a substitution's status reaches its own statement is decidable and is decided
+above. Whether that statement's status is then consumed is decidable **within the
+file** for `if`/`&&`/`set -e`, and **not decidable at all** for two routes:
+
+1. **a function's last statement**, whose status goes to whoever calls it — bash does
+   pass an assignment's status out that way (measured above);
+2. **`set -e` arriving from a sourcer.**
+
+**Direction chosen: flag on the file-visible routes, do NOT flag on the two escape
+routes, and name them with their instance counts instead of calling them a residual.**
+The reason is not that missing one is cheap. It is that the alternative flags every
+`v=$(… | head -1)` on the theory that some caller might read the status — 8 propagating
+substitution sites plus the 16 top-level ones §3 already ruled safe by construction,
+i.e. roughly two dozen findings on a clean tree. An always-red check is a delayed
+failure: it is fixed by weakening it, and the weakening is what ships.
+
+The counts that make this a measurement and not a preference: **ZERO of the ten
+substitution sites is a function's last statement** (checked one by one, §10.5), and
+the function-tail route has **exactly one instance in the whole tree** —
+`reference_env_var` at `nightly_source_gates.sh:233`, a top-level pipeline, already
+adjudicated safe in §4.1 by enumerating its single caller. Implementing the route today
+would buy one red that must immediately be excused by re-doing that same enumeration.
+
+Recorded the same way rather than silently adopted: **`||` as a consumer.**
+`v=$(… | head) || handler` fires the handler on a spurious 141 and neither surface
+treats `||` as consuming — which was true before this change too. Measured against the
+corpus it would add **zero findings today**.
+
+## 10.5 The re-run: every site, with a measured band
+
+On the clean tree the closed lint reports **no findings**. The new surface adds 10 to
+the census and 0 to the offences. All ten sit in files with `set -uo pipefail` and no
+`-e`, none is in a condition or `&&`-gated, and none is a function's last statement —
+each decides on the VALUE, which is complete because `head` writes its lines before it
+exits.
+
+| # | site | writer feeding the reader | (c)? | band |
+|---|---|---|---|---|
+| 1 | `diagnostics_sweep.sh:55` | bash `printf` → `head -1` | absent — `echo` argument, status discarded | IMPOSSIBLE (est. <1 KB) |
+| 2 | `diagnostics_sweep.sh:62` | `grep -Ev` over ≤2 listing-footer lines | absent — plain assignment, no `-e` | IMPOSSIBLE (est. ~60 B) |
+| 3 | `characterise.sh:132` | `grep -oE` over asl diagnostics | absent | IMPOSSIBLE (est. <200 B) |
+| 4 | `sweep_isa_vectors.sh:42` | `grep -v '^$'` over N md5s | absent | IMPOSSIBLE (est. <1 KB) |
+| 5 | `selfcheck.sh:53` | `grep -oE` emitting ONE banner match | absent | IMPOSSIBLE (est. 40 B) |
+| 6 | `selfcheck.sh:54` | as 5 | absent | IMPOSSIBLE (est. 40 B) |
+| 7 | `nightly_ref_drift.sh:276` | `sed -n s///p` over one script | absent | IMPOSSIBLE — **measured: 1 line, 40 bytes** |
+| 8 | `nightly_ref_drift.sh:311` | `sed -n s///p` over `$REPORT_OUT` | absent | IMPOSSIBLE (est. 1 line) |
+| 9 | `nightly_source_gates.sh:620` | `grep -v` over the register block | absent | **measured, see below** |
+| 10 | `tree_state_capture_gate.sh:160` | `sed -n s///p` over one banner | absent — `say` argument | IMPOSSIBLE (est. 1 line) |
+
+"est." means the site's output size was reasoned about, not measured; the BAND
+THRESHOLDS it is compared against were measured (§10.6). Saying which is which is the
+point, given how this note's earlier sizes were arrived at.
+
+Nothing was narrowed and nothing was excluded: 10 of 10 are accounted for.
+
+## 10.6 The turnover for the writers this repo actually uses
+
+`boundary.sh` measured `printf`, `seq` and `cat` into `grep -q`. **Not one of the ten
+sites uses any of those as the writer into the early exit** — they are `grep`, `sed`
+and a shell builtin, into `head -N`. Pricing them by `cat`'s turnover borrows a number
+from something that is not the subject, which is the same move as pricing them by the
+pipe's capacity. `writers_grep_sed.sh` measures the real ones, serially, one worker,
+200 runs a point, reader `head -20`, pipe read from the kernel at 65,536 B:
+
+```
+  grep -v             : last 0% at 3,100 B  ->  first >=95% at  62,000 B
+  sed -n p            : last 0% at 3,100 B  ->  first >=95% at 124,000 B
+  awk {print}         : last 0% at 3,100 B  ->  first >=95% at  31,000 B
+  bash printf builtin : last 0% at   651 B  ->  first >=95% at  18,600 B
+```
+
+**The size mechanism holds.** Every writer goes monotonically 0% → 100% with size,
+serially, with no concurrency anywhere. And the turnover is still the writer's and not
+the pipe's — four writers, one 65,536-byte pipe, four different turnovers.
+
+**One thing to state plainly rather than let the earlier figures imply.** §1b's spread
+was "two orders of magnitude" across `printf`/`seq`/`cat`. These four cluster inside a
+single order (3.1 KB–124 KB), straddling the pipe rather than sitting far below it. The
+spread is a property of *which writers were compared and which reader they fed*, not a
+constant of the mechanism, and §1b's own numbers used a different reader (`grep -q`,
+matching on line 1). Both measurements stand; neither licenses a universal factor.
+
+What the working rule becomes, for this tree: **more than ~3 KB owed past the reader's
+exit is at risk whatever the writer; more than ~60 KB is near-certain whatever the
+writer.** The brief's "a shell builtin with more than a few KB is near-certain" is
+confirmed and is the conservative end — the builtin turns over lowest of the four.
+
+## 10.7 Site 620 measured — and the fourth wrong size story
+
+The construct was lifted from line 620 (with a refusal if it no longer ends in
+`head -20`) and run 200 times against beds carrying K register rows:
+
+```
+  register rows K=2      log=12198  bytes  sigpipe=  0/200   REGISTER lines=2     (today)
+  register rows K=19     log=13263  bytes  sigpipe=  0/200   REGISTER lines=19
+  register rows K=20     log=13326  bytes  sigpipe=  0/200   REGISTER lines=19
+  register rows K=25     log=13641  bytes  sigpipe=  0/200   REGISTER lines=19
+  register rows K=100    log=18368  bytes  sigpipe= 19/200   REGISTER lines=19
+  register rows K=5000   log=335970 bytes  sigpipe=200/200   REGISTER lines=19
+```
+
+The measurement separates two different reasons for a zero, which the prose band never
+did: at K≤19 `head -20` **never fills, so it never exits early at all**; at K=20–25 it
+does exit, and `grep -v` had already finished writing. Only past K≈100 — ~5 KB owed,
+just above `grep`'s measured 3.1 KB zero-point — does the race open.
+
+So §5c's "squarely in the near-certain regime" is **wrong**, on two counts:
+`sed -n '/A/,/B/p'` **writes only the range** (it reads the whole log and writes none
+of it), so the writer is bounded by the register block and not the corpus; and the
+governing quantity is **the register's row count**, which is 2.
+
+**The verdict is unchanged, and what holds it up is this note's own rule.** A register
+of open findings exists in order to grow; pricing it at K=2 is exactly the mitigation
+§5's R2 correction refuses. The site is a defect the moment (c) arrives.
+
+**The pattern worth taking out of this class:** four mechanism stories now — load
+gates it, load amplifies it, the pipe buffer is the boundary, the whole suite log is
+the writer — and **not one of them ever changed a verdict.** Every ruling here has
+rested on (a) and (c), both readable from the source in a second. The size argument has
+been wrong three times out of four and load-bearing zero times out of four. It belongs
+in the explanation, never in the triage.
+
+## 10.8 Red-first, four mutations, each shown on disk
+
+| mutation | result |
+|---|---|
+| `substitution_status_propagates` → always `true` | **RED** — the bash model test names 8 disagreements (`local`/`export`/`declare`/`readonly`/`echo`/`true`/`printf`/`x=$(…) true`). **The corpus gate stayed GREEN**, which is why the model test is a separate instrument. |
+| `substitution_status_propagates` → always `false`, **plus** the `set -e` mutation | **RED both** — the corpus gate reverts to exactly the pre-parcel answer (233 named, 620 invisible) and the model test names 4 disagreements. |
+| `command_substitutions` → returns empty | **RED** — `COULD NOT MEASURE: 89 shell unit(s) scanned and NOT ONE pipeline INSIDE a $( … ) ending in an early-exiting reader was seen` |
+| `nightly_ref_drift.sh:276` rewritten as `if READS_PATTERN=$(… \| head -1); then :; fi`, **no `set -e` anywhere** | **OLD lint (`git show HEAD:`) — GREEN. NEW lint — RED**, naming the line. This is the mutation the old lint had no path to. |
+
+The fourth is the one that meets this parcel's bar: it lives inside `$( … )`, it uses
+the condition route rather than `set -e`, and the lint that shipped this morning is
+green on it.
+
+Every restore was from a byte-verified copy (md5 `ac383365…` for the lint) or from
+`git show HEAD:`, never `git checkout --` over a dirty tree.
+
+## 10.9 Left open by THIS parcel
+
+- **the two escape routes of §10.4** — a function's last statement, and `set -e` from
+  a sourcer. Instance counts today: one (already adjudicated) and zero.
+- **`||` as a consumer** — zero findings today, recorded not adopted (§10.4).
+- **two assignment shapes bash propagates through and the position rule rejects**:
+  `b=$(…) a=1` and `arr=( $(…) )`. Both rejected because anything separated from the
+  substitution by a space could equally be the command word of `VAR=$(…) prog args`,
+  which does NOT propagate. Neither shape appears in this tree with an early-exiting
+  reader; both are named in `substitution_status_propagates`.
+- **a `$( … )` opened on one physical line and closed on a later one** that no
+  continuation rule folds. `logical_lines` folds backslashes and trailing `|`, which
+  covers every instance here; a substitution split some other way would be read
+  truncated rather than skipped, and the failure would be silent.
+- **TAGGED FOR FOREGROUND**: nothing here needs the emulator.
