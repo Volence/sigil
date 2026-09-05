@@ -127,6 +127,7 @@ pub fn corpus() -> Vec<(&'static str, Instruction)> {
         ("ld sp,(1234h)", inst(Ld, vec![Pair(Sp), Mem(0x1234)])),
         ("neg", inst(Neg, vec![])),
         ("im 1", inst(Im, vec![Imm8(1)])),
+        ("ldi", inst(Ldi, vec![])),
         ("ldir", inst(Ldir, vec![])),
         ("ld i,a", inst(Ld, vec![RegI, Reg(A)])),
         ("ld r,a", inst(Ld, vec![RegR, Reg(A)])),

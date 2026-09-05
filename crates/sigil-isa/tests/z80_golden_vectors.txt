@@ -109,6 +109,7 @@ ld bc,(1234h) => ED 4B 34 12
 ld sp,(1234h) => ED 7B 34 12
 neg => ED 44
 im 1 => ED 56
+ldi => ED A0
 ldir => ED B0
 ld i,a => ED 47
 ld r,a => ED 4F

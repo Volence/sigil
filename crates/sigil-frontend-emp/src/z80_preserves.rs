@@ -188,14 +188,18 @@ fn z80_writes_regs(mnem: &str, ops: &[CodeOperand]) -> Vec<usize> {
         // `b`. (Its flag-neutrality is handled in `z80_flag_neutral`; `djnz` leaves
         // the flags.)
         "djnz" => vec![idx("b")],
-        // `ldir` — the block transfer `(hl++)→(de++), bc--` until bc=0: it writes the
-        // pointer/counter pairs bc, de, hl. It is the ONLY assemblable block op in the
-        // ISA enum (sigil-isa/z80.rs `Mnemonic`); the day the LD-block siblings
-        // (`ldi`/`ldd`/`lddr`, same {bc,de,hl} writes-set) or the CP-block family
-        // (`cpi`/`cpd`/`cpir`/`cpdr`, which write bc + hl but NOT de) become
-        // assemblable, they join here. `ldir` is NOT flag-neutral (it clears P/V), so
-        // its `f` write comes through the [`z80_flag_neutral`] complement above.
-        "ldir" => vec![idx("b"), idx("c"), idx("d"), idx("e"), idx("h"), idx("l")],
+        // The LD block transfers `(hl)` to `(de)` with hl/de stepped and bc-- (the `r` forms
+        // repeating until bc=0): they write the pointer/counter pairs bc, de, hl.
+        // Neither is flag-neutral (they clear P/V), so the `f` write comes through the
+        // [`z80_flag_neutral`] complement above. The CP-block family
+        // (`cpi`/`cpd`/`cpir`/`cpdr`) writes bc + hl but NOT de, so it is a separate
+        // arm rather than a member of this one.
+        //
+        // The default arm of this match is `vec![]` (writes nothing), so a block op
+        // named here but absent would be claimed to preserve every register it
+        // clobbers. That is why an arm lands in the SAME change as the encoder that
+        // makes the mnemonic assemblable, never after it.
+        "ldi" | "ldir" => vec![idx("b"), idx("c"), idx("d"), idx("e"), idx("h"), idx("l")],
         _ => vec![],
     }
 }

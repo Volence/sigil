@@ -8649,6 +8649,7 @@ fn mnemonic(s: &str) -> Option<Mnemonic> {
         "sra" => Sra,
         "neg" => Neg,
         "im" => Im,
+        "ldi" => Ldi,
         "ldir" => Ldir,
         _ => return None,
     })
@@ -14355,26 +14356,37 @@ C:\n";
     ///     indented  ldi             exit 0 — a real Z80 instruction
     /// ```
     ///
-    /// Row 4 is the one that matters: `ldi` is a Z80 instruction this assembler
-    /// does not encode, and before the column rule applied under Z80 it was
-    /// eaten in silence. `asl` assembles `nop / ldi / nop` at org 0 to
-    /// `00 ED A0 00`; this assembler emitted `00 00` and exited 0.
+    /// Row 4 was once carried here as a REFUSAL: `ldi` was a Z80 instruction
+    /// this assembler did not encode, and before the column rule applied under
+    /// Z80 it was eaten in silence: no diagnostic, no bytes, exit 0. It is now
+    /// encoded, so the row is asserted the way `asl` actually answers it, which
+    /// is the stronger claim: `asl` assembles `nop / ldi / nop` at org 0 to
+    /// `00 ED A0 00`, and so must this. A refusal and a correct encoding are
+    /// both fine outcomes for the column rule; SILENCE is the defect, and the
+    /// positive control is what proves the row is still being exercised at all.
     #[test]
     fn unrecognized_indented_head_under_z80_is_loud_not_a_label() {
-        for head in ["zqp_bogus", "zqp_bogus a,b", "ldi"] {
+        for head in ["zqp_bogus", "zqp_bogus a,b"] {
             let src = format!("	cpu z80\n	padding off\n	phase 0\n	{head}\n	nop\n");
             let diags = match run(&src, &Options::default()) {
                 Ok(_) => panic!("`{head}` assembled silently; it must diagnose"),
                 Err(d) => d,
             };
             let msgs: Vec<&str> = diags.iter().map(|d| d.message.as_str()).collect();
-            let want = if head.starts_with("ldi") {
-                "unknown directive or mnemonic `ldi`"
-            } else {
-                "unknown directive or mnemonic `zqp_bogus`"
-            };
-            assert_eq!(msgs, vec![want], "head `{head}` gave {msgs:?}");
+            assert_eq!(
+                msgs,
+                vec!["unknown directive or mnemonic `zqp_bogus`"],
+                "head `{head}` gave {msgs:?}"
+            );
         }
+        // Row 4, as a positive control: the indented head that IS a Z80
+        // instruction now emits asl's bytes, and the surrounding `nop`s prove
+        // nothing was skipped or double-counted around it.
+        let src = "	cpu z80\n	padding off\n	phase 0\n	nop\n	ldi\n	nop\n";
+        let m = run(src, &Options::default()).expect("`ldi` must assemble");
+        let linked = sigil_link::link(&m.sections, &sigil_ir::SymbolTable::new())
+            .expect("link");
+        assert_eq!(sigil_link::flatten(&linked, 0x00), vec![0x00, 0xED, 0xA0, 0x00]);
     }
 
     /// The other half of AS's column rule, and the reason the fix is a column

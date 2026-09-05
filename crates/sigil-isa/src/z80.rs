@@ -136,6 +136,11 @@ pub enum Mnemonic {
     Sra,
     Neg,
     Im,
+    /// The single-step block move `(hl)->(de), hl++, de++, bc--`. The repeating
+    /// form `Ldir` runs the same step until `bc` reaches zero; they are two
+    /// instructions (ED A0 and ED B0), not two spellings of one, and prose that
+    /// says "the block copy" names whichever of them it happens to mean.
+    Ldi,
     Ldir,
     LdIA,
     LdRA,
@@ -716,6 +721,11 @@ pub fn encode(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
         (Mnemonic::Set, _) => encode_cb_bit(0xC0, &inst.ops),
         // ---- Task 6: ED group — bare one-offs ----
         (Mnemonic::Neg, _) => Ok(vec![ED_PREFIX, 0x44]),
+        // The block-op grid: sub-opcode bit 4 selects repeating, bit 3 selects
+        // decrementing, bits 1..0 select the family. Every arm here is asl's own
+        // answer rather than that arithmetic, because the arithmetic is what a
+        // wrong table would also produce.
+        (Mnemonic::Ldi, []) => Ok(vec![ED_PREFIX, 0xA0]),
         (Mnemonic::Ldir, _) => Ok(vec![ED_PREFIX, 0xB0]),
         // im 1 = ED 56 (only mode 1 is in catalog scope; other modes not oracled).
         (Mnemonic::Im, ops) => match ops {
