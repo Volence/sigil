@@ -779,6 +779,12 @@ struct Asm {
     /// CONVERGED pass the env is final, so any entry here is genuinely undefined
     /// and `run` promotes it to an error.
     poison_refs: Vec<(String, Span)>,
+    /// Argument spans [`Self::check_ignored_arg`] has already ruled on this
+    /// pass. A `function` call reached through a `rept`, a `macro` body or a
+    /// nested call is expanded more than once from ONE source position, and the
+    /// verdict on an argument is a property of that position — reporting it per
+    /// expansion would say the same thing several times about one line.
+    arg_faults_seen: std::collections::HashSet<(u32, u32, u32)>,
     /// Remaining `while`-body-execution budget for THIS pass (per-`Asm`, so it
     /// resets each pass). Complements the per-loop `WHILE_CAP`: two NESTED
     /// non-convergent `while`s each bounded at `WHILE_CAP` still multiply to
@@ -1031,6 +1037,7 @@ impl Asm {
             expansion_label_used: 0,
             cpu_refused: false,
             poison_refs: Vec::new(),
+            arg_faults_seen: std::collections::HashSet::new(),
             while_budget: GLOBAL_WHILE_CAP,
             pending_equ_syms: Vec::new(),
             defer_unresolved_jsr_jmp,
@@ -1341,7 +1348,7 @@ impl Asm {
     /// `while (pos>=0) / pos: set strstr(...)` loop (T9.2 `while` + T9.1
     /// `strstr`) now really assembles.
     fn eval_all(&mut self, toks: &[Token], span: Span) -> Option<i64> {
-        let expanded = self.expand_calls(toks, 0);
+        let expanded = self.expand_calls_checked(toks);
         let expanded = self.expand_int_builtin(&expanded);
         let expanded = self.expand_str_builtins(&expanded);
         let expanded = self.expand_str_comparisons(&expanded);
@@ -1931,6 +1938,150 @@ impl Asm {
             out.push(t.clone());
         }
         out
+    }
+
+    /// AS `function` argument evaluation is STRICT: every actual argument is
+    /// calculated once at the call, whether or not the body mentions the
+    /// parameter it binds to. `doc_EN/as.tex`, section `FUNCTION`:
+    ///
+    /// > When the function is called, all parameters are calculated once and are
+    /// > then inserted into the function's formula. […] may have an integer, a
+    /// > float, or even a string as result, depending on the argument's type!
+    ///
+    /// Three types are named. A register is not one of them, and an undefined
+    /// symbol has no value to calculate. The reference build (md5
+    /// `61e672562465725a8c102288a7da9098`) refuses `move.w #fi(zz),d0` — `fi`'s
+    /// body `$3C7` never mentioning its parameter, `zz` defined nowhere — with
+    /// `error #1010: symbol undefined` and exit 2.
+    ///
+    /// [`Self::substitute`] pastes an argument's TOKENS into the body, so an
+    /// argument bound to a parameter the body USES is already evaluated: it is
+    /// part of the expression the operand folds, and a bad one is already
+    /// refused there, naming it. The gap this closes is the argument bound to a
+    /// parameter the body IGNORES, which under that scheme is never looked at
+    /// at all. So this reports for exactly those, and the two halves together
+    /// are what makes every argument evaluated once — reporting for a USED
+    /// parameter here as well would say the same thing twice about one operand.
+    ///
+    /// It recurses two ways, and needs both: into an argument (a call can be
+    /// written inside one) and into the SUBSTITUTED body (a body can spend its
+    /// parameter on another call that ignores it — `hu function p,gi(p)` with
+    /// `gi function q,$100` drops `hu`'s argument one level down).
+    ///
+    /// A FORWARD reference is not an undefined symbol: the unresolved names go
+    /// to `poison_refs`, which `run` promotes to errors only on the converged
+    /// pass, where the env is final.
+    /// [`Self::expand_calls`] with AS's strict argument rule applied first. Every
+    /// site that expands `function` calls AND reports diagnostics uses this;
+    /// `fold_const`/`fold_str_as_expr` deliberately do not, because they are the
+    /// silent counterpart (a `substr` bound that does not fold is not an error
+    /// there, it is a `None`).
+    ///
+    /// The expansion itself is untouched, so this cannot move a byte: an
+    /// argument that calculates produces exactly the tokens it produced before.
+    fn expand_calls_checked(&mut self, toks: &[Token]) -> Vec<Token> {
+        self.check_call_args(toks, 0);
+        self.expand_calls(toks, 0)
+    }
+
+    fn check_call_args(&mut self, toks: &[Token], depth: usize) {
+        if depth > EXPAND_CAP {
+            return;
+        }
+        let mut i = 0;
+        while i < toks.len() {
+            let Tok::Ident(name) = &toks[i].tok else {
+                i += 1;
+                continue;
+            };
+            if !matches!(
+                toks.get(i + 1).map(|t| &t.tok),
+                Some(Tok::Punct(Punct::LParen))
+            ) {
+                i += 1;
+                continue;
+            }
+            let Some((params, body)) = self.functions.get(name).cloned() else {
+                i += 1;
+                continue;
+            };
+            let Some((args, next)) = split_call_args(toks, i + 1) else {
+                i += 1;
+                continue;
+            };
+            for (idx, arg) in args.iter().enumerate() {
+                self.check_call_args(arg, depth + 1);
+                if params.get(idx).is_some_and(|p| !body_mentions(&body, p)) {
+                    self.check_ignored_arg(arg);
+                }
+            }
+            let expanded = self.substitute(&body, &params, &args, depth);
+            self.check_call_args(&expanded, depth + 1);
+            i = next;
+        }
+    }
+
+    /// Calculate ONE actual argument for its diagnostic alone — the value is
+    /// discarded, because [`Self::substitute`] has already decided what the call
+    /// folds to and this must not perturb a single byte of it.
+    ///
+    /// A register in value position gets its own message. asl's own catalogue
+    /// (`as.msg`, a data file beside the binary) carries *"expected integer,
+    /// floating point number or string but got register"* and asl fires it
+    /// (`#1145`) for `#1+a1`, the same situation one syntactic layer away.
+    /// Reporting it as `unresolved symbol` — true of sigil's symbol table, false
+    /// of the program — sends a reader looking for a definition that was never
+    /// missing.
+    fn check_ignored_arg(&mut self, arg: &[Token]) {
+        // An empty argument group is an ARITY fault, reported where arity is.
+        let Some(span) = group_span(arg) else {
+            return;
+        };
+        if !self
+            .arg_faults_seen
+            .insert((span.source.0, span.start, span.end))
+        {
+            return;
+        }
+        // A string literal is one of AS's three legal argument types, and is
+        // already a value: nothing to calculate.
+        if matches!(arg, [Token { tok: Tok::Str(_), .. }]) {
+            return;
+        }
+        if let [Token { tok: Tok::Ident(w), .. }] = arg {
+            if is_expr_register_name(w, self.state.cpu) {
+                self.err(
+                    span,
+                    format!(
+                        "`{w}` is a register: a function argument must be an \
+                         integer, floating point number or string"
+                    ),
+                );
+                return;
+            }
+        }
+        // The same four layers `expand_operand_builtins` runs, spelled out:
+        // that wrapper gains the strict check itself, and routing through it
+        // here would make the check re-enter on its own argument.
+        let expanded = self.expand_calls(arg, 0);
+        let expanded = self.expand_int_builtin(&expanded);
+        let expanded = self.expand_str_builtins(&expanded);
+        let expanded = self.expand_str_comparisons(&expanded);
+        // Not an integer expression at all (a bare float literal, say). asl has
+        // its own diagnostics for those shapes and they are reached through the
+        // substituted body; a vaguer word here would be worse than silence.
+        let Some((e, rest)) = crate::expr::parse_expr(&expanded) else {
+            return;
+        };
+        if !rest.is_empty() {
+            return;
+        }
+        let qualified = self.qualify_expr(&e);
+        if matches!(self.fold(&qualified), Fold::Poison) {
+            for name in self.unresolved_names(&qualified) {
+                self.poison_refs.push((name, span));
+            }
+        }
     }
 
     /// Execute a root source. `root_name` is the file it was read from — it names
@@ -4511,7 +4662,7 @@ impl Asm {
             // subterms — `X = Label + CONST` ships `Sym(Label) + Int(CONST)`); the
             // linker folds it post-relax onto the shifted label. A pure-constant
             // equ never matches and keeps baking `Int(v)`.
-            let sym_rhs = crate::expr::parse_expr(&self.expand_calls(rest, 0))
+            let sym_rhs = crate::expr::parse_expr(&self.expand_calls_checked(rest))
                 .and_then(|(e, tail)| tail.is_empty().then_some(e))
                 .map(|e| self.resolve_dollar(&self.qualify_expr(&e)))
                 .filter(|e| self.expr_refs_label(e));
@@ -4579,7 +4730,7 @@ impl Asm {
             // is unaffected. An equate whose base is absent from the final link is
             // simply not defined (`fold_equ_syms` leaves it), and only a REAL
             // reference to it errors — at the fixup, as an unplaced label would.
-            if let Some(e) = crate::expr::parse_expr(&self.expand_calls(rest, 0))
+            if let Some(e) = crate::expr::parse_expr(&self.expand_calls_checked(rest))
                 .and_then(|(e, tail)| tail.is_empty().then_some(e))
                 .map(|e| self.resolve_dollar(&self.qualify_expr(&e)))
                 .filter(expr_has_sym)
@@ -4621,7 +4772,7 @@ impl Asm {
     /// not have) went from 6 diagnostics to 12 across the S2 corpus, one pair per
     /// call site: a speculative type test must not be able to raise a diagnostic.
     fn float_rhs(&mut self, rest: &[Token]) -> Option<f64> {
-        let expanded = self.expand_calls(rest, 0);
+        let expanded = self.expand_calls_checked(rest);
         match self.eval_num(&expanded)? {
             Num::Float(f) => Some(f),
             Num::Int(_) => None,
@@ -4819,7 +4970,7 @@ impl Asm {
             // deferral pass); byte-neutral because the map is read only under
             // `keep_labels_symbolic`. `relax_safe_fold` splices set-symbols at its
             // root, so a chained set stores the underlying label expr directly.
-            let sym_rhs = crate::expr::parse_expr(&self.expand_calls(rest, 0))
+            let sym_rhs = crate::expr::parse_expr(&self.expand_calls_checked(rest))
                 .and_then(|(e, tail)| tail.is_empty().then_some(e))
                 .map(|e| self.resolve_dollar(&self.qualify_expr(&e)));
             match sym_rhs {
@@ -4873,7 +5024,7 @@ impl Asm {
     /// not a missing feature so much as a trap, so the widths share one
     /// function rather than three parallel pipelines.
     fn expand_operand_builtins(&mut self, toks: &[Token]) -> Vec<Token> {
-        let expanded = self.expand_calls(toks, 0);
+        let expanded = self.expand_calls_checked(toks);
         let expanded = self.expand_int_builtin(&expanded);
         let expanded = self.expand_str_builtins(&expanded);
         self.expand_str_comparisons(&expanded)
@@ -4924,7 +5075,7 @@ impl Asm {
     fn directive_db(&mut self, rest: &[Token], span: Span) {
         self.open_section_if_needed();
         for g in split_top_commas(rest) {
-            let called = self.expand_calls(g, 0);
+            let called = self.expand_calls_checked(g);
             let expanded = self.expand_int_builtin(&called);
             let expanded = self.expand_str_builtins(&expanded);
             let expanded = match self.collapse_float_operand(&expanded) {
@@ -5332,22 +5483,28 @@ impl Asm {
     /// Holding the group back can only NARROW what expands, and only for an
     /// operand that ends in a register base group, so an operand carrying no
     /// such group takes the unchanged whole-slice path.
-    fn expand_calls_m68k_operands(&self, toks: &[Token]) -> Vec<Token> {
+    ///
+    /// The strict argument check runs over the SAME slices the expansion does,
+    /// and for the same reason: a held-back `dsp(a1)` is an addressing mode, so
+    /// `a1` is a base register there and not an argument in value position.
+    fn expand_calls_m68k_operands(&mut self, toks: &[Token]) -> Vec<Token> {
         let held = crate::operands::m68k_ea_base_spans(toks);
         if held.is_empty() {
-            return self.expand_calls(toks, 0);
+            return self.expand_calls_checked(toks);
         }
         let mut out = Vec::new();
         let mut i = 0usize;
         for r in held {
             if r.start > i {
-                out.extend(self.expand_calls(&toks[i..r.start], 0));
+                let head = self.expand_calls_checked(&toks[i..r.start]);
+                out.extend(head);
             }
             out.extend_from_slice(&toks[r.start..r.end]);
             i = r.end;
         }
         if i < toks.len() {
-            out.extend(self.expand_calls(&toks[i..], 0));
+            let tail = self.expand_calls_checked(&toks[i..]);
+            out.extend(tail);
         }
         out
     }
@@ -8777,6 +8934,46 @@ fn paren(p: Punct, span: Span) -> Token {
         tok: Tok::Punct(p),
         span,
     }
+}
+
+/// Whether a `function` body refers to the parameter named `param` — the test
+/// [`Asm::substitute`] itself applies, so it answers "will this argument's
+/// tokens reach the evaluator through substitution?" and nothing else. Exact
+/// token equality, not a text search: `substitute` matches whole `Tok::Ident`s,
+/// so a body mentioning `pp` does not use a parameter `p`.
+fn body_mentions(body: &[Token], param: &str) -> bool {
+    body.iter()
+        .any(|t| matches!(&t.tok, Tok::Ident(n) if n == param))
+}
+
+/// The names AS's EXPRESSION parser resolves to a register value, which is a
+/// narrower set than "a register name": measured on the reference build (md5
+/// `61e672562465725a8c102288a7da9098`, 33 shapes at
+/// `docs/superpowers/notes/2026-09-05-asl-silent-decline-regime-probes/`), only
+/// `a0`–`a7`, `d0`–`d7` and `sp` reach it.
+///
+/// Four boundaries, each measured rather than assumed:
+///
+/// * `pc`, `sr`, `ccr` and `usp` do NOT — asl answers `#1010 symbol undefined`
+///   for `#fu(pc)` and its three siblings, so they stay on the unresolved-symbol
+///   path here too.
+/// * A size suffix takes a name out of the set: `#fu(a1.w)` is also `#1010`. The
+///   lexer folds `.w` into the identifier, so `a1.w` simply does not match.
+/// * Case does not narrow it. `#fu(A1)` behaves exactly as `#fu(a1)` under `-U`,
+///   asl's case-SENSITIVE mode, so the comparison folds case.
+/// * It is 68000-only. `r07_z80.asm` puts the same shape to `cpu z80` and both
+///   `ld bc,fu(hl)` and `dw hl` are `#1010 symbol undefined`: z80 register names
+///   are not expression-level register symbols, and a z80 program is free to
+///   define a symbol called `sp`.
+fn is_expr_register_name(w: &str, cpu: Cpu) -> bool {
+    if cpu != Cpu::M68000 {
+        return false;
+    }
+    let w = w.to_ascii_lowercase();
+    if w == "sp" {
+        return true;
+    }
+    matches!(w.as_bytes(), [b'a' | b'd', b'0'..=b'7'])
 }
 
 #[cfg(test)]
