@@ -3821,14 +3821,27 @@ impl Asm {
     /// the computed `=$2` on the refused line but the symbol table still reads
     /// `*Ce : 1`. The old value survives the refusal.
     ///
-    /// Only the CROSSING is checked here. asl also refuses a same-class
-    /// redefinition of a constant (`#1000 symbol double defined`, and it fires
-    /// even when the value is identical — probe `m4.asm` line 6, `Aq equ 1`
-    /// twice), and that is a DIFFERENT rule with a different population: every
-    /// duplicated label and every twice-included header is in it. It is not
-    /// implemented here, and the gap is stated in
-    /// `docs/superpowers/notes/2026-09-04-as-symbol-class-tracking.md` rather
-    /// than closed silently by a rule that only half covers it.
+    /// BOTH refusals live here — the CROSSING between the two classes, and the
+    /// same-class redefinition of a CONSTANT.
+    ///
+    /// `const → const` is `#1000 symbol double defined`, and it fires **even
+    /// when the two values are identical** (probe `m4.asm` line 6, `Aq equ 1`
+    /// twice; probe `m14.asm`, a header included twice, where the `equ` binds 5
+    /// both times). It is not a "the value moved" rule: probe `m15.asm` refuses
+    /// a second `Bp:` whose logical AND physical address both differ, and
+    /// `m16.asm` refuses `Bi equ 9` over `Bi equ 7`. What it IS about is a
+    /// second EXECUTED declaration — `m16.asm`'s twin under `if 0` is silent,
+    /// so a declaration the pass never reaches is not one.
+    ///
+    /// `var → var` stays legal: `set`/`eval`/`:=` are the reassignable class and
+    /// reassigning is their whole point (probe `m2.asm`).
+    ///
+    /// EVERY CALLER REACHING THIS POINT DECLARES GLOBALLY. Two constant-making
+    /// forms do not always — a PC label and an `enum` member are localized to the
+    /// expansion they are written in — and those come through
+    /// [`Self::declare_expansion_local_const`], which is where that exemption and
+    /// its probes are documented. `equ`, `=` and the `label` DIRECTIVE are global
+    /// wherever they are written (`m18.asm`, `m19.asm`) and call this directly.
     fn declare_class(&mut self, q: &str, class: SymClass, span: Span) -> bool {
         match self.sym_class.get(q) {
             Some(&prev) if prev != class => {
@@ -3843,11 +3856,56 @@ impl Asm {
                 );
                 false
             }
+            Some(SymClass::Const) => {
+                // asl's `#1000 symbol double defined`, its own wording.
+                self.err(span, format!("symbol double defined: `{q}`"));
+                false
+            }
             _ => {
                 self.sym_class.insert(q.to_string(), class);
                 true
             }
         }
+    }
+
+    /// [`Self::declare_class`] for the two constant-making forms asl LOCALIZES to
+    /// the expansion they are written in: a PC label (colon, colon-less column-0,
+    /// or on a data line) and an `enum` member.
+    ///
+    /// Inside a macro / `rept` / `irp` / `while` body such a name never reaches
+    /// asl's global symbol table, so it can neither collide with anything nor be
+    /// collided with, and this records nothing and refuses nothing. Measured, not
+    /// reasoned: probe `m18.asm` expands one macro twice for each of the four PC
+    /// spellings and for an `enum` member and asl is silent on all five, while
+    /// the `label` DIRECTIVE in the same position is `#1000`; probe `m19.asm`
+    /// then reads both names from OUTSIDE and gets `$100` for the `label`
+    /// directive's `Al` and `#1010 symbol undefined` for the `enum`'s `Be`;
+    /// probe `m17.asm` does the same for the PC spellings and adds the mixed
+    /// order (a file-level `Zr:` followed by a `Zr:` inside a `rept`, silent).
+    /// So `equ`, `=` and `label` keep the full check — they are global wherever
+    /// they are written — and only these two are exempt, and only in an
+    /// expansion.
+    ///
+    /// This is the whole reason the rule is not "any second constant
+    /// declaration": that shape refuses 97 sites in the s2 corpus that asl
+    /// accepts, every one of them a colon label in a twice-expanded macro
+    /// (`start:`/`end:` in `s2.macrosetup.asm`, `start:` in `zoneanimdecl`,
+    /// `__LABEL__Plc:` in `plrlistheader`).
+    ///
+    /// NOT recording is deliberate and is the half that carries the mixed
+    /// orders. Recording the class and merely skipping the refusal would leave a
+    /// file-level `X equ 1` AFTER an expansion's `X:` reading as a redefinition
+    /// of a symbol asl says does not exist.
+    ///
+    /// `expansion_depth` is the same counter `exitm` is checked against, so the
+    /// boundary is drawn where asl's own expansion boundary was measured — four
+    /// drivers, and RESET across an `include` (probe `e14`), which is also what
+    /// `m14.asm` wants: a header's label included twice IS `#1000` to asl.
+    fn declare_expansion_local_const(&mut self, q: &str, span: Span) -> bool {
+        if self.expansion_depth > 0 {
+            return true;
+        }
+        self.declare_class(q, SymClass::Const, span)
     }
 
     fn define_label(&mut self, name: &str, span: Span) -> String {
@@ -3876,7 +3934,7 @@ impl Asm {
         // of an unmeasured guess would put invented recovery semantics on a path
         // that already fails the build, so the diagnostic — which is the whole
         // divergence — is raised and nothing else moves.
-        self.declare_class(&qualified, SymClass::Const, span);
+        self.declare_expansion_local_const(&qualified, span);
         self.env.define(&qualified, SymbolValue::Int(value));
         self.known_labels.insert(qualified.clone());
         self.builder.define_label(&qualified);
@@ -4339,7 +4397,11 @@ impl Asm {
             // `m9.asm`). The counter still advances past a refused member —
             // asl's listing shows `=$5` for the refused `enum Dv=5` line, so
             // the enumeration is not rewound by the refusal.
-            if !self.declare_class(&q, SymClass::Const, span) {
+            //
+            // Inside an EXPANSION the member is expansion-local and declares
+            // nothing globally (probes `m18`/`m19`), which is what
+            // [`Self::declare_expansion_local_const`] carries.
+            if !self.declare_expansion_local_const(&q, span) {
                 self.enum_next = self.enum_next.wrapping_add(self.enum_step);
                 continue;
             }
