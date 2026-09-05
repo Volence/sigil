@@ -1,0 +1,37 @@
+asl   md5: 61e672562465725a8c102288a7da9098  /home/volence/sonic_hacks/sonic_hack/tools/as/asl
+sigil md5: 0c373d7cc6c46b93cdfa2a77c0a95cac  /home/volence/sonic_hacks/sigil/.claude/worktrees/agent-a8a6251ffb509859f/.target-land/release/sigil
+
+m_eq1
+   asl   : exit=0  3 passes  0 errors  bytes=110002  author-msg-lines=0
+   sigil : exit=0  bytes=110002  author-msg-lines=0
+m_gt1
+   asl   : exit=0  3 passes  0 errors  bytes=AA110002  author-msg-lines=0
+   sigil : exit=0  bytes=AA110002  author-msg-lines=0
+m_eq2
+   asl   : exit=0  4 passes  0 errors  bytes=110002  author-msg-lines=0
+   sigil : exit=0  bytes=AA110002  author-msg-lines=0
+m_eq3
+   asl   : exit=0  2 passes  0 errors  bytes=110002  author-msg-lines=0
+   sigil : exit=0  bytes=110002  author-msg-lines=0
+m_val
+   asl   : exit=0  2 passes  0 errors  bytes=02110002  author-msg-lines=0
+   sigil : exit=0  bytes=02110002  author-msg-lines=0
+m_cmpd
+   asl   : exit=0  3 passes  0 errors  bytes=110002  author-msg-lines=0
+   sigil : exit=0  bytes=110002  author-msg-lines=0
+m_fatal
+   asl   : exit=3      bytes=  author-msg-lines=0
+   sigil : exit=0  bytes=110002  author-msg-lines=0
+m_msg
+   asl   : exit=0  2 passes  0 errors  bytes=110002  author-msg-lines=1
+   sigil : exit=0  bytes=110002  author-msg-lines=0
+pA
+   asl   : exit=0  1 pass  0 errors  bytes=01  author-msg-lines=0
+   sigil : exit=0  bytes=02  author-msg-lines=0
+pB
+   asl   : exit=0  2 passes  0 errors  bytes=020002EE  author-msg-lines=0
+   sigil : exit=0  bytes=020002EE  author-msg-lines=0
+pI
+   asl   : exit=0  3 passes  0 errors  bytes=000333C0001234560008  author-msg-lines=0
+   sigil : exit=0  bytes=000233C0001234560008  author-msg-lines=0
+REFVALS-END

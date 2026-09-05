@@ -26,6 +26,11 @@ use sigil_span::{Diagnostic, Level, SourceId, Span};
 
 const EXPAND_CAP: usize = 64;
 const PASS_CAP: usize = 16;
+/// What the `MOMPASS` builtin reports on the FIRST iteration of the fixpoint,
+/// and on every LATER one. See [`Asm::builtin_num`] for the measurement that
+/// chose two values rather than a running count.
+const FIRST_PASS: i64 = 1;
+const LATER_PASS: i64 = 2;
 /// Bound for `while … endm` (T9.2): caps re-evaluation/body-expansion
 /// iterations so a non-convergent condition diagnoses (A5) instead of
 /// hanging. Generous relative to any real `while`-driven table-fill idiom.
@@ -171,6 +176,10 @@ fn run_impl(
     // The most recent pass's spliced-file map. Diagnostics are returned from a
     // single pass, so the map returned with them is that pass's own.
     let mut last_sources = sigil_span::SourceMap::new();
+    // Every distinct `fatal` any pass raised, in raise order. See the comment at
+    // the `terminal_fatal` arm below for why this one diagnostic outlives its
+    // pass when no other does.
+    let mut carried_fatals: Vec<(Span, String, Option<String>)> = Vec::new();
     for pass in 0..PASS_CAP {
         let PassOutput {
             module,
@@ -179,11 +188,53 @@ fn run_impl(
             functions: f,
             diags,
             poison,
+            terminal_fatal,
             labels: pass_labels,
             label_ref_equs: pass_label_ref_equs,
             sources,
-        } = one_pass(src, root_name, opts, &seed, &macros, &functions, &labels, &label_ref_equs);
+        } = one_pass(
+            src,
+            root_name,
+            opts,
+            &seed,
+            &macros,
+            &functions,
+            &labels,
+            &label_ref_equs,
+            if pass == 0 { FIRST_PASS } else { LATER_PASS },
+        );
         last_sources = sources;
+        // A `fatal` raised on ANY pass survives to the returned diagnostics.
+        //
+        // Every OTHER diagnostic is returned from the CONVERGED pass alone,
+        // because a later pass genuinely supersedes it: a name unresolved on
+        // iteration 1 has a value by iteration 2, and reporting iteration 1's
+        // complaint would be reporting a forward reference as an error.
+        // `fatal` is the one directive for which that reasoning does not hold,
+        // and asl supplies the reason: it does not report a `fatal` and carry
+        // on to another pass, it prints it and TERMINATES (probe `co_fatal`,
+        // asl exit 3). There is no later pass for it to be superseded BY.
+        //
+        // Without this the strongest refusal the language has was the quietest
+        // thing in it. A `fatal` on a non-final iteration set `aborted`, that
+        // pass's diagnostics were dropped as superseded, a further pass ran
+        // without the `fatal`, and the run exited 0 with NO OUTPUT AT ALL while
+        // asl exited 3 on the same source.
+        //
+        // Carried rather than made TERMINAL, and the difference was measured
+        // rather than argued. Stopping the run at the raising pass, which is
+        // what asl literally does, also throws away everything the run had
+        // already found: on s1disasm it cut 50 located diagnostics to 1 and on
+        // skdisasm 2132 to 1, and in BOTH the surviving line was one the run
+        // already reported. Carrying is strictly additive instead, so it can
+        // make a run louder and never quieter, and the three-way measurement
+        // over all six roots shows it changes nothing anywhere that does not
+        // have a dropped `fatal` to begin with.
+        if let Some(f) = terminal_fatal {
+            if !carried_fatals.contains(&f) {
+                carried_fatals.push(f);
+            }
+        }
         for sec in &module.sections {
             for eq in &sec.equ_syms {
                 if ever_exported_names.insert(eq.name.clone()) {
@@ -209,6 +260,7 @@ fn run_impl(
                 let mut module = module;
                 restore_missing_equ_exports(&mut module, &ever_exported, &env);
                 attach_guarded_equ_exports(&mut module, &opts.guarded_defines);
+                let diags = merge_carried_fatals(diags, &carried_fatals, &last_sources);
                 return if diags.iter().any(|d| d.level == Level::Error) {
                     Err(Failure { diags, sources: last_sources })
                 } else {
@@ -225,6 +277,7 @@ fn run_impl(
                 &pass_labels,
                 &pass_label_ref_equs,
                 true,
+                LATER_PASS,
             );
             let mut diags = bonus.diags;
             for (name, span) in bonus.poison {
@@ -237,6 +290,14 @@ fn run_impl(
             let mut bonus_module = bonus.module;
             restore_missing_equ_exports(&mut bonus_module, &ever_exported, &env);
             attach_guarded_equ_exports(&mut bonus_module, &opts.guarded_defines);
+            // The bonus pass raises its own `fatal`s too, and it is a pass like
+            // any other for this purpose.
+            if let Some(f) = bonus.terminal_fatal {
+                if !carried_fatals.contains(&f) {
+                    carried_fatals.push(f);
+                }
+            }
+            let diags = merge_carried_fatals(diags, &carried_fatals, &bonus.sources);
             return if diags.iter().any(|d| d.level == Level::Error) {
                 Err(Failure { diags, sources: bonus.sources })
             } else {
@@ -253,20 +314,70 @@ fn run_impl(
     // Non-convergence is a property of the whole run, not of any one line, so it
     // carries no source: an id past every registered file makes the renderer print
     // a bare message rather than attribute the failure to line 1 of the root.
-    Err(Failure {
-        diags: vec![Diagnostic {
+    let mut diags = merge_carried_fatals(Vec::new(), &carried_fatals, &last_sources);
+    diags.push(Diagnostic {
+        level: Level::Error,
+        message: format!(
+            "assembly did not converge within {PASS_CAP} passes (symbol values still changing)"
+        ),
+        primary: Span {
+            source: SourceId(u32::MAX),
+            start: 0,
+            end: 0,
+        },
+    });
+    Err(Failure { diags, sources: last_sources })
+}
+
+/// Add every `fatal` a non-final pass raised to a returned diagnostic list.
+///
+/// Deduped against what the list already carries, because the overwhelmingly
+/// common case is a `fatal` that fires on EVERY pass (its condition does not
+/// depend on the pass number, and the abort truncates the pass, so whatever
+/// would have flipped the condition never runs). Both corpus roots that raise a
+/// `fatal` at all, s1disasm and skdisasm, are that case: the line is already in
+/// the converged pass's output, and this adds nothing to either.
+fn merge_carried_fatals(
+    mut diags: Vec<Diagnostic>,
+    carried: &[(Span, String, Option<String>)],
+    sources: &sigil_span::SourceMap,
+) -> Vec<Diagnostic> {
+    for (span, message, raised_label) in carried {
+        if diags
+            .iter()
+            .any(|d| d.primary == *span && d.message == *message)
+        {
+            continue;
+        }
+        // Keep the span only when the RETURNING pass's map renders it to the
+        // same place the raising pass did. When it does not, the span is not a
+        // location here at all, so it is replaced by one that renders to
+        // nothing and the true `file(line)` is written into the text instead.
+        // A misattributed diagnostic is worse than a bare one, and probe
+        // `co_map2` shows this path is reached rather than hypothetical.
+        if sources.label(*span).as_ref() == raised_label.as_ref() {
+            diags.push(Diagnostic {
+                level: Level::Error,
+                message: message.clone(),
+                primary: *span,
+            });
+            continue;
+        }
+        let message = match raised_label {
+            Some(l) => format!("{l}: {message}"),
+            None => message.clone(),
+        };
+        diags.push(Diagnostic {
             level: Level::Error,
-            message: format!(
-                "assembly did not converge within {PASS_CAP} passes (symbol values still changing)"
-            ),
+            message,
             primary: Span {
                 source: SourceId(u32::MAX),
                 start: 0,
                 end: 0,
             },
-        }],
-        sources: last_sources,
-    })
+        });
+    }
+    diags
 }
 
 /// The outputs of a single assembly pass.
@@ -282,6 +393,9 @@ struct PassOutput {
     diags: Vec<Diagnostic>,
     /// Operand symbols that folded to Poison this pass (name + site span).
     poison: Vec<(String, Span)>,
+    /// The first `fatal` this pass raised, with the `file(line)` label THIS
+    /// pass's own source map renders for it. See [`Asm::terminal_fatal`].
+    terminal_fatal: Option<(Span, String, Option<String>)>,
     /// Every fully-qualified label name defined this pass (grown from the seed).
     /// Threaded into the next pass so a forward-referenced label is known before
     /// its definition line — see [`Asm::known_labels`].
@@ -381,10 +495,11 @@ fn one_pass(
     seed_functions: &FunctionTable,
     seed_labels: &std::collections::HashSet<String>,
     seed_label_ref_equs: &std::collections::HashSet<String>,
+    mompass: i64,
 ) -> PassOutput {
     one_pass_with_defer(
         src, root_name, opts, seed_env, seed_macros, seed_functions, seed_labels,
-        seed_label_ref_equs, false,
+        seed_label_ref_equs, false, mompass,
     )
 }
 
@@ -403,8 +518,10 @@ fn one_pass_with_defer(
     seed_labels: &std::collections::HashSet<String>,
     seed_label_ref_equs: &std::collections::HashSet<String>,
     defer_unresolved_jsr_jmp: bool,
+    mompass: i64,
 ) -> PassOutput {
     let mut asm = Asm::new_with_defer(opts, defer_unresolved_jsr_jmp);
+    asm.mompass = mompass;
     asm.env = seed_env.clone();
     asm.macros = seed_macros.clone();
     asm.functions = seed_functions.clone();
@@ -477,6 +594,7 @@ fn one_pass_with_defer(
         functions: asm.functions,
         diags,
         poison: asm.poison_refs,
+        terminal_fatal: asm.terminal_fatal,
         labels: asm.known_labels,
         label_ref_equs: asm.label_ref_equs,
         sources: asm.sources,
@@ -826,6 +944,16 @@ struct Asm {
     /// joined only at LINK time) is not an error here — it becomes one only
     /// if `resolve_layout`/`link` can't find it either.
     defer_unresolved_jsr_jmp: bool,
+    /// The first `fatal` this pass raised, if any, with the span it names.
+    ///
+    /// Separate from `aborted` because `aborted` is shared with `end`, which
+    /// every well-formed corpus file uses and which is not a refusal at all.
+    /// See [`run_impl`] for what the run does with it.
+    terminal_fatal: Option<(Span, String, Option<String>)>,
+    /// The value the `MOMPASS` builtin reports on THIS pass: 1 on the first,
+    /// 2 on every later one. See [`Asm::builtin_num`] for why it saturates
+    /// rather than counting.
+    mompass: i64,
     /// Every fully-qualified LABEL name known to this pass — seeded from the
     /// previous pass (so a FORWARD-referenced label is already present) and
     /// grown as `define_label` sees each definition. `fixup_target` consults
@@ -1057,6 +1185,8 @@ impl Asm {
             while_budget: GLOBAL_WHILE_CAP,
             pending_equ_syms: Vec::new(),
             defer_unresolved_jsr_jmp,
+            terminal_fatal: None,
+            mompass: LATER_PASS,
             known_labels: std::collections::HashSet::new(),
             sym_class: std::collections::HashMap::new(),
             label_ref_equs: std::collections::HashSet::new(),
@@ -1273,6 +1403,34 @@ impl Asm {
     ///   that file read FALSE, so the Z80 arm of `org`, `cnop`, `align`,
     ///   `even` and `ds` is what gets assembled under the 68000. That is a
     ///   wrong branch, not a missing symbol — it emits bytes.
+    /// - `MOMPASS`: 1 on the FIRST iteration of the fixpoint, 2 on every
+    ///   later one. asl's own `MOMPASS` is its 1-based pass counter and it is
+    ///   not bounded by 2: a file whose operand GROWS between passes (an
+    ///   absolute address that turns out not to fit in a word) runs three,
+    ///   and `dc.w MOMPASS` in it emits `0003` (probe `pI`, exit 0, 0 errors).
+    ///   sigil cannot report that number, because sigil's iteration count is
+    ///   measurably not asl's pass count: over six probes the two differ in
+    ///   three, in BOTH directions (asl 1 / sigil 2 for a file with no forward
+    ///   reference, asl 2 / sigil 3 for a forward `:=`), and on the s2disasm
+    ///   root asl takes 2 passes where sigil takes 4. A running count would
+    ///   therefore make `if MOMPASS=2` answer differently from asl for a
+    ///   reason that is a property of the fixpoint, not of the program.
+    ///
+    ///   What IS portable is the distinction the number is used for, and the
+    ///   corpus writes it down: `s2.constants.asm:972` says "Avoid undefined
+    ///   symbol errors by checking only after the first pass." Reporting 1 then
+    ///   2 makes that distinction exact, and it decides every one of the three
+    ///   idioms the corpora actually contain (`=1`, `>1`, `=2`) the same way a
+    ///   2-pass asl decides them. Across s2disasm, s1disasm and skdisasm no
+    ///   `MOMPASS` comparison names a pass number above 2, and aeon names
+    ///   `MOMPASS` in no file at all.
+    ///
+    ///   The cost is stated rather than hidden: `dc.b MOMPASS` read as a NUMBER
+    ///   is reading the assembler's internal schedule, and in a file asl
+    ///   assembles in one pass (`01`) or three (`03`) sigil answers `02`. The
+    ///   one-pass half of that is not the saturation's doing: convergence here
+    ///   requires `pass > 0`, so the iteration that emits bytes is never the
+    ///   first, and no definition of `MOMPASS` could make it report 1.
     /// - `TRUE` / `FALSE` — 1 and 0 (`dc.b TRUE,FALSE` ⇒ `0100`). Undefined,
     ///   they take the same shape as `MOMCPU`: `s2.macrosetup.asm:76`'s
     ///   `if TRUE` reads FALSE and drops the block it guards without a word.
@@ -1288,6 +1446,7 @@ impl Asm {
                 Cpu::M68000 => 0x68000,
                 Cpu::Z80 => 0x80,
             }),
+            "MOMPASS" => Some(self.mompass),
             "TRUE" => Some(1),
             "FALSE" => Some(0),
             _ => None,
@@ -4297,10 +4456,29 @@ impl Asm {
                 let m = self.interp_string(rest);
                 self.err(span, m);
             }
+            // `fatal "text"` is not a diagnostic a later pass can supersede, it
+            // is the statement that there IS no later pass: asl prints it and
+            // TERMINATES the assembly (probe `co_fatal`, exit 3). That is what
+            // `terminal_fatal` records, and why `fatal` needs a signal of its
+            // own rather than reusing `aborted`, which `end` also sets on every
+            // well-formed file in the corpus.
             "fatal" => {
                 let m = self.interp_string(rest);
-                self.err(span, m);
+                self.err(span, m.clone());
                 self.aborted = true;
+                if self.terminal_fatal.is_none() {
+                    // The label is captured HERE, against THIS pass's own source
+                    // map, because the map is rebuilt per pass and a `fatal` that
+                    // this pass reached is often inside a file a later pass does
+                    // not splice at all. Carrying the bare span instead renders
+                    // it against the map of whichever pass returns, which is
+                    // either nameless or, measurably, WRONG: probe `co_map2`
+                    // reported a `fatal` written in `inc/c.asm` as
+                    // `inc/b.asm(1)`, because ids are handed out in splice order
+                    // and dropping one include shifts every id after it.
+                    let label = self.sources.label(span);
+                    self.terminal_fatal = Some((span, m, label));
+                }
             }
             "message" => {
                 let _ = self.interp_string(rest);

@@ -1,0 +1,120 @@
+baseline: 876ae0c8   tree clean: 0 dirty paths in crates/sigil-frontend-as/src/eval.rs
+
+====================================================================
+MUTATION: MOMPASS is not a builtin
+  applied, by content grep:
+    32:const FIRST_PASS: i64 = 1;
+    33:const LATER_PASS: i64 = 2;
+  applied, by git diff HEAD --stat:
+     crates/sigil-frontend-as/src/eval.rs | 1 -
+     1 file changed, 1 deletion(-)
+  this run MUST FAIL, and specifically at: every MOMPASS test, as a refusal instead of bytes
+    test mompass_eq_three_is_false ... FAILED
+    test mompass_eq_two_guarding_an_emission_diverges_from_asl ... FAILED
+    test mompass_eq_one_is_false_on_the_pass_that_emits ... FAILED
+    test mompass_reads_as_two_on_the_pass_that_emits ... FAILED
+    test a_source_definition_does_not_displace_the_builtin ... FAILED
+    test mompass_no_longer_refuses_as_an_unresolved_condition ... FAILED
+    test one_pass_asl_file_is_a_known_divergence ... FAILED
+    test mompass_in_the_compound_corpus_condition ... FAILED
+    test mompass_gt_one_is_true_on_the_pass_that_emits ... FAILED
+    test mompass_eq_two_decides_the_corpus_shape_the_way_asl_does ... FAILED
+    thread 'mompass_eq_three_is_false' (1894257) panicked at crates/sigil-frontend-as/tests/as_mompass_builtin.rs:90:19:
+    thread 'mompass_eq_two_guarding_an_emission_diverges_from_asl' (1894259) panicked at crates/sigil-frontend-as/tests/as_mompass_builtin.rs:90:19:
+    thread 'mompass_eq_one_is_false_on_the_pass_that_emits' (1894256) panicked at crates/sigil-frontend-as/tests/as_mompass_builtin.rs:90:19:
+    thread 'mompass_reads_as_two_on_the_pass_that_emits' (1894263) panicked at crates/sigil-frontend-as/tests/as_mompass_builtin.rs:80:85:
+    thread 'a_source_definition_does_not_displace_the_builtin' (1894255) panicked at crates/sigil-frontend-as/tests/as_mompass_builtin.rs:194:5:
+      left: 7
+     right: 2
+    thread 'mompass_no_longer_refuses_as_an_unresolved_condition' (1894262) panicked at crates/sigil-frontend-as/tests/as_mompass_builtin.rs:181:19:
+    thread 'one_pass_asl_file_is_a_known_divergence' (1894264) panicked at crates/sigil-frontend-as/tests/as_mompass_builtin.rs:80:85:
+    thread 'mompass_in_the_compound_corpus_condition' (1894261) panicked at crates/sigil-frontend-as/tests/as_mompass_builtin.rs:90:19:
+    thread 'mompass_gt_one_is_true_on_the_pass_that_emits' (1894260) panicked at crates/sigil-frontend-as/tests/as_mompass_builtin.rs:90:19:
+    thread 'mompass_eq_two_decides_the_corpus_shape_the_way_asl_does' (1894258) panicked at crates/sigil-frontend-as/tests/as_mompass_builtin.rs:90:19:
+    test result: FAILED. 0 passed; 10 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+  restoring from committed baseline 8cdf7c45a7f9569ca0f599ef87a0df2b425e6478
+  restored, dirty paths in $SRC now: 0
+
+====================================================================
+MUTATION: the two pass numbers are swapped
+  applied, by content grep:
+    1343:            "MOMPASS" => Some(self.mompass),
+    32:const FIRST_PASS: i64 = 2;
+    33:const LATER_PASS: i64 = 1;
+  applied, by git diff HEAD --stat:
+     crates/sigil-frontend-as/src/eval.rs | 4 ++--
+     1 file changed, 2 insertions(+), 2 deletions(-)
+  this run MUST FAIL, and specifically at: mompass_eq_one_is_false, mompass_gt_one_is_true, mompass_reads_as_two
+    test mompass_eq_three_is_false ... ok
+    test one_pass_asl_file_is_a_known_divergence ... FAILED
+    test mompass_eq_two_guarding_an_emission_diverges_from_asl ... FAILED
+    test a_source_definition_does_not_displace_the_builtin ... FAILED
+    test mompass_eq_one_is_false_on_the_pass_that_emits ... FAILED
+    test mompass_reads_as_two_on_the_pass_that_emits ... FAILED
+    test mompass_no_longer_refuses_as_an_unresolved_condition ... ok
+    test mompass_gt_one_is_true_on_the_pass_that_emits ... FAILED
+    test mompass_eq_two_decides_the_corpus_shape_the_way_asl_does ... FAILED
+    test mompass_in_the_compound_corpus_condition ... FAILED
+    thread 'one_pass_asl_file_is_a_known_divergence' (1894645) panicked at crates/sigil-frontend-as/tests/as_mompass_builtin.rs:215:5:
+      left: [1]
+     right: [2]
+    thread 'mompass_eq_two_guarding_an_emission_diverges_from_asl' (1894640) panicked at crates/sigil-frontend-as/tests/as_mompass_builtin.rs:270:5:
+      left: [17, 0, 2]
+     right: [170, 17, 0, 2]
+    thread 'a_source_definition_does_not_displace_the_builtin' (1894636) panicked at crates/sigil-frontend-as/tests/as_mompass_builtin.rs:194:5:
+      left: 1
+     right: 2
+    thread 'mompass_eq_one_is_false_on_the_pass_that_emits' (1894637) panicked at crates/sigil-frontend-as/tests/as_mompass_builtin.rs:128:5:
+      left: [170, 17, 0, 2]
+     right: [17, 0, 2]
+    thread 'mompass_reads_as_two_on_the_pass_that_emits' (1894644) panicked at crates/sigil-frontend-as/tests/as_mompass_builtin.rs:113:5:
+      left: [1, 17, 0, 2]
+     right: [2, 17, 0, 2]
+    thread 'mompass_gt_one_is_true_on_the_pass_that_emits' (1894641) panicked at crates/sigil-frontend-as/tests/as_mompass_builtin.rs:139:5:
+      left: [17, 0, 2]
+     right: [170, 17, 0, 2]
+    thread 'mompass_eq_two_decides_the_corpus_shape_the_way_asl_does' (1894639) panicked at crates/sigil-frontend-as/tests/as_mompass_builtin.rs:249:5:
+      left: [0, 17, 3, 238]
+     right: [170, 17, 3, 238]
+    thread 'mompass_in_the_compound_corpus_condition' (1894642) panicked at crates/sigil-frontend-as/tests/as_mompass_builtin.rs:167:5:
+      left: [170, 17, 0, 2]
+     right: [17, 0, 2]
+    test result: FAILED. 2 passed; 8 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+  restoring from committed baseline 8cdf7c45a7f9569ca0f599ef87a0df2b425e6478
+  restored, dirty paths in $SRC now: 0
+
+====================================================================
+MUTATION: a running count instead of the saturation
+  applied, by content grep:
+    1343:            "MOMPASS" => Some(self.mompass),
+    32:const FIRST_PASS: i64 = 1;
+    33:const LATER_PASS: i64 = 2;
+  applied, by git diff HEAD --stat:
+     crates/sigil-frontend-as/src/eval.rs | 2 +-
+     1 file changed, 1 insertion(+), 1 deletion(-)
+  this run MUST FAIL, and specifically at: mompass_eq_two_guarding_an_emission (the =2 shape a running count loses)
+    test one_pass_asl_file_is_a_known_divergence ... ok
+    test mompass_eq_three_is_false ... ok
+    test a_source_definition_does_not_displace_the_builtin ... ok
+    test mompass_no_longer_refuses_as_an_unresolved_condition ... ok
+    test mompass_reads_as_two_on_the_pass_that_emits ... ok
+    test mompass_gt_one_is_true_on_the_pass_that_emits ... ok
+    test mompass_eq_one_is_false_on_the_pass_that_emits ... ok
+    test mompass_eq_two_guarding_an_emission_diverges_from_asl ... FAILED
+    test mompass_in_the_compound_corpus_condition ... ok
+    test mompass_eq_two_decides_the_corpus_shape_the_way_asl_does ... FAILED
+    thread 'mompass_eq_two_guarding_an_emission_diverges_from_asl' (1895021) panicked at crates/sigil-frontend-as/tests/as_mompass_builtin.rs:270:5:
+      left: [17, 0, 2]
+     right: [170, 17, 0, 2]
+    thread 'mompass_eq_two_decides_the_corpus_shape_the_way_asl_does' (1895020) panicked at crates/sigil-frontend-as/tests/as_mompass_builtin.rs:249:5:
+      left: [0, 17, 3, 238]
+     right: [170, 17, 3, 238]
+    test result: FAILED. 8 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+  restoring from committed baseline 8cdf7c45a7f9569ca0f599ef87a0df2b425e6478
+  restored, dirty paths in $SRC now: 0
+
+====================================================================
+final state: 876ae0c8  dirty paths in $SRC: 0
+GREEN after restore:
+    test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+REDFIRST-END

@@ -1,0 +1,76 @@
+baseline: a77ef3b0   dirty paths in $SRC: 0
+
+====================================================================
+MUTATION: a fatal raised on a non-final pass is not carried
+  applied, by git diff HEAD --stat:
+     crates/sigil-frontend-as/src/eval.rs | 6 +-----
+     1 file changed, 1 insertion(+), 5 deletions(-)
+  applied, by content grep:
+    -        if let Some(f) = terminal_fatal {
+    -            if !carried_fatals.contains(&f) {
+    -                carried_fatals.push(f);
+    -            }
+    -        }
+    +        let _ = terminal_fatal;
+  this run MUST FAIL at: a_fatal_on_a_non_final_pass_is_reported (bytes instead of a refusal)
+    test an_unguarded_fatal_is_still_reported ... ok
+    test a_fatal_on_the_final_pass_is_reported_once ... ok
+    test a_warning_on_a_non_final_pass_is_still_dropped ... ok
+    test a_fatal_on_a_non_final_pass_is_reported ... FAILED
+    test a_carried_fatal_names_the_file_it_was_written_in ... FAILED
+    thread 'a_fatal_on_a_non_final_pass_is_reported' (1427079) panicked at crates/sigil-frontend-as/tests/as_fatal_survives_its_pass.rs:98:32:
+    thread 'a_carried_fatal_names_the_file_it_was_written_in' (1427078) panicked at crates/sigil-frontend-as/tests/as_fatal_survives_its_pass.rs:166:6:
+    test result: FAILED. 3 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+  restoring from committed baseline a77ef3b0
+  restored, dirty paths in $SRC: 0
+
+====================================================================
+MUTATION: trust the returning pass to render the carried span
+  applied, by git diff HEAD --stat:
+     crates/sigil-frontend-as/src/eval.rs | 2 +-
+     1 file changed, 1 insertion(+), 1 deletion(-)
+  applied, by content grep:
+    -        if sources.label(*span).as_ref() == raised_label.as_ref() {
+    +        if true {
+  this run MUST FAIL at: a_carried_fatal_names_the_file_it_was_written_in, and ONLY that one
+    test an_unguarded_fatal_is_still_reported ... ok
+    test a_fatal_on_a_non_final_pass_is_reported ... ok
+    test a_warning_on_a_non_final_pass_is_still_dropped ... ok
+    test a_fatal_on_the_final_pass_is_reported_once ... ok
+    test a_carried_fatal_names_the_file_it_was_written_in ... FAILED
+    thread 'a_carried_fatal_names_the_file_it_was_written_in' (1427533) panicked at crates/sigil-frontend-as/tests/as_fatal_survives_its_pass.rs:171:5:
+    must name the file it is written in: /tmp/.tmpg9harg/inc/b.asm(1): fatal from inside an included file
+    test result: FAILED. 4 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+  restoring from committed baseline a77ef3b0
+  restored, dirty paths in $SRC: 0
+
+====================================================================
+MUTATION: carry without deduping against what the pass already reported
+  applied, by git diff HEAD --stat:
+     crates/sigil-frontend-as/src/eval.rs | 6 ------
+     1 file changed, 6 deletions(-)
+  applied, by content grep:
+    -        if diags
+    -            .iter()
+    -            .any(|d| d.primary == *span && d.message == *message)
+    -        {
+    -            continue;
+    -        }
+  this run MUST FAIL at: a_fatal_on_the_final_pass_is_reported_once (reported twice)
+    test an_unguarded_fatal_is_still_reported ... ok
+    test a_fatal_on_a_non_final_pass_is_reported ... ok
+    test a_fatal_on_the_final_pass_is_reported_once ... FAILED
+    test a_warning_on_a_non_final_pass_is_still_dropped ... ok
+    test a_carried_fatal_names_the_file_it_was_written_in ... ok
+    thread 'a_fatal_on_the_final_pass_is_reported_once' (1427939) panicked at crates/sigil-frontend-as/tests/as_fatal_survives_its_pass.rs:138:5:
+    assertion `left == right` failed: carried once, not twice: ["/tmp/.tmpTmtovr/probe.asm(5): later-pass problem", "/tmp/.tmpTmtovr/probe.asm(5): later-pass problem"]
+    test result: FAILED. 4 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+  restoring from committed baseline a77ef3b0
+  restored, dirty paths in $SRC: 0
+
+====================================================================
+final: a77ef3b0  dirty paths in $SRC: 0
+GREEN after restore:
+    test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+    test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+REDFIRST-FATAL-END

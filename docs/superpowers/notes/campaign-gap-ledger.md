@@ -3967,9 +3967,72 @@ Not implemented by that parcel deliberately. Sigil iterates to a fixpoint rather
 running asl's fixed two passes, so what `MOMPASS` should REPORT is a design question, and
 answering it wrong changes bytes in whichever direction it moves the guarded blocks. aeon
 names `MOMPASS` in 0 files, so the corpora are the only population.
--- OPEN (kill: decide what `MOMPASS` means for a convergence-iterating assembler, seed it
-beside `MOMCPU`/`TRUE`/`FALSE` in the builtin resolver, and re-run the s2disasm corpus
-decomposition expecting those 7 rows to go GONE with nothing appearing)
+-- CLOSED 2026-09-05 by `parcel/as-mompass` (`2026-09-05-as-mompass.md`). `MOMPASS` reports
+1 on the first iteration and 2 on every later one, seeded beside `MOMCPU`/`TRUE`/`FALSE` in
+`builtin_num`. The design question was answered by measurement, not by architecture: sigil's
+iteration count is NOT asl's pass count (they differ in 3 of 6 probes in both directions,
+and asl takes 2 passes on `s2.asm` where sigil takes 4), so a running count would decide
+`if MOMPASS=2` at `s2.asm(91270)` the opposite way from asl. Corpus decomposition: 5254 to
+5247 diagnostics, exactly those 7 rows GONE, no class ROSE, no class APPEARED, after-only
+unresolved-name set empty. All twelve corpus sites agree with asl, and the reason the
+byte risk never materialised is that every one of them guards a `message`, `warning`,
+`fatal` or a `:=` feeding one: no MOMPASS site in any of the three corpora emits a byte.
+Two divergences remain, both with zero corpus population and both asserted as tests
+(a 1-pass asl file, and `if MOMPASS=<n>` guarding an emission).
+
+### A `fatal` that fires only on a non-converged pass is silently discarded (2026-09-05)
+Found while implementing `MOMPASS`, and confirmed PRE-EXISTING by a control that contains
+no `MOMPASS` at all. `run_impl` returns only the converged pass's diagnostics, and a pass
+that aborted via `fatal` is followed by another pass that does not, so the `fatal` vanishes
+and the run exits 0 on a program asl terminates.
+
+| probe | asl | sigil BEFORE the MOMPASS parcel | sigil AFTER |
+|---|---|---|---|
+| `ctrl_fatal.asm` (`fatal` under a forward `:=`, no MOMPASS) | exit 3 | exit 0, `11 EE` | exit 0, `11 EE` |
+| `m_fatal.asm` (`fatal` under `if MOMPASS=1`) | exit 3 | exit 1, the `MOMPASS` refusal | exit 0, `11 00 02` |
+
+The control's before and after are identical, so the parcel did not cause the class. What
+it changed is REACHABILITY: `if MOMPASS=1` guarding a `fatal` used to refuse loudly and now
+evaluates and loses it. The population is real, `sound/_smps2asm_inc.asm(238)` and `(282)`
+on the `SonicDriverVer=1` path s1disasm uses. `message` and `warning` under the same guard
+have the same shape (asl prints on pass 1, sigil prints nothing).
+-- CLOSED 2026-09-05 in the same parcel, after the overseer refused to land a change that
+walks a path from loud to silent. THE ROW ABOVE IS WRONG IN TWO PLACES AND IS CORRECTED
+HERE RATHER THAN EDITED AWAY.
+
+(a) "PRE-EXISTING AND GENERAL" WAS NOT ESTABLISHED. `ctrl_fatal.asm` never reached the
+discard: `V := W` with `W` forward folds to Poison on iteration 1, so the arm is SKIPPED
+and the `fatal` does not execute. Its identical before/after meant nothing. Three
+replacement controls (`ctrl2_ifndef`, `ctrl3_relax`, `co_fatal_plain`) all come back LOUD
+on master, because a `fatal` aborts its pass, which truncates the env, so whatever would
+flip its condition never runs and it re-fires on every pass. `MOMPASS` is the only route to
+the discard that could be constructed, so the parcel created the population rather than
+widening one.
+
+(b) THE CENSUS WAS NOT NEEDED, and the hard stop the row proposed is measurably the WRONG
+FIX. Terminating at the raising pass, which is what asl literally does, cut s1disasm from
+50 located diagnostics to 1 and skdisasm from 2132 to 1, and in both the survivor was a
+line the run already printed. The fix CARRIES instead: the run converges as before, and any
+`fatal` raised on any pass is added to the returned diagnostics, deduped, with the
+`file(line)` captured against the RAISING pass's own source map (carrying the bare span
+reported a `fatal` written in `inc/c.asm` as `inc/b.asm(1)`, probe `co_map2`). Keyed on
+`fatal` and not on `aborted`, which `end` also sets at the bottom of every well-formed
+corpus file. Three-way run over all six roots (s2disasm, s1disasm, skdisasm, aeon's three):
+stdout AND stderr byte-identical between the branch and the branch-plus-fix everywhere.
+
+### `warning` and `message` on a non-final pass are still dropped (2026-09-05)
+The half of the row above that was NOT closed, and scoped out deliberately rather than
+missed. `warning "x"` under `if MOMPASS=1` prints on asl's first pass and prints nothing
+here, exit 0 both ways; `message` is the same. They are not separable on the argument that
+carries `fatal`: asl treats a `warning` as a diagnostic and keeps assembling, and prints it
+once per PASS rather than once per run, so a later pass genuinely does supersede it and
+"carry every one" would multiply output by the iteration count. Pinned as
+`a_warning_on_a_non_final_pass_is_still_dropped` so it reads as a decision.
+-- OPEN (kill: decide what a per-pass author diagnostic MEANS for a fixpoint, which needs
+the census of pass-dependent diagnostics that `fatal` turned out not to need: asl prints
+one per pass and sigil has no pass count to match, so the choice is between once, once per
+iteration, and once tagged with the iteration, and it should be made against a count of
+what the corpora actually emit)
 
 ### `&&` binds TIGHTER than `=` in asl and looser in sigil (2026-09-05)
 Probe `prec.asm` under `2026-09-05-as-undefined-sym-panic-and-silent-if-probes/`, asl

@@ -1,0 +1,15 @@
+== saturating at 2 (what this parcel landed) ==
+  bytes: AA 11 03 EE  exit=0
+
+== the same source with a RUNNING COUNT instead ==
+  applied, by content grep:
+    199:            pass as i64 + 1,
+  applied, by git diff HEAD --stat:
+     crates/sigil-frontend-as/src/eval.rs | 2 +-
+     1 file changed, 1 insertion(+), 1 deletion(-)
+  bytes: 00 11 03 EE  exit=0
+
+  restoring from committed baseline 8cdf7c45a7f9569ca0f599ef87a0df2b425e6478
+  dirty paths in $SRC: 0
+  bytes after restore: AA 11 03 EE
+COUNTERTEST-END
