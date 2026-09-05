@@ -356,7 +356,10 @@ clean**.
 - **`AEON_DIR = /home/volence/sonic_hacks/.aeon-verify-483` was not used at all.** It is 164
   commits behind the pin, and no fact in this note comes from it. Stated because the brief
   offered it and a reader will want to know which tree each fact came from: **every aeon fact
-  here comes from `.aeon-decouple-inv` at `9e3d2861`, and nothing else.**
+  here comes from a detached worktree at `9e3d2861`, and nothing else.** That worktree was
+  created for this pass and **removed afterwards** — reproduce it with
+  `git -C /home/volence/sonic_hacks/aeon worktree add --detach <path> 9e3d2861`. It is not a
+  tree anyone should go looking for.
 
 ## §4 — Where the brief this parcel was dispatched with was wrong
 
