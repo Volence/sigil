@@ -208,7 +208,7 @@ fn dw_unresolved_symbol_defers_verbatim_le() {
     assert_eq!(
         linked.section(&sec.name).unwrap().bytes,
         vec![0x7E, 0x05],
-        "verbatim LE — NOT 7E 85 (the old BankPtr16Le mask)"
+        "verbatim LE, NOT 7E 85 (the old BankPtr16Le mask)"
     );
 }
 

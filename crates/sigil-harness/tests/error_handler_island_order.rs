@@ -114,7 +114,7 @@ fn an_appendix_starting_before_blob_end_is_refused_with_the_other_diagnosis() {
 #[test]
 fn the_exact_blob_end_placement_passes_the_guard_and_proceeds() {
     let err = appendix_starting_at(blob_end(), &listing_with_blob(), true)
-        .expect_err("no engine tree on disk, so the call still fails — but LATER");
+        .expect_err("no engine tree on disk, so the call still fails, but LATER");
     assert!(
         !err.contains("blob-end contract"),
         "the contract holds at exactly blob end and must not fire; got: {err}"
@@ -158,7 +158,7 @@ fn a_declared_island_with_no_blob_label_is_refused() {
 fn an_undeclared_island_lets_an_islandless_listing_through() {
     let no_blob = vec![sym("EntryPoint", 0x200), sym("GameLoop", 0x2_56E)];
     let err = appendix_starting_at(blob_end() + 2, &no_blob, false)
-        .expect_err("no engine tree on disk, so the call still fails — but LATER");
+        .expect_err("no engine tree on disk, so the call still fails, but LATER");
     assert!(
         !err.contains("MDDBG"),
         "a shape with no island has no MDDBG contract to break; got: {err}"

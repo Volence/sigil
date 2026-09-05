@@ -51,7 +51,7 @@ fn jbra_just_over_short_range_widens_to_word() {
     );
     assert_eq!(
         bytes[1], 0x00,
-        "a jbra 128 bytes forward MUST be bra.w (60 00 ..), not bra.s — got byte1={:#04x} (bra.s with disp {}, unreachable)",
+        "a jbra 128 bytes forward MUST be bra.w (60 00 ..), not bra.s, got byte1={:#04x} (bra.s with disp {}, unreachable)",
         bytes[1], bytes[1]
     );
     // And the whole branch is 4 bytes → total = 4 + 64*2 + 2 = 134.

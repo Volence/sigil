@@ -419,12 +419,12 @@ fn out_declaring_targets_dispatches(files: &[File]) -> Vec<String> {
 fn tripwire_message(hits: &[String]) -> String {
     format!(
         "TRUST BOUNDARY: out-verify's soundness through a computed `targets(...)` \
-         dispatch rests on the author-supplied landing list being EXHAUSTIVE — a \
+         dispatch rests on the author-supplied landing list being EXHAUSTIVE, a \
          list omitting a reachable landing verifies a false `out()`, which then \
          feeds must-def as a definition. Nothing validates exhaustiveness in \
          general; the corpus was safe only because no out-declaring proc used the \
          combination. These now do: {hits:?}. Before adopting it, add a \
-         clamp-provability or table-length guard — see campaign-gap-ledger.md, the \
+         clamp-provability or table-length guard, see campaign-gap-ledger.md, the \
          \"exhaustiveness trust\" row (lane-cfg, 2026-08-08)."
     )
 }

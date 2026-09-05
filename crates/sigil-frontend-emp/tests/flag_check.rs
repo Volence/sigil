@@ -91,7 +91,7 @@ fn consumed_carry_passes() {
         "Queue",
         NONE,
     );
-    assert!(f.is_empty(), "carry consumed by bcs — should not fire: {f:?}");
+    assert!(f.is_empty(), "carry consumed by bcs, should not fire: {f:?}");
 }
 
 /// The dplc pattern: a `movem.l (sp)+` sits between the call and its `bcs`.
@@ -112,7 +112,7 @@ fn movem_between_call_and_bcs_is_transparent() {
         "Queue",
         NONE,
     );
-    assert!(f.is_empty(), "movem is CC-transparent — carry survives to bcs: {f:?}");
+    assert!(f.is_empty(), "movem is CC-transparent, carry survives to bcs: {f:?}");
 }
 
 /// An `addx` between the call and a `bcs` REDEFINES carry (it reads X, not the
@@ -134,7 +134,7 @@ fn addx_between_call_and_bcs_redefines_and_fires() {
         "Queue",
         NONE,
     );
-    assert_eq!(f.len(), 1, "addx redefines carry before the bcs — must fire: {f:?}");
+    assert_eq!(f.len(), 1, "addx redefines carry before the bcs, must fire: {f:?}");
 }
 
 /// A `move.w #imm, sr` between the call and a `bcs` writes the whole status
@@ -155,7 +155,7 @@ fn move_to_sr_between_call_and_bcs_redefines_and_fires() {
         "Queue",
         NONE,
     );
-    assert_eq!(f.len(), 1, "move to sr redefines carry before the bcs — must fire: {f:?}");
+    assert_eq!(f.len(), 1, "move to sr redefines carry before the bcs, must fire: {f:?}");
 }
 
 /// A return without consuming the carry fires (the flag is abandoned in the
@@ -171,7 +171,7 @@ fn return_without_consume_fires() {
         "Queue",
         NONE,
     );
-    assert_eq!(f.len(), 1, "return abandons the flag — should fire: {f:?}");
+    assert_eq!(f.len(), 1, "return abandons the flag, should fire: {f:?}");
 }
 
 /// A branch join where ONE path consumes the carry and the other returns
@@ -193,7 +193,7 @@ fn one_unconsumed_path_at_a_join_fires() {
         "Queue",
         NONE,
     );
-    assert_eq!(f.len(), 1, "the .skip path returns unconsumed — should fire: {f:?}");
+    assert_eq!(f.len(), 1, "the .skip path returns unconsumed, should fire: {f:?}");
 }
 
 /// `@discards(dropped)` on the call is the explicit opt-out — the same dropped
@@ -340,7 +340,7 @@ fn non_flag_callee_is_never_checked() {
         "Queue", // the flag-callee is Queue; PlainSub is not it
         NONE,
     );
-    assert!(f.is_empty(), "PlainSub returns no flag — nothing to consume: {f:?}");
+    assert!(f.is_empty(), "PlainSub returns no flag, nothing to consume: {f:?}");
 }
 
 // --- §6 (A): an intervening UNCONDITIONAL out() kills the conditional taint ----
@@ -420,7 +420,7 @@ fn invalid_path_conditional_out_does_not_kill_trap() {
     assert!(
         f.iter().any(|x| matches!(&x.kind, FlagFiringKind::InvalidPathRead { reg, .. } if reg == "a1")
             && x.callee == "Find"),
-        "Find2's CONDITIONAL out must NOT kill the taint — Find's invalid-path a1 read still fires: {f:?}"
+        "Find2's CONDITIONAL out must NOT kill the taint, Find's invalid-path a1 read still fires: {f:?}"
     );
 
     // MUTATION (proves the guardrail is load-bearing, not decorative): if the fix
@@ -494,7 +494,7 @@ fn z80_jr_c_consumes_carry() {
          }\n",
         "Resolve",
     );
-    assert!(f.is_empty(), "jr c consumes the carry result — should not fire: {f:?}");
+    assert!(f.is_empty(), "jr c consumes the carry result, should not fire: {f:?}");
 }
 
 /// CONSUMED: `jr nc` (carry-clear) is the mirror consumer — also discharges the
@@ -512,7 +512,7 @@ fn z80_jr_nc_consumes_carry() {
          }\n",
         "Resolve",
     );
-    assert!(f.is_empty(), "jr nc consumes the carry result — should not fire: {f:?}");
+    assert!(f.is_empty(), "jr nc consumes the carry result, should not fire: {f:?}");
 }
 
 /// ABANDONED: a Z80 caller that returns without testing carry drops the result
@@ -528,7 +528,7 @@ fn z80_return_without_consume_fires() {
          }\n",
         "Resolve",
     );
-    assert_eq!(f.len(), 1, "return abandons the Z80 carry result — should fire: {f:?}");
+    assert_eq!(f.len(), 1, "return abandons the Z80 carry result, should fire: {f:?}");
     assert_eq!(f[0].flag, "carry");
 }
 
@@ -548,7 +548,7 @@ fn z80_scf_redefines_carry_and_fires() {
          }\n",
         "Resolve",
     );
-    assert_eq!(f.len(), 1, "scf redefines carry before the jr c — must fire: {f:?}");
+    assert_eq!(f.len(), 1, "scf redefines carry before the jr c, must fire: {f:?}");
 }
 
 /// TRANSPARENT: a `jr z` (Zero-testing, NOT carry) between the call and the
@@ -570,7 +570,7 @@ fn z80_jr_z_is_carry_transparent() {
          }\n",
         "Resolve",
     );
-    assert!(f.is_empty(), "jr z is carry-transparent — carry survives to jr c: {f:?}");
+    assert!(f.is_empty(), "jr z is carry-transparent, carry survives to jr c: {f:?}");
 }
 
 /// JOIN: one path consumes the carry (`jr c`), the other returns unconsumed —
@@ -591,5 +591,5 @@ fn z80_one_unconsumed_path_at_a_join_fires() {
          }\n",
         "Resolve",
     );
-    assert_eq!(f.len(), 1, "the .skip path returns unconsumed — should fire: {f:?}");
+    assert_eq!(f.len(), 1, "the .skip path returns unconsumed, should fire: {f:?}");
 }

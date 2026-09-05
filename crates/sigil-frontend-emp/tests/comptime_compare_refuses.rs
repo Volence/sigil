@@ -121,7 +121,7 @@ fn label_vs_struct_refuses_while_struct_vs_struct_still_answers_both_ways() {
     );
     assert!(
         !unequal.iter().any(|m| m.contains("[eq.cross-type]")),
-        "two `pal_variant` values are comparable — refusing them would fire on correct code: {unequal:?}"
+        "two `pal_variant` values are comparable, refusing them would fire on correct code: {unequal:?}"
     );
 
     // Leg 3 — the probe's own always-red shape, with the EQUAL twin on the right.
@@ -141,7 +141,7 @@ fn label_vs_struct_refuses_while_struct_vs_struct_still_answers_both_ways() {
     );
     assert!(
         refusal.contains("always true"),
-        "`!=` across classes was stuck at true — the diagnostic must say which constant: {refusal:?}"
+        "`!=` across classes was stuck at true, the diagnostic must say which constant: {refusal:?}"
     );
 
     // Leg 4 — the same shape with the UNEQUAL twin on the right refuses too. Legs
@@ -180,7 +180,7 @@ fn cross_struct_type_equality_refuses_while_same_type_answers_both_ways() {
     );
     assert!(
         refusal.contains("always false"),
-        "`==` across classes was stuck at false — the diagnostic must say so: {refusal:?}"
+        "`==` across classes was stuck at false, the diagnostic must say so: {refusal:?}"
     );
 
     // Leg 2 — same-typed values still compare EQUAL cleanly...

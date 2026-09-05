@@ -129,7 +129,7 @@ fn named_section_without_vma_has_no_pinned_vma_base() {
     assert_eq!(
         b.vma_origin(),
         2,
-        "vma_origin() falls back to lma (2) — Bval must NOT resolve from address 0"
+        "vma_origin() falls back to lma (2), Bval must NOT resolve from address 0"
     );
     assert_eq!(b.labels[0].name, "Bval");
     assert_eq!(b.vma_origin() + b.labels[0].offset, 2);

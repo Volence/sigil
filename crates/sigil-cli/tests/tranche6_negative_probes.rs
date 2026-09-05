@@ -282,7 +282,7 @@ fn word_imm_link_range_violation_is_loud_on_both_frontends() {
         lma += 0x10_0000;
     }
     let resolved = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
-        .expect("layout resolves — the range check is the LINK's");
+        .expect("layout resolves, the range check is the LINK's");
     assert!(
         sigil_link::link(&resolved, &SymbolTable::new()).is_err(),
         "an overflowing deferred dc.w value must fail the link"

@@ -122,8 +122,8 @@ fn a_bare_run_gets_a_directory_of_its_own_tree_not_a_suite_shared_one() {
     );
     assert!(
         !got.contains(".sigil-ref-target"),
-        "`.sigil-ref-target` is the retired suite-shared default — one path for every \
-         worktree of this repo — and a derivation must not land back on it: `{got}`"
+        "`.sigil-ref-target` is the retired suite-shared default, one path for every \
+         worktree of this repo, and a derivation must not land back on it: `{got}`"
     );
     // And the same tree asked twice answers the same, while a DIFFERENT tree answers
     // differently. Uniqueness is the whole property; a constant would satisfy the two
@@ -164,7 +164,7 @@ fn from_a_linked_worktree_the_main_checkouts_target_is_refused_too() {
             .arg(dir)
             .args(args)
             .output()
-            .unwrap_or_else(|e| panic!("git {args:?}: {e} — this gate measures what git resolves, so it cannot be skipped"));
+            .unwrap_or_else(|e| panic!("git {args:?}: {e}, this gate measures what git resolves, so it cannot be skipped"));
         assert!(out.status.success(), "git {args:?}: {}", String::from_utf8_lossy(&out.stderr));
     };
     git(&main, &["init", "-q"]);
@@ -279,7 +279,7 @@ fn a_capture_with_no_assembler_named_refuses_and_says_what_it_declined() {
     for want in ["SIGIL_BUILD", "CARGO_TARGET_DIR", "target/release/sigil"] {
         assert!(
             text.contains(want),
-            "the refusal must name `{want}` — the variables consulted and the path \
+            "the refusal must name `{want}`, the variables consulted and the path \
              declined:\n{text}"
         );
     }
@@ -359,7 +359,7 @@ fn refreeze_tells_its_children_which_build_directory_to_use() {
     let got = env.get("CARGO_TARGET_DIR").unwrap_or_else(|| {
         panic!(
             "refreeze handed its capture child no build directory, so the child would have \
-             to guess one — which is what these scripts now refuse. It passed: {:?}",
+             to guess one, which is what these scripts now refuse. It passed: {:?}",
             env.keys().collect::<Vec<_>>()
         )
     });
@@ -457,7 +457,7 @@ fn a_size_derivation_given_a_build_directory_moves_on_to_the_next_requirement() 
         "naming CARGO_TARGET_DIR must satisfy the build-directory requirement:\n{text}"
     );
     assert!(
-        text.contains("REFUSING — cannot locate the aeon checkout"),
+        text.contains("REFUSING, cannot locate the aeon checkout"),
         "it must proceed to the reference-tree resolution:\n{text}"
     );
 }
@@ -484,7 +484,7 @@ fn no_script_supplies_a_default_for_cargo_target_dir() {
             Ok(e) => e,
             // A directory that is not there is not "no defects": the gate would silently
             // stop measuring the day one is renamed.
-            Err(e) => panic!("cannot scan {} ({e}) — this gate measures files, so an \
+            Err(e) => panic!("cannot scan {} ({e}), this gate measures files, so an \
                               unreadable directory is a failure, not an empty result", dir.display()),
         };
         for entry in entries.flatten() {
@@ -525,7 +525,7 @@ fn no_script_supplies_a_default_for_cargo_target_dir() {
     }
     assert!(
         scanned > 0,
-        "no shell script was scanned, so this gate measured nothing — that is a failure, \
+        "no shell script was scanned, so this gate measured nothing, that is a failure, \
          not a pass"
     );
     assert!(

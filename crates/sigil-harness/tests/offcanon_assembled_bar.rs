@@ -70,7 +70,7 @@ fn header_assembled_end(stem: &str) -> Result<usize, String> {
             return usize::from_str_radix(v, 16).map_err(|e| format!("{stem} assembled_end `{v}`: {e}"));
         }
     }
-    Err(format!("{stem}: no `# assembled_end=` header — the table is not derive_offcanon output"))
+    Err(format!("{stem}: no `# assembled_end=` header, the table is not derive_offcanon output"))
 }
 
 /// THE gate: each shape's profile-visible assembled bar == the provenance chain tip's
@@ -98,7 +98,7 @@ fn assembled_len_matches_provenance_tip_for_every_shape() {
         if derived != tip.anchor_end {
             bad.push(format!(
                 "{key}: profile `{}` assembled_len() = {derived:#x} but provenance tip \
-                 anchor_end = {:#x} (delta {}{:#x}) — the size table and the freeze \
+                 anchor_end = {:#x} (delta {}{:#x}), the size table and the freeze \
                  describe different ROMs; re-run derive_offcanon, or refreeze",
                 profile.name,
                 tip.anchor_end,
@@ -128,7 +128,7 @@ fn size_table_header_agrees_with_its_endofrom_row() {
         let row = profile.assembled_len();
         if header != row {
             bad.push(format!(
-                "{stem}: header `# assembled_end={header:#x}` but `EndOfRom {row:#x}` — a \
+                "{stem}: header `# assembled_end={header:#x}` but `EndOfRom {row:#x}`, a \
                  GENERATED table was hand-edited; re-run derive_offcanon instead"
             ));
         }
@@ -150,7 +150,7 @@ fn canonical_pins_agree_with_the_canonical_size_tables() {
         assert_eq!(
             pinned, frozen,
             "canonical {} shape: pins::{}ASSEMBLED_LEN = {pinned:#x} but {} `EndOfRom` = \
-             {frozen:#x} — repin and derive_offcanon disagree about the assembled bar",
+             {frozen:#x}, repin and derive_offcanon disagree about the assembled bar",
             if debug { "debug" } else { "plain" },
             if debug { "DEBUG_" } else { "" },
             if debug { "s4_debug.txt" } else { "s4.txt" },
@@ -174,7 +174,7 @@ fn every_frozen_size_table_is_gated() {
     gated.sort();
     assert_eq!(
         on_disk, gated,
-        "committed size tables and this gate's subject list differ — add the new shape's \
+        "committed size tables and this gate's subject list differ, add the new shape's \
          row to `targets()` (and its provenance target) rather than leaving it ungated"
     );
 }

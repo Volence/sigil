@@ -240,7 +240,7 @@ fn z80_move_idiom_preserves_source_not_dest() {
                }\n";
     assert!(
         lower_diags(bad).iter().any(|d| d.contains("[proc.preserves-unverifiable]") && d.contains("h")),
-        "push ix/pop hl CLOBBERS hl — preserves(hl) must fire"
+        "push ix/pop hl CLOBBERS hl, preserves(hl) must fire"
     );
 }
 
@@ -304,7 +304,7 @@ fn z80_unconditional_jr_keeps_single_edge() {
     let diags = lower_diags(src);
     assert!(
         !diags.iter().any(|d| d.contains("[proc.preserves-unverifiable]")),
-        "unconditional jr skips the dead `ld a, 5` — preserves(a) must hold, got: {diags:?}"
+        "unconditional jr skips the dead `ld a, 5`, preserves(a) must hold, got: {diags:?}"
     );
 }
 
@@ -547,7 +547,7 @@ fn z80_call_to_unknown_callee_conservative() {
     let diags = lower_diags(src);
     assert!(
         diags.iter().any(|d| d.contains("[proc.preserves-unverifiable]")),
-        "an unknown callee must be conservative (clobbers de) — preserves(de) fires, got: {diags:?}"
+        "an unknown callee must be conservative (clobbers de), preserves(de) fires, got: {diags:?}"
     );
 }
 
@@ -606,7 +606,7 @@ fn z80_tail_jp_unknown_callee_conservative() {
     let diags = lower_diags(src);
     assert!(
         diags.iter().any(|d| d.contains("[proc.preserves-unverifiable]")),
-        "a tail-jp to an unknown callee must be conservative — preserves(ix) fires, got: {diags:?}"
+        "a tail-jp to an unknown callee must be conservative, preserves(ix) fires, got: {diags:?}"
     );
 }
 
@@ -806,7 +806,7 @@ fn z80_out_carry_preserves_a_no_overlap() {
     let diags = lower_diags(src);
     assert!(
         !diags.iter().any(|d| d.contains("[proc.out-preserves-overlap]")),
-        "out(carry:) + preserves(a) is disjoint — no overlap, got: {diags:?}"
+        "out(carry:) + preserves(a) is disjoint, no overlap, got: {diags:?}"
     );
 }
 
@@ -901,7 +901,7 @@ fn z80_preserves_f_16bit_inc_holds() {
     let diags = lower_diags(src);
     assert!(
         !diags.iter().any(|d| d.contains("[proc.preserves-unverifiable]")),
-        "16-bit inc hl leaves the flags — preserves(f) must hold, got: {diags:?}"
+        "16-bit inc hl leaves the flags, preserves(f) must hold, got: {diags:?}"
     );
 }
 
@@ -917,7 +917,7 @@ fn z80_preserves_f_8bit_inc_fires() {
     let diags = lower_diags(src);
     assert!(
         diags.iter().any(|d| d.contains("[proc.preserves-unverifiable]") && d.contains("preserves(f)")),
-        "8-bit inc b writes the flags — preserves(f) must fire, got: {diags:?}"
+        "8-bit inc b writes the flags, preserves(f) must fire, got: {diags:?}"
     );
 }
 
@@ -975,7 +975,7 @@ fn z80_djnz_writes_counter_b_fires() {
     let diags = lower_diags(src);
     assert!(
         diags.iter().any(|d| d.contains("[proc.preserves-unverifiable]") && d.contains("preserves(b)")),
-        "djnz writes b — preserves(bc) must fire, got: {diags:?}"
+        "djnz writes b, preserves(bc) must fire, got: {diags:?}"
     );
 }
 
@@ -992,7 +992,7 @@ fn z80_ldir_writes_hl_fires() {
     let diags = lower_diags(src);
     assert!(
         diags.iter().any(|d| d.contains("[proc.preserves-unverifiable]") && d.contains("preserves(h)")),
-        "ldir writes hl — preserves(hl) must fire, got: {diags:?}"
+        "ldir writes hl, preserves(hl) must fire, got: {diags:?}"
     );
 }
 
@@ -1025,7 +1025,7 @@ fn z80_out_cond_preserves_b_no_overlap() {
     let diags = lower_diags(src);
     assert!(
         !diags.iter().any(|d| d.contains("[proc.out-preserves-overlap]")),
-        "out(a if eq) + preserves(b) is disjoint from the flags — no overlap, got: {diags:?}"
+        "out(a if eq) + preserves(b) is disjoint from the flags, no overlap, got: {diags:?}"
     );
 }
 
@@ -1060,7 +1060,7 @@ fn z80_exit_with_balanced_stack_holds() {
     let diags = lower_diags(src);
     assert!(
         !diags.iter().any(|d| d.contains("[proc.preserves-unverifiable]")),
-        "a balanced push/pop leaves the stack empty — preserves(de) must hold, got: {diags:?}"
+        "a balanced push/pop leaves the stack empty, preserves(de) must hold, got: {diags:?}"
     );
 }
 
@@ -1089,7 +1089,7 @@ fn z80_tail_into_noreturn_carries_no_preserve_obligation() {
     let diags = lower_diags(src);
     assert!(
         !diags.iter().any(|d| d.contains("[proc.preserves-unverifiable]")),
-        "a tail into a @noreturn handler is not a return path — preserves(de) must not \
+        "a tail into a @noreturn handler is not a return path, preserves(de) must not \
          be charged against it, got: {diags:?}"
     );
 }
@@ -1111,7 +1111,7 @@ fn z80_tail_into_ordinary_clobbering_callee_still_fires() {
     let diags = lower_diags(src);
     assert!(
         diags.iter().any(|d| d.contains("[proc.preserves-unverifiable]")),
-        "a tail into an ordinary de-clobbering callee is a real return path — \
+        "a tail into an ordinary de-clobbering callee is a real return path, \
          preserves(de) must still fire, got: {diags:?}"
     );
 }

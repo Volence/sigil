@@ -295,7 +295,7 @@ fn stall_source(bed: &Bed, name: &str) -> std::fs::File {
     let mut w = rx
         .recv_timeout(std::time::Duration::from_secs(20))
         .unwrap_or_else(|_| {
-            panic!("nothing opened the fifo source for reading within 20s — the fixture never reached its copy")
+            panic!("nothing opened the fifo source for reading within 20s, the fixture never reached its copy")
         })
         .unwrap_or_else(|e| panic!("open fifo source for write: {e}"));
     let blob = new_bytes(name);
@@ -480,7 +480,7 @@ fn a_copy_stalled_mid_file_cannot_disturb_the_committed_golden() {
     assert_eq!(
         committed,
         old_bytes(name),
-        "the committed golden changed while a copy was mid-file — {} bytes",
+        "the committed golden changed while a copy was mid-file, {} bytes",
         committed.len()
     );
     assert_eq!(

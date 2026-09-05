@@ -57,7 +57,7 @@ const GOLDEN: &str = include_str!("z80_golden_vectors.txt");
 fn golden_file_parses() {
     let vectors = parse_golden(GOLDEN);
     // parse_golden asserts each record is well-formed; require it is non-empty too.
-    assert!(!vectors.is_empty(), "committed golden file is empty — run gen-z80-vectors");
+    assert!(!vectors.is_empty(), "committed golden file is empty, run gen-z80-vectors");
     assert!(vectors.iter().all(|v| (1..=4).contains(&v.bytes.len())));
 }
 
@@ -89,7 +89,7 @@ fn golden_and_corpus_agree_line_for_line() {
     assert_eq!(
         corpus.len(),
         vectors.len(),
-        "corpus() has {} snippets but golden has {} vectors — regenerate",
+        "corpus() has {} snippets but golden has {} vectors, regenerate",
         corpus.len(),
         vectors.len()
     );

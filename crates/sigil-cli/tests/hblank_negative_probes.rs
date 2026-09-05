@@ -188,7 +188,7 @@ fn doctored_jsr_register_produces_different_bytes_than_genuine() {
     let doctored_bytes = &doctored_linked.section("hblank").expect("hblank section").bytes;
     assert_ne!(
         genuine_bytes, doctored_bytes,
-        "a doctored `move.l a1, ...` must emit different bytes than the genuine `move.l a0, ...` — \
+        "a doctored `move.l a1, ...` must emit different bytes than the genuine `move.l a0, ...`, \
          else the byte gate could never catch this transcription class"
     );
 }
@@ -291,7 +291,7 @@ fn wrong_base_map_places_the_section_at_a_different_address() {
     assert_eq!(wrong_hblank.lma, wrong_base, "the doctored map must place hblank at the derived wrong base");
     assert_ne!(
         real_hblank.lma, wrong_hblank.lma,
-        "placement must genuinely move with the map base — not be an echo/hardcode"
+        "placement must genuinely move with the map base, not be an echo/hardcode"
     );
 
     // Genuine end-to-end proof: link BOTH placements (with the cross-seam
@@ -312,6 +312,6 @@ fn wrong_base_map_places_the_section_at_a_different_address() {
     assert_ne!(
         real_linked.section("hblank").unwrap().lma,
         wrong_linked.section("hblank").unwrap().lma,
-        "the LMA must differ between the two placements — placement is real, not an echo"
+        "the LMA must differ between the two placements, placement is real, not an echo"
     );
 }

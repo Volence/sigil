@@ -285,7 +285,7 @@ fn first_proc(f: &File) -> &ProcDecl {
 #[test]
 fn scaffolding_attr_attaches_to_proc() {
     let f = ok("module engine.render\n\
-                @scaffolding(\"VInt_Lag race fix — forward reset hook\")\n\
+                @scaffolding(\"VInt_Lag race fix, forward reset hook\")\n\
                 pub proc Plane_Buffer_Reset () clobbers() { rts }\n");
     let p = first_proc(&f);
     assert_eq!(p.attrs.len(), 1);

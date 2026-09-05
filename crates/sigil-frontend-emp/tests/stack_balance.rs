@@ -221,7 +221,7 @@ fn assert_bailout_silences(what: &str, hazard: &str) {
     let leaked = stack_diags(&bailed);
     assert!(
         leaked.is_empty(),
-        "`{what}` makes the stack model untrustworthy — an ERROR-tier finding past it \
+        "`{what}` makes the stack model untrustworthy, an ERROR-tier finding past it \
          would be a guess, got: {leaked:?}"
     );
 }

@@ -160,7 +160,7 @@ fn shapes_sharing_a_game_map_carry_the_same_builtin_key_set() {
                 keys,
                 first_keys,
                 "shapes `{first_label}` and `{label}` share {} but carry different \
-                 built-in key sets — a game [defines] row named for the difference \
+                 built-in key sets, a game [defines] row named for the difference \
                  would error in one shape and silently land in the other",
                 map.display()
             );
@@ -294,7 +294,7 @@ fn the_shipped_maps_game_declared_rows_are_polarity_covered() {
     // the one that changes, in the same commit as the row.
     assert!(
         keys.is_empty(),
-        "the shipped maps now declare game defines {keys:?} — update this expectation \
+        "the shipped maps now declare game defines {keys:?}, update this expectation \
          in the same commit as the row"
     );
 }

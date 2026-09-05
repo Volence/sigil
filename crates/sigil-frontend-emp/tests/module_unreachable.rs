@@ -42,7 +42,7 @@ fn unreached_guards_are_reported_and_reached_ones_are_not() {
 
     assert!(
         diags.iter().all(|d| d.level != sigil_span::Level::Error),
-        "an unreached FALSE guard must not fail the build — that is the defect: {diags:?}"
+        "an unreached FALSE guard must not fail the build, that is the defect: {diags:?}"
     );
     let hits: Vec<&str> = diags
         .iter()

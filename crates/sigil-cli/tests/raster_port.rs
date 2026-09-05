@@ -340,7 +340,7 @@ pub fn compile_real_file(debug: bool, carriers_override: Option<Vec<Section>>) -
 pub fn assert_region_matches(candidate: &[u8], expected: &[u8], what: &str) {
     assert!(
         !candidate.is_empty(),
-        "{what}: the module emitted NO BYTES — a region gate over an empty window \
+        "{what}: the module emitted NO BYTES, a region gate over an empty window \
          proves nothing. Either the module stopped emitting, or this pin should not exist."
     );
     let expected = if expected.len() > candidate.len()
@@ -354,7 +354,7 @@ pub fn assert_region_matches(candidate: &[u8], expected: &[u8], what: &str) {
     assert_eq!(
         candidate.len(),
         expected.len(),
-        "{what}: length mismatch — candidate {} bytes, expected {} bytes",
+        "{what}: length mismatch, candidate {} bytes, expected {} bytes",
         candidate.len(),
         expected.len()
     );

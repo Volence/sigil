@@ -372,7 +372,7 @@ fn controllers_doctored_eor_operand_order_produces_different_bytes_than_genuine(
     let doctored_bytes = &doctored_linked.section("controllers").expect("controllers section").bytes;
     assert_ne!(
         genuine_bytes, doctored_bytes,
-        "a doctored `eor.b d3, d0` must emit different bytes than the genuine `eor.b d0, d3` — \
+        "a doctored `eor.b d3, d0` must emit different bytes than the genuine `eor.b d0, d3`, \
          else the byte gate could never catch this transcription class"
     );
 }
@@ -398,7 +398,7 @@ fn math_doctored_dropped_add_produces_different_bytes_than_genuine() {
     let doctored_bytes = &doctored_linked.section("math").expect("math section").bytes;
     assert_ne!(
         genuine_bytes, doctored_bytes,
-        "dropping `add.w d0, d0` must emit different bytes than the genuine file — \
+        "dropping `add.w d0, d0` must emit different bytes than the genuine file, \
          else the byte gate could never catch this transcription class"
     );
 }
@@ -512,7 +512,7 @@ fn controllers_wrong_base_map_places_the_section_at_a_different_address() {
     );
     assert_ne!(
         real_controllers.lma, wrong_controllers.lma,
-        "placement must genuinely move with the map base — not be an echo/hardcode"
+        "placement must genuinely move with the map base, not be an echo/hardcode"
     );
 
     let real_linked = link_controllers_placed(real_sections);
@@ -523,7 +523,7 @@ fn controllers_wrong_base_map_places_the_section_at_a_different_address() {
     assert_ne!(
         real_linked.section("controllers").unwrap().lma,
         wrong_linked.section("controllers").unwrap().lma,
-        "the LMA must differ between the two placements — placement is real, not an echo"
+        "the LMA must differ between the two placements, placement is real, not an echo"
     );
 }
 
@@ -551,7 +551,7 @@ fn math_wrong_base_map_places_the_section_at_a_different_address() {
     );
     assert_ne!(
         real_math.lma, wrong_math.lma,
-        "placement must genuinely move with the map base — not be an echo/hardcode"
+        "placement must genuinely move with the map base, not be an echo/hardcode"
     );
 
     let real_linked = link_math_placed(real_sections);
@@ -562,6 +562,6 @@ fn math_wrong_base_map_places_the_section_at_a_different_address() {
     assert_ne!(
         real_linked.section("math").unwrap().lma,
         wrong_linked.section("math").unwrap().lma,
-        "the LMA must differ between the two placements — placement is real, not an echo"
+        "the LMA must differ between the two placements, placement is real, not an echo"
     );
 }

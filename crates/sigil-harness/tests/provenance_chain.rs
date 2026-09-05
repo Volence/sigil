@@ -148,7 +148,7 @@ fn aeon_dir_matches_the_provenance_tip() {
             // A reference that cannot be read at all is the `reference_tree` case:
             // skip green, hard under strict, naming the path.
             assert!(!test_support::strict_gate(), "SIGIL_STRICT_GATE set but {e}");
-            eprintln!("skip: cannot read aeon revision — {e} (set AEON_DIR)");
+            eprintln!("skip: cannot read aeon revision, {e} (set AEON_DIR)");
             return;
         }
     };

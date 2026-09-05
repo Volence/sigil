@@ -102,7 +102,7 @@ fn corpus_sources() -> Option<Vec<(PathBuf, String)>> {
     // walk that lost a directory — or a generated module — must fail loudly.
     assert!(
         paths.len() >= 120,
-        "the corpus walk found only {} .emp files under {} — too few to be the whole \
+        "the corpus walk found only {} .emp files under {}, too few to be the whole \
          corpus, so every assert-empty gate below would pass vacuously",
         paths.len(),
         aeon.display()
@@ -111,7 +111,7 @@ fn corpus_sources() -> Option<Vec<(PathBuf, String)>> {
         paths.iter().any(|p| p.ends_with("engine/debug/generated/compression_vectors.emp")),
         "engine/debug/generated/compression_vectors.emp is absent, so `engine.compression_vectors` \
          is not in the walk and compression_selftest.emp's uses of it vanish silently. \
-         It is gitignored — run tools/gen_compression_vectors.py in {}",
+         It is gitignored, run tools/gen_compression_vectors.py in {}",
         aeon.display()
     );
     Some(
@@ -174,7 +174,7 @@ fn analyze_every_shape(
                 .collect();
             assert!(
                 bind_errors.is_empty(),
-                "shape `{label}`: L1 interface bind errors — the walk's env is \
+                "shape `{label}`: L1 interface bind errors, the walk's env is \
                  incomplete, so every gate below would read a corpus with silently \
                  discarded comptime arms: {bind_errors:?}"
             );
@@ -259,7 +259,7 @@ fn corpus_word_facet_preserves_all_verify_the_error_gate() {
         // in a plain shape the register is never written.
         assert_eq!(
             r.word_preserve_claims, expected_claims,
-            "shape `{label}`: the word-facet claim census drifted — the error gate above \
+            "shape `{label}`: the word-facet claim census drifted, the error gate above \
              is only as meaningful as the set it ranged over"
         );
         checked += r.word_preserve_claims.len();
@@ -289,7 +289,7 @@ fn corpus_comptime_conditions_all_resolve_the_error_gate() {
     for (label, _profile, r) in analyze_every_shape(&srcs) {
         assert!(
             r.comptime_unresolved.is_empty(),
-            "shape `{label}`: [comptime.unresolved] — a comptime condition references \
+            "shape `{label}`: [comptime.unresolved], a comptime condition references \
              a name this shape's define set does not resolve, so its arms are \
              INVISIBLE to every analysis at zero drops: {:?}",
             r.comptime_unresolved
@@ -330,7 +330,7 @@ fn a_misspelled_toggle_in_a_condition_is_named_at_zero_drops_in_every_shape() {
                 .iter()
                 .any(|(p, n, _)| p == "Collected_ParkSlot" && n == "DEBUG_MISSPELLED"),
             "shape `{label}`: a misspelled toggle in a comptime condition MUST land on \
-             [comptime.unresolved] in every shape — it resolves in none. got: {:?}",
+             [comptime.unresolved] in every shape, it resolves in none. got: {:?}",
             r.comptime_unresolved
                 .iter()
                 .map(|(p, n, _)| (p.as_str(), n.as_str()))
@@ -338,7 +338,7 @@ fn a_misspelled_toggle_in_a_condition_is_named_at_zero_drops_in_every_shape() {
         );
         assert_eq!(
             r.dropped_instrs, 0,
-            "shape `{label}`: a poisoned condition discards arms WHOLE — it must not \
+            "shape `{label}`: a poisoned condition discards arms WHOLE, it must not \
              drop instructions, or the drop gate would have covered this class and \
              this surface would be redundant: {:?}",
             r.dropped_by_proc
@@ -379,8 +379,8 @@ fn a_profile_that_loses_a_toggle_is_named_by_the_surface_in_every_shape() {
         let r = analyze_corpus_with_contracts(&files, &defines, &iface_env);
         assert!(
             r.comptime_unresolved.iter().any(|(_, n, _)| n == "DEBUG"),
-            "shape `{label}` stripped of DEBUG: the surface must name the lost toggle \
-             — this is the profile-lost-a-define blind spot. got: {:?}",
+            "shape `{label}` stripped of DEBUG: the surface must name the lost toggle, \
+             this is the profile-lost-a-define blind spot. got: {:?}",
             r.comptime_unresolved
                 .iter()
                 .map(|(p, n, _)| (p.as_str(), n.as_str()))
@@ -403,7 +403,7 @@ fn a_profile_that_loses_a_toggle_is_named_by_the_surface_in_every_shape() {
         );
         assert_eq!(
             r.dropped_instrs, 0,
-            "shape `{label}` stripped of DEBUG: still zero drops — the surface, not \
+            "shape `{label}` stripped of DEBUG: still zero drops, the surface, not \
              the drop count, is what catches a lost toggle: {:?}",
             r.dropped_by_proc
         );
@@ -434,7 +434,7 @@ fn an_env_free_walk_names_the_interface_member_it_cannot_resolve() {
             .iter()
             .any(|(p, n, _)| p == "Camera_Update" && n == "Game.CAMERA_JUMP_LOCK"),
         "shape `{label}`, empty interface env: the interface-gated condition must \
-         land on the surface — silence here means an env-free walk can silently \
+         land on the surface, silence here means an env-free walk can silently \
          discard `Iface.MEMBER`-gated arms again. got: {:?}",
         r.comptime_unresolved
             .iter()
@@ -472,7 +472,7 @@ fn corpus_closure_residue_is_empty_the_error_gate() {
             .collect();
         assert!(
             r.firings.is_empty(),
-            "shape `{label}`: closure firing(s) — an undeclared register effect must be \
+            "shape `{label}`: closure firing(s), an undeclared register effect must be \
              declared or verified-preserved before it can ship: {residue:?}"
         );
     }
@@ -563,7 +563,7 @@ fn a_clobber_undeclared_inside_a_comptime_gate_fires_in_exactly_the_debug_shapes
             assert!(
                 hit.is_some(),
                 "shape `{label}` assembles the `DEBUG == 1` block that writes d2, so the \
-                 dropped declaration MUST fire — an empty residue here means the walk is \
+                 dropped declaration MUST fire, an empty residue here means the walk is \
                  not reading the shape's defines. firings: {:?}",
                 r.firings.iter().map(|f| (f.proc.as_str(), f.reg.as_deref())).collect::<Vec<_>>()
             );
@@ -572,7 +572,7 @@ fn a_clobber_undeclared_inside_a_comptime_gate_fires_in_exactly_the_debug_shapes
             assert!(
                 hit.is_none(),
                 "shape `{label}` is DEBUG=0, so the doctored arm compiles away and must NOT \
-                 fire — a firing here means every shape is walking one define set: {:?}",
+                 fire, a firing here means every shape is walking one define set: {:?}",
                 r.firings.iter().map(|f| (f.proc.as_str(), f.reg.as_deref())).collect::<Vec<_>>()
             );
         }
@@ -582,7 +582,7 @@ fn a_clobber_undeclared_inside_a_comptime_gate_fires_in_exactly_the_debug_shapes
     // asserts nothing on the other, and the silent-there half is the load-bearing one.
     assert!(debug_shapes > 0 && plain_shapes > 0,
         "the shipped shapes no longer straddle DEBUG ({debug_shapes} debug / \
-         {plain_shapes} plain) — this probe proves nothing");
+         {plain_shapes} plain), this probe proves nothing");
 }
 
 /// GAME-AXIS SHAPE-SENSITIVITY — the L1 interface binding is real, per shape.
@@ -630,7 +630,7 @@ fn an_interface_gated_arm_is_walked_under_each_shapes_own_game() {
             assert!(
                 hit.is_some(),
                 "shape `{label}` binds sonic4's `CAMERA_JUMP_LOCK = true`, so the \
-                 doctored write inside the interface-gated arm MUST fire — silence \
+                 doctored write inside the interface-gated arm MUST fire, silence \
                  here means the arm is still invisible to the analysis: {:?}",
                 r.firings.iter().map(|f| (f.proc.as_str(), f.reg.as_deref())).collect::<Vec<_>>()
             );
@@ -639,7 +639,7 @@ fn an_interface_gated_arm_is_walked_under_each_shapes_own_game() {
             assert!(
                 hit.is_none(),
                 "shape `{label}` binds demo's `CAMERA_JUMP_LOCK = false`, so the arm \
-                 compiles away and must NOT fire — a firing here means every shape \
+                 compiles away and must NOT fire, a firing here means every shape \
                  is walking one game's binding: {:?}",
                 r.firings.iter().map(|f| (f.proc.as_str(), f.reg.as_deref())).collect::<Vec<_>>()
             );
@@ -648,7 +648,7 @@ fn an_interface_gated_arm_is_walked_under_each_shapes_own_game() {
     assert!(
         lock_on_shapes > 0 && lock_off_shapes > 0,
         "the shipped shapes no longer straddle the game axis ({lock_on_shapes} sonic4 / \
-         {lock_off_shapes} demo) — this probe proves nothing"
+         {lock_off_shapes} demo), this probe proves nothing"
     );
 }
 
@@ -695,7 +695,7 @@ fn a_lost_crash_report_define_is_named_in_exactly_the_plain_shapes() {
             assert!(
                 !hit,
                 "shape `{label}` (DEBUG=1) short-circuits `DEBUG == 1 || …` before \
-                 CRASH_REPORT evaluates — a hit here means evaluation order changed; \
+                 CRASH_REPORT evaluates, a hit here means evaluation order changed; \
                  re-measure this partition: {:?}",
                 r.comptime_unresolved
                     .iter()
@@ -707,7 +707,7 @@ fn a_lost_crash_report_define_is_named_in_exactly_the_plain_shapes() {
             assert!(
                 hit,
                 "shape `{label}` (DEBUG=0) must evaluate CRASH_REPORT in `Vectors`' \
-                 fault-cell conditions — silence means the toggle no longer reaches \
+                 fault-cell conditions, silence means the toggle no longer reaches \
                  the analysis: {:?}",
                 r.comptime_unresolved
                     .iter()
@@ -719,7 +719,7 @@ fn a_lost_crash_report_define_is_named_in_exactly_the_plain_shapes() {
     assert!(
         plain_shapes > 0 && debug_shapes > 0,
         "the shipped shapes no longer straddle DEBUG ({debug_shapes} debug / \
-         {plain_shapes} plain) — this probe proves nothing"
+         {plain_shapes} plain), this probe proves nothing"
     );
 }
 
@@ -759,7 +759,7 @@ fn a_lost_mirror_define_is_named_in_exactly_the_debug_sound_on_shapes() {
             reached_shapes += 1;
             assert!(
                 hit,
-                "shape `{label}` (DEBUG=1, sound ON) must evaluate SOUND_DBG_MIRROR — \
+                "shape `{label}` (DEBUG=1, sound ON) must evaluate SOUND_DBG_MIRROR, \
                  silence means the toggle no longer reaches the analysis: {:?}",
                 r.comptime_unresolved
                     .iter()
@@ -770,7 +770,7 @@ fn a_lost_mirror_define_is_named_in_exactly_the_debug_sound_on_shapes() {
             skipped_shapes += 1;
             assert!(
                 !hit,
-                "shape `{label}` short-circuits before SOUND_DBG_MIRROR evaluates — a \
+                "shape `{label}` short-circuits before SOUND_DBG_MIRROR evaluates, a \
                  hit here means evaluation order changed; re-measure this partition: {:?}",
                 r.comptime_unresolved
                     .iter()
@@ -782,7 +782,7 @@ fn a_lost_mirror_define_is_named_in_exactly_the_debug_sound_on_shapes() {
     assert!(
         reached_shapes > 0 && skipped_shapes > 0,
         "the shipped shapes no longer straddle DEBUG+sound ({reached_shapes} reached / \
-         {skipped_shapes} skipped) — this probe proves nothing"
+         {skipped_shapes} skipped), this probe proves nothing"
     );
 }
 
@@ -832,7 +832,7 @@ fn a_lost_hotkeys_define_fails_the_interface_bind_in_the_sonic4_shapes() {
     assert!(
         sonic4_shapes > 0 && demo_shapes > 0,
         "the shipped shapes no longer straddle the game axis ({sonic4_shapes} sonic4 / \
-         {demo_shapes} demo) — this probe proves nothing"
+         {demo_shapes} demo), this probe proves nothing"
     );
 }
 
@@ -893,7 +893,7 @@ fn corpus_input_undefined_is_empty_the_error_gate() {
     assert!(
         r.input_firings.is_empty(),
         "[call.input-undefined] (D1b): a callee register-param input has no reaching \
-         definition on some path — it must be defined before the call: {:?}",
+         definition on some path, it must be defined before the call: {:?}",
         r.input_firings
             .iter()
             .map(|f| (f.proc.as_str(), f.callee.as_str(), f.reg.as_str()))
@@ -915,7 +915,7 @@ fn corpus_flag_results_declared_vs_verified_credit_agree() {
     let Some(r) = corpus_report() else { return };
     assert_eq!(
         r.flag_firings, r.flag_firings_verified_credit,
-        "§6 invalid-path DIVERGES between declared and verified out-credit — declared \
+        "§6 invalid-path DIVERGES between declared and verified out-credit, declared \
          credit is suppressing a firing verified credit would show on the ERROR gate. \
          Adjudicate (the define-vs-redefine boundary may need §6 moved to verified). \
          declared={:?} verified={:?}",
@@ -962,7 +962,7 @@ fn corpus_out_residue_is_the_verified_complement() {
     // returned nothing would make the vacuity meaningless, so pin the verified map.
     assert!(
         !r.verified_uncond_out.is_empty(),
-        "the verified-out map is empty — the walk produced nothing, so the complement \
+        "the verified-out map is empty, the walk produced nothing, so the complement \
          property below would hold vacuously for the wrong reason"
     );
     for f in &r.out_firings {
@@ -970,7 +970,7 @@ fn corpus_out_residue_is_the_verified_complement() {
             r.verified_uncond_out.get(&f.proc).is_some_and(|s| s.contains(&f.reg));
         assert!(
             !marked_verified,
-            "{}::out({}) is in the out-verify residue yet marked VERIFIED — the residue \
+            "{}::out({}) is in the out-verify residue yet marked VERIFIED, the residue \
              surface and must-def credit have drifted apart",
             f.proc, f.reg
         );
@@ -991,7 +991,7 @@ fn corpus_inout_facet_verifies_the_sprite_cursors() {
     {
         assert!(
             r.verified_inout.get(proc).is_some_and(|s| s.contains(reg)),
-            "{proc}::inout({reg}) is not in the verified-inout map — the facet did not verify \
+            "{proc}::inout({reg}) is not in the verified-inout map, the facet did not verify \
              the cursor it was adopted for. verified_inout: {:?}",
             r.verified_inout
         );
@@ -1000,7 +1000,7 @@ fn corpus_inout_facet_verifies_the_sprite_cursors() {
     for f in &r.inout_firings {
         assert!(
             !matches!(f.proc.as_str(), "DrawRings" | "InsertSpriteMasks"),
-            "{}::inout({}) is firing yet was adopted to verify — {}",
+            "{}::inout({}) is firing yet was adopted to verify, {}",
             f.proc, f.reg, f.reason
         );
     }
@@ -1039,12 +1039,12 @@ fn corpus_conditional_callee_out_is_credited_edge_sensitively() {
             }),
             "shape `{label}`: AllocDynamic no longer verifies a CONDITIONAL out(a1 if eq) \
              (got {cond:?}). The Load_Object witness below only tests edge-sensitive credit \
-             while its source is conditional — adjudicate before re-pointing it",
+             while its source is conditional, adjudicate before re-pointing it",
         );
         assert!(
             r.verified_uncond_out.get("Load_Object").is_some_and(|s| s.contains("a1")),
             "shape `{label}`: Load_Object::out(a1) is no longer credited from AllocDynamic's \
-             cc-success edge — the edge-sensitive conditional-out credit named in \
+             cc-success edge, the edge-sensitive conditional-out credit named in \
              out_verify's header regressed. verified={:?}",
             r.verified_uncond_out.get("Load_Object")
         );
@@ -1067,14 +1067,14 @@ fn corpus_z80_out_residue_is_the_verified_complement() {
     let Some(r) = corpus_report() else { return };
     assert!(
         !r.z80_out_firings.is_empty(),
-        "the Z80 out residue is empty — the loop below would pass by measuring nothing"
+        "the Z80 out residue is empty, the loop below would pass by measuring nothing"
     );
     for f in &r.z80_out_firings {
         let marked_verified =
             r.z80_verified_out.get(&f.proc).is_some_and(|s| s.contains(&f.unit));
         assert!(
             !marked_verified,
-            "{}::out({}) is in the Z80 out-verify residue yet marked VERIFIED — the residue \
+            "{}::out({}) is in the Z80 out-verify residue yet marked VERIFIED, the residue \
              surface and the fixpoint have drifted apart",
             f.proc, f.unit
         );
@@ -1084,7 +1084,7 @@ fn corpus_z80_out_residue_is_the_verified_complement() {
     // this the check above is satisfied by a fixpoint that verifies nothing at all.
     assert!(
         r.z80_verified_out.get("Fm_RoutePart").is_some_and(|s| s.contains("b") && s.contains("c")),
-        "Fm_RoutePart's locally-produced out(b, c) must be VERIFIED — a fixpoint that \
+        "Fm_RoutePart's locally-produced out(b, c) must be VERIFIED, a fixpoint that \
          verifies nothing would make the residue-complement check vacuous: {:?}",
         r.z80_verified_out.get("Fm_RoutePart")
     );
@@ -1138,14 +1138,14 @@ fn corpus_context_requirements_are_satisfied_the_error_gate() {
     assert_eq!(
         r.context_claim_sites.len(),
         10,
-        "the vblank claim census moved — 1 grant root (VBlank_Handler) + 9 requiring \
+        "the vblank claim census moved, 1 grant root (VBlank_Handler) + 9 requiring \
          procs. Update deliberately: {:?}",
         r.context_claim_sites
     );
     assert!(
         r.context_claim_sites
             .contains(&("VBlank_Handler".into(), "grants".into(), "vblank".into())),
-        "the vblank grant ROOT is gone — every requirement below it would then be \
+        "the vblank grant ROOT is gone, every requirement below it would then be \
          discharged by nothing and the gate would still read empty: {:?}",
         r.context_claim_sites
     );
@@ -1170,7 +1170,7 @@ fn corpus_context_requirements_are_satisfied_the_error_gate() {
     assert_eq!(
         r.context_regions.len(),
         20,
-        "the `with` bracket census moved — corpus adoption changed. Update deliberately: {:?}",
+        "the `with` bracket census moved, corpus adoption changed. Update deliberately: {:?}",
         r.context_regions
     );
     // …with a NAMED witness, so an un-adoption that coincidentally preserves the
@@ -1198,7 +1198,7 @@ fn corpus_context_requirements_are_satisfied_the_error_gate() {
     // the examined set while the firing set stayed (correctly) empty.
     assert!(
         !r.context_discharged.is_empty(),
-        "no call site's `requires` was DISCHARGED — the satisfaction gate examined \
+        "no call site's `requires` was DISCHARGED, the satisfaction gate examined \
          nothing, so its emptiness proves nothing"
     );
 
@@ -1211,7 +1211,7 @@ fn corpus_context_requirements_are_satisfied_the_error_gate() {
     assert_eq!(
         bus,
         vec!["z80_stopped"],
-        "the bus-context set moved — it is read off what each bracket's ACQUIRE \
+        "the bus-context set moved, it is read off what each bracket's ACQUIRE \
          splices, so this changes only when a context's acquire does"
     );
 }
@@ -1264,9 +1264,9 @@ fn the_contracts_report_is_wired_and_carries_the_targets_defines() {
     let debug = run(&["--game", "sonic4", "--debug"]);
     let demo = run(&["--game", "demo"]);
 
-    assert!(plain.starts_with("contract closure — sonic4 plain\n"), "header: {plain:.80}");
-    assert!(debug.starts_with("contract closure — sonic4 debug\n"), "header: {debug:.80}");
-    assert!(demo.starts_with("contract closure — demo plain\n"), "header: {demo:.80}");
+    assert!(plain.starts_with("contract closure, sonic4 plain\n"), "header: {plain:.80}");
+    assert!(debug.starts_with("contract closure, sonic4 debug\n"), "header: {debug:.80}");
+    assert!(demo.starts_with("contract closure, demo plain\n"), "header: {demo:.80}");
 
     // The shapes differ in the defines the walk RAN under, not merely in a label:
     // DEBUG is the build-shape axis and MAX_RING_BUFFER is the game→engine axis.
@@ -1288,7 +1288,7 @@ fn the_contracts_report_is_wired_and_carries_the_targets_defines() {
         );
         assert!(
             out.contains("-- [comptime.unresolved] condition names (must be 0): 0 --"),
-            "{label}: the report carries unresolved comptime-condition names — a \
+            "{label}: the report carries unresolved comptime-condition names, a \
              define or interface binding is missing from its walk:\n{out:.400}"
         );
     }
@@ -1321,7 +1321,7 @@ fn the_corpus_invoke_edges_are_collected() {
             assert!(
                 has_debug && has_boot,
                 "shape `{label}`: SOUND_DEBUG_HOTKEYS binds both hooks, so both invoke \
-                 edges must be collected — got {:?}",
+                 edges must be collected, got {:?}",
                 r.abs_call_edges
             );
             bound_shapes += 1;
@@ -1329,7 +1329,7 @@ fn the_corpus_invoke_edges_are_collected() {
             assert!(
                 !has_debug && !has_boot,
                 "shape `{label}`: no hotkeys, so the hooks stay `= empty` and emit no \
-                 invoke edge — got {:?}",
+                 invoke edge, got {:?}",
                 r.abs_call_edges
             );
         }
@@ -1363,20 +1363,20 @@ fn the_assert_rails_are_excluded_by_authorship_the_revert_probe() {
             assert!(
                 !rails.contains(callee),
                 "shape `{label}`: an AssertDesugar rail leaked into the edge census as \
-                 ({proc}, {callee}) — the authorship exclusion is not applied"
+                 ({proc}, {callee}), the authorship exclusion is not applied"
             );
         }
         assert_eq!(
             r.authored_rail_holes, rails,
             "shape `{label}`: the would-be holes the exclusion suppresses must be exactly \
              the two desugar boundaries (strip the exclusion → the residue fails naming \
-             these) — got {:?}",
+             these), got {:?}",
             r.authored_rail_holes
         );
         // And the live residue stays empty — the exclusion actually holds.
         assert!(
             r.closure.unresolved_callees.is_empty(),
-            "shape `{label}`: residue must be empty with the exclusion applied — got {:?}",
+            "shape `{label}`: residue must be empty with the exclusion applied, got {:?}",
             r.closure.unresolved_callees
         );
     }
@@ -1429,7 +1429,7 @@ pub implement H {
             .iter()
             .any(|f| f.proc == "Invoker" && f.reg.as_deref() == Some("d5")),
         "the invoke edge must charge the bound hook's d5 into the invoker (which declares \
-         only d0) — got {:?}",
+         only d0), got {:?}",
         r.firings
             .iter()
             .map(|f| (f.proc.as_str(), f.reg.as_deref()))
@@ -1572,7 +1572,7 @@ fn contract_baselines_hold_for_every_shipped_shape() {
         // even while `is_clean()` might hold over a matching-empty firing set.
         assert!(
             r.z80_out_claims.len() >= 30,
-            "shape `{label}`: only {} Z80 out claims — the Z80 pass lost modules, so \
+            "shape `{label}`: only {} Z80 out claims, the Z80 pass lost modules, so \
              the Z80 out gate above ranged over almost nothing: {:?}",
             r.z80_out_claims.len(),
             r.z80_out_claims
@@ -1587,7 +1587,7 @@ fn contract_baselines_hold_for_every_shipped_shape() {
         ] {
             assert!(
                 r.z80_out_claims.iter().any(|(p, u)| p == witness.0 && u == witness.1),
-                "shape `{label}`: the Z80 out claim `{} :: out({})` is gone — the \
+                "shape `{label}`: the Z80 out claim `{} :: out({})` is gone, the \
                  non-vacuity witness for the Z80 out gate: {:?}",
                 witness.0,
                 witness.1,
@@ -1617,6 +1617,6 @@ fn contract_baselines_hold_for_every_shipped_shape() {
     assert_eq!(
         native::shipped_shapes().len(),
         7,
-        "the shape list shrank — a baseline that walks fewer shapes pins less"
+        "the shape list shrank, a baseline that walks fewer shapes pins less"
     );
 }

@@ -905,7 +905,7 @@ fn an_rte_released_bracket_ending_in_rte_is_clean() {
     );
     assert!(
         r.context_regions.iter().any(|(p, c)| p == "H" && c == "ints_off_until_rte"),
-        "…and NOT because no region was recovered — the silence has to be a PASS: {:?}",
+        "…and NOT because no region was recovered, the silence has to be a PASS: {:?}",
         r.context_regions
     );
 }
@@ -933,7 +933,7 @@ fn an_rte_released_bracket_that_returns_with_rts_fires() {
     assert_eq!(
         ctx_count(&r, "H", ContextFiringKind::Escape),
         0,
-        "…and NOT as a plain escape — the two say different things: {:?}",
+        "…and NOT as a plain escape, the two say different things: {:?}",
         r.context_firings
     );
 }
@@ -955,7 +955,7 @@ fn an_rtr_exit_does_not_discharge_an_rte_released_hold() {
     assert_eq!(
         ctx_count(&r, "H", ContextFiringKind::RteUndischarged),
         1,
-        "`rtr` restores CCR only — the mask stays raised: {:?}",
+        "`rtr` restores CCR only, the mask stays raised: {:?}",
         r.context_firings
     );
 }

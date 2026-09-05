@@ -30,7 +30,7 @@ fn git(dir: &Path, args: &[&str]) {
         .arg(dir)
         .args(args)
         .output()
-        .unwrap_or_else(|e| panic!("git {args:?} could not run in {}: {e} — these gates measure what git and the child binary resolve, so they cannot be skipped", dir.display()));
+        .unwrap_or_else(|e| panic!("git {args:?} could not run in {}: {e}, these gates measure what git and the child binary resolve, so they cannot be skipped", dir.display()));
     assert!(
         out.status.success(),
         "git {args:?} failed in {}: {}",
@@ -111,7 +111,7 @@ fn the_child_operates_on_the_tree_the_parent_resolved_not_the_one_it_stands_in()
     assert_eq!(
         operating_on(&run_child(&[], &elsewhere)),
         elsewhere.display().to_string(),
-        "with no root passed the child derives its own tree — if this fails the gate below \
+        "with no root passed the child derives its own tree, if this fails the gate below \
          proves nothing"
     );
 
@@ -130,7 +130,7 @@ fn the_child_operates_on_the_tree_the_parent_resolved_not_the_one_it_stands_in()
         assert_eq!(
             said,
             resolved.display().to_string(),
-            "parent and child resolved DIFFERENT trees — a freeze would split across them"
+            "parent and child resolved DIFFERENT trees, a freeze would split across them"
         );
         assert_ne!(
             said,

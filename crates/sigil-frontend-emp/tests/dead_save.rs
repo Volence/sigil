@@ -226,7 +226,7 @@ fn narrow_dispatch_effect_would_report_the_save_dead() {
     );
     assert!(
         regs(&f).contains(&Reg::D0) && regs(&f).contains(&Reg::D1),
-        "a narrow callee effect makes the save look dead — this is the advice at risk: {f:?}"
+        "a narrow callee effect makes the save look dead, this is the advice at risk: {f:?}"
     );
 }
 
@@ -249,6 +249,6 @@ fn top_dispatch_effect_withdraws_the_advice() {
     );
     assert!(
         f.is_empty(),
-        "a ⊤ callee may clobber anything — no save across it is deletable: {f:?}"
+        "a ⊤ callee may clobber anything, no save across it is deletable: {f:?}"
     );
 }

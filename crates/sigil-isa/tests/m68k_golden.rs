@@ -10,7 +10,7 @@ const GOLDEN: &str = include_str!("m68k_golden_vectors.txt");
 #[test]
 fn golden_file_parses_and_is_nonempty() {
     let vectors = parse_golden_m68k(GOLDEN);
-    assert!(!vectors.is_empty(), "committed golden file is empty — run gen-m68k-vectors");
+    assert!(!vectors.is_empty(), "committed golden file is empty, run gen-m68k-vectors");
 }
 
 #[test]
@@ -20,14 +20,14 @@ fn golden_covers_the_full_corpus() {
     assert_eq!(
         vectors.len(),
         corpus.len(),
-        "golden vector count ({}) != corpus count ({}) — regenerate",
+        "golden vector count ({}) != corpus count ({}), regenerate",
         vectors.len(),
         corpus.len()
     );
     for (snippet, _) in &corpus {
         assert!(
             vectors.iter().any(|v| v.snippet == *snippet),
-            "corpus snippet {snippet:?} missing from golden — regenerate"
+            "corpus snippet {snippet:?} missing from golden, regenerate"
         );
     }
 }

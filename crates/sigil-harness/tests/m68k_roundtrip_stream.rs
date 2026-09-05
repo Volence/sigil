@@ -132,7 +132,7 @@ fn every_emitted_m68k_instruction_roundtrips_in_every_shipped_shape() {
     for (label, n) in &per_shape {
         assert!(
             *n > 0,
-            "shape `{label}` captured 0 instructions — the capture tap is disconnected \
+            "shape `{label}` captured 0 instructions, the capture tap is disconnected \
              (or the build encoded nothing), which must never read as a pass"
         );
     }
@@ -169,7 +169,7 @@ fn every_emitted_m68k_instruction_roundtrips_in_every_shipped_shape() {
     let unclassified: Vec<&str> = seen.difference(&all).copied().collect();
     assert!(
         unclassified.is_empty(),
-        "captured families not in ALL_FAMILY_NAMES: {unclassified:?} — unknown family, \
+        "captured families not in ALL_FAMILY_NAMES: {unclassified:?}, unknown family, \
          classify it in ALL_FAMILY_NAMES (sigil-isa m68k.rs) so both coverage \
          directions can see it"
     );
@@ -182,14 +182,14 @@ fn every_emitted_m68k_instruction_roundtrips_in_every_shipped_shape() {
     assert!(
         missing.is_empty(),
         "families in sigil's encodable set but absent from EVERY shape's stream and \
-         not on the NOT_IN_STREAM list: {missing:?} — either the capture narrowed \
+         not on the NOT_IN_STREAM list: {missing:?}, either the capture narrowed \
          (a bug in this pass) or the corpus stopped using them (move them to the \
          list with a reason)"
     );
     let stale: Vec<&str> = NOT_IN_STREAM.iter().copied().filter(|f| seen.contains(f)).collect();
     assert!(
         stale.is_empty(),
-        "NOT_IN_STREAM rows that ARE now emitted: {stale:?} — delete the stale rows \
+        "NOT_IN_STREAM rows that ARE now emitted: {stale:?}, delete the stale rows \
          so their coverage claim stays true"
     );
 }

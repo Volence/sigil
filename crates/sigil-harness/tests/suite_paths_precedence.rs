@@ -241,7 +241,7 @@ fn the_resolver_follows_the_contract_precedence() {
     assert!(
         !err.contains(&root_a.join(AEON_REPO_DIR).display().to_string()),
         "a set-but-wrong AEON_DIR must stop at step 1. This refusal names the step-2 answer, so \
-         the resolver went on to consult EMPYREAN_SUITE_ROOT — and a resolver that consults it \
+         the resolver went on to consult EMPYREAN_SUITE_ROOT, and a resolver that consults it \
          after a wrong AEON_DIR is one step from returning it. Got: {err}"
     );
 
@@ -313,7 +313,7 @@ fn the_resolver_follows_the_contract_precedence() {
     assert_eq!(
         step, 3,
         "unnamed_default_tree answers the question `what does a run resolve to when nobody names \
-         a tree` — a set AEON_DIR must not answer it"
+         a tree`, a set AEON_DIR must not answer it"
     );
     assert_ne!(path, named, "the unnamed default must not be the tree AEON_DIR names");
     assert_eq!(path, walked.join(AEON_REPO_DIR), "the unnamed default is step 3's answer here");
@@ -418,7 +418,7 @@ fn the_step_3_derivation_is_proven_from_a_linked_worktree() {
             // The clause's escape, printed rather than silent.
             println!(
                 "NOT MEASURED: could not build the linked-worktree bed, so the step-3 property \
-                 was not exercised in this run — {why}. Everything else in this file still ran; \
+                 was not exercised in this run, {why}. Everything else in this file still ran; \
                  what is missing is the one assertion that separates `--git-common-dir` from \
                  `--show-toplevel`."
             );
@@ -445,7 +445,7 @@ fn the_step_3_derivation_is_proven_from_a_linked_worktree() {
     let derived = sigil_harness::test_support::derive_suite_root_from(&wt);
     let derived = derived.unwrap_or_else(|e| {
         panic!(
-            "step 3 could not derive a suite root from the linked worktree {} — {e}. This is the \
+            "step 3 could not derive a suite root from the linked worktree {}, {e}. This is the \
              shape every sigil agent runs in, so a derivation that fails here fails in ordinary \
              use.",
             wt.display()
@@ -473,7 +473,7 @@ fn the_step_3_derivation_is_proven_from_a_linked_worktree() {
     assert_eq!(
         derived, suite,
         "step 3 derived the wrong suite root from a LINKED, NESTED worktree. `--show-toplevel` \
-         there answers {} — the worktree — whose parent is {:?}; only `--git-common-dir`, which \
+         there answers {}, the worktree, whose parent is {:?}; only `--git-common-dir`, which \
          answers the main checkout's `.git` from a worktree and from the checkout alike, reaches \
          the repository this code belongs to.",
         toplevel.display(),
@@ -510,14 +510,14 @@ fn the_step_3_derivation_is_proven_from_a_linked_worktree() {
         "production anchor {} -> git --git-common-dir answers `{raw}` ({}); the other shapes are \
          covered by step_3_survives_every_shape_git_rev_parse_can_answer",
         env!("CARGO_MANIFEST_DIR"),
-        if raw.starts_with('/') { "absolute — a linked worktree" } else { "RELATIVE — a plain checkout" }
+        if raw.starts_with('/') { "absolute, a linked worktree" } else { "RELATIVE, a plain checkout" }
     );
 
     match (live, walked) {
         (Ok(l), Some(w)) => assert_eq!(
             l, w,
             "the mechanism proven on the bed, applied to this crate's own location, disagrees \
-             with an independent marker walk — so the bed proved a function the production path \
+             with an independent marker walk, so the bed proved a function the production path \
              does not behave like"
         ),
         (Err(e), _) => panic!("step 3 cannot derive from this crate's own location: {e}"),
@@ -583,7 +583,7 @@ fn ambient_worktree_check(walked: &Option<PathBuf>) {
     assert_eq!(
         &live, walked,
         "compiled inside a linked worktree, the deployed anchor derived the wrong suite root. \
-         `--show-toplevel` answers {} there, whose parent is {:?} — only `--git-common-dir` \
+         `--show-toplevel` answers {} there, whose parent is {:?}, only `--git-common-dir` \
          reaches the checkout this code belongs to.",
         top.display(),
         top.parent()
@@ -678,7 +678,7 @@ fn step_3_survives_every_shape_git_rev_parse_can_answer() {
         Err(why) => {
             println!(
                 "NOT MEASURED: could not build the shapes bed, so step 3 was exercised against \
-                 none of the four anchors in this run — {why}."
+                 none of the four anchors in this run, {why}."
             );
             return;
         }

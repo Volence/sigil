@@ -78,7 +78,7 @@ fn corpus_bricks<'a>(
 #[test]
 fn every_shipped_shape_builds_from_source() {
     let shapes = native::shipped_shapes();
-    assert!(!shapes.is_empty(), "shipped_shapes() enumerated nothing — a gate over no shapes gates nothing");
+    assert!(!shapes.is_empty(), "shipped_shapes() enumerated nothing, a gate over no shapes gates nothing");
 
     // The guard is derived from each shape's own profile (its residual root and its
     // placement map), so it cannot name an input the build does not read. Under
@@ -99,7 +99,7 @@ fn every_shipped_shape_builds_from_source() {
     );
     assert!(
         bricks.is_empty(),
-        "{} of {} shipped shapes do NOT build from aeon source (a BRICK — the compiler \
+        "{} of {} shipped shapes do NOT build from aeon source (a BRICK, the compiler \
          refuses the corpus; no refreeze clears this):\n  {}",
         bricks.len(),
         shapes.len(),

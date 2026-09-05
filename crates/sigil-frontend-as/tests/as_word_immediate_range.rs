@@ -102,11 +102,11 @@ fn accepted(body: &str) -> bool {
 fn word_immediate_accepts_the_signed_floor_and_the_unsigned_ceiling() {
     assert!(
         accepted("\tmove.w\t#65535,d0"),
-        "asl emits `303C FFFF` for `move.w #65535,d0` — the unsigned ceiling is in range"
+        "asl emits `303C FFFF` for `move.w #65535,d0`, the unsigned ceiling is in range"
     );
     assert!(
         accepted("\tmove.w\t#-32768,d0"),
-        "asl emits `303C 8000` for `move.w #-32768,d0` — the signed floor is in range"
+        "asl emits `303C 8000` for `move.w #-32768,d0`, the signed floor is in range"
     );
 }
 
@@ -122,7 +122,7 @@ fn word_immediate_refuses_exactly_where_asl_reports_range_overflow() {
     ] {
         assert!(
             !accepted(body),
-            "asl reports `range overflow` for `{}` — accepting it emits four bytes and \
+            "asl reports `range overflow` for `{}`, accepting it emits four bytes and \
              no complaint, which no diagnostic count can see",
             body.trim()
         );

@@ -62,7 +62,7 @@ fn assert_byte_identical(reference: &[u8], candidate: &[u8], what: &str) {
             &candidate[i..(i + 8).min(candidate.len())],
         );
     }
-    panic!("{what}: length differ — ref {} vs cand {}", reference.len(), candidate.len());
+    panic!("{what}: length differ, ref {} vs cand {}", reference.len(), candidate.len());
 }
 
 // The spliced-displacement template, called twice with different displacements

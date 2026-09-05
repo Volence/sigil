@@ -1232,7 +1232,7 @@ fn word_w_roundtrip_verifies_word_but_refuses_full() {
     assert!(is_verified(&status_word(src, Reg::D5)), "the low word round-trips");
     assert!(
         is_not_preserved(&status(src, Reg::D5)),
-        "a `.w` restore does NOT round-trip the full register — today's behaviour, must not regress"
+        "a `.w` restore does NOT round-trip the full register, today's behaviour, must not regress"
     );
 }
 
@@ -1343,7 +1343,7 @@ fn word_peek_of_a_long_save_credits_nothing() {
                }\n";
     assert!(
         is_not_preserved(&status_word(src, Reg::D5)),
-        "a `.w` peek of a `.l` save reads the HIGH word — no word round-trip"
+        "a `.w` peek of a `.l` save reads the HIGH word, no word round-trip"
     );
     assert!(is_not_preserved(&status(src, Reg::D5)), "and certainly no full round-trip");
 }
@@ -1382,7 +1382,7 @@ fn full_peek_of_a_word_save_credits_nothing() {
                }\n";
     assert!(
         is_not_preserved(&status(src, Reg::D5)),
-        "a `.l` peek of a `.w` save reads past the slot — no full round-trip"
+        "a `.l` peek of a `.w` save reads past the slot, no full round-trip"
     );
     assert!(is_not_preserved(&status_word(src, Reg::D5)), "nor a word round-trip");
 }

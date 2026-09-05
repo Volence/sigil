@@ -212,7 +212,7 @@ fn no_banner_field_is_blank_or_a_bare_placeholder() {
         let value = value.trim();
         assert!(
             !value.is_empty(),
-            "field `{label}` rendered empty — an unknown must be a word, not a blank\n{stdout}"
+            "field `{label}` rendered empty, an unknown must be a word, not a blank\n{stdout}"
         );
         assert!(
             !matches!(value, "-" | "n/a" | "N/A" | "0" | "null" | "none"),
@@ -359,7 +359,7 @@ fn the_banner_names_the_rerun_triggers_backing_the_revision() {
     );
     assert!(
         !freshness.contains("cargo tracks none"),
-        "a revision was reported while nothing was tracked — that stamp cannot stay true\n{stdout}"
+        "a revision was reported while nothing was tracked, that stamp cannot stay true\n{stdout}"
     );
     assert!(
         freshness.contains("manifests"),
@@ -885,7 +885,7 @@ fn the_printed_drift_check_returns_the_reported_revision_in_every_shell() {
     assert!(
         !ran.is_empty(),
         "no shell on this machine could run the printed drift check, so this gate measured \
-         nothing — that is a failure, not a pass.\ncommand: {command}"
+         nothing, that is a failure, not a pass.\ncommand: {command}"
     );
 }
 
@@ -927,7 +927,7 @@ fn every_closure_path_that_exists_is_watched_for_edits() {
     assert!(
         !recorded.starts_with("unavailable"),
         "the build script could not say where cargo records its output ({recorded}), so this \
-         gate cannot see the directive stream. That is a failure, not a pass — run \
+         gate cannot see the directive stream. That is a failure, not a pass, run \
          scripts/tree_state_capture_gate.sh, which proves the same property end to end."
     );
     let stream = std::fs::read_to_string(recorded).unwrap_or_else(|e| {
@@ -970,7 +970,7 @@ fn every_closure_path_that_exists_is_watched_for_edits() {
             !triggers.contains(&absolute.as_str()),
             "`{path}` does not exist, yet cargo was handed it as a rerun trigger. Cargo reads a \
              trigger on a missing path as dirty on EVERY build, which recompiles this crate and \
-             relinks all of its test binaries every time — the unconditional-rerun cost this \
+             relinks all of its test binaries every time, the unconditional-rerun cost this \
              design refuses on measured grounds.\nrecorded at {recorded}"
         );
     }
@@ -988,7 +988,7 @@ fn every_closure_path_that_exists_is_watched_for_edits() {
         assert!(
             tracked.contains(path.as_str()),
             "`{path}` is claimed as a source of this binary but does not exist, so cargo cannot \
-             be told to watch it — and the banner does not name it as a hole: `{tracked}`\n{stdout}"
+             be told to watch it, and the banner does not name it as a hole: `{tracked}`\n{stdout}"
         );
     }
     if missing.is_empty() {
@@ -1009,7 +1009,7 @@ fn every_closure_path_that_exists_is_watched_for_edits() {
         assert!(
             freshness.contains(",sources"),
             "cargo was handed {} closure path(s) as triggers, so the banner must list `sources` \
-             among what it tracks — a tree state a reader believes is revision-keyed is a tree \
+             among what it tracks, a tree state a reader believes is revision-keyed is a tree \
              state nobody re-checks\n{stdout}",
             present.len()
         );
@@ -1028,7 +1028,7 @@ fn the_tree_state_word_distinguishes_a_source_change_from_any_other() {
     let state = tree.split_whitespace().next().unwrap_or_default();
     assert!(
         matches!(state, "clean" | "clean-sources" | "dirty" | "unknown"),
-        "unrecognised tree state `{state}` — a consumer keys on this word\n{stdout}"
+        "unrecognised tree state `{state}`, a consumer keys on this word\n{stdout}"
     );
 
     let closure = field(&stdout, "closure");
@@ -1036,7 +1036,7 @@ fn the_tree_state_word_distinguishes_a_source_change_from_any_other() {
         assert!(
             !state.starts_with("clean"),
             "the closure could not be derived, so nothing here can place a change outside this \
-             binary's sources — yet the tree reads `{state}`\n{stdout}"
+             binary's sources, yet the tree reads `{state}`\n{stdout}"
         );
     }
 
@@ -1119,7 +1119,7 @@ fn the_published_line_states_this_revision_s_position_against_a_named_remote_ref
         .args(["merge-base", "--is-ancestor", &revision, &tip])
         .current_dir(REPO)
         .status()
-        .expect("git merge-base must run — this gate measures what git answers, so it \
+        .expect("git merge-base must run, this gate measures what git answers, so it \
                  cannot be skipped")
         .success();
     let says_yes = line.starts_with("yes");
@@ -1167,7 +1167,7 @@ fn the_published_drift_check_runs_and_is_anchored_at_the_named_ref() {
     );
     assert!(
         command.contains(&format!(" {name} --")),
-        "the command must be anchored at {name} — the ref the `published` line names — and \
+        "the command must be anchored at {name}, the ref the `published` line names, and \
          say so in the command itself: {command}"
     );
     assert!(
@@ -1203,7 +1203,7 @@ fn the_published_drift_check_runs_and_is_anchored_at_the_named_ref() {
             .success();
         assert!(
             reachable,
-            "the check printed {printed}, which is not reachable from {name} — so it did \
+            "the check printed {printed}, which is not reachable from {name}, so it did \
              not ask about that ref.\ncommand: {command}"
         );
         ran.push(shell);
@@ -1211,6 +1211,6 @@ fn the_published_drift_check_runs_and_is_anchored_at_the_named_ref() {
     assert!(
         !ran.is_empty(),
         "no shell on this machine could run the printed check, so this gate measured \
-         nothing — that is a failure, not a pass.\ncommand: {command}"
+         nothing, that is a failure, not a pass.\ncommand: {command}"
     );
 }

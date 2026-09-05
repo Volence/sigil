@@ -105,7 +105,7 @@ fn moved_dac_anchor_moves_the_derivation() {
         let needle = format!("at = 0x{from:X}");
         assert!(
             m.contains(&needle),
-            "map.toml no longer spells the dac_banks anchor as `{needle}` — the doctor would be a no-op"
+            "map.toml no longer spells the dac_banks anchor as `{needle}`, the doctor would be a no-op"
         );
         m.replace(&needle, &format!("at = 0x{to:X}"))
     });

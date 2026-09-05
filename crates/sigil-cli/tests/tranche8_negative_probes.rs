@@ -182,5 +182,5 @@ fn dc_cannot_be_shadowed_by_comptime_fn() {
         "the reserved mnemonic must win cleanly: {diags:?}"
     );
     let bytes = bytes.expect("must link");
-    assert_eq!(&bytes[..3], &[0x07, 0x4E, 0x75], "dc.b 7 then rts — the statement lowered as data");
+    assert_eq!(&bytes[..3], &[0x07, 0x4E, 0x75], "dc.b 7 then rts, the statement lowered as data");
 }

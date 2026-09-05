@@ -838,7 +838,7 @@ fn a_poisoned_expression_if_inside_a_comptime_fn_lands_on_the_surface() {
          }\n";
     let r = analyze(&[src]);
     assert!(!fires(&r, "Bar", "d2"), "the ungated Code never spliced: {:?}", r.firings);
-    assert_eq!(r.dropped_instrs, 0, "nothing drops — the arm never existed: {:?}", r.dropped_by_proc);
+    assert_eq!(r.dropped_instrs, 0, "nothing drops, the arm never existed: {:?}", r.dropped_by_proc);
     let rows: Vec<(&str, &str)> =
         r.comptime_unresolved.iter().map(|(p, n, _)| (p.as_str(), n.as_str())).collect();
     assert_eq!(
@@ -918,7 +918,7 @@ fn a_memoized_poison_const_read_in_a_condition_still_lands_on_the_surface() {
         r.comptime_unresolved.iter().filter(|(p, n, _)| p == "Baz" && n == "FOO").count();
     assert_eq!(
         foo_reads, 2,
-        "BOTH poisoned reads must surface — one row per condition, the second \
+        "BOTH poisoned reads must surface, one row per condition, the second \
          served from the memo: {:?}",
         r.comptime_unresolved.iter().map(|(p, n, _)| (p.as_str(), n.as_str())).collect::<Vec<_>>()
     );
@@ -992,7 +992,7 @@ fn a_word_facet_licenses_the_full_register_as_a_clobber() {
     let r = analyze(&[WORD_CALLEE]);
     assert!(
         !fires(&r, "WCallee", "d5"),
-        "a `preserves(d5.w)` licenses d5 as a clobber — it must not fire: {:?}",
+        "a `preserves(d5.w)` licenses d5 as a clobber, it must not fire: {:?}",
         r.firings
     );
     // Non-vacuity: the walk DID see this proc and its d5 write. The identical proc
@@ -1115,7 +1115,7 @@ fn inout_credit_laundering_is_caught_by_d1b() {
     assert!(
         !out_fires(&laundering, "P", "d5"),
         "expected verify_out to credit Q's inout for P's out(d5) (so D1b is the load-\
-         bearing catch) — if out-verify now fires, re-read the soundness argument: {:?}",
+         bearing catch), if out-verify now fires, re-read the soundness argument: {:?}",
         laundering.out_firings
     );
 
@@ -1345,7 +1345,7 @@ fn the_out_residue_surface_uses_verified_credit_not_declared() {
     assert!(
         out_fires(&mixed_tails, "D", "a1"),
         "one uncrediting tail must leave the claim unproven even though the sibling \
-         tail V produces a1 — credit is per edge, not a union: {:?}",
+         tail V produces a1, credit is per edge, not a union: {:?}",
         mixed_tails.out_firings
     );
     assert!(
@@ -1700,7 +1700,7 @@ fn z80_out_residue_uses_verified_credit_not_declared() {
     assert!(
         z80_out_fires(&unverified_source, "D", "h"),
         "D grounds only in S's declared-but-unproduced out(hl); under verified credit it \
-         must stand — its absence means the surface reads the declared map: {:?}",
+         must stand, its absence means the surface reads the declared map: {:?}",
         unverified_source.z80_out_firings
     );
 

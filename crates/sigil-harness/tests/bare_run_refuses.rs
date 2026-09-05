@@ -112,7 +112,7 @@ fn run_child(env: &[(&str, Option<&str>)]) -> (bool, String) {
     assert!(
         text.contains("test result:"),
         "UNMEASURABLE: the child produced no libtest result line, so it cannot be established \
-         that it ran a test at all — and a child that never started looks exactly like one that \
+         that it ran a test at all, and a child that never started looks exactly like one that \
          ran and stayed quiet.\n{text}"
     );
     (out.status.success(), text)
@@ -142,7 +142,7 @@ fn a_bare_run_refuses_and_a_declared_partial_run_says_its_size() {
     assert!(
         bare.contains("DECLINED to use"),
         "the refusal must say it DECLINED a tree it could have used, not merely that it found \
-         none — otherwise a reader cannot tell this from a resolver that broke.\n{bare}"
+         none, otherwise a reader cannot tell this from a resolver that broke.\n{bare}"
     );
     // The refusal is a FAILURE and must not be countable as a skip: `landing-run.sh` and
     // `refreeze.rs` both count these two spellings out of a run's log, and a stop that
@@ -162,11 +162,11 @@ fn a_bare_run_refuses_and_a_declared_partial_run_says_its_size() {
     // ── DIRECTION 2: the declared partial run. It PASSES, the row skips, and the run says
     // how much it left alone.
     let (ok, partial) = run_child(&[(ALLOW_PARTIAL_VAR, Some("1"))]);
-    assert!(ok, "a declared partial run must pass — that is what declaring it is for.\n{partial}");
+    assert!(ok, "a declared partial run must pass, that is what declaring it is for.\n{partial}");
     assert!(
         partial.contains(WITNESS_NO_TREE),
         "the partial run must leave the reference-dependent row UNMEASURED. It reported \
-         otherwise, which means it found a tree — and a partial run that quietly measures \
+         otherwise, which means it found a tree, and a partial run that quietly measures \
          against the live checkout is the behaviour the refusal exists to prevent.\n{partial}"
     );
     assert!(
@@ -213,7 +213,7 @@ fn a_bare_run_refuses_and_a_declared_partial_run_says_its_size() {
         "a named run is not a partial run.\n{run}"
     );
     assert!(
-        run.contains(&format!("step 1 — named by {AEON_DIR_VAR}")),
+        run.contains(&format!("step 1, named by {AEON_DIR_VAR}")),
         "a named run must announce which step answered.\n{run}"
     );
 }
@@ -249,7 +249,7 @@ fn strict_and_partial_together_are_refused() {
     // above could not tell the two apart, so they passed over the removed check.
     assert!(
         out.contains("describe opposite runs"),
-        "the run stopped, but not with the resolver's own refusal — so what this gate measured \
+        "the run stopped, but not with the resolver's own refusal, so what this gate measured \
          is that SOMETHING failed downstream of the contradiction rather than that the \
          contradiction itself was caught. A reader of that failure is told a path is missing, \
          not that the two flags they set cannot both hold.\n{out}"

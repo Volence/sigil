@@ -185,7 +185,7 @@ fn phase_dw_production_winptr_shape_defers_and_links() {
 fn phase_dw_never_defined_symbol_fails_loud_at_link() {
     let src =
         "        cpu z80\n        phase 08000h\n        dw (NeverDefined & 32767) | 32768\n";
-    let module = assemble(src, &Options::default()).expect("assembles — defers to link");
+    let module = assemble(src, &Options::default()).expect("assembles, defers to link");
     // No defining section: NeverDefined is unresolvable anywhere.
     let resolved = sigil_link::resolve_layout(&module.sections, &SymbolTable::new(), true)
         .expect("resolve_layout (no width ambiguity for a fixed-width dw)");

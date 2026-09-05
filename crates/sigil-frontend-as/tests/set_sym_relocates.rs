@@ -96,7 +96,7 @@ fn set_snapshot_binds_value_held_at_each_use_site() {
     assert_eq!(
         &bytes[14..18],
         &[0x00, 0x01, 0x00, 0x08],
-        "second dc.l binds B's grown VMA ($10008) — the snapshot after `P := B`"
+        "second dc.l binds B's grown VMA ($10008), the snapshot after `P := B`"
     );
 }
 

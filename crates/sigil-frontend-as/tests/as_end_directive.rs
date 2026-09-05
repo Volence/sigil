@@ -106,7 +106,7 @@ fn end_under_a_false_conditional_does_not_stop_the_assembly() {
     let img = image(&root);
     assert!(
         img.len() >= 2 && img[1] == 0x22,
-        "the `dc.b $22` after the `endif` must survive — the `end` inside the FALSE \
+        "the `dc.b $22` after the `endif` must survive, the `end` inside the FALSE \
          `if` arm is never executed (asl listing line 12: `=>FALSE`). Got {img:02X?}"
     );
 }
@@ -121,6 +121,6 @@ fn end_terminates_without_raising_a_diagnostic() {
         .join("tests/vectors/as_end_include/root.asm");
     assert!(
         assemble_root(&root, &Options::default()).is_ok(),
-        "`end` must end the unit cleanly — asl reports 0 errors and 0 warnings"
+        "`end` must end the unit cleanly, asl reports 0 errors and 0 warnings"
     );
 }

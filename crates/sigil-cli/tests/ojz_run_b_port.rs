@@ -212,7 +212,7 @@ fn gate(debug: bool, rom_name: &str) {
             hi - lo <= *max_shape_delta,
             "{section} plain/debug spans differ by {:#x}, more than the {max_shape_delta:#x} this \
              section declares: plain {:#x} debug {:#x}. Either the emission changed or the \
-             declaration is stale — re-derive it from the module, do not raise it to fit.",
+             declaration is stale, re-derive it from the module, do not raise it to fit.",
             hi - lo,
             region.plain_len,
             region.debug_len
@@ -230,7 +230,7 @@ fn gate(debug: bool, rom_name: &str) {
         // `bg_anim.emp` emitted anything (lens sweep, seat GATE, S15).
         assert!(
             !sec.bytes.is_empty(),
-            "`{section}` emitted NO BYTES — a pin over an empty window proves nothing. \
+            "`{section}` emitted NO BYTES, a pin over an empty window proves nothing. \
              Either the module stopped emitting, or this pin should not exist."
         );
         // Packed placement (Wave-B B-0): the pin LEN spans to the NEXT section's

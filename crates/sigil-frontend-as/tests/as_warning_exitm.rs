@@ -246,7 +246,7 @@ fn exitm_leaves_the_closer_label_unbound() {
     let module = assemble(src, &Options::default()).expect("assemble");
     let diags = sigil_link::link(&module.sections, &sigil_ir::SymbolTable::new())
         .err()
-        .unwrap_or_else(|| panic!("`LC` must not resolve — asl never reads the closer it sits on"));
+        .unwrap_or_else(|| panic!("`LC` must not resolve, asl never reads the closer it sits on"));
     let msgs: Vec<&String> = diags.iter().map(|d| &d.message).collect();
     assert!(
         msgs.iter().any(|m| m.contains("LC")),

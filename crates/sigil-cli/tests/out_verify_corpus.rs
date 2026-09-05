@@ -58,7 +58,7 @@ fn dump_out_unverified_residue() {
 
     eprintln!("=== [proc.out-unverified] residue: {} firing(s) ===", r.out_firings.len());
     for f in &r.out_firings {
-        eprintln!("  {} :: out({}) — {}", f.proc, f.reg, f.reason);
+        eprintln!("  {} :: out({}), {}", f.proc, f.reg, f.reason);
     }
     eprintln!("=== [call.live-clobbered] D1c: {} firing(s) ===", r.live_clobbered_firings.len());
     for f in &r.live_clobbered_firings {
@@ -69,7 +69,7 @@ fn dump_out_unverified_residue() {
         r.survives_firings.len()
     );
     for f in &r.survives_firings {
-        eprintln!("  {} :: out({} if {}) — {}", f.proc, f.reg, f.cc, f.reason);
+        eprintln!("  {} :: out({} if {}), {}", f.proc, f.reg, f.cc, f.reason);
     }
     eprintln!(
         "=== Z80 [proc.out-unverified] residue: {} firing(s), over {} out claim(s) ===",
@@ -77,7 +77,7 @@ fn dump_out_unverified_residue() {
         r.z80_out_claims.len()
     );
     for f in &r.z80_out_firings {
-        eprintln!("  {} :: out({}) — {}", f.proc, f.unit, f.reason);
+        eprintln!("  {} :: out({}), {}", f.proc, f.unit, f.reason);
     }
 }
 
@@ -98,7 +98,7 @@ fn cond_out_survives_claims_all_prove() {
     let rows: Vec<String> = r.survives_firings.iter().map(survives_message).collect();
     assert!(
         rows.is_empty(),
-        "[proc.out-cond-survives-unverifiable] over the aeon corpus — a conditional out \
+        "[proc.out-cond-survives-unverifiable] over the aeon corpus, a conditional out \
          claims its register survives the failure edges and the proof does not carry:\n  {}",
         rows.join("\n  ")
     );

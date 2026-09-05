@@ -49,9 +49,9 @@ fn error_handler_is_the_last_emission(profile: native::GameProfile) {
     }
     // LOUD on unmeasurable: a shape without the blob or the terminus proves nothing.
     let (blob_base, blob_off) = blob.unwrap_or_else(|| {
-        panic!("`{}` is not in this shape's layout — the invariant cannot be measured", native::ERROR_HANDLER_BLOB_LABEL)
+        panic!("`{}` is not in this shape's layout, the invariant cannot be measured", native::ERROR_HANDLER_BLOB_LABEL)
     });
-    let end_of_rom = end_of_rom.expect("`EndOfRom` is not in this shape's layout — the invariant cannot be measured");
+    let end_of_rom = end_of_rom.expect("`EndOfRom` is not in this shape's layout, the invariant cannot be measured");
     let blob_end = blob_base + blob_off + native::ERROR_HANDLER_BLOB_LEN;
     assert_eq!(blob_end, end_of_rom, "blob end {blob_end:#x} != EndOfRom {end_of_rom:#x}");
     let last = emitters.iter().max_by_key(|(base, _, _)| *base).expect("no byte-emitting section");

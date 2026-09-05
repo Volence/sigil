@@ -284,7 +284,7 @@ fn default_on_a_defaultless_field_is_an_error() {
     let (_buf, diags) = data(src, "D");
     assert!(
         diags.iter().any(|d| d.message.contains("[struct.no-default]") && d.message.contains("`a`")),
-        "`a` declares no default — `a: default` has nothing to take: {diags:?}"
+        "`a` declares no default, `a: default` has nothing to take: {diags:?}"
     );
 }
 
@@ -332,7 +332,7 @@ fn retired_rest_marker_teaches_the_named_spelling() {
     );
     assert!(
         perrs.iter().any(|d| d.message.contains("field: default")),
-        "`..` was retired at the checkpoint — the error teaches the replacement: {perrs:?}"
+        "`..` was retired at the checkpoint, the error teaches the replacement: {perrs:?}"
     );
 }
 
@@ -653,7 +653,7 @@ fn only_span_of(src: &str, needle: &str) -> (usize, usize) {
     let at = src.find(needle).unwrap_or_else(|| panic!("`{needle}` is not in the source"));
     assert!(
         src[at + needle.len()..].find(needle).is_none(),
-        "`{needle}` occurs more than once — the span derivation would be ambiguous"
+        "`{needle}` occurs more than once, the span derivation would be ambiguous"
     );
     (at, at + needle.len())
 }

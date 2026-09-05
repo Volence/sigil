@@ -120,7 +120,7 @@ fn a_numeric_spelling_sigil_does_not_encode_is_refused() {
         );
         assert!(
             run.bytes.is_none(),
-            "a refused processor must produce no output binary — bytes on disk \
+            "a refused processor must produce no output binary, bytes on disk \
              are the whole damage of this class"
         );
     }
@@ -203,7 +203,7 @@ fn every_accepted_spelling_selects_the_target_the_table_names() {
         );
         assert_eq!(
             under_spelling.bytes, under_canonical.bytes,
-            "`cpu {spelling}` must encode exactly as `cpu {canonical}` — the \
+            "`cpu {spelling}` must encode exactly as `cpu {canonical}`, the \
              table says they are the same target, and a spelling that assembles \
              to different bytes is a different processor wearing an alias"
         );
@@ -247,7 +247,7 @@ fn the_refusal_lists_every_accepted_line() {
         assert!(
             line.contains(&format!("`cpu {spelling}`")),
             "the refusal must print `cpu {spelling}` as a line the reader can \
-             write — every accepted spelling, listed from the table. \
+             write, every accepted spelling, listed from the table. \
              refusal:\n{line}"
         );
     }
@@ -282,7 +282,7 @@ fn the_undocumented_forms_z80undoc_adds_are_refused_and_emit_nothing() {
         let run = assemble(&format!("\tcpu z80undoc\n{form}"));
         assert!(
             !run.ok,
-            "sigil does not encode `{}` — under `cpu z80undoc` it must be \
+            "sigil does not encode `{}`, under `cpu z80undoc` it must be \
              REFUSED, never dropped or assembled as something else. Accepting \
              the wider processor is sound only while this holds. stderr:\n{}",
             form.trim(),

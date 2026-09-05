@@ -193,7 +193,7 @@ fn the_no_names_lint_is_silent_on_blank_and_still_fires_on_bare() {
         assert!(ok, "`use guard{suffix}` must build: {stderr}");
         seen.push(stderr.contains("[import.no-names]"));
     }
-    assert!(seen[0], "the bare `use guard` must still warn — a silenced lint is the failure mode");
+    assert!(seen[0], "the bare `use guard` must still warn, a silenced lint is the failure mode");
     assert!(!seen[1], "`use guard._` must not warn");
 }
 

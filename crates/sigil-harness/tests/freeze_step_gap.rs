@@ -214,7 +214,7 @@ fn unjournaled_joint(stop_after: usize) {
         assert_eq!(
             fresh.len() + stale.len(),
             STEPS.iter().map(|s| s.produces.len()).sum::<usize>(),
-            "gap {stop_after}: every artifact must be one or the other — a third state \
+            "gap {stop_after}: every artifact must be one or the other, a third state \
              would mean the fixture, not the mechanism, produced the mixture"
         );
 
@@ -254,7 +254,7 @@ fn a_byte_neutral_kill_at_the_last_joint_is_invisible_without_a_journal() {
         assert_eq!(
             std::fs::read_to_string(t.root.join(rel)).unwrap(),
             std::fs::read_to_string(untouched.root.join(rel)).unwrap(),
-            "{rel} differs — then this is not the byte-neutral case"
+            "{rel} differs, then this is not the byte-neutral case"
         );
     }
     assert!(
@@ -493,7 +493,7 @@ fn an_unreadable_journal_could_not_measure_and_is_never_a_pass() {
         assert_eq!(
             l.stale().into_iter().collect::<BTreeSet<_>>(),
             every,
-            "{what}: every artifact is possibly stale — the conservative direction"
+            "{what}: every artifact is possibly stale, the conservative direction"
         );
         let r = l.report();
         assert!(r.contains("COULD NOT MEASURE"), "{what}: the house idiom is missing:\n{r}");

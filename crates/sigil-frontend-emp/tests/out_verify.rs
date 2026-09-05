@@ -877,7 +877,7 @@ fn the_oracle_settles_a_call_blocked_survives_claim_both_ways() {
     )]);
     assert!(
         survives(src, "P", &[(Reg::A1, "eq")], &["d0"], CallPolicy::Oracle(&preserving)).is_empty(),
-        "Helper does not clobber a1 — the claim survives the call"
+        "Helper does not clobber a1, the claim survives the call"
     );
     let clobbering: BTreeMap<String, RegEffect> = BTreeMap::from([(
         "Helper".to_string(),
@@ -886,7 +886,7 @@ fn the_oracle_settles_a_call_blocked_survives_claim_both_ways() {
     assert_eq!(
         survives(src, "P", &[(Reg::A1, "eq")], &["d0"], CallPolicy::Oracle(&clobbering)).len(),
         1,
-        "Helper clobbers a1 — the claim is false on the !eq edge"
+        "Helper clobbers a1, the claim is false on the !eq edge"
     );
 }
 
@@ -918,7 +918,7 @@ fn a_tail_exit_on_the_not_cc_path_is_an_exit_but_its_target_is_not_charged() {
     assert_eq!(
         survives(destroyed, "P", &[(Reg::A1, "eq")], &["d0"], CallPolicy::Oracle(&unknown)).len(),
         1,
-        "a1 is destroyed before control leaves on the !eq edge — the claim is false there"
+        "a1 is destroyed before control leaves on the !eq edge, the claim is false there"
     );
 
     let untouched = "module m\n\
@@ -935,7 +935,7 @@ fn a_tail_exit_on_the_not_cc_path_is_an_exit_but_its_target_is_not_charged() {
     assert!(
         survives(untouched, "P", &[(Reg::A1, "eq")], &["d0"], CallPolicy::Oracle(&unknown))
             .is_empty(),
-        "an unknown tail target must NOT be charged — it may be a noreturn error rail"
+        "an unknown tail target must NOT be charged, it may be a noreturn error rail"
     );
 }
 /// WHY a `[proc.out-unverified]` firing over a sub-width body is the WIDTH rule
@@ -982,7 +982,7 @@ fn the_out_residue_is_a_width_gap_not_a_control_flow_one() {
     // Control: widening that one write is the whole difference.
     let long_path = byte_path.replace("move.b  (a0, d1.w), d0", "move.l  (a0, d1.w), d0");
     assert!(is_produced(&status_uncond(&long_path, "P", Reg::D0, &m)),
-        "widening the same write verifies — the width rule is the discriminator");
+        "widening the same write verifies, the width rule is the discriminator");
 }
 
 /// A declared `falls_into` proc's fall-off-end TRANSFERS the out obligation to
@@ -1088,7 +1088,7 @@ fn falls_into_successor_credit_reaches_the_fixpoint() {
     assert!(verified(&wired, "Q", Reg::A1), "Q produces a1 locally");
     assert!(
         verified(&wired, "P", Reg::A1),
-        "P must be credited from its declared successor Q — the falls_into map did not \
+        "P must be credited from its declared successor Q, the falls_into map did not \
          reach the fall-off credit"
     );
 
@@ -1124,7 +1124,7 @@ fn falls_into_credit_does_not_reach_an_rts_on_another_path() {
     let m = fixpoint_uncond_fi(src, &[("P", &[Reg::A1]), ("Q", &[Reg::A1])], &[("P", "Q")]);
     assert!(
         !verified(&m, "P", Reg::A1),
-        "an rts path returns without entering the successor — the fall-off credit \
+        "an rts path returns without entering the successor, the fall-off credit \
          must not discharge it"
     );
 }

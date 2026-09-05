@@ -133,7 +133,7 @@ fn every_aeon_fixture_this_file_names_still_resolves() {
     for absent in [MISSING_EXTRA_ENTRY_PATH] {
         assert!(
             !aeon.join(absent).exists(),
-            "`{absent}` is asserted ABSENT by this file — `a_missing_extra_entry_errors_loudly` \
+            "`{absent}` is asserted ABSENT by this file, `a_missing_extra_entry_errors_loudly` \
              uses it to prove an unresolvable name is a loud error. It now EXISTS under {}, so \
              that case has stopped testing what it claims while still passing. Pick another \
              name that does not exist.",
@@ -201,7 +201,7 @@ fn a_failing_extra_entry_fails_the_build_with_its_message() {
     assert_eq!(
         text.matches("[Error]").count(),
         1,
-        "one firing guard must render exactly one `[Error]` — an extra one means the \
+        "one firing guard must render exactly one `[Error]`, an extra one means the \
          plumbing minted a diagnostic of its own; output:\n{text}"
     );
 }
@@ -357,7 +357,7 @@ fn a_passing_extra_entry_moves_no_bytes() {
     assert!(
         unreachable(&base),
         "`{PASSING_EXTRA_ENTRY}` is already inside the sonic4 closure, so this gate \
-         proves nothing about the flag — pick a module the profile does not reach."
+         proves nothing about the flag, pick a module the profile does not reach."
     );
     assert!(
         !unreachable(&with),
@@ -372,12 +372,12 @@ fn a_passing_extra_entry_moves_no_bytes() {
     assert_eq!(
         with_rom.len(),
         base_rom.len(),
-        "`--extra-entry` changed the full-file LENGTH — the plumbing leaked into emission"
+        "`--extra-entry` changed the full-file LENGTH, the plumbing leaked into emission"
     );
     let diff = base_rom.iter().zip(&with_rom).position(|(a, b)| a != b);
     assert_eq!(
         diff, None,
-        "`--extra-entry` changed an emitted byte (first at {diff:?}) — it must be \
+        "`--extra-entry` changed an emitted byte (first at {diff:?}), it must be \
          byte-neutral"
     );
 

@@ -329,7 +329,7 @@ fn branch_to_undefined_label_still_errors() {
     // this must fail during resolve_layout/link rather than assemble — but it
     // must still fail loud, not silently emit a bogus displacement.
     let src = "        cpu 68000\n        phase 0\n        bra.w UndefinedLabel\n";
-    let module = assemble(src, &Options::default()).expect("assembles — branch defers to link");
+    let module = assemble(src, &Options::default()).expect("assembles, branch defers to link");
     let resolved = sigil_link::resolve_layout(&module.sections, &SymbolTable::new(), true)
         .expect("resolve_layout (no branch-width ambiguity for bra.w)");
     let err = sigil_link::link(&resolved, &SymbolTable::new())

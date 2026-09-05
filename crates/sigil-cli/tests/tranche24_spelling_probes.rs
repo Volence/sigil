@@ -96,7 +96,7 @@ fn assert_byte_identical(reference: &[u8], candidate: &[u8], what: &str) {
             &candidate[i..(i + 8).min(candidate.len())],
         );
     }
-    panic!("{what}: length differ — ref {} vs cand {}", reference.len(), candidate.len());
+    panic!("{what}: length differ, ref {} vs cand {}", reference.len(), candidate.len());
 }
 
 // ---------------------------------------------------------------------------
@@ -388,7 +388,7 @@ fn coords_module_emits_zero_bytes() {
     assert_eq!(
         module.sections.len(),
         0,
-        "engine.coords must open NO section (it emitted {} section(s), {bytes} fragment(s)) — \
+        "engine.coords must open NO section (it emitted {} section(s), {bytes} fragment(s)), \
          a module that emits bytes needs a region, a gate and a pin",
         module.sections.len()
     );

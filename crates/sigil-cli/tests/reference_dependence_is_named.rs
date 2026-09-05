@@ -68,7 +68,7 @@ fn the_suite_names_the_measurement_it_did_not_take() {
 
     if aeon.is_dir() {
         println!(
-            "reference tree present at {} — the {} reference-dependent test \
+            "reference tree present at {}, the {} reference-dependent test \
              binaries are measuring against it",
             aeon.display(),
             gated.len()
@@ -81,7 +81,7 @@ fn the_suite_names_the_measurement_it_did_not_take() {
     let banner = format!(
         "THE REFERENCE TREE IS ABSENT ({}). {} test binaries are reference-dependent and \
          every row in them will SKIP. A green result from this run does NOT mean those \
-         rows passed — it means they were not run. Binaries: {}",
+         rows passed, it means they were not run. Binaries: {}",
         aeon.display(),
         gated.len(),
         gated.join(", ")

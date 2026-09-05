@@ -129,7 +129,7 @@ fn assert_byte_identical(expected: &[u8], actual: &[u8], what: &str) {
         );
     }
     panic!(
-        "{what}: lengths differ — expected {} bytes, got {} bytes (common prefix matches)",
+        "{what}: lengths differ, expected {} bytes, got {} bytes (common prefix matches)",
         expected.len(),
         actual.len()
     );
@@ -404,7 +404,7 @@ fn expected_image() -> Vec<u8> {
     assert_eq!(
         d.len(),
         0xC2,
-        "`seed` proc ends — pitcher_plant's real content ends here"
+        "`seed` proc ends, pitcher_plant's real content ends here"
     );
 
     // --- 44-byte zero-filled gap (0xC2..0xEE) ---
@@ -570,7 +570,7 @@ fn corrupting_prelude_wait_time_changes_the_image() {
     let baseline = expected_image();
     assert_ne!(
         image, baseline,
-        "corrupting WAIT_TIME must change the emitted image — the test would be an echo otherwise"
+        "corrupting WAIT_TIME must change the emitted image, the test would be an echo otherwise"
     );
     // Same length (a `u8` immediate's value never changes any instruction's
     // width), so the byte-diff is real content, not a length regression.

@@ -132,7 +132,7 @@ fn an_error_in_a_macro_body_names_the_file_the_body_was_written_in() {
     let body_at_3 = format!("{}(3): error: ", src.join("mac.inc").display());
     assert!(
         stderr.contains(&body_at_3),
-        "a macro body's error must be reported as `{body_at_3}…` — the file the body \
+        "a macro body's error must be reported as `{body_at_3}…`, the file the body \
          was written in.\nstderr:\n{stderr}"
     );
 }

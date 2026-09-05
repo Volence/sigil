@@ -114,6 +114,6 @@ fn dead_save_worklist_over_corpus() {
     assert!(
         widest >= 1,
         "expected the dead-save census (>=1: TestChurnObj_Main/A0) in the widest shape, \
-         found {widest} — the worklist analysis is not running"
+         found {widest}, the worklist analysis is not running"
     );
 }

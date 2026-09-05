@@ -89,7 +89,7 @@ fn assert_subjects(r: &ContractReport, procs: &[&str]) {
     for p in procs {
         assert!(
             r.verified_uncond_out.contains_key(*p),
-            "the corpus walk never saw `{p}` — every assert below it proves nothing"
+            "the corpus walk never saw `{p}`, every assert below it proves nothing"
         );
     }
 }
@@ -167,7 +167,7 @@ fn a_merge_charges_the_narrower_incoming_width() {
          proc Typed (d1: u8) out(d0: u16) {{{body}}}\n"
     )]);
     assert_subjects(&r, &["Bare", "Typed"]);
-    assert!(out_fires(&r, "Bare", "d0"), "one arm is only `.w` — 32 bits are unprovable");
+    assert!(out_fires(&r, "Bare", "d0"), "one arm is only `.w`, 32 bits are unprovable");
     assert!(verified(&r, "Typed", "d0"), "firings: {:?}", r.out_firings);
 }
 
@@ -273,7 +273,7 @@ fn a_newtype_narrows_to_its_underlying_type_transitively() {
     assert!(verified(&r, "ViaNewtype", "d0"), "firings: {:?}", r.out_firings);
     assert!(
         out_fires(&r, "TooNarrow", "d0"),
-        "`Outer` erases to u16, so a `.b` write must still fire — otherwise the \
+        "`Outer` erases to u16, so a `.b` write must still fire, otherwise the \
          chain resolved to a byte, or to nothing at all"
     );
 }
@@ -365,7 +365,7 @@ fn a_typed_out_composes_with_the_conditional_form() {
     assert!(verified_cond(&r, "Cond", "d0", "eq"), "firings: {:?}", r.out_firings);
     assert!(
         out_fires(&r, "CondTooNarrow", "d0"),
-        "the cc half must not swallow the width half — a `.b` write still misses a \
+        "the cc half must not swallow the width half, a `.b` write still misses a \
          u16 claim on the success edge"
     );
 }

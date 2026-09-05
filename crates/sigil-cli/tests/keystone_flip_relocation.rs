@@ -89,7 +89,7 @@ fn doctored_golden_at_deform_pointer_is_caught() {
     let bad: Vec<usize> = (0..EOR).filter(|&i| !is_header_field(i) && rom[i] != g[i]).collect();
     assert!(
         bad.contains(&DEFORM_DIVERGENT_BYTE),
-        "t24: doctoring the golden at {:#x} was NOT caught — the gate is vacuous there",
+        "t24: doctoring the golden at {:#x} was NOT caught, the gate is vacuous there",
         DEFORM_DIVERGENT_BYTE
     );
 }

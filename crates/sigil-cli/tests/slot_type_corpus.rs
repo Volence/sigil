@@ -90,7 +90,7 @@ fn corpus_sources() -> Option<Vec<(PathBuf, String)>> {
     // walk that lost a directory — or a generated module — must fail loudly.
     assert!(
         paths.len() >= 120,
-        "the corpus walk found only {} .emp files under {} — too few to be the whole \
+        "the corpus walk found only {} .emp files under {}, too few to be the whole \
          corpus, so every assert-empty gate below would pass vacuously",
         paths.len(),
         aeon.display()
@@ -99,7 +99,7 @@ fn corpus_sources() -> Option<Vec<(PathBuf, String)>> {
         paths.iter().any(|p| p.ends_with("engine/debug/generated/compression_vectors.emp")),
         "engine/debug/generated/compression_vectors.emp is absent, so `engine.compression_vectors` \
          is not in the walk and compression_selftest.emp's uses of it vanish silently. \
-         It is gitignored — run tools/gen_compression_vectors.py in {}",
+         It is gitignored, run tools/gen_compression_vectors.py in {}",
         aeon.display()
     );
     Some(paths.into_iter().map(|p| {
@@ -147,7 +147,7 @@ fn analyze_every_shape(
                 .collect();
             assert!(
                 bind_errors.is_empty(),
-                "shape `{label}`: L1 interface bind errors — a half-bound env silently \
+                "shape `{label}`: L1 interface bind errors, a half-bound env silently \
                  discards `Iface.MEMBER`-gated arms from the walk: {bind_errors:?}"
             );
             let r = analyze_corpus_with_contracts(&files, &defines, &iface_env);
@@ -211,7 +211,7 @@ fn a_bless_stripped_inside_a_comptime_gate_fires_in_exactly_the_sound_on_shapes(
             assert!(
                 hit.is_some(),
                 "shape `{label}` assembles the `SOUND_DRIVER_ENABLED == 1` block, so the \
-                 stripped bless MUST fire — an empty firing set here means the walk is \
+                 stripped bless MUST fire, an empty firing set here means the walk is \
                  not reading the shape's defines. firings: {:#?}",
                 r.slot_firings
             );
@@ -223,7 +223,7 @@ fn a_bless_stripped_inside_a_comptime_gate_fires_in_exactly_the_sound_on_shapes(
             assert!(
                 hit.is_none(),
                 "shape `{label}` is sound-OFF, so the doctored site compiles away and must \
-                 NOT fire — a firing here means every shape is walking one define set: {:#?}",
+                 NOT fire, a firing here means every shape is walking one define set: {:#?}",
                 r.slot_firings
             );
         }
@@ -233,7 +233,7 @@ fn a_bless_stripped_inside_a_comptime_gate_fires_in_exactly_the_sound_on_shapes(
     // asserts nothing on the other, and the silent-there half is the load-bearing one.
     assert!(sound_on_shapes > 0 && sound_off_shapes > 0,
         "the shipped shapes no longer straddle SOUND_DRIVER_ENABLED \
-         ({sound_on_shapes} on / {sound_off_shapes} off) — this probe proves nothing");
+         ({sound_on_shapes} on / {sound_off_shapes} off), this probe proves nothing");
 }
 
 /// NEGATIVE: swap the axis bless at ONE call site → the build fails naming that

@@ -25,7 +25,7 @@ fn parse_bounded(src: String) -> Vec<sigil_span::Diagnostic> {
     let out = rx
         .recv_timeout(std::time::Duration::from_secs(60))
         .expect("parse did not terminate");
-    h.join().expect("parser thread died — stack overflow regression");
+    h.join().expect("parser thread died, stack overflow regression");
     out
 }
 

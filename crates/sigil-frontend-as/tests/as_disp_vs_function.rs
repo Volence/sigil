@@ -104,11 +104,11 @@ fn a_function_only_name_over_an_address_register_is_an_undefined_symbol() {
     );
     assert!(
         msgs.iter().any(|m| m.contains("konst")),
-        "the refusal must blame `konst`, the name in displacement position — got {msgs:?}"
+        "the refusal must blame `konst`, the name in displacement position, got {msgs:?}"
     );
     assert!(
         !msgs.iter().any(|m| m.contains("`a1`")),
-        "`a1` is the addressing-mode base, never an expression leaf — got {msgs:?}"
+        "`a1` is the addressing-mode base, never an expression leaf, got {msgs:?}"
     );
 }
 
@@ -131,7 +131,7 @@ fn the_insn2op_displacement_arm_takes_the_equate_not_the_function() {
          \tmove.b\t#$B7,1+id(a1)\n";
     assemble(src, &Options::default()).unwrap_or_else(|d| {
         panic!(
-            "`1+id(a1)` must read as a displacement — got {:?}",
+            "`1+id(a1)` must read as a displacement, got {:?}",
             d.iter().map(|x| &x.message).collect::<Vec<_>>()
         )
     });
@@ -156,7 +156,7 @@ fn a_two_element_trailing_group_is_an_addressing_mode_not_a_two_arg_call() {
     );
     assert!(
         msgs.iter().any(|m| m.contains("zz") && m.contains("index")),
-        "must refuse `zz` as the index register of a peeled `(An,Xn)` group — got {msgs:?}"
+        "must refuse `zz` as the index register of a peeled `(An,Xn)` group, got {msgs:?}"
     );
 }
 
@@ -181,7 +181,7 @@ fn a_call_in_the_displacement_still_expands() {
     )
     .unwrap_or_else(|d| {
         panic!(
-            "the displacement's call must still expand — got {:?}",
+            "the displacement's call must still expand, got {:?}",
             d.iter().map(|x| &x.message).collect::<Vec<_>>()
         )
     });
@@ -192,6 +192,6 @@ fn a_call_in_the_displacement_still_expands() {
     assert_eq!(
         sigil_link::flatten(&linked, 0x00),
         vec![0x33, 0x7C, 0x12, 0x34, 0x01, 0x17],
-        "asl emits 337C 1234 0117 — displacement (3*7)+$100+2"
+        "asl emits 337C 1234 0117, displacement (3*7)+$100+2"
     );
 }

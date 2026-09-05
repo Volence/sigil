@@ -135,12 +135,12 @@ fn ram_packing_invariants(debug: bool) {
     ram.sort_by_key(|s| s.vma_origin());
 
     // (a) even-based, and there IS a RAM region (guards against a resolve that lost it).
-    assert!(!ram.is_empty(), "no RAM sections resolved — the phase blocks vanished");
+    assert!(!ram.is_empty(), "no RAM sections resolved, the phase blocks vanished");
     for s in &ram {
         assert_eq!(
             s.vma_origin() % 2,
             0,
-            "RAM section `{}` base {:#x} is ODD — a 68k word/long access there address-errors",
+            "RAM section `{}` base {:#x} is ODD, a 68k word/long access there address-errors",
             s.name,
             s.vma_origin()
         );
@@ -153,7 +153,7 @@ fn ram_packing_invariants(debug: bool) {
         .count();
     assert_eq!(
         rom_in_ram, 0,
-        "{rom_in_ram} ROM section(s) placed at a RAM lma — the ROM/RAM partition broke; \
+        "{rom_in_ram} ROM section(s) placed at a RAM lma, the ROM/RAM partition broke; \
          RAM growth could perturb ROM bases"
     );
 
@@ -252,7 +252,7 @@ fn config_b_doctored_size_table_moves_no_bytes() {
     assert!(
         doctored.len() == base.len()
             && (0..eor).all(|i| header(i) || doctored[i] == golden[i]),
-        "doctoring the island row `{probe}`+2 moved the ROM — the frozen table is still a \
+        "doctoring the island row `{probe}`+2 moved the ROM, the frozen table is still a \
          placement input for the object bank (its anchor is the map's, its alignment the declaration's)"
     );
 
@@ -318,7 +318,7 @@ fn config_b_doctored_size_table_moves_no_bytes() {
             head,
             prev + dust_data_len,
             "t24(b) precondition: `{inert}` ({head:#x}) no longer abuts `{inert_pred_end}` \
-             ({prev:#x}) + the dust_data image ({dust_data_len:#x}) in the frozen table — \
+             ({prev:#x}) + the dust_data image ({dust_data_len:#x}) in the frozen table, \
              the freeze shifted the layout; choose a new contiguous probe entry"
         );
     }
@@ -346,7 +346,7 @@ fn config_b_doctored_size_table_moves_no_bytes() {
         .unwrap_or_else(|e| panic!("t24(b): contiguous doctoring must still build: {e}"));
     assert_eq!(
         repacked, base,
-        "t24(b): doctoring the contiguous `{inert}`+{delta} changed the ROM — packing is \
+        "t24(b): doctoring the contiguous `{inert}`+{delta} changed the ROM, packing is \
          supposed to derive contiguous bases from live sizes, not the table"
     );
 }

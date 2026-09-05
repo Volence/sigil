@@ -391,7 +391,7 @@ fn verified_preserves_not_inherited_by_callers() {
     // Preserver's effective is d0 only (d1/a0 preserved); Caller inherits only d0.
     assert_eq!(c.effective["Preserver"], eff(&["d0"]));
     assert_eq!(c.effective["Caller"], eff(&["d0"]));
-    assert!(check_firings(&procs, &c).is_empty(), "no firing — d1/a0 preserved");
+    assert!(check_firings(&procs, &c).is_empty(), "no firing, d1/a0 preserved");
 }
 
 // ---------------------------------------------------------------------------

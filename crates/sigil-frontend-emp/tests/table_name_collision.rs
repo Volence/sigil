@@ -149,7 +149,7 @@ proc a () { rts }
         assert_eq!(
             f[0].level,
             Level::Warning,
-            "an enum carries no base label — this program links today: {}",
+            "an enum carries no base label, this program links today: {}",
             f[0].message
         );
         assert!(
@@ -173,7 +173,7 @@ proc a () { rts }
     );
     let f = firings(&diags);
     assert_eq!(f.len(), 1, "firings: {diags:?}");
-    assert_eq!(f[0].level, Level::Error, "both emit a base label — error tier");
+    assert_eq!(f[0].level, Level::Error, "both emit a base label, error tier");
     assert!(
         f[0].message.contains("against the `dispatch` table"),
         "dispatch outranks table: {}",

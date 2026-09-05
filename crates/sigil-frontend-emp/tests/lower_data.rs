@@ -690,11 +690,11 @@ fn p1_conditional_embed_false_arm_is_zero_length_but_labeled() {
     let x_off = label_offset(sec, "X");
     let next_off = label_offset(sec, "Next");
     assert_eq!(x_off, 0, "X's label is still defined");
-    assert_eq!(next_off, 0, "Next lands at X's offset — X emitted zero bytes");
+    assert_eq!(next_off, 0, "Next lands at X's offset, X emitted zero bytes");
     assert_eq!(x_off, next_off, "the following item lands at the SAME offset as the empty item");
 
     let bytes = linked_bytes(&module);
-    assert_eq!(bytes, vec![0xAA], "only Next's single byte — X contributed nothing");
+    assert_eq!(bytes, vec![0xAA], "only Next's single byte, X contributed nothing");
 }
 
 // ---- P2: `[*u8; N]` pointer array with string elements -------------------
@@ -884,11 +884,11 @@ fn t3_p2_zero_byte_embed_is_labeled_zero_length_next_item_same_offset() {
     let x_off = label_offset(sec, "X");
     let next_off = label_offset(sec, "Next");
     assert_eq!(x_off, 0, "X's label is still defined at the section start");
-    assert_eq!(next_off, 0, "Next lands at X's offset — the zero-byte embed emitted nothing");
+    assert_eq!(next_off, 0, "Next lands at X's offset, the zero-byte embed emitted nothing");
     assert_eq!(x_off, next_off, "the following item lands at the SAME offset as the empty embed");
 
     let bytes = linked_bytes(&module);
-    assert_eq!(bytes, vec![0xAA], "only Next's single byte — the empty embed contributed nothing");
+    assert_eq!(bytes, vec![0xAA], "only Next's single byte, the empty embed contributed nothing");
 }
 
 // ---- P3: NULL (`0`) entries in a `[*u8; N]` pointer array ----------------
