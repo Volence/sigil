@@ -18,10 +18,21 @@
 //! separates the two behaviours, which is why this gate asserts bytes.
 //!
 //! Every expectation below is read off the listing of `asl` 1.42 Beta Bld 212 —
-//! the binary committed at `s2disasm/build_tools/Linux-x86_64/asl` — for the
-//! identical source text. The probes are committed under
+//! the binary committed at `s2disasm/build_tools/Linux-x86_64/asl`, md5
+//! `0dee1f98e6480a4783d27ffd8b90896f` — for the identical source text. The
+//! probes are committed under
 //! `docs/superpowers/notes/2026-09-04-as-end-probes/`, and `run.sh` there reruns
 //! any of them.
+//!
+//! **THE VERSION STRING DOES NOT IDENTIFY THE BINARY, WHICH IS WHY THE DIGEST IS
+//! HERE.** Four asl builds in this workspace print `1.42 Beta [Bld 212]`
+//! verbatim, and the one named above substitutes an uninitialized word for any
+//! operand it declined to give a value. `run.sh` now selects
+//! `61e672562465725a8c102288a7da9098` and refuses anything else. Every `end`,
+//! `cnop` and `wimm2` probe in that directory was assembled under BOTH builds
+//! and their emitted code lines are identical, so nothing this file asserts
+//! moves; the two probes that do differ are `wrange.asm` and `wimm.asm`, which
+//! belong to `as_word_immediate_range.rs` and carry the note there.
 //!
 //! ## Division of labour with the golden snippets
 //!

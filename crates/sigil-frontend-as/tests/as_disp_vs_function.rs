@@ -9,7 +9,11 @@
 //! refusal names — and that name is the whole rule here.
 //!
 //! THE RULE, and the asl rows it is derived from (AS V1.42 Beta [Bld 212],
-//! `s2disasm/build_tools/Linux-x86_64/asl`, run `-xx -n -q -A -L -U -i .`).
+//! `s2disasm/build_tools/Linux-x86_64/asl`, md5
+//! `0dee1f98e6480a4783d27ffd8b90896f`, run `-xx -n -q -A -L -U -i .`). The
+//! digest is the identity; four builds in this workspace print that same version
+//! string, and this one substitutes an uninitialized word for any operand it
+//! declined to give a value — see `docs/superpowers/notes/asl-reference/`.
 //! In a 68000 operand asl peels the trailing `(An)`/`(An,Xn)` addressing-mode
 //! group off BEFORE it evaluates anything, so the name in front of it is looked
 //! up as a SYMBOL and never as a user `function`:

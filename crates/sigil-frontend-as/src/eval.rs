@@ -10959,6 +10959,42 @@ C:\n";
     }
 
     #[test]
+    fn a_label_directive_off_the_pc_claims_no_position_in_the_section() {
+        // The other side of the `label` placement rule, and the side no BYTE can
+        // reach. A `label` whose value is NOT the program counter is a constant
+        // that happens to be typed as an address; placing it would claim a
+        // position in the section for a name that does not live there, and the
+        // section would then relocate a value that must not move.
+        //
+        // Nothing observable in an image separates the two. The name is in the
+        // symbol environment either way, so every reference — folded in-pass or
+        // deferred to the linker — reads `$100` under both readings:
+        //
+        // ```text
+        //   15/    1000 : 6000 F0FE           	bra.w	Al
+        //   16/    1004 : (MACRO)              	mk
+        //   16/    1004 : =$100                Al      label   $100
+        //   16/    1004 : 4E71                        nop
+        //   17/    1006 : 0100                	dc.w	Al
+        // ```
+        //
+        // So the assertion is STRUCTURAL: the section carries no `Al`. Its twin
+        // above asserts the opposite for the PC-valued form, and the pair is
+        // what pins the condition rather than either branch of it.
+        //
+        // WHAT OTHER ANSWER COULD THIS HAVE GIVEN: `Some(4)`, the offset of the
+        // expansion, which is what placing every `label` produces — and which
+        // leaves the image above byte-for-byte unchanged, which is why this test
+        // is not written as an image comparison.
+        let src = intlabel_src("mk macro\nAl\tlabel\t$100\n\tnop\n\tendm\n\tbra.w Al\n\tmk\n\tdc.w Al\n");
+        assert_eq!(
+            linked_image(&src)[0x1000..],
+            [0x60, 0x00, 0xF0, 0xFE, 0x4E, 0x71, 0x01, 0x00]
+        );
+        assert_eq!(section_label(&src, "Al"), None);
+    }
+
+    #[test]
     fn a_capture_the_recursion_cap_refused_is_not_handed_to_the_next_call() {
         // The capture is parked between `exec_one` recognising it and
         // `expand_macro_inner` binding it, so EVERY path out of that function has
@@ -11716,7 +11752,9 @@ C:\n";
 
     /// AS symbol-name composition. Every expected value below is READ OFF an
     /// `asl -L` listing of the same source (AS V1.42 Beta Bld 212,
-    /// `s2disasm/build_tools/Linux-x86_64/asl`), never off sigil's own output:
+    /// `s2disasm/build_tools/Linux-x86_64/asl`, md5 `0dee1f98e6480a4783d27ffd8b90896f`
+    /// — the digest, because four builds here print that same version string),
+    /// never off sigil's own output:
     ///
     /// ```text
     ///   7/     100 : 0055                    dc.w zone_id_{cur_str}
@@ -11849,7 +11887,9 @@ C:\n";
     // ── `shift`: the variadic macro argument walk ───────────────────────────
     //
     // Every expected value below is read off an `asl -L -U` listing row
-    // (AS V1.42 Beta Bld 212, `s2disasm/build_tools/Linux-x86_64/asl`), quoted
+    // (AS V1.42 Beta Bld 212, `s2disasm/build_tools/Linux-x86_64/asl`, md5
+    // `0dee1f98e6480a4783d27ffd8b90896f` — the version string identifies no
+    // binary here), quoted
     // in each test. `-U` is the invocation: it sets asl's `CASESENSITIVE` to 1,
     // which is the namespace this front-end implements and the flag every asl
     // oracle in this repo passes. Without it asl folds every identifier —
@@ -12261,7 +12301,8 @@ C:\n";
     // ── `.`-local scope inside a macro expansion ────────────────────────────
     //
     // Every expected value below is an `asl -L` row from AS V1.42 Beta Bld 212
-    // (`s2disasm/build_tools/Linux-x86_64/asl`) run with the Sonic 2 build's own
+    // (`s2disasm/build_tools/Linux-x86_64/asl`, md5
+    // `0dee1f98e6480a4783d27ffd8b90896f`) run with the Sonic 2 build's own
     // flags, `-xx -n -q -A -L -U -i .` — `-U` above all, which forces the
     // case-sensitive namespace this front-end implements.
 

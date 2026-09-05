@@ -2105,3 +2105,59 @@ _move   macro
         dc.w    id($1C6)
 --- bytes ---
 13 7C 00 B7 00 00 13 44 00 00 18 28 00 00 13 68 00 00 00 00 00 C9
+=== as_label_directive_star_escapes_the_macro_body ===
+        cpu 68000
+        padding off
+        phase 0
+        dc.w    $1111
+        dc.w    $2222
+mx      macro
+Xl      label   *
+        endm
+        mx
+        dc.l    Xl
+        dc.w    $4444
+--- bytes ---
+11 11 22 22 00 00 00 04 44 44
+=== as_label_directive_constant_escapes_the_macro_body ===
+        cpu 68000
+        padding off
+        phase 0
+mlabdir macro
+Al      label   $100
+        endm
+        mlabdir
+mpc     macro
+Pc:     dc.w    $1111
+        endm
+        mpc
+        dc.w    Al
+        dc.w    $4444
+--- bytes ---
+11 11 01 00 44 44
+=== as_label_directive_reads_back_inside_its_own_body ===
+        cpu 68000
+        padding off
+        phase 0
+mlab    macro
+Al      label   $100
+        dc.w    Al
+        endm
+        mlab
+        dc.w    Al
+        dc.w    $4444
+--- bytes ---
+01 00 01 00 44 44
+=== as_label_directive_constant_reached_by_a_deferred_fixup ===
+        cpu 68000
+        padding off
+        phase 0
+mk      macro
+Al      label   $100
+        nop
+        endm
+        bra.w   Al
+        mk
+        dc.w    Al
+--- bytes ---
+60 00 00 FE 4E 71 01 00

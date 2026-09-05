@@ -1,10 +1,22 @@
 # `warning` and `exitm` measured against asl — 2026-09-04
 
-Reference assembler: `s2disasm/build_tools/Linux-x86_64/asl`, **AS 1.42 Beta
-[Bld 212]**, invoked `asl -U -q <probe>.asm` then `p2bin <probe>.p <probe>.bin -k`
-with `AS_MSGPATH` pointed at the same directory. Every `image:` line below is the
-`p2bin` output read back with `od -An -tx1`; every diagnostic is asl's own stderr,
-verbatim.
+Reference assembler: `s1disasm/build_tools/Linux-x86_64/asl`, md5
+`61e672562465725a8c102288a7da9098`, invoked `asl -U -q <probe>.asm` then
+`p2bin <probe>.p <probe>.bin -k` with `AS_MSGPATH` pointed at the same
+directory. Every `image:` line below is the `p2bin` output read back with
+`od -An -tx1`; every diagnostic is asl's own stderr, verbatim.
+
+**The digest, not the banner, is the identity — and the rows below were taken
+with a DIFFERENT build that prints the same one.** `run.sh` and `img.sh` named
+`s2disasm/build_tools/Linux-x86_64/asl` (md5 `0dee1f98e6480a4783d27ffd8b90896f`)
+when this table was written; both print **AS 1.42 Beta [Bld 212]** verbatim, so
+nothing in the output said which had run. The runners now select by digest
+(`../asl-reference/`) and refuse anything else.
+
+The rows are NOT re-taken, and they do not need to be: all 33 probes in this
+directory were run under both builds and the emitted code lines are identical
+under every one of them. Two probes in the whole sweep of four repinned corpora
+differ, and both are in `2026-09-04-as-end-probes`, not here.
 
 ## `warning`
 

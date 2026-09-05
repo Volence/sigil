@@ -9,9 +9,18 @@
 //! `s := "\{n}"` then `dc.b s` emits the characters of the rendering.
 //!
 //! Expectations derived from asl 1.42 Beta [Bld 212]
-//! (`s2disasm/build_tools/Linux-x86_64/asl`), probes committed under
+//! (`s2disasm/build_tools/Linux-x86_64/asl`, md5
+//! `0dee1f98e6480a4783d27ffd8b90896f`), probes committed under
 //! `docs/superpowers/notes/2026-09-05-as-interp-radix-probes/` with each cell's
 //! verbatim output and three-run stability.
+//!
+//! **THE DIGEST IS CITED BECAUSE THE VERSION STRING CANNOT IDENTIFY THE
+//! BINARY**, and here that is not a formality: the build named above answers
+//! differently on every run for any operand it declined to give a value, so
+//! three identical runs from it were a statement about which operands happened
+//! to resolve. `run.sh` now selects `61e672562465725a8c102288a7da9098` and
+//! refuses anything else. All 13 probes were assembled under both builds and
+//! their output is identical, so every row here stands.
 //!
 //! EVERY FIXTURE HERE USES A VALUE WHOSE HEX AND DECIMAL SPELLINGS DIFFER. The
 //! reason this divergence survived for months is that every probe behind the
