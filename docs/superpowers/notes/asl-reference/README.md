@@ -270,13 +270,31 @@ that was verified, not inherited. A guard on any of them would delete the
 capability rather than protect it — the defect was never a second build, it was
 an unidentified instrument.
 
-**Not runners, and not closed:** `gen_m68k_vectors`, `gen_z80_vectors` and
-`gen_snippet_vectors` take their assembler from `ASL_BIN` with **no default and
-no digest check**, and the committed vector files they mint carry no provenance
-line naming what produced them. They are deliberately out-of-repo since the P4d
-flip, so a digest pin to this workspace's `s1disasm` would contradict that
-decision — but "the version banner is not an identity" applies to them most of
-all, because their output is the frozen oracle. Booked, not fixed here.
+**Not runners, and CLOSED 2026-09-05** (`../2026-09-05-asl-gen-vector-provenance.md`):
+`gen_m68k_vectors`, `gen_z80_vectors` and `gen_snippet_vectors` took their
+assembler from `ASL_BIN` with **no default and no digest check**, and the vector
+files they mint carried no provenance line. They are deliberately out-of-repo
+since the P4d flip, so a digest pin would contradict that decision — the fix is
+therefore **stamp, not constrain**: each generator now derives the md5 and banner
+of the `asl` and `p2bin` it was handed and writes them into a header on the file,
+and **refuses (exit 4, nothing written) any toolchain it cannot identify**.
+`ASL_BIN` still names any build; the choice is simply no longer unrecorded.
+
+The demonstration is in the artifact. Minting `z80_golden_vectors.txt` under the
+varying build changes **no vector line at all** — all 120 are identical — and
+changes only:
+
+```diff
+-# asl-md5       61e672562465725a8c102288a7da9098
++# asl-md5       0dee1f98e6480a4783d27ffd8b90896f
+ # asl-banner    Macro Assembler 1.42 Beta [Bld 212]     <- unchanged
+-# asl-banner    (x86_64-unknown-linux)
++# asl-banner    (x86_64-Linux)
+```
+
+Before the header that mint was a git-clean no-op, indistinguishable from a
+reference-build mint. The banner's *first* line is identical across the two, so
+this file's own rule is what the artifact now records.
 
 ## The version-string sweep
 
