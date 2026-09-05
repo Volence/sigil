@@ -72,29 +72,46 @@ impl Provenance {
     pub fn header(&self) -> String {
         let mut s = String::new();
         for line in PREAMBLE {
-            s.push_str("# ");
-            s.push_str(line);
-            s.push('\n');
+            // No trailing space on a blank comment line — it is invisible churn
+            // that survives every future diff of this header.
+            if line.is_empty() {
+                s.push_str("#\n");
+            } else {
+                s.push_str(&format!("# {line}\n"));
+            }
         }
-        s.push_str(&format!("# minted-by     {}\n", self.minted_by));
-        s.push_str(&format!("# asl-md5       {}\n", self.asl.md5));
+        push_field(&mut s, "minted-by", &self.minted_by);
+        push_field(&mut s, "asl-md5", &self.asl.md5);
         push_banner(&mut s, "asl", &self.asl.banner);
-        s.push_str(&format!("# p2bin-md5     {}\n", self.p2bin.md5));
+        push_field(&mut s, "p2bin-md5", &self.p2bin.md5);
         push_banner(&mut s, "p2bin", &self.p2bin.banner);
         s.push('\n');
         s
     }
 }
 
+/// Field-label column width, sized to the longest label (`p2bin-banner`).
+const LABEL_W: usize = 12;
+
+fn push_field(s: &mut String, label: &str, value: &str) {
+    s.push_str(&format!("# {label:<LABEL_W$}  {value}\n"));
+}
+
 fn push_banner(s: &mut String, tool: &str, banner: &[String]) {
+    let label = format!("{tool}-banner");
     if banner.is_empty() {
+        push_field(
+            s,
+            &label,
+            "(none — this tool prints no version string, so its digest is its",
+        );
         s.push_str(&format!(
-            "# {tool}-banner  (none — this tool prints no version string; the digest is its\n\
-             #               only identity, which is the general case stated plainly)\n"
+            "# {:<LABEL_W$}  only identity — which is the general case, stated plainly)\n",
+            ""
         ));
     } else {
         for line in banner {
-            s.push_str(&format!("# {tool}-banner  {line}\n"));
+            push_field(s, &label, line);
         }
     }
 }

@@ -1,3 +1,27 @@
+# PROVENANCE — generated. This records WHICH BUILD ANSWERED.
+#
+# Do NOT read it as a claim that the answer is correct, and do not cite it as one.
+# asl substitutes a value for an operand it declines to evaluate rather than
+# refusing to emit, and on a given build that substitute is stable — it echoes the
+# last value that build computed — so it re-mints identically and reads like a
+# measurement. Re-derivability is evidence about the INSTRUMENT and never about
+# the vectors. The question a digest cannot answer is whether asl answered at all;
+# for that see docs/superpowers/notes/2026-09-05-asl-gen-vector-provenance-probes/.
+#
+# Identity is the digest. Four asl builds in this workspace print the same version
+# banner and are different programs, so the banner below discriminates nothing; it
+# is human context. The install path is deliberately absent — it is not a property
+# of the binary and would churn this header between machines holding the identical
+# build. Regenerate with the generator named below; a diff here means the
+# instrument changed.
+# minted-by     gen-z80-vectors
+# asl-md5       61e672562465725a8c102288a7da9098
+# asl-banner    Macro Assembler 1.42 Beta [Bld 212]
+# asl-banner    (x86_64-unknown-linux)
+# p2bin-md5     4f2fff99c3347bafb93b12d5be1db754
+# p2bin-banner  (none — this tool prints no version string, so its digest is its
+#               only identity — which is the general case, stated plainly)
+
 nop => 00
 ld b,a => 47
 ld d,0 => 16 00

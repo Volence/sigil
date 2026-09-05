@@ -27,11 +27,20 @@ fn blocks() -> Vec<(String, String, Vec<u8>)> {
     let mut asm = String::new();
     let mut hex = String::new();
     let mut in_bytes = false;
+    // Everything before the first `=== ` header is the file's provenance header
+    // (which asl build minted these bytes — see `sigil-isa/src/asl_provenance.rs`).
+    // It is skipped explicitly rather than falling through the `else` arm into a
+    // discarded `asm` buffer, so the handling is a decision and not a side effect.
+    let mut seen_first_block = false;
     for line in text.lines() {
+        if !seen_first_block && !line.starts_with("=== ") {
+            continue;
+        }
         if let Some(n) = line
             .strip_prefix("=== ")
             .and_then(|s| s.strip_suffix(" ==="))
         {
+            seen_first_block = true;
             if !name.is_empty() {
                 out.push((name.clone(), asm.clone(), parse_hex(&hex)));
             }
