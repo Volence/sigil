@@ -275,3 +275,36 @@ fn a_value_binding_form_in_a_macro_body_stays_global() {
         "expected an unresolved-symbol refusal naming `Pc`, got: {msgs:?}"
     );
 }
+
+/// probe `p11`. The `label` DIRECTIVE read from INSIDE the body that declares
+/// it — the direction the test above does not reach, and the one that actually
+/// depends on `scan_plain_labels` excluding the directive.
+///
+/// This fixture exists because the mutation that removes `"label"` from that
+/// exclusion list APPLIED CLEANLY AND LEFT THE FILE GREEN. The exclusion is
+/// inert on the outside read: `directive_label` binds through the builder rather
+/// than through `define_label`, so the name is written bare either way, and by
+/// the time the outside read happens the namespace stack is empty. It is the
+/// INSIDE read that breaks — the reference mangles to the expansion's key while
+/// the declaration wrote the bare name, and nothing resolves.
+///
+/// INVOKED ONCE, and that is forced rather than sloppy: `m18` measured a second
+/// `Al label $100` as `#1000 symbol double defined` even with the value
+/// unchanged, so no two-instance version of this shape assembles. The
+/// discriminator is the VALUE — `$100` is nowhere near the PC here.
+///
+/// WHAT OTHER ANSWER COULD THIS HAVE GIVEN: `$0000`/`$0002`, if the directive
+/// were read as a PC label; and a refusal, which is what removing `"label"` from
+/// the exclusion produces and what this fixture was added to catch.
+#[test]
+fn the_label_directive_reads_back_from_inside_its_own_body() {
+    let src = format!(
+        "{}mlab\tmacro\nAl\tlabel\t$100\n\tdc.w\tAl\n\tendm\n\tmlab\n\tdc.w\tAl\n\tdc.w\t$4444\n",
+        head()
+    );
+    assert_eq!(
+        bytes(&src),
+        vec![0x01, 0x00, 0x01, 0x00, 0x44, 0x44],
+        "asl p11: 0100 (inside the body) / 0100 (outside) / 4444"
+    );
+}

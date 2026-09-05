@@ -39,11 +39,17 @@ sources are committed.
 | `p8` | the control: a FILE-LEVEL label read from inside an expansion |
 | `p9` | a `.local` written in a macro body, and which scope owns it |
 | `p10` | `{INTLABEL}`: which `__LABEL__` spellings substitute, and which stay literal |
+| `p11` | the `label` DIRECTIVE read from INSIDE the body that declares it |
 
 Every one of them invokes its macro MORE THAN ONCE, at addresses that DIFFER. A
 macro invoked once cannot separate "each instance owns the name" from "the last
 definition wins", and a label whose address is the same under both readings emits
 the same byte either way.
+
+`p11` is the one exception, and it is forced rather than sloppy: `m18` measured a
+second `Al label $100` as `#1000 symbol double defined` even with the value
+unchanged, so there is no two-instance version of that shape that assembles. Its
+discriminator is the VALUE instead — `$100` is nowhere near the PC.
 
 ## The measuring scripts
 

@@ -91,4 +91,4 @@ patch 'a = """                    | \"label\"
                     | \"macro\""""
 assert s.count(a) == 1, s.count(a)
 s = s.replace(a, """                    | \"macro\"""")'
-run_one M5 "the `label` DIRECTIVE is treated as a PC label"
+run_one M5 'the label DIRECTIVE is treated as a PC label'
