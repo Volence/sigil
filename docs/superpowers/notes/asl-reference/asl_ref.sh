@@ -26,9 +26,26 @@
 #     303C 5602 / 303C 55B1 / 303C 5655 / 303C 557F     (four consecutive runs)
 #
 # while `s1disasm`'s upstream build (md5 61e672562465725a8c102288a7da9098)
-# answers `303C 8000` every time. A runner that checked the banner would have
+# returns `303C 8000` every time. A runner that checked the banner would have
 # accepted either and verified nothing; that is the whole reason this file
 # exists rather than a `--version` grep.
+#
+# ── AND THE REFERENCE BUILD IS NOT ANSWERING EITHER ──────────────────────────
+# That `303C 8000` is NOT this build's answer for those lines, and this comment
+# used to say "answers", which was wrong. It is line 5 of `wrange.asm` leaking
+# downward: line 5 is `move.w #-32768,d0`, which is in range, is ACCEPTED, and
+# legitimately computes $8000 — and the four refused lines below it echo THE
+# LAST VALUE ASL COMPUTED. Change line 5's accepted value and all four move with
+# it: that is `wcarry.asm`, beside `wrange.asm`, where they read `303C 1234`.
+# With no accepted immediate above them at all (`wcarry0.asm`) they read `0000`,
+# the slot's initial state.
+#
+# So the two builds do not differ in WHETHER they substitute, only in WHAT: this
+# one substitutes a stale value, the other an uninitialized one. The stale one is
+# the more dangerous to inherit, because re-running it agrees with itself and so
+# reads like a measurement. THIS GUARD PINS WHICH BUILD ANSWERED; it cannot tell
+# you the build answered at all. For a shape asl declines, the byte column is an
+# artifact on either build — do not pin it.
 #
 # ── THE DIGEST IS A LITERAL, ON PURPOSE ──────────────────────────────────────
 # `ASL_REF_MD5` below is written out. It is NOT computed from the binary the

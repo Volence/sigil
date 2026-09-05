@@ -48,18 +48,33 @@
 //! for any operand it declined to give a value. The word is different on every
 //! run — `5602`, `55B1`, `5655`, `557F` on four consecutive ones — and the
 //! `55F5` here is one draw from that, frozen into a comment as though it were
-//! output. `s1disasm`'s build (md5 `61e672562465725a8c102288a7da9098`) prints
-//! `303C 8000` on all four lines, every run, and is what the probe runner now
-//! selects; both builds print `AS 1.42 Beta [Bld 212]` verbatim, which is why
-//! the binary is cited by digest here and not by version.
+//! output. Both builds print `AS 1.42 Beta [Bld 212]` verbatim, which is why the
+//! binary is cited by digest here and not by version.
+//!
+//! **AND THE REFERENCE BUILD DOES NOT ANSWER THESE LINES EITHER** *(amended
+//! 2026-09-05)*. This paragraph used to end by saying that `s1disasm`'s build
+//! (md5 `61e672562465725a8c102288a7da9098`) "prints `303C 8000` on all four
+//! lines, every run" — which corrected the varying build's artifact by
+//! enshrining the reference build's. That `8000` is **line 5 leaking downward**:
+//! line 5 is `move.w #-32768,d0`, in range, ACCEPTED, and legitimately `$8000`,
+//! and the four refused lines echo the last value asl computed. The control is
+//! `wcarry.asm` beside `wrange.asm` — the same file with line 5's accepted value
+//! changed to `$1234` and lines 6-9 untouched — where all four then read
+//! `303C 1234`. `wcarry0.asm`, with no accepted immediate above the refused
+//! ones, reads `0000`: the slot's initial state, not a policy.
+//!
+//! So the reference build is stable here and still not answering. That is the
+//! more freezable of the two failure modes, because re-running it confirms it.
 //!
 //! **The rule and every assertion below are UNAFFECTED, and that is measured
 //! rather than argued.** The four `> > > range overflow` diagnostics come back
 //! identical from both builds, at the same lines; the two ACCEPTED rows
-//! (`303C FFFF`, `303C 8000`) are identical too. The tests here assert
-//! acceptance and refusal, never the byte column of a refused line — nothing
-//! reads the varying word. The stale listing is kept rather than swapped so the
-//! supersession is visible instead of silent.
+//! (`303C FFFF` on line 4, `303C 8000` on line 5) are identical too — those two
+//! ARE answers, and line 5's is the one the refused lines below it go on to
+//! echo. The tests here assert acceptance and refusal, never the byte column of
+//! a refused line — nothing reads the substituted word on either build. The
+//! stale listing is kept rather than swapped so the supersession is visible
+//! instead of silent.
 //!
 //! asl's word immediate spans `-32768..=65535`: the signed floor and the
 //! unsigned ceiling, both inclusive. `-65536` is the value the booked

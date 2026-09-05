@@ -60,6 +60,36 @@ come back, on four consecutive runs:
 against `303C 8000` on every run of the reference build. `wimm.asm` behaves the
 same way (`5570` / `5632` / `555B` / `561E` against a steady `0000`).
 
+> **NEITHER OF THOSE TWO REFERENCE-BUILD FIGURES IS AN ANSWER** *(measured
+> 2026-09-05; the varying build's four draws above are real and reproduce, the
+> contrast this paragraph drew from them does not)*.
+>
+> `wrange.asm`'s `8000` is **line 5 leaking downward**. Line 5 is
+> `move.w #-32768,d0`, which is in range, is ACCEPTED, and legitimately computes
+> `$8000`; lines 6-9 are the refused ones, and they echo it. Probe `wcarry.asm`
+> beside `wrange.asm` is that file with line 5's accepted value changed to
+> `$1234` and the four refused lines untouched — and all four then read
+> `303C 1234`:
+>
+> ```text
+>   wrange.asm                        wcarry.asm  (line 5 changed, 6-9 identical)
+>    5/  4 : 303C 8000  #-32768        5/  4 : 303C 1234  #$1234
+>    6/  8 : 303C 8000  #-32769        6/  8 : 303C 1234  #-32769
+>    7/  C : 303C 8000  #65536         7/  C : 303C 1234  #65536
+>    8/ 10 : 303C 8000  #-65536        8/ 10 : 303C 1234  #-65536
+>    9/ 14 : 303C 8000  #$FFFFF700     9/ 14 : 303C 1234  #$FFFFF700
+> ```
+>
+> `wimm.asm`'s `0000` is the other half of the same mechanism: nothing is
+> accepted above its refused lines, so the slot still holds its initial state.
+> `wcarry0.asm` is the minimal form — two refused immediates and nothing else —
+> and reads `0000` for the same reason.
+>
+> So the contrast is not *real answer* versus *garbage*. It is
+> **stale-and-stable** versus **fresh-and-random**, and the stable one is the
+> one that gets frozen into a table. See *And what the REFERENCE build does with
+> the same operand*, below.
+
 **The regime is wider than it looks and the loud case is not the dangerous one.**
 `move.w #zz,d0` with `zz` undefined is unstable and exits 2 with a diagnostic;
 `#f(<register>)` — a `function` call in an immediate whose argument is a
