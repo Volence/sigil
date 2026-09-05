@@ -1,0 +1,321 @@
+{
+  "aeon_tree": "/home/volence/sonic_hacks/.aeon-p6-resweep",
+  "lst": "/home/volence/sonic_hacks/.aeon-p6-resweep/s4.debug.lst",
+  "rom": "/home/volence/sonic_hacks/.aeon-p6-resweep/s4.debug.bin",
+  "range": [
+    -65536,
+    65536
+  ],
+  "n_shifts": 131073,
+  "tile_size": 32,
+  "slots": 12,
+  "reserve": 2,
+  "boundary": 131072,
+  "ratchet": 10,
+  "ratchet_provenance": "the real budget assert in collision_data.emp, so the bar is DMA_IMPORTANT_SLOTS - DPLC_ENTRY_RESERVE = 12 - 2",
+  "subjects_derived": [
+    "Art_Sonic",
+    "Art_Tails",
+    "Art_TailsAppendage",
+    "Art_Knuckles"
+  ],
+  "results": {
+    "Art_Sonic": {
+      "name": "sonic",
+      "art_base": 473410,
+      "art_len": 101056,
+      "frames": 224,
+      "reachable_frames": 83,
+      "peak_entries": 10,
+      "base_peak_slots": 10,
+      "base_reach_split": 0,
+      "fail_a": 2773,
+      "fail_b": 31,
+      "bands": [
+        [
+          -46593,
+          -46563
+        ],
+        [
+          -40801,
+          -40675
+        ],
+        [
+          -40673,
+          -40643
+        ],
+        [
+          -40321,
+          -40291
+        ],
+        [
+          -40289,
+          -40227
+        ],
+        [
+          -40097,
+          -40035
+        ],
+        [
+          -40001,
+          -39971
+        ],
+        [
+          -39553,
+          -39523
+        ],
+        [
+          -39521,
+          -39363
+        ],
+        [
+          -39361,
+          -39331
+        ],
+        [
+          -38241,
+          -38211
+        ],
+        [
+          -38177,
+          -38083
+        ],
+        [
+          -38081,
+          -38051
+        ],
+        [
+          -32929,
+          -32899
+        ],
+        [
+          -18401,
+          -18147
+        ],
+        [
+          -18145,
+          -18083
+        ],
+        [
+          -18081,
+          -18019
+        ],
+        [
+          -18017,
+          -17987
+        ],
+        [
+          -17985,
+          -17955
+        ],
+        [
+          -16033,
+          -15971
+        ],
+        [
+          -15969,
+          -15939
+        ],
+        [
+          -15937,
+          -15907
+        ],
+        [
+          -15649,
+          -15619
+        ],
+        [
+          -15457,
+          -15427
+        ],
+        [
+          -15425,
+          -15331
+        ],
+        [
+          -15265,
+          -15235
+        ],
+        [
+          -15201,
+          -15139
+        ],
+        [
+          -15073,
+          -15011
+        ],
+        [
+          -14977,
+          -14947
+        ],
+        [
+          -8609,
+          -8579
+        ],
+        [
+          -8449,
+          -8419
+        ],
+        [
+          -8417,
+          -8387
+        ],
+        [
+          -8353,
+          -8323
+        ],
+        [
+          -8321,
+          -8291
+        ],
+        [
+          32991,
+          33405
+        ],
+        [
+          33407,
+          33437
+        ],
+        [
+          33439,
+          33693
+        ],
+        [
+          45567,
+          45597
+        ],
+        [
+          45791,
+          45821
+        ],
+        [
+          45823,
+          45853
+        ],
+        [
+          46207,
+          46269
+        ],
+        [
+          50623,
+          50653
+        ],
+        [
+          50655,
+          50685
+        ]
+      ],
+      "band_widths": [
+        31,
+        127,
+        31,
+        31,
+        63,
+        63,
+        31,
+        31,
+        159,
+        31,
+        31,
+        95,
+        31,
+        31,
+        255,
+        63,
+        63,
+        31,
+        31,
+        63,
+        31,
+        31,
+        31,
+        31,
+        95,
+        31,
+        63,
+        63,
+        31,
+        31,
+        31,
+        31,
+        31,
+        31,
+        415,
+        31,
+        255,
+        31,
+        31,
+        31,
+        63,
+        31,
+        31
+      ],
+      "worst_peak_slots": 17,
+      "margin_earlier": 8291,
+      "margin_later": 32991,
+      "at_zero": false,
+      "control_shifts": 512,
+      "reachability_undetermined": []
+    },
+    "Art_Tails": {
+      "name": "tails",
+      "art_base": 187714,
+      "art_len": 116320,
+      "frames": 251,
+      "reachable_frames": 76,
+      "peak_entries": 2,
+      "base_peak_slots": 2,
+      "base_reach_split": 0,
+      "fail_a": 0,
+      "fail_b": 0,
+      "bands": [],
+      "band_widths": [],
+      "worst_peak_slots": 3,
+      "margin_earlier": null,
+      "margin_later": null,
+      "at_zero": false,
+      "control_shifts": 512,
+      "reachability_undetermined": []
+    },
+    "Art_TailsAppendage": {
+      "name": "tails_tail",
+      "art_base": 305014,
+      "art_len": 8896,
+      "frames": 45,
+      "reachable_frames": 36,
+      "peak_entries": 1,
+      "base_peak_slots": 1,
+      "base_reach_split": 0,
+      "fail_a": 0,
+      "fail_b": 0,
+      "bands": [],
+      "band_widths": [],
+      "worst_peak_slots": 2,
+      "margin_earlier": null,
+      "margin_later": null,
+      "at_zero": false,
+      "control_shifts": 512,
+      "reachability_undetermined": []
+    },
+    "Art_Knuckles": {
+      "name": "knuckles",
+      "art_base": 323902,
+      "art_len": 130944,
+      "frames": 251,
+      "reachable_frames": 113,
+      "peak_entries": 5,
+      "base_peak_slots": 5,
+      "base_reach_split": 0,
+      "fail_a": 0,
+      "fail_b": 0,
+      "bands": [],
+      "band_widths": [],
+      "worst_peak_slots": 6,
+      "margin_earlier": null,
+      "margin_later": null,
+      "at_zero": false,
+      "control_shifts": 512,
+      "reachability_undetermined": []
+    }
+  }
+}
