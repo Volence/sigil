@@ -881,3 +881,64 @@ regression above.
 post-fix prediction and must not be quoted as one.** Closing this resolves symbols that are
 currently unresolved and lets the assembler reach code it currently abandons, which can remove rows
 and add them. The only way to know the number after is to measure after.
+
+### RULED: the three golden-vector headers are NOT hand-edited, and "wait for a regeneration" is not the ruling either
+
+The dash sweep flagged one item for a ruling: three committed golden-vector files
+(`crates/sigil-isa/tests/{z80,m68k}_golden_vectors.txt`,
+`crates/sigil-frontend-as/tests/snippets_golden.txt`) carry a stale copy of the generated
+`PREAMBLE` header, dashes included.
+
+**Ruled: do not hand-edit them.** The agent's reasoning is this lane's own standing rule arriving
+from the outside, and it is right: a regenerated header that no generator produced is a hand-written
+artefact wearing a generator's name, and it would sit directly above rows that are real digest
+measurements. At read time an edit that freshened the header is indistinguishable from an edit that
+adjusted a measurement. That is the maintenance act being the vulnerability.
+
+**But "they lose the dashes next time the generators run" is NOT an acceptable resting place, and
+the agent named the reason itself: nothing schedules those generators.** An unbounded wait with no
+owner is a state, not a plan, and it reads as closed while nothing is closing it.
+
+**The defect underneath is bigger than the dashes and is the real booking. `PREAMBLE` has exactly
+one reader, and NOTHING compares the committed header against it.** So the committed artefacts can
+drift from their own generator silently, forever, and the dash ruling is merely what made one
+instance visible. Booked as `GOLDEN-HEADER-UNGATED`: close it by REGENERATING (never by hand), and
+add the missing comparison so the next drift is loud. Regeneration invokes `asl`, so it is subject
+to the exit-status rule banked above, and it is its own small parcel with its own verification
+because it rewrites committed test vectors.
+
+### RATIFIED: the sweep's scope extension to shell and Python
+
+The brief drew scope at "string literals in Rust source". A Rust test asserting on **shell** output
+went red and proved the line had a hole wherever a tool in one language is tested from another. The
+agent extended to 121 shell and Python edits and closed the CLASS rather than the instance.
+**Explicitly ratified, not merely tolerated.** The residual it leaves is stated in its note and is
+real: the regression gate covers Rust string literals only, so a shell or Python tool can still grow
+a dash without reddening anything.
+
+### THREE THINGS THIS PARCEL TAUGHT THAT OUTLIVE IT
+
+**1. MY DASH COUNTS WERE WRONG THREE TIMES, and the third time had a mechanism worth keeping.** I
+reported 582, then 595. Both were wrong; the true occurrence count was **1,031**, and the agent
+refused my figure rather than reconciling to it. **The cause: a hand-rolled Rust lexer with no
+CHAR-LITERAL state.** `crates/sigil-frontend-as/src/eval.rs:2208` is `b'"'`, a byte-char literal
+holding a double quote, so the lexer entered string state there and stayed desynchronized for the
+rest of the file, counting hundreds of COMMENT dashes as string dashes. The error is **not one
+directional**: after a desync, real strings are read as code and their dashes are MISSED too. A
+lexer written to count something in a language that lexes text will meet its own constructs in that
+text. **When a count needs a lexer, either use a real one or prove it on a file whose answer is known
+by a second method.**
+
+**2. A CONTROL IS WHAT MAKES A COUNT MEAN ANYTHING, and it caught all three.** The first measurement
+returned **zero** (bad pathspec). The second and third were inflated (the lexer above). Every one
+looked like a clean confident answer. What settled it was running a corrected lexer over BOTH trees:
+**1,031 on master, 0 on the swept branch**, matching the agent's independently-implemented count
+exactly. Two implementations agreeing at a non-trivial number is worth more than either one's care.
+
+**3. MY OWN BRIEF CARRIED A CONTRADICTORY INSTRUCTION, and it cost the agent two suite runs.** I
+wrote "set `CARGO_TARGET_DIR` to a path inside your own worktree". Inside the repo root,
+`target-agent` reds `scripts_name_their_tree.rs:58` and `<root>/target` reds
+`shared_target_defaults.rs:375`. **Only `.target-land`, which is `landing-run.sh`'s own default,
+satisfies both.** The general shape: a brief that states a constraint in the abstract ("somewhere
+under your worktree") when the tree actually admits exactly ONE value has stated a preference and
+called it a rule. **Name the value.**
