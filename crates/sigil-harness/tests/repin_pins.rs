@@ -17,7 +17,8 @@
 use sigil_harness::native;
 use sigil_harness::pins;
 use sigil_harness::repin::{
-    diff_pins, load_manifest, render, resolve, strip_provenance, Listing, Provenance,
+    build_dir_of_this_run, drift_report, load_manifest, render, resolve, stale_pins_message,
+    Listing, Provenance,
 };
 use sigil_harness::test_support::reference_tree_for_profile;
 
@@ -69,24 +70,13 @@ fn pins_rs_is_current() {
     let generated = render(&resolved, &prov);
     let committed = include_str!("../src/pins.rs");
 
-    if strip_provenance(committed) != strip_provenance(&generated) {
-        let changes = diff_pins(committed, &generated);
-        let detail: Vec<String> = changes
-            .iter()
-            .map(|c| {
-                format!(
-                    "  {}: {} → {}",
-                    c.name,
-                    c.old.as_deref().unwrap_or("(new)"),
-                    c.new.as_deref().unwrap_or("(removed)")
-                )
-            })
-            .collect();
+    // ONE verdict, asked in one place. It is `strip_provenance` equality over the WHOLE
+    // text, and it stays that way: the message below explains the verdict, it does not
+    // narrow it. See `DriftReport` for the two comparisons and why they differ.
+    if let Some(report) = drift_report(committed, &generated) {
         panic!(
-            "src/pins.rs is STALE against the live listings ({} changed pin(s)):\n{}\n\
-             run: cargo run -p sigil-harness --bin repin",
-            changes.len(),
-            detail.join("\n")
+            "{}",
+            stale_pins_message(&report, build_dir_of_this_run().as_deref(), Some(&aeon))
         );
     }
 }
