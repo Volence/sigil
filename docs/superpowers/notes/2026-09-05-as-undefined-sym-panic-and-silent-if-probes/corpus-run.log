@@ -1,0 +1,111 @@
+before md5: 77d8469c7042089d865dc7f768c8e16d  /home/volence/sonic_hacks/sigil/.claude/worktrees/agent-a159ca0b948688d11/.runlogs/sigil-before
+after  md5: 175875878ad79d504747dc0bf20109f8  /home/volence/sonic_hacks/sigil/.claude/worktrees/agent-a159ca0b948688d11/.target-land/release/sigil
+corpus rev: e45ebf332f39987424ca3102e50c717628f71269
+corpus dirty paths: 0
+
+== freshness witness: each binary answers the two parcel probes ==
+  BEFORE if_undef : exit=0 : 22 22 22 22
+  BEFORE jsr_undef: exit=101 :  thread 'main' (3394598) panicked at crates/sigil-ir/src/lib.rs:424:21: 
+  AFTER if_undef : exit=1 : /tmp/claude-1000/-home-volence-sonic-hacks-sigil/1a93ba92-b503-43b3-8939-b5973f7954ac/scratchpad/p/if_undef.asm(2): error: unresolved if condition: `Nowhere` has no value, so this condition cannot decide whether the code it guards is assembled
+  AFTER jsr_undef: exit=1 : /tmp/claude-1000/-home-volence-sonic-hacks-sigil/1a93ba92-b503-43b3-8939-b5973f7954ac/scratchpad/p/jsr_undef.asm(2): error: unresolved jmp/jsr target in section sec0 references symbol `Nowhere` not defined in this link 
+
+== corpus run ==
+before exit=1  stderr lines=5243
+after  exit=1  stderr lines=5254
+
+== located vs locationless split, both runs ==
+  before: total=5243  with file(line)=5243  without=0
+  after: total=5254  with file(line)=5254  without=0
+
+== class table (message text, normalised) ==
+  level    before   after   delta  class
+  error      2624    2624      +0  bad operand expression
+  error      2309    2309      +0  expected mnemonic, directive, or label
+  error        89      89      +0  `X` is not a recognized N mnemonic
+  error        49      49      +0  bad word expression
+  error        30      30      +0  bad byte expression
+  error        24      24      +0  unresolved symbol `X` in operand
+  error        23      23      +0  int(): could not evaluate float expression
+  error        18      18      +0  unknown directive or mnemonic `X`
+  error        11      11      +0  unexpected character
+  error         8       8      +0  instruction needs an explicit size suffix (.b/.w/.l)
+  error         0       8      +8  unresolved if condition: `X` has no value, so this condition cannot decide whether the code it guards is assem  <== APPEARED
+  error         6       6      +0  case needs a string literal
+  error         4       4      +0  malformed number (hex needs a trailing `X`)
+  error         3       3      +0  bad displacement expression in `X`
+  error         2       2      +0  switch needs a string expression
+  error         2       2      +0  trailing tokens in operand
+  error         1       1      +0  cannot include sound/DAC/generated/Bongo.inc: No such file or directory (os error N)
+  error         1       1      +0  cannot include sound/DAC/generated/Clap.inc: No such file or directory (os error N)
+  error         1       1      +0  cannot include sound/DAC/generated/Kick.inc: No such file or directory (os error N)
+  error         1       1      +0  cannot include sound/DAC/generated/Scratch.inc: No such file or directory (os error N)
+  error         1       1      +0  cannot include sound/DAC/generated/Snare.inc: No such file or directory (os error N)
+  error         1       1      +0  cannot include sound/DAC/generated/Timpani.inc: No such file or directory (os error N)
+  error         1       1      +0  cannot include sound/DAC/generated/Tom.inc: No such file or directory (os error N)
+  error         1       1      +0  cannot include sound/PCM/generated/SEGA.inc: No such file or directory (os error N)
+  error         1       1      +0  cannot include sound/music/generated/8A - DEZ.inc: No such file or directory (os error N)
+  error         1       1      +0  cannot include sound/music/generated/8B - MCZ.inc: No such file or directory (os error N)
+  error         1       1      +0  cannot include sound/music/generated/8C - EHZ 2P.inc: No such file or directory (os error N)
+  error         1       1      +0  cannot include sound/music/generated/8D - SCZ.inc: No such file or directory (os error N)
+  error         1       1      +0  cannot include sound/music/generated/8E - CPZ.inc: No such file or directory (os error N)
+  error         1       1      +0  cannot include sound/music/generated/8F - WFZ.inc: No such file or directory (os error N)
+  error         1       1      +0  cannot include sound/music/generated/9A - End of Act.inc: No such file or directory (os error N)
+  error         1       1      +0  cannot include sound/music/generated/9B - Game Over.inc: No such file or directory (os error N)
+  error         1       1      +0  cannot include sound/music/generated/9C - Continue.inc: No such file or directory (os error N)
+  error         1       1      +0  cannot include sound/music/generated/9D - Got Emerald.inc: No such file or directory (os error N)
+  error         1       1      +0  cannot include sound/music/generated/9E - Credits.inc: No such file or directory (os error N)
+  error         1       1      +0  cannot include sound/music/generated/9F - Drowning.inc: No such file or directory (os error N)
+  error         1       1      +0  cannot include sound/music/generated/N - ARZ.inc: No such file or directory (os error N)
+  error         1       1      +0  cannot include sound/music/generated/N - Boss.inc: No such file or directory (os error N)
+  error         1       1      +0  cannot include sound/music/generated/N - CNZ 2P.inc: No such file or directory (os error N)
+  error         1       1      +0  cannot include sound/music/generated/N - CNZ.inc: No such file or directory (os error N)
+  error         1       1      +0  cannot include sound/music/generated/N - EHZ.inc: No such file or directory (os error N)
+  error         1       1      +0  cannot include sound/music/generated/N - Ending.inc: No such file or directory (os error N)
+  error         1       1      +0  cannot include sound/music/generated/N - Extra Life.inc: No such file or directory (os error N)
+  error         1       1      +0  cannot include sound/music/generated/N - Final Boss.inc: No such file or directory (os error N)
+  error         1       1      +0  cannot include sound/music/generated/N - HPZ.inc: No such file or directory (os error N)
+  error         1       1      +0  cannot include sound/music/generated/N - HTZ.inc: No such file or directory (os error N)
+  error         1       1      +0  cannot include sound/music/generated/N - Invincible.inc: No such file or directory (os error N)
+  error         1       1      +0  cannot include sound/music/generated/N - MCZ 2P.inc: No such file or directory (os error N)
+  error         1       1      +0  cannot include sound/music/generated/N - MTZ.inc: No such file or directory (os error N)
+  error         1       1      +0  cannot include sound/music/generated/N - N Player Menu.inc: No such file or directory (os error N)
+  error         1       1      +0  cannot include sound/music/generated/N - OOZ.inc: No such file or directory (os error N)
+  error         1       1      +0  cannot include sound/music/generated/N - Options.inc: No such file or directory (os error N)
+  error         1       1      +0  cannot include sound/music/generated/N - Special Stage.inc: No such file or directory (os error N)
+  error         1       1      +0  cannot include sound/music/generated/N - Super Sonic.inc: No such file or directory (os error N)
+  error         1       1      +0  cannot include sound/music/generated/N - Title Screen.inc: No such file or directory (os error N)
+  error         1       1      +0  struct `X` has a member line this cannot read; its size and every member after it would be wrong
+  error         0       1      +1  unresolved elseif condition: `X` has no value, so this condition cannot decide whether the code it guards is a  <== APPEARED
+  error         0       1      +1  unresolved elseif condition: it does not evaluate, so it cannot decide whether the code it guards is assembled  <== APPEARED
+  error         0       1      +1  unresolved if condition: it does not evaluate, so it cannot decide whether the code it guards is assembled  <== APPEARED
+  error         1       1      +0  unsupported form: Instruction { mnemonic: Sbc, ops: [Pair(Hl), Pair(Bc)] }
+             5243    5254     +11  TOTAL
+
+  examples for APPEARED / ROSE rows:
+    s2.constants.asm(972): error: unresolved if condition: `MOMPASS` has no value, so this condition cannot decide whether the code it guards is assembled
+    s2.macros.asm(119): error: unresolved elseif condition: `MOMPASS` has no value, so this condition cannot decide whether the code it guards is assembled
+    s2.macrosetup.asm(22): error: unresolved elseif condition: it does not evaluate, so it cannot decide whether the code it guards is assembled
+    s2.macrosetup.asm(20): error: unresolved if condition: it does not evaluate, so it cannot decide whether the code it guards is assembled
+
+== unresolved-symbol NAME SETS, both directions ==
+  before-only (0): []
+  after-only  (1): ['MOMPASS']
+  in both     (8)
+
+== every AFTER diagnostic line absent from BEFORE (new text) ==
+s2.asm(88574): error: unresolved if condition: `MOMPASS` has no value, so this condition cannot decide whether the code it guards is assembled
+s2.asm(91000): error: unresolved if condition: `Snd_Sega.size` has no value, so this condition cannot decide whether the code it guards is assembled
+s2.asm(91003): error: unresolved if condition: `Snd_Sega.size` has no value, so this condition cannot decide whether the code it guards is assembled
+s2.asm(91270): error: unresolved if condition: `MOMPASS` has no value, so this condition cannot decide whether the code it guards is assembled
+s2.constants.asm(972): error: unresolved if condition: `MOMPASS` has no value, so this condition cannot decide whether the code it guards is assembled
+s2.macros.asm(119): error: unresolved elseif condition: `MOMPASS` has no value, so this condition cannot decide whether the code it guards is assembled
+s2.macros.asm(224): error: unresolved if condition: `MOMPASS` has no value, so this condition cannot decide whether the code it guards is assembled
+s2.macrosetup.asm(20): error: unresolved if condition: it does not evaluate, so it cannot decide whether the code it guards is assembled
+s2.macrosetup.asm(22): error: unresolved elseif condition: it does not evaluate, so it cannot decide whether the code it guards is assembled
+s2.sounddriver.asm(297): error: unresolved if condition: `MOMPASS` has no value, so this condition cannot decide whether the code it guards is assembled
+sound/_smps2asm_inc.asm(258): error: unresolved if condition: `MOMPASS` has no value, so this condition cannot decide whether the code it guards is assembled
+  (count: 11)
+
+== every BEFORE diagnostic line absent from AFTER (lost text) ==
+  (count: 0)
+CORPUS-END-MARKER
