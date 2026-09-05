@@ -263,8 +263,38 @@ named.
 killed under load, each segment with its own end marker, and the log stamped with `pwd`,
 `HEAD` and branch so it names its own tree.
 
-PENDING: the run is in flight at the time of this commit and its results land in the
-next one. A missing result here is not a verdict.
+**Failures first: 0 failed. 4,627 passed, 2 ignored.** No `test result: FAILED` line
+anywhere in either log, and no failing test names.
+
+| segment | passed | failed | ignored | rc |
+| --- | --- | --- | --- | --- |
+| `-p sigil-cli` (rerun, see below) | 685 | 0 | 1 | 0 |
+| `-p sigil-harness` + `--workspace --exclude` both | 3,942 | 0 | 1 | 0 |
+| **total** | **4,627** | **0** | **2** | |
+
+Reconciles against the master bar of 4,617 passed / 0 failed: +10, which is exactly the
+ten `#[test]` in the new `tests/repin_gate_message.rs`. Nothing else moved.
+
+Log canary, because a suite log does not name its own tree: both logs are stamped with
+`pwd`, `HEAD` and branch, and `repin_gate_message` is grepped for by name in the harness
+log. It is there, `10 passed; 0 failed`. `repin_pins::pins_rs_is_current` is there too,
+`ok`, against `AEON_DIR=/home/volence/sonic_hacks/.aeon-ref`, which is the gate this
+parcel rewired and the one that was red yesterday.
+
+**Segment 1 was rerun, and why is a finding.** The first pass of `-p sigil-cli` returned
+`rc=101` on one test, `version_provenance::version_reports_the_head_of_the_tree_it_was_
+built_from`: the `sigil` binary reported revision `72f464dd` while the checkout's HEAD
+read `6ab45fe1`. Cause: I committed the note WHILE the run was in flight, so HEAD moved
+under a suite that measures HEAD. The test names both possible causes itself and says
+`re-run to distinguish`, which is what distinguished it. The rerun holds HEAD still and
+stamps it before and after (`HEAD_BEFORE` and `HEAD_AFTER` both `6ab45fe1`): `rc=0`,
+`685 passed; 0 failed`, and the version row green. Segments 2 and 3 both ran entirely
+after that commit and so were never exposed to it.
+
+The general form, which is a standing trap rather than a one-off: **"commit before a
+long run" and "do not commit during a long run" are both true, and the second is the one
+no invariant here states.** Every delta calculation holds something fixed; this suite
+holds HEAD fixed, and I moved it.
 
 ## Anything in this brief you concluded was wrong
 
@@ -294,7 +324,18 @@ next one. A missing result here is not a verdict.
    the brief claimed otherwise; it is simply a property of the comparison that is easy
    to assume the other way when reading `it compares essentially the whole file`.
 
-4. **Nothing else.** The three line references (`repin_pins.rs:72`, `repin.rs:1147`,
+4. **The confusion had already propagated, which the brief treats as a cost to one
+   seat.** `docs/superpowers/notes/2026-09-05-as-if-refusal-diag-vector.md` books the
+   red as a known row and then reads its own output as reassurance twice: "The `0 changed
+   pin(s)` is also positive evidence in its own right: this parcel moved no pinned aeon
+   bytes" (line 249) and "its own `0 changed pin(s)` output is consistent with it and
+   shows this parcel moved no pins" (line 361). The conclusion drawn there is true, but
+   it is drawn from a number that does not describe the failing verdict, on a run where
+   the file was declared STALE. A message that has to be reasoned around is a message
+   that will eventually be reasoned around wrongly. That note is another lane's and is
+   not edited here.
+
+5. **Nothing else.** The three line references (`repin_pins.rs:72`, `repin.rs:1147`,
    `repin.rs:1180`), the claim that `strip_provenance` drops only `[provenance]` lines,
    the claim that `diff_pins` builds from `const_lines` and is blind to comments, and the
    108-comment-line account of yesterday's drift all check out against `90a3c9ea`. The
