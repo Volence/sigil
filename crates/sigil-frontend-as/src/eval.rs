@@ -5509,8 +5509,32 @@ impl Asm {
     /// `movem` routes to [`Self::lower_m68k_movem`] (register-list operand);
     /// every other in-scope mnemonic (incl. `movep`) flows through the shared
     /// branch/dbcc/jmp-jsr/generic paths below.
-    /// [`Self::expand_calls`] over a 68000 operand list, with every trailing EA
-    /// base group held back.
+    /// [`Self::expand_operand_builtins`] over a 68000 operand list, with every
+    /// trailing EA base group held back.
+    ///
+    /// It ran `expand_calls_checked` ALONE until 2026-09-05, which is one of
+    /// the four layers `dc.b`/`dc.w`/`dc.l` have always run, so a builtin
+    /// worked in a data operand and not in an instruction operand:
+    /// `dc.l strlen("ab")+Foo` assembled and `move.l strlen("ab")+Foo,d0` did
+    /// not. Sonic 2 lands on that 518 times from the single line
+    /// `s2.macrosetup.asm:304`, `jmp (extractJmpToName("op")).l`. asl has no
+    /// such split (probe `insn_operands.asm`, exit 0: `int`, `val` and
+    /// `strlen` all answer in an immediate, in a long-absolute address and in
+    /// a bare absolute), so the two positions now share one function rather
+    /// than diverging.
+    ///
+    /// This cannot perturb an operand that assembles today. The added layers
+    /// are the identity on any slice that does not spell a builtin head
+    /// immediately before a `(`, and an operand that DOES spell one is
+    /// currently a hard refusal in every non-held position: there is no call
+    /// syntax in `parse_expr`, so `name(...)` outside a held-back EA base
+    /// group leaves trailing tokens and is diagnosed. A program that
+    /// assembles today therefore contains no such operand, which is the whole
+    /// argument that the shipping build is untouched.
+    ///
+    /// The held-back group is what keeps `val(a0)` a displacement rather than
+    /// a call: the `(a0)` is never offered to a builtin, and the `val` in
+    /// front of it is a bare identifier with no `(` after it.
     ///
     /// A name may be both an equate and an AS `function` — `s2disasm` spells
     /// `id` both ways, an object-record offset (`s2.constants.asm:15`) and a
@@ -5532,20 +5556,20 @@ impl Asm {
     fn expand_calls_m68k_operands(&mut self, toks: &[Token]) -> Vec<Token> {
         let held = crate::operands::m68k_ea_base_spans(toks);
         if held.is_empty() {
-            return self.expand_calls_checked(toks);
+            return self.expand_operand_builtins(toks);
         }
         let mut out = Vec::new();
         let mut i = 0usize;
         for r in held {
             if r.start > i {
-                let head = self.expand_calls_checked(&toks[i..r.start]);
+                let head = self.expand_operand_builtins(&toks[i..r.start]);
                 out.extend(head);
             }
             out.extend_from_slice(&toks[r.start..r.end]);
             i = r.end;
         }
         if i < toks.len() {
-            let tail = self.expand_calls_checked(&toks[i..]);
+            let tail = self.expand_operand_builtins(&toks[i..]);
             out.extend(tail);
         }
         out

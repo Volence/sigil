@@ -1,0 +1,69 @@
+ AS V1.42 Beta [Bld 212] - Source File jmptos.asm - Page 1 - 09/05/2026 12:23:44 PM
+
+
+       1/       0 :                     ; The corpus construct itself: Sonic 2's `s2.macrosetup.asm:280` function and
+       2/       0 :                     ; the `:304` jump it feeds, reduced to two targets at two different addresses
+       3/       0 :                     ; so a fix that resolved every call to the same symbol cannot pass.
+       4/       0 :                     	cpu	68000
+       5/    1000 :                     	org	$1000
+       6/    1000 :                     extractJmpToName function name,val(substr(name, strstr(name, "_") + 1, strlen(name)))
+       7/    1000 :                     Foo:
+       8/    1000 : 4E71                	nop
+       9/    1002 : 4E71                	nop
+      10/    1004 : 4E71                	nop
+      11/    1006 : 4E71                	nop
+      12/    1008 :                     Bar:
+      13/    1008 : 4EF9 0000 1000      	jmp	(extractJmpToName("JmpTo_Foo")).l
+      14/    100E : 4EF9 0000 1008      	jmp	(extractJmpToName("JmpTo_Bar")).l
+      15/    1014 :                     	end
+ AS V1.42 Beta [Bld 212] - Source File jmptos.asm - Page 2 - 09/05/2026 12:23:44 PM
+
+
+  Symbol Table (* = unused):
+  --------------------------
+
+*ARCHITECTURE :                                      "x86_64-unknown-linux" - |
+*BIGENDIAN :                      0 - | *BRANCHEXT :                      0 - |
+ Bar :                         1008 C | *CASESENSITIVE :                  1 - |
+*COMPMODE :                       0 - | *CONSTPI :        3.141592653589793 - |
+*CUSTOM :                         0 - | *DATE :                "09/05/2026" - |
+*FALSE :                          0 - | *FULLPMMU :                       1 - |
+ Foo :                         1000 C | *HAS64 :                          1 - |
+*HASDSP :                         0 - | *HASFPU :                         0 - |
+*HASPMMU :                        0 - | *INEXTMODE :                      0 - |
+*INLWORDMODE :                    0 - | *INMAXMODE :                      0 - |
+*INSRCMODE :                      0 - | *INSUPMODE :                      0 - |
+*LISTON :                         1 - | *MACEXP :                         7 - |
+*MOMCPU :                     68000 - | *MOMCPUNAME :               "68000" - |
+*NESTMAX :                      100 - | *PACKING :                        0 - |
+*PADDING :                        1 - | *RELAXED :                        0 - |
+*TIME :               "12:23:44 PM" - | *TRUE :                           1 - |
+*VERSION :                     142F - | *Z80SYNTAX :                      0 - |
+
+     33 symbols
+     31 unused symbols
+
+ AS V1.42 Beta [Bld 212] - Source File jmptos.asm - Page 3 - 09/05/2026 12:23:44 PM
+
+
+  Defined Functions:
+  ------------------
+
+extractJmpToName                      |
+
+ AS V1.42 Beta [Bld 212] - Source File jmptos.asm - Page 4 - 09/05/2026 12:23:44 PM
+
+
+  Code Pages:
+  ----------
+
+STANDARD (0 changed characters)
+
+1 code page
+
+0.00 seconds assembly time
+
+     16 lines source file
+      1 pass
+      0 errors
+      0 warnings
