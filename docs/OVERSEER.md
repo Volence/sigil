@@ -1036,6 +1036,18 @@ whose trigger is another defect**, and a diagnostic residue row is exactly where
 guaranteed to be present in the field and absent in the probe. Where a fault is about error
 REPORTING, probe it inside a program that is already failing.
 
+**⚠ AND THE RULE HAS A SECOND DIRECTION, measured the same day on the two faults that parcel booked.
+A fault can be VISIBLE ONLY WHEN EVERYTHING ELSE IS CORRECT.** `jsr <undefined>` panics at exit 101
+on an otherwise clean file, and in a file carrying any unrelated error the front end returns `Err`
+first and **the panic never happens**. Its sibling `if <undefined>` is silent in both. So of two
+faults booked together, one is hidden BY other errors and the other is hidden by their ABSENCE.
+
+**The general rule, which is what to carry: error-path behaviour is CONDITIONAL ON WHAT ELSE FAILED,
+so a probe samples ONE POINT in that space and both directions must be run.** Probing only clean
+files misses everything an earlier stage swallows; probing only dirty ones misses everything that
+needs a clean run to reach. Neither habit is the safe one, and **a lane that adopts only the rule
+above has swapped one blind spot for the other.**
+
 **Root cause, one rather than several: a register name is not in the symbol table, so an expression
 holding one folds to `Poison`, and POISON IS THE SHAPE OF A FORWARD REFERENCE.** Every consumer did
 what a forward reference deserves, defer it or call it unresolved. The discriminator is cheap and
