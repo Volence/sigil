@@ -8973,7 +8973,7 @@ fn is_expr_register_name(w: &str, cpu: Cpu) -> bool {
     if w == "sp" {
         return true;
     }
-    matches!(w.as_bytes(), [b'a' | b'd', d @ b'0'..=b'7'] if *d <= b'7')
+    matches!(w.as_bytes(), [b'a' | b'd', b'0'..=b'7'])
 }
 
 #[cfg(test)]
