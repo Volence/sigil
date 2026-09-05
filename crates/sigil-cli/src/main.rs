@@ -102,13 +102,19 @@ fn main() {
     // anyone — the failure mode is silent, which is the one the directive
     // exists to prevent.
     let opts = sigil_frontend_as::Options::default();
-    let module = match sigil_frontend_as::assemble_root_located_warned(
+    // The `SourceMap` is kept past the front end rather than dropped with the
+    // `Assembled`: a LINK diagnostic carries a span into the same spliced files,
+    // and rendering it without the map printed a bare `error: …` line that named
+    // no file and no line, the one thing a user needs first. Same map, same
+    // renderer, so a front-end and a link diagnostic about the same source line
+    // print the same way.
+    let (module, sources) = match sigil_frontend_as::assemble_root_located_warned(
         std::path::Path::new(&input),
         &opts,
     ) {
         Ok(a) => {
             render_as_warnings(&a);
-            a.module
+            (a.module, a.sources)
         }
         Err(failure) => {
             render_as_diags(&failure);
@@ -118,9 +124,7 @@ fn main() {
     let linked = match sigil_link::link(&module.sections, &sigil_ir::SymbolTable::new()) {
         Ok(img) => img,
         Err(diags) => {
-            for d in &diags {
-                eprintln!("error: {}", d.message);
-            }
+            render_located_diags(&diags, &sources);
             process::exit(1);
         }
     };
@@ -153,6 +157,23 @@ fn main() {
 fn render_as_diags(failure: &sigil_frontend_as::Failure) {
     for d in &failure.diags {
         match failure.sources.label(d.primary) {
+            Some(loc) => eprintln!("{loc}: {}: {}", d.level, d.message),
+            None => eprintln!("{}: {}", d.level, d.message),
+        }
+    }
+}
+
+/// [`render_as_diags`] for a diagnostic list that arrives WITHOUT a `Failure`
+/// wrapper (the linker's, which returns bare `Vec<Diagnostic>`) while the map
+/// its spans resolve against belongs to the front end that produced the module.
+///
+/// A link diagnostic used to print as a bare `error: …`, because the caller had
+/// already dropped the map. The span was there the whole time; nothing but the
+/// map was missing, and a refusal that cannot say which line it is about reads
+/// as a fact about the program rather than about a line of it.
+fn render_located_diags(diags: &[sigil_span::Diagnostic], sources: &sigil_span::SourceMap) {
+    for d in diags {
+        match sources.label(d.primary) {
             Some(loc) => eprintln!("{loc}: {}: {}", d.level, d.message),
             None => eprintln!("{}: {}", d.level, d.message),
         }

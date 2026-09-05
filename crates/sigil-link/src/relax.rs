@@ -464,7 +464,7 @@ fn lower_jmp_jsr(is_jsr: bool, target: Expr, w: AbsWidth, span: Span) -> Fragmen
     }
 }
 
-fn frag_span(f: &Fragment) -> Span {
+pub(crate) fn frag_span(f: &Fragment) -> Span {
     match f {
         Fragment::Data(d) => d.span,
         Fragment::Fill { span, .. }
@@ -1202,7 +1202,7 @@ fn unresolved_equ_diag(
 /// The first symbol in `expr` that neither `folded_vals` (already-folded equs)
 /// nor `syms` (final label VMAs) can resolve — the concrete dependency to name
 /// in the unresolvable-equ diagnostic.
-fn first_unresolved_sym(
+pub(crate) fn first_unresolved_sym(
     expr: &Expr,
     syms: &SymbolTable,
     folded_vals: &std::collections::HashMap<String, i64>,
