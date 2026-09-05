@@ -942,3 +942,69 @@ wrote "set `CARGO_TARGET_DIR` to a path inside your own worktree". Inside the re
 satisfies both.** The general shape: a brief that states a constraint in the abstract ("somewhere
 under your worktree") when the tree actually admits exactly ONE value has stated a preference and
 called it a rule. **Name the value.**
+
+### MY OWN BISECTION WAS CONFOUNDED, AND THE AGENT REFUTED IT: the 518 block, 2026-09-05
+
+**Both diagnoses I dispatched were wrong, and both refutations are verified firsthand here** (landed
+`c325c7a2`). Recorded at this length because the failure was in the OVERSEER's measurement, handed
+down to an agent as ground truth, and the agent's willingness to refute it is the only thing that
+caught it.
+
+**Defect 1, refuted outright. MY PROBE COULD NOT DISTINGUISH THE TWO ANSWERS.** I claimed `val()`
+accepts a string literal but not a computed string, and showed `val(substr("JmpTo_Foo", 7, 3))`
+failing. **AS `substr` is 0-based**, so that expression is `val("oo")`, which fails correctly because
+no symbol `oo` exists. At offset 6 it assembles on master. Verified here: 7 fails, 6 exits 0. The
+real fault was one level deeper, in which arguments `fold_const` expands.
+
+**This is the standing bar aimed at its own author.** A probe whose failure is equally explained by
+the mechanism you propose and by a trivial error in the probe is not evidence for either. **Ask what
+OTHER answer the probe could have given**, and for any probe built on an index, an offset or a
+boundary, verify the intermediate value before building the conclusion on it: one `dc.b substr(...)`
+would have shown me `"oo"` in five seconds.
+
+**Defect 2, real but materially wider than I wrote, which is the more dangerous error.** I said the
+long absolute address operand cannot hold a string builtin. In fact **no 68000 instruction operand
+ran any builtin layer at all**: `move.l #int(3.7),d0` fails on master with nothing string-shaped in
+it, while `dc.l int(3.7)` assembles (verified here). **A narrow diagnosis produces a narrow patch
+that closes the visible rows and leaves the rest of the class broken**, and the corpus count would
+have gone to zero and certified it. The agent widened the fix to the operand layer.
+
+**A BRIEF'S STATED MECHANISM IS THE DANGEROUS PART, AND THIS IS WHY.** The dispatch rule says label
+mechanisms as hypotheses because an agent tends to reconcile its measurement to the controller's
+story. I labelled mine as measurements, which was honest and correct (I had run them) and made them
+harder to refute. **Measured and wrong is a real category.** The line that saved it was the required
+"anything in this brief you concluded was wrong" section: it has now produced a correction in 4 of 4
+dispatches that carried it, and this time the correction was the entire diagnosis.
+
+### `git checkout <rev> -- <path>` STAGES, so `git diff --stat` is EMPTY on an applied mutation
+
+*(Found by the 518-block parcel, reproduced here at the landing seat.)* The standing rule is that a
+red-first proof must show the mutation applied on disk, because an unapplied mutation and a correct
+restore are the same artefact. **The obvious command for that is `git diff --stat`, and it reports
+NOTHING here** while `git diff HEAD --stat` reports 86 changed lines and the file on disk is plainly
+reverted.
+
+Direction, stated so the risk is not over-read: this yields a false **"the mutation did not apply"**,
+not a false pass, so it wastes a cycle rather than certifying a vacuous gate. It still belongs
+written down, because the reasonable response to a proof that keeps saying "not applied" is to reach
+for a weaker proof method. **Use `git diff HEAD --stat`, or a content check (`grep -c` for a symbol
+the fix introduces), which is what this seat used.**
+
+### AND MY OWN INSTRUCTION CAUSED A SHARED-STATE MUTATION, in the field I had just corrected
+
+I told the 518-block agent that `CARGO_TARGET_DIR` **must be `.target-land`** because the previous
+parcel had measured that only that name satisfies both tree guards. I did not say **whose**
+`.target-land`. Its first build therefore used the MAIN checkout's, relinking
+`.target-land/release/{sigil,emp_census}`.
+
+**Impact, assessed rather than assumed: none.** `.target-land` is a gitignored BUILD directory that
+every landing run rebuilds, and the standing pinned assembler is `~/sonic_hacks/.pinned/sigil-0a58f2ec`,
+read-only and untouched. `target/release/sigil` was not touched either. **The agent was still right
+to report it**, since it had no way to know that, and an unexpected mutation of shared state is
+exactly what a report is for.
+
+**The lesson is about the instruction, not the agent. I fixed an ambiguity and introduced a
+different one in the same field, one parcel apart.** The first brief named a constraint too
+abstractly ("somewhere under your worktree") when exactly one value worked; the correction named the
+value and dropped the tree. **A path instruction needs BOTH halves, and the template line is: the
+`.target-land` inside YOUR OWN worktree, never the main checkout's.**
