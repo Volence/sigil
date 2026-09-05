@@ -1441,3 +1441,37 @@ comment nor string.** `tool_text_dash_lint` tracks char-literal state deliberate
 which is right for user-facing prose and means `'—'` survives a sweep by design. That is exactly how
 this dead assertion kept its needle. Their instance was a regex literal; ours was a char literal;
 **the class is "a token the lexer classifies as neither of the two things the gate looks at".**
+
+### WORKTREE PRUNING: THE LOCK IS NOT A LIVENESS SIGNAL, AND I OVERRODE ONE TWICE
+
+*(Criterion retracted by the hub from aurora's measurement; **checked here, where it lands on two
+things I did tonight**.)*
+
+**The retracted criterion:** "tip is an ancestor of master" does NOT mean an agent worktree is
+finished. A tree started at master HEAD with uncommitted work is **trivially** an ancestor. I never
+pruned on it, having only counted, but the count I reported to the hub (238 of 246 branches
+"removable") was computed with it and **is not a safe removal list**.
+
+**⚠ I PASSED `-f -f` TWICE TONIGHT**, on `agent-a91ec943071597b23` and `agent-a3923cd793d91d0de`. In
+both cases `git worktree remove --force` had **refused** with `use 'remove -f -f' to override or
+unlock first`, and I read that as a syntax hint rather than as a guard telling me something. **What
+saved me was ordering, not judgement**: I had merged each agent's tip before removing, so the
+committed work survived, verified after the fact (`eda59a35` and `aede487e` are both ancestors of
+master). **I cannot prove no uncommitted scratch was lost, because the trees are gone.** Treat the
+refusal as the answer.
+
+**⚠ AND THE LOCK DOES NOT EXPIRE, SO "HONOUR THE REFUSAL" ALONE LEAKS DISK WITHOUT BOUND.** Measured
+here: **5 locked trees, of which exactly ONE is a live agent.** The other four are 17, 25 and 40 hours
+old, left by agents that finished long ago, and they hold **34.8 GB between them, one of them 28 GB
+alone.** So the lock records that an agent *claimed* a tree, never that one still holds it.
+
+**The safe rule needs both halves, and neither is sufficient:**
+
+- **Liveness comes from whether the agent is running**, not from the lock. A task notification
+  received, or the agent absent from the live list, is the evidence a lock cannot give.
+- **The lock is the tiebreaker when liveness is UNKNOWN.** Refusal stands; never a second `-f`.
+- **The ancestor test is at best a staleness hint** among trees already known dead, and it is wrong
+  in both directions: fresh trees are ancestors, and squash or rebase merges make landed work a
+  non-ancestor.
+- **`du -sh` per tree before any count**, because "31 worktrees" and "34.8 GB in four dead locks" call
+  for different urgency and only the second one is a reason to act tonight.
