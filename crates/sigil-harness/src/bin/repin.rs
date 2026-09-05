@@ -38,7 +38,8 @@ use sigil_harness::harness_root::{
 };
 use sigil_harness::native;
 use sigil_harness::repin::{
-    diff_pins, load_manifest, render, resolve, strip_provenance, Listing, Provenance,
+    build_dir_of_this_run, drift_report, load_manifest, regenerate_command, render, resolve,
+    Listing, Provenance,
 };
 
 fn fail(msg: &str) -> ExitCode {
@@ -155,13 +156,15 @@ fn main() -> ExitCode {
     let generated = render(&resolved, &prov);
 
     let committed = std::fs::read_to_string(&pins_path).unwrap_or_default();
-    if strip_provenance(&committed) == strip_provenance(&generated) {
+    // THE SAME VERDICT THE GATE ASKS, from the same function: whole-file equality
+    // modulo the `[provenance]` stamp. A tool and the test that guards it must not be
+    // able to disagree about whether the committed file is current.
+    let Some(report) = drift_report(&committed, &generated) else {
         println!("pins.rs unchanged");
         return ExitCode::SUCCESS;
-    }
+    };
 
     // ── drift: the D-T10.4 review surface ──
-    let changes = diff_pins(&committed, &generated);
     // THE RERUN HINT IS DERIVED FROM WHAT ACTUALLY REFERENCES EACH CONSTANT, not from
     // `repin.toml`'s `tests` lists. Those lists gate nothing — this hint was their only
     // reader — so an incomplete one could never fail, and measured 2026-09-02, **176 of the
@@ -171,13 +174,8 @@ fn main() -> ExitCode {
     // fourth one that reads it is not mentioned. Hand-correcting 176 rows would have
     // produced a population whose failure mode is "wrong because nobody maintained it",
     // which is the shape this repo rejects elsewhere; deriving deletes the population.
-    let rerun = derive_rerun(&root, &changes);
-    println!("{} pin(s) changed:", changes.len());
-    for c in &changes {
-        let old = c.old.as_deref().unwrap_or("(new)");
-        let new = c.new.as_deref().unwrap_or("(removed)");
-        println!("  {}: {old} → {new}{}", c.name, delta_suffix(c.old.as_deref(), c.new.as_deref()));
-    }
+    let rerun = derive_rerun(&root, &report.pin_changes);
+    print!("{report}");
     if !rerun.is_empty() {
         println!();
         println!("rerun hint (affected binaries first, full workspace once at the end):");
@@ -185,7 +183,10 @@ fn main() -> ExitCode {
     }
 
     if check {
-        eprintln!("--check: pins.rs is STALE (run `cargo run -p sigil-harness --bin repin`)");
+        eprintln!(
+            "--check: pins.rs is STALE.\n{}",
+            regenerate_command(build_dir_of_this_run().as_deref(), Some(&aeon))
+        );
         return ExitCode::FAILURE;
     }
     if let Err(e) = std::fs::write(&pins_path, &generated) {
@@ -196,9 +197,6 @@ fn main() -> ExitCode {
     ExitCode::SUCCESS
 }
 
-/// ` (Δ …)` for single-value numeric pins where a delta is meaningful; empty
-/// for added/removed pins and multi-field initializers whose field counts
-/// differ.
 /// Which test binaries actually reference the constants whose pins moved.
 ///
 /// Derived by reading every `crates/*/tests/*.rs` and asking which of them contain the
@@ -254,33 +252,4 @@ fn derive_rerun(root: &std::path::Path, changes: &[sigil_harness::repin::PinChan
     }
     out.sort();
     out
-}
-
-fn delta_suffix(old: Option<&str>, new: Option<&str>) -> String {
-    let (Some(old), Some(new)) = (old, new) else { return String::new() };
-    let nums = |s: &str| -> Vec<i64> {
-        let mut out = Vec::new();
-        for tok in s.split(|c: char| !c.is_ascii_alphanumeric()) {
-            if let Some(hex) = tok.strip_prefix("0x").or_else(|| tok.strip_prefix("0X")) {
-                if let Ok(v) = i64::from_str_radix(hex, 16) {
-                    out.push(v);
-                }
-            }
-        }
-        out
-    };
-    let (o, n) = (nums(old), nums(new));
-    if o.is_empty() || o.len() != n.len() {
-        return String::new();
-    }
-    let deltas: Vec<String> = o
-        .iter()
-        .zip(&n)
-        .filter(|(a, b)| a != b)
-        .map(|(a, b)| {
-            let d = b - a;
-            if d >= 0 { format!("+{d:#X}") } else { format!("-{:#X}", -d) }
-        })
-        .collect();
-    if deltas.is_empty() { String::new() } else { format!(" (Δ {})", deltas.join(", ")) }
 }

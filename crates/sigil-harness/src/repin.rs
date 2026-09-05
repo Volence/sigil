@@ -1200,6 +1200,328 @@ pub fn diff_pins(old_text: &str, new_text: &str) -> Vec<PinChange> {
     changes
 }
 
+// ── Drift reporting: the ONE verdict, and a message that owns both comparisons ──
+
+/// What differs between the committed `pins.rs` and a fresh render, kept in the
+/// buckets a reader has to be able to tell apart.
+///
+/// TWO COMPARISONS, AND THEY ARE NOT THE SAME ONE. The staleness VERDICT is
+/// whole-file: [`strip_provenance`] drops only the `[provenance]` stamp lines, so
+/// every other line the generator emits, doc comments and struct definitions
+/// included, is part of "is the committed file what `repin` now writes". The pin
+/// COUNT is not whole-file: [`diff_pins`] reads `pub const` declarations and is
+/// blind to everything else. A sweep that rewrites the generator's comment strings
+/// therefore leaves every pin value standing and still makes the committed file
+/// stale, and a report carrying only the count renders that true pair as
+/// `STALE ... (0 changed pin(s))`, which reads as a self-contradiction and sends
+/// the reader hunting a bug in the gate. Measured once already: a dash sweep moved
+/// 38 string literals in this file and drifted 108 comment lines of `pins.rs` with
+/// no pin value moving at all.
+///
+/// THE VERDICT IS THE STRICT ONE ON PURPOSE. Narrowing it to what [`diff_pins`]
+/// models would make exactly that case invisible, which is why the fix here was to
+/// widen the MESSAGE and never the comparison. The buckets below partition the
+/// whole line difference, so the report can name what it found in every case
+/// rather than printing a zero next to the word STALE.
+#[derive(Debug)]
+pub struct DriftReport {
+    /// Pins whose initializer text changed, or that were added or removed.
+    pub pin_changes: Vec<PinChange>,
+    /// `pub const` lines that differ WITHOUT their pin appearing in `pin_changes`:
+    /// the declaration's rendering moved while its value stood still.
+    pub reformatted_declarations: usize,
+    /// Non-declaration lines present only in the committed file.
+    pub other_removed: Vec<String>,
+    /// Non-declaration lines present only in the regenerated text.
+    pub other_added: Vec<String>,
+}
+
+/// How many of the listed one-sided lines a message prints before summarising the
+/// rest. A comment sweep can move hundreds; a panic that scrolls past the verdict
+/// is a message nobody reads to the end of.
+const DRIFT_LINES_SHOWN: usize = 8;
+
+impl DriftReport {
+    /// Non-declaration lines present on exactly one side, both directions.
+    pub fn other_lines(&self) -> usize {
+        self.other_removed.len() + self.other_added.len()
+    }
+
+    /// True when every bucket is empty. The texts still differ (that is what built
+    /// this report), so the only remaining explanation is that the same lines appear
+    /// in a different ORDER, and the message says so rather than printing zeroes.
+    pub fn only_line_order_differs(&self) -> bool {
+        self.pin_changes.is_empty() && self.reformatted_declarations == 0 && self.other_lines() == 0
+    }
+
+    /// The one-line answer to "what differs", covering every bucket.
+    fn headline(&self) -> String {
+        if self.only_line_order_differs() {
+            return "the same lines in a different ORDER; no line was added or removed".into();
+        }
+        let mut parts = Vec::new();
+        parts.push(match self.pin_changes.len() {
+            0 => "NO pin value moved".to_string(),
+            1 => "1 pin value moved".to_string(),
+            n => format!("{n} pin values moved"),
+        });
+        if self.reformatted_declarations > 0 {
+            parts.push(format!(
+                "{} declaration line(s) differ without their value changing",
+                self.reformatted_declarations
+            ));
+        }
+        if self.other_lines() > 0 {
+            parts.push(format!(
+                "{} line(s) of surrounding text differ ({} committed-only, {} regenerated-only)",
+                self.other_lines(),
+                self.other_removed.len(),
+                self.other_added.len()
+            ));
+        } else {
+            parts.push("the surrounding text is identical".to_string());
+        }
+        parts.join("; ")
+    }
+}
+
+/// What a report says when the pins all stood still. Spelled out because the pair
+/// it describes is the one that reads as a contradiction, and because the tempting
+/// repair is the wrong one.
+const PINS_ALL_STOOD_STILL: &str = "\
+Every pin value in the committed file is still the value the generator produces, and
+the file is STILL stale: the verdict compares the whole rendered file minus the
+`[provenance]` stamp lines, so the text the generator writes AROUND the pins counts.
+That is not a false alarm and not a gate bug. The committed file is no longer what
+`repin` emits, so regenerate it; do NOT narrow the comparison to pin values, which
+would hide exactly this case.";
+
+impl std::fmt::Display for DriftReport {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "WHAT DIFFERS: {}", self.headline())?;
+        if self.pin_changes.is_empty() && !self.only_line_order_differs() {
+            writeln!(f)?;
+            writeln!(f, "{PINS_ALL_STOOD_STILL}")?;
+        }
+        if !self.pin_changes.is_empty() {
+            writeln!(f)?;
+            writeln!(f, "pin values that moved (name: committed -> regenerated):")?;
+            for c in &self.pin_changes {
+                let old = c.old.as_deref().unwrap_or("(new)");
+                let new = c.new.as_deref().unwrap_or("(removed)");
+                writeln!(
+                    f,
+                    "  {}: {old} -> {new}{}",
+                    c.name,
+                    delta_suffix(c.old.as_deref(), c.new.as_deref())
+                )?;
+            }
+        }
+        for (label, lines) in [
+            ("surrounding text, committed side only", &self.other_removed),
+            ("surrounding text, regenerated side only", &self.other_added),
+        ] {
+            if lines.is_empty() {
+                continue;
+            }
+            writeln!(f)?;
+            writeln!(f, "{label} ({} line(s)):", lines.len())?;
+            for line in lines.iter().take(DRIFT_LINES_SHOWN) {
+                writeln!(f, "  {line}")?;
+            }
+            if lines.len() > DRIFT_LINES_SHOWN {
+                writeln!(f, "  ... and {} more", lines.len() - DRIFT_LINES_SHOWN)?;
+            }
+        }
+        Ok(())
+    }
+}
+
+/// THE staleness verdict, asked in exactly one place so the gate and the `repin`
+/// binary cannot answer it differently: `None` when the committed text is current,
+/// `Some(report)` when it is stale.
+///
+/// The comparison is [`strip_provenance`] equality over the WHOLE text and stays
+/// that way; the report exists so the message can explain a verdict the pin count
+/// alone cannot.
+pub fn drift_report(committed: &str, generated: &str) -> Option<DriftReport> {
+    let a = strip_provenance(committed);
+    let b = strip_provenance(generated);
+    if a == b {
+        return None;
+    }
+    let pin_changes = diff_pins(committed, generated);
+    let moved: HashSet<&str> = pin_changes.iter().map(|c| c.name.as_str()).collect();
+    let (removed, added) = one_sided_lines(&a, &b);
+    let mut reformatted = 0usize;
+    let mut other_removed: Vec<String> = Vec::new();
+    let mut other_added: Vec<String> = Vec::new();
+    for (lines, out) in [(removed, &mut other_removed), (added, &mut other_added)] {
+        for line in lines {
+            match const_name_of(&line) {
+                // A declaration line that differs while `diff_pins` reports its pin
+                // unchanged: the VALUE stood still and only the rendering moved.
+                Some(name) if !moved.contains(name.as_str()) => reformatted += 1,
+                // Already named, with its old and new value, under `pin_changes`.
+                Some(_) => {}
+                None => out.push(line),
+            }
+        }
+    }
+    Some(DriftReport {
+        pin_changes,
+        reformatted_declarations: reformatted,
+        other_removed,
+        other_added,
+    })
+}
+
+/// The constant a `pub const` line declares, or `None` for any other line. The same
+/// prefix [`const_lines`] keys on, so the two agree about what a declaration is.
+fn const_name_of(line: &str) -> Option<String> {
+    let rest = line.trim_start().strip_prefix("pub const ")?;
+    let (name, _) = rest.split_once(':')?;
+    Some(name.trim().to_string())
+}
+
+/// Lines present on exactly one side, as a MULTISET difference in each file's own
+/// order: `(only in a, only in b)`.
+///
+/// Multiset rather than positional, because a single inserted line shifts every line
+/// after it and a positional diff would report the whole tail as changed. File order
+/// rather than sorted, because the first differing line is the one a reader looks at.
+fn one_sided_lines(a: &str, b: &str) -> (Vec<String>, Vec<String>) {
+    let mut counts: BTreeMap<&str, i64> = BTreeMap::new();
+    for l in a.lines() {
+        *counts.entry(l).or_default() += 1;
+    }
+    for l in b.lines() {
+        *counts.entry(l).or_default() -= 1;
+    }
+    let mut left = counts.clone();
+    let mut removed = Vec::new();
+    for l in a.lines() {
+        if let Some(c) = left.get_mut(l) {
+            if *c > 0 {
+                *c -= 1;
+                removed.push(l.to_string());
+            }
+        }
+    }
+    let mut right = counts;
+    let mut added = Vec::new();
+    for l in b.lines() {
+        if let Some(c) = right.get_mut(l) {
+            if *c < 0 {
+                *c += 1;
+                added.push(l.to_string());
+            }
+        }
+    }
+    (removed, added)
+}
+
+/// ` (Δ …)` for single-value numeric pins where a delta is meaningful; empty for
+/// added/removed pins and for multi-field initializers whose field counts differ.
+fn delta_suffix(old: Option<&str>, new: Option<&str>) -> String {
+    let (Some(old), Some(new)) = (old, new) else { return String::new() };
+    let nums = |s: &str| -> Vec<i64> {
+        let mut out = Vec::new();
+        for tok in s.split(|c: char| !c.is_ascii_alphanumeric()) {
+            if let Some(hex) = tok.strip_prefix("0x").or_else(|| tok.strip_prefix("0X")) {
+                if let Ok(v) = i64::from_str_radix(hex, 16) {
+                    out.push(v);
+                }
+            }
+        }
+        out
+    };
+    let (o, n) = (nums(old), nums(new));
+    if o.is_empty() || o.len() != n.len() {
+        return String::new();
+    }
+    let deltas: Vec<String> = o
+        .iter()
+        .zip(&n)
+        .filter(|(a, b)| a != b)
+        .map(|(a, b)| {
+            let d = b - a;
+            if d >= 0 { format!("+{d:#X}") } else { format!("-{:#X}", -d) }
+        })
+        .collect();
+    if deltas.is_empty() { String::new() } else { format!(" (Δ {})", deltas.join(", ")) }
+}
+
+/// The EXACT text `tests/repin_pins.rs::pins_rs_is_current` fails with. Assembled
+/// here rather than at the panic site so the message itself is a testable artifact:
+/// the gate needs a reference tree to reach its panic, and the wording is the subject
+/// of `tests/repin_gate_message.rs`, which has none.
+pub fn stale_pins_message(
+    report: &DriftReport,
+    build_dir: Option<&std::path::Path>,
+    aeon: Option<&std::path::Path>,
+) -> String {
+    format!(
+        "src/pins.rs is STALE against the live listings.\n\n{report}\n{}",
+        regenerate_command(build_dir, aeon)
+    )
+}
+
+/// The cargo build directory the RUNNING executable was compiled into, derived from
+/// its own path rather than guessed: an explicit `CARGO_TARGET_DIR` first (a caller
+/// who chose a directory keeps it), else `<target>/<profile>[/deps]/<exe>` walked
+/// back. `None` when neither is readable, so a caller prints a placeholder instead
+/// of a wrong path.
+pub fn build_dir_of_this_run() -> Option<std::path::PathBuf> {
+    if let Some(dir) = std::env::var_os("CARGO_TARGET_DIR") {
+        if !dir.is_empty() {
+            return Some(std::path::PathBuf::from(dir));
+        }
+    }
+    let exe = std::env::current_exe().ok()?;
+    let holder = exe.parent()?;
+    // An integration-test binary sits one level deeper, in `deps/`.
+    let profile = if holder.file_name()? == "deps" { holder.parent()? } else { holder };
+    Some(profile.parent()?.to_path_buf())
+}
+
+/// The remediation a staleness report prints: THE COMMAND THAT ACTUALLY WORKS.
+///
+/// `cargo run -p sigil-harness --bin repin` on its own does not regenerate anything.
+/// The resolve builds the sound-on shape, so `repin` refuses without `SIGIL_EMIT`:
+/// measured, it exits 2 and prints `repin: set SIGIL_EMIT to ...`, writing nothing.
+/// That is a clear failure with a pointer rather than a silent no-op, so the old
+/// one-line hint cost a reader a round trip rather than misleading them into a bad
+/// state; it is still the wrong command to print, and printing the right one costs
+/// two lines.
+///
+/// `build_dir` and `aeon` are filled in when the caller knows them (the gate does:
+/// it has just resolved both), and stand in as named placeholders when it does not.
+pub fn regenerate_command(
+    build_dir: Option<&std::path::Path>,
+    aeon: Option<&std::path::Path>,
+) -> String {
+    let emit = match build_dir {
+        Some(d) => d.join("release").join("emit_sound_blob").display().to_string(),
+        None => "$CARGO_TARGET_DIR/release/emit_sound_blob".to_string(),
+    };
+    let aeon = match aeon {
+        Some(a) => a.display().to_string(),
+        None => "$AEON_DIR".to_string(),
+    };
+    format!(
+        "TO FIX: regenerate the file. SIGIL_EMIT IS PART OF THE COMMAND, not an optional\n\
+         extra: the resolve builds the sound-on shape, and `repin` with SIGIL_EMIT unset\n\
+         exits 2 naming the variable and writes nothing. From the sigil checkout whose\n\
+         pins.rs is stale:\n\
+         \n  \
+         cargo build --release -p sigil-harness --bin emit_sound_blob\n  \
+         SIGIL_EMIT={emit} \\\n  \
+         AEON_DIR={aeon} \\\n    \
+         cargo run --release -p sigil-harness --bin repin"
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
