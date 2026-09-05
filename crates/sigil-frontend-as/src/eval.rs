@@ -785,6 +785,12 @@ struct Asm {
     /// verdict on an argument is a property of that position — reporting it per
     /// expansion would say the same thing several times about one line.
     arg_faults_seen: std::collections::HashSet<(u32, u32, u32)>,
+    /// `(source, start, end, name)` triples [`Self::report_register_values`] has
+    /// already ruled on this pass, for the same reason `arg_faults_seen` exists:
+    /// one written `a0` reached through a macro body or a `rept` is one fault at
+    /// one source position, not one per expansion. Keyed by NAME as well as
+    /// span, so `dc.l a0+a1` still names both registers.
+    reg_faults_seen: std::collections::HashSet<(u32, u32, u32, String)>,
     /// Remaining `while`-body-execution budget for THIS pass (per-`Asm`, so it
     /// resets each pass). Complements the per-loop `WHILE_CAP`: two NESTED
     /// non-convergent `while`s each bounded at `WHILE_CAP` still multiply to
@@ -1038,6 +1044,7 @@ impl Asm {
             cpu_refused: false,
             poison_refs: Vec::new(),
             arg_faults_seen: std::collections::HashSet::new(),
+            reg_faults_seen: std::collections::HashSet::new(),
             while_budget: GLOBAL_WHILE_CAP,
             pending_equ_syms: Vec::new(),
             defer_unresolved_jsr_jmp,
@@ -1296,12 +1303,74 @@ impl Asm {
                 v.clamp(lo, hi)
             }
             Fold::Poison => {
-                for name in self.unresolved_names(e) {
-                    self.poison_refs.push((name, span));
-                }
+                self.route_poison_names(e, span);
                 0
             }
         }
+    }
+
+    /// Report every REGISTER name standing in value position in `e`, and answer
+    /// whether there was one.
+    ///
+    /// A register name is not a forward reference. No later pass defines `a0`,
+    /// so unlike a genuinely-unresolved symbol this needs no deferral to the
+    /// converged pass and no deferral to the linker: it is reported here, at the
+    /// point of use, with the span of the line that wrote it. That is what gives
+    /// the answer a `file(line)` at all, since the linker sees only a section
+    /// and an offset.
+    ///
+    /// It fires only on names that do NOT resolve, which is what keeps a program
+    /// that legitimately defines `a0` as a symbol (`a0 equ 5` then `dc.l a0`)
+    /// assembling exactly as before: a resolved name never reaches Poison.
+    ///
+    /// `true` is the caller's signal to take an error path rather than emit a
+    /// placeholder and defer a fixup the linker can only refuse.
+    fn report_register_values(&mut self, e: &Expr, span: Span) -> bool {
+        let mut found = false;
+        for name in self.unresolved_names(e) {
+            if !is_expr_register_name(&name, self.state.cpu) {
+                continue;
+            }
+            found = true;
+            if self
+                .reg_faults_seen
+                .insert((span.source.0, span.start, span.end, name.clone()))
+            {
+                self.err(span, register_in_value_position(&name));
+            }
+        }
+        found
+    }
+
+    /// Whether a register-in-value-position fault has already been reported at
+    /// `span` this pass.
+    ///
+    /// A directive that wants a constant and has its own word for not getting
+    /// one (`org needs a constant expression`, `unresolved rept count`, …) asks
+    /// this before adding that word. The register message has already said what
+    /// is wrong and where; a second line about the same token, phrased as if a
+    /// definition were missing, is the residue rather than an addition.
+    fn register_reported_at(&self, span: Span) -> bool {
+        let key = (span.source.0, span.start, span.end);
+        self.reg_faults_seen
+            .iter()
+            .any(|(s, a, b, _)| (*s, *a, *b) == key)
+    }
+
+    /// Split the unresolved names in `e` between their two stories: a register
+    /// goes to [`Self::report_register_values`] (a fault, now, here), everything
+    /// else joins `poison_refs` (a forward reference, judged on the converged
+    /// pass). `dc.l a0+Later` is both, and says both.
+    ///
+    /// Answers whether a register was among them.
+    fn route_poison_names(&mut self, e: &Expr, span: Span) -> bool {
+        let found = self.report_register_values(e, span);
+        for name in self.unresolved_names(e) {
+            if !is_expr_register_name(&name, self.state.cpu) {
+                self.poison_refs.push((name, span));
+            }
+        }
+        found
     }
 
     /// Collect the symbol names in `e` that do NOT resolve in the current env
@@ -1359,7 +1428,16 @@ impl Asm {
         }
         match self.fold(&e) {
             Fold::Value(v) => Some(v),
-            Fold::Poison => None,
+            Fold::Poison => {
+                // THE choke point for every directive that wants a constant and
+                // has its own word for not getting one: `org`, `ds`, `align`,
+                // `rept`, `while`, `if`, `irpc` and their siblings all arrive
+                // here. Each of those wordings is right for a symbol that is
+                // merely unresolved and wrong for a register, so the register is
+                // named here, once, before the caller reaches for its own.
+                self.report_register_values(&e, span);
+                None
+            }
         }
     }
 
@@ -2090,18 +2168,6 @@ impl Asm {
         if matches!(arg, [Token { tok: Tok::Str(_), .. }]) {
             return;
         }
-        if let [Token { tok: Tok::Ident(w), .. }] = arg {
-            if is_expr_register_name(w, self.state.cpu) {
-                self.err(
-                    span,
-                    format!(
-                        "`{w}` is a register: a function argument must be an \
-                         integer, floating point number or string"
-                    ),
-                );
-                return;
-            }
-        }
         // The same four layers `expand_operand_builtins` runs, spelled out:
         // that wrapper gains the strict check itself, and routing through it
         // here would make the check re-enter on its own argument.
@@ -2120,9 +2186,7 @@ impl Asm {
         }
         let qualified = self.qualify_expr(&e);
         if matches!(self.fold(&qualified), Fold::Poison) {
-            for name in self.unresolved_names(&qualified) {
-                self.poison_refs.push((name, span));
-            }
+            self.route_poison_names(&qualified, span);
         }
     }
 
@@ -3270,7 +3334,9 @@ impl Asm {
                 0
             }
             None => {
-                self.err(span, "unresolved rept count");
+                if !self.register_reported_at(span) {
+                    self.err(span, "unresolved rept count");
+                }
                 0
             }
         };
@@ -3557,7 +3623,9 @@ impl Asm {
                     iterations += 1;
                 }
                 None => {
-                    self.err(span, "unresolved while condition");
+                    if !self.register_reported_at(span) {
+                        self.err(span, "unresolved while condition");
+                    }
                     break;
                 }
             }
@@ -4589,7 +4657,9 @@ impl Asm {
         let target_abs = match self.eval_all(rest, span) {
             Some(v) => v as u32,
             None => {
-                self.err(span, "org needs a constant expression");
+                if !self.register_reported_at(span) {
+                    self.err(span, "org needs a constant expression");
+                }
                 return;
             }
         };
@@ -5168,6 +5238,15 @@ impl Asm {
                     self.emit(&[v.clamp(-128, 0xFF) as u8], vec![], span);
                 }
                 Fold::Poison => {
+                    // A register is not a cross-seam leaf. Deferring it hands
+                    // the linker a fixup it can only refuse, and the linker's
+                    // refusal carries a section and an offset where the reader
+                    // needs a file and a line. Report it here and emit the
+                    // placeholder alone.
+                    if self.report_register_values(&qe, span) {
+                        self.emit(&[0x00], vec![], span);
+                        continue;
+                    }
                     self.emit(
                         &[0x00],
                         vec![Fixup {
@@ -5209,6 +5288,11 @@ impl Asm {
                     self.emit(&[(w & 0xFF) as u8, (w >> 8) as u8], vec![], span);
                 }
                 Fold::Poison => {
+                    // A register is not a cross-seam leaf; see `directive_db`.
+                    if self.report_register_values(&qe, span) {
+                        self.emit(&[0x00, 0x00], vec![], span);
+                        continue;
+                    }
                     // ANY unresolved expression (bare symbol OR compound) defers
                     // to the linker as a general link-expr VALUE — two placeholder
                     // bytes + a `Value16Le` fixup carrying the full parsed+
@@ -5300,6 +5384,11 @@ impl Asm {
                     self.emit(&w, vec![], span);
                 }
                 Fold::Poison => {
+                    // A register is not a cross-seam leaf; see `directive_db`.
+                    if self.report_register_values(&qe, span) {
+                        self.emit(&[0x00, 0x00], vec![], span);
+                        continue;
+                    }
                     if matches!(qe, Expr::Sym(_)) {
                         self.emit(
                             &[0x00, 0x00],
@@ -5368,6 +5457,14 @@ impl Asm {
                     self.emit(&l, vec![], span);
                 }
                 Fold::Poison => {
+                    // A register is not a cross-seam leaf; see `directive_db`.
+                    // This also takes the COMPOUND case (`dc.l a0+1`) off
+                    // "unresolved long expression", which is a true sentence
+                    // about the fold and a useless one about the mistake.
+                    if self.report_register_values(&qe, span) {
+                        self.emit(&[0x00, 0x00, 0x00, 0x00], vec![], span);
+                        continue;
+                    }
                     if matches!(qe, Expr::Sym(_)) {
                         self.emit(
                             &[0x00, 0x00, 0x00, 0x00],
@@ -5403,7 +5500,11 @@ impl Asm {
         match self.eval_all(rest, span) {
             Some(v) if v >= 0 => self.builder.reserve(v as u32 * unit, span),
             Some(_) => self.err(span, "negative ds count"),
-            None => self.err(span, "unresolved ds count"),
+            None => {
+                if !self.register_reported_at(span) {
+                    self.err(span, "unresolved ds count");
+                }
+            }
         }
     }
 
@@ -5443,7 +5544,11 @@ impl Asm {
                 }
             }
             Some(_) => self.err(span, "align needs a positive constant"),
-            None => self.err(span, "unresolved align constant"),
+            None => {
+                if !self.register_reported_at(span) {
+                    self.err(span, "unresolved align constant");
+                }
+            }
         }
     }
 
@@ -5666,6 +5771,15 @@ impl Asm {
                 // SomeSiblingModuleProc` (a real cross-seam call, e.g. aeon's
                 // `jsr GetSineCosine` when `SIGIL_EMP_MATH` is on) resolve at
                 // LINK time instead of hard-erroring at ASSEMBLE time.
+                // A register target is not a cross-seam call waiting on a link,
+                // so it must not take the deferral: `jsr a0` reaching the linker
+                // is a diagnostic with no source line, and the reader who wrote
+                // it needs the line.
+                if matches!(self.fold(&target), Fold::Poison)
+                    && self.report_register_values(&target, span)
+                {
+                    return;
+                }
                 if self.defer_unresolved_jsr_jmp && matches!(self.fold(&target), Fold::Poison) {
                     let frag = self.m68k.lower_jmp_jsr_sym(is_jsr, target, span);
                     self.builder.emit_fragment(frag);
@@ -5686,9 +5800,7 @@ impl Asm {
                         (asl_width_rule(v, false), ft)
                     }
                     Fold::Poison => {
-                        for name in self.unresolved_names(&target) {
-                            self.poison_refs.push((name, span));
-                        }
+                        self.route_poison_names(&target, span);
                         (AbsWidth::W, target)
                     }
                 };
@@ -6005,6 +6117,12 @@ impl Asm {
         let is_poison = matches!(self.fold(&qualified), Fold::Poison);
         let refs_label = self.keep_labels_symbolic() && self.expr_refs_label(&qualified);
         if !is_poison && !refs_label {
+            return None;
+        }
+        // A register is not a cross-seam leaf. Falling through to the eager path
+        // would report it there WITH a span; taking this deferral would ship it
+        // to the linker, which answers with a section and an offset and no line.
+        if is_poison && self.report_register_values(&qualified, span) {
             return None;
         }
         let inst = M68kInstruction {
@@ -6396,9 +6514,7 @@ impl Asm {
                 AbsWidth::L => M68kOperand::AbsL(v as i32),
             },
             Fold::Poison => {
-                for name in self.unresolved_names(&qualified) {
-                    self.poison_refs.push((name, span));
-                }
+                self.route_poison_names(&qualified, span);
                 // Optimistic abs.w while unresolved (M1.D T3): asl selects the least
                 // fixpoint for the absolute-EA class too (probe: lea at $7FFA → 41F8
                 // 7FFE, abs.w). The multi-pass loop then only grows W→L, converging
@@ -9031,6 +9147,23 @@ fn body_mentions(body: &[Token], param: &str) -> bool {
 ///   `ld bc,fu(hl)` and `dw hl` are `#1010 symbol undefined`: z80 register names
 ///   are not expression-level register symbols, and a z80 program is free to
 ///   define a symbol called `sp`.
+/// THE sentence for a register written where a value belongs, wherever it was
+/// written. One fault gets one story: a `dc.l a0`, a `dc.w a0+1`, a
+/// `move.w #a0,d0`, an `org a0` and a `#fi(a1)` are the same mistake in five
+/// places, and before this they were told apart as "unresolved symbol", as
+/// "unresolved long expression", as "unresolved target expression (dangling
+/// symbol(s))", as "org needs a constant expression" and as a register.
+///
+/// The tail is asl's own catalogue wording (`as.msg`: *"expected integer,
+/// floating point number or string but got register"*); the head names the
+/// offending token, which asl's does not. What it must never say is
+/// "unresolved" or "undefined": both are true of sigil's symbol table and false
+/// of the program, and they send a reader hunting a definition of `a0` that was
+/// never missing.
+fn register_in_value_position(name: &str) -> String {
+    format!("`{name}` is a register, not a value: expected an integer, floating point number or string")
+}
+
 fn is_expr_register_name(w: &str, cpu: Cpu) -> bool {
     if cpu != Cpu::M68000 {
         return false;
