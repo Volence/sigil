@@ -8,7 +8,7 @@
 //! WHAT IT ENUMERATES OVER. Every `.rs` file under `crates/`, lexed rather than
 //! grepped. A line grep cannot tell a diagnostic from a note ABOUT one, and the
 //! difference is not marginal here: at the sweep the workspace held 1,012
-//! dash-bearing string literals and 10,840 dash-bearing comments, so a grep-based
+//! dash-bearing string literals and 10,887 dash-bearing comment lines, so a grep
 //! gate would have been 91 percent false positives and would have been weakened
 //! or deleted within a week. The lexer tracks line-comment, block-comment
 //! (nested), char-literal, string-literal and raw-string state, and only a string
@@ -18,7 +18,7 @@
 //! check that would establish it are separable:
 //!
 //!   * COMMENTS, doc comments included. Out of scope by the ruling's own words,
-//!     and 10,840 of them; editing them is churn that buries a real diff.
+//!     and 10,887 of them; editing them is churn that buries a real diff.
 //!   * `docs/**`. The sweep was about tool text. The no-new-dashes half governs
 //!     new writing there, and no mechanical check enforces it.
 //!   * NON-RUST tools. `scripts/drift_report.py` prints a report a person reads,
