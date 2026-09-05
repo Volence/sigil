@@ -168,6 +168,12 @@ rule with a different population — every duplicated label, every twice-include
 header — and it wants its own measurement rather than a half-covering patch
 bolted onto this one. Named in the code and here rather than closed silently.
 
+> **CLOSED 2026-09-05** by `2026-09-05-as-duplicate-definition.md`, and the
+> guessed population above is wrong in a way worth reading: a PC label and an
+> `enum` member inside a macro/`rept`/`irp`/`while` expansion are LOCAL to that
+> expansion in asl and are not in `#1000`'s population at all. "Every duplicated
+> label" would have refused 97 sites in the s2 corpus that asl assembles.
+
 ---
 
 ## 4. Population: nothing anywhere trips the new refusal

@@ -41,6 +41,18 @@ AS_MSGPATH=$ASLDIR $ASLDIR/asl -xx -n -q -A -L -U -D Dv=1 -D Dw=1 -i . m8.asm
 | `m9` | `set` first, then each of the four constant-MAKING forms |
 | `m10` | which line sets the local-label scope — a label, or a `set`? |
 | `m11` | the divergence in its sharpest form: both assemblers, one source, different bytes |
+| `m12` | a constant declared inside a `rept`: does each iteration count? |
+| `m13` | a macro invoked twice, each expansion declaring the same name |
+| `m14` | the same header `include`d twice (needs `m14hdr.inc` beside it) |
+| `m15` | a label redeclared across `phase`/`dephase` |
+| `m16` | a second declaration the pass never EXECUTES (`if 0`), and its executed twin |
+| `m17` | is an expansion's PC label global at all? (it is not) |
+| `m18` | the remaining constant-making forms inside an expansion, and `irp`/`while` |
+| `m19` | reading an expansion's `enum` member and `label` directive from OUTSIDE |
+| `m20` | the mixed order: an expansion-local constant first, a file-level one second |
+
+`m12`–`m20` are the `#1000` parcel's, and the note behind them is
+`../2026-09-05-as-duplicate-definition.md`.
 
 `run.sh` leaves a `.lst` (and `.p`, when the file assembles clean) beside each
 probe. Those are build output, not evidence to keep — delete them; only the

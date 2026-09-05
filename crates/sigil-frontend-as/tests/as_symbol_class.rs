@@ -35,13 +35,23 @@
 //! > > > As equ 2
 //! ```
 //!
-//! WHAT THIS FILE DOES NOT PIN. `#1000`, the SAME-class redefinition of a
-//! constant, is not implemented and is not asserted here. asl raises it — and
-//! raises it even when the value is unchanged (`Aq equ 1` written twice, probe
-//! `m4.asm`) — but its population is every duplicated label and every
-//! twice-included header, which is a different measurement and a different
-//! parcel. Asserting a rule this front end does not have would make the file
-//! describe a compiler nobody built.
+//! `#1000` — the SAME-class redefinition of a CONSTANT — is pinned here too, and
+//! it is the row with the sharpest edge, because asl raises it EVEN WHEN THE TWO
+//! VALUES ARE IDENTICAL (`Aq equ 1` written twice, probe `m4.asm`). Every fixture
+//! for it below therefore comes in both flavours: one where the value changes and
+//! one where it does not, so a front end that merely notices a value moving fails
+//! the equal-value row.
+//!
+//! THE ONE EXEMPTION, and it is not a softening — it is what asl does. A PC label
+//! and an `enum` member written inside a macro / `rept` / `irp` / `while`
+//! expansion are LOCAL to that expansion: they never enter asl's symbol table
+//! (probes `m17.asm`, `m19.asm`, both `#1010 symbol undefined` from outside), so
+//! a second expansion redeclaring one is silent and a later file-level constant
+//! of the same name is a FIRST declaration (probe `m20.asm`). `equ`, `=` and the
+//! `label` DIRECTIVE are global wherever they are written and keep the full rule
+//! in the same position (probes `m18.asm`, `m20.asm`). Without the exemption the
+//! rule refuses 97 sites in the s2 corpus that asl accepts, every one of them a
+//! colon label in a twice-expanded macro.
 
 use sigil_frontend_as::{assemble, Options};
 
@@ -167,18 +177,13 @@ fn the_class_is_the_directive_and_not_the_value_type() {
 /// branch, so its `Ap equ 1` and its `Lab:` each EXECUTE TWICE, and asl reports
 /// `2 passes / 0 errors`.
 ///
-/// WHAT THIS TEST CAN AND CANNOT PROVE, stated because the answer surprised the
-/// author. The implementation keeps its class map per-pass rather than threading
-/// it through `run_impl`'s env seeding, and that choice is correct — but it is
-/// NOT OBSERVABLE under the crossing-only rule this front end implements, so
-/// this test could not have gone red for a threaded map. Re-executing the same
-/// declaration on a later pass gives a name the SAME class both times, and only
-/// a CROSSING is checked; `#1000`, the rule that would notice a name declared
-/// twice in one class, is not implemented (see the module doc). The per-pass
-/// reset becomes load-bearing, and this test becomes a real gate on it, the day
-/// `#1000` lands. Until then it is regression coverage for the ordinary
-/// multi-pass shape and a record of asl's `2 passes / 0 errors`, and it is
-/// labelled as such rather than presented as the proof it cannot be.
+/// THIS IS NOW A REAL GATE, and it was not one before. Under the crossing-only
+/// rule a threaded class map was unobservable — re-executing a declaration gives
+/// a name the SAME class both times, and only a crossing was checked, so no
+/// mutation could have turned this red. With `#1000` in, the per-pass reset is
+/// load-bearing: a class map seeded from the previous pass makes the SECOND pass
+/// of every multi-pass program a wall of `symbol double defined`, which is
+/// exactly the shape asl calls `2 passes / 0 errors`.
 #[test]
 fn re_executing_a_declaration_on_a_later_pass_is_not_a_redefinition() {
     assert_eq!(
@@ -261,4 +266,149 @@ fn a_repeated_set_and_a_seeded_define_are_not_crossings() {
          rather than colliding with a seed — `Options::defines`' own doc says an in-file \
          `=`/`equ` of such a name WINS, which the code-gate and game-config overrides rely on"
     );
+}
+
+/// `#1000`, every constant-making form redeclared by every constant-making form
+/// at FILE LEVEL. `equ`/`=` and the same-value row from probe `m4.asm`, the
+/// colon label from `m3.asm` (`Fl:` written twice), the `label` directive and
+/// the bare label from `m4.asm`, and the `phase`d label from `m15.asm`.
+///
+/// EVERY SHAPE COMES IN BOTH FLAVOURS. The SAME-value rows redeclare with the
+/// identical value and the others with a different one, because asl's rule is
+/// about a second DECLARATION and not about a value moving (`Aq equ 1` twice is
+/// `#1000`; so is `m15.asm`'s `Bp:`, whose two addresses differ in both the
+/// logical and the physical counter). A front end that refused only on a changed
+/// value would pass half of this and fail the other half — which is the whole
+/// reason both halves are here.
+#[test]
+fn a_constant_may_not_be_redefined_as_a_constant() {
+    for (body, name, what) in [
+        ("Aq\tequ\t1\nAq\tequ\t1", "Aq", "equ then equ, SAME value"),
+        ("Aq\tequ\t1\nAq\tequ\t2", "Aq", "equ then equ, different value"),
+        ("Be\tequ\t1\nBe\t=\t2", "Be", "equ then ="),
+        ("Be\t=\t1\nBe\tequ\t1", "Be", "= then equ, SAME value"),
+        ("Fl:\n\tdc.w\t$1111\nFl:\n\tdc.w\t$1111", "Fl", "colon label then colon label"),
+        ("Dq\n\tdc.w\t$1111\nDq\tequ\t2", "Dq", "bare label then equ"),
+        ("Fq\tlabel\t$100\nFq\tequ\t2", "Fq", "`label` directive then equ"),
+        ("Fq\tlabel\t$100\nFq\tlabel\t$100", "Fq", "`label` twice, SAME value"),
+        ("Hq:\tdc.w\t$1111\nHq\tequ\t2", "Hq", "label on a data line then equ"),
+        ("Ge\tequ\t1\nGe:\n\tdc.w\t$1111", "Ge", "equ then a colon label"),
+        ("\tenum\tBr=5\nBr\tequ\t2", "Br", "enum member then equ"),
+        ("\tenum\tBr=5\n\tenum\tBr=5", "Br", "enum member twice, SAME value"),
+        (
+            "Ap:\n\tdc.w\t$1111\n\tphase\t$1000\nBp:\n\tdc.w\t$2222\n\tdephase\nBp:\n\tdc.w\t$2222",
+            "Bp",
+            "a label redeclared across phase/dephase, both counters moved",
+        ),
+    ] {
+        let want = format!("symbol double defined: `{name}`");
+        assert!(
+            diags(body).contains(&want),
+            "asl reports `#1000 symbol double defined` for {what}; accepting it binds a \
+             name the reference assembler leaves at its FIRST value, so the two assemblers \
+             read different numbers out of the same source. Got: {:?}",
+            diags(body)
+        );
+    }
+}
+
+/// The rule counts EXECUTED declarations, not written ones. Probe `m16.asm`: the
+/// same two-`equ` shape under `if 0` lists clean and under `if 1` is `#1000`, and
+/// the surviving value is the FIRST one (`Bi : 7` in asl's symbol table after the
+/// refused `Bi equ 9`).
+///
+/// This separates "a second declaration RAN" from "the name appears twice in the
+/// file"; a front end keyed on the latter would refuse every `ifdef`-guarded
+/// constant in the corpus.
+#[test]
+fn a_declaration_the_pass_never_reaches_is_not_a_redefinition() {
+    assert!(
+        accepted("Ai\tequ\t7\n\tif\t0\nAi\tequ\t9\n\tendif\n\tdc.w\tAi"),
+        "asl lists the unexecuted arm clean (probe `m16.asm`)"
+    );
+    assert!(
+        diags("Bi\tequ\t7\n\tif\t1\nBi\tequ\t9\n\tendif\n\tdc.w\tBi")
+            .iter()
+            .any(|m| m == "symbol double defined: `Bi`"),
+        "the EXECUTED twin of the same shape IS #1000 — without this row the test above \
+         proves only that the front end refuses nothing"
+    );
+}
+
+/// THE NARROWING, and the measurements it is drawn on.
+///
+/// A PC label (colon, colon-less column-0, or on a data line) and an `enum`
+/// member are LOCAL to the macro / `rept` / `irp` / `while` expansion they are
+/// written in. asl expands one macro twice over each of those spellings and stays
+/// silent (probe `m18.asm`), the names are absent from its symbol table, and
+/// reading one from outside the expansion is `#1010 symbol undefined` (probes
+/// `m17.asm`, `m19.asm`). The `label` DIRECTIVE and `equ` in the same position
+/// are NOT localized: they list in the table, they resolve from outside, and a
+/// second expansion of them IS `#1000` (`m18.asm` `Al`, `m12.asm` `Ar`,
+/// `m13.asm` `Am`).
+///
+/// WHAT THIS GATE MUST FAIL: the un-narrowed rule — "any second constant
+/// declaration is `#1000`" — which refuses 97 sites in the s2 corpus that asl
+/// assembles, every one a colon label in a twice-expanded macro (`start:`/`end:`
+/// in `s2.macrosetup.asm`, `start:` in `zoneanimdecl`, `__LABEL__Plc:` in
+/// `plrlistheader`). It must equally fail the opposite over-correction — an
+/// exemption drawn around "anything inside an expansion" — which would accept the
+/// `equ` and `label` rows asl refuses.
+#[test]
+fn an_expansion_localizes_a_pc_label_and_an_enum_member_but_not_an_equ() {
+    for (body, what) in [
+        ("m\tmacro\nBm:\n\tdc.w\t$1111\n\tendm\n\tm\n\tm", "colon label, macro twice"),
+        ("m\tmacro\nCl\n\tdc.w\t$1111\n\tendm\n\tm\n\tm", "bare label, macro twice"),
+        ("m\tmacro\nDl:\tdc.w\t$2222\n\tendm\n\tm\n\tm", "label on a data line, macro twice"),
+        ("m\tmacro\n\tenum\tBe=5\n\tendm\n\tm\n\tm", "enum member, macro twice"),
+        ("\trept\t2\nBr:\n\tdc.w\t$1111\n\tendm", "colon label, rept 2"),
+        ("\tirp\tn,1,2\nEl:\n\tdc.w\tn\n\tendm", "colon label, irp over two items"),
+        (
+            "Wc\tset\t0\n\twhile\tWc<2\nFl:\n\tdc.w\t$3333\nWc\tset\tWc+1\n\tendm",
+            "colon label, while over two iterations",
+        ),
+        // THE MIXED ORDERS (probe `m20.asm`). These are what force the exemption
+        // to skip the RECORDING and not merely the refusal: an expansion-local
+        // name is not a symbol asl has, in either direction.
+        (
+            "Zr:\n\tdc.w\t$3333\n\trept\t1\nZr:\n\tdc.w\t$3333\n\tendm",
+            "a file label, then the same name in a rept",
+        ),
+        (
+            "\trept\t1\nPr:\n\tdc.w\t$1111\n\tendm\nPr\tequ\t$99\n\tdc.w\tPr",
+            "a rept label, then a file-level equ of the same name",
+        ),
+        (
+            "m\tmacro\n\tenum\tQe=5\n\tendm\n\tm\nQe\tequ\t$99\n\tdc.w\tQe",
+            "a macro enum member, then a file-level equ of the same name",
+        ),
+    ] {
+        assert_eq!(
+            diags(body),
+            Vec::<String>::new(),
+            "asl lists {what} clean — the name is local to the expansion and never enters \
+             its symbol table, so refusing it refuses source the reference assembler builds \
+             (this exact shape is 97 sites in the s2 corpus)"
+        );
+    }
+    // …and the two forms that are global wherever they are written keep the rule.
+    for (body, name, what) in [
+        ("m\tmacro\nAl\tlabel\t$100\n\tendm\n\tm\n\tm", "Al", "`label` directive, macro twice"),
+        ("m\tmacro\nAm\tequ\t7\n\tendm\n\tm\n\tm", "Am", "equ, macro twice"),
+        ("\trept\t2\nAr\tequ\t7\n\tendm", "Ar", "equ, rept 2"),
+        (
+            "m\tmacro\nRl\tlabel\t$100\n\tendm\n\tm\nRl\tequ\t$99",
+            "Rl",
+            "a macro `label`, then a file-level equ",
+        ),
+        ("m\tmacro\nSl\tequ\t7\n\tendm\n\tm\nSl\tequ\t$99", "Sl", "a macro equ, then a file-level equ"),
+    ] {
+        let want = format!("symbol double defined: `{name}`");
+        assert!(
+            diags(body).contains(&want),
+            "asl reports #1000 for {what} — the exemption is for PC labels and `enum` \
+             members, NOT for everything an expansion happens to contain. Got: {:?}",
+            diags(body)
+        );
+    }
 }
