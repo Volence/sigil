@@ -87,19 +87,17 @@ jobs:
           echo " reference-dependent gates SKIPPED in this run: ${total}"
           echo " (each one is counted as a PASS by the test harness)"
           echo "==================================================================="
-          grep '^skip: ' test-output.txt \
-            | sed -E 's#(set AEON_DIR)#\1#; s#/[^ ]*/([^/ ]+)#.../\1#g' \
-            | sort | uniq -c | sort -rn | head -40
-          echo "-------------------------------------------------------------------"
-          echo "A green run above does NOT prove any whole-ROM byte claim."
-          echo "Run the byte gate locally: SIGIL_STRICT_GATE=1 with AEON_DIR set to"
-          echo "the sibling aeon checkout, which turns every skip above into a panic."
-          # A count of zero means the skip mechanism itself broke (or the reporter
-          # stopped matching), which would silently restore the false reassurance
-          # this step exists to remove. It is also what catches an AEON_DIR or
-          # EMPYREAN_SUITE_ROOT arriving in this workflow's environment: that is the
-          # only way CI could start measuring against a tree, and it shows up here
-          # as the skips disappearing rather than as a quietly bigger green.
+          # THE ZERO CASE IS DECIDED BEFORE THE BREAKDOWN, not after. Under this
+          # step's `set -e`, a `grep` that matches nothing exits 1 and kills the
+          # step — so with the check below the breakdown, the one case this whole
+          # step exists to explain produced a bare red and none of the text that
+          # explains it. A count of zero means the skip mechanism itself broke (or
+          # the reporter stopped matching), which would silently restore the false
+          # reassurance this step exists to remove. It is also what catches an
+          # AEON_DIR or EMPYREAN_SUITE_ROOT arriving in this workflow's
+          # environment: that is the only way CI could start measuring against a
+          # tree, and it shows up here as the skips disappearing rather than as a
+          # quietly bigger green.
           if [ "${total}" -eq 0 ]; then
             echo "ERROR: expected reference-dependent skips in CI and found none —"
             echo "either a reference tree was named (AEON_DIR / EMPYREAN_SUITE_ROOT),"
@@ -108,6 +106,23 @@ jobs:
             echo "workflow would be claiming evidence it has no way to produce."
             exit 1
           fi
+          # NO EARLY-EXITING READER ENDS THIS PIPELINE, and that is load-bearing.
+          # The last stage was `head -40`, which exits the moment it has 40 lines;
+          # `sort -rn` upstream is then killed by SIGPIPE and `pipefail` hands the
+          # pipeline back 141, which under `set -e` fails the step — a red that
+          # says nothing about the code under test, arriving only when there was
+          # MORE to report. `awk` reads to EOF, so there is no signal to take, and
+          # it says out loud when it truncated rather than dropping the tail the
+          # way `head` did.
+          grep '^skip: ' test-output.txt \
+            | sed -E 's#(set AEON_DIR)#\1#; s#/[^ ]*/([^/ ]+)#.../\1#g' \
+            | sort | uniq -c | sort -rn \
+            | awk 'NR <= 40 { print }
+                   END { if (NR > 40) printf "  ... and %d further distinct skip line(s) not shown\n", NR - 40 }'
+          echo "-------------------------------------------------------------------"
+          echo "A green run above does NOT prove any whole-ROM byte claim."
+          echo "Run the byte gate locally: SIGIL_STRICT_GATE=1 with AEON_DIR set to"
+          echo "the sibling aeon checkout, which turns every skip above into a panic."
 
       - name: clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
