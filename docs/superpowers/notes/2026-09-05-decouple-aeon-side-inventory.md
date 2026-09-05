@@ -555,3 +555,82 @@ Of the 2026-08-26 inventory's seven, four have landed (§4.1). The residue maps 
   note found it in `repin`, a maintenance binary no ROM build consults, and could reasonably
   price it low. It is now the instrument under two live `build.sh` gates.
 
+
+## §7 — CORRECTIONS from aeon's confirmation, 2026-09-05
+
+Aeon confirmed this inventory and landed its reading at aeon `305af222` (verified here an
+ancestor of their `origin/master`, and the text found by `git show 305af222 | grep -n nt_row`).
+Appended as a dated correction rather than folded into the rows above, so a reader can see what
+this survey got wrong and in which direction.
+
+### 7.1 — Both defects CONFIRMED, and my replacement coordinate for the second was wrong
+
+Defect 1 (`bganim_room.py:266` computes an end from one label plus a blob length and compares it
+to nothing) holds, reproduced independently by aeon across all twelve rows of that shape. Their
+figures: `Art_Sonic` 0x72F72, packed_end 0x8BA32, anchor 0xA8000, room 0x1C5CE — and their
+framing is sharper than mine: `Art_Sonic` is today the max-LMA label below the anchor with zero
+labels between it and the anchor, so the assumption holds **by luck of declared order, not by
+construction.**
+
+Defect 2 holds and is corrected in place — **and my replacement coordinate was wrong in exactly
+the way this document's own booking warns about.** I restated the 2026-08-30 figures
+(`Sound_PlaySFX` at 0x8024, margin 36 B) instead of re-measuring them. From a real listing the
+binding symbol is **`nt_row` inside `BG_Init` at 0x801A, margin 26 B**; `Sound_PlaySFX` sits at
+0x825A with 602 B and is not binding at all; `BG_Init`'s body straddles 0x8000; and the ceiling
+neighbourhood is `bg.emp` / `bg_anim.emp`, **not the sound region**. So the section of this note
+that criticised a stale named-symbol grep reproduced a stale figure while doing it. Aeon replaced
+the grep with an awk that measures.
+
+**The rule this cost, stated because the survey broke it while enumerating others breaking it:**
+a figure carried forward from a dated note is a claim about a tree that has moved, and citing it
+inside a correction does not refresh it. The direction matters too — 36 B read as more headroom
+than the real 26 B, which is the favourable direction, the one that never gets caught.
+
+### 7.2 — `falls_into` is the shipped answer to Class G, and this survey credited it nothing
+
+Aeon's finding, verified here firsthand rather than taken from the relay: `.emp` has a
+`falls_into` proc contract that machine-checks intra-section adjacency. **47 occurrences across
+20 aeon `.emp` files** (`git grep -c falls_into -- '*.emp'`), enforced in **sigil's**
+`crates/sigil-frontend-emp/src/corpus_contracts.rs` (`falls_into_succ`, built from the proc
+buffers and checked at lower time). Class G above says these adjacencies are "an assertion about
+emission order that nothing verifies" and lists no mechanism that could express them. That was a
+gap in the survey.
+
+**⚠ AND IT DOES NOT MOVE THE COUNT — refuse that reading explicitly, because the summary of this
+finding invites it.** "Zero rows in your distribution" reads as *you undercounted the checked
+rows*. Measured here: of the nine symbols named in G1–G5 — `ObjDef_Static`, `OJZ_Reels_Fill`,
+`OJZ_Reel_Speed`, `OJZ_TestPal`, `OJZ_BaseSwap`, `Parallax_Update`,
+`ParallaxConfig_OJZ_Default`, `ParallaxConfig_OJZ_Underwater`, `DeformTable_OJZ_Calm` — **not
+one appears in any `falls_into` declaration.** The two constructs address the same *shape* and
+not the same *sites*: `falls_into` is a source-side declaration about control-flow fallthrough
+between procs; G1–G5 are gate-side assumptions about the layout of data and routine symbols.
+**All five Class G rows remain checked by nothing, and §5's 19 stands.**
+
+What changes is §6's recommendation, and it changes in the cheaper direction: **fixing Class G
+needs no new mechanism designed.** The language already has a machine-checked adjacency
+construct in daily use; the work is expressing these five as it, or as its data-side analogue if
+one is needed, rather than inventing a scheme. That is a smaller and better-grounded ask than
+this note made.
+
+### 7.3 — Aeon's pytest lane is structurally blind to placement (corroborates, does not correct)
+
+Aeon reports 20 placement-shaped files in their pytest lane that read **committed cuts of past
+listings**, so no re-derivation can redden any of them. That is §2's finding arriving from their
+side and by a different parameter: this survey enumerated by what touches placement, theirs by
+what their test lane actually reads. Independent corroboration, not echo.
+
+### 7.4 — Three more sources, and one constraint that is unexpressible
+
+Beyond §3's admitted omission of `map.toml` prose: **A9 and A10 live only in `map.toml` prose**
+(`map.toml:285-288`); **intra-section emission order is unexpressible in `map.toml`** at all
+(`page_cache.emp:926` is live and depends on it); and **`decisions.jsonl` is a fifth source**,
+with 50 cards carrying placement text. The three-source scope was narrower than the population
+by more than the one source §4.2 conceded.
+
+### 7.5 — P6 is UNCHECKED by aeon, and should not be read as confirmed
+
+Aeon did not re-run the Art_Sonic sweep at the current layout — the commit exists and the gate is
+on the build path, but re-running was outside their parcel. **So the 2,773-of-131,073 figure and
+the 5,188 B margin carry this survey's measurement alone**, at the revision named in §1, and no
+second party has reproduced them. Stated here because a confirmation that covers most of a
+document gets read as covering all of it.
