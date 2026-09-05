@@ -43,9 +43,10 @@ self.eval_all(toks, span).map(|v| v != 0).unwrap_or(false)
 `false` is a verdict. `eval_all` returns `None` for an expression that folds to
 Poison (an unresolved symbol) or does not parse, and the `if` answered anyway.
 
-The sibling directives already refuse: `rept` says `unresolved rept count`
-(eval.rs:3338), `while` says `unresolved while condition` (eval.rs:3626), `org`
-says `org needs a constant expression` (eval.rs:4661). `if` was the one block
+The sibling directives already refuse: `exec_rept` says `unresolved rept count`,
+`exec_while` says `unresolved while condition`, `directive_org` says `org needs a
+constant expression` (eval.rs:3364, :3653, :4754 at this tip; grep the strings,
+not the lines). `if` was the one block
 directive that answered without a basis, and it is the one whose answer decides
 what code exists at all. The file's own `resolve_sym` doc comment had already
 written the argument down, about `MOMCPU`/`TRUE`/`FALSE`: *"leaving it undefined
@@ -60,7 +61,8 @@ names the first symbol with no value and refuses. The arm is still skipped so th
 pass has a shape to walk, but the run fails.
 
 `report_unresolved_cond` fires at the site on EVERY pass, and only the CONVERGED
-pass's diagnostics are returned by `run_impl` (eval.rs:208 and :241). That is the
+pass's diagnostics are returned by `run_impl` (its two `return if
+diags.iter().any(...)` sites, eval.rs:212 and :240 at this tip). That is the
 same arrangement `rept` and `while` already use, and it is what makes a forward
 reference legal.
 
@@ -181,18 +183,20 @@ WIDTH-DEFERRED path.
 
 Three stages, and the fault is in how they were joined.
 
-1. On the convergence bonus pass (`eval.rs:216`, `defer_unresolved_jsr_jmp`) the
+1. On the convergence bonus pass (`one_pass_with_defer`, eval.rs:218, with
+   `defer_unresolved_jsr_jmp` set) the
    AS front end turns a `jsr`/`jmp` whose bare-symbol target still folds to
    Poison into a `Fragment::JmpJsrSym`, because that is what a genuine cross-seam
    reference to a sibling `.emp` `pub proc` looks like and it is joined at LINK
    time.
 2. `resolve_layout` is the stage that lowers it, and it already refuses an
-   unresolvable target properly (`relax.rs:775`, `unresolved_abs_target_diag`).
+   unresolvable target properly (`unresolved_abs_target_diag`, called from
+   relax.rs:775 and :791).
 3. The shipped `sigil <file.asm>` command **does not call `resolve_layout`**. It
    goes front end straight to `sigil_link::link`, and `link()` enforced the
-   already-lowered contract with `unreachable!` (`lib.rs:159`, reached one line
-   later than `Section::image_bytes`'s own at `sigil-ir/src/lib.rs:424`, which is
-   why the panic names the IR crate).
+   already-lowered contract with `unreachable!` (sigil-link/src/lib.rs:212 at this
+   tip, and it is reached AFTER `Section::image_bytes`'s own at
+   sigil-ir/src/lib.rs:424, which is why the panic names the IR crate).
 
 Nothing between the deferral and the panic asked what happens when the symbol is
 not cross-seam but simply absent.
