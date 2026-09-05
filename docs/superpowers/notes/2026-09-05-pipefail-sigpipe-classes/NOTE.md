@@ -745,7 +745,22 @@ green on it.
 Every restore was from a byte-verified copy (md5 `ac383365…` for the lint) or from
 `git show HEAD:`, never `git checkout --` over a dirty tree.
 
-## 10.9 Left open by THIS parcel
+## 10.9 Verification, with the tree named
+
+Run from `/home/volence/sonic_hacks/sigil/.claude/worktrees/agent-ab17a08466fecfc17`,
+branch `parcel/pipefail-cmdsubst-hole`, at `081fcb61`, and the log carries that
+`pwd`/`HEAD`/`branch` stamp so it cannot be a green from somewhere else.
+
+| bar | result |
+|---|---|
+| `cargo test --workspace` (`SIGIL_ALLOW_PARTIAL=1`) | exit 0 — **4553 passed, 0 failed, 2 ignored**, `FAILED` appears 0 times, and all three of this parcel's tests are named `ok` IN that log. 4551 → 4553 reconciles: this parcel adds exactly two tests. |
+| `cargo clippy --workspace --all-targets` (no `-D`, so nothing is truncated by fail-fast) | exit 0, and `-- -D warnings` also exit 0; zero `error:`/`warning:` lines across both |
+| `scripts/nightly_source_gates.sh --audit` | exit 0 — `SOURCE_GATES=46 scanned=138 source=45 artifact=87 no-reference=6 unclassified=0`, unchanged from §8. The two new tests name no reference tree, so they do not enter that population. |
+
+Both clippy passes are reported because a `-D warnings` run stops at the first finding
+and its silence would size the problem as "one", not "none".
+
+## 10.10 Left open by THIS parcel
 
 - **the two escape routes of §10.4** — a function's last statement, and `set -e` from
   a sourcer. Instance counts today: one (already adjudicated) and zero.
