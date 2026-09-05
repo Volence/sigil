@@ -1008,3 +1008,48 @@ different one in the same field, one parcel apart.** The first brief named a con
 abstractly ("somewhere under your worktree") when exactly one value worked; the correction named the
 value and dropped the tree. **A path instruction needs BOTH halves, and the template line is: the
 `.target-land` inside YOUR OWN worktree, never the main checkout's.**
+
+### A DIAGNOSTIC RESIDUE ROW WAS HIDING A SILENT ACCEPTANCE: the register fault, 2026-09-05
+
+**Landed `4b6e0378`. Booked as a wording defect, dispatched by me as a wording defect, and the worst
+of its seven outcomes was NO DIAGNOSTIC AT ALL.** Recorded because the row, the brief and the
+reproduction at this seat all understated it in the same direction, and the thing that found it was
+an agent testing the REALISTIC case rather than the minimal one.
+
+**The row said two stories. My dispatch brief, after reproducing, said three. It was SEVEN**,
+including two panics (`jsr <undefined>` exits 101) and one silent pass (`if <undefined>` is quietly
+false at exit 0). Both of those are general, not register specific, and are booked separately.
+
+**⚠ THE PART THAT MATTERS: `dc.l a0` IS SILENTLY ACCEPTED IN ANY FILE THAT ALREADY HAS AN ERROR.**
+Verified firsthand here, not taken from the report. Injecting `dc.l a0` at line 86 of the corpus
+`s2.asm`, the pre-parcel binary produced **5,243 rows and not one naming line 86**; the post-parcel
+binary produces 5,244 with the sorted stderr diff exactly one added line. The mechanism: the register
+defers as a fixup, the front end returns `Err` for unrelated reasons, and the link stage that would
+have refused it is never reached.
+
+**Why every earlier look missed it, and this is the transferable part. A MINIMAL PROBE IS A
+DIFFERENT PROGRAM FROM A REAL ONE.** In isolation `dc.l a0` DOES produce a message, the ugly
+locationless link-stage one, which is what the row recorded and what I reproduced. The silence only
+appears once something else in the file has already failed, because that is what stops the run
+reaching the stage that would refuse it. **A one-line probe systematically cannot see any defect
+whose trigger is another defect**, and a diagnostic residue row is exactly where such a trigger is
+guaranteed to be present in the field and absent in the probe. Where a fault is about error
+REPORTING, probe it inside a program that is already failing.
+
+**Root cause, one rather than several: a register name is not in the symbol table, so an expression
+holding one folds to `Poison`, and POISON IS THE SHAPE OF A FORWARD REFERENCE.** Every consumer did
+what a forward reference deserves, defer it or call it unresolved. The discriminator is cheap and
+was simply never applied: no later pass defines `a0`. Fixed at all 15 consumers, at the point of use,
+with that line's span. **The bar this instance illustrates is the standing one: a property verified
+at the PRODUCER is not a property of the CONSUMERS, and the population to enumerate is always the
+consuming end.** One bespoke check at one producer was landed on 2026-09-05 and made exactly one of
+seven variants read correctly, which is what a producer-side fix buys.
+
+**The corpus table for this parcel reads NOTHING MOVED, and that is INERTNESS rather than a
+measurement**, which the agent stated rather than letting the zero speak. The corpus contains no
+instance of the fault and cannot. The injection is the engagement witness, and without it the table
+reads identically whether the code ran and agreed or never ran at all.
+
+**Over-firing is the dangerous direction for a new refusal and was checked here on both binaries**: a
+symbol legitimately named `a0` still assembles, real addressing modes are untouched, and a genuine
+forward reference still defers instead of being called a register.
