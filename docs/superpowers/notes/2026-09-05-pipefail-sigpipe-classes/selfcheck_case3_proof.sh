@@ -104,7 +104,10 @@ TREE_WRONG=$(arm tree "$TREE_LINE")
 echo
 if [[ $BASE_WRONG == 0 ]]; then
     echo "VACUOUS: the baseline construct never gave a wrong answer here, so this run"
-    echo "says nothing about the fixed one. Raise the worker or run count."
+    echo "says nothing about the fixed one. The message under test is only ~200 bytes,"
+    echo "which puts this arm deep in the racing band where scheduling decides — the"
+    echo "lever is the WRITER'S SIZE, not the worker count (see boundary.sh). Lengthen"
+    echo "the message before reaching for more workers."
     exit 2
 fi
 if [[ $TREE_WRONG != 0 ]]; then

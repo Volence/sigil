@@ -33,7 +33,7 @@ FIXED — the same question, no pipe:
   fixed: 0 wrong answer(s) of 9600
 ```
 
-### THE BRIEF'S FRAMING IS WRONG ON ONE POINT, and it matters
+### 1a. "Serially it cannot appear" is refuted — this part stands
 
 Both the founding commit ("0/4,000 serial") and this parcel's brief ("serially is
 exactly the condition under which this defect cannot appear") state that a serial
@@ -44,15 +44,78 @@ serial trial 1:  unfixed: 1 wrong answer(s) of 9600
 serial trial 2:  unfixed: 7 wrong answer(s) of 9600
 ```
 
-So load does not GATE the fault, it AMPLIFIES it — roughly 44× at 64 workers on 16
-CPUs here. `0/4,000` serial is exactly what a base rate near `1/9600` produces
-(expectation 0.4); it was an under-powered measurement read as an impossibility
-proof. The practical consequence is the opposite of reassuring: a nightly lane that
-runs the audit ONCE, alone, on a machine doing nothing else, still has a real
-per-run chance of going dark. Caveat on my own number in the other direction: my
-"serial" arm is one worker, but the machine was not idle (another agent lane was
-building throughout), so `1–7/9600` is an upper bound on a truly quiet box, not a
-lower one. What is refuted either way is "cannot appear".
+`0/4,000` was never evidence of impossibility: at a base rate near `1/9600`, zero
+hits in 4,000 trials has probability **0.66** — it was the *modal* outcome. An
+under-powered measurement read as a proof.
+
+### 1b. My replacement mechanism was ALSO wrong — CORRECTED, see `boundary.sh`
+
+> **CORRECTED 2026-09-05, same day, after the coordinator's challenge and my own
+> re-measurement. The struck sentence below propagates a triage rule that is
+> backwards for the sites that matter most, which makes it the more dangerous of
+> the two errors. It is struck rather than deleted so nobody re-derives it.**
+
+> ~~So load does not GATE the fault, it AMPLIFIES it — roughly 44× at 64 workers on
+> 16 CPUs here.~~ ~~The practical consequence is the opposite of reassuring: a
+> nightly lane that runs the audit ONCE, alone, on a machine doing nothing else,
+> still has a real per-run chance of going dark.~~
+
+**The variable is the WRITER'S SIZE, not concurrency.** `boundary.sh` sweeps it with
+one worker and no concurrency anywhere, needle on the first line so the match is as
+early as possible:
+
+```
+  writer = bash printf builtin
+    bytes=4798      false-non-match=   0/400     0%  IMPOSSIBLE
+    bytes=7198      false-non-match=   4/400     1%    <- the racing band
+    bytes=9598      false-non-match=  83/400    20%    <- the racing band
+    bytes=10798     false-non-match= 287/400    71%    <- the racing band
+    bytes=14398     false-non-match= 394/400    98%  NEAR-CERTAIN
+    bytes=23998     false-non-match= 400/400   100%  NEAR-CERTAIN
+```
+
+If the writer has already handed over everything it will ever emit, it is finished
+and no signal is delivered — the fault is **impossible**, not rare. If it must still
+issue one more write past the reader's exit, that write lands on a closed pipe — the
+fault is **near-certain**, not rare. Concurrency only decides the narrow racing band
+between.
+
+**But the boundary is NOT "a pipe buffer", and getting that wrong is dangerous in
+the permissive direction.** Three writers, the *same* 65536-byte pipe (read via
+`F_GETPIPE_SZ`, not assumed), same reader, same machine, all serial:
+
+| writer | last size at 0% | first size at ≥95% | vs. the 65536-byte pipe |
+|---|---|---|---|
+| bash `printf` builtin | 4,798 B | 14,398 B | **turns over BELOW it** |
+| `seq` | 23,998 B | 239,998 B | ~4× above |
+| `cat` | 479,998 B | 719,998 B | ~10× above |
+
+A boundary that moves ~100× across writers on a fixed pipe is not the pipe's. What
+governs is how much the writer must still push out past the match **in units of its
+own output buffering**. *(That explanation is inference — no `strace` on this box.
+The per-writer turnovers are measured.)*
+
+So the triage question **"can this writer emit more than a pipe buffer past the
+earliest match?"** would CLEAR a bash-builtin writer at 9,598 bytes that measures
+83/400, and at 14,398 bytes that measures 394/400 — and the shell builtin is the
+writer this repo's scripts actually use. **The usable rule is the smallest turnover,
+not the pipe: treat a shell-builtin writer with more than a few KB past the earliest
+match as near-certain.**
+
+### 1c. The two measurements reconcile — neither replaces the other
+
+The founding site's writer is `printf '%s\n' "${SOURCE_GATES[@]}"`: 46 names, ≈1.1 KB.
+That is in the impossible-to-racing band, which is exactly why it took **9,600
+concurrent** runs to show 44 and why a serial 4,000 showed none. Small writer → rare,
+and scheduling decides. Large writer → near-certain, and nothing decides. My 44/9600
+and the coordinator's 9534/9600 are the same mechanism sampled either side of the
+turnover.
+
+**The triage question is therefore static and per-site, needing no load harness and
+no probability**: *can this writer produce more than a few kilobytes past the
+earliest possible match?* A site that runs once, serially, in the nightly lane over
+a large corpus is in the **near-certain** regime, not the rare one — which is the
+opposite of what the struck sentence above implies.
 
 ---
 

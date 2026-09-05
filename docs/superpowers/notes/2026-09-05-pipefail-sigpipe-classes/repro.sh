@@ -1,12 +1,24 @@
 #!/usr/bin/env bash
-# THE REPRODUCTION FOR THE `pipefail` + SIGPIPE CLASS. It has to run under load,
-# because run serially the fault cannot appear at all.
+# THE REPRODUCTION FOR THE `pipefail` + SIGPIPE CLASS, AT ONE WRITER SIZE.
 #
-# `grep -q` exits the moment it MATCHES. Its writer is then killed by SIGPIPE and
-# exits 141, and `set -o pipefail` hands 141 back as the pipeline's status — so an
-# `if` on that pipeline takes the ELSE branch ON A MATCH. Whether the writer's
-# write(2) lands before grep exits is a scheduling race, which is why running the
-# construct on its own can never show it: only a busy machine can.
+# CORRECTED 2026-09-05. This header first said the reproduction "has to run under
+# load, because run serially the fault cannot appear at all". THAT IS WRONG, and it
+# is recorded here rather than quietly swapped so nobody re-derives it. The
+# governing variable is the WRITER'S SIZE, not concurrency: `boundary.sh` sweeps it
+# with ONE worker and no concurrency anywhere and takes this very construct from
+# 0/400 to 400/400 on size alone.
+#
+# What this file measures is one point on that sweep. Its writer is ~1.4 KB, which
+# lands in the narrow RACING BAND where scheduling decides — which is the only
+# reason it needs thousands of concurrent runs to show anything. A LARGER WRITER
+# FAILS HERE ALMOST EVERY TIME, SERIALLY, ONCE. So do not read a small number out of
+# this file as "the class is rare"; read it as "this SIZE is rare".
+#
+# `grep -q` exits the moment it MATCHES. If the writer still owes output past that
+# point, its next write lands on a closed pipe: SIGPIPE, exit 141, and `pipefail`
+# hands 141 back as the pipeline's status — so an `if` takes the ELSE branch ON A
+# MATCH. If the writer had already emitted everything it will ever emit, it is
+# finished and no signal is ever delivered.
 #
 #   usage: repro.sh [runs-per-arm] [workers]
 #
@@ -87,7 +99,10 @@ FIXED_WRONG=$(arm fixed "$WORK/fixed.sh")
 echo
 if [[ $UNFIXED_WRONG == 0 ]]; then
     echo "VACUOUS: the unfixed arm never gave a wrong answer, so nothing here says"
-    echo "anything about the fixed one. Raise the worker count or the run count."
+    echo "anything about the fixed one. The lever that actually moves the rate is the"
+    echo "WRITER'S SIZE, not the worker count — this arm's writer is ~1.4 KB, which is"
+    echo "in the racing band. Grow the name list (or run boundary.sh) before reaching"
+    echo "for more workers."
     exit 2
 fi
 if [[ $FIXED_WRONG != 0 ]]; then

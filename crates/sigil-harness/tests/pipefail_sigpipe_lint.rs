@@ -1,11 +1,26 @@
 //! A MATCH READ AS A NON-MATCH: `pipefail` OVER AN EARLY-EXITING READER.
 //!
-//! `grep -q` exits the moment it MATCHES. Its writer is then killed by SIGPIPE
-//! and exits 141, and `set -o pipefail` hands 141 back as the pipeline's status —
-//! so an `if` on that pipeline takes the ELSE branch ON A MATCH. Whether the
-//! writer's write(2) lands before the reader exits is a scheduling race, which
-//! makes the fault load-dependent, silent, and asymmetric: it can only ever fire
-//! when the answer was YES.
+//! `grep -q` exits the moment it MATCHES. If its writer still owes output past
+//! that point, the writer's next write(2) lands on a closed pipe: SIGPIPE, exit
+//! 141, and `set -o pipefail` hands 141 back as the pipeline's status — so an `if`
+//! on that pipeline takes the ELSE branch ON A MATCH. It is silent and asymmetric:
+//! it can only ever fire when the answer was YES.
+//!
+//! WHAT DECIDES WHETHER IT FIRES IS THE WRITER'S SIZE, NOT MACHINE LOAD, and that
+//! is worth stating precisely because the intuitive rule is backwards. If the
+//! writer has already handed over everything it will ever emit, no signal is
+//! delivered and the fault is IMPOSSIBLE. If it must still issue one more write
+//! after the reader has gone, the fault is NEAR-CERTAIN. Load only decides the
+//! narrow band between. Measured serially, one worker, no concurrency, in
+//! `docs/superpowers/notes/2026-09-05-pipefail-sigpipe-classes/boundary.sh`: a
+//! bash `printf` writer gives 0/400 at 4,798 bytes and 394/400 at 14,398.
+//!
+//! And the turnover is a property of the WRITER, not of the pipe. Over one
+//! 65,536-byte pipe, the same reader, the same machine: `printf` turns over at
+//! ~5-14 KB (BELOW the pipe), `seq` at ~24-240 KB, `cat` at ~480-720 KB. So
+//! "under a pipe buffer, therefore safe" is not a sound per-site rule — it clears
+//! the shell builtin, which is the writer this repo's scripts actually use, at
+//! sizes where it already fails four times in five.
 //!
 //! It cost this lane a dark nightly lane and a red landing run on a tree that had
 //! not touched the script. It was then fixed AT ONE SITE, which is what this file
@@ -21,9 +36,13 @@
 //!   c. `pipefail` in effect AND the pipeline's STATUS consumed as a decision.
 //!
 //! (b) is a property of the data and cannot be read off the source, so this lint
-//! judges (a) and (c). That is the right direction: a site with (a) and (c) is one
-//! input size away from the fault, and the fix — asking the question without a
-//! pipe, or ending the pipeline in a reader that runs to EOF — costs nothing.
+//! judges (a) and (c) and DELIBERATELY DOES NOT PRICE THE SIZE. That is the right
+//! direction, and it is why the mechanism correction above changed nothing here: a
+//! site with (a) and (c) is one input size away from the fault, today's input size
+//! is not a property anyone re-checks when a corpus grows, and the fix — asking the
+//! question without a pipe, or ending the pipeline in a reader that runs to EOF —
+//! costs nothing. A lint that excused small writers would have to be re-run against
+//! every corpus that ever grows, which is not a lint.
 //!
 //! WHAT IT DOES NOT FLAG, and why each is genuinely safe rather than tolerated:
 //!
@@ -61,28 +80,45 @@ fn repo_root() -> PathBuf {
         .to_path_buf()
 }
 
-/// Directories that hold no shell this repo runs: git's own storage, agent
-/// worktrees (other branches, not this tree), and build output.
-const SKIP_DIRS: &[&str] = &[".git", ".claude", ".worktrees", "target", "node_modules"];
-
-fn walk(dir: &Path, out: &mut Vec<PathBuf>) {
-    let Ok(rd) = std::fs::read_dir(dir) else { return };
-    let mut entries: Vec<PathBuf> = rd.flatten().map(|e| e.path()).collect();
-    entries.sort();
-    for p in entries {
-        let base = p
-            .file_name()
-            .map(|n| n.to_string_lossy().to_string())
-            .unwrap_or_default();
-        if SKIP_DIRS.contains(&base.as_str()) {
-            continue;
-        }
-        if p.is_dir() {
-            walk(&p, out);
-        } else {
-            out.push(p);
-        }
-    }
+/// THE POPULATION IS WHAT THE REPO CARRIES, asked of git rather than of the disk.
+///
+/// A directory walk was the obvious thing and it was wrong twice over. It descended
+/// into `.cargo-target`, so the lint's answer depended on how much had been built —
+/// and, worse, other harness tests plant SHELL SCRIPTS in bed directories under that
+/// same target dir. A lint that reads generated beds can go red because of what
+/// another test was doing at the time, which is a flaky gate, and a flaky gate is
+/// how a real finding gets waved through as "that one again". Nothing on disk but
+/// outside the index is shell this repo runs.
+fn tracked_files() -> Vec<PathBuf> {
+    let root = repo_root();
+    let out = std::process::Command::new("git")
+        .arg("-C")
+        .arg(&root)
+        .args(["ls-files", "-z"])
+        .output()
+        .unwrap_or_else(|e| {
+            panic!(
+                "COULD NOT MEASURE: `git ls-files` could not run in {}: {e}. This lint's \
+                 population is what git tracks; without it, it has no population at all \
+                 and its silence would say nothing.",
+                root.display()
+            )
+        });
+    assert!(
+        out.status.success(),
+        "COULD NOT MEASURE: `git ls-files` failed in {} ({}): {}",
+        root.display(),
+        out.status,
+        String::from_utf8_lossy(&out.stderr).trim()
+    );
+    let mut files: Vec<PathBuf> = out
+        .stdout
+        .split(|b| *b == 0)
+        .filter(|s| !s.is_empty())
+        .map(|s| root.join(String::from_utf8_lossy(s).to_string()))
+        .collect();
+    files.sort();
+    files
 }
 
 /// One body of shell, with the label a finding is reported under.
@@ -99,8 +135,7 @@ struct Unit {
 /// is where one of this class's two live instances was found.
 fn shell_units() -> Vec<Unit> {
     let root = repo_root();
-    let mut files = Vec::new();
-    walk(&root, &mut files);
+    let files = tracked_files();
 
     let mut units = Vec::new();
     for f in &files {
@@ -475,9 +510,15 @@ fn no_pipefail_decision_rests_on_an_early_exiting_reader() {
              early-exiting reader across {units} shell unit(s).\n\n\
              The last stage exits before its input is exhausted, the writer is killed by \
              SIGPIPE and exits 141, and `pipefail` hands 141 back as the pipeline's \
-             status — so a MATCH reads as a NON-MATCH. It fires only when the writer is \
-             still writing, which makes it load-dependent and invisible to a serial run \
-             of the same check.\n\n\
+             status — so a MATCH reads as a NON-MATCH.\n\n\
+             It fires when the writer still owes output past the earliest match, and \
+             that — NOT machine load — is what decides it. Measured serially with no \
+             concurrency at all, a bash `printf` writer gives 0/400 at 4.8 KB and \
+             394/400 at 14.4 KB. Do not excuse a site because it runs once, alone, in \
+             a nightly lane: a writer enumerating a large corpus there is in the \
+             NEAR-CERTAIN regime, not the rare one. The turnover is a property of the \
+             writer, not of the pipe, and for a shell builtin it sits well BELOW the \
+             pipe's capacity.\n\n\
              Ask the question without a pipe (a shell loop, `[[ $s == *needle* ]]`), or \
              end the pipeline in a reader that runs to EOF (`sort`, `awk`, `wc`).\n\n",
         );
