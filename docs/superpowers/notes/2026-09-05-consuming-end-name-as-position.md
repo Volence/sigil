@@ -649,3 +649,38 @@ and only one of them did. A phased-row marker in the listing retires the whole c
 
 **S9 is second, and for a different reason:** it is the only site whose fix is not wholly aeon's,
 and the only one where the tempting fix is the forbidden one.
+
+## Verified at the landing — what the overseer checked firsthand, and one wrong doubt
+
+Three claims were re-derived at this seat before this note was accepted, because two of them
+correct a mechanism that reached this lane through a relay and one asserts a live defect in
+another repo's tool.
+
+**1. The pytest-lane mechanism — CONFIRMED, and it corrects the relayed framing.** At aeon
+`305af222`, `build.sh` runs `python3 -m pytest "${TOOLS}"` at **line 612** and the post-build
+listing gates under `--built-after` at **line 772+**. So no test in that lane can observe this
+build's placement whatever it reads. And it is deliberate: `build.sh`'s own header (lines 64-74)
+records that the pre-build listing-reading version *"was twice not the subject"* and was moved to
+committed listing cuts for that reason. **Aeon's "structurally blind to placement" is right about
+the reading and wrong about the implication** — this is a documented design decision with the
+real gates elsewhere, not an accidental blindness.
+
+**2. `s4lint.py`'s `SST_FIELDS` is already wrong — CONFIRMED, after a wrong doubt worth
+recording.** The first check ran against the head of the table and found six offsets *matching*
+`engine/objects/sst.emp` exactly, which read as a refutation. It was not: **the table agrees
+through `art_tile @$14` and diverges from `$16` onward.** `SST_priority @$16` names a field the
+struct does not have; the struct's `$16`/`$17`/`$18` are `width_pixels`/`height_pixels`/`anim`,
+each of which `s4lint` places two bytes late. **The sample was drawn from the agreeing prefix** —
+a table that is right for nine rows and then shifts is exactly the shape a head-sample clears.
+Sample the tail, or diff the whole table, and never accept a prefix as the population.
+
+**3. The latency argument — CONFIRMED, with the exit status checked.**
+`git grep -l "SST_" -- '*.asm'` at `305af222` **exits 1 with zero matching files**, against
+**3** tracked `.asm` files in the whole tree. The defect is real and has no live subject today.
+*(First attempt piped that grep into `head` and read `$?` from the pipeline — measuring `head`,
+not the grep. The rule this lane already carries: an absence is only a finding once the exit
+status came from the command you meant.)*
+
+**Not verified here, and left as the agent's measurement alone:** the four-versus-three
+`routine_extent` count, the field-by-field totals in S1 (six stale / four phantom / seven
+unlisted — the shape is confirmed, the counts are not), and the S9 name-equality reading.
