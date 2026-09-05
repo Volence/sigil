@@ -208,7 +208,9 @@ pub fn md5_hex(data: &[u8]) -> String {
     let (mut a0, mut b0, mut c0, mut d0) =
         (0x6745_2301u32, 0xefcd_ab89u32, 0x98ba_dcfeu32, 0x1032_5476u32);
 
-    for chunk in msg.chunks_exact(64) {
+    // `as_chunks::<64>().0` — the padding above guarantees a whole number of
+    // 64-byte blocks, so the remainder is empty by construction.
+    for chunk in msg.as_chunks::<64>().0 {
         let mut m = [0u32; 16];
         for (i, slot) in m.iter_mut().enumerate() {
             *slot = u32::from_le_bytes([
