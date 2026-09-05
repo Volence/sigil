@@ -1,5 +1,5 @@
 before md5: 00238cf8dfc0e06a8e47eba11890b0dc  /home/volence/sonic_hacks/sigil/.claude/worktrees/agent-a8a6251ffb509859f/.runlogs/sigil-before
-after  md5: 0c373d7cc6c46b93cdfa2a77c0a95cac  /home/volence/sonic_hacks/sigil/.claude/worktrees/agent-a8a6251ffb509859f/.target-land/release/sigil
+after  md5: 203ff135f880bac18ef883feff5816f2  /home/volence/sonic_hacks/sigil/.claude/worktrees/agent-a8a6251ffb509859f/.target-land/release/sigil
 corpus rev: e45ebf332f39987424ca3102e50c717628f71269
 corpus dirty paths: 0
 

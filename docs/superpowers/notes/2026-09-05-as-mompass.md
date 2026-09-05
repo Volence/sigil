@@ -219,6 +219,23 @@ Runner: `cargo test -p sigil-frontend-as --test as_mompass_builtin`, ten tests,
 all with expectations derived from named asl probes quoted in each test's doc
 comment.
 
+### The `fatal` rounds
+
+`redfirst_fatal.sh`, log archived, same bars, baseline `a77ef3b0`. Runner
+`cargo test -p sigil-frontend-as --test as_fatal_survives_its_pass`, five tests.
+
+| mutation | result | reds |
+|---|---|---|
+| the carry removed (`let _ = terminal_fatal;`) | 3 passed, 2 failed | the shape returns to bytes and exit 0 |
+| the raise-time label ignored (`if true {`) | 4 passed, **1 failed** | ONLY the include test, quoting `inc/b.asm(1)` |
+| the dedupe removed | 4 passed, **1 failed** | the same fatal reported twice |
+| (restored) | ok, 5 passed and 10 passed | |
+
+The second round is the discriminating one, and it was designed to be: a
+single-file span renders correctly with or without the label capture, so a
+mutation that red everything would not have shown the capture was load-bearing.
+It reds exactly one test and prints the misattribution in the failure message.
+
 ---
 
 ## The corpus decomposition
@@ -294,40 +311,122 @@ edits, untouched).
 
 ---
 
-## What this parcel newly exposes but did not cause
+## The `fatal` that was dropped, and the correction to my own control
 
-A `fatal` that fires only on a non-converged pass is **silently discarded**:
-`run_impl` returns only the converged pass's diagnostics, and a pass that
-aborted via `fatal` is followed by another pass that does not.
+The overseer held the branch on this shape, and was right to:
 
 ```
-    m_fatal.asm:  if MOMPASS=1 / fatal "first pass only" / endif / dc.b $11
-    asl    exit 3, assembly terminated
-    sigil  exit 0, bytes 11 00 02
+    if MOMPASS=1 / fatal "first-iteration problem" / endif / dc.b $11
+
+    asl                            exit 3, assembly terminated
+    sigil master                   exit 1, refuses the unresolved condition
+    sigil with MOMPASS, unfixed    exit 0, NO OUTPUT AT ALL
 ```
 
-**This is pre-existing and general, and the control proves it carries no
-MOMPASS.** `ctrl_fatal.asm` fires its `fatal` from a forward `:=` that is 0 on
-the first pass and 2 later, with `MOMPASS` nowhere in the file:
+Quieter than master and quieter than the reference, on the strongest refusal the
+language has.
+
+### My first control was confounded, and the framing it supported was wrong
+
+The first version of this note booked the discard as "pre-existing and general",
+on `ctrl_fatal.asm`: a `fatal` under `if V = 0` with `V := W` and `W` forward,
+no `MOMPASS` in the file, identical before and after (exit 0, `11 EE`).
+
+**That probe never reached the discard.** `V` folds to Poison on iteration 1, so
+the arm is SKIPPED and the `fatal` does not execute at all. The identical
+before/after was real and meant nothing: there was nothing to drop. The probe
+could not have distinguished my explanation from the truth, which is the same
+defect class the brief warned about and the second time in this parcel that I
+banked reasoning I had not run. Probe `ctrl_vprobe` isolates it: `dc.b V` emits
+`02` under BOTH asl and sigil, so the two agree about `V` and the divergence in
+`ctrl_fatal` is asl evaluating an undefined symbol as 0 on its first pass where
+sigil poisons it, which is a different, already documented difference.
+
+### Re-derived: MOMPASS is the only route I could construct
+
+The discard needs a condition with a VALUE on iteration 1 that is TRUE there and
+FALSE later. Three further controls all came back LOUD on master:
+
+| control | mechanism | master | asl |
+|---|---|---|---|
+| `ctrl2_ifndef` | `ifndef` before the definition | exit 1, reported | exit 3 |
+| `ctrl3_relax` | a label moved by operand relaxation | exit 1, reported | exit 3 |
+| `co_fatal_plain` | unguarded | exit 1, reported | exit 3 |
+
+One structural reason covers all three: **a `fatal` aborts its pass, which
+truncates the env, so whatever would flip the condition on a later pass never
+runs and the `fatal` re-fires on every pass.** For the flip to survive it has to
+come from something BEFORE the `fatal`, and anything before it has the same
+value on every iteration. `MOMPASS` is the exception, because it flips for a
+reason internal to the assembler rather than a source fact.
+
+So this parcel did not widen a general fault. It created the only population
+there is, which makes the hold right for a sharper reason than either of us had.
+
+### The census turned out not to be needed
+
+I said the fix needed a static census of every corpus `fatal` first. It does
+not, and what replaces it is a measurement rather than a count: a three-way run
+over every root there is.
+
+| root | MASTER | MOMPASS | +FATALFIX | MOMPASS vs FATALFIX |
+|---|---|---|---|---|
+| s2disasm `s2.asm` | exit 1, 5254 | exit 1, 5247 | exit 1, 5247 | byte-identical |
+| s1disasm `sonic.asm` | exit 1, 68 | exit 1, 50 | exit 1, 50 | byte-identical |
+| skdisasm `sonic3k.asm` | exit 1, 2135 | exit 1, 2132 | exit 1, 2132 | byte-identical |
+| aeon `debugger.asm` | exit 1, 23 | exit 1, 23 | exit 1, 23 | byte-identical |
+| aeon `demo/game_root.asm` | exit 0, 0 | exit 0, 0 | exit 0, 0 | byte-identical |
+| aeon `sonic4/game_root.asm` | exit 0, 0 | exit 0, 0 | exit 0, 0 | byte-identical |
+
+stdout AND stderr identical in all six. The two roots that raise a `fatal` at
+all raise it on every pass and already reported it: s1disasm's is `sound/z80.asm(229)`,
+skdisasm's is `Sound/Z80 Sound Driver.asm(345)`. **No root has a dropped
+`fatal`**, so the fix adds nothing anywhere except the shape it was written for.
+
+### Terminating was tried first, and measured
+
+asl literally terminates, so a hard stop is the faithful reading, and it was
+implemented first. It is wrong here, and the reason is a number rather than an
+argument: it cut s1disasm from **50 located diagnostics to 1** and skdisasm from
+**2132 to 1**, and in both cases the single survivor was a line the run already
+printed. So the fix CARRIES instead: the run converges exactly as before and any
+`fatal` raised on any pass is added to the returned diagnostics, deduped. That
+is strictly additive, so it can make a run louder and never quieter.
+
+### A carried span misattributes, shown rather than supposed
+
+The source map is rebuilt every pass and ids are handed out in splice order, so
+a file spliced only on the raising pass shifts every later id. Probe `co_map2`
+puts the `fatal` in `inc/c.asm`, included only under `if MOMPASS=1`, with four
+more includes after it:
 
 ```
-    asl            exit 3
-    sigil BEFORE   exit 0,  11 EE
-    sigil AFTER    exit 0,  11 EE     (identical, so the parcel changed nothing here)
+    carrying the bare span     inc/b.asm(1): error: fatal from inside an included file
+    capturing the label        error: inc/c.asm(1): fatal from inside an included file
 ```
 
-What the parcel DOES change is reachability. Before, `if MOMPASS=1 / fatal`
-refused loudly (exit 1, "unresolved if condition"); now it is evaluated and the
-`fatal` is lost. The population is real: `sound/_smps2asm_inc.asm(238)` and
-`(282)` are `if (MOMPASS=1)&&(DEFINED(loc))` guarding a `fatal`, live on the
-`SonicDriverVer=1` path that s1disasm uses. `message` under the same guard has
-the same shape (`m_msg`: asl prints it on pass 1, sigil prints nothing).
+A real file, a real line, and the wrong one. The `file(line)` is therefore
+captured against the raising pass's own map at raise time, and used whenever the
+returning map disagrees. Probe `co_map`, with fewer includes, shows the other
+failure mode of the bare span: the id falls off the end of the map and the
+diagnostic renders with no location at all.
 
-**Not fixed here, deliberately.** The fix is a hard stop when any pass sets
-`aborted`, which is a byte-affecting change to a different fault with its own
-population, and riding it on an unrelated parcel is how two changes become one
-unattributable result. Booked in the gap ledger with a kill condition, and
-TAGGED for the overseer.
+### Keyed on `fatal`, not on `aborted`
+
+`aborted` is set by five things: `fatal`, `end`, include-nesting overflow, the
+`while` budget, and the undeclared-processor refusal. `end` sits at the bottom
+of every well-formed file in all three corpora, so a fix keyed on `aborted`
+would fire on all of them. `fatal` needs its own signal, and has one.
+
+### Scope held: `warning` is still dropped
+
+A `warning` under the same guard still vanishes (asl prints it on its first
+pass, sigil prints nothing, exit 0 either way). Pinned as a test so it reads as
+a decision rather than an oversight, and booked. `warning` is not separable on
+the argument that carries `fatal`: asl treats it as a diagnostic and keeps
+assembling, and prints one once per pass rather than once per run, so a later
+pass genuinely does supersede it. Widening to it needs the census of
+pass-dependent diagnostics that `fatal` turned out not to need.
 
 ---
 
@@ -341,13 +440,19 @@ TAGGED for the overseer.
   A green result from this run does NOT mean those rows passed, it means they
   were not run."* The banner fired in 116 test processes. **The byte gates did
   not execute. This note does not claim they passed.**
-* **Totals**, identical across two runs (captured and `--nocapture`):
-  **4608 passed, 0 failed, 2 ignored**, across 404 result lines, exit 0. The two
+* **Totals** after the `fatal` fix: **4613 passed, 0 failed, 2 ignored**, across
+  405 result lines, exit 0. (Before it, identical across two runs, captured and
+  `--nocapture`: 4608 passed, 0 failed, 2 ignored, 404 result lines.) The two
   ignored are `sigil_diff_reports_byte_identity` ("reads the aeon source tree")
   and `secondary_pin_classes_match_the_hand_typed_baseline` (retired by Wave-B
   B-0). No failing names, because there are none.
 * **No emulator was touched.** Nothing here wanted runtime confirmation.
-* **No aeon build.** The three roots were read; `AEON_DIR` was never set.
+* **No aeon build.** The three roots were read; `AEON_DIR` was never set. aeon
+  moved under this parcel while it ran, from `2be6020a` to `747ed40e` (the owner
+  commits live), so the three-root assertion is quoted at the SHA each run saw
+  and both runs were clean.
+* **`warning` and `message` on a non-final pass are still dropped.** Scoped out
+  deliberately, pinned as a test, booked.
 * **The full s2disasm ROM was never assembled by the blessed asl without
   errors**, and cannot be: upstream asl Bld 212 refuses s2disasm's `jsrto` macro
   137 times. Every asl VALUE in this note comes instead from a clean exit-0 run,
@@ -357,7 +462,8 @@ TAGGED for the overseer.
 
 ## Anything in this brief you concluded was wrong
 
-Four things, one of which was mine rather than the brief's and is the largest.
+Five things. The first two are mine rather than the brief's, and the first is
+the largest thing in the parcel: it was found by the overseer's hold, not by me.
 
 **1. The brief's central worry does not materialise, and the reason is in the
 corpus rather than in the semantics.** The brief framed this as byte-affecting
@@ -370,6 +476,20 @@ got right, because the `=2` site's verdict does differ between the two candidate
 designs, but the risk of emitting different code from the same source was zero
 for this corpus before the first line was written. Reading the twelve sites
 should be step one of a parcel like this, ahead of any theory.
+
+**0. My "pre-existing and general" framing of the dropped `fatal` was wrong, and
+the control that supported it was confounded.** This is the largest correction
+in the parcel and it is written up in full above. `ctrl_fatal.asm` never reached
+the discard: its `fatal` sits behind a Poison condition and does not execute, so
+its identical before/after meant nothing. Three replacement controls all come
+back loud on master, for the structural reason that a `fatal` truncates its own
+pass and therefore re-fires on every one. `MOMPASS` is the only route to the
+discard I could construct, so the parcel did not widen a general fault, it
+created the only population there is. I also said the fix needed a static census
+of every corpus `fatal`; it did not, and a three-way run over all six roots
+bounds it exactly, at zero. And the fix I would have written from the brief's
+own logic, a hard stop matching asl, is measurably wrong: it cuts s1disasm from
+50 diagnostics to 1 and skdisasm from 2132 to 1.
 
 **2. I put a false mechanism in my own first commit message, and my own
 red-first run refuted it an hour later.** I wrote that a running count "would

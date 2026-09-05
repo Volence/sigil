@@ -1,0 +1,43 @@
+MASTER   md5: 00238cf8dfc0e06a8e47eba11890b0dc  (sigil master 3c3f625c)
+MOMPASS  md5: 07b1b98a756658ed138d52800acd4ce4  (branch tip 9f579155)
+FATALFIX md5: 99b6c8b4436b880cdeb6fd9f80a3c8ef  (branch + terminal fatal)
+
+-------------------------------------------------------------
+s2disasm   (/home/volence/sonic_hacks/s2disasm-mompass-clean/s2.asm)
+   MASTER    exit=1  diagnostics=5254
+   MOMPASS   exit=1  diagnostics=5247
+   FATALFIX  exit=1  diagnostics=5247
+   MOMPASS vs FATALFIX: stdout AND stderr byte-identical
+-------------------------------------------------------------
+s1disasm   (/home/volence/sonic_hacks/s1disasm/sonic.asm)
+   MASTER    exit=1  diagnostics=68
+   MOMPASS   exit=1  diagnostics=50
+   FATALFIX  exit=1  diagnostics=50
+   MOMPASS vs FATALFIX: stdout AND stderr byte-identical
+-------------------------------------------------------------
+skdisasm   (/home/volence/sonic_hacks/skdisasm/sonic3k.asm)
+   MASTER    exit=1  diagnostics=2135
+   MOMPASS   exit=1  diagnostics=2132
+   FATALFIX  exit=1  diagnostics=2132
+   MOMPASS vs FATALFIX: stdout AND stderr byte-identical
+-------------------------------------------------------------
+aeon-debugger   (/home/volence/sonic_hacks/aeon/engine/debug/debugger.asm)
+   MASTER    exit=1  diagnostics=23
+   MOMPASS   exit=1  diagnostics=23
+   FATALFIX  exit=1  diagnostics=23
+   MOMPASS vs FATALFIX: stdout AND stderr byte-identical
+-------------------------------------------------------------
+aeon-demo   (/home/volence/sonic_hacks/aeon/games/demo/game_root.asm)
+   MASTER    exit=0  diagnostics=0
+   MOMPASS   exit=0  diagnostics=0
+   FATALFIX  exit=0  diagnostics=0
+   MOMPASS vs FATALFIX: stdout AND stderr byte-identical
+-------------------------------------------------------------
+aeon-sonic4   (/home/volence/sonic_hacks/aeon/games/sonic4/game_root.asm)
+   MASTER    exit=0  diagnostics=0
+   MOMPASS   exit=0  diagnostics=0
+   FATALFIX  exit=0  diagnostics=0
+   MOMPASS vs FATALFIX: stdout AND stderr byte-identical
+-------------------------------------------------------------
+aeon dirty paths after: 1
+FATAL3WAY-END
