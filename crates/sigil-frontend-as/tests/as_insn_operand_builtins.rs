@@ -1,3 +1,12 @@
+// A TAB in these quotations is the AS mnemonic COLUMN, and the column is
+// load-bearing in this crate: an indented head is an instruction, a column-0
+// head is a label. Spacing them to please a prose lint would falsify the
+// quoted source and the quoted asl listing, so the lint is off HERE and the
+// text stays verbatim.
+// (The module doc comment below quotes one too, and an inner
+// attribute is the only spelling that reaches a `//!` run.)
+#![allow(clippy::tabs_in_doc_comments)]
+
 //! The front-end builtin layer over a 68000 INSTRUCTION operand.
 //!
 //! `dc.b`/`dc.w`/`dc.l` route their operands through `expand_operand_builtins`:

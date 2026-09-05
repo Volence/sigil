@@ -80,6 +80,12 @@ fn refusal(src: &str) -> Vec<String> {
         .collect()
 }
 
+// A TAB in these quotations is the AS mnemonic COLUMN, and the column is
+// load-bearing in this crate: an indented head is an instruction, a column-0
+// head is a label. Spacing them to please a prose lint would falsify the
+// quoted source and the quoted asl listing, so the lint is off HERE and the
+// text stays verbatim.
+#[allow(clippy::tabs_in_doc_comments)]
 /// `strstr` inside `substr`'s POSITION argument, with the `substr` consumed by
 /// an outer `val`. This is the corpus construct with the user `function`
 /// removed, so it isolates the nesting from argument substitution.
@@ -100,6 +106,8 @@ fn strstr_in_the_position_argument_of_a_nested_substr() {
     assert_eq!(bytes(src), vec![0x00, 0x00, 0x10, 0x00]);
 }
 
+// The tab below is the AS mnemonic column, quoted verbatim from an asl listing.
+#[allow(clippy::tabs_in_doc_comments)]
 /// `strlen` inside `substr`'s LENGTH argument. `strlen("JmpTo_Foo")` is 9, which
 /// runs past the end of the tail and clamps: asl's answer is the whole tail, so
 /// the extracted name is still `Foo`. A length that did NOT clamp would name a
@@ -121,6 +129,8 @@ fn strlen_in_the_length_argument_of_a_nested_substr() {
     assert_eq!(bytes(src), vec![0x00, 0x00, 0x10, 0x00]);
 }
 
+// The tab below is the AS mnemonic column, quoted verbatim from an asl listing.
+#[allow(clippy::tabs_in_doc_comments)]
 /// Both at once, which is the exact body of `extractJmpToName`, and reached
 /// through the user `function` so that argument substitution (which
 /// parenthesises every substituted argument) is in the path too. The two
@@ -179,6 +189,8 @@ fn a_computed_name_that_no_label_defines_is_still_refused() {
     );
 }
 
+// The tab below is the AS mnemonic column, quoted verbatim from an asl listing.
+#[allow(clippy::tabs_in_doc_comments)]
 /// The inertness half of the fix, and the reason it can be reasoned about
 /// without running the byte gates: the new expansion is the IDENTITY on any
 /// operand that does not spell one of the three builtin heads immediately
