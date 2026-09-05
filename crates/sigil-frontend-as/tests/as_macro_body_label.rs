@@ -1,0 +1,277 @@
+//! A PC label written in a macro / `rept` / `irp` / `while` BODY belongs to the
+//! expansion INSTANCE it is written in, and to nothing else.
+//!
+//! asl gives each instance its own namespace for these names, chained inward to
+//! outward: the body that writes the label reads it back, a nested expansion
+//! reads its enclosing one, and everybody else — the outer body after the inner
+//! expansion returned, a sibling expansion, file level — gets
+//! `#1010 symbol undefined`. Sigil bound every one of them globally, which had
+//! two visible consequences: a name asl says does not exist resolved, and a
+//! macro invoked twice produced `symbol redefined by section` from the linker on
+//! programs asl assembles without complaint.
+//!
+//! Expectations derived from asl 1.42 Beta [Bld 212]
+//! (`s1disasm/build_tools/Linux-x86_64/asl`, md5
+//! `61e672562465725a8c102288a7da9098`) with Sonic 1's own flags minus `-E`/`-c`.
+//! Probes `p1`–`p9` are committed under
+//! `docs/superpowers/notes/2026-09-05-as-macro-body-label-probes/` with their
+//! verbatim listings and a three-run stability hash for every one of them.
+//!
+//! EVERY FIXTURE HERE INVOKES ITS MACRO MORE THAN ONCE, AT ADDRESSES THAT
+//! DIFFER. A macro invoked once cannot distinguish "each instance owns the name"
+//! from "the last definition wins", and a label whose address is the same under
+//! both readings proves nothing — the byte is identical either way. A
+//! single-invocation fixture in this file, or one whose two expansions sit at the
+//! same address, is a bug in the file.
+
+use sigil_frontend_as::{assemble, Options};
+
+/// Assemble AND LINK, for the cells whose evidence is BYTES.
+fn bytes(src: &str) -> Vec<u8> {
+    let module = assemble(src, &Options::default()).expect("assemble");
+    let linked = sigil_link::link(&module.sections, &sigil_ir::SymbolTable::new()).expect("link");
+    sigil_link::flatten(&linked, 0x00)
+}
+
+/// Assemble and link, expecting a REFUSAL from either stage, and hand back the
+/// messages. Both stages are in the helper because the refusal this file is
+/// about arrives from the LINKER — the front end leaves the unresolvable name as
+/// a fixup target and the link is where it has nowhere to go — while a front-end
+/// refusal for the same source would be just as correct an answer.
+fn refusal(src: &str) -> Vec<String> {
+    let module = match assemble(src, &Options::default()) {
+        Ok(m) => m,
+        Err(diags) => return diags.into_iter().map(|d| d.message).collect(),
+    };
+    match sigil_link::link(&module.sections, &sigil_ir::SymbolTable::new()) {
+        Ok(_) => panic!("expected a refusal, the source assembled and linked"),
+        Err(diags) => diags.into_iter().map(|d| d.message).collect(),
+    }
+}
+
+fn head() -> &'static str {
+    "\tcpu\t68000\n\tpadding\toff\n\torg\t0\n"
+}
+
+/// probe `p1`. The macro runs twice, four bytes apart, and reads its own label
+/// back each time.
+///
+/// WHAT OTHER ANSWER COULD THIS HAVE GIVEN: `$0004` on BOTH read lines, which is
+/// what a global binding whose second expansion overwrote the first produces —
+/// and is what sigil would emit if the definition were global and the linker did
+/// not refuse it first. The two expansions are deliberately at different
+/// addresses so that answer is a different byte string, not the same one.
+#[test]
+fn a_macro_body_label_reads_back_per_expansion_instance() {
+    let src = format!(
+        "{}mi\tmacro\nLi:\tdc.w\t$1111\n\tdc.w\tLi\n\tendm\n\tmi\n\tmi\n\tdc.w\t$4444\n",
+        head()
+    );
+    assert_eq!(
+        bytes(&src),
+        vec![0x11, 0x11, 0x00, 0x00, 0x11, 0x11, 0x00, 0x04, 0x44, 0x44],
+        "asl p1: 1111 0000 / 1111 0004 / 4444"
+    );
+}
+
+/// probe `p2`, the `end-start` shape s2's `s2.macrosetup.asm` actually writes.
+/// The two expansions have DIFFERENT SIZES, so the difference `Ef-Sf` is $0003
+/// in the first and $0005 in the second.
+///
+/// WHAT OTHER ANSWER COULD THIS HAVE GIVEN: any binding that did not give each
+/// instance its own `Sf` and `Ef` produces the same difference twice, whichever
+/// value it picks. The unequal `ds.b` sizes are what make the pair of
+/// differences the discriminator rather than the pair of addresses.
+#[test]
+fn a_forward_reference_inside_the_body_reads_its_own_expansion() {
+    let src = format!(
+        "{}mf\tmacro\tn\nSf:\tds.b\tn\n\tdc.w\tEf-Sf\nEf:\n\tendm\n\tmf\t1\n\tmf\t3\n\tdc.w\t$4444\n",
+        head()
+    );
+    assert_eq!(
+        bytes(&src),
+        vec![0x00, 0x00, 0x03, 0x00, 0x00, 0x00, 0x00, 0x05, 0x44, 0x44],
+        "asl p2: ds.b 1 / 0003 / ds.b 3 / 0005 / 4444"
+    );
+}
+
+/// probe `e12` of the `exitm` set — the shape that opened this parcel. A macro
+/// body's label, read from FILE LEVEL.
+///
+/// WHAT OTHER ANSWER COULD THIS HAVE GIVEN: `A0 A1 FF 00 00 00 01`, which is
+/// what sigil emitted before this file existed, having bound `lbl12` at address
+/// 1. asl reports `symbol undefined` and its symbol table holds nothing.
+#[test]
+fn an_expansion_label_is_undefined_at_file_level() {
+    let src = format!(
+        "{}m12\tmacro\n\tdc.b\t$A0\nlbl12:\tdc.b\t$A1\n\tendm\n\tm12\n\tm12\n\tdc.b\t$FF\n\tdc.l\tlbl12\n",
+        head()
+    );
+    let msgs = refusal(&src);
+    assert!(
+        msgs.iter().any(|m| m.contains("lbl12") && m.contains("unresolved")),
+        "expected an unresolved-symbol refusal naming `lbl12`, got: {msgs:?}"
+    );
+}
+
+/// probe `p3`. NESTED: the inner macro writes the label, the OUTER body reads it
+/// after the inner expansion has returned. asl: `#1010`, twice.
+///
+/// WHAT OTHER ANSWER COULD THIS HAVE GIVEN: `1111 0000 1111 0004 4444` — the
+/// bytes an "anything inside any expansion is visible to anything else inside an
+/// expansion" rule produces. That rule passes the p4 test below and fails here,
+/// and the two are the pair that pins the chain to the LIVE stack.
+#[test]
+fn an_inner_expansions_label_is_undefined_in_the_outer_body() {
+    let src = format!(
+        "{}inner3\tmacro\nNi:\tdc.w\t$1111\n\tendm\nouter3\tmacro\n\tinner3\n\tdc.w\tNi\n\tendm\n\touter3\n\touter3\n\tdc.w\t$4444\n",
+        head()
+    );
+    let msgs = refusal(&src);
+    assert!(
+        msgs.iter().any(|m| m.contains("Ni") && m.contains("unresolved")),
+        "expected an unresolved-symbol refusal naming `Ni`, got: {msgs:?}"
+    );
+}
+
+/// probe `p4`. NESTED the other way: the OUTER macro writes the label and the
+/// INNER macro it calls reads it. asl resolves it, per instance.
+///
+/// WHAT OTHER ANSWER COULD THIS HAVE GIVEN: a refusal, which is what an
+/// exemption drawn around "the innermost expansion only" produces — and `$0004`
+/// on both read lines, which is what a global binding produces. Three candidate
+/// rules, three different observable answers.
+#[test]
+fn an_enclosing_expansions_label_is_visible_to_a_nested_one() {
+    let src = format!(
+        "{}inner4\tmacro\n\tdc.w\tNo\n\tendm\nouter4\tmacro\nNo:\tdc.w\t$2222\n\tinner4\n\tendm\n\touter4\n\touter4\n\tdc.w\t$4444\n",
+        head()
+    );
+    assert_eq!(
+        bytes(&src),
+        vec![0x22, 0x22, 0x00, 0x00, 0x22, 0x22, 0x00, 0x04, 0x44, 0x44],
+        "asl p4: 2222 0000 / 2222 0004 / 4444"
+    );
+}
+
+/// probe `p5`. A SIBLING expansion's label — both reads happen inside an
+/// expansion, neither inside the one that wrote the name.
+///
+/// WHAT OTHER ANSWER COULD THIS HAVE GIVEN: `$0000` and `$0002`, the addresses
+/// the two `d5a` expansions wrote, under a rule that kept expansion labels in one
+/// shared pool instead of one pool per instance.
+#[test]
+fn a_sibling_expansions_label_is_undefined() {
+    let src = format!(
+        "{}d5a\tmacro\nDx:\tdc.w\t$1111\n\tendm\nd5b\tmacro\n\tdc.w\tDx\n\tendm\n\td5a\n\td5b\n\td5a\n\td5b\n\tdc.w\t$4444\n",
+        head()
+    );
+    let msgs = refusal(&src);
+    assert!(
+        msgs.iter().any(|m| m.contains("Dx") && m.contains("unresolved")),
+        "expected an unresolved-symbol refusal naming `Dx`, got: {msgs:?}"
+    );
+}
+
+/// probe `p6`. All three PC-label SPELLINGS, in one twice-run body: a colon
+/// label on its own line, a colon-less column-0 label, and a label on a data
+/// line.
+///
+/// WHAT OTHER ANSWER COULD THIS HAVE GIVEN: the second expansion's three
+/// addresses ($0008/$000A/$000C) printed in the first expansion too. It also
+/// discriminates a rule drawn around ONE spelling: exempting only the colon form
+/// leaves `Cb` reading `$000A` in both expansions while `Ca` and `Cc` are right.
+#[test]
+fn all_three_pc_label_spellings_localize() {
+    let src = format!(
+        "{}msp\tmacro\nCa:\n\tdc.w\tCa\nCb\n\tdc.w\tCb\nCc:\tdc.w\t$1111\n\tdc.w\tCc\n\tendm\n\tmsp\n\tmsp\n\tdc.w\t$4444\n",
+        head()
+    );
+    assert_eq!(
+        bytes(&src),
+        vec![
+            0x00, 0x00, 0x00, 0x02, 0x11, 0x11, 0x00, 0x04, 0x00, 0x08, 0x00, 0x0A, 0x11, 0x11,
+            0x00, 0x0C, 0x44, 0x44
+        ],
+        "asl p6: 0000 0002 1111 0004 / 0008 000A 1111 000C / 4444"
+    );
+}
+
+/// probe `p7`. The other three expansion DRIVERS, each running its body twice.
+/// The namespace is per ITERATION, not per loop: `Ra` reads `$0000` then
+/// `$0002`.
+///
+/// WHAT OTHER ANSWER COULD THIS HAVE GIVEN: `$0000` twice (one namespace for the
+/// whole loop, the first iteration winning) or `$0002` twice (one namespace, the
+/// last winning) — and, for a change that localized macro bodies only, the
+/// second address in both slots for all three loops.
+#[test]
+fn rept_irp_and_while_localize_per_iteration() {
+    let src = format!(
+        "{}\trept\t2\nRa:\n\tdc.w\tRa\n\tendm\n\tirp\tn,$11,$22\nIa:\n\tdc.b\tn,0\n\tdc.w\tIa\n\tendm\nWc\tset\t0\n\twhile\tWc<2\nWa:\n\tdc.w\tWa\nWc\tset\tWc+1\n\tendm\n\tdc.w\t$4444\n",
+        head()
+    );
+    assert_eq!(
+        bytes(&src),
+        vec![
+            0x00, 0x00, 0x00, 0x02, 0x11, 0x00, 0x00, 0x04, 0x22, 0x00, 0x00, 0x08, 0x00, 0x0C,
+            0x00, 0x0E, 0x44, 0x44
+        ],
+        "asl p7: rept 0000 0002 / irp 1100 0004 2200 0008 / while 000C 000E / 4444"
+    );
+}
+
+/// probe `p8`. THE DIRECTION THAT MUST NOT BREAK — a file-level label read from
+/// inside an expansion, backward and forward. If this stopped resolving nothing
+/// would assemble, which is exactly why it is a fixture and not an assumption:
+/// the exemption is drawn around the DEFINITION site, never the read site.
+///
+/// WHAT OTHER ANSWER COULD THIS HAVE GIVEN: a refusal, from a rule that treated
+/// "reference evaluated inside an expansion" as the trigger. That version of the
+/// change passes every other test in this file.
+#[test]
+fn a_file_level_label_still_resolves_from_inside_an_expansion() {
+    let src = format!(
+        "{}Gb:\n\tdc.w\t$1111\nmread\tmacro\n\tdc.w\tGb\n\tdc.w\tGf\n\tendm\n\tmread\n\tmread\nGf:\n\tdc.w\t$4444\n",
+        head()
+    );
+    assert_eq!(
+        bytes(&src),
+        vec![0x11, 0x11, 0x00, 0x00, 0x00, 0x0A, 0x00, 0x00, 0x00, 0x0A, 0x44, 0x44],
+        "asl p8: 1111 / 0000 000A / 0000 000A / 4444"
+    );
+}
+
+/// probes `m18`/`m19` of the symbol-class set, from the other side. The VALUE-
+/// BINDING forms written in a macro body are GLOBAL wherever they are written,
+/// and must stay reachable from outside the expansion — asl resolves the `label`
+/// directive's `Al` to `$0100` from file level while refusing the PC label
+/// beside it.
+///
+/// WHAT OTHER ANSWER COULD THIS HAVE GIVEN: a refusal on `Al`, which is what an
+/// exemption drawn around "any name declared inside an expansion" produces. That
+/// is the single most likely way to get this change wrong, because "labels" and
+/// "the `label` directive" are one word apart and land on opposite sides.
+#[test]
+fn a_value_binding_form_in_a_macro_body_stays_global() {
+    let src = format!(
+        "{}mlabdir\tmacro\nAl\tlabel\t$100\n\tendm\n\tmlabdir\nmpc\tmacro\nPc:\tdc.w\t$1111\n\tendm\n\tmpc\n\tdc.w\tAl\n\tdc.w\t$4444\n",
+        head()
+    );
+    assert_eq!(
+        bytes(&src),
+        vec![0x11, 0x11, 0x01, 0x00, 0x44, 0x44],
+        "the `label` directive's Al reads $0100 from outside the expansion"
+    );
+
+    // …and the PC label beside it does not, in the same source shape.
+    let src = format!(
+        "{}mpc\tmacro\nPc:\tdc.w\t$1111\n\tendm\n\tmpc\n\tmpc\n\tdc.w\tPc\n\tdc.w\t$4444\n",
+        head()
+    );
+    let msgs = refusal(&src);
+    assert!(
+        msgs.iter().any(|m| m.contains("Pc") && m.contains("unresolved")),
+        "expected an unresolved-symbol refusal naming `Pc`, got: {msgs:?}"
+    );
+}
