@@ -173,33 +173,51 @@ fn the_i_and_r_reads_write_flags_while_the_writes_do_not() {
 
 /// THE CYCLE TABLE, the other consumer keyed on these mnemonic strings.
 ///
-/// It prices only the timed-region subset the driver demands, and its default
-/// is `Cost::Unknown`, which is the LOUD direction: a span or budget walk
-/// containing an unpriced op bails with `[cycles.unknown-op]` rather than
-/// guessing a number. Every instruction this coverage work made assemblable
-/// lands there, `ldir` included, and that is deliberately left alone: a wrong
-/// T-state count is worse than an absent one, and pricing them belongs to
-/// whichever timed region first needs them, with its own derivation.
+/// This test used to assert that every mnemonic the coverage work made
+/// assemblable stayed UNPRICED. It said out loud that it was a pin and that
+/// whoever priced them would have to announce it. They are priced now, and this
+/// is the announcement: the counts are the Zilog UM0080 T-states, derived in
+/// `docs/superpowers/notes/2026-09-06-isa-cycle-table-gap.md`, and the
+/// obligation the old pin was standing in for is now held by a test that cannot
+/// be satisfied by neglect — `z80_cycles`'s `encoder_coverage`, which asks the
+/// ENCODER which forms exist and fails on any the table cannot price.
 ///
-/// This is a PIN, not an aspiration. If a later change prices one of these, the
-/// test goes red and whoever priced it has to say so out loud.
-///
-/// TWO of them were ALREADY priced before they could be assembled: `reti` and
-/// `retn` sat in this table at 14 T with no encoder arm and no name mapping, the
-/// same half-built shape the eight one-byte primitives were found in. The
-/// encoder has now caught up with the price rather than the other way round, so
-/// they are asserted at their existing value instead of being pushed to Unknown.
+/// What is asserted here is the SHAPE of the answer per family, because that is
+/// the part a table copied down one column gets wrong: the eight single-step
+/// block ops are a flat 16 T, and the eight repeating ones carry two numbers
+/// (21 T for an iteration that repeats, 16 T for the one that leaves), which is
+/// what `Cost::Split` means. The two families are one bit apart in the encoding
+/// and would be indistinguishable if priced alike.
 #[test]
-fn the_new_mnemonics_are_unpriced_in_the_cycle_table() {
+fn the_block_grid_is_priced_by_family_in_the_cycle_table() {
     use sigil_frontend_emp::z80_cycles::{instr_cost, Cost};
-    for m in ["ldi", "ldd", "ldir", "lddr", "cpi", "cpd", "cpir", "cpdr",
-              "ini", "ind", "inir", "indr", "outi", "outd", "otir", "otdr",
-              "rrd", "rld", "in", "out"] {
-        assert_eq!(instr_cost(m, &[]), Cost::Unknown, "`{m}` must stay unpriced");
+    for m in ["ldi", "ldd", "cpi", "cpd", "ini", "ind", "outi", "outd"] {
+        assert_eq!(instr_cost(m, &[]), Cost::Fixed(16), "`{m}` steps once");
     }
+    for m in ["ldir", "lddr", "cpir", "cpdr", "inir", "indr", "otir", "otdr"] {
+        assert_eq!(
+            instr_cost(m, &[]),
+            Cost::Split { taken: 21, not_taken: 16 },
+            "`{m}` repeats"
+        );
+    }
+    // The BCD nibble rotates are 18, the dearest ED two-byte form.
+    assert_eq!(instr_cost("rrd", &[]), Cost::Fixed(18));
+    assert_eq!(instr_cost("rld", &[]), Cost::Fixed(18));
+    // `reti`/`retn` were priced at 14 BEFORE they could be assembled — the
+    // analyzer was ahead of the encoder — and the encoder caught up rather than
+    // the price moving. They are asserted at that same value.
     assert_eq!(instr_cost("reti", &[]), Cost::Fixed(14));
     assert_eq!(instr_cost("retn", &[]), Cost::Fixed(14));
-    // The positive control: an op the table DOES price, so a broken lookup that
-    // answered Unknown for everything could not pass the loop above.
+    // The direct-port I/O forms. The operandless spelling is NOT priced: `in`
+    // and `out` carry their cost on the operand shape, and an `in` with no
+    // operands is not an instruction.
+    let a = CodeOperand::Z80Reg8(Z80Reg8::A);
+    let port = CodeOperand::Z80Mem { addr: 0x00FE };
+    assert_eq!(instr_cost("in", &[a.clone(), port.clone()]), Cost::Fixed(11));
+    assert_eq!(instr_cost("out", &[port, a]), Cost::Fixed(11));
+    assert_eq!(instr_cost("in", &[]), Cost::Unknown);
+    // The positive control: an op the table priced before any of this, so a
+    // broken lookup answering one value for everything could not pass above.
     assert_eq!(instr_cost("nop", &[]), Cost::Fixed(4));
 }

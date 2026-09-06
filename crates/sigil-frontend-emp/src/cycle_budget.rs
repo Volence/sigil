@@ -125,22 +125,27 @@ pub enum BudgetFindingKind {
     /// `[cycles.ambiguous-branch]` — an outcome-split conditional whose taken and
     /// fall-through edges cannot be told apart.
     ///
-    /// **THIS VARIANT is a defensive refusal with no reachable input; the LINT ID
-    /// is live.** The same id is emitted by a second producer that fires on real
-    /// input — [`crate::z80_cycles::CycleBail::AmbiguousBranch`], reached through
-    /// the `cycles(L1, L2)` span builtin ([`crate::eval::builtins`]) and pinned by
-    /// `z80_cycles`'s own `mod tests` and `tests/t40_cycles.rs`. Nothing here
-    /// licenses deleting the diagnostic; the inputless claim is scoped to this
-    /// walk's two producers, which are inputless for two DIFFERENT reasons:
+    /// **THIS VARIANT NOW HAS A REACHABLE INPUT**, and it acquired one exactly the
+    /// way the kill condition below predicted a table change could: the eight
+    /// REPEATING block ops (`ldir`, `lddr`, `cpir`, `cpdr`, `inir`, `indr`,
+    /// `otir`, `otdr`) carry a `Cost::Split` of 21/16 and present ONE edge,
+    /// because a block repeat re-executes the same instruction rather than
+    /// branching. So the `two_way` guard fires on them, and the refusal is the
+    /// right answer: the true cost is `16 + 21*(BC-1)` with `BC` a run-time
+    /// value, and charging either number to the single edge would state a bound
+    /// that is wrong by up to 21 T per iteration. Pinned by this module's
+    /// `a_block_repeat_is_an_ambiguous_branch_not_an_unknown_op`.
     ///
-    ///   * the SPLIT-vs-`two_way` guard in [`charged_edges`] — every split-cost
-    ///     terminator on both CPUs presents exactly two edges, so a split cost
-    ///     always has somewhere to be routed;
-    ///   * the enumerated-dispatch arm in the same function — a dispatch mnemonic
-    ///     (`jmp`/`jp`, the only shapes a `targets(...)` clause is legal on) never
-    ///     carries a Split table cost, so the arm's `WalkCost::Split` case has no
-    ///     input either. It would be a cost-table defect, refused rather than
-    ///     routed blind.
+    /// The same id is also emitted by a second producer —
+    /// [`crate::z80_cycles::CycleBail::AmbiguousBranch`], reached through the
+    /// `cycles(L1, L2)` span builtin ([`crate::eval::builtins`]) and pinned by
+    /// `z80_cycles`'s own `mod tests` and `tests/t40_cycles.rs`.
+    ///
+    /// The walk's OTHER producer remains inputless: the enumerated-dispatch arm
+    /// in [`charged_edges`] — a dispatch mnemonic (`jmp`/`jp`, the only shapes a
+    /// `targets(...)` clause is legal on) never carries a Split table cost, so
+    /// that arm's `WalkCost::Split` case has no input. It would be a cost-table
+    /// defect, refused rather than routed blind.
     ///
     /// The near miss, and the ordering it depends on: `call cc` DOES carry a split
     /// cost with a single edge (it calls and comes back, so its only successor is
@@ -153,19 +158,17 @@ pub enum BudgetFindingKind {
     /// `[cycles.ambiguous-branch]`; `tests/cycle_budget.rs`'s `a_call_is_refused`
     /// is the pin that would catch it).
     ///
-    /// The evidence is a counted ENUMERATION of today's terminator shapes
+    /// The counted enumeration of TERMINATOR shapes is still there
     /// (`tests/cycle_budget.rs`,
     /// `a_split_cost_conditional_is_refused_before_its_edges_are_counted`, with the
-    /// edge-count invariant itself pinned crate-side in this module's `mod tests`,
-    /// `a_split_cost_terminator_presents_exactly_two_edges`) — not a proof. A
-    /// terminator shape added later is not in that sweep.
+    /// edge-count invariant pinned crate-side in this module's `mod tests`,
+    /// `a_split_cost_terminator_presents_exactly_two_edges`), and it still holds
+    /// for terminators. What it never covered — and what the block repeats are —
+    /// is a split-cost instruction that is not a terminator at all.
     ///
-    /// Kept because its polarity is safe: an edge model or cost table that later
-    /// produced a one-edge split refuses here rather than charging one of two
-    /// numbers to the single edge it has. **Kill condition:** delete this variant
-    /// (not the lint id) when the edge model makes a one-edge split-cost terminator
-    /// unrepresentable by construction, so that the guard cannot be reached even by
-    /// a table or builder change.
+    /// **Kill condition:** none now. The variant is load-bearing, not defensive:
+    /// deleting it would make the block repeats route one of two numbers to their
+    /// single edge.
     AmbiguousBranch {
         /// The conditional's mnemonic.
         mnemonic: String,
@@ -799,11 +802,14 @@ fn charged_edges(
         return bail(BudgetFindingKind::UnknownOp { mnemonic: mnem.to_string() });
     }
     let two_way = edges.len() == 2;
-    // No input today: every split-cost terminator on both CPUs presents exactly two
-    // edges, and the one split-cost form that presents a single edge (`call cc`) is
-    // refused as an opaque call at the top of this function. See
-    // [`BudgetFindingKind::AmbiguousBranch`] for the enumeration, the ordering
-    // dependency, and the kill condition.
+    // REACHED, by the eight repeating block ops. Every split-cost TERMINATOR on
+    // both CPUs presents exactly two edges, and the one split-cost terminator that
+    // presents a single edge (`call cc`) is refused as an opaque call at the top of
+    // this function — but `ldir` and its seven siblings are split-cost
+    // NON-terminators with one edge, because a block repeat re-executes itself
+    // instead of branching. They land here, and refusing is correct: their true
+    // cost is `16 + 21*(BC-1)` for a run-time `BC`. See
+    // [`BudgetFindingKind::AmbiguousBranch`].
     if matches!(cost, WalkCost::Split { .. }) && !two_way {
         return bail(BudgetFindingKind::AmbiguousBranch { mnemonic: mnem.to_string() });
     }
@@ -1041,14 +1047,19 @@ mod tests {
         assert_eq!((c.min, c.max), (28, 34));
     }
 
-    /// The EDGE-COUNT invariant that leaves the `two_way` guard of
-    /// [`BudgetFindingKind::AmbiguousBranch`] without an input: every split-cost
-    /// TERMINATOR on both CPUs presents exactly two edges, so a Split cost always
-    /// has two places to be routed. Read off the edge builders directly, because
-    /// the diagnostic cannot show it — the structural transfer-out refusal in
+    /// The EDGE-COUNT invariant over TERMINATORS: every split-cost terminator on
+    /// both CPUs presents exactly two edges, so a Split cost on one always has two
+    /// places to be routed. Read off the edge builders directly, because the
+    /// diagnostic cannot show it — the structural transfer-out refusal in
     /// [`charged_edges`] fires on the first leaving edge, BEFORE `two_way` is ever
     /// computed, so a one-edge shape would still be refused and a source-level
     /// sweep would still be green.
+    ///
+    /// THIS INVARIANT IS ABOUT TERMINATORS AND ONLY TERMINATORS, which is the
+    /// scope its earlier prose left implicit and the `two_way` guard was read as
+    /// having no input because of. A split-cost NON-terminator with a single edge
+    /// exists — the eight repeating block ops — and is asserted at the end of this
+    /// sweep as its own polarity.
     ///
     /// Counted, and paired with both polarities: a `jbra`/`jp` tail has ONE edge
     /// and is Fixed-cost (a split with one edge is what the guard fears, and no
@@ -1125,6 +1136,28 @@ mod tests {
         assert!(matches!(walk_cost(Cpu::Z80, mnemonic, None, ops), WalkCost::Split { .. }));
         assert_eq!(cpu_edges(&Cfg::build(&call_cc), Cpu::Z80, 0).len(), 1);
         assert!(crate::context::is_call_mnemonic(mnemonic, Cpu::Z80), "the bail that saves it");
+
+        // THE THIRD POLARITY, and the one that is NOT a terminator: each repeating
+        // block op is a split cost presenting a single edge, with no call bail
+        // ahead of it. These are the guard's live input. Swept over all eight, so
+        // a family priced by copying one row cannot leave seven unexercised.
+        let mut repeats = 0;
+        for m in ["ldir", "lddr", "cpir", "cpdr", "inir", "indr", "otir", "otdr"] {
+            let items = vec![instr(m, vec![]), instr("ret", vec![])];
+            let CodeItem::Instr { mnemonic, ops, .. } = &items[0] else { unreachable!() };
+            assert!(
+                matches!(walk_cost(Cpu::Z80, mnemonic, None, ops), WalkCost::Split { .. }),
+                "`{m}` must be a split cost for this polarity to mean anything"
+            );
+            assert_eq!(
+                cpu_edges(&Cfg::build(&items), Cpu::Z80, 0).len(),
+                1,
+                "`{m}` re-executes itself; that is not an edge in this CFG"
+            );
+            assert!(!crate::context::is_call_mnemonic(mnemonic, Cpu::Z80), "no bail ahead of it");
+            repeats += 1;
+        }
+        assert_eq!(repeats, 8, "the repeat sweep covered {repeats} of the eight block repeats");
     }
 
     // A call's cost is its callee's, which is not a local fact.
@@ -1158,11 +1191,44 @@ mod tests {
     }
 
     // An op outside the T-state table has no assignable cost.
+    //
+    // The fixture was `ldir`, which is now PRICED — as a `Cost::Split`, because a
+    // block repeat costs 21 T per iteration and 16 T on the one that leaves. It
+    // is still a refusal here, and the arm below records which one: a split cost
+    // over an instruction presenting a single edge is an ambiguous branch, not an
+    // unknown op. `ex (sp),ix` replaces it because the encoder genuinely cannot
+    // emit that form, so no future pricing pass can quietly make it known.
     #[test]
     fn an_off_table_op_is_unknown() {
+        let ex_sp_ix = instr(
+            "ex",
+            vec![
+                CodeOperand::Z80IndSp,
+                CodeOperand::Z80Pair(crate::value::Z80Pair::Ix),
+            ],
+        );
+        let items = vec![ex_sp_ix, instr("ret", vec![])];
+        let e = path_costs(&items, Cpu::Z80, sp(), &nr()).unwrap_err();
+        assert_eq!(e.kind, BudgetFindingKind::UnknownOp { mnemonic: "ex".into() });
+    }
+
+    // A BLOCK REPEAT is refused, and the refusal names the right reason. The walk
+    // charges `taken` to a branch edge and `not_taken` to the fall-through, and
+    // `ldir` has neither: it re-executes itself, which is not an edge in this
+    // CFG. So the two-edge precondition fails and the split cost is refused
+    // rather than charged 16 to the single edge — an undercount by 21 T per
+    // iteration, of which there may be 65 535.
+    #[test]
+    fn a_block_repeat_is_an_ambiguous_branch_not_an_unknown_op() {
         let items = vec![instr("ldir", vec![]), instr("ret", vec![])];
         let e = path_costs(&items, Cpu::Z80, sp(), &nr()).unwrap_err();
-        assert_eq!(e.kind, BudgetFindingKind::UnknownOp { mnemonic: "ldir".into() });
+        assert_eq!(e.kind, BudgetFindingKind::AmbiguousBranch { mnemonic: "ldir".into() });
+        // The DISCRIMINATING neighbour: the single-step `ldi` costs a flat 16 and
+        // walks cleanly, so the refusal above is about the repeat and not about
+        // the block family being off-table.
+        let stepped = vec![instr("ldi", vec![]), instr("ret", vec![])];
+        let c = path_costs(&stepped, Cpu::Z80, sp(), &nr()).unwrap();
+        assert_eq!((c.min, c.max), (26, 26)); // ldi 16 + ret 10
     }
 
     // A 68000 straight line measures through the M68000UM table: nop 4 + rts 16.
