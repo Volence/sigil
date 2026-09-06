@@ -1114,217 +1114,28 @@ content is at most minimal*, **not** as a listing with provably zero phased symb
 partial result offered as a discharge is exactly what the first correction had just caught**, and
 they refused to let it stand as one.
 
-### A DO-NOT-TOUCH RULE WITH NO NAMED OWNER FOR THE DELIBERATE TOUCH ROTS THE THING IT PROTECTS
+### Read at the moment - the bars moved to the reference file on 2026-09-06
 
-*(Aeon's framing, adopted in their words because it is better than mine: **the protection and the
-maintenance were the same action, so forbidding one forbade the other.**)*
+Moved VERBATIM to `docs/OVERSEER-REFERENCE.md` when the boot read crossed its byte bound, under the
+owner's 2026-09-04T15:38:47Z ruling that the split is by WHEN A RULE IS READ. **Nothing was
+shortened to move it.** None of these changes what a session does FIRST; each is read at a moment:
 
-The shared assembler every lane links against is `sigil/target/release/sigil`, this checkout's
-DEFAULT target dir. This document's standing rule is that **no cargo command may land there**, because
-a relink silently replaces the binary another lane's freeze pins by md5. That rule is right and was
-obeyed all session, every build routed to `.target-land`.
-
-**So it sat at `756c7efd` while master moved 20-odd commits past it**, and a peer lane's builds were
-warning about the mismatch. **It went stale precisely BECAUSE the rule was working.** Nothing in the
-rule says who performs the deliberate refresh or when, so the answer was nobody.
-
-**Refreshed 2026-09-05 from master `d094c3c8`: md5 `58db3594...` to `945387f2...`, `emit_sound_blob`
-rebuilt from the same tree.** Checked before overwriting that nothing live pinned the old digest (the
-two hits were dated historical records, which stay true) and that the standing pinned artifact at
-`~/sonic_hacks/.pinned/` is a separate file, untouched.
-
-**THE GENERAL BAR, and aeon is right that it is not sigil-specific: read every "nobody may write
-here" convention in this suite for whether it also forbids the UPDATE, and where it does, name who
-performs it.** A protected artifact with no maintainer is a protected artifact rotting on schedule.
-
-**And prove the refresh CHANGED BEHAVIOUR, not just the version string.** A version bump is not
-evidence the new code is in there. Built a shape with the refreshed binary and read the new section
-out of the listing. **My first check was a false positive**: a case-insensitive grep for `VMA|LMA`
-matched `LocaLMAp` inside unrelated symbol names, and would have read as confirmation.
-
-### AND "NOT WORTH CHASING" WAS WORTH CHASING: 29 AND 30 RECONCILED EXACTLY
-
-Two lanes measured the same tool's error rate and got 29 and 30. The peer proposed it was "probably
-the demo case counted differently" and not worth pursuing. **It took three minutes and reconciled
-exactly**: the tool returns 36 names, 6 appear in sonic4's phase table and 1 in demo's, so 36-6=30
-are absent from sonic4 (theirs) and 36-6-1=29 are absent from BOTH (mine). **Both numbers correct,
-different populations, no disagreement.** The single name between them is `Z80_IdleProgram`.
-
-**A plausible reconciliation offered in place of an actual one is a guess wearing an explanation's
-clothes**, and the cost of settling it was three commands. The same run confirmed the second
-direction the peer had rightly refused to accept on assertion:
-`$engine.z80_init$Z80_IdleProgram$code_end` is in demo's phase table and is NOT returned by the tool.
-
-### A DERIVATION THAT CAPTURES PARENTS AND DROPS LOCALS MISSES EXACTLY THE BOUNDARY MARKERS
-
-*(Aeon's mechanism, found by checking their own tool rather than my listing, and it is worth more
-than the counts either of us produced.)*
-
-`vma_phased_symbol_names()` parses `section ... (vma: ...)` blocks and takes the **top-level** names.
-The one symbol it misses is a **local inside** such a proc, mangling to `$module$Proc$local`. So the
-misses are not scattered: **they are precisely the local labels inside phased procs.**
-
-**And that is the worst class to miss, by the consumer's own logic.** The tool exists so a
-boundary-inferring consumer never lets a phased symbol stand as an extent boundary. The single symbol
-it misses is an **end-of-code marker**, a symbol whose entire purpose is to be a boundary, with three
-`imm16` references to it. **So the 30 over-reports are harmless phantoms and the one miss is the exact
-shape the tool was written to catch.**
-
-**The transferable rule: when a derivation walks a structure and takes the named things at one level,
-ask what lives at the level below, because in a symbol table that is where the boundary markers
-are.** A count of how often such a derivation is wrong says nothing about this; only the mechanism
-does. Both of us had measured the error rate and neither of us had it until the mechanism was found.
-
-### THE FOUR-CORPUS SWEEP COMPARES ALMOST NO BYTES, AND THIS SEAT PRESCRIBED IT THREE TIMES
-
-**Measured 2026-09-06 and verified independently here: 0 of 40 `s2disasm` `.asm` files emit ANY bytes
-assembled standalone.** The corpus trees are include FRAGMENTS, not roots. Across all four trees both
-arms accepted **2 of 1,753** files and emitted **zero** bytes.
-
-**So the sweep's `DIFFER=0` is a statement about 43,862 DIAGNOSTIC lines and exit codes, and is
-VACUOUS about bytes.** It has been reported in this lane's own words as comparing "emitted bytes,
-every diagnostic, and the exit code", which is true and misleading: the first term is empty.
-
-**This narrows a banked result rather than overturning it.** The strict-arguments null result rests on
-the diagnostic half, which is real; its byte wording was not. **A conclusion can survive while the
-sentence that carried it does not**, and the correction is owed to the sentence.
-
-**What caught it was the bar added hours earlier from a peer's void test: state what each arm
-PRODUCED, not merely that they agreed.** The bar caught an instrument THIS SEAT had prescribed three
-times, which is the argument for stating bars as properties of evidence rather than as warnings about
-a particular tool.
-
-**`sweep.sh` now prints the byte census every run and refuses to let a zero-byte run read as byte
-identity.** The real byte check is separate and was run: both aeon ROM shapes on both binaries,
-identical, **1,659,455 bytes of actual emission**, written to scratch so the shared reference tree
-was untouched.
-
-**The general form: an instrument that compares X over a population where X is empty reports perfect
-agreement forever.** Before believing any comparison, ask what the population actually contains of
-the thing being compared. A file count is not a byte count.
-
-### AND A ROW'S TITLE CAN BE THE NARROWEST TRUE STATEMENT OF ITS OWN DEFECT
-
-`AS-SET-OPENS-SCOPE` named `set`. **Twelve spellings diverged** (`set`, `equ`, `=`, `:=`, `eval`, each
-with or without the decorative colon, the comma-operand forms, string-valued binders) plus `enum`,
-where the last member owns the scope: **24 of 28 matrix rows**. The two already-correct rows were the
-controls that made the matrix worth building.
-
-**And the row's cited five sites CANNOT diverge at all**: they are dotted binders, and a dotted binder
-opens no scope in either assembler. I had measured that one of them did not diverge and framed it as
-"at least one does not". **The true statement was stronger and simpler than my hedge** — a hedge
-around a measurement is not automatically the safe direction, it can also be the imprecise one.
-
-### CITE THE ARTEFACT THAT CAN BREAK, NOT THE SESSION THAT ASKED
-
-*(Oracle's correction to a comment I wrote naming them. Small, and it generalises past attribution.)*
-
-I recorded a cross-lane contract in source and credited the requesting session by its handle. **A
-session handle stops existing.** In six weeks it names nothing, and the comment reads as a note from
-a ghost, **which is worse than no attribution, because the next editor cannot tell whether the
-dependency is still real** and will therefore either preserve a dead constraint or delete a live one.
-
-**Name the REPO and the PARSER**: the thing that will still be there to break. Now cited as `oracle`'s
-`SymbolTable::parse` at `crates/oracle-core/src/symbols.rs:553`, **verified present when written**,
-since a path cited without checking is the defect this lane closes weekly.
-
-**It is the promise-in-a-message problem one level down.** A guarantee given in chat has no owner and
-rots invisibly; a guarantee given in a comment naming a session has an owner who evaporates. Only the
-artefact persists.
-
-### AND THE PIN FAILED IN THE EXACT WAY THE PIN EXISTED TO PREVENT
-
-Worth recording as the sharpest instance of the night's theme. The contract's first pin asserted
-**"every line in this section begins with `PHASE` at column 0"**. The count line was then renamed
-`PHASE-COUNT`, and **`PHASE` is a prefix of `PHASE-COUNT`**, so the assertion would have gone on
-passing while the consumer's two distinct keys silently collapsed into one. **A guard that fails the
-way it exists to prevent, one level above where it was written.**
-
-Caught by the consumer, not by me. **The corrective is in the test now**: the two shapes are asserted
-SEPARATELY and required disjoint, and the trailing space in `^PHASE ` is documented as load-bearing
-with the reason, because it is the trap a future consumer is most likely to repeat.
-
-**And the detail worth copying into any guard: it REFUSES TO RUN over an empty row set.** A guard that
-is green because it examined nothing survives every other precaution, and it is the one thing a
-red-first proof cannot catch, since an unapplied mutation and an empty corpus both print `ok`.
-
-### ATTRIBUTION, CORRECTED TWICE IN ONE EXCHANGE
-
-*"Prefer a check that must CLOSE over a check that must AGREE"* is **not** the phrase's relayer's, and
-not mine. It is **the dash-sweep agent's**, formed after it found its own cross-validation worthless:
-two lexers in two languages, written hours apart and deliberately cross-checked, agreeing on 480.
-**One author wrote both, so the agreement measured nothing.** What caught the error was a residual
-that had to reach zero and did not.
-
-**Three independent arrivals at that idea in one night**, the third being this lane's own sweep
-agreeing 1,753 times over zero bytes. **Nearly every defect found today was a check that AGREED;
-nearly every recovery was a check that had to CLOSE** — an accounted population, a control that had
-to fire, a leg count that had to reconcile.
-
-### ⚠ THE OWNERSHIP BAR I WROTE TODAY BROKE A PEER'S RUN THE FIRST TIME I EXERCISED IT
-
-**2026-09-06 05:45:48Z I renamed over `sigil/target/release/sigil` while aeon's SP-5 agent was
-mid-build with the previous binary's md5 pinned in its brief.** Four legs assembled by two different
-assemblers, with **nothing in the output that would say so**: a false byte-identity, which is the
-exact failure the pin existed to prevent.
-
-**Hours earlier I banked: a shared artifact protected by a do-not-touch rule needs a NAMED OWNER for
-the deliberate touch, or it rots.** I became that owner. **The first exercise of the ownership caused
-a collision, because the bar named WHO MAY TOUCH and said nothing about WHEN.**
-
-**A rule that assigns ownership without a coordination point does not remove the hazard; it relocates
-it, from rot to collision.** That is the amendment, and it is the more important half:
-
-- **The owner of a deliberate touch announces BEFORE, not after.** I announced after, as a completed
-  refresh, which is a report rather than a coordination.
-- **A refresh of a shared artifact is a SCHEDULED act, not a local one.** The artifact being shared
-  makes the TIMING shared too. Content being correct settles nothing about when it may land.
-- **Ask who is mid-run before touching**, not whether the content is right. I checked staleness,
-  provenance, that nothing pinned the old digest in tracked files, and that the standing pinned copy
-  was untouched. **Every check I ran was about the artifact. None was about the other lanes.**
-
-**And the recovery is worse than the incident.** The previous binary is **unrecoverable**: no copy in
-scratch, none in `~/sonic_hacks/.pinned/`. A rebuild of the same revision is a DIFFERENT artifact
-answering a slightly different question, per this document's own rule, so it cannot be handed back as
-the pinned one. **This repo already knows a rename-over destroys evidence and not merely state**, in
-the words of its own freeze rule: `chmod` on a file does not stop a rename, because a rename is
-governed by the DIRECTORY. I had that written down and applied none of it, because I was thinking
-about whether the content was current rather than about who else was standing on it.
-
-**Cheap prophylactic for next time, since the rule needs a mechanism and not vigilance: copy the
-outgoing binary aside BEFORE the rename.** One `cp`, and the pin stays recoverable whatever else goes
-wrong.
-
-**⚠ AND MY OFFER TO PARTITION THE DAMAGE BY TIMESTAMP WAS WRONG, on a mechanism I verified here
-rather than accepting.** I offered aeon that only legs straddling the swap instant were unattributable
-and that timestamps could identify them. Aeon declined for the right reason: **a rename-over does not
-disturb a process that has already opened the old inode.** Demonstrated at this seat with a running
-script renamed over mid-execution: **the running process completed on the OLD contents while the path
-already served the NEW ones.**
-
-So a leg running across the instant is not half-and-half; it completes on the old binary. And a
-"leg" is not one execution but many invocations over its life, so **which binary each invocation got
-is not recoverable from the leg's start time.** Partitioning would have needed per-invocation timing
-that nobody records, and my offer would have had aeon keep results it could not actually attribute.
-
-**The general form, and it is the same family as the freeze rule this repo already carries: a rename
-changes what a PATH resolves to, never what an already-open process is running.** That is what makes
-a mid-run swap invisible from both ends: nothing fails, nothing warns, and the output of a leg that
-straddled it looks exactly like the output of one that did not.
-
-**RULED BY THE HUB 2026-09-06, and it supersedes my amendment because it names WHO COORDINATES rather
-than merely when: the shared binary is refreshed ONLY INSIDE A WINDOW THE HUB OPENS, after asking
-every lane that builds against that path, and the HUB announces the swap instant and the new identity
-afterwards.** My version said "the owner announces before", which still leaves the owner deciding the
-moment from inside one lane's view. **A lane cannot see who is mid-run; only the hub can.** That is
-the whole reason the coordination point has to sit above the owner.
-
-**Resolution of the incident: `e6e942e5` STAYS.** No swap back and no rebuild of `d094c3c8` was
-ordered, on the grounds that a reproduced pin would answer a question nobody needs any more, since
-aeon restarts every SP-5 leg under the new identity. **The path is frozen to this lane until the hub's
-word.** The refreshed binary's acceptance rests on the proof, not the version string: one
-`^PHASE-COUNT` line, six phase rows, and **zero lines matching the old spelling, checked as a
-control** rather than only confirming the new one appeared.
+- **About to touch the shared `target/release/sigil`** - *a do-not-touch rule with no named owner
+  rots the thing it protects*, and *the ownership bar that broke a peer's run the first time it was
+  exercised*, which carries the hub-opens-the-window ruling and the installed binary's identity.
+- **Reconciling two lanes' numbers** - *"not worth chasing" was worth chasing: 29 and 30 reconciled
+  exactly*.
+- **Judging a derivation that walks a structure** - *a derivation that captures parents and drops
+  locals misses exactly the boundary markers*.
+- **Judging an instrument, or believing a comparison** - *the four-corpus sweep compares almost no
+  bytes, and this seat prescribed it three times*.
+- **Writing a queue row's title** - *a row's title can be the narrowest true statement of its own
+  defect*.
+- **Writing a citation into source** - *cite the artefact that can break, not the session that
+  asked*.
+- **Building a guard** - *the pin failed in the exact way the pin existed to prevent*, including the
+  refuse-to-run-over-an-empty-row-set clause.
+- **Attributing a finding** - *attribution, corrected twice in one exchange*.
 
 ### VARYING A FLAG IS NOT VARYING A ROUTE: I compared one path with itself and called it two
 
