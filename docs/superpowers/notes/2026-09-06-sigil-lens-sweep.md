@@ -243,3 +243,64 @@ TIP-MATCH invariant by hand without cargo: 7/7 blobs match on CRC32, length, and
 anchor, and it names the two ways that reconstruction could have failed and did not. 87 and 98
 label pairs agree between the size tables and `pins.rs`, with zero disagreements and no hand-edit
 evidence in any generated file.
+
+## Performance: the two walks, and why doubling that seat paid
+
+The protocol doubles perf seats deliberately, "because measuring the same thing from two ends is
+the only reason a bad number gets caught." Both walks reached the same headline by different
+instruments, and the reverse walk found a cost the forward walk could not see.
+
+**Agreed, by two different methods.** The gap is the outer fixpoint, not the hot code. Forward
+used an env-gated pass census; reverse used **marginal-pass calibration** - append a forward `equ`
+chain of length k, find where the plateau ends - and got a clean 0.246 s per additional traversal.
+Both land on: sigil traverses the source **twice as many times as asl**, and per traversal is
+within ~10 to 60% of it. Convergence needs two consecutive identical symbol tables, so the
+earliest exit is 2 traversals where asl stops at 1; a forward-referenced equate costs one more per
+link, where asl resolves a chain of any length in 2.
+
+**The forward walk's own headline confound, which reframes every ratio in this packet:** sigil
+exits before `resolve_layout` and `link`, so 1.3 s is a front-end-only, output-free run against
+asl's complete assembly plus a 531 KB object file and a listing. **The gap is understated.**
+
+**What only the reverse walk could find: a per-nesting-level re-lex.** A block body is re-scanned
+once per enclosing level, untaken arms included. Measured against depth, asl is FLAT and sigil is
+linear: at depth 32, 1.697 s against asl's 0.032 s, **52x**, at +0.052 s per level - 52% of the
+whole depth-0 cost, per level.
+
+**And it is nearly invisible on the corpus this project benchmarks with.** Mean block-nesting depth
+per line: **s1disasm 0.054** (about 3% overhead, which is why the headline looks benign), **aeon
+1.157** (about +60%). On s2disasm, macro-heavy with conditional bodies everywhere, **sigil takes
+5.82 s against asl's 0.40 s: 14.5x**. A seat measuring only the briefed corpus would have reported
+the fixpoint and stopped.
+
+**A confound that makes the deficit worse than the headline, volunteered rather than buried:** asl
+is catastrophically bad at large symbol tables (200k labels: sigil 0.41 s, asl **31.0 s**), and
+sigil also wins on symbol arithmetic (0.81x). So sigil takes its 2.5x deficit while WINNING the
+symbol-table sub-problem, which means **the per-line deficit on the non-symbol majority is worse
+than 2.5x**. The seat that found this had every reason to bank the flattering half and did not.
+
+**Diagnostic rendering is O(file) per diagnostic.** `SourceMap::location` walks `char_indices()`
+from byte 0 on every call, so an error at the top of a file costs about 18 microseconds and one at
+the bottom of a 1.6 MB file costs about **0.45 ms**, growing with file size. s1disasm's 50
+diagnostics are invisible; s2disasm's **5,229** are not. It only bites a FAILING build, which is
+the build a developer runs repeatedly.
+
+**Retraction, recorded because the seat volunteered it:** an earlier tcmalloc figure of 1.93x was
+contaminated by a concurrent agent in the same directory and is withdrawn; the private-directory
+re-run gives **1.15x** and stands. Allocator traffic is about 13% of the run, and the same seat
+measured the symbol table it had expected to indict and found it a **minor** term (+15% across
+four orders of magnitude of table growth), reporting it as hygiene rather than speed.
+
+## A shared-machine hazard, reported because it damaged a measurement
+
+The reverse-perf seat had its pinned instrument and several probe files **deleted mid-run** by a
+concurrent agent writing into the same scratchpad, and files it never created appeared beside its
+own. It re-copied, re-verified the md5, moved to a private subdirectory and re-ran. Two agents told
+to build scratch files and not told where to put them are each other's concurrent writer by
+construction; the dispatch invariant already says so about detached scripts, and this is the same
+shape arriving on a measurement. **Every seat brief should name a private scratch directory.**
+
+## Panel complete: 22 of 22
+
+All seats returned. Nothing was fixed; every finding above is read, derived, or measured against a
+pinned instrument, and every seat disclosed that it could not build.
