@@ -1031,3 +1031,43 @@ shape the tool was written to catch.**
 ask what lives at the level below, because in a symbol table that is where the boundary markers
 are.** A count of how often such a derivation is wrong says nothing about this; only the mechanism
 does. Both of us had measured the error rate and neither of us had it until the mechanism was found.
+
+### THE FOUR-CORPUS SWEEP COMPARES ALMOST NO BYTES, AND THIS SEAT PRESCRIBED IT THREE TIMES
+
+**Measured 2026-09-06 and verified independently here: 0 of 40 `s2disasm` `.asm` files emit ANY bytes
+assembled standalone.** The corpus trees are include FRAGMENTS, not roots. Across all four trees both
+arms accepted **2 of 1,753** files and emitted **zero** bytes.
+
+**So the sweep's `DIFFER=0` is a statement about 43,862 DIAGNOSTIC lines and exit codes, and is
+VACUOUS about bytes.** It has been reported in this lane's own words as comparing "emitted bytes,
+every diagnostic, and the exit code", which is true and misleading: the first term is empty.
+
+**This narrows a banked result rather than overturning it.** The strict-arguments null result rests on
+the diagnostic half, which is real; its byte wording was not. **A conclusion can survive while the
+sentence that carried it does not**, and the correction is owed to the sentence.
+
+**What caught it was the bar added hours earlier from a peer's void test: state what each arm
+PRODUCED, not merely that they agreed.** The bar caught an instrument THIS SEAT had prescribed three
+times, which is the argument for stating bars as properties of evidence rather than as warnings about
+a particular tool.
+
+**`sweep.sh` now prints the byte census every run and refuses to let a zero-byte run read as byte
+identity.** The real byte check is separate and was run: both aeon ROM shapes on both binaries,
+identical, **1,659,455 bytes of actual emission**, written to scratch so the shared reference tree
+was untouched.
+
+**The general form: an instrument that compares X over a population where X is empty reports perfect
+agreement forever.** Before believing any comparison, ask what the population actually contains of
+the thing being compared. A file count is not a byte count.
+
+### AND A ROW'S TITLE CAN BE THE NARROWEST TRUE STATEMENT OF ITS OWN DEFECT
+
+`AS-SET-OPENS-SCOPE` named `set`. **Twelve spellings diverged** (`set`, `equ`, `=`, `:=`, `eval`, each
+with or without the decorative colon, the comma-operand forms, string-valued binders) plus `enum`,
+where the last member owns the scope: **24 of 28 matrix rows**. The two already-correct rows were the
+controls that made the matrix worth building.
+
+**And the row's cited five sites CANNOT diverge at all**: they are dotted binders, and a dotted binder
+opens no scope in either assembler. I had measured that one of them did not diverge and framed it as
+"at least one does not". **The true statement was stronger and simpler than my hedge** — a hedge
+around a measurement is not automatically the safe direction, it can also be the imprecise one.
