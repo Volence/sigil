@@ -888,6 +888,34 @@ actually has; matching a table proves agreement with a tree they do not. **Byte 
 the pinned reference does not entail byte neutrality 358 commits later**, so their differential
 is not a re-run of this lane's check, it is the check this lane could not perform.
 
+## THE `--version` BANNER'S TREE VOCABULARY IS A LIVE TWO-WAY CONTRACT (banked 2026-09-06)
+
+**Sigil defines the words; aeon's `build.sh` enumerates the trusted ones and fails CLOSED on
+anything else; so ADDING A WORD IS A BREAKING CHANGE AT THEIR END and they must be told before
+it lands.** The vocabulary today is exactly `clean`, `clean-sources`, `dirty`, `unknown`,
+defined in `crates/sigil-cli/src/tree_class.rs::state_and_detail` and pinned by
+`crates/sigil-cli/tests/version_provenance.rs`. Their consumer is `build.sh` (the `tree:` read
+and the `case "${SIGIL_TREE}"` arm), verified here at aeon `origin/master`, and the coupling is
+written into their own comment: *the vocabulary is sigil's to define, the fail-safe direction is
+theirs to keep, and a consumer enumerating the trusted words must be told when a word is added.*
+
+**⚠ THIS LANE HAS ALREADY BROKEN IT ONCE, AND THE HOLD THAT SHOULD HAVE PREVENTED IT WAS WRITTEN
+IN A PLACE THAT CANNOT STOP A MERGE.** `9d71d8f4` (2026-08-27) added `clean-sources` and its own
+message opens `DO NOT MERGE THIS COMMIT until the banner's shape is agreed with the aeon lane`,
+naming their `dirty*` test as the thing it breaks. It is an ancestor of master via `d7f3f632`,
+merged the same day, and the hold was retired at `d5967f87` by READING their consumer rather
+than by asking them. **A DO-NOT-MERGE in a commit message is not a gate; it is a note that
+travels with the thing it is trying to stop.** A hold that must hold gets a failing test or an
+owner-visible blocker, never a sentence in the artifact being held.
+
+**And this lane's retirement note understated the cost, which is the part worth carrying.** It
+recorded the effect as *a FALSE warning, noisy and in the safe direction*. Aeon's own fix
+(`306608f2`, 2026-08-30) shows the same flag reaches `exit 1` under `SIGIL_VERSION_STRICT=1`, so
+on a correct tree with uncommitted sigil docs, STRICT REFUSES THE BUILD; latent only because
+nothing in-tree sets STRICT. **Reading a consumer settles more than reasoning about the producer
+can, and it still under-reads when you stop at the first arm the value reaches.** Three days
+passed between the word landing and their arm being added.
+
 ## Standing cross-session obligations (2026-08-22)
 
 The aeon session owes sigil two things, both triggered by sigil work rather than by
