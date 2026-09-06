@@ -1418,3 +1418,42 @@ were checked for the signature (a word gap where a quoted token was eaten). One 
 one. Every other commit that day used the heredoc form and is intact. Note the first sweep returned
 a confident ZERO from a broken `--since` filter and had to be re-run with a canary, which is the
 fifth false zero this lane hit in a day.
+
+### DO NOT COMMIT WHILE A GATE IS READING THE TREE (2026-09-06)
+
+*(Read at the moment you start any full-suite or landing run.)*
+
+**Instance, this seat's own.** A landing run was started at HEAD `6e04f349`. A docs-only commit was
+made while it ran. `version_reports_the_head_of_the_tree_it_was_built_from` failed: the binary bakes
+in the revision it was built from, and the checkout's HEAD had moved past it.
+
+**The reasoning that let it happen is the part worth keeping, because the hazard WAS noticed.** The
+thought was: the commit touches a note, nothing compiled, so it cannot change the run's inputs. Both
+clauses are true. They answer a DIFFERENT mechanism from the one that fired. The gate does not
+compare source, it compares the binary's recorded provenance against the tree's, and **every commit
+moves that, whatever it contains.** Noticing a hazard and then dismissing it with a correct
+statement about an unrelated mechanism is worse than not noticing, because it retires the worry.
+
+**THE RULE: from the moment a full-suite or landing run starts until it prints its verdict, the tree
+does not move.** No commits, no merges, no branch switches. Queue the work and do it after.
+
+**And a run you can EXPLAIN is not a run that PASSED.** The broken run was informative (412 suites,
+4,703 passed, exactly one failure, the self-inflicted one, and 4,703 + 1 reconciled to the expected
+4,704) and it is NOT what the landing rested on. It was re-run at a still HEAD. Explaining away a
+red is always available and is right often enough to be dangerous, which is why this document
+already forbids retiring a check because it is red; this is the same move wearing a diagnosis.
+
+**Credit where the gate earned it:** it did not merely fail. It named BOTH candidate causes (*"either
+build.rs did not re-run when HEAD moved, or HEAD moved while the suite was running"*) and the command
+that distinguishes them. A gate that hands you the discriminator turns an investigation into one
+command, and it is worth copying that shape into anything that can fail two ways.
+
+### A MONITOR FILTER THAT MATCHES NON-FAILURES TRAINS YOU TO SKIM IT
+
+Same session, and it is the reason the above took three notifications to see. A filter watching for
+`panicked` fired on **every `should_panic` test in the suite**, which are tests PASSING, and one
+watching for `Killed` fired on a game object named `Killed_CheckObject`. **Coverage is not the only
+property a filter needs; precision is what keeps its events readable.** The authoritative signals
+here are `^test result: FAILED` and the verdict block, not the panic text, because a panic is how
+half of these tests report success. **Ask not only "would this fire if the run crashed" but "does
+anything that is NOT a failure match this."**
