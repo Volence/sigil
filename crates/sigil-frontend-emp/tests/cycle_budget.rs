@@ -352,13 +352,27 @@ fn a_fall_off_the_end_is_refused() {
 
 /// An op outside the T-state table has no assignable cost, and adding a default
 /// would be the one thing worse than refusing.
+///
+/// The fixture has been `rlca`, then `ldir`, and each in turn became priced,
+/// leaving this asserting that a KNOWN op was unknown. `rlc (ix+0)` is chosen to
+/// end that: the DDCB shift column has no encoding in this assembler at all
+/// (`encode_cb_shift` refuses an indexed target), so it CANNOT become priced,
+/// the cost table's coverage guard is keyed on what the encoder accepts, and it
+/// does not accept this. The accompanying `[lower.z80-unsupported]` is not a
+/// cycle finding and `assert_one` filters on `[cycles.`, so it does not disturb
+/// the count.
 #[test]
 fn an_off_table_op_is_refused() {
     assert_silent(&z80("@budget(cycles: 100)", "    nop\n    ret\n"));
-    // `ldir` is a real Z80 op the cycle table genuinely does not price. It was
-    // `rlca` until that became priced (the eight missing primitives), at which
-    // point this asserted a known op was unknown. Keep it a REAL unpriced op.
-    assert_one(&z80("@budget(cycles: 100)", "    ldir\n    ret\n"), "cycles.unknown-op");
+    assert_one(&z80("@budget(cycles: 100)", "    rlc (ix+0)\n    ret\n"), "cycles.unknown-op");
+    // The TWIN that separates "off the table" from "refused for another reason":
+    // `ldir` used to be this test's fixture and is now priced, as a split cost.
+    // It is still refused, a block repeat has one edge and two costs, but under
+    // the other id, so a walk that answered `unknown-op` for everything could not
+    // pass both halves.
+    assert_one(&z80("@budget(cycles: 100)", "    ldir\n    ret\n"), "cycles.ambiguous-branch");
+    // And the single-step sibling MEASURES: ldi 16 + ret 10 = 26.
+    assert_silent(&z80("@budget(cycles: 26)", "    ldi\n    ret\n"));
 }
 
 /// A 68k `@budget` measures through the M68000UM table: the ceiling that admits

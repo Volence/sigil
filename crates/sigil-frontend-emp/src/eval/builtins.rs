@@ -655,6 +655,18 @@ impl<'a> Evaluator<'a> {
                 );
                 Value::Poison
             }
+            Err(crate::z80_cycles::CycleBail::OpaqueCall { mnemonic, span: isp }) => {
+                self.error(
+                    isp,
+                    format!(
+                        "[cycles.opaque-call] `{mnemonic}` calls out of the span; its own cost \
+                         is known but the callee's is not, so a straight-line sum would state \
+                         a T-state count for less code than actually runs. Cut the span around \
+                         the call, or measure the callee separately"
+                    ),
+                );
+                Value::Poison
+            }
             Err(crate::z80_cycles::CycleBail::UnknownOp { mnemonic, span: isp }) => {
                 self.error(
                     isp,

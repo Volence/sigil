@@ -40,9 +40,29 @@ fn cycles_jr_cc_in_span_bails() {
 // An off-table op inside the span is the unknown-op bail.
 #[test]
 fn cycles_off_table_bails() {
-    // A real Z80 op with no cost entry — see the note in `cycle_budget.rs`.
-    let e = errs("    .a:\n    ldir\n    .b:\n    ensure(cycles(.a, .b) == 0, \"x\")");
+    // `rlc (ix+0)`, the DDCB shift column, which this assembler cannot encode
+    // at all, so it cannot become priced later. See the note in `cycle_budget.rs`
+    // for why the previous two fixtures (`rlca`, then `ldir`) both went stale.
+    let e = errs("    .a:\n    rlc (ix+0)\n    .b:\n    ensure(cycles(.a, .b) == 0, \"x\")");
     assert!(e.iter().any(|m| m.contains("[cycles.unknown-op]")), "got {e:?}");
+    // The twin: `ldir` is now PRICED, and refuses under the other id because its
+    // two costs are outcome-keyed on a repeat that is not an edge.
+    let r = errs("    .a:\n    ldir\n    .b:\n    ensure(cycles(.a, .b) == 0, \"x\")");
+    assert!(r.iter().any(|m| m.contains("[cycles.ambiguous-branch]")), "got {r:?}");
+    // And the single-step `ldi` MEASURES at a flat 16: no cycle bail, and the
+    // ensure does not fire. Only `[cycles.*]` and the ensure's own message are
+    // examined, because `ldi` has no `.emp` mnemonic spelling yet, the language
+    // surface is the owner's to extend, so lowering says so, and that
+    // diagnostic is not what this test is about.
+    let s = errs("    .a:\n    ldi\n    .b:\n    ensure(cycles(.a, .b) == 16, \"LDI-DRIFT\")");
+    assert!(
+        !s.iter().any(|m| m.contains("[cycles.") || m.contains("LDI-DRIFT")),
+        "expected `ldi` to sum at 16 with no cycle finding, got {s:?}"
+    );
+    // …and the same span at a WRONG expectation does fire, so the assertion
+    // above is not passing because `cycles()` never produced a number.
+    let w = errs("    .a:\n    ldi\n    .b:\n    ensure(cycles(.a, .b) == 15, \"LDI-DRIFT\")");
+    assert!(w.iter().any(|m| m.contains("LDI-DRIFT")), "got {w:?}");
 }
 
 // `jp cc` is the POSITIVE control for the ambiguous bail — fixed 10, passes.
