@@ -313,8 +313,75 @@ single-witness applied-check is a coin flip you cannot audit.
 
 ## 6. The landing run
 
-See the following commit for the run output. Reported failures-first with names,
-with `pwd` and `HEAD` beside the verdict.
+Invocation copied from the brief, not retyped:
+
+    scripts/landing-run.sh --baseline 4650 --aeon /home/volence/sonic_hacks/.aeon-ref
+
+with `CARGO_TARGET_DIR` set to `.target-land` inside this worktree.
+
+### Run 1, at `4f4f83b5`: RED, 2 failures
+
+    FAILING TESTS (2), all of them:
+      every_selected_test_file_is_classified
+      the_derived_accessor_set_is_the_declared_guard_set
+    CARGO_EXIT 101   CLIPPY_EXIT 0   suites 411
+    passed 4656   failed 2   ignored 2   skip lines 0
+    reconciles  4650 baseline + 8 new = 4658 returned a verdict (4656 passed + 2 failed)
+
+Both are one cause: the new test file `listing_phase_marker` landed in none of
+the nightly source-gate lane's three buckets, and an unclassified file makes that
+whole lane REFUSE and produce no coverage. The gate is the landing-time copy of
+that lane going dark, so it found the defect one landing before the 05:17 timer
+would have, and against this tree rather than against master.
+
+    SOURCE_GATES=46 scanned=140 source=45 artifact=87 no-reference=7 unclassified=1
+    unclassified: listing_phase_marker
+
+Fixed in `84228134` by classifying it as a SOURCE gate, which is what its inputs
+make it: it compiles the corpus and reads the assembler's own answer about the
+sections it produced, opening no built ROM, no listing FILE, and no golden.
+
+A finding came out of the fix. Its near-twin `listing_defines` builds every
+shipped shape's listing the same way and sits in the ARTIFACT bucket, and the
+difference is not one of inputs: the classifier greps the whole file for the
+string `.lst`, `listing_defines` mentions a listing's file extension once in
+prose, and this file does not. The script already knows it does this and says so
+about six other files that match the artifact pattern "ONLY in prose", keeping it
+that way deliberately because tightening it would push those six into the
+refusal. So part of that bucket boundary is a property of how a file is WORDED.
+Recorded in the run list beside the new entry so a later reader does not conclude
+the two tests were judged to have different inputs.
+
+    after: SOURCE_GATES=47 scanned=140 source=46 artifact=87 no-reference=7 unclassified=0
+
+### Run 2, at `84228134`: GREEN
+
+    log        .target-land/landing-20260906T011859Z.log
+    tree       .../worktrees/agent-a0abba1b9a6abd93f @ 84228134
+               (parcel/emit-listing-phased-marker, clean)
+    reference  /home/volence/sonic_hacks/.aeon-ref @ 483b3e12 (HEAD, clean), all four present
+    started    2026-09-06T01:18:59Z -> 2026-09-06T01:24:27Z (UTC)
+    CARGO_EXIT 0    CLIPPY_EXIT 0 (lint bar clean)
+    suites     411
+    passed     4658   failed 0   ignored 2   skip lines 0
+    reconciles 4650 baseline + 8 new = 4658 observed
+    RESULT     GREEN
+
+`pwd` and `HEAD` are the log's own stamp, quoted above, not asserted here. The
+delta is exactly the parcel's own 8 tests and no others, and all eight are named
+in the green log rather than inferred from the total:
+
+    listing::tests::unphased_listing_still_carries_a_count_zero_phase_table ... ok
+    listing::tests::phased_symbols_get_vma_and_lma_rows ... ok
+    listing::tests::phase_lines_never_parse_as_an_address_row ... ok
+    listing::tests::phase_table_does_not_disturb_the_two_view_cross_check ... ok
+    listing::tests::an_equate_never_reaches_the_phase_table ... ok
+    native::phase_marker_tests::a_phased_section_yields_vma_and_lma_... ... ok
+    native::phase_marker_tests::a_reserve_only_ram_block_is_not_reported_... ... ok
+    every_shipped_shape_declares_which_of_its_addresses_are_phased ... ok
+
+plus `s4budget_parses_emit_listing ... ok`, which is the count-0 assertion added
+to an existing test rather than a new one.
 
 ---
 
