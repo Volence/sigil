@@ -14898,7 +14898,7 @@ C:\n";
             for eq in m.sections.iter().flat_map(|s| s.equ_syms.iter()) {
                 assert!(
                     matches!(eq.expr, sigil_ir::Expr::Int(_)),
-                    "{label}: `{}` left a symbolic obligation {:?} — the pass loop did not converge",
+                    "{label}: `{}` left a symbolic obligation {:?}; the pass loop did not converge",
                     eq.name,
                     eq.expr
                 );
