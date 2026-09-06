@@ -400,6 +400,43 @@ passing for some reason other than the footer match"
 measuring the footer match and not something else"
     fi
 fi
+
+echo "--- case 14: asl_lst_for agrees with WHERE ASL ACTUALLY WROTE, dots and all"
+# The whole INCOMPLETE check reads a file, so a derivation that names the wrong
+# file reports `unknown` on a swallowing run and looks like a clean absence.
+# asl truncates the listing name at the FIRST dot in the path it is handed, so a
+# directory with a dot in it moves the listing into the PARENT. This case does
+# not assume that: it assembles into such a directory and asks the filesystem.
+DOTDIR="$SCRATCH/d.d"
+mkdir -p "$DOTDIR"
+cp "$SWAL" "$DOTDIR/p.asm"
+rm -f "$SCRATCH"/d.lst "$DOTDIR"/p.lst
+(
+    cd "$SCRATCH" || exit 90
+    export USEANSI=n
+    . "$GUARD" >/dev/null 2>&1 || exit $?
+    "$ASL" -xx -n -q -A -L -U -i . d.d/p.asm >/dev/null 2>&1
+)
+derived="$(
+    . "$GUARD" >/dev/null 2>&1
+    cd "$SCRATCH" || exit 90
+    asl_lst_for -xx -n -q -A -L -U -i . d.d/p.asm
+)"
+actual="$(cd "$SCRATCH" && find . -name '*.lst' -newer "$DOTDIR/p.asm" | sed 's|^\./||' | head -1)"
+if [ -z "$actual" ]; then
+    bad "no listing was written anywhere under the scratch tree, so this case \
+has nothing to compare against"
+elif [ -z "$derived" ]; then
+    bad "asl_lst_for derived nothing for a blessed argument vector, so asl_run \
+would report 'unknown' on every run shaped like this"
+elif [ "$derived" != "$actual" ]; then
+    bad "asl_lst_for says '$derived' and asl actually wrote '$actual': the \
+INCOMPLETE check would be reading the wrong file, and a missing file reports \
+as 'unknown' rather than as an error"
+else
+    ok "asl wrote '$actual' for source d.d/p.asm and asl_lst_for names the same \
+file: the derivation follows asl's first-dot rule rather than the obvious one"
+fi
 fi
 fi
 

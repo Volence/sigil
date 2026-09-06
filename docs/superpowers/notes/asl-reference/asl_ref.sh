@@ -225,8 +225,26 @@ asl_diag_state() {
 
 # Which listing `asl -L` would have written for this argument vector. asl names
 # the listing after the SOURCE FILE, beside it, extension replaced. Measured,
-# not assumed: `asl -L -i . sub/x.asm` writes `sub/x.lst`, not `./x.lst`. The
-# last source-looking argument wins, and `-i .` / `-o out.p` do not match, so a
+# not assumed: `asl -L -i . sub/x.asm` writes `sub/x.lst`, not `./x.lst`.
+#
+# AND IT TRUNCATES AT THE FIRST DOT IN THE PATH IT WAS GIVEN, NOT THE LAST.
+# That is not a nicety. Measured on this build:
+#
+#     swal.asm                          ->  swal.lst          (as expected)
+#     a.b/p.asm                         ->  a.lst             (in the PARENT)
+#     ./p2.asm                          ->  .lst              (a hidden file)
+#     /path/sigil/.claude/wt/x/p.asm    ->  /path/sigil/.lst
+#
+# So a caller inside a `.claude/worktrees/...` checkout that hands asl an
+# ABSOLUTE source path gets no listing where it expects one and writes a stray
+# `.lst` at the first dot-directory in the path, which in this workspace is the
+# repository root, OUTSIDE the worktree. The untracked `.lst` and `.log` sitting
+# at sigil's root are that. A runner in that shape then reads a listing that is
+# missing or stale while its assembly looked entirely normal.
+#
+# `${src%%.*}` reproduces asl's rule exactly, which is the point: this function
+# must agree with where the file went, not with where it ought to go. The last
+# source-looking argument wins, and `-i .` / `-o out.p` do not match, so a
 # blessed invocation resolves. Override with `ASL_LST` when a caller's argument
 # vector is shaped so this cannot.
 asl_lst_for() {
@@ -238,7 +256,7 @@ asl_lst_for() {
         esac
     done
     [ -n "$src" ] || return 1
-    printf '%s.lst\n' "${src%.*}"
+    printf '%s.lst\n' "${src%%.*}"
 }
 
 asl_run() {
@@ -285,8 +303,12 @@ asl_run() {
             # so there is nothing a listing could have added here.
             echo "ASL_DIAG=complete (exit 0: no error, so no pass was aborted)" >&2
         else
-            echo "ASL_DIAG=unknown (no listing read; pass -L, or set ASL_LST to" >&2
-            echo "  the listing path, to learn whether asl finished its passes)" >&2
+            echo "ASL_DIAG=unknown (no listing at ${asl_lst:-<none derivable>};" >&2
+            echo "  pass -L, or set ASL_LST, to learn whether asl finished its" >&2
+            echo "  passes. If -L WAS passed: asl truncates the listing name at" >&2
+            echo "  the FIRST dot in the source path it was given, so an absolute" >&2
+            echo "  path through a dot-directory writes the listing elsewhere." >&2
+            echo "  Hand it a relative path from the source's own directory.)" >&2
         fi
         ;;
     esac
