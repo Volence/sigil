@@ -132,18 +132,27 @@ provenance disclaimer in its text** rather than relying on anyone remembering it
 *(The episode that earned it: `docs/OVERSEER-LOG.md`, 2026-09-03 cut, original lines 124-151.)*
 ### Standing rules — independent of whether a row is active
 
-**The R7 alignment flip.** *(Its measurement — 81–91% of declared sections over-aligned,
-the dominant case declaring 2 and handed 16 — and the ratchet hazard under it are in
-`docs/OVERSEER-LOG.md`, 2026-08-30, original lines 1342–1391. The byte effect of the flip
-is UNMEASURED and can only be measured by running it; report the counts, never a byte
-figure.)*
+**The R7 alignment flip: LANDED at `e2517405` (2026-08-30), verified an ancestor of master.**
+*(Its pre-flip measurement, 81 to 91% of declared sections over-aligned with the dominant case
+declaring 2 and handed 16, and the ratchet hazard under it, are in `docs/OVERSEER-LOG.md`,
+2026-08-30, original lines 1342 to 1391.)*
 
-**STATE OF THE PARCEL: writable, and the precondition really did land.** `DECLARED` carries **107
-rows**, `required_for` is live, and `section_alignment_declared.rs` already gates it **with a
-red-first witness** that doctors `Sfx_33`'s frozen row by +4 and requires the build to refuse by
-name. What remains is the flip itself — `align_up(running, required_for(section))` replacing
-`align_up(running, packed_align_of(prov))`, deleting `packed_align_of` and the provisional bases it
-reads. **Its own paired freeze, never riding another parcel's range** (the chain-179 lesson).
+The packing walk now reads `align_up(running, required_for(head label))`; the declaration is the
+ONLY alignment input and a section with no declaration is **refused by name, never given a
+default**. `packed_align_of` is gone from every Rust source file in the workspace and survives only
+as prose inside `golden/provenance.toml` history. Frozen as chain 196, whose note records seven
+shapes shrinking (s4 -62, s4_debug -46, demo -18, demo_debug -36, config_a -62, config_b -152,
+lean -14).
+
+**⚠ THIS BLOCK SAID *"what remains is the flip itself"* FOR A WEEK AFTER THE FLIP LANDED**, and it
+is the boot read, so every session since 2026-08-30 booted holding a landed parcel as outstanding.
+Nothing surfaced it because nothing executes this file, which is this document's own banked defect
+(*a snapshot wearing the grammar of a standing fact*) aimed at itself. It was caught on 2026-09-06
+only because the hub asked which decouple pieces were landed and the answer was verified in code
+rather than read off this page. **The general form, and it is why the correction is written here
+rather than quietly applied: a parcel's completion has to be written back to the document that
+DISPATCHES it, and no gate anywhere makes that happen.** When you land something this file
+describes as pending, edit this file in the landing commit.
 
 **A RE-BASELINE DOES NOT EXPLAIN A GREEN — IT MANUFACTURES ONE** sat here and is now in
 `docs/OVERSEER-REFERENCE.md`, beside the four ways a red-first proof goes vacuous. Read both at
