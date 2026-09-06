@@ -150,11 +150,19 @@ it could not clear by reading.
   error is exit 2, so a clean run cannot produce it. That is the always-red bar,
   and the sweep puts a number on how badly a failure-keyed check would have
   missed it: **115 tracked probes fail; only 24 of them swallow anything.**
-- **It still cannot make itself get used.** Four scripts in this tree call
-  `asl_run`; the rest call `"$ASL"` directly and get none of this. Unchanged from
+- **It still cannot make itself get used.** Five scripts in this tree call
+  `asl_run`: `scripts/z80_byte_sweep.sh`, the two probe `run.sh`es that already
+  did (`2026-09-05-as-logical-precedence-probes`,
+  `2026-09-05-as-macro-body-label-probes`), this parcel's `run.sh` and `sweep.sh`.
+  Everything else calls `"$ASL"` directly and gets none of this. Unchanged from
   the exit-status parcel, and unchanged for the same reason: an adoption lint
   would fire on the runners that deliberately run a second build, which is the
   always-red shape.
+- **`selfcheck.sh` is not in the cargo suite.** The landing run's 4658 tests do
+  not include any of its 15 cases, and never did. Running it is a hand step, so
+  a regression in `asl_diag_state` would not redden the gate. Pre-existing for
+  cases 0 to 9 and not made worse here, but it is why this parcel's landing delta
+  is 0 rather than 5.
 - **It needs `-L`.** Without a listing the honest answer is `unknown`, and
   `z80_byte_sweep.sh`, which passes no `-L`, now gets `unknown` on any failing
   run. That is the true state, not a regression, but it is not free.
@@ -216,8 +224,13 @@ fixtures keep their comments so the anchoring stays load-bearing.
 
 `./sweep.sh` assembles every tracked `.asm` standalone from a copy of its own
 directory, with the blessed flags, and classifies the listing. 348 tracked
-`.asm` at base `d094c3c8`, 297 of them under `docs/superpowers/notes/`. Run
-twice, by two independently written scripts, agreeing file for file.
+`.asm` at base `d094c3c8`, 297 of them under `docs/superpowers/notes/`.
+
+Run twice: once by an ad-hoc script with the classification inlined, once by the
+committed `sweep.sh` calling the guard's `asl_diag_state`. They agree file for
+file. **That checks that the guard's classifier and a hand-written grep make the
+same call, which is worth having; it is not two independent derivations, because
+the second was written from the first.**
 
 | | exit 0 | exit 2 | exit 3 / 139 |
 |---|---|---|---|
@@ -228,6 +241,14 @@ twice, by two independently written scripts, agreeing file for file.
 **91 probes fail with a complete diagnostic set.** That row is the reason the
 detector is not keyed to failure: a failure-keyed check would fire on 115 files
 where 24 are affected.
+
+**Re-running it after this parcel lands returns 354 files, 28 `INCOMPLETE`,
+310 `complete`, 18 `unknown`.** The eight-file difference is this parcel's own
+fixtures joining the corpus, classified as designed: `swallowed_undef.asm`,
+`error_first.asm`, `error_last.asm` and `remote_error_placeholder.asm`
+`INCOMPLETE`, their four controls `complete`. Every other row is unchanged, which
+is a live positive control on the sweep: a version that had stopped detecting
+would show them green.
 
 **The sweep's own limit.** Each file is run standalone. That is what most of this
 tree's runners do, but a probe that needs an include path into one of the
@@ -391,3 +412,26 @@ Their own runners supply what this sweep does not. **Not classified here.**
   unanchored grep read a fixture's comment about the warning as the warning. It
   is in the red-first section above because a mutation test that only ever
   confirms is not doing anything.
+- **And my own first write-up of the sweep overstated its corroboration.** It
+  said the population was derived by "two independently written scripts". The
+  second was written from the first and calls the guard's classifier; the
+  agreement is real and worth having, but it is a classifier-against-grep check,
+  not two independent derivations. Corrected above and stated here rather than
+  quietly softened.
+
+## THE LANDING RUN
+
+```text
+tree        .claude/worktrees/agent-aee518212984133ae @ 419d1278
+            (parcel/asl-pass-loop-swallows-diagnostics, DIRTY: untracked scratch only)
+reference   /home/volence/sonic_hacks/.aeon-ref @ 483b3e12 (clean), all four present
+CARGO_EXIT  0      CLIPPY_EXIT 0 (lint bar clean)
+suites 411   passed 4658   FAILED 0   ignored 2   skip lines 0
+reconciles  4658 baseline + 0 new = 4658 observed
+RESULT      GREEN
+```
+
+**No failures, so there are no names to lead with.** The delta is 0 and that is
+correct: this parcel adds no `crates/*/tests/*.rs`, so the source-gate
+classification hazard the brief warned about did not arise, and the five new
+checks live in `selfcheck.sh`, which the cargo suite does not run.

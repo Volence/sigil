@@ -31,7 +31,12 @@ git ls-files '*.asm' | while IFS= read -r rel; do
     # listing name at the FIRST dot in the path it is handed, so an absolute
     # path through a `.claude/worktrees/...` checkout writes the listing outside
     # the tree and this sweep would read `nofooter` for every single file.
-    ( cd "$WORK/$dir" && "$ASL" -xx -n -q -A -L -U -i . "$base" >/dev/null 2>&1 )
+    #
+    # Through `asl_run`, not `"$ASL"`, so this sweep is not itself a new
+    # unblessed call site. Its stderr goes nowhere on purpose: most of these 348
+    # runs are SUPPOSED to fail, and the per-file refusal banner would bury the
+    # table. The state and the status both survive, in the row.
+    ( cd "$WORK/$dir" && asl_run -xx -n -q -A -L -U -i . "$base" >/dev/null 2>&1 )
     rc=$?
     lst="$WORK/$dir/$stem.lst"
     pline=""; eline=""
