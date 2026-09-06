@@ -263,7 +263,46 @@ be lost.
 
 ## The landing run
 
-LANDING_PLACEHOLDER
+`scripts/landing-run.sh` itself, with its own invocations rather than retyped ones, run TWICE:
+once at the cut plus the repairs, and again at the final tip so the verdict is stamped with the
+tree that actually ships.
+
+```
+=============================== LANDING RUN VERDICT ===============================
+  tree            .../agent-a97be5a4cf1ce39d7 @ 8ebe18d4 (parcel/boot-doc-cut-2, clean)
+  reference       /home/volence/sonic_hacks/.aeon-ref @ 483b3e12 (HEAD, clean), all four present
+  target dir      .../agent-a97be5a4cf1ce39d7/.target-land
+  started/ended   2026-09-06T00:25:38Z -> 2026-09-06T00:31:49Z (UTC)
+  CARGO_EXIT      0
+  CLIPPY_EXIT     0   (lint bar clean)
+  suites          410
+  passed          4650
+  failed          0
+  ignored         2
+  skip lines      0
+  reconciles      4650 baseline + 0 new = 4650 observed
+  RESULT          GREEN
+===================================================================================
+LANDING2_EXIT=0
+== END MARKER ==
+```
+
+**Failures first: there are none.** `^test .* FAILED` returns 0 and `test result: FAILED` returns
+0, against a positive control of 410 `test result: ok` lines from the same file, so the zero is a
+finding rather than a broken pattern. The three `panicked at` lines in the log are
+`should_panic` tests naming themselves (`override_of_unknown_constant_panics`,
+`ensure_generated_refuses_before_it_touches_an_absent_tree`, `compress_panics_on_error`).
+
+**The count reconciles exactly with the brief's stated baseline.** 4,650 passed, 0 failed, which
+is master's 4,649 plus the one this parcel turned green, and no other delta.
+
+The first run (at `6051fa29`, before this note existed) was identical: 410 suites, 4,650 passed, 0
+failed, clippy 0, RESULT GREEN, 00:19:17Z to 00:24:30Z. It is re-run rather than relied on because
+this note was written into the tree while it was in flight, and a verdict stamped with a tree that
+no longer exists is the shape this lane already banked.
+
+`/home/volence/sonic_hacks/.aeon-ref` was read and never rebuilt; the script names it at
+SUITE_PATHS step 1 and reports it clean at `483b3e12` on both runs.
 
 ## Anything in this brief you concluded was wrong
 
