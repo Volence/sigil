@@ -784,6 +784,47 @@ have never had a source, send them that too and retire it.** Stated as an obliga
 refusal booked on both sides sits forever by default, each side assuming the other holds it. Their
 booking is aeon `ab5dfc68`.
 
+## A NAME-STRING ENUMERATION CANNOT TELL A CONSUMER FROM A FIXTURE (2026-09-06)
+
+**Two lanes enumerated the same symbol independently and BOTH over-counted, in the same way.**
+Aeon asked this lane to price the sigil-side cost of deleting one aeon object module
+(`games.sonic4.path_swap`). They sent their own enumeration, explicitly flagging that their agent
+had MISSED two files. This lane re-enumerated varying the alphabet rather than the scope
+(case-insensitive, underscore / camel / spaced spellings, all tracked file types, per bar 19) and
+found four more again.
+
+**Then the extra hits turned out not to be consumers at all.** `path_swap`'s diagnostic string,
+`"Bad path swap!%<endl>Got: %<.b d0>"`, is used as a **test vector** in the `.emp` diagnostics
+encoder's own tests, and two further files merely name the module in a comment. Five files in
+total **survive the module's deletion untouched**, including the one aeon had reported as a missed
+site. They test how a format string encodes; that message is just a realistic sample.
+
+**The rule: a name-string enumeration cannot distinguish a CONSUMER from a FIXTURE, and the error
+is toward over-counting.** The tell is position, not spelling: **a hit inside a quoted literal is
+data, a hit in a symbol position is a consumer.** Bar 14 covers the case where an identifier grep
+and a quoted-key grep each find what the other misses; this is the inverse face, where the quoted
+occurrence is a *decoy* and both greps find it. **Widening the alphabet made the answer worse, not
+better**, which is worth remembering the next time a wider enumeration feels like the safer one.
+
+**And the real surface was still under-counted where it mattered**, which is why the correction is
+not simply "fewer sites". Aeon named `repin.toml`'s `test_parent` anchor as the second consumer
+that gets missed. **There are five** distinct regions anchored on the deleted symbol
+(`test_particle`, `test_emitter`, `test_stress_emitter`, `test_churn`, `test_parent`), plus the
+`path_swap` region itself. **The instinct about the class was right and the instance was one fifth
+of it**, so a correction that only removed the false positives would have shipped a booking that
+was wrong in the expensive direction.
+
+**Open and deliberately not asserted:** since the alignment flip, an UNDECLARED section is refused
+by name. Whether a `section_align::DECLARED` row for a section that no longer EXISTS is inert or
+fatal is the opposite direction and is untested. One command, owed before the bundled parcel is
+sized.
+
+*(Priced and PARKED by the hub in the owner's place: the deletion waits in aeon's `DEFERRED_WORK`
+and rides the next chainer-pin advance as one parcel. Grounds, and this lane's own read before the
+ruling arrived: a repin plus a five-shape refreeze plus a shared-binary relink for one obsolete
+object is poor value per byte moved, and the relink is hub-gated since 2026-09-06, so it cannot be
+scheduled from inside this lane at all.)*
+
 ## Standing cross-session obligations (2026-08-22)
 
 The aeon session owes sigil two things, both triggered by sigil work rather than by
