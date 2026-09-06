@@ -4152,6 +4152,52 @@ sites and one of its nine `warning` sites are never reached by any sigil pass.
 Population: 1 site, inside the existing 42-row s1disasm total, but it is the row that costs
 every later site its reach. Note the bare-tree figure for the same message is `72325h`; the
 number moves with the generated DPCM includes, so size it off a PREPARED tree only.
--- OPEN (kill: compare sigil's and asl's `$` at `sound/z80.asm(229)` on the prepared tree;
-the factor of roughly sixty points at a phase/org accounting difference rather than an
-emit-size one)
+-- **MECHANISM FOUND 2026-09-06, FIX BLOCKED (byte-moving).** `2026-09-06-as-org-backwards-z80-driver.md`.
+`directive_org` models `org` as a PHYSICAL relocation and refuses any target below the open
+section's base, so `sound/z80.asm(9)`'s `!org 0` fails with `org target precedes the current
+phase base` and `$` never leaves the 68000 address space. Probed on one instrumented tree by
+both assemblers: immediately after the org, asl reports `0` and sigil `72240h`. The factor of
+sixty is not the whole story and the brief's `0x73DFD - 0x1BC6 = 0x72237` is not anybody's
+base: two error terms hide in it (`0xC3C` of upstream emission sigil never produced, and 9 B
+of driver body from four `ld r,userfunc(arg)` lines). The repair cannot be diagnostic-only:
+`$` feeds `define_label`, `asl_align_pad`, `word_pad_due` and the PC-relative displacement
+word, and this file's `zPCM_Table` emits Z80-space label addresses as `dw` (asl lists
+`B0 0B` for `dw zDAC_Timpani`, `zDAC_Timpani = BB0h`).
+Widened population: 4 corpus rows plus 1 SILENT site. skdisasm reproduces both halves
+(`Sound/Z80 Sound Driver.asm(226)` the same org refusal, `(345)` `Function GetPointerTable
+is at 0F0908h` where asl lists `=8H` and `rst GetPointerTable` assembles to `CF`, which IS
+`rst 08h`). s2disasm takes the OTHER branch of `directive_org`: with no section open at
+`s2.sounddriver.asm(248)` the org succeeds, `$` becomes `0`, no diagnostic is raised, and the
+Z80 driver is placed at physical ROM offset 0. Both fatals truncate: skdisasm's stream
+carries exactly 3 rows naming a 5,315-line file, so ~4,970 lines of Z80 source have never
+been assessed. Post-fix totals must be MEASURED, never predicted by subtraction.
+-- OPEN (kill: an aeon-paired verification, then the placement change. Aeon's 378 `*.asm`
+files contain no `org`/`save`/`restore`/`phase`/`dephase` in directive position and its Z80
+driver is `engine/sound/z80_sound_driver.emp` on the `.emp` frontend, so the ripple looks
+absent, but that is a source sweep and NOT a ROM-byte comparison)
+
+### `\{$}` silently interpolates to nothing under `CPU 68000`, where asl errors (2026-09-06)
+A `warning`/`error`/`fatal`/`message` string containing `\{$}` under the 68000 CPU comes back
+from sigil with the text `\{$}` VERBATIM and no diagnostic. asl refuses the same string:
+`error #1020: invalid symbol name` followed by `$` on its own line, then `error #1970: invalid
+string`. Under `CPU Z80`, where hex takes an `h` suffix and `$` is unambiguous, both
+assemblers interpolate it. `\{*}` works on both CPUs in both assemblers and is the spelling a
+probe should use.
+Population: measured on 3 instrumented sites in a prepared s1disasm tree, one per CPU-mode
+combination tried; the corpus's own `\{$}` sites all sit under `CPU Z80` and are unaffected,
+so this raises no corpus row today and is a silent-acceptance gap rather than a count.
+-- OPEN (kill: decide whether sigil follows asl in refusing `$` as an interpolated PC under a
+CPU whose hex prefix is `$`, or interpolates it anyway; either way it must stop leaving the
+sequence in the output untouched, which is the one answer asl never gives)
+
+### A Z80 operand cannot be a user `function` call (2026-09-06)
+`ld a,zmake68kBank(SegaPCM)&1`, `ld a,zmake68kBank(SegaPCM)>>1`,
+`ld de,zmake68kPtr(SegaPCM)` and `ld b,pcmLoopCounter(16000)` all raise `trailing tokens in
+operand`. The operand parser reads the function NAME as the operand and then finds `(args)`
+left over. asl assembles all four.
+Population: 4 sites in `s1disasm/sound/z80.asm` (lines 51, 55, 188, 197), which is the whole
+of the 4-row `trailing tokens in operand` class in that corpus, and 9 bytes of driver body.
+skdisasm and s2disasm both define the same `zmake68kPtr`/`zmake68kBank` helpers, so their
+counts are hidden behind the fatals in the row above and are not yet knowable.
+-- OPEN (kill: let a Z80 operand start with a user `function` call; then re-measure both
+truncated corpora, because this class and the org class hide each other)
