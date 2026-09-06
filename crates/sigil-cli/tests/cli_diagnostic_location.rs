@@ -171,3 +171,79 @@ fn every_diagnostic_line_carries_a_file_and_line() {
         );
     }
 }
+
+/// THE ROUTE-PARITY GATE. Whether sigil accepts a program must not depend on
+/// which of its link routes reached it.
+///
+/// `sigil <file.asm>` is the only FINAL link in this binary that used to stop at
+/// `link()`. `link()` serves partial links too, so it steps over an `equ_sym`
+/// that will not fold — the base may be in a module it was not given — and that
+/// tolerance made `Val equ Missing` assemble clean here while `resolve_layout`,
+/// which every other route runs, refused the same two lines. asl refuses them
+/// (`error #1010: symbol undefined`, exit 2, `2 passes`), so the accepting
+/// route was the wrong one.
+///
+/// Both arms of the discriminator are asserted, because USE was the thing that
+/// separated them: the value is read in one file and never mentioned again in
+/// the other, and both must be refused, at the ASSIGNMENT's line.
+#[test]
+fn an_unresolved_assignment_is_refused_whether_or_not_it_is_read() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let src = dir.path();
+    let cases = [
+        ("read.asm", "\tcpu 68000\nVal\tequ\tMissing\n\tdc.l\tVal\n"),
+        ("unread.asm", "\tcpu 68000\nVal\tequ\tMissing\n\tnop\n"),
+        ("unread_set.asm", "\tcpu 68000\nVal\tset\tMissing\n\tnop\n"),
+    ];
+    for (name, text) in cases {
+        std::fs::write(src.join(name), text).expect("write probe");
+        let out = Command::new(env!("CARGO_BIN_EXE_sigil"))
+            .arg(src.join(name))
+            .output()
+            .expect("spawn sigil");
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(
+            !out.status.success(),
+            "{name}: an assignment naming an undefined symbol was ACCEPTED.\nstdout: {}",
+            String::from_utf8_lossy(&out.stdout)
+        );
+        assert!(
+            stderr.contains("`Val`") && stderr.contains("`Missing`"),
+            "{name}: the refusal names the binder and its dependency.\nstderr:\n{stderr}"
+        );
+        // At the ASSIGNMENT (line 2), which is where asl reports it — not at
+        // whatever line happens to read the value.
+        assert!(
+            stderr.contains(&format!("{name}(2)")),
+            "{name}: the refusal points at the assignment's own line.\nstderr:\n{stderr}"
+        );
+    }
+}
+
+/// The same route, on the OVER-FIRE side: a forward reference is legal and must
+/// still assemble, to the bytes asl's listing shows for the same source.
+#[test]
+fn the_single_file_route_still_accepts_a_forward_reference() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let src = dir.path();
+    std::fs::write(
+        src.join("fwd.asm"),
+        "\tcpu 68000\nVal\tequ\tLater\n\tdc.l\tVal\nLater:\n\tdc.w\t1\n",
+    )
+    .expect("write fwd.asm");
+    let out = Command::new(env!("CARGO_BIN_EXE_sigil"))
+        .arg(src.join("fwd.asm"))
+        .arg("--hex")
+        .output()
+        .expect("spawn sigil");
+    assert!(
+        out.status.success(),
+        "a forward `equ` was refused.\nstderr:\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&out.stdout).trim(),
+        "00 00 00 04 00 01",
+        "asl's own listing column for these five lines"
+    );
+}

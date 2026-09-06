@@ -121,7 +121,33 @@ fn main() {
             process::exit(1);
         }
     };
-    let linked = match sigil_link::link(&module.sections, &sigil_ir::SymbolTable::new()) {
+    // `resolve_layout` before `link`, which is what every other FINAL-link route
+    // in this binary and in `sigil-harness` does, and what this one has to do to
+    // ask the same questions of a program as the ROM build does.
+    //
+    // `link()` alone answers a strictly smaller set. It is written to serve a
+    // PARTIAL link as well as a whole one, so its Pass-1b passes over an
+    // `equ_sym` that will not fold — that equate's base may simply be in a
+    // module this link was not given — and leaves the name undefined, which is
+    // silent until something READS it. `Val equ Missing` with nothing reading
+    // `Val` therefore assembled clean here while the same two lines in the ROM
+    // build were refused by `fold_equ_syms`, so whether sigil accepted a program
+    // depended on which route reached it. `resolve_layout` is where the whole
+    // program is visible and where that refusal is taken.
+    //
+    // It is not only the equates: `resolve_layout` is also the width-relaxation
+    // fixpoint, so a `JmpJsrSym`/`RelaxAbsSym`/`RelaxLadder` fragment (which
+    // `link()`'s Pass-1c can only refuse, having no placement to choose a width
+    // from) now resolves on this route as it does on the others.
+    let empty = sigil_ir::SymbolTable::new();
+    let resolved = match sigil_link::resolve_layout(&module.sections, &empty, true) {
+        Ok(secs) => secs,
+        Err(diags) => {
+            render_located_diags(&diags, &sources);
+            process::exit(1);
+        }
+    };
+    let linked = match sigil_link::link(&resolved, &empty) {
         Ok(img) => img,
         Err(diags) => {
             render_located_diags(&diags, &sources);

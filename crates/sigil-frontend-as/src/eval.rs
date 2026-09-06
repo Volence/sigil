@@ -941,6 +941,17 @@ struct Asm {
     /// opens; drained (never left stranded) as long as the module contains at
     /// least one section, which every real program does.
     pending_equ_syms: Vec<EquSym>,
+    /// Names already carried out of this pass by [`Self::defer_unresolved_assign`].
+    ///
+    /// `set`/`:=`/`eval` are the REASSIGNABLE class, so one name may reach the
+    /// deferral more than once in a single pass (`x := ExtA` … `x := ExtB`).
+    /// Emitting an `EquSym` per occurrence would hand the linker two rows with
+    /// one name, and `link()`'s `defined_here` map reads a repeated name as a
+    /// redefinition — a diagnostic about the deferral mechanism rather than
+    /// about the program. FIRST occurrence wins: every row this set guards is
+    /// unresolvable in the front end, so the choice cannot change a value, and
+    /// the first is the line asl itself would have refused.
+    deferred_assign_names: std::collections::HashSet<String>,
     /// Port #2 (math.emp follow-up): set only on the ONE extra bonus pass
     /// `run` performs when normal convergence still leaves `jsr`/`jmp`
     /// bare-symbol targets Poison. `false` on every ordinary pass (every
@@ -1193,6 +1204,7 @@ impl Asm {
             cond_faults_seen: std::collections::HashSet::new(),
             while_budget: GLOBAL_WHILE_CAP,
             pending_equ_syms: Vec::new(),
+            deferred_assign_names: std::collections::HashSet::new(),
             defer_unresolved_jsr_jmp,
             terminal_fatal: None,
             mompass: LATER_PASS,
@@ -5214,38 +5226,79 @@ impl Asm {
             // THIS AS unit — a cross-seam `.emp` label joined only at link time
             // (`Game_Entry = GameState_OJZScroll_Init`; the mixed-build
             // `ErrorHandler = ErrorHandlerBlob` alias + its `MDDBG__* =
-            // ErrorHandler + N` chain). Without this the equate was silently
-            // dropped and every reference to it dangled at link. Emit it as a
-            // DEFERRED symbolic `equ_sym` (`relax_safe_fold` keeps the unresolved
-            // symbol symbolic and bakes any env-only subterm) so
-            // `resolve_layout`'s `fold_equ_syms` folds it off the external base
-            // once that label is placed (equ-off-link-external-base). Emitted on
-            // EVERY pass — a minimal AS unit with no cross-seam `jsr`/`jmp` poison
-            // never triggers the bonus pass, so gating on it would drop the equate
-            // in exactly those mixed harnesses; `run` keeps only the final module,
-            // and the raw env is untouched (the RHS never folded), so convergence
-            // is unaffected. An equate whose base is absent from the final link is
-            // simply not defined (`fold_equ_syms` leaves it), and only a REAL
-            // reference to it errors — at the fixup, as an unplaced label would.
-            if let Some(e) = crate::expr::parse_expr(&self.expand_calls_checked(rest))
-                .and_then(|(e, tail)| tail.is_empty().then_some(e))
-                .map(|e| self.resolve_dollar(&self.qualify_expr(&e)))
-                .filter(expr_has_sym)
-            {
-                self.label_ref_equs.insert(q.clone());
-                let equ_expr = self.relax_safe_fold(&e);
-                if self.in_section {
-                    self.builder.add_equ_sym(EquSym { name: q, expr: equ_expr, span });
-                } else {
-                    self.pending_equ_syms.push(EquSym { name: q, expr: equ_expr, span });
-                }
-            }
+            // ErrorHandler + N` chain). The equate becomes an OBLIGATION on the
+            // link rather than a value bound here; see
+            // [`Self::defer_unresolved_assign`] for what the link then owes it.
+            self.defer_unresolved_assign(&q, rest, span);
             // NO [`Self::open_binder_scope`] on this arm, and that is measured
             // rather than an omission: a binder whose right-hand side does not
             // evaluate opens no scope in asl either (probe `s08`, whose table
             // reads `Anchor.tt` and not `Bd.tt`). The deferred `equ_sym` above
             // is a promise to the LINKER, not a value bound at this line, and
             // the local written under it still belongs to the label above.
+        }
+    }
+
+    /// Carry an assignment whose right-hand side this unit cannot evaluate out
+    /// to the link as a DEFERRED symbolic `equ_sym`, for every spelling of the
+    /// assignment (`equ`, `=`, `set`, `:=`, `eval`, and the comma-operand forms
+    /// that route through them).
+    ///
+    /// WHY THE FRONT END DOES NOT REFUSE HERE, which is the whole shape of this.
+    /// asl refuses an unresolvable right-hand side AT THE ASSIGNMENT (`error
+    /// #1010: symbol undefined`), and the natural reading is that this function
+    /// should do the same. It cannot, and the reason is not conservatism: this
+    /// unit is one half of a mixed AS + `.emp` program, and a name absent from
+    /// this unit's tables is INDISTINGUISHABLE HERE from a `.emp` label the link
+    /// is about to supply. `Game_Entry = GameState_OJZScroll_Init` is that shape
+    /// and it is correct source. So the refusal must be taken where the whole
+    /// program is visible, and this function's job is to make sure something
+    /// THERE is obliged to take it.
+    ///
+    /// WHAT THE LINK OWES IT. `resolve_layout`'s `fold_equ_syms` folds every
+    /// `equ_sym` against the final post-placement symbol table and refuses —
+    /// naming the equate and its first unresolved dependency — when one will not
+    /// fold. That refusal does not ask whether anything READS the name, which is
+    /// what makes an unused bad assignment a refusal rather than a silent
+    /// acceptance. Every final-link route runs `resolve_layout` (`link()` alone
+    /// tolerates a Poison equ, because a partial link legitimately has one).
+    ///
+    /// FORWARD REFERENCES NEVER REACH HERE. `run` iterates passes to a fixpoint,
+    /// so `Val equ Later` folds on the pass after `Later` is seen and takes the
+    /// `Some(v)` branch with an `Expr::Int`. Only a name no pass ever resolves
+    /// arrives at this function, which is why an obligation and not a diagnostic
+    /// is the right thing to record.
+    ///
+    /// `relax_safe_fold` keeps the unresolved symbol symbolic and bakes any
+    /// env-only subterm, so `X = Extern + CONST` ships `Sym(Extern) + Int(CONST)`
+    /// and folds off the external base once that label is placed. Recorded on
+    /// EVERY pass: a minimal AS unit with no cross-seam `jsr`/`jmp` poison never
+    /// triggers `run`'s bonus pass, so gating on it would drop the obligation in
+    /// exactly the mixed harnesses that need it. `run` keeps only the final
+    /// pass's module, and the raw env is untouched (the RHS never folded), so
+    /// convergence is unaffected.
+    ///
+    /// A right-hand side that parses to no symbol at all records nothing: a pure
+    /// `Int` parse would have folded, so the failure was in the parse and the
+    /// parser has already said so.
+    fn defer_unresolved_assign(&mut self, q: &str, rest: &[Token], span: Span) {
+        let Some(e) = crate::expr::parse_expr(&self.expand_calls_checked(rest))
+            .and_then(|(e, tail)| tail.is_empty().then_some(e))
+            .map(|e| self.resolve_dollar(&self.qualify_expr(&e)))
+            .filter(expr_has_sym)
+        else {
+            return;
+        };
+        if !self.deferred_assign_names.insert(q.to_string()) {
+            return;
+        }
+        self.label_ref_equs.insert(q.to_string());
+        let equ_expr = self.relax_safe_fold(&e);
+        let sym = EquSym { name: q.to_string(), expr: equ_expr, span };
+        if self.in_section {
+            self.builder.add_equ_sym(sym);
+        } else {
+            self.pending_equ_syms.push(sym);
         }
     }
 
@@ -5497,6 +5550,17 @@ impl Asm {
             // own `.`-locals, and it must see the scope the line was written in
             // -- probe `s04`. See [`Self::open_binder_scope`].
             self.open_binder_scope(name);
+        } else {
+            // `eval_all` failed: the right-hand side names something this unit
+            // cannot evaluate. Same obligation as the equate's failing branch —
+            // see [`Self::defer_unresolved_assign`] — so a reassignable binder
+            // gets the same refusal at the link that a constant one does, and an
+            // unread `x := nosuchsymbol` cannot pass for a program.
+            //
+            // No [`Self::open_binder_scope`]: nothing was bound at this line, so
+            // the locals written under it still belong to the label above, which
+            // is what the equate's failing branch does for the same reason.
+            self.defer_unresolved_assign(&q, rest, span);
         }
     }
 
@@ -14735,6 +14799,125 @@ C:\n";
             &img[0x1000..],
             [0x4E, 0xF9, 0x00, 0x00, 0x10, 0x00, 0x4E, 0xF9, 0x00, 0x00, 0x10, 0x06]
         );
+    }
+
+    // ── An assignment whose right-hand side never resolves ───────────────────
+    //
+    // asl decides an assignment AT THE ASSIGNMENT, and its refusal does not ask
+    // whether anything reads the name. Measured on the reference build
+    // (`asl_ref.sh`, md5 61e672562465725a8c102288a7da9098), each of the five
+    // spellings below, with `Missing` never defined and `Val` never read:
+    //
+    //     Val equ Missing   ->  h.asm(2):9:  error #1010: symbol undefined
+    //     Val = Missing     ->  h.asm(2):7:  error #1010: symbol undefined
+    //     Val set Missing   ->  h.asm(2):9:  error #1010: symbol undefined
+    //     Val := Missing    ->  h.asm(2):8:  error #1010: symbol undefined
+    //     Val eval Missing  ->  h.asm(2):10: error #1010: symbol undefined
+    //
+    // all exit 2 with `2 passes` in the footer, so the refusal was sought on a
+    // later pass and found, not left unlooked-for behind an earlier error.
+
+    /// The five assignment spellings, as `(label, source)`. Every one binds
+    /// `Val` from a name nothing defines, and NOTHING READS `Val`: use is the
+    /// discriminator this whole group exists to remove.
+    fn unresolved_assignment_spellings() -> Vec<(&'static str, String)> {
+        ["equ", "=", "set", ":=", "eval"]
+            .iter()
+            .map(|kw| (*kw, format!("\tcpu 68000\nVal\t{kw}\tMissing\n\tnop\n")))
+            .collect()
+    }
+
+    /// The obligation the front end records for such an assignment: exactly one
+    /// `equ_sym` named `Val`, still SYMBOLIC (an `Int` would mean it folded and
+    /// there is nothing left to refuse).
+    ///
+    /// This is the population check the refusal test needs. Without it, a
+    /// refusal assertion passes just as well when the front end recorded
+    /// nothing and the link failed for some other reason — and "recorded
+    /// nothing" is precisely the defect being closed, so the test would be
+    /// green over the bug it was written for.
+    #[test]
+    fn every_assignment_spelling_records_an_unresolved_obligation() {
+        for (kw, src) in unresolved_assignment_spellings() {
+            let m = run(&src, &Options::default()).unwrap_or_else(|d| panic!("{kw}: assemble {d:?}"));
+            let equs: Vec<_> =
+                m.sections.iter().flat_map(|s| s.equ_syms.iter()).filter(|e| e.name == "Val").collect();
+            assert_eq!(equs.len(), 1, "{kw}: exactly one obligation for `Val`, got {equs:?}");
+            assert!(
+                matches!(&equs[0].expr, sigil_ir::Expr::Sym(s) if s == "Missing"),
+                "{kw}: the obligation still names `Missing`, got {:?}",
+                equs[0].expr
+            );
+        }
+    }
+
+    /// And the link takes it, on every spelling, with the value UNREAD.
+    #[test]
+    fn every_assignment_spelling_is_refused_unread() {
+        for (kw, src) in unresolved_assignment_spellings() {
+            let m = run(&src, &Options::default()).unwrap_or_else(|d| panic!("{kw}: assemble {d:?}"));
+            let empty = sigil_ir::SymbolTable::new();
+            let diags = sigil_link::resolve_layout(&m.sections, &empty, true)
+                .err()
+                .unwrap_or_else(|| panic!("{kw}: an unresolvable assignment was ACCEPTED"));
+            let text = diags.iter().map(|d| d.message.clone()).collect::<Vec<_>>().join(" | ");
+            assert!(
+                text.contains("`Val`") && text.contains("`Missing`"),
+                "{kw}: the refusal names the equate and its dependency, got: {text}"
+            );
+        }
+    }
+
+    /// THE OVER-FIRE DIRECTION, and the one that breaks working programs: a
+    /// forward reference is NOT an unresolved symbol. The front end iterates
+    /// passes to a fixpoint, so every shape here folds and never reaches the
+    /// obligation at all.
+    ///
+    /// The expected bytes are asl's own listing columns for the same five
+    /// sources, each assembled with `ASL_EXIT=0` and `ASL_DIAG=complete`.
+    #[test]
+    fn a_forward_reference_is_not_an_unresolved_symbol() {
+        let cases: [(&str, &str, &[u8]); 5] = [
+            // `equ` read forward, and the same equ never read at all.
+            ("fwd equ", "\tcpu 68000\nVal\tequ\tLater\n\tdc.l\tVal\nLater:\n\tdc.w\t1\n",
+             &[0x00, 0x00, 0x00, 0x04, 0x00, 0x01]),
+            ("fwd equ unread", "\tcpu 68000\nVal\tequ\tLater\n\tnop\nLater:\n\tdc.w\t1\n",
+             &[0x4E, 0x71, 0x00, 0x01]),
+            // A plain forward LABEL reference, which shares the pass loop.
+            ("fwd label", "\tcpu 68000\n\tbra.w\tLater\n\tnop\nLater:\n\tdc.w\t1\n",
+             &[0x60, 0x00, 0x00, 0x04, 0x4E, 0x71, 0x00, 0x01]),
+            // The reassignable class, plain and reassigned over a settled value.
+            ("fwd set", "\tcpu 68000\nVal\tset\tLater\n\tdc.l\tVal\nLater:\n\tdc.w\t1\n",
+             &[0x00, 0x00, 0x00, 0x04, 0x00, 0x01]),
+            ("fwd set reassigned", "\tcpu 68000\nVal\tset\t1\nVal\tset\tLater\n\tdc.l\tVal\nLater:\n\tdc.w\t1\n",
+             &[0x00, 0x00, 0x00, 0x04, 0x00, 0x01]),
+        ];
+        for (label, src, want) in cases {
+            let m = run(src, &Options::default()).unwrap_or_else(|d| panic!("{label}: assemble {d:?}"));
+            // Nothing is owed to the link: the pass loop resolved it here.
+            for eq in m.sections.iter().flat_map(|s| s.equ_syms.iter()) {
+                assert!(
+                    matches!(eq.expr, sigil_ir::Expr::Int(_)),
+                    "{label}: `{}` left a symbolic obligation {:?}; the pass loop did not converge",
+                    eq.name,
+                    eq.expr
+                );
+            }
+            assert_eq!(linked_image(src), want, "{label}: bytes");
+        }
+    }
+
+    /// A REASSIGNABLE binder may reach the deferral more than once under one
+    /// name. One name, one obligation — two rows would reach `link()`'s
+    /// dup-symbol channel and be reported as a redefinition, which is a
+    /// diagnostic about this mechanism rather than about the program.
+    #[test]
+    fn a_reassigned_binder_owes_one_obligation_not_two() {
+        let src = "\tcpu 68000\nVal\t:=\tMissing\nVal\t:=\tMissing\n\tnop\n";
+        let m = run(src, &Options::default()).expect("assemble");
+        let equs: Vec<_> =
+            m.sections.iter().flat_map(|s| s.equ_syms.iter()).filter(|e| e.name == "Val").collect();
+        assert_eq!(equs.len(), 1, "one obligation for a twice-deferred name, got {equs:?}");
     }
 }
 
