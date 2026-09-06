@@ -1348,6 +1348,24 @@ afterwards.** My version said "the owner announces before", which still leaves t
 moment from inside one lane's view. **A lane cannot see who is mid-run; only the hub can.** That is
 the whole reason the coordination point has to sit above the owner.
 
+**⚠ THE INSTALLED BINARY'S OWN MD5 WAS RECORDED NOWHERE UNTIL 2026-09-06, WHICH IS THE ONE FIELD A
+CONSUMER PINS BY.** The 2026-09-05 refresh above is recorded as `58db3594...` to `945387f2...`,
+correctly. The 2026-09-06T05:45:48Z swap that superseded it is recorded by its **commit**
+(`e6e942e5`) and never by its digest, so this document told every reader to *"select and cite by
+MD5"* while giving none for the artifact actually on disk. Measured and recorded rather than left to
+the next reader:
+
+| path | md5 | mtime |
+|---|---|---|
+| `target/release/sigil` | `fa18ebfe849aa4bfb3203cde7c8a0770` | 2026-09-06 05:45:48Z |
+| `target/release/emit_sound_blob` | `0c1cf7ec5dd452bfb703856a42437d6d` | 2026-09-06 05:45:48Z |
+
+**Both mtimes are the swap instant and have not moved since**, which is the check that says nothing
+has relinked the path. Read the mtime as well as the digest: a digest alone cannot say whether it is
+the blessed build or a coincidental rebuild of the same source. **The general form is this
+document's own rule turned on itself: recording an artifact's SOURCE is not recording its IDENTITY,
+and a consumer pinning by digest cannot use a commit.**
+
 **Resolution of the incident: `e6e942e5` STAYS.** No swap back and no rebuild of `d094c3c8` was
 ordered, on the grounds that a reproduced pin would answer a question nobody needs any more, since
 aeon restarts every SP-5 leg under the new identity. **The path is frozen to this lane until the hub's
