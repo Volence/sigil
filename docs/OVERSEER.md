@@ -814,6 +814,22 @@ that gets missed. **There are five** distinct regions anchored on the deleted sy
 of it**, so a correction that only removed the false positives would have shipped a booking that
 was wrong in the expensive direction.
 
+**⚠ AND THIS LANE THEN CARRIED THE REFUTED SET'S ARITHMETIC.** Aeon's headline was *"seven files
+plus five frozen tables"*, seven including the fixture file. This lane refuted that file's
+membership and wrote back that *"seven files plus five frozen tables stands as your headline, what
+changes is WHICH seven."* **Both halves cannot be true**: removing a member from a set reduces its
+count. The real figure is **SIX**, enumerated here so it cannot drift again: `native.rs`,
+`section_align.rs`, `repin.toml`, `pins.rs`, `ojz_run_a_port.rs`, `test_g4_final_objects_port.rs`,
+plus the five golden tables. The peer had already banked the seven, citing this lane, and it was
+corrected inside the hour.
+
+**This is the banked rule aimed at the session enforcing it** *(a refuted mechanism does not leave
+its arithmetic standing)*. Note why nothing looked wrong: the error was **one high on the stated
+side and one low on the true side**, so the sentence read as a careful partial correction, which is
+the most credible possible wrapper for a wrong number. **A correction that preserves the original
+count is not a correction, it is a concession with the figure smuggled through.** When refuting a
+member, restate the SET by enumeration, never the total.
+
 **Open and deliberately not asserted:** since the alignment flip, an UNDECLARED section is refused
 by name. Whether a `section_align::DECLARED` row for a section that no longer EXISTS is inert or
 fatal is the opposite direction and is untested. One command, owed before the bundled parcel is
