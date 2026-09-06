@@ -4114,3 +4114,44 @@ the AS front end started.
 -- OPEN (kill: a mode that takes two git revisions, builds each into its own
 `CARGO_TARGET_DIR`, prepares one corpus tree and reports the class delta, so the before-side
 is derived from a SHA rather than from a number someone wrote down)
+
+### `message` prints nothing, on every pass, and asl prints it to stdout (2026-09-06)
+Sigil's `message` arm evaluates its string and discards it: `"message" => { let _ =
+self.interp_string(rest); }`. Not a pass question, and not what the
+`a_warning_on_a_non_final_pass` pin implied: a `message` on the CONVERGED pass is dropped
+too. asl writes it to STDOUT, unprefixed and outside the diagnostic stream, so
+implementing it moves no corpus diagnostic count but does change what a runner capturing
+stdout sees.
+Population: 39 source sites (s2disasm 16, s1disasm 12, skdisasm 11). Two of them print
+under asl today: `s1disasm` `Uncompressed driver size: 1BC6h bytes.` and `s2disasm`
+`ROM size is $100000 bytes (1024 KiB). About $8F1 bytes are padding.` Sigil prints neither.
+-- OPEN (kill: emit to stdout, unprefixed, on the CONVERGED pass only, and delete
+`a_message_is_dropped_on_every_pass_including_the_final_one` on purpose when doing it.
+Fix the interpolation gap below in the same parcel, because the one corpus site that fires
+needs it)
+
+### `\{expr}` interpolation drops a float-division form (2026-09-06)
+Sigil's census of `s2.asm(91272)` shows the text it would have printed if `message` emitted
+anything:
+`ROM size is $FFFED bytes (\{(EndOfRom-StartOfRom)/1024.0} KiB). About $2375 bytes are padding.`
+The second `\{...}` is UNINTERPOLATED, so `interp_string` does not handle a parenthesised
+float division. asl renders the same site as `1024 KiB`. Whoever implements `message`
+inherits this immediately; `warning` shares `interp_string` and would inherit it the day a
+corpus site fires.
+Population: 1 measured site, and every `warning`/`message` string carrying the
+`\{a/1.0}` idiom, which is how all five s2disasm table-size messages are written.
+-- OPEN (kill: an interpolation probe per operand shape against asl, then the missing
+form; the `int()`/float work already landed the evaluator this needs)
+
+### Sigil sizes s1disasm's Z80 driver about sixty times too large (2026-09-06)
+`sound/z80.asm(229)` raises `The driver is too big; the maximum size it can take is 1FFCh.
+It currently takes 73DFDh bytes.` under sigil. asl assembles the same PREPARED tree cleanly
+(exit 0, footer `2 passes`) and its own `message` two lines later reports `1BC6h`. The
+`fatal` sets `aborted`, which truncates the pass, so nine of s1disasm's twelve `message`
+sites and one of its nine `warning` sites are never reached by any sigil pass.
+Population: 1 site, inside the existing 42-row s1disasm total, but it is the row that costs
+every later site its reach. Note the bare-tree figure for the same message is `72325h`; the
+number moves with the generated DPCM includes, so size it off a PREPARED tree only.
+-- OPEN (kill: compare sigil's and asl's `$` at `sound/z80.asm(229)` on the prepared tree;
+the factor of roughly sixty points at a phase/org accounting difference rather than an
+emit-size one)
