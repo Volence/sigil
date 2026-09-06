@@ -3974,6 +3974,10 @@ pub fn sigil_native_symbol_listing(
             value: *val as u32,
             is_equate: false,
             unused: false,
+            // This path reads `resolved_symbols`, a name/value map with no section
+            // behind it, so phase is not recoverable here. `None` is the honest
+            // answer for a consumer that only queries names.
+            lma: None,
         })
         .collect();
     let demangled = sigil_link::demangle_symbols(&listing_syms);
@@ -4381,6 +4385,21 @@ fn listing_from_resolved(
     let mut seen = std::collections::HashSet::new();
     for sec in resolved {
         let origin = sec.vma_origin();
+        // PHASE, decided at the SECTION, which is the only place it exists. A
+        // section with an explicit `vma:` that differs from where the linker
+        // actually placed it runs at one address and is stored at another, and its
+        // labels' listing values are the former. Anything else is unphased and
+        // carries no `lma` at all, so `Some` in a row always means a real phase.
+        //
+        // A RESERVE-ONLY section is excluded even when its VMA differs from its
+        // LMA. Aeon's RAM blocks are exactly that shape (`vma: $FFFFxxxx` over an
+        // LMA that anchors at the physical counter and places ZERO image bytes), so
+        // an `lma` for one of them would name a storage address for bytes that were
+        // never stored: a number a consumer could follow into unrelated ROM. RAM
+        // symbols are already recognised by every consumer here from their own
+        // `$FFFFxxxx` value; what the marker exists to disambiguate is a phased
+        // address that looks ORDINARY.
+        let phased = sec.vma_origin() != sec.lma && sec.image_len() > 0;
         for label in &sec.labels {
             if seen.insert(label.name.clone()) {
                 listing.push(sigil_link::ListingSymbol {
@@ -4388,6 +4407,7 @@ fn listing_from_resolved(
                     value: origin.wrapping_add(label.offset),
                     is_equate: false,
                     unused: false,
+                    lma: phased.then(|| sec.lma.wrapping_add(label.offset)),
                 });
             }
         }
@@ -4399,6 +4419,8 @@ fn listing_from_resolved(
                 value: value as u32,
                 is_equate: true,
                 unused: false,
+                // An equate is a value, not storage: never phased.
+                lma: None,
             });
         }
     }
@@ -5467,7 +5489,7 @@ mod error_handler_placement_tests {
     use super::{check_error_handler_is_last, ERROR_HANDLER_BLOB_LEN};
 
     fn sym(name: &str, value: u32) -> sigil_link::ListingSymbol {
-        sigil_link::ListingSymbol { name: name.into(), value, is_equate: false, unused: false }
+        sigil_link::ListingSymbol { name: name.into(), value, is_equate: false, unused: false, lma: None }
     }
 
     /// The real debug-shape geometry: blob @0x5E688, so EndOfRom must be 0x5F5DE.
@@ -6266,5 +6288,119 @@ mod derived_layout_tests {
         ] {
             assert!(report.contains(needle), "missing {needle:?} in {report:?}");
         }
+    }
+}
+
+#[cfg(test)]
+mod phase_marker_tests {
+    //! The PHASE derivation, at the only place it exists: the section.
+    //!
+    //! `value` in a listing row has always been the VMA. Nothing in the file said
+    //! so, so a consumer needing the distinction re-derived it, and the only signal
+    //! recoverable from the listing alone is the magnitude of the number, which is
+    //! exactly why re-derivation by address range returns 68000 routines at low ROM
+    //! addresses instead of phased ones. Here the assembler answers from the
+    //! section that declared the phase.
+    use super::listing_from_resolved;
+    use sigil_ir::{Cpu, DataFragment, Fragment, Label, Section, SectionPlacement, SymbolTable};
+    use sigil_span::{SourceId, Span};
+
+    fn sp() -> Span {
+        Span { source: SourceId(0), start: 0, end: 0 }
+    }
+
+    fn data(n: usize) -> Fragment {
+        Fragment::Data(DataFragment { bytes: vec![0u8; n], fixups: vec![], span: sp() })
+    }
+
+    fn sec(
+        name: &str,
+        vma_base: Option<u32>,
+        lma: u32,
+        frags: Vec<Fragment>,
+        labels: &[(&str, u32)],
+    ) -> Section {
+        Section {
+            name: name.into(),
+            cpu: Cpu::M68000,
+            vma_base,
+            lma,
+            labels: labels
+                .iter()
+                .map(|(n, o)| Label { name: (*n).into(), offset: *o })
+                .collect(),
+            fragments: frags,
+            placement: SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
+            bank: None,
+            equ_syms: vec![],
+        }
+    }
+
+    /// A phased section's labels carry BOTH addresses; an unphased section's carry
+    /// no `lma` at all, so `Some` in a row always means a real phase.
+    #[test]
+    fn a_phased_section_yields_vma_and_lma_and_a_plain_one_yields_neither() {
+        let out = listing_from_resolved(
+            &[
+                // Unphased: placed where it says it runs.
+                sec("boot", None, 0x200, vec![data(0x40)], &[("EntryPoint", 0), ("Wait", 0x10)]),
+                // Phased: runs at $8000, stored at $B8000 (aeon's sound-bank head).
+                sec(
+                    "soundbankhead",
+                    Some(0x8000),
+                    0xB8000,
+                    vec![data(0x500)],
+                    &[("SoundTablesZ80_Head", 0), ("SfxBlobWinTab", 0x45F)],
+                ),
+            ],
+            &SymbolTable::new(),
+        );
+        let by = |n: &str| out.iter().find(|s| s.name == n).unwrap().clone();
+        assert_eq!((by("EntryPoint").value, by("EntryPoint").lma), (0x200, None));
+        assert_eq!((by("Wait").value, by("Wait").lma), (0x210, None));
+        // The VMA is what the address rows have always printed; the LMA is new.
+        assert_eq!(
+            (by("SoundTablesZ80_Head").value, by("SoundTablesZ80_Head").lma),
+            (0x8000, Some(0xB8000))
+        );
+        // The offset rides along, so a phased row names the byte, not just the base.
+        assert_eq!((by("SfxBlobWinTab").value, by("SfxBlobWinTab").lma), (0x845F, Some(0xB845F)));
+    }
+
+    /// A RESERVE-ONLY section is NOT phased, whatever its VMA and LMA say.
+    ///
+    /// Aeon's RAM blocks are exactly this shape: `vma: $FFFFxxxx` over an LMA that
+    /// anchors at the physical counter and places ZERO image bytes. An `lma` on one
+    /// of those would name a storage address for bytes that were never stored, and
+    /// a consumer following it would land in unrelated ROM. It is also by far the
+    /// larger population, so admitting it would bury the rows that matter under
+    /// every RAM label in the build.
+    #[test]
+    fn a_reserve_only_ram_block_is_not_reported_as_phased() {
+        let out = listing_from_resolved(
+            &[
+                sec(
+                    "ram",
+                    Some(0xFFFF_0000),
+                    0,
+                    vec![Fragment::Reserve { count: 0x1000, span: sp() }],
+                    &[("Camera_X", 0xA728)],
+                ),
+                sec("boot", None, 0x200, vec![data(4)], &[("EntryPoint", 0)]),
+            ],
+            &SymbolTable::new(),
+        );
+        let ram = out.iter().find(|s| s.name == "Camera_X").unwrap();
+        assert_eq!(ram.value, 0xFFFF_A728, "a RAM label still lists at its RAM VMA");
+        assert_eq!(ram.lma, None, "a reserve-only block must not claim a storage address");
+        // NON-VACUITY. The same function DOES mark a byte-emitting phased section,
+        // so this cannot pass by the derivation having been switched off entirely.
+        let phased = listing_from_resolved(
+            &[sec("bank", Some(0x8000), 0xB8000, vec![data(4)], &[("Head", 0)])],
+            &SymbolTable::new(),
+        );
+        assert_eq!(phased[0].lma, Some(0xB8000));
     }
 }

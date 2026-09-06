@@ -152,8 +152,8 @@ fn abs_l_jmp_flows_through_emit_rom() {
 #[test]
 fn s4budget_parses_emit_listing() {
     let lst = sigil_link::emit_listing(&[
-        sigil_link::ListingSymbol { name: "Main".into(), value: 0x1000, is_equate: false, unused: false },
-        sigil_link::ListingSymbol { name: "OBJ_len".into(), value: 0x40, is_equate: true, unused: false },
+        sigil_link::ListingSymbol { name: "Main".into(), value: 0x1000, is_equate: false, unused: false, lma: None },
+        sigil_link::ListingSymbol { name: "OBJ_len".into(), value: 0x40, is_equate: true, unused: false, lma: None },
     ]);
     let dir = std::env::temp_dir().join("sigil_m1b_lst");
     std::fs::create_dir_all(&dir).unwrap();
@@ -188,6 +188,18 @@ fn s4budget_parses_emit_listing() {
             assert!(o.status.success(), "s4budget failed: {stderr}");
             let combined = format!("{stdout}{stderr}");
             assert!(combined.contains("ROM:"), "unexpected s4budget output: {combined}");
+            // THE COUNT-0 PHASE MARKER, against the real tool. Nothing here is
+            // phased, so this listing carries the header at count 0, and it is the
+            // case nothing else exercises: no shipped aeon shape is unphased
+            // (measured 6/6/6/6/2/2 across the seven), so an emitter-produced
+            // count-0 listing exists only here. The header is what tells a reader
+            // apart from an older sigil that never looked, and s4budget must parse
+            // straight over it: the assertion above is that it EXITED 0 and printed
+            // a real `ROM:` line, not merely that two runs agreed.
+            assert!(
+                lst.contains("PHASE COUNT 0"),
+                "an unphased listing must still declare the count: {lst}"
+            );
         }
         Err(_) => {
             if strict_gate() { panic!("SIGIL_STRICT_GATE set but reference missing: python3"); }
@@ -213,8 +225,8 @@ fn oracle_loadfromaslisting_resolves_emit_listing() {
     // at every listing construction site, so no real build ever emitted an equate
     // row and Oracle never saw one.
     let lst = sigil_link::emit_listing(&[
-        sigil_link::ListingSymbol { name: "Main".into(), value: 0x1000, is_equate: false, unused: false },
-        sigil_link::ListingSymbol { name: "OBJ_len".into(), value: 0x40, is_equate: true, unused: false },
+        sigil_link::ListingSymbol { name: "Main".into(), value: 0x1000, is_equate: false, unused: false, lma: None },
+        sigil_link::ListingSymbol { name: "OBJ_len".into(), value: 0x40, is_equate: true, unused: false, lma: None },
     ]);
     let gui = oracle_gui_dir();
     let symbols_cpp = gui.join("Symbols.cpp");

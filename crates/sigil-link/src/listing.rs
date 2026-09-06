@@ -4,12 +4,21 @@
 //! `|` separator, the `Symbol Table (* = unused):` header, `N symbols` footer.
 
 /// One symbol row. `is_equate` picks the `-` (equate) vs `C` (code) marker.
+///
+/// `value` is always the symbol's VMA, the address the code RUNS at. `lma`
+/// records the address its bytes are STORED at, and ONLY when the two differ:
+/// `None` means unphased (VMA == LMA, or a value symbol that has no storage at
+/// all), `Some(l)` means the symbol is PHASED and `l` is where its bytes live.
+/// The listing's address rows never carried that distinction, so every consumer
+/// that needed it had to re-derive it from somewhere else; see [`emit_listing`]'s
+/// Phase Table for what the file says about it now.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ListingSymbol {
     pub name: String,
     pub value: u32,
     pub is_equate: bool,
     pub unused: bool,
+    pub lma: Option<u32>,
 }
 
 /// Is `part` a synthetic compiler block scope (`asm0`, `asm1`, …)? Those are
@@ -97,6 +106,42 @@ pub fn demangle_symbols(symbols: &[ListingSymbol]) -> Vec<ListingSymbol> {
 /// Values render as the `u32` [`ListingSymbol`] carries: a negative equate appears
 /// as its two's-complement pattern, exactly as an address-width AS listing would
 /// render it.
+///
+/// # The Phase Table, and why it is UNCONDITIONAL
+///
+/// Every address row above prints a VMA. For most symbols that is also the LMA and
+/// nothing is lost; for a symbol in a PHASED section (`section … (vma: $8000)`) the
+/// printed address is a bank-local runtime address and the bytes are stored
+/// somewhere else entirely. The listing said nothing about which was which, so a
+/// consumer that needed the distinction had to re-derive it, and re-derivation from
+/// the listing alone is impossible: the only recoverable signal is the magnitude of
+/// the number, and a phased VMA is an ordinary-looking small address. A fourth
+/// section states it instead:
+///
+/// ```text
+///   Phase Table (every address above is a VMA):
+///   -------------------------------------------
+///
+/// PHASE COUNT 6
+/// PHASE SoundTablesZ80_Head VMA $00008000 LMA $000B8000
+/// ```
+///
+/// It is emitted ALWAYS, even at count 0, and that is the whole point. The
+/// ambiguity being closed is one bit per LISTING, not one per symbol: with the
+/// section unconditional, no section at all means an older sigil that does not know
+/// about phasing, `PHASE COUNT 0` means this sigil looked and found nothing phased,
+/// and rows are the phased set with the storage address each one hides. An
+/// omitted-when-empty section would leave those first two cases spelled the same
+/// way, which is the one reading a consumer cannot recover from.
+///
+/// The cost is that an unphased listing is no longer byte-identical to the
+/// pre-phase format. That trade is deliberate: the byte identity this project
+/// protects is the ROM's, not the listing's.
+///
+/// The row shape matches none of the four consumer grammars, on the same reasoning
+/// as the equate row: no `(depth) N/HEX :` head, no ` NAME : HEX C |` symbol row,
+/// and the count line says `PHASE COUNT n`, never `<n> symbols`, so neither
+/// s4budget trailer regex sees it.
 pub fn emit_listing(symbols: &[ListingSymbol]) -> String {
     let (equates, addrs): (Vec<&ListingSymbol>, Vec<&ListingSymbol>) =
         symbols.iter().partition(|s| s.is_equate);
@@ -138,6 +183,21 @@ pub fn emit_listing(symbols: &[ListingSymbol]) -> String {
         }
         out.push_str(&format!("\n   {} equates\n", eqs.len()));
     }
+
+    // The Phase Table. Address-sorted, matching the two address views above, so a
+    // phased row is found at the same place in the ordering as its address row.
+    // Emitted unconditionally: `PHASE COUNT 0` is a POSITIVE statement that this
+    // build looked and nothing was phased, which absence cannot express.
+    let mut phased: Vec<&&ListingSymbol> = rows.iter().filter(|s| s.lma.is_some()).collect();
+    phased.sort_by(|a, b| a.value.cmp(&b.value).then(a.name.cmp(&b.name)));
+    out.push_str("\n  Phase Table (every address above is a VMA):\n");
+    out.push_str("  -------------------------------------------\n\n");
+    out.push_str(&format!("PHASE COUNT {}\n", phased.len()));
+    for s in &phased {
+        let lma = s.lma.expect("filtered to Some above");
+        out.push_str(&format!("PHASE {} VMA ${:08X} LMA ${:08X}\n", s.name, s.value, lma));
+    }
+
     out
 }
 
@@ -146,7 +206,12 @@ mod tests {
     use super::*;
 
     fn sym(name: &str, value: u32, eq: bool, unused: bool) -> ListingSymbol {
-        ListingSymbol { name: name.into(), value, is_equate: eq, unused }
+        ListingSymbol { name: name.into(), value, is_equate: eq, unused, lma: None }
+    }
+
+    /// A PHASED address symbol: runs at `value`, stored at `lma`.
+    fn phased(name: &str, value: u32, lma: u32) -> ListingSymbol {
+        ListingSymbol { name: name.into(), value, is_equate: false, unused: false, lma: Some(lma) }
     }
 
     #[test]
@@ -408,5 +473,203 @@ mod tests {
         assert_eq!(body.len(), 3, "only the three address symbols: {body:?}");
         assert!(out.contains("3 symbols") && out.contains("1 unused symbols"), "{out}");
         assert!(out.contains("2 equates"), "{out}");
+    }
+
+    /// THE CASE THAT CLOSES THE AMBIGUITY, and the one nothing else exercises.
+    ///
+    /// A listing of an entirely unphased program still carries the Phase Table,
+    /// with `PHASE COUNT 0` and no rows. Without the unconditional header a reader
+    /// cannot tell "this sigil looked and found nothing phased" from "this sigil
+    /// predates the marker and every address here might be either", and the two would
+    /// be spelled identically, as an absent section.
+    #[test]
+    fn unphased_listing_still_carries_a_count_zero_phase_table() {
+        let out = emit_listing(&[
+            sym("Main", 0x1000, false, false),
+            sym("Boot", 0x40, false, false),
+            sym("OBJ_len", 0x40, true, false),
+        ]);
+        assert!(out.contains("Phase Table"), "no phase section on an unphased listing:\n{out}");
+        assert!(out.contains("PHASE COUNT 0"), "no zero count:\n{out}");
+        // No rows at all, and in particular no row for the unphased symbols.
+        assert!(
+            !out.lines().any(|l| l.starts_with("PHASE ") && l.contains(" VMA ")),
+            "a row was emitted for an unphased symbol:\n{out}"
+        );
+        // The rest of the listing is untouched: the marker ADDS a section, it does
+        // not reinterpret or renumber any existing row.
+        assert!(out.contains("(0) 1/40 :        Boot:"), "{out}");
+        assert!(out.contains("(0) 2/1000 :        Main:"), "{out}");
+        assert!(out.contains("Boot : 40 C |") && out.contains("Main : 1000 C |"), "{out}");
+        assert!(out.contains("2 symbols"), "the phase table must not disturb the count:\n{out}");
+        assert!(out.contains("EQU OBJ_len = $00000040"), "{out}");
+    }
+
+    /// A phased symbol gets a row naming BOTH addresses, and its address rows are
+    /// unchanged: `value` was already the VMA and stays the VMA everywhere.
+    #[test]
+    fn phased_symbols_get_vma_and_lma_rows() {
+        let out = emit_listing(&[
+            sym("Anchor", 0x200, false, false),
+            phased("SoundTablesZ80_Head", 0x8000, 0xE12C0),
+            phased("SfxBlobWinTab", 0x845F, 0xE171F),
+            sym("Tail", 0x20000, false, false),
+        ]);
+        assert!(out.contains("PHASE COUNT 2"), "wrong count:\n{out}");
+        assert!(
+            out.contains("PHASE SoundTablesZ80_Head VMA $00008000 LMA $000E12C0"),
+            "missing/incorrect phased row:\n{out}"
+        );
+        assert!(
+            out.contains("PHASE SfxBlobWinTab VMA $0000845F LMA $000E171F"),
+            "missing/incorrect phased row:\n{out}"
+        );
+        // Address-sorted, like the two address views.
+        let a = out.find("PHASE SoundTablesZ80_Head").unwrap();
+        let b = out.find("PHASE SfxBlobWinTab").unwrap();
+        assert!(a < b, "phase rows are not address-sorted:\n{out}");
+        // The two address views still carry the phased symbols at their VMA, and
+        // still cross-check 1:1 against the trailer, so the marker is ADDITIVE.
+        assert!(out.contains("(0) 2/8000 :        SoundTablesZ80_Head:"), "{out}");
+        assert!(out.contains("SoundTablesZ80_Head : 8000 C |"), "{out}");
+        assert!(out.contains("4 symbols"), "{out}");
+        // No unphased symbol acquired a row.
+        assert!(!out.contains("PHASE Anchor"), "{out}");
+        assert!(!out.contains("PHASE Tail"), "{out}");
+    }
+
+    /// COLLISION CONTROL for the phase rows, the same shape as the equate one: the
+    /// header, the rule, the count line and a hostile row must parse as an address
+    /// row under NONE of aeon's four `.lst` consumer grammars, proven against the
+    /// same transcriptions with positive controls so a broken transcription cannot
+    /// pass this test by matching nothing.
+    #[test]
+    fn phase_lines_never_parse_as_an_address_row() {
+        // Named like a proc, valued like a real ROM address at both ends.
+        let out = emit_listing(&[
+            sym("Anchor", 0x200, false, false),
+            phased("OJZ_GradientStream", 0x10AF2, 0x2C0FE),
+        ]);
+        // Same transcriptions the equate control uses.
+        let head_re = |l: &str| -> bool {
+            let Some(rest) = l.strip_prefix('(') else { return false };
+            let Some((depth, rest)) = rest.split_once(") ") else { return false };
+            if depth.is_empty() || !depth.bytes().all(|b| b.is_ascii_digit()) {
+                return false;
+            }
+            let Some((idx, rest)) = rest.split_once('/') else { return false };
+            if idx.is_empty() || !idx.bytes().all(|b| b.is_ascii_digit()) {
+                return false;
+            }
+            let Some((hex, rest)) = rest.split_once(" :") else { return false };
+            if hex.is_empty() || !hex.bytes().all(|b| b.is_ascii_hexdigit()) {
+                return false;
+            }
+            let name = rest.trim_start();
+            let Some(name) = name.strip_suffix(':') else { return false };
+            !name.is_empty()
+                && name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_')
+                && !name.as_bytes()[0].is_ascii_digit()
+        };
+        let gate_probe = |l: &str| l.starts_with("(0) ") && l.trim_end().ends_with(':');
+        let sym_row = |l: &str| -> bool {
+            let l = l.trim_start().trim_start_matches('*');
+            let Some((name, rest)) = l.split_once(':') else { return false };
+            let name = name.trim_end();
+            if name.is_empty()
+                || !name.bytes().all(|b| b.is_ascii_alphanumeric() || b"_.$".contains(&b))
+            {
+                return false;
+            }
+            let rest = rest.trim_start();
+            let Some((hex, rest)) = rest.split_once(' ') else { return false };
+            hex.bytes().all(|b| b.is_ascii_hexdigit())
+                && !hex.is_empty()
+                && matches!(rest.trim().trim_end_matches('|').trim(), "C" | "-")
+                && rest.trim_end().ends_with('|')
+        };
+        // BOTH s4budget trailers, transcribed as anchored matches.
+        let trailer = |l: &str| {
+            let t = l.trim();
+            [" symbols", " unused symbols"].iter().any(|suffix| {
+                t.strip_suffix(suffix)
+                    .is_some_and(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()))
+            })
+        };
+
+        // Every line the phase section contributes: header, rule, blank, count, row.
+        let phase_start = out.find("  Phase Table").expect("no phase section");
+        for line in out[phase_start..].lines() {
+            assert!(!head_re(line), "a phase line parsed as an address head: {line:?}");
+            assert!(!gate_probe(line), "a phase line matched the effects gate probe: {line:?}");
+            assert!(!sym_row(line), "a phase line parsed as a symbol-table row: {line:?}");
+            assert!(!trailer(line), "a phase line parsed as a symbol trailer: {line:?}");
+        }
+        // Positive controls on the SAME transcriptions: real rows DO match, so the
+        // assertions above test the phase row shape, not a dead transcription.
+        let addr = emit_listing(&[sym("OJZ_GradientStream", 0x10AF2, false, false)]);
+        assert!(addr.lines().any(head_re), "the transcribed LST_HEAD_RE is broken:\n{addr}");
+        assert!(addr.lines().any(gate_probe), "the transcribed gate probe is broken:\n{addr}");
+        assert!(addr.lines().any(sym_row), "the transcribed _SYM_ROW_RE is broken:\n{addr}");
+        assert!(addr.lines().any(trailer), "the transcribed trailer regex is broken:\n{addr}");
+        // And the count line specifically, which is the line that is ALWAYS there.
+        assert!(!trailer("PHASE COUNT 0"), "the count line parsed as a symbol trailer");
+        assert!(!sym_row("PHASE COUNT 0"), "the count line parsed as a symbol row");
+    }
+
+    /// s4budget's cross-check invariant, re-asserted with PHASED symbols present:
+    /// the two address views stay one table, at the VMA, and the trailer agrees.
+    #[test]
+    fn phase_table_does_not_disturb_the_two_view_cross_check() {
+        let out = emit_listing(&[
+            sym("Main", 0x1000, false, false),
+            phased("BankHead", 0x8000, 0xE0000),
+            sym("Boot", 0x40, false, false),
+            sym("A_EQ", 0x2C, true, false),
+        ]);
+        let body: Vec<(String, u32)> = out
+            .lines()
+            .filter_map(|l| l.strip_prefix("(0) "))
+            .map(|l| {
+                let (head, name) = l.split_once(" :").unwrap();
+                let hex = head.split_once('/').unwrap().1;
+                (name.trim().trim_end_matches(':').to_string(), u32::from_str_radix(hex, 16).unwrap())
+            })
+            .collect();
+        let table: Vec<(String, u32)> = out
+            .lines()
+            .filter(|l| l.trim_end().ends_with(" C |"))
+            .map(|l| {
+                let l = l.trim_start_matches([' ', '*']);
+                let (name, rest) = l.split_once(" : ").unwrap();
+                let hex = rest.split_once(' ').unwrap().0;
+                (name.to_string(), u32::from_str_radix(hex, 16).unwrap())
+            })
+            .collect();
+        assert_eq!(body, table, "the two address views must be one table");
+        assert_eq!(body.len(), 3, "only the three address symbols: {body:?}");
+        assert!(out.contains("3 symbols"), "{out}");
+        // The phased symbol appears in BOTH address views at its VMA, and once more
+        // in the phase table with its LMA. Three rows, one truth, no reinterpretation.
+        assert!(body.contains(&("BankHead".to_string(), 0x8000)), "{body:?}");
+        assert!(out.contains("PHASE COUNT 1") && out.contains("PHASE BankHead VMA $00008000 LMA $000E0000"), "{out}");
+    }
+
+    /// An EQUATE is never phased, whatever it carries: it has a value, not storage.
+    #[test]
+    fn an_equate_never_reaches_the_phase_table() {
+        let out = emit_listing(&[
+            sym("Anchor", 0x200, false, false),
+            ListingSymbol {
+                name: "BANK_BASE".into(),
+                value: 0x8000,
+                is_equate: true,
+                unused: false,
+                lma: Some(0xE0000),
+            },
+        ]);
+        assert!(out.contains("PHASE COUNT 0"), "an equate was counted as phased:\n{out}");
+        assert!(!out.contains("PHASE BANK_BASE"), "an equate got a phase row:\n{out}");
+        assert!(out.contains("EQU BANK_BASE = $00008000"), "{out}");
     }
 }
