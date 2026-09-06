@@ -857,6 +857,37 @@ ruling arrived: a repin plus a five-shape refreeze plus a shared-binary relink f
 object is poor value per byte moved, and the relink is hub-gated since 2026-09-06, so it cannot be
 scheduled from inside this lane at all.)*
 
+## A CRC QUOTED WITHOUT ITS AEON REVISION CANNOT BE REPRODUCED OR REFUTED (2026-09-06)
+
+**Found by the aeon lane against a message from this seat, and verified here from the record
+rather than taken on relay.** This lane sent aeon four expected digests
+(`s4 1c09fbfc/819131`, `s4.debug e2144057/840324`, `demo 11ebd7ab/96602`,
+`demo.debug 9b0d2ce7/102818`) and asked them to reproduce. They built aeon master
+`f14b21a8` in a clean detached worktree with the CURRENT shared binary, this lane's fix
+nowhere near the build, and got four shapes differing from that table in **both** crc and
+size. Their conclusion was right and their reasoning was right: the table describes a
+different aeon tree.
+
+**Which tree, established here in one command rather than left as "almost certainly":** those
+four values are the chain TIP entry `relayout-at-aeon-master` in
+`crates/sigil-harness/golden/provenance.toml`, whose `aeon_rev` is
+`483b3e128ec4b9efc77a9d2e8a8c7679e961cea8`. Aeon master `f14b21a8` is **358 commits ahead of
+it** and has it as an ancestor. So the divergence is fully explained by the revision gap and
+says nothing about any assembler.
+
+**The rule: a CRC is meaningless across sessions without BOTH referents beside it, the sigil
+revision AND the aeon revision.** Four digests with neither named can only be agreed with or
+disagreed with, never checked, which is the opposite of what a digest is for. This lane already
+holds *provenance is CRC32 + size*; that rule fixes the IDENTITY FUNCTION and is silent on the
+SUBJECT, and the subject is the half a receiver cannot recover.
+
+**And the stronger form, which is aeon's and should be preferred whenever it is available: send
+a DIFFERENTIAL, not a table.** One tree, one worktree, one `build.sh`, exactly one variable (the
+binary), control first. Pairing eight digests proves byte neutrality on the tree the receiver
+actually has; matching a table proves agreement with a tree they do not. **Byte neutrality at
+the pinned reference does not entail byte neutrality 358 commits later**, so their differential
+is not a re-run of this lane's check, it is the check this lane could not perform.
+
 ## Standing cross-session obligations (2026-08-22)
 
 The aeon session owes sigil two things, both triggered by sigil work rather than by
