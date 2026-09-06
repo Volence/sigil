@@ -343,12 +343,12 @@ scripts/landing-run.sh --baseline 4683 --aeon /home/volence/sonic_hacks/.aeon-re
 
 ```
 =============================== LANDING RUN VERDICT ===============================
-  log             .../agent-adac9243c6d15a126/.target-land/landing-20260906T060027Z.log
+  log             .../agent-adac9243c6d15a126/.target-land/landing-20260906T060724Z.log
   tree            /home/volence/sonic_hacks/sigil/.claude/worktrees/agent-adac9243c6d15a126
-                  @ 4a152fd5 (parcel/as-assign-unresolved, clean)
+                  @ 1b251fcb (parcel/as-assign-unresolved, clean)
   reference       /home/volence/sonic_hacks/.aeon-ref @ 483b3e12 (HEAD, clean), all four present
   target dir      .../agent-adac9243c6d15a126/.target-land
-  started/ended   2026-09-06T06:00:27Z -> 2026-09-06T06:05:42Z (UTC)
+  started/ended   2026-09-06T06:07:24Z -> 2026-09-06T06:13:00Z (UTC)
   CARGO_EXIT      0
   CLIPPY_EXIT     0   (lint bar clean)
   suites          412
@@ -370,13 +370,24 @@ they are this worktree at this branch's tip.
 this code and not about other code:
 
 ```
-315:  test the_single_file_route_still_accepts_a_forward_reference ... ok
-316:  test an_unresolved_assignment_is_refused_whether_or_not_it_is_read ... ok
-2142: test eval::tests::a_forward_reference_is_not_an_unresolved_symbol ... ok
-2153: test eval::tests::a_reassigned_binder_owes_one_obligation_not_two ... ok
-2226: test eval::tests::every_assignment_spelling_records_an_unresolved_obligation ... ok
-2227: test eval::tests::every_assignment_spelling_is_refused_unread ... ok
+234:  test the_single_file_route_still_accepts_a_forward_reference ... ok
+235:  test an_unresolved_assignment_is_refused_whether_or_not_it_is_read ... ok
+2065: test eval::tests::a_reassigned_binder_owes_one_obligation_not_two ... ok
+2082: test eval::tests::a_forward_reference_is_not_an_unresolved_symbol ... ok
+2144: test eval::tests::every_assignment_spelling_records_an_unresolved_obligation ... ok
+2146: test eval::tests::every_assignment_spelling_is_refused_unread ... ok
 ```
+
+### Why this is the SECOND landing run, and the first one is not the record
+
+The first run came out GREEN with the identical counts (4689 / 0 failed / 412 suites,
+`landing-20260906T060027Z.log`), stamped `@ 4a152fd5 ... clean`. It is not the record,
+because I edited a test assertion's string literal in `eval.rs` WHILE it was running, to
+settle the dash bar. The stamp is taken at the start, so a log can truthfully say "clean"
+about a tree that changed under it, and the tree that log describes is not the tree at
+the tip. The edit could not change behaviour (it is text printed only on a failure), and
+that is not the point: a green whose provenance has a hole in it is worth less than five
+minutes of machine time. Re-run at `1b251fcb`, which is the run quoted above.
 
 ### The byte measurement the corpus sweep could not make
 
