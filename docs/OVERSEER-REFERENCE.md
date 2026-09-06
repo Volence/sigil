@@ -224,7 +224,7 @@ survive unreferenced is the signature of a MERGE**, exactly as an empty commit r
 *(Origin, and the n=3 caveat in full: `docs/OVERSEER-LOG.md`, 2026-09-03 cut, original lines
 466-488.)*
 
-### THE THREE FACES OF A CHECK THAT CANNOT COME OUT OTHER THAN GREEN (2026-09-05)
+### THE FOUR FACES OF A CHECK THAT CANNOT COME OUT OTHER THAN GREEN (2026-09-05, a fourth added 2026-09-06)
 
 **All three were found in one night, all by DELIBERATELY BREAKING THE CODE, and none by the test
 suite.** They are one defect wearing three costumes, and a brief should name all three because an
@@ -244,9 +244,34 @@ agent that guards against one walks into the others.
    never disagree. **Write expected values out as the REFERENCE'S own numbers**, never computed
    from the constant under test. Three of six mutations landed green on that parcel's first run.
 
-**THE ONE CLAUSE THAT CATCHES ALL THREE is invariant 6(c): applied-and-still-green is a RUNNER
-DEFECT, never a pass.** It is not a formality and it must never be softened — it is the only step
+
+4. **TWO ERROR TERMS IN ONE EXPRESSION THAT CANCEL: the green is the SUM OF TWO WRONGS**
+   *(2026-09-06, formed with the aeon lane against their live B7 parcel; theirs is the sharper
+   statement and this is it)*. `end = LMA + blob_len` has two independently wrong inputs, and a
+   probe that perturbs both together can leave `end` unchanged. The gate then agrees, and the
+   agreement is real, and it is evidence of nothing. **This is distinct from face 1**: there the
+   input could not DISTINGUISH two answers; here both inputs are wrong and the errors have opposite
+   sign, so a discriminating input still produces the right total. **Vary ONE ARM AT A TIME, and
+   report what each arm PRODUCED rather than that the arms agreed** (the bar that caught this
+   lane's own four-corpus sweep agreeing 1,753 times over zero bytes). Any derived quantity built
+   from two or more measured terms carries this, and a compound expression is where to look.
+
+5. **AND THE MUTATION MUST HIT THE SUBJECT, NOT THE CHECKER** *(same exchange; it is the clause
+   that makes faces 2 and 4 actionable rather than merely nameable)*. Where a gate asserts
+   something that is true today only because the tree happens to be ARRANGED that way, the honest
+   red-first proof perturbs **the arrangement**, never the assertion's own code or constant. A red
+   obtained by breaking the parser proves the code executes and says nothing about whether it
+   observes the breach. Aeon named the cause on their own side and it is the general one: a brief
+   saying *"perturb it"* is AMBIGUOUS between the checker and the subject, **and the cheaper
+   reading is the one an agent takes**. Say which.
+
+**THE ONE CLAUSE THAT CATCHES ALL OF THEM is invariant 6(c): applied-and-still-green is a RUNNER
+DEFECT, never a pass.** It is not a formality and it must never be softened, it is the only step
 that discovers a fixture cannot fail, because a fixture that cannot fail is silent by construction.
+**And its companion, aeon's** *(2026-09-06)*: *"the assertion held"* and *"the assertion could have
+failed and did not"* are different claims and **only the second is worth anything**. Where a
+perturbation that would make the gate fail cannot be constructed at all, **saying so plainly is the
+valuable outcome**, never a gap to paper over.
 
 ### A BEFORE/AFTER STREAM DIFF NEEDS AN ENGAGEMENT COUNTER BESIDE IT
 
