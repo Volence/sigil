@@ -1373,3 +1373,48 @@ word.** The refreshed binary's acceptance rests on the proof, not the version st
 `^PHASE-COUNT` line, six phase rows, and **zero lines matching the old spelling, checked as a
 control** rather than only confirming the new one appeared.
 
+### NEVER PASS A COMMIT MESSAGE THROUGH `-m "..."` IN THIS SHELL: BACKTICKS RUN AS COMMANDS (2026-09-06)
+
+*(Read at the moment you are writing any commit, and it is the one bar below that has a mechanism
+rather than a habit as its remedy.)*
+
+**Instance, this seat's own, at `3a5eb6c1`.** A landing commit was written with `git commit -m "..."`
+instead of the quoted-heredoc form used for every other commit that day. The message contained
+`` `!org 0` `` and `` `save` ``. **zsh performs command substitution inside double quotes**, so both
+were executed and REPLACED BY THEIR EMPTY OUTPUT before git ever saw the message. Two sentences lost
+their subject:
+
+- *"`` `!org 0` `` inside the 68000 ROM is such a target"* became *"inside the 68000 ROM is such a
+  target"*.
+- *"s1disasm has `` `save` `` before its org"* became *"s1disasm has before its org"*.
+
+**The commit succeeded, exit 0.** The only signal was two `zsh: command not found` lines on stderr,
+scrolling past inside ordinary merge output.
+
+**Why this is worse than a typo: the mutilation is SELECTIVE and it eats exactly the identifiers.**
+Backticks are how a technical message quotes a symbol, a directive or a path, so the shell destroys
+the load-bearing tokens and leaves the prose around them grammatical enough to read. The same
+message keeps its argument, its numbers and its conclusion, and silently drops the thing the
+argument is ABOUT.
+
+**This is protocol bar 23 (*a commit message is a claim about a diff and nothing checks it*) with a
+new mechanism: the claim was correct when written and was corrupted between the keyboard and git.**
+Bar 23's remedy, read the blob back before writing the message, does not reach this at all, because
+the damage happens after the check.
+
+**THE RULE, and it is a mechanism rather than vigilance: write every commit message with
+`git commit -F - <<'EOF'`.** The quoted delimiter suppresses all expansion. `-m` is acceptable only
+for a one-line message containing no backticks, no `!`, and no `$`. Never reach for `-m` because the
+message is short; reach for the heredoc because the shell is hostile.
+
+**And the recovery is constrained, which is worth knowing before it happens.** The commit was
+already pushed, and fixing a pushed message means `--amend` plus a force push. That is a HISTORY
+REWRITE and is explicitly outside this lane's standing push approval, which covers fast-forward
+pushes of finished work and nothing else. So the correction is an APPENDED commit, never a rewrite,
+and the damaged message stays in the history with a successor naming it.
+
+**Sweep run before banking this, because an instance is not a class:** all 25 commits from that day
+were checked for the signature (a word gap where a quoted token was eaten). One was damaged, this
+one. Every other commit that day used the heredoc form and is intact. Note the first sweep returned
+a confident ZERO from a broken `--since` filter and had to be re-run with a canary, which is the
+fifth false zero this lane hit in a day.
