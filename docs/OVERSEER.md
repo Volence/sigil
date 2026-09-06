@@ -941,3 +941,32 @@ a tree with no `Cargo.toml`: `docs/OVERSEER-LOG.md`, 2026-09-05 cut.)*
 an exit code alone cannot tell a tool's failure from the tool never running.** Print `pwd` and `HEAD`
 beside any verdict you intend to act on. This lane already stamps its suite logs that way; the same
 discipline was missing from one-line checks.
+
+### AN A/B WHOSE ARMS AGREE MAY HAVE MEASURED NOTHING: state what each arm PRODUCED
+
+*(Aeon's finding against its own test, widened by them from a bar this seat had stated too narrowly.)*
+
+Their first before/after run had **both arms fail on a missing positional argument**. The failure
+output was identical, so **the pair read as "identical, therefore fine"**. Caught only by looking at
+the exit codes.
+
+**This seat then banked the narrow form, "check exit codes on both arms". Aeon widened it and the
+wider version is the right one: THE EXIT CODE IS THE INSTANCE, NOT THE SHAPE.** The real requirement
+is that **at least one arm must have PRODUCED something**, not merely that the two agree. That covers
+every shared upstream failure an exit code may not even report: a wrong path, an absent input, a
+stale cache, a subprocess that never ran, a tool that resolved its subject from its own location
+rather than from the argument.
+
+**Two arms agreeing perfectly while having measured nothing are the same family as a control that
+bypasses its subject and a test that cannot fail** (the three vacuous-proof shapes already banked
+here). The discipline is one line longer than the habit: report a positive artifact from the arms, a
+row count, an extracted symbol and its value, a byte length, **beside** the agreement. Their corrected
+run does exactly that: `s4budget` exit 0 both arms and byte-identical output, **plus** 1,654 symbol
+rows either way and two named symbols extracted with their values.
+
+**And the same lane bounded its own result before being asked**, which is the other half of the
+practice: their unphased-listing test used a build with the sound driver off, whose listing still
+carries 34 Z80 mentions, so they reported it as *a listing gaining a count-0 trailer where phased
+content is at most minimal*, **not** as a listing with provably zero phased symbols. **A second
+partial result offered as a discharge is exactly what the first correction had just caught**, and
+they refused to let it stand as one.
