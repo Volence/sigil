@@ -250,23 +250,28 @@ impl M68kBackend {
     }
 
     /// Lower an instruction carrying a symbolic `(d16,PC)` operand: encode with a
-    /// `Pcd16(0)` placeholder, then attach a `PcRelDisp16` fixup at the byte
-    /// offset of that extension word. `pcd16_offset` is that offset within the
-    /// encoded bytes (the caller/front-end knows the operand layout).
+    /// `Pcd16` placeholder, then attach a `PcRelDisp16` fixup at the byte offset
+    /// of that extension word.
+    ///
+    /// The offset is DERIVED, not supplied: see [`pcrel_disp_offset`]. Most 68k
+    /// forms put the EA extension immediately after the opcode word, but not
+    /// all — `btst #n,<ea>` emits the bit-number word FIRST, so its d16 sits at
+    /// 4 — and a caller-supplied constant silently writes the displacement over
+    /// whatever word actually lives at the assumed offset.
     pub fn lower_pcrel_ea(
         &self,
         inst: &Instruction,
-        pcd16_offset: u32,
         target: Expr,
         span: Span,
     ) -> Result<DataFragment, LowerError> {
         let bytes = m68k::encode(inst).map_err(|e| LowerError { message: e.to_string() })?;
-        if pcd16_offset as usize + 2 > bytes.len() {
+        let offset = pcrel_disp_offset(inst, &bytes)?;
+        if offset as usize + 2 > bytes.len() {
             return Err(LowerError { message: "pcd16 offset past instruction end".into() });
         }
         Ok(DataFragment {
             bytes,
-            fixups: vec![Fixup { kind: FixupKind::PcRelDisp16, offset: pcd16_offset, target }],
+            fixups: vec![Fixup { kind: FixupKind::PcRelDisp16, offset, target }],
             span,
         })
     }
@@ -274,32 +279,98 @@ impl M68kBackend {
     /// Lower an instruction carrying a symbolic `(d8,PC,Xn)` operand: encode with
     /// a `Pcd8Xn { d: 0, .. }` placeholder (the encoder emits the brief extension
     /// word with a zero displacement), then attach a `PcRelDisp8` fixup at the
-    /// disp (low) byte of that extension word. `disp8_offset` is that byte's
-    /// position within the encoded bytes — for a single-word opcode with the
-    /// PC-indexed EA as its source it is `3` (opcode word + ext-word high byte).
+    /// disp (low) byte of that extension word.
+    ///
+    /// The offset is DERIVED, not supplied: see [`pcrel_disp_offset`]. For a
+    /// single-word opcode with the PC-indexed EA as its source that is 3
+    /// (opcode word + ext-word high byte), but `btst #n,<ea>` puts the
+    /// bit-number word in between and its disp8 is at 5.
     pub fn lower_pcrel_idx_ea(
         &self,
         inst: &Instruction,
-        disp8_offset: u32,
         target: Expr,
         span: Span,
     ) -> Result<DataFragment, LowerError> {
         let bytes = m68k::encode(inst).map_err(|e| LowerError { message: e.to_string() })?;
-        if disp8_offset as usize >= bytes.len() {
+        let offset = pcrel_disp_offset(inst, &bytes)?;
+        if offset as usize >= bytes.len() {
             return Err(LowerError { message: "pcd8 disp offset past instruction end".into() });
         }
         Ok(DataFragment {
             bytes,
-            fixups: vec![Fixup { kind: FixupKind::PcRelDisp8, offset: disp8_offset, target }],
+            fixups: vec![Fixup { kind: FixupKind::PcRelDisp8, offset, target }],
             span,
         })
     }
 }
 
+/// Byte offset of a PC-relative operand's displacement field within `bytes`,
+/// the already-encoded form of `inst`.
+///
+/// SENTINEL PROBE: re-encode with the displacement perturbed and take the first
+/// byte that moves. That byte IS the start of the displacement field, whatever
+/// precedes it — so a form that emits an extension word BEFORE its EA extension
+/// (`btst #n,<ea>` is the only PC-relative-reachable one: the static bit ops put
+/// the bit-number word first, and only `btst` takes `EaSet::DATA`, which admits
+/// `(d16,PC)`/`(d8,PC,Xn)`) is located exactly rather than by a per-mnemonic
+/// constant. The same technique locates the d16 field in
+/// `sigil-frontend-emp`'s `lower_m68k_disp_sym` and the PC extension word in
+/// `sigil-isa`'s capstone differ.
+///
+/// A `Pcd16` probe perturbs BOTH bytes of the displacement word, so the first
+/// difference is that word's high byte (its start); a `Pcd8Xn` probe perturbs
+/// only the disp8, so the first difference is the disp8 byte inside the brief
+/// extension word. Neither perturbation can change the encoded LENGTH — both
+/// fields are fixed-width within an already-chosen addressing mode — so a
+/// length change, a failed re-encode, or bytes that do not move at all is an
+/// internal inconsistency and surfaces as a LOUD error, never as offset 0.
+fn pcrel_disp_offset(inst: &Instruction, bytes: &[u8]) -> Result<u32, LowerError> {
+    let idx = inst
+        .ops
+        .iter()
+        .position(|o| matches!(o, Operand::Pcd16(_) | Operand::Pcd8Xn { .. }))
+        .ok_or_else(|| LowerError {
+            message: "internal: pc-relative lowering on an instruction with no (d16,PC)/(d8,PC,Xn) operand"
+                .into(),
+        })?;
+    let mut probe = inst.clone();
+    match &mut probe.ops[idx] {
+        Operand::Pcd16(d) => *d ^= 0x5A5A_u16 as i16,
+        Operand::Pcd8Xn { d, .. } => *d ^= 0x5A_u8 as i8,
+        // `idx` came from the matches! above, so this arm is unreachable.
+        _ => {
+            return Err(LowerError {
+                message: "internal: pc-relative operand changed shape between probe and match".into(),
+            })
+        }
+    }
+    let probed = m68k::encode(&probe).map_err(|e| LowerError {
+        message: format!("internal: pc-relative displacement probe failed to encode: {e}"),
+    })?;
+    if probed.len() != bytes.len() {
+        return Err(LowerError {
+            message: format!(
+                "internal: pc-relative displacement probe changed the encoded length ({} -> {})",
+                bytes.len(),
+                probed.len()
+            ),
+        });
+    }
+    let first = bytes
+        .iter()
+        .zip(probed.iter())
+        .position(|(a, b)| a != b)
+        .ok_or_else(|| LowerError {
+            message: "internal: could not locate the pc-relative displacement field (probe moved no byte)"
+                .into(),
+        })?;
+    Ok(first as u32)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sigil_isa::m68k::{Cond, Size};
+    use sigil_isa::m68k::{Cond, Size, Xn};
     use sigil_span::SourceId;
 
     fn span() -> Span {
@@ -380,7 +451,7 @@ mod tests {
     fn lower_pcrel_ea_attaches_disp16_fixup_at_offset() {
         // lea (d16,PC),a0 → 41 FA 00 00 : opcode word, then the d16 extension word.
         let inst = Instruction { mnemonic: Mnemonic::Lea, size: Size::L, ops: vec![Operand::Pcd16(0), Operand::An(0)] };
-        let frag = M68kBackend.lower_pcrel_ea(&inst, 2, Expr::Sym("L".into()), span()).unwrap();
+        let frag = M68kBackend.lower_pcrel_ea(&inst, Expr::Sym("L".into()), span()).unwrap();
         assert_eq!(frag.bytes.len(), 4);
         assert_eq!(frag.fixups.len(), 1);
         assert_eq!(frag.fixups[0].kind, FixupKind::PcRelDisp16);
@@ -388,12 +459,66 @@ mod tests {
         assert_eq!(frag.fixups[0].target, Expr::Sym("L".into()));
     }
 
+    /// The static bit ops emit `opcode word | bit-number word | EA extension`,
+    /// so `btst`'s d16 is at 4, not 2 — and `btst` is the only member of the
+    /// family whose destination row (`EaSet::DATA`) admits a PC-relative EA.
+    /// asl: `btst #1,target(pc)` with target at 6 → `083A 0001 0002`.
     #[test]
-    fn lower_pcrel_ea_offset_past_end_errors() {
-        let inst = Instruction { mnemonic: Mnemonic::Lea, size: Size::L, ops: vec![Operand::Pcd16(0), Operand::An(0)] };
-        // Encoded length is 4; offset 3 makes offset+2 = 5 > 4.
-        let err = M68kBackend.lower_pcrel_ea(&inst, 3, Expr::Sym("L".into()), span()).unwrap_err();
-        assert!(err.message.contains("past instruction end"));
+    fn lower_pcrel_ea_locates_btst_disp16_after_the_bit_number_word() {
+        let inst = Instruction {
+            mnemonic: Mnemonic::Btst,
+            size: Size::B,
+            ops: vec![Operand::Imm(1), Operand::Pcd16(0)],
+        };
+        let frag = M68kBackend.lower_pcrel_ea(&inst, Expr::Sym("L".into()), span()).unwrap();
+        assert_eq!(frag.bytes, vec![0x08, 0x3A, 0x00, 0x01, 0x00, 0x00]);
+        assert_eq!(frag.fixups[0].kind, FixupKind::PcRelDisp16);
+        assert_eq!(frag.fixups[0].offset, 4, "d16 sits after the bit-number word");
+    }
+
+    /// Same for the indexed form: the disp8 is the LOW byte of the brief
+    /// extension word, which for `btst` starts at 4 — so the disp8 is at 5.
+    /// asl: `btst #1,target(pc,d0.w)` with target at 8 → `083B 0001 0004`.
+    #[test]
+    fn lower_pcrel_idx_ea_locates_btst_disp8_after_the_bit_number_word() {
+        let inst = Instruction {
+            mnemonic: Mnemonic::Btst,
+            size: Size::B,
+            ops: vec![Operand::Imm(1), Operand::Pcd8Xn { d: 0, xn: Xn::D(0), long: false }],
+        };
+        let frag = M68kBackend.lower_pcrel_idx_ea(&inst, Expr::Sym("L".into()), span()).unwrap();
+        assert_eq!(frag.bytes, vec![0x08, 0x3B, 0x00, 0x01, 0x00, 0x00]);
+        assert_eq!(frag.fixups[0].kind, FixupKind::PcRelDisp8);
+        assert_eq!(frag.fixups[0].offset, 5, "disp8 is the ext word's low byte");
+    }
+
+    /// The `.w`/`.l` index bit lives in the ext word's HIGH byte, which the
+    /// disp8 probe must not perturb — otherwise the derived offset would be 4
+    /// (the word start) instead of 5 (the disp byte).
+    #[test]
+    fn lower_pcrel_idx_ea_probe_does_not_move_the_index_bits() {
+        let inst = Instruction {
+            mnemonic: Mnemonic::Move,
+            size: Size::W,
+            ops: vec![Operand::Pcd8Xn { d: 0, xn: Xn::A(7), long: true }, Operand::Dn(1)],
+        };
+        let frag = M68kBackend.lower_pcrel_idx_ea(&inst, Expr::Sym("L".into()), span()).unwrap();
+        // brief ext word: D/A=1 (a7), reg=111, size=1 (.l) → 0xF8, disp8 = 0.
+        assert_eq!(frag.bytes, vec![0x32, 0x3B, 0xF8, 0x00]);
+        assert_eq!(frag.fixups[0].offset, 3);
+    }
+
+    /// A caller that routes a non-PC-relative instruction here is a bug, and it
+    /// must be LOUD — offset 0 would silently overwrite the opcode word.
+    #[test]
+    fn lower_pcrel_ea_without_a_pcrel_operand_is_loud() {
+        let inst = Instruction { mnemonic: Mnemonic::Move, size: Size::W, ops: vec![Operand::Dn(1), Operand::Dn(0)] };
+        let err = M68kBackend.lower_pcrel_ea(&inst, Expr::Sym("L".into()), span()).unwrap_err();
+        assert!(
+            err.message.contains("no (d16,PC)/(d8,PC,Xn) operand"),
+            "unexpected message: {}",
+            err.message
+        );
     }
 
     #[test]

@@ -527,15 +527,11 @@ fn lower_jbra_jbsr(
 /// construction, see the `pcrel_port.rs` test module doc).
 ///
 /// # Fixup offset
-/// The 68k `encode_ea` rejects `Pcd16`/`Pcd8Xn` as a DESTINATION (PC-relative
-/// only reads), so wherever it legally appears it is the SOURCE of a 2-operand
-/// form or the single EA of a 1-operand form — both `encode_move`/
-/// `encode_alu_ea`/etc. emit the source's extension words immediately after
-/// the 2-byte opcode word (mirrors the AS front-end's `lower_m68k_pcrel`/
-/// `lower_m68k_pcrel_idx` doc, which this offset convention is copied from).
-/// So the plain form's d16 ext word always starts at byte offset 2; the
-/// indexed form's brief ext word also starts at offset 2, and its disp8 is
-/// that word's LOW byte, i.e. offset 3.
+/// The backend DERIVES it (`pcrel_disp_offset`, a sentinel probe on the
+/// displacement), so this routing — which matches on the presence of a
+/// PC-relative operand, not on the mnemonic — does not have to know each
+/// form's word layout. It is usually 2 (d16) / 3 (disp8 in the brief ext
+/// word), but `btst #n,<ea>` emits the bit-number word first and is 4 / 5.
 /// The link-time fixup expression for a PC-relative target: the bare symbol,
 /// or `Sym ± n` when the operand carried a comptime addend (`Sym-4(pc,Xn)` —
 /// the linker's `Expr::fold` does the arithmetic after symbol resolution).
@@ -618,9 +614,9 @@ fn lower_m68k_pcrel(
     let refined = refine_m68k_mnemonic(m, &mops);
     let inst = M68kInst { mnemonic: refined, size, ops: mops };
     let result = if is_indexed {
-        M68kBackend.lower_pcrel_idx_ea(&inst, 3, target, span)
+        M68kBackend.lower_pcrel_idx_ea(&inst, target, span)
     } else {
-        M68kBackend.lower_pcrel_ea(&inst, 2, target, span)
+        M68kBackend.lower_pcrel_ea(&inst, target, span)
     };
     match result {
         Ok(df) => emit_data_frag(builder, df),
