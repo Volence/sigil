@@ -329,9 +329,12 @@ is the silent half.
 
 **FAILURES FIRST: zero.** `grep -c FAILED` over the whole log is `0`.
 
+Run twice: once at `9585ac92` and once at the final tip after the dash pass,
+with the same verdict block both times. The one below is the final tip's.
+
 ```text
 pwd             /home/volence/sonic_hacks/sigil/.claude/worktrees/agent-a7ddc7ed61b24bb4c
-HEAD            9585ac92 (parcel/as-set-opens-scope, clean)
+HEAD            295e67b1 (parcel/as-set-opens-scope, clean)
 reference       /home/volence/sonic_hacks/.aeon-ref @ 483b3e12 (clean), all four present
 target dir      <worktree>/.target-land
 CARGO_EXIT      0
@@ -346,9 +349,10 @@ RESULT          GREEN
 ```
 
 The log was grepped for this parcel's own test binary rather than trusted to be
-the right tree: line 2420, `Running tests/as_binder_opens_scope.rs`, followed by
-all twelve rows `... ok`. The delta is exactly the twelve tests this parcel adds
-and nothing else.
+the right tree: `Running tests/as_binder_opens_scope.rs` is present, followed by
+all twelve rows `... ok`, and the log's own stamp names this worktree, this
+branch and HEAD `295e67b158abddee3ab355643071c29eff3e5a0a`. The delta is
+exactly the twelve tests this parcel adds and nothing else.
 
 The source-gate classification lane did not red: the new test file names none of
 the identifiers that lane selects on, so it is outside the population that has
