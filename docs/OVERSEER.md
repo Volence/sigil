@@ -830,6 +830,22 @@ the most credible possible wrapper for a wrong number. **A correction that prese
 count is not a correction, it is a concession with the figure smuggled through.** When refuting a
 member, restate the SET by enumeration, never the total.
 
+**THE MECHANISM, in aeon's formulation, which is better than this lane's and places the instance in
+an existing family rather than leaving it an anecdote:** *a refuted MEMBER invalidates the
+arithmetic that rested on it, and the arithmetic is the half nobody re-derives, because the
+refutation feels like the hard part and the number feels like transcription.* That is the protocol's
+**provenance-feeling material gets reasoning-grade trust** (aurora's three surfaces: the verified-at
+SHA, the repaired line number, the hash typed from memory), **arriving on a COUNT instead of on a
+SHA**. Same family, new surface, and the surface is the one that looks least like a claim.
+
+**Both lanes owned it and the shared frame is the finding.** Aeon relayed the sentence verbatim in a
+message whose whole purpose was to carry this lane's refutation of the seventh member, with that
+refutation in front of them, and did not run the subtraction either. **Two lanes, one number,
+neither re-derived it** (bar 8: mutual verification cannot catch a shared frame). The fix both
+adopted costs nothing and is mechanical rather than attentional: **write the SET, not the count.**
+Six names in one sentence cannot drift; a bare *"six"* can, and *"seven"* did, twice in twenty
+minutes, in both directions at once.
+
 **Open and deliberately not asserted:** since the alignment flip, an UNDECLARED section is refused
 by name. Whether a `section_align::DECLARED` row for a section that no longer EXISTS is inert or
 fatal is the opposite direction and is untested. One command, owed before the bundled parcel is
