@@ -197,7 +197,7 @@ fn s4budget_parses_emit_listing() {
             // straight over it: the assertion above is that it EXITED 0 and printed
             // a real `ROM:` line, not merely that two runs agreed.
             assert!(
-                lst.contains("PHASE COUNT 0"),
+                lst.contains("PHASE-COUNT 0"),
                 "an unphased listing must still declare the count: {lst}"
             );
         }

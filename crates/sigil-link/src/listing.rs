@@ -122,14 +122,14 @@ pub fn demangle_symbols(symbols: &[ListingSymbol]) -> Vec<ListingSymbol> {
 ///   Phase Table (every address above is a VMA):
 ///   -------------------------------------------
 ///
-/// PHASE COUNT 6
+/// PHASE-COUNT 6
 /// PHASE SoundTablesZ80_Head VMA $00008000 LMA $000B8000
 /// ```
 ///
 /// It is emitted ALWAYS, even at count 0, and that is the whole point. The
 /// ambiguity being closed is one bit per LISTING, not one per symbol: with the
 /// section unconditional, no section at all means an older sigil that does not know
-/// about phasing, `PHASE COUNT 0` means this sigil looked and found nothing phased,
+/// about phasing, `PHASE-COUNT 0` means this sigil looked and found nothing phased,
 /// and rows are the phased set with the storage address each one hides. An
 /// omitted-when-empty section would leave those first two cases spelled the same
 /// way, which is the one reading a consumer cannot recover from.
@@ -140,7 +140,7 @@ pub fn demangle_symbols(symbols: &[ListingSymbol]) -> Vec<ListingSymbol> {
 ///
 /// The row shape matches none of the four consumer grammars, on the same reasoning
 /// as the equate row: no `(depth) N/HEX :` head, no ` NAME : HEX C |` symbol row,
-/// and the count line says `PHASE COUNT n`, never `<n> symbols`, so neither
+/// and the count line says `PHASE-COUNT n`, never `<n> symbols`, so neither
 /// s4budget trailer regex sees it.
 pub fn emit_listing(symbols: &[ListingSymbol]) -> String {
     let (equates, addrs): (Vec<&ListingSymbol>, Vec<&ListingSymbol>) =
@@ -186,13 +186,13 @@ pub fn emit_listing(symbols: &[ListingSymbol]) -> String {
 
     // The Phase Table. Address-sorted, matching the two address views above, so a
     // phased row is found at the same place in the ordering as its address row.
-    // Emitted unconditionally: `PHASE COUNT 0` is a POSITIVE statement that this
+    // Emitted unconditionally: `PHASE-COUNT 0` is a POSITIVE statement that this
     // build looked and nothing was phased, which absence cannot express.
     let mut phased: Vec<&&ListingSymbol> = rows.iter().filter(|s| s.lma.is_some()).collect();
     phased.sort_by(|a, b| a.value.cmp(&b.value).then(a.name.cmp(&b.name)));
     out.push_str("\n  Phase Table (every address above is a VMA):\n");
     out.push_str("  -------------------------------------------\n\n");
-    out.push_str(&format!("PHASE COUNT {}\n", phased.len()));
+    out.push_str(&format!("PHASE-COUNT {}\n", phased.len()));
     for s in &phased {
         let lma = s.lma.expect("filtered to Some above");
         out.push_str(&format!("PHASE {} VMA ${:08X} LMA ${:08X}\n", s.name, s.value, lma));
@@ -478,7 +478,7 @@ mod tests {
     /// THE CASE THAT CLOSES THE AMBIGUITY, and the one nothing else exercises.
     ///
     /// A listing of an entirely unphased program still carries the Phase Table,
-    /// with `PHASE COUNT 0` and no rows. Without the unconditional header a reader
+    /// with `PHASE-COUNT 0` and no rows. Without the unconditional header a reader
     /// cannot tell "this sigil looked and found nothing phased" from "this sigil
     /// predates the marker and every address here might be either", and the two would
     /// be spelled identically, as an absent section.
@@ -490,7 +490,7 @@ mod tests {
             sym("OBJ_len", 0x40, true, false),
         ]);
         assert!(out.contains("Phase Table"), "no phase section on an unphased listing:\n{out}");
-        assert!(out.contains("PHASE COUNT 0"), "no zero count:\n{out}");
+        assert!(out.contains("PHASE-COUNT 0"), "no zero count:\n{out}");
         // No rows at all, and in particular no row for the unphased symbols.
         assert!(
             !out.lines().any(|l| l.starts_with("PHASE ") && l.contains(" VMA ")),
@@ -515,27 +515,35 @@ mod tests {
             phased("SfxBlobWinTab", 0x845F, 0xE171F),
             sym("Tail", 0x20000, false, false),
         ]);
-        assert!(out.contains("PHASE COUNT 2"), "wrong count:\n{out}");
+        assert!(out.contains("PHASE-COUNT 2"), "wrong count:\n{out}");
 
-        // CROSS-LANE CONTRACT, oracle 2026-09-06. Oracle's listing parser keys
-        // recognition on `PHASE` being the FIRST CHARACTER of every row in this
-        // section, so that its recognition survives a rewording of the header
-        // sentence. That is a stronger promise than "first non-whitespace token"
-        // and it is the one this emitter actually makes: both write sites emit
-        // `PHASE` at column 0 while the header and its rule are indented two
-        // spaces. It is pinned HERE rather than left to the format strings
-        // because a promise made to another repo in a message rots silently,
-        // and the lane that would break it is this one.
-        for line in out.lines().filter(|l| l.contains(" VMA $") || l.starts_with("PHASE COUNT")) {
+        // CROSS-LANE CONTRACT, oracle 2026-09-06, in TWO shapes deliberately.
+        // Oracle keys rows on `^PHASE ` (with the trailing space) and the count
+        // on `^PHASE-COUNT `. Asserting only "every line starts with PHASE"
+        // would STILL PASS if the two ever merged, because `PHASE` is a prefix
+        // of `PHASE-COUNT`: that is the exact failure this pair exists to stop,
+        // and oracle named it rather than discovering it later. So the two
+        // shapes are asserted SEPARATELY and must stay disjoint.
+        //
+        // `PHASE-COUNT` rather than `PHASE COUNT` because a symbol legitimately
+        // named `COUNT` emits `PHASE COUNT VMA $...`, which matches
+        // `^PHASE COUNT ` exactly as the count line does. Population is zero
+        // today and the collision is reachable, so the old spelling was
+        // unambiguous ON CURRENT EVIDENCE, which is a different property from
+        // unambiguous. A space is not a hyphen, so the two are now disjoint by
+        // construction rather than by census.
+        let rows: Vec<&str> = out.lines().filter(|l| l.contains(" VMA $")).collect();
+        assert!(!rows.is_empty(), "no phase rows to check, the assertion would be vacuous");
+        for line in &rows {
             assert!(
-                line.starts_with("PHASE"),
-                "a phase-section row must begin with PHASE at column 0, oracle keys on it: {line:?}"
+                line.starts_with("PHASE ") && !line.starts_with("PHASE-"),
+                "a phase ROW must match `^PHASE ` at column 0, oracle keys on it: {line:?}"
             );
         }
-        assert!(
-            out.lines().any(|l| l.starts_with("PHASE COUNT ")),
-            "the count line must be at column 0 too:\n{out}"
-        );
+        let counts: Vec<&str> =
+            out.lines().filter(|l| l.starts_with("PHASE-COUNT ")).collect();
+        assert_eq!(counts.len(), 1, "exactly one count line, at column 0: {counts:?}");
+
         assert!(
             out.contains("PHASE SoundTablesZ80_Head VMA $00008000 LMA $000E12C0"),
             "missing/incorrect phased row:\n{out}"
@@ -633,8 +641,8 @@ mod tests {
         assert!(addr.lines().any(sym_row), "the transcribed _SYM_ROW_RE is broken:\n{addr}");
         assert!(addr.lines().any(trailer), "the transcribed trailer regex is broken:\n{addr}");
         // And the count line specifically, which is the line that is ALWAYS there.
-        assert!(!trailer("PHASE COUNT 0"), "the count line parsed as a symbol trailer");
-        assert!(!sym_row("PHASE COUNT 0"), "the count line parsed as a symbol row");
+        assert!(!trailer("PHASE-COUNT 0"), "the count line parsed as a symbol trailer");
+        assert!(!sym_row("PHASE-COUNT 0"), "the count line parsed as a symbol row");
     }
 
     /// s4budget's cross-check invariant, re-asserted with PHASED symbols present:
@@ -672,7 +680,7 @@ mod tests {
         // The phased symbol appears in BOTH address views at its VMA, and once more
         // in the phase table with its LMA. Three rows, one truth, no reinterpretation.
         assert!(body.contains(&("BankHead".to_string(), 0x8000)), "{body:?}");
-        assert!(out.contains("PHASE COUNT 1") && out.contains("PHASE BankHead VMA $00008000 LMA $000E0000"), "{out}");
+        assert!(out.contains("PHASE-COUNT 1") && out.contains("PHASE BankHead VMA $00008000 LMA $000E0000"), "{out}");
     }
 
     /// An EQUATE is never phased, whatever it carries: it has a value, not storage.
@@ -688,7 +696,7 @@ mod tests {
                 lma: Some(0xE0000),
             },
         ]);
-        assert!(out.contains("PHASE COUNT 0"), "an equate was counted as phased:\n{out}");
+        assert!(out.contains("PHASE-COUNT 0"), "an equate was counted as phased:\n{out}");
         assert!(!out.contains("PHASE BANK_BASE"), "an equate got a phase row:\n{out}");
         assert!(out.contains("EQU BANK_BASE = $00008000"), "{out}");
     }

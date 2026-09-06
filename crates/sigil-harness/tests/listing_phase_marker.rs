@@ -24,7 +24,7 @@
 //! the phase, and charges every shipped shape's listing with carrying the answer.
 //!
 //! WHAT WOULD MAKE THIS GATE VACUOUS, and what stops it. A wiring loss that returned
-//! `lma: None` everywhere would leave every shape at `PHASE COUNT 0`, which is a
+//! `lma: None` everywhere would leave every shape at `PHASE-COUNT 0`, which is a
 //! legal listing and would satisfy any per-shape consistency check. So the walk also
 //! requires that the shipped set is not UNIFORMLY empty: at least one shape must
 //! report a real phased symbol, with its two addresses.
@@ -46,11 +46,11 @@ fn emitted_phase_rows(listing: &[ListingSymbol]) -> Vec<(String, u32, u32)> {
         .collect()
 }
 
-/// The `PHASE COUNT n` line, which is present on EVERY listing this emitter writes.
+/// The `PHASE-COUNT n` line, which is present on EVERY listing this emitter writes.
 fn emitted_count(listing: &[ListingSymbol]) -> Option<usize> {
     sigil_link::emit_listing(listing)
         .lines()
-        .find_map(|l| l.strip_prefix("PHASE COUNT "))
+        .find_map(|l| l.strip_prefix("PHASE-COUNT "))
         .and_then(|n| n.parse().ok())
 }
 
@@ -82,7 +82,7 @@ fn every_shipped_shape_declares_which_of_its_addresses_are_phased() {
         //    phased" by the same evidence.
         let Some(count) = emitted_count(&listing) else {
             faults.push(format!(
-                "shape `{label}`: the listing carries no `PHASE COUNT` line. Without it \
+                "shape `{label}`: the listing carries no `PHASE-COUNT` line. Without it \
                  a consumer cannot tell an unphased build from an assembler that does \
                  not know about phasing, which is the single bit this section exists \
                  to state"
@@ -94,7 +94,7 @@ fn every_shipped_shape_declares_which_of_its_addresses_are_phased() {
         let rows = emitted_phase_rows(&listing);
         if rows.len() != count {
             faults.push(format!(
-                "shape `{label}`: `PHASE COUNT {count}` against {} emitted rows",
+                "shape `{label}`: `PHASE-COUNT {count}` against {} emitted rows",
                 rows.len()
             ));
         }
@@ -141,7 +141,7 @@ fn every_shipped_shape_declares_which_of_its_addresses_are_phased() {
         }
 
         total_phased += count;
-        report.push(format!("{label}: PHASE COUNT {count} {rows:?}"));
+        report.push(format!("{label}: PHASE-COUNT {count} {rows:?}"));
     }
 
     // 6. NON-VACUITY, over the shipped set rather than per shape. Some shapes may
