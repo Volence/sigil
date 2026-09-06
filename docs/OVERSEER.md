@@ -1040,6 +1040,18 @@ classes, 86.5 percent of the entire Sonic 2 run** (landed measurement, `49acd05d
 2026-09-03 for the AS surface only; zero of 5,003 constructs are accepted today, so this is not
 started rather than half done.
 
+**⚠ `d-22` IS HUB-ANSWERED, AND EVERY EARLIER STATEMENT OF THIS ROW OMITTED THAT** *(established
+2026-09-06, reading the card rather than the row that cites it: `docs/decisions.jsonl` has `d-22`
+answered `by: "hub, under the project declaration"`)*. **So this item has never had an owner
+decision of any kind.** What went to him was the size, and it has not come back. The bare words
+*"Ruled ACCEPT"* in a queue row are how a hub ruling becomes indistinguishable from his, one hop
+later, to a session reading cold, which is this lane's own banked *relay is not approval* with the
+delay that makes it invisible at the time. Instance, and it is why the correction is written into
+the row rather than only into the log: on 2026-09-06 the hub sent a GO resting partly on `d-22`
+read as an acceptance already in hand. This lane held, named the card's author, and the hub
+withdrew the go and corrected its card within minutes. **When citing a decision as grounds, name
+who answered it in the same sentence.**
+
 **The rest of this row is read when the parcel is DISPATCHED, not at boot**, so it is in
 `docs/OVERSEER-REFERENCE.md` under this row's own name, verbatim: the six things that have to
 change and where each is refused today, why the row is L and not XL, the arithmetic-regression
