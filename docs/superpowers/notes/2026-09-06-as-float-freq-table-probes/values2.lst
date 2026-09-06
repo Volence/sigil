@@ -1,0 +1,144 @@
+ AS V1.42 Beta [Bld 212] - Source File values2.asm - Page 1 - 09/06/2026 02:38:21 AM
+
+
+       1/       0 :                     	cpu	68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org	0
+       4/       0 :                     ; The same measurements as `values.asm`, written WITHOUT `1e6`-style exponent
+       5/       0 :                     ; literals so that the identical source can be handed to sigil. (sigil's lexer
+       6/       0 :                     ; does not implement `1e3`/`1.5e2`/`.5`/`1.` — see the "Left open" section of
+       7/       0 :                     ; `2026-09-04-f1-as-float-semantics.md`; the corpus writes none of them.)
+       8/       0 :                     ;
+       9/       0 :                     ; This file is the one the regression tests quote, so it must exit 0.
+      10/       0 :                     
+      11/       0 :                     ; `hud_counter`, copied from `s2.asm(87675-87682)`, with the `moveq` that reads
+      12/       0 :                     ; the counter back (`s2.asm(87595)` etc.). The counter is "total digits minus
+      13/       0 :                     ; one", so these six immediates are the shipped bytes the whole parcel is about.
+      14/       0 :                     hud_counter macro {INTLABEL},number
+      15/       0 :                     __LABEL__ label *
+      16/       0 :                     .loop_counter = int(log(number)) ; Total digits minus one.
+      17/       0 :                     	dc.l number
+      18/       0 :                         endm
+      19/       0 :                     
+      20/       0 : (MACRO)              Hud_100000:	hud_counter 100000
+      20/       0 : =$0                  Hud_100000 label *
+      20/       0 : =$5                  .loop_counter = int(log(100000)) ; Total digits minus one.
+      20/       0 : 0001 86A0                   dc.l 100000
+      21/       4 : (MACRO)              Hud_10000:	hud_counter 10000
+      21/       4 : =$4                  Hud_10000 label *
+      21/       4 : =$4                  .loop_counter = int(log(10000)) ; Total digits minus one.
+      21/       4 : 0000 2710                   dc.l 10000
+      22/       8 : (MACRO)              Hud_1000:	hud_counter 1000
+      22/       8 : =$8                  Hud_1000 label *
+      22/       8 : =$3                  .loop_counter = int(log(1000)) ; Total digits minus one.
+      22/       8 : 0000 03E8                   dc.l 1000
+      23/       C : (MACRO)              Hud_100:	hud_counter 100
+      23/       C : =$C                  Hud_100 label *
+      23/       C : =$2                  .loop_counter = int(log(100)) ; Total digits minus one.
+      23/       C : 0000 0064                   dc.l 100
+      24/      10 : (MACRO)              Hud_10:		hud_counter 10
+      24/      10 : =$10                 Hud_10 label *
+      24/      10 : =$1                  .loop_counter = int(log(10)) ; Total digits minus one.
+      24/      10 : 0000 000A                   dc.l 10
+      25/      14 : (MACRO)              Hud_1:		hud_counter 1
+      25/      14 : =$14                 Hud_1 label *
+      25/      14 : =$0                  .loop_counter = int(log(1)) ; Total digits minus one.
+      25/      14 : 0000 0001                   dc.l 1
+      26/      18 :                     
+      27/      18 : 7C05                	moveq	#Hud_100000.loop_counter,d6
+      28/      1A : 7C04                	moveq	#Hud_10000.loop_counter,d6
+      29/      1C : 7C03                	moveq	#Hud_1000.loop_counter,d6
+      30/      1E : 7C02                	moveq	#Hud_100.loop_counter,d6
+      31/      20 : 7C01                	moveq	#Hud_10.loop_counter,d6
+      32/      22 : 7C00                	moveq	#Hud_1.loop_counter,d6
+      33/      24 :                     
+      34/      24 :                     ; The base, and the exact spelling of it.
+      35/      24 : 0000 0002           	dc.l	INT(LOG(100))		; 2 base 10 / 4 natural
+      36/      28 : 0000 0004           	dc.l	INT(LN(100))		; 4, the natural one under its own name
+      37/      2C : 0000 0003           	dc.l	INT(LOG(1000))		; 3 exact log10 / 2 via ln(x)/ln(10)
+      38/      30 :                     
+      39/      30 :                     ; INT() on a negative.
+      40/      30 : FFFF FFFC           	dc.l	INT(-3.2)			; -4 floor / -3 truncate
+      41/      34 : FFFF FFFF           	dc.l	INT(LOG(0.5))			; -1 floor /  0 truncate
+      42/      38 : FFFB 681A           	dc.l	INT(LOG(0.5)*1000000)		; -301030 floor / -301029 truncate
+ AS V1.42 Beta [Bld 212] - Source File values2.asm - Page 2 - 09/06/2026 02:38:21 AM
+
+
+      43/      3C :                     
+      44/      3C :                     ; The rest of the surface.
+      45/      3C : 0070 BF80           	dc.l	INT(EXP(2)*1000000)		; e^x, not 2^x
+      46/      40 : 0015 9445           	dc.l	INT(SQRT(2)*1000000)
+      47/      44 : 000C D6FE           	dc.l	INT(SIN(1)*1000000)		; radians, not degrees
+      48/      48 : 0008 3E8E           	dc.l	INT(COS(1)*1000000)
+      49/      4C : 0017 C39F           	dc.l	INT(TAN(1)*1000000)
+      50/      50 : 000B FBF6           	dc.l	INT(ATAN(1)*1000000)
+      51/      54 : 0017 F7EC           	dc.l	INT(ASIN(1)*1000000)
+      52/      58 : 0017 F7EC           	dc.l	INT(ACOS(0)*1000000)
+      53/      5C : 0011 EEA1           	dc.l	INT(SINH(1)*1000000)
+      54/      60 : 0017 8BA8           	dc.l	INT(COSH(1)*1000000)
+      55/      64 : 000B 9EFA           	dc.l	INT(TANH(1)*1000000)
+      56/      68 : 000D 72DD           	dc.l	INT(ASINH(1)*1000000)
+      57/      6C : 0014 185D           	dc.l	INT(ACOSH(2)*1000000)
+      58/      70 : 0008 61BA           	dc.l	INT(ATANH(0.5)*1000000)
+      59/      74 : 0031 9750           	dc.l	INT(ABS(-3.25)*1000000)
+      60/      78 : 0000 0003           	dc.l	INT(ABS(-3))
+      61/      7C :                     	end
+ AS V1.42 Beta [Bld 212] - Source File values2.asm - Page 3 - 09/06/2026 02:38:21 AM
+
+
+  Symbol Table (* = unused):
+  --------------------------
+
+*ARCHITECTURE :                                      "x86_64-unknown-linux" - |
+*BIGENDIAN :                      0 - | *BRANCHEXT :                      0 - |
+*CASESENSITIVE :                  1 - | *COMPMODE :                       0 - |
+*CONSTPI :        3.141592653589793 - | *CUSTOM :                         0 - |
+*DATE :                "09/06/2026" - | *FALSE :                          0 - |
+*FULLPMMU :                       1 - | *HAS64 :                          1 - |
+*HASDSP :                         0 - | *HASFPU :                         0 - |
+*HASPMMU :                        0 - | *Hud_1 :                         14 C |
+ Hud_1.loop_counter :             0 - | *Hud_10 :                        10 C |
+ Hud_10.loop_counter :            1 - | *Hud_100 :                        C C |
+ Hud_100.loop_counter :           2 - | *Hud_1000 :                       8 C |
+ Hud_1000.loop_counter :          3 - | *Hud_10000 :                      4 C |
+ Hud_10000.loop_counter :         4 - | *Hud_100000 :                     0 C |
+ Hud_100000.loop_counter :        5 - | *INEXTMODE :                      0 - |
+*INLWORDMODE :                    0 - | *INMAXMODE :                      0 - |
+*INSRCMODE :                      0 - | *INSUPMODE :                      0 - |
+*LISTON :                         1 - | *MACEXP :                         7 - |
+*MOMCPU :                     68000 - | *MOMCPUNAME :               "68000" - |
+*NESTMAX :                      100 - | *PACKING :                        0 - |
+*PADDING :                        0 - | *RELAXED :                        0 - |
+*TIME :               "02:38:21 AM" - | *TRUE :                           1 - |
+*VERSION :                     142F - | *Z80SYNTAX :                      0 - |
+
+     43 symbols
+     37 unused symbols
+
+ AS V1.42 Beta [Bld 212] - Source File values2.asm - Page 4 - 09/06/2026 02:38:21 AM
+
+
+  Defined Macros:
+  ---------------
+
+hud_counter                           |
+
+      1 macro
+
+ AS V1.42 Beta [Bld 212] - Source File values2.asm - Page 5 - 09/06/2026 02:38:21 AM
+
+
+  Code Pages:
+  ----------
+
+STANDARD (0 changed characters)
+
+1 code page
+
+0.00 seconds assembly time
+
+     62 lines source file
+     80 lines incl. macro expansions
+      1 pass
+      0 errors
+      0 warnings
