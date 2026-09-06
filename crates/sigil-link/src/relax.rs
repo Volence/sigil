@@ -380,19 +380,35 @@ fn run_overrun_diag(sec: &Section, rungs: &[usize]) -> Option<Diagnostic> {
 /// This is why a section can freely mix an `Org` back-patch with a relaxable:
 /// the delta is a per-run step function, reset to the org-anchored baseline at
 /// every barrier, so a growing relaxable before an `Org` never mis-shifts the
-/// org-pinned content after it. `shift_offset` reads the delta for the run
-/// containing an offset (last matching breakpoint wins — which, for a BACKWARD
-/// org that revisits an authored-offset range, mirrors `image_bytes`'
-/// later-write-wins overwrite semantics).
-fn shift_breakpoints(sec: &Section, rungs: &[usize]) -> Vec<(u32, i64)> {
+/// org-pinned content after it.
+///
+/// # Why the runs are carried alongside the breakpoints
+///
+/// The breakpoint list is keyed on the BASELINE offset, and that key is unique
+/// only while the baseline cursor advances monotonically. A BACKWARD `org`
+/// seeks it back into a range the section has already authored, so two runs can
+/// carry the SAME baseline offsets with DIFFERENT deltas, and a plain scan of
+/// the whole list for the last key at-or-below an offset can hand back the
+/// delta of a run that does not even span it. `runs` fences the lookup:
+/// `shift_offset` only ever considers breakpoints belonging to a run whose
+/// baseline band actually contains the offset.
+fn shift_breakpoints(sec: &Section, rungs: &[usize]) -> ShiftMap {
     let mut cur: u32 = 0;
     let mut orig: u32 = 0;
     let mut bps = vec![(0u32, 0i64)];
+    let mut runs: Vec<Run> = Vec::new();
+    let mut first = 0usize;
     for (fi, frag) in sec.fragments.iter().enumerate() {
         if let Fragment::Org { target, .. } = frag {
             // Barrier: both cursors seek to the org target. The current and
             // baseline anchors coincide there, so the delta resets to 0 — the
             // run after this org is pinned to `target` in both layouts.
+            //
+            // `bps[fi]` (the boundary after fragment `fi - 1`) closes the run
+            // this barrier ends; the barrier's own boundary, `bps[fi + 1]`,
+            // opens the next.
+            runs.push(Run { first, last: fi });
+            first = fi + 1;
             cur = *target;
             orig = *target;
         } else {
@@ -401,46 +417,94 @@ fn shift_breakpoints(sec: &Section, rungs: &[usize]) -> Vec<(u32, i64)> {
         }
         bps.push((orig, cur as i64 - orig as i64));
     }
-    bps
+    runs.push(Run { first, last: sec.fragments.len() });
+    ShiftMap { bps, runs }
 }
 
-/// Map an all-rung-0 label offset to its current-layout offset. The last
-/// breakpoint at-or-before `orig_off` supplies the run's delta (for a backward
-/// `Org` that revisits an authored range, the later run wins — mirroring
-/// `image_bytes`' overwrite order).
-fn shift_offset(bps: &[(u32, i64)], orig_off: u32) -> u32 {
-    let mut d = 0i64;
-    for &(bo, bd) in bps {
-        if bo <= orig_off {
-            d = bd;
-        }
+/// A maximal span of fragments between `Org` barriers, as an inclusive index
+/// range into [`ShiftMap::bps`]. Its BASELINE band is `[bps[first].0,
+/// bps[last].0]`, inclusive at both ends — a label may sit on either boundary.
+#[derive(Debug, Clone, Copy)]
+struct Run {
+    first: usize,
+    last: usize,
+}
+
+/// The baseline→current offset map of one section under one set of rungs:
+/// a `(baseline_offset, delta)` breakpoint per fragment boundary, partitioned
+/// into the runs the section's `Org` barriers cut it into.
+struct ShiftMap {
+    bps: Vec<(u32, i64)>,
+    runs: Vec<Run>,
+}
+
+impl ShiftMap {
+    /// The inclusive baseline band `[lo, hi]` a run spans.
+    fn band(&self, r: Run) -> (u32, u32) {
+        (self.bps[r.first].0, self.bps[r.last].0)
     }
+}
+
+/// Map an all-rung-0 label offset to its current-layout offset.
+///
+/// The offset is resolved against a run whose baseline band CONTAINS it, using
+/// the last breakpoint at-or-before it within that run. A run that merely
+/// starts below the offset and ends before it never supplies the delta.
+///
+/// # The tie-break, and what the IR cannot say
+///
+/// After a BACKWARD `org` two runs can both contain an offset, and [`Label`]
+/// carries `{name, offset}` with no fragment index — so for an offset in the
+/// overlap the IR genuinely does not record which run authored the label. The
+/// tie-break is the LATER run, matching the order in which `image_bytes`
+/// replays the same offsets: a label written just after `org N` resolves to the
+/// org-anchored run, which is the shape a front-end emits (`define_label` binds
+/// a label to the write cursor, so its offset is the org target itself).
+/// Settling the overlap exactly would need the fragment index on `Label`.
+fn shift_offset(map: &ShiftMap, orig_off: u32) -> u32 {
+    let run = map
+        .runs
+        .iter()
+        .rev()
+        .find(|r| {
+            let (lo, hi) = map.band(**r);
+            lo <= orig_off && orig_off <= hi
+        })
+        // An offset no run contains — past every run's end, or inside the gap a
+        // FORWARD org opens. The nearest run that starts at-or-below it owns the
+        // address space up to the next barrier, so its trailing delta applies.
+        .or_else(|| map.runs.iter().rev().find(|r| map.band(**r).0 <= orig_off));
+    let Some(run) = run else { return orig_off };
+    // Baseline offsets are non-decreasing WITHIN a run (the cursor only ever
+    // advances by a fragment length), so the run's slice is partitioned by
+    // `bo <= orig_off` and the last such entry is the run's delta here.
+    let slice = &map.bps[run.first..=run.last];
+    let k = slice.partition_point(|&(bo, _)| bo <= orig_off);
+    let d = slice[k.saturating_sub(1)].1;
     (orig_off as i64 + d) as u32
 }
 
 /// The current-layout START VMA of fragment `fi` under the given rungs, i.e. the
-/// VMA of the first byte the fragment emits. Its baseline offset is the prefix
-/// sum of the rung-0 lengths of the preceding fragments (exactly what
-/// `shift_breakpoints`/`shift_offset` are built on), shifted into the current
-/// layout, plus the section origin. This is the reach-test site VMA a ladder
+/// VMA of the first byte the fragment emits — the reach-test site VMA a ladder
 /// candidate measures its displacement from.
 ///
-/// Org-aware like `shift_breakpoints`: a preceding `Org` SEEKS the baseline
-/// cursor to its target (a barrier, not a run of bytes), so `fi`'s baseline
-/// offset is measured from the last org anchor at or before it — the same
-/// per-run anchoring `shift_offset` then maps into the current layout.
+/// This is a direct cursor replay at the CURRENT rungs, never a lookup keyed on
+/// a baseline offset: the fragment INDEX is known here, so the ambiguity a
+/// backward `org` creates in the baseline key (see [`shift_offset`]) cannot
+/// arise. A preceding `Org` seeks the cursor to its target — a barrier, not a
+/// run of bytes — so `fi`'s start is measured from the last org anchor before it.
 // TODO(perf): O(fi) prefix walk per ladder per pass; once ladders get dense, thread a
 // running accumulator through the selection loop + convergence sweep instead.
-fn frag_start_vma(sec: &Section, bps: &[(u32, i64)], origin: u32, fi: usize) -> u32 {
-    let mut baseline_off: u32 = 0;
-    for prev in &sec.fragments[..fi] {
+fn frag_start_vma(sec: &Section, rungs: &[usize], origin: u32, fi: usize) -> u32 {
+    let mut cur: u32 = 0;
+    for (i, prev) in sec.fragments[..fi].iter().enumerate() {
         if let Fragment::Org { target, .. } = prev {
-            baseline_off = *target;
+            cur = *target;
         } else {
-            baseline_off += frag_len(prev, 0);
+            cur += frag_len(prev, rungs[i]);
         }
     }
-    origin + shift_offset(bps, baseline_off)
+    origin + cur
 }
 
 /// jmp abs.w=4EF8/abs.l=4EF9, jsr abs.w=4EB8/abs.l=4EB9 (`.l` = `.w | 1`);
@@ -761,7 +825,11 @@ fn resolve_layout_impl(
         let mut grew = false;
         for (si, sec) in placed.iter().enumerate() {
             let origin = sec.vma_origin();
-            let bps = shift_breakpoints(sec, &rungs[si]);
+            // Site VMAs are read from the rungs as they stood when this pass
+            // opened, not from the rungs this loop is still moving: a snapshot
+            // keeps every fragment in the section measured against one layout,
+            // and the convergence sweep re-checks them all at the final rungs.
+            let pass_rungs = rungs[si].clone();
             for fi in 0..sec.fragments.len() {
                 let frag = &sec.fragments[fi];
                 match frag {
@@ -817,7 +885,7 @@ fn resolve_layout_impl(
                                 )]);
                             }
                         };
-                        let frag_start = frag_start_vma(sec, &bps, origin, fi);
+                        let frag_start = frag_start_vma(sec, &pass_rungs, origin, fi);
                         // Minimal rung whose fixup kind reaches the target.
                         let mut min_reaching: Option<usize> = None;
                         for (k, cand) in candidates.iter().enumerate() {
@@ -866,7 +934,6 @@ fn resolve_layout_impl(
             let mut errs: Vec<Diagnostic> = Vec::new();
             for (si, sec) in placed.iter().enumerate() {
                 let origin = sec.vma_origin();
-                let bps = shift_breakpoints(sec, &rungs[si]);
                 for fi in 0..sec.fragments.len() {
                     if let Fragment::RelaxLadder { candidates, target, span } = &sec.fragments[fi] {
                         // LABELS ONLY, matching the selection arm in (b): ladder
@@ -877,7 +944,7 @@ fn resolve_layout_impl(
                             Fold::Value(v) => v,
                             Fold::Poison => continue, // reported in pass (b) already
                         };
-                        let frag_start = frag_start_vma(sec, &bps, origin, fi);
+                        let frag_start = frag_start_vma(sec, &rungs[si], origin, fi);
                         let cand = &candidates[rungs[si][fi]];
                         match rung_reaches(cand, frag_start, v, dash_a, *span, &sec.name) {
                             Ok(true) => {}
@@ -3292,5 +3359,171 @@ mod tests {
         assert_eq!(out[0].labels.iter().find(|l| l.name == "A").unwrap().offset, 6);
         assert_eq!(out[0].labels.iter().find(|l| l.name == "B").unwrap().offset, 0x12);
         assert_eq!(out[0].labels.iter().find(|l| l.name == "C").unwrap().offset, 0x26);
+    }
+
+    // ============ Org (BACKWARD) + a GROWING relaxable ========================
+    //
+    // The four shipped `Org`+relaxable tests above are all forward-org or
+    // NON-growing, so nothing exercised a backward `org` in a section whose
+    // earlier content GREW. That is the shape where a baseline offset alone
+    // stops naming one position: run 1's baseline band and the post-org run's
+    // baseline band OVERLAP, so the breakpoint table is no longer monotonic in
+    // its baseline key.
+    //
+    // Shared shape for the tests below (`Hi` forces the jmp to abs.l, +2):
+    //
+    //   fi 0  jmp Hi           baseline [0,4)    current [0,6)
+    //   fi 1  dc.b AA,BB,CC,DD baseline [4,8)    current [6,10)
+    //   fi 2  org 6            barrier: seek both cursors back to 6
+    //   fi 3  dc.b EE          baseline [6,7)    current [6,7)
+    //
+    // breakpoints = [(0,0), (4,2), (8,2), (6,0), (7,0)] — run 1 spans baseline
+    // [0,8] with delta +2 after the jmp, the post-org run spans baseline [6,7]
+    // with delta 0. Baseline offset 8 lies in run 1 ONLY (the post-org run ends
+    // at 7), so it is not ambiguous: it must take run 1's +2. The org target is
+    // 6 rather than 4 so the back-patched byte lands CLEAR of the jmp's
+    // `Abs32Be` operand field [2,6) — `link` applies fixups after `image_bytes`,
+    // so a patch written into a relocation field is overwritten by the
+    // relocation and the image assertion below would say nothing.
+
+    /// Baseline fragments of the shared backward-org shape, with `extra`
+    /// appended (empty for the label tests).
+    fn backward_org_growth_section(labels: Vec<Label>) -> Section {
+        Section {
+            name: "back".into(),
+            cpu: Cpu::M68000,
+            vma_base: None,
+            lma: 0,
+            labels,
+            fragments: vec![
+                Fragment::JmpJsrSym { is_jsr: false, target: Expr::Sym("Hi".into()), span: sp() },
+                Fragment::Data(DataFragment {
+                    bytes: vec![0xAA, 0xBB, 0xCC, 0xDD],
+                    fixups: vec![],
+                    span: sp(),
+                }),
+                Fragment::Org { target: 6, fill: 0x00, span: sp() },
+                Fragment::Data(DataFragment { bytes: vec![0xEE], fixups: vec![], span: sp() }),
+            ],
+            placement: sigil_ir::SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
+            bank: None,
+            equ_syms: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn org_backward_growth_shifts_a_label_in_the_grown_run() {
+        // `Tail` is the boundary at the END of run 1 (baseline 8 — after
+        // `dc.b AA,BB,CC,DD`, before the `org`). The jmp ahead of it grows +2, so
+        // run 1 now ends at 10 and `Tail` must resolve to 10. Baseline 8 is
+        // outside the post-org run's band [6,7] entirely, so nothing else can
+        // claim it.
+        let mut stubs = SymbolTable::new();
+        stubs.define("Hi", SymbolValue::Int(0x12_3456));
+        let sec = backward_org_growth_section(vec![Label { name: "Tail".into(), offset: 8 }]);
+        let out = resolve_layout(&[sec], &stubs, true).unwrap();
+        assert_eq!(
+            out[0].labels.iter().find(|l| l.name == "Tail").unwrap().offset,
+            10,
+            "a label at the end of the GROWN run must carry that run's +2 delta"
+        );
+        // Label mapping does not touch the image: run 1 emits 4+2 = 6 bytes of
+        // jmp then AA,BB,CC,DD at [6,10), and `org 6` seeks back so `dc.b EE`
+        // overwrites offset 6 (the AA).
+        let linked = crate::link(&out, &stubs).unwrap();
+        assert_eq!(
+            linked.section("back").unwrap().bytes,
+            vec![0x4E, 0xF9, 0x00, 0x12, 0x34, 0x56, 0xEE, 0xBB, 0xCC, 0xDD]
+        );
+    }
+
+    #[test]
+    fn org_backward_growth_keeps_a_post_org_label_org_anchored() {
+        // `Patch` is the boundary the `org 6` opens (baseline 6 — a label written
+        // immediately after the org). Baseline 6 lies in BOTH bands (run 1 spans
+        // [0,8], the post-org run spans [6,7]), and the IR carries no fragment
+        // index, so the offset alone cannot say which. The documented tie-break
+        // is the LATER run — which is the right answer for this, the shape a
+        // front-end actually emits — so `Patch` stays org-anchored at 4.
+        let mut stubs = SymbolTable::new();
+        stubs.define("Hi", SymbolValue::Int(0x12_3456));
+        let sec = backward_org_growth_section(vec![Label { name: "Patch".into(), offset: 6 }]);
+        let out = resolve_layout(&[sec], &stubs, true).unwrap();
+        assert_eq!(out[0].labels.iter().find(|l| l.name == "Patch").unwrap().offset, 6);
+    }
+
+    #[test]
+    fn frag_start_vma_is_exact_across_a_backward_org() {
+        // `frag_start_vma` is handed the fragment INDEX, so its answer is a
+        // plain cursor replay under the current rungs — never a lookup keyed on
+        // a baseline offset that a backward org has made ambiguous.
+        //   fi 0 (jmp)     : nothing before it            -> 0
+        //   fi 1 (dc.b x4) : the jmp is 6 bytes at rung 1 -> 6
+        //   fi 3 (dc.b EE) : the org seeks the cursor to  -> 6
+        let sec = backward_org_growth_section(vec![]);
+        let rungs = vec![1usize, 0, 0, 0];
+        assert_eq!(frag_start_vma(&sec, &rungs, 0, 0), 0);
+        assert_eq!(frag_start_vma(&sec, &rungs, 0, 1), 6, "the grown jmp is 6 bytes, not 4");
+        assert_eq!(frag_start_vma(&sec, &rungs, 0, 3), 6, "the org anchors the post-org run");
+        // ...and the section origin is added, not folded into the replay.
+        assert_eq!(frag_start_vma(&sec, &rungs, 0x2000, 1), 0x2006);
+    }
+
+    #[test]
+    fn org_backward_growth_ladder_measures_reach_from_its_real_site() {
+        // The consequence of a wrong site VMA, end to end: a `bne` ladder sitting
+        // just past the reach boundary silently keeps its `.s` rung.
+        //
+        //   fi 0  jmp Hi     baseline [0,4)      current [0,6)   (+2)
+        //   fi 1  Fill(122)  baseline [4,126)    current [6,128)
+        //   fi 2  bne Back   baseline site 126   current site 128
+        //   fi 3  org 4      barrier
+        //   fi 4  dc.b CC
+        //   Back @ 0
+        //
+        // bne.s measures its disp from site+2, so from the REAL site 128 the
+        // displacement to `Back` (VMA 0) is -130: outside i8, so the ladder must
+        // take its `.w` rung. Reading the site off the baseline-keyed table
+        // instead yields 126 -> disp -128, which fits, and the ladder would keep
+        // a 2-byte `.s` encoding whose runtime target is VMA 2, not 0.
+        let mut stubs = SymbolTable::new();
+        stubs.define("Hi", SymbolValue::Int(0x12_3456));
+        let sec = Section {
+            name: "reach".into(),
+            cpu: Cpu::M68000,
+            vma_base: None,
+            lma: 0,
+            labels: vec![Label { name: "Back".into(), offset: 0 }],
+            fragments: vec![
+                Fragment::JmpJsrSym { is_jsr: false, target: Expr::Sym("Hi".into()), span: sp() },
+                Fragment::Fill { value: 0x00, count: 122, span: sp() },
+                bne_ladder("Back"),
+                Fragment::Org { target: 4, fill: 0x00, span: sp() },
+                Fragment::Data(DataFragment { bytes: vec![0xCC], fixups: vec![], span: sp() }),
+            ],
+            placement: sigil_ir::SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
+            bank: None,
+            equ_syms: Vec::new(),
+        };
+        let out = resolve_layout(&[sec], &stubs, true).unwrap();
+        match &out[0].fragments[2] {
+            Fragment::Data(d) => {
+                assert_eq!(
+                    d.fixups[0].kind,
+                    FixupKind::PcRelDisp16,
+                    "the ladder must take its .w rung: from its real site 128 the .s disp is -130"
+                );
+                assert_eq!(d.bytes.len(), 4);
+            }
+            other => panic!("expected a lowered Data fragment, got {other:?}"),
+        }
+        // The emitted disp is measured from the extension word's own VMA (130).
+        let linked = crate::link(&out, &stubs).unwrap();
+        let bytes = &linked.section("reach").unwrap().bytes;
+        assert_eq!(&bytes[128..132], &[0x66, 0x00, 0xFF, 0x7E], "disp16 = 0 - 130 = -130");
     }
 }
