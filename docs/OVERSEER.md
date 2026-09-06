@@ -776,6 +776,14 @@ cannot be distinguished from a row somebody invented** (aeon's formulation, bett
 So before answering any request to hand a peer a routed finding, resolve the row to a committed
 path first, and **say plainly when it does not resolve** rather than reconstructing it.
 
+**COMMITMENT MADE TO AEON 2026-09-06, banked because it would otherwise live only in mail.** They
+have booked `S4BUDGET-STALE-ASSUMPTION` on their side **as a refusal rather than an omission**, with
+the re-entry condition that it returns only by being re-derived from their own tree. This lane owes
+the other half: **if the row is grounded from this tree, send them the path; if it is concluded to
+have never had a source, send them that too and retire it.** Stated as an obligation because a
+refusal booked on both sides sits forever by default, each side assuming the other holds it. Their
+booking is aeon `ab5dfc68`.
+
 ## Standing cross-session obligations (2026-08-22)
 
 The aeon session owes sigil two things, both triggered by sigil work rather than by
