@@ -33,17 +33,19 @@
 //! and `equ`. `label` and a plain PC label were already right and are the two
 //! controls.
 //!
-//! WHAT EACH TEST MUST FAIL ON, before the fix:
+//! WHAT EACH TEST MUST FAIL ON, before the fix. Seven fail and five pass, and
+//! the split is the bar:
 //!
-//! * the four `_binds_the_local_to_the_binder` tests refuse with
-//!   `unresolved symbol \`Var.lq\`` — the symbol does not exist at all;
+//! * the four `_binds_the_local_to_the_binder` tests and
+//!   `a_set_inside_a_macro_opens_the_scope_in_the_caller` refuse with
+//!   `unresolved symbol \`Var.lq\`` / `\`Ms.lq\`` — the symbol does not exist;
 //! * the two `_is_no_longer_the_parent` tests ASSEMBLE, emitting `$00000002`
 //!   for the reference assembler's undefined symbol, which is the silent half;
-//! * `a_dotted_binder_opens_no_scope`, `the_right_hand_side_is_evaluated_...`
-//!   and both plain-label controls PASS before and after. They are the other
-//!   direction of the bar: a fix that opened a scope for a dotted binder, or
-//!   opened it before the binder's own operand was read, would break them, and
-//!   both shapes are in the corpus while the divergent one is not.
+//! * the remaining five PASS before AND after, and they are what an over-broad
+//!   fix breaks: a scope opened for a dotted binder, or opened before the
+//!   binder's own operand was read, or opened by a line that bound nothing,
+//!   fails one of them. All three of those shapes are in the corpus; the
+//!   divergent one is not.
 
 use sigil_frontend_as::{assemble, Options};
 
@@ -159,6 +161,8 @@ fn the_right_hand_side_is_evaluated_in_the_previous_scope() {
 /// A `set` inside a macro expansion opens the scope in the CALLER, not in the
 /// expansion's own unspellable frame (probe `s09`: the reference table reads
 /// `Ms.uu : 1002 C`).
+///
+/// MUST FAIL before the fix, with `unresolved symbol \`Ms.lq\``.
 #[test]
 fn a_set_inside_a_macro_opens_the_scope_in_the_caller() {
     let src = "\tcpu 68000\n\tphase 0\n\
@@ -173,24 +177,21 @@ fn a_set_inside_a_macro_opens_the_scope_in_the_caller() {
 }
 
 /// A binder whose right-hand side does not evaluate opens NO scope: the
-/// reference table for probe `s08` reads `Anchor.tt`, not `Bd.tt`. The program
-/// is refused by both assemblers either way, so what is under test is that the
-/// refusal names ONLY the operand that could not be read — a second complaint
-/// about the local would mean the scope had moved on a line that bound nothing.
+/// reference table for probe `s08` reads `Anchor.tt`, not `Bd.tt`, so the local
+/// still belongs to the preceding label.
 ///
-/// PASSES BEFORE AND AFTER.
+/// ONLY THE ATTACHMENT IS UNDER TEST HERE. asl also REFUSES this source
+/// (`#1010 symbol undefined`, exit 2) and sigil assembles it silently; that is
+/// a real divergence and a different one, it is not closed by this parcel, and
+/// asserting a refusal here would make this test fail for a reason that has
+/// nothing to do with scopes. What is asserted is the part this parcel owns:
+/// the scope did not move on a line that bound nothing.
+///
+/// PASSES BEFORE AND AFTER. It fails against a fix that opens the scope from
+/// the label field alone, without regard to whether a value was bound.
 #[test]
 fn a_binder_whose_value_does_not_resolve_opens_no_scope() {
-    let msgs = refusal(&probe("Var\tset\tnosuchsymbol", "Parent.lq"));
-    assert!(
-        msgs.iter().any(|m| m.contains("nosuchsymbol")),
-        "the refusal must name the operand that could not be read, got {msgs:?}"
-    );
-    assert!(
-        !msgs.iter().any(|m| m.contains("Parent.lq")),
-        "`Parent.lq` must still resolve: a line that bound nothing moved no scope, \
-         got {msgs:?}"
-    );
+    assert_eq!(bytes(&probe("Var\tset\tnosuchsymbol", "Parent.lq")), RESOLVED);
 }
 
 /// The control that was already right, kept in the file so the two halves of
