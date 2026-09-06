@@ -153,6 +153,30 @@ Two things follow.
   constraint. This is an F/G-class assumption of exactly the kind §5 enumerates, found in a
   new place.
 
+  **⚠ REFUTED 2026-09-06 BY THE AEON LANE (aeon `36e3e409`, on their `origin/master`), and the
+  error is mine.** Knuckles' exact ceiling is **6, headroom 4**, not 10. `2 × peak entries` is a
+  valid **BOUND** and is not the ceiling: it assumes every entry can straddle at once, and every
+  Knuckles frame names **disjoint runs**, so at most one can. The constraint is
+  `entries + simultaneous straddles <= 10`, so the sentence above points at the wrong variable.
+
+  **What survives and what does not, stated separately because the bound is used TWICE on this
+  page and only one use is wrong.** The structural-zeros claim in the paragraph above this bullet
+  **stands unchanged**: proving *cannot exceed 10* needs only an upper bound, and an over-estimate
+  proves it a fortiori. This bullet reuses the same number as an EXACT ceiling to price how close
+  Knuckles sits to the bar, and a bound cannot do that job. The alarm was overstated in the
+  alarming direction, which is the direction that gets acted on.
+
+  **Their control, which is why this is a refutation and not a disagreement:** a byte-granular
+  brute-force sweep of a whole `0x20000` period matched their analytic ceiling for all four
+  subjects exactly, and the same function independently reproduced this note's separately-measured
+  *Sonic's `$1E` splits 7 ways*. A refutation of a measurement arrives with an instrument or it is
+  an opinion.
+
+  **The half of this row that was right is the half that mattered, and it is now enforced at their
+  end:** the ceiling was **unstated**, and a bar met exactly is indistinguishable from a bar met
+  with room. Their build now prints the computed ceiling every time with a `CEILING EQUALS THE
+  BAR` tag at zero headroom.
+
 ### 3.1 One thing P6 could not have found
 
 `dplc_straddle`'s **VERDICT B** (a *reachable* frame splitting past `DPLC_ENTRY_RESERVE`) did

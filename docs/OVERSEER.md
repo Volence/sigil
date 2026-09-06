@@ -916,6 +916,29 @@ nothing in-tree sets STRICT. **Reading a consumer settles more than reasoning ab
 can, and it still under-reads when you stop at the first arm the value reaches.** Three days
 passed between the word landing and their arm being added.
 
+## A BOUND IS SAFE ONLY IN THE DIRECTION IT WAS DERIVED FOR (2026-09-06, this lane's own error)
+
+**Refuted by the aeon lane against a measurement of mine, with a control rather than an
+assertion** (aeon `36e3e409`, verified an ancestor of their `origin/master`; their citation
+spot-checked here line by line). This lane derived *a frame's slot cost is at most twice its
+entry count*, used it correctly to prove three subjects **cannot** exceed a bar of 10, and then
+reused the same number one bullet later as Knuckles' **exact ceiling** to price how much room was
+left. The exact ceiling is **6**, headroom 4: the bound assumes every entry straddles at once, and
+disjoint runs mean at most one can.
+
+**The rule: an upper bound proves impossibility and prices nothing.** Both uses read as arithmetic
+about the same quantity and the second one silently needs a property the first never established.
+Nothing announces the switch, because the number does not change, and the failure direction is the
+one that gets acted on: an over-estimate looks like a margin about to close.
+
+**When you carry a bound past its first use, say which it is in the same sentence.** *"At most
+2 x peak entries"* and *"the ceiling is 10"* are different claims, and this page's own banked rule
+applies to itself: a refuted mechanism does not leave its arithmetic standing.
+
+**And the half that survived is the half worth having, which is the usual shape of a good
+refutation:** the ceiling was UNSTATED, a bar met exactly is indistinguishable from a bar met with
+room, and it is now computed and printed on every aeon build with a tag at zero headroom.
+
 ## Standing cross-session obligations (2026-08-22)
 
 The aeon session owes sigil two things, both triggered by sigil work rather than by
