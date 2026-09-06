@@ -4300,3 +4300,41 @@ promote it from derived to observed.
 **Standing findings carried forward, both re-verified this sweep:** S12 is open and its cost is now
 **59, not 53** (re-derived, with the model validated by reproducing the historical 53 at three
 sweep-era revisions); S8 is open and the move is **~70% larger** than when it was deferred.
+
+### `LENS-PROBE-OWNS-A-LIVE-GAME-FILE` (2026-09-06, from the source-gate red)
+
+**A sigil test whose SUBJECT lives in another repo and moves under it.**
+`crates/sigil-cli/tests/tranche6_negative_probes.rs:202-298` says so in its own words: *"Compile
+the REAL test_solid.emp (with the real sst.emp ambient)"*. It reads live aeon files through
+`read_aeon` and lowers them against a **hard-coded two-file ambient** (`engine/system/types.emp` +
+`engine/objects/sst.emp`). When the game file grows a name reachable from aeon's real closure but
+not from those two files, the probe reports 40+ `unknown name` diagnostics and the nightly lane
+goes red on a defect that does not exist.
+
+Diagnosed by the aeon lane at the pair this lane named (sigil `e9a9dfa6` / aeon `a7a4f640`), and
+**verified here rather than accepted**: the probe's live-file dependency is at the cited lines, and
+`games/sonic4/objects/test_solid.emp` **grew from 298 lines at `5f8bbee7` to 715 at `abc7fdfa`**
+across the spring series.
+
+**Correcting the figure as relayed, because a refuted number does not get to stand next to a right
+conclusion:** it reached this lane as *"37 to 715"*. At the revision named it is **298**, so the
+growth is 298 to 715 (+417), not 37 to 715 (+678). The conclusion is untouched, and the mechanism
+is exactly as aeon described it; only the magnitude was wrong, in the direction that overstates.
+
+**Ruled, and the ruling is the shape rather than the instance:** the probe gets a **small
+dedicated fixture that sigil owns**, not a widened ambient. Widening the ambient fixes today and
+breaks the next time anyone touches a live game file, because the subject would still be somebody
+else's working file. A test that reads another repo's live source has no stable subject by
+construction.
+
+**The fixture named to aeon** (they carve it and mark it sigil-owned; this lane consumes it):
+`games/sonic4/test/fixtures/sigil_objroutine_probe.emp`, minimal shape - resolvable **entirely**
+from `types.emp` + `sst.emp` and nothing else, one proc whose `ObjRoutine` target is deliberately
+MISSPELLED (must dangle loud at link) and one sibling whose target resolves (the control that must
+NOT dangle), no imports beyond the two ambient files, and a header saying it is sigil's resolving
+control so nobody grows it.
+
+**The general form, which is the part worth keeping:** a probe that names a live file in another
+repo is a test with no stable subject, and its failure mode is a red that indicts the wrong lane.
+Sweep for siblings: every `read_aeon` call site that names a **game** file rather than an engine
+vocabulary file is the same shape.
