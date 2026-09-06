@@ -344,9 +344,9 @@ check that distinguishes "pushed" from "looks pushed".
 
 ## Read at the moment — `docs/OVERSEER-REFERENCE.md`
 
-Six blocks that sat here are read at a specific moment rather than at boot, so they live in
-`docs/OVERSEER-REFERENCE.md` and are read when that moment arrives. **Nothing was shortened to
-move it.** Each entry below states the moment that triggers its block, because a rule whose
+Six blocks that sat here at the 2026-09-04 cut are read at a specific moment rather than at
+boot, so they live in `docs/OVERSEER-REFERENCE.md` and are read when that moment arrives.
+**Nothing was shortened to move it.** Each entry below states the moment that triggers its block, because a rule whose
 trigger a reader cannot recognise is a rule nobody looks up.
 
 - **Writing a brief for any agent** — *Dispatch practice*: why a stated MECHANISM is more
@@ -372,6 +372,11 @@ trigger a reader cannot recognise is a rule nobody looks up.
 Four further blocks moved from earlier in this file — the positive freeze witness, `d-18`, the
 rules banked from closed findings, and the drift watch's timer — and each is named by path at
 the point it used to sit.
+
+**Ten more blocks joined them at the 2026-09-05 cut**, and they are indexed separately, under
+*Read at the moment - the 2026-09-05 blocks, and the moment that triggers each*, in the
+2026-09-05 section near the end of this file. The list above is the 2026-09-04 cut's and is not
+the whole of `docs/OVERSEER-REFERENCE.md`.
 
 ## Queue
 
@@ -773,6 +778,57 @@ in `docs/superpowers/notes/`, then `docs/superpowers/notes/campaign-gap-ledger.m
 for banked nice-to-haves. Keep this section's "current state" paragraph fresh when
 landing an arc — a stale queue snapshot misleads the next boot more than no snapshot.
 
+## Rules banked 2026-09-05 - read at boot
+
+The findings of 2026-09-05 that a fresh session needs before it acts. Their episodes are
+not here: this section carries the rule and names where the narrative went, per the owner's
+2026-09-04T15:38:47Z ruling that the boot read is split by WHEN A RULE IS READ.
+
+### Read at the moment - the 2026-09-05 blocks, and the moment that triggers each
+
+Nothing below was shortened to move it. Each row names the moment its block is read, because a
+rule whose trigger a reader cannot recognise is a rule nobody looks up.
+
+**In `docs/OVERSEER-REFERENCE.md`:**
+
+- **Sizing or dispatching AS-NAMELESS-LABELS-RC1** - the six change sites, the L sizing, the
+  arithmetic risk, the landing condition and the no-prediction prohibition.
+- **Touching a committed generated artifact** - *the three golden-vector headers are NOT
+  hand-edited*: why a hand-freshened generator header is indistinguishable from an adjusted
+  measurement, and `GOLDEN-HEADER-UNGATED`.
+- **Building a count, or writing a brief** - *THREE THINGS THIS PARCEL TAUGHT*: the lexer with
+  no char-literal state, the control that made three wrong counts detectable, and why a brief
+  that states a constraint in the abstract when exactly one value works has stated a preference
+  and called it a rule.
+- **Proving a mutation applied** - *`git checkout <rev> -- <path>` STAGES*, so plain
+  `git diff --stat` reports nothing on an applied mutation.
+- **Naming a path in a brief** - the `.target-land` instruction that caused a shared-state
+  mutation because it named the value and dropped the tree.
+- **Designing a probe for anything on an error path** - *error-path behaviour is CONDITIONAL ON
+  WHAT ELSE FAILED*, so both directions must be run.
+- **Making something newly refuse** - ask what the OLD code did on the same path; a panic or an
+  `unreachable!` cannot regress a working build, and that quantifies where a green run samples.
+- **Judging a control, or a report's own severity** - *A CONTROL CAN BE CONFOUNDED BY THE VERY
+  THING IT CONTROLS FOR* (MOMPASS): a pre-existing claim needs its own instrument, fidelity is a
+  cost rather than a goal, and a reporting change should be strictly additive.
+- **Running any mechanical text change** - *a sweep kills any negative assertion keyed to what
+  it changed*, and the grep that finds them runs against the PRE-sweep revision.
+- **Pruning worktrees** - the lock is not a liveness signal, the ancestor test is wrong in both
+  directions, and `du -sh` comes before any count.
+
+**Two live bookings are named only in that narrative, so they are named here too**, because the
+queue board `docs/lane-status.json` is untracked and a rotated session cannot be shown to hold
+them: **`PINS-GATE-MESSAGE-MISLEADS`** (make the count and the verdict describe the same
+comparison; the printed command was fixed at `81d92f80`) and **`AS-IF-REFUSAL-DIAG-VECTOR`**,
+which is CLOSED at `34dad07c` and is listed so nobody re-opens it from the narrative alone.
+
+**In `docs/OVERSEER-LOG.md`, 2026-09-05 cut:** the dash ruling's scope gap and its measured
+counts; the ratification of the sweep's extension to shell and Python; the 518-block bisection
+that this seat got wrong twice and an agent refuted; the register fault and its silent
+acceptance; how the `if` refusal was cleared without an aeon build; master's strict red and the
+enumeration error under it; the pins gate's two true halves; and the four landing-gate
+episodes whose rules are kept below.
+
 ### NO EM OR EN DASHES IN TOOL TEXT (owner ruling, 2026-09-05): booked, and the count is measured
 
 **Verified firsthand at empyrean `24cdd17`, reachable from their `origin/main`**, a 9-line addition to
@@ -782,14 +838,8 @@ broader words: *"get rid of all current emdashes and update so no more emdashes 
 agents"*. No U+2014 and no U+2013 in any text a tool shows a person: diagnostics, warnings, panic
 messages, generated help. Use a comma, a colon, a period, or parentheses.
 
-**SCOPE IS SETTLED IN THE SPEC ITSELF, so do not re-litigate it.** At `24cdd17` the spec named only
-Oracle, Aurora and Seraph, and the extension to this lane arrived through the relay carrying his
-broader sentence. That gap was flagged to the hub and CLOSED at empyrean `f9fbfc9` (verified here
-reachable from their `origin/main`, and the line read back): the rule now names every tool in the
-suite, with **Sigil (the assembler's diagnostics, warnings and help)** explicit. Recorded because
-the fix is the interesting half: the ruling bound this lane either way, but a cold session reading
-a spec that does not name its own tool reads scope as a limit, which is the failure where a ruling
-reaches only the sessions alive when it was sent.
+*(How that scope gap was found and closed at empyrean `f9fbfc9`, kept because the fix is the
+interesting half: `docs/OVERSEER-LOG.md`, 2026-09-05 cut.)*
 
 **Half (b) is in force NOW, for everything anyone writes here**: strings, docs, lane logs, commit
 messages, peer messages. This section is written under it.
@@ -797,35 +847,15 @@ messages, peer messages. This section is written under it.
 **Half (a), the sweep, is booked as `TOOLTEXT-DASH-SWEEP` and takes its turn AFTER the S2
 decomposition.** Sequenced by what a person reads first.
 
-**The count, measured here 2026-09-05 over tracked files at master `297dcd8f`, with a lexer that
-tracks Rust string, raw-string, line-comment and block-comment state rather than a line grep:**
-
-| population | occurrences | note |
-|---|---|---|
-| `crates` src STRING literals | **595** across 64 files | the producer side, the actual subject |
-| `crates/*/tests` STRING literals | **556** | the CONSUMING end, see below |
-| `crates` comments | 10,840 | NOT in scope by the ruling's own words; touching them is churn |
-| `docs` | 28,938 | out of scope for the sweep; half (b) governs new writing |
-
-**⚠ THE SWEEP IS NOT 595 EDITS. It is 595 producer edits that must move in lockstep with 556
-consumer assertions**, and this lane's own bar says a wording change is exactly how a matcher starts
-passing for the wrong reason. Both directions need enumerating before anything is edited: a test
-that asserts a full string goes RED (loud, fine), a test that matches a substring on the untouched
-half goes GREEN while no longer testing what it names (silent, the whole problem). And
-`docs/OVERSEER.md` already records that several `(align: N)` diagnostic strings are pinned by
-**nothing at all**, so part of the producer side has no consumer to red at all. Enumerate the
-consuming end, per the standing rule; never size this off the producer count.
-
-**Correction to my own first figure, kept rather than silently patched:** this table said **582** for two
-hours. That count took only files under a `/src/` path and dropped `build.rs` and `src/bin/`. The
-figure is **595**. Same defect family as the zero below, one layer milder: a pathspec that answers a
-narrower question than the one asked, with nothing in the output saying so.
-
-**⚠ AND THE FIRST MEASUREMENT OF THIS RETURNED ZERO.** `git grep -- 'crates/*/src'` matched no paths
-and reported 0 occurrences in 0 files, which reads exactly like a clean tool. It was caught only by
-running a positive control (the same pattern found 28,938 in `docs`, so the pattern worked and the
-PATHSPEC did not). Same family as the zsh word-split instance already banked: an empty result read
-as a pass. Any re-measure of this row carries a positive control.
+**THE MEASURED POPULATIONS ARE DELIBERATELY NOT ON THIS PAGE.** A count read off the boot
+read is the snapshot-wearing-the-grammar-of-a-standing-fact defect this file already bans, and
+these particular figures were wrong three times before they were right. The producer and
+consumer tables, the two corrections they went through, and the pathspec that first returned a
+confident zero are in `docs/OVERSEER-LOG.md`, 2026-09-05 cut. **Re-measure with a positive
+control and size the sweep off the CONSUMING end**, never off the producer count. One residual
+is live and belongs here rather than in the narrative: the shipped regression gate covers Rust
+string literals only, so a shell or Python tool can still grow a dash without reddening
+anything.
 
 ### AS-NAMELESS-LABELS-RC1: the sizing, asked for by the owner before dispatch
 
@@ -836,320 +866,12 @@ classes, 86.5 percent of the entire Sonic 2 run** (landed measurement, `49acd05d
 2026-09-03 for the AS surface only; zero of 5,003 constructs are accepted today, so this is not
 started rather than half done.
 
-**What has to change, all in `crates/sigil-frontend-as/`:**
-
-1. **Definition side.** A run of `+`, `-` or `/` in column 1 becomes a label. Today it is refused at
-   `eval.rs:2697`, "expected mnemonic, directive, or label". 2,309 sites.
-2. **Reference side.** A bare `+`, `++`, `-` as a branch operand. Today refused at
-   `operands.rs:345`, "bad operand expression". About 2,600 sites. **This is the hard part and the
-   reason the row is L**: `+` and `-` are also arithmetic operators, so this is context sensitive
-   disambiguation inside the operand parser, not a token added to a table.
-3. **The parenthesized forms `(+)` and `(++)` occur**, as `offsetTableEntry` arguments, so it cannot
-   be a bare-token special case. The measurement note records that a regex over bare tokens misses
-   them and they were nearly lost from the count.
-4. **Ordinal resolution.** `+` is the next following definition, `++` the second, `-` the nearest
-   preceding. Position ordered, and it has to stay stable across the existing multi-pass convergence
-   loop, where a forward reference is resolved on a later pass.
-5. **Macro interaction, already measured rather than anticipated.** References arrive through macro
-   ARGUMENTS (14 calls at 2 sites, plus 49 through `offsetTableEntry`) and inside macro BODIES (11
-   calls at 1 site). Scoping is per expansion instance, the same shape the plain-label half already
-   has.
-6. **The reference population is LARGER than the diagnostics show.** 18 references emit no row at all
-   today because the definition on their line already failed. They become live the moment
-   definitions parse, so a count taken from the diagnostic stream understates the work.
-
-**Why L and not XL:** the machinery this needs mostly exists. `sym_key`, `plain_label_scope` and
-`expansion_labels` (`eval.rs:1160-1210`) already implement "reader and writer agree about where a
-name lives", per expansion instance, with the walk outward and the stop at the live stack both
-measured against asl. The ordinal half is new; the scoping half has a working model to follow.
-
-**THE RISK THAT DECIDES THE GATE, and it is not the feature.** Making `+` and `-` label-capable in
-operand position can silently change how existing ARITHMETIC parses. That is a change to code that
-is correct today, in a crate that sits in aeon's shipping build path, and it would not announce
-itself. Every currently-correct expression must be proven unchanged, by artifact and not by argument.
-
-**Landing condition (hub's, and its premise is now ASSERTED here rather than assumed):** the four
-aeon shapes stay CRC32 and size identical. **Population in aeon is ZERO, measured at the CONSUMING
-end** and not merely in a file listing: aeon tracks exactly three `.asm` files, which are exactly the
-three `build.sh` routes through this frontend, and their include closure is self-contained (both
-`game_root.asm` include only `engine/debug/debugger.asm`, which includes nothing). Zero definitions,
-zero references. So the CRC condition should hold trivially, **which is precisely why it is worth
-gating**: it costs nothing when the feature is clean and it is the tripwire for the arithmetic
-regression above.
-
-**⚠ PROHIBITION, carried into this row from the measurement: `5,761 - 4,985 = 776` is NOT a
-post-fix prediction and must not be quoted as one.** Closing this resolves symbols that are
-currently unresolved and lets the assembler reach code it currently abandons, which can remove rows
-and add them. The only way to know the number after is to measure after.
-
-### RULED: the three golden-vector headers are NOT hand-edited, and "wait for a regeneration" is not the ruling either
-
-The dash sweep flagged one item for a ruling: three committed golden-vector files
-(`crates/sigil-isa/tests/{z80,m68k}_golden_vectors.txt`,
-`crates/sigil-frontend-as/tests/snippets_golden.txt`) carry a stale copy of the generated
-`PREAMBLE` header, dashes included.
-
-**Ruled: do not hand-edit them.** The agent's reasoning is this lane's own standing rule arriving
-from the outside, and it is right: a regenerated header that no generator produced is a hand-written
-artefact wearing a generator's name, and it would sit directly above rows that are real digest
-measurements. At read time an edit that freshened the header is indistinguishable from an edit that
-adjusted a measurement. That is the maintenance act being the vulnerability.
-
-**But "they lose the dashes next time the generators run" is NOT an acceptable resting place, and
-the agent named the reason itself: nothing schedules those generators.** An unbounded wait with no
-owner is a state, not a plan, and it reads as closed while nothing is closing it.
-
-**The defect underneath is bigger than the dashes and is the real booking. `PREAMBLE` has exactly
-one reader, and NOTHING compares the committed header against it.** So the committed artefacts can
-drift from their own generator silently, forever, and the dash ruling is merely what made one
-instance visible. Booked as `GOLDEN-HEADER-UNGATED`: close it by REGENERATING (never by hand), and
-add the missing comparison so the next drift is loud. Regeneration invokes `asl`, so it is subject
-to the exit-status rule banked above, and it is its own small parcel with its own verification
-because it rewrites committed test vectors.
-
-### RATIFIED: the sweep's scope extension to shell and Python
-
-The brief drew scope at "string literals in Rust source". A Rust test asserting on **shell** output
-went red and proved the line had a hole wherever a tool in one language is tested from another. The
-agent extended to 121 shell and Python edits and closed the CLASS rather than the instance.
-**Explicitly ratified, not merely tolerated.** The residual it leaves is stated in its note and is
-real: the regression gate covers Rust string literals only, so a shell or Python tool can still grow
-a dash without reddening anything.
-
-### THREE THINGS THIS PARCEL TAUGHT THAT OUTLIVE IT
-
-**1. MY DASH COUNTS WERE WRONG THREE TIMES, and the third time had a mechanism worth keeping.** I
-reported 582, then 595. Both were wrong; the true occurrence count was **1,031**, and the agent
-refused my figure rather than reconciling to it. **The cause: a hand-rolled Rust lexer with no
-CHAR-LITERAL state.** `crates/sigil-frontend-as/src/eval.rs:2208` is `b'"'`, a byte-char literal
-holding a double quote, so the lexer entered string state there and stayed desynchronized for the
-rest of the file, counting hundreds of COMMENT dashes as string dashes. The error is **not one
-directional**: after a desync, real strings are read as code and their dashes are MISSED too. A
-lexer written to count something in a language that lexes text will meet its own constructs in that
-text. **When a count needs a lexer, either use a real one or prove it on a file whose answer is known
-by a second method.**
-
-**2. A CONTROL IS WHAT MAKES A COUNT MEAN ANYTHING, and it caught all three.** The first measurement
-returned **zero** (bad pathspec). The second and third were inflated (the lexer above). Every one
-looked like a clean confident answer. What settled it was running a corrected lexer over BOTH trees:
-**1,031 on master, 0 on the swept branch**, matching the agent's independently-implemented count
-exactly. Two implementations agreeing at a non-trivial number is worth more than either one's care.
-
-**3. MY OWN BRIEF CARRIED A CONTRADICTORY INSTRUCTION, and it cost the agent two suite runs.** I
-wrote "set `CARGO_TARGET_DIR` to a path inside your own worktree". Inside the repo root,
-`target-agent` reds `scripts_name_their_tree.rs:58` and `<root>/target` reds
-`shared_target_defaults.rs:375`. **Only `.target-land`, which is `landing-run.sh`'s own default,
-satisfies both.** The general shape: a brief that states a constraint in the abstract ("somewhere
-under your worktree") when the tree actually admits exactly ONE value has stated a preference and
-called it a rule. **Name the value.**
-
-### MY OWN BISECTION WAS CONFOUNDED, AND THE AGENT REFUTED IT: the 518 block, 2026-09-05
-
-**Both diagnoses I dispatched were wrong, and both refutations are verified firsthand here** (landed
-`c325c7a2`). Recorded at this length because the failure was in the OVERSEER's measurement, handed
-down to an agent as ground truth, and the agent's willingness to refute it is the only thing that
-caught it.
-
-**Defect 1, refuted outright. MY PROBE COULD NOT DISTINGUISH THE TWO ANSWERS.** I claimed `val()`
-accepts a string literal but not a computed string, and showed `val(substr("JmpTo_Foo", 7, 3))`
-failing. **AS `substr` is 0-based**, so that expression is `val("oo")`, which fails correctly because
-no symbol `oo` exists. At offset 6 it assembles on master. Verified here: 7 fails, 6 exits 0. The
-real fault was one level deeper, in which arguments `fold_const` expands.
-
-**This is the standing bar aimed at its own author.** A probe whose failure is equally explained by
-the mechanism you propose and by a trivial error in the probe is not evidence for either. **Ask what
-OTHER answer the probe could have given**, and for any probe built on an index, an offset or a
-boundary, verify the intermediate value before building the conclusion on it: one `dc.b substr(...)`
-would have shown me `"oo"` in five seconds.
-
-**Defect 2, real but materially wider than I wrote, which is the more dangerous error.** I said the
-long absolute address operand cannot hold a string builtin. In fact **no 68000 instruction operand
-ran any builtin layer at all**: `move.l #int(3.7),d0` fails on master with nothing string-shaped in
-it, while `dc.l int(3.7)` assembles (verified here). **A narrow diagnosis produces a narrow patch
-that closes the visible rows and leaves the rest of the class broken**, and the corpus count would
-have gone to zero and certified it. The agent widened the fix to the operand layer.
-
-**A BRIEF'S STATED MECHANISM IS THE DANGEROUS PART, AND THIS IS WHY.** The dispatch rule says label
-mechanisms as hypotheses because an agent tends to reconcile its measurement to the controller's
-story. I labelled mine as measurements, which was honest and correct (I had run them) and made them
-harder to refute. **Measured and wrong is a real category.** The line that saved it was the required
-"anything in this brief you concluded was wrong" section: it has now produced a correction in 4 of 4
-dispatches that carried it, and this time the correction was the entire diagnosis.
-
-### `git checkout <rev> -- <path>` STAGES, so `git diff --stat` is EMPTY on an applied mutation
-
-*(Found by the 518-block parcel, reproduced here at the landing seat.)* The standing rule is that a
-red-first proof must show the mutation applied on disk, because an unapplied mutation and a correct
-restore are the same artefact. **The obvious command for that is `git diff --stat`, and it reports
-NOTHING here** while `git diff HEAD --stat` reports 86 changed lines and the file on disk is plainly
-reverted.
-
-Direction, stated so the risk is not over-read: this yields a false **"the mutation did not apply"**,
-not a false pass, so it wastes a cycle rather than certifying a vacuous gate. It still belongs
-written down, because the reasonable response to a proof that keeps saying "not applied" is to reach
-for a weaker proof method. **Use `git diff HEAD --stat`, or a content check (`grep -c` for a symbol
-the fix introduces), which is what this seat used.**
-
-### AND MY OWN INSTRUCTION CAUSED A SHARED-STATE MUTATION, in the field I had just corrected
-
-I told the 518-block agent that `CARGO_TARGET_DIR` **must be `.target-land`** because the previous
-parcel had measured that only that name satisfies both tree guards. I did not say **whose**
-`.target-land`. Its first build therefore used the MAIN checkout's, relinking
-`.target-land/release/{sigil,emp_census}`.
-
-**Impact, assessed rather than assumed: none.** `.target-land` is a gitignored BUILD directory that
-every landing run rebuilds, and the standing pinned assembler is `~/sonic_hacks/.pinned/sigil-0a58f2ec`,
-read-only and untouched. `target/release/sigil` was not touched either. **The agent was still right
-to report it**, since it had no way to know that, and an unexpected mutation of shared state is
-exactly what a report is for.
-
-**The lesson is about the instruction, not the agent. I fixed an ambiguity and introduced a
-different one in the same field, one parcel apart.** The first brief named a constraint too
-abstractly ("somewhere under your worktree") when exactly one value worked; the correction named the
-value and dropped the tree. **A path instruction needs BOTH halves, and the template line is: the
-`.target-land` inside YOUR OWN worktree, never the main checkout's.**
-
-### A DIAGNOSTIC RESIDUE ROW WAS HIDING A SILENT ACCEPTANCE: the register fault, 2026-09-05
-
-**Landed `4b6e0378`. Booked as a wording defect, dispatched by me as a wording defect, and the worst
-of its seven outcomes was NO DIAGNOSTIC AT ALL.** Recorded because the row, the brief and the
-reproduction at this seat all understated it in the same direction, and the thing that found it was
-an agent testing the REALISTIC case rather than the minimal one.
-
-**The row said two stories. My dispatch brief, after reproducing, said three. It was SEVEN**,
-including two panics (`jsr <undefined>` exits 101) and one silent pass (`if <undefined>` is quietly
-false at exit 0). Both of those are general, not register specific, and are booked separately.
-
-**⚠ THE PART THAT MATTERS: `dc.l a0` IS SILENTLY ACCEPTED IN ANY FILE THAT ALREADY HAS AN ERROR.**
-Verified firsthand here, not taken from the report. Injecting `dc.l a0` at line 86 of the corpus
-`s2.asm`, the pre-parcel binary produced **5,243 rows and not one naming line 86**; the post-parcel
-binary produces 5,244 with the sorted stderr diff exactly one added line. The mechanism: the register
-defers as a fixup, the front end returns `Err` for unrelated reasons, and the link stage that would
-have refused it is never reached.
-
-**Why every earlier look missed it, and this is the transferable part. A MINIMAL PROBE IS A
-DIFFERENT PROGRAM FROM A REAL ONE.** In isolation `dc.l a0` DOES produce a message, the ugly
-locationless link-stage one, which is what the row recorded and what I reproduced. The silence only
-appears once something else in the file has already failed, because that is what stops the run
-reaching the stage that would refuse it. **A one-line probe systematically cannot see any defect
-whose trigger is another defect**, and a diagnostic residue row is exactly where such a trigger is
-guaranteed to be present in the field and absent in the probe. Where a fault is about error
-REPORTING, probe it inside a program that is already failing.
-
-**⚠ AND THE RULE HAS A SECOND DIRECTION, measured the same day on the two faults that parcel booked.
-A fault can be VISIBLE ONLY WHEN EVERYTHING ELSE IS CORRECT.** `jsr <undefined>` panics at exit 101
-on an otherwise clean file, and in a file carrying any unrelated error the front end returns `Err`
-first and **the panic never happens**. Its sibling `if <undefined>` is silent in both. So of two
-faults booked together, one is hidden BY other errors and the other is hidden by their ABSENCE.
-
-**The general rule, which is what to carry: error-path behaviour is CONDITIONAL ON WHAT ELSE FAILED,
-so a probe samples ONE POINT in that space and both directions must be run.** Probing only clean
-files misses everything an earlier stage swallows; probing only dirty ones misses everything that
-needs a clean run to reach. Neither habit is the safe one, and **a lane that adopts only the rule
-above has swapped one blind spot for the other.**
-
-**Root cause, one rather than several: a register name is not in the symbol table, so an expression
-holding one folds to `Poison`, and POISON IS THE SHAPE OF A FORWARD REFERENCE.** Every consumer did
-what a forward reference deserves, defer it or call it unresolved. The discriminator is cheap and
-was simply never applied: no later pass defines `a0`. Fixed at all 15 consumers, at the point of use,
-with that line's span. **The bar this instance illustrates is the standing one: a property verified
-at the PRODUCER is not a property of the CONSUMERS, and the population to enumerate is always the
-consuming end.** One bespoke check at one producer was landed on 2026-09-05 and made exactly one of
-seven variants read correctly, which is what a producer-side fix buys.
-
-**The corpus table for this parcel reads NOTHING MOVED, and that is INERTNESS rather than a
-measurement**, which the agent stated rather than letting the zero speak. The corpus contains no
-instance of the fault and cannot. The injection is the engagement witness, and without it the table
-reads identically whether the code ran and agreed or never ran at all.
-
-**Over-firing is the dangerous direction for a new refusal and was checked here on both binaries**: a
-symbol legitimately named `a0` still assembles, real addressing modes are untouched, and a genuine
-forward reference still defers instead of being called a register.
-
-### THE `if` REFUSAL: how a new refusal on the shipping path was cleared without an aeon build
-
-*(Landed `d9f00a3e`. Recorded because the clearing argument is reusable and because the agent
-escalated correctly rather than pushing through.)*
-
-Fault 1 made the assembler **refuse** what it had accepted, which is the direction that reds correct
-code. The agent answered the design question with evidence and it **inverted the assumption in the
-brief**: **sigil is the MORE permissive assembler here.** It resolves a forward reference in an `if`
-by iterating passes to a fixpoint; `asl` refuses a forward `equ`, a forward label, a forward `set`
-and an include-after-the-`if`, all four at exit 2. **So keying the refusal on CONVERGENCE rather than
-on asl's first-pass rule is strictly weaker than the reference and cannot red anything asl accepts.**
-Keyed on asl's own rule it would have red four legitimate shapes. That is a BLOCKED question answered
-rather than assumed, and the answer chose the design.
-
-**The agent TAGGED an aeon risk it could not close and named the settling command (a strict landing
-run on a provisioned tree). It was closed here two cheaper ways, and both are reusable:**
-
-- **By MEASUREMENT, on the whole population rather than a sample.** Aeon's AS-routed surface is three
-  files and **its include closure was verified self-contained earlier the same day** (both
-  `game_root.asm` include only `engine/debug/debugger.asm`, which includes nothing). The new binary
-  over all three gives **zero firings**, and both game roots assemble at **exit 0 with zero rows**,
-  which is conclusive for the third file because each of them includes it. **The direction is sound
-  too:** a standalone run defines FEWER symbols than the real build, so it can only OVER-report; a
-  clean standalone result therefore implies a clean real one. State that direction, because a
-  standalone run is otherwise easy to dismiss as unrepresentative.
-- **By CONSTRUCTION, from the code being replaced.** All three width-deferred arms in the old
-  `link()` were `unreachable!`, so **any build reaching them PANICKED**. The change is strictly panic
-  to diagnostic and **cannot turn a green build red**. Reading the OLD code settled in one command
-  what a build would have cost hours to demonstrate.
-
-**The generalisable move: when a change makes something newly refuse, ask what the OLD code did on
-the same path.** If the old path was a panic, an `unreachable!`, or an already-failing branch, the
-new refusal cannot regress a working build and no build is needed to prove it. That is a stronger
-argument than a green run, because a green run samples inputs while this quantifies over them.
-
-**Two rows opened rather than closed, both silent-wrong-answer class:** `MOMPASS` is unimplemented
-and was silently reading FALSE and dropping its block at 7 of the corpus's 11 firing sites; and `&&`
-binds tighter than `=` in asl and looser here, so `(K*2)=6&&(J<>3)` is `0` there and `1` here, with
-near-zero corpus population only because the disassemblies parenthesise.
-
-### A CONTROL CAN BE CONFOUNDED BY THE VERY THING IT CONTROLS FOR (MOMPASS, 2026-09-05)
-
-*(Landed `f1673ba2`, after this seat HELD the first version. Three lessons, and the first is the one
-this document did not already have.)*
-
-**1. "Pre-existing" is a CLAIM, and it needs its own control, which can itself be confounded.** The
-parcel booked a discarded `fatal` as a pre-existing fault it merely widened, supported by a control
-file whose before/after behaviour was identical. **The control was confounded by the fault it
-existed to isolate:** its `fatal` sat behind a condition that folded to `Poison` on the first
-iteration, so the arm was skipped and **the `fatal` never executed at all**. Identical before and
-after was perfectly real and meant nothing.
-
-Re-controlled three other ways, the truth was the opposite and sharper: **the parcel did not widen
-that fault, it CREATED THE ONLY POPULATION THERE IS.** The structural reason is worth keeping: a
-`fatal` aborts its pass, which truncates the environment, so whatever would flip its condition never
-runs and it re-fires on every pass. Anything preceding it has the same value every iteration.
-`MOMPASS` is the sole exception, because it flips for a reason internal to the assembler rather than
-to the program. **A "this was already broken" finding is exactly as falsifiable as a "this is newly
-broken" one and deserves the same instrument.**
-
-**2. FIDELITY IS A COST, NOT A GOAL, AND THE COST IS MEASURABLE.** `asl` literally terminates on a
-`fatal`, so the faithful hard stop is the obvious implementation and was written first. Measured, it
-**cut s1disasm from 50 located diagnostics to 1 and skdisasm from 2132 to 1**, the survivor in each
-being a line already printed. Matching the reference exactly would have destroyed the tool's own
-diagnostic output. The shipped design CARRIES the diagnostic instead, deduped: **strictly additive,
-louder never quieter**, which is the property to reach for whenever a change touches reporting.
-**Implement the faithful reading first BECAUSE it is cheap to measure, then let the measurement
-choose.**
-
-**3. HOLDING A PARCEL OVER A LOUDNESS REGRESSION COST ONE MESSAGE AND WAS RIGHT.** The first version
-was silent at exit 0 on a shape where master was loud at exit 1 and asl loud at exit 3. The hold
-named the shape, gave the three measurements, offered three acceptable outcomes including "your
-reading is wrong", and refused to design the fix. What came back was a narrow fix, a refutation of
-the parcel's own framing, **and a defect in the fix itself found on disk rather than in theory**: ids
-are handed out in splice order, so a carried span reported a `fatal` written in `inc/c.asm` as
-`inc/b.asm(1)`, a real file and a real line and the wrong one. **Do not accept a report's own
-severity classification when the landing consequence is checkable in three commands.**
-
-**Both remaining divergences are pinned AS NAMED TESTS** (`one_pass_asl_file_is_a_known_divergence`,
-`mompass_eq_two_guarding_an_emission_diverges_from_asl`) so they read as decisions rather than as
-oversights a later session might "fix" without knowing they were chosen. `warning` and `message` on a
-non-final pass are still dropped, deliberately: unlike `fatal`, asl keeps assembling past a `warning`
-and prints it once per pass, so a later pass genuinely does supersede it. Booked with a kill
-condition rather than left implicit.
+**The rest of this row is read when the parcel is DISPATCHED, not at boot**, so it is in
+`docs/OVERSEER-REFERENCE.md` under this row's own name, verbatim: the six things that have to
+change and where each is refused today, why the row is L and not XL, the arithmetic-regression
+risk that decides the gate, the landing condition with its zero-population premise measured at
+the consuming end, and the prohibition on quoting `5,761 - 4,985 = 776` as a post-fix
+prediction.
 
 ### SHELL `grep -r` IS A FUNCTION HERE AND SKIPS GITIGNORED FILES, RETURNING A CLEAN ZERO
 
@@ -1160,16 +882,9 @@ HERE before being banked. It had already put a false "symbol appears nowhere" in
 snapshot. That function's `-r` **skips gitignored paths and reports success with no output and no
 error**. Everything this lane generates is gitignored: listings, ROMs, build directories, generated
 corpus files, probe output.
-
-**Reproduced here, and the first attempt was VOID, which is the part worth carrying.** The canary
-went into a file that turned out not to be gitignored, so both greps found it and the test could not
-have come out any other way. Redone with `git check-ignore -v` confirming the path first:
-
-```
-canary in a verified-ignored path
-  shell `grep -r CANARY .`      ->  0 matches, exit 0, no error
-  /usr/bin/grep -r CANARY .     ->  FOUND IT
-```
+*(The reproduction, including the first attempt that was VOID because the canary went into a
+path that was not ignored, and this lane's audit of its own 2026-09-05 zeroes:
+`docs/OVERSEER-LOG.md`, 2026-09-05 cut.)*
 
 **Pick the instrument by what the subject IS:**
 
@@ -1180,15 +895,6 @@ canary in a verified-ignored path
 - **either, when a zero would be a finding**: plant a canary of the same class, confirm it is ignored,
   and confirm the instrument finds it *before* believing the zero.
 
-**AUDIT OF THIS LANE'S 2026-09-05 MEASUREMENTS, run rather than asserted.** No reported zero came
-through this path. The dash counts used `git grep -l` plus a Rust-aware lexer; the aeon
-nameless-label and MOMPASS populations used `git ls-files` and `git grep`; the corpus logical-operator
-count used `git grep`; the aeon three-root assertions ran the assembler over named files rather than
-searching text; and the one bare `grep -r` over a directory (`crates/sigil-frontend-emp/src/`)
-returned a NON-zero result and holds only tracked source anyway. **This audit is worth the five
-minutes precisely because the failure is invisible: a lane that had been bitten would look exactly
-like a lane that had not.**
-
 **And it is the FOURTH instrument that returned a confident wrong zero to this lane in one day**, all
 different mechanisms: a `git grep` pathspec that matched no files; a hand-rolled lexer desynchronised
 by a char literal; a peer's `\|` alternation inside `$'...'` under zsh; and now this. **The rule is
@@ -1196,73 +902,11 @@ not "watch out for greps", it is that AN EMPTINESS IS NEVER A FINDING WITHOUT AN
 COULD HAVE RETURNED NON-EMPTY.** Same family as `cmd | sed ... || echo`, where the `||` binds to the
 whole pipeline.
 
-## MASTER'S STRICT RED: FOUR OF FIVE WERE MINE AND ARE NOW CLOSED (2026-09-05)
+### A PARTIAL RUN IS NOT A LANDING GATE (2026-09-05)
 
-**RESOLVED at `34dad07c`. Merged-tree strict gate: 4,616 passed, 1 failed**, the survivor being the
-pre-booked `pins_rs_is_current` row. The four `diag_assert_vector` failures are green. The history
-below is kept because the reasoning error that caused them is the transferable part, and because the
-fix changed what the failure MEANT.
-
-**The refusal was an OVER-FIRE and the underlying defect PREDATES the parcel by two months**: the
-`pos < 0` guard came from `d59bab36` (2026-07-04) and is present at `742c7366`, where the tests
-passed. `d9f00a3e` converted an accidentally-right SILENT answer into a visibly-wrong LOUD one, since
-the silent-false read produced the same verdict asl gives on that site. **It exposed a latent bug
-rather than creating one. That does NOT retract the enumeration error below, which stands on its own
-terms and was a real mistake in reasoning.**
-
-**⚠ AND THE FOUR RED TESTS COULD NOT HAVE DISTINGUISHED A CORRECT FIX FROM A WRONG ONE** *(the
-agent's finding, and the most important thing in the parcel)*. `diag_assert_vector`'s "AS reference"
-is **sigil's own AS front end**, not `asl`, so clamping the position to 0 would have turned all four
-green while disagreeing with asl's actual length law. **Their green proves the regression is gone and
-proves nothing about correctness**; the grounding lives entirely in three new asl-derived unit tests.
-A red test going green is evidence about the regression, never about the fix, whenever the test's
-oracle is the tool under repair.
-
-**asl has no SEMANTICS for a negative position, only BEHAVIOUR.** It does not clamp; it reads below
-the buffer, so `strlen(substr("wxyz",-4,0))` is **8**, longer than its source, which is what makes
-that probe discriminating (no clamping model can exceed the input). `substr("a",-1000000,0)`
-**segfaults asl, exit 139**. There was never a correct value to copy: the fix reproduces the length
-law and models the unreadable prefix as NUL, which decides every comparison as asl does because an AS
-string literal cannot contain a NUL.
-
-### The original entry, kept for the reasoning error
-
-
-**Read this before landing anything or reading a green partial run as safety.** `SIGIL_STRICT_GATE=1`
-with a verified `AEON_DIR` returns **5 failures** at `33aeee96`. Every parcel today ran
-`SIGIL_ALLOW_PARTIAL=1`, which skips 127 reference-dependent binaries, so none of them could see this.
-
-| failure | attribution | state |
-|---|---|---|
-| `diag_assert_vector` x4 | **MY OWN if-condition parcel `d9f00a3e`.** Bisected: **15 passed / 0 failed at its parent `742c7366`** | booked `AS-IF-REFUSAL-DIAG-VECTOR`, top of queue |
-| `repin_pins::pins_rs_is_current` | fails on master too; **declares STALE while reporting ZERO changed pins** | booked `PINS-GATE-CONTRADICTS-ITSELF` |
-
-**The four are the hazard I warned an agent about, landed by me.** The `if` parcel makes the
-assembler refuse a condition it cannot decide. I cleared its blast radius with this argument:
-*"aeon's AS-routed surface is three files, zero firings, and a standalone run defines FEWER symbols
-than the real build so it can only OVER-report; a clean standalone result therefore implies a clean
-real one."*
-
-**The argument was wrong, and the flaw is exactly the bar this document enforces on everyone else:
-THE POPULATION TO ENUMERATE IS THE CONSUMING END.** I enumerated aeon's three roots as the consumers
-of `debugger.asm`. **Sigil's own test harness is a fourth consumer**, and it does not assemble that
-file either standalone or as aeon builds it: `diag_assert_vector` SYNTHESIZES a third context, its
-own header plus stub `equ`s, and assembles the real `debugger.asm` inside it. My two-case reasoning
-("standalone" versus "the real build") did not contain that case, so the implication never held.
-
-**And "fewer symbols can only over-report" is itself false in general:** a synthesized context does
-not define a SUBSET of the real one, it defines a DIFFERENT one, and a stub set to a particular value
-can make a condition undecidable that would decide either way elsewhere.
-
-**The failing site is `debugger.asm:572`,
-`elseif (strlen(OPERAND)>4)&&(substr(OPERAND, strlen(OPERAND)-4, 4)="(pc)")`. Do not diagnose it from
-that line alone**: reduced to a standalone macro with the same condition, sigil and asl AGREE
-(`AA BB`), so the fault is context-specific and is NOT the obvious nested-string-builtin reading.
-**Whether the refusal is CORRECT (the synthesized context genuinely cannot decide it, and the test's
-golden was being produced by the silent-false bug this parcel removed) or an OVER-FIRE is the first
-question of that parcel, and it decides whether the fix is in the test or in the assembler.** If it
-is the former, re-baselining the test is the move this document forbids twice over; the expectations
-would have to be re-derived from `asl`.
+*(The strict red this came out of is CLOSED. Four of its five failures were this lane's own,
+the survivor was the pins gate, and the reasoning error that produced them is the transferable
+part: `docs/OVERSEER-LOG.md`, 2026-09-05 cut.)*
 
 **What this costs, stated rather than softened: a partial run is not a landing gate, and I treated it
 as one six times today.** Every one of those parcels reported honestly that the byte gates had not
@@ -1270,208 +914,30 @@ executed. The reporting was correct and the LANDING DECISION still went ahead on
 lane needs is not better disclosure, which was already perfect, but that **a parcel touching the AS
 frontend gets a strict run before it lands, or it lands knowing the gate is owed.**
 
-### THE PINS GATE WAS RIGHT AND ITS MESSAGE WAS NOT: one root cause, one loud artifact, one silent one
-
-*(Closed 2026-09-05. The gate was booked here as self-contradicting. It was not contradicting itself;
-it was reporting two true things whose juxtaposition reads as a contradiction.)*
-
-**`pins_rs_is_current` failed with `src/pins.rs is STALE against the live listings (0 changed pin(s))`.**
-The verdict comes from a WHOLE-TEXT comparison of committed against generated; the count comes from a
-PIN-LEVEL differ. The file genuinely was stale and genuinely no pin had moved, so both halves were
-true and the message was unreadable.
-
-**THE CAUSE WAS MY OWN DASH SWEEP, and the mechanism is worth keeping.** `f6618ec9` correctly swept
-STRING LITERALS and correctly left COMMENTS alone. But 38 lines of `crates/sigil-harness/src/repin.rs`
-are string literals that RENDER comments into a generated file. So the generator started emitting
-`GENERATED FILE, DO NOT EDIT BY HAND` while the committed `pins.rs` still carried the em-dash form in
-its 108 comment lines. **A sweep scoped by what a token IS in the source can still move what a
-generator PRODUCES, and the generated artifact does not update itself.**
-
-**⚠ THE SAME ROOT CAUSE HIT A SECOND ARTIFACT SILENTLY, AND THAT PAIRING IS THE LESSON.** The three
-golden-vector headers booked as `GOLDEN-HEADER-UNGATED` are the same defect: swept generator, stale
-generated file. **`pins.rs` had a gate, so it went red within hours. The vector headers have none, so
-they drifted with nothing to notice.** One cause, two artifacts, and the only difference in how it
-surfaced was whether somebody had written a currency check. **After ANY sweep, the population is not
-"files matching the pattern", it is "files matching the pattern PLUS every artifact generated by
-one".**
-
-**Closed by REGENERATING, never by hand**, which is this document's own standing ruling on generated
-artifacts, applied to itself. Verified before landing with the sweep's own discipline: **all 108
-changed lines are punctuation-only after stripping dashes and punctuation, and NOT ONE hex constant
-appears on one side and not the other.** `repin` reported `0 pin(s) changed` and the diff proves it.
-Gate green after.
-
-**Also worth fixing separately, and STATED SMALLER THAN I FIRST BANKED IT.** The remediation the
-failing gate prints, `run: cargo run -p sigil-harness --bin repin`, is INCOMPLETE: **TWO** variables
-are missing, not one. **I got this wrong THREE times and each correction was still wrong.** First I
-banked that it "does nothing and reports no error". Then, measured, "it exits 2 naming `SIGIL_EMIT`".
-**That second version holds only when `AEON_DIR` is ALREADY SET.** With neither variable, measured at
-this seat, it exits **101** about the reference tree and **`SIGIL_EMIT` appears ZERO times in either
-stream**. Two missing variables, and the one the reader hears about first is the other one. So a
-reader who copies the printed command gets a clear failure and a pointer, just a pointer to a
-different missing thing than I twice claimed. FIXED at `81d92f80`: the message now names both and
-gives the build step.
-The defect is a papercut, not a trap, and the correction matters because I had relayed the stronger
-version to the hub. Booked `PINS-GATE-MESSAGE-MISLEADS` with both halves: make the count and the
-verdict describe the same comparison, and make the printed command the command that works.
-
-**The general form, since I have now done this twice in one day:** an over-stated defect is still a
-defect report that has to be retracted, and it costs the same as an under-stated one. **The check is
-the same one this document applies to everything else, aimed at the severity rather than the
-existence: what would the run have to print for my claim to be false, and did I look?** Here it was
-one command, `echo $?`, and I banked the claim without it.
-
 ### I RAN A SUBSET OF THE LANDING GATE ALL DAY AND IT COST ME TWICE (2026-09-05)
 
-**`scripts/landing-run.sh` is the landing gate. I ran `cargo test` instead, ten parcels running.** Both
-things that escaped today escaped through exactly that gap, and neither was subtle once the real gate
-was run:
-
-- **The strict suite.** Every parcel ran `SIGIL_ALLOW_PARTIAL=1`, which skips 127 reference-dependent
-  binaries. Four `diag_assert_vector` failures sat red for hours.
-- **Clippy.** `landing-run.sh` runs `--release --workspace --all-targets -- -D warnings` as
-  precondition (7), and a red bar makes its `RESULT` not-green. Measured tonight: **exit 101**, six
-  `doc_lazy_continuation` errors, attributed by `git log -L` to **`392503fe`, my own register-diagnostic
-  landing this afternoon.**
-
-**The failure was not disclosure and it was not the agents.** Every parcel reported honestly and
-prominently which gates had not executed. I read those disclosures and landed anyway, ten times.
-**A rule that names a script and a session that runs the script's constituent parts are not the same
-thing**, and the difference is invisible until something the script does and you did not catches
-something.
+*(The two things that escaped through that gap, and the clippy attribution by `git log -L`:
+`docs/OVERSEER-LOG.md`, 2026-09-05 cut.)*
 
 **Standing rule for this lane, in force: run `scripts/landing-run.sh`, not a hand-assembled subset.**
 If it cannot run (machine load killed two monolithic suites tonight), segment it, give each segment
 its own end marker, and say in the landing which preconditions did not execute. Naming the gap is the
 minimum; running the gate is the job.
 
-### AND THE FIX FOR THAT CLIPPY RED NEARLY BENT THE DOCUMENT TO SUIT THE LINT
-
-`doc_lazy_continuation` fires on a line that continues a list item without indentation. **My first fix
-indented six lines, clippy went green, and it was wrong.** The paragraph beginning *"THE sentence for
-a register written where a value belongs"* is a NEW paragraph about the diagnostic's wording; the
-bullet above it is about z80 register names. **Indenting it folds one claim into an unrelated one and
-changes what the document says.** The correct fix is a blank `///` line, which ENDS the list.
-
-**This is bar 9 aimed at its own enforcer: never change the subject to suit the instrument.** The
-green was real, immediate, and would have shipped a quiet meaning change under a tidy-up commit.
-**The tell was that I could not say what the lint was complaining ABOUT, only that it stopped
-complaining.** Read the surrounding prose before satisfying any formatting lint that offers two ways
-out, because usually only one of them preserves the text.
-
-### I FIXED THE SUBSET PROBLEM AND THEN VERIFIED THE FIX WITH A SUBSET (2026-09-05)
-
-**Within the hour of banking "`landing-run.sh` IS the gate and I ran `cargo test` instead", I did the
-same thing one level down.** Told that clippy was red, I fixed it and confirmed with:
-
-```
-cargo clippy --release --workspace -- -D warnings        ->  exit 0
-```
-
-The gate runs `--all-targets` (`scripts/landing-run.sh:65`). **Measured on the same tree, same
-moment:**
-
-```
-cargo clippy --release --workspace --all-targets -- -D warnings  ->  exit 101, 27 error lines
-```
-
-`--all-targets` is what lints TEST files, and the residue was 36 `tabs_in_doc_comments` in two
-untouched files from `33ceea3a`, a different parcel of mine. **So my "clippy is green" was true of a
-command nobody runs.**
+*(Both measurements, and why the quoted `asl` tabs make a scoped `allow` the right remedy
+rather than a reflow: `docs/OVERSEER-LOG.md`, 2026-09-05 cut.)*
 
 **The lesson did not transfer because I applied it to the PROCEDURE and not to the COMMANDS INSIDE
 IT.** Reading a gate's precondition and then re-typing it from memory is the same omission the wrapper
 exists to prevent, one layer in. **Copy the invocation out of the script; never retype a gate's
 command.**
 
-**And the tabs are EVIDENCE, which decides the remedy.** `docs/OVERSEER.md` already records that the
-116 clippy sites in seven files are quoted `asl` listings whose tabs are the evidence. Reformatting
-them to satisfy a lint would destroy what they exist to preserve, so the correct remedy is a
-scoped `allow`, not a reflow. That is bar 9 again: change the instrument, not the subject.
+### PRINT `pwd` AND `HEAD` BESIDE ANY VERDICT (2026-09-05)
 
-### A DIRECTORY CHANGE CONTAMINATED A VERDICT IN THE SAME SESSION
-
-Immediately after, a compound command left the shell in `s2disasm` and my next clippy invocation
-reported **exit 101** from there. With stderr discarded that reads as a lint failure on the merged
-tree; it was `could not find Cargo.toml`. **Re-run from the right tree it is exit 0.** Caught only
-because the exit code disagreed with a landing run that had reported `CLIPPY_EXIT 0` minutes earlier.
+*(The compound command that left the shell in `s2disasm` and produced a clippy exit 101 from
+a tree with no `Cargo.toml`: `docs/OVERSEER-LOG.md`, 2026-09-05 cut.)*
 
 **The rule: a verdict from a compound command inherits wherever the previous part left the shell, and
 an exit code alone cannot tell a tool's failure from the tool never running.** Print `pwd` and `HEAD`
 beside any verdict you intend to act on. This lane already stamps its suite logs that way; the same
 discipline was missing from one-line checks.
-
-### A SWEEP KILLS ANY NEGATIVE ASSERTION KEYED TO WHAT IT CHANGED, AND NOTHING ANNOUNCES IT
-
-*(Raised by the aurora lane from their own dash sweep; **checked here and it had happened**, one
-instance, fixed at the same time.)*
-
-**`crates/sigil-cli/tests/version_provenance.rs` asserted `!value.ends_with('—')`** with the comment
-*"a dangling em-dash means a reason was promised and not supplied"*. The producer, `build.rs`, rendered
-`format!("unknown — {}", why)` until the 2026-09-05 dash sweep and renders `format!("unknown, {}", why)`
-after it. **The sweep did not touch the assertion, so from that moment it could not fail.** A negative
-assertion whose needle the producer has stopped emitting **does not go red, it stops testing**, and it
-keeps printing `ok` forever.
-
-**Re-pointed at the producer's current separator with the reasoning written beside it**, and **proved
-it can fire**: injecting a dangling comma into the live `tree_detail` path reds
-`no_banner_field_is_blank_or_a_bare_placeholder`, naming the field and quoting the value.
-
-**⚠ MY FIRST RED-FIRST ATTEMPT WAS VACUOUS AND PRINTED A FULL PAGE OF `ok`.** I mutated
-`format!("unknown, {}", upstream.why)`, which is only reached when the upstream probe fails, and it
-never runs in this repo. **The mutation applied, the suite passed, and nothing distinguished that
-from a working assertion** until I asked which of the rendered fields the mutated line actually
-produces. That is face 2 of the three vacuous-proof shapes already banked here, met while proving a
-fix for face 3. **Mutate a path you have CONFIRMED renders in the artifact under test**, not one that
-merely looks like the right function.
-
-**The general rule, which is broader than dashes: a sweep's blast radius includes every NEGATIVE
-assertion keyed to the text it changed.** A positive assertion reds loudly and gets fixed in the same
-hour; a negative one goes quiet and is indistinguishable from a passing test forever. **After any
-mechanical text change, grep the tests for negations keyed to the old text**, which for this lane was
-`git grep -P '!\s*\w[\w.()]*\.(contains|find|starts_with|ends_with)\([^)]*<old-text>'` against the
-PRE-sweep revision, because the post-sweep tree no longer contains the evidence.
-
-**A control is what makes that grep mean anything:** the same pattern without the negation returned
-7 hits pre-sweep, so a zero from the negated form would have been a finding rather than a broken
-pattern. It returned 1.
-
-**And the sibling finding, also aurora's, checked here: a dash inside a CHAR literal is neither
-comment nor string.** `tool_text_dash_lint` tracks char-literal state deliberately and excludes it,
-which is right for user-facing prose and means `'—'` survives a sweep by design. That is exactly how
-this dead assertion kept its needle. Their instance was a regex literal; ours was a char literal;
-**the class is "a token the lexer classifies as neither of the two things the gate looks at".**
-
-### WORKTREE PRUNING: THE LOCK IS NOT A LIVENESS SIGNAL, AND I OVERRODE ONE TWICE
-
-*(Criterion retracted by the hub from aurora's measurement; **checked here, where it lands on two
-things I did tonight**.)*
-
-**The retracted criterion:** "tip is an ancestor of master" does NOT mean an agent worktree is
-finished. A tree started at master HEAD with uncommitted work is **trivially** an ancestor. I never
-pruned on it, having only counted, but the count I reported to the hub (238 of 246 branches
-"removable") was computed with it and **is not a safe removal list**.
-
-**⚠ I PASSED `-f -f` TWICE TONIGHT**, on `agent-a91ec943071597b23` and `agent-a3923cd793d91d0de`. In
-both cases `git worktree remove --force` had **refused** with `use 'remove -f -f' to override or
-unlock first`, and I read that as a syntax hint rather than as a guard telling me something. **What
-saved me was ordering, not judgement**: I had merged each agent's tip before removing, so the
-committed work survived, verified after the fact (`eda59a35` and `aede487e` are both ancestors of
-master). **I cannot prove no uncommitted scratch was lost, because the trees are gone.** Treat the
-refusal as the answer.
-
-**⚠ AND THE LOCK DOES NOT EXPIRE, SO "HONOUR THE REFUSAL" ALONE LEAKS DISK WITHOUT BOUND.** Measured
-here: **5 locked trees, of which exactly ONE is a live agent.** The other four are 17, 25 and 40 hours
-old, left by agents that finished long ago, and they hold **34.8 GB between them, one of them 28 GB
-alone.** So the lock records that an agent *claimed* a tree, never that one still holds it.
-
-**The safe rule needs both halves, and neither is sufficient:**
-
-- **Liveness comes from whether the agent is running**, not from the lock. A task notification
-  received, or the agent absent from the live list, is the evidence a lock cannot give.
-- **The lock is the tiebreaker when liveness is UNKNOWN.** Refusal stands; never a second `-f`.
-- **The ancestor test is at best a staleness hint** among trees already known dead, and it is wrong
-  in both directions: fresh trees are ancestors, and squash or rebase merges make landed work a
-  non-ancestor.
-- **`du -sh` per tree before any count**, because "31 worktrees" and "34.8 GB in four dead locks" call
-  for different urgency and only the second one is a reason to act tonight.
