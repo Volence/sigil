@@ -37,7 +37,7 @@ use std::path::Path;
 const BLOB_VMA: u32 = 0x9_F000;
 
 fn sym(name: &str, value: u32) -> ListingSymbol {
-    ListingSymbol { name: name.to_string(), value, is_equate: false, unused: false }
+    ListingSymbol { name: name.to_string(), value, is_equate: false, unused: false, lma: None }
 }
 
 /// A listing shaped like a real one: the blob plus ordinary neighbours, so a guard that

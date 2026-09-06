@@ -390,6 +390,8 @@ pub fn define_listing_rows(
             value: (*value as i64) as u32,
             is_equate: true,
             unused: false,
+            // A define is a VALUE. It has no storage, so it is never phased.
+            lma: None,
         });
     }
 
@@ -671,11 +673,11 @@ at = 0x0
     // ---------------------------------------------------------------------------
 
     fn addr(name: &str, value: u32) -> sigil_link::ListingSymbol {
-        sigil_link::ListingSymbol { name: name.into(), value, is_equate: false, unused: false }
+        sigil_link::ListingSymbol { name: name.into(), value, is_equate: false, unused: false, lma: None }
     }
 
     fn equ(name: &str, value: u32) -> sigil_link::ListingSymbol {
-        sigil_link::ListingSymbol { name: name.into(), value, is_equate: true, unused: false }
+        sigil_link::ListingSymbol { name: name.into(), value, is_equate: true, unused: false, lma: None }
     }
 
     fn rows(pairs: &[(&str, i128)]) -> Vec<(String, i128)> {

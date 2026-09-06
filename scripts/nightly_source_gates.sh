@@ -162,6 +162,18 @@ SOURCE_GATES=(
     # from the build. Source only — it compiles the corpus and reads symbol NAMES; no
     # byte is compared to anything committed.
     error_handler_island_membership
+    # every shipped shape's listing declares which of its addresses are phased (VMA
+    # != LMA) and which are not, judged against the sections the resolve produced.
+    # Source only, and the same shape as the row above: it compiles the corpus and
+    # reads the assembler's own answer about its sections. It opens no built ROM, no
+    # listing FILE and no golden, so no refreeze clears or colours it.
+    #
+    # A near-twin, `listing_defines`, sits in the ARTIFACT bucket instead, and the
+    # difference is an accident of prose rather than of inputs: that file mentions a
+    # listing's file extension and this one does not, and the classifier below matches
+    # that spelling on the whole file. Named here so a later reader does not conclude
+    # the two were judged to have different inputs. They do not.
+    listing_phase_marker
     p5_constants_flip
     parcel_8b_stage_gen_touchers
     seam2_layout_derivation

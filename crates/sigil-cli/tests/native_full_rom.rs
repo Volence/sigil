@@ -371,6 +371,7 @@ fn deb2_appendix_negative_controls() {
             value: 0x1000 + i,
             is_equate: false,
             unused: false,
+            lma: None,
         })
         .collect();
     // `expect_island: false` — this synthetic three-symbol listing represents no shape
