@@ -682,3 +682,52 @@ would not load.**
 
 **Not swept and not sweepable by this instrument:** VERDICT C is a property of every subject's
 base *at once*, and this sweep moves one at a time. 0 of 2 today, unpriced under a re-layout.
+
+
+## ADDENDUM 2026-09-06: B7 is answered, and F2's answer is a THIRD CASE neither instrument can see
+
+**Aeon's measurement, not this lane's, recorded with that attribution and PENDING MERGE at the time
+of writing.** They report the fix built and green on their branch, merging behind a spring landing
+because byte-movers serialize. **Re-verify against their `origin/master` before citing it as
+landed**; this addendum records what was learned, not that it has shipped.
+
+**The control is stronger evidence than the fix, and it is the sharpest form this inventory's F1 row
+could have taken.** With a real 1,024 byte `pub data B7_Probe` appended to `collision_data.emp` and
+built for real, landing at `0x8C61E`, exactly the terminus, **master's `bganim_room.py` prints
+`ROM room 113122 B free`, rc=0, bit for bit the clean-tree number**, over a kilobyte of real content
+in the region it calls free. F1 and B7 were argued here from source reading; that is the gate being
+blind DEMONSTRATED.
+
+**F2's answer, and it is not the one this row assumed.** Trailing content splits three ways:
+
+1. **LABELLED** content, which a symbol scan sees.
+2. **UNLABELLED AND NON-ZERO**, which an image scan sees.
+3. **UNLABELLED AND ZERO-FILLED, which is byte-identical to free space and which NEITHER instrument
+   can see.**
+
+**So the question this row poses cannot be closed by any check that reads the ARTIFACT.** Case 3 is
+exactly what `map.toml` concedes in its own words, *"a section with several embeds has no such
+instrument"*, and this row quoted that sentence without drawing the consequence from it. **Only the
+SOURCE can testify**, which is why aeon's assertion is written against the source: `Art_Sonic` is the
+last emitting data in its module, it binds its embed whole, its section has no second module, and
+its `blob_len` bytes at its LMA are byte-identical to the embedded file. They also assert that arm
+STAYS green on the tree, so it cannot decay into a check incapable of failing.
+
+**The transferable rule, and it is wider than this row:** where a property distinguishes CONTENT from
+ABSENCE, an instrument reading the built artifact is blind whenever the content is
+indistinguishable from the absence, and zero fill is the common case of that. **Ask what the
+absence looks like in the artifact before believing any instrument that reads only the artifact.**
+
+**Two runner defects they found and fixed rather than exempted, the second worth this lane's
+attention:** `report` / `rom_room` / `art_sonic_bytes` bound the tree root **in the signature**, so
+the CLI derived the terminus from one tree and the length term from the live repo. **That is a true
+statement about the wrong artifact**, and note it is also this lane's own cancellation shape from
+the other side: one expression, two terms, sourced from two different trees, with nothing in the
+output saying so.
+
+**The cancellation warning this lane sent paid off and is recorded because a bar that fires is worth
+more than a bar that is agreed with.** Arms varied independently: LMA minus K alone refused naming
+byte 0; blob plus K alone refused naming byte `base_len`; both together, with `end` bit for bit
+UNCHANGED, still refused, at its own byte. Three distinct refusals, asserted non-equal. Aeon's own
+assessment is that without it the agent would very likely have moved both terms together and read
+the agreement.
