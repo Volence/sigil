@@ -4227,3 +4227,76 @@ Measured: `p5_overlap.asm` in `2026-09-06-as-org-backwards-probes/` is the two-t
 asl writing `0102 e0e1 e2e3 0708` where sigil names both sections and stops.
 -- OPEN (kill: an output model in which an `org`ed run is a chunk the link stage can be asked
 to extract, compress and re-place, rather than a region that must tile the image)
+
+## 2026-09-06 lens sweep intake, booked same day (packet: `docs/superpowers/notes/2026-09-06-sigil-lens-sweep.md`, merged 2570f724)
+
+Booked, not started. Seats stayed read-only; **the fix order is the owner's** and no row below is
+authorized by its presence here. Every row names where the packet's evidence sits, and none of
+them is byte-proven, because the panel was forbidden to build: each carries the command that would
+promote it from derived to observed.
+
+**Byte-changing (own parcels, before/after evidence, then the repin ritual):**
+
+- `LENS-SHIFT-OFFSET-ORG` - `sigil-link/src/relax.rs:411` returns a wrong label offset after a
+  backward `org` with growth; last-match scan over a table `org` makes non-monotonic. AS path only
+  (`.emp` has no `org`). The same defect is also its O(L x F) cost on that path. Falsifier named in
+  the packet: clone `relax.rs:3218` with a high stub so the jmp grows, assert `Tail`; it must
+  return 5 where 7 is correct.
+- `LENS-BTST-PCREL` - both front-ends pass a hardcoded extension offset of 2 to
+  `lower_pcrel_ea`; `encode_bit` emits the bit-number word first, so `btst #n,Sym(pc)` patches the
+  wrong word. Found independently by CGa and B1. The blessed sentinel-probe technique is two
+  functions away and already used at two of four offset sites. asl witness in-tree at
+  `capstone_diff.rs:709` (`083A 0001 0002`).
+- `LENS-EMP-ALIGN-FILL` - `.emp` `align` still emits `Fill` and rounds up unsigned where the AS
+  side moved to `reserve` + `asl_align_pad` at `84c48a7b`. **Do not land alone**: the DAC
+  intra-bank recompute matches only `Fill`, so fixing this without `recompute_bank_aligns` moves
+  the drum bank off its `$8000` boundary with no diagnostic.
+- `LENS-HERE-PREPLACEMENT` - `here()` bakes a pre-placement origin while labels follow placement;
+  `builder.rs:101`'s justifying comment is false since the placement rework. Exposure is DATA
+  sections, not code.
+
+**Silent acceptance and aborts (the class this project exists to eliminate):**
+
+- `LENS-UNTERMINATED-BLOCK` - a missing `endif`/`endm` makes `find_block_end` treat the file's last
+  line as the closer, deleting source bytes at exit 0. Reproduced against a real binary.
+- `LENS-MACRO-BREADTH` / `LENS-REPT-BUDGET` - depth is capped, breadth is not; `rept` has no
+  iteration budget. The same file already argues the global-budget case for nested `while`.
+- `LENS-FLATTEN-LMA-ALLOC` - `flatten` sizes its buffer from a placed ADDRESS, so one stray byte in
+  a RAM-phased section aborts uncatchably. `validate_section` already says the right thing and is
+  not on the CLI path.
+- `LENS-DCW-DCL-TRUNCATE` - `dc.w`/`dc.l` truncate an out-of-range fold where `dc.b` refuses.
+
+**Gates that cannot fail (byte-neutral; may land immediately once ruled):**
+
+- `LENS-SKIP-LINT-WRAP` - the skip lint reads only same-line literals; five live announcements are
+  through the hole, and there is no `rustfmt.toml` or fmt check, so a reformat shrinks the census.
+- `LENS-LANDING-BAR-SKIPS` - `landing-run.sh` never reads `SKIPS` in its exit decision while four
+  documents say it fails on them.
+- `LENS-AB-WITNESS-NONEMPTY` - the A/B guard tests only that the field is non-empty; five freezes
+  cite a sibling entry's name.
+- `LENS-PLAIN-ARM-PROOFS` - three port tests whose comments claim a proof the code does not make.
+- `LENS-PINS-TESTS-FIELD` - a field the manifest calls dead, still stamped into 512 doc lines,
+  naming three binaries that do not exist.
+
+**Structural / process (their own arc item, not folded into a code fix):**
+
+- `LENS-CI-RED-10-DAYS` - last green 2026-08-27; the failing rows are the bare-run guard and CI is
+  the bare run.
+- `LENS-STALE-PROSE-ADDRS` - five sound-head addresses in seven `seam2_*` files name the
+  pre-relayout bank in doc comments AND panic messages; assertions are derived and correct.
+- `LENS-SEAT-SCRATCH-DIRS` - every future seat brief names a private scratch directory; a
+  concurrent agent deleted a seat's pinned instrument mid-measurement.
+
+**Measure-first (no retuning before a profiler):**
+
+- `LENS-NESTING-RELEX` - a block body is re-lexed once per enclosing level; flat in asl, linear
+  here, 52x at depth 32. Near-invisible on s1disasm (mean depth 0.054), dominant on aeon (1.157)
+  and s2disasm (14.5x). **Size it on aeon or s2disasm, never on s1disasm.**
+- `LENS-EXTRA-TRAVERSAL` - convergence needs two consecutive identical symbol tables, so the floor
+  is 2 traversals where asl's is 1, plus one per forward-equ link.
+- `LENS-DIAG-LOCATION-ONE` - `SourceMap::location` walks from byte 0 per diagnostic; about 0.45 ms
+  each at the bottom of a 1.6 MB file, and only on a FAILING build.
+
+**Standing findings carried forward, both re-verified this sweep:** S12 is open and its cost is now
+**59, not 53** (re-derived, with the model validated by reproducing the historical 53 at three
+sweep-era revisions); S8 is open and the move is **~70% larger** than when it was deferred.
