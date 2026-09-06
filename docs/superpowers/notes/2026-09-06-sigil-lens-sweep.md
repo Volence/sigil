@@ -199,3 +199,47 @@ guards quietly turned into guards that cannot run. Measured here, same three que
 signal, and the way it dies is that two failures stack and the second is assumed to be the first.
 Sigil's red is 10 days old rather than 46, and the nightly lane's red is hours old - both are
 still young enough to be attributed rather than archaeology.
+
+## The data-first walk, and a count this packet is NOT going to average
+
+**Stale addresses that only exist in prose, so no gate can reach them.** Five sound-head
+addresses across seven `seam2_*` test files still name the pre-relayout bank: `$58000` where the
+frozen size table says `SoundTablesZ80_Head 0xb8000` (verified here at
+`golden/offcanonical_sizes/s4.txt:72` against `seam2_phased_head.rs:5,14,23`). The assertions are
+derived and therefore correct; the doc comments AND the panic messages are hand-typed, so when one
+of these gates goes red it tells the reader to look 384 KB from where the bytes are. Two of them
+are wrong in the relative offset too, having been computed against a 270-byte SFX head that is now
+274 - and one file contradicts itself, saying 270 in its header and asserting 274 in its body.
+
+**`pins.rs` names test binaries that do not exist.** `m1d_rom`, `m1d_debug_rom` and
+`mixed_dac_rom` appear in the generated `tests:` doc line on the two most-read constants in the
+file; none of the three exists in the tree (control: `m1b_gate.rs` and `m1c_vector_table.rs` do).
+Nine constants name a non-existent binary. This is the dead-field finding with a sharper edge than
+"it is unmaintained": it is a record that a future author will read as evidence of coverage, and
+it names files that were never there.
+
+**Two counts in `repin.toml`'s own header are wrong about its own contents**: it says removing
+"412 `tests` lines" is a mechanical no-op (actual: 512), and it advertises "80 region/shape pairs
+declare `allotment` today" as a standing conversion backlog (actual: **1**). The gate it names is
+correctly count-free and reads the live manifest, so the stale figure lives purely in prose.
+
+### ADJUDICATION: 33 orphan pins, or 22
+
+Seat GATE reported **33** pin constants with no code consumer. Seat B2b, walking data-first,
+reported **22** and enumerated every one with its line number, stated its predicate (no reference
+in any `.rs` outside `pins.rs`), and ran it beside a known-consumed control.
+
+**This packet records 22 and does not average the two.** The rule is this lane's own, banked after
+a count drifted in both directions inside twenty minutes: **write the SET, not the count.** An
+enumerated list with a stated predicate and a control can be checked by anyone; a bare integer
+whose predicate is unstated cannot be reconciled with anything, and the difference between the two
+figures is almost certainly scope (prose-only hits, `crates/*/tests/*.rs` versus all `.rs`) rather
+than a disagreement about the code. Spot-checked here: `EPILOGUE` has no consumer outside
+`pins.rs`; `KNUCKLES_ANIMS`'s only other hit is `provenance.toml`, which is data, not a consumer;
+the control returns two consuming files.
+
+**The generated artifacts are internally sound, which is the honest other half.** B2b re-ran the
+TIP-MATCH invariant by hand without cargo: 7/7 blobs match on CRC32, length, and the header-neutral
+anchor, and it names the two ways that reconstruction could have failed and did not. 87 and 98
+label pairs agree between the size tables and `pins.rs`, with zero disagreements and no hand-edit
+evidence in any generated file.
