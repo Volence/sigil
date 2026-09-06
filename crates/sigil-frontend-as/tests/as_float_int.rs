@@ -459,19 +459,19 @@ Hud_1:\thud_counter 1
 ///
 /// The `moveq` half is the reason `log` must be spelled as a dedicated base-10
 /// logarithm rather than `x.ln() / 10f64.ln()`. In binary64 the latter gives
-/// 2.9999999999999996 for 1000, one ULP short of 3, and `int()` FLOORS — so
+/// 2.9999999999999996 for 1000, one ULP short of 3, and `int()` FLOORS -- so
 /// that spelling emits `7C02` for `Hud_1000` and the HUD counts a digit short.
 /// The assertion below therefore discriminates the two spellings of the right
 /// base, not merely the right base from the wrong one.
 #[test]
 // asl separates its listing columns with tabs; they are the evidence, not
-// formatting. Waived here only — see the file's module doc.
+// formatting. Waived here only -- see the file's module doc.
 #[allow(clippy::tabs_in_doc_comments)]
 fn hud_counter_loop_counters_match_asl() {
     let got = bytes(S2_HUD_COUNTER);
     // The six `dc.l`s first, then the six `moveq`s. Spelled out in full rather
     // than sliced, so a fixture that silently stopped emitting the `moveq`
-    // block — the way this assertion could go green over an empty population —
+    // block -- the way this assertion could go green over an empty population --
     // fails on length instead of passing on a prefix.
     assert_eq!(
         got,
@@ -517,7 +517,7 @@ fn ln_over_ln10_is_a_ulp_short_at_1000() {
 /// ```
 ///
 /// `LOG(100)` = 2 is the base discriminator: the natural log of 100 is 4.605,
-/// which floors to 4 — the value the very next row shows `LN` actually
+/// which floors to 4 -- the value the very next row shows `LN` actually
 /// produces. A probe on `LOG(10)` would have been useless here, since it
 /// answers 1 under several wrong readings.
 #[test]
@@ -556,7 +556,7 @@ fn builtin_names_are_case_insensitive() {
 /// ```
 ///
 /// -4, -1 and -301030. Truncation toward zero would give -3, 0 and -301029, so
-/// all three rows discriminate — and the third does it six digits into the new
+/// all three rows discriminate -- and the third does it six digits into the new
 /// function rather than at a value where the two happen to meet.
 #[test]
 #[allow(clippy::tabs_in_doc_comments)]
@@ -595,14 +595,14 @@ fn int_floors_a_negative_including_through_log() {
 ///
 /// Why each argument and not a rounder one:
 /// * `EXP(2)` = 7389056, where `2^x` would give 4000000. `EXP(1)` would not
-///   have separated them — both floor to 2.
+///   have separated them -- both floor to 2.
 /// * `SIN(1)`, `COS(1)`, `TAN(1)`, `ATAN(1)`, `ASIN(1)`, `ACOS(0)` are all in
 ///   RADIANS: 841470 / 540302 / 1557407 / 785398 / 1570796 / 1570796. Reading
 ///   the argument as degrees gives 17452 / 999847 / 17455 / 45000000 /
-///   90000000 / 90000000 — a different digit count, not a rounding difference.
+///   90000000 / 90000000 -- a different digit count, not a rounding difference.
 /// * `ABS(-3)` is the type row: it stays an INTEGER. Every other function here
 ///   returns a float even when the value is integral, which asl shows from the
-///   failing side — `dc.l SQRT(16)` is `error #1133` (`types.asm(10)`) while
+///   failing side -- `dc.l SQRT(16)` is `error #1133` (`types.asm(10)`) while
 ///   `dc.l ABS(-3)` assembles to `0000 0003` (`clean2.asm(8)`). The row below
 ///   asks it through `INT(...)`, which is the only integer context sigil routes
 ///   to this evaluator; a BARE `dc.l ABS(-3)` is still refused here, and is
@@ -644,7 +644,7 @@ fn float_builtin_surface_matches_asl() {
 /// A float RESULT in an integer slot is refused even when the value is a whole
 /// number, because the builtins return a float TYPE rather than a float value.
 ///
-/// asl, `types.asm` (a deliberate-failure probe — read for its diagnostics, not
+/// asl, `types.asm` (a deliberate-failure probe -- read for its diagnostics, not
 /// its byte column): `dc.l LOG(100)` and `dc.l SQRT(16)` each draw `error
 /// #1133: expected integer or string, but got floating point number`, and
 /// `dc.l LOG(100)&1` draws `#1134: expected integer, but got floating point
@@ -652,7 +652,7 @@ fn float_builtin_surface_matches_asl() {
 ///
 /// WHAT THIS TEST DOES AND DOES NOT PIN, stated because it passes on the
 /// pre-`log` baseline too and so proves nothing about the new table on its own.
-/// It pins the DIRECTION only — that these lines are refused rather than
+/// It pins the DIRECTION only -- that these lines are refused rather than
 /// emitted. sigil's wording is its generic `bad long expression`, not asl's
 /// `#1133`, because the operand path reaches the typed evaluator only when a
 /// float TOKEN is present and `LOG(100)` contains none. That message gap is a
@@ -676,7 +676,7 @@ fn a_float_builtin_result_is_refused_in_an_integer_slot() {
 /// arguments where the corresponding `f64` method returns a non-finite value.
 ///
 /// The last row is the same class from the other end: asl answers `error #1320:
-/// range overflow` at the INT itself — `bigint.asm(8)` writes
+/// range overflow` at the INT itself -- `bigint.asm(8)` writes
 /// `dc.l INT(1e30)-INT(1e30)`, whose value is 0 and in range for a `dc.l`, and
 /// asl reports the overflow twice on that one line. An unguarded
 /// `f.floor() as i64` in Rust saturates to `i64::MAX` instead and emits a
@@ -699,7 +699,7 @@ fn an_out_of_domain_or_out_of_range_argument_is_refused() {
     }
 }
 
-/// `abs(...)` in a PLAIN INTEGER context — no float token anywhere on the line,
+/// `abs(...)` in a PLAIN INTEGER context -- no float token anywhere on the line,
 /// so nothing but the builtin table can give the call a meaning.
 ///
 /// The corpus demand is `s1disasm/Macros.asm(353)`,
@@ -736,7 +736,7 @@ fn abs_resolves_in_a_plain_integer_context() {
 /// type alone.
 ///
 /// This is not symmetry for its own sake. `s1disasm`'s `range` macro is invoked
-/// as `range $21,$2F,+1`, so `abs(step)` arrives as `abs(+1)` — and with `abs`
+/// as `range $21,$2F,+1`, so `abs(step)` arrives as `abs(+1)` -- and with `abs`
 /// wired but no unary-plus arm, exactly the four ASCENDING call sites of the
 /// eight kept failing while the four descending ones passed. A fix measured
 /// only on the descending spelling would have read as complete.
@@ -774,7 +774,7 @@ fn a_leading_plus_is_a_sign() {
 /// lookup. Guarding this direction is what stops the new name table from
 /// swallowing a user symbol that happens to be followed by a parenthesis.
 ///
-/// asl calls an unknown one out by name — `error #1860: unknown function
+/// asl calls an unknown one out by name -- `error #1860: unknown function
 /// BOGUSFN` (`names.asm(15)`), uppercased, which is the same lookup seen from
 /// the failing side.
 #[test]

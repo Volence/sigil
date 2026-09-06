@@ -1,4 +1,4 @@
- AS V1.42 Beta [Bld 212] - Source File values2.asm - Page 1 - 09/06/2026 02:38:21 AM
+ AS V1.42 Beta [Bld 212] - Source File values2.asm - Page 1 - 09/06/2026 02:55:42 AM
 
 
        1/       0 :                     	cpu	68000
@@ -6,7 +6,7 @@
        3/       0 :                     	org	0
        4/       0 :                     ; The same measurements as `values.asm`, written WITHOUT `1e6`-style exponent
        5/       0 :                     ; literals so that the identical source can be handed to sigil. (sigil's lexer
-       6/       0 :                     ; does not implement `1e3`/`1.5e2`/`.5`/`1.` — see the "Left open" section of
+       6/       0 :                     ; does not implement `1e3`/`1.5e2`/`.5`/`1.` -- see the "Left open" section of
        7/       0 :                     ; `2026-09-04-f1-as-float-semantics.md`; the corpus writes none of them.)
        8/       0 :                     ;
        9/       0 :                     ; This file is the one the regression tests quote, so it must exit 0.
@@ -61,7 +61,7 @@
       40/      30 : FFFF FFFC           	dc.l	INT(-3.2)			; -4 floor / -3 truncate
       41/      34 : FFFF FFFF           	dc.l	INT(LOG(0.5))			; -1 floor /  0 truncate
       42/      38 : FFFB 681A           	dc.l	INT(LOG(0.5)*1000000)		; -301030 floor / -301029 truncate
- AS V1.42 Beta [Bld 212] - Source File values2.asm - Page 2 - 09/06/2026 02:38:21 AM
+ AS V1.42 Beta [Bld 212] - Source File values2.asm - Page 2 - 09/06/2026 02:55:42 AM
 
 
       43/      3C :                     
@@ -83,7 +83,7 @@
       59/      74 : 0031 9750           	dc.l	INT(ABS(-3.25)*1000000)
       60/      78 : 0000 0003           	dc.l	INT(ABS(-3))
       61/      7C :                     	end
- AS V1.42 Beta [Bld 212] - Source File values2.asm - Page 3 - 09/06/2026 02:38:21 AM
+ AS V1.42 Beta [Bld 212] - Source File values2.asm - Page 3 - 09/06/2026 02:55:42 AM
 
 
   Symbol Table (* = unused):
@@ -109,13 +109,13 @@
 *MOMCPU :                     68000 - | *MOMCPUNAME :               "68000" - |
 *NESTMAX :                      100 - | *PACKING :                        0 - |
 *PADDING :                        0 - | *RELAXED :                        0 - |
-*TIME :               "02:38:21 AM" - | *TRUE :                           1 - |
+*TIME :               "02:55:42 AM" - | *TRUE :                           1 - |
 *VERSION :                     142F - | *Z80SYNTAX :                      0 - |
 
      43 symbols
      37 unused symbols
 
- AS V1.42 Beta [Bld 212] - Source File values2.asm - Page 4 - 09/06/2026 02:38:21 AM
+ AS V1.42 Beta [Bld 212] - Source File values2.asm - Page 4 - 09/06/2026 02:55:42 AM
 
 
   Defined Macros:
@@ -125,7 +125,7 @@ hud_counter                           |
 
       1 macro
 
- AS V1.42 Beta [Bld 212] - Source File values2.asm - Page 5 - 09/06/2026 02:38:21 AM
+ AS V1.42 Beta [Bld 212] - Source File values2.asm - Page 5 - 09/06/2026 02:55:42 AM
 
 
   Code Pages:

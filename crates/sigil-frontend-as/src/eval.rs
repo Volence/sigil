@@ -1650,7 +1650,7 @@ impl Asm {
     /// meaning and is left untouched (whatever consumes it downstream will
     /// report a normal "bad expression" diagnostic).
     ///
-    /// EVERY numeric builtin is scanned for, not only `int` — but only a call
+    /// EVERY numeric builtin is scanned for, not only `int` -- but only a call
     /// that resolves to an INTEGER is rewritten. In practice that is `int` and
     /// `abs`, the two type-preserving entries in [`apply_num_builtin`]; the
     /// float-returning family always declines here and is left for `int(...)`
@@ -15087,7 +15087,7 @@ fn apply_num_binop(op: BinOp, lhs: Num, rhs: Num) -> Option<Num> {
 /// The guard is not defensive tidiness: Rust's `as` cast from `f64` to `i64`
 /// SATURATES, so `1e30 as i64` is `i64::MAX` and an unguarded `f.floor() as
 /// i64` puts a plausible, in-range-looking number in the byte column. asl
-/// refuses instead, and refuses at the `INT` rather than at the directive —
+/// refuses instead, and refuses at the `INT` rather than at the directive --
 /// probe `bigint.asm(8)` writes `dc.l INT(1e30)-INT(1e30)`, whose value is 0
 /// and perfectly in range for a `dc.l`, and asl reports `error #1320: range
 /// overflow` TWICE on that line, once per call.
@@ -15130,7 +15130,7 @@ const FLOAT_BUILTINS: &[(&str, FloatFn)] = &[
     ("atanh", f64::atanh),
     ("sqrt", f64::sqrt),
     ("exp", f64::exp),
-    // `log` is BASE 10 and `ln` is natural — see the residual row in
+    // `log` is BASE 10 and `ln` is natural -- see the residual row in
     // `apply_num_builtin`'s table for why this must be the dedicated `log10`
     // and never `x.ln() / 10f64.ln()`.
     ("log", f64::log10),
@@ -15173,7 +15173,7 @@ fn is_num_builtin(name: &str) -> bool {
 /// float-typed, so a diagnostic raised here would be emitted for lines that are
 /// not wrong. (Measured: routing that probe through the erroring expansion
 /// doubled the S2 corpus's `log` diagnostics from 6 to 12, one extra per site.)
-/// A caller that needs a message says so in its own words — `int(...)`'s is
+/// A caller that needs a message says so in its own words -- `int(...)`'s is
 /// "could not evaluate float expression".
 ///
 /// ## The table, minted from asl
@@ -15196,7 +15196,7 @@ fn is_num_builtin(name: &str) -> bool {
 /// | `dc.l LOG(100)`, `dc.l SQRT(16)` | `error #1133` | every other function returns a FLOAT even when the value is integral |
 ///
 /// The `log10` row is the one that decides shipped bytes. `ln(1000)/ln(10)` in
-/// binary64 is 2.9999999999999996, one ULP short of 3, and `INT` FLOORS — so
+/// binary64 is 2.9999999999999996, one ULP short of 3, and `INT` FLOORS -- so
 /// that spelling answers **2** for `s2.asm`'s `Hud_1000`, whose
 /// `.loop_counter` is read back as an immediate by `moveq
 /// #Hud_1000.loop_counter,d6` (`s2.asm(87746)`). A wrong base is loud; a wrong
@@ -15204,7 +15204,7 @@ fn is_num_builtin(name: &str) -> bool {
 ///
 /// ## Domain violations
 ///
-/// asl diagnoses them rather than producing a NaN or an infinity —
+/// asl diagnoses them rather than producing a NaN or an infinity --
 /// `domain.asm`: `LOG(0)`, `LOG(-1)`, `SQRT(-1)` and `ASIN(2)` each draw
 /// `error #1870: function argument out of definition range`, and `ATANH(2)` /
 /// `ACOSH(0)` draw `error #1880: floating point overflow`. Every one of those

@@ -4053,3 +4053,40 @@ sides of `&&`/`||` throughout, which is also why no byte gate has ever caught it
 -- OPEN (kill: an asl precedence probe over the full operator table, not just this pair,
 then one change to `expr.rs`'s binding powers behind that table; the census comes first
 because a precedence change is global and this is one measured cell of it)
+
+### asl's INTEGER-valued builtin family is unimplemented (2026-09-06)
+`2026-09-06-as-float-freq-table.md` landed the sixteen single-argument NUMERIC builtins
+(`log` `ln` `exp` `sqrt` `abs` and the trig/hyperbolic family, plus `int`). The name
+census in `names2.asm` / `names3.asm` found six more that asl knows and sigil does not,
+all integer-valued, so none of them belongs on the `fn(f64) -> f64` table this parcel
+built:
+
+| written | asl | source |
+|---|---|---|
+| `SGN(-5)`, `SGN(0)` | `-1`, `0` | `names3.asm(8,9)` |
+| `BITCNT(7)` | `3` | `names3.asm(10)` |
+| `FIRSTBIT(8)`, `LASTBIT(8)`, `BITPOS(8)` | `3`, `3`, `3` | `names3.asm(11-13)` |
+| `TOUPPER(65)` | accepted | `names2.asm(24)` |
+
+Both name censuses exit 2 by design, so those are the accepted/refused verdicts, not a
+quotable byte column; `clean3.asm` is the exit-0 file for anything that needs a value.
+Population: `s1disasm/MacroSetup.asm(221)` writes
+`signedToString function number,substr("-",0,-sgn(number))+"$\{abs(number)}"`, which
+reaches `sgn` through STRING INTERPOLATION rather than through a numeric operand, so it
+is not simply "one more row in the table".
+-- OPEN (kill: an exit-0 value probe per function, then rows in `apply_num_builtin`
+returning `Num::Int`; `expand_int_builtin` already rewrites any builtin that resolves to
+an integer, so the wiring is done. The interpolation path is the part to check first,
+because that is where the only measured corpus use lives)
+
+### A bare float builtin in an integer slot gets the wrong WORDING (2026-09-06)
+`dc.l LOG(100)` is REFUSED by sigil, which is the safe direction, but as the generic
+`bad long expression` rather than asl's `error #1133: expected integer or string, but
+got floating point number` (`types.asm(7)`). Cause: `collapse_float_operand` reaches the
+typed evaluator only when `float_leaf` finds a float TOKEN on the line, and `LOG(100)`
+contains none. Same for `dc.l LOG(100)&1`, which asl calls `#1134`.
+Population: zero in both disassemblies -- every corpus use of a float-returning builtin
+is already wrapped in `int(...)`. Never a wrong byte, only a worse message.
+-- OPEN (kill: teach `float_leaf` that a float-RETURNING builtin name counts as a float
+leaf, which is a one-line predicate change now that `float_builtin()` exists; do it
+alongside the `#1133` wording rather than on its own)

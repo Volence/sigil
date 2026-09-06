@@ -3,7 +3,7 @@
 	org	0
 ; The same measurements as `values.asm`, written WITHOUT `1e6`-style exponent
 ; literals so that the identical source can be handed to sigil. (sigil's lexer
-; does not implement `1e3`/`1.5e2`/`.5`/`1.` — see the "Left open" section of
+; does not implement `1e3`/`1.5e2`/`.5`/`1.` -- see the "Left open" section of
 ; `2026-09-04-f1-as-float-semantics.md`; the corpus writes none of them.)
 ;
 ; This file is the one the regression tests quote, so it must exit 0.
