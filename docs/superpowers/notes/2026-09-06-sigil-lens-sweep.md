@@ -304,3 +304,35 @@ shape arriving on a measurement. **Every seat brief should name a private scratc
 
 All seats returned. Nothing was fixed; every finding above is read, derived, or measured against a
 pinned instrument, and every seat disclosed that it could not build.
+
+## Three-state gates: asked of sigil's lanes on aeon's finding
+
+Aeon's effects gate said COULD NOT RUN nine nights running because its pytest lane read listings
+from the working tree, a nine-day-old listing failed the gate, and the gate exited before the step
+that would have rebuilt the listing. Absent SKIPs, fresh PASSes, stale FAILs, and the false red
+keeps the input stale. Asked here of both nightly lanes:
+
+**Both distinguish all three states, with distinct exit codes, deliberately.** `0` OK, `1` a real
+gate failure, `2` COULD NOT RUN. `nightly_source_gates.sh:24` states the contract in its own
+header; `nightly_ref_drift.sh:118` states it and records the incident that earned it, four
+unexplainable COULD NOT RUNs written to a terminal nobody kept.
+
+**A stale input cannot jam the loop that refreshes it here, and the reason is structural rather
+than careful.** The source-gate lane does not read a working tree at all: it creates FRESH
+detached worktrees (`git worktree add --detach`, then `checkout --force --detach <SHA>`) and
+rebuilds its own inputs, salvador and the compression vectors, BEFORE the gates run. A failure in
+that preparation is `exit 2` COULD NOT RUN, which is a different state from `exit 1`. So the
+refresh is unconditional and upstream of the thing that could go stale, which is precisely the
+ordering aeon's lane has inverted.
+
+**Today's red is real, named, and is the lane doing its job.** 2026-09-06T05:19:41,
+`SOURCE GATES FAILED at sigil e9a9dfa6 / aeon a7a4f640, 1 failed / 185 passed:
+misspelled_objroutine_target_dangles_while_control_resolves`, with both revisions named and a log
+path. It succeeded on 09-04 and 09-05, so it is hours old.
+
+**Corroborated by a second instrument that did not know about the first**: seat TEST hit the same
+test failing while running the one current binary it had against the live aeon tree, and
+**correctly declined to report it**, on the grounds that its binary was from a different moment
+than the tree. Two instruments, one failure, and the seat that could not attribute it said so
+rather than banking it. It is a live finding for the aeon lane, routed with its path rather than
+restated.
