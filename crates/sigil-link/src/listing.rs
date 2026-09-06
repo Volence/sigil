@@ -517,21 +517,38 @@ mod tests {
         ]);
         assert!(out.contains("PHASE-COUNT 2"), "wrong count:\n{out}");
 
-        // CROSS-LANE CONTRACT, oracle 2026-09-06, in TWO shapes deliberately.
-        // Oracle keys rows on `^PHASE ` (with the trailing space) and the count
-        // on `^PHASE-COUNT `. Asserting only "every line starts with PHASE"
-        // would STILL PASS if the two ever merged, because `PHASE` is a prefix
-        // of `PHASE-COUNT`: that is the exact failure this pair exists to stop,
-        // and oracle named it rather than discovering it later. So the two
-        // shapes are asserted SEPARATELY and must stay disjoint.
+        // CROSS-LANE CONTRACT, in TWO shapes deliberately.
+        //
+        // The consumer is `oracle`'s `SymbolTable::parse`, at
+        // `crates/oracle-core/src/symbols.rs:553` (verified present when this was
+        // written). It is named by REPO AND PARSER rather than by the session that
+        // asked for it: a session handle stops existing, and a comment citing one
+        // reads in six weeks as a note from a ghost, which is worse than no
+        // attribution because the next editor cannot tell whether the dependency is
+        // still real. THE PARSER IS THE THING THAT WILL STILL BE THERE TO BREAK.
+        //
+        // It keys rows on `^PHASE ` WITH THE TRAILING SPACE, and the count on
+        // `^PHASE-COUNT `. THE TRAILING SPACE IS LOAD-BEARING: `^PHASE` and
+        // `^PHASE-COUNT` are NOT DISJOINT AS PREFIXES, so a consumer keying on the
+        // bare word matches both and will not notice. That is not hypothetical: the
+        // first version of THIS TEST did exactly that, asserting only that every
+        // line began with `PHASE`, which would have kept passing while the two keys
+        // silently merged into one. The pin failed in the way the pin exists to
+        // prevent, one level up from where it was written.
+        //
+        // So the two shapes are asserted SEPARATELY and must stay disjoint.
         //
         // `PHASE-COUNT` rather than `PHASE COUNT` because a symbol legitimately
-        // named `COUNT` emits `PHASE COUNT VMA $...`, which matches
-        // `^PHASE COUNT ` exactly as the count line does. Population is zero
-        // today and the collision is reachable, so the old spelling was
-        // unambiguous ON CURRENT EVIDENCE, which is a different property from
-        // unambiguous. A space is not a hyphen, so the two are now disjoint by
-        // construction rather than by census.
+        // named `COUNT` emits `PHASE COUNT VMA $...`, matching `^PHASE COUNT `
+        // exactly as the count line did. Population is zero today and the collision
+        // is reachable, so the old spelling was unambiguous ON CURRENT EVIDENCE,
+        // which is a different property from unambiguous.
+        //
+        // The alternative was to discriminate on the THIRD TOKEN (`VMA` versus a
+        // number). Rejected, and the reason is the one that outlives this comment:
+        // that is a POSITIONAL rule, and positional rules break on the most ordinary
+        // future edit there is, ADDING A FIELD. `PHASE-COUNT` puts the discriminator
+        // in the line's own identity, so it survives the format gaining columns.
         let rows: Vec<&str> = out.lines().filter(|l| l.contains(" VMA $")).collect();
         assert!(!rows.is_empty(), "no phase rows to check, the assertion would be vacuous");
         for line in &rows {

@@ -1071,3 +1071,49 @@ controls that made the matrix worth building.
 opens no scope in either assembler. I had measured that one of them did not diverge and framed it as
 "at least one does not". **The true statement was stronger and simpler than my hedge** — a hedge
 around a measurement is not automatically the safe direction, it can also be the imprecise one.
+
+### CITE THE ARTEFACT THAT CAN BREAK, NOT THE SESSION THAT ASKED
+
+*(Oracle's correction to a comment I wrote naming them. Small, and it generalises past attribution.)*
+
+I recorded a cross-lane contract in source and credited the requesting session by its handle. **A
+session handle stops existing.** In six weeks it names nothing, and the comment reads as a note from
+a ghost, **which is worse than no attribution, because the next editor cannot tell whether the
+dependency is still real** and will therefore either preserve a dead constraint or delete a live one.
+
+**Name the REPO and the PARSER**: the thing that will still be there to break. Now cited as `oracle`'s
+`SymbolTable::parse` at `crates/oracle-core/src/symbols.rs:553`, **verified present when written**,
+since a path cited without checking is the defect this lane closes weekly.
+
+**It is the promise-in-a-message problem one level down.** A guarantee given in chat has no owner and
+rots invisibly; a guarantee given in a comment naming a session has an owner who evaporates. Only the
+artefact persists.
+
+### AND THE PIN FAILED IN THE EXACT WAY THE PIN EXISTED TO PREVENT
+
+Worth recording as the sharpest instance of the night's theme. The contract's first pin asserted
+**"every line in this section begins with `PHASE` at column 0"**. The count line was then renamed
+`PHASE-COUNT`, and **`PHASE` is a prefix of `PHASE-COUNT`**, so the assertion would have gone on
+passing while the consumer's two distinct keys silently collapsed into one. **A guard that fails the
+way it exists to prevent, one level above where it was written.**
+
+Caught by the consumer, not by me. **The corrective is in the test now**: the two shapes are asserted
+SEPARATELY and required disjoint, and the trailing space in `^PHASE ` is documented as load-bearing
+with the reason, because it is the trap a future consumer is most likely to repeat.
+
+**And the detail worth copying into any guard: it REFUSES TO RUN over an empty row set.** A guard that
+is green because it examined nothing survives every other precaution, and it is the one thing a
+red-first proof cannot catch, since an unapplied mutation and an empty corpus both print `ok`.
+
+### ATTRIBUTION, CORRECTED TWICE IN ONE EXCHANGE
+
+*"Prefer a check that must CLOSE over a check that must AGREE"* is **not** the phrase's relayer's, and
+not mine. It is **the dash-sweep agent's**, formed after it found its own cross-validation worthless:
+two lexers in two languages, written hours apart and deliberately cross-checked, agreeing on 480.
+**One author wrote both, so the agreement measured nothing.** What caught the error was a residual
+that had to reach zero and did not.
+
+**Three independent arrivals at that idea in one night**, the third being this lane's own sweep
+agreeing 1,753 times over zero bytes. **Nearly every defect found today was a check that AGREED;
+nearly every recovery was a check that had to CLOSE** — an accounted population, a control that had
+to fire, a leg count that had to reconcile.
