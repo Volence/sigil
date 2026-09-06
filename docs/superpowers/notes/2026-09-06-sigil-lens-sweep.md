@@ -170,3 +170,32 @@ their own arc item; open questions go to the owner.
 
 **Dry criterion, restated so nobody claims it early:** this track is dry only when a fresh panel,
 run AFTER this round's fixes land, returns nothing new.
+
+## CI and the nightly lanes, measured on the hub's ask (oracle's finding, applied here)
+
+Oracle found their CI red for 46 days unnoticed, 529 of 554 runs, with five corpus-presence
+guards quietly turned into guards that cannot run. Measured here, same three questions:
+
+- **Last green sigil CI run: 2026-08-27T11:18:17Z. Red for 10 days.** Over the last 1,000 runs
+  (window opens 2026-07-12), **838 failures against 162 successes**, and the most recent 400 are
+  failures without exception.
+- **The cause is a guard about guards.** Two rows in `crates/sigil-harness/tests/bare_run_refuses.rs`
+  panic at `test_support.rs:1204`: *"NO REFERENCE TREE IS NAMED, so this run can measure nothing it
+  could attribute, and STOPS."* That file exists to prove `d-18` REFUSE-BARE behaves, and CI is a
+  declared partial run (`SIGIL_ALLOW_PARTIAL=1`, `ci.yml:68`) - the exact condition whose refusal
+  the test is written to observe. So the check that guarantees a bare run cannot pass silently is
+  itself the check CI cannot run green.
+- **The nightly lanes ARE running, which is where sigil differs from oracle.** Both timers are
+  armed and fired today: `sigil-source-gates` at 05:17 EDT, `sigil-ref-drift` at 07:17 EDT.
+  Drift finished clean. **`sigil-source-gates` FAILED today, exit 1** - and it succeeded on
+  2026-09-04 and 2026-09-05, so this is a fresh red rather than a rotted one.
+- **A guard that exists only outside the landing bar** (seat V, independently): the zero-skip rule
+  is documented in four places as something *"the landing bar fails on"*, and `landing-run.sh`'s
+  exit decision reads `CARGO_RC`, `FAILED`, `CLIPPY_RC` and `RECONCILED` - **never `SKIPS`**. The
+  only real enforcer is `nightly_source_gates.sh`, which is not the landing bar. A strict landing
+  run carrying skip lines prints `RESULT GREEN` and exits 0.
+
+**The transferable half, which is oracle's and not ours:** a red that nobody reads stops being a
+signal, and the way it dies is that two failures stack and the second is assumed to be the first.
+Sigil's red is 10 days old rather than 46, and the nightly lane's red is hours old - both are
+still young enough to be attributed rather than archaeology.
