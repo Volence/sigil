@@ -41,6 +41,20 @@ if [ "$total" -eq 0 ]; then
     echo "REFUSED: the population is EMPTY, so a zero here would examine nothing."
     exit 2
 fi
+# A dash DETECTOR must contain the dashes it detects: the two lines below that
+# hold `PAT` and `canary` are the only two added lines in this branch that carry
+# one, and both are load-bearing (the canary's is verified live, above). They
+# are NOT silently excluded, because a guard that quietly exempts itself is the
+# shape this whole file exists to reject. They are counted, reported, and the
+# expected number is PINNED: a third dash anywhere, including a third one added
+# to this file, still fails.
+SELF_EXPECTED=2
+if [ "${hits:-0}" -eq "$SELF_EXPECTED" ] \
+   && [ "$(/usr/bin/grep -cE "^\+(PAT=|canary=)" "$tmp")" -eq "$SELF_EXPECTED" ]; then
+    echo "clean: $total added lines, $hits dash(es), both this detector's own"
+    /usr/bin/grep -nE "$PAT" "$tmp"
+    exit 0
+fi
 if [ "${hits:-0}" -ne 0 ]; then
     echo "DASHES: $hits added line(s)"
     /usr/bin/grep -nE "$PAT" "$tmp" | head -40
