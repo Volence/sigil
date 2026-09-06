@@ -738,6 +738,44 @@ this lane's 2026-09-05 read of `0xC000` with `DATA_GROWTH_GRACE = 0x8000`, offer
 to check rather than as a correction, since it is aeon's constant and the two reads have different
 dates.
 
+## A ROUTED ROW MUST NAME ITS ARTIFACT, AND "ROUTED" IS TWO CLAIMS (2026-09-06)
+
+**Found when aeon reported that a row this lane had marked `routed` had no content anywhere in
+their tree.** Their reading was that the findings had died with the session that received them.
+They had not: all five were committed here, across three notes, all reachable from
+`origin/master`, and two of them sat under a section literally headed *"Left open, and routed
+elsewhere"* with *"Aeon lane"* written against them. **The recording was never the failure. The
+routing was.**
+
+**The rule, and it is the sending-side twin of aeon's** *(theirs: a finding routed TO a lane gets
+an artifact in that lane's own repo at the moment it is accepted)*: **a row that says `routed` is
+asserting two separate things, that an artifact exists and that the recipient was told where it
+is, and only the first is under this lane's nose.** Protocol bar 20 governs the first and is
+silent on the second, so a lane can satisfy the bar completely and the receiver still ends up
+with nothing. **Write the path into the row, and send the path, not the summary.**
+
+**The naming half, which was this lane's own contribution to the mess.** The row was
+`AEON-S1-S3-S9-ROUTED`. `S1`, `S3` and `S9` are section numbers inside one of *our* notes, so the
+id was unreadable to the only lane that needed to act on it. Renamed. **An id built from this
+lane's internal coordinates is a private note wearing an address.**
+
+**⚠ AND THE ENUMERATION FOUND A WORSE ONE, which is why the instance is not the fix** (bar 8,
+turned on ourselves). Four rows here name the engine lane. Two were fine, one
+(`ROWREMAP-HEAD-LABEL-RULED`) had a real artifact nobody had pointed at, and
+**`S4BUDGET-STALE-ASSUMPTION`'s wording matches no artifact in this tree at all.** Its instrument
+was working, `s4budget` appears in 14 files here, so that is a genuine non-match and not an empty
+grep. Either the source is somewhere the search missed, or **the row has drifted from its source
+and is now a reconstruction.** It was NOT sent to aeon as bookable, and it must not be until it is
+grounded.
+
+**The direction of that risk is the transferable part: a row that has drifted from its source
+reads exactly like a row that has one.** Had the peer asked for that row instead of the one they
+did, this lane would have restated it in good faith and they would have booked a finding no
+measurement stands behind. **A queue row is a POINTER, and a pointer with nothing at the far end
+cannot be distinguished from a row somebody invented** (aeon's formulation, better than mine).
+So before answering any request to hand a peer a routed finding, resolve the row to a committed
+path first, and **say plainly when it does not resolve** rather than reconstructing it.
+
 ## Standing cross-session obligations (2026-08-22)
 
 The aeon session owes sigil two things, both triggered by sigil work rather than by
