@@ -4090,3 +4090,27 @@ is already wrapped in `int(...)`. Never a wrong byte, only a worse message.
 -- OPEN (kill: teach `float_leaf` that a float-RETURNING builtin name counts as a float
 leaf, which is a one-line predicate change now that `float_builtin()` exists; do it
 alongside the `#1133` wording rather than on its own)
+
+### skdisasm has a 38-row float gap that is NOT the missing-generated-file shadow (2026-09-06)
+Measured by `scripts/corpus-baseline.sh` over a PREPARED `skdisasm` worktree at `2fcd861`,
+entry `sonic3k.asm`, sigil md5 `93b368052dbb77a5d2c199134f9c002d`: 2,170 diagnostics bare,
+2,126 prepared, and `int(): could not evaluate float expression` falls 67 to **38** rather
+than to 0. Sonic 2 and Sonic 1 both go to 0 under the same treatment, so this is the only
+corpus where the class survives preparation and it has never been looked at.
+Population: 38 rows over a stream of 2,126, alongside 467 `unresolved long expression` and
+1,124 `unexpected character`, which are the two larger untouched classes in that tree.
+-- OPEN (kill: run `scripts/corpus-baseline.sh` over the prepared tree, group the 38 by
+site, and reduce one. Do NOT size this off the bare figure of 67; 29 of those were the
+absent `Sound/DAC/generated/*.inc`)
+
+### The corpus runner cannot say "you regressed the corpus" on its own (2026-09-06)
+`scripts/corpus-baseline.sh --compare` diffs two diagnostic streams a caller supplies, so a
+parcel still has to build and run the before-side binary itself. Recording a baseline
+figure in the repository was deliberately NOT done, because a stored number goes stale
+against both the corpus revision and the sigil revision and would then be a check that must
+AGREE rather than one that must CLOSE.
+Population: every parcel that has measured the corpus so far, which is all of them since
+the AS front end started.
+-- OPEN (kill: a mode that takes two git revisions, builds each into its own
+`CARGO_TARGET_DIR`, prepares one corpus tree and reports the class delta, so the before-side
+is derived from a SHA rather than from a number someone wrote down)

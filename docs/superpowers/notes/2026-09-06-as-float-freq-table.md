@@ -83,6 +83,27 @@ stop before the ROM build) and re-measuring, with NO sigil change whatsoever:
 | `cannot include` | 39 | 0 |
 | `could not evaluate float` | 23 | **6** |
 
+> **CORRECTION, 2026-09-06, `2026-09-06-corpus-generated-includes.md`.** These
+> four rows all reproduce and none of the parcel's conclusions move. Two things
+> about the presentation are wrong and both have misled a reader since.
+>
+> * **`5,229` is not a corpus constant.** It is `master 0eb20272` over a bare
+>   tree, measured before this very parcel landed. At master `7b6f7dc7` the same
+>   bare figure is **5,223** and the prepared figure is **5,162**. The six-row
+>   difference is this parcel's own `log` fix, which is present in BOTH columns.
+>   A bare total quoted without its binary has two moving parts and reads as
+>   having one.
+> * **"the first 186 lines, which stop before the ROM build" is off by one.**
+>   Line 186 of `s2disasm/build.lua` at `e45ebf33` IS
+>   `common.build_rom_and_handle_failure(...)`. The generator half is lines
+>   1..185 and the last generating call is line 182. The generated set comes out
+>   the same either way, so no number here is affected, but `head -186` assembles
+>   a ROM. `scripts/corpus-prepare.sh` derives the cut by pattern instead.
+>
+> The measurement is now re-runnable: `scripts/corpus-prepare.sh` and
+> `scripts/corpus-baseline.sh`, which REFUSE to report a count over a tree
+> missing its generated includes.
+
 17 is exactly the number of `dac_sample_metadata` call sites (18 occurrences of the
 name, minus the macro definition). The same class is independently visible in Sonic 1:
 `s1.sounddriver.asm(337)` writes
@@ -230,6 +251,12 @@ Sonic 2, `e45ebf33`, generated includes present, entry `s2.asm`:
 |---|---|---|
 | total | 5,168 | **5,162** |
 | `could not evaluate float` | 6 | **0** |
+
+> **CONFIRMED, 2026-09-06.** `5,162` is re-measured at master `7b6f7dc7` by
+> `scripts/corpus-baseline.sh`, over two independently generated `s2disasm`
+> worktrees, and is the figure the campaign should carry forward. `5,168` is
+> also independently reproduced as the prepared count at `6bdf8d86`, so nothing
+> between that commit and `0eb20272` moved the corpus.
 
 A full sorted diff of the two diagnostic sets shows **six lines removed and zero added**.
 
