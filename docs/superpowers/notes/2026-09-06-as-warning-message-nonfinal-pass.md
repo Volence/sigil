@@ -306,6 +306,52 @@ mutation is specific rather than a blanket break. Restoring from the set-aside
 file returned 9 passed, 0 failed. Stated before the run: a run in which every
 test passed would have been a runner defect, not a pass.
 
+## The landing run
+
+```
+tree        .../agent-ae4f63ecd32949c9a @ 7600611b (parcel/as-warning-message-nonfinal-pass, clean)
+reference   /home/volence/sonic_hacks/.aeon-wmp @ 483b3e12 (HEAD, clean), all four present
+CARGO_EXIT  0    CLIPPY_EXIT 0
+suites 412   passed 4704   failed 0   ignored 2   skip lines 0
+reconciles  4700 baseline + 4 new = 4704 observed
+RESULT      GREEN
+```
+
+All five test names this branch adds or renames appear in that log and are `ok`,
+and the name it replaces (`a_warning_on_a_non_final_pass_is_still_dropped`)
+appears zero times.
+
+**The baseline `4700` is DERIVED, not quoted.** It is this run's own 4,704 minus
+the four tests this branch adds, which is checkable from the diff (the one test
+file it touches goes from 5 tests to 9) rather than from a number someone wrote
+down. The last recorded suite figure in this repository is 4,689 at `1b251fcb`,
+and several parcels have landed since, so quoting it would have been quoting a
+stale number.
+
+### The first landing run was RED, and it was not this change
+
+Run 1, at the same tip, reported `passed 4703  failed 1`:
+
+```
+the_published_line_states_this_revision_s_position_against_a_named_remote_ref
+  assertion `left == right` failed: the tip the banner names for origin/master
+  is not the one git resolves
+    left:  08c7362ce12775486c52d89a8d6ac3b90ee5943d
+    right: 6cab10af2a75929440ac94b4775e15f19962703b
+```
+
+Both sides of that assertion are a git ref and a value baked from a git ref, and
+this branch touches neither. `origin/master` moved under the run: this worktree
+resolved it as `6cab10af` at 08:12 UTC and as `08c7362c` by 08:26, because the
+sigil repository is shared with other lanes that fetch. Run 2, after it settled,
+has the same test green. Recorded rather than quietly dropped, because a single
+red test in a landing log that a later green replaces is exactly the shape that
+should never be waved through on an assurance.
+
+Run 1 also stamped the tree `DIRTY`, over one untracked shell helper this parcel
+wrote to keep `cargo` output inside the worktree. It was deleted; run 2 stamps
+`clean`.
+
 ## `message` is a different mechanism, and a live divergence today
 
 The brief's row treats `warning` and `message` together. They do not behave
