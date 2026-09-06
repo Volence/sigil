@@ -189,6 +189,10 @@ fn run_impl(
     // the `terminal_fatal` arm below for why this one diagnostic outlives its
     // pass when no other does.
     let mut carried_fatals: Vec<(Span, String, Option<String>)> = Vec::new();
+    // Every SITE at which any pass ran the `warning` directive, in raise order.
+    // See `merge_carried_author_warnings` for why an author's own `warning`
+    // outlives its pass and an assembler-raised one does not.
+    let mut carried_author_warnings: Vec<(Span, String, Option<String>)> = Vec::new();
     for pass in 0..PASS_CAP {
         let PassOutput {
             module,
@@ -198,6 +202,7 @@ fn run_impl(
             diags,
             poison,
             terminal_fatal,
+            author_warnings,
             labels: pass_labels,
             label_ref_equs: pass_label_ref_equs,
             sources,
@@ -244,6 +249,11 @@ fn run_impl(
                 carried_fatals.push(f);
             }
         }
+        for w in author_warnings {
+            if !carried_author_warnings.iter().any(|(s, _, _)| *s == w.0) {
+                carried_author_warnings.push(w);
+            }
+        }
         for sec in &module.sections {
             for eq in &sec.equ_syms {
                 if ever_exported_names.insert(eq.name.clone()) {
@@ -270,6 +280,11 @@ fn run_impl(
                 restore_missing_equ_exports(&mut module, &ever_exported, &env);
                 attach_guarded_equ_exports(&mut module, &opts.guarded_defines);
                 let diags = merge_carried_fatals(diags, &carried_fatals, &last_sources);
+                let diags = merge_carried_author_warnings(
+                    diags,
+                    &carried_author_warnings,
+                    &last_sources,
+                );
                 return if diags.iter().any(|d| d.level == Level::Error) {
                     Err(Failure { diags, sources: last_sources })
                 } else {
@@ -299,14 +314,21 @@ fn run_impl(
             let mut bonus_module = bonus.module;
             restore_missing_equ_exports(&mut bonus_module, &ever_exported, &env);
             attach_guarded_equ_exports(&mut bonus_module, &opts.guarded_defines);
-            // The bonus pass raises its own `fatal`s too, and it is a pass like
-            // any other for this purpose.
+            // The bonus pass raises its own `fatal`s and `warning`s too, and it
+            // is a pass like any other for this purpose.
             if let Some(f) = bonus.terminal_fatal {
                 if !carried_fatals.contains(&f) {
                     carried_fatals.push(f);
                 }
             }
+            for w in bonus.author_warnings {
+                if !carried_author_warnings.iter().any(|(s, _, _)| *s == w.0) {
+                    carried_author_warnings.push(w);
+                }
+            }
             let diags = merge_carried_fatals(diags, &carried_fatals, &bonus.sources);
+            let diags =
+                merge_carried_author_warnings(diags, &carried_author_warnings, &bonus.sources);
             return if diags.iter().any(|d| d.level == Level::Error) {
                 Err(Failure { diags, sources: bonus.sources })
             } else {
@@ -323,7 +345,9 @@ fn run_impl(
     // Non-convergence is a property of the whole run, not of any one line, so it
     // carries no source: an id past every registered file makes the renderer print
     // a bare message rather than attribute the failure to line 1 of the root.
-    let mut diags = merge_carried_fatals(Vec::new(), &carried_fatals, &last_sources);
+    let diags = merge_carried_fatals(Vec::new(), &carried_fatals, &last_sources);
+    let mut diags =
+        merge_carried_author_warnings(diags, &carried_author_warnings, &last_sources);
     diags.push(Diagnostic {
         level: Level::Error,
         message: format!(
@@ -389,6 +413,89 @@ fn merge_carried_fatals(
     diags
 }
 
+/// Add every site a non-final pass ran the `warning` DIRECTIVE at to a returned
+/// diagnostic list.
+///
+/// ## Why the author's `warning` outlives its pass and the assembler's does not
+///
+/// Returning only the converged pass's diagnostics is right for a diagnostic
+/// the ASSEMBLER raised: a name unresolved on iteration 1 has a value by
+/// iteration 2, and iteration 1's complaint was about a forward reference. The
+/// `warning` directive is not that. It is a line the author WROTE in order to
+/// be told something, and asl does not retract one: asl prints it and keeps
+/// assembling, once per pass it fires on, and the run's output is the union
+/// over passes rather than the last pass's view.
+///
+/// Measured, not reasoned about, against asl md5 `61e672562465725a8c102288a7da9098`:
+///
+/// | probe | shape | asl | sigil before this |
+/// |---|---|---|---|
+/// | `cw1` | `if MOMPASS=1` | prints it once, exit 0 | **nothing at all**, exit 0 |
+/// | `cw2` | `if MOMPASS>1` | prints it once, exit 0 | prints it once, exit 0 |
+/// | `cw3` | unguarded | prints it TWICE (2 passes) | prints it once |
+///
+/// So the pass-supersession argument that separates `fatal` from every other
+/// diagnostic does not separate the `warning` directive from `fatal`: there is
+/// nothing for a later pass to supersede, because asl never treated the earlier
+/// pass's line as provisional.
+///
+/// ## Why ONE line per site rather than one per firing
+///
+/// asl's multiplicity is a property of how many passes it happened to run, and
+/// sigil runs a different number (4 to 5 evaluations where asl runs 2, measured
+/// on all three corpora). Reproducing the count would reproduce an artifact of
+/// asl's pass loop. One line per source position is the count sigil already
+/// reports for every other repeated diagnostic (`cond_faults_seen`), it is
+/// never MORE than asl prints for a site that fires at all, and the converged
+/// pass's own text wins whenever that pass fires the site too, because the
+/// `diags` this merges into are already that pass's.
+///
+/// ## What it cannot be
+///
+/// Additive only. Every entry is `Level::Warning`, so no carried line can turn
+/// an `Ok` into an `Err`, and none of them reaches the module: a run can become
+/// louder and can never change a byte.
+fn merge_carried_author_warnings(
+    mut diags: Vec<Diagnostic>,
+    carried: &[(Span, String, Option<String>)],
+    sources: &sigil_span::SourceMap,
+) -> Vec<Diagnostic> {
+    for (span, message, raised_label) in carried {
+        // The returning pass already speaks about this position, so it has the
+        // authoritative text for it (interpolated against the converged env).
+        if diags.iter().any(|d| d.primary == *span) {
+            continue;
+        }
+        // Same span-validity guard the carried `fatal` needs, and for the same
+        // reason: the source map is rebuilt every pass and ids are handed out
+        // in splice order, so a file spliced only on the raising pass leaves
+        // every later id shifted and a bare span renders to a real file and the
+        // WRONG line. A misattributed diagnostic is worse than a bare one.
+        if sources.label(*span).as_ref() == raised_label.as_ref() {
+            diags.push(Diagnostic {
+                level: Level::Warning,
+                message: format!("[as.warning] {message}"),
+                primary: *span,
+            });
+            continue;
+        }
+        let message = match raised_label {
+            Some(l) => format!("[as.warning] {l}: {message}"),
+            None => format!("[as.warning] {message}"),
+        };
+        diags.push(Diagnostic {
+            level: Level::Warning,
+            message,
+            primary: Span {
+                source: SourceId(u32::MAX),
+                start: 0,
+                end: 0,
+            },
+        });
+    }
+    diags
+}
+
 /// The outputs of a single assembly pass.
 struct PassOutput {
     module: Module,
@@ -405,6 +512,9 @@ struct PassOutput {
     /// The first `fatal` this pass raised, with the `file(line)` label THIS
     /// pass's own source map renders for it. See [`Asm::terminal_fatal`].
     terminal_fatal: Option<(Span, String, Option<String>)>,
+    /// Every site at which this pass ran the `warning` directive. See
+    /// [`Asm::author_warnings`].
+    author_warnings: Vec<(Span, String, Option<String>)>,
     /// Every fully-qualified label name defined this pass (grown from the seed).
     /// Threaded into the next pass so a forward-referenced label is known before
     /// its definition line — see [`Asm::known_labels`].
@@ -604,6 +714,7 @@ fn one_pass_with_defer(
         diags,
         poison: asm.poison_refs,
         terminal_fatal: asm.terminal_fatal,
+        author_warnings: asm.author_warnings,
         labels: asm.known_labels,
         label_ref_equs: asm.label_ref_equs,
         sources: asm.sources,
@@ -970,6 +1081,17 @@ struct Asm {
     /// every well-formed corpus file uses and which is not a refusal at all.
     /// See [`run_impl`] for what the run does with it.
     terminal_fatal: Option<(Span, String, Option<String>)>,
+    /// Every distinct SITE at which this pass ran the `warning` DIRECTIVE, with
+    /// the text it produced there and the `file(line)` label THIS pass's own
+    /// source map renders for it. See [`run_impl`] for what the run does with
+    /// it, and why an author-written `warning` outlives its pass while an
+    /// assembler-raised warning does not.
+    ///
+    /// One entry per source position, for the reason `cond_faults_seen` exists:
+    /// a `warning` inside a macro the corpus expands 81 times is one line the
+    /// author wrote, not 81. Within a pass the FIRST text at a position wins,
+    /// which matters only when a re-expansion interpolates different values.
+    author_warnings: Vec<(Span, String, Option<String>)>,
     /// The value the `MOMPASS` builtin reports on THIS pass: 1 on the first,
     /// 2 on every later one. See [`Asm::builtin_num`] for why it saturates
     /// rather than counting.
@@ -1207,6 +1329,7 @@ impl Asm {
             deferred_assign_names: std::collections::HashSet::new(),
             defer_unresolved_jsr_jmp,
             terminal_fatal: None,
+            author_warnings: Vec::new(),
             mompass: LATER_PASS,
             known_labels: std::collections::HashSet::new(),
             sym_class: std::collections::HashMap::new(),
@@ -4670,6 +4793,10 @@ impl Asm {
                     return;
                 }
                 let m = self.interp_string(rest);
+                if !self.author_warnings.iter().any(|(s, _, _)| *s == span) {
+                    let label = self.sources.label(span);
+                    self.author_warnings.push((span, m.clone(), label));
+                }
                 self.diags.push(Diagnostic {
                     level: Level::Warning,
                     message: format!("[as.warning] {m}"),
