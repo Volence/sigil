@@ -269,9 +269,26 @@ declaration and an instance).
   proves rather than assumes. Falsifiers: `q9.asm`, `q12.asm`.
 - **`endstruct <name>` with the name in the OPERAND column** renames the size
   symbol to that name: `endstruct C` defines `C` = the size and leaves `C.len`
-  undefined — yet asl then resolves `C.len` to the current PC and exits 0, which
-  is its own silent-wrong-answer. sigil defines `C.len` normally. Corpus-
-  unreachable (all six sites are bare or label-column). Probe `q8.asm`.
+  undefined. sigil defines `C.len` normally. Corpus-unreachable (all six sites
+  are bare or label-column). Probe `q8.asm`.
+
+  **CORRECTED 2026-09-05, and the correction is the whole second half of the
+  row.** This entry used to continue "yet asl then resolves `C.len` to the
+  current PC and exits 0, which is its own silent-wrong-answer". Both halves are
+  wrong. asl exits **2** on `q8.asm`, and the `100A` that `dc.w C.a,C.len`
+  printed is the PASS-1 PLACEHOLDER for an unresolved symbol, not a resolution.
+  `q8.asm` carries an unrelated `#2040 structure name missing` on its last line,
+  which stopped asl's pass loop, and the pass that judges forward references
+  never ran. Delete only that one line and asl says
+
+  ```text
+  q8n.asm(15):11: error #1010: symbol undefined
+  C.len
+  ```
+
+  and prints **no byte column at all** for that line. asl is LOUD about `C.len`;
+  there is no silent wrong answer here, only a suppressed diagnostic. See
+  `2026-09-05-asl-pass-loop-swallows-diagnostics.md`.
 - **A struct body under `CPU Z80` cannot use `ds.b`** at all in asl (`q13.asm`);
   both corpora route it through their own `ds` MACRO, whose Z80 arm emits `db 0`
   bytes. `parse_struct_member` reads the width off the WRITTEN token instead of

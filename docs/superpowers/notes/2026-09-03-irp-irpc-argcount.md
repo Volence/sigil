@@ -355,5 +355,21 @@ falsifier is one command — run the full suite twice concurrently on master.
 - `eval_str` has no `+` concatenation, so `irpc c,sa+"OP"` is refused where asl
   accepts it (probe `p7.asm` case 7e). A general `eval_str` gap, not an `irpc`
   one; unreachable in both corpora.
-- `ARGCOUNT` outside a macro: asl resolves it to something (13 in `p2.asm`),
-  sigil reports an unresolved symbol. Not corpus-reachable, not characterised.
+- `ARGCOUNT` outside a macro: **asl reports an unresolved symbol, and so does
+  sigil. There is no divergence here.**
+
+  **CORRECTED 2026-09-05.** This row used to read "asl resolves it to something
+  (13 in `p2.asm`), sigil reports an unresolved symbol", and recorded a
+  behavioural gap that does not exist. `p2.asm` is a five-shape file whose
+  `three` macro raises six `#1107 undefined attribute` errors well above the
+  `dc.b $BB,ARGCOUNT` line, and those errors stopped asl's pass loop, so the
+  pass that judges an unresolved symbol never ran. The `BB0D` in that listing is
+  a pass-1 artifact, not the 13 asl computed. The same construct alone in a file
+
+  ```text
+  cpu 68000 / padding off / org $1000 / dc.b $BB,ARGCOUNT / end
+  ```
+
+  assembles in **2 passes** with a complete diagnostic set and says
+  `error #1010: symbol undefined  ARGCOUNT`, emitting no byte for the line. The
+  two front ends agree. See `2026-09-05-asl-pass-loop-swallows-diagnostics.md`.
