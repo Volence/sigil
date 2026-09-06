@@ -699,6 +699,77 @@ fn an_out_of_domain_or_out_of_range_argument_is_refused() {
     }
 }
 
+/// `abs(...)` in a PLAIN INTEGER context — no float token anywhere on the line,
+/// so nothing but the builtin table can give the call a meaning.
+///
+/// The corpus demand is `s1disasm/Macros.asm(353)`,
+/// `rept 1+(abs(first-last)/abs(step))`, which carried EIGHT of Sonic 1's
+/// diagnostics as `unresolved rept count`.
+///
+/// asl listing, `clean3.asm` (`ASL_EXIT=0`, `ASL_DIAG=complete`):
+///
+/// ```text
+///        7/       0 : 0000 0003           	dc.l	ABS(-3)
+///        8/       4 : 0000 0004           	dc.l	1+(ABS(3-9)/ABS(2))
+///       10/       8 : AA                  	dc.b	$AA      (four times)
+///       12/       C : 0000 0007           	dc.l	ABS(-3)+ABS(4)
+///       13/      10 : 03                  	dc.b	ABS(-3)
+/// ```
+///
+/// The four `AA` bytes are the whole point of the `rept` row: the count is a
+/// number asl computed from two `abs` calls, so an assembler that cannot
+/// evaluate them emits nothing there and the assertion below fails on length.
+#[test]
+#[allow(clippy::tabs_in_doc_comments)]
+fn abs_resolves_in_a_plain_integer_context() {
+    assert_eq!(bytes("\tdc.l ABS(-3)\n"), vec![0, 0, 0, 3]);
+    assert_eq!(bytes("\tdc.l 1+(ABS(3-9)/ABS(2))\n"), vec![0, 0, 0, 4]);
+    assert_eq!(bytes("\tdc.l ABS(-3)+ABS(4)\n"), vec![0, 0, 0, 7]);
+    assert_eq!(bytes("\tdc.b ABS(-3)\n"), vec![3]);
+    assert_eq!(
+        bytes("\trept 1+(ABS(3-9)/ABS(2))\n\tdc.b $AA\n\tendr\n"),
+        vec![0xaa, 0xaa, 0xaa, 0xaa],
+    );
+}
+
+/// A leading `+` is a SIGN in the typed evaluator, and leaves the value and its
+/// type alone.
+///
+/// This is not symmetry for its own sake. `s1disasm`'s `range` macro is invoked
+/// as `range $21,$2F,+1`, so `abs(step)` arrives as `abs(+1)` — and with `abs`
+/// wired but no unary-plus arm, exactly the four ASCENDING call sites of the
+/// eight kept failing while the four descending ones passed. A fix measured
+/// only on the descending spelling would have read as complete.
+///
+/// asl listing, `clean4.asm` (`ASL_EXIT=0`, `ASL_DIAG=complete`):
+///
+/// ```text
+///        8/       0 : 0000 0001           	dc.l	ABS(+1)
+///        9/       4 : 0000 0005           	dc.l	+5
+///       10/       8 : 0000 000F           	dc.l	1+(ABS($21-$2F)/ABS(+1))
+///       11/       C : 0000 000F           	dc.l	1+(ABS($2F-$21)/ABS(-1))
+///       12/      10 : 0000 0003           	dc.l	INT(+3.7)
+/// ```
+///
+/// The two `000F` rows are the same count reached from opposite directions,
+/// which is what makes the pair a test rather than two independent rows.
+#[test]
+#[allow(clippy::tabs_in_doc_comments)]
+fn a_leading_plus_is_a_sign() {
+    assert_eq!(bytes("\tdc.l ABS(+1)\n"), vec![0, 0, 0, 1]);
+    assert_eq!(bytes("\tdc.l INT(+3.7)\n"), vec![0, 0, 0, 3]);
+    assert_eq!(
+        bytes("\tdc.l 1+(ABS($21-$2F)/ABS(+1))\n"),
+        vec![0, 0, 0, 0x0f],
+        "ascending"
+    );
+    assert_eq!(
+        bytes("\tdc.l 1+(ABS($2F-$21)/ABS(-1))\n"),
+        vec![0, 0, 0, 0x0f],
+        "descending"
+    );
+}
+
 /// An identifier that is NOT a builtin still reaches the ordinary symbol
 /// lookup. Guarding this direction is what stops the new name table from
 /// swallowing a user symbol that happens to be followed by a parenthesis.

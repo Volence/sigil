@@ -1,0 +1,64 @@
+ AS V1.42 Beta [Bld 212] - Source File clean4.asm - Page 1 - 09/06/2026 02:48:33 AM
+
+
+       1/       0 :                     	cpu	68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org	0
+       4/       0 :                     ; UNARY PLUS. `s1disasm`'s `range` macro is invoked as `range $21,$2F,+1`, so
+       5/       0 :                     ; `abs(step)` arrives as `abs(+1)`. sigil's typed evaluator has an arm for
+       6/       0 :                     ; unary minus and none for unary plus, which is why four of the eight `range`
+       7/       0 :                     ; sites still refused after `abs` was wired. Must exit 0.
+       8/       0 : 0000 0001           	dc.l	ABS(+1)
+       9/       4 : 0000 0005           	dc.l	+5
+      10/       8 : 0000 000F           	dc.l	1+(ABS($21-$2F)/ABS(+1))	; the real rept count, ascending
+      11/       C : 0000 000F           	dc.l	1+(ABS($2F-$21)/ABS(-1))	; ... and descending
+      12/      10 : 0000 0003           	dc.l	INT(+3.7)
+      13/      14 :                     ; `INT(+3.7+ +1)` is NOT here on purpose: asl answers `error #1110: wrong
+      14/      14 :                     ; number of operands / expected 2 arguments but got 1` for it, so a second `+`
+      15/      14 :                     ; inside the parentheses is read as an argument separator rather than as a sign.
+      16/      14 :                     ; The line was removed rather than kept as a refusal row, because keeping it
+      17/      14 :                     ; made this whole file exit 2 and a failed run's byte column is not a source of
+      18/      14 :                     ; values for the lines that DID assemble.
+      19/      14 :                     	end
+ AS V1.42 Beta [Bld 212] - Source File clean4.asm - Page 2 - 09/06/2026 02:48:33 AM
+
+
+  Symbol Table (* = unused):
+  --------------------------
+
+*ARCHITECTURE :                                      "x86_64-unknown-linux" - |
+*BIGENDIAN :                      0 - | *BRANCHEXT :                      0 - |
+*CASESENSITIVE :                  1 - | *COMPMODE :                       0 - |
+*CONSTPI :        3.141592653589793 - | *CUSTOM :                         0 - |
+*DATE :                "09/06/2026" - | *FALSE :                          0 - |
+*FULLPMMU :                       1 - | *HAS64 :                          1 - |
+*HASDSP :                         0 - | *HASFPU :                         0 - |
+*HASPMMU :                        0 - | *INEXTMODE :                      0 - |
+*INLWORDMODE :                    0 - | *INMAXMODE :                      0 - |
+*INSRCMODE :                      0 - | *INSUPMODE :                      0 - |
+*LISTON :                         1 - | *MACEXP :                         7 - |
+*MOMCPU :                     68000 - | *MOMCPUNAME :               "68000" - |
+*NESTMAX :                      100 - | *PACKING :                        0 - |
+*PADDING :                        0 - | *RELAXED :                        0 - |
+*TIME :               "02:48:33 AM" - | *TRUE :                           1 - |
+*VERSION :                     142F - | *Z80SYNTAX :                      0 - |
+
+     31 symbols
+     31 unused symbols
+
+ AS V1.42 Beta [Bld 212] - Source File clean4.asm - Page 3 - 09/06/2026 02:48:33 AM
+
+
+  Code Pages:
+  ----------
+
+STANDARD (0 changed characters)
+
+1 code page
+
+0.00 seconds assembly time
+
+     20 lines source file
+      1 pass
+      0 errors
+      0 warnings

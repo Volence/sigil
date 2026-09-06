@@ -1,0 +1,64 @@
+ AS V1.42 Beta [Bld 212] - Source File clean3.asm - Page 1 - 09/06/2026 02:47:15 AM
+
+
+       1/       0 :                     	cpu	68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org	0
+       4/       0 :                     ; `abs(...)` in a PLAIN INTEGER context, with no float token anywhere on the
+       5/       0 :                     ; line -- the shape `s1disasm/Macros.asm(353)` writes as
+       6/       0 :                     ; `rept 1+(abs(first-last)/abs(step))`. Must exit 0.
+       7/       0 : 0000 0003           	dc.l	ABS(-3)
+       8/       4 : 0000 0004           	dc.l	1+(ABS(3-9)/ABS(2))	; the rept count, as a value
+       9/       8 :                     	rept	1+(ABS(3-9)/ABS(2))	; ... and as a rept count: 4 iterations
+      10/       8 :                     	dc.b	$AA
+      11/       8 :                     	endr
+      10/       8 : AA                  	dc.b	$AA
+      10/       9 : AA                  	dc.b	$AA
+      10/       A : AA                  	dc.b	$AA
+      10/       B : AA                  	dc.b	$AA
+      12/       C : 0000 0007           	dc.l	ABS(-3)+ABS(4)		; composes as an integer on both sides
+      13/      10 : 03                  	dc.b	ABS(-3)			; and fits a byte, so it is not a float
+      14/      11 :                     	end
+ AS V1.42 Beta [Bld 212] - Source File clean3.asm - Page 2 - 09/06/2026 02:47:15 AM
+
+
+  Symbol Table (* = unused):
+  --------------------------
+
+*ARCHITECTURE :                                      "x86_64-unknown-linux" - |
+*BIGENDIAN :                      0 - | *BRANCHEXT :                      0 - |
+*CASESENSITIVE :                  1 - | *COMPMODE :                       0 - |
+*CONSTPI :        3.141592653589793 - | *CUSTOM :                         0 - |
+*DATE :                "09/06/2026" - | *FALSE :                          0 - |
+*FULLPMMU :                       1 - | *HAS64 :                          1 - |
+*HASDSP :                         0 - | *HASFPU :                         0 - |
+*HASPMMU :                        0 - | *INEXTMODE :                      0 - |
+*INLWORDMODE :                    0 - | *INMAXMODE :                      0 - |
+*INSRCMODE :                      0 - | *INSUPMODE :                      0 - |
+*LISTON :                         1 - | *MACEXP :                         7 - |
+*MOMCPU :                     68000 - | *MOMCPUNAME :               "68000" - |
+*NESTMAX :                      100 - | *PACKING :                        0 - |
+*PADDING :                        0 - | *RELAXED :                        0 - |
+*TIME :               "02:47:15 AM" - | *TRUE :                           1 - |
+*VERSION :                     142F - | *Z80SYNTAX :                      0 - |
+
+     31 symbols
+     31 unused symbols
+
+ AS V1.42 Beta [Bld 212] - Source File clean3.asm - Page 3 - 09/06/2026 02:47:15 AM
+
+
+  Code Pages:
+  ----------
+
+STANDARD (0 changed characters)
+
+1 code page
+
+0.00 seconds assembly time
+
+     15 lines source file
+     19 lines incl. macro expansions
+      1 pass
+      0 errors
+      0 warnings

@@ -1649,12 +1649,24 @@ impl Asm {
     /// hand. A bare `sin(...)` not wrapped in `int(...)` has no integer
     /// meaning and is left untouched (whatever consumes it downstream will
     /// report a normal "bad expression" diagnostic).
+    ///
+    /// EVERY numeric builtin is scanned for, not only `int` — but only a call
+    /// that resolves to an INTEGER is rewritten. In practice that is `int` and
+    /// `abs`, the two type-preserving entries in [`apply_num_builtin`]; the
+    /// float-returning family always declines here and is left for `int(...)`
+    /// or for the float-operand path to handle. The corpus demand is S1's
+    /// `Macros.asm(353)`, `rept 1+(abs(first-last)/abs(step))`, which reaches
+    /// this function through `eval_all` and has no float token anywhere in it,
+    /// so nothing else in the pipeline can give `abs` a meaning. asl assembles
+    /// `dc.l ABS(-3)` to `0000 0003` with no diagnostic (`clean2.asm(8)`,
+    /// `ASL_EXIT=0`), so the integer type really does survive the call.
     fn expand_int_builtin(&mut self, toks: &[Token]) -> Vec<Token> {
         let mut out = Vec::new();
         let mut i = 0;
         while i < toks.len() {
             if let Tok::Ident(name) = &toks[i].tok {
-                if name.eq_ignore_ascii_case("int")
+                let is_int = name.eq_ignore_ascii_case("int");
+                if is_num_builtin(name)
                     && matches!(
                         toks.get(i + 1).map(|t| &t.tok),
                         Some(Tok::Punct(Punct::LParen))
@@ -1665,25 +1677,45 @@ impl Asm {
                         let value = match args.as_slice() {
                             [arg] => self
                                 .eval_num(arg)
-                                .and_then(|v| apply_num_builtin("int", v))
+                                .and_then(|v| apply_num_builtin(name, v))
                                 .and_then(|v| v.as_i64()),
                             _ => None,
                         };
                         match value {
-                            Some(v) => out.push(Token {
-                                tok: Tok::Int(v),
-                                span,
-                            }),
-                            None => {
+                            Some(v) => {
+                                out.push(Token {
+                                    tok: Tok::Int(v),
+                                    span,
+                                });
+                                i = next;
+                                continue;
+                            }
+                            // `int(...)` OWNS its failure: it is the one call
+                            // whose whole job is to produce an integer, so not
+                            // getting one is the caller's error and is reported
+                            // here.
+                            None if is_int => {
                                 self.err(span, "int(): could not evaluate float expression");
                                 out.push(Token {
                                     tok: Tok::Int(0),
                                     span,
                                 });
+                                i = next;
+                                continue;
                             }
+                            // Every OTHER builtin falls through untouched, and
+                            // silently. Two cases reach here and neither is an
+                            // error at this point: a float-valued result
+                            // (`log(100)`), which has no integer meaning and
+                            // whose real diagnostic belongs to whatever
+                            // consumes it; and an argument that does not
+                            // resolve YET, such as a forward label, which the
+                            // integer folder and the linker still handle. This
+                            // pass is a rewrite, not a check, so leaving the
+                            // tokens exactly as they were is what keeps it
+                            // unable to perturb a program that assembles today.
+                            None => {}
                         }
-                        i = next;
-                        continue;
                     }
                 }
             }
@@ -1742,6 +1774,17 @@ impl Asm {
                     r,
                 ))
             }
+            // Unary PLUS, which is a sign and not an operator: it leaves both
+            // the value and its type exactly as they are.
+            //
+            // Not cosmetic symmetry with the minus arm above. `s1disasm`'s
+            // `range` macro is invoked as `range $21,$2F,+1`, so `abs(step)`
+            // arrives as `abs(+1)`, and the four ASCENDING call sites of the
+            // eight refused on the missing sign alone while the four descending
+            // ones passed. asl assembles `dc.l ABS(+1)` to `0000 0001` and
+            // `dc.l 1+(ABS($21-$2F)/ABS(+1))` to `0000 000F`, the same as the
+            // descending spelling (`clean4.asm`, `ASL_EXIT=0`).
+            Tok::Punct(Punct::Plus) => self.parse_num_atom(rest),
             // `~x` / `~~x` are INTEGER operators; asl refuses a float operand.
             Tok::Punct(Punct::Tilde) => {
                 let (v, r) = self.parse_num_atom(rest)?;
