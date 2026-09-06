@@ -3293,4 +3293,161 @@ mod tests {
         assert_eq!(out[0].labels.iter().find(|l| l.name == "B").unwrap().offset, 0x12);
         assert_eq!(out[0].labels.iter().find(|l| l.name == "C").unwrap().offset, 0x26);
     }
+
+    // ============ Org (BACKWARD) + a GROWING relaxable ========================
+    //
+    // The four shipped `Org`+relaxable tests above are all forward-org or
+    // NON-growing, so nothing exercised a backward `org` in a section whose
+    // earlier content GREW. That is the shape where a baseline offset alone
+    // stops naming one position: run 1's baseline band and the post-org run's
+    // baseline band OVERLAP, so the breakpoint table is no longer monotonic in
+    // its baseline key.
+    //
+    // Shared shape for the tests below (`Hi` forces the jmp to abs.l, +2):
+    //
+    //   fi 0  jmp Hi        baseline [0,4)    current [0,6)
+    //   fi 1  dc.b AA,BB    baseline [4,6)    current [6,8)
+    //   fi 2  org 4         barrier: seek both cursors back to 4
+    //   fi 3  dc.b CC       baseline [4,5)    current [4,5)
+    //
+    // breakpoints = [(0,0), (4,2), (6,2), (4,0), (5,0)] — run 1 spans baseline
+    // [0,6] with delta +2 after the jmp, the post-org run spans baseline [4,5]
+    // with delta 0. Baseline offset 6 lies in run 1 ONLY (the post-org run ends
+    // at 5), so it is not ambiguous: it must take run 1's +2.
+
+    /// Baseline fragments of the shared backward-org shape, with `extra`
+    /// appended (empty for the label tests).
+    fn backward_org_growth_section(labels: Vec<Label>) -> Section {
+        Section {
+            name: "back".into(),
+            cpu: Cpu::M68000,
+            vma_base: None,
+            lma: 0,
+            labels,
+            fragments: vec![
+                Fragment::JmpJsrSym { is_jsr: false, target: Expr::Sym("Hi".into()), span: sp() },
+                Fragment::Data(DataFragment { bytes: vec![0xAA, 0xBB], fixups: vec![], span: sp() }),
+                Fragment::Org { target: 4, fill: 0x00, span: sp() },
+                Fragment::Data(DataFragment { bytes: vec![0xCC], fixups: vec![], span: sp() }),
+            ],
+            placement: sigil_ir::SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
+            bank: None,
+            equ_syms: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn org_backward_growth_shifts_a_label_in_the_grown_run() {
+        // `Tail` is the boundary at the END of run 1 (baseline 6 — after
+        // `dc.b AA,BB`, before the `org`). The jmp ahead of it grows +2, so run 1
+        // now ends at 8 and `Tail` must resolve to 8. Baseline 6 is outside the
+        // post-org run's band [4,5] entirely, so no other run can claim it.
+        let mut stubs = SymbolTable::new();
+        stubs.define("Hi", SymbolValue::Int(0x12_3456));
+        let sec = backward_org_growth_section(vec![Label { name: "Tail".into(), offset: 6 }]);
+        let out = resolve_layout(&[sec], &stubs, true).unwrap();
+        assert_eq!(
+            out[0].labels.iter().find(|l| l.name == "Tail").unwrap().offset,
+            8,
+            "a label at the end of the GROWN run must carry that run's +2 delta"
+        );
+        // The image is unaffected by label mapping: run 1 emits 6+2 = 8 bytes,
+        // then `org 4` seeks back and `dc.b CC` overwrites offset 4 (0x34).
+        let linked = crate::link(&out, &stubs).unwrap();
+        assert_eq!(
+            linked.section("back").unwrap().bytes,
+            vec![0x4E, 0xF9, 0x00, 0x12, 0xCC, 0x56, 0xAA, 0xBB]
+        );
+    }
+
+    #[test]
+    fn org_backward_growth_keeps_a_post_org_label_org_anchored() {
+        // `Patch` is the boundary the `org 4` opens (baseline 4 — a label written
+        // immediately after the org). Baseline 4 lies in BOTH bands (run 1 spans
+        // [0,6], the post-org run spans [4,5]), and the IR carries no fragment
+        // index, so the offset alone cannot say which. The documented tie-break
+        // is the LATER run — which is the right answer for this, the shape a
+        // front-end actually emits — so `Patch` stays org-anchored at 4.
+        let mut stubs = SymbolTable::new();
+        stubs.define("Hi", SymbolValue::Int(0x12_3456));
+        let sec = backward_org_growth_section(vec![Label { name: "Patch".into(), offset: 4 }]);
+        let out = resolve_layout(&[sec], &stubs, true).unwrap();
+        assert_eq!(out[0].labels.iter().find(|l| l.name == "Patch").unwrap().offset, 4);
+    }
+
+    #[test]
+    fn frag_start_vma_is_exact_across_a_backward_org() {
+        // `frag_start_vma` is handed the fragment INDEX, so its answer is a
+        // plain cursor replay under the current rungs — never a lookup keyed on
+        // a baseline offset that a backward org has made ambiguous.
+        //   fi 0 (jmp)     : nothing before it            -> 0
+        //   fi 1 (dc.b x2) : the jmp is 6 bytes at rung 1 -> 6
+        //   fi 3 (dc.b CC) : the org seeks the cursor to  -> 4
+        let sec = backward_org_growth_section(vec![]);
+        let rungs = vec![1usize, 0, 0, 0];
+        let bps = shift_breakpoints(&sec, &rungs);
+        assert_eq!(frag_start_vma(&sec, &bps, 0, 0), 0);
+        assert_eq!(frag_start_vma(&sec, &bps, 0, 1), 6, "the grown jmp is 6 bytes, not 4");
+        assert_eq!(frag_start_vma(&sec, &bps, 0, 3), 4, "the org anchors the post-org run");
+        // ...and the section origin is added, not folded into the replay.
+        assert_eq!(frag_start_vma(&sec, &bps, 0x2000, 1), 0x2006);
+    }
+
+    #[test]
+    fn org_backward_growth_ladder_measures_reach_from_its_real_site() {
+        // The consequence of a wrong site VMA, end to end: a `bne` ladder sitting
+        // just past the reach boundary silently keeps its `.s` rung.
+        //
+        //   fi 0  jmp Hi     baseline [0,4)      current [0,6)   (+2)
+        //   fi 1  Fill(122)  baseline [4,126)    current [6,128)
+        //   fi 2  bne Back   baseline site 126   current site 128
+        //   fi 3  org 4      barrier
+        //   fi 4  dc.b CC
+        //   Back @ 0
+        //
+        // bne.s measures its disp from site+2, so from the REAL site 128 the
+        // displacement to `Back` (VMA 0) is -130: outside i8, so the ladder must
+        // take its `.w` rung. Reading the site off the baseline-keyed table
+        // instead yields 126 -> disp -128, which fits, and the ladder would keep
+        // a 2-byte `.s` encoding whose runtime target is VMA 2, not 0.
+        let mut stubs = SymbolTable::new();
+        stubs.define("Hi", SymbolValue::Int(0x12_3456));
+        let sec = Section {
+            name: "reach".into(),
+            cpu: Cpu::M68000,
+            vma_base: None,
+            lma: 0,
+            labels: vec![Label { name: "Back".into(), offset: 0 }],
+            fragments: vec![
+                Fragment::JmpJsrSym { is_jsr: false, target: Expr::Sym("Hi".into()), span: sp() },
+                Fragment::Fill { value: 0x00, count: 122, span: sp() },
+                bne_ladder("Back"),
+                Fragment::Org { target: 4, fill: 0x00, span: sp() },
+                Fragment::Data(DataFragment { bytes: vec![0xCC], fixups: vec![], span: sp() }),
+            ],
+            placement: sigil_ir::SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
+            bank: None,
+            equ_syms: Vec::new(),
+        };
+        let out = resolve_layout(&[sec], &stubs, true).unwrap();
+        match &out[0].fragments[2] {
+            Fragment::Data(d) => {
+                assert_eq!(
+                    d.fixups[0].kind,
+                    FixupKind::PcRelDisp16,
+                    "the ladder must take its .w rung: from its real site 128 the .s disp is -130"
+                );
+                assert_eq!(d.bytes.len(), 4);
+            }
+            other => panic!("expected a lowered Data fragment, got {other:?}"),
+        }
+        // The emitted disp is measured from the extension word's own VMA (130).
+        let linked = crate::link(&out, &stubs).unwrap();
+        let bytes = &linked.section("reach").unwrap().bytes;
+        assert_eq!(&bytes[128..132], &[0x66, 0x00, 0xFF, 0x7E], "disp16 = 0 - 130 = -130");
+    }
 }
