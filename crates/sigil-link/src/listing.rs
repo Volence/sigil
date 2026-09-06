@@ -516,6 +516,26 @@ mod tests {
             sym("Tail", 0x20000, false, false),
         ]);
         assert!(out.contains("PHASE COUNT 2"), "wrong count:\n{out}");
+
+        // CROSS-LANE CONTRACT, oracle 2026-09-06. Oracle's listing parser keys
+        // recognition on `PHASE` being the FIRST CHARACTER of every row in this
+        // section, so that its recognition survives a rewording of the header
+        // sentence. That is a stronger promise than "first non-whitespace token"
+        // and it is the one this emitter actually makes: both write sites emit
+        // `PHASE` at column 0 while the header and its rule are indented two
+        // spaces. It is pinned HERE rather than left to the format strings
+        // because a promise made to another repo in a message rots silently,
+        // and the lane that would break it is this one.
+        for line in out.lines().filter(|l| l.contains(" VMA $") || l.starts_with("PHASE COUNT")) {
+            assert!(
+                line.starts_with("PHASE"),
+                "a phase-section row must begin with PHASE at column 0, oracle keys on it: {line:?}"
+            );
+        }
+        assert!(
+            out.lines().any(|l| l.starts_with("PHASE COUNT ")),
+            "the count line must be at column 0 too:\n{out}"
+        );
         assert!(
             out.contains("PHASE SoundTablesZ80_Head VMA $00008000 LMA $000E12C0"),
             "missing/incorrect phased row:\n{out}"
