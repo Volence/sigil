@@ -57,11 +57,23 @@ fn bytes(src: &str) -> Vec<u8> {
     sigil_link::flatten(&linked, 0x00)
 }
 
-/// Assemble, expecting REFUSAL, and hand back the diagnostic messages.
+/// Assemble AND LINK, expecting a refusal from either, and hand back the
+/// diagnostic messages.
+///
+/// THE LINK IS NOT OPTIONAL HERE and getting it wrong cost this file a round.
+/// A `dc.l` of a name the front end does not know is not a front-end error: it
+/// is emitted as a symbolic fixup and refused by the linker,
+/// `unresolved symbol \`X\` for fixup in section …`. A `refusal` that stopped
+/// at [`assemble`] reported "the source assembled" for a source that does not
+/// link, which reads as the defect being unfixed when it is closed.
 fn refusal(src: &str) -> Vec<String> {
-    let diags = assemble(src, &Options::default())
+    let module = match assemble(src, &Options::default()) {
+        Ok(m) => m,
+        Err(diags) => return diags.into_iter().map(|d| d.message).collect(),
+    };
+    let diags = sigil_link::link(&module.sections, &sigil_ir::SymbolTable::new())
         .err()
-        .unwrap_or_else(|| panic!("expected a refusal, the source assembled"));
+        .unwrap_or_else(|| panic!("expected a refusal, the source assembled AND linked"));
     diags.into_iter().map(|d| d.message).collect()
 }
 

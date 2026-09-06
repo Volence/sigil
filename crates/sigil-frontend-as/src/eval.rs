@@ -4386,6 +4386,65 @@ impl Asm {
         }
     }
 
+    /// The local-label scope a successful VALUE BINDER opens.
+    ///
+    /// asl treats `Var set 5` exactly as it treats `Var:` for the locals that
+    /// follow it. Read from the reference build's own symbol table rather than
+    /// inferred (probe `s01`, exit 0, pass loop complete):
+    ///
+    /// ```text
+    /// Parent:                          *Parent : 1000 C
+    ///         nop                      *Var    : 5    -
+    /// Var     set     5                *Var.lq : 1002 C
+    /// .lq:
+    /// ```
+    ///
+    /// There is no `Parent.lq` row. The whole reason the divergence was worth a
+    /// parcel is the other direction: sigil RESOLVED `Parent.lq` and emitted
+    /// `$00001002` for a symbol asl calls `#1010 symbol undefined`.
+    ///
+    /// EVERY value-binding spelling does this, not only `set`. Measured over
+    /// twelve of them in
+    /// `docs/superpowers/notes/2026-09-06-as-set-opens-scope-probes/matrix.sh`:
+    /// `set`, `equ`, `=`, `:=` and `eval`, each with or without the decorative
+    /// colon, the `set NAME,value` / `eval NAME,value` operand forms where the
+    /// name is not in asl's label field at all, and the string-valued spellings
+    /// of `set` and `equ`. `enum` too, where the LAST member owns the scope
+    /// (probe `s11`). `label` and a plain PC label already opened one and are
+    /// the two controls the matrix carries.
+    ///
+    /// TWO CONDITIONS, BOTH MEASURED, and both are why this is a helper rather
+    /// than an unconditional `open_scope` at the top of each directive:
+    ///
+    /// * A DOTTED name opens NOTHING. `.b set 5` under `Outer:` leaves the next
+    ///   local at `Outer.zz`, not `Outer.b.zz` (probe `s03`). This is not a
+    ///   corner: every `set` site the queue row named is dotted, so an
+    ///   unconditional rule would have moved real corpus sources while closing
+    ///   nothing.
+    /// * Callers reach here only where a value ACTUALLY BOUND, because a binder
+    ///   whose right-hand side does not evaluate opens no scope either — asl's
+    ///   table for probe `s08` reads `Anchor.tt`, not `Bd.tt`.
+    ///
+    /// And the binder's OWN right-hand side is read in the PREVIOUS scope
+    /// (probe `s04`: `Vr set .prev` binds `Parent.prev`'s value and only the
+    /// NEXT line starts resolving against `Vr`), which is why every call site
+    /// below sits after the operand has been evaluated rather than before.
+    ///
+    /// ONE MEASURED DIVERGENCE IS LEFT STANDING, deliberately. A binder whose
+    /// DECLARATION asl refuses as a class crossing still opens a scope there
+    /// (probe `s06`: after `Kc equ 9` / `Kc set 10`, `#2030` is reported and the
+    /// next local still lists as `Kc.rr`). Both directives return before this
+    /// point on that refusal, so sigil leaves the scope where it was. Reaching
+    /// asl's answer would mean evaluating the right-hand side on a path that has
+    /// already reported, purely to decide a scope, and double-reporting one line
+    /// to match the spelling of a local inside a program both assemblers refuse.
+    /// Population across the four corpora is zero.
+    fn open_binder_scope(&mut self, name: &str) {
+        if !name.starts_with('.') {
+            self.open_scope(name);
+        }
+    }
+
     fn dispatch(&mut self, head: &str, rest: &[Token], span: Span) {
         if let Some((base, suffix)) = split_attribute_suffix(head) {
             if !self.macros.contains_key(head) && self.macros.contains_key(base) {
@@ -5069,11 +5128,13 @@ impl Asm {
             let s = self.interp_text(&s);
             self.float_env.remove(&q);
             self.str_env.insert(q, s);
+            self.open_binder_scope(name);
             return;
         }
         if let Some(f) = self.float_rhs(rest) {
             self.str_env.remove(&q);
             self.float_env.insert(q, f);
+            self.open_binder_scope(name);
             return;
         }
         if let Some(v) = self.eval_all(rest, span) {
@@ -5144,6 +5205,10 @@ impl Asm {
             } else {
                 self.pending_equ_syms.push(EquSym { name: q, expr: equ_expr, span });
             }
+            // LAST, not first — `qualify_expr` above must see the scope this
+            // line was written in (probe `s04`). See
+            // [`Self::open_binder_scope`].
+            self.open_binder_scope(name);
         } else {
             // `eval_all` failed: the RHS references a symbol not resolvable in
             // THIS AS unit — a cross-seam `.emp` label joined only at link time
@@ -5175,6 +5240,12 @@ impl Asm {
                     self.pending_equ_syms.push(EquSym { name: q, expr: equ_expr, span });
                 }
             }
+            // NO [`Self::open_binder_scope`] on this arm, and that is measured
+            // rather than an omission: a binder whose right-hand side does not
+            // evaluate opens no scope in asl either (probe `s08`, whose table
+            // reads `Anchor.tt` and not `Bd.tt`). The deferred `equ_sym` above
+            // is a promise to the LINKER, not a value bound at this line, and
+            // the local written under it still belongs to the label above.
         }
     }
 
@@ -5313,6 +5384,12 @@ impl Asm {
             }
             self.env.define(&q, SymbolValue::Int(self.enum_next));
             self.enum_next = self.enum_next.wrapping_add(self.enum_step);
+            // An `enum` member opens a local-label scope like any other value
+            // binder, and with several members the LAST one owns it — which the
+            // loop gives for free. Probe `s11`: after `enum En1,En2` the
+            // following `.e1` lists as `En2.e1`, with no `En1.e1` and no
+            // `Anchor.e1` row. See [`Self::open_binder_scope`].
+            self.open_binder_scope(&name);
         }
     }
 
@@ -5381,11 +5458,13 @@ impl Asm {
             let s = self.interp_text(&s);
             self.float_env.remove(&q);
             self.str_env.insert(q, s);
+            self.open_binder_scope(name);
             return;
         }
         if let Some(f) = self.float_rhs(rest) {
             self.str_env.remove(&q);
             self.float_env.insert(q, f);
+            self.open_binder_scope(name);
             return;
         }
         if let Some(v) = self.eval_all(rest, span) {
@@ -5414,6 +5493,10 @@ impl Asm {
                     self.set_sym_symbolic.remove(&q);
                 }
             }
+            // LAST, not first. `qualify_expr` just above resolves this line's
+            // own `.`-locals, and it must see the scope the line was written in
+            // — probe `s04`. See [`Self::open_binder_scope`].
+            self.open_binder_scope(name);
         }
     }
 
