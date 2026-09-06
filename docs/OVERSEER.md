@@ -1152,6 +1152,23 @@ about whether the content was current rather than about who else was standing on
 outgoing binary aside BEFORE the rename.** One `cp`, and the pin stays recoverable whatever else goes
 wrong.
 
+**⚠ AND MY OFFER TO PARTITION THE DAMAGE BY TIMESTAMP WAS WRONG, on a mechanism I verified here
+rather than accepting.** I offered aeon that only legs straddling the swap instant were unattributable
+and that timestamps could identify them. Aeon declined for the right reason: **a rename-over does not
+disturb a process that has already opened the old inode.** Demonstrated at this seat with a running
+script renamed over mid-execution: **the running process completed on the OLD contents while the path
+already served the NEW ones.**
+
+So a leg running across the instant is not half-and-half; it completes on the old binary. And a
+"leg" is not one execution but many invocations over its life, so **which binary each invocation got
+is not recoverable from the leg's start time.** Partitioning would have needed per-invocation timing
+that nobody records, and my offer would have had aeon keep results it could not actually attribute.
+
+**The general form, and it is the same family as the freeze rule this repo already carries: a rename
+changes what a PATH resolves to, never what an already-open process is running.** That is what makes
+a mid-run swap invisible from both ends: nothing fails, nothing warns, and the output of a leg that
+straddled it looks exactly like the output of one that did not.
+
 **RULED BY THE HUB 2026-09-06, and it supersedes my amendment because it names WHO COORDINATES rather
 than merely when: the shared binary is refreshed ONLY INSIDE A WINDOW THE HUB OPENS, after asking
 every lane that builds against that path, and the HUB announces the swap instant and the new identity
