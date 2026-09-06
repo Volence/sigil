@@ -217,12 +217,20 @@ corrected, and the sweep gains all eight repeats as a third polarity.
 
 ## Landing run, failures first
 
+Run twice, and both are recorded because a verdict belongs to the tip it was
+measured on. `5deb95af` is the last CODE tip; `90cd287e` adds this note and the
+comment punctuation fix and moves no logic. Both GREEN at the same 4683.
+
 ```
 pwd    /home/volence/sonic_hacks/sigil/.claude/worktrees/agent-a44f1861f39ea8d03
-HEAD   5deb95af  (parcel/isa-cycle-table-gap, clean)
+HEAD   5deb95af  (code tip)      GREEN, 4683 passed / 0 failed, cargo 0, clippy 0
+HEAD   90cd287e  (note + prose)  GREEN, 4683 passed / 0 failed, cargo 0, clippy 0
 ```
 
-FAILING TESTS: none.
+The commit carrying this line is not itself named above, for the obvious reason;
+it changes this file only.
+
+FAILING TESTS: none, in either run.
 
 ```
   tree            …/agent-a44f1861f39ea8d03 @ 5deb95af (parcel/isa-cycle-table-gap, clean)
