@@ -47,6 +47,20 @@ The aeon row is new and it settles the scope-boundary question before any code
 was touched: **aeon names `warning` and `message` in no `.asm` or `.inc` file at
 all**, so nothing on aeon's build path can raise one, let alone carry one.
 
+That is an ENUMERATION rather than a sample. The aeon reference tree this
+parcel's suite runs against (`483b3e12`) has exactly **three** tracked `.asm`
+files in total, which are the three residual roots `build.sh` routes through the
+AS frontend:
+
+```
+engine/debug/debugger.asm
+games/demo/game_root.asm
+games/sonic4/game_root.asm
+```
+
+`warning` 0, `message` 0, `fatal` 0, `error` 1. There is no fourth file for a
+carried warning to come out of.
+
 ### Firings (the instrument, per pass)
 
 A temporary census instrument recorded every execution of `warning`, `message`,
@@ -54,6 +68,17 @@ A temporary census instrument recorded every execution of `warning`, `message`,
 naming the pass whose diagnostics the run returns. The patch is 113 lines and
 was reverted before implementation; its shape is the house's existing
 `SIGIL_CENSUS_EXPLABEL` shape.
+
+The instrument, stated so the next parcel does not re-derive it. A
+`CENSUS_PASS: AtomicUsize` beside `PASS_CAP`, stored with the loop index before
+each `one_pass` call and with `1000 + pass` before the bonus pass; an
+`Asm::census(kind, span, msg)` gated on `SIGIL_CENSUS` that prints
+`pass=`, `kind=`, `at=` (through `self.sources.label(span)`, THIS pass's own
+map) and `text=`; a call in each of the `error`, `fatal`, `message` and
+`warning` arms; and a `RETURN` line at each of `run_impl`'s three exits naming
+the pass whose diagnostics the run returns. 113 lines, reverted before
+implementation. `message` needed the census call because its arm emits nothing
+otherwise, which is itself the finding below.
 
 **Feed, stated beside every count**: 13 `warning` source sites and 39 `message`
 sites, over **12 pass evaluations** (s2disasm 5: passes 0,1,2,3 plus the bonus
@@ -241,12 +266,27 @@ unresolved-symbol name sets in both directions, and whole line:
 No class rose, none appeared, and the whole-line comparison is empty in both
 directions.
 
-### It cannot move a byte, and that is structural rather than measured
+### It cannot move a byte, structurally AND by measurement
 
-Every carried entry is `Level::Warning`. `run_impl` returns `Err` iff some
-diagnostic is `Level::Error`, so no carried line can turn an `Ok` into an `Err`;
-none of them reaches the module; and the module is what produces bytes. The
-change is confined to diagnostic collection.
+Structurally: every carried entry is `Level::Warning`. `run_impl` returns `Err`
+iff some diagnostic is `Level::Error`, so no carried line can turn an `Ok` into
+an `Err`; none of them reaches the module; and the module is what produces
+bytes. The change is confined to diagnostic collection.
+
+Measured, and this witness was incidental rather than sought, which is why it is
+stated with its provenance rather than leaned on: `scripts/provision-aeon-ref.sh`
+builds both shipped shapes with the tool it resolves from THIS tree, and its own
+log heads with that tool's self-report:
+
+```
+| sigil 0.1.0 (7731d3a2)
+==> tool closure 7731d3a2 == this tree's closure at HEAD
+    REBUILD CONTROL s4.bin           1c09fbfc/819131 MATCHES THE GOLDEN
+    REBUILD CONTROL s4.debug.bin     e2144057/840324 MATCHES THE GOLDEN
+```
+
+`7731d3a2` is this parcel's implementation commit. Both shipped ROMs rebuild
+byte-identical to golden with the change in.
 
 ### Red-first
 
