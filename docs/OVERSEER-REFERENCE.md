@@ -912,7 +912,8 @@ one reader, and NOTHING compares the committed header against it.** So the commi
 drift from their own generator silently, forever, and the dash ruling is merely what made one
 instance visible. Booked as `GOLDEN-HEADER-UNGATED`: close it by REGENERATING (never by hand), and
 add the missing comparison so the next drift is loud. Regeneration invokes `asl`, so it is subject
-to the exit-status rule banked above, and it is its own small parcel with its own verification
+to the exit-status rule under SIGIL-AS-REPLACEMENT in `docs/OVERSEER.md`, and it is its own
+small parcel with its own verification
 because it rewrites committed test vectors.
 
 ### THREE THINGS THIS PARCEL TAUGHT THAT OUTLIVE IT
@@ -980,8 +981,9 @@ value and dropped the tree. **A path instruction needs BOTH halves, and the temp
 **The general rule, which is what to carry: error-path behaviour is CONDITIONAL ON WHAT ELSE FAILED,
 so a probe samples ONE POINT in that space and both directions must be run.** Probing only clean
 files misses everything an earlier stage swallows; probing only dirty ones misses everything that
-needs a clean run to reach. Neither habit is the safe one, and **a lane that adopts only the rule
-above has swapped one blind spot for the other.**
+needs a clean run to reach. Neither habit is the safe one, and **a lane that adopts only the
+minimal-probe rule has swapped one blind spot for the other.** *(That rule, and the register fault
+that earned both halves: `docs/OVERSEER-LOG.md`, 2026-09-05 cut.)*
 
 ### WHEN A CHANGE MAKES SOMETHING NEWLY REFUSE, READ THE OLD CODE (original lines 1099-1102)
 
@@ -993,7 +995,7 @@ argument than a green run, because a green run samples inputs while this quantif
 ### A CONTROL CAN BE CONFOUNDED BY THE VERY THING IT CONTROLS FOR (MOMPASS, 2026-09-05)
 
 *(Landed `f1673ba2`, after this seat HELD the first version. Three lessons, and the first is the one
-this document did not already have.)*
+the boot read did not already have.)*
 
 **1. "Pre-existing" is a CLAIM, and it needs its own control, which can itself be confounded.** The
 parcel booked a discarded `fatal` as a pre-existing fault it merely widened, supported by a control

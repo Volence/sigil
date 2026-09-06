@@ -344,9 +344,9 @@ check that distinguishes "pushed" from "looks pushed".
 
 ## Read at the moment — `docs/OVERSEER-REFERENCE.md`
 
-Six blocks that sat here are read at a specific moment rather than at boot, so they live in
-`docs/OVERSEER-REFERENCE.md` and are read when that moment arrives. **Nothing was shortened to
-move it.** Each entry below states the moment that triggers its block, because a rule whose
+Six blocks that sat here at the 2026-09-04 cut are read at a specific moment rather than at
+boot, so they live in `docs/OVERSEER-REFERENCE.md` and are read when that moment arrives.
+**Nothing was shortened to move it.** Each entry below states the moment that triggers its block, because a rule whose
 trigger a reader cannot recognise is a rule nobody looks up.
 
 - **Writing a brief for any agent** — *Dispatch practice*: why a stated MECHANISM is more
@@ -372,6 +372,11 @@ trigger a reader cannot recognise is a rule nobody looks up.
 Four further blocks moved from earlier in this file — the positive freeze witness, `d-18`, the
 rules banked from closed findings, and the drift watch's timer — and each is named by path at
 the point it used to sit.
+
+**Ten more blocks joined them at the 2026-09-05 cut**, and they are indexed separately, under
+*Read at the moment - the 2026-09-05 blocks, and the moment that triggers each*, in the
+2026-09-05 section near the end of this file. The list above is the 2026-09-04 cut's and is not
+the whole of `docs/OVERSEER-REFERENCE.md`.
 
 ## Queue
 
@@ -810,6 +815,12 @@ rule whose trigger a reader cannot recognise is a rule nobody looks up.
   it changed*, and the grep that finds them runs against the PRE-sweep revision.
 - **Pruning worktrees** - the lock is not a liveness signal, the ancestor test is wrong in both
   directions, and `du -sh` comes before any count.
+
+**Two live bookings are named only in that narrative, so they are named here too**, because the
+queue board `docs/lane-status.json` is untracked and a rotated session cannot be shown to hold
+them: **`PINS-GATE-MESSAGE-MISLEADS`** (make the count and the verdict describe the same
+comparison; the printed command was fixed at `81d92f80`) and **`AS-IF-REFUSAL-DIAG-VECTOR`**,
+which is CLOSED at `34dad07c` and is listed so nobody re-opens it from the narrative alone.
 
 **In `docs/OVERSEER-LOG.md`, 2026-09-05 cut:** the dash ruling's scope gap and its measured
 counts; the ratification of the sweep's extension to shell and Python; the 518-block bisection
