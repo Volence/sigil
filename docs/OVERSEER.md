@@ -1151,3 +1151,17 @@ about whether the content was current rather than about who else was standing on
 **Cheap prophylactic for next time, since the rule needs a mechanism and not vigilance: copy the
 outgoing binary aside BEFORE the rename.** One `cp`, and the pin stays recoverable whatever else goes
 wrong.
+
+**RULED BY THE HUB 2026-09-06, and it supersedes my amendment because it names WHO COORDINATES rather
+than merely when: the shared binary is refreshed ONLY INSIDE A WINDOW THE HUB OPENS, after asking
+every lane that builds against that path, and the HUB announces the swap instant and the new identity
+afterwards.** My version said "the owner announces before", which still leaves the owner deciding the
+moment from inside one lane's view. **A lane cannot see who is mid-run; only the hub can.** That is
+the whole reason the coordination point has to sit above the owner.
+
+**Resolution of the incident: `e6e942e5` STAYS.** No swap back and no rebuild of `d094c3c8` was
+ordered, on the grounds that a reproduced pin would answer a question nobody needs any more, since
+aeon restarts every SP-5 leg under the new identity. **The path is frozen to this lane until the hub's
+word.** The refreshed binary's acceptance rests on the proof, not the version string: one
+`^PHASE-COUNT` line, six phase rows, and **zero lines matching the old spelling, checked as a
+control** rather than only confirming the new one appeared.
