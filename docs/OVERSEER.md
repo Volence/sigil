@@ -970,3 +970,44 @@ carries 34 Z80 mentions, so they reported it as *a listing gaining a count-0 tra
 content is at most minimal*, **not** as a listing with provably zero phased symbols. **A second
 partial result offered as a discharge is exactly what the first correction had just caught**, and
 they refused to let it stand as one.
+
+### A DO-NOT-TOUCH RULE WITH NO NAMED OWNER FOR THE DELIBERATE TOUCH ROTS THE THING IT PROTECTS
+
+*(Aeon's framing, adopted in their words because it is better than mine: **the protection and the
+maintenance were the same action, so forbidding one forbade the other.**)*
+
+The shared assembler every lane links against is `sigil/target/release/sigil`, this checkout's
+DEFAULT target dir. This document's standing rule is that **no cargo command may land there**, because
+a relink silently replaces the binary another lane's freeze pins by md5. That rule is right and was
+obeyed all session, every build routed to `.target-land`.
+
+**So it sat at `756c7efd` while master moved 20-odd commits past it**, and a peer lane's builds were
+warning about the mismatch. **It went stale precisely BECAUSE the rule was working.** Nothing in the
+rule says who performs the deliberate refresh or when, so the answer was nobody.
+
+**Refreshed 2026-09-05 from master `d094c3c8`: md5 `58db3594...` to `945387f2...`, `emit_sound_blob`
+rebuilt from the same tree.** Checked before overwriting that nothing live pinned the old digest (the
+two hits were dated historical records, which stay true) and that the standing pinned artifact at
+`~/sonic_hacks/.pinned/` is a separate file, untouched.
+
+**THE GENERAL BAR, and aeon is right that it is not sigil-specific: read every "nobody may write
+here" convention in this suite for whether it also forbids the UPDATE, and where it does, name who
+performs it.** A protected artifact with no maintainer is a protected artifact rotting on schedule.
+
+**And prove the refresh CHANGED BEHAVIOUR, not just the version string.** A version bump is not
+evidence the new code is in there. Built a shape with the refreshed binary and read the new section
+out of the listing. **My first check was a false positive**: a case-insensitive grep for `VMA|LMA`
+matched `LocaLMAp` inside unrelated symbol names, and would have read as confirmation.
+
+### AND "NOT WORTH CHASING" WAS WORTH CHASING: 29 AND 30 RECONCILED EXACTLY
+
+Two lanes measured the same tool's error rate and got 29 and 30. The peer proposed it was "probably
+the demo case counted differently" and not worth pursuing. **It took three minutes and reconciled
+exactly**: the tool returns 36 names, 6 appear in sonic4's phase table and 1 in demo's, so 36-6=30
+are absent from sonic4 (theirs) and 36-6-1=29 are absent from BOTH (mine). **Both numbers correct,
+different populations, no disagreement.** The single name between them is `Z80_IdleProgram`.
+
+**A plausible reconciliation offered in place of an actual one is a guess wearing an explanation's
+clothes**, and the cost of settling it was three commands. The same run confirmed the second
+direction the peer had rightly refused to accept on assertion:
+`$engine.z80_init$Z80_IdleProgram$code_end` is in demo's phase table and is NOT returned by the tool.
