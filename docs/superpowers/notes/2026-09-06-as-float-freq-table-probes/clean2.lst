@@ -1,0 +1,63 @@
+ AS V1.42 Beta [Bld 212] - Source File clean2.asm - Page 1 - 09/06/2026 02:33:12 AM
+
+
+       1/       0 :                     	cpu	68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org	0
+       4/       0 :                     ; A CLEAN run (exit 0) for the rows whose byte column is load-bearing. The
+       5/       0 :                     ; type census in `types.asm` exits 2, and a failed run's byte column is not a
+       6/       0 :                     ; source of values -- so `ABS(-3)` is re-asked here where the exit status
+       7/       0 :                     ; permits reading it.
+       8/       0 : 0000 0003           	dc.l	ABS(-3)		; INTEGER in, INTEGER out (no #1133)
+       9/       4 : 0000 0004           	dc.l	ABS(-3)+1	; and it composes as an integer
+      10/       8 :                     ; The corpus spells the name in LOWER case (`int(log(number))`), the probes
+      11/       8 :                     ; above in UPPER. Both must reach the same builtin under `-U`.
+      12/       8 : 0000 0003           	dc.l	INT(log(1000))
+      13/       C : 0000 0003           	dc.l	INT(Log(1000))
+      14/      10 : 0000 0003           	dc.l	INT(lOg(1000))
+      15/      14 :                     ; `log` of a float argument, and of an expression -- `hud_counter` is passed a
+      16/      14 :                     ; macro parameter, so the argument arrives as tokens, not as a literal.
+      17/      14 : 0000 0003           	dc.l	INT(LOG(10.0*100))
+      18/      18 :                     	end
+ AS V1.42 Beta [Bld 212] - Source File clean2.asm - Page 2 - 09/06/2026 02:33:12 AM
+
+
+  Symbol Table (* = unused):
+  --------------------------
+
+*ARCHITECTURE :                                      "x86_64-unknown-linux" - |
+*BIGENDIAN :                      0 - | *BRANCHEXT :                      0 - |
+*CASESENSITIVE :                  1 - | *COMPMODE :                       0 - |
+*CONSTPI :        3.141592653589793 - | *CUSTOM :                         0 - |
+*DATE :                "09/06/2026" - | *FALSE :                          0 - |
+*FULLPMMU :                       1 - | *HAS64 :                          1 - |
+*HASDSP :                         0 - | *HASFPU :                         0 - |
+*HASPMMU :                        0 - | *INEXTMODE :                      0 - |
+*INLWORDMODE :                    0 - | *INMAXMODE :                      0 - |
+*INSRCMODE :                      0 - | *INSUPMODE :                      0 - |
+*LISTON :                         1 - | *MACEXP :                         7 - |
+*MOMCPU :                     68000 - | *MOMCPUNAME :               "68000" - |
+*NESTMAX :                      100 - | *PACKING :                        0 - |
+*PADDING :                        0 - | *RELAXED :                        0 - |
+*TIME :               "02:33:12 AM" - | *TRUE :                           1 - |
+*VERSION :                     142F - | *Z80SYNTAX :                      0 - |
+
+     31 symbols
+     31 unused symbols
+
+ AS V1.42 Beta [Bld 212] - Source File clean2.asm - Page 3 - 09/06/2026 02:33:12 AM
+
+
+  Code Pages:
+  ----------
+
+STANDARD (0 changed characters)
+
+1 code page
+
+0.00 seconds assembly time
+
+     19 lines source file
+      1 pass
+      0 errors
+      0 warnings

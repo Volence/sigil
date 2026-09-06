@@ -1,0 +1,111 @@
+ AS V1.42 Beta [Bld 212] - Source File values.asm - Page 1 - 09/06/2026 02:32:19 AM
+
+
+       1/       0 :                     	cpu	68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org	0
+       4/       0 :                     
+       5/       0 :                     ; ── THE CORPUS ARGUMENTS, EXACTLY AS `hud_counter` WRITES THEM ──────────────
+       6/       0 :                     ; `s2.asm(87677)` is `.loop_counter = int(log(number))`, "total digits minus
+       7/       0 :                     ; one", and `number` is one of these six. The answers must be 0..5; anything
+       8/       0 :                     ; else is a HUD that counts wrong, so these are the load-bearing rows.
+       9/       0 : 0000 0000           	dc.l	INT(LOG(1))		; 0
+      10/       4 : 0000 0001           	dc.l	INT(LOG(10))		; 1
+      11/       8 : 0000 0002           	dc.l	INT(LOG(100))		; 2 base 10 / 4 natural  <- BASE DISCRIMINATOR
+      12/       C : 0000 0003           	dc.l	INT(LOG(1000))		; 3
+      13/      10 : 0000 0004           	dc.l	INT(LOG(10000))		; 4
+      14/      14 : 0000 0005           	dc.l	INT(LOG(100000))	; 5
+      15/      18 :                     
+      16/      18 :                     ; ── LOG IS NOT LN, SHOWN FROM BOTH SIDES ────────────────────────────────────
+      17/      18 :                     ; LOG(100)=2 already excludes natural log (ln 100 = 4.605, INT -> 4). This row
+      18/      18 :                     ; shows the build HAS a natural log under a different name, so "LOG is base 10"
+      19/      18 :                     ; is a real distinction here and not an absence.
+      20/      18 : 0000 0004           	dc.l	INT(LN(100))		; 4  <- ln, for contrast
+      21/      1C : 0000 0006           	dc.l	INT(LN(1000))		; 6
+      22/      20 :                     
+      23/      20 :                     ; ── AND LOG IS AN EXACT log10, NOT ln(x)/ln(10) ─────────────────────────────
+      24/      20 :                     ; This is the row that decides the HUD's bytes. `ln(1000)/ln(10)` in binary64
+      25/      20 :                     ; is 2.9999999999999996, one ULP short of 3, and INT() FLOORS, so an
+      26/      20 :                     ; implementation that spells log10 that way answers 2 for `Hud_1000` and the
+      27/      20 :                     ; counter is off by one. Subtracting the integer and scaling by 1e15 makes the
+      28/      20 :                     ; residual visible: exactly 0 for a true log10, negative for the ULP-short
+      29/      20 :                     ; form, positive for an ULP-long one.
+      30/      20 : 0000 0000           	dc.l	INT((LOG(1)-0)*1e15)
+      31/      24 : 0000 0000           	dc.l	INT((LOG(10)-1)*1e15)
+      32/      28 : 0000 0000           	dc.l	INT((LOG(100)-2)*1e15)
+      33/      2C : 0000 0000           	dc.l	INT((LOG(1000)-3)*1e15)
+      34/      30 : 0000 0000           	dc.l	INT((LOG(10000)-4)*1e15)
+      35/      34 : 0000 0000           	dc.l	INT((LOG(100000)-5)*1e15)
+      36/      38 :                     
+      37/      38 :                     ; ── INT() ON A NEGATIVE: FLOOR OR TRUNCATE-TOWARD-ZERO ──────────────────────
+      38/      38 :                     ; No positive value can tell these apart. -3.2 goes to -4 under floor and -3
+      39/      38 :                     ; under truncation; LOG(0.5) = -0.30103 goes to -1 under floor and 0 under
+      40/      38 :                     ; truncation, which also exercises the negative through the new function.
+      41/      38 : FFFF FFFC           	dc.l	INT(-3.2)		; -4 floor / -3 trunc
+      42/      3C : FFFF FFFF           	dc.l	INT(LOG(0.5))		; -1 floor /  0 trunc
+      43/      40 : FFFB 681A           	dc.l	INT(LOG(0.5)*1e6)	; -301029 floor / -301029 (agree; value check)
+      44/      44 :                     
+      45/      44 :                     ; ── THE REST OF THE FLOAT SURFACE ───────────────────────────────────────────
+      46/      44 :                     ; Each argument is picked so a plausible WRONG implementation gives a visibly
+      47/      44 :                     ; different answer, never a coincidentally equal one.
+      48/      44 : 0070 BF80           	dc.l	INT(EXP(2)*1e6)		; e^2=7389056 / 2^2 would be 4000000
+      49/      48 : 0015 9445           	dc.l	INT(SQRT(2)*1e6)	; 1414213
+      50/      4C : 000C D6FE           	dc.l	INT(SIN(1)*1e6)		; radians 841470 / degrees 17452
+      51/      50 : 0008 3E8E           	dc.l	INT(COS(1)*1e6)		; radians 540302 / degrees 999847
+      52/      54 : 0017 C39F           	dc.l	INT(TAN(1)*1e6)		; radians 1557407 / degrees 17455
+      53/      58 : 000B FBF6           	dc.l	INT(ATAN(1)*1e6)	; radians 785398 / degrees 45000000
+      54/      5C : 0017 F7EC           	dc.l	INT(ASIN(1)*1e6)	; radians 1570796 / degrees 90000000
+      55/      60 : 0017 F7EC           	dc.l	INT(ACOS(0)*1e6)	; radians 1570796 / degrees 90000000
+      56/      64 : 0011 EEA1           	dc.l	INT(SINH(1)*1e6)	; 1175201
+      57/      68 : 0017 8BA8           	dc.l	INT(COSH(1)*1e6)	; 1543080
+      58/      6C : 000B 9EFA           	dc.l	INT(TANH(1)*1e6)	; 761594
+      59/      70 : 000D 72DD           	dc.l	INT(ASINH(1)*1e6)	; 881373
+      60/      74 : 0014 185D           	dc.l	INT(ACOSH(2)*1e6)	; 1316957
+ AS V1.42 Beta [Bld 212] - Source File values.asm - Page 2 - 09/06/2026 02:32:19 AM
+
+
+      61/      78 : 0008 61BA           	dc.l	INT(ATANH(0.5)*1e6)	; 549306
+      62/      7C : 0031 9750           	dc.l	INT(ABS(-3.25)*1e6)	; 3250000
+      63/      80 :                     	end
+ AS V1.42 Beta [Bld 212] - Source File values.asm - Page 3 - 09/06/2026 02:32:19 AM
+
+
+  Symbol Table (* = unused):
+  --------------------------
+
+*ARCHITECTURE :                                      "x86_64-unknown-linux" - |
+*BIGENDIAN :                      0 - | *BRANCHEXT :                      0 - |
+*CASESENSITIVE :                  1 - | *COMPMODE :                       0 - |
+*CONSTPI :        3.141592653589793 - | *CUSTOM :                         0 - |
+*DATE :                "09/06/2026" - | *FALSE :                          0 - |
+*FULLPMMU :                       1 - | *HAS64 :                          1 - |
+*HASDSP :                         0 - | *HASFPU :                         0 - |
+*HASPMMU :                        0 - | *INEXTMODE :                      0 - |
+*INLWORDMODE :                    0 - | *INMAXMODE :                      0 - |
+*INSRCMODE :                      0 - | *INSUPMODE :                      0 - |
+*LISTON :                         1 - | *MACEXP :                         7 - |
+*MOMCPU :                     68000 - | *MOMCPUNAME :               "68000" - |
+*NESTMAX :                      100 - | *PACKING :                        0 - |
+*PADDING :                        0 - | *RELAXED :                        0 - |
+*TIME :               "02:32:19 AM" - | *TRUE :                           1 - |
+*VERSION :                     142F - | *Z80SYNTAX :                      0 - |
+
+     31 symbols
+     31 unused symbols
+
+ AS V1.42 Beta [Bld 212] - Source File values.asm - Page 4 - 09/06/2026 02:32:19 AM
+
+
+  Code Pages:
+  ----------
+
+STANDARD (0 changed characters)
+
+1 code page
+
+0.00 seconds assembly time
+
+     64 lines source file
+      1 pass
+      0 errors
+      0 warnings

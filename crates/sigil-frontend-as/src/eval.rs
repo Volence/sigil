@@ -1649,12 +1649,24 @@ impl Asm {
     /// hand. A bare `sin(...)` not wrapped in `int(...)` has no integer
     /// meaning and is left untouched (whatever consumes it downstream will
     /// report a normal "bad expression" diagnostic).
+    ///
+    /// EVERY numeric builtin is scanned for, not only `int` -- but only a call
+    /// that resolves to an INTEGER is rewritten. In practice that is `int` and
+    /// `abs`, the two type-preserving entries in [`apply_num_builtin`]; the
+    /// float-returning family always declines here and is left for `int(...)`
+    /// or for the float-operand path to handle. The corpus demand is S1's
+    /// `Macros.asm(353)`, `rept 1+(abs(first-last)/abs(step))`, which reaches
+    /// this function through `eval_all` and has no float token anywhere in it,
+    /// so nothing else in the pipeline can give `abs` a meaning. asl assembles
+    /// `dc.l ABS(-3)` to `0000 0003` with no diagnostic (`clean2.asm(8)`,
+    /// `ASL_EXIT=0`), so the integer type really does survive the call.
     fn expand_int_builtin(&mut self, toks: &[Token]) -> Vec<Token> {
         let mut out = Vec::new();
         let mut i = 0;
         while i < toks.len() {
             if let Tok::Ident(name) = &toks[i].tok {
-                if name.eq_ignore_ascii_case("int")
+                let is_int = name.eq_ignore_ascii_case("int");
+                if is_num_builtin(name)
                     && matches!(
                         toks.get(i + 1).map(|t| &t.tok),
                         Some(Tok::Punct(Punct::LParen))
@@ -1663,27 +1675,47 @@ impl Asm {
                     let span = toks[i].span;
                     if let Some((args, next)) = split_call_args(toks, i + 1) {
                         let value = match args.as_slice() {
-                            [arg] => self.eval_num(arg),
+                            [arg] => self
+                                .eval_num(arg)
+                                .and_then(|v| apply_num_builtin(name, v))
+                                .and_then(|v| v.as_i64()),
                             _ => None,
                         };
                         match value {
-                            Some(v) => out.push(Token {
-                                tok: Tok::Int(match v {
-                                    Num::Int(i) => i,
-                                    Num::Float(f) => f.floor() as i64,
-                                }),
-                                span,
-                            }),
-                            None => {
+                            Some(v) => {
+                                out.push(Token {
+                                    tok: Tok::Int(v),
+                                    span,
+                                });
+                                i = next;
+                                continue;
+                            }
+                            // `int(...)` OWNS its failure: it is the one call
+                            // whose whole job is to produce an integer, so not
+                            // getting one is the caller's error and is reported
+                            // here.
+                            None if is_int => {
                                 self.err(span, "int(): could not evaluate float expression");
                                 out.push(Token {
                                     tok: Tok::Int(0),
                                     span,
                                 });
+                                i = next;
+                                continue;
                             }
+                            // Every OTHER builtin falls through untouched, and
+                            // silently. Two cases reach here and neither is an
+                            // error at this point: a float-valued result
+                            // (`log(100)`), which has no integer meaning and
+                            // whose real diagnostic belongs to whatever
+                            // consumes it; and an argument that does not
+                            // resolve YET, such as a forward label, which the
+                            // integer folder and the linker still handle. This
+                            // pass is a rewrite, not a check, so leaving the
+                            // tokens exactly as they were is what keeps it
+                            // unable to perturb a program that assembles today.
+                            None => {}
                         }
-                        i = next;
-                        continue;
                     }
                 }
             }
@@ -1742,6 +1774,17 @@ impl Asm {
                     r,
                 ))
             }
+            // Unary PLUS, which is a sign and not an operator: it leaves both
+            // the value and its type exactly as they are.
+            //
+            // Not cosmetic symmetry with the minus arm above. `s1disasm`'s
+            // `range` macro is invoked as `range $21,$2F,+1`, so `abs(step)`
+            // arrives as `abs(+1)`, and the four ASCENDING call sites of the
+            // eight refused on the missing sign alone while the four descending
+            // ones passed. asl assembles `dc.l ABS(+1)` to `0000 0001` and
+            // `dc.l 1+(ABS($21-$2F)/ABS(+1))` to `0000 000F`, the same as the
+            // descending spelling (`clean4.asm`, `ASL_EXIT=0`).
+            Tok::Punct(Punct::Plus) => self.parse_num_atom(rest),
             // `~x` / `~~x` are INTEGER operators; asl refuses a float operand.
             Tok::Punct(Punct::Tilde) => {
                 let (v, r) = self.parse_num_atom(rest)?;
@@ -1764,7 +1807,7 @@ impl Asm {
             // and asl reports an unknown one uppercased (`error #1860: unknown
             // function MIN` for a written `min(`).
             Tok::Ident(name)
-                if (name.eq_ignore_ascii_case("sin") || name.eq_ignore_ascii_case("int"))
+                if is_num_builtin(name)
                     && matches!(
                         rest.first().map(|t| &t.tok),
                         Some(Tok::Punct(Punct::LParen))
@@ -1775,19 +1818,14 @@ impl Asm {
                     [arg] => self.eval_num(arg)?,
                     _ => return None,
                 };
-                let v = if name.eq_ignore_ascii_case("sin") {
-                    Num::Float(inner.as_f64().sin())
-                } else {
-                    // `INT` of an INTEGER is that integer (probe `f1.asm(11)`:
-                    // `dc.l INT(7)` -> `0000 0007`), and of a float is its
-                    // FLOOR, not a truncation toward zero (`INT(-3.7)` ->
-                    // `FFFF FFFC` = -4, `INT(-3.2)` -> -4, `INT(-3.0)` -> -3).
-                    match inner {
-                        Num::Int(i) => Num::Int(i),
-                        Num::Float(f) => Num::Int(f.floor() as i64),
-                    }
-                };
-                Some((v, &rest[next..]))
+                // `INT` of an INTEGER is that integer (probe `f1.asm(11)`:
+                // `dc.l INT(7)` -> `0000 0007`), and of a float is its FLOOR,
+                // not a truncation toward zero (`INT(-3.7)` -> `FFFF FFFC` =
+                // -4, `INT(-3.2)` -> -4, `INT(-3.0)` -> -3, and through the new
+                // functions `INT(LOG(0.5))` -> `FFFF FFFF` = -1 where
+                // truncation would give 0). See `apply_num_builtin` for the
+                // whole table, and for why a refusal is silent here.
+                Some((apply_num_builtin(name, inner)?, &rest[next..]))
             }
             Tok::Ident(name) => {
                 // A float-valued symbol (`sample_rate_scale := 1.0`, S2's
@@ -15042,4 +15080,154 @@ fn apply_num_binop(op: BinOp, lhs: Num, rhs: Num) -> Option<Num> {
         LogAnd => Num::Int((lhs.as_f64() != 0.0 && rhs.as_f64() != 0.0) as i64),
         LogOr => Num::Int((lhs.as_f64() != 0.0 || rhs.as_f64() != 0.0) as i64),
     })
+}
+
+/// `floor(f)` as an `i64`, or `None` when the result does not fit one.
+///
+/// The guard is not defensive tidiness: Rust's `as` cast from `f64` to `i64`
+/// SATURATES, so `1e30 as i64` is `i64::MAX` and an unguarded `f.floor() as
+/// i64` puts a plausible, in-range-looking number in the byte column. asl
+/// refuses instead, and refuses at the `INT` rather than at the directive --
+/// probe `bigint.asm(8)` writes `dc.l INT(1e30)-INT(1e30)`, whose value is 0
+/// and perfectly in range for a `dc.l`, and asl reports `error #1320: range
+/// overflow` TWICE on that line, once per call.
+///
+/// The upper bound is EXCLUSIVE. `i64::MAX as f64` rounds UP to 2^63, one past
+/// the largest `i64`, so an inclusive bound would admit exactly 2^63 and then
+/// saturate it back to `i64::MAX`. `i64::MIN as f64` is a power of two and
+/// therefore exact, so the low end is inclusive.
+fn floor_to_i64(f: f64) -> Option<i64> {
+    let f = f.floor();
+    (f.is_finite() && f >= (i64::MIN as f64) && f < (i64::MAX as f64)).then_some(f as i64)
+}
+
+/// asl's single-argument builtins that take a number and return a FLOAT,
+/// paired with the `f64` method that reproduces each.
+///
+/// The two builtins missing from this table, `int` and `abs`, are the only
+/// TYPE-PRESERVING ones and so cannot be `fn(f64) -> f64`; they are handled by
+/// name in [`apply_num_builtin`]. Everything here returns a float even when the
+/// value is integral, which is byte-visible: `dc.l SQRT(16)` is `error #1133:
+/// expected integer or string, but got floating point number`, not `4`
+/// (`types.asm(10)`).
+///
+/// This is the ONE list. [`is_num_builtin`] and [`apply_num_builtin`] both read
+/// it, so a name cannot be recognized by one and unknown to the other.
+type FloatFn = fn(f64) -> f64;
+
+const FLOAT_BUILTINS: &[(&str, FloatFn)] = &[
+    ("sin", f64::sin),
+    ("cos", f64::cos),
+    ("tan", f64::tan),
+    ("asin", f64::asin),
+    ("acos", f64::acos),
+    ("atan", f64::atan),
+    ("sinh", f64::sinh),
+    ("cosh", f64::cosh),
+    ("tanh", f64::tanh),
+    ("asinh", f64::asinh),
+    ("acosh", f64::acosh),
+    ("atanh", f64::atanh),
+    ("sqrt", f64::sqrt),
+    ("exp", f64::exp),
+    // `log` is BASE 10 and `ln` is natural -- see the residual row in
+    // `apply_num_builtin`'s table for why this must be the dedicated `log10`
+    // and never `x.ln() / 10f64.ln()`.
+    ("log", f64::log10),
+    ("ln", f64::ln),
+];
+
+/// The `f64` method behind a float-returning builtin name, or `None`.
+///
+/// Names are matched case-insensitively even under `-U`, which makes user
+/// SYMBOLS case-sensitive: `clean2.asm` assembles `INT(log(1000))`,
+/// `INT(Log(1000))` and `INT(lOg(1000))` all to `3`, and the corpus writes the
+/// lower-case spelling (`s2.asm(87677)`).
+fn float_builtin(name: &str) -> Option<FloatFn> {
+    FLOAT_BUILTINS
+        .iter()
+        .find(|(n, _)| name.eq_ignore_ascii_case(n))
+        .map(|(_, f)| *f)
+}
+
+/// Is `name` one of asl's single-argument numeric builtin functions?
+///
+/// Asked BEFORE [`apply_num_builtin`], and separately from it, because the two
+/// questions have different answers: `log(0)` is a KNOWN function asl refuses
+/// (`error #1870`), and an identifier that is merely unknown must keep falling
+/// through to the ordinary symbol lookup instead. Collapsing the two would make
+/// `log(0)` parse as a symbol named `log`.
+fn is_num_builtin(name: &str) -> bool {
+    name.eq_ignore_ascii_case("int")
+        || name.eq_ignore_ascii_case("abs")
+        || float_builtin(name).is_some()
+}
+
+/// Apply one of asl's single-argument numeric builtins to an already-evaluated
+/// argument. `None` means either "no builtin of that name" or "asl would
+/// refuse this argument".
+///
+/// **Refusing rather than reporting is deliberate.** This whole evaluator is
+/// silent by contract: [`Evaluator::float_rhs`] runs it SPECULATIVELY on every
+/// `equ`/`=`/`set`/`:=` right-hand side purely to ask whether the value is
+/// float-typed, so a diagnostic raised here would be emitted for lines that are
+/// not wrong. (Measured: routing that probe through the erroring expansion
+/// doubled the S2 corpus's `log` diagnostics from 6 to 12, one extra per site.)
+/// A caller that needs a message says so in its own words -- `int(...)`'s is
+/// "could not evaluate float expression".
+///
+/// ## The table, minted from asl
+///
+/// `s1disasm/build_tools/Linux-x86_64/asl`, md5 `61e672562465725a8c102288a7da9098`,
+/// probes `values2.asm` / `clean2.asm` / `domain.asm` / `bigint.asm` under
+/// `docs/superpowers/notes/2026-09-06-as-float-freq-table-probes/`. Only the
+/// clean (`ASL_EXIT=0`) listings are quoted for values.
+///
+/// | written | asl | discriminates |
+/// |---|---|---|
+/// | `INT(LOG(100))` | `2` | **base 10**, not natural: `ln 100` = 4.605 would floor to `4` |
+/// | `INT(LN(100))` | `4` | the build HAS a natural log, under a different name |
+/// | `INT(LOG(1000))` | `3` | **an exact `log10`**, not `ln(x)/ln(10)`, which floors to `2` |
+/// | `INT(EXP(2)*1000000)` | `7389056` | e^x, not 2^x (which would give `4000000`) |
+/// | `INT(SIN(1)*1000000)` | `841470` | **radians**, not degrees (`17452`) |
+/// | `INT(ATAN(1)*1000000)` | `785398` | radians, not degrees (`45000000`) |
+/// | `INT(LOG(0.5))` | `-1` | `int` FLOORS; truncation toward zero gives `0` |
+/// | `ABS(-3)` in a `dc.l` | `3`, no error | `abs` is **type-preserving**: an integer stays an integer |
+/// | `dc.l LOG(100)`, `dc.l SQRT(16)` | `error #1133` | every other function returns a FLOAT even when the value is integral |
+///
+/// The `log10` row is the one that decides shipped bytes. `ln(1000)/ln(10)` in
+/// binary64 is 2.9999999999999996, one ULP short of 3, and `INT` FLOORS -- so
+/// that spelling answers **2** for `s2.asm`'s `Hud_1000`, whose
+/// `.loop_counter` is read back as an immediate by `moveq
+/// #Hud_1000.loop_counter,d6` (`s2.asm(87746)`). A wrong base is loud; a wrong
+/// SPELLING of the right base is one byte, at one of six sites.
+///
+/// ## Domain violations
+///
+/// asl diagnoses them rather than producing a NaN or an infinity --
+/// `domain.asm`: `LOG(0)`, `LOG(-1)`, `SQRT(-1)` and `ASIN(2)` each draw
+/// `error #1870: function argument out of definition range`, and `ATANH(2)` /
+/// `ACOSH(0)` draw `error #1880: floating point overflow`. Every one of those
+/// six is exactly the case where the corresponding `f64` method returns a
+/// non-finite value, so the single `is_finite` test below covers all of them
+/// (and `EXP(1000)`, which asl also calls `#1880`).
+fn apply_num_builtin(name: &str, arg: Num) -> Option<Num> {
+    // The two TYPE-PRESERVING builtins, which is why they are not in
+    // `FLOAT_BUILTINS`: that path would turn `ABS(-3)` into a float and make
+    // `dc.l ABS(-3)` an `error #1133`, which asl does NOT report
+    // (`clean2.asm(8)` assembles it to `0000 0003`).
+    if name.eq_ignore_ascii_case("int") {
+        return Some(match arg {
+            Num::Int(i) => Num::Int(i),
+            Num::Float(f) => Num::Int(floor_to_i64(f)?),
+        });
+    }
+    if name.eq_ignore_ascii_case("abs") {
+        return Some(match arg {
+            Num::Int(i) => Num::Int(i.wrapping_abs()),
+            Num::Float(f) => Num::Float(f.abs()),
+        });
+    }
+    let y = float_builtin(name)?(arg.as_f64());
+    y.is_finite().then_some(Num::Float(y))
 }

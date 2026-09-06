@@ -405,3 +405,381 @@ fn int_works_in_z80_db_and_dw() {
     let linked = sigil_link::link(&module.sections, &sigil_ir::SymbolTable::new()).expect("link");
     assert_eq!(sigil_link::flatten(&linked, 0x00), vec![0x03, 0x58, 0x02]);
 }
+
+// ── The float FUNCTION surface (`log`, `ln`, `sqrt`, the trig family) ────────
+//
+// Oracle for everything below: the same asl build as the rest of this file,
+// probe `docs/superpowers/notes/2026-09-06-as-float-freq-table-probes/values2.asm`,
+// run through `asl_run` with `-xx -n -q -A -L -U -i .`. That run reports
+// `ASL_EXIT=0` and `ASL_DIAG=complete`, which is why its byte column may be
+// quoted at all: a run carrying any error leaves forward references at their
+// pass-1 placeholders and prints them looking complete.
+//
+// `values2.asm` is deliberately written without `1e6`-style exponent literals,
+// which sigil's lexer does not implement, so the SAME source text goes to both
+// assemblers and the comparison is not mediated by a rewrite.
+
+/// `s2.asm(87675-87682)`'s `hud_counter`, verbatim, plus the `moveq` that reads
+/// the counter back (`s2.asm(87595)`, `(87746)`, and four more).
+///
+/// This is the whole parcel in one fixture. `.loop_counter` is "total digits
+/// minus one" and is consumed as a `moveq` immediate, so a wrong `log` is a
+/// wrong shipped byte and not merely a diagnostic.
+const S2_HUD_COUNTER: &str = "\
+hud_counter macro {INTLABEL},number
+__LABEL__ label *
+.loop_counter = int(log(number)) ; Total digits minus one.
+\tdc.l number
+    endm
+Hud_100000:\thud_counter 100000
+Hud_10000:\thud_counter 10000
+Hud_1000:\thud_counter 1000
+Hud_100:\thud_counter 100
+Hud_10:\thud_counter 10
+Hud_1:\thud_counter 1
+\tmoveq\t#Hud_100000.loop_counter,d6
+\tmoveq\t#Hud_10000.loop_counter,d6
+\tmoveq\t#Hud_1000.loop_counter,d6
+\tmoveq\t#Hud_100.loop_counter,d6
+\tmoveq\t#Hud_10.loop_counter,d6
+\tmoveq\t#Hud_1.loop_counter,d6
+";
+
+/// asl listing, `values2.asm` lines 20-32 (macro expansions shown):
+///
+/// ```text
+///       22/       8 : =$3                  .loop_counter = int(log(1000))
+///       27/      18 : 7C05                	moveq	#Hud_100000.loop_counter,d6
+///       28/      1A : 7C04                	moveq	#Hud_10000.loop_counter,d6
+///       29/      1C : 7C03                	moveq	#Hud_1000.loop_counter,d6
+///       30/      1E : 7C02                	moveq	#Hud_100.loop_counter,d6
+///       31/      20 : 7C01                	moveq	#Hud_10.loop_counter,d6
+///       32/      22 : 7C00                	moveq	#Hud_1.loop_counter,d6
+/// ```
+///
+/// The `moveq` half is the reason `log` must be spelled as a dedicated base-10
+/// logarithm rather than `x.ln() / 10f64.ln()`. In binary64 the latter gives
+/// 2.9999999999999996 for 1000, one ULP short of 3, and `int()` FLOORS -- so
+/// that spelling emits `7C02` for `Hud_1000` and the HUD counts a digit short.
+/// The assertion below therefore discriminates the two spellings of the right
+/// base, not merely the right base from the wrong one.
+#[test]
+// asl separates its listing columns with tabs; they are the evidence, not
+// formatting. Waived here only -- see the file's module doc.
+#[allow(clippy::tabs_in_doc_comments)]
+fn hud_counter_loop_counters_match_asl() {
+    let got = bytes(S2_HUD_COUNTER);
+    // The six `dc.l`s first, then the six `moveq`s. Spelled out in full rather
+    // than sliced, so a fixture that silently stopped emitting the `moveq`
+    // block -- the way this assertion could go green over an empty population --
+    // fails on length instead of passing on a prefix.
+    assert_eq!(
+        got,
+        vec![
+            0x00, 0x01, 0x86, 0xa0, // dc.l 100000
+            0x00, 0x00, 0x27, 0x10, // dc.l 10000
+            0x00, 0x00, 0x03, 0xe8, // dc.l 1000
+            0x00, 0x00, 0x00, 0x64, // dc.l 100
+            0x00, 0x00, 0x00, 0x0a, // dc.l 10
+            0x00, 0x00, 0x00, 0x01, // dc.l 1
+            0x7c, 0x05, // moveq #Hud_100000.loop_counter,d6
+            0x7c, 0x04, // moveq #Hud_10000.loop_counter,d6
+            0x7c, 0x03, // moveq #Hud_1000.loop_counter,d6   <- the ULP row
+            0x7c, 0x02, // moveq #Hud_100.loop_counter,d6
+            0x7c, 0x01, // moveq #Hud_10.loop_counter,d6
+            0x7c, 0x00, // moveq #Hud_1.loop_counter,d6
+        ],
+    );
+}
+
+/// The naive spelling really does differ, stated as arithmetic rather than as a
+/// claim about an implementation nobody wrote.
+///
+/// Without this, `hud_counter_loop_counters_match_asl` looks like it only pins
+/// "base 10", and a later reader could swap `log10` for `ln(x)/ln(10)` believing
+/// the tests cover it. 1000 is the one argument among the six where they differ.
+#[test]
+fn ln_over_ln10_is_a_ulp_short_at_1000() {
+    let naive = 1000f64.ln() / 10f64.ln();
+    assert_ne!(naive, 3.0, "the naive spelling would be exact and the risk imaginary");
+    assert_eq!(naive.floor(), 2.0, "and `int()` floors it to the wrong digit count");
+    assert_eq!(1000f64.log10(), 3.0, "while the dedicated log10 is exact");
+}
+
+/// `log` is base 10, and this build has the natural one under its own name.
+///
+/// asl listing, `values2.asm`:
+///
+/// ```text
+///       35/      24 : 0000 0002           	dc.l	INT(LOG(100))
+///       36/      28 : 0000 0004           	dc.l	INT(LN(100))
+///       37/      2C : 0000 0003           	dc.l	INT(LOG(1000))
+/// ```
+///
+/// `LOG(100)` = 2 is the base discriminator: the natural log of 100 is 4.605,
+/// which floors to 4 -- the value the very next row shows `LN` actually
+/// produces. A probe on `LOG(10)` would have been useless here, since it
+/// answers 1 under several wrong readings.
+#[test]
+#[allow(clippy::tabs_in_doc_comments)]
+fn log_is_base_ten_and_ln_is_natural() {
+    assert_eq!(bytes("\tdc.l INT(LOG(100))\n"), vec![0x00, 0x00, 0x00, 0x02]);
+    assert_eq!(bytes("\tdc.l INT(LN(100))\n"), vec![0x00, 0x00, 0x00, 0x04]);
+    assert_eq!(bytes("\tdc.l INT(LOG(1000))\n"), vec![0x00, 0x00, 0x00, 0x03]);
+}
+
+/// Builtin function names are matched case-insensitively even under `-U`, which
+/// makes user SYMBOLS case-sensitive. The corpus writes `log` in lower case
+/// (`s2.asm(87677)`); every probe in this parcel writes `LOG`. asl assembles
+/// `INT(log(1000))`, `INT(Log(1000))` and `INT(lOg(1000))` all to `0000 0003`
+/// (`clean2.asm` lines 12-14, `ASL_EXIT=0`).
+#[test]
+fn builtin_names_are_case_insensitive() {
+    for spelling in ["log", "LOG", "Log", "lOg"] {
+        assert_eq!(
+            bytes(&format!("\tdc.l INT({spelling}(1000))\n")),
+            vec![0x00, 0x00, 0x00, 0x03],
+            "{spelling}"
+        );
+    }
+}
+
+/// `int()` FLOORS toward negative infinity; it does not truncate toward zero.
+///
+/// No positive argument can tell those apart, which is why every row here is
+/// negative. asl listing, `values2.asm`:
+///
+/// ```text
+///       40/      30 : FFFF FFFC           	dc.l	INT(-3.2)
+///       41/      34 : FFFF FFFF           	dc.l	INT(LOG(0.5))
+///       42/      38 : FFFB 681A           	dc.l	INT(LOG(0.5)*1000000)
+/// ```
+///
+/// -4, -1 and -301030. Truncation toward zero would give -3, 0 and -301029, so
+/// all three rows discriminate -- and the third does it six digits into the new
+/// function rather than at a value where the two happen to meet.
+#[test]
+#[allow(clippy::tabs_in_doc_comments)]
+fn int_floors_a_negative_including_through_log() {
+    assert_eq!(bytes("\tdc.l INT(-3.2)\n"), vec![0xff, 0xff, 0xff, 0xfc]);
+    assert_eq!(bytes("\tdc.l INT(LOG(0.5))\n"), vec![0xff, 0xff, 0xff, 0xff]);
+    assert_eq!(
+        bytes("\tdc.l INT(LOG(0.5)*1000000)\n"),
+        vec![0xff, 0xfb, 0x68, 0x1a],
+    );
+}
+
+/// The rest of the surface, one row per builtin, each at an argument where a
+/// plausible wrong implementation answers visibly differently.
+///
+/// asl listing, `values2.asm` lines 45-60, in this order:
+///
+/// ```text
+///       45/      3C : 0070 BF80           	dc.l	INT(EXP(2)*1000000)
+///       46/      40 : 0015 9445           	dc.l	INT(SQRT(2)*1000000)
+///       47/      44 : 000C D6FE           	dc.l	INT(SIN(1)*1000000)
+///       48/      48 : 0008 3E8E           	dc.l	INT(COS(1)*1000000)
+///       49/      4C : 0017 C39F           	dc.l	INT(TAN(1)*1000000)
+///       50/      50 : 000B FBF6           	dc.l	INT(ATAN(1)*1000000)
+///       51/      54 : 0017 F7EC           	dc.l	INT(ASIN(1)*1000000)
+///       52/      58 : 0017 F7EC           	dc.l	INT(ACOS(0)*1000000)
+///       53/      5C : 0011 EEA1           	dc.l	INT(SINH(1)*1000000)
+///       54/      60 : 0017 8BA8           	dc.l	INT(COSH(1)*1000000)
+///       55/      64 : 000B 9EFA           	dc.l	INT(TANH(1)*1000000)
+///       56/      68 : 000D 72DD           	dc.l	INT(ASINH(1)*1000000)
+///       57/      6C : 0014 185D           	dc.l	INT(ACOSH(2)*1000000)
+///       58/      70 : 0008 61BA           	dc.l	INT(ATANH(0.5)*1000000)
+///       59/      74 : 0031 9750           	dc.l	INT(ABS(-3.25)*1000000)
+///       60/      78 : 0000 0003           	dc.l	INT(ABS(-3))
+/// ```
+///
+/// Why each argument and not a rounder one:
+/// * `EXP(2)` = 7389056, where `2^x` would give 4000000. `EXP(1)` would not
+///   have separated them -- both floor to 2.
+/// * `SIN(1)`, `COS(1)`, `TAN(1)`, `ATAN(1)`, `ASIN(1)`, `ACOS(0)` are all in
+///   RADIANS: 841470 / 540302 / 1557407 / 785398 / 1570796 / 1570796. Reading
+///   the argument as degrees gives 17452 / 999847 / 17455 / 45000000 /
+///   90000000 / 90000000 -- a different digit count, not a rounding difference.
+/// * `ABS(-3)` is the type row: it stays an INTEGER. Every other function here
+///   returns a float even when the value is integral, which asl shows from the
+///   failing side -- `dc.l SQRT(16)` is `error #1133` (`types.asm(10)`) while
+///   `dc.l ABS(-3)` assembles to `0000 0003` (`clean2.asm(8)`). The row below
+///   asks it through `INT(...)`, which is the only integer context sigil routes
+///   to this evaluator; a BARE `dc.l ABS(-3)` is still refused here, and is
+///   recorded as a gap rather than claimed.
+#[test]
+#[allow(clippy::tabs_in_doc_comments)]
+fn float_builtin_surface_matches_asl() {
+    let rows: &[(&str, u32)] = &[
+        ("INT(EXP(2)*1000000)", 0x0070_BF80),
+        ("INT(SQRT(2)*1000000)", 0x0015_9445),
+        ("INT(SIN(1)*1000000)", 0x000C_D6FE),
+        ("INT(COS(1)*1000000)", 0x0008_3E8E),
+        ("INT(TAN(1)*1000000)", 0x0017_C39F),
+        ("INT(ATAN(1)*1000000)", 0x000B_FBF6),
+        ("INT(ASIN(1)*1000000)", 0x0017_F7EC),
+        ("INT(ACOS(0)*1000000)", 0x0017_F7EC),
+        ("INT(SINH(1)*1000000)", 0x0011_EEA1),
+        ("INT(COSH(1)*1000000)", 0x0017_8BA8),
+        ("INT(TANH(1)*1000000)", 0x000B_9EFA),
+        ("INT(ASINH(1)*1000000)", 0x000D_72DD),
+        ("INT(ACOSH(2)*1000000)", 0x0014_185D),
+        ("INT(ATANH(0.5)*1000000)", 0x0008_61BA),
+        ("INT(ABS(-3.25)*1000000)", 0x0031_9750),
+        ("INT(ABS(-3))", 0x0000_0003),
+    ];
+    // A loop over a table is exactly the shape that passes by examining
+    // nothing, so the table's own size is pinned against the count of `dc.l`
+    // rows read out of the listing above.
+    assert_eq!(rows.len(), 16, "asl listing values2.asm lines 45-60");
+    for (expr, want) in rows {
+        assert_eq!(
+            bytes(&format!("\tdc.l {expr}\n")),
+            want.to_be_bytes().to_vec(),
+            "{expr}"
+        );
+    }
+}
+
+/// A float RESULT in an integer slot is refused even when the value is a whole
+/// number, because the builtins return a float TYPE rather than a float value.
+///
+/// asl, `types.asm` (a deliberate-failure probe -- read for its diagnostics, not
+/// its byte column): `dc.l LOG(100)` and `dc.l SQRT(16)` each draw `error
+/// #1133: expected integer or string, but got floating point number`, and
+/// `dc.l LOG(100)&1` draws `#1134: expected integer, but got floating point
+/// number`.
+///
+/// WHAT THIS TEST DOES AND DOES NOT PIN, stated because it passes on the
+/// pre-`log` baseline too and so proves nothing about the new table on its own.
+/// It pins the DIRECTION only -- that these lines are refused rather than
+/// emitted. sigil's wording is its generic `bad long expression`, not asl's
+/// `#1133`, because the operand path reaches the typed evaluator only when a
+/// float TOKEN is present and `LOG(100)` contains none. That message gap is a
+/// recorded gap, not a claim; what matters for bytes is that no value is
+/// invented, and this asserts exactly that.
+#[test]
+fn a_float_builtin_result_is_refused_in_an_integer_slot() {
+    let bodies = ["\tdc.l LOG(100)\n", "\tdc.l SQRT(16)\n", "\tdc.l LOG(100)&1\n"];
+    assert_eq!(bodies.len(), 3, "types.asm lines 7, 10, 11");
+    for body in bodies {
+        assert!(!refused(body).is_empty(), "{body}");
+    }
+}
+
+/// An argument outside a function's definition range is REFUSED, not carried as
+/// a NaN or an infinity into the byte column.
+///
+/// asl, `domain.asm`: `LOG(0)`, `LOG(-1)`, `SQRT(-1)` and `ASIN(2)` each draw
+/// `error #1870: function argument out of definition range`; `ATANH(2)` and
+/// `ACOSH(0)` draw `#1880: floating point overflow`. All six are exactly the
+/// arguments where the corresponding `f64` method returns a non-finite value.
+///
+/// The last row is the same class from the other end: asl answers `error #1320:
+/// range overflow` at the INT itself -- `bigint.asm(8)` writes
+/// `dc.l INT(1e30)-INT(1e30)`, whose value is 0 and in range for a `dc.l`, and
+/// asl reports the overflow twice on that one line. An unguarded
+/// `f.floor() as i64` in Rust saturates to `i64::MAX` instead and emits a
+/// plausible number. (`1e30` is spelled out as a product because sigil's lexer
+/// has no exponent literals.)
+#[test]
+fn an_out_of_domain_or_out_of_range_argument_is_refused() {
+    let bodies = [
+        "\tdc.l INT(LOG(0))\n",
+        "\tdc.l INT(LOG(-1))\n",
+        "\tdc.l INT(SQRT(-1))\n",
+        "\tdc.l INT(ASIN(2))\n",
+        "\tdc.l INT(ATANH(2))\n",
+        "\tdc.l INT(ACOSH(0))\n",
+        "\tdc.l INT(1000000000000000.0*1000000000000000.0)\n",
+    ];
+    assert_eq!(bodies.len(), 7, "six domain rows plus the range row");
+    for body in bodies {
+        assert!(!refused(body).is_empty(), "{body}");
+    }
+}
+
+/// `abs(...)` in a PLAIN INTEGER context -- no float token anywhere on the line,
+/// so nothing but the builtin table can give the call a meaning.
+///
+/// The corpus demand is `s1disasm/Macros.asm(353)`,
+/// `rept 1+(abs(first-last)/abs(step))`, which carried EIGHT of Sonic 1's
+/// diagnostics as `unresolved rept count`.
+///
+/// asl listing, `clean3.asm` (`ASL_EXIT=0`, `ASL_DIAG=complete`):
+///
+/// ```text
+///        7/       0 : 0000 0003           	dc.l	ABS(-3)
+///        8/       4 : 0000 0004           	dc.l	1+(ABS(3-9)/ABS(2))
+///       10/       8 : AA                  	dc.b	$AA      (four times)
+///       12/       C : 0000 0007           	dc.l	ABS(-3)+ABS(4)
+///       13/      10 : 03                  	dc.b	ABS(-3)
+/// ```
+///
+/// The four `AA` bytes are the whole point of the `rept` row: the count is a
+/// number asl computed from two `abs` calls, so an assembler that cannot
+/// evaluate them emits nothing there and the assertion below fails on length.
+#[test]
+#[allow(clippy::tabs_in_doc_comments)]
+fn abs_resolves_in_a_plain_integer_context() {
+    assert_eq!(bytes("\tdc.l ABS(-3)\n"), vec![0, 0, 0, 3]);
+    assert_eq!(bytes("\tdc.l 1+(ABS(3-9)/ABS(2))\n"), vec![0, 0, 0, 4]);
+    assert_eq!(bytes("\tdc.l ABS(-3)+ABS(4)\n"), vec![0, 0, 0, 7]);
+    assert_eq!(bytes("\tdc.b ABS(-3)\n"), vec![3]);
+    assert_eq!(
+        bytes("\trept 1+(ABS(3-9)/ABS(2))\n\tdc.b $AA\n\tendr\n"),
+        vec![0xaa, 0xaa, 0xaa, 0xaa],
+    );
+}
+
+/// A leading `+` is a SIGN in the typed evaluator, and leaves the value and its
+/// type alone.
+///
+/// This is not symmetry for its own sake. `s1disasm`'s `range` macro is invoked
+/// as `range $21,$2F,+1`, so `abs(step)` arrives as `abs(+1)` -- and with `abs`
+/// wired but no unary-plus arm, exactly the four ASCENDING call sites of the
+/// eight kept failing while the four descending ones passed. A fix measured
+/// only on the descending spelling would have read as complete.
+///
+/// asl listing, `clean4.asm` (`ASL_EXIT=0`, `ASL_DIAG=complete`):
+///
+/// ```text
+///        8/       0 : 0000 0001           	dc.l	ABS(+1)
+///        9/       4 : 0000 0005           	dc.l	+5
+///       10/       8 : 0000 000F           	dc.l	1+(ABS($21-$2F)/ABS(+1))
+///       11/       C : 0000 000F           	dc.l	1+(ABS($2F-$21)/ABS(-1))
+///       12/      10 : 0000 0003           	dc.l	INT(+3.7)
+/// ```
+///
+/// The two `000F` rows are the same count reached from opposite directions,
+/// which is what makes the pair a test rather than two independent rows.
+#[test]
+#[allow(clippy::tabs_in_doc_comments)]
+fn a_leading_plus_is_a_sign() {
+    assert_eq!(bytes("\tdc.l ABS(+1)\n"), vec![0, 0, 0, 1]);
+    assert_eq!(bytes("\tdc.l INT(+3.7)\n"), vec![0, 0, 0, 3]);
+    assert_eq!(
+        bytes("\tdc.l 1+(ABS($21-$2F)/ABS(+1))\n"),
+        vec![0, 0, 0, 0x0f],
+        "ascending"
+    );
+    assert_eq!(
+        bytes("\tdc.l 1+(ABS($2F-$21)/ABS(-1))\n"),
+        vec![0, 0, 0, 0x0f],
+        "descending"
+    );
+}
+
+/// An identifier that is NOT a builtin still reaches the ordinary symbol
+/// lookup. Guarding this direction is what stops the new name table from
+/// swallowing a user symbol that happens to be followed by a parenthesis.
+///
+/// asl calls an unknown one out by name -- `error #1860: unknown function
+/// BOGUSFN` (`names.asm(15)`), uppercased, which is the same lookup seen from
+/// the failing side.
+#[test]
+fn an_unknown_function_name_is_not_treated_as_a_builtin() {
+    assert!(!refused("\tdc.l INT(BOGUSFN(1))\n").is_empty());
+    // And a symbol whose name merely STARTS with a builtin keeps its value.
+    assert_eq!(bytes("logo = 7\n\tdc.l INT(logo)\n"), vec![0, 0, 0, 7]);
+}
