@@ -179,7 +179,7 @@ fn the_i_and_r_reads_write_flags_while_the_writes_do_not() {
 /// is the announcement: the counts are the Zilog UM0080 T-states, derived in
 /// `docs/superpowers/notes/2026-09-06-isa-cycle-table-gap.md`, and the
 /// obligation the old pin was standing in for is now held by a test that cannot
-/// be satisfied by neglect — `z80_cycles`'s `encoder_coverage`, which asks the
+/// be satisfied by neglect, `z80_cycles`'s `encoder_coverage`, which asks the
 /// ENCODER which forms exist and fails on any the table cannot price.
 ///
 /// What is asserted here is the SHAPE of the answer per family, because that is
@@ -204,8 +204,8 @@ fn the_block_grid_is_priced_by_family_in_the_cycle_table() {
     // The BCD nibble rotates are 18, the dearest ED two-byte form.
     assert_eq!(instr_cost("rrd", &[]), Cost::Fixed(18));
     assert_eq!(instr_cost("rld", &[]), Cost::Fixed(18));
-    // `reti`/`retn` were priced at 14 BEFORE they could be assembled — the
-    // analyzer was ahead of the encoder — and the encoder caught up rather than
+    // `reti`/`retn` were priced at 14 BEFORE they could be assembled, the
+    // analyzer was ahead of the encoder, and the encoder caught up rather than
     // the price moving. They are asserted at that same value.
     assert_eq!(instr_cost("reti", &[]), Cost::Fixed(14));
     assert_eq!(instr_cost("retn", &[]), Cost::Fixed(14));

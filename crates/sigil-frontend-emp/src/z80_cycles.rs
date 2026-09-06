@@ -30,7 +30,7 @@
 //!   * `[cycles.path-end]` — a RETURN inside a span. A straight-line sum cannot
 //!     represent a path ending, so it would go on costing instructions the
 //!     machine never reaches.
-//!   * `[cycles.opaque-call]` — a CALL (`call`, `rst`) inside a span. The
+//!   * `[cycles.opaque-call]`, a CALL (`call`, `rst`) inside a span. The
 //!     instruction is priced, but its callee is not in the slice, so the sum
 //!     would be a true T-state count of less code than runs.
 //!
@@ -41,7 +41,7 @@
 //! forms it accepts and requires this table to price each one, so an encoding
 //! added later cannot land unpriced and silent. Three form classes are priced
 //! nowhere and each says so at its arm: the `(c)` port forms (no `CodeOperand`
-//! spelling exists), the DDCB shift column (`rlc (ix+d)` — the encoder refuses
+//! spelling exists), the DDCB shift column (`rlc (ix+d)`, the encoder refuses
 //! it), and the index-page forms the encoder does not reach (`jp (ix)`,
 //! `ex (sp),ix`).
 //!
@@ -149,7 +149,7 @@ fn is_sym(op: &CodeOperand) -> bool {
 }
 /// A 16-bit absolute target, however it is spelled. `jp`/`call`/`ld rr,nn` take
 /// either a link-time symbol or a folded constant, and the T-state count is the
-/// same for both — the operand is an immediate word in the encoding either way.
+/// same for both, the operand is an immediate word in the encoding either way.
 fn is_abs16(op: &CodeOperand) -> bool {
     is_sym(op) || is_imm(op)
 }
@@ -164,7 +164,7 @@ fn is_bitnum(op: &CodeOperand) -> bool {
 ///
 /// Zilog UM0080 "8-Bit Arithmetic and Logical Group": every one of the eight ops
 /// costs the same for a given SOURCE shape, so the cost is a function of the
-/// source alone — register 4, immediate 7, `(hl)` 7, `(ix+d)` 19.
+/// source alone, register 4, immediate 7, `(hl)` 7, `(ix+d)` 19.
 fn alu8_src_cost(src: &CodeOperand) -> Cost {
     match src {
         _ if is_reg8(src) => Cost::Fixed(4),
@@ -176,7 +176,7 @@ fn alu8_src_cost(src: &CodeOperand) -> Cost {
 }
 /// The CB-group rotate/shift cost for a target shape (Zilog UM0080 "Rotate and
 /// Shift Group"): `r` 8, `(hl)` 15. The `(ix+d)` form is 23 T on the machine but
-/// has NO encoding here — `encode_cb_shift` refuses an `Indexed` target, so the
+/// has NO encoding here, `encode_cb_shift` refuses an `Indexed` target, so the
 /// DDCB shift column cannot be assembled and pricing it would be a number for an
 /// instruction this assembler cannot emit.
 fn cb_shift_cost(target: &CodeOperand) -> Cost {
@@ -188,7 +188,7 @@ fn cb_shift_cost(target: &CodeOperand) -> Cost {
 }
 
 /// The T-state cost of one resolved Z80 instruction FORM (mnemonic + operand
-/// shapes). Anything not enumerated is [`Cost::Unknown`] (loud bail) — an ABSENT
+/// shapes). Anything not enumerated is [`Cost::Unknown`] (loud bail), an ABSENT
 /// cost, never a default one.
 ///
 /// Every count is the Zilog T-state figure from the UM0080 instruction tables,
@@ -247,21 +247,21 @@ pub fn instr_cost(mnemonic: &str, ops: &[CodeOperand]) -> Cost {
         }
         // ld hl,(nn) 16 (base 2A)  ;  ld dd,(nn) 20 (ED-prefixed)  ;  ld ix,(nn) 20
         // The 4 T between them is the prefix byte, and `hl` is the ONLY pair with
-        // an unprefixed form — which is exactly why the encoder never emits ED 6B.
+        // an unprefixed form, which is exactly why the encoder never emits ED 6B.
         ("ld", [Z80Pair(crate::value::Z80Pair::Hl), Z80Mem { .. }]) => Cost::Fixed(16),
         ("ld", [Z80Pair(_), Z80Mem { .. }]) => Cost::Fixed(20),
-        // ld (nn),hl 16  ;  ld (nn),dd 20  ;  ld (nn),ix 20 — the same split.
+        // ld (nn),hl 16  ;  ld (nn),dd 20  ;  ld (nn),ix 20, the same split.
         ("ld", [Z80Mem { .. }, Z80Pair(crate::value::Z80Pair::Hl)]) => Cost::Fixed(16),
         ("ld", [Z80Mem { .. }, Z80Pair(_)]) => Cost::Fixed(20),
-        // push qq 11 / pop qq 10 — the ONE place a push and its matching pop
+        // push qq 11 / pop qq 10, the ONE place a push and its matching pop
         // differ, because the push writes two bytes after an extra idle T-state.
         // push ix 15 / pop ix 14 add the prefix's 4. Zilog UM0080, "16-Bit Load".
         ("push", [Z80Pair(p)]) => Cost::Fixed(if is_index_pair(*p) { 15 } else { 11 }),
         ("pop", [Z80Pair(p)]) => Cost::Fixed(if is_index_pair(*p) { 14 } else { 10 }),
 
         // --- 8-bit arithmetic / logic on the accumulator ---
-        // The eight base ALU ops in both spellings the encoder accepts — the
-        // two-operand `add a,src` and the one-operand `or src` — priced by the
+        // The eight base ALU ops in both spellings the encoder accepts, the
+        // two-operand `add a,src` and the one-operand `or src`, priced by the
         // SOURCE shape alone (see [`alu8_src_cost`]). `add a,n` and `or (hl)` are
         // the same instruction as `add a,b` with a dearer operand fetch.
         ("add" | "adc" | "sub" | "sbc" | "and" | "or" | "xor" | "cp", [a, src]) if is_a(a) => {
@@ -278,7 +278,7 @@ pub fn instr_cost(mnemonic: &str, ops: &[CodeOperand]) -> Cost {
         // would lose.
         ("add", [Z80Pair(crate::value::Z80Pair::Hl), Z80Pair(_)]) => Cost::Fixed(11),
         ("adc" | "sbc", [Z80Pair(crate::value::Z80Pair::Hl), Z80Pair(_)]) => Cost::Fixed(15),
-        // add ix,pp 15 — `add hl,ss`'s 11 plus the DD/FD prefix's 4.
+        // add ix,pp 15, `add hl,ss`'s 11 plus the DD/FD prefix's 4.
         ("add", [Z80Pair(p), Z80Pair(_)]) if is_index_pair(*p) => Cost::Fixed(15),
 
         // --- inc / dec ---
@@ -290,7 +290,7 @@ pub fn instr_cost(mnemonic: &str, ops: &[CodeOperand]) -> Cost {
         ("inc" | "dec", [CodeOperand::Z80Pair(p)]) if is_index_pair(*p) => Cost::Fixed(10),
         // READ-MODIFY-WRITE through memory: inc (hl) 11, inc (ix+d) 23. Nothing
         // like the 4 T of the register form and nothing like the 6 T of the
-        // 16-bit pair form — this is the arm a table that treated `inc` as one
+        // 16-bit pair form, this is the arm a table that treated `inc` as one
         // instruction would get wrong by a factor of five.
         ("inc" | "dec", [Z80IndHl]) => Cost::Fixed(11),
         ("inc" | "dec", [Z80Indexed { .. }]) => Cost::Fixed(23),
@@ -302,7 +302,7 @@ pub fn instr_cost(mnemonic: &str, ops: &[CodeOperand]) -> Cost {
             Cost::Fixed(4)
         }
         ("ex", [Z80Pair(crate::value::Z80Pair::Af), Z80AfShadow]) => Cost::Fixed(4),
-        // ex (sp),hl is 19 T — it moves two bytes each way through the stack.
+        // ex (sp),hl is 19 T, it moves two bytes each way through the stack.
         // `(sp)` reaches here in BOTH emp spellings: the distinct `Z80IndSp` the
         // operand mapper produces, and the `Z80Pair(Sp)` it lowers to.
         ("ex", [Z80IndSp | Z80Pair(crate::value::Z80Pair::Sp), Z80Pair(crate::value::Z80Pair::Hl)]) => {
@@ -317,7 +317,7 @@ pub fn instr_cost(mnemonic: &str, ops: &[CodeOperand]) -> Cost {
         // The REPEATING members carry the same 16 T final step plus a 21 T body:
         // the machine decrements PC by two and re-executes, so 21 is paid for
         // every iteration that repeats and 16 for the one that leaves. That is
-        // exactly [`Cost::Split`]'s meaning — two outcome-keyed numbers — and it
+        // exactly [`Cost::Split`]'s meaning, two outcome-keyed numbers, and it
         // is why they do not get a mechanism of their own.
         //
         // HOW THE CONSUMERS READ IT, which is the part worth stating out loud:
@@ -384,7 +384,7 @@ pub fn instr_cost(mnemonic: &str, ops: &[CodeOperand]) -> Cost {
         ("ret", []) => Cost::Fixed(10),
         ("reti" | "retn", []) => Cost::Fixed(14),
 
-        // --- unconditional call (17) — see `span_cost`'s OpaqueCall refusal for
+        // --- unconditional call (17), see `span_cost`'s OpaqueCall refusal for
         // why pricing it does not make a straight-line sum reach past it.
         ("call", [t]) if is_abs16(t) => Cost::Fixed(17),
 
@@ -622,7 +622,7 @@ mod tests {
     }
 
     // A `call` inside a straight-line span is a REFUSAL, not a 17. The
-    // instruction is priced — the budget walk charges it — but the callee is not
+    // instruction is priced, the budget walk charges it, but the callee is not
     // in the slice, so a sum would be a true count of less code than runs.
     #[test]
     fn call_and_rst_bail_opaque_in_a_span() {
@@ -777,7 +777,7 @@ mod tests {
         assert_eq!(instr_cost("ld", &[ix(), mem()]), Cost::Fixed(20));
         assert_eq!(instr_cost("ld", &[mem(), hl()]), Cost::Fixed(16));
         assert_eq!(instr_cost("ld", &[mem(), bc()]), Cost::Fixed(20));
-        // The 8-bit accumulator form through the same `(nn)` is 13 — a third
+        // The 8-bit accumulator form through the same `(nn)` is 13, a third
         // number, so a wrong arm here cannot land on a right one.
         assert_eq!(instr_cost("ld", &[a(), mem()]), Cost::Fixed(13));
     }
@@ -878,7 +878,7 @@ mod tests {
     ///
     /// The population is NOT a list of mnemonics kept up by hand. A hand list's
     /// failure mode is "green because nobody maintained it", which is precisely
-    /// the failure this guard exists to prevent — the twenty-one mnemonics that
+    /// the failure this guard exists to prevent, the twenty-one mnemonics that
     /// prompted it became assemblable and stayed unpriced for exactly that
     /// reason. Two mechanisms replace the list:
     ///
@@ -929,8 +929,8 @@ mod tests {
             In => "in", Out => "out", Reti => "reti", Retn => "retn",
             Rrd => "rrd", Rld => "rld",
             // The two `ld a,i` / `ld a,r` marker variants. `encode` has no arm
-            // for either — those bytes come from the ordinary `Ld` variant with
-            // a `RegI`/`RegR` operand — so the pool below finds them
+            // for either, those bytes come from the ordinary `Ld` variant with
+            // a `RegI`/`RegR` operand, so the pool below finds them
             // unencodable and they place no demand on the table.
             LdIA => "ld", LdRA => "ld",
             Rlca => "rlca", Rla => "rla", Rra => "rra", Daa => "daa",
@@ -1003,7 +1003,7 @@ mod tests {
         /// The operand shapes offered to every mnemonic. Over-covering is the
         /// safe direction here: a shape the encoder rejects costs one `Err` and
         /// nothing else, while a shape left out silently removes real forms from
-        /// the demand — so the immediates are chosen to be ACCEPTABLE wherever a
+        /// the demand, so the immediates are chosen to be ACCEPTABLE wherever a
         /// narrow range exists (`rst $18`, `im 1`, a port that fits in 8 bits)
         /// rather than merely typical.
         fn shape_pool() -> Vec<Vec<IsaOp>> {
@@ -1038,7 +1038,7 @@ mod tests {
                 vec![Cc(IsaCond::Nz)],
                 vec![Cc(IsaCond::Po)],
                 vec![Rel(2)],
-                // two operands — 8-bit
+                // two operands, 8-bit
                 vec![a, b],
                 vec![b, a],
                 vec![a, Imm8(0x12)],
@@ -1068,7 +1068,7 @@ mod tests {
                 vec![b, IndC],
                 vec![IndC, a],
                 vec![IndC, b],
-                // two operands — 16-bit
+                // two operands, 16-bit
                 vec![Pair(IsaPair::Hl), Imm16(0x1234)],
                 vec![Pair(IsaPair::Bc), Imm16(0x1234)],
                 vec![Pair(IsaPair::Sp), Imm16(0x1234)],
@@ -1133,7 +1133,7 @@ mod tests {
             }
 
             // GUARD 2: the population. Non-empty is the floor, and it is not
-            // enough on its own — a pool that had lost every ED or CB shape
+            // enough on its own, a pool that had lost every ED or CB shape
             // would still be non-empty, so the anchors below require the
             // discovery to have reached each ENCODING PAGE: base one-byte, base
             // two-operand, CB, ED block, ED I/O, DD/FD index, and the two

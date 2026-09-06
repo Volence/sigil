@@ -356,7 +356,7 @@ fn a_fall_off_the_end_is_refused() {
 /// The fixture has been `rlca`, then `ldir`, and each in turn became priced,
 /// leaving this asserting that a KNOWN op was unknown. `rlc (ix+0)` is chosen to
 /// end that: the DDCB shift column has no encoding in this assembler at all
-/// (`encode_cb_shift` refuses an indexed target), so it CANNOT become priced —
+/// (`encode_cb_shift` refuses an indexed target), so it CANNOT become priced,
 /// the cost table's coverage guard is keyed on what the encoder accepts, and it
 /// does not accept this. The accompanying `[lower.z80-unsupported]` is not a
 /// cycle finding and `assert_one` filters on `[cycles.`, so it does not disturb
@@ -367,7 +367,7 @@ fn an_off_table_op_is_refused() {
     assert_one(&z80("@budget(cycles: 100)", "    rlc (ix+0)\n    ret\n"), "cycles.unknown-op");
     // The TWIN that separates "off the table" from "refused for another reason":
     // `ldir` used to be this test's fixture and is now priced, as a split cost.
-    // It is still refused — a block repeat has one edge and two costs — but under
+    // It is still refused, a block repeat has one edge and two costs, but under
     // the other id, so a walk that answered `unknown-op` for everything could not
     // pass both halves.
     assert_one(&z80("@budget(cycles: 100)", "    ldir\n    ret\n"), "cycles.ambiguous-branch");
