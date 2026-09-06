@@ -723,6 +723,21 @@ is otherwise easy to read as a regression in whatever branch happens to be check
 said one word from the owner is enough, the yes being banked at aeon `822c382a`), and step 2 is
 aeon's ROM-RELAYOUT, which their queue holds for the owner's go.
 
+**POSITION SENT TO THE HUB 2026-09-06T07:29Z, banked here because a position that lives only in
+mail does not survive a `/clear` (protocol bar 20, sending side).** Asked what would make this item
+CLOSED as an EFFECTS-W1 completion requirement, this lane answered that neither *done* nor *ruled
+closed with the residual named* is honest, since steps 2 to 4 are unstarted and step 2 is not
+sigil's to start, **and recommended repointing the requirement instead**: the only decouple-adjacent
+thing that can hurt EFFECTS-W1 is a decaying margin silently eating the effects reserve, and that is
+**B7/F1/F2**, an aeon instrument defect closeable on its own with no decouple step moving. So the
+requirement should read *B7 closed, the terminus assumption asserted rather than assumed*, and
+SIGIL-DECOUPLE returns to its own clock. **It is a scope call on the hub's board, so it is theirs or
+the owner's and NOT this lane's to take**; the recommendation is recorded, the ruling is not made.
+Sent with it: a figure for aeon to settle, the project row's `DATA_GROWTH_RESERVE = 0x4000` against
+this lane's 2026-09-05 read of `0xC000` with `DATA_GROWTH_GRACE = 0x8000`, offered as a discrepancy
+to check rather than as a correction, since it is aeon's constant and the two reads have different
+dates.
+
 ## Standing cross-session obligations (2026-08-22)
 
 The aeon session owes sigil two things, both triggered by sigil work rather than by
