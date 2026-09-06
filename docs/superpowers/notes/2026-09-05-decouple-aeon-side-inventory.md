@@ -686,10 +686,16 @@ base *at once*, and this sweep moves one at a time. 0 of 2 today, unpriced under
 
 ## ADDENDUM 2026-09-06: B7 is answered, and F2's answer is a THIRD CASE neither instrument can see
 
-**Aeon's measurement, not this lane's, recorded with that attribution and PENDING MERGE at the time
-of writing.** They report the fix built and green on their branch, merging behind a spring landing
-because byte-movers serialize. **Re-verify against their `origin/master` before citing it as
-landed**; this addendum records what was learned, not that it has shipped.
+**Aeon's measurement, not this lane's, recorded with that attribution. LANDED AND RE-VERIFIED HERE
+2026-09-06: aeon `6034b277`, confirmed an ancestor of their `origin/master` by
+`git merge-base --is-ancestor`, message *"merge(B7): the room gate could not see a breach, and now it
+refuses three ways"*.** The re-verification obligation this paragraph carried while the fix was on a
+branch is discharged; it is kept in place rather than deleted, because a reader meeting the claim
+later needs to see that it was checked rather than assumed.
+
+**`check_terminus()` exists in their shipped `tools/bganim_room.py` and reports Unmeasurable rather
+than a gate verdict**, which is the loud-on-unmeasurable discipline: a terminus it cannot establish
+is not rendered as a budget that passed.
 
 **The control is stronger evidence than the fix, and it is the sharpest form this inventory's F1 row
 could have taken.** With a real 1,024 byte `pub data B7_Probe` appended to `collision_data.emp` and
