@@ -5191,8 +5191,16 @@ impl Asm {
     /// AS `org <target>` (M1.C T6b). `target` is an ABSOLUTE address (like
     /// `phase`'s argument), evaluated eagerly (matching `directive_align`/
     /// `directive_ds`'s pattern of resolving directive arguments at eval time
-    /// rather than deferring an `Expr` into the fragment). Two cases, per the
-    /// asl-verified back-patch + absolute-org rules (M1.C T6b investigation):
+    /// rather than deferring an `Expr` into the fragment).
+    ///
+    /// **`org` sets the location counter ABSOLUTELY, in either direction.** asl
+    /// places no ordering constraint on the target and reports nothing for a
+    /// backward one: probe `p1_back.asm`
+    /// (`docs/superpowers/notes/2026-09-06-as-org-backwards-probes/`) emits at
+    /// `$1000`, orgs to `$10`, and lists `low = 10h` beside `start = 1000h` on a
+    /// clean exit, with both byte runs present in the linked image at their own
+    /// addresses. The direction of the jump therefore selects a MECHANISM here,
+    /// never a diagnostic.
     ///
     /// - **No section open yet** (e.g. `main.asm`'s very first `org 0`, before
     ///   any byte has been emitted): behaves exactly like `phase`'s no-section
@@ -5202,13 +5210,20 @@ impl Asm {
     ///   back-patch seek (`org pscStart / dc.b n / org pscEndPos`, the
     ///   `parallax_section_end` idiom) — `IrBuilder::seek` repositions the
     ///   cursor; subsequent `Data`/`Fill` overwrite in place.
-    /// - Otherwise (`target` is beyond anything written): a forward jump into
-    ///   brand-new territory (`main.asm`'s `org $10000` starting the object
-    ///   code bank) — closing the section and re-phasing at `target`, so the
-    ///   gap is filled by `flatten`'s ordinary inter-section gap-fill instead of
-    ///   growing this section's `Org`+`JmpJsrSym` mix (which `resolve_layout`
-    ///   refuses — see its guard — since real engine code between `org 0` and
-    ///   `org $10000` contains bare `jmp`/`jsr`).
+    /// - **Anywhere else**, forward past the section's extent (`main.asm`'s
+    ///   `org $10000` starting the object code bank) or backward past its base
+    ///   (`sound/z80.asm`'s `save` / `!org 0` / `CPU Z80`, which restarts the
+    ///   counter in the Z80 driver's own address space): close the section and
+    ///   re-base the physical counter at the target, so the next emit opens a
+    ///   `Pinned` section there. Forward, the gap is `flatten`'s ordinary
+    ///   inter-section gap-fill rather than a growing `Org`+`JmpJsrSym` mix
+    ///   (which `resolve_layout` refuses, see its guard, since real engine code
+    ///   between `org 0` and `org $10000` contains bare `jmp`/`jsr`). Backward,
+    ///   the new section may land on top of a region already placed; that is a
+    ///   genuine collision in a flat image, and `relax`'s R7p.4 `overlap_diag`
+    ///   names both sections and both extents at link time. It is NOT this
+    ///   directive's business to pre-judge it, because the target may equally be
+    ///   untouched ground.
     fn directive_org(&mut self, rest: &[Token], span: Span) {
         let target_abs = match self.eval_all(rest, span) {
             Some(v) => v as u32,
@@ -5233,26 +5248,25 @@ impl Asm {
             self.builder.pin_next_section();
             return;
         }
-        // A section is open. `base` is the VMA of its first byte; `rel` is the
-        // target's offset within it. Within the already-written extent this is an
-        // in-place back-patch seek (`parallax_section_end`); beyond it, a forward
-        // jump that closes the section and re-bases the physical counter (so the
-        // gap is inter-section gap-fill, not a growing Org+JmpJsrSym run).
+        // A section is open. `base` is the VMA of its first byte, so the target
+        // lies INSIDE what this section has already written exactly when it sits
+        // in `[base, base + extent]`. That, and only that, is the in-place
+        // back-patch seek (`parallax_section_end`). Every other target, in either
+        // direction, leaves this section: close it and re-base the physical
+        // counter, which is the one model asl has (see the doc comment).
         let base = (self.phys_base as i64 + self.state.disp) as u32;
-        if target_abs < base {
-            self.err(span, "org target precedes the current phase base");
-            return;
-        }
-        let rel = target_abs - base;
-        if rel <= self.builder.extent() {
-            self.builder.seek(rel, 0, span);
+        if target_abs >= base && target_abs - base <= self.builder.extent() {
+            self.builder.seek(target_abs - base, 0, span);
         } else {
             self.close_section();
             self.phys_base = phys_target;
-            // Forward org past the section extent → the next auto-opened section
-            // is `Pinned` at the org'd counter (R7p.1): its gap is an intentional
-            // inter-section gap, which the placement pass must preserve rather
-            // than compact (`org_forward_new_section` golden).
+            // R7p.1: an org that leaves the section is an explicit placement
+            // authority, so the next auto-opened section is `Pinned` at the
+            // org'd counter. Forward, its gap from the predecessor is intentional
+            // and the placement pass must preserve rather than compact it
+            // (`org_forward_new_section` golden). Backward, the pin is what lets
+            // `overlap_diag` see a collision at all: a `Chained` section would be
+            // silently compacted back into sequence and the org would vanish.
             self.builder.pin_next_section();
         }
     }
@@ -5362,17 +5376,14 @@ impl Asm {
             // `open_section_if_needed()` here (mirroring `directive_binclude`)
             // was tried and REJECTED: unlike those directives, `equ` runs at
             // points `directive_org`/`directive_phase` rely on being possibly
-            // section-FREE. `directive_org`'s `!self.in_section` branch
-            // unconditionally jumps `phys_base` to the target with no
-            // backward-move check (real Aeon `org 0` after a RAM `phase` block
-            // whose `dephase` folded the RAM reservation size into `phys_base`
-            // relies on exactly this reset). Eagerly opening a section here
-            // would leave a stray section open across that boundary, flipping
-            // `org` onto its OTHER branch (`target_abs < base` validated) and
-            // spuriously erroring "org target precedes the current phase base"
-            // — reproduced against the real `aeon` corpus (`engine.inc`'s
-            // `org 0`, preceded by `engine/debug/debugger.asm`'s leading
-            // `DEBUGGER__EXTENSIONS__ENABLE: equ 1`). So: attach the EquSym to
+            // section-FREE. `directive_org`'s `!self.in_section` branch jumps
+            // `phys_base` straight to the target and opens nothing (real Aeon
+            // `org 0` after a RAM `phase` block whose `dephase` folded the RAM
+            // reservation size into `phys_base` relies on exactly this reset).
+            // Eagerly opening a section here would leave an EMPTY stray section
+            // open across that boundary, sending `org` down its section-open
+            // branch and adding a zero-length region to the module for no reason
+            // the source asked for. So: attach the EquSym to
             // the builder's CURRENTLY open section if one exists; otherwise
             // stash it in a pending list `close_section`/`switch_section_lma`
             // flush into the next section that actually opens, WITHOUT
