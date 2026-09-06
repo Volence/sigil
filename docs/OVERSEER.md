@@ -1211,3 +1211,47 @@ because the front end cannot distinguish a never-defined name from a `.emp` labe
 supply. **A fix specified from the outside can be impossible for a reason the specifier cannot see**,
 which is the argument for stating the DEFECT precisely and leaving the remedy to whoever can read the
 seam.
+
+### A CANARY PROVES THE PATTERN CAN FIRE, NOT THAT THE INPUT ARRIVED
+
+**The sharpest refinement of the night, and it is a correction to a discipline this document already
+teaches.** This lane has been demanding a canary before believing any zero. An agent then ran one
+correctly and STILL shipped a false clean: its dash scanner used `\+` in an ERE, so it scanned **1
+line instead of 1,365** and printed "clean". **The canary passed, because the canary proved the
+PATTERN could match. It said nothing about whether the 1,365 lines ever reached the matcher.**
+
+**So a canary covers the RULE and not the FEED.** Both need a control, and they are different
+controls: plant a positive to prove the pattern fires, and **assert the input count** to prove the
+data arrived. A zero is only meaningful when both are known. Every false-clean this lane hit tonight
+splits cleanly by that test: the bad pathspec, the shell `grep -r`, the zsh alternation, the empty
+corpus, the truncated scan. **Four were feed failures and only one was a rule failure**, and the
+canary discipline as written only covered the rule.
+
+### AND A REDUCTION CAN SUPPLY THE VERY THING WHOSE ABSENCE IS THE FAULT
+
+I reduced a corpus failure to a small probe, both assemblers agreed, and I reported to the agent that
+**my reduction does not reproduce it** and the isolation was still owed. Correct as far as it went and
+wrong in a way I could not see: the real fault was a **missing build-generated include**, and my
+reduction had supplied a value for the symbol whose absence IS the fault. **The probe tested a
+program in which the defect cannot occur.**
+
+**That is a distinct confound from the ones already banked here.** The others were probes that could
+not distinguish two answers; this one removed the cause while preserving the shape. **When a
+reduction fails to reproduce, ask what the original had that the reduction supplies**, not only what
+the reduction lacks.
+
+**It was the fourth confounded probe from this seat in one night**, which is the real headline: an
+off-by-one index, a value too large for its destination, one route compared with itself, and now a
+reduction that filled in the missing input. **All four looked like measurements and three of them
+reached the dispatch brief.**
+
+### THE RIGHT BASE COMPUTED THE WRONG WAY IS ONE BYTE AT ONE SITE
+
+I warned the parcel that `asl`'s `log` is base 10, so a natural-log implementation answers 4 where the
+reference answers 2. True, and **loud**: wrong by a whole digit, visible in any test.
+
+**The quiet one is finer.** `ln(1000)/ln(10)` is `2.9999999999999996` in binary64, and `int()`
+**floors**, so the right base computed the obvious way emits `7C02` where asl emits `7C03`. **A wrong
+base is loud; a wrong SPELLING of the right base is one byte at one of six sites.** `asl`'s is an
+exact `log10`. **When matching a reference's arithmetic, the function is the easy half and the
+formulation is where the byte moves.**
