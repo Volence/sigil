@@ -1011,3 +1011,23 @@ different populations, no disagreement.** The single name between them is `Z80_I
 clothes**, and the cost of settling it was three commands. The same run confirmed the second
 direction the peer had rightly refused to accept on assertion:
 `$engine.z80_init$Z80_IdleProgram$code_end` is in demo's phase table and is NOT returned by the tool.
+
+### A DERIVATION THAT CAPTURES PARENTS AND DROPS LOCALS MISSES EXACTLY THE BOUNDARY MARKERS
+
+*(Aeon's mechanism, found by checking their own tool rather than my listing, and it is worth more
+than the counts either of us produced.)*
+
+`vma_phased_symbol_names()` parses `section ... (vma: ...)` blocks and takes the **top-level** names.
+The one symbol it misses is a **local inside** such a proc, mangling to `$module$Proc$local`. So the
+misses are not scattered: **they are precisely the local labels inside phased procs.**
+
+**And that is the worst class to miss, by the consumer's own logic.** The tool exists so a
+boundary-inferring consumer never lets a phased symbol stand as an extent boundary. The single symbol
+it misses is an **end-of-code marker**, a symbol whose entire purpose is to be a boundary, with three
+`imm16` references to it. **So the 30 over-reports are harmless phantoms and the one miss is the exact
+shape the tool was written to catch.**
+
+**The transferable rule: when a derivation walks a structure and takes the named things at one level,
+ask what lives at the level below, because in a symbol table that is where the boundary markers
+are.** A count of how often such a derivation is wrong says nothing about this; only the mechanism
+does. Both of us had measured the error rate and neither of us had it until the mechanism was found.
