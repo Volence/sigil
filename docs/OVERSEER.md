@@ -1182,3 +1182,32 @@ aeon restarts every SP-5 leg under the new identity. **The path is frozen to thi
 word.** The refreshed binary's acceptance rests on the proof, not the version string: one
 `^PHASE-COUNT` line, six phase rows, and **zero lines matching the old spelling, checked as a
 control** rather than only confirming the new one appeared.
+
+### VARYING A FLAG IS NOT VARYING A ROUTE: I compared one path with itself and called it two
+
+**The `AS-ASSIGN-UNRESOLVED` row said the divergence was between the LINKER path and a SINGLE-FILE
+route. I reproduced it, ran the CLI with and without `--hex`, got identical behaviour, and wrote in
+the dispatch brief that "both routes behave identically" and the row's framing was wrong.**
+
+**The row was right and I was wrong.** Verified at `e6e942e5`: `main.rs:124` goes
+`assemble_root_located_warned` then `sigil_link::link()` with **no `resolve_layout`**, while every
+other seam (`:436`, `:789`, `:902`) runs `resolve_layout` then `link`. `resolve_layout`'s
+`fold_equ_syms` already refused an unfoldable `equ` **without asking whether anything reads it**, and
+the `.asm` CLI was the one final link that stepped over it.
+
+**Only one CLI route takes a `.asm` file, so both my observations were of the same path.** `--hex`
+changes the OUTPUT FORMAT, not the seam. **I compared a route with itself and reported agreement**,
+which is the same family as a sweep that runs one binary twice, or a cross-validation whose two
+implementations share an author.
+
+**The rule: before claiming two paths agree, name what makes them DIFFERENT PATHS, and check that the
+thing you varied is that.** A flag, an output format, a verbosity level and a file extension are all
+things that feel like route selectors and usually are not. The cheap check is the one I skipped:
+follow the call chain far enough to see where the two supposedly diverge.
+
+**And the fix I proposed in that brief could not be taken at all.** "Evaluate the right-hand side
+where it is written" would refuse the cross-seam equates the mixed AS plus `.emp` build depends on,
+because the front end cannot distinguish a never-defined name from a `.emp` label the link is about to
+supply. **A fix specified from the outside can be impossible for a reason the specifier cannot see**,
+which is the argument for stating the DEFECT precisely and leaving the remedy to whoever can read the
+seam.
