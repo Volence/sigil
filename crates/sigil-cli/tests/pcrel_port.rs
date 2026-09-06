@@ -462,3 +462,99 @@ fn owner_label_pcrel_target_resolves() {
     // (disp measured from the ext word at $8: $4 - $8 = -4).
     assert_eq!(&image[6..10], &[0x41, 0xFA, 0xFF, 0xFC]);
 }
+
+// ---------------------------------------------------------------------------
+// T7 — `btst`, the ONE member of the static-bit family that can reach a
+// PC-relative EA, and the ONE emitted 68k shape where an extension word (the
+// bit-number word) PRECEDES the displacement.
+//
+// `btst`'s destination row is `EaSet::DATA` (`sigil-isa/src/m68k.rs`), which
+// admits `(d16,PC)` / `(d8,PC,Xn)`; its siblings `bset`/`bclr`/`bchg` write
+// their destination and take `DATA_ALTERABLE`, which does not. So the layout
+// `opcode word | bit-number word | EA extension` is unique to `btst` among the
+// PC-relative-capable forms, and the displacement does NOT sit at offset 2.
+//
+// MC68000 PRM §2.6/§2.7: the PC value for `(d16,PC)` / `(d8,PC,Xn)` is the
+// address of the DISPLACEMENT's own extension word, not the first one.
+//
+// Expected bytes minted with the reference assembler (asl
+// `61e672562465725a8c102288a7da9098`, exit 0, "0 errors", symbol table
+// showing `TARGET` valued at 6 and 8 respectively — so the displacements are
+// `target - 4`, an arithmetic relation to a resolved symbol, not a silently
+// substituted last value):
+//
+//     btst #1,target(pc)      target at 6  ->  083A 0001 0002   (disp word @ 4)
+//     btst #1,target(pc,d0.w) target at 8  ->  083B 0001 0004   (disp8 byte @ 5)
+//
+// Both front-ends carry their own PC-relative-offset plumbing, so both are
+// pinned here; `as_reference` is sigil's own AS front-end, NOT an independent
+// oracle, which is why the literals above come from asl and each front-end is
+// compared to them directly.
+// ---------------------------------------------------------------------------
+
+/// asl: `083A 0001 0002` — the d16 displacement word is at offset 4, AFTER the
+/// bit-number word, and is measured from its own VMA (4): target 6 - 4 = 2.
+const BTST_PCREL_STATIC: [u8; 6] = [0x08, 0x3A, 0x00, 0x01, 0x00, 0x02];
+
+/// asl: `083B 0001 0004` — the brief extension word is at offset 4, its disp8
+/// byte at offset 5, measured from the ext word's own VMA (4): target 8 - 4 = 4.
+const BTST_PCREL_INDEXED: [u8; 6] = [0x08, 0x3B, 0x00, 0x01, 0x00, 0x04];
+
+#[test]
+fn btst_static_pcrel_as_frontend_matches_asl() {
+    let asm = "\tcpu 68000\n\tphase 0\n\tbtst\t#1,Target(pc)\n\
+               Target:\n\tdc.w $1234\n";
+    let reference = as_reference(asm);
+    assert_eq!(
+        &reference[0..6],
+        &BTST_PCREL_STATIC,
+        "AS front-end: btst #1,Target(pc) must place the d16 displacement at offset 4"
+    );
+}
+
+#[test]
+fn btst_static_pcrel_emp_frontend_matches_asl() {
+    let emp = "module m\n\
+        section s (cpu: m68000, vma: $000000) {\n\
+        \tproc p () {\n\
+        \t\tbtst\t#1,Target(pc)\n\
+        \t}\n\
+        \tdata Target: [u16; 1] = [$1234]\n\
+        }\n";
+    let candidate = emp_candidate(emp);
+    assert_eq!(
+        &candidate[0..6],
+        &BTST_PCREL_STATIC,
+        "emp front-end: btst #1,Target(pc) must place the d16 displacement at offset 4"
+    );
+}
+
+#[test]
+fn btst_indexed_pcrel_as_frontend_matches_asl() {
+    let asm = "\tcpu 68000\n\tphase 0\n\tbtst\t#1,Target(pc,d0.w)\n\tdc.w $AAAA\n\
+               Target:\n\tdc.w $1234\n";
+    let reference = as_reference(asm);
+    assert_eq!(
+        &reference[0..6],
+        &BTST_PCREL_INDEXED,
+        "AS front-end: btst #1,Target(pc,d0.w) must place the disp8 at offset 5"
+    );
+}
+
+#[test]
+fn btst_indexed_pcrel_emp_frontend_matches_asl() {
+    let emp = "module m\n\
+        section s (cpu: m68000, vma: $000000) {\n\
+        \tproc p () {\n\
+        \t\tbtst\t#1,Target(pc,d0.w)\n\
+        \t}\n\
+        \tdata Pad: [u16; 1] = [$AAAA]\n\
+        \tdata Target: [u16; 1] = [$1234]\n\
+        }\n";
+    let candidate = emp_candidate(emp);
+    assert_eq!(
+        &candidate[0..6],
+        &BTST_PCREL_INDEXED,
+        "emp front-end: btst #1,Target(pc,d0.w) must place the disp8 at offset 5"
+    );
+}

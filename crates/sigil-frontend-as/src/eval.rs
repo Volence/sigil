@@ -6997,13 +6997,13 @@ impl Asm {
     /// (already located by the caller). `(d16,PC)` is illegal as a
     /// DESTINATION EA (`encode_ea` rejects it there — real 68k only reads
     /// through PC-relative), so wherever it legally appears it is the single
-    /// EA operand of a 1-operand form or the SOURCE of a 2-operand form; both
-    /// `encode_move`/`encode_alu_ea`/`encode_control`/etc. process the source
-    /// EA's extension words first (right after the 2-byte opcode word), so
-    /// the `(d16,PC)` extension word always starts at byte offset 2 —
-    /// confirmed against `lower_pcrel_ea`'s own unit test (`lea (d16,PC),a0`)
-    /// and against real asl (`m68k_move_w_pcd16_to_d0` in
-    /// `tests/snippets_golden.txt`).
+    /// EA operand of a 1-operand form or the SOURCE of a 2-operand form.
+    ///
+    /// The fixup's byte offset is DERIVED by the backend
+    /// (`pcrel_disp_offset`), not assumed here: most forms emit the EA's
+    /// extension words right after the 2-byte opcode word, but `btst #n,<ea>`
+    /// emits the bit-number word first and puts its d16 at 4. This routing is
+    /// mnemonic-agnostic, so it must not encode any one form's layout.
     fn lower_m68k_pcrel(
         &mut self,
         mnemonic: M68kMnemonic,
@@ -7036,7 +7036,7 @@ impl Asm {
             size,
             ops,
         };
-        let frag = self.m68k.lower_pcrel_ea(&inst, 2, target, span);
+        let frag = self.m68k.lower_pcrel_ea(&inst, target, span);
         self.emit_frag(frag, span);
     }
 
@@ -7045,7 +7045,9 @@ impl Asm {
     /// [`Self::lower_m68k_pcrel`] but for the brief-extension-word indexed form:
     /// the pc-idx atom's `disp` is the label target (resolved later as an 8-bit
     /// PC-relative displacement), and its index register becomes the ext word's
-    /// `Xn`. The disp8 byte sits at offset 3 (opcode word + ext-word high byte).
+    /// `Xn`. The disp8 byte's offset is derived by the backend — 3 for the
+    /// common layout (opcode word + ext-word high byte), 5 for `btst`, whose
+    /// bit-number word precedes the EA extension.
     fn lower_m68k_pcrel_idx(
         &mut self,
         mnemonic: M68kMnemonic,
@@ -7088,7 +7090,7 @@ impl Asm {
             size,
             ops,
         };
-        let frag = self.m68k.lower_pcrel_idx_ea(&inst, 3, target, span);
+        let frag = self.m68k.lower_pcrel_idx_ea(&inst, target, span);
         self.emit_frag(frag, span);
     }
 
