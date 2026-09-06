@@ -4171,18 +4171,28 @@ is at 0F0908h` where asl lists `=8H` and `rst GetPointerTable` assembles to `CF`
 Z80 driver is placed at physical ROM offset 0. Both fatals truncate: skdisasm's stream
 carries exactly 3 rows naming a 5,315-line file, so ~4,970 lines of Z80 source have never
 been assessed. Post-fix totals must be MEASURED, never predicted by subtraction.
--- OPEN (kill: an aeon-paired verification, then the placement change. Aeon's 378 `*.asm`
-files contain no `org`/`save`/`restore`/`phase`/`dephase` in directive position and its Z80
-driver is `engine/sound/z80_sound_driver.emp` on the `.emp` frontend, so the ripple looks
-absent, but that is a source sweep and NOT a ROM-byte comparison)
+-- **CLOSED 2026-09-06** by `parcel/as-org-backwards`, `2026-09-06-as-org-backwards-fix.md`.
+asl's `org` sets the counter absolutely in either direction and reports nothing about the
+direction (probe `p1_back.asm`: `low = 10h` beside `start = 1000h` in one file, exit 0), and
+`restore` does not carry the counter back (`p2_saverestore.asm`). `directive_org` now treats
+any target outside `[base, base + extent]` the same way in both directions: close the section
+and re-base the counter, `Pinned`. s1disasm 42 -> 50, s2disasm 5,162 unchanged (its site was
+always on the no-section arm, which was already asl's answer), skdisasm 2,126 -> 2,448, all
+three measured, the rises being coverage arriving where the fatals used to truncate. Aeon
+unmoved on all four shipped shapes at the provenance tip `483b3e12`, arms shown to be a real
+measurement by a one-byte checksum mutation that DID move the ROM. The aeon `378 *.asm`
+figure above is stale: that tree holds 3 `.asm` files, 0 `.inc`, and `directive_org` is
+evaluated ZERO times in any of the four builds (instrumented binary, feed counted)
 
 ### `\{$}` silently interpolates to nothing under `CPU 68000`, where asl errors (2026-09-06)
 A `warning`/`error`/`fatal`/`message` string containing `\{$}` under the 68000 CPU comes back
 from sigil with the text `\{$}` VERBATIM and no diagnostic. asl refuses the same string:
 `error #1020: invalid symbol name` followed by `$` on its own line, then `error #1970: invalid
 string`. Under `CPU Z80`, where hex takes an `h` suffix and `$` is unambiguous, both
-assemblers interpolate it. `\{*}` works on both CPUs in both assemblers and is the spelling a
-probe should use.
+assemblers interpolate it. **`\{*}` is NOT the universal spelling this row first claimed:**
+under `cpu z80` asl raises `#1110 wrong number of operands` for it, because `*` is
+multiplication there (probe `p4_pcsym.asm`, 2026-09-06). The PC is `*` under 68000 and `$`
+under Z80, and a probe must pick per CPU.
 Population: measured on 3 instrumented sites in a prepared s1disasm tree, one per CPU-mode
 combination tried; the corpus's own `\{$}` sites all sit under `CPU Z80` and are unaffected,
 so this raises no corpus row today and is a silent-acceptance gap rather than a count.
@@ -4201,3 +4211,19 @@ skdisasm and s2disasm both define the same `zmake68kPtr`/`zmake68kBank` helpers,
 counts are hidden behind the fatals in the row above and are not yet knowable.
 -- OPEN (kill: let a Z80 operand start with a user `function` call; then re-measure both
 truncated corpora, because this class and the org class hide each other)
+
+### No counterpart to `p2bin -z`, so an `org`ed chunk collides instead of being extracted (2026-09-06)
+AS writes a chunked `.p` file: a backward `org` starts a new chunk at the target and the
+chunks are separate objects until `p2bin` flattens them, last write wins. s1disasm's build
+depends on that separation, `p2bin -p=FF -z=0,kosinski,Size_of_DAC_driver_guess,after`, which
+takes the chunk at address 0 OUT of the image, Kosinski-compresses it, and pastes it after a
+named symbol. sigil links one flat image, so the Z80 driver's section at LMA 0 lands on the
+vector table and `relax`'s R7p.4 `overlap_diag` refuses with `sections ... overlap in the
+image (colliding pins)`. That refusal is correct for what sigil currently is; it is also the
+reason a byte-identical end-to-end s1disasm ROM is not reachable from the front end alone.
+Population: 1 corpus (s1disasm) depends on `-z` today; skdisasm and s2disasm both `org 0`
+their drivers the same way, so the same seam is theirs the moment their front-end rows clear.
+Measured: `p5_overlap.asm` in `2026-09-06-as-org-backwards-probes/` is the two-tool exhibit,
+asl writing `0102 e0e1 e2e3 0708` where sigil names both sections and stops.
+-- OPEN (kill: an output model in which an `org`ed run is a chunk the link stage can be asked
+to extract, compress and re-place, rather than a region that must tile the image)
