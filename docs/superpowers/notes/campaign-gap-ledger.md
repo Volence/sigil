@@ -4316,10 +4316,32 @@ Diagnosed by the aeon lane at the pair this lane named (sigil `e9a9dfa6` / aeon 
 `games/sonic4/objects/test_solid.emp` **grew from 298 lines at `5f8bbee7` to 715 at `abc7fdfa`**
 across the spring series.
 
-**Correcting the figure as relayed, because a refuted number does not get to stand next to a right
-conclusion:** it reached this lane as *"37 to 715"*. At the revision named it is **298**, so the
-growth is 298 to 715 (+417), not 37 to 715 (+678). The conclusion is untouched, and the mechanism
-is exactly as aeon described it; only the magnitude was wrong, in the direction that overstates.
+**⚠ MY CORRECTION OF THE FIGURE WAS ITSELF WRONG, AND THE ORIGINAL 37 TO 715 STANDS.** This lane
+wrote that the growth was 298 to 715, having measured from `5f8bbee7`. **`5f8bbee7` is the FIRST
+COMMIT OF THE SPRING SERIES, not the state before it**, and it alone added 261 of the lines, so
+that measurement takes the first quarter of the growth as its own baseline. Refuted by the aeon
+lane and re-derived here firsthand over every revision touching the file:
+
+| revision | lines | |
+|---|---|---|
+| `542fc0e8` | 37 | sprites H1 |
+| `4406ac92` | **37** | **the last revision before any spring work** |
+| `5f8bbee7` | 298 | spring, first commit: +261 |
+| `0aa4488c` | 308 | half-width correction |
+| `794f1b58` | 488 | subtype decode |
+| `abc7fdfa` | 715 | four directions |
+
+**So the series is 37 to 715, +678, and that is also the span that matters for this defect**: the
+probe's two-file ambient WAS sufficient for the 37-line file, and the whole 678 lines is what it
+stopped being sufficient for.
+
+**The rule this earns, and it is narrower than "check your numbers":** when correcting a figure
+because it overstates, **re-derive the ENDPOINT; do not move to the nearest named SHA.** A SHA in a
+message is there for a reason of its own - `5f8bbee7` was named because it was the series' first
+commit - and reading it as the series' boundary is an assumption about what stayed still, made at
+the exact moment of claiming rigour. The correction was in the direction AGAINST this lane's own
+interest, which is the right instinct and is not a defence: a good instinct that overshoots still
+lands a wrong number, and this one would have understated how far a probe's subject can move.
 
 **Ruled, and the ruling is the shape rather than the instance:** the probe gets a **small
 dedicated fixture that sigil owns**, not a widened ambient. Widening the ambient fixes today and
