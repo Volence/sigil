@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# run.sh — assemble one probe with the REFERENCE asl and print everything a
+# run.sh -- assemble one probe with the REFERENCE asl and print everything a
 # reader needs to judge the run: exit status, ASL_DIAG (whether asl finished
 # its pass loop and so whether it LOOKED for undefined symbols), and the
 # listing.

@@ -1,4 +1,4 @@
-; s10: a binder whose RHS is a FORWARD reference — undefined on pass 1, defined
+; s10: a binder whose RHS is a FORWARD reference -- undefined on pass 1, defined
 ; on pass 2.  Does the scope open?
 ;
 ; This is the shape that decides whether "the scope opens when the value binds"

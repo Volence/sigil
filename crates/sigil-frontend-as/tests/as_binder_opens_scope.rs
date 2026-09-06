@@ -23,7 +23,7 @@
 //!
 //! THE DIVERGENCE THIS FILE CLOSES IS SILENT IN ONE DIRECTION. Before the fix
 //! sigil resolved `Parent.lq` and emitted `$00001002` for a symbol the reference
-//! assembler says does not exist — an answer, not a refusal.
+//! assembler says does not exist -- an answer, not a refusal.
 //!
 //! IT IS NOT ONLY `set`. Measured over twelve spellings
 //! (`docs/superpowers/notes/2026-09-06-as-set-opens-scope-probes/matrix.sh`),
@@ -38,7 +38,7 @@
 //!
 //! * the four `_binds_the_local_to_the_binder` tests and
 //!   `a_set_inside_a_macro_opens_the_scope_in_the_caller` refuse with
-//!   `unresolved symbol \`Var.lq\`` / `\`Ms.lq\`` — the symbol does not exist;
+//!   `unresolved symbol \`Var.lq\`` / `\`Ms.lq\`` -- the symbol does not exist;
 //! * the two `_is_no_longer_the_parent` tests ASSEMBLE, emitting `$00000002`
 //!   for the reference assembler's undefined symbol, which is the silent half;
 //! * the remaining five PASS before AND after, and they are what an over-broad
@@ -82,7 +82,7 @@ fn refusal(src: &str) -> Vec<String> {
 /// Two `nop`s put `.lq` at offset 2, so a resolved reference emits
 /// `00 00 00 02` and the whole image is `4E 71 4E 71 00 00 00 02`. `lq` occurs
 /// exactly once in the source and `Parent` and `Var` are distinct names, so the
-/// spelling that resolves names the parent outright — a local that existed
+/// spelling that resolves names the parent outright -- a local that existed
 /// under both candidates could not tell the two apart.
 fn probe(binder: &str, reference: &str) -> String {
     format!(
@@ -142,7 +142,7 @@ fn the_preceding_label_is_no_longer_the_parent_after_an_equ() {
 
 /// A DOTTED binder name opens nothing: `.b set 5` under `Outer:` leaves the
 /// next local at `Outer.zz` (probe `s03`). This is the shape the corpus is
-/// actually made of — all five `set` sites the queue row named are dotted — so
+/// actually made of -- all five `set` sites the queue row named are dotted -- so
 /// a fix that opened a scope for them would break real sources while closing
 /// nothing.
 ///
@@ -154,7 +154,7 @@ fn a_dotted_binder_opens_no_scope() {
 
 /// The binder's OWN right-hand side is read in the PREVIOUS scope: `Vr set
 /// .prev` under `Parent:` resolves `.prev` as `Parent.prev` and binds its value
-/// (probe `s04` — the reference build binds `Vr : 1002` there and only then
+/// (probe `s04` -- the reference build binds `Vr : 1002` there and only then
 /// starts refusing `.prev` on the following line).
 ///
 /// PASSES BEFORE AND AFTER. A fix that opened the scope before evaluating the

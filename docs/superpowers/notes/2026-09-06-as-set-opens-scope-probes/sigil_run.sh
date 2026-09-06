@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# sigil_run.sh — assemble each named probe with a sigil binary and print its
+# sigil_run.sh -- assemble each named probe with a sigil binary and print its
 # bytes, its diagnostics and its exit status.
 #
 #   SIGIL=<path to sigil> ./sigil_run.sh probe.asm ...

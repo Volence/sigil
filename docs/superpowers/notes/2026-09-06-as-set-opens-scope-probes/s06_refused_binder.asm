@@ -1,4 +1,4 @@
-; s06: a binder whose DECLARATION asl refuses (a class crossing) — does the
+; s06: a binder whose DECLARATION asl refuses (a class crossing) -- does the
 ; scope still open?
 ;
 ; This run FAILS on purpose (`#2030 constants cannot be redefined as

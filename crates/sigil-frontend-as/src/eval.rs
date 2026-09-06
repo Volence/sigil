@@ -4422,7 +4422,7 @@ impl Asm {
     ///   unconditional rule would have moved real corpus sources while closing
     ///   nothing.
     /// * Callers reach here only where a value ACTUALLY BOUND, because a binder
-    ///   whose right-hand side does not evaluate opens no scope either — asl's
+    ///   whose right-hand side does not evaluate opens no scope either -- asl's
     ///   table for probe `s08` reads `Anchor.tt`, not `Bd.tt`.
     ///
     /// And the binder's OWN right-hand side is read in the PREVIOUS scope
@@ -5205,7 +5205,7 @@ impl Asm {
             } else {
                 self.pending_equ_syms.push(EquSym { name: q, expr: equ_expr, span });
             }
-            // LAST, not first — `qualify_expr` above must see the scope this
+            // LAST, not first -- `qualify_expr` above must see the scope this
             // line was written in (probe `s04`). See
             // [`Self::open_binder_scope`].
             self.open_binder_scope(name);
@@ -5385,7 +5385,7 @@ impl Asm {
             self.env.define(&q, SymbolValue::Int(self.enum_next));
             self.enum_next = self.enum_next.wrapping_add(self.enum_step);
             // An `enum` member opens a local-label scope like any other value
-            // binder, and with several members the LAST one owns it — which the
+            // binder, and with several members the LAST one owns it -- which the
             // loop gives for free. Probe `s11`: after `enum En1,En2` the
             // following `.e1` lists as `En2.e1`, with no `En1.e1` and no
             // `Anchor.e1` row. See [`Self::open_binder_scope`].
@@ -5495,7 +5495,7 @@ impl Asm {
             }
             // LAST, not first. `qualify_expr` just above resolves this line's
             // own `.`-locals, and it must see the scope the line was written in
-            // — probe `s04`. See [`Self::open_binder_scope`].
+            // -- probe `s04`. See [`Self::open_binder_scope`].
             self.open_binder_scope(name);
         }
     }

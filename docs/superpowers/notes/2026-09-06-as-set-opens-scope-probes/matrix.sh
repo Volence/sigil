@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# matrix.sh — for every value-binding form, ask BOTH assemblers which parent a
+# matrix.sh -- for every value-binding form, ask BOTH assemblers which parent a
 # following `.local` attached to, in BOTH directions.
 #
 #   ./matrix.sh [<sigil binary>]
 #
 # Two probes per form, generated into ./gen/:
-#   <form>_prev.asm   references `Anchor.zz`  — resolves iff NO scope opened
-#   <form>_bind.asm   references `<Name>.zz`  — resolves iff a scope DID open
+#   <form>_prev.asm   references `Anchor.zz`  -- resolves iff NO scope opened
+#   <form>_bind.asm   references `<Name>.zz`  -- resolves iff a scope DID open
 #
 # The local is spelled `zz` and occurs exactly once per file, and `Anchor` and
 # the binder name are distinct, so the spelling that resolves names the parent

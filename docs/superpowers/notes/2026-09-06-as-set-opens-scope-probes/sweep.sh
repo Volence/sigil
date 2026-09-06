@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# sweep.sh — put the OLD and the NEW assembler to every source file in four
+# sweep.sh -- put the OLD and the NEW assembler to every source file in four
 # trees and compare BYTES, EVERY DIAGNOSTIC and the EXIT CODE, per file.
 #
 #   ./sweep.sh <old sigil> <new sigil> [dir ...]
@@ -11,8 +11,8 @@
 # A sweep reporting "N files, 0 differ" is exactly as consistent with having
 # run ONE binary twice as it is with a null result.  Nothing downstream can
 # tell those apart, and the second reads like work.  So before the loop this
-# script assembles a WITNESS — the exact divergent shape, `dc.l Parent.lq`
-# after a `set` — and REFUSES TO START unless the two binaries answer it
+# script assembles a WITNESS -- the exact divergent shape, `dc.l Parent.lq`
+# after a `set` -- and REFUSES TO START unless the two binaries answer it
 # differently: the old one must ACCEPT it (the symbol asl calls undefined) and
 # the new one must REFUSE it.  That check is what makes a run of identical
 # results mean something.
@@ -30,8 +30,8 @@
 # ON THIS CORPUS THEY DO NOT PASS.  These trees are include FRAGMENTS: 1751 of
 # 1753 are refused by BOTH arms and the 2 accepted emit ZERO bytes, so what
 # the sweep compares here is 43,862 DIAGNOSTIC LINES, not an image.  That is a
-# real comparison — a diagnostic names the symbol it could not resolve, and
-# moving a local to a different parent renames it — but it is NOT a byte
+# real comparison -- a diagnostic names the symbol it could not resolve, and
+# moving a local to a different parent renames it -- but it is NOT a byte
 # measurement, and reading it as one would be reading agreement as evidence.
 # The byte half is the aeon ROM A/B, in the note beside this script.
 set -uo pipefail
@@ -77,7 +77,7 @@ if [ "$old_rc" -ne 0 ] || [ "$new_rc" -eq 0 ]; then
     echo "  one binary compared with itself." >&2
     exit 2
 fi
-echo "witness: OLD accepts the symbol asl calls undefined, NEW refuses it — two distinct tools"
+echo "witness: OLD accepts the symbol asl calls undefined, NEW refuses it -- two distinct tools"
 echo
 
 total=0
@@ -90,7 +90,7 @@ diaglines=0
 declare -a DIFFS=()
 for dir in "${DIRS[@]}"; do
     if [ ! -d "$dir" ]; then
-        echo "$dir  UNMEASURABLE: not a directory — reported, not counted as zero"
+        echo "$dir  UNMEASURABLE: not a directory -- reported, not counted as zero"
         continue
     fi
     n=0
@@ -122,7 +122,7 @@ done
 echo
 echo "TOTAL files=$total  identical=$((total - differ))  DIFFER=$differ"
 echo
-echo "WHAT THE ARMS PRODUCED — read this before reading DIFFER=0 as a result:"
+echo "WHAT THE ARMS PRODUCED -- read this before reading DIFFER=0 as a result:"
 echo "  OLD accepted $accepted_old of $total, emitting $bytes_old bytes"
 echo "  NEW accepted $accepted_new of $total, emitting $bytes_new bytes"
 echo "  diagnostic lines compared on the refused files: $diaglines"
