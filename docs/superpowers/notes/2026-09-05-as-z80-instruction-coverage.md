@@ -303,6 +303,24 @@ error    1 -> 0    -1   unsupported form: Sbc, ops: [Pair(Hl), Pair(Bc)]
 the unresolved-symbol name sets are identical in both directions:
 `before-only 0`, `after-only 0`, `in both 8`.
 
+> **CORRECTION, 2026-09-06, `2026-09-06-corpus-generated-includes.md`.** Both
+> ABSOLUTE figures above are inflated by 61. `s2disasm` at `e45ebf33` has 39
+> build-time generated include files that its own `build.lua` writes and that a
+> bare `git` checkout does not have, and their absence costs 61 diagnostics.
+> **The delta of -18 is unaffected, and this was measured rather than assumed.**
+> Re-running both of this parcel's own binaries (base `c38b44fd`, md5
+> `4243a728...`; tip `6bdf8d86`, md5 `40ee4292...`) over a PREPARED tree gives
+>
+> ```
+> error   18 -> 1   -17   unknown directive or mnemonic `X`
+> error    1 -> 0    -1   unsupported form: Sbc, ops: [Pair(Hl), Pair(Bc)]
+>       5186 -> 5168  -18  TOTAL
+> ```
+>
+> the same two classes and the same -18, with both endpoints moved by exactly
+> 61. So read `5247` as **5186** and `5229` as **5168**; every claim this
+> section makes about what the parcel closed stands unchanged.
+
 The 18 removed lines are the 17 `ldi` sites plus `s2.sounddriver.asm:4023`'s
 `sbc hl,bc`. **The one surviving `unknown directive or mnemonic` in the whole
 corpus is `s2.sounddriver.asm:251`'s `listing`,** which is an AS directive and

@@ -9,7 +9,12 @@
 # counts the assembler's own defects PLUS an absent generator's output and
 # cannot tell them apart. This script closes that gap.
 #
-# Usage: scripts/corpus-prepare.sh <corpus-dir>
+# Usage: scripts/corpus-prepare.sh <corpus-dir> [build-script]
+#
+# The build script defaults to `build.lua`. skdisasm has no `build.lua`: it ships
+# `buildS3.lua`, `buildSK.lua` and `buildS3Complete.lua`, one per ROM shape, and
+# a corpus like that must be told which one to run. When the default is absent
+# this script enumerates the candidates it found and refuses rather than picking.
 #
 # The cut point between the generator half and the ROM build is DERIVED from
 # build.lua by pattern, never by line number: everything before the first call
@@ -23,14 +28,24 @@
 set -u
 
 CORPUS="${1:-}"
+BUILD="${2:-build.lua}"
 if [ -z "$CORPUS" ] || [ ! -d "$CORPUS" ]; then
-    echo "FATAL: usage: scripts/corpus-prepare.sh <corpus-dir>" >&2
+    echo "FATAL: usage: scripts/corpus-prepare.sh <corpus-dir> [build-script]" >&2
     exit 2
 fi
 CORPUS="$(cd "$CORPUS" && pwd)"
 
-if [ ! -f "$CORPUS/build.lua" ]; then
-    echo "FATAL: $CORPUS has no build.lua, so there is no generator half to run" >&2
+if [ ! -f "$CORPUS/$BUILD" ]; then
+    echo "FATAL: $CORPUS has no $BUILD." >&2
+    CANDIDATES=$(cd "$CORPUS" && grep -l 'build_rom_and_handle_failure' ./*.lua 2>/dev/null | sed 's|^\./||')
+    if [ -n "$CANDIDATES" ]; then
+        echo "       Root Lua scripts that build a ROM, any of which may carry the" >&2
+        echo "       generator half; name one as the second argument:" >&2
+        printf '%s\n' "$CANDIDATES" | sed 's/^/         /' >&2
+    else
+        echo "       No root Lua script names build_rom_and_handle_failure either," >&2
+        echo "       so this corpus has no generator half this script can find." >&2
+    fi
     exit 2
 fi
 
@@ -48,30 +63,36 @@ echo "  lua       $(lua -v 2>&1 | head -1)"
 # ---------------------------------------------------------------------------
 # Derive the cut point.
 # ---------------------------------------------------------------------------
-BUILD_LINES=$(wc -l < "$CORPUS/build.lua")
-CUT=$(grep -n 'build_rom_and_handle_failure' "$CORPUS/build.lua" | head -1 | cut -d: -f1)
+BUILD_LINES=$(wc -l < "$CORPUS/$BUILD")
+CUT=$(grep -n 'build_rom_and_handle_failure' "$CORPUS/$BUILD" | head -1 | cut -d: -f1)
 if [ -z "$CUT" ]; then
-    echo "FATAL: build.lua names no 'build_rom_and_handle_failure', so the boundary" >&2
+    echo "FATAL: $BUILD names no 'build_rom_and_handle_failure', so the boundary" >&2
     echo "       between generating input and building a ROM cannot be derived." >&2
     echo "       Refusing to guess a line number." >&2
     exit 3
 fi
 KEEP=$((CUT - 1))
 if [ "$KEEP" -lt 1 ]; then
-    echo "FATAL: the ROM build is build.lua's first line; there is no generator half" >&2
+    echo "FATAL: the ROM build is $BUILD's first line; there is no generator half" >&2
     exit 3
 fi
 
 echo
 echo "== derived cut =="
-echo "  build.lua is $BUILD_LINES line(s); the ROM build is line $CUT:"
-sed -n "${CUT}p" "$CORPUS/build.lua" | sed 's/^/      /'
+echo "  script    $BUILD, $BUILD_LINES line(s); the ROM build is line $CUT:"
+sed -n "${CUT}p" "$CORPUS/$BUILD" | sed 's/^/      /'
 echo "  keeping lines 1..$KEEP as the generator half"
 
 GEN_LUA="$CORPUS/.sigil-corpus-generate.lua"
 cleanup() { rm -f "$GEN_LUA"; }
 trap cleanup EXIT
-head -n "$KEEP" "$CORPUS/build.lua" > "$GEN_LUA"
+head -n "$KEEP" "$CORPUS/$BUILD" > "$GEN_LUA"
+KEPT=$(wc -l < "$GEN_LUA")
+if [ "$KEPT" -ne "$KEEP" ]; then
+    echo "FATAL: kept $KEPT line(s), expected $KEEP; the generator half was not" >&2
+    echo "       extracted and running it would prove nothing." >&2
+    exit 3
+fi
 
 # ---------------------------------------------------------------------------
 # Count what is there before, so "wrote files" is a measurement.
