@@ -1117,3 +1117,37 @@ that had to reach zero and did not.
 agreeing 1,753 times over zero bytes. **Nearly every defect found today was a check that AGREED;
 nearly every recovery was a check that had to CLOSE** — an accounted population, a control that had
 to fire, a leg count that had to reconcile.
+
+### ⚠ THE OWNERSHIP BAR I WROTE TODAY BROKE A PEER'S RUN THE FIRST TIME I EXERCISED IT
+
+**2026-09-06 05:45:48Z I renamed over `sigil/target/release/sigil` while aeon's SP-5 agent was
+mid-build with the previous binary's md5 pinned in its brief.** Four legs assembled by two different
+assemblers, with **nothing in the output that would say so**: a false byte-identity, which is the
+exact failure the pin existed to prevent.
+
+**Hours earlier I banked: a shared artifact protected by a do-not-touch rule needs a NAMED OWNER for
+the deliberate touch, or it rots.** I became that owner. **The first exercise of the ownership caused
+a collision, because the bar named WHO MAY TOUCH and said nothing about WHEN.**
+
+**A rule that assigns ownership without a coordination point does not remove the hazard; it relocates
+it, from rot to collision.** That is the amendment, and it is the more important half:
+
+- **The owner of a deliberate touch announces BEFORE, not after.** I announced after, as a completed
+  refresh, which is a report rather than a coordination.
+- **A refresh of a shared artifact is a SCHEDULED act, not a local one.** The artifact being shared
+  makes the TIMING shared too. Content being correct settles nothing about when it may land.
+- **Ask who is mid-run before touching**, not whether the content is right. I checked staleness,
+  provenance, that nothing pinned the old digest in tracked files, and that the standing pinned copy
+  was untouched. **Every check I ran was about the artifact. None was about the other lanes.**
+
+**And the recovery is worse than the incident.** The previous binary is **unrecoverable**: no copy in
+scratch, none in `~/sonic_hacks/.pinned/`. A rebuild of the same revision is a DIFFERENT artifact
+answering a slightly different question, per this document's own rule, so it cannot be handed back as
+the pinned one. **This repo already knows a rename-over destroys evidence and not merely state**, in
+the words of its own freeze rule: `chmod` on a file does not stop a rename, because a rename is
+governed by the DIRECTORY. I had that written down and applied none of it, because I was thinking
+about whether the content was current rather than about who else was standing on it.
+
+**Cheap prophylactic for next time, since the rule needs a mechanism and not vigilance: copy the
+outgoing binary aside BEFORE the rename.** One `cp`, and the pin stays recoverable whatever else goes
+wrong.
