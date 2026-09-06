@@ -104,11 +104,19 @@ export AS_MSGPATH
 # file. That probe has ONE invalid line, `bra.s /`, where `/` is a nameless
 # label DEFINITION in AS and not a reference. Everything else in it is valid.
 # asl reports the one error, exits 2, and prints a FULL BYTE COLUMN for every
-# other line. One of those other lines is wrong because of it: the macro's
-# `beq.s +` comes back
+# other line. One of those other lines is wrong: the macro's `beq.s +` comes back
 #
 #     67FE      with the bad line present   (a branch to ITSELF)
 #     6702      with the bad line deleted   (the correct forward branch)
+#
+# AND THE REASON IS NOT "THE ERROR CHANGED THAT LINE", which is what this comment
+# used to say. `67FE` is the PASS-1 PLACEHOLDER for a forward reference asl had
+# not resolved yet, and it survives because the error stopped the PASS LOOP
+# before pass 2 could resolve it. Distinguishable, and distinguished: put an
+# unknown-instruction error on line 3 of a file containing only that macro, with
+# no `bra.s /` anywhere and nothing near the branch, and `beq.s +` still reads
+# `67FE`. Any error, at any position, related or not. The rule below does not
+# move; only its reason does.
 #
 # The listing looks complete. The corrupted value is plausible, in range, and
 # the right shape, and nothing in the listing announces it. A reader who had
@@ -136,6 +144,121 @@ export AS_MSGPATH
 # nothing here reddens when that happens. And a caller who redirects `asl_run`'s
 # stderr to a log or to /dev/null loses the banner; the RETURN STATUS survives
 # that, which is why the status and not the banner is the load-bearing half.
+#
+# ── AND WHETHER IT LOOKED AT ALL: `asl_diag_state` ───────────────────────────
+# A THIRD QUESTION, AND THE EXIT STATUS CANNOT ANSWER IT EITHER. asl assembles
+# in a PASS LOOP. A forward reference is legal, so an undefined symbol is a
+# provisional value on pass 1 and becomes `error #1010: symbol undefined` only
+# when a LATER pass finds it still undefined. If ANY error occurs, asl refuses
+# to start the next needed pass, and every diagnostic that pass would have
+# raised is simply never looked for.
+#
+# So a run can fail for reason X and report NOTHING WHATEVER about reason Y,
+# with a plausible failure and a plausible count. Measured beside this file on
+# `swallowed_undef.asm` and `swallowed_undef_control.asm`, which differ in
+# exactly one line: the subject carries `zzbogus d0,d1` above three undefined
+# symbols, the control does not, and every other line is identical:
+#
+#     control  (3 undefined, nothing else wrong)   3 x #1010    exit 2, 2 passes
+#     subject  (1 unrelated error + the same 3)    0 x #1010    exit 2, 1 pass
+#
+# BOTH ARMS FAIL, and the footer of the second reads `1 error`. A caller keyed
+# to "did it fail" sees two failures and cannot tell them apart. POSITION IS
+# IRRELEVANT: the same three vanish whether the unrelated error is above them or
+# below them, because what stops is the pass LOOP, not the reading of the file.
+#
+# asl does say so, at the very bottom of the listing, in prose no runner parses:
+#
+#     1 pass
+#       Additional necessary passes not started due to
+#       errors, listing possibly incorrect.
+#
+# THE HONEST LIMIT, and it is the whole shape of this check: finding that line
+# makes the incompleteness VISIBLE. IT DOES NOT MAKE THE MISSING DIAGNOSTICS
+# APPEAR. A listing carrying it is not a smaller diagnostic set to be topped up;
+# it is a set of unknown size. The only way to learn what was suppressed is to
+# fix the reported error and assemble again.
+#
+# THREE STATES, NOT TWO, and the third is why this is a classifier and not a
+# predicate. `complete` needs the footer to be PRESENT and to lack the line:
+# absence of the line is not evidence of completeness, because a fatal error
+# (exit 3) or a crash writes a listing with NO FOOTER AT ALL, and greping such a
+# listing for the line finds nothing and would read as clean. 18 committed
+# probes in this tree are that shape.
+#
+#   INCOMPLETE  the line is there: later-pass diagnostics were never looked for
+#   complete    footer present, line absent: asl ran every pass it wanted
+#   nofooter    a listing with no footer: the run died, completeness unknowable
+#   missing     no listing to read at all (no `-L`, or a path this cannot derive)
+#
+# It reports and does not gate. It NEVER changes `asl_run`'s return status, and
+# that is deliberate: many probes in this tree are supposed to fail, and several
+# read a non-zero exit as the answer. A check that reddened those would be the
+# always-red shape this repo rejects. `INCOMPLETE` also cannot occur on a clean
+# run, because the line says "due to errors" and an error is exit 2, so nothing here
+# fires on correct input.
+asl_diag_state() {
+    local lst="$1"
+    if [ -z "$lst" ] || [ ! -f "$lst" ]; then
+        echo missing
+        return 0
+    fi
+    # ANCHORED, and it has to be. A listing ECHOES THE SOURCE, so a file whose
+    # comments discuss this footer line contains the phrase in its own listing
+    # and an unanchored `grep -q` calls it INCOMPLETE. That is not theoretical:
+    # `swallowed_undef_control.asm` beside this file says in a comment that its
+    # footer does NOT carry the line, and the first version of this check read
+    # that sentence and reported the control as incomplete. Selfcheck case 11
+    # caught it. Echoed source always carries a line-number and address prefix,
+    # so requiring the phrase to start the line after whitespace alone
+    # distinguishes the footer from any mention of it.
+    if grep -qE '^[[:space:]]+Additional necessary passes not started' "$lst"; then
+        echo INCOMPLETE
+        return 0
+    fi
+    if grep -qE '^ +[0-9]+ passe?s?$' "$lst"; then
+        echo complete
+        return 0
+    fi
+    echo nofooter
+}
+
+# Which listing `asl -L` would have written for this argument vector. asl names
+# the listing after the SOURCE FILE, beside it, extension replaced. Measured,
+# not assumed: `asl -L -i . sub/x.asm` writes `sub/x.lst`, not `./x.lst`.
+#
+# AND IT TRUNCATES AT THE FIRST DOT IN THE PATH IT WAS GIVEN, NOT THE LAST.
+# That is not a nicety. Measured on this build:
+#
+#     swal.asm                          ->  swal.lst          (as expected)
+#     a.b/p.asm                         ->  a.lst             (in the PARENT)
+#     ./p2.asm                          ->  .lst              (a hidden file)
+#     /path/sigil/.claude/wt/x/p.asm    ->  /path/sigil/.lst
+#
+# So a caller inside a `.claude/worktrees/...` checkout that hands asl an
+# ABSOLUTE source path gets no listing where it expects one and writes a stray
+# `.lst` at the first dot-directory in the path, which in this workspace is the
+# repository root, OUTSIDE the worktree. The untracked `.lst` and `.log` sitting
+# at sigil's root are that. A runner in that shape then reads a listing that is
+# missing or stale while its assembly looked entirely normal.
+#
+# `${src%%.*}` reproduces asl's rule exactly, which is the point: this function
+# must agree with where the file went, not with where it ought to go. The last
+# source-looking argument wins, and `-i .` / `-o out.p` do not match, so a
+# blessed invocation resolves. Override with `ASL_LST` when a caller's argument
+# vector is shaped so this cannot.
+asl_lst_for() {
+    local a src=""
+    for a in "$@"; do
+        case "$a" in
+            -*) ;;
+            *.asm|*.ASM|*.s|*.S|*.a68|*.z80|*.inc) src="$a" ;;
+        esac
+    done
+    [ -n "$src" ] || return 1
+    printf '%s.lst\n' "${src%%.*}"
+}
+
 asl_run() {
     if [ -z "${ASL:-}" ]; then
         echo "FATAL: asl_run called with no \$ASL; source asl_ref.sh first." >&2
@@ -150,12 +273,52 @@ asl_run() {
         asl_rc=$?
     fi
     echo "ASL_EXIT=$asl_rc" >&2
+    local asl_lst asl_diag
+    asl_lst="${ASL_LST:-$(asl_lst_for "$@")}"
+    asl_diag="$(asl_diag_state "$asl_lst")"
+    case "$asl_diag" in
+    INCOMPLETE)
+        echo "ASL_DIAG=INCOMPLETE" >&2
+        echo "  asl stopped its PASS LOOP on an error, so the diagnostics from" >&2
+        echo "  the pass it refused to start were NEVER LOOKED FOR. Chiefly" >&2
+        echo "  'symbol undefined': a forward reference is only judged on a" >&2
+        echo "  later pass, so undefined symbols in this file are reported as" >&2
+        echo "  ZERO here whether there are none or thirty. The error count in" >&2
+        echo "  the footer counts what asl reached, not what is wrong." >&2
+        echo "  THIS LINE MAKES THE GAP VISIBLE. IT DOES NOT FILL IT: fix the" >&2
+        echo "  reported error and assemble again to learn what was hidden." >&2
+        echo "  Listing: $asl_lst" >&2
+        ;;
+    complete)
+        echo "ASL_DIAG=complete" >&2
+        ;;
+    nofooter)
+        echo "ASL_DIAG=unknown ($asl_lst has no pass footer: the run died before" >&2
+        echo "  writing one, so whether asl finished its pass loop is unknowable" >&2
+        echo "  from the listing. Absence of the warning is NOT completeness.)" >&2
+        ;;
+    missing)
+        if [ "$asl_rc" -eq 0 ]; then
+            # No error occurred, and the pass loop only stops "due to errors",
+            # so there is nothing a listing could have added here.
+            echo "ASL_DIAG=complete (exit 0: no error, so no pass was aborted)" >&2
+        else
+            echo "ASL_DIAG=unknown (no listing at ${asl_lst:-<none derivable>};" >&2
+            echo "  pass -L, or set ASL_LST, to learn whether asl finished its" >&2
+            echo "  passes. If -L WAS passed: asl truncates the listing name at" >&2
+            echo "  the FIRST dot in the source path it was given, so an absolute" >&2
+            echo "  path through a dot-directory writes the listing elsewhere." >&2
+            echo "  Hand it a relative path from the source's own directory.)" >&2
+        fi
+        ;;
+    esac
     if [ "$asl_rc" -ne 0 ]; then
         echo "REFUSED: asl exited $asl_rc, so this run FAILED." >&2
         echo "  NO BYTE COLUMN FROM THIS RUN IS A SOURCE OF VALUES, including the" >&2
-        echo "  lines that assembled: one error changes what OTHER lines encode to," >&2
-        echo "  and the listing prints them looking complete. See partial_failure.asm" >&2
-        echo "  beside asl_ref.sh, where a single bad line turns 6702 into 67FE." >&2
+        echo "  lines that assembled: an error stops the pass loop, so every forward" >&2
+        echo "  reference is left at its unresolved pass-1 placeholder and the" >&2
+        echo "  listing prints them looking complete. See partial_failure.asm" >&2
+        echo "  beside asl_ref.sh, where one bad line leaves 6702 reading 67FE." >&2
         echo "  Fix the source, do not quote the listing." >&2
     fi
     return "$asl_rc"

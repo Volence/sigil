@@ -68,6 +68,17 @@ Aborted (core dumped)                                       exit 134
 **An error found earlier in a file suppresses every later `symbol undefined`
 report.** asl says so itself, in the listing footer:
 
+> **WIDENED 2026-09-05: POSITION IS IRRELEVANT.** "Earlier" is a narrower rule
+> than the one that holds. An error placed *below* the undefined symbols
+> suppresses them just the same, because what stops is the pass LOOP and not the
+> reading of the file. Measured on
+> `2026-09-05-asl-pass-loop-probes/error_first.asm` and `error_last.asm`, which
+> carry the same three undefined symbols with one unrelated error above and
+> below them respectively: both report **zero** of the three, against three from
+> the same file with no other error. Everything this section concludes stands;
+> only its scope grows. `2026-09-05-asl-pass-loop-swallows-diagnostics.md`
+> carries the sweep this section booked.
+
 ```text
       1 pass
         Additional necessary passes not started due to
@@ -436,11 +447,18 @@ like enough.
 
 ## WHAT IS LEFT OPEN
 
-- **The pass-loop suppression is unswept.** Any committed probe file in this tree
-  that puts several deliberate errors together may be under-reporting, and the
-  `INCOMPLETE` tell now added to three runners is not wired into any other.
-  Deriving the population is mechanical: assemble each probe, grep its listing
-  for `Additional necessary passes not started`.
+- ~~**The pass-loop suppression is unswept.**~~ **SWEPT 2026-09-05**, in
+  `2026-09-05-asl-pass-loop-swallows-diagnostics.md`: 348 tracked `.asm`, 24
+  carrying the warning, 18 more whose run died before writing a footer at all,
+  two conclusions actually affected (`q8.asm` in `2026-09-03-as-struct-dots.md`
+  and `p2.asm` in `2026-09-03-irp-irpc-argcount.md`, both corrected). The tell is
+  no longer per-runner: it moved into `../asl-reference/asl_ref.sh` as
+  `asl_diag_state`, and `asl_run` now writes `ASL_DIAG=<state>` beside
+  `ASL_EXIT` for every caller. **Two things the sweep found that this row's
+  recipe would have missed**: the grep has to be ANCHORED, because a listing
+  echoes its source and a file whose comments discuss the warning matches an
+  unanchored one; and absence of the warning is not completeness, because a
+  fatal or a crash writes a listing with no footer at all.
 - **`../asl-reference/README.md`'s binary table is short by two rows and by two
   digests**, and its "the path is context beside it" line is too kind to a path
   that actively lies. Not edited here: that file is the subject of its own

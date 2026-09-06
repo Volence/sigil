@@ -204,13 +204,24 @@ same way it does for the digest.
 **Why the gap is not academic**, measured on `partial_failure.asm` beside the
 guard. That file has one invalid line, `bra.s /` (in AS, `/` is a nameless label
 *definition* and not a reference). asl reports the one error, exits 2, and prints
-a full byte column for every other line. One of those other lines is wrong
-because of it: the macro's `beq.s +` assembles to
+a full byte column for every other line. One of those other lines is wrong: the
+macro's `beq.s +` assembles to
 
 | | `beq.s +` |
 |---|---|
 | with the bad line present | `67FE`, a branch to **itself** |
 | with the bad line deleted | `6702`, the correct forward branch |
+
+**The mechanism is not "the error changed that line", and this file used to say
+it was.** `67FE` is the *pass-1 placeholder* for a forward reference asl had not
+resolved yet, and it is still there because the error stopped the pass loop
+before pass 2 could resolve it. The two are distinguishable, and were
+distinguished: put an `unknown instruction` error on line 3 of a file whose only
+other content is that macro, with no `bra.s /` anywhere and nothing near the
+branch, and `beq.s +` still comes back `67FE`. Any error, at any position,
+related or not. See `../2026-09-05-asl-pass-loop-swallows-diagnostics.md`, which
+carries that pair. The rule below is unchanged by the correction; only the
+reason for it moves.
 
 The listing looks complete. The corrupted value is plausible, in range, and the
 right shape, and nothing announces it. A reader who pinned the digest perfectly
@@ -235,6 +246,60 @@ Two further limits, stated because an unstated one reads as covered:
   works and is the **unblessed** path; see *Why there is no adoption lint* below.
 * **A caller who redirects stderr loses the banner.** The return status survives
   that, which is why the status and not the banner is the load-bearing half.
+
+### And whether it LOOKED: `ASL_DIAG`
+
+**A third question, and the exit status cannot answer it either: did the run
+report on everything that is wrong with the file?** asl assembles in a pass loop,
+a forward reference is legal, and so an undefined symbol is a provisional value
+on pass 1 and becomes `error #1010` only when a *later* pass finds it still
+undefined. **Any error stops the loop, and that pass never runs.** The run then
+fails for reason X and says nothing whatever about reason Y.
+
+`swallowed_undef.asm` and `swallowed_undef_control.asm` beside the guard differ
+in one line and both fail:
+
+| | undefined symbols reported | exit | footer |
+|---|---|---|---|
+| control: 3 undefined, nothing else wrong | **3** | 2 | `2 passes`, `3 errors` |
+| subject: one unrelated error + the same 3 | **0** | 2 | `1 pass`, `1 error` |
+
+**Both arms fail**, so a check keyed to "did it fail" cannot separate them, which
+is exactly why `asl_run`'s exit refusal is not partial coverage of this. Position
+is irrelevant: the same three vanish with the unrelated error above them or below
+them, because what stops is the *loop*, not the reading of the file.
+
+`asl_run` now writes `ASL_DIAG=<state>` beside `ASL_EXIT`, from `asl_diag_state`.
+**Three states, not two**, and the third is the point:
+
+| state | meaning |
+|---|---|
+| `complete` | footer present and without the warning: asl ran every pass it wanted |
+| `INCOMPLETE` | asl refused a needed pass; later-pass diagnostics never looked for |
+| `unknown` | no footer (a fatal or a crash) or no listing: **completeness unknowable** |
+
+`unknown` exists because *absence of the warning is not evidence of
+completeness*: a fatal error writes a listing with no footer at all, and greping
+that for the warning finds nothing and reads as clean. 18 committed probes in
+this tree are that shape.
+
+**The honest limit, and it is the whole shape of the check: this makes the
+incompleteness VISIBLE, it does not make the missing diagnostics APPEAR.** A
+listing carrying `INCOMPLETE` is not a smaller diagnostic set to top up; it is a
+set of unknown size. The only way to learn what was suppressed is to fix the
+reported error and assemble again.
+
+**It reports and never gates.** `ASL_DIAG` does not touch the return status
+(selfcheck case 12), for the same reason there is no adoption lint: many probes
+here are supposed to fail and several read a non-zero exit as the answer. And it
+cannot fire on a clean run, because the warning says *due to errors* and an error
+is exit 2.
+
+**The match is anchored**, `^[[:space:]]+Additional necessary passes not
+started`, and it has to be: a listing echoes its source, so a file whose comments
+discuss the warning contains the phrase in its own listing. The unanchored first
+version read `swallowed_undef_control.asm`'s comment and called the control
+incomplete. Case 11 caught it before it was committed.
 
 ### Why there is no adoption lint
 
@@ -264,10 +329,24 @@ case 6  asl_run ACCEPTS a clean assembly, with no banner
 case 7  the fixture is a PARTIAL failure: exit 2, full byte column, 67FE vs 6702
 case 8  asl_run REFUSES the partial failure               ← the load-bearing case
 case 9  with asl_run's STATUS PROPAGATION stubbed, case 8 goes RED
+case 10 THE PAIR DISCRIMINATES: both arms fail, 3 x #1010 against 0 x #1010
+case 11 asl_run says INCOMPLETE on the subject and complete on the control
+case 12 the state NEVER changes what asl_run returns
+case 13 with the FOOTER LITERAL stubbed, case 11 goes RED
 ```
 
 Cases 0 to 5 ask which program ran; cases 6 to 9 ask whether its answers mean
-anything.
+anything; cases 10 to 13 ask whether it looked at everything.
+
+Case 10 measures the pair with no check of ours in the loop, so cases 11 to 13
+are known to report a real difference rather than themselves. It requires **both
+arms to exit non-zero** and the two undefined-symbol counts to differ: an A/B
+whose arms agree may have measured nothing, and two arms failing the same way
+upstream are indistinguishable from two arms passing. Case 11's control half is
+the bar the check has to clear to be worth having, because the control **fails**
+and is nonetheless complete. Case 13 stubs a **third** line: case 5 disables the
+digest comparison, case 9 the exit check, case 13 the footer match, and a stub of
+any one says nothing about the others.
 
 Case 5 is the selfcheck's own honesty check, and it verifies the stub APPLIED
 before drawing a conclusion from it — a stub that fails to apply runs the

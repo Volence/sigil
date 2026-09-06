@@ -281,6 +281,163 @@ measuring the exit check and not something else"
 reason other than the status test"
     fi
 fi
+
+# ── CASES 10 TO 13: THE PASS LOOP ────────────────────────────────────────────
+# A DIFFERENT DEFECT SHAPE FROM CASES 6 TO 9, and the reason cases 8 and 9 do
+# not cover it. There the run failed and `asl_run` refused a non-zero exit.
+# Here the exit is non-zero too - legitimately, the run really did fail - and
+# the defect is that it failed for reason X while reporting NOTHING about
+# reason Y. A check keyed to "did it fail" cannot see that, because both arms
+# of the pair below fail.
+#
+# `swallowed_undef.asm` carries one unrelated error above three undefined
+# symbols; `swallowed_undef_control.asm` is the same file without that one line.
+# Case 10 measures the pair with no check involved at all, so cases 11 to 13
+# are known to be reporting on a real difference rather than on themselves.
+SWAL="$HERE/swallowed_undef.asm"
+SWCTL="$HERE/swallowed_undef_control.asm"
+if [ ! -f "$SWAL" ] || [ ! -f "$SWCTL" ]; then
+    bad "swallowed_undef.asm or swallowed_undef_control.asm is missing beside \
+this file: cases 10 to 13 cannot run, and a missing fixture is not a pass"
+else
+cp "$SWAL" "$SCRATCH/swal.asm"
+cp "$SWCTL" "$SCRATCH/swctl.asm"
+
+# Written-out expectations, not read off either listing.
+UNDEF_WHEN_LOOKED=3      # what the control reports
+UNDEF_WHEN_SWALLOWED=0   # what the subject reports, having the same three
+
+undef_count() { grep -c 'error #1010' "$1" 2>/dev/null || true; }
+
+echo "--- case 10: THE PAIR DISCRIMINATES, with no check of ours in the loop"
+raw_probe swal.asm;  swal_rc=$?
+raw_probe swctl.asm; swctl_rc=$?
+got_swal="$(undef_count "$SCRATCH/swal.lst")"
+got_swctl="$(undef_count "$SCRATCH/swctl.lst")"
+if [ "$UNDEF_WHEN_LOOKED" = "$UNDEF_WHEN_SWALLOWED" ]; then
+    bad "the two expectations are the same literal, so this case cannot fail"
+elif [ "$swal_rc" = 0 ] || [ "$swctl_rc" = 0 ]; then
+    bad "one arm exited 0 (subject $swal_rc, control $swctl_rc): the point of \
+this pair is that BOTH fail, and an arm that passes makes the exit status \
+sufficient after all"
+elif [ "$got_swctl" != "$UNDEF_WHEN_LOOKED" ]; then
+    bad "the control reported $got_swctl undefined symbols, not \
+$UNDEF_WHEN_LOOKED: the fixture no longer contains the class this pair is \
+about, so a zero from the subject would mean nothing"
+elif [ "$got_swal" != "$UNDEF_WHEN_SWALLOWED" ]; then
+    bad "the subject reported $got_swal undefined symbols, not \
+$UNDEF_WHEN_SWALLOWED: this build no longer swallows them, so cases 11 to 13 \
+are checking for a condition that does not arise"
+else
+    ok "both arms exit non-zero (subject $swal_rc, control $swctl_rc), the \
+control reports $got_swctl x #1010 and the subject reports $got_swal x #1010 \
+for the SAME three symbols: a failure that looked, and a failure that did not"
+fi
+
+echo "--- case 11: asl_run CALLS IT (INCOMPLETE on the subject, complete on the control)"
+out="$(run_probe swal.asm)";  msg_swal="${out#*$'\n'}"
+out="$(run_probe swctl.asm)"; rc_swctl="${out%%$'\n'*}"; msg_swctl="${out#*$'\n'}"
+if [[ $msg_swal != *"ASL_DIAG=INCOMPLETE"* ]]; then
+    bad "asl_run said nothing about the swallowed pass on the subject: [$msg_swal]"
+elif [[ $msg_swal != *"NEVER LOOKED FOR"* ]]; then
+    bad "the INCOMPLETE report does not say what it means, so it is not \
+actionable: [$msg_swal]"
+elif [[ $msg_swctl == *"ASL_DIAG=INCOMPLETE"* ]]; then
+    bad "asl_run called the CONTROL incomplete. It failed with $rc_swctl and \
+three real errors, and its diagnostics are whole. A detector that reds every \
+failing run is the always-red shape, and this tree is full of probes that are \
+supposed to fail: [$msg_swctl]"
+elif [[ $msg_swctl != *"ASL_DIAG=complete"* ]]; then
+    bad "asl_run reported no diagnostic state at all for the control: [$msg_swctl]"
+else
+    ok "subject INCOMPLETE, control complete, and the control still failed with \
+$rc_swctl: the check separates the two failures rather than firing on both"
+fi
+
+echo "--- case 12: the state NEVER changes what asl_run returns"
+# Deliberate, and worth a case of its own: several probes in this tree read a
+# non-zero exit as their answer, and a diagnostic-completeness report that moved
+# the status would break them silently.
+out="$(run_probe swal.asm)"; rc_swal="${out%%$'\n'*}"
+raw_probe swal.asm; raw_swal_rc=$?
+if [ "$rc_swal" != "$raw_swal_rc" ]; then
+    bad "asl_run returned $rc_swal where raw asl returned $raw_swal_rc: the \
+completeness report is not supposed to touch the status"
+elif [ "$rc_swal" = 0 ]; then
+    bad "asl_run returned 0 on the subject, so this case is comparing two \
+values that are both wrong"
+else
+    ok "asl_run returns $rc_swal, the same status raw asl returned, with the \
+INCOMPLETE report printed beside it and not instead of it"
+fi
+
+echo "--- case 13: with the footer literal STUBBED, case 11 must go RED"
+# Stubbed at a third point, distinct from case 5 (the digest comparison) and
+# case 9 (the exit propagation): this disables only the footer match, so a stub
+# of either of the others proves nothing about this one.
+DIAGSTUB="$(mktemp)"
+DIAG_LIT='Additional necessary passes not started'
+sed "s/'\^\[\[:space:\]\]+$DIAG_LIT'/'ZZ_NO_SUCH_FOOTER_LINE_ZZ'/" "$GUARD" > "$DIAGSTUB"
+if ! grep -qF "grep -qE '^[[:space:]]+$DIAG_LIT'" "$GUARD"; then
+    bad "the guard does not match on '$DIAG_LIT': either the pass-loop check is \
+already gone (which case 11 should be reporting) or it was rewritten and this \
+case is stubbing nothing"
+elif grep -qF "grep -qE '^[[:space:]]+$DIAG_LIT'" "$DIAGSTUB"; then
+    bad "the stub did not apply: case 13 would have passed by running the \
+ORIGINAL guard, which is indistinguishable from a working stub"
+elif ! grep -q 'ZZ_NO_SUCH_FOOTER_LINE_ZZ' "$DIAGSTUB"; then
+    bad "the stub removed the literal without substituting the unmatchable one, \
+so the stubbed guard is not the program this case means to run"
+else
+    out="$(run_probe swal.asm "$DIAGSTUB")"; msg="${out#*$'\n'}"
+    if [[ $msg == *"ASL_DIAG=INCOMPLETE"* ]]; then
+        bad "the stubbed guard STILL called the subject incomplete: case 11 is \
+passing for some reason other than the footer match"
+    elif [[ $msg != *"ASL_DIAG=complete"* ]]; then
+        bad "the stubbed guard reported neither state: [$msg]"
+    else
+        ok "stubbed guard calls the swallowing run 'complete', so case 11 is \
+measuring the footer match and not something else"
+    fi
+fi
+
+echo "--- case 14: asl_lst_for agrees with WHERE ASL ACTUALLY WROTE, dots and all"
+# The whole INCOMPLETE check reads a file, so a derivation that names the wrong
+# file reports `unknown` on a swallowing run and looks like a clean absence.
+# asl truncates the listing name at the FIRST dot in the path it is handed, so a
+# directory with a dot in it moves the listing into the PARENT. This case does
+# not assume that: it assembles into such a directory and asks the filesystem.
+DOTDIR="$SCRATCH/d.d"
+mkdir -p "$DOTDIR"
+cp "$SWAL" "$DOTDIR/p.asm"
+rm -f "$SCRATCH"/d.lst "$DOTDIR"/p.lst
+(
+    cd "$SCRATCH" || exit 90
+    export USEANSI=n
+    . "$GUARD" >/dev/null 2>&1 || exit $?
+    "$ASL" -xx -n -q -A -L -U -i . d.d/p.asm >/dev/null 2>&1
+)
+derived="$(
+    . "$GUARD" >/dev/null 2>&1
+    cd "$SCRATCH" || exit 90
+    asl_lst_for -xx -n -q -A -L -U -i . d.d/p.asm
+)"
+actual="$(cd "$SCRATCH" && find . -name '*.lst' -newer "$DOTDIR/p.asm" | sed 's|^\./||' | head -1)"
+if [ -z "$actual" ]; then
+    bad "no listing was written anywhere under the scratch tree, so this case \
+has nothing to compare against"
+elif [ -z "$derived" ]; then
+    bad "asl_lst_for derived nothing for a blessed argument vector, so asl_run \
+would report 'unknown' on every run shaped like this"
+elif [ "$derived" != "$actual" ]; then
+    bad "asl_lst_for says '$derived' and asl actually wrote '$actual': the \
+INCOMPLETE check would be reading the wrong file, and a missing file reports \
+as 'unknown' rather than as an error"
+else
+    ok "asl wrote '$actual' for source d.d/p.asm and asl_lst_for names the same \
+file: the derivation follows asl's first-dot rule rather than the obvious one"
+fi
+fi
 fi
 
 echo
