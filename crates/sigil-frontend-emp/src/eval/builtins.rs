@@ -6,6 +6,14 @@ use crate::ast;
 use crate::value::{Cell, CodeBuf, CodeItem, CodeOperand, DataBuf, Value};
 use sigil_span::Span;
 
+/// The SFX bank-window mask `winptr(sym)` applies: `(sym & SFX_WIN_MASK) | SFX_WIN_BASE`
+/// maps a 68k ROM address into the Z80's `$8000..$FFFF` window (AS `sfx_winptr`,
+/// `SFX_WIN_MASK`). The one definition of the rule in this crate; the linker's
+/// `BankPtr16*` kinds fold the same arithmetic on their own side.
+pub const SFX_WIN_MASK: i64 = 0x7FFF;
+/// The window base `winptr(sym)` ORs in (AS `SFX_WIN_BASE`). See [`SFX_WIN_MASK`].
+pub const SFX_WIN_BASE: i64 = 0x8000;
+
 /// The inclusive value range accepted by `byte`/`bytes` — an 8-bit cell may be
 /// written signed (`-128..=127`) or unsigned (`0..=255`), so the union is the
 /// accepted set; anything outside genuinely does not fit 8 bits.
@@ -451,20 +459,19 @@ impl<'a> Evaluator<'a> {
             Ok(n) => n,
             Err(poison) => return poison,
         };
-        // Build the residual tree `(Sym & $7FFF) | $8000` — the SFX bank-window
-        // mask/base (AS `sfx_winptr`, `SFX_WIN_MASK`/`SFX_WIN_BASE`), matching the
-        // linker's own BankPtr test convention and the old `sym_target` masking.
-        // Folded by the linker once `sym`'s final address is known.
+        // Build the residual tree `(Sym & SFX_WIN_MASK) | SFX_WIN_BASE`, the SFX
+        // bank-window mask/base. Folded by the linker once `sym`'s final address
+        // is known.
         use sigil_ir::expr::{BinOp, Expr};
         let masked = Expr::Binary {
             op: BinOp::And,
             lhs: Box::new(Expr::Sym(name)),
-            rhs: Box::new(Expr::Int(0x7FFF)),
+            rhs: Box::new(Expr::Int(SFX_WIN_MASK)),
         };
         let windowed = Expr::Binary {
             op: BinOp::Or,
             lhs: Box::new(masked),
-            rhs: Box::new(Expr::Int(0x8000)),
+            rhs: Box::new(Expr::Int(SFX_WIN_BASE)),
         };
         Value::LinkExpr(windowed)
     }

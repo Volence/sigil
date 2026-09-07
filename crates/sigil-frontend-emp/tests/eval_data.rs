@@ -361,7 +361,7 @@ fn pointer_field_lowers_to_symref() {
     assert_eq!(
         buf.cells,
         vec![
-            Cell::SymRef { name: "init".into(), width: 4, windowed: false },
+            Cell::SymRef { name: "init".into(), width: 4 },
             Cell::Scalar { value: 3, width: 1, signed: false, le: false },
         ]
     );

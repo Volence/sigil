@@ -1567,7 +1567,7 @@ impl Evaluator<'_> {
                     return None;
                 }
                 Value::Label(name) => {
-                    cells.push(Cell::SymRef { name, width: width_bytes as u8, windowed: false });
+                    cells.push(Cell::SymRef { name, width: width_bytes as u8 });
                     total += width_bytes;
                 }
                 Value::Str(s) if width_bytes == 1 => {
@@ -1591,7 +1591,7 @@ impl Evaluator<'_> {
                 Value::LinkExpr(e) => {
                     match e {
                         sigil_ir::expr::Expr::Sym(name) => {
-                            cells.push(Cell::SymRef { name, width: width_bytes as u8, windowed: false });
+                            cells.push(Cell::SymRef { name, width: width_bytes as u8 });
                         }
                         other => {
                             cells.push(Cell::Expr { expr: other, width: width_bytes as u8, le: false });

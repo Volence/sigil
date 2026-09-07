@@ -197,29 +197,23 @@ pub enum Cell {
     /// A run of width-1 bytes (from `byte`/`bytes`/`++`). Single bytes have no
     /// byte order, so this stays CPU-neutral as raw bytes.
     Bytes(Vec<u8>),
-    /// A pointer-typed field: a reference to a named symbol, `width` bytes wide.
-    /// Plan 4 resolves the name to an address and emits a fixup; Plan 3 does NOT.
-    ///
-    /// `windowed` records whether this is a Z80 *bank pointer* (`winptr(sym)`,
-    /// §7.2 — a 2-byte windowed pointer, `BankPtr16Le`) versus a plain absolute
-    /// pointer (a 68k `Abs32`/`Abs16`). Plan 4's fixup-kind selection (D-P4.5)
-    /// reads (`width`, section CPU, `windowed`): a plain 68k pointer is
-    /// width 4 (`Abs32Be`) — the default (D-P3.7); a windowed Z80 pointer is
-    /// width 2 (`BankPtr16Le`). An un-windowed pointer in a Z80 section is the
+    /// A pointer-typed field: a PLAIN reference to a named symbol, `width` bytes
+    /// wide. Plan 4 resolves the name to an address and emits a fixup; Plan 3
+    /// does NOT. Fixup-kind selection (D-P4.5) reads (`width`, section CPU): a
+    /// 68k pointer is width 4 (`Abs32Be`, the default, D-P3.7) or 2 (`Abs16Be`);
+    /// a Z80 width-2 or width-1 reference is a resident VALUE (`Value16Le` /
+    /// `Value8`); a width-4 pointer in a Z80 section is the
     /// `[cross-cpu.unwindowed-pointer]` error.
+    ///
+    /// A Z80 bank-window pointer (`winptr(sym)`, §7.2) is NOT a `SymRef`: the
+    /// builtin evaluates to a [`Value::LinkExpr`] carrying the masked tree, which
+    /// lowers to a [`Cell::Expr`] VALUE cell. See `Evaluator::eval_winptr`.
     SymRef {
         /// The referenced symbol's name.
         name: String,
-        /// Pointer byte width (4 for a plain absolute pointer, 2 for a `winptr`).
+        /// Pointer byte width (4 for a plain absolute pointer, 2 or 1 for a
+        /// resident Z80 reference).
         width: u8,
-        /// Whether this is a Z80 windowed bank pointer (`winptr(sym)`, §7.2).
-        ///
-        /// A `bool` suffices while the two pointer flavors are distinguishable by
-        /// `(width, windowed)`. If a THIRD flavor appears that a bool cannot name
-        /// (e.g. one not separable by width), migrate this to a
-        /// `PtrKind { Absolute, Windowed, … }` field rather than adding a second
-        /// bool.
-        windowed: bool,
     },
     /// A self-relative signed **word** offset for an `offsets` table entry:
     /// emits `dc.w target - base` (2 bytes) via a `RelWord16Be` fixup. Distinct

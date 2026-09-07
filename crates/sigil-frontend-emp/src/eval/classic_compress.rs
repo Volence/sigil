@@ -613,7 +613,7 @@ mod tests {
     fn kosinski_from_data_symbolic_cell_errors() {
         let mut ev = Evaluator::new();
         let mut buf = DataBuf::empty();
-        buf.push(Cell::SymRef { name: "Foo".into(), width: 2, windowed: false });
+        buf.push(Cell::SymRef { name: "Foo".into(), width: 2 });
         let result = ev.kosinski_from_data(buf, span());
         assert_eq!(result, Value::Poison);
         assert!(ev.diags.iter().any(|d| d.message.contains("[kosinski.symbolic]")));
