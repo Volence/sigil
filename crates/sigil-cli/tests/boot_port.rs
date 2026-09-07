@@ -113,11 +113,11 @@ fn golden(name: &str) -> Option<Vec<u8>> {
 /// the game proc.
 fn frozen_symbol(debug: bool, name: &str) -> u64 {
     match (name, debug) {
-        // The resident Z80 driver span. The blob is 6163 / 6293 bytes — both ODD, so
-        // `Z80_SOUND_SIZE` is each rounded UP to even, which is why these two do not
-        // move when the blob length changes by one.
-        ("Z80_SOUND_SIZE", false) => 0x1814,
-        ("Z80_SOUND_SIZE", true) => 0x1896,
+        // The resident Z80 driver span. `Z80_SOUND_SIZE` is the blob length rounded UP
+        // to even. The blob is 6176 / 6306 bytes, both EVEN, so the round-up is the
+        // identity: 6176 = $1820 and 6306 = $18A2, equal to the blob lengths.
+        ("Z80_SOUND_SIZE", false) => 0x1820,
+        ("Z80_SOUND_SIZE", true) => 0x18A2,
         // `#Game.entry`'s link target. The `ojz_scroll_test` region begins at this
         // symbol, so its base is the symbol's ROM address.
         ("GameState_OJZScroll_Init", false) => u64::from(pins::OJZ_SCROLL_TEST.plain_base),

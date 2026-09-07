@@ -37,6 +37,38 @@ fn read_aeon(rel: &str) -> Option<String> {
     std::fs::read_to_string(aeon_dir().join(rel)).ok()
 }
 
+/// The object the two objroutine probes compile: a frozen copy of
+/// `games/sonic4/objects/test_solid.emp` that aeon keeps under its test
+/// fixtures so the live object can grow without moving this gate. Its header
+/// records what the probes require of it (exports `TestSolid_Init`, declares
+/// it before `TestSolid_Main`, `TestSolid_Main` last in the file, only the
+/// link truths `solid_outcome` supplies). The byte-identity ports
+/// (`test_objects_port.rs`, `objdef_port.rs`) keep reading the live object;
+/// that coupling is theirs on purpose.
+const OBJROUTINE_PROBE_FIXTURE: &str = "games/sonic4/test/fixtures/sigil_objroutine_probe.emp";
+
+/// The reference guard for the objroutine probes: the two-file ambient plus the
+/// fixture, every path named. Absent, the house guard skips naming the missing
+/// path, or fails naming it under `SIGIL_STRICT_GATE=1`.
+fn objroutine_probe_tree() -> Option<PathBuf> {
+    sigil_harness::test_support::reference_tree(&[
+        "engine/system/types.emp",
+        "engine/objects/sst.emp",
+        OBJROUTINE_PROBE_FIXTURE,
+    ])
+}
+
+/// Read a path the reference guard has already found present. A read failure
+/// past the guard is a real error, so it panics naming the path.
+fn read_guarded(rel: &str) -> String {
+    read_aeon(rel).unwrap_or_else(|| {
+        panic!(
+            "unreadable reference file: {}",
+            aeon_dir().join(rel).display()
+        )
+    })
+}
+
 /// Lower one synthetic file (deps' items prepended under `main`'s header) to
 /// sections + link asserts. Panics on parse errors (the probes doctor
 /// SEMANTICS, never syntax); returns lower diags for probes that expect
@@ -199,8 +231,8 @@ fn as_label_at(name: &str, vma: u32) -> Vec<Section> {
     assemble(&asm, &opts).unwrap_or_else(|d| panic!("AS assemble (synthetic {name}): {d:?}")).sections
 }
 
-/// Compile the REAL test_solid.emp (with the real sst.emp ambient) and link
-/// against the truths — the resolving CONTROL every doctored probe pairs
+/// Compile the objroutine probe fixture (with the real sst.emp ambient) and link
+/// against the truths: the resolving CONTROL every doctored probe pairs
 /// with. Extra synthetic sections ride along per probe.
 fn solid_outcome(sst_src: &str, solid_src: &str, extra: Vec<Vec<Section>>) -> LinkOutcome {
     let types_src = read_aeon("engine/system/types.emp")
@@ -291,11 +323,9 @@ fn word_imm_link_range_violation_is_loud_on_both_frontends() {
 
 #[test]
 fn misspelled_objroutine_target_dangles_while_control_resolves() {
-    let Some(sst) = read_aeon("engine/objects/sst.emp") else {
-        eprintln!("skip: aeon tree not present");
-        return;
-    };
-    let solid = read_aeon("games/sonic4/objects/test_solid.emp").unwrap();
+    let Some(_) = objroutine_probe_tree() else { return };
+    let sst = read_guarded("engine/objects/sst.emp");
+    let solid = read_guarded(OBJROUTINE_PROBE_FIXTURE);
 
     let consumer = |target: &str| -> Vec<Section> {
         let asm = format!("cpu 68000\nConsumer:\n\tdc.w {target}-ObjCodeBase\n");
@@ -325,11 +355,9 @@ fn misspelled_objroutine_target_dangles_while_control_resolves() {
 
 #[test]
 fn reordered_falls_into_pair_fails_compile() {
-    let Some(sst) = read_aeon("engine/objects/sst.emp") else {
-        eprintln!("skip: aeon tree not present");
-        return;
-    };
-    let solid = read_aeon("games/sonic4/objects/test_solid.emp").unwrap();
+    let Some(_) = objroutine_probe_tree() else { return };
+    let sst = read_guarded("engine/objects/sst.emp");
+    let solid = read_guarded(OBJROUTINE_PROBE_FIXTURE);
 
     // The doctor: move TestSolid_Main ABOVE TestSolid_Init by swapping the
     // two proc declarations (comments and all), leaving the `falls_into`
