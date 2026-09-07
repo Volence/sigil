@@ -4400,6 +4400,7 @@ stops, and a set `EMPYREAN_SUITE_ROOT` never softens into a skip. Red-first in a
 3 failed at baseline, 3 skipped after under partial, 3 failed by name after under strict. One
 correction to the row: a CI-shaped clone cannot sit anywhere under `~/sonic_hacks/`, because the
 marker walk climbs every ancestor and finds the real suite root there.
+  -- **LANDED 2026-09-07** at merge `e19496a7` (note `2026-09-07-ci-suite-root-readers.md`).
 
 ### `LANDING-GATE-DEBUG-PROFILE`: the release-only landing gate cannot see a debug overflow (2026-09-07)
 
