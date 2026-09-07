@@ -4276,11 +4276,15 @@ promote it from derived to observed.
 
 - `LENS-SKIP-LINT-WRAP` - the skip lint reads only same-line literals; five live announcements are
   through the hole, and there is no `rustfmt.toml` or fmt check, so a reformat shrinks the census.
+  -- **CLOSED 2026-09-07** at merge `90b0047f` (`parcel/gates-that-cannot-fail`, note `2026-09-07-gates-that-cannot-fail.md`): the detector reads across line breaks; seven sites, not five.
 - `LENS-LANDING-BAR-SKIPS` - `landing-run.sh` never reads `SKIPS` in its exit decision while four
   documents say it fails on them.
+  -- **CLOSED 2026-09-07** at merge `90b0047f`: a skip line under strict fails the verdict (exit 1); `--verdict-only <log>` re-judges a finished log through the same path.
 - `LENS-AB-WITNESS-NONEMPTY` - the A/B guard tests only that the field is non-empty; five freezes
   cite a sibling entry's name.
+  -- **CLOSED 2026-09-07** at merge `90b0047f`: `ab_witness_fault`, bound to entries carrying `aeon_rev`; older entries stand as written.
 - `LENS-PLAIN-ARM-PROOFS` - three port tests whose comments claim a proof the code does not make.
+  -- **CLOSED 2026-09-07** at merge `90b0047f` for g1 and g2; g3's plain arm checks only compile success (its subject is the reference `.emp` source) and is noted in the packet note.
 - `LENS-PINS-TESTS-FIELD` - a field the manifest calls dead, still stamped into 512 doc lines,
   naming three binaries that do not exist.
 
@@ -4418,3 +4422,11 @@ The fix at the LS-12 refreeze is not new literals: derive PTR/LEN from the emitt
 and the drum list from the `.asm`, and drop the two paths rather than repoint them (aeon confirms they
 do not come back). Aeon's occupancy for the record: shared bank 30,908 to 25,754 B, free tail 1,860
 to 7,014 B, which admits all six S3K drum sizes where before it admitted one.
+
+### `PLACE-SECTIONS-SIZE-UNENFORCED`: a region's declared `size` is not enforced by placement (2026-09-07)
+
+Observed by the gates parcel while mutating `pins.rs` for a red-first proof: `place_sections` does not
+enforce a region's declared `size`, so a section growing past its region is caught only by whatever
+downstream gate happens to read the bytes. Book a refusal by name at placement, red-first with a
+section deliberately one byte over its declared size; byte-neutral on every shipped shape by
+expectation.
