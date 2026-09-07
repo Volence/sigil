@@ -4288,8 +4288,10 @@ promote it from derived to observed.
 
 - `LENS-CI-RED-10-DAYS` - last green 2026-08-27; the failing rows are the bare-run guard and CI is
   the bare run.
+  -- **CLOSED 2026-09-07** at merge `3bb22aaf` for two of three stacked causes (note `2026-09-07-ci-red-and-stale-prose.md`); the third is `CI-SUITE-ROOT-READERS` below.
 - `LENS-STALE-PROSE-ADDRS` - five sound-head addresses in seven `seam2_*` files name the
   pre-relayout bank in doc comments AND panic messages; assertions are derived and correct.
+  -- **CLOSED 2026-09-07** at merge `3bb22aaf` for the eight `seam2_*` files and the harness docs; the residual non-seam2 population is listed in the parcel note.
 - `LENS-SEAT-SCRATCH-DIRS` - every future seat brief names a private scratch directory; a
   concurrent agent deleted a seat's pinned instrument mid-measurement.
 
@@ -4376,3 +4378,30 @@ now it is a loud `if is never closed` refusal, which is the honest state. Zero u
 trees and in aeon's three `.asm` files. Also from the same parcel, drop-no-bytes divergences: a closer
 placed after `END` is accepted here and refused by asl; `sigil-link::write_value` keeps 16-bit deferred
 cells strictly unsigned, stricter than asl's window on the resolved path (pre-existing).
+
+### `CI-SUITE-ROOT-READERS`: three tests read the suite root and CI has none (2026-09-07)
+
+`crates/sigil-harness/tests/reference_tree_named_write.rs:133` and `suite_paths_precedence.rs:177`,
+`:523` are UNMEASURABLE on a runner with no `aeon/` + `empyrean/` beside the checkout, and they FAIL
+rather than skip under `SIGIL_ALLOW_PARTIAL=1`, because d-18's partial opt-in names reference-TREE
+readers and these are suite-ROOT readers (added 08-30 and 09-02, never green in CI). Ruling owed and
+it is this lane's under the autonomy directive: a declared partial run may leave suite-root readers
+unmeasured in the house `skip:` form with the row count printed in the banner, exactly as tree
+readers are, and CI provides no fake suite root. Land with a red-first proof in a CI-shaped clone.
+
+### `LANDING-GATE-DEBUG-PROFILE`: the release-only landing gate cannot see a debug overflow (2026-09-07)
+
+`relax.rs:193` overflowed under the debug profile on `org -1` and the landing gate that certified
+the parcel (a7165e56) runs `--release` only, so CI found it and the gate did not. Options: a
+debug-profile run of the crates that do address arithmetic (`sigil-link`, `sigil-ir`, the
+backends) inside `landing-run.sh`, or `overflow-checks = true` in the release profile for the
+landing target dir. Size the wall-clock cost before choosing; the cap is ten minutes.
+
+### `PORT-DEP-LIST-FRAME_PIECE_COUNT`: the nightly lane's `unknown name FRAME_PIECE_COUNT` (2026-09-07)
+
+Three port gates fail on the nightly source-gate lane against aeon master with `unknown name
+FRAME_PIECE_COUNT`: the `*_port` cross-seam trap in `docs/OVERSEER-REFERENCE.md` (a standalone port
+oracle lowers one module against a hand-picked dep list). Fix pattern is `test_support.rs` section 4:
+derive the constant from the aeon tree at test runtime, never a copied literal. The other nightly
+rows on 09-07 (`SND_S3K_SNARE_PTR`, `dac/s3k_snare.pcm`, the `with` census, the unused carry) are
+pin and corpus drift that the LS-12 chain refreeze re-baselines.
