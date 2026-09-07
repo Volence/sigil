@@ -4308,6 +4308,7 @@ promote it from derived to observed.
   is 2 traversals where asl's is 1, plus one per forward-equ link.
 - `LENS-DIAG-LOCATION-ONE` - `SourceMap::location` walks from byte 0 per diagnostic; about 0.45 ms
   each at the bottom of a 1.6 MB file, and only on a FAILING build.
+  -- **CLOSED 2026-09-07** at merge `a7068c38` (`parcel/span-location-index`, note `2026-09-07-span-location-index.md`).
 
 **Standing findings carried forward, both re-verified this sweep:** S12 is open and its cost is now
 **59, not 53** (re-derived, with the model validated by reproducing the historical 53 at three
