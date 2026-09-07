@@ -222,10 +222,37 @@ back from disk each time, then restored with `git checkout --` from the committe
 The second mutation is the one that matters for this parcel: without it, a probe whose control had
 quietly stopped discriminating would still print `ok`.
 
-**Coverage moved, not lost.** The deleted control asserted aeon's real chain lowers with no
-`[proc.undeclared-fallthrough]`. `warn_tier_corpus` pins that lint id's firings per shipped shape
-over the whole corpus (`CORPUS_LINTS` includes `proc.undeclared-fallthrough`, and the walk covers
-`engine/` and `games/`), so it was duplicated here.
+**COVERAGE WAS LOST, AND MY FIRST ACCOUNT OF THIS WAS WRONG.** The commit message for `898a97b1`
+and the first draft of this note both said the deleted control was *duplicated* by
+`warn_tier_corpus`, on the strength of `proc.undeclared-fallthrough` appearing in its `CORPUS_LINTS`
+list. **That is refuted by `warn_tier_corpus`'s own words**, and the refutation is worth more than
+the claim was:
+
+* the id-set gate (`warn_tier_lint_ids_match_the_frozen_baseline`) compares the SET of firing ids
+  against `CORPUS_LINTS`. An id already in the set cannot fail it by firing more;
+* `warn_tier_corpus.rs:261-264` says so explicitly — *"Shapes also diverge below the id set, which
+  this gate deliberately does not watch: `lean` fires one fewer `[proc.undeclared-fallthrough]` than
+  the canonical shapes"*. So the lint already fires in the corpus, several times, by design;
+* the site-pinned register that DOES count firings iterates only
+  `warnings.iter().filter(|w| registered_ids.contains(w.id))`, and `registered_ids` is the ids
+  appearing in `CORPUS_OPEN_FINDINGS` — today that is **`import.no-names` and nothing else**.
+
+So a new `[proc.undeclared-fallthrough]` firing anywhere in the corpus is seen by no gate, and the
+deleted control was a narrow island of coverage over one engine file rather than a duplicate.
+Removing it lost that island. The loss is booked in the ledger rather than argued away.
+
+**The larger finding this exposed, which is not about this parcel at all.** The register's own
+failure text reads *"The id is admitted in `WARN_ID_BASELINE`, so the id-set gate stays green and
+this is the only thing that sees it, which is the whole reason the register is site-pinned"* — but
+it only sees an id that ALREADY HAS A ROW. For the four `CORPUS_LINTS` ids with no row
+(`module.unreachable`, `module.path-mismatch`, `proc.clobber-undeclared`, `proc.out-unwritten`,
+plus `proc.undeclared-fallthrough`), a firing at a brand-new site changes nothing any gate reads.
+Ledgered as `WARN-TIER-COUNTS-UNWATCHED`.
+
+**How the wrong claim was caught, because the mechanism matters.** It was not caught by reading more
+carefully. It was caught by asking what would have to be true for the claim to hold — "then the id
+must NOT currently fire, or the gate must count" — and going to look. The claim was convenient: it
+made a deletion free. A convenient result is a trigger.
 
 **Second change in the same commit.** `sources()` read six live engine files and returned `None` if
 any was absent, so the aabb probe — which uses one of them — skipped when a file it never touches

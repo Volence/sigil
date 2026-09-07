@@ -196,12 +196,17 @@ fn unknown_local_label_mlab_arg_is_loud_naming_it() {
 /// closed `sig-probe-live-game-file` finding ruled the shape: a probe that
 /// names a live file in another repo has no stable subject.
 ///
-/// WHAT THE OLD CONTROL COVERED, AND WHERE IT LIVES NOW. The live-file control
-/// asserted that aeon's real chain lowers with no `[proc.undeclared-fallthrough]`.
-/// That is `warn_tier_corpus`'s job and not this file's: it pins that lint id's
-/// firings per shipped shape over the whole corpus, `engine/` and `games/`
-/// alike, so the real chain's cleanliness is measured there and was duplicated
-/// here.
+/// WHAT THE OLD CONTROL COVERED, AND WHAT WENT WITH IT. It asserted that aeon's
+/// real chain lowers with no `[proc.undeclared-fallthrough]`. That is NOT
+/// covered elsewhere, and saying it was would be the comfortable answer rather
+/// than the true one: `warn_tier_corpus` pins the SET of firing lint ids, not
+/// their counts (its own header records that `lean` fires one fewer of this
+/// exact lint than the canonical shapes), and its site-pinned register counts
+/// only ids that already carry a `CORPUS_OPEN_FINDINGS` row — today only
+/// `import.no-names`. So the deleted control was a narrow island of coverage
+/// over one engine file, and removing it lost that island. Booked as
+/// `WARN-TIER-COUNTS-UNWATCHED` in the gap ledger, where it belongs: the real
+/// gap is corpus-wide and much larger than this probe.
 const STUB_CHAIN: &str = concat!(
     "module m in collision\n",
     "proc Touch_None () clobbers() falls_into Touch_Enemy {}\n",

@@ -4623,3 +4623,43 @@ and both `m68k_*_stream` tests name only an `engine/` path in their skip guard w
 consuming `games/` content through `shipped_shapes()` / seam1 / seam2. Harmless while a tree is
 either wholly present or wholly absent; it matters only if guard paths are ever used to classify
 what a test reads.
+
+### `WARN-TIER-COUNTS-UNWATCHED`: a warn-tier lint can fire at a brand-new site and no gate sees it (2026-09-07)
+
+Found while checking a claim this lane had already written down and committed (the
+`PROBE-CONTENT-SNAPSHOT` sweep asserted that `warn_tier_corpus` covered a control it was deleting;
+it does not).
+
+`warn_tier_corpus` has two gates over the corpus warnings and there is a hole between them:
+
+* `warn_tier_lint_ids_match_the_frozen_baseline` compares the firing id SET against `CORPUS_LINTS`.
+  An id already in the list cannot fail it by firing more often or in a new file. The file says so
+  itself at `crates/sigil-cli/tests/warn_tier_corpus.rs:261-264`: *"Shapes also diverge below the id
+  set, which this gate deliberately does not watch: `lean` fires one fewer
+  `[proc.undeclared-fallthrough]` than the canonical shapes."*
+* the site-pinned `CORPUS_OPEN_FINDINGS` register DOES count firings per `(shape, id, file, detail)`
+  and fails on an unregistered site — but it iterates
+  `warnings.iter().filter(|w| registered_ids.contains(w.id.as_str()))`, and `registered_ids` is
+  built from the register's own rows. Today that is **`import.no-names` alone**.
+
+So for the other five `CORPUS_LINTS` ids — `module.unreachable`, `module.path-mismatch`,
+`proc.clobber-undeclared`, `proc.out-unwritten`, `proc.undeclared-fallthrough` — a firing at a file
+that has never fired before is invisible to every gate in the suite. The register's own failure text
+claims otherwise (*"this is the only thing that sees it, which is the whole reason the register is
+site-pinned"*), which is true only for an id that already has a row: the sentence describes the
+gate's intent and the filter one screen above implements something narrower.
+
+**The move, and it is small.** Widen the register walk from `registered_ids` to `CORPUS_LINTS`, so
+an unregistered SITE of any known id fails with the file and message named, exactly as it already
+does for `import.no-names`. The existing `unregistered` assert message needs no change. The cost is
+one adjudication pass to add rows for whatever the five ids currently fire at — which is the
+population that is unwatched today, so measuring it is the point rather than a side effect.
+
+**Do NOT close this by widening `CORPUS_LINTS` or by adding blanket rows with large counts.** That
+is the always-red-check trade in reverse: it would make the gate quieter, not louder.
+
+Cost of the hole, concretely: this parcel's `898a97b1` deleted the only assertion in the suite that
+`engine/objects/collision.emp` lowers with no `[proc.undeclared-fallthrough]`, on the mistaken
+belief that `warn_tier_corpus` duplicated it. The deletion was still right — the control was welded
+to a live foreign file and red on a rename — but the coverage did not survive it, and until this row
+is closed, nothing replaces it.
