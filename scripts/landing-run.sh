@@ -608,7 +608,7 @@ read -r SUITES PASSED FAILED IGNORED < <(awk '
     }
     END { print n+0, p+0, f+0, g+0 }' "$LOG")
 # Every lint site, named. `error: could not compile …` is clippy's TALLY line, not a
-# finding, so counting bare `^error:` reports one more site than exists — and a verdict
+# finding, so counting bare `^error:` reports one more site than exists, and a verdict
 # that cannot be checked against the log by hand is a verdict a reader has to trust.
 # Parsed here, beside the other log readers, because it reads the log and nothing else:
 # the verdict-only path has no clippy process to ask.

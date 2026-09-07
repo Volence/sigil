@@ -1173,7 +1173,7 @@ fn allows_lint(file: &ast::File, id: &str) -> bool {
 /// True when `buf` carries any 68k-word-read cell — the `[layout.odd-item]`
 /// data-item trigger. Pure byte runs have no alignment need, and neither do
 /// LITTLE-ENDIAN cells (`u16le` scalars/exprs): in a 68k section those are by
-/// definition data for the Z80 side (D2.26 — the dac_samples shape stores them
+/// definition data for the Z80 side (D2.26: the dac_samples shape stores them
 /// byte-exactly at odd addresses), read byte-wise, never through a 68k word
 /// access. A `SymRef` is always a plain big-endian pointer, so its width alone
 /// decides.
