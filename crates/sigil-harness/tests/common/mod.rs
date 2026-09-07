@@ -37,13 +37,13 @@ pub fn emitters_named_by_ensure_generated() -> Vec<String> {
     });
 
     let body = src
-        .split_once("pub fn ensure_generated(aeon: &Path) {")
+        .split_once("pub fn emit_generated(aeon: &Path) -> Result<(), String> {")
         .map(|(_, rest)| rest)
         .unwrap_or_else(|| {
             panic!(
-                "UNMEASURABLE: no `pub fn ensure_generated(aeon: &Path) {{` in {}. The function \
-                 the emitter set is derived from was renamed or re-signed; re-point the scan \
-                 rather than letting it find nothing.",
+                "UNMEASURABLE: no `pub fn emit_generated(aeon: &Path) -> Result<(), String> {{` \
+                 in {}. The function the emitter set is derived from was renamed or re-signed; \
+                 re-point the scan rather than letting it find nothing.",
                 path.display()
             )
         });

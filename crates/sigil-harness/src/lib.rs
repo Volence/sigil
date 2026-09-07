@@ -50,6 +50,11 @@ pub mod seam1;
 
 pub mod seam2;
 
+/// The one renderer every error diagnostic the native build reports goes through:
+/// one `path:line:col: [Error] message` line per diagnostic, for the comptime
+/// guards, the deferred link asserts, and the sound emitters' co-link guards alike.
+pub mod diag_render;
+
 /// The strict-gate CENSUS: the population of `if !strict_gate()` consultations the
 /// test tree declares, derived from source at attest time, plus the set comparison
 /// `refreeze --attest` runs it against the run's witness. Replaces the old

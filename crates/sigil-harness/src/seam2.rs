@@ -27,11 +27,12 @@ use std::path::Path;
 
 use sigil_frontend_as::{assemble, Options as AsOptions};
 use sigil_frontend_emp::lower::{lower_module, LowerOptions};
-use sigil_frontend_emp::parse_str;
 use sigil_frontend_emp::resolve::place_sections;
+use sigil_frontend_emp::{parse_file, parse_str};
 use sigil_ir::backend::Cpu;
 use sigil_ir::{Section, SectionPlacement, SymbolTable};
 
+use crate::diag_render::{link_assert_failure, SourceTexts};
 use crate::map_placement::load_placement_map;
 
 // ── The map-derived placement authority (Parcel A1) ─────────────────────────
@@ -506,15 +507,18 @@ pub struct DacBodyAndHead {
 
 /// Lower one `.emp` file at `initial_cpu` with `dir` as the embed/include root,
 /// returning its full `Module` (sections + link_asserts). Panics-free: lower/parse
-/// errors surface as `Err`.
+/// errors surface as `Err`. The file's text registers in `texts` and is parsed
+/// under the id it is handed, so a link-time diagnostic against this module
+/// locates as `path:line:col` in the emitter's own report.
 fn lower_emp_file(
     path: &Path,
     dir: &Path,
     initial_cpu: Cpu,
     defines: Vec<(String, i128)>,
+    texts: &mut SourceTexts,
 ) -> Result<sigil_ir::Module, String> {
     let src = std::fs::read_to_string(path).map_err(|e| format!("read {}: {e}", path.display()))?;
-    let (file, pdiags) = parse_str(&src);
+    let (file, pdiags) = parse_file(&src, texts.add(path, &src));
     if pdiags.iter().any(|d| d.level == sigil_span::Level::Error) {
         return Err(format!("{} parse errors: {pdiags:?}", path.display()));
     }
@@ -576,8 +580,10 @@ fn emit_dac_body_and_head_at(
     let dac_dir = aeon.join("games/sonic4/data/sound");
     let eng_dir = aeon.join("engine/sound");
 
+    let mut texts = SourceTexts::new();
     // dac_samples.emp is m68000 (the banks + the SND_* equ carrier).
-    let samples = lower_emp_file(&dac_dir.join("dac_samples.emp"), &dac_dir, Cpu::M68000, vec![])?;
+    let samples =
+        lower_emp_file(&dac_dir.join("dac_samples.emp"), &dac_dir, Cpu::M68000, vec![], &mut texts)?;
     // dac_sample_tab.emp declares `module ... (cpu: z80)`; its head cells reference
     // the SND_* equs cross-module (link-resolved against dac_samples.emp). Its size
     // guard `use`s DAC_SAMPLE_COUNT / DacSample_len from the sound-constants
@@ -596,7 +602,13 @@ fn emit_dac_body_and_head_at(
             (n.to_string(), v as i128)
         })
         .collect();
-    let tab = lower_emp_file(&eng_dir.join("dac_sample_tab.emp"), &eng_dir, Cpu::M68000, dac_defines)?;
+    let tab = lower_emp_file(
+        &eng_dir.join("dac_sample_tab.emp"),
+        &eng_dir,
+        Cpu::M68000,
+        dac_defines,
+        &mut texts,
+    )?;
     let link_asserts = tab.link_asserts.clone();
 
     // The `.emp` sections (banks + both equ carriers + the head) are map-placed;
@@ -628,9 +640,7 @@ fn emit_dac_body_and_head_at(
     // ignored (matching the other co-link emitters).
     let assert_diags =
         sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), &link_asserts);
-    if assert_diags.iter().any(|d| d.level == sigil_span::Level::Error) {
-        return Err(format!("dac_sample_tab size-guard fired: {assert_diags:?}"));
-    }
+    link_assert_failure("dac_sample_tab size-guard fired", &assert_diags, &|s| texts.locate(s))?;
     let linked = sigil_link::link(&resolved, &SymbolTable::new())
         .map_err(|d| format!("link: {d:?}"))?;
 
@@ -728,10 +738,17 @@ fn emit_sfx_body_and_head_at(
 
     // sfx_bank.emp is m68000 (the blob table + the SFX_WIN_* equ layer); it lives
     // in sound/sfx/ so its 18 embed("sfx_*.bin") fixtures resolve there.
-    let body = lower_emp_file(&sfx_dir.join("sfx_bank.emp"), &sfx_dir, Cpu::M68000, vec![])?;
+    let mut texts = SourceTexts::new();
+    let body = lower_emp_file(&sfx_dir.join("sfx_bank.emp"), &sfx_dir, Cpu::M68000, vec![], &mut texts)?;
     // sfx_blob_win_tab.emp declares (cpu: z80); its cells reference the SFX_WIN_*
     // equs cross-module and its span guard defers to a link assert.
-    let head = lower_emp_file(&snd_dir.join("sfx_blob_win_tab.emp"), &snd_dir, Cpu::M68000, vec![])?;
+    let head = lower_emp_file(
+        &snd_dir.join("sfx_blob_win_tab.emp"),
+        &snd_dir,
+        Cpu::M68000,
+        vec![],
+        &mut texts,
+    )?;
     let mut link_asserts = body.link_asserts.clone();
     link_asserts.extend(head.link_asserts.clone());
 
@@ -796,9 +813,7 @@ fn emit_sfx_body_and_head_at(
     let resolved = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
         .map_err(|d| format!("resolve_layout (bank straddle / ensure?): {d:?}"))?;
     let assert_diags = sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), &link_asserts);
-    if assert_diags.iter().any(|d| d.level == sigil_span::Level::Error) {
-        return Err(format!("sfx co-residency/drift/span guards fired: {assert_diags:?}"));
-    }
+    link_assert_failure("sfx co-residency/drift/span guards fired", &assert_diags, &|s| texts.locate(s))?;
     let linked = sigil_link::link(&resolved, &SymbolTable::new()).map_err(|d| format!("link: {d:?}"))?;
 
     let body_bytes = linked.section("sfx_bank").ok_or("missing sfx_bank in linked image")?.bytes.clone();
@@ -834,7 +849,8 @@ pub fn emit_seq_opcode_tab_doctored(
     doctor: Option<(&str, i64)>,
 ) -> Result<Vec<u8>, String> {
     let dir = aeon.join("engine/sound");
-    let module = lower_emp_file(&dir.join("seq_opcode_tab.emp"), &dir, Cpu::M68000, vec![])?;
+    let mut texts = SourceTexts::new();
+    let module = lower_emp_file(&dir.join("seq_opcode_tab.emp"), &dir, Cpu::M68000, vec![], &mut texts)?;
     let link_asserts = module.link_asserts.clone();
 
     // The table places at VMA $8000; its cell VALUES (resident Seq_Op_* addresses)
@@ -880,9 +896,7 @@ pub fn emit_seq_opcode_tab_doctored(
     // section-length primitive — but thread it so a future guard is not silently
     // ignored, matching the co-link emitters).
     let assert_diags = sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), &link_asserts);
-    if assert_diags.iter().any(|d| d.level == sigil_span::Level::Error) {
-        return Err(format!("seq_opcode_tab guards fired: {assert_diags:?}"));
-    }
+    link_assert_failure("seq_opcode_tab guards fired", &assert_diags, &|s| texts.locate(s))?;
     let linked = sigil_link::link(&resolved, &SymbolTable::new()).map_err(|d| format!("link: {d:?}"))?;
     Ok(linked.section("seq_opcode_tab").ok_or("missing seq_opcode_tab in linked image")?.bytes.clone())
 }
@@ -916,7 +930,9 @@ pub fn emit_sound_tables_z80_doctored(
     doctor_vma: Option<u32>,
 ) -> Result<Vec<u8>, String> {
     let dir = aeon.join("engine/sound");
-    let module = lower_emp_file(&dir.join("sound_tables_z80.emp"), &dir, Cpu::M68000, vec![])?;
+    let mut texts = SourceTexts::new();
+    let module =
+        lower_emp_file(&dir.join("sound_tables_z80.emp"), &dir, Cpu::M68000, vec![], &mut texts)?;
     let link_asserts = module.link_asserts.clone();
 
     // Place at the map-derived head LMA (the `sound_bank` anchor) with the section's
@@ -949,9 +965,7 @@ pub fn emit_sound_tables_z80_doctored(
     // section-length primitive — threaded so a future guard is not silently
     // ignored, matching the co-link emitters).
     let assert_diags = sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), &link_asserts);
-    if assert_diags.iter().any(|d| d.level == sigil_span::Level::Error) {
-        return Err(format!("sound_tables_z80 guards fired: {assert_diags:?}"));
-    }
+    link_assert_failure("sound_tables_z80 guards fired", &assert_diags, &|s| texts.locate(s))?;
     let linked = sigil_link::link(&resolved, &SymbolTable::new()).map_err(|d| format!("link: {d:?}"))?;
     Ok(linked.section("sound_tables_z80").ok_or("missing sound_tables_z80 in linked image")?.bytes.clone())
 }
@@ -1005,7 +1019,8 @@ pub fn emit_pitchtable_doctored(aeon: &Path, doctor: bool) -> Result<Vec<u8>, St
             + anchor;
         src.replace_range(cell..cell + 3, "$01");
     }
-    let (file, pdiags) = parse_str(&src);
+    let mut texts = SourceTexts::new();
+    let (file, pdiags) = parse_file(&src, texts.add(&emp, &src));
     if pdiags.iter().any(|d| d.level == sigil_span::Level::Error) {
         return Err(format!("movingtrucks_pitchtable parse errors: {pdiags:?}"));
     }
@@ -1040,9 +1055,7 @@ pub fn emit_pitchtable_doctored(aeon: &Path, doctor: bool) -> Result<Vec<u8>, St
     let resolved = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
         .map_err(|d| format!("resolve_layout: {d:?}"))?;
     let assert_diags = sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), &link_asserts);
-    if assert_diags.iter().any(|d| d.level == sigil_span::Level::Error) {
-        return Err(format!("movingtrucks_pitchtable guards fired: {assert_diags:?}"));
-    }
+    link_assert_failure("movingtrucks_pitchtable guards fired", &assert_diags, &|s| texts.locate(s))?;
     let linked = sigil_link::link(&resolved, &SymbolTable::new()).map_err(|d| format!("link: {d:?}"))?;
     Ok(linked
         .section("movingtrucks_pitchtable")
@@ -1146,7 +1159,8 @@ fn emit_mt_bank_at(
     let dir = aeon.join("games/sonic4/data/sound");
     let emp = dir.join("mt_bank.emp");
     let src = std::fs::read_to_string(&emp).map_err(|e| format!("read {}: {e}", emp.display()))?;
-    let (file, pdiags) = parse_str(&src);
+    let mut texts = SourceTexts::new();
+    let (file, pdiags) = parse_file(&src, texts.add(&emp, &src));
     if pdiags.iter().any(|d| d.level == sigil_span::Level::Error) {
         return Err(format!("mt_bank.emp parse errors: {pdiags:?}"));
     }
@@ -1202,9 +1216,7 @@ fn emit_mt_bank_at(
     let resolved = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
         .map_err(|d| format!("resolve_layout (bank straddle / ensure?): {d:?}"))?;
     let assert_diags = sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), &link_asserts);
-    if assert_diags.iter().any(|d| d.level == sigil_span::Level::Error) {
-        return Err(format!("mt_bank co-residency/drift guards fired: {assert_diags:?}"));
-    }
+    link_assert_failure("mt_bank co-residency/drift guards fired", &assert_diags, &|s| texts.locate(s))?;
     let linked = sigil_link::link(&resolved, &SymbolTable::new()).map_err(|d| format!("link: {d:?}"))?;
 
     let bytes = linked.section("mt_bank").ok_or("missing mt_bank in linked image")?.bytes.clone();
