@@ -10,12 +10,13 @@
 //! the SFX block placement.
 //!
 //! This gate proves the co-linked head is BYTE-IDENTICAL to the `SfxBlobWinTab`
-//! slice of the assembled reference ROM (`$5845F`, 270 bytes = 135 × 2) — the
+//! slice of the assembled reference ROM (at the LMA `sound_layout` derives,
+//! `sfx_win_tab_lma`; `SFX_WIN_TAB_LEN` bytes), the
 //! "twins present, both paths byte-identical" dual proof that must be GREEN before
 //! `sfx_blob_win_tab.asm` (+ the SFX body `.asm`s) can be retired.
 //!
 //! SHAPE-DEPENDENT (unlike the DAC head): the SFX block sits AFTER the
-//! shape-dependent song tables (plain base `$5BAE8` / debug `$5D53A`), so every
+//! shape-dependent song tables (`sfx_bank_lma_plain` / `sfx_bank_lma_debug`), so every
 //! real cell (`winptr(Sfx_NN)`) shifts with `__DEBUG__`. So this gate co-links
 //! per shape and asserts each against ITS OWN reference ROM.
 //!
@@ -44,17 +45,11 @@ fn golden(name: &str) -> Vec<u8> {
     std::fs::read(&path).unwrap_or_else(|e| panic!("read golden {}: {e}", path.display()))
 }
 
-/// The reference SFX-block body window per shape, DERIVED from the map rather
-/// than hand-pinned.
-///
-/// It used to hardcode `$5BAE8` / `$5D53A`. Those went stale at sound-pkg-3
-/// (2026-08-10, the 9 -> 12 byte DAC descriptor pushed both bases +0x28) and
-/// stayed stale, which is half of why this target has been red under
-/// `SIGIL_STRICT_GATE=1` since. Since `sound_layout` already derives exactly these
-/// two addresses — and `sound_layout_derives_the_frozen_addresses` in
-/// seam2_layout_derivation.rs is the test that pins them against literals — taking
-/// them from there removes the duplicate hand-maintained copy instead of just
-/// correcting it. One pin, one place.
+/// The reference SFX-block body window per shape, read off `sound_layout`
+/// (`sfx_bank_lma_plain` / `sfx_bank_lma_debug`), the one place those two addresses
+/// are derived; `sound_layout_derives_the_frozen_addresses` in
+/// seam2_layout_derivation.rs is the test that pins them against literals. One pin,
+/// one place.
 fn body_window(layout: &SoundLayout, debug: bool) -> (&'static str, usize) {
     if debug {
         ("s4.debug.bin", layout.sfx_bank_lma_debug as usize)
@@ -73,7 +68,7 @@ const SFX_WIN_TAB_LEN: usize = 274; // 137 dense ids ($33..=$BB) × 2 bytes
 const SFX_BODY_LEN: usize = 2284;
 
 /// THE HEAD BYTE GATE: the co-linked `SfxBlobWinTab` == the reference ROM slice
-/// at `$5845F`, in BOTH shapes (each vs its own ROM — the head is
+/// at `sfx_win_tab_lma`, in BOTH shapes (each vs its own ROM; the head is
 /// shape-dependent). The body from the SAME co-link also matches, proving the
 /// pair is consistent.
 #[test]
@@ -103,7 +98,10 @@ fn colinked_sfx_head_matches_the_reference_rom_slice_both_shapes() {
                 &head_ref[e..(e + 8).min(head_ref.len())],
             );
         }
-        assert_eq!(out.head, head_ref, "co-linked SfxBlobWinTab must equal the {shape} reference @ $5845F");
+        assert_eq!(
+            out.head, head_ref,
+            "co-linked SfxBlobWinTab must equal the {shape} reference @ {win_lma:#X} (SfxBlobWinTab)"
+        );
 
         let (rom_name, base) = body_window(&layout, debug);
         assert_eq!(rom_name, if debug { "s4.debug.bin" } else { "s4.bin" });
@@ -112,9 +110,10 @@ fn colinked_sfx_head_matches_the_reference_rom_slice_both_shapes() {
     }
 }
 
-/// t24 NON-VACUITY control (row-91 bar c): a doctored composition — the SFX block
-/// co-linked `$100` bytes higher (still bank $B, so the body co-residency ensures
-/// stay green) — must make the head DIVERGE from the golden slice, because every
+/// t24 NON-VACUITY control (row-91 bar c): a doctored composition, the SFX block
+/// co-linked `$100` bytes higher (still inside the SFX block's own bank, so the
+/// body co-residency ensures stay green), must make the head DIVERGE from the golden
+/// slice, because every
 /// `SFX_WIN_NN = winptr(Sfx_NN)` re-folds from the moved blobs. The head byte gate
 /// is vacuous if a moved SFX block still matches.
 #[test]
@@ -125,11 +124,19 @@ fn sfx_head_diverges_when_block_moved() {
     }
     let aeon = aeon_dir();
     let layout = sound_layout(&aeon).expect("sound_layout");
-    // +$100 keeps the block in bank $B ($58000..$5FFFF): bankid unchanged, so only
-    // the window pointers shift — the body's co-residency guards do not fire.
-    let doctored =
-        emit_sfx_body_and_head_doctored(&aeon, false, Some(layout.sfx_bank_lma_plain + 0x100))
-            .expect("doctored co-link (still bank $B)");
+    // +$100 must keep the block inside its own `$8000` bank (`bankid` unchanged), so
+    // only the window pointers shift and the body's co-residency guards do not fire.
+    // Checked rather than assumed: the bank is wherever the map puts it.
+    let moved = layout.sfx_bank_lma_plain + 0x100;
+    let bankid = |lma: u32| (lma & 0x7F_8000) >> 15;
+    assert_eq!(
+        bankid(moved),
+        bankid(layout.sfx_bank_lma_plain),
+        "the +$100 control must stay inside the SFX block's own bank, otherwise the body \
+         co-residency ensures fire instead of the head diverging"
+    );
+    let doctored = emit_sfx_body_and_head_doctored(&aeon, false, Some(moved))
+        .expect("doctored co-link (same bank)");
     let rom = golden("s4.bin");
     let lo = layout.sfx_win_tab_lma as usize;
     let head_ref = &rom[lo..lo + SFX_WIN_TAB_LEN];

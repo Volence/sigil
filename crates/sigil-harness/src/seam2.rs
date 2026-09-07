@@ -75,11 +75,11 @@ const SFX_LEN_PROBE_OFFSET: u32 = 0x2000;
 /// declared byte-emitting `order`.
 #[derive(Debug)]
 struct BankAnchors {
-    /// `dac_banks` anchor LMA — the DAC blip bank head / bank island (`$90000` since
-    /// aeon's 2026-08-26 re-layout; `$48000` before it).
+    /// `dac_banks` anchor LMA, the DAC blip bank head / bank island (`Dac_Temp_Blip`
+    /// in `golden/offcanonical_sizes/*.txt` records it per shape).
     dac_banks: u32,
-    /// `sound_bank` anchor LMA — the `$8000`-window head bank (`$A0000` since the
-    /// re-layout; `$58000` before it).
+    /// `sound_bank` anchor LMA, the `$8000`-window head bank (`SoundTablesZ80_Head`
+    /// in the same table).
     sound_bank: u32,
     /// `sound_bank`'s window VMA (`$8000`).
     sound_bank_vma: u32,
@@ -233,24 +233,24 @@ pub struct SoundLayout {
     pub dac_blip_lma: u32,
     /// `dac_shared_bank` LMA — `dac_banks` anchor + the intra-bank align.
     pub dac_shared_lma: u32,
-    /// `sound_tables_z80` head LMA — the `sound_bank` anchor, first head. (The
-    /// in-bank offsets quoted below are bank-relative facts of the emitted heads;
-    /// the absolute examples date from the `$58000` bank and read `+$48000` since
-    /// aeon's 2026-08-26 re-layout.)
+    /// `sound_tables_z80` head LMA: the `sound_bank` anchor and the first head
+    /// (`SoundTablesZ80_Head` in `golden/offcanonical_sizes/*.txt`). Every LMA below
+    /// is this anchor plus the running span of the heads before it; none is typed.
     pub sound_tables_z80_lma: u32,
-    /// `movingtrucks_pitchtable` head LMA (`$58357`).
+    /// `movingtrucks_pitchtable` head LMA (`SndDefaultPitchTable`).
     pub pitchtable_lma: u32,
-    /// `SfxBlobWinTab` head LMA (`$5845F`).
+    /// `SfxBlobWinTab` head LMA.
     pub sfx_win_tab_lma: u32,
-    /// `SeqOpcodeTable` head LMA (`$5856D`).
+    /// `SeqOpcodeTable` head LMA.
     pub seq_opcode_tab_lma: u32,
-    /// `DacSampleTable` head LMA (`$585AD`), last head — the head bank ends here.
+    /// `DacSampleTable` head LMA, the last head; the head bank ends after it.
     pub dac_sample_tab_lma: u32,
-    /// `mt_bank` LMA (`$58628`) — `sound_bank` anchor + the head-bank span.
+    /// `mt_bank` LMA (`Song_MovingTrucks`), the packed base after the head-bank span.
     pub mt_bank_lma: u32,
-    /// `sfx_bank` block base, plain shape (`$5BB10`) — `mt_bank` + the plain MT body.
+    /// `sfx_bank` block base, plain shape (`Sfx_33`), the packed base after the plain
+    /// MT body.
     pub sfx_bank_lma_plain: u32,
-    /// `sfx_bank` block base, debug shape (`$5D560`) — `mt_bank` + the debug MT body.
+    /// `sfx_bank` block base, debug shape, the packed base after the debug MT body.
     pub sfx_bank_lma_debug: u32,
 }
 

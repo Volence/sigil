@@ -2,8 +2,9 @@
 //!
 //! The banked engine-table HEAD (`seq_opcode_tab`, `dac_sample_tab`, the generated
 //! LUTs) is PHASED: its labels live at the `$8000` window (`vma:$8000+offset`) but
-//! its bytes are placed physically INSIDE the `$58000` song bank (`lma` in a high
-//! bank). Row-1620 blocker 3 flagged this VMA≠LMA-in-a-high-bank mode as UNPROBED —
+//! its bytes are placed physically INSIDE the sound bank (`lma` in a high bank, at
+//! the `SeqOpcodeTable` LMA `sound_layout` derives). Row-1620 blocker 3 flagged this
+//! VMA≠LMA-in-a-high-bank mode as UNPROBED:
 //! neither `z80_init.emp` (`vma:$0`, LMA 0) nor `dac_samples.emp` (`bank:$8000`,
 //! VMA==LMA) matched it.
 //!
@@ -11,7 +12,7 @@
 //! the REAL resident-blob handler VMAs (seam-1's `native_sound_blob`), and proves:
 //!   (1) the head's Value16Le cells resolve to the RESIDENT handler VMAs
 //!       ($0-based phase-0 addresses), independent of the head's own high LMA —
-//!       i.e. placing the head in the $58000 bank does NOT drag its cell targets
+//!       i.e. placing the head in the sound bank does NOT drag its cell targets
 //!       to the bank; a cross-section ref resolves to the target's VMA (Pass 1 of
 //!       `link` defines every symbol at `vma_origin + offset`);
 //!   (2) the head's OWN bytes land at the bank LMA (`LinkedSection.lma`);
@@ -20,7 +21,8 @@
 //!       sequencer indexes `SeqOpcodeTable` as a window pointer).
 //!
 //! The machinery is the SAME `vma_base`/`lma` decoupling seam-1 uses for the
-//! resident blob (VMA 0 / LMA $3DE); this proves it at (VMA $8000 / LMA $58000).
+//! resident blob (VMA 0 / LMA $3DE); this proves it at (VMA $8000 / the derived
+//! sound-bank LMA).
 //! The cell resolution is placement-INVARIANT: the phased head emits the identical
 //! bytes as the windowed oracle (`seq_opcode_tab_port`), so the scale-1 byte gate's
 //! proof carries to the scale-2 placement with no new drift surface.
@@ -124,20 +126,25 @@ kind = \"rom\"
 /// The PHASED-HEAD placement (the scale-2 seam): the WINDOW VMA is owned by the
 /// `.emp` section attribute (`section seq_opcode_tab (cpu: z80, vma: $8000)`), so
 /// its labels resolve to the $8000 window; the map/emitter places the BYTES
-/// PHYSICALLY in the $58000 song bank (`lma_base = 0x5856D`). This is the mode
-/// row-1620 called unprobed — VMA (source-owned) ≠ LMA (placement-owned), the LMA
-/// deep in a high bank. `0x5856D` = a representative physical address inside the
-/// engine-table bank. (A `vma_base` in the map would be OVERRIDDEN by the section's
-/// own `vma:` attr, so the source is the single source of truth for the window.)
-const MAP_PHASED: &str = "\
-fill = 0x00
+/// PHYSICALLY in the sound bank, at the `SeqOpcodeTable` LMA `sound_layout` derives
+/// (`seq_opcode_tab_lma`), so the probe follows a re-layout instead of pinning a
+/// bank the game no longer uses. This is the mode row-1620 called unprobed: VMA
+/// (source-owned) differs from LMA (placement-owned), the LMA deep in a high bank.
+/// (A `vma_base` in the map would be OVERRIDDEN by the section's own `vma:` attr, so
+/// the source is the single source of truth for the window.)
+fn map_phased(lma: u32) -> String {
+    format!(
+        "fill = 0x00\n\n[[region]]\nname = \"seq_opcode_tab\"\nlma_base = {lma:#X}\nsize = 0x100\nkind = \"rom\"\n"
+    )
+}
 
-[[region]]
-name = \"seq_opcode_tab\"
-lma_base = 0x5856D
-size = 0x100
-kind = \"rom\"
-";
+/// The real `SeqOpcodeTable` bank LMA, from the same derivation the head byte gates
+/// (`seam2_seq_colink`) compare against.
+fn derived_seq_tab_lma() -> u32 {
+    sigil_harness::seam2::sound_layout(&aeon_dir())
+        .expect("sound_layout derives seq_opcode_tab_lma")
+        .seq_opcode_tab_lma
+}
 
 #[test]
 fn phased_head_cells_resolve_to_resident_vmas_bytes_at_bank_lma() {
@@ -145,13 +152,14 @@ fn phased_head_cells_resolve_to_resident_vmas_bytes_at_bank_lma() {
         eprintln!("skip: seam2_phased_head not measured (set SIGIL_STRICT_GATE=1 + AEON_DIR)");
         return;
     }
+    let head_lma = derived_seq_tab_lma();
     for debug in [false, true] {
-        let (phased_bytes, phased_lma, seqtab_vma) = link_head_at(MAP_PHASED, debug);
+        let (phased_bytes, phased_lma, seqtab_vma) = link_head_at(&map_phased(head_lma), debug);
 
-        // (2) the head's bytes land at the bank LMA (physical placement in $58000).
+        // (2) the head's bytes land at the bank LMA (physical placement in the sound bank).
         assert_eq!(
-            phased_lma, 0x5856D,
-            "phased head bytes must be placed at the $58000-bank LMA (debug={debug})"
+            phased_lma, head_lma,
+            "phased head bytes must be placed at the derived SeqOpcodeTable bank LMA {head_lma:#X} (debug={debug})"
         );
         // (3) the head's own label resolves to its $8000-WINDOW VMA (source-owned),
         //     NOT the bank LMA. The isolated table anchors at the window base $8000;
@@ -175,7 +183,7 @@ fn phased_head_cells_resolve_to_resident_vmas_bytes_at_bank_lma() {
             "first cell must be Seq_Op_Vol's RESIDENT VMA little-endian, not a bank address (debug={debug})"
         );
         // Every cell is a resident phase-0 address (< $8000), never dragged into
-        // the head's own bank — a $58000-region byte pair would exceed the window.
+        // the head's own bank; a bank-LMA byte pair would exceed the window.
         assert_eq!(phased_bytes.len(), 64, "32 × dc.w = 64 bytes (debug={debug})");
     }
 }
@@ -187,12 +195,13 @@ fn phased_head_emits_identical_bytes_to_the_windowed_oracle() {
         return;
     }
     // Cell resolution is PLACEMENT-INVARIANT: co-linked against the same resident
-    // VMAs, the phased head (LMA in the $58000 bank) emits byte-for-byte the same
+    // VMAs, the phased head (LMA in the sound bank) emits byte-for-byte the same
     // table as the windowed oracle (VMA==LMA==window). So the scale-1 byte gate
-    // (`seq_opcode_tab_port`) carries to the scale-2 placement — no new drift.
+    // (`seq_opcode_tab_port`) carries to the scale-2 placement, no new drift.
+    let head_lma = derived_seq_tab_lma();
     for debug in [false, true] {
         let (windowed, windowed_lma, windowed_seqtab) = link_head_at(MAP_WINDOWED, debug);
-        let (phased, phased_lma, phased_seqtab) = link_head_at(MAP_PHASED, debug);
+        let (phased, phased_lma, phased_seqtab) = link_head_at(&map_phased(head_lma), debug);
         assert_eq!(windowed, phased, "phased head bytes must equal the windowed oracle (debug={debug})");
         // The placements DIFFER only in the physical LMA; the window VMA is identical.
         assert_ne!(windowed_lma, phased_lma, "the two placements have distinct LMAs (debug={debug})");

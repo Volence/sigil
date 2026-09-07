@@ -8,7 +8,8 @@
 //! (`native_sound_blob`) the resident driver ships from, so the Seq_Op_* imports
 //! resolve to the exact VMAs the `z80_sound_syms.asm` contract exported (design
 //! §2c). This gate proves the emitted head is BYTE-IDENTICAL to the
-//! `SeqOpcodeTable` slice of the assembled reference ROM (`$5856D`, 64 bytes).
+//! `SeqOpcodeTable` slice of the assembled reference ROM (at the LMA `sound_layout`
+//! derives, `seq_opcode_tab_lma`; 64 bytes).
 //!
 //! SHAPE-DEPENDENT: the handlers re-base after `sound_sequencer.emp`'s
 //! `if DEBUG==1` growth, so the table differs per shape — each is gated against
@@ -40,7 +41,8 @@ fn golden(name: &str) -> Vec<u8> {
 }
 
 /// THE HEAD BYTE GATE: the co-linked `SeqOpcodeTable` == the reference ROM slice
-/// at `$5856D`, in BOTH shapes (each vs its own ROM — the head is shape-dependent).
+/// at `seq_opcode_tab_lma`, in BOTH shapes (each vs its own ROM; the head is
+/// shape-dependent).
 #[test]
 fn colinked_seq_opcode_tab_matches_the_reference_rom_slice_both_shapes() {
     if !strict_gate() {
@@ -63,7 +65,10 @@ fn colinked_seq_opcode_tab_matches_the_reference_rom_slice_both_shapes() {
                 i % 2, head[i], head_ref[i]
             );
         }
-        assert_eq!(head, head_ref, "co-linked SeqOpcodeTable must equal the {shape} reference @ $5856D");
+        assert_eq!(
+            head, head_ref,
+            "co-linked SeqOpcodeTable must equal the {shape} reference @ {lma:#X} (SeqOpcodeTable)"
+        );
     }
 }
 

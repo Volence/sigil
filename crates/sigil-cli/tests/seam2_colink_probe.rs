@@ -11,8 +11,8 @@
 //!     blob. The recon's fallback: reference the `SND_*_LEN` equ (which folds
 //!     same-module in `dac_samples.emp`) as a cross-module LINK symbol.
 //!
-//! This probe co-links the REAL `dac_samples.emp` (placed at the current baseline
-//! $48000/$50000) with a SYNTHETIC one-descriptor head module and empirically
+//! This probe co-links the REAL `dac_samples.emp` (placed at the bank LMAs
+//! `sound_layout` derives) with a SYNTHETIC one-descriptor head module and empirically
 //! settles each mechanism BEFORE any `.asm` deletion. Every assert records a fact.
 //!
 //! ```text
@@ -130,8 +130,8 @@ fn colink(head_src: &str) -> Result<Vec<u8>, Vec<sigil_span::Diagnostic>> {
 ///
 /// Expected: Dac_Kick @ the shared bank → BANK bankid(shared), PTR $8000, LEN 1406
 /// ($057E). Dac_Temp_Blip @ the blip bank → BANK bankid(blip), PTR $8000, LEN 2880
-/// ($0B40). The two bank ids are derived from the map layout (they were $0A/$09 at
-/// $50000/$48000; $13/$12 since the 2026-08-26 re-layout).
+/// ($0B40). The two bank ids are `bankid` of the derived blip and shared bank LMAs,
+/// never retyped.
 #[test]
 fn colink_snd_equs_resolve_cross_module_in_dc_cells() {
     if !strict_gate() {
