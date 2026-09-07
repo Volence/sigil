@@ -1367,6 +1367,17 @@ the next reader:
 | `target/release/sigil` | `fa18ebfe849aa4bfb3203cde7c8a0770` | 2026-09-06 05:45:48Z |
 | `target/release/emit_sound_blob` | `0c1cf7ec5dd452bfb703856a42437d6d` | 2026-09-06 05:45:48Z |
 
+**Superseded 2026-09-07T13:35:41Z, inside a hub-opened window and after aeon's explicit clear** (the
+handshake the ownership bar above asks for, exercised for the first time). Installed by rename from
+sigil `135ba589` (branch `parcel/ls12-blob-repin`, built in the durable worktree
+`~/sonic_hacks/.sigil-ls12-pin`, which the banner names as `source:`): `sigil`
+`509b93c4520aed3e0d65e4a7003104d3`, `emit_sound_blob` `51e1190dd97577690658d598e6f968e8`. The file
+mtimes read 12:36Z, the BUILD time, because the copy preserved them; the swap instant is the one
+above. The outgoing pair is kept at `~/sonic_hacks/.sigil-outgoing-e6e942e5/` (md5 as in the table),
+so this refresh, unlike the 09-06 one, is reversible. A refresh from sigil master is owed after the
+LS-12 landing so the banner names master rather than a branch; the durable worktree is released only
+after aeon confirms it is on that pair.
+
 **Both mtimes are the swap instant and have not moved since**, which is the check that says nothing
 has relinked the path. Read the mtime as well as the digest: a digest alone cannot say whether it is
 the blessed build or a coincidental rebuild of the same source. **The general form is this
