@@ -1330,6 +1330,19 @@ const LONG_DATA_RANGE: std::ops::RangeInclusive<i64> = -0x8000_0000..=0xFFFF_FFF
 /// is `range overflow` there); the pad function is defined up to `u32::MAX`,
 /// so that ceiling is kept.
 const ALIGN_COUNT_RANGE: std::ops::RangeInclusive<i64> = 1..=u32::MAX as i64;
+/// The counts `ds.b`/`ds.w`/`ds.l` accept, in units: asl's 32-bit window
+/// (`ds.b $100000000` is `range overflow` there). The byte total and the
+/// section cursor are checked separately by [`Asm::directive_ds`].
+const DS_COUNT_RANGE: std::ops::RangeInclusive<i64> = 0..=u32::MAX as i64;
+
+/// The size suffix a `ds`/`dc` directive spells for a unit width.
+fn unit_suffix(unit: u32) -> &'static str {
+    match unit {
+        1 => "b",
+        2 => "w",
+        _ => "l",
+    }
+}
 
 enum Lowered {
     Fixed(Vec<Operand>),
@@ -6312,8 +6325,37 @@ impl Asm {
             self.pad_word_align_reserving(span);
         }
         match self.eval_all(rest, span) {
-            Some(v) if v >= 0 => self.builder.reserve(v as u32 * unit, span),
-            Some(_) => self.err(span, "negative ds count"),
+            Some(v) if DS_COUNT_RANGE.contains(&v) => {
+                // In range, so the narrowing is exact. The byte total and the
+                // cursor advance are each checked where they are computed: a
+                // count of 2^31 words is a total of 2^32 bytes, and a total
+                // that fits can still carry the section cursor past u32::MAX.
+                let count = v as u32;
+                let bytes = count.checked_mul(unit);
+                let end = bytes.and_then(|b| self.builder.current_offset().checked_add(b));
+                match (bytes, end) {
+                    (Some(bytes), Some(_)) => self.builder.reserve(bytes, span),
+                    (Some(bytes), None) => self.err(
+                        span,
+                        format!(
+                            "ds.{} {v} reserves {bytes} bytes past the end of the 32-bit address space",
+                            unit_suffix(unit)
+                        ),
+                    ),
+                    (None, _) => self.err(
+                        span,
+                        format!(
+                            "ds.{} {v} reserves {} bytes, more than the 32-bit address space holds",
+                            unit_suffix(unit),
+                            v as u64 * unit as u64
+                        ),
+                    ),
+                }
+            }
+            Some(v) => self.err(
+                span,
+                format!("ds count {v} out of range {}..={}", DS_COUNT_RANGE.start(), DS_COUNT_RANGE.end()),
+            ),
             None => {
                 if !self.register_reported_at(span) {
                     self.err(span, "unresolved ds count");
