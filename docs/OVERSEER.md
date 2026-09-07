@@ -977,6 +977,15 @@ the whole reason they are here rather than in a thread.
   (aeon's addition, adopted here): say what would have made it wrong at the moment you send it. A
   prediction whose falsifier is written after the result is a description, and a prediction reported
   only when it lands is not a method.
+- **THIS LANE OWES AEON THE DELETION SIGNAL for their transient commitments block** (aeon
+  `6f75078c`, verified an ancestor of their `origin/master`). They banked their reciprocal five in
+  their own boot read with a self-delete condition: *both* that we are on the post-align pair AND
+  that the align parcel has landed. **Both halves are events THIS lane generates**, so a condition
+  they cannot observe is a condition that will not fire. Precedent from this very file, same shape:
+  the R7 block said *"what remains is the flip itself"* for a week after the flip landed, in the boot
+  read, because nothing executes a document. **So the deletion is NOTIFIED, not self-executed: when
+  both halves are true, send them one message saying so.** Written here rather than left as a good
+  intention because it binds a later session of this lane and nothing else will surface it.
 - **A peer's occupancy figure for `dac_shared_bank` is a BUILD PRODUCT.** Their 25,754 B occupied
   / 7,014 B free came from `engine/sound/generated/dac_shared_bank.bin` in their working tree —
   the right file, and an artifact of their last build rather than a committed value. So a
