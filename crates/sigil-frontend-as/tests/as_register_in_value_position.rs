@@ -153,8 +153,13 @@ const ROWS: &[Row] = &[
     Row { what: "ds count", body: "\tcpu 68000\n\tds.b a0\n", line: 2, says: A0 },
     Row { what: "align", body: "\tcpu 68000\n\talign a0\n\tdc.l 1\n", line: 2, says: A0 },
     Row { what: "rept count", body: "\tcpu 68000\n\trept a0\n\tdc.l 1\n\tendr\n", line: 2, says: A0 },
-    Row { what: "while condition", body: "\tcpu 68000\n\twhile a0\n\tdc.l 1\n\tendw\n", line: 2, says: A0 },
-    Row { what: "if condition", body: "\tcpu 68000\n\tif a0\n\tdc.l 1\n\tendc\n", line: 2, says: A0 },
+    // `endm`, not `endw`: asl closes a `while` on `endm` alone (`endw` is `WHILE
+    // without ENDM`, exit 2), and an unclosed block is now its own refusal.
+    Row { what: "while condition", body: "\tcpu 68000\n\twhile a0\n\tdc.l 1\n\tendm\n", line: 2, says: A0 },
+    // `endif`, not `endc`: asl accepts `endc` as an `if` closer too (probe
+    // `c_endc.asm`, exit 0), sigil does not yet know that spelling, and with an
+    // unclosed block now refused the row would report the block, not the register.
+    Row { what: "if condition", body: "\tcpu 68000\n\tif a0\n\tdc.l 1\n\tendif\n", line: 2, says: A0 },
     // Function arguments: the body that USES its parameter and the body that
     // IGNORES it took different paths, and told different stories.
     Row {

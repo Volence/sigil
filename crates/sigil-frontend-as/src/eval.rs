@@ -3553,7 +3553,13 @@ impl Asm {
     /// nested opener of ANY kind pushes ITS OWN closer set, so only that
     /// closer set's keyword pops it — regardless of what closer keyword the
     /// enclosing block happens to share with it.
-    fn find_block_end(&self, lines: &[SrcLine], start: usize) -> usize {
+    ///
+    /// `None` when no line closes the block: the caller reports that through
+    /// [`Asm::block_end`] rather than picking a line to stand in for the
+    /// closer. There is no line that can: the last line of the slice is a body
+    /// line the block never reached its end of, and consuming it as the closer
+    /// dropped its bytes from the image with exit 0.
+    fn find_block_end(&self, lines: &[SrcLine], start: usize) -> Option<usize> {
         let start_kw = self.line_keyword(&lines[start]).unwrap_or_default();
         let mut stack: Vec<&'static [&'static str]> = vec![closers_for(&start_kw)];
         for (idx, line) in lines.iter().enumerate().skip(start + 1) {
@@ -3572,18 +3578,70 @@ impl Asm {
                 if top.contains(&k.as_str()) {
                     stack.pop();
                     if stack.is_empty() {
-                        return idx;
+                        return Some(idx);
                     }
                 }
             }
         }
-        lines.len().saturating_sub(1)
+        None
+    }
+
+    /// [`Asm::find_block_end`], REFUSING an unterminated block: a missing closer
+    /// is reported at the opener's line and `None` is returned, and every
+    /// executor then skips the rest of its slice. asl refuses the same shapes
+    /// (`missing ENDIF/ENDCASE`, `REPT without ENDM`, `WHILE without ENDM`,
+    /// `IRP without ENDM`, `open macro definition`, `open structure definition`,
+    /// each exit 2), and names no line; the opener is the line whose partner
+    /// the reader has to find. `subject` is the defined name a `macro` or
+    /// `struct` head carries, so the message can say WHICH definition is open.
+    ///
+    /// A block opened after an `end` directive is never reached: `end` sets
+    /// `aborted` and `exec` stops walking, which is also asl's behaviour (it
+    /// stops reading at `END` and raises nothing for what follows).
+    fn block_end(&mut self, lines: &[SrcLine], start: usize, subject: Option<&str>) -> Option<usize> {
+        if let Some(end) = self.find_block_end(lines, start) {
+            return Some(end);
+        }
+        let kw = self.line_keyword(&lines[start]).unwrap_or_default();
+        let closers = closers_for(&kw)
+            .iter()
+            .map(|c| format!("`{c}`"))
+            .collect::<Vec<_>>()
+            .join(" or ");
+        let asl = match fold_kw(&kw).as_ref() {
+            "if" | "ifdef" | "ifndef" | "switch" => "missing ENDIF/ENDCASE",
+            "rept" => "REPT without ENDM",
+            "while" => "WHILE without ENDM",
+            "irp" | "irpc" => "IRP without ENDM",
+            "macro" => "open macro definition",
+            "struct" => "open structure definition",
+            _ => "unterminated block",
+        };
+        let what = match subject {
+            Some(name) => format!("`{kw}` `{name}`"),
+            None => format!("`{kw}`"),
+        };
+        let span = Span {
+            source: lines[start].source,
+            start: lines[start].base,
+            end: lines[start].base,
+        };
+        self.err(
+            span,
+            format!(
+                "{what} is never closed: expected {closers} before the end of the enclosing source, \
+                 and an open block would otherwise swallow every line after it (asl: {asl})"
+            ),
+        );
+        None
     }
 
     /// Execute an `if`/`ifdef`/`ifndef` … `endif` region; run the first true arm.
     /// Returns the index just past `endif`.
     fn exec_if(&mut self, lines: &[SrcLine], start: usize) -> usize {
-        let end = self.find_block_end(lines, start);
+        let Some(end) = self.block_end(lines, start, None) else {
+            return lines.len();
+        };
         // Collect arm-head indices at depth 0: start, then each elseif/else.
         let mut heads = vec![start];
         let mut depth = 0i32;
@@ -3646,9 +3704,8 @@ impl Asm {
                 //                                      `#1: symbol undefined`
                 // ```
                 //
-                // Guarded on the keyword because `find_block_end` falls back to
-                // the last line of an UNTERMINATED region, which is a body line
-                // the arm never reached rather than a closer.
+                // Guarded on the keyword: the sentinel head is the next arm head
+                // or the closer, and only those bind here.
                 //
                 // An `exitm` inside the arm means asl never READ the closer, so
                 // its label binds nothing: probe `e18` puts `LC:` on the `endif`
@@ -3687,7 +3744,9 @@ impl Asm {
     /// index past `endcase`.
     fn exec_switch(&mut self, lines: &[SrcLine], start: usize) -> usize {
         let (_, arg_toks, span) = self.line_kw_args(&lines[start]);
-        let end = self.find_block_end(lines, start);
+        let Some(end) = self.block_end(lines, start, None) else {
+            return lines.len();
+        };
         let switch_val = self.eval_str(&arg_toks);
         if switch_val.is_none() {
             self.err(span, "switch needs a string expression");
@@ -3747,7 +3806,9 @@ impl Asm {
                 0
             }
         };
-        let end = self.find_block_end(lines, start);
+        let Some(end) = self.block_end(lines, start, None) else {
+            return lines.len();
+        };
         let captured = self.capture_loop_body(&lines[start + 1..end]);
         let body: &[SrcLine] = captured.as_deref().unwrap_or(&lines[start + 1..end]);
         // A `rept` IS an expansion for `exitm`'s purposes, top-level one included
@@ -3826,7 +3887,9 @@ impl Asm {
     /// Returns the index past the closer.
     fn exec_irp(&mut self, lines: &[SrcLine], start: usize, kind: IterKind) -> usize {
         let (_, arg_toks, span) = self.line_kw_args_checked(&lines[start]);
-        let end = self.find_block_end(lines, start);
+        let Some(end) = self.block_end(lines, start, None) else {
+            return lines.len();
+        };
         // The head's own text, for `irp`'s RAW-TEXT items. Recomputed rather
         // than threaded out of `line_kw_args_checked` because `subst_frame_text`
         // is pure and this is the identical call it already made — the token
@@ -3989,7 +4052,9 @@ impl Asm {
     /// past `endm`.
     fn exec_while(&mut self, lines: &[SrcLine], start: usize) -> usize {
         let (_, arg_toks, span) = self.line_kw_args(&lines[start]);
-        let end = self.find_block_end(lines, start);
+        let Some(end) = self.block_end(lines, start, None) else {
+            return lines.len();
+        };
         let captured = self.capture_loop_body(&lines[start + 1..end]);
         let body: &[SrcLine] = captured.as_deref().unwrap_or(&lines[start + 1..end]);
         let mut iterations = 0usize;
@@ -4079,7 +4144,9 @@ impl Asm {
             .iter()
             .any(|t| matches!(&t.tok, Tok::Ident(s) if fold_kw(s) == "dots"));
         let sep = if dots { '.' } else { '_' };
-        let end = self.find_block_end(lines, start);
+        let Some(end) = self.block_end(lines, start, None) else {
+            return lines.len();
+        };
         let mut off: i64 = 0;
         let mut elems: Vec<(String, i64)> = Vec::new();
         // Every member symbol is bound into `env` AS THE BODY IS WALKED, not
@@ -7835,21 +7902,12 @@ impl Asm {
                 _ => None,
             });
         }
-        let end = self.find_block_end(lines, start);
-        // An UNCLOSED definition. `find_block_end` answers with the last line it
-        // scanned, so a head on that line leaves nothing between head and end and
-        // the body slice would be inverted. Say so instead: the alternative is a
-        // panic, and the way this is reached is not a malformed source file but a
-        // pasted expansion-scope name — see [`Asm::bind_macro_arg`].
-        if end <= start {
-            let span = Span {
-                source: lines[start].source,
-                start: lines[start].base,
-                end: lines[start].base,
-            };
-            self.err(span, format!("macro `{name}` definition has no `endm`"));
+        // An UNCLOSED definition is refused by `block_end`, naming the macro.
+        // Besides a source file missing its `endm`, this is reached by a pasted
+        // expansion-scope name — see [`Asm::bind_macro_arg`].
+        let Some(end) = self.block_end(lines, start, Some(&name)) else {
             return lines.len();
-        }
+        };
         // A macro DEFINED inside an expanding macro body captures text the
         // enclosing expansion has already substituted — including its
         // `ALLARGS`, frozen at the shift state in force here. The inner macro
@@ -13932,7 +13990,9 @@ C:\n";
         );
         let diags = run(src, &Options::default()).expect_err("must diagnose, not panic");
         assert!(
-            diags.iter().any(|d| d.message.contains("has no `endm`")),
+            diags
+                .iter()
+                .any(|d| d.message.contains("is never closed") && d.message.contains("`endm`")),
             "expected the unclosed-definition refusal, got {:?}",
             diags.iter().map(|d| &d.message).collect::<Vec<_>>()
         );
