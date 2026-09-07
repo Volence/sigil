@@ -276,14 +276,93 @@ rests on the earlier two-mutation run.
 
 ## Suite
 
-SUITE_PLACEHOLDER
+`SIGIL_STRICT_GATE=1 AEON_DIR=/home/volence/sonic_hacks/.aeon-align-parcel
+cargo test --release --workspace --no-fail-fast`, from
+`/home/volence/sonic_hacks/sigil/.claude/worktrees/agent-ae0641a8b5b55d882` at
+`0749e1a4`, branch `parcel/emp-align-reserve` (the log is stamped with pwd,
+HEAD, branch and the aeon revision). Ran 19:12:38 → 19:19:23, `RUNNER_EXIT=101`,
+`END_MARKER_suite` present.
+
+**429 result lines: 4,849 passed / 5 failed / 2 ignored.** The five, by name:
+
+| Failure | Cause |
+|---|---|
+| `pins_rs_is_current` | **the parcel's ripple** — see below |
+| `particle_anims_debug_region_matches_reference` | the same pin (`pins::PARTICLE_ANIMS.debug_len`) |
+| `doctored_af_delete_produces_different_bytes` | the same pin (its control arm reads the same window) |
+| `config_a_size_table_rederives_native` | the same shrink in `golden/offcanonical_sizes/config_a.txt` |
+| `the_published_line_states_this_revision_s_position_against_a_named_remote_ref` | **environmental, refuted** — see below |
+
+An earlier run of the same command returned 4,686 / 168 / 2. **That was this
+lane's own harness artifact, not a result**: the arm script deletes all four
+ROMs before each leg, so after the last leg only `demo.debug.bin` existed and
+163 of the 168 panicked with `SIGIL_STRICT_GATE set but reference missing`. The
+four shapes were rebuilt to coexist (deleted once up front, each leg producing
+only its own, `LEGS_COMPLETED=4`, all four CRCs reproduced a second time) and
+the suite re-run. The first run is kept at `logs/suite.run1.log` and is not a
+verdict on anything.
+
+### The four real failures are ONE ripple, and it is in DERIVED tables only
+
+No ROM byte moved. What moved is the recorded LENGTH of two sections, each by
+the one trailing pad byte that stopped being emitted — and no BASE moved, which
+is the same fact from the other side:
+
+```
+KNUCKLES_ANIMS: plain_len 0x16C -> 0x16B, debug_len 0x16C -> 0x16B   (bases unchanged)
+PARTICLE_ANIMS: debug_len 0x8   -> 0x7                               (bases unchanged, plain_len already 0)
+config_a.txt:15  Ani_Particle_End  0x2bcd0 -> 0x2bccf                (the ONLY key of 86 that differs)
+```
+
+`particle_anims_port` and `tranche4_negative_probes` both take their ROM window
+from `pins::PARTICLE_ANIMS` at run time, so both follow the pin: the compiled
+module is 7 bytes and the 8-byte window still holds the ROM's 8th byte, which
+is now the flatten gap fill. Regenerating `pins.rs` closes all three.
+
+**NOT REGENERATED HERE, on instruction.** The parcel brief's step 5 reserves the
+pins and the chain for the controller to sequence (a refreeze landed an hour
+before this parcel started). The two artifacts that need it:
+
+- `crates/sigil-harness/src/pins.rs` — via `repin` with BOTH `AEON_DIR` and
+  `SIGIL_EMIT` set, per `pins_rs_is_current`'s own instructions.
+- `crates/sigil-harness/golden/offcanonical_sizes/config_a.txt` line 15 — via
+  `derive_offcanon` / `golden/derive_offcanonical_sizes.sh`. `s4_debug.txt`
+  carries `Ani_Particle` but no `_End` row and is unaffected.
+
+The other three of the five-site ripple are expected to be untouched and are
+NOT asserted here: no region was added (`repin.toml`), no section base moved
+(`engine.inc` orgs), and the DAC blob lengths are unchanged
+(`mixed_dac_rom.rs`, `emit_sound_blob` pins) — the emitted `dac_shared_bank.bin`
+is `aded015c`/25754 in both arms. Whoever repins should verify rather than
+inherit that expectation.
+
+### The fifth failure is environmental, and that was measured, not assumed
+
+`the_published_line_...` compares the banner's baked `origin/master` tip against
+what git resolves at test time. **Master moved 12 commits under the running
+suite** (`8faccab9` → `edff4932`, all of them `docs/OVERSEER.md`,
+`docs/OVERSEER-REFERENCE.md`, `docs/QUEUE.md` — `git diff --stat 8faccab9
+edff4932 -- crates/` is empty), so the compiled banner and the live ref
+disagreed. Re-running `cargo test --release -p sigil-cli --test
+version_provenance` with **no source change** returns **19 passed / 0 failed**.
+That master motion also means the byte differential taken against `8faccab9`
+holds against current master: not one source file differs.
 
 ## Open / TAGGED
 
 - **No emulator ran.** Nothing here was confirmed at runtime. If the byte table
   shows movement in a shipped shape, a foreground boot check is the follow-up.
-- **Chain and pins NOT touched.** Per the brief, movement is reported and
-  stopped there; sequencing the chain and the pins is the controller's.
+- **Chain and pins NOT touched, so the branch lands RED on four gates.** Per the
+  brief's step 5, movement is reported and stopped there. The four are named
+  above with their exact deltas; they are all one ripple in derived tables and
+  all close with one `repin` plus one `config_a.txt` line.
+- **"No ROM byte moved" is not the same claim as "nothing moved."** Two section
+  images are a byte shorter, and only `pins_rs_is_current` and the config_a
+  size table could see it — the four-shape CRC differential could not, because
+  the successor sections' own declared alignment reabsorbs the byte. A parcel
+  that had only run the CRC differential would have reported this as fully
+  byte-neutral and been wrong in a way nothing downstream would have caught
+  until the next repin.
 - `recompute_bank_aligns` / `trim_trailing_align_overshoot` (`native.rs`) now
   have NO producer of zero-`Fill` align pads in either front-end. Ledgered as
   `LENS-BANK-ALIGN-RECOMPUTE-ORPHANED`; deliberately not removed here, because

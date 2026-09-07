@@ -4277,6 +4277,16 @@ promote it from derived to observed.
   the finding's `where` line named only the second. The signed-vs-unsigned half is INERT
   today, not impossible: no aeon `section` declares a RAM `vma:` (all 20 enumerated,
   largest `$8357`), and that is the only construct that reaches the negative regime.
+  **LANDS RED ON FOUR GATES BY INSTRUCTION** (brief step 5 reserves the pins for the
+  controller): `pins_rs_is_current` (`KNUCKLES_ANIMS` plain/debug_len `0x16C`->`0x16B`,
+  `PARTICLE_ANIMS` debug_len `0x8`->`0x7`, no base moved), the two gates that read the
+  window from `pins::PARTICLE_ANIMS` (`particle_anims_debug_region_matches_reference`,
+  `doctored_af_delete_produces_different_bytes`), and
+  `config_a_size_table_rederives_native` (`golden/offcanonical_sizes/config_a.txt:15`
+  `Ani_Particle_End` `0x2bcd0`->`0x2bccf`, the only one of 86 keys). One `repin` plus
+  one line closes all four. NO ROM BYTE MOVED - the successor sections' own declared
+  alignment reabsorbs the byte, which is why the four-shape CRC differential is blind
+  to this and the pin table is not.
 - `LENS-BANK-ALIGN-RECOMPUTE-ORPHANED` - `sigil-harness/src/native.rs`
   `recompute_bank_aligns` (`:3039`) and `trim_trailing_align_overshoot` (`:2975`) rewrite an
   already-baked align pad on relocation by matching `Fragment::Fill { value: 0, .. }`. With
