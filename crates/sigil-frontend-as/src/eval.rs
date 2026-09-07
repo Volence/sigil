@@ -6960,7 +6960,7 @@ impl Asm {
         // Unresolved (Poison) exprs ALWAYS defer. A RESOLVED immediate that names
         // a section LABEL also defers on the deferral pass (`keep_labels_symbolic`):
         // `move.l #Label` bakes the label's VMA, which a width-grown `JmpJsrSym`
-        // would shift out from under — so carry the label symbolically and let
+        // would shift out from under, so carry the label symbolically and let
         // the linker fill it post-relax. A resolved NON-label immediate takes the
         // existing eager path (byte-identical), and on every ordinary pass this is
         // exactly the pre-existing Poison-only rule. Decided BEFORE the
