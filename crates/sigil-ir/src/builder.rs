@@ -48,6 +48,9 @@ pub struct IrBuilder {
     /// onto the finished [`Module`]. Empty for any program without a provisional
     /// `here()` guard.
     link_asserts: Vec<LinkAssert>,
+    /// Comptime `ensure` verdicts recorded during lowering; carried onto the
+    /// finished [`Module`] as [`Module::comptime_guards`].
+    comptime_guards: usize,
     /// R7p.1: force the NEXT `switch_section_lma` to stamp `Pinned` regardless of
     /// whether a section has already opened. Set by the AS front-end after an
     /// `org` that JUMPS the physical counter (an explicit placement authority, not
@@ -205,10 +208,22 @@ impl IrBuilder {
         self.link_asserts.push(assert);
     }
 
+    /// Record `n` comptime guard verdicts (see [`Module::comptime_guards`]).
+    pub fn add_comptime_guards(&mut self, n: usize) {
+        self.comptime_guards += n;
+    }
+
     /// Consume the builder: close the open section and return the module + diags.
     pub fn finish(mut self) -> (Module, Vec<Diagnostic>) {
         self.close();
-        (Module { sections: self.done, link_asserts: self.link_asserts }, self.diags)
+        (
+            Module {
+                sections: self.done,
+                link_asserts: self.link_asserts,
+                comptime_guards: self.comptime_guards,
+            },
+            self.diags,
+        )
     }
 
     /// Move an already-recorded label in the open section to the current

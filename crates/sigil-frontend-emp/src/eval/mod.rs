@@ -383,6 +383,11 @@ pub struct Evaluator<'a> {
     /// `eval_guard` records one here instead of passing/failing the guard at
     /// comptime; the lowering pass drains them (like `diags`) onto the module.
     link_asserts: Vec<sigil_ir::LinkAssert>,
+    /// How many `ensure`/`ensure_fatal` evaluations reached a comptime verdict
+    /// (a `Bool` condition, passed or failed). The complement of `link_asserts`:
+    /// a deferred guard is recorded there instead. The lowering pass drains it
+    /// beside the asserts, so a check-only run can say how many guards it decided.
+    guards_decided: usize,
     /// Set true the first time a PROVISIONAL `here()` is evaluated (D-H.8): it
     /// records that the anchor label named by [`here_anchor`](Self::here_anchor)
     /// is actually referenced, so the lowering pass defines it (an item guard's
@@ -620,6 +625,7 @@ impl<'a> Evaluator<'a> {
             here_anchor: None,
             here_used: false,
             link_asserts: Vec::new(),
+            guards_decided: 0,
             include_root: None,
             embed_base: None,
             captures: Vec::new(),
@@ -766,6 +772,12 @@ impl<'a> Evaluator<'a> {
     /// onto the module (like `diags`).
     pub(crate) fn take_link_asserts(&mut self) -> Vec<sigil_ir::LinkAssert> {
         std::mem::take(&mut self.link_asserts)
+    }
+
+    /// Take the count of guards decided at comptime during this evaluation,
+    /// leaving it zero. Drained beside [`take_link_asserts`](Self::take_link_asserts).
+    pub(crate) fn take_guards_decided(&mut self) -> usize {
+        std::mem::take(&mut self.guards_decided)
     }
 
     /// Apply a [`HerePos`](crate::layout::HerePos): an exact position sets a bare

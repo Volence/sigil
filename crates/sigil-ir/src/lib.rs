@@ -455,6 +455,12 @@ pub struct Module {
     /// `build_program` concatenates each module's list. Empty for every program
     /// with no provisional-`here()` guard — the byte-neutral default.
     pub link_asserts: Vec<LinkAssert>,
+    /// How many `ensure`/`ensure_fatal` evaluations reached a comptime verdict
+    /// (passed or failed) while this module was lowered. Recorded at the two
+    /// lowering sites that also drain `link_asserts` (item-position guards and
+    /// data initializers), so a guard evaluated there is counted here or deferred
+    /// there, never both and never neither. Zero for every non-`.emp` front-end.
+    pub comptime_guards: usize,
 }
 
 /// Trait for types that can receive a stream of raw bytes from a front-end.
@@ -506,6 +512,7 @@ impl ModuleBuilder {
                 equ_syms: Vec::new(),
             }],
             link_asserts: Vec::new(),
+            comptime_guards: 0,
         }
     }
 }
