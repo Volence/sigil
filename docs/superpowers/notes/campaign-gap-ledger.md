@@ -4480,6 +4480,7 @@ appendix. It decides every LinkAssert against final post-relaxation placement; i
 budget or overlap, image bounds, the checksum, or the closure gate. "One module's guards" is not an
 honest unit because externs resolve program-wide; the saving is the tail. `emit_generated` still
 writes sound artifacts. A CLI surface, so sigil's call; put the shape to aeon before landing.
+  -- **LANDED 2026-09-07** at merge `d90a297c` as `sigil build --check` (note `2026-09-07-build-check-only.md`); the timing premise was aeon's build.sh lane, not `sigil build` (0.75 s for demo).
 
 ### `ATTEST-SCRATCH-DEFAULT-TARGET`: `refreeze --attest` scratch falls back to the default target (2026-09-07)
 
