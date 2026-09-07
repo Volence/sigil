@@ -808,6 +808,13 @@ way. File and directory are both read-only, verified by observing a same-device 
 lift command live in `README-STANDING-ARTIFACT.txt` beside it, where whoever trips over it will
 be standing.
 
+**THE DURABLE PIN WORKTREE `~/sonic_hacks/.sigil-ls12-pin`** (added 2026-09-07). A detached sigil worktree at the
+LS-12 blob re-pin tip, kept because the shared `target/release/sigil` pair installed for aeon's LS-12 merge bakes
+this path as its `source:` field, and aeon's `build.sh` currency check resolves that path on every build: sweep it
+and every aeon build reports `unknown` assembler provenance and refuses under `SIGIL_VERSION_STRICT=1`. Aeon has
+recorded it as a consumer dependency on its own board (aeon `817cba9d`). **It ends when aeon confirms it is on the
+post-landing pair refreshed from sigil master, and not before; ask them.**
+
 **THE AEON REFERENCE TREE.** This lane needs one aeon checkout with **all four shapes built**,
 pinned to **the `aeon_rev` of the corpus tip** — the expensive half is the build, not the
 clone. Byte gates point `AEON_DIR` at it; without one, they cannot run at all.
