@@ -1,9 +1,16 @@
 //! Comptime integer expressions and the pure folding pass.
 //!
 //! Folding is a pure function of the expression tree and a symbol-lookup
-//! closure. Any unresolved symbol or arithmetic error (e.g. divide-by-zero)
-//! yields [`Fold::Poison`], which propagates through every operator — the
-//! front-end turns a poisoned fold into a diagnostic (Plan 4).
+//! closure. An unresolved symbol yields [`Fold::Poison`]; an arithmetic
+//! fault (64-bit overflow, division by zero, a shift amount outside
+//! `0..=63`) yields [`Fold::Fault`] carrying the failed operation. Both
+//! propagate through every operator, and a fault outranks a poison so it is
+//! reported where it happened rather than deferred to a later resolution.
+//! Every consumer of a fold reports a fault: the AS front end at the line, the
+//! linker at the fixup, equ or assertion. This evaluator serves both the AS
+//! front end at assembly time and the linker at link time, and it refuses
+//! exactly what the `.emp` comptime evaluator refuses (D-P2.1), so a value
+//! that reaches a narrowing was computed without a wrap on either route.
 
 /// Binary operators used by the Z80 driver's build-time math (catalog §3.10).
 /// Comparisons appear only inside `if` and fold to `1`/`0`.
@@ -72,8 +79,92 @@ pub enum Expr {
 pub enum Fold {
     /// The expression folded to a concrete integer.
     Value(i64),
-    /// The expression could not be resolved (unknown symbol, arithmetic error).
+    /// The expression could not be resolved (unknown symbol).
     Poison,
+    /// The expression has no 64-bit value: an operation overflowed, divided
+    /// by zero, or shifted by an amount outside the value's width. Never a
+    /// placeholder; every consumer reports it.
+    Fault(ArithFault),
+}
+
+/// What went wrong in a folded operation.
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum FaultKind {
+    /// The mathematical result does not fit an `i64`.
+    Overflow,
+    /// `/` or `#` with a zero divisor.
+    DivideByZero,
+    /// A shift amount outside `0..=63`, the only amounts a 64-bit value has.
+    ShiftRange,
+}
+
+/// The failed operation, with the operand values it was applied to, so a
+/// diagnostic can name the arithmetic rather than the symptom. `lhs` is the
+/// single operand of a unary `-`.
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub struct ArithFault {
+    pub kind: FaultKind,
+    /// The operator as written: `+ - * / # << >>`, or `neg` for unary `-`.
+    pub op: &'static str,
+    pub lhs: i64,
+    pub rhs: i64,
+}
+
+impl std::fmt::Display for ArithFault {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.kind {
+            FaultKind::Overflow if self.op == "neg" => {
+                write!(f, "arithmetic overflow: -({}) does not fit a 64-bit value", self.lhs)
+            }
+            FaultKind::Overflow => write!(
+                f,
+                "arithmetic overflow: {} {} {} does not fit a 64-bit value",
+                self.lhs, self.op, self.rhs
+            ),
+            FaultKind::DivideByZero => {
+                write!(f, "division by zero: {} {} {}", self.lhs, self.op, self.rhs)
+            }
+            FaultKind::ShiftRange => write!(
+                f,
+                "shift amount {} out of range 0..=63 in {} {} {}",
+                self.rhs, self.lhs, self.op, self.rhs
+            ),
+        }
+    }
+}
+
+impl ArithFault {
+    fn binary(kind: FaultKind, op: &'static str, lhs: i64, rhs: i64) -> Fold {
+        Fold::Fault(ArithFault { kind, op, lhs, rhs })
+    }
+}
+
+/// `checked` or the overflow fault for `lhs op rhs`.
+fn checked_or_overflow(checked: Option<i64>, op: &'static str, lhs: i64, rhs: i64) -> Fold {
+    match checked {
+        Some(v) => Fold::Value(v),
+        None => ArithFault::binary(FaultKind::Overflow, op, lhs, rhs),
+    }
+}
+
+/// A shift by `rhs` of `lhs`: the amount must be one a 64-bit value has, and
+/// a left shift must round-trip (`(a << n) >> n == a`), which is the
+/// `.emp` comptime rule and what makes `1 << 63` an overflow rather than
+/// `i64::MIN`.
+fn shift(op: &'static str, lhs: i64, rhs: i64) -> Fold {
+    if !(0..=63).contains(&rhs) {
+        return ArithFault::binary(FaultKind::ShiftRange, op, lhs, rhs);
+    }
+    let n = rhs as u32;
+    if op == "<<" {
+        let r = lhs << n;
+        if (r >> n) != lhs {
+            return ArithFault::binary(FaultKind::Overflow, op, lhs, rhs);
+        }
+        Fold::Value(r)
+    } else {
+        Fold::Value(lhs >> n)
+    }
 }
 
 impl Expr {
@@ -89,45 +180,49 @@ impl Expr {
             Expr::Unary { op, operand } => {
                 let v = match operand.fold(lookup) {
                     Fold::Value(v) => v,
-                    Fold::Poison => return Fold::Poison,
+                    other => return other,
                 };
                 match op {
-                    UnOp::Neg => Fold::Value(v.wrapping_neg()),
+                    UnOp::Neg => match v.checked_neg() {
+                        Some(r) => Fold::Value(r),
+                        None => ArithFault::binary(FaultKind::Overflow, "neg", v, 0),
+                    },
                     UnOp::Not => Fold::Value(!v),
                     UnOp::LogNot => Fold::Value(i64::from(v == 0)),
                 }
             }
             Expr::Binary { op, lhs, rhs } => {
-                let a = match lhs.fold(lookup) {
-                    Fold::Value(v) => v,
-                    Fold::Poison => return Fold::Poison,
-                };
-                let b = match rhs.fold(lookup) {
-                    Fold::Value(v) => v,
-                    Fold::Poison => return Fold::Poison,
+                // Both sides fold before either failure is returned, so a
+                // fault on the right is reported even when the left is a
+                // still-unresolved symbol: a fault is final, a poison is not.
+                let (a, b) = match (lhs.fold(lookup), rhs.fold(lookup)) {
+                    (Fold::Value(a), Fold::Value(b)) => (a, b),
+                    (Fold::Fault(f), _) | (_, Fold::Fault(f)) => return Fold::Fault(f),
+                    _ => return Fold::Poison,
                 };
                 let bool_val = |t: bool| Fold::Value(if t { 1 } else { 0 });
                 match op {
-                    BinOp::Add => Fold::Value(a.wrapping_add(b)),
-                    BinOp::Sub => Fold::Value(a.wrapping_sub(b)),
-                    BinOp::Mul => Fold::Value(a.wrapping_mul(b)),
+                    BinOp::Add => checked_or_overflow(a.checked_add(b), "+", a, b),
+                    BinOp::Sub => checked_or_overflow(a.checked_sub(b), "-", a, b),
+                    BinOp::Mul => checked_or_overflow(a.checked_mul(b), "*", a, b),
                     BinOp::Div => {
                         if b == 0 {
-                            Fold::Poison
+                            ArithFault::binary(FaultKind::DivideByZero, "/", a, b)
                         } else {
-                            // i64 `/` truncates toward zero (matches AS).
-                            Fold::Value(a.wrapping_div(b))
+                            // i64 `/` truncates toward zero (matches AS);
+                            // `checked_div` also refuses `i64::MIN / -1`.
+                            checked_or_overflow(a.checked_div(b), "/", a, b)
                         }
                     }
                     BinOp::Mod => {
                         if b == 0 {
-                            Fold::Poison
+                            ArithFault::binary(FaultKind::DivideByZero, "#", a, b)
                         } else {
-                            Fold::Value(a.wrapping_rem(b))
+                            checked_or_overflow(a.checked_rem(b), "#", a, b)
                         }
                     }
-                    BinOp::Shl => Fold::Value(a.wrapping_shl(b as u32)),
-                    BinOp::Shr => Fold::Value(a.wrapping_shr(b as u32)),
+                    BinOp::Shl => shift("<<", a, b),
+                    BinOp::Shr => shift(">>", a, b),
                     BinOp::And => Fold::Value(a & b),
                     BinOp::Or => Fold::Value(a | b),
                     BinOp::Xor => Fold::Value(a ^ b),
@@ -231,10 +326,58 @@ mod tests {
     }
 
     #[test]
-    fn modulo_by_zero_poisons() {
+    fn modulo_by_zero_faults() {
         use BinOp::*;
         let m = Expr::Binary { op: Mod, lhs: Box::new(Expr::Int(5)), rhs: Box::new(Expr::Int(0)) };
-        assert_eq!(fold_pure(&m), Fold::Poison);
+        let f = ArithFault { kind: FaultKind::DivideByZero, op: "#", lhs: 5, rhs: 0 };
+        assert_eq!(fold_pure(&m), Fold::Fault(f));
+        assert_eq!(f.to_string(), "division by zero: 5 # 0");
+    }
+
+    /// Every fault kind, with the text a consumer prints, and the edge each
+    /// one sits beside: the value one step inside still folds.
+    #[test]
+    fn overflow_and_shift_faults_name_the_operation() {
+        use BinOp::*;
+        let bin = |op, l: i64, r: i64| Expr::Binary { op, lhs: Box::new(Expr::Int(l)), rhs: Box::new(Expr::Int(r)) };
+        let fault = |e: &Expr| match fold_pure(e) {
+            Fold::Fault(f) => f.to_string(),
+            other => panic!("{e:?} folded to {other:?}, not a fault"),
+        };
+        assert_eq!(fault(&bin(Add, i64::MAX, 2)), "arithmetic overflow: 9223372036854775807 + 2 does not fit a 64-bit value");
+        assert_eq!(fold_pure(&bin(Add, i64::MAX, 0)), Fold::Value(i64::MAX));
+        assert_eq!(fault(&bin(Sub, i64::MIN, 1)), "arithmetic overflow: -9223372036854775808 - 1 does not fit a 64-bit value");
+        assert_eq!(fault(&bin(Mul, i64::MAX, 2)), "arithmetic overflow: 9223372036854775807 * 2 does not fit a 64-bit value");
+        assert_eq!(fold_pure(&bin(Mul, i64::MAX, 1)), Fold::Value(i64::MAX));
+        assert_eq!(fault(&bin(Div, i64::MIN, -1)), "arithmetic overflow: -9223372036854775808 / -1 does not fit a 64-bit value");
+        assert_eq!(fault(&bin(Div, 5, 0)), "division by zero: 5 / 0");
+        assert_eq!(fault(&bin(Shl, 1, 64)), "shift amount 64 out of range 0..=63 in 1 << 64");
+        assert_eq!(fault(&bin(Shr, 1, 64)), "shift amount 64 out of range 0..=63 in 1 >> 64");
+        assert_eq!(fault(&bin(Shl, 1, -1)), "shift amount -1 out of range 0..=63 in 1 << -1");
+        assert_eq!(fault(&bin(Shl, 1, 63)), "arithmetic overflow: 1 << 63 does not fit a 64-bit value");
+        assert_eq!(fault(&bin(Shl, 0x100, 62)), "arithmetic overflow: 256 << 62 does not fit a 64-bit value");
+        assert_eq!(fold_pure(&bin(Shl, 1, 62)), Fold::Value(1 << 62));
+        assert_eq!(fold_pure(&bin(Shl, -1, 63)), Fold::Value(i64::MIN));
+        assert_eq!(fold_pure(&bin(Shr, -1, 63)), Fold::Value(-1));
+        assert_eq!(fold_pure(&bin(Shr, i64::MIN, 63)), Fold::Value(-1));
+        let neg = Expr::Unary { op: UnOp::Neg, operand: Box::new(Expr::Int(i64::MIN)) };
+        assert_eq!(fault(&neg), "arithmetic overflow: -(-9223372036854775808) does not fit a 64-bit value");
+        let neg_ok = Expr::Unary { op: UnOp::Neg, operand: Box::new(Expr::Int(i64::MIN + 1)) };
+        assert_eq!(fold_pure(&neg_ok), Fold::Value(i64::MAX));
+    }
+
+    /// A fault on one side outranks a poison on the other: the fault is
+    /// final and is reported where it happened, while the poison may resolve
+    /// on a later pass.
+    #[test]
+    fn fault_outranks_poison_on_either_side() {
+        use BinOp::*;
+        let dz = Expr::Binary { op: Div, lhs: Box::new(Expr::Int(1)), rhs: Box::new(Expr::Int(0)) };
+        let sym = Expr::Sym("Later".to_string());
+        let l = Expr::Binary { op: Add, lhs: Box::new(sym.clone()), rhs: Box::new(dz.clone()) };
+        let r = Expr::Binary { op: Add, lhs: Box::new(dz), rhs: Box::new(sym) };
+        assert!(matches!(fold_pure(&l), Fold::Fault(_)));
+        assert!(matches!(fold_pure(&r), Fold::Fault(_)));
     }
 
     #[test]
@@ -273,7 +416,7 @@ mod tests {
     }
 
     #[test]
-    fn poison_propagates_and_div_by_zero_poisons() {
+    fn poison_propagates_and_div_by_zero_faults() {
         use BinOp::*;
         let e = Expr::Binary {
             op: Add,
@@ -282,6 +425,6 @@ mod tests {
         };
         assert_eq!(fold_pure(&e), Fold::Poison);
         let dz = Expr::Binary { op: Div, lhs: Box::new(Expr::Int(1)), rhs: Box::new(Expr::Int(0)) };
-        assert_eq!(fold_pure(&dz), Fold::Poison);
+        assert_eq!(fold_pure(&dz), Fold::Fault(ArithFault { kind: FaultKind::DivideByZero, op: "/", lhs: 1, rhs: 0 }));
     }
 }

@@ -69,7 +69,11 @@ impl Z80Backend {
     /// Lower a fixed-opcode instruction whose 16-bit immediate is an unresolved
     /// symbolic *absolute* address (`jp`/`call`/`ld rr,nn`/`ld ix,nn` with a
     /// label target). The immediate is the last 2 bytes for every such form;
-    /// emit the opcode with a `00 00` placeholder + a `BankPtr16Le` fixup there.
+    /// emit the opcode with a `00 00` placeholder + a `Value16Le` fixup there,
+    /// the range-checked kind (unsigned 16-bit window at link) the `.emp`
+    /// twin `lower_z80_abs16_sym` emits for the same shapes. `BankPtr16Le` is
+    /// the masking address kind for a windowed bank pointer, and a `jp` to a
+    /// label above `$FFFF` under it wrote the low word and jumped elsewhere.
     /// `operands` must carry `Imm16(0)` in the immediate slot (the placeholder).
     pub fn lower_abs16(
         &self,
@@ -89,7 +93,7 @@ impl Z80Backend {
         bytes[n - 1] = 0x00;
         Ok(DataFragment {
             bytes,
-            fixups: vec![Fixup { kind: FixupKind::BankPtr16Le, offset: off, target }],
+            fixups: vec![Fixup { kind: FixupKind::Value16Le, offset: off, target }],
             span,
         })
     }
@@ -214,14 +218,17 @@ mod tests {
         assert_eq!(frag.fixups[0].kind, FixupKind::Z80JrRel8);
     }
 
+    /// The fixup is the range-checked VALUE kind, not the masking bank-pointer
+    /// kind: the linker refuses a target above `$FFFF` instead of writing its
+    /// low word.
     #[test]
-    fn abs16_emits_bankptr_fixup_at_last_two_bytes() {
+    fn abs16_emits_value16le_fixup_at_last_two_bytes() {
         use sigil_isa::z80::Reg16;
         let b = Z80Backend;
         let f = b.lower_abs16(Mnemonic::Jp, &[Operand::Imm16(0)], Expr::Sym("Label".into()), span()).unwrap();
         assert_eq!(f.bytes, vec![0xC3, 0x00, 0x00]);
         assert_eq!(f.fixups.len(), 1);
-        assert_eq!(f.fixups[0].kind, FixupKind::BankPtr16Le);
+        assert_eq!(f.fixups[0].kind, FixupKind::Value16Le);
         assert_eq!(f.fixups[0].offset, 1);
         let g = b.lower_abs16(Mnemonic::Ld, &[Operand::Pair(Reg16::Ix), Operand::Imm16(0)], Expr::Sym("L".into()), span()).unwrap();
         assert_eq!(g.bytes, vec![0xDD, 0x21, 0x00, 0x00]);

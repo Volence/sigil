@@ -92,6 +92,10 @@ pub fn link(sections: &[Section], stubs: &SymbolTable) -> Result<LinkedImage, Ve
             let v = match eq.expr.fold(&|name| syms.resolve(name, None)) {
                 Fold::Value(v) => v,
                 Fold::Poison => continue,
+                Fold::Fault(f) => {
+                    diags.push(diag(format!("[value.fault] equ `{}`: {f}", eq.name), eq.span));
+                    continue;
+                }
             };
             if let Some(prev) = defined_here.insert(eq.name.clone(), sec.name.clone()) {
                 diags.push(diag(
@@ -155,6 +159,7 @@ pub fn link(sections: &[Section], stubs: &SymbolTable) -> Result<LinkedImage, Ve
                      un-lowered; the caller must run resolve_layout first",
                     sec.name
                 ),
+                Fold::Fault(f) => format!("[value.fault] {what} in section {}: {f}", sec.name),
             };
             diags.push(diag(message, span));
         }
@@ -411,6 +416,9 @@ pub fn check_link_asserts(
                 };
                 out.push(Diagnostic { level: Level::Error, message, primary: a.span });
             }
+            Fold::Fault(f) => {
+                out.push(diag(format!("[value.fault] link assertion condition: {f}"), a.span));
+            }
         }
     }
     out
@@ -478,6 +486,7 @@ fn render_assert_message(parts: &[MsgPart], lookup: &dyn Fn(&str) -> Option<i64>
             MsgPart::Expr(e) => match e.fold(lookup) {
                 Fold::Value(v) => out.push_str(&v.to_string()),
                 Fold::Poison => out.push_str("<?>"),
+                Fold::Fault(f) => out.push_str(&format!("<{f}>")),
             },
         }
     }
@@ -499,6 +508,13 @@ fn apply_fixup(
     // front-end will pre-qualify local names into fully-dotted `Sym`s in Plan 4).
     let value = match fx.target.fold(&|name| syms.resolve(name, None)) {
         Fold::Value(v) => v,
+        Fold::Fault(f) => {
+            diags.push(diag(
+                format!("[value.fault] {f} for fixup in section {section} at offset {site_abs}"),
+                span,
+            ));
+            return;
+        }
         Fold::Poison => {
             // Name the dangling leaves: a compound target (`Main - ObjCodeBase`,
             // the objroutine word) with one misspelled symbol should say WHICH
@@ -590,10 +606,12 @@ fn apply_fixup(
             bytes[site_abs as usize] = disp as i8 as u8;
         }
         FixupKind::Abs16Be => {
-            // abs.w holds a sign-extended 16-bit address: the VMA must fit i16
-            // (asl errors otherwise; matching that keeps us byte-exact).
+            // abs.w holds a sign-extended 16-bit address: the low 24 bits of
+            // the VMA must sit in the window `sigil_ir::fits_abs_w` tests, the
+            // same predicate the front ends apply to an eagerly folded
+            // `(addr).w` (asl: `short addressing not allowed` outside it).
             let v = value as i64;
-            if !(-0x8000..=0x7FFF).contains(&v) && !(0xFF_8000..=0xFF_FFFF).contains(&(v & 0xFF_FFFF)) {
+            if !sigil_ir::fits_abs_w(v) {
                 diags.push(diag(
                     format!("value {v:#X} does not fit abs.w (16-bit sign-extended) in section {section}"),
                     span,
@@ -1930,6 +1948,69 @@ mod tests {
             equ_syms: Vec::new(),
         };
         let err = link(&[bad], &stubs).unwrap_err();
+        assert!(err.iter().any(|d| d.message.contains("abs.w")), "got: {:?}", err);
+    }
+
+    /// A link-time expression that overflows 64 bits or divides by zero is
+    /// refused at the fixup with the failed operation named, where the
+    /// wrapping evaluator used to write a plausible value (`(L << 62) >> 62`
+    /// for `L = $100` wrote `00000000`) and the division wrote nothing and
+    /// said `unresolved target expression`.
+    #[test]
+    fn value_fixup_refuses_link_time_arithmetic_faults() {
+        use sigil_ir::expr::BinOp;
+        let mut stubs = SymbolTable::new();
+        stubs.define("L", SymbolValue::Int(0x100));
+        let bin = |op, lhs: Expr, rhs: Expr| Expr::Binary { op, lhs: Box::new(lhs), rhs: Box::new(rhs) };
+        let sec = |target: Expr| Section {
+            name: "s".to_string(), cpu: Cpu::M68000, vma_base: None, lma: 0x400, labels: vec![],
+            fragments: vec![Fragment::Data(DataFragment {
+                bytes: vec![0, 0, 0, 0],
+                fixups: vec![Fixup { kind: FixupKind::Value32Be, offset: 0, target }],
+                span: span(),
+            })],
+            placement: SectionPlacement::Pinned,
+            reserved_span: 0, group: None, bank: None, equ_syms: Vec::new(),
+        };
+        let shifted = bin(BinOp::Shr, bin(BinOp::Shl, Expr::Sym("L".into()), Expr::Int(62)), Expr::Int(62));
+        let err = link(&[sec(shifted)], &stubs).unwrap_err();
+        assert!(
+            err.iter().any(|d| d.message.contains("arithmetic overflow") && d.message.contains("256 << 62")),
+            "got: {:?}", err
+        );
+        let div = bin(BinOp::Div, Expr::Sym("L".into()), Expr::Int(0));
+        let err = link(&[sec(div)], &stubs).unwrap_err();
+        assert!(
+            err.iter().any(|d| d.message.contains("division by zero") && d.message.contains("256 / 0")),
+            "got: {:?}", err
+        );
+        // The control: the same shape inside 64 bits folds and writes.
+        let fine = bin(BinOp::Shr, bin(BinOp::Shl, Expr::Sym("L".into()), Expr::Int(20)), Expr::Int(20));
+        assert_eq!(link(&[sec(fine)], &stubs).unwrap().section("s").unwrap().bytes, vec![0, 0, 1, 0]);
+    }
+
+    /// The window is on the LOW 24 BITS (`sigil_ir::fits_abs_w`, shared with
+    /// the front ends' eager `(addr).w` folds): asl assembles `($1007FFF).w`
+    /// to `7FFF` with exit 0, and a sign-extended RAM address to its low word.
+    #[test]
+    fn abs16be_window_is_the_shared_24_bit_predicate() {
+        let mut stubs = SymbolTable::new();
+        stubs.define("Bit25", SymbolValue::Int(0x100_7FFF));
+        stubs.define("Ram", SymbolValue::Int(0xFFFF_8000));
+        stubs.define("Edge", SymbolValue::Int(0x8000));
+        let sec = |sym: &str| Section {
+            name: "s".to_string(), cpu: Cpu::M68000, vma_base: None, lma: 0x400, labels: vec![],
+            fragments: vec![Fragment::Data(DataFragment {
+                bytes: vec![0, 0],
+                fixups: vec![Fixup { kind: FixupKind::Abs16Be, offset: 0, target: Expr::Sym(sym.into()) }],
+                span: span(),
+            })],
+            placement: SectionPlacement::Pinned,
+            reserved_span: 0, group: None, bank: None, equ_syms: Vec::new(),
+        };
+        assert_eq!(link(&[sec("Bit25")], &stubs).unwrap().section("s").unwrap().bytes, vec![0x7F, 0xFF]);
+        assert_eq!(link(&[sec("Ram")], &stubs).unwrap().section("s").unwrap().bytes, vec![0x80, 0x00]);
+        let err = link(&[sec("Edge")], &stubs).unwrap_err();
         assert!(err.iter().any(|d| d.message.contains("abs.w")), "got: {:?}", err);
     }
 

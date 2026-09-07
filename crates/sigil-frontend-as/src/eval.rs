@@ -1322,6 +1322,31 @@ const GLOBAL_MACRO_CAP: usize = 1_000_000;
 const WORD_DATA_RANGE: std::ops::RangeInclusive<i64> = -0x8000..=0xFFFF;
 /// The values a long data directive (`dc.l`) accepts, the same shape.
 const LONG_DATA_RANGE: std::ops::RangeInclusive<i64> = -0x8000_0000..=0xFFFF_FFFF;
+/// The Z80 addresses a `jp`/`call` target or an `(nn)` operand accepts: the
+/// unsigned 16-bit space (asl: `range overflow` for `jp 10000h` and for a
+/// negative target alike). A symbol and a literal take the same window.
+const Z80_ADDR_RANGE: std::ops::RangeInclusive<i64> = 0..=0xFFFF;
+/// The counts `align` accepts: the domain of [`sigil_ir::asl_align_pad`],
+/// every non-zero `u32`. Checked on the folded `i64` BEFORE the narrowing
+/// cast, since a count that passes a wide positivity test and then truncates
+/// (`$100000000` to 0, `$100000001` to 1) is what the cast would otherwise
+/// hand the pad function. asl's own count is a 16-bit word (`align $10000`
+/// is `range overflow` there); the pad function is defined up to `u32::MAX`,
+/// so that ceiling is kept.
+const ALIGN_COUNT_RANGE: std::ops::RangeInclusive<i64> = 1..=u32::MAX as i64;
+/// The counts `ds.b`/`ds.w`/`ds.l` accept, in units: asl's 32-bit window
+/// (`ds.b $100000000` is `range overflow` there). The byte total and the
+/// section cursor are checked separately by [`Asm::directive_ds`].
+const DS_COUNT_RANGE: std::ops::RangeInclusive<i64> = 0..=u32::MAX as i64;
+
+/// The size suffix a `ds`/`dc` directive spells for a unit width.
+fn unit_suffix(unit: u32) -> &'static str {
+    match unit {
+        1 => "b",
+        2 => "w",
+        _ => "l",
+    }
+}
 
 enum Lowered {
     Fixed(Vec<Operand>),
@@ -1672,12 +1697,23 @@ impl Asm {
         e.fold(&|name| self.builtin_num(name).or_else(|| self.resolve_sym(name)))
     }
 
+    /// Report a fold that has no 64-bit value (`Fold::Fault`: an overflow, a
+    /// division by zero, a shift outside `0..=63`) at the line that wrote it.
+    /// The caller still emits a placeholder so the pass keeps its shape; the
+    /// error fails the run. A fault is never routed as a poison: a poison with
+    /// no dangling names records nothing, and `move.w #5/0,d0` used to reach
+    /// the image as `303C 0000` that way.
+    fn fault_err(&mut self, fault: sigil_ir::expr::ArithFault, span: Span) {
+        self.err(span, fault.to_string());
+    }
+
     /// Fold an immediate to a value in [lo,hi]. Out-of-range → diagnostic + clamp.
     /// Unresolved (Poison) → 0 placeholder for THIS pass (byte-stable so a forward
     /// ref that resolves on a later pass doesn't perturb layout), but the offending
     /// symbol names are recorded: on the converged pass `run` promotes them to
     /// unresolved-symbol errors (the env is final there, so a still-Poison operand
-    /// is genuinely undefined rather than a pending forward ref).
+    /// is genuinely undefined rather than a pending forward ref). A fault is
+    /// reported here and now, with the same 0 placeholder.
     fn fold_imm(&mut self, e: &Expr, span: Span, lo: i64, hi: i64) -> i64 {
         match self.fold(e) {
             Fold::Value(v) if v >= lo && v <= hi => v,
@@ -1687,6 +1723,10 @@ impl Asm {
             }
             Fold::Poison => {
                 self.route_poison_names(e, span);
+                0
+            }
+            Fold::Fault(f) => {
+                self.fault_err(f, span);
                 0
             }
         }
@@ -1811,6 +1851,10 @@ impl Asm {
         }
         match self.fold(&e) {
             Fold::Value(v) => Some(v),
+            Fold::Fault(f) => {
+                self.fault_err(f, span);
+                None
+            }
             Fold::Poison => {
                 // THE choke point for every directive that wants a constant and
                 // has its own word for not getting one: `org`, `ds`, `align`,
@@ -2400,7 +2444,9 @@ impl Asm {
         }
         match self.fold(&e) {
             Fold::Value(v) => Some(v),
-            Fold::Poison => None,
+            // A fault is a refusal here too: the caller reports the piece as
+            // not being an integer, in its own words.
+            Fold::Poison | Fold::Fault(_) => None,
         }
     }
 
@@ -6040,6 +6086,10 @@ impl Asm {
                     }
                     self.emit(&[v.clamp(-128, 0xFF) as u8], vec![], span);
                 }
+                Fold::Fault(f) => {
+                    self.fault_err(f, span);
+                    self.emit(&[0x00], vec![], span);
+                }
                 Fold::Poison => {
                     // A register is not a cross-seam leaf. Deferring it hands
                     // the linker a fixup it can only refuse, and the linker's
@@ -6090,6 +6140,10 @@ impl Asm {
                     self.check_data_range(v, WORD_DATA_RANGE, span);
                     let w = v as u16;
                     self.emit(&[(w & 0xFF) as u8, (w >> 8) as u8], vec![], span);
+                }
+                Fold::Fault(f) => {
+                    self.fault_err(f, span);
+                    self.emit(&[0x00, 0x00], vec![], span);
                 }
                 Fold::Poison => {
                     // A register is not a cross-seam leaf; see `directive_db`.
@@ -6188,6 +6242,10 @@ impl Asm {
                     let w = (v as u16).to_be_bytes();
                     self.emit(&w, vec![], span);
                 }
+                Fold::Fault(f) => {
+                    self.fault_err(f, span);
+                    self.emit(&[0x00, 0x00], vec![], span);
+                }
                 Fold::Poison => {
                     // A register is not a cross-seam leaf; see `directive_db`.
                     if self.report_register_values(&qe, span) {
@@ -6262,6 +6320,10 @@ impl Asm {
                     let l = (v as u32).to_be_bytes();
                     self.emit(&l, vec![], span);
                 }
+                Fold::Fault(f) => {
+                    self.fault_err(f, span);
+                    self.emit(&[0x00; 4], vec![], span);
+                }
                 Fold::Poison => {
                     // A register is not a cross-seam leaf; see `directive_db`.
                     // This also takes the COMPOUND case (`dc.l a0+1`) off
@@ -6304,8 +6366,37 @@ impl Asm {
             self.pad_word_align_reserving(span);
         }
         match self.eval_all(rest, span) {
-            Some(v) if v >= 0 => self.builder.reserve(v as u32 * unit, span),
-            Some(_) => self.err(span, "negative ds count"),
+            Some(v) if DS_COUNT_RANGE.contains(&v) => {
+                // In range, so the narrowing is exact. The byte total and the
+                // cursor advance are each checked where they are computed: a
+                // count of 2^31 words is a total of 2^32 bytes, and a total
+                // that fits can still carry the section cursor past u32::MAX.
+                let count = v as u32;
+                let bytes = count.checked_mul(unit);
+                let end = bytes.and_then(|b| self.builder.current_offset().checked_add(b));
+                match (bytes, end) {
+                    (Some(bytes), Some(_)) => self.builder.reserve(bytes, span),
+                    (Some(bytes), None) => self.err(
+                        span,
+                        format!(
+                            "ds.{} {v} reserves {bytes} bytes past the end of the 32-bit address space",
+                            unit_suffix(unit)
+                        ),
+                    ),
+                    (None, _) => self.err(
+                        span,
+                        format!(
+                            "ds.{} {v} reserves {} bytes, more than the 32-bit address space holds",
+                            unit_suffix(unit),
+                            v as u64 * unit as u64
+                        ),
+                    ),
+                }
+            }
+            Some(v) => self.err(
+                span,
+                format!("ds count {v} out of range {}..={}", DS_COUNT_RANGE.start(), DS_COUNT_RANGE.end()),
+            ),
             None => {
                 if !self.register_reported_at(span) {
                     self.err(span, "unresolved ds count");
@@ -6342,14 +6433,22 @@ impl Asm {
     fn directive_align(&mut self, rest: &[Token], span: Span) {
         self.open_section_if_needed();
         match self.eval_all(rest, span) {
-            Some(n) if n > 0 => {
+            Some(n) if ALIGN_COUNT_RANGE.contains(&n) => {
+                // In range, so the narrowing is exact.
                 let n = n as u32;
                 let pad = sigil_ir::asl_align_pad(self.here(), n);
                 if pad > 0 {
                     self.builder.reserve(pad, span);
                 }
             }
-            Some(_) => self.err(span, "align needs a positive constant"),
+            Some(n) => self.err(
+                span,
+                format!(
+                    "align count {n} out of range {}..={}",
+                    ALIGN_COUNT_RANGE.start(),
+                    ALIGN_COUNT_RANGE.end()
+                ),
+            ),
             None => {
                 if !self.register_reported_at(span) {
                     self.err(span, "unresolved align constant");
@@ -6609,6 +6708,10 @@ impl Asm {
                         self.route_poison_names(&target, span);
                         (AbsWidth::W, target)
                     }
+                    Fold::Fault(f) => {
+                        self.fault_err(f, span);
+                        (AbsWidth::W, Expr::Int(0))
+                    }
                 };
                 let frag = self.m68k.lower_jmp_jsr_abs(is_jsr, fixup_target, width, span);
                 self.emit_frag(Ok(frag), span);
@@ -6849,41 +6952,59 @@ impl Asm {
         // extension is scoped to MEMORY destinations (the object-spawn shape). A
         // word immediate into a register (`move.w #Sym, d0`) falls through to the
         // eager path and errors as before.
-        let (imm_expr, dst) = match atoms {
-            [OperandAtom::Imm(e), OperandAtom::RegOrCond(w)] if size == M68kSize::L => {
-                let dst = match mnemonic {
-                    M68kMnemonic::Movea => M68kOperand::An(m68k_addr_reg(w)?),
-                    // `move.l #imm, sp` lands here and MUST stay None:
-                    // `m68k_data_reg("sp")` is None, so it falls to the eager
-                    // path, which encodes the movea form. Accepting `sp` here
-                    // would mis-encode it as a Dn destination.
-                    M68kMnemonic::Move => M68kOperand::Dn(m68k_data_reg(w)?),
-                    _ => return None,
-                };
-                (e, dst)
-            }
-            [OperandAtom::Imm(e), OperandAtom::Value(Expr::Sym(w))] if size == M68kSize::L => {
-                let dst = match mnemonic {
-                    M68kMnemonic::Movea => M68kOperand::An(m68k_addr_reg(w)?),
-                    M68kMnemonic::Move => M68kOperand::Dn(m68k_data_reg(w)?),
-                    _ => return None,
-                };
-                (e, dst)
-            }
-            [OperandAtom::Imm(e), OperandAtom::M68kAbs { addr, long }] if mnemonic == M68kMnemonic::Move && size == M68kSize::L => {
+        let imm_expr = match atoms.first() {
+            Some(OperandAtom::Imm(e)) => e,
+            _ => return None,
+        };
+        let qualified = self.qualify_expr(imm_expr);
+        // Unresolved (Poison) exprs ALWAYS defer. A RESOLVED immediate that names
+        // a section LABEL also defers on the deferral pass (`keep_labels_symbolic`):
+        // `move.l #Label` bakes the label's VMA, which a width-grown `JmpJsrSym`
+        // would shift out from under, so carry the label symbolically and let
+        // the linker fill it post-relax. A resolved NON-label immediate takes the
+        // existing eager path (byte-identical), and on every ordinary pass this is
+        // exactly the pre-existing Poison-only rule. Decided BEFORE the
+        // destination folds: a destination this arm folds and then hands to the
+        // eager path would be folded twice, and a refusal on it reported twice.
+        let is_poison = matches!(self.fold(&qualified), Fold::Poison);
+        let refs_label = self.keep_labels_symbolic() && self.expr_refs_label(&qualified);
+        if !is_poison && !refs_label {
+            return None;
+        }
+        // A register is not a cross-seam leaf. Falling through to the eager path
+        // would report it there WITH a span; taking this deferral would ship it
+        // to the linker, which answers with a section and an offset and no line.
+        if is_poison && self.report_register_values(&qualified, span) {
+            return None;
+        }
+        let dst = match atoms {
+            [OperandAtom::Imm(_), OperandAtom::RegOrCond(w)] if size == M68kSize::L => match mnemonic {
+                M68kMnemonic::Movea => M68kOperand::An(m68k_addr_reg(w)?),
+                // `move.l #imm, sp` lands here and MUST stay None:
+                // `m68k_data_reg("sp")` is None, so it falls to the eager
+                // path, which encodes the movea form. Accepting `sp` here
+                // would mis-encode it as a Dn destination.
+                M68kMnemonic::Move => M68kOperand::Dn(m68k_data_reg(w)?),
+                _ => return None,
+            },
+            [OperandAtom::Imm(_), OperandAtom::Value(Expr::Sym(w))] if size == M68kSize::L => match mnemonic {
+                M68kMnemonic::Movea => M68kOperand::An(m68k_addr_reg(w)?),
+                M68kMnemonic::Move => M68kOperand::Dn(m68k_data_reg(w)?),
+                _ => return None,
+            },
+            [OperandAtom::Imm(_), OperandAtom::M68kAbs { addr, long }] if mnemonic == M68kMnemonic::Move && size == M68kSize::L => {
                 // The destination address resolves EAGERLY (it's not the
                 // cross-seam leaf this deferral targets) — an unresolved
                 // absolute destination falls through to the eager path.
                 let qualified_addr = self.qualify_expr(addr);
                 let v = self.fold_imm(&qualified_addr, span, i32::MIN as i64, u32::MAX as i64);
-                let dst = if *long {
+                if *long {
                     M68kOperand::AbsL(v as i32)
                 } else {
-                    M68kOperand::AbsW((v & 0xFFFF) as i16)
-                };
-                (e, dst)
+                    self.abs_w_operand(v, span)
+                }
             }
-            [OperandAtom::Imm(e), OperandAtom::M68kDisp { disp, an }] if mnemonic == M68kMnemonic::Move => {
+            [OperandAtom::Imm(_), OperandAtom::M68kDisp { disp, an }] if mnemonic == M68kMnemonic::Move => {
                 // `move.l #Sym, d16(An)` — the tranche-4 particle_anims
                 // consumer shape (`move.l #Ani_Particle, SST_anim_table(a0)`,
                 // test_particle.asm). The displacement resolves EAGERLY (an
@@ -6900,37 +7021,16 @@ impl Asm {
                 // zeroOffsetOptimization does on the eager path. That fold runs
                 // AFTER lower_inst, which the deferred frag skips, so fold here or
                 // the imm hole ships an extra $0000 disp word (+2 bytes, ROM drift).
-                let dst = if d == 0 { M68kOperand::Ind(n) } else { M68kOperand::Disp16An(d as i16, n) };
-                (e, dst)
+                if d == 0 { M68kOperand::Ind(n) } else { M68kOperand::Disp16An(d as i16, n) }
             }
-            [OperandAtom::Imm(e), OperandAtom::M68kInd(reg)] if mnemonic == M68kMnemonic::Move && size == M68kSize::W => {
+            [OperandAtom::Imm(_), OperandAtom::M68kInd(reg)] if mnemonic == M68kMnemonic::Move && size == M68kSize::W => {
                 // `move.w #Sym, (An)` — the literal `(a1)` object-spawn dest (mode
                 // 2, no dest ext word). W-only: the L (An) memory dest deliberately
                 // stays loud (R3 scoped move.l deferral to register/abs/disp).
-                let n = m68k_addr_reg(reg)?;
-                (e, M68kOperand::Ind(n))
+                M68kOperand::Ind(m68k_addr_reg(reg)?)
             }
             _ => return None,
         };
-        let qualified = self.qualify_expr(imm_expr);
-        // Unresolved (Poison) exprs ALWAYS defer. A RESOLVED immediate that names
-        // a section LABEL also defers on the deferral pass (`keep_labels_symbolic`):
-        // `move.l #Label` bakes the label's VMA, which a width-grown `JmpJsrSym`
-        // would shift out from under — so carry the label symbolically and let
-        // the linker fill it post-relax. A resolved NON-label immediate takes the
-        // existing eager path (byte-identical), and on every ordinary pass this is
-        // exactly the pre-existing Poison-only rule.
-        let is_poison = matches!(self.fold(&qualified), Fold::Poison);
-        let refs_label = self.keep_labels_symbolic() && self.expr_refs_label(&qualified);
-        if !is_poison && !refs_label {
-            return None;
-        }
-        // A register is not a cross-seam leaf. Falling through to the eager path
-        // would report it there WITH a span; taking this deferral would ship it
-        // to the linker, which answers with a section and an offset and no line.
-        if is_poison && self.report_register_values(&qualified, span) {
-            return None;
-        }
         let inst = M68kInstruction {
             mnemonic,
             size,
@@ -7321,6 +7421,10 @@ impl Asm {
                 AbsWidth::W => M68kOperand::AbsW((v & 0xFFFF) as i16),
                 AbsWidth::L => M68kOperand::AbsL(v as i32),
             },
+            Fold::Fault(f) => {
+                self.fault_err(f, span);
+                M68kOperand::AbsW(0)
+            }
             Fold::Poison => {
                 self.route_poison_names(&qualified, span);
                 // Optimistic abs.w while unresolved (M1.D T3): asl selects the least
@@ -7331,6 +7435,30 @@ impl Asm {
                 M68kOperand::AbsW(0)
             }
         }
+    }
+
+    /// The `abs.w` operand for an EXPLICIT `(addr).w`, whose width the author
+    /// pinned: an address outside the abs.w window (`sigil_ir::fits_abs_w`,
+    /// the same test the linker's `Abs16Be` arm makes for a deferred one) is
+    /// refused, since there is no `.l` to fall back to and the low word alone
+    /// names a different address (`($C00004).w` would store to `$000004`).
+    /// asl refuses the same operand with `error #1340: short addressing not
+    /// allowed`. The operand is still returned so the pass keeps its shape;
+    /// the error fails the run.
+    fn abs_w_operand(&mut self, v: i64, span: Span) -> M68kOperand {
+        if !sigil_ir::fits_abs_w(v) {
+            // `v` came through a `fold_imm` bounded to i32::MIN..=u32::MAX, so
+            // the u32 spelling is exact and reads as the address the author wrote.
+            self.err(
+                span,
+                format!(
+                    "address ${:X} does not fit abs.w: only $0..=$7FFF and $FF8000..=$FFFFFF \
+                     have a short spelling (asl: short addressing not allowed); use .l",
+                    v as u32
+                ),
+            );
+        }
+        M68kOperand::AbsW((v & 0xFFFF) as i16)
     }
 
     /// Convert one operand atom (see [`Self::convert_atoms_m68k`]).
@@ -7394,7 +7522,7 @@ impl Asm {
                 if *long {
                     M68kOperand::AbsL(v as i32)
                 } else {
-                    M68kOperand::AbsW((v & 0xFFFF) as i16)
+                    self.abs_w_operand(v, span)
                 }
             }
             // `(sp)` is the `a7` alias but lexes down the pre-existing Z80
@@ -7527,13 +7655,22 @@ impl Asm {
                         ops.push(Operand::Cc(cc));
                     }
                     return Some(match self.fold(&target) {
-                        Fold::Value(v) => {
+                        Fold::Value(_) => {
+                            // A resolved symbol takes the literal path's window
+                            // (asl: `range overflow` for `jp Big` at $10000 and
+                            // `jp Neg` at -1 alike), refused at the narrowing.
+                            let v = self.fold_imm(&target, span, *Z80_ADDR_RANGE.start(), *Z80_ADDR_RANGE.end());
                             ops.push(Operand::Imm16(v as u16));
                             Lowered::Fixed(ops)
                         }
                         Fold::Poison => {
                             ops.push(Operand::Imm16(0));
                             Lowered::Abs16(ops, target)
+                        }
+                        Fold::Fault(f) => {
+                            self.fault_err(f, span);
+                            ops.push(Operand::Imm16(0));
+                            Lowered::Fixed(ops)
                         }
                     });
                 }
@@ -7544,11 +7681,17 @@ impl Asm {
                 if let Some(rr) = reg16(w) {
                     let target = self.qualify_expr(e);
                     return Some(match self.fold(&target) {
-                        Fold::Value(v) => {
+                        Fold::Value(_) => {
+                            // The word window a literal `ld rr,nn` already takes.
+                            let v = self.fold_imm(&target, span, *WORD_DATA_RANGE.start(), *WORD_DATA_RANGE.end());
                             Lowered::Fixed(vec![Operand::Pair(rr), Operand::Imm16(v as u16)])
                         }
                         Fold::Poison => {
                             Lowered::Abs16(vec![Operand::Pair(rr), Operand::Imm16(0)], target)
+                        }
+                        Fold::Fault(f) => {
+                            self.fault_err(f, span);
+                            Lowered::Fixed(vec![Operand::Pair(rr), Operand::Imm16(0)])
                         }
                     });
                 }
@@ -7676,7 +7819,9 @@ impl Asm {
         }
         match self.fold(&qualified) {
             Fold::Value(v) => Expr::Int(v),
-            Fold::Poison => qualified,
+            // A fault travels with the expression: the linker folds the same
+            // tree and reports it at the fixup.
+            Fold::Poison | Fold::Fault(_) => qualified,
         }
     }
 
@@ -7825,7 +7970,7 @@ impl Asm {
                     Operand::IndC
                 }
                 OperandAtom::Mem(e) => {
-                    let v = self.fold_imm(e, span, 0, 0xFFFF);
+                    let v = self.fold_imm(e, span, *Z80_ADDR_RANGE.start(), *Z80_ADDR_RANGE.end());
                     Operand::Mem(v as u16)
                 }
                 OperandAtom::Value(e) => {
@@ -7838,10 +7983,10 @@ impl Asm {
                     } else if matches!(m, Mnemonic::Jp | Mnemonic::Call) {
                         // A literal address for jp/call is a 16-bit immediate
                         // (symbolic targets take the Abs16 fixup path earlier).
-                        let v = self.fold_imm(e, span, 0, 0xFFFF);
+                        let v = self.fold_imm(e, span, *Z80_ADDR_RANGE.start(), *Z80_ADDR_RANGE.end());
                         Operand::Imm16(v as u16)
                     } else if has_pair_companion {
-                        let v = self.fold_imm(e, span, -0x8000, 0xFFFF);
+                        let v = self.fold_imm(e, span, *WORD_DATA_RANGE.start(), *WORD_DATA_RANGE.end());
                         Operand::Imm16(v as u16)
                     } else {
                         let v = self.fold_imm(e, span, -128, 0xFF);

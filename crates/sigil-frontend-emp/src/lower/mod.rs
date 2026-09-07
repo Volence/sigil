@@ -1727,9 +1727,23 @@ fn section_attrs(
             "bank" => {
                 let (n, mut ds) = eval_attr_int(file, expr, defines);
                 diags.append(&mut ds);
-                // Power-of-two check per R7m.1: n > 0 && n & (n-1) == 0.
+                // Power-of-two check per R7m.1: n > 0 && n & (n-1) == 0. The
+                // value is then narrowed to the `u32` the section carries, so
+                // the second arm refuses a power of two with no u32 spelling
+                // (`$100000000` and up) before the cast can turn it into 0.
                 match n {
-                    Some(v) if v > 0 && (v & (v - 1)) == 0 => bank = Some(v as u32),
+                    Some(v) if v > 0 && (v & (v - 1)) == 0 && v <= u32::MAX as i128 => {
+                        bank = Some(v as u32)
+                    }
+                    Some(v) if v > 0 && (v & (v - 1)) == 0 => err(
+                        diags,
+                        crate::parser::expr_span(expr),
+                        format!(
+                            "section `{}` `bank:` ${v:X} exceeds the 32-bit address space \
+                             (largest bank: $80000000)",
+                            sec.name
+                        ),
+                    ),
                     _ => err(
                         diags,
                         crate::parser::expr_span(expr),
