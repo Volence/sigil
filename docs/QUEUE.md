@@ -107,6 +107,8 @@ The sigil variant is pointed at DIAGNOSTICS. **UXa, task walk:** the seat writes
 
 Three conditions that are not optional: every finding ships the diagnostic text VERBATIM (no evidence, no finding — the amendment's own guard against a verdict of "nothing found", which is indistinguishable from clean); the panel is LATE, at a new pin, and the packet is amended to name it; and the no-emulator-MCP line stands unchanged.
 
+**⚠ THE BRIEF HAS MOVED AND THIS ROW WAS WRITTEN FROM THE OLDER TEXT.** Everything above was read at empyrean `97cd725`. The amendment is now at empyrean `6a12740` (same file, +25 lines, verified here an ancestor of their `origin/main`), carrying four rules added from oracle's pre-run reading. **This row does NOT restate them, because this lane has not read them** — bumping a citation to a revision you have not read is the verified-at defect wearing a freshness costume. Two were relayed by the hub and are recorded as RELAYED, not verified: that failing to get a newcomer from launch to a first successful assemble is a FINDING and never BLOCKED, and that the charter names the surface each job is walked in. **Read Roster C at `6a12740` (or later, re-derived) when writing the charter, and write the charter from that text rather than from this row.**
+
 **DO NOT START until the hub relays oracle's pilot notes.** The brief is the thing under test on the first run, which is the whole reason oracle goes first — starting early would spend this lane's run on a brief the pilot is about to correct.
 
 ## S4BUDGET-STALE-ASSUMPTION
