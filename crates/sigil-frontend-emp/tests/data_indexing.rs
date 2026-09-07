@@ -256,7 +256,7 @@ fn byte_at_refuses_symbolic_cells() {
     // Bytes cells, so this arm is defensive depth exercised directly.
     let mut buf = DataBuf::empty();
     buf.push(Cell::Bytes(vec![1]));
-    buf.push(Cell::SymRef { name: "S".into(), width: 4, windowed: false });
+    buf.push(Cell::SymRef { name: "S".into(), width: 4 });
     assert_eq!(buf.byte_at(0), Some(1), "the raw byte before the SymRef reads");
     for off in 1..5 {
         assert_eq!(buf.byte_at(off), None, "SymRef byte {off} is link-folded");

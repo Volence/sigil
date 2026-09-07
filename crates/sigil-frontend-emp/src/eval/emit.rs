@@ -403,7 +403,7 @@ impl<'a> Evaluator<'a> {
         let mut buf = DataBuf::empty();
         match (name, value) {
             // A plain absolute pointer (NOT windowed — that is `winptr(sym)`).
-            (Some(name), _) => buf.push(Cell::SymRef { name, width: 4, windowed: false }),
+            (Some(name), _) => buf.push(Cell::SymRef { name, width: 4 }),
             // An INT literal in a pointer slot folds to a plain width-4 absolute
             // VALUE cell — no fixup (T3 P3). This is the sparse-table null idiom:
             // a `0` is an unused/empty pointer slot (`SfxTable`'s 126 gap cells),
@@ -426,7 +426,7 @@ impl<'a> Evaluator<'a> {
                     span,
                     format!("pointer field needs a symbol reference, got {}", value.type_name()),
                 );
-                buf.push(Cell::SymRef { name: "<unresolved>".to_string(), width: 4, windowed: false });
+                buf.push(Cell::SymRef { name: "<unresolved>".to_string(), width: 4 });
             }
         }
         buf
@@ -472,7 +472,7 @@ impl<'a> Evaluator<'a> {
                 return DataBuf::empty();
             }
             let mut buf = DataBuf::empty();
-            buf.push(Cell::SymRef { name: name.clone(), width, windowed: false });
+            buf.push(Cell::SymRef { name: name.clone(), width });
             return buf;
         }
         // A residual arithmetic tree: the general link-expr VALUE cell. Width is

@@ -83,9 +83,12 @@ fn the_strict_gate_census_can_be_taken_and_classifies_every_occurrence() {
         c.sites.len()
     );
 
+    // A green-run report, so it must not read as a skip: the excluded population is
+    // named by what those sites DO (refuse when a reference is not there) rather than
+    // by the skip vocabulary the marker lint and the landing bar both match on.
     println!(
         "strict-gate census: {} declared site(s), {} declared test(s), {} scanned file(s), \
-         {} missing-reference path(s) excluded, {} plumbing occurrence(s)",
+         {} reference-refusal path(s) excluded, {} plumbing occurrence(s)",
         c.sites.len(),
         c.tests.len(),
         c.files_scanned,

@@ -358,11 +358,25 @@ fn reference_gate(shape: &Shape, rom_name: &str) {
         &static_ref,
         &format!("test_static vs {rom_name}"),
     );
-    // objtest-gate (2026-08-05): test_animated is DEBUG-only — the plain arm
-    // proves the region is EMPTY instead of comparing bytes.
+    // test_animated is DEBUG-only. In the plain shape the pin records zero bytes at
+    // the collapsed anchor, so there is no reference window to compare and
+    // `animated_ref` is empty BY CONSTRUCTION (it was read with these bounds; an
+    // assertion on it tests the bounds, not the ROM). What the plain shape can be
+    // held to is the module's own image: it still lowers and links here, and it is
+    // the size the DEBUG pin records for it, the one region length the plain pins
+    // do not carry. A module that stopped emitting, or grew or shrank past the
+    // alignment fill the byte gate tolerates, fails here; the byte-for-byte
+    // comparison is the debug arm's.
     let animated_sec = c.linked.section("test_animated").expect("linked test_animated");
     if shape.animated_len == 0 {
-        assert!(animated_ref.is_empty(), "plain animated window must be empty");
+        let want = DEBUG.animated_len;
+        let got = animated_sec.bytes.len();
+        assert!(got > 0, "test_animated emitted NO BYTES in the plain shape");
+        assert!(
+            got <= want && want - got < 16,
+            "test_animated's plain-shape image is {got:#x} bytes; the debug region pin \
+             records {want:#x} (up to 15 bytes of alignment fill tolerated)"
+        );
     } else {
         assert_region_matches(
             &animated_sec.bytes,

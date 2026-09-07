@@ -5,22 +5,22 @@
 //! load-bearing Plan 3 → Plan 4 seam.
 //!
 //! Byte order is section-CPU driven (§4.5 / §7.2): M68000 is big-endian, Z80 is
-//! little-endian. Fixup-kind selection reads (`width`, section CPU, `windowed`)
-//! per the D-P4.5 table:
+//! little-endian. Fixup-kind selection for a [`Cell::SymRef`] reads (`width`,
+//! section CPU) per the D-P4.5 table:
 //!
 //! | context                          | FixupKind                              |
 //! |----------------------------------|----------------------------------------|
 //! | 68000, width 4                   | `Abs32Be`                              |
 //! | 68000, width 2                   | `Abs16Be`                              |
-//! | Z80, windowed (`winptr`)         | `BankPtr16Le`                          |
-//! | 68000, windowed (`winptr`)       | `BankPtr16Be` (T6, D-P4.7)             |
 //! | Z80, width-1 ref (`dc.b`)        | `Value8` (seam-2 — bankid byte)        |
 //! | Z80, width-2 local ref (`dc.w`)  | `Value16Le` (t27 — resident Z80 addr)  |
 //! | Z80, un-windowed 68k pointer (w4)| ERROR `[cross-cpu.unwindowed-pointer]` |
 //!
-//! `BankPtr16Be` (a 68k reference to a Z80 bank pointer) was added in T6 (D-P4.7)
-//! alongside its Core [`FixupKind`] variant — the big-endian counterpart of
-//! `BankPtr16Le`.
+//! A bank-window pointer (`winptr(sym)`, §7.2) is not a `SymRef` and never
+//! reaches this table: `Evaluator::eval_winptr` builds the masked link
+//! expression `(sym & SFX_WIN_MASK) | SFX_WIN_BASE` as a [`Value::LinkExpr`],
+//! which lowers to a [`Cell::Expr`] VALUE cell (`Value16Be` on 68k,
+//! `Value16Le` on Z80). The mask lives in one place, beside that builtin.
 //!
 //! A [`Cell::RelOffset`] (an offset-table entry) does NOT go through
 //! `fixup_kind`: it always emits a fixed-width `RelWord16Be` (68k big-endian
@@ -55,8 +55,8 @@ pub(super) fn stream_data(
             }
             // Single bytes have no byte order — order-neutral, emit verbatim.
             Cell::Bytes(v) => bytes.extend_from_slice(v),
-            Cell::SymRef { name, width, windowed } => {
-                let Some(kind) = fixup_kind(cpu, *width, *windowed, name, span, &mut diags) else {
+            Cell::SymRef { name, width } => {
+                let Some(kind) = fixup_kind(cpu, *width, name, span, &mut diags) else {
                     // No representable kind: the diagnostic is already recorded.
                     // Still reserve `width` bytes so downstream sizes line up.
                     bytes.resize(bytes.len() + *width as usize, 0);
@@ -69,7 +69,7 @@ pub(super) fn stream_data(
                 fixups.push(Fixup {
                     kind,
                     offset: bytes.len() as u32,
-                    target: sym_target(name, *windowed),
+                    target: Expr::Sym(name.clone()),
                 });
                 bytes.resize(bytes.len() + kind.byte_width() as usize, 0);
             }
@@ -142,29 +142,22 @@ pub(super) fn encode_scalar(value: i128, width: u8, cpu: Cpu, le: bool) -> Vec<u
     }
 }
 
-/// Select the [`FixupKind`] for a `SymRef` from (`width`, section CPU,
-/// `windowed`) per the D-P4.5 table. Returns `None` (after recording a
-/// diagnostic) for a case with no representable kind: an un-windowed pointer in
-/// a Z80 section (`[cross-cpu.unwindowed-pointer]`, §7.2), or a shape still
-/// deferred to a later task (a bare Z80-local `Abs16Le`). The 68k windowed
-/// pointer (`BankPtr16Be`, T6 / D-P4.7) is now represented.
+/// Select the [`FixupKind`] for a `SymRef` from (`width`, section CPU) per the
+/// D-P4.5 table. Returns `None` (after recording a diagnostic) for a case with
+/// no representable kind: a width-4 pointer in a Z80 section
+/// (`[cross-cpu.unwindowed-pointer]`, §7.2), or a shape still deferred to a
+/// later task (a bare Z80-local `Abs16Le`).
 fn fixup_kind(
     cpu: Cpu,
     width: u8,
-    windowed: bool,
     name: &str,
     span: Span,
     diags: &mut Vec<Diagnostic>,
 ) -> Option<FixupKind> {
-    match (cpu, width, windowed) {
+    match (cpu, width) {
         // A 68k absolute pointer: width picks Abs32/Abs16 (both big-endian).
-        (Cpu::M68000, 4, false) => Some(FixupKind::Abs32Be),
-        (Cpu::M68000, 2, false) => Some(FixupKind::Abs16Be),
-        // A 68k reference to a Z80 bank pointer: the big-endian counterpart of
-        // `BankPtr16Le` (§7.2 / D-P4.7). Added in T6 alongside the Core kind.
-        (Cpu::M68000, 2, true) => Some(FixupKind::BankPtr16Be),
-        // A Z80 windowed bank pointer: little-endian 16-bit window offset.
-        (Cpu::Z80, 2, true) => Some(FixupKind::BankPtr16Le),
+        (Cpu::M68000, 4) => Some(FixupKind::Abs32Be),
+        (Cpu::M68000, 2) => Some(FixupKind::Abs16Be),
         // A width-2 Z80-LOCAL reference (`dc.w <resident-Z80-label>`, e.g.
         // seq_opcode_tab's `Seq_Op_*` handler addresses): the resident phase-0
         // Z80 address written as a little-endian 16-bit VALUE. Reuse `Value16Le`
@@ -173,7 +166,7 @@ fn fixup_kind(
         // genuine 68k address (> $FFFF) that reached here without `winptr` as a
         // link-time `[value.out-of-range]` — so the cross-cpu guard's protection
         // survives, now width-split as the data.rs comment anticipated.
-        (Cpu::Z80, 2, false) => Some(FixupKind::Value16Le),
+        (Cpu::Z80, 2) => Some(FixupKind::Value16Le),
         // A width-1 Z80 SymRef (`dc.b <cross-module-equ>`, e.g. dac_sample_tab's
         // `dc.b SND_KICK_BANK` where `SND_KICK_BANK = bankid(Dac_Kick)` folds in
         // the co-linked dac_samples module): the byte VALUE of the resolved
@@ -185,11 +178,11 @@ fn fixup_kind(
         // cross-cpu guard's protection survives, width-split exactly as the
         // width-2 case anticipated. (seam-2 Option Y: the DAC descriptor head's
         // ds_bank byte, sourced from the co-linked `SND_*_BANK` equ, not a `-D`.)
-        (Cpu::Z80, 1, false) => Some(FixupKind::Value8),
+        (Cpu::Z80, 1) => Some(FixupKind::Value8),
         // A wider (68k-address, width-4) un-windowed pointer in Z80 data is an
         // error unless explicitly windowed via `winptr(sym)` — the convsym
         // z-filter class is unrepresentable (§7.2).
-        (Cpu::Z80, _, false) => {
+        (Cpu::Z80, _) => {
             diags.push(err(
                 span,
                 format!(
@@ -199,19 +192,18 @@ fn fixup_kind(
             ));
             None
         }
-        // Totality guard: every (width, cpu, windowed) shape T2 actually
-        // produces is matched above, so this arm is currently unreachable. The
-        // Z80-local width-1/width-2 `dc.b`/`dc.w <symbol>` VALUE cases are the
-        // `(Cpu::Z80, 1, false) => Value8` / `(Cpu::Z80, 2, false) => Value16Le`
-        // arms above; a width-4 Z80 un-windowed pointer still falls to the
-        // `(Cpu::Z80, _, false)` cross-cpu error, not here.
+        // Totality guard: every (width, cpu) shape T2 actually produces is
+        // matched above, so this arm is currently unreachable. The Z80-local
+        // width-1/width-2 `dc.b`/`dc.w <symbol>` VALUE cases are the
+        // `(Cpu::Z80, 1) => Value8` / `(Cpu::Z80, 2) => Value16Le` arms above; a
+        // width-4 Z80 un-windowed pointer still falls to the `(Cpu::Z80, _)`
+        // cross-cpu error, not here.
         _ => {
             diags.push(err(
                 span,
                 format!(
                     "[lower.unsupported-pointer] no fixup kind for a width-{width} \
-                     {}pointer to `{name}` in this section",
-                    if windowed { "windowed " } else { "" }
+                     pointer to `{name}` in this section"
                 ),
             ));
             None
@@ -239,32 +231,6 @@ fn value_fixup_kind(cpu: Cpu, width: u8, le: bool) -> FixupKind {
         (Cpu::M68000, 4, _) => FixupKind::Value32Be,
         (Cpu::Z80, 4, _) => FixupKind::Value32Le,
         _ => unreachable!("Cell::Expr width must be 1, 2, or 4 (got {width})"),
-    }
-}
-
-/// The fixup target for a `SymRef`. A plain (un-windowed) reference is the bare
-/// symbol; a WINDOWED (`winptr`) reference applies the SFX bank-window mask —
-/// `(addr & 0x7FFF) | 0x8000` — matching AS `sfx_winptr`
-/// (`SFX_WIN_MASK=0x7FFF`, `SFX_WIN_BASE=0x8000`) and the linker's own
-/// `BankPtr16Le`/`BankPtr16Be` test convention. The mask maps a 68k-ROM-blob
-/// address (e.g. `$6569A → $D69A`) into the z80's `$8000..$FFFF` window; it is
-/// idempotent for a symbol that already resolves inside the window (a z80 label
-/// in a `vma:$8000` section), so it is safe to apply unconditionally to every
-/// windowed symref (both LE and BE kinds).
-fn sym_target(name: &str, windowed: bool) -> Expr {
-    let sym = Expr::Sym(name.to_string());
-    if !windowed {
-        return sym;
-    }
-    // (addr & 0x7FFF) | 0x8000
-    Expr::Binary {
-        op: BinOp::Or,
-        lhs: Box::new(Expr::Binary {
-            op: BinOp::And,
-            lhs: Box::new(sym),
-            rhs: Box::new(Expr::Int(0x7FFF)),
-        }),
-        rhs: Box::new(Expr::Int(0x8000)),
     }
 }
 
@@ -402,7 +368,7 @@ mod rel_offset_tests {
     #[test]
     fn z80_width1_symref_selects_value8_not_cross_cpu_error() {
         let mut buf = DataBuf::empty();
-        buf.push(Cell::SymRef { name: "SND_KICK_BANK".into(), width: 1, windowed: false });
+        buf.push(Cell::SymRef { name: "SND_KICK_BANK".into(), width: 1 });
         let (bytes, fixups, diags) = stream_data(&buf, Cpu::Z80, span());
         assert!(diags.is_empty(), "a width-1 Z80 symref must NOT error: {diags:?}");
         assert_eq!(bytes.len(), 1, "reserves a 1-byte hole");
@@ -416,7 +382,7 @@ mod rel_offset_tests {
     #[test]
     fn z80_width4_symref_still_cross_cpu_errors() {
         let mut buf = DataBuf::empty();
-        buf.push(Cell::SymRef { name: "SomePtr".into(), width: 4, windowed: false });
+        buf.push(Cell::SymRef { name: "SomePtr".into(), width: 4 });
         let (_bytes, _fixups, diags) = stream_data(&buf, Cpu::Z80, span());
         assert!(
             diags.iter().any(|d| d.message.contains("cross-cpu.unwindowed-pointer")),

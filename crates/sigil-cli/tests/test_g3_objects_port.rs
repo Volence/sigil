@@ -328,9 +328,11 @@ fn ref_window(aeon: &Path, rom_name: &str, base: usize, len: usize) -> Option<Ve
 /// The region's reference gate + the drift guards.
 fn reference_gate(shape: &Shape, rom_name: &str) {
     let Some(aeon) = ref_sources() else { return };
-    // objtest-gate (2026-08-05): test_parent is DEBUG-only — the plain arm proves
-    // the region carries ZERO plain bytes and that the module still compiles (at
-    // the DEBUG base; the plain pin is the collapsed plain_anchor).
+    // test_parent is DEBUG-only, and the plain arm compares no bytes: there is no
+    // plain window to read, and the zero it branches on is the pin, not a
+    // measurement. The only thing it checks is that the module still lowers and
+    // links, at the DEBUG base because the plain pin is the collapsed anchor. The
+    // byte gate is the debug arm's.
     if shape.parent_len == 0 {
         let _ = compile_real_file(&aeon, &DEBUG);
         return;

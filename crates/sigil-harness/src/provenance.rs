@@ -10,7 +10,12 @@
 //!      header-neutral `anchor_crc` equals the chain tip.
 //!   2. **ANCHOR-MOVE-NEEDS-A/B** — a target whose `anchor_crc` differs from the prior
 //!      entry forces the newer entry to carry a non-empty `ab` A/B-evidence ref. An
-//!      anchor that moved without evidence is a HARD failure.
+//!      anchor that moved without evidence is a HARD failure. For an entry that carries
+//!      an `aeon_rev` the ref must also be WITNESS-SHAPED: not the name of another chain
+//!      entry, and not a bare token (a branch or entry name is a pointer into git, not
+//!      evidence a reader can open). The boundary is the field, never an entry number:
+//!      five entries that predate `aeon_rev` chain `ab` back to the word `master` and
+//!      stand as written. See [`ab_witness_fault`].
 //!   3. **AEON-REV-WELL-FORMED** — an entry carrying an `aeon_rev` at all carries a full
 //!      40-character SHA, wherever it sits in the chain.
 //!   4. **AEON-REV-MONOTONIC** — once any entry names the aeon revision its bytes were
@@ -565,6 +570,43 @@ pub fn byte_neutral_note(abandoned: &str, author_note: &str) -> String {
 /// `ab`) while moving an anchor is a discipline violation.
 pub const ASL_WITNESS: &str = "asl-witness";
 
+/// Why `ab` is not A/B evidence, or `None` when it is witness-shaped.
+///
+/// The non-empty check alone was satisfied by five anchor-moving entries whose `ab` was
+/// the NAME of the preceding entry, chaining back to the bare word `master`: a pointer
+/// into the chain itself, which is not evidence of anything. Two shapes are refused:
+///
+///   * the name of any entry in the chain: one entry cannot be another's witness;
+///   * a bare token, meaning no whitespace, no path separator, no `.` and no `@`: a
+///     branch name, an entry name or a lone abbreviated SHA is a pointer into git, not
+///     a note, a capture directory or a sentence a reader can open and check. Prose
+///     that names a revision (`aeon 483b3e12 ...`) passes, as does any path.
+///
+/// Callers decide the boundary; this function only judges the string. [`check`] applies
+/// it to entries carrying an `aeon_rev` (the field that marks the current regime), and
+/// [`freeze_into`] applies it to every new entry, since `render_entry` always writes
+/// that field.
+pub fn ab_witness_fault(ab: &str, chain: &Chain) -> Option<String> {
+    let ab = ab.trim();
+    if let Some(e) = chain.entry.iter().find(|e| e.name == ab) {
+        return Some(format!(
+            "it is the name of chain entry `{}`, and one entry cannot be another's witness",
+            e.name
+        ));
+    }
+    let evidence_shaped = ab
+        .chars()
+        .any(|c| c.is_whitespace() || c == '/' || c == '.' || c == '@');
+    if !evidence_shaped {
+        return Some(
+            "it is a bare token (no whitespace, path separator, `.` or `@`): a branch or \
+             entry name points into git and is not evidence a reader can open"
+                .into(),
+        );
+    }
+    None
+}
+
 /// Whether a string is a full 40-character lowercase-hex git SHA — the only shape
 /// [`Entry::aeon_rev`] may carry. Abbreviations are rejected rather than normalized:
 /// the emitter always has the full SHA, so a short one means something hand-edited it.
@@ -791,15 +833,31 @@ pub fn check(golden_dir: &Path, chain: &Chain) -> Vec<String> {
     }
 
     // (2) chain discipline: an anchor that differs from the prior entry's same target
-    // forces the newer entry to carry a real A/B ref.
+    // forces the newer entry to carry a real A/B ref. Non-empty and not the sentinel
+    // is the floor for every entry; an entry in the `aeon_rev` regime must also carry
+    // a ref that is witness-shaped (see `ab_witness_fault`). One error per target per
+    // entry, whichever rule it fails.
     for pair in chain.entry.windows(2) {
         let (prev, cur) = (&pair[0], &pair[1]);
         let cur_needs_ab = cur.ab.trim().is_empty() || cur.ab == ASL_WITNESS;
+        let cur_unwitnessed = if cur_needs_ab || cur.aeon_rev.is_none() {
+            None
+        } else {
+            ab_witness_fault(&cur.ab, chain)
+        };
         for (key, t) in &cur.targets {
             if let Some(pt) = prev.targets.get(key) {
-                if pt.anchor_crc != t.anchor_crc && cur_needs_ab {
+                if pt.anchor_crc == t.anchor_crc {
+                    continue;
+                }
+                if cur_needs_ab {
                     errs.push(format!(
                         "entry `{}`: target `{key}` anchor moved {} -> {} but ab=\"{}\" carries no A/B evidence (anchor-move-needs-A/B)",
+                        cur.name, pt.anchor_crc, t.anchor_crc, cur.ab
+                    ));
+                } else if let Some(why) = &cur_unwitnessed {
+                    errs.push(format!(
+                        "entry `{}`: target `{key}` anchor moved {} -> {} but ab=\"{}\" is not A/B evidence: {why} (anchor-move-needs-witness)",
                         cur.name, pt.anchor_crc, t.anchor_crc, cur.ab
                     ));
                 }
@@ -1160,7 +1218,10 @@ pub fn freeze_into(
 
     // Discipline pre-check: an anchor that MOVED needs a real A/B ref. Silent on a
     // byte-neutral append by construction — no anchor moved, so there is no A/B to cite.
-    if ab.trim().is_empty() || ab == ASL_WITNESS {
+    // The entry about to be written always carries `aeon_rev`, so the witness-shape rule
+    // `check` applies to that regime is applied here too: refused before the write, not
+    // discovered by the next `--check`.
+    {
         let tip = chain.tip()?;
         let moved: Vec<&String> = fresh
             .iter()
@@ -1168,10 +1229,19 @@ pub fn freeze_into(
             .map(|(k, _)| k)
             .collect();
         if !moved.is_empty() {
-            return Err(format!(
-                "anchor(s) moved {:?} but --ab is empty/sentinel, a byte-changing freeze needs an A/B evidence ref",
-                moved
-            ));
+            if ab.trim().is_empty() || ab == ASL_WITNESS {
+                return Err(format!(
+                    "anchor(s) moved {:?} but --ab is empty/sentinel, a byte-changing freeze needs an A/B evidence ref",
+                    moved
+                ));
+            }
+            if let Some(why) = ab_witness_fault(ab, &chain) {
+                return Err(format!(
+                    "anchor(s) moved {:?} but --ab \"{ab}\" is not A/B evidence: {why}. Name the note, \
+                     capture directory or A/B log a reader can open.",
+                    moved
+                ));
+            }
         }
     }
 
@@ -1278,6 +1348,91 @@ mod tests {
             !errs.iter().any(|e| e.contains("anchor-move-needs-A/B")),
             "anchor move with a real ab must be allowed: {errs:?}"
         );
+    }
+
+    // ── anchor-move-needs-witness ─────────────────────────────────────────────
+
+    /// Root plus one anchor-moving entry with the given `ab` and `aeon_rev`. The
+    /// synthetic chain fixture the witness rule is proven on: no blobs, so only the
+    /// discipline sweep can fire.
+    fn moved_chain(ab: &str, aeon_rev: Option<&str>) -> Chain {
+        let mut root_t = BTreeMap::new();
+        root_t.insert("s4".to_string(), t("s4.bin", "aaaa", 10, "1111", 8));
+        let mut moved_t = BTreeMap::new();
+        moved_t.insert("s4".to_string(), t("s4.bin", "bbbb", 10, "2222", 8));
+        Chain {
+            entry: vec![
+                Entry { name: "root".into(), ab: ASL_WITNESS.into(), aeon_rev: None, note: String::new(), strict: None, superseded: None, targets: root_t },
+                Entry { name: "mover".into(), ab: ab.into(), aeon_rev: aeon_rev.map(str::to_string), note: String::new(), strict: None, superseded: None, targets: moved_t },
+            ],
+        }
+    }
+
+    fn witness_errs(chain: &Chain) -> Vec<String> {
+        check(Path::new("/nonexistent"), chain)
+            .into_iter()
+            .filter(|e| e.contains("anchor-move-needs-witness"))
+            .collect()
+    }
+
+    /// THE HOLE: `ab` is the name of the preceding entry. Non-empty, not the
+    /// sentinel, and evidence of nothing.
+    #[test]
+    fn anchor_move_with_a_chain_entry_name_as_ab_is_flagged_in_the_aeon_rev_regime() {
+        let errs = witness_errs(&moved_chain("root", Some(SHA_A)));
+        assert_eq!(errs.len(), 1, "one target moved, one error expected: {errs:?}");
+        assert!(errs[0].contains("name of chain entry `root`"), "{errs:?}");
+    }
+
+    /// The bare word the five historical entries chain back to.
+    #[test]
+    fn anchor_move_with_a_bare_branch_name_as_ab_is_flagged_in_the_aeon_rev_regime() {
+        let errs = witness_errs(&moved_chain("master", Some(SHA_A)));
+        assert_eq!(errs.len(), 1, "{errs:?}");
+        assert!(errs[0].contains("bare token"), "{errs:?}");
+    }
+
+    /// THE BOUNDARY. An entry without `aeon_rev` predates the regime and stands as
+    /// written, exactly as the committed chain's entries 130-134 do.
+    #[test]
+    fn a_pre_aeon_rev_entry_with_a_bare_ab_is_not_flagged() {
+        assert!(witness_errs(&moved_chain("master", None)).is_empty());
+        assert!(witness_errs(&moved_chain("root", None)).is_empty());
+    }
+
+    /// The shapes real evidence takes in the committed chain all pass: a note path,
+    /// a capture directory, prose naming a revision, an `aeon@sha` form.
+    #[test]
+    fn witness_shaped_abs_pass() {
+        for ab in [
+            "docs/superpowers/notes/2026-08-08-widen-d5-addqw-ab.md",
+            "aeon docs/captures/2026-08-30-scroll-clamp/",
+            "aeon 483b3e12 (master; the landed merge of parcel/rom-relayout-more-room)",
+            "aeon@5944dad5 - both replay fixtures passed",
+        ] {
+            assert!(witness_errs(&moved_chain(ab, Some(SHA_A))).is_empty(), "{ab:?} must pass");
+        }
+    }
+
+    /// A byte-neutral entry moves no anchor and is asked for no witness, whatever
+    /// its `ab` says.
+    #[test]
+    fn a_byte_neutral_entry_is_not_asked_for_a_witness() {
+        let mut chain = moved_chain("root", Some(SHA_A));
+        chain.entry[1].targets = chain.entry[0].targets.clone();
+        assert!(witness_errs(&chain).is_empty());
+    }
+
+    /// The sentinel/empty rule and the witness rule do not double-report: an empty
+    /// `ab` in the regime is one `anchor-move-needs-A/B` error and nothing else.
+    #[test]
+    fn an_empty_ab_in_the_regime_reports_the_floor_rule_once() {
+        let errs: Vec<String> = check(Path::new("/nonexistent"), &moved_chain("", Some(SHA_A)))
+            .into_iter()
+            .filter(|e| e.contains("anchor-move-needs"))
+            .collect();
+        assert_eq!(errs.len(), 1, "{errs:?}");
+        assert!(errs[0].contains("anchor-move-needs-A/B"), "{errs:?}");
     }
 
     #[test]

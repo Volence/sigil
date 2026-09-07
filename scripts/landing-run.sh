@@ -105,13 +105,28 @@
 #
 # Plus the reporting rules a landing verdict is worthless without: failures-first WITH
 # THE NAMES (never a tail excerpt, never `grep | head` — that has hidden failures behind
-# a merged green here), a `skip:` count, and reconciliation against a baseline the caller
-# states. A bare pass count is not a result.
+# a merged green here), a `skip:` count THAT FAILS THE RUN WHEN IT IS NOT ZERO, and
+# reconciliation against a baseline the caller states. A bare pass count is not a result.
+#
+#     A SKIP LINE IS A RED RUN. Under `SIGIL_STRICT_GATE=1` every reference-dependent
+#     gate must either measure or panic, so a `skip:` (or `skipping`) line inside the test
+#     span is a gate that measured nothing while reporting green. It is counted in the
+#     verdict block and it sits in the SAME condition as a red test and a red lint bar:
+#     `RESULT FAILED`, exit 1. It was a warning line beside `RESULT GREEN` until this was
+#     written, which is the exact shape (7) closed for clippy: a bar reported beside a
+#     green verdict is a bar that gets landed over.
 #
 # USAGE
 #   scripts/landing-run.sh --baseline 4156
 #   scripts/landing-run.sh --baseline 4156 --aeon ~/sonic_hacks/.aeon-landing
 #   scripts/landing-run.sh --scoped -- -p sigil-span        # a deliberately partial run
+#   scripts/landing-run.sh --verdict-only <log>             # re-judge a finished log
+#
+#   `--verdict-only <log>` runs NOTHING: it reads a log this script (or a fixture shaped
+#   like one) already wrote and puts it through the identical verdict code path, so the
+#   verdict rules can be exercised and tested without a suite run. The stamp lines,
+#   `CARGO_EXIT=` and `CLIPPY_EXIT=` are read out of the log; a log carrying no exit
+#   lines is refused, because a verdict over an unfinished run is not a verdict.
 #
 # WHICH REFERENCE TREE A BARE RUN USES — there is no longer a built-in answer.
 #   A run that names no tree does NOT fall back to a live checkout. It resolves one by the
@@ -156,7 +171,8 @@
 # EXIT CODES
 #   0  the suite ran, passed, reconciled against the stated baseline, and the lint bar
 #      exited 0
-#   1  the suite FAILED (red tests, or cargo exited nonzero), or THE LINT BAR IS RED
+#   1  the suite FAILED (red tests, cargo exited nonzero, or a `skip:` line survived
+#      SIGIL_STRICT_GATE=1), or THE LINT BAR IS RED
 #   2  the run COULD NOT RUN or could not be measured — never green, never a count
 #   3  the suite passed but the total does NOT reconcile with --baseline
 
@@ -186,6 +202,7 @@ AEON_ARG=""
 TARGET_ARG=""
 LOG_ARG=""
 SCOPED=0
+VERDICT_ONLY=""
 CARGO_EXTRA=()
 EXPECT=()
 
@@ -195,6 +212,9 @@ while (( $# )); do
         --aeon)     AEON_ARG=${2:-}; shift 2 || die "--aeon needs a path" ;;
         --target)   TARGET_ARG=${2:-}; shift 2 || die "--target needs a path" ;;
         --log)      LOG_ARG=${2:-}; shift 2 || die "--log needs a path" ;;
+        # Runs nothing. The verdict rules below are read out of an EXISTING log, so they
+        # can be exercised (and red-first tested) without a suite run.
+        --verdict-only) VERDICT_ONLY=${2:-}; shift 2 || die "--verdict-only needs a log path" ;;
         # Repeatable. A green log that does not contain the landed code's own test is a
         # green log about other code.
         --expect-test) EXPECT+=("${2:-}"); shift 2 || die "--expect-test needs a name" ;;
@@ -219,6 +239,59 @@ if (( ${#CARGO_EXTRA[@]} )) && (( ! SCOPED )); then
        the failure this script exists to prevent. Add --scoped to say so on purpose."
 fi
 
+# ---------------------------------------------------------------------------------------
+# --verdict-only: the verdict's inputs, read out of a finished log instead of produced by
+# a run. Every value the verdict block prints or tests is set here from the stamp this
+# script writes, so the SAME verdict code runs over a log whether the run happened in
+# this process or in one that finished last week. Nothing below writes to the log.
+# ---------------------------------------------------------------------------------------
+# The stamp line for a key, with the key and its padding stripped. Empty when absent.
+stamp() { sed -n "s/^# $1 *//p" "$LOG" | head -n 1; }
+
+load_verdict_inputs() {
+    LOG=$(abspath "$1")
+    [[ -f $LOG ]] || die "--verdict-only: $LOG is not a readable log file"
+    # The two exit lines are the run's own verdict inputs, and a log without them is a
+    # run that did not finish (or a fixture that forgot them). Refused BY NAME rather than
+    # defaulted to 0, because a defaulted exit code is a green that nobody measured.
+    CARGO_RC=$(sed -n 's/^CARGO_EXIT=//p' "$LOG" | tail -n 1)
+    CLIPPY_RC=$(sed -n 's/^CLIPPY_EXIT=//p' "$LOG" | tail -n 1)
+    [[ $CARGO_RC =~ ^[0-9]+$ ]] \
+        || die "--verdict-only: $LOG carries no \`CARGO_EXIT=<n>\` line, the test span never
+       finished, so there is no verdict to give over it."
+    [[ $CLIPPY_RC =~ ^[0-9]+$ ]] \
+        || die "--verdict-only: $LOG carries no \`CLIPPY_EXIT=<n>\` line, the lint bar was never
+       measured, so there is no verdict to give over it."
+    ROOT=$(stamp pwd);                 ROOT=${ROOT:-?}
+    HEAD_SHA=$(stamp 'sigil HEAD');    HEAD_SHA=${HEAD_SHA:-?}
+    local br; br=$(stamp 'sigil branch')
+    BRANCH=${br% (*}; BRANCH=${BRANCH:-?}
+    DIRTY=${br##*(}; DIRTY=${DIRTY%)}; [[ $br == *'('* ]] || DIRTY=?
+    local ae; ae=$(stamp AEON_DIR)
+    AEON=${ae% (step*}; AEON=${AEON:-?}
+    AEON_HEAD=$(stamp 'aeon HEAD');    AEON_HEAD=${AEON_HEAD:-?}
+    local ab; ab=$(stamp 'aeon branch')
+    AEON_BRANCH=${ab% (*}; AEON_BRANCH=${AEON_BRANCH:-?}
+    AEON_DIRTY=${ab##*(}; AEON_DIRTY=${AEON_DIRTY%)}; [[ $ab == *'('* ]] || AEON_DIRTY=?
+    ROM_STATE=$(stamp 'aeon ROMs');    ROM_STATE=${ROM_STATE:-?}
+    TARGET=$(stamp TARGET_DIR);        TARGET=${TARGET:-?}
+    STARTED=$(stamp 'started (UTC)');  STARTED=${STARTED:-?}
+    FINISHED=$(stamp 'finished (UTC)'); FINISHED=${FINISHED:-?}
+    [[ $(stamp scoped) == YES* ]] && SCOPED=1
+    # A --baseline on this command line wins; otherwise the one the run stated.
+    if [[ -z $BASELINE ]]; then
+        local sb; sb=$(stamp baseline)
+        [[ $sb =~ ^[0-9]+$ ]] && BASELINE=$sb
+    fi
+    say "verdict-only: re-judging $LOG (tree $ROOT @ ${HEAD_SHA:0:8}), nothing runs"
+}
+
+# The run itself: preflight refusals, the stamp, the lint bar and the suite. One function
+# so that --verdict-only can take the other branch of ONE dispatch below and reach the
+# identical verdict code, rather than a copy of it. The body is the linear script it was
+# and is left at its column so its history stays readable; every variable it sets is
+# global, which is exactly what the verdict block reads.
+run_landing() {
 # ---------------------------------------------------------------------------------------
 # (0) Where we are. Everything below is derived from this, never from the caller's cwd.
 # ---------------------------------------------------------------------------------------
@@ -487,19 +560,6 @@ CLIPPY_RC=${PIPESTATUS[0]}
 echo "CLIPPY_EXIT=$CLIPPY_RC" >> "$LOG"
 echo "##### CLIPPY SPAN ENDS" >> "$LOG"
 
-# Every lint site, named. `error: could not compile …` is clippy's TALLY line, not a
-# finding, so counting bare `^error:` reports one more site than exists — and a verdict
-# that cannot be checked against the log by hand is a verdict a reader has to trust.
-mapfile -t CLIPPY_SITES < <(awk '
-    /^##### CLIPPY SPAN ENDS/ { inspan = 0 }
-    inspan && /^error: / && !/^error: could not compile/ { msg = substr($0, 8); next }
-    inspan && /^ *--> / && msg != "" {
-        loc = $2
-        print loc "  " msg
-        msg = ""
-    }
-    /^##### CLIPPY SPAN,/ { inspan = 1 }' "$LOG")
-
 # ---------------------------------------------------------------------------------------
 # (3)+(6) The run. The strict flag is INSIDE the command span; the exit code is cargo's.
 # ---------------------------------------------------------------------------------------
@@ -518,6 +578,15 @@ echo "CARGO_EXIT=$CARGO_RC" >> "$LOG"
 
 FINISHED=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 echo "# finished (UTC) $FINISHED" >> "$LOG"
+}
+
+# THE ONE DISPATCH. Both branches leave the same variables set and fall through to the
+# same verdict code; there is no second verdict.
+if [[ -n $VERDICT_ONLY ]]; then
+    load_verdict_inputs "$VERDICT_ONLY"
+else
+    run_landing
+fi
 
 # ---------------------------------------------------------------------------------------
 # (7) Failures first, WITH the names. No `head`, no tail excerpt.
@@ -538,6 +607,20 @@ read -r SUITES PASSED FAILED IGNORED < <(awk '
         }
     }
     END { print n+0, p+0, f+0, g+0 }' "$LOG")
+# Every lint site, named. `error: could not compile …` is clippy's TALLY line, not a
+# finding, so counting bare `^error:` reports one more site than exists, and a verdict
+# that cannot be checked against the log by hand is a verdict a reader has to trust.
+# Parsed here, beside the other log readers, because it reads the log and nothing else:
+# the verdict-only path has no clippy process to ask.
+mapfile -t CLIPPY_SITES < <(awk '
+    /^##### CLIPPY SPAN ENDS/ { inspan = 0 }
+    inspan && /^error: / && !/^error: could not compile/ { msg = substr($0, 8); next }
+    inspan && /^ *--> / && msg != "" {
+        loc = $2
+        print loc "  " msg
+        msg = ""
+    }
+    /^##### CLIPPY SPAN,/ { inspan = 1 }' "$LOG")
 # BOTH spellings. The landing bar greps `skip:`, and 27 sites say `skipping` instead —
 # invisible to that grep while reporting green. A matcher inheriting the same blind spot
 # would under-count while still looking like a witness.
@@ -612,10 +695,10 @@ echo "  passed          $PASSED"
 echo "  failed          $FAILED"
 echo "  ignored         $IGNORED"
 if (( SKIPS > 0 )); then
-    echo "  skip lines      $SKIPS   <-- WARNING: SIGIL_STRICT_GATE=1 should make these"
+    echo "  skip lines      $SKIPS   <-- FAILS THIS RUN. SIGIL_STRICT_GATE=1 should make these"
     echo "                          impossible. Each is a gate that measured nothing while"
-    echo "                          reporting green, so this run's green means less than it"
-    echo "                          reads. Grep the log for 'skip:' and 'skipping'."
+    echo "                          reporting green, so the passes above are not a landing."
+    echo "                          Grep the log for 'skip:' and 'skipping'."
 else
     echo "  skip lines      0"
 fi
@@ -692,16 +775,25 @@ fi
 # a warning line above it, because a bar reported beside a `RESULT GREEN` is a bar that
 # gets landed over — which is how ten lint errors reached master under a wrapper that
 # printed GREEN.
-if (( CARGO_RC != 0 || FAILED > 0 || CLIPPY_RC != 0 )); then
+# A SKIP LINE IS A RED RUN, for the same reason and in the same condition. The count was
+# printed as a WARNING beside `RESULT GREEN` and exit 0, which is the identical shape:
+# four documents said the landing bar fails on a skip line, and the wrapper did not.
+if (( CARGO_RC != 0 || FAILED > 0 || CLIPPY_RC != 0 || SKIPS > 0 )); then
     echo
-    if (( CLIPPY_RC != 0 && CARGO_RC == 0 && FAILED == 0 )); then
+    if (( CLIPPY_RC != 0 && CARGO_RC == 0 && FAILED == 0 && SKIPS == 0 )); then
         # Named separately because the two halves disagreeing is the informative case, and
         # "$FAILED test(s) red" printed as 0 over a red run reads as a script mistake.
         echo "  RESULT          FAILED, the LINT BAR is red (clippy exit $CLIPPY_RC,"
         echo "                  ${#CLIPPY_SITES[@]} site(s)). Every test that ran passed; the suite is not"
         echo "                  the reason this is not green. Do not land on this."
+    elif (( SKIPS > 0 && CARGO_RC == 0 && FAILED == 0 && CLIPPY_RC == 0 )); then
+        # The same informative case for the third bar: nothing was red, and the run is
+        # still not a landing because $SKIPS gate(s) never measured their subject.
+        echo "  RESULT          FAILED, $SKIPS skip line(s) survived SIGIL_STRICT_GATE=1. Every test"
+        echo "                  that ran passed and the lint bar is clean; a gate that measured"
+        echo "                  nothing is why this is not green. Do not land on this."
     else
-        echo "  RESULT          FAILED, $FAILED test(s) red, cargo exit $CARGO_RC, clippy exit $CLIPPY_RC."
+        echo "  RESULT          FAILED, $FAILED test(s) red, $SKIPS skip line(s), cargo exit $CARGO_RC, clippy exit $CLIPPY_RC."
     fi
     echo "==================================================================================="
     exit 1

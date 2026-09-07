@@ -100,7 +100,9 @@ AEON_DIR=/path/to/aeon SIGIL_STRICT_GATE=1 \
   (`crates/sigil-harness/src/test_support.rs`); it falls back to a sibling `aeon`
   checkout. Gates that read built artifacts need that tree's ROMs built.
 - `SIGIL_STRICT_GATE=1` turns a missing-reference *skip* into a failure, so a gate
-  cannot pass by measuring nothing. This is the pre-merge bar.
+  cannot pass by measuring nothing. This is the pre-merge bar, and
+  `scripts/landing-run.sh` holds it from the outside too: a `skip:` (or `skipping`)
+  line that survives the flag makes its verdict `FAILED`, exit 1.
 - Without `--release` some gates are impractically slow; without `--workspace
   --no-fail-fast` an early failure hides the rest of the result set.
 

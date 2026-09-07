@@ -1149,7 +1149,8 @@ pub const NO_REFERENCE_TREE: &str = "/nonexistent/SIGIL_ALLOW_PARTIAL-no-referen
 /// things have to be in it and each is asserted: both variables that would have answered,
 /// the path step 3 derived and DECLINED (so the reader is not left wondering whether the
 /// resolver simply failed), and the opt-in spelling. It carries neither `skip:` nor
-/// `skipping` — `scripts/landing-run.sh:369` and `refreeze.rs:533` count those out of a
+/// `skipping`: `scripts/landing-run.sh` (its `SKIPS` count, which FAILS the verdict) and
+/// `refreeze --attest` count those out of a
 /// run's log, and this refusal is a FAILURE, not a skipped test; counting it as a skip
 /// would let the very run that stopped report a skip total instead of a stop.
 ///
@@ -1945,8 +1946,8 @@ mod tests {
                  about it; got: {notice}"
             );
         }
-        // The landing bar counts BOTH spellings (scripts/landing-run.sh:369,
-        // refreeze.rs:533). This refusal is a FAILURE, not a skipped test: counting it as a
+        // The landing bar counts BOTH spellings (scripts/landing-run.sh's `SKIPS`,
+        // refreeze --attest). This refusal is a FAILURE, not a skipped test: counting it as a
         // skip would let the run that STOPPED report a skip total instead of a stop.
         assert!(
             !notice.contains("skip:") && !notice.contains("skipping"),

@@ -2710,7 +2710,7 @@ pub fn eval_dispatch_with_root(
                     buf.push(Cell::RelOffset { base: decl.name.clone(), target: name });
                 }
                 ast::DispatchEncoding::LongPtrs => {
-                    buf.push(Cell::SymRef { name, width: 4, windowed: false });
+                    buf.push(Cell::SymRef { name, width: 4 });
                 }
             }
         }
