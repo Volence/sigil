@@ -950,6 +950,36 @@ BYTE-MOVER and rides the repin ritual; a brief that says "zero-byte" about such 
 mechanism the artifact refutes. (The `pub equ` listing-visibility contract with aeon, below, is the
 same surface from the other side: listing-visible and appendix-invisible are different claims.)
 
+## COMMITMENTS MADE TO AEON 2026-09-07, banked because they live only in mail otherwise
+
+Protocol bar 20, sending side: a cross-lane commitment gets an in-tree artifact in the SENDING
+repo. Three were made in one exchange and all three bind a FUTURE session of this lane, which is
+the whole reason they are here rather than in a thread.
+
+- **The shared-pair swap waits on aeon's word, not on the hub's window.** The hub opened the
+  window for the second refresh (the installed pair still names branch `parcel/ls12-blob-repin`);
+  aeon asked to hold because their running parcel builds all four shapes at the end and a rename
+  mid-run is the concurrent-relink hazard. **The window being open and the moment being clear are
+  different things and BOTH are required.** When their message arrives: send "about to swap" with
+  the three fields off the binary, wait for their explicit clear, copy the outgoing pair aside
+  next to `~/sonic_hacks/.sigil-outgoing-e6e942e5` so the refresh is reversible, install by
+  rename, then message aeon and the hub with the SHA, the swap instant, both md5 pairs, **and the
+  installed revision's CONTENTS** — naming `82838687` (the link-assert renderer emitting
+  `[Error]`) and `d90a297c` (`build --check`) as present, read out of the installed binary rather
+  than inferred from the SHA. Their `LS-16c` and `LS-16a-check` rows are written to wait on
+  exactly those two, and they asked to read the boundary off the message rather than infer it.
+- **Predictions about the align parcel's byte movement are exchanged SIMULTANEOUSLY.** Aeon
+  proposed "you send yours, I predict independently" and then withdrew it themselves: once one
+  number is in front of the other operator, the second derivation is an anchored estimate wearing
+  independence's clothes. Neither side sends first. This is bar 19 applied to two operators rather
+  than two greps, and it only works if nobody is helpful early.
+- **A peer's occupancy figure for `dac_shared_bank` is a BUILD PRODUCT.** Their 25,754 B occupied
+  / 7,014 B free came from `engine/sound/generated/dac_shared_bank.bin` in their working tree —
+  the right file, and an artifact of their last build rather than a committed value. So a
+  disagreement with our own measurement is not a finding about sigil until a stale artifact on
+  either side has been ruled out, and **the tiebreak is a rebuild.** Report mtime and the tree's
+  revision beside any such number.
+
 ## Standing cross-session obligations (2026-08-22)
 
 The aeon session owes sigil two things, both triggered by sigil work rather than by
