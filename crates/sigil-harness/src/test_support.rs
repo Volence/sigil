@@ -1453,6 +1453,53 @@ pub fn suite_root_absent(what: &str, why: &str) {
     );
 }
 
+/// The guard a row closes with when the test binary running it was built into the
+/// checkout's DEFAULT `target/`.
+///
+/// One row measures that `refreeze` hands its children a build directory other than the
+/// shared checkout's `target/`. The directory it hands over is the one the binary was built
+/// into, so when that IS the default `target/` the row's answer is decided by how the test
+/// binary was built and not by the code under test: the distinction is UNMEASURABLE in that
+/// environment. GitHub's runner builds into the default `target/` unless the workflow names
+/// another, which is how the row went red on correct code (CI run 34131201403).
+///
+/// `what` names the row left unmeasured; `target` is the directory the binary was built
+/// into. Returns only in a declared partial run, so the caller returns after it. The three
+/// runs answer as d-18 answers them for the suite-root class
+/// (`docs/OVERSEER-REFERENCE.md`, [`suite_root_absent`]):
+///
+///   * `SIGIL_STRICT_GATE`: a binary built into the default `target/` is a FAILURE naming
+///     the directory, so a strict run cannot read green over the row;
+///   * a declared partial run ([`ALLOW_PARTIAL_VAR`]): the row is left unmeasured in the
+///     `skip:` form the zero-skip bar counts;
+///   * a bare run: stops with UNMEASURABLE, naming the opt-in and the build directory that
+///     makes the row measurable.
+pub fn built_into_default_target(what: &str, target: &std::path::Path) {
+    assert!(
+        !strict_gate(),
+        "SIGIL_STRICT_GATE set but this test binary was built into the checkout's DEFAULT \
+         target/ ({}), so {what} cannot be measured. A strict run builds into a named \
+         CARGO_TARGET_DIR outside the checkout's target/ or fails here by name.",
+        target.display()
+    );
+    let partial = std::env::var_os(ALLOW_PARTIAL_VAR).is_some_and(|v| !v.is_empty());
+    if !partial {
+        panic!(
+            "UNMEASURABLE: {what}: this test binary was built into the checkout's DEFAULT \
+             target/ ({}), the directory the row holds refreeze's answer apart from, so the \
+             row cannot be measured from here. Build with CARGO_TARGET_DIR naming a directory \
+             outside the checkout's target/, or declare a partial run with \
+             {ALLOW_PARTIAL_VAR}=1, in which case this is left unmeasured and the run says so.",
+            target.display()
+        );
+    }
+    eprintln!(
+        "skip: {what}: this test binary was built into the checkout's DEFAULT target/ ({}), \
+         so the row cannot be measured here; left unmeasured under {ALLOW_PARTIAL_VAR}",
+        target.display()
+    );
+}
+
 /// The banner a declared partial run prints once when a suite-root reader finds none: the
 /// second line of the d-18 banner, for the second class. Its count comes from
 /// [`crate::reference_dependence::suite_root_reading_binaries`], the same kind of walk

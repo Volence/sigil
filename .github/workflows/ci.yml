@@ -3,6 +3,18 @@ on: [push, pull_request]
 jobs:
   test:
     runs-on: ubuntu-latest
+    # EVERY STEP BUILDS INTO A NAMED DIRECTORY, never the checkout's default `target/`.
+    # `shared_target_defaults` measures that `refreeze` hands its children a build
+    # directory other than the checkout's `target/`; the directory it hands over is the
+    # one the test binary was built into, so a test binary built into the default
+    # `target/` cannot measure that row (run 34131201403 went red on correct code for
+    # exactly this). Job-level so the test, clippy and crate-graph steps share one build.
+    # Dot-prefixed to match the house's other named target directories (`.target-land`,
+    # `.target-ref`) and because the repo walkers skip dot-prefixed names; a plain
+    # `target-ci` would be walked by `drift_nightly_harness`. There is no cache step in
+    # this workflow, so nothing else names the directory.
+    env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/.target-ci
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable

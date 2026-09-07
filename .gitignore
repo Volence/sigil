@@ -37,6 +37,11 @@ crates/sigil-harness/golden/.freeze-journal
 # dedicated landing-verification target dir — never share target/ between worktrees
 /.target-land/
 
+# .github/workflows/ci.yml's build directory, job-wide. Named so the test binary is not
+# built into the checkout's default target/, which shared_target_defaults cannot measure
+# from; ignored so a local run of CI's shape leaves no untracked artifact behind.
+/.target-ci/
+
 # scripts/provision-aeon-ref.sh's build directory when the caller names none
 # (scripts/lib/sigil_tool.sh, sigil_tool_ref_target step 3). Per-worktree by
 # construction: the predecessor default was one path outside the checkout, shared by
