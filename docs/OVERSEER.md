@@ -939,6 +939,17 @@ applies to itself: a refuted mechanism does not leave its arithmetic standing.
 refutation:** the ceiling was UNSTATED, a bar met exactly is indistinguishable from a bar met with
 room, and it is now computed and printed on every aeon build with a tag at zero headroom.
 
+## A `mark` IS NOT ZERO-BYTE, and no brief may call any deb2-visible symbol zero-byte (2026-09-07)
+
+Aeon measured it (aeon `22d0bbb5`): `build.sh` appends the deb2 symbol table into the debug ROMs, so
+one added `mark` moved `demo.debug` (b2df205f to 1180c261), isolated by bisect with a determinism
+control. Sigil's chain pins the FULL file, crc32 plus size with the appendix, for both debug shapes,
+which is why the movement is visible here without any new gate. The rule for this lane: a parcel that
+adds a `mark`, a `pub equ` reaching the listing, or anything else the deb2 appendix records is a
+BYTE-MOVER and rides the repin ritual; a brief that says "zero-byte" about such a change states a
+mechanism the artifact refutes. (The `pub equ` listing-visibility contract with aeon, below, is the
+same surface from the other side: listing-visible and appendix-invisible are different claims.)
+
 ## Standing cross-session obligations (2026-08-22)
 
 The aeon session owes sigil two things, both triggered by sigil work rather than by
