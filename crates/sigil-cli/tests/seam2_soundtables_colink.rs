@@ -8,7 +8,8 @@
 //! `dc.w PsgVolEnv_XX`/`FmVolEnv_XX` pointer cells resolve to their `$8000`-window
 //! addresses. SELF-CONTAINED (no external symbols — the pointer cells reference
 //! this module's own body labels). The table is proven BYTE-IDENTICAL to the
-//! reference ROM slice (`$58000`, 855 bytes).
+//! reference ROM slice at the `SoundTablesZ80_Head` LMA `sound_layout` derives
+//! (`sound_tables_z80_lma`, the `sound_bank` map anchor; 855 bytes).
 //!
 //! SHAPE-INVARIANT (pure-math LUTs + fixed vol-env data; 855 bytes both shapes),
 //! so one emission serves both — gated against BOTH reference ROMs.
@@ -39,7 +40,8 @@ fn golden(name: &str) -> Vec<u8> {
 }
 
 /// THE HEAD BYTE GATE: the emitted `sound_tables_z80` == the reference ROM slice
-/// at `$58000`, in BOTH shapes (shape-invariant, so the same 855 bytes match both).
+/// at `sound_tables_z80_lma`, in BOTH shapes (shape-invariant, so the same 855
+/// bytes match both).
 #[test]
 fn sound_tables_z80_matches_the_reference_rom_slice_both_shapes() {
     if !strict_gate() {
@@ -62,7 +64,10 @@ fn sound_tables_z80_matches_the_reference_rom_slice_both_shapes() {
                 &refslice[i.saturating_sub(4)..(i + 4).min(refslice.len())],
             );
         }
-        assert_eq!(out, refslice, "sound_tables_z80 must equal the {rom_name} reference @ $58000");
+        assert_eq!(
+            out, refslice,
+            "sound_tables_z80 must equal the {rom_name} reference @ {lma:#X} (SoundTablesZ80_Head)"
+        );
     }
 }
 

@@ -9,13 +9,14 @@
 //! `bankid`/`winptr`/`.len`). The `SND_*` names live ONCE, at the producer.
 //!
 //! This gate proves the co-linked head is BYTE-IDENTICAL to the `DacSampleTable`
-//! slice of the assembled reference ROM (`s4.bin` @ `$585AD`, 90 bytes) — the
+//! slice of the assembled reference ROM (`s4.bin` at the LMA `sound_layout` derives,
+//! `dac_sample_tab_lma`; `DAC_SAMPLE_TAB_LEN` bytes), the
 //! "twins present, both paths byte-identical" dual proof that must be GREEN before
 //! `dac_samples.asm` + `dac_sample_tab.asm` can be retired together (rows 5-dac + 57).
 //!
 //! t24 head-shape control: the head is SHAPE-INVARIANT (`DacSampleTable` sits at the
-//! same VMA `$85AD` / LMA `$585AD` in `s4.lst` AND `s4.debug.lst`, and the reference
-//! bytes there are byte-identical plain/debug — the `SND_*` fold does not move with
+//! same window VMA and bank LMA in both shapes, and the reference
+//! bytes there are byte-identical plain/debug; the `SND_*` fold does not move with
 //! `__DEBUG__`). So one head serves both shapes; this test asserts against BOTH
 //! reference ROMs to prove it.
 //!
@@ -49,8 +50,9 @@ fn golden(name: &str) -> Vec<u8> {
     std::fs::read(&path).unwrap_or_else(|e| panic!("read golden {}: {e}", path.display()))
 }
 
-/// THE HEAD BYTE GATE: the co-linked `DacSampleTable` == the reference ROM slice,
-/// in BOTH shapes (the head is shape-invariant, so the same 90 bytes match both).
+/// THE HEAD BYTE GATE: the co-linked `DacSampleTable` == the reference ROM slice at
+/// `dac_sample_tab_lma`, in BOTH shapes (the head is shape-invariant, so the same
+/// `DAC_SAMPLE_TAB_LEN` bytes match both).
 #[test]
 fn colinked_dac_head_matches_the_reference_rom_slice_both_shapes() {
     if !strict_gate() {
@@ -69,15 +71,22 @@ fn colinked_dac_head_matches_the_reference_rom_slice_both_shapes() {
         let lo = lma as usize;
         let head_ref = &rom[lo..lo + DAC_SAMPLE_TAB_LEN];
         if let Some(i) = (0..out.head.len()).find(|&i| out.head[i] != head_ref[i]) {
-            let d = i / 9; // descriptor index
+            // Byte index plus the ROM address it sits at, with an 8-byte window on
+            // each side; the descriptor stride is the emitter's to know, not this
+            // message's, so no stride is typed here.
+            let e = i.saturating_sub(4);
             panic!(
-                "co-linked head differs from {shape} reference @ descriptor {d} byte {}: \
-                 emp {:#04x} vs rom {:#04x}\n  emp[{d}]:  {:02x?}\n  rom[{d}]:  {:02x?}",
-                i % 9, out.head[i], head_ref[i],
-                &out.head[d * 9..d * 9 + 9], &head_ref[d * 9..d * 9 + 9],
+                "co-linked DacSampleTable differs from {shape} reference @ byte {i:#x} (ROM {:#X}): \
+                 emp {:#04x} vs rom {:#04x}\n  emp[{e:#x}..]: {:02x?}\n  rom[{e:#x}..]: {:02x?}",
+                lo + i, out.head[i], head_ref[i],
+                &out.head[e..(e + 8).min(out.head.len())],
+                &head_ref[e..(e + 8).min(head_ref.len())],
             );
         }
-        assert_eq!(out.head, head_ref, "co-linked DacSampleTable must equal the {shape} reference slice @ $585AD");
+        assert_eq!(
+            out.head, head_ref,
+            "co-linked DacSampleTable must equal the {shape} reference slice @ {lma:#X} (DacSampleTable)"
+        );
     }
 }
 

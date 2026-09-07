@@ -180,7 +180,7 @@ fn place_pass(placed: &mut [Section], rungs: &[Vec<usize>]) -> bool {
         if let Some(n) = sec.bank {
             if sec.placement == SectionPlacement::Chained
                 && final_sz > 0
-                && base / n != (base + final_sz - 1) / n
+                && base / n != base.saturating_add(final_sz - 1) / n
             {
                 base = base.next_multiple_of(n);
             }
@@ -190,7 +190,13 @@ fn place_pass(placed: &mut [Section], rungs: &[Vec<usize>]) -> bool {
             sec.lma = base;
             moved = true;
         }
-        cursors.insert(sec.group.clone(), base + advance);
+        // Saturating, not plain `+`: a section placed at the top of the address
+        // space (`org -1`) reaches this cursor before `check_image_bounds` refuses
+        // it by name, and that refusal is the diagnostic a caller can read. A
+        // debug-profile overflow here aborts the process with exit 101 instead. A
+        // cursor that has run off the end stays off the end, which the overlap and
+        // bounds checks then name; a chained section can never validly place there.
+        cursors.insert(sec.group.clone(), base.saturating_add(advance));
     }
     moved
 }
@@ -235,7 +241,9 @@ fn bank_diag(placed: &[Section], rungs: &[Vec<usize>]) -> Option<Diagnostic> {
             });
         }
         let start = sec.lma;
-        let end = sec.lma + final_sz;
+        // Saturating for the same reason as the placement cursor: an out-of-window
+        // pin reaches this check before `check_image_bounds` names it.
+        let end = sec.lma.saturating_add(final_sz);
         // Straddle: first and last byte fall in different N-windows. Unreachable
         // for chained sections (the bump discharges it constructively); this is
         // the catch for a straddling PIN, which is never moved.
@@ -285,7 +293,9 @@ fn overlap_diag(placed: &[Section], rungs: &[Vec<usize>]) -> Option<Diagnostic> 
                 start: 0,
                 end: 0,
             });
-            Some((sec.lma, sec.lma + size, sec.name.as_str(), span))
+            // Saturating: an out-of-window section reaches this scan before
+            // `check_image_bounds` names it, and this scan must not abort first.
+            Some((sec.lma, sec.lma.saturating_add(size), sec.name.as_str(), span))
         })
         .collect();
     for i in 0..ranges.len() {

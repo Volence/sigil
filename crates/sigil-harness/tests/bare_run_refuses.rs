@@ -17,7 +17,7 @@
 //!
 //! | Environment | Must |
 //! |---|---|
-//! | nothing named | STOP, naming both variables, the derived path it declined, and the opt-in |
+//! | nothing named | STOP, naming both variables, the opt-in, and either the derived path it declined or that nothing was derived |
 //! | `SIGIL_ALLOW_PARTIAL=1`, nothing named | pass, skip the reference rows, print the derived not-measured size |
 //! | `AEON_DIR` named | run normally, no refusal, no partial banner |
 //!
@@ -34,11 +34,24 @@
 //! scratch. A child that never started exits non-zero and prints nothing, which from
 //! outside is indistinguishable from a child that ran and found nothing, so the parent
 //! checks for libtest's own result line before believing any of it.
+//!
+//! ## Which refusal shape direction 1 owes, and why the parent derives it
+//!
+//! The refusal has two spellings by construction (`bare_run_refusal` takes the step-3
+//! answer as an `Option`): beside a suite root it DECLINES the live sibling checkout by
+//! path; on a checkout with no suite root beside it (a CI runner holding this repository
+//! alone) nothing exists to decline and it says so, carrying the resolver's own reason.
+//! Asserting the first spelling everywhere made this row red on every CI run, and
+//! accepting either spelling everywhere would let a resolver that broke read as a runner
+//! with no suite. So the parent runs the same step-3 mechanism the child runs, over the
+//! same anchor, and pins the one spelling this environment owes.
 
+use std::path::Path;
 use std::process::Command;
 
 use sigil_harness::test_support::{
-    ALLOW_PARTIAL_VAR, AEON_DIR_VAR, NO_REFERENCE_TREE, SUITE_ROOT_VAR,
+    derive_suite_root_from, AEON_REPO_DIR, ALLOW_PARTIAL_VAR, AEON_DIR_VAR,
+    NO_REFERENCE_TREE, SUITE_ROOT_VAR,
 };
 
 /// Selects the child body.
@@ -139,11 +152,33 @@ fn a_bare_run_refuses_and_a_declared_partial_run_says_its_size() {
              it.\n{bare}"
         );
     }
-    assert!(
-        bare.contains("DECLINED to use"),
-        "the refusal must say it DECLINED a tree it could have used, not merely that it found \
-         none, otherwise a reader cannot tell this from a resolver that broke.\n{bare}"
-    );
+    // The child derives from the harness crate's `CARGO_MANIFEST_DIR`; this test binary
+    // belongs to the same crate, so the same anchor lands on the same repository root.
+    let derived = derive_suite_root_from(Path::new(env!("CARGO_MANIFEST_DIR")))
+        .ok()
+        .map(|root| root.join(AEON_REPO_DIR))
+        .filter(|aeon| aeon.is_dir());
+    match derived {
+        Some(aeon) => assert!(
+            bare.contains(&format!("DECLINED to use {}", aeon.display())),
+            "a suite root exists beside this checkout, so the refusal must say it DECLINED the \
+             tree step 3 derived ({}), not merely that it found none, otherwise a reader cannot \
+             tell this from a resolver that broke.\n{bare}",
+            aeon.display()
+        ),
+        None => {
+            assert!(
+                bare.contains("Nothing was derived either."),
+                "no suite root exists beside this checkout, so the refusal must say nothing was \
+                 derived rather than claim to have declined a tree.\n{bare}"
+            );
+            assert!(
+                bare.contains("this checkout's own location"),
+                "the refusal must carry the resolver's own step-3 reason, otherwise a reader \
+                 cannot tell a runner with no suite from a resolver that broke.\n{bare}"
+            );
+        }
+    }
     // The refusal is a FAILURE and must not be countable as a skip: `landing-run.sh` and
     // `refreeze.rs` both count these two spellings out of a run's log, and a stop that
     // registered as a skip would be reported by the very run it stopped.

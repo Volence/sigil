@@ -1,9 +1,9 @@
 //! seam-2 step-2a — the DAC bank BODY emit, proven against the reference ROM.
 //!
 //! `sigil_harness::seam2::emit_dac_banks` lowers the REAL `dac_samples.emp` and
-//! places its two `bank:` sections at the map-derived bank LMAs (`seam2::sound_layout`
-//! — the `dac_banks` anchor and the shared bank one window above it; `$90000`/`$98000`
-//! since aeon's 2026-08-26 re-layout, `$48000`/`$50000` before it). The slices below
+//! places its two `bank:` sections at the map-derived bank LMAs (`seam2::sound_layout`,
+//! the `dac_banks` anchor and the shared bank one window above it; `Dac_Temp_Blip` in
+//! `golden/offcanonical_sizes/*.txt` records the anchor per shape). The slices below
 //! are DERIVED from that layout, never retyped. This gate proves the emitted bank payloads are BYTE-IDENTICAL
 //! to the corresponding slices of the assembled reference ROM (`aeon/s4.bin`) —
 //! the "twins present, both paths byte-identical" dual proof that must be GREEN

@@ -7,8 +7,8 @@
 //! `games/sonic4/data/sound/movingtrucks_pitchtable.emp` placed at VMA `$8357`.
 //! SELF-CONTAINED — pure `dc.b` data, no external symbols and no intra-module
 //! references (the labels are provided by `sound_bank.inc`'s AS side ahead of the
-//! BINCLUDE). Proven BYTE-IDENTICAL to the reference ROM slice (`$58357`, 264
-//! bytes).
+//! BINCLUDE). Proven BYTE-IDENTICAL to the reference ROM slice at the
+//! `SndDefaultPitchTable` LMA `sound_layout` derives (`pitchtable_lma`; 264 bytes).
 //!
 //! SHAPE-INVARIANT (fixed data; 264 bytes both shapes), so one emission serves
 //! both — gated against BOTH reference ROMs.
@@ -39,8 +39,8 @@ fn golden(name: &str) -> Vec<u8> {
 }
 
 /// THE HEAD BYTE GATE: the emitted `movingtrucks_pitchtable` == the reference ROM
-/// slice at `$58357`, in BOTH shapes (shape-invariant, so the same 264 bytes match
-/// both).
+/// slice at `pitchtable_lma`, in BOTH shapes (shape-invariant, so the same 264
+/// bytes match both).
 #[test]
 fn pitchtable_matches_the_reference_rom_slice_both_shapes() {
     if !strict_gate() {
@@ -63,7 +63,10 @@ fn pitchtable_matches_the_reference_rom_slice_both_shapes() {
                 &refslice[i.saturating_sub(4)..(i + 4).min(refslice.len())],
             );
         }
-        assert_eq!(out, refslice, "movingtrucks_pitchtable must equal the {rom_name} reference @ $58357");
+        assert_eq!(
+            out, refslice,
+            "movingtrucks_pitchtable must equal the {rom_name} reference @ {lma:#X} (SndDefaultPitchTable)"
+        );
     }
 }
 
