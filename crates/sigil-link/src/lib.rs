@@ -2001,6 +2001,16 @@ mod tests {
         assert_eq!(flatten(&linked, 0x00).unwrap(), vec![0x00, 0x00, 0xAA, 0xBB]);
     }
 
+    /// The refusal a flatten result must carry. On a regression the `Ok` holds
+    /// an image sized from the stray address (gigabytes), so the failure reports
+    /// its length rather than formatting it the way `unwrap_err` would.
+    fn refused(result: Result<Vec<u8>, String>) -> String {
+        match result {
+            Err(msg) => msg,
+            Ok(image) => panic!("the image was accepted at {} bytes instead of refused", image.len()),
+        }
+    }
+
     /// The image is sized from the emitting sections' extents and bounded by the
     /// cartridge window: a one-byte section at the top of the address space is
     /// refused by name, not allocated as a 4 GiB buffer.
@@ -2012,10 +2022,10 @@ mod tests {
                 LinkedSection { name: "stray".to_string(), lma: 0xFFFF_FFFF, bytes: vec![0x01] },
             ],
         };
-        let err = flatten(&img, 0x00).unwrap_err();
+        let err = refused(flatten(&img, 0x00));
         assert_eq!(err, "section `stray` LMA 0xFFFFFFFF is in no ROM region; ROM regions: `cartridge` [0x0,0x400000)");
         assert_eq!(image_extent(&img).unwrap_err(), err);
-        assert_eq!(flatten_checked(&img, 0x00).unwrap_err(), err);
+        assert_eq!(refused(flatten_checked(&img, 0x00)), err);
     }
 
     /// A byte-emitting section phased into 68000 work RAM names the RAM window it
@@ -2033,7 +2043,7 @@ mod tests {
             sections: vec![LinkedSection { name: "vars".to_string(), lma: 0xFF_0000, bytes: vec![0x01] }],
         };
         assert_eq!(
-            flatten(&ram_byte, 0x00).unwrap_err(),
+            refused(flatten(&ram_byte, 0x00)),
             "section `vars` LMA 0xFF0000 lies in non-ROM region `work_ram` (m68k_ram) [0xFF0000,0x1000000); its 1 byte(s) have no place in the image"
         );
     }
@@ -2055,7 +2065,7 @@ mod tests {
             sections: vec![LinkedSection { name: "tail".to_string(), lma: last, bytes: vec![0x01, 0x02] }],
         };
         assert_eq!(
-            flatten(&straddle, 0x00).unwrap_err(),
+            refused(flatten(&straddle, 0x00)),
             "section `tail` [0x3FFFFF,0x400001) overflows region `cartridge` (ends 0x400000), over by 1 bytes"
         );
     }
