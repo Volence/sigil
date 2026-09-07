@@ -8000,7 +8000,7 @@ impl Asm {
         }
         // An UNCLOSED definition is refused by `block_end`, naming the macro.
         // Besides a source file missing its `endm`, this is reached by a pasted
-        // expansion-scope name — see [`Asm::bind_macro_arg`].
+        // expansion-scope name, see [`Asm::bind_macro_arg`].
         let Some(end) = self.block_end(lines, start, Some(&name)) else {
             return lines.len();
         };
