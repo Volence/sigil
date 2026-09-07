@@ -30,7 +30,7 @@ fn assemble_link_flatten(asm: &str) -> Vec<u8> {
     let resolved = sigil_link::resolve_layout(&module.sections, &stubs, true)
         .expect("resolve_layout (combined)");
     let linked = sigil_link::link(&resolved, &stubs).expect("link (combined)");
-    sigil_link::flatten(&linked, 0x00)
+    sigil_link::flatten(&linked, 0x00).unwrap()
 }
 
 /// A phased block whose first instruction is an UNRESOLVED cross-seam `jsr`

@@ -275,7 +275,7 @@ fn exitm_in_an_irp_ends_the_irp_no_asl_oracle_exists() {
     let linked =
         sigil_link::link(&module.sections, &sigil_ir::SymbolTable::new()).expect("link");
     assert_eq!(
-        sigil_link::flatten(&linked, 0x00),
+        sigil_link::flatten(&linked, 0x00).unwrap(),
         vec![0xA0, 0xC0, 0xA1, 0xFF],
         "sigil's UNVERIFIED choice: one irp iteration, then the enclosing macro continues"
     );

@@ -30,7 +30,7 @@ fn forward_referenced_equate_operand_resolves_to_the_right_byte() {
     let module = assemble(src, &Options::default()).expect("forward equate must resolve");
     let linked = sigil_link::link(&module.sections, &sigil_ir::SymbolTable::new()).expect("link");
     // ld a,5 = 3E 05
-    assert_eq!(sigil_link::flatten(&linked, 0x00), vec![0x3E, 0x05]);
+    assert_eq!(sigil_link::flatten(&linked, 0x00).unwrap(), vec![0x3E, 0x05]);
 }
 
 #[test]

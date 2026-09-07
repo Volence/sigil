@@ -59,7 +59,7 @@ fn compile_full(emp: &str) -> (Option<Vec<u8>>, Vec<String>) {
         msgs.extend(assert_diags.into_iter().map(|d| d.message));
         return (None, msgs);
     }
-    (Some(sigil_link::flatten(&image, 0x00)), msgs)
+    (Some(sigil_link::flatten(&image, 0x00).unwrap()), msgs)
 }
 
 fn write(dir: &std::path::Path, rel: &str, src: &str) {

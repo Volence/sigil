@@ -57,10 +57,10 @@ fn as_link(asm: &str) -> LinkedImage {
 }
 
 fn emp_flat(emp: &str) -> Vec<u8> {
-    sigil_link::flatten(&emp_link(emp), 0x00)
+    sigil_link::flatten(&emp_link(emp), 0x00).unwrap()
 }
 fn as_flat(asm: &str) -> Vec<u8> {
-    sigil_link::flatten(&as_link(asm), 0x00)
+    sigil_link::flatten(&as_link(asm), 0x00).unwrap()
 }
 
 /// Lowering diagnostics (parse must be clean) — for the `@as_compat` pin error,

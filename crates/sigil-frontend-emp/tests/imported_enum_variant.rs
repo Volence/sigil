@@ -61,7 +61,7 @@ fn flatten(sections: &[Section]) -> Vec<u8> {
     let resolved =
         sigil_link::resolve_layout(sections, &SymbolTable::new(), true).expect("resolve_layout");
     let linked = sigil_link::link(&resolved, &SymbolTable::new()).expect("link");
-    sigil_link::flatten(&linked, 0x00)
+    sigil_link::flatten(&linked, 0x00).unwrap()
 }
 
 /// Build the program with `c` as the entry and read its single `data D: u16`.

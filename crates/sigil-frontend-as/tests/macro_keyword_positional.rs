@@ -80,7 +80,7 @@ fn run(call: &str) -> Result<Vec<u8>, Vec<String>> {
         .unwrap_or_else(|e| panic!("did not lay out: {e:?}\n{src}"));
     let linked = sigil_link::link(&resolved, &sigil_ir::SymbolTable::new())
         .unwrap_or_else(|e| panic!("did not link: {e:?}\n{src}"));
-    Ok(sigil_link::flatten(&linked, 0x00))
+    Ok(sigil_link::flatten(&linked, 0x00).unwrap())
 }
 
 /// How many diagnostics carry `needle`, so a count assertion says WHICH message

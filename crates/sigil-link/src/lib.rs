@@ -785,44 +785,100 @@ fn write_value(
     }
 }
 
-/// Materialize a full contiguous image: place each section's bytes at its LMA,
-/// filling all gaps (and the head) with `fill`. Sections must not overlap.
-///
-/// EMPTY sections are skipped: a pure-`ds`/Reserve section (RAM variable
-/// declarations phased to `$FFFF0000`+) reserves address space and defines
-/// labels but emits NO ROM bytes — asl/p2bin write no binary records for it.
-/// It carries a physical-counter LMA that can legitimately alias a real code
-/// section's range (both start near physical 0), so it must contribute nothing
-/// to, and never be range-checked against, the image.
-pub fn flatten(image: &LinkedImage, fill: u8) -> Vec<u8> {
-    let end = image
-        .sections
-        .iter()
-        .filter(|s| !s.bytes.is_empty())
-        .map(|s| s.lma as usize + s.bytes.len())
-        .max()
-        .unwrap_or(0);
-    let mut out = vec![fill; end];
-    for s in &image.sections {
-        if s.bytes.is_empty() {
-            continue;
+/// The byte-emitting sections of `image`: the ones that place bytes and are
+/// therefore range-checked. EMPTY sections are skipped: a pure-`ds`/Reserve
+/// section (RAM variable declarations phased to `$FFFF0000`+) reserves address
+/// space and defines labels but emits NO ROM bytes, and asl/p2bin write no
+/// binary records for it. It carries a physical-counter LMA that can
+/// legitimately alias a real code section's range (both start near physical 0),
+/// so it must contribute nothing to, and never be range-checked against, the
+/// image.
+fn emitting_sections(image: &LinkedImage) -> impl Iterator<Item = &LinkedSection> {
+    image.sections.iter().filter(|s| !s.bytes.is_empty())
+}
+
+/// The refusal for one byte-emitting section that the cartridge window
+/// ([`MemoryMap::mega_drive`]) does not contain, or `None` when it fits.
+fn window_refusal(window: &MemoryMap, s: &LinkedSection) -> Option<String> {
+    let Ok(len) = u32::try_from(s.bytes.len()) else {
+        return Some(format!(
+            "section `{}` emits {} bytes, more than the 32-bit address space holds",
+            s.name,
+            s.bytes.len()
+        ));
+    };
+    window.validate_section(&s.name, s.lma, len).err()
+}
+
+/// The length of the flat image `image` materializes to: the end of its
+/// highest byte-emitting section, measured from address 0, after every
+/// byte-emitting section is validated against the cartridge window
+/// ([`MemoryMap::mega_drive`]). A section outside that window is refused by
+/// name, so the length can never exceed the window (`CARTRIDGE_SIZE`) and is
+/// never taken from an address that has no image behind it.
+pub fn image_extent(image: &LinkedImage) -> Result<usize, String> {
+    let window = MemoryMap::mega_drive();
+    let mut end = 0usize;
+    for s in emitting_sections(image) {
+        if let Some(refusal) = window_refusal(&window, s) {
+            return Err(refusal);
         }
+        end = end.max(s.lma as usize + s.bytes.len());
+    }
+    Ok(end)
+}
+
+/// [`image_extent`]'s refusals as located diagnostics, every failing section
+/// reported (not only the first). Each is placed at the first byte-emitting
+/// fragment of the `Section` in `sections` with the same name and LMA, so a
+/// front end's source map renders it at the line that emitted the byte. A
+/// refusal whose section has no such fragment in `sections` is still returned,
+/// at a span no source map resolves, so no refusal is dropped for want of a
+/// line. Empty on an image that fits.
+pub fn check_image_bounds(image: &LinkedImage, sections: &[Section]) -> Vec<Diagnostic> {
+    let window = MemoryMap::mega_drive();
+    let unlocated = Span { source: sigil_span::SourceId(u32::MAX), start: 0, end: 0 };
+    emitting_sections(image)
+        .filter_map(|s| window_refusal(&window, s).map(|message| (s, message)))
+        .map(|(s, message)| {
+            let primary = sections
+                .iter()
+                .find(|sec| sec.name == s.name && sec.lma == s.lma)
+                .and_then(|sec| {
+                    sec.fragments.iter().find_map(|f| match f {
+                        Fragment::Data(d) => Some(d.span),
+                        Fragment::Fill { span, .. } => Some(*span),
+                        _ => None,
+                    })
+                })
+                .unwrap_or(unlocated);
+            Diagnostic { level: Level::Error, message, primary }
+        })
+        .collect()
+}
+
+/// Materialize a full contiguous image: place each section's bytes at its LMA,
+/// filling all gaps (and the head) with `fill`. Sections must not overlap. The
+/// image is sized by [`image_extent`], so a byte-emitting section outside the
+/// cartridge window is refused by name before any buffer is allocated; empty
+/// sections are skipped (see [`image_extent`]).
+pub fn flatten(image: &LinkedImage, fill: u8) -> Result<Vec<u8>, String> {
+    let end = image_extent(image)?;
+    let mut out = vec![fill; end];
+    for s in emitting_sections(image) {
         let start = s.lma as usize;
         out[start..start + s.bytes.len()].copy_from_slice(&s.bytes);
     }
-    out
+    Ok(out)
 }
 
 /// Like `flatten`, but errors if any two sections' `[lma, lma+len)` ranges
 /// overlap (a mis-assigned LMA map would otherwise silently clobber bytes).
-/// Empty (zero-byte) sections are excluded — they place no bytes, so they can
-/// neither clobber nor overlap (see `flatten`).
+/// Empty (zero-byte) sections are excluded: they place no bytes, so they can
+/// neither clobber nor overlap (see [`image_extent`]).
 pub fn flatten_checked(image: &LinkedImage, fill: u8) -> Result<Vec<u8>, String> {
-    let mut ranges: Vec<(usize, usize, &str)> = image
-        .sections
-        .iter()
-        .filter(|s| !s.bytes.is_empty())
-        .map(|s| (s.lma as usize, s.lma as usize + s.bytes.len(), s.name.as_str()))
+    let mut ranges: Vec<(u64, u64, &str)> = emitting_sections(image)
+        .map(|s| (s.lma as u64, s.lma as u64 + s.bytes.len() as u64, s.name.as_str()))
         .collect();
     ranges.sort_by_key(|r| r.0);
     for w in ranges.windows(2) {
@@ -830,7 +886,7 @@ pub fn flatten_checked(image: &LinkedImage, fill: u8) -> Result<Vec<u8>, String>
             return Err(format!("sections `{}` and `{}` overlap in the image", w[0].2, w[1].2));
         }
     }
-    Ok(flatten(image, fill))
+    flatten(image, fill)
 }
 
 /// The single-image ROM output (`p2bin` + `fixheader` replacement):
@@ -1942,7 +1998,117 @@ mod tests {
         };
         let linked = link(&[a], &SymbolTable::new()).unwrap();
         // Bytes at LMA 2..4; positions 0,1 gap-filled with 0x00.
-        assert_eq!(flatten(&linked, 0x00), vec![0x00, 0x00, 0xAA, 0xBB]);
+        assert_eq!(flatten(&linked, 0x00).unwrap(), vec![0x00, 0x00, 0xAA, 0xBB]);
+    }
+
+    /// The refusal a flatten result must carry. On a regression the `Ok` holds
+    /// an image sized from the stray address (gigabytes), so the failure reports
+    /// its length rather than formatting it the way `unwrap_err` would.
+    fn refused(result: Result<Vec<u8>, String>) -> String {
+        match result {
+            Err(msg) => msg,
+            Ok(image) => panic!("the image was accepted at {} bytes instead of refused", image.len()),
+        }
+    }
+
+    /// The image is sized from the emitting sections' extents and bounded by the
+    /// cartridge window: a one-byte section at the top of the address space is
+    /// refused by name, not allocated as a 4 GiB buffer.
+    #[test]
+    fn flatten_refuses_a_byte_outside_the_cartridge_window_by_name() {
+        let img = LinkedImage {
+            sections: vec![
+                LinkedSection { name: "code".to_string(), lma: 0, bytes: vec![0x4E, 0x71] },
+                LinkedSection { name: "stray".to_string(), lma: 0xFFFF_FFFF, bytes: vec![0x01] },
+            ],
+        };
+        let err = refused(flatten(&img, 0x00));
+        assert_eq!(err, "section `stray` LMA 0xFFFFFFFF is in no ROM region; ROM regions: `cartridge` [0x0,0x400000)");
+        assert_eq!(image_extent(&img).unwrap_err(), err);
+        assert_eq!(refused(flatten_checked(&img, 0x00)), err);
+    }
+
+    /// A byte-emitting section phased into 68000 work RAM names the RAM window it
+    /// landed in; the reserve-only RAM section (no bytes) stays exempt.
+    #[test]
+    fn flatten_refuses_a_work_ram_byte_and_ignores_a_reserve_only_ram_section() {
+        let reserve_only = LinkedImage {
+            sections: vec![
+                LinkedSection { name: "code".to_string(), lma: 0, bytes: vec![0x4E, 0x71] },
+                LinkedSection { name: "vars".to_string(), lma: 0xFFFF_0000, bytes: vec![] },
+            ],
+        };
+        assert_eq!(flatten(&reserve_only, 0x00).unwrap(), vec![0x4E, 0x71]);
+        let ram_byte = LinkedImage {
+            sections: vec![LinkedSection { name: "vars".to_string(), lma: 0xFF_0000, bytes: vec![0x01] }],
+        };
+        assert_eq!(
+            refused(flatten(&ram_byte, 0x00)),
+            "section `vars` LMA 0xFF0000 lies in non-ROM region `work_ram` (m68k_ram) [0xFF0000,0x1000000); its 1 byte(s) have no place in the image"
+        );
+    }
+
+    /// The bound is the window's end exactly: the last cartridge byte fits and
+    /// sizes the image to the whole window; one more byte overflows by one.
+    #[test]
+    fn flatten_accepts_the_last_cartridge_byte_and_refuses_the_straddle() {
+        let last = sigil_ir::map::CARTRIDGE_LMA_BASE + sigil_ir::map::CARTRIDGE_SIZE - 1;
+        let fits = LinkedImage {
+            sections: vec![LinkedSection { name: "tail".to_string(), lma: last, bytes: vec![0x01] }],
+        };
+        assert_eq!(image_extent(&fits).unwrap(), sigil_ir::map::CARTRIDGE_SIZE as usize);
+        let image = flatten(&fits, 0xFF).unwrap();
+        assert_eq!(image.len(), sigil_ir::map::CARTRIDGE_SIZE as usize);
+        assert_eq!(image[last as usize], 0x01);
+        assert_eq!(image[0], 0xFF);
+        let straddle = LinkedImage {
+            sections: vec![LinkedSection { name: "tail".to_string(), lma: last, bytes: vec![0x01, 0x02] }],
+        };
+        assert_eq!(
+            refused(flatten(&straddle, 0x00)),
+            "section `tail` [0x3FFFFF,0x400001) overflows region `cartridge` (ends 0x400000), over by 1 bytes"
+        );
+    }
+
+    /// The located form reports EVERY failing section at the span of its first
+    /// byte-emitting fragment, and an unmatched section at the unresolvable span.
+    #[test]
+    fn check_image_bounds_locates_each_refusal_at_its_emitting_fragment() {
+        let at = |start: u32| Span { source: sigil_span::SourceId(7), start, end: start + 4 };
+        let sections = vec![
+            Section {
+                name: "stray".to_string(),
+                cpu: Cpu::M68000,
+                vma_base: None,
+                lma: 0x40_0000,
+                labels: vec![],
+                fragments: vec![
+                    Fragment::Reserve { count: 2, span: at(10) },
+                    Fragment::Data(DataFragment { bytes: vec![0x01], fixups: vec![], span: at(20) }),
+                ],
+                placement: SectionPlacement::Pinned,
+                reserved_span: 3,
+                group: None,
+                bank: None,
+                equ_syms: vec![],
+            },
+        ];
+        let img = LinkedImage {
+            sections: vec![
+                LinkedSection { name: "code".to_string(), lma: 0, bytes: vec![0x4E, 0x71] },
+                LinkedSection { name: "stray".to_string(), lma: 0x40_0000, bytes: vec![0x01] },
+                LinkedSection { name: "orphan".to_string(), lma: 0xFF_0000, bytes: vec![0x02] },
+            ],
+        };
+        let diags = check_image_bounds(&img, &sections);
+        assert_eq!(diags.len(), 2, "{diags:?}");
+        assert_eq!(diags[0].level, Level::Error);
+        assert!(diags[0].message.starts_with("section `stray` LMA 0x400000 is in no ROM region"), "{}", diags[0].message);
+        assert_eq!(diags[0].primary, at(20), "the Reserve fragment emits no byte and is skipped");
+        assert!(diags[1].message.starts_with("section `orphan` LMA 0xFF0000 lies in non-ROM region `work_ram`"), "{}", diags[1].message);
+        assert_eq!(diags[1].primary.source, sigil_span::SourceId(u32::MAX));
+        let fits = LinkedImage { sections: vec![LinkedSection { name: "code".to_string(), lma: 0, bytes: vec![0x4E, 0x71] }] };
+        assert!(check_image_bounds(&fits, &sections).is_empty());
     }
 
     #[test]

@@ -78,7 +78,7 @@ fn two_section_ab_layout_and_cross_fixup() {
     assert_eq!(&b.bytes[0x45F..], &[0x9A, 0xD6]);
 
     // The materialized image places A at $400 and B at $60000.
-    let image = flatten(&linked, 0x00);
+    let image = flatten(&linked, 0x00).unwrap();
     assert_eq!(&image[0x400..0x403], &[0x11, 0x5F, 0x84]);
     assert_eq!(&image[0x6045F..0x60461], &[0x9A, 0xD6]);
 }

@@ -52,7 +52,7 @@ fn two_procs_with_same_local_label_get_distinct_symbols_and_link() {
         .expect("resolve_layout");
     // Both branches resolve intra-proc (label and bra at the same offset → -2).
     let linked = sigil_link::link(&resolved, &SymbolTable::new()).expect("link must succeed");
-    let bytes = sigil_link::flatten(&linked, 0x00);
+    let bytes = sigil_link::flatten(&linked, 0x00).unwrap();
     assert_eq!(bytes, vec![0x60, 0x00, 0xFF, 0xFE, 0x60, 0x00, 0xFF, 0xFE]);
 }
 
@@ -103,7 +103,7 @@ fn exported_proc_label_is_referenceable_as_owner_dot_name() {
     let resolved = sigil_link::resolve_layout(&module.sections, &SymbolTable::new(), true)
         .expect("resolve_layout");
     let linked = sigil_link::link(&resolved, &SymbolTable::new()).expect("link must succeed");
-    let bytes = sigil_link::flatten(&linked, 0x00);
+    let bytes = sigil_link::flatten(&linked, 0x00).unwrap();
     // foo: rts (4E 75) @0, foo.entry@0. bar@2: bra.w foo.entry (60 00 + disp16),
     // disp word @4, target @0 → disp = 0 - (2+2) = -4 = 0xFFFC; then rts @6.
     assert_eq!(bytes, vec![0x4E, 0x75, 0x60, 0x00, 0xFF, 0xFC, 0x4E, 0x75]);

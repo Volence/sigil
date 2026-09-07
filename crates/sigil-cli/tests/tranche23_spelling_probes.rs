@@ -85,7 +85,7 @@ fn link_flatten(sections: Vec<Section>) -> Vec<u8> {
         .unwrap_or_else(|d| panic!("probe resolve failed: {d:?}"));
     let linked = sigil_link::link(&resolved, &empty)
         .unwrap_or_else(|d| panic!("probe link failed: {d:?}"));
-    sigil_link::flatten(&linked, 0x00)
+    sigil_link::flatten(&linked, 0x00).unwrap()
 }
 
 // ---------------------------------------------------------------------------
@@ -166,7 +166,7 @@ fn link_moveq_probe(idle_size: &str) -> Result<Vec<u8>, String> {
     let resolved = sigil_link::resolve_layout(&sections, &empty, true)
         .map_err(|d| format!("resolve: {d:?}"))?;
     let linked = sigil_link::link(&resolved, &empty).map_err(|d| format!("{d:?}"))?;
-    Ok(sigil_link::flatten(&linked, 0x00))
+    Ok(sigil_link::flatten(&linked, 0x00).unwrap())
 }
 
 #[test]

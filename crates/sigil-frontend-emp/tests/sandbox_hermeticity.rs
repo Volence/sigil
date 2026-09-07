@@ -45,7 +45,7 @@ fn lower_module_with_include_root_resolves_embed() {
     let resolved = sigil_link::resolve_layout(&module.sections, &SymbolTable::new(), true)
         .expect("resolve_layout");
     let linked = sigil_link::link(&resolved, &SymbolTable::new()).expect("link");
-    let bytes = sigil_link::flatten(&linked, 0x00);
+    let bytes = sigil_link::flatten(&linked, 0x00).unwrap();
     assert_eq!(bytes, FIXTURE_BYTES.to_vec());
 }
 

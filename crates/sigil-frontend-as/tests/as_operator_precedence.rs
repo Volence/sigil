@@ -67,7 +67,7 @@ fn folded(expr: &str) -> Result<u8, String> {
     })?;
     let linked = sigil_link::link(&module.sections, &sigil_ir::SymbolTable::new())
         .map_err(|_| "link failed".to_string())?;
-    let bytes = sigil_link::flatten(&linked, 0x00);
+    let bytes = sigil_link::flatten(&linked, 0x00).unwrap();
     if bytes.len() != 1 {
         return Err(format!("emitted {} bytes, expected 1", bytes.len()));
     }

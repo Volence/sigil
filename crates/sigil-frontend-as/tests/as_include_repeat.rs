@@ -69,7 +69,7 @@ fn bytes(files: &[(&str, &str)], root: &str) -> Vec<u8> {
         .1;
     let module = assemble(src, &opts).expect("assemble");
     let linked = sigil_link::link(&module.sections, &sigil_ir::SymbolTable::new()).expect("link");
-    sigil_link::flatten(&linked, 0x00)
+    sigil_link::flatten(&linked, 0x00).unwrap()
 }
 
 /// Assemble the named root expecting a REFUSAL, and hand back the messages.

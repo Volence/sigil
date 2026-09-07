@@ -37,7 +37,7 @@ fn as_reference(asm: &str) -> Vec<u8> {
     let sections = as_sections(asm);
     let linked = sigil_link::link(&sections, &SymbolTable::new())
         .unwrap_or_else(|d| panic!("AS link failed: {d:?}"));
-    sigil_link::flatten(&linked, 0x00)
+    sigil_link::flatten(&linked, 0x00).unwrap()
 }
 
 /// Lower an `.emp` source into raw sections (with optional comptime defines).
@@ -142,7 +142,7 @@ fn falls_into_pub_pair_nonempty_body_matches_as() {
         .unwrap_or_else(|d| panic!("owner resolve failed: {d:?}"));
     let linked =
         sigil_link::link(&resolved, &empty).unwrap_or_else(|d| panic!("owner link failed: {d:?}"));
-    let rom = sigil_link::flatten(&linked, 0x00);
+    let rom = sigil_link::flatten(&linked, 0x00).unwrap();
     // Byte parity implies adjacency: the Dict preamble is 4 bytes and Plain's
     // body must start at offset 4 with NO pad between the two proc bodies.
     assert_byte_identical(&reference, &rom, "falls_into pub pair (owner bytes)");
@@ -159,7 +159,7 @@ fn falls_into_pub_pair_names_resolve_cross_module() {
         .unwrap_or_else(|d| panic!("cross-module resolve failed: {d:?}"));
     let linked = sigil_link::link(&resolved, &empty)
         .unwrap_or_else(|d| panic!("cross-module link failed: {d:?}"));
-    let rom = sigil_link::flatten(&linked, 0x00);
+    let rom = sigil_link::flatten(&linked, 0x00).unwrap();
     // jbsr lowers to bsr.w here: 6100 <disp>. Caller at 0: disp to $2000 from
     // pc=2 is $1FFE; disp to $2004 from pc=6 is $1FFE + 4 - 4 = $1FFE... spell
     // both out: bsr.w Dict at 0 -> disp = $2000 - 2 = $1FFE; bsr.w Plain at 4
@@ -198,7 +198,7 @@ fn link_pinned(sections: Vec<Section>) -> Vec<u8> {
         .unwrap_or_else(|d| panic!("probe resolve failed: {d:?}"));
     let linked = sigil_link::link(&resolved, &empty)
         .unwrap_or_else(|d| panic!("probe link failed: {d:?}"));
-    sigil_link::flatten(&linked, 0x00)
+    sigil_link::flatten(&linked, 0x00).unwrap()
 }
 
 // ---------------------------------------------------------------------------
@@ -236,7 +236,7 @@ fn assert_register_dest_expands_cmp_form() {
         .unwrap_or_else(|d| panic!("assert probe resolve failed: {d:?}"));
     let linked = sigil_link::link(&resolved, &empty)
         .unwrap_or_else(|d| panic!("assert probe link failed: {d:?}"));
-    let rom = sigil_link::flatten(&linked, 0x00);
+    let rom = sigil_link::flatten(&linked, 0x00).unwrap();
     let bytes = &rom[0x400..];
     // move.l a3,d1 = 220B; sub.l a2,d1 = 928A; then the assert head:
     // move.w sr,-(sp) = 40E7; cmp.w d1,d4 = B841; bhs.w = 6400.
@@ -296,7 +296,7 @@ fn link_with_cs(emp: &str) -> Vec<u8> {
         .unwrap_or_else(|d| panic!("linkimm resolve failed: {d:?}"));
     let linked = sigil_link::link(&resolved, &empty)
         .unwrap_or_else(|d| panic!("linkimm link failed: {d:?}"));
-    sigil_link::flatten(&linked, 0x00)
+    sigil_link::flatten(&linked, 0x00).unwrap()
 }
 
 #[test]
@@ -364,6 +364,6 @@ fn assert_diag_labels_unique_across_modules() {
         .unwrap_or_else(|d| panic!("two-module assert resolve failed: {d:?}"));
     let linked = sigil_link::link(&resolved, &empty)
         .unwrap_or_else(|d| panic!("two-module assert link failed (diag-label collision?): {d:?}"));
-    let rom = sigil_link::flatten(&linked, 0x00);
+    let rom = sigil_link::flatten(&linked, 0x00).unwrap();
     assert!(rom.len() > 0x800, "both modules must place");
 }

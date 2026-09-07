@@ -48,7 +48,7 @@ fn image(body: &str) -> Vec<u8> {
         .unwrap_or_else(|e| panic!("did not lay out: {e:?}\n{src}"));
     let linked = sigil_link::link(&resolved, &sigil_ir::SymbolTable::new())
         .unwrap_or_else(|e| panic!("did not link: {e:?}\n{src}"));
-    sigil_link::flatten(&linked, 0x00)
+    sigil_link::flatten(&linked, 0x00).unwrap()
 }
 
 /// The corpus macro, reduced to the shape under test. `vdp_control_port` is 4

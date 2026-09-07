@@ -115,7 +115,7 @@ fn bytes(body: &str) -> Vec<u8> {
     };
     let linked =
         sigil_link::link(&module.sections, &sigil_ir::SymbolTable::new()).expect("link");
-    sigil_link::flatten(&linked, 0x00)
+    sigil_link::flatten(&linked, 0x00).unwrap()
 }
 
 /// One consumer of a Poison expression: the source that reaches it, the line

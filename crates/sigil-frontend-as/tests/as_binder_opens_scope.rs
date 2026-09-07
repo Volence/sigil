@@ -54,7 +54,7 @@ fn bytes(src: &str) -> Vec<u8> {
     let module = assemble(src, &Options::default())
         .unwrap_or_else(|d| panic!("expected an assembly, refused: {d:?}"));
     let linked = sigil_link::link(&module.sections, &sigil_ir::SymbolTable::new()).expect("link");
-    sigil_link::flatten(&linked, 0x00)
+    sigil_link::flatten(&linked, 0x00).unwrap()
 }
 
 /// Assemble AND LINK, expecting a refusal from either, and hand back the

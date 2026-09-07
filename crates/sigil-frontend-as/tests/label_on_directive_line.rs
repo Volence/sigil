@@ -28,7 +28,7 @@ fn linked(src: &str) -> Option<Vec<u8>> {
     let resolved =
         sigil_link::resolve_layout(&m.sections, &sigil_ir::SymbolTable::new(), true).ok()?;
     let linked = sigil_link::link(&resolved, &sigil_ir::SymbolTable::new()).ok()?;
-    Some(sigil_link::flatten(&linked, 0x00))
+    Some(sigil_link::flatten(&linked, 0x00).unwrap())
 }
 
 /// The bytes, or a panic naming the source. Used where AS assembles clean.
