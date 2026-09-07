@@ -14,7 +14,9 @@
 //! (d) F2: an unknown proc-local `.label` passed as `aabb_axis_test`'s `mlab`
 //!     argument is a LOUD error naming the label (not a silent link dangle).
 //! (e) A BROKEN falls_into stub chain (a `falls_into` removed so a stub gains
-//!     fallthrough) fires the `[proc.undeclared-fallthrough]` diagnostic.
+//!     fallthrough) fires the `[proc.undeclared-fallthrough]` diagnostic. The
+//!     chain is synthetic: the subject is the lint, and compiling a live engine
+//!     file for it gave the probe a subject that moves in another repo.
 //! (f) `aabb_axis_test` with `stmp` aliasing `cdim` is a COMPILE ERROR naming
 //!     the MUST-NOT-alias constraint (retro-fix-audit-1 item 7: the template
 //!     carries `ensure(stmp != cdim)` / `ensure(stmp != delt)` — the distinct-
@@ -71,28 +73,24 @@ fn lower_with_ambient(dep_srcs: &[&str], main_src: &str) -> Vec<sigil_span::Diag
     ldiags
 }
 
-/// The four aeon sources collision.emp is compiled with (types + sst +
-/// constants ambient, plus the aabb template). Skips (returns None) if the
-/// aeon tree is absent.
-struct Sources {
-    types: String,
-    sst: String,
-    constants: String,
-    aabb: String,
-    coords: String,
-    collision: String,
+/// The one aeon source a probe here still compiles: the aabb template, whose
+/// `ensure(stmp != cdim)` contract probe (f) is about. Named through the house
+/// reference guard, so an absent file skips NAMING the path and fails under
+/// `SIGIL_STRICT_GATE=1`.
+///
+/// It is one path and not six because the ambient this file used to assemble —
+/// types + sst + constants + aabb + coords, prepended under a live
+/// `collision.emp` — was a probe subject that lives in somebody else's working
+/// tree. See `aabb_template_tree`'s sibling comment on probe (e).
+fn aabb_template_tree() -> Option<PathBuf> {
+    sigil_harness::test_support::reference_tree(&["engine/objects/aabb.emp"])
 }
 
-fn sources() -> Option<Sources> {
-    Some(Sources {
-        types: read_aeon("engine/system/types.emp")?,
-        sst: read_aeon("engine/objects/sst.emp")?,
-        constants: read_aeon("engine/system/constants.emp")?,
-        aabb: read_aeon("engine/objects/aabb.emp")?,
-        // coords carries abs_w (ambient-hoist parcel folded collision's AABB
-        // |delta| sites onto the shared template).
-        coords: read_aeon("engine/coords.emp")?,
-        collision: read_aeon("engine/objects/collision.emp")?,
+/// Read a path the reference guard has already found present. A read failure
+/// past the guard is a real error, so it panics naming the path.
+fn read_guarded(rel: &str) -> String {
+    read_aeon(rel).unwrap_or_else(|| {
+        panic!("unreadable reference file: {}", aeon_dir().join(rel).display())
     })
 }
 
@@ -184,15 +182,47 @@ fn unknown_local_label_mlab_arg_is_loud_naming_it() {
 
 // ---- (e) broken falls_into chain → [proc.undeclared-fallthrough] ------------
 
+/// The stub chain this probe doctors: the shape `collision.emp`'s `Touch_*`
+/// dispatch stubs use — a terminator-less body that declares where it falls,
+/// followed by the proc it falls into.
+///
+/// SYNTHETIC, AND THAT IS THE POINT. This probe used to compile the LIVE
+/// `engine/objects/collision.emp` and string-doctor one of its literal lines.
+/// The subject is the LINT, not aeon's content, and borrowing live content as
+/// the input made a pure rename in aeon's tree — `Touch_Enemy` -> anything —
+/// red this gate on `"the doctor must have found its target"`, a message that
+/// indicts sigil for an edit that changed no compiler behaviour at all
+/// (reproduced 2026-09-07; see `2026-09-07-probe-game-file-sweep.md`). The
+/// closed `sig-probe-live-game-file` finding ruled the shape: a probe that
+/// names a live file in another repo has no stable subject.
+///
+/// WHAT THE OLD CONTROL COVERED, AND WHAT WENT WITH IT. It asserted that aeon's
+/// real chain lowers with no `[proc.undeclared-fallthrough]`. That is NOT
+/// covered elsewhere, and saying it was would be the comfortable answer rather
+/// than the true one: `warn_tier_corpus` pins the SET of firing lint ids, not
+/// their counts (its own header records that `lean` fires one fewer of this
+/// exact lint than the canonical shapes), and its site-pinned register counts
+/// only ids that already carry a `CORPUS_OPEN_FINDINGS` row — today only
+/// `import.no-names`. So the deleted control was a narrow island of coverage
+/// over one engine file, and removing it lost that island. Booked as
+/// `WARN-TIER-COUNTS-UNWATCHED` in the gap ledger, where it belongs: the real
+/// gap is corpus-wide and much larger than this probe.
+const STUB_CHAIN: &str = concat!(
+    "module m in collision\n",
+    "proc Touch_None () clobbers() falls_into Touch_Enemy {}\n",
+    "proc Touch_Enemy () clobbers() {\n",
+    "\trts\n",
+    "}\n",
+);
+
+/// The line the doctor removes the `falls_into` from.
+const STUB_WITH_FALLS_INTO: &str = "proc Touch_None () clobbers() falls_into Touch_Enemy {}";
+const STUB_WITHOUT_FALLS_INTO: &str = "proc Touch_None () clobbers() {}";
+
 #[test]
 fn broken_falls_into_stub_chain_fires_fallthrough() {
-    let Some(s) = sources() else {
-        eprintln!("skip: aeon tree not present");
-        return;
-    };
-
-    // Control: the real chain lowers with no undeclared-fallthrough diagnostic.
-    let control = lower_with_ambient(&[&s.types, &s.sst, &s.constants, &s.aabb, &s.coords], &s.collision);
+    // Control: the declared chain lowers with no undeclared-fallthrough diagnostic.
+    let control = lower_with_ambient(&[], STUB_CHAIN);
     assert!(
         !control.iter().any(|d| d.message.contains("[proc.undeclared-fallthrough]")),
         "control must have no undeclared-fallthrough diagnostic: {:?}",
@@ -202,13 +232,10 @@ fn broken_falls_into_stub_chain_fires_fallthrough() {
     // The doctor: remove the `falls_into Touch_Enemy` from the FIRST stub, so
     // `Touch_None` becomes an empty body with no terminator and no falls_into
     // — it will run into whatever follows, which the fallthrough lint flags.
-    let doctored = s.collision.replace(
-        "proc Touch_None () clobbers() falls_into Touch_Enemy {}",
-        "proc Touch_None () clobbers() {}",
-    );
-    assert_ne!(doctored, s.collision, "the doctor must have found its target");
+    let doctored = STUB_CHAIN.replace(STUB_WITH_FALLS_INTO, STUB_WITHOUT_FALLS_INTO);
+    assert_ne!(doctored, STUB_CHAIN, "the doctor must have found its target");
 
-    let diags = lower_with_ambient(&[&s.types, &s.sst, &s.constants, &s.aabb, &s.coords], &doctored);
+    let diags = lower_with_ambient(&[], &doctored);
     assert!(
         diags.iter().any(|d| d.message.contains("[proc.undeclared-fallthrough]")
             && d.message.contains("Touch_None")),
@@ -221,10 +248,11 @@ fn broken_falls_into_stub_chain_fires_fallthrough() {
 
 #[test]
 fn aabb_stmp_aliasing_cdim_is_a_compile_error() {
-    let Some(s) = sources() else {
-        eprintln!("skip: aeon tree not present");
-        return;
-    };
+    // This probe's subject IS aeon's template — the `ensure` it carries — so it
+    // reads the live file on purpose. One path, named: the six-file `sources()`
+    // this replaced made the probe skip when a file it never used was absent.
+    let Some(_) = aabb_template_tree() else { return };
+    let aabb = read_guarded("engine/objects/aabb.emp");
 
     // The real aabb.emp template, instantiated with `stmp` aliasing `cdim`
     // (both d0) — the contract's MUST-NOT-alias rule (the scratch neg/double
@@ -245,7 +273,7 @@ fn aabb_stmp_aliasing_cdim_is_a_compile_error() {
         "    rts\n",
         "}\n",
     );
-    let diags = lower_with_ambient(&[&s.aabb], consumer);
+    let diags = lower_with_ambient(&[&aabb], consumer);
     assert!(
         diags.iter().any(|d| d.level == sigil_span::Level::Error
             && d.message.contains("stmp MUST NOT alias cdim")),
