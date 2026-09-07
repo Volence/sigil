@@ -4430,3 +4430,13 @@ enforce a region's declared `size`, so a section growing past its region is caug
 downstream gate happens to read the bytes. Book a refusal by name at placement, red-first with a
 section deliberately one byte over its declared size; byte-neutral on every shipped shape by
 expectation.
+
+### `CHECK-THEN-USE-RESIDUAL`: same class, outside the parcel's scope (2026-09-07)
+
+Named by the check-then-use parcel (merge `0a729aaf`, note `2026-09-07-check-then-use.md`) and not
+fixed there: `.emp` `pub equ` lowering through `Expr::Int(n as i64)` at three sites in
+`crates/sigil-frontend-emp/src/lower/mod.rs`; `code.rs` spelling the abs.w window itself rather than
+`sigil_ir::fits_abs_w`; `BankPtr16*` keeping `as u16` deliberately (the mask is the semantics, so this
+is a documented exception, not a defect); link-time `>> n` for n in 64..128 refused where comptime
+i128 answers it. Each is a narrowing or a duplicated rule; fix by the same idiom, red-first with an
+input the narrow cast changes.
