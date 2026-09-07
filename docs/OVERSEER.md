@@ -973,6 +973,10 @@ the whole reason they are here rather than in a thread.
   number is in front of the other operator, the second derivation is an anchored estimate wearing
   independence's clothes. Neither side sends first. This is bar 19 applied to two operators rather
   than two greps, and it only works if nobody is helpful early.
+  **And the prediction ships with its own falsifier, in the same message, before either side knows**
+  (aeon's addition, adopted here): say what would have made it wrong at the moment you send it. A
+  prediction whose falsifier is written after the result is a description, and a prediction reported
+  only when it lands is not a method.
 - **A peer's occupancy figure for `dac_shared_bank` is a BUILD PRODUCT.** Their 25,754 B occupied
   / 7,014 B free came from `engine/sound/generated/dac_shared_bank.bin` in their working tree —
   the right file, and an artifact of their last build rather than a committed value. So a
