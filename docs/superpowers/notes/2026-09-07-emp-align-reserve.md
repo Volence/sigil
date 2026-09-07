@@ -85,7 +85,15 @@ at 0 per module and accumulates image lengths, so it is a small non-negative
 number; the only way the position goes negative as `i32` is an explicit
 `section (vma: $FFFF….)` carrying an align. **All 20 `section` declarations in
 aeon `ec640bcf` were enumerated: the largest `vma:` is `$8357`
-(`movingtrucks_pitchtable.emp`), and no section declares a RAM vma at all.** So
+(`movingtrucks_pitchtable.emp`), and no section declares a RAM vma at all.**
+
+That enumeration is backed by an instrument that does not depend on it:
+`/usr/bin/grep -rnE 'vma:\s*\$F' --include='*.emp'` over the WHOLE aeon tree
+returns nothing, and the same pattern fires on a planted
+`section canary (cpu: m68000, vma: $FFFF8000)` — so the emptiness is a finding
+rather than a grep that could not have returned anything. (`grep -r` is a shell
+function here that skips gitignored paths; the absolute path is the reason the
+generated `.emp` under `games/sonic4/data/generated/` is in scope.) So
 the unsigned round-up and the signed asl rule agree on every byte the corpus
 reaches, and unifying them was byte-neutral by construction — which is what the
 brief's "STOP if it would move a field" condition asked to be measured.
