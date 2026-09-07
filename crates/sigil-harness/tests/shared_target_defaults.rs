@@ -353,6 +353,14 @@ fn refreeze_child_env(extra: &[(&str, &str)]) -> std::collections::BTreeMap<Stri
 /// With nothing set, the freeze's children are told a build directory — the one this
 /// `refreeze` was itself built into, which is an observation of where it lives rather
 /// than a guess, and never the shared checkout's `target/`.
+///
+/// The first assertion is the claim about `refreeze` and always runs. The second is a
+/// claim about the ENVIRONMENT: the directory handed over is the one this test binary was
+/// built into, so it differs from the checkout's default `target/` exactly when the build
+/// that produced this binary named another. A binary built into the default `target/`
+/// cannot measure that row, and the environment says so through
+/// [`sigil_harness::test_support::built_into_default_target`] rather than failing on
+/// correct code, which is what it did on GitHub's runner.
 #[test]
 fn refreeze_tells_its_children_which_build_directory_to_use() {
     let env = refreeze_child_env(&[]);
@@ -372,9 +380,17 @@ fn refreeze_tells_its_children_which_build_directory_to_use() {
         expected,
         "the directory handed to the child must be the one this refreeze was built into"
     );
+    let default_target = sigil_root().join("target");
+    if expected == default_target {
+        sigil_harness::test_support::built_into_default_target(
+            "the shared-target row of refreeze_tells_its_children_which_build_directory_to_use",
+            &default_target,
+        );
+        return;
+    }
     assert_ne!(
         Path::new(got),
-        sigil_root().join("target"),
+        default_target,
         "the shared checkout's target/ is the directory this whole file is about"
     );
 }
