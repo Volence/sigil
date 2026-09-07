@@ -96,6 +96,19 @@ Item 14. Both owed reads done (§6 a and b). Verdict unchanged - NOT YET - but i
 
 SUPERSEDED BY THE 2026-09-05 SWEEP and restated to what is left. 49 GB reclaimed, 31 worktrees to 13, 246 branches to 17, every removed tree verified 0 tracked-dirty, 0 untracked and tip in master, locks cleared with unlock and never a second -f. WHAT REMAINS: 12 trees hold something, mostly a single untracked build artifact each, and 7 branches are unmerged and kept by name. The residue needs a per-tree judgement rather than a rule, so it is not a sweep.
 
+## RESOLVER-FALLS-THROUGH-TO-SHARED-TREE
+
+- state at archive: `open`  size: `S`  project: `-`
+- blockedBy: nothing
+
+`crates/sigil-harness/tests/m1b_gate.rs:51` resolves `ORACLE_DIR`, then falls through to the fixed path `/home/volence/sonic_hacks/oracle-old` — another lane's checkout. Found 2026-09-07 by turning aurora's fifth Roster C rule (no resolver in a seat's rig may fall through to a shared last resort) on this lane's own rig; the rule is in the lens UX amendment at empyrean `3ad431f` per the hub's relay, NOT read here.
+
+**The existing mitigation covers the wrong failure.** The gate skips when the sibling repo is ABSENT and fails hard on absent under `SIGIL_STRICT_GATE=1`. On this machine the directory is PRESENT, so the unforced case does not refuse: it measures whatever that tree contains and attributes the result to nothing. Fix shape: the value is set explicitly by whoever runs the gate, and the unforced case is PROVEN to refuse once, rather than assumed.
+
+**Checked and clear in the same sweep, named so the zero has an instrument behind it:** `test_support::aeon_dir` (step 3, the derived sibling, excluded from `names_a_reference_tree` by name at `test_support.rs:795`; a run naming no tree refuses or skips by declared intent), `scripts/landing-run.sh` (refuses at the end of its chain), `P2BIN_BIN` in the three vector generators (derives from an already-explicit `ASL_BIN` that exits 2 when unset, then asserts the result is a file). **NOT audited and not claimed clear: `refreeze.rs:785`'s `AEON_DIR` default — only its mismatch branch was read.**
+
+Related and already fixed: `docs/OVERSEER-REFERENCE.md` claimed `aeon_dir` still defaulted to the owner's live checkout, which the code refutes; corrected at `2802d189`. The practice that paragraph teaches survives, its argument did not.
+
 ## LENS-UX-SEAT-DIAGNOSTICS
 
 - state at archive: `open`  size: `M`  project: `-`
