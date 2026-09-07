@@ -272,27 +272,44 @@ fn parent() {
     common::reconcile_arms(&declared, &names);
 
     // Direction 1: AEON_DIR removed. One refusal per emitter plus ensure_generated.
-    let unset = scratch_tree();
-    std::fs::create_dir_all(&unset).expect("create the child's scratch tree");
-    let out = run_child("unset", &unset);
-    let left_behind = !is_empty(&unset);
-    let _ = std::fs::remove_dir_all(&unset);
-    assert!(
-        !left_behind,
-        "the AEON_DIR-unset child left something under {}. The parent checks the tree \
-         independently of the child's own assertions.\n{out}",
-        unset.display()
-    );
-    let refusals = out.matches("WITNESS refused ").count();
-    let expected = declared.len() + 1; // every emitter, plus ensure_generated's entry
-    assert_eq!(
-        refusals, expected,
-        "UNMEASURABLE: the AEON_DIR-unset child reported {refusals} refusals; \
-         `ensure_generated` drives {} emitters and refuses at its own entry, so {expected} were \
-         expected. A count that does not reconcile is a run that measured something other than \
-         the property.\n{out}",
-        declared.len()
-    );
+    //
+    // This direction READS THE SUITE ROOT. The refusal it holds each emitter to names the
+    // tree a run resolves to when nobody names one, and the child derives that tree from
+    // the suite root beside this checkout. The parent asks the same resolver first, in the
+    // same environment the child gets (the unnamed default never consults AEON_DIR), so a
+    // checkout with no suite root beside it is decided here by the d-18 rule for the
+    // suite-root class, and the child's own UNMEASURABLE stays what it is: a failure. A
+    // declared partial run leaves this direction unmeasured and says so; direction 2 reads
+    // no suite root and runs either way.
+    if let Err(why) = sigil_harness::test_support::unnamed_default_tree() {
+        sigil_harness::test_support::suite_root_absent(
+            "direction 1 (AEON_DIR removed) of \
+             a_write_into_the_reference_tree_refuses_unless_aeon_dir_named_it",
+            &why,
+        );
+    } else {
+        let unset = scratch_tree();
+        std::fs::create_dir_all(&unset).expect("create the child's scratch tree");
+        let out = run_child("unset", &unset);
+        let left_behind = !is_empty(&unset);
+        let _ = std::fs::remove_dir_all(&unset);
+        assert!(
+            !left_behind,
+            "the AEON_DIR-unset child left something under {}. The parent checks the tree \
+             independently of the child's own assertions.\n{out}",
+            unset.display()
+        );
+        let refusals = out.matches("WITNESS refused ").count();
+        let expected = declared.len() + 1; // every emitter, plus ensure_generated's entry
+        assert_eq!(
+            refusals, expected,
+            "UNMEASURABLE: the AEON_DIR-unset child reported {refusals} refusals; \
+             `ensure_generated` drives {} emitters and refuses at its own entry, so {expected} \
+             were expected. A count that does not reconcile is a run that measured something \
+             other than the property.\n{out}",
+            declared.len()
+        );
+    }
 
     // Direction 2: AEON_DIR set. The naming check passes and the content probe runs,
     // so a refusal in direction 1 is attributable to the naming check alone.

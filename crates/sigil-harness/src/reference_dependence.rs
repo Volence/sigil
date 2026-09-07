@@ -48,10 +48,26 @@ pub fn workspace_root() -> PathBuf {
     p
 }
 
+/// The guard a SUITE-ROOT reader closes with when its own derivation finds none. A file
+/// that calls it reads the directory holding `aeon/` + `empyrean/` beside this checkout,
+/// not the reference tree, and is the second class a declared partial run leaves
+/// unmeasured; `test_support::partial_run_suite_root_banner` reports this population.
+pub const SUITE_ROOT_GUARDS: [&str; 1] = ["suite_root_absent("];
+
 /// Every test binary whose body asks the reference tree a question, derived from source.
 ///
 /// Sorted, so two callers comparing populations compare the same list.
 pub fn reference_dependent_binaries(ws: &Path) -> Vec<String> {
+    binaries_calling(ws, &GUARDS)
+}
+
+/// Every test binary whose body reads the SUITE ROOT, derived from source. Sorted.
+pub fn suite_root_reading_binaries(ws: &Path) -> Vec<String> {
+    binaries_calling(ws, &SUITE_ROOT_GUARDS)
+}
+
+/// Every test binary under `crates/*/tests/` whose text calls any of `guards`.
+fn binaries_calling(ws: &Path, guards: &[&str]) -> Vec<String> {
     let mut out = Vec::new();
     for crate_dir in std::fs::read_dir(ws.join("crates")).into_iter().flatten().flatten() {
         let tests = crate_dir.path().join("tests");
@@ -65,7 +81,7 @@ pub fn reference_dependent_binaries(ws: &Path) -> Vec<String> {
                 continue;
             }
             let Ok(text) = std::fs::read_to_string(&p) else { continue };
-            if GUARDS.iter().any(|g| text.contains(g)) {
+            if guards.iter().any(|g| text.contains(g)) {
                 out.push(name);
             }
         }
