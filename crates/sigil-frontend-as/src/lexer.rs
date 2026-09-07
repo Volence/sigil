@@ -49,6 +49,25 @@ pub fn lex_line_recover(
     (out, err)
 }
 
+/// How much the lexer has scanned on this thread: (lines, bytes). A test that
+/// pins the lexing COST of a construct reads this, because the cost is not
+/// visible in the bytes or the diagnostics a run produces. Test builds only.
+#[cfg(test)]
+pub(crate) fn lex_tally() -> (u64, u64) {
+    LEX_TALLY.with(|t| t.get())
+}
+
+/// Zero [`lex_tally`] for this thread.
+#[cfg(test)]
+pub(crate) fn reset_lex_tally() {
+    LEX_TALLY.with(|t| t.set((0, 0)));
+}
+
+#[cfg(test)]
+thread_local! {
+    static LEX_TALLY: std::cell::Cell<(u64, u64)> = const { std::cell::Cell::new((0, 0)) };
+}
+
 fn lex_into(
     line: &str,
     cpu: Cpu,
@@ -56,6 +75,11 @@ fn lex_into(
     base: u32,
     out: &mut Vec<Token>,
 ) -> Result<(), Diagnostic> {
+    #[cfg(test)]
+    LEX_TALLY.with(|t| {
+        let (lines, bytes) = t.get();
+        t.set((lines + 1, bytes + line.len() as u64));
+    });
     let bytes = line.as_bytes();
     let mut i = 0usize;
     let span_at = |start: usize, end: usize| Span {

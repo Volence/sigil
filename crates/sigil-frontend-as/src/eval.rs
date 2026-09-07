@@ -45,7 +45,6 @@ const WHILE_CAP: usize = 10_000;
 /// offset derived from a string the same expression just measured.
 const MAX_SUBSTR_CHARS: i64 = 65_536;
 
-#[derive(Clone)]
 struct SrcLine {
     text: String,
     base: u32,
@@ -54,6 +53,57 @@ struct SrcLine {
     /// executes at a call site in a different file — reports the file that
     /// actually contains the text.
     source: SourceId,
+    /// What [`Asm::line_keyword`] last answered for this line, with the state
+    /// it answered under. Block-structure scanning asks the same line for its
+    /// keyword once per ENCLOSING block (`find_block_end` and `exec_if`'s arm
+    /// scan each walk the whole body), and each ask lexes the line again, so
+    /// without the memo a body's lexing cost is linear in its nesting depth.
+    head: HeadMemo,
+}
+
+impl SrcLine {
+    fn new(text: String, base: u32, source: SourceId) -> Self {
+        SrcLine { text, base, source, head: HeadMemo::default() }
+    }
+}
+
+/// A clone starts with an empty memo: the copy is about to be executed under
+/// a state of its own (a macro body per expansion, a loop body per capture),
+/// and the memo is per state.
+impl Clone for SrcLine {
+    fn clone(&self) -> Self {
+        SrcLine::new(self.text.clone(), self.base, self.source)
+    }
+}
+
+/// The memo behind [`SrcLine::head`]: the keyword answered, under the key it
+/// was answered for. Interior mutability because the scan that fills it holds
+/// only `&self` on the assembler and `&[SrcLine]` on the lines.
+#[derive(Default)]
+struct HeadMemo(std::cell::RefCell<Option<(HeadKey, Option<std::rc::Rc<str>>)>>);
+
+/// Every input of [`Asm::dispatch_head`] that is not the line itself. The line
+/// text is lexed under the CPU, after substitution by the innermost live macro
+/// frame, and a name at the head routes as an invocation only while the macro
+/// table holds it; so the same line answers the same keyword exactly while
+/// these three are unchanged. `macros_gen` and `frame` are stamps from
+/// [`next_stamp`]: a new value on every mutation of the table or the frame,
+/// and `frame` is 0 when no frame substitutes (none is live, or the innermost
+/// one is suspended for a loop-body replay).
+#[derive(Clone, Copy, PartialEq, Eq)]
+struct HeadKey {
+    cpu: Cpu,
+    macros_gen: u64,
+    frame: u64,
+}
+
+/// A fresh stamp for a [`HeadKey`] input, unique for the life of the process,
+/// so a memo filled under one state can never match another state's key, no
+/// matter which assembler or pass produced either. 0 is never returned: it is
+/// the stamp of "no substituting frame".
+fn next_stamp() -> u64 {
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+    NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
 }
 
 /// Collected macro definitions: name → (params, body lines).
@@ -643,6 +693,7 @@ fn one_pass_with_defer(
     asm.mompass = mompass;
     asm.env = seed_env.clone();
     asm.macros = seed_macros.clone();
+    asm.macros_gen = next_stamp();
     asm.functions = seed_functions.clone();
     asm.known_labels = seed_labels.clone();
     asm.label_ref_equs = seed_label_ref_equs.clone();
@@ -940,6 +991,10 @@ struct Asm {
     sources: sigil_span::SourceMap,
     functions: FunctionTable,
     macros: MacroTable,
+    /// The [`HeadKey::macros_gen`] stamp: renewed whenever [`Self::macros`]
+    /// changes, so a keyword memoised against one table answers only while
+    /// that table stands.
+    macros_gen: u64,
     /// The label written on the line of a `{INTLABEL}` macro invocation, parked
     /// between [`Asm::exec_one`] recognising it and [`Asm::expand_macro_inner`]
     /// binding it to `__LABEL__`. Set only on the step immediately before the
@@ -1378,6 +1433,7 @@ impl Asm {
             sources: sigil_span::SourceMap::new(),
             functions: std::collections::BTreeMap::new(),
             macros: std::collections::BTreeMap::new(),
+            macros_gen: next_stamp(),
             pending_int_label: None,
             macro_depth: 0,
             macro_frames: Vec::new(),
@@ -2864,11 +2920,7 @@ impl Asm {
                 }
             }
         }
-        changed.then_some(SrcLine {
-            text: out,
-            base: line.base,
-            source: line.source,
-        })
+        changed.then_some(SrcLine::new(out, line.base, line.source))
     }
 
     /// Render one `{…}` group's contents as the text AS pastes into the name:
@@ -3546,8 +3598,33 @@ impl Asm {
     /// a keyword and still reports one, because block structure is decided by
     /// the head alone: asl counts a nested `if`/`endif` inside a branch it never
     /// evaluates, and a scan that cannot see the head cuts the block short.
-    fn line_keyword(&self, line: &SrcLine) -> Option<String> {
-        self.dispatch_head(line).map(|(kw, _, _)| kw)
+    ///
+    /// Memoised per line under [`HeadKey`]: a body line is asked for its keyword
+    /// by every enclosing block's scan and by `exec` itself, and the answer is
+    /// the same until the CPU, the macro table or the substituting frame moves.
+    fn line_keyword(&self, line: &SrcLine) -> Option<std::rc::Rc<str>> {
+        let key = self.head_key();
+        if let Some((memo_key, kw)) = &*line.head.0.borrow() {
+            if *memo_key == key {
+                return kw.clone();
+            }
+        }
+        let kw = self.dispatch_head(line).map(|(kw, _, _)| std::rc::Rc::from(kw));
+        *line.head.0.borrow_mut() = Some((key, kw.clone()));
+        kw
+    }
+
+    /// The [`HeadKey`] of the current state: what [`Self::dispatch_head`] reads
+    /// besides the line. The frame half mirrors [`Self::subst_frame_text`],
+    /// which substitutes only under the innermost frame and only while it is
+    /// not suspended.
+    fn head_key(&self) -> HeadKey {
+        let frame = self
+            .macro_frames
+            .last()
+            .filter(|f| f.suspend == 0)
+            .map_or(0, |f| f.stamp);
+        HeadKey { cpu: self.state.cpu, macros_gen: self.macros_gen, frame }
     }
 
     /// The name in the LABEL field of a line whose head is a block directive,
@@ -3677,7 +3754,7 @@ impl Asm {
     /// line the block never reached its end of, and consuming it as the closer
     /// dropped its bytes from the image with exit 0.
     fn find_block_end(&self, lines: &[SrcLine], start: usize) -> Option<usize> {
-        let start_kw = self.line_keyword(&lines[start]).unwrap_or_default();
+        let start_kw = self.line_keyword(&lines[start]).unwrap_or_else(|| std::rc::Rc::from(""));
         let mut stack: Vec<&'static [&'static str]> = vec![closers_for(&start_kw)];
         for (idx, line) in lines.iter().enumerate().skip(start + 1) {
             let Some(k) = self.line_keyword(line) else {
@@ -3692,7 +3769,7 @@ impl Asm {
                 continue;
             }
             if let Some(top) = stack.last() {
-                if top.contains(&k.as_str()) {
+                if top.contains(&&*k) {
                     stack.pop();
                     if stack.is_empty() {
                         return Some(idx);
@@ -3719,7 +3796,7 @@ impl Asm {
         if let Some(end) = self.find_block_end(lines, start) {
             return Some(end);
         }
-        let kw = self.line_keyword(&lines[start]).unwrap_or_default();
+        let kw = self.line_keyword(&lines[start]).unwrap_or_else(|| std::rc::Rc::from(""));
         let closers = closers_for(&kw)
             .iter()
             .map(|c| format!("`{c}`"))
@@ -4054,11 +4131,7 @@ impl Asm {
             }
             let iter: Vec<SrcLine> = body
                 .iter()
-                .map(|l| SrcLine {
-                    text: substitute_name(&l.text, &name, item),
-                    base: l.base,
-                    source: l.source,
-                })
+                .map(|l| SrcLine::new(substitute_name(&l.text, &name, item), l.base, l.source))
                 .collect();
             // Scanned from the SUBSTITUTED body, unlike `rept`/`while`: `irp`
             // rewrites the text per item, so a label spelled with the loop
@@ -8166,6 +8239,7 @@ impl Asm {
         let int_label = head_declares_int_label(&head.text);
         self.macros
             .insert(name, MacroDef { params, defaults, body, int_label });
+        self.macros_gen = next_stamp();
         end + 1
     }
 
@@ -8279,7 +8353,7 @@ impl Asm {
     /// anchor so diagnostics still point at the macro body.
     fn subst_frame(&self, line: &SrcLine) -> Option<SrcLine> {
         let text = self.subst_frame_text(&line.text)?;
-        Some(SrcLine { text, base: line.base, source: line.source })
+        Some(SrcLine::new(text, line.base, line.source))
     }
 
     /// Whether a body line reached now would be substituted — the test
@@ -8653,6 +8727,7 @@ impl Asm {
             suspend: 0,
             dot_labels,
             int_label,
+            stamp: next_stamp(),
         });
         self.expansion_depth += 1;
         self.push_expansion_labels(plain_labels);
@@ -8862,6 +8937,10 @@ struct MacroFrame {
     ///   12/ 100B : 3C36 3E20 3C4C     dc.b "<6> <Lb2> <>"
     /// ```
     int_label: Option<String>,
+    /// The [`HeadKey::frame`] stamp: renewed by every mutation of a
+    /// substitution input, so a keyword memoised under this frame answers only
+    /// while the frame still substitutes the same text.
+    stamp: u64,
 }
 
 impl MacroFrame {
@@ -8926,6 +9005,7 @@ impl MacroFrame {
             self.all.remove(0);
         }
         self.shifted += 1;
+        self.stamp = next_stamp();
     }
 }
 
@@ -9014,29 +9094,21 @@ fn split_src_lines(text: &str, source: SourceId) -> Vec<SrcLine> {
                 if is_cont {
                     pending = Some((start_base, acc));
                 } else {
-                    lines.push(SrcLine {
-                        text: acc,
-                        base: start_base,
-                        source,
-                    });
+                    lines.push(SrcLine::new(acc, start_base, source));
                 }
             }
             None => {
                 if is_cont {
                     pending = Some((base, cell));
                 } else {
-                    lines.push(SrcLine { text: cell, base, source });
+                    lines.push(SrcLine::new(cell, base, source));
                 }
             }
         }
         base += raw.len() as u32;
     }
     if let Some((start_base, acc)) = pending {
-        lines.push(SrcLine {
-            text: acc,
-            base: start_base,
-            source,
-        });
+        lines.push(SrcLine::new(acc, start_base, source));
     }
     lines
 }
@@ -15430,6 +15502,57 @@ C:\n";
         let equs: Vec<_> =
             m.sections.iter().flat_map(|s| s.equ_syms.iter()).filter(|e| e.name == "Val").collect();
         assert_eq!(equs.len(), 1, "one obligation for a twice-deferred name, got {equs:?}");
+    }
+
+    /// A fixed body wrapped in `depth` nested `if 1` blocks. Every line of the
+    /// body is a different line, so a lexer that visits a body line more than
+    /// once per pass cannot hide behind a repeated text.
+    fn nested_body(depth: usize) -> String {
+        let mut src = String::from("\tcpu 68000\n\torg 0\n");
+        for _ in 0..depth {
+            src.push_str("\tif 1\n");
+        }
+        for i in 0..200 {
+            src.push_str(&format!("lbl_{i}:\tmove.w\td0,d1\n\tadd.l\t#${i:X},(a0)+\n"));
+        }
+        for _ in 0..depth {
+            src.push_str("\tendif\n");
+        }
+        src
+    }
+
+    /// The lexer's (lines, bytes) tally for one assembly of `src`.
+    fn lex_cost(src: &str) -> (u64, u64) {
+        crate::lexer::reset_lex_tally();
+        run(src, &Options::default()).expect("assemble");
+        crate::lexer::lex_tally()
+    }
+
+    /// The lexing cost of a block body does not grow with the number of blocks
+    /// enclosing it. Each enclosing `if` scans the whole body twice per pass
+    /// (`find_block_end`, then `exec_if`'s arm-head scan), and each scan asks
+    /// every line for its keyword; the per-line memo answers all but the first
+    /// ask without lexing, so the body's cost is paid once and only the opener
+    /// and closer lines are charged per level. The bound is 16 lexes per level,
+    /// against the 800 body lexes per level an unmemoised scan pays (two scans
+    /// of 200 lines, each in two passes).
+    #[test]
+    fn a_block_body_is_lexed_once_regardless_of_nesting_depth() {
+        let flat = nested_body(0);
+        let deep = nested_body(32);
+        let (flat_lines, flat_bytes) = lex_cost(&flat);
+        let (deep_lines, deep_bytes) = lex_cost(&deep);
+        assert_eq!(image(&flat), image(&deep), "the nesting must not change the bytes");
+        let extra_lines = deep_lines - flat_lines;
+        let extra_bytes = deep_bytes - flat_bytes;
+        // `\tif 1` is 5 bytes and `\tendif` 6, so 16 lexes of each per level is
+        // 176 bytes per level.
+        assert!(
+            extra_lines <= 32 * 16 && extra_bytes <= 32 * 176,
+            "32 enclosing blocks cost {extra_lines} extra line lexes and {extra_bytes} extra bytes \
+             over the flat body's {flat_lines} lexes / {flat_bytes} bytes: the body is being \
+             re-lexed per enclosing level"
+        );
     }
 }
 
