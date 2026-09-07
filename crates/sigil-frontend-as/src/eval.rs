@@ -1044,6 +1044,14 @@ struct Asm {
     /// the TOTAL across all (possibly nested) loops so a pathological input
     /// diagnoses in bounded time. Generous vs. any real table-fill loop.
     while_budget: usize,
+    /// Remaining `rept`-body-execution budget for THIS pass, the `rept` half
+    /// of the same contract. A `rept` folds its count once, so the only bound
+    /// it ever had was that count; two nested `rept 100000` multiply to ten
+    /// billion body runs and nothing diagnosed. Bounded across all (possibly
+    /// nested) repeats to `GLOBAL_REPT_CAP`, far above any corpus table (the
+    /// largest literal `rept` count in the three community disassemblies is
+    /// 32; the computed ones are chunk and buffer sizes in the hundreds).
+    rept_budget: usize,
     /// Task B1 (seam re-eval): int `equ`s seen while NO section is open yet,
     /// held here rather than forcing one open (see `directive_equate`'s doc —
     /// eagerly opening a section there perturbs `directive_org`'s no-section
@@ -1271,6 +1279,10 @@ enum StructMember {
 /// Far above any real Aeon `while`-driven data table, far below the `WHILE_CAP²`
 /// (10⁸) a pair of nested non-convergent loops would otherwise grind through.
 const GLOBAL_WHILE_CAP: usize = 1_000_000;
+/// Per-pass ceiling on total `rept`-body executions (see `Asm::rept_budget`),
+/// the same figure as the `while` budget for the same reason: far above any
+/// real table, far below the product two nested oversized repeats reach.
+const GLOBAL_REPT_CAP: usize = 1_000_000;
 
 /// The values a word data directive (`dc.w`, Z80 `dw`) accepts: asl's window,
 /// signed floor to unsigned ceiling. See [`Asm::check_data_range`].
@@ -1331,6 +1343,7 @@ impl Asm {
             reg_faults_seen: std::collections::HashSet::new(),
             cond_faults_seen: std::collections::HashSet::new(),
             while_budget: GLOBAL_WHILE_CAP,
+            rept_budget: GLOBAL_REPT_CAP,
             pending_equ_syms: Vec::new(),
             deferred_assign_names: std::collections::HashSet::new(),
             defer_unresolved_jsr_jmp,
@@ -3842,7 +3855,12 @@ impl Asm {
         // loop — `p7`'s `rept 2` reads `Ra` back as `$0000` then `$0002`, which
         // is a namespace per iteration, not per loop.
         let plain_labels = std::rc::Rc::new(scan_plain_labels(body));
-        for _ in 0..n {
+        // A body with no lines at all runs nothing, defines nothing and costs no
+        // budget, whatever its count: asl finishes a nested pair of `rept
+        // 100000` with no body line in 80 ms with exit 0, while the same pair
+        // around a single comment line runs past a 30-second timeout.
+        let iterations = if body.is_empty() { 0 } else { n };
+        for _ in 0..iterations {
             // `end` (and `fatal`) inside the body stop the unit, so the
             // remaining iterations must not run. `exec` already returns
             // immediately once `aborted` is set, so this is byte-neutral; it is
@@ -3851,6 +3869,23 @@ impl Asm {
             if self.aborted {
                 break;
             }
+            // The per-pass budget, checked per BODY RUN rather than against the
+            // folded count, so a nest of in-range repeats is bounded by the
+            // product it actually executes. Exhausting it aborts the pass, as
+            // the `while` budget does: an enclosing repeat must not keep going.
+            if self.rept_budget == 0 {
+                self.err(
+                    span,
+                    format!(
+                        "total `rept` body executions exceeded the per-pass budget ({GLOBAL_REPT_CAP}): \
+                         this `rept` (count {n}), with any repeat enclosing it, runs more bodies than \
+                         the assembler will execute in one pass (asl runs such a nest without limit)"
+                    ),
+                );
+                self.aborted = true;
+                break;
+            }
+            self.rept_budget -= 1;
             self.push_expansion_labels(plain_labels.clone());
             self.exec(body);
             self.pop_expansion_labels();
