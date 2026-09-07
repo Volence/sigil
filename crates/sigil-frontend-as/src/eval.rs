@@ -6952,41 +6952,59 @@ impl Asm {
         // extension is scoped to MEMORY destinations (the object-spawn shape). A
         // word immediate into a register (`move.w #Sym, d0`) falls through to the
         // eager path and errors as before.
-        let (imm_expr, dst) = match atoms {
-            [OperandAtom::Imm(e), OperandAtom::RegOrCond(w)] if size == M68kSize::L => {
-                let dst = match mnemonic {
-                    M68kMnemonic::Movea => M68kOperand::An(m68k_addr_reg(w)?),
-                    // `move.l #imm, sp` lands here and MUST stay None:
-                    // `m68k_data_reg("sp")` is None, so it falls to the eager
-                    // path, which encodes the movea form. Accepting `sp` here
-                    // would mis-encode it as a Dn destination.
-                    M68kMnemonic::Move => M68kOperand::Dn(m68k_data_reg(w)?),
-                    _ => return None,
-                };
-                (e, dst)
-            }
-            [OperandAtom::Imm(e), OperandAtom::Value(Expr::Sym(w))] if size == M68kSize::L => {
-                let dst = match mnemonic {
-                    M68kMnemonic::Movea => M68kOperand::An(m68k_addr_reg(w)?),
-                    M68kMnemonic::Move => M68kOperand::Dn(m68k_data_reg(w)?),
-                    _ => return None,
-                };
-                (e, dst)
-            }
-            [OperandAtom::Imm(e), OperandAtom::M68kAbs { addr, long }] if mnemonic == M68kMnemonic::Move && size == M68kSize::L => {
+        let imm_expr = match atoms.first() {
+            Some(OperandAtom::Imm(e)) => e,
+            _ => return None,
+        };
+        let qualified = self.qualify_expr(imm_expr);
+        // Unresolved (Poison) exprs ALWAYS defer. A RESOLVED immediate that names
+        // a section LABEL also defers on the deferral pass (`keep_labels_symbolic`):
+        // `move.l #Label` bakes the label's VMA, which a width-grown `JmpJsrSym`
+        // would shift out from under — so carry the label symbolically and let
+        // the linker fill it post-relax. A resolved NON-label immediate takes the
+        // existing eager path (byte-identical), and on every ordinary pass this is
+        // exactly the pre-existing Poison-only rule. Decided BEFORE the
+        // destination folds: a destination this arm folds and then hands to the
+        // eager path would be folded twice, and a refusal on it reported twice.
+        let is_poison = matches!(self.fold(&qualified), Fold::Poison);
+        let refs_label = self.keep_labels_symbolic() && self.expr_refs_label(&qualified);
+        if !is_poison && !refs_label {
+            return None;
+        }
+        // A register is not a cross-seam leaf. Falling through to the eager path
+        // would report it there WITH a span; taking this deferral would ship it
+        // to the linker, which answers with a section and an offset and no line.
+        if is_poison && self.report_register_values(&qualified, span) {
+            return None;
+        }
+        let dst = match atoms {
+            [OperandAtom::Imm(_), OperandAtom::RegOrCond(w)] if size == M68kSize::L => match mnemonic {
+                M68kMnemonic::Movea => M68kOperand::An(m68k_addr_reg(w)?),
+                // `move.l #imm, sp` lands here and MUST stay None:
+                // `m68k_data_reg("sp")` is None, so it falls to the eager
+                // path, which encodes the movea form. Accepting `sp` here
+                // would mis-encode it as a Dn destination.
+                M68kMnemonic::Move => M68kOperand::Dn(m68k_data_reg(w)?),
+                _ => return None,
+            },
+            [OperandAtom::Imm(_), OperandAtom::Value(Expr::Sym(w))] if size == M68kSize::L => match mnemonic {
+                M68kMnemonic::Movea => M68kOperand::An(m68k_addr_reg(w)?),
+                M68kMnemonic::Move => M68kOperand::Dn(m68k_data_reg(w)?),
+                _ => return None,
+            },
+            [OperandAtom::Imm(_), OperandAtom::M68kAbs { addr, long }] if mnemonic == M68kMnemonic::Move && size == M68kSize::L => {
                 // The destination address resolves EAGERLY (it's not the
                 // cross-seam leaf this deferral targets) — an unresolved
                 // absolute destination falls through to the eager path.
                 let qualified_addr = self.qualify_expr(addr);
                 let v = self.fold_imm(&qualified_addr, span, i32::MIN as i64, u32::MAX as i64);
-                let dst = if *long {
+                if *long {
                     M68kOperand::AbsL(v as i32)
                 } else {
                     self.abs_w_operand(v, span)
-                };
-                (e, dst)
+                }
             }
-            [OperandAtom::Imm(e), OperandAtom::M68kDisp { disp, an }] if mnemonic == M68kMnemonic::Move => {
+            [OperandAtom::Imm(_), OperandAtom::M68kDisp { disp, an }] if mnemonic == M68kMnemonic::Move => {
                 // `move.l #Sym, d16(An)` — the tranche-4 particle_anims
                 // consumer shape (`move.l #Ani_Particle, SST_anim_table(a0)`,
                 // test_particle.asm). The displacement resolves EAGERLY (an
@@ -7003,37 +7021,16 @@ impl Asm {
                 // zeroOffsetOptimization does on the eager path. That fold runs
                 // AFTER lower_inst, which the deferred frag skips, so fold here or
                 // the imm hole ships an extra $0000 disp word (+2 bytes, ROM drift).
-                let dst = if d == 0 { M68kOperand::Ind(n) } else { M68kOperand::Disp16An(d as i16, n) };
-                (e, dst)
+                if d == 0 { M68kOperand::Ind(n) } else { M68kOperand::Disp16An(d as i16, n) }
             }
-            [OperandAtom::Imm(e), OperandAtom::M68kInd(reg)] if mnemonic == M68kMnemonic::Move && size == M68kSize::W => {
+            [OperandAtom::Imm(_), OperandAtom::M68kInd(reg)] if mnemonic == M68kMnemonic::Move && size == M68kSize::W => {
                 // `move.w #Sym, (An)` — the literal `(a1)` object-spawn dest (mode
                 // 2, no dest ext word). W-only: the L (An) memory dest deliberately
                 // stays loud (R3 scoped move.l deferral to register/abs/disp).
-                let n = m68k_addr_reg(reg)?;
-                (e, M68kOperand::Ind(n))
+                M68kOperand::Ind(m68k_addr_reg(reg)?)
             }
             _ => return None,
         };
-        let qualified = self.qualify_expr(imm_expr);
-        // Unresolved (Poison) exprs ALWAYS defer. A RESOLVED immediate that names
-        // a section LABEL also defers on the deferral pass (`keep_labels_symbolic`):
-        // `move.l #Label` bakes the label's VMA, which a width-grown `JmpJsrSym`
-        // would shift out from under — so carry the label symbolically and let
-        // the linker fill it post-relax. A resolved NON-label immediate takes the
-        // existing eager path (byte-identical), and on every ordinary pass this is
-        // exactly the pre-existing Poison-only rule.
-        let is_poison = matches!(self.fold(&qualified), Fold::Poison);
-        let refs_label = self.keep_labels_symbolic() && self.expr_refs_label(&qualified);
-        if !is_poison && !refs_label {
-            return None;
-        }
-        // A register is not a cross-seam leaf. Falling through to the eager path
-        // would report it there WITH a span; taking this deferral would ship it
-        // to the linker, which answers with a section and an offset and no line.
-        if is_poison && self.report_register_values(&qualified, span) {
-            return None;
-        }
         let inst = M68kInstruction {
             mnemonic,
             size,
