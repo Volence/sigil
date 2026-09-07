@@ -417,7 +417,7 @@ fn the_step_3_derivation_is_proven_from_a_linked_worktree() {
         Err(why) => {
             // The clause's escape, printed rather than silent.
             println!(
-                "NOT MEASURED: could not build the linked-worktree bed, so the step-3 property \
+                "skip: could not build the linked-worktree bed, so the step-3 property \
                  was not exercised in this run, {why}. Everything else in this file still ran; \
                  what is missing is the one assertion that separates `--git-common-dir` from \
                  `--show-toplevel`."
@@ -538,14 +538,18 @@ fn the_step_3_derivation_is_proven_from_a_linked_worktree() {
 /// `env!("CARGO_MANIFEST_DIR")`, in whatever checkout this binary was actually compiled in.
 /// The bed proves the walk; this proves the anchor the walk is deployed behind.
 ///
-/// It can therefore only assert when the ambient run happens to be in a linked worktree,
-/// which is exactly why it is SECONDARY. When it cannot, it prints why — and the printed
-/// line says which of the two checks was skipped, so a reader is not left thinking the
-/// step-3 property went unmeasured when the bed measured it.
+/// The deployed derivation is asserted in EITHER shape: from a plain checkout and from a
+/// linked worktree it must reach the walked suite root. Only the worktree shape exercises
+/// the distinction between the two git answers, which is why this row is SECONDARY and
+/// the bed row is the contract's requirement; the line it prints says which shape this
+/// binary was compiled in, so a reader knows whether the distinction was live here. The
+/// two cases where nothing can be asserted at all (no suite markers above this crate, or
+/// git not answering) are announced with the skip marker, because a check that measured
+/// nothing must say so in the spelling the zero-skip bar counts.
 fn ambient_worktree_check(walked: &Option<PathBuf>) {
     let Some(walked) = walked else {
         println!(
-            "NOT MEASURED (secondary only): no ancestor of this crate holds the suite markers, so \
+            "skip: (secondary only) no ancestor of this crate holds the suite markers, so \
              the deployed anchor has no independent expectation here. The bed above still proved \
              the step-3 walk."
         );
@@ -560,34 +564,40 @@ fn ambient_worktree_check(walked: &Option<PathBuf>) {
         .map(|o| PathBuf::from(String::from_utf8_lossy(&o.stdout).trim().to_string()));
     let Some(top) = toplevel else {
         println!(
-            "NOT MEASURED (secondary only): `git rev-parse --show-toplevel` did not run against \
+            "skip: (secondary only) `git rev-parse --show-toplevel` did not run against \
              this crate's own location. The bed above still proved the step-3 walk."
         );
         return;
     };
-    if top.parent() == Some(walked.as_path()) {
-        println!(
-            "NOT MEASURED (secondary only): this binary was compiled in a plain checkout, where \
-             `--show-toplevel` and `--git-common-dir` agree, so the deployed anchor cannot \
-             exercise the distinction here. The bed above proved it on a bed that can, which is \
-             why that row and not this one is the contract's requirement."
-        );
-        return;
-    }
-    // Compiled inside a linked worktree — the shape every sigil agent runs in. The
-    // deployed derivation must reach the checkout's suite root, not the worktree's parent.
+    // In a plain checkout `--show-toplevel`'s parent IS the suite root, so the two git
+    // answers agree; in a linked worktree (the shape every sigil agent runs in) they do
+    // not, and only `--git-common-dir` reaches the checkout this code belongs to.
+    let plain_checkout = top.parent() == Some(walked.as_path());
     let live = sigil_harness::test_support::derive_suite_root_from(std::path::Path::new(env!(
         "CARGO_MANIFEST_DIR"
     )))
     .expect("the deployed anchor derives a suite root");
     assert_eq!(
         &live, walked,
-        "compiled inside a linked worktree, the deployed anchor derived the wrong suite root. \
-         `--show-toplevel` answers {} there, whose parent is {:?}, only `--git-common-dir` \
-         reaches the checkout this code belongs to.",
+        "the deployed anchor derived the wrong suite root (compiled in a {}). \
+         `--show-toplevel` answers {} there, whose parent is {:?}.",
+        if plain_checkout { "plain checkout" } else { "linked worktree" },
         top.display(),
         top.parent()
     );
+    if plain_checkout {
+        println!(
+            "ambient anchor: compiled in a plain checkout, where `--show-toplevel` and \
+             `--git-common-dir` agree; the deployed derivation reached the walked suite root. \
+             The worktree distinction is the bed row's to prove, and it did."
+        );
+    } else {
+        println!(
+            "ambient anchor: compiled inside a linked worktree; the deployed derivation reached \
+             the checkout's suite root rather than the worktree's parent, so the distinction \
+             was live here as well as on the bed."
+        );
+    }
 }
 
 /// EVERY SHAPE `git rev-parse --git-common-dir` CAN ANSWER, and step 3 must survive all of
@@ -677,7 +687,7 @@ fn step_3_survives_every_shape_git_rev_parse_can_answer() {
     let wt = match built {
         Err(why) => {
             println!(
-                "NOT MEASURED: could not build the shapes bed, so step 3 was exercised against \
+                "skip: could not build the shapes bed, so step 3 was exercised against \
                  none of the four anchors in this run, {why}."
             );
             return;

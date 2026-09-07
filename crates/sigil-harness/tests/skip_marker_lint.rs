@@ -127,10 +127,20 @@ fn collect_rs(dir: &Path, out: &mut Vec<PathBuf>) {
     }
 }
 
-/// The format literal of the first `eprintln!`/`println!` on `line`, when the
-/// macro opens directly on a string literal. Returns `None` for a print whose
-/// first argument is a value — see the residuals in the module doc.
-fn print_literal(line: &str) -> Option<String> {
+/// The format literal of the first `eprintln!`/`println!` whose invocation begins
+/// on the line of `src` starting at byte `line_start`, when the macro's first
+/// argument is a string literal. THE LITERAL IS READ FROM `src`, NOT FROM THE
+/// LINE: rustfmt puts a long literal on the line after `println!(`, and a
+/// literal that does not fit one line continues past a `\` at the line end.
+/// A detector that stopped at the line break saw neither, and five live
+/// announcements in the lint's own forbidden vocabulary were green for exactly
+/// that reason. Returns `None` for a print whose first argument is a value; see
+/// the residuals in the module doc.
+fn print_literal(src: &str, line_start: usize) -> Option<String> {
+    let line_end = src[line_start..]
+        .find('\n')
+        .map_or(src.len(), |n| line_start + n);
+    let line = &src[line_start..line_end];
     for macro_name in ["eprintln!(", "println!("] {
         let mut from = 0usize;
         while let Some(rel) = line[from..].find(macro_name) {
@@ -145,35 +155,51 @@ fn print_literal(line: &str) -> Option<String> {
             if !preceded_ok {
                 continue;
             }
-            let rest = line[at + macro_name.len()..].trim_start();
+            // From the open paren to the end of the FILE: whitespace before the
+            // literal may include any number of line breaks.
+            let rest = src[line_start + at + macro_name.len()..].trim_start();
             if !rest.starts_with('"') {
                 continue;
             }
-            let bytes = rest.as_bytes();
-            let mut i = 1usize;
-            let mut lit = String::new();
-            while i < bytes.len() {
-                match bytes[i] {
-                    b'\\' => {
-                        // Keep the escape verbatim; the marker check only reads
-                        // the prefix, and a literal cannot start with `\`.
-                        lit.push('\\');
-                        if i + 1 < bytes.len() {
-                            lit.push(bytes[i + 1] as char);
-                        }
-                        i += 2;
-                    }
-                    b'"' => return Some(lit),
-                    b => {
-                        lit.push(b as char);
-                        i += 1;
-                    }
-                }
-            }
-            return Some(lit);
+            return Some(read_string_literal(rest));
         }
     }
     None
+}
+
+/// The body of the string literal `rest` opens with (`rest[0] == '"'`), up to
+/// its closing quote. A `\` at a line end is Rust's continuation: the break and
+/// the next line's leading whitespace are dropped, as the compiler drops them,
+/// so the vocabulary check sees the words the program prints. Every other
+/// escape is kept verbatim; the marker check reads only the prefix, and a
+/// literal cannot start with `\`.
+fn read_string_literal(rest: &str) -> String {
+    let bytes = rest.as_bytes();
+    let mut i = 1usize;
+    let mut lit = String::new();
+    while i < bytes.len() {
+        match bytes[i] {
+            b'\\' if matches!(bytes.get(i + 1), Some(b'\n' | b'\r')) => {
+                i += 1;
+                while i < bytes.len() && bytes[i].is_ascii_whitespace() {
+                    i += 1;
+                }
+            }
+            b'\\' => {
+                lit.push('\\');
+                if i + 1 < bytes.len() {
+                    lit.push(bytes[i + 1] as char);
+                }
+                i += 2;
+            }
+            b'"' => return lit,
+            b => {
+                lit.push(b as char);
+                i += 1;
+            }
+        }
+    }
+    lit
 }
 
 /// `return` as a token, not as a substring of `returned`/`_return`.
@@ -216,29 +242,105 @@ fn announcement_sites() -> (Vec<Site>, usize) {
                 path.display()
             );
         };
-        let lines: Vec<&str> = src.lines().collect();
-        for (i, line) in lines.iter().enumerate() {
-            let Some(text) = print_literal(line) else {
-                continue;
-            };
-            let structural = lines
-                .iter()
-                .skip(i)
-                .take(STRUCTURAL_WINDOW)
-                .any(|l| has_return_keyword(l));
-            let lexical = uses_skip_vocabulary(&text);
-            if structural || lexical {
-                sites.push(Site {
-                    file: path.clone(),
-                    line: i + 1,
-                    text,
-                    structural,
-                    lexical,
-                });
-            }
-        }
+        sites.extend(scan_source(&src, path));
     }
     (sites, files.len())
+}
+
+/// Both detectors over ONE source text. Separated from the file walk so the
+/// detector can be run over a fixture string, which is how its own blind spots
+/// are tested below.
+fn scan_source(src: &str, path: &Path) -> Vec<Site> {
+    let lines: Vec<&str> = src.lines().collect();
+    // Byte offset of each line's start, so the detector can read past the line
+    // it was found on. `split_inclusive` keeps every line's true length (a
+    // `\r\n` file would otherwise drift one byte per line).
+    let mut starts = Vec::with_capacity(lines.len());
+    let mut at = 0usize;
+    for l in src.split_inclusive('\n') {
+        starts.push(at);
+        at += l.len();
+    }
+    let mut sites = Vec::new();
+    for (i, start) in starts.iter().enumerate() {
+        let Some(text) = print_literal(src, *start) else {
+            continue;
+        };
+        let structural = lines
+            .iter()
+            .skip(i)
+            .take(STRUCTURAL_WINDOW)
+            .any(|l| has_return_keyword(l));
+        let lexical = uses_skip_vocabulary(&text);
+        if structural || lexical {
+            sites.push(Site {
+                file: path.to_path_buf(),
+                line: i + 1,
+                text,
+                structural,
+                lexical,
+            });
+        }
+    }
+    sites
+}
+
+// ---- the detector's own poison ---------------------------------------------
+//
+// Each fixture below is a shape the corpus contains, or contained when it slipped
+// through. The vocabulary words in them are the lint's OWN forbidden words, which
+// is the point: a fixture the detector cannot read is a hole every real site can
+// use. This file is excluded from the walk (see `scanned_files`), so quoting them
+// here does not count them.
+
+/// rustfmt's wrapping: the literal starts on the line AFTER `println!(`. A
+/// line-bound detector returned `None` here and the site was never a site.
+#[test]
+fn a_literal_that_starts_on_the_next_line_is_read() {
+    let src = "fn f() {\n    println!(\n        \"NOT MEASURED: could not build the bed\"\n    );\n    return;\n}\n";
+    let sites = scan_source(src, Path::new("fixture.rs"));
+    assert_eq!(sites.len(), 1, "one announcement expected, got {}", sites.len());
+    assert_eq!(sites[0].line, 2, "the site is reported at the macro's line");
+    assert_eq!(sites[0].text, "NOT MEASURED: could not build the bed");
+    assert!(sites[0].lexical, "`not measured` is skip vocabulary");
+    assert!(sites[0].structural, "the `return` is inside the structural window");
+    assert!(!sites[0].text.starts_with(SKIP_MARKER), "this fixture is a violator by construction");
+}
+
+/// A literal continued past a `\` at the line end: the compiler drops the break
+/// and the next line's indentation, and so must the detector, or the words
+/// either side of the break are never seen together.
+#[test]
+fn a_continued_literal_is_read_whole() {
+    let src = "eprintln!(\n    \"NOT \\\n     MEASURED (secondary only): no ancestor\"\n);\n";
+    let sites = scan_source(src, Path::new("fixture.rs"));
+    assert_eq!(sites.len(), 1, "{:?}", sites.iter().map(|s| &s.text).collect::<Vec<_>>());
+    assert_eq!(sites[0].text, "NOT MEASURED (secondary only): no ancestor");
+    assert!(sites[0].lexical);
+}
+
+/// The compliant shapes stay compliant: a wrapped literal that carries the
+/// marker is a site (it is counted in the census) and it passes the prefix test.
+#[test]
+fn a_wrapped_literal_carrying_the_marker_is_a_compliant_site() {
+    let src = format!(
+        "    eprintln!(\n        \"{SKIP_MARKER}reference ROM not at {{}} (set AEON_DIR)\",\n        p.display()\n    );\n    return None;\n"
+    );
+    let sites = scan_source(&src, Path::new("fixture.rs"));
+    assert_eq!(sites.len(), 1);
+    assert!(sites[0].text.starts_with(SKIP_MARKER), "{:?}", sites[0].text);
+}
+
+/// The single-line shape the detector always read, and the value-argument shape
+/// it cannot read (a documented residual), so the widening changed neither.
+#[test]
+fn single_line_and_value_argument_shapes_are_unchanged() {
+    let src = "eprintln!(\"skip: gate x, no tree\");\nreturn;\n";
+    assert_eq!(print_literal(src, 0).as_deref(), Some("skip: gate x, no tree"));
+    let src = "eprintln!(\"{}\", msg);\nreturn;\n";
+    assert_eq!(print_literal(src, 0).as_deref(), Some("{}"));
+    let src = "eprintln!(msg);\nreturn;\n";
+    assert_eq!(print_literal(src, 0), None, "a value argument is not a literal");
 }
 
 /// THE GATE. Every announced early return in the test tree carries the one

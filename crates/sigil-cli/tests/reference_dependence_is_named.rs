@@ -98,8 +98,10 @@ fn the_suite_names_the_measurement_it_did_not_take() {
     // every lane that runs it bare, which is the owner's open half of `d-17` and not this
     // gate's to take.
     println!("{banner}");
+    // Spelled with the marker the zero-skip bar counts: this line is ABOUT every row that
+    // measured nothing in this run, and the bar's grep must see it as one of them.
     println!(
-        "This run is NOT a landing. Set SIGIL_STRICT_GATE=1 (as scripts/landing-run.sh does) \
-         to turn these skips into named failures."
+        "skip: this run is NOT a landing. Set SIGIL_STRICT_GATE=1 (as scripts/landing-run.sh \
+         does) to turn these skips into named failures."
     );
 }
