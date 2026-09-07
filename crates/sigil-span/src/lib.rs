@@ -1,6 +1,7 @@
 //! Source identifiers, byte-range spans, source maps, and diagnostics.
 
 use std::fmt;
+use std::sync::OnceLock;
 
 /// Opaque identifier for a source file stored in a [`SourceMap`].
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
@@ -39,12 +40,16 @@ impl Span {
 pub struct SourceMap {
     texts: Vec<String>,
     names: Vec<String>,
+    /// Per source, the byte offset of every line start, filled on the first
+    /// [`SourceMap::location`] call against that source. A source that never
+    /// locates a span never pays for its index.
+    line_starts: Vec<OnceLock<Vec<u32>>>,
 }
 
 impl SourceMap {
     /// Create an empty source map.
     pub fn new() -> Self {
-        SourceMap { texts: Vec::new(), names: Vec::new() }
+        SourceMap { texts: Vec::new(), names: Vec::new(), line_starts: Vec::new() }
     }
 
     /// Add an unnamed source text and return its [`SourceId`].
@@ -58,6 +63,7 @@ impl SourceMap {
         let id = SourceId(self.texts.len() as u32);
         self.texts.push(text);
         self.names.push(name);
+        self.line_starts.push(OnceLock::new());
         id
     }
 
@@ -96,22 +102,39 @@ impl SourceMap {
     }
 
     /// Return the 1-based `(line, column)` of `span.start` within its source.
+    ///
+    /// Columns count CHARACTERS, not bytes: a multi-byte UTF-8 character before
+    /// `span.start` on the same line advances the column by one. An offset
+    /// inside a multi-byte character counts that character, and an offset past
+    /// the end of the text locates as the end of the text.
+    ///
+    /// Line lookup is a binary search over the source's line-start index, so
+    /// the cost of one call does not grow with the offset; the index itself is
+    /// built once per source, on its first call.
     pub fn location(&self, span: Span) -> (u32, u32) {
         let text = self.text(span.source);
-        let mut line = 1u32;
-        let mut col = 1u32;
-        for (i, ch) in text.char_indices() {
-            if i as u32 >= span.start {
-                break;
-            }
-            if ch == '\n' {
-                line += 1;
-                col = 1;
-            } else {
-                col += 1;
-            }
-        }
-        (line, col)
+        let starts = self.line_starts(span.source);
+        let start = (span.start as usize).min(text.len());
+        // Every line whose first byte is at or before `start`; the last of them
+        // holds it. `starts[0]` is 0, so at least one qualifies.
+        let line = starts.partition_point(|&s| s as usize <= start);
+        let line_start = starts[line - 1] as usize;
+        // A byte begins a character unless it is a UTF-8 continuation byte.
+        let chars = text.as_bytes()[line_start..start].iter().filter(|&&b| b & 0xC0 != 0x80).count();
+        (line as u32, chars as u32 + 1)
+    }
+
+    /// The byte offset of every line start in a source, in ascending order,
+    /// beginning with 0. Built on first use and kept for the map's lifetime.
+    fn line_starts(&self, id: SourceId) -> &[u32] {
+        self.line_starts[id.0 as usize].get_or_init(|| {
+            let text = &self.texts[id.0 as usize];
+            let mut starts = vec![0u32];
+            starts.extend(
+                text.bytes().enumerate().filter(|&(_, b)| b == b'\n').map(|(i, _)| i as u32 + 1),
+            );
+            starts
+        })
     }
 }
 
@@ -178,6 +201,74 @@ mod tests {
         assert_eq!(map.location(Span { source: id, start: 4, end: 6 }), (2, 1));
         // byte 7 ('a' operand) => line 2, col 4
         assert_eq!(map.location(Span { source: id, start: 7, end: 8 }), (2, 4));
+    }
+
+    /// Columns count characters. The expected pairs are the character walk's
+    /// answers, so any indexed lookup must reproduce them byte for byte,
+    /// including an offset inside a multi-byte character and one past the end.
+    #[test]
+    fn location_columns_count_characters_not_bytes() {
+        // Byte layout: 0 'a' 1 'b' 2 '\n' 3..5 'é' 5..8 '中' 8 'x' 9..13 '😀' 13 'y' 14 '\n' 15 'z'
+        let utf = "ab\n\u{e9}\u{4e2d}x\u{1F600}y\nz";
+        assert_eq!(utf.len(), 16);
+        let mut map = SourceMap::new();
+        let id = map.add(utf.to_string());
+        let expected: [(u32, u32); 19] = [
+            (1, 1), (1, 2), (1, 3),
+            (2, 1), (2, 2), (2, 2), (2, 3), (2, 3), (2, 3), (2, 4), (2, 5), (2, 5), (2, 5), (2, 5), (2, 6),
+            (3, 1),
+            // Past the end: the end of the text.
+            (3, 2), (3, 2), (3, 2),
+        ];
+        for (start, want) in expected.iter().enumerate() {
+            let start = start as u32;
+            assert_eq!(map.location(Span { source: id, start, end: start }), *want, "start {start}");
+        }
+        let empty = map.add(String::new());
+        assert_eq!(map.location(Span { source: empty, start: 0, end: 0 }), (1, 1));
+        assert_eq!(map.location(Span { source: empty, start: 5, end: 5 }), (1, 1));
+        // A trailing newline opens an empty final line.
+        let nl = map.add("x\n".to_string());
+        assert_eq!(map.location(Span { source: nl, start: 2, end: 2 }), (2, 1));
+        assert_eq!(map.location(Span { source: nl, start: 3, end: 3 }), (2, 1));
+    }
+
+    /// Locating a span at the bottom of a large source costs the same as one at
+    /// the top, within noise. A walk from byte 0 fails this by three orders of
+    /// magnitude in either build profile (measured 773 us per bottom lookup in
+    /// release; the top lookup is a few nanoseconds).
+    #[test]
+    fn location_at_the_bottom_costs_no_more_than_at_the_top() {
+        use std::time::Instant;
+        let line = "\tmove.w\t#$1234,(a0)+\t; a comment of typical width\n";
+        let mut text = String::new();
+        while text.len() < 1_600_000 {
+            text.push_str(line);
+        }
+        let len = text.len() as u32;
+        let lines = text.matches('\n').count() as u32;
+        let mut map = SourceMap::new();
+        let id = map.add(text);
+        let n = 5229;
+        // The first call pays for the index; every timed call below is a lookup.
+        assert_eq!(map.location(Span { source: id, start: len - 1, end: len }), (lines, line.len() as u32));
+
+        let time = |start: u32| {
+            let t0 = Instant::now();
+            for _ in 0..n {
+                std::hint::black_box(map.location(Span { source: id, start, end: start + 1 }));
+            }
+            t0.elapsed()
+        };
+        let top = time(0);
+        let bottom = time(len - 1);
+        assert!(
+            bottom < std::time::Duration::from_secs(2),
+            "{n} bottom lookups took {bottom:?}; the lookup is walking the file"
+        );
+        // Both sides run under the same load, so the ratio is load-independent.
+        let ratio = bottom.as_secs_f64() / top.as_secs_f64().max(1e-9);
+        assert!(ratio < 1000.0, "bottom {bottom:?} is {ratio:.0}x the top {top:?}; the lookup is walking the file");
     }
 
     #[test]
