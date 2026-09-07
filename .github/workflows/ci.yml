@@ -72,7 +72,11 @@ jobs:
           # aggregate through `head` returning 0 while tests were red) has already
           # cost one bad merge.
           set -o pipefail
-          cargo test --workspace -- --nocapture 2>&1 | tee test-output.txt
+          # --no-fail-fast: every test binary runs, so a red run names EVERY red
+          # binary instead of the first one cargo reached. The exit status is
+          # still non-zero when any binary failed. Without it, one red binary
+          # early in the crate order hid a second, independent red for days.
+          cargo test --workspace --no-fail-fast -- --nocapture 2>&1 | tee test-output.txt
 
       - name: report reference-dependent skips
         if: always()
