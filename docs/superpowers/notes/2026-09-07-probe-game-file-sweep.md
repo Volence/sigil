@@ -296,3 +296,44 @@ from their source, and that it must not grow.
 
 (sections below filled in as each group's verification lands)
 
+
+---
+
+## SUITE TOTALS, AND TWO DEFECTS IN MY OWN FIRST RUN
+
+**Final run** — `AEON_DIR=/home/volence/sonic_hacks/.aeon-ls12-fix SIGIL_STRICT_GATE=1 cargo test
+--workspace --no-fail-fast`, at a quiet tree, HEAD `ac8b3a67`, branch `parcel/probe-game-file-sweep`:
+
+    429 test binaries · 4850 passed · 1 failed · 2 ignored · 0 skip lines under SIGIL_STRICT_GATE=1
+
+The one failure is `version_provenance::the_published_line_states_this_revision_s_position_against_a_named_remote_ref`,
+and it is **not this parcel's**. It compares the `origin/master` tip the banner recorded at BUILD
+time against what git resolves at RUN time, and another lane was pushing throughout:
+
+| observation | banner's origin/master | git's origin/master |
+|---|---|---|
+| first run | `44f043e6` | `00be2edb` |
+| second run | `9af282ae` | `44f043e6` |
+| at report time | — | `edff4932` (committed 19:14:51) |
+
+Falsifier run: `cargo test -p sigil-cli --test version_provenance` alone, same tree, no code change
+— **19 passed, 0 failed**. A test that passes on the identical tree once the shared ref settles is
+tracking the ref, not the code. Worth a row of its own: on a checkout whose `origin/master` moves
+during a long run, this gate reds on somebody else's push.
+
+**My first run had two defects, and both are process rather than code.**
+
+1. **I committed twice while the suite was running.** That moved HEAD out from under a binary built
+   at the older revision, and `version_provenance` red four tests. Its own message named the
+   distinguishing experiment — *"Either build.rs did not re-run when HEAD moved …, or HEAD moved
+   while the suite was running (re-run to distinguish)"* — and re-running at a quiet tree cleared
+   three of the four. Invariant: commit before a long run or after it, never during.
+2. **The first run had no `--no-fail-fast`, so it TRUNCATED at the first failing binary — 74 of 429.**
+   A truncated run's aggregate reads clean for everything it never reached. The count measured how
+   far cargo got, not how much passed.
+
+Also worth stating: I spent a stretch of this parcel "waiting" with `sleep` calls issued as
+BACKGROUND commands and then polling in the foreground immediately after, so the waits never
+happened and the polls were seconds apart. The tell was mundane — the log's mtime was 18 seconds
+old when I believed an hour had passed. A wait you did not actually perform looks exactly like a
+wait you did.
