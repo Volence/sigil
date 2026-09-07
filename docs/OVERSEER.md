@@ -777,12 +777,31 @@ So before answering any request to hand a peer a routed finding, resolve the row
 path first, and **say plainly when it does not resolve** rather than reconstructing it.
 
 **COMMITMENT MADE TO AEON 2026-09-06, banked because it would otherwise live only in mail.** They
-have booked `S4BUDGET-STALE-ASSUMPTION` on their side **as a refusal rather than an omission**, with
-the re-entry condition that it returns only by being re-derived from their own tree. This lane owes
-the other half: **if the row is grounded from this tree, send them the path; if it is concluded to
-have never had a source, send them that too and retire it.** Stated as an obligation because a
-refusal booked on both sides sits forever by default, each side assuming the other holds it. Their
+booked `S4BUDGET-STALE-ASSUMPTION` on their side **as a refusal rather than an omission**, with the
+re-entry condition that it returns only by being re-derived from their own tree. This lane owed the
+other half: ground it and send the path, or conclude it never had a source and retire it. Their
 booking is aeon `ab5dfc68`.
+
+**DISCHARGED 2026-09-07: the row IS grounded, and the 2026-09-06 attempt failed because it searched
+THE WRONG TREE.** The row is a finding about aeon's tool, so no artifact for it was ever going to
+exist here; the grep was working and its subject was one repo over. **A failing lookup tells you
+about the tree you ran it in, never about the object** — protocol bar 16(d), and the instance is
+this lane concluding a row had "drifted from its source" on the strength of a search that could not
+have found it. The artifacts: this lane's own `docs/OVERSEER-LOG.md` entry carrying the quoted
+string, and aeon `tools/s4budget.py` — the premise appears TWICE, in `load_vram_layout`'s docstring
+and in the user-facing message *"VRAM: UNMEASURED - a sigil listing emits no constants"*.
+
+**What is actually true, measured here on `.aeon-ls12-fix`'s built listings and NOT taken from the
+row:** `s4.lst` carries **780 `EQU` rows**, of which **32 are `VRAM_*`**, in the parseable form
+`EQU VRAM_PLANE_A = $0000C000` — 19 address-shaped, 12 `_TILES`, 1 `_BYTES`, identical in the plain
+and debug shapes. Their docstring names `VRAM_PLANE_A` as a symbol the old approach scraped and says
+it "has no input at all"; it is present. **The row's own figure of 17 is NOT restated here**, because
+a refuted mechanism does not leave its arithmetic standing and the measurement is 32 by enumeration.
+**And their CONCLUSION survives:** reading `vram.toml` is right for a reason they state and the
+symbols cannot supply — occupancy is the UNION of tile ranges and `overlay_with` lives only in the
+toml. So this is a right conclusion resting on a refuted premise, and only the premise is the
+defect; it is the user-facing half that misleads, since it tells an author to add constants that
+already exist.
 
 ## A NAME-STRING ENUMERATION CANNOT TELL A CONSUMER FROM A FIXTURE (2026-09-06)
 
