@@ -4242,11 +4242,13 @@ promote it from derived to observed.
   (`.emp` has no `org`). The same defect is also its O(L x F) cost on that path. Falsifier named in
   the packet: clone `relax.rs:3218` with a high stub so the jmp grows, assert `Tail`; it must
   return 5 where 7 is correct.
+  -- **CLOSED 2026-09-06** at merge `2b0b2b6b` (`parcel/shift-offset-org`): the shift lookup is fenced to runs that CONTAIN the offset, `frag_start_vma` replays from the rungs, and the parcel found a second defect in the same family (`sig-frag-start-vma`, also fixed there). Four aeon shapes byte-identical; gate re-run green 2026-09-07 (4715/0/2).
 - `LENS-BTST-PCREL` - both front-ends pass a hardcoded extension offset of 2 to
   `lower_pcrel_ea`; `encode_bit` emits the bit-number word first, so `btst #n,Sym(pc)` patches the
   wrong word. Found independently by CGa and B1. The blessed sentinel-probe technique is two
   functions away and already used at two of four offset sites. asl witness in-tree at
   `capstone_diff.rs:709` (`083A 0001 0002`).
+  -- **CLOSED 2026-09-06** at merge `56382256` (`parcel/btst-pcrel-offset`): both front-ends no longer pass an offset; `lower_pcrel_ea` derives it by sentinel probe. Four aeon shapes byte-identical; gate re-run green 2026-09-07.
 - `LENS-EMP-ALIGN-FILL` - `.emp` `align` still emits `Fill` and rounds up unsigned where the AS
   side moved to `reserve` + `asl_align_pad` at `84c48a7b`. **Do not land alone**: the DAC
   intra-bank recompute matches only `Fill`, so fixing this without `recompute_bank_aligns` moves
@@ -4264,6 +4266,7 @@ promote it from derived to observed.
 - `LENS-FLATTEN-LMA-ALLOC` - `flatten` sizes its buffer from a placed ADDRESS, so one stray byte in
   a RAM-phased section aborts uncatchably. `validate_section` already says the right thing and is
   not on the CLI path.
+  -- **CLOSED 2026-09-07** at merge `a7165e56` (`parcel/link-flatten-size`, note `2026-09-07-link-flatten-size.md`): image extent derived from emitting sections against a named memory map in `crates/sigil-ir/src/map.rs`; both no-map CLI routes check bounds before `flatten`; refusals name section, region and overshoot; gate `crates/sigil-cli/tests/image_bounds.rs` red on the pre-fix linker. Landing gate 413 suites, 4729/0/2.
 - `LENS-DCW-DCL-TRUNCATE` - `dc.w`/`dc.l` truncate an out-of-range fold where `dc.b` refuses.
 
 **Gates that cannot fail (byte-neutral; may land immediately once ruled):**
