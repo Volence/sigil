@@ -12,7 +12,7 @@
 # assembled_end=0xc14f4
 # labels=86
 Ani_Particle 0x2bcc8
-Ani_Particle_End 0x2bcd0
+Ani_Particle_End 0x2bccf
 Ani_Sonic 0x2b896
 Ani_Sonic_End 0x2b9a0
 Ani_Tails 0x2b9a0

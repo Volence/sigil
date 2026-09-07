@@ -223,7 +223,7 @@ pub const SONIC_ANIMS: Region = Region { plain_base: 0x2AE74, debug_base: 0x2B89
 pub const TAILS_ANIMS: Region = Region { plain_base: 0x2AF7E, debug_base: 0x2B9A0, plain_len: 0x1BC, debug_len: 0x1BC };
 
 /// `Ani_Knuckles` .. `section:knuckles_anims`, gate `SIGIL_EMP_KNUCKLES_ANIMS`. tests: sonic_anims_port
-pub const KNUCKLES_ANIMS: Region = Region { plain_base: 0x2B13A, debug_base: 0x2BB5C, plain_len: 0x16C, debug_len: 0x16C };
+pub const KNUCKLES_ANIMS: Region = Region { plain_base: 0x2B13A, debug_base: 0x2BB5C, plain_len: 0x16B, debug_len: 0x16B };
 
 /// `Map_Tails` .. `section:tails_data`, gate `SIGIL_EMP_TAILS_DATA`. tests: collision_data_port
 pub const TAILS_DATA: Region = Region { plain_base: 0x2B2BA, debug_base: 0x2BCE4, plain_len: 0x20F5E, debug_len: 0x20F5E };
@@ -232,7 +232,7 @@ pub const TAILS_DATA: Region = Region { plain_base: 0x2B2BA, debug_base: 0x2BCE4
 pub const KNUCKLES_DATA: Region = Region { plain_base: 0x4C218, debug_base: 0x4CC42, plain_len: 0x226C8, debug_len: 0x226C8 };
 
 /// `Ani_Particle` .. `section:particle_anims` (debug-only region; plain empty at `Ani_DustSpindash`), gate `SIGIL_EMP_PARTICLE_ANIMS`. tests: particle_anims_port, test_objects_port
-pub const PARTICLE_ANIMS: Region = Region { plain_base: 0x2B2A6, debug_base: 0x2BCC8, plain_len: 0x0, debug_len: 0x8 };
+pub const PARTICLE_ANIMS: Region = Region { plain_base: 0x2B2A6, debug_base: 0x2BCC8, plain_len: 0x0, debug_len: 0x7 };
 
 /// `Ani_DustSpindash` .. `section:dust_anims`, gate `SIGIL_EMP_DUST_ANIMS`.
 pub const DUST_ANIMS: Region = Region { plain_base: 0x2B2A6, debug_base: 0x2BCD0, plain_len: 0x14, debug_len: 0x14 };
