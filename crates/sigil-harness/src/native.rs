@@ -42,21 +42,6 @@ use sigil_ir::{Cpu, Fragment, Module, Section, SectionPlacement, SymbolTable};
 
 use crate::{seam1, seam2};
 
-/// Format EVERY build error, one per line, instead of only the first.
-///
-/// A `build_program` failure is usually a small cluster of related diagnostics (a
-/// struct-literal type mismatch reports both the offending field and the item that
-/// failed to emit), and reporting only `first` hides whichever one names the actual
-/// mistake. Byte spans rather than `file:line` because `build_program_open_embed`
-/// does not hand back the `SourceMap` needed to resolve them — locating the span is
-/// `head -c <end> <file> | tail -c <end-start>`.
-fn fmt_diag_list(errs: &[&sigil_span::Diagnostic]) -> String {
-    errs.iter()
-        .map(|d| format!("  [{:?}] {} @ {:?}", d.level, d.message, d.primary))
-        .collect::<Vec<_>>()
-        .join("\n")
-}
-
 // ── Flip Stage 2 · S1.2 — THE GAME PROFILE (the off-canonical driver parameters) ──
 //
 // The Stage-1 native driver is sonic4-shaped throughout (registry, defines, keystones,
@@ -1154,20 +1139,34 @@ fn publicize_helper_comptime(manifest: &mut resolve::manifest::Manifest, helpers
 /// behave differently the second time than the first. Each emitter re-checks the
 /// same precondition, so the `emit_sound_blob` binary and direct callers get the
 /// refusal too.
-pub fn ensure_generated(aeon: &Path) {
+///
+/// A failure is the build's `Err`, never a panic: an emitter's guard firing (a
+/// `.emp` `ensure(extern(..))` co-residency or drift guard) is a diagnostic about
+/// the source, and it reaches the reader as one, on the same channel and with the
+/// same exit status (1) every other build error uses. A panic would exit 101,
+/// which is a crash to any lane reading the status.
+pub fn emit_generated(aeon: &Path) -> Result<(), String> {
     seam2::require_reference_tree(aeon)
-        .unwrap_or_else(|e| panic!("ensure_generated writes into the reference tree: {e}"));
+        .map_err(|e| format!("ensure_generated writes into the reference tree: {e}"))?;
     let gen = aeon.join("engine/sound/generated");
-    seam1::emit_sound_blob(aeon, &gen).unwrap_or_else(|e| panic!("emit_sound_blob (blob): {e}"));
-    seam2::emit_dac_artifacts(aeon, &gen).unwrap_or_else(|e| panic!("emit_dac_artifacts: {e}"));
-    seam2::emit_mt_artifacts(aeon, &gen).unwrap_or_else(|e| panic!("emit_mt_artifacts: {e}"));
-    seam2::emit_sfx_artifacts(aeon, &gen).unwrap_or_else(|e| panic!("emit_sfx_artifacts: {e}"));
+    seam1::emit_sound_blob(aeon, &gen).map_err(|e| format!("emit_sound_blob (blob): {e}"))?;
+    seam2::emit_dac_artifacts(aeon, &gen).map_err(|e| format!("emit_dac_artifacts: {e}"))?;
+    seam2::emit_mt_artifacts(aeon, &gen).map_err(|e| format!("emit_mt_artifacts: {e}"))?;
+    seam2::emit_sfx_artifacts(aeon, &gen).map_err(|e| format!("emit_sfx_artifacts: {e}"))?;
     seam2::emit_seq_opcode_artifacts(aeon, &gen)
-        .unwrap_or_else(|e| panic!("emit_seq_opcode_artifacts: {e}"));
+        .map_err(|e| format!("emit_seq_opcode_artifacts: {e}"))?;
     seam2::emit_sound_tables_artifacts(aeon, &gen)
-        .unwrap_or_else(|e| panic!("emit_sound_tables_artifacts: {e}"));
+        .map_err(|e| format!("emit_sound_tables_artifacts: {e}"))?;
     seam2::emit_pitchtable_artifacts(aeon, &gen)
-        .unwrap_or_else(|e| panic!("emit_pitchtable_artifacts: {e}"));
+        .map_err(|e| format!("emit_pitchtable_artifacts: {e}"))?;
+    Ok(())
+}
+
+/// [`emit_generated`] for a TEST that wants a failure to be its own failure: the
+/// gates run it as a precondition step, where a panic is the right outcome. The
+/// build drivers call [`emit_generated`] directly and report its `Err`.
+pub fn ensure_generated(aeon: &Path) {
+    emit_generated(aeon).unwrap_or_else(|e| panic!("{e}"));
 }
 
 /// The AS-side residual for `profile`: `main.asm` with the profile's sound state,
@@ -1980,10 +1979,16 @@ pub fn build_emp(aeon: &Path, profile: &GameProfile) -> Result<EmpProgram, Strin
         resolve::build_program_open_embed(&manifest, &entry_id, None, &opts, &embed_base_for);
     let berr: Vec<_> = bdiags.iter().filter(|d| d.level == sigil_span::Level::Error).collect();
     if !berr.is_empty() {
+        // Every error, one per line, located through the manifest's own index: a
+        // `build_program` failure is usually a small cluster of related diagnostics
+        // (a struct-literal type mismatch reports both the offending field and the
+        // item that failed to emit), and reporting only the first hides whichever
+        // one names the actual mistake.
+        let index = resolve::manifest::SourceIndex::new(&manifest);
         return Err(format!(
             "build_program: {} error(s);\n{}",
             berr.len(),
-            fmt_diag_list(&berr)
+            crate::diag_render::render_diag_lines(&berr, &|span| index.locate(span))
         ));
     }
 
@@ -2093,6 +2098,29 @@ const DEMO_INAPPLICABLE_GUARDS: &[(&str, &str)] = &[];
 /// its own set ([`GameProfile::inapplicable_guards`]; demo/Config each home a different
 /// twin subset). `inapplicable` are the "not defined in this link" diagnostics;
 /// `link_asserts` supplies each guard's own message (its `.emp` site) via span match.
+/// The declared-chain verdict over `check_link_asserts`' output. A guard that
+/// folded and failed is REAL drift: every such guard is rendered at its own line
+/// through the build's one renderer, and the build fails with all of them. A
+/// guard whose `extern()` names a symbol this link does not define is
+/// INAPPLICABLE (a gated-off twin) and is handed back for the allowlist check.
+pub fn declared_chain_drift_verdict<'a>(
+    adiags: &'a [sigil_span::Diagnostic],
+    locate: &dyn Fn(sigil_span::Span) -> Option<String>,
+) -> Result<Vec<&'a sigil_span::Diagnostic>, String> {
+    let (inapplicable, real): (Vec<_>, Vec<_>) = adiags
+        .iter()
+        .filter(|d| d.level == sigil_span::Level::Error)
+        .partition(|d| d.message.contains("not defined in this link"));
+    if !real.is_empty() {
+        return Err(format!(
+            "declared-chain drift guard FIRED: {} error(s):\n{}",
+            real.len(),
+            crate::diag_render::render_diag_lines(&real, locate)
+        ));
+    }
+    Ok(inapplicable)
+}
+
 fn enforce_inapplicable_allowlist_against(
     inapplicable: &[&sigil_span::Diagnostic],
     link_asserts: &[sigil_ir::LinkAssert],
@@ -3609,7 +3637,7 @@ pub fn build_rom_chained_with_listing(
     profile: &GameProfile,
 ) -> Result<RomBuild, String> {
     if profile.sound_on {
-        ensure_generated(aeon);
+        emit_generated(aeon)?;
     }
     let as_side = assemble_as_side(aeon, profile)?;
     let EmpProgram { sections: emp_sections, link_asserts, mut warnings, sources } =
@@ -3666,8 +3694,16 @@ pub fn build_rom_chained_with_listing(
     let all = apply_declared_chain(sections, &true_bases, &spans);
 
     let stubs = SymbolTable::new();
+    let render_all = |what: &str, d: Vec<sigil_span::Diagnostic>| {
+        let all: Vec<&sigil_span::Diagnostic> = d.iter().collect();
+        format!(
+            "declared-chain: {what}: {} diag(s):\n{}",
+            d.len(),
+            crate::diag_render::render_diag_lines(&all, &|span| sources.locate(span))
+        )
+    };
     let resolved = sigil_link::resolve_layout(&all, &stubs, true)
-        .map_err(|d| format!("declared-chain: resolve_layout: {} diag(s); first {:?}", d.len(), d.first()))?;
+        .map_err(|d| render_all("resolve_layout", d))?;
     // Same drift partition as the pinned driver: real Value(0) drift is a hard fail;
     // gated-off-twin (unresolvable-extern) guards are inapplicable here.
     let adiags = sigil_link::check_link_asserts(&resolved, &stubs, &link_asserts);
@@ -3675,18 +3711,7 @@ pub fn build_rom_chained_with_listing(
     // is `Level::Warning` and fails at LINK time, so the warn tier is only complete
     // once these join it.
     warnings.extend(collect_warnings(&sources, &[&adiags], None));
-    let (inapplicable, real): (Vec<_>, Vec<_>) = adiags
-        .iter()
-        .filter(|d| d.level == sigil_span::Level::Error)
-        .partition(|d| d.message.contains("not defined in this link"));
-    if !real.is_empty() {
-        if std::env::var("NATIVE_DEBUG").is_ok() {
-            for d in &real {
-                eprintln!("REAL DRIFT: {}", d.message);
-            }
-        }
-        return Err(format!("declared-chain drift guard FIRED: {} error(s); first {:?}", real.len(), real.first()));
-    }
+    let inapplicable = declared_chain_drift_verdict(&adiags, &|span| sources.locate(span))?;
     enforce_inapplicable_allowlist_against(&inapplicable, &link_asserts, &profile.inapplicable_guards)?;
 
     // Sigil-canonical listing from the resolved image: one `C` row per label VMA
@@ -3713,8 +3738,7 @@ pub fn build_rom_chained_with_listing(
         listing
     };
 
-    let linked = sigil_link::link(&resolved, &stubs)
-        .map_err(|d| format!("declared-chain: link: {} diag(s); first {:?}", d.len(), d.first()))?;
+    let linked = sigil_link::link(&resolved, &stubs).map_err(|d| render_all("link", d))?;
     // Parcel K5: the map DROVE the order above; this post-resolve pass CONFIRMS the drive —
     // every byte-emitting section is declared (completeness) and the resolved layout honours
     // the declared sequence + island anchors + hole (a bug in the drive, or a section the map
@@ -3773,7 +3797,7 @@ fn placement_map(aeon: &Path, profile: &GameProfile) -> Result<crate::map_placem
 /// size-table derivation: both read `section.lma + label.offset` off these sections.
 fn resolve_frozen_sections(aeon: &Path, profile: &GameProfile) -> Result<Vec<Section>, String> {
     if profile.sound_on {
-        ensure_generated(aeon);
+        emit_generated(aeon)?;
     }
     // Warnings are the BUILD's to print; this resolve is a placement helper and
     // renders nothing, so `as_side.warnings` is dropped here on purpose — the
