@@ -414,7 +414,10 @@ below requires zero `skip:` lines and this is not a missing reference.
   `SIGIL_STRICT_GATE=1 AEON_DIR=<clean> cargo test --release --workspace --no-fail-fast -- --nocapture`,
   with `AEON_DIR` a tree matching the provenance tip (derive it — see the warning above) —
   **3990 passed / 0 failed / 4 ignored** (3994 declared), **zero `skip:` lines**, exit 0,
-  clippy `-D warnings` exit 0.
+  clippy `-D warnings` exit 0. The wrapper ENFORCES the zero: a `skip:` or `skipping` line
+  inside its test span is `RESULT FAILED`, exit 1, in the same condition as a red test and
+  a red lint bar (`crates/sigil-harness/tests/landing_verdict.rs` holds it there by running
+  the script over fixture logs through `--verdict-only`).
   **The env vars belong INSIDE the command span, and this paragraph had them outside it
   until 2026-08-27.** That is not formatting: a reader copies the backticked command and
   gets the prose-stated requirement only if they read two lines further. It is the exact
