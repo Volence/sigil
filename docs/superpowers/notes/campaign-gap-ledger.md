@@ -4261,13 +4261,16 @@ promote it from derived to observed.
 
 - `LENS-UNTERMINATED-BLOCK` - a missing `endif`/`endm` makes `find_block_end` treat the file's last
   line as the closer, deleting source bytes at exit 0. Reproduced against a real binary.
+  -- **CLOSED 2026-09-07** at merge `81f05a29` (`parcel/as-silent-acceptance`, note `2026-09-07-as-silent-acceptance.md`): an open block is refused at its opening line naming the expected closer; red-first with the lost bytes quoted.
 - `LENS-MACRO-BREADTH` / `LENS-REPT-BUDGET` - depth is capped, breadth is not; `rept` has no
   iteration budget. The same file already argues the global-budget case for nested `while`.
+  -- **CLOSED 2026-09-07** at merge `81f05a29` (same parcel): per-pass budgets `GLOBAL_REPT_CAP` and `GLOBAL_MACRO_CAP`, sized by a corpus census; asl itself hangs on the macro case.
 - `LENS-FLATTEN-LMA-ALLOC` - `flatten` sizes its buffer from a placed ADDRESS, so one stray byte in
   a RAM-phased section aborts uncatchably. `validate_section` already says the right thing and is
   not on the CLI path.
   -- **CLOSED 2026-09-07** at merge `a7165e56` (`parcel/link-flatten-size`, note `2026-09-07-link-flatten-size.md`): image extent derived from emitting sections against a named memory map in `crates/sigil-ir/src/map.rs`; both no-map CLI routes check bounds before `flatten`; refusals name section, region and overshoot; gate `crates/sigil-cli/tests/image_bounds.rs` red on the pre-fix linker. Landing gate 413 suites, 4729/0/2.
 - `LENS-DCW-DCL-TRUNCATE` - `dc.w`/`dc.l` truncate an out-of-range fold where `dc.b` refuses.
+  -- **CLOSED 2026-09-07** at merge `81f05a29` (same parcel): `dc.w`, `dc.l` and the Z80 `dw` range-check against asl's `#1320` windows.
 
 **Gates that cannot fail (byte-neutral; may land immediately once ruled):**
 
@@ -4363,3 +4366,13 @@ control so nobody grows it.
 repo is a test with no stable subject, and its failure mode is a red that indicts the wrong lane.
 Sweep for siblings: every `read_aeon` call site that names a **game** file rather than an engine
 vocabulary file is the same shape.
+
+### `AS-ENDC-CLOSER`: asl accepts `endc` as an `if` closer; sigil refuses it (2026-09-07)
+
+Found by the silent-acceptance parcel while correcting a fixture (`as_register_in_value_position.rs`):
+asl closes an `if` on `endc` as well as `endif` (probe `c_endc.asm`, exit 0). Sigil does not know the
+spelling. Before the parcel that line was silently dropped and the block closed on the file's last line;
+now it is a loud `if is never closed` refusal, which is the honest state. Zero uses in the three corpus
+trees and in aeon's three `.asm` files. Also from the same parcel, drop-no-bytes divergences: a closer
+placed after `END` is accepted here and refused by asl; `sigil-link::write_value` keeps 16-bit deferred
+cells strictly unsigned, stricter than asl's window on the resolved path (pre-existing).
