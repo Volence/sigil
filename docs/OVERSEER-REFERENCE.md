@@ -848,7 +848,18 @@ right.**
 
 ### `AEON_DIR` IN EVERY BRIEF: UNCONDITIONAL, **EXCLUSIVE**, and **PREPARED**
 
-`test_support.rs::aeon_dir` defaults to the owner's live checkout, and `sigil build --aeon <tree>`
+**⚠ THIS SENTENCE'S FIRST CLAUSE IS STALE AND IS CORRECTED IN PLACE (2026-09-07), because it is the
+line that instructs every brief.** `test_support.rs::aeon_dir` **no longer** falls through to the
+owner's live checkout: `PathStep::Derived` — step 3, `<suite root>/aeon` — is excluded from
+`names_a_reference_tree` **by name**, with the reason stated at `test_support.rs:795` (its revision
+moves under a run, so a pass or a failure measured against it is attributable to whatever it
+happened to contain). A run that names no tree reaches `no_named_reference_tree` and refuses or
+skips by declared intent; it does not quietly measure his directory. **The reason to name the tree
+in every brief is therefore no longer "or it silently uses his" but "or the run refuses" — the
+practice is unchanged and its ARGUMENT is not**, and a brief repeating the old argument teaches a
+mechanism the code refutes. *(Found 2026-09-07 by turning aurora's fifth Roster C rule on this
+lane's own rig, an hour after this seat flagged the identical stale-sentence class in a peer's
+file.)* The rest of the paragraph stands: `sigil build --aeon <tree>`
 **writes into** that tree rather than only reading it. A default pointing at a person's working
 directory must be overridden *every* time, and every-time is what briefs are bad at. **Set it in
 the template, not per parcel** — *"a stable aeon tree, if needed"* is the whole defect wearing
