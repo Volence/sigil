@@ -622,3 +622,41 @@ fn unknown_attr_diagnostics_unchanged_alongside_bank() {
         "expected an unknown-attribute diagnostic, got: {diags:?}"
     );
 }
+
+/// A `bank:` that passes the power-of-two test on the comptime `i128` but has
+/// no `u32` spelling is refused AT THE ATTRIBUTE, naming the value and the
+/// largest bank a 32-bit address space can hold. Before this check `$100000000`
+/// arrived in `Section.bank` as `Some(0)` and the placer refused it as a
+/// `0x0 bank`, a message about a value the author never wrote.
+#[test]
+fn bank_attr_refuses_a_power_of_two_with_no_u32_spelling() {
+    for spelling in ["$100000000", "$200000000", "1 << 40"] {
+        let src = format!("module m\nsection s (bank: {spelling}) {{\n  data X: u8 = 0\n}}\n");
+        let (file, perrs) = parse_str(&src);
+        assert!(perrs.is_empty(), "parse: {perrs:?}");
+        let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] });
+        let hit = diags.iter().find(|d| {
+            d.message.contains("`bank:`") && d.message.contains("32-bit") && d.message.contains("$80000000")
+        });
+        assert!(
+            hit.is_some(),
+            "bank: {spelling} was not refused at the attribute; diags {:?}, section bank {:?}",
+            diags.iter().map(|d| &d.message).collect::<Vec<_>>(),
+            module.sections.iter().find(|s| s.name == "s").map(|s| s.bank)
+        );
+    }
+}
+
+/// The largest bank with a `u32` spelling is accepted and arrives intact.
+#[test]
+fn bank_attr_accepts_the_largest_u32_power_of_two() {
+    let src = "module m\n\
+               section s (bank: $80000000) {\n\
+                 data X: u8 = 0\n\
+               }\n";
+    let (file, perrs) = parse_str(src);
+    assert!(perrs.is_empty(), "parse: {perrs:?}");
+    let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] });
+    assert!(diags.is_empty(), "lower: {diags:?}");
+    assert_eq!(section(&module, "s").bank, Some(0x8000_0000));
+}
