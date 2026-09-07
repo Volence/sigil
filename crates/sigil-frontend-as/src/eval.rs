@@ -6937,7 +6937,7 @@ impl Asm {
                 let dst = if *long {
                     M68kOperand::AbsL(v as i32)
                 } else {
-                    M68kOperand::AbsW((v & 0xFFFF) as i16)
+                    self.abs_w_operand(v, span)
                 };
                 (e, dst)
             }
@@ -7391,6 +7391,30 @@ impl Asm {
         }
     }
 
+    /// The `abs.w` operand for an EXPLICIT `(addr).w`, whose width the author
+    /// pinned: an address outside the abs.w window (`sigil_ir::fits_abs_w`,
+    /// the same test the linker's `Abs16Be` arm makes for a deferred one) is
+    /// refused, since there is no `.l` to fall back to and the low word alone
+    /// names a different address (`($C00004).w` would store to `$000004`).
+    /// asl refuses the same operand with `error #1340: short addressing not
+    /// allowed`. The operand is still returned so the pass keeps its shape;
+    /// the error fails the run.
+    fn abs_w_operand(&mut self, v: i64, span: Span) -> M68kOperand {
+        if !sigil_ir::fits_abs_w(v) {
+            // `v` came through a `fold_imm` bounded to i32::MIN..=u32::MAX, so
+            // the u32 spelling is exact and reads as the address the author wrote.
+            self.err(
+                span,
+                format!(
+                    "address ${:X} does not fit abs.w: only $0..=$7FFF and $FF8000..=$FFFFFF \
+                     have a short spelling (asl: short addressing not allowed); use .l",
+                    v as u32
+                ),
+            );
+        }
+        M68kOperand::AbsW((v & 0xFFFF) as i16)
+    }
+
     /// Convert one operand atom (see [`Self::convert_atoms_m68k`]).
     fn convert_one_atom_m68k(
         &mut self,
@@ -7452,7 +7476,7 @@ impl Asm {
                 if *long {
                     M68kOperand::AbsL(v as i32)
                 } else {
-                    M68kOperand::AbsW((v & 0xFFFF) as i16)
+                    self.abs_w_operand(v, span)
                 }
             }
             // `(sp)` is the `a7` alias but lexes down the pre-existing Z80

@@ -39,3 +39,34 @@ pub fn asl_width_rule(target: i64, _dash_a: bool) -> AbsWidth {
         AbsWidth::L
     }
 }
+
+/// Whether `target` has an `abs.w` spelling at all: the window
+/// [`asl_width_rule`] selects `.w` inside. This is the check an EXPLICIT
+/// `(addr).w` needs, since there the width is pinned by the author and an
+/// address outside the window cannot fall back to `.l`; asl refuses it with
+/// `error #1340: short addressing not allowed`. Every consumer that writes an
+/// abs.w extension word (the front ends' eager folds and the linker's
+/// `Abs16Be` arm) asks this one function, so the window has a single spelling.
+pub fn fits_abs_w(target: i64) -> bool {
+    asl_width_rule(target, false) == AbsWidth::W
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{asl_width_rule, fits_abs_w, AbsWidth};
+
+    /// The window edges asl measured (`($7FFF).w` and `($FF8000).w` assemble,
+    /// `($8000).w` and `($C00004).w` are `short addressing not allowed`), plus
+    /// the sign-extended and 25-bit spellings of an in-window address.
+    #[test]
+    fn fits_abs_w_agrees_with_the_width_rule_at_every_edge() {
+        for v in [0i64, 0x7FFF, 0xFF_8000, 0xFF_FFFF, -0x8000, -1, 0xFFFF_8000u32 as i64, 0x100_7FFF] {
+            assert!(fits_abs_w(v), "{v:#X} is inside the window");
+            assert_eq!(asl_width_rule(v, false), AbsWidth::W);
+        }
+        for v in [0x8000i64, 0xC0_0004, 0xFF_7FFF, 0x1_0000, 0x100_8000] {
+            assert!(!fits_abs_w(v), "{v:#X} is outside the window");
+            assert_eq!(asl_width_rule(v, false), AbsWidth::L);
+        }
+    }
+}

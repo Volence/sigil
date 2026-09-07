@@ -590,10 +590,12 @@ fn apply_fixup(
             bytes[site_abs as usize] = disp as i8 as u8;
         }
         FixupKind::Abs16Be => {
-            // abs.w holds a sign-extended 16-bit address: the VMA must fit i16
-            // (asl errors otherwise; matching that keeps us byte-exact).
+            // abs.w holds a sign-extended 16-bit address: the low 24 bits of
+            // the VMA must sit in the window `sigil_ir::fits_abs_w` tests, the
+            // same predicate the front ends apply to an eagerly folded
+            // `(addr).w` (asl: `short addressing not allowed` outside it).
             let v = value as i64;
-            if !(-0x8000..=0x7FFF).contains(&v) && !(0xFF_8000..=0xFF_FFFF).contains(&(v & 0xFF_FFFF)) {
+            if !sigil_ir::fits_abs_w(v) {
                 diags.push(diag(
                     format!("value {v:#X} does not fit abs.w (16-bit sign-extended) in section {section}"),
                     span,
@@ -1930,6 +1932,31 @@ mod tests {
             equ_syms: Vec::new(),
         };
         let err = link(&[bad], &stubs).unwrap_err();
+        assert!(err.iter().any(|d| d.message.contains("abs.w")), "got: {:?}", err);
+    }
+
+    /// The window is on the LOW 24 BITS (`sigil_ir::fits_abs_w`, shared with
+    /// the front ends' eager `(addr).w` folds): asl assembles `($1007FFF).w`
+    /// to `7FFF` with exit 0, and a sign-extended RAM address to its low word.
+    #[test]
+    fn abs16be_window_is_the_shared_24_bit_predicate() {
+        let mut stubs = SymbolTable::new();
+        stubs.define("Bit25", SymbolValue::Int(0x100_7FFF));
+        stubs.define("Ram", SymbolValue::Int(0xFFFF_8000));
+        stubs.define("Edge", SymbolValue::Int(0x8000));
+        let sec = |sym: &str| Section {
+            name: "s".to_string(), cpu: Cpu::M68000, vma_base: None, lma: 0x400, labels: vec![],
+            fragments: vec![Fragment::Data(DataFragment {
+                bytes: vec![0, 0],
+                fixups: vec![Fixup { kind: FixupKind::Abs16Be, offset: 0, target: Expr::Sym(sym.into()) }],
+                span: span(),
+            })],
+            placement: SectionPlacement::Pinned,
+            reserved_span: 0, group: None, bank: None, equ_syms: Vec::new(),
+        };
+        assert_eq!(link(&[sec("Bit25")], &stubs).unwrap().section("s").unwrap().bytes, vec![0x7F, 0xFF]);
+        assert_eq!(link(&[sec("Ram")], &stubs).unwrap().section("s").unwrap().bytes, vec![0x80, 0x00]);
+        let err = link(&[sec("Edge")], &stubs).unwrap_err();
         assert!(err.iter().any(|d| d.message.contains("abs.w")), "got: {:?}", err);
     }
 

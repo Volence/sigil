@@ -20,7 +20,7 @@ mod width;
 pub use expr::Expr;
 pub use fixup::{Fixup, FixupKind};
 pub use symbols::{SymbolTable, SymbolValue};
-pub use width::{asl_width_rule, AbsWidth};
+pub use width::{asl_width_rule, fits_abs_w, AbsWidth};
 
 use sigil_span::Span;
 
