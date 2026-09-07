@@ -408,9 +408,10 @@ pub const DAC_SAMPLE_TAB_LEN: usize = 127;
 /// The two DAC bank payloads, emitted from `dac_samples.emp` — the exact bytes
 /// asl would BINCLUDE at `$48000` / `$50000` (each after an `align $8000`).
 pub struct DacBanks {
-    /// `dac_blip_bank` @ `$48000` (temp_blip.bin — 2880 B at the current baseline).
+    /// `dac_blip_bank` at the `dac_banks` map anchor (temp_blip.bin).
     pub blip: Vec<u8>,
-    /// `dac_shared_bank` @ `$50000` (the 9 drum samples — 30908 B).
+    /// `dac_shared_bank` one window above it (the drums `dac_samples.emp` declares,
+    /// concatenated; `test_support::read_dac_declarations` reads that list).
     pub shared: Vec<u8>,
 }
 

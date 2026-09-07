@@ -48,9 +48,6 @@ fn strict_gate() -> bool {
     sigil_harness::test_support::strict_gate()
 }
 
-/// One `ObjDef` record — the stride between `ObjDef_Static` and `ObjDef_Solid`.
-const OBJDEF_LEN: u32 = 0x1A;
-
 /// The fill byte `games/sonic4/map.toml` places these sections with (`fill = 0x00`).
 /// Inter-section slack is written with it; emitted data is not.
 const MAP_FILL: u8 = 0x00;
@@ -69,31 +66,64 @@ const MAP_FILL: u8 = 0x00;
 /// go away — a gap this big is the signal, whatever the bytes say.
 const MAX_PLACER_SLACK: usize = 16;
 
-/// The `ObjDef_*` seam entity_data's type-table pointers resolve against — the
+/// The `ObjDef_*` seam entity_data's type-table pointers resolve against: the
 /// per-shape ROM addresses the Abs32 pointer cells bake in.
 ///
-/// PIN-DERIVED as of `cheat-flag` (2026-08-05). These were three hand-typed literal
-/// pairs that had to be re-shifted by hand on every re-baseline, and they silently
-/// rotted whenever someone forgot — this parcel moved the object bank +0x20 and the
-/// gate failed with a one-byte diff deep inside a data blob, which is an expensive
-/// way to learn that a constant is stale. The old comment already recorded the exact
-/// relations (`ObjDef_Static == OBJDEFS base`, `ObjDef_Solid == base + one ObjDef`,
-/// `ObjDef_PathSwap == PATH_SWAP base`), so they are now simply computed.
+/// BOTH halves are derived. WHICH names: every `ObjDef_*` token the generated
+/// `entity_data.emp` spells, read from the file, so a type table that starts naming
+/// a new archetype (aeon's spring, `ObjDef_Spring` in `objects/test_solid.emp`,
+/// arrived this way) brings its own seam entry instead of an `unresolved symbol`.
+/// WHICH addresses: the reference build's own listing beside the ROM
+/// (`test_support::listing_symbol_addr`), the one source that cannot disagree with
+/// the operand the reference ROM encodes. The previous form computed three names
+/// from `pins::OBJDEFS` / `pins::PATH_SWAP` and a typed record stride, which held
+/// exactly as long as the archetypes lived in those two sections.
 ///
 /// This is NOT circular: the seam is an INPUT to the standalone compile, and the
-/// assertion compares that compile's bytes against the real built ROM. Deriving the
-/// input from pins removes hand-maintenance without weakening the check.
-fn objdef_seam(debug: bool) -> Vec<(&'static str, u32)> {
-    let (objdefs, path_swap) = if debug {
-        (pins::OBJDEFS.debug_base, pins::PATH_SWAP.debug_base)
-    } else {
-        (pins::OBJDEFS.plain_base, pins::PATH_SWAP.plain_base)
-    };
-    vec![
-        ("ObjDef_Solid", objdefs + OBJDEF_LEN),
-        ("ObjDef_Static", objdefs),
-        ("ObjDef_PathSwap", path_swap),
-    ]
+/// assertion compares that compile's bytes against the real built ROM. A wrong
+/// address changes the pointer bytes and fails the diff.
+fn objdef_seam(debug: bool) -> Vec<(String, u32)> {
+    let aeon = aeon_root();
+    let src_path = aeon.join("games/sonic4/data/generated/ojz/act1/entity_data.emp");
+    let src = std::fs::read_to_string(&src_path)
+        .unwrap_or_else(|e| panic!("read {}: {e}", src_path.display()));
+    let mut names: Vec<String> = Vec::new();
+    for line in src.lines().filter(|l| !l.trim_start().starts_with("//")) {
+        let mut rest = line;
+        while let Some(i) = rest.find("ObjDef_") {
+            let tail = &rest[i..];
+            let end = tail
+                .find(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
+                .unwrap_or(tail.len());
+            let name = &tail[..end];
+            if name.len() > "ObjDef_".len() && !names.iter().any(|n| n == name) {
+                names.push(name.to_string());
+            }
+            rest = &tail[end..];
+        }
+    }
+    assert!(
+        !names.is_empty(),
+        "{} names no ObjDef_* archetype, the type-table seam would be empty",
+        src_path.display()
+    );
+    names.sort();
+    let listing = sigil_harness::test_support::listing_path(debug);
+    names
+        .into_iter()
+        .map(|name| {
+            let addr = sigil_harness::test_support::listing_symbol_addr(&listing, &name)
+                .unwrap_or_else(|| {
+                    panic!(
+                        "no listing at {}, this gate derives every ObjDef_* seam address from \
+                         the listing beside the reference ROM, so a source-only checkout \
+                         cannot serve it. Point AEON_DIR at a tree with all four shapes built.",
+                        listing.display()
+                    )
+                });
+            (name, addr)
+        })
+        .collect()
 }
 
 fn seam_sections(debug: bool) -> Vec<Section> {

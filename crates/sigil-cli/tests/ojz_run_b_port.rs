@@ -55,21 +55,75 @@ const ALIGN_PAD: usize = 15;
 /// per shape, by design and by exactly this much.
 ///
 /// `games/sonic4/data/generated/ojz/act1/bg_anim.emp` sets
-/// `BGANIM_VIEW_EMIT = if DEBUG == 1 { 1 } else { 0 }` and gates six arrays on it, so
-/// the DEBUG shape carries a camera-motion view record the plain shape does not:
+/// `BGANIM_VIEW_EMIT = if DEBUG == 1 { 1 } else { 0 }` and gates its view arrays on
+/// it, so the DEBUG shape carries camera-motion view records the plain shape does
+/// not, one 46-byte arm each (`BgAnim_View_H`, `BgAnim_View_V`, `BgAnim_View_T`):
 ///
 /// ```text
-///   BgAnim_View_H          [u16; 1]   2       BgAnim_View_V          [u16; 1]   2
-///   _BgAnim_ViewH0_hdr     [u16; 6]  12       _BgAnim_ViewV0_hdr     [u16; 6]  12
-///   _BgAnim_ViewH0_banks   [*u8; 8]  32       _BgAnim_ViewV0_banks   [*u8; 8]  32
-///                                    --                                        --
-///                                    46   x2                                   46   = 92
+///   BgAnim_View_<arm>        [u16; 1]   2
+///   _BgAnim_View<arm>0_hdr   [u16; 6]  12
+///   _BgAnim_View<arm>0_banks [*u8; 8]  32
+///                                      --
+///                                      46 per arm
 /// ```
 ///
 /// Derived from the module rather than measured off the pins on purpose: read off the
-/// pins it would equal the divergence by construction and assert nothing. If the view
-/// record gains or loses a field, this number is wrong and the gate says so.
-const BG_ANIM_VIEW_BYTES: usize = 92;
+/// pins it would equal the divergence by construction and assert nothing. Read from
+/// the MODULE TEXT rather than typed, because the record count is aeon's to change
+/// (a third arm, `BgAnim_View_T`, joined the two above and a typed 92 stopped
+/// describing it): every `data` line whose length is `BGANIM_VIEW_EMIT` or
+/// `BGANIM_VIEW_EMIT * k` contributes k times its element width, and only those
+/// lines exist in the debug shape. A line this reader cannot size fails by name.
+fn bg_anim_view_bytes(aeon: &std::path::Path) -> usize {
+    let path = aeon.join("games/sonic4/data/generated/ojz/act1/bg_anim.emp");
+    let src = std::fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("bg_anim_view_bytes: cannot read {}: {e}", path.display()));
+    let width = |elem: &str| -> usize {
+        match elem.trim() {
+            "u8" | "i8" => 1,
+            "u16" | "i16" => 2,
+            "u32" | "i32" => 4,
+            t if t.starts_with('*') => 4,
+            other => panic!(
+                "bg_anim_view_bytes: element type `{other}` in {} has no width this reader knows",
+                path.display()
+            ),
+        }
+    };
+    let mut total = 0usize;
+    let mut lines = 0usize;
+    for raw in src.lines() {
+        let line = raw.split("//").next().unwrap_or("").trim();
+        let Some(rest) = line.strip_prefix("data ").or_else(|| line.strip_prefix("pub data ")) else {
+            continue;
+        };
+        // `NAME: [ELEM; BGANIM_VIEW_EMIT * k] = ...` or `[ELEM; BGANIM_VIEW_EMIT]`.
+        let Some((_, ty)) = rest.split_once(':') else { continue };
+        let Some(inner) = ty.trim().strip_prefix('[').and_then(|t| t.split_once(']')).map(|(i, _)| i) else {
+            continue;
+        };
+        let Some((elem, len)) = inner.split_once(';') else { continue };
+        let len = len.trim();
+        let Some(len) = len.strip_prefix("BGANIM_VIEW_EMIT") else { continue };
+        let count: usize = match len.trim() {
+            "" => 1,
+            k => k
+                .strip_prefix('*')
+                .map(str::trim)
+                .and_then(|k| k.parse().ok())
+                .unwrap_or_else(|| panic!("bg_anim_view_bytes: cannot read the multiplier in `{raw}`")),
+        };
+        total += width(elem) * count;
+        lines += 1;
+    }
+    assert!(
+        lines > 0,
+        "bg_anim_view_bytes: {} declares no BGANIM_VIEW_EMIT-gated data line, the view record \
+         this gate accounts for is gone",
+        path.display()
+    );
+    total
+}
 
 /// `(emp, section, pin, preludes, max cross-shape length divergence)`.
 ///
@@ -78,7 +132,8 @@ const BG_ANIM_VIEW_BYTES: usize = 92;
 /// alignment pad a changed successor leaves — `ALIGN_PAD`. A section that legitimately
 /// emits DIFFERENT BYTES per shape declares exactly how many, and the assert is then
 /// tight against that number rather than loosened for everyone.
-const SECTIONS: &[(&str, &str, Region, &[Prelude], usize)] = &[
+fn sections(aeon: &std::path::Path) -> Vec<(&'static str, &'static str, Region, &'static [Prelude], usize)> {
+    vec![
     (
         "games/sonic4/data/generated/ojz/act1/sec_block_blobs.emp",
         "sec_block_blobs",
@@ -108,9 +163,10 @@ const SECTIONS: &[(&str, &str, Region, &[Prelude], usize)] = &[
         "ojz_bg_anim",
         pins::OJZ_BG_ANIM,
         &[],
-        BG_ANIM_VIEW_BYTES,
+        bg_anim_view_bytes(aeon),
     ),
-];
+    ]
+}
 
 fn map_toml(section: &str, base: u32, len: usize) -> String {
     format!(
@@ -204,7 +260,7 @@ fn gate(debug: bool, rom_name: &str) {
         return;
     };
 
-    for (emp_rel, section, region, preludes, max_shape_delta) in SECTIONS {
+    for (emp_rel, section, region, preludes, max_shape_delta) in &sections(&aeon_root()) {
         let base = if debug { region.debug_base } else { region.plain_base };
         let len = if debug { region.debug_len } else { region.plain_len };
         let (lo, hi) = (region.plain_len.min(region.debug_len), region.plain_len.max(region.debug_len));

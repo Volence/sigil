@@ -59,7 +59,7 @@ use sigil_frontend_emp::lower::{lower_module, LowerOptions};
 use sigil_frontend_emp::parse_str;
 use sigil_frontend_emp::resolve::place_sections;
 use sigil_harness::seam2::sound_layout;
-use sigil_harness::test_support::reference_tree;
+use sigil_harness::test_support::{parse_dac_declarations, reference_tree, DacDataLine, DacDeclarations};
 use sigil_ir::backend::Cpu;
 use sigil_ir::{Expr, Section, SymbolTable};
 use std::collections::BTreeMap;
@@ -199,111 +199,10 @@ fn snd_equ_names(sections: &[Section]) -> Vec<String> {
 }
 
 // ---------------------------------------------------------------------------
-// The SOURCE half: order and names, read out of `dac_samples.emp`.
+// The SOURCE half: order and names, read out of `dac_samples.emp` by
+// `test_support::parse_dac_declarations` (section 7), shared with the seam-2
+// bank-emit gate so the module is read one way.
 // ---------------------------------------------------------------------------
-
-/// One `data <label> = <blob>` line of a `section` block, in declaration order.
-#[derive(Debug)]
-struct DataLine {
-    label: String,
-    blob: String,
-}
-
-/// What one `SND_<base>_*` triple's right-hand sides NAME: the label under
-/// `bankid()`, the label under `winptr()`, the blob const under `.len`.
-#[derive(Debug, Default)]
-struct SndTriple {
-    bank_of: Option<String>,
-    ptr_of: Option<String>,
-    len_of: Option<String>,
-}
-
-/// The declaring module as text facts: which file each blob const embeds, which
-/// data lines each `bank:` section holds in order, and what each `SND_*` equ names.
-#[derive(Debug, Default)]
-struct Declared {
-    /// `const <Blob> = embed("<path>")`, keyed by the blob const's name.
-    embeds: BTreeMap<String, String>,
-    /// `section <name> (...) { data ... }` blocks, data lines in declaration order.
-    sections: BTreeMap<String, Vec<DataLine>>,
-    /// `equ SND_<base>_{BANK,PTR,LEN} = ...`, keyed by `<base>`.
-    equs: BTreeMap<String, SndTriple>,
-}
-
-/// `dac_samples.emp`'s declarations, read line by line. Trailing `// ...` comments
-/// are dropped; fully commented lines are skipped. Any `SND_*` equ whose right-hand
-/// side is not one of the three shapes the module documents (`bankid(L)`,
-/// `winptr(L)`, `B.len`) is a hard failure: the derivation cannot follow a shape it
-/// does not know, and must say so rather than bind a wrong expectation.
-fn read_declarations(src: &str) -> Declared {
-    let mut d = Declared::default();
-    let mut in_section: Option<String> = None;
-    for raw in src.lines() {
-        let line = raw.split("//").next().unwrap_or("").trim();
-        if line.is_empty() {
-            continue;
-        }
-        if let Some(rest) = line.strip_prefix("const ") {
-            let (name, rhs) = rest.split_once('=').unwrap_or_else(|| panic!("const line without `=`: {raw}"));
-            if let Some(path) = rhs.trim().strip_prefix("embed(\"").and_then(|r| r.strip_suffix("\")")) {
-                d.embeds.insert(name.trim().to_string(), path.to_string());
-            }
-            continue;
-        }
-        if let Some(rest) = line.strip_prefix("section ") {
-            let name = rest.split([' ', '(', '{']).next().unwrap_or("").trim();
-            assert!(!name.is_empty(), "section line without a name: {raw}");
-            in_section = Some(name.to_string());
-            d.sections.entry(name.to_string()).or_default();
-            continue;
-        }
-        if line == "}" {
-            in_section = None;
-            continue;
-        }
-        if let (Some(sec), Some(rest)) = (&in_section, line.strip_prefix("data ")) {
-            let (label, blob) = rest.split_once('=').unwrap_or_else(|| panic!("data line without `=`: {raw}"));
-            d.sections.get_mut(sec).unwrap().push(DataLine {
-                label: label.trim().to_string(),
-                blob: blob.trim().to_string(),
-            });
-            continue;
-        }
-        if let Some(rest) = line.strip_prefix("equ ") {
-            let (name, rhs) = rest.split_once('=').unwrap_or_else(|| panic!("equ line without `=`: {raw}"));
-            let (name, rhs) = (name.trim(), rhs.trim());
-            let Some(name) = name.strip_prefix("SND_") else { continue };
-            let call = |f: &str| rhs.strip_prefix(f).and_then(|r| r.strip_prefix('(')).and_then(|r| r.strip_suffix(')'));
-            if let Some(base) = name.strip_suffix("_BANK") {
-                let l = call("bankid").unwrap_or_else(|| panic!("SND_{name}: expected `bankid(<label>)`, got `{rhs}`"));
-                d.equs.entry(base.to_string()).or_default().bank_of = Some(l.trim().to_string());
-            } else if let Some(base) = name.strip_suffix("_PTR") {
-                let l = call("winptr").unwrap_or_else(|| panic!("SND_{name}: expected `winptr(<label>)`, got `{rhs}`"));
-                d.equs.entry(base.to_string()).or_default().ptr_of = Some(l.trim().to_string());
-            } else if let Some(base) = name.strip_suffix("_LEN") {
-                let b = rhs.strip_suffix(".len").unwrap_or_else(|| panic!("SND_{name}: expected `<Blob>.len`, got `{rhs}`"));
-                d.equs.entry(base.to_string()).or_default().len_of = Some(b.trim().to_string());
-            } else {
-                panic!("SND_{name}: not a _BANK / _PTR / _LEN equ, the derivation does not know this shape");
-            }
-        }
-    }
-    // Loud on the unmeasurable: an empty module would make every assertion below
-    // vacuously true.
-    assert!(!d.embeds.is_empty(), "dac_samples.emp declares no `const X = embed(...)`");
-    assert!(
-        d.sections.values().any(|v| !v.is_empty()),
-        "dac_samples.emp declares no `data` line in any section"
-    );
-    assert!(!d.equs.is_empty(), "dac_samples.emp declares no `SND_*` equ");
-    for (base, t) in &d.equs {
-        assert!(
-            t.bank_of.is_some() && t.ptr_of.is_some() && t.len_of.is_some(),
-            "SND_{base}: incomplete triple {t:?}"
-        );
-    }
-    d
-}
 
 // ---------------------------------------------------------------------------
 // The ARTIFACT half: values, read off the linked image, checked against the order.
@@ -329,7 +228,7 @@ fn find_at_or_after(hay: &[u8], needle: &[u8], from: usize) -> Option<usize> {
     hay[from..].windows(needle.len()).position(|w| w == needle).map(|p| p + from)
 }
 
-fn derive_layout(dir: &Path, declared: &Declared, linked: &sigil_link::LinkedImage) -> Layout {
+fn derive_layout(dir: &Path, declared: &DacDeclarations, linked: &sigil_link::LinkedImage) -> Layout {
     let mut out = Layout { label_addr: BTreeMap::new(), blob_len: BTreeMap::new(), faults: Vec::new() };
     for (sec_name, lines) in &declared.sections {
         let sec = linked
@@ -338,7 +237,7 @@ fn derive_layout(dir: &Path, declared: &Declared, linked: &sigil_link::LinkedIma
         // The pointer derivation's INPUT: the LMA the placer gave this section.
         let base = sec.lma;
         let mut cursor = 0usize;
-        for DataLine { label, blob } in lines {
+        for DacDataLine { label, blob } in lines {
             let path = declared
                 .embeds
                 .get(blob)
@@ -390,7 +289,7 @@ fn derive_layout(dir: &Path, declared: &Declared, linked: &sigil_link::LinkedIma
 fn dac_bank_payloads_match_declared_blobs() {
     let Some(dir) = sound_dir() else { return };
     let (src, _resolved, linked) = compile_real_file(&dir);
-    let declared = read_declarations(&src);
+    let declared = parse_dac_declarations(&src);
     let layout = derive_layout(&dir, &declared, &linked);
     assert!(
         layout.faults.is_empty(),
@@ -415,7 +314,7 @@ fn dac_bank_payloads_match_declared_blobs() {
 fn snd_equ_values_match_derived_layout() {
     let Some(dir) = sound_dir() else { return };
     let (src, resolved, linked) = compile_real_file(&dir);
-    let declared = read_declarations(&src);
+    let declared = parse_dac_declarations(&src);
     let layout = derive_layout(&dir, &declared, &linked);
     assert!(
         layout.faults.is_empty(),

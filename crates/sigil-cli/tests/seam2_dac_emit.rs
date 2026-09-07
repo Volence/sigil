@@ -40,9 +40,23 @@ fn emitted_dac_banks_match_the_reference_rom_slices() {
     let aeon = aeon_dir();
     let banks = sigil_harness::seam2::emit_dac_banks(&aeon).expect("emit_dac_banks");
 
-    // The banks are 2880 B (blip) + 30908 B (shared) at the current baseline.
-    assert_eq!(banks.blip.len(), 0xB40, "blip bank length (temp_blip.bin)");
-    assert_eq!(banks.shared.len(), 0x78BC, "shared drum bank length (9 .pcm)");
+    // Each bank is exactly the blobs `dac_samples.emp` declares for it, and the
+    // expectation is read from that module (the declarer) and the files it embeds,
+    // never typed: aeon LS-7 deleted two duplicate drums and a typed 30,908 stopped
+    // describing the shared bank at that commit.
+    let sound_dir = aeon.join("games/sonic4/data/sound");
+    let decl = sigil_harness::test_support::read_dac_declarations(&sound_dir);
+    assert_eq!(
+        banks.blip.len(),
+        decl.declared_bytes(&sound_dir, "dac_blip_bank"),
+        "blip bank length (the blobs dac_samples.emp declares for dac_blip_bank)"
+    );
+    assert_eq!(
+        banks.shared.len(),
+        decl.declared_bytes(&sound_dir, "dac_shared_bank"),
+        "shared drum bank length (the {} drums dac_samples.emp declares for dac_shared_bank)",
+        decl.sections["dac_shared_bank"].len()
+    );
 
     let l = sigil_harness::seam2::sound_layout(&aeon).expect("sound_layout derives the bank LMAs");
     let (blip, shared, head) =
