@@ -29,7 +29,7 @@ fn flatten(module: &Module) -> Vec<u8> {
     let resolved = sigil_link::resolve_layout(&module.sections, &SymbolTable::new(), true)
         .expect("resolve_layout");
     let linked = sigil_link::link(&resolved, &SymbolTable::new()).expect("link");
-    sigil_link::flatten(&linked, 0x00)
+    sigil_link::flatten(&linked, 0x00).unwrap()
 }
 
 fn has_tag(diags: &[Diagnostic], tag: &str) -> bool {

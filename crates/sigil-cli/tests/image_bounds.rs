@@ -98,10 +98,18 @@ fn a_byte_just_past_the_cartridge_is_refused() {
     assert_refused(&out, "org_past.asm", 3, "LMA 0x400000 is in no ROM region");
 }
 
+/// Two bytes from the last window address: `[0x3FFFFF, 0x400001)`, one byte over.
+/// (`dc.b`, not `dc.w`: AS pads a word to an even address, which would make the
+/// emitted run three bytes and the overshoot two.)
 #[test]
-fn a_word_straddling_the_cartridge_end_is_refused_with_the_overshoot() {
-    let (out, _dir) = run("org_straddle.asm", "\torg $3FFFFF\n\tdc.w 1\n", &[]);
-    assert_refused(&out, "org_straddle.asm", 3, "overflows region `cartridge` (ends 0x400000), over by 1 bytes");
+fn two_bytes_straddling_the_cartridge_end_are_refused_with_the_overshoot() {
+    let (out, _dir) = run("org_straddle.asm", "\torg $3FFFFF\n\tdc.b 1,2\n", &[]);
+    assert_refused(
+        &out,
+        "org_straddle.asm",
+        3,
+        "[0x3FFFFF,0x400001) overflows region `cartridge` (ends 0x400000), over by 1 bytes",
+    );
 }
 
 /// Control: the last byte of the window is inside it. Without this the four

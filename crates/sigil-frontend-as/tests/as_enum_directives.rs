@@ -44,7 +44,7 @@ fn image(body: &str) -> Vec<u8> {
         .unwrap_or_else(|e| panic!("did not resolve:\n{src}\n{e:?}"));
     let linked = sigil_link::link(&resolved, &sigil_ir::SymbolTable::new())
         .unwrap_or_else(|e| panic!("did not link:\n{src}\n{e:?}"));
-    sigil_link::flatten(&linked, 0x00)
+    sigil_link::flatten(&linked, 0x00).unwrap()
 }
 
 /// Whether the source is refused by the front end.

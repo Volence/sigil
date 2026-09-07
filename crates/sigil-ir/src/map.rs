@@ -15,6 +15,30 @@ pub enum RegionKind {
     ObjectBank,
 }
 
+impl RegionKind {
+    /// The map-file spelling of this kind (the `kind = "..."` value `map_load` reads).
+    pub fn label(self) -> &'static str {
+        match self {
+            RegionKind::Rom => "rom",
+            RegionKind::M68kRam => "m68k_ram",
+            RegionKind::Z80Bank => "z80_bank",
+            RegionKind::ObjectBank => "object_bank",
+        }
+    }
+}
+
+/// The 68000 cartridge window, `0x000000..=0x3FFFFF`: the address space a flat ROM
+/// image occupies, and the bound every flat image is validated against. The
+/// shipped game maps declare their `rom` region with this same base and size.
+pub const CARTRIDGE_LMA_BASE: u32 = 0x00_0000;
+/// Size of [`CARTRIDGE_LMA_BASE`]'s window (4 MiB).
+pub const CARTRIDGE_SIZE: u32 = 0x40_0000;
+/// The 68000 work RAM window, `0xFF0000..=0xFFFFFF`. A byte placed here has no
+/// image to land in.
+pub const M68K_RAM_LMA_BASE: u32 = 0xFF_0000;
+/// Size of [`M68K_RAM_LMA_BASE`]'s window (64 KiB).
+pub const M68K_RAM_SIZE: u32 = 0x1_0000;
+
 /// One declared region. `vma_base` records a phased VMA≠LMA relationship
 /// (informational in B; sections still carry their own `vma_base`).
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -24,6 +48,13 @@ pub struct Region {
     pub size: u32,
     pub kind: RegionKind,
     pub vma_base: Option<u32>,
+}
+
+impl Region {
+    /// Whether `lma` lies in this region's `[lma_base, lma_base+size)` window.
+    pub fn contains(&self, lma: u32) -> bool {
+        lma >= self.lma_base && (lma - self.lma_base) < self.size
+    }
 }
 
 /// The whole map, in ROM output order, plus the default gap-fill byte.
@@ -38,11 +69,35 @@ impl MemoryMap {
         MemoryMap { regions, fill }
     }
 
+    /// The Mega Drive's fixed address windows as a map: the cartridge
+    /// (`cartridge`, the one ROM region) and 68000 work RAM (`work_ram`, which
+    /// holds no image bytes), gap fill `0x00`. This is the bound a flat image is
+    /// validated against when no game map names its regions.
+    pub fn mega_drive() -> Self {
+        MemoryMap::new(
+            vec![
+                Region {
+                    name: "cartridge".to_string(),
+                    lma_base: CARTRIDGE_LMA_BASE,
+                    size: CARTRIDGE_SIZE,
+                    kind: RegionKind::Rom,
+                    vma_base: None,
+                },
+                Region {
+                    name: "work_ram".to_string(),
+                    lma_base: M68K_RAM_LMA_BASE,
+                    size: M68K_RAM_SIZE,
+                    kind: RegionKind::M68kRam,
+                    vma_base: None,
+                },
+            ],
+            0x00,
+        )
+    }
+
     /// The ROM region whose `[lma_base, lma_base+size)` contains `lma`.
     pub fn region_for(&self, lma: u32) -> Option<&Region> {
-        self.regions.iter().find(|r| {
-            r.kind == RegionKind::Rom && lma >= r.lma_base && (lma - r.lma_base) < r.size
-        })
+        self.regions.iter().find(|r| r.kind == RegionKind::Rom && r.contains(lma))
     }
 
     /// A region by exact name (any kind).
@@ -74,9 +129,28 @@ impl MemoryMap {
     }
 
     /// Verify a section `[lma, lma+len)` lies entirely within one `Rom` region.
+    /// A refusal names what the LMA did land in: the non-ROM region holding it
+    /// when one does (work RAM, a Z80 bank), else every ROM window it could have
+    /// used.
     pub fn validate_section(&self, name: &str, lma: u32, len: u32) -> Result<(), String> {
         let Some(r) = self.region_for(lma) else {
-            return Err(format!("section `{name}` LMA {lma:#X} is in no ROM region"));
+            if let Some(other) = self.regions.iter().find(|r| r.kind != RegionKind::Rom && r.contains(lma)) {
+                return Err(format!(
+                    "section `{name}` LMA {lma:#X} lies in non-ROM region `{}` ({}) [{:#X},{:#X}); its {len} byte(s) have no place in the image",
+                    other.name,
+                    other.kind.label(),
+                    other.lma_base,
+                    other.lma_base as u64 + other.size as u64
+                ));
+            }
+            let windows: Vec<String> = self
+                .regions
+                .iter()
+                .filter(|r| r.kind == RegionKind::Rom)
+                .map(|r| format!("`{}` [{:#X},{:#X})", r.name, r.lma_base, r.lma_base as u64 + r.size as u64))
+                .collect();
+            let windows = if windows.is_empty() { "(none)".to_string() } else { windows.join(", ") };
+            return Err(format!("section `{name}` LMA {lma:#X} is in no ROM region; ROM regions: {windows}"));
         };
         let end = lma as u64 + len as u64;
         let region_end = r.lma_base as u64 + r.size as u64;
@@ -114,6 +188,45 @@ mod tests {
         assert!(m.validate_section("ok", 0, 0x1000).is_ok());
         assert!(m.validate_section("over", 0xF00, 0x200).is_err());
         assert!(m.validate_section("outside", 0x2000, 4).is_err());
+    }
+
+    #[test]
+    fn mega_drive_map_names_the_cartridge_and_work_ram_windows() {
+        let m = MemoryMap::mega_drive();
+        assert_eq!(m.region_for(CARTRIDGE_LMA_BASE).unwrap().name, "cartridge");
+        assert_eq!(m.region_for(CARTRIDGE_LMA_BASE + CARTRIDGE_SIZE - 1).unwrap().name, "cartridge");
+        assert!(m.region_for(CARTRIDGE_LMA_BASE + CARTRIDGE_SIZE).is_none());
+        assert!(m.region_for(M68K_RAM_LMA_BASE).is_none(), "work RAM is not a ROM region");
+        assert_eq!(m.region_by_name("work_ram").unwrap().kind, RegionKind::M68kRam);
+        assert_eq!(m.fill, 0x00);
+    }
+
+    #[test]
+    fn a_refusal_names_the_non_rom_region_holding_the_lma() {
+        let m = MemoryMap::mega_drive();
+        let err = m.validate_section("s", M68K_RAM_LMA_BASE, 1).unwrap_err();
+        assert_eq!(
+            err,
+            "section `s` LMA 0xFF0000 lies in non-ROM region `work_ram` (m68k_ram) [0xFF0000,0x1000000); its 1 byte(s) have no place in the image"
+        );
+    }
+
+    #[test]
+    fn a_refusal_outside_every_region_lists_the_rom_windows() {
+        let m = MemoryMap::mega_drive();
+        let err = m.validate_section("s", 0xFFFF_FFFF, 1).unwrap_err();
+        assert_eq!(err, "section `s` LMA 0xFFFFFFFF is in no ROM region; ROM regions: `cartridge` [0x0,0x400000)");
+        let bare = MemoryMap::new(vec![], 0x00);
+        assert_eq!(bare.validate_section("s", 0, 1).unwrap_err(), "section `s` LMA 0x0 is in no ROM region; ROM regions: (none)");
+    }
+
+    #[test]
+    fn the_last_cartridge_byte_fits_and_the_next_overflows_by_one() {
+        let m = MemoryMap::mega_drive();
+        let last = CARTRIDGE_LMA_BASE + CARTRIDGE_SIZE - 1;
+        assert!(m.validate_section("s", last, 1).is_ok());
+        let err = m.validate_section("s", last, 2).unwrap_err();
+        assert_eq!(err, "section `s` [0x3FFFFF,0x400001) overflows region `cartridge` (ends 0x400000), over by 1 bytes");
     }
 
     fn objbank(base: u32, size: u32) -> Region {

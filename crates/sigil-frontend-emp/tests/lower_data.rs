@@ -34,7 +34,7 @@ fn roundtrip_bytes() {
     let resolved = sigil_link::resolve_layout(&module.sections, &SymbolTable::new(), true)
         .expect("resolve_layout");
     let linked = sigil_link::link(&resolved, &SymbolTable::new()).expect("link");
-    let bytes = sigil_link::flatten(&linked, 0x00);
+    let bytes = sigil_link::flatten(&linked, 0x00).unwrap();
     assert_eq!(bytes, vec![0x01, 0x02, 0x03]);
 }
 
@@ -51,7 +51,7 @@ fn multibyte_scalar_is_big_endian() {
     let resolved = sigil_link::resolve_layout(&module.sections, &SymbolTable::new(), true)
         .expect("resolve_layout");
     let linked = sigil_link::link(&resolved, &SymbolTable::new()).expect("link");
-    let bytes = sigil_link::flatten(&linked, 0x00);
+    let bytes = sigil_link::flatten(&linked, 0x00).unwrap();
     assert_eq!(bytes, vec![0x12, 0x34]);
 }
 
@@ -130,7 +130,7 @@ fn linked_bytes(module: &sigil_ir::Module) -> Vec<u8> {
     let resolved = sigil_link::resolve_layout(&module.sections, &SymbolTable::new(), true)
         .expect("resolve_layout");
     let linked = sigil_link::link(&resolved, &SymbolTable::new()).expect("link");
-    sigil_link::flatten(&linked, 0x00)
+    sigil_link::flatten(&linked, 0x00).unwrap()
 }
 
 #[test]
@@ -1055,7 +1055,7 @@ fn image(src: &str) -> Vec<u8> {
     let resolved = sigil_link::resolve_layout(&module.sections, &SymbolTable::new(), true)
         .expect("resolve_layout");
     let linked = sigil_link::link(&resolved, &SymbolTable::new()).expect("link");
-    sigil_link::flatten(&linked, 0x00)
+    sigil_link::flatten(&linked, 0x00).unwrap()
 }
 
 #[test]

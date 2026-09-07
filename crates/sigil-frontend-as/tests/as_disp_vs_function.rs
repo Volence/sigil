@@ -190,7 +190,7 @@ fn a_call_in_the_displacement_still_expands() {
             .expect("resolve_layout");
     let linked = sigil_link::link(&resolved, &sigil_ir::SymbolTable::new()).expect("link");
     assert_eq!(
-        sigil_link::flatten(&linked, 0x00),
+        sigil_link::flatten(&linked, 0x00).unwrap(),
         vec![0x33, 0x7C, 0x12, 0x34, 0x01, 0x17],
         "asl emits 337C 1234 0117, displacement (3*7)+$100+2"
     );

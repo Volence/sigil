@@ -9877,7 +9877,7 @@ mod tests {
         let resolved = sigil_link::resolve_layout(&m.sections, &sigil_ir::SymbolTable::new(), true)
             .expect("resolve_layout");
         let linked = sigil_link::link(&resolved, &sigil_ir::SymbolTable::new()).expect("link");
-        sigil_link::flatten(&linked, 0x00)
+        sigil_link::flatten(&linked, 0x00).unwrap()
     }
 
     /// Whether the source assembles AND LINKS. An unresolved symbol survives
@@ -10565,7 +10565,7 @@ mod tests {
         let resolved = sigil_link::resolve_layout(&m.sections, &sigil_ir::SymbolTable::new(), true)
             .expect("resolve_layout");
         let linked = sigil_link::link(&resolved, &sigil_ir::SymbolTable::new()).expect("link");
-        let bytes = sigil_link::flatten(&linked, 0x00);
+        let bytes = sigil_link::flatten(&linked, 0x00).unwrap();
         // move.w (d16,PC),d0 = 30 3A, then disp word 00 06.
         assert_eq!(bytes, vec![0x30, 0x3A, 0x00, 0x06]);
     }
@@ -10586,7 +10586,7 @@ mod tests {
         let resolved = sigil_link::resolve_layout(&m.sections, &sigil_ir::SymbolTable::new(), true)
             .expect("resolve_layout");
         let linked = sigil_link::link(&resolved, &sigil_ir::SymbolTable::new()).expect("link");
-        let bytes = sigil_link::flatten(&linked, 0x00);
+        let bytes = sigil_link::flatten(&linked, 0x00).unwrap();
         assert_eq!(bytes, vec![0x32, 0x3B, 0x00, 0x06]);
     }
 
@@ -10604,7 +10604,7 @@ mod tests {
         let resolved = sigil_link::resolve_layout(&m.sections, &sigil_ir::SymbolTable::new(), true)
             .expect("resolve_layout");
         let linked = sigil_link::link(&resolved, &sigil_ir::SymbolTable::new()).expect("link");
-        let bytes = sigil_link::flatten(&linked, 0x00);
+        let bytes = sigil_link::flatten(&linked, 0x00).unwrap();
         assert_eq!(
             bytes,
             vec![0x85, 0xC4, 0x85, 0xFC, 0x00, 0x0A, 0x83, 0xC0, 0x81, 0xF8, 0x12, 0x34]
@@ -10622,7 +10622,7 @@ mod tests {
         let resolved = sigil_link::resolve_layout(&m.sections, &sigil_ir::SymbolTable::new(), true)
             .expect("resolve_layout");
         let linked = sigil_link::link(&resolved, &sigil_ir::SymbolTable::new()).expect("link");
-        let bytes = sigil_link::flatten(&linked, 0x00);
+        let bytes = sigil_link::flatten(&linked, 0x00).unwrap();
         assert_eq!(bytes, vec![0x84, 0xC4, 0x8A, 0xC3]);
     }
 
@@ -10642,7 +10642,7 @@ mod tests {
         let resolved = sigil_link::resolve_layout(&m.sections, &sigil_ir::SymbolTable::new(), true)
             .expect("resolve_layout");
         let linked = sigil_link::link(&resolved, &sigil_ir::SymbolTable::new()).expect("link");
-        let bytes = sigil_link::flatten(&linked, 0x00);
+        let bytes = sigil_link::flatten(&linked, 0x00).unwrap();
         assert_eq!(bytes, vec![0x30, 0x38, 0x12, 0x34]);
     }
 
@@ -10685,7 +10685,7 @@ mod tests {
         let resolved = sigil_link::resolve_layout(&m.sections, &sigil_ir::SymbolTable::new(), true)
             .expect("resolve_layout");
         let linked = sigil_link::link(&resolved, &sigil_ir::SymbolTable::new()).expect("link");
-        let bytes = sigil_link::flatten(&linked, 0x00);
+        let bytes = sigil_link::flatten(&linked, 0x00).unwrap();
         // bra.w .loop: op@0, disp word@2, target=4 (right after the 4-byte
         // branch), disp = 4-2 = 2; then rts (4E75) at the target.
         assert_eq!(bytes, vec![0x60, 0x00, 0x00, 0x02, 0x4E, 0x75]);
@@ -10713,7 +10713,7 @@ mod tests {
         let resolved = sigil_link::resolve_layout(&m.sections, &sigil_ir::SymbolTable::new(), true)
             .expect("resolve_layout");
         let linked = sigil_link::link(&resolved, &sigil_ir::SymbolTable::new()).expect("link");
-        let bytes = sigil_link::flatten(&linked, 0x00);
+        let bytes = sigil_link::flatten(&linked, 0x00).unwrap();
         assert_eq!(bytes, vec![0x4E, 0xF8, 0x00, 0x00]);
     }
 
@@ -10743,7 +10743,7 @@ mod tests {
         let m = run(src, &Options::default()).expect("assemble");
         let linked = sigil_link::link(&m.sections, &sigil_ir::SymbolTable::new())
             .expect("link must succeed (no unresolvable fixup)");
-        let bytes = sigil_link::flatten(&linked, 0x00);
+        let bytes = sigil_link::flatten(&linked, 0x00).unwrap();
         // ld hl,1234h = 21 34 12 ; dw 1234h = 34 12
         assert_eq!(bytes, vec![0x21, 0x34, 0x12, 0x34, 0x12]);
     }
@@ -10759,7 +10759,7 @@ mod tests {
             let m = run(src, &Options::default()).expect("assemble");
             let linked =
                 sigil_link::link(&m.sections, &sigil_ir::SymbolTable::new()).expect("link");
-            sigil_link::flatten(&linked, 0x00)
+            sigil_link::flatten(&linked, 0x00).unwrap()
         };
         assert_eq!(
             link("        cpu z80\n        phase 0\n        jr $+2\n"),
@@ -11360,7 +11360,7 @@ mod tests {
         // multi-section split still gap-fills identically to an in-section run.
         let linked =
             sigil_link::link(&module.sections, &sigil_ir::SymbolTable::new()).expect("link");
-        let bytes = sigil_link::flatten(&linked, 0x00);
+        let bytes = sigil_link::flatten(&linked, 0x00).unwrap();
         let mut want = vec![1, 2, 3, 4];
         want.extend(std::iter::repeat_n(0x00, 12));
         want.extend([5, 6]);
@@ -12641,7 +12641,7 @@ C:\n";
         let resolved = sigil_link::resolve_layout(&m.sections, &sigil_ir::SymbolTable::new(), true)
             .expect("resolve_layout");
         let linked = sigil_link::link(&resolved, &sigil_ir::SymbolTable::new()).expect("link");
-        let bytes = sigil_link::flatten(&linked, 0x00);
+        let bytes = sigil_link::flatten(&linked, 0x00).unwrap();
         assert_eq!(bytes, vec![0x4E, 0xB8, 0x00, 0x00]);
     }
 
@@ -14751,7 +14751,7 @@ C:\n";
         let m = run(src, &Options::default()).expect("`ldi` must assemble");
         let linked = sigil_link::link(&m.sections, &sigil_ir::SymbolTable::new())
             .expect("link");
-        assert_eq!(sigil_link::flatten(&linked, 0x00), vec![0x00, 0xED, 0xA0, 0x00]);
+        assert_eq!(sigil_link::flatten(&linked, 0x00).unwrap(), vec![0x00, 0xED, 0xA0, 0x00]);
     }
 
     /// The other half of AS's column rule, and the reason the fix is a column

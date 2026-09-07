@@ -31,7 +31,7 @@ fn bytes(body: &str) -> Vec<u8> {
     let src = format!("\tcpu 68000\n\tphase 0\n{body}");
     let module = assemble(&src, &Options::default()).expect("assemble");
     let linked = sigil_link::link(&module.sections, &sigil_ir::SymbolTable::new()).expect("link");
-    sigil_link::flatten(&linked, 0x00)
+    sigil_link::flatten(&linked, 0x00).unwrap()
 }
 
 /// Assemble and require a refusal.
@@ -403,7 +403,7 @@ fn int_works_in_z80_db_and_dw() {
     let src = "\tcpu z80\n\tphase 0\n\tdb INT(3.7)\n\tdw INT(600.7)\n";
     let module = assemble(src, &Options::default()).expect("assemble");
     let linked = sigil_link::link(&module.sections, &sigil_ir::SymbolTable::new()).expect("link");
-    assert_eq!(sigil_link::flatten(&linked, 0x00), vec![0x03, 0x58, 0x02]);
+    assert_eq!(sigil_link::flatten(&linked, 0x00).unwrap(), vec![0x03, 0x58, 0x02]);
 }
 
 // ── The float FUNCTION surface (`log`, `ln`, `sqrt`, the trig family) ────────

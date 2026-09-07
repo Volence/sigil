@@ -62,7 +62,7 @@ fn bytes(src: &str) -> Vec<u8> {
         )
     });
     let linked = sigil_link::link(&module.sections, &sigil_ir::SymbolTable::new()).expect("link");
-    let image = sigil_link::flatten(&linked, 0x00);
+    let image = sigil_link::flatten(&linked, 0x00).unwrap();
     assert!(
         image.len() > ORG,
         "the fixture emitted nothing at $1000: {} bytes total",

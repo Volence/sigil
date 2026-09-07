@@ -30,7 +30,7 @@ fn as_reference(asm: &str) -> Vec<u8> {
     let module = assemble(asm, &opts).unwrap_or_else(|d| panic!("AS assemble failed: {d:?}"));
     let linked = sigil_link::link(&module.sections, &SymbolTable::new())
         .unwrap_or_else(|d| panic!("AS link failed: {d:?}"));
-    sigil_link::flatten(&linked, 0x00)
+    sigil_link::flatten(&linked, 0x00).unwrap()
 }
 
 /// Compile a `.emp` source string through the modern front-end to its flat
@@ -54,7 +54,7 @@ fn emp_candidate(emp: &str) -> Vec<u8> {
         .unwrap_or_else(|d| panic!("emp resolve_layout failed: {d:?}"));
     let linked = sigil_link::link(&resolved, &SymbolTable::new())
         .unwrap_or_else(|d| panic!("emp link failed: {d:?}"));
-    sigil_link::flatten(&linked, 0x00)
+    sigil_link::flatten(&linked, 0x00).unwrap()
 }
 
 /// Like [`emp_candidate`], but for the offsets-totality proof (Spec 2, Plan 7

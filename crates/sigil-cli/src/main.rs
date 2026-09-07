@@ -154,7 +154,23 @@ fn main() {
             process::exit(1);
         }
     };
-    let image = sigil_link::flatten(&linked, 0x00);
+    // The cartridge-window check before `flatten`, located against `resolved`
+    // so a section placed outside the window is refused at the line that
+    // emitted its byte: `file(line): error: section ...`. `flatten` sizes its
+    // buffer from the window, so a refusal here is what stands between an
+    // `org -1` and a 4 GiB allocation.
+    let bounds = sigil_link::check_image_bounds(&linked, &resolved);
+    if !bounds.is_empty() {
+        render_located_diags(&bounds, &sources);
+        process::exit(1);
+    }
+    let image = match sigil_link::flatten(&linked, 0x00) {
+        Ok(image) => image,
+        Err(msg) => {
+            eprintln!("error: {msg}");
+            process::exit(1);
+        }
+    };
 
     if let Some(out_path) = output {
         if let Err(err) = std::fs::write(&out_path, &image) {
@@ -457,7 +473,10 @@ fn compile_emp(
 fn link_to_image(
     sections: &[sigil_ir::Section],
     asserts: &[sigil_ir::LinkAssert],
-) -> Result<(sigil_link::LinkedImage, Vec<sigil_span::Diagnostic>), Vec<sigil_span::Diagnostic>> {
+) -> Result<
+    (sigil_link::LinkedImage, Vec<sigil_ir::Section>, Vec<sigil_span::Diagnostic>),
+    Vec<sigil_span::Diagnostic>,
+> {
     let empty = sigil_ir::SymbolTable::new();
     let resolved = sigil_link::resolve_layout(sections, &empty, true)?;
     let image = sigil_link::link(&resolved, &empty)?;
@@ -469,17 +488,38 @@ fn link_to_image(
     if assert_diags.iter().any(|d| d.level == sigil_span::Level::Error) {
         return Err(assert_diags);
     }
-    Ok((image, assert_diags))
+    // The resolved sections ride along: they carry the post-placement LMAs and
+    // the fragment spans a tail needs to locate a refusal about the image.
+    Ok((image, resolved, assert_diags))
 }
 
-/// The no-map link seam: [`link_to_image`] then `flatten` (gap-fill 0x00, no
-/// region validation).
+/// The no-map link seam: [`link_to_image`], the cartridge-window check
+/// (located against the resolved sections, so a section outside the window is
+/// refused at the line that emitted its byte), then `flatten` (gap-fill 0x00).
+/// No game-map region validation happens here; `link_rom` is the map tail.
 fn link_sections(
     sections: &[sigil_ir::Section],
     asserts: &[sigil_ir::LinkAssert],
 ) -> Result<(Vec<u8>, Vec<sigil_span::Diagnostic>), Vec<sigil_span::Diagnostic>> {
-    let (image, warns) = link_to_image(sections, asserts)?;
-    Ok((sigil_link::flatten(&image, 0x00), warns))
+    let (image, resolved, warns) = link_to_image(sections, asserts)?;
+    let bounds = sigil_link::check_image_bounds(&image, &resolved);
+    if !bounds.is_empty() {
+        return Err(bounds);
+    }
+    let bytes = sigil_link::flatten(&image, 0x00).map_err(|msg| vec![unlocated_error(msg)])?;
+    Ok((bytes, warns))
+}
+
+/// An error diagnostic about the whole image rather than a source line. An id
+/// past every scanned file makes the renderers degrade to a bare
+/// `error: <msg>` rather than attribute it to whichever module happens to hold
+/// `SourceId(0)`.
+fn unlocated_error(message: String) -> sigil_span::Diagnostic {
+    sigil_span::Diagnostic {
+        level: sigil_span::Level::Error,
+        message,
+        primary: sigil_span::Span { source: sigil_span::SourceId(u32::MAX), start: 0, end: 0 },
+    }
 }
 
 /// The shared emp output tail: write `image` to `output` (if given), print it as
@@ -936,18 +976,9 @@ fn link_rom(
     asserts: &[sigil_ir::LinkAssert],
     map: &sigil_ir::map::MemoryMap,
 ) -> Result<(Vec<u8>, Vec<sigil_span::Diagnostic>), Vec<sigil_span::Diagnostic>> {
-    let (linked, warns) = link_to_image(sections, asserts)?;
-    sigil_link::emit_rom(&linked, map).map(|rom| (rom, warns)).map_err(|msg| {
-        vec![sigil_span::Diagnostic {
-            level: sigil_span::Level::Error,
-            message: msg,
-            // A region/placement failure belongs to no source line. An id past
-            // every scanned file makes the renderer degrade to a bare
-            // `error: <msg>` rather than attribute it to whichever module happens
-            // to hold `SourceId(0)`.
-            primary: sigil_span::Span { source: sigil_span::SourceId(u32::MAX), start: 0, end: 0 },
-        }]
-    })
+    let (linked, _resolved, warns) = link_to_image(sections, asserts)?;
+    // A region/placement failure belongs to no source line.
+    sigil_link::emit_rom(&linked, map).map(|rom| (rom, warns)).map_err(|msg| vec![unlocated_error(msg)])
 }
 
 /// Render multi-module diagnostics as `path:line:col: <level>: message`, through

@@ -35,7 +35,7 @@ use sigil_span::Diagnostic;
 fn bytes(src: &str) -> Vec<u8> {
     let module = assemble(src, &Options::default()).expect("assemble");
     let linked = sigil_link::link(&module.sections, &sigil_ir::SymbolTable::new()).expect("link");
-    sigil_link::flatten(&linked, 0x00)
+    sigil_link::flatten(&linked, 0x00).unwrap()
 }
 
 /// Assemble through the FILE entry point, expecting success, and hand back the

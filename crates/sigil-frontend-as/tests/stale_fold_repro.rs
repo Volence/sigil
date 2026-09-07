@@ -47,7 +47,7 @@ fn assemble_flatten(asm: &str) -> Vec<u8> {
     let resolved = sigil_link::resolve_layout(&module.sections, &SymbolTable::new(), true)
         .expect("resolve_layout");
     let linked = sigil_link::link(&resolved, &SymbolTable::new()).expect("link");
-    sigil_link::flatten(&linked, 0x00)
+    sigil_link::flatten(&linked, 0x00).unwrap()
 }
 
 /// Assemble → resolve_layout only; return the resolved sections for LMA checks.

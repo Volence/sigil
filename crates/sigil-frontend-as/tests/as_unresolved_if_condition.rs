@@ -56,7 +56,7 @@ fn assemble(body: &str) -> Result<Vec<u8>, Vec<(u32, String)>> {
                 sigil_link::resolve_layout(&m.sections, &sigil_ir::SymbolTable::new(), true)
                     .expect("resolve_layout");
             let linked = sigil_link::link(&resolved, &sigil_ir::SymbolTable::new()).expect("link");
-            Ok(sigil_link::flatten(&linked, 0x00))
+            Ok(sigil_link::flatten(&linked, 0x00).unwrap())
         }
         Err(f) => Err(f
             .diags

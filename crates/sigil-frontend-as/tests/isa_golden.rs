@@ -14,7 +14,7 @@ fn assemble_one(snippet: &str) -> Vec<u8> {
         .unwrap_or_else(|d| panic!("assemble `{snippet}` failed: {d:?}"));
     let linked = sigil_link::link(&module.sections, &SymbolTable::new())
         .unwrap_or_else(|d| panic!("link `{snippet}` failed: {d:?}"));
-    sigil_link::flatten(&linked, 0x00)
+    sigil_link::flatten(&linked, 0x00).unwrap()
 }
 
 fn parse_hex(s: &str) -> Vec<u8> {

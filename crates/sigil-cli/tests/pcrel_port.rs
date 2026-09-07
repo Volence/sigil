@@ -41,7 +41,7 @@ fn as_reference(asm: &str) -> Vec<u8> {
     let module = assemble(asm, &opts).unwrap_or_else(|d| panic!("AS assemble failed: {d:?}"));
     let linked = sigil_link::link(&module.sections, &SymbolTable::new())
         .unwrap_or_else(|d| panic!("AS link failed: {d:?}"));
-    sigil_link::flatten(&linked, 0x00)
+    sigil_link::flatten(&linked, 0x00).unwrap()
 }
 
 /// The full emp pipeline (parse -> lower -> resolve_layout -> link -> flatten),
@@ -74,7 +74,7 @@ fn compile_full(emp: &str) -> (Option<Vec<u8>>, Vec<String>) {
             return (None, msgs);
         }
     };
-    (Some(sigil_link::flatten(&linked, 0x00)), msgs)
+    (Some(sigil_link::flatten(&linked, 0x00).unwrap()), msgs)
 }
 
 /// Compile `emp` and panic with the diagnostics on any failure — the happy-path

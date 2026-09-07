@@ -75,10 +75,10 @@ fn emp_link(emp: &str) -> LinkedImage {
 /// Whole flat image (fill `0x00`) — the strongest diff, used for small programs
 /// where every emitted byte fits without a huge inter-section gap.
 fn as_flat(asm: &str) -> Vec<u8> {
-    sigil_link::flatten(&as_link(asm), 0x00)
+    sigil_link::flatten(&as_link(asm), 0x00).unwrap()
 }
 fn emp_flat(emp: &str) -> Vec<u8> {
-    sigil_link::flatten(&emp_link(emp), 0x00)
+    sigil_link::flatten(&emp_link(emp), 0x00).unwrap()
 }
 
 /// The bytes of a single named linked section — used when the referenced symbol

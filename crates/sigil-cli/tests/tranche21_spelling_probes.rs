@@ -42,7 +42,7 @@ fn as_reference(asm: &str) -> Vec<u8> {
     let sections = as_sections(asm);
     let linked = sigil_link::link(&sections, &SymbolTable::new())
         .unwrap_or_else(|d| panic!("AS link failed: {d:?}"));
-    sigil_link::flatten(&linked, 0x00)
+    sigil_link::flatten(&linked, 0x00).unwrap()
 }
 
 /// Lower an `.emp` source into raw sections (with optional comptime defines).
@@ -76,7 +76,7 @@ fn emp_candidate(emp: &str) -> Vec<u8> {
         .unwrap_or_else(|d| panic!("emp resolve failed: {d:?}"));
     let linked =
         sigil_link::link(&resolved, &empty).unwrap_or_else(|d| panic!("emp link failed: {d:?}"));
-    sigil_link::flatten(&linked, 0x00)
+    sigil_link::flatten(&linked, 0x00).unwrap()
 }
 
 fn assert_byte_identical(reference: &[u8], candidate: &[u8], what: &str) {
@@ -190,7 +190,7 @@ fn mixed_link(asm: &str, emp: &str) -> Vec<u8> {
         .unwrap_or_else(|d| panic!("mixed resolve failed: {d:?}"));
     let linked =
         sigil_link::link(&resolved, &empty).unwrap_or_else(|d| panic!("mixed link failed: {d:?}"));
-    sigil_link::flatten(&linked, 0x00)
+    sigil_link::flatten(&linked, 0x00).unwrap()
 }
 
 #[test]
@@ -313,7 +313,7 @@ fn qsd_link(mut code_sections: Vec<Section>) -> Vec<u8> {
         .unwrap_or_else(|d| panic!("qsd resolve failed: {d:?}"));
     let linked =
         sigil_link::link(&resolved, &empty).unwrap_or_else(|d| panic!("qsd link failed: {d:?}"));
-    let img = sigil_link::flatten(&linked, 0x00);
+    let img = sigil_link::flatten(&linked, 0x00).unwrap();
     // The code sits at 0; the carrier is far above — trim to the code bytes.
     let code_len = linked
         .sections
@@ -364,7 +364,7 @@ fn gated_extern_decl_compiles_both_shapes() {
         .unwrap_or_else(|d| panic!("gated-decl OFF resolve failed: {d:?}"));
     let linked = sigil_link::link(&resolved, &empty)
         .unwrap_or_else(|d| panic!("gated-decl OFF link failed: {d:?}"));
-    let bytes = sigil_link::flatten(&linked, 0x00);
+    let bytes = sigil_link::flatten(&linked, 0x00).unwrap();
     assert_eq!(bytes, vec![0x4E, 0x75], "OFF shape must be a bare rts");
 
     // ON shape: decl present, call resolves against a pinned AS-side label.
@@ -468,7 +468,7 @@ fn linkexpr_shift_mask_over_extern_matches_as() {
         .unwrap_or_else(|d| panic!("linkexpr resolve failed: {d:?}"));
     let linked = sigil_link::link(&resolved, &empty)
         .unwrap_or_else(|d| panic!("linkexpr link failed: {d:?}"));
-    let bytes = sigil_link::flatten(&linked, 0x00);
+    let bytes = sigil_link::flatten(&linked, 0x00).unwrap();
     assert_byte_identical(&reference, &bytes[..reference.len()], "dmaSource link expr");
 }
 

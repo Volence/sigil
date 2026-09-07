@@ -383,7 +383,7 @@ fn flatten(src: &str) -> Vec<u8> {
     );
     let resolved = sigil_link::resolve_layout(&module.sections, &SymbolTable::new(), true).expect("resolve");
     let linked = sigil_link::link(&resolved, &SymbolTable::new()).expect("link");
-    sigil_link::flatten(&linked, 0x00)
+    sigil_link::flatten(&linked, 0x00).unwrap()
 }
 
 /// `@scaffolding` is inert: the proc's emitted bytes are identical with and

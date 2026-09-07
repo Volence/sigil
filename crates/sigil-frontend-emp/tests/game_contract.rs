@@ -66,7 +66,7 @@ fn flatten_with_syms(module: &Module, syms: &[(&str, i64)]) -> Vec<u8> {
     let resolved =
         sigil_link::resolve_layout(&module.sections, &table, true).expect("resolve_layout");
     let linked = sigil_link::link(&resolved, &table).expect("link");
-    sigil_link::flatten(&linked, 0x00)
+    sigil_link::flatten(&linked, 0x00).unwrap()
 }
 
 fn errors(diags: &[Diagnostic]) -> Vec<String> {

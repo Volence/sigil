@@ -95,7 +95,7 @@ fn chained_successor_follows_grown_predecessor_final_size() {
     assert_eq!(out[1].lma, 6, "chained data must follow the FINAL 6-byte code, not baked 4");
     // The whole image links: code = jmp abs.l (6 bytes), then data at lma 6.
     let linked = sigil_link::link(&out, &stubs).unwrap();
-    let image = sigil_link::flatten(&linked, 0x00);
+    let image = sigil_link::flatten(&linked, 0x00).unwrap();
     assert_eq!(image, vec![0x4E, 0xF9, 0x00, 0x12, 0x34, 0x56, 0xDE, 0xAD, 0xBE, 0xEF]);
 }
 
@@ -133,7 +133,7 @@ fn max_span_reservation_holds_gap_when_final_is_smaller() {
     assert_eq!(out[0].lma, 0);
     assert_eq!(out[1].lma, 6, "max-span reservation must hold the gap (degeneracy)");
     let linked = sigil_link::link(&out, &stubs).unwrap();
-    let image = sigil_link::flatten(&linked, 0x00);
+    let image = sigil_link::flatten(&linked, 0x00).unwrap();
     // jmp abs.w (4 bytes) + a 2-byte gap (0x00 fill) + data at 6.
     assert_eq!(
         image,
@@ -258,7 +258,7 @@ fn a_reservation_inside_a_section_counts_toward_its_overlap_extent() {
         .expect("a pin past the gap does not overlap");
     let linked = sigil_link::link(&out, &SymbolTable::new()).expect("link");
     assert_eq!(
-        sigil_link::flatten(&linked, 0x00)[0x100..],
+        sigil_link::flatten(&linked, 0x00).unwrap()[0x100..],
         [0x11, 0x00, 0x00, 0x00, 0x00, 0x22, 0x55, 0x66],
         "alpha's gap fills, and beta follows it at 0x106"
     );

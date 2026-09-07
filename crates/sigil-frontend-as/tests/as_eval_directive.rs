@@ -62,7 +62,7 @@ fn eval_in_operand_position_still_emits() {
     let linked =
         sigil_link::link(&module.sections, &sigil_ir::SymbolTable::new()).expect("link");
     assert_eq!(
-        sigil_link::flatten(&linked, 0x00),
+        sigil_link::flatten(&linked, 0x00).unwrap(),
         vec![0x09, 0x03, 0x01],
         "`dc.b eval&$FF` must emit the label's low byte, not be read as an assignment"
     );
@@ -102,11 +102,11 @@ fn a_user_macro_named_eval_beats_the_directive() {
     let module = assemble(src, &Options::default()).expect("assemble");
     let linked =
         sigil_link::link(&module.sections, &sigil_ir::SymbolTable::new()).expect("link");
-    assert_eq!(sigil_link::flatten(&linked, 0x00), vec![0x41]);
+    assert_eq!(sigil_link::flatten(&linked, 0x00).unwrap(), vec![0x41]);
 
     let forced = "eval\tmacro x\n        dc.b x+$40\n        endm\n        cpu 68000\n        phase 0\n        !eval z,7\n        dc.b z\n";
     let module = assemble(forced, &Options::default()).expect("assemble");
     let linked =
         sigil_link::link(&module.sections, &sigil_ir::SymbolTable::new()).expect("link");
-    assert_eq!(sigil_link::flatten(&linked, 0x00), vec![0x07]);
+    assert_eq!(sigil_link::flatten(&linked, 0x00).unwrap(), vec![0x07]);
 }

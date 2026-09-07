@@ -17,7 +17,7 @@ fn as_reference(asm: &str) -> Vec<u8> {
     let module = assemble(asm, &opts).unwrap_or_else(|d| panic!("AS assemble failed: {d:?}"));
     let linked = sigil_link::link(&module.sections, &SymbolTable::new())
         .unwrap_or_else(|d| panic!("AS link failed: {d:?}"));
-    sigil_link::flatten(&linked, 0x00)
+    sigil_link::flatten(&linked, 0x00).unwrap()
 }
 
 /// Full emp pipeline (parse -> lower -> resolve_layout -> link -> flatten).
@@ -45,7 +45,7 @@ fn emp_candidate(emp: &str) -> Vec<u8> {
         .unwrap_or_else(|d| panic!("emp resolve failed: {d:?}"));
     let linked =
         sigil_link::link(&resolved, &empty).unwrap_or_else(|d| panic!("emp link failed: {d:?}"));
-    sigil_link::flatten(&linked, 0x00)
+    sigil_link::flatten(&linked, 0x00).unwrap()
 }
 
 fn assert_byte_identical(reference: &[u8], candidate: &[u8], what: &str) {

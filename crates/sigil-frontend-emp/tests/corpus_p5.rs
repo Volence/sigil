@@ -34,7 +34,7 @@ fn lower_and_flatten(src: &str) -> (Vec<u8>, Vec<sigil_span::Diagnostic>) {
         let resolved =
             sigil_link::resolve_layout(&module.sections, &SymbolTable::new(), true).expect("resolve_layout");
         let linked = sigil_link::link(&resolved, &SymbolTable::new()).expect("link");
-        (sigil_link::flatten(&linked, 0x00), diags)
+        (sigil_link::flatten(&linked, 0x00).unwrap(), diags)
     } else {
         (Vec::new(), diags)
     }

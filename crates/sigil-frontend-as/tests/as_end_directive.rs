@@ -54,7 +54,7 @@ fn image(root: &std::path::Path) -> Vec<u8> {
         .unwrap_or_else(|e| panic!("did not resolve:\n{e:?}"));
     let linked = sigil_link::link(&resolved, &SymbolTable::new())
         .unwrap_or_else(|e| panic!("did not link:\n{e:?}"));
-    sigil_link::flatten(&linked, 0x00)
+    sigil_link::flatten(&linked, 0x00).unwrap()
 }
 
 /// `end` in an included file ends the WHOLE unit — the parent's own line after
