@@ -65,8 +65,10 @@ as its own class; it is not a separate principle.
 
 The population is every test binary under `crates/*/tests/*.rs` whose text calls any of
 `aeon_dir(`, `reference_tree(`, `reference_tree_for_profile(`, `listing_path(`, `AEON_DIR`, or
-reaches a `games/` path through a harness helper. That is **144 files** of the 399 test binaries in
-the workspace; every one was read.
+reaches a `games/` path through a harness helper. That is **143 files** of the 399 test binaries in
+the workspace; every one was read. (143 is the instrument's answer, re-run at the parcel tip. An
+earlier draft of this note said 144, which was an eyeball of the printed list rather than a count —
+the sort of number that is right nineteen times out of twenty and is never checked.)
 
 **The first run of that instrument returned zero, and it was wrong.** `git grep … -- 'crates/*/tests/'`
 — a directory pathspec with a trailing slash — matches nothing and exits 0. The corrected pathspec

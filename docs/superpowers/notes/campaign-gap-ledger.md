@@ -4563,7 +4563,7 @@ sigil strict suite is red by this one test against every tree that carries the c
 ### `PROBE-CONTENT-SNAPSHOT`: assertions that pin another repo's content as it stands today (2026-09-07)
 
 The sweep the closed `sig-probe-live-game-file` finding booked, done at
-`docs/superpowers/notes/2026-09-07-probe-game-file-sweep.md`. 144 of the workspace's 399 test
+`docs/superpowers/notes/2026-09-07-probe-game-file-sweep.md`. 143 of the workspace's 399 test
 binaries read the aeon tree; every one was read and classified.
 
 **The classification the finding implied is wrong, and the note carries the correction.** The axis is
