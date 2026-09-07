@@ -141,18 +141,21 @@ fn a_negative_vma_align_follows_the_shared_signed_rule() {
     let secs = emp_sections(&format!(
         "module m\nsection s (cpu: m68000, vma: ${BASE:X}) {{\n  align {N}\n  data D: [u8; 1] = [9]\n}}\n"
     ));
-    let reserves: Vec<u32> = secs
+    // Deliberately agnostic about the fragment KIND — `an_align_pad_is_reserved_
+    // not_filled` owns that half. This vector must red for the RULE and nothing
+    // else, so it reads the pad's size out of whichever pad fragment carries it.
+    let pads: Vec<u32> = secs
         .iter()
         .flat_map(|s| s.fragments.iter())
         .filter_map(|f| match f {
-            Fragment::Reserve { count, .. } => Some(*count),
+            Fragment::Reserve { count, .. } | Fragment::Fill { count, .. } => Some(*count),
             _ => None,
         })
         .collect();
     let want = sigil_ir::asl_align_pad(BASE, N);
     assert_eq!(want, N, "asl advances an already-aligned NEGATIVE position a full n");
     assert_eq!(
-        reserves,
+        pads,
         vec![want],
         "the .emp align must use sigil_ir::asl_align_pad; a plain unsigned round-up answers 0"
     );
