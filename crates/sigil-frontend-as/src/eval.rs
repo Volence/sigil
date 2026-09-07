@@ -1272,6 +1272,12 @@ enum StructMember {
 /// (10⁸) a pair of nested non-convergent loops would otherwise grind through.
 const GLOBAL_WHILE_CAP: usize = 1_000_000;
 
+/// The values a word data directive (`dc.w`, Z80 `dw`) accepts: asl's window,
+/// signed floor to unsigned ceiling. See [`Asm::check_data_range`].
+const WORD_DATA_RANGE: std::ops::RangeInclusive<i64> = -0x8000..=0xFFFF;
+/// The values a long data directive (`dc.l`) accepts, the same shape.
+const LONG_DATA_RANGE: std::ops::RangeInclusive<i64> = -0x8000_0000..=0xFFFF_FFFF;
+
 enum Lowered {
     Fixed(Vec<Operand>),
     Rel(Option<Cond>, Expr),
@@ -1365,6 +1371,23 @@ impl Asm {
             message: msg.into(),
             primary: span,
         });
+    }
+
+    /// Refuse a folded data value outside the window its directive can hold,
+    /// the check `dc.b` has always made and the wider directives did not:
+    /// `dc.w $12345` cast to `u16` and emitted `23 45` with exit 0. The window
+    /// is asl's, signed floor to unsigned ceiling (`-32768..=65535` for a word,
+    /// `-2147483648..=4294967295` for a long; asl `error #1320: range
+    /// overflow` outside it, `dc.w -1` and `dc.w $FFFF` both `FFFF` inside).
+    /// The caller still emits the low bytes so the pass keeps its shape; the
+    /// error fails the run.
+    fn check_data_range(&mut self, v: i64, range: std::ops::RangeInclusive<i64>, span: Span) {
+        if !range.contains(&v) {
+            self.err(
+                span,
+                format!("operand {v} out of range {}..={}", range.start(), range.end()),
+            );
+        }
     }
 
     /// The continuous PHYSICAL location counter (real ROM/LMA offset): the open
@@ -5994,6 +6017,7 @@ impl Asm {
             let qe = self.qualify_expr(&e);
             match self.fold(&qe) {
                 Fold::Value(v) => {
+                    self.check_data_range(v, WORD_DATA_RANGE, span);
                     let w = v as u16;
                     self.emit(&[(w & 0xFF) as u8, (w >> 8) as u8], vec![], span);
                 }
@@ -6076,9 +6100,9 @@ impl Asm {
             // On the deferral pass, a `dc.w` whose value references a section
             // label (an offset-table row `Target-Base`, or a truncated address)
             // must carry the label(s) SYMBOLICALLY — a width-grown `JmpJsrSym`
-            // shifts them and a baked word would go stale. `Value16Be` matches
-            // the resolved path's `v as u16` low-16 truncation. See
-            // `keep_labels_symbolic`.
+            // shifts them and a baked word would go stale. `Value16Be` writes
+            // the folded value after its own range check, as the resolved path
+            // below does through `check_data_range`. See `keep_labels_symbolic`.
             let qed = self.resolve_dollar(&qe);
             if self.keep_labels_symbolic() && self.expr_refs_label(&qed) {
                 self.emit(
@@ -6090,6 +6114,7 @@ impl Asm {
             }
             match self.fold(&qe) {
                 Fold::Value(v) => {
+                    self.check_data_range(v, WORD_DATA_RANGE, span);
                     let w = (v as u16).to_be_bytes();
                     self.emit(&w, vec![], span);
                 }
@@ -6163,6 +6188,7 @@ impl Asm {
             }
             match self.fold(&qe) {
                 Fold::Value(v) => {
+                    self.check_data_range(v, LONG_DATA_RANGE, span);
                     let l = (v as u32).to_be_bytes();
                     self.emit(&l, vec![], span);
                 }
