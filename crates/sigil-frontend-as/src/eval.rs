@@ -1322,6 +1322,14 @@ const GLOBAL_MACRO_CAP: usize = 1_000_000;
 const WORD_DATA_RANGE: std::ops::RangeInclusive<i64> = -0x8000..=0xFFFF;
 /// The values a long data directive (`dc.l`) accepts, the same shape.
 const LONG_DATA_RANGE: std::ops::RangeInclusive<i64> = -0x8000_0000..=0xFFFF_FFFF;
+/// The counts `align` accepts: the domain of [`sigil_ir::asl_align_pad`],
+/// every non-zero `u32`. Checked on the folded `i64` BEFORE the narrowing
+/// cast, since a count that passes a wide positivity test and then truncates
+/// (`$100000000` to 0, `$100000001` to 1) is what the cast would otherwise
+/// hand the pad function. asl's own count is a 16-bit word (`align $10000`
+/// is `range overflow` there); the pad function is defined up to `u32::MAX`,
+/// so that ceiling is kept.
+const ALIGN_COUNT_RANGE: std::ops::RangeInclusive<i64> = 1..=u32::MAX as i64;
 
 enum Lowered {
     Fixed(Vec<Operand>),
@@ -6342,14 +6350,22 @@ impl Asm {
     fn directive_align(&mut self, rest: &[Token], span: Span) {
         self.open_section_if_needed();
         match self.eval_all(rest, span) {
-            Some(n) if n > 0 => {
+            Some(n) if ALIGN_COUNT_RANGE.contains(&n) => {
+                // In range, so the narrowing is exact.
                 let n = n as u32;
                 let pad = sigil_ir::asl_align_pad(self.here(), n);
                 if pad > 0 {
                     self.builder.reserve(pad, span);
                 }
             }
-            Some(_) => self.err(span, "align needs a positive constant"),
+            Some(n) => self.err(
+                span,
+                format!(
+                    "align count {n} out of range {}..={}",
+                    ALIGN_COUNT_RANGE.start(),
+                    ALIGN_COUNT_RANGE.end()
+                ),
+            ),
             None => {
                 if !self.register_reported_at(span) {
                     self.err(span, "unresolved align constant");
