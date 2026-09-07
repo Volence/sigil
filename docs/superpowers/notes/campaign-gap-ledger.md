@@ -4449,3 +4449,34 @@ fixed there: `.emp` `pub equ` lowering through `Expr::Int(n as i64)` at three si
 is a documented exception, not a defect); link-time `>> n` for n in 64..128 refused where comptime
 i128 answers it. Each is a narrowing or a duplicated rule; fix by the same idiom, red-first with an
 input the narrow cast changes.
+
+### `DIAG-DIALECT-THIRD`: one binary, more than the two ruled dialects (2026-09-07)
+
+The boot doc rules two diagnostic dialects on purpose (`.emp` `path:line:col:`, AS `file(line):`). The
+link-assert parcel (merge `82838687`) measured a third and a fourth: single-file `sigil emp` prints
+no level word at all, and the contract gate prints `error: [proc...]`; only `sigil build` carries the
+`[Error]` token a token-keyed expect-fail lane can count. Unify the `.emp`-side surfaces on the `sigil
+build` shape (level token present, located); the AS dialect stays as ruled. Owner-visible only in that
+diagnostics are tool text; the split itself is an internals call. Remaining `{:?}` / first-only sites
+in the native path are listed by line in the parcel note; none are guards.
+
+### `BUS-NET-BUILD-GATE-ROW`: the `[bus.*]` inference net is reported, not gated (2026-09-07)
+
+`crates/sigil-frontend-emp/src/.../z80_bus.rs` names itself the absorption of aeon's retired s4lint
+E006/E007/E008/E011 and is reported by `--report contracts`, but it is not in the build gate's
+zero-firing list (`crates/sigil-cli/src/main.rs`, the empty_gate rows). Measure that it fires zero
+times on all four shapes, then add the row; aeon's LS-14a "no mechanical statement" is wrong for sigil
+once the row exists. Answers aeon (h).
+
+### `CHECK-ONLY-INVOCATION`: evaluate a program's guards without emitting a ROM (2026-09-07)
+
+Aeon asked (LS-16a follow-up) for a check-only run that decides `ensure` and `LinkAssert` guards
+without the ~150 s full build. Nothing exists: `--extra-entry` is a full build, `sigil emp --root`
+decides link asserts without the residual and carriers so cross-namespace externs are Poison, and
+`sigil test` and `--report` do not link. Cheapest honest shape: a `--check` that runs exactly
+`resolve_frozen_sections` (emit_generated, assemble_as_side, build_emp, declared chain,
+resolve_layout) then `check_link_asserts` and the drift verdict, with no link, emit, listing or
+appendix. It decides every LinkAssert against final post-relaxation placement; it cannot prove region
+budget or overlap, image bounds, the checksum, or the closure gate. "One module's guards" is not an
+honest unit because externs resolve program-wide; the saving is the tail. `emit_generated` still
+writes sound artifacts. A CLI surface, so sigil's call; put the shape to aeon before landing.
