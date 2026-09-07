@@ -125,11 +125,12 @@ fn native_blob_matches_reference_debug() {
 /// length rounded UP to even (it is `boot_port.rs` that pins that value). The pad
 /// is load-bearing — boot walks `a5` through the blob into word-wide VDP reads in
 /// `boot_tail`, so an odd blob address-errors the 68k before the first frame.
-/// Both current lengths are odd, hence a 1-byte pad in each shape.
+/// Both current lengths are even, so neither shape carries a pad and
+/// `Z80_SOUND_SIZE` equals the blob length in each.
 #[test]
 fn blob_lengths_are_canonical() {
     assert_eq!(BLOB_LEN_DEBUG - BLOB_LEN_PLAIN, 0x82, "debug grows +$82 over plain (pkg 4 D7 added a 4 B debug-only operand-0 trap)");
-    assert_eq!(BLOB_LEN_PLAIN, 0x1813, "plain resident blob length = 6163 B; the debug shape is this + $82");
+    assert_eq!(BLOB_LEN_PLAIN, 0x1820, "plain resident blob length = 6176 B; the debug shape is this + $82");
 }
 
 /// The PLACEMENT contract, stated structurally instead of by re-pinned addresses:
