@@ -868,9 +868,9 @@ fn here_pos(builder: &IrBuilder, origin: u32, anchor_name: &str) -> HerePos {
 /// Lower one `align N` item (D2.29, §4.8): evaluate `N` (a positive comptime
 /// int), refuse a provisional position (`[align.provisional]` — v1 steers
 /// toward pinned branch sizes; ported data files contain no relaxables), then
-/// pad the LOWERING-BASELINE position to the next multiple of `N` with `$00`
-/// fill — the exact AS `align` arithmetic (`pad = (n - pos % n) % n`, zero
-/// fill).
+/// advance the LOWERING-BASELINE position to the boundary by the SHARED rule
+/// `sigil_ir::asl_align_pad`, as a `Reserve` — see [`emit_align_pad`] for both
+/// halves and for what each one means at the image.
 ///
 /// Soundness refinement (recorded in the tranche-0 notes): the baseline
 /// position can differ from the FINAL address (D2.25 — chained section bases
@@ -947,14 +947,37 @@ fn relax_granularity(cpu: Cpu) -> u32 {
     }
 }
 
-/// Emit one alignment pad (D2.29): refuse a provisional position, `$00`-fill the
-/// lowering-baseline position up to the next multiple of `n`, then define a
-/// hidden congruence anchor and record the link-time `anchor % n == 0` assert
-/// (so a final placement that breaks the alignment fails loudly). Shared by
+/// Emit one alignment pad (D2.29): refuse a provisional position, advance the
+/// lowering-baseline position to the boundary, then define a hidden congruence
+/// anchor and record the link-time `anchor % n == 0` assert (so a final
+/// placement that breaks the alignment fails loudly). Shared by
 /// [`lower_align_item`] (`align N`), [`lower_table_item`] (`item_align: N`, the
 /// self-adjusting pad after every emitted part), and [`lower_data_item`]
 /// (per-item `(align: N)`) so all three use the identical machinery — the
 /// design's byte-neutral guarantee.
+///
+/// THE PAD IS `sigil_ir::asl_align_pad`, AND IT IS A `Reserve` — the identical
+/// rule and the identical effect the AS front-end's `align` directive uses
+/// (`eval.rs::directive_align`), which is the whole point of there being one
+/// function here. Both halves matter separately:
+///
+///   * The RULE. asl does not round up: it rounds up on the LOW 32 BITS OF THE
+///     POSITION READ AS A SIGNED `i32`, with C's truncating remainder. For a
+///     non-negative position — every ROM address, and every lowering baseline
+///     an aeon module reaches today — that is exactly the plain round-up this
+///     used to compute by hand. It parts company on a NEGATIVE position: a
+///     `section (vma: $FFFF….)` carrying an `align`, where truncation rounds
+///     toward zero and an already-aligned position advances a full `n`. Nothing
+///     in the corpus declares such a section, so the rules agree on every byte
+///     reached today — INERT, not impossible, and it stops being inert the
+///     first time a RAM-VMA section carries an align.
+///   * The EFFECT. asl's object file carries NO RECORD for the addresses an
+///     `align` steps over, so the pad occupies address space and places no
+///     image byte. Mid-image that is indistinguishable from `$00` fill (the
+///     write cursor skips the gap and the next datum's `resize` zeroes it), so
+///     the two only part at a section's TAIL: `dc.b $11` + `align 4` is ONE
+///     byte, not four. A `Fill` here lengthened the section by up to `n-1`
+///     trailing bytes that asl never emits.
 ///
 /// `structural` tags the congruence assert `[layout.align]` when the pad is an
 /// IMPLICIT/layout one — a `table item_align:` pad (one per part, many) or a
@@ -1005,9 +1028,9 @@ fn emit_align_pad(
     }
 
     let pos = origin.wrapping_add(builder.current_offset());
-    let pad = (n - (pos % n)) % n;
+    let pad = sigil_ir::asl_align_pad(pos, n);
     if pad > 0 {
-        builder.emit_fill(pad, 0, span);
+        builder.reserve(pad, span);
     }
 
     // The congruence anchor: byte-free, name-collision-free (`$` is unlexable
