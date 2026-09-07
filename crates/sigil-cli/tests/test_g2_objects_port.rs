@@ -378,14 +378,16 @@ fn ref_window(aeon: &Path, rom_name: &str, base: usize, len: usize) -> Option<Ve
 /// All three regions' reference gate + the drift guards + the outbound proof.
 fn reference_gate(shape: &Shape, rom_name: &str) {
     let Some(aeon) = ref_sources() else { return };
-    // objtest-gate (2026-08-05): all three G2 modules are DEBUG-only — the plain
-    // arm's job flips to proving their regions carry ZERO plain bytes (the
-    // modules still compile; the byte gates run on the debug arm).
+    // All three G2 modules are DEBUG-only, and the plain arm compares no bytes:
+    // there is no plain window to read. What it checks is (1) that the three pins
+    // AGREE the trio is absent from the plain ROM, so a repin that hands one of
+    // them plain bytes while the emitter stays empty fails here rather than
+    // silently changing which arm this is, and (2) that the modules still lower
+    // and link, at the DEBUG bases because the collapsed plain bases would
+    // overlap. The byte gates are the debug arm's.
     if shape.emitter_len == 0 {
-        assert_eq!(shape.stress_len, 0, "gated trio must be all-empty in plain");
-        assert_eq!(shape.churn_len, 0, "gated trio must be all-empty in plain");
-        // The trio must still COMPILE standalone — at the DEBUG bases (the plain
-        // pins all collapse onto the plain_anchor and would overlap).
+        assert_eq!(shape.stress_len, 0, "the emitter pin says plain-empty, the stress pin disagrees");
+        assert_eq!(shape.churn_len, 0, "the emitter pin says plain-empty, the churn pin disagrees");
         let _ = compile_real_files(&aeon, &DEBUG);
         return;
     }
