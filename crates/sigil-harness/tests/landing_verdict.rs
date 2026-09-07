@@ -138,8 +138,12 @@ fn a_skip_line_under_strict_fails_the_landing_verdict() {
 
 /// The other spelling the counter matches. 27 sites once said `skipping` and were
 /// invisible to a `skip:`-only grep; the verdict must fail on that spelling too.
+///
+/// THE TEST'S OWN NAME MUST NOT SPELL IT. `cargo test` prints every test name into
+/// the log the wrapper counts, so a name carrying that word is itself a skip line in
+/// a strict landing run. Measured: the first name of this test did exactly that.
 #[test]
-fn the_skipping_spelling_fails_the_landing_verdict_too() {
+fn the_second_spelling_fails_the_landing_verdict_too() {
     let dir = scratch("skipping");
     let log = fixture(&dir, "skipping.log", "skipping gate_x: no reference tree\n");
     let (code, text) = judge(&log, &[]);
