@@ -96,6 +96,19 @@ Item 14. Both owed reads done (§6 a and b). Verdict unchanged - NOT YET - but i
 
 SUPERSEDED BY THE 2026-09-05 SWEEP and restated to what is left. 49 GB reclaimed, 31 worktrees to 13, 246 branches to 17, every removed tree verified 0 tracked-dirty, 0 untracked and tip in master, locks cleared with unlock and never a second -f. WHAT REMAINS: 12 trees hold something, mostly a single untracked build artifact each, and 7 branches are unmerged and kept by name. The residue needs a per-tree judgement rather than a rule, so it is not a sweep.
 
+## LENS-UX-SEAT-DIAGNOSTICS
+
+- state at archive: `open`  size: `M`  project: `-`
+- blockedBy: oracle's pilot notes on the brief, relayed by the hub; and the in-flight lens fixes and the owed shared-pair refresh, both ahead of it
+
+OWNER-RULED 2026-09-07, verified firsthand at empyrean `97cd725` (an ancestor of their `origin/main`; text at `docs/2026-09-07-lens-ux-seat-amendment.md`, protocol lands in aeon's `LENS_PROTOCOL.md`). His words in the artifact, not the relay: asked whether the lens should have a UX seat, *"I think it should have one right?"*, and on scope *"I think we draft it and run on oracle, aurora, and sigil for now"*. So the owner decision exists AND it is this question; the SEQUENCING (oracle first as pilot) is the hub's on his words and the artifact says so itself.
+
+The sigil variant is pointed at DIAGNOSTICS. **UXa, task walk:** the seat writes wrong code on purpose, three to five classes named in the controller's charter (a typo'd mnemonic, a width mismatch, an unresolved label, a macro misuse, a section overflow), as a newcomer who has read the README and nothing else, and judges whether each message gets them out — logging every stall, guess, and moment it had to read our source to proceed, ranked by time burned. **UXb, heuristic audit:** walk the message catalog against the checklist — can the cause be found from the text, does it say what to do next, is it consistent with its neighbours.
+
+Three conditions that are not optional: every finding ships the diagnostic text VERBATIM (no evidence, no finding — the amendment's own guard against a verdict of "nothing found", which is indistinguishable from clean); the panel is LATE, at a new pin, and the packet is amended to name it; and the no-emulator-MCP line stands unchanged.
+
+**DO NOT START until the hub relays oracle's pilot notes.** The brief is the thing under test on the first run, which is the whole reason oracle goes first — starting early would spend this lane's run on a brief the pilot is about to correct.
+
 ## S4BUDGET-STALE-ASSUMPTION
 
 - state at archive: `open`  size: `S`  project: `-`
