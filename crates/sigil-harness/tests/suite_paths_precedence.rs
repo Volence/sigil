@@ -274,18 +274,44 @@ fn the_resolver_follows_the_contract_precedence() {
     }
 
     // ── STEP 3: derivation, and it must agree with a derivation that is not its own.
-    let walked = walked_suite_root().expect(
-        "UNMEASURABLE: no ancestor of this crate holds the suite markers, so the step-3 \
-         expectation cannot be established independently of the resolver",
-    );
-    let (step, path) = ok_case("resolve", vec![]);
-    assert_eq!(step, 3, "with neither variable set, step 3 must answer");
-    assert_eq!(
-        path,
-        walked.join(AEON_REPO_DIR),
-        "the resolver's git-based derivation and an independent marker walk must reach the same \
-         suite root; they disagree, so at least one is answering about the wrong tree"
-    );
+    //
+    // This row and the unnamed default after it READ THE SUITE ROOT: their expectation is
+    // the marker walk, which only a checkout inside a suite root can answer. A checkout
+    // with none above it is decided by the d-18 rule for the suite-root class; a declared
+    // partial run leaves these two rows unmeasured and says so, and step 4 below, which
+    // reads no suite root, runs either way.
+    if let Some(walked) = walked_suite_root() {
+        let (step, path) = ok_case("resolve", vec![]);
+        assert_eq!(step, 3, "with neither variable set, step 3 must answer");
+        assert_eq!(
+            path,
+            walked.join(AEON_REPO_DIR),
+            "the resolver's git-based derivation and an independent marker walk must reach the \
+             same suite root; they disagree, so at least one is answering about the wrong tree"
+        );
+
+        // ── THE UNNAMED DEFAULT skips step 1 by construction: it is what a run resolves to
+        // when nobody names a tree, so a value in AEON_DIR must not reach it.
+        let (step, path) = ok_case("unnamed", vec![(AEON_DIR_VAR, s(&named))]);
+        assert_eq!(
+            step, 3,
+            "unnamed_default_tree answers the question `what does a run resolve to when nobody \
+             names a tree`, a set AEON_DIR must not answer it"
+        );
+        assert_ne!(path, named, "the unnamed default must not be the tree AEON_DIR names");
+        assert_eq!(
+            path,
+            walked.join(AEON_REPO_DIR),
+            "the unnamed default is step 3's answer here"
+        );
+    } else {
+        sigil_harness::test_support::suite_root_absent(
+            "the step-3 row and the unnamed-default row of \
+             the_resolver_follows_the_contract_precedence",
+            "no ancestor of this crate holds the suite markers, so the expectation those rows \
+             compare the resolver against cannot be established independently of it",
+        );
+    }
 
     // ── THE STEP-3 PROOF, FROM A LINKED WORKTREE THIS TEST BUILDS. See
     // `the_step_3_derivation_is_proven_from_a_linked_worktree` below; it is a separate row
@@ -306,17 +332,6 @@ fn the_resolver_follows_the_contract_precedence() {
         err.contains("git rev-parse --git-common-dir"),
         "the step-4 refusal must say why the derivation did not answer; got: {err}"
     );
-
-    // ── THE UNNAMED DEFAULT skips step 1 by construction: it is what a run resolves to
-    // when nobody names a tree, so a value in AEON_DIR must not reach it.
-    let (step, path) = ok_case("unnamed", vec![(AEON_DIR_VAR, s(&named))]);
-    assert_eq!(
-        step, 3,
-        "unnamed_default_tree answers the question `what does a run resolve to when nobody names \
-         a tree`, a set AEON_DIR must not answer it"
-    );
-    assert_ne!(path, named, "the unnamed default must not be the tree AEON_DIR names");
-    assert_eq!(path, walked.join(AEON_REPO_DIR), "the unnamed default is step 3's answer here");
 }
 
 /// THE STEP-3 PROOF, MADE FROM A LINKED WORKTREE THIS TEST BUILDS ITSELF.
@@ -513,6 +528,12 @@ fn the_step_3_derivation_is_proven_from_a_linked_worktree() {
         if raw.starts_with('/') { "absolute, a linked worktree" } else { "RELATIVE, a plain checkout" }
     );
 
+    // The production half READS THE SUITE ROOT, and only its last arm is an absent one:
+    // both derivations found nothing above this crate. A derivation that answers where the
+    // walk finds nothing, or fails where the walk finds a root, is a disagreement between
+    // the two, and stays the failure it always was. The absent arm is decided by the d-18
+    // rule for the suite-root class; a declared partial run leaves this half unmeasured
+    // and returns, so the ambient check is not announced a second time on its behalf.
     match (live, walked) {
         (Ok(l), Some(w)) => assert_eq!(
             l, w,
@@ -520,11 +541,24 @@ fn the_step_3_derivation_is_proven_from_a_linked_worktree() {
              with an independent marker walk, so the bed proved a function the production path \
              does not behave like"
         ),
-        (Err(e), _) => panic!("step 3 cannot derive from this crate's own location: {e}"),
-        (_, None) => panic!(
-            "UNMEASURABLE: no ancestor of this crate holds the suite markers, so the production \
-             half of this row has no independent expectation to check against"
+        (Err(e), Some(_)) => panic!("step 3 cannot derive from this crate's own location: {e}"),
+        (Ok(l), None) => panic!(
+            "UNMEASURABLE: the derivation answered {} while no ancestor of this crate holds the \
+             suite markers, so the production half of this row has no independent expectation \
+             to check against",
+            l.display()
         ),
+        (Err(e), None) => {
+            sigil_harness::test_support::suite_root_absent(
+                "the production-anchor half of \
+                 the_step_3_derivation_is_proven_from_a_linked_worktree",
+                &format!(
+                    "no ancestor of this crate holds the suite markers, and the derivation from \
+                     its own location agrees: {e}"
+                ),
+            );
+            return;
+        }
     }
 
     ambient_worktree_check(&walked_suite_root());

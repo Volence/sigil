@@ -1126,6 +1126,15 @@ fn announce_once(line: String) {
     ANNOUNCED.call_once(|| eprintln!("{line}"));
 }
 
+/// The suite-root class's banner, once per process, on its own latch. It cannot share
+/// [`announce_once`]'s: the two classes are independent (a tree named by `AEON_DIR` beside
+/// no suite root, or no tree named and a suite root present), so a process can owe both
+/// lines, and a latch already spent on the reference line would swallow this one.
+fn announce_suite_root_once(line: String) {
+    static ANNOUNCED: std::sync::Once = std::sync::Once::new();
+    ANNOUNCED.call_once(|| eprintln!("{line}"));
+}
+
 /// The environment variable that opts a run in to running WITHOUT a named reference tree.
 ///
 /// The ruling's shape: the refusal is the default and the partial run is explicit, because
@@ -1386,6 +1395,94 @@ pub fn reference_tree_for_profile(profile: &crate::native::GameProfile) -> Optio
     let map = root.parent().unwrap_or(std::path::Path::new("")).join("map.toml");
     let map = map.to_str().expect("game_root_rel is UTF-8");
     reference_tree(&[profile.game_root_rel, map])
+}
+
+/// The guard a SUITE-ROOT reader closes with when its own derivation finds none.
+///
+/// A suite-root reader is a test whose subject is the directory holding
+/// [`SUITE_ROOT_MARKERS`] beside this checkout (the step-3 derivation, the unnamed default
+/// tree) rather than the reference tree the gates above measure against. It opens with
+/// nothing, because its own derivation IS the read, and calls this when that derivation
+/// came back empty. `what` names the rows left unmeasured; `why` is the derivation's own
+/// answer. Returns only in a declared partial run, so the caller returns after it.
+///
+/// The three runs answer as d-18 answers them for the reference-tree class
+/// (`docs/OVERSEER-REFERENCE.md`, widened to this class on 2026-09-07):
+///
+///   * `SIGIL_STRICT_GATE`: a missing suite root is a FAILURE naming the class and the
+///     markers, so a strict run cannot read green over it;
+///   * a declared partial run ([`ALLOW_PARTIAL_VAR`]): the rows are left unmeasured in the
+///     `skip:` form the zero-skip bar counts, after a once-per-process banner carrying the
+///     DERIVED size of the class ([`partial_run_suite_root_banner`]);
+///   * a bare run: stops with UNMEASURABLE, naming the opt-in, because a run that only
+///     prints how much it skipped still exits 0.
+///
+/// A set [`SUITE_ROOT_VAR`] is never an absent suite root. It is a wrong one, or a checkout
+/// standing outside the root it names, and either is a wrong environment rather than a
+/// missing one: set but wrong is a hard error at its own step everywhere in the resolver,
+/// and a partial run must not be the one place it softens into a skip. The skip covers
+/// exactly the environment CI has: no variable, and no `aeon/` + `empyrean/` above.
+pub fn suite_root_absent(what: &str, why: &str) {
+    let markers = SUITE_ROOT_MARKERS.map(|m| format!("{m}/")).join(" + ");
+    assert!(
+        !strict_gate(),
+        "SIGIL_STRICT_GATE set but no suite root for {what}. The SUITE ROOT is the directory \
+         holding {markers} beside this checkout, and none was found ({why}). A strict run \
+         measures this from a checkout inside a suite root or fails here by name."
+    );
+    if std::env::var_os(SUITE_ROOT_VAR).is_some_and(|v| !v.is_empty()) {
+        panic!(
+            "UNMEASURABLE: {what}: {SUITE_ROOT_VAR} is set and the suite root still could not \
+             be established ({why}). A variable that is set but wrong is a wrong environment, \
+             not a missing one, and this run will not render it as a skip."
+        );
+    }
+    let partial = std::env::var_os(ALLOW_PARTIAL_VAR).is_some_and(|v| !v.is_empty());
+    if !partial {
+        panic!(
+            "UNMEASURABLE: no suite root for {what}. The SUITE ROOT is the directory holding \
+             {markers} beside this checkout, and none was found ({why}). Run from a checkout \
+             inside a suite root, or declare a partial run with {ALLOW_PARTIAL_VAR}=1, in \
+             which case this is left unmeasured and the run says so."
+        );
+    }
+    announce_suite_root_once(partial_run_suite_root_banner(why));
+    eprintln!(
+        "skip: {what}: no suite root holds {markers} beside this checkout ({why}); left \
+         unmeasured under {ALLOW_PARTIAL_VAR}"
+    );
+}
+
+/// The banner a declared partial run prints once when a suite-root reader finds none: the
+/// second line of the d-18 banner, for the second class. Its count comes from
+/// [`crate::reference_dependence::suite_root_reading_binaries`], the same kind of walk
+/// [`partial_run_banner`]'s does, and it names the binaries because the class is small
+/// enough to read. The positive control is structural: the binary printing this is a
+/// member, so an empty derivation is a broken one and is reported as unknown rather than
+/// as zero.
+pub fn partial_run_suite_root_banner(context: &str) -> String {
+    let ws = crate::reference_dependence::workspace_root();
+    let readers = crate::reference_dependence::suite_root_reading_binaries(&ws);
+    let markers = SUITE_ROOT_MARKERS.map(|m| format!("{m}/")).join(" + ");
+    let size = if readers.is_empty() {
+        "the derivation of how many test binaries read the SUITE ROOT returned none and COULD \
+         NOT BE ESTABLISHED (the binary printing this is one of them), so the size of this \
+         class is unknown rather than zero, and"
+            .to_string()
+    } else {
+        format!(
+            "{} test binaries read the SUITE ROOT ({}) and",
+            readers.len(),
+            readers.join(", ")
+        )
+    };
+    format!(
+        "PARTIAL RUN ({ALLOW_PARTIAL_VAR} is set). No suite root holds {markers} beside this \
+         checkout, so {size} the rows in them that compare against it are left UNMEASURED, \
+         each announced in the skip form. A green result from this run does NOT mean those \
+         rows passed, it means they were not run. Run from a checkout inside a suite root to \
+         measure them.\n{context}"
+    )
 }
 
 // ── 4. The scanline-capability contract seam (Scanline P2 Phase 1) ──────────
@@ -1986,6 +2083,63 @@ mod tests {
         assert!(
             !banner.contains("skip:") && !banner.contains("skipping"),
             "the banner is one line about a whole run, not a skipped test; got: {banner}"
+        );
+    }
+
+    /// The suite-root class has its own banner, and it says the number, the names and
+    /// the class. The size is derived from the test tree, and the derivation is held to a
+    /// positive control here because this binary is not itself a reader: an empty answer
+    /// from a walk that has real callers to find is a broken walk.
+    #[test]
+    fn the_partial_run_suite_root_banner_names_the_class_and_its_derived_size() {
+        let ws = crate::reference_dependence::workspace_root();
+        let readers = crate::reference_dependence::suite_root_reading_binaries(&ws);
+        assert!(
+            !readers.is_empty(),
+            "COULD NOT MEASURE: the suite-root derivation found no test binary calling {:?} \
+             under {}, and the corpus has them; a zero here renders the class as measured",
+            crate::reference_dependence::SUITE_ROOT_GUARDS,
+            ws.display()
+        );
+        for name in &readers {
+            let mut found = false;
+            for crate_dir in std::fs::read_dir(ws.join("crates")).into_iter().flatten().flatten() {
+                found |= crate_dir.path().join("tests").join(format!("{name}.rs")).is_file();
+            }
+            assert!(found, "the derivation named `{name}`, which is no test binary in this tree");
+        }
+
+        let banner = super::partial_run_suite_root_banner("(derivation context)");
+        assert!(
+            banner.contains(&readers.len().to_string()),
+            "the banner must carry the DERIVED count of the class ({}); got: {banner}",
+            readers.len()
+        );
+        for name in &readers {
+            assert!(banner.contains(name), "the banner must name `{name}`; got: {banner}");
+        }
+        assert!(
+            banner.contains("SUITE ROOT") && banner.contains("(derivation context)"),
+            "the banner must name the class it is about and carry the derivation's own \
+             answer; got: {banner}"
+        );
+        for m in super::SUITE_ROOT_MARKERS {
+            assert!(banner.contains(m), "the banner must say what a suite root holds; got: {banner}");
+        }
+        assert!(
+            banner.contains(super::ALLOW_PARTIAL_VAR),
+            "the banner must name the flag that produced this run; got: {banner}"
+        );
+        assert!(
+            !banner.contains("skip:") && !banner.contains("skipping"),
+            "the banner is one line about a whole class, not a skipped test; got: {banner}"
+        );
+        // The two banners describe two independent classes; the reference banner must
+        // not be read as also covering this one.
+        assert!(
+            !super::partial_run_banner("x").contains("SUITE ROOT"),
+            "the reference-tree banner claims the suite-root class, so a run with a named \
+             tree and no suite root would be described by the wrong line"
         );
     }
 

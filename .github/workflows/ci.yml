@@ -15,6 +15,13 @@ jobs:
       # compiling sources out of the sibling aeon tree, plus the m1b_gate
       # checksum/s4budget/Oracle gates — is left UNMEASURED here.
       #
+      # So are the SUITE-ROOT readers, a second and smaller class: rows whose
+      # subject is the directory holding aeon/ + empyrean/ beside the checkout
+      # (the resolver's step-3 derivation, the unnamed default tree). CI
+      # provides no fake suite root, deliberately; those rows announce
+      # themselves in the same `skip:` form and the harness prints a second
+      # banner line naming that class and its derived size.
+      #
       # CI IS A DECLARED PARTIAL RUN, and `SIGIL_ALLOW_PARTIAL=1` below is how it
       # says so. That is the `d-18` opt-in: without it, a run that resolves no
       # reference tree STOPS rather than passing green over the rows it did not
