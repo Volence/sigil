@@ -4304,6 +4304,7 @@ promote it from derived to observed.
 - `LENS-NESTING-RELEX` - a block body is re-lexed once per enclosing level; flat in asl, linear
   here, 52x at depth 32. Near-invisible on s1disasm (mean depth 0.054), dominant on aeon (1.157)
   and s2disasm (14.5x). **Size it on aeon or s2disasm, never on s1disasm.**
+  -- **CLOSED 2026-09-07** at merge `d21e9993` (`parcel/as-nesting-relex`, note `2026-09-07-as-nesting-relex.md`); the s2disasm remainder is `S2DISASM-REMAINING-COST`.
 - `LENS-EXTRA-TRAVERSAL` - convergence needs two consecutive identical symbol tables, so the floor
   is 2 traversals where asl's is 1, plus one per forward-equ link.
 - `LENS-DIAG-LOCATION-ONE` - `SourceMap::location` walks from byte 0 per diagnostic; about 0.45 ms
@@ -4489,3 +4490,12 @@ writes sound artifacts. A CLI surface, so sigil's call; put the shape to aeon be
 log scratch files under `<root>/target/attest` when `CARGO_TARGET_DIR` is unset. Scratch, not a build, so
 the shared binary is not relinked by it; but the path is the one every rule here says nothing lands in.
 Route it through the same named-target resolution the landing script uses.
+
+### `S2DISASM-REMAINING-COST`: s2disasm still takes about 5.2 s where asl takes 0.4 s (2026-09-07)
+
+After the nesting re-lex fix (merge `d21e9993`) the s2disasm front-end run is about 5.25 s median
+against asl's 0.40 s; the re-lex was about 14 percent of it. Unprofiled. Known candidates from the
+sweep packet: the outer fixpoint (two traversals minimum where asl stops at one, plus one per
+forward-equ link, `sig-extra-traversal`), `exec_one`'s second lex of each executed line (the
+4-per-line floor), and the per-copy memo on twice-executed includes and macro expansions. Profile
+before touching any of them; size on s2disasm or aeon, never s1disasm.
