@@ -1135,10 +1135,12 @@ fn corpus_context_requirements_are_satisfied_the_error_gate() {
 
     // Anti-vacuity 1 — the CLAIM census. A `requires`/`grants` clause is a
     // DECLARATION, not code, so this list is exact and shape-independent.
+    // 11 since aeon 157e59bf: `Sound_DebugMirror` (engine/debug/sound_debug.emp)
+    // joined the nine requiring procs.
     assert_eq!(
         r.context_claim_sites.len(),
-        10,
-        "the vblank claim census moved, 1 grant root (VBlank_Handler) + 9 requiring \
+        11,
+        "the vblank claim census moved, 1 grant root (VBlank_Handler) + 10 requiring \
          procs. Update deliberately: {:?}",
         r.context_claim_sites
     );
@@ -1167,9 +1169,12 @@ fn corpus_context_requirements_are_satisfied_the_error_gate() {
     // from the exception frame, so the ordinary flavor's save/restore pair was 22 measured
     // cycles per fire spent producing a value the next instruction discards. The COUNT is
     // unchanged (one bracket either way); the witness below is what records the flavor.
+    // 21 since aeon LS-12 (157e59bf): Sound_PlayMusic's slot capture is bracketed
+    // `with ints_off { with z80_stopped { .. } }`, one more `ints_off` region (the
+    // acquire is what needs the mask, see that site's comment).
     assert_eq!(
         r.context_regions.len(),
-        20,
+        21,
         "the `with` bracket census moved, corpus adoption changed. Update deliberately: {:?}",
         r.context_regions
     );

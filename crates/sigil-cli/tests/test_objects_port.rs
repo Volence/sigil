@@ -116,9 +116,12 @@ struct Shape {
     solid_len: usize,
     particle_base: u32,
     particle_len: usize,
+    /// The `DEBUG` define the modules are lowered under (test_solid.emp reads it).
+    debug: bool,
 }
 
 const PLAIN: Shape = Shape {
+    debug: false,
     draw_sprite: pins::DRAW_SPRITE.plain,
     object_move: pins::OBJECT_MOVE.plain,
     animate_sprite: pins::ANIMATE.plain_base,
@@ -130,6 +133,7 @@ const PLAIN: Shape = Shape {
     particle_len: pins::TEST_PARTICLE.plain_len,
 };
 const DEBUG: Shape = Shape {
+    debug: true,
     draw_sprite: pins::DRAW_SPRITE.debug,
     object_move: pins::OBJECT_MOVE.debug,
     animate_sprite: pins::ANIMATE.debug_base,
@@ -265,14 +269,33 @@ fn compile_real_files(
 
     // engine.types rides in front of sst (sst.emp itself imports it —
     // construct-walk #3's vocabulary).
-    let solid_file = with_ambient(vec![types(), sst()], solid);
+    // test_solid.emp's imports, every one read from the aeon tree at test runtime:
+    // engine.constants and games.sonic4.constants whole (consts-only, zero bytes),
+    // and the zero-byte items of engine.objects.objdef (`objdef`, `vram_art`),
+    // engine.objects.mapping_dsl (`MapPiece`, `MapFrame1`, `centered`, `piece`) and
+    // games.sonic4.player_common (the `PlayerV` overlay); test_support section 6.
+    let zero_byte = |rel: &str| sigil_harness::test_support::zero_byte_module(&aeon, rel);
+    let solid_file = with_ambient(
+        vec![
+            types(),
+            sst(),
+            constants(),
+            zero_byte("games/sonic4/config/constants.emp"),
+            zero_byte("engine/objects/objdef.emp"),
+            zero_byte("engine/objects/mapping_dsl.emp"),
+            zero_byte("games/sonic4/player/player_common.emp"),
+        ],
+        solid,
+    );
     let particle_file = with_ambient(vec![types(), sst(), constants()], particle);
 
     let opts = LowerOptions {
         initial_cpu: Cpu::M68000,
         include_root: Some(aeon.join("games/sonic4/objects")),
         embed_base: None,
-        defines: vec![],
+        // DEBUG is bound in both shapes (the house convention: the debug shape is
+        // explicit); test_solid.emp reads it.
+        defines: vec![("DEBUG".to_string(), i128::from(shape.debug))],
     };
     let mut sections = Vec::new();
     let mut link_asserts = Vec::new();
@@ -296,16 +319,33 @@ fn compile_real_files(
     // Synthetic cross-seam sections at harness-private LMAs, clear of the
     // bank regions.
     let mut lma = 0x0100_0000u32;
-    let mut synth = as_constant_equs();
-    for group in [
-        &mut synth,
-        &mut as_label_at("Draw_Sprite", shape.draw_sprite),
-        &mut as_label_at("ObjectMove", shape.object_move),
-        &mut as_label_at("AnimateSprite", shape.animate_sprite),
-        &mut as_label_at("RefreshSpritePieceCount", shape.refresh_spc),
-        &mut as_label_at("Ani_Particle", shape.ani_particle),
-        &mut as_outbound_consumer(),
-    ] {
+    let mut groups: Vec<Vec<Section>> = vec![
+        as_constant_equs(),
+        as_label_at("Draw_Sprite", shape.draw_sprite),
+        as_label_at("ObjectMove", shape.object_move),
+        as_label_at("AnimateSprite", shape.animate_sprite),
+        as_label_at("RefreshSpritePieceCount", shape.refresh_spc),
+        as_label_at("Ani_Particle", shape.ani_particle),
+        // The outbound consumer is the SEVENTH group and the gate finds it by that
+        // position (harness LMA 0x0160_0000); every group added later goes AFTER it.
+        as_outbound_consumer(),
+        // The spring's two outbound calls (aeon's spring object in test_solid.emp):
+        // the player state setter and collision's spring touch handler, both ROM
+        // procs read per shape from the reference build's own listing (the
+        // `listing_vma` seam) rather than pinned.
+        as_label_at("Player_SetState", sigil_harness::test_support::listing_vma(shape.debug, "Player_SetState")),
+        as_label_at("Touch_Spring", sigil_harness::test_support::listing_vma(shape.debug, "Touch_Spring")),
+    ];
+    if shape.debug {
+        // The MD Debugger carriers the spring's DEBUG-only asserts reach (the
+        // bg_anim_port / rings_port precedent); shape-invariant pins.
+        groups.push(as_label_at("MDDBG__ErrorHandler", pins::MDDBG_ERROR_HANDLER));
+        groups.push(as_label_at(
+            "MDDBG__ErrorHandler_PagesController",
+            pins::MDDBG_ERROR_HANDLER_PAGES_CONTROLLER,
+        ));
+    }
+    for group in &mut groups {
         for sec in group.iter_mut() {
             sec.lma = lma;
             sec.placement = SectionPlacement::Pinned;

@@ -196,7 +196,7 @@ fn parallax_addr_labels(debug: bool) -> Vec<Section> {
     // VDP_Shadow_Table cell below lives BEFORE the deleted pair, so it holds. (It had
     // a VDP_Dirty_Mask sibling until the blanket-restore parcel deleted that symbol.)
     // Camera_X/Y now pin-sourced (they carry the −4 too; matches Current_Act_Ptr style).
-    let table: [(&str, u32, u32); 38] = [
+    let mut table: Vec<(&str, u32, u32)> = vec![
         // The role-swap flag parallax.emp reads across the seam; derived like every
         // other `Parallax_*` cell here rather than pinned.
         ram_block_vma("Parallax_Roles_Swapped"),
@@ -327,6 +327,30 @@ fn parallax_addr_labels(debug: bool) -> Vec<Section> {
             pins::MATH.debug_base + pins::SINE_TABLE_OFF as u32,
         ),
     ];
+    // The vertical-parallax camera latch (`Parallax_VP_Prev_Cam_X`), engine RAM in
+    // both shapes, derived like every other `Parallax_*` cell.
+    table.push(ram_block_vma("Parallax_VP_Prev_Cam_X"));
+    table.push(ram_block_vma("Parallax_VP_Lean"));
+    // The waterline strip row the row-remap arm reads (owned by engine.ram, shared
+    // with bg_anim), derived the same way.
+    table.push(ram_block_vma("Waterline_Art_Row"));
+    if debug {
+        // The live-effects scratch config the arm installs from; debug RAM only.
+        table.push((
+            "Parallax_Scratch_Config",
+            0,
+            sigil_harness::test_support::listing_vma(true, "Parallax_Scratch_Config"),
+        ));
+        // The live-effects scratch arm Parallax_Update services in its DEBUG-only
+        // step 0 (an Aether client pokes it; see parallax.emp). It exists in the debug
+        // RAM map only, so it is read from the debug listing alone, the bg_anim_port
+        // precedent for a debug-only cell.
+        table.push((
+            "Parallax_Scratch_Arm",
+            0,
+            sigil_harness::test_support::listing_vma(true, "Parallax_Scratch_Arm"),
+        ));
+    }
     let mut out = Vec::new();
     for (i, (name, plain, dbg)) in table.iter().enumerate() {
         let vma = if debug { *dbg } else { *plain };
@@ -389,6 +413,13 @@ fn compile_real_file(
     // The per-cell fill and the fn went with owner ruling d-29-corrected — one fill, one
     // DMA length, one hardware mode — so parallax.emp no longer imports it and nothing is
     // spliced.)
+    // `use engine.level.parallax_dsl.{V_FLOOR_HALF_COLS, ...}`: the DSL module's
+    // consts and comptime fns, which emit no bytes, ride along whole (test_support
+    // section 6) so the next const parallax.emp imports from it arrives with them.
+    let parallax_dsl_file = sigil_harness::test_support::zero_byte_module(
+        &aeon_dir(),
+        "engine/level/parallax_dsl.emp",
+    );
     let file = sigil_frontend_emp::ast::File {
         module: main.module.clone(),
         attrs: main.attrs.clone(),
@@ -400,6 +431,7 @@ fn compile_real_file(
             .chain(z80_bus_file.items)
             .chain(irq_file.items)
             .chain(caps_file.items)
+            .chain(parallax_dsl_file.items)
             .chain(main.items)
             .collect(),
         docs: main.docs.clone(),

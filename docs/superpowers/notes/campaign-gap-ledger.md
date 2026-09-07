@@ -4430,6 +4430,13 @@ oracle lowers one module against a hand-picked dep list). Fix pattern is `test_s
 derive the constant from the aeon tree at test runtime, never a copied literal. The other nightly
 rows on 09-07 (`SND_S3K_SNARE_PTR`, `dac/s3k_snare.pcm`, the `with` census, the unused carry) are
 pin and corpus drift that the LS-12 chain refreeze re-baselines.
+  -- **CLOSED 2026-09-07** on `parcel/ls12-refreeze` (note `2026-09-07-ls12-refreeze.md`): the three
+  files are `dplc_port.rs` (both lowering sites), `dplc_negative_probes.rs` and, by the same class
+  under a different name (`unknown function offset_table_frames`), `collision_data_port.rs`. The two
+  dplc gates prepend `test_support::engine_const_src(aeon, "FRAME_PIECE_COUNT")`, the right-hand side
+  read verbatim from `engine/system/constants.emp` at test runtime; `collision_data_port.rs` admits
+  `dplc.emp`'s comptime fns wholesale beside its consts (neither emits a byte), so the next comptime
+  guard aeon adds arrives with it.
 
 ### `DAC-PORT-HANDTYPED-TABLE`: `dac_port.rs` re-types its expectations (2026-09-07)
 
@@ -4443,6 +4450,12 @@ The fix at the LS-12 refreeze is not new literals: derive PTR/LEN from the emitt
 and the drum list from the `.asm`, and drop the two paths rather than repoint them (aeon confirms they
 do not come back). Aeon's occupancy for the record: shared bank 30,908 to 25,754 B, free tail 1,860
 to 7,014 B, which admits all six S3K drum sizes where before it admitted one.
+  -- **CLOSED 2026-09-07** on `parcel/ls12-refreeze` (note `2026-09-07-ls12-refreeze.md`): `dac_port.rs`
+  reads the drum list, the section order and every `SND_*` right-hand side out of `dac_samples.emp`
+  (the declarer; no `.asm` declares the list any more), takes pointer VALUES from where each blob's
+  bytes sit in the linked image, asserts the two agree, and collects every row's mismatch. Red on the
+  old table at `SND_S3K_SNARE_PTR: expected 0x9512, got 0x857E`; red by name with the section LMA input
+  perturbed by 2.
 
 ### `PLACE-SECTIONS-SIZE-UNENFORCED`: a region's declared `size` is not enforced by placement (2026-09-07)
 
@@ -4509,3 +4522,40 @@ sweep packet: the outer fixpoint (two traversals minimum where asl stops at one,
 forward-equ link, `sig-extra-traversal`), `exec_one`'s second lex of each executed line (the
 4-per-line floor), and the per-copy memo on twice-executed includes and macro expansions. Profile
 before touching any of them; size on s2disasm or aeon, never s1disasm.
+
+### `REPIN-TYPED-SPANS`: repin.toml rows that spell a region's length as a literal (2026-09-07)
+
+Found by the LS-12 refreeze (`parcel/ls12-refreeze`, note `2026-09-07-ls12-refreeze.md`): a region
+declared `len = 0x..` (or `len` + `debug_len`) in `crates/sigil-harness/repin.toml` is a hand-typed
+expectation repin copies verbatim, so a module that grows past it leaves its consumer comparing a
+window it has outgrown, and a refreeze cannot close it. Three rows were converted to the section-END
+anchor (`end = "section:<name>"`, measured from sigil's own resolve, which needs no shipped label):
+`dac_banks` (0xF8BC vs the 0xE49A LS-7 left), `sound_api` (8 B short of LS-12's `with ints_off`
+tail), `bg_anim` (0x56 / 0x58 B short of the waterline arm). Every remaining `len =` row in the
+file is the same class waiting for its module to grow; convert on contact, or sweep them in one
+parcel with `repin --check` as the byte-neutral proof.
+
+### `PORT-SEAM-NAMES-DERIVED`: a port oracle's cross-seam symbol NAMES are still listed by hand (2026-09-07)
+
+The addresses are derived (`listing_vma`, `ram_block_vma`, `extend_from_listing` by prefix,
+`game_contract_bound_symbols`), but which names a standalone lower needs is still a list in each
+`*_port.rs`, and the LS-12 refreeze grew four of them one `unresolved symbol` at a time (bg_anim,
+parallax, collision, test_objects). The derived form enumerates the module's UNDEFINED references off
+the lowered IR (every `Expr::Sym` in the sections' fragments and fixups minus the labels the sections
+define) and phases each at its listing address; nothing in `sigil_ir` exposes that walk today. Build
+it once in `test_support`, then retire the lists. Red-first: a module referencing a symbol no list
+names must resolve without an edit.
+
+### `AEON-PARALLAX-INSTALLSCRATCH-CARRY`: aeon drops a declared flag result (2026-09-07)
+
+Aeon-side, found by `corpus_flag_results_are_all_consumed` strict against aeon 157e59bf: in the
+`sonic4 debug` shape `Parallax_Update` calls `Parallax_InstallScratch` (declared
+`out(carry: refused)`) and never reads the carry (`engine/level/parallax.emp:1694`, its own comment
+says "carry = refused; nothing here acts on it"). Contract-grammar v2 section 6 wants the discard
+spelled: aeon already uses `@discards(name)` at `engine/level/page_in.emp:300` and
+`engine/objects/load_object.emp:116`, so the one-line fix is `jbsr Parallax_InstallScratch
+@discards(refused)`. Not a sigil expectation; the gate is doing its job. Until aeon lands it, the
+sigil strict suite is red by this one test against every tree that carries the call, and chain entry
+204 cannot be attested green.
+  -- **CLOSED 2026-09-07**: aeon landed the one-line `@discards(refused)` at `ec640bcf`; chain entry 205
+  supersedes the red tip 204 and attests green.

@@ -23,12 +23,12 @@ use sigil_frontend_emp::parse_str;
 use sigil_ir::backend::Cpu;
 use sigil_ir::{Section, SectionPlacement, SymbolTable};
 
-/// The plain-shape resident blob length: **6163 B** (`$1813`).
+/// The plain-shape resident blob length: **6176 B** (`$1820`).
 ///
-/// This is the BLOB length, not `Z80_SOUND_SIZE` — aeon pads the blob to an even
+/// This is the BLOB length, not `Z80_SOUND_SIZE`: aeon pads the blob to an even
 /// length inside the `Z80_Sound_Start`/`_End` brackets, so `Z80_SOUND_SIZE` is this
-/// value rounded UP to even and is pinned separately in `boot_port.rs`. 6163 is odd,
-/// so the plain shape carries a 1-byte pad.
+/// value rounded UP to even and is pinned separately in `boot_port.rs`. 6176 is
+/// even, so the plain shape carries no pad and `Z80_SOUND_SIZE` equals this value.
 ///
 /// TRIPWIRE, NOT AN INPUT. Module bases are DERIVED from a running cursor
 /// ([`place_resident_sections`]), so nothing here participates in placement;
@@ -36,12 +36,12 @@ use sigil_ir::{Section, SectionPlacement, SymbolTable};
 /// [`emit_sound_blob`] asserts the emitted blob against. When a module
 /// legitimately grows or shrinks, re-pin this to the new measured length
 /// (and re-pin the `Z80_SOUND_SIZE` mirrors in the boot/tranche gates).
-pub const BLOB_LEN_PLAIN: usize = 0x1813;
+pub const BLOB_LEN_PLAIN: usize = 0x1820;
 /// The debug blob length: plain + `$82`, the sequencer's `if DEBUG==1` bodies.
-/// **6293 B** (`$1895`), also odd, so the debug shape carries a 1-byte pad too.
+/// **6306 B** (`$18A2`), also even, so the debug shape carries no pad either.
 /// Same TRIPWIRE-not-input status as [`BLOB_LEN_PLAIN`]. Debug headroom against
-/// the `$18F0` ceiling is 90 B.
-pub const BLOB_LEN_DEBUG: usize = 0x1813 + 0x82;
+/// the `$18F0` ceiling is 78 B.
+pub const BLOB_LEN_DEBUG: usize = 0x1820 + 0x82;
 
 /// The blob's LMA base = `Z80_Sound_Start` = `BootData + 54`. SHAPE-DEPENDENT: the
 /// debug shape grows +4 UPSTREAM of BootData (boot `__DEBUG__` content). Pin-sourced

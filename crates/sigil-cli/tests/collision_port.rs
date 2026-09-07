@@ -68,7 +68,7 @@
 //! ```
 
 use sigil_frontend_as::{assemble, Options as AsOptions};
-use sigil_frontend_emp::lower::{lower_module, LowerOptions};
+use sigil_frontend_emp::lower::{lower_module_with_contracts, LowerOptions};
 use sigil_frontend_emp::parse_str;
 use sigil_frontend_emp::resolve::place_sections;
 use sigil_harness::pins;
@@ -246,7 +246,17 @@ fn compile_real_file(
         // comptime `if` resolves.
         defines: vec![("DEBUG".to_string(), if shape.debug { 1 } else { 0 })],
     };
-    let (module, ldiags) = lower_module(&file, &opts);
+    // The game-contract env: collision.emp `invoke`s Game hooks (solid_pushed,
+    // spring_launched), which the whole-program bind pass resolves and a
+    // single-module lower does not. Bound from aeon's own interface against
+    // sonic4's own `implement Game` at THIS shape (test_support section 4), so the
+    // hook set and its targets are the ones the reference ROM was built with.
+    let profile = sigil_harness::native::sonic4_profile(shape.debug);
+    let profile_defines: Vec<(String, i128)> =
+        profile.emp_defines.iter().map(|(n, v)| (n.to_string(), *v)).collect();
+    let contracts =
+        sigil_harness::test_support::game_contract_env_from_aeon(&aeon, &profile, &profile_defines);
+    let (module, ldiags) = lower_module_with_contracts(&file, &opts, &contracts);
     assert!(
         ldiags.iter().all(|d| d.level != sigil_span::Level::Error),
         "collision.emp lower errors: {ldiags:?}"
@@ -276,6 +286,31 @@ fn compile_real_file(
     if let Some(w) = shape.walking {
         groups.push(as_label_at("Dynamic_Live_Walking", w));
     }
+    // Every hook target the bound contract names, at the address the reference
+    // build's own listing records for this shape: an `invoke Game.<hook>` lowers to
+    // a `jsr <target>`, and the operand bytes it encodes are what the region diff
+    // compares. Read off the env, never listed by hand, so a newly bound hook
+    // arrives with its seam entry.
+    let listing = sigil_harness::test_support::listing_path(shape.debug);
+    for target in sigil_harness::test_support::game_contract_bound_symbols(&contracts) {
+        let addr = sigil_harness::test_support::listing_symbol_addr(&listing, &target)
+            .unwrap_or_else(|| {
+                panic!(
+                    "no listing at {}, this gate derives every bound hook target's address \
+                     from the listing beside the reference ROM, so a source-only checkout \
+                     cannot serve it. Point AEON_DIR at a tree with all four shapes built.",
+                    listing.display()
+                )
+            });
+        groups.push(as_label_at(&target, addr));
+    }
+    // `Effect_Slots`: the effects pool collision.emp walks beside the dynamic pool,
+    // GAME RAM that moves with the shape, read from the listing (the `listing_vma`
+    // seam) rather than pinned.
+    groups.push(as_label_at(
+        "Effect_Slots",
+        sigil_harness::test_support::listing_vma(shape.debug, "Effect_Slots"),
+    ));
     for group in &mut groups {
         for sec in group.iter_mut() {
             sec.lma = lma;

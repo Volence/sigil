@@ -1,26 +1,26 @@
-# GENERATED — derive_offcanon. SIGIL-NATIVE region-boundary addresses (Stage-3 P4a).
+# GENERATED, derive_offcanon. SIGIL-NATIVE region-boundary addresses (Stage-3 P4a).
 # Derived from sigil's OWN resolved layout (each label's ROM LMA), NOT an asl
-# listing — THE LAST asl-derived constants retire here (kill-list rows 34/95).
+# listing, THE LAST asl-derived constants retire here (kill-list rows 34/95).
 # Section-END markers (`*_End`) are synthesized from the owning section's resolved
 # geometry (lma + image_len); the phased z80 idle reports its ROM LMA. The declared
 # per-region sizes (addr[end]-addr[start]) reproduce the golden below. On any ruled
 # post-flip golden re-baseline these re-derive from sigil (nothing requires asl).
 # target=demo
 # reproduces_golden=demo.bin
-# golden_crc32=11ebd7ab
-# assembled_anchor=cc50c11e
+# golden_crc32=0ad17404
+# assembled_anchor=932f01e4
 # assembled_end=0x1121a
 # labels=40
-AnimateSprite 0x1b8a
-BG_Init 0x5a06
-BgAnim_Init 0x5ada
+AnimateSprite 0x1b80
+BG_Init 0x5ae2
+BgAnim_Init 0x5bb6
 BootData 0x392
 BootData_End 0x3fe
 BusError 0x1016a
-Camera_Init 0x436e
+Camera_Init 0x444a
 Checksum 0x18e
-Collected_Init 0x20ce
-Collision_GetType 0x3ed0
+Collected_Init 0x21aa
+Collision_GetType 0x3fac
 DemoBox_Main 0x10002
 EndOfRom 0x1121a
 EntryPoint 0x200
@@ -29,23 +29,23 @@ GameState_Demo_Init 0x10100
 GetSineCosine 0xfde
 HBlank_Install 0xbca
 InitObjectRAM 0x1478
-InitSpriteSystem 0x1770
+InitSpriteSystem 0x1766
 Init_DMA_Queue 0x438
 Init_SpriteTable 0x764
-Level_LoadArt 0x5180
-Load_Object 0x2ca8
+Level_LoadArt 0x525c
+Load_Object 0x2d84
 ObjCodeBase 0x10000
 ObjDef_DemoBox 0x10006
-Parallax_Init 0x4518
+Parallax_Init 0x45f4
 Perform_DPLC 0x13d4
-Plane_Buffer_Reset 0x2d30
-PopulateSpawnedPieceCount 0x29bc
+Plane_Buffer_Reset 0x2e0c
+PopulateSpawnedPieceCount 0x2a98
 Read_Controllers 0xbfa
-RingBuffer_Add 0x1f1a
+RingBuffer_Add 0x1ff6
 S4LZ_DecompressDict 0xe6e
-Section_Init 0x3f38
-Tile_Cache_GetTile 0x304a
-TouchResponse 0x1d1a
+Section_Init 0x4014
+Tile_Cache_GetTile 0x3126
+TouchResponse 0x1d10
 VBlank_Handler 0xa3c
 VDP_Shadow_Init 0x3fe
 Vectors 0x0

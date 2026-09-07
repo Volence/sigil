@@ -31,7 +31,7 @@
 //! ```
 
 use sigil_frontend_as::{assemble, Options as AsOptions};
-use sigil_frontend_emp::lower::{lower_module, LowerOptions};
+use sigil_frontend_emp::lower::{lower_module_with_contracts, LowerOptions};
 use sigil_frontend_emp::parse_str;
 use sigil_frontend_emp::resolve::place_sections;
 use sigil_harness::pins;
@@ -104,6 +104,12 @@ fn bg_anim_addr_labels(debug: bool) -> Vec<Section> {
         table.push(("MDDBG__ErrorHandler", pins::MDDBG_ERROR_HANDLER));
         table.push(("MDDBG__ErrorHandler_PagesController", pins::MDDBG_ERROR_HANDLER_PAGES_CONTROLLER));
     }
+    // The waterline row-remap state (`Waterline_Art_Row` / `_LastRow` / `_Buffer` /
+    // `_State_End`, engine RAM the row-remap arm walks), swept from the reference
+    // listing by prefix so a new cell in that family needs no edit here; rows above
+    // keep their pinned value. See `test_support::extend_from_listing`.
+    let mut table: Vec<(String, u32)> = table.into_iter().map(|(n, v)| (n.to_string(), v)).collect();
+    sigil_harness::test_support::extend_from_listing_ram(&mut table, debug, &["Waterline_Art_"]);
     let mut out = Vec::new();
     for (i, (name, vma)) in table.iter().enumerate() {
         let vma = *vma;
@@ -135,19 +141,47 @@ fn parse_file(path: &Path) -> sigil_frontend_emp::ast::File {
     file
 }
 
-/// Lower the real `bg_anim.emp` (prepend `engine.types` — the `bganim_band`
-/// record's `vram_dest: VramAddr` vocabulary), place into the per-shape map,
-/// append the cross-seam address labels, one `resolve_layout` -> `link`.
+/// The ambient dependencies the standalone `bg_anim.emp` lower needs, every one
+/// read from the aeon tree at test runtime: `engine.types` (the `bganim_band`
+/// record's `vram_dest: VramAddr` vocabulary), `engine.constants` whole (the
+/// `VRAM_WATERLINE_STRIPS` chain; a consts-only module, zero bytes), the
+/// synthesized `CAP_*` bits standing in for `use engine.level.scene_dsl.{CAP_ROW_REMAP}`
+/// (test_support section 4), and `engine.level.parallax_dsl`'s zero-byte items
+/// (the `WATERLINE_*` consts, a chain rooted at `ROW_REMAP_H16`; section 6).
+fn bg_anim_ambient() -> Vec<sigil_frontend_emp::ast::File> {
+    let aeon = aeon_dir();
+    let caps_src = sigil_harness::test_support::scene_dsl_cap_consts_src(&aeon);
+    let (caps_file, caps_diags) = parse_str(&caps_src);
+    assert!(
+        caps_diags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "synthesized CAP_* block parse errors: {caps_diags:?}"
+    );
+    vec![
+        parse_file(&aeon.join("engine/system/types.emp")),
+        parse_file(&aeon.join("engine/system/constants.emp")),
+        caps_file,
+        sigil_harness::test_support::zero_byte_module(&aeon, "engine/level/parallax_dsl.emp"),
+    ]
+}
+
+/// Lower the real `bg_anim.emp` with [`bg_anim_ambient`] prepended, bound to
+/// sonic4's game contract (`Game.SCANLINE_CAPS` gates its row-remap block), place
+/// into the per-shape map, append the cross-seam address labels, one
+/// `resolve_layout` -> `link`.
 fn compile_real_file(
     debug: bool,
 ) -> (Vec<Section>, sigil_link::LinkedImage, Vec<sigil_ir::LinkAssert>) {
     let dir = level_dir();
     let main = parse_file(&dir.join("bg_anim.emp"));
-    let types_file = parse_file(&dir.parent().unwrap().join("system/types.emp"));
+    let mut items = Vec::new();
+    for dep in bg_anim_ambient() {
+        items.extend(dep.items);
+    }
+    items.extend(main.items);
     let file = sigil_frontend_emp::ast::File {
         module: main.module.clone(),
         attrs: main.attrs.clone(),
-        items: types_file.items.into_iter().chain(main.items).collect(),
+        items,
         docs: main.docs.clone(),
     };
 
@@ -157,7 +191,8 @@ fn compile_real_file(
         embed_base: None,
         defines: vec![("DEBUG".to_string(), i128::from(debug))],
     };
-    let (module, ldiags) = lower_module(&file, &opts);
+    let contracts = sigil_harness::test_support::scanline_caps_contract_env(&aeon_dir());
+    let (module, ldiags) = lower_module_with_contracts(&file, &opts, &contracts);
     assert!(
         ldiags.iter().all(|d| d.level != sigil_span::Level::Error),
         "bg_anim.emp lower errors: {ldiags:?}"
@@ -295,7 +330,10 @@ fn flip_lower_and_place(
         embed_base: None,
         defines: vec![("DEBUG".to_string(), i128::from(debug))],
     };
-    let (module, ldiags) = lower_module(&file, &opts);
+    // Both modules of the flip lower against sonic4's contract env; bg_anim reads
+    // `Game.SCANLINE_CAPS`, dma_queue reads no member and is unaffected.
+    let contracts = sigil_harness::test_support::scanline_caps_contract_env(&aeon_dir());
+    let (module, ldiags) = lower_module_with_contracts(&file, &opts, &contracts);
     assert!(
         ldiags.iter().all(|d| d.level != sigil_span::Level::Error),
         "{} lower errors: {ldiags:?}",
@@ -350,7 +388,7 @@ fn two_module_flip(debug: bool, rom_name: &str) {
     let ba_len = region_len(debug);
     let (mut ba_sections, ba_asserts) = flip_lower_and_place(
         &level_dir().join("bg_anim.emp"),
-        vec![parse_file(&level_dir().parent().unwrap().join("system/types.emp"))],
+        bg_anim_ambient(),
         level_dir(),
         "bg_anim",
         ba_base,
@@ -427,6 +465,9 @@ fn two_module_flip(debug: bool, rom_name: &str) {
     if debug {
         sigil_harness::test_support::extend_from_listing(&mut labels, debug, &["Dbg_DMA_", "DMA_Peak_", "DMA_Split_"]);
     }
+    // The waterline row-remap state bg_anim walks in both shapes (see
+    // `bg_anim_addr_labels`).
+    sigil_harness::test_support::extend_from_listing_ram(&mut labels, debug, &["Waterline_Art_"]);
     let mut lma = 0x0100_0000u32;
     let mut groups: Vec<Vec<Section>> = vec![flip_value_equs()];
     for (name, vma) in labels {

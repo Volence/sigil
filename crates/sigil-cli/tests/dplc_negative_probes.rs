@@ -42,23 +42,34 @@ fn strict_gate() -> bool {
     sigil_harness::test_support::strict_gate()
 }
 
-/// The ambient deps prepended so `Sst.<field>(a0)` resolves — types + sst,
-/// under dplc.emp's module header (the ambient-injection technique).
+/// The ambient deps prepended so `Sst.<field>(a0)` resolves — types + sst, plus
+/// the one engine constant the module imports (`FRAME_PIECE_COUNT`, re-declared
+/// from `engine/system/constants.emp` at test runtime by
+/// `test_support::engine_const_src`, so its module-level `ensure` reads a name
+/// the standalone lower carries) — under dplc.emp's module header (the
+/// ambient-injection technique).
 fn dplc_with_ambient(dplc_src: &str) -> sigil_frontend_emp::ast::File {
     let aeon = sigil_harness::test_support::aeon_dir();
+    let parse = |s: &str, what: &str| {
+        let (f, d) = parse_str(s);
+        assert!(d.iter().all(|x| x.level != Level::Error), "{what} parse: {d:?}");
+        f
+    };
     let read = |p: PathBuf| {
         let s = std::fs::read_to_string(&p).unwrap_or_else(|e| panic!("read {}: {e}", p.display()));
-        let (f, d) = parse_str(&s);
-        assert!(d.iter().all(|x| x.level != Level::Error), "{} parse: {d:?}", p.display());
-        f
+        parse(&s, &p.display().to_string())
     };
     let types = read(aeon.join("engine/system/types.emp"));
     let sst = read(aeon.join("engine/objects/sst.emp"));
-    let (dplc, ddiags) = parse_str(dplc_src);
-    assert!(ddiags.iter().all(|x| x.level != Level::Error), "dplc parse: {ddiags:?}");
+    let frame_piece_count = parse(
+        &sigil_harness::test_support::engine_const_src(&aeon, "FRAME_PIECE_COUNT"),
+        "engine_const_src(FRAME_PIECE_COUNT)",
+    );
+    let dplc = parse(dplc_src, "dplc");
     let mut items = Vec::new();
     items.extend(types.items);
     items.extend(sst.items);
+    items.extend(frame_piece_count.items);
     items.extend(dplc.items);
     sigil_frontend_emp::ast::File {
         module: dplc.module.clone(),

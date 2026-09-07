@@ -1723,6 +1723,32 @@ pub fn bg_layout_size_const_src(aeon: &std::path::Path) -> String {
     format!("module engine.bg_layout\npub const BG_LAYOUT_SIZE = {rhs}\n")
 }
 
+/// A synthesized `.emp` source re-declaring ONE `pub const` of
+/// `engine/system/constants.emp`, for a single-module oracle to PREPEND to its
+/// dep items.
+///
+/// The live case is `engine/objects/dplc.emp`'s
+/// `use engine.constants.{FRAME_PIECE_COUNT}`: the module pins its inlined `+ 4`
+/// frame-header read with a module-level `ensure(FRAME_PIECE_COUNT == 4, ...)`,
+/// so a standalone lower that does not carry the name aborts with
+/// `unknown name FRAME_PIECE_COUNT` before it reaches the bytes it exists to
+/// compare (the `*_port` cross-seam trap in `docs/OVERSEER-REFERENCE.md`: a
+/// hand-picked dep list predates a constant the module later imports).
+///
+/// Synthesized rather than prepending the whole `constants.emp`, on the same
+/// reasoning as [`bg_layout_size_const_src`]: a byte-oracle's dep list is kept
+/// deliberately minimal, and only the one integer is load-bearing here.
+///
+/// The value is not written down here: the right-hand side is copied VERBATIM
+/// out of `constants.emp` and folded by sigil's own comptime evaluator, so a
+/// change to the engine's frame-header layout reaches every gate that lowers the
+/// module by itself. A renamed or removed const fails loud in [`emp_const_rhs`]
+/// rather than binding a stale value.
+pub fn engine_const_src(aeon: &std::path::Path, name: &str) -> String {
+    let rhs = emp_const_rhs(&aeon.join("engine/system/constants.emp"), name);
+    format!("module engine.constants_lifted\npub const {name} = {rhs}\n")
+}
+
 /// The resolved game-contract env the raster / parallax / buffers oracles lower
 /// against — sonic4's WHOLE contract via [`game_contract_env_from_aeon`] at the
 /// canonical shape, not a one-member stub.
@@ -1739,6 +1765,223 @@ pub fn scanline_caps_contract_env(
     let defines: Vec<(String, i128)> =
         profile.emp_defines.iter().map(|(n, v)| (n.to_string(), *v)).collect();
     game_contract_env_from_aeon(aeon, &profile, &defines)
+}
+
+// ── 6. Zero-byte ambient modules ────────────────────────────────────────────
+//
+// A port gate lowers one module against a hand-picked dep list, and that list goes
+// stale in one direction only: aeon starts importing a name the list never carried,
+// and the standalone lower aborts with `unknown name` before it reaches the bytes it
+// exists to compare. Prepending the DECLARING module is the derived fix, and it is
+// safe exactly when the module contributes nothing to the window being compared.
+// That is a property of item KINDS, not of any one file, so it is spelled once here.
+
+/// A module's items of the kinds that lower to NO BYTES, under its own header, for a
+/// single-module byte oracle to PREPEND as an ambient dependency.
+///
+/// A const, an equ, an enum, a bitfield, a struct, a newtype, a comptime fn, an
+/// extern declaration, a contract type and a vars OVERLAY (`vars Name: window { .. }`,
+/// which aliases a struct's byte window and allocates nothing, the `PlayerV` shape)
+/// are compile-time vocabulary. A proc, a data item, a table, a dispatch, an
+/// `offsets` block (it EMITS its word offset table; `player_common.emp`'s three
+/// state tables are 78 B), a region-form vars block (`vars region { .. }`, a RAM
+/// allocation), a section and a script are bytes or RAM and stay out. `use` items
+/// stay out too: they name modules a standalone lower does not follow.
+///
+/// Loud on a missing or unparseable file, and on a module that contributes nothing
+/// (a gate prepending an empty module has the wrong path).
+pub fn zero_byte_module(aeon: &std::path::Path, rel: &str) -> sigil_frontend_emp::ast::File {
+    use sigil_frontend_emp::ast::Item;
+    let path = aeon.join(rel);
+    let src = std::fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("zero_byte_module: cannot read {}: {e}", path.display()));
+    let (file, diags) = sigil_frontend_emp::parse_str(&src);
+    assert!(
+        diags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "zero_byte_module: {} parse errors: {diags:?}",
+        path.display()
+    );
+    let items: Vec<Item> = file
+        .items
+        .into_iter()
+        .filter(|it| {
+            matches!(
+                it,
+                Item::Const(_)
+                    | Item::Equ(_)
+                    | Item::Enum(_)
+                    | Item::Bitfield(_)
+                    | Item::Struct(_)
+                    | Item::Newtype(_)
+                    | Item::ComptimeFn(_)
+                    | Item::ExternConst(_)
+                    | Item::ExternProc(_)
+                    | Item::ContractType(_)
+            ) || matches!(it, Item::Vars(v) if v.name.is_some() && v.region_body.is_empty())
+        })
+        .collect();
+    assert!(
+        !items.is_empty(),
+        "zero_byte_module: {} carries no zero-byte item, the gate prepending it has the \
+         wrong module",
+        path.display()
+    );
+    sigil_frontend_emp::ast::File { module: file.module, attrs: file.attrs, items, docs: file.docs }
+}
+
+// ── 7. The DAC sample module, read as declarations ──────────────────────────
+//
+// `games/sonic4/data/sound/dac_samples.emp` is the ONLY declarer of the DAC banks
+// (no `.asm` reader remains): which blob const embeds which file, which `data` lines
+// each `bank:` section holds in what order, and which label or blob each `SND_*`
+// equ names. Two gates derive their expectations from it (`dac_port` and
+// `seam2_dac_emit`), so the reading is spelled once. It is authoritative for ORDER
+// and NAMES; values come from the artifact the gate is measuring.
+
+/// One `data <label> = <blob>` line of a `section` block, in declaration order.
+#[derive(Debug)]
+pub struct DacDataLine {
+    pub label: String,
+    pub blob: String,
+}
+
+/// What one `SND_<base>_*` triple's right-hand sides NAME: the label under
+/// `bankid()`, the label under `winptr()`, the blob const under `.len`.
+#[derive(Debug, Default)]
+pub struct SndTriple {
+    pub bank_of: Option<String>,
+    pub ptr_of: Option<String>,
+    pub len_of: Option<String>,
+}
+
+/// The declaring module as text facts.
+#[derive(Debug, Default)]
+pub struct DacDeclarations {
+    /// `const <Blob> = embed("<path>")`, keyed by the blob const's name.
+    pub embeds: std::collections::BTreeMap<String, String>,
+    /// `section <name> (...) { data ... }` blocks, data lines in declaration order.
+    pub sections: std::collections::BTreeMap<String, Vec<DacDataLine>>,
+    /// `equ SND_<base>_{BANK,PTR,LEN} = ...`, keyed by `<base>`.
+    pub equs: std::collections::BTreeMap<String, SndTriple>,
+}
+
+impl DacDeclarations {
+    /// The bytes a section declares: the lengths of the files its `data` lines embed,
+    /// summed in declaration order. Loud on a section the module does not declare,
+    /// a blob no `const` embeds, and a file that cannot be read (a deleted drum must
+    /// fail by name, never read as zero).
+    pub fn declared_bytes(&self, sound_dir: &std::path::Path, section: &str) -> usize {
+        let lines = self
+            .sections
+            .get(section)
+            .unwrap_or_else(|| panic!("dac_samples.emp declares no section `{section}`"));
+        assert!(!lines.is_empty(), "dac_samples.emp: section `{section}` declares no data line");
+        lines
+            .iter()
+            .map(|DacDataLine { label, blob }| {
+                let path = self.embeds.get(blob).unwrap_or_else(|| {
+                    panic!("`{section}`: data `{label}` binds `{blob}`, which no `const ... = embed(...)` declares")
+                });
+                std::fs::metadata(sound_dir.join(path))
+                    .unwrap_or_else(|e| panic!("{path} (blob `{blob}`, label `{label}`): {e}"))
+                    .len() as usize
+            })
+            .sum()
+    }
+}
+
+/// Read `dac_samples.emp` out of the sound directory and parse its declarations.
+pub fn read_dac_declarations(sound_dir: &std::path::Path) -> DacDeclarations {
+    let path = sound_dir.join("dac_samples.emp");
+    let src = std::fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("read_dac_declarations: cannot read {}: {e}", path.display()));
+    parse_dac_declarations(&src)
+}
+
+/// `dac_samples.emp`'s declarations, read line by line. Trailing `// ...` comments
+/// are dropped; fully commented lines are skipped. Any `SND_*` equ whose right-hand
+/// side is not one of the three shapes the module documents (`bankid(L)`,
+/// `winptr(L)`, `B.len`) is a hard failure: a derivation cannot follow a shape it
+/// does not know, and must say so rather than bind a wrong expectation.
+pub fn parse_dac_declarations(src: &str) -> DacDeclarations {
+    let mut d = DacDeclarations::default();
+    let mut in_section: Option<String> = None;
+    for raw in src.lines() {
+        let line = raw.split("//").next().unwrap_or("").trim();
+        if line.is_empty() {
+            continue;
+        }
+        if let Some(rest) = line.strip_prefix("const ") {
+            let (name, rhs) =
+                rest.split_once('=').unwrap_or_else(|| panic!("const line without `=`: {raw}"));
+            if let Some(path) =
+                rhs.trim().strip_prefix("embed(\"").and_then(|r| r.strip_suffix("\")"))
+            {
+                d.embeds.insert(name.trim().to_string(), path.to_string());
+            }
+            continue;
+        }
+        if let Some(rest) = line.strip_prefix("section ") {
+            let name = rest.split([' ', '(', '{']).next().unwrap_or("").trim();
+            assert!(!name.is_empty(), "section line without a name: {raw}");
+            in_section = Some(name.to_string());
+            d.sections.entry(name.to_string()).or_default();
+            continue;
+        }
+        if line == "}" {
+            in_section = None;
+            continue;
+        }
+        if let (Some(sec), Some(rest)) = (&in_section, line.strip_prefix("data ")) {
+            let (label, blob) =
+                rest.split_once('=').unwrap_or_else(|| panic!("data line without `=`: {raw}"));
+            d.sections.get_mut(sec).unwrap().push(DacDataLine {
+                label: label.trim().to_string(),
+                blob: blob.trim().to_string(),
+            });
+            continue;
+        }
+        if let Some(rest) = line.strip_prefix("equ ") {
+            let (name, rhs) =
+                rest.split_once('=').unwrap_or_else(|| panic!("equ line without `=`: {raw}"));
+            let (name, rhs) = (name.trim(), rhs.trim());
+            let Some(name) = name.strip_prefix("SND_") else { continue };
+            let call = |f: &str| {
+                rhs.strip_prefix(f).and_then(|r| r.strip_prefix('(')).and_then(|r| r.strip_suffix(')'))
+            };
+            if let Some(base) = name.strip_suffix("_BANK") {
+                let l = call("bankid")
+                    .unwrap_or_else(|| panic!("SND_{name}: expected `bankid(<label>)`, got `{rhs}`"));
+                d.equs.entry(base.to_string()).or_default().bank_of = Some(l.trim().to_string());
+            } else if let Some(base) = name.strip_suffix("_PTR") {
+                let l = call("winptr")
+                    .unwrap_or_else(|| panic!("SND_{name}: expected `winptr(<label>)`, got `{rhs}`"));
+                d.equs.entry(base.to_string()).or_default().ptr_of = Some(l.trim().to_string());
+            } else if let Some(base) = name.strip_suffix("_LEN") {
+                let b = rhs
+                    .strip_suffix(".len")
+                    .unwrap_or_else(|| panic!("SND_{name}: expected `<Blob>.len`, got `{rhs}`"));
+                d.equs.entry(base.to_string()).or_default().len_of = Some(b.trim().to_string());
+            } else {
+                panic!("SND_{name}: not a _BANK / _PTR / _LEN equ, the derivation does not know this shape");
+            }
+        }
+    }
+    // Loud on the unmeasurable: an empty module would make every assertion a gate
+    // derives from this vacuously true.
+    assert!(!d.embeds.is_empty(), "dac_samples.emp declares no `const X = embed(...)`");
+    assert!(
+        d.sections.values().any(|v| !v.is_empty()),
+        "dac_samples.emp declares no `data` line in any section"
+    );
+    assert!(!d.equs.is_empty(), "dac_samples.emp declares no `SND_*` equ");
+    for (base, t) in &d.equs {
+        assert!(
+            t.bank_of.is_some() && t.ptr_of.is_some() && t.len_of.is_some(),
+            "SND_{base}: incomplete triple {t:?}"
+        );
+    }
+    d
 }
 
 // ── 5. The whole-path module rig ────────────────────────────────────────────

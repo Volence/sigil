@@ -1,28 +1,28 @@
-# GENERATED — derive_offcanon. SIGIL-NATIVE region-boundary addresses (Stage-3 P4a).
+# GENERATED, derive_offcanon. SIGIL-NATIVE region-boundary addresses (Stage-3 P4a).
 # Derived from sigil's OWN resolved layout (each label's ROM LMA), NOT an asl
-# listing — THE LAST asl-derived constants retire here (kill-list rows 34/95).
+# listing, THE LAST asl-derived constants retire here (kill-list rows 34/95).
 # Section-END markers (`*_End`) are synthesized from the owning section's resolved
 # geometry (lma + image_len); the phased z80 idle reports its ROM LMA. The declared
 # per-region sizes (addr[end]-addr[start]) reproduce the golden below. On any ruled
 # post-flip golden re-baseline these re-derive from sigil (nothing requires asl).
 # target=demo_debug
 # reproduces_golden=demo.debug.bin
-# golden_crc32=9b0d2ce7
-# assembled_anchor=678b6afb
+# golden_crc32=2565ece2
+# assembled_anchor=b3a21a2f
 # assembled_end=0x1121a
 # labels=42
 AnimateSprite 0x2348
-BG_Init 0x7c48
-BgAnim_Init 0x7d7c
+BG_Init 0x7d7a
+BgAnim_Init 0x7eae
 BootData 0x396
 BootData_End 0x402
 BusError 0x1016a
-CSelf_S4LZ_Plain 0x8176
-Camera_Init 0x5a0e
+CSelf_S4LZ_Plain 0x82ac
+Camera_Init 0x5af4
 Checksum 0x18e
-Collected_Init 0x2a1e
-Collision_GetType 0x5140
-CompressionSelfTest 0x7eec
+Collected_Init 0x2b04
+Collision_GetType 0x5226
+CompressionSelfTest 0x8022
 DemoBox_Main 0x10002
 EndOfRom 0x1121a
 EntryPoint 0x200
@@ -34,19 +34,19 @@ InitObjectRAM 0x16d4
 InitSpriteSystem 0x1e14
 Init_DMA_Queue 0x492
 Init_SpriteTable 0x7d8
-Level_LoadArt 0x68be
-Load_Object 0x3b16
+Level_LoadArt 0x69f0
+Load_Object 0x3bfc
 ObjCodeBase 0x10000
 ObjDef_DemoBox 0x10006
-Parallax_Init 0x5bc2
+Parallax_Init 0x5ca8
 Perform_DPLC 0x1630
-Plane_Buffer_Reset 0x3b9e
-PopulateSpawnedPieceCount 0x377a
+Plane_Buffer_Reset 0x3c84
+PopulateSpawnedPieceCount 0x3860
 Read_Controllers 0xc9e
-RingBuffer_Add 0x2804
+RingBuffer_Add 0x28ea
 S4LZ_DecompressDict 0xfc2
-Section_Init 0x51a8
-Tile_Cache_GetTile 0x4054
+Section_Init 0x528e
+Tile_Cache_GetTile 0x413a
 TouchResponse 0x25fc
 VBlank_Handler 0xab0
 VDP_Shadow_Init 0x402
