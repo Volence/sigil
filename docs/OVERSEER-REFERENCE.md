@@ -821,7 +821,29 @@ way. File and directory are both read-only, verified by observing a same-device 
 lift command live in `README-STANDING-ARTIFACT.txt` beside it, where whoever trips over it will
 be standing.
 
-**THE DURABLE PIN WORKTREE `~/sonic_hacks/.sigil-ls12-pin`** (added 2026-09-07). A detached sigil worktree at the
+**THE DURABLE PIN WORKTREE `~/sonic_hacks/.sigil-pin-af35fa56`** (added 2026-09-07T23:49:44Z, and it
+SUPERSEDES `.sigil-ls12-pin`, one for one). The shared pair installed at that instant bakes this path
+as its `source:` field and aeon's `build.sh` resolves it on every build, so sweeping it turns every
+aeon build's assembler provenance to `unknown` and refuses under `SIGIL_VERSION_STRICT=1`. Installed
+pair: `sigil` `49ecc532e0b133ab0eab9447e071805c`, `emit_sound_blob` `b1569c67cbd02aba003a1455e72f6046`,
+built from sigil `af35fa56` in a clean detached worktree (`tree: clean at capture`). The OUTGOING pair
+is kept at `~/sonic_hacks/.sigil-outgoing-135ba589/` with the swap instant beside it, copied aside
+BEFORE the rename, so this refresh is reversible with the original artifacts rather than a rebuild.
+**`.sigil-ls12-pin` is released once aeon confirms it is on the new pair — ask them, not this file.**
+
+**⚠ THIS ARTIFACT EXISTS BECAUSE OF A ONE-CHARACTER MISMATCH IN A PEER'S PARSER, and it dies when
+they fix it.** Measured by the aeon lane 2026-09-07 across all four arms of their `tree:` switch:
+`clean`, `clean at capture, no uncommitted changes` and bare `clean-sources` are all ACCEPTED, while
+the real main-checkout string `clean-sources, 1 uncommitted change` falls to the catch-all — their
+accept pattern is `clean-sources` with a TRAILING SPACE, and `clean-sources,` is not that. So a pair
+built from the main checkout (whose `source:` path is permanent and never swept) would be refused
+under strict for the comma alone. **This lane predicted the refusal and was right for the WRONG
+reason** — it believed `clean-sources` was outside their accept list. When their arm reads the real
+vocabulary, build the installed pair from the MAIN CHECKOUT and this standing dependency ends
+permanently instead of being handed from one worktree to the next. Aeon has booked that fix; do not
+press its timing, and do not rebuild in the meantime.
+
+**(superseded) `~/sonic_hacks/.sigil-ls12-pin`** (added 2026-09-07). A detached sigil worktree at the
 LS-12 blob re-pin tip, kept because the shared `target/release/sigil` pair installed for aeon's LS-12 merge bakes
 this path as its `source:` field, and aeon's `build.sh` currency check resolves that path on every build: sweep it
 and every aeon build reports `unknown` assembler provenance and refuses under `SIGIL_VERSION_STRICT=1`. Aeon has
