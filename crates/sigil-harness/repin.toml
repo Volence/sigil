@@ -495,10 +495,12 @@ tests = ["bg_port"]
 # branches) grow the debug shape; plain self-gates to zero bytes.)
 name = "bg_anim"
 start = "BgAnim_Init"
-len = 0x9E
-# DEBUG carries the camera-motion view path the plain shape gates out, so the two
-# shapes' lengths are independent literals here rather than one number with a pad.
-debug_len = 0x170
+# The section's OWN extent per shape (the section-END anchor from sigil's resolve):
+# DEBUG carries the camera-motion view path the plain shape gates out, and both
+# shapes carry the waterline row-remap arm that outgrew the typed 0x9E / 0x170 pair
+# this row used to spell (bg_anim_port then compared a window the module had
+# outgrown by 0x56 / 0x58 B).
+end = "section:bg_anim"
 gate = "SIGIL_EMP_BG_ANIM"
 tests = ["bg_anim_port"]
 
@@ -520,18 +522,19 @@ gate = "SIGIL_EMP_COMPRESSION_SELFTEST"
 tests = ["compression_selftest_port"]
 
 [[region]]
-# The one region whose end carries no listing symbol: the include's content ends
-# unlabeled after Sound_FadeIn (next placement is org $10000 / sound_debug.asm).
-# Shape-DEPENDENT length as of retro-fix batch 2 (the DEBUG song-id + SFX-ring
-# asserts, findings 1/2, grow the debug shape): a literal `len` + `debug_len`
-# override — NOT an `end` symbol, because a real end label would ship in the
-# release convsym appendix and perturb the byte-identical plain ROM. `debug_len`
-# (= the debug resume org − debug base) is emitted directly into pins.rs by repin;
-# re-derive it on any sound_api debug-shape byte change.
+# The module's content ends unlabeled after Sound_FadeIn (the next placement is
+# sound_debug), and a real end label would ship in the release convsym appendix and
+# perturb the byte-identical plain ROM, so the end is the section's OWN extent from
+# sigil's resolve (the section-END anchor), which needs no label. The span is
+# shape-DEPENDENT (the DEBUG song-id + SFX-ring asserts and the SPIN_WATCHDOG_LIMIT
+# bounded-spin rails grow the debug shape) and the anchor measures each shape on
+# its own. It replaced a typed `len` + `debug_len` pair that went 8 B short when
+# Sound_PlayMusic's slot capture gained its `with ints_off` bracket (aeon LS-12): the
+# bracket's spin tail landed after the typed end and sound_api_port compared a
+# window the module had outgrown.
 name = "sound_api"
 start = "Sound_PostByte"
-len = 0x2A8       # plain: the Sound_* procs incl. the pkg-1 API v2 wrappers (pause/jingle/composed-fade + status readers)
-debug_len = 0x452 # debug: + the SPIN_WATCHDOG_LIMIT bounded-spin rails (raise_error blobs), DEBUG-only
+end = "section:sound_api"
 gate = "SIGIL_EMP_SOUND_API"
 tests = ["sound_api_port"]
 

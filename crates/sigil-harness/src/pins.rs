@@ -162,14 +162,14 @@ pub const PAGE_CACHE: Region = Region { plain_base: 0x7B8E, debug_base: 0x951C, 
 /// `BG_Init` .. `section:bg`, gate `SIGIL_EMP_BG`. tests: bg_port
 pub const BG: Region = Region { plain_base: 0x8074, debug_base: 0xA394, plain_len: 0xD4, debug_len: 0x134 };
 
-/// `BgAnim_Init` .. start + 0x9E plain / 0x170 debug (literal, no end symbol), gate `SIGIL_EMP_BG_ANIM`. tests: bg_anim_port
-pub const BG_ANIM: Region = Region { plain_base: 0x8148, debug_base: 0xA4C8, plain_len: 0x9E, debug_len: 0x170 };
+/// `BgAnim_Init` .. `section:bg_anim`, gate `SIGIL_EMP_BG_ANIM`. tests: bg_anim_port
+pub const BG_ANIM: Region = Region { plain_base: 0x8148, debug_base: 0xA4C8, plain_len: 0xF4, debug_len: 0x1C8 };
 
 /// `CompressionSelfTest` .. `section:compression_selftest` (debug-only region; plain empty at `Sound_PostByte`), gate `SIGIL_EMP_COMPRESSION_SELFTEST`. tests: compression_selftest_port
 pub const COMPRESSION_SELFTEST: Region = Region { plain_base: 0x823C, debug_base: 0xA690, plain_len: 0x0, debug_len: 0xDE0 };
 
-/// `Sound_PostByte` .. start + 0x2A8 plain / 0x452 debug (literal, no end symbol), gate `SIGIL_EMP_SOUND_API`. tests: sound_api_port
-pub const SOUND_API: Region = Region { plain_base: 0x823C, debug_base: 0xB472, plain_len: 0x2A8, debug_len: 0x452 };
+/// `Sound_PostByte` .. `section:sound_api`, gate `SIGIL_EMP_SOUND_API`. tests: sound_api_port
+pub const SOUND_API: Region = Region { plain_base: 0x823C, debug_base: 0xB472, plain_len: 0x2B0, debug_len: 0x45A };
 
 /// `TestSolid_Init` .. `section:test_solid`, gate `SIGIL_EMP_TEST_OBJECTS`. tests: test_objects_port
 pub const TEST_SOLID: Region = Region { plain_base: 0x123C6, debug_base: 0x128CC, plain_len: 0x122, debug_len: 0x17C };
