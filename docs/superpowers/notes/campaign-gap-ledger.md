@@ -4125,10 +4125,13 @@ stdout sees.
 Population: 39 source sites (s2disasm 16, s1disasm 12, skdisasm 11). Two of them print
 under asl today: `s1disasm` `Uncompressed driver size: 1BC6h bytes.` and `s2disasm`
 `ROM size is $100000 bytes (1024 KiB). About $8F1 bytes are padding.` Sigil prints neither.
--- OPEN (kill: emit to stdout, unprefixed, on the CONVERGED pass only, and delete
-`a_message_is_dropped_on_every_pass_including_the_final_one` on purpose when doing it.
-Fix the interpolation gap below in the same parcel, because the one corpus site that fires
-needs it)
+-- **CLOSED 2026-09-07** by `parcel/as-message-interp`, `2026-09-07-as-message-interp.md`.
+`Assembled::messages` / `Failure::messages` carry the converged pass's lines, one per
+firing; the CLI prints them to stdout, unprefixed, before any diagnostic, on both arms.
+Both corpus lines now print (s1 `Uncompressed driver size: 1BBDh bytes.`, s2 `ROM size is
+$FFFED bytes (1023.9814453125 KiB). About $2375 bytes are padding. `); the values differ
+from asl's by the Z80-sizing and ROM-size rows, not by this one. The pin was deleted on
+purpose; `as_message_stdout.rs` (frontend and cli) replaces it.
 
 ### `\{expr}` interpolation drops a float-division form (2026-09-06)
 Sigil's census of `s2.asm(91272)` shows the text it would have printed if `message` emitted
@@ -4140,8 +4143,15 @@ inherits this immediately; `warning` shares `interp_string` and would inherit it
 corpus site fires.
 Population: 1 measured site, and every `warning`/`message` string carrying the
 `\{a/1.0}` idiom, which is how all five s2disasm table-size messages are written.
--- OPEN (kill: an interpolation probe per operand shape against asl, then the missing
-form; the `int()`/float work already landed the evaluator this needs)
+-- **CLOSED 2026-09-07** by `parcel/as-message-interp`, `2026-09-07-as-message-interp.md`.
+102 cells probed against the reference asl (`2026-09-07-as-message-interp-probes/`), 100
+byte-identical after. A float-typed expression pastes decimal through a one-for-one port
+of asl's `FloatString` (`render_interp_float`: `%.15e`, an 18-character cut that drops the
+digits BEFORE the last one, exponent written out when the result fits); a string symbol
+pastes its characters, which also removes 35 spurious `unexpected character` errors at the
+`zoneanimcount_{"\{zoneanimcur}"}` sites (s2 11, sk 24). Still verbatim: a character
+literal (`'A'`, lexed to an integer before interpolation sees it) and `MOMLINE` (no such
+builtin); corpus population of both is zero firings. Pinned by `as_interp_shapes.rs`.
 
 ### Sigil sizes s1disasm's Z80 driver about sixty times too large (2026-09-06)
 `sound/z80.asm(229)` raises `The driver is too big; the maximum size it can take is 1FFCh.
