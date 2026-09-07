@@ -1,0 +1,9 @@
+> > > p1.asm(14):20: error #1020: invalid symbol name
+> > > $
+> > >  message "dollar \{$}"
+> > >                    ~
+> > > p1.asm(14): error #1970: invalid string
+> > >  message "dollar \{$}"
+ASL_EXIT=2
+ASL_DIAG=complete
+REFUSED: asl exited 2, so this run FAILED.

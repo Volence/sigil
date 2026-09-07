@@ -32,6 +32,11 @@ pub use eval::Assembled;
 pub struct Failure {
     /// Every diagnostic the failing pass produced, in the order it raised them.
     pub diags: Vec<Diagnostic>,
+    /// Every line the `message` directive produced on the failing pass, when
+    /// that pass is the converged one; see [`Assembled::messages`]. A run can
+    /// print its `message` and still fail (s1disasm prints its driver size,
+    /// then fails on an unrelated line), and asl prints it either way.
+    pub messages: Vec<String>,
     /// The root source and every `include`d file, under the ids the spans carry.
     pub sources: SourceMap,
 }
@@ -244,6 +249,7 @@ fn assemble_root_impl(root: &Path, opts: &Options, relocate: bool) -> Result<Ass
                 end: 0,
             },
         }],
+        messages: Vec::new(),
         sources: SourceMap::new(),
     })?;
     let mut o = opts.clone();

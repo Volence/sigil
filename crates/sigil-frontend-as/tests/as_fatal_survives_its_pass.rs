@@ -1,5 +1,6 @@
 //! A `fatal`, and a `warning` the source author wrote, raised on any pass reach
-//! the returned diagnostics. A `message` reaches nothing, on any pass.
+//! the returned diagnostics. A `message` is a different stream (stdout, the
+//! converged pass only) and lives in `as_message_stdout.rs`.
 //!
 //! ## What was silently wrong
 //!
@@ -322,31 +323,5 @@ fn a_carried_warning_names_the_file_it_was_written_in() {
     assert!(
         !row.contains("inc/b.asm"),
         "must not name the file that inherited its source id: {row}"
-    );
-}
-
-/// `message` is NOT the same case, and the row that treats it with `warning`
-/// is wrong about it. sigil's `message` evaluates its string and discards it on
-/// EVERY pass, the converged one included, so no pass-carrying rule reaches it.
-/// asl writes it to STDOUT, unprefixed and outside the diagnostic stream, and
-/// two corpus sites print there today while sigil prints nothing:
-///
-/// | corpus | asl stdout | sigil |
-/// |---|---|---|
-/// | s1disasm | `Uncompressed driver size: 1BC6h bytes.` | nothing |
-/// | s2disasm | `ROM size is $100000 bytes (1024 KiB). About $8F1 bytes are padding.` | nothing |
-///
-/// Pinned here so the gap reads as booked rather than as an oversight, and so
-/// that implementing `message` (a new output stream, not a pass question) has
-/// to come here and delete this test on purpose.
-#[test]
-fn a_message_is_dropped_on_every_pass_including_the_final_one() {
-    let src = format!("{HEAD}\tmessage \"unguarded message\"\n\tdc.b $11\n{FWD}\tend\n");
-    let a = assemble_located(&src).expect("a message does not stop assembly");
-    assert_eq!(a.0, vec![0x11, 0x00, 0x02]);
-    assert!(
-        !a.1.iter().any(|d| d.contains("unguarded message")),
-        "sigil emits nothing for `message` on any pass: {:?}",
-        a.1
     );
 }
