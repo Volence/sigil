@@ -4405,3 +4405,16 @@ oracle lowers one module against a hand-picked dep list). Fix pattern is `test_s
 derive the constant from the aeon tree at test runtime, never a copied literal. The other nightly
 rows on 09-07 (`SND_S3K_SNARE_PTR`, `dac/s3k_snare.pcm`, the `with` census, the unused carry) are
 pin and corpus drift that the LS-12 chain refreeze re-baselines.
+
+### `DAC-PORT-HANDTYPED-TABLE`: `dac_port.rs` re-types its expectations (2026-09-07)
+
+`crates/sigil-cli/tests/dac_port.rs` asserts a hand-typed `(BANK, PTR, LEN)` table in source order and
+carries the nine drum file names as literals. Aeon `cbc023ff` (LS-7) deleted two byte-identical
+duplicate blobs (`dac/s3k_snare.pcm`, `dac/s3k_kick.pcm`; ids 5 and 6 now share ids 2 and 3's
+pointers via `winptr`), so the nightly lane reports `SND_S3K_SNARE_PTR expected 0x9512, got 0x857E`
+and `read dac/s3k_snare.pcm: No such file`. The assert aborts at the first row, so the five rows after
+it (every pointer shifts down by 0xEA4; `SND_S3K_KICK_PTR` becomes 0x8000) have not been measured.
+The fix at the LS-12 refreeze is not new literals: derive PTR/LEN from the emitted shared-bank image
+and the drum list from the `.asm`, and drop the two paths rather than repoint them (aeon confirms they
+do not come back). Aeon's occupancy for the record: shared bank 30,908 to 25,754 B, free tail 1,860
+to 7,014 B, which admits all six S3K drum sizes where before it admitted one.
