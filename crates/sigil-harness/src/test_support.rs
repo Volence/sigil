@@ -1426,9 +1426,9 @@ pub fn suite_root_absent(what: &str, why: &str) {
     let markers = SUITE_ROOT_MARKERS.map(|m| format!("{m}/")).join(" + ");
     assert!(
         !strict_gate(),
-        "SIGIL_STRICT_GATE set but no suite root: {what} reads the SUITE ROOT, the directory \
+        "SIGIL_STRICT_GATE set but no suite root for {what}. The SUITE ROOT is the directory \
          holding {markers} beside this checkout, and none was found ({why}). A strict run \
-         measures this row from a checkout inside a suite root or fails here by name."
+         measures this from a checkout inside a suite root or fails here by name."
     );
     if std::env::var_os(SUITE_ROOT_VAR).is_some_and(|v| !v.is_empty()) {
         panic!(
@@ -1440,10 +1440,10 @@ pub fn suite_root_absent(what: &str, why: &str) {
     let partial = std::env::var_os(ALLOW_PARTIAL_VAR).is_some_and(|v| !v.is_empty());
     if !partial {
         panic!(
-            "UNMEASURABLE: {what} reads the SUITE ROOT, the directory holding {markers} beside \
-             this checkout, and none was found ({why}). Run from a checkout inside a suite \
-             root, or declare a partial run with {ALLOW_PARTIAL_VAR}=1, in which case this row \
-             is left unmeasured and the run says so."
+            "UNMEASURABLE: no suite root for {what}. The SUITE ROOT is the directory holding \
+             {markers} beside this checkout, and none was found ({why}). Run from a checkout \
+             inside a suite root, or declare a partial run with {ALLOW_PARTIAL_VAR}=1, in \
+             which case this is left unmeasured and the run says so."
         );
     }
     announce_suite_root_once(partial_run_suite_root_banner(why));

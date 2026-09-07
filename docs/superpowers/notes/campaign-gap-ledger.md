@@ -4393,6 +4393,14 @@ it is this lane's under the autonomy directive: a declared partial run may leave
 unmeasured in the house `skip:` form with the row count printed in the banner, exactly as tree
 readers are, and CI provides no fake suite root. Land with a red-first proof in a CI-shaped clone.
 
+-- **CLOSED 2026-09-07** on `parcel/ci-suite-root-readers` (note
+`2026-09-07-ci-suite-root-readers.md`): `test_support::suite_root_absent` is the guard, the class
+has its own banner line with a derived count and names, strict still fails by name, bare still
+stops, and a set `EMPYREAN_SUITE_ROOT` never softens into a skip. Red-first in a CI-shaped clone:
+3 failed at baseline, 3 skipped after under partial, 3 failed by name after under strict. One
+correction to the row: a CI-shaped clone cannot sit anywhere under `~/sonic_hacks/`, because the
+marker walk climbs every ancestor and finds the real suite root there.
+
 ### `LANDING-GATE-DEBUG-PROFILE`: the release-only landing gate cannot see a debug overflow (2026-09-07)
 
 `relax.rs:193` overflowed under the debug profile on `org -1` and the landing gate that certified

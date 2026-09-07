@@ -65,6 +65,16 @@ on top of it.
 
 *(The delegation it was ruled under, its authority trail, and this lane's migration list in order:
 `docs/OVERSEER-LOG.md`, 2026-09-03 cut, original lines 86-123.)*
+
+**Widened to SUITE-ROOT readers, 2026-09-07** (ledger `CI-SUITE-ROOT-READERS`, note
+`2026-09-07-ci-suite-root-readers.md`). A suite-root reader is a row whose subject is the directory
+holding `aeon/` + `empyrean/` beside the checkout rather than the reference tree (the step-3
+derivation, the unnamed default tree); it opens with nothing, because its own derivation is the
+read, and closes with `test_support::suite_root_absent` when that came back empty. The three
+answers are d-18's: strict fails by name, a declared partial run leaves the row unmeasured in the
+`skip:` form with a second banner line carrying the class's derived size and names, a bare run
+stops. Two limits are the rule's own: a set `EMPYREAN_SUITE_ROOT` is never an absent root (set but
+wrong stays a hard failure, in the partial run too), and CI provides no fake suite root.
 ### Rules banked from closed findings — the narrative is in `docs/OVERSEER-LOG.md`, 2026-09-02
 
 Each of these was a dated section in the boot read (`docs/OVERSEER.md`) until it went over
