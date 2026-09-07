@@ -273,8 +273,8 @@ pub const REPLAY_FIXTURE: Region = Region { plain_base: 0xBC982, debug_base: 0xC
 /// `BusError` .. `section:error_handler`, gate `SIGIL_EMP_ERROR_HANDLER`. tests: error_handler_port
 pub const ERROR_HANDLER: Region = Region { plain_base: 0xBCBE2, debug_base: 0xC0444, plain_len: 0x10B0, debug_len: 0x10B0 };
 
-/// `Dac_Temp_Blip` .. start + 0xF8BC plain / 0xF8BC debug (literal, no end symbol), gate `SIGIL_EMP_DAC`. tests: dac_bank_port
-pub const DAC_BANKS: Region = Region { plain_base: 0xA8000, debug_base: 0xA8000, plain_len: 0xF8BC, debug_len: 0xF8BC };
+/// `Dac_Temp_Blip` .. `section:dac_banks`, gate `SIGIL_EMP_DAC`. tests: dac_bank_port
+pub const DAC_BANKS: Region = Region { plain_base: 0xA8000, debug_base: 0xA8000, plain_len: 0xE49A, debug_len: 0xE49A };
 
 /// `Song_MovingTrucks` .. start + 0x34E8 plain / 0x4F38 debug (literal, no end symbol), gate `SIGIL_EMP_MT`. tests: mt_bank_port
 pub const MT_BANK_BLOB: Region = Region { plain_base: 0xB8630, debug_base: 0xB8630, plain_len: 0x34E8, debug_len: 0x4F38 };
