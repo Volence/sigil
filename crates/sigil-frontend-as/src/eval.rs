@@ -111,6 +111,21 @@ pub struct Assembled {
     /// two-pass convergence still appears once (asl, which reports per pass,
     /// prints it twice and counts it once — probe `w4`).
     pub warnings: Vec<Diagnostic>,
+    /// Every line the `message` directive produced on the CONVERGED pass, in
+    /// execution order and interpolated against the converged env, so a
+    /// forward-referenced value prints its final value. asl writes these to
+    /// STDOUT, unprefixed and outside the diagnostic stream, and a caller that
+    /// renders this must do the same: `s1disasm` reads its Z80 driver size off
+    /// this line and `s2disasm` its ROM size.
+    ///
+    /// Converged pass only, which is where sigil deliberately differs from
+    /// asl. asl prints a `message` on every pass that reaches it (probe `p4`:
+    /// `fwd 0` on pass 1, then `fwd 3` on pass 2, for one `message "fwd
+    /// \{Later}"` above `Later:`), and its pass count is a property of its
+    /// pass loop, not of the program. Both corpus sites that print are guarded
+    /// by `if MOMPASS=2`, so a pass that is not the last one has nothing to
+    /// say that the last one does not say better.
+    pub messages: Vec<String>,
     /// The root source and every `include`d file, under the ids the warnings'
     /// spans carry — the half a caller cannot reconstruct, exactly as for
     /// [`Failure`].
@@ -203,6 +218,7 @@ fn run_impl(
             poison,
             terminal_fatal,
             author_warnings,
+            messages,
             labels: pass_labels,
             label_ref_equs: pass_label_ref_equs,
             sources,
@@ -285,10 +301,15 @@ fn run_impl(
                     &carried_author_warnings,
                     &last_sources,
                 );
+                // This pass is the converged one, so its `message` lines are
+                // the run's: a failing run still returns them, because asl
+                // prints a `message` when it is reached and the failure comes
+                // later (s1disasm prints its driver size and then fails on
+                // an unrelated line).
                 return if diags.iter().any(|d| d.level == Level::Error) {
-                    Err(Failure { diags, sources: last_sources })
+                    Err(Failure { diags, messages, sources: last_sources })
                 } else {
-                    Ok(Assembled { module, warnings: diags, sources: last_sources })
+                    Ok(Assembled { module, warnings: diags, messages, sources: last_sources })
                 };
             }
             let bonus = one_pass_with_defer(
@@ -329,10 +350,17 @@ fn run_impl(
             let diags = merge_carried_fatals(diags, &carried_fatals, &bonus.sources);
             let diags =
                 merge_carried_author_warnings(diags, &carried_author_warnings, &bonus.sources);
+            // The bonus pass is the last one to run, so its `message` lines
+            // are the run's, as for the poison-free return above.
             return if diags.iter().any(|d| d.level == Level::Error) {
-                Err(Failure { diags, sources: bonus.sources })
+                Err(Failure { diags, messages: bonus.messages, sources: bonus.sources })
             } else {
-                Ok(Assembled { module: bonus_module, warnings: diags, sources: bonus.sources })
+                Ok(Assembled {
+                    module: bonus_module,
+                    warnings: diags,
+                    messages: bonus.messages,
+                    sources: bonus.sources,
+                })
             };
         }
         prev = env.clone();
@@ -359,7 +387,9 @@ fn run_impl(
             end: 0,
         },
     });
-    Err(Failure { diags, sources: last_sources })
+    // No pass converged, so no pass's `message` lines are final: none are
+    // returned, the same rule that keeps a non-final pass's lines out above.
+    Err(Failure { diags, messages: Vec::new(), sources: last_sources })
 }
 
 /// Add every `fatal` a non-final pass raised to a returned diagnostic list.
@@ -515,6 +545,9 @@ struct PassOutput {
     /// Every site at which this pass ran the `warning` directive. See
     /// [`Asm::author_warnings`].
     author_warnings: Vec<(Span, String, Option<String>)>,
+    /// Every line the `message` directive produced this pass. See
+    /// [`Asm::messages`].
+    messages: Vec<String>,
     /// Every fully-qualified label name defined this pass (grown from the seed).
     /// Threaded into the next pass so a forward-referenced label is known before
     /// its definition line — see [`Asm::known_labels`].
@@ -726,6 +759,7 @@ fn one_pass_with_defer(
         poison: asm.poison_refs,
         terminal_fatal: asm.terminal_fatal,
         author_warnings: asm.author_warnings,
+        messages: asm.messages,
         labels: asm.known_labels,
         label_ref_equs: asm.label_ref_equs,
         sources: asm.sources,
@@ -1124,6 +1158,12 @@ struct Asm {
     /// author wrote, not 81. Within a pass the FIRST text at a position wins,
     /// which matters only when a re-expansion interpolates different values.
     author_warnings: Vec<(Span, String, Option<String>)>,
+    /// Every line the `message` directive produced on THIS pass, in execution
+    /// order, interpolated against this pass's env. One entry per FIRING (a
+    /// `message` inside a macro expanded three times is three lines, exactly
+    /// as asl prints it three times). Only the converged pass's list leaves
+    /// [`run_impl`]; see [`Assembled::messages`].
+    messages: Vec<String>,
     /// The value the `MOMPASS` builtin reports on THIS pass: 1 on the first,
     /// 2 on every later one. See [`Asm::builtin_num`] for why it saturates
     /// rather than counting.
@@ -1409,6 +1449,7 @@ impl Asm {
             defer_unresolved_jsr_jmp,
             terminal_fatal: None,
             author_warnings: Vec::new(),
+            messages: Vec::new(),
             mompass: LATER_PASS,
             known_labels: std::collections::HashSet::new(),
             sym_class: std::collections::HashMap::new(),
@@ -2745,8 +2786,8 @@ impl Asm {
             match after.find('}') {
                 Some(end) => {
                     let expr_text = &after[..end];
-                    match self.fold_text(expr_text) {
-                        Some(v) => out.push_str(&render_interp_int(v)),
+                    match self.render_interp_expr(expr_text) {
+                        Some(v) => out.push_str(&v),
                         None => {
                             out.push_str("\\{");
                             out.push_str(expr_text);
@@ -2763,6 +2804,49 @@ impl Asm {
         }
         out.push_str(cur);
         out
+    }
+
+    /// The text one `\{expr}` interpolation pastes, by the TYPE the expression
+    /// evaluates to, or `None` when it does not evaluate (the caller then
+    /// leaves the sequence verbatim).
+    ///
+    /// Three value types, three renderings, all asl-measured (probes `p1b`,
+    /// `p2s`, `p3`, `p7s` under `2026-09-07-as-message-interp-probes/`):
+    ///
+    /// | expression | asl pastes | via |
+    /// |---|---|---|
+    /// | a string symbol (`s equ "abc"`, `t := "xyz"`) | its characters, `abc` | [`Self::eval_str`] |
+    /// | a FLOAT-typed expression (`1536/1024.0`, `2.5`, `fs` bound to a float) | `1.5`, decimal | [`render_interp_float`] |
+    /// | anything else that folds to an integer | uppercase hex, `2A` | [`render_interp_int`] |
+    ///
+    /// The float branch is what makes `\{x/1.0}` the corpus's idiom for a
+    /// DECIMAL rendering: `42/1.0` is float-typed and pastes `42`, where `42`
+    /// pastes `2A`. A comparison over floats yields an integer and takes the
+    /// integer branch (`3.5<4` pastes `1`), exactly as [`apply_num_binop`]
+    /// types it.
+    ///
+    /// Order matters and is deliberate. The string probe runs first because a
+    /// string symbol has no numeric reading at all. The float probe runs
+    /// through the SILENT expansion ([`Self::expand_calls`], not the checked
+    /// one) and the typed evaluator, so a float-free expression falls through
+    /// to the integer path having raised nothing, and that path is untouched:
+    /// every integer interpolation renders byte-for-byte as before this
+    /// method existed, which is what keeps the string-binding `equ`/`set`
+    /// branches (which reach BYTES) unchanged for every program that already
+    /// assembled.
+    fn render_interp_expr(&mut self, text: &str) -> Option<String> {
+        let toks = lex_line(text, self.state.cpu, self.source, 0).ok()?;
+        if let Some(s) = self.eval_str(&toks) {
+            return Some(s);
+        }
+        let expanded = self.expand_calls(&toks, 0);
+        if self.float_leaf(&expanded).is_some() {
+            return match self.eval_num(&expanded)? {
+                Num::Float(f) => Some(render_interp_float(f)),
+                Num::Int(i) => Some(render_interp_int(i)),
+            };
+        }
+        self.fold_text(text).map(render_interp_int)
     }
 
     /// Lex + fold a short expression string (for `\{…}` interpolation).
@@ -4967,8 +5051,14 @@ impl Asm {
                     self.terminal_fatal = Some((span, m, label));
                 }
             }
+            // `message "text"` writes its interpolated text to STDOUT,
+            // unprefixed and outside the diagnostic stream (asl: `message
+            // "int \{42}"` prints the line `int 2A`, exit 0, probe `p1b`).
+            // Recorded per pass here; only the converged pass's list leaves
+            // `run_impl`, see [`Assembled::messages`].
             "message" => {
-                let _ = self.interp_string(rest);
+                let m = self.interp_string(rest);
+                self.messages.push(m);
             }
             // `warning "text"` — a diagnostic the SOURCE AUTHOR wrote, at the
             // warn tier: asl prints it and the assembly still SUCCEEDS (probe
@@ -8943,6 +9033,120 @@ impl MacroFrame {
 /// renders in DECIMAL in the same file (probe `r9`) — see `eval_name_brace`.
 fn render_interp_int(v: i64) -> String {
     format!("{:X}", v as u64)
+}
+
+/// The text asl pastes for a FLOAT folded out of a `\{expr}` interpolation:
+/// a port of `FloatString` (asl 1.42 Bld 212, `asmsub.c`), which is NOT a
+/// `%g`. It formats the value as `%.15e`, shortens the exponent, strips the
+/// mantissa's trailing zeros, cuts the mantissa down to a total length of 18
+/// characters, and then removes the exponent whenever the number fits in 18
+/// characters written out in full. Every step below names the one it ports.
+///
+/// Two of its choices are not what a reader expects, and both are measured
+/// (probes `p2s`, `p7s`, three identical runs each, asl md5
+/// `61e672562465725a8c102288a7da9098`):
+///
+/// * An integral float has no point: `1024.0` pastes `1024`, `42/1.0` pastes
+///   `42`, `1e17` pastes `100000000000000000` and `1e18` pastes `1E18` (the
+///   written-out form would be 19 characters).
+/// * The length cut removes digits BEFORE the last one and keeps the last,
+///   already-rounded digit: `1/7.0` pastes `0.14285714285718`, not
+///   `...714`, and `2/7.0` pastes `0.28571428571427`. That is `strmov(d +
+///   (n - k), d + n)` in the original, with `d + n` the final mantissa digit.
+///
+/// The first step is `%.15e`, so 16 significant digits correctly rounded;
+/// glibc's `printf` and Rust's `{:.15e}` agree on every digit because both
+/// round the exact binary value. That is also why `1.0e-20` pastes
+/// `9.999999999999E-21` on both: the nearest double is below 1e-20, and 16
+/// digits of it begin `9.999999999999999` (probe `p7s` cell `c8`).
+fn render_interp_float(f: f64) -> String {
+    const MAX_LEN: usize = 18;
+    if !f.is_finite() {
+        return if f.is_nan() {
+            "nan".to_string()
+        } else if f < 0.0 {
+            "-inf".to_string()
+        } else {
+            "inf".to_string()
+        };
+    }
+    // Step 1: `%.15e`, leading spaces and `+` dropped.
+    let e = format!("{f:.15e}");
+    let (mant, exp) = e.split_once('e').expect("Rust `{:e}` always writes an exponent");
+    let exp_val: i64 = exp.parse().expect("Rust `{:e}` exponent is a decimal integer");
+    let mut s: Vec<u8> = mant.as_bytes().to_vec();
+    // Step 2: the exponent shortened (`e+18` to `E18`, `e-05` to `E-5`) and
+    // dropped entirely when it is zero.
+    let with_e = exp_val != 0;
+    let e_part: Vec<u8> = if with_e { format!("E{exp_val}").into_bytes() } else { Vec::new() };
+    // Step 3: trailing zeros of the mantissa, the point kept for now.
+    while s.last() == Some(&b'0') {
+        s.pop();
+    }
+    // Steps 4 and 5: over 18 characters in all, drop the excess from the
+    // decimals immediately BEFORE the last one.
+    let total = s.len() + e_part.len();
+    if total > MAX_LEN {
+        let k = total - MAX_LEN;
+        let d = s.iter().position(|&b| b == b'.').expect("`%e` mantissa carries a point");
+        let n = s.len() - d - 1;
+        if k <= n {
+            s.drain(d + n - k..d + n);
+        }
+    }
+    let neg = s.first() == Some(&b'-');
+    let d = s.iter().position(|&b| b == b'.').expect("`%e` mantissa carries a point");
+    let n_dec = s.len() - d - 1;
+    let sign: &[u8] = if neg { b"-" } else { b"" };
+    let digits: Vec<u8> = s[usize::from(neg)..].iter().copied().filter(|&b| b != b'.').collect();
+    let total = s.len() + e_part.len();
+    let mut out: Vec<u8> = Vec::new();
+    let mut keep_e = with_e;
+    if exp_val > 0 {
+        let nzeroes = exp_val - n_dec as i64;
+        if nzeroes <= 0 {
+            // Step 7a: the point moves right; it vanishes when it would land
+            // at the end.
+            let at = (1 + exp_val) as usize;
+            out.extend_from_slice(sign);
+            out.extend_from_slice(&digits[..at]);
+            if nzeroes != 0 {
+                out.push(b'.');
+                out.extend_from_slice(&digits[at..]);
+            }
+            keep_e = false;
+        } else {
+            // Step 7b: zeros appended, if the written-out form fits.
+            let room = e_part.len() as i64 + 1 + (MAX_LEN as i64 - total as i64);
+            if room >= nzeroes {
+                out.extend_from_slice(sign);
+                out.extend_from_slice(&digits);
+                out.extend(std::iter::repeat_n(b'0', nzeroes as usize));
+                keep_e = false;
+            }
+        }
+    } else if exp_val < 0 {
+        // Step 8: leading zeros prepended, if the written-out form fits.
+        let grow = (-exp_val) - e_part.len() as i64;
+        if total as i64 + grow <= MAX_LEN as i64 {
+            out.extend_from_slice(sign);
+            out.extend_from_slice(b"0.");
+            out.extend(std::iter::repeat_n(b'0', (-exp_val - 1) as usize));
+            out.extend_from_slice(&digits);
+            keep_e = false;
+        }
+    }
+    if out.is_empty() {
+        out.extend_from_slice(&s);
+        // Step 9: a point with nothing after it goes.
+        if out.last() == Some(&b'.') {
+            out.pop();
+        }
+        if keep_e {
+            out.extend_from_slice(&e_part);
+        }
+    }
+    String::from_utf8(out).expect("built from ASCII")
 }
 
 /// Index of the `}` closing the `{` at `open` in `bytes`, or `None` if the group

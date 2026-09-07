@@ -1,0 +1,13 @@
+int 2A
+hex FF
+sym 2A
+paren 5A
+neg FFFFFFFFFFFFFFFF
+zero 0
+intdiv 3
+here 0
+mask 0
+char A
+cmp 1
+two 2A and FF
+plain text with no interpolation

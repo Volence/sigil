@@ -113,10 +113,12 @@ fn main() {
         &opts,
     ) {
         Ok(a) => {
+            render_as_messages(&a.messages);
             render_as_warnings(&a);
             (a.module, a.sources)
         }
         Err(failure) => {
+            render_as_messages(&failure.messages);
             render_as_diags(&failure);
             process::exit(1);
         }
@@ -235,6 +237,21 @@ fn render_as_warnings(assembled: &sigil_frontend_as::Assembled) {
             Some(loc) => eprintln!("{loc}: {}: {}", d.level, d.message),
             None => eprintln!("{}: {}", d.level, d.message),
         }
+    }
+}
+
+/// The AS `message` directive's lines, to STDOUT, one per line, unprefixed.
+///
+/// Stdout and not the diagnostic stream, because that is where asl writes
+/// them: `message` is the author's way of printing a computed value for a
+/// human (`s1disasm`'s `Uncompressed driver size: 1BC6h bytes.`), and a
+/// build script that captures stdout to read it must find the bare line, not
+/// a `file(line): note:` rendering of it. Printed on a failing run as well,
+/// before the diagnostics, for the same reason: asl prints the line when it is
+/// reached and the failure comes later.
+fn render_as_messages(messages: &[String]) {
+    for m in messages {
+        println!("{m}");
     }
 }
 
