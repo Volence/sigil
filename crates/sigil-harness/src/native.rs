@@ -3670,6 +3670,24 @@ pub struct GuardCensus {
     pub link_asserts_inapplicable: usize,
 }
 
+impl GuardCensus {
+    /// The census from a resolve's records: the comptime count the lowering
+    /// drained, the `LinkAssert` list the link folded, and the inapplicable
+    /// subset the drift verdict handed back. Every assert not inapplicable was
+    /// decided (it folded to a value, and a zero already failed the resolve).
+    pub fn from_verdict(
+        comptime_guards: usize,
+        link_asserts: &[sigil_ir::LinkAssert],
+        inapplicable: &[&sigil_span::Diagnostic],
+    ) -> GuardCensus {
+        GuardCensus {
+            comptime_guards,
+            link_asserts_decided: link_asserts.len() - inapplicable.len(),
+            link_asserts_inapplicable: inapplicable.len(),
+        }
+    }
+}
+
 /// Render a declared-chain stage's failure: the stage name, the diagnostic
 /// count, then every diagnostic located through the program's own index.
 fn render_declared_chain(
@@ -3755,11 +3773,7 @@ fn resolve_chained(aeon: &Path, profile: &GameProfile) -> Result<ChainedResolve,
     warnings.extend(collect_warnings(&sources, &[&adiags], None));
     let inapplicable = declared_chain_drift_verdict(&adiags, &|span| sources.locate(span))?;
     enforce_inapplicable_allowlist_against(&inapplicable, &link_asserts, &profile.inapplicable_guards)?;
-    let guards = GuardCensus {
-        comptime_guards,
-        link_asserts_decided: link_asserts.len() - inapplicable.len(),
-        link_asserts_inapplicable: inapplicable.len(),
-    };
+    let guards = GuardCensus::from_verdict(comptime_guards, &link_asserts, &inapplicable);
     Ok(ChainedResolve { resolved, stubs, warnings, sources, map, pmap, guards })
 }
 
