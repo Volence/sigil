@@ -46,7 +46,7 @@ fn parse_file(path: &Path) -> sigil_frontend_emp::ast::File {
 /// to lower at all: the window bounds from the game config, and the comptime DPLC
 /// parser from `engine.objects.dplc`.
 ///
-/// The DPLC module is filtered to that ONE comptime fn — prepending it wholesale
+/// The DPLC module is filtered to its ZERO-BYTE items: prepending it wholesale
 /// would pull `perform_dplc` and its siblings into a compile whose bytes are being
 /// compared against a ROM window. The two constants modules emit nothing, so they
 /// ride whole; the engine one is needed because the same parcel gave the game
@@ -56,23 +56,23 @@ fn wall_ambient(aeon: &Path) -> Vec<sigil_frontend_emp::ast::Item> {
     use sigil_frontend_emp::ast::Item;
     let mut items = parse_file(&aeon.join("engine/system/constants.emp")).items;
     items.extend(parse_file(&aeon.join("games/sonic4/config/constants.emp")).items);
-    // The comptime fns are named individually because the rest of the module emits
-    // bytes. `Item::Const` is admitted WHOLESALE instead, on the same reasoning the
-    // doc comment above gives for the two constants modules: a `pub const` is a
-    // compile-time value and emits nothing, so it cannot disturb the window being
-    // compared. Naming consts individually would leave this filter one edit behind
-    // aeon forever — which is exactly how it broke: EFFECTS-W1's DPLC ceiling added
-    // `DPLC_ADDRESSABLE_TILES` to collision_data.emp's `ensure`, all four ROM shapes
-    // built green, and only this standalone scope could see the name was missing.
+    // `Item::Const` and `Item::ComptimeFn` are admitted WHOLESALE, on the same
+    // reasoning the doc comment above gives for the two constants modules: a `pub
+    // const` is a compile-time value and a comptime fn is compile-time code, neither
+    // emits a byte, so neither can disturb the window being compared. Naming either
+    // kind individually leaves this filter one edit behind aeon forever, which is
+    // exactly how it broke twice: EFFECTS-W1's DPLC ceiling added
+    // `DPLC_ADDRESSABLE_TILES` to collision_data.emp's `ensure` (a const the
+    // then-named list lacked), and LS-9's map/DPLC frame-count binding (aeon
+    // cd856a9e) added `offset_table_frames` / `empty_frame_mismatches` (comptime fns
+    // a two-name list lacked); all four ROM shapes built green both times, and only
+    // this standalone scope could see the name was missing.
     // A ZERO-BYTE CLAIM IS A CLAIM ABOUT BYTES AND SAYS NOTHING ABOUT NAMES.
     items.extend(
         parse_file(&aeon.join("engine/objects/dplc.emp"))
             .items
             .into_iter()
-            .filter(|it| {
-                matches!(it, Item::ComptimeFn(d) if d.name == "dplc_peak_tiles" || d.name == "dplc_peak_entries")
-                    || matches!(it, Item::Const(_))
-            }),
+            .filter(|it| matches!(it, Item::ComptimeFn(_) | Item::Const(_))),
     );
     items
 }

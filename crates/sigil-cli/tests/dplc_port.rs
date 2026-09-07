@@ -10,9 +10,12 @@
 //! ## What this port exercises
 //!
 //! - **The leanest cross-seam set of the campaign** — dplc reads NO RAM cells,
-//!   NO engine constants, NO game-contract symbols. Its only cross-seam surface
-//!   is the two `jsr QueueDMA_{Important,Deferrable}` targets (bare names,
-//!   width-selected to abs.w). The ambient deps are types + sst only.
+//!   NO game-contract symbols, and ONE engine constant (`FRAME_PIECE_COUNT`,
+//!   which pins the frame-header read its comptime parser inlines). Its only
+//!   cross-seam code surface is the two `jsr QueueDMA_{Important,Deferrable}`
+//!   targets (bare names, width-selected to abs.w). The ambient deps are types +
+//!   sst, plus that one constant re-declared from `engine/system/constants.emp`
+//!   at test runtime (`test_support::engine_const_src`, never a typed copy).
 //! - **Indexed EA `adda.w (a2,d0.w), a2`** and the `movem.l d2-d4/a2-a3`
 //!   save/restore around the DMA call.
 //! - **Two near-identical procs** (`Perform_DPLC` / `Perform_DPLC_Deferrable`,
@@ -96,6 +99,27 @@ fn parse_file(path: &std::path::Path) -> sigil_frontend_emp::ast::File {
     file
 }
 
+/// Parse one synthesized `.emp` source to an AST, failing loudly on parse errors
+/// and naming what synthesized it.
+fn parse_src(src: &str, what: &str) -> sigil_frontend_emp::ast::File {
+    let (file, diags) = parse_str(src);
+    assert!(
+        diags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "{what} parse errors: {diags:?}"
+    );
+    file
+}
+
+/// The one engine constant `dplc.emp` imports, re-declared from the aeon tree at
+/// test runtime so the standalone lower carries the name its module-level
+/// `ensure(FRAME_PIECE_COUNT == 4, ...)` reads.
+fn frame_piece_count(aeon: &std::path::Path) -> sigil_frontend_emp::ast::File {
+    parse_src(
+        &sigil_harness::test_support::engine_const_src(aeon, "FRAME_PIECE_COUNT"),
+        "engine_const_src(FRAME_PIECE_COUNT)",
+    )
+}
+
 /// One synthetic file: `deps`' items prepended to `main`'s own, under `main`'s
 /// module header (the ambient-injection technique).
 fn with_ambient(
@@ -173,7 +197,7 @@ fn compile_real_file(
     let sst = parse_file(&aeon.join("engine/objects/sst.emp"));
     let dplc = parse_file(&aeon.join("engine/objects/dplc.emp"));
 
-    let file = with_ambient(vec![types, sst], dplc);
+    let file = with_ambient(vec![types, sst, frame_piece_count(&aeon)], dplc);
 
     let opts = LowerOptions {
         initial_cpu: Cpu::M68000,
@@ -421,6 +445,7 @@ fn two_module_flip(debug: bool, rom_name: &str) {
         vec![
             parse_file(&aeon.join("engine/system/types.emp")),
             parse_file(&aeon.join("engine/objects/sst.emp")),
+            frame_piece_count(&aeon),
         ],
         aeon.join("engine/objects"),
         "dplc",

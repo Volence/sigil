@@ -1579,6 +1579,32 @@ pub fn bg_layout_size_const_src(aeon: &std::path::Path) -> String {
     format!("module engine.bg_layout\npub const BG_LAYOUT_SIZE = {rhs}\n")
 }
 
+/// A synthesized `.emp` source re-declaring ONE `pub const` of
+/// `engine/system/constants.emp`, for a single-module oracle to PREPEND to its
+/// dep items.
+///
+/// The live case is `engine/objects/dplc.emp`'s
+/// `use engine.constants.{FRAME_PIECE_COUNT}`: the module pins its inlined `+ 4`
+/// frame-header read with a module-level `ensure(FRAME_PIECE_COUNT == 4, ...)`,
+/// so a standalone lower that does not carry the name aborts with
+/// `unknown name FRAME_PIECE_COUNT` before it reaches the bytes it exists to
+/// compare (the `*_port` cross-seam trap in `docs/OVERSEER-REFERENCE.md`: a
+/// hand-picked dep list predates a constant the module later imports).
+///
+/// Synthesized rather than prepending the whole `constants.emp`, on the same
+/// reasoning as [`bg_layout_size_const_src`]: a byte-oracle's dep list is kept
+/// deliberately minimal, and only the one integer is load-bearing here.
+///
+/// The value is not written down here: the right-hand side is copied VERBATIM
+/// out of `constants.emp` and folded by sigil's own comptime evaluator, so a
+/// change to the engine's frame-header layout reaches every gate that lowers the
+/// module by itself. A renamed or removed const fails loud in [`emp_const_rhs`]
+/// rather than binding a stale value.
+pub fn engine_const_src(aeon: &std::path::Path, name: &str) -> String {
+    let rhs = emp_const_rhs(&aeon.join("engine/system/constants.emp"), name);
+    format!("module engine.constants_lifted\npub const {name} = {rhs}\n")
+}
+
 /// The resolved game-contract env the raster / parallax / buffers oracles lower
 /// against — sonic4's WHOLE contract via [`game_contract_env_from_aeon`] at the
 /// canonical shape, not a one-member stub.
