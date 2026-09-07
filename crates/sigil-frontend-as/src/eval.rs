@@ -1322,6 +1322,10 @@ const GLOBAL_MACRO_CAP: usize = 1_000_000;
 const WORD_DATA_RANGE: std::ops::RangeInclusive<i64> = -0x8000..=0xFFFF;
 /// The values a long data directive (`dc.l`) accepts, the same shape.
 const LONG_DATA_RANGE: std::ops::RangeInclusive<i64> = -0x8000_0000..=0xFFFF_FFFF;
+/// The Z80 addresses a `jp`/`call` target or an `(nn)` operand accepts: the
+/// unsigned 16-bit space (asl: `range overflow` for `jp 10000h` and for a
+/// negative target alike). A symbol and a literal take the same window.
+const Z80_ADDR_RANGE: std::ops::RangeInclusive<i64> = 0..=0xFFFF;
 /// The counts `align` accepts: the domain of [`sigil_ir::asl_align_pad`],
 /// every non-zero `u32`. Checked on the folded `i64` BEFORE the narrowing
 /// cast, since a count that passes a wide positivity test and then truncates
@@ -7609,7 +7613,11 @@ impl Asm {
                         ops.push(Operand::Cc(cc));
                     }
                     return Some(match self.fold(&target) {
-                        Fold::Value(v) => {
+                        Fold::Value(_) => {
+                            // A resolved symbol takes the literal path's window
+                            // (asl: `range overflow` for `jp Big` at $10000 and
+                            // `jp Neg` at -1 alike), refused at the narrowing.
+                            let v = self.fold_imm(&target, span, *Z80_ADDR_RANGE.start(), *Z80_ADDR_RANGE.end());
                             ops.push(Operand::Imm16(v as u16));
                             Lowered::Fixed(ops)
                         }
@@ -7626,7 +7634,9 @@ impl Asm {
                 if let Some(rr) = reg16(w) {
                     let target = self.qualify_expr(e);
                     return Some(match self.fold(&target) {
-                        Fold::Value(v) => {
+                        Fold::Value(_) => {
+                            // The word window a literal `ld rr,nn` already takes.
+                            let v = self.fold_imm(&target, span, *WORD_DATA_RANGE.start(), *WORD_DATA_RANGE.end());
                             Lowered::Fixed(vec![Operand::Pair(rr), Operand::Imm16(v as u16)])
                         }
                         Fold::Poison => {
@@ -7907,7 +7917,7 @@ impl Asm {
                     Operand::IndC
                 }
                 OperandAtom::Mem(e) => {
-                    let v = self.fold_imm(e, span, 0, 0xFFFF);
+                    let v = self.fold_imm(e, span, *Z80_ADDR_RANGE.start(), *Z80_ADDR_RANGE.end());
                     Operand::Mem(v as u16)
                 }
                 OperandAtom::Value(e) => {
@@ -7920,10 +7930,10 @@ impl Asm {
                     } else if matches!(m, Mnemonic::Jp | Mnemonic::Call) {
                         // A literal address for jp/call is a 16-bit immediate
                         // (symbolic targets take the Abs16 fixup path earlier).
-                        let v = self.fold_imm(e, span, 0, 0xFFFF);
+                        let v = self.fold_imm(e, span, *Z80_ADDR_RANGE.start(), *Z80_ADDR_RANGE.end());
                         Operand::Imm16(v as u16)
                     } else if has_pair_companion {
-                        let v = self.fold_imm(e, span, -0x8000, 0xFFFF);
+                        let v = self.fold_imm(e, span, *WORD_DATA_RANGE.start(), *WORD_DATA_RANGE.end());
                         Operand::Imm16(v as u16)
                     } else {
                         let v = self.fold_imm(e, span, -128, 0xFF);
