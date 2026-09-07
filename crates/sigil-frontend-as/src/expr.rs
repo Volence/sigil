@@ -281,6 +281,7 @@ mod tests {
         match e.fold(lookup) {
             Fold::Value(v) => v,
             Fold::Poison => panic!("poison"),
+            Fold::Fault(f) => panic!("{f}"),
         }
     }
 

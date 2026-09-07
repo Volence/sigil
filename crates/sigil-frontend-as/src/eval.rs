@@ -1697,12 +1697,23 @@ impl Asm {
         e.fold(&|name| self.builtin_num(name).or_else(|| self.resolve_sym(name)))
     }
 
+    /// Report a fold that has no 64-bit value (`Fold::Fault`: an overflow, a
+    /// division by zero, a shift outside `0..=63`) at the line that wrote it.
+    /// The caller still emits a placeholder so the pass keeps its shape; the
+    /// error fails the run. A fault is never routed as a poison: a poison with
+    /// no dangling names records nothing, and `move.w #5/0,d0` used to reach
+    /// the image as `303C 0000` that way.
+    fn fault_err(&mut self, fault: sigil_ir::expr::ArithFault, span: Span) {
+        self.err(span, fault.to_string());
+    }
+
     /// Fold an immediate to a value in [lo,hi]. Out-of-range → diagnostic + clamp.
     /// Unresolved (Poison) → 0 placeholder for THIS pass (byte-stable so a forward
     /// ref that resolves on a later pass doesn't perturb layout), but the offending
     /// symbol names are recorded: on the converged pass `run` promotes them to
     /// unresolved-symbol errors (the env is final there, so a still-Poison operand
-    /// is genuinely undefined rather than a pending forward ref).
+    /// is genuinely undefined rather than a pending forward ref). A fault is
+    /// reported here and now, with the same 0 placeholder.
     fn fold_imm(&mut self, e: &Expr, span: Span, lo: i64, hi: i64) -> i64 {
         match self.fold(e) {
             Fold::Value(v) if v >= lo && v <= hi => v,
@@ -1712,6 +1723,10 @@ impl Asm {
             }
             Fold::Poison => {
                 self.route_poison_names(e, span);
+                0
+            }
+            Fold::Fault(f) => {
+                self.fault_err(f, span);
                 0
             }
         }
@@ -1836,6 +1851,10 @@ impl Asm {
         }
         match self.fold(&e) {
             Fold::Value(v) => Some(v),
+            Fold::Fault(f) => {
+                self.fault_err(f, span);
+                None
+            }
             Fold::Poison => {
                 // THE choke point for every directive that wants a constant and
                 // has its own word for not getting one: `org`, `ds`, `align`,
@@ -2425,7 +2444,9 @@ impl Asm {
         }
         match self.fold(&e) {
             Fold::Value(v) => Some(v),
-            Fold::Poison => None,
+            // A fault is a refusal here too: the caller reports the piece as
+            // not being an integer, in its own words.
+            Fold::Poison | Fold::Fault(_) => None,
         }
     }
 
@@ -6065,6 +6086,10 @@ impl Asm {
                     }
                     self.emit(&[v.clamp(-128, 0xFF) as u8], vec![], span);
                 }
+                Fold::Fault(f) => {
+                    self.fault_err(f, span);
+                    self.emit(&[0x00], vec![], span);
+                }
                 Fold::Poison => {
                     // A register is not a cross-seam leaf. Deferring it hands
                     // the linker a fixup it can only refuse, and the linker's
@@ -6115,6 +6140,10 @@ impl Asm {
                     self.check_data_range(v, WORD_DATA_RANGE, span);
                     let w = v as u16;
                     self.emit(&[(w & 0xFF) as u8, (w >> 8) as u8], vec![], span);
+                }
+                Fold::Fault(f) => {
+                    self.fault_err(f, span);
+                    self.emit(&[0x00, 0x00], vec![], span);
                 }
                 Fold::Poison => {
                     // A register is not a cross-seam leaf; see `directive_db`.
@@ -6213,6 +6242,10 @@ impl Asm {
                     let w = (v as u16).to_be_bytes();
                     self.emit(&w, vec![], span);
                 }
+                Fold::Fault(f) => {
+                    self.fault_err(f, span);
+                    self.emit(&[0x00, 0x00], vec![], span);
+                }
                 Fold::Poison => {
                     // A register is not a cross-seam leaf; see `directive_db`.
                     if self.report_register_values(&qe, span) {
@@ -6286,6 +6319,10 @@ impl Asm {
                     self.check_data_range(v, LONG_DATA_RANGE, span);
                     let l = (v as u32).to_be_bytes();
                     self.emit(&l, vec![], span);
+                }
+                Fold::Fault(f) => {
+                    self.fault_err(f, span);
+                    self.emit(&[0x00; 4], vec![], span);
                 }
                 Fold::Poison => {
                     // A register is not a cross-seam leaf; see `directive_db`.
@@ -6670,6 +6707,10 @@ impl Asm {
                     Fold::Poison => {
                         self.route_poison_names(&target, span);
                         (AbsWidth::W, target)
+                    }
+                    Fold::Fault(f) => {
+                        self.fault_err(f, span);
+                        (AbsWidth::W, Expr::Int(0))
                     }
                 };
                 let frag = self.m68k.lower_jmp_jsr_abs(is_jsr, fixup_target, width, span);
@@ -7383,6 +7424,10 @@ impl Asm {
                 AbsWidth::W => M68kOperand::AbsW((v & 0xFFFF) as i16),
                 AbsWidth::L => M68kOperand::AbsL(v as i32),
             },
+            Fold::Fault(f) => {
+                self.fault_err(f, span);
+                M68kOperand::AbsW(0)
+            }
             Fold::Poison => {
                 self.route_poison_names(&qualified, span);
                 // Optimistic abs.w while unresolved (M1.D T3): asl selects the least
@@ -7625,6 +7670,11 @@ impl Asm {
                             ops.push(Operand::Imm16(0));
                             Lowered::Abs16(ops, target)
                         }
+                        Fold::Fault(f) => {
+                            self.fault_err(f, span);
+                            ops.push(Operand::Imm16(0));
+                            Lowered::Fixed(ops)
+                        }
                     });
                 }
             }
@@ -7641,6 +7691,10 @@ impl Asm {
                         }
                         Fold::Poison => {
                             Lowered::Abs16(vec![Operand::Pair(rr), Operand::Imm16(0)], target)
+                        }
+                        Fold::Fault(f) => {
+                            self.fault_err(f, span);
+                            Lowered::Fixed(vec![Operand::Pair(rr), Operand::Imm16(0)])
                         }
                     });
                 }
@@ -7768,7 +7822,9 @@ impl Asm {
         }
         match self.fold(&qualified) {
             Fold::Value(v) => Expr::Int(v),
-            Fold::Poison => qualified,
+            // A fault travels with the expression: the linker folds the same
+            // tree and reports it at the fixup.
+            Fold::Poison | Fold::Fault(_) => qualified,
         }
     }
 

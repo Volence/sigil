@@ -25,6 +25,17 @@ pub use sigil_ir::{
 };
 use sigil_span::{Diagnostic, Level, Span};
 
+/// The diagnostic for a link-time expression that has no 64-bit value
+/// (`Fold::Fault`): names what was being resolved, the section, and the
+/// failed operation, at the fragment's own span.
+fn fault_diag(what: &str, fault: sigil_ir::expr::ArithFault, section: &str, span: Span) -> Diagnostic {
+    Diagnostic {
+        level: Level::Error,
+        message: format!("[value.fault] {what} in section {section}: {fault}"),
+        primary: span,
+    }
+}
+
 /// Map a `JmpJsrSym`/`RelaxAbsSym` rung index back to its `AbsWidth` (rung 0 →
 /// `abs.w`, rung 1 → `abs.l`). These two fragments have exactly two rungs, so
 /// any index ≥ 1 is `abs.l` — the fixpoint never produces an out-of-range index
@@ -845,6 +856,7 @@ fn resolve_layout_impl(
                                     &equ_overlay, *span,
                                 )]);
                             }
+                            Fold::Fault(f) => return Err(vec![fault_diag("jmp/jsr target", f, &sec.name, *span)]),
                         };
                         if asl_width_rule(v, dash_a) == AbsWidth::L && rungs[si][fi] == 0 {
                             rungs[si][fi] = 1;
@@ -860,6 +872,9 @@ fn resolve_layout_impl(
                                     "symbolic absolute operand", target, &placed, &sec.name,
                                     &syms, &equ_overlay, *span,
                                 )]);
+                            }
+                            Fold::Fault(f) => {
+                                return Err(vec![fault_diag("symbolic absolute operand", f, &sec.name, *span)])
                             }
                         };
                         if asl_width_rule(v, dash_a) == AbsWidth::L && rungs[si][fi] == 0 {
@@ -884,6 +899,7 @@ fn resolve_layout_impl(
                                     target, &placed, &sec.name, &syms, *span,
                                 )]);
                             }
+                            Fold::Fault(f) => return Err(vec![fault_diag("branch/ladder target", f, &sec.name, *span)]),
                         };
                         let frag_start = frag_start_vma(sec, &pass_rungs, origin, fi);
                         // Minimal rung whose fixup kind reaches the target.
@@ -942,7 +958,8 @@ fn resolve_layout_impl(
                         // target already errored loudly in (b) this same pass.
                         let v = match target.fold(&|n| syms.resolve(n, None)) {
                             Fold::Value(v) => v,
-                            Fold::Poison => continue, // reported in pass (b) already
+                            // Reported in pass (b) already, both shapes.
+                            Fold::Poison | Fold::Fault(_) => continue,
                         };
                         let frag_start = frag_start_vma(sec, &rungs[si], origin, fi);
                         let cand = &candidates[rungs[si][fi]];
@@ -1190,6 +1207,9 @@ fn fold_equ_syms(
                         progressed = true;
                     }
                     Fold::Poison => all_done = false,
+                    Fold::Fault(f) => {
+                        return Err(vec![fault_diag(&format!("equ `{}`", eq.name), f, &sec.name, eq.span)])
+                    }
                 }
             }
         }
