@@ -11434,3 +11434,58 @@ demo_debug = "9b0d2ce7/102818"
 lean = "3fd246f7/773120"
 s4 = "1c09fbfc/819131"
 s4_debug = "e2144057/840324"
+
+[[entry]]
+name = "ls12-dma-guard-tick-paths"
+ab = "aeon 157e59bf four-shape verify by the aeon lane 2026-09-07 (s4/s4.debug moved, demo/demo.debug identical), matching sigil's c1ac4a60 build; sigil control at 43bf606a reproduced aeon 141dff5e md5s"
+aeon_rev = "157e59bfd9149edc25bfd443cb0d5a916ca662f6"
+note = "aeon_rev moves 483b3e12 (master, 2026-09-06) to 157e59bf (master, the landed LS-12 merge); the resident Z80 blob grows 6163 to 6176 / 6293 to 6306 B; demo shapes are byte-identical to the previous aeon master build"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "9a63c8c1"
+full_size = 846881
+anchor_crc = "77a63d95"
+anchor_end = 0xc14f4
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "ed60e162"
+full_size = 620727
+anchor_crc = "f24a7ab3"
+anchor_end = 0x8d3d4
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "0ad17404"
+full_size = 96863
+anchor_crc = "932f01e4"
+anchor_end = 0x1121a
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "2565ece2"
+full_size = 103185
+anchor_crc = "b3a21a2f"
+anchor_end = 0x1121a
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "0b5d25f5"
+full_size = 773136
+anchor_crc = "87a15fe4"
+anchor_end = 0xbcc10
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "b09ccd65"
+full_size = 820229
+anchor_crc = "bd961940"
+anchor_end = 0xbdc92
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "1b7fe316"
+full_size = 846529
+anchor_crc = "0fd970d5"
+anchor_end = 0xc14f4
