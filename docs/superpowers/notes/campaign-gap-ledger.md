@@ -4263,6 +4263,30 @@ promote it from derived to observed.
   side moved to `reserve` + `asl_align_pad` at `84c48a7b`. **Do not land alone**: the DAC
   intra-bank recompute matches only `Fill`, so fixing this without `recompute_bank_aligns` moves
   the drum bank off its `$8000` boundary with no diagnostic.
+  -- **FIXED on `parcel/emp-align-reserve`** (tip `f1a9e4f7`+, note
+  `2026-09-07-emp-align-reserve.md`; merge SHA to be appended by the controller):
+  `emit_align_pad` calls `sigil_ir::asl_align_pad` and `reserve`. **THE DO-NOT-LAND-ALONE
+  IS REFUTED BY MEASUREMENT** and should not be carried forward: `recompute_bank_aligns`
+  is guarded by `baked_after >= tru`, and every `.emp` section is chained from the
+  COSMETIC base `emp_map_frozen` hands it (`lma_base = 0x0`), so `baked_after` is always
+  far below the true base and the rewrite branch never ran on `dac_banks` under `Fill`
+  either. The pad was already correct for an independent reason (lowering origin `0` and
+  a `$8000`-aligned true base are congruent mod `$8000`). Measured: the drum bank sits at
+  the same address in both arms. The three `.emp` forms `emit_align_pad` serves are the
+  top-level `align N` item, the per-item `(align: N)`, and a `table item_align:` pad -
+  the finding's `where` line named only the second. The signed-vs-unsigned half is INERT
+  today, not impossible: no aeon `section` declares a RAM `vma:` (all 20 enumerated,
+  largest `$8357`), and that is the only construct that reaches the negative regime.
+- `LENS-BANK-ALIGN-RECOMPUTE-ORPHANED` - `sigil-harness/src/native.rs`
+  `recompute_bank_aligns` (`:3039`) and `trim_trailing_align_overshoot` (`:2975`) rewrite an
+  already-baked align pad on relocation by matching `Fragment::Fill { value: 0, .. }`. With
+  `directive_align` on `reserve` since `84c48a7b` and `emit_align_pad` since
+  `parcel/emp-align-reserve`, **NEITHER FRONT-END PRODUCES A ZERO-`Fill` ALIGN PAD ANY MORE**,
+  so both passes are dead with respect to their stated subject. Not removed with the align
+  fix on purpose - deleting a relocation pass is a placement change and wants its own
+  four-shape differential. `trim_trailing_align_overshoot` still has unit coverage
+  (`native.rs:5019`) built on hand-constructed `Fill` fragments, which is exactly the shape
+  that keeps a dead pass looking live.
 - `LENS-HERE-PREPLACEMENT` - `here()` bakes a pre-placement origin while labels follow placement;
   `builder.rs:101`'s justifying comment is false since the placement rework. Exposure is DATA
   sections, not code.
