@@ -647,6 +647,17 @@ fn one_pass_with_defer(
     asm.known_labels = seed_labels.clone();
     asm.label_ref_equs = seed_label_ref_equs.clone();
     asm.process(root_name, src);
+    // The census behind `GLOBAL_MACRO_CAP` and `GLOBAL_REPT_CAP`: what one
+    // pass over a real program actually drew on each budget, so the figures in
+    // those constants' docs can be re-measured rather than believed.
+    if std::env::var_os("SIGIL_CENSUS_BUDGET").is_some() {
+        eprintln!(
+            "budget-census\tpass={mompass}\tmacro-expansions={}\trept-bodies={}\twhile-bodies={}",
+            GLOBAL_MACRO_CAP - asm.macro_budget,
+            GLOBAL_REPT_CAP - asm.rept_budget,
+            GLOBAL_WHILE_CAP - asm.while_budget
+        );
+    }
     // The end-of-unit half of the no-declared-processor refusal. `emit` catches
     // a unit that PRODUCES bytes without a declaration, which is where the
     // silent-wrong-target damage is; this catches the rest — a unit that
@@ -1037,6 +1048,13 @@ struct Asm {
     /// under 114 rows. Not keyed by name: a condition has one verdict, unlike
     /// `dc.l a0+a1`, which names two registers.
     cond_faults_seen: std::collections::HashSet<(u32, u32, u32)>,
+    /// Invocation positions whose `EXPAND_CAP` refusal has already been
+    /// raised this pass, so a self-doubling macro reports each of its call
+    /// lines once rather than once per LEAF: at the cap a body with two
+    /// self-calls has 2^64 leaves, and before the expansion budget could stop
+    /// the run it had printed 919,281 identical lines under which the one
+    /// budget line that says why was unreadable.
+    expand_faults_seen: std::collections::HashSet<(u32, u32, u32)>,
     /// Remaining `while`-body-execution budget for THIS pass (per-`Asm`, so it
     /// resets each pass). Complements the per-loop `WHILE_CAP`: two NESTED
     /// non-convergent `while`s each bounded at `WHILE_CAP` still multiply to
@@ -1044,6 +1062,20 @@ struct Asm {
     /// the TOTAL across all (possibly nested) loops so a pathological input
     /// diagnoses in bounded time. Generous vs. any real table-fill loop.
     while_budget: usize,
+    /// Remaining `rept`-body-execution budget for THIS pass, the `rept` half
+    /// of the same contract. A `rept` folds its count once, so the only bound
+    /// it ever had was that count; two nested `rept 100000` multiply to ten
+    /// billion body runs and nothing diagnosed. Bounded across all (possibly
+    /// nested) repeats to `GLOBAL_REPT_CAP`, far above any corpus table (the
+    /// largest literal `rept` count in the three community disassemblies is
+    /// 32, and a whole pass over any of their roots runs under 600 bodies).
+    rept_budget: usize,
+    /// Remaining macro-expansion budget for THIS pass. `EXPAND_CAP` bounds how
+    /// DEEP an expansion tree grows and nothing bounded how WIDE, so a macro
+    /// that calls itself twice per body is 2^64 leaves at the cap and the pass
+    /// never finishes. This bounds the TOTAL number of expansions in a pass to
+    /// `GLOBAL_MACRO_CAP`; every expansion, nested or flat, draws one.
+    macro_budget: usize,
     /// Task B1 (seam re-eval): int `equ`s seen while NO section is open yet,
     /// held here rather than forcing one open (see `directive_equate`'s doc —
     /// eagerly opening a section there perturbs `directive_org`'s no-section
@@ -1271,6 +1303,25 @@ enum StructMember {
 /// Far above any real Aeon `while`-driven data table, far below the `WHILE_CAP²`
 /// (10⁸) a pair of nested non-convergent loops would otherwise grind through.
 const GLOBAL_WHILE_CAP: usize = 1_000_000;
+/// Per-pass ceiling on total `rept`-body executions (see `Asm::rept_budget`),
+/// the same figure as the `while` budget for the same reason: far above any
+/// real table (one pass runs 434 bodies over the s1disasm root, 572 over
+/// s2disasm, 540 over skdisasm; `SIGIL_CENSUS_BUDGET=1`), far below the
+/// product two nested oversized repeats reach.
+const GLOBAL_REPT_CAP: usize = 1_000_000;
+/// Per-pass ceiling on macro expansions (see `Asm::macro_budget`). Sized
+/// against the corpus, measured rather than guessed (`SIGIL_CENSUS_BUDGET=1`
+/// prints the draw per pass): one pass over the s1disasm root expands 14,449
+/// macros, s2disasm 24,842 and skdisasm 28,930, so this is more than thirty
+/// times the largest real program, and a self-doubling macro reaches it in
+/// about a second.
+const GLOBAL_MACRO_CAP: usize = 1_000_000;
+
+/// The values a word data directive (`dc.w`, Z80 `dw`) accepts: asl's window,
+/// signed floor to unsigned ceiling. See [`Asm::check_data_range`].
+const WORD_DATA_RANGE: std::ops::RangeInclusive<i64> = -0x8000..=0xFFFF;
+/// The values a long data directive (`dc.l`) accepts, the same shape.
+const LONG_DATA_RANGE: std::ops::RangeInclusive<i64> = -0x8000_0000..=0xFFFF_FFFF;
 
 enum Lowered {
     Fixed(Vec<Operand>),
@@ -1324,7 +1375,10 @@ impl Asm {
             arg_faults_seen: std::collections::HashSet::new(),
             reg_faults_seen: std::collections::HashSet::new(),
             cond_faults_seen: std::collections::HashSet::new(),
+            expand_faults_seen: std::collections::HashSet::new(),
             while_budget: GLOBAL_WHILE_CAP,
+            rept_budget: GLOBAL_REPT_CAP,
+            macro_budget: GLOBAL_MACRO_CAP,
             pending_equ_syms: Vec::new(),
             deferred_assign_names: std::collections::HashSet::new(),
             defer_unresolved_jsr_jmp,
@@ -1365,6 +1419,23 @@ impl Asm {
             message: msg.into(),
             primary: span,
         });
+    }
+
+    /// Refuse a folded data value outside the window its directive can hold,
+    /// the check `dc.b` has always made and the wider directives did not:
+    /// `dc.w $12345` cast to `u16` and emitted `23 45` with exit 0. The window
+    /// is asl's, signed floor to unsigned ceiling (`-32768..=65535` for a word,
+    /// `-2147483648..=4294967295` for a long; asl `error #1320: range
+    /// overflow` outside it, `dc.w -1` and `dc.w $FFFF` both `FFFF` inside).
+    /// The caller still emits the low bytes so the pass keeps its shape; the
+    /// error fails the run.
+    fn check_data_range(&mut self, v: i64, range: std::ops::RangeInclusive<i64>, span: Span) {
+        if !range.contains(&v) {
+            self.err(
+                span,
+                format!("operand {v} out of range {}..={}", range.start(), range.end()),
+            );
+        }
     }
 
     /// The continuous PHYSICAL location counter (real ROM/LMA offset): the open
@@ -3553,7 +3624,13 @@ impl Asm {
     /// nested opener of ANY kind pushes ITS OWN closer set, so only that
     /// closer set's keyword pops it — regardless of what closer keyword the
     /// enclosing block happens to share with it.
-    fn find_block_end(&self, lines: &[SrcLine], start: usize) -> usize {
+    ///
+    /// `None` when no line closes the block: the caller reports that through
+    /// [`Asm::block_end`] rather than picking a line to stand in for the
+    /// closer. There is no line that can: the last line of the slice is a body
+    /// line the block never reached its end of, and consuming it as the closer
+    /// dropped its bytes from the image with exit 0.
+    fn find_block_end(&self, lines: &[SrcLine], start: usize) -> Option<usize> {
         let start_kw = self.line_keyword(&lines[start]).unwrap_or_default();
         let mut stack: Vec<&'static [&'static str]> = vec![closers_for(&start_kw)];
         for (idx, line) in lines.iter().enumerate().skip(start + 1) {
@@ -3572,18 +3649,70 @@ impl Asm {
                 if top.contains(&k.as_str()) {
                     stack.pop();
                     if stack.is_empty() {
-                        return idx;
+                        return Some(idx);
                     }
                 }
             }
         }
-        lines.len().saturating_sub(1)
+        None
+    }
+
+    /// [`Asm::find_block_end`], REFUSING an unterminated block: a missing closer
+    /// is reported at the opener's line and `None` is returned, and every
+    /// executor then skips the rest of its slice. asl refuses the same shapes
+    /// (`missing ENDIF/ENDCASE`, `REPT without ENDM`, `WHILE without ENDM`,
+    /// `IRP without ENDM`, `open macro definition`, `open structure definition`,
+    /// each exit 2), and names no line; the opener is the line whose partner
+    /// the reader has to find. `subject` is the defined name a `macro` or
+    /// `struct` head carries, so the message can say WHICH definition is open.
+    ///
+    /// A block opened after an `end` directive is never reached: `end` sets
+    /// `aborted` and `exec` stops walking, which is also asl's behaviour (it
+    /// stops reading at `END` and raises nothing for what follows).
+    fn block_end(&mut self, lines: &[SrcLine], start: usize, subject: Option<&str>) -> Option<usize> {
+        if let Some(end) = self.find_block_end(lines, start) {
+            return Some(end);
+        }
+        let kw = self.line_keyword(&lines[start]).unwrap_or_default();
+        let closers = closers_for(&kw)
+            .iter()
+            .map(|c| format!("`{c}`"))
+            .collect::<Vec<_>>()
+            .join(" or ");
+        let asl = match fold_kw(&kw).as_ref() {
+            "if" | "ifdef" | "ifndef" | "switch" => "missing ENDIF/ENDCASE",
+            "rept" => "REPT without ENDM",
+            "while" => "WHILE without ENDM",
+            "irp" | "irpc" => "IRP without ENDM",
+            "macro" => "open macro definition",
+            "struct" => "open structure definition",
+            _ => "unterminated block",
+        };
+        let what = match subject {
+            Some(name) => format!("`{kw}` `{name}`"),
+            None => format!("`{kw}`"),
+        };
+        let span = Span {
+            source: lines[start].source,
+            start: lines[start].base,
+            end: lines[start].base,
+        };
+        self.err(
+            span,
+            format!(
+                "{what} is never closed: expected {closers} before the end of the enclosing source, \
+                 and an open block would otherwise swallow every line after it (asl: {asl})"
+            ),
+        );
+        None
     }
 
     /// Execute an `if`/`ifdef`/`ifndef` … `endif` region; run the first true arm.
     /// Returns the index just past `endif`.
     fn exec_if(&mut self, lines: &[SrcLine], start: usize) -> usize {
-        let end = self.find_block_end(lines, start);
+        let Some(end) = self.block_end(lines, start, None) else {
+            return lines.len();
+        };
         // Collect arm-head indices at depth 0: start, then each elseif/else.
         let mut heads = vec![start];
         let mut depth = 0i32;
@@ -3646,9 +3775,8 @@ impl Asm {
                 //                                      `#1: symbol undefined`
                 // ```
                 //
-                // Guarded on the keyword because `find_block_end` falls back to
-                // the last line of an UNTERMINATED region, which is a body line
-                // the arm never reached rather than a closer.
+                // Guarded on the keyword: the sentinel head is the next arm head
+                // or the closer, and only those bind here.
                 //
                 // An `exitm` inside the arm means asl never READ the closer, so
                 // its label binds nothing: probe `e18` puts `LC:` on the `endif`
@@ -3687,7 +3815,9 @@ impl Asm {
     /// index past `endcase`.
     fn exec_switch(&mut self, lines: &[SrcLine], start: usize) -> usize {
         let (_, arg_toks, span) = self.line_kw_args(&lines[start]);
-        let end = self.find_block_end(lines, start);
+        let Some(end) = self.block_end(lines, start, None) else {
+            return lines.len();
+        };
         let switch_val = self.eval_str(&arg_toks);
         if switch_val.is_none() {
             self.err(span, "switch needs a string expression");
@@ -3747,7 +3877,9 @@ impl Asm {
                 0
             }
         };
-        let end = self.find_block_end(lines, start);
+        let Some(end) = self.block_end(lines, start, None) else {
+            return lines.len();
+        };
         let captured = self.capture_loop_body(&lines[start + 1..end]);
         let body: &[SrcLine] = captured.as_deref().unwrap_or(&lines[start + 1..end]);
         // A `rept` IS an expansion for `exitm`'s purposes, top-level one included
@@ -3758,7 +3890,12 @@ impl Asm {
         // loop — `p7`'s `rept 2` reads `Ra` back as `$0000` then `$0002`, which
         // is a namespace per iteration, not per loop.
         let plain_labels = std::rc::Rc::new(scan_plain_labels(body));
-        for _ in 0..n {
+        // A body with no lines at all runs nothing, defines nothing and costs no
+        // budget, whatever its count: asl finishes a nested pair of `rept
+        // 100000` with no body line in 80 ms with exit 0, while the same pair
+        // around a single comment line runs past a 30-second timeout.
+        let iterations = if body.is_empty() { 0 } else { n };
+        for _ in 0..iterations {
             // `end` (and `fatal`) inside the body stop the unit, so the
             // remaining iterations must not run. `exec` already returns
             // immediately once `aborted` is set, so this is byte-neutral; it is
@@ -3767,6 +3904,23 @@ impl Asm {
             if self.aborted {
                 break;
             }
+            // The per-pass budget, checked per BODY RUN rather than against the
+            // folded count, so a nest of in-range repeats is bounded by the
+            // product it actually executes. Exhausting it aborts the pass, as
+            // the `while` budget does: an enclosing repeat must not keep going.
+            if self.rept_budget == 0 {
+                self.err(
+                    span,
+                    format!(
+                        "total `rept` body executions exceeded the per-pass budget ({GLOBAL_REPT_CAP}): \
+                         this `rept` (count {n}), with any repeat enclosing it, runs more bodies than \
+                         the assembler will execute in one pass (asl runs such a nest without limit)"
+                    ),
+                );
+                self.aborted = true;
+                break;
+            }
+            self.rept_budget -= 1;
             self.push_expansion_labels(plain_labels.clone());
             self.exec(body);
             self.pop_expansion_labels();
@@ -3826,7 +3980,9 @@ impl Asm {
     /// Returns the index past the closer.
     fn exec_irp(&mut self, lines: &[SrcLine], start: usize, kind: IterKind) -> usize {
         let (_, arg_toks, span) = self.line_kw_args_checked(&lines[start]);
-        let end = self.find_block_end(lines, start);
+        let Some(end) = self.block_end(lines, start, None) else {
+            return lines.len();
+        };
         // The head's own text, for `irp`'s RAW-TEXT items. Recomputed rather
         // than threaded out of `line_kw_args_checked` because `subst_frame_text`
         // is pure and this is the identical call it already made — the token
@@ -3989,7 +4145,9 @@ impl Asm {
     /// past `endm`.
     fn exec_while(&mut self, lines: &[SrcLine], start: usize) -> usize {
         let (_, arg_toks, span) = self.line_kw_args(&lines[start]);
-        let end = self.find_block_end(lines, start);
+        let Some(end) = self.block_end(lines, start, None) else {
+            return lines.len();
+        };
         let captured = self.capture_loop_body(&lines[start + 1..end]);
         let body: &[SrcLine] = captured.as_deref().unwrap_or(&lines[start + 1..end]);
         let mut iterations = 0usize;
@@ -4079,7 +4237,9 @@ impl Asm {
             .iter()
             .any(|t| matches!(&t.tok, Tok::Ident(s) if fold_kw(s) == "dots"));
         let sep = if dots { '.' } else { '_' };
-        let end = self.find_block_end(lines, start);
+        let Some(end) = self.block_end(lines, start, None) else {
+            return lines.len();
+        };
         let mut off: i64 = 0;
         let mut elems: Vec<(String, i64)> = Vec::new();
         // Every member symbol is bound into `env` AS THE BODY IS WALKED, not
@@ -4621,7 +4781,7 @@ impl Asm {
     fn dispatch(&mut self, head: &str, rest: &[Token], span: Span) {
         if let Some((base, suffix)) = split_attribute_suffix(head) {
             if !self.macros.contains_key(head) && self.macros.contains_key(base) {
-                self.expand_macro_with_attribute(base, rest, suffix);
+                self.expand_macro_with_attribute(base, rest, suffix, span);
                 return;
             }
         }
@@ -4675,7 +4835,7 @@ impl Asm {
         // sits at the bottom of the match — and so was the `.ATTRIBUTE`-suffix
         // side, which `dispatch` resolves before calling here.
         if !forced_builtin && self.macros.contains_key(head) {
-            self.expand_macro(head, rest);
+            self.expand_macro(head, rest, span);
             return;
         }
         // The DIRECTIVE/MNEMONIC name folds (`fold_kw`); `head` itself stays
@@ -4855,7 +5015,7 @@ impl Asm {
             // forced-builtin one; kept as the explicit statement that a macro
             // never reaches the mnemonic arm below.
             _ if !forced_builtin && self.macros.contains_key(head) => {
-                self.expand_macro(head, rest)
+                self.expand_macro(head, rest, span)
             }
             // `label: SomeStruct` — placing an instance of a declared struct.
             // BELOW the directive arms deliberately: a struct may be named
@@ -5927,6 +6087,7 @@ impl Asm {
             let qe = self.qualify_expr(&e);
             match self.fold(&qe) {
                 Fold::Value(v) => {
+                    self.check_data_range(v, WORD_DATA_RANGE, span);
                     let w = v as u16;
                     self.emit(&[(w & 0xFF) as u8, (w >> 8) as u8], vec![], span);
                 }
@@ -6009,9 +6170,9 @@ impl Asm {
             // On the deferral pass, a `dc.w` whose value references a section
             // label (an offset-table row `Target-Base`, or a truncated address)
             // must carry the label(s) SYMBOLICALLY — a width-grown `JmpJsrSym`
-            // shifts them and a baked word would go stale. `Value16Be` matches
-            // the resolved path's `v as u16` low-16 truncation. See
-            // `keep_labels_symbolic`.
+            // shifts them and a baked word would go stale. `Value16Be` writes
+            // the folded value after its own range check, as the resolved path
+            // below does through `check_data_range`. See `keep_labels_symbolic`.
             let qed = self.resolve_dollar(&qe);
             if self.keep_labels_symbolic() && self.expr_refs_label(&qed) {
                 self.emit(
@@ -6023,6 +6184,7 @@ impl Asm {
             }
             match self.fold(&qe) {
                 Fold::Value(v) => {
+                    self.check_data_range(v, WORD_DATA_RANGE, span);
                     let w = (v as u16).to_be_bytes();
                     self.emit(&w, vec![], span);
                 }
@@ -6096,6 +6258,7 @@ impl Asm {
             }
             match self.fold(&qe) {
                 Fold::Value(v) => {
+                    self.check_data_range(v, LONG_DATA_RANGE, span);
                     let l = (v as u32).to_be_bytes();
                     self.emit(&l, vec![], span);
                 }
@@ -7835,21 +7998,12 @@ impl Asm {
                 _ => None,
             });
         }
-        let end = self.find_block_end(lines, start);
-        // An UNCLOSED definition. `find_block_end` answers with the last line it
-        // scanned, so a head on that line leaves nothing between head and end and
-        // the body slice would be inverted. Say so instead: the alternative is a
-        // panic, and the way this is reached is not a malformed source file but a
-        // pasted expansion-scope name — see [`Asm::bind_macro_arg`].
-        if end <= start {
-            let span = Span {
-                source: lines[start].source,
-                start: lines[start].base,
-                end: lines[start].base,
-            };
-            self.err(span, format!("macro `{name}` definition has no `endm`"));
+        // An UNCLOSED definition is refused by `block_end`, naming the macro.
+        // Besides a source file missing its `endm`, this is reached by a pasted
+        // expansion-scope name, see [`Asm::bind_macro_arg`].
+        let Some(end) = self.block_end(lines, start, Some(&name)) else {
             return lines.len();
-        }
+        };
         // A macro DEFINED inside an expanding macro body captures text the
         // enclosing expansion has already substituted — including its
         // `ALLARGS`, frozen at the shift state in force here. The inner macro
@@ -7880,16 +8034,22 @@ impl Asm {
     /// params positionally, in declaration order. `tst AMP=7,PER=9`,
     /// `tst 3,4`, and `tst PER=5,AMP=2` (params `AMP,PER`) all bind correctly
     /// under this rule.
-    fn expand_macro(&mut self, name: &str, arg_toks: &[Token]) {
-        self.expand_macro_inner(name, arg_toks, None);
+    fn expand_macro(&mut self, name: &str, arg_toks: &[Token], span: Span) {
+        self.expand_macro_inner(name, arg_toks, None, span);
     }
 
     /// Expand a `.ATTRIBUTE`-suffix invocation (T9.2): `name` is the BASE
     /// macro (already stripped of its `.SUFFIX` by `dispatch`'s
     /// `split_attribute_suffix` check), `attribute` is the literal suffix
     /// text (`.b`/`.w`/`.l`/`.s`) bound to `.ATTRIBUTE` inside the body.
-    fn expand_macro_with_attribute(&mut self, name: &str, arg_toks: &[Token], attribute: &str) {
-        self.expand_macro_inner(name, arg_toks, Some(attribute));
+    fn expand_macro_with_attribute(
+        &mut self,
+        name: &str,
+        arg_toks: &[Token],
+        attribute: &str,
+        span: Span,
+    ) {
+        self.expand_macro_inner(name, arg_toks, Some(attribute), span);
     }
 
     /// Shared implementation: substitute `.ATTRIBUTE` (if this is an
@@ -8045,7 +8205,13 @@ impl Asm {
         std::mem::take(&mut self.exit_expansion)
     }
 
-    fn expand_macro_inner(&mut self, name: &str, arg_toks: &[Token], attribute: Option<&str>) {
+    fn expand_macro_inner(
+        &mut self,
+        name: &str,
+        arg_toks: &[Token],
+        attribute: Option<&str>,
+        span: Span,
+    ) {
         // TAKEN FIRST, before any early return. `exec_one` parks the invocation
         // line's label here and this is the only consumer; a return that left it
         // parked would hand one call's label to the NEXT expansion, which is a
@@ -8053,17 +8219,38 @@ impl Asm {
         // reachable — the recursion cap fires on the corpus's own `zoneTableEntry`.
         let captured = self.pending_int_label.take();
         if self.macro_depth >= EXPAND_CAP {
-            let span = arg_toks.first().map(|t| t.span).unwrap_or(Span {
-                source: self.source,
-                start: 0,
-                end: 0,
-            });
-            self.err(
-                span,
-                format!("macro `{name}` expansion too deep (recursive macro?)"),
-            );
+            // Once per invocation position per pass (`expand_faults_seen`);
+            // the return is unconditional, so the leaf is still cut either way.
+            if self
+                .expand_faults_seen
+                .insert((span.source.0, span.start, span.end))
+            {
+                self.err(
+                    span,
+                    format!("macro `{name}` expansion too deep (recursive macro?)"),
+                );
+            }
             return;
         }
+        // Breadth, after depth. The depth cap returns from each leaf and lets
+        // the caller try its next line, so a body with two self-calls has
+        // 2^EXPAND_CAP leaves and never finishes. Exhausting the per-pass
+        // budget aborts the pass, as the loop budgets do, since every enclosing
+        // expansion would otherwise carry on to its next call.
+        if self.macro_budget == 0 {
+            self.err(
+                span,
+                format!(
+                    "macro `{name}` expansion exceeded the per-pass budget ({GLOBAL_MACRO_CAP} \
+                     expansions): a macro that calls itself more than once per body, or a repeat \
+                     around such a call, never finishes inside the depth cap of {EXPAND_CAP} (asl \
+                     runs this shape without limit)"
+                ),
+            );
+            self.aborted = true;
+            return;
+        }
+        self.macro_budget -= 1;
         let MacroDef { params, defaults, body, int_label } = match self.macros.get(name) {
             Some(m) => m.clone(),
             None => return,
@@ -13932,7 +14119,9 @@ C:\n";
         );
         let diags = run(src, &Options::default()).expect_err("must diagnose, not panic");
         assert!(
-            diags.iter().any(|d| d.message.contains("has no `endm`")),
+            diags
+                .iter()
+                .any(|d| d.message.contains("is never closed") && d.message.contains("`endm`")),
             "expected the unclosed-definition refusal, got {:?}",
             diags.iter().map(|d| &d.message).collect::<Vec<_>>()
         );
