@@ -1231,6 +1231,7 @@ fn lower_item_guard(
     for a in outcome.link_asserts {
         builder.push_link_assert(a);
     }
+    builder.add_comptime_guards(outcome.decided);
     outcome.cont
 }
 
@@ -1267,7 +1268,7 @@ fn lower_data_item(
         );
     }
     let here = here_pos(builder, placement.origin, &decl.name);
-    let (buf, asserts, mut ds) = eval_data_with_root_and_base(
+    let (buf, asserts, decided, mut ds) = eval_data_with_root_and_base(
         file,
         &decl.name,
         Some(here),
@@ -1276,6 +1277,9 @@ fn lower_data_item(
         placement.defines,
     );
     diags.append(&mut ds);
+    // The initializer's comptime guard verdicts count whether or not the item
+    // emitted; a failed item still decided the guards it reached.
+    builder.add_comptime_guards(decided);
     let Some(buf) = buf else { return };
 
     let (bytes, fixups, mut stream_diags) = data::stream_data(&buf, placement.cpu, decl.span);

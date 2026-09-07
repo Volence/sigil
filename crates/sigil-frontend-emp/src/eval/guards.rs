@@ -18,6 +18,10 @@ pub(crate) struct ItemGuardOutcome {
     pub diags: Vec<Diagnostic>,
     /// Deferred link-time assertions produced by this guard (D-H.4).
     pub link_asserts: Vec<sigil_ir::LinkAssert>,
+    /// Guard evaluations that reached a comptime verdict (the item guard itself
+    /// and any `ensure` a function it calls reaches); the complement of
+    /// `link_asserts`.
+    pub decided: usize,
     /// Whether a provisional `here()` referenced the guard's anonymous anchor.
     pub anchor_used: bool,
 }
@@ -62,6 +66,7 @@ pub(crate) fn eval_item_guard(
             cont: !ev.was_aborted(),
             anchor_used: ev.here_anchor_used(),
             link_asserts: ev.take_link_asserts(),
+            decided: ev.take_guards_decided(),
             diags: ev.diags,
         }
     })
@@ -112,8 +117,12 @@ impl<'a> Evaluator<'a> {
             // Already-reported error in the condition: stay silent (D-P2.9).
             Value::Poison => Value::Poison,
             // Passing guard: silent and cheap — the message is never touched.
-            Value::Bool(true) => Value::Unit,
+            Value::Bool(true) => {
+                self.guards_decided += 1;
+                Value::Unit
+            }
             Value::Bool(false) => {
+                self.guards_decided += 1;
                 let msg = self.eval_expr(&args[1].value, env);
                 if self.aborted || self.pending_return.is_some() {
                     return Value::Poison;

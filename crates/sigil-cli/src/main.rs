@@ -1020,9 +1020,13 @@ fn run_build(args: &[String]) {
             eprintln!(
                 "usage: sigil build --aeon <dir> [-o <out.bin>] [--emit-lst <lst>] \
                  [--game sonic4|demo] [--debug] [--config-a|--config-b|--lean] \
-                 [--report ram|contracts] [--extra-entry <module|path.emp>]...\n\
+                 [--report ram|contracts] [--extra-entry <module|path.emp>]... [--check]\n\
                  note:  --extra-entry evaluates the NAMED module's comptime guards; the \
                  named module must emit nothing (its own imports are not checked)\n\
+                 note:  --check decides every ensure and LinkAssert against final \
+                 post-relaxation placement and writes no ROM; a green check proves nothing \
+                 about region budget or overlap, image bounds, the checksum or the closure \
+                 gate, and is not a statement that the game builds\n\
                  env:   SIGIL_WARNINGS=off|summary|full  (warn-tier detail; default summary)"
             );
             process::exit(2);
@@ -1045,6 +1049,7 @@ fn run_build(args: &[String]) {
     match opts.report {
         Some(ReportKind::Ram) => run_ram_report(aeon_path, &opts.target),
         Some(ReportKind::Contracts) => run_contract_report(aeon_path, &opts.target),
+        None if opts.check => run_check_native(aeon_path, &opts),
         None => run_build_native(aeon_path, &opts),
     }
 }
@@ -1763,6 +1768,9 @@ struct BuildOpts {
     /// an `.emp` file under the scan root. Only the NAMED module is checked for
     /// byte-neutrality; what its own imports pull in is not.
     extra_entries: Vec<String>,
+    /// `--check`: decide every guard against the final placement and stop before
+    /// the link. No ROM, no listing, no appendix. `false` builds.
+    check: bool,
 }
 
 /// Parse `sigil build`'s argument slice. `--aeon <dir>` is required; `-o <path>`,
@@ -1782,6 +1790,12 @@ struct BuildOpts {
 /// module that would emit is refused by name; the refusal does not reach through that
 /// module's own imports, so byte-neutrality is a property of the argument, not of its
 /// whole import closure.
+///
+/// `--check` runs the build's resolve over the same target (so `--game`, `--debug`,
+/// the `--config-*` shapes and `--extra-entry` all apply) and stops once every guard
+/// is decided. It writes nothing, so a ROM or listing destination beside it is
+/// refused like it is beside `--report`, and the two non-building modes refuse each
+/// other rather than picking one silently.
 fn parse_build_args(args: &[String]) -> Result<BuildOpts, String> {
     let mut aeon: Option<String> = None;
     let mut output: Option<String> = None;
@@ -1793,6 +1807,7 @@ fn parse_build_args(args: &[String]) -> Result<BuildOpts, String> {
     let mut stress_art = false;
     let mut report: Option<ReportKind> = None;
     let mut extra_entries: Vec<String> = Vec::new();
+    let mut check = false;
 
     let mut i = 0;
     while i < args.len() {
@@ -1819,6 +1834,7 @@ fn parse_build_args(args: &[String]) -> Result<BuildOpts, String> {
             "--stress-art" => stress_art = true,
             // Repeatable, order-preserving: one module evaluated per occurrence.
             "--extra-entry" => extra_entries.push(next_value(args, &mut i, "--extra-entry")?),
+            "--check" => check = true,
             "--report" => {
                 let kind = ReportKind::parse(&next_value(args, &mut i, "--report")?)?;
                 if report.is_some_and(|prev| prev != kind) {
@@ -1868,7 +1884,16 @@ fn parse_build_args(args: &[String]) -> Result<BuildOpts, String> {
     if report.is_some() && !extra_entries.is_empty() {
         return Err("--report prints instead of building; --extra-entry needs a build".into());
     }
-    Ok(BuildOpts { aeon, output, emit_lst, target, report, extra_entries })
+    // A check writes no ROM and no listing, so a destination beside it names an
+    // artifact that will not exist; and it is not a report, so the two refuse each
+    // other instead of one silently winning.
+    if check && (output.is_some() || emit_lst.is_some()) {
+        return Err("--check decides guards without writing a ROM; drop -o / --emit-lst".into());
+    }
+    if check && report.is_some() {
+        return Err("--check and --report are different runs; pick one".into());
+    }
+    Ok(BuildOpts { aeon, output, emit_lst, target, report, extra_entries, check })
 }
 
 /// Consume the value after a value-taking flag at `args[*i]`, advancing `i`. A
@@ -1982,6 +2007,50 @@ fn report_warnings(warnings: &[sigil_harness::native::BuildWarning]) {
     for line in warning_report_lines(WarningView::from_env(), warnings) {
         eprintln!("{line}");
     }
+}
+
+/// `sigil build --check`: decide every `ensure` and every `LinkAssert` of the
+/// target against the final post-relaxation placement, then stop. Runs exactly the
+/// resolve the full build runs (`native::check_chained`: sound artifacts for a
+/// sound-on shape, the AS residual, the `.emp` lowering, the declared chain,
+/// `resolve_layout`, `check_link_asserts`, the drift verdict and the inapplicable
+/// allowlist) and none of what follows it: no link, no listing, no appendix, no
+/// checksum, no ROM. Exit 0 when every decided guard holds; exit 1 with the same
+/// rendered guard lines the full build prints when any fails.
+///
+/// The contract closure gate is NOT run here, and the banner says so: a green
+/// check is a statement about guards against placement, not that the game builds.
+fn run_check_native(aeon: &std::path::Path, opts: &BuildOpts) {
+    use sigil_harness::native;
+
+    let (label, profile) = opts.target.label_and_profile();
+    let profile = profile.with_extra_entries(opts.extra_entries.iter().cloned());
+    eprintln!(
+        "check: {label}: deciding every ensure and LinkAssert against final post-relaxation \
+         placement, then stopping before the link: a green check proves nothing about region \
+         budget or overlap, image bounds, the checksum or the contract closure gate, and is not \
+         a statement that the game builds"
+    );
+    if profile.sound_on {
+        eprintln!(
+            "check: {label}: emit_generated writes the sound artifacts into {} (a precondition \
+             of the .emp build), the one write this run makes",
+            aeon.display()
+        );
+    }
+    let native::CheckReport { guards, warnings } = match native::check_chained(aeon, &profile) {
+        Ok(report) => report,
+        Err(err) => {
+            eprintln!("error: native check ({label}): {err}");
+            process::exit(1);
+        }
+    };
+    report_warnings(&warnings);
+    println!(
+        "checked: {label}: {} ensure verdict(s) at comptime, {} LinkAssert(s) decided at link, \
+         {} LinkAssert(s) inapplicable (extern not defined in this link, allowlisted)",
+        guards.comptime_guards, guards.link_asserts_decided, guards.link_asserts_inapplicable
+    );
 }
 
 /// The `--native` build. Reproduces the exact steps the native gates bank: get the
@@ -2214,6 +2283,42 @@ mod tests {
         assert!(crate::parse_build_args(&s(&["--aeon", "x", "--lean", "--debug"])).is_err());
         assert!(crate::parse_build_args(&s(&["--aeon", "x", "--lean", "--game", "demo"])).is_err());
         assert!(crate::parse_build_args(&s(&["--aeon", "x", "--game", "genesis"])).is_err());
+    }
+
+    /// `--check` rides every target selector and `--extra-entry`, and refuses the
+    /// destinations it would never write and the report it is not.
+    #[test]
+    fn parse_build_args_check_grammar() {
+        use crate::BuildTarget;
+        let s = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        let o = crate::parse_build_args(&s(&["--aeon", "x", "--check"])).unwrap();
+        assert!(o.check);
+        assert!(matches!(o.target, BuildTarget::Sonic4 { debug: false }));
+        let o = crate::parse_build_args(&s(&["--aeon", "x", "--game", "demo", "--check"])).unwrap();
+        assert!(o.check);
+        assert!(matches!(o.target, BuildTarget::Demo { debug: false }));
+        let o = crate::parse_build_args(&s(&[
+            "--aeon", "x", "--check", "--game", "demo", "--debug", "--extra-entry", "games.demo.constants",
+        ]))
+        .unwrap();
+        assert!(o.check);
+        assert!(matches!(o.target, BuildTarget::Demo { debug: true }));
+        assert_eq!(o.extra_entries, vec!["games.demo.constants".to_string()]);
+        let o = crate::parse_build_args(&s(&["--aeon", "x", "--config-b", "--check"])).unwrap();
+        assert!(o.check);
+        assert!(matches!(o.target, BuildTarget::ConfigB));
+        assert!(!crate::parse_build_args(&s(&["--aeon", "x"])).unwrap().check);
+
+        let refused = |args: &[&str], flag: &str| {
+            let err = match crate::parse_build_args(&s(args)) {
+                Err(e) => e,
+                Ok(_) => panic!("{args:?} must be refused"),
+            };
+            assert!(err.contains("--check") && err.contains(flag), "{args:?}: {err}");
+        };
+        refused(&["--aeon", "x", "--check", "-o", "r.bin"], "-o");
+        refused(&["--aeon", "x", "--check", "--emit-lst", "r.lst"], "--emit-lst");
+        refused(&["--aeon", "x", "--check", "--report", "ram"], "--report");
     }
 
     /// `--extra-entry` is REPEATABLE and order-preserving (one module evaluated per

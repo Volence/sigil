@@ -559,7 +559,9 @@ pub fn build_program(
     prelude_id: Option<&str>,
     opts: &LowerOptions,
 ) -> (Vec<Section>, Vec<sigil_ir::LinkAssert>, Vec<Diagnostic>) {
-    build_program_with(manifest, entry_id, prelude_id, opts, true, true, &|_| opts.embed_base.clone())
+    let BuiltProgram { sections, link_asserts, diags, .. } =
+        build_program_with(manifest, entry_id, prelude_id, opts, true, true, &|_| opts.embed_base.clone());
+    (sections, link_asserts, diags)
 }
 
 /// [`build_program`] for an OPEN program — one whose `.emp` modules reference
@@ -576,7 +578,9 @@ pub fn build_program_open(
     prelude_id: Option<&str>,
     opts: &LowerOptions,
 ) -> (Vec<Section>, Vec<sigil_ir::LinkAssert>, Vec<Diagnostic>) {
-    build_program_with(manifest, entry_id, prelude_id, opts, false, true, &|_| opts.embed_base.clone())
+    let BuiltProgram { sections, link_asserts, diags, .. } =
+        build_program_with(manifest, entry_id, prelude_id, opts, false, true, &|_| opts.embed_base.clone());
+    (sections, link_asserts, diags)
 }
 
 /// [`build_program_open`] with a PER-MODULE `embed_base` override.
@@ -607,7 +611,37 @@ pub fn build_program_open_embed(
     opts: &LowerOptions,
     embed_base_for: &dyn Fn(&str) -> Option<PathBuf>,
 ) -> (Vec<Section>, Vec<sigil_ir::LinkAssert>, Vec<Diagnostic>) {
+    let BuiltProgram { sections, link_asserts, diags, .. } =
+        build_program_open_embed_counted(manifest, entry_id, prelude_id, opts, embed_base_for);
+    (sections, link_asserts, diags)
+}
+
+/// [`build_program_open_embed`] keeping the whole-program guard census: the
+/// deferred asserts AND how many `ensure` evaluations the reachable modules
+/// decided at comptime. The check-only build reads both counts so a run that
+/// decided zero of a family says so.
+pub fn build_program_open_embed_counted(
+    manifest: &Manifest,
+    entry_id: &str,
+    prelude_id: Option<&str>,
+    opts: &LowerOptions,
+    embed_base_for: &dyn Fn(&str) -> Option<PathBuf>,
+) -> BuiltProgram {
     build_program_with(manifest, entry_id, prelude_id, opts, false, false, embed_base_for)
+}
+
+/// A built multi-module program: its placed-to-be sections, the deferred link
+/// asserts of every reachable module, the comptime guard verdicts those modules
+/// reached, and every diagnostic the build produced.
+pub struct BuiltProgram {
+    /// Every reachable module's sections, in lowering order.
+    pub sections: Vec<Section>,
+    /// The whole program's deferred link asserts (D-H.4), concatenated.
+    pub link_asserts: Vec<sigil_ir::LinkAssert>,
+    /// The sum of every reachable module's [`sigil_ir::Module::comptime_guards`].
+    pub comptime_guards: usize,
+    /// Every diagnostic from reachability, lowering and the whole-program checks.
+    pub diags: Vec<Diagnostic>,
 }
 
 /// Shared body of [`build_program`] / [`build_program_open`]. `closed` gates the
@@ -624,9 +658,12 @@ fn build_program_with(
     closed: bool,
     rename: bool,
     embed_base_for: &dyn Fn(&str) -> Option<PathBuf>,
-) -> (Vec<Section>, Vec<sigil_ir::LinkAssert>, Vec<Diagnostic>) {
+) -> BuiltProgram {
     let mut diags = Vec::new();
     let mut sections = Vec::new();
+    // Comptime guard verdicts, summed over the reachable modules in the same
+    // walk that concatenates their deferred asserts.
+    let mut comptime_guards: usize = 0;
     // Scoped to THIS build and dropped with it — see `ConstFoldCache`.
     let folds = RefCell::new(ConstFoldCache::default());
     // Deferred link-time assertions (D-H.4) from every reachable module,
@@ -907,6 +944,7 @@ fn build_program_with(
         }
         sections.extend(module.sections);
         link_asserts.extend(module.link_asserts);
+        comptime_guards += module.comptime_guards;
     }
 
     // Item #7a §2.3: a region's `vars` blocks must all live in one owner module
@@ -939,7 +977,7 @@ fn build_program_with(
         .collect();
     diags.extend(fold_faults);
 
-    (sections, link_asserts, diags)
+    BuiltProgram { sections, link_asserts, comptime_guards, diags }
 }
 
 /// Assign each section a physical LMA from the memory map, keyed by SECTION NAME

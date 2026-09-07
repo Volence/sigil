@@ -1846,6 +1846,9 @@ pub struct EmpProgram {
     pub sections: Vec<Section>,
     /// The whole program's deferred link asserts (drift guards).
     pub link_asserts: Vec<sigil_ir::LinkAssert>,
+    /// How many `ensure` evaluations the reachable modules decided at comptime
+    /// (the complement of `link_asserts`; see [`sigil_ir::Module::comptime_guards`]).
+    pub comptime_guards: usize,
     /// Warnings and notes from all four lowering diagnostic sources (manifest scan,
     /// entry parse, program build, placement), deduplicated and location-resolved.
     pub warnings: Vec<BuildWarning>,
@@ -1975,8 +1978,8 @@ pub fn build_emp(aeon: &Path, profile: &GameProfile) -> Result<EmpProgram, Strin
     // root-relative path would then join onto the module dir and resolve one level deep.
     let aeon_root = aeon.to_path_buf();
     let embed_base_for = move |_id: &str| -> Option<std::path::PathBuf> { Some(aeon_root.clone()) };
-    let (mut sections, link_asserts, bdiags) =
-        resolve::build_program_open_embed(&manifest, &entry_id, None, &opts, &embed_base_for);
+    let resolve::BuiltProgram { mut sections, link_asserts, comptime_guards, diags: bdiags } =
+        resolve::build_program_open_embed_counted(&manifest, &entry_id, None, &opts, &embed_base_for);
     let berr: Vec<_> = bdiags.iter().filter(|d| d.level == sigil_span::Level::Error).collect();
     if !berr.is_empty() {
         // Every error, one per line, located through the manifest's own index: a
@@ -2028,7 +2031,7 @@ pub fn build_emp(aeon: &Path, profile: &GameProfile) -> Result<EmpProgram, Strin
     let warnings =
         collect_warnings(&index, &[&mdiags, &pdiags, &bdiags, &place_diags], Some(source));
 
-    Ok(EmpProgram { sections, link_asserts, warnings, sources: index })
+    Ok(EmpProgram { sections, link_asserts, comptime_guards, warnings, sources: index })
 }
 
 /// Location-resolve and deduplicate every non-error diagnostic in `sources`,
@@ -3627,20 +3630,85 @@ pub struct RomBuild {
     pub warnings: Vec<BuildWarning>,
 }
 
-/// The chained whole-ROM build AND its sigil-canonical listing (the deb2-appendix
-/// source for the off-canonical full-file layer). One `C` row per resolved section
-/// label at its final VMA, de-duplicated and address-deterministic — mirrors
-/// `build_native_rom_with_listing`'s listing derivation, on the chained (Frozen)
-/// placement instead of the pinned one.
-pub fn build_rom_chained_with_listing(
-    aeon: &Path,
-    profile: &GameProfile,
-) -> Result<RomBuild, String> {
+/// The chained build's program, placed and guard-decided: everything
+/// `build_rom_chained_with_listing` computes BEFORE it links. Emit the sound
+/// artifacts (sound-on shapes), assemble the AS residual, lower the `.emp`
+/// program, walk the declared chain, `resolve_layout`, then decide every
+/// `LinkAssert` and enforce the inapplicable allowlist. The full build continues
+/// from here into the listing, link, placement validation and `emit_rom`; the
+/// check-only build stops here.
+struct ChainedResolve {
+    /// Every section at its final post-relaxation placement.
+    resolved: Vec<Section>,
+    /// The (empty) stub table the resolve and the link share.
+    stubs: SymbolTable,
+    /// The warn tier so far: AS residual, lowering, chain drift, link asserts.
+    warnings: Vec<BuildWarning>,
+    /// The location authority the warnings and the link's own diagnostics render through.
+    sources: sigil_frontend_emp::resolve::manifest::SourceIndex,
+    /// The game's memory map (`emit_rom` and the object-bank budget read it).
+    map: sigil_ir::map::MemoryMap,
+    /// The declared placement map (`validate_placement` confirms the walk against it).
+    pmap: crate::map_placement::PlacementMap,
+    /// The guard census this resolve decided.
+    guards: GuardCensus,
+}
+
+/// How many guards a resolve decided, by family. Derived from the evaluator's
+/// own records (the comptime count the lowering drains beside the deferred
+/// asserts, and the `LinkAssert` list `check_link_asserts` folded), never from a
+/// source scan, so a family that decided nothing reads as zero.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct GuardCensus {
+    /// `ensure` evaluations that reached a comptime verdict.
+    pub comptime_guards: usize,
+    /// `LinkAssert`s whose condition folded against the final placement.
+    pub link_asserts_decided: usize,
+    /// `LinkAssert`s whose `extern()` names a symbol this link does not define
+    /// (a gated-off twin); neither passed nor failed, and each one is on the
+    /// profile's allowlist or the resolve would have failed.
+    pub link_asserts_inapplicable: usize,
+}
+
+impl GuardCensus {
+    /// The census from a resolve's records: the comptime count the lowering
+    /// drained, the `LinkAssert` list the link folded, and the inapplicable
+    /// subset the drift verdict handed back. Every assert not inapplicable was
+    /// decided (it folded to a value, and a zero already failed the resolve).
+    pub fn from_verdict(
+        comptime_guards: usize,
+        link_asserts: &[sigil_ir::LinkAssert],
+        inapplicable: &[&sigil_span::Diagnostic],
+    ) -> GuardCensus {
+        GuardCensus {
+            comptime_guards,
+            link_asserts_decided: link_asserts.len() - inapplicable.len(),
+            link_asserts_inapplicable: inapplicable.len(),
+        }
+    }
+}
+
+/// Render a declared-chain stage's failure: the stage name, the diagnostic
+/// count, then every diagnostic located through the program's own index.
+fn render_declared_chain(
+    what: &str,
+    d: &[sigil_span::Diagnostic],
+    sources: &sigil_frontend_emp::resolve::manifest::SourceIndex,
+) -> String {
+    let all: Vec<&sigil_span::Diagnostic> = d.iter().collect();
+    format!(
+        "declared-chain: {what}: {} diag(s):\n{}",
+        d.len(),
+        crate::diag_render::render_diag_lines(&all, &|span| sources.locate(span))
+    )
+}
+
+fn resolve_chained(aeon: &Path, profile: &GameProfile) -> Result<ChainedResolve, String> {
     if profile.sound_on {
         emit_generated(aeon)?;
     }
     let as_side = assemble_as_side(aeon, profile)?;
-    let EmpProgram { sections: emp_sections, link_asserts, mut warnings, sources } =
+    let EmpProgram { sections: emp_sections, link_asserts, comptime_guards, mut warnings, sources } =
         build_emp(aeon, profile)?;
     // An author-written `warning` in the residual AS joins the build's warn tier
     // through the same vector as every `.emp` lint, so it reaches the CLI banner
@@ -3694,16 +3762,8 @@ pub fn build_rom_chained_with_listing(
     let all = apply_declared_chain(sections, &true_bases, &spans);
 
     let stubs = SymbolTable::new();
-    let render_all = |what: &str, d: Vec<sigil_span::Diagnostic>| {
-        let all: Vec<&sigil_span::Diagnostic> = d.iter().collect();
-        format!(
-            "declared-chain: {what}: {} diag(s):\n{}",
-            d.len(),
-            crate::diag_render::render_diag_lines(&all, &|span| sources.locate(span))
-        )
-    };
     let resolved = sigil_link::resolve_layout(&all, &stubs, true)
-        .map_err(|d| render_all("resolve_layout", d))?;
+        .map_err(|d| render_declared_chain("resolve_layout", &d, &sources))?;
     // Same drift partition as the pinned driver: real Value(0) drift is a hard fail;
     // gated-off-twin (unresolvable-extern) guards are inapplicable here.
     let adiags = sigil_link::check_link_asserts(&resolved, &stubs, &link_asserts);
@@ -3713,6 +3773,41 @@ pub fn build_rom_chained_with_listing(
     warnings.extend(collect_warnings(&sources, &[&adiags], None));
     let inapplicable = declared_chain_drift_verdict(&adiags, &|span| sources.locate(span))?;
     enforce_inapplicable_allowlist_against(&inapplicable, &link_asserts, &profile.inapplicable_guards)?;
+    let guards = GuardCensus::from_verdict(comptime_guards, &link_asserts, &inapplicable);
+    Ok(ChainedResolve { resolved, stubs, warnings, sources, map, pmap, guards })
+}
+
+/// What a check-only run reports: the guard census and the warn tier.
+pub struct CheckReport {
+    /// The guards the resolve decided, by family.
+    pub guards: GuardCensus,
+    /// Every non-error diagnostic the resolve produced, for the caller to render.
+    pub warnings: Vec<BuildWarning>,
+}
+
+/// The check-only build (`sigil build --check`): run exactly the chained build's
+/// resolve (sound artifacts, AS residual, `.emp` lowering, the declared chain,
+/// `resolve_layout`), decide every `ensure` and every `LinkAssert` against the
+/// final post-relaxation placement, and stop. No link, no listing, no appendix,
+/// no checksum, no ROM. A failing guard returns the same rendered error the full
+/// build would. A green result says nothing about region budget or overlap,
+/// image bounds, the checksum, or the contract closure gate.
+pub fn check_chained(aeon: &Path, profile: &GameProfile) -> Result<CheckReport, String> {
+    let ChainedResolve { warnings, guards, .. } = resolve_chained(aeon, profile)?;
+    Ok(CheckReport { guards, warnings })
+}
+
+/// The chained whole-ROM build AND its sigil-canonical listing (the deb2-appendix
+/// source for the off-canonical full-file layer). One `C` row per resolved section
+/// label at its final VMA, de-duplicated and address-deterministic — mirrors
+/// `build_native_rom_with_listing`'s listing derivation, on the chained (Frozen)
+/// placement instead of the pinned one.
+pub fn build_rom_chained_with_listing(
+    aeon: &Path,
+    profile: &GameProfile,
+) -> Result<RomBuild, String> {
+    let ChainedResolve { resolved, stubs, warnings, sources, map, pmap, guards: _ } =
+        resolve_chained(aeon, profile)?;
 
     // Sigil-canonical listing from the resolved image: one `C` row per label VMA
     // plus one `-` row per folded equate, plus one `-` row per COMMAND-LINE define.
@@ -3738,7 +3833,8 @@ pub fn build_rom_chained_with_listing(
         listing
     };
 
-    let linked = sigil_link::link(&resolved, &stubs).map_err(|d| render_all("link", d))?;
+    let linked = sigil_link::link(&resolved, &stubs)
+        .map_err(|d| render_declared_chain("link", &d, &sources))?;
     // Parcel K5: the map DROVE the order above; this post-resolve pass CONFIRMS the drive —
     // every byte-emitting section is declared (completeness) and the resolved layout honours
     // the declared sequence + island anchors + hole (a bug in the drive, or a section the map

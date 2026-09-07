@@ -1954,14 +1954,19 @@ pub fn eval_data_with_root(
     include_root: Option<&std::path::Path>,
     defines: &[(String, i128)],
 ) -> (Option<DataBuf>, Vec<sigil_ir::LinkAssert>, Vec<Diagnostic>) {
-    eval_data_with_root_and_base(file, name, here, include_root, None, defines)
+    let (buf, asserts, _decided, diags) =
+        eval_data_with_root_and_base(file, name, here, include_root, None, defines);
+    (buf, asserts, diags)
 }
 
 /// Like [`eval_data_with_root`], but also threads an `embed_base` (port #2,
 /// `math.emp`'s `embed("../data/sine.bin")`) distinct from `include_root` —
 /// see [`crate::lower::LowerOptions::embed_base`]. `eval_data_with_root`
 /// delegates here with `embed_base: None` (identical to its pre-existing
-/// behavior), so every one of its callers is unaffected.
+/// behavior), so every one of its callers is unaffected. The third element is
+/// the number of `ensure` evaluations the initializer decided at comptime (the
+/// complement of the deferred asserts), which the lowering pass records on the
+/// module.
 pub fn eval_data_with_root_and_base(
     file: &ast::File,
     name: &str,
@@ -1969,7 +1974,7 @@ pub fn eval_data_with_root_and_base(
     include_root: Option<&std::path::Path>,
     embed_base: Option<&std::path::Path>,
     defines: &[(String, i128)],
-) -> (Option<DataBuf>, Vec<sigil_ir::LinkAssert>, Vec<Diagnostic>) {
+) -> (Option<DataBuf>, Vec<sigil_ir::LinkAssert>, usize, Vec<Diagnostic>) {
     crate::eval::run_on_eval_stack(|| {
         let mut ev = Evaluator::with_file(file);
         ev.seed_defines(defines);
@@ -1982,12 +1987,13 @@ pub fn eval_data_with_root_and_base(
         }
         if !ev.datas.contains_key(name) {
             ev.error(file.module.span, format!("no data item named `{name}`"));
-            return (None, Vec::new(), ev.diags);
+            return (None, Vec::new(), 0, ev.diags);
         }
         let buf = ev.resolve_data(name, file.module.span);
         check_max_size(&mut ev, name, buf.size, file.module.span);
         let asserts = ev.take_link_asserts();
-        (Some(buf), asserts, ev.diags)
+        let decided = ev.take_guards_decided();
+        (Some(buf), asserts, decided, ev.diags)
     })
 }
 
