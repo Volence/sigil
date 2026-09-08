@@ -4779,15 +4779,28 @@ child.stdin.take().unwrap().write_all(text.as_bytes())?;   // blocks once the pi
 let out = child.wait_with_output()?;                       // only now is stdout drained
 ```
 
-The stdin here is one 28-hex-digit line per distinct emitted byte string, corpus-derived: the
-observed run had written 325,830 bytes and was not finished, so about 11,200 lines against a 64 KiB
-default pipe. Measured at the stall: parent in `__futex_wait` inside the write, child
+The stdin here is one 28-hex-digit line per distinct emitted byte string, corpus-derived. **⚠ THE
+TWO FIGURES IN THE NEXT SENTENCE ARE REFUTED, and they are left standing only so a reader who
+already carried them meets the correction here rather than thirty lines down: the stream is 94,453
+bytes over 3257 lines, measured at aeon `ec640bcf` by the fixing parcel, and that volume does not
+deadlock a 64 KiB pipe at all.** Where 325,830 came from is not recoverable: the observing run is
+gone, and it cannot have been this stdin, since it exceeds the whole stream three times over. See
+the correction below for the volume that does deadlock and at what pipe size. The original reading:
+the observed run had written 325,830 bytes and was not finished, so about 11,200 lines against a
+64 KiB default pipe. Measured at the stall: parent in `__futex_wait` inside the write, child
 (`scripts/capstone_m68k_dump.py`) in `anon_pipe_write`, both asleep, 0.0% CPU.
 
 **It is INTERMITTENT, and the intermittency is the dangerous part.** The immediately following run
 of the same test, same tip, same reference tree, passed in 9.59 s and the deadlock breaker never
 fired. So it is a race between the child draining stdin and its own stdout backing up, and load
-decides it — the hanging run was on a loaded machine. A first draft of this row said "deterministic
+decides it — the hanging run was on a loaded machine. **⚠ THE MECHANISM IN THAT SENTENCE IS ALSO
+REFUTED.** A CPU-scheduling race cannot reach a deadlock on this stream at a default pipe size,
+measured. The reading that fits every number is a ONE-PAGE pipe, which the kernel hands out once
+the user's pipe pages pass `fs.pipe-user-pages-soft`, so "load decides it" survives with the load
+being the machine's pipe-page count rather than its CPU. That mechanism was never witnessed on the
+hanging run, whose pipe size nobody read, so it is the explanation consistent with the evidence and
+not an observed cause. The fix removes the deadlock at every pipe size regardless, which is why
+closing this did not wait on settling it. A first draft of this row said "deterministic
 at this corpus size"; the second run refuted that, and the arithmetic that supported it (325 KB
 against 64 KiB) is still right while the conclusion drawn from it was wrong.
 
