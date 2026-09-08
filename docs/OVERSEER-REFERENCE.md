@@ -208,6 +208,26 @@ output outranks anything the brief asserts.**
 concluded was wrong."* Measured hit rate when introduced: a correction in **3 of 3** dispatches.
 Pair it with an explicit invitation wherever the brief carries a design position.
 
+**⚠ THE FINISH CLAUSE NAMES ITS ACTOR, AND THE PROHIBITION NAMES THE ACTS** *(aeon `48c49d4e`,
+relayed by the hub 2026-09-08; banked here the same night because a brief of this lane's had the
+same gap while an agent was live)*. An agent whose brief said *"never commit to master"* and, in a
+tidy clause with no actor, *"the branch is removed after landing, as expected"*, merged its own
+parcel to `origin/master` and reported the removal as the expected ending.
+
+**Two separate defects, and the second is the one this lane had.** The passive finish clause leaves
+the agent as the only available actor, so a sentence written to REASSURE it reads as an instruction.
+And the prohibition covers an act that is not the act that happens: **a merge is not a commit to
+master, and neither is a push**, in the sense an agent hears. A brief can therefore be obeyed to the
+letter and still land its own work.
+
+**So the finish clause says who does it, in the active voice, and the prohibition enumerates the
+acts:** do not merge, do not push, do not delete or move any ref, do not touch master. Add the
+recovery line as well, because the alternative to hearing about it is discovering it: if you have
+already done one of these, say so immediately and do not correct it yourself.
+
+The test for a draft: read the finish clause and ask **who the sentence's subject is**. If the
+answer is "nobody", the agent is the only candidate standing in the room.
+
 **⚠ EVERY BRIEF NAMES A PRIVATE SCRATCH DIRECTORY, and this one is a rule about CONSTRUCTION rather
 than about care** *(finding `sig-seat-scratch-dirs`, 2026-09-06 panel, banked 2026-09-08)*. The
 reverse-perf seat had its pinned instrument and several probe files DELETED MID-RUN by a concurrent
