@@ -20,18 +20,20 @@ impl<'a> Evaluator<'a> {
             return Value::Poison;
         }
         match self.here_base {
-            // PROVISIONAL position (D-H.1): the section already holds a relaxable
-            // fragment, so the physical VMA can still shift under relaxation. Yield
-            // a link-time value anchored to the position's label — the linker folds
-            // it against the anchor's post-relaxation VMA. Mark the anchor used
-            // (D-H.8) so the lowering pass defines it.
+            // PROVISIONAL position (D-H.1): a label here would only be resolved
+            // at link, because the section's base follows placement (no explicit
+            // `vma:`) or an earlier fragment can still grow under relaxation.
+            // Yield a link-time value anchored to the position's label; the
+            // linker folds it against the anchor's final, placed VMA, so `here()`
+            // and the label agree by construction. Mark the anchor used (D-H.8)
+            // so the lowering pass defines it.
             Some(_) if self.here_anchor.is_some() => {
                 self.here_used = true;
                 let anchor = self.here_anchor.clone().expect("here_anchor is Some");
                 Value::LinkExpr(sigil_ir::expr::Expr::Sym(anchor))
             }
-            // EXACT position: the byte-identical `Value::Int` path — every program
-            // with no relaxable before its `here()` is untouched.
+            // EXACT position: the section's base is baked (`vma:`) and nothing
+            // before this point can grow, so the integer IS the label's address.
             Some(vma) => Value::Int(vma as i128),
             None => {
                 self.error(

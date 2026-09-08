@@ -58,17 +58,33 @@ fn provisional_here_in_if_condition_refuses() {
     );
 }
 
-/// EXACT positions are untouched: a `here()` with no relaxable before it in the
-/// section is still a plain comptime int and sizes/steers as before (byte-exact
-/// path). This is the byte-identical guarantee — no [here.provisional] here.
+/// EXACT positions are untouched: a `here()` in a `vma:`-pinned section with no
+/// relaxable before it is a plain comptime int and sizes/steers freely. No
+/// [here.provisional] here.
 #[test]
 fn exact_here_still_folds_and_steers() {
-    // No relaxable before the data item → exact position → here() is Value::Int(0)
-    // (default section, vma==lma==0), so the `if` folds normally.
+    // Explicit `vma:` (the base is baked) and no relaxable before the data item
+    // → exact position → here() is Value::Int($8000), so the `if` folds normally.
     let src = "module m\n\
-               data Ok: u8 = if here() == 0 { 7 } else { 9 }\n";
+               section s (vma: $8000) {\n\
+                 data Ok: u8 = if here() == $8000 { 7 } else { 9 }\n\
+               }\n";
     let ds = msgs(src);
     assert!(ds.is_empty(), "exact here() must not refuse, got: {ds:?}");
+}
+
+/// The default section has no `vma:`, so its base is whatever placement decides
+/// (a second module's default section does not sit at 0). A `here()` steering
+/// comptime there is provisional and refuses, like one after a relaxable.
+#[test]
+fn provisional_here_in_default_section_refuses_to_steer() {
+    let src = "module m\n\
+               data Bad: u8 = if here() == 0 { 7 } else { 9 }\n";
+    let ds = msgs(src);
+    assert!(
+        ds.iter().any(|m| m.contains("[here.provisional]")),
+        "expected [here.provisional] for a comptime-steering here() in the default section, got: {ds:?}"
+    );
 }
 
 use sigil_ir::{Module, SymbolTable};

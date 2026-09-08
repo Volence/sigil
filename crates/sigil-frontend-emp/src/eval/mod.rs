@@ -368,11 +368,12 @@ pub struct Evaluator<'a> {
     /// SAME data item) still reads the item start, not the advanced position.
     here_base: Option<u32>,
     /// The ANCHOR LABEL a PROVISIONAL `here()` resolves to (D-H.1/D-H.2), or
-    /// `None` at an EXACT position (where `here()` returns `Value::Int(here_base)`,
-    /// byte-identical to today). Set by the lowering pass alongside
-    /// [`here_base`](Self::here_base) via [`set_here_provisional`](Self::set_here_provisional)
-    /// when the currently-open section already contains a size-relaxable fragment
-    /// (`IrBuilder::section_has_relaxable`). When `Some(anchor)`, `here()` yields
+    /// `None` at an EXACT position (where `here()` returns `Value::Int(here_base)`).
+    /// Set by the lowering pass alongside [`here_base`](Self::here_base) via
+    /// [`set_here_provisional`](Self::set_here_provisional) whenever a label at
+    /// the position would only resolve at link (`IrBuilder::position_is_provisional`:
+    /// the section's base follows placement, or it already contains a
+    /// size-relaxable fragment). When `Some(anchor)`, `here()` yields
     /// `Value::LinkExpr(Sym(anchor))` — a link-time value the linker resolves to
     /// the anchor's post-relaxation VMA — and sets [`here_used`](Self::here_used)
     /// so the lowering pass knows to actually define the anchor label (D-H.8: a
@@ -742,9 +743,10 @@ impl<'a> Evaluator<'a> {
     }
 
     /// Set the VMA `here()` resolves to for the item about to be evaluated
-    /// (§7.1), at an EXACT position — `here()` yields `Value::Int(vma)`
-    /// byte-identically to before this fix. The lowering pass calls this before
-    /// resolving each data item / guard whose section holds no relaxable fragment.
+    /// (§7.1), at an EXACT position: `here()` yields `Value::Int(vma)`. The
+    /// lowering pass calls this for each data item / guard whose section has an
+    /// explicit `vma:` base and holds no relaxable fragment, the one case where
+    /// the integer is the address a label there would get.
     pub(crate) fn set_here_base(&mut self, vma: u32) {
         self.here_base = Some(vma);
         self.here_anchor = None;
@@ -754,7 +756,8 @@ impl<'a> Evaluator<'a> {
     /// (for diagnostics only) plus the `anchor` label whose post-relaxation VMA
     /// `here()` resolves to. `here()` then yields `Value::LinkExpr(Sym(anchor))`
     /// and marks the anchor USED. Called by the lowering pass when the open
-    /// section already contains a size-relaxable fragment.
+    /// section's base follows placement (no explicit `vma:`) or it already
+    /// contains a size-relaxable fragment.
     pub(crate) fn set_here_provisional(&mut self, vma: u32, anchor: String) {
         self.here_base = Some(vma);
         self.here_anchor = Some(anchor);
