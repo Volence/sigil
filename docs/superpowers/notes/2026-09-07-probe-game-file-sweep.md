@@ -337,3 +337,35 @@ BACKGROUND commands and then polling in the foreground immediately after, so the
 happened and the polls were seconds apart. The tell was mundane — the log's mtime was 18 seconds
 old when I believed an hour had passed. A wait you did not actually perform looks exactly like a
 wait you did.
+
+## The refuting counts, re-derived firsthand 2026-09-08, and the parameter nobody recorded
+
+The axis refutation above rests on four commit counts, and this seat had passed them to the aeon
+lane out of this note rather than out of a measurement. They went straight into two of their
+in-flight agents' briefs, so they were re-derived before they could harden.
+
+Measured at aeon `ec640bcf` in a detached reference tree, the revision named so the measurement is
+reproducible rather than agreeable. Commits since 2026-03-01, path-scoped:
+
+| file | path-scoped | with `--follow` |
+|---|---|---|
+| `engine/system/constants.emp` | 79 | 81 |
+| `games/sonic4/config/constants.emp` | 37 | 36 |
+| `engine/objects/collision.emp` | 24 | 24 |
+| `engine/objects/sst.emp` | 16 | 16 |
+
+**All four reproduce the note exactly, and the conclusion survives both accountings: engine files
+move more.** What the note did not say is WHICH accounting it was: a rename crosses the window on
+the constants pair, so following renames moves 79/37 to 81/36. The collision pair is identical
+either way, which is why nothing looked ambiguous.
+
+**The transferable half is bar 19 arriving on a git command rather than on a grep.** `--follow` is
+an enumeration parameter, it was never recorded as a choice, and an unrecorded choice cannot be
+varied on a re-check: running `git log` twice the same way agrees with itself forever. The figures
+answer two different questions and neither is wrong. A count published without its accounting is
+the same defect class as an emptiness published without its instrument.
+
+**Also measured, for the lane that asked:** `games/sonic4/player/player_common.emp` has **59**
+commits in the same window, which is the live-content file behind
+`crates/sigil-cli/tests/test_p1_player_port.rs`'s `guards == 1` assertion. The brittle assertion
+sits over one of the churniest files in that tree.
