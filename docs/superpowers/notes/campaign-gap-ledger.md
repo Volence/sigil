@@ -4748,6 +4748,16 @@ measurement is honest. **Owner:** sigil warn-tier lane.
 
 Found by a full-suite run for `parcel/warn-tier-counts-watched`, not by that parcel's subject.
 
+**⚠ OWNERSHIP CORRECTED AT THE LANDING, and the correction is why this row is actionable.** The parcel
+reported this as BLOCKED because the file belongs to "another lane". **It does not.**
+`crates/sigil-isa/tests/support/capstone_diff.rs` is tracked in sigil and in NO sibling repo — checked
+across aeon, oracle, aurora, seraph and empyrean, each returning zero — and this lane last touched it
+itself on 2026-09-05. So there is no cross-repo boundary here and nothing to wait for: **this row is
+SIGIL'S, unblocked, and takes its turn in the queue.** Recorded because a defect parked on an
+ownership that does not exist waits forever by default, and this particular one is worse than most:
+a HANG defeats `--no-fail-fast` and defeats an agent polling its own log for an end marker, which are
+the two mechanisms this lane relies on to know a run finished at all.
+
 `m68k_capstone_stream::every_emitted_m68k_instruction_agrees_with_capstone` hung for 1290 s and
 would not have ended on its own. `run_capstone`
 (`crates/sigil-isa/tests/support/capstone_diff.rs`) writes the WHOLE of the child's stdin before it
