@@ -715,6 +715,15 @@ outlives what it points at, so a coordinate in one rots. A row leaves the regist
 either direction: fixed, or ruled deliberate and promoted into the baseline citing the
 ruling. Each row's age prints on every lane run.
 
+Between those two sits `SITE_WATCH` in the same file: for EVERY admitted id it pins the
+FILES the id fires in — unioned over the seven shapes, counts deliberately not pinned —
+so a class reaching code it had never reached fails by name even with no register row.
+A red there is one of three things and the message says so: a real new site (adjudicate,
+then pin the file or fix it), a file aeon RENAMED (move the row), or a class that stopped
+firing somewhere (delete the line and say so). Two ids carry `unpinned` directory
+prefixes whose populations were measured to grow with the corpus; each prefix must carry
+its measurement, and the firings it swallows are printed on every run.
+
 ## Worktree and environment quirks
 
 - **Worktrees are agent-isolated but the registry is repo-global.** Every session's

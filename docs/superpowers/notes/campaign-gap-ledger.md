@@ -4697,3 +4697,83 @@ Cost of the hole, concretely: this parcel's `898a97b1` deleted the only assertio
 belief that `warn_tier_corpus` duplicated it. The deletion was still right — the control was welded
 to a live foreign file and red on a rename — but the coverage did not survive it, and until this row
 is closed, nothing replaces it.
+
+-- **CLOSED 2026-09-08** on `parcel/warn-tier-counts-watched` (note
+`2026-09-08-warn-tier-counts-watched.md`), **and the move this row proposed is refuted by
+measurement.** Widening the register walk to `CORPUS_LINTS` costs 124 rows over 1169 firings and
+pins counts that move on ordinary engine work — `page_cache.emp` fires `proc.clobber-undeclared`
+66 times on `sonic4 plain` and 70 on `sonic4 debug`; `proc.undeclared-fallthrough` totals run 5 to
+21 across the seven shapes — and **21 of `module.unreachable`'s 94 files were added within 14
+days**, so that gate would go red on correct work weekly. "The move, and it is small" was the
+always-red trade this row's own next paragraph warns against.
+What landed instead is `SITE_WATCH` in `warn_tier_corpus.rs`: a per-id FILE set, unioned over the
+seven shapes and COUNT-FREE, covering every id `CORPUS_LINTS` or a `WARN_ID_BASELINE` row admits.
+`site_watch_rows_are_completely_specified` fails if an admitted id has no row, so the hole cannot
+reopen silently; `warn_tier_firing_files_match_the_pinned_sites` fails on a new file, on a pinned
+file that stops firing, and on an id that fires zero times. Nothing existing was re-baselined —
+`CORPUS_LINTS`, `WARN_ID_BASELINE` and `CORPUS_OPEN_FINDINGS` are unchanged. `collision.emp`'s lost
+property is back and general: the file is absent from the `proc.undeclared-fallthrough` row, and a
+red-first run mutating that file IN A COPY OF THE CORPUS (`falls_into` dropped from
+`Touch_SolidHurt`) fails the new gate in all 7 shapes while master's version of the same file
+passes 7/7 — the hole demonstrated, not argued.
+The register's overclaiming failure text is fixed in the same commit: it now states that it watches
+the SYMBOL and the COUNT and only for an id that already has a row, and names the file gate as what
+holds the rest.
+  -- **RESIDUAL, and smaller than what it replaces**: `WARN-TIER-UNPINNED-PREFIXES` below.
+
+### `WARN-TIER-UNPINNED-PREFIXES`: two lint ids are watched at file granularity only outside a declared prefix (2026-09-08)
+
+The residual of `WARN-TIER-COUNTS-UNWATCHED`. `SITE_WATCH` pins files for six admitted ids; two of
+them exclude a prefix whose population grows with the corpus rather than with its defects, because
+pinning it would be an always-red check:
+
+* `module.unreachable` under `games/` — 85 of its 94 firing files are game content, 63 added within
+  30 days of the measurement, 45 of them poison-test fixtures. 421 of its 477 firings sit here. The
+  9 `engine/` files ARE pinned.
+* `module.path-mismatch` under `games/sonic4/data/generated/`, `games/sonic4/data/levels/` and
+  `tools/fixtures/` — all 14 firing files are generated level modules or anchor-sweep fixtures. All
+  98 of its firings sit here; its pinned set is empty, which asserts that no hand-written module has
+  a header disagreeing with its file.
+
+519 of 1169 firings are therefore unwatched at file granularity, against 1167 before. Unlike the
+old hole this one is **rendered on every run** (`warn-tier files: <id> … N unpinned`), so its size
+is in ordinary green output rather than derivable only by reading the walk.
+**Kill condition:** a population stops churning (the level pipeline stabilises, or the poison
+fixtures move under a directory of their own) and the prefix narrows or goes. Widening a prefix, or
+adding one, is the way this gate would be silently disarmed — `site_watch_rows_are_completely_specified`
+forces a measurement string alongside every prefix, but only a reviewer can tell whether the
+measurement is honest. **Owner:** sigil warn-tier lane.
+
+### `CAPSTONE-STREAM-PIPE-DEADLOCK`: a suite test can HANG, not fail, and did (2026-09-08)
+
+Found by a full-suite run for `parcel/warn-tier-counts-watched`, not by that parcel's subject.
+
+`m68k_capstone_stream::every_emitted_m68k_instruction_agrees_with_capstone` hung for 1290 s and
+would not have ended on its own. `run_capstone`
+(`crates/sigil-isa/tests/support/capstone_diff.rs`) writes the WHOLE of the child's stdin before it
+reads any of the child's stdout:
+
+```rust
+child.stdin.take().unwrap().write_all(text.as_bytes())?;   // blocks once the pipe fills
+let out = child.wait_with_output()?;                       // only now is stdout drained
+```
+
+The stdin here is one 28-hex-digit line per distinct emitted byte string, corpus-derived: the
+observed run had written 325,830 bytes and was not finished, so about 11,200 lines against a 64 KiB
+default pipe. Measured at the stall: parent in `__futex_wait` inside the write, child
+(`scripts/capstone_m68k_dump.py`) in `anon_pipe_write`, both asleep, 0.0% CPU.
+
+**It is INTERMITTENT, and the intermittency is the dangerous part.** The immediately following run
+of the same test, same tip, same reference tree, passed in 9.59 s and the deadlock breaker never
+fired. So it is a race between the child draining stdin and its own stdout backing up, and load
+decides it — the hanging run was on a loaded machine. A first draft of this row said "deterministic
+at this corpus size"; the second run refuted that, and the arithmetic that supported it (325 KB
+against 64 KiB) is still right while the conclusion drawn from it was wrong.
+
+A hang is worse than a red: `--no-fail-fast` cannot step over it, the log aggregates clean up to
+that point, and an agent polling for an end marker waits forever. The fix is the standard one, in
+`run_capstone` only: write stdin from a spawned thread and join it after `wait_with_output`, or
+hand the child a temp file instead of a pipe.
+
+**Owner:** whoever owns the capstone differential (`d38f655b`'s lane). **Kill:** the write no longer
+blocks the reader.

@@ -196,17 +196,17 @@ fn unknown_local_label_mlab_arg_is_loud_naming_it() {
 /// closed `sig-probe-live-game-file` finding ruled the shape: a probe that
 /// names a live file in another repo has no stable subject.
 ///
-/// WHAT THE OLD CONTROL COVERED, AND WHAT WENT WITH IT. It asserted that aeon's
-/// real chain lowers with no `[proc.undeclared-fallthrough]`. That is NOT
-/// covered elsewhere, and saying it was would be the comfortable answer rather
-/// than the true one: `warn_tier_corpus` pins the SET of firing lint ids, not
-/// their counts (its own header records that `lean` fires one fewer of this
-/// exact lint than the canonical shapes), and its site-pinned register counts
-/// only ids that already carry a `CORPUS_OPEN_FINDINGS` row — today only
-/// `import.no-names`. So the deleted control was a narrow island of coverage
-/// over one engine file, and removing it lost that island. Booked as
-/// `WARN-TIER-COUNTS-UNWATCHED` in the gap ledger, where it belongs: the real
-/// gap is corpus-wide and much larger than this probe.
+/// WHAT THE OLD CONTROL COVERED, AND WHERE THAT NOW LIVES. It asserted that
+/// aeon's real chain lowers with no `[proc.undeclared-fallthrough]`. When it was
+/// deleted that was covered nowhere — `warn_tier_corpus` pins the SET of firing
+/// lint ids, not their counts (its own header records that `lean` fires one
+/// fewer of this exact lint than the canonical shapes), and its site-pinned
+/// register walked only ids that already carried a `CORPUS_OPEN_FINDINGS` row,
+/// then `import.no-names` alone. Booked as `WARN-TIER-COUNTS-UNWATCHED`, closed
+/// 2026-09-08 by `warn_tier_corpus`'s `SITE_WATCH`: it pins, for every admitted
+/// id, the FILES that fire it, so `engine/objects/collision.emp` acquiring a
+/// fallthrough fails there by name — corpus-wide rather than over one file, and
+/// without this probe's dependency on aeon's literal text.
 const STUB_CHAIN: &str = concat!(
     "module m in collision\n",
     "proc Touch_None () clobbers() falls_into Touch_Enemy {}\n",
