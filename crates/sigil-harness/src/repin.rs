@@ -283,8 +283,6 @@ pub struct Manifest {
 #[derive(Debug)]
 pub struct RomSpec {
     pub end_symbol: String,
-    #[serde(default)]
-    pub tests: Vec<String>,
 }
 
 /// `[[region]]` — a gated window. `start` is a listing symbol; the extent is
@@ -342,8 +340,6 @@ pub struct RegionSpec {
     pub debug_len: Option<u32>,
     #[serde(default)]
     pub gate: Option<String>,
-    #[serde(default)]
-    pub tests: Vec<String>,
     /// Region that exists ONLY in the debug shape (the twin is whole-file
     /// `ifdef __DEBUG__` — compression_selftest): `start`/`end` resolve
     /// against the DEBUG listing only; plain_len = 0; plain_base = the plain
@@ -386,8 +382,6 @@ pub struct SymbolSpec {
     pub const_name: Option<String>,
     #[serde(default)]
     pub debug_only: bool,
-    #[serde(default)]
-    pub tests: Vec<String>,
 }
 
 /// `[[offset]]` — `sym − region.start` (dotted locals welcome), asserted
@@ -401,8 +395,6 @@ pub struct OffsetSpec {
     pub region: String,
     #[serde(default)]
     pub per_shape: bool,
-    #[serde(default)]
-    pub tests: Vec<String>,
 }
 
 /// Parse `repin.toml`. Structural validation only — cross-listing resolution
@@ -523,7 +515,6 @@ pub struct RegionPin {
     pub start: String,
     pub end_desc: String,
     pub gate: Option<String>,
-    pub tests: Vec<String>,
     pub plain_base: u32,
     pub debug_base: u32,
     pub plain_len: u32,
@@ -535,7 +526,6 @@ pub struct RegionPin {
 pub struct SymbolPin {
     pub name: String,
     pub const_name: String,
-    pub tests: Vec<String>,
     pub value: SymbolValue,
 }
 
@@ -552,7 +542,6 @@ pub struct OffsetPin {
     pub const_name: String,
     pub sym: String,
     pub region: String,
-    pub tests: Vec<String>,
     pub value: OffsetValue,
 }
 
@@ -569,7 +558,6 @@ pub enum OffsetValue {
 pub struct Resolved {
     pub rom_plain_len: u32,
     pub rom_debug_len: u32,
-    pub rom_tests: Vec<String>,
     pub regions: Vec<RegionPin>,
     pub symbols: Vec<SymbolPin>,
     pub offsets: Vec<OffsetPin>,
@@ -580,21 +568,19 @@ pub struct Resolved {
 }
 
 impl Resolved {
-    /// `const name → tests` for every emitted const — the rerun-hint map.
-    pub fn tests_by_const(&self) -> BTreeMap<String, Vec<String>> {
-        let mut map = BTreeMap::new();
-        map.insert("ASSEMBLED_LEN".to_string(), self.rom_tests.clone());
-        map.insert("DEBUG_ASSEMBLED_LEN".to_string(), self.rom_tests.clone());
-        for r in &self.regions {
-            map.insert(r.const_name.clone(), r.tests.clone());
-        }
-        for s in &self.symbols {
-            map.insert(s.const_name.clone(), s.tests.clone());
-        }
-        for o in &self.offsets {
-            map.insert(o.const_name.clone(), o.tests.clone());
-        }
-        map
+    /// Every constant [`render`] emits, in the order it emits them.
+    ///
+    /// The zero-consumer report reads this: a name here that no `.rs` file outside
+    /// `pins.rs` mentions is a pin the workspace declares and never imports.
+    pub fn const_names(&self) -> Vec<String> {
+        let mut names = vec![
+            "ASSEMBLED_LEN".to_string(),
+            "DEBUG_ASSEMBLED_LEN".to_string(),
+        ];
+        names.extend(self.regions.iter().map(|r| r.const_name.clone()));
+        names.extend(self.symbols.iter().map(|s| s.const_name.clone()));
+        names.extend(self.offsets.iter().map(|o| o.const_name.clone()));
+        names
     }
 }
 
@@ -773,7 +759,6 @@ pub fn resolve(m: &Manifest, plain: &Listing, debug: &Listing) -> Result<Resolve
                 start: r.start.clone(),
                 end_desc,
                 gate: r.gate.clone(),
-                tests: r.tests.clone(),
                 plain_base,
                 debug_base,
                 plain_len: 0,
@@ -829,7 +814,6 @@ pub fn resolve(m: &Manifest, plain: &Listing, debug: &Listing) -> Result<Resolve
                 start: r.start.clone(),
                 end_desc,
                 gate: r.gate.clone(),
-                tests: r.tests.clone(),
                 plain_base,
                 debug_base,
                 plain_len,
@@ -897,7 +881,6 @@ pub fn resolve(m: &Manifest, plain: &Listing, debug: &Listing) -> Result<Resolve
             start: r.start.clone(),
             end_desc,
             gate: r.gate.clone(),
-            tests: r.tests.clone(),
             plain_base,
             debug_base,
             plain_len,
@@ -920,7 +903,6 @@ pub fn resolve(m: &Manifest, plain: &Listing, debug: &Listing) -> Result<Resolve
         symbols.push(SymbolPin {
             name: s.name.clone(),
             const_name: s.const_name.clone().unwrap_or_else(|| upper_snake(&s.name)),
-            tests: s.tests.clone(),
             value,
         });
     }
@@ -955,7 +937,6 @@ pub fn resolve(m: &Manifest, plain: &Listing, debug: &Listing) -> Result<Resolve
             const_name: o.name.clone(),
             sym: o.sym.clone(),
             region: o.region.clone(),
-            tests: o.tests.clone(),
             value,
         });
     }
@@ -976,7 +957,6 @@ pub fn resolve(m: &Manifest, plain: &Listing, debug: &Listing) -> Result<Resolve
     Ok(Resolved {
         rom_plain_len: plain.end_addr,
         rom_debug_len: debug.end_addr,
-        rom_tests: m.rom.tests.clone(),
         regions,
         symbols,
         offsets,
@@ -995,10 +975,6 @@ pub struct Provenance {
     pub debug_path: String,
     pub plain_stamp: String,
     pub debug_stamp: String,
-}
-
-fn tests_suffix(tests: &[String]) -> String {
-    if tests.is_empty() { String::new() } else { format!(" tests: {}", tests.join(", ")) }
 }
 
 /// Render the full `pins.rs` text. Deterministic: manifest order, stable
@@ -1053,9 +1029,9 @@ pub fn render(r: &Resolved, prov: &Provenance) -> String {
 
     let _ = writeln!(w, "// ── ROM end (the listing `END` line address, per shape) ──");
     let _ = writeln!(w);
-    let _ = writeln!(w, "/// Assembled (pre-convsym) ROM length, plain shape.{}", tests_suffix(&r.rom_tests));
+    let _ = writeln!(w, "/// Assembled (pre-convsym) ROM length, plain shape.");
     let _ = writeln!(w, "pub const ASSEMBLED_LEN: usize = {:#X};", r.rom_plain_len);
-    let _ = writeln!(w, "/// Assembled (pre-convsym) ROM length, `__DEBUG__` shape.{}", tests_suffix(&r.rom_tests));
+    let _ = writeln!(w, "/// Assembled (pre-convsym) ROM length, `__DEBUG__` shape.");
     let _ = writeln!(w, "pub const DEBUG_ASSEMBLED_LEN: usize = {:#X};", r.rom_debug_len);
     let _ = writeln!(w);
 
@@ -1067,13 +1043,7 @@ pub fn render(r: &Resolved, prov: &Provenance) -> String {
             .as_ref()
             .map(|g| format!(", gate `{g}`"))
             .unwrap_or_default();
-        let _ = writeln!(
-            w,
-            "/// `{}` .. {}{gate}.{}",
-            reg.start,
-            reg.end_desc,
-            tests_suffix(&reg.tests)
-        );
+        let _ = writeln!(w, "/// `{}` .. {}{gate}.", reg.start, reg.end_desc);
         let _ = writeln!(
             w,
             "pub const {}: Region = Region {{ plain_base: {:#X}, debug_base: {:#X}, plain_len: {:#X}, debug_len: {:#X} }};",
@@ -1087,7 +1057,7 @@ pub fn render(r: &Resolved, prov: &Provenance) -> String {
         let _ = writeln!(w);
         match sym.value {
             SymbolValue::Both { plain, debug } => {
-                let _ = writeln!(w, "/// `{}`.{}", sym.name, tests_suffix(&sym.tests));
+                let _ = writeln!(w, "/// `{}`.", sym.name);
                 let _ = writeln!(
                     w,
                     "pub const {}: Pin = Pin {{ plain: {:#X}, debug: {:#X} }};",
@@ -1097,9 +1067,8 @@ pub fn render(r: &Resolved, prov: &Provenance) -> String {
             SymbolValue::DebugOnly(v) => {
                 let _ = writeln!(
                     w,
-                    "/// `{}`, debug-shape consumer only (`debug_only`).{}",
-                    sym.name,
-                    tests_suffix(&sym.tests)
+                    "/// `{}`, debug-shape consumer only (`debug_only`).",
+                    sym.name
                 );
                 let _ = writeln!(w, "pub const {}: u32 = {:#X};", sym.const_name, v);
             }
@@ -1114,20 +1083,18 @@ pub fn render(r: &Resolved, prov: &Provenance) -> String {
             OffsetValue::Invariant(v) => {
                 let _ = writeln!(
                     w,
-                    "/// `{}` − `{}` start (shape-invariant, asserted at generation).{}",
+                    "/// `{}` − `{}` start (shape-invariant, asserted at generation).",
                     off.sym,
-                    off.region,
-                    tests_suffix(&off.tests)
+                    off.region
                 );
                 let _ = writeln!(w, "pub const {}: usize = {:#X};", off.const_name, v);
             }
             OffsetValue::PerShape { plain, debug } => {
                 let _ = writeln!(
                     w,
-                    "/// `{}` − `{}` start (per-shape).{}",
+                    "/// `{}` − `{}` start (per-shape).",
                     off.sym,
-                    off.region,
-                    tests_suffix(&off.tests)
+                    off.region
                 );
                 let _ = writeln!(
                     w,
@@ -1532,6 +1499,90 @@ pub fn regenerate_command(
     )
 }
 
+// ── The zero-consumer report (sig-orphan-pins) ──────────────────────────────
+//
+// A pin no source file imports. REPORTED, GATED BY NOTHING, and rendered ONLY by
+// `src/bin/repin.rs` on its own run: nothing here is reachable from
+// [`stale_pins_message`] or from [`DriftReport`]'s `Display`, because the aeon lane's
+// `tools/freeze_preflight.sh` parses that failure text to classify a stale instrument
+// apart from a real cross-seam defect. `zero_consumer_report_is_not_gate_text` holds
+// that boundary.
+//
+// Not gated, because a declared exception list is a population to maintain whose
+// failure mode is going green because nobody maintained it (the shape
+// `PROVENANCE-REV-REACHABILITY` already rejects). A name here is not a defect and not
+// dead weight either: `pins_rs_is_current` compares the WHOLE generated text, so an
+// unconsumed pin whose engine symbol moves still turns that gate red. The set is
+// visibility, not a to-do list.
+
+/// The predicate the report states in its own output, so a reader never has to guess
+/// what "no consumer" measured.
+pub const ZERO_CONSUMER_PREDICATE: &str =
+    "no `.rs` file outside `src/pins.rs` contains the constant's name as a whole \
+     identifier token";
+
+/// The constants in `const_names` that no text in `sources` names.
+///
+/// `sources` is the text of every `.rs` file in the workspace except `pins.rs` itself.
+///
+/// A name counts as named when it appears as a WHOLE identifier. A substring test reads
+/// a longer identifier that merely ENDS in a pin's name as a reference to that pin, and
+/// drops a real orphan off the list; the token test does not. Comments and strings still
+/// count, which is the safe direction: the report over-reports consumers and
+/// under-reports orphans, so a name that survives to the list is one nothing mentions.
+///
+/// WRITING ABOUT A PIN CONSUMES IT. This doc comment is swept like every other `.rs`
+/// line, so naming a specific constant here would take it off the list it documents.
+/// Say the shape, never the name.
+pub fn zero_consumer_pins(const_names: &[String], sources: &[String]) -> Vec<String> {
+    let mut seen: HashSet<&str> = HashSet::new();
+    for text in sources {
+        for tok in text.split(|c: char| !(c.is_ascii_alphanumeric() || c == '_')) {
+            if !tok.is_empty() {
+                seen.insert(tok);
+            }
+        }
+    }
+    const_names
+        .iter()
+        .filter(|n| !seen.contains(n.as_str()))
+        .cloned()
+        .collect()
+}
+
+/// The report block the `repin` binary prints, enumerated by NAME.
+///
+/// `scanned` is how many `.rs` files the sweep read. Zero is LOUD rather than an empty
+/// finding: a sweep that found no sources reports every pin as an orphan, and an
+/// unqualified list of all of them reads as a discovery instead of a broken instrument.
+pub fn zero_consumer_report(orphans: &[String], scanned: usize) -> String {
+    let mut s = String::new();
+    let w = &mut s;
+    let _ = writeln!(w, "zero-consumer pins (reported, gated by nothing)");
+    let _ = writeln!(w, "  predicate: {ZERO_CONSUMER_PREDICATE}");
+    if scanned == 0 {
+        let _ = writeln!(
+            w,
+            "  WARNING: the sweep read no `.rs` files, so the list below is an artefact of \
+             the walk, not a finding about any pin."
+        );
+    }
+    if orphans.is_empty() {
+        let _ = writeln!(w, "  (none: every pin constant is named somewhere)");
+    } else {
+        for name in orphans {
+            let _ = writeln!(w, "  {name}");
+        }
+        let _ = writeln!(
+            w,
+            "  A pin here still earns its place: `pins_rs_is_current` compares the whole \
+             generated text, so an unconsumed pin whose engine symbol moves turns that gate \
+             red. Deleting one removes drift coverage of that symbol."
+        );
+    }
+    s
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1573,24 +1624,20 @@ mod tests {
             r#"
 [rom]
 end_symbol = "__END__"
-tests = ["m1d_rom"]
 
 [[region]]
 name = "animate"
 start = "AnimateSprite"
 end = "AnimateSprite.cc_delete"
 gate = "SIGIL_EMP_ANIMATE"
-tests = ["animate_port"]
 
 [[symbol]]
 name = "Player_1"
-tests = ["rings_port"]
 
 [[offset]]
 name = "CC_DELETE_OFF"
 sym = "AnimateSprite.cc_delete"
 region = "animate"
-tests = ["animate_port"]
 "#,
         )
         .unwrap();
@@ -1642,7 +1689,6 @@ end = "SelfTest.done"
 debug_only = true
 plain_anchor = "AnimateSprite"
 gate = "SIGIL_EMP_SELFTEST"
-tests = ["selftest_port"]
 "#,
         )
         .unwrap();
@@ -1804,7 +1850,6 @@ name = "soundbankhead"
 start = "SoundTablesZ80_Head"
 len = 0x607
 gate = "SIGIL_EMP_SOUNDBANKHEAD"
-tests = ["soundbankhead_port"]
 
 [[region]]
 name = "foo"
@@ -2095,5 +2140,104 @@ end = "Blocks_Head"
         assert!(!stripped.contains("[provenance]"));
         assert!(stripped.contains("pub const A"));
         assert!(stripped.contains("//! header"));
+    }
+
+    /// The `tests` field is gone from the manifest grammar, not merely unused: a row
+    /// that spells one must be REFUSED, or a future author reintroduces the population
+    /// this parcel deleted and the file silently accepts it.
+    #[test]
+    fn a_tests_field_is_a_manifest_parse_error() {
+        let with_field = r#"
+[rom]
+end_symbol = "__END__"
+
+[[symbol]]
+name = "Player_1"
+tests = ["rings_port"]
+"#;
+        let err = load_manifest(with_field)
+            .expect_err("a `tests` row must not parse: `deny_unknown_fields` is the enforcement");
+        assert!(
+            err.contains("tests"),
+            "the refusal must name the offending field so the author can find it: {err}"
+        );
+        // Positive control: the SAME manifest minus that one line parses, so the refusal
+        // above is about the field and not about the fixture being malformed.
+        let without_field = with_field.replace("tests = [\"rings_port\"]\n", "");
+        load_manifest(&without_field).expect("the fixture must be valid without the field");
+    }
+
+    /// A longer identifier that merely ends in a pin's name is not a reference to that
+    /// pin, and a name nothing spells at all is.
+    #[test]
+    fn zero_consumer_pins_matches_whole_tokens_only() {
+        let names: Vec<String> = ["ALPHA", "BETA", "GAMMA"].iter().map(|s| s.to_string()).collect();
+        let sources = vec![
+            "// PREFIX_ALPHA is a different identifier\n".to_string(),
+            "let x = pins::BETA;\n".to_string(),
+        ];
+        assert_eq!(
+            zero_consumer_pins(&names, &sources),
+            vec!["ALPHA".to_string(), "GAMMA".to_string()],
+            "ALPHA is only a SUFFIX of PREFIX_ALPHA, so nothing references it; BETA is \
+             referenced; GAMMA appears nowhere"
+        );
+        // An empty sweep reports everything, which is why the report renders a warning
+        // for it rather than a list on its own.
+        assert_eq!(zero_consumer_pins(&names, &[]).len(), names.len());
+    }
+
+    /// The report is READ BY A HUMAN and PARSED BY THE AEON LANE'S PREFLIGHT, which
+    /// greps captured output to tell a stale instrument from a real cross-seam defect.
+    /// Two strings it keys on must not appear in any line this block emits.
+    #[test]
+    fn zero_consumer_report_carries_no_failure_grammar() {
+        let orphans: Vec<String> = ["ALPHA", "BETA"].iter().map(|s| s.to_string()).collect();
+        for block in [
+            zero_consumer_report(&orphans, 400),
+            zero_consumer_report(&[], 400),
+            zero_consumer_report(&orphans, 0),
+        ] {
+            for line in block.lines() {
+                let words: Vec<&str> = line.split_whitespace().collect();
+                assert!(
+                    !(words.first() == Some(&"test") && words.contains(&"FAILED")),
+                    "a line reading as a test-failure record would be parsed as one: {line}"
+                );
+                assert!(
+                    !line.contains("is STALE against the live listings"),
+                    "the stale-pins classifier keys on this string: {line}"
+                );
+            }
+            assert!(
+                block.contains(ZERO_CONSUMER_PREDICATE),
+                "the block must state its own predicate, or a reader cannot tell what \
+                 `no consumer` measured"
+            );
+        }
+    }
+
+    /// The report block belongs to the TOOL. It must not reach the text
+    /// `tests/repin_pins.rs::pins_rs_is_current` panics with, because the aeon lane
+    /// parses that text and anything added to it becomes input to their parser.
+    #[test]
+    fn zero_consumer_report_is_not_gate_text() {
+        let report = DriftReport {
+            pin_changes: vec![],
+            reformatted_declarations: 1,
+            other_removed: vec![],
+            other_added: vec![],
+        };
+        let gate = stale_pins_message(&report, None, None);
+        assert!(
+            gate.contains("is STALE against the live listings"),
+            "nothing to measure: this is not the gate message"
+        );
+        for marker in ["zero-consumer pins", ZERO_CONSUMER_PREDICATE] {
+            assert!(
+                !gate.contains(marker),
+                "the zero-consumer block leaked into the gate message: {marker}"
+            );
+        }
     }
 }

@@ -6,20 +6,19 @@
 # manifest edit + regenerate — the tool never re-pins a NEW region into
 # existence on its own.
 #
-# `tests` IS NO LONGER READ BY ANYTHING. Do not maintain it, and do not add it to a
-# new row. It used to name the test BINARIES that consume a pin, printed as the rerun
-# hint when the pin moved — and that hint was its only reader, so an incomplete list
-# could not fail. Measured 2026-09-02: 176 of the 386 rows carrying a pin constant
-# omitted at least one binary that references it; `Map_TestObj` declared `objdef_port`
-# while five binaries read `MAP_TEST_OBJ`. The hint is now DERIVED at print time from
-# which `crates/*/tests/*.rs` actually reference the constant, so it cannot be short.
-# Proved on a real pin move: doctoring MAP_TEST_OBJ emitted all five binaries where
-# the declared list named one.
+# THERE IS NO `tests` FIELD. A row that spells one is a PARSE ERROR, because every
+# spec struct in `src/repin.rs` carries `serde(deny_unknown_fields)` and the field is
+# gone from all four. The rerun hint is DERIVED at print time from which
+# `crates/*/tests/*.rs` actually reference each constant, so it cannot be short.
 #
-# The rows are left in place rather than deleted in the same breath — removing 412
-# `tests` lines is a mechanical no-op diff and belongs on its own. Deleting them is
-# the correct end state precisely because a field nobody reads and nobody maintains
-# will otherwise be read by a future author as a record of something.
+# The field it replaced named the test BINARIES that consume a pin, and that hint was
+# its only reader, so an incomplete list could not fail. Measured 2026-09-02: 176 of
+# the 386 rows carrying a pin constant omitted at least one binary that references it;
+# `Map_TestObj` declared `objdef_port` while five binaries read `MAP_TEST_OBJ`. Proved
+# on a real pin move: doctoring MAP_TEST_OBJ emitted all five binaries where the
+# declared list named one. The 512 declarations are deleted rather than left standing
+# because a field nobody reads and nobody maintains is read by a future author as a
+# record of something.
 #
 # Inventory transcribed 2026-07-10 from the hand-typed pins in:
 #   sigil-cli tests: rings_port collision_port collision_lookup_port
@@ -62,7 +61,6 @@
 # The listing END-line address per shape — the assembled (pre-convsym) ROM
 # lengths ASSEMBLED_LEN / DEBUG_ASSEMBLED_LEN.
 end_symbol = "__END__"
-tests = ["m1d_rom", "m1d_debug_rom", "mixed_dac_rom"]
 
 # ── Gated regions, engine.inc ladder order ──────────────────────────────────
 
@@ -76,7 +74,6 @@ name = "vectors"
 start = "Vectors"
 len = 0x100
 gate = "SIGIL_EMP_VECTORS"
-tests = ["vectors_port"]
 
 # Parcel K4 — the $100-$1FF ROM header, native (was header.inc's gameHeader macro).
 # No gate: no AS twin (header.inc deleted, the gameHeader invocation removed from
@@ -85,7 +82,6 @@ tests = ["vectors_port"]
 name = "header"
 start = "GameHeader"
 end = "section:header"
-tests = ["header_port"]
 
 # Parcel K4 — the collision/character data island (HeightMaps .. Art_Sonic end).
 # No gate: no AS twin (the BINCLUDEs were deleted from main.asm). The next placement
@@ -105,7 +101,6 @@ tests = ["header_port"]
 name = "collision_data"
 start = "HeightMaps"
 end = "section:collision_data"
-tests = ["collision_data_port"]
 
 [[region]]
 # Tranche 23 — the boot sequence (EntryPoint/Warm/Cold fall-through chain).
@@ -118,7 +113,6 @@ name = "boot"
 start = "EntryPoint"
 end = "section:boot"
 gate = "SIGIL_EMP_BOOT"
-tests = ["boot_port"]
 
 [[region]]
 # Parcel K2 — the BootData table head (engine/system/boot_data.emp). Ungated
@@ -129,7 +123,6 @@ tests = ["boot_port"]
 name = "boot_head"
 start = "BootData"
 end = "section:boot_head"
-tests = ["boot_data_port"]
 
 [[region]]
 # Parcel K2 — the BootData table tail (PSG silence + post-DMA commands). Resumes
@@ -139,14 +132,12 @@ tests = ["boot_data_port"]
 name = "boot_tail"
 start = "BootData_PostBlob"
 end = "section:boot_tail"
-tests = ["boot_data_port"]
 
 [[region]]
 name = "vdp_init"
 start = "VDP_Shadow_Init"
 end = "section:vdp_init"
 gate = "SIGIL_EMP_VDP_INIT"
-tests = ["vdp_init_port"]
 
 [[region]]
 # Tranche 20 — the 3-priority DMA queue (Init/QueueDMA_*/Process_DMA_*/
@@ -157,7 +148,6 @@ name = "dma_queue"
 start = "Init_DMA_Queue"
 end = "section:dma_queue"
 gate = "SIGIL_EMP_DMA_QUEUE"
-tests = ["dma_queue_port"]
 
 [[region]]
 # Tranche 21 — buffer init, static DMA entries, plane utilities. End is the
@@ -167,7 +157,6 @@ name = "buffers"
 start = "Init_SpriteTable"
 end = "section:buffers"
 gate = "SIGIL_EMP_BUFFERS"
-tests = ["buffers_port"]
 
 [[region]]
 # Tranche 21 — VBlank handler family (VBlank_Handler/VInt_Level/VInt_Lag/
@@ -178,7 +167,6 @@ name = "vblank"
 start = "VBlank_Handler"
 end = "section:vblank"
 gate = "SIGIL_EMP_VBLANK"
-tests = ["vblank_port"]
 
 [[region]]
 name = "hblank"
@@ -186,21 +174,18 @@ start = "HBlank_Install"
 end = "section:hblank"
 gate = "SIGIL_EMP_HBLANK"
 # m1c_vector_table pins the IRQ4 vector target (now HBlank_Vector_Slot, RAM).
-tests = ["hblank_port", "m1c_vector_table"]
 
 [[region]]
 name = "controllers"
 start = "Read_Controllers"
 end = "section:controllers"
 gate = "SIGIL_EMP_CONTROLLERS"
-tests = ["controllers_port"]
 
 [[region]]
 name = "game_loop"
 start = "GameLoop"
 end = "section:game_loop"
 gate = "SIGIL_EMP_GAME_LOOP"
-tests = ["game_loop_port", "load_art_port"]
 
 [[region]]
 # Parcel I3 (2026-08-02 input-replay) — the demo record/replay module
@@ -211,7 +196,6 @@ tests = ["game_loop_port", "load_art_port"]
 name = "replay"
 start = "Input_Tick"
 end = "section:replay"
-tests = ["game_loop_port"]
 
 [[region]]
 # Tranche 22 — the S4LZ v3 blocking decompressor (S4LZ_DecompressDict +
@@ -225,7 +209,6 @@ name = "s4lz"
 start = "S4LZ_DecompressDict"
 end = "section:s4lz"
 gate = "SIGIL_EMP_S4LZ"
-tests = ["s4lz_port"]
 
 [[region]]
 # Art-streaming P2a — the resumable stack-flat ZX0 decoder (zx0_resume.emp).
@@ -242,14 +225,12 @@ end = "section:math"
 gate = "SIGIL_EMP_MATH"
 # parallax_port derives Sine_Table as this region's base + SINE_TABLE_OFF, so a drift here
 # moves its expectation too.
-tests = ["math_port", "parallax_port"]
 
 [[region]]
 name = "dplc"
 start = "Perform_DPLC"
 end = "section:dplc"
 gate = "SIGIL_EMP_DPLC"
-tests = ["dplc_port"]
 
 [[region]]
 # Shape-DEPENDENT length: the debug surplus is the assert transliterations +
@@ -258,7 +239,6 @@ name = "core"
 start = "InitObjectRAM"
 end = "section:core"
 gate = "SIGIL_EMP_CORE"
-tests = ["core_port"]
 
 [[region]]
 # Shape-INDEPENDENT length ($420 both shapes — no __DEBUG__ code); base
@@ -267,7 +247,6 @@ name = "sprites"
 start = "InitSpriteSystem"
 end = "section:sprites"
 gate = "SIGIL_EMP_SPRITES"
-tests = ["sprites_port"]
 
 [[region]]
 name = "animate"
@@ -275,14 +254,12 @@ start = "AnimateSprite"
 end = "section:animate"
 gate = "SIGIL_EMP_ANIMATE"
 # test_objects_port pins AnimateSprite (= this region's base) as a call target.
-tests = ["animate_port", "test_objects_port"]
 
 [[region]]
 name = "collision"
 start = "TouchResponse"
 end = "section:collision"
 gate = "SIGIL_EMP_COLLISION"
-tests = ["collision_port"]
 
 [[region]]
 # Shape-DEPENDENT length (the debug-only assert block) — the campaign's first.
@@ -290,7 +267,6 @@ name = "rings"
 start = "RingBuffer_Add"
 end = "section:rings"
 gate = "SIGIL_EMP_RINGS"
-tests = ["rings_port"]
 
 [[region]]
 # Shape-DEPENDENT length (the 11 assert sites + 3 __DEBUG__ blocks). Immediate
@@ -301,7 +277,6 @@ name = "entity_window"
 start = "Collected_Init"
 end = "section:entity_window"
 gate = "SIGIL_EMP_ENTITY_WINDOW"
-tests = ["entity_window_port"]
 
 [[region]]
 # Tranche 24 — data-driven parent/child + effect spawning (8 entry points over
@@ -319,7 +294,6 @@ name = "children"
 start = "PopulateSpawnedPieceCount"
 end = "section:children"
 gate = "SIGIL_EMP_CHILDREN"
-tests = ["children_port"]
 
 [[region]]
 # Shape-INVARIANT length ($9E both shapes — no asserts, no __DEBUG__; the
@@ -332,7 +306,6 @@ name = "load_object"
 start = "Load_Object"
 end = "section:load_object"
 gate = "SIGIL_EMP_LOAD_OBJECT"
-tests = ["load_object_port", "entity_window_port"]
 
 [[region]]
 # Tranche 17 — the deferred nametable plane buffer (§4.1), the VDP-side DRAW half
@@ -344,7 +317,6 @@ name = "plane_buffer"
 start = "Plane_Buffer_Reset"
 end = "section:plane_buffer"
 gate = "SIGIL_EMP_PLANE_BUFFER"
-tests = ["plane_buffer_port"]
 
 [[region]]
 # Tranche 16 — the 2D block-decompression tile cache (§4.7). Biggest region yet
@@ -356,14 +328,12 @@ name = "tile_cache"
 start = "Tile_Cache_GetTile"
 end = "section:tile_cache"
 gate = "SIGIL_EMP_TILE_CACHE"
-tests = ["tile_cache_port"]
 
 [[region]]
 name = "collision_lookup"
 start = "Collision_GetType"
 end = "section:collision_lookup"
 gate = "SIGIL_EMP_COLLISION_LOOKUP"
-tests = ["collision_lookup_port"]
 
 [[region]]
 # Tranche 15 — the section-streaming engine (§4). Biggest region yet. End is the
@@ -373,7 +343,6 @@ name = "section"
 start = "Section_Init"
 end = "section:section"
 gate = "SIGIL_EMP_SECTION"
-tests = ["section_port"]
 
 [[region]]
 # Tranche 19 — the §4 camera (Camera_Init + Camera_Update). End is the next
@@ -383,7 +352,6 @@ name = "camera"
 start = "Camera_Init"
 end = "section:camera"
 gate = "SIGIL_EMP_CAMERA"
-tests = ["camera_port"]
 
 [[region]]
 # Tranche 18 — the §4.6 parallax pipeline (per-cell/per-line HScroll + whole-plane/
@@ -393,7 +361,6 @@ name = "parallax"
 start = "Parallax_Init"
 end = "section:parallax"
 gate = "SIGIL_EMP_PARALLAX"
-tests = ["parallax_port"]
 
 [[region]]
 # Effects P1 module split: the sparse HInt raster dispatcher, moved out of the
@@ -410,7 +377,6 @@ name = "raster"
 start = "Raster_Install"
 end = "section:raster"
 gate = "SIGIL_EMP_RASTER"
-tests = ["raster_port"]
 
 [[region]]
 # Effects P1 module split: the per-section palette load, moved out of `buffers`
@@ -428,7 +394,6 @@ start = "Palette_LoadPal"
 # placer as well as the payload.
 end = "Effects_InstallPreset"
 gate = "SIGIL_EMP_PALETTE"
-tests = ["palette_port"]
 
 [[region]]
 # Effects P3 Parcel C2 — engine/effects/preset.emp. Holds the EffectsPreset struct
@@ -452,7 +417,6 @@ name = "load_art"
 start = "Level_LoadArt"
 end = "section:load_art"
 gate = "SIGIL_EMP_LOAD_ART"
-tests = ["load_art_port"]
 
 [[region]]
 # Art-streaming P2a — the VBlank-bookmark page-in dispatcher (page_in.emp).
@@ -479,7 +443,6 @@ name = "bg"
 start = "BG_Init"
 end = "section:bg"
 gate = "SIGIL_EMP_BG"
-tests = ["bg_port"]
 
 [[region]]
 # Tranche 19 — driver-keyed BG tile-band animation (BgAnim_Init/BgAnim_Update).
@@ -502,7 +465,6 @@ start = "BgAnim_Init"
 # outgrown by 0x56 / 0x58 B).
 end = "section:bg_anim"
 gate = "SIGIL_EMP_BG_ANIM"
-tests = ["bg_anim_port"]
 
 [[region]]
 # Tranche 22 — the DEBUG-only compression self-test (the twin is whole-file
@@ -519,7 +481,6 @@ end = "section:compression_selftest"
 debug_only = true
 plain_anchor = "Sound_PostByte"
 gate = "SIGIL_EMP_COMPRESSION_SELFTEST"
-tests = ["compression_selftest_port"]
 
 [[region]]
 # The module's content ends unlabeled after Sound_FadeIn (the next placement is
@@ -536,7 +497,6 @@ name = "sound_api"
 start = "Sound_PostByte"
 end = "section:sound_api"
 gate = "SIGIL_EMP_SOUND_API"
-tests = ["sound_api_port"]
 
 # ── Object-code bank (org $10000; windows shape-invariant) ──────────────────
 
@@ -545,7 +505,6 @@ name = "test_solid"
 start = "TestSolid_Init"
 end = "section:test_solid"
 gate = "SIGIL_EMP_TEST_OBJECTS"
-tests = ["test_objects_port"]
 
 [[region]]
 name = "test_particle"
@@ -555,7 +514,6 @@ end = "section:test_particle"
 debug_only = true
 plain_anchor = "ObjDef_PathSwap"
 gate = "SIGIL_EMP_TEST_OBJECTS"
-tests = ["test_objects_port"]
 
 # G1 (t29): the trivial display/animate objects. Bank windows shape-invariant;
 # TestAnimated is the SHARED anchor (test_static's end / test_animated's start).
@@ -564,7 +522,6 @@ name = "test_static"
 start = "TestStatic_Main"
 end = "section:test_static"
 gate = "SIGIL_EMP_TEST_STATIC"
-tests = ["test_g1_objects_port"]
 
 [[region]]
 name = "test_animated"
@@ -574,7 +531,6 @@ end = "section:test_animated"
 debug_only = true
 plain_anchor = "TestSolid_Init"
 gate = "SIGIL_EMP_TEST_ANIMATED"
-tests = ["test_g1_objects_port"]
 
 # G2 (t30): the effect/child-lifecycle trio. Bank windows shape-invariant.
 # test_parent.asm sits between test_emitter and test_stress_emitter (NOT ported).
@@ -588,7 +544,6 @@ end = "section:test_emitter"
 debug_only = true
 plain_anchor = "ObjDef_PathSwap"
 gate = "SIGIL_EMP_TEST_EMITTER"
-tests = ["test_g2_objects_port"]
 
 [[region]]
 name = "test_stress_emitter"
@@ -598,7 +553,6 @@ end = "section:test_stress_emitter"
 debug_only = true
 plain_anchor = "ObjDef_PathSwap"
 gate = "SIGIL_EMP_TEST_STRESS_EMITTER"
-tests = ["test_g2_objects_port"]
 
 [[region]]
 name = "test_churn"
@@ -608,7 +562,6 @@ end = "section:test_churn"
 debug_only = true
 plain_anchor = "ObjDef_PathSwap"
 gate = "SIGIL_EMP_TEST_CHURN"
-tests = ["test_g2_objects_port"]
 
 # G3 (t31): the struct-overlay object. Bank window shape-invariant. test_parent's
 # FIRST label is TestChildPart (test_emitter's end anchor); its end is
@@ -623,7 +576,6 @@ end = "section:test_parent"
 debug_only = true
 plain_anchor = "ObjDef_PathSwap"
 gate = "SIGIL_EMP_TEST_PARENT"
-tests = ["test_g3_objects_port"]
 
 # t39 (the FINAL three objects — the object bank closes ALL-.emp). test_player and
 # test_enemy are shape-INVARIANT (internal-gated AS twins keep their zero-byte
@@ -639,7 +591,6 @@ end = "section:test_player"
 debug_only = true
 plain_anchor = "TestSolid_Init"
 gate = "SIGIL_EMP_TEST_PLAYER"
-tests = ["test_g4_final_objects_port"]
 
 [[region]]
 name = "test_enemy"
@@ -649,14 +600,12 @@ end = "section:test_enemy"
 debug_only = true
 plain_anchor = "TestSolid_Init"
 gate = "SIGIL_EMP_TEST_ENEMY"
-tests = ["test_g4_final_objects_port"]
 
 [[region]]
 name = "path_swap"
 start = "ObjDef_PathSwap"
 end = "section:path_swap"
 gate = "SIGIL_EMP_PATH_SWAP"
-tests = ["test_g4_final_objects_port"]
 
 # ── Game data (main.asm gates) ──────────────────────────────────────────────
 
@@ -706,7 +655,6 @@ name = "scene_registry"
 start = "DeformTable_Zero"
 end = "section:scene_registry"
 gate = "SIGIL_EMP_SCENE_REGISTRY"
-tests = ["scene_registry_port"]
 
 # conv-h #35 — the test-object sprite mapping index (Map_TestObj word-offset
 # table + 3 frame records). END = the next section head — the end-is-next-placement
@@ -718,7 +666,6 @@ name = "test_mappings"
 start = "Map_TestObj"
 end = "section:test_mappings"
 gate = "SIGIL_EMP_TEST_MAPPINGS"
-tests = ["test_mappings_port"]
 
 # Dust sprite data (dust_data.emp): mappings x2, the charge DPLC, and the 88-tile
 # art blob whose tail 16 tiles are the resident puff block. Placed right after
@@ -737,7 +684,6 @@ name = "sonic_anims"
 start = "Ani_Sonic"
 end = "section:sonic_anims"
 gate = "SIGIL_EMP_SONIC_ANIMS"
-tests = ["sonic_anims_port"]
 
 # tails-data (C1 task 5): `Ani_Tails` + `Ani_TailsAppendage`, the peer of
 # sonic_anims, placed right after it per map.toml `order`. Section-END anchor
@@ -750,7 +696,6 @@ name = "tails_anims"
 start = "Ani_Tails"
 end = "section:tails_anims"
 gate = "SIGIL_EMP_TAILS_ANIMS"
-tests = ["sonic_anims_port"]
 
 # knuckles-anims (C4 task 9): `Ani_Knuckles`, the third peer of sonic_anims /
 # tails_anims, placed right after tails_anims per map.toml `order`. Section-END
@@ -762,7 +707,6 @@ name = "knuckles_anims"
 start = "Ani_Knuckles"
 end = "section:knuckles_anims"
 gate = "SIGIL_EMP_KNUCKLES_ANIMS"
-tests = ["sonic_anims_port"]
 
 # tails-data (C1 task 5): the Tails body + twin-tail appendage mappings/DPLC/art.
 # Its map.toml `order` slot is at the ROM TAIL, past the sound banks — 132 KB does
@@ -776,7 +720,6 @@ name = "tails_data"
 start = "Map_Tails"
 end = "section:tails_data"
 gate = "SIGIL_EMP_TAILS_DATA"
-tests = ["collision_data_port"]
 
 # knuckles-data (C4 task 9): the Knuckles mappings/DPLC/art, plus the two CRAM
 # line-0 palettes (Pal_SonicTails / Pal_Knuckles) the per-character palette swap
@@ -792,7 +735,6 @@ name = "knuckles_data"
 start = "Map_Knuckles"
 end = "section:knuckles_data"
 gate = "SIGIL_EMP_KNUCKLES_DATA"
-tests = ["collision_data_port"]
 
 [[region]]
 name = "particle_anims"
@@ -805,7 +747,6 @@ debug_only = true
 plain_anchor = "Ani_DustSpindash"
 gate = "SIGIL_EMP_PARTICLE_ANIMS"
 # test_objects_port pins Ani_Particle (= this region's base) as an anim table.
-tests = ["particle_anims_port", "test_objects_port"]
 
 # Dust animation scripts (dust_anims.emp) — the charge loop + the puff one-shot.
 # Placed right after particle_anims per map.toml `order` (union; in plain, where
@@ -825,13 +766,11 @@ gate = "SIGIL_EMP_DUST_ANIMS"
 name = "entity_data"
 start = "OJZ_Sec0_TypeTable"
 end = "section:entity_data"
-tests = ["ojz_run_a_port"]
 
 [[region]]
 name = "ojz_act_pool"
 start = "OJZ_Act_Pool_Page0"
 end = "section:ojz_act_pool"
-tests = ["ojz_run_a_port"]
 
 # END = the section's OWN end (`section:<name>` = its `lma + image_len`, REPIN-END).
 # The descriptor emits 0x28 header + 9 x 0x42 = 0x27A bytes; the successor's head
@@ -843,7 +782,6 @@ name = "act_descriptor"
 start = "OJZ_Act1_Descriptor"
 end = "section:act_descriptor"
 gate = "SIGIL_EMP_ACT_DESCRIPTOR"
-tests = ["act_descriptor_port"]
 
 # Parcel K3 run B — the OJZ act1 interior-island TAIL, three native `.emp`
 # sections placed by contiguity after the descriptor. No gate: they have no AS
@@ -853,7 +791,6 @@ tests = ["act_descriptor_port"]
 name = "sec_block_blobs"
 start = "OJZ_Sec0_Blocks"
 end = "section:sec_block_blobs"
-tests = ["ojz_run_b_port"]
 
 # art-streaming-p2-task5 — the per-section local->global tile-index tables
 # (sec_local_maps.emp), placed by contiguity after the block blobs and before the
@@ -862,19 +799,16 @@ tests = ["ojz_run_b_port"]
 name = "sec_local_maps"
 start = "OJZ_Sec0_LocalMap"
 end = "section:sec_local_maps"
-tests = ["ojz_run_b_port"]
 
 [[region]]
 name = "ojz_act_assets"
 start = "OJZ_Palette"
 end = "section:ojz_act_assets"
-tests = ["ojz_run_b_port"]
 
 [[region]]
 name = "ojz_bg_anim"
 start = "BgAnim_Table"
 end = "section:ojz_bg_anim"
-tests = ["ojz_run_b_port"]
 
 # The objdef DATA region (t14): the ObjDef_* archetype templates emitted by
 # games/sonic4/data/objdefs/test_objects.{asm,emp} — two 26-byte ObjDef records,
@@ -886,7 +820,6 @@ name = "objdefs"
 start = "ObjDef_Static"
 len = 0x34
 gate = "SIGIL_EMP_OBJDEFS"
-tests = ["objdef_port"]
 
 # t41 — the T1 harness states (the LAST game-side code before main/config). Both
 # gameStatesIncludes files, SHAPE-DEPENDENT (distinct plain/debug lengths — the
@@ -904,14 +837,12 @@ end = "section:object_test_state"
 debug_only = true
 plain_anchor = "GameState_OJZScroll_Init"
 gate = "SIGIL_EMP_OBJECT_TEST_STATE"
-tests = ["test_t1_harness_states_port"]
 
 [[region]]
 name = "ojz_scroll_test"
 start = "GameState_OJZScroll_Init"
 end = "section:ojz_scroll_test"
 gate = "SIGIL_EMP_OJZ_SCROLL_TEST"
-tests = ["test_t1_harness_states_port"]
 
 # I4 — the OJZ replay fixture. It USED to be the chain tail; the `mddbg-symbols`
 # parcel moved it AHEAD of the fault-handler island, because the vendored MD
@@ -927,7 +858,6 @@ tests = ["test_t1_harness_states_port"]
 name = "replay_fixture"
 start = "Replay_OJZ_Fixture"
 end = "section:replay_fixture"
-tests = []
 
 # `release_fault` HAS NO REGION HERE, deliberately. The old 2-byte NullInterrupt:rte
 # stub it replaced is deleted (no vector referencer since item 27's ruling), and
@@ -964,7 +894,6 @@ name = "error_handler"
 start = "BusError"
 end = "section:error_handler"
 gate = "SIGIL_EMP_ERROR_HANDLER"
-tests = ["error_handler_port"]
 
 # Parcel K4 inc-5 Stage 2 — the DAC sample banks, native (dac_banks.emp embeds the
 # seam-2 dac_blip_bank.bin at the `dac_banks` map anchor + dac_shared_bank.bin one
@@ -980,7 +909,6 @@ name = "dac_banks"
 start = "Dac_Temp_Blip"
 end = "section:dac_banks"
 gate = "SIGIL_EMP_DAC"
-tests = ["dac_bank_port"]
 
 # Parcel K4 inc-5 Stage 3 — the Moving-Trucks streaming bank BODY, native
 # (mt_bank_blob.emp embeds the seam-2 mt_bank{,_debug}.bin @ $58628, after the phased
@@ -995,7 +923,6 @@ start = "Song_MovingTrucks"
 len = 0x34E8
 debug_len = 0x4F38
 gate = "SIGIL_EMP_MT"
-tests = ["mt_bank_port"]
 
 # Parcel K4 inc-5 Stage 4 — the SFX block, native (sfx_bank_blob.emp embeds the seam-2
 # sfx_bank{,_debug}.bin, after the native MT body). Shape-INVARIANT size (0x748 both),
@@ -1014,7 +941,6 @@ start = "Sfx_33"
 # warnings tell every other stale region to spell it.
 end = "section:sfx_bank_blob"
 gate = "SIGIL_EMP_SFX"
-tests = ["sfx_bank_port"]
 
 # Parcel K4 inc-5 Stage 4b — the engine-table bank HEAD, native (soundbankhead.emp
 # places the 5 heads as a PHASE-BANK section, LMA $58000 / VMA $8000). Was the
@@ -1029,7 +955,6 @@ name = "soundbankhead"
 start = "SoundTablesZ80_Head"
 len = 0x630
 gate = "SIGIL_EMP_SOUNDBANKHEAD"
-tests = ["soundbankhead_port"]
 
 # Parcel K4 B1 — the ROM terminus (engine.epilogue). A zero-length section whose
 # head label EndOfRom is the ROM one-past-the-end. `len = 0` literal (nothing
@@ -1041,7 +966,6 @@ name = "epilogue"
 start = "EndOfRom"
 len = 0x0
 gate = "SIGIL_EMP_EPILOGUE"
-tests = ["m1d_rom", "m1d_debug_rom"]
 
 # objdef byte gate cross-seam symbols: the four routine labels (code_addr =
 # label − ObjCodeBase) + the mappings pointer, resolved to their true VMAs so
@@ -1052,23 +976,18 @@ tests = ["m1d_rom", "m1d_debug_rom"]
 # or the re-lower cannot link, and build.sh will not warn).
 [[symbol]]
 name = "OJZ_Preset_Sec0"
-tests = ["act_descriptor_port"]
 
 [[symbol]]
 name = "OJZ_Preset_Sec1"
-tests = ["act_descriptor_port"]
 
 [[symbol]]
 name = "OJZ_Preset_Sec2"
-tests = ["act_descriptor_port"]
 
 [[symbol]]
 name = "OJZ_Preset_Sec3"
-tests = ["act_descriptor_port"]
 
 [[symbol]]
 name = "OJZ_Preset_Plain"
-tests = ["act_descriptor_port"]
 
 # showcase-effects (2026-08-26, aeon 9dd52471): section 4 binds the d-15 curved-horizon
 # scene. act_descriptor.emp now names TWO more cross-seam data operands — the sixth
@@ -1078,11 +997,9 @@ tests = ["act_descriptor_port"]
 # supplies them from the resolve, not from a hand literal that rots at the next slide.
 [[symbol]]
 name = "OJZ_Preset_Depth"
-tests = ["act_descriptor_port"]
 
 [[symbol]]
 name = "EditorSceneBinding_OJZ_Act1_Sec4"
-tests = ["act_descriptor_port"]
 
 # EFFECTS-W1 item 1 step 5 (2026-08-30, aeon 2e976223): section 5 stopped sharing
 # OJZ_Preset_Plain and took a preset of its own, so act_descriptor.emp names a SEVENTH
@@ -1098,7 +1015,6 @@ tests = ["act_descriptor_port"]
 # d-15 showcase pinned directly above.
 [[symbol]]
 name = "OJZ_Preset_Sec5"
-tests = ["act_descriptor_port"]
 
 # editor-raster-preset (2026-08-29, aeon e99a2ca7): the effects lab's raster chord became a
 # CYCLE, and its .raster_table's second entry is `EditorRaster_OJZ_Act1_authored_probe` — the
@@ -1110,7 +1026,6 @@ tests = ["act_descriptor_port"]
 # caught this, on the attest, exactly where the ritual expects to catch it.
 [[symbol]]
 name = "EditorRaster_OJZ_Act1_authored_probe"
-tests = ["act_descriptor_port"]
 
 # EFFECTS-W1 item 1 step 6 (2026-08-30, aeon c9a462be): section 5's sidecar binds a raster
 # preset, so the generated ojz_effects_editor_act1 (effects_scenes.emp) now emits a SECOND
@@ -1123,7 +1038,6 @@ tests = ["act_descriptor_port"]
 # not defined in this link". Sourced from the resolve like its siblings, never a literal.
 [[symbol]]
 name = "EditorRaster_OJZ_Act1_ojz_sec5_showcase"
-tests = ["act_descriptor_port"]
 
 # EFFECTS-W1 item 5 (2026-09-02, aeon 73b07a4f, chain 198): section 3's sidecar binds a
 # shimmer preset that carries BOTH a raster program and a colour cycle, so the generated
@@ -1135,14 +1049,8 @@ tests = ["act_descriptor_port"]
 # assertion condition references symbol(s) `EditorRaster_OJZ_Act1_ojz_sec3_shimmer` not
 # defined in this link", and the same for the cycle. Sourced from the resolve like their
 # siblings, never a literal that rots at the next slide.
-#
-# `tests` is DERIVED rather than copied from the neighbour above: both existing
-# EditorRaster_* pins are consumed by act_descriptor_port and nothing else (git grep over
-# crates/*/tests/*.rs), and chain 198's attest failed exactly those two test bodies and no
-# others. Two enumerations over different parameters, same answer.
 [[symbol]]
 name = "EditorRaster_OJZ_Act1_ojz_sec3_shimmer"
-tests = ["act_descriptor_port"]
 
 [[symbol]]
 name = "EditorCycle_OJZ_Act1_ojz_sec3_shimmer"
@@ -1155,12 +1063,8 @@ name = "EditorCycle_OJZ_Act1_ojz_sec3_shimmer"
 # port test lowers that module alone. Surfaced here when the corpus pin advanced past
 # chain 208; the aeon lane's own agent had reported both and they did not reach this lane,
 # which is the notification half of the same rule.
-#
-# `tests` is deliberately absent: the rerun hint derives its list from what actually
-# references each constant, so a hand-written one can only be wrong.
 [[symbol]]
 name = "CrossoverTable"
-tests = ["act_descriptor_port"]
 
 # Effects P3 Parcel C2 — the crossing's single effects consumer. Replaces the three
 # per-field pins (Palette_LoadSection / Raster_InstallSection /
@@ -1169,7 +1073,6 @@ tests = ["act_descriptor_port"]
 # outbound call.
 [[symbol]]
 name = "Effects_InstallPreset"
-tests = ["parallax_port"]
 
 # Parcel W — the world-anchored deform overlay's clamp source. parallax.emp's Step 4b
 # calls into raster.emp to read the patch channel's authored band, so the two boundaries
@@ -1177,20 +1080,16 @@ tests = ["parallax_port"]
 # Effects_InstallPreset above: parallax_port must resolve this outbound call.
 [[symbol]]
 name = "Raster_GetChannelBand"
-tests = ["parallax_port"]
 
 [[symbol]]
 name = "TestStatic_Main"
-tests = ["objdef_port"]
 
 [[symbol]]
 name = "TestSolid_Init"
-tests = ["objdef_port"]
 
 [[symbol]]
 name = "TestEnemy_Init"
 debug_only = true  # objtest-gate: module is DEBUG-only
-tests = ["objdef_port"]
 
 [[symbol]]
 name = "TestParent"
@@ -1198,25 +1097,20 @@ debug_only = true  # objtest-gate: module is DEBUG-only
 # const_name override: `test_parent` is a t31 region (-> TEST_PARENT), so this
 # LABEL pin takes the _LABEL suffix (the Plane_Buffer -> PLANE_BUFFER_BASE precedent).
 const_name = "TEST_PARENT_LABEL"
-tests = ["objdef_port"]
 
 [[symbol]]
 name = "Map_TestObj"
-tests = ["objdef_port"]
 
 # test_animated's cross-seam imm32 pointers (Ani_Sonic = SONIC_ANIMS region
 # base; Draw_Sprite / ANIMATE / DPLC pins already exist).
 [[symbol]]
 name = "Map_Sonic"
-tests = ["test_g1_objects_port"]
 
 [[symbol]]
 name = "DPLC_Sonic"
-tests = ["test_g1_objects_port"]
 
 [[symbol]]
 name = "Art_Sonic"
-tests = ["test_g1_objects_port"]
 
 # G2 (t30): the effect-seam callee CreateEffect_Normal (children.emp). The other
 # callees (PopulateSpawnedPieceCount = CHILDREN base, AllocDynamic, DeleteObject,
@@ -1224,22 +1118,18 @@ tests = ["test_g1_objects_port"]
 # already pinned.
 [[symbol]]
 name = "CreateEffect_Normal"
-tests = ["test_g2_objects_port"]
 
 # G3 (t31): test_parent's cross-seam callees. CreateChild_Normal + DeleteChildren
 # (children.emp), GetSineCosine (math.emp). The others (DeleteObject, Draw_Sprite,
 # Map_TestObj) are already pinned; TestChildPart is INTERNAL to the region.
 [[symbol]]
 name = "CreateChild_Normal"
-tests = ["test_g3_objects_port"]
 
 [[symbol]]
 name = "DeleteChildren"
-tests = ["test_g3_objects_port"]
 
 [[symbol]]
 name = "GetSineCosine"
-tests = ["test_g3_objects_port"]
 
 # ── Cross-seam symbols ──────────────────────────────────────────────────────
 # m1c_vector_table's exception-stub VMAs (the IRQ4 $70 target is now
@@ -1248,7 +1138,6 @@ tests = ["test_g3_objects_port"]
 
 [[symbol]]
 name = "EntryPoint"
-tests = ["m1c_vector_table"]
 
 # NullInterrupt symbol pin DELETED (review item 29 part 4): the module is gone, so
 # there is no address to pin. ReleaseFault has no pin either since the crash-report
@@ -1268,66 +1157,53 @@ tests = ["m1c_vector_table"]
 [[symbol]]
 name = "BusError"
 debug_only = true
-tests = ["vectors_port"]
 
 [[symbol]]
 name = "AddressError"
 debug_only = true
-tests = ["vectors_port"]
 
 [[symbol]]
 name = "IllegalInstr"
 debug_only = true
-tests = ["vectors_port"]
 
 [[symbol]]
 name = "ZeroDivide"
 debug_only = true
-tests = ["vectors_port"]
 
 [[symbol]]
 name = "ChkInstr"
 debug_only = true
-tests = ["vectors_port"]
 
 [[symbol]]
 name = "TrapvInstr"
 debug_only = true
-tests = ["vectors_port"]
 
 [[symbol]]
 name = "PrivilegeViol"
 debug_only = true
-tests = ["vectors_port"]
 
 [[symbol]]
 name = "Trace"
 debug_only = true
-tests = ["vectors_port"]
 
 [[symbol]]
 name = "Line1010Emu"
 debug_only = true
-tests = ["vectors_port"]
 
 [[symbol]]
 name = "Line1111Emu"
 debug_only = true
-tests = ["vectors_port"]
 
 [[symbol]]
 name = "ErrorExcept"
 debug_only = true
-tests = ["vectors_port"]
 
 [[symbol]]
 name = "ErrorTrap"
 debug_only = true
-tests = ["vectors_port"]
 
 [[symbol]]
 name = "VBlank_Handler"
-tests = ["m1c_vector_table"]
 
 # hblank (port #1)
 # The IRQ4 vector points DIRECTLY at this RAM slot (the trampoline target);
@@ -1337,24 +1213,20 @@ tests = ["m1c_vector_table"]
 
 [[symbol]]
 name = "HBlank_Vector_Slot"
-tests = ["hblank_port", "m1c_vector_table"]
 
 # vdp_init (tranche 3)
 
 [[symbol]]
 name = "VDP_Shadow_Table"
-tests = ["vdp_init_port"]
 
 [[symbol]]
 name = "BootData_VDPRegs"
-tests = ["vdp_init_port"]
 
 # controllers (port #2; Ctrl_2_Held/*_Press_Accum derive from this base in
 # the test's phased carrier)
 
 [[symbol]]
 name = "Ctrl_1_Held"
-tests = ["controllers_port"]
 
 # The IRQ-owned HELD raw shadows (aeon character-lens-sweep, 2026-08-13). Read_Controllers
 # writes these every physical VBlank; VInt_Level alone latches them into the published
@@ -1362,61 +1234,49 @@ tests = ["controllers_port"]
 # port test carries them on a SECOND phased section anchored here.
 [[symbol]]
 name = "Ctrl_1_Held_Raw"
-tests = ["controllers_port"]
 
 # The rest of the HELD family, now referenced by VInt_Level's publish step
 # (aeon character-lens-sweep): Held is latched ONCE per tick from the raw shadows,
 # so vblank references both sides of the copy for all four cells.
 [[symbol]]
 name = "Ctrl_2_Held"
-tests = ["vblank_port"]
 
 [[symbol]]
 name = "Ctrl_1_Ext_Held"
-tests = ["vblank_port"]
 
 [[symbol]]
 name = "Ctrl_2_Ext_Held"
-tests = ["vblank_port"]
 
 [[symbol]]
 name = "Ctrl_2_Held_Raw"
-tests = ["vblank_port"]
 
 [[symbol]]
 name = "Ctrl_1_Ext_Held_Raw"
-tests = ["vblank_port"]
 
 [[symbol]]
 name = "Ctrl_2_Ext_Held_Raw"
-tests = ["vblank_port"]
 
 # game_loop (tranche 5)
 
 [[symbol]]
 name = "VSync_Wait"
-tests = ["game_loop_port", "load_art_port"]
 
 [[symbol]]
 name = "Sound_DrainSfxRing"
-tests = ["game_loop_port", "load_art_port"]
 
 [[symbol]]
 name = "Game_State"
-tests = ["game_loop_port", "load_art_port"]
 
 # Parcel I3 (2026-08-02) — game_loop's `jbsr Input_Tick` (bsr.w pc-relative) target,
 # the replay seam. The game_loop / two-module-flip / game_debug composition fixtures
 # supply it as a synthetic cross-seam label at this VMA (= the replay region head).
 [[symbol]]
 name = "Input_Tick"
-tests = ["game_loop_port", "game_debug_port"]
 
 # collision_lookup (tranche 3; Cache_Head_Col/Top/Bottom derive +2/+4/+6)
 
 [[symbol]]
 name = "Cache_Left_Col"
-tests = ["collision_lookup_port", "section_port"]
 
 # Collision_GetType (collision_lookup #1) folded in the former
 # Tile_Cache_GetCollision, so the fused body now reads the collision array base
@@ -1429,61 +1289,47 @@ tests = ["collision_lookup_port", "section_port"]
 # abs.w operands and two mem-to-mem fixups resolve against.
 [[symbol]]
 name = "Draw_TileColumn"
-tests = ["section_port"]
 
 [[symbol]]
 name = "Draw_TileRow_FromCache"
-tests = ["section_port"]
 
 [[symbol]]
 name = "EntityWindow_Init"
-tests = ["section_port"]
 
 # (Camera_X/Camera_Y/Current_Act_Ptr already pinned below — section_port added
 # to their existing entries rather than duplicated.)
 [[symbol]]
 name = "Section_Plane_Dirty"
-tests = ["section_port"]
 
 [[symbol]]
 name = "Section_Right_Col_Written"
-tests = ["section_port"]
 
 [[symbol]]
 name = "Section_Left_Col_Written"
-tests = ["section_port"]
 
 [[symbol]]
 name = "Section_Top_Row_Written"
-tests = ["section_port"]
 
 [[symbol]]
 name = "Section_Bottom_Row_Written"
-tests = ["section_port"]
 
 [[symbol]]
 name = "Cache_Head_Col"
-tests = ["section_port"]
 
 [[symbol]]
 name = "Cache_Top_Row"
-tests = ["section_port"]
 
 [[symbol]]
 name = "Cache_Bottom_Row"
-tests = ["section_port"]
 
 [[symbol]]
 name = "Cache_Origin_Col"
-tests = ["section_port"]
 
 [[symbol]]
 name = "Cache_Origin_Row"
-tests = ["section_port"]
 
 [[symbol]]
 name = "Plane_Buffer_Ptr"
-tests = ["section_port"]
 
 # plane_buffer (tranche 17) — the ring-buffer BASE (`ds.b PLANE_BUFFER_SIZE`
 # before Plane_Buffer_Ptr). `const_name` override dodges the PLANE_BUFFER region
@@ -1491,11 +1337,9 @@ tests = ["section_port"]
 [[symbol]]
 name = "Plane_Buffer"
 const_name = "PLANE_BUFFER_BASE"
-tests = ["plane_buffer_port"]
 
 [[symbol]]
 name = "Tile_Cache_Nametable"
-tests = ["section_port"]
 
 # tile_cache (tranche 16) — the RAM symbols tile_cache.emp's abs operands + the
 # Block_Stage_Buffers data-table fixup resolve against, plus the S4LZ_DecompressDict
@@ -1503,11 +1347,9 @@ tests = ["section_port"]
 # Nametable, Camera_X/Y, Current_Act_Ptr, Section_Plane_Dirty already pinned above.)
 [[symbol]]
 name = "Tile_Cache_Collision"
-tests = ["tile_cache_port", "collision_lookup_port"]
 
 [[symbol]]
 name = "Frame_Counter"
-tests = ["tile_cache_port"]
 
 # Logic_Tick (u32, I2 input/replay parcel 2026-08-02): the lag-immune tick
 # timebase, inserted directly after Frame_Counter. GameLoop increments it and
@@ -1515,167 +1357,127 @@ tests = ["tile_cache_port"]
 # cross-seam RAM label, so pin-source it (t24 rule: never hand-shift a RAM VMA).
 [[symbol]]
 name = "Logic_Tick"
-tests = ["game_loop_port", "bg_anim_port", "tile_cache_port", "parallax_port"]
 
 [[symbol]]
 name = "Block_Stage_Keys"
-tests = ["tile_cache_port"]
 
 [[symbol]]
 name = "Block_Stage_Next"
-tests = ["tile_cache_port"]
 [[symbol]]
 name = "Block_Stage_Bucket"
-tests = ["tile_cache_port"]
 
 [[symbol]]
 name = "Block_Stage_Chain"
-tests = ["tile_cache_port"]
 
 
 [[symbol]]
 name = "Block_Stage_Buffers"
-tests = ["tile_cache_port"]
 
 [[symbol]]
 name = "Block_Stage_Ptrs"
-tests = ["tile_cache_port"]
 
 [[symbol]]
 name = "Block_Stage_ZeroPage"
-tests = ["tile_cache_port"]
 
 [[symbol]]
 name = "Cache_Fill_Last_Frame"
-tests = ["tile_cache_port"]
 
 [[symbol]]
 name = "Cache_Fill_Budget"
-tests = ["tile_cache_port"]
 
 [[symbol]]
 name = "Cache_Fill_Resume_Col"
-tests = ["tile_cache_port"]
 
 [[symbol]]
 name = "Cache_Fill_Resume_Row"
-tests = ["tile_cache_port"]
 
 [[symbol]]
 name = "Cache_Fill_RowResume_Row"
-tests = ["tile_cache_port"]
 
 [[symbol]]
 name = "Cache_Fill_RowResume_Col"
-tests = ["tile_cache_port"]
 
 [[symbol]]
 name = "Cache_Fill_Rows_Left"
-tests = ["tile_cache_port"]
 
 [[symbol]]
 name = "Cache_Prev_Cam_Row"
-tests = ["tile_cache_port"]
 
 [[symbol]]
 name = "Cache_Prev_Cam_X"
-tests = ["tile_cache_port"]
 
 [[symbol]]
 name = "Cache_H_Pfx_Dir"
-tests = ["tile_cache_port"]
 
 [[symbol]]
 name = "Cache_H_Pfx_Accum"
-tests = ["tile_cache_port"]
 
 [[symbol]]
 name = "Cache_Pfx_Row_Target"
-tests = ["tile_cache_port"]
 
 [[symbol]]
 name = "Cache_Pfx_Col_Target"
-tests = ["tile_cache_port"]
 
 [[symbol]]
 name = "Cache_Pfx_Skip_Armed"
-tests = ["tile_cache_port"]
 
 [[symbol]]
 name = "Cache_Pfx_Lag_Flag"
-tests = ["tile_cache_port"]
 
 # Prefetch scan memoize (RAM tail) — generation word + per-axis keyed memos.
 [[symbol]]
 name = "Block_Stage_Gen"
-tests = ["tile_cache_port"]
 
 [[symbol]]
 name = "Pfx_Memo_Row"
-tests = ["tile_cache_port"]
 
 [[symbol]]
 name = "Pfx_Memo_L16"
-tests = ["tile_cache_port"]
 
 [[symbol]]
 name = "Pfx_Memo_H16"
-tests = ["tile_cache_port"]
 
 [[symbol]]
 name = "Pfx_Memo_Gen"
-tests = ["tile_cache_port"]
 
 [[symbol]]
 name = "Cs_Memo_Col"
-tests = ["tile_cache_port"]
 
 [[symbol]]
 name = "Cs_Memo_T16"
-tests = ["tile_cache_port"]
 
 [[symbol]]
 name = "Cs_Memo_B16"
-tests = ["tile_cache_port"]
 
 [[symbol]]
 name = "Cs_Memo_Gen"
-tests = ["tile_cache_port"]
 [[symbol]]
 name = "Pfx_Memo_Mask"
-tests = ["tile_cache_port"]
 
 [[symbol]]
 name = "Cs_Memo_Mask"
-tests = ["tile_cache_port"]
 
 [[symbol]]
 name = "Cache_Spec_Gen_Ring"
-tests = ["tile_cache_port"]
 [[symbol]]
 name = "Cache_Spec_Window"
-tests = ["tile_cache_port"]
 
 [[symbol]]
 name = "Cache_Spec_Blocked"
-tests = ["tile_cache_port"]
 
 [[symbol]]
 name = "Cache_Spec_Skips"
-tests = ["tile_cache_port"]
 
 
 
 
 [[symbol]]
 name = "S4LZ_DecompressDict"
-tests = ["tile_cache_port"]
 
 # collision + rings shared RAM
 
 [[symbol]]
 name = "Player_1"
-tests = ["collision_port", "rings_port"]
 
 # Game-side cheat bitfield (games/sonic4/config/ram.emp), bit 0 = CHEAT_DEBUG_FLY.
 # Read by three sites the port tests compile STANDALONE — player_common's
@@ -1685,49 +1487,38 @@ tests = ["collision_port", "rings_port"]
 # DEPENDENT, so consumers must pick the arm, not assume `.plain` serves both.
 [[symbol]]
 name = "Cheat_Flags"
-tests = ["test_g4_final_objects_port", "test_p1_player_port"]
 
 [[symbol]]
 name = "Dynamic_Slots"
-tests = ["collision_port"]
 
 # rings (tranche 8)
 
 [[symbol]]
 name = "Ring_Buffer"
-tests = ["rings_port"]
 
 [[symbol]]
 name = "Ring_Count"
-tests = ["rings_port"]
 
 [[symbol]]
 name = "Ring_HighWater"
-tests = ["rings_port"]
 
 [[symbol]]
 name = "Ring_Add_Dropped"
-tests = ["rings_port"]
 
 [[symbol]]
 name = "Ring_Counter"
-tests = ["rings_port"]
 
 [[symbol]]
 name = "Ring_Anim_Frame"
-tests = ["rings_port"]
 
 [[symbol]]
 name = "Ring_Anim_Timer"
-tests = ["rings_port"]
 
 [[symbol]]
 name = "Camera_X"
-tests = ["rings_port", "section_port", "camera_port", "bg_anim_port"]
 
 [[symbol]]
 name = "Camera_Y"
-tests = ["rings_port", "section_port", "camera_port", "bg_anim_port"]
 
 # C1: the LEADER pointer. Engine RAM word holding the SST address the camera
 # follows; camera.emp and path_swap.emp read it where both used to name
@@ -1735,7 +1526,6 @@ tests = ["rings_port", "section_port", "camera_port", "bg_anim_port"]
 # same four consumers, so a RAM-layout parcel carries it automatically.
 [[symbol]]
 name = "Camera_Target"
-tests = ["camera_port", "test_g4_final_objects_port", "test_t1_harness_states_port"]
 
 # tails-flight (aeon 89837e3e): the curl compensation the camera applies while the
 # leader is balled up. Engine RAM word, PUBLISHED by the game
@@ -1745,77 +1535,61 @@ tests = ["camera_port", "test_g4_final_objects_port", "test_t1_harness_states_po
 # bytes, so it must ride RAM-layout parcels automatically.
 [[symbol]]
 name = "Camera_Curl_Offset"
-tests = ["camera_port", "test_p1_player_port"]
 
 # Camera-follow state RAM (tranche 19 — camera_port cross-seam carriers).
 [[symbol]]
 name = "Camera_Deadzone_Base"
-tests = ["camera_port"]
 
 [[symbol]]
 name = "Camera_Pan_Offset"
-tests = ["camera_port"]
 
 [[symbol]]
 name = "Camera_Hold_Frames"
-tests = ["camera_port"]
 
 # P2c Task 10 — art-streaming camera soft-clamp bits. camera_port reads them,
 # tile_cache_port's fill sets them (both standalone lowers carry the cell).
 [[symbol]]
 name = "Camera_Art_Hold"
-tests = ["camera_port", "tile_cache_port"]
 
 # P2c Task 10 — DEBUG-only soft-clamp frame counter (camera_port debug lower).
 [[symbol]]
 name = "Dbg_Cam_Clamp_Frames"
 debug_only = true
-tests = ["camera_port"]
 
 # Per-act camera clamp ceilings, hoisted out of clamp_camera_axis (F-2 sweep-fix).
 [[symbol]]
 name = "Camera_X_Max"
-tests = ["camera_port"]
 
 [[symbol]]
 name = "Camera_Y_Max"
-tests = ["camera_port"]
 
 # BG tile-band animation state + table (tranche 19 — bg_anim_port carriers).
 # BgAnim_Table is GAME DATA (gameDataIncludes) — it shifts with the data
 # region, so it must ride the pin table, never a hand-typed VMA.
 [[symbol]]
 name = "BgAnim_LastStep"
-tests = ["bg_anim_port"]
 
 [[symbol]]
 name = "BgAnim_Table"
-tests = ["bg_anim_port"]
 
 # Biased camera RAM cells (A1 camera-bias fold, sprites step-5 follow-up).
 [[symbol]]
 name = "Camera_X_Biased"
-tests = ["sprites_port"]
 
 [[symbol]]
 name = "Camera_Y_Biased"
-tests = ["sprites_port"]
 
 [[symbol]]
 name = "Collected_MarkRing"
-tests = ["rings_port"]
 
 [[symbol]]
 name = "EntityWindow_EntryForSection"
-tests = ["rings_port"]
 
 [[symbol]]
 name = "EntityLoaded_Clear"
-tests = ["rings_port"]
 
 [[symbol]]
 name = "Sound_PlayRing"
-tests = ["rings_port"]
 
 # rings' debug-shape error-handler entries. debug_only: the sole consumer is
 # the DEBUG shape's assert transliteration (the plain listing also carries
@@ -1829,12 +1603,10 @@ tests = ["rings_port"]
 [[symbol]]
 name = "MDDBG__ErrorHandler"
 debug_only = true
-tests = ["rings_port"]
 
 [[symbol]]
 name = "MDDBG__ErrorHandler_PagesController"
 debug_only = true
-tests = ["rings_port"]
 
 # dplc (tranche 10)
 
@@ -1846,179 +1618,139 @@ tests = ["rings_port"]
 # DMA_Queue label as an alias of the DMA_Critical pin instead.)
 [[symbol]]
 name = "DMA_Critical"
-tests = ["dma_queue_port"]
 
 [[symbol]]
 name = "DMA_Critical_End"
-tests = ["dma_queue_port"]
 
 [[symbol]]
 name = "DMA_Important"
-tests = ["dma_queue_port"]
 
 [[symbol]]
 name = "DMA_Important_End"
-tests = ["dma_queue_port"]
 
 [[symbol]]
 name = "DMA_Deferrable"
-tests = ["dma_queue_port"]
 
 [[symbol]]
 name = "DMA_Deferrable_End"
-tests = ["dma_queue_port"]
 
 [[symbol]]
 name = "DMA_Critical_Slot"
-tests = ["dma_queue_port"]
 
 [[symbol]]
 name = "DMA_Important_Slot"
-tests = ["dma_queue_port"]
 
 [[symbol]]
 name = "DMA_Deferrable_Slot"
-tests = ["dma_queue_port"]
 
 [[symbol]]
 name = "DMA_Budget_Remaining"
-tests = ["dma_queue_port"]
 
 # P2c Task 8 byte cap — the shared .transfer core charges this cell; every
 # harness composition that lowers dma_queue needs the seam row (its absence
 # was masked by the flip tests' ROM-presence skip — P-3).
 [[symbol]]
 name = "DMA_Enq_Bytes_Frame"
-tests = ["bg_anim_port", "dma_queue_port", "dplc_port", "game_loop_port", "load_art_port", "vblank_port"]
 
 # P-3 family (pre-existing post-P2 seam rot, baseline preS+preA FAIL): the
 # load_art composition's missing RAM rows.
 [[symbol]]
 name = "Act_Art_Budget"
-tests = ["load_art_port"]
 
 [[symbol]]
 name = "Art_Budget_Remaining"
-tests = ["load_art_port"]
 
 [[symbol]]
 name = "PageIn_Pool_Pages"
-tests = ["load_art_port"]
 
 [[symbol]]
 name = "PageIn_Bulk_Drain"
-tests = ["load_art_port"]
 
 [[symbol]]
 name = "PageIn_Fully_Resident"
-tests = ["load_art_port"]
 
 # F-3 merge-translation cells (wave-f3-f1-f6): the per-slot map array + the
 # current-block map cell read by PatchWord and the prefetch scan.
 [[symbol]]
 name = "Block_Stage_Maps"
-tests = ["tile_cache_port"]
 
 [[symbol]]
 name = "Cache_Cur_LocalMap"
-tests = ["tile_cache_port"]
 
 [[symbol]]
 name = "PageCache_Direct_Map"
-tests = ["load_art_port"]
 
 [[symbol]]
 name = "Page_Table"
-tests = ["load_art_port"]
 
 [[symbol]]
 name = "Dbg_DMA_Enq_Capped"
-tests = ["bg_anim_port", "dma_queue_port", "dplc_port"]
 debug_only = true
 
 [[symbol]]
 name = "DMA_Overflow_Count"
 debug_only = true
-tests = ["dma_queue_port"]
 
 # Level art loader (tranche 20 — load_art_port carriers: the staging buffer,
 # the two blocking decompressors, the Critical enqueue, and BG_Init — the
 # region-end neighbor load_art tail-hands the act pointer to).
 [[symbol]]
 name = "Art_Staging_Buffer"
-tests = ["load_art_port"]
 
 [[symbol]]
 name = "S4LZ_Decompress"
-tests = ["load_art_port"]
 
 [[symbol]]
 name = "QueueDMA_Critical"
-tests = ["load_art_port"]
 
 [[symbol]]
 name = "BG_Init"
-tests = ["load_art_port"]
 
 [[symbol]]
 name = "QueueDMA_Important"
-tests = ["dplc_port"]
 
 [[symbol]]
 name = "QueueDMA_Deferrable"
-tests = ["dplc_port"]
 
 # core (tranche 10) — cross-seam RAM labels + procs (PLAYER_1/DYNAMIC_SLOTS/
 # CAMERA_X/CAMERA_Y/DRAW_SPRITE/ObjectMove already pinned above; reused).
 
 [[symbol]]
 name = "Object_RAM"
-tests = ["core_port"]
 
 [[symbol]]
 name = "System_Slots"
-tests = ["core_port"]
 
 [[symbol]]
 name = "Effect_Slots"
-tests = ["core_port"]
 
 [[symbol]]
 name = "Game_Paused"
-tests = ["core_port"]
 
 [[symbol]]
 name = "Object_RAM_End"
-tests = ["core_port"]
 
 [[symbol]]
 name = "Dynamic_Free_Stack"
-tests = ["core_port"]
 
 [[symbol]]
 name = "Dynamic_Free_SP"
-tests = ["core_port"]
 
 [[symbol]]
 name = "Effect_Free_Stack"
-tests = ["core_port"]
 
 [[symbol]]
 name = "Effect_Free_SP"
-tests = ["core_port"]
 
 # object-pool occupancy — the dynamic live-list (spawn-order run objects list)
 [[symbol]]
 name = "Dynamic_Live"
-tests = ["core_port"]
 
 [[symbol]]
 name = "Dynamic_Live_Count"
-tests = ["core_port"]
 
 [[symbol]]
 name = "Dynamic_Live_Dirty"
-tests = ["core_port"]
 
 # A2 walk-live rail (retro-fix-audit-1 item 1/12). debug_only: the flag is
 # referenced only inside `if DEBUG == 1` blocks (core/collision/entity_window
@@ -2026,23 +1758,19 @@ tests = ["core_port"]
 [[symbol]]
 name = "Dynamic_Live_Walking"
 debug_only = true
-tests = ["core_port", "collision_port", "entity_window_port"]
 
 # A2 overflow latch (occupancy amendment A2, spec §9) — RELEASE both shapes.
 # AllocDynamic latches saturated-frame allocs here; RunObjects' tail drains them.
 [[symbol]]
 name = "Dynamic_Live_Pending"
-tests = ["core_port"]
 
 [[symbol]]
 name = "Dynamic_Live_Pending_Count"
-tests = ["core_port"]
 
 # animate (tranche 9)
 
 [[symbol]]
 name = "DeleteObject"
-tests = ["animate_port", "children_port"]
 
 # sprites (tranche 11) — the one outbound cross-region call: Render_Sprites
 # tail-calls DrawRings (rings region). Render_Sprites/InitSpriteSystem are
@@ -2051,40 +1779,32 @@ tests = ["animate_port", "children_port"]
 
 [[symbol]]
 name = "DrawRings"
-tests = ["sprites_port"]
 
 # sprites' engine RAM cells (engine/ram.asm) — abs.w EAs, per-shape VMAs.
 # Camera_X/Camera_Y are pinned above (rings). Sprite_Cycle_Counter+1 derives.
 
 [[symbol]]
 name = "Sprite_Table_Buffer"
-tests = ["sprites_port"]
 
 [[symbol]]
 name = "Sprite_Table_Dirty"
-tests = ["sprites_port"]
 
 # NEW-3 emit bracket (defect-batch-8): read by buffers' enqueue gate, written at
 # Render_Sprites' entry/exits. Consumed by both port tests' addr carriers.
 [[symbol]]
 name = "Sprite_Emit_Active"
-tests = ["sprites_port", "buffers_port"]
 
 [[symbol]]
 name = "Sprite_Bands"
-tests = ["sprites_port"]
 
 [[symbol]]
 name = "Sprite_Band_Counts"
-tests = ["sprites_port"]
 
 [[symbol]]
 name = "Sprites_Rendered"
-tests = ["sprites_port"]
 
 [[symbol]]
 name = "Sprite_Cycle_Counter"
-tests = ["sprites_port"]
 
 # SPRITE-OWNER: engine/ram.emp's DEBUG-only [u16; MAX_VDP_SPRITES] owner array,
 # read by sprites.emp's `lea Sprite_Owner, a6` (abs.w, so the VMA is IN the
@@ -2093,247 +1813,189 @@ tests = ["sprites_port"]
 [[symbol]]
 name = "Sprite_Owner"
 debug_only = true
-tests = ["sprites_port"]
 
 [[symbol]]
 name = "SpriteMask_Y"
-tests = ["sprites_port"]
 
 [[symbol]]
 name = "SpriteMask_Height"
-tests = ["sprites_port"]
 
 [[symbol]]
 name = "SpriteMask_After_Band"
-tests = ["sprites_port"]
 
 [[symbol]]
 name = "Scanline_Band_Sprites"
-tests = ["sprites_port"]
 
 [[symbol]]
 name = "Sound_PlaySFX"
-tests = ["animate_port"]
 
 # t39 final object cross-seam callee: ObjectMoveX (core, test_enemy's mover).
 # Draw_Sprite/ObjectMove/ObjCodeBase/Player_1/Ctrl_1_Held/Ctrl_1_Press/
 # Player_SensorFloor/Map_*/DPLC_Sonic/Art_Sonic/Ani_Sonic already pinned.
 [[symbol]]
 name = "ObjectMoveX"
-tests = ["test_g4_final_objects_port"]
 
 # test_objects (tranche 6)
 
 [[symbol]]
 name = "ObjCodeBase"
-tests = ["test_objects_port"]
 
 [[symbol]]
 name = "Draw_Sprite"
-tests = ["test_objects_port"]
 
 [[symbol]]
 name = "ObjectMove"
-tests = ["test_objects_port"]
 
 # sound_api (tranche 5)
 
 [[symbol]]
 name = "Ring_Sfx_Speaker"
-tests = ["sound_api_port"]
 
 [[symbol]]
 name = "Sfx_Ring_Buf"
-tests = ["sound_api_port"]
 
 [[symbol]]
 name = "Sfx_Ring_Wr"
-tests = ["sound_api_port"]
 
 [[symbol]]
 name = "Sfx_Ring_Rd"
-tests = ["sound_api_port"]
 
 [[symbol]]
 name = "SongTable"
-tests = ["sound_api_port"]
 
 [[symbol]]
 name = "SongPatchTable"
-tests = ["sound_api_port"]
 
 # act_descriptor (tranche 4): the 42 cross-seam data labels…
 
 [[symbol]]
 name = "OJZ_Palette"
-tests = ["act_descriptor_port"]
 
 [[symbol]]
 name = "OJZ_Act1_BG_Layout"
-tests = ["act_descriptor_port"]
 
 [[symbol]]
 name = "OJZ_Act1_BG_Tiles"
-tests = ["act_descriptor_port"]
 
 [[symbol]]
 name = "ParallaxConfig_OJZ_Default"
-tests = ["act_descriptor_port"]
 
 [[symbol]]
 name = "OJZ_Act_Pool_PageTable"
-tests = ["act_descriptor_port"]
 
 [[symbol]]
 # art-streaming-p2-task5 — the [*u8;9] per-section local->global pointer table the
 # descriptor reads (Act.act_sec_local_maps).
 name = "OJZ_Sec_LocalMaps"
-tests = ["act_descriptor_port"]
 
 [[symbol]]
 name = "OJZ_Sec0_Blocks"
-tests = ["act_descriptor_port"]
 
 [[symbol]]
 name = "OJZ_Sec1_Blocks"
-tests = ["act_descriptor_port"]
 
 [[symbol]]
 name = "OJZ_Sec2_Blocks"
-tests = ["act_descriptor_port"]
 
 [[symbol]]
 name = "OJZ_Sec3_Blocks"
-tests = ["act_descriptor_port"]
 
 [[symbol]]
 # Content-dedup alias of Sec2 (same address by design).
 name = "OJZ_Sec4_Blocks"
-tests = ["act_descriptor_port"]
 
 [[symbol]]
 name = "OJZ_Sec5_Blocks"
-tests = ["act_descriptor_port"]
 
 [[symbol]]
 name = "OJZ_Sec6_Blocks"
-tests = ["act_descriptor_port"]
 
 [[symbol]]
 name = "OJZ_Sec7_Blocks"
-tests = ["act_descriptor_port"]
 
 [[symbol]]
 name = "OJZ_Sec8_Blocks"
-tests = ["act_descriptor_port"]
 
 [[symbol]]
 name = "OJZ_Sec0_Objects"
-tests = ["act_descriptor_port"]
 
 [[symbol]]
 name = "OJZ_Sec0_Rings"
-tests = ["act_descriptor_port"]
 
 [[symbol]]
 name = "OJZ_Sec0_TypeTable"
-tests = ["act_descriptor_port"]
 
 [[symbol]]
 name = "OJZ_Sec1_Objects"
-tests = ["act_descriptor_port"]
 
 [[symbol]]
 name = "OJZ_Sec1_Rings"
-tests = ["act_descriptor_port"]
 
 [[symbol]]
 name = "OJZ_Sec1_TypeTable"
-tests = ["act_descriptor_port"]
 
 [[symbol]]
 name = "OJZ_Sec2_Objects"
-tests = ["act_descriptor_port"]
 
 [[symbol]]
 name = "OJZ_Sec2_Rings"
-tests = ["act_descriptor_port"]
 
 [[symbol]]
 name = "OJZ_Sec2_TypeTable"
-tests = ["act_descriptor_port"]
 
 [[symbol]]
 name = "OJZ_Sec3_Objects"
-tests = ["act_descriptor_port"]
 
 [[symbol]]
 name = "OJZ_Sec3_Rings"
-tests = ["act_descriptor_port"]
 
 [[symbol]]
 name = "OJZ_Sec3_TypeTable"
-tests = ["act_descriptor_port"]
 
 [[symbol]]
 name = "OJZ_Sec4_Objects"
-tests = ["act_descriptor_port"]
 
 [[symbol]]
 name = "OJZ_Sec4_Rings"
-tests = ["act_descriptor_port"]
 
 [[symbol]]
 name = "OJZ_Sec4_TypeTable"
-tests = ["act_descriptor_port"]
 
 [[symbol]]
 name = "OJZ_Sec5_Objects"
-tests = ["act_descriptor_port"]
 
 [[symbol]]
 name = "OJZ_Sec5_Rings"
-tests = ["act_descriptor_port"]
 
 [[symbol]]
 name = "OJZ_Sec5_TypeTable"
-tests = ["act_descriptor_port"]
 
 [[symbol]]
 name = "OJZ_Sec6_Objects"
-tests = ["act_descriptor_port"]
 
 [[symbol]]
 name = "OJZ_Sec6_Rings"
-tests = ["act_descriptor_port"]
 
 [[symbol]]
 name = "OJZ_Sec6_TypeTable"
-tests = ["act_descriptor_port"]
 
 [[symbol]]
 name = "OJZ_Sec7_Objects"
-tests = ["act_descriptor_port"]
 
 [[symbol]]
 name = "OJZ_Sec7_Rings"
-tests = ["act_descriptor_port"]
 
 [[symbol]]
 name = "OJZ_Sec7_TypeTable"
-tests = ["act_descriptor_port"]
 
 [[symbol]]
 name = "OJZ_Sec8_Objects"
-tests = ["act_descriptor_port"]
 
 [[symbol]]
 name = "OJZ_Sec8_Rings"
-tests = ["act_descriptor_port"]
 
 [[symbol]]
 name = "OJZ_Sec8_TypeTable"
-tests = ["act_descriptor_port"]
 
 # …and the equ-like values its seam supplies. The pool page count + the per-
 # section block-dict lengths retired from this seam at Parcel K3: they are now
@@ -2343,97 +2005,74 @@ tests = ["act_descriptor_port"]
 
 [[symbol]]
 name = "BLOCK_INDEX_SIZE"
-tests = ["act_descriptor_port"]
 
 [[symbol]]
 name = "EDGE_CLAMP"
-tests = ["act_descriptor_port"]
 
 [[symbol]]
 name = "MAX_ACT_SECTIONS"
-tests = ["act_descriptor_port"]
 
 [[symbol]]
 name = "SECTION_SIZE_SHIFT"
-tests = ["act_descriptor_port"]
 
 [[symbol]]
 name = "Act_len"
-tests = ["act_descriptor_port"]
 
 [[symbol]]
 name = "Sec_len"
-tests = ["act_descriptor_port"]
 
 # entity_window (tranche 12) cross-seam INBOUND symbols: RAM cells it reads +
 # the external procs it calls (RingBuffer_*, Section_*, Load_Object).
 [[symbol]]
 name = "Camera_Y_Coarse_Prev"
-tests = ["entity_window_port"]
 
 [[symbol]]
 name = "Current_Act_Ptr"
-tests = ["entity_window_port", "section_port"]
 
 [[symbol]]
 name = "Entity_Window_Active"
-tests = ["entity_window_port"]
 
 [[symbol]]
 name = "Entity_Window_Anchor"
-tests = ["entity_window_port"]
 
 [[symbol]]
 name = "Entity_Window_OriginX"
-tests = ["entity_window_port"]
 
 [[symbol]]
 name = "Entity_Window_OriginY"
-tests = ["entity_window_port"]
 
 [[symbol]]
 name = "Entity_Window_Center_ID"
-tests = ["entity_window_port"]
 
 [[symbol]]
 name = "Entity_Scan_State"
-tests = ["entity_window_port"]
 
 [[symbol]]
 name = "Entity_Loaded_Masks"
-tests = ["entity_window_port"]
 
 [[symbol]]
 name = "Entity_Mask_Scratch"
-tests = ["entity_window_port"]
 
 [[symbol]]
 name = "Ring_Collected_Window"
-tests = ["entity_window_port"]
 
 [[symbol]]
 name = "Ring_Collected_Park"
-tests = ["entity_window_port"]
 
 [[symbol]]
 name = "Collected_Park_Next"
-tests = ["entity_window_port"]
 
 [[symbol]]
 name = "RingBuffer_Clear"
-tests = ["entity_window_port"]
 
 [[symbol]]
 name = "RingBuffer_Remove"
-tests = ["entity_window_port"]
 
 [[symbol]]
 name = "Section_GetSecPtrXY"
-tests = ["entity_window_port"]
 
 [[symbol]]
 name = "Section_FlatIDXY"
-tests = ["entity_window_port"]
 
 # (Load_Object is now the `load_object` region's start symbol — pinned as
 # LOAD_OBJECT.plain_base/.debug_base, consumed by entity_window_port.)
@@ -2442,13 +2081,11 @@ tests = ["entity_window_port"]
 # The `jsr AllocDynamic` target in load_object.emp (the sole inbound extern);
 # the AllocDynamic latch/live-list owner lives in core.emp.
 name = "AllocDynamic"
-tests = ["load_object_port", "children_port"]
 
 [[symbol]]
 # The `jsr AllocEffect` target in children.emp (the effect-pool sibling of
 # AllocDynamic; owner lives in core.emp).
 name = "AllocEffect"
-tests = ["children_port"]
 
 # ── Region-relative offsets ─────────────────────────────────────────────────
 
@@ -2460,7 +2097,6 @@ name = "CC_DELETE_OFF"
 sym = "AnimateSprite.cc_delete"
 region = "animate"
 per_shape = true
-tests = ["animate_port"]
 
 [[offset]]
 # `RefreshSpritePieceCount:` structural anchor. Shape-dependent as of retro-fix
@@ -2469,7 +2105,6 @@ name = "REFRESH_OFF"
 sym = "RefreshSpritePieceCount"
 region = "animate"
 per_shape = true
-tests = ["animate_port"]
 
 [[offset]]
 # `RingCollision`'s spot-check + outbound-consumer target. Per-shape: the
@@ -2478,7 +2113,6 @@ name = "RINGCOL_OFF"
 sym = "RingCollision"
 region = "rings"
 per_shape = true
-tests = ["rings_port"]
 
 [[offset]]
 # The outbound `bsr.w Sound_PlaySFX` proof target. Shape-dependent as of
@@ -2489,21 +2123,18 @@ name = "SOUND_PLAY_SFX_OFF"
 sym = "Sound_PlaySFX"
 region = "sound_api"
 per_shape = true
-tests = ["sound_api_port"]
 
 [[offset]]
 # The consumer's `dc.l Sine_Table` fixup target.
 name = "SINE_TABLE_OFF"
 sym = "Sine_Table"
 region = "math"
-tests = ["math_port"]
 
 [[offset]]
 # The consumer's second `bsr.w` target.
 name = "FLUSH_VDP_SHADOW_OFF"
 sym = "Flush_VDP_Shadow"
 region = "vdp_init"
-tests = ["vdp_init_port"]
 
 # HBlank_Uninstall offset within the hblank region — the second proc, checked by
 # hblank_port to anchor the region's two-proc layout, and by raster_port for the
@@ -2519,124 +2150,96 @@ tests = ["vdp_init_port"]
 name = "HBLANK_UNINSTALL_OFF"
 sym = "HBlank_Uninstall"
 region = "hblank"
-tests = ["hblank_port", "raster_port"]
 
 # ── Tranche 21 cross-seam symbols (buffers_port / vblank_port) ──────────────
 
 [[symbol]]
 name = "Palette_Buffer"
-tests = ["buffers_port"]
 
 [[symbol]]
 name = "Hscroll_Buffer"
-tests = ["buffers_port"]
 
 [[symbol]]
 name = "Static_Pal_Line0"
-tests = ["buffers_port"]
 
 [[symbol]]
 name = "Static_Pal_Line1"
-tests = ["buffers_port"]
 
 [[symbol]]
 name = "Static_Pal_Line2"
-tests = ["buffers_port"]
 
 [[symbol]]
 name = "Static_Pal_Line3"
-tests = ["buffers_port"]
 
 [[symbol]]
 name = "Static_Sprite_DMA"
-tests = ["buffers_port"]
 
 [[symbol]]
 name = "Static_Hscroll_Line"
-tests = ["buffers_port"]
 
 [[symbol]]
 name = "Palette_Dirty"
 # hblank_port joins buffers_port with effects P1: the raster dispatcher re-asserts
 # the program's pal_dirty_mask into this every frame.
-tests = ["buffers_port", "palette_port"]
 
 [[symbol]]
 name = "Parallax_Active_Config"
-tests = ["buffers_port"]
 
 [[symbol]]
 name = "Palette_Ship_Snap"
 # R1 Task 2: Enqueue_Dirty_Buffers' four palette splices reference this RAM tail
 # field directly (lea Palette_Ship_Snap, a2) — declare it here or the standalone
 # buffers_port re-lower stops resolving, same as Static_Pal_Ship/Effects_* above.
-tests = ["buffers_port"]
 
 [[symbol]]
 name = "VBlank_Ready"
-tests = ["vblank_port"]
 
 [[symbol]]
 name = "VBlank_Flag"
-tests = ["vblank_port"]
 
 [[symbol]]
 name = "VInt_Ptr"
-tests = ["vblank_port"]
 
 [[symbol]]
 name = "Ctrl_1_Press"
-tests = ["vblank_port"]
 
 [[symbol]]
 name = "Ctrl_1_Press_Accum"
-tests = ["vblank_port"]
 
 [[symbol]]
 name = "Ctrl_2_Press"
-tests = ["vblank_port"]
 
 [[symbol]]
 name = "Ctrl_2_Press_Accum"
-tests = ["vblank_port"]
 
 [[symbol]]
 name = "Ctrl_1_Ext_Press"
-tests = ["vblank_port", "game_loop_port"]
 
 [[symbol]]
 name = "Ctrl_1_Ext_Press_Accum"
-tests = ["vblank_port", "game_loop_port"]
 
 [[symbol]]
 name = "Ctrl_2_Ext_Press"
-tests = ["vblank_port", "game_loop_port"]
 
 [[symbol]]
 name = "Ctrl_2_Ext_Press_Accum"
-tests = ["vblank_port", "game_loop_port"]
 
 [[symbol]]
 name = "Parallax_State"
-tests = ["parallax_port"]
 
 [[symbol]]
 name = "Vscroll_Factor"
-tests = ["parallax_port"]
 
 [[symbol]]
 name = "DMA_Budget_Default"
-tests = ["vblank_port"]
 
 [[symbol]]
 name = "Lag_Frame_Count"
 debug_only = true
-tests = ["vblank_port"]
 
 [[symbol]]
 name = "DMA_Bytes_ThisFrame"
 debug_only = true
-tests = ["vblank_port"]
 
 # Art-streaming P2a Task 3 — the VBlank bookmark hook's cross-seam operands. Only
 # the two_module_ownership_flip test (game_loop_port.rs) needs them stubbed: it
@@ -2647,25 +2250,20 @@ tests = ["vblank_port"]
 # resolves them from engine.ram / page_in / zx0_resume directly.)
 [[symbol]]
 name = "PageIn_InFlight"
-tests = ["game_loop_port"]
 
 [[symbol]]
 name = "PageIn_Saved_PC"
-tests = ["game_loop_port"]
 
 [[symbol]]
 name = "PageIn_BankRegs"
-tests = ["game_loop_port"]
 
 [[symbol]]
 name = "Dbg_PageIn_Preempts"
 debug_only = true
-tests = ["game_loop_port"]
 
 [[symbol]]
 name = "ZX0R_Decompress.__end"
 const_name = "ZX0R_DECOMPRESS_END"
-tests = ["game_loop_port"]
 
 # Art-streaming P2a Task 4 — VInt_Level's Important-drain Staging_Busy release
 # references PageIn_Staging_Busy cross-seam; the two_module_ownership_flip test
@@ -2674,7 +2272,6 @@ tests = ["game_loop_port"]
 # / DMA_Important_Slot already carry pins from dma_queue_port.)
 [[symbol]]
 name = "PageIn_Staging_Busy"
-tests = ["game_loop_port", "load_art_port"]
 
 # Art-streaming P2a Task 4 — Level_LoadArt drives the pool load through the page-in
 # FIFO: it calls PageIn_Flush/PageIn_Enqueue, sets PageIn_Pool_Table, and its
@@ -2683,27 +2280,21 @@ tests = ["game_loop_port", "load_art_port"]
 # needs them stubbed to their real VMAs.
 [[symbol]]
 name = "PageIn_Flush"
-tests = ["load_art_port"]
 
 [[symbol]]
 name = "PageIn_Enqueue"
-tests = ["load_art_port"]
 
 [[symbol]]
 name = "PageIn_Pool_Table"
-tests = ["load_art_port"]
 
 [[symbol]]
 name = "PageIn_Queue_Count"
-tests = ["load_art_port"]
 
 [[symbol]]
 name = "PageIn_Suspended"
-tests = ["load_art_port"]
 
 [[symbol]]
 name = "PageIn_Land_Pending"
-tests = ["load_art_port"]
 
 # Art-streaming P2b Task 6 — the page_cache cross-seam operands. Port tests that
 # re-lower a caller module standalone need these resolved to their real VMAs:
@@ -2711,39 +2302,31 @@ tests = ["load_art_port"]
 # page_in -> PageCache_AllocFrame / PageCache_Publish.
 [[symbol]]
 name = "PageCache_Init"
-tests = ["load_art_port"]
 
 [[symbol]]
 name = "PageCache_AllocFrame"
-tests = ["load_art_port"]
 
 [[symbol]]
 name = "PageCache_Publish"
-tests = ["load_art_port"]
 
 # patch-run batching (aeon 01d9d05): PatchWord deleted; the copy sites bank once
 # per run via the two run-walk procs.
 [[symbol]]
 name = "PageCache_PatchRun_Seq"
-tests = ["tile_cache_port"]
 
 [[symbol]]
 name = "PageCache_PatchRun_Col"
-tests = ["tile_cache_port"]
 
 [[symbol]]
 name = "PageCache_Audit"
-tests = ["tile_cache_port"]
 
 # P2b Task 6 — new tile-cache RAM cells the standalone tile_cache lowering carries.
 [[symbol]]
 name = "Cache_Art_Stall"
-tests = ["tile_cache_port"]
 
 [[symbol]]
 name = "Page_Audit_Ticks"
 debug_only = true
-tests = ["tile_cache_port"]
 
 # chain-74 demand-stall watchdog counter (DEBUG-only). Referenced by tile_cache.emp's
 # watchdog bump but never pinned/labeled at chain-74 — its tile_cache_port debug region
@@ -2752,39 +2335,30 @@ tests = ["tile_cache_port"]
 [[symbol]]
 name = "Cache_Stall_Watchdog"
 debug_only = true
-tests = ["tile_cache_port"]
 
 [[symbol]]
 name = "Flush_VDP_Shadow"
-tests = ["vblank_port"]
 
 [[symbol]]
 name = "VInt_DrawLevel"
-tests = ["vblank_port"]
 
 [[symbol]]
 name = "Vscroll_Write"
-tests = ["vblank_port"]
 
 [[symbol]]
 name = "Read_Controllers"
-tests = ["vblank_port"]
 
 [[symbol]]
 name = "Process_DMA_Critical"
-tests = ["vblank_port"]
 
 [[symbol]]
 name = "Process_DMA_Important"
-tests = ["vblank_port"]
 
 [[symbol]]
 name = "Process_DMA_Deferrable"
-tests = ["vblank_port"]
 
 [[symbol]]
 name = "Enqueue_Dirty_Buffers"
-tests = ["vblank_port"]
 
 # boot (tranche 23) — cross-seam carriers for boot_port. BootData is the
 # `lea BootData(pc)` forward target (the data tail's head); the RAM cells are
@@ -2793,27 +2367,21 @@ tests = ["vblank_port"]
 
 [[symbol]]
 name = "BootData"
-tests = ["boot_port"]
 
 [[symbol]]
 name = "VInt_Level"
-tests = ["boot_port"]
 
 [[symbol]]
 name = "BuildStaticDMA"
-tests = ["boot_port"]
 
 [[symbol]]
 name = "Sound_Init"
-tests = ["boot_port"]
 
 [[symbol]]
 name = "Hardware_Region"
-tests = ["boot_port"]
 
 [[symbol]]
 name = "Region_Flags"
-tests = ["boot_port"]
 
 # Timing_Step / Frame_Accumulator retired 2026-08-02 (NTSC-only ruling B):
 # the PAL fixed-timestep RAM fields were deleted in aeon, so these pins no
@@ -2821,15 +2389,12 @@ tests = ["boot_port"]
 
 [[symbol]]
 name = "Game_State_ID"
-tests = ["boot_port"]
 
 [[symbol]]
 name = "Game_State_Init"
-tests = ["boot_port"]
 
 [[symbol]]
 name = "RAM_Start"
-tests = ["boot_port"]
 
 # ── P1 (t34): the player keystone ───────────────────────────────────────────
 # Parcel K4 inc-6 — the object-code-bank base (objcodebase.emp: ObjCodeBase + the
@@ -2841,7 +2406,6 @@ name = "objcodebase"
 start = "ObjCodeBase"
 len = 0x2
 gate = "SIGIL_EMP_OBJCODEBASE"
-tests = ["m1d_rom", "m1d_debug_rom"]
 
 # player_common is the object-bank FIRST code region (base = Player_Init, just
 # past ObjCodeBase's safety rts + __BUDGET_OBJBANK); its end anchor is
@@ -2856,7 +2420,6 @@ name = "player_common"
 start = "Player_Init"
 end = "section:player_common"
 gate = "SIGIL_EMP_PLAYER_COMMON"
-tests = ["test_p1_player_port"]
 
 # sonic is now the Sonic character RECORD only (CharDef_Sonic + PhysTable_Sonic).
 # Its two procs folded into the shared loaders in `characters` when the roster
@@ -2868,7 +2431,6 @@ name = "sonic"
 start = "CharDef_Sonic"
 end = "section:sonic"
 gate = "SIGIL_EMP_SONIC"
-tests = ["test_p1_player_port"]
 
 # tails (C1 task 6) — the Tails character RECORD (CharDef_Tails +
 # PhysTable_Tails), the exact peer of `sonic` and placed right after it per
@@ -2880,7 +2442,6 @@ name = "tails"
 start = "CharDef_Tails"
 end = "section:tails"
 gate = "SIGIL_EMP_TAILS"
-tests = ["test_p1_player_port"]
 
 # knuckles (C4 task 9) — the Knuckles character RECORD (CharDef_Knuckles +
 # PhysTable_Knuckles), the third peer of `sonic` / `tails` and placed right after
@@ -2893,7 +2454,6 @@ name = "knuckles"
 start = "CharDef_Knuckles"
 end = "section:knuckles"
 gate = "SIGIL_EMP_KNUCKLES"
-tests = ["test_p1_player_port"]
 
 # characters — the roster table + the shared per-character asset/art loaders
 # (CharacterDefs, Player_InitAssets, Player_LoadArt, Ability_None). Sits between
@@ -2904,7 +2464,6 @@ name = "characters"
 start = "CharacterDefs"
 end = "section:characters"
 gate = "SIGIL_EMP_CHARACTERS"
-tests = ["test_p1_player_port"]
 
 # tails_appendage (character-dispatch C1) — Tails' twin tails as their own child
 # object: the reconcile the character switch calls, the effect-pool spawn, and the
@@ -2917,7 +2476,6 @@ name = "tails_appendage"
 start = "TailsAppendage_Refresh"
 end = "section:tails_appendage"
 gate = "SIGIL_EMP_TAILS_APPENDAGE"
-tests = ["test_p1_player_port"]
 
 # dust_puff (dust-effect Task 4) — the fire-and-forget skid puff object: the
 # world-coord spawn + the animate/draw Main (resident art, zero DMA). Player-side
@@ -2948,21 +2506,18 @@ name = "player_ground"
 start = "PState_Ground"
 end = "section:player_ground"
 gate = "SIGIL_EMP_PLAYER_GROUND"
-tests = ["test_p2_player_states_port"]
 
 [[region]]
 name = "player_air"
 start = "PState_Air"
 end = "section:player_air"
 gate = "SIGIL_EMP_PLAYER_AIR"
-tests = ["test_p2_player_states_port"]
 
 [[region]]
 name = "player_spindash"
 start = "PState_Spindash"
 end = "section:player_spindash"
 gate = "SIGIL_EMP_PLAYER_SPINDASH"
-tests = ["test_p2_player_states_port"]
 
 # player_fly (character-dispatch C2) — Tails' flight: PSTATE_FLY's body plus the
 # AbilityHook that enters it. The fourth player state file and the last player
@@ -2974,7 +2529,6 @@ name = "player_fly"
 start = "PState_Fly"
 end = "section:player_fly"
 gate = "SIGIL_EMP_PLAYER_FLY"
-tests = ["test_p2_player_states_port"]
 
 # player_glide (character-dispatch C4 Task 10) — Knuckles' glide/slide:
 # PSTATE_GLIDE/GLIDEFALL/SLIDE plus Ability_KnuxGlide, the AbilityHook that enters
@@ -2987,7 +2541,6 @@ name = "player_glide"
 start = "PState_Glide"
 end = "section:player_glide"
 gate = "SIGIL_EMP_PLAYER_GLIDE"
-tests = ["test_p2_player_states_port"]
 
 # player_climb (character-dispatch C4 Task 11) — Knuckles' wall climb + ledge pull-up:
 # PSTATE_CLIMB/LEDGE plus the glide wall-catch. The sixth player state file and the
@@ -3000,7 +2553,6 @@ start = "Climb_WallDist"
 end = "CharDef_Sonic"
 end_measures = "allotment"
 gate = "SIGIL_EMP_PLAYER_CLIMB"
-tests = ["test_p2_player_states_port"]
 
 # P4 (tranche 38) — player_sensors, the collision sensor primitives. Lives in
 # the ENGINE BLOCK (main.asm gameEngineBlockIncludes, the first include), NOT
@@ -3014,7 +2566,6 @@ name = "player_sensors"
 start = "Collision_ProbeDown"
 end = "section:player_sensors"
 gate = "SIGIL_EMP_PLAYER_SENSORS"
-tests = ["test_p4_player_sensors_port"]
 
 # P1 cross-seam call targets + RAM/data pins. Draw_Sprite/Sound_PlaySFX/
 # Map_TestObj/ObjCodeBase/Ctrl_1_Press/Ctrl_1_Held/Current_Act_Ptr/Map_Sonic/
@@ -3024,31 +2575,23 @@ tests = ["test_p4_player_sensors_port"]
 # sonic.emp's interior exports + the player RAM block:
 [[symbol]]
 name = "PState_Ground"
-tests = ["test_p1_player_port"]
 [[symbol]]
 name = "PState_Roll"
-tests = ["test_p1_player_port"]
 [[symbol]]
 name = "PState_Spindash"
-tests = ["test_p1_player_port"]
 [[symbol]]
 name = "PState_Air"
-tests = ["test_p1_player_port"]
 [[symbol]]
 name = "PState_Jump"
-tests = ["test_p1_player_port"]
 [[symbol]]
 name = "PState_RollJump"
-tests = ["test_p1_player_port"]
 [[symbol]]
 name = "PState_AirBall"
-tests = ["test_p1_player_port"]
 # tails-flight (aeon de1f915e): the seventh player state. player_common's state
 # offset table names it like the other six, so it is a cross-seam branch target of
 # that region even though only Tails' ability hook ever enters it.
 [[symbol]]
 name = "PState_Fly"
-tests = ["test_p1_player_port"]
 # knuckles-c4 (2026-08-12): the five glide-family rows. Same rationale as
 # PState_Fly above — player_common's offset tables name them, so they are
 # cross-seam branch targets of that region even though only Knuckles' ability
@@ -3056,86 +2599,61 @@ tests = ["test_p1_player_port"]
 # fails with dangling `PState_Glide`/`GlideFall`/`Slide`/`Climb`/`Ledge`.
 [[symbol]]
 name = "PState_Glide"
-tests = ["test_p1_player_port"]
 [[symbol]]
 name = "PState_GlideFall"
-tests = ["test_p1_player_port"]
 [[symbol]]
 name = "PState_Slide"
-tests = ["test_p1_player_port"]
 [[symbol]]
 name = "PState_Climb"
-tests = ["test_p1_player_port"]
 [[symbol]]
 name = "PState_Ledge"
-tests = ["test_p1_player_port"]
 [[symbol]]
 name = "Player_SensorFloor"
-tests = ["test_p1_player_port"]
 [[symbol]]
 name = "Player_AtLedgeEdge"
-tests = ["test_p1_player_port"]
 # P2+P3 (tranche 35) cross-seam callees: the ONE transition writer, the surface
 # snap, and the three surviving-AS sensors the state files call.
 [[symbol]]
 name = "Player_SetState"
-tests = ["test_p2_player_states_port"]
 [[symbol]]
 name = "Player_SnapToSurface"
-tests = ["test_p2_player_states_port"]
 [[symbol]]
 name = "Player_SensorCeiling"
-tests = ["test_p2_player_states_port"]
 [[symbol]]
 name = "Player_SensorWallDir"
-tests = ["test_p2_player_states_port"]
 [[symbol]]
 name = "Player_SensorWallAt"
-tests = ["test_p2_player_states_port"]
 # P4 (tranche 38) cross-seam callees player_sensors.emp references: the surviving-
 # AS collision lookup proc + its four ROM tables (Player_Quadrant already pinned).
 [[symbol]]
 name = "Collision_GetType"
-tests = ["test_p4_player_sensors_port"]
 [[symbol]]
 name = "SolidityTable"
-tests = ["test_p4_player_sensors_port"]
 [[symbol]]
 name = "AngleTable"
-tests = ["test_p4_player_sensors_port"]
 [[symbol]]
 name = "HeightMaps"
-tests = ["test_p4_player_sensors_port"]
 [[symbol]]
 name = "HeightMapsRot"
-tests = ["test_p4_player_sensors_port"]
 [[symbol]]
 name = "Character_ID"
-tests = ["test_p1_player_port"]
 [[symbol]]
 name = "Player_Chardef"
-tests = ["test_p1_player_port"]
 [[symbol]]
 name = "Ability_None"
-tests = ["test_p1_player_port"]
 [[symbol]]
 name = "CharacterDefs"
-tests = ["test_p1_player_port"]
 [[symbol]]
 name = "Player_InitAssets"
-tests = ["test_p1_player_port"]
 [[symbol]]
 name = "Player_LoadArt"
-tests = ["test_p1_player_port"]
 # C1: the THIRD record reader — the cd_ability dispatch. player_air's
 # PState_AirShared calls it on a fresh jump press while already airborne, so it is
 # a cross-seam branch target of the player_air region, not just of the roster.
 [[symbol]]
 name = "Player_Ability"
-tests = ["test_p2_player_states_port"]
 [[symbol]]
 name = "PhysTable_Sonic"
-tests = ["test_p1_player_port"]
 # C4 task 9: the shared CRAM line 0 that Sonic's and Tails' records both point
 # `cd_palette` at (Knuckles points at Pal_Knuckles instead). It lives in
 # knuckles_data beside the art it belongs to, so from `sonic`'s side it is a
@@ -3143,7 +2661,6 @@ tests = ["test_p1_player_port"]
 # why the isolated p1 compile needs it supplied.
 [[symbol]]
 name = "Pal_SonicTails"
-tests = ["test_p1_player_port"]
 # Effects P1: the two gate fixtures act_descriptor now names per-section —
 # OJZ_TestRaster into sec_raster_table (section 1) and OJZ_TestPal into sec_pal
 # (section 2). Both live in `parallax_configs` (the game-side effects library), so
@@ -3153,10 +2670,8 @@ tests = ["test_p1_player_port"]
 # lives in a different region.
 [[symbol]]
 name = "OJZ_TestRaster"
-tests = ["act_descriptor_port"]
 [[symbol]]
 name = "OJZ_TestPal"
-tests = ["act_descriptor_port"]
 # Effects P2: the same class, two parcels later — OJZ_TestGradient is the dense-tier
 # gate fixture (Task 5, a 96-line OP_RUN_GRADIENT ramp) that act_descriptor names into
 # section 2's sec_raster_table, and OJZ_ShimmerCycle is the Task 8 per-section cycling
@@ -3164,41 +2679,32 @@ tests = ["act_descriptor_port"]
 # P1 fixtures above, so both are cross-seam DATA operands from act_descriptor's side.
 [[symbol]]
 name = "OJZ_TestGradient"
-tests = ["act_descriptor_port"]
 [[symbol]]
 name = "OJZ_ShimmerCycle"
-tests = ["act_descriptor_port"]
 # Effects P3 (vsram parcel): OJZ_TestVsram is the first VSRAM raster program — the
 # plane B scroll-banding gate fixture act_descriptor names into section 0's
 # sec_raster_table. Lives in `parallax_configs` with the others: cross-seam DATA
 # operand from act_descriptor's side.
 [[symbol]]
 name = "OJZ_TestVsram"
-tests = ["act_descriptor_port"]
 # Effects ramp parcel: OJZ_TestRamp is the OP_RUN_RAMP gate fixture (computed per-line
 # VSRAM values from a 16.16 accumulator) that act_descriptor names into section 0's
 # sec_raster_table. Same class, same home in parallax_configs.
 [[symbol]]
 name = "OJZ_TestRamp"
-tests = ["act_descriptor_port"]
 # Effects P1: the raster dispatcher's RAM working set. They are engine.ram labels, so
 # from engine.effects.raster's standalone re-lower they are inbound cross-seam RAM
 # operands and raster_port has to be given their true per-shape VMAs.
 [[symbol]]
 name = "Raster_Program"
-tests = ["raster_port"]
 [[symbol]]
 name = "Raster_Cursor"
-tests = ["raster_port"]
 [[symbol]]
 name = "Raster_Pending"
-tests = ["raster_port"]
 [[symbol]]
 name = "Raster_Buf_A"
-tests = ["raster_port"]
 [[symbol]]
 name = "Raster_Active_Buf"
-tests = ["raster_port"]
 
 # Effects P3 P-b: the rest of engine.effects.raster's INBOUND cross-seam RAM surface.
 # The five pins above were the module's surface in Parcel P1 and were never widened as
@@ -3213,60 +2719,42 @@ tests = ["raster_port"]
 # or the guard fails the port test for a reason that has nothing to do with the port.
 [[symbol]]
 name = "Raster_Buf_B"
-tests = ["raster_port"]
 [[symbol]]
 name = "Raster_Line"
-tests = ["raster_port"]
 [[symbol]]
 name = "Raster_Dense_Lines"
-tests = ["raster_port"]
 [[symbol]]
 name = "Raster_Dense_Cursor"
-tests = ["raster_port"]
 [[symbol]]
 name = "Raster_Dense_Cmd"
-tests = ["raster_port"]
 [[symbol]]
 name = "Raster_Dense_Mode"
-tests = ["raster_port"]
 [[symbol]]
 name = "Raster_Ramp_Acc"
-tests = ["raster_port"]
 [[symbol]]
 name = "Raster_Ramp_Step"
-tests = ["raster_port"]
 [[symbol]]
 name = "Effects_World_Y"
-tests = ["raster_port"]
 [[symbol]]
 name = "Effects_Screen_L"
-tests = ["raster_port", "parallax_port", "buffers_port"]
 [[symbol]]
 name = "Effects_Offscreen_Entry"
-tests = ["raster_port", "buffers_port"]
 [[symbol]]
 name = "Static_Pal_Ship"
-tests = ["raster_port"]
 [[symbol]]
 name = "Build_DMA_Entry"
-tests = ["raster_port"]
 [[symbol]]
 name = "Raster_Patch_Tab"
-tests = ["raster_port"]
 [[symbol]]
 name = "Raster_State"
-tests = ["raster_port"]
 [[symbol]]
 name = "Raster_State_End"
-tests = ["raster_port"]
 [[symbol]]
 name = "Pal_Variant_Stage"
-tests = ["raster_port"]
 # Effects P1: vblank.emp calls into the dispatcher, so from the game-loop/vblank
 # standalone re-lower Raster_VBlank is an outbound cross-seam CALL target.
 [[symbol]]
 name = "Raster_VBlank"
-tests = ["game_loop_port", "vblank_port", "load_art_port", "boot_port"]
 # Effects P1: Parallax_CheckBoundary was the single place the engine noticed a
 # section crossing, so the palette and raster consumers hung off it — outbound
 # cross-seam calls from parallax's standalone re-lower (Palette_LoadSection lived
@@ -3282,7 +2770,6 @@ tests = ["game_loop_port", "vblank_port", "load_art_port", "boot_port"]
 # the game_loop standalone re-lower, the peer of Raster_VBlank above.
 [[symbol]]
 name = "Palette_Compose"
-tests = ["game_loop_port"]
 # C1 (per-slot player working state): the single-global `Player_Phys` row +
 # `Player_Quadrant` + `Player_JumpBuffer` are GONE — folded into a
 # `[PlayerBlock; NUM_PLAYERS]` array whose ONE label is the array base. Every
@@ -3294,27 +2781,20 @@ tests = ["game_loop_port"]
 # RAM label at all any more, which is why their pin rows retire with the cells.
 [[symbol]]
 name = "Player_Blocks"
-tests = ["test_p1_player_port"]
 [[symbol]]
 name = "Player_Ring_Index"
-tests = ["test_p1_player_port"]
 [[symbol]]
 name = "Player_Pos_Ring"
-tests = ["test_p1_player_port"]
 [[symbol]]
 name = "Player_Stat_Ring"
-tests = ["test_p1_player_port"]
 [[symbol]]
 name = "Player_Death_Pending"
-tests = ["test_p1_player_port"]
 # bug005 parcel (M3): the act-invariant clamp-edge cache Player_BoundsInit
 # writes and the per-frame ground/air clamps read back (game ram.emp cells).
 [[symbol]]
 name = "Player_Bound_Right"
-tests = ["test_p1_player_port"]
 [[symbol]]
 name = "Player_Bound_Bottom"
-tests = ["test_p1_player_port"]
 # dust Task 4/5 (aeon 26344203 / 24e7f6a0): player_common calls INTO the
 # dust_spindash section — Player_Display calls Dust_Tick (the skid-dust cadence,
 # Task 4) and PHook_SpindashEnter calls DustSpindash_Spawn (the charge-dust
@@ -3324,4 +2804,3 @@ tests = ["test_p1_player_port"]
 # anchor needs this pin.
 [[symbol]]
 name = "DustSpindash_Spawn"
-tests = ["test_p1_player_port"]
