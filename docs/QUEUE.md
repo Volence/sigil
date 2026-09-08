@@ -183,3 +183,42 @@ Raised by the aeon lane 2026-09-06 from their own instance: inject_editor_bg's r
 - blockedBy: nothing
 
 DONE and landed (packet 2570f724, 22 of 22 seats); findings booked same day in docs/superpowers/notes/campaign-gap-ledger.md. What remains is the FIX ORDER, which is yours: 4 byte-changing, 4 silent-acceptance or abort, 5 gates that cannot fail, 3 structural, 3 measure-first. Nothing fixed during the sweep by design, and nothing is authorized by being booked.
+
+## PINS-DEAD-TESTS-FIELD-AND-ORPHANS
+
+- state at archive: `next`  size: `S`  project: `-`
+- blockedBy: nothing; the engine lane is TOLD before it lands, not asked
+
+The two low lens findings in the pin manifest, `sig-pins-tests-field` and `sig-orphan-pins`, taken
+as one parcel because they are one file's two halves. Grounded 2026-09-08 before briefing, and the
+grounding changed what the parcel is:
+
+**Half one is already solved and only the cleanup is left.** The manifest's own header says
+`tests` IS NO LONGER READ BY ANYTHING: the rerun hint is DERIVED at print time from which
+`crates/*/tests/*.rs` actually reference each constant, proved on a real pin move where doctoring
+`MAP_TEST_OBJ` emitted all five consuming binaries against a declared list naming one. What remains
+is deleting the 412 dead `tests` lines, which the header itself books as belonging on its own commit
+and calls the correct end state, for the stated reason that a field nobody reads and nobody
+maintains will be read by a future author as a record of something. The generator stamps that field
+into the generated file's doc lines, so `pins.rs` is regenerated in the same change and its diff
+must be doc lines only, with no pin VALUE moving.
+
+**Half two needed a mechanism check before it could be briefed, and the check inverted the obvious
+fix.** An orphan pin is NOT inert. `repin_pins::pins_rs_is_current` regenerates the whole file from
+the manifest against the tree and compares the entire text, so every pin, consumed or not,
+participates: a symbol that moves in the engine tree makes the generated text differ, the gate goes
+red, and someone regenerates. So a pin no test reads still costs a red on unrelated movement, and
+still shows what moved. Deleting the 22 would have looked like tidying and would have removed drift
+coverage of 22 symbols. **A brief saying "delete the orphans" would have been acted on.**
+
+**RULED HERE, and it follows this repo's own precedent rather than taste:** the zero-consumer set is
+REPORTED by the repin tool on every run, enumerated by name, and GATED BY NOTHING. Same shape as
+`PROVENANCE-REV-REACHABILITY`, and for the same reason: a declared exception list is a population to
+maintain whose failure mode is green because nobody maintained it. Reporting makes the set visible
+and count-free, which is what the finding actually asked for. Nothing is deleted on this parcel.
+
+**Both halves touch `crates/sigil-harness/repin.toml` and `crates/sigil-harness/src/pins.rs`**, the
+two files the boot read puts on the coordinate list. Under the 2026-09-02 cut the engine lane
+freezes alone, so this is a notification rather than a permission: this seat undertook to the engine
+lane on 2026-09-08 that they hear before such a parcel lands, not after, and that undertaking is
+what governs.
