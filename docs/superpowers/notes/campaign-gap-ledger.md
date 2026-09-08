@@ -4743,3 +4743,37 @@ fixtures move under a directory of their own) and the prefix narrows or goes. Wi
 adding one, is the way this gate would be silently disarmed — `site_watch_rows_are_completely_specified`
 forces a measurement string alongside every prefix, but only a reviewer can tell whether the
 measurement is honest. **Owner:** sigil warn-tier lane.
+
+### `CAPSTONE-STREAM-PIPE-DEADLOCK`: a suite test can HANG, not fail, and did (2026-09-08)
+
+Found by a full-suite run for `parcel/warn-tier-counts-watched`, not by that parcel's subject.
+
+`m68k_capstone_stream::every_emitted_m68k_instruction_agrees_with_capstone` hung for 1290 s and
+would not have ended on its own. `run_capstone`
+(`crates/sigil-isa/tests/support/capstone_diff.rs`) writes the WHOLE of the child's stdin before it
+reads any of the child's stdout:
+
+```rust
+child.stdin.take().unwrap().write_all(text.as_bytes())?;   // blocks once the pipe fills
+let out = child.wait_with_output()?;                       // only now is stdout drained
+```
+
+The stdin here is one 28-hex-digit line per distinct emitted byte string, corpus-derived: the
+observed run had written 325,830 bytes and was not finished, so about 11,200 lines against a 64 KiB
+default pipe. Measured at the stall: parent in `__futex_wait` inside the write, child
+(`scripts/capstone_m68k_dump.py`) in `anon_pipe_write`, both asleep, 0.0% CPU.
+
+**It is INTERMITTENT, and the intermittency is the dangerous part.** The immediately following run
+of the same test, same tip, same reference tree, passed in 9.59 s and the deadlock breaker never
+fired. So it is a race between the child draining stdin and its own stdout backing up, and load
+decides it — the hanging run was on a loaded machine. A first draft of this row said "deterministic
+at this corpus size"; the second run refuted that, and the arithmetic that supported it (325 KB
+against 64 KiB) is still right while the conclusion drawn from it was wrong.
+
+A hang is worse than a red: `--no-fail-fast` cannot step over it, the log aggregates clean up to
+that point, and an agent polling for an end marker waits forever. The fix is the standard one, in
+`run_capstone` only: write stdin from a spawned thread and join it after `wait_with_output`, or
+hand the child a temp file instead of a pipe.
+
+**Owner:** whoever owns the capstone differential (`d38f655b`'s lane). **Kill:** the write no longer
+blocks the reader.

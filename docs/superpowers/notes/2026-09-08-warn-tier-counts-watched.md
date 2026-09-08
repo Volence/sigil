@@ -188,3 +188,28 @@ Restored from the committed tip after each: 9 passed, 0 failed.
 
 The first run after the change was green, as a measured baseline must be, which is exactly why the
 red-first proofs above are the evidence and the green is not.
+
+## THE SUITE
+
+`SIGIL_STRICT_GATE=1 cargo test --release --workspace --no-fail-fast`, `AEON_DIR` on the reference
+tree, at the branch tip: **4856 passed, 0 failed, 2 ignored, 431 suites, 0 skip lines, exit 0.**
+
+Reconciled rather than eyeballed: the last landing run on master reported 4854, this parcel adds
+exactly two tests, 4854 + 2 = 4856.
+
+Two things the run caught that the parcel's own gate runs did not, both worth the whole-suite pass:
+
+* **The tool-text dash rule.** Five of the new assert messages carried em dashes;
+  `tool_text_dash_lint::no_em_or_en_dash_in_any_rust_string_literal` fails on text a person reads
+  (comments are exempt). Fixed in `bb7c8822`, and the M1 red-first proof was RE-RUN against the
+  shipped wording rather than left standing on the pre-fix text.
+* **A test that HANGS.** `m68k_capstone_stream` deadlocked for 1290 s on the first run and had to be
+  unblocked by hand; the second run of the same test at the same tip passed in 9.59 s. Nothing to do
+  with this parcel (the branch touches no file it reads), booked as `CAPSTONE-STREAM-PIPE-DEADLOCK`
+  with the mechanism and the fix. Flagged for foreground follow-up: a hang defeats `--no-fail-fast`
+  and any agent waiting on an end marker.
+
+An earlier full run reported 4851 passed / 5 failed; three of those five were
+`version_provenance` failing because this lane COMMITTED while the suite was running (the binary's
+baked revision goes stale, and the test's own message names that case), one was the dash rule, one
+was the capstone hang. The run above was taken with no commit in flight.
