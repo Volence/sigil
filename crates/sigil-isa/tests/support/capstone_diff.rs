@@ -78,7 +78,7 @@
 use sigil_isa::m68k::{encode, family_name, Cond, Instruction, Mnemonic, Operand, Size, Xn};
 use sigil_isa::m68k_decode::{canonicalize, decode_one};
 use std::collections::BTreeMap;
-use std::process::{Command, Stdio};
+use std::process::{Command, Output, Stdio};
 
 /// Padding length the Python side uses; both sides must feed capstone and
 /// `decode_one` the same buffer or a length comparison is meaningless.
@@ -104,6 +104,59 @@ fn helper() -> Option<std::path::PathBuf> {
         .find(|p| p.exists())
 }
 
+/// Run a child to completion, feeding it `stdin` (when given) and collecting
+/// everything it writes. `Err` on a spawn failure, a non-zero exit status, or a
+/// failed stdin write, in that order of precedence; `what` names the child in
+/// those messages.
+///
+/// The stdin bytes go out from a spawned thread while THIS thread drains the
+/// child's stdout and stderr through `wait_with_output`, so neither side ever
+/// waits on the other. The other order (write all of stdin, then read) is a
+/// deadlock the moment both pipes are full: the child sleeps in a stdout
+/// write waiting for a reader that is itself asleep in the stdin write. How
+/// much input that takes is not a constant of this code. It is the child's
+/// stdout buffering plus two pipe capacities, and a pipe is 64 KiB by default
+/// but ONE PAGE once the user's pipe pages exceed `fs.pipe-user-pages-soft`,
+/// which a loaded suite run can do. At one page the emitted-stream corpus
+/// (about 94 KiB of hex lines, 1.6x that back) deadlocks every time, and
+/// that is the hang `capstone_pipe_discipline.rs` keeps out.
+///
+/// The writer is joined, never detached, so a failed write is an `Err` here.
+/// A failed child status is reported first because it is the more
+/// informative of the two when the child died before reading its input: a
+/// broken pipe says nothing about why, the child's stderr does.
+pub fn run_piped(what: &str, mut cmd: Command, stdin: Option<String>) -> Result<Output, String> {
+    let program = cmd.get_program().to_string_lossy().into_owned();
+    cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
+    cmd.stdin(if stdin.is_some() { Stdio::piped() } else { Stdio::null() });
+    let mut child = cmd.spawn().map_err(|e| format!("cannot spawn {program}: {e}"))?;
+    let writer = stdin.map(|text| {
+        let mut pipe = child.stdin.take().expect("stdin was configured as a pipe");
+        std::thread::spawn(move || {
+            use std::io::Write;
+            // Dropping `pipe` on return closes the child's stdin, which is
+            // its end-of-input on success and on failure alike.
+            pipe.write_all(text.as_bytes())
+        })
+    });
+    let out = child.wait_with_output().map_err(|e| e.to_string())?;
+    if !out.status.success() {
+        return Err(format!(
+            "{what} failed ({}): {}",
+            out.status,
+            String::from_utf8_lossy(&out.stderr).trim()
+        ));
+    }
+    if let Some(writer) = writer {
+        match writer.join() {
+            Ok(Ok(())) => {}
+            Ok(Err(e)) => return Err(format!("writing {what}'s stdin failed: {e}")),
+            Err(_) => return Err(format!("the thread writing {what}'s stdin panicked")),
+        }
+    }
+    Ok(out)
+}
+
 /// Run the helper and parse its TSV. `Err` carries a human-readable reason the
 /// oracle could not be consulted; the caller decides skip-vs-panic.
 fn run_capstone(
@@ -115,21 +168,8 @@ fn run_capstone(
         return Err("dump helper scripts/capstone_m68k_dump.py not found".into());
     };
     let mut cmd = Command::new("python3");
-    cmd.arg(&path).arg(mode).args(extra).stdout(Stdio::piped()).stderr(Stdio::piped());
-    cmd.stdin(if stdin_lines.is_some() { Stdio::piped() } else { Stdio::null() });
-    let mut child = cmd.spawn().map_err(|e| format!("cannot spawn python3: {e}"))?;
-    if let Some(text) = stdin_lines {
-        use std::io::Write;
-        child.stdin.take().unwrap().write_all(text.as_bytes()).map_err(|e| e.to_string())?;
-    }
-    let out = child.wait_with_output().map_err(|e| e.to_string())?;
-    if !out.status.success() {
-        return Err(format!(
-            "capstone dump failed ({}): {}",
-            out.status,
-            String::from_utf8_lossy(&out.stderr).trim()
-        ));
-    }
+    cmd.arg(&path).arg(mode).args(extra);
+    let out = run_piped("capstone dump", cmd, stdin_lines)?;
     let text = String::from_utf8(out.stdout).map_err(|e| e.to_string())?;
     let mut recs = Vec::new();
     let mut banner = None;
