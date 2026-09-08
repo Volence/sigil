@@ -4787,3 +4787,25 @@ hand the child a temp file instead of a pipe.
 
 **Owner:** whoever owns the capstone differential (`d38f655b`'s lane). **Kill:** the write no longer
 blocks the reader.
+
+-- **CLOSED 2026-09-08** on `parcel/capstone-pipe-deadlock` at `d73c743d` (note
+`2026-09-08-capstone-pipe-deadlock.md`). Killed by `run_piped` in `capstone_diff.rs`: the stdin
+bytes go out from a joined thread while the caller drains stdout and stderr through
+`wait_with_output`, so neither process can wait on the other; a failed write is still an `Err`,
+reported after a failed child status because the old order turned a child that died before
+reading (capstone import failure, exit 3) into "Broken pipe" and lost the reason. Gate:
+`sigil-isa/tests/capstone_pipe_discipline.rs`, four cases driven by a child that fills its stdout
+before reading a byte of stdin at `2 * fs.pipe-max-size + 1` bytes each way, under a 120 s watchdog
+so a revert reds rather than hangs; proven red-first by re-applying the write-then-read order to the
+fixed runner (0 passed, 4 failed, 120 s to the watchdog) and restoring from the committed bytes.
+**Two figures in this row were refuted by measurement, and the mechanism is sharpened:** the
+corpus at aeon `ec640bcf` is 3257 distinct byte strings, 94,453 bytes of stdin, not 325,830 (the
+row's number is not the stdin volume; where it came from is not known). With this python (3.14,
+128 KiB stdout buffer) and a default 64 KiB pipe the old order completes up to 145,000 bytes and
+deadlocks from 174,000 every time, so the real corpus is BELOW the deadlock point on a default pipe
+and the scheduling race the row describes cannot reach it. What does reach it: a pipe of ONE PAGE,
+which the kernel hands out once the user's pipe pages exceed `fs.pipe-user-pages-soft` (16384
+pages here), and at 4096-byte pipes the same 94,453-byte corpus deadlocks every time. A full-suite
+run holds hundreds of child pipes, so "load decides it" stands, but the load that decides it is
+the user's pipe-page count, not CPU. The hanging run's pipe size was not measured, so this is the
+mechanism that fits every number, not a witnessed one.
