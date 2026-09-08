@@ -18,10 +18,20 @@
 //!     fails this gate until the win is recorded here.
 //!
 //! The limitation is honest and stated: the id gate does NOT catch growth WITHIN an
-//! already-firing class. [`CORPUS_OPEN_FINDINGS`] is where a class stops having that
-//! hiding place — it pins `(shape, id, file, symbol)` with a count, so a registered id
-//! firing anywhere else, or one more time, fails. Ids not in the register still rely on
-//! the build's tally line.
+//! already-firing class. Two gates take that hiding place away, and they take
+//! different amounts of it:
+//!   - [`SITE_WATCH`] pins, for EVERY admitted id, the FILES it fires in — so a class
+//!     reaching code it had never reached fails by name. Counts are not pinned there
+//!     and shapes are unioned, because those move on ordinary engine work.
+//!   - [`CORPUS_OPEN_FINDINGS`] goes further for the ids that have a row in it: it
+//!     pins `(shape, id, file, symbol)` WITH a count, so a registered id firing at
+//!     another symbol, or one more time, fails. It watches nothing about an id with no
+//!     row — which for five of the six ids was the whole of their coverage until the
+//!     file gate landed, and is the hole `WARN-TIER-COUNTS-UNWATCHED` names.
+//!
+//! So: a new id fails the id gate, a new FILE fails the file gate, a new symbol or an
+//! extra firing at a registered site fails the register. Growth inside an unregistered
+//! file of an already-firing id is what still rides on the build's tally line.
 //!
 //! WHERE A NEW FIRING GOES. Into the register, with an owner, a tracking anchor and a
 //! kill condition — not into [`WARN_ID_BASELINE`], which admits an id corpus-wide.
@@ -103,6 +113,158 @@ const WARN_ID_BASELINE: &[(&str, &[&str])] = &[
     ("lean", &["import.no-names"]),
 ];
 
+/// WHICH FILES an admitted lint id is allowed to fire in.
+///
+/// THE HOLE THIS CLOSES. [`WARN_ID_BASELINE`] admits an id corpus-wide, and
+/// [`CORPUS_OPEN_FINDINGS`] only ever looked at ids that already had a row in it — so
+/// for every admitted id with no row, a firing in a file that had never fired before
+/// was invisible to every gate in the suite. Measured on the reference tree at aeon
+/// `ec640bcf`: five of the six ids were in that state, covering 1167 of the corpus's
+/// 1169 warn-tier firings.
+///
+/// WHY FILES AND NOT COUNTS. The register pins `(shape, id, file, detail)` WITH a
+/// count, and extending that to the whole corpus was the obvious move — it is also
+/// measurably wrong. The counts move on ordinary engine work and per shape:
+/// `page_cache.emp` fires `[proc.clobber-undeclared]` 66 times on `sonic4 plain` and
+/// 70 on `sonic4 debug`, and `[proc.undeclared-fallthrough]` totals run 5 to 21 across
+/// the seven shapes. A gate that goes red on correct work teaches its readers to
+/// weaken it. The FILE SET, unioned over the shapes, is the part that stays still: it
+/// moves when a class reaches code it never reached before, which is the event that
+/// must not pass unnoticed, and it is exactly the property whose loss opened this hole
+/// (the deleted `[proc.undeclared-fallthrough]`-free assertion on
+/// `engine/objects/collision.emp` — that file is absent from the row below, so its
+/// first fallthrough fails this gate by name).
+///
+/// WHY SOME PREFIXES ARE UNPINNED. Two of the six ids fire on populations that GROW
+/// with the corpus rather than with its defects, and pinning those would be the
+/// always-red trade. Each `unpinned` prefix carries the measurement that put it there,
+/// and the count of firings it swallows is RENDERED on every run — an unwatched
+/// population that nobody can see is the defect this whole table is about. Narrow the
+/// prefixes when a population stops churning; widening one is how this gate would be
+/// silently disarmed, so a widening is a reviewed diff with a fresh measurement.
+struct SiteWatch {
+    /// The lint id, as the diagnostic carries it.
+    id: &'static str,
+    /// Path prefixes (relative to the aeon tree) whose firings are deliberately not
+    /// pinned. Empty for most ids, and empty is the state to get back to.
+    unpinned: &'static [&'static str],
+    /// Why those prefixes are unpinned — a MEASUREMENT, not an opinion. Empty exactly
+    /// when `unpinned` is empty, which [`site_watch_rows_are_completely_specified`]
+    /// holds.
+    why_unpinned: &'static str,
+    /// Every file OUTSIDE `unpinned` that fires this id in ANY of the seven shapes.
+    /// A union, not a per-shape list: a comptime define moving a file in or out of one
+    /// shape's closure is ordinary engine work and must not red this.
+    files: &'static [&'static str],
+}
+
+/// The file sets, MEASURED on the reference tree (aeon `ec640bcf`, 2026-09-08) by
+/// walking the same seven-shape lowering the gates below share — never typed from a
+/// design document.
+const SITE_WATCH: &[SiteWatch] = &[
+    SiteWatch {
+        id: "import.no-names",
+        unpinned: &[],
+        why_unpinned: "",
+        // The two hand-written closure edges. Their COUNTS and SYMBOLS are pinned
+        // harder, in CORPUS_OPEN_FINDINGS; this row is the file half, so the two
+        // mechanisms state the same scope for this id.
+        files: &[
+            "games/sonic4/data/effects/ojz_effects.emp",
+            "games/sonic4/test/ojz_scroll_test.emp",
+        ],
+    },
+    SiteWatch {
+        id: "module.path-mismatch",
+        // Every one of the 14 firings is a GENERATED module whose emitted header does
+        // not match the emitter's file naming, or an anchor-sweep fixture that is
+        // deliberately named that way. New acts and new fixtures arrive in these
+        // directories in batches (4 of the 14 files were added within 30 days of the
+        // measurement, all inside these prefixes), so the population grows with the
+        // level pipeline rather than with defects.
+        unpinned: &[
+            "games/sonic4/data/generated/",
+            "games/sonic4/data/levels/",
+            "tools/fixtures/",
+        ],
+        why_unpinned: "all 14 firings are generated level modules or anchor-sweep \
+                       fixtures; 4 of the files were added within 30 days, every one \
+                       inside these prefixes",
+        // EMPTY, and that is the assertion: no HAND-WRITTEN module in the corpus has a
+        // header that disagrees with its file. The lint's actual subject is exactly
+        // that, so this row watches the whole of it — 188 of the corpus's 202 `.emp`
+        // files lie outside the prefixes above and any of them firing fails here.
+        files: &[],
+    },
+    SiteWatch {
+        id: "module.unreachable",
+        // Game content: 85 of the 94 firing files are under `games/`, and 63 of those
+        // were added within 30 days of the measurement (45 of them poison-test
+        // fixtures). This is a module-graph fact about content that is still being
+        // written, not a defect rate, and pinning it would red on nearly every level
+        // or test batch aeon lands.
+        unpinned: &["games/"],
+        why_unpinned: "85 of 94 firing files are game content, 63 of them added within \
+                       30 days of the measurement (45 poison-test fixtures); the set \
+                       grows with the corpus, not with its defects",
+        // The engine side does NOT churn: 6 engine `.emp` modules were added within 30
+        // days of the measurement and not one of them landed here, because an engine
+        // module normally IS in the profile closure. So an engine module falling OUT of
+        // it — its `ensure` guards going dark with nothing to say so — fails here by
+        // name. These nine are the S21 adjudication's own list: the Z80/sound modules
+        // that evaluate their guards through seam-1/seam-2 instead, plus the three
+        // named as the real finding.
+        files: &[
+            "engine/debug/compression_selftest.emp",
+            "engine/debug/sound_debug.emp",
+            "engine/sound/dac_sample_tab.emp",
+            "engine/sound/sound_fm.emp",
+            "engine/sound/sound_sequencer.emp",
+            "engine/sound/sound_sfx.emp",
+            "engine/sound/sound_tables_z80.emp",
+            "engine/sound/z80_sound_driver.emp",
+            "engine/system/z80_init.emp",
+        ],
+    },
+    SiteWatch {
+        id: "proc.clobber-undeclared",
+        unpinned: &[],
+        why_unpinned: "",
+        // 68 firings on `sonic4 plain`, in three files. The concentration is the point:
+        // `page_cache.emp` is one unconverted proc family, and the gate that matters is
+        // that a FOURTH file does not join them.
+        files: &[
+            "engine/level/page_cache.emp",
+            "engine/system/boot.emp",
+            "games/sonic4/player/player_common.emp",
+        ],
+    },
+    SiteWatch {
+        id: "proc.out-unwritten",
+        unpinned: &[],
+        why_unpinned: "",
+        files: &["engine/objects/load_object.emp"],
+    },
+    SiteWatch {
+        id: "proc.undeclared-fallthrough",
+        unpinned: &[],
+        why_unpinned: "",
+        // The class the removed `collision.emp` control used to watch one file of.
+        files: &[
+            "engine/debug/error_handler.emp",
+            "engine/level/bg_anim.emp",
+            "engine/level/page_cache.emp",
+            "engine/level/parallax.emp",
+            "engine/level/section.emp",
+            "engine/objects/core.emp",
+            "engine/system/boot_data.emp",
+            "engine/system/vectors.emp",
+            "games/sonic4/data/effects/ojz_effects.emp",
+            "games/sonic4/test/ojz_scroll_test.emp",
+        ],
+    },
+];
+
 /// One unadjudicated warn-tier firing, pinned SITE-for-SITE.
 ///
 /// WHY THIS EXISTS ALONGSIDE [`WARN_ID_BASELINE`] AND NOT INSIDE IT. The id baseline
@@ -113,6 +275,13 @@ const WARN_ID_BASELINE: &[(&str, &[&str])] = &[
 /// This register answers the sharper question: exactly WHICH sites, and how MANY
 /// times each. A firing of a registered id anywhere else, or a different number of
 /// times, is a failure.
+///
+/// ITS SCOPE, SAID PLAINLY, BECAUSE IT HAS BEEN MISREAD. The walk below only ever
+/// looks at ids that already have a row here. An id with no row is not watched by this
+/// register in any way — its files are watched by [`SITE_WATCH`], and nothing pins its
+/// symbols or counts. "The register sees a new site" is true of a registered id and
+/// false of every other; that sentence, in this file's own failure text, is what the
+/// `WARN-TIER-COUNTS-UNWATCHED` finding was hiding behind.
 ///
 /// It is therefore the place an unadjudicated firing goes INSTEAD of the id baseline.
 /// Widening the baseline to silence a firing is the failure mode this whole gate was
@@ -310,6 +479,201 @@ fn warn_tier_lint_ids_match_the_frozen_baseline() {
     }
 }
 
+/// The file a diagnostic points at, relative to the aeon tree.
+///
+/// The `:line:col` suffix is dropped: the file is the stable half of a coordinate and
+/// the line is the half that moves on every edit above it.
+fn diag_file<'a>(w: &'a native::BuildWarning, root: &str) -> &'a str {
+    let loc = w.location.as_deref().unwrap_or("<no location>");
+    let file = loc.rsplitn(3, ':').last().unwrap_or(loc);
+    file.strip_prefix(root).unwrap_or(file)
+}
+
+/// Every admitted id has exactly one [`SITE_WATCH`] row, and every row is honest.
+///
+/// The first half is the coverage statement: an id may be admitted by
+/// [`CORPUS_LINTS`] or by a [`WARN_ID_BASELINE`] shape row, and either way the file
+/// gate must watch it. Admitting an id without adding a row here is precisely how the
+/// hole reopens, so it is a failure rather than a default.
+#[test]
+fn site_watch_rows_are_completely_specified() {
+    let admitted: BTreeSet<&str> = CORPUS_LINTS
+        .iter()
+        .copied()
+        .chain(WARN_ID_BASELINE.iter().flat_map(|(_, extra)| extra.iter().copied()))
+        .collect();
+    let watched: BTreeSet<&str> = SITE_WATCH.iter().map(|w| w.id).collect();
+    assert_eq!(
+        SITE_WATCH.len(),
+        watched.len(),
+        "SITE_WATCH has two rows for one id; the walk takes the first and the second \
+         silently gates nothing"
+    );
+    let unwatched: Vec<_> = admitted.difference(&watched).collect();
+    let stale: Vec<_> = watched.difference(&admitted).collect();
+    assert!(
+        unwatched.is_empty(),
+        "admitted lint id(s) with no SITE_WATCH row: {unwatched:?}. An id in \
+         CORPUS_LINTS or a WARN_ID_BASELINE row may fire anywhere in the corpus, so \
+         without a row here a firing in a file that never fired before is invisible to \
+         every gate in this suite. Add the row with its measured file set."
+    );
+    assert!(
+        stale.is_empty(),
+        "SITE_WATCH row(s) for id(s) nothing admits: {stale:?}. The id-set gate would \
+         have failed first; delete the row in the same commit that retired the class."
+    );
+
+    for w in SITE_WATCH {
+        assert_eq!(
+            w.unpinned.is_empty(),
+            w.why_unpinned.trim().is_empty(),
+            "SITE_WATCH `{}`: an unpinned prefix without a measurement behind it is an \
+             unwatched population nobody has to justify — and a measurement with no \
+             prefix describes nothing",
+            w.id
+        );
+        for p in w.unpinned {
+            assert!(
+                p.ends_with('/') && !p.starts_with('/'),
+                "SITE_WATCH `{}`: unpinned prefix {p:?} must be a tree-relative \
+                 directory prefix ending in `/`, or it silently matches file stems",
+                w.id
+            );
+            assert!(
+                !w.files.iter().any(|f| f.starts_with(p)),
+                "SITE_WATCH `{}`: pinned file under unpinned prefix {p:?} — the walk \
+                 skips it before the pin is ever consulted, so the row reads as \
+                 coverage and is none",
+                w.id
+            );
+        }
+        let mut sorted = w.files.to_vec();
+        sorted.sort_unstable();
+        sorted.dedup();
+        assert_eq!(
+            sorted.len(),
+            w.files.len(),
+            "SITE_WATCH `{}`: duplicate file in the pinned set",
+            w.id
+        );
+    }
+}
+
+/// THE FILE GATE: an admitted lint id fires only in files that already fire it.
+///
+/// [`WARN_ID_BASELINE`] answers "may this id fire on this shape at all", which admits
+/// it corpus-wide; [`CORPUS_OPEN_FINDINGS`] answers "which symbol, how many times",
+/// but only for ids that have a row there. This one answers "in which FILES", for
+/// EVERY admitted id — the question that had no gate at all until now.
+///
+/// Three ways to be red:
+///   - a file that never fired this id fires it (the class reached new code, or aeon
+///     RENAMED a pinned file — the message cannot tell those apart, so it says so);
+///   - a pinned file stops firing in every shape (the finding was fixed, or the file
+///     left every closure) — the retirement direction, which must be recorded rather
+///     than pocketed;
+///   - an admitted id fires nowhere at all, which means this walk stopped seeing the
+///     corpus and a green here would be vacuous.
+///
+/// Counts are deliberately NOT pinned here and shapes are unioned; see [`SiteWatch`]
+/// for the measurements behind that.
+#[test]
+fn warn_tier_firing_files_match_the_pinned_sites() {
+    let Some(aeon) = aeon_dir() else { return };
+    let Some(shapes) = corpus_warnings() else { return };
+    assert!(!shapes.is_empty(), "no shape was lowered, measure before trusting");
+
+    let root = format!("{}/", aeon.display());
+    let mut seen: std::collections::BTreeMap<&str, usize> = Default::default();
+    let mut swallowed: std::collections::BTreeMap<&str, usize> = Default::default();
+    let mut hit: BTreeSet<(&str, &str)> = BTreeSet::new();
+    let mut appeared: Vec<String> = Vec::new();
+
+    for (label, warnings) in shapes {
+        for w in warnings.iter() {
+            let Some(watch) = SITE_WATCH.iter().find(|s| s.id == w.id) else {
+                // Not admitted anywhere: `warn_tier_lint_ids_match_the_frozen_baseline`
+                // owns that failure and names the id.
+                continue;
+            };
+            *seen.entry(watch.id).or_default() += 1;
+            let rel = diag_file(w, &root);
+            if watch.unpinned.iter().any(|p| rel.starts_with(p)) {
+                *swallowed.entry(watch.id).or_default() += 1;
+                continue;
+            }
+            match watch.files.iter().find(|f| **f == rel) {
+                Some(f) => {
+                    hit.insert((watch.id, f));
+                }
+                None => appeared.push(format!("[{label}] {} @ {rel} :: {}", w.id, w.message)),
+            }
+        }
+    }
+
+    // Rendered on every run, red or green: the pinned population and the population
+    // deliberately left unwatched, so the size of the hole is visible in ordinary
+    // output instead of resting in a file nobody is obliged to open.
+    for s in SITE_WATCH {
+        let n = seen.get(s.id).copied().unwrap_or(0);
+        let un = swallowed.get(s.id).copied().unwrap_or(0);
+        eprintln!(
+            "warn-tier files: {:<28} {:>3} firing / {:>3} unpinned ({} prefix(es)) / {} pinned file(s)",
+            s.id,
+            n,
+            un,
+            s.unpinned.len(),
+            s.files.len()
+        );
+    }
+
+    assert!(
+        appeared.is_empty(),
+        "an admitted warn-tier lint fired in {} place(s) no SITE_WATCH row lists. \
+         Either the class reached code it had never reached — adjudicate it and, if it \
+         stays, pin the file — or aeon renamed a file that was already pinned, in which \
+         case move the row to the new path. This gate cannot tell those apart and does \
+         not guess:\n{}",
+        appeared.len(),
+        appeared.join("\n")
+    );
+
+    let mut vanished: Vec<String> = Vec::new();
+    for s in SITE_WATCH {
+        for f in s.files {
+            if !hit.contains(&(s.id, *f)) {
+                vanished.push(format!(
+                    "  {} @ {f} fires in no shape any more. If it was fixed, delete the \
+                     line and say so; if the file was renamed or dropped, move it.",
+                    s.id
+                ));
+            }
+        }
+    }
+    assert!(
+        vanished.is_empty(),
+        "SITE_WATCH no longer describes the corpus:\n{}",
+        vanished.join("\n")
+    );
+
+    // NON-VACUITY. Every admitted id fires somewhere on this corpus today, so a zero
+    // here is a walk that stopped reaching the warnings, not a win — and a win would
+    // have failed the id-set gate first, with the id named.
+    let silent: Vec<&str> = SITE_WATCH
+        .iter()
+        .map(|s| s.id)
+        .filter(|id| seen.get(id).copied().unwrap_or(0) == 0)
+        .collect();
+    assert!(
+        silent.is_empty(),
+        "admitted id(s) {silent:?} fired zero times across all seven shapes. Every \
+         admitted id fires today, so this is this gate's own walk going blind, not a \
+         retirement — a retirement fails warn_tier_lint_ids_match_the_frozen_baseline \
+         first."
+    );
+}
+
 /// Every [`CORPUS_OPEN_FINDINGS`] row is complete and its date parses.
 ///
 /// The type already makes owner / anchor / kill non-`Option`; this is the other half —
@@ -419,12 +783,9 @@ fn corpus_open_findings_fire_exactly_where_registered() {
     let root = format!("{}/", aeon.display());
     for (label, warnings) in shapes {
         for w in warnings.iter().filter(|w| registered_ids.contains(w.id.as_str())) {
-            // The file comes from the diagnostic's own `location`, with the `:line:col`
-            // suffix dropped: the file is the stable half of a coordinate and the line
-            // is the half that moves on every edit above it.
-            let loc = w.location.as_deref().unwrap_or("<no location>");
-            let file = loc.rsplitn(3, ':').last().unwrap_or(loc);
-            let rel = file.strip_prefix(&root).unwrap_or(file);
+            // The file comes from the diagnostic's own `location` (see `diag_file`),
+            // never scraped out of the message.
+            let rel = diag_file(w, &root);
             // A row claims a firing when it names the same file AND the message names
             // its symbol. Matching on the symbol keeps two distinct findings in one
             // file distinguishable without pinning a coordinate.
@@ -452,11 +813,15 @@ fn corpus_open_findings_fire_exactly_where_registered() {
 
     assert!(
         unregistered.is_empty(),
-        "a registered lint id fired at {} site(s) NO open-findings row claims. The id is \
-         admitted in WARN_ID_BASELINE, so the id-set gate stays green and this is the only \
-         thing that sees it, which is the whole reason the register is site-pinned. \
-         Adjudicate each and either fix it or add a CORPUS_OPEN_FINDINGS row (owner, anchor \
-         and kill condition included) in the same commit:\n{}",
+        "a REGISTERED lint id fired at {} site(s) NO open-findings row claims. The id is \
+         admitted in WARN_ID_BASELINE, so the id-set gate stays green. What this register \
+         is the only thing to see, exactly: the SYMBOL and the COUNT, and only for an id \
+         that already has a row here — an id with no row is not watched by this walk at \
+         all. Its FILES are watched for every admitted id by \
+         warn_tier_firing_files_match_the_pinned_sites, which fails alongside this one \
+         when the file is new too. Adjudicate each and \
+         either fix it or add a CORPUS_OPEN_FINDINGS row (owner, anchor and kill condition \
+         included) in the same commit:\n{}",
         unregistered.len(),
         unregistered.join("\n")
     );
