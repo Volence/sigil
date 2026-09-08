@@ -529,7 +529,7 @@ fn site_watch_rows_are_completely_specified() {
             w.unpinned.is_empty(),
             w.why_unpinned.trim().is_empty(),
             "SITE_WATCH `{}`: an unpinned prefix without a measurement behind it is an \
-             unwatched population nobody has to justify — and a measurement with no \
+             unwatched population nobody has to justify, and a measurement with no \
              prefix describes nothing",
             w.id
         );
@@ -542,7 +542,7 @@ fn site_watch_rows_are_completely_specified() {
             );
             assert!(
                 !w.files.iter().any(|f| f.starts_with(p)),
-                "SITE_WATCH `{}`: pinned file under unpinned prefix {p:?} — the walk \
+                "SITE_WATCH `{}`: pinned file under unpinned prefix {p:?}. The walk \
                  skips it before the pin is ever consulted, so the row reads as \
                  coverage and is none",
                 w.id
@@ -631,8 +631,8 @@ fn warn_tier_firing_files_match_the_pinned_sites() {
     assert!(
         appeared.is_empty(),
         "an admitted warn-tier lint fired in {} place(s) no SITE_WATCH row lists. \
-         Either the class reached code it had never reached — adjudicate it and, if it \
-         stays, pin the file — or aeon renamed a file that was already pinned, in which \
+         Either the class reached code it had never reached (adjudicate it and, if it \
+         stays, pin the file), or aeon renamed a file that was already pinned, in which \
          case move the row to the new path. This gate cannot tell those apart and does \
          not guess:\n{}",
         appeared.len(),
@@ -669,7 +669,7 @@ fn warn_tier_firing_files_match_the_pinned_sites() {
         silent.is_empty(),
         "admitted id(s) {silent:?} fired zero times across all seven shapes. Every \
          admitted id fires today, so this is this gate's own walk going blind, not a \
-         retirement — a retirement fails warn_tier_lint_ids_match_the_frozen_baseline \
+         retirement: a retirement fails warn_tier_lint_ids_match_the_frozen_baseline \
          first."
     );
 }
@@ -816,7 +816,7 @@ fn corpus_open_findings_fire_exactly_where_registered() {
         "a REGISTERED lint id fired at {} site(s) NO open-findings row claims. The id is \
          admitted in WARN_ID_BASELINE, so the id-set gate stays green. What this register \
          is the only thing to see, exactly: the SYMBOL and the COUNT, and only for an id \
-         that already has a row here — an id with no row is not watched by this walk at \
+         that already has a row here. An id with no row is not watched by this walk at \
          all. Its FILES are watched for every admitted id by \
          warn_tier_firing_files_match_the_pinned_sites, which fails alongside this one \
          when the file is new too. Adjudicate each and \
