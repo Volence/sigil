@@ -4697,3 +4697,49 @@ Cost of the hole, concretely: this parcel's `898a97b1` deleted the only assertio
 belief that `warn_tier_corpus` duplicated it. The deletion was still right — the control was welded
 to a live foreign file and red on a rename — but the coverage did not survive it, and until this row
 is closed, nothing replaces it.
+
+-- **CLOSED 2026-09-08** on `parcel/warn-tier-counts-watched` (note
+`2026-09-08-warn-tier-counts-watched.md`), **and the move this row proposed is refuted by
+measurement.** Widening the register walk to `CORPUS_LINTS` costs 124 rows over 1169 firings and
+pins counts that move on ordinary engine work — `page_cache.emp` fires `proc.clobber-undeclared`
+66 times on `sonic4 plain` and 70 on `sonic4 debug`; `proc.undeclared-fallthrough` totals run 5 to
+21 across the seven shapes — and **21 of `module.unreachable`'s 94 files were added within 14
+days**, so that gate would go red on correct work weekly. "The move, and it is small" was the
+always-red trade this row's own next paragraph warns against.
+What landed instead is `SITE_WATCH` in `warn_tier_corpus.rs`: a per-id FILE set, unioned over the
+seven shapes and COUNT-FREE, covering every id `CORPUS_LINTS` or a `WARN_ID_BASELINE` row admits.
+`site_watch_rows_are_completely_specified` fails if an admitted id has no row, so the hole cannot
+reopen silently; `warn_tier_firing_files_match_the_pinned_sites` fails on a new file, on a pinned
+file that stops firing, and on an id that fires zero times. Nothing existing was re-baselined —
+`CORPUS_LINTS`, `WARN_ID_BASELINE` and `CORPUS_OPEN_FINDINGS` are unchanged. `collision.emp`'s lost
+property is back and general: the file is absent from the `proc.undeclared-fallthrough` row, and a
+red-first run mutating that file IN A COPY OF THE CORPUS (`falls_into` dropped from
+`Touch_SolidHurt`) fails the new gate in all 7 shapes while master's version of the same file
+passes 7/7 — the hole demonstrated, not argued.
+The register's overclaiming failure text is fixed in the same commit: it now states that it watches
+the SYMBOL and the COUNT and only for an id that already has a row, and names the file gate as what
+holds the rest.
+  -- **RESIDUAL, and smaller than what it replaces**: `WARN-TIER-UNPINNED-PREFIXES` below.
+
+### `WARN-TIER-UNPINNED-PREFIXES`: two lint ids are watched at file granularity only outside a declared prefix (2026-09-08)
+
+The residual of `WARN-TIER-COUNTS-UNWATCHED`. `SITE_WATCH` pins files for six admitted ids; two of
+them exclude a prefix whose population grows with the corpus rather than with its defects, because
+pinning it would be an always-red check:
+
+* `module.unreachable` under `games/` — 85 of its 94 firing files are game content, 63 added within
+  30 days of the measurement, 45 of them poison-test fixtures. 421 of its 477 firings sit here. The
+  9 `engine/` files ARE pinned.
+* `module.path-mismatch` under `games/sonic4/data/generated/`, `games/sonic4/data/levels/` and
+  `tools/fixtures/` — all 14 firing files are generated level modules or anchor-sweep fixtures. All
+  98 of its firings sit here; its pinned set is empty, which asserts that no hand-written module has
+  a header disagreeing with its file.
+
+519 of 1169 firings are therefore unwatched at file granularity, against 1167 before. Unlike the
+old hole this one is **rendered on every run** (`warn-tier files: <id> … N unpinned`), so its size
+is in ordinary green output rather than derivable only by reading the walk.
+**Kill condition:** a population stops churning (the level pipeline stabilises, or the poison
+fixtures move under a directory of their own) and the prefix narrows or goes. Widening a prefix, or
+adding one, is the way this gate would be silently disarmed — `site_watch_rows_are_completely_specified`
+forces a measurement string alongside every prefix, but only a reviewer can tell whether the
+measurement is honest. **Owner:** sigil warn-tier lane.
