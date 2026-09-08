@@ -208,6 +208,25 @@ output outranks anything the brief asserts.**
 concluded was wrong."* Measured hit rate when introduced: a correction in **3 of 3** dispatches.
 Pair it with an explicit invitation wherever the brief carries a design position.
 
+**⚠ EVERY BRIEF NAMES A PRIVATE SCRATCH DIRECTORY, and this one is a rule about CONSTRUCTION rather
+than about care** *(finding `sig-seat-scratch-dirs`, 2026-09-06 panel, banked 2026-09-08)*. The
+reverse-perf seat had its pinned instrument and several probe files DELETED MID-RUN by a concurrent
+agent writing into the same scratchpad, and files it never created appeared beside its own. It
+re-copied, re-verified the md5, moved to a private subdirectory and re-ran, so the measurement
+survived; nothing announced the corruption while it was happening.
+
+**Two agents told to build scratch files and not told where to put them are each other's concurrent
+writer by construction.** Neither is careless and neither can detect the other. The dispatch
+invariant already says this about a detached script's own path, where a mid-run truncation resumes
+execution inside the new bytes; this is the same shape arriving on a measurement instead of on a
+script.
+
+**So the brief names the directory, and names it as the agent's alone.** Create it before dispatch
+(`/home/volence/sonic_hacks/.scratch/<parcel>` is the shape in use) and say in the brief that every
+probe file, log and temp script goes there and nowhere else. A brief that says "use a scratch
+directory" without naming one is the defect wearing helpful flexibility, exactly as
+*"a stable aeon tree, if needed"* is.
+
 **Its honest limit:** a self-report line cannot surface what the agent never thought to question. It
 catches conflicts the agent noticed and would otherwise have swallowed — a real but bounded win.
 
