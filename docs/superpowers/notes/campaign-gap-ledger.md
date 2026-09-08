@@ -4617,23 +4617,27 @@ arms proven against a mutated lint. Commit `898a97b1`.
 changes no compiler behaviour reds this lane. Listed so the exposure is written down rather than
 rediscovered:
 
-* `cfg_blind_spots.rs:355-356` — `assert_eq!(sites, 6)` / `assert_eq!(procs.len(), 5)` plus
+* `crates/sigil-frontend-emp/tests/cfg_blind_spots.rs:355-356` — `assert_eq!(sites, 6)` / `assert_eq!(procs.len(), 5)` plus
   membership of `Player_SensorSurface` / `Player_SensorWallDir`, over a walk that includes
   `aeon/games`. Those procs live in `games/sonic4/player/player_sensors.emp`, 18 commits in six
   months. The file's own comment declares it a drift tripwire, so the red is wanted — but the lane
   that must act on it cannot edit sigil in the same commit, which is the cross-repo cost.
-* `out_verify_corpus.rs:172` (`slots.len() == 34`), `contract_closure_corpus.rs:1140`
-  (`context_claim_sites.len() == 11`), `parcel_8b_stage_gen_touchers.rs:129` (a fixed 3-name list),
-  `preserves_corpus.rs:133-142` (fixed triples). All four pin engine-shaped symbols TODAY, but each
+* `crates/sigil-cli/tests/out_verify_corpus.rs:172` (`slots.len() == 34`), `crates/sigil-cli/tests/contract_closure_corpus.rs:1140`
+  (`context_claim_sites.len() == 11`), `crates/sigil-cli/tests/parcel_8b_stage_gen_touchers.rs:129` (a fixed 3-name list),
+  `crates/sigil-cli/tests/preserves_corpus.rs:133-142` (fixed triples). All four pin engine-shaped symbols TODAY, but each
   walk spans `games/`, so a game-side construct of the same kind moves the number.
-* `test_p1_player_port.rs:810` — `assert_eq!(guards, 1)` over live `player_common.emp` with no byte
-  oracle at all; the docstring says counting it is the point.
-* `sonic_anims_port.rs:316` — `src.contains("comptime fn rep(")` over live game animation data, for
+* `crates/sigil-cli/tests/test_p1_player_port.rs:810` — `assert_eq!(guards, 1)` over compiled live `player_common.emp` with no byte
+  oracle at all; the docstring says counting it is the point. It counts LINK-TIME guards, the one
+  survivor being the `Player_1` w-addressable check (a `cmpa.w` against a sign-extended word, which
+  rides the link and cannot fold at comptime), so an added link guard reads 2 and a retired one
+  reads 0. **Zero-byte does not clear this one: it counts guards, not bytes.** The file it watches
+  has 59 commits since 2026-03-01, measured at aeon `ec640bcf`.
+* `crates/sigil-cli/tests/sonic_anims_port.rs:316` — `src.contains("comptime fn rep(")` over live game animation data, for
   a helper its own comment says is unused by today's scripts.
-* `dac_port.rs:306` (`blip.len() == 1`), `seam2_colink_probe.rs:164,168` (typed sample lengths 1406
-  and 2880), `corpus_builds.rs:117` + `section_row_fixture.rs:27` (the live map declares
-  `ojz_effects_editor_act1` exactly once), `tranche4_negative_probes.rs:359` (literal source needles
-  in live game data), `listing_defines.rs:377` (`__Aeon_AS_Carrier: equ 0` occurs exactly once).
+* `crates/sigil-cli/tests/dac_port.rs:306` (`blip.len() == 1`), `crates/sigil-cli/tests/seam2_colink_probe.rs:164,168` (typed sample lengths 1406
+  and 2880), `crates/sigil-cli/tests/corpus_builds.rs:117` + `crates/sigil-cli/tests/section_row_fixture.rs:27` (the live map declares
+  `ojz_effects_editor_act1` exactly once), `crates/sigil-cli/tests/tranche4_negative_probes.rs:359` (literal source needles
+  in live game data), `crates/sigil-harness/tests/listing_defines.rs:377` (the anchor `__Aeon_AS_Carrier:  equ 0`, TWO spaces after the colon, occurs exactly once, so a reflow of that line reds it as surely as a deletion).
 * The guard-count asserts wired into byte gates — `mt_port` (7), `sfx_port` (1), `sonic_anims_port`
   (25), `test_g1/g2/g3/g4`, `test_objects`, `act_descriptor_port`. Narrow residual: only a
   **zero-byte** game-side `ensure` reds these without also reding the byte gate they ride.
@@ -4658,6 +4662,13 @@ consuming `games/` content through `shipped_shapes()` / seam1 / seam2. Harmless 
 either wholly present or wholly absent; it matters only if guard paths are ever used to classify
 what a test reads.
 
+**PATHS CORRECTED IN PLACE 2026-09-08, where the wrong path leads rather than in a note under it.**
+Every site above was listed by bare basename, and the files live in THREE different crates
+(`sigil-cli`, `sigil-harness`, `sigil-frontend-emp`). A reader who greps the crate the row implies
+finds nothing, and finding nothing reads as "no exposure" with this document as the source rather
+than a tool. Found by the aeon lane inside an hour of the row being routed to them, against their
+own copy of the booking; corrected there at aeon `bdc87ccf`. A correction appended below a wrong
+pointer does not reach a reader who has already followed it.
 ### `WARN-TIER-COUNTS-UNWATCHED`: a warn-tier lint can fire at a brand-new site and no gate sees it (2026-09-07)
 
 Found while checking a claim this lane had already written down and committed (the
