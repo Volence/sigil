@@ -1117,7 +1117,8 @@ impl<'a> Evaluator<'a> {
     }
 
     /// Emit the `[here.provisional]` error (D-H.2) and return `Poison`. A
-    /// PROVISIONAL `here()` — one after a size-relaxable instruction — is a
+    /// PROVISIONAL `here()`, one in a section whose base follows placement (no
+    /// explicit `vma:`) or after a size-relaxable instruction, is a
     /// [`Value::LinkExpr`], an integer known only after `resolve_layout`. It may
     /// only be LIFTED through the comptime operators IR `Expr` represents, EMITTED
     /// plainly (D-H.3), or GUARDED (D-H.4); every other site that consumes it as a
@@ -1127,10 +1128,12 @@ impl<'a> Evaluator<'a> {
     pub(crate) fn here_provisional_error(&mut self, span: Span) -> Value {
         self.error(
             span,
-            "[here.provisional] `here()` after a size-relaxable instruction (jbra/jbsr, an \
-             unsized branch, or a bare jmp/jsr) is a link-time value; it cannot size or steer \
-             comptime evaluation, pin branch sizes (bra.s/bra.w, jmp) before this point, or \
-             restructure so the value is only emitted or guarded"
+            "[here.provisional] `here()` is a link-time value here: the section has no explicit \
+             `vma:` (its address is decided by placement, after lowering) or a size-relaxable \
+             instruction (jbra/jbsr, an unsized branch, or a bare jmp/jsr) precedes this point; \
+             it cannot size or steer comptime evaluation. Give the section a `vma:`, pin branch \
+             sizes (bra.s/bra.w, jmp) before this point, or restructure so the value is only \
+             emitted or guarded"
                 .to_string(),
         );
         Value::Poison

@@ -94,15 +94,17 @@ impl IrBuilder {
     }
 
     /// Whether the currently-open section already contains a SIZE-RELAXABLE
-    /// fragment (`JmpJsrSym` | `RelaxAbsSym` | `RelaxLadder`) — one whose final
-    /// byte length `resolve_layout` may still grow (D-H.1). When true, the current
-    /// write position is PROVISIONAL: a `here()` resolved to `current_offset()`
-    /// counts every such fragment at its baseline (smallest) rung, so the physical
-    /// VMA can still shift under relaxation. The lowering pass consults this to
-    /// decide whether a `here()` yields an exact `Value::Int` (byte-identical to
-    /// today) or a link-time `Value::LinkExpr`. Same-section tracking suffices:
-    /// cross-section origin staleness hits labels and `here()` equally (the
-    /// label-equivalence invariant, ledger L-H.1). `false` when no section is open.
+    /// fragment (`JmpJsrSym` | `RelaxAbsSym` | `RelaxLadder`), one whose final
+    /// byte length `resolve_layout` may still grow (D-H.1). When true, every
+    /// later OFFSET in this section is provisional: `current_offset()` counts
+    /// each such fragment at its baseline (smallest) rung, so the distance from
+    /// the section start can still grow under relaxation. This predicate answers
+    /// only that question, whether the offset WITHIN the section can move. It
+    /// says nothing about whether the section's BASE is known; that is a
+    /// property of `vma_base`, and [`position_is_provisional`]
+    /// (Self::position_is_provisional) joins the two for `here()`. Same-section
+    /// tracking is the right scope here because an earlier section's growth moves
+    /// this section's base, never its offsets. `false` when no section is open.
     pub fn section_has_relaxable(&self) -> bool {
         self.open.as_ref().is_some_and(|o| {
             o.fragments.iter().any(|f| {
@@ -114,6 +116,31 @@ impl IrBuilder {
                 )
             })
         })
+    }
+
+    /// Whether a `here()` taken at the current write position must be a
+    /// link-time value rather than an exact integer (the label-equivalence
+    /// invariant, ledger L-H.1: `here()` resolves to exactly what a label at the
+    /// same position resolves to). A label's address is
+    /// `Section::vma_origin() + offset` where `vma_origin` is
+    /// `vma_base.unwrap_or(lma)`, so the position is provisional when EITHER
+    /// half is not yet final:
+    ///
+    /// - the section's base follows placement (`vma_base` is `None`): its
+    ///   origin is `lma`, which the placers (`place_sequential`,
+    ///   `place_sections`) and the linker's placement pass rewrite after
+    ///   lowering, so the base baked at lowering is a module-local counter,
+    ///   not the address the label ends up at;
+    /// - the section already holds a size-relaxable fragment
+    ///   ([`section_has_relaxable`](Self::section_has_relaxable)): the offset
+    ///   within the section can still grow.
+    ///
+    /// `false` only when the base is baked (`vma_base` is `Some`, an explicit
+    /// `vma:`) AND nothing before the position can grow: then
+    /// `vma_base + current_offset()` is the label's final address and `here()`
+    /// may be that integer. `false` when no section is open.
+    pub fn position_is_provisional(&self) -> bool {
+        self.open.as_ref().is_some_and(|o| o.vma_base.is_none()) || self.section_has_relaxable()
     }
 
     /// The highest `current_offset()` ever reached in the currently-open

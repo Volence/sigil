@@ -853,15 +853,18 @@ fn lower_equ_item(
     builder.add_equ_sym(sigil_ir::EquSym { name: decl.name.clone(), expr, span: decl.span });
 }
 
-/// Classify the `here()` position for an item whose provisional anchor (when the
-/// open section already holds a size-relaxable fragment) is `anchor_name` — for a
-/// data item its own label, which `lower_data_item` defines at exactly this byte
-/// (D-H.3). At an EXACT position (no relaxable yet) the anchor is `None` and
-/// `here()` returns the byte-identical `Value::Int(base)`; at a PROVISIONAL one it
-/// is `Some(anchor_name)` and `here()` returns a link-time value (D-H.1).
+/// Classify the `here()` position for an item whose provisional anchor is
+/// `anchor_name`, for a data item its own label, which `lower_data_item` defines
+/// at exactly this byte (D-H.3). At an EXACT position the anchor is `None` and
+/// `here()` returns `Value::Int(base)`; at a PROVISIONAL one it is
+/// `Some(anchor_name)` and `here()` returns a link-time value the linker folds
+/// against the anchor's final address (D-H.1). The position is provisional
+/// whenever a label here would only be resolved at link
+/// ([`IrBuilder::position_is_provisional`]): the section's base follows
+/// placement (no explicit `vma:`), or an earlier fragment in it can still grow.
 fn here_pos(builder: &IrBuilder, origin: u32, anchor_name: &str) -> HerePos {
     let base = origin.wrapping_add(builder.current_offset());
-    let anchor = builder.section_has_relaxable().then(|| anchor_name.to_string());
+    let anchor = builder.position_is_provisional().then(|| anchor_name.to_string());
     HerePos { base, anchor }
 }
 
@@ -1232,9 +1235,10 @@ fn lower_item_guard(
     builder: &mut IrBuilder,
     diags: &mut Vec<Diagnostic>,
 ) -> bool {
-    // Provisional position → mint a candidate anonymous anchor for the guard's
-    // `here()` (D-H.8); the label is only DEFINED below if the guard used it.
-    let provisional = builder.section_has_relaxable();
+    // Provisional position (the base follows placement, or an earlier fragment
+    // can grow) → mint a candidate anonymous anchor for the guard's `here()`
+    // (D-H.8); the label is only DEFINED below if the guard used it.
+    let provisional = builder.position_is_provisional();
     let anchor_name = format!("__here${module_id}${}", *here_anchor_counter);
     let base = origin.wrapping_add(builder.current_offset());
     let here = HerePos {

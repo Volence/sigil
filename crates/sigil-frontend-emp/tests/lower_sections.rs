@@ -199,7 +199,9 @@ fn here_resolves_to_item_start_vma_and_advances() {
 
 #[test]
 fn here_outside_a_placed_section_uses_default_origin() {
-    // A top-level `data` (default `text` section, vma == lma == 0): here() == 0.
+    // A top-level `data` (default `text` section, no `vma:`): here() is a
+    // link-time value resolved as the label H is, and this single-section link
+    // places `text` at 0, so the emitted word is 0.
     let src = "module m\n\
                data H: u16 = here()\n";
     let (file, perrs) = parse_str(src);
