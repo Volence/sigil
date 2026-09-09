@@ -341,10 +341,53 @@ fn run_impl(
             // row-94 parallax pointer). A poison-free PINNED build skips it: sections
             // don't move, so a baked label == its relocated value — return the ordinary
             // module, byte-for-byte asl (the overwhelmingly common path).
-            if poison.is_empty() && !force_relocate {
+            //
+            // A PINNED build that has ALREADY FAILED skips it too, and that is a
+            // statement about what a failing run reports, not an optimization. Both
+            // things the bonus pass does are SUPPRESSIONS: (1) turns an unresolved
+            // `jsr`/`jmp` target into a deferral instead of an error, and (2) —
+            // `keep_labels_symbolic`, seven sites in this file — short-circuits a
+            // label-referencing operand BEFORE its fold, so a compound operand that
+            // folds to Poison raises nothing where an ordinary pass raises
+            // `unresolved long expression`. Both suppressions exist to serve a LINK
+            // that a failed run will never reach. Returning the converged ordinary
+            // pass instead reports everything an ordinary pass found.
+            //
+            // `already_failed` is read off the CONVERGED ORDINARY pass, so the gate
+            // CAN turn an `Ok` into an `Err`, and the honest statement of when is:
+            // the converged pass raised an error the bonus pass would have
+            // suppressed, and the bonus pass would then have deferred every
+            // remaining poison symbol away. Such a module is not linkable
+            // standalone — reaching this branch at all needs NON-EMPTY `poison`, and
+            // a bonus pass that empties it does so by building at least one
+            // length-variable `Fragment::JmpJsrSym`, which a link with no composition
+            // refuses ("unresolved jmp/jsr target … not defined in this link"). So
+            // the run still fails; the refusal moves from the linker to the front
+            // end, and gets more precise on the way. `force_relocate` is the first
+            // conjunct, so the CHAINED path that legitimately hands those fragments
+            // to a composition never reaches this reasoning at all.
+            // `failed_run_reports_everything.rs` pins both directions.
+            let already_failed =
+                !carried_fatals.is_empty() || diags.iter().any(|d| d.level == Level::Error);
+            if !force_relocate && (poison.is_empty() || already_failed) {
                 let mut module = module;
                 restore_missing_equ_exports(&mut module, &ever_exported, &env);
                 attach_guarded_equ_exports(&mut module, &opts.guarded_defines);
+                // Leftover poison is reported HERE for the same reason the bonus
+                // branch reports its own: this is the last pass that runs, so an
+                // operand still naming nothing is an error and not a deferral.
+                // Empty on the poison-free path, so this is the failed-run arm's
+                // line and nothing else's. Without it a `jsr Missing` on a failed
+                // run would be reported by neither pass, which is the one
+                // direction this change must never take.
+                let mut diags = diags;
+                for (name, span) in poison {
+                    diags.push(Diagnostic {
+                        level: Level::Error,
+                        message: format!("unresolved symbol `{name}` in operand"),
+                        primary: span,
+                    });
+                }
                 let diags = merge_carried_fatals(diags, &carried_fatals, &last_sources);
                 let diags = merge_carried_author_warnings(
                     diags,
