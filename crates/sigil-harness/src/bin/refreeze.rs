@@ -101,12 +101,11 @@ fn fail(msg: impl AsRef<str>) -> ExitCode {
 
 /// Resolve the aeon revision `--freeze` is about to freeze FROM, or refuse.
 ///
-/// Until this existed the freeze path never looked at `AEON_DIR` at all — it passed the
-/// environment through to `capture_goldens.sh`, whose `${AEON_DIR:-/home/volence/…/aeon}`
-/// fallback silently builds against the owner's LIVE working tree, which routinely carries
-/// hours of uncommitted content edits. The existing `--ab`/anchor guard fires on byte
-/// MOVEMENT, so it is blind to this by construction: the wrong tree gets frozen and the
-/// record says nothing about it.
+/// The freeze path resolves the tree HERE, rather than passing the environment through to
+/// `capture_goldens.sh` and letting that script's resolution stand as the record. What is
+/// frozen has to be attributable to a named revision, and the `--ab`/anchor guard cannot
+/// supply that: it fires on byte MOVEMENT, so a freeze from the wrong tree is invisible to
+/// it by construction, the wrong tree gets frozen and the record says nothing about it.
 ///
 /// This is not new policy. `docs/OVERSEER-REFERENCE.md` (*Worktree and environment quirks*)
 /// already requires freezing from a clean checkout of a committed SHA — a clean worktree of a
