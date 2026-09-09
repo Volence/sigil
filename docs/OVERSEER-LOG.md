@@ -6941,3 +6941,76 @@ Immediately after, a compound command left the shell in `s2disasm` and my next c
 reported **exit 101** from there. With stderr discarded that reads as a lint failure on the merged
 tree; it was `could not find Cargo.toml`. **Re-run from the right tree it is exit 0.** Caught only
 because the exit code disagreed with a landing run that had reported `CLIPPY_EXIT 0` minutes earlier.
+
+## 2026-09-09 cut - closed history moved verbatim from the boot read
+
+Moved when `docs/OVERSEER.md` crossed its byte bound a second time. Each entry carries its
+original line span and the heading it sat under. The rules these episodes earned stay in the
+boot read; what moved is the narrative, the landing record and the measurements behind them.
+
+### The `REPIN-TESTS-HINT-UNDERLISTED` landing record
+
+*(original `docs/OVERSEER.md` lines 683-702, under: REPIN-TESTS-HINT-UNDERLISTED: LANDED)*
+
+`repin.toml`'s per-symbol `tests = [...]` fed one printed rerun hint and nothing else, so an
+incomplete list could not fail. The hint has been DERIVED at print time since `22b1a19f`, and at
+`53bc85de` the field is deleted from the manifest AND from the grammar: all four spec structs carry
+`serde(deny_unknown_fields)`, so a row that spells `tests` is now a parse error rather than a
+silently ignored line. `repin::tests::a_tests_field_is_a_manifest_parse_error` holds that, with a
+positive control that the same fixture minus the one line parses. Editing those rows by hand was
+always the wrong fix: that is a population to maintain whose failure mode is "green because nobody
+maintained it", which this file rejects twice elsewhere. Deriving deleted the population.
+
+**512 declarations were deleted, not 412.** Instrument: `/usr/bin/grep -c '^tests = \['` on the
+manifest, corroborated by `git grep -c`, by the 512 `tests:` doc suffixes in `pins.rs`, and by
+`repin`'s own drift report ("512 committed-only, 512 regenerated-only"). 412 was the count in early
+August 2026 and was carried forward unchanged, through the 2026-08-30 sweep and the 2026-09-02
+promotion, while the real figure climbed past 510. The commit that last wrote "412" already
+measured 512 at its own parent. The row was made count-free for exactly this reason and the figure
+went on being quoted anyway: a figure taken from a row rather than re-measured at the quoting date.
+
+*(The original measurement, the mechanism, its instance and the two method findings:
+`docs/OVERSEER-LOG.md`, 2026-09-04 cut, original lines 1186-1202. The 190-of-412 numerator is a
+name-anywhere grep over a population that no longer exists and is not re-derivable.)*
+
+### The `S4BUDGET-STALE-ASSUMPTION` arc: the enumeration, the wrong conclusion, and the discharge
+
+*(original `docs/OVERSEER.md` lines 847-854, under: A ROUTED ROW MUST NAME ITS ARTIFACT, AND "ROUTED" IS TWO CLAIMS (2026-09-06))*
+
+**⚠ AND THE ENUMERATION FOUND A WORSE ONE, which is why the instance is not the fix** (bar 8,
+turned on ourselves). Four rows here name the engine lane. Two were fine, one
+(`ROWREMAP-HEAD-LABEL-RULED`) had a real artifact nobody had pointed at, and
+**`S4BUDGET-STALE-ASSUMPTION`'s wording matches no artifact in this tree at all.** Its instrument
+was working, `s4budget` appears in 14 files here, so that is a genuine non-match and not an empty
+grep. Either the source is somewhere the search missed, or **the row has drifted from its source
+and is now a reconstruction.** It was NOT sent to aeon as bookable, and it must not be until it is
+grounded.
+
+*(original `docs/OVERSEER.md` lines 864-889, under: A ROUTED ROW MUST NAME ITS ARTIFACT, AND "ROUTED" IS TWO CLAIMS (2026-09-06))*
+
+**COMMITMENT MADE TO AEON 2026-09-06, banked because it would otherwise live only in mail.** They
+booked `S4BUDGET-STALE-ASSUMPTION` on their side **as a refusal rather than an omission**, with the
+re-entry condition that it returns only by being re-derived from their own tree. This lane owed the
+other half: ground it and send the path, or conclude it never had a source and retire it. Their
+booking is aeon `ab5dfc68`.
+
+**DISCHARGED 2026-09-07: the row IS grounded, and the 2026-09-06 attempt failed because it searched
+THE WRONG TREE.** The row is a finding about aeon's tool, so no artifact for it was ever going to
+exist here; the grep was working and its subject was one repo over. **A failing lookup tells you
+about the tree you ran it in, never about the object** — protocol bar 16(d), and the instance is
+this lane concluding a row had "drifted from its source" on the strength of a search that could not
+have found it. The artifacts: this lane's own `docs/OVERSEER-LOG.md` entry carrying the quoted
+string, and aeon `tools/s4budget.py` — the premise appears TWICE, in `load_vram_layout`'s docstring
+and in the user-facing message *"VRAM: UNMEASURED - a sigil listing emits no constants"*.
+
+**What is actually true, measured here on `.aeon-ls12-fix`'s built listings and NOT taken from the
+row:** `s4.lst` carries **780 `EQU` rows**, of which **32 are `VRAM_*`**, in the parseable form
+`EQU VRAM_PLANE_A = $0000C000` — 19 address-shaped, 12 `_TILES`, 1 `_BYTES`, identical in the plain
+and debug shapes. Their docstring names `VRAM_PLANE_A` as a symbol the old approach scraped and says
+it "has no input at all"; it is present. **The row's own figure of 17 is NOT restated here**, because
+a refuted mechanism does not leave its arithmetic standing and the measurement is 32 by enumeration.
+**And their CONCLUSION survives:** reading `vram.toml` is right for a reason they state and the
+symbols cannot supply — occupancy is the UNION of tile ranges and `overlay_with` lives only in the
+toml. So this is a right conclusion resting on a refuted premise, and only the premise is the
+defect; it is the user-facing half that misleads, since it tells an author to add constants that
+already exist.
