@@ -215,7 +215,10 @@ fn price() {
     let full: u16 = 0x7FFF;
     let minus_one: u16 = 0x7FFE;
 
-    let rows: Vec<(&str, u32, Vec<O>, Option<Width>, &str)> = vec![
+    // One priced instruction: source text, byte length, operands, width, and the cost-table
+    // family it is looked up under. Named because a five-field tuple is unreadable inline.
+    type PriceRow = (&'static str, u32, Vec<O>, Option<Width>, &'static str);
+    let rows: Vec<PriceRow> = vec![
         ("move.l  a0,-(sp)", 2, vec![O::Reg(Reg::A0), O::PreDec(Reg::A7)], Some(Width::L), "move"),
         ("movea.l (sp),a0", 2, vec![O::Ind(Reg::A7), O::Reg(Reg::A0)], Some(Width::L), "movea"),
         ("movea.l (sp)+,a0", 2, vec![O::PostInc(Reg::A7), O::Reg(Reg::A0)], Some(Width::L), "movea"),
