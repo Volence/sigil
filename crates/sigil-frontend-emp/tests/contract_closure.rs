@@ -190,6 +190,133 @@ fn absent_callee_is_unresolved() {
 }
 
 // ---------------------------------------------------------------------------
+// The declared fall-through edge (`falls_into`).
+// ---------------------------------------------------------------------------
+
+/// A `falls_into SUCC` proc is charged SUCC's whole effect. Control leaves the
+/// body off its closing `}` and continues into SUCC inside the same call, so
+/// everything SUCC clobbers is visible to this proc's callers — there is simply
+/// no transfer instruction for a mnemonic walk to find.
+#[test]
+fn falls_into_successor_effect_unions_in() {
+    let mut procs = BTreeMap::new();
+    procs.insert(
+        "Head".to_string(),
+        ProcNode {
+            local_writes: regs(&["d6", "d7"]),
+            falls_into: Some("Body".to_string()),
+            ..Default::default()
+        },
+    );
+    procs.insert(
+        "Body".to_string(),
+        ProcNode { local_writes: regs(&["d0", "d1", "a2"]), ..Default::default() },
+    );
+    let c = compute_closure(&procs, &BTreeMap::new());
+    assert_eq!(c.effective["Head"], eff(&["a2", "d0", "d1", "d6", "d7"]));
+}
+
+/// THE DERIVATION, and the reason the bare union above is not the whole pin: the
+/// two spellings of one mechanism must agree. A proc that ENDS in a tail transfer
+/// to SUCC and a proc that FALLS INTO SUCC hand their callers the same register
+/// file — the first is an explicit `jbra SUCC`, the second is the same transfer
+/// with the instruction omitted because the pair is adjacent in the image. The
+/// corpus holds exactly this pair (`Player_SensorFloor` tails into
+/// `Player_SensorSurface`, `Player_SensorCeiling` falls into it), and before the
+/// edge was modelled the two read differently: the tailing twin carried the
+/// successor's ten registers and the falling twin carried two.
+#[test]
+fn falls_into_and_a_tail_transfer_to_the_same_successor_agree() {
+    let mut procs = BTreeMap::new();
+    procs.insert(
+        "Tailing".to_string(),
+        ProcNode {
+            local_writes: regs(&["d6", "d7"]),
+            direct_callees: vec!["Shared".to_string()],
+            ..Default::default()
+        },
+    );
+    procs.insert(
+        "Falling".to_string(),
+        ProcNode {
+            local_writes: regs(&["d6", "d7"]),
+            falls_into: Some("Shared".to_string()),
+            ..Default::default()
+        },
+    );
+    procs.insert(
+        "Shared".to_string(),
+        ProcNode { local_writes: regs(&["d0", "d1", "a1"]), ..Default::default() },
+    );
+    let c = compute_closure(&procs, &BTreeMap::new());
+    assert_eq!(
+        c.effective["Falling"], c.effective["Tailing"],
+        "a declared fall-through and an explicit tail transfer to the same successor \
+         are one mechanism spelled two ways; their effective sets must not differ"
+    );
+    // Spelled out, so a test that agreed because BOTH went empty would fail.
+    assert_eq!(c.effective["Falling"], eff(&["a1", "d0", "d1", "d6", "d7"]));
+}
+
+/// The edge propagates transitively and charges a CALLER of the falling proc,
+/// which is the direction the under-declaration gate reads: `Caller` calls
+/// `Head`, `Head` falls into `Body`, so `Body`'s writes are `Caller`'s effect.
+#[test]
+fn falls_into_propagates_through_a_caller() {
+    let mut procs = BTreeMap::new();
+    procs.insert(
+        "Caller".to_string(),
+        ProcNode { direct_callees: vec!["Head".to_string()], ..Default::default() },
+    );
+    procs.insert(
+        "Head".to_string(),
+        ProcNode { falls_into: Some("Body".to_string()), ..Default::default() },
+    );
+    procs.insert(
+        "Body".to_string(),
+        ProcNode { local_writes: regs(&["d4"]), ..Default::default() },
+    );
+    let c = compute_closure(&procs, &BTreeMap::new());
+    assert_eq!(c.effective["Caller"], eff(&["d4"]));
+}
+
+/// A ⊤ successor makes the falling proc ⊤: an unbounded indirect call past the
+/// fall-through can clobber anything, and nothing may read narrower than that.
+#[test]
+fn falls_into_a_top_successor_is_top() {
+    let mut procs = BTreeMap::new();
+    procs.insert(
+        "Head".to_string(),
+        ProcNode {
+            local_writes: regs(&["d6"]),
+            falls_into: Some("Body".to_string()),
+            ..Default::default()
+        },
+    );
+    procs.insert(
+        "Body".to_string(),
+        ProcNode { indirect_sites: vec![None], ..Default::default() },
+    );
+    let c = compute_closure(&procs, &BTreeMap::new());
+    assert!(c.effective["Head"].top, "a ⊤ successor must not be read as narrower");
+}
+
+/// An unresolvable fall-through successor is a HOLE, for the same reason a call
+/// target is: control continues into code the closure cannot read. A silently
+/// ignored one would read as "this proc ends here", which is the narrowing
+/// direction.
+#[test]
+fn absent_falls_into_successor_is_unresolved() {
+    let mut procs = BTreeMap::new();
+    procs.insert(
+        "Head".to_string(),
+        ProcNode { falls_into: Some("MysteryAsmTail".to_string()), ..Default::default() },
+    );
+    let c = compute_closure(&procs, &BTreeMap::new());
+    assert!(c.unresolved_callees.contains("MysteryAsmTail"));
+}
+
+// ---------------------------------------------------------------------------
 // The firing check (§9) — effective vs declared clobbers∪params∪out.
 // ---------------------------------------------------------------------------
 

@@ -1854,3 +1854,129 @@ fn contract_baselines_hold_for_every_shipped_shape() {
         "the shape list shrank, a baseline that walks fewer shapes pins less"
     );
 }
+
+/// Every `falls_into SUCC` declaration in the corpus, as `(proc, successor)` —
+/// including the `(cpu: z80)` ones, which the caller filters by presence in the
+/// 68k closure rather than by module, so no module-classification copy is kept
+/// here to drift.
+fn falls_into_pairs(srcs: &[(PathBuf, String)]) -> Vec<(String, String)> {
+    fn walk(items: &[sigil_frontend_emp::ast::Item], out: &mut Vec<(String, String)>) {
+        for it in items {
+            match it {
+                sigil_frontend_emp::ast::Item::Proc(p) => {
+                    if let Some(s) = &p.falls_into {
+                        out.push((p.name.clone(), s.clone()));
+                    }
+                }
+                sigil_frontend_emp::ast::Item::Section(s) => walk(&s.items, out),
+                _ => {}
+            }
+        }
+    }
+    let mut out = Vec::new();
+    for (_p, s) in srcs {
+        walk(&parse_str(s).0.items, &mut out);
+    }
+    out.sort();
+    out
+}
+
+/// THE FALL-THROUGH EDGE IS MODELLED — `falls_into SUCC` is a closure edge, not
+/// decoration.
+///
+/// A declared fall-through leaves the body off its closing `}` and continues into
+/// SUCC inside the same call, so everything SUCC clobbers is visible to this
+/// proc's callers. It arrives with NO transfer instruction, and the node builder's
+/// callee edges come from CALL and TAIL mnemonics in the evaluated body — so
+/// unless the declaration is charged as its own edge, the successor's writes are
+/// absent from the falling proc's `effective` set. Measured before the edge
+/// landed: `Player_SensorCeiling` read as clobbering `d6/d7` while
+/// `Player_SensorSurface`, the body it falls into, clobbers `a1/a2/d0-d5`.
+///
+/// Two halves, and the second is the one that cannot be satisfied by accident:
+///
+/// - the INVARIANT, over every 68k pair in the corpus: `effective(P) ⊇
+///   effective(SUCC)` (⊤ successor ⇒ ⊤ proc). A missing edge breaks it at once;
+/// - the DERIVATION, on the corpus's own twin pair: `Player_SensorFloor` ends in
+///   `jbra Player_SensorSurface` and `Player_SensorCeiling` declares `falls_into
+///   Player_SensorSurface`. Two spellings of one transfer — the second is the
+///   first with the instruction omitted because the pair is adjacent in the image
+///   — so the two heads must hand their callers the same register file. Before the
+///   edge they did not, and that disagreement is what the parcel closed.
+#[test]
+fn a_declared_fall_through_is_a_closure_edge_on_every_shape() {
+    let Some(srcs) = corpus_sources() else { return };
+    let pairs = falls_into_pairs(&srcs);
+    // LOUD WHEN UNMEASURABLE: a walk that lost the declarations would satisfy
+    // every assertion below over an empty population.
+    assert!(
+        pairs.len() >= 25,
+        "only {} `falls_into` declarations parsed out of the corpus, too few to be \
+         the real population, so the invariant below would hold vacuously: {pairs:?}",
+        pairs.len()
+    );
+
+    for (label, _profile, r) in analyze_every_shape(&srcs) {
+        let eff = &r.closure.effective;
+        // The 68k subset: a `(cpu: z80)` proc carries no 68k register effect and is
+        // absent from this closure by construction (PASS 2 skips the module).
+        let mut checked = 0usize;
+        for (proc, succ) in &pairs {
+            let (Some(p_eff), Some(s_eff)) = (eff.get(proc), eff.get(succ)) else { continue };
+            checked += 1;
+            if s_eff.top {
+                assert!(
+                    p_eff.top,
+                    "shape `{label}`: `{proc} falls_into {succ}` and the successor's \
+                     effect is ⊤, so the falling proc's must be too. A narrower \
+                     reading tells a caller its registers survive a body that can \
+                     clobber anything"
+                );
+                continue;
+            }
+            assert!(
+                p_eff.top || s_eff.regs.iter().all(|reg| p_eff.regs.contains(reg)),
+                "shape `{label}`: `{proc} falls_into {succ}` but {proc}'s effective set \
+                 {:?} is missing {:?} from its successor's {:?}. The fall-through edge \
+                 is not being charged, so every caller of {proc} reads a contract \
+                 narrower than the code",
+                p_eff.regs,
+                s_eff.regs.difference(&p_eff.regs).collect::<Vec<_>>(),
+                s_eff.regs
+            );
+        }
+        assert!(
+            checked >= 20,
+            "shape `{label}`: only {checked} of {} `falls_into` pairs were resolvable \
+             in the 68k closure; the walk lost procs and the invariant above ranged \
+             over almost nothing",
+            pairs.len()
+        );
+
+        // THE TWIN PAIR, named: the tail-transfer spelling and the fall-through
+        // spelling of the same transfer into `Player_SensorSurface`.
+        let floor = eff.get("Player_SensorFloor").unwrap_or_else(|| {
+            panic!("shape `{label}`: Player_SensorFloor absent from the closure")
+        });
+        let ceiling = eff.get("Player_SensorCeiling").unwrap_or_else(|| {
+            panic!("shape `{label}`: Player_SensorCeiling absent from the closure")
+        });
+        assert_eq!(
+            (ceiling.top, &ceiling.regs),
+            (floor.top, &floor.regs),
+            "shape `{label}`: Player_SensorCeiling (`falls_into Player_SensorSurface`) \
+             and Player_SensorFloor (`jbra Player_SensorSurface`) are one transfer \
+             spelled two ways, yet the closure reads them differently"
+        );
+        // Non-vacuity for the equality: both heads write d6/d7 themselves and the
+        // shared body writes a1/a2/d0-d5, so agreeing at a SMALL set would mean the
+        // shared body's effect reached neither.
+        assert!(
+            ceiling.regs.len() >= 10,
+            "shape `{label}`: the sensor twins agree at only {:?}, which is smaller \
+             than the shared body's own writes, so they are equal because both lost \
+             the successor, not because both found it",
+            ceiling.regs
+        );
+    }
+}

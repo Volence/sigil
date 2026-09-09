@@ -122,6 +122,18 @@ pub const INOUT_UNVERIFIED_BASELINE: &[(&str, &str)] = &[];
 /// `TileCache_FillRow @ TileCache_FindStagedBlock :: a1` and `Load_Object @
 /// AllocDynamic :: a1`; `calls.rs`'s `destroys_value` header carries the per-site
 /// reasoning. An edge-precise D1c would dissolve the class.
+///
+/// A SECOND documented FP class, six rows, all on the player sensors: the callee
+/// returns its result in `d0` (and `d1` for an angle) and declares NO `out(...)`,
+/// so the post-call read of that register is the callee's PRODUCT and D1c, reading
+/// the declaration, can only see a clobbered held value. `Player_SensorFloor`'s
+/// prose header states the convention — `Out: d0.w dist, d1.b angle, d2.b attr`
+/// against `clobbers(d0-d7/a1-a2)` — and `Player_SensorCeiling` says "same
+/// contract". The `Ground_Move_Cap @ Player_SensorWallDir :: d0`, `PState_Spindash
+/// @ Player_SensorFloor :: d0/d1` and `TestPlayer_Main @ Player_SensorFloor ::
+/// d0/d2` rows here are the same class, already frozen. KILL CONDITION: declaring
+/// the sensors' real `out(...)` surface in aeon dissolves all of them at once, and
+/// it is an aeon contract change, not a sigil one.
 pub const D1C_BASELINE: &[(&str, &str, &str)] = &[
     // Adjudicated (aeon character-dispatch C2, Tails' flight): these three rows
     // were `PState_AirShared @ …` verbatim. The air body's angle-decay +
@@ -131,8 +143,35 @@ pub const D1C_BASELINE: &[(&str, &str, &str)] = &[
     // name moved. Same edge-blind close as the other documented FPs: d4 is the
     // probes' PRODUCED hit flag on the taken edge, not a destroyed held value.
     ("Air_Collide", "Air_WallProbeLeft", "d4"),
-    ("Air_Collide", "Air_WallProbeRight", "d1"),
     ("Air_Collide", "Air_WallProbeRight", "d4"),
+    // MOVED, 2026-09-09, with the `falls_into` closure edge (parcel
+    // CLOSURE-MISSES-FALLS-INTO-EDGE). The row used to read
+    // `Air_Collide @ Air_WallProbeRight :: d1` and it is the same d1, the same
+    // definition and the same READ — only the call charged for it moved, to the
+    // LATER call on the one path that reaches the read. `Air_Collide`'s d1 is
+    // defined at `move.w d3, d1` (the |x_vel| compare input); in `.mostly_up` the
+    // only read of d1 after any `Air_WallProbeRight` call is `move.b d1, d3` (the
+    // ceiling angle), and the sole path to it runs through `jbsr
+    // Player_SensorCeiling`. That callee now carries d1 in its effective set (it
+    // falls into `Player_SensorSurface`, which writes d0-d5), so D1c's forward walk
+    // stops there: the value the read observes is the SENSOR's angle, produced two
+    // instructions earlier, not the wall probe's victim. `Air_Collide :: d1` is
+    // therefore one row before and one row after — the multiset count for that
+    // (proc, register) is unchanged, and the callee column is now the call that
+    // actually destroys and reproduces it.
+    ("Air_Collide", "Player_SensorCeiling", "d0"),
+    ("Air_Collide", "Player_SensorCeiling", "d1"),
+    // NEW, 2026-09-09, same parcel and same undeclared-out class as the sensor rows
+    // described above. `Air_WallProbe{Left,Right}` load the probe point into d0
+    // (`move.w x_pos(a0), d0` ± PUSH_RADIUS — an undeclared INPUT), call
+    // `Player_SensorWallAt`, then `tst.w d0` on the returned DISTANCE, which the
+    // proc's own header documents as `Out: d0.w dist`. The rows appear now because
+    // `Player_SensorWallAt`'s body is three instructions and a fall-through: until
+    // the edge was modelled its effective set read `{d2}`, so no caller could be
+    // charged anything it destroys. Its successor `Player_SensorWallDir` carries
+    // `a1/d0-d6`, which the declaration of BOTH halves already states.
+    ("Air_WallProbeLeft", "Player_SensorWallAt", "d0"),
+    ("Air_WallProbeRight", "Player_SensorWallAt", "d0"),
     ("CreateChild_Complex", "AllocDynamic", "a1"),
     ("CreateChild_FlipAware", "AllocDynamic", "a1"),
     ("CreateChild_Linked", "AllocDynamic", "a1"),
@@ -157,6 +196,18 @@ pub const D1C_BASELINE: &[(&str, &str, &str)] = &[
     // reads Glide_Collide's PRODUCED flags byte (word-width stack pop), not the
     // gravity value. Same edge-blind close as the Air_Collide/Air_WallProbe rows.
     ("PState_GlideFall", "Glide_Collide", "d0"),
+    // NEW, 2026-09-09 (`falls_into` closure edge), and the SAME undeclared-out class
+    // as `PState_Spindash @ Player_SensorFloor :: d0` directly below: both jump
+    // gates read `cmpi.w #PHYS_JUMP_HEADROOM, d0` immediately after `jbsr
+    // Player_SensorCeiling`, so the d0 charged as a destroyed held value is the
+    // sensor's produced CLEARANCE. The ceiling twin was invisible while its
+    // effective set read `{d6,d7}` — its three-instruction body sets the class mask
+    // and quadrant and falls into `Player_SensorSurface`, which does the work. The
+    // FLOOR twin, spelling the identical transfer as `jbra Player_SensorSurface`,
+    // has fired all along: that asymmetry between two spellings of one transfer is
+    // what this parcel removed.
+    ("PState_Ground", "Player_SensorCeiling", "d0"),
+    ("PState_Roll", "Player_SensorCeiling", "d0"),
     ("PState_Spindash", "Player_SensorFloor", "d0"),
     ("PState_Spindash", "Player_SensorFloor", "d1"),
     ("Parallax_Update", "Decode_Factor_A", "d2"),

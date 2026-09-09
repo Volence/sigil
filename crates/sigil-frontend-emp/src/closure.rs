@@ -53,6 +53,19 @@ pub struct ProcNode {
     /// Symbols this proc calls via `jsr`/`jbsr`/`bsr` (resolved by name against
     /// the proc map; a name that is neither a proc nor an extern is a hole).
     pub direct_callees: Vec<String>,
+    /// The proc's declared `falls_into SUCC` successor. Control leaves this body
+    /// off its closing `}` and CONTINUES into `SUCC` inside the same call, so
+    /// everything `SUCC` clobbers, this proc's callers see clobbered — the same
+    /// effect a tail transfer carries, arriving with no transfer instruction for
+    /// the mnemonic walk to see. It is therefore a real edge of the closure and
+    /// not decoration: without it the falling proc's `effective` set is missing
+    /// its successor's writes, which reads as an over-declared contract in the
+    /// safe direction and, in the destructive one, LOSES the
+    /// `[proc.clobber-undeclared]` firing for a register the pair really does
+    /// destroy. Kept apart from [`direct_callees`](Self::direct_callees) because
+    /// it is not a call site: nothing returns here, and a consumer that counts
+    /// calls must not count it.
+    pub falls_into: Option<String>,
     /// Each indirect call site's declared bound: `Some(type_name)` names a §4
     /// contract type; `None` is an UNBOUNDED indirect call (⊤).
     pub indirect_sites: Vec<Option<String>>,
@@ -279,6 +292,15 @@ pub fn compute_closure_with(
                 // once after the fixpoint (it contributes nothing to the
                 // union, i.e. treated as ⊥, and is surfaced as unresolved).
             }
+            // The declared fall-through edge. Charged exactly like a tail
+            // transfer: control continues into the successor within this call,
+            // so the successor's whole effect is this proc's effect too. Same
+            // hole treatment as a callee (absent ⇒ ⊥ here, surfaced below).
+            if let Some(succ) = &node.falls_into {
+                if let Some(se) = effective.get(resolve_callee_key(procs, succ)) {
+                    acc.union_with(se);
+                }
+            }
             for site in &node.indirect_sites {
                 match site {
                     // Unbounded indirect = ⊤ (§1's load-bearing fact).
@@ -324,10 +346,12 @@ pub fn compute_closure_with(
 
     // Collect holes: direct callees named by some proc that are neither a proc
     // nor an extern in the map (nor an exported label of one — see
-    // `resolve_callee_key`).
+    // `resolve_callee_key`). A declared fall-through successor is walked with
+    // them: an unresolvable one is a hole for the same reason a call target is,
+    // control continues into code the closure cannot read.
     let mut unresolved_callees = BTreeSet::new();
     for node in procs.values() {
-        for callee in &node.direct_callees {
+        for callee in node.direct_callees.iter().chain(node.falls_into.iter()) {
             if !procs.contains_key(resolve_callee_key(procs, callee)) {
                 unresolved_callees.insert(callee.clone());
             }
