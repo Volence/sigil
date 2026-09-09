@@ -1717,7 +1717,7 @@ fn section_attrs(
     let mut byte_access = false;
     for (name, expr) in &sec.attrs {
         match name.as_str() {
-            "cpu" => cpu = attr_cpu(expr),
+            "cpu" => cpu = attr_cpu(expr, diags),
             // `access: byte` (checkpoint ruling, 2026-07-09): a POSITIVE
             // declaration that this section's cells are read byte-wise (the
             // packed-record discipline — aeon's 5-byte dac descriptor
@@ -1817,7 +1817,7 @@ fn module_declared_cpu(module: &ast::ModuleDecl, diags: &mut Vec<Diagnostic>) ->
     let mut cpu = None;
     for (name, expr) in &module.attrs {
         match name.as_str() {
-            "cpu" => cpu = Some(attr_cpu(expr)),
+            "cpu" => cpu = Some(attr_cpu(expr, diags)),
             // The rung-2 module-scope `invariant` class (ruling 4): the
             // forward-compat slot T1 named for it. Its CONTENT (a `preserves(...)`
             // reglist / a `holds(...)` value bound) is validated by
@@ -2087,14 +2087,104 @@ fn cpu_name(cpu: Cpu) -> &'static str {
     }
 }
 
-/// Resolve a `cpu:` attribute expression to a [`Cpu`]: `z80` (case-insensitive)
-/// selects [`Cpu::Z80`]; anything else defaults to [`Cpu::M68000`].
-fn attr_cpu(expr: &ast::Expr) -> Cpu {
-    if let ast::Expr::Path(p) = expr {
-        if p.segments.last().is_some_and(|s| s.eq_ignore_ascii_case("z80")) {
-            return Cpu::Z80;
-        }
+/// Every processor spelling a `.emp` `cpu:` attribute may name, and the target
+/// each one selects. The single source of truth: [`cpu_for_spelling`] resolves
+/// against it and [`unrecognized_cpu`] lists it back to the reader, so the
+/// refusal can never advertise a spelling the attribute does not accept, and
+/// narrowing the language surface later is a change to these rows alone.
+///
+/// Two spellings select the 68000. `m68000` and `m68k` name one instruction set,
+/// and both are written across this tree today (`examples/main.emp` is the
+/// second). Neither of AS's bare-numeric forms can appear here: `68000` lexes as
+/// an integer literal rather than a path, so the `.emp` surface and the
+/// `sigil_frontend_as::CPU_SPELLINGS` surface are deliberately different sets.
+/// Which of the two 68000 spellings is canonical is a language-surface question
+/// for the owner, not a matter this table decides.
+pub const CPU_SPELLINGS: &[(&str, Cpu)] = &[
+    ("m68000", Cpu::M68000),
+    ("m68k", Cpu::M68000),
+    ("z80", Cpu::Z80),
+];
+
+/// The target a `cpu:` attribute's processor name selects, or `None` when the
+/// `.emp` front end does not recognize that spelling. `.emp` processor names are
+/// case-insensitive, so the comparison folds.
+pub fn cpu_for_spelling(name: &str) -> Option<Cpu> {
+    CPU_SPELLINGS
+        .iter()
+        .find(|(spelling, _)| spelling.eq_ignore_ascii_case(name))
+        .map(|(_, cpu)| *cpu)
+}
+
+/// The refusal raised when a `cpu:` attribute names a processor this front end
+/// does not recognize.
+///
+/// It names the value it refused and prints the remedy, the accepted lines
+/// listed from [`CPU_SPELLINGS`] itself rather than transcribed, and says why
+/// the answer is a refusal rather than a default. A processor picked by default
+/// is the worst shape of wrong: a section its author meant for the Z80 lowers as
+/// a 68000, and every correct Z80 instruction in it is then reported as an
+/// unknown mnemonic, so the tool speaks and points away from the cause.
+pub fn unrecognized_cpu(written: &str) -> String {
+    let accepted: Vec<String> = CPU_SPELLINGS
+        .iter()
+        .map(|(spelling, _)| format!("`cpu: {spelling}`"))
+        .collect();
+    format!(
+        "unrecognized processor `{written}`: sigil's .emp front end does not recognize this \
+         processor name, and will not lower against a processor nobody named. Write one of {}. \
+         A default-chosen processor rejects the section's own correct instructions as unknown \
+         mnemonics, pointing a reader at working code instead of at this line.",
+        accepted.join(", ")
+    )
+}
+
+/// The offending `cpu:` value as the author wrote it, for [`unrecognized_cpu`].
+/// A bare-numeric name (`cpu: 68000`) reaches here as an integer literal, so it
+/// is named by its digits rather than by its AST shape.
+fn attr_cpu_written(expr: &ast::Expr) -> String {
+    match expr {
+        ast::Expr::Path(p) => p.segments.join("."),
+        ast::Expr::Int(n, _) => n.to_string(),
+        ast::Expr::Float(f, _) => f.to_string(),
+        ast::Expr::Str(s, _) => format!("\"{s}\""),
+        ast::Expr::LocalLabel(s, _) => format!(".{s}"),
+        _ => "(expression)".to_string(),
     }
+}
+
+/// A `cpu:` attribute expression resolved against [`CPU_SPELLINGS`], or `None`
+/// when it names nothing this front end recognizes.
+///
+/// Only a single-segment path is a processor name. A dotted path is not: reading
+/// its last segment alone would let a module path's tail decide the processor.
+///
+/// The silent half of the pair. A reader that RE-resolves an attribute already
+/// checked at its declaration site uses this, so one mistake is reported once.
+fn attr_cpu_opt(expr: &ast::Expr) -> Option<Cpu> {
+    match expr {
+        ast::Expr::Path(p) if p.segments.len() == 1 => cpu_for_spelling(&p.segments[0]),
+        _ => None,
+    }
+}
+
+/// Resolve a `cpu:` attribute expression to a [`Cpu`] against [`CPU_SPELLINGS`].
+/// A value that is not one of those spellings is REFUSED by name at its own
+/// span, never coerced to a default.
+///
+/// Poison-tolerant like the other attribute diagnostics here: the returned
+/// [`Cpu::M68000`] lets the rest of the file lower so a reader sees more than
+/// one diagnostic per run. The refusal is an error, so nothing it touched is
+/// written out.
+fn attr_cpu(expr: &ast::Expr, diags: &mut Vec<Diagnostic>) -> Cpu {
+    if let Some(cpu) = attr_cpu_opt(expr) {
+        return cpu;
+    }
+    err(
+        diags,
+        crate::parser::expr_span(expr),
+        unrecognized_cpu(&attr_cpu_written(expr)),
+    );
     Cpu::M68000
 }
 
@@ -2228,9 +2318,14 @@ fn validate_inout_boundaries(items: &[ast::Item], cpu: Cpu, diags: &mut Vec<Diag
                 );
             }
             ast::Item::Section(s) => {
+                // A RE-read of an attribute [`section_attrs`] already resolved and
+                // already refused if unrecognized, so it resolves silently here:
+                // one wrong `cpu:` earns one diagnostic. An unrecognized value
+                // inherits the enclosing processor rather than switching to one
+                // nobody named; the file carries a refusal either way.
                 let sec_cpu = s.attrs.iter()
                     .find(|(k, _)| k == "cpu")
-                    .map(|(_, v)| attr_cpu(v))
+                    .and_then(|(_, v)| attr_cpu_opt(v))
                     .unwrap_or(cpu);
                 validate_inout_boundaries(&s.items, sec_cpu, diags);
             }

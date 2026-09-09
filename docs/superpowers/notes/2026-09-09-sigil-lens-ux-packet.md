@@ -39,7 +39,14 @@ other's half: one arrived by trying to produce a ROM, the other by sweeping flag
 
 ## Findings the controller re-derived firsthand
 
-### 1 . An unrecognized processor name silently assembles as 68000 . **firsthand** . UXb F1/F2
+### 1 . An unrecognized processor name silently assembles as 68000 . **firsthand** . UXb F1/F2 . **CLOSED**
+
+**Closed on branch `parcel/emp-cpu-name-refusal`.** Refused by name at the value's span against
+`lower::CPU_SPELLINGS`, the ruling below now enumerated onto the `.emp` surface. Two things the
+finding did not anticipate: the value reaches THREE call sites, not two (the third re-reads an
+attribute already refused, so it resolves silently and one mistake earns one diagnostic), and two
+further mirrors of the resolver live outside the lowering module, in `corpus_contracts` and in the
+`cycle_fraction` harness bin. All five now read the one table.
 
 `section code (cpu: banana, vma: $0)` holding 68k code and the identical file spelling
 `cpu: m68000` both emit `70 01 4E 75`, `built: 4 bytes`, **exit 0, no diagnostic anywhere**.

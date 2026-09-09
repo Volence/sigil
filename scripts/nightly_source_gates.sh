@@ -107,6 +107,13 @@ SOURCE_GATES=(
     # fixture from a call aimed at a real tree, so the file would otherwise be
     # UNCLASSIFIED and darken this whole lane.
     bare_run_refuses
+    # the `.emp` `cpu:` attribute's accepted spellings, held to what aeon WRITES: the
+    # gate censuses aeon's `*.emp` sources for processor names and requires the front
+    # end to accept every distinct one. Source only, it reads `.emp` text and lowers
+    # in-process, opening no ROM and comparing no committed artifact. Its whole point
+    # is to fail HERE rather than in aeon's build, so a nightly that skipped it would
+    # leave the promise it stands for unmeasured until an aeon build broke.
+    emp_cpu_attr_spelling
     # whole-corpus source analyses
     contract_closure_corpus
     dead_save_corpus
