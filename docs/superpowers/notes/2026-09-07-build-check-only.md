@@ -19,6 +19,14 @@ time with a usage error (exit 2), the same shape `--report` already used. There 
 no `--help` in this CLI; the usage block prints on any parse error, and `sigil
 build --help` reaches it through the unknown-argument path (exit 2). Its text now:
 
+> **Superseded 2026-09-09 (`parcel/cli-help`).** The two sentences above are no
+> longer true of the binary. `sigil --help`, `-h` and `help` print help at exit 0,
+> and `sigil build --help` prints the build page directly rather than reaching a
+> usage block through the unknown-argument path. Every usage text now lives in the
+> `ENTRIES` table in `crates/sigil-cli/src/main.rs`, which is also what `main`
+> dispatches on; the block quoted below is the shape it had at this note's date and
+> is kept as the record of what `--check` added to it.
+
 ```
 usage: sigil build --aeon <dir> [-o <out.bin>] [--emit-lst <lst>] [--game sonic4|demo] [--debug] [--config-a|--config-b|--lean] [--report ram|contracts] [--extra-entry <module|path.emp>]... [--check]
 note:  --extra-entry evaluates the NAMED module's comptime guards; the named module must emit nothing (its own imports are not checked)

@@ -29,7 +29,7 @@ against the pinned tree; **seat** means it is carried on the seat's committed ev
 
 | # | target | UXa met it as | UXb met it as |
 |---|---|---|---|
-| C-1 | **There is no help** | job 1: `--help` consumed as a filename, the `.emp` track undiscoverable from the binary | F3: the only reachable usage text names 1 of 6 entry points |
+| C-1 | **There is no help** **CLOSED** | job 1: `--help` consumed as a filename, the `.emp` track undiscoverable from the binary | F3: the only reachable usage text names 1 of 6 entry points |
 | C-2 | **A success line that does not mean the build succeeded** **CLOSED** | F1: `built: N bytes`, exit 0, no file written | F14: `--prelude` parsed, consumed, dropped, run reports success |
 
 C-1 is the one the briefs bought. C-2 is the panel's headline and neither seat could have found the
@@ -133,7 +133,7 @@ which is the half of the wording rule this lane keeps closing on itself, and it 
 `pass --root <dir>, or drop --map`. The sibling that was the model for the refusal turned out to
 need the same treatment as the surface it was modelling.
 
-### 4 . There is no help, and the usage text names one entry point of six . **firsthand** . both seats
+### 4 . There is no help, and the usage text names one entry point of six . **firsthand** . both seats . **CLOSED**
 
 `--help`, `-h` and `help` are each read as an input FILENAME:
 `error: cannot read --help: No such file or directory`. The only usage text, printed by a bare
@@ -141,6 +141,41 @@ invocation, is two lines naming `<input.asm>`, `-o` and `--hex`. It mentions no 
 whole `.emp` track is undiscoverable from the binary. Two accepted flags (`--map`, `--deny-todo`)
 appear in no usage line at all, and `main.rs`'s own header lists five entry points against the
 dispatch's six.
+
+**Closed on branch `parcel/cli-help`.** All three forms print help on stdout at exit 0, `sigil
+<command> --help` and `sigil help <command>` print that command's page, a bare invocation keeps
+exit 2 and points at `--help`, and every wrong shape keeps the exit code it had.
+
+**The fix is a table, not a help string, and that is the whole point of the row.** A help text is a
+second copy of the interface, so the copy was removed instead of being written: `ENTRIES` holds one
+row per entry point (words, label, summary, usage, the function that runs it), `main` dispatches by
+walking it, both the top-level list and every per-command page render from it, and each run function
+prints its own row's usage on a missing argument. A seventh command cannot be dispatched without
+being listed, because the list IS the dispatch. The five per-command usage strings the seats found
+were good were kept as the rows' text, checked against the code first: `--map`'s note was written
+from the flag's own refusal message and said it WRITES a placement report, and it reads one.
+
+**The `--map` and `--deny-todo` half is closed as a CLASS, not as two instances.**
+`usage_names_every_accepted_flag` reads each entry point's own argument-match arms out of the source
+and fails if a flag it accepts is missing from that entry point's usage, and fails again if any
+argument parser in the file belongs to no entry point. It surfaced three more undocumented flags the
+seats had not reached (`--native`, `--stress-evict`, `--stress-art`, all on `build`), now on a `dev:`
+line. The seats' count of two was a floor.
+
+**Two gate defects, both found by mutation, both the same shape, and both would have shipped a gate
+that could not fail for its own subject.** Dropping a command from the list left the binary-level
+gate green, because the page's footer says ``for example `sigil emp --help` `` and the gate asked
+whether the page contained the string `emp`. Deleting `emp` from the `sigil emp` usage line left two
+gates green, because the line still reads `usage: sigil <input.emp>` and `emp` is inside
+`<input.emp>`. **Every command in this CLI is a substring of the argument it takes**, so a substring
+search over help text can never answer a question about which command a line is about. Both gates
+now compare the token after `sigil ` against the table's own words, and the mutation that produced
+each defect is red in both places.
+
+Ten mutations, each shown on disk before its run, restored from a committed baseline: nine red at
+the gate named for them, and the tenth (deleting the `--deny-todo` note line) green because it was a
+BAD MUTATION rather than a bad gate: the flag was still in the synopsis line above, so the run never
+produced the defect. Re-run with the flag removed from both places, it is red.
 
 ---
 
