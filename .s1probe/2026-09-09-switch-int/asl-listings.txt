@@ -1,0 +1,432 @@
+asl banner:
+Macro Assembler 1.42 Beta [Bld 212]
+(x86_64-unknown-linux)
+asl md5: 61e672562465725a8c102288a7da9098
+invocation: asl -xx -n -q -A -L -U -E -i . <probe>.asm
+
+=== p10  exit=2
+ AS V1.42 Beta [Bld 212] - Source File p10.asm - Page 1 - 09/09/2026 11:05:26 AM
+
+
+       1/       0 :                     	cpu 68000
+       2/       0 : =$5                  V = 5
+       3/       0 : =$5                  	switch V
+       4/       0 : =>FALSE              		case 1
+       5/       0 :                     			dc.b $11
+       6/       0 : =>TRUE               		elsecase
+       7/       0 : EE                  			dc.b $EE
+> > > p10.asm(8): error #1480: invalid IF-structure
+> > >   case 5
+       8/       1 :                     		case 5
+       9/       1 : 55                  			dc.b $55
+      10/       2 : [3]                  	endcase
+      11/       2 :                     	end
+
+
+
+=== p11  exit=2
+ AS V1.42 Beta [Bld 212] - Source File p11.asm - Page 1 - 09/09/2026 11:05:26 AM
+
+
+       1/       0 :                     	cpu 68000
+> > > p11.asm(2): error #1820: expression must be evaluatable in first pass
+> > >  switch Undef
+       2/       0 : =$1                  	switch Undef
+       3/       0 : =>TRUE               		case 1
+       4/       0 : 11                  			dc.b $11
+       5/       1 : =>FALSE              		case 2
+       6/       1 :                     			dc.b $22
+       7/       1 : =>FALSE              		elsecase
+       8/       1 :                     			dc.b $EE
+       9/       1 : [2]                  	endcase
+      10/       1 :                     	end
+
+
+
+=== p12  exit=0
+ AS V1.42 Beta [Bld 212] - Source File p12.asm - Page 1 - 09/09/2026 11:05:26 AM
+
+
+       1/       0 :                     	cpu 68000
+       2/       0 : =$2                  V = 2
+       3/       0 : =$2                  	switch V
+       4/       0 : =>FALSE              		case 1
+       5/       0 :                     			dc.b $11
+       6/       0 : =>TRUE               		case 2
+       7/       0 : =$3                  			switch V+1
+       8/       0 : =>FALSE              				case 2
+       9/       0 :                     					dc.b $A1
+      10/       0 : =>TRUE               				case 3
+      11/       0 : A3                  					dc.b $A3
+      12/       1 : [7]                  			endcase
+      13/       1 : 22                  			dc.b $22
+      14/       2 : =>FALSE              		case 3
+      15/       2 :                     			dc.b $33
+      16/       2 : [3]                  	endcase
+      17/       2 :                     	end
+
+
+
+=== p13  exit=0
+ AS V1.42 Beta [Bld 212] - Source File p13.asm - Page 1 - 09/09/2026 11:05:26 AM
+
+
+       1/       0 :                     	cpu 68000
+       2/       0 : =$2                  V = 2
+       3/       0 : =$2                  	switch V
+       4/       0 : =>FALSE              		case 1
+       5/       0 :                     			dc.b $11
+       6/       0 : =>TRUE               		case 2
+       7/       0 : 22                  			dc.b $22
+       8/       1 : =>FALSE              		case 2
+       9/       1 :                     			dc.b $BB
+      10/       1 : [3]                  	endcase
+      11/       1 :                     	end
+
+
+
+=== p14  exit=0
+ AS V1.42 Beta [Bld 212] - Source File p14.asm - Page 1 - 09/09/2026 11:05:26 AM
+
+
+       1/       0 :                     	cpu 68000
+       2/       0 : =$41                 V = 65
+       3/       0 : =$41                 	switch V
+       4/       0 : =>FALSE              		case 'B'
+       5/       0 :                     			dc.b $11
+       6/       0 : =>FALSE              		case 'A'
+       7/       0 :                     			dc.b $22
+       8/       0 : =>TRUE               		elsecase
+       9/       0 : EE                  			dc.b $EE
+      10/       1 : [3]                  	endcase
+      11/       1 :                     	end
+
+
+
+=== p15  exit=0
+ AS V1.42 Beta [Bld 212] - Source File p15.asm - Page 1 - 09/09/2026 11:05:26 AM
+
+
+       1/       0 :                     	cpu 68000
+       2/       0 : =$FFFFFFFFFFFFFFFD   V = -3
+       3/       0 : =$FFFFFFFFFFFFFFFD   	switch V
+       4/       0 : =>FALSE              		case 3
+       5/       0 :                     			dc.b $11
+       6/       0 : =>TRUE               		case -3
+       7/       0 : 22                  			dc.b $22
+       8/       1 : =>FALSE              		elsecase
+       9/       1 :                     			dc.b $EE
+      10/       1 : [3]                  	endcase
+      11/       1 :                     	end
+
+
+
+=== p16  exit=0
+ AS V1.42 Beta [Bld 212] - Source File p16.asm - Page 1 - 09/09/2026 11:05:26 AM
+
+
+       1/       0 :                     	cpu 68000
+       2/       0 : ="bee"               	switch "bee"
+       3/       0 : =>FALSE              		case "aaa","zzz"
+       4/       0 :                     			dc.b $11
+       5/       0 : =>TRUE               		case 3,"bee"
+       6/       0 : 22                  			dc.b $22
+       7/       1 : =>FALSE              		elsecase
+       8/       1 :                     			dc.b $EE
+       9/       1 : [2]                  	endcase
+      10/       1 :                     	end
+
+
+
+=== p17  exit=2
+ AS V1.42 Beta [Bld 212] - Source File p17.asm - Page 1 - 09/09/2026 11:05:26 AM
+
+
+       1/       0 :                     	cpu 68000
+       2/       0 : =$2                  V = 2
+       3/       0 : =$2                  	switch V
+> > > p17.asm(4): error #1110: wrong number of operands
+> > > expected between 1 and 476 arguments but got 0
+> > >   case
+       4/       0 :                     		case
+       5/       0 : 11                  			dc.b $11
+       6/       1 : =>TRUE               		case 2
+       7/       1 : 22                  			dc.b $22
+       8/       2 : [3]                  	endcase
+       9/       2 :                     	end
+
+
+
+=== p18  exit=2
+ AS V1.42 Beta [Bld 212] - Source File p18.asm - Page 1 - 09/09/2026 11:05:26 AM
+
+
+       1/       0 :                     	cpu 68000
+       2/       0 : =$1                  V = 1
+       3/       0 : =$1                  	switch V
+       4/       0 : =>TRUE               		case 1
+       5/       0 : 11                  			dc.b $11
+       6/       1 : =>FALSE              		case Undef
+       7/       1 :                     			dc.b $22
+> > > p18.asm(8): error #1110: wrong number of operands
+> > > expected between 1 and 476 arguments but got 0
+> > >   case
+       8/       1 :                     		case
+       9/       1 :                     			dc.b $33
+      10/       1 : [3]                  	endcase
+      11/       1 :                     	end
+
+
+
+=== p19  exit=0
+ AS V1.42 Beta [Bld 212] - Source File p19.asm - Page 1 - 09/09/2026 11:05:26 AM
+
+
+       1/       0 :                     	cpu 68000
+       2/       0 : =$1                  V = 1
+       3/       0 : =$1                  	switch V
+       4/       0 : =>TRUE               		case 1,Undef
+       5/       0 : 11                  			dc.b $11
+       6/       1 : =>FALSE              		case 2
+       7/       1 :                     			dc.b $22
+       8/       1 : [3]                  	endcase
+       9/       1 :                     	end
+
+
+
+=== p1  exit=0
+ AS V1.42 Beta [Bld 212] - Source File p1.asm - Page 1 - 09/09/2026 11:05:26 AM
+
+
+       1/       0 :                     	cpu 68000
+       2/       0 : =$2                  V = 2
+       3/       0 : =$2                  	switch V
+       4/       0 : =>FALSE              		case 1
+       5/       0 :                     			dc.b $11
+       6/       0 : =>TRUE               		case 2
+       7/       0 : 22                  			dc.b $22
+       8/       1 : =>FALSE              		case 3
+       9/       1 :                     			dc.b $33
+      10/       1 : =>FALSE              		elsecase
+      11/       1 :                     			dc.b $EE
+      12/       1 : [3]                  	endcase
+      13/       1 :                     	end
+
+
+
+=== p20  exit=2
+ AS V1.42 Beta [Bld 212] - Source File p20.asm - Page 1 - 09/09/2026 11:05:26 AM
+
+
+       1/       0 :                     	cpu 68000
+       2/       0 : =$1                  V = 1
+       3/       0 : =$1                  	switch V
+> > > p20.asm(4): error #1820: expression must be evaluatable in first pass
+> > >   case Undef,1
+       4/       0 : =>TRUE               		case Undef,1
+       5/       0 : 11                  			dc.b $11
+       6/       1 : =>FALSE              		case 2
+       7/       1 :                     			dc.b $22
+       8/       1 : [3]                  	endcase
+       9/       1 :                     	end
+
+
+
+=== p21  exit=0
+ AS V1.42 Beta [Bld 212] - Source File p21.asm - Page 1 - 09/09/2026 11:05:26 AM
+
+
+       1/       0 :                     	cpu 68000
+       2/       0 : 42                  	dc.b 'A'+1
+       3/       1 : 00                  <padding>
+       3/       2 : 494E 4954           	dc.l 'INIT'
+       4/       6 : =>TRUE               	if 65='A'
+       5/       6 : AA                  		dc.b $AA
+       6/       7 : =>FALSE              	else
+       7/       7 :                     		dc.b $BB
+       8/       7 : [4]                  	endif
+       9/       7 : =$41                 V = 65
+      10/       7 : =>TRUE               	if V='A'
+      11/       7 : CC                  		dc.b $CC
+      12/       8 : =>FALSE              	else
+      13/       8 :                     		dc.b $DD
+      14/       8 : [10]                 	endif
+      15/       8 :                     	end
+
+
+
+=== p22  exit=0
+ AS V1.42 Beta [Bld 212] - Source File p22.asm - Page 1 - 09/09/2026 11:05:26 AM
+
+
+       1/       0 :                     	cpu 68000
+       2/       0 : ='A'                 	switch 'A'
+       3/       0 : =>FALSE              		case 65
+       4/       0 :                     			dc.b $11
+       5/       0 : =>TRUE               		case "A"
+       6/       0 : 22                  			dc.b $22
+       7/       1 : =>FALSE              		elsecase
+       8/       1 :                     			dc.b $EE
+       9/       1 : [2]                  	endcase
+      10/       1 : =$2                  V = 2
+      11/       1 : =$2                  	switch V
+      12/       1 : =>FALSE              		case "2"
+      13/       1 :                     			dc.b $33
+      14/       1 : =>TRUE               		elsecase
+      15/       1 : 44                  			dc.b $44
+      16/       2 : [11]                 	endcase
+      17/       2 : =$41                 W = 65
+      18/       2 : =$41                 	switch W+0
+      19/       2 : =>FALSE              		case 'A'
+      20/       2 :                     			dc.b $55
+      21/       2 : =>TRUE               		elsecase
+      22/       2 : 66                  			dc.b $66
+      23/       3 : [18]                 	endcase
+      24/       3 :                     	end
+
+
+
+=== p2  exit=0
+ AS V1.42 Beta [Bld 212] - Source File p2.asm - Page 1 - 09/09/2026 11:05:26 AM
+
+
+       1/       0 :                     	cpu 68000
+       2/       0 : =$9                  V = 9
+       3/       0 : =$9                  	switch V
+       4/       0 : =>FALSE              		case 1
+       5/       0 :                     			dc.b $11
+       6/       0 : =>FALSE              		case 2
+       7/       0 :                     			dc.b $22
+       8/       0 : =>TRUE               		elsecase
+       9/       0 : EE                  			dc.b $EE
+      10/       1 : [3]                  	endcase
+      11/       1 :                     	end
+
+
+
+=== p3  exit=0
+ AS V1.42 Beta [Bld 212] - Source File p3.asm - Page 1 - 09/09/2026 11:05:26 AM
+
+
+       1/       0 :                     	cpu 68000
+       2/       0 : =$9                  V = 9
+       3/       0 : =$9                  	switch V
+       4/       0 : =>FALSE              		case 1
+       5/       0 :                     			dc.b $11
+       6/       0 : =>FALSE              		case 2
+       7/       0 :                     			dc.b $22
+> > > p3.asm(8): warning #100: none of the CASE conditions was true
+> > >  endcase
+       8/       0 : [3]                  	endcase
+       9/       0 : FF                  	dc.b $FF
+      10/       1 :                     	end
+
+
+
+=== p4  exit=0
+ AS V1.42 Beta [Bld 212] - Source File p4.asm - Page 1 - 09/09/2026 11:05:26 AM
+
+
+       1/       0 :                     	cpu 68000
+       2/       0 : ="btn"               	switch "btn"
+       3/       0 : =>FALSE              		case "aaa"
+       4/       0 :                     			dc.b $11
+       5/       0 : =>TRUE               		case "btn"
+       6/       0 : 22                  			dc.b $22
+       7/       1 : =>FALSE              		elsecase
+       8/       1 :                     			dc.b $EE
+       9/       1 : [2]                  	endcase
+      10/       1 :                     	end
+
+
+
+=== p5  exit=0
+ AS V1.42 Beta [Bld 212] - Source File p5.asm - Page 1 - 09/09/2026 11:05:26 AM
+
+
+       1/       0 :                     	cpu 68000
+       2/       0 : =$3                  V = 3
+       3/       0 : =$3                  	switch V
+       4/       0 : =>FALSE              		case 1,2
+       5/       0 :                     			dc.b $11
+       6/       0 : =>TRUE               		case 3,4
+       7/       0 : 22                  			dc.b $22
+       8/       1 : =>FALSE              		elsecase
+       9/       1 :                     			dc.b $EE
+      10/       1 : [3]                  	endcase
+      11/       1 :                     	end
+
+
+
+=== p6  exit=0
+ AS V1.42 Beta [Bld 212] - Source File p6.asm - Page 1 - 09/09/2026 11:05:26 AM
+
+
+       1/       0 :                     	cpu 68000
+       2/       0 : =$4                  V = 4
+       3/       0 : =$2                  W = 2
+       4/       0 : =$4                  	switch V*1
+       5/       0 : =>FALSE              		case W-1
+       6/       0 :                     			dc.b $11
+       7/       0 : =>TRUE               		case W+2
+       8/       0 : 22                  			dc.b $22
+       9/       1 : =>FALSE              		elsecase
+      10/       1 :                     			dc.b $EE
+      11/       1 : [4]                  	endcase
+      12/       1 :                     	end
+
+
+
+=== p7  exit=0
+ AS V1.42 Beta [Bld 212] - Source File p7.asm - Page 1 - 09/09/2026 11:05:26 AM
+
+
+       1/       0 :                     	cpu 68000
+       2/       0 : =$2                  V = 2
+       3/       0 : =$2                  	switch V
+       4/       0 : =>FALSE              		case "two"
+       5/       0 :                     			dc.b $11
+       6/       0 : =>TRUE               		case 2
+       7/       0 : 22                  			dc.b $22
+       8/       1 : =>FALSE              		elsecase
+       9/       1 :                     			dc.b $EE
+      10/       1 : [3]                  	endcase
+      11/       1 :                     	end
+
+
+
+=== p8  exit=0
+ AS V1.42 Beta [Bld 212] - Source File p8.asm - Page 1 - 09/09/2026 11:05:26 AM
+
+
+       1/       0 :                     	cpu 68000
+       2/       0 : ="btn"               	switch "btn"
+       3/       0 : =>FALSE              		case "aaa"
+       4/       0 :                     			dc.b $11
+       5/       0 : =>FALSE              		case "zzz"
+       6/       0 :                     			dc.b $22
+> > > p8.asm(7): warning #100: none of the CASE conditions was true
+> > >  endcase
+       7/       0 : [2]                  	endcase
+       8/       0 : FF                  	dc.b $FF
+       9/       1 :                     	end
+
+
+
+=== p9  exit=0
+ AS V1.42 Beta [Bld 212] - Source File p9.asm - Page 1 - 09/09/2026 11:05:26 AM
+
+
+       1/       0 :                     	cpu 68000
+       2/       0 : ="2"                 	switch "2"
+       3/       0 : =>FALSE              		case 2
+       4/       0 :                     			dc.b $11
+       5/       0 : =>TRUE               		case "2"
+       6/       0 : 22                  			dc.b $22
+       7/       1 : =>FALSE              		elsecase
+       8/       1 :                     			dc.b $EE
+       9/       1 : [2]                  	endcase
+      10/       1 :                     	end
+
+
+
