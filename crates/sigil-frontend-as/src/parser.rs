@@ -27,13 +27,14 @@ pub fn parse_line_tokens(toks: &[Token]) -> Line {
 #[cfg(test)]
 mod tests {
     use super::parse_line_tokens;
+    use crate::charset::CodePage;
     use crate::lexer::lex_line;
     use crate::token::Tok;
     use sigil_ir::backend::Cpu;
     use sigil_span::SourceId;
 
     fn line(src: &str) -> (Option<String>, Vec<Tok>) {
-        let toks = lex_line(src, Cpu::Z80, SourceId(0), 0).unwrap();
+        let toks = lex_line(src, Cpu::Z80, &CodePage::identity(), SourceId(0), 0).unwrap();
         let l = parse_line_tokens(&toks);
         (
             l.label_colon,

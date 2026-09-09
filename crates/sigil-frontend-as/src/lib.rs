@@ -5,6 +5,7 @@
 //! codec (`sigil-isa`) nor the linker (`sigil-link`).
 
 mod ast;
+mod charset;
 mod eval;
 mod expand;
 mod expr;
