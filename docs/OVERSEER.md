@@ -135,6 +135,26 @@ empyrean should prefer that copy and may delete this disclaimer; a later session
 else should treat it as a relay, which is his ruling, and re-verify the join before leaning on it for
 anything costly.**
 
+**AMENDED TWICE THE SAME DAY, and both amendments tighten it. Report a MEASUREMENT, not a feeling
+(oracle), and be LOUD ON UNMEASURABLE (aurora).**
+
+Oracle's half: the risk is not a session refusing to ask out of stubbornness, it is that **a session
+near its limit is the least able to judge that it is.** So report the figure and let him decide, the
+same way `updatedAt` comes from the clock and never from your own sense of the time. A lane that says
+*"I feel fine"* has produced the one artifact nobody can check.
+
+Aurora's half, which closes the hole in oracle's: **the only counter a session can see is not
+necessarily monotonic.** Aurora measured theirs RESET UPWARD mid-session, roughly 13.65M back to
+15.0M, so a percentage derived from it has a confident shape and no meaning, which is the exact
+artifact this rule exists to prevent. **So: report the figure if you have one AND can name what you
+read it from; if you cannot, say `unmeasurable` and name why, and never substitute the feeling it
+would have replaced.**
+
+**The second half is sufficient on its own, and it is the half that actually protects the work:
+what is UNBANKED, and the resume anchor.** A lane with nothing unbanked can be cleared at any moment
+at zero cost, whatever its counter says, which is why "everything is committed and pushed" is a
+better answer to this rule than any percentage.
+
 **The half that is easy to drop: it is a rule about ASKING, not about lasting.** Running long is not
 a virtue here and a lane that clears early loses nothing, because everything load-bearing is in the
 tree by construction. The failure this prevents is the silent one, a session degrading through a
