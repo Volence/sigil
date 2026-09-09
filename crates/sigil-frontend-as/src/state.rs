@@ -1,5 +1,6 @@
 //! state: the AS assembler-state unit + the save/restore stack.
 
+use crate::charset::CodePage;
 use sigil_ir::backend::Cpu;
 
 /// A CPU's default `padding` flag. 68000 defaults to ON (auto-even-pad); Z80 has
@@ -70,6 +71,36 @@ pub struct AsmState {
     pub padding: bool,
     /// `supmode on/off` (68k privileged-instruction mode; byte-inert).
     pub supmode: bool,
+    /// The `charset` code page: the character-to-byte translation every string
+    /// and character literal passes through on its way to a byte.
+    ///
+    /// Deliberately NOT part of the `save`/`restore` snapshot, and that is a
+    /// measurement rather than a convenience. asl:
+    ///
+    /// ```text
+    ///       3/       0 :                     	charset $41,$11
+    ///       4/       0 : 11                  	dc.b "A"
+    ///       5/       1 :                     	save
+    ///       6/       1 :                     	charset $41,$44
+    ///       7/       1 : 44                  	dc.b "A"
+    ///       8/       2 : ALL                  	restore
+    ///       9/       2 : 44                  	dc.b "A"
+    /// ```
+    ///
+    /// The `44` on line 9 is the finding: `restore` does not bring the page
+    /// back. The raw `$41` index is what makes the probe conclusive — spelling
+    /// it `charset 'A',$44` makes the inner line inert for an unrelated reason
+    /// (see [`CodePage`]), and a first attempt at this probe read as
+    /// "save/restore brackets the page" for exactly that reason.
+    ///
+    /// Reset to the identity page at the start of every pass, which happens for
+    /// free because `Asm` rebuilds this whole struct per pass.
+    // REASON: the doc comment above quotes asl listings verbatim, and asl separates
+    // its listing columns with TABS. The tabs ARE the evidence: reflowing them to
+    // spaces would silently edit a reference assembler's output that later parcels
+    // compare against. Scoped to this item, never crate wide.
+    #[allow(clippy::tabs_in_doc_comments)]
+    pub charset: CodePage,
     saved: Vec<Saved>,
 }
 
@@ -94,6 +125,7 @@ impl AsmState {
             disp: 0,
             padding: default_padding(cpu),
             supmode: default_supmode(cpu),
+            charset: CodePage::identity(),
             saved: Vec::new(),
         }
     }
@@ -194,6 +226,29 @@ mod tests {
         s.disp = 0x1234; // as if `phase` set a displacement after the save
         s.restore().unwrap();
         assert_eq!(s.disp, 0x1234, "restore must not rewind the phase displacement");
+    }
+
+    /// The code page starts at the identity and `save`/`restore` does not
+    /// bracket it. Asserted at the STRUCT level as well as end-to-end
+    /// (`tests/as_charset.rs::save_and_restore_do_not_bracket_the_page`,
+    /// which quotes the asl listing) because the two can fail apart: putting
+    /// the page into `Saved` would keep every existing byte test green and
+    /// break only a source that changes the page inside a `save` block, which
+    /// no corpus in this workspace does.
+    #[test]
+    fn save_and_restore_do_not_bracket_the_code_page() {
+        let mut s = AsmState::new(Some(Cpu::M68000));
+        assert!(s.charset.is_identity(), "a new state starts on the identity page");
+        s.charset.set(0x41, 0x11);
+        s.save();
+        s.charset.set(0x41, 0x44);
+        s.restore().unwrap();
+        assert_eq!(
+            s.charset.map_char('A'),
+            0x44,
+            "restore must not bring the saved code page back (asl: `dc.b \"A\"` reads 44)"
+        );
+        assert!(!s.charset.is_identity());
     }
 
     #[test]

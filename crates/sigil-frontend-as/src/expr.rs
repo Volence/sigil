@@ -1,5 +1,6 @@
 //! expr: token-slice → `sigil_ir::Expr` with AS-flavoured precedence.
 
+use crate::charset::CodePage;
 use crate::token::{Punct, Tok, Token};
 use sigil_ir::expr::{BinOp, UnOp};
 use sigil_ir::Expr;
@@ -70,18 +71,23 @@ const MAX_PACKED_CHARS: usize = 4;
 /// than let it arrive here and pack, because packing it would be silently wrong
 /// bytes rather than a loud refusal.
 ///
-/// **The `charset` seam.** asl's `charset` directive remaps the code page, which
-/// is the CHARACTER-TO-BYTE step and nothing else: the big-endian packing above
-/// sits on top of whatever byte a character maps to. This function therefore
-/// isolates that step (`c as u8`, the identity code page, the `STANDARD (0
-/// changed characters)` asl reports for an unmapped assembly) so a later
-/// `charset` composes by supplying a mapping there instead of undoing the
-/// packing. The identical `c as u8` step lives in `eval.rs::directive_db`, and
-/// the two are the complete population a `charset` implementation must reach.
-/// A code page is assembler STATE, and this parser is deliberately stateless,
-/// so `charset` will have to thread that state in; the seam is which step it
-/// replaces, and it is one step, not two.
-pub(crate) fn string_to_int(s: &str) -> Option<i64> {
+/// **The `charset` seam**, now wired: `cs` IS the code page, and it replaces the
+/// character-to-byte step alone. The big-endian packing above sits on top of
+/// whatever byte a character maps to, so the two compose without either knowing
+/// about the other: under `charset 'A','X',$11`, asl reads `move.w #"AB",d0` as
+/// `303C 1112` and this function returns `$1112`.
+///
+/// The page reaches exactly two sites in this front end, and the second is
+/// `eval.rs::directive_db`. asl has a THIRD — its wide data directives
+/// distribute a string operand and translate each character (`dc.w "AB"` under
+/// that same `charset` is `0011 0042`) — but sigil refuses a string operand to
+/// `dc.w`/`dc.l` outright (`STRING_IN_WIDE_DATA`), so that site does not exist
+/// here. If it is ever implemented, it is a code-page consumer on day one.
+///
+/// The page is threaded as an argument rather than held: this parser stays
+/// stateless, and every call site is named by the compiler instead of by a
+/// reader's enumeration.
+pub(crate) fn string_to_int(s: &str, cs: &CodePage) -> Option<i64> {
     let mut packed: i64 = 0;
     let mut chars = 0usize;
     for c in s.chars() {
@@ -89,7 +95,7 @@ pub(crate) fn string_to_int(s: &str) -> Option<i64> {
         if chars > MAX_PACKED_CHARS {
             return None;
         }
-        packed = (packed << 8) | i64::from(c as u8);
+        packed = (packed << 8) | i64::from(cs.map_char(c));
     }
     if chars == 0 {
         None
@@ -102,8 +108,8 @@ pub(crate) fn string_to_int(s: &str) -> Option<i64> {
 /// `None` if the head is not an expression, or if it nests past
 /// [`MAX_EXPR_DEPTH`] — the same "not an expression here" answer the unbalanced-
 /// paren arm already returns, so callers report a clean parse error either way.
-pub fn parse_expr(toks: &[Token]) -> Option<(Expr, &[Token])> {
-    parse_bp(toks, 0, 0)
+pub fn parse_expr<'a>(toks: &'a [Token], cs: &CodePage) -> Option<(Expr, &'a [Token])> {
+    parse_bp(toks, 0, 0, cs)
 }
 
 /// Binding-power ladder: higher binds tighter. It is asl's, tier for tier, and
@@ -189,14 +195,19 @@ pub(crate) fn infix_bp(p: Punct) -> Option<(u8, BinOp)> {
     })
 }
 
-fn parse_bp(toks: &[Token], min_bp: u8, depth: u32) -> Option<(Expr, &[Token])> {
-    let (mut lhs, mut rest) = parse_atom(toks, depth)?;
+fn parse_bp<'a>(
+    toks: &'a [Token],
+    min_bp: u8,
+    depth: u32,
+    cs: &CodePage,
+) -> Option<(Expr, &'a [Token])> {
+    let (mut lhs, mut rest) = parse_atom(toks, depth, cs)?;
     while let Some(Tok::Punct(p)) = rest.first().map(|t| &t.tok) {
         let (bp, op) = match infix_bp(*p) {
             Some(x) if x.0 > min_bp => x,
             _ => break,
         };
-        let (rhs, r2) = parse_bp(&rest[1..], bp, depth)?;
+        let (rhs, r2) = parse_bp(&rest[1..], bp, depth, cs)?;
         lhs = Expr::Binary {
             op,
             lhs: Box::new(lhs),
@@ -207,7 +218,7 @@ fn parse_bp(toks: &[Token], min_bp: u8, depth: u32) -> Option<(Expr, &[Token])> 
     Some((lhs, rest))
 }
 
-fn parse_atom(toks: &[Token], depth: u32) -> Option<(Expr, &[Token])> {
+fn parse_atom<'a>(toks: &'a [Token], depth: u32, cs: &CodePage) -> Option<(Expr, &'a [Token])> {
     if depth >= MAX_EXPR_DEPTH {
         return None;
     }
@@ -218,7 +229,7 @@ fn parse_atom(toks: &[Token], depth: u32) -> Option<(Expr, &[Token])> {
         // A string literal in a primary-expression position is asl's packed
         // integer; see [`string_to_int`] for the rule and for why a `dc`-family
         // directive must never reach this arm.
-        Tok::Str(s) => string_to_int(s).map(|v| (Expr::Int(v), rest)),
+        Tok::Str(s) => string_to_int(s, cs).map(|v| (Expr::Int(v), rest)),
         Tok::Dollar => Some((Expr::Sym("$".to_string()), rest)),
         // A standalone `*` in atom (primary-expression) position is AS's other
         // spelling of the current-PC symbol (used by `pscStart := *` etc. in
@@ -232,7 +243,7 @@ fn parse_atom(toks: &[Token], depth: u32) -> Option<(Expr, &[Token])> {
         Tok::Punct(Punct::Star) => Some((Expr::Sym("$".to_string()), rest)),
         Tok::Ident(name) => Some((Expr::Sym(name.clone()), rest)),
         Tok::Punct(Punct::Minus) => {
-            let (inner, r) = parse_atom(rest, depth)?;
+            let (inner, r) = parse_atom(rest, depth, cs)?;
             Some((
                 Expr::Unary {
                     op: UnOp::Neg,
@@ -246,7 +257,7 @@ fn parse_atom(toks: &[Token], depth: u32) -> Option<(Expr, &[Token])> {
         // `~(mask)` / `~BLOCK_TILE_SIZE-1` parse as `(~x)` then any following
         // binary operator, matching asl.
         Tok::Punct(Punct::Tilde) => {
-            let (inner, r) = parse_atom(rest, depth)?;
+            let (inner, r) = parse_atom(rest, depth, cs)?;
             Some((
                 Expr::Unary {
                     op: UnOp::Not,
@@ -263,7 +274,7 @@ fn parse_atom(toks: &[Token], depth: u32) -> Option<(Expr, &[Token])> {
         // `dc.b ~~0=1` = `01`. `~~~x` is `~~` then `~` by maximal munch:
         // `dc.b ~~~0,~~~1,~~~5` = `00 00 00`.
         Tok::Punct(Punct::TildeTilde) => {
-            let (inner, r) = parse_atom(rest, depth)?;
+            let (inner, r) = parse_atom(rest, depth, cs)?;
             Some((
                 Expr::Unary {
                     op: UnOp::LogNot,
@@ -273,7 +284,7 @@ fn parse_atom(toks: &[Token], depth: u32) -> Option<(Expr, &[Token])> {
             ))
         }
         Tok::Punct(Punct::LParen) => {
-            let (inner, r) = parse_bp(rest, 0, depth)?;
+            let (inner, r) = parse_bp(rest, 0, depth, cs)?;
             match r.first().map(|t| &t.tok) {
                 Some(Tok::Punct(Punct::RParen)) => Some((inner, &r[1..])),
                 _ => None, // unbalanced paren
@@ -301,6 +312,7 @@ mod depth_guard_tests {
     //! the main thread, and a regression FAILS (thread died) instead of taking the
     //! whole test binary down with it.
     use super::parse_expr;
+    use crate::charset::CodePage;
     use crate::lexer::lex_line;
     use sigil_ir::backend::Cpu;
     use sigil_span::SourceId;
@@ -310,8 +322,8 @@ mod depth_guard_tests {
         let h = std::thread::Builder::new()
             .stack_size(4 * 1024 * 1024)
             .spawn(move || {
-                let toks = lex_line(&src, Cpu::M68000, SourceId(0), 0).expect("lex");
-                let _ = tx.send(parse_expr(&toks).is_some());
+                let toks = lex_line(&src, Cpu::M68000, &CodePage::identity(), SourceId(0), 0).expect("lex");
+                let _ = tx.send(parse_expr(&toks, &CodePage::identity()).is_some());
             })
             .expect("spawn");
         let out = rx
@@ -354,13 +366,14 @@ mod depth_guard_tests {
 mod tests {
     use super::parse_expr;
     use crate::lexer::lex_line;
+    use crate::charset::CodePage;
     use sigil_ir::backend::Cpu;
     use sigil_ir::expr::Fold;
     use sigil_span::SourceId;
 
     fn fold(src: &str, lookup: &dyn Fn(&str) -> Option<i64>) -> i64 {
-        let toks = lex_line(src, Cpu::Z80, SourceId(0), 0).unwrap();
-        let (e, rest) = parse_expr(&toks).unwrap();
+        let toks = lex_line(src, Cpu::Z80, &CodePage::identity(), SourceId(0), 0).unwrap();
+        let (e, rest) = parse_expr(&toks, &CodePage::identity()).unwrap();
         assert!(rest.is_empty(), "unconsumed tokens: {rest:?}");
         match e.fold(lookup) {
             Fold::Value(v) => v,

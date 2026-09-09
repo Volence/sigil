@@ -2020,7 +2020,7 @@ impl Asm {
         let expanded = self.expand_int_builtin(&expanded);
         let expanded = self.expand_str_builtins(&expanded);
         let expanded = self.expand_str_comparisons(&expanded);
-        let (e, rest) = crate::expr::parse_expr(&expanded)?;
+        let (e, rest) = crate::expr::parse_expr(&expanded, &self.state.charset)?;
         if !rest.is_empty() {
             self.err(span, "trailing tokens in expression");
             return None;
@@ -2596,7 +2596,7 @@ impl Asm {
     /// AS-EXPRESSION evaluator rather than a plain number parse (it resolves
     /// symbols, honors `$`-prefixed hex, arithmetic, …).
     fn fold_str_as_expr(&self, text: &str) -> Option<i64> {
-        let toks = lex_line(text, self.state.cpu, self.source, 0).ok()?;
+        let toks = lex_line(text, self.state.cpu, &self.state.charset, self.source, 0).ok()?;
         self.fold_const(&toks)
     }
 
@@ -2614,7 +2614,7 @@ impl Asm {
         // Identity when no builtin head is present, so an ordinary arithmetic
         // `pos`/`len` reaches `parse_expr` exactly as it did before.
         let expanded = self.expand_str_builtins_opt(&expanded)?;
-        let (e, rest) = crate::expr::parse_expr(&expanded)?;
+        let (e, rest) = crate::expr::parse_expr(&expanded, &self.state.charset)?;
         if !rest.is_empty() {
             return None;
         }
@@ -2636,7 +2636,7 @@ impl Asm {
     fn def_function(&mut self, line: &SrcLine) {
         let substituted = self.subst_frame(line);
         let line = substituted.as_ref().unwrap_or(line);
-        let toks = match lex_line(&line.text, self.state.cpu, line.source, line.base) {
+        let toks = match lex_line(&line.text, self.state.cpu, &self.state.charset, line.source, line.base) {
             Ok(t) => t,
             Err(d) => {
                 self.diags.push(d);
@@ -2927,7 +2927,7 @@ impl Asm {
         // Not an integer expression at all (a bare float literal, say). asl has
         // its own diagnostics for those shapes and they are reached through the
         // substituted body; a vaguer word here would be worse than silence.
-        let Some((e, rest)) = crate::expr::parse_expr(&expanded) else {
+        let Some((e, rest)) = crate::expr::parse_expr(&expanded, &self.state.charset) else {
             return;
         };
         if !rest.is_empty() {
@@ -3036,7 +3036,7 @@ impl Asm {
     /// branches (which reach BYTES) unchanged for every program that already
     /// assembled.
     fn render_interp_expr(&mut self, text: &str) -> Option<String> {
-        let toks = lex_line(text, self.state.cpu, self.source, 0).ok()?;
+        let toks = lex_line(text, self.state.cpu, &self.state.charset, self.source, 0).ok()?;
         if let Some(s) = self.eval_str(&toks) {
             return Some(s);
         }
@@ -3052,7 +3052,7 @@ impl Asm {
 
     /// Lex + fold a short expression string (for `\{…}` interpolation).
     fn fold_text(&mut self, text: &str) -> Option<i64> {
-        let toks = lex_line(text, self.state.cpu, self.source, 0).ok()?;
+        let toks = lex_line(text, self.state.cpu, &self.state.charset, self.source, 0).ok()?;
         self.eval_all(
             &toks,
             Span {
@@ -3166,7 +3166,7 @@ impl Asm {
     /// defining and reading sides only agree while both go through the string
     /// arm.
     fn eval_name_brace(&mut self, inner: &str, line: &SrcLine) -> Option<String> {
-        let toks = lex_line(inner, self.state.cpu, line.source, line.base).ok()?;
+        let toks = lex_line(inner, self.state.cpu, &self.state.charset, line.source, line.base).ok()?;
         if toks.is_empty() {
             return None;
         }
@@ -3420,7 +3420,7 @@ impl Asm {
         // attribute there), which would otherwise truncate the composed name.
         let composed = self.subst_name_braces(line);
         let line = composed.as_ref().unwrap_or(line);
-        let toks = match lex_line(&line.text, self.state.cpu, line.source, line.base) {
+        let toks = match lex_line(&line.text, self.state.cpu, &self.state.charset, line.source, line.base) {
             Ok(t) => t,
             Err(d) => {
                 self.diags.push(d);
@@ -3755,7 +3755,7 @@ impl Asm {
     ) -> Option<(String, usize, Vec<Token>, Option<Diagnostic>)> {
         let substituted = self.subst_frame_text(&line.text);
         let text = substituted.as_deref().unwrap_or(&line.text);
-        let (toks, lex_err) = lex_line_recover(text, self.state.cpu, line.source, line.base);
+        let (toks, lex_err) = lex_line_recover(text, self.state.cpu, &self.state.charset, line.source, line.base);
         let (kw, idx, body) = self.head_of_tokens(toks)?;
         Some((kw, idx, body, lex_err))
     }
@@ -3879,7 +3879,7 @@ impl Asm {
     fn head_label(&self, line: &SrcLine) -> Option<String> {
         let substituted = self.subst_frame_text(&line.text);
         let text = substituted.as_deref().unwrap_or(&line.text);
-        let (toks, _) = lex_line_recover(text, self.state.cpu, line.source, line.base);
+        let (toks, _) = lex_line_recover(text, self.state.cpu, &self.state.charset, line.source, line.base);
         if toks.is_empty() {
             return None;
         }
@@ -4637,8 +4637,7 @@ impl Asm {
         let head = self.subst_frame(&lines[start]);
         let head = head.as_ref().unwrap_or(&lines[start]);
         let toks = lex_line(
-            &head.text,
-            self.state.cpu,
+            &head.text, self.state.cpu, &self.state.charset,
             lines[start].source,
             lines[start].base,
         )
@@ -4834,7 +4833,7 @@ impl Asm {
             // `zVar` by a byte.
             let substituted = self.subst_frame(line);
             let l = substituted.as_ref().unwrap_or(line);
-            match lex_line(&l.text, self.state.cpu, l.source, l.base) {
+            match lex_line(&l.text, self.state.cpu, &self.state.charset, l.source, l.base) {
                 Ok(toks) => return (!toks.is_empty()).then_some(StructMember::Unreadable),
                 Err(d) => {
                     self.diags.push(d);
@@ -4864,7 +4863,7 @@ impl Asm {
     fn struct_embed_name(&mut self, line: &SrcLine) -> Option<String> {
         let substituted = self.subst_frame(line);
         let line = substituted.as_ref().unwrap_or(line);
-        let toks = lex_line(&line.text, self.state.cpu, line.source, line.base).ok()?;
+        let toks = lex_line(&line.text, self.state.cpu, &self.state.charset, line.source, line.base).ok()?;
         let parsed = parse_line_tokens(&toks);
         let head = if parsed.label_colon.is_some() {
             parsed.tokens.first()
@@ -4886,7 +4885,7 @@ impl Asm {
     fn parse_struct_field(&mut self, line: &SrcLine) -> Option<(String, i64, i64)> {
         let substituted = self.subst_frame(line);
         let line = substituted.as_ref().unwrap_or(line);
-        let toks = lex_line(&line.text, self.state.cpu, line.source, line.base).ok()?;
+        let toks = lex_line(&line.text, self.state.cpu, &self.state.charset, line.source, line.base).ok()?;
         if toks.is_empty() {
             return None;
         }
@@ -5042,7 +5041,7 @@ impl Asm {
         let expanded = self.expand_int_builtin(&expanded);
         let expanded = self.expand_str_builtins(&expanded);
         let expanded = self.expand_str_comparisons(&expanded);
-        let (e, _) = crate::expr::parse_expr(&expanded)?;
+        let (e, _) = crate::expr::parse_expr(&expanded, &self.state.charset)?;
         self.unresolved_names(&e).into_iter().next()
     }
 
@@ -5303,6 +5302,11 @@ impl Asm {
             "enum" => self.directive_enum(rest, span),
             "nextenum" => self.directive_nextenum(rest, span),
             "enumconf" => self.directive_enumconf(rest, span),
+            // The CODE PAGE control. Processor-neutral: the page is a property
+            // of the character-to-byte step, which both targets share (`db` and
+            // `dc.b` are the same routine), so this is deliberately ungated by
+            // CPU exactly as `eval` is.
+            "charset" => self.directive_charset(rest, span),
             "db" | "dc.b" => self.directive_db(rest, span),
             "dw" => self.directive_dw(rest, span),
             "dc.w" => self.directive_dc_w(rest, span),
@@ -5995,7 +5999,7 @@ impl Asm {
             // subterms — `X = Label + CONST` ships `Sym(Label) + Int(CONST)`); the
             // linker folds it post-relax onto the shifted label. A pure-constant
             // equ never matches and keeps baking `Int(v)`.
-            let sym_rhs = crate::expr::parse_expr(&self.expand_calls_checked(rest))
+            let sym_rhs = crate::expr::parse_expr(&self.expand_calls_checked(rest), &self.state.charset)
                 .and_then(|(e, tail)| tail.is_empty().then_some(e))
                 .map(|e| self.resolve_dollar(&self.qualify_expr(&e)))
                 .filter(|e| self.expr_refs_label(e));
@@ -6107,7 +6111,7 @@ impl Asm {
     /// `Int` parse would have folded, so the failure was in the parse and the
     /// parser has already said so.
     fn defer_unresolved_assign(&mut self, q: &str, rest: &[Token], span: Span) {
-        let Some(e) = crate::expr::parse_expr(&self.expand_calls_checked(rest))
+        let Some(e) = crate::expr::parse_expr(&self.expand_calls_checked(rest), &self.state.charset)
             .and_then(|(e, tail)| tail.is_empty().then_some(e))
             .map(|e| self.resolve_dollar(&self.qualify_expr(&e)))
             .filter(expr_has_sym)
@@ -6359,7 +6363,7 @@ impl Asm {
             // deferral pass); byte-neutral because the map is read only under
             // `keep_labels_symbolic`. `relax_safe_fold` splices set-symbols at its
             // root, so a chained set stores the underlying label expr directly.
-            let sym_rhs = crate::expr::parse_expr(&self.expand_calls_checked(rest))
+            let sym_rhs = crate::expr::parse_expr(&self.expand_calls_checked(rest), &self.state.charset)
                 .and_then(|(e, tail)| tail.is_empty().then_some(e))
                 .map(|e| self.resolve_dollar(&self.qualify_expr(&e)));
             match sym_rhs {
@@ -6615,20 +6619,27 @@ impl Asm {
             };
             // (T6c) A STRING operand — a plain `Tok::Str` literal or a
             // string-builtin call that resolves to one (`substr(...)`,
-            // `lowstring(...)`) — emits one ASCII byte per character
-            // instead of folding as a numeric expression (asl-verified:
-            // `dc.b "AB"` -> `41 42`; `dc.b substr("hello",1,2)` -> `65 6C`).
-            // This is the shape only, checked BEFORE the numeric parse below
-            // so plain numeric/symbol operands are unaffected.
+            // `lowstring(...)`) — emits one byte per character instead of
+            // folding as a numeric expression (asl-verified: `dc.b "AB"` ->
+            // `41 42`; `dc.b substr("hello",1,2)` -> `65 6C`). This is the
+            // shape only, checked BEFORE the numeric parse below so plain
+            // numeric/symbol operands are unaffected.
+            //
+            // The byte a character contributes is the CODE PAGE's, not the
+            // character's own: this is one of the two sites a `charset` reaches
+            // (the other is `expr::string_to_int`, for a string in an
+            // expression). Under Sonic 1's level-select page, `dc.b "GREEN"`
+            // emits `17 22 15 15 1E`.
             if let Some(s) = self.eval_str(&expanded) {
-                let bytes: Vec<u8> = s.chars().map(|c| c as u8).collect();
+                let cs = &self.state.charset;
+                let bytes: Vec<u8> = s.chars().map(|c| cs.map_char(c)).collect();
                 self.emit(&bytes, vec![], span);
                 continue;
             }
             // Fold any nested string comparison (`substr(...)="x"`) to 0/1 before
             // the numeric parse (mirrors `eval_all`; T5).
             let expanded = self.expand_str_comparisons(&expanded);
-            let e = match crate::expr::parse_expr(&expanded) {
+            let e = match crate::expr::parse_expr(&expanded, &self.state.charset) {
                 Some((e, [])) => e,
                 _ => {
                     self.err(gspan, "bad byte expression");
@@ -6699,7 +6710,7 @@ impl Asm {
                 self.err(ssp, STRING_IN_WIDE_DATA);
                 continue;
             }
-            let e = match crate::expr::parse_expr(&expanded) {
+            let e = match crate::expr::parse_expr(&expanded, &self.state.charset) {
                 Some((e, [])) => e,
                 _ => {
                     self.err(gspan, "bad word expression");
@@ -6795,7 +6806,7 @@ impl Asm {
                 self.err(ssp, STRING_IN_WIDE_DATA);
                 continue;
             }
-            let e = match crate::expr::parse_expr(&expanded) {
+            let e = match crate::expr::parse_expr(&expanded, &self.state.charset) {
                 Some((e, [])) => e,
                 _ => {
                     self.err(gspan, "bad word expression");
@@ -6886,7 +6897,7 @@ impl Asm {
                 self.err(ssp, STRING_IN_WIDE_DATA);
                 continue;
             }
-            let e = match crate::expr::parse_expr(&expanded) {
+            let e = match crate::expr::parse_expr(&expanded, &self.state.charset) {
                 Some((e, [])) => e,
                 _ => {
                     self.err(gspan, "bad long expression");
@@ -7022,6 +7033,144 @@ impl Asm {
     /// and an untouched address are indistinguishable, so a `Fill` here agrees
     /// with the reference everywhere except at the end of the image, which is
     /// exactly where it was caught.
+    /// `charset` — remap the code page, the character-to-byte step that every
+    /// string and character literal passes through.
+    ///
+    /// See [`crate::charset`] for the measured asl semantics this implements and
+    /// for the probe listings behind each rule. The shape of the code follows
+    /// asl's own operand accounting:
+    ///
+    /// ```text
+    ///   charset                     reset the page to the identity
+    ///   charset SRC, TGT            TGT integer: map[SRC] = TGT
+    ///   charset SRC, "str"          map[SRC+i] = the RAW byte of str[i]
+    ///   charset LO, HI, BASE        map[LO+i] = (BASE+i) mod 256
+    /// ```
+    ///
+    /// The three range refusals are asl's, verbatim in effect if not in
+    /// spelling: an index or target outside `0..=255` and `LO > HI` are both
+    /// refused with NO mapping applied, so a refused `charset` cannot half-apply
+    /// and leave the page in a state no asl run would produce.
+    ///
+    /// `SRC`/`LO`/`HI`/`BASE` fold through [`Self::eval_all`], which is what
+    /// makes a character literal written there translate through the page that
+    /// is live at that moment — asl's behaviour, and the rule most likely to be
+    /// guessed wrong. The string target does NOT translate; its bytes are raw.
+    fn directive_charset(&mut self, rest: &[Token], span: Span) {
+        let groups: Vec<&[Token]> = if rest.is_empty() {
+            Vec::new()
+        } else {
+            split_top_commas(rest)
+        };
+        match groups.len() {
+            0 => self.state.charset.reset(),
+            2 => {
+                let Some(src) = self.charset_index(groups[0], span) else {
+                    return;
+                };
+                // A STRING target assigns consecutive entries from raw bytes; an
+                // integer target assigns the single entry. The string arm is
+                // checked first because `charset $61,"AB"` is the two-character
+                // string form, not the packed integer $4142 (asl: `dc.b "ab"`
+                // reads `41 42`, so it is neither packed nor a range refusal).
+                if let Some(s) = self.eval_str(groups[1]) {
+                    // A string target that would run past $FF is refused whole,
+                    // with NOTHING applied. Measured rather than chosen: asl
+                    // draws `range overflow` on `charset $FE,"ABC"` and a
+                    // following `dc.b "\xfe"` still reads `FE`, so not even the
+                    // in-range prefix landed.
+                    let last = s.chars().count().saturating_sub(1);
+                    if usize::from(src) + last > 0xFF {
+                        self.err_charset_string_overruns(span);
+                        return;
+                    }
+                    for (i, c) in s.chars().enumerate() {
+                        self.state.charset.set(src + i as u8, c as u8);
+                    }
+                } else {
+                    let Some(tgt) = self.charset_index(groups[1], span) else {
+                        return;
+                    };
+                    self.state.charset.set(src, tgt);
+                }
+            }
+            3 => {
+                let Some(lo) = self.charset_index(groups[0], span) else {
+                    return;
+                };
+                let Some(hi) = self.charset_index(groups[1], span) else {
+                    return;
+                };
+                let Some(base) = self.charset_index(groups[2], span) else {
+                    return;
+                };
+                if lo > hi {
+                    self.err(
+                        span,
+                        format!("charset range ${lo:02X}..${hi:02X} runs backwards"),
+                    );
+                    return;
+                }
+                for (i, idx) in (lo..=hi).enumerate() {
+                    // asl WRAPS the target across the range (`charset
+                    // $41,$43,$FE` gives `FE FF 00`), so this is a deliberate
+                    // wrapping add and not an overflow to guard.
+                    self.state
+                        .charset
+                        .set(idx, base.wrapping_add(i as u8));
+                }
+            }
+            n => self.err(
+                span,
+                format!("charset takes 0, 2 or 3 operands, not {n}"),
+            ),
+        }
+    }
+
+    /// One `charset` operand as a code-page index or target: fold it, then hold
+    /// it to asl's `0..=255`. `None` (with the refusal already raised) means the
+    /// caller must apply NO part of the mapping.
+    fn charset_index(&mut self, toks: &[Token], span: Span) -> Option<u8> {
+        // The `None` arm gets its own word, and it has to: `eval_all` says
+        // NOTHING for an operand that merely fails to resolve (its `Fold::Poison`
+        // arm names a register and otherwise returns silently). Without this,
+        // `charset NeverDefined,$11` dropped the mapping, emitted no diagnostic,
+        // exited 0, and handed back plain ASCII for every character the source
+        // meant to be in the game's font. Measured on the binary before this
+        // arm existed, which emitted `41` for a following `dc.b "A"`. asl
+        // refuses it (`p16.asm(4):10: error: symbol undefined`, exit 2) and
+        // applies no mapping, so `41` at exit 0 was a silent wrong byte, the one
+        // outcome a code page must never produce.
+        //
+        // A FORWARD reference is not this case and must not be caught by it:
+        // asl assembles `charset Later,$11` with `Later equ $41` below it at
+        // exit 0, reading `dc.b "A"` as `11` (probe `p17.asm`). It works here
+        // for the same reason `align` and `ds` survive one: diagnostics are
+        // returned from the CONVERGED pass alone, so this refusal on pass 0
+        // is superseded once the symbol has a value.
+        //
+        // `align`, `ds` and the duplicate count all reach for their own word at
+        // this same choke point, and `register_reported_at` is the same
+        // don't-say-it-twice courtesy they extend.
+        let Some(v) = self.eval_all(toks, span) else {
+            if !self.register_reported_at(span) {
+                self.err(span, "unresolved charset operand");
+            }
+            return None;
+        };
+        match u8::try_from(v) {
+            Ok(b) => Some(b),
+            Err(_) => {
+                self.err(span, format!("charset operand {v} out of range 0..=255"));
+                None
+            }
+        }
+    }
+
+    fn err_charset_string_overruns(&mut self, span: Span) {
+        self.err(span, "charset string target runs past the end of the code page");
+    }
+
     fn directive_align(&mut self, rest: &[Token], span: Span) {
         self.open_section_if_needed();
         match self.eval_all(rest, span) {
@@ -7111,9 +7260,9 @@ impl Asm {
             let expanded = self.expand_operand_builtins(g);
             let classified =
                 if !written_indirect && crate::operands::is_whole_paren_group(&expanded) {
-                    crate::operands::classify_as_value(&expanded, span)
+                    crate::operands::classify_as_value(&expanded, span, &self.state.charset)
                 } else {
-                    crate::operands::classify(&expanded, span)
+                    crate::operands::classify(&expanded, span, &self.state.charset)
                 };
             match classified {
                 Ok(a) => atoms.push(a),
@@ -7277,7 +7426,7 @@ impl Asm {
             return self.lower_m68k_movem(suffix_size, rest, span);
         }
         if matches!(mnemonic, M68kMnemonic::Jmp | M68kMnemonic::Jsr) {
-            let atoms = match parse_operands(rest, span) {
+            let atoms = match parse_operands(rest, span, &self.state.charset) {
                 Ok(a) => a,
                 Err(d) => {
                     self.diags.push(d);
@@ -7401,7 +7550,7 @@ impl Asm {
             return self.lower_m68k_generic(mnemonic, suffix_size, atoms, span);
         }
 
-        let atoms = match parse_operands(rest, span) {
+        let atoms = match parse_operands(rest, span, &self.state.charset) {
             Ok(a) => a,
             Err(d) => {
                 self.diags.push(d);
@@ -7740,7 +7889,7 @@ impl Asm {
                 return;
             }
         };
-        let atoms = match parse_operands(rest, span) {
+        let atoms = match parse_operands(rest, span, &self.state.charset) {
             Ok(a) => a,
             Err(d) => {
                 self.diags.push(d);
@@ -7774,7 +7923,7 @@ impl Asm {
     /// `self_address - (self_address + 2)`) and against real `asl` (see
     /// `m68k_dbf_d0_self`/`m68k_dbeq_d1_self` in `tests/snippets_golden.txt`).
     fn lower_m68k_dbcc(&mut self, mnemonic: M68kMnemonic, rest: &[Token], span: Span) {
-        let atoms = match parse_operands(rest, span) {
+        let atoms = match parse_operands(rest, span, &self.state.charset) {
             Ok(a) => a,
             Err(d) => {
                 self.diags.push(d);
@@ -7868,7 +8017,7 @@ impl Asm {
                 return;
             }
         };
-        let mem_atoms = match parse_operands(mem_toks, span) {
+        let mem_atoms = match parse_operands(mem_toks, span, &self.state.charset) {
             Ok(a) => a,
             Err(d) => {
                 self.diags.push(d);
@@ -8729,8 +8878,7 @@ impl Asm {
         let head = self.subst_frame(&lines[start]);
         let head = head.as_ref().unwrap_or(&lines[start]);
         let toks = lex_line(
-            &head.text,
-            self.state.cpu,
+            &head.text, self.state.cpu, &self.state.charset,
             lines[start].source,
             lines[start].base,
         )
@@ -11642,7 +11790,7 @@ mod tests {
         use super::parse_reg_list;
         use crate::lexer::lex_line;
         let mask = |s: &str| {
-            let toks = lex_line(s, Cpu::M68000, sigil_span::SourceId(0), 0).unwrap();
+            let toks = lex_line(s, Cpu::M68000, &crate::charset::CodePage::identity(), sigil_span::SourceId(0), 0).unwrap();
             parse_reg_list(&toks)
         };
         // Single reg: bit0=D0..bit7=D7, bit8=A0..bit15=A7 (canonical order).

@@ -4878,3 +4878,47 @@ was still `1b7fe316/846529`, byte-identical to the pin, while the same binary em
 instead of `22` for probe `p1`. So four green CRCs are a real regression guard against incidental
 damage and are **not** evidence about selector semantics. A parcel touching this routine owes its
 own probes. **Kill:** an aeon source actually invokes a macro whose body holds a `switch`.
+
+## 2026-09-09 AS `charset`, the code page (Sonic 1 cause B), booked not fixed
+
+Landed on `worktree-agent-a3bc0b784db9e7c19` at `parcel/as-charset`. `charset` now works and
+Sonic 1's front end is clean. Oracle for every claim: asl 1.42 Beta [Bld 212], md5
+`61e672562465725a8c102288a7da9098`; probes and listings in
+`docs/superpowers/notes/2026-09-09-as-charset.md`. These four are what the parcel found and did
+NOT close.
+
+**1. asl's WIDE data directives distribute a string operand, and sigil refuses it.** `dc.w "AB"`
+is `0041 0042` in asl and `dc.l "AB"` is `00000041 00000042`; under a live code page the same
+lines are `0011 0042` and `00000011 00000042` (probe `p11`, exit 0 on those lines). sigil refuses
+the shape (`STRING_IN_WIDE_DATA`), which is a deliberate loud-rather-than-wrong choice predating
+this parcel. **The charset dimension is new information: implementing it makes a FOURTH code-page
+consumer**, and one whose omission would be invisible exactly the way the lexer's was. **Exposure
+is 0** in s1disasm's front-end run today. **Kill:** `dc.w`/`dc.l` accept a string operand AND route
+it through `AsmState::charset`.
+
+**2. `dc.b "AB"+0`, an operator distributing over a string's elements.** asl emits `41 42` (one
+byte per character, the operator applied to each), and `11 42` under `charset 'A',$11` (probe
+`p2`, line 30). sigil's `directive_db` takes its string path only for a BARE string, so `"AB"+0`
+falls through to the numeric parse, packs to `$1142`, and is refused as out of range. Same family
+as row 1 and pre-existing; recorded here because it surfaced while measuring the code page and
+would otherwise be re-derived. **Kill:** the operator distributes, and the elements are
+page-mapped.
+
+**3. `charset "AB",$11` refuses for a different reason than asl does.** asl says `#1110 wrong
+number of operands`; sigil packs the multi-character string and says `charset operand 16706 out of
+range 0..=255`. Same line, same outcome (refused, no mapping applied), different account. asl
+evidently has a dedicated one-character-string path for operand 1 rather than routing it through
+the integer conversion, since `charset $4142,$11` on the same build draws `range overflow`
+instead (probe `p10`). **Exposure is 0**: no corpus writes a multi-character `charset` operand.
+**Kill:** the message names the operand's shape rather than its packed value.
+
+**4. THE AEON FOUR-SHAPE BYTE CHECK IS BLIND TO `charset`, AND SO IS THE SONIC 1 CENSUS.** aeon
+writes the token `charset` **0 times** across 205 `.asm`/`.emp`/`.inc` files, so the four ROM CRCs
+cannot move on any charset change; that half is structural and needs no mutation to establish. The
+census is the more surprising half and it WAS measured: with the `dc.b` consumer reverted to the
+identity page, the census still reports **1 diagnostic**, unchanged, because it counts REFUSALS and
+a wrong byte is not one. So neither of this repo's two standing corpus-wide instruments can see a
+wrong code page. Only `tests/as_charset.rs` can, and one of its cases
+(`a_string_in_an_expression_packs_the_mapped_bytes`) is the single gate in the whole workspace that
+sees the expression consumer. **Kill:** a corpus in the harness assembles a `charset` region and
+compares bytes.
