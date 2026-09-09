@@ -410,3 +410,36 @@ will be standing.
    The brief predicted the direction; it is worth recording that the honest
    ADDED count was 2 and then 0, and only a both-directions set diff could tell
    the difference.
+
+## An unrelated latent gate defect this run tripped by chance
+
+`sigil-harness/tests/s8_seam_size.rs::the_seam_report_arithmetic_agrees_with_itself`
+failed on this branch, and it is nothing to do with nameless labels. Recorded
+here because it is intermittent, it vanishes on the next commit, and the next
+person to hit it will otherwise re-derive it from scratch.
+
+The test parses the seam report with `row()`, which takes the first
+whitespace-separated token that parses as an `i64` and treats the line as a data
+row when that token is not the first. The report's own provenance header
+contains `tree: <abbreviated SHA>`, and this parcel's tip at the time was
+`91709289` -- eight characters, all of them decimal digits. So the SHA parsed,
+the header line became a row, and it was summed with the real ones:
+
+```text
+   declared seam total             9912
+   the five real rows              6526 + 248 + 429 + 1359 + 1350 = 9912   (agree)
+   the number the test reported    91719201  =  9912 + 91709289
+```
+
+The control is in the same function: at master's `6abe9488` the same line yields
+`None`, because `"6abe9488".parse::<i64>()` fails on its letters. So the gate is
+red for any commit whose short SHA happens to be all digits, roughly one in
+forty-three, and green for every other one. That is also why a re-run makes it
+disappear without anything being fixed, which is the property worth writing down.
+
+NOT FIXED HERE. It is another crate's gate, and the right repair is a judgement
+call for whoever owns it: exclude the header, require a row to be indented, or
+stop putting a bare number in the provenance line. Choosing one of those from
+inside an unrelated parcel would be a change to a gate made by the person whose
+run it had just failed, which is the shape that is indistinguishable from hiding
+a defect.
