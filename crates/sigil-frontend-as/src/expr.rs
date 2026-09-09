@@ -18,6 +18,86 @@ use sigil_ir::Expr;
 /// far below the stack budget.
 const MAX_EXPR_DEPTH: u32 = 128;
 
+/// The most characters a string literal may carry and still be an integer:
+/// asl's integer conversion holds four bytes and refuses a fifth.
+const MAX_PACKED_CHARS: usize = 4;
+
+/// AS's STRING-AS-INTEGER rule, for an EXPRESSION context only.
+///
+/// A string literal of one to four characters IS an integer in asl: the
+/// characters are packed BIG-ENDIAN, each contributing its unsigned byte, and
+/// the result is an ordinary non-negative value that every operator accepts.
+/// Sonic 1 spends it as a two-character command tag. `move.w #"SW",...` writes
+/// `$5357` into a child object's command field and `cmpi.w #"GO",...` reads it
+/// back, so getting the packing wrong is a wrong ROM byte, not a wrong
+/// diagnostic.
+///
+/// Every case below is asl-measured (md5 `61e672562465725a8c102288a7da9098`,
+/// exit 0 quoted per probe in
+/// `docs/superpowers/notes/2026-09-09-s1-expr-char-literal-and-defined.md`):
+///
+/// ```text
+///   move.l #"A",d0        203C 0000 0041      one character, ZERO-extended
+///   move.l #"AB",d0       203C 0000 4142
+///   move.l #"ABC",d0      203C 0041 4243
+///   move.l #"ABCD",d0     203C 4142 4344
+///   move.w #"SW",d0       303C 5357           the corpus's own tag
+///   move.w #"AB"+1,d0     303C 4143           an ordinary integer in arithmetic
+/// ```
+///
+/// UNSIGNED, and measured as such rather than assumed: a high bit does not sign
+/// -extend. `move.l #"\xff",d0` is `0000 00FF` (not `FFFF FFFF`), `#"\x80"+0`
+/// is `0000 0080`, `#"\xff\xff"+1` is `0001 0000` (not `0000 0000`), and
+/// `#("\xff\xff"<0)` is `0000 0000`. So the value is the plain base-256 reading
+/// of the bytes, and the width of the target does not enter into it:
+/// `move.b #"AB",d0` converts to `$4142` and then draws asl's own
+/// `error #1320: range overflow`, rather than the string being refused.
+///
+/// `None` for an EMPTY string and for five characters or more, which is asl's
+/// answer too: both draw `error #1141: expected integer, but got string` at
+/// exit 2. Returning `None` makes the operand not-an-expression, so the caller
+/// raises its own refusal at the same line asl refuses. The limit is four on
+/// the Z80 as well as the 68000 (`ld hl,"ABCD">>16` is `21 42 41`;
+/// `ld hl,"ABCDE"` is the same `#1141`), so it belongs to asl's integer type and
+/// not to the target's word size.
+///
+/// **This rule is for EXPRESSIONS, and a `dc`-family directive is not one.** In
+/// a data directive a string is a CHARACTER SEQUENCE, one element per character
+/// at the directive's width, and an operator distributes over the elements
+/// rather than over a packed value: asl's `dc.w "AB"` is `0041 0042`, and so is
+/// `dc.w "AB"+0`. `directive_db` already consumes that shape before it reaches
+/// this parser; the wider directives refuse a string operand outright rather
+/// than let it arrive here and pack, because packing it would be silently wrong
+/// bytes rather than a loud refusal.
+///
+/// **The `charset` seam.** asl's `charset` directive remaps the code page, which
+/// is the CHARACTER-TO-BYTE step and nothing else: the big-endian packing above
+/// sits on top of whatever byte a character maps to. This function therefore
+/// isolates that step (`c as u8`, the identity code page, the `STANDARD (0
+/// changed characters)` asl reports for an unmapped assembly) so a later
+/// `charset` composes by supplying a mapping there instead of undoing the
+/// packing. The identical `c as u8` step lives in `eval.rs::directive_db`, and
+/// the two are the complete population a `charset` implementation must reach.
+/// A code page is assembler STATE, and this parser is deliberately stateless,
+/// so `charset` will have to thread that state in; the seam is which step it
+/// replaces, and it is one step, not two.
+pub(crate) fn string_to_int(s: &str) -> Option<i64> {
+    let mut packed: i64 = 0;
+    let mut chars = 0usize;
+    for c in s.chars() {
+        chars += 1;
+        if chars > MAX_PACKED_CHARS {
+            return None;
+        }
+        packed = (packed << 8) | i64::from(c as u8);
+    }
+    if chars == 0 {
+        None
+    } else {
+        Some(packed)
+    }
+}
+
 /// Parse a leading expression from `toks`; return it plus the unconsumed tail.
 /// `None` if the head is not an expression, or if it nests past
 /// [`MAX_EXPR_DEPTH`] — the same "not an expression here" answer the unbalanced-
@@ -135,6 +215,10 @@ fn parse_atom(toks: &[Token], depth: u32) -> Option<(Expr, &[Token])> {
     let (head, rest) = toks.split_first()?;
     match &head.tok {
         Tok::Int(n) => Some((Expr::Int(*n), rest)),
+        // A string literal in a primary-expression position is asl's packed
+        // integer; see [`string_to_int`] for the rule and for why a `dc`-family
+        // directive must never reach this arm.
+        Tok::Str(s) => string_to_int(s).map(|v| (Expr::Int(v), rest)),
         Tok::Dollar => Some((Expr::Sym("$".to_string()), rest)),
         // A standalone `*` in atom (primary-expression) position is AS's other
         // spelling of the current-PC symbol (used by `pscStart := *` etc. in
