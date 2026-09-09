@@ -1885,6 +1885,50 @@ impl Asm {
     /// Everything else a placed label needs (a section to live in, the env
     /// binding a later fold reads, the link-level record the final VMA comes
     /// from) is the same and is done here.
+    /// Advance the counters for one nameless DEFINITION, define the slot(s) it
+    /// lands on, and return the name the pad machinery should carry — or `None`
+    /// when the run is one asl refuses.
+    ///
+    /// Shared by the two paths that can reach a definition, which is the point
+    /// of it being a method: `exec_one` for an ordinary line, and
+    /// `bind_head_label` for a line whose remainder is a BLOCK OPENER
+    /// (`-\trept 8`). Two copies of the counter arithmetic would be two chances
+    /// to disagree about how far a `+` advances, and the disagreement would show
+    /// up as a branch to the wrong address rather than as a diagnostic.
+    fn bind_nameless_def(&mut self, def: crate::nameless::Def, span: Span) -> Option<String> {
+        use crate::nameless::Def;
+        match def {
+            Def::Invalid => {
+                // asl: `error: invalid symbol name`. The multi-character form is
+                // a `+` privilege: `--` and `//` in column 1 are both refused,
+                // measured, while `++` is accepted and consumes two slots.
+                self.err(span, "`--` and `//` are not nameless labels; write `-`, `/`, or a run of `+`");
+                None
+            }
+            Def::Forward(m) => {
+                self.nameless.fwd += m;
+                let n = self.nameless.fwd;
+                Some(self.define_nameless_slot(&crate::nameless::fwd_slot(n)))
+            }
+            Def::Backward => {
+                self.nameless.bwd += 1;
+                let n = self.nameless.bwd;
+                Some(self.define_nameless_slot(&crate::nameless::bwd_slot(n)))
+            }
+            Def::Both => {
+                self.nameless.fwd += 1;
+                self.nameless.bwd += 1;
+                let (f, b) = (self.nameless.fwd, self.nameless.bwd);
+                self.define_nameless_slot(&crate::nameless::fwd_slot(f));
+                // A `/` defines two slots and a pad can only be absorbed into
+                // one of them, so the caller carries the BACKWARD one: that is
+                // the direction a `/` exists to be reached from, and the one
+                // whose address a following `align` would otherwise leave stale.
+                Some(self.define_nameless_slot(&crate::nameless::bwd_slot(b)))
+            }
+        }
+    }
+
     fn define_nameless_slot(&mut self, name: &str) -> String {
         self.open_section_if_needed();
         let value = self.here_i64();
@@ -3692,41 +3736,8 @@ impl Asm {
         // before this parcel — the line died on its first token, so its operand
         // was never reached to complain about.
         if let Some((def, used)) = crate::nameless::classify_def(&body, body[0].span.start == line.base) {
-            use crate::nameless::Def;
-            let span = body[0].span;
-            match def {
-                Def::Invalid => {
-                    // asl: `error: invalid symbol name`. The multi-character
-                    // form is a `+` privilege — `--` and `//` in column 1 are
-                    // both refused, measured.
-                    self.err(span, "a nameless label is `+`, a run of `+`, `-`, or `/`");
-                    return;
-                }
-                Def::Forward(m) => {
-                    self.nameless.fwd += m;
-                    let n = self.nameless.fwd;
-                    self.define_nameless_slot(&crate::nameless::fwd_slot(n));
-                }
-                Def::Backward => {
-                    self.nameless.bwd += 1;
-                    let n = self.nameless.bwd;
-                    self.define_nameless_slot(&crate::nameless::bwd_slot(n));
-                }
-                Def::Both => {
-                    self.nameless.fwd += 1;
-                    self.nameless.bwd += 1;
-                    let (f, b) = (self.nameless.fwd, self.nameless.bwd);
-                    self.define_nameless_slot(&crate::nameless::fwd_slot(f));
-                    self.define_nameless_slot(&crate::nameless::bwd_slot(b));
-                }
-            }
-            // A `/` defines two slots and can absorb a pad into only one of
-            // them, so the pad machinery is given the BACKWARD one — the
-            // direction a `/` exists to be reached from, and the one whose
-            // address a following `align` would otherwise leave stale.
-            let carried = match def {
-                Def::Forward(_) => crate::nameless::fwd_slot(self.nameless.fwd),
-                _ => crate::nameless::bwd_slot(self.nameless.bwd),
+            let Some(carried) = self.bind_nameless_def(def, body[0].span) else {
+                return;
             };
             self.lone_label_here = Some(carried.clone());
             if body.len() == used {
@@ -3906,7 +3917,7 @@ impl Asm {
         let substituted = self.subst_frame_text(&line.text);
         let text = substituted.as_deref().unwrap_or(&line.text);
         let (toks, lex_err) = lex_line_recover(text, self.state.cpu, &self.state.charset, line.source, line.base);
-        let (kw, idx, body) = self.head_of_tokens(toks)?;
+        let (kw, idx, body) = self.head_of_tokens(toks, line.base)?;
         Some((kw, idx, body, lex_err))
     }
 
@@ -3914,18 +3925,37 @@ impl Asm {
     /// [`Self::dispatch_head_checked`] so the head rules below are stated once
     /// and apply identically to a fully-lexed line and to the clean PREFIX of
     /// one whose operand did not lex.
-    fn head_of_tokens(&self, toks: Vec<Token>) -> Option<(String, usize, Vec<Token>)> {
+    fn head_of_tokens(&self, toks: Vec<Token>, base: u32) -> Option<(String, usize, Vec<Token>)> {
         if toks.is_empty() {
             return None;
         }
         let parsed = parse_line_tokens(&toks);
-        let body = if parsed.label_colon.is_some() {
+        let mut body = if parsed.label_colon.is_some() {
             parsed.tokens
         } else {
             toks
         };
         if body.is_empty() {
             return None;
+        }
+        // A NAMELESS LABEL peels here exactly as a colon label does, and for the
+        // same reason: block structure is decided by the head, and a line whose
+        // head this cannot read is routed to `exec_one` instead of to its block
+        // driver. The corpus writes `-\trept 8` … `endm` … `dbf d0,-`, so the
+        // opener and its label share a line; without this peel the `rept` never
+        // reaches `exec_rept`, the body is never repeated, and the line reports
+        // `rept` as an unrecognized mnemonic.
+        //
+        // That failure did not exist before nameless labels did — the line died
+        // on its first token — which is the shape of thing closing one gap
+        // exposes. It was found by diffing the corpus's diagnostic SETS in both
+        // directions rather than its totals: the run went from 5,136 rows to
+        // 153, and these two were the entire ADDED side.
+        if let Some((_, used)) = crate::nameless::classify_def(&body, body[0].span.start == base) {
+            body = body[used..].to_vec();
+            if body.is_empty() {
+                return None;
+            }
         }
         let name = match &body[0].tok {
             Tok::Ident(s) => s.clone(),
@@ -4040,7 +4070,7 @@ impl Asm {
         // line's tokens, so an index of 1 is exactly "token 0 is the label
         // field". Spans are `line.base + column` (see `lex_line`), so column 0
         // is `span.start == line.base`.
-        let (_, idx, body) = self.head_of_tokens(toks)?;
+        let (_, idx, body) = self.head_of_tokens(toks, line.base)?;
         if idx != 1 || body[0].span.start != line.base {
             return None;
         }
@@ -4057,10 +4087,39 @@ impl Asm {
     /// (`L: if 1=1` then `.loc: dc.b $CC` lists ` L : 101 C` and
     /// ` L.loc : 102 C`).
     fn bind_head_label(&mut self, line: &SrcLine) {
+        // A NAMELESS label on a block-opener line, the twin of the named case
+        // below. `head_of_tokens` peels it so the line ROUTES to its block
+        // driver; this is what makes it exist. Without it `-\trept 8` repeats
+        // its body correctly and then the `dbf d0,-` under it counts one
+        // definition too few, which is a branch to the wrong address and no
+        // diagnostic at all — strictly worse than the unrecognized-mnemonic
+        // error that peeling replaced.
+        if let Some((def, _)) = self.line_nameless_def(line) {
+            let span = Span {
+                source: line.source,
+                start: line.base,
+                end: line.base,
+            };
+            self.bind_nameless_def(def, span);
+            return;
+        }
         if let Some(name) = self.head_label(line) {
             let span = label_span(line, &name);
             self.define_label(&name, span);
         }
+    }
+
+    /// The nameless DEFINITION a block-opener line carries in its label field,
+    /// if any. Reads the line the same way [`Self::head_label`] does — same
+    /// substitution, same recovering lex — so the two answers cannot be about
+    /// different text.
+    fn line_nameless_def(&self, line: &SrcLine) -> Option<(crate::nameless::Def, usize)> {
+        let substituted = self.subst_frame_text(&line.text);
+        let text = substituted.as_deref().unwrap_or(&line.text);
+        let (toks, _) =
+            lex_line_recover(text, self.state.cpu, &self.state.charset, line.source, line.base);
+        let first = toks.first()?;
+        crate::nameless::classify_def(&toks, first.span.start == line.base)
     }
 
     /// [`Self::line_kw_args`] for a head whose arguments are about to be
