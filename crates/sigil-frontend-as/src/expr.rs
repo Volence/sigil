@@ -14,7 +14,7 @@ use sigil_ir::Expr;
 /// WHERE IN THE PASS the statement sits, both are needed at the leaves, and
 /// bundling them means adding a third cannot silently miss a call site. The
 /// counters are a snapshot by value for the same reason the code page is
-/// borrowed read-only — this parser stays stateless, and a reference resolves
+/// borrowed read-only -- this parser stays stateless, and a reference resolves
 /// against the position it was parsed at and nothing later.
 #[derive(Copy, Clone)]
 pub struct ExprCtx<'a> {
@@ -266,8 +266,8 @@ fn parse_atom<'a>(toks: &'a [Token], depth: u32, ctx: &ExprCtx<'_>) -> Option<(E
     // AS's NAMELESS TEMPORARY LABELS, in the one position where `+` and `-` can
     // be a label rather than an operator: the head of a primary expression.
     //
-    // `parse_atom` runs ONLY where an operand is expected — `parse_bp` consumes
-    // an infix operator itself and never calls back in with one at the head — so
+    // `parse_atom` runs ONLY where an operand is expected -- `parse_bp` consumes
+    // an infix operator itself and never calls back in with one at the head -- so
     // reaching here with a `+`/`-` already means "no left-hand side". That is
     // exactly AS's own condition, and it is why this needs no lookbehind and no
     // statement-level pre-pass.
@@ -278,8 +278,8 @@ fn parse_atom<'a>(toks: &'a [Token], depth: u32, ctx: &ExprCtx<'_>) -> Option<(E
     // an operator to, the reference is all n.
     //
     // The `ref_len == 0` fall-through is what keeps this feature away from
-    // arithmetic that already worked. A single `-` before an operand — every
-    // `-1`, `-Base`, `-(SIZE*2)` in every corpus — takes the unary-negation arm
+    // arithmetic that already worked. A single `-` before an operand -- every
+    // `-1`, `-Base`, `-(SIZE*2)` in every corpus -- takes the unary-negation arm
     // below, byte for byte as before. What changes for a currently-ACCEPTED
     // expression is only `-` × m, m >= 2, before an operand: sigil folded that
     // as m nested negations, and asl reads it as `(nameless) - operand`. The
@@ -416,7 +416,8 @@ mod depth_guard_tests {
             .stack_size(4 * 1024 * 1024)
             .spawn(move || {
                 let toks = lex_line(&src, Cpu::M68000, &CodePage::identity(), SourceId(0), 0).expect("lex");
-                let _ = tx.send(parse_expr(&toks, &CodePage::identity()).is_some());
+                let cs = CodePage::identity();
+                let _ = tx.send(parse_expr(&toks, &ExprCtx::plain(&cs)).is_some());
             })
             .expect("spawn");
         let out = rx

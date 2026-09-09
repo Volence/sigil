@@ -663,6 +663,7 @@ fn is_reg_or_cond_word(w: &str) -> bool {
 mod tests {
     use super::{parse_operands, OperandAtom};
     use crate::charset::CodePage;
+    use crate::expr::ExprCtx;
     use crate::lexer::lex_line;
     use sigil_ir::backend::Cpu;
     use sigil_ir::expr::Fold;

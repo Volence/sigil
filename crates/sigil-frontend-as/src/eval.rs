@@ -1149,7 +1149,7 @@ struct Asm {
     /// Per-`Asm`, hence per pass, and for exactly the reason `expansion_label_seq`
     /// above is: the passes execute the same statements in the same order, so a
     /// slot number is stable across them. That stability is what lets a FORWARD
-    /// reference work at all — it is an ordinary reference to a symbol this pass
+    /// reference work at all -- it is an ordinary reference to a symbol this pass
     /// has not defined yet, which the convergence loop resolves on the next pass
     /// exactly as it does for a named forward label.
     nameless: crate::nameless::NamelessCounts,
@@ -1880,13 +1880,13 @@ impl Asm {
     /// Deliberately NOT [`Self::define_label`], and the difference is one line
     /// there: a plain label assigns `self.scope`, which is what a following
     /// `.local` qualifies under. A nameless label must not, or every `+` between
-    /// a named label and its own locals would silently re-anchor them — and
+    /// a named label and its own locals would silently re-anchor them -- and
     /// there are 2,010 `+` definitions in the Sonic 2 corpus to do it with.
     /// Everything else a placed label needs (a section to live in, the env
     /// binding a later fold reads, the link-level record the final VMA comes
     /// from) is the same and is done here.
     /// Advance the counters for one nameless DEFINITION, define the slot(s) it
-    /// lands on, and return the name the pad machinery should carry — or `None`
+    /// lands on, and return the name the pad machinery should carry -- or `None`
     /// when the run is one asl refuses.
     ///
     /// Shared by the two paths that can reach a definition, which is the point
@@ -3733,7 +3733,7 @@ impl Asm {
         // The label is defined and then the REST OF THE LINE is dispatched, not
         // returned from: a definition and a reference share one line 18 times in
         // the corpus (`-\tdbf\td0,-`), and those 18 emitted no diagnostic at all
-        // before this parcel — the line died on its first token, so its operand
+        // before this parcel -- the line died on its first token, so its operand
         // was never reached to complain about.
         if let Some((def, used)) = crate::nameless::classify_def(&body, body[0].span.start == line.base) {
             let Some(carried) = self.bind_nameless_def(def, body[0].span) else {
@@ -3946,8 +3946,8 @@ impl Asm {
         // reaches `exec_rept`, the body is never repeated, and the line reports
         // `rept` as an unrecognized mnemonic.
         //
-        // That failure did not exist before nameless labels did — the line died
-        // on its first token — which is the shape of thing closing one gap
+        // That failure did not exist before nameless labels did -- the line died
+        // on its first token -- which is the shape of thing closing one gap
         // exposes. It was found by diffing the corpus's diagnostic SETS in both
         // directions rather than its totals: the run went from 5,136 rows to
         // 153, and these two were the entire ADDED side.
@@ -4092,7 +4092,7 @@ impl Asm {
         // driver; this is what makes it exist. Without it `-\trept 8` repeats
         // its body correctly and then the `dbf d0,-` under it counts one
         // definition too few, which is a branch to the wrong address and no
-        // diagnostic at all — strictly worse than the unrecognized-mnemonic
+        // diagnostic at all -- strictly worse than the unrecognized-mnemonic
         // error that peeling replaced.
         if let Some((def, _)) = self.line_nameless_def(line) {
             let span = Span {
@@ -4110,8 +4110,8 @@ impl Asm {
     }
 
     /// The nameless DEFINITION a block-opener line carries in its label field,
-    /// if any. Reads the line the same way [`Self::head_label`] does — same
-    /// substitution, same recovering lex — so the two answers cannot be about
+    /// if any. Reads the line the same way [`Self::head_label`] does -- same
+    /// substitution, same recovering lex -- so the two answers cannot be about
     /// different text.
     fn line_nameless_def(&self, line: &SrcLine) -> Option<(crate::nameless::Def, usize)> {
         let substituted = self.subst_frame_text(&line.text);

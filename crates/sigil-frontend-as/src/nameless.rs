@@ -3,7 +3,7 @@
 //!
 //! The whole construct is two counters and a slot name. This module owns both,
 //! so the definition side (`eval.rs`) and the reference side (`expr.rs`) cannot
-//! disagree about which slot a given ordinal means — the same
+//! disagree about which slot a given ordinal means -- the same
 //! "a reader can never disagree with its writer about where a name lives" rule
 //! `sym_key` states for scoped names.
 //!
@@ -13,7 +13,7 @@
 //! quoted in `docs/superpowers/notes/2026-09-09-as-nameless-labels.md`. Every
 //! listing quoted there is from an `exit 0` run: asl stops iterating its passes
 //! once a line errors, so a run carrying ANY error prints unconverged forward
-//! branches — `60FE`, a branch to itself — for lines that are perfectly fine.
+//! branches -- `60FE`, a branch to itself -- for lines that are perfectly fine.
 //! Reading values off an errored listing is how the first draft of these rules
 //! got the forward direction backwards.)
 //!
@@ -24,8 +24,8 @@
 //! not a label.
 //!
 //! ```text
-//!   4/    1000 : 60FE                	bra.s	+
-//!   6/    1004 :                     	+			; indented
+//!   4/    1000 : 60FE                bra.s  +
+//!   6/    1004 :                      +           ; indented
 //!   > > > q1.asm(6):2: error: unknown instruction
 //! ```
 //!
@@ -34,7 +34,7 @@
 //!
 //! * `+` × m advances the FORWARD counter by m and defines forward slot `fwd`.
 //! * `-` advances the BACKWARD counter by 1 and defines backward slot `bwd`.
-//! * `/` advances BOTH by 1 and defines both slots — it is the bidirectional
+//! * `/` advances BOTH by 1 and defines both slots -- it is the bidirectional
 //!   form, reachable from either side.
 //!
 //! The `m > 1` case is not a curiosity invented here, it is measured, and it is
@@ -42,13 +42,13 @@
 //! "a `++` definition consumes two slots". It consumes two:
 //!
 //! ```text
-//!   4/    1000 : 6004                	bra.s	+	; -> $1006, slot 1
-//!   5/    1002 : 6004                	bra.s	+++	; -> $1008, slot 3
-//!   7/    1006 :                     +			; slot 1
-//!   9/    1008 :                     ++			; slot 3, NOT slot 2
+//!   4/    1000 : 6004                bra.s  +          ; -> $1006, slot 1
+//!   5/    1002 : 6004                bra.s  +++        ; -> $1008, slot 3
+//!   7/    1006 :                     +                 ; slot 1
+//!   9/    1008 :                     ++                ; slot 3, NOT slot 2
 //! ```
 //!
-//! — and slot 2 is then never defined at all, which is why a `bra.s ++` in that
+//! -- and slot 2 is then never defined at all, which is why a `bra.s ++` in that
 //! file is `error: symbol undefined`.
 //!
 //! The multi-character form is a `+` privilege and not a general one. `--` and
@@ -67,17 +67,17 @@
 //! of that line is dispatched, so
 //!
 //! ```text
-//!   6/    1004 : 60FE                -	bra.s	-	; its OWN line's label
-//!   4/    1000 : 6004                +	bra.s	+	; NOT its own; the next one
+//!   6/    1004 : 60FE                -  bra.s  -       ; its OWN line's label
+//!   4/    1000 : 6004                +  bra.s  +       ; NOT its own; the next one
 //! ```
 //!
-//! — backward `-` with k=1 lands on slot `bwd`, which the line just defined,
+//! -- backward `-` with k=1 lands on slot `bwd`, which the line just defined,
 //! while forward `+` with k=1 wants slot `fwd + 1`, one past it.
 //!
 //! ## What this module deliberately does NOT model
 //!
 //! asl scopes a definition made INSIDE A MACRO BODY to that expansion: a `+`
-//! defined in a body is invisible to a reference outside it, and — measured —
+//! defined in a body is invisible to a reference outside it, and -- measured --
 //! it does not merely fail to satisfy that reference, it makes the reference
 //! `error: symbol undefined` even though a later definition outside the macro
 //! would otherwise have served it. The counters here are global to the pass, so
@@ -109,13 +109,21 @@ pub struct NamelessCounts {
 /// source can spell a symbol with one, and the front end already relies on that
 /// for expansion scopes (`" exp#N"`). It also keeps them sorted together and
 /// obviously synthetic in any symbol listing that shows them.
+///
+/// The name SAYS `nameless` because it is not purely internal: a reference
+/// deeper than the definitions behind it (`bra.s ---` with two `-` above)
+/// reaches the linker as an unresolved symbol, and the linker prints the name.
+/// `unresolved symbol ` -#0`` sends the reader looking for a typo; `unresolved
+/// symbol ` nameless-#0`` names the construct they wrote. asl's own answer here
+/// is `error: symbol undefined`, so a refusal is right either way and only the
+/// wording was in question.
 pub fn fwd_slot(n: u32) -> String {
-    format!(" +#{n}")
+    format!(" nameless+#{n}")
 }
 
 /// The symbol-table name of backward slot `n`. See [`fwd_slot`].
 pub fn bwd_slot(n: u32) -> String {
-    format!(" -#{n}")
+    format!(" nameless-#{n}")
 }
 
 /// What a column-1 token run defines, if anything.
@@ -140,7 +148,7 @@ pub enum Def {
 /// reports whatever it reports for an indented `+` today.
 ///
 /// Returns the [`Def`] and the number of tokens it consumed, so the caller can
-/// dispatch the rest of the line — `-\tdbf\td0,-` is one line carrying both a
+/// dispatch the rest of the line -- `-\tdbf\td0,-` is one line carrying both a
 /// definition and a reference, and it is 18 of the corpus's references.
 pub fn classify_def(body: &[Token], col1: bool) -> Option<(Def, usize)> {
     if !col1 {
@@ -169,7 +177,7 @@ pub fn classify_def(body: &[Token], col1: bool) -> Option<(Def, usize)> {
 /// LOCAL test because AS's own rule is local. AS splits an expression at the
 /// RIGHTMOST operator of the loosest precedence tier present, so in a leading
 /// run of `+`/`-` the LAST one is the binary operator and everything before it
-/// is the left-hand side — which, being a bare run, is a nameless reference.
+/// is the left-hand side -- which, being a bare run, is a nameless reference.
 /// Only when nothing an operand could apply to follows the run is the whole run
 /// the reference.
 ///
