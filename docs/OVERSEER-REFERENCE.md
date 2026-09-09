@@ -891,18 +891,30 @@ its measurement, and the firings it swallows are printed on every run.
   command name will keep missing this; the honest fix is a non-default target dir by default.
   *(The chain-198 instance, its md5s and timestamps, and the accident that made a byte control
   non-vacuous: `docs/OVERSEER-LOG.md`, 2026-09-03 cut, original lines 886-935.)*
-- **AND THE SAME TREE NOW PRODUCES A RED NO CLEAN CHECKOUT CAN REPRODUCE, WHICH IS THE REVERSE
-  DIRECTION** *(aeon's finding, relayed 2026-09-09, carried at empyrean `origin/main 2cf6228`,
-  verified an ancestor from here; not reproduced at this seat, and their measurement is theirs)*.
-  Their main-tree pytest lane's `test_citation_form` indexes the roughly 160 agent worktrees under
-  `.claude/worktrees/`, so a bare `.emp:LINE` citation resolves ambiguously and 183 of 363 cases
-  report failure. They established the control before reporting it: identical 183 of 363 with their
-  own change stashed. **It is environmental, it exists in exactly one tree, and every lane that
-  glances at that tree will read it as signal.** The rule above trains suspicion of a green that
-  hides a problem; this is a red that means nothing, and it is the direction nobody has a reflex
-  for. It costs this lane nothing only because the aeon byte gate owed at every AS-frontend landing
-  runs against `.aeon-sigil-ref` or another clean checkout of a committed SHA, never against their
-  main tree. **If that ever changes, this is what the wall of red will be.**
+- **A GATE THAT WALKS THE FILESYSTEM IN A REPO HOSTING WORKTREES INSIDE ITSELF FAILS FOR WHOEVER
+  STANDS IN THE PARENT TREE AND FOR NOBODY ELSE** *(aeon's defect and aeon's fix, 2026-09-09;
+  relayed, not reproduced at this seat)*. Their `test_citation_form` walked the disk for `.emp`
+  files and descended into `.claude/worktrees/`, so a bare `foo.emp:N` citation matched roughly 160
+  checkouts and resolved ambiguous: 183 of 363 cases red, and it was **failing `build.sh`'s pytest
+  lane**, met as a failed four-shape verify on a comment-only change. **The red was unreachable by
+  exactly the people who could fix it and unavoidable for anyone standing where landings happen.**
+  The underlying bug was an asymmetry: the citing side enumerated from git while the cited side
+  walked the disk, two populations answering one question. Fixed at the class, not the instance,
+  by enumerating from `git ls-files` plus `--others --exclude-standard`, which cannot see an
+  ignored tree by construction rather than by remembering to skip one; and because the METHOD
+  changed they re-established the existing claims, three poisons each quoted off disk and restored
+  from a committed baseline, including a poison for the silent-recreation path (git made to fail
+  goes red with *"will NOT fall back to a directory walk"*).
+  **⚠ THIS BLOCK FIRST SAID THEIR TREE WAS EXPECTED TO BE RED AND COULD BE DISREGARDED. That was
+  wrong and it is the more instructive half.** The relay carried checkable facts (the counts, the
+  stashed control) and one unverifiable FRAMING, that the red meant nothing; this seat checked the
+  facts and banked the framing, into a reference file, inside twenty minutes, while
+  `docs/OVERSEER-REFERENCE.md` already carried *a framing cannot be verified by checking the things
+  inside it*. **A standing "expect that red" rots into a licence to ignore red**, which this suite
+  has recorded happening twice, and it was aimed at a defect whose owner was actively fixing it.
+  The byte-gate advice below is unchanged in effect and changed in reason: run it against a clean
+  checkout or `.aeon-sigil-ref` because **that is the right instrument**, never because some other
+  tree is expected to be red.
 - **A LANDING RUN AGAINST THE OWNER'S LIVE AEON TREE PRODUCES PHANTOM FAILURES, proved here the
   expensive way.** A full-suite run pointed at `/home/volence/sonic_hacks/aeon` returned an extra
   failure the parcel's own agent had not seen, in a gate that plausibly matched what the parcel had
