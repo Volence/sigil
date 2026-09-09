@@ -310,3 +310,36 @@ one of them without saying which is a report that can be off by 4x:
   (28 definitions and 48 references) would report if `fixBugs` were on. They were
   read and classified by eye, not measured, because flipping a corpus assembly
   option changes the corpus.
+
+## Answering "how far off is Sonic 2", 2026-09-09, and correcting the premise it came with
+
+The owner asked, verbatim: *"Also sonic 1 compiles with sigil, how far off is sonic 2 from
+compiling?"*
+
+**Sonic 1 does not compile, and that is the first correction.** Last night's profile
+(`2026-09-08-s1-build-profile.md`, merge `8d6b8089`) measured the Sonic 1 run as **exit 1 with 50
+diagnostics**, ten distinct classes across seven files, exiting before layout, link and flatten. The
+profile said so plainly and the premise still formed, which is worth noting: a message whose subject
+is SPEED is read as a report that the thing works. Nine of those ten classes are missing directives
+(`charset`, `listing`, `page`) and string-flavoured `switch`/`case`, so Sonic 1's remaining distance
+is a short language-coverage list rather than a structural gap.
+
+**What 86.5 percent is a share OF: error ROWS in one run.** 4,985 of 5,761 rows, over 5,113 distinct
+sites, at the revisions recorded at the head of this note. It is not a share of lines, not of files,
+and not of features. One root cause produces most of the noise because a missing label form is
+referenced everywhere.
+
+**So "Sonic 2 is one feature away" is NOT what the number means, and this note already forbade the
+inference that produces it.** `5,761 - 4,985 = 776` is barred above as a post-fix prediction, for a
+reason that survives restating: closing nameless labels lets the assembler REACH code it currently
+abandons, and code newly reached produces its own diagnostics. The count can rise. The honest
+statement is that one blocker accounts for most of today's noise and the tail behind it cannot be
+sized until it is gone.
+
+**What is known to sit behind it**, from the class table above: 89 unrecognized mnemonics, 39
+`cannot include` (files the run never reaches), 24 unresolved symbols, and three clusters whose row
+counts come from a SINGLE SITE each (518, 49 and 30 rows), which are one construct repeated rather
+than three hundred problems. None of that is a size for the tail; it is the visible part of it.
+
+**Bottom line for him: both games are incomplete. Sonic 1 is a short list away. Sonic 2 is one large
+blocker plus a tail nobody can measure until the blocker is gone.**
