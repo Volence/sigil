@@ -39,7 +39,7 @@ use sigil_harness::harness_root::{
 use sigil_harness::native;
 use sigil_harness::repin::{
     build_dir_of_this_run, drift_report, load_manifest, regenerate_command, render, resolve,
-    Listing, Provenance,
+    zero_consumer_pins, zero_consumer_report, Listing, Provenance,
 };
 
 fn fail(msg: &str) -> ExitCode {
@@ -155,6 +155,16 @@ fn main() -> ExitCode {
     };
     let generated = render(&resolved, &prov);
 
+    // sig-orphan-pins: which pins nothing imports, by NAME, on EVERY run, before the
+    // unchanged-early-return below, because a run that moves no pin is exactly when a
+    // reader has the attention to look. Reported here and nowhere else: the aeon lane
+    // parses `stale_pins_message`'s text, so this block stays out of it.
+    let (sources, scanned) = workspace_rs_sources(&root, &pins_path);
+    print!(
+        "{}",
+        zero_consumer_report(&zero_consumer_pins(&resolved.const_names(), &sources), scanned)
+    );
+
     let committed = std::fs::read_to_string(&pins_path).unwrap_or_default();
     // THE SAME VERDICT THE GATE ASKS, from the same function: whole-file equality
     // modulo the `[provenance]` stamp. A tool and the test that guards it must not be
@@ -195,6 +205,56 @@ fn main() -> ExitCode {
     println!();
     println!("wrote {}", pins_path.display());
     ExitCode::SUCCESS
+}
+
+/// The text of every `.rs` file under `crates/`, minus `pins.rs` itself, plus how many
+/// files were read.
+///
+/// `root` is `crates/sigil-harness`, so `crates/` is its parent and every workspace
+/// source lives under it. `target` directories are skipped: a build tree carries
+/// generated `.rs` that would name a pin nothing in the source names.
+///
+/// The count comes back so the report can say a zero sweep is a broken walk. An empty
+/// read list would otherwise report every pin as an orphan and read as a discovery.
+fn workspace_rs_sources(
+    root: &std::path::Path,
+    pins_path: &std::path::Path,
+) -> (Vec<String>, usize) {
+    let mut out = Vec::new();
+    let mut stack = vec![root.join("..")];
+    while let Some(dir) = stack.pop() {
+        let Ok(entries) = std::fs::read_dir(&dir) else { continue };
+        for e in entries.flatten() {
+            let p = e.path();
+            if p.is_dir() {
+                if p.file_name().and_then(|n| n.to_str()) != Some("target") {
+                    stack.push(p);
+                }
+                continue;
+            }
+            if p.extension().and_then(|x| x.to_str()) != Some("rs") {
+                continue;
+            }
+            if same_file(&p, pins_path) {
+                continue;
+            }
+            if let Ok(text) = std::fs::read_to_string(&p) {
+                out.push(text);
+            }
+        }
+    }
+    let n = out.len();
+    (out, n)
+}
+
+/// Whether two paths name the same file on disk, canonicalized so `crates/../crates`
+/// and `crates` are one path. A textual compare would let `pins.rs` back into the sweep
+/// through the `..` the walk starts from, and every pin would then name itself.
+fn same_file(a: &std::path::Path, b: &std::path::Path) -> bool {
+    match (a.canonicalize(), b.canonicalize()) {
+        (Ok(x), Ok(y)) => x == y,
+        _ => a == b,
+    }
 }
 
 /// Which test binaries actually reference the constants whose pins moved.

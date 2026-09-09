@@ -603,18 +603,28 @@ consequential half of it had no diagnostics at all.
   figure here was read at boot, believed, and written into a dispatch brief as a fact about the
   tree, telling an agent a pre-existing red existed when none did. **Derive the suite figure when
   you need it; never quote one from this document.**
-### REPIN-TESTS-HINT-UNDERLISTED — a hint nothing can contradict
+### REPIN-TESTS-HINT-UNDERLISTED: LANDED
 
-`repin.toml`'s per-symbol `tests = [...]` feeds one printed rerun hint and nothing else. It gates
-nothing, so an incomplete list cannot fail, and a large share of rows omit at least one consuming
-test binary. **The fix is not editing those rows by hand** — that is a population to maintain whose
-failure mode is "green because nobody maintained it", which this file rejects twice elsewhere.
-Prefer deriving the list or gating it: the consuming set is mechanically discoverable, so the honest
-shape is a check that the declared list matches the derived one, or dropping the field for a derived
-hint. The count is a name-anywhere grep and needs narrowing before it is quoted as fact.
+`repin.toml`'s per-symbol `tests = [...]` fed one printed rerun hint and nothing else, so an
+incomplete list could not fail. The hint has been DERIVED at print time since `22b1a19f`, and at
+`53bc85de` the field is deleted from the manifest AND from the grammar: all four spec structs carry
+`serde(deny_unknown_fields)`, so a row that spells `tests` is now a parse error rather than a
+silently ignored line. `repin::tests::a_tests_field_is_a_manifest_parse_error` holds that, with a
+positive control that the same fixture minus the one line parses. Editing those rows by hand was
+always the wrong fix: that is a population to maintain whose failure mode is "green because nobody
+maintained it", which this file rejects twice elsewhere. Deriving deleted the population.
 
-*(The measurement, the mechanism, its instance and the two method findings: `docs/OVERSEER-LOG.md`,
-2026-09-04 cut, original lines 1186-1202.)*
+**512 declarations were deleted, not 412.** Instrument: `/usr/bin/grep -c '^tests = \['` on the
+manifest, corroborated by `git grep -c`, by the 512 `tests:` doc suffixes in `pins.rs`, and by
+`repin`'s own drift report ("512 committed-only, 512 regenerated-only"). 412 was the count in early
+August 2026 and was carried forward unchanged, through the 2026-08-30 sweep and the 2026-09-02
+promotion, while the real figure climbed past 510. The commit that last wrote "412" already
+measured 512 at its own parent. The row was made count-free for exactly this reason and the figure
+went on being quoted anyway: a figure taken from a row rather than re-measured at the quoting date.
+
+*(The original measurement, the mechanism, its instance and the two method findings:
+`docs/OVERSEER-LOG.md`, 2026-09-04 cut, original lines 1186-1202. The 190-of-412 numerator is a
+name-anywhere grep over a population that no longer exists and is not re-derivable.)*
 ### DPLC-ENTRY-INSTRUMENT REPIN — an ask that must outlive both sessions
 
 `parcel/dplc-entry-instrument` is parked on the aeon lane and is the CANDIDATE owner of a
