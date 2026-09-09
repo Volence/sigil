@@ -14,11 +14,18 @@
 //!    same column twice. The item's own span had to move too.
 //!
 //! The two diagnostic DIALECTS are deliberate and are not a defect. `.emp`
-//! renders `path:line:col:` and the AS surface renders `file(line,col):`;
+//! renders `path:line:col:` and the AS surface renders `file(line):col:`;
 //! docs/OVERSEER.md rules the split on the argument that a compatibility
 //! surface's job is to be the thing it is compatible with. The gate at the end
 //! holds the split open in BOTH directions, so neither one can later be
 //! "fixed" into the other by someone who cannot tell which was intended.
+//!
+//! `file(line):col:` is asl's OWN spelling, measured and not chosen: on the
+//! reference build asl reports `h.asm(2):9: error #1010: symbol undefined`,
+//! and across five assignment spellings its numbers are the 1-based columns of
+//! the offending token. The first draft of this fix invented `file(line,col)`
+//! from the Microsoft convention without checking, which would have been a
+//! third dialect answering a question the incumbent had already answered.
 
 use std::process::{Command, Output};
 
@@ -64,7 +71,7 @@ fn an_unexpected_character_is_named_and_located() {
         d[0]
     );
     assert!(
-        d[0].contains(&format!("(4,{col}):")),
+        d[0].contains(&format!("(4):{col}:")),
         "expected line 4 column {col} (the probe's own backtick position): {:?}",
         d[0]
     );
@@ -88,14 +95,24 @@ fn a_non_ascii_unexpected_character_is_reported_as_one_character() {
 /// The AS surface carries a column at all. The `.emp` front end on the SAME
 /// binary already did, which is what made this a discarded fact rather than a
 /// missing one.
+///
+/// The assertion reaches PAST the `(4):`, because the pre-fix format was
+/// `probe.asm(4): error: …` and `starts_with("probe.asm(4):")` is true of it.
+/// A gate for "there is a column" that the columnless format satisfies is the
+/// gate this row exists to complain about.
 #[test]
 fn an_as_diagnostic_carries_a_column() {
     let (out, name) = run("\tdc.b nothing_defines_this\n\tend\n");
     let d = diags(&out);
     assert_eq!(d.len(), 1, "one diagnostic expected: {d:?}");
+    let head = format!("{name}(4):");
+    let rest = d[0]
+        .strip_prefix(&head)
+        .unwrap_or_else(|| panic!("expected `{head}<col>: …`, got {:?}", d[0]));
+    let col = rest.split(':').next().unwrap_or("");
     assert!(
-        d[0].starts_with(&format!("{name}(4,")),
-        "expected `{name}(line,col):`, got {:?}",
+        col.parse::<u32>().is_ok_and(|n| n >= 1),
+        "the field after the line number must be a 1-based column, got {col:?} in {:?}",
         d[0]
     );
 }
@@ -118,8 +135,8 @@ fn two_operands_on_one_line_are_told_apart_by_their_columns() {
     let first = line.find("Big").expect("first item") + 1;
     let second = line.rfind("Big").expect("second item") + 1;
     assert_ne!(first, second, "the probe must place the items apart");
-    assert!(d[0].contains(&format!("(5,{first}):")), "first item at col {first}: {d:?}");
-    assert!(d[1].contains(&format!("(5,{second}):")), "second item at col {second}: {d:?}");
+    assert!(d[0].contains(&format!("(5):{first}:")), "first item at col {first}: {d:?}");
+    assert!(d[1].contains(&format!("(5):{second}:")), "second item at col {second}: {d:?}");
 }
 
 /// The same, one width up, so what is established is the shared code path
@@ -150,8 +167,8 @@ fn the_two_diagnostic_dialects_stay_apart() {
     assert_eq!(as_diag.len(), 1, "one AS diagnostic expected: {as_diag:?}");
     let as_name = asm.to_string_lossy().into_owned();
     assert!(
-        as_diag[0].starts_with(&format!("{as_name}(3,")),
-        "the AS surface renders file(line,col): {:?}",
+        as_diag[0].starts_with(&format!("{as_name}(3):")),
+        "the AS surface renders file(line):col: {:?}",
         as_diag[0]
     );
     assert!(
@@ -171,7 +188,7 @@ fn the_two_diagnostic_dialects_stay_apart() {
         "the .emp surface renders path:line:col: {emp_err:?}"
     );
     assert!(
-        !emp_err.contains(&format!("{emp_name}(4,")),
+        !emp_err.contains(&format!("{emp_name}(4):")),
         "the .emp surface must NOT adopt the AS dialect: {emp_err:?}"
     );
 }

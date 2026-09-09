@@ -18,21 +18,20 @@ Usage:
 import re
 import sys
 
-# `file(line,col): level: message`, the AS surface's dialect. The column is
+# `file(line):col: level: message`, which is asl's own shape. The column is
 # optional so a stream captured before sigil carried one still parses.
 #
 # WITHOUT the column branch this whole script silently stops working. The old
-# pattern was `^(.*)\(([0-9]+)\): (error|warning): (.*)$`, and against
-# `probe.asm(4,10): error: x` it does not match at all: the only `(` in the line
-# is the one before the `4`, and `\)` then meets a comma. Every located line
-# would fall to the unmatched branch, where the class becomes the ENTIRE line
-# and the level is assumed to be `error`. The table would then hold one row per
-# file-and-line rather than one row per rule, since `norm` reduces the numbers
-# but not the path, and every `warning` would be counted as an `error`.
+# pattern was `^(.*)\(([0-9]+)\): (error|warning): (.*)$`, whose `\): ` meets
+# `):17: ` and does not match. Every located line would fall to the unmatched
+# branch, where the class becomes the ENTIRE line and the level is assumed to
+# be `error`. The table would then hold one row per file-and-line rather than
+# one row per rule, since `norm` reduces the numbers but not the path, and
+# every `warning` would be counted as an `error`.
 #
 # The visible symptom is the `located` count in the population line going to
 # zero, which is why that count is printed rather than kept internally.
-LOC = re.compile(r"^(.*?)\(([0-9]+)(?:,([0-9]+))?\): (error|warning): (.*)$")
+LOC = re.compile(r"^(.*?)\(([0-9]+)\)(?::([0-9]+))?: (error|warning): (.*)$")
 
 
 def norm(msg):
@@ -68,7 +67,7 @@ def load(path):
 def one(path):
     counts, read, located = load(path)
     total = sum(counts.values())
-    print("  population: %d non-empty line(s) read, %d parsed as file(line[,col]): level:"
+    print("  population: %d non-empty line(s) read, %d parsed as file(line)[:col]: level:"
           % (read, located))
     if read == 0:
         print("  REFUSED: the stream is EMPTY, so every count below would be a zero")
