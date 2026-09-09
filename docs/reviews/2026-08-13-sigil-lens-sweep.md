@@ -240,6 +240,10 @@ windowed pointer's target is actually in a bankable region.
 ### S8 — Two crates are 93% of build time, in series; `sigil-harness` is accretion · MEDIUM
 **Seat:** ARCH
 
+> Every figure in this section is as measured at this packet's review SHA and none of them has been
+> re-timed since. For the current size of the move run `scripts/s8_seam_size.sh`; the seconds need a
+> clean release build (`cargo clean` then `cargo build --release --timings`) to re-derive.
+
 Clean release build 25.8 s: `sigil-frontend-emp` 15.0 s (58%), `sigil-harness` 9.0 s (35%). They sit
 in series on the critical path — `sigil-cli` cannot start compiling until 23.8 s in.
 
@@ -336,7 +340,9 @@ Unlike `targets(...)` — which sigil's own doc explicitly quarantines to the op
 the guard that made the code safe.
 
 **Live in aeon at 8 sites** (`core.emp:519,571`, `collision.emp:78`, `player_common.emp:639,1011,1015`,
-`player_sensors.emp:266`, `characters.emp:151`). Aeon already knows: `core.emp:520` ships a DEBUG-only
+`player_sensors.emp:266`, `characters.emp:151`), as counted at this packet's review SHA against the
+aeon tip of the day; `sigil build --aeon <tree> --report indirect-cost` enumerates them for a current
+tree, and prices the flip. Aeon already knows: `core.emp:520` ships a DEBUG-only
 **runtime** assert commented "*catch object routines violating the a0/d7 preservation contract*" — a
 runtime workaround for a compile-time check the type syntax implies exists.
 
@@ -682,8 +688,8 @@ that can quietly produce a passing wrong ROM would be the worst possible additio
    aeon headers to say what is actually verified. Do not leave the claim standing.
 4. **S7's `emit_fragment` derive** — one-line structural fix for a three-crate unchecked contract.
 5. **S6's boundary tests** — seven missing reach-boundary cases, cheap.
-6. **S8's harness split** — mostly `Cargo.toml`; takes ~1,900 LOC off the shipped binary and the
-   rebuild path.
+6. **S8's harness split** — mostly `Cargo.toml`; takes the `sigil-testkit` seam off the shipped
+   binary and the rebuild path (~1,900 LOC at this SHA; `scripts/s8_seam_size.sh` re-prices it).
 7. **S5's `rst`** — scoped at ~20-40 lines; unblocks ~116 B in the sound driver.
 8. **README + salvador provenance** — cheapest items in the packet.
 

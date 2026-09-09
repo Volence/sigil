@@ -63,6 +63,22 @@ pub struct ContractReport {
     pub closure: Closure,
     /// The transitive under-declaration firings (§9), sorted (proc, reg).
     pub firings: Vec<Firing>,
+    /// The same §9 firing list recomputed with every indirect dispatch site read
+    /// as ⊤ ([`crate::closure::IndirectPolicy::Unbounded`]) instead of narrowed to
+    /// its `as Type` bound.
+    ///
+    /// This is the MEASUREMENT of what the trusted-bound narrowing is worth to the
+    /// warn tier: the day the bound stops being trusted, this is the firing list
+    /// the warn tier produces and every entry is an engine contract that has to be
+    /// corrected. Rendered by `sigil build --report indirect-cost`; nothing gates
+    /// on its size, which moves with ordinary engine work reaching the dispatch
+    /// loop.
+    pub firings_unbounded: Vec<Firing>,
+    /// Every bounded `jsr (aN) as Type` dispatch site the walk saw, as
+    /// `(proc, contract type)`. The population the narrowing ranges over, so a
+    /// reader counts it instead of quoting a count. Sorted by proc; within a proc,
+    /// body order.
+    pub bounded_indirect_sites: Vec<(String, String)>,
     /// The §6 caller-side flag-result firings: `[call.flag-result-unused]` (a
     /// carry result abandoned on some path) and `[call.result-invalid-path]` (a
     /// conditional register result read on its invalid path), sorted (proc,
@@ -813,6 +829,22 @@ pub fn analyze_corpus_with_contracts(
     // frozen baselines already encode it.
     let ds_closure =
         crate::closure::compute_closure_with(&nodes, &types, crate::closure::IndirectPolicy::Unbounded);
+    // The S12 cost, measured rather than quoted: the warn-tier firing list under
+    // the SAME ⊤ reading the dead-save consumer already runs on. `firings` above is
+    // what the warn tier sees while the `as Type` bound is trusted; this is what it
+    // would see the day the bound has to be proven. The two lists differ by exactly
+    // the engine contracts that are written against the narrowed answer, which is
+    // the price of the flip. Reported, never gated.
+    let firings_unbounded = check_firings(&nodes, &ds_closure);
+    let bounded_indirect_sites: Vec<(String, String)> = nodes
+        .iter()
+        .flat_map(|(name, node)| {
+            node.indirect_sites
+                .iter()
+                .flatten()
+                .map(move |ty| (name.clone(), ty.clone()))
+        })
+        .collect();
     let mut dead_saves: Vec<DeadSave> = Vec::new();
     for pb in &proc_bufs {
         dead_saves.extend(find_dead_saves(&pb.name, &pb.buf.items, &ds_closure.effective));
@@ -1223,6 +1255,8 @@ pub fn analyze_corpus_with_contracts(
     ContractReport {
         closure,
         firings,
+        firings_unbounded,
+        bounded_indirect_sites,
         flag_firings,
         flag_firings_verified_credit: flag_firings_verified,
         extern_collisions,

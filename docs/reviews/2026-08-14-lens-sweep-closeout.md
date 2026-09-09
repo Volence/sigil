@@ -31,21 +31,24 @@ S3 was superseded by S17 in the packet itself; S10/S11 were answers, not defects
 
 ## Not closed, on purpose
 
-**S8, the `sigil-harness` crate split.** A ~9,300-LOC multi-crate move for a
-build-time and architecture win, with no byte-level gate that would catch a
-subtle mis-split — the ROM would still build. Ledgered in
-`docs/superpowers/notes/campaign-gap-ledger.md` with ARCH's measurements. It
-wants owner review of the seam choices, not an unattended night.
+**S8, the `sigil-harness` crate split.** A multi-crate move for a build-time and
+architecture win, with no byte-level gate that would catch a subtle mis-split, the
+ROM would still build. The move measured ~9,300 LOC on 2026-08-14, the date of
+this closeout; the crate has grown since and that figure is not current. Size it
+with `scripts/s8_seam_size.sh`, which holds the seam table and prints what it
+counted. Ledgered in `docs/superpowers/notes/campaign-gap-ledger.md` with ARCH's
+measurements. It wants owner review of the seam choices, not an unattended night.
 
 ## Partial, and why
 
 **S12** keeps the trusting closure for the warn-tier analyses. Neither remedy the
 packet offered is reachable as-is: wiring `subcontract_violations` at the
 dispatch site needs a target set the language cannot express there (every corpus
-`targets(...)` is an intra-proc label table), and dropping the narrowing costs
-**53 `[proc.clobber-undeclared]` firings** — 53 engine contracts are written
-against the narrowed answer. Ledgered with that number so the next attempt starts
-from it.
+`targets(...)` is an intra-proc label table), and dropping the narrowing costs one
+`[proc.clobber-undeclared]` firing per engine contract written against the
+narrowed answer. That was **53** on 2026-08-14, the date of this closeout, and it
+grows with the engine, so the next attempt should price it rather than start from
+the number: `sigil build --aeon <tree> --report indirect-cost`.
 
 ## Things the sweep did not know
 

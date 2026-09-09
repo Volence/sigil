@@ -1037,7 +1037,8 @@ fn run_build(args: &[String]) {
             eprintln!(
                 "usage: sigil build --aeon <dir> [-o <out.bin>] [--emit-lst <lst>] \
                  [--game sonic4|demo] [--debug] [--config-a|--config-b|--lean] \
-                 [--report ram|contracts] [--extra-entry <module|path.emp>]... [--check]\n\
+                 [--report ram|contracts|indirect-cost] [--extra-entry <module|path.emp>]... \
+                 [--check]\n\
                  note:  --extra-entry evaluates the NAMED module's comptime guards; the \
                  named module must emit nothing (its own imports are not checked)\n\
                  note:  --check decides every ensure and LinkAssert against final \
@@ -1066,6 +1067,7 @@ fn run_build(args: &[String]) {
     match opts.report {
         Some(ReportKind::Ram) => run_ram_report(aeon_path, &opts.target),
         Some(ReportKind::Contracts) => run_contract_report(aeon_path, &opts.target),
+        Some(ReportKind::IndirectCost) => run_indirect_cost_report(aeon_path, &opts.target),
         None if opts.check => run_check_native(aeon_path, &opts),
         None => run_build_native(aeon_path, &opts),
     }
@@ -1209,6 +1211,65 @@ fn run_contract_report(aeon: &std::path::Path, target: &BuildTarget) {
     let (report, _manifest) = corpus_closure_or_exit(aeon, target);
     print_report_header("contract closure", &label, &defines);
     print_contract_report(&report);
+}
+
+/// `--report indirect-cost`: what the trusted `jsr (aN) as Type` narrowing is
+/// worth to the warn tier, for the selected shape.
+///
+/// `jsr (aN) as Type` replaces the ⊤ an unbounded indirect call would contribute
+/// with the contract type's own clobber set. Nothing proves the procs installed in
+/// the dispatch table satisfy that bound, so the narrowing is trusted; the price of
+/// withdrawing it is the engine contracts that are written against the narrow
+/// answer and would have to be corrected. That price is a MEASUREMENT, and it moves
+/// as ordinary object work reaches the dispatch loop, so this prints it on demand
+/// rather than anyone recording an integer that goes stale. Nothing gates on it.
+///
+/// The two firing lists come from the SAME analysis the build gate runs, one under
+/// each [`IndirectPolicy`](sigil_frontend_emp::closure::IndirectPolicy), so the
+/// report can never describe a different closure than the one that ships.
+fn run_indirect_cost_report(aeon: &std::path::Path, target: &BuildTarget) {
+    let (label, profile) = target.label_and_profile();
+    let defines = shape_defines_or_exit(&profile, aeon);
+    let (report, _manifest) = corpus_closure_or_exit(aeon, target);
+    print_report_header("indirect-bound cost", &label, &defines);
+
+    let sites = &report.bounded_indirect_sites;
+    println!("\n-- bounded `jsr (aN) as Type` dispatch sites ({}): --", sites.len());
+    for (proc, ty) in sites {
+        println!("  {proc:<32} as {ty}");
+    }
+    // What this count IS: the sites the corpus walk collected for THIS shape. A
+    // site the walk cannot reach is absent from it: a comptime arm this shape's
+    // defines discard, and a site inside a splice template the walk does not
+    // resolve. So the source text can hold more than this lists, and the honest
+    // cross-check is the grep, printed here so a reader runs both rather than
+    // trusting one.
+    println!(
+        "   (sites the corpus walk reached for this shape; cross-check the source with\n    \
+         grep -rn --include='*.emp' -E '(jsr|jmp).*\\) +as +[A-Z]' \"$AEON_DIR\"/engine \"$AEON_DIR\"/games\n    \
+         a grep hit missing from the list above is a site the walk structurally cannot see)"
+    );
+
+    let trusting = report.firings.len();
+    let forced = report.firings_unbounded.len();
+    println!(
+        "\n-- [proc.clobber-undeclared] firings, `as Type` TRUSTED (today's warn tier): {trusting} --"
+    );
+    println!("-- [proc.clobber-undeclared] firings, ⊤ FORCED at every indirect site: {forced} --");
+    for f in &report.firings_unbounded {
+        let kind = if f.unbounded {
+            "UNBOUNDED".to_string()
+        } else if f.transitive {
+            format!("transitive {}", f.reg.as_deref().unwrap_or("?"))
+        } else {
+            format!("direct     {}", f.reg.as_deref().unwrap_or("?"))
+        };
+        println!("  {:<32} {kind}", f.proc);
+    }
+    println!(
+        "\n-- COST OF THE FLIP: {} engine contract(s) would have to be corrected --",
+        forced.saturating_sub(trusting)
+    );
 }
 
 /// The one closure both `--report contracts` and the build gate run, so a build
@@ -1700,6 +1761,9 @@ enum ReportKind {
     Ram,
     /// The whole-corpus contract-closure census.
     Contracts,
+    /// What the trusted `jsr (aN) as Type` narrowing costs the warn tier, and the
+    /// dispatch sites it ranges over.
+    IndirectCost,
 }
 
 impl ReportKind {
@@ -1709,7 +1773,10 @@ impl ReportKind {
         match value {
             "ram" => Ok(ReportKind::Ram),
             "contracts" => Ok(ReportKind::Contracts),
-            other => Err(format!("unknown --report '{other}' (want ram or contracts)")),
+            "indirect-cost" => Ok(ReportKind::IndirectCost),
+            other => Err(format!(
+                "unknown --report '{other}' (want ram, contracts or indirect-cost)"
+            )),
         }
     }
 }
