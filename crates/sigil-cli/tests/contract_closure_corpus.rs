@@ -1300,6 +1300,227 @@ fn the_contracts_report_is_wired_and_carries_the_targets_defines() {
 }
 
 
+// ---------------------------------------------------------------------------
+// The `--report indirect-cost` surface.
+// ---------------------------------------------------------------------------
+
+/// The count a report header declares between `open` and `close` -- the `11` in
+/// `... dispatch sites (11): --`. Parsed from named delimiters rather than from
+/// "the digits in the line", so a number appearing later in a section's prose
+/// cannot silently become the count under test.
+fn declared_count(line: &str, open: &str, close: &str) -> Option<usize> {
+    line.split_once(open)?.1.split_once(close)?.0.trim().parse().ok()
+}
+
+/// The index of the first line containing `needle`, or a panic naming what the
+/// report failed to emit. A missing section is the failure this whole gate exists
+/// for: the figure would then have no source at all.
+fn report_line(lines: &[&str], needle: &str, label: &str, out: &str) -> usize {
+    lines.iter().position(|l| l.contains(needle)).unwrap_or_else(|| {
+        panic!(
+            "{label}: `--report indirect-cost` emitted no line containing `{needle}`, so that \
+             section of the report is gone and the figure it derives has no source:\n{out:.900}"
+        )
+    })
+}
+
+/// The rows a section renders: the lines after `from` indented by EXACTLY two
+/// spaces. The report's own continuation prose (the grep cross-check note) is
+/// indented three and four spaces, so it ends the run by construction rather than
+/// by this matching its wording, which would drift the day the note is reworded.
+fn section_rows<'a>(lines: &[&'a str], from: usize) -> Vec<&'a str> {
+    lines[from + 1..]
+        .iter()
+        .take_while(|l| l.starts_with("  ") && !l.starts_with("   "))
+        .copied()
+        .collect()
+}
+
+/// Every shape assertion on one `--report indirect-cost` rendering, factored out
+/// so all three shipped shapes are held to the identical bar rather than the two
+/// extra shapes being a label check with a weaker body.
+fn assert_indirect_cost_report_shape(label: &str, out: &str) {
+    let lines: Vec<&str> = out.lines().collect();
+
+    // The header renders the SELECTED target, and the walk ran under a define set
+    // rather than define-free. `(none)` is the shape of a report that walked the
+    // corpus blind to every `if DEBUG == 1 { }` arm, which is the blind spot this
+    // file's header names -- so it is a defect, not an empty-but-valid rendering.
+    let want_header = format!("indirect-bound cost, {label}");
+    assert_eq!(
+        lines.first().copied(),
+        Some(want_header.as_str()),
+        "{label}: report header:\n{out:.300}"
+    );
+    let defines = lines
+        .iter()
+        .find(|l| l.starts_with("defines: "))
+        .unwrap_or_else(|| panic!("{label}: the report emitted no `defines:` line:\n{out:.300}"));
+    assert!(
+        !defines.contains("(none)"),
+        "{label}: the report walked the corpus define-free, so every comptime-gated arm \
+         vanished from it: {defines}"
+    );
+
+    // (1) THE SITE SECTION IS INTERNALLY CONSISTENT: it renders exactly as many
+    //     rows as its own header declares. A relation, not a population -- it
+    //     holds at any corpus size and fails only if the report contradicts
+    //     itself.
+    let sites_at = report_line(&lines, "dispatch sites (", label, out);
+    let declared_sites = declared_count(lines[sites_at], "dispatch sites (", ")")
+        .unwrap_or_else(|| panic!("{label}: unparseable site count: {}", lines[sites_at]));
+    let site_rows = section_rows(&lines, sites_at);
+    assert_eq!(
+        declared_sites,
+        site_rows.len(),
+        "{label}: the site section declares {declared_sites} bounded dispatch sites and then \
+         renders {} rows -- the report contradicts itself:\n{out:.900}",
+        site_rows.len()
+    );
+
+    // (2) A FLOOR OF ONE, and only one. Zero rows would satisfy (1) vacuously and
+    //     would make an emitting printer indistinguishable from one that prints a
+    //     header and stops. This is not a pinned population: the count is free to
+    //     move in either direction above one, and only the collapse to nothing is
+    //     refused.
+    assert!(
+        declared_sites >= 1,
+        "{label}: the report reached no bounded `jsr (aN) as Type` site at all, so the \
+         narrowing it prices has no population and every count below is vacuous:\n{out:.900}"
+    );
+
+    // (3) Each site row is a `<proc> as <Type>` pair -- the rendering the report
+    //     promises, checked without naming any proc or contract type in the corpus.
+    for row in &site_rows {
+        let (proc, ty) = row.trim().split_once(" as ").unwrap_or_else(|| {
+            panic!("{label}: site row is not a `<proc> as <Type>` pair: `{row}`")
+        });
+        assert!(
+            !proc.trim().is_empty() && !ty.trim().is_empty() && !ty.trim().contains(' '),
+            "{label}: site row does not name a proc and a single contract type: `{row}`"
+        );
+    }
+
+    // (4) BOTH POLICY READINGS ARE PRESENT. The report's whole content is the
+    //     difference between two closures, so one line surviving alone is a
+    //     report that has silently stopped comparing anything.
+    let trusting_at = report_line(&lines, "TRUSTED (today's warn tier): ", label, out);
+    let forced_at = report_line(&lines, "FORCED at every indirect site: ", label, out);
+    let trusting = declared_count(lines[trusting_at], "warn tier): ", " --")
+        .unwrap_or_else(|| panic!("{label}: unparseable trusting count: {}", lines[trusting_at]));
+    let forced = declared_count(lines[forced_at], "indirect site: ", " --")
+        .unwrap_or_else(|| panic!("{label}: unparseable forced count: {}", lines[forced_at]));
+
+    // (5) The forced firing list is internally consistent the same way (1) is.
+    let forced_rows = section_rows(&lines, forced_at);
+    assert_eq!(
+        forced,
+        forced_rows.len(),
+        "{label}: the report declares {forced} firings under the forced policy and then renders \
+         {} rows -- the count and the list it is a count OF have come apart:\n{out:.900}",
+        forced_rows.len()
+    );
+
+    // (6) Each firing row's kind column is one of the three spellings the renderer
+    //     can produce. Well-formedness of the column, so a garbled kind is caught
+    //     without pinning which procs are in the list.
+    for row in &forced_rows {
+        let cols: Vec<&str> = row.trim().split_whitespace().collect();
+        let kind_ok = matches!(
+            cols.as_slice(),
+            [_, "UNBOUNDED"] | [_, "transitive", _] | [_, "direct", _]
+        );
+        assert!(
+            kind_ok,
+            "{label}: firing row is not `<proc> UNBOUNDED` / `<proc> transitive <reg>` / \
+             `<proc> direct <reg>`: `{row}`"
+        );
+    }
+
+    // (7) THE ONE THIS GATE EXISTS FOR: the printed cost is the difference between
+    //     the two counts printed immediately above it. This is the relation the
+    //     whole report asserts, and asserting the relation rather than the number
+    //     is what lets the number move.
+    //
+    //     `saturating_sub` and not `forced - trusting`, deliberately: the forced
+    //     count is NOT structurally >= the trusting one. `check_firings` collapses
+    //     a proc whose effective set is TOP into a SINGLE unbounded firing and
+    //     stops, where the trusting reading of the same proc can fire once per
+    //     register; and `@allow("clobbers.unanalyzable")` suppresses the unbounded
+    //     case entirely. Both make a legitimately SMALLER forced count reachable,
+    //     so a `forced >= trusting` assertion here would be a check that fires on
+    //     correct code, and it is vacuous today besides (the warn tier is empty).
+    let cost_at = report_line(&lines, "COST OF THE FLIP: ", label, out);
+    let cost = declared_count(lines[cost_at], "COST OF THE FLIP: ", " engine contract")
+        .unwrap_or_else(|| panic!("{label}: unparseable cost: {}", lines[cost_at]));
+    assert_eq!(
+        cost,
+        forced.saturating_sub(trusting),
+        "{label}: the report prints a cost of {cost} while printing {forced} forced firings \
+         against {trusting} trusting ones -- the headline figure disagrees with the two counts \
+         it is derived from:\n{out:.900}"
+    );
+}
+
+/// THE SURFACE IS WIRED, AND WHAT IS PINNED IS ITS SHAPE, NEVER ITS VALUE.
+///
+/// `sigil build --aeon <tree> --report indirect-cost` is the SOLE derivation of a
+/// figure that `README.md`, the [`IndirectPolicy`] doc comment in `closure.rs` and
+/// `contract_closure.rs`'s own header all point at INSTEAD of stating. Nothing
+/// else computes it, so if this path breaks every one of those pointers resolves
+/// to nothing and the failure is silent. Before this test the whole path -- the
+/// `ReportKind::IndirectCost` arm and `run_indirect_cost_report` in the CLI, and
+/// `ContractReport::firings_unbounded` / `bounded_indirect_sites` behind it -- was
+/// exercised by nothing; every citation of it in the tree was a comment.
+///
+/// **THE ONE THING THIS TEST MUST NEVER DO IS ASSERT THE COST.** That number moves
+/// with ordinary engine work reaching the dispatch loop. A check pinning it would
+/// go red on correct code the day the next engine contract is added, which is how
+/// a check teaches people to switch it off, and the figure was made derivable
+/// precisely so that nobody would record it. What is pinned instead is the
+/// report's INTERNAL CONSISTENCY: each section's declared count against the rows
+/// it then renders, and the headline difference against the two counts printed
+/// above it. Those relations hold at every corpus size and fail the moment the
+/// report starts contradicting itself.
+///
+/// All three shipped shapes run, through the identical body: the report is
+/// shape-parameterized (it walks under the target's own defines), so a shape that
+/// only had its header checked would be a label with no gate behind it.
+///
+/// Reference tree: the house pattern via [`aeon_dir`] -- skip when absent, HARD
+/// FAIL under `SIGIL_STRICT_GATE`. Deliberately NO `ensure_generated`, unlike the
+/// `--report contracts` gate above: that gate asserts zero dropped instructions
+/// and so depends on the embedded sound blobs existing, while this report never
+/// lowers to bytes (it scans, parses and runs the closure) and has no embed
+/// dependency to satisfy. Not writing into the reference tree is the weaker
+/// precondition, so it is the one taken.
+#[test]
+fn the_indirect_cost_report_is_wired_and_internally_consistent() {
+    let Some(aeon) = aeon_dir() else { return };
+
+    let run = |extra: &[&str]| -> String {
+        let mut cmd = std::process::Command::new(env!("CARGO_BIN_EXE_sigil"));
+        cmd.args(["build", "--aeon", aeon.to_str().unwrap(), "--native"]);
+        cmd.args(extra);
+        cmd.args(["--report", "indirect-cost"]);
+        let out = cmd.output().expect("run sigil build --report indirect-cost");
+        assert!(
+            out.status.success(),
+            "sigil build --report indirect-cost {extra:?} failed: {out:?}"
+        );
+        String::from_utf8_lossy(&out.stdout).into_owned()
+    };
+
+    for (label, extra) in [
+        ("sonic4 plain", &["--game", "sonic4"][..]),
+        ("sonic4 debug", &["--game", "sonic4", "--debug"][..]),
+        ("demo plain", &["--game", "demo"][..]),
+    ] {
+        assert_indirect_cost_report_shape(label, &run(extra));
+    }
+}
+
+
 /// THE INVOKE EDGE IS LIVE. `invoke Iface.hook` lowers to `jsr (bound).l`
 /// (an `AbsSym`), the only corpus source of an AbsSym call edge, and the closure
 /// must collect it so the bound proc's clobbers charge the invoker. Pinned from
