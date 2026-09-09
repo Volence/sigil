@@ -222,3 +222,30 @@ two files the boot read puts on the coordinate list. Under the 2026-09-02 cut th
 freezes alone, so this is a notification rather than a permission: this seat undertook to the engine
 lane on 2026-09-08 that they hear before such a parcel lands, not after, and that undertaking is
 what governs.
+
+## INDIRECT-COST-REPORT-UNCOVERED
+
+- state at archive: `open`  size: `S`  project: `-`
+- blockedBy: nothing
+
+Booked at the landing of `parcel/quoted-cost-deferrals` (merge 68351ffc) by the controller, against
+that parcel's own delivery, because an unstated gap reads as coverage.
+
+`sigil build --report indirect-cost` is 71 new lines in `crates/sigil-cli/src/main.rs` plus 34 in
+`crates/sigil-frontend-emp/src/corpus_contracts.rs`, and **no test exercises either.** Measured:
+`git grep` for the flag and the symbol across every `crates/*/tests/*.rs` returns only comments
+CITING the command, never a call. The report is the sole derivation of a figure two documents and one
+source comment now point at instead of stating, so if the path breaks, every one of those pointers
+resolves to nothing and the failure is silent.
+
+**What is NOT wanted here, and it is the reason this row exists rather than a quick test:** a check
+asserting the cost is 59. That rots exactly as the prose did and goes red on correct code the day the
+next engine contract is added, which is how a check teaches people to switch it off. The parcel was
+right to refuse it and the refusal is not the gap.
+
+**What is wanted:** a test that the path RUNS and emits both policy lines and a difference, asserting
+the SHAPE and never the value. The value is the thing that must be free to move.
+
+The same argument covers `scripts/s8_seam_size.sh`, whose loud-when-a-module-goes-missing path was
+proven red-first by hand at the parcel and is wired into no runner. Its silent-undercount failure was
+demonstrated once (16195 against 18257) and nothing re-demonstrates it.
