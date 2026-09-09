@@ -209,12 +209,20 @@ produced the defect. Re-run with the flag removed from both places, it is red.
   byte-identically for two operands on one line.
   **CLOSED on the same branch, and the row was THREE defects rather than one.** The seat framed
   the repeat as a consequence of the missing column. It is not: `SourceMap::label` now carries a
-  column and `dc.b Big, Big` still printed `(3,2)` twice, because every item of a data directive
-  was blamed at the DIRECTIVE's span. The item's own span was available and discarded, exactly as
-  the column was, and both had to move. The three parts red-separate cleanly under mutation, which
-  is the evidence that they were three.
+  column and `dc.b Big, Big` still printed the same column twice, because every item of a data
+  directive was blamed at the DIRECTIVE's span. The item's own span was available and discarded,
+  exactly as the column was, and both had to move. The three parts red-separate cleanly under
+  mutation, which is the evidence that they were three.
   The two dialects are untouched, and the gate holds the split open in BOTH directions rather than
   only the direction this parcel touched.
+  **The finding was more right than it knew, and the controller's first fix was wrong.** asl
+  ALREADY prints a column, spelled `file(line):col:` (reference build, `h.asm(2):9: error #1010`,
+  with its numbers across five assignment spellings equal to the columns the offending name starts
+  at). So sigil's `file(line)` was asl's format with the column DELETED, not merely less than the
+  `.emp` surface. The first fix here rendered `file(line,col)` from the Microsoft convention
+  without checking what the incumbent does, which would have made sigil a third dialect answering
+  a question asl had already answered; the evidence was two files away in
+  `sigil-frontend-as/src/eval.rs` the whole time. Corrected before landing.
 
 ## Look and taste, captures for the owner and NOT packet findings
 
