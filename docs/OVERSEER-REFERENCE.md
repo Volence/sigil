@@ -2240,3 +2240,30 @@ wearing a rule's grammar.
 
 **This lane meets the class constantly in `.emp` diagnostics**, where a message that names the
 offending construct without naming the line to write is the same defect aimed at a user.
+
+### SORT A STALENESS AUDIT BY MOOD, NOT BY AGE
+
+Read when auditing any standing document for rot, and when deciding which stale line to fix first.
+
+**Aurora's sharpening, relayed 2026-09-09: a stale DESCRIPTION is merely believed; a stale
+IMPERATIVE is acted on.** Age is the wrong sort key because it measures how long a line has been
+wrong rather than what being wrong costs.
+
+**The instance is this lane's own, which is why it is banked rather than admired.** The boot read
+carried *"Nothing is implemented"* about `pad`/`pad_to` for two weeks after it landed
+(`ffa7bdb8`, 2026-08-26, verified an ancestor of master with the parser taking it). That sentence
+parses as a description. **It is read as an instruction not to use the construct, and as a
+standing invitation to implement it again.** So it sat in the class that looks harmless and is not.
+
+**The tell, and it is a grammar tell rather than a content one: an imperative wearing a
+description's grammar.** *"X is unimplemented"*, *"nothing consumes Y"*, *"the only caller is Z"*,
+*"this is not yet gated"* all read as facts and all license an action. Contrast a genuinely
+descriptive rot, a superseded measurement or an old count, which misleads a reader without
+directing one.
+
+**How to apply:** when sweeping a document, first pass for lines that would change what somebody
+DOES if believed, and fix those before anything else. **The R7 block and this one are the same
+defect twice in the same file** (*what remains is the flip itself*, held for a week after the flip
+landed), and both were caught by someone asking a question, never by a sweep, because **nothing
+executes a document.** A completion has to be written back to the document that DISPATCHES the
+work, in the landing commit.
