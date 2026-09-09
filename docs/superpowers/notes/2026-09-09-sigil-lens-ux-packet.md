@@ -68,6 +68,13 @@ output cannot distinguish "your ROM is on disk" from "your ROM was discarded".
 Cost in the stated unit: one wasted cycle at best, and at worst a porter who believes a stale
 artifact is fresh, which costs every cycle after it until noticed.
 
+**The re-derivation strengthened the row rather than confirming it, and UXa spotted why before this
+seat did.** The seat measured `built: 13 bytes` on `examples/guards.emp`; the controller measured
+`built: 4 bytes` on a different file. **A single input can only support "this file does it"; two
+inputs at different byte counts make it the code path's behaviour rather than the example's.** The
+generalisation was not available from either measurement alone, and neither party set out to run a
+two-input control: it fell out of the controller using its own probe instead of the seat's.
+
 ### 3 . `--prelude` is parsed, consumed, and dropped, and the run reports success . **firsthand** . UXb F14
 
 `--prelude <path>` without `--root` accepts a path **that does not exist**, prints `built: 4 bytes`
