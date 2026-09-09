@@ -119,8 +119,9 @@ cargo run -p sigil-cli --bin sigil -- build --aeon <dir> [--game sonic4|demo] [-
 
 A bare `sigil <input.asm>` assembles one AS-syntax source; `emp` does the same for
 `.emp`, single-file or `--root`-rooted multi-module. `build` also takes
-`--report ram` / `--report contracts`, which print the target's RAM map or contract
-closure instead of building. `sigil --version` reports the revision the binary was
+`--report ram` / `--report contracts` / `--report indirect-cost`, which print the
+target's RAM map, its contract closure, or the price of withdrawing the trusted
+`jsr (aN) as Type` narrowing, instead of building. `sigil --version` reports the revision the binary was
 built from — the only way to tell a current assembler from a stale one, since byte
 identity cannot.
 
