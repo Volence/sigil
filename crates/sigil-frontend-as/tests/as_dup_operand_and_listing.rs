@@ -320,19 +320,53 @@ fn listing_and_page_are_accepted_on_both_cpus_and_emit_nothing() {
     );
 }
 
-/// l3. asl checks the arity of both, and so does this front end. The vocabulary
-/// is deliberately not checked; see the module header.
+/// l3, l5, l6 and l7. Both ends of the arity, because asl checks both and names
+/// each bound outright, and because "the arity is checked" is otherwise a
+/// sentence a lower-bound-only check does not earn.
+///
+/// The two bounds differ and each was measured on its own directive: `listing`
+/// takes exactly one argument, `page` takes one or two. Reading `listing`'s
+/// upper bound off `page`'s message would have set it to 2 and quietly accepted
+/// `listing on,off`, which asl refuses.
+///
+/// The vocabulary is deliberately not checked; see the module header.
 #[test]
-fn a_bare_listing_or_page_is_refused_by_name() {
+fn listing_and_page_check_both_ends_of_their_arity() {
+    // Under the lower bound.
     let got = refusal("        listing\n");
     assert!(
-        got.contains("`listing` needs an argument"),
-        "refused, but not for the missing argument. Got: {got}"
+        got.contains("`listing` takes 1 argument, got 0"),
+        "refused, but not for the argument count. Got: {got}"
     );
     let got = refusal("        page\n");
     assert!(
-        got.contains("`page` needs an argument"),
-        "refused, but not for the missing argument. Got: {got}"
+        got.contains("`page` takes 1 to 2 arguments, got 0"),
+        "refused, but not for the argument count. Got: {got}"
+    );
+
+    // Over the upper bound. l5: asl gives `expected one argument but got 2`.
+    let got = refusal("        listing on,off\n");
+    assert!(
+        got.contains("`listing` takes 1 argument, got 2"),
+        "refused, but not for the argument count. Got: {got}"
+    );
+    // l7: asl gives `expected between 1 and 2 arguments but got 3`.
+    let got = refusal("        page 0,1,2\n");
+    assert!(
+        got.contains("`page` takes 1 to 2 arguments, got 3"),
+        "refused, but not for the argument count. Got: {got}"
+    );
+
+    // The accepted side, and the half that keeps the bound from being wrong in
+    // the strict direction. l6: `page 0,1` assembles clean, so a `page` gated at
+    // one argument would refuse working source.
+    assert_eq!(
+        image(
+            "        dc.b $11\n\
+             \x20       page 0,1\n\
+             \x20       dc.b $22\n"
+        ),
+        vec![0x11, 0x22]
     );
 }
 

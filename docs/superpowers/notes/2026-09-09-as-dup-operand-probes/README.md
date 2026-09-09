@@ -44,6 +44,9 @@ listing and suppresses the diagnostics a later pass would have raised.
 | `l2` | `listing zqp_bogus` | 2 | `error #1520: only ON/OFF allowed`, although `purecode` is accepted: the message understates the set |
 | `l3` | a bare `listing`, a bare `page` | 2 | `error #1110`: one argument, and one or two, respectively |
 | `l4` | `listing purecode` / `page 0` under `cpu z80` | 0 | accepted on both surfaces |
+| `l5` | `listing on,off` | 2 | `error #1110`, `expected one argument but got 2`: `listing`'s upper bound is 1, measured on `listing` itself |
+| `l6` | `page 0,1` | 0 | assembles clean, so `page`'s upper bound really is 2 and a stricter gate would refuse working source |
+| `l7` | `page 0,1,2` | 2 | `error #1110`, `expected between 1 and 2 arguments but got 3` |
 
 ## Where sigil diverges, deliberately
 
@@ -54,7 +57,12 @@ listing and suppresses the diagnostics a later pass would have raised.
   assembles to convergence rather than in one pass.
 - The `listing` argument vocabulary: asl validates it (l2), sigil does not. The
   accepted set is wider than asl's own message claims, nothing downstream reads
-  the value, and a guessed vocabulary would refuse working source.
+  the value, and a guessed vocabulary would refuse working source. The ARITY is
+  a different case and is NOT a divergence: asl states each bound outright in
+  its own refusal, so it is measured (l3, l5, l6, l7) rather than guessed, and
+  sigil enforces both ends. The two bounds differ, and each was measured on its
+  own directive: reading `listing`'s upper bound off `page`'s message would have
+  set it to 2 and accepted `listing on,off`, which asl refuses.
 - `db`/`dc.b` are one directive in sigil on both CPUs, so sigil takes the group
   on either spelling where asl gates the whole spelling by CPU (d14, d16). The
   alias predates this work; a bracket-only gate would imitate half a rule sigil

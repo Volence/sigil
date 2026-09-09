@@ -1441,6 +1441,28 @@ const DS_COUNT_RANGE: std::ops::RangeInclusive<i64> = 0..=u32::MAX as i64;
 /// the other side: it reads the count unsigned and the emit runs out of space.
 const DUP_COUNT_RANGE: std::ops::RangeInclusive<i64> = 0..=u32::MAX as i64;
 
+/// The argument counts `listing` accepts. asl states this bound outright in its
+/// own refusals, so it is measured rather than guessed: `expected one argument
+/// but got 0` for a bare `listing` (probe `l3`) and `expected one argument but
+/// got 2` for `listing on,off` (probe `l5`). Measured on `listing` itself and
+/// NOT inferred from `page`'s wording, which names a different range.
+const LISTING_ARG_COUNT: std::ops::RangeInclusive<usize> = 1..=1;
+/// The argument counts `page` accepts: `expected between 1 and 2 arguments but
+/// got 0` for a bare `page` (probe `l3`) and `but got 3` for `page 0,1,2`
+/// (probe `l7`), while `page 0,1` assembles clean (probe `l6`).
+const PAGE_ARG_COUNT: std::ops::RangeInclusive<usize> = 1..=2;
+
+/// Render an argument-count bound as the text a diagnostic quotes, so the
+/// wording follows the constant instead of restating it.
+fn arg_count_bound(range: &std::ops::RangeInclusive<usize>) -> String {
+    if range.start() == range.end() {
+        let n = *range.start();
+        format!("{n} argument{}", if n == 1 { "" } else { "s" })
+    } else {
+        format!("{} to {} arguments", range.start(), range.end())
+    }
+}
+
 /// The size suffix a `ds`/`dc` directive spells for a unit width.
 fn unit_suffix(unit: u32) -> &'static str {
     match unit {
@@ -5079,8 +5101,8 @@ impl Asm {
             // so both accept their argument and change nothing about the
             // assembly. See `directive_listing_control` for what is and is not
             // checked, and why.
-            "listing" => self.directive_listing_control("listing", rest, span),
-            "page" => self.directive_listing_control("page", rest, span),
+            "listing" => self.directive_listing_control("listing", LISTING_ARG_COUNT, rest, span),
+            "page" => self.directive_listing_control("page", PAGE_ARG_COUNT, rest, span),
             "enum" => self.directive_enum(rest, span),
             "nextenum" => self.directive_nextenum(rest, span),
             "enumconf" => self.directive_enumconf(rest, span),
@@ -5578,9 +5600,16 @@ impl Asm {
     /// `MacroSetup.asm` writes `listing purecode` / `page 0` and its
     /// `sound/z80.asm` writes `listing` again on the Z80 side).
     ///
-    /// The ARITY is checked, because asl checks it: a bare `listing` is
-    /// `expected one argument but got 0` and a bare `page` is `expected between
-    /// 1 and 2 arguments but got 0` (probe `l3.asm`).
+    /// The ARITY is checked at BOTH ends, because asl checks both and states
+    /// each bound outright in its own refusal: `listing` takes exactly one
+    /// argument (`expected one argument but got 0` for a bare one, probe
+    /// `l3.asm`; `but got 2` for `listing on,off`, probe `l5.asm`) and `page`
+    /// takes one or two (`expected between 1 and 2 arguments but got 0`, probe
+    /// `l3.asm`; `but got 3` for `page 0,1,2`, probe `l7.asm`; `page 0,1`
+    /// assembles clean, probe `l6.asm`). Each bound was measured on ITS OWN
+    /// directive: the two messages name different ranges, so neither borrows
+    /// the other's. The bounds live in [`LISTING_ARG_COUNT`] and
+    /// [`PAGE_ARG_COUNT`] and the diagnostic renders from them.
     ///
     /// The argument VOCABULARY is not checked. asl does check it (`listing
     /// zqp_bogus` is `only ON/OFF allowed`, probe `l2.asm`) but that message
@@ -5588,9 +5617,26 @@ impl Asm {
     /// nothing downstream of here reads the value. A vocabulary this front end
     /// could only guess at would refuse working source, so the value is taken
     /// as written.
-    fn directive_listing_control(&mut self, name: &str, rest: &[Token], span: Span) {
-        if rest.is_empty() {
-            self.err(span, format!("`{name}` needs an argument"));
+    fn directive_listing_control(
+        &mut self,
+        name: &str,
+        arg_count: std::ops::RangeInclusive<usize>,
+        rest: &[Token],
+        span: Span,
+    ) {
+        // An EMPTY operand field is ZERO arguments, not one empty one:
+        // `split_top_commas` answers a single empty group either way, so the
+        // count has to come off `rest` before the split.
+        let n = if rest.is_empty() {
+            0
+        } else {
+            split_top_commas(rest).len()
+        };
+        if !arg_count.contains(&n) {
+            self.err(
+                span,
+                format!("`{name}` takes {}, got {n}", arg_count_bound(&arg_count)),
+            );
         }
     }
 
