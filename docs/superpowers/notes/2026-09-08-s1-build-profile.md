@@ -1,5 +1,16 @@
 # Why sigil takes 0.88 s on Sonic 1: a decomposition, and what it is doing with the time
 
+> **CORRECTION, 2026-09-08, `2026-09-08-failed-run-bonus-pass-measurement.md`. Do not quote this
+> note's third pass as the bonus pass, and do not quote the 33% as recoverable.** s1disasm's
+> `poison` is EMPTY at convergence (measured at the convergence site), so the bonus pass never runs
+> on this input: the three traversals are three ORDINARY passes, and the run converges at pass
+> index 2 rather than 1. Item 2's sentence "Pass 3 is the bonus pass after convergence, and on this
+> input it is forced by `poison`", Item 6's first and third rows, and Item 8's costing of the fix
+> are wrong in consequence; deleting the bonus pass moves Sonic 1 by a measured ratio of 1.022,
+> which is nothing. Nothing else here was re-measured, so nothing else here is either confirmed or
+> retracted by that parcel; what it establishes is that the THIRD TRAVERSAL is misidentified, and
+> every claim resting on that identification falls with it.
+
 2026-09-08. Branch `measure/s1-build-profile` off master `ec09c700`. **This parcel moves no
 shipped code.** It answers a question the owner asked by hand: *"Do we want to have sigil look into
 why it takes so long compiling sonic 1? Since it's not really doing anything?"*
