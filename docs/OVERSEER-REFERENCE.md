@@ -866,6 +866,40 @@ its measurement, and the firings it swallows are printed on every run.
   broad `*_port` region-diff failures at embedded addresses plus
   `repin_pins::pins_rs_is_current` failing identically on sigil master.
 
+### THE REFERENCE TREE IS `.aeon-sigil-ref`, AND ITS EXCLUSIVITY IS INCIDENTAL (2026-09-09)
+
+**Provisioned at `/home/volence/sonic_hacks/.aeon-sigil-ref`**, detached at aeon `ec640bcf`, by
+`scripts/provision-aeon-ref.sh`, with the assembler built from this checkout rather than the shared
+binary. Both rebuild controls matched the goldens, all four shapes verify against the provenance tip
+(s4 b09ccd65/820229, s4.debug 1b7fe316/846529, demo 0ad17404/96863, demo.debug 2565ece2/103185), and
+the positive witness passed: `repin --check` prints `pins.rs unchanged`.
+
+**Why it replaced `.aeon-ls12-fix`, and the finding is this seat's own.** That tree was adopted at
+boot after verifying its four ROMs by digest. PREPARED was established and EXCLUSIVE never was, and
+four agent briefs then carried the words "PREPARED, READ-ONLY for you", which is true about the agent
+and silent about everyone else. The writer turned out to be THIS LANE: `native::ensure_generated`
+calls `emit_generated`, which runs seven emitters into `engine/sound/generated/` of whatever tree
+`AEON_DIR` names, and eight test binaries call it as a precondition. A write landed at 01:04:06Z
+inside a landing run that ran 00:59:15Z to 01:04:13Z. **The attribution was first sent to the aeon
+lane as theirs, on an agent's say-so, unverified; their one question, "how did you attribute it",
+was the entire audit.**
+
+**The sharper form of the rule: exclusivity is not only about other lanes. Ask whether your OWN
+gates write into the tree.** Watching for a foreign writer while being the writer is the shape that
+survives every check aimed outward.
+
+**⚠ AND THIS TREE'S EXCLUSIVITY IS AN ACCIDENT OF ITS PIN, NOT A PROPERTY.** The aeon lane disclosed
+that `tools/test_extern_guard_reachability.py` resolves its root from its own file location and runs
+a sound-on `sigil build --check`, so **any tree holding their `tools/` is written by their pytest
+lane**. That file is ABSENT here only because `ec640bcf` predates it. **The day this pin advances
+past that commit, the exposure returns and nothing will announce it.** Re-check for that file
+whenever the reference revision moves.
+
+**A timestamp trap that nearly reversed the attribution.** Formatting mtimes with a literal `Z` in
+the format string renders a LOCAL time as `...T21:04:06Z`, which reads as UTC and is four hours off,
+enough to move the write outside the run and back onto the peer. Use `--time-style=full-iso`, which
+prints the offset.
+
 ### STANDING ARTIFACTS THIS LANE DEPENDS ON — declared here so a SWEEPING lane can find them
 
 **A declaration only its author reads is not a declaration.** On 2026-08-27 the aeon lane
