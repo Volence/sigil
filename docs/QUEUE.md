@@ -223,29 +223,58 @@ freezes alone, so this is a notification rather than a permission: this seat und
 lane on 2026-09-08 that they hear before such a parcel lands, not after, and that undertaking is
 what governs.
 
-## INDIRECT-COST-REPORT-UNCOVERED
+## INDIRECT-COST-REPORT-UNCOVERED: covered by `parcel/cost-report-shape-test`, both halves
 
-- state at archive: `open`  size: `S`  project: `-`
+- state at archive: `open` until that branch merges; nothing further is owed by it  size: `S`  project: `-`
 - blockedBy: nothing
 
 Booked at the landing of `parcel/quoted-cost-deferrals` (merge 68351ffc) by the controller, against
-that parcel's own delivery, because an unstated gap reads as coverage.
+that parcel's own delivery, because an unstated gap reads as coverage. The gap was real and was
+re-measured before it was worked: at `bfd34618` the only occurrence of the flag or either new field
+outside their own source was a comment in `crates/sigil-frontend-emp/tests/contract_closure.rs`
+citing the command, and `crates/sigil-cli` had no test naming it at all.
 
-`sigil build --report indirect-cost` is 71 new lines in `crates/sigil-cli/src/main.rs` plus 34 in
-`crates/sigil-frontend-emp/src/corpus_contracts.rs`, and **no test exercises either.** Measured:
-`git grep` for the flag and the symbol across every `crates/*/tests/*.rs` returns only comments
-CITING the command, never a call. The report is the sole derivation of a figure two documents and one
-source comment now point at instead of stating, so if the path breaks, every one of those pointers
-resolves to nothing and the failure is silent.
+**WHAT CLOSED.** `the_indirect_cost_report_is_wired_and_internally_consistent`, in
+`crates/sigil-cli/tests/contract_closure_corpus.rs` beside the `--report contracts` gate it mirrors,
+drives the real binary over all three shipped shapes and reads its real stdout. It asserts the report
+does not contradict itself and asserts no number: each section's declared count against the rows it
+renders, the headline cost against the two policy counts printed above it, the row grammars, and that
+the walk ran under the target's defines rather than define-free. Proven red-first with three
+mutations of the SUBJECT, each shown applied on disk before its run: swapping the cost operands (red
+on the cost relation, 0 against 59), a site header that declares 11 and renders 0 (red on the site
+relation), and a firing list one row short of its own count (red on the firing relation). Runner:
+`cargo test --release -p sigil-cli --test contract_closure_corpus`, which CI's `cargo test
+--workspace` already runs.
 
-**What is NOT wanted here, and it is the reason this row exists rather than a quick test:** a check
-asserting the cost is 59. That rots exactly as the prose did and goes red on correct code the day the
-next engine contract is added, which is how a check teaches people to switch it off. The parcel was
-right to refuse it and the refusal is not the gap.
+The script half closed too, since the row named it and it was cheap in the same parcel:
+`crates/sigil-harness/tests/s8_seam_size.rs`, beside the existing script tests in that directory.
+Two cases. The arithmetic case asserts the report's totals against the rows they total, the headline
+against the seam totals, and THE PARTITION, that the move plus the unassigned remainder is the whole
+crate; that last relation is the one the silent-undercount class breaks, and it was proven red-first
+by dropping a seam from the headline (16644 against 18257, the same failure re-demonstrated) and
+again by claiming a module in neither list (741 lines accounted for nowhere). The refusal case builds
+a throwaway fixture tree and runs it twice, whole (the control, which must exit 0) and with one
+seam-named module removed (which must exit 2 and name it); without the control the exit 2 would be
+evidence only that the fixture was broken.
 
-**What is wanted:** a test that the path RUNS and emits both policy lines and a difference, asserting
-the SHAPE and never the value. The value is the thing that must be free to move.
+**WHAT DID NOT CLOSE, and none of it is owed by this parcel.**
 
-The same argument covers `scripts/s8_seam_size.sh`, whose loud-when-a-module-goes-missing path was
-proven red-first by hand at the parcel and is wired into no runner. Its silent-undercount failure was
-demonstrated once (16195 against 18257) and nothing re-demonstrates it.
+1. Nothing here says the reported figure is RIGHT. Both gates assert self-consistency, so a closure
+   that computed the wrong firing sets would still render a report that balances. That is the
+   deliberate limit of a shape gate and the price of a figure that is free to move.
+2. The cost relation is partly vacuous while the trusting count is 0: `cost == forced` and
+   `cost == forced - trusting` are the same claim today, so a defect on the trusting operand would
+   pass. It discriminates on the forced operand now and on both the day the warn tier is non-empty.
+   Stated in the test rather than left to be found.
+3. The relation is `forced.saturating_sub(trusting)` and NOT `forced >= trusting`, which was
+   considered and rejected as a check that fires on correct code: `check_firings` collapses a proc
+   whose effective set is TOP into a SINGLE unbounded firing and returns, where the trusting reading
+   of the same proc can fire once per register, and `@allow("clobbers.unanalyzable")` suppresses the
+   unbounded case outright. A legitimately smaller forced count is reachable, and with the warn tier
+   empty nothing would have noticed the assertion was wrong until it was.
+4. The cross-check the report prints (grep the source for `as Type` sites the walk cannot see) is
+   still a manual step. Nothing compares the walk's site list against the source text, so a site
+   inside an unresolved splice template remains invisible to every check, exactly as the report's
+   own note says.
+5. The s8 refusal is proven on a fixture, not on the real tree, because proving it there means
+   removing a harness module.

@@ -1425,7 +1425,7 @@ fn assert_indirect_cost_report_shape(label: &str, out: &str) {
     //     can produce. Well-formedness of the column, so a garbled kind is caught
     //     without pinning which procs are in the list.
     for row in &forced_rows {
-        let cols: Vec<&str> = row.trim().split_whitespace().collect();
+        let cols: Vec<&str> = row.split_whitespace().collect();
         let kind_ok = matches!(
             cols.as_slice(),
             [_, "UNBOUNDED"] | [_, "transitive", _] | [_, "direct", _]
@@ -1450,6 +1450,14 @@ fn assert_indirect_cost_report_shape(label: &str, out: &str) {
     //     case entirely. Both make a legitimately SMALLER forced count reachable,
     //     so a `forced >= trusting` assertion here would be a check that fires on
     //     correct code, and it is vacuous today besides (the warn tier is empty).
+    //
+    //     WHAT THIS RELATION CANNOT SEE, stated rather than left to be discovered:
+    //     while the trusting count is 0, `cost == forced` and `cost == forced -
+    //     trusting` are the same claim, so a defect that dropped the trusting
+    //     operand from the subtraction would pass here. The relation discriminates
+    //     on the FORCED operand today and on both the day the warn tier is
+    //     non-empty. The counts-against-rows relations above, (1) and (5), are not
+    //     vacuous at any corpus size.
     let cost_at = report_line(&lines, "COST OF THE FLIP: ", label, out);
     let cost = declared_count(lines[cost_at], "COST OF THE FLIP: ", " engine contract")
         .unwrap_or_else(|| panic!("{label}: unparseable cost: {}", lines[cost_at]));
