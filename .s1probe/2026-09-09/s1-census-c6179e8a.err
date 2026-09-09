@@ -1,0 +1,17 @@
+sonic.asm(2616): error: `charset` is not a recognized 68000 mnemonic
+sonic.asm(2617): error: `charset` is not a recognized 68000 mnemonic
+sonic.asm(2618): error: `charset` is not a recognized 68000 mnemonic
+sonic.asm(2619): error: `charset` is not a recognized 68000 mnemonic
+sonic.asm(2620): error: `charset` is not a recognized 68000 mnemonic
+sonic.asm(2621): error: `charset` is not a recognized 68000 mnemonic
+sonic.asm(2623): error: `charset` is not a recognized 68000 mnemonic
+sonic.asm(2624): error: `charset` is not a recognized 68000 mnemonic
+sonic.asm(2675): error: `charset` is not a recognized 68000 mnemonic
+sound/_smps2asm_inc.asm(63): error: switch needs a string expression
+sound/_smps2asm_inc.asm(64): error: case needs a string literal
+sound/_smps2asm_inc.asm(67): error: case needs a string literal
+sound/_smps2asm_inc.asm(88): error: switch needs a string expression
+sound/_smps2asm_inc.asm(89): error: case needs a string literal
+sound/_smps2asm_inc.asm(92): error: case needs a string literal
+sound/_smps2asm_inc.asm(96): error: case needs a string literal
+sound/_smps2asm_inc.asm(113): error: case needs a string literal
