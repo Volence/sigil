@@ -1454,6 +1454,35 @@ const ALIGN_COUNT_RANGE: std::ops::RangeInclusive<i64> = 1..=u32::MAX as i64;
 /// (`ds.b $100000000` is `range overflow` there). The byte total and the
 /// section cursor are checked separately by [`Asm::directive_ds`].
 const DS_COUNT_RANGE: std::ops::RangeInclusive<i64> = 0..=u32::MAX as i64;
+/// The counts a `[count]value` duplicate operand accepts, in repetitions. An
+/// operand cannot be repeated more times than the 32-bit address space holds
+/// units, which is the bound `ds` reserves under; the BYTE total is checked
+/// separately by [`Asm::dup_expanded_groups`]. asl reports `code overflow` for
+/// a negative count (probe `d10.asm`), which is the same refusal reached from
+/// the other side: it reads the count unsigned and the emit runs out of space.
+const DUP_COUNT_RANGE: std::ops::RangeInclusive<i64> = 0..=u32::MAX as i64;
+
+/// The argument counts `listing` accepts. asl states this bound outright in its
+/// own refusals, so it is measured rather than guessed: `expected one argument
+/// but got 0` for a bare `listing` (probe `l3`) and `expected one argument but
+/// got 2` for `listing on,off` (probe `l5`). Measured on `listing` itself and
+/// NOT inferred from `page`'s wording, which names a different range.
+const LISTING_ARG_COUNT: std::ops::RangeInclusive<usize> = 1..=1;
+/// The argument counts `page` accepts: `expected between 1 and 2 arguments but
+/// got 0` for a bare `page` (probe `l3`) and `but got 3` for `page 0,1,2`
+/// (probe `l7`), while `page 0,1` assembles clean (probe `l6`).
+const PAGE_ARG_COUNT: std::ops::RangeInclusive<usize> = 1..=2;
+
+/// Render an argument-count bound as the text a diagnostic quotes, so the
+/// wording follows the constant instead of restating it.
+fn arg_count_bound(range: &std::ops::RangeInclusive<usize>) -> String {
+    if range.start() == range.end() {
+        let n = *range.start();
+        format!("{n} argument{}", if n == 1 { "" } else { "s" })
+    } else {
+        format!("{} to {} arguments", range.start(), range.end())
+    }
+}
 
 /// The size suffix a `ds`/`dc` directive spells for a unit width.
 fn unit_suffix(unit: u32) -> &'static str {
@@ -5184,6 +5213,12 @@ impl Asm {
             }
             "padding" => self.state.padding = on_off(rest),
             "supmode" => self.state.supmode = on_off(rest),
+            // The LISTING-FILE controls. This front end emits no listing file,
+            // so both accept their argument and change nothing about the
+            // assembly. See `directive_listing_control` for what is and is not
+            // checked, and why.
+            "listing" => self.directive_listing_control("listing", LISTING_ARG_COUNT, rest, span),
+            "page" => self.directive_listing_control("page", PAGE_ARG_COUNT, rest, span),
             "enum" => self.directive_enum(rest, span),
             "nextenum" => self.directive_nextenum(rest, span),
             "enumconf" => self.directive_enumconf(rest, span),
@@ -5671,6 +5706,54 @@ impl Asm {
         // `restore` never touches it).
         self.close_section();
         self.state.disp = 0;
+    }
+
+    /// AS `listing <mode>` and `page <lines>[,<columns>]`: the controls that
+    /// shape asl's LISTING FILE. This front end emits no listing file, so
+    /// neither changes a byte, a symbol or a diagnostic, and both are accepted
+    /// on every CPU (asl takes them under `cpu 68000` and `cpu z80` alike,
+    /// probes `l1.asm` and `l4.asm`, which is what Sonic 1 relies on: its
+    /// `MacroSetup.asm` writes `listing purecode` / `page 0` and its
+    /// `sound/z80.asm` writes `listing` again on the Z80 side).
+    ///
+    /// The ARITY is checked at BOTH ends, because asl checks both and states
+    /// each bound outright in its own refusal: `listing` takes exactly one
+    /// argument (`expected one argument but got 0` for a bare one, probe
+    /// `l3.asm`; `but got 2` for `listing on,off`, probe `l5.asm`) and `page`
+    /// takes one or two (`expected between 1 and 2 arguments but got 0`, probe
+    /// `l3.asm`; `but got 3` for `page 0,1,2`, probe `l7.asm`; `page 0,1`
+    /// assembles clean, probe `l6.asm`). Each bound was measured on ITS OWN
+    /// directive: the two messages name different ranges, so neither borrows
+    /// the other's. The bounds live in [`LISTING_ARG_COUNT`] and
+    /// [`PAGE_ARG_COUNT`] and the diagnostic renders from them.
+    ///
+    /// The argument VOCABULARY is not checked. asl does check it (`listing
+    /// zqp_bogus` is `only ON/OFF allowed`, probe `l2.asm`) but that message
+    /// understates its own accepted set, which takes `purecode` as well, and
+    /// nothing downstream of here reads the value. A vocabulary this front end
+    /// could only guess at would refuse working source, so the value is taken
+    /// as written.
+    fn directive_listing_control(
+        &mut self,
+        name: &str,
+        arg_count: std::ops::RangeInclusive<usize>,
+        rest: &[Token],
+        span: Span,
+    ) {
+        // An EMPTY operand field is ZERO arguments, not one empty one:
+        // `split_top_commas` answers a single empty group either way, so the
+        // count has to come off `rest` before the split.
+        let n = if rest.is_empty() {
+            0
+        } else {
+            split_top_commas(rest).len()
+        };
+        if !arg_count.contains(&n) {
+            self.err(
+                span,
+                format!("`{name}` takes {}, got {n}", arg_count_bound(&arg_count)),
+            );
+        }
     }
 
     /// AS `org <target>` (M1.C T6b). `target` is an ABSOLUTE address (like
@@ -6325,9 +6408,119 @@ impl Asm {
         }
     }
 
+    /// Expand AS's DUPLICATE-OPERAND groups across a `dc` operand list.
+    ///
+    /// `[count]value` emits `value` `count` times: `dc.b [3]$FF` is `FF FF FF`,
+    /// `dc.w [2]$1234` is `1234 1234`, and the count advances `$` by the whole
+    /// run (asl probe `d1.asm`). The group is the prefix of ONE operand, so it
+    /// composes with the rest of the comma list: `dc.b $01,[3]$FF,$02` is
+    /// `01 FF FF FF 02` (`d2.asm`). `[0]value` emits nothing and leaves `$`
+    /// where it stood (`d5.asm`). A string value repeats whole: `dc.b [2]"ab"`
+    /// is `61 62 61 62` (`d7.asm`).
+    ///
+    /// The count is an ordinary constant expression, a literal, an arithmetic
+    /// form or a symbol defined earlier (`d3.asm`), and it must fold NOW: asl
+    /// refuses a forward reference with `expression must be evaluatable in
+    /// first pass` (`d6.asm`), which is what an unfoldable count reports here
+    /// through `eval_all`'s own wording.
+    ///
+    /// Only a LEADING `[` opens a group. asl reads `[2][3]$FF` as a count of 2
+    /// over the value `[3]$FF` and reports that value as an undefined symbol
+    /// (`d9.asm`); this front end reaches the same refusal through its
+    /// expression parser.
+    ///
+    /// Returns `None` when the list carries no group at all, which is every
+    /// line of both corpora except Sonic 1's `dcb` macro body; the caller then
+    /// keeps its borrowed `split_top_commas` groups.
+    ///
+    /// The expansion is by repeated OPERAND, so a count of N holds N copies of
+    /// the value's tokens at once. N is bounded by the address space the emit
+    /// those tokens drive would need anyway.
+    fn dup_expanded_groups(
+        &mut self,
+        rest: &[Token],
+        unit: u32,
+        span: Span,
+    ) -> Option<Vec<Vec<Token>>> {
+        if !rest
+            .iter()
+            .any(|t| matches!(t.tok, Tok::Punct(Punct::LBracket)))
+        {
+            return None;
+        }
+        let mut out: Vec<Vec<Token>> = Vec::new();
+        for g in split_top_commas(rest) {
+            let opens_bracket = matches!(
+                g.first().map(|t| &t.tok),
+                Some(Tok::Punct(Punct::LBracket))
+            );
+            let (count_toks, value) = match split_dup_group(g) {
+                Some(parts) => parts,
+                None if opens_bracket => {
+                    self.err(span, "unterminated `[count]` duplicate-operand group");
+                    continue;
+                }
+                None => {
+                    out.push(g.to_vec());
+                    continue;
+                }
+            };
+            if count_toks.is_empty() {
+                self.err(span, "`[]` needs a count expression");
+                continue;
+            }
+            if value.is_empty() {
+                self.err(span, "`[count]` needs a value after the `]`");
+                continue;
+            }
+            let Some(n) = self.eval_all(count_toks, span) else {
+                // `eval_all` returns None for a POISONED count without a word
+                // of its own, and dropping the operand there would emit nothing
+                // and exit 0. Named here for the same reason `ds` names its own
+                // count, and only when the poison is not already a register
+                // report.
+                if !self.register_reported_at(span) {
+                    self.err(span, "unresolved duplicate count");
+                }
+                continue;
+            };
+            if !DUP_COUNT_RANGE.contains(&n) {
+                self.err(
+                    span,
+                    format!(
+                        "duplicate count {n} out of range {}..={}",
+                        DUP_COUNT_RANGE.start(),
+                        DUP_COUNT_RANGE.end()
+                    ),
+                );
+                continue;
+            }
+            let bytes = n as u64 * unit as u64;
+            if bytes + self.builder.current_offset() as u64 > u32::MAX as u64 {
+                self.err(
+                    span,
+                    format!(
+                        "dc.{} [{n}] emits {bytes} bytes, past the end of the 32-bit address space",
+                        unit_suffix(unit)
+                    ),
+                );
+                continue;
+            }
+            for _ in 0..n {
+                out.push(value.to_vec());
+            }
+        }
+        Some(out)
+    }
+
     fn directive_db(&mut self, rest: &[Token], span: Span) {
         self.open_section_if_needed();
-        for g in split_top_commas(rest) {
+        let dup = self.dup_expanded_groups(rest, 1, span);
+        let groups: Vec<&[Token]> = match &dup {
+            Some(v) => v.iter().map(Vec::as_slice).collect(),
+            None => split_top_commas(rest),
+        };
+        for g in groups {
             let called = self.expand_calls_checked(g);
             let expanded = self.expand_int_builtin(&called);
             let expanded = self.expand_str_builtins(&expanded);
@@ -6500,7 +6693,12 @@ impl Asm {
     fn directive_dc_w(&mut self, rest: &[Token], span: Span) {
         self.open_section_if_needed();
         self.pad_word_align(span);
-        for g in split_top_commas(rest) {
+        let dup = self.dup_expanded_groups(rest, 2, span);
+        let groups: Vec<&[Token]> = match &dup {
+            Some(v) => v.iter().map(Vec::as_slice).collect(),
+            None => split_top_commas(rest),
+        };
+        for g in groups {
             let expanded = self.expand_operand_builtins(g);
             let expanded = match self.collapse_float_operand(&expanded) {
                 Ok(t) => t,
@@ -6585,7 +6783,12 @@ impl Asm {
     fn directive_dc_l(&mut self, rest: &[Token], span: Span) {
         self.open_section_if_needed();
         self.pad_word_align(span);
-        for g in split_top_commas(rest) {
+        let dup = self.dup_expanded_groups(rest, 4, span);
+        let groups: Vec<&[Token]> = match &dup {
+            Some(v) => v.iter().map(Vec::as_slice).collect(),
+            None => split_top_commas(rest),
+        };
+        for g in groups {
             let expanded = self.expand_operand_builtins(g);
             let expanded = match self.collapse_float_operand(&expanded) {
                 Ok(t) => t,
@@ -9558,6 +9761,8 @@ fn is_op_keyword(s: &str) -> bool {
             | "restore"
             | "padding"
             | "supmode"
+            | "listing"
+            | "page"
             | "enum"
             | "nextenum"
             | "enumconf"
@@ -10598,6 +10803,35 @@ fn is_bare_local(v: &str) -> bool {
     v.starts_with('.')
         && v.len() > 1
         && v[1..].chars().all(|c| c.is_alphanumeric() || c == '_')
+}
+
+/// Split one `dc` operand into its `[count]` prefix and the value after the
+/// `]`, or `None` when the operand does not open with `[` or the group is never
+/// closed.
+///
+/// Only a LEADING bracket opens a duplicate count: a `[` anywhere else is part
+/// of the value's expression text, which is how asl reads it too.
+fn split_dup_group(g: &[Token]) -> Option<(&[Token], &[Token])> {
+    if !matches!(
+        g.first().map(|t| &t.tok),
+        Some(Tok::Punct(Punct::LBracket))
+    ) {
+        return None;
+    }
+    let mut depth = 0i32;
+    for (i, t) in g.iter().enumerate() {
+        match t.tok {
+            Tok::Punct(Punct::LBracket) => depth += 1,
+            Tok::Punct(Punct::RBracket) => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some((&g[1..i], &g[i + 1..]));
+                }
+            }
+            _ => {}
+        }
+    }
+    None
 }
 
 fn on_off(rest: &[Token]) -> bool {

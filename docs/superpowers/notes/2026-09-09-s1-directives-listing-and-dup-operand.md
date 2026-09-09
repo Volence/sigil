@@ -1,0 +1,393 @@
+# S1-DIRECTIVES-LISTING-AND-DUP-OPERAND
+
+Two unimplemented AS features that were 21 of the 46 diagnostics sigil emitted
+on the Sonic 1 disassembly: the `listing` / `page` listing-file controls, and
+the `[count]value` duplicate-operand syntax.
+
+## The instruments
+
+**sigil, before.** `sigil 0.1.0 (bd7fce7b)`, md5 `ea2ea282285b89ad84b34801c9a20fcc`
+(the controller's measurement, quoted, not re-run here).
+
+**sigil, after.** Built from this branch at `248a5c72`, md5
+`3c31cb20b2b368b4f02c72bc9a97ba07`, `CARGO_TARGET_DIR=.target-s1dir` so nothing
+relinked the shared `target/release/sigil` another lane may be pinned to.
+
+**asl.** `/home/volence/sonic_hacks/s1disasm/build_tools/Linux-x86_64/asl`, md5
+`61e672562465725a8c102288a7da9098`, verified before the first run. Every probe
+went through `docs/superpowers/notes/asl-reference/asl_ref.sh`'s `asl_run`, so
+the digest was re-checked and the exit status reported on each invocation. A
+run with a non-zero status was read for its DIAGNOSTIC only; no byte column was
+taken from one.
+
+**Corpus.** A private copy at `/home/volence/sonic_hacks/.scratch/s1-directives/s1disasm`
+of the prepared tree, rev `f6ece657`, entry `sonic.asm`. Generated-include
+readiness 4/4 both runs, so both numbers are baselines rather than an absent
+generator's shadow.
+
+## The corpus baselines
+
+`scripts/corpus-baseline.sh --compare` against the controller's
+`baseline-bd7fce7b/s1-bd7fce7b.err`:
+
+```text
+  level    before   after   delta  class
+  error        18       0     -18  unexpected character  <== GONE
+  error        11       9      -2  `X` is not a recognized N mnemonic
+  error         6       6      +0  bad immediate expression
+  error         6       6      +0  case needs a string literal
+  error         2       2      +0  switch needs a string expression
+  error         2       2      +0  unresolved if condition
+               46      25     -21  TOTAL
+
+  error         1       0      -1  unknown directive or mnemonic `X`  <== GONE
+
+  lines only in the NEW run:  0
+  lines only in the OLD run:  4
+    MacroSetup.asm(7): error: `listing` is not a recognized 68000 mnemonic
+    MacroSetup.asm(8): error: `page` is not a recognized 68000 mnemonic
+    MacroSetup.asm(98): error: unexpected character
+    sound/z80.asm(11): error: unknown directive or mnemonic `listing`
+```
+
+**No new diagnostics were exposed, of any class, at any site.** The brief
+expected the count to rise where accepting a construct uncovers what sits behind
+it, and it did not: the 21 rows came off and nothing came on. Both classes clear
+to zero; the third moves 11 to 9 because two of its rows were `listing` and
+`page`, and the remaining nine are `charset`, another parcel's.
+
+A falling count is evidence noise was removed, never that anything is correct.
+The correctness claim rests on the byte assertions below, not on this table.
+
+**`lines only in the NEW run: 0` is an absence, so here is the filter finding
+something.** The same differ, over the same pair of streams, reported `lines only
+in the OLD run: 4` and named all four. It therefore selects lines of exactly this
+class out of exactly these inputs, and its zero on the other side is a measured
+zero rather than a filter that reads nothing. The population it read is printed
+beside it: 46 lines before, 25 after.
+
+The other absence claim in this parcel is "no em or en dash in the new text".
+The instrument was shown to find both characters in a planted canary, the input
+was sized at 672 lines, and the same filter over the added SOURCE lines returned
+a real hit in `token.rs` that was then fixed. It selects this subject, not merely
+some subject of its class.
+
+## Group A: `listing` and `page`
+
+`MacroSetup.asm:6-9` is `padding off` / `listing purecode` / `page 0` /
+`supmode on`. Two of the four were handled and two were not, and the two that
+were not produced DIFFERENT diagnostics on the two CPU surfaces
+(`is not a recognized 68000 mnemonic` versus `unknown directive or mnemonic`),
+which reads as two refusal sites. It is one absence with two fallbacks: under
+`cpu 68000` an unrecognised head reaches `lower_m68k`, under `cpu z80` it reaches
+`dispatch`'s final arm.
+
+`padding` was the population proxy for the enumeration sites, since it is the
+same shape of directive (an operand, no bytes, no block). It appears in exactly
+three places, and so `listing`/`page` needed:
+
+| site | needed | why |
+|---|---|---|
+| `dispatch`'s match (`eval.rs:5069`ff) | ADDED | routes the directive |
+| `is_op_keyword` (`eval.rs:9418`ff) | ADDED | a COLUMN-0 spelling is a directive, not a label |
+| `scan_plain_labels` (`eval.rs:10309`ff) | already present | the name column |
+
+The second is the one a dispatch-only fix loses, and it is invisible in the
+corpus: every corpus site is indented, and an indented unknown head dispatches
+anyway. Measured (mutation M2 below): with the dispatch arm alone, a column-0
+`listing purecode` binds a symbol named `listing` and hands `purecode` to
+instruction lowering, which reports `` `purecode` is not a recognized 68000
+mnemonic `` on correct source.
+
+**Implementation: accept, check the arity, ignore the value.** sigil emits no
+listing file, so neither directive can change a byte.
+
+- The ARITY is checked AT BOTH ENDS, because asl checks both and states each
+  bound outright in its own refusal. `listing` takes exactly one argument and
+  `page` takes one or two:
+
+  | probe | line | asl |
+  |---|---|---|
+  | `l3` | bare `listing` | `expected one argument but got 0` |
+  | `l5` | `listing on,off` | `expected one argument but got 2` |
+  | `l3` | bare `page` | `expected between 1 and 2 arguments but got 0` |
+  | `l6` | `page 0,1` | assembles, exit 0 |
+  | `l7` | `page 0,1,2` | `expected between 1 and 2 arguments but got 3` |
+
+  Each bound was measured on ITS OWN directive, which was not a formality. The
+  two messages name different ranges, so reading `listing`'s upper bound off
+  `page`'s wording would have set it to 2 and quietly accepted `listing on,off`.
+  `l6` pins the other side: `page 0,1` assembles clean, so a `page` gated at one
+  argument would refuse working source.
+
+  The bounds are `LISTING_ARG_COUNT` (`1..=1`) and `PAGE_ARG_COUNT` (`1..=2`),
+  and the diagnostic renders from them through `arg_count_bound`, so the wording
+  follows the constant instead of restating it. Mutation M6 below is the proof
+  that this is real rather than decorative.
+
+  Arity is therefore NOT one of the divergences below. It is the half asl tells
+  you outright, which is exactly what the vocabulary is not.
+- The VOCABULARY is not checked, and this is a deliberate divergence. asl does
+  check it (probe `l2`: `listing zqp_bogus` is `error #1520: only ON/OFF
+  allowed`) but that message understates asl's own accepted set, which takes
+  `purecode`. A vocabulary sigil could only guess at would refuse working
+  source, and nothing downstream reads the value.
+- **No warning. RATIFIED by the controller**, so this is settled rather than
+  proposed: a warning here would fire on
+  `listing purecode`, which is what every correct Sonic 1 build writes. A check
+  that fires on correct code is not the safe direction; it trains readers to
+  ignore the stream it lives in. If a listing file ever exists, `listing off`
+  acquires a real meaning and gets real semantics then.
+
+## Group B: `[count]value`
+
+**It died in the LEXER, not in `operands.rs`.** `[` and `]` were absent from
+`punct`'s alphabet outright, so any line carrying one failed at
+`unexpected character` before an operand parser saw it. `dc.ATTRIBUTE` was
+already working: probe `d13` runs `MacroSetup.asm`'s exact macro through the
+reference assembler and the listing shows `dcb.b 3,$FF` expanding to
+`dc.b [3]$FF`, and sigil now assembles the same shape. The brief's hypothesis
+was right, and its stated uncertainty about `ATTRIBUTE` resolves in the
+convenient direction, which is itself a reason it was checked rather than
+assumed.
+
+### The semantics, each with its listing
+
+Full listings and per-probe verdicts are in
+`docs/superpowers/notes/2026-09-09-as-dup-operand-probes/README.md`; the probe
+sources are committed beside it, one construct per file so that an error in one
+cannot poison another's byte column.
+
+| established | probe | asl exit | evidence |
+|---|---|---|---|
+| repeats the value at each width | `d1` | 0 | `[3]$FF` -> `FF FF FF`; `[2]$1234` -> `1234 1234`; `[2]$AABBCCDD` -> the long twice |
+| the count advances `$` | `d1` | 0 | labels land at `$1003`, `$1008`, `$1010` from an origin of `$1000` |
+| the group is ONE operand's prefix | `d2` | 0 | `$01,[3]$FF,$02` -> `01 FF FF FF 02` |
+| the count is any constant expression | `d3` | 0 | `[1+2]`, `[(2*2)]`, `[n]`, `[n-1]` with `n equ 4` |
+| whitespace is immaterial | `d4` | 0 | `[ 3 ]$AA`, `[3] $BB`, `[ 2 ] $CC` |
+| `[0]` emits nothing, `$` unmoved | `d5` | 0 | the byte after stays at `$1001` |
+| a forward count is refused | `d6` | 2 | `error #1820: expression must be evaluatable in first pass` |
+| a string value repeats whole | `d7` | 0 | `[2]"ab"` -> `61 62 61 62` |
+| only a LEADING bracket is a count | `d9` | 2 | `[2][3]$FF` is `error #1010` naming the SYMBOL `[3]$FF` |
+| a negative count is refused | `d10` | 2 | `error #1920: code overflow` |
+| `ds` does not take the group | `d11` | 2 | `error #1820` |
+| an instruction operand does not | `d12` | 2 | `error #1010` naming `[2]1` |
+| a missing value emits zeros | `d15` | 0 | `dc.b [3]` -> `00 00 00` |
+
+**Two things the brief and the corpus both got wrong, found by probing rather
+than assuming.**
+
+`asl has no `dcb` builtin in this build.` Probe `d8`: `dcb.b 3,$FF` is
+`error #1200: unknown instruction DCB`. Sonic 1's `dcb` macro therefore shadows
+nothing, and sigil needs no `dcb` directive. (`scan_plain_labels` lists `dcb`
+among the names that are not labels in the name column, which is harmless here
+because the one corpus occurrence is a macro definition.)
+
+`MacroSetup.asm`'s `org0` macro chunks its fill at 1024 with the comment "AS can
+only generate 1 kb of code on a single line". Probe `d17`: 1024, 1025, 1596 and
+`$62A` all assemble on one line with exit 0. The comment does not bind this
+build, which is just as well, since `sonic.asm` writes `dcb.b $62A,$FF` (1578
+bytes) five lines at a time.
+
+### The implementation
+
+`[` and `]` join `Punct` and the lexer's one-char table, and NOTHING ELSE gained
+a meaning for them. The lexer's alphabet was checked before widening: no
+construct in this front end used either character, and the corpus's only other
+occurrences are inside comments. A bracket outside a leading `dc`-operand
+position is still refused, which is a pinned test rather than a claim.
+
+`split_top_commas` now counts bracket depth alongside paren depth, so a count
+containing a comma (`[f(1,2)]$FF`) is one operand rather than two.
+
+`Asm::dup_expanded_groups` peels the group per operand ahead of the existing
+per-operand loop in `directive_db` / `directive_dc_w` / `directive_dc_l`,
+returning `None` (and so allocating nothing extra) for the overwhelming majority
+of lines that carry no bracket at all. Expanding at the operand level rather
+than restructuring the emit loops is what makes `[0]`, string values and
+mixed comma lists fall out for free instead of each needing its own arm.
+
+### Four deliberate divergences from asl, all four RATIFIED by the controller
+
+Each is pinned as a test, so reversing one has to be deliberate. Arity is NOT
+among them: it was a silent divergence, it is now closed, and the section above
+says how. The distinction that decides which list a thing lands on is whether
+asl states the rule outright (arity: yes, so enforce it) or only gestures at it
+(the vocabulary: its message understates its own set, so do not guess).
+
+1. `dc.b [3]` with no value: asl emits `00 00 00` (`d15`), sigil refuses by
+   name. An empty operand meaning zero is a rule `dc` does not implement here,
+   and inheriting it through the bracket path would let a truncated line
+   assemble.
+2. A forward-referenced count: asl refuses (`d6`), sigil resolves it, because
+   sigil assembles to convergence rather than in one pass. Pinned as BYTES, so
+   what is guarded is the value and not merely the acceptance.
+3. The `listing` argument vocabulary, above.
+4. `db` and `dc.b` are one directive in sigil on both CPUs, so sigil takes the
+   group on either spelling. asl gates the whole SPELLING by CPU: `dc.*` does
+   not exist under `cpu z80` (`d14`) and `db`/`dw` do not exist under
+   `cpu 68000` (`d16`), which is why `db [3]v` is refused there. The alias
+   predates this work; a bracket-only gate would imitate half a rule sigil does
+   not implement, so the alias is left total and the divergence recorded.
+
+## The defect this work introduced and then caught
+
+The first draft answered an unfoldable count by dropping the operand. `eval_all`
+returns `None` for a poisoned expression WITHOUT a diagnostic of its own, so
+`dc.b [nosuchsym]$AA` assembled to zero bytes and exited 0: an assembly silently
+short by however many bytes the count was worth, with nothing said. Named now,
+the way `directive_ds` names its own count. Mutation M3 below is that defect
+put back, and it measures exactly that shape.
+
+## Verification
+
+### Red-first mutations
+
+Each was applied to the committed tree at `248a5c72`, shown on disk, run, and
+restored with `git checkout HEAD -- <path>` from that commit. The prediction was
+written before each run.
+
+A red is not evidence that the intended mechanism was measured. This front end
+has many refusal paths over one input, so an unimplemented construct and a
+neighbouring syntax error arrive as the same exit code. Every red below is
+therefore quoted by its TEXT, and the prediction says which text would mean the
+mutation measured something else.
+
+**M1: delete the lexer's `[` and `]` arms.** Predicted: every bracket row red
+naming the LEXER; a red naming `dc.ATTRIBUTE`, an operand-size path, a
+macro-expansion path or `bad byte expression` would mean M1 proved nothing.
+Measured 11 failed, 5 passed, and every byte row reads
+
+```text
+expected an assembly, got: ["unexpected character"]
+```
+
+with `the_macrosetup_dcb_macro_shape_expands` carrying three of them, one per
+macro expansion, which is the corpus's own 18-row shape in miniature.
+
+**M1 also demonstrated the hazard it was told to look for.** The three rows that
+assert a REFUSAL still refused under M1, with a plausible message and a non-zero
+status:
+
+```text
+refused, but not for the missing value. Got: unexpected character
+refused, but not for the count. Got: unexpected character
+an unresolvable count must be named, not silently dropped. Got: unexpected character
+```
+
+Those three matchers key on wording unique to their own rule, so they went red.
+Written against "did it refuse" they would all three have gone GREEN on a build
+where the feature does not lex at all.
+
+**M2: remove `listing`/`page` from `is_op_keyword` only, keeping the dispatch
+arm.** Predicted: ONLY the column-0 row red. Measured 1 failed, 15 passed:
+
+```text
+expected an assembly, got: ["`purecode` is not a recognized 68000 mnemonic"]
+```
+
+which names the mechanism exactly, the head bound as a label and the ARGUMENT
+handed to instruction lowering.
+
+**M3: drop the `unresolved duplicate count` diagnostic.** Predicted: only the
+unresolvable row red, and red by ASSEMBLING rather than by a different message,
+since a different message would mean some other guard caught it first. Measured
+1 failed:
+
+```text
+assembled to 0 byte(s) [] instead of refusing
+```
+
+**M4: peel the bracket but ignore the count, emitting the value once.**
+Predicted: the byte rows red as COUNT mismatches; any diagnostic text in a red
+would mean the bracket had stopped lexing and M4 was re-measuring M1. Measured 8
+failed, 8 passed, no diagnostic anywhere:
+
+```text
+a_count_repeats_the_value_at_every_dc_width   left: [255]            right: [255, 255, 255]
+a_string_value_repeats_whole                  left: [97, 98]         right: [97, 98, 97, 98]
+a_zero_count_emits_nothing                    left: [17, 255, 34]    right: [17, 34]
+the_macrosetup_dcb_macro_shape_expands        left: [255, 18, 52, 32]
+                                              right: [255, 255, 255, 18, 52, 18, 52, 32 x8]
+```
+
+**M5: check only the LOWER bound, the shape this parcel first shipped.**
+Predicted: only the arity row red, and red by ASSEMBLING an over-arity line; a
+red quoting a WORDING mismatch instead would mean the mutation had hit the
+message rather than the bound, and the test would be measuring text. Measured 1
+failed:
+
+```text
+assembled to 0 byte(s) [] instead of refusing
+```
+
+**M6: give `listing` the bound named in `page`'s message, `1..=2`.** This is the
+specific error the review warned against. Predicted to show two separate things:
+the bound is load-bearing (`listing on,off` becomes accepted), and the
+diagnostic RENDERS FROM the constant rather than a typed literal, so the
+LOWER-bound message moves too. The second fires first, so the red must quote the
+changed wording; a red with the message still reading `takes 1 argument` would
+have meant the constant was decorative. Measured 1 failed:
+
+```text
+refused, but not for the argument count. Got: `listing` takes 1 to 2 arguments, got 0
+```
+
+M2, M4 and M6 are the three that could have come out green and meant something
+bad. A green M2 would have made the `is_op_keyword` edit dead code and the
+column-0 row worthless; a green M4 would have shown the byte rows proving only
+that the bracket LEXES, not that the count is honoured; a green M6 would have
+meant either the bound or the message it renders was doing nothing. None did.
+
+M2 also corrected a prediction. The commit message for `248a5c72` says a
+dispatch-only fix binds a label "emitting nothing, with no diagnostic". Measured,
+it binds the label AND reports the ARGUMENT as an unrecognised mnemonic, so the
+defect is a wrong diagnostic on correct source rather than a silent one. The
+silent shape needs a column-0 `listing` with no argument, which no corpus writes.
+The test's own comment carries the measured wording.
+
+### Suites
+
+`CARGO_TARGET_DIR=.target-s1dir cargo test --release --workspace --no-fail-fast`
+
+- Strict (no `AEON_DIR`): 4518 passed, 382 failed, 2 ignored. **All 382 are the
+  harness refusing to measure a reference-dependent row because no aeon tree is
+  named**, which this parcel's brief forbids naming (379 carry the
+  `NO REFERENCE TREE IS NAMED` refusal verbatim; the other 3 are `PoisonError`
+  collateral from a sibling in the same test binary panicking on it). None is a
+  golden divergence.
+- With `SIGIL_ALLOW_PARTIAL=1`, the sanctioned declaration: **4900 passed, 0
+  failed, 2 ignored.** Read that honestly: 382 of those 4900 rows print `ok`
+  with `0 measured` because they were declared unmeasured, not because anything
+  compared. The measured result is 4518 green, 0 red.
+
+`crates/sigil-frontend-as/tests/as_dup_operand_and_listing.rs`, 16 tests, all
+passing, wired into the normal `cargo test` workspace run.
+
+One run during the arity work came back 4899/1/2 on
+`the_published_line_states_this_revision_s_position_against_a_named_remote_ref`,
+which compares the version banner's baked `origin/master` against what git
+resolves. It is not this branch's: nothing here touches `crates/sigil-cli`, and
+the ref moved under the run (the banner's value is what `origin/master` resolves
+to now, and the test read an intermediate state while another lane was
+fetching). Re-run once the ref settled: 19 passed, 0 failed. Recorded rather than
+dropped, because a transient red that is quietly re-run until green is
+indistinguishable from one that was argued away.
+
+## Still open
+
+- **The aeon byte gate is owed and was not run here.** `sigil-frontend-as` is on
+  aeon's shipping build path, and this parcel changes the lexer's alphabet and
+  three `dc` directives. The brief assigns that proof to the controller at
+  landing on the merged tree. Nothing in this parcel measured it.
+- **s2disasm was not re-measured.** The other corpus lives in a shared, dirty
+  checkout this parcel was told not to touch, and no prepared private copy was
+  available. The change is additive at the lexer and no-op for any line without
+  a bracket, but that is an argument and not a measurement.
+- **A hostile count allocates.** The count is bounded by the 32-bit address
+  space, which is the bound the emit needs anyway, but the expansion materialises
+  the value's tokens per repetition, so a deliberately enormous count costs a
+  constant factor more memory than the bytes it asks for. The corpus maximum is
+  1596. Left as it stands rather than invented a tighter ceiling that no
+  measurement supports.
+- **The `charset` rows (9 of the remaining 25) are another parcel's.**

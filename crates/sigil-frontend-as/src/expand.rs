@@ -66,6 +66,8 @@ fn punct_str(p: Punct) -> &'static str {
         Punct::Ge => ">=",
         Punct::LParen => "(",
         Punct::RParen => ")",
+        Punct::LBracket => "[",
+        Punct::RBracket => "]",
         Punct::OrOr => "||",
         Punct::AndAnd => "&&",
         Punct::Comma => ",",
@@ -313,15 +315,19 @@ pub(crate) fn split_call_args(toks: &[Token], lparen: usize) -> Option<(Vec<Vec<
     None
 }
 
-/// Split a token slice on top-level (non-parenthesised) commas.
+/// Split a token slice on top-level (non-parenthesised, non-bracketed) commas.
+///
+/// A `[...]` duplicate-operand count is one group's own prefix, so a comma
+/// inside it belongs to the count expression and not to the operand list:
+/// `dc.b [f(1,2)]$FF` is ONE operand, exactly as `dc.b (f(1,2))` is.
 pub(crate) fn split_top_commas(toks: &[Token]) -> Vec<&[Token]> {
     let mut groups = Vec::new();
     let mut depth = 0i32;
     let mut start = 0usize;
     for (i, t) in toks.iter().enumerate() {
         match t.tok {
-            Tok::Punct(Punct::LParen) => depth += 1,
-            Tok::Punct(Punct::RParen) => depth -= 1,
+            Tok::Punct(Punct::LParen) | Tok::Punct(Punct::LBracket) => depth += 1,
+            Tok::Punct(Punct::RParen) | Tok::Punct(Punct::RBracket) => depth -= 1,
             Tok::Punct(Punct::Comma) if depth == 0 => {
                 groups.push(&toks[start..i]);
                 start = i + 1;
