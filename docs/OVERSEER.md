@@ -447,17 +447,6 @@ exits 0**, and a silent green is the class we never drop. Amends the hub's first
 dependency of the project that exists to replace it is a real cost and is the OWNER'S
 alternative, not taken.**
 
-**ENUMERATED ONTO `.emp`, 2026-09-09.** The ruling above was made for the AS front end and applied
-there only. The `.emp` `cpu:` attribute had the same class through a different door: a value it did
-not recognize was coerced to `Cpu::M68000` with no diagnostic, by a resolver that took no
-diagnostics sink and so structurally could not report. `lower::CPU_SPELLINGS` now carries the
-accepted spellings (`m68000`, `m68k`, `z80`, case-insensitive, the set the corpus writes today) and
-anything else is refused by name at the value's own span. The refusal lists the table rather than
-transcribing it, so it cannot advertise a spelling the attribute does not accept. Note the two
-surfaces have DIFFERENT accepted sets on purpose: AS takes `68000`/`68008`, which the `.emp` grammar
-cannot deliver at all (a bare-numeric name lexes as an integer literal). Whether `.emp` should keep
-two spellings for the 68000 is a language-surface question for the owner and is left open.
-
 **⚠ THE ORACLE EXISTS, AND THIS PARAGRAPH SAID IT DID NOT — corrected 2026-09-03 after four
 parcels had been run without it.** A working **`asl` 1.42 Beta Bld 212** is committed in the
 corpus repos. It runs. It is a **differential oracle for the entire AS-replacement project** —
