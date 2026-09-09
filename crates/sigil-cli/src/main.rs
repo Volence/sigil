@@ -175,7 +175,7 @@ fn main() {
     };
 
     if let Some(out_path) = output {
-        if let Err(err) = std::fs::write(&out_path, &image) {
+        if let Err(err) = install_artifact(&out_path, &image) {
             eprintln!("error: cannot write {out_path}: {err}");
             process::exit(1);
         }
@@ -539,12 +539,30 @@ fn unlocated_error(message: String) -> sigil_span::Diagnostic {
     }
 }
 
+/// Install one output artifact at `path`, by rename rather than by truncation.
+///
+/// EVERY file this binary writes for a consumer goes through here, and the reason it
+/// is one function rather than a call at each site is that the guarantee is only
+/// worth anything if it holds at all of them: a lane polling the ROM while the
+/// listing beside it is still written in place learns nothing from the ROM's
+/// atomicity. A new output artifact belongs on this path too.
+///
+/// The mechanism, the limits of the guarantee, and the file-mode contract a rename
+/// answers differently from a truncation are in
+/// [`sigil_harness::atomic_write`](sigil_harness::atomic_write), which this
+/// delegates to unchanged. In particular a failed write leaves the previous
+/// artifact complete and readable rather than a stub, which is what makes exiting
+/// non-zero on the error below a safe response.
+fn install_artifact(path: &str, bytes: &[u8]) -> std::io::Result<()> {
+    sigil_harness::atomic_write::write_atomic_io(std::path::Path::new(path), bytes)
+}
+
 /// The shared emp output tail: write `image` to `output` (if given), print it as
 /// `--hex` (if set), and always report `built: N bytes`. Exits non-zero on a
 /// write failure.
 fn emit_image(image: &[u8], output: Option<&str>, hex: bool) {
     if let Some(out_path) = output {
-        if let Err(err) = std::fs::write(out_path, image) {
+        if let Err(err) = install_artifact(out_path, image) {
             eprintln!("error: cannot write {out_path}: {err}");
             process::exit(1);
         }
@@ -2233,7 +2251,8 @@ fn run_build_native(aeon: &std::path::Path, opts: &BuildOpts) {
 
     // The sigil-canonical listing (the `.lst`-consumer drop-in), if requested.
     if let Some(lst_path) = &opts.emit_lst {
-        if let Err(err) = std::fs::write(lst_path, sigil_link::emit_listing(&listing)) {
+        if let Err(err) = install_artifact(lst_path, sigil_link::emit_listing(&listing).as_bytes())
+        {
             eprintln!("error: cannot write {lst_path}: {err}");
             process::exit(1);
         }
@@ -2275,7 +2294,7 @@ fn run_build_native(aeon: &std::path::Path, opts: &BuildOpts) {
         rom
     };
     if let Some(out_path) = &opts.output {
-        if let Err(err) = std::fs::write(out_path, &full) {
+        if let Err(err) = install_artifact(out_path, &full) {
             eprintln!("error: cannot write {out_path}: {err}");
             process::exit(1);
         }
