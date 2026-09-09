@@ -377,6 +377,10 @@ trigger a reader cannot recognise is a rule nobody looks up.
 - **About to sweep, delete or rebuild trees under `~/sonic_hacks/`** — *STANDING ARTIFACTS THIS
   LANE DEPENDS ON*: the pinned assembler at `~/sonic_hacks/.pinned/` and the aeon reference
   tree, neither of which any other lane's worktree list can see.
+- **Asked why aeon's board says `blockedBy: sigil`** — *LS-13b*: its artifact is aeon's, the id is
+  aeon's coordinate, and the ask is an `.emp` language question rather than a lint.
+- **Dispatching the UX seat pair** — *what oracle's pilot already refuted in the brief*, including
+  the substitution a seat with no input path makes silently.
 
 Four further blocks moved from earlier in this file — the positive freeze witness, `d-18`, the
 rules banked from closed findings, and the drift watch's timer — and each is named by path at

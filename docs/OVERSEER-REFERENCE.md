@@ -1677,3 +1677,58 @@ property a filter needs; precision is what keeps its events readable.** The auth
 here are `^test result: FAILED` and the verdict block, not the panic text, because a panic is how
 half of these tests report success. **Ask not only "would this fire if the run crashed" but "does
 anything that is NOT a failure match this."**
+
+### LS-13b, THE AEON ROW BLOCKED ON SIGIL: WHERE IT ACTUALLY LIVES (routed 2026-09-09)
+
+Read when anyone asks why aeon's board carries a row `blockedBy: sigil`, or before starting it.
+
+**The artifact is aeon `origin/master d3339973`, `docs/DEFERRED_WORK.md`, the row beginning
+`| LS-13b |`.** Read it there rather than from any summary. `git grep LS-13b` in THIS tree returns
+nothing and always would: the id is aeon's ledger coordinate, not a shared one, so the empty result
+is a fact about which tree the search ran in and not about the row. That is protocol bar 16(d)
+arriving from the receiving side, and this seat spent a message concluding the row might be
+ungrounded before the path was sent.
+
+**The ask, which is narrower than the title:** `engine/system/boot.emp`'s `EntryPoint` requests,
+spins on and releases the Z80 bus by hand around the driver-blob copy, because it interleaves the
+hold with the /IC reset pulse, a shape `with z80_stopped` cannot take. So it gets none of the
+pairing proofs (`[context.escape]`, `[context.entry-skip]`, `[context.reacquire]`), and this lane's
+`[bus.*]` net cannot see it either: that net keys off a RESOLVED destination operand and a
+register-indirect destination is its documented soundness bailout, per the module doc in
+`crates/sigil-frontend-emp/src/z80_bus.rs`. **It is a LANGUAGE question, not a lint request: can
+`z80_stopped` be given a form that admits boot's interleaved /IC pulse**, which would delete the
+exception rather than document it. So it is `.emp` language surface and lands under propose,
+discuss, then land, never silently.
+
+**Nobody is held up by it.** It sits behind the owner's unanswered items and aeon's region planning
+does not wait on it.
+
+### THE UX SEAT PAIR: WHAT ORACLE'S PILOT ALREADY REFUTED IN THE BRIEF (relayed 2026-09-09)
+
+Read before dispatching `LENS-UX-SEAT-DIAGNOSTICS`. Banked here because it reached this lane only
+by mail, and mail is not part of any tree. Oracle's amendment SHA is owed and not yet in hand, so
+this is a relay: read their text when it lands rather than treating this as the source.
+
+**The one sentence: isolate the SURFACE, not the process.** Both of oracle's safety defects were a
+rig that correctly confined a process while leaving it a path to the owner's screen that nothing in
+the proof looked at.
+
+- **An absence check must point at the surface the thing would escape TO, not the one you can
+  conveniently enumerate.** Their charter proved "window on its own Xvfb, nothing on `:0`"; on a
+  Wayland desktop that is blind, and they measured a window on the owner's real screen while the
+  X-only check found zero windows. **Environment-as-launched and environment-as-running are two
+  different claims and only the second is worth anything**: read `/proc/<pid>/environ` back from the
+  running process and enumerate its open sockets.
+- **The charter assumed a seat could drive a window and never said how; `xdotool`, `ydotool`,
+  `wtype`, `dotool` and `xte` are all absent on this box.** The failure mode matters more than the
+  delay: with no input path **a seat quietly substitutes reading the code for driving the thing, and
+  a UX seat that reads code has stopped being a UX seat while still producing findings that look
+  like UX findings.** This lane's pair is a terminal-diagnostics pair rather than a window one and
+  the identical substitution is available to it: a seat reading our diagnostic source instead of
+  running builds and reading the output would look the same in its report. **So the brief for our
+  pair must require a transcript of commands run and output read, not a list of conclusions.**
+- **`/dev/uinput` is user-writable here through a POSIX ACL the mode string hides** (`crw-rw----
+  root:root`, only a `+` betrays it), so kernel-level injection is possible and must not be used:
+  uinput events bind to no display and land wherever focus is, which is his live session. The
+  general rule outlives the instance: **an input mechanism not bound to a display escapes a
+  correctly isolated rig.**
