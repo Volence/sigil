@@ -12,10 +12,35 @@ here with their closing reason rather than deleted.
 
 THE Sonic 2 item, now measured: AS nameless temporary labels (+, -, /), unimplemented entirely, are the single root cause of 4,985 rows across four message classes, 86.5 percent of the whole run. ACCEPTED BY THE HUB (d-22, 2026-09-03, answered by: hub, under the project declaration) and NOT BY THE OWNER: this item has had no owner decision of any kind, only a size sent to him. On 2026-09-06 the hub sent a go resting on d-22 read as an acceptance in hand; this lane held and the hub withdrew it. Do NOT size the post-fix count by subtraction: closing it reaches code currently abandoned and can add rows as well as remove them.
 
-## AS-MESSAGE-AND-INTERPOLATION
+## AS-MESSAGE-AND-INTERPOLATION: LANDED 2026-09-07, and this row sat open for two days
 
-- state at archive: `open`  size: `M`  project: `SIGIL-AS-REPLACEMENT`
-- blockedBy: nothing
+- state at archive: `LANDED`  size: `M`  project: `SIGIL-AS-REPLACEMENT`
+- blockedBy: nothing; nothing is left to do
+
+**BOTH halves shipped at `67fdea97`** (2026-09-07 12:16 local, verified an ancestor of master),
+*"`message` reaches stdout on the converged pass; `\{expr}` pastes floats and strings"*, 39 files
+including asl probe transcripts. `message` now carries a stream of its own out of the front end as
+`Assembled::messages` / `Failure::messages`, one line per firing from the converged pass, and the
+`a_message_is_dropped_on_every_pass_including_the_final_one` pin was deleted on purpose as this row
+asked. The float interpolation half is pinned too: `as_interp_shapes.rs` asserts
+`("(2048-1024)/1024.0", "1")` and `as_message_stdout.rs` carries the exact ROM-size idiom the row
+named. Reading the row's text against the tree, every clause it states as outstanding is done.
+
+**⚠ THE ROW WAS THE NEXT THING THIS LANE WAS ABOUT TO DISPATCH, AND ONLY GROUNDING CAUGHT IT.** On
+2026-09-09 the fallback sequence reached this row, and the brief was one command from being written.
+What stopped it was reading the message arm in `eval.rs` before describing it, which is a habit this
+lane adopted tonight only because three earlier briefs had each named a wrong location. **A stale
+open row does not read as stale; it reads as work.**
+
+This is the boot read's own banked defect arriving a second time: a parcel's completion has to be
+written back to the document that DISPATCHES it, and no gate anywhere makes that happen. The first
+instance was the R7 block saying *"what remains is the flip itself"* for a week after the flip
+landed. **The cost here would have been an agent sent to build what exists**, and the likelier
+failure is not wasted effort but a plausible second implementation of a solved problem.
+
+The old row text is kept below, unedited, because a reader who has already carried it away needs to
+meet the correction rather than find the row silently rewritten.
+
 
 Two rows that must land as ONE parcel, per the census. (a) sigil's message arm evaluates its string and discards it on EVERY pass, converged included, so it is not a pass question at all and the old row pairing it with warning was wrong. asl writes it to STDOUT, unprefixed and outside the diagnostic stream, so implementing it moves NO corpus diagnostic count while changing what a runner capturing stdout sees. 39 sites; two print under asl today and sigil prints neither. (b) the one corpus site that would fire needs an interpolation form sigil drops: \{(EndOfRom-StartOfRom)/1024.0} comes back UNINTERPOLATED, and that idiom is how all five s2disasm table-size messages are written. warning shares interp_string and inherits this the day a corpus site fires. Deleting the a_message_is_dropped pin is part of the work and is deliberate, not incidental.
 
