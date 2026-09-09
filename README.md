@@ -109,13 +109,17 @@ AEON_DIR=/path/to/aeon SIGIL_STRICT_GATE=1 \
 `sigil-cli` ships two binaries, so `--bin sigil` is required:
 
 ```bash
-cargo run -p sigil-cli --bin sigil -- --version
-cargo run -p sigil-cli --bin sigil -- <input.asm> [-o <out.bin>] [--hex]
-cargo run -p sigil-cli --bin sigil -- parse <input.emp>
-cargo run -p sigil-cli --bin sigil -- emp   <input.emp> [--root <dir>] [-o <out.bin>] [--hex]
-cargo run -p sigil-cli --bin sigil -- test  <input.emp> [--root <dir>]
-cargo run -p sigil-cli --bin sigil -- build --aeon <dir> [--game sonic4|demo] [--debug] [-o <out.bin>]
+cargo run -p sigil-cli --bin sigil -- --help          # every entry point, one line each
+cargo run -p sigil-cli --bin sigil -- emp --help      # one entry point's own arguments
 ```
+
+**The binary's own help is the command line's documentation.** `sigil --help`,
+`sigil -h` and `sigil help` all print the list of entry points; `sigil <command>
+--help` and `sigil help <command>` print that command's arguments. The list is
+rendered from the same table `main` dispatches on, so it cannot fall behind the
+binary, and a test holds every flag a command accepts to appearing in that
+command's usage. A copy of the list here could do neither, so this README does not
+carry one.
 
 A bare `sigil <input.asm>` assembles one AS-syntax source; `emp` does the same for
 `.emp`, single-file or `--root`-rooted multi-module. `build` also takes

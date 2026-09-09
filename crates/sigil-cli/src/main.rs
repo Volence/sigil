@@ -1,24 +1,15 @@
 //! sigil-cli: the `sigil` command-line assembler binary.
 //!
-//! Usage: `sigil <input.asm> [-o <output.bin>] [--hex]`
-//!        `sigil parse <input.emp>`
-//!        `sigil emp <input.emp> [-o <output.bin>] [--hex]`
-//!        `sigil build --aeon <dir> [-o <output.bin>] [--emit-lst <lst>] [--game ...] [--debug]`
-//!        `sigil --version` / `sigil -V`
+//! **The command line is [`ENTRIES`].** That table is what [`main`] dispatches on
+//! and what `--help` prints, so an entry point cannot be reachable without a help
+//! line and a help line cannot name an entry point that does not run. A second
+//! list written into this note would be a copy nothing executes, so this note
+//! names the table rather than restating it.
 //!
-//! Assembles the given Z80 source file. Writes the binary image to the path
-//! given by `-o` (if supplied). When `--hex` is passed, prints the output
-//! bytes as uppercase space-separated hex (e.g. `00 3E 05`) to stdout.
-//!
-//! `sigil parse <input.emp>` runs only the .emp lexer/parser front end
-//! (Spec 2 Plan 1) and reports success or every diagnostic collected.
-//!
-//! `sigil build --aeon <dir>` is THE Aeon ROM build (post-flip, the only one):
-//! it assembles the game's residual root `.asm` (`games/<game>/game_root.asm`)
-//! with every `.emp` module lowered natively, chained-links, folds the checksum,
-//! emits the sigil-canonical `.lst`, and appends the `convsym` deb2 symbol table —
-//! the full shipped ROM. (It said `main.asm` until 2026-08-14; that file was
-//! deleted at the flip this same sentence describes.)
+//! `sigil build --aeon <dir>` is THE Aeon ROM build: it assembles the game's
+//! residual root `.asm` (`games/<game>/game_root.asm`) with every `.emp` module
+//! lowered natively, chained-links, folds the checksum, emits the sigil-canonical
+//! `.lst`, and appends the `convsym` deb2 symbol table: the full shipped ROM.
 //!
 //! `sigil --version` reports the source revision this executable was built from,
 //! which is the only way to tell a current assembler from a stale one: byte
@@ -33,23 +24,231 @@ use std::process;
 #[cfg(test)]
 mod tree_class;
 
+/// One entry point of the command line: the words that select it, how help
+/// names it, what it does, its full usage text, and the function that runs it.
+///
+/// [`main`] dispatches by walking [`ENTRIES`] and the help text is rendered from
+/// the same rows, so the command list a reader is shown is the command list the
+/// binary answers to. The unit tests below hold the rest of that relationship:
+/// every row appears in the top-level list, every row's usage names the row, and
+/// every flag a row's parser accepts appears in that row's usage.
+struct Entry {
+    /// First-argument words that select this entry point. Empty for the
+    /// bare-file form, which runs whenever the first argument is not one of the
+    /// other rows' words.
+    words: &'static [&'static str],
+    /// How the top-level command list names this entry point.
+    label: &'static str,
+    /// What this entry point does, in one line, for the top-level list.
+    summary: &'static str,
+    /// The usage text, one element per printed line.
+    usage: &'static [&'static str],
+    /// Name of the function whose argument loop accepts this entry point's
+    /// flags. The `usage_names_every_accepted_flag` gate reads that function's
+    /// match arms out of this source file and holds each flag it accepts to
+    /// appearing in `usage`. Only that gate reads it, and it compiles under
+    /// `cfg(test)`.
+    #[allow(dead_code)]
+    flags_fn: &'static str,
+    /// The entry point itself. It receives its own row, so the usage it prints
+    /// on a missing argument is the row's text rather than a second copy.
+    run: fn(&Entry, &[String]),
+}
+
+/// Every entry point of the `sigil` command line, in the order help lists them.
+const ENTRIES: &[Entry] = &[
+    Entry {
+        words: &[],
+        label: "<input.asm>",
+        summary: "assemble one AS-syntax source file to a binary image",
+        usage: &["usage: sigil <input.asm> [-o <output.bin>] [--hex]"],
+        flags_fn: "run_asm",
+        run: run_asm,
+    },
+    Entry {
+        words: &["emp"],
+        label: "emp",
+        summary: "compile a .emp module or program to a binary image",
+        usage: &[
+            "usage: sigil emp <input.emp> [--root <dir>] [--prelude <module.id>]",
+            "                 [--map <map.toml>] [-o <output.bin>] [--hex] [--deny-todo]",
+            "                 [-D NAME=INT]...",
+            "note:  --root compiles the whole reachable program under that directory;",
+            "       --prelude and --map need it, and are refused by name without it.",
+            "note:  --map reads a region map and places each section into its named",
+            "       region, against that region's budget. Without it the sections are",
+            "       packed sequentially from address 0.",
+            "note:  --deny-todo turns every remaining todo hole into an error, so a",
+            "       release build cannot ship one.",
+        ],
+        flags_fn: "run_emp",
+        run: run_emp,
+    },
+    Entry {
+        words: &["test"],
+        label: "test",
+        summary: "run the test blocks in a .emp module, or in every module under a root",
+        usage: &[
+            "usage: sigil test <input.emp> [-D NAME=INT]...",
+            "       sigil test --root <dir> [-D NAME=INT]...",
+            "note:  pass EITHER a file OR --root, not both.",
+        ],
+        flags_fn: "run_test",
+        run: run_test,
+    },
+    Entry {
+        words: &["parse"],
+        label: "parse",
+        summary: "parse one .emp file and report its diagnostics, emitting nothing",
+        usage: &["usage: sigil parse <input.emp>"],
+        flags_fn: "run_parse",
+        run: run_parse,
+    },
+    Entry {
+        words: &["build"],
+        label: "build",
+        summary: "build the Aeon ROM from a game tree",
+        usage: &[
+            "usage: sigil build --aeon <dir> [-o <out.bin>] [--emit-lst <lst>]",
+            "                   [--game sonic4|demo] [--debug] [--config-a|--config-b|--lean]",
+            "                   [--report ram|contracts|indirect-cost]",
+            "                   [--extra-entry <module|path.emp>]... [--check]",
+            "note:  --extra-entry evaluates the NAMED module's comptime guards; the",
+            "       named module must emit nothing (its own imports are not checked)",
+            "note:  --check decides every ensure and LinkAssert against final",
+            "       post-relaxation placement and writes no ROM; a green check proves nothing",
+            "       about region budget or overlap, image bounds, the checksum or the closure",
+            "       gate, and is not a statement that the game builds",
+            "dev:   --native is an accepted no-op (a native build is the only build).",
+            "       --stress-evict and --stress-art each fix an off-canonical development",
+            "       shape and take no other shape selector.",
+            "env:   SIGIL_WARNINGS=off|summary|full  (warn-tier detail; default summary)",
+        ],
+        flags_fn: "parse_build_args",
+        run: run_build,
+    },
+    Entry {
+        words: &["--version", "-V"],
+        label: "--version",
+        summary: "print the source revision this assembler was built from",
+        usage: &["usage: sigil --version", "       sigil -V"],
+        flags_fn: "run_version",
+        run: run_version,
+    },
+];
+
+/// The bare-file row: the one with no selecting word, which runs when the first
+/// argument names a file rather than a command.
+fn bare_entry() -> &'static Entry {
+    ENTRIES
+        .iter()
+        .find(|e| e.words.is_empty())
+        .expect("ENTRIES holds the bare-file row")
+}
+
+/// The row `word` selects, if any.
+fn entry_for(word: &str) -> Option<&'static Entry> {
+    ENTRIES.iter().find(|e| e.words.contains(&word))
+}
+
+/// Every conventional way of asking for help. Asking is not an error: each of
+/// these prints help to stdout and exits 0.
+fn is_help_word(word: &str) -> bool {
+    matches!(word, "--help" | "-h" | "help")
+}
+
+/// The top-level help: what the tool is, and one line per row of [`ENTRIES`].
+///
+/// Rendered from the table rather than written out, so a row added tomorrow is
+/// listed here today.
+fn top_level_help() -> String {
+    let width = ENTRIES.iter().map(|e| e.label.len()).max().unwrap_or(0);
+    let mut out = String::new();
+    out.push_str("sigil assembles 68000 and Z80 sources, in AS syntax or in the .emp language.\n");
+    out.push('\n');
+    out.push_str("usage: sigil [<command>] <arguments>\n");
+    out.push('\n');
+    out.push_str("commands:\n");
+    for e in ENTRIES {
+        out.push_str(&format!("  {:width$}  {}\n", e.label, e.summary, width = width));
+    }
+    out.push('\n');
+    out.push_str("For one command's arguments, run `sigil <command> --help`, for example\n");
+    out.push_str("`sigil emp --help`. `sigil help <command>` prints the same thing.\n");
+    out
+}
+
+/// One row's own help: what it does, then its usage text.
+fn entry_help(entry: &Entry) -> String {
+    let mut out = String::new();
+    out.push_str(entry.summary);
+    out.push_str(".\n\n");
+    for line in entry.usage {
+        out.push_str(line);
+        out.push('\n');
+    }
+    out.push('\n');
+    out.push_str("Run `sigil --help` for the other commands.\n");
+    out
+}
+
+/// Print `entry`'s usage to stderr and exit 2. The caller reached an entry point
+/// without the arguments it needs, which is a usage error and not a request for
+/// help, so it goes to stderr and keeps its exit code.
+fn usage_error(entry: &Entry) -> ! {
+    for line in entry.usage {
+        eprintln!("{line}");
+    }
+    eprintln!("run `sigil --help` for the list of commands");
+    process::exit(2);
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().collect();
+    let first = args.get(1).map(String::as_str);
 
-    match args.get(1).map(String::as_str) {
-        Some("--version") | Some("-V") => return run_version(),
-        Some("parse") => return run_parse(),
-        Some("emp") => return run_emp(&args[2..]),
-        Some("test") => return run_test(&args[2..]),
-        Some("build") => return run_build(&args[2..]),
-        _ => {}
+    // `sigil --help`, `sigil -h`, `sigil help`, and `sigil help <command>`.
+    if first.is_some_and(is_help_word) {
+        match args.get(2) {
+            None => print!("{}", top_level_help()),
+            Some(word) => match entry_for(word) {
+                Some(entry) => print!("{}", entry_help(entry)),
+                // Naming a command that does not exist is a mistake, not a
+                // request, so it keeps the usage-error exit code.
+                None => {
+                    eprintln!("error: unknown command '{word}'");
+                    eprint!("{}", top_level_help());
+                    process::exit(2);
+                }
+            },
+        }
+        return;
     }
 
+    // A word selects its row and consumes itself; anything else is the first
+    // argument of the bare-file row.
+    let (entry, rest) = match first.and_then(entry_for) {
+        Some(entry) => (entry, &args[2..]),
+        None => (bare_entry(), &args[1..]),
+    };
+
+    // `sigil <command> --help` prints that command's usage instead of running it.
+    if rest.iter().any(|a| a == "--help" || a == "-h") {
+        print!("{}", entry_help(entry));
+        return;
+    }
+
+    (entry.run)(entry, rest);
+}
+
+/// `sigil <input.asm> [-o <output.bin>] [--hex]`: assemble one AS-syntax source
+/// file and write or print the image.
+fn run_asm(entry: &Entry, args: &[String]) {
     let mut input: Option<String> = None;
     let mut output: Option<String> = None;
     let mut hex = false;
 
-    let mut i = 1;
+    let mut i = 0;
     while i < args.len() {
         match args[i].as_str() {
             "-o" => {
@@ -77,11 +276,7 @@ fn main() {
 
     let input = match input {
         Some(path) => path,
-        None => {
-            eprintln!("usage: sigil <input.asm> [-o <output.bin>] [--hex]");
-            eprintln!("       sigil --version");
-            process::exit(2);
-        }
+        None => usage_error(entry),
     };
 
     // `assemble_root` rather than `assemble`: it sets `include_root` to the source file's
@@ -286,7 +481,7 @@ fn render_as_messages(messages: &[String]) {
 ///
 /// Every field is a word even when nothing could be determined — an empty
 /// string reads as "clean" to a human and passes a grep for a SHA.
-fn run_version() {
+fn run_version(_entry: &Entry, _args: &[String]) {
     let revision = env!("SIGIL_REVISION");
     let short = env!("SIGIL_REVISION_SHORT");
     let branch = env!("SIGIL_REVISION_BRANCH");
@@ -401,13 +596,10 @@ fn run_version() {
 /// `sigil parse <input.emp>` — run the .emp lexer/parser front end only and
 /// report success (module path + item count) or every diagnostic collected,
 /// rendered as `path:line:col: message` via `SourceMap::location`.
-fn run_parse() {
-    let path = match std::env::args().nth(2) {
-        Some(path) => path,
-        None => {
-            eprintln!("usage: sigil parse <file.emp>");
-            process::exit(2);
-        }
+fn run_parse(entry: &Entry, args: &[String]) {
+    let path = match args.first() {
+        Some(path) => path.clone(),
+        None => usage_error(entry),
     };
 
     let src = match std::fs::read_to_string(&path) {
@@ -651,7 +843,7 @@ fn parse_define_int(s: &str) -> Option<i128> {
 /// increment). Output: one `test <module>::<name> ... ok|FAILED` line per
 /// test, failure diagnostics indented beneath, then a cargo-style summary.
 /// Exit 0 iff every test passed (and no module failed to parse).
-fn run_test(args: &[String]) {
+fn run_test(entry: &Entry, args: &[String]) {
     let mut input: Option<String> = None;
     let mut root_arg: Option<String> = None;
     let mut defines: Vec<(String, i128)> = Vec::new();
@@ -713,10 +905,7 @@ fn run_test(args: &[String]) {
                 })
                 .collect()
         }
-        (None, None) => {
-            eprintln!("usage: sigil test <input.emp> [--root <dir>] [-D NAME=INT]...");
-            process::exit(2);
-        }
+        (None, None) => usage_error(entry),
     };
 
     let root_include = root_arg
@@ -804,7 +993,7 @@ fn promote_todo_holes(diags: &mut [sigil_span::Diagnostic], deny_todo: bool) {
 /// module to a flat binary image. `embed`/`import` paths resolve against the
 /// source file's own directory (the capability-sandbox include-root, §6.7),
 /// canonicalized so a comptime capture path is stable regardless of cwd.
-fn run_emp(args: &[String]) {
+fn run_emp(entry: &Entry, args: &[String]) {
     let mut input: Option<String> = None;
     let mut output: Option<String> = None;
     let mut root_arg: Option<String> = None;
@@ -838,13 +1027,7 @@ fn run_emp(args: &[String]) {
 
     let input = match input {
         Some(path) => path,
-        None => {
-            eprintln!(
-                "usage: sigil emp <input.emp> [--root <dir>] [--prelude <module.id>] \
-                 [-o <output.bin>] [--hex] [-D NAME=INT]..."
-            );
-            process::exit(2);
-        }
+        None => usage_error(entry),
     };
 
     // Multi-module path: `--root <dir>` gathers, resolves, and links the whole
@@ -1078,25 +1261,12 @@ fn render_program_diags(
 /// This is what `build.sh` invokes. The legacy no-appendix all-AS `assemble_full_rom`
 /// mode retired with the flip (the AS-reassembly harness is gone); `--native` is
 /// accepted as a no-op for build.sh compatibility.
-fn run_build(args: &[String]) {
+fn run_build(entry: &Entry, args: &[String]) {
     let opts = match parse_build_args(args) {
         Ok(o) => o,
         Err(msg) => {
             eprintln!("error: {msg}");
-            eprintln!(
-                "usage: sigil build --aeon <dir> [-o <out.bin>] [--emit-lst <lst>] \
-                 [--game sonic4|demo] [--debug] [--config-a|--config-b|--lean] \
-                 [--report ram|contracts|indirect-cost] [--extra-entry <module|path.emp>]... \
-                 [--check]\n\
-                 note:  --extra-entry evaluates the NAMED module's comptime guards; the \
-                 named module must emit nothing (its own imports are not checked)\n\
-                 note:  --check decides every ensure and LinkAssert against final \
-                 post-relaxation placement and writes no ROM; a green check proves nothing \
-                 about region budget or overlap, image bounds, the checksum or the closure \
-                 gate, and is not a statement that the game builds\n\
-                 env:   SIGIL_WARNINGS=off|summary|full  (warn-tier detail; default summary)"
-            );
-            process::exit(2);
+            usage_error(entry);
         }
     };
     let aeon_path = std::path::Path::new(&opts.aeon);
@@ -2331,6 +2501,262 @@ fn run_build_native(aeon: &std::path::Path, opts: &BuildOpts) {
         }
     }
     println!("built: {label} native ROM, crc={:08x} len={}", native::crc32(&full), full.len());
+}
+
+#[cfg(test)]
+mod help_gates {
+    //! The help text and the command line are one table, and these hold the
+    //! parts of that relationship the type system cannot.
+    //!
+    //! A help text is a second copy of an interface, and a second copy drifts.
+    //! [`super::ENTRIES`] removes the copy for the command LIST (dispatch and
+    //! help read the same rows, so a seventh command cannot be dispatched
+    //! without being listed), and these gates cover what is left: that the list
+    //! renders every row, that each row's usage is about that row, that no flag
+    //! a row accepts is missing from its usage, and that dispatch still goes
+    //! through the table instead of a hand-written match.
+    //!
+    //! They assert RELATIONSHIPS between the table, the source, and the
+    //! rendered text, never a golden copy of the text, so rewording help is
+    //! free and dropping a command from it is not.
+
+    use super::{Entry, ENTRIES};
+    use std::collections::BTreeSet;
+
+    /// This binary's own source, read at compile time. The flag and dispatch
+    /// gates ask questions about the code that no runtime value answers.
+    const SOURCE: &str = include_str!("main.rs");
+
+    /// The source with its own test modules removed, so a gate cannot be
+    /// satisfied (or tripped) by test code.
+    fn shipping_source() -> &'static str {
+        let marker = "\n#[cfg(test)]\nmod help_gates {";
+        let end = SOURCE.find(marker).expect("the test modules start with a cfg(test) marker");
+        &SOURCE[..end]
+    }
+
+    /// The text of `fn <name>` in this source, from its signature to its
+    /// closing brace at column zero.
+    fn fn_body(name: &str) -> &'static str {
+        let src = shipping_source();
+        let needle = format!("\nfn {name}(");
+        let start = src
+            .find(&needle)
+            .unwrap_or_else(|| panic!("no `fn {name}` in the shipping source"));
+        let rest = &src[start + 1..];
+        let end = rest.find("\n}\n").map(|i| i + 3).unwrap_or(rest.len());
+        &rest[..end]
+    }
+
+    /// Every flag literal in the match arms of `text`: a line that begins with a
+    /// string literal and carries a `=>` is an argument-match arm, and every
+    /// `-`-prefixed literal on it is a flag that arm accepts.
+    fn flag_arms(text: &str) -> BTreeSet<String> {
+        let mut flags = BTreeSet::new();
+        for line in text.lines() {
+            let trimmed = line.trim_start();
+            if !trimmed.starts_with('"') || !trimmed.contains("=>") {
+                continue;
+            }
+            let mut rest = trimmed;
+            while let Some(open) = rest.find('"') {
+                let after = &rest[open + 1..];
+                let Some(close) = after.find('"') else { break };
+                let literal = &after[..close];
+                if literal.starts_with('-') {
+                    flags.insert(literal.to_string());
+                }
+                rest = &after[close + 1..];
+            }
+        }
+        flags
+    }
+
+    /// The top-level list names every entry point, by label and by summary.
+    /// A row added to the table appears here without anyone writing a line.
+    #[test]
+    fn top_level_help_lists_every_entry() {
+        let help = super::top_level_help();
+        assert!(!ENTRIES.is_empty(), "the entry table is empty");
+        for e in ENTRIES {
+            assert!(help.contains(e.label), "top-level help omits label `{}`:\n{help}", e.label);
+            assert!(
+                help.contains(e.summary),
+                "top-level help omits the summary of `{}`:\n{help}",
+                e.label
+            );
+        }
+        assert!(
+            help.contains("--help"),
+            "top-level help must say how to reach a command's own help:\n{help}"
+        );
+    }
+
+    /// The command each usage line invokes: the token after `sigil ` on it.
+    ///
+    /// A whole-text substring search cannot answer this question, because the
+    /// commands are substrings of the arguments they take: a `sigil emp` usage
+    /// line that had lost its `emp` still contains `emp`, inside `<input.emp>`.
+    /// The token after `sigil` is the thing a reader would type.
+    fn usage_commands<'a>(usage: &[&'a str]) -> BTreeSet<&'a str> {
+        let mut out = BTreeSet::new();
+        for line in usage {
+            let Some(at) = line.find("sigil ") else { continue };
+            if let Some(token) = line[at + "sigil ".len()..].split_whitespace().next() {
+                out.insert(token);
+            }
+        }
+        out
+    }
+
+    /// Each row's usage text is about that row: it opens with a usage line, and
+    /// every word that selects the row is the command on one of those lines.
+    /// Catches a usage string copied from a sibling and left naming the sibling.
+    #[test]
+    fn every_entry_usage_names_its_own_entry() {
+        for e in ENTRIES {
+            let usage = e.usage.join("\n");
+            assert!(!e.summary.is_empty(), "`{}` has no summary", e.label);
+            assert!(
+                e.usage.first().is_some_and(|l| l.starts_with("usage: sigil")),
+                "`{}` usage does not open with a usage line: {usage}",
+                e.label
+            );
+            let commands = usage_commands(e.usage);
+            assert!(
+                commands.contains(e.label),
+                "`{}` usage never invokes the entry point (it invokes {commands:?}): {usage}",
+                e.label
+            );
+            for word in e.words {
+                assert!(
+                    commands.contains(word),
+                    "`{}` usage never invokes its selecting word `{word}` \
+                     (it invokes {commands:?}): {usage}",
+                    e.label
+                );
+            }
+        }
+    }
+
+    /// No two rows answer to the same word, so `entry_for` cannot depend on
+    /// table order.
+    #[test]
+    fn entry_words_are_unique() {
+        let mut seen: BTreeSet<&str> = BTreeSet::new();
+        for e in ENTRIES {
+            for word in e.words {
+                assert!(seen.insert(word), "two entry points answer to `{word}`");
+            }
+        }
+        assert!(!seen.is_empty(), "no entry point has a selecting word");
+    }
+
+    /// Every flag an entry point's parser ACCEPTS appears in that entry point's
+    /// usage, and every argument-match arm in the shipping source belongs to
+    /// some entry point's parser.
+    ///
+    /// This is the gate for the defect it closes: `--map` and `--deny-todo` were
+    /// accepted by `sigil emp` and named in no usage line at all, so the only
+    /// way to learn they existed was to read the source. It is a relationship
+    /// between the parser and the text, so a flag added tomorrow fails here
+    /// until its usage line exists, and no wording change can fail it.
+    #[test]
+    fn usage_names_every_accepted_flag() {
+        let mut attributed: BTreeSet<String> = BTreeSet::new();
+        for e in ENTRIES {
+            let body = fn_body(e.flags_fn);
+            assert!(
+                body.contains("fn ") && body.len() > 100,
+                "the slice for `{}` is too small to be a function body: {body}",
+                e.flags_fn
+            );
+            let usage = e.usage.join("\n");
+            for flag in flag_arms(body) {
+                assert!(
+                    usage.contains(&flag),
+                    "`{}` accepts `{flag}` and its usage never names it:\n{usage}",
+                    e.label
+                );
+                attributed.insert(flag);
+            }
+        }
+        // The instrument found something: if the scanner stopped matching, this
+        // is what says so rather than an empty sweep reading as a clean one.
+        assert!(
+            attributed.len() >= 10,
+            "the flag scanner found only {} flags across the whole command line, \
+             which is fewer than this binary is known to accept",
+            attributed.len()
+        );
+        // And it found everything: an argument parser reachable from no entry
+        // point accepts flags nothing documents.
+        let all = flag_arms(shipping_source());
+        let orphans: Vec<&String> = all.difference(&attributed).collect();
+        assert!(
+            orphans.is_empty(),
+            "flags accepted by no entry point's parser, so named in no usage: {orphans:?}"
+        );
+    }
+
+    /// Dispatch reads the table. A hand-written arm in `main` would be an entry
+    /// point the help text knows nothing about, which is the whole defect class
+    /// the table exists to prevent, so the arm shape itself is refused.
+    #[test]
+    fn dispatch_reads_only_the_entry_table() {
+        let body = fn_body("main");
+        // Controls: the slice really is `main`, and it really does dispatch
+        // through the table, so a failure below is about the code and not about
+        // the slicer having grabbed the wrong text.
+        assert!(body.contains("entry_for("), "main does not look up the entry table: {body}");
+        assert!(body.contains("(entry.run)("), "main does not run a table row: {body}");
+        assert!(
+            !body.contains("Some(\""),
+            "main dispatches on a literal instead of the entry table, so that entry point \
+             appears in no help text:\n{body}"
+        );
+    }
+
+    /// The help surface carries no em dash or en dash, which is an owner ruling
+    /// about product text. Checked over the rendered pages rather than the table
+    /// so a dash introduced by a renderer counts too.
+    #[test]
+    fn help_text_uses_no_dashes() {
+        let mut pages = vec![super::top_level_help()];
+        pages.extend(ENTRIES.iter().map(super::entry_help));
+        assert_eq!(pages.len(), ENTRIES.len() + 1);
+        for page in pages {
+            assert!(!page.contains('\u{2014}'), "em dash in help text:\n{page}");
+            assert!(!page.contains('\u{2013}'), "en dash in help text:\n{page}");
+        }
+    }
+
+    /// `entry_for` answers for every word in the table and for nothing else, and
+    /// the bare-file row is the one with no word.
+    #[test]
+    fn entry_lookup_matches_the_table() {
+        for e in ENTRIES {
+            for word in e.words {
+                let found: &Entry = super::entry_for(word).expect("a table word resolves");
+                assert_eq!(found.label, e.label, "`{word}` resolved to the wrong entry point");
+            }
+        }
+        assert!(super::entry_for("input.asm").is_none(), "a filename selected a command");
+        assert!(super::entry_for("--help").is_none(), "help is not a dispatch word");
+        assert!(super::bare_entry().words.is_empty());
+    }
+
+    /// Every conventional way of asking is a help word, and a flag that is not
+    /// a request for help is not.
+    #[test]
+    fn help_words_are_the_conventional_three() {
+        for word in ["--help", "-h", "help"] {
+            assert!(super::is_help_word(word), "`{word}` is not treated as a request for help");
+        }
+        for word in ["--hex", "-o", "helper", "build"] {
+            assert!(!super::is_help_word(word), "`{word}` is not a request for help");
+        }
+    }
 }
 
 #[cfg(test)]
