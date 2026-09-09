@@ -1885,7 +1885,7 @@ every reader a gate protected the wording. The producer side is thinner than the
 measured string by string at `db2dacce`: #1 well pinned; #2 only on `must be a power of two` (the
 parenthetical free); #3 only on ``asserts its alignment with `(align: N)` `` (the leading clause
 free); #4, #5 and #6 pinned by nothing in the workspace.
-**Owed by this lane, in the `pad`/`pad_to` parcel:** tests for #4-#6, widen #2/#3 to the full
+**PAID, and this paragraph said it was owed until 2026-09-09.** All four items below landed in the `pad`/`pad_to` parcel itself (`ffa7bdb8`, an ancestor of master): #4, #5 and #6 each have a test (`duplicate_at_offset_on_one_field_is_diagnosed`, `duplicate_field_align_on_one_field_is_diagnosed`, `an_unknown_field_attribute_keyword_names_the_one_that_belongs`), #2 and #3 `assert_eq!` the whole string, and the Scope clause is pinned by `field_align_does_not_propagate_into_a_nested_structs_own_fields`. All four verified by name here with a control, and empyrean `origin/main` records the same in the spec's own §4.3. The original text, kept so the correction is legible: **Owed by this lane, in the `pad`/`pad_to` parcel:** tests for #4-#6, widen #2/#3 to the full
 strings, and pin the Scope clause (true by construction — the check walks only this struct's own
 fields — but unpinned, and marked as such in the spec). The hub strengthens that clause on a
 message from here once it lands.
@@ -2295,3 +2295,38 @@ this seat ran that check having already written the rule about planting controls
 
 **Both are the same family as a control that bypasses its subject and a test that cannot fail, and
 the family's signature is that nothing looks wrong.** The failure is never in the output.
+
+### A VERBATIM MOVE LAUNDERS STALENESS, AND FIXING ONE STALE LINE CERTIFIES THE REST
+
+Read when cutting or reorganising any standing document, and when booking a row off text you just
+moved.
+
+**Caught 2026-09-09, within two hours, by this seat against itself.** The boot-read cut moved the
+`pad`/`pad_to` block verbatim to `docs/OVERSEER-REFERENCE.md`, which was correct: a cut moves text,
+it does not fact-check it. The agent performing it noticed ONE stale claim in that block, *"Nothing
+is implemented"*, verified `pad_to` had landed at `ffa7bdb8` on 2026-08-26, and wrote the correction
+beside the moved text. Exemplary, and it is the reason the second half is worth banking.
+
+**The same block's next clause was also stale and neither of us checked it.** It read *"Owed by
+this lane, in the `pad`/`pad_to` parcel: tests for #4-#6, widen #2/#3 to the full strings, and pin
+the Scope clause"*. All of it had been paid, by that same `ffa7bdb8` parcel. The spec at empyrean
+`origin/main` §4.3 records it explicitly, and all four tests exist here, verified by name with a
+control. **This seat then booked a fresh queue row asserting the debt "was never established"**,
+hours after banking the rule that a stale imperative is acted on while a stale description is
+merely believed. The row was the acting.
+
+**Two mechanisms, and both are about how a document earns unearned credit:**
+
+- **A verbatim move launders staleness.** Old text arrives at a new location with a fresh date on
+  the commit that moved it, and the next reader meets it as current material rather than as
+  something written weeks ago. The move is honest and the freshness is an artifact of it.
+- **Fixing one stale line in a block certifies the rest of the block.** A visible correction reads
+  as *this block has been reviewed*, which is precisely what it is not: a correction is evidence
+  about ONE sentence and says nothing about its neighbours. **The corrected block is more
+  trustworthy-looking and no more trustworthy.**
+
+**How to apply.** A cut does not audit, and should not: keep the two acts separate. But **a row
+booked off moved text is a row booked off an unaudited source**, so resolve it against the code or
+the spec before booking, not before working it. And when you correct one line in a block, say in
+the correction which lines you did NOT check, because the default reading is that you checked them
+all.
