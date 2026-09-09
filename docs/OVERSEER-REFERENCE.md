@@ -208,6 +208,24 @@ output outranks anything the brief asserts.**
 concluded was wrong."* Measured hit rate when introduced: a correction in **3 of 3** dispatches.
 Pair it with an explicit invitation wherever the brief carries a design position.
 
+**⚠ WRITING ABOUT A THING CAN CONSUME IT: a sweep that scans source for references counts its own
+prose** *(found 2026-09-08 by the pins parcel, against its own first draft, and volunteered)*. The
+zero-consumer sweep asks which pin constants no `.rs` file mentions. Its predicate's doc comment
+used a REAL constant as the worked example, so the sweep read that comment as a reference and
+dropped that pin from the very list the comment documents: **20 names where the truth was 21.**
+
+**The direction is what makes it dangerous.** A self-reference of this shape can only ever REMOVE
+members, so the report comes back shorter and cleaner, which is the direction nobody audits. It was
+caught only because an independent derivation existed to compare against, not by anything in the
+output looking wrong.
+
+**Two rules, and the second is the general one.** Documentation of a scanner states the SHAPE and
+never a live name from the scanned population, with the reason written beside it so the next author
+does not helpfully add an example back. And more broadly: **when a check's subject is the source
+text, the check's own source is inside its subject.** Ask what the instrument says about itself
+before believing a population it produced. Same family as a fixture derived from the constant under
+test, arriving through prose instead of through code.
+
 **⚠ THE FINISH CLAUSE NAMES ITS ACTOR, AND THE PROHIBITION NAMES THE ACTS** *(aeon `48c49d4e`,
 relayed by the hub 2026-09-08; banked here the same night because a brief of this lane's had the
 same gap while an agent was live)*. An agent whose brief said *"never commit to master"* and, in a
