@@ -25,7 +25,7 @@ pub enum Punct {
     AndAnd,
     LParen,
     RParen,
-    /// `[` / `]` — the delimiters of AS's DUPLICATE-OPERAND group, `[count]value`
+    /// `[` / `]`, the delimiters of AS's DUPLICATE-OPERAND group: `[count]value`
     /// in a `dc` operand (`dc.b [3]$FF` emits `FF FF FF`). They carry no meaning
     /// anywhere else: an expression containing one is refused by the expression
     /// parser, which is also what asl does (it folds the bracket text into a

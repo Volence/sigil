@@ -109,7 +109,10 @@ fn refusal(tail: &str) -> String {
 fn the_undecorated_forms_still_assemble() {
     assert_eq!(image("        dc.b $11,$22\n"), vec![0x11, 0x22]);
     assert_eq!(image("        dc.w $1234\n"), vec![0x12, 0x34]);
-    assert_eq!(image("        dc.l $AABBCCDD\n"), vec![0xAA, 0xBB, 0xCC, 0xDD]);
+    assert_eq!(
+        image("        dc.l $AABBCCDD\n"),
+        vec![0xAA, 0xBB, 0xCC, 0xDD]
+    );
 }
 
 /// d1. The count repeats the value and advances the location counter by the
@@ -228,7 +231,10 @@ fn a_count_past_the_1kb_comment_still_assembles() {
 /// else.
 #[test]
 fn a_forward_referenced_count_resolves_here_where_asl_refuses() {
-    assert_eq!(image("        dc.b [fwd]$AA\nfwd:    equ 3\n"), vec![0xAA; 3]);
+    assert_eq!(
+        image("        dc.b [fwd]$AA\nfwd:    equ 3\n"),
+        vec![0xAA; 3]
+    );
 }
 
 /// A count that never resolves must be REPORTED. `eval_all` answers a poisoned
@@ -330,9 +336,14 @@ fn a_bare_listing_or_page_is_refused_by_name() {
     );
 }
 
-/// A column-0 `listing` is the directive, not a label. Without `listing` in the
-/// keyword set the bare-label rule would bind a symbol named `listing` and emit
-/// nothing, with no diagnostic, which is the shape a dispatch-only fix leaves.
+/// A column-0 `listing` is the directive, not a label.
+///
+/// This is the row that separates the two edits `listing` needed. Every corpus
+/// site is INDENTED, and an indented unknown head reaches dispatch anyway, so
+/// the dispatch arm alone clears all three of them. Take `listing`/`page` back
+/// out of the keyword set and only this row goes red, with `` `purecode` is not
+/// a recognized 68000 mnemonic ``: the bare-label rule binds a symbol named
+/// `listing` and hands the ARGUMENT to instruction lowering.
 #[test]
 fn a_column_zero_listing_is_the_directive_not_a_label() {
     assert_eq!(
