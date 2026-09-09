@@ -341,6 +341,11 @@ fn punct(b: &[u8]) -> Option<(Punct, usize)> {
         b'>' => Gt,
         b'(' => LParen,
         b')' => RParen,
+        // The duplicate-operand delimiters, `dc.b [3]$FF`. Recognized by the
+        // lexer on every line so the `dc` directives can peel the group; no
+        // other construct in this front end reads them.
+        b'[' => LBracket,
+        b']' => RBracket,
         b',' => Comma,
         b':' => Colon,
         b'#' => Hash,
