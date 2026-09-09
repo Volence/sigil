@@ -24,7 +24,12 @@ here with their closing reason rather than deleted.
 ## AS-NAMELESS-LABELS-RC1
 
 - state at archive: `next`  size: `L`  project: `SIGIL-AS-REPLACEMENT`
-- blockedBy: the owner: size L sent for his eye, and no owner decision exists on the item itself. A hub go is not his go.
+- blockedBy: the owner, as decision **d-29** filed 2026-09-09: THE WORK IS NOW BUILT AND UNLANDED on branch
+  `parcel/as-nameless-labels` (tip `c22f6050`, six commits, nothing merged). The hold below still stands and was
+  correct; a 2026-09-09 session REVERSED IT WITHOUT READING IT, dispatched the parcel, and told the owner the item
+  had never been waiting on him. That was wrong. The question put to him is no longer whether to spend the effort,
+  which is already spent, but whether the feature lands. Size L sent for his eye, and no owner decision exists on
+  the item itself. A hub go is not his go.
 
 THE Sonic 2 item, now measured: AS nameless temporary labels (+, -, /), unimplemented entirely, are the single root cause of 4,985 rows across four message classes, 86.5 percent of the whole run. ACCEPTED BY THE HUB (d-22, 2026-09-03, answered by: hub, under the project declaration) and NOT BY THE OWNER: this item has had no owner decision of any kind, only a size sent to him. On 2026-09-06 the hub sent a go resting on d-22 read as an acceptance in hand; this lane held and the hub withdrew it. Do NOT size the post-fix count by subtraction: closing it reaches code currently abandoned and can add rows as well as remove them.
 
