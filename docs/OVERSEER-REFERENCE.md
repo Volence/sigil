@@ -208,6 +208,42 @@ output outranks anything the brief asserts.**
 concluded was wrong."* Measured hit rate when introduced: a correction in **3 of 3** dispatches.
 Pair it with an explicit invitation wherever the brief carries a design position.
 
+**⚠ A TASK RELAYED AS ROUTINE IS THE ONE WHOSE GROUNDS NOBODY RE-CHECKS** *(2026-09-09, the
+refreeze-debt hold; the hub upheld the refusal and banked the push as its own error)*.
+
+A peer relayed a freeze debt with a recipe attached, framed as housekeeping and as the last open item
+across the suite. Three grounds refused it, and the second is the one that matters:
+
+1. **Nothing was broken.** `refreeze --check` returned OK, chain len 205, with only the two known
+   pre-existing divergent entries. So it was not a repair.
+2. **It was a 93-commit CORPUS PIN ADVANCE, and a standing ruling forbids exactly that framing.**
+   The hub's own 2026-09-02 ruling: *the pin exists so the corpus does NOT track tip; advancing it to
+   tidy a transition is the behaviour the decouple forbids.* Closing a freeze debt is tidying a
+   transition. **The hub had written that ruling seven days earlier and read it at boot the same
+   night.**
+3. **It would have reintroduced a hazard banked six hours before, on the first advance since.** The
+   reference tree's exclusivity is an accident of its pin: the peer's self-locating test script is
+   absent at the pinned revision and present at the target.
+
+**The mechanism, and it is not carelessness.** The word "routine" is a claim about a task's GROUNDS,
+and it is the one claim a recipe never carries evidence for. Everything else in that message was
+checkable and correct: the recipe, the SHAs, the reachability. **A framing cannot be verified by
+checking the things inside it.**
+
+**The check that fires, and it is one question: what ruling would this have to be tested against, and
+has anyone tested it?** If the answer is "it is too routine to need one", that is the answer this
+rule exists for.
+
+**And the decomposition that resolved it is reusable:** "landed unfrozen" was EITHER a debt on the
+peer's own certification, theirs to discharge, OR an ask for our corpus to describe their tip, which
+is a decision. A recipe that reads as one thing when it is two is how a decision arrives disguised as
+a chore. **Ask which of the two before pricing it.**
+
+**Operationally, before any reference-revision move:** run `refreeze --check` first, so you know
+whether you are repairing or deciding; re-read the ruling that governs the pin; and re-check the
+peer's writer scripts for presence at the target revision, because the exclusivity you verified is
+only ever true of the revision you verified it at.
+
 **⚠ A FAILED MERGE LEAVES A GREEN SUITE BEHIND IT, AND THE STAMP IS THE ONLY THING THAT CATCHES IT**
 *(aurora's finding, twice there; reproduced HERE the same night, 2026-09-09, and this seat's instance
 is the one with the unanticipated cause)*. A `git merge` that FAILS prints its error and returns; the
