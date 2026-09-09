@@ -102,16 +102,38 @@ mnemonic `` on correct source.
 **Implementation: accept, check the arity, ignore the value.** sigil emits no
 listing file, so neither directive can change a byte.
 
-- The ARITY is checked because asl checks it: probe `l3` gives
-  `error #1110: wrong number of operands`, `expected one argument` for `listing`
-  and `expected between 1 and 2 arguments` for `page`.
+- The ARITY is checked AT BOTH ENDS, because asl checks both and states each
+  bound outright in its own refusal. `listing` takes exactly one argument and
+  `page` takes one or two:
+
+  | probe | line | asl |
+  |---|---|---|
+  | `l3` | bare `listing` | `expected one argument but got 0` |
+  | `l5` | `listing on,off` | `expected one argument but got 2` |
+  | `l3` | bare `page` | `expected between 1 and 2 arguments but got 0` |
+  | `l6` | `page 0,1` | assembles, exit 0 |
+  | `l7` | `page 0,1,2` | `expected between 1 and 2 arguments but got 3` |
+
+  Each bound was measured on ITS OWN directive, which was not a formality. The
+  two messages name different ranges, so reading `listing`'s upper bound off
+  `page`'s wording would have set it to 2 and quietly accepted `listing on,off`.
+  `l6` pins the other side: `page 0,1` assembles clean, so a `page` gated at one
+  argument would refuse working source.
+
+  The bounds are `LISTING_ARG_COUNT` (`1..=1`) and `PAGE_ARG_COUNT` (`1..=2`),
+  and the diagnostic renders from them through `arg_count_bound`, so the wording
+  follows the constant instead of restating it. Mutation M6 below is the proof
+  that this is real rather than decorative.
+
+  Arity is therefore NOT one of the divergences below. It is the half asl tells
+  you outright, which is exactly what the vocabulary is not.
 - The VOCABULARY is not checked, and this is a deliberate divergence. asl does
   check it (probe `l2`: `listing zqp_bogus` is `error #1520: only ON/OFF
   allowed`) but that message understates asl's own accepted set, which takes
   `purecode`. A vocabulary sigil could only guess at would refuse working
   source, and nothing downstream reads the value.
-- **No warning.** The controller rules on warning tiers, so this is a
-  recommendation and not a fait accompli: a warning here would fire on
+- **No warning. RATIFIED by the controller**, so this is settled rather than
+  proposed: a warning here would fire on
   `listing purecode`, which is what every correct Sonic 1 build writes. A check
   that fires on correct code is not the safe direction; it trains readers to
   ignore the stream it lives in. If a listing file ever exists, `listing off`
@@ -185,9 +207,13 @@ of lines that carry no bracket at all. Expanding at the operand level rather
 than restructuring the emit loops is what makes `[0]`, string values and
 mixed comma lists fall out for free instead of each needing its own arm.
 
-### Four deliberate divergences from asl
+### Four deliberate divergences from asl, all four RATIFIED by the controller
 
-Each is pinned as a test, so reversing one has to be deliberate.
+Each is pinned as a test, so reversing one has to be deliberate. Arity is NOT
+among them: it was a silent divergence, it is now closed, and the section above
+says how. The distinction that decides which list a thing lands on is whether
+asl states the rule outright (arity: yes, so enforce it) or only gestures at it
+(the vocabulary: its message understates its own set, so do not guess).
 
 1. `dc.b [3]` with no value: asl emits `00 00 00` (`d15`), sigil refuses by
    name. An empty operand meaning zero is a rule `dc` does not implement here,
@@ -285,10 +311,33 @@ the_macrosetup_dcb_macro_shape_expands        left: [255, 18, 52, 32]
                                               right: [255, 255, 255, 18, 52, 18, 52, 32 x8]
 ```
 
-M2 and M4 are the two that could have come out green and meant something bad. A
-green M2 would have made the `is_op_keyword` edit dead code and the column-0 row
-worthless; a green M4 would have shown the byte rows proving only that the
-bracket LEXES, not that the count is honoured. Neither did.
+**M5: check only the LOWER bound, the shape this parcel first shipped.**
+Predicted: only the arity row red, and red by ASSEMBLING an over-arity line; a
+red quoting a WORDING mismatch instead would mean the mutation had hit the
+message rather than the bound, and the test would be measuring text. Measured 1
+failed:
+
+```text
+assembled to 0 byte(s) [] instead of refusing
+```
+
+**M6: give `listing` the bound named in `page`'s message, `1..=2`.** This is the
+specific error the review warned against. Predicted to show two separate things:
+the bound is load-bearing (`listing on,off` becomes accepted), and the
+diagnostic RENDERS FROM the constant rather than a typed literal, so the
+LOWER-bound message moves too. The second fires first, so the red must quote the
+changed wording; a red with the message still reading `takes 1 argument` would
+have meant the constant was decorative. Measured 1 failed:
+
+```text
+refused, but not for the argument count. Got: `listing` takes 1 to 2 arguments, got 0
+```
+
+M2, M4 and M6 are the three that could have come out green and meant something
+bad. A green M2 would have made the `is_op_keyword` edit dead code and the
+column-0 row worthless; a green M4 would have shown the byte rows proving only
+that the bracket LEXES, not that the count is honoured; a green M6 would have
+meant either the bound or the message it renders was doing nothing. None did.
 
 M2 also corrected a prediction. The commit message for `248a5c72` says a
 dispatch-only fix binds a label "emitting nothing, with no diagnostic". Measured,
@@ -314,6 +363,16 @@ The test's own comment carries the measured wording.
 
 `crates/sigil-frontend-as/tests/as_dup_operand_and_listing.rs`, 16 tests, all
 passing, wired into the normal `cargo test` workspace run.
+
+One run during the arity work came back 4899/1/2 on
+`the_published_line_states_this_revision_s_position_against_a_named_remote_ref`,
+which compares the version banner's baked `origin/master` against what git
+resolves. It is not this branch's: nothing here touches `crates/sigil-cli`, and
+the ref moved under the run (the banner's value is what `origin/master` resolves
+to now, and the test read an intermediate state while another lane was
+fetching). Re-run once the ref settled: 19 passed, 0 failed. Recorded rather than
+dropped, because a transient red that is quietly re-run until green is
+indistinguishable from one that was argued away.
 
 ## Still open
 
