@@ -159,6 +159,39 @@ describes as pending, edit this file in the landing commit.
 the moment you are judging a green or building the witness that gates one — including the
 red-first witness this parcel already has.
 
+## A RULING HAS CONSUMING SURFACES, AND A PARTIAL ENUMERATION LOOKS EXACTLY LIKE A FINISHED ONE
+
+**Banked 2026-09-09, earned by `UX-CPU-NAME-SILENT-DEFAULT`.** This lane ruled *AS-DEFAULT-CPU is
+REFUSE BY NAME*, shipped it on the AS frontend with four gates and a module doc, and never applied
+it to `.emp`, where `attr_cpu` went on silently turning every unrecognised processor name into a
+68000. The banked rule *gate every consumer of a value* already covers values. **This is the same
+failure one level up, on a RULING, and it is harder rather than easier to watch.**
+
+**Why it is harder, and this is the operative sentence:** a value's consumers are enumerable by a
+mechanical sweep, so a miss is findable by grep. **A ruling's surfaces are not enumerable by any
+sweep**, because nothing in the tree marks a site as one the ruling ought to reach. So the check
+has no population to run over, and the artifact cannot distinguish *we finished* from *we finished
+the first one*.
+
+**The direction that makes it survive: a lane that did most of the work looks identical to one
+that did all of it.** The AS half was not sloppy. It was thorough, tested, documented, and cited
+approvingly for months by this very file. Thoroughness at the completed surface is what supplies
+the impression of completeness, so **the more carefully the first surface is done, the less likely
+anyone asks about the second.**
+
+**The practice, and it is cheap: when you bank a ruling, write down the surfaces it must reach, by
+name, in the ruling itself.** Not the sites you changed, the sites it GOVERNS. That converts an
+unenumerable class into a list a later session can check, which is the only thing that makes the
+ruling auditable at all. When you cite a ruling as already-applied, name the surface you verified
+it on, never the ruling alone.
+
+*(The instance also carries a second lesson worth keeping beside it: the naive application of the
+ruling would have been a REGRESSION. Neither `m68000` nor `m68k` is recognised either, both reach
+`M68000` through the same default the ruling removes, so the accepted spellings were never a policy,
+they are the defect's silhouette. Refusing all but `z80` and `m68000` would newly refuse
+`examples/main.emp`, the newcomer's first-contact file. **Before applying a ruling to a new surface,
+ask what that surface's current behaviour is RESTING on**, here the very default being deleted.)*
+
 ## Read at the moment — the nightly drift watch
 
 The drift watch's timer — the unit name, the commands that arm and disarm it, and the measured
