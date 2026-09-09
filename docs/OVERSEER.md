@@ -944,25 +944,50 @@ risk that decides the gate, the landing condition with its zero-population premi
 the consuming end, and the prohibition on quoting `5,761 - 4,985 = 776` as a post-fix
 prediction.
 
-### SHELL `grep -r` IS A FUNCTION HERE AND SKIPS GITIGNORED FILES, RETURNING A CLEAN ZERO
+### PICK A GREP BY WHAT THE SUBJECT IS, AND RE-MEASURE THE SHELL'S GREP BEFORE TRUSTING ANY CLAIM ABOUT IT
 
 *(Reported by the aeon lane at aeon `56e42f00`, reproduced by aurora with a canary, and REPRODUCED
 HERE before being banked. It had already put a false "symbol appears nowhere" into one lane's brief.)*
 
 `type grep` on this machine returns **"grep is a shell function"**, sourced from the harness's shell
-snapshot. That function's `-r` **skips gitignored paths and reports success with no output and no
-error**. Everything this lane generates is gitignored: listings, ROMs, build directories, generated
-corpus files, probe output.
-*(The reproduction, including the first attempt that was VOID because the canary went into a
-path that was not ignored, and this lane's audit of its own 2026-09-05 zeroes:
+snapshot.
+*(The 2026-09-05 reproduction, including the first attempt that was VOID because the canary went
+into a path that was not ignored, and this lane's audit of its own zeroes:
 `docs/OVERSEER-LOG.md`, 2026-09-05 cut.)*
+
+**⚠ THE STATED MECHANISM DOES NOT REPRODUCE, AND THE CONCLUSION BELOW SURVIVES ANYWAY. RE-MEASURE
+BEFORE QUOTING EITHER** *(2026-09-09, tested here with a needle placed only in a gitignored file,
+plus a positive control)*. This heading and the sentence that stood here said the function's `-r`
+skips gitignored paths and returns a clean zero. **It does not, today: shell `grep -rl` FOUND the
+ignored needle.** The shell snapshot carries `alias grep='grep --color=auto
+--exclude-dir={.bzr,CVS,.git,.hg,.svn,.idea,.tox,.venv,venv}'`, which excludes a fixed list of VCS
+and virtualenv directories and says nothing about gitignore.
+
+**The snapshot is REGENERATED PER SESSION** (`~/.claude/shell-snapshots/snapshot-zsh-<epoch-ms>.sh`;
+the one this was measured against is stamped 2026-09-09T07:05:35Z, four days after the rule was
+banked). **So this whole section is a claim about a MUTABLE environment written in the grammar of a
+standing fact**, which is the defect this file bans elsewhere, aimed at itself. Do not trust the
+mechanism in either direction; run the canary.
+
+**And the measured hazard here is close to the INVERSE of the one described.** Same needle, same
+moment, this checkout: `git grep -l` 8 files, shell `grep -rl` 8 files, **`/usr/bin/grep -rl` 130
+files.** This repo hosts its worktrees inside itself (19 at the time of measuring), and
+`/usr/bin/grep` descends into every one, so a tree walk from the repo root over-counts by 16x. That
+is aeon's banked *a gate that walks the filesystem in a repo hosting worktrees inside itself*,
+reached from the other end, and the two rules sat in this document contradicting each other with
+nobody reconciling them.
+
+**What survives, and it is the load-bearing half: `/usr/bin/grep` is right for an artifact and the
+words BY ABSOLUTE PATH are doing the work, not the choice of binary.** Pointed at the repo root it
+is the worst of the three.
 
 **Pick the instrument by what the subject IS:**
 
 - **tracked source** (corpus `.asm`/`.inc`, our `.rs`, docs): `git grep`, which is also faster and
   respects the repo boundary;
 - **ignored artifacts** (a listing, an output binary, anything under a build dir): `/usr/bin/grep -r`
-  by absolute path, never bare `grep -r`;
+  **by absolute path to the artifact**, never at the repo root, where it descends into every worktree
+  this checkout hosts;
 - **either, when a zero would be a finding**: plant a canary of the same class, confirm it is ignored,
   and confirm the instrument finds it *before* believing the zero.
 

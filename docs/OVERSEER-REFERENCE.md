@@ -2330,3 +2330,59 @@ booked off moved text is a row booked off an unaudited source**, so resolve it a
 the spec before booking, not before working it. And when you correct one line in a block, say in
 the correction which lines you did NOT check, because the default reading is that you checked them
 all.
+
+### CONVERGENCE IS EVIDENCE ABOUT REPRODUCIBILITY, NEVER ABOUT CAUSE
+
+Read before dispatching a seat pair, and when two seats agree on a finding.
+
+**Aurora's, relayed 2026-09-09, and it is about the strongest-looking evidence a seat pair
+produces.** Both their seats hit `Open Project...` and found nothing happened. One filed it as its
+costliest finding while refusing to attribute it; the other declined to press it and declared the
+surface undrivable. Aurora then reproduced it with a twelve-line script containing **none of their
+code**: it was the headless rig, not the product. **Two honest seats, one wall, and their agreement
+would have been read as confirmation.**
+
+**Why it is not a lapse: a seat pair shares an environment BY CONSTRUCTION.** That is the point of
+running them together, and it is also a shared confound in every finding they reach independently.
+Convergence tells you the observation is real and repeatable. It says nothing about what produced
+it. Same shape as *two draws from one distribution are not two witnesses*, and as this file's
+custody-versus-observation rule, arriving on a walkthrough instead of on a measurement.
+
+**The discriminator is TRACING, not agreement.** This lane's own convergent finding, the success
+line that printed identically whether or not a file was written, is sound because it was traced to
+`emit_image` and the writer. Both seats saying it added nothing to that.
+
+### THE EXCLUSIONS THIS LANE'S SEATS CANNOT DISTINGUISH FROM PRODUCT DEFECTS
+
+Read when writing any seat brief, and **declare these in the brief**. Aurora's formulation, adopted:
+**an exemption nobody sees is a hole; an exclusion nobody declares is a finding factory.** A seat
+that meets one of these and cannot name it files a serious defect in good faith, and the next seat
+files it again.
+
+**Everything below was measured on 2026-09-09 and every item is MUTABLE. Re-measure at brief time;
+do not copy the values forward.**
+
+- **`grep`, `find` and `ls` come from the harness's shell snapshot**, which is regenerated per
+  session (`~/.claude/shell-snapshots/snapshot-zsh-<epoch-ms>.sh`). `ls` is an alias for `eza`, so a
+  probe passing a bare path where `eza` expects a flag value fails with a message about `--icons`
+  that has nothing to do with the subject. **`type <cmd>` at the start of a seat run, and never
+  state what these do from memory**, this file included.
+- **This checkout hosts its own worktrees** (19 when measured). Any filesystem walk from the repo
+  root descends into all of them: same needle, `git grep -l` 8 files against `/usr/bin/grep -rl`
+  130. **A count from a tree walk here is not a count of this repo.**
+- **A bare test run REFUSES rather than skipping** when no reference tree is named (ruling `d-18`):
+  six tests in `seam1_native_link` alone stop with `NO REFERENCE TREE IS NAMED`. **That is correct
+  behaviour and a seat will read it as a broken test suite.** Say so, and name `SIGIL_ALLOW_PARTIAL=1`
+  or a provisioned tree.
+- **`target/release/sigil` is shared and another lane may be mid-relink.** A seat measuring "the
+  shipped binary" can be measuring somebody else's build. Give seats their own `CARGO_TARGET_DIR`
+  and tell them which binary is the subject, by md5.
+- **zsh, not bash**: no word splitting on unquoted variables, and `\|` alternation inside `$'...'`
+  does not alternate. **`$?` after a pipeline is the LAST command's status**, which this seat hit
+  twice in one session while verifying a row about exit codes.
+- **The corpus `asl` binaries**: seven paths, four digests, one identical banner. Selection is by
+  md5 and a run carrying any error is not a source of values for the lines that did assemble.
+
+**The general form for whoever writes the next brief: an exclusion is a precondition the seat cannot
+tell apart from the product.** Not everything you happen to know, and not a disclaimer. The test is
+whether a competent seat meeting it would file a defect.
