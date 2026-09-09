@@ -115,6 +115,35 @@ you need. **Going quiet without a message is the state he named**, and note what
 he could see a lane had stopped and could not see why. `lane-status.json` is not a substitute —
 it is a pull, and this ruling is a push.
 
+## AN EXCLUSIVE-TREE LEASE HAS NO END UNTIL YOU GIVE IT ONE (2026-09-09)
+
+**This seat told an agent "the reference tree is yours exclusively; I will run nothing against it",
+then started a landing run against that tree while the agent was still alive, and the AGENT caught
+it.** No harm: its three runs closed at 17:34:42Z and mine opened at 17:38:14Z, verified from both
+sides, and it re-checked the tree at `ec640bcf` with 0 modified paths. The promise was still live
+and I broke it anyway.
+
+**The mechanism, and it is structural rather than careless: a completion notification says the agent
+STOPPED, not that it has ENDED.** The notification's own text says the same task id may notify more
+than once and that the agent can be resumed from its transcript. So a lease worded *"while you are
+out"* has **no expiry event on the controller's side at all** - there is no moment the harness tells
+you the lease is over, and the moment that FEELS like one is the report landing in your lap, which is
+exactly when you want the tree back.
+
+**THE RULE: scope the lease to an event YOU control, and say which in the brief.** The merge of that
+agent's branch is the natural one. Until then the tree is theirs, whatever their status looks like.
+If you need it sooner, message the agent and get an explicit release, which costs one round trip and
+is unambiguous.
+
+**Watch the perturbation direction, because it is not symmetric.** Two runs against one aeon tree
+manufacture a false GREEN as readily as a false red: `build.sh` rebuilds `rm`-first, so the loser of
+a race can find a stale ROM the other agent built and read it as its own. A red gets investigated; a
+green gets quoted. That is the mandated-gate asymmetry arriving on the tree instead of on the check.
+
+**And note who found it.** The agent flagged a shared-state violation committed by its own controller,
+against a brief clause written to protect it. A dispatch that tells agents what the controller has
+promised THEM is what made that reportable at all.
+
 ## THE MOTIVATING CASE IS SELECTED FOR BEING BROKEN, NEVER FOR BEING REPRESENTATIVE (2026-09-09)
 
 **A corpus earns a parcel by FAILING on it. That says nothing about whether it EXERCISES the fix**,
