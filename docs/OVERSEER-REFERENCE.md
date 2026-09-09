@@ -208,6 +208,29 @@ output outranks anything the brief asserts.**
 concluded was wrong."* Measured hit rate when introduced: a correction in **3 of 3** dispatches.
 Pair it with an explicit invitation wherever the brief carries a design position.
 
+**⚠ A FAILED MERGE LEAVES A GREEN SUITE BEHIND IT, AND THE STAMP IS THE ONLY THING THAT CATCHES IT**
+*(aurora's finding, twice there; reproduced HERE the same night, 2026-09-09, and this seat's instance
+is the one with the unanticipated cause)*. A `git merge` that FAILS prints its error and returns; the
+landing run started immediately afterwards then measures the UNMERGED tree, comes back green at
+master's own numbers, and reads as the landing verified. **A green suite after a landing is not
+evidence the landing happened.**
+
+**This seat's instance, and the cause is the part nobody plans for.** The merge did not fail on a
+conflict. Its `-m "..."` message contained backticks, which THIS SHELL EXECUTES, so the command died
+in argument parsing before git ever ran. A gate was already launched in the same breath and ran
+happily against the previous commit. **The rule against backticks in a commit message was in three of
+this lane's own agent briefs that same evening.**
+
+**Two things catch it and one of them already exists.** `scripts/landing-run.sh` stamps the HEAD it
+measured into its own log and verdict block, so comparing that SHA against the merge you believe you
+made settles it in one glance. And the baseline reconciliation catches it whenever the merge would
+have added tests, since `+0 new` on a merge that adds a test binary is the tell. **A bare RESULT
+GREEN catches nothing.**
+
+**Read the merge's own output before starting anything that depends on it.** The general form: when
+two commands are issued together and the second is the evidence for the first, the second cannot
+witness the first's failure, because a no-op predecessor leaves it a perfectly valid subject.
+
 **⚠ WRITING ABOUT A THING CAN CONSUME IT: a sweep that scans source for references counts its own
 prose** *(found 2026-09-08 by the pins parcel, against its own first draft, and volunteered)*. The
 zero-consumer sweep asks which pin constants no `.rs` file mentions. Its predicate's doc comment
