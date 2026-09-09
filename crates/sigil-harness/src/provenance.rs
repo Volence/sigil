@@ -1122,39 +1122,17 @@ pub fn append_block(path: &Path, existing: &str, block: &str) -> Result<(String,
     Ok((new_src, chain))
 }
 
-/// Replace `path`'s contents with `contents` by rename, never by truncation.
+/// Replace the ledger at `path` with `contents` by rename, never by truncation, so
+/// a reader of the chain never observes it half-written.
 ///
-/// The temporary is a SIBLING of the target. A rename is only atomic within one
-/// filesystem, and the one directory guaranteed to share the target's filesystem is its
-/// own. The data is flushed before the rename so the installed name never resolves to
-/// content the kernel has not yet written.
+/// The mechanism and the limits of the guarantee — including the file-mode question,
+/// which a rename answers differently from a truncation — live in
+/// [`crate::atomic_write`], the one implementation every artifact writer in this
+/// workspace shares. Notably it is NOT a validity claim: an atomic install of a
+/// ledger that does not parse installs an unparseable ledger, which is why
+/// [`append_block`] parses in memory before calling this.
 pub fn write_atomic(path: &Path, contents: &str) -> Result<(), String> {
-    use std::io::Write;
-    let dir = path
-        .parent()
-        .filter(|p| !p.as_os_str().is_empty())
-        .ok_or_else(|| format!("{} has no parent directory", path.display()))?;
-    let stem = path
-        .file_name()
-        .ok_or_else(|| format!("{} names no file", path.display()))?
-        .to_string_lossy()
-        .into_owned();
-    let tmp = dir.join(format!(".{stem}.{}.tmp", std::process::id()));
-
-    let install = || -> std::io::Result<()> {
-        let mut f = std::fs::File::create(&tmp)?;
-        f.write_all(contents.as_bytes())?;
-        f.sync_all()?;
-        drop(f);
-        std::fs::rename(&tmp, path)
-    };
-    match install() {
-        Ok(()) => Ok(()),
-        Err(e) => {
-            let _ = std::fs::remove_file(&tmp);
-            Err(format!("write {}: {e}", path.display()))
-        }
-    }
+    crate::atomic_write::write_atomic_str(path, contents)
 }
 
 /// Whether a freshly recomputed target set is IDENTICAL to the current tip — the

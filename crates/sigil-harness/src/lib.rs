@@ -99,6 +99,13 @@ pub mod game_defines;
 /// base) and `native::validate_resolved_alignment` (against the resolved layout).
 pub mod section_align;
 
+/// Installing a file by rename rather than by truncation, so a consumer reading an
+/// artifact while sigil writes it sees the whole previous file or the whole new one
+/// and never a prefix. Every artifact this workspace hands to a consumer goes
+/// through here; the module doc also states what the guarantee does NOT cover,
+/// including the file-mode question a rename answers differently from a truncation.
+pub mod atomic_write;
+
 use sigil_link::LinkedImage;
 
 // The region base LMAs are NOT constants here. Each has exactly one authority, and a
