@@ -214,24 +214,56 @@ fn map_and_prelude_refuse_at_the_same_exit_code() {
     );
 }
 
-/// CONTROL for the refusal: `--prelude` WITH `--root` still resolves a real prelude
-/// module and still builds. Without this arm the gate above is satisfied by a
-/// binary that has simply stopped accepting the flag.
-#[test]
-fn prelude_with_root_still_builds() {
-    let tmp = tempfile::tempdir().unwrap();
-    let dir = tmp.path();
+/// Write a two-module program (a prelude exporting `K`, an entry consuming it) into
+/// `dir`, so a `--root`/`--prelude` build has something real to resolve.
+fn write_prelude_program(dir: &Path) {
     std::fs::write(dir.join("prelude.emp"), "module prelude\npub const K = 1\n").unwrap();
     std::fs::write(
         dir.join("entry.emp"),
         "module entry\nproc go () {\n    moveq #K, d0\n    rts\n}\n",
     )
     .unwrap();
+}
+
+/// CONTROL for the refusal: `--prelude` WITH `--root` still resolves a real prelude
+/// module and still builds. Without this arm the gate above is satisfied by a
+/// binary that has simply stopped accepting the flag.
+///
+/// It asserts ONLY the control property, which means it must stay GREEN when the
+/// refusal is reverted. An assertion about the wording of the success line does not
+/// belong here: a control that also fails for the reason the subject fails cannot
+/// tell the two apart, and is not a control. That claim is
+/// `built_line_names_the_path_on_the_root_path`, below.
+#[test]
+fn prelude_with_root_still_builds() {
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path();
+    write_prelude_program(dir);
 
     let out = run(dir, &["entry.emp", "--root", ".", "--prelude", "prelude", "-o", "entry.bin"]);
-    let stdout = String::from_utf8_lossy(&out.stdout);
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(out.status.success(), "a real prelude under --root must build; stderr: {stderr}");
-    assert!(dir.join("entry.bin").exists(), "and write its artifact; stdout: {stdout}");
-    assert!(stdout.contains("entry.bin"), "and name it in the success line: {stdout}");
+    assert!(dir.join("entry.bin").exists(), "and write its artifact; stderr: {stderr}");
+}
+
+/// The `--root` path reaches the success line through its own caller
+/// (`run_emp_program`), so a fix proven on the single-file path is not yet a fact
+/// about this one. Same behavioural assertions: the named path is the path that
+/// exists, and the reported count is the artifact's real length.
+#[test]
+fn built_line_names_the_path_on_the_root_path() {
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path();
+    write_prelude_program(dir);
+
+    let out = run(dir, &["entry.emp", "--root", ".", "--prelude", "prelude", "-o", "entry.bin"]);
+    let line = built_line(&out);
+    let artifact = dir.join("entry.bin");
+    assert!(artifact.exists(), "the multi-module path must write its artifact; line: `{line}`");
+    assert!(line.contains("entry.bin"), "and name it in the success line: `{line}`");
+    assert_eq!(
+        reported_bytes(&line),
+        std::fs::read(&artifact).unwrap().len(),
+        "and report the artifact's real length; line: `{line}`"
+    );
 }
