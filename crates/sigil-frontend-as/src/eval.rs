@@ -1716,7 +1716,7 @@ impl Asm {
         self.defined_this_pass.insert(key.to_string());
     }
 
-    /// Whether `name` is defined AT THIS POINT IN THIS PASS — asl's `DEFINED`.
+    /// Whether `name` is defined AT THIS POINT IN THIS PASS: asl's `DEFINED`.
     ///
     /// A builtin counts: asl reports `DEFINED(MOMCPU)` and `DEFINED(TRUE)` as 1
     /// (probe `dc.asm`). A MACRO name does not: `DEFINED(Mac)` after

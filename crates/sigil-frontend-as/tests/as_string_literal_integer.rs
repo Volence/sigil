@@ -141,6 +141,54 @@ SEgg_ChildCmd:\tequ obSubtype\n\
     );
 }
 
+/// THE TEN skdisasm SITES this also newly accepts, operand for operand:
+/// `sonic3k.asm` lines 100498 and 121694 to 121711, one two-character immediate
+/// and nine one-character ones. They are not Sonic 1's, and they are asserted
+/// here for the same reason: accepting a construct is only progress if the
+/// bytes are right, and skdisasm's diagnostic count fell by exactly these ten.
+///
+/// asl, probe `sksites.asm`, exit 0, `1 pass`, `0 errors`:
+///
+/// ```text
+///        6/       0 : 0C79 4547 0020    cmpi.w  #"EG",(SSMagic_TestLoc_200114).l
+///                 6 : 0114
+///        7/       8 : 0C01 0020         cmpi.b  #" ",d1
+///        8/       C : 0C01 003F         cmpi.b  #"?",d1
+///        9/      10 : 0C01 0021         cmpi.b  #"!",d1
+///       10/      14 : 0C01 0026         cmpi.b  #"&",d1
+///       11/      18 : 0C01 0029         cmpi.b  #")",d1
+///       12/      1C : 0C01 0028         cmpi.b  #"(",d1
+///       13/      20 : 0C01 002E         cmpi.b  #".",d1
+///       14/      24 : 0C01 0049         cmpi.b  #"I",d1
+///       15/      28 : 0401 0041         subi.b  #"A",d1
+/// ```
+#[test]
+fn the_ten_skdisasm_sites_match_the_reference_listing() {
+    let src = format!(
+        "{HEAD}\
+SSMagic_TestLoc_200114:\tequ $200114\n\
+\tcmpi.w\t#\"EG\",(SSMagic_TestLoc_200114).l\n\
+\tcmpi.b\t#\" \",d1\n\tcmpi.b\t#\"?\",d1\n\tcmpi.b\t#\"!\",d1\n\
+\tcmpi.b\t#\"&\",d1\n\tcmpi.b\t#\")\",d1\n\tcmpi.b\t#\"(\",d1\n\
+\tcmpi.b\t#\".\",d1\n\tcmpi.b\t#\"I\",d1\n\tsubi.b\t#\"A\",d1\n\tend\n"
+    );
+    assert_eq!(
+        bytes(&src),
+        vec![
+            0x0C, 0x79, 0x45, 0x47, 0x00, 0x20, 0x01, 0x14,
+            0x0C, 0x01, 0x00, 0x20,
+            0x0C, 0x01, 0x00, 0x3F,
+            0x0C, 0x01, 0x00, 0x21,
+            0x0C, 0x01, 0x00, 0x26,
+            0x0C, 0x01, 0x00, 0x29,
+            0x0C, 0x01, 0x00, 0x28,
+            0x0C, 0x01, 0x00, 0x2E,
+            0x0C, 0x01, 0x00, 0x49,
+            0x04, 0x01, 0x00, 0x41,
+        ]
+    );
+}
+
 /// One to four characters, packed big-endian and ZERO-extended to the target.
 /// asl, probe `sa.asm`, exit 0, `1 pass`, `0 errors`, the four `move.l` lines
 /// quoted in the module header.

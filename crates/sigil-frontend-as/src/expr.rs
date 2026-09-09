@@ -27,9 +27,9 @@ const MAX_PACKED_CHARS: usize = 4;
 /// A string literal of one to four characters IS an integer in asl: the
 /// characters are packed BIG-ENDIAN, each contributing its unsigned byte, and
 /// the result is an ordinary non-negative value that every operator accepts.
-/// Sonic 1 spends it as a two-character command tag — `move.w #"SW",…` writes
-/// `$5357` into a child object's command field and `cmpi.w #"GO",…` reads it
-/// back — so getting the packing wrong is a wrong ROM byte, not a wrong
+/// Sonic 1 spends it as a two-character command tag. `move.w #"SW",...` writes
+/// `$5357` into a child object's command field and `cmpi.w #"GO",...` reads it
+/// back, so getting the packing wrong is a wrong ROM byte, not a wrong
 /// diagnostic.
 ///
 /// Every case below is asl-measured (md5 `61e672562465725a8c102288a7da9098`,
