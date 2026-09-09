@@ -10,6 +10,7 @@ mod eval;
 mod expand;
 mod expr;
 mod lexer;
+mod nameless;
 mod operands;
 mod parser;
 mod state;
