@@ -337,9 +337,10 @@ Provisioned. NOW PROVE IT, because "no errors" is not a witness:
   CARGO_TARGET_DIR="$REF_TARGET" \\
     cargo run --release -p sigil-harness --bin repin -- --check
 
-Expect the burndown warnings, then "pins.rs unchanged". That line is the positive
-witness that this tree reproduces $REV's placement. Anything else means the
-provisioning is wrong, NOT that the pins have drifted.
+Expect the burndown warnings, then the zero-consumer pin list, then
+"pins.rs unchanged". That last line is the positive witness that this tree
+reproduces $REV's placement. Anything else means the provisioning is wrong,
+NOT that the pins have drifted.
 
 Built by: $SIGIL_BIN
 Its full --version self-report heads this log. Quote it, not this line, when the

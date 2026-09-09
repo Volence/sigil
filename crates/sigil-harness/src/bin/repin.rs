@@ -155,7 +155,7 @@ fn main() -> ExitCode {
     };
     let generated = render(&resolved, &prov);
 
-    // sig-orphan-pins: which pins nothing imports, by NAME, on EVERY run — before the
+    // sig-orphan-pins: which pins nothing imports, by NAME, on EVERY run, before the
     // unchanged-early-return below, because a run that moves no pin is exactly when a
     // reader has the attention to look. Reported here and nowhere else: the aeon lane
     // parses `stale_pins_message`'s text, so this block stays out of it.
