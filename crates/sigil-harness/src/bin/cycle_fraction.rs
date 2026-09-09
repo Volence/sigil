@@ -163,13 +163,19 @@ fn emp_files(dir: &Path, out: &mut Vec<PathBuf>) {
     }
 }
 
-/// `(cpu: z80)` on a module or a section header — mirrors `attr_cpu` in
-/// `lower/mod.rs` and `module_is_z80` in `corpus_contracts`.
+/// `(cpu: z80)` on a module or a section header.
+///
+/// Resolves through `sigil_frontend_emp::lower::cpu_for_spelling`, the same
+/// table the `cpu:` attribute itself resolves against, so this measurement
+/// cannot attribute a body to a processor the front end would refuse its
+/// source for.
 fn attrs_are_z80(attrs: &[(String, ast::Expr)]) -> bool {
     attrs.iter().any(|(name, expr)| {
         name == "cpu"
             && matches!(expr, ast::Expr::Path(p)
-                if p.segments.last().is_some_and(|s| s.eq_ignore_ascii_case("z80")))
+                if p.segments.len() == 1
+                    && sigil_frontend_emp::lower::cpu_for_spelling(&p.segments[0])
+                        == Some(Cpu::Z80))
     })
 }
 

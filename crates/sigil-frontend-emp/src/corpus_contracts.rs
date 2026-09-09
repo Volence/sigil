@@ -370,14 +370,18 @@ pub fn bind_corpus_interfaces(
     crate::resolve::contract::bind_with_ambient(&mods, defines, &env)
 }
 
-/// Whether a module declares `(cpu: z80)` — its procs are OUTSIDE the 68k
-/// register-contract closure (a mirror of `attr_cpu` in `lower/mod.rs`, kept
-/// local so `corpus_contracts` needs no lowering import).
+/// Whether a module declares `(cpu: z80)`: its procs are OUTSIDE the 68k
+/// register-contract closure.
+///
+/// Resolves through [`crate::lower::cpu_for_spelling`], the same table the
+/// `cpu:` attribute itself resolves against, so this census cannot classify a
+/// module as a processor the front end would refuse the module for.
 fn module_is_z80(module: &ast::ModuleDecl) -> bool {
     module.attrs.iter().any(|(name, expr)| {
         name == "cpu"
             && matches!(expr, ast::Expr::Path(p)
-                if p.segments.last().is_some_and(|s| s.eq_ignore_ascii_case("z80")))
+                if p.segments.len() == 1
+                    && crate::lower::cpu_for_spelling(&p.segments[0]) == Some(Cpu::Z80))
     })
 }
 
