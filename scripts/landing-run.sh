@@ -410,6 +410,14 @@ fi
 # run would stop inside the suite with the resolver's own message rather than here with a
 # usable one, and before 2026-09-08 it did neither: the gate fell through to a fixed path
 # and measured a peer's live checkout under a strict landing green.
+#
+# WHAT EXPORTING IT COSTS, stated because it is a real limit and not a detail. When the
+# include answers at STEP 3, this script hands the child a derived tree under the name of an
+# explicitly-chosen one, and from inside the suite the two are indistinguishable: the
+# resolver sees a variable and cannot see who set it. That is the same trade the AEON_DIR
+# line above already makes, and the same mitigation covers both, which is why the step is
+# stamped into the log header rather than only the path. A reader asking WHICH VALUE WAS IN
+# EFFECT gets it from the stamp; the suite cannot answer it on its own.
 ORACLE_LEGACY=$(suite_resolve_checkout oracle-old ORACLE_DIR) \
     || die "the legacy oracle tree could not be resolved (see the refusal above).
        The M1.B listing gate compiles against its linux-port/gui/Symbols.cpp, so a landing
