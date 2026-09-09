@@ -43,13 +43,24 @@ fn the_boot_read_is_inside_its_byte_bound() {
     assert!(
         !is_over(size),
         "boot read {} is {size} B / {BOOT_READ_BYTES} B: OVER by {over} B ({lines} lines).\n\
-         The remedy is to MOVE CLOSED HISTORY to docs/OVERSEER-LOG.md verbatim under its original\n\
-         line spans, in one cut, and leave every rule in place. Do NOT shorten a rule to hit this\n\
-         number - the owner's ruling forbids it, and four of one day's five additions here were\n\
-         corrections that had to be MORE precise than what they replaced.\n\
+         The remedy is ONE CUT that MOVES text out verbatim, to whichever of TWO destinations\n\
+         its kind belongs, and leaves every rule in place:\n\
+           - a rule read at a MOMENT (dispatching, landing, judging a green) -> OVERSEER-REFERENCE.md\n\
+           - CLOSED HISTORY (a dated episode, a landing record) -> OVERSEER-LOG.md, under its\n\
+             original line spans.\n\
+         Both destinations, not the log alone. The 2026-09-09 cut measured only 4.5 kB of 22 kB as\n\
+         genuinely closed history, so a log-only reading of this message either falls short of the\n\
+         target or forces rules into the log, which the owner's split (by WHEN A RULE IS READ,\n\
+         2026-09-04T15:38:47Z) forbids. This paragraph said 'the log' alone until that cut.\n\
+         Do NOT shorten a rule to hit this number - the owner's ruling forbids it, and four of one\n\
+         day's five additions here were corrections that had to be MORE precise than what they\n\
+         replaced. Do NOT raise this bound: the maintenance edit that clears a legitimate red is\n\
+         indistinguishable from hiding the defect.\n\
          Prove the cut lossless by set difference AND read every seam: the set difference is blind\n\
          to a sentence left behind whose antecedent moved out with its paragraph, and it cannot\n\
-         tell a move from a deliberate rewrite, so declare any in-pass repair by hand.",
+         tell a move from a deliberate rewrite, so declare any in-pass repair by hand.\n\
+         scripts/boot_read_cut_lossless.py is half one; it needs OMD_BASE=<rev before the cut>\n\
+         and refuses a run that weighed no text.",
         path.display(),
         over = size - BOOT_READ_BYTES
     );
