@@ -4172,6 +4172,11 @@ impl Asm {
     /// position, a malformed expression). The caller adds its own word only when
     /// nothing has been said, the same courtesy `org` and `rept` extend through
     /// [`Self::register_reported_at`].
+    // REASON: the doc comment above quotes asl listings verbatim, and asl separates
+    // its listing columns with TABS. The tabs ARE the evidence: reflowing them to
+    // spaces would silently edit a reference assembler's output that later parcels
+    // compare against. Scoped to this item, never crate wide.
+    #[allow(clippy::tabs_in_doc_comments)]
     fn eval_switch_val(&mut self, toks: &[Token], span: Span) -> (Option<SwitchVal>, bool) {
         if let Some(s) = self.eval_str(toks) {
             return (Some(SwitchVal::Str(s)), false);
@@ -4217,6 +4222,11 @@ impl Asm {
     /// the intended one that is byte-identical to a correct run, so a fix that
     /// only stops the diagnostic is indistinguishable from this one on such a
     /// source. Returns the index past `endcase`.
+    // REASON: the doc comment above quotes asl listings verbatim, and asl separates
+    // its listing columns with TABS. The tabs ARE the evidence: reflowing them to
+    // spaces would silently edit a reference assembler's output that later parcels
+    // compare against. Scoped to this item, never crate wide.
+    #[allow(clippy::tabs_in_doc_comments)]
     fn exec_switch(&mut self, lines: &[SrcLine], start: usize) -> usize {
         let (_, arg_toks, span) = self.line_kw_args(&lines[start]);
         let Some(end) = self.block_end(lines, start, None) else {
@@ -9457,6 +9467,11 @@ fn slice_source(text: &str, base: u32, group: &[Token]) -> String {
 /// `a_single_quoted_case_operand_compares_as_an_integer_which_asl_does_not` pins
 /// what sigil actually does so the gap stays visible instead of drifting.
 #[derive(Clone, PartialEq, Eq)]
+// REASON: the doc comment above quotes asl listings verbatim, and asl separates
+// its listing columns with TABS. The tabs ARE the evidence: reflowing them to
+// spaces would silently edit a reference assembler's output that later parcels
+// compare against. Scoped to this item, never crate wide.
+#[allow(clippy::tabs_in_doc_comments)]
 enum SwitchVal {
     Str(String),
     Int(i64),
