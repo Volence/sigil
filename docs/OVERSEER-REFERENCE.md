@@ -2198,3 +2198,45 @@ applies to itself: a refuted mechanism does not leave its arithmetic standing.
 **And the half that survived is the half worth having, which is the usual shape of a good
 refutation:** the ceiling was UNSTATED, a bar met exactly is indistinguishable from a bar met with
 room, and it is now computed and printed on every aeon build with a tag at zero headroom.
+
+### A PROOF THAT CANNOT FAIL ON DEMAND HAS NOT BEEN READ, IT HAS BEEN ADMIRED
+
+Read when building or judging any red-first proof, and when writing a bar for someone else.
+
+**Aurora's sentence, relayed through the hub 2026-09-09, and it states this lane's red-first bar
+better than the lane's own wording does.** Their case: the RED row of a before/after pair was
+required to reproduce a defect and simply refused to. Right mechanism, right table, green run,
+nothing looking wrong. **The tell is not in the artifact, it is in what the reader did with it.**
+
+**Why it improves on "prove it red first":** that phrasing names a step in a procedure, and a step
+can be performed. This names the READER'S obligation, and it is not satisfiable by ceremony. A
+proof whose red arm was never observed failing is not evidence, however carefully it was built,
+and the standard question becomes *did I watch this fail, on demand, just now* rather than *did
+the parcel include a red-first section*.
+
+**Composes with the vacuity shapes already banked here** (an unapplied mutation, a runner not
+executing what you patched, a proof that ran the wrong program). Those ask what the green could be
+hiding. This one asks whether anybody ever saw the instrument move.
+
+### A PRESCRIPTION IS NOT A PROOF: NAMING THE OBSERVABLE IS NOT NAMING HOW TO READ IT
+
+Read when writing a bar, a brief, or a diagnostic that tells somebody what to check.
+
+**Oracle's sentence, on why a hub bar failed three consecutive times.** The bar named the right
+observable, at a level of detail that **PERMITTED the failing implementation**. Every seat that
+followed it did follow it, and three of them measured nothing. **A bar is not judged by whether a
+correct reading exists, but by whether an incorrect one is excluded.**
+
+**The direction of the error is what makes it survive: a prescription that is merely true reads as
+a completed act.** Nobody rereads a bar they satisfied. So the cost lands on whoever executes it
+next, and it lands as a confident green.
+
+**How to apply, and it is one extra clause:** beside the observable, say **what reading it wrong
+would look like**, or give the invocation. *"Check the isolation holds"* permits the failure;
+*"resolve through the PEER via `ss -x -a -n`, because a connecting client's socket carries no
+address and walking your own fds finds an empty path"* does not. **The test for your own bar: could
+a careful person satisfy this sentence and measure nothing?** If yes, the sentence is a preference
+wearing a rule's grammar.
+
+**This lane meets the class constantly in `.emp` diagnostics**, where a message that names the
+offending construct without naming the line to write is the same defect aimed at a user.
