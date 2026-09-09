@@ -490,7 +490,7 @@ fn a_backward_reference_past_the_definitions_is_refused() {
 /// Decode a hex string into bytes; a malformed literal in a test is a test bug
 /// and panics rather than silently comparing something shorter.
 fn hex(s: &str) -> Vec<u8> {
-    assert!(s.len() % 2 == 0, "odd-length hex literal in a test");
+    assert!(s.len().is_multiple_of(2), "odd-length hex literal in a test");
     (0..s.len())
         .step_by(2)
         .map(|i| u8::from_str_radix(&s[i..i + 2], 16).expect("hex literal"))

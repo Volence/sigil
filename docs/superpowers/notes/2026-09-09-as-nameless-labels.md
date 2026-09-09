@@ -334,6 +334,34 @@ named and nameless agree for a reason that has nothing to do with the rule. A
 green from that pair would have looked exactly like the green above and meant
 nothing.
 
+## Two edges the peel could have opened, both checked against asl
+
+Peeling a nameless run in `head_of_tokens` routes the line to its block driver,
+and `macro`/`struct`/`function` are heads that CONSUME the label field as the
+definition's name. `-\tmacro` therefore became reachable where it previously
+died on its first token. Both assemblers refuse it, at the same line
+(`q13.asm`):
+
+```text
+   asl:   q13.asm(5): error: invalid symbol name          exit 2
+   sigil: q13.asm(5):1: error: macro needs a name         exit 1
+```
+
+The other is `-(An,Xn)`. It is not a predecrement (predecrement takes no index),
+so the `-` lands in the DISPLACEMENT expression, where this parcel now reads it
+as a nameless reference. asl reads it the same way, and the proof is the shape
+of the refusal rather than the refusal itself (`q14.asm`, with the `-` at
+`$1000`):
+
+```text
+   asl:   q14.asm(7):9: error: range overflow
+   sigil: q14.asm(7):2: error: operand 4096 out of range -128..=127
+```
+
+`4096` is `$1000`. Both took the label's ADDRESS as an 8-bit displacement and
+overflowed; an assembler that had read the `-` as something else would have
+failed differently or not at all.
+
 ## Measured and deliberately NOT implemented: macro-body scoping
 
 asl scopes a nameless definition made INSIDE A MACRO BODY to that expansion. A
