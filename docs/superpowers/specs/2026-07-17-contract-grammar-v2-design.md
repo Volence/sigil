@@ -46,8 +46,20 @@ heuristic. v2 computes each proc's **effective clobber set** over the call-graph
 effective(P) = localWrites(P)
              ∪ ⋃ { effective(C) | C ∈ directCallees(P) }
              ∪ ⋃ { bound(S).clobbers | S ∈ indirectSites(P) }
+             ∪ effective(fallsInto(P))
              − verifiedPreserved(P)
 ```
+
+**ERRATUM 2026-09-09 (`CLOSURE-MISSES-FALLS-INTO-EDGE`): the `fallsInto` term above was
+missing from this formula as written, and from the implementation, for the whole of its life.**
+A declared `falls_into SUCC` reaches control into SUCC with no transfer instruction, so the
+edge has to come from the DECLARATION; the node builder collected edges from call and tail
+mnemonics only, and the successor's writes reached neither the falling proc's effective set nor
+its callers'. Two spellings of one transfer therefore read differently:
+`Player_SensorFloor` ends `jbra Player_SensorSurface` and carried the shared body's ten
+registers, while `Player_SensorCeiling` declares `falls_into Player_SensorSurface` and carried
+`d6/d7`. Measured consequence and the adjudicated baseline movement:
+`notes/2026-09-09-falls-into-edge.md`.
 
 - `directCallees` resolve through the link (Sigil owns the link — D7's same substrate).
 - **Indirect sites use their declared bound (§4). An unbounded indirect call is ⊤ (all

@@ -2232,6 +2232,12 @@ fn proc_node(
     let node = ProcNode {
         local_writes,
         direct_callees,
+        // The declared fall-through edge. `direct_callees` above is built from
+        // CALL and TAIL mnemonics in the evaluated body, and a `falls_into`
+        // successor is reached by neither (the pair is adjacent in the image and
+        // control simply runs on), so without this the successor's writes never
+        // reach the falling proc's `effective` set.
+        falls_into: p.falls_into.clone(),
         indirect_sites: collect_indirect_sites(&p.body, p.is_resumable()),
         is_extern: false,
         // §6 partial-width: a `preserves(dN.w)` licenses clobbering the full `dN`

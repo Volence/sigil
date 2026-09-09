@@ -1,5 +1,13 @@
 # CLOBBER-PAYOFF-MEASURE: what the over-declared clobber sets cost in the shipped ROM
 
+> **SUPERSEDED IN ONE RESPECT, 2026-09-09.** Every figure below was measured while the closure was
+> blind to `falls_into`, which this note is what found. That gap is now closed
+> (`CLOSURE-MISSES-FALLS-INTO-EDGE`, note `2026-09-09-falls-into-edge.md`), so the producer table's
+> `falls_into` column reads 0 today and the over-declaring counts are lower: 90 becomes 66 on sonic4
+> plain. The CONSUMING-end answer is unaffected and was re-measured: `[proc.dead-save]` is still 1 on
+> the shipped shapes and 10 on the debug ones, the same rows. The closing recommendation was taken,
+> and the under-declaration direction it predicted turned out to have **no instance** in the corpus.
+
 Parcel note. Branch `measure/clobber-payoff`, off master `ea8c64fa`. **This parcel moves no
 shipped code.** It answers d-26's size-S question — *what does the over-declaration actually cost
 across the shipped ROM, in bytes and cycles* — measured at the CONSUMING end, and it re-verifies

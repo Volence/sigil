@@ -909,12 +909,6 @@ pub fn z80_clobbers_report_doctored(
                             }
                         }
                     }
-                    // A `falls_into T` proc physically flows into T with no transfer
-                    // instruction, so `transfer_target` cannot see the edge — model it
-                    // directly (T's effect becomes this proc's, like a tail transfer).
-                    if let Some(t) = &p.falls_into {
-                        direct_callees.push(t.clone());
-                    }
                     let doctored = doctor.iter().find(|(n, _)| *n == p.name);
                     let declared_clobbers = match doctored {
                         Some((_, segs)) => expand(segs),
@@ -927,6 +921,13 @@ pub fn z80_clobbers_report_doctored(
                         ProcNode {
                             local_writes,
                             direct_callees,
+                            // A `falls_into T` proc physically flows into T with no
+                            // transfer instruction, so `transfer_target` cannot see
+                            // the edge, so the closure charges it directly, like a tail
+                            // transfer. Carried on the node's own field rather than
+                            // pushed into `direct_callees`, so the 68k corpus walk and
+                            // this Z80 seam spell one edge one way.
+                            falls_into: p.falls_into.clone(),
                             indirect_sites: Vec::new(),
                             is_extern: false,
                             declared_clobbers,

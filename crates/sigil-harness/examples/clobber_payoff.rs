@@ -152,10 +152,12 @@ fn main() {
         //  - `empty`: the proc's body writes NOTHING in this shape (a comptime
         //    `if DEBUG == 1` body compiled out), so its whole declared set reads
         //    as over-declared and describes the OTHER shape.
-        //  - `falls`: the proc declares `falls_into SUCC`. The closure builds its
-        //    callee edges from call/tail MNEMONICS in the CodeBuf only, so a
-        //    fall-through edge contributes nothing and the successor's writes are
-        //    missing from `effective` — an analysis artifact, not a loose contract.
+        //  - `falls`: the proc declares `falls_into SUCC`. This bucket is the
+        //    standing witness that the fall-through EDGE is modelled: the closure
+        //    charges the successor's whole effect to the falling proc (one of its
+        //    node edges), so a proc landing here would mean a pair whose successor
+        //    genuinely writes less than the head declares. It read 16 on every
+        //    shape while the edge was missing, and reads 0 with it.
         let mut over_empty = 0usize;
         let mut over_falls = 0usize;
         for (name, decl) in &declared {
@@ -186,7 +188,7 @@ fn main() {
         );
         println!("  PRODUCER  over-declared (proc, register) pairs: {pairs}");
         println!(
-            "  PRODUCER  of those procs: {over_empty} write nothing in this shape, {over_falls} declare `falls_into` (closure blind to the successor); residue = {}",
+            "  PRODUCER  of those procs: {over_empty} write nothing in this shape, {over_falls} declare `falls_into` (expected 0: the successor's effect is charged to the head); residue = {}",
             over.len() - over_empty - over_falls
         );
         for (name, diff, declared_n) in &over {

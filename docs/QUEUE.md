@@ -357,27 +357,72 @@ evidence only that the fixture was broken.
 5. The s8 refusal is proven on a fixture, not on the real tree, because proving it there means
    removing a harness module.
 
-## CLOSURE-MISSES-FALLS-INTO-EDGE
+## CLOSURE-MISSES-FALLS-INTO-EDGE: LANDED 2026-09-09, and one of its two halves had no instance
 
-- state at archive: `next`  size: `S`  project: `-`
-- blockedBy: nothing; it is OUR code, so it does not serialize behind the byte chain
+- state at archive: `LANDED`  size: `S`  project: `-`
+- blockedBy: nothing; it was OUR code
 
-Booked 2026-09-09 from the CLOBBER-PAYOFF-MEASURE result, and it is the reason that measurement was
-ordered before the fix rather than beside it.
+**The edge is modelled.** `ProcNode::falls_into` carries the declaration and the closure fixpoint
+charges the successor's whole effect to the falling proc, exactly as it charges a tail transfer,
+with the same hole treatment for an unresolvable successor. `seam1`'s Z80 node builder had modelled
+the same edge since it was written (by pushing the successor into `direct_callees`) and now uses the
+field, so one edge has one spelling. Per-row evidence, the adjudication of every baseline movement,
+and the red-first proofs: `docs/superpowers/notes/2026-09-09-falls-into-edge.md`.
 
-`corpus_contracts.rs` builds callee edges from call and tail mnemonics only, so **a `falls_into`
-declaration is not modelled as an edge at all.** Consequence, measured: 11 of the 90 procs the census
-reports as over-declaring are not loose, they are correct. `S4LZ_DecompressDict` reads as never
-writing 8 of its 9 declared registers, while `S4LZ_Decompress`, the proc it falls into, writes them.
+**The asymmetry it removes, in the corpus's own words.** `Player_SensorFloor` ends
+`jbra Player_SensorSurface`; `Player_SensorCeiling` declares `falls_into Player_SensorSurface`. One
+transfer spelled two ways, and the closure read the first as clobbering the shared body's ten
+registers and the second as clobbering `d6/d7`.
 
-**⚠ THE DIRECTION THAT MATTERS: had the large fix started on the producer count, a register was on the
-list to be deleted from a contract that needs it, along with its caller's correct save.** The
-over-declaration census is the SAFE direction of this gap. The same missing edge suppresses a real
-under-declaration firing, which is the destructive one, and that half wants its own row rather than
-riding this one.
+**WHAT CLOSED.** The census half, in full: over-declaring procs drop 90 to 66 on sonic4 plain (71 to
+47 debug, 101 to 77 demo plain, 82 to 58 demo debug, 71 to 47 config_a, 91 to 67 config_b, 90 to 66
+lean) and the `falls_into` artifact class goes 16 to 0 on every shape. The row's figure of 11 is the
+same population under `clobber_payoff`'s bucket ORDER, which counts an empty-effective proc in the
+comptime-empty bucket first. The drop is 24 rather than 16 because callers of a falling proc gain its
+successor's registers too.
 
-Fix shape: teach the closure the `falls_into` edge. It removes 11 false census rows and closes the
-missed-firing direction in one change, in our tree.
+**WHAT DID NOT CLOSE, and it is the half this row called urgent.**
+`[proc.clobber-undeclared]` closure firings are **0 before and 0 after, on all seven shapes**. No
+proc in the corpus falls into a successor writing more than the head declares, so the suppressed
+under-declaration firing this row was booked for **has no instance in today's corpus**. The
+mechanism is real and a test now holds it, so the firing cannot be suppressed the day someone writes
+that pair; but the row's claim that the destructive direction was the reason to run now does not
+survive the measurement, and anyone re-reading the CLOBBER-PAYOFF note's closing paragraph should
+read this sentence beside it.
+
+**WHAT MOVED INSTEAD.** `[call.live-clobbered]` (D1c) moved identically on all seven shapes, one row
+relocating and six appearing, all of them the player sensors returning their result in an
+undeclared `d0`/`d1`. Three rows of that class were already frozen. Each new row is adjudicated at
+its own row in `crates/sigil-harness/src/contract_baseline.rs`; the GONE row
+(`Air_Collide @ Air_WallProbeRight :: d1`) did not vanish but moved to the later call on the one
+path that reaches the read, and `Air_Collide :: d1` is one row before and one row after.
+`[proc.dead-save]` is unchanged by count AND by row on every shape, which is the direction the
+baseline's ratchet warns about.
+
+**The follow-on this leaves, not booked by this parcel:** the sensors declare no `out(...)` for
+results their own headers document (`Out: d0.w dist, d1.b angle, d2.b attr`). Declaring that
+surface in aeon would dissolve nine D1c rows at once, and it is an aeon contract change, not a
+sigil one.
+
+Original row text, unedited, because a reader who carried it away needs to meet the correction
+rather than find the row silently rewritten:
+
+> Booked 2026-09-09 from the CLOBBER-PAYOFF-MEASURE result, and it is the reason that measurement was
+> ordered before the fix rather than beside it.
+>
+> `corpus_contracts.rs` builds callee edges from call and tail mnemonics only, so **a `falls_into`
+> declaration is not modelled as an edge at all.** Consequence, measured: 11 of the 90 procs the census
+> reports as over-declaring are not loose, they are correct. `S4LZ_DecompressDict` reads as never
+> writing 8 of its 9 declared registers, while `S4LZ_Decompress`, the proc it falls into, writes them.
+>
+> **⚠ THE DIRECTION THAT MATTERS: had the large fix started on the producer count, a register was on the
+> list to be deleted from a contract that needs it, along with its caller's correct save.** The
+> over-declaration census is the SAFE direction of this gap. The same missing edge suppresses a real
+> under-declaration firing, which is the destructive one, and that half wants its own row rather than
+> riding this one.
+>
+> Fix shape: teach the closure the `falls_into` edge. It removes 11 false census rows and closes the
+> missed-firing direction in one change, in our tree.
 
 ## AS-Z80-FUNCTION-CALL-IN-OPERAND
 
