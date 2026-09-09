@@ -13576,11 +13576,27 @@ C:\n";
     #[test]
     fn an_integer_selector_does_not_match_a_string_case() {
         // asl (probe `p7`), `V = 2`: `case "two"` is `=>FALSE` and no error is
-        // raised for it. A cross-type pair is a NON-MATCH, not a diagnostic,
-        // which is why the comparison is typed rather than done on rendered
-        // text.
+        // raised for it. A cross-type pair is a NON-MATCH, not a diagnostic.
         let src = "        cpu 68000\n        padding off\n        phase 0\nV       = 2\n        switch V\n        case \"two\"\n        dc.b $11\n        case 2\n        dc.b $22\n        elsecase\n        dc.b $EE\n        endcase\n";
         assert_eq!(image(src), vec![0x22]);
+    }
+
+    #[test]
+    fn an_integer_selector_does_not_match_the_same_digit_spelled_as_a_string() {
+        // The DISCRIMINATING form of the test above, and the reason it is a
+        // separate one: `case "two"` would still be skipped by an
+        // implementation that compared rendered text, so it does not gate the
+        // typed comparison at all. This does. asl (probe `p22`), `V = 2`
+        // against `case "2"`:
+        //
+        // ```text
+        //   11/       1 : =$2                  	switch V
+        //   12/       1 : =>FALSE              		case "2"
+        //   14/       1 : =>TRUE               		elsecase
+        //   15/       1 : 44                  			dc.b $44
+        // ```
+        let src = "        cpu 68000\n        padding off\n        phase 0\nV       = 2\n        switch V\n        case \"2\"\n        dc.b $33\n        elsecase\n        dc.b $44\n        endcase\n";
+        assert_eq!(image(src), vec![0x44]);
     }
 
     #[test]
