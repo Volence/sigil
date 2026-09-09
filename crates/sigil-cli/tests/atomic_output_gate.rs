@@ -44,7 +44,8 @@ fn rust_sources(dir: &Path) -> Vec<PathBuf> {
     let mut out = Vec::new();
     let mut stack = vec![dir.to_path_buf()];
     while let Some(d) = stack.pop() {
-        for entry in std::fs::read_dir(&d).unwrap_or_else(|e| panic!("read_dir {}: {e}", d.display()))
+        for entry in
+            std::fs::read_dir(&d).unwrap_or_else(|e| panic!("read_dir {}: {e}", d.display()))
         {
             let entry = entry.expect("dir entry");
             let p = entry.path();
@@ -107,14 +108,17 @@ fn no_source_in_this_crate_writes_a_file_by_truncation() {
         src.display()
     );
     assert!(
-        files.iter().any(|p| p.file_name().is_some_and(|n| n == "main.rs")),
+        files
+            .iter()
+            .any(|p| p.file_name().is_some_and(|n| n == "main.rs")),
         "the walk did not reach the binary's own root under {}",
         src.display()
     );
 
     let mut findings = Vec::new();
     for f in &files {
-        let text = std::fs::read_to_string(f).unwrap_or_else(|e| panic!("read {}: {e}", f.display()));
+        let text =
+            std::fs::read_to_string(f).unwrap_or_else(|e| panic!("read {}: {e}", f.display()));
         for (line, body) in offending_lines(&text) {
             findings.push(format!("{}:{line}: {body}", f.display()));
         }

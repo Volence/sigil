@@ -187,7 +187,10 @@ mod tests {
         std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o755))
             .expect("restore directory");
 
-        assert!(err.contains("rom.bin"), "error names the destination: {err}");
+        assert!(
+            err.contains("rom.bin"),
+            "error names the destination: {err}"
+        );
         assert_eq!(std::fs::read(&p).expect("read"), b"COMPLETE-OLD");
     }
 
@@ -206,7 +209,10 @@ mod tests {
         write_atomic(&p, b"new").expect("install over a read-only destination");
 
         let mode = std::fs::metadata(&p).expect("stat").permissions().mode() & 0o777;
-        assert_eq!(mode, 0o444, "destination mode was reset to the umask default");
+        assert_eq!(
+            mode, 0o444,
+            "destination mode was reset to the umask default"
+        );
         assert_eq!(std::fs::read(&p).expect("read"), b"new");
     }
 }

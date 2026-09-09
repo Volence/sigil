@@ -1125,8 +1125,8 @@ pub fn append_block(path: &Path, existing: &str, block: &str) -> Result<(String,
 /// Replace the ledger at `path` with `contents` by rename, never by truncation, so
 /// a reader of the chain never observes it half-written.
 ///
-/// The mechanism and the limits of the guarantee — including the file-mode question,
-/// which a rename answers differently from a truncation — live in
+/// The mechanism and the limits of the guarantee, including the file-mode question
+/// that a rename answers differently from a truncation, live in
 /// [`crate::atomic_write`], the one implementation every artifact writer in this
 /// workspace shares. Notably it is NOT a validity claim: an atomic install of a
 /// ledger that does not parse installs an unparseable ledger, which is why
