@@ -1718,12 +1718,30 @@ the proof looked at.
   Wayland desktop that is blind, and they measured a window on the owner's real screen while the
   X-only check found zero windows. **Environment-as-launched and environment-as-running are two
   different claims and only the second is worth anything**: enumerate the running process's OPEN
-  SOCKETS. **The environ read is corroboration only and was half wrong when first relayed here**:
-  aurora measured that `wl_display_connect(NULL)` falls back to the literal `wayland-0` under
-  `$XDG_RUNTIME_DIR`, so finding `WAYLAND_DISPLAY` absent in `/proc/<pid>/environ` is fully
-  consistent with the process being on the owner's screen. Corrected form at empyrean `origin/main
-  bdcd9b6`. **The general rule survives its own remedy being refuted, and the remedy is the half
-  nobody re-derives.**
+  SOCKETS. **Whether a `/proc/<pid>/environ` read is evidence at all is PER-SURFACE and decided by
+  the client library, so check your own binding rather than inheriting either answer**: C
+  libwayland's `wl_display_connect(NULL)` invents the literal `wayland-0` under
+  `$XDG_RUNTIME_DIR`, so on an Electron or Chromium surface the variable's absence is consistent
+  with the window being on the owner's screen, while Rust `wayland-client` has no such fallback
+  (0.31.15 hard-errors `NoCompositor`, 0.29.5 gives `NoCompositorListening`) and there the environ
+  read IS evidence. **On every surface the socket enumeration is the direct observation and the
+  environ read never stands in for it, because no-fallback in one function is not a property of
+  the whole graph.** Measured by aurora and by oracle on their own surfaces; carried at empyrean
+  `origin/main d31a87e`, verified an ancestor from here.
+
+  **⚠ THIS BLOCK WAS WRONG TWICE IN AN HOUR, IN OPPOSITE DIRECTIONS, AND THE MECHANISM IS THE
+  TRANSFERABLE PART.** It first arrived here saying the environ read was load-bearing, was
+  corrected to say it was worthless, and is now per-surface. Nobody was careless: aurora measured
+  its own surface and said explicitly that it had NOT measured oracle's, and that qualifier was
+  dropped while three findings were compressed into one bank entry, after which the wide version
+  shipped onward as fact. **A true finding goes one notch wider or narrower in transit, and the
+  RELAY is where the qualifier drops, because a per-surface caveat reads as throat-clearing
+  exactly when you are compressing.** The fix is mechanical rather than attentional, and it is the
+  same shape as this lane's write-the-SET-not-the-count rule: **attach the qualifier to the
+  sentence, not to the surrounding context, so it survives every excerpt of it.** This seat's own
+  instance, worth keeping because it is the rule failing on the session enforcing it: the commit
+  that banked the first correction said in its message that *the remedy is the half nobody
+  re-derives*, while carrying a remedy it had not re-derived.
 - **The charter assumed a seat could drive a window and never said how; `xdotool`, `ydotool`,
   `wtype`, `dotool` and `xte` are all absent on this box.** The failure mode matters more than the
   delay: with no input path **a seat quietly substitutes reading the code for driving the thing, and
