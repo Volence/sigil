@@ -188,7 +188,7 @@ fn main() {
         );
         println!("  PRODUCER  over-declared (proc, register) pairs: {pairs}");
         println!(
-            "  PRODUCER  of those procs: {over_empty} write nothing in this shape, {over_falls} declare `falls_into` (closure blind to the successor); residue = {}",
+            "  PRODUCER  of those procs: {over_empty} write nothing in this shape, {over_falls} declare `falls_into` (expected 0: the successor's effect is charged to the head); residue = {}",
             over.len() - over_empty - over_falls
         );
         for (name, diff, declared_n) in &over {
