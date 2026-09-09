@@ -28,7 +28,9 @@ figure). Where a finding needs a build to become byte-proven, it says so and nam
 
 ## Step 0 — the standing findings, re-verified rather than blank-slated
 
-The 2026-08-13 packet is closed except two, and both moved:
+The 2026-08-13 packet is closed except two, and both moved. Every number in the two bullets below
+is as re-derived on this sweep's date; neither cost is quoted anywhere as current any more. Price
+S12 with `sigil build --aeon <tree> --report indirect-cost` and S8 with `scripts/s8_seam_size.sh`.
 
 - **S12** (the trusting closure kept for warn-tier analyses) — CONFIRMED-STILL-OPEN, and the
   **cost re-derived rather than quoted: 53 to 59**. Six new procs, all aeon code written since

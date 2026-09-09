@@ -604,9 +604,12 @@ fn missing_conditional_out_violates() {
 // aeon ships a DEBUG-only RUNTIME assert as the workaround.
 //
 // The narrowing is load-bearing and cannot just be dropped: forcing ⊤ at every
-// site produces 53 `[proc.clobber-undeclared]` firings on the corpus. So the
-// policy is chosen per consumer, and these tests pin that both readings exist and
-// genuinely differ.
+// site fires `[proc.clobber-undeclared]` on every engine contract written against
+// the narrowed answer, and each of those is a correction the flip has to pay for.
+// How many there are today is a measurement that grows with the engine, so read it
+// with `sigil build --aeon <tree> --report indirect-cost` rather than recording it
+// here. So the policy is chosen per consumer, and these tests pin that both
+// readings exist and genuinely differ.
 
 use sigil_frontend_emp::closure::{compute_closure_with, IndirectPolicy};
 

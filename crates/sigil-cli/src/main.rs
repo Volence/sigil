@@ -1239,7 +1239,7 @@ fn run_indirect_cost_report(aeon: &std::path::Path, target: &BuildTarget) {
         println!("  {proc:<32} as {ty}");
     }
     // What this count IS: the sites the corpus walk collected for THIS shape. A
-    // site the walk cannot reach is absent from it — a comptime arm this shape's
+    // site the walk cannot reach is absent from it: a comptime arm this shape's
     // defines discard, and a site inside a splice template the walk does not
     // resolve. So the source text can hold more than this lists, and the honest
     // cross-check is the grep, printed here so a reader runs both rather than

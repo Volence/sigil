@@ -195,15 +195,26 @@ pub(crate) fn resolve_callee_key<'a>(procs: &BTreeMap<String, ProcNode>, callee:
 /// "what makes a dispatch target installable" — is called from exactly one place,
 /// interface `implement` binding, and never at a dispatch site. Nothing checks
 /// that the procs actually installed in the dispatch table satisfy the bound
-/// (lens sweep, seat Va, finding S12). aeon carries 8 such sites and ships a
-/// DEBUG-only RUNTIME assert at `core.emp:520` as a workaround for the
-/// compile-time check the syntax implies exists.
+/// (lens sweep, seat Va, finding S12). aeon's workaround for the compile-time
+/// check the syntax implies exists is a DEBUG-only RUNTIME assert,
+/// `Debug_AssertObjLoop`, called after the object dispatch.
 ///
-/// The narrowing cannot simply be dropped: it is load-bearing. Measured by
-/// forcing ⊤ at every site, the corpus produces 53 `[proc.clobber-undeclared]`
-/// closure firings, 2 preserves firings, and moves the frozen `[call.live-clobbered]`
-/// baseline — i.e. 53 engine contracts are written against the narrowed answer.
-/// Withdrawing it is a real aeon+sigil parcel, not a flag flip.
+/// The narrowing cannot simply be dropped: it is load-bearing. Every engine
+/// contract written against the narrowed answer has to be corrected the day the
+/// bound has to be proven, and forcing ⊤ also moves the frozen
+/// `[call.live-clobbered]` baseline, so withdrawing it is a real aeon+sigil
+/// parcel and not a flag flip.
+///
+/// That price is a MEASUREMENT and it grows as ordinary object work reaches the
+/// dispatch loop, so read it rather than quoting it:
+///
+/// ```text
+/// sigil build --aeon <aeon tree> --report indirect-cost
+/// ```
+///
+/// which enumerates the bounded dispatch sites for the selected shape and prints
+/// the `[proc.clobber-undeclared]` firing list under both policies plus their
+/// difference.
 ///
 /// So the policy is chosen PER CONSUMER, because the conservative direction is not
 /// the same for all of them. For the warn-tier analyses a narrower set means FEWER
