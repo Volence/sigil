@@ -558,8 +558,19 @@ fn install_artifact(path: &str, bytes: &[u8]) -> std::io::Result<()> {
 }
 
 /// The shared emp output tail: write `image` to `output` (if given), print it as
-/// `--hex` (if set), and always report `built: N bytes`. Exits non-zero on a
-/// write failure.
+/// `--hex` (if set), and report the build. Exits non-zero on a write failure.
+///
+/// The success line states the DISPOSITION of the image, not only its size, because
+/// those are two different facts and a reader has no other channel for the second
+/// one. Building without `-o` is legitimate (`--hex`, a syntax check), so it is not
+/// an error, but a run that discarded the image must not be indistinguishable from
+/// one that left a ROM on disk: that difference is the whole cost of a stale
+/// artifact believed fresh. The wrote-case names the path, so the line answers
+/// "where is it" as well as "did it happen".
+///
+/// `built: N bytes` stays the prefix in both cases. The byte count is the fact both
+/// outcomes share, and it is what the acceptance gates assert on; the disposition is
+/// the suffix that separates them.
 fn emit_image(image: &[u8], output: Option<&str>, hex: bool) {
     if let Some(out_path) = output {
         if let Err(err) = install_artifact(out_path, image) {
@@ -571,7 +582,13 @@ fn emit_image(image: &[u8], output: Option<&str>, hex: bool) {
         let rendered: Vec<String> = image.iter().map(|b| format!("{b:02X}")).collect();
         println!("{}", rendered.join(" "));
     }
-    println!("built: {} bytes", image.len());
+    match output {
+        Some(out_path) => println!("built: {} bytes, wrote {out_path}", image.len()),
+        None => println!(
+            "built: {} bytes, no file written (pass -o <path> to write one)",
+            image.len()
+        ),
+    }
 }
 
 /// Consume the value following a value-taking flag at `args[*i]`, advancing `i`.
@@ -845,8 +862,22 @@ fn run_emp(args: &[String]) {
         );
         return;
     }
+    // Flags the single-file path cannot honour are refused BY NAME here rather than
+    // dropped. A flag that is parsed, consumed, and ignored makes a run that did not
+    // do what was asked indistinguishable from one that did, and the flag's own
+    // spelling is the only thing that can point at the mistake.
     if map_arg.is_some() {
-        eprintln!("error: --map requires --root (region placement is a multi-module concern)");
+        eprintln!(
+            "error: --map requires --root (region placement is a multi-module concern); \
+             pass --root <dir>, or drop --map"
+        );
+        process::exit(2);
+    }
+    if prelude.is_some() {
+        eprintln!(
+            "error: --prelude requires --root (a prelude is a module id resolved under the \
+             scan root, not a file path); pass --root <dir>, or drop --prelude"
+        );
         process::exit(2);
     }
 

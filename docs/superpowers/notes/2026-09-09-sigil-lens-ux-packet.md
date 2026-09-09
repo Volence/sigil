@@ -30,7 +30,7 @@ against the pinned tree; **seat** means it is carried on the seat's committed ev
 | # | target | UXa met it as | UXb met it as |
 |---|---|---|---|
 | C-1 | **There is no help** | job 1: `--help` consumed as a filename, the `.emp` track undiscoverable from the binary | F3: the only reachable usage text names 1 of 6 entry points |
-| C-2 | **A success line that does not mean the build succeeded** | F1: `built: N bytes`, exit 0, no file written | F14: `--prelude` parsed, consumed, dropped, run reports success |
+| C-2 | **A success line that does not mean the build succeeded** **CLOSED** | F1: `built: N bytes`, exit 0, no file written | F14: `--prelude` parsed, consumed, dropped, run reports success |
 
 C-1 is the one the briefs bought. C-2 is the panel's headline and neither seat could have found the
 other's half: one arrived by trying to produce a ROM, the other by sweeping flags.
@@ -66,7 +66,26 @@ consumers, and the population to enumerate is always the consuming end*) failing
 than on a value. An unrecognized NAME is also a different door from a MISSING declaration, so even
 within the AS surface the ruling's population deserves re-deriving.
 
-### 2 . `built: N bytes` says the same thing whether or not a file was written . **firsthand** . UXa F1
+### 2 . `built: N bytes` says the same thing whether or not a file was written . **firsthand** . UXa F1 . **CLOSED**
+
+**Closed on branch `parcel/emp-success-line-truth`.** The line states the disposition of the image
+and the wrote-case names the path:
+
+```
+built: 13 bytes, no file written (pass -o <path> to write one)
+built: 13 bytes, wrote out.bin
+```
+
+`built: N bytes` stays the prefix, because the byte count is the fact both outcomes share and is
+what the acceptance gates assert on; the disposition is the suffix that separates them. Building
+without `-o` stays a SUCCESS, since `--hex` and a plain syntax check are legitimate uses, and a
+control gate holds that open so the honest line cannot later be bought by turning the no-output case
+into an error.
+
+The gates take the row's own evidential point as their design: they assert on the FILE (it exists,
+and its real length equals the count the line printed) rather than on a golden string, because
+stdout is the thing under test and cannot also be the ground truth, and they run two shapes of
+different byte length so what is established is the code path's behaviour.
 
 In a directory holding nothing but the source, `sigil emp <file>` prints `built: 4 bytes` and exits
 0 **and writes nothing**. The run that does write the file prints the byte-identical line. So the
@@ -82,12 +101,37 @@ inputs at different byte counts make it the code path's behaviour rather than th
 generalisation was not available from either measurement alone, and neither party set out to run a
 two-input control: it fell out of the controller using its own probe instead of the seat's.
 
-### 3 . `--prelude` is parsed, consumed, and dropped, and the run reports success . **firsthand** . UXb F14
+### 3 . `--prelude` is parsed, consumed, and dropped, and the run reports success . **firsthand** . UXb F14 . **CLOSED**
 
 `--prelude <path>` without `--root` accepts a path **that does not exist**, prints `built: 4 bytes`
 and exits 0. Its sibling `--map` under the identical precondition refuses by name, states the
 precondition, and exits 2: `error: --map requires --root (region placement is a multi-module
 concern)`. **The correct behaviour is written thirty lines away in the same handler.**
+
+**Closed on branch `parcel/emp-success-line-truth`, and the diagnosis above is HALF WRONG in a way
+worth keeping on the record.** Two candidate defects were carried forward for this row: (a) the flag
+silently no-ops without `--root`, and (b) it accepts a path that does not exist. Only (a) is real,
+and it is the whole of it.
+
+**(b) does not exist, and its frame is wrong.** `--prelude` takes a MODULE ID, not a path, which the
+usage string already said (`--prelude <module.id>`). With `--root`, a bogus id is already refused at
+exit 1 by `reachable_modules`: ``no module `nope` found under the scan root``, blamed at the seed
+span. So there is no path for a not-found check to check. The transcript that looked like (b) was
+(a) wearing a path-shaped argument, and the argument's shape was doing all the work: the same run
+with a bare id (`--prelude prelude`) behaved identically.
+
+The fix mirrors `--map` exactly, at the same exit code, with a gate pinning the two together so a
+future change to one cannot leave the other behind:
+
+```
+error: --prelude requires --root (a prelude is a module id resolved under the scan root,
+not a file path); pass --root <dir>, or drop --prelude
+```
+
+`--map`'s own message was corrected in the same change. It named the precondition but not the fix,
+which is the half of the wording rule this lane keeps closing on itself, and it now ends
+`pass --root <dir>, or drop --map`. The sibling that was the model for the refusal turned out to
+need the same treatment as the surface it was modelling.
 
 ### 4 . There is no help, and the usage text names one entry point of six . **firsthand** . both seats
 
