@@ -1717,8 +1717,13 @@ the proof looked at.
   conveniently enumerate.** Their charter proved "window on its own Xvfb, nothing on `:0`"; on a
   Wayland desktop that is blind, and they measured a window on the owner's real screen while the
   X-only check found zero windows. **Environment-as-launched and environment-as-running are two
-  different claims and only the second is worth anything**: read `/proc/<pid>/environ` back from the
-  running process and enumerate its open sockets.
+  different claims and only the second is worth anything**: enumerate the running process's OPEN
+  SOCKETS. **The environ read is corroboration only and was half wrong when first relayed here**:
+  aurora measured that `wl_display_connect(NULL)` falls back to the literal `wayland-0` under
+  `$XDG_RUNTIME_DIR`, so finding `WAYLAND_DISPLAY` absent in `/proc/<pid>/environ` is fully
+  consistent with the process being on the owner's screen. Corrected form at empyrean `origin/main
+  bdcd9b6`. **The general rule survives its own remedy being refuted, and the remedy is the half
+  nobody re-derives.**
 - **The charter assumed a seat could drive a window and never said how; `xdotool`, `ydotool`,
   `wtype`, `dotool` and `xte` are all absent on this box.** The failure mode matters more than the
   delay: with no input path **a seat quietly substitutes reading the code for driving the thing, and
