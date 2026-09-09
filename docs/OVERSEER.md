@@ -155,7 +155,7 @@ DISPATCHES it, and no gate anywhere makes that happen.** When you land something
 describes as pending, edit this file in the landing commit.
 
 **A RE-BASELINE DOES NOT EXPLAIN A GREEN — IT MANUFACTURES ONE** sat here and is now in
-`docs/OVERSEER-REFERENCE.md`, beside the four ways a red-first proof goes vacuous. Read both at
+`docs/OVERSEER-REFERENCE.md`, beside the ways a red-first proof goes vacuous. Read both at
 the moment you are judging a green or building the witness that gates one — including the
 red-first witness this parcel already has.
 

@@ -350,7 +350,7 @@ survive unreferenced is the signature of a MERGE**, exactly as an empty commit r
 *(Origin, and the n=3 caveat in full: `docs/OVERSEER-LOG.md`, 2026-09-03 cut, original lines
 466-488.)*
 
-### THE FOUR FACES OF A CHECK THAT CANNOT COME OUT OTHER THAN GREEN (2026-09-05, a fourth added 2026-09-06)
+### THE FACES OF A CHECK THAT CANNOT COME OUT OTHER THAN GREEN (2026-09-05; a fourth and fifth added 2026-09-06, a sixth 2026-09-09)
 
 **All three were found in one night, all by DELIBERATELY BREAKING THE CODE, and none by the test
 suite.** They are one defect wearing three costumes, and a brief should name all three because an
@@ -390,6 +390,32 @@ agent that guards against one walks into the others.
    observes the breach. Aeon named the cause on their own side and it is the general one: a brief
    saying *"perturb it"* is AMBIGUOUS between the checker and the subject, **and the cheaper
    reading is the one an agent takes**. Say which.
+
+6. **AND A RED IS NOT EVIDENCE THAT YOU TESTED WHAT YOU MEANT TO TEST: READ THE MESSAGE AND
+   CONFIRM IT NAMES YOUR MECHANISM** *(oracle's, 2026-09-09, against its own re-run; paired with
+   aurora's the same night; relayed, not reproduced here)*. Oracle re-ran a refusal and the run
+   refused, and it proved nothing: **a different guard fired first**, and reading a refusal for
+   the wrong reason is indistinguishable from the one you meant to test until you read the text.
+   Aurora hit the same shape from the other side, two malformed plants caught by a neighbouring
+   arm of the same gate, going red with plausible messages. **A build that fails for the reason
+   you planted and a build that fails for a neighbouring reason are the same exit code.**
+   This is protocol bar 2 inverted. That bar governs a poison that comes back GREEN and says to
+   suspect the matcher; this governs a poison that comes back RED, where nothing looks wrong at
+   all, which is why it is the face that ships. **Quote the diagnostic text beside every red-first
+   proof, not the exit status**, and on this lane's surfaces that means the AS-shape `file(line):`
+   line itself. Live consequence for every AS-frontend parcel: the frontend has many refusal
+   paths over one input, so an unimplemented construct and a neighbouring syntax error land the
+   same way.
+   **And its positive-control twin, from the same exchange: an absence check is only evidence once
+   the same filter has been shown to FIND the thing somewhere.** Run the filter where the subject
+   IS, see a hit, then run it where the subject must not be. Without that, an absence proof
+   measures the FILTER and not the world. This lane already carries *an emptiness is never a
+   finding without an instrument that could have returned non-empty* and the canary rule that a
+   canary covers the RULE while an input count covers the FEED; oracle's addition is the third
+   leg, that the filter must be shown to select THIS subject and not merely some subject of its
+   class. Their instance: a window filter keyed on `_NET_WM_PID`, which minifb never sets, so it
+   returned zero on the display where the window demonstrably was. Five independent arrivals at
+   this rule in one night across four lanes, carried at empyrean `origin/main a0e523a`.
 
 **THE ONE CLAUSE THAT CATCHES ALL OF THEM is invariant 6(c): applied-and-still-green is a RUNNER
 DEFECT, never a pass.** It is not a formality and it must never be softened, it is the only step
