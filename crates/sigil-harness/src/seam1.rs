@@ -923,7 +923,7 @@ pub fn z80_clobbers_report_doctored(
                             direct_callees,
                             // A `falls_into T` proc physically flows into T with no
                             // transfer instruction, so `transfer_target` cannot see
-                            // the edge — the closure charges it directly, like a tail
+                            // the edge, so the closure charges it directly, like a tail
                             // transfer. Carried on the node's own field rather than
                             // pushed into `direct_callees`, so the 68k corpus walk and
                             // this Z80 seam spell one edge one way.

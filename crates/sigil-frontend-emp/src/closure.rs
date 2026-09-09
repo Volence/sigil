@@ -9,10 +9,15 @@
 //! effective(P) = localWrites(P)
 //!              ∪ ⋃ { effective(C) | C ∈ directCallees(P) }
 //!              ∪ ⋃ { bound(S).clobbers | S ∈ indirectSites(P) }
+//!              ∪ effective(fallsInto(P))
 //!              − verifiedPreserved(P)
 //! ```
 //!
-//! (spec `2026-07-17-contract-grammar-v2-design.md` §1). This module is the
+//! (spec `2026-07-17-contract-grammar-v2-design.md` §1, whose formula predates the
+//! fall-through term and carries it as an erratum). The `fallsInto` term is the one
+//! edge that arrives with NO instruction: a declared `falls_into SUCC` runs off the
+//! body's closing `}` into SUCC inside the same call, so a mnemonic walk finds
+//! nothing and the declaration itself is the edge. This module is the
 //! pure algorithm: a monotone set-union fixpoint from ∅ over a finite lattice,
 //! so it terminates even with recursion / SCCs. It is deliberately decoupled
 //! from the grammar — it consumes a name-keyed [`ProcNode`] map plus a
@@ -55,7 +60,7 @@ pub struct ProcNode {
     pub direct_callees: Vec<String>,
     /// The proc's declared `falls_into SUCC` successor. Control leaves this body
     /// off its closing `}` and CONTINUES into `SUCC` inside the same call, so
-    /// everything `SUCC` clobbers, this proc's callers see clobbered — the same
+    /// everything `SUCC` clobbers, this proc's callers see clobbered: the same
     /// effect a tail transfer carries, arriving with no transfer instruction for
     /// the mnemonic walk to see. It is therefore a real edge of the closure and
     /// not decoration: without it the falling proc's `effective` set is missing

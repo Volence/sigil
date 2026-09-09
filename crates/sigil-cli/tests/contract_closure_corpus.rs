@@ -1855,7 +1855,7 @@ fn contract_baselines_hold_for_every_shipped_shape() {
     );
 }
 
-/// Every `falls_into SUCC` declaration in the corpus, as `(proc, successor)` —
+/// Every `falls_into SUCC` declaration in the corpus, as `(proc, successor)`,
 /// including the `(cpu: z80)` ones, which the caller filters by presence in the
 /// 68k closure rather than by module, so no module-classification copy is kept
 /// here to drift.
@@ -1881,13 +1881,13 @@ fn falls_into_pairs(srcs: &[(PathBuf, String)]) -> Vec<(String, String)> {
     out
 }
 
-/// THE FALL-THROUGH EDGE IS MODELLED — `falls_into SUCC` is a closure edge, not
+/// THE FALL-THROUGH EDGE IS MODELLED. `falls_into SUCC` is a closure edge, not
 /// decoration.
 ///
 /// A declared fall-through leaves the body off its closing `}` and continues into
 /// SUCC inside the same call, so everything SUCC clobbers is visible to this
 /// proc's callers. It arrives with NO transfer instruction, and the node builder's
-/// callee edges come from CALL and TAIL mnemonics in the evaluated body — so
+/// callee edges come from CALL and TAIL mnemonics in the evaluated body, so
 /// unless the declaration is charged as its own edge, the successor's writes are
 /// absent from the falling proc's `effective` set. Measured before the edge
 /// landed: `Player_SensorCeiling` read as clobbering `d6/d7` while
@@ -1899,9 +1899,9 @@ fn falls_into_pairs(srcs: &[(PathBuf, String)]) -> Vec<(String, String)> {
 ///   effective(SUCC)` (⊤ successor ⇒ ⊤ proc). A missing edge breaks it at once;
 /// - the DERIVATION, on the corpus's own twin pair: `Player_SensorFloor` ends in
 ///   `jbra Player_SensorSurface` and `Player_SensorCeiling` declares `falls_into
-///   Player_SensorSurface`. Two spellings of one transfer — the second is the
+///   Player_SensorSurface`. Two spellings of one transfer (the second is the
 ///   first with the instruction omitted because the pair is adjacent in the image
-///   — so the two heads must hand their callers the same register file. Before the
+///   so the two heads must hand their callers the same register file. Before the
 ///   edge they did not, and that disagreement is what the parcel closed.
 #[test]
 fn a_declared_fall_through_is_a_closure_edge_on_every_shape() {

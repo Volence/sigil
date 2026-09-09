@@ -127,8 +127,8 @@ pub const INOUT_UNVERIFIED_BASELINE: &[(&str, &str)] = &[];
 /// returns its result in `d0` (and `d1` for an angle) and declares NO `out(...)`,
 /// so the post-call read of that register is the callee's PRODUCT and D1c, reading
 /// the declaration, can only see a clobbered held value. `Player_SensorFloor`'s
-/// prose header states the convention — `Out: d0.w dist, d1.b angle, d2.b attr`
-/// against `clobbers(d0-d7/a1-a2)` — and `Player_SensorCeiling` says "same
+/// prose header states the convention (`Out: d0.w dist, d1.b angle, d2.b attr`
+/// against `clobbers(d0-d7/a1-a2)`) and `Player_SensorCeiling` says "same
 /// contract". The `Ground_Move_Cap @ Player_SensorWallDir :: d0`, `PState_Spindash
 /// @ Player_SensorFloor :: d0/d1` and `TestPlayer_Main @ Player_SensorFloor ::
 /// d0/d2` rows here are the same class, already frozen. KILL CONDITION: declaring
@@ -147,7 +147,7 @@ pub const D1C_BASELINE: &[(&str, &str, &str)] = &[
     // MOVED, 2026-09-09, with the `falls_into` closure edge (parcel
     // CLOSURE-MISSES-FALLS-INTO-EDGE). The row used to read
     // `Air_Collide @ Air_WallProbeRight :: d1` and it is the same d1, the same
-    // definition and the same READ — only the call charged for it moved, to the
+    // definition and the same READ; only the call charged for it moved, to the
     // LATER call on the one path that reaches the read. `Air_Collide`'s d1 is
     // defined at `move.w d3, d1` (the |x_vel| compare input); in `.mostly_up` the
     // only read of d1 after any `Air_WallProbeRight` call is `move.b d1, d3` (the
@@ -156,14 +156,14 @@ pub const D1C_BASELINE: &[(&str, &str, &str)] = &[
     // falls into `Player_SensorSurface`, which writes d0-d5), so D1c's forward walk
     // stops there: the value the read observes is the SENSOR's angle, produced two
     // instructions earlier, not the wall probe's victim. `Air_Collide :: d1` is
-    // therefore one row before and one row after — the multiset count for that
+    // therefore one row before and one row after: the multiset count for that
     // (proc, register) is unchanged, and the callee column is now the call that
     // actually destroys and reproduces it.
     ("Air_Collide", "Player_SensorCeiling", "d0"),
     ("Air_Collide", "Player_SensorCeiling", "d1"),
     // NEW, 2026-09-09, same parcel and same undeclared-out class as the sensor rows
     // described above. `Air_WallProbe{Left,Right}` load the probe point into d0
-    // (`move.w x_pos(a0), d0` ± PUSH_RADIUS — an undeclared INPUT), call
+    // (`move.w x_pos(a0), d0` ± PUSH_RADIUS, an undeclared INPUT), call
     // `Player_SensorWallAt`, then `tst.w d0` on the returned DISTANCE, which the
     // proc's own header documents as `Out: d0.w dist`. The rows appear now because
     // `Player_SensorWallAt`'s body is three instructions and a fall-through: until
@@ -201,7 +201,7 @@ pub const D1C_BASELINE: &[(&str, &str, &str)] = &[
     // gates read `cmpi.w #PHYS_JUMP_HEADROOM, d0` immediately after `jbsr
     // Player_SensorCeiling`, so the d0 charged as a destroyed held value is the
     // sensor's produced CLEARANCE. The ceiling twin was invisible while its
-    // effective set read `{d6,d7}` — its three-instruction body sets the class mask
+    // effective set read `{d6,d7}`: its three-instruction body sets the class mask
     // and quadrant and falls into `Player_SensorSurface`, which does the work. The
     // FLOOR twin, spelling the identical transfer as `jbra Player_SensorSurface`,
     // has fired all along: that asymmetry between two spellings of one transfer is

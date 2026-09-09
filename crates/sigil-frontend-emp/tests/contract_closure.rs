@@ -195,7 +195,7 @@ fn absent_callee_is_unresolved() {
 
 /// A `falls_into SUCC` proc is charged SUCC's whole effect. Control leaves the
 /// body off its closing `}` and continues into SUCC inside the same call, so
-/// everything SUCC clobbers is visible to this proc's callers — there is simply
+/// everything SUCC clobbers is visible to this proc's callers, and there is simply
 /// no transfer instruction for a mnemonic walk to find.
 #[test]
 fn falls_into_successor_effect_unions_in() {
@@ -219,7 +219,7 @@ fn falls_into_successor_effect_unions_in() {
 /// THE DERIVATION, and the reason the bare union above is not the whole pin: the
 /// two spellings of one mechanism must agree. A proc that ENDS in a tail transfer
 /// to SUCC and a proc that FALLS INTO SUCC hand their callers the same register
-/// file — the first is an explicit `jbra SUCC`, the second is the same transfer
+/// file: the first is an explicit `jbra SUCC`, the second is the same transfer
 /// with the instruction omitted because the pair is adjacent in the image. The
 /// corpus holds exactly this pair (`Player_SensorFloor` tails into
 /// `Player_SensorSurface`, `Player_SensorCeiling` falls into it), and before the
