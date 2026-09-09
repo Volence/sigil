@@ -59,6 +59,19 @@ to zero; the third moves 11 to 9 because two of its rows were `listing` and
 A falling count is evidence noise was removed, never that anything is correct.
 The correctness claim rests on the byte assertions below, not on this table.
 
+**`lines only in the NEW run: 0` is an absence, so here is the filter finding
+something.** The same differ, over the same pair of streams, reported `lines only
+in the OLD run: 4` and named all four. It therefore selects lines of exactly this
+class out of exactly these inputs, and its zero on the other side is a measured
+zero rather than a filter that reads nothing. The population it read is printed
+beside it: 46 lines before, 25 after.
+
+The other absence claim in this parcel is "no em or en dash in the new text".
+The instrument was shown to find both characters in a planted canary, the input
+was sized at 672 lines, and the same filter over the added SOURCE lines returned
+a real hit in `token.rs` that was then fixed. It selects this subject, not merely
+some subject of its class.
+
 ## Group A: `listing` and `page`
 
 `MacroSetup.asm:6-9` is `padding off` / `listing purecode` / `page 0` /
@@ -208,16 +221,73 @@ Each was applied to the committed tree at `248a5c72`, shown on disk, run, and
 restored with `git checkout HEAD -- <path>` from that commit. The prediction was
 written before each run.
 
-| # | mutation | predicted | measured |
-|---|---|---|---|
-| M1 | delete the lexer's `[`/`]` arms | every bracket row red, the listing rows green | 11 failed, 5 passed, exactly the split predicted |
-| M2 | remove `listing`/`page` from `is_op_keyword` ONLY, keeping the dispatch arm | ONLY the column-0 row red | 1 failed, 15 passed, and the failure is `` `purecode` is not a recognized 68000 mnemonic `` |
-| M3 | drop the `unresolved duplicate count` diagnostic | only the unresolvable row red, and red by ASSEMBLING rather than by a different message | 1 failed: `assembled to 0 byte(s) [] instead of refusing` |
-| M4 | peel the bracket but ignore the count, emitting the value once | the byte rows red, the refusal and listing rows green | 8 failed, 8 passed, exactly the split predicted |
+A red is not evidence that the intended mechanism was measured. This front end
+has many refusal paths over one input, so an unimplemented construct and a
+neighbouring syntax error arrive as the same exit code. Every red below is
+therefore quoted by its TEXT, and the prediction says which text would mean the
+mutation measured something else.
 
-M2 and M4 are the two that could have come out green and meant something bad.
-A green M2 would have made the `is_op_keyword` edit dead code and the column-0
-row worthless; a green M4 would have shown the byte rows proving only that the
+**M1: delete the lexer's `[` and `]` arms.** Predicted: every bracket row red
+naming the LEXER; a red naming `dc.ATTRIBUTE`, an operand-size path, a
+macro-expansion path or `bad byte expression` would mean M1 proved nothing.
+Measured 11 failed, 5 passed, and every byte row reads
+
+```text
+expected an assembly, got: ["unexpected character"]
+```
+
+with `the_macrosetup_dcb_macro_shape_expands` carrying three of them, one per
+macro expansion, which is the corpus's own 18-row shape in miniature.
+
+**M1 also demonstrated the hazard it was told to look for.** The three rows that
+assert a REFUSAL still refused under M1, with a plausible message and a non-zero
+status:
+
+```text
+refused, but not for the missing value. Got: unexpected character
+refused, but not for the count. Got: unexpected character
+an unresolvable count must be named, not silently dropped. Got: unexpected character
+```
+
+Those three matchers key on wording unique to their own rule, so they went red.
+Written against "did it refuse" they would all three have gone GREEN on a build
+where the feature does not lex at all.
+
+**M2: remove `listing`/`page` from `is_op_keyword` only, keeping the dispatch
+arm.** Predicted: ONLY the column-0 row red. Measured 1 failed, 15 passed:
+
+```text
+expected an assembly, got: ["`purecode` is not a recognized 68000 mnemonic"]
+```
+
+which names the mechanism exactly, the head bound as a label and the ARGUMENT
+handed to instruction lowering.
+
+**M3: drop the `unresolved duplicate count` diagnostic.** Predicted: only the
+unresolvable row red, and red by ASSEMBLING rather than by a different message,
+since a different message would mean some other guard caught it first. Measured
+1 failed:
+
+```text
+assembled to 0 byte(s) [] instead of refusing
+```
+
+**M4: peel the bracket but ignore the count, emitting the value once.**
+Predicted: the byte rows red as COUNT mismatches; any diagnostic text in a red
+would mean the bracket had stopped lexing and M4 was re-measuring M1. Measured 8
+failed, 8 passed, no diagnostic anywhere:
+
+```text
+a_count_repeats_the_value_at_every_dc_width   left: [255]            right: [255, 255, 255]
+a_string_value_repeats_whole                  left: [97, 98]         right: [97, 98, 97, 98]
+a_zero_count_emits_nothing                    left: [17, 255, 34]    right: [17, 34]
+the_macrosetup_dcb_macro_shape_expands        left: [255, 18, 52, 32]
+                                              right: [255, 255, 255, 18, 52, 18, 52, 32 x8]
+```
+
+M2 and M4 are the two that could have come out green and meant something bad. A
+green M2 would have made the `is_op_keyword` edit dead code and the column-0 row
+worthless; a green M4 would have shown the byte rows proving only that the
 bracket LEXES, not that the count is honoured. Neither did.
 
 M2 also corrected a prediction. The commit message for `248a5c72` says a
