@@ -87,18 +87,32 @@ impl SourceMap {
         self.texts.is_empty()
     }
 
-    /// `file(line)` for a span in a NAMED source — the shape AS itself reports
-    /// (`smps-bug.asm(9): error: …`). `None` when the span's source is not in
-    /// this map or carries no name, which is what a diagnostic belonging to no
-    /// source line (a whole-run or placement failure) must produce.
+    /// `file(line,col)` for a span in a NAMED source — the AS dialect's shape
+    /// (`smps-bug.asm(9,17): error: …`). `None` when the span's source is not
+    /// in this map or carries no name, which is what a diagnostic belonging to
+    /// no source line (a whole-run or placement failure) must produce.
+    ///
+    /// The column is here because [`location`](Self::location) already computes
+    /// it and this function used to throw it away, so the AS surface reported
+    /// less than the same binary's `.emp` surface from the same data. Two
+    /// diagnostics about two operands of one line are one line number and two
+    /// columns: without the column they render byte-identically and a reader
+    /// cannot tell which operand either is about.
+    ///
+    /// The parenthesised shape is kept, deliberately. `.emp` renders
+    /// `path:line:col:` and this surface renders `file(line,col):`, which is
+    /// the split `docs/OVERSEER.md` rules is intentional: a compatibility
+    /// surface's job is to be the thing it is compatible with, and
+    /// `file(line,col)` is the same dialect carrying one more fact, not a
+    /// different one.
     pub fn label(&self, span: Span) -> Option<String> {
         let idx = span.source.0 as usize;
         let name = self.names.get(idx)?;
         if name.is_empty() {
             return None;
         }
-        let (line, _col) = self.location(span);
-        Some(format!("{name}({line})"))
+        let (line, col) = self.location(span);
+        Some(format!("{name}({line},{col})"))
     }
 
     /// Return the 1-based `(line, column)` of `span.start` within its source.

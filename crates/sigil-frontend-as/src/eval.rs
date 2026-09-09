@@ -1,7 +1,7 @@
 //! eval: the driver — line loop, directive dispatch, instruction lowering, emit.
 
 use crate::expand::{
-    group_span, keyword_eq_index, render_tokens, split_call_args, split_top_commas,
+    group_span, item_span, keyword_eq_index, render_tokens, split_call_args, split_top_commas,
     substitute_frame, substitute_name,
 };
 use crate::lexer::{lex_line, lex_line_recover};
@@ -6521,6 +6521,7 @@ impl Asm {
             None => split_top_commas(rest),
         };
         for g in groups {
+            let gspan = item_span(g, span);
             let called = self.expand_calls_checked(g);
             let expanded = self.expand_int_builtin(&called);
             let expanded = self.expand_str_builtins(&expanded);
@@ -6549,7 +6550,7 @@ impl Asm {
             let e = match crate::expr::parse_expr(&expanded) {
                 Some((e, [])) => e,
                 _ => {
-                    self.err(span, "bad byte expression");
+                    self.err(gspan, "bad byte expression");
                     continue;
                 }
             };
@@ -6567,12 +6568,12 @@ impl Asm {
             match self.fold(&qe) {
                 Fold::Value(v) => {
                     if !(-128..=0xFF).contains(&v) {
-                        self.err(span, format!("operand {v} out of range {}..={}", -128, 0xFF));
+                        self.err(gspan, format!("operand {v} out of range {}..={}", -128, 0xFF));
                     }
                     self.emit(&[v.clamp(-128, 0xFF) as u8], vec![], span);
                 }
                 Fold::Fault(f) => {
-                    self.fault_err(f, span);
+                    self.fault_err(f, gspan);
                     self.emit(&[0x00], vec![], span);
                 }
                 Fold::Poison => {
@@ -6604,6 +6605,7 @@ impl Asm {
     fn directive_dw(&mut self, rest: &[Token], span: Span) {
         self.open_section_if_needed();
         for g in split_top_commas(rest) {
+            let gspan = item_span(g, span);
             let expanded = self.expand_operand_builtins(g);
             let expanded = match self.collapse_float_operand(&expanded) {
                 Ok(t) => t,
@@ -6619,19 +6621,19 @@ impl Asm {
             let e = match crate::expr::parse_expr(&expanded) {
                 Some((e, [])) => e,
                 _ => {
-                    self.err(span, "bad word expression");
+                    self.err(gspan, "bad word expression");
                     continue;
                 }
             };
             let qe = self.qualify_expr(&e);
             match self.fold(&qe) {
                 Fold::Value(v) => {
-                    self.check_data_range(v, WORD_DATA_RANGE, span);
+                    self.check_data_range(v, WORD_DATA_RANGE, gspan);
                     let w = v as u16;
                     self.emit(&[(w & 0xFF) as u8, (w >> 8) as u8], vec![], span);
                 }
                 Fold::Fault(f) => {
-                    self.fault_err(f, span);
+                    self.fault_err(f, gspan);
                     self.emit(&[0x00, 0x00], vec![], span);
                 }
                 Fold::Poison => {
@@ -6699,6 +6701,7 @@ impl Asm {
             None => split_top_commas(rest),
         };
         for g in groups {
+            let gspan = item_span(g, span);
             let expanded = self.expand_operand_builtins(g);
             let expanded = match self.collapse_float_operand(&expanded) {
                 Ok(t) => t,
@@ -6714,7 +6717,7 @@ impl Asm {
             let e = match crate::expr::parse_expr(&expanded) {
                 Some((e, [])) => e,
                 _ => {
-                    self.err(span, "bad word expression");
+                    self.err(gspan, "bad word expression");
                     continue;
                 }
             };
@@ -6736,12 +6739,12 @@ impl Asm {
             }
             match self.fold(&qe) {
                 Fold::Value(v) => {
-                    self.check_data_range(v, WORD_DATA_RANGE, span);
+                    self.check_data_range(v, WORD_DATA_RANGE, gspan);
                     let w = (v as u16).to_be_bytes();
                     self.emit(&w, vec![], span);
                 }
                 Fold::Fault(f) => {
-                    self.fault_err(f, span);
+                    self.fault_err(f, gspan);
                     self.emit(&[0x00, 0x00], vec![], span);
                 }
                 Fold::Poison => {
@@ -6789,6 +6792,7 @@ impl Asm {
             None => split_top_commas(rest),
         };
         for g in groups {
+            let gspan = item_span(g, span);
             let expanded = self.expand_operand_builtins(g);
             let expanded = match self.collapse_float_operand(&expanded) {
                 Ok(t) => t,
@@ -6804,7 +6808,7 @@ impl Asm {
             let e = match crate::expr::parse_expr(&expanded) {
                 Some((e, [])) => e,
                 _ => {
-                    self.err(span, "bad long expression");
+                    self.err(gspan, "bad long expression");
                     continue;
                 }
             };
@@ -6823,12 +6827,12 @@ impl Asm {
             }
             match self.fold(&qe) {
                 Fold::Value(v) => {
-                    self.check_data_range(v, LONG_DATA_RANGE, span);
+                    self.check_data_range(v, LONG_DATA_RANGE, gspan);
                     let l = (v as u32).to_be_bytes();
                     self.emit(&l, vec![], span);
                 }
                 Fold::Fault(f) => {
-                    self.fault_err(f, span);
+                    self.fault_err(f, gspan);
                     self.emit(&[0x00; 4], vec![], span);
                 }
                 Fold::Poison => {
@@ -6851,7 +6855,7 @@ impl Asm {
                             span,
                         );
                     } else {
-                        self.err(span, "unresolved long expression");
+                        self.err(gspan, "unresolved long expression");
                         self.emit(&[0x00, 0x00, 0x00, 0x00], vec![], span);
                     }
                 }

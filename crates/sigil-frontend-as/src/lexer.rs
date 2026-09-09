@@ -282,8 +282,24 @@ fn lex_into(
             }
             _ => {
                 // Operators / delimiters (maximal munch for 2-char forms).
-                let (p, len) =
-                    punct(&bytes[i..]).ok_or_else(|| err(i, i + 1, "unexpected character"))?;
+                //
+                // The refusal names the character. `unexpected character` alone
+                // states that one exists and leaves the reader to find it, and
+                // on the corpus this message is thousands of lines deep: the
+                // character is the whole content of the diagnostic. It is
+                // rendered through `char`'s `Debug`, so a space, a tab and a
+                // non-printing byte are visible rather than being swallowed by
+                // the surrounding punctuation.
+                //
+                // Decoded as UTF-8 rather than reported as a byte, because a
+                // stray `£` in a source is one character to the person reading
+                // it and `\u{a3}` is not what they typed. The span covers the
+                // whole character, so the column the label prints is the
+                // column that character starts at.
+                let ch = line[i..].chars().next().unwrap_or(c as char);
+                let (p, len) = punct(&bytes[i..]).ok_or_else(|| {
+                    err(i, i + ch.len_utf8(), &format!("unexpected character {ch:?}"))
+                })?;
                 out.push(Token {
                     tok: Tok::Punct(p),
                     span: span_at(i, i + len),

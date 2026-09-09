@@ -315,6 +315,25 @@ pub(crate) fn split_call_args(toks: &[Token], lparen: usize) -> Option<(Vec<Vec<
     None
 }
 
+/// Where to blame a diagnostic about ONE item of a comma-separated list: the
+/// item's own first token, falling back to the directive's span when the group
+/// is empty.
+///
+/// A data directive holds many items on one line, so blaming every one of them
+/// at the directive renders two mistakes as two byte-identical lines. `dc.b
+/// Big, Big` reported `probe.asm(3): error: operand 74565 out of range
+/// -128..=255` twice, and nothing in either line said which item it was about.
+/// Since [`SourceMap::label`](sigil_span::SourceMap::label) carries a column,
+/// the item's own span is what makes the two lines different.
+///
+/// Only DIAGNOSTIC spans move. The span an item's bytes are emitted under stays
+/// the directive's, because that one is the line-to-offset attribution the
+/// listing and the fixup records are built from, and it is not a claim about
+/// where a mistake is.
+pub(crate) fn item_span(g: &[Token], directive: Span) -> Span {
+    group_span(g).unwrap_or(directive)
+}
+
 /// Split a token slice on top-level (non-parenthesised, non-bracketed) commas.
 ///
 /// A `[...]` duplicate-operand count is one group's own prefix, so a comma
