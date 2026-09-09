@@ -192,9 +192,29 @@ produced the defect. Re-run with the flag removed from both places, it is red.
   is a full build cycle.
 - **UXa F8.** A source `message` directive goes to stdout while diagnostics go to stderr, so a
   habitual `> build.log` captures the reassuring line and none of the errors.
+  **CLOSED on branch `parcel/ux-message-stream-and-diagnostic-columns`, and the seat's remedy was
+  the wrong one.** Reproduced exactly. But moving the stream is refused at the CONSUMING end:
+  asl writes `message` to stdout (probe `p1b`), and this repo's own
+  `scripts/corpus-baseline.sh:160` splits the two streams on purpose and treats stderr as the
+  diagnostic POPULATION it counts, classifies, and `comm`-diffs against a stored baseline. Both
+  corpora fire `message`, so the move would have inflated that count and made every stored
+  baseline incomparable, to fix a log nobody had to keep. The fix keeps the stream and makes
+  stdout unable to END a failing run on a reassuring note:
+  `assembly failed: 1 error (reported on stderr)`.
+  **A claim in the pinning test's header turned out to be false** and is corrected there: it said
+  s1disasm and s2disasm read their size lines off this stream, and both invoke the assembler
+  through `os.execute`, which captures no output at all.
 - **UXb.** `error: unexpected character` names neither the character nor a column. AS diagnostics
   drop a column the `.emp` front end on the same binary proves is available, and repeat
   byte-identically for two operands on one line.
+  **CLOSED on the same branch, and the row was THREE defects rather than one.** The seat framed
+  the repeat as a consequence of the missing column. It is not: `SourceMap::label` now carries a
+  column and `dc.b Big, Big` still printed `(3,2)` twice, because every item of a data directive
+  was blamed at the DIRECTIVE's span. The item's own span was available and discarded, exactly as
+  the column was, and both had to move. The three parts red-separate cleanly under mutation, which
+  is the evidence that they were three.
+  The two dialects are untouched, and the gate holds the split open in BOTH directions rather than
+  only the direction this parcel touched.
 
 ## Look and taste, captures for the owner and NOT packet findings
 
