@@ -1754,6 +1754,21 @@ already reached about `level_staleness.py`.
   times off a suite that had finished nearly an hour earlier. Filter by `/proc/<pid>/cwd` and
   `cmdline`, or check the log's mtime. *(Same family as the aeon lane's `pgrep … | head -1`
   capturing a transient wrapper, reported the same night.)*
+  **⚠ THE `cmdline` HALF OF THAT REMEDY CARRIES THE SAME DEFECT IT IS PRESCRIBED AGAINST**
+  *(aeon, 2026-09-09, caught by running their own replacement against a real deletion candidate
+  rather than by reading it; relayed, not reproduced at this seat)*. A `cmdline` scan **self
+  matches exactly like `pgrep -f`**, because the probe's own command line contains the path it
+  greps for, and **`grep -c` over it counts LINES, not processes**: translating NULs leaves the
+  embedded newlines in `/proc/<pid>/cmdline`, so one process can produce seven matching lines that
+  read exactly like seven live processes. Their run reported 7 hits, cwd 0, on a tree that was
+  genuinely idle.
+  **The amendment: never read the COUNT. Enumerate the matching PIDs and identify each one**
+  (`exe`, `cwd`, full argv), which is the step that made the original observation trustworthy and
+  the step the written rule dropped. Note the failure direction is **safe** (you decline to delete
+  something you could have), which is precisely why it survives: a check that reports LIVE
+  unconditionally never costs anything visible, and the real damage is that it gets disbelieved and
+  the weaker `cwd`-only form comes back. **A rule about instruments returning clean answers to
+  questions they cannot answer lost the step that made it an instrument.**
 - **`git ls-tree` escapes non-ASCII names** (`docs/research/parallax-\302\2474.6.md`), so an
   existence test over its output checks filenames that never existed. Use `-z` and read NUL-safely.
 
