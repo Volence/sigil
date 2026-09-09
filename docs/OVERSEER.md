@@ -944,7 +944,7 @@ risk that decides the gate, the landing condition with its zero-population premi
 the consuming end, and the prohibition on quoting `5,761 - 4,985 = 776` as a post-fix
 prediction.
 
-### PICK A GREP BY WHAT THE SUBJECT IS, AND RE-MEASURE THE SHELL'S GREP BEFORE TRUSTING ANY CLAIM ABOUT IT
+### SHELL `grep -r` SKIPS GITIGNORED FILES HERE, RETURNING A CLEAN ZERO. MEASURE IT IN YOUR OWN SESSION
 
 *(Reported by the aeon lane at aeon `56e42f00`, reproduced by aurora with a canary, and REPRODUCED
 HERE before being banked. It had already put a false "symbol appears nowhere" into one lane's brief.)*
@@ -955,27 +955,31 @@ snapshot.
 into a path that was not ignored, and this lane's audit of its own zeroes:
 `docs/OVERSEER-LOG.md`, 2026-09-05 cut.)*
 
-**⚠ THE STATED MECHANISM DOES NOT REPRODUCE, AND THE CONCLUSION BELOW SURVIVES ANYWAY. RE-MEASURE
-BEFORE QUOTING EITHER** *(2026-09-09, tested here with a needle placed only in a gitignored file,
-plus a positive control)*. This heading and the sentence that stood here said the function's `-r`
-skips gitignored paths and returns a clean zero. **It does not, today: shell `grep -rl` FOUND the
-ignored needle.** The shell snapshot carries `alias grep='grep --color=auto
---exclude-dir={.bzr,CVS,.git,.hg,.svn,.idea,.tox,.venv,venv}'`, which excludes a fixed list of VCS
-and virtualenv directories and says nothing about gitignore.
+**⚠ THIS SEAT "REFUTED" THIS RULE ON 2026-09-09 AND THE REFUTATION WAS WRONG. THE RULE IS TRUE;
+the retraction is kept because the confound is worth more than the rule.** Measured here with a
+needle in a path ignored by a real `.gitignore` entry: shell `grep -rl` **0 hits**,
+`/usr/bin/grep -rl` **1**, control (a tracked needle) 8. The hub measured its own session
+independently and got the same 0.
 
-**The snapshot is REGENERATED PER SESSION** (`~/.claude/shell-snapshots/snapshot-zsh-<epoch-ms>.sh`;
-the one this was measured against is stamped 2026-09-09T07:05:35Z, four days after the rule was
-banked). **So this whole section is a claim about a MUTABLE environment written in the grammar of a
-standing fact**, which is the defect this file bans elsewhere, aimed at itself. Do not trust the
-mechanism in either direction; run the canary.
+**How the false refutation happened, and it is a control failure rather than a careless one.** The
+first canary was ignored via `.git/info/exclude`, and the control was `git check-ignore`, which
+confirmed, correctly, that **git** ignores the path. But the instrument under test is the harness's
+`grep` function, which runs `ugrep --ignore-files`, and that reads **`.gitignore` FILES**. Those are
+two different notions of "ignored". **The control verified a true predicate that was not the
+instrument's predicate**, so it passed while the canary was invisible to the thing being tested.
+See *A CONTROL CAN VERIFY THE WRONG PREDICATE* in `docs/OVERSEER-REFERENCE.md`.
 
-**And the measured hazard here is close to the INVERSE of the one described.** Same needle, same
-moment, this checkout: `git grep -l` 8 files, shell `grep -rl` 8 files, **`/usr/bin/grep -rl` 130
-files.** This repo hosts its worktrees inside itself (19 at the time of measuring), and
-`/usr/bin/grep` descends into every one, so a tree walk from the repo root over-counts by 16x. That
-is aeon's banked *a gate that walks the filesystem in a repo hosting worktrees inside itself*,
-reached from the other end, and the two rules sat in this document contradicting each other with
-nobody reconciling them.
+**Also wrong in that retraction: the CAUSE.** It blamed the snapshot's
+`alias grep='grep --color=auto --exclude-dir={...}'`. An alias is present, and so is a function of
+the same name that the shell actually resolves (`whence -w grep` says `function`); `which grep`
+prints it, and it is the ugrep router. **Reading one definition out of a file is not reading what
+the shell resolves.**
+
+**What IS per-session, and the hub established it rather than this seat:** their session and this one
+can differ in `grep` semantics at the same minute, because the snapshot is regenerated per session.
+So the rule is not a property of the machine and neither lane's measurement settles the other's.
+**Run `type grep` and a canary in YOUR session**, and put the canary behind a `.gitignore` entry,
+not `.git/info/exclude`.
 
 **What survives, and it is the load-bearing half: `/usr/bin/grep` is right for an artifact and the
 words BY ABSOLUTE PATH are doing the work, not the choice of binary.** Pointed at the repo root it

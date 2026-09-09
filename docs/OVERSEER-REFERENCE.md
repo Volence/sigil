@@ -2386,3 +2386,43 @@ do not copy the values forward.**
 **The general form for whoever writes the next brief: an exclusion is a precondition the seat cannot
 tell apart from the product.** Not everything you happen to know, and not a disclaimer. The test is
 whether a competent seat meeting it would file a defect.
+
+### A CONTROL CAN VERIFY THE WRONG PREDICATE
+
+Read when planting any canary or control, and before believing a refutation you produced yourself.
+
+**This seat refuted a standing rule on 2026-09-09, pushed the refutation, and told a peer who
+carried it to a third lane. The refutation was wrong and the rule was right.** The rule: the
+harness's `grep` skips gitignored files and returns a clean zero. The test looked rigorous. It had a
+canary, a positive control, an explicit check that the canary was ignored, and it produced a clean
+contradiction.
+
+**The canary was ignored via `.git/info/exclude`. The instrument reads `.gitignore` FILES.** The
+control was `git check-ignore`, which confirmed, correctly and unambiguously, that **git** ignored
+the path. But the thing under test was `ugrep --ignore-files`, whose notion of ignored is
+`.gitignore` files, not git's full ignore resolution. **The control verified a TRUE predicate that
+was not the INSTRUMENT'S predicate**, so it passed while the canary remained invisible to the thing
+it was supposed to make visible. Re-run with the needle behind a real `.gitignore` entry: shell
+`grep -rl` 0, `/usr/bin/grep -rl` 1, tracked-needle control 8. The rule holds.
+
+**This is a distinct vacuity from the ones already banked here** (an unapplied mutation, a runner not
+executing what you patched, a proof that ran the wrong program, a reduction supplying the missing
+input). Those are all about the SUBJECT. This one is about the CONTROL: the control ran, applied,
+and reported truthfully about a property the instrument does not use.
+
+**The question that catches it, and it is one question:** *by what mechanism, exactly, is my canary
+supposed to be visible to this instrument?* Not *is my canary of the right kind*, which is the
+question this seat asked and answered correctly. Name the instrument's own predicate and satisfy
+THAT. Near-synonyms are where it hides: ignored-by-git versus ignored-by-a-`.gitignore`-file,
+tracked against committed, on-disk against staged, installed against on-`PATH`.
+
+**Two aggravating features worth carrying, because they are what made it propagate.** A refutation
+feels like the rigorous act, so it draws less scrutiny than the claim it overturns. And this one
+overturned a rule ABOUT false clean zeros, using a false clean zero, which read as fitting rather
+than as suspicious. **A result that confirms the local theme is not corroborated by fitting it.**
+
+**And the CAUSE in that retraction was wrong too, by a second mechanism.** It blamed an
+`alias grep=...` read out of the shell snapshot. An alias of that name exists; so does a FUNCTION of
+that name, which is what the shell actually resolves (`whence -w` says `function`, `which grep`
+prints the ugrep router). **Reading one definition out of a config file is not reading what the
+shell resolves.** Ask the shell, do not grep its snapshot.
