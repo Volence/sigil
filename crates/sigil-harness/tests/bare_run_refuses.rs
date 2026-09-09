@@ -51,11 +51,18 @@ use std::process::Command;
 
 use sigil_harness::test_support::{
     derive_suite_root_from, AEON_REPO_DIR, ALLOW_PARTIAL_VAR, AEON_DIR_VAR,
-    NO_REFERENCE_TREE, SUITE_ROOT_VAR,
+    NO_REFERENCE_TREE, ORACLE_DIR_VAR, ORACLE_LEGACY_REPO_DIR, SUITE_ROOT_VAR,
 };
 
 /// Selects the child body.
 const CHILD_VAR: &str = "SIGIL_BARE_RUN_CHILD";
+
+/// The child body for the LEGACY ORACLE tree, on its own selector.
+///
+/// A second selector and not a second value of the first: both children live in this one
+/// binary, and libtest is asked for one of them by name, so a shared selector would only
+/// ever mean "some child", which is not a thing a parent can assert about.
+const ORACLE_CHILD_VAR: &str = "SIGIL_BARE_RUN_ORACLE_CHILD";
 
 /// THE CHILD. It is reference-dependent on purpose: it opens with the same guard every
 /// port gate opens with, so what this file measures is the real path and not a mock of it.
@@ -93,18 +100,42 @@ fn the_child_opens_a_reference_dependent_gate() {
     }
 }
 
+/// THE ORACLE CHILD. It opens the legacy-oracle resolver the M1.B listing gate opens, for
+/// the same reason the aeon child opens `reference_tree`: the subject is the real door, not
+/// a re-implementation of it that could agree with a broken one.
+#[test]
+fn the_child_opens_the_legacy_oracle_gate() {
+    if std::env::var_os(ORACLE_CHILD_VAR).is_none() {
+        return;
+    }
+    println!("{WITNESS_RAN} {}", sigil_harness::test_support::oracle_legacy_dir().display());
+}
+
 /// A child run's combined output, with the parent refusing to believe a child it cannot
 /// account for.
 fn run_child(env: &[(&str, Option<&str>)]) -> (bool, String) {
+    run_named_child(CHILD_VAR, "the_child_opens_a_reference_dependent_gate", env)
+}
+
+/// The same, for a named child body and selector.
+fn run_named_child(
+    selector: &str,
+    child_test: &str,
+    env: &[(&str, Option<&str>)],
+) -> (bool, String) {
     let exe = std::env::current_exe().expect("the test binary knows its own path");
     let mut cmd = Command::new(&exe);
     cmd.arg("--nocapture")
         .arg("--test-threads=1")
-        .arg("the_child_opens_a_reference_dependent_gate")
-        .env(CHILD_VAR, "1");
+        .arg(child_test)
+        .env(selector, "1");
     // Every variable that could answer is removed first, so a direction's environment is
-    // exactly what it declares rather than what the parent happened to inherit.
+    // exactly what it declares rather than what the parent happened to inherit. BOTH
+    // checkout variables are removed for either child: a child asked about one tree with
+    // the other's variable still exported is a child whose environment the parent did not
+    // fully state.
     cmd.env_remove(AEON_DIR_VAR)
+        .env_remove(ORACLE_DIR_VAR)
         .env_remove(SUITE_ROOT_VAR)
         .env_remove(ALLOW_PARTIAL_VAR)
         .env_remove("SIGIL_STRICT_GATE");
@@ -250,6 +281,133 @@ fn a_bare_run_refuses_and_a_declared_partial_run_says_its_size() {
     assert!(
         run.contains(&format!("step 1, named by {AEON_DIR_VAR}")),
         "a named run must announce which step answered.\n{run}"
+    );
+}
+
+/// THE SECOND SIBLING OBEYS THE SAME RULE, and the arm that matters is direction 1.
+///
+/// `m1b_gate`'s oracle listing gate read `ORACLE_DIR` for itself and fell through to a
+/// fixed `/home/…/oracle-old`. The skip in front of it answered the ABSENT case, and
+/// hard-failed on absent under `SIGIL_STRICT_GATE`, so the failure it covered was the one
+/// that could not happen quietly. On a machine where that directory is PRESENT, which is
+/// every machine this suite is run on today, the unforced case measured a peer's live
+/// working checkout and reported a pass attributable to nothing.
+///
+/// So direction 1 here is deliberately asserted WITH THE DIRECTORY PRESENT. That is the
+/// whole content of the row: a refusal proven only against an absent tree is a refusal
+/// proven against the case that was never broken.
+///
+/// WHAT THIS ROW DOES NOT PROVE ON EVERY MACHINE, stated rather than left to be inferred:
+/// which of the two refusal spellings direction 1 exercises is decided by whether an
+/// `oracle-old` sits beside this checkout. It does on the machine this suite is landed
+/// from, and there the motivating case is the one measured. On a checkout with no suite
+/// root beside it, a CI runner holding this repository alone, the absent spelling is
+/// what direction 1 measures, and the present-tree case goes unexercised in that run.
+/// Which arm ran is readable from the environment, not from this row's colour.
+#[test]
+fn the_legacy_oracle_tree_is_named_or_the_run_refuses() {
+    if std::env::var_os(CHILD_VAR).is_some() || std::env::var_os(ORACLE_CHILD_VAR).is_some() {
+        return;
+    }
+    let child = |env: &[(&str, Option<&str>)]| {
+        run_named_child(ORACLE_CHILD_VAR, "the_child_opens_the_legacy_oracle_gate", env)
+    };
+
+    // The tree step 3 would derive, from the same anchor the child derives from. Present or
+    // absent, this is what direction 1 owes its reader, and which of the two refusal
+    // spellings this environment owes is decided here rather than assumed.
+    let derived = derive_suite_root_from(Path::new(env!("CARGO_MANIFEST_DIR")))
+        .ok()
+        .map(|root| root.join(ORACLE_LEGACY_REPO_DIR))
+        .filter(|d| d.is_dir());
+
+    // ── DIRECTION 1: nothing named. The run STOPS, even though the tree is right there.
+    let (ok, bare) = child(&[]);
+    assert!(
+        !ok,
+        "a run naming no legacy-oracle tree PASSED. With the sibling present that is not a \
+         skip, it is a measurement against a checkout nobody named, reported as a green.\n{bare}"
+    );
+    for needle in [ORACLE_DIR_VAR, SUITE_ROOT_VAR, ALLOW_PARTIAL_VAR] {
+        assert!(
+            bare.contains(needle),
+            "the refusal must name `{needle}`: the variables that would have answered and the \
+             opt-in that takes the partial run are the whole of what a reader can do about \
+             it.\n{bare}"
+        );
+    }
+    assert!(
+        !bare.contains(&format!("Set {AEON_DIR_VAR} to")) && !bare.contains("=<aeon checkout>"),
+        "the refusal for the LEGACY ORACLE tree told the reader to set the ENGINE's variable. A \
+         message that names the wrong variable sends the fix to the wrong environment, and the \
+         run stays unattributable after the reader has done what it asked.\n{bare}"
+    );
+    match &derived {
+        Some(d) => assert!(
+            bare.contains(&format!("DECLINED to use {}", d.display())),
+            "THE DIRECTORY IS PRESENT at {}, which is the case the old mitigation did not \
+             cover, so the refusal must say it DECLINED that tree by name. A refusal that only \
+             reported finding none would be indistinguishable from a run on a machine without \
+             the sibling, which is exactly the environment the old skip was written for and \
+             the one it was never wrong in.\n{bare}",
+            d.display()
+        ),
+        // No sibling beside this checkout, so the refusal owes the other spelling. THE ROW'S
+        // MOTIVATING CASE IS NOT EXERCISED ON THIS ARM and the test's doc says so; it is not
+        // announced here, because a line in this vocabulary is what the landing bar counts as
+        // a gate that measured nothing, and this arm measured the spelling it owed.
+        None => assert!(
+            bare.contains("Nothing was derived either."),
+            "no legacy-oracle tree sits beside this checkout, so the refusal must say nothing \
+             was derived rather than claim to have declined one.\n{bare}"
+        ),
+    }
+    let refusal_lines: Vec<&str> =
+        bare.lines().filter(|l| l.contains("NO REFERENCE TREE IS NAMED")).collect();
+    assert!(!refusal_lines.is_empty(), "no refusal line to check for skip spellings:\n{bare}");
+    for l in &refusal_lines {
+        assert!(
+            !l.contains("skip:") && !l.contains("skipping"),
+            "the refusal is countable as a skip: {l}"
+        );
+    }
+
+    // ── DIRECTION 2: the declared partial run passes and leaves the row unmeasured.
+    let (ok, partial) = child(&[(ALLOW_PARTIAL_VAR, Some("1"))]);
+    assert!(ok, "a declared partial run must pass, that is what declaring it is for.\n{partial}");
+    assert!(
+        partial.contains(NO_REFERENCE_TREE),
+        "a partial run must resolve the self-describing stand-in, so the reason travels with \
+         the row. Resolving the derived live checkout here is the behaviour being \
+         refused.\n{partial}"
+    );
+    if let Some(d) = &derived {
+        assert!(
+            !partial.contains(&format!("{WITNESS_RAN} {}", d.display())),
+            "the partial run resolved the derived live checkout at {} anyway.\n{partial}",
+            d.display()
+        );
+    }
+
+    // ── DIRECTION 3: a NAMED tree runs normally. Without it, a resolver that refused
+    // unconditionally, including one that had simply stopped working, satisfies both arms
+    // above and this file would report the rule implemented.
+    let named = env!("CARGO_MANIFEST_DIR"); // a real directory, and not an oracle checkout
+    let (ok, run) = child(&[(ORACLE_DIR_VAR, Some(named))]);
+    assert!(ok, "a run with {ORACLE_DIR_VAR} naming a directory must not be refused.\n{run}");
+    assert!(
+        !run.contains("NO REFERENCE TREE IS NAMED") && !run.contains("PARTIAL RUN"),
+        "the refusal fired even though {ORACLE_DIR_VAR} named a tree, so directions 1 and 2 \
+         prove nothing about the unnamed case specifically.\n{run}"
+    );
+    assert!(
+        run.contains(&format!("step 1, named by {ORACLE_DIR_VAR}")),
+        "a named run must announce WHICH VALUE WAS IN EFFECT and which step produced it, or a \
+         reader of the green cannot say what it measured.\n{run}"
+    );
+    assert!(
+        run.contains(&format!("{WITNESS_RAN} {named}")),
+        "the named tree must be the one the gate actually opened.\n{run}"
     );
 }
 

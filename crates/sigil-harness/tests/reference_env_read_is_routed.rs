@@ -57,9 +57,11 @@
 //!
 //! ## THE HOLES THIS LEAVES, stated
 //!
-//!   * A THIRD tree-naming variable. The rule covers precedence steps 1 and 2, which are
-//!     the two the contract declares. A new variable added to the precedence would need a
-//!     line here; until then a read of it would pass unseen.
+//!   * A FURTHER tree-naming variable. The rule covers exactly the variables listed in
+//!     `RULED_VARIABLES`, and a new one added to the precedence needs a line there; until
+//!     then a read of it passes unseen. This is not a hypothetical: `ORACLE_DIR` sat
+//!     outside the list until 2026-09-08 while a gate read it privately and fell through to
+//!     a fixed path, and this file was green over that read for as long as it existed.
 //!   * `#[cfg(test)]` modules under `crates/*/src/`. They are inside the sanctioned
 //!     location by this rule's own definition — that is what makes the door a door — so a
 //!     private read written there is out of scope.
@@ -75,8 +77,22 @@
 //! in every `cargo test --workspace`, which is what `scripts/landing-run.sh` invokes.
 
 use sigil_harness::reference_dependence::{reference_dependent_binaries, workspace_root, FLOOR};
-use sigil_harness::test_support::{AEON_DIR_VAR, SUITE_ROOT_VAR};
+use sigil_harness::test_support::{AEON_DIR_VAR, ORACLE_DIR_VAR, SUITE_ROOT_VAR};
 use std::path::{Path, PathBuf};
+
+/// EVERY variable that names a tree a gate measures against.
+///
+/// The module doc used to state a hole here: *"A THIRD tree-naming variable. The rule
+/// covers precedence steps 1 and 2 ... until then a read of it would pass unseen."* That
+/// hole was not hypothetical while it stood. `ORACLE_DIR` was already being read privately
+/// by `m1b_gate`, with a fixed `/home/…/oracle-old` behind it, and this gate was green over
+/// it the entire time, the rule was narrower than its own title and nothing said so from
+/// the inside.
+///
+/// So the set is a list and the rule iterates it. A fourth tree adds a line here; a tree
+/// added to the precedence without one is still a hole, which is why the hole is restated
+/// in the module doc rather than deleted.
+const RULED_VARIABLES: [&str; 3] = [AEON_DIR_VAR, SUITE_ROOT_VAR, ORACLE_DIR_VAR];
 
 /// The harness file the resolver lives in, and the file the constant identifiers are read
 /// back out of.
@@ -265,7 +281,7 @@ fn no_test_reads_a_reference_tree_variable_for_itself() {
     // THE SPELLINGS, derived. The values come from the published constants as Rust items;
     // the identifiers come back out of the harness source by matching those values.
     let mut tokens: Vec<String> = Vec::new();
-    for value in [AEON_DIR_VAR, SUITE_ROOT_VAR] {
+    for value in RULED_VARIABLES {
         assert!(
             !value.is_empty(),
             "UNMEASURABLE: a reference-tree constant is the empty string, so its spelling would \
@@ -283,15 +299,20 @@ fn no_test_reads_a_reference_tree_variable_for_itself() {
     }
     assert_eq!(
         tokens.len(),
-        4,
-        "UNMEASURABLE: expected a quoted name and a constant identifier for each of the two \
-         precedence variables; derived {tokens:?}"
+        2 * RULED_VARIABLES.len(),
+        "UNMEASURABLE: expected a quoted name and a constant identifier for each of the {} \
+         ruled variables; derived {tokens:?}",
+        RULED_VARIABLES.len()
     );
-    assert_ne!(
-        AEON_DIR_VAR, SUITE_ROOT_VAR,
-        "UNMEASURABLE: the two precedence variables resolved to the same name, so the rule covers \
-         one step and reads as if it covered two."
-    );
+    for (i, a) in RULED_VARIABLES.iter().enumerate() {
+        for b in &RULED_VARIABLES[i + 1..] {
+            assert_ne!(
+                a, b,
+                "UNMEASURABLE: two ruled variables resolved to the same name, so the rule covers \
+                 fewer trees than it reads as covering."
+            );
+        }
+    }
 
     // THE DETECTOR, proven live on this run rather than assumed. A green below means these
     // two came out right, so a detector that had stopped matching cannot report a clean
@@ -365,7 +386,8 @@ fn no_test_reads_a_reference_tree_variable_for_itself() {
          state the refusal exists to end, reached by not using the door.\n\nUse the door: \
          `test_support::aeon_dir` for a tree to measure against, `aeon_checkout` for the \
          checkout and the step that answered, `checkout_var_is_set` \
-         for a question about the environment. Setting the variable on a CHILD \
+         for a question about the environment, and the matching pair on the legacy-oracle \
+         side for that tree. Setting the variable on a CHILD \
          (`Command::env` / `env_remove`) is not a read and is unaffected.\n\nThe accessor \
          names above are written WITHOUT their parentheses on purpose: \
          `scripts/nightly_source_gates.sh` classifies a test file by whether its code text \

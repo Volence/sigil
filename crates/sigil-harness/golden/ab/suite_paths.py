@@ -48,6 +48,11 @@ _MARKERS = {
     "aeon": ("build.sh", "engine"),
     "sigil": ("Cargo.toml", "crates/sigil-harness"),
     "empyrean": ("contract", "clients"),
+    # The LEGACY Exodus port. Kept in step with the shell twin's row on purpose: two
+    # resolvers answering the same question must not answer it differently, and a marker
+    # set present in one of them is a set-but-wrong value that one refuses and the other
+    # accepts.
+    "oracle-old": ("linux-port/gui/Symbols.cpp", "Devices"),
 }
 
 _HERE = os.path.dirname(os.path.abspath(__file__))

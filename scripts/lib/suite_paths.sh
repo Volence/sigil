@@ -72,6 +72,11 @@ suite_paths_markers() {
         aeon)     printf '%s\n' build.sh engine ;;
         sigil)    printf '%s\n' Cargo.toml crates/sigil-harness ;;
         empyrean) printf '%s\n' contract clients ;;
+        # The LEGACY Exodus port. The marker is the file the one gate that resolves this
+        # tree actually compiles against, so a value naming the ground-up Rust `oracle/`
+        # instead is refused at its own step rather than resolving to a tree with no
+        # `linux-port/` in it at all.
+        oracle-old) printf '%s\n' linux-port/gui/Symbols.cpp Devices ;;
         *)        : ;;
     esac
 }

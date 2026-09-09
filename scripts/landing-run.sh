@@ -404,6 +404,22 @@ fi
 [[ -f $AEON/build.sh ]] || die "AEON_DIR resolves to $AEON, which has no build.sh, that is
        not an aeon checkout. Pass --aeon <path to a built aeon checkout>."
 
+# THE SECOND SIBLING, named by this script for the same reason the first one is. The M1.B
+# listing gate compiles a micro-harness against the legacy Exodus port's `Symbols.cpp`, and
+# that resolver refuses a tree nobody named exactly as the engine's does. Left unnamed, this
+# run would stop inside the suite with the resolver's own message rather than here with a
+# usable one, and before 2026-09-08 it did neither: the gate fell through to a fixed path
+# and measured a peer's live checkout under a strict landing green.
+ORACLE_LEGACY=$(suite_resolve_checkout oracle-old ORACLE_DIR) \
+    || die "the legacy oracle tree could not be resolved (see the refusal above).
+       The M1.B listing gate compiles against its linux-port/gui/Symbols.cpp, so a landing
+       run cannot measure that gate without one. Export ORACLE_DIR=<oracle-old checkout>."
+ORACLE_LEGACY=$(abspath "$ORACLE_LEGACY")
+if [[ -n ${ORACLE_DIR:-} ]]; then ORACLE_STEP="1: explicit ORACLE_DIR"
+elif [[ -n ${EMPYREAN_SUITE_ROOT:-} ]]; then ORACLE_STEP="2: EMPYREAN_SUITE_ROOT/oracle-old"
+else ORACLE_STEP="3: sibling of this checkout via git --git-common-dir"
+fi
+
 AEON_HEAD=$(git -C "$AEON" rev-parse HEAD 2>/dev/null || echo '?')
 AEON_BRANCH=$(git -C "$AEON" rev-parse --abbrev-ref HEAD 2>/dev/null || echo '?')
 AEON_DIRTY=clean
@@ -526,6 +542,7 @@ CLIPPY_ARGS=(clippy --release --workspace --all-targets
     echo "# aeon HEAD      $AEON_HEAD"
     echo "# aeon branch    $AEON_BRANCH ($AEON_DIRTY)"
     echo "# aeon ROMs      $ROM_STATE"
+    echo "# ORACLE_DIR     $ORACLE_LEGACY (step $ORACLE_STEP)"
     echo "# TARGET_DIR     $TARGET"
     echo "# SIGIL_BUILD    $SIGIL_BUILD_RESOLVED ($BUILD_ORIGIN)"
     echo "# SIGIL_EMIT     $SIGIL_EMIT_RESOLVED ($EMIT_ORIGIN)"
@@ -567,6 +584,7 @@ echo "##### TEST SPAN, cargo ${CARGO_ARGS[*]}" >> "$LOG"
 SIGIL_STRICT_GATE=1 \
 CARGO_TARGET_DIR="$TARGET" \
 AEON_DIR="$AEON" \
+ORACLE_DIR="$ORACLE_LEGACY" \
 SIGIL_BUILD="$SIGIL_BUILD_RESOLVED" \
 SIGIL_EMIT="$SIGIL_EMIT_RESOLVED" \
     env -u SIGIL_ALLOW_PARTIAL cargo "${CARGO_ARGS[@]}" 2>&1 | tee -a "$LOG"

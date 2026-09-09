@@ -46,12 +46,17 @@ fn aeon_dir() -> PathBuf {
 /// expected" — and never as evidence that the listing serves the debugger in
 /// use. The currency question that gate was written to ask needs the Rust
 /// loader as its subject.
+///
+/// WHICH tree, and how it is named, is `test_support::oracle_legacy_dir`'s to answer and
+/// not this file's. It read `ORACLE_DIR` here and fell through to a fixed
+/// `/home/…/oracle-old` until 2026-09-08, a peer's live working checkout, reached by a
+/// gate that then attributed its result to nothing. The skip in front of it covered the
+/// ABSENT case only, which is the case that cannot happen quietly; on the machine where
+/// that directory is present the unforced run measured it and passed.
 fn oracle_gui_dir() -> PathBuf {
-    PathBuf::from(
-        std::env::var("ORACLE_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/oracle-old".into()),
-    )
-    .join("linux-port/gui")
+    sigil_harness::test_support::oracle_legacy_dir().join("linux-port/gui")
 }
+
 fn sp() -> Span { Span { source: SourceId(0), start: 0, end: 0 } }
 
 /// Reference-dependent gates skip when the sibling aeon/oracle repos are absent
