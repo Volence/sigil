@@ -1286,6 +1286,27 @@ struct Asm {
     /// unchanged. A set reassigned to a label-free value clears its entry and
     /// reverts to baking.
     set_sym_symbolic: std::collections::HashMap<String, Expr>,
+    /// Every fully-qualified symbol name this pass has DEFINED so far, in
+    /// traversal order of definition, and never seeded from a previous pass.
+    ///
+    /// This is what `DEFINED(NAME)` answers from, and it exists because `env`
+    /// cannot answer the question. `env` IS seeded from the previous pass (that
+    /// is how a forward reference gets a value), so it holds every symbol the
+    /// program will ever define from the first line of every pass after the
+    /// first, and asking it "is this defined yet" gets a yes for a label a
+    /// hundred lines below.
+    ///
+    /// asl's own answer is positional and RESETS each pass, which is measured
+    /// rather than assumed: in a two-pass file whose `jmp Later` resolves to
+    /// `Later`'s address on pass 2, `dc.b DEFINED(Later)` above it is `00` on
+    /// pass 2 just as it was on pass 1 (probe `db.asm`, `2 passes`, `0 errors`,
+    /// exit 0). Carrying the value forward and carrying the DEFINEDNESS forward
+    /// are separate, and asl carries only the first.
+    ///
+    /// Populated by [`Asm::define_sym`], which is the single writer for every
+    /// symbol-defining form, so a form that binds a name without going through
+    /// it would be invisible here and not merely late.
+    defined_this_pass: std::collections::HashSet<String>,
     /// Names seeded from [`Options::guarded_defines`] — the `.emp`-owned
     /// constants the residual AS may consume but not re-author. An in-file
     /// `=`/`equ` of any of these is a `[defines.collision]` error (the P5
@@ -1511,6 +1532,7 @@ impl Asm {
             sym_class: std::collections::HashMap::new(),
             label_ref_equs: std::collections::HashSet::new(),
             set_sym_symbolic: std::collections::HashMap::new(),
+            defined_this_pass: std::collections::HashSet::new(),
             guarded_defines: opts.guarded_defines.iter().map(|(k, _)| k.clone()).collect(),
             structs: std::collections::HashMap::new(),
             pending_struct_label: None,
@@ -1531,7 +1553,7 @@ impl Asm {
         let Some(name) = self.lone_label_here.take() else { return };
         if self.builder.move_label_to_cursor(&name) {
             let value = self.here_i64();
-            self.env.define(&name, SymbolValue::Int(value));
+            self.define_sym(&name, SymbolValue::Int(value));
         }
     }
 
@@ -1679,6 +1701,34 @@ impl Asm {
     /// running it through again returns it unchanged. That matters because the
     /// operand path qualifies at the `Expr` sites and then folds, and the fold's
     /// own symbol closure calls this again on the result.
+    /// Bind a fully-qualified symbol name to a value, and record that this pass
+    /// has now defined it.
+    ///
+    /// THE SINGLE WRITER for `env`, and it has to be: `DEFINED(NAME)` reads
+    /// [`Asm::defined_this_pass`], and a definition that reached `env` by
+    /// another route would be a symbol that resolves but reports as undefined.
+    /// The two stores answer different questions (`env` says what the value is,
+    /// including a value inherited from the previous pass; this says whether
+    /// THIS pass has reached the definition yet), so they must be written
+    /// together or they drift apart silently.
+    fn define_sym(&mut self, key: &str, value: SymbolValue) {
+        self.env.define(key, value);
+        self.defined_this_pass.insert(key.to_string());
+    }
+
+    /// Whether `name` is defined AT THIS POINT IN THIS PASS — asl's `DEFINED`.
+    ///
+    /// A builtin counts: asl reports `DEFINED(MOMCPU)` and `DEFINED(TRUE)` as 1
+    /// (probe `dc.asm`). A MACRO name does not: `DEFINED(Mac)` after
+    /// `Mac macro loc` is 0 in the same probe, because a macro is not a symbol.
+    ///
+    /// The name is qualified exactly as a reference to it would be
+    /// ([`Self::sym_key`]), so a local `.loc` asks about the same key the
+    /// definition wrote.
+    fn sym_defined_now(&self, name: &str) -> bool {
+        self.builtin_num(name).is_some() || self.defined_this_pass.contains(&self.sym_key(name))
+    }
+
     fn sym_key(&self, name: &str) -> String {
         if name.starts_with('.') {
             qualify(name, self.dot_scope(name))
@@ -2630,11 +2680,77 @@ impl Asm {
                         }
                     }
                 }
+                // asl's `DEFINED(NAME)` predicate, folded to its 1 or 0 here so
+                // that every expression context reaches it: this expansion is
+                // the shared first step of both `eval_all` (which is where an
+                // `if` condition arrives) and `expand_operand_builtins` (which
+                // is where an instruction operand arrives).
+                //
+                // AFTER the user-function arm, and that order is measured, not
+                // chosen: a program that writes `DEFINED function x,x+100` and
+                // then `dc.b DEFINED(E)` with `E equ 2` gets `66` from asl, so
+                // a user function of that name WINS over the builtin (probe
+                // `dh.asm`, exit 0). The builtin only applies to a call shape;
+                // a bare `DEFINED` with no parenthesis is an ordinary symbol
+                // reference, and `DEFINED equ 2` / `dc.b DEFINED` is `02`
+                // (probe `df.asm`).
+                if fold_kw(name) == "defined"
+                    && matches!(
+                        toks.get(i + 1).map(|t| &t.tok),
+                        Some(Tok::Punct(Punct::LParen))
+                    )
+                {
+                    if let Some((args, next)) = split_call_args(toks, i + 1) {
+                        out.push(Token {
+                            tok: Tok::Int(i64::from(self.defined_arg_is_defined(&args))),
+                            span: toks[i].span,
+                        });
+                        i = next;
+                        continue;
+                    }
+                }
             }
             out.push(toks[i].clone());
             i += 1;
         }
         out
+    }
+
+    /// The verdict of one `DEFINED(...)` call's argument list.
+    ///
+    /// asl reads the parenthesised text as a symbol NAME and asks whether a
+    /// symbol of exactly that name exists; it does not EVALUATE it, and anything
+    /// that is not a bare name is simply not a defined symbol, so the answer is
+    /// 0 rather than an error. Measured (probes `dd.asm`, `de.asm`, `dg.asm`,
+    /// all exit 0, with `E equ 2` in scope): `DEFINED(E)` is 1 while
+    /// `DEFINED((E))`, `DEFINED(1)`, `DEFINED(E+1)` and `DEFINED(E.x)` are all
+    /// 0. So exactly one argument, and that argument exactly one identifier
+    /// token, is the shape that can answer 1.
+    ///
+    /// ONE MEASURED DIVERGENCE, in the loud direction, and it is a property of
+    /// the lexer rather than a choice. asl's rule is textual to the point that
+    /// whitespace defeats it: `DEFINED( E )` is 0 even though `DEFINED(E)` is 1
+    /// (probe `dd.asm`). sigil asks this question about TOKENS, and the lexer
+    /// has already dropped the spaces, so the spaced form answers the same as
+    /// the unspaced one. Reproducing the wart would mean asserting that the
+    /// parenthesis and the name are adjacent in the source text, and the spans
+    /// available here do not survive macro expansion intact, so the check would
+    /// be unreliable exactly where the corpus uses this (inside a macro body).
+    /// The divergence is in the safe direction: every site in all three
+    /// disassemblies spends `DEFINED` on a `fatal` guard, so answering 1 where
+    /// asl answers 0 stops the build and says so, rather than quietly changing
+    /// bytes. The population is 2 sites per tree, all spelled `DEFINED(loc)`
+    /// with no space, in `sound/_smps2asm_inc.asm`; aeon spells it nowhere.
+    fn defined_arg_is_defined(&self, args: &[Vec<Token>]) -> bool {
+        match args {
+            [one] => match &one[..] {
+                [Token {
+                    tok: Tok::Ident(n), ..
+                }] => self.sym_defined_now(n),
+                _ => false,
+            },
+            _ => false,
+        }
     }
 
     /// Replace each body identifier equal to a parameter with its (expanded,
@@ -4544,7 +4660,7 @@ impl Asm {
         let base = self.here_i64();
         for (member, off) in &def.elems {
             let full = format!("{label}{}{member}", def.sep);
-            self.env.define(&full, SymbolValue::Int(base + off));
+            self.define_sym(&full, SymbolValue::Int(base + off));
             self.known_labels.insert(full.clone());
             self.export_equ_sym(full, base + off, span);
         }
@@ -4559,7 +4675,7 @@ impl Asm {
     /// read `extern("VDP_Shadow_len")`).
     fn define_struct_member(&mut self, name: &str, sep: char, member: &str, value: i64, span: Span) {
         let full = format!("{name}{sep}{member}");
-        self.env.define(&full, SymbolValue::Int(value));
+        self.define_sym(&full, SymbolValue::Int(value));
         self.export_equ_sym(full, value, span);
     }
 
@@ -4899,7 +5015,7 @@ impl Asm {
         // for the same reason as [`Self::define_label`] — this form opens a
         // scope too.
         self.declare_class(&qualified, SymClass::Const, span);
-        self.env.define(&qualified, SymbolValue::Int(v));
+        self.define_sym(&qualified, SymbolValue::Int(v));
         self.known_labels.insert(qualified.clone());
         // Only a PC-valued `label` is a PLACED label the linker can relocate.
         // Any other value is a constant that happens to be typed as an address,
@@ -5442,7 +5558,7 @@ impl Asm {
         // that already fails the build, so the diagnostic — which is the whole
         // divergence — is raised and nothing else moves.
         self.declare_expansion_local_const(&qualified, span);
-        self.env.define(&qualified, SymbolValue::Int(value));
+        self.define_sym(&qualified, SymbolValue::Int(value));
         self.known_labels.insert(qualified.clone());
         self.builder.define_label(&qualified);
         qualified
@@ -5699,7 +5815,7 @@ impl Asm {
         }
         if let Some(v) = self.eval_all(rest, span) {
             self.float_env.remove(&q);
-            self.env.define(&q, SymbolValue::Int(v));
+            self.define_sym(&q, SymbolValue::Int(v));
             // A label-referencing equate (`HandlerPtr = Handler`, the debugger's
             // `DEBUGGER__* = MDDBG__* = ErrorHandler + N` chain): its VALUE is a
             // relaxation-shiftable label address. DETECT and register such a name
@@ -5980,7 +6096,7 @@ impl Asm {
                 self.enum_next = self.enum_next.wrapping_add(self.enum_step);
                 continue;
             }
-            self.env.define(&q, SymbolValue::Int(self.enum_next));
+            self.define_sym(&q, SymbolValue::Int(self.enum_next));
             self.enum_next = self.enum_next.wrapping_add(self.enum_step);
             // An `enum` member opens a local-label scope like any other value
             // binder, and with several members the LAST one owns it -- which the
@@ -6067,7 +6183,7 @@ impl Asm {
         }
         if let Some(v) = self.eval_all(rest, span) {
             self.float_env.remove(&q);
-            self.env.define(&q, SymbolValue::Int(v));
+            self.define_sym(&q, SymbolValue::Int(v));
             // Relocation capability (flip Stage 2): if the RHS — after splicing
             // any set-symbol it CHAINS through (`P_DFG := PC_FG_T`) — references a
             // section LABEL, remember its `relax_safe_fold`ed symbolic snapshot so
@@ -6152,6 +6268,19 @@ impl Asm {
         let expanded = self.expand_int_builtin(&expanded);
         let expanded = self.expand_str_builtins(&expanded);
         self.expand_str_comparisons(&expanded)
+    }
+
+    /// The position of the first STRING literal in `toks`.
+    ///
+    /// Used by the data directives wider than a byte, which must refuse a string
+    /// operand rather than let the expression parser pack it: see
+    /// [`STRING_IN_WIDE_DATA`]. A string that a builtin was going to consume has
+    /// already been consumed by the time this is asked, so a `Tok::Str` still
+    /// standing here is a literal in a value position.
+    fn string_leaf(toks: &[Token]) -> Option<Span> {
+        toks.iter()
+            .find(|t| matches!(t.tok, Tok::Str(_)))
+            .map(|t| t.span)
     }
 
     /// The position of a FLOAT-typed leaf in `toks` — a literal that no
@@ -6290,6 +6419,10 @@ impl Asm {
                     continue;
                 }
             };
+            if let Some(ssp) = Self::string_leaf(&expanded) {
+                self.err(ssp, STRING_IN_WIDE_DATA);
+                continue;
+            }
             let e = match crate::expr::parse_expr(&expanded) {
                 Some((e, [])) => e,
                 _ => {
@@ -6376,6 +6509,10 @@ impl Asm {
                     continue;
                 }
             };
+            if let Some(ssp) = Self::string_leaf(&expanded) {
+                self.err(ssp, STRING_IN_WIDE_DATA);
+                continue;
+            }
             let e = match crate::expr::parse_expr(&expanded) {
                 Some((e, [])) => e,
                 _ => {
@@ -6457,6 +6594,10 @@ impl Asm {
                     continue;
                 }
             };
+            if let Some(ssp) = Self::string_leaf(&expanded) {
+                self.err(ssp, STRING_IN_WIDE_DATA);
+                continue;
+            }
             let e = match crate::expr::parse_expr(&expanded) {
                 Some((e, [])) => e,
                 _ => {
@@ -15829,6 +15970,30 @@ C:\n";
 /// how to round would get a rounding anyway.
 const FLOAT_IN_INT_CONTEXT: &str =
     "floating point value where an integer is required (wrap it in `int(...)`)";
+
+/// The diagnostic for a string operand reaching a data directive wider than a
+/// byte.
+///
+/// In a `dc`-family directive asl reads a string as a CHARACTER SEQUENCE, one
+/// element per character at the directive's own width, and an operator
+/// distributes over the elements: `dc.w "AB"` is `0041 0042`, and `dc.w "AB"+0`
+/// is `0041 0042` too, never the packed `4142`. That is the opposite of the
+/// EXPRESSION rule, where a one-to-four character string IS the packed integer
+/// (`expr.rs::string_to_int`).
+///
+/// The character-sequence form is not implemented for these widths. It is
+/// refused rather than folded through the expression parser, because that parser
+/// would pack it, and a packed word where asl writes two zero-extended ones is
+/// silently wrong bytes rather than a missing feature. `dc.b`/`db` DO carry the
+/// character-sequence form and consume it before the expression parser is
+/// reached, so only the wider directives arrive here.
+///
+/// Population, measured with the same command form on all four trees and proven
+/// to fire on a known-positive input: s1disasm, s2disasm, skdisasm and aeon
+/// contain no `dc.w`/`dc.l`/`dw` line with a string operand at all.
+const STRING_IN_WIDE_DATA: &str =
+    "string operand in a data directive wider than a byte: asl emits one \
+     zero-extended element per character here, which is not implemented";
 
 /// A front-end-only NUMBER: AS's expression evaluator is TYPED, and the
 /// distinction is byte-visible, not cosmetic.
