@@ -29,6 +29,44 @@ are in `docs/OVERSEER-REFERENCE.md`.
 > file say *"above"*, *"below"* or *"this file"* about text that now sits in the other; those
 > resolve across the pair, and the index names every block that moved.
 
+## `docs/lane-status.json` IS EDITED, NEVER REGENERATED: an orienting read is not a basis for a rewrite
+
+**This seat destroyed nine live queue rows and two of the owner's open questions on 2026-09-09, at
+boot, in one write.** The mechanism is worth more than the incident because nothing about it looked
+careless at the time.
+
+The boot read of the file was `head -60`. That is the RIGHT instrument for orienting: it shows the
+focus, the blockers and the front of the queue, which is what a booting session needs. The defect
+was carrying its output into a **different act**. Later, writing the status, this seat composed a
+COMPLETE REPLACEMENT of the file out of what the partial read had shown it. Everything past line 60
+ceased to exist.
+
+**Three properties made it silent, and all three are structural rather than attentional:**
+
+- **The file is gitignored**, so there is no diff, no history and nothing to notice it against.
+- **A file written from scratch is internally consistent by construction.** Nothing in the output
+  is malformed; the console read it `ok` and the card rendered cleanly with nine fewer rows.
+- **The loss is invisible to the obvious check.** The hub verified that a specific named row had
+  survived the restructure, and it had. **Confirming that a named item survived cannot see what
+  left beside it, because the survivor is the only thing in the frame.**
+
+**THE RULE: this file is EDITED, never regenerated.** Load it, mutate the fields that changed, write
+it back. A partial read composes safely with an edit and catastrophically with a replacement. Do not
+restate this as "read the whole file first", which is advice nobody follows under time pressure and
+which puts the burden in the wrong place: the durable property is that the WRITE preserves what the
+read never saw.
+
+**And the reason it matters more than the row count, which is the hub's formulation:** a decision
+card carries the QUESTION, a queue row carries the WORK. `AS-NAMELESS-LABELS-RC1` is the row the
+owner's answer to `d-24` lands on. Destroying the row while keeping the card means his go arrives at
+a board with nothing to catch it, and the failure appears days later as a decision that seemingly
+produced nothing.
+
+*(Recovery, if it happens again: Dominion's `dominion/.dominion/changes.jsonl` carries per-row
+`added` / `left the queue` entries with the row's title text and prior state, and the
+`no longer waiting on you` entries carry dropped `blockedOnOwner` text. It holds titles and states;
+it does not hold sizes. Leave an unknown size ABSENT rather than guessing it.)*
+
 ## STANDING: DO NOT BOOT INTO A STOP WHILE SLEEP MODE IS ON (owner) — read this before waiting
 
 **Two owner rulings, verified here firsthand at commits reachable from empyrean `origin/main` rather
