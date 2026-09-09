@@ -6628,14 +6628,72 @@ impl Asm {
         }
     }
 
+    /// Lower one Z80 instruction.
+    ///
+    /// The operands run [`Self::expand_operand_builtins`] first, exactly as the
+    /// 68000 path and the `dc.b`/`dc.w`/`dc.l` path do. Without it a user
+    /// `function` call in a Z80 operand reached [`crate::expr::parse_expr`]
+    /// unexpanded; there is no call syntax there, so `zmake68kPtr(SegaPCM)`
+    /// parsed as the bare symbol `zmake68kPtr` with `(SegaPCM)` left over and
+    /// was refused as `trailing tokens in operand`. Sonic 1's `sound/z80.asm`
+    /// lands on that four times (lines 51, 55, 188 and 197), and the four
+    /// instructions it could not encode are the whole of the 9 bytes by which
+    /// sigil's uncompressed driver was short of asl's `1BC6h`.
+    ///
+    /// asl has no per-CPU split here: a `function` call is an expression term
+    /// wherever an expression is legal, so the three positions share one
+    /// function rather than diverging.
+    ///
+    /// Unlike the 68000 path this holds back no trailing addressing-mode group.
+    /// The hold-back exists because asl peels a 68000 EA before it evaluates
+    /// anything, so `dsp(a1)` is a displacement even when a `function` named
+    /// `dsp` exists. The Z80 has no `disp(reg)` mode at all: every one of its
+    /// parenthesised operands (`(hl)`, `(ix+d)`, `(nn)`) opens with the paren,
+    /// so no name ever sits in front of one and there is nothing to hold back.
+    /// Importing the 68000 rule here would instead mean a Z80 program with a
+    /// label named `a0`..`a7` silently lost a call.
+    ///
+    /// What the Z80 does need, and the 68000 does not, is for the WRITTEN shape
+    /// to decide the addressing mode rather than the expanded one.
+    /// [`Self::expand_calls`] wraps every expansion in parentheses so the body
+    /// binds tighter than whatever surrounds the call, which turns the value
+    /// operand `f(x)` into the token shape `(...)`, and on the Z80 an operand
+    /// that is one whole paren group is an INDIRECTION. Left alone that silently
+    /// rewrote `ld de,zmake68kPtr(SegaPCM)` (3 bytes, `11 nn nn`) into
+    /// `ld de,(nn)` (4 bytes, `ED 5B nn nn`) and turned
+    /// `ld b,pcmLoopCounter(16000)` into `ld b,(nn)`, which is not an
+    /// instruction at all. So each group is expanded on its own, and a group the
+    /// PROGRAMMER did not parenthesise stays a value however many parens the
+    /// expansion added. The 68000 never saw this because an immediate there
+    /// carries a `#`, which `classify` settles before it looks at parens.
     fn lower_z80(&mut self, mn: &str, rest: &[Token], span: Span) {
-        let atoms = match parse_operands(rest, span) {
-            Ok(a) => a,
-            Err(d) => {
-                self.diags.push(d);
-                return;
-            }
+        // An operandless mnemonic (`nop`, `ret`, `ei`) has no group at all;
+        // `split_commas` would hand back one EMPTY group, which classifies as a
+        // refusal. `parse_operands` guarded this and the guard travels with the
+        // loop that replaced it.
+        let groups = if rest.is_empty() {
+            Vec::new()
+        } else {
+            crate::operands::split_commas(rest)
         };
+        let mut atoms = Vec::new();
+        for g in groups {
+            let written_indirect = crate::operands::is_whole_paren_group(g);
+            let expanded = self.expand_operand_builtins(g);
+            let classified =
+                if !written_indirect && crate::operands::is_whole_paren_group(&expanded) {
+                    crate::operands::classify_as_value(&expanded, span)
+                } else {
+                    crate::operands::classify(&expanded, span)
+                };
+            match classified {
+                Ok(a) => atoms.push(a),
+                Err(d) => {
+                    self.diags.push(d);
+                    return;
+                }
+            }
+        }
         let m = match mnemonic(mn) {
             Some(m) => m,
             None => {

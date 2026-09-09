@@ -71,7 +71,7 @@ pub fn parse_operands(toks: &[Token], at: Span) -> Result<Vec<OperandAtom>, Diag
 }
 
 /// Split on commas not nested inside parentheses.
-fn split_commas(toks: &[Token]) -> Vec<&[Token]> {
+pub fn split_commas(toks: &[Token]) -> Vec<&[Token]> {
     let mut groups = Vec::new();
     let mut depth = 0i32;
     let mut start = 0usize;
@@ -90,7 +90,44 @@ fn split_commas(toks: &[Token]) -> Vec<&[Token]> {
     groups
 }
 
-fn classify(g: &[Token], at: Span) -> Result<OperandAtom, Diagnostic> {
+/// `true` iff `g` is ONE whole parenthesised group: it opens with `(`, closes
+/// with the matching `)`, and that `)` is the last token. This is the shape
+/// [`classify`] reads as an addressing mode (`(hl)`, `(ix+d)`, `(nn)`, `(An)`,
+/// ...) rather than as a value.
+///
+/// Exposed because a caller that expands AS `function` calls before classifying
+/// needs to know whether the parens it is looking at were WRITTEN or were
+/// introduced by the expansion: `expand_calls` wraps every expansion in parens
+/// for precedence, which turns the value operand `f(x)` into the token shape of
+/// an indirection. See `lower_z80`.
+pub fn is_whole_paren_group(g: &[Token]) -> bool {
+    matches!(
+        g.first(),
+        Some(Token {
+            tok: Tok::Punct(Punct::LParen),
+            ..
+        })
+    ) && trailing_group_open(g) == Some(0)
+}
+
+/// Parse one comma-split operand group as a plain value expression, bypassing
+/// every addressing-mode shape [`classify`] recognizes.
+///
+/// The caller that needs this is the one whose tokens have already had AS
+/// `function` calls expanded: the expansion's own parens must not be read as an
+/// indirection, and the only legal reading left for such a group is a value.
+pub fn classify_as_value(g: &[Token], at: Span) -> Result<OperandAtom, Diagnostic> {
+    let span = g.first().map(|t| t.span).unwrap_or(at);
+    let (e, rest) = parse_expr(g).ok_or_else(|| err(span, "bad operand expression"))?;
+    if !rest.is_empty() {
+        return Err(err(span, "trailing tokens in operand"));
+    }
+    Ok(OperandAtom::Value(e))
+}
+
+/// Structurally classify one already-comma-split operand group. `at` stands in
+/// for an empty group's missing span, as in [`parse_operands`].
+pub fn classify(g: &[Token], at: Span) -> Result<OperandAtom, Diagnostic> {
     let span = g.first().map(|t| t.span).unwrap_or(at);
     // `#expr` — 68k immediate marker.
     if let Some(Token {
