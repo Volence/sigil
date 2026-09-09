@@ -98,8 +98,25 @@ fn rows() -> Vec<Row> {
     rows
 }
 
+/// The command list in a help page: the first token of each line under
+/// `commands:`, up to the blank line that ends the block.
+///
+/// The block is read rather than the whole page because a label also occurs in
+/// the page's prose (`sigil emp --help` is the example the footer gives), and a
+/// substring search over the page therefore finds a command the list has
+/// dropped. Reading the block asks the question the reader's eye asks.
+fn listed_commands(page: &str) -> Vec<&str> {
+    page.lines()
+        .skip_while(|l| l.trim() != "commands:")
+        .skip(1)
+        .take_while(|l| !l.trim().is_empty())
+        .filter_map(|l| l.split_whitespace().next())
+        .collect()
+}
+
 /// Every conventional way of asking prints the same help, to stdout, at exit 0,
-/// and that help names every entry point the binary dispatches.
+/// and the command list in it is exactly the set of entry points the binary
+/// dispatches: none missing, and none listed that does not exist.
 #[test]
 fn asking_for_help_lists_every_entry_point_and_exits_zero() {
     let rows = rows();
@@ -108,9 +125,19 @@ fn asking_for_help_lists_every_entry_point_and_exits_zero() {
         let (stdout, stderr, code) = run(form);
         assert_eq!(code, 0, "`sigil {}` exited {code}, stderr: {stderr}", form.join(" "));
         assert!(stderr.is_empty(), "`sigil {}` wrote to stderr: {stderr}", form.join(" "));
+
+        let listed = listed_commands(&stdout);
+        assert_eq!(
+            listed.len(),
+            rows.len(),
+            "`sigil {}` lists {} commands against {} entry points:\n{stdout}",
+            form.join(" "),
+            listed.len(),
+            rows.len()
+        );
         for row in &rows {
             assert!(
-                stdout.contains(&row.label),
+                listed.contains(&row.label.as_str()),
                 "`sigil {}` does not list the `{}` entry point:\n{stdout}",
                 form.join(" "),
                 row.label
