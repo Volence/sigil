@@ -1,5 +1,21 @@
 # Sigil queue rows, full text
 
+**A ROW'S STATE LIVES IN ITS OWN HEADING, and this rule exists because the file had nowhere to put
+a closing reason.** On 2026-09-06 one commit closed four rows and wrote all four closing reasons
+into the tail of a fifth row's body. The result: four closed rows whose own headings read `open`,
+and one genuinely open row appearing to carry four closure notices. Nobody misread it deliberately;
+the file offered no other place to write. The four were rehomed 2026-09-09 and each says where it
+had been sitting.
+
+So: when a row closes, mark the HEADING (`## ROW: LANDED` or `## ROW: CLOSED`) and put the reason
+directly under it. A reader scanning headings must never have to read a neighbour's body to learn
+this row's state.
+
+**And a row can go stale faster than a day.** `PINS-DEAD-TESTS-FIELD-AND-ORPHANS` was written into
+the dispatch slot at 19:29 and the parcel it describes landed at 19:59, thirty minutes later, both
+by the same seat in one evening. Before dispatching from any row here, ground its claims against the
+tree first: a stale open row does not read as stale, it reads as work.
+
 Verbatim row text, moved out of `docs/lane-status.json` on 2026-09-06 under
 `empyrean/contract/LANE_STATUS.md` rule 7 (a row states its state; the history has its own file).
 The board keeps a short title and this file keeps the argument. Rows closed on that date are kept
@@ -51,19 +67,27 @@ Two rows that must land as ONE parcel, per the census. (a) sigil's message arm e
 
 TAGGED by the Z80 coverage parcel and deliberately not done. The AS side now encodes 21 more instructions; our own .emp language's Z80 mnemonic table was NOT extended to match, because what the game can be written in is language surface and yours rather than mine. Extending it also needs a new operand kind for the in/out port-in-C form. Nothing depends on it today.
 
-## ROWREMAP-HEAD-LABEL-RULED
+## ROWREMAP-HEAD-LABEL-RULED: CLOSED
 
 - state at archive: `open`  size: `S`  project: `EFFECTS-W1`
 - blockedBy: the engine lane: the fix is at their generator, not here
 
 SENT to aeon 2026-09-06 with its anchor: row D2 in docs/superpowers/notes/2026-09-05-decouple-aeon-side-inventory.md (b0cf2eeb). RULED, no sigil change: the ojz_effects_editor_act1 order row must key by SECTION NAME, not head label, because the head label is content-derived. Nothing breaks today (SECTION-ROW resolves name to head label at placement); the fix is at the engine lane's generator, and aurora's read is that only determinism AMONG tables is required, so it is probably a one-line move, unproven until a build refuses or does not.
 
-## AEON-TOOL-DEFECTS-NAME-AS-POSITION
+**CLOSED 2026-09-06 as far as this lane goes: ruled, no sigil change, sent to aeon with its anchor. The fix is at their generator.**
+
+**Its closing reason was written into PROSE-STATED-BOUNDS's body by the commit that closed four rows at once, so this row read `open` for three days while its own closure sat under an unrelated heading. Moved here 2026-09-09.**
+
+## AEON-TOOL-DEFECTS-NAME-AS-POSITION: CLOSED
 
 - state at archive: `open`  size: `S`  project: `-`
 - blockedBy: nothing
 
 SENT to aeon 2026-09-06 with paths and SHAs; they book from the files, not from a restatement. Five findings for the engine lane, all committed in sigil since 2026-09-05 and reachable from origin/master: the lint table already wrong, four mis-measuring routine-extent copies, pointer identity by name-string (these three are sections S1/S3/S9 of docs/superpowers/notes/2026-09-05-consuming-end-name-as-position.md), plus a margin decaying 440 B/day into a forbidden band and Knuckles' ceiling equalling its bar with nothing saying so (2026-09-05-p6-resweep-current-layout.md, section 6, items 2 and 3). RENAMED from AEON-S1-S3-S9-ROUTED: the old id was built from this lane's own internal section numbers and was unreadable to the only lane that needed it, which is how aeon came to believe the findings were lost in a message while they sat committed and unread. Recording was never the failure; routing was.
+
+**CLOSED 2026-09-06. The aeon lane worked all five at aeon 36e3e409: four held and landed, S1 declined on the owner's scope cut with its ruling recorded. One of the five refuted a measurement of this lane's (see the bound-versus-ceiling correction at sigil 4221cfee).**
+
+**Its closing reason was written into PROSE-STATED-BOUNDS's body by the commit that closed four rows at once, so this row read `open` for three days while its own closure sat under an unrelated heading. Moved here 2026-09-09.**
 
 ## STABILITY-RUNNER-MISSING-WHERE-CLAIMED
 
@@ -93,12 +117,14 @@ Whether a name may begin with a digit. The one-byte-short defect is closed; what
 
 Two of the new instructions are deliberately NOT exposed in our own language - they need a new operand kind, which is language surface and your call rather than mine. Nothing depends on it today.
 
-## EMP-ALIGN-SHARED-RULE
+## EMP-ALIGN-SHARED-RULE: LANDED
 
 - state at archive: `open`  size: `S`  project: `SIGIL-AS-REPLACEMENT`
 - blockedBy: nothing
 
 Our own language's align still rounds up plainly. That is correct for every ROM section, which is all the engine currently has, so nothing is wrong today - but the moment anything aligns on the RAM side it needs the signed rule the assemble
+
+**LANDED at `3ed600d4` / merge `4f7fc54f`, established by the 2026-09-08 staleness sweep rather than assumed from the merge title: both `.emp` lowering sites call `sigil_ir::asl_align_pad` (`lower/mod.rs:1034`, `regions.rs:565`), and the rule is pinned by `align_as_parity.rs:138`, `a_negative_vma_align_follows_the_shared_signed_rule`. The row's claim that our align "still rounds up plainly" and needs the signed rule the day anything sits on the RAM side is answered on both halves.**
 
 ## CLOBBER-UNEXERCISED
 
@@ -114,12 +140,16 @@ RULED d-26 on 2026-09-06 BY THE HUB IN THE OWNER'S PLACE, overturnable by him, N
 
 Item 14. Both owed reads done (§6 a and b). Verdict unchanged - NOT YET - but its argument is rewritten: the census was never stale, and the live risk is a decaying margin routed to the engine lane.
 
-## AGENT-WORKTREE-TARGET-DIRS
+## AGENT-WORKTREE-TARGET-DIRS: CLOSED
 
 - state at archive: `open`  size: `S`  project: `-`
 - blockedBy: nothing
 
 SUPERSEDED BY THE 2026-09-05 SWEEP and restated to what is left. 49 GB reclaimed, 31 worktrees to 13, 246 branches to 17, every removed tree verified 0 tracked-dirty, 0 untracked and tip in master, locks cleared with unlock and never a second -f. WHAT REMAINS: 12 trees hold something, mostly a single untracked build artifact each, and 7 branches are unmerged and kept by name. The residue needs a per-tree judgement rather than a rule, so it is not a sweep.
+
+**CLOSED 2026-09-06 at the root level by the cleanup the owner asked for: 171.9 GB reclaimed, 227 hidden directories to 122, manifest at docs/2026-09-06-workspace-cleanup.md. What remains is 110 aeon-owned directories (routed to that lane) and 6 registered worktrees of mine, which need a per-tree judgement rather than a rule.**
+
+**Its closing reason was written into PROSE-STATED-BOUNDS's body by the commit that closed four rows at once, so this row read `open` for three days while its own closure sat under an unrelated heading. Moved here 2026-09-09.**
 
 ## RESOLVER-FALLS-THROUGH-TO-SHARED-TREE
 
@@ -166,26 +196,33 @@ Three conditions that are not optional: every finding ships the diagnostic text 
 
 **DO NOT START until the hub relays oracle's pilot notes.** The brief is the thing under test on the first run, which is the whole reason oracle goes first — starting early would spend this lane's run on a brief the pilot is about to correct.
 
-## S4BUDGET-STALE-ASSUMPTION
+## S4BUDGET-STALE-ASSUMPTION: CLOSED
 
 - state at archive: `open`  size: `S`  project: `-`
 - blockedBy: nothing
 
 ✅ GROUNDED 2026-09-07 and ROUTED to aeon; retire at the next boundary. The 2026-09-06 non-match was a search of the WRONG TREE: the row is a finding about aeon's tool, so no artifact for it could exist here. Grounded at aeon tools/s4budget.py (the premise appears twice, in load_vram_layout's docstring and in the user-facing VRAM message) against this tree's built listings, which carry 780 EQU rows of which 32 are VRAM_*, in the form `EQU VRAM_PLANE_A = $0000C000`. The row's figure of 17 is not restated; the measurement is 32 by enumeration. Their CONCLUSION (read vram.toml) survives on the union/overlay_with argument; only the premise is stale. Superseded text follows. ⚠ UNGROUNDED, DO NOT ROUTE UNTIL RESOLVED. The row reads 'their budget tool reports a value UNMEASURED while the data it needs sits in the listing it just read', and on 2026-09-06 that wording matched NO artifact in this tree. The instrument was working (s4budget appears in 14 files), so it is a genuine non-match: the row has either lost its source or never had one. Deliberately NOT sent to aeon as bookable. What IS grounded nearby, and is aeon's independently: row F4 in docs/superpowers/notes/2026-09-05-decouple-aeon-side-inventory.md, EndOfRom equals the ROM file size, structurally un-failable because the disagreement prints as a NOTE and never reaches breaches, so padding, a stale file and a real placement error read identically. Next action is to ground this row or retire it, not to work it.
 
+**CLOSED. Grounded 2026-09-07 and routed to the engine lane, and they landed the fix at aeon `c834cb66`, whose docstring now quotes this lane's own 780 EQU / 32 VRAM figures. The row's own body already carried its closing reason while its heading read `open`, which is the same defect as the four rehomed above wearing a different shape.**
+
 ## CLOBBER-PAYOFF-MEASURE
 
 - state at archive: `open`  size: `S`  project: `SIGIL-AS-REPLACEMENT`
-- blockedBy: AS-S1-DRIVER-SIZE-60X: ruled to run after it, not beside it
+- blockedBy: nothing; **the blocker LANDED at `ee136317`, verified an ancestor of master by the
+  2026-09-08 sweep, so the d-26 ordering is satisfied and this row is runnable now**
 
 The S row d-26 ordered before the L fix may start. Measure what the 76 over-declared clobber lists actually cost across the shipped ROM in bytes and cycles. MEASURE AT THE CONSUMING END: the cost is wasted saves and restores at CALL SITES, so 76 of 387 procs is a producer count and says nothing about how often they are called. A small answer retires the item honestly and that is a real result, not a failure.
 
-## EMP-ORG-TWIN-CHECK
+## EMP-ORG-TWIN-CHECK: CLOSED
 
 - state at archive: `open`  size: `S`  project: `SIGIL-AS-REPLACEMENT`
 - blockedBy: nothing
 
 ANSWERED by the org parcel and kept only so it is not re-opened: the .emp frontend CANNOT have this defect, because it has no org at all. lower/mod.rs always opens with switch_section_lma, so LMA is a monotone chain that can never take a lower target, and vma: is a VMA pin only. That is a DESIGN DIFFERENCE, not twin agreement, which is the distinction that matters: twin agreement would have proved nothing. No parcel site exists. Close this row at the next boundary.
+
+**CLOSED 2026-09-06. Answered by the org parcel: the .emp frontend cannot have the defect, no parcel site exists. Its own text said to close it at the next boundary.**
+
+**Its closing reason was written into PROSE-STATED-BOUNDS's body by the commit that closed four rows at once, so this row read `open` for three days while its own closure sat under an unrelated heading. Moved here 2026-09-09.**
 
 ## PROSE-STATED-BOUNDS
 
@@ -194,13 +231,9 @@ ANSWERED by the org parcel and kept only so it is not re-opened: the .emp fronte
 
 Raised by the aeon lane 2026-09-06 from their own instance: inject_editor_bg's refusal told authors 'the limit is 12 KiB' while enforcing 20,480, stale two days after the owner raised the constant. A BOUND STATED IN PROSE inside a diagnostic is a third population, reached by neither an identifier grep nor a quoted-key grep, and it is read at the exact moment an author hits the limit. NOT YET MEASURED HERE: sigil's diagnostics are this lane's own surface and nobody has asked whether any of them state a numeric bound in words rather than deriving it from the constant. The sweep is the measurement, and a zero needs an instrument that could have returned non-empty. Their fix is the shape to copy: derive the figure from the constant and prove it by poisoning the constant and watching every printed figure follow.
 
-**CLOSED 2026-09-06 as far as this lane goes: ruled, no sigil change, sent to aeon with its anchor. The fix is at their generator.**
 
-**CLOSED 2026-09-06. The aeon lane worked all five at aeon 36e3e409: four held and landed, S1 declined on the owner's scope cut with its ruling recorded. One of the five refuted a measurement of this lane's (see the bound-versus-ceiling correction at sigil 4221cfee).**
 
-**CLOSED 2026-09-06 at the root level by the cleanup the owner asked for: 171.9 GB reclaimed, 227 hidden directories to 122, manifest at docs/2026-09-06-workspace-cleanup.md. What remains is 110 aeon-owned directories (routed to that lane) and 6 registered worktrees of mine, which need a per-tree judgement rather than a rule.**
 
-**CLOSED 2026-09-06. Answered by the org parcel: the .emp frontend cannot have the defect, no parcel site exists. Its own text said to close it at the next boundary.**
 
 ## LENS-PASS (closed 2026-09-06, dropped from the board)
 
@@ -209,7 +242,7 @@ Raised by the aeon lane 2026-09-06 from their own instance: inject_editor_bg's r
 
 DONE and landed (packet 2570f724, 22 of 22 seats); findings booked same day in docs/superpowers/notes/campaign-gap-ledger.md. What remains is the FIX ORDER, which is yours: 4 byte-changing, 4 silent-acceptance or abort, 5 gates that cannot fail, 3 structural, 3 measure-first. Nothing fixed during the sweep by design, and nothing is authorized by being booked.
 
-## PINS-DEAD-TESTS-FIELD-AND-ORPHANS
+## PINS-DEAD-TESTS-FIELD-AND-ORPHANS: LANDED, and it was stale in the DISPATCH SLOT within thirty minutes
 
 - state at archive: `next`  size: `S`  project: `-`
 - blockedBy: nothing; the engine lane is TOLD before it lands, not asked
@@ -247,6 +280,10 @@ two files the boot read puts on the coordinate list. Under the 2026-09-02 cut th
 freezes alone, so this is a notification rather than a permission: this seat undertook to the engine
 lane on 2026-09-08 that they hear before such a parcel lands, not after, and that undertaking is
 what governs.
+
+**LANDED at `53bc85de`, merge `d39b7ce9`. The manifest carries zero `tests` lines, re-adding one is a parse error, and `zero_consumer_report` ships.**
+
+**⚠ THIS ROW IS THE SHARPEST STALENESS INSTANCE THIS LANE HAS.** It was written at `fa9d1e1d`, 19:29 local, in state `next`, which is the dispatch slot. The parcel it describes landed at `53bc85de`, 19:59 local. **Thirty minutes, same evening, same repo, both by this seat.** Staleness here was being modelled as multi-day drift and it is two orders of magnitude faster than that: a row can be stale before the session that wrote it has finished its turn. Found by the 2026-09-08 sweep, not by the seat that wrote and then invalidated it.
 
 ## INDIRECT-COST-REPORT-UNCOVERED: covered by `parcel/cost-report-shape-test`, both halves
 
