@@ -99,7 +99,13 @@ Stated as a floor, not a census:
 
 ## 2. Findings, most severe first
 
-### F1. An unrecognized `cpu:` name is silently taken as 68000 (exercised)
+### F1. An unrecognized `cpu:` name is silently taken as 68000 (exercised) . **CLOSED**
+
+**Closed on branch `parcel/emp-cpu-name-refusal`.** An unrecognized `cpu:` value is refused by name
+at its own span against `lower::CPU_SPELLINGS` (`m68000`, `m68k`, `z80`, case-insensitive), never
+defaulted. Gates in `crates/sigil-cli/tests/emp_cpu_attr_spelling.rs`. The seat found two call
+sites; there were three, plus two mirrors elsewhere that re-implemented the same fold, all now
+resolving through the one table.
 
 Fails checklist 1 (what happened), 3 (what to do), 4 (is it true), 6 (adjacent outcomes),
 7 (reachable).
