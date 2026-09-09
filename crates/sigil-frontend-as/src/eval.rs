@@ -4153,55 +4153,126 @@ impl Asm {
         end + 1
     }
 
-    /// Handle `switch <str-expr> / case "s1" / … / elsecase / … / endcase`
-    /// (T9.3, asl-verified): assembles ONLY the body of the first `case`
-    /// whose literal string equals the switch value; `elsecase` is the
-    /// default (chosen when reached, mirroring `exec_if`'s `else` arm — same
-    /// arm-collection shape as `exec_if`, but keyed on STRING equality
-    /// against each `case`'s literal instead of a boolean condition). The
-    /// switch expression and each `case` literal are evaluated through
-    /// `eval_str` (so `switch lowstring(...)` / nested `substr` all compose,
-    /// exactly as the debugger's `__FSTRING_*` macros use them). An
-    /// unresolved switch expression, or a `case` whose argument isn't a
-    /// string, diagnoses but does not abort the block scan. Returns the
-    /// index past `endcase`.
+    /// Evaluate one `switch` or `case` operand to a [`SwitchVal`].
+    ///
+    /// STRING first, then INTEGER, because only the string reading is
+    /// front-end-only: a quoted literal, an `equs` symbol, or a
+    /// `substr`/`lowstring` chain is a string, and anything else is an ordinary
+    /// constant expression. asl accepts a full expression in both positions,
+    /// not just a literal (probe `p6`, `W = 2`):
+    ///
+    /// ```text
+    ///    4/       0 : =$4                  	switch V*1
+    ///    5/       0 : =>FALSE              		case W-1
+    ///    7/       0 : =>TRUE               		case W+2
+    /// ```
+    ///
+    /// Returns `None` when the operand is neither, and answers separately
+    /// whether [`Self::eval_all`] already said why (a register in value
+    /// position, a malformed expression). The caller adds its own word only when
+    /// nothing has been said, the same courtesy `org` and `rept` extend through
+    /// [`Self::register_reported_at`].
+    fn eval_switch_val(&mut self, toks: &[Token], span: Span) -> (Option<SwitchVal>, bool) {
+        if let Some(s) = self.eval_str(toks) {
+            return (Some(SwitchVal::Str(s)), false);
+        }
+        let before = self.diags.len();
+        let v = self.eval_all(toks, span).map(SwitchVal::Int);
+        let spoke = self.diags.len() > before || self.register_reported_at(span);
+        (v, spoke)
+    }
+
+    /// Handle `switch <expr> / case <v1>[,<v2>…] / … / elsecase / … / endcase`
+    /// (T9.3, asl-verified): assembles ONLY the body of the first `case` one of
+    /// whose values equals the switch value; `elsecase` is the default, chosen
+    /// when reached, mirroring `exec_if`'s `else` arm.
+    ///
+    /// The selector is a STRING or an INTEGER, and the comparison is typed: see
+    /// [`SwitchVal`] for why a cross-type pair is a non-match rather than an
+    /// error. A `case` head carries a comma-separated LIST and matches if any
+    /// alternative does (asl probe `p5`, `V = 3`, `case 3,4` is the taken arm).
+    ///
+    /// Arm values are evaluated INSIDE the selection loop, not in the head scan,
+    /// because asl short-circuits: the arms after the taken one are never
+    /// evaluated, and neither are the alternatives after the matching one.
+    /// Probes `p18` and `p19`: an unresolvable `case Undef` after a taken arm
+    /// draws nothing, and so does the `Undef` in `case 1,Undef` when `1` already
+    /// matched, while the same `Undef` BEFORE the match does draw `#1820`
+    /// (probe `p20`):
+    ///
+    /// ```text
+    ///    4/       0 : =>TRUE               		case 1          ; V = 1
+    ///    6/       1 : =>FALSE              		case Undef      ; silent
+    ///
+    /// > > > p20.asm(4): error #1820: expression must be evaluatable in first pass
+    ///    4/       0 : =>TRUE               		case Undef,1
+    /// ```
+    ///
+    /// An arm whose value does not evaluate is REFUSED, never read as taken.
+    /// That is the whole safety property of this routine and it is why the
+    /// verdict below reads a comparison and nothing else: an earlier shape
+    /// pushed a `case` it could not evaluate under the same representation as
+    /// `elsecase`, whose verdict is an unconditional `true`, so an integer
+    /// selector silently assembled the FIRST arm. On a source whose first arm is
+    /// the intended one that is byte-identical to a correct run, so a fix that
+    /// only stops the diagnostic is indistinguishable from this one on such a
+    /// source. Returns the index past `endcase`.
     fn exec_switch(&mut self, lines: &[SrcLine], start: usize) -> usize {
         let (_, arg_toks, span) = self.line_kw_args(&lines[start]);
         let Some(end) = self.block_end(lines, start, None) else {
             return lines.len();
         };
-        let switch_val = self.eval_str(&arg_toks);
-        if switch_val.is_none() {
-            self.err(span, "switch needs a string expression");
+        let (switch_val, spoke) = self.eval_switch_val(&arg_toks, span);
+        if switch_val.is_none() && !spoke {
+            self.err(span, "switch needs a string or integer expression");
         }
-        // Collect arm-head indices at depth 0: each `case "lit"` (Some(lit))
-        // and `elsecase` (None, the default), mirroring `exec_if`'s
-        // if/elseif/else head collection but depth-counting `switch`/`endcase`
-        // instead of `if`/`endif`.
-        let mut heads: Vec<(usize, Option<String>)> = Vec::new();
+        // Collect arm-head INDICES at depth 0, each tagged with whether it is
+        // the default arm, mirroring `exec_if`'s if/elseif/else head collection
+        // but depth-counting `switch`/`endcase` instead of `if`/`endif`. Only
+        // the index is collected: the value is evaluated in the loop below, so
+        // that arms past the taken one are neither evaluated nor diagnosed.
+        let mut heads: Vec<(usize, bool)> = Vec::new();
         let mut depth = 0i32;
         for (idx, line) in lines.iter().enumerate().take(end).skip(start + 1) {
             match self.line_keyword(line).as_deref() {
                 Some("switch") => depth += 1,
                 Some("endcase") => depth -= 1,
-                Some("case") if depth == 0 => {
-                    let (_, cargs, cspan) = self.line_kw_args(line);
-                    let lit = self.eval_str(&cargs);
-                    if lit.is_none() {
-                        self.err(cspan, "case needs a string literal");
-                    }
-                    heads.push((idx, lit));
-                }
-                Some("elsecase") if depth == 0 => heads.push((idx, None)),
+                Some("case") if depth == 0 => heads.push((idx, false)),
+                Some("elsecase") if depth == 0 => heads.push((idx, true)),
                 _ => {}
             }
         }
-        heads.push((end, None)); // sentinel
+        heads.push((end, true)); // sentinel
         for w in 0..(heads.len() - 1) {
-            let (head, lit) = heads[w].clone();
-            let take = match &lit {
-                Some(s) => switch_val.as_deref() == Some(s.as_str()),
-                None => true, // elsecase: default, taken if reached
+            let (head, is_default) = heads[w];
+            let take = if is_default {
+                true
+            } else {
+                let (_, cargs, cspan) = self.line_kw_args(&lines[head]);
+                let mut hit = false;
+                for group in crate::expand::split_top_commas(&cargs) {
+                    let (v, spoke) = self.eval_switch_val(group, cspan);
+                    match v {
+                        // The ONLY path to a taken arm: two values that both
+                        // evaluated, of the same type, and equal.
+                        Some(v) if Some(&v) == switch_val.as_ref() => {
+                            hit = true;
+                            break;
+                        }
+                        Some(_) => {}
+                        None => {
+                            if !spoke {
+                                self.err(
+                                    cspan,
+                                    "case needs a string or integer value, so this arm \
+                                     cannot be compared against the switch value and is \
+                                     not assembled",
+                                );
+                            }
+                        }
+                    }
+                }
+                hit
             };
             if take {
                 let body = &lines[head + 1..heads[w + 1].0];
@@ -9332,6 +9403,65 @@ fn slice_source(text: &str, base: u32, group: &[Token]) -> String {
     }
 }
 
+/// The value of a `switch` head, or of one alternative on a `case` head.
+///
+/// A selector value is a STRING or an INTEGER, and the two are different types:
+/// asl compares string to string and integer to integer, and a cross-type pair
+/// is simply NOT EQUAL rather than an error. That is why this is an enum and not
+/// a normalised string: reading `2` and `"2"` as the same value would take an arm
+/// asl skips. asl 1.42 Beta [Bld 212], probes `p7`/`p9`/`p22`, both directions
+/// including the two spellings of the same digit:
+///
+/// ```text
+///    3/       0 : =$2                  	switch V          ; V = 2
+///    4/       0 : =>FALSE              		case "two"
+///    6/       0 : =>TRUE               		case 2
+///
+///    2/       0 : ="2"                 	switch "2"
+///    3/       0 : =>FALSE              		case 2
+///    5/       0 : =>TRUE               		case "2"
+///
+///   11/       1 : =$2                  	switch V          ; V = 2
+///   12/       1 : =>FALSE              		case "2"
+///   14/       1 : =>TRUE               		elsecase
+/// ```
+///
+/// WHICH type an operand has is decided by its SPELLING, not by its value: in a
+/// `switch` or `case` operand asl reads a bare quoted literal as a string and
+/// everything else as an integer expression, and it does so for BOTH quote
+/// forms. This is local to the selector. In an ordinary expression a
+/// single-quoted literal is asl's character constant and is an integer, which
+/// probe `p21` shows directly (`dc.b 'A'+1` assembles `42`, and `if 65='A'` is
+/// `=>TRUE`), so the two readings genuinely differ by context. Probe `p22`:
+///
+/// ```text
+///    2/       0 : ='A'                 	switch 'A'
+///    3/       0 : =>FALSE              		case 65
+///    5/       0 : =>TRUE               		case "A"
+///
+///   18/       2 : =$41                 	switch W+0        ; W = 65
+///   19/       2 : =>FALSE              		case 'A'
+///   21/       2 : =>TRUE               		elsecase
+/// ```
+///
+/// sigil DIVERGES on that one spelling and this is the honest place to say so.
+/// Its lexer folds `'…'` to an integer for the whole language, deliberately and
+/// correctly for ordinary expressions (`'INIT'` is a packed longword in Aeon's
+/// sources), and the quote form does not survive into the token, so a
+/// single-quoted selector operand arrives here as an integer and compares as
+/// one. Closing it needs the token to carry both readings, which is a lexer
+/// change with every expression consumer downstream of it, not a decision this
+/// routine can make. No `switch` or `case` operand in s1disasm, s2disasm,
+/// skdisasm or aeon is spelled with single quotes (0 lines), so the divergence
+/// is unexercised today; the test
+/// `a_single_quoted_case_operand_compares_as_an_integer_which_asl_does_not` pins
+/// what sigil actually does so the gap stays visible instead of drifting.
+#[derive(Clone, PartialEq, Eq)]
+enum SwitchVal {
+    Str(String),
+    Int(i64),
+}
+
 /// What an `irp`/`irpc` head iterates over: `irp`'s comma-separated argument
 /// groups, or `irpc`'s characters. The two directives share everything else —
 /// block structure, closers, body substitution and the empty-list rule — so
@@ -13358,6 +13488,215 @@ C:\n";
         // outer `switch`/`case`/`elsecase`/`endcase` keywords.
         let src = "        cpu 68000\n        padding off\n        phase 0\n        switch \"a\"\n        case \"a\"\n        switch \"z\"\n        case \"y\"\n        dc.b 1\n        elsecase\n        dc.b 2\n        endcase\n        elsecase\n        dc.b 3\n        endcase\n";
         assert_eq!(image(src), vec![2]);
+    }
+
+    // ── The selector on an INTEGER ────────────────────────────────────────
+    //
+    // Every expectation below is quoted from asl 1.42 Beta [Bld 212], md5
+    // 61e672562465725a8c102288a7da9098, run as
+    // `asl -xx -n -q -A -L -U -E -i . <probe>.asm`, exit 0 with empty stderr.
+    // The listing's `=>TRUE` / `=>FALSE` column names the arm asl took and the
+    // byte column is what it emitted, so both halves of each claim come from
+    // the reference rather than from a reading of what ought to happen.
+    //
+    // The FIRST test here is the one that matters. Before integer selection was
+    // wired in, a `case` whose value was not a string was diagnosed and then
+    // recorded under the same representation as `elsecase`, whose verdict is an
+    // unconditional `true`, so the first such arm was taken. On a source whose
+    // first arm is the intended one that produces the right bytes and, once the
+    // diagnostic stops, no complaint either. Sonic 1 is exactly such a source
+    // (`SonicDriverVer = 1`, and `case 1` opens both blocks in
+    // `sound/_smps2asm_inc.asm`), so it cannot tell a correct implementation
+    // from that one. These probes put the matching arm SECOND on purpose.
+
+    #[test]
+    fn integer_switch_takes_the_matching_arm_and_not_the_first_one() {
+        // asl (probe `p1`), `V = 2` against `case 1` / `case 2` / `case 3` /
+        // `elsecase`:
+        //
+        // ```text
+        //    3/       0 : =$2                  	switch V
+        //    4/       0 : =>FALSE              		case 1
+        //    6/       0 : =>TRUE               		case 2
+        //    7/       0 : 22                  			dc.b $22
+        //    8/       1 : =>FALSE              		case 3
+        //   10/       1 : =>FALSE              		elsecase
+        // ```
+        let src = "        cpu 68000\n        padding off\n        phase 0\nV       = 2\n        switch V\n        case 1\n        dc.b $11\n        case 2\n        dc.b $22\n        case 3\n        dc.b $33\n        elsecase\n        dc.b $EE\n        endcase\n";
+        assert_eq!(image(src), vec![0x22]);
+    }
+
+    #[test]
+    fn integer_switch_matching_nothing_falls_through_to_elsecase() {
+        // asl (probe `p2`), `V = 9`: both `case` arms `=>FALSE`, `elsecase`
+        // `=>TRUE`, byte `EE`.
+        let src = "        cpu 68000\n        padding off\n        phase 0\nV       = 9\n        switch V\n        case 1\n        dc.b $11\n        case 2\n        dc.b $22\n        elsecase\n        dc.b $EE\n        endcase\n";
+        assert_eq!(image(src), vec![0xEE]);
+    }
+
+    #[test]
+    fn integer_switch_matching_nothing_with_no_elsecase_emits_nothing() {
+        // asl (probe `p3`), `V = 9` with no default arm: both arms `=>FALSE`,
+        // no byte from the block, and the `dc.b $FF` after `endcase` still
+        // assembles at offset 0. asl additionally raises `warning #100: none of
+        // the CASE conditions was true` here and exits 0; sigil does not raise
+        // that warning yet (see the gap ledger), which is why this test asserts
+        // the BYTES, the half that is settled.
+        let src = "        cpu 68000\n        padding off\n        phase 0\nV       = 9\n        switch V\n        case 1\n        dc.b $11\n        case 2\n        dc.b $22\n        endcase\n        dc.b $FF\n";
+        assert_eq!(image(src), vec![0xFF]);
+    }
+
+    #[test]
+    fn a_string_switch_still_selects_on_the_string() {
+        // The control. asl (probe `p4`), `switch "btn"` against `case "aaa"` /
+        // `case "btn"` / `elsecase` takes the second arm and emits `22`. This
+        // is the behaviour that existed before integer selection and it must be
+        // unchanged by it; `Macros.asm(318)` in the Sonic 1 corpus is a live
+        // instance of this shape.
+        let src = "        cpu 68000\n        padding off\n        phase 0\n        switch \"btn\"\n        case \"aaa\"\n        dc.b $11\n        case \"btn\"\n        dc.b $22\n        elsecase\n        dc.b $EE\n        endcase\n";
+        assert_eq!(image(src), vec![0x22]);
+    }
+
+    #[test]
+    fn a_case_head_holds_a_comma_separated_list_of_alternatives() {
+        // asl (probe `p5`), `V = 3`: `case 1,2` is `=>FALSE` and `case 3,4` is
+        // `=>TRUE`, so a `case` matches if ANY of its alternatives does.
+        let src = "        cpu 68000\n        padding off\n        phase 0\nV       = 3\n        switch V\n        case 1,2\n        dc.b $11\n        case 3,4\n        dc.b $22\n        elsecase\n        dc.b $EE\n        endcase\n";
+        assert_eq!(image(src), vec![0x22]);
+    }
+
+    #[test]
+    fn switch_and_case_operands_are_full_expressions_not_literals() {
+        // asl (probe `p6`), `V = 4` and `W = 2`: `switch V*1` folds to `$4`,
+        // `case W-1` is `=>FALSE` and `case W+2` is `=>TRUE`.
+        let src = "        cpu 68000\n        padding off\n        phase 0\nV       = 4\nW       = 2\n        switch V*1\n        case W-1\n        dc.b $11\n        case W+2\n        dc.b $22\n        elsecase\n        dc.b $EE\n        endcase\n";
+        assert_eq!(image(src), vec![0x22]);
+    }
+
+    #[test]
+    fn an_integer_selector_does_not_match_a_string_case() {
+        // asl (probe `p7`), `V = 2`: `case "two"` is `=>FALSE` and no error is
+        // raised for it. A cross-type pair is a NON-MATCH, not a diagnostic.
+        let src = "        cpu 68000\n        padding off\n        phase 0\nV       = 2\n        switch V\n        case \"two\"\n        dc.b $11\n        case 2\n        dc.b $22\n        elsecase\n        dc.b $EE\n        endcase\n";
+        assert_eq!(image(src), vec![0x22]);
+    }
+
+    #[test]
+    fn an_integer_selector_does_not_match_the_same_digit_spelled_as_a_string() {
+        // The DISCRIMINATING form of the test above, and the reason it is a
+        // separate one: `case "two"` would still be skipped by an
+        // implementation that compared rendered text, so it does not gate the
+        // typed comparison at all. This does. asl (probe `p22`), `V = 2`
+        // against `case "2"`:
+        //
+        // ```text
+        //   11/       1 : =$2                  	switch V
+        //   12/       1 : =>FALSE              		case "2"
+        //   14/       1 : =>TRUE               		elsecase
+        //   15/       1 : 44                  			dc.b $44
+        // ```
+        let src = "        cpu 68000\n        padding off\n        phase 0\nV       = 2\n        switch V\n        case \"2\"\n        dc.b $33\n        elsecase\n        dc.b $44\n        endcase\n";
+        assert_eq!(image(src), vec![0x44]);
+    }
+
+    #[test]
+    fn a_string_selector_does_not_match_an_integer_case() {
+        // The other direction. asl (probe `p9`), `switch "2"`: `case 2` is
+        // `=>FALSE`, `case "2"` is `=>TRUE`. So `2` and `"2"` are distinct
+        // values in both directions and neither is coerced to the other.
+        let src = "        cpu 68000\n        padding off\n        phase 0\n        switch \"2\"\n        case 2\n        dc.b $11\n        case \"2\"\n        dc.b $22\n        elsecase\n        dc.b $EE\n        endcase\n";
+        assert_eq!(image(src), vec![0x22]);
+    }
+
+    #[test]
+    fn a_single_quoted_case_operand_compares_as_an_integer_which_asl_does_not() {
+        // A KNOWN DIVERGENCE, pinned rather than asserted as correct, so that
+        // it stays visible. asl (probes `p14`/`p22`), `V = 65`: both `case 'B'`
+        // and `case 'A'` are `=>FALSE` and the `elsecase` is taken, emitting
+        // `EE`, because a quoted selector operand is a STRING to asl whichever
+        // quote form is used. sigil emits `22`: its lexer folds `'A'` to the
+        // integer $41 for the whole language, which is right for an ordinary
+        // expression (asl agrees there: probe `p21`, `dc.b 'A'+1` is `42`) but
+        // loses the spelling this one construct reads the type from.
+        //
+        // Not closed here because closing it means giving the token both
+        // readings and revisiting every expression consumer, which is a lexer
+        // design call and not one this seam can make. Unexercised today: 0
+        // `switch`/`case` operands are single-quoted across s1disasm,
+        // s2disasm, skdisasm and aeon. See the [`SwitchVal`] doc.
+        let src = "        cpu 68000\n        padding off\n        phase 0\nV       = 65\n        switch V\n        case 'B'\n        dc.b $11\n        case 'A'\n        dc.b $22\n        elsecase\n        dc.b $EE\n        endcase\n";
+        assert_eq!(image(src), vec![0x22], "asl emits EE here; see the comment");
+    }
+
+    #[test]
+    fn only_the_first_matching_arm_of_a_duplicated_value_is_taken() {
+        // asl (probe `p13`), `V = 2` with `case 2` written twice: the first is
+        // `=>TRUE` and the second `=>FALSE`, so the selection stops at the
+        // first hit rather than assembling both bodies.
+        let src = "        cpu 68000\n        padding off\n        phase 0\nV       = 2\n        switch V\n        case 1\n        dc.b $11\n        case 2\n        dc.b $22\n        case 2\n        dc.b $BB\n        endcase\n";
+        assert_eq!(image(src), vec![0x22]);
+    }
+
+    #[test]
+    fn a_negative_selector_matches_a_negative_case() {
+        // asl (probe `p15`), `V = -3`: `case 3` is `=>FALSE` and `case -3` is
+        // `=>TRUE`. The comparison is on the signed value, not on magnitude or
+        // on the rendered `$FFFFFFFFFFFFFFFD`.
+        let src = "        cpu 68000\n        padding off\n        phase 0\nV       = -3\n        switch V\n        case 3\n        dc.b $11\n        case -3\n        dc.b $22\n        elsecase\n        dc.b $EE\n        endcase\n";
+        assert_eq!(image(src), vec![0x22]);
+    }
+
+    #[test]
+    fn nested_integer_switches_select_independently() {
+        // asl (probe `p12`), `V = 2`: the outer `case 2` is taken, the switch
+        // nested in its body selects `case 3` from `switch V+1`, and the outer
+        // arm's trailing byte follows. Bytes `A3 22`, and the outer `case 3`
+        // after the nested `endcase` stays `=>FALSE`, so the depth-0 arm scan
+        // is not confused by the inner arms.
+        let src = "        cpu 68000\n        padding off\n        phase 0\nV       = 2\n        switch V\n        case 1\n        dc.b $11\n        case 2\n        switch V+1\n        case 2\n        dc.b $A1\n        case 3\n        dc.b $A3\n        endcase\n        dc.b $22\n        case 3\n        dc.b $33\n        endcase\n";
+        assert_eq!(image(src), vec![0xA3, 0x22]);
+    }
+
+    #[test]
+    fn alternatives_in_one_case_are_matched_per_element_and_may_mix_types() {
+        // asl (probe `p16`), `switch "bee"`: `case "aaa","zzz"` is `=>FALSE`
+        // and `case 3,"bee"` is `=>TRUE`, matching on its STRING element while
+        // its integer element is simply not equal. So the type test is per
+        // alternative, not per `case` head.
+        let src = "        cpu 68000\n        padding off\n        phase 0\n        switch \"bee\"\n        case \"aaa\",\"zzz\"\n        dc.b $11\n        case 3,\"bee\"\n        dc.b $22\n        elsecase\n        dc.b $EE\n        endcase\n";
+        assert_eq!(image(src), vec![0x22]);
+    }
+
+    #[test]
+    fn a_case_whose_value_does_not_evaluate_is_refused_and_not_taken() {
+        // The safety property, stated as a test: an arm sigil cannot evaluate
+        // must be REFUSED, never read as the default. This is the shape the
+        // old code got wrong, and it is the one shape here whose expectation is
+        // NOT quoted from asl: asl declines this source (`error #1820:
+        // expression must be evaluatable in first pass`) and then proceeds on
+        // an invented value, so its arm choice is not a reference answer. The
+        // expectation is sigil's own refusal doctrine, the same one `exec_if`
+        // states for a condition with no verdict: skip the arm AND fail the
+        // run, because silently taking it is byte-identical to code the author
+        // never wrote.
+        let src = "        cpu 68000\n        padding off\n        phase 0\nV       = 2\n        switch V\n        case NeverDefinedAnywhereCase\n        dc.b $11\n        elsecase\n        dc.b $EE\n        endcase\n";
+        let err = run(src, &Options::default())
+            .expect_err("an unevaluatable case value must fail the assembly");
+        assert!(
+            err.iter().any(|d| d.message.contains("case needs a string")),
+            "expected a refusal naming the case operand, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn an_arm_after_the_taken_one_is_neither_evaluated_nor_diagnosed() {
+        // asl (probe `p18`), `V = 1`: `case 1` is `=>TRUE` and the following
+        // `case Undef` is `=>FALSE` with NO `#1820` against it, so asl stops
+        // evaluating arm values once one has matched. sigil must not report an
+        // arm it never had to look at, which is why arm values are evaluated in
+        // the selection loop rather than in the head scan.
+        let src = "        cpu 68000\n        padding off\n        phase 0\nV       = 1\n        switch V\n        case 1\n        dc.b $11\n        case NeverDefinedAnywhereCase\n        dc.b $22\n        endcase\n";
+        assert_eq!(image(src), vec![0x11]);
     }
 
     #[test]

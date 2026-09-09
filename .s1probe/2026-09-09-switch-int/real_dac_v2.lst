@@ -1,0 +1,151 @@
+ AS V1.42 Beta [Bld 212] - Source File real_dac_v2.asm - Page 1 - 09/09/2026 11:11:05 AM
+
+
+       1/       0 :                     	cpu 68000
+       2/       0 :                     ; The DAC-equate `switch` block lifted VERBATIM from Sonic 1's
+       3/       0 :                     ; sound/_smps2asm_inc.asm lines 88-168, with SonicDriverVer set to 2 so the
+       4/       0 :                     ; matching arm is the SECOND one. dTimpani is $83 in the `case 1` arm and $85 in
+       5/       0 :                     ; the `case 2` arm, so the emitted byte says which arm ran.
+       6/       0 : =$2                  SonicDriverVer = 2
+       7/       0 : =$0                  use_s3_samples = 0
+       8/       0 : =$0                  use_sk_samples = 0
+       9/       0 : =$0                  use_s3d_samples = 0
+      10/       0 : =$2                  	switch SonicDriverVer
+      11/       0 : =>FALSE              		case 1
+      12/       0 :                     			enum		dKick=$81,dSnare,dTimpani
+      13/       0 :                     			enum		dHiTimpani=$88,dMidTimpani,dLowTimpani,dVLowTimpani
+      14/       0 : =>TRUE               		case 2
+      15/       0 : =$81..$89            			enum		dKick=$81,dSnare,dClap,dScratch,dTimpani,dHiTom,dVLowClap,dHiTimpani,dMidTimpani
+      16/       0 : =$8A..$8F            			nextenum	dLowTimpani,dVLowTimpani,dMidTom,dLowTom,dFloorTom,dHiClap
+      17/       0 : =$90..$91            			nextenum	dMidClap,dLowClap
+      18/       0 : =>FALSE              		case 3
+      19/       0 :                     			enum		dSnareS3=$81,dHighTom,dMidTomS3,dLowTomS3,dFloorTomS3,dKickS3,dMuffledSnare
+      20/       0 :                     			nextenum	dCrashCymbal,dRideCymbal,dLowMetalHit,dMetalHit,dHighMetalHit
+      21/       0 :                     			nextenum	dHigherMetalHit,dMidMetalHit,dClapS3,dElectricHighTom
+      22/       0 :                     			nextenum	dElectricMidTom,dElectricLowTom,dElectricFloorTom
+      23/       0 :                     			nextenum	dTightSnare,dMidpitchSnare,dLooseSnare,dLooserSnare
+      24/       0 :                     			nextenum	dHiTimpaniS3,dLowTimpaniS3,dMidTimpaniS3,dQuickLooseSnare
+      25/       0 :                     			nextenum	dClick,dPowerKick,dQuickGlassCrash
+      26/       0 :                     			nextenum	dGlassCrashSnare,dGlassCrash,dGlassCrashKick,dQuietGlassCrash
+      27/       0 :                     			nextenum	dOddSnareKick,dKickExtraBass,dComeOn,dDanceSnare,dLooseKick
+      28/       0 :                     			nextenum	dModLooseKick,dWoo,dGo,dSnareGo,dPowerTom,dHiWoodBlock,dLowWoodBlock
+      29/       0 :                     			nextenum	dHiHitDrum,dLowHitDrum,dMetalCrashHit,dEchoedClapHit_S3
+      30/       0 :                     			nextenum	dLowerEchoedClapHit_S3,dHipHopHitKick,dHipHopHitPowerKick
+      31/       0 :                     			nextenum	dBassHey,dDanceStyleKick,dHipHopHitKick2,dHipHopHitKick3
+      32/       0 :                     			nextenum	dReverseFadingWind,dScratchS3,dLooseSnareNoise,dPowerKick2
+      33/       0 :                     			nextenum	dCrashingNoiseWoo,dQuickHit,dKickHey,dPowerKickHit
+      34/       0 :                     			nextenum	dLowPowerKickHit,dLowerPowerKickHit,dLowestPowerKickHit
+      35/       0 : =>FALSE              		case 4
+      36/       0 :                     			enum		dSnareS3=$81,dHighTom,dMidTomS3,dLowTomS3,dFloorTomS3,dKickS3,dMuffledSnare
+      37/       0 :                     			nextenum	dCrashCymbal,dRideCymbal,dLowMetalHit,dMetalHit,dHighMetalHit
+      38/       0 :                     			nextenum	dHigherMetalHit,dMidMetalHit,dClapS3,dElectricHighTom
+      39/       0 :                     			nextenum	dElectricMidTom,dElectricLowTom,dElectricFloorTom
+      40/       0 :                     			nextenum	dTightSnare,dMidpitchSnare,dLooseSnare,dLooserSnare
+      41/       0 :                     			nextenum	dHiTimpaniS3,dLowTimpaniS3,dMidTimpaniS3,dQuickLooseSnare
+      42/       0 :                     			nextenum	dClick,dPowerKick,dQuickGlassCrash
+      43/       0 :                     			nextenum	dGlassCrashSnare,dGlassCrash,dGlassCrashKick,dQuietGlassCrash
+      44/       0 :                     			nextenum	dOddSnareKick,dKickExtraBass,dComeOn,dDanceSnare,dLooseKick
+      45/       0 :                     			nextenum	dModLooseKick,dWoo,dGo,dSnareGo,dPowerTom,dHiWoodBlock,dLowWoodBlock
+      46/       0 :                     			nextenum	dHiHitDrum,dLowHitDrum,dMetalCrashHit,dEchoedClapHit
+      47/       0 :                     			nextenum	dLowerEchoedClapHit,dHipHopHitKick,dHipHopHitPowerKick
+      48/       0 :                     			nextenum	dBassHey,dDanceStyleKick,dHipHopHitKick2,dHipHopHitKick3
+      49/       0 :                     			nextenum	dReverseFadingWind,dScratchS3,dLooseSnareNoise,dPowerKick2
+      50/       0 :                     			nextenum	dCrashingNoiseWoo,dQuickHit,dKickHey,dPowerKickHit
+      51/       0 :                     			nextenum	dLowPowerKickHit,dLowerPowerKickHit,dLowestPowerKickHit
+      52/       0 : =>FALSE              		elsecase;SonicDriverVer>=5
+      53/       0 :                     			if (use_s3_samples<>0)||(use_sk_samples<>0)||(use_s3d_samples<>0)
+      54/       0 :                     				enum		dSnareS3=$81,dHighTom,dMidTomS3,dLowTomS3,dFloorTomS3,dKickS3,dMuffledSnare
+      55/       0 :                     				nextenum	dCrashCymbal,dRideCymbal,dLowMetalHit,dMetalHit,dHighMetalHit
+      56/       0 :                     				nextenum	dHigherMetalHit,dMidMetalHit,dClapS3,dElectricHighTom
+      57/       0 :                     				nextenum	dElectricMidTom,dElectricLowTom,dElectricFloorTom
+      58/       0 :                     				nextenum	dTightSnare,dMidpitchSnare,dLooseSnare,dLooserSnare
+      59/       0 :                     				nextenum	dHiTimpaniS3,dLowTimpaniS3,dMidTimpaniS3,dQuickLooseSnare
+      60/       0 :                     				nextenum	dClick,dPowerKick,dQuickGlassCrash
+ AS V1.42 Beta [Bld 212] - Source File real_dac_v2.asm - Page 2 - 09/09/2026 11:11:05 AM
+
+
+      61/       0 : [53]                 			endif
+      62/       0 :                     			if (use_s3_samples<>0)||(use_sk_samples<>0)
+      63/       0 :                     				nextenum	dGlassCrashSnare,dGlassCrash,dGlassCrashKick,dQuietGlassCrash
+      64/       0 :                     				nextenum	dOddSnareKick,dKickExtraBass,dComeOn,dDanceSnare,dLooseKick
+      65/       0 :                     				nextenum	dModLooseKick,dWoo,dGo,dSnareGo,dPowerTom,dHiWoodBlock,dLowWoodBlock
+      66/       0 :                     				nextenum	dHiHitDrum,dLowHitDrum,dMetalCrashHit,dEchoedClapHit
+      67/       0 :                     				nextenum	dLowerEchoedClapHit,dHipHopHitKick,dHipHopHitPowerKick
+      68/       0 :                     				nextenum	dBassHey,dDanceStyleKick,dHipHopHitKick2,dHipHopHitKick3
+      69/       0 :                     				nextenum	dReverseFadingWind,dScratchS3,dLooseSnareNoise,dPowerKick2
+      70/       0 :                     				nextenum	dCrashingNoiseWoo,dQuickHit,dKickHey,dPowerKickHit
+      71/       0 :                     				nextenum	dLowPowerKickHit,dLowerPowerKickHit,dLowestPowerKickHit
+      72/       0 : [62]                 			endif
+      73/       0 :                     			; For conversions:
+      74/       0 :                     			if (use_s2_samples<>0)
+      75/       0 :                     				if (use_s3_samples<>0)||(use_sk_samples<>0)||(use_s3d_samples<>0)
+      76/       0 :                     					nextenum	dKick
+      77/       0 :                     				else
+      78/       0 :                     					enum		dKick=$81
+      79/       0 : [75]                 				endif
+      80/       0 :                     				nextenum	dSnare,dClap,dScratch,dTimpani,dHiTom,dVLowClap,dHiTimpani,dMidTimpani
+      81/       0 :                     				nextenum	dLowTimpani,dVLowTimpani,dMidTom,dLowTom,dFloorTom,dHiClap
+      82/       0 :                     				nextenum	dMidClap,dLowClap
+      83/       0 : [74]                 			endif
+      84/       0 :                     			if (use_s3d_samples<>0)
+      85/       0 :                     				nextenum	dFinalFightMetalCrash,dIntroKick
+      86/       0 : [84]                 			endif
+      87/       0 :                     			if (use_s3_samples<>0)
+      88/       0 :                     				nextenum	dEchoedClapHit_S3,dLowerEchoedClapHit_S3
+      89/       0 : [87]                 			endif
+      90/       0 : [10]                 	endcase
+      91/       0 : 8182 8384 85        	dc.b dKick,dSnare,dClap,dScratch,dTimpani
+      92/       5 :                     	end
+ AS V1.42 Beta [Bld 212] - Source File real_dac_v2.asm - Page 3 - 09/09/2026 11:11:05 AM
+
+
+  Symbol Table (* = unused):
+  --------------------------
+
+*ARCHITECTURE :                                      "x86_64-unknown-linux" - |
+*BIGENDIAN :                      0 - | *BRANCHEXT :                      0 - |
+*CASESENSITIVE :                  1 - | *COMPMODE :                       0 - |
+*CONSTPI :        3.141592653589793 - | *CUSTOM :                         0 - |
+*DATE :                "09/09/2026" - | *FALSE :                          0 - |
+*FULLPMMU :                       1 - | *HAS64 :                          1 - |
+*HASDSP :                         0 - | *HASFPU :                         0 - |
+*HASPMMU :                        0 - | *INEXTMODE :                      0 - |
+*INLWORDMODE :                    0 - | *INMAXMODE :                      0 - |
+*INSRCMODE :                      0 - | *INSUPMODE :                      0 - |
+*LISTON :                         1 - | *MACEXP :                         7 - |
+*MOMCPU :                     68000 - | *MOMCPUNAME :               "68000" - |
+*NESTMAX :                      100 - | *PACKING :                        0 - |
+*PADDING :                        1 - | *RELAXED :                        0 - |
+ SonicDriverVer :                 2 - | *TIME :               "11:11:05 AM" - |
+*TRUE :                           1 - | *VERSION :                     142F - |
+*Z80SYNTAX :                      0 - |  dClap :                         83 - |
+*dFloorTom :                     8E - | *dHiClap :                       8F - |
+*dHiTimpani :                    88 - | *dHiTom :                        86 - |
+ dKick :                         81 - | *dLowClap :                      91 - |
+*dLowTimpani :                   8A - | *dLowTom :                       8D - |
+*dMidClap :                      90 - | *dMidTimpani :                   89 - |
+*dMidTom :                       8C - |  dScratch :                      84 - |
+ dSnare :                        82 - |  dTimpani :                      85 - |
+*dVLowClap :                     87 - | *dVLowTimpani :                  8B - |
+*use_s3_samples :                 0 - | *use_s3d_samples :                0 - |
+*use_sk_samples :                 0 - |
+
+     52 symbols
+     46 unused symbols
+
+ AS V1.42 Beta [Bld 212] - Source File real_dac_v2.asm - Page 4 - 09/09/2026 11:11:05 AM
+
+
+  Code Pages:
+  ----------
+
+STANDARD (0 changed characters)
+
+1 code page
+
+0.00 seconds assembly time
+
+     93 lines source file
+      1 pass
+      0 errors
+      0 warnings
