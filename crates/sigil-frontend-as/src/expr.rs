@@ -77,10 +77,15 @@ const MAX_PACKED_CHARS: usize = 4;
 /// about the other: under `charset 'A','X',$11`, asl reads `move.w #"AB",d0` as
 /// `303C 1112` and this function returns `$1112`.
 ///
-/// The page reaches exactly two sites in this front end, and the second is
-/// `eval.rs::directive_db`. asl has a THIRD — its wide data directives
+/// The page reaches THREE sites in this front end: this function,
+/// `eval.rs::directive_db`, and `lexer.rs`'s character constant, which packs
+/// `'AB'` at lex time and maps each character through `cs.map_char` as it goes.
+/// The count matters more than it looks: the sentence this replaced named a
+/// population of TWO, it was quoted into a dispatch brief as authoritative, and
+/// the third site was found only because the parcel enumerated instead of
+/// inheriting. asl has a FOURTH: its wide data directives
 /// distribute a string operand and translate each character (`dc.w "AB"` under
-/// that same `charset` is `0011 0042`) — but sigil refuses a string operand to
+/// that same `charset` is `0011 0042`). But sigil refuses a string operand to
 /// `dc.w`/`dc.l` outright (`STRING_IN_WIDE_DATA`), so that site does not exist
 /// here. If it is ever implemented, it is a code-page consumer on day one.
 ///
