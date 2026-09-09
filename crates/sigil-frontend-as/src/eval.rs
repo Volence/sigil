@@ -345,8 +345,8 @@ fn run_impl(
             // A PINNED build that has ALREADY FAILED skips it too, and that is a
             // statement about what a failing run reports, not an optimization. Both
             // things the bonus pass does are SUPPRESSIONS: (1) turns an unresolved
-            // `jsr`/`jmp` target into a deferral instead of an error, and (2) —
-            // `keep_labels_symbolic`, seven sites in this file — short-circuits a
+            // `jsr`/`jmp` target into a deferral instead of an error, and (2)
+            // `keep_labels_symbolic`, seven sites in this file, short-circuits a
             // label-referencing operand BEFORE its fold, so a compound operand that
             // folds to Poison raises nothing where an ordinary pass raises
             // `unresolved long expression`. Both suppressions exist to serve a LINK
@@ -358,7 +358,7 @@ fn run_impl(
             // the converged pass raised an error the bonus pass would have
             // suppressed, and the bonus pass would then have deferred every
             // remaining poison symbol away. Such a module is not linkable
-            // standalone — reaching this branch at all needs NON-EMPTY `poison`, and
+            // standalone: reaching this branch at all needs NON-EMPTY `poison`, and
             // a bonus pass that empties it does so by building at least one
             // length-variable `Fragment::JmpJsrSym`, which a link with no composition
             // refuses ("unresolved jmp/jsr target … not defined in this link"). So

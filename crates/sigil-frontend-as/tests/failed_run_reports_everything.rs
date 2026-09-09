@@ -7,9 +7,9 @@
 //!   1. a `jsr`/`jmp` bare-symbol target still folding to `Poison` becomes a
 //!      deferred `Fragment::JmpJsrSym` instead of an `unresolved symbol … in
 //!      operand` error, and
-//!   2. `keep_labels_symbolic()` — SEVEN call sites in `eval.rs`, in
+//!   2. `keep_labels_symbolic()`, SEVEN call sites in `eval.rs`, in
 //!      `directive_equate`, `directive_dc_w`, `directive_dc_l`, `lower_m68k`
-//!      (twice), `try_defer_long_imm` and `fixup_target` — short-circuits a
+//!      (twice), `try_defer_long_imm` and `fixup_target`, short-circuits a
 //!      label-referencing operand BEFORE its fold, so a compound operand that
 //!      folds to `Poison` raises nothing where an ordinary pass raises
 //!      `unresolved long expression`.
@@ -26,7 +26,7 @@
 //! operand` and `code/engines/art_data.asm(23)` and `(24)`, both `unresolved
 //! long expression`. Those two are the `dc.l (plc1<<24)|art` and `dc.l
 //! (plc2<<24)|map16x16` lines of its `levartptrs` macro, where the PLC id is an
-//! `equ` that never resolves and the art pointer is a real label — so
+//! `equ` that never resolves and the art pointer is a real label, so
 //! `expr_refs_label` is true and the fold is `Poison`, which is exactly the
 //! `keep_labels_symbolic` short-circuit. `levartptrs_shape_*` below is that
 //! construct reduced to one file, and it moves the same three lines.
