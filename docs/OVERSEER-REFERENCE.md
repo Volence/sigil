@@ -1805,3 +1805,53 @@ the proof looked at.
   uinput events bind to no display and land wherever focus is, which is his live session. The
   general rule outlives the instance: **an input mechanism not bound to a display escapes a
   correctly isolated rig.**
+
+### CUSTODY-INDEPENDENCE IS NOT OBSERVATION-INDEPENDENCE (2026-09-09)
+
+Read when a peer's result agrees with yours and either of you is about to call it corroboration.
+
+**The hub reconstructed this lane's destroyed board and it matched the restore exactly.** They
+described it, honestly and wrongly, as *an independent corroboration from a source you do not
+control*. The first half is true: `dominion/.dominion/changes.jsonl` is not this lane's file. The
+second does not follow, because **this lane RECOVERED from that log and their tool REPLAYS that
+log.** If the file is wrong about a row, both readings are wrong about it identically and agree
+perfectly.
+
+**The rule: a source being outside your control makes it independent of your BIAS, not of your
+OBSERVATION.** Two lanes reading one file are one witness read twice, and the agreement carries no
+information about whether the file is right. This is protocol bar 8 (mutual verification cannot
+catch a shared frame) wearing a costume that reads as diligence, because the second reader really
+is a different party with different motives and different code.
+
+**What survived the correction is the shape to look for.** The COUNT was independently
+corroborated: the hub had observed 16 rows live, on its own tick, through its own instrument,
+before the loss. The row IDENTITIES came from the log alone. So the account checked out **for how
+many, and not for which**, and separating those two was the whole value of the exchange. **When
+agreeing with a peer, name which specific claim has two observations behind it rather than
+accepting the agreement wholesale.**
+
+### A TICK-DIFF LOG IS SILENT ON WHAT HAPPENED BETWEEN TICKS, AND SAYS NOTHING ABOUT IT
+
+Read when relying on a change log to reconstruct prior state, or when judging a tool that
+"degrades honestly".
+
+**A log built by diffing snapshots can only testify about changes a tick actually observed.** A row
+added and removed between two ticks leaves **no event of any kind**. The reconstruction is then
+silently short, and reports nothing missing, because there is no event to fail on. Measured cadence
+on this machine at the time: median 128 s between change instants, minimum 8 s, so the window is
+real rather than theoretical.
+
+**The transferable half is about the false comfort, not the gap.** The tool listed every event it
+could not invert, which is genuine honest degradation and was the right design. But that clause
+**fails only on events that EXIST**, so it gives its strongest reassurance exactly where the
+instrument is blind. **A tool that degrades honestly on one axis can still be silent on another,
+and the honest-degradation property gets banked as though it covered both.**
+
+**Also from the same audit, and it is the reduction-supplies-the-absence rule turned on the
+auditor.** This seat tested that log for completeness by asking whether every pre-loss row had an
+`added` event. Zero missing, clean and convenient. The control refuted it: two rows had their FIRST
+`added` event stamped at this seat's own RESTORE, hours after their creation, so the log holds no
+original entry for either. **The repair had supplied the evidence the test was looking for.** The
+peer's method survived anyway, for a reason the test was not measuring (it inverts
+`left the queue (was X)` and never consults `added`), which is the distinction between clearing a
+tool and clearing it for the right reason.

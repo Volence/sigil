@@ -1388,6 +1388,13 @@ shortened to move it.** None of these changes what a session does FIRST; each is
 - **Building a guard** - *the pin failed in the exact way the pin existed to prevent*, including the
   refuse-to-run-over-an-empty-row-set clause.
 - **Attributing a finding** - *attribution, corrected twice in one exchange*.
+- **A peer's result agrees with yours** - *custody-independence is not observation-independence*:
+  a source outside your control is independent of your BIAS, not of your OBSERVATION, so two lanes
+  reading one file are one witness read twice. Name which claim has two observations behind it.
+- **Relying on a change log to reconstruct prior state** - *a tick-diff log is silent on what
+  happened between ticks*, and its honest-degradation clause fails only on events that exist, so it
+  reassures most exactly where it is blind. Carries the completeness test this seat confounded with
+  its own repair.
 
 ### VARYING A FLAG IS NOT VARYING A ROUTE: I compared one path with itself and called it two
 
