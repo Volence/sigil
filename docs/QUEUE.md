@@ -424,22 +424,44 @@ rather than find the row silently rewritten:
 > Fix shape: teach the closure the `falls_into` edge. It removes 11 false census rows and closes the
 > missed-firing direction in one change, in our tree.
 
-## AS-Z80-FUNCTION-CALL-IN-OPERAND
+## AS-Z80-FUNCTION-CALL-IN-OPERAND: LANDED 2026-09-09, and it was TWO defects, not one
 
-- state at archive: `open`  size: `S`  project: `SIGIL-AS-REPLACEMENT`
-- blockedBy: nothing
+- state at archive: `LANDED`  size: `S`  project: `SIGIL-AS-REPLACEMENT`
+- blockedBy: nothing; nothing is left to do
 
-Booked 2026-09-09 from the same parcel's step zero. `AS-S1-DRIVER-SIZE-60X` cleared: the recorded
-symptom is gone, no fatal at `sound/z80.asm(229)`, and the pass now reaches the message site it used
-to truncate before.
+**Shipped on `parcel/z80-function-operand` at `4cc75c75`**, *"as: a user `function` call in a Z80
+operand, and the paren the expansion adds"*. sigil now reports `1BC6h` on s1disasm `f6ece657`, the
+figure asl (md5 `61e672562465725a8c102288a7da9098`) reports from the same tree at exit 0.
 
-**It did not close completely, and the residue is a different defect.** We report the uncompressed
-driver as `1BBDh` where the reference reports `1BC6h`, 9 bytes short. Cause, proved rather than
-asserted: **four Z80 instructions we cannot encode, each carrying a user-defined `function` macro call
-in an operand** (`z80.asm` lines 51, 55, 188 and 197, contributing 2+2+3+2 bytes). Substituting
-literals for exactly those four operands yields `1BC6h`, byte-equal to the reference, with every other
-diagnostic unchanged. A first attempt that only parenthesised the calls changed the error text and not
-the size, which is what identified the call rather than the trailing operator.
+The row's diagnosis was right about the cause and wrong about the count. Fixing what it describes
+gets to `1BC5h`, not `1BC6h`, and raises a diagnostic the row does not predict.
+
+1. `lower_z80` handed its operands straight to `parse_operands`, running none of the
+   `expand_operand_builtins` layer that `dc.b`/`dc.w`/`dc.l` and the 68000 path both run. There is no
+   call syntax in `parse_expr`, so `zmake68kPtr(SegaPCM)` parsed as the bare symbol `zmake68kPtr`
+   with `(SegaPCM)` left over. This is what the row describes, and routing through the existing layer
+   closes it.
+2. That alone lands on `1BC5h` and a NEW refusal at line 197, `unsupported form: Ld, [Reg(B),
+   Mem(11)]`. `expand_calls` wraps every expansion in parens for precedence, and on the Z80 an
+   operand that is one whole paren group is an INDIRECTION. So the expansion rewrote
+   `ld de,zmake68kPtr(SegaPCM)` (3 bytes) into `ld de,(nn)` (4 bytes) and `ld b,pcmLoopCounter(16000)`
+   into `ld b,(nn)`, which is not a Z80 instruction: +4 and +0 where the reference has +3 and +2. The
+   68000 never saw this because an immediate there carries a `#`, which `classify` settles before it
+   looks at parens. The fix lets the WRITTEN shape decide the addressing mode: a group the programmer
+   did not parenthesise stays a value however many parens the expansion added.
+
+The row's "substituting literals for exactly those four operands yields `1BC6h`" was a sound
+measurement of the GAP and not of the fix: a literal carries no parens, so it never exercised defect
+2. The defect the substitution could not see is the one that cost the ninth byte.
+
+Ripple over all four corpus roots, both directions, nothing newly present anywhere: s1 `sonic.asm`
+50 -> 46 (4 absent), s2 `s2.asm` 5229 -> 5227 (2), skdisasm `sonic3k.asm` 2424 -> 2417 (7),
+`s3.asm` 1433 -> 1429 (4). The two Sonic 3 roots need their generated PCM includes present first;
+without them the newly-reached line 4404 reports `unresolved symbol SEGA_PCM.sample_rate`, which is
+a corpus-preparation artefact downstream of an include failure both runs already report, not a
+regression. Pinned by `crates/sigil-frontend-as/tests/as_z80_function_operand.rs`, expectations read
+out of an asl listing committed beside it, red under three separate mutations of the subject
+(no expansion; expansion without the written-shape rule; the written-shape rule over-reaching).
 
 ## DEAD-SAVE-DOC-AND-FLOOR-STALE
 
