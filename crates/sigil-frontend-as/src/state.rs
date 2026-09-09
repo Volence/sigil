@@ -223,6 +223,29 @@ mod tests {
         assert_eq!(s.disp, 0x1234, "restore must not rewind the phase displacement");
     }
 
+    /// The code page starts at the identity and `save`/`restore` does not
+    /// bracket it. Asserted at the STRUCT level as well as end-to-end
+    /// (`tests/as_charset.rs::save_and_restore_do_not_bracket_the_page`,
+    /// which quotes the asl listing) because the two can fail apart: putting
+    /// the page into `Saved` would keep every existing byte test green and
+    /// break only a source that changes the page inside a `save` block, which
+    /// no corpus in this workspace does.
+    #[test]
+    fn save_and_restore_do_not_bracket_the_code_page() {
+        let mut s = AsmState::new(Some(Cpu::M68000));
+        assert!(s.charset.is_identity(), "a new state starts on the identity page");
+        s.charset.set(0x41, 0x11);
+        s.save();
+        s.charset.set(0x41, 0x44);
+        s.restore().unwrap();
+        assert_eq!(
+            s.charset.map_char('A'),
+            0x44,
+            "restore must not bring the saved code page back (asl: `dc.b \"A\"` reads 44)"
+        );
+        assert!(!s.charset.is_identity());
+    }
+
     #[test]
     fn restore_without_save_is_an_error() {
         let mut s = AsmState::new(Some(Cpu::Z80));
