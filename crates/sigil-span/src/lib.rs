@@ -87,18 +87,40 @@ impl SourceMap {
         self.texts.is_empty()
     }
 
-    /// `file(line)` for a span in a NAMED source — the shape AS itself reports
-    /// (`smps-bug.asm(9): error: …`). `None` when the span's source is not in
-    /// this map or carries no name, which is what a diagnostic belonging to no
-    /// source line (a whole-run or placement failure) must produce.
+    /// `file(line):col` for a span in a NAMED source, which is asl's own shape
+    /// (`smps-bug.asm(9):17: error: …`). `None` when the span's source is not
+    /// in this map or carries no name, which is what a diagnostic belonging to
+    /// no source line (a whole-run or placement failure) must produce.
+    ///
+    /// The column is here because [`location`](Self::location) already computes
+    /// it and this function used to throw it away, so the AS surface reported
+    /// less than the same binary's `.emp` surface from the same data. Two
+    /// diagnostics about two operands of one line are one line number and two
+    /// columns: without the column they render byte-identically and a reader
+    /// cannot tell which operand either is about.
+    ///
+    /// **The spelling is asl's, measured rather than chosen.** On the reference
+    /// build (md5 `61e672562465725a8c102288a7da9098`) asl reports
+    /// `h.asm(2):9: error #1010: symbol undefined` for `Val equ Missing`, and
+    /// across the five assignment spellings its numbers are 9, 7, 9, 8, 10,
+    /// which are exactly the 1-based columns at which `Missing` starts in each.
+    /// The evidence sits in `sigil-frontend-as/src/eval.rs` near the
+    /// unresolved-assignment group. So sigil's old `file(line)` was asl's
+    /// format with the column deleted, and a `file(line,col)` would have been a
+    /// third dialect answering a question asl had already answered.
+    ///
+    /// `.emp` renders `path:line:col:` and keeps its own shape; the split is
+    /// ruled in `docs/OVERSEER.md` on the argument that a compatibility surface
+    /// should be the thing it is compatible with, which is the same argument
+    /// that fixes this spelling.
     pub fn label(&self, span: Span) -> Option<String> {
         let idx = span.source.0 as usize;
         let name = self.names.get(idx)?;
         if name.is_empty() {
             return None;
         }
-        let (line, _col) = self.location(span);
-        Some(format!("{name}({line})"))
+        let (line, col) = self.location(span);
+        Some(format!("{name}({line}):{col}"))
     }
 
     /// Return the 1-based `(line, column)` of `span.start` within its source.
@@ -297,15 +319,22 @@ mod tests {
         let anon = map.add("nop\n".to_string());
 
         // Each id resolves against ITS OWN text: byte 8 is line 3 of the root and
-        // line 5 of nothing else.
+        // line 5 of nothing else. The trailing `:1` is the COLUMN, in asl's own
+        // `file(line):col` spelling; byte 8 is the first byte of root's line 3.
         assert_eq!(
             map.label(Span { source: root, start: 8, end: 9 }).as_deref(),
-            Some("root.asm(3)")
+            Some("root.asm(3):1")
         );
         // Byte 6 of the included file is line 4 — the includer's name never appears.
         assert_eq!(
             map.label(Span { source: inc, start: 6, end: 7 }).as_deref(),
-            Some("sub/part.asm(4)")
+            Some("sub/part.asm(4):1")
+        );
+        // A column that is NOT 1, so the field is shown to carry the position
+        // rather than a constant: byte 9 is root's line 3, second character.
+        assert_eq!(
+            map.label(Span { source: root, start: 9, end: 10 }).as_deref(),
+            Some("root.asm(3):2")
         );
         // A source with no name, and an id in no map at all, both decline to invent
         // a location rather than defaulting to the first file.

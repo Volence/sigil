@@ -67,17 +67,22 @@ fn a_diagnostic_names_its_own_file_and_line_across_an_include() {
     );
 
     // The included file's error names the INCLUDED file, at its own line 4.
-    let part_at_4 = format!("{}(4): error: ", src.join("part.asm").display());
+    //
+    // The column is matched as "present" rather than pinned to a value: this
+    // gate is about WHICH FILE and WHICH LINE, and `as_diagnostic_detail.rs`
+    // is where the column's value is the subject. Pinning it here would make
+    // this gate fail for a reason it is not about.
+    let part_at_4 = format!("{}(4):", src.join("part.asm").display());
     assert!(
         stderr.contains(&part_at_4),
-        "an error inside an included file must be reported as `{part_at_4}…`.\nstderr:\n{stderr}"
+        "an error inside an included file must be reported as `{part_at_4}<col>: error: …`.\nstderr:\n{stderr}"
     );
 
     // The root file's error names the ROOT file, at its own line 3.
-    let root_at_3 = format!("{}(3): error: ", src.join("root.asm").display());
+    let root_at_3 = format!("{}(3):", src.join("root.asm").display());
     assert!(
         stderr.contains(&root_at_3),
-        "an error in the root file must be reported as `{root_at_3}…`.\nstderr:\n{stderr}"
+        "an error in the root file must be reported as `{root_at_3}<col>: error: …`.\nstderr:\n{stderr}"
     );
 
     // The included file's error must not be laid at the includer's door under ANY
@@ -129,11 +134,12 @@ fn an_error_in_a_macro_body_names_the_file_the_body_was_written_in() {
         "the macro must have expanded and its bad line diagnosed, or this test is \
          vacuous.\nstderr:\n{stderr}"
     );
-    let body_at_3 = format!("{}(3): error: ", src.join("mac.inc").display());
+    // Column matched as present, not pinned; see the note in the include gate.
+    let body_at_3 = format!("{}(3):", src.join("mac.inc").display());
     assert!(
         stderr.contains(&body_at_3),
-        "a macro body's error must be reported as `{body_at_3}…`, the file the body \
-         was written in.\nstderr:\n{stderr}"
+        "a macro body's error must be reported as `{body_at_3}<col>: error: …`, the file \
+         the body was written in.\nstderr:\n{stderr}"
     );
 }
 
@@ -163,11 +169,24 @@ fn every_diagnostic_line_carries_a_file_and_line() {
         "expected one diagnostic per bogus mnemonic.\nstderr:\n{stderr}"
     );
     for line in &lines {
-        // `<path>(<line>): error: <message>` — the shape AS itself prints.
+        // `<path>(<line>):<col>: error: <message>`, asl's own shape. The
+        // numbers are checked AS NUMBERS: a shape assertion alone passes on
+        // `foo.asm():` and on any parenthesised junk, so a run that lost the
+        // line and the column entirely would satisfy it.
         let head = line.split(": error: ").next().unwrap_or("");
+        assert!(head.contains(".asm("), "diagnostic names no source file: {line}");
+        let (before_col, col_no) = head
+            .rsplit_once(':')
+            .unwrap_or_else(|| panic!("location carries no column: {line}"));
+        let line_no = before_col
+            .rsplit_once('(')
+            .map(|(_, tail)| tail.trim_end_matches(')'))
+            .unwrap_or_else(|| panic!("location carries no line number: {line}"));
         assert!(
-            head.ends_with(')') && head.contains(".asm("),
-            "diagnostic carries no `file(line)` location: {line}"
+            line_no.parse::<u32>().is_ok_and(|n| n >= 1)
+                && col_no.parse::<u32>().is_ok_and(|n| n >= 1),
+            "location's line and column must both be 1-based numbers, got \
+             line {line_no:?} col {col_no:?} in: {line}"
         );
     }
 }
@@ -214,7 +233,7 @@ fn an_unresolved_assignment_is_refused_whether_or_not_it_is_read() {
         // At the ASSIGNMENT (line 2), which is where asl reports it — not at
         // whatever line happens to read the value.
         assert!(
-            stderr.contains(&format!("{name}(2)")),
+            stderr.contains(&format!("{name}(2):")),
             "{name}: the refusal points at the assignment's own line.\nstderr:\n{stderr}"
         );
     }

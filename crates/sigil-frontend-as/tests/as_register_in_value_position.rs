@@ -89,11 +89,22 @@ fn refusal(body: &str) -> Vec<(String, String)> {
         .diags
         .iter()
         .map(|d| {
+            // Basename plus LINE, with the `:col` suffix dropped. This file
+            // asks which line each story is told on; the column's value is
+            // `sigil-cli/tests/as_diagnostic_detail.rs`'s subject, and carrying
+            // it here would make every expectation below brittle to a span
+            // moving within its line.
             let label = match failure.sources.label(d.primary) {
-                Some(full) => match full.rsplit_once('/') {
-                    Some((_, base)) => base.to_string(),
-                    None => full,
-                },
+                Some(full) => {
+                    let base = match full.rsplit_once('/') {
+                        Some((_, base)) => base.to_string(),
+                        None => full,
+                    };
+                    match base.split_once(')') {
+                        Some((upto, _)) => format!("{upto})"),
+                        None => base,
+                    }
+                }
                 None => "<no source location>".to_string(),
             };
             (label, d.message.clone())

@@ -13,7 +13,7 @@
 //! exited 0, which is the quieter failure of the same sizing.
 //!
 //! The assertions are about the CLI PROCESS: the refusal must be a rendered
-//! `file(line): error:` line on stderr and a status of exactly 1 (a signal shows
+//! `file(line):col: error:` line on stderr and a status of exactly 1 (a signal shows
 //! up as `code() == None`, which these assertions reject by name), and the
 //! allocator's own message must be absent. A control case places the LAST byte of
 //! the cartridge and must still succeed, so the bound is the window's end and not
@@ -50,10 +50,15 @@ fn assert_refused(out: &Output, file: &str, line: u32, needle: &str) {
         !stderr.contains("memory allocation"),
         "the allocator spoke instead of the linker\nstderr: {stderr}"
     );
-    let prefix = format!("{file}({line}): error: section `");
-    let located = stderr.lines().find(|l| l.contains(&prefix));
+    // `file(line):col: error: section `…`. The column is matched as present
+    // rather than pinned: this gate is about the LINE the refusal names, and
+    // `as_diagnostic_detail.rs` is where the column's value is the subject.
+    let prefix = format!("{file}({line}):");
+    let located = stderr
+        .lines()
+        .find(|l| l.contains(&prefix) && l.contains(": error: section `"));
     let Some(located) = located else {
-        panic!("no line starts with {prefix:?}\nstderr: {stderr}");
+        panic!("no line matches {prefix:?}<col>`: error: section `\nstderr: {stderr}");
     };
     assert!(located.contains(needle), "expected {needle:?} in {located:?}");
     assert!(
@@ -62,18 +67,35 @@ fn assert_refused(out: &Output, file: &str, line: u32, needle: &str) {
     );
 }
 
+/// A refused run rendered NOTHING: stdout holds the failure line and not one
+/// byte of image.
+///
+/// This replaces an `out.stdout.is_empty()` that stopped being true when a
+/// failing run began saying so on stdout. Emptiness was never the property
+/// under test, and asserting the exact content is the stronger form of the one
+/// that was: it fails if a single hex byte is printed, which `is_empty` also
+/// did, AND it fails if anything else appears, which `is_empty` did too but
+/// which a loosened `!contains("hex")` would not have.
+fn assert_rendered_nothing(out: &Output) {
+    assert_eq!(
+        String::from_utf8_lossy(&out.stdout),
+        "assembly failed: 1 error (reported on stderr)\n",
+        "a refused run printed something other than its failure line"
+    );
+}
+
 #[test]
 fn org_minus_one_is_refused_not_a_four_gib_allocation() {
     let (out, _dir) = run("org_neg1.asm", "\torg -1\n\tdc.b 1\n", &[]);
     assert_refused(&out, "org_neg1.asm", 3, "LMA 0xFFFFFFFF is in no ROM region");
-    assert!(out.stdout.is_empty(), "stdout: {}", String::from_utf8_lossy(&out.stdout));
+    assert_rendered_nothing(&out);
 }
 
 #[test]
 fn org_minus_one_with_hex_is_refused_before_rendering() {
     let (out, _dir) = run("org_neg1.asm", "\torg -1\n\tdc.b 1\n", &["--hex"]);
     assert_refused(&out, "org_neg1.asm", 3, "LMA 0xFFFFFFFF is in no ROM region");
-    assert!(out.stdout.is_empty(), "stdout: {}", String::from_utf8_lossy(&out.stdout));
+    assert_rendered_nothing(&out);
 }
 
 #[test]

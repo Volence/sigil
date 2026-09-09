@@ -43,6 +43,30 @@ fn run(src: &str) -> (Option<i32>, String) {
     (out.status.code(), String::from_utf8_lossy(&out.stderr).into_owned())
 }
 
+/// Whether some line of `stderr` is located at `file_line` and is an error:
+/// `…<file_line>:<col>: error: …`, for any column.
+///
+/// The column is matched as a NUMBER rather than pinned to a value, because
+/// this file asks whether a LINK diagnostic is located like a front-end one,
+/// not where in the line it points. Anchoring it this way keeps the location
+/// and the `error:` on the SAME line, which two independent `contains` calls
+/// would not: those pass on a report where one line carries the location and a
+/// different line carries the word.
+fn located_error_at(stderr: &str, file_line: &str) -> bool {
+    stderr.lines().any(|l| {
+        let Some(i) = l.find(file_line) else {
+            return false;
+        };
+        let Some(rest) = l[i + file_line.len()..].strip_prefix(':') else {
+            return false;
+        };
+        match rest.split_once(": ") {
+            Some((col, tail)) => col.parse::<u32>().is_ok() && tail.starts_with("error: "),
+            None => false,
+        }
+    })
+}
+
 /// Nothing the assembler prints to a user may be an internal-error message, and
 /// no exit status may be a panic's. 101 is checked by number as well as by text
 /// because a panic whose message changed is still a panic.
@@ -68,12 +92,19 @@ fn jsr_to_an_undefined_symbol_is_a_located_diagnostic() {
         "the refusal must name the symbol. stderr:\n{stderr}"
     );
     assert!(
-        stderr.contains("root.asm(2): error: "),
+        located_error_at(&stderr, "root.asm(2)"),
         "the refusal must name the file and line it is about, in the same shape \
          as every other diagnostic. stderr:\n{stderr}"
     );
 }
 
+/// The `jmp` twin of the gate above.
+///
+/// **It did not check a location until 2026-09-09**, despite being named for
+/// one: it asserted the exit code and the symbol's name and stopped, while its
+/// `jsr` and `bsr` siblings both asserted the location. A test's NAME is not
+/// evidence of what it checks, and this one would have gone on reading as
+/// coverage of the `jmp` path's location for as long as nobody opened it.
 #[test]
 fn jmp_to_an_undefined_symbol_is_a_located_diagnostic() {
     let (code, stderr) = run("\tcpu\t68000\n\tjmp\tNowhere\n");
@@ -82,6 +113,10 @@ fn jmp_to_an_undefined_symbol_is_a_located_diagnostic() {
     assert!(
         stderr.contains("`Nowhere`"),
         "the refusal must name the symbol. stderr:\n{stderr}"
+    );
+    assert!(
+        located_error_at(&stderr, "root.asm(2)"),
+        "a LINK diagnostic must be located like a front-end one. stderr:\n{stderr}"
     );
 }
 
@@ -110,7 +145,7 @@ fn bsr_to_an_undefined_symbol_stays_loud_and_gains_a_location() {
         "the refusal must name the symbol. stderr:\n{stderr}"
     );
     assert!(
-        stderr.contains("root.asm(2): error: "),
+        located_error_at(&stderr, "root.asm(2)"),
         "a LINK diagnostic must be located like a front-end one. stderr:\n{stderr}"
     );
 }

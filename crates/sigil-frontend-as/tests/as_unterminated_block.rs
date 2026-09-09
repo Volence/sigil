@@ -61,8 +61,14 @@ fn assemble(body: &str) -> Result<Vec<u8>, Vec<(u32, String)>> {
                     .sources
                     .label(d.primary)
                     .and_then(|l| {
+                        // `file(line):col`: the line is what sits BETWEEN the
+                        // parens. Reading to the end of the string instead used
+                        // to work only because nothing followed the `)`, and it
+                        // returned 0 (a line no source has) the moment the
+                        // column arrived.
                         l.rsplit_once('(')
-                            .and_then(|(_, n)| n.trim_end_matches(')').parse().ok())
+                            .and_then(|(_, rest)| rest.split_once(')'))
+                            .and_then(|(n, _)| n.parse().ok())
                     })
                     .unwrap_or(0);
                 (line, d.message.clone())

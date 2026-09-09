@@ -51,7 +51,7 @@
 use sigil_frontend_as::{assemble_root_located, Options};
 
 /// Assemble a root that may `include` siblings, and hand back the linked bytes
-/// or the rendered `file(line): message` diagnostics.
+/// or the rendered `file(line):col: message` diagnostics.
 ///
 /// The diagnostics are rendered through the same `SourceMap::label` the CLI
 /// uses, because half of what these tests check is WHICH FILE a carried
@@ -85,6 +85,29 @@ fn assemble_tree(files: &[(&str, &str)]) -> Result<Vec<u8>, Vec<String>> {
 
 fn assemble(body: &str) -> Result<Vec<u8>, Vec<String>> {
     assemble_tree(&[("probe.asm", body)])
+}
+
+/// Whether `diag` reads `…<file_line>:<col>: <text>` for SOME column.
+///
+/// The column is not pinned. This file asks which LINE a carried diagnostic
+/// names, and `sigil-cli/tests/as_diagnostic_detail.rs` is where the column's
+/// value is the subject; pinning it here would make these tests fail whenever
+/// a span moved within its line, for a reason they are not about.
+///
+/// It is nonetheless TIGHTER than the `contains("probe.asm(5): text")` it
+/// replaces: the message must be the whole of what follows the location, so a
+/// diagnostic that merely mentions the text somewhere no longer passes.
+fn at(diag: &str, file_line: &str, text: &str) -> bool {
+    let Some(i) = diag.find(file_line) else {
+        return false;
+    };
+    let Some(rest) = diag[i + file_line.len()..].strip_prefix(':') else {
+        return false;
+    };
+    match rest.split_once(": ") {
+        Some((col, tail)) => col.parse::<u32>().is_ok() && tail == text,
+        None => false,
+    }
 }
 
 /// Like [`assemble_tree`] but keeps the WARNINGS a successful assembly returned,
@@ -144,7 +167,7 @@ fn a_fatal_on_a_non_final_pass_is_reported() {
     assert!(
         diags
             .iter()
-            .any(|d| d.contains("probe.asm(5): first-iteration problem")),
+            .any(|d| at(d, "probe.asm(5)", "first-iteration problem")),
         "and must name the line it is written on: {diags:?}"
     );
 }
@@ -158,7 +181,7 @@ fn an_unguarded_fatal_is_still_reported() {
     let src = format!("{HEAD}\tfatal \"plain\"\n\tdc.b $11\n\tend\n");
     let diags = assemble(&src).expect_err("a fatal must not assemble to bytes");
     assert!(
-        diags.iter().any(|d| d.contains("probe.asm(4): plain")),
+        diags.iter().any(|d| at(d, "probe.asm(4)", "plain")),
         "{diags:?}"
     );
 }
@@ -259,7 +282,7 @@ fn a_warning_on_a_non_final_pass_is_reported() {
     assert_eq!(a.0, vec![0x11, 0x00, 0x02], "and it emits no bytes of its own");
     assert!(
         a.1.iter()
-            .any(|d| d.contains("probe.asm(5): [as.warning] first-iteration warning")),
+            .any(|d| at(d, "probe.asm(5)", "[as.warning] first-iteration warning")),
         "the author's own text must survive its pass, naming its own line: {:?}",
         a.1
     );

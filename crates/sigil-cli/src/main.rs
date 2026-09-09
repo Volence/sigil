@@ -315,7 +315,7 @@ fn run_asm(entry: &Entry, args: &[String]) {
         Err(failure) => {
             render_as_messages(&failure.messages);
             render_as_diags(&failure);
-            process::exit(1);
+            fail_asm(failure.diags.len());
         }
     };
     // `resolve_layout` before `link`, which is what every other FINAL-link route
@@ -341,14 +341,14 @@ fn run_asm(entry: &Entry, args: &[String]) {
         Ok(secs) => secs,
         Err(diags) => {
             render_located_diags(&diags, &sources);
-            process::exit(1);
+            fail_asm(diags.len());
         }
     };
     let linked = match sigil_link::link(&resolved, &empty) {
         Ok(img) => img,
         Err(diags) => {
             render_located_diags(&diags, &sources);
-            process::exit(1);
+            fail_asm(diags.len());
         }
     };
     // The cartridge-window check before `flatten`, located against `resolved`
@@ -359,20 +359,20 @@ fn run_asm(entry: &Entry, args: &[String]) {
     let bounds = sigil_link::check_image_bounds(&linked, &resolved);
     if !bounds.is_empty() {
         render_located_diags(&bounds, &sources);
-        process::exit(1);
+        fail_asm(bounds.len());
     }
     let image = match sigil_link::flatten(&linked, 0x00) {
         Ok(image) => image,
         Err(msg) => {
             eprintln!("error: {msg}");
-            process::exit(1);
+            fail_asm(1);
         }
     };
 
     if let Some(out_path) = output {
         if let Err(err) = install_artifact(&out_path, &image) {
             eprintln!("error: cannot write {out_path}: {err}");
-            process::exit(1);
+            fail_asm(1);
         }
     }
 
@@ -448,6 +448,42 @@ fn render_as_messages(messages: &[String]) {
     for m in messages {
         println!("{m}");
     }
+}
+
+/// End a failed `sigil <root.asm>` run, after saying on STDOUT that it failed.
+///
+/// **Every failure exit in [`run_asm`] goes through here**, which is the whole
+/// point: the guarantee is a property of one function rather than of a
+/// population of `process::exit(1)` calls that a later edit can quietly leave
+/// out. `asm_failure_exits_all_go_through_fail_asm` reads `run_asm`'s own body
+/// out of the source and fails if a bare exit reappears in it.
+///
+/// The line exists because `message` writes to stdout and diagnostics write to
+/// stderr, so `sigil root.asm > build.log` on a FAILING run left a log holding
+/// the author's reassuring line and not one word about the failure. The
+/// asymmetry worth naming is against a C compiler: `cc foo.c > log` on a
+/// failing build leaves the log EMPTY, which misleads nobody. Here it left
+/// `Uncompressed driver size: 1BC6h bytes.` and exit 1, and a log read later
+/// reads as a build that worked.
+///
+/// **The stream is NOT the fix, and moving it was refused on the consumers.**
+/// asl writes `message` to stdout (probe `p1b`), and this surface's job is to
+/// be the thing it is compatible with, which is the same argument the two
+/// diagnostic dialects are ruled on. `scripts/corpus-baseline.sh` then splits
+/// the two streams on purpose and treats stderr as the diagnostic POPULATION:
+/// it line-counts it into `NERR`, feeds it the class table, diffs it against a
+/// stored baseline with `comm`, and keys its "clean assembly" verdict on that
+/// count. Both corpora fire `message` (`s1disasm/sound/z80.asm:231`,
+/// `s2disasm/s2.macrosetup.asm:84`), so moving the stream would have inflated
+/// the count, added unclassified rows, and made every stored baseline
+/// incomparable, to fix a log nobody had to keep.
+///
+/// The count is the diagnostics this route rendered, so it is derived from the
+/// list that was printed rather than tallied separately and left to drift.
+fn fail_asm(errors: usize) -> ! {
+    let noun = if errors == 1 { "error" } else { "errors" };
+    println!("assembly failed: {errors} {noun} (reported on stderr)");
+    process::exit(1);
 }
 
 /// `sigil --version` / `sigil -V` — report the source revision this executable
