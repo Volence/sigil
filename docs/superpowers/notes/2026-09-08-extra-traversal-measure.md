@@ -281,3 +281,32 @@ is dated 2026-09-07 11:59. Something wrote into the reference tree today. Not th
 7. The brief's caution that the candidate site "is there but not established as the loop the finding
    means": it IS the loop that re-reads the source, and its exit condition is as described. The site
    is right; what the finding says the site does is not.
+
+## Addendum, 20:56: the reference tree is not still, and my fingerprint was the wrong instrument
+
+The final read-only check, taken after the commit above, came back DIFFERENT:
+`bef4129e4d31baf5c56b6537fda60f17` against the `806e2a3e...` that had held across every measurement.
+All 19 files in `$AEON_DIR/engine/sound/generated/` carry mtime 2026-09-08 20:56:05, with every size
+unchanged. A concurrently running aeon lane (session `38649c2b`, visible in `ps` running gates out of
+`.aeon-ls22a-resid`) rewrote them, as it also did at 20:38 before this parcel started. Nothing in
+this parcel writes there: the last aeon-touching command here finished before 20:54, and the
+fingerprint taken immediately after it was still `806e2a3e`.
+
+Two things follow, and both are corrections to my own method rather than to the numbers.
+
+**The fingerprint was mtime-sensitive, so a byte-identical rewrite flips it.** `find -printf '%T@ %s
+%p'` cannot distinguish "someone changed the tree" from "someone rewrote the same bytes". Content
+hashes taken now, for whoever needs a stable one: size-and-path over the whole tree
+`7dfb0b2570b90aae8a9ba13d32b6a17a`, and md5-of-md5s over `engine/sound/generated`
+`dde7bcd0b23e35173ccf169a54f71873`. A future parcel measuring against a shared reference tree should
+hash CONTENT, and should hash it before and after each individual run rather than at the ends.
+
+**No foreign write landed inside a measurement window,** which is the claim that matters and the one
+I can support: 20:38 precedes this parcel's first census run, 20:56 follows its last aeon run, and
+the fingerprint was checked and identical immediately after the aeon census, after the AS-side
+timing, and after the whole demo builds. The corpus figures are untouched by this: they run against
+private copies in this lane's own scratch directory. What the machine's other lanes did contribute
+is load, which is why every figure above carries its own load average.
+
+It is also worth saying plainly that a tree briefed as READ-ONLY is being written by another lane
+several times an hour. That is the overseer's to resolve, not this parcel's.
