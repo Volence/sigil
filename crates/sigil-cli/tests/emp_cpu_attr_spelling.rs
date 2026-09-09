@@ -310,12 +310,20 @@ fn every_cpu_spelling_written_in_the_aeon_tree_is_accepted() {
         return;
     }
 
-    let spellings = cpu_spellings_written_under(&dir);
+    let Census { spellings, files } = cpu_spellings_written_under(&dir);
+    // What was measured, on the record. A census that reports only its verdict
+    // cannot be checked for over-reach, which is this one's failure mode.
+    eprintln!(
+        "cpu census: {} `.emp` files under {}, spellings {spellings:?}",
+        files,
+        dir.display()
+    );
     assert!(
-        !spellings.is_empty(),
-        "the census found no `cpu:` value under {}. An empty result here is a \
-         BROKEN INSTRUMENT, not a clean tree: aeon declares processors in its \
-         `.emp` sources and always has. Refusing to read that as a pass.",
+        files > 0 && !spellings.is_empty(),
+        "the census found {files} `.emp` files and no `cpu:` value under {}. An \
+         empty result here is a BROKEN INSTRUMENT, not a clean tree: aeon \
+         declares processors in its `.emp` sources and always has. Refusing to \
+         read that as a pass.",
         dir.display()
     );
 
@@ -366,37 +374,66 @@ fn the_spellings_aeon_writes_today_are_accepted() {
     }
 }
 
+/// Subtrees the census does not descend into. Each would attribute somebody
+/// else's sources to the reference tree.
+///
+/// `.claude/worktrees` and `.worktrees` are the sharp ones and they are not
+/// hypothetical: both hold SYMLINKS INTO OTHER REPOSITORIES (this one included),
+/// so a walk that follows them censuses sigil's own `examples/` and reports the
+/// result as aeon's. That is how this gate first passed, with a spelling in its
+/// census that appears nowhere in aeon.
+const CENSUS_SKIPS: &[&str] = &[".git", ".claude", ".worktrees", "target"];
+
+/// The census population: every `*.emp` file under `root`, not following
+/// symlinks and not descending into [`CENSUS_SKIPS`].
+///
+/// Returned alongside the spellings so a reader can see WHAT was measured. A
+/// census is only as good as its population, and this one's failure mode is
+/// silent over-reach rather than emptiness.
+struct Census {
+    spellings: Vec<String>,
+    files: usize,
+}
+
 /// Every distinct `cpu:` value written in `*.emp` under `root`, folded.
 ///
 /// Reads the attribute out of the source text rather than parsing: the census
 /// must see a spelling this front end may not be able to lower, which is the
 /// case the derived gate exists to catch.
-fn cpu_spellings_written_under(root: &std::path::Path) -> Vec<String> {
-    let mut found: Vec<String> = Vec::new();
+///
+/// Symlinks are not followed, in either direction. `entry.file_type()` reports
+/// the LINK rather than its target, unlike `Path::is_dir`, so a link out of the
+/// tree is neither descended into nor read.
+fn cpu_spellings_written_under(root: &std::path::Path) -> Census {
+    let mut spellings: Vec<String> = Vec::new();
+    let mut files = 0usize;
     let mut stack = vec![root.to_path_buf()];
     while let Some(dir) = stack.pop() {
         let Ok(entries) = std::fs::read_dir(&dir) else { continue };
         for entry in entries.flatten() {
+            let Ok(kind) = entry.file_type() else { continue };
+            if kind.is_symlink() {
+                continue;
+            }
             let path = entry.path();
-            if path.is_dir() {
-                // `.git` is the one subtree worth naming: it holds packed
-                // object data whose bytes can spell anything.
-                if path.file_name().is_some_and(|n| n == ".git") {
+            if kind.is_dir() {
+                if path.file_name().is_some_and(|n| CENSUS_SKIPS.iter().any(|s| n == *s)) {
                     continue;
                 }
                 stack.push(path);
             } else if path.extension().is_some_and(|e| e == "emp") {
                 let Ok(text) = std::fs::read_to_string(&path) else { continue };
+                files += 1;
                 for spelling in cpu_values_in(&text) {
-                    if !found.contains(&spelling) {
-                        found.push(spelling);
+                    if !spellings.contains(&spelling) {
+                        spellings.push(spelling);
                     }
                 }
             }
         }
     }
-    found.sort();
-    found
+    spellings.sort();
+    Census { spellings, files }
 }
 
 /// The `cpu:` attribute values in one `.emp` source's text.
