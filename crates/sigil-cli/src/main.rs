@@ -2592,9 +2592,26 @@ mod help_gates {
         );
     }
 
+    /// The command each usage line invokes: the token after `sigil ` on it.
+    ///
+    /// A whole-text substring search cannot answer this question, because the
+    /// commands are substrings of the arguments they take: a `sigil emp` usage
+    /// line that had lost its `emp` still contains `emp`, inside `<input.emp>`.
+    /// The token after `sigil` is the thing a reader would type.
+    fn usage_commands<'a>(usage: &[&'a str]) -> BTreeSet<&'a str> {
+        let mut out = BTreeSet::new();
+        for line in usage {
+            let Some(at) = line.find("sigil ") else { continue };
+            if let Some(token) = line[at + "sigil ".len()..].split_whitespace().next() {
+                out.insert(token);
+            }
+        }
+        out
+    }
+
     /// Each row's usage text is about that row: it opens with a usage line, and
-    /// it spells every word that selects the row. Catches a usage string copied
-    /// from a sibling and left naming the sibling.
+    /// every word that selects the row is the command on one of those lines.
+    /// Catches a usage string copied from a sibling and left naming the sibling.
     #[test]
     fn every_entry_usage_names_its_own_entry() {
         for e in ENTRIES {
@@ -2605,15 +2622,17 @@ mod help_gates {
                 "`{}` usage does not open with a usage line: {usage}",
                 e.label
             );
+            let commands = usage_commands(e.usage);
             assert!(
-                usage.contains(e.label),
-                "`{}` usage never names the entry point: {usage}",
+                commands.contains(e.label),
+                "`{}` usage never invokes the entry point (it invokes {commands:?}): {usage}",
                 e.label
             );
             for word in e.words {
                 assert!(
-                    usage.contains(*word),
-                    "`{}` usage never spells its selecting word `{word}`: {usage}",
+                    commands.contains(word),
+                    "`{}` usage never invokes its selecting word `{word}` \
+                     (it invokes {commands:?}): {usage}",
                     e.label
                 );
             }

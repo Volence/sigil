@@ -151,8 +151,21 @@ fn asking_for_help_lists_every_entry_point_and_exits_zero() {
     );
 }
 
+/// The commands a help page invokes: the token after `sigil ` on each line.
+///
+/// A substring search over the page cannot answer this, because the commands are
+/// substrings of the arguments they take: `emp` is inside `<input.emp>`, so a
+/// page that had lost its command still contains the command's name.
+fn invoked_commands(page: &str) -> Vec<&str> {
+    page.lines()
+        .filter_map(|l| l.find("sigil ").map(|at| &l[at + "sigil ".len()..]))
+        .filter_map(|rest| rest.split_whitespace().next())
+        .collect()
+}
+
 /// Every command in the list answers its own `--help`, both as a flag after the
-/// command and as `sigil help <command>`, and says something about itself.
+/// command and as `sigil help <command>`, and the page it prints is that
+/// command's page rather than another's.
 #[test]
 fn every_command_answers_its_own_help() {
     let rows = rows();
@@ -163,8 +176,8 @@ fn every_command_answers_its_own_help() {
                 let (stdout, stderr, code) = run(&form);
                 assert_eq!(code, 0, "`sigil {}` exited {code}, stderr: {stderr}", form.join(" "));
                 assert!(
-                    stdout.contains(word.as_str()),
-                    "`sigil {}` prints help that never names it:\n{stdout}",
+                    invoked_commands(&stdout).contains(&word.as_str()),
+                    "`sigil {}` prints a page for some other command:\n{stdout}",
                     form.join(" ")
                 );
                 checked += 1;
