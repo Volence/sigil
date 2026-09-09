@@ -356,3 +356,53 @@ evidence only that the fixture was broken.
    own note says.
 5. The s8 refusal is proven on a fixture, not on the real tree, because proving it there means
    removing a harness module.
+
+## CLOSURE-MISSES-FALLS-INTO-EDGE
+
+- state at archive: `next`  size: `S`  project: `-`
+- blockedBy: nothing; it is OUR code, so it does not serialize behind the byte chain
+
+Booked 2026-09-09 from the CLOBBER-PAYOFF-MEASURE result, and it is the reason that measurement was
+ordered before the fix rather than beside it.
+
+`corpus_contracts.rs` builds callee edges from call and tail mnemonics only, so **a `falls_into`
+declaration is not modelled as an edge at all.** Consequence, measured: 11 of the 90 procs the census
+reports as over-declaring are not loose, they are correct. `S4LZ_DecompressDict` reads as never
+writing 8 of its 9 declared registers, while `S4LZ_Decompress`, the proc it falls into, writes them.
+
+**⚠ THE DIRECTION THAT MATTERS: had the large fix started on the producer count, a register was on the
+list to be deleted from a contract that needs it, along with its caller's correct save.** The
+over-declaration census is the SAFE direction of this gap. The same missing edge suppresses a real
+under-declaration firing, which is the destructive one, and that half wants its own row rather than
+riding this one.
+
+Fix shape: teach the closure the `falls_into` edge. It removes 11 false census rows and closes the
+missed-firing direction in one change, in our tree.
+
+## AS-Z80-FUNCTION-CALL-IN-OPERAND
+
+- state at archive: `open`  size: `S`  project: `SIGIL-AS-REPLACEMENT`
+- blockedBy: nothing
+
+Booked 2026-09-09 from the same parcel's step zero. `AS-S1-DRIVER-SIZE-60X` cleared: the recorded
+symptom is gone, no fatal at `sound/z80.asm(229)`, and the pass now reaches the message site it used
+to truncate before.
+
+**It did not close completely, and the residue is a different defect.** We report the uncompressed
+driver as `1BBDh` where the reference reports `1BC6h`, 9 bytes short. Cause, proved rather than
+asserted: **four Z80 instructions we cannot encode, each carrying a user-defined `function` macro call
+in an operand** (`z80.asm` lines 51, 55, 188 and 197, contributing 2+2+3+2 bytes). Substituting
+literals for exactly those four operands yields `1BC6h`, byte-equal to the reference, with every other
+diagnostic unchanged. A first attempt that only parenthesised the calls changed the error text and not
+the size, which is what identified the call rather than the trailing operator.
+
+## DEAD-SAVE-DOC-AND-FLOOR-STALE
+
+- state at archive: `open`  size: `S`  project: `-`
+- blockedBy: nothing
+
+`dead_save_corpus.rs`'s doc comment says one firing in every shape. Measured 2026-09-09: **1 in the
+non-debug shapes and 10 in the three debug ones.** Its floor is `widest >= 1`, which is tolerant in the
+direction that matters: it could never notice growth. Same class as the stale-comment rows this file
+already carries, with the addition that the gate's own tolerance hides the drift its comment
+misdescribes.
