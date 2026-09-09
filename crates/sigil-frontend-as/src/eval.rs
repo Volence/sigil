@@ -7136,7 +7136,7 @@ impl Asm {
         // arm names a register and otherwise returns silently). Without this,
         // `charset NeverDefined,$11` dropped the mapping, emitted no diagnostic,
         // exited 0, and handed back plain ASCII for every character the source
-        // meant to be in the game's font — measured on the binary before this
+        // meant to be in the game's font. Measured on the binary before this
         // arm existed, which emitted `41` for a following `dc.b "A"`. asl
         // refuses it (`p16.asm(4):10: error: symbol undefined`, exit 2) and
         // applies no mapping, so `41` at exit 0 was a silent wrong byte, the one

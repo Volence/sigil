@@ -631,7 +631,7 @@ fn an_out_of_range_operand_is_refused_and_applies_nothing() {
 /// The `41` in the first is the reason this test exists rather than being left
 /// to the general unresolved-symbol machinery. Before `charset_index` grew its
 /// own `None` arm, sigil emitted that same `41` **at exit 0 with no
-/// diagnostic** — plain ASCII where the source asked for the game's font, which
+/// diagnostic**: plain ASCII where the source asked for the game's font, which
 /// is a silent wrong byte and not a refusal. Neither the Sonic 1 census nor the
 /// four-shape ROM gate can see one.
 // REASON: the doc comment above quotes asl listings verbatim, and asl separates

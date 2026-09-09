@@ -4896,7 +4896,7 @@ consumer**, and one whose omission would be invisible exactly the way the lexer'
 is 0** in s1disasm's front-end run today. **Kill:** `dc.w`/`dc.l` accept a string operand AND route
 it through `AsmState::charset`.
 
-**2. `dc.b "AB"+0` — an operator distributing over a string's elements.** asl emits `41 42` (one
+**2. `dc.b "AB"+0`, an operator distributing over a string's elements.** asl emits `41 42` (one
 byte per character, the operator applied to each), and `11 42` under `charset 'A',$11` (probe
 `p2`, line 30). sigil's `directive_db` takes its string path only for a BARE string, so `"AB"+0`
 falls through to the numeric parse, packs to `$1142`, and is refused as out of range. Same family

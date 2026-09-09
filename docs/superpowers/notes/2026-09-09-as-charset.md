@@ -256,8 +256,8 @@ superseded once the symbol has a value. sigil emits `11` at exit 0, as asl does.
    draws `range overflow` instead.
 2. **`dc.b "AB"+0`.** asl distributes the operator over the string's elements
    and emits `11 42` under a live page; sigil packs it to `$1142` and refuses it
-   as out of range. **Pre-existing and unrelated to `charset`** — `expr.rs`
-   already documents the rule and sigil's departure from it — but it surfaced
+   as out of range. **Pre-existing and unrelated to `charset`**: `expr.rs`
+   already documents the rule and sigil's departure from it. It surfaced
    here and is recorded so the next reader does not re-derive it.
 
 ## The census
@@ -317,3 +317,27 @@ works. The evidence for that is `tests/as_charset.rs`, and for the expression
 consumer specifically it is one test:
 `a_string_in_an_expression_packs_the_mapped_bytes`, the only gate in the
 workspace that goes red under M2.
+
+
+## A correction to this parcel's own commit message
+
+`eaf4ef29` says the compiler named "18 in the expression path and 11 in the
+lexer". The expression half is right; **the lexer half is 13, and the total is
+31, not 29.**
+
+The 11 came from a regex that required the call's first argument to sit on the
+same line as `self.state.cpu`, so it missed the multi-line call sites. A second
+pass patched those without printing a count, and the first pass's number was
+banked. Re-derived by counting occurrences rather than matching lines:
+
+```
+lexer sites       13
+parse_expr sites  11
+operands sites     7
+TOTAL             31
+```
+
+Recorded rather than amended, because the point of the figure was that the
+COMPILER did the enumeration and a reader did not, and that point survives the
+wrong number. What did not survive is the number, and a later reader quoting 29
+would be quoting a regex artifact.

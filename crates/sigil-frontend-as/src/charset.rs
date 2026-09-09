@@ -151,7 +151,7 @@ impl CodePage {
 
     /// Translate one source character to its byte.
     ///
-    /// The index is `c as u8` — the same truncation the identity page always
+    /// The index is `c as u8`, the same truncation the identity page always
     /// performed, kept verbatim so a source with no `charset` in it emits
     /// exactly the bytes it did before this table existed.
     pub fn map_char(&self, c: char) -> u8 {
