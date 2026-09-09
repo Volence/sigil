@@ -283,6 +283,54 @@ fn a_dotted_path_is_not_a_processor_name() {
     }
 }
 
+/// A diagnostic that NAMES a processor must name one the reader can write.
+///
+/// `[module.cpu-mismatch]` renders both processors through a separate
+/// `Cpu -> &str` helper, so the table is not the only place a spelling is
+/// produced. Narrow the table without touching that helper and the message
+/// starts telling people to write a `cpu:` value the attribute would refuse,
+/// which is the drift the one-table design exists to prevent, arriving through
+/// the one direction the table does not resolve.
+#[test]
+fn a_diagnostic_that_names_a_processor_names_an_acceptable_spelling() {
+    // A module declared Z80 opening a 68000 section: the mismatch names both.
+    let src = "module m (cpu: z80)\nsection s (cpu: m68000, vma: $0) {\n  data V: u16 = $1111\n}\n";
+    let (_, diags) = lower(src);
+    let msg = diags
+        .iter()
+        .find(|d| d.message.contains("[module.cpu-mismatch]"))
+        .map(|d| d.message.clone())
+        .unwrap_or_else(|| {
+            panic!(
+                "this gate needs the mismatch diagnostic to exist; without it \
+                 it asserts on nothing. diagnostics: {:?}",
+                diags.iter().map(|d| &d.message).collect::<Vec<_>>()
+            )
+        });
+
+    // BOTH sides. The message renders the module's processor and the section's
+    // through the same helper, and only one of the two is written `(cpu: X)`,
+    // so scanning for that spelling alone would check half of it.
+    for target in [Cpu::Z80, Cpu::M68000] {
+        let accepted: Vec<&str> = CPU_SPELLINGS
+            .iter()
+            .filter(|(_, c)| *c == target)
+            .map(|(s, _)| *s)
+            .collect();
+        assert!(
+            !accepted.is_empty(),
+            "precondition: the table names {target:?} at all"
+        );
+        assert!(
+            accepted.iter().any(|s| msg.contains(*s)),
+            "the mismatch message names the {target:?} side with something that \
+             is not a spelling the attribute accepts, so it is telling the \
+             reader to write a value that would be refused. Accepted for \
+             {target:?}: {accepted:?}. message: {msg}"
+        );
+    }
+}
+
 // ---- the promise made to aeon -----------------------------------------------
 
 /// THE GATE ON THE PROMISE, DERIVED. Every distinct `cpu:` spelling written in
