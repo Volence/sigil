@@ -369,8 +369,18 @@ One run during the arity work came back 4899/1/2 on
 which compares the version banner's baked `origin/master` against what git
 resolves. It is not this branch's: nothing here touches `crates/sigil-cli`, and
 the ref moved under the run (the banner's value is what `origin/master` resolves
-to now, and the test read an intermediate state while another lane was
-fetching). Re-run once the ref settled: 19 passed, 0 failed. Recorded rather than
+to now, and the test read an intermediate state while the ref moved under the
+run).
+
+> **CORRECTION by the controller at the landing: the mover was NOT another lane.
+> It was this parcel's own controller**, which pushed seven commits to sigil
+> `origin/master` while this agent was running. The agent could not have known,
+> and the controller is the only party who could. Recorded because attributing to
+> an unnamed peer what your own session did is the same shape this lane has
+> already banked once tonight, from the other end: a write inside our own landing
+> run was reported to a peer as theirs, and their one question, how did you
+> attribute it, was the entire audit. The transient red itself is unchanged and
+> keeping it on the record was right. Re-run once the ref settled: 19 passed, 0 failed. Recorded rather than
 dropped, because a transient red that is quietly re-run until green is
 indistinguishable from one that was argued away.
 
