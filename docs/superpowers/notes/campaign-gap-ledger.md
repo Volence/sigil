@@ -4836,3 +4836,45 @@ pages here), and at 4096-byte pipes the same 94,453-byte corpus deadlocks every 
 run holds hundreds of child pipes, so "load decides it" stands, but the load that decides it is
 the user's pipe-page count, not CPU. The hanging run's pipe size was not measured, so this is the
 mechanism that fits every number, not a witnessed one.
+
+## 2026-09-09 AS selector on an integer (Sonic 1 cause E), booked not fixed
+
+Landed on `worktree-agent-a903dfc1b67f61ad8` at `7ccd4dba`. `switch`/`case` now selects on an
+integer as well as a string; these four are what the parcel found and did NOT close. Oracle for
+every claim: asl 1.42 Beta [Bld 212], md5 `61e672562465725a8c102288a7da9098`; probes and their
+listings at `.s1probe/2026-09-09-switch-int/`.
+
+**1. A single-quoted `switch`/`case` operand is a STRING to asl and an integer to sigil.** In this
+one construct asl types an operand by its SPELLING and reads both quote forms as strings, so
+`switch 65` skips `case 'A'` (probes `p14`, `p22`). Everywhere else `'A'` really is 65 and asl
+agrees (`p21`: `dc.b 'A'+1` is `42`, `if 65='A'` is `=>TRUE`), so sigil's lexer is right to fold
+`'…'` to an integer and the quote form simply does not survive into the token. Closing it needs a
+token carrying both readings plus every expression consumer revisited. **Exposure is 0**: no
+`switch` or `case` operand is single-quoted anywhere in s1disasm, s2disasm, skdisasm or aeon.
+**Owner:** whoever next opens the AS lexer's literal types. **Kill:** the test
+`a_single_quoted_case_operand_compares_as_an_integer_which_asl_does_not` inverts to asl's answer.
+
+**2. `warning #100: none of the CASE conditions was true` is not raised.** asl raises it at the
+`endcase` when no arm was taken and there is no `elsecase`, and exits 0 (probes `p3`, `p8`). sigil
+emits the right bytes (nothing) and says nothing. The `warnings` channel in `sigil-frontend-as` is
+documented as the author's own `warning` directive with per-pass carry and dedup, so a synthetic
+assembler warning needs a decision about which pass raises it. Byte-neutral either way. **Kill:**
+sigil prints it once per converged pass.
+
+**3. Two `case` arity/structure refusals asl makes and sigil does not.** A `case` after `elsecase`
+is asl `#1480 invalid IF-structure` (`p10`); a bare `case` with no operand is `#1110 wrong number of
+operands` (`p17`) and asl raises it EVEN AFTER an arm has matched, because it is a syntax check
+rather than a value evaluation. sigil diagnoses a bare `case` only when the arm is reached, and
+does not diagnose a `case` after `elsecase` at all. **Kill:** both shapes draw a diagnostic at the
+site.
+
+**4. THE AEON FOUR-SHAPE BYTE CHECK IS BLIND TO `exec_switch`, MEASURED NOT ASSUMED.** This is the
+row that matters to anyone editing the selector next. `engine/debug/debugger.asm` is the only `.asm`
+file in aeon with a `switch` (62 `switch`/`case`/`elsecase` lines, all string switches in the
+`assert`/`_assert` macro bodies) and **those macros are invoked 0 times** in aeon's sources, so the
+construct is defined and never expanded. Proven by mutation rather than by reading: with
+`exec_switch` changed to execute NO arm body at all, `s4.debug.bin` rebuilt from a deleted artifact
+was still `1b7fe316/846529`, byte-identical to the pin, while the same binary emitted 0 bytes
+instead of `22` for probe `p1`. So four green CRCs are a real regression guard against incidental
+damage and are **not** evidence about selector semantics. A parcel touching this routine owes its
+own probes. **Kill:** an aeon source actually invokes a macro whose body holds a `switch`.

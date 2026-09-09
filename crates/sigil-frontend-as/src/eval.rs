@@ -4195,7 +4195,7 @@ impl Asm {
     /// Arm values are evaluated INSIDE the selection loop, not in the head scan,
     /// because asl short-circuits: the arms after the taken one are never
     /// evaluated, and neither are the alternatives after the matching one.
-    /// Probes `p18` and `p19` — an unresolvable `case Undef` after a taken arm
+    /// Probes `p18` and `p19`: an unresolvable `case Undef` after a taken arm
     /// draws nothing, and so does the `Undef` in `case 1,Undef` when `1` already
     /// matched, while the same `Undef` BEFORE the match does draw `#1820`
     /// (probe `p20`):
