@@ -891,6 +891,18 @@ its measurement, and the firings it swallows are printed on every run.
   command name will keep missing this; the honest fix is a non-default target dir by default.
   *(The chain-198 instance, its md5s and timestamps, and the accident that made a byte control
   non-vacuous: `docs/OVERSEER-LOG.md`, 2026-09-03 cut, original lines 886-935.)*
+- **AND THE SAME TREE NOW PRODUCES A RED NO CLEAN CHECKOUT CAN REPRODUCE, WHICH IS THE REVERSE
+  DIRECTION** *(aeon's finding, relayed 2026-09-09, carried at empyrean `origin/main 2cf6228`,
+  verified an ancestor from here; not reproduced at this seat, and their measurement is theirs)*.
+  Their main-tree pytest lane's `test_citation_form` indexes the roughly 160 agent worktrees under
+  `.claude/worktrees/`, so a bare `.emp:LINE` citation resolves ambiguously and 183 of 363 cases
+  report failure. They established the control before reporting it: identical 183 of 363 with their
+  own change stashed. **It is environmental, it exists in exactly one tree, and every lane that
+  glances at that tree will read it as signal.** The rule above trains suspicion of a green that
+  hides a problem; this is a red that means nothing, and it is the direction nobody has a reflex
+  for. It costs this lane nothing only because the aeon byte gate owed at every AS-frontend landing
+  runs against `.aeon-sigil-ref` or another clean checkout of a committed SHA, never against their
+  main tree. **If that ever changes, this is what the wall of red will be.**
 - **A LANDING RUN AGAINST THE OWNER'S LIVE AEON TREE PRODUCES PHANTOM FAILURES, proved here the
   expensive way.** A full-suite run pointed at `/home/volence/sonic_hacks/aeon` returned an extra
   failure the parcel's own agent had not seen, in a gate that plausibly matched what the parcel had
