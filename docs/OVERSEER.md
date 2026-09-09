@@ -115,6 +115,31 @@ you need. **Going quiet without a message is the state he named**, and note what
 he could see a lane had stopped and could not see why. `lane-status.json` is not a substitute —
 it is a pull, and this ruling is a push.
 
+## STANDING: SAY WHEN YOU NEED A CONTEXT CLEAR (owner, relayed 2026-09-09) - the sibling of the report-when-you-stop rule
+
+**Owner ruling, all lanes, transcribed by the hub rather than summarised:** *"I'd like to keep going
+through lenses and fixing the items they found for whatever's left. Remind the agents to let us know
+when they need a clear."*
+
+**Do not silently run down to a compaction or drift through one.** When a clear would help, say so in
+the message to the hub AND put it in `docs/lane-status.json`'s `awaiting`, with what a fresh session
+needs to resume. **The anchor is a file at a committed SHA, never a summary** - this lane's whole
+boot design rests on that and a handoff written as prose is the one thing a rotation cannot carry.
+
+**PROVENANCE, and it is the reason this paragraph exists rather than a bare rule.** This reached the
+lane BY RELAY and was **not in empyrean's tree when it was banked**: checked at their `origin/main`
+`1530dd3`, `docs/OVERSEER.md` carries neither phrase. So it is the hub's transcription of his words,
+recorded here under this lane's own standing practice that a banked ruling carries its provenance in
+its text, and under protocol bar 20, mail is not part of any tree. **A later session finding it in
+empyrean should prefer that copy and may delete this disclaimer; a later session finding it nowhere
+else should treat it as a relay, which is his ruling, and re-verify the join before leaning on it for
+anything costly.**
+
+**The half that is easy to drop: it is a rule about ASKING, not about lasting.** Running long is not
+a virtue here and a lane that clears early loses nothing, because everything load-bearing is in the
+tree by construction. The failure this prevents is the silent one, a session degrading through a
+compaction while its board still reads current.
+
 ## STANDING: CUT THE CEREMONY (owner, 2026-09-02T18:20:19Z) — OUTRANKS every process bar here
 
 **Read it at the artifact, not from this line, which deliberately does not restate it:** empyrean
