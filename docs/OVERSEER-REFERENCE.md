@@ -1855,3 +1855,346 @@ original entry for either. **The repair had supplied the evidence the test was l
 peer's method survived anyway, for a reason the test was not measuring (it inverts
 `left the queue (was X)` and never consults `added`), which is the distinction between clearing a
 tool and clearing it for the right reason.
+
+## Moved from the boot read on 2026-09-09, the second cut
+
+Eight blocks, moved VERBATIM when `docs/OVERSEER.md` crossed its byte bound a second time,
+under the owner's 2026-09-04T15:38:47Z ruling that the split is by WHEN A RULE IS READ.
+**Nothing was shortened to move it.** They keep the order they held in the boot read, so the
+move is provable as an order-preserving subsequence; each carries a locator giving its original
+line span and the heading it sat under. The moment that triggers each is in the boot read's
+index, *Read at the moment - the blocks moved to the reference file on 2026-09-09*. The last
+four keep their own `##` headings, so they read as sections in their own right below this one.
+
+### `pad`/`pad_to`: the spec text's landing, the diagnostic-string debt, and the sequencing
+
+*(original `docs/OVERSEER.md` lines 366-391, under: The autonomy directive - and its scope, which is the part that matters)*
+
+**The spec text is LANDED and un-DRAFTed at empyrean `2000b5ca03592377ea1881671db53e03ad36f264`**
+(reachable from their `origin/main`, verified here after their push, not from the local tracking
+ref). D2.37 is `(align: N)`, D2.38 is `pad`/`pad_to`, §4.3.1 carries the construct text lifted
+verbatim from this lane's draft. **Cite that SHA from the implementation parcel.**
+
+**What the review of that text bought, and the debt it left here.** The spec had carried, from
+this lane's own field-align packet §10, the claim that the six `(align: N)` diagnostic strings are
+a cross-repo interface aeon fixtures assert on. **They are not: none of the six appears anywhere in
+aeon** — not in the 44-case `tools/emp_expect_fail.py` negative-build lane, not in the poison
+modules, nowhere. Checked here and independently by the hub. It was a name doing a behaviour's
+work, and it would have frozen six strings against a consumer that does not exist while telling
+every reader a gate protected the wording. The producer side is thinner than the spec implied too,
+measured string by string at `db2dacce`: #1 well pinned; #2 only on `must be a power of two` (the
+parenthetical free); #3 only on ``asserts its alignment with `(align: N)` `` (the leading clause
+free); #4, #5 and #6 pinned by nothing in the workspace.
+**Owed by this lane, in the `pad`/`pad_to` parcel:** tests for #4-#6, widen #2/#3 to the full
+strings, and pin the Scope clause (true by construction — the check walks only this struct's own
+fields — but unpinned, and marked as such in the spec). The hub strengthens that clause on a
+message from here once it lands.
+
+Sequencing, so nobody lands half of it: the spec text is **empyrean's to land** — sigil does not
+land `.emp` language spec, `SIGIL_SPEC2_LANGUAGE.md` is their file — lifted verbatim from
+`docs/superpowers/notes/2026-08-26-pad-to-spec-draft.md`. **Nothing is implemented**; no crate
+was touched by the parcel that wrote the draft, and `pad_to_cycles` in `t40_cycles.rs` is an
+unrelated cycle-padding construct that shares a prefix and nothing else. Implementation is a
+separate parcel and is this lane's.
+
+**⚠ CORRECTION MADE AT THE 2026-09-09 CUT, and deliberately written BESIDE the moved text
+rather than into it: `pad_to` IS IMPLEMENTED.** The block above says *"Nothing is
+implemented"*. It landed at `ffa7bdb8` (merge of `feat/struct-pad`, 2026-08-26, verified an
+ancestor of master here), and `crates/sigil-frontend-emp/src/parser.rs:1211` takes `pad_to` as
+a struct-body pad marker. The boot read carried the stale sentence for two weeks, which is
+exactly the defect the R7 block earned: **a parcel's completion has to be written back to the
+document that DISPATCHES it.** What this cut did NOT establish, and is still owed: whether that
+parcel paid the debt the block records, the tests for diagnostic strings #4 to #6, widening #2
+and #3 to their full strings, and pinning the Scope clause.
+
+### Selecting and citing the `asl` oracle: three faces, and the md5 covers only the first
+
+*(original `docs/OVERSEER.md` lines 527-590, under: SIGIL-AS-REPLACEMENT - active on the owner's own words; source locations LANDED)*
+
+**⚠ BUT NOT THE COPY THIS PARAGRAPH USED TO NAME. It said
+`s2disasm/build_tools/Linux-x86_64/asl`, which is the ONE BUILD HERE THAT ANSWERS
+INCONSISTENTLY** *(measured 2026-09-05; this file was pointing every fresh session at it, by
+path, with the words "Use it")*.
+
+- **USE** `s1disasm/build_tools/Linux-x86_64/asl`, md5 **`61e672562465725a8c102288a7da9098`**.
+  `skdisasm`'s copy is the identical binary.
+- **REFUSE** `s2disasm/build_tools/…/asl`, md5 **`0dee1f98e6480a4783d27ffd8b90896f`**. For any
+  operand it declined to give a value — an undefined symbol, a range-refused immediate — it
+  returns a **different answer every run** with zero errors reported. The mechanism is an
+  uninitialized read; it collapses to a constant under `setarch -R`.
+
+**THE BANNER CANNOT DISCRIMINATE: both print `Macro Assembler 1.42 Beta [Bld 212]` verbatim.**
+So a runner or a note that names the VERSION has not identified its instrument, and a path is
+not an identity either. **Select and cite by MD5.** The shared guard is
+`docs/superpowers/notes/asl-reference/asl_ref.sh`, whose own `selfcheck.sh` proves it refuses
+the varying build rather than merely claiming to.
+
+**⚠ AND THE PIN IDENTIFIES THE INSTRUMENT WITHOUT MAKING ITS ANSWER REAL — A STABLE VALUE IS
+NOT AN ANSWER** *(measured 2026-09-05, reproduced firsthand at this seat on
+`docs/superpowers/notes/2026-09-05-disp-or-call-probes/d9.asm`, three runs)*. For an operand it
+declines to value, the **reference** build substitutes **the last value it computed**. Three
+declined `#f(<register>)` immediates, each preceded by a successful call holding `$0111` /
+`$0222` / `$0333`, come back `0111` / `0222` / `0333` — each echoing the line above it, **exit 0
+and no diagnostic**. So its stability on this shape is a property of SOURCE ORDER, and the
+uniform `0000` measured elsewhere was the initial state of that slot rather than a policy.
+
+**This inverts which build is dangerous to freeze from.** The varying build's defect announces
+itself on the second run; the reference build's agrees with itself forever and therefore reads
+as a measurement — which is exactly the value that gets minted into a golden, a note's table or
+a test's module doc. **Both builds are wrong on this shape and we match neither** (queue row
+`ASL-SILENT-WRONG-ON-BOTH-BUILDS`). Before quoting any asl value, ask whether the shape is one
+asl DECLINES; if it is, the number is an artifact under either digest, and the digest tells you
+only which build produced the artifact. This does not weaken the md5 ruling above by one inch —
+an unidentified instrument was always the bigger defect — but the ruling was banked with a
+contrast (`303C 8000` "every run" against four random draws) whose stable half is itself a
+carry-over, and **a right conclusion does not license the evidence that was offered for it.**
+
+**⚠ AND A THIRD FACE, WHICH THE MD5 GUARD DOES NOT COVER AT ALL: AN ASL RUN CARRYING ANY ERROR IS
+NOT A SOURCE OF VALUES FOR THE LINES THAT DID ASSEMBLE** *(found 2026-09-05 by the S2 decomposition
+parcel, against its own probe; landed at sigil `49acd05d`)*. Its first probe file had one invalid
+line (`bra.s /`, where `/` is definition only in AS). That single unrelated error **changed a value
+elsewhere in the same file**: a macro expanded `beq.s +` came back `67FE`, a branch to itself,
+instead of the correct `6702`. The listing looked complete.
+
+**So the selection ritual is now two checks, not one.** The md5 says WHICH PROGRAM ran. The exit
+status says WHETHER ITS ANSWERS MEAN ANYTHING. A session that pins the digest perfectly, reads a
+listing that looks complete, and quotes a value out of a run that exited non zero has done
+everything this document previously asked and still carried a fabricated number. Note the direction:
+the corrupted value was plausible, in range, and of the right shape, which is why nothing announced
+it.
+
+**`asl_ref.sh` checks the binary and NOT the run** (verified here: its four `exit` sites are all
+about selecting the digest). Until that is fixed, checking the exit status is the caller's job on
+every asl invocation. Booked as `ASL-GUARD-EXIT-STATUS`.
+
+*(Counting note, and it has now been wrong TWICE. "Four binaries, one bad" was four PATHS and
+TWO PROGRAMS — and that correction was itself a count of what someone happened to check.
+**Measured 2026-09-05 by running every `asl` on the machine: SEVEN paths execute here under FOUR
+distinct digests**, all printing the same banner. The reference digest is reached by three paths,
+and `s2disasm/build_tools/Linux-x86/asl` is an **ELF 64-bit binary in the 32-bit slot** with a
+digest of its own — so selecting by architecture directory gets a program neither its path nor
+its banner describes. The guard is unaffected: it pins one digest and refuses the other three.
+Population and `file` output in `docs/superpowers/notes/asl-reference/README.md`.)*
+
+### SIGIL-DECOUPLE: what the coupling actually buys, and the residual cost
+
+*(original `docs/OVERSEER.md` lines 742-771, under: SIGIL-DECOUPLE - the owner ruled 2026-08-26, in this lane's session: follow aeon's plan)*
+
+**What the coupling actually buys, measured before the ruling rather than assumed**, because
+step 4 will want it and because a future session will otherwise re-litigate this from scratch.
+Two families, and only one of them is liveness:
+
+- **The goldens (byte-identity) catch things nothing else does, and they SURVIVE step 1** —
+  they simply describe a pinned corpus. Instance with teeth: the one-sided
+  `Player_SensorPair` push/pop narrowing is a real runtime bug (wrong angle delivered) that
+  left contract closure green, fired no warn tier, and is invisible to every static analysis
+  here because nothing models 68k stack byte lanes; the ROM diverging from the frozen golden
+  was the only signal. Also the `test_emitter` end-anchor error (caught as a window length
+  mismatch) and the `boot.asm` −0xA base slide, which surfaced hardcoded-address fixtures the
+  design-gate census had not listed.
+- **Liveness catches exactly one family: aeon's newest source hitting a sigil capability or
+  measurement gap** — a brick or a mis-measure, never a byte regression. All three 2026-08-26
+  instances are that shape: the missing map region for `ojz_effects_editor_act1`; the `repin`
+  pin defect where the successor's alignment pad entered `ACT_DESCRIPTOR` (0x27C pinned vs
+  0x27A real); and BGROOM-3's `abs.w`, whose real cause was a collision-fallback scratch slot
+  aliasing zero. **That family is already covered without the coupling** — the nightly
+  source-gate lane and `corpus_builds`' brick witness build every shipped shape from live
+  aeon tip and block nothing, which is the same shape step 1's nightly drift job takes.
+- **And the coupling is not a general safety net, so do not price it as one:** the `×26`
+  stride bug sat green because both twins carried the identical wrong shift decomposition
+  (the gate proves twin-agreement, not correctness), and `[layout.odd-field]` drifted four
+  days through six zero-byte parcels whose CRCs were verified at every landing.
+
+**The residual cost, stated so nobody discovers it later:** byte coverage AGES. A construct
+aeon writes after the snapshot has no golden, so mis-placing it surfaces as a brick rather
+than a byte diff, until the snapshot is bumped on sigil's cadence. Aeon stated the matching
+cost to the owner before his yes — assembler regressions surface nightly rather than at the
+next aeon landing.
+
+### SIGIL-DECOUPLE: the strict run needs a paired aeon tree, and the recipe
+
+*(original `docs/OVERSEER.md` lines 781-800, under: SIGIL-DECOUPLE - the owner ruled 2026-08-26, in this lane's session: follow aeon's plan)*
+
+**THE STRICT RUN NEEDS A PAIRED AEON TREE, and the live one is not it.** A strict
+`--workspace` run with `AEON_DIR` at `sonic_hacks/aeon` returns **58 failures across 41
+binaries** — every `*_debug_region_matches_reference`, the golden full-file/anchor gates,
+`pins_rs_is_current`, and the two provenance gates. None of it is a defect in the branch
+under test: `provenance_chain::aeon_dir_matches_the_provenance_tip` says so in one line,
+naming the tree's revision, the frozen one, and the fix. The recipe that turns the same
+branch from 58 red to 0:
+
+```
+git -C …/aeon worktree add --detach …/.aeon-island-arm <provenance aeon_rev>
+cd …/.aeon-island-arm
+SIGIL_BUILD=<target>/release/sigil SIGIL_EMIT=<target>/release/emit_sound_blob ./build.sh
+#   … and again with DEBUG=1, and again for `./build.sh demo`, both shapes — build.sh
+#   makes ONE shape per invocation and the port gates read all four
+SIGIL_STRICT_GATE=1 AEON_DIR=…/.aeon-island-arm cargo test --release --workspace --no-fail-fast
+```
+
+Read `aeon_dir_matches_the_provenance_tip` FIRST when a strict run comes back with a wall
+of debug-shape byte diffs: it is the one failure that explains the other 57, and the wall
+is otherwise easy to read as a regression in whatever branch happens to be checked out.
+
+*(original `docs/OVERSEER.md` lines 891-962, under: its own `##` section in the boot read)*
+
+## A NAME-STRING ENUMERATION CANNOT TELL A CONSUMER FROM A FIXTURE (2026-09-06)
+
+**Two lanes enumerated the same symbol independently and BOTH over-counted, in the same way.**
+Aeon asked this lane to price the sigil-side cost of deleting one aeon object module
+(`games.sonic4.path_swap`). They sent their own enumeration, explicitly flagging that their agent
+had MISSED two files. This lane re-enumerated varying the alphabet rather than the scope
+(case-insensitive, underscore / camel / spaced spellings, all tracked file types, per bar 19) and
+found four more again.
+
+**Then the extra hits turned out not to be consumers at all.** `path_swap`'s diagnostic string,
+`"Bad path swap!%<endl>Got: %<.b d0>"`, is used as a **test vector** in the `.emp` diagnostics
+encoder's own tests, and two further files merely name the module in a comment. Five files in
+total **survive the module's deletion untouched**, including the one aeon had reported as a missed
+site. They test how a format string encodes; that message is just a realistic sample.
+
+**The rule: a name-string enumeration cannot distinguish a CONSUMER from a FIXTURE, and the error
+is toward over-counting.** The tell is position, not spelling: **a hit inside a quoted literal is
+data, a hit in a symbol position is a consumer.** Bar 14 covers the case where an identifier grep
+and a quoted-key grep each find what the other misses; this is the inverse face, where the quoted
+occurrence is a *decoy* and both greps find it. **Widening the alphabet made the answer worse, not
+better**, which is worth remembering the next time a wider enumeration feels like the safer one.
+
+**And the real surface was still under-counted where it mattered**, which is why the correction is
+not simply "fewer sites". Aeon named `repin.toml`'s `test_parent` anchor as the second consumer
+that gets missed. **There are five** distinct regions anchored on the deleted symbol
+(`test_particle`, `test_emitter`, `test_stress_emitter`, `test_churn`, `test_parent`), plus the
+`path_swap` region itself. **The instinct about the class was right and the instance was one fifth
+of it**, so a correction that only removed the false positives would have shipped a booking that
+was wrong in the expensive direction.
+
+**⚠ AND THIS LANE THEN CARRIED THE REFUTED SET'S ARITHMETIC.** Aeon's headline was *"seven files
+plus five frozen tables"*, seven including the fixture file. This lane refuted that file's
+membership and wrote back that *"seven files plus five frozen tables stands as your headline, what
+changes is WHICH seven."* **Both halves cannot be true**: removing a member from a set reduces its
+count. The real figure is **SIX**, enumerated here so it cannot drift again: `native.rs`,
+`section_align.rs`, `repin.toml`, `pins.rs`, `ojz_run_a_port.rs`, `test_g4_final_objects_port.rs`,
+plus the five golden tables. The peer had already banked the seven, citing this lane, and it was
+corrected inside the hour.
+
+**This is the banked rule aimed at the session enforcing it** *(a refuted mechanism does not leave
+its arithmetic standing)*. Note why nothing looked wrong: the error was **one high on the stated
+side and one low on the true side**, so the sentence read as a careful partial correction, which is
+the most credible possible wrapper for a wrong number. **A correction that preserves the original
+count is not a correction, it is a concession with the figure smuggled through.** When refuting a
+member, restate the SET by enumeration, never the total.
+
+**THE MECHANISM, in aeon's formulation, which is better than this lane's and places the instance in
+an existing family rather than leaving it an anecdote:** *a refuted MEMBER invalidates the
+arithmetic that rested on it, and the arithmetic is the half nobody re-derives, because the
+refutation feels like the hard part and the number feels like transcription.* That is the protocol's
+**provenance-feeling material gets reasoning-grade trust** (aurora's three surfaces: the verified-at
+SHA, the repaired line number, the hash typed from memory), **arriving on a COUNT instead of on a
+SHA**. Same family, new surface, and the surface is the one that looks least like a claim.
+
+**Both lanes owned it and the shared frame is the finding.** Aeon relayed the sentence verbatim in a
+message whose whole purpose was to carry this lane's refutation of the seventh member, with that
+refutation in front of them, and did not run the subtraction either. **Two lanes, one number,
+neither re-derived it** (bar 8: mutual verification cannot catch a shared frame). The fix both
+adopted costs nothing and is mechanical rather than attentional: **write the SET, not the count.**
+Six names in one sentence cannot drift; a bare *"six"* can, and *"seven"* did, twice in twenty
+minutes, in both directions at once.
+
+**Open and deliberately not asserted:** since the alignment flip, an UNDECLARED section is refused
+by name. Whether a `section_align::DECLARED` row for a section that no longer EXISTS is inert or
+fatal is the opposite direction and is untested. One command, owed before the bundled parcel is
+sized.
+
+*(Priced and PARKED by the hub in the owner's place: the deletion waits in aeon's `DEFERRED_WORK`
+and rides the next chainer-pin advance as one parcel. Grounds, and this lane's own read before the
+ruling arrived: a repin plus a five-shape refreeze plus a shared-binary relink for one obsolete
+object is poor value per byte moved, and the relink is hub-gated since 2026-09-06, so it cannot be
+scheduled from inside this lane at all.)*
+
+*(original `docs/OVERSEER.md` lines 964-993, under: its own `##` section in the boot read)*
+
+## A CRC QUOTED WITHOUT ITS AEON REVISION CANNOT BE REPRODUCED OR REFUTED (2026-09-06)
+
+**Found by the aeon lane against a message from this seat, and verified here from the record
+rather than taken on relay.** This lane sent aeon four expected digests
+(`s4 1c09fbfc/819131`, `s4.debug e2144057/840324`, `demo 11ebd7ab/96602`,
+`demo.debug 9b0d2ce7/102818`) and asked them to reproduce. They built aeon master
+`f14b21a8` in a clean detached worktree with the CURRENT shared binary, this lane's fix
+nowhere near the build, and got four shapes differing from that table in **both** crc and
+size. Their conclusion was right and their reasoning was right: the table describes a
+different aeon tree.
+
+**Which tree, established here in one command rather than left as "almost certainly":** those
+four values are the chain TIP entry `relayout-at-aeon-master` in
+`crates/sigil-harness/golden/provenance.toml`, whose `aeon_rev` is
+`483b3e128ec4b9efc77a9d2e8a8c7679e961cea8`. Aeon master `f14b21a8` is **358 commits ahead of
+it** and has it as an ancestor. So the divergence is fully explained by the revision gap and
+says nothing about any assembler.
+
+**The rule: a CRC is meaningless across sessions without BOTH referents beside it, the sigil
+revision AND the aeon revision.** Four digests with neither named can only be agreed with or
+disagreed with, never checked, which is the opposite of what a digest is for. This lane already
+holds *provenance is CRC32 + size*; that rule fixes the IDENTITY FUNCTION and is silent on the
+SUBJECT, and the subject is the half a receiver cannot recover.
+
+**And the stronger form, which is aeon's and should be preferred whenever it is available: send
+a DIFFERENTIAL, not a table.** One tree, one worktree, one `build.sh`, exactly one variable (the
+binary), control first. Pairing eight digests proves byte neutrality on the tree the receiver
+actually has; matching a table proves agreement with a tree they do not. **Byte neutrality at
+the pinned reference does not entail byte neutrality 358 commits later**, so their differential
+is not a re-run of this lane's check, it is the check this lane could not perform.
+
+*(original `docs/OVERSEER.md` lines 995-1021, under: its own `##` section in the boot read)*
+
+## THE `--version` BANNER'S TREE VOCABULARY IS A LIVE TWO-WAY CONTRACT (banked 2026-09-06)
+
+**Sigil defines the words; aeon's `build.sh` enumerates the trusted ones and fails CLOSED on
+anything else; so ADDING A WORD IS A BREAKING CHANGE AT THEIR END and they must be told before
+it lands.** The vocabulary today is exactly `clean`, `clean-sources`, `dirty`, `unknown`,
+defined in `crates/sigil-cli/src/tree_class.rs::state_and_detail` and pinned by
+`crates/sigil-cli/tests/version_provenance.rs`. Their consumer is `build.sh` (the `tree:` read
+and the `case "${SIGIL_TREE}"` arm), verified here at aeon `origin/master`, and the coupling is
+written into their own comment: *the vocabulary is sigil's to define, the fail-safe direction is
+theirs to keep, and a consumer enumerating the trusted words must be told when a word is added.*
+
+**⚠ THIS LANE HAS ALREADY BROKEN IT ONCE, AND THE HOLD THAT SHOULD HAVE PREVENTED IT WAS WRITTEN
+IN A PLACE THAT CANNOT STOP A MERGE.** `9d71d8f4` (2026-08-27) added `clean-sources` and its own
+message opens `DO NOT MERGE THIS COMMIT until the banner's shape is agreed with the aeon lane`,
+naming their `dirty*` test as the thing it breaks. It is an ancestor of master via `d7f3f632`,
+merged the same day, and the hold was retired at `d5967f87` by READING their consumer rather
+than by asking them. **A DO-NOT-MERGE in a commit message is not a gate; it is a note that
+travels with the thing it is trying to stop.** A hold that must hold gets a failing test or an
+owner-visible blocker, never a sentence in the artifact being held.
+
+**And this lane's retirement note understated the cost, which is the part worth carrying.** It
+recorded the effect as *a FALSE warning, noisy and in the safe direction*. Aeon's own fix
+(`306608f2`, 2026-08-30) shows the same flag reaches `exit 1` under `SIGIL_VERSION_STRICT=1`, so
+on a correct tree with uncommitted sigil docs, STRICT REFUSES THE BUILD; latent only because
+nothing in-tree sets STRICT. **Reading a consumer settles more than reasoning about the producer
+can, and it still under-reads when you stop at the first arm the value reaches.** Three days
+passed between the word landing and their arm being added.
+
+*(original `docs/OVERSEER.md` lines 1023-1044, under: its own `##` section in the boot read)*
+
+## A BOUND IS SAFE ONLY IN THE DIRECTION IT WAS DERIVED FOR (2026-09-06, this lane's own error)
+
+**Refuted by the aeon lane against a measurement of mine, with a control rather than an
+assertion** (aeon `36e3e409`, verified an ancestor of their `origin/master`; their citation
+spot-checked here line by line). This lane derived *a frame's slot cost is at most twice its
+entry count*, used it correctly to prove three subjects **cannot** exceed a bar of 10, and then
+reused the same number one bullet later as Knuckles' **exact ceiling** to price how much room was
+left. The exact ceiling is **6**, headroom 4: the bound assumes every entry straddles at once, and
+disjoint runs mean at most one can.
+
+**The rule: an upper bound proves impossibility and prices nothing.** Both uses read as arithmetic
+about the same quantity and the second one silently needs a property the first never established.
+Nothing announces the switch, because the number does not change, and the failure direction is the
+one that gets acted on: an over-estimate looks like a margin about to close.
+
+**When you carry a bound past its first use, say which it is in the same sentence.** *"At most
+2 x peak entries"* and *"the ceiling is 10"* are different claims, and this page's own banked rule
+applies to itself: a refuted mechanism does not leave its arithmetic standing.
+
+**And the half that survived is the half worth having, which is the usual shape of a good
+refutation:** the ceiling was UNSTATED, a bar met exactly is indistinguishable from a bar met with
+room, and it is now computed and printed on every aeon build with a tag at zero headroom.
