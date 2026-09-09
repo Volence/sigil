@@ -2267,3 +2267,31 @@ defect twice in the same file** (*what remains is the flip itself*, held for a w
 landed), and both were caught by someone asking a question, never by a sweep, because **nothing
 executes a document.** A completion has to be written back to the document that DISPATCHES the
 work, in the landing commit.
+
+### A CHECK CAN BE BLIND BY POPULATION OR BY ORDERING, AND THE FIXES ARE DIFFERENT
+
+Read when designing any check whose clean result you intend to believe.
+
+**Two blind checks met on 2026-09-09, one aurora's and one this lane's, and they look identical
+from the outside: both returned a confident clean result while measuring nothing.** The hub's
+separation is the useful part, because collapsing them yields a fix that closes only one.
+
+- **Blind by POPULATION.** Aurora's scoring driver scored nine planted defects KILLED against a
+  suite that never executed an assertion, a lint having failed before the runner started. Six of
+  the nine were survivors. **A batch containing no predicted-survivor cannot detect that its own
+  scorer has stopped working**, because every possible outcome agrees with a dead scorer.
+  **Fix: plant some you expect to LIVE. They are the control.**
+- **Blind by ORDERING.** This seat tested a change log for completeness by asking whether every
+  pre-loss row carried an `added` event. Zero missing. Two of those rows had their first `added`
+  event stamped at this seat's own RESTORE, hours after their creation: **the repair had supplied
+  the evidence the check was looking for.** The population was fine and the clock was not.
+  **Fix: run the check BEFORE the repair, or against a source the repair did not touch.**
+
+**So the question to ask of a clean result is two questions.** *Could any member of this batch have
+produced a different answer?* and *did anything I did earlier put the answer here?* A check can pass
+the first and fail the second, which is what makes this worth separating: the population discipline
+this lane already had would not have caught the ordering case, and the instance proves it, since
+this seat ran that check having already written the rule about planting controls.
+
+**Both are the same family as a control that bypasses its subject and a test that cannot fail, and
+the family's signature is that nothing looks wrong.** The failure is never in the output.
