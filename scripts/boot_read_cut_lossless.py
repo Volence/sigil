@@ -82,4 +82,17 @@ if stale:
 for line, count in missing.items():
     print('  MISSING x%d | %s' % (count, line[:150]))
 
+# An empty measurement is never a pass. With no OMD_BASE the base defaults to HEAD,
+# so the boot read is compared with itself: nothing was removed, nothing can be
+# missing, and this exits 0 having examined no text at all. That green is
+# indistinguishable from a lossless cut and is the shape it exists to refuse, so it
+# refuses itself first. Anything that reads this exit status is entitled to assume
+# some text was actually weighed.
+if not removed:
+    print('REFUSED: no line left the boot read between %s and the working tree, so this run'
+          % BASE)
+    print('         weighed no text and its zero is not a finding. Name the revision BEFORE')
+    print('         the cut: OMD_BASE=<rev> python3 scripts/boot_read_cut_lossless.py')
+    sys.exit(2)
+
 sys.exit(1 if missing else 0)
