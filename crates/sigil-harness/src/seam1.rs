@@ -34,8 +34,24 @@ use sigil_ir::{Section, SectionPlacement, SymbolTable};
 /// ([`place_resident_sections`]), so nothing here participates in placement;
 /// this is purely the "the reclaim moved the number I expected" check that
 /// [`emit_sound_blob`] asserts the emitted blob against. When a module
-/// legitimately grows or shrinks, re-pin this to the new measured length
-/// (and re-pin the `Z80_SOUND_SIZE` mirrors in the boot/tranche gates).
+/// legitimately grows or shrinks, re-pin this to the new measured length.
+///
+/// The `Z80_SOUND_SIZE` mirrors in the boot/tranche gates move only when the
+/// PADDED length moves, which is a weaker condition than this pin moving: the
+/// mirror is this value rounded UP to even, so a change that leaves the rounded
+/// value alone does not reach it. A shrink of one from an even length is the
+/// case in point, 6176 to 6175 rounds back to 6176 and the mirrors stand.
+/// Derive the rounded value both sides of the change rather than re-pinning the
+/// mirrors reflexively.
+///
+/// Re-pinning this constant is NOT the whole edit, and doing it alone reds
+/// master. Two other sites move with it, one of which needs no aeon tree and so
+/// fails unconditionally: `seam1_native_link.rs`'s `blob_lengths_are_canonical`
+/// asserts the literal, and the whole-blob byte gates compare against the FROZEN
+/// `golden/s4.bin`. A blob whose CONTENT changed fails those byte gates whatever
+/// this length says, so a real module change is a golden refreeze with a
+/// provenance entry, sequenced AFTER the aeon revision that causes it is merged,
+/// never before.
 pub const BLOB_LEN_PLAIN: usize = 0x1820;
 /// The debug blob length: plain + `$82`, the sequencer's `if DEBUG==1` bodies.
 /// **6306 B** (`$18A2`), also even, so the debug shape carries no pad either.
