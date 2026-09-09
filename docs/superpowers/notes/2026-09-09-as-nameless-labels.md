@@ -303,6 +303,37 @@ count one definition too few -- a branch to the wrong address with no diagnostic
 strictly worse than the error it replaced. asl assembles the shape and sigil now
 matches it byte for byte (`q9.asm`: `7001 4e71 4e71 4e71 51c8 fff8`).
 
+## The one call made on instinct, measured afterwards: pad absorption
+
+A LONE label on its own line takes the address AFTER a pad the next line
+inserts (`absorb_pad_into_lone_label`). The nameless definition was wired into
+that machinery because that is what a named label does, which is a reason and
+not evidence, so it was measured. The named twin sits in the SAME probe file, so
+the two answers are comparable rather than two separate runs (`q12.asm`,
+exit 0):
+
+```text
+      5/    1000 : 11                  dc.b  $11
+      6/    1001 :                     Lone
+      7/    1001 : 00                  <padding>
+      7/    1002 : 2233                dc.w  $2233
+      8/    1004 : 44                  dc.b  $44
+      9/    1005 :                     -
+     10/    1005 : 00                  <padding>
+     10/    1006 : 5566                dc.w  $5566
+     11/    1008 : 60F8                bra.s Lone   ; -8 -> $1002, PAST the pad
+     12/    100A : 60FA                bra.s -      ; -6 -> $1006, PAST the pad
+```
+
+Both labels moved; sigil is byte-identical (`110022334400556660f860fa`). The
+call was right.
+
+**The first probe of this could not have told me that.** `q10`/`q11` used an
+explicit `align 2`, and there NEITHER label moves: both stay before the pad, so
+named and nameless agree for a reason that has nothing to do with the rule. A
+green from that pair would have looked exactly like the green above and meant
+nothing.
+
 ## Measured and deliberately NOT implemented: macro-body scoping
 
 asl scopes a nameless definition made INSIDE A MACRO BODY to that expansion. A

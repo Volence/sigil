@@ -427,6 +427,49 @@ fn a_nameless_label_may_open_a_rept_block() {
     );
 }
 
+/// A LONE nameless label absorbs the pad on the line below it, exactly as a
+/// lone NAMED label does.
+///
+/// This was the one design call in the parcel made on instinct rather than on
+/// evidence -- the nameless definition was wired into
+/// `absorb_pad_into_lone_label` because that is what a named label does -- so it
+/// was measured afterwards, with the named twin in the SAME file so the two
+/// answers are comparable rather than two separate probes.
+///
+/// asl probe `q12.asm`, exit 0:
+///
+/// ```text
+///       5/    1000 : 11                  dc.b  $11
+///       6/    1001 :                     Lone
+///       7/    1001 : 00                  <padding>
+///       7/    1002 : 2233                dc.w  $2233
+///       8/    1004 : 44                  dc.b  $44
+///       9/    1005 :                     -
+///      10/    1005 : 00                  <padding>
+///      10/    1006 : 5566                dc.w  $5566
+///      11/    1008 : 60F8                bra.s Lone   ; -8 -> $1002, PAST the pad
+///      12/    100A : 60FA                bra.s -      ; -6 -> $1006, PAST the pad
+/// ```
+///
+/// Both labels moved. A probe using only `align` would NOT have settled it:
+/// there (probes `q10`/`q11`) neither label moves, so named and nameless agree
+/// for a reason that has nothing to do with this rule.
+#[test]
+fn a_lone_nameless_label_absorbs_a_pad_like_a_named_one() {
+    let src = format!(
+        "{HEAD}\
+         \tdc.b\t$11\n\
+         Lone\n\
+         \tdc.w\t$2233\n\
+         \tdc.b\t$44\n\
+         -\n\
+         \tdc.w\t$5566\n\
+         \tbra.s\tLone\n\
+         \tbra.s\t-\n"
+    );
+    assert_eq!(at_1000(&src, 12), hex("110022334400556660f860fa"));
+}
+
 /// A nameless reference deeper than the definitions behind it is an ordinary
 /// UNDEFINED SYMBOL, not a silent zero. asl says `error: symbol undefined`;
 /// the point of the assertion is that something is said at all, because the

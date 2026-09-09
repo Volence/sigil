@@ -1906,18 +1906,22 @@ impl Asm {
                 None
             }
             Def::Forward(m) => {
-                self.nameless.fwd += m;
+                // Saturating for the same reason the reference side is: `m` is
+                // an unbounded token count, and a wrapped counter would make
+                // the NEXT definition land on a slot an earlier one already
+                // holds.
+                self.nameless.fwd = self.nameless.fwd.saturating_add(m);
                 let n = self.nameless.fwd;
                 Some(self.define_nameless_slot(&crate::nameless::fwd_slot(n)))
             }
             Def::Backward => {
-                self.nameless.bwd += 1;
+                self.nameless.bwd = self.nameless.bwd.saturating_add(1);
                 let n = self.nameless.bwd;
                 Some(self.define_nameless_slot(&crate::nameless::bwd_slot(n)))
             }
             Def::Both => {
-                self.nameless.fwd += 1;
-                self.nameless.bwd += 1;
+                self.nameless.fwd = self.nameless.fwd.saturating_add(1);
+                self.nameless.bwd = self.nameless.bwd.saturating_add(1);
                 let (f, b) = (self.nameless.fwd, self.nameless.bwd);
                 self.define_nameless_slot(&crate::nameless::fwd_slot(f));
                 // A `/` defines two slots and a pad can only be absorbed into

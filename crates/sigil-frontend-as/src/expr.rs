@@ -304,14 +304,21 @@ fn parse_atom<'a>(toks: &'a [Token], depth: u32, ctx: &ExprCtx<'_>) -> Option<(E
             {
                 return None;
             }
-            let k = ref_len as u32;
+            // SATURATING, both directions, and the `-` x 60,000 depth-guard
+            // probe is what says this is not paranoia: `ref_len` is a token
+            // count with no bound but the line's length, so plain `+` can wrap
+            // in release and PANIC in debug. A wrapped slot number is the worse
+            // half: it would ALIAS a real slot and branch somewhere plausible,
+            // silently. Saturated, it names a slot nothing can ever define, and
+            // the reference is refused by name.
+            let k = u32::try_from(ref_len).unwrap_or(u32::MAX);
             let name = match kind {
-                Punct::Plus => nameless::fwd_slot(ctx.nameless.fwd + k),
+                Punct::Plus => nameless::fwd_slot(ctx.nameless.fwd.saturating_add(k)),
                 // Backward slot `bwd - k + 1`. A reference deeper than the
                 // definitions behind it would underflow; naming slot 0 instead
                 // gives an ordinary undefined symbol, which is the diagnostic
                 // asl raises for it (`error: symbol undefined`).
-                _ => nameless::bwd_slot((ctx.nameless.bwd + 1).saturating_sub(k)),
+                _ => nameless::bwd_slot(ctx.nameless.bwd.saturating_add(1).saturating_sub(k)),
             };
             return Some((Expr::Sym(name), &toks[ref_len..]));
         }
@@ -436,10 +443,34 @@ mod depth_guard_tests {
         );
     }
 
+    /// A deep `~` chain is still refused by the depth guard, and a deep `-`
+    /// chain is no longer a recursive shape at all.
+    ///
+    /// This assertion CHANGED when nameless labels landed, and the change is the
+    /// point rather than a concession. A leading run of `-` is now counted with
+    /// a `take_while` and consumed whole, so `-` x 60,000 followed by an operand
+    /// costs ONE stack frame instead of 60,000: the danger the guard exists for
+    /// is gone from this shape by construction rather than bounded. What the
+    /// parser returns is a reference to backward slot 0, which nothing ever
+    /// defines, so the expression is still refused -- at resolution, loudly, by
+    /// name.
+    ///
+    /// The property under test was never "a deep `-` chain is refused"; it was
+    /// "a deep `-` chain does not abort the process". That is what is asserted
+    /// here, and it is asserted the only way it can be: the parse must
+    /// TERMINATE and the child thread must survive it, both of which `parses`
+    /// already checks and neither of which a `SIGABRT` would let it report.
     #[test]
-    fn deep_unary_chains_are_refused_not_aborted() {
+    fn deep_unary_chains_do_not_abort() {
         let n = 60_000;
-        assert!(!parses(format!("{}1", "-".repeat(n))), "deep `-` chain must be refused");
+        // Terminates on a 4 MiB stack and the thread survives; `parses` panics
+        // on either failure, so reaching the assertion at all is half the test.
+        let minus_parses = parses(format!("{}1", "-".repeat(n)));
+        assert!(
+            minus_parses,
+            "a {n}-deep `-` run is a nameless reference now, not 60,000 negations, \
+             and it must parse in constant stack"
+        );
         assert!(!parses(format!("{}1", "~".repeat(n))), "deep `~` chain must be refused");
     }
 
