@@ -120,6 +120,11 @@ const HEAD: &str = "\tcpu 68000\n\torg 0\n";
 /// Sonic 1 cannot check: `sonic.asm` has 0 `dc.b` strings after its own
 /// `charset` reset, so an unimplemented reset is invisible there. `4752 4545
 /// 4E` is plain ASCII `GREEN`, so the page really did go back.
+// REASON: the doc comment above quotes asl listings verbatim, and asl separates
+// its listing columns with TABS. The tabs ARE the evidence: reflowing them to
+// spaces would silently edit a reference assembler's output that later parcels
+// compare against. Scoped to this item, never crate wide.
+#[allow(clippy::tabs_in_doc_comments)]
 #[test]
 fn the_sonic_1_preamble_matches_the_reference_listing() {
     let src = format!(
@@ -176,6 +181,11 @@ fn the_sonic_1_preamble_matches_the_reference_listing() {
 /// The `303C 1112` is the whole point of this test. An implementation wired
 /// only into `directive_db` writes `303C 4142` there, emits no diagnostic, and
 /// passes every check Sonic 1 can offer.
+// REASON: the doc comment above quotes asl listings verbatim, and asl separates
+// its listing columns with TABS. The tabs ARE the evidence: reflowing them to
+// spaces would silently edit a reference assembler's output that later parcels
+// compare against. Scoped to this item, never crate wide.
+#[allow(clippy::tabs_in_doc_comments)]
 #[test]
 fn a_string_in_an_expression_packs_the_mapped_bytes() {
     let src = format!(
@@ -228,6 +238,11 @@ fn a_string_in_an_expression_packs_the_mapped_bytes() {
 /// The `dc.b 'A'` reading `41` is the control: `A` is not in the mapped set, so
 /// a test that only checked the mapped characters could not tell a working page
 /// from one that rewrote everything.
+// REASON: the doc comment above quotes asl listings verbatim, and asl separates
+// its listing columns with TABS. The tabs ARE the evidence: reflowing them to
+// spaces would silently edit a reference assembler's output that later parcels
+// compare against. Scoped to this item, never crate wide.
+#[allow(clippy::tabs_in_doc_comments)]
 #[test]
 fn a_character_constant_packs_the_mapped_bytes() {
     let src = format!(
@@ -281,6 +296,11 @@ fn a_character_constant_packs_the_mapped_bytes() {
 /// Without the control the first listing is equally well explained by "a second
 /// `charset` on the same character is ignored", which is a different rule that
 /// happens to produce the same byte.
+// REASON: the doc comment above quotes asl listings verbatim, and asl separates
+// its listing columns with TABS. The tabs ARE the evidence: reflowing them to
+// spaces would silently edit a reference assembler's output that later parcels
+// compare against. Scoped to this item, never crate wide.
+#[allow(clippy::tabs_in_doc_comments)]
 #[test]
 fn a_charset_operand_reads_through_the_live_page() {
     let selfref = format!(
@@ -321,6 +341,11 @@ fn a_charset_operand_reads_through_the_live_page() {
 /// The second listing is the discriminator: `z` is mapped to `$05` before the
 /// `charset` that uses `"z"` as a target, and `a` still comes out `$7A`. A raw
 /// target, not a translated one.
+// REASON: the doc comment above quotes asl listings verbatim, and asl separates
+// its listing columns with TABS. The tabs ARE the evidence: reflowing them to
+// spaces would silently edit a reference assembler's output that later parcels
+// compare against. Scoped to this item, never crate wide.
+#[allow(clippy::tabs_in_doc_comments)]
 #[test]
 fn a_string_target_assigns_consecutive_raw_bytes() {
     let consecutive = format!("{HEAD}\tcharset 'a',\"xyz\"\n\tdc.b \"abc\"\n\tend\n");
@@ -350,6 +375,11 @@ fn a_string_target_assigns_consecutive_raw_bytes() {
 ///
 /// `0B11` is the accumulation: the second `charset` added `-` without dropping
 /// `A`. `7A` is the passthrough.
+// REASON: the doc comment above quotes asl listings verbatim, and asl separates
+// its listing columns with TABS. The tabs ARE the evidence: reflowing them to
+// spaces would silently edit a reference assembler's output that later parcels
+// compare against. Scoped to this item, never crate wide.
+#[allow(clippy::tabs_in_doc_comments)]
 #[test]
 fn a_second_charset_accumulates_and_an_unmapped_character_passes_through() {
     let src = format!(
@@ -371,6 +401,11 @@ fn a_second_charset_accumulates_and_an_unmapped_character_passes_through() {
 ///      11/       3 :                     	charset $41,$43,$FE
 ///      12/       3 : FEFF 00             	dc.b "ABC"
 /// ```
+// REASON: the doc comment above quotes asl listings verbatim, and asl separates
+// its listing columns with TABS. The tabs ARE the evidence: reflowing them to
+// spaces would silently edit a reference assembler's output that later parcels
+// compare against. Scoped to this item, never crate wide.
+#[allow(clippy::tabs_in_doc_comments)]
 #[test]
 fn a_range_target_wraps_at_the_top_of_the_page() {
     let src = format!("{HEAD}\tcharset $41,$43,$FE\n\tdc.b \"ABC\"\n\tend\n");
@@ -404,6 +439,11 @@ fn a_range_target_wraps_at_the_top_of_the_page() {
 /// ```
 ///
 /// The `22` on line 12 and the `11` on line 25 are the leaks.
+// REASON: the doc comment above quotes asl listings verbatim, and asl separates
+// its listing columns with TABS. The tabs ARE the evidence: reflowing them to
+// spaces would silently edit a reference assembler's output that later parcels
+// compare against. Scoped to this item, never crate wide.
+#[allow(clippy::tabs_in_doc_comments)]
 #[test]
 fn the_page_crosses_include_and_macro_boundaries_in_both_directions() {
     let inc = "\tdc.b \"A\"\n\tcharset 'B',$22\n\tdc.b \"B\"\n";
@@ -453,6 +493,11 @@ mset\tmacro\n\
 /// at this probe read `11 / 11 / 11` and was written down as "save/restore
 /// brackets the page". It does not; the probe was measuring its own
 /// self-reference.
+// REASON: the doc comment above quotes asl listings verbatim, and asl separates
+// its listing columns with TABS. The tabs ARE the evidence: reflowing them to
+// spaces would silently edit a reference assembler's output that later parcels
+// compare against. Scoped to this item, never crate wide.
+#[allow(clippy::tabs_in_doc_comments)]
 #[test]
 fn save_and_restore_do_not_bracket_the_page() {
     let src = format!(
@@ -487,6 +532,11 @@ fn save_and_restore_do_not_bracket_the_page() {
 /// `41` on the last pass, with the page still dirty at the end of the previous
 /// one and no `charset` reset anywhere in the file, is the finding. The listing
 /// reports the LAST pass, so a page that survived would print `11` here.
+// REASON: the doc comment above quotes asl listings verbatim, and asl separates
+// its listing columns with TABS. The tabs ARE the evidence: reflowing them to
+// spaces would silently edit a reference assembler's output that later parcels
+// compare against. Scoped to this item, never crate wide.
+#[allow(clippy::tabs_in_doc_comments)]
 #[test]
 fn every_pass_starts_from_the_identity_page() {
     let src = format!(
@@ -514,6 +564,11 @@ Later:\n\
 ///       4/       0 :                     	charset $61,$62,$63,$64
 /// > > > p10.asm(4): error: wrong number of operands
 /// ```
+// REASON: the doc comment above quotes asl listings verbatim, and asl separates
+// its listing columns with TABS. The tabs ARE the evidence: reflowing them to
+// spaces would silently edit a reference assembler's output that later parcels
+// compare against. Scoped to this item, never crate wide.
+#[allow(clippy::tabs_in_doc_comments)]
 #[test]
 fn only_zero_two_or_three_operands() {
     assert_eq!(
@@ -539,6 +594,11 @@ fn only_zero_two_or_three_operands() {
 ///
 /// Each of those runs then shows the mapping was NOT applied: `p5.asm` line 13
 /// reads `dc.b "ABC"` as `4142 43`, plain ASCII.
+// REASON: the doc comment above quotes asl listings verbatim, and asl separates
+// its listing columns with TABS. The tabs ARE the evidence: reflowing them to
+// spaces would silently edit a reference assembler's output that later parcels
+// compare against. Scoped to this item, never crate wide.
+#[allow(clippy::tabs_in_doc_comments)]
 #[test]
 fn an_out_of_range_operand_is_refused_and_applies_nothing() {
     for (line, want) in [
@@ -566,6 +626,11 @@ fn an_out_of_range_operand_is_refused_and_applies_nothing() {
 /// The `FE` on line 5 is what makes this a claim about ATOMICITY rather than
 /// about the refusal: had asl applied the two in-range entries before giving
 /// up, `$FE` would map to `A` and that byte would read `41`.
+// REASON: the doc comment above quotes asl listings verbatim, and asl separates
+// its listing columns with TABS. The tabs ARE the evidence: reflowing them to
+// spaces would silently edit a reference assembler's output that later parcels
+// compare against. Scoped to this item, never crate wide.
+#[allow(clippy::tabs_in_doc_comments)]
 #[test]
 fn a_string_target_past_the_end_of_the_page_is_refused_whole() {
     let src = format!("{HEAD}\tcharset $FE,\"ABC\"\n\tend\n");

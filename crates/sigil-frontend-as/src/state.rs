@@ -95,6 +95,11 @@ pub struct AsmState {
     ///
     /// Reset to the identity page at the start of every pass, which happens for
     /// free because `Asm` rebuilds this whole struct per pass.
+    // REASON: the doc comment above quotes asl listings verbatim, and asl separates
+    // its listing columns with TABS. The tabs ARE the evidence: reflowing them to
+    // spaces would silently edit a reference assembler's output that later parcels
+    // compare against. Scoped to this item, never crate wide.
+    #[allow(clippy::tabs_in_doc_comments)]
     pub charset: CodePage,
     saved: Vec<Saved>,
 }

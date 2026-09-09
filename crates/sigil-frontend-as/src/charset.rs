@@ -86,10 +86,20 @@
 //!
 //! The per-pass reset needs no code here: `Asm` (and with it [`AsmState`]) is
 //! rebuilt for each pass, so a fresh identity page comes for free. It is
-//! asserted in `charset_state.rs` anyway, because "for free" is a property of a
-//! construction site that a later refactor can move.
+//! asserted end to end anyway, in
+//! `tests/as_charset.rs::every_pass_starts_from_the_identity_page`, because
+//! "for free" is a property of a construction site that a later refactor can
+//! move.
 //!
 //! [`AsmState`]: crate::state::AsmState
+
+// REASON: the module doc above quotes asl listings verbatim, and asl separates
+// its listing columns with TABS. The tabs ARE the evidence: reflowing them to
+// spaces would silently edit a reference assembler's output that later parcels
+// compare against. This one is an INNER attribute because the listing sits in
+// the module's own `//!` doc and there is no item to hang it on; it is scoped to
+// this module, not to the crate.
+#![allow(clippy::tabs_in_doc_comments)]
 
 /// AS's 256-entry code page: the character-to-byte translation table.
 ///
@@ -131,8 +141,10 @@ impl CodePage {
         CodePage { map }
     }
 
-    /// `true` iff nothing has been remapped. Used only by tests and by the
-    /// [`Debug`](std::fmt::Debug) rendering.
+    /// `true` iff nothing has been remapped. Test-only: the assembler never
+    /// asks, and `#[cfg(test)]` rather than an `allow(dead_code)` so a future
+    /// non-test caller is a compile error here instead of silent dead weight.
+    #[cfg(test)]
     pub fn is_identity(&self) -> bool {
         (0..256usize).all(|i| self.map[i] == i as u8)
     }
