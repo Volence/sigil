@@ -115,6 +115,44 @@ you need. **Going quiet without a message is the state he named**, and note what
 he could see a lane had stopped and could not see why. `lane-status.json` is not a substitute —
 it is a pull, and this ruling is a push.
 
+## THE MOTIVATING CASE IS SELECTED FOR BEING BROKEN, NEVER FOR BEING REPRESENTATIVE (2026-09-09)
+
+**A corpus earns a parcel by FAILING on it. That says nothing about whether it EXERCISES the fix**,
+and the two get silently conflated because the same file is doing both jobs: it is the reason the
+work exists and the thing the work is verified against. **Its coverage of the fix is accidental.**
+
+Measured instances, and the sample is stated precisely because the pattern is more attractive than
+its evidence:
+
+- **The integer selector.** Sonic 1 refuses the construct, which is why the parcel existed. But
+  `SonicDriverVer = 1` and `case 1` is FIRST in both blocks, and the old code took a refused arm as
+  the default, so a fix that stopped the refusal WITHOUT wiring the comparison would emit zero
+  diagnostics and the correct bytes and pass every byte gate the corpus offers.
+- **`charset`.** Sonic 1 reaches one of the two consumers the seam's own doc comment names: 0 `dc.b`
+  strings after the bare `charset` reset in `sonic.asm`, against 45 elsewhere in the corpus. All nine
+  complaints can vanish with `string_to_int` still unmapped.
+
+**HONEST SAMPLE, because this lane's own bar 19 applies to its own findings.** That is **n=2 on the
+corpus form**, not three: the third instance people will want to add, the four-shape byte gate that
+stayed green under a mutation breaking `exec_switch` outright, is the **reference-artifact** form of
+the same idea and has a different cause (aeon does not use the construct at all). Keep them adjacent
+and do not merge them into one count. **And the two corpus instances are not independent:** the
+second was found by an agent whose brief already carried the first's lesson, so it is corroboration
+under a shared frame rather than a second discovery. It may still be the general case; it has not
+been shown to be.
+
+**THE REMEDY, and it is cheap: build a probe for the half the motivating corpus does NOT reach, and
+derive its expected values from `asl` rather than from your reading of what ought to happen.** The
+selector parcel found the better shape of this without being asked: it built the probe out of the
+corpus's OWN text, the real block with one constant changed so the matching arm is second, choosing
+a block where both arms emit a symbol that exists in both so a wrong pick stays SILENT. A probe made
+of the real construct beats a model of it, and a probe whose failure is silent is the only kind that
+tests this hazard at all.
+
+**The question that finds it before a parcel starts: WHAT WOULD A HALF-FIX LOOK LIKE HERE, AND WOULD
+ANYTHING GO RED?** Ask it while writing the brief, not at review, because by review the green run
+already exists and reads as evidence.
+
 ## STANDING: SAY WHEN YOU NEED A CONTEXT CLEAR (owner, relayed 2026-09-09) - the sibling of the report-when-you-stop rule
 
 **Owner ruling, all lanes, transcribed by the hub rather than summarised:** *"I'd like to keep going
