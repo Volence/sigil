@@ -217,6 +217,35 @@ byte would read `41`.
 Within an ACCEPTED range the target wraps: `charset $41,$43,$FE` gives
 `dc.b "ABC"` = `FE FF 00` (probe `p7.asm`, exit 0).
 
+## An operand that never resolves, and one that resolves late
+
+Two answers from one construct, and conflating them costs either a silent wrong
+byte or a refused legal source. Probes `p16.asm` (exit 2) and `p17.asm` (exit 0):
+
+```text
+> > > p16.asm(4):10: error: symbol undefined
+       4/       0 :                     	charset NeverDefined,$11
+       5/       0 : 41                  	dc.b "A"
+
+       4/       0 :                     	charset Later,$11
+       5/       0 : 11                  	dc.b "A"
+       7/       1 : =$41                 Later	equ $41
+```
+
+**The first of these caught a real hole in this parcel's own implementation.**
+`charset_index` folded through `eval_all`, and `eval_all` says NOTHING for an
+operand that merely fails to resolve: its `Fold::Poison` arm names a register and
+otherwise returns silently. So the first cut of this directive dropped the
+mapping, emitted no diagnostic, exited 0, and handed back plain ASCII where the
+source asked for the game's font. Measured on that binary: `41`, the same byte
+asl prints, but at exit 0 where asl exits 2. A silent wrong byte, which is the one
+outcome a code page must never produce. `charset_index` now reaches for its own
+word, exactly as `align`, `ds` and the duplicate count do at the same choke point.
+
+The forward reference must NOT be caught by that arm, and is not, because
+diagnostics are returned from the converged pass alone: the pass-0 refusal is
+superseded once the symbol has a value. sigil emits `11` at exit 0, as asl does.
+
 ## Where sigil and asl differ, stated rather than hidden
 
 1. **`charset "AB",$11`.** asl says `wrong number of operands`; sigil packs the
@@ -256,3 +285,35 @@ rather than quote it, and it was right to.
 
 The 504-byte figure re-derives from the listing: `LevelMenuText` at `$359E`, the
 `charset` reset at `$3796`, `$3796 - $359E = $1F8 = 504`.
+
+
+## WHICH GATE ACTUALLY SEES THIS, measured by breaking it
+
+Four mutations, each one line, each applied and shown on disk with
+`git diff --stat`, each restored from a commit:
+
+| mutation | as_charset | census | four-shape ROM CRCs |
+|---|---|---|---|
+| M1 `directive_db` back to `c as u8` | 8 of 14 RED | **1, unchanged** | **12 of 12 green** |
+| M2 `string_to_int` back to `c as u8` | **1** of 14 RED | **1, unchanged** | **12 of 12 green** |
+| M3 lexer back to `ch as i64` | 2 of 14 RED | not run | not run |
+| M4 `CodePage::reset` a no-op | 2 of 14 RED | not run | not run |
+
+Each mutation ran a demonstrably different binary: baseline md5
+`f49ae09f04397af7ac10cf9ab7383019`, M1 `e0ab40e1ac87488a08d50a8b80d4d5aa`, M2
+`519ae4a5f2350d058702639f59bd5c13`.
+
+**Neither of this repo's two corpus-wide instruments can see a broken code
+page.** The four-shape ROM gate is blind structurally: aeon writes the token
+`charset` 0 times across 205 `.asm`/`.emp`/`.inc` files, so no charset change can
+move those bytes. The census is blind for a different and more interesting
+reason: it counts REFUSALS, and a wrong byte is not one. Under M1, Sonic 1's own
+menu text assembles to plain ASCII instead of the level-select font and the
+census still reports the same single diagnostic.
+
+So the four green CRCs reported for this parcel are a guard against incidental
+damage from the 29 threaded call sites, and they are not evidence that `charset`
+works. The evidence for that is `tests/as_charset.rs`, and for the expression
+consumer specifically it is one test:
+`a_string_in_an_expression_packs_the_mapped_bytes`, the only gate in the
+workspace that goes red under M2.

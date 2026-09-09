@@ -7131,7 +7131,33 @@ impl Asm {
     /// it to asl's `0..=255`. `None` (with the refusal already raised) means the
     /// caller must apply NO part of the mapping.
     fn charset_index(&mut self, toks: &[Token], span: Span) -> Option<u8> {
-        let v = self.eval_all(toks, span)?;
+        // The `None` arm gets its own word, and it has to: `eval_all` says
+        // NOTHING for an operand that merely fails to resolve (its `Fold::Poison`
+        // arm names a register and otherwise returns silently). Without this,
+        // `charset NeverDefined,$11` dropped the mapping, emitted no diagnostic,
+        // exited 0, and handed back plain ASCII for every character the source
+        // meant to be in the game's font — measured on the binary before this
+        // arm existed, which emitted `41` for a following `dc.b "A"`. asl
+        // refuses it (`p16.asm(4):10: error: symbol undefined`, exit 2) and
+        // applies no mapping, so `41` at exit 0 was a silent wrong byte, the one
+        // outcome a code page must never produce.
+        //
+        // A FORWARD reference is not this case and must not be caught by it:
+        // asl assembles `charset Later,$11` with `Later equ $41` below it at
+        // exit 0, reading `dc.b "A"` as `11` (probe `p17.asm`). It works here
+        // for the same reason `align` and `ds` survive one: diagnostics are
+        // returned from the CONVERGED pass alone, so this refusal on pass 0
+        // is superseded once the symbol has a value.
+        //
+        // `align`, `ds` and the duplicate count all reach for their own word at
+        // this same choke point, and `register_reported_at` is the same
+        // don't-say-it-twice courtesy they extend.
+        let Some(v) = self.eval_all(toks, span) else {
+            if !self.register_reported_at(span) {
+                self.err(span, "unresolved charset operand");
+            }
+            return None;
+        };
         match u8::try_from(v) {
             Ok(b) => Some(b),
             Err(_) => {

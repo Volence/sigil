@@ -612,6 +612,49 @@ fn an_out_of_range_operand_is_refused_and_applies_nothing() {
     }
 }
 
+/// An operand that never resolves is REFUSED, and a FORWARD-referenced one is
+/// not. Two answers from one construct, and conflating them costs either a
+/// silent wrong byte or a refused legal source.
+///
+/// asl, probes `p16.asm` (exit 2) and `p17.asm` (exit 0):
+///
+/// ```text
+/// > > > p16.asm(4):10: error: symbol undefined
+///       4/       0 :                     	charset NeverDefined,$11
+///       5/       0 : 41                  	dc.b "A"
+///
+///       4/       0 :                     	charset Later,$11
+///       5/       0 : 11                  	dc.b "A"
+///       7/       1 : =$41                 Later	equ $41
+/// ```
+///
+/// The `41` in the first is the reason this test exists rather than being left
+/// to the general unresolved-symbol machinery. Before `charset_index` grew its
+/// own `None` arm, sigil emitted that same `41` **at exit 0 with no
+/// diagnostic** — plain ASCII where the source asked for the game's font, which
+/// is a silent wrong byte and not a refusal. Neither the Sonic 1 census nor the
+/// four-shape ROM gate can see one.
+// REASON: the doc comment above quotes asl listings verbatim, and asl separates
+// its listing columns with TABS. The tabs ARE the evidence: reflowing them to
+// spaces would silently edit a reference assembler's output that later parcels
+// compare against. Scoped to this item, never crate wide.
+#[allow(clippy::tabs_in_doc_comments)]
+#[test]
+fn an_unresolved_operand_is_refused_and_a_forward_reference_is_not() {
+    assert_eq!(
+        diags(&format!("{HEAD}\tcharset NeverDefined,$11\n\tdc.b \"A\"\n\tend\n")),
+        vec!["unresolved charset operand"]
+    );
+    let forward = format!(
+        "{HEAD}\
+\tcharset Later,$11\n\
+\tdc.b \"A\"\n\
+Later:\tequ $41\n\
+\tend\n"
+    );
+    assert_eq!(bytes(&forward), vec![0x11]);
+}
+
 /// A string target that would run past `$FF` is refused WHOLE: not even the
 /// in-range prefix lands.
 ///
