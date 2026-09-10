@@ -151,6 +151,27 @@
 #     written, which is the exact shape (7) closed for clippy: a bar reported beside a
 #     green verdict is a bar that gets landed over.
 #
+#     A BINARY THAT LAUNCHED AND NEVER REPORTED IS A RED RUN. The totals are sums over
+#     `test result:` lines, and until this was written NOTHING SAID WHAT THAT COUNT SHOULD
+#     BE. A test binary that dies mid-run prints no `test result:` line, so its tests leave
+#     `suites` and `passed` silently and every line in the verdict still reads like a
+#     complete run. `--baseline` does not cover it: the reconciliation fails only on a
+#     shortfall, so it is a lower bound, and every test added since the caller last moved
+#     that number is slack a vanished test hides inside (measured here: 0 to 21 tests
+#     across seventeen landing logs). The check pairs cargo's own `Running`/`Doc-tests`
+#     launch lines against the children's `test result:` lines and NAMES any binary that
+#     started and went quiet.
+#
+#     A TEST-TARGET CENSUS SHORTFALL IS A RED RUN, and it is the ONE population in the
+#     verdict that does not come out of the log. The pairing above is structurally blind to
+#     a target that stopped being BUILT: such a target neither launches nor reports, so it
+#     is absent from both of the log's own populations and a check comparing them would be
+#     asserting a set against itself. `scripts/test_target_census.py` reads the workspace
+#     manifests through `cargo metadata --no-deps`, which builds nothing, and the figure is
+#     STAMPED into the log so `--verdict-only` judges the tree the run was made from. A
+#     census that could not be taken fails too; a log written before the stamp existed says
+#     NOT STATED and does not.
+#
 # USAGE
 #   scripts/landing-run.sh --baseline 4156
 #   scripts/landing-run.sh --baseline 4156 --aeon ~/sonic_hacks/.aeon-landing
@@ -605,6 +626,33 @@ CLIPPY_ARGS=(clippy --release --workspace --all-targets
 # line can move on the day it goes red.
 LEDGER_ARGS=("$LEDGER_GATE" --repo "$ROOT" --docs "$ROOT/docs")
 
+# ---------------------------------------------------------------------------------------
+# THE TEST-TARGET CENSUS, and it is the only figure in this file that comes from OUTSIDE
+# the log. The launch/report pairing in the verdict catches a binary that started and went
+# quiet; it is SILENT about a target that stopped being built, because such a target
+# neither launches nor reports and both halves of that pairing are read out of the log.
+# `cargo metadata --no-deps` reads the manifests and builds nothing, so it says how many
+# binaries a full run SHOULD launch without being able to be affected by what the run did.
+#
+# STAMPED INTO THE LOG rather than measured at verdict time, so `--verdict-only` judges the
+# tree the run was made from and not whatever the manifests say today.
+#
+# A CENSUS THAT FAILED IS STAMPED AS SUCH, NEVER AS A NUMBER. It does not stop the run:
+# the census is a cross-check on the other bars, and refusing to run the suite because a
+# metadata call failed would trade a measurement for a missing one.
+# ---------------------------------------------------------------------------------------
+CENSUS_OUT=$(python3 "$ROOT/scripts/test_target_census.py" "$ROOT/Cargo.toml" 2>&1)
+CENSUS_RC=$?
+if (( CENSUS_RC == 0 )); then
+    CENSUS_RUNNABLE=$(awk '$1=="runnable"{print $2}' <<< "$CENSUS_OUT")
+    CENSUS_DOCTEST=$(awk '$1=="doctest"{print $2}' <<< "$CENSUS_OUT")
+    CENSUS_EXCLUDED=$(awk '$1=="excluded-required-features"{print $2}' <<< "$CENSUS_OUT")
+    CENSUS_LINE="$(( CENSUS_RUNNABLE + CENSUS_DOCTEST )) expected launches ($CENSUS_RUNNABLE runnable + $CENSUS_DOCTEST doctest, $CENSUS_EXCLUDED excluded for required-features; cargo metadata --no-deps)"
+else
+    CENSUS_LINE="COULD NOT MEASURE (scripts/test_target_census.py exited $CENSUS_RC: ${CENSUS_OUT//$'\n'/ })"
+fi
+say "test-target census: $CENSUS_LINE"
+
 {
     echo "# sigil landing run"
     echo "# started (UTC)  $STARTED"
@@ -622,6 +670,7 @@ LEDGER_ARGS=("$LEDGER_GATE" --repo "$ROOT" --docs "$ROOT/docs")
     echo "# SIGIL_EMIT     $SIGIL_EMIT_RESOLVED ($EMIT_ORIGIN)"
     echo "# scoped         $( ((SCOPED)) && echo 'YES, this is a PARTIAL run, not a landing' || echo 'no (full workspace)')"
     echo "# baseline       ${BASELINE:-<none stated>}"
+    echo "# test targets   $CENSUS_LINE"
     # The suite's own partial-run opt-in, stamped as CLEARED rather than left to be
     # assumed: the log has to be answerable about whether the reference-dependent rows
     # were measured, and "the variable was not set in my shell" is not something a
@@ -762,6 +811,71 @@ SKIPS=$(awk '
     inspan && /skip:|skipping/ { n++ }
     END { print n+0 }' "$LOG")
 
+# ---------------------------------------------------------------------------------------
+# (7b) WHICH BINARIES LAUNCHED, AND WHICH OF THEM REPORTED.
+#
+# `SUITES` above counts `test result:` lines and NOTHING SAYS WHAT THAT COUNT SHOULD BE.
+# A test binary that dies mid-run contributes no `test result:` line at all, so its tests
+# leave the totals silently: `suites` and `passed` both come back smaller and every line
+# in the verdict still reads like a complete run. Measured on this repo, from a real green
+# log with one binary's report removed: 449 suites became 448, 5077 passed became 5075,
+# and the verdict printed `RESULT GREEN` with `5063 baseline + 12 new = 5075 observed`.
+#
+# THE BASELINE DOES NOT COVER THIS. `--baseline` is the count expected on a green run and
+# the reconciliation only fails on a SHORTFALL against it, so it is a lower bound with
+# slack: every test added since the caller last updated the number is slack a vanished
+# test can hide inside. Measured across the seventeen landing logs in this repo the slack
+# ran from 0 to 21 tests, and stood at 14 on the day this was written.
+#
+# THE POPULATION COMES FROM A DIFFERENT PRODUCER THAN THE REPORT, which is the whole point
+# and the reason this is not a set checked against itself. `Running <target>` and
+# `Doc-tests <crate>` are written by CARGO, the parent, before each child starts;
+# `test result:` is written by the CHILD when it finishes. A child that dies cannot
+# retract a line its parent already flushed, so the launch record survives exactly the
+# failure this is looking for. Measured on all seventeen logs: launched == reported in
+# every one, including the red one, so this is an equality and not a ratchet.
+#
+# The pairing, rather than two counts subtracted, so the verdict can NAME the binary that
+# went quiet: a count tells an operator a target died and leaves them to find which.
+LAUNCHED=$(awk '
+    /^##### TEST SPAN,/ { inspan = 1; next }
+    inspan && (/^ *Running / || /^ *Doc-tests /) { n++ }
+    END { print n+0 }' "$LOG")
+mapfile -t SILENT_BINARIES < <(awk '
+    /^##### TEST SPAN,/ { inspan = 1; next }
+    !inspan { next }
+    /^ *Running / || /^ *Doc-tests / {
+        if (pending != "") print pending
+        sub(/^ +/, ""); pending = $0
+        next
+    }
+    /^test result:/ { pending = "" }
+    END { if (pending != "") print pending }' "$LOG")
+# The third state, and it is LOUD rather than 0. A log whose test span reports suites but
+# records no launches is a log this check cannot measure, and rendering an unmeasurable
+# population as a satisfied one is the defect this whole block exists to close.
+COMPLETENESS_UNMEASURED=0
+(( SUITES > 0 && LAUNCHED == 0 )) && COMPLETENESS_UNMEASURED=1
+
+# THE CENSUS, read back out of the stamp. This is the half the pairing above cannot do: a
+# target that stopped being built neither launches nor reports, so it is absent from both
+# of the log's own populations and only a figure derived from the manifests can miss it.
+# Three states, and the third is why this is parsed rather than defaulted:
+#   a number  -- the run stamped a census, compare it to what launched
+#   COULD...  -- the run tried and the census failed, which is not a satisfied cross-check
+#   empty     -- the log predates this stamp entirely, so there is nothing to compare
+CENSUS_STAMP=$(stamp 'test targets')
+CENSUS_EXPECTED=${CENSUS_STAMP%% *}
+CENSUS_STATE=absent
+[[ -n $CENSUS_STAMP ]] && CENSUS_STATE=unmeasured
+[[ $CENSUS_EXPECTED =~ ^[0-9]+$ ]] && CENSUS_STATE=measured
+CENSUS_SHORT=0
+if [[ $CENSUS_STATE == measured ]] && (( ! SCOPED )) && (( LAUNCHED != CENSUS_EXPECTED )); then
+    CENSUS_SHORT=1
+fi
+CENSUS_UNMEASURED=0
+[[ $CENSUS_STATE == unmeasured ]] && CENSUS_UNMEASURED=1
+
 # Every failing name, sorted and deduped. All of them.
 mapfile -t FAILING < <(grep -E '^test .* \.\.\. FAILED$' "$LOG" \
     | sed -E 's/^test (.*) \.\.\. FAILED$/\1/' | sort -u)
@@ -854,6 +968,71 @@ else
     echo "  skip lines      0"
 fi
 
+# ALWAYS PRINTED, GREEN OR RED, for the reason the ledger report is: a completeness figure
+# shown only when it breaks leaves a reader unable to tell a run that checked from a run
+# that did not.
+if (( COMPLETENESS_UNMEASURED )); then
+    echo "  binaries        COULD NOT MEASURE. $SUITES suite(s) reported and the test span"
+    echo "                  records no \`Running\`/\`Doc-tests\` launch line at all, so nothing"
+    echo "                  here knows how many binaries SHOULD have reported. This is not a"
+    echo "                  satisfied completeness check, it is an absent one."
+elif (( ${#SILENT_BINARIES[@]} )); then
+    echo "  binaries        $LAUNCHED launched, $SUITES reported   <-- FAILS THIS RUN."
+    echo
+    echo "  BINARIES THAT LAUNCHED AND NEVER REPORTED (${#SILENT_BINARIES[@]}), all of them:"
+    for b in "${SILENT_BINARIES[@]}"; do echo "    $b"; done
+    echo "  Each of these started and produced no \`test result:\` line, so however many tests"
+    echo "  it holds are absent from the counts above and the totals still read complete. A"
+    echo "  binary killed by the OOM killer leaves exactly this trace; so does one that"
+    echo "  aborted, hung until something killed it, or died in a static initialiser. Read"
+    echo "  the log AT THE NAMED TARGET, not at the tail."
+else
+    echo "  binaries        $LAUNCHED launched, $SUITES reported"
+fi
+
+# THE ONE FIGURE FROM OUTSIDE THE LOG. Always printed, for the reason the ledger report is.
+case $CENSUS_STATE in
+    measured)
+        if (( SCOPED )); then
+            echo "  test targets    $CENSUS_STAMP"
+            echo "                  REPORTED, NOT CHECKED. A --scoped run launches a subset by"
+            echo "                  design, so a shortfall against the census is the point of the"
+            echo "                  flag rather than a finding."
+        elif (( CENSUS_SHORT )); then
+            echo "  test targets    $CENSUS_STAMP"
+            if (( LAUNCHED < CENSUS_EXPECTED )); then
+                echo "                  <-- FAILS THIS RUN. $(( CENSUS_EXPECTED - LAUNCHED )) target(s) the manifests"
+                echo "                  describe never launched at all. The pairing above cannot see this:"
+                echo "                  a target that stopped being built neither launches nor reports, so"
+                echo "                  it is absent from both populations the log carries. Something was"
+                echo "                  removed from a Cargo.toml, gained a \`test = false\`, or stopped"
+                echo "                  compiling into a target cargo would run."
+            else
+                echo "                  <-- FAILS THIS RUN. $(( LAUNCHED - CENSUS_EXPECTED )) MORE launch(es) than the"
+                echo "                  manifests describe. The census derivation and cargo disagree, and"
+                echo "                  until they are reconciled neither number can be trusted as the"
+                echo "                  population. Read scripts/test_target_census.py against the"
+                echo "                  manifests; a target kind it does not know about is the likely gap."
+            fi
+        else
+            echo "  test targets    $CENSUS_STAMP, all launched"
+        fi
+        ;;
+    unmeasured)
+        echo "  test targets    $CENSUS_STAMP"
+        echo "                  <-- FAILS THIS RUN. The census is the only population in this"
+        echo "                  verdict that does not come out of the log, and a run that could"
+        echo "                  not take it has no outside check on what was built at all. This"
+        echo "                  is an absent cross-check, not a satisfied one."
+        ;;
+    absent)
+        echo "  test targets    NOT STATED, this log predates the census stamp. Nothing outside"
+        echo "                  the log says how many binaries should have launched, so the"
+        echo "                  launch/report pairing above is the only completeness evidence"
+        echo "                  here. A run made by this script today always stamps one."
+        ;;
+esac
+
 if (( ${#FAILING[@]} )); then
     echo
     echo "  FAILING TESTS (${#FAILING[@]}), all of them:"
@@ -937,7 +1116,22 @@ fi
 # unmeasurable (2) alike -- an unmeasurable gate is not a passing one -- and
 # `LEDGER_SILENT` covers the third state, a gate that returned an exit code with no
 # measurement behind it.
-if (( CARGO_RC != 0 || FAILED > 0 || CLIPPY_RC != 0 || SKIPS > 0 || LEDGER_RC != 0 || LEDGER_SILENT )); then
+#
+# A BINARY THAT LAUNCHED AND NEVER REPORTED IS A RED RUN, in this same condition and for
+# the fourth time the same reason. Its tests are missing from every total above while
+# every total still reads complete, and cargo's exit code covers only the half of that
+# where cargo noticed: a binary killed by a signal makes cargo exit 101 (measured), but a
+# target that stopped being built, was filtered out, or was marked `#[ignore]` takes tests
+# out of the count with cargo exiting 0. The condition below is what makes (7b) load
+# bearing rather than a line in a verdict block. `COMPLETENESS_UNMEASURED` covers the
+# third state, a run whose population this check could not establish at all.
+#
+# A CENSUS SHORTFALL IS A RED RUN, and a census that could not be taken is one too. The
+# `absent` state is NOT in this condition, deliberately: it is a log written before the
+# stamp existed, and a rule that failed every historical log would be a rule people learn
+# to route around rather than a bar.
+if (( CARGO_RC != 0 || FAILED > 0 || CLIPPY_RC != 0 || SKIPS > 0 || LEDGER_RC != 0 || LEDGER_SILENT \
+      || ${#SILENT_BINARIES[@]} > 0 || COMPLETENESS_UNMEASURED || CENSUS_SHORT || CENSUS_UNMEASURED )); then
     echo
     if (( LEDGER_RC != 0 && CARGO_RC == 0 && FAILED == 0 && SKIPS == 0 && CLIPPY_RC == 0 )); then
         # The informative case again: nothing about the code is red, and the run still is
@@ -968,8 +1162,31 @@ if (( CARGO_RC != 0 || FAILED > 0 || CLIPPY_RC != 0 || SKIPS > 0 || LEDGER_RC !=
         echo "  RESULT          FAILED, $SKIPS skip line(s) survived SIGIL_STRICT_GATE=1. Every test"
         echo "                  that ran passed and the lint bar is clean; a gate that measured"
         echo "                  nothing is why this is not green. Do not land on this."
+    elif (( ${#SILENT_BINARIES[@]} > 0 && CARGO_RC == 0 && FAILED == 0 && SKIPS == 0 && CLIPPY_RC == 0 && LEDGER_RC == 0 && ! LEDGER_SILENT )); then
+        # The informative case for the fourth bar, and the one worth naming loudest: every
+        # bar the run measures is clean and the run is still not a landing, because the
+        # POPULATION it measured them over is short. Nothing else in this verdict would
+        # have said so -- the totals shrink silently and the baseline has slack.
+        echo "  RESULT          FAILED, ${#SILENT_BINARIES[@]} test binary/binaries launched and never"
+        echo "                  reported. Every test that ran passed, the lint bar is clean and cargo"
+        echo "                  exited 0; the tests inside those binaries are simply not in the counts"
+        echo "                  above. This is not a green run with a smaller number, it is a run whose"
+        echo "                  population is unknown. Do not land on this."
+    elif (( COMPLETENESS_UNMEASURED && CARGO_RC == 0 && FAILED == 0 && SKIPS == 0 && CLIPPY_RC == 0 && LEDGER_RC == 0 && ! LEDGER_SILENT )); then
+        echo "  RESULT          FAILED, the completeness check could not measure. Every other bar is"
+        echo "                  clean; this log records no binary launches, so how many binaries should"
+        echo "                  have reported is unknown, and an unknown population is not a green one."
+    elif (( CENSUS_SHORT && CARGO_RC == 0 && FAILED == 0 && SKIPS == 0 && CLIPPY_RC == 0 && LEDGER_RC == 0 && ! LEDGER_SILENT && ${#SILENT_BINARIES[@]} == 0 )); then
+        # The informative case for the census: every binary that launched also reported,
+        # so the log is internally consistent and still describes fewer targets than the
+        # manifests do. Only a figure from outside the log can say that.
+        echo "  RESULT          FAILED, the TEST-TARGET CENSUS does not match. $LAUNCHED binaries"
+        echo "                  launched, the workspace manifests describe $CENSUS_EXPECTED. Every one that"
+        echo "                  launched reported and every test in them passed, so the log agrees"
+        echo "                  with itself; it is the workspace it does not agree with. Do not land"
+        echo "                  on this."
     else
-        echo "  RESULT          FAILED, $FAILED test(s) red, $SKIPS skip line(s), cargo exit $CARGO_RC, clippy exit $CLIPPY_RC, ledger exit $LEDGER_RC."
+        echo "  RESULT          FAILED, $FAILED test(s) red, ${#SILENT_BINARIES[@]} silent binary/binaries, $SKIPS skip line(s), cargo exit $CARGO_RC, clippy exit $CLIPPY_RC, ledger exit $LEDGER_RC, census $CENSUS_STATE."
     fi
     echo "==================================================================================="
     exit 1
