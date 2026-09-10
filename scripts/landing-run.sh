@@ -151,6 +151,17 @@
 #     written, which is the exact shape (7) closed for clippy: a bar reported beside a
 #     green verdict is a bar that gets landed over.
 #
+#     A BINARY THAT LAUNCHED AND NEVER REPORTED IS A RED RUN. The totals are sums over
+#     `test result:` lines, and until this was written NOTHING SAID WHAT THAT COUNT SHOULD
+#     BE. A test binary that dies mid-run prints no `test result:` line, so its tests leave
+#     `suites` and `passed` silently and every line in the verdict still reads like a
+#     complete run. `--baseline` does not cover it: the reconciliation fails only on a
+#     shortfall, so it is a lower bound, and every test added since the caller last moved
+#     that number is slack a vanished test hides inside (measured here: 0 to 21 tests
+#     across seventeen landing logs). The check pairs cargo's own `Running`/`Doc-tests`
+#     launch lines against the children's `test result:` lines and NAMES any binary that
+#     started and went quiet.
+#
 # USAGE
 #   scripts/landing-run.sh --baseline 4156
 #   scripts/landing-run.sh --baseline 4156 --aeon ~/sonic_hacks/.aeon-landing
@@ -762,6 +773,52 @@ SKIPS=$(awk '
     inspan && /skip:|skipping/ { n++ }
     END { print n+0 }' "$LOG")
 
+# ---------------------------------------------------------------------------------------
+# (7b) WHICH BINARIES LAUNCHED, AND WHICH OF THEM REPORTED.
+#
+# `SUITES` above counts `test result:` lines and NOTHING SAYS WHAT THAT COUNT SHOULD BE.
+# A test binary that dies mid-run contributes no `test result:` line at all, so its tests
+# leave the totals silently: `suites` and `passed` both come back smaller and every line
+# in the verdict still reads like a complete run. Measured on this repo, from a real green
+# log with one binary's report removed: 449 suites became 448, 5077 passed became 5075,
+# and the verdict printed `RESULT GREEN` with `5063 baseline + 12 new = 5075 observed`.
+#
+# THE BASELINE DOES NOT COVER THIS. `--baseline` is the count expected on a green run and
+# the reconciliation only fails on a SHORTFALL against it, so it is a lower bound with
+# slack: every test added since the caller last updated the number is slack a vanished
+# test can hide inside. Measured across the seventeen landing logs in this repo the slack
+# ran from 0 to 21 tests, and stood at 14 on the day this was written.
+#
+# THE POPULATION COMES FROM A DIFFERENT PRODUCER THAN THE REPORT, which is the whole point
+# and the reason this is not a set checked against itself. `Running <target>` and
+# `Doc-tests <crate>` are written by CARGO, the parent, before each child starts;
+# `test result:` is written by the CHILD when it finishes. A child that dies cannot
+# retract a line its parent already flushed, so the launch record survives exactly the
+# failure this is looking for. Measured on all seventeen logs: launched == reported in
+# every one, including the red one, so this is an equality and not a ratchet.
+#
+# The pairing, rather than two counts subtracted, so the verdict can NAME the binary that
+# went quiet: a count tells an operator a target died and leaves them to find which.
+LAUNCHED=$(awk '
+    /^##### TEST SPAN,/ { inspan = 1; next }
+    inspan && (/^ *Running / || /^ *Doc-tests /) { n++ }
+    END { print n+0 }' "$LOG")
+mapfile -t SILENT_BINARIES < <(awk '
+    /^##### TEST SPAN,/ { inspan = 1; next }
+    !inspan { next }
+    /^ *Running / || /^ *Doc-tests / {
+        if (pending != "") print pending
+        sub(/^ +/, ""); pending = $0
+        next
+    }
+    /^test result:/ { pending = "" }
+    END { if (pending != "") print pending }' "$LOG")
+# The third state, and it is LOUD rather than 0. A log whose test span reports suites but
+# records no launches is a log this check cannot measure, and rendering an unmeasurable
+# population as a satisfied one is the defect this whole block exists to close.
+COMPLETENESS_UNMEASURED=0
+(( SUITES > 0 && LAUNCHED == 0 )) && COMPLETENESS_UNMEASURED=1
+
 # Every failing name, sorted and deduped. All of them.
 mapfile -t FAILING < <(grep -E '^test .* \.\.\. FAILED$' "$LOG" \
     | sed -E 's/^test (.*) \.\.\. FAILED$/\1/' | sort -u)
@@ -854,6 +911,28 @@ else
     echo "  skip lines      0"
 fi
 
+# ALWAYS PRINTED, GREEN OR RED, for the reason the ledger report is: a completeness figure
+# shown only when it breaks leaves a reader unable to tell a run that checked from a run
+# that did not.
+if (( COMPLETENESS_UNMEASURED )); then
+    echo "  binaries        COULD NOT MEASURE. $SUITES suite(s) reported and the test span"
+    echo "                  records no \`Running\`/\`Doc-tests\` launch line at all, so nothing"
+    echo "                  here knows how many binaries SHOULD have reported. This is not a"
+    echo "                  satisfied completeness check, it is an absent one."
+elif (( ${#SILENT_BINARIES[@]} )); then
+    echo "  binaries        $LAUNCHED launched, $SUITES reported   <-- FAILS THIS RUN."
+    echo
+    echo "  BINARIES THAT LAUNCHED AND NEVER REPORTED (${#SILENT_BINARIES[@]}), all of them:"
+    for b in "${SILENT_BINARIES[@]}"; do echo "    $b"; done
+    echo "  Each of these started and produced no \`test result:\` line, so however many tests"
+    echo "  it holds are absent from the counts above and the totals still read complete. A"
+    echo "  binary killed by the OOM killer leaves exactly this trace; so does one that"
+    echo "  aborted, hung until something killed it, or died in a static initialiser. Read"
+    echo "  the log AT THE NAMED TARGET, not at the tail."
+else
+    echo "  binaries        $LAUNCHED launched, $SUITES reported"
+fi
+
 if (( ${#FAILING[@]} )); then
     echo
     echo "  FAILING TESTS (${#FAILING[@]}), all of them:"
@@ -937,7 +1016,17 @@ fi
 # unmeasurable (2) alike -- an unmeasurable gate is not a passing one -- and
 # `LEDGER_SILENT` covers the third state, a gate that returned an exit code with no
 # measurement behind it.
-if (( CARGO_RC != 0 || FAILED > 0 || CLIPPY_RC != 0 || SKIPS > 0 || LEDGER_RC != 0 || LEDGER_SILENT )); then
+#
+# A BINARY THAT LAUNCHED AND NEVER REPORTED IS A RED RUN, in this same condition and for
+# the fourth time the same reason. Its tests are missing from every total above while
+# every total still reads complete, and cargo's exit code covers only the half of that
+# where cargo noticed: a binary killed by a signal makes cargo exit 101 (measured), but a
+# target that stopped being built, was filtered out, or was marked `#[ignore]` takes tests
+# out of the count with cargo exiting 0. The condition below is what makes (7b) load
+# bearing rather than a line in a verdict block. `COMPLETENESS_UNMEASURED` covers the
+# third state, a run whose population this check could not establish at all.
+if (( CARGO_RC != 0 || FAILED > 0 || CLIPPY_RC != 0 || SKIPS > 0 || LEDGER_RC != 0 || LEDGER_SILENT \
+      || ${#SILENT_BINARIES[@]} > 0 || COMPLETENESS_UNMEASURED )); then
     echo
     if (( LEDGER_RC != 0 && CARGO_RC == 0 && FAILED == 0 && SKIPS == 0 && CLIPPY_RC == 0 )); then
         # The informative case again: nothing about the code is red, and the run still is
@@ -968,8 +1057,22 @@ if (( CARGO_RC != 0 || FAILED > 0 || CLIPPY_RC != 0 || SKIPS > 0 || LEDGER_RC !=
         echo "  RESULT          FAILED, $SKIPS skip line(s) survived SIGIL_STRICT_GATE=1. Every test"
         echo "                  that ran passed and the lint bar is clean; a gate that measured"
         echo "                  nothing is why this is not green. Do not land on this."
+    elif (( ${#SILENT_BINARIES[@]} > 0 && CARGO_RC == 0 && FAILED == 0 && SKIPS == 0 && CLIPPY_RC == 0 && LEDGER_RC == 0 && ! LEDGER_SILENT )); then
+        # The informative case for the fourth bar, and the one worth naming loudest: every
+        # bar the run measures is clean and the run is still not a landing, because the
+        # POPULATION it measured them over is short. Nothing else in this verdict would
+        # have said so -- the totals shrink silently and the baseline has slack.
+        echo "  RESULT          FAILED, ${#SILENT_BINARIES[@]} test binary/binaries launched and never"
+        echo "                  reported. Every test that ran passed, the lint bar is clean and cargo"
+        echo "                  exited 0; the tests inside those binaries are simply not in the counts"
+        echo "                  above. This is not a green run with a smaller number, it is a run whose"
+        echo "                  population is unknown. Do not land on this."
+    elif (( COMPLETENESS_UNMEASURED && CARGO_RC == 0 && FAILED == 0 && SKIPS == 0 && CLIPPY_RC == 0 && LEDGER_RC == 0 && ! LEDGER_SILENT )); then
+        echo "  RESULT          FAILED, the completeness check could not measure. Every other bar is"
+        echo "                  clean; this log records no binary launches, so how many binaries should"
+        echo "                  have reported is unknown, and an unknown population is not a green one."
     else
-        echo "  RESULT          FAILED, $FAILED test(s) red, $SKIPS skip line(s), cargo exit $CARGO_RC, clippy exit $CLIPPY_RC, ledger exit $LEDGER_RC."
+        echo "  RESULT          FAILED, $FAILED test(s) red, ${#SILENT_BINARIES[@]} silent binary/binaries, $SKIPS skip line(s), cargo exit $CARGO_RC, clippy exit $CLIPPY_RC, ledger exit $LEDGER_RC."
     fi
     echo "==================================================================================="
     exit 1

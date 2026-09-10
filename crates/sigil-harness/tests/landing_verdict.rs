@@ -78,6 +78,8 @@ LEDGER_EXIT=0
 CLIPPY_EXIT=0
 ##### CLIPPY SPAN ENDS
 ##### TEST SPAN, cargo test --release --no-fail-fast --workspace -- --nocapture
+     Running tests/gates.rs (/fixture/.target-land/release/deps/gates-0123456789abcdef)
+
 running 3 tests
 test a_gate ... ok
 ";
@@ -346,6 +348,207 @@ fn a_log_without_an_exit_line_is_refused_not_judged() {
     let (code, out) = judge(&p, &[]);
     assert_eq!(code, 2, "an unfinished log must be REFUSED (exit 2), got {code}:\n{out}");
     assert!(out.contains("CARGO_EXIT"), "the refusal must name the missing line:\n{out}");
+    assert!(!out.contains("RESULT          GREEN"), "{out}");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+// ----------------------------------------------------------------------------------------
+// COMPLETENESS: A BINARY THAT LAUNCHED AND NEVER REPORTED.
+//
+// The totals are sums over `test result:` lines and nothing said what that count should
+// be. A test binary that dies mid-run prints no `test result:` line, so its tests leave
+// `suites` and `passed` silently while every line in the verdict still reads complete.
+// Measured on a real green landing log with one binary's report removed: 449 suites became
+// 448 and 5077 passed became 5075, and the wrapper printed `RESULT GREEN` with
+// `5063 baseline + 12 new = 5075 observed`. The baseline does not cover it, because the
+// reconciliation fails only on a shortfall and every test added since the caller last
+// moved that number is slack the loss hides inside.
+//
+// THE POPULATION AND THE REPORT COME FROM DIFFERENT PRODUCERS, which is what keeps this
+// from being a set checked against itself: cargo (the parent) writes `Running` before each
+// child starts, the child writes `test result:` when it finishes, and a child that dies
+// cannot retract a line its parent already flushed.
+// ----------------------------------------------------------------------------------------
+
+/// A second test binary that launches AFTER the first one has reported, runs one test and
+/// goes quiet. Spliced in by replacing the first binary's `finished in 0.01s` line ending,
+/// so the text it replaces is put back and the victim follows it: the ORDER matters,
+/// because the check pairs each launch with the next `test result:` and a victim spliced
+/// before the first binary's report would make the FIRST binary the silent one.
+const VICTIM: &str = "\
+finished in 0.01s
+
+     Running tests/oom_victim.rs (/fixture/.target-land/release/deps/oom_victim-fedcba9876543210)
+
+running 40 tests
+test victim_one ... ok
+";
+
+/// A launch line with no `test result:` after it FAILS THE RUN and the verdict NAMES the
+/// binary. The control is the stock fixture, whose single launch does report, and which
+/// stays GREEN: that is what proves the red comes from the missing report and not from the
+/// fixture's shape.
+#[test]
+fn a_binary_that_launched_and_never_reported_fails_the_landing_verdict() {
+    let dir = scratch("silent-binary");
+
+    let clean = fixture(&dir, "clean.log", "");
+    let (code, text) = judge(&clean, &[]);
+    assert_eq!(code, 0, "the CONTROL log must be GREEN, got exit {code}:\n{text}");
+    assert!(
+        text.contains("binaries        1 launched, 1 reported"),
+        "the control must report a matched launch/report count:\n{text}"
+    );
+
+    // A SECOND binary that starts and goes quiet, spliced in AFTER the first binary's
+    // `test result:` line so the first one is complete and only the second is short.
+    // Everything else about the log is untouched: cargo still exits 0, every test that
+    // reported passed, the lint bar and the ledger gate are clean.
+    let log = dir.join("silent.log");
+    std::fs::write(&log, format!("{STAMP}{TAIL}").replace("finished in 0.01s\n", VICTIM)).unwrap();
+    let (code, text) = judge(&log, &[]);
+    assert_eq!(
+        code, 1,
+        "a binary that launched and never reported must exit 1. If this is 0, a run that \
+         lost a whole test binary reads as a complete one. Got {code}:\n{text}"
+    );
+    assert!(text.contains("RESULT          FAILED"), "the verdict line must say FAILED:\n{text}");
+    assert!(!text.contains("RESULT          GREEN"), "a run missing a binary printed GREEN:\n{text}");
+    assert!(
+        text.contains("BINARIES THAT LAUNCHED AND NEVER REPORTED (1)"),
+        "the verdict must name the silent binaries, not just count them:\n{text}"
+    );
+    assert!(
+        text.contains("oom_victim"),
+        "the verdict must name WHICH binary went quiet, or the operator has to find it:\n{text}"
+    );
+    assert!(
+        !text.contains("gates.rs"),
+        "the completed binary must NOT be named: pairing each launch with the next report \
+         is what makes the name right, and naming the wrong target sends an operator to \
+         read a binary that finished:\n{text}"
+    );
+    assert!(
+        text.contains("binaries        2 launched, 1 reported"),
+        "both counts must be shown, so the shortfall is checkable by hand:\n{text}"
+    );
+    assert!(
+        text.contains("launched and never"),
+        "the RESULT line must name completeness as the reason, with every other bar clean:\n{text}"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// The death shape cargo DOES flag, kept separate because the two are different facts.
+/// Measured against real cargo (`--no-fail-fast`, a test binary that SIGKILLs itself):
+/// cargo exits 101, prints `error: test failed` and a `signal: 9, SIGKILL` cause, and the
+/// dead binary emits no `test result:` line and no `test ... FAILED` line. So the failing
+/// list is EMPTY and the completeness check is the only thing in the verdict that can say
+/// which target died.
+#[test]
+fn a_signal_killed_binary_is_named_even_though_no_test_line_says_failed() {
+    let dir = scratch("sigkill");
+    let clean = fixture(&dir, "clean.log", "");
+    let body = std::fs::read_to_string(&clean)
+        .unwrap()
+        .replace("CARGO_EXIT=0", "CARGO_EXIT=101")
+        .replace("finished in 0.01s\n", VICTIM)
+        .replace(
+            "test victim_one ... ok\n",
+            "test victim_one ... ok\n\
+             error: test failed, to rerun pass `--test oom_victim`\n\
+             \n\
+             Caused by:\n\
+               process didn't exit successfully: `oom_victim-fedcba9876543210 --nocapture` (signal: 9, SIGKILL: kill)\n",
+        );
+    let p = dir.join("sigkill.log");
+    std::fs::write(&p, body).unwrap();
+
+    let (code, text) = judge(&p, &[]);
+    assert_eq!(code, 1, "a signal-killed binary must fail the run, got {code}:\n{text}");
+    assert!(
+        !text.contains("FAILING TESTS"),
+        "a SIGKILL leaves no `... FAILED` line, so the failing list must be empty here; if \
+         this fired the fixture no longer models the measured shape:\n{text}"
+    );
+    assert!(
+        text.contains("oom_victim"),
+        "with no failing test name to print, the completeness check is the only thing that \
+         can say which target died, and it must:\n{text}"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A DOCTEST TARGET COUNTS AS A LAUNCH. `Doc-tests <crate>` is cargo's launch line for the
+/// doctest binary and it reports a `test result:` like any other; a check that matched only
+/// `Running` would read all thirteen doctest targets in this workspace as silent.
+#[test]
+fn a_doctest_launch_that_reports_is_not_counted_as_silent() {
+    let dir = scratch("doctest-launch");
+    let log = fixture(
+        &dir,
+        "doctest.log",
+        "test b_gate ... ok\n\
+         test c_gate ... ok\n\
+         test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s\n\
+         \n\
+            Doc-tests sigil-span\n\
+         \n\
+         running 0 tests\n",
+    );
+    // The fixture's TAIL supplies the doctest target's own `test result:` line.
+    let (code, text) = judge(&log, &[]);
+    assert_eq!(code, 0, "a doctest launch that reports must stay GREEN, got {code}:\n{text}");
+    assert!(
+        text.contains("binaries        2 launched, 2 reported"),
+        "the doctest launch must be counted on both sides:\n{text}"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A `Running` line QUOTED by clippy is not a launch. The counter is scoped to the test
+/// span for the same reason the skip counter is: clippy prints source lines verbatim, and
+/// a launch counted out of the lint bar would make a complete run read as short by one.
+#[test]
+fn a_running_line_quoted_by_clippy_is_not_a_launch() {
+    let dir = scratch("running-quote");
+    let p = dir.join("running-quote.log");
+    let text = format!("{STAMP}{TAIL}").replace(
+        "    Finished `release`",
+        "warning: unused\n  --> crates/x/tests/y.rs:1:1\n   |\n 1 |     eprintln!(\"     Running tests/z.rs\");\n    Finished `release`",
+    );
+    std::fs::write(&p, text).unwrap();
+    let (code, out) = judge(&p, &[]);
+    assert_eq!(code, 0, "a quoted launch line must not fail the run:\n{out}");
+    assert!(
+        out.contains("binaries        1 launched, 1 reported"),
+        "a line from the CLIPPY span was counted as a launch:\n{out}"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// UNMEASURABLE IS NOT GREEN, for the completeness check too. A log whose test span
+/// reports suites but records no launch line at all is a log this check cannot measure,
+/// and rendering that as a satisfied population would be the exact defect the check
+/// exists to close. Every landing log written before this parcel has that shape.
+#[test]
+fn a_log_with_no_launch_lines_is_not_read_as_complete() {
+    let dir = scratch("no-launches");
+    let p = dir.join("no-launches.log");
+    let text = format!("{STAMP}{TAIL}")
+        .lines()
+        .filter(|l| !l.trim_start().starts_with("Running tests/gates.rs"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    std::fs::write(&p, format!("{text}\n")).unwrap();
+
+    let (code, out) = judge(&p, &[]);
+    assert_eq!(
+        code, 1,
+        "a log with suites but no launch record must not be read as a complete run, got \
+         {code}:\n{out}"
+    );
+    assert!(out.contains("COULD NOT MEASURE"), "the verdict must say so in those words:\n{out}");
     assert!(!out.contains("RESULT          GREEN"), "{out}");
     let _ = std::fs::remove_dir_all(&dir);
 }
