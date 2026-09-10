@@ -50,10 +50,16 @@ expr_dcw_range_overflow	refuse	2	complete	#1320 range overflow
 expr_division_by_zero	refuse	2	complete	#1310 division by 0
 expr_function_arg_count_ok	accept	0	complete	
 expr_function_arg_count	refuse	2	complete	#1490 wrong numbers of function arguments
+expr_minus_after_binary_minus	refuse	2	complete	#1110 wrong number of operands
+expr_minus_after_divide	refuse	2	complete	#1110 wrong number of operands
+expr_minus_after_multiply	refuse	2	complete	#1110 wrong number of operands
+expr_minus_both_sides_of_multiply	refuse	2	complete	#1110 wrong number of operands
 expr_paren_mismatch	refuse	2	complete	#1300 number of opening/closing parentheses does not match
 expr_string_in_integer_slot	accept	0	complete	
 expr_symbol_double_defined	refuse	2	complete	#1000 symbol double defined
 expr_symbol_undefined	refuse	2	complete	#1010 symbol undefined
+expr_unary_plus_on_symbol	refuse	2	complete	#1110 wrong number of operands
+expr_unary_plus_paren	refuse	2	complete	#1110 wrong number of operands
 expr_variable_redefined_as_constant	refuse	2	complete	#2035 variables cannot be redefined as constants
 firstpass_dcb_forward_constant	accept	0	complete	
 firstpass_ds_forward_label	refuse	2	INCOMPLETE	#1820 expression must be evaluatable in first pass

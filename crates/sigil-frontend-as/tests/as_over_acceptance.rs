@@ -36,7 +36,7 @@
 //!
 //! ## The probe population, and how it was derived
 //!
-//! 82 probes in `over_acceptance/probes/`. asl refuses 55 of them, covering 41
+//! 88 probes in `over_acceptance/probes/`. asl refuses 61 of them, covering 41
 //! distinct numbered refusal classes, and accepts the other 27.
 //!
 //! **A corpus assembled from the shapes we already knew would be a gate that
@@ -46,8 +46,15 @@
 //! `as.msg` beside the binary, about 200 messages, and the corpus is that
 //! catalogue filtered to the classes reachable from 68000 and Z80 source in the
 //! AS syntax sigil parses, one minimal probe per class. The three known
-//! divergences are in the corpus, but as three members of 82 rather than as the
+//! divergences are in the corpus, but as three members of 88 rather than as the
 //! corpus.
+//!
+//! Six probes come from a second source and are the exception that proves the
+//! rule about deriving from asl: `docs/superpowers/notes/campaign-gap-ledger.md`
+//! rows 3 and 4 name expression-tier divergences somebody had already measured
+//! and nothing watched, and row 5 names "a corpus of asl-REFUSED expressions
+//! asserted refused" as its own kill condition. Four of the six reproduce and
+//! are ledgered; two do not and are live tripwires instead.
 //!
 //! The 27 asl-ACCEPTED probes are not filler and the gate is unsound without
 //! them. Roughly half are the in-range twin of a refused probe (`dc.b 255`
@@ -93,7 +100,7 @@
 //!
 //! `feed_control_every_probe_reached_both_assemblers` covers the FEED, which is
 //! the half a canary cannot reach. A scanner that silently processed one file
-//! instead of 82 prints "clean" with a working comparison behind it. So the
+//! instead of 88 prints "clean" with a working comparison behind it. So the
 //! probe count the run actually processed is asserted against a literal, and the
 //! probe-file name set and the verdict-table name set are asserted equal in both
 //! directions, so a probe with no verdict and a verdict with no probe are each a
@@ -108,17 +115,18 @@
 //! agree, and where a change of behaviour in either direction therefore reds a
 //! gate.
 //!
-//! Measured on the corpus as it stands: 82 probes, 10 ledgered divergences, so
-//! **72 live tripwires** — 49 probes both assemblers refuse, where sigil
-//! becoming looser goes red, and 23 both accept, where sigil becoming stricter
-//! goes red. `feed_control_the_ledger_is_not_an_escape_hatch` floors both
+//! Measured on the corpus as it stands: 88 probes, 14 ledgered divergences, so
+//! **74 live tripwires**: 51 probes both assemblers refuse, where sigil becoming
+//! looser goes red, and 23 both accept, where sigil becoming stricter goes red. `feed_control_the_ledger_is_not_an_escape_hatch` floors both
 //! numbers, so the way to get green after a widening is not to ledger it: that
 //! reds a second gate whose floor has to be moved by hand in the same diff.
 //!
-//! Six of the ten ledgered rows were found by this gate's first run. Three were
-//! known (the note's `c4`, `c5`, `d2`); the other three were not, which is the
-//! evidence that deriving the population from asl's catalogue rather than from
-//! our own findings was the load-bearing choice.
+//! Ten of the fourteen ledgered rows were found by this gate rather than
+//! inherited. Three were known (the note's `c4`, `c5`, `d2`), four were already
+//! written down in the gap ledger with nothing watching them, and three were not
+//! known to anyone. Those last three are the evidence that deriving the
+//! population from asl's catalogue rather than from our own findings was the
+//! load-bearing choice.
 //!
 //! ## Loud on unmeasurable
 //!
@@ -135,7 +143,7 @@ use sigil_frontend_as::{assemble_root_located, Options};
 /// asserts the run reached it. It is not derived from the directory listing,
 /// because an expectation read off its own subject moves with the subject and
 /// can never disagree with it.
-const EXPECTED_PROBE_COUNT: usize = 82;
+const EXPECTED_PROBE_COUNT: usize = 88;
 
 /// The floor on distinct numbered asl refusal classes the corpus exercises.
 /// This is what stops the corpus being quietly gutted down to the handful of
@@ -145,7 +153,7 @@ const MIN_ASL_REFUSAL_CLASSES: usize = 41;
 
 /// Probes both assemblers currently REFUSE. Each is a live tripwire for sigil
 /// becoming looser, and their number is the gate's real headroom.
-const MIN_AGREED_REFUSALS: usize = 49;
+const MIN_AGREED_REFUSALS: usize = 51;
 
 /// Probes both assemblers currently ACCEPT. Each is a live tripwire for sigil
 /// becoming stricter.
@@ -725,10 +733,11 @@ fn ledger_rows_that_have_started_agreeing_are_reported() {
     }
 }
 
-/// The measurement itself, printed. Not an assertion: this is the artifact a
-/// reader wants when a gate above goes red, and printing it beside the gates
-/// means the numbers in the module doc can be checked against a run rather than
-/// taken on the doc's word.
+/// The measurement itself, printed. NOT AN ASSERTION, and it has no red-first
+/// proof because it has no red: do not read its green as a measurement of
+/// anything. It exists so the numbers in the module doc can be checked against a
+/// run rather than taken on the doc's word, and so a reader has the full picture
+/// beside whichever gate above went red.
 #[test]
 fn report_the_divergence_sets() {
     let run = measure();

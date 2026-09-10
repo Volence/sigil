@@ -45,6 +45,26 @@ dir_padding_not_on_off	over-acceptance	`padding maybe`. asl #1520 only ON/OFF al
 expr_function_arg_count	over-acceptance	A user `function` called with more arguments than it declares parameters. asl #1490 wrong numbers of function arguments. sigil does not arity-check `function` calls; the extra argument is evaluated and discarded.
 save_missing_restore	over-acceptance	A `save` with no matching `restore` at end of file. asl #1460 missing RESTORE. sigil does not check that the save stack is empty when the unit ends.
 
+# The four below were already MEASURED and written down, in
+# docs/superpowers/notes/campaign-gap-ledger.md row 4, and had no gate. That row
+# is the reason they are here: a divergence somebody documented and nothing
+# watches is the same as one nobody found, and row 5 of the same file names "a
+# corpus of asl-REFUSED expressions asserted refused" as its kill condition.
+# asl's rightmost-loosest operator split strands a sign after a binary operator;
+# sigil has unary minus at the atom tier and folds it.
+#
+# Measured here independently of that row and agreeing with it. Its neighbouring
+# claim about unary PLUS does not reproduce through this path: `+Base` and `+(1)`
+# are REFUSED by sigil in a data directive, so they are live tripwires in the
+# corpus rather than ledger rows. Row 3 speaks about `parse_num_atom` in the
+# typed evaluator, which is a different surface from the one measured here, so
+# this neither confirms nor refutes it.
+
+expr_minus_after_binary_minus	over-acceptance	`dc.w 1--2`. asl #1110 wrong number of operands. sigil folds the second minus as unary at the atom tier. Accept-more only: it cannot put a wrong byte in an image, it can only assemble a file asl would reject.
+expr_minus_after_multiply	over-acceptance	`dc.w 2*-3`. asl #1110. Same atom-tier unary minus.
+expr_minus_after_divide	over-acceptance	`dc.w 2/-1`. asl #1110. Same atom-tier unary minus.
+expr_minus_both_sides_of_multiply	over-acceptance	`dc.w -1*-1`. asl #1110. Same atom-tier unary minus.
+
 # ---------------------------------------------------------------------------
 # OVER-REFUSAL
 # ---------------------------------------------------------------------------
