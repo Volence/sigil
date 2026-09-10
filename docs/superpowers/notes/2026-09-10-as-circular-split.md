@@ -197,3 +197,58 @@ keep settling. They are recorded here as a standing divergence for the owner:
 > separated by an `org` (`c5`), and an `if` condition naming a forward label that settles
 > (`d2`). Each is a program that works here and does not assemble under asl. Closing them
 > is a second decision, not this one.
+
+## 7. The corpus gate, and the control that makes its zero mean something
+
+**The result.** Diagnostic streams, baseline `ee6d1941` against this branch, each run from
+its own corpus root with the tree read and never written:
+
+| root | diagnostic lines | diff | exit, both |
+|---|---|---|---|
+| `s1disasm/sonic.asm` | 3 | 0 lines | 1 (a link-stage section overlap, unrelated) |
+| `s2disasm/s2.asm` | 151 | 0 lines | 1 |
+| `skdisasm/sonic3k.asm` | 190 | 0 lines | 1 |
+
+**Zero new refusals, and no line moved.** Nothing that assembled before is refused now, so
+there is no per-site ruling-or-defect classification to make: the population is empty.
+
+**The zero is not vacuous, and proving that took two instruments.**
+
+*Input count asserted.* `SIGIL_CENSUS_LAYOUT` prints four numbers per pass: expressions
+folded, watched (conjuncts (a)+(b)), bound later in the same pass (conjunct (c), the near
+misses), and refused (conjunct (d) survived).
+
+```text
+s1disasm   folded=483   watched=0   bound-later=0   refused=0
+s2disasm   folded=667   watched=0   bound-later=0   refused=0
+skdisasm   folded=956   watched=0   bound-later=0   refused=0
+```
+
+2,106 layout count expressions swept per pass. Every one had a count already known where
+it stood, which is what asl's own first-pass rule forces on any disassembly that ships.
+
+**`bound-later=0` everywhere deserves its own line.** Conjunct (d), the part that carries
+all of the false-positive risk, was never even reached on 2,106 real sites. The corpus does
+not come near the surface where a wrong answer would be possible.
+
+*Positive control at corpus scale, and the first attempt at it was itself vacuous.*
+Appending the circular repeat to a COPY of each root changed nothing: `folded` stayed 483
+and 667. Both roots end in `END`, so the appended lines never execute, and that control
+would have "confirmed" the mechanism while never running it. Injecting the same block
+BEFORE the final `END` instead:
+
+```text
+s1 copy   folded=484 (+1)   watched=1   bound-later=1   refused=1   named at sonic.asm(5239)
+s2 copy   folded=668 (+1)   watched=1   bound-later=1   refused=1   named at s2.asm(91278)
+```
+
+The `+1` in the fold count is what says the needle was present, and it is exactly the
+number the first attempt failed to produce.
+
+## 8. What the row's own name got wrong, for the record
+
+`AS-REPT-CIRCULAR-SPLIT` names a repeat. Three constructs reach the message the ruling
+removed: a `rept` count, a `ds` count, and an `if` condition. Two of them are answered by
+the circularity proof and the third by the oscillation proof, and both answers are the
+ruling's. No part of the ruling turned out to be unimplementable as stated; the only
+correction is to its scope, which was narrower than the defect.
