@@ -66,6 +66,13 @@ const STAMP: &str = "\
 # scoped         no (full workspace)
 # baseline       3
 
+##### LEDGER SPAN, python3 /fixture/sigil/scripts/ledger_gate.py
+LEDGER: json      3 file(s), 388 line(s), 0 unparseable, 0 missing a trailing newline  -- HARD, ok
+LEDGER: pin       12 (built-in constant PIN in scripts/ledger_gate.py)
+LEDGER: render    decisions.jsonl  36 line(s) / 24 render / 12 rejected   pin 12, distance +0  -- RATCHET, ok
+LEDGER: result    ok
+LEDGER_EXIT=0
+##### LEDGER SPAN ENDS
 ##### CLIPPY SPAN, cargo clippy --release --workspace --all-targets -- -D warnings
     Finished `release` profile [optimized] target(s) in 1.00s
 CLIPPY_EXIT=0
@@ -166,6 +173,165 @@ fn a_skip_word_quoted_by_clippy_is_not_a_skipped_gate() {
     let (code, out) = judge(&p, &[]);
     assert_eq!(code, 0, "a skip word inside the clippy span must not fail the run:\n{out}");
     assert!(out.contains("skip lines      0"), "{out}");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+// ----------------------------------------------------------------------------------------
+// THE LEDGER GATE'S VERDICT REACHES THE EXIT CODE.
+//
+// THE THIRD STATE. A check has three states, not two: absent, present-but-unwired, and
+// RUNS-REPORTS-AND-DOES-NOT-BLOCK. The third is the worst of them, because its output
+// looks like enforcement in a log while enforcing nothing, and it is invisible to every
+// test that only asks whether the check ran.
+//
+// `landing-run.sh` is a collect-then-decide gate: the `(9) THE LEDGER GATE` block runs the
+// gate and writes `LEDGER_EXIT=` WITHOUT ABORTING, and `LEDGER_RC != 0` in the `RESULT
+// FAILED` condition three hundred lines later is what turns that into a refusal. That is
+// the same split as oracle's tools/land.sh, whose `fail()` at :260 merely appends to an
+// array while `finish_red` at :663 is what exits 1 before the push -- a correct gate that
+// reads as decorative to anyone who stops at the first half. READING EITHER HALF IS NOT
+// PROOF. These tests make the gate red on purpose and observe the wrapper REFUSE.
+// ----------------------------------------------------------------------------------------
+
+/// A RED LEDGER GATE MAKES THE LANDING REFUSE, with every test green and the lint bar
+/// clean. The clean twin exits 0, which is the control proving the red comes from
+/// `LEDGER_EXIT` and not from the fixture's shape.
+#[test]
+fn a_red_ledger_gate_fails_the_landing_verdict() {
+    let dir = scratch("ledger-red");
+
+    // The control first: the stock fixture carries LEDGER_EXIT=0 and is GREEN.
+    let clean = fixture(&dir, "clean.log", "");
+    let (code, text) = judge(&clean, &[]);
+    assert_eq!(code, 0, "the CONTROL log must be GREEN, got exit {code}:\n{text}");
+    assert!(text.contains("RESULT          GREEN"), "{text}");
+    assert!(text.contains("LEDGER_EXIT     0"), "the verdict must carry the ledger exit:\n{text}");
+
+    // The same log with ONE character changed: the gate's exit code.
+    let red = dir.join("ledger-red.log");
+    let body = std::fs::read_to_string(&clean)
+        .unwrap()
+        .replace("LEDGER_EXIT=0", "LEDGER_EXIT=1")
+        .replace("RATCHET, ok", "RATCHET, FAILED")
+        .replace("LEDGER: result    ok", "LEDGER: result    FAILED");
+    std::fs::write(&red, body).unwrap();
+
+    let (code, text) = judge(&red, &[]);
+    assert_eq!(
+        code, 1,
+        "a red ledger gate must make the landing exit 1. If this is 0, the gate RUNS AND \
+         REPORTS AND DOES NOT BLOCK, which is worse than not running. Got {code}:\n{text}"
+    );
+    assert!(text.contains("RESULT          FAILED"), "the verdict line must say FAILED:\n{text}");
+    assert!(
+        text.contains("the LEDGER GATE is red"),
+        "the verdict must name the ledger as the reason, not leave it to be inferred:\n{text}"
+    );
+    assert!(!text.contains("RESULT          GREEN"), "a red ledger printed GREEN:\n{text}");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// UNMEASURABLE (exit 2 from the gate) IS ALSO A RED RUN, and it is named as its own
+/// thing. "The ledger question is unanswered" and "the ledger is clean" are different
+/// facts and only one of them is a landing.
+#[test]
+fn an_unmeasurable_ledger_gate_fails_the_landing_verdict() {
+    let dir = scratch("ledger-unmeasurable");
+    let clean = fixture(&dir, "clean.log", "");
+    let p = dir.join("unmeasurable.log");
+    let body = std::fs::read_to_string(&clean)
+        .unwrap()
+        .replace("LEDGER_EXIT=0", "LEDGER_EXIT=2");
+    std::fs::write(&p, body).unwrap();
+
+    let (code, text) = judge(&p, &[]);
+    assert_eq!(code, 1, "an unmeasurable ledger gate must exit 1, got {code}:\n{text}");
+    assert!(
+        text.contains("could not measure"),
+        "the verdict must distinguish unmeasurable from red:\n{text}"
+    );
+    assert!(text.contains("UNMEASURABLE"), "{text}");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A GATE THAT PRINTED NOTHING IS NOT A GATE THAT FOUND NOTHING. `LEDGER_EXIT=0` with no
+/// report above it is a run whose measurement is missing, and it fails rather than
+/// warning: an emptiness is not a finding without an instrument that could have returned
+/// non-empty, and this log demonstrably has none.
+#[test]
+fn a_silent_ledger_gate_is_not_a_clean_one() {
+    let dir = scratch("ledger-silent");
+    let clean = fixture(&dir, "clean.log", "");
+    let p = dir.join("silent.log");
+    let body: String = std::fs::read_to_string(&clean)
+        .unwrap()
+        .lines()
+        .filter(|l| !l.starts_with("LEDGER: "))
+        .collect::<Vec<_>>()
+        .join("\n");
+    std::fs::write(&p, format!("{body}\n")).unwrap();
+
+    let (code, text) = judge(&p, &[]);
+    assert_eq!(
+        code, 1,
+        "an exit code with no measurement behind it must fail, got {code}:\n{text}"
+    );
+    assert!(text.contains("PRODUCED NO REPORT LINES"), "{text}");
+    assert!(!text.contains("RESULT          GREEN"), "{text}");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// The measured figure reaches the VERDICT BLOCK, not only the log body. The renderability
+/// count is a TREND -- it went 3-of-16 to 12-of-36 unnoticed -- and a number visible only
+/// to someone who opens the log is a number nobody reads.
+#[test]
+fn the_ledger_report_is_reprinted_in_the_verdict() {
+    let dir = scratch("ledger-echo");
+    let clean = fixture(&dir, "clean.log", "");
+    let (code, text) = judge(&clean, &[]);
+    assert_eq!(code, 0, "{text}");
+    assert!(text.contains("LEDGER GATE (docs/*.jsonl), all of it:"), "{text}");
+    assert!(
+        text.contains("36 line(s) / 24 render / 12 rejected"),
+        "the verdict must carry the measured figure:\n{text}"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A ledger line QUOTED by a test is not a measurement. The span-scoped parser must not
+/// lift `LEDGER:` out of the test span, or a verdict could report a figure nothing
+/// produced.
+#[test]
+fn a_ledger_prefix_quoted_in_the_test_span_is_not_a_measurement() {
+    let dir = scratch("ledger-quote");
+    let log = fixture(
+        &dir,
+        "quoted.log",
+        "LEDGER: render    decisions.jsonl  99 line(s) / 0 render / 99 rejected\n",
+    );
+    let (code, text) = judge(&log, &[]);
+    assert_eq!(code, 0, "a quoted line must not change the verdict:\n{text}");
+    assert!(
+        !text.contains("99 rejected"),
+        "a line from the TEST span was lifted into the ledger report:\n{text}"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// UNMEASURABLE IS NOT GREEN. A log with no `LEDGER_EXIT=` line is a run in which the
+/// ledger gate never executed; the wrapper refuses it (exit 2) rather than defaulting the
+/// code to 0. This is the state every landing log in this repo was in before this parcel,
+/// and defaulting it would have made the whole wiring optional in practice.
+#[test]
+fn a_log_without_a_ledger_exit_line_is_refused_not_judged() {
+    let dir = scratch("no-ledger-exit");
+    let p = dir.join("unwired.log");
+    let text = format!("{STAMP}{TAIL}").replace("LEDGER_EXIT=0\n", "");
+    std::fs::write(&p, text).unwrap();
+    let (code, out) = judge(&p, &[]);
+    assert_eq!(code, 2, "a log with no ledger exit must be REFUSED, got {code}:\n{out}");
+    assert!(out.contains("LEDGER_EXIT"), "the refusal must name the missing line:\n{out}");
+    assert!(!out.contains("RESULT          GREEN"), "{out}");
     let _ = std::fs::remove_dir_all(&dir);
 }
 

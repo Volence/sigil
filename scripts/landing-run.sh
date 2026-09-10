@@ -103,6 +103,41 @@
 #     settle one site. Silence the specific item, with a comment saying why, or change the
 #     code.
 #
+# (8) THE LEDGER GATE, `scripts/ledger_gate.py`, RUN HERE FOR THE SAME REASON AS (7).
+#     `tools/decisions_reader_audit.py` was committed, correct, and had NO CALLER
+#     ANYWHERE IN THE TREE. It answers "which lines of docs/decisions.jsonl can the
+#     owner's console actually render", and between 2026-08-30 and 2026-09-09 that answer
+#     went from 3 of 16 to 12 of 36 -- the file doubled and the unrenderable share went
+#     19% to 33% with nobody noticing, because nothing ran it. AN UNWIRED AUDIT DOES NOT
+#     STOP THE NUMBER GROWING, IT STOPS ANYONE NOTICING THAT IT GREW. Same class as (7):
+#     a bar that exists and that only an operator remembering a second command stands
+#     between and a merge.
+#
+#     THREE ASSERTIONS AT THREE STRENGTHS, stated in full in that script's header. JSON
+#     well-formedness of every `docs/*.jsonl` is HARD; console-renderability is a RATCHET
+#     that fails on GROWTH past a measured pin and on nothing else, because a hard gate
+#     there is red on arrival against ratified history and the remedy a reasonable person
+#     reaches for is weakening it; id-uniqueness is REPORTED AND IS NOT A GATE, because
+#     wiring it before the rule-8e re-id is made would hand this repo an unlandable
+#     master.
+#
+#     A RED LEDGER GATE MAKES THIS SCRIPT'S RESULT NOT-GREEN, and `LEDGER_EXIT` sits
+#     beside `CARGO_EXIT` and `CLIPPY_EXIT` in the verdict block. There is no --no-ledger
+#     and no skip path, INCLUDING FOR `--scoped`: the gate reads files in this checkout
+#     and needs no reference tree, so a scoped run has nothing to be partial about here,
+#     and a second way to reach a green-looking verdict without it would rebuild the hole
+#     this closes.
+#
+#     WHERE ITS TWO HALVES ARE. The measurement is in the block marked `(9) THE LEDGER
+#     GATE` below; the decision is `LEDGER_RC != 0` in the `RESULT FAILED` condition at
+#     the foot of this file. THEY ARE HUNDREDS OF LINES APART, which is the shape that
+#     makes a correct collect-then-decide gate read as decorative to anyone who stops at
+#     the first half -- oracle's tools/land.sh has the same split, its `fail()` at :260
+#     merely appends to an array and its `finish_red` at :663 is what exits 1. So each
+#     half here names the other, and the wiring is proven by a control that makes the gate
+#     red on purpose and observes this script REFUSE, not by reading either half:
+#     `crates/sigil-harness/tests/landing_verdict.rs`.
+#
 # Plus the reporting rules a landing verdict is worthless without: failures-first WITH
 # THE NAMES (never a tail excerpt, never `grep | head` — that has hidden failures behind
 # a merged green here), a `skip:` count THAT FAILS THE RUN WHEN IT IS NOT ZERO, and
@@ -125,8 +160,9 @@
 #   `--verdict-only <log>` runs NOTHING: it reads a log this script (or a fixture shaped
 #   like one) already wrote and puts it through the identical verdict code path, so the
 #   verdict rules can be exercised and tested without a suite run. The stamp lines,
-#   `CARGO_EXIT=` and `CLIPPY_EXIT=` are read out of the log; a log carrying no exit
-#   lines is refused, because a verdict over an unfinished run is not a verdict.
+#   `CARGO_EXIT=`, `CLIPPY_EXIT=` and `LEDGER_EXIT=` are read out of the log; a log
+#   carrying no exit lines is refused, because a verdict over an unfinished run is not a
+#   verdict.
 #
 # WHICH REFERENCE TREE A BARE RUN USES — there is no longer a built-in answer.
 #   A run that names no tree does NOT fall back to a live checkout. It resolves one by the
@@ -172,7 +208,7 @@
 #   0  the suite ran, passed, reconciled against the stated baseline, and the lint bar
 #      exited 0
 #   1  the suite FAILED (red tests, cargo exited nonzero, or a `skip:` line survived
-#      SIGIL_STRICT_GATE=1), or THE LINT BAR IS RED
+#      SIGIL_STRICT_GATE=1), or THE LINT BAR IS RED, or THE LEDGER GATE IS RED
 #   2  the run COULD NOT RUN or could not be measured — never green, never a count
 #   3  the suite passed but the total does NOT reconcile with --baseline
 
@@ -262,6 +298,14 @@ load_verdict_inputs() {
     [[ $CLIPPY_RC =~ ^[0-9]+$ ]] \
         || die "--verdict-only: $LOG carries no \`CLIPPY_EXIT=<n>\` line, the lint bar was never
        measured, so there is no verdict to give over it."
+    # REFUSED BY NAME, NOT DEFAULTED TO 0, for the identical reason as the two above. A
+    # ledger gate that did not run is not a ledger gate that found nothing, and this is
+    # the file's own history: the check it wraps sat committed and uncalled for weeks
+    # while the number it measures doubled.
+    LEDGER_RC=$(sed -n 's/^LEDGER_EXIT=//p' "$LOG" | tail -n 1)
+    [[ $LEDGER_RC =~ ^[0-9]+$ ]] \
+        || die "--verdict-only: $LOG carries no \`LEDGER_EXIT=<n>\` line, the ledger gate was
+       never measured, so there is no verdict to give over it."
     ROOT=$(stamp pwd);                 ROOT=${ROOT:-?}
     HEAD_SHA=$(stamp 'sigil HEAD');    HEAD_SHA=${HEAD_SHA:-?}
     local br; br=$(stamp 'sigil branch')
@@ -465,6 +509,20 @@ CLIPPY_VERSION=$(cargo clippy --version 2>/dev/null) \
        \`rustup component add clippy\` and re-run."
 say "clippy available: $CLIPPY_VERSION"
 
+# (8) THE LEDGER GATE MUST EXIST AND BE RUNNABLE BEFORE ANYTHING SPENDS TIME, for the
+# reason clippy is checked above: "the gate could not be measured" and "the gate is red"
+# are different facts, and only one of them is about the ledger. Refused here BY NAME
+# rather than surfacing later as an exit code the verdict would have to guess at.
+LEDGER_GATE=$ROOT/scripts/ledger_gate.py
+[[ -f $LEDGER_GATE ]] \
+    || die "the ledger gate is not at $LEDGER_GATE. It asserts what the owner's console can
+       render out of docs/*.jsonl, and a landing that cannot run it is a landing with that
+       question unanswered, not one with a clean answer."
+PYTHON_VERSION=$(python3 --version 2>&1) \
+    || die "\`python3\` is not on PATH, so the ledger gate cannot be measured, and an
+       unmeasurable gate is not a passing one."
+say "python3 available: $PYTHON_VERSION"
+
 # A DERIVED path is this script's to produce, so it is built rather than demanded: these
 # two binaries live in the workspace the suite is about to compile anyway, and building
 # them HERE is what guarantees the landing uses the assembler this tree just made rather
@@ -539,6 +597,14 @@ CARGO_ARGS+=(-- --nocapture)
 CLIPPY_ARGS=(clippy --release --workspace --all-targets
              --manifest-path "$ROOT/Cargo.toml" -- -D warnings)
 
+# THE LEDGER GATE'S ARGUMENTS, and they do not follow --scoped either, for a reason
+# stronger than clippy's: this gate reads `docs/*.jsonl` in THIS checkout and consults no
+# reference tree, so there is nothing about it a partial run could be partial about. NO
+# `--pin` IS PASSED, deliberately -- the pin a landing enforces is the constant inside
+# that script, where changing it is a diff someone reviews, and not a number a command
+# line can move on the day it goes red.
+LEDGER_ARGS=("$LEDGER_GATE" --repo "$ROOT" --docs "$ROOT/docs")
+
 {
     echo "# sigil landing run"
     echo "# started (UTC)  $STARTED"
@@ -563,6 +629,8 @@ CLIPPY_ARGS=(clippy --release --workspace --all-targets
     echo "# allow-partial  removed from the child (was: ${SIGIL_ALLOW_PARTIAL:-<unset>})"
     echo "# clippy         $CLIPPY_VERSION"
     echo "# lint command   cargo ${CLIPPY_ARGS[*]}"
+    echo "# python3        $PYTHON_VERSION"
+    echo "# ledger command python3 ${LEDGER_ARGS[*]}"
     echo "# command        SIGIL_STRICT_GATE=1 env -u SIGIL_ALLOW_PARTIAL cargo ${CARGO_ARGS[*]}"
     echo
 } > "$LOG" || die "cannot stamp the log $LOG"
@@ -577,6 +645,26 @@ say "(tail it: tail -f $LOG)"
 # independent measurements and a landing wants both; short-circuiting here would hand back
 # a verdict with the test half unmeasured, which is the shape (2) already refuses.
 # ---------------------------------------------------------------------------------------
+# ---------------------------------------------------------------------------------------
+# (9) THE LEDGER GATE. Runs FIRST because it costs milliseconds and answers a question
+# about this checkout alone, so a reader tailing the log meets it before the compile.
+#
+# THIS IS THE COLLECTING HALF ONLY. Nothing here aborts: `LEDGER_RC` is written to the
+# log and execution continues into the lint bar and the suite, exactly as a red clippy
+# does, because the two are independent measurements and a landing wants all of them. THE
+# DECIDING HALF IS `LEDGER_RC != 0` IN THE `RESULT FAILED` CONDITION AT THE FOOT OF THIS
+# FILE -- go and read it before concluding from this block that the gate is decorative.
+# That misreading is the whole hazard of this shape and it is why the pointer is here.
+# ---------------------------------------------------------------------------------------
+echo "##### LEDGER SPAN, python3 ${LEDGER_ARGS[*]}" >> "$LOG"
+say "ledger gate: python3 ${LEDGER_ARGS[*]}"
+python3 "${LEDGER_ARGS[@]}" 2>&1 | tee -a "$LOG"
+# PIPESTATUS[0], never `$?`, for the reason (6) gives: with `tee` in the pipeline `$?` is
+# tee's status, and tee succeeds over a red gate.
+LEDGER_RC=${PIPESTATUS[0]}
+echo "LEDGER_EXIT=$LEDGER_RC" >> "$LOG"
+echo "##### LEDGER SPAN ENDS" >> "$LOG"
+
 echo "##### CLIPPY SPAN, cargo ${CLIPPY_ARGS[*]}" >> "$LOG"
 say "lint bar: cargo ${CLIPPY_ARGS[*]}"
 CARGO_TARGET_DIR="$TARGET" cargo "${CLIPPY_ARGS[@]}" 2>&1 | tee -a "$LOG"
@@ -633,6 +721,7 @@ read -r SUITES PASSED FAILED IGNORED < <(awk '
         }
     }
     END { print n+0, p+0, f+0, g+0 }' "$LOG")
+LEDGER_SILENT=0
 # Every lint site, named. `error: could not compile …` is clippy's TALLY line, not a
 # finding, so counting bare `^error:` reports one more site than exists, and a verdict
 # that cannot be checked against the log by hand is a verdict a reader has to trust.
@@ -647,6 +736,16 @@ mapfile -t CLIPPY_SITES < <(awk '
         msg = ""
     }
     /^##### CLIPPY SPAN,/ { inspan = 1 }' "$LOG")
+# The ledger gate's own report, lifted out of ITS span so the number it measured is
+# visible in the verdict a merge reads rather than only in the log body. Scoped to the
+# span for the same reason the skip counter is: `LEDGER:` is a literal a lint or a test
+# could quote, and a matcher that read one as a measurement would be reporting a figure
+# nothing produced. The `LEDGER: ` prefix is stripped; the gate owns the wording.
+mapfile -t LEDGER_LINES < <(awk '
+    /^##### LEDGER SPAN ENDS/ { inspan = 0 }
+    inspan && /^LEDGER:/ { print substr($0, 9) }
+    /^##### LEDGER SPAN,/ { inspan = 1 }' "$LOG")
+
 # BOTH spellings. The landing bar greps `skip:`, and 27 sites say `skipping` instead —
 # invisible to that grep while reporting green. A matcher inheriting the same blind spot
 # would under-count while still looking like a witness.
@@ -676,7 +775,33 @@ echo "  target dir      $TARGET"
 echo "  started/ended   $STARTED -> $FINISHED (UTC)"
 echo "  CARGO_EXIT      $CARGO_RC"
 echo "  CLIPPY_EXIT     $CLIPPY_RC   ($( (( CLIPPY_RC == 0 )) && echo 'lint bar clean' || echo "LINT BAR RED, ${#CLIPPY_SITES[@]} site(s)" ))"
+case $LEDGER_RC in
+    0) echo "  LEDGER_EXIT     $LEDGER_RC   (ledger gate clean)" ;;
+    2) echo "  LEDGER_EXIT     $LEDGER_RC   (LEDGER GATE UNMEASURABLE, which is not a clean ledger)" ;;
+    *) echo "  LEDGER_EXIT     $LEDGER_RC   (LEDGER GATE RED)" ;;
+esac
 (( SCOPED )) && echo "  ** SCOPED RUN, PARTIAL. This is not a landing verdict. **"
+
+# ALWAYS PRINTED, GREEN OR RED. The renderability figure is a TREND and a verdict that
+# showed it only when it broke would hide the two things worth watching: a count that
+# crept and a pin that could tighten. It is four lines when everything holds.
+if (( ${#LEDGER_LINES[@]} )); then
+    echo
+    echo "  LEDGER GATE (docs/*.jsonl), all of it:"
+    for l in "${LEDGER_LINES[@]}"; do echo "    $l"; done
+else
+    # A `LEDGER_EXIT=` line with no report above it. THIS FAILS THE RUN rather than
+    # warning beside it: an emptiness is not a finding without an instrument that could
+    # have returned non-empty, and a gate that exits 0 having printed nothing is
+    # indistinguishable from one that measured nothing. The real gate cannot reach this
+    # -- it reports before it can exit 0 -- so the only way here is a gate that broke or
+    # a log that lost its span, and neither is a landing.
+    LEDGER_SILENT=1
+    echo
+    echo "  LEDGER GATE PRODUCED NO REPORT LINES, only an exit code $LEDGER_RC. Read the"
+    echo "  LEDGER SPAN in the log. A silent gate is not a clean one, and this run is not"
+    echo "  green on the strength of an exit code with no measurement behind it."
+fi
 
 # Before the unmeasurable branches below, because a run whose tests could not be measured
 # still measured the lint bar, and dropping that finding on the way out would make the
@@ -804,22 +929,47 @@ fi
 # A SKIP LINE IS A RED RUN, for the same reason and in the same condition. The count was
 # printed as a WARNING beside `RESULT GREEN` and exit 0, which is the identical shape:
 # four documents said the landing bar fails on a skip line, and the wrapper did not.
-if (( CARGO_RC != 0 || FAILED > 0 || CLIPPY_RC != 0 || SKIPS > 0 )); then
+#
+# A RED LEDGER GATE IS A RED RUN, in this same condition and for the third time the same
+# reason. THIS IS THE DECIDING HALF OF (8): the measuring half is the `(9) THE LEDGER
+# GATE` block above, which deliberately does not abort, and if you arrived here from
+# there this line is what makes that block load-bearing. `LEDGER_RC` covers red (1) and
+# unmeasurable (2) alike -- an unmeasurable gate is not a passing one -- and
+# `LEDGER_SILENT` covers the third state, a gate that returned an exit code with no
+# measurement behind it.
+if (( CARGO_RC != 0 || FAILED > 0 || CLIPPY_RC != 0 || SKIPS > 0 || LEDGER_RC != 0 || LEDGER_SILENT )); then
     echo
-    if (( CLIPPY_RC != 0 && CARGO_RC == 0 && FAILED == 0 && SKIPS == 0 )); then
+    if (( LEDGER_RC != 0 && CARGO_RC == 0 && FAILED == 0 && SKIPS == 0 && CLIPPY_RC == 0 )); then
+        # The informative case again: nothing about the code is red, and the run still is
+        # not a landing because the owner's decision ledger moved somewhere he cannot read.
+        if (( LEDGER_RC == 2 )); then
+            echo "  RESULT          FAILED, the LEDGER GATE could not measure (exit 2). Every test"
+            echo "                  that ran passed and the lint bar is clean; the ledger question is"
+            echo "                  UNANSWERED, which is not the same as answered clean. Do not land"
+            echo "                  on this."
+        else
+            echo "  RESULT          FAILED, the LEDGER GATE is red (exit $LEDGER_RC). Every test that ran"
+            echo "                  passed and the lint bar is clean; the suite is not the reason this"
+            echo "                  is not green. The report above names the lines. Do not land on this."
+        fi
+    elif (( LEDGER_SILENT && CARGO_RC == 0 && FAILED == 0 && SKIPS == 0 && CLIPPY_RC == 0 )); then
+        echo "  RESULT          FAILED, the LEDGER GATE reported nothing. Every other bar is clean;"
+        echo "                  a gate with no measurement behind its exit code is why this is not"
+        echo "                  green. Do not land on this."
+    elif (( CLIPPY_RC != 0 && CARGO_RC == 0 && FAILED == 0 && SKIPS == 0 && LEDGER_RC == 0 && ! LEDGER_SILENT )); then
         # Named separately because the two halves disagreeing is the informative case, and
         # "$FAILED test(s) red" printed as 0 over a red run reads as a script mistake.
         echo "  RESULT          FAILED, the LINT BAR is red (clippy exit $CLIPPY_RC,"
         echo "                  ${#CLIPPY_SITES[@]} site(s)). Every test that ran passed; the suite is not"
         echo "                  the reason this is not green. Do not land on this."
-    elif (( SKIPS > 0 && CARGO_RC == 0 && FAILED == 0 && CLIPPY_RC == 0 )); then
+    elif (( SKIPS > 0 && CARGO_RC == 0 && FAILED == 0 && CLIPPY_RC == 0 && LEDGER_RC == 0 && ! LEDGER_SILENT )); then
         # The same informative case for the third bar: nothing was red, and the run is
         # still not a landing because $SKIPS gate(s) never measured their subject.
         echo "  RESULT          FAILED, $SKIPS skip line(s) survived SIGIL_STRICT_GATE=1. Every test"
         echo "                  that ran passed and the lint bar is clean; a gate that measured"
         echo "                  nothing is why this is not green. Do not land on this."
     else
-        echo "  RESULT          FAILED, $FAILED test(s) red, $SKIPS skip line(s), cargo exit $CARGO_RC, clippy exit $CLIPPY_RC."
+        echo "  RESULT          FAILED, $FAILED test(s) red, $SKIPS skip line(s), cargo exit $CARGO_RC, clippy exit $CLIPPY_RC, ledger exit $LEDGER_RC."
     fi
     echo "==================================================================================="
     exit 1
