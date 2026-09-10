@@ -1718,6 +1718,38 @@ build.rs did not re-run when HEAD moved, or HEAD moved while the suite was runni
 that distinguishes them. A gate that hands you the discriminator turns an investigation into one
 command, and it is worth copying that shape into anything that can fail two ways.
 
+**⚠ EXTENDED 2026-09-10, AND THE FIRST FORM WAS TOO NARROW IN TWO WAYS AT ONCE.** It says *the TREE
+does not move* and forbids *commits, merges, branch switches* - all acts performed in the tree that
+is running the gate. This seat obeyed every word of that and reddened an agent's landing run three
+times.
+
+**What actually moved was `origin/master`, and I moved it from a DIFFERENT CHECKOUT.** The agent was
+in its own worktree; I never touched it. `crates/sigil-cli/build.rs` bakes `SIGIL_PUBLISHED` from
+`origin/master` at COMPILE time and
+`the_published_line_states_this_revision_s_position_against_a_named_remote_ref` resolves that ref
+LIVE at test time. **A worktree shares its parent's ref store**, so a `git push` from the main
+checkout updates the remote-tracking ref the agent's gate reads, instantly, with nothing in either
+tree changing. Six pushes across a roughly 25-minute window, three landing runs of about six minutes
+each, three reds.
+
+**So the frozen thing is not the tree, it is EVERY REF THE GATE RESOLVES**, and the actor who breaks
+it need not be in the tree under test. Restate it that way: **from the moment a full-suite or
+landing run starts until it prints its verdict, neither the tree NOR the refs move - including
+`origin/*`, and including pushes made from any other checkout sharing the ref store.** A controller
+holding an agent's landing run is the likeliest violator, because banking findings between polls is
+exactly what there is time for while a gate runs.
+
+**The direction that makes it expensive: the failure lands on the AGENT.** Its work is indicted by
+its controller's activity, the red names a test it never touched, and it has no way to see the
+cause. This one diagnosed the mechanism, predicted both values of its next run in advance, hit both,
+and refused to fix the gate to green its own landing, which is the correct call and cost it a
+recovery cycle it should not have had to spend.
+
+**Whether the gate itself is at fault is a SEPARATE question and must not be settled while it is
+red** *(this lane's standing bar: the tell is who is expected to move)*. It reds correct code
+whenever a push overlaps a run, which is the shape that trains people to weaken a check. Booked as
+its own row; not touched as part of a landing it was blocking.
+
 ### A MONITOR FILTER THAT MATCHES NON-FAILURES TRAINS YOU TO SKIM IT
 
 Same session, and it is the reason the above took three notifications to see. A filter watching for
