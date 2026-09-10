@@ -4922,3 +4922,50 @@ wrong code page. Only `tests/as_charset.rs` can, and one of its cases
 (`a_string_in_an_expression_packs_the_mapped_bytes`) is the single gate in the whole workspace that
 sees the expression consumer. **Kill:** a corpus in the harness assembles a `charset` region and
 compares bytes.
+
+## 2026-09-10 — `parcel/rept-nested-capture` (the `+`-signed literal)
+
+The parcel closed the reported defect (asl's `+`-signed integer literal, missing from
+`expr.rs::parse_atom`). Oracle for every claim below: asl md5
+`61e672562465725a8c102288a7da9098`, exit status checked. These are what it found and did NOT close.
+
+**1. A `set` WHOSE RIGHT-HAND SIDE DOES NOT PARSE IS SILENT, AND KEEPS THE OLD VALUE.** This is
+the whole reason the reported defect wrote 75 wrong bytes into Sonic 1 with exit 0 and no
+diagnostic. `directive_set` ends at `defer_unresolved_assign`, whose first statement is
+`let Some(e) = parse_expr(...) else { return; }` — a syntax error and a forward reference are the
+same answer there, and the symbol's previous binding stands. Measured, all exit 0 with ZERO
+diagnostic lines and the stale value emitted: `set .v, .v+(`, `set .v, 1+`, `set .v, ~~~~`. asl
+exits 2 on all three (`#1300`, `#1110`, `#1110`). **It is `set` alone**: `V equ 1+` refuses with 2
+diagnostics and `dc.b .v+(` refuses with 2, both measured on the same build. **Exposure is every
+future expression-syntax gap**: whatever the parser cannot read next, a `set` will swallow.
+**NOT FIXED HERE, and the reason is a measurement nobody has taken**: the population that would
+newly go red is unknown, and `eval.rs`'s own comment names at least one member — `s2.asm(87677)`'s
+`.loop_counter = int(log(number))`, asl's `log` builtin, which sigil does not have. Shipping the
+diagnostic without sizing that population is the always-red shape. **Kill:** count `directive_set`
+RHS parse failures across the aeon closure and the three community disassemblies; if the count is
+zero, the diagnostic ships, and if it is not, each member is named first.
+
+**2. THE TWO EXPRESSION PARSERS WERE FIXED ONE AT A TIME, AND THAT IS WHY THIS DEFECT LOOKED LIKE
+A `rept` BUG.** `eval.rs::parse_num_atom` — the typed (int/float) evaluator behind `int()`,
+`sin()`, float symbols and the `abs()` fold — ALREADY had a unary-plus arm, added by an earlier
+parcel whose comment names this exact corpus: "`range $21,$2F,+1`, so `abs(step)` arrives as
+`abs(+1)` … the four ASCENDING call sites of the eight refused on the missing sign alone". So the
+`rept` COUNT was right while the increment was dead, which is precisely the shape that reads as a
+loop-body defect. The two parsers already share `infix_bp`; they do not share their atom tier.
+**Kill:** one atom surface, or a test that asserts the two agree on a shared corpus of expressions.
+
+**3. `parse_num_atom`'s PLUS ARM IS UNCONDITIONAL, so the typed evaluator accepts `+Base`,
+`+(1)`, `+ 1` and `+2*3`, all `#1110` in asl.** Wider than the arm this parcel added, which is
+gated on head position, adjacency and the following operator's tier. ACCEPT-MORE only (the arm is
+the identity, so it can never yield a different value), and untouched here because tightening it
+risks the `abs(+1)` fix in row 2. **Kill:** `parse_num_atom` routes its sign through the same
+`signed_int_literal` rule, with the `abs(+1)` case asserted first.
+
+**4. SEVEN PRE-EXISTING MINUS-SIDE DIVERGENCES, all measured unchanged by this parcel.** asl folds
+where sigil refuses: `--1` = `ffffffff`, `--SZ` = `fffffff8`, `- -1` = `ffffffff` (a lone `-` reads
+as 0 there, while a lone `+` is `#1010 symbol undefined` — asl's own asymmetry). sigil folds where
+asl refuses `#1110`: `1--2`, `2*-3`, `2/-1`, `-1*-1` — sigil has unary minus at the atom tier,
+asl's rightmost-loosest split strands it after a binary operator. **Exposure**: the refuse-more
+half is loud; the accept-more half can never put a wrong byte in an image. The first three sit in
+the nameless-label run territory `expr.rs` already documents as a deliberate divergence.
+**Kill:** the atom tier models asl's split rather than a recursive-descent approximation of it.
