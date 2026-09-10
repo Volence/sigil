@@ -861,25 +861,29 @@ the whole reason they are here rather than in a thread.
 
 ## Standing cross-session obligations (2026-08-22)
 
-The aeon session owes sigil two things, both triggered by sigil work rather than by
-time — **ping them, don't assume they are watching**:
+The aeon session owes sigil ONE thing, triggered by sigil work rather than by time.
+**⚠ AND THE PING IS NOT THE MECHANISM, which is the correction this block needed (aeon's, 2026-09-10).**
+*"Ping them, don't assume they are watching"* was this row's whole remedy and it is one `/clear` away
+from never arriving. **An obligation whose TRIGGER lives in the peer's repo is untestable by the peer,
+who cannot see that their own confirmation never ran, and untested by the holder, because nothing
+prompts a look.** It needs nobody to forget. **Test the trigger on a schedule you control; never wait
+for the promised ping.** Banked their side at aeon `8d99deeb`.
 
 - **On the `game-defines` ship notice:** they re-run T8's three measured contexts
   (data-binding layout, struct harvest, RAM harvest) against a capability-derived
   define and confirm all three see it. Cheap, theirs to run.
-- **When the alignment attribute lands:** they migrate the two `offsetof(Scene, …) % 2
-  == 0` ensures to it and retire them. Their `ensure`s are a workaround for the missing
-  language feature, not a fix for the class. Those ensures now EXIST — aeon landed them
-  at `9a718f74` (merged `1a794ace`), live in `engine/level/scene_dsl.emp` (cited by symbol,
-  not by line: the `:1025,1027` this row carried is exactly the coordinate-rot the protocol
-  bars) — so this obligation has a concrete subject.
-  **TRIGGERED 2026-08-22:** `(align: N)` landed at sigil `6fae4d6a`. The migration is
-  `sc_mask_raw: i16 (align: 2)` / `sc_v_deform_shift_raw: i16 (align: 2)`, deleting both
-  trailing `ensure`s. Two cautions for them: the spelling is **`(align: N)`, not
-  `@align(N)`** — the latter is the `vars`-region cursor-mover and is refused by name on a
-  struct field; and `sc_pad_5D`'s width is still hand-computed after the migration, since
-  the assertion guards the constant rather than deriving it (that is queue item 4,
-  `pad_to(N)`, parked). Push before citing `6fae4d6a` to them — verify against the remote.
+- **DISCHARGED 2026-09-10, and it had been done for FIFTEEN DAYS.** The `offsetof(Scene, …) % 2 == 0`
+  migration landed at aeon `1c3dd0cf` on 2026-08-25, subject *"the two bridges' parity is structural,
+  `(align: 2)` replaces the offsetof ensures"*. **Verified here firsthand rather than taken from their
+  message:** that SHA is an ancestor of their `origin/master`, and `offsetof(Scene` returns zero in
+  their `engine/` at that revision, with the `sc_mask_raw` / `sc_v_deform_shift_raw` bridges present.
+  **They established it with `git log -S` and said why, which is the part worth keeping: the guards'
+  ABSENCE is two-valued (migrated, moved, or renamed) and the `-S` result is one-valued.**
+  **THE SHAPE, and it is the mirror of what the suite swept all morning.** Today's sweep found rows
+  asserting a debt that was NEVER INCURRED. This is a row asserting a debt ALREADY PAID. Same field,
+  opposite sign, **and neither side can see it alone**: this lane cannot watch their migration land,
+  and they never read this list. A sweep that looks for unsent asks finds one direction and is
+  structurally blind to the other.
 
 **Sigil owes aeon a warning before changing either of these** *(registered 2026-08-22)*:
 
