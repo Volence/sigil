@@ -118,6 +118,12 @@ def load_audit_module(repo: Path):
             f"implementation to run, and a run without it is not a run with nothing to "
             f"report."
         )
+    # A GATE MUST NOT DIRTY THE TREE IT MEASURES. Importing by path writes
+    # `tools/__pycache__/` beside the tool, that directory is not in .gitignore, and a
+    # landing run stamps its log with whether the checkout is DIRTY. A gate whose own
+    # execution can flip that stamp is a gate that changes the answer by being run.
+    # Measured here: the first hand run left the directory behind.
+    sys.dont_write_bytecode = True
     spec = importlib.util.spec_from_file_location("decisions_reader_audit", path)
     if spec is None or spec.loader is None:
         raise Unmeasurable(f"cannot load {path} as a python module")

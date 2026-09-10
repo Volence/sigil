@@ -408,6 +408,27 @@ fn an_empty_ledger_is_refused_not_reported_as_clean() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// A GATE MUST NOT DIRTY THE TREE IT MEASURES. Importing the audit tool by path writes
+/// `tools/__pycache__/` beside it, that directory is not in `.gitignore`, and a landing
+/// run stamps its log with whether the checkout is DIRTY. A gate whose own execution can
+/// flip that stamp changes the answer by being run. Measured: the first hand run left it
+/// behind, which is why `sys.dont_write_bytecode` is set before the import.
+#[test]
+fn running_the_gate_leaves_no_bytecode_behind() {
+    let dir = scratch("nopycache");
+    let docs = bed(&dir, &[renderable("d-1"), renderable("d-2")]);
+    let (code, text) = run(&dir, &docs, &["--pin", "0"]);
+    assert_eq!(code, 0, "the bed must be green so the only finding here is the litter:\n{text}");
+    let cache = dir.join("tools/__pycache__");
+    assert!(
+        !cache.exists(),
+        "the gate wrote {} into the tree it measured. That directory is untracked and \
+         not gitignored, so running the gate would flip a landing log's DIRTY stamp.",
+        cache.display()
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 // ----------------------------------------------------------------------------------------
 // The real tree. This is the assertion that actually holds the line day to day.
 // ----------------------------------------------------------------------------------------
