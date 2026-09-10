@@ -350,7 +350,7 @@ survive unreferenced is the signature of a MERGE**, exactly as an empty commit r
 *(Origin, and the n=3 caveat in full: `docs/OVERSEER-LOG.md`, 2026-09-03 cut, original lines
 466-488.)*
 
-### THE FACES OF A CHECK THAT CANNOT COME OUT OTHER THAN GREEN (2026-09-05; a fourth and fifth added 2026-09-06, a sixth 2026-09-09)
+### THE FACES OF A CHECK THAT CANNOT COME OUT OTHER THAN GREEN (2026-09-05; a fourth and fifth added 2026-09-06, a sixth 2026-09-09, a seventh 2026-09-10)
 
 **All three were found in one night, all by DELIBERATELY BREAKING THE CODE, and none by the test
 suite.** They are one defect wearing three costumes, and a brief should name all three because an
@@ -416,6 +416,35 @@ agent that guards against one walks into the others.
    class. Their instance: a window filter keyed on `_NET_WM_PID`, which minifb never sets, so it
    returned zero on the display where the window demonstrably was. Five independent arrivals at
    this rule in one night across four lanes, carried at empyrean `origin/main a0e523a`.
+
+7. **AND THE SEVENTH IS ON THE GATE'S INPUT RATHER THAN ITS OUTPUT: A GATE BUILT FROM THE SHAPES
+   YOU ALREADY FOUND CANNOT COME OUT OTHER THAN GREEN** *(2026-09-10, written into the
+   `NOTHING-MEASURES-OVER-ACCEPTANCE` brief; the hub banked it the same hour and it is the half of
+   that brief they did not already hold)*. Faces 1 to 6 all ask whether the check can observe its
+   subject. This one asks **where its population came from**, and the answer is almost always the
+   defect report that motivated the gate. A divergence ledger seeded with the divergences we know
+   about asserts a set against itself: it is green on the day it lands, green forever, and it
+   measures nothing, while presenting as the exact instrument that would have caught the thing it
+   was built after.
+   **It is the motivating-case rule arriving on a GATE instead of on a parcel**, and the parcel
+   form is already banked in `docs/OVERSEER.md` (*the motivating case is selected for being broken,
+   never for being representative*). The difference is who is fooled and for how long: a parcel
+   verified against its own motivating corpus is wrong once, at review. **A gate whose population
+   is its own motivating set is wrong every day it runs, and each green makes it more trusted.**
+   **The question that finds it, asked while the brief is being written and not at review:** what
+   would a half-built version of this gate look like, and would anything go red? By review a green
+   run exists and reads as evidence.
+   **The remedy is a population derived independently of the finding**: from the reference tool's
+   own refusal classes, from a sweep of the corpora, from mutation toward a boundary. And **report
+   the population SIZE beside the verdict**, because a gate over four members and a gate over sixty
+   are different instruments with the same green.
+   **⚠ THIS FACE IS A PREDICTION AND NOT YET A MEASUREMENT, AND NO LATER SESSION MAY CITE IT AS
+   ONE.** It was written into a brief before the parcel ran, so what stands behind it today is the
+   argument above and the parcel form's own n=2, not an observed instance of a self-seeded gate
+   going vacuously green here. **When that parcel reports, come back and either ground this face in
+   what it measured or say plainly that it was not tested.** A face banked from a brief is exactly
+   the shape this document warns about elsewhere: a claim with no artifact, in the register of a
+   finding.
 
 **THE ONE CLAUSE THAT CATCHES ALL OF THEM is invariant 6(c): applied-and-still-green is a RUNNER
 DEFECT, never a pass.** It is not a formality and it must never be softened, it is the only step
