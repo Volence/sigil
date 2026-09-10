@@ -2452,6 +2452,16 @@ with tip by `0x4E`. **Those two facts are compatible and only one of them is abo
 signature of a pin gap rather than a pin fault.** A real pin fault is region-local: the length moves
 too, or one region moves and its neighbour does not.
 
+**A SECOND SIGNATURE, AND IT IS A DIFFERENT ENUMERATION PARAMETER: the two SHAPES' gaps can have
+OPPOSITE SIGNS.** Derived here after both lanes had argued the plain shape only, neither having
+consulted debug. Against the same pinned corpus, `CORE.plain_base` `0x2CCC` sat `+0x4E` behind
+aeon's tip while `CORE.debug_base` `0x2FB0` sat `-0x66` AHEAD of it. **A region-local pin fault
+cannot flip sign between shapes for the same region**, so opposite signs are independent evidence of
+accumulated unrelated change ahead of the region rather than a bad pin. **The operational half: at a
+repin, `debug_base` can legitimately move DOWN.** A repin sanity check written to expect forward
+motion reads a correct value as a fault. *(The tip figures are aeon's measurement, not a second
+observation of it: this lane ran no build, so the sign finding is a consequence of their number.)*
+
 **What to keep from such a report even when the drift half dissolves.** Aeon serialized their two
 landings and recorded the INTERMEDIATE revision rather than reconstructing it, which is the only
 thing that will let the two be attributed separately whenever the pin is advanced; a differencing of
