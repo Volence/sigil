@@ -70,7 +70,7 @@ fn is_refused(expr: &str) -> bool {
     match assemble(&dcl(expr), &Options::default()) {
         Ok(m) => {
             let n = m.sections.first().map(|s| s.image_bytes().len()).unwrap_or(0);
-            assert!(n > 0, "`{expr}` was accepted but emitted nothing — a silent refusal");
+            assert!(n > 0, "`{expr}` was accepted but emitted nothing: a silent refusal");
             false
         }
         Err(ds) => {
@@ -191,7 +191,7 @@ fn known_residual_a_packed_or_folded_int_also_takes_the_sign() {
         assert_eq!(
             value(expr),
             folds_to,
-            "`{expr}` — asl raises #1110 here; if sigil now refuses it too, the residual has been \
+            "`{expr}`: asl raises #1110 here; if sigil now refuses it too, the residual has been \
              CLOSED and this test should become an `is_refused` assertion"
         );
     }
