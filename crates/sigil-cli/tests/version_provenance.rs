@@ -1125,25 +1125,39 @@ struct Positions {
 }
 
 fn positions_of(ref_name: &str) -> Positions {
-    let mut values = Vec::new();
-    if let Ok(now) = git(&["rev-parse", ref_name]) {
-        values.push(now);
-    }
-    // Newest first, so the ordinary case answers on the first candidate and the bound is
-    // spent on the entries most likely to be the one the banner read.
-    // Exits 0 with no output when the ref has no reflog, so an empty answer is
-    // "nothing recorded" and never a swallowed error.
-    let depth = RECENT_POSITIONS.to_string();
-    let reflog =
-        git(&["reflog", "show", "-n", &depth, "--format=%H", ref_name]).unwrap_or_default();
-    let is_recorded = !reflog.trim().is_empty();
-    for line in reflog.lines() {
-        let value = line.trim().to_string();
-        if !value.is_empty() && !values.contains(&value) {
+    // `<ref>@{n}` is the value the ref HELD n steps ago, which is the question being asked.
+    // A reflog entry rendered with `--format=%H` is the value the ref moved TO, so the value
+    // it moved FROM on the oldest entry is not in that rendering at all: a checkout whose
+    // tracking ref has been moved once reports one position and silently omits the one it
+    // started at, which is the position a banner built before that move would name. Walking
+    // `@{n}` reports both sides and cannot omit it.
+    //
+    // Ascending n is newest first, so the ordinary case answers on the first candidate and
+    // the bound is spent on the positions most likely to be the one the banner read.
+    let mut values: Vec<String> = Vec::new();
+    for n in 0..RECENT_POSITIONS {
+        let selector = format!("{ref_name}@{{{n}}}");
+        // Out of range and no-reflog-at-all both land here, and both mean "there is nothing
+        // further back on record", never a swallowed error.
+        let Ok(value) = git(&["rev-parse", "--verify", "--quiet", &selector]) else {
+            break;
+        };
+        if value.is_empty() {
+            break;
+        }
+        if !values.contains(&value) {
             values.push(value);
         }
     }
-    values.truncate(RECENT_POSITIONS);
+
+    // Empty exactly when this checkout keeps no reflog for the ref. The ref's current value
+    // is still a position it holds, so the weakened question has something to ask about.
+    let is_recorded = !values.is_empty();
+    if !is_recorded {
+        if let Ok(now) = git(&["rev-parse", ref_name]) {
+            values.push(now);
+        }
+    }
     Positions { values, is_recorded }
 }
 
