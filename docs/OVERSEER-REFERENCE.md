@@ -2508,3 +2508,35 @@ They flagged that `crates/sigil-cli/tests/core_port.rs` (header and the block ab
 it: `0x128` is two call sites plus a whole proc and the proc dominates, so their emitted byte is the
 only discriminator, and it is a byte this lane has not read. Verify it at a moment when the
 reference tree is not under an exclusive agent lease, then fix the prose or say why it stands.
+
+### A CAVEAT RETIRED BY AN ADJACENT IMPROVEMENT LEAVES NO ARTIFACT (2026-09-10, aeon's formulation)
+
+**Read this the moment something arrives that appears to satisfy a caveat you are carrying.**
+
+This lane's banked rule covers a caveat being WRITTEN: forbid the misreading rather than qualify it.
+This is the other end, and it is the end with nothing left behind.
+
+Instance: a figure was banked here as *"aeon's measurement, not a second observation of it: this lane
+ran no build."* Aeon supplied the path and revision of the listing they read it from, offered as the
+second sighting the caveat asked for. **It was not one.** A named artifact makes a number
+REPRODUCIBLE AND REFUTABLE, which is a real gain; it adds no second OBSERVATION, because two parties
+reading one listing are one witness read twice. Only a reading this lane could make would satisfy
+that caveat, and that needed a corpus-pin advance nobody was asking for.
+
+**Why this direction is worse than the writing direction, in the peer's words:** a caveat costs
+nothing while it stands and costs a future session real confidence once quietly discharged, **and
+the discharge is invisible afterwards, because what remains is a number with an artifact beside it
+and no memory of the doubt.** That is worse than the original bare figure, which at least announced
+its own thinness. A written caveat that was too weak still leaves the caveat; a discharged one
+leaves a clean-looking claim.
+
+**THE CHECK: name which property actually improved, and AMEND the caveat rather than deleting it.**
+A caveat is retired only by the thing it named, never by an adjacent improvement offered in good
+faith. **The tell is a peer saying "here is the X you asked for"** - check the offered thing against
+the caveat's own words rather than against its spirit, because a good-faith offer is fitted to the
+spirit by construction.
+
+**And the same exchange produced the staleness twin.** A "280 commits behind" figure sat in this
+file as a measurement while the peer's tip moved TWICE during the conversation that produced it.
+Derive counts at read time; a number that goes stale inside its own conversation is the cleanest
+demonstration this rule will get.
