@@ -531,8 +531,11 @@ fn run_impl(
             });
             return Err(Failure { diags, messages: Vec::new(), sources: last_sources });
         }
-        history.push(env.clone());
-        prev = env.clone();
+        // `prev` already holds the previous pass's environment, so it MOVES into
+        // the history rather than being cloned a second time: the loop pays one
+        // `SymbolTable` clone per pass, exactly as it did before this check
+        // existed.
+        history.push(std::mem::replace(&mut prev, env.clone()));
         seed = env;
         macros = m;
         functions = f;
@@ -551,10 +554,10 @@ fn run_impl(
     // the ruling gave: what the author can act on is which symbols are moving
     // and between which values. How many times we tried is a description of our
     // own effort, and it is not printed here or anywhere.
-    let moving = moving_symbols(
-        history.get(history.len().wrapping_sub(2)).unwrap_or(&prev),
-        &prev,
-    );
+    // The last two environments the loop produced. `prev` is the newest and
+    // `history`'s tail is the one before it (the loop moves `prev` into the
+    // history as it advances), so this is what moved on the final step.
+    let moving = moving_symbols(history.last().unwrap_or(&prev), &prev);
     diags.push(Diagnostic {
         level: Level::Error,
         message: format!("assembly never settles: {moving}"),
@@ -2082,11 +2085,25 @@ impl Asm {
         toks.iter().any(|t| match &t.tok {
             Tok::Dollar => true,
             Tok::Ident(n) => {
+                // The bare spelling first, and the order is a measurement rather
+                // than a preference. `sym_key` allocates a `String` for every
+                // name it is handed, this runs on every `equ`/`set` right-hand
+                // side in the unit, and building the key unconditionally cost
+                // 0.35s of a 2.28s s2disasm run (2.73s with, 2.38s with this
+                // whole function stubbed out). For a plain name outside a macro
+                // expansion the key IS the bare spelling, which is nearly every
+                // name in a disassembly, so the allocation bought nothing.
+                if self.known_labels.contains(n) || self.pc_derived.contains(n) {
+                    return true;
+                }
+                // Only a `.`-local, or a plain name a live expansion owns,
+                // qualifies to something other than itself. Anything else has
+                // already been looked up above under its own key.
+                if !n.starts_with('.') && self.plain_label_scope(n).is_none() {
+                    return false;
+                }
                 let key = self.sym_key(n);
-                self.known_labels.contains(&key)
-                    || self.pc_derived.contains(&key)
-                    || self.known_labels.contains(n)
-                    || self.pc_derived.contains(n)
+                self.known_labels.contains(&key) || self.pc_derived.contains(&key)
             }
             _ => false,
         })
