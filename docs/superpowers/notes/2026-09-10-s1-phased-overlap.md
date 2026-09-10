@@ -383,6 +383,20 @@ appears to be captured only up to the **inner** `endr` and the trailing `set`
 falls outside the loop — a nesting-depth bug in `rept` body capture, not a `set`
 bug. Files: `.s1phase-2026-09-09/probe/{nested,n2,n3}.asm`.
 
+> **CORRECTION (2026-09-10, parcel `parcel/rept-nested-capture`).** The
+> localisation in the paragraph above is WRONG and the two controls that produced
+> it are confounded: both of them ALSO rewrote the `set` line from `.val+(+1)` to
+> `.val+1`, so each changed two variables. `rept` body capture is correct — a
+> 14-row asl differential over every nested-construct/trailing-statement pairing
+> (nested `rept`, `if`, `ifdef/else`, `while`, `irp`, `irpc`, `switch`,
+> `rept`-in-`rept`, inside an outer `rept`, `while`, `irp` and `macro`) agrees
+> with asl on all 14, with a canary row proving the harness can see a difference.
+> The trigger is the `+(+1)`: asl has no unary-plus OPERATOR, `parse_atom` had no
+> reading for a leading `+` on a number, and the expression failed to PARSE. The
+> same source with NO `rept` anywhere reproduces it (`flat.asm`). The silence is a
+> second, separate defect belonging to `set` alone. See the probe directory's
+> README and `crates/sigil-frontend-as/tests/as_signed_int_literal.rs`.
+
 **This needs its own row.** It is invisible to the census (no diagnostic) and was
 invisible to every previous parcel (the run never reached `flatten`). It is the
 class the campaign cares most about: a wrong answer that looks like a right one.

@@ -241,7 +241,12 @@ fn parse_bp<'a>(
     depth: u32,
     ctx: &ExprCtx<'_>,
 ) -> Option<(Expr, &'a [Token])> {
-    let (mut lhs, mut rest) = parse_atom(toks, depth, ctx)?;
+    // `min_bp == 0` is reached from exactly two places — [`parse_expr`] and the
+    // `(` arm below — and those are exactly asl's two "start of a (sub)expression
+    // to scan" positions, which is the only place a signed literal's sign can
+    // sit. Every binary right-hand side recurses with the operator's own binding
+    // power, and the LOOSEST tier is 1, so a rhs never carries `0`.
+    let (mut lhs, mut rest) = parse_atom(toks, depth, ctx, min_bp == 0)?;
     while let Some(Tok::Punct(p)) = rest.first().map(|t| &t.tok) {
         let (bp, op) = match infix_bp(*p) {
             Some(x) if x.0 > min_bp => x,
@@ -258,7 +263,106 @@ fn parse_bp<'a>(
     Some((lhs, rest))
 }
 
-fn parse_atom<'a>(toks: &'a [Token], depth: u32, ctx: &ExprCtx<'_>) -> Option<(Expr, &'a [Token])> {
+/// asl's `+`-SIGNED INTEGER LITERAL: `+1`, `+$FF`, `+%1010`, `+123456`.
+///
+/// **asl has no unary-plus OPERATOR.** A leading `+` is a value only when the
+/// (sub)expression asl is scanning is, in its entirety, one signed number: asl
+/// tries the whole string as a literal FIRST, and only then splits it at the
+/// rightmost operator of the loosest tier present. A leading `+` that survives
+/// to the split is a binary add with an empty left operand, which is asl's
+/// `error #1110: wrong number of operands`. Unary MINUS is a real operator
+/// there and is a separate arm below; the asymmetry is asl's, not a
+/// simplification.
+///
+/// Three conditions, each measured against the reference `asl`
+/// (md5 `61e672562465725a8c102288a7da9098`), `dc.l` of the expression:
+///
+/// ```text
+///   +1        00000001     +$FF     000000ff     +%1010   0000000a
+///   +1+2      00000003     +1-2     ffffffff     +8-SZ    00000000
+///   +1&&2     00000001     +1||2    00000001     +1=2     00000000
+///   (+1)      00000001     (+1+2)   00000003     (+1)*3   00000003
+///   $21+(+1)  00000022     1-(+1)   00000000     (((+1))) 00000001
+///   + 1       #1110        +'A'     #1110        +Base    #1110
+///   +(1)      #1110        +(1+2)   #1110        1+ +2    #1110
+///   +1*3      #1110        +1/2     #1110        +1#2     #1110
+///   +1&2      #1110        +1|2     #1110        +1!2     #1110
+///   +1<<2     #1110        +1*2+3   #1110        2*3++1   #1110
+/// ```
+///
+/// 1. **HEAD position.** The sign may only open the whole expression or a
+///    parenthesised group. `1+ +2` refuses while `1+(+1)` folds to 2, because
+///    the paren gives asl a fresh string to scan and the bare `+2` never gets
+///    one.
+/// 2. **ADJACENT.** `+ 1` refuses: asl does not strip the blank before trying
+///    the literal, so `"+ 1"` is not a number and the split then finds an empty
+///    left operand. Spans decide this, and they are real source offsets — macro
+///    parameters substitute as TEXT and the result is lexed afterwards, so
+///    `range $21,$2F,+1` reaches here as an adjacent pair.
+/// 3. **Followed by the ADD tier or looser, or by nothing.** `+1+2` folds and
+///    `+1*3` refuses, and the boundary is exactly [`infix_bp`]'s `Plus` tier of
+///    4: a tighter operator after the number means asl's loosest-tier split
+///    lands on the leading `+` itself and strands it. A non-operator (`)`, `,`,
+///    end of expression) is the accepting case.
+///
+/// The value is the literal's own, unmodified — `+` contributes nothing but its
+/// permission to be there.
+///
+/// **KNOWN RESIDUAL, measured and bounded.** Condition 2 asks the SPANS whether
+/// the number is adjacent, and a span cannot say whether its `Tok::Int` came
+/// from numeric-literal syntax. Two other things reach this parser already
+/// packed into a `Tok::Int`: the lexer's character constant (`'A'`), and the
+/// builtin folds in `eval.rs` that rewrite a whole call to one resolved integer
+/// (`defined(…)`, `abs(…)`, `strlen(…)`, the string comparisons). asl sees the
+/// unfolded TEXT, which is not a number, and raises `#1110` for all of them:
+///
+/// ```text
+///   +'A'            #1110      sigil: 00000041
+///   +'AB'           #1110      sigil: 00004142
+///   +defined(SZ)    #1110      sigil: 00000001
+///   +abs(-3)        #1110      sigil: 00000003
+///   +strlen("ab")   #1110      sigil: 00000002
+/// ```
+///
+/// The divergence is ACCEPT-MORE in every case — sigil folds where asl refuses,
+/// never a different value — so it cannot put a wrong byte in an image, and no
+/// corpus can contain one of these shapes and still build under asl. Closing it
+/// needs the lexer to mark a bare numeric literal, which is a change to the
+/// token vocabulary and to every site that matches `Tok::Int`; the shapes are
+/// pinned in `tests/as_signed_int_literal.rs` so the boundary cannot move
+/// without a test saying so.
+fn signed_int_literal(toks: &[Token]) -> Option<(i64, &[Token])> {
+    let [plus, num, tail @ ..] = toks else {
+        return None;
+    };
+    if !matches!(plus.tok, Tok::Punct(Punct::Plus)) {
+        return None;
+    }
+    let Tok::Int(v) = num.tok else {
+        return None;
+    };
+    if plus.span.source != num.span.source || plus.span.end != num.span.start {
+        return None;
+    }
+    // The `+` tier itself. Named through `infix_bp` rather than written as `4`
+    // so a precedence change cannot move the ladder out from under this test.
+    let add_bp = infix_bp(Punct::Plus).map(|(bp, _)| bp)?;
+    if let Some(Tok::Punct(p)) = tail.first().map(|t| &t.tok) {
+        if infix_bp(*p).is_some_and(|(bp, _)| bp > add_bp) {
+            return None;
+        }
+    }
+    Some((v, tail))
+}
+
+/// `head` is whether this atom sits at the START of the whole expression or of a
+/// parenthesised group — see [`signed_int_literal`], the one arm that cares.
+fn parse_atom<'a>(
+    toks: &'a [Token],
+    depth: u32,
+    ctx: &ExprCtx<'_>,
+    head: bool,
+) -> Option<(Expr, &'a [Token])> {
     if depth >= MAX_EXPR_DEPTH {
         return None;
     }
@@ -323,6 +427,14 @@ fn parse_atom<'a>(toks: &'a [Token], depth: u32, ctx: &ExprCtx<'_>) -> Option<(E
             return Some((Expr::Sym(name), &toks[ref_len..]));
         }
     }
+    // asl's SIGNED INTEGER LITERAL, the `+` half. There is no unary-plus
+    // OPERATOR in asl — see [`signed_int_literal`] for the measured evidence and
+    // for the three conditions this arm enforces.
+    if head {
+        if let Some((v, rest)) = signed_int_literal(toks) {
+            return Some((Expr::Int(v), rest));
+        }
+    }
     let (head, rest) = toks.split_first()?;
     match &head.tok {
         Tok::Int(n) => Some((Expr::Int(*n), rest)),
@@ -343,7 +455,7 @@ fn parse_atom<'a>(toks: &'a [Token], depth: u32, ctx: &ExprCtx<'_>) -> Option<(E
         Tok::Punct(Punct::Star) => Some((Expr::Sym("$".to_string()), rest)),
         Tok::Ident(name) => Some((Expr::Sym(name.clone()), rest)),
         Tok::Punct(Punct::Minus) => {
-            let (inner, r) = parse_atom(rest, depth, ctx)?;
+            let (inner, r) = parse_atom(rest, depth, ctx, false)?;
             Some((
                 Expr::Unary {
                     op: UnOp::Neg,
@@ -357,7 +469,7 @@ fn parse_atom<'a>(toks: &'a [Token], depth: u32, ctx: &ExprCtx<'_>) -> Option<(E
         // `~(mask)` / `~BLOCK_TILE_SIZE-1` parse as `(~x)` then any following
         // binary operator, matching asl.
         Tok::Punct(Punct::Tilde) => {
-            let (inner, r) = parse_atom(rest, depth, ctx)?;
+            let (inner, r) = parse_atom(rest, depth, ctx, false)?;
             Some((
                 Expr::Unary {
                     op: UnOp::Not,
@@ -374,7 +486,7 @@ fn parse_atom<'a>(toks: &'a [Token], depth: u32, ctx: &ExprCtx<'_>) -> Option<(E
         // `dc.b ~~0=1` = `01`. `~~~x` is `~~` then `~` by maximal munch:
         // `dc.b ~~~0,~~~1,~~~5` = `00 00 00`.
         Tok::Punct(Punct::TildeTilde) => {
-            let (inner, r) = parse_atom(rest, depth, ctx)?;
+            let (inner, r) = parse_atom(rest, depth, ctx, false)?;
             Some((
                 Expr::Unary {
                     op: UnOp::LogNot,
