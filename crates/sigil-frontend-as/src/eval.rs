@@ -25,7 +25,30 @@ use sigil_ir::{
 use sigil_span::{Diagnostic, Level, SourceId, Span};
 
 const EXPAND_CAP: usize = 64;
-const PASS_CAP: usize = 16;
+/// Last-resort resource guard on the settle loop. **Not a pass count in any
+/// user-facing sense and its number is never printed**, which is the owner
+/// ruling `d-23-answered` (`docs/decisions.jsonl`): "assembly did not converge
+/// within 16 passes" was the exact class of answer the community named when
+/// asked what it dislikes about AS, and answering it with a bigger number would
+/// be adopting the thing this project exists to replace.
+///
+/// What actually decides, in order, is: convergence (`env == prev`, where every
+/// real build ends, in two or three passes); a PROVEN circular layout
+/// expression, refused by name (see [`Asm::note_layout_binding`]); and a PROVEN
+/// oscillation, detected by the environment revisiting an earlier state, which
+/// needs no bound at all because the pass function is deterministic. This guard
+/// exists only for the residue that would otherwise run forever: divergence
+/// that never repeats a state. Reaching it produces the SAME report as a proven
+/// oscillation, naming the symbols still moving and the values they moved
+/// between, and naming no number.
+///
+/// It sits beside `EXPAND_CAP`, `WHILE_CAP` and `GLOBAL_REPT_CAP`, which are
+/// the same kind of thing. It is deliberately far above anything a real program
+/// approaches, so that no shape measured in
+/// `docs/superpowers/notes/2026-09-10-as-circular-split.md` reaches it: every
+/// one of them is answered by convergence, by the circularity proof, or by the
+/// oscillation proof.
+const SETTLE_GUARD: usize = 200;
 /// What the `MOMPASS` builtin reports on the FIRST iteration of the fixpoint,
 /// and on every LATER one. See [`Asm::builtin_num`] for the measurement that
 /// chose two values rather than a running count.
@@ -238,6 +261,16 @@ fn run_impl(
     // reference role as `labels`, for the debugger's `DEBUGGER__* = <label>` table.
     let mut label_ref_equs: std::collections::HashSet<String> = std::collections::HashSet::new();
     let mut prev = seed.clone();
+    // Every environment a pass has produced, oldest first. The oscillation
+    // PROOF reads it: `one_pass` is deterministic and its only varying input is
+    // the seed environment, so an environment equal to one from two or more
+    // passes back means the sequence repeats that segment forever and no
+    // fixpoint exists. That is a decision with no bound in it, which is what the
+    // ruling asked for; the alternative (keep counting) is the number the ruling
+    // removed. Full tables rather than digests, so the answer is an equality and
+    // not a probability: the only programs that push more than three entries
+    // into this are ones that are already failing, and those are small.
+    let mut history: Vec<SymbolTable> = Vec::new();
     // Every equ-sym name any pass exports, in first-seen order. An
     // `ifndef`-guarded definition block executes (and exports) on pass 0,
     // then SKIPS on later passes once its guard symbol is seeded — the
@@ -258,13 +291,14 @@ fn run_impl(
     // See `merge_carried_author_warnings` for why an author's own `warning`
     // outlives its pass and an assembler-raised one does not.
     let mut carried_author_warnings: Vec<(Span, String, Option<String>)> = Vec::new();
-    for pass in 0..PASS_CAP {
+    for pass in 0..SETTLE_GUARD {
         let PassOutput {
             module,
             env,
             macros: m,
             functions: f,
             diags,
+            circular_layout,
             poison,
             terminal_fatal,
             author_warnings,
@@ -284,6 +318,28 @@ fn run_impl(
             if pass == 0 { FIRST_PASS } else { LATER_PASS },
         );
         last_sources = sources;
+        // A PROVEN circular layout expression is TERMINAL, and it has to be.
+        //
+        // Every other diagnostic from a non-converged pass is dropped as
+        // superseded (see the `fatal` note below for why that rule is right),
+        // and this one would be dropped with them: a program whose repeat count
+        // is one of its own inputs is exactly a program that never converges, so
+        // the pass that proves it is never the pass that returns. The proof
+        // would be raised on every pass and reported on none.
+        //
+        // It also does not expire. The four conjuncts behind it are observed
+        // inside one pass and none of them is "the value moved", so a later pass
+        // cannot un-prove it; there is no later pass for it to be superseded BY,
+        // which is the same reason `fatal` is carried.
+        if let Some((span, message)) = circular_layout {
+            let diags = merge_carried_fatals(Vec::new(), &carried_fatals, &last_sources);
+            let mut diags =
+                merge_carried_author_warnings(diags, &carried_author_warnings, &last_sources);
+            // Rendered against THIS pass's map, which is the map that produced
+            // the span, so the `file(line)` is this pass's own reading.
+            diags.push(Diagnostic { level: Level::Error, message, primary: span });
+            return Err(Failure { diags, messages: Vec::new(), sources: last_sources });
+        }
         // A `fatal` raised on ANY pass survives to the returned diagnostics.
         //
         // Every OTHER diagnostic is returned from the CONVERGED pass alone,
@@ -456,6 +512,26 @@ fn run_impl(
                 })
             };
         }
+        // THE OSCILLATION PROOF. `one_pass` is deterministic and its only
+        // varying input is the seed environment, so `env == history[j]` for some
+        // `j` at least two passes back means `env[k+1] == history[j+1]`, and by
+        // induction the sequence repeats that segment forever. No fixpoint
+        // exists, and saying so needs no count of attempts. `j == passes - 1` is
+        // the ordinary convergence case and was already returned above, so a
+        // match here is a cycle of length two or more.
+        if let Some(j) = history.iter().position(|e| *e == env) {
+            let moving = moving_symbols(&history[j], &prev);
+            let diags = merge_carried_fatals(Vec::new(), &carried_fatals, &last_sources);
+            let mut diags =
+                merge_carried_author_warnings(diags, &carried_author_warnings, &last_sources);
+            diags.push(Diagnostic {
+                level: Level::Error,
+                message: format!("assembly never settles: {moving}"),
+                primary: Span { source: SourceId(u32::MAX), start: 0, end: 0 },
+            });
+            return Err(Failure { diags, messages: Vec::new(), sources: last_sources });
+        }
+        history.push(env.clone());
         prev = env.clone();
         seed = env;
         macros = m;
@@ -469,11 +545,19 @@ fn run_impl(
     let diags = merge_carried_fatals(Vec::new(), &carried_fatals, &last_sources);
     let mut diags =
         merge_carried_author_warnings(diags, &carried_author_warnings, &last_sources);
+    // The residue: values that keep moving and never revisit a state, so the
+    // oscillation proof cannot fire and the guard is what stopped the run. The
+    // report is the SAME one a proven oscillation gets, and for the same reason
+    // the ruling gave: what the author can act on is which symbols are moving
+    // and between which values. How many times we tried is a description of our
+    // own effort, and it is not printed here or anywhere.
+    let moving = moving_symbols(
+        history.get(history.len().wrapping_sub(2)).unwrap_or(&prev),
+        &prev,
+    );
     diags.push(Diagnostic {
         level: Level::Error,
-        message: format!(
-            "assembly did not converge within {PASS_CAP} passes (symbol values still changing)"
-        ),
+        message: format!("assembly never settles: {moving}"),
         primary: Span {
             source: SourceId(u32::MAX),
             start: 0,
@@ -483,6 +567,59 @@ fn run_impl(
     // No pass converged, so no pass's `message` lines are final: none are
     // returned, the same rule that keeps a non-final pass's lines out above.
     Err(Failure { diags, messages: Vec::new(), sources: last_sources })
+}
+
+/// Render what moved between two environments: the symbols whose values differ,
+/// and the two values each moved between.
+///
+/// This is the whole content of a non-settling report under owner ruling
+/// `d-23-answered`. It replaces a pass count, which says what the assembler did
+/// and nothing about what the author must change.
+///
+/// The list is capped so a large program's report stays readable, and the cap is
+/// stated in the text rather than silently truncating: a report that hides how
+/// much it hid is a report that gets acted on incompletely.
+fn moving_symbols(a: &SymbolTable, b: &SymbolTable) -> String {
+    const SHOWN: usize = 8;
+    let render = |v: Option<&SymbolValue>| match v {
+        Some(SymbolValue::Int(i)) => format!("{i} (${i:X})"),
+        Some(SymbolValue::Poison) => "unresolved".to_string(),
+        None => "not defined".to_string(),
+    };
+    let am: std::collections::BTreeMap<&String, &SymbolValue> = a.iter().collect();
+    let bm: std::collections::BTreeMap<&String, &SymbolValue> = b.iter().collect();
+    let mut moved: Vec<String> = Vec::new();
+    let mut extra = 0usize;
+    let mut names: std::collections::BTreeSet<&String> = Default::default();
+    names.extend(am.keys().copied());
+    names.extend(bm.keys().copied());
+    for name in names {
+        let (va, vb) = (am.get(name).copied(), bm.get(name).copied());
+        if va == vb {
+            continue;
+        }
+        if moved.len() < SHOWN {
+            moved.push(format!("`{name}` moves between {} and {}", render(va), render(vb)));
+        } else {
+            extra += 1;
+        }
+    }
+    if moved.is_empty() {
+        // Unreachable through either caller (both are reached only because two
+        // environments differ), written out so the function has no silent
+        // default. A silent default here would report a settled run as unsettled
+        // with nothing named, which is the one thing worse than a pass count.
+        return "no symbol value differs, which the assembler cannot explain; \
+                please report this source"
+            .to_string();
+    }
+    let mut out = String::from("these symbols never take a settled value: ");
+    out.push_str(&moved.join("; "));
+    if extra > 0 {
+        out.push_str(&format!("; and {extra} more"));
+    }
+    out.push('.');
+    out
 }
 
 /// Add every `fatal` a non-final pass raised to a returned diagnostic list.
@@ -620,6 +757,26 @@ fn merge_carried_author_warnings(
 }
 
 /// The outputs of a single assembly pass.
+/// One site where a layout-determining expression named a symbol that was not
+/// yet defined there. See [`Asm::layout_watch`].
+#[derive(Clone, Debug)]
+struct LayoutWatch {
+    /// What the expression sizes, named twice in the message: once as the thing
+    /// that is circular (`"repeat count"`) and once as the thing that moves the
+    /// location counter (`"repeat"`).
+    what: (&'static str, &'static str),
+    /// The directive spelling the author wrote, for the message: `rept`, `ds.b`.
+    directive: String,
+    /// The line the expression is on. The refusal is raised HERE, because this
+    /// is the line the author changes.
+    span: Span,
+    /// The name as WRITTEN in the expression, which is what the author reads,
+    /// not the qualified key the watch is filed under.
+    named: String,
+    /// [`Asm::flow_epoch`] at the moment the expression was folded.
+    epoch: u32,
+}
+
 struct PassOutput {
     module: Module,
     /// The files this pass spliced, under the ids its spans carry. Every pass
@@ -632,6 +789,10 @@ struct PassOutput {
     diags: Vec<Diagnostic>,
     /// Operand symbols that folded to Poison this pass (name + site span).
     poison: Vec<(String, Span)>,
+    /// The first PROVEN circular layout expression this pass found: the span of
+    /// the `rept`/`ds` line whose count is one of its own inputs, and the
+    /// message naming the loop. See [`Asm::circular_layout`].
+    circular_layout: Option<(Span, String)>,
     /// The first `fatal` this pass raised, with the `file(line)` label THIS
     /// pass's own source map renders for it. See [`Asm::terminal_fatal`].
     terminal_fatal: Option<(Span, String, Option<String>)>,
@@ -850,6 +1011,7 @@ fn one_pass_with_defer(
         macros: asm.macros,
         functions: asm.functions,
         diags,
+        circular_layout: asm.circular_layout,
         poison: asm.poison_refs,
         terminal_fatal: asm.terminal_fatal,
         author_warnings: asm.author_warnings,
@@ -1362,6 +1524,42 @@ struct Asm {
     /// symbol-defining form, so a form that binds a name without going through
     /// it would be invisible here and not merely late.
     defined_this_pass: std::collections::HashSet<String>,
+    /// Symbols a LAYOUT-DETERMINING expression named while they were still
+    /// undefined at that point in this pass, keyed by the qualified name, with
+    /// every site that named them. A `rept` count and a `ds` count are the two
+    /// such expressions: their value decides how many bytes are emitted where
+    /// they stand.
+    ///
+    /// This is conjuncts (a) and (b) of the circularity proof (see
+    /// `docs/superpowers/notes/2026-09-10-as-circular-split.md`). It is a WATCH
+    /// and not a finding: a name that is never bound afterwards in this pass is
+    /// never reported, which is what keeps an `ifndef`-guarded definition that
+    /// ran on pass 0 and skips on later ones from reading as a forward
+    /// reference.
+    layout_watch: std::collections::HashMap<String, Vec<LayoutWatch>>,
+    /// Qualified names whose value is derived from the location counter: every
+    /// label, and every `equ`/`set` whose right-hand side names the location
+    /// counter, a label, or another name already in here. Conjunct (d).
+    ///
+    /// An OVER-approximation would mean more refusals, so this deliberately
+    /// under-approximates: the 68k `*` location-counter token is not read (the
+    /// same token is the multiplication operator in the same position), so
+    /// `N equ *` is not marked derived and a repeat counting by it is not
+    /// refused.
+    pc_derived: std::collections::HashSet<String>,
+    /// Bumped whenever the location counter stops being a running total of what
+    /// has been emitted: `org`, `phase`, `dephase`, and closing a section. Two
+    /// program points share an epoch exactly when the bytes emitted between them
+    /// are what separates their addresses, which is the "same uninterrupted
+    /// address flow" half of conjunct (d).
+    ///
+    /// Bumping on MORE things only suppresses refusals, so `close_section` is
+    /// included even though not every close moves an address.
+    flow_epoch: u32,
+    /// The first proven circular layout expression, which ends the run. See
+    /// [`Asm::note_layout_binding`] for the proof and `run_impl` for why it is
+    /// terminal rather than carried.
+    circular_layout: Option<(Span, String)>,
     /// Names seeded from [`Options::guarded_defines`] — the `.emp`-owned
     /// constants the residual AS may consume but not re-author. An in-file
     /// `=`/`equ` of any of these is a `[defines.collision]` error (the P5
@@ -1618,6 +1816,10 @@ impl Asm {
             label_ref_equs: std::collections::HashSet::new(),
             set_sym_symbolic: std::collections::HashMap::new(),
             defined_this_pass: std::collections::HashSet::new(),
+            layout_watch: std::collections::HashMap::new(),
+            pc_derived: std::collections::HashSet::new(),
+            flow_epoch: 0,
+            circular_layout: None,
             guarded_defines: opts.guarded_defines.iter().map(|(k, _)| k.clone()).collect(),
             structs: std::collections::HashMap::new(),
             pending_struct_label: None,
@@ -1799,6 +2001,134 @@ impl Asm {
     fn define_sym(&mut self, key: &str, value: SymbolValue) {
         self.env.define(key, value);
         self.defined_this_pass.insert(key.to_string());
+    }
+
+    /// Conjuncts (a) and (b): watch every symbol a LAYOUT-DETERMINING expression
+    /// names that is not defined at this point in this pass.
+    ///
+    /// `what` is what the expression sizes, for the eventual message. Called
+    /// from the `rept` count and the `ds` count, which are the two expressions
+    /// whose value decides how many bytes are emitted where they stand. An `if`
+    /// condition also decides layout, and is deliberately NOT watched: its shape
+    /// is a genuine two-state oscillation rather than a divergence, so the
+    /// oscillation proof in `run_impl` answers it with the moving symbols and
+    /// their values, which is what the ruling asks for that half.
+    ///
+    /// An identifier immediately followed by `(` is a function call head, not a
+    /// symbol reference, and is skipped. A builtin is defined everywhere and
+    /// `sym_defined_now` already says so.
+    fn watch_layout_expr(
+        &mut self,
+        what: (&'static str, &'static str),
+        directive: &str,
+        toks: &[Token],
+        span: Span,
+    ) {
+        for (i, t) in toks.iter().enumerate() {
+            let Tok::Ident(name) = &t.tok else { continue };
+            if matches!(
+                toks.get(i + 1).map(|n| &n.tok),
+                Some(Tok::Punct(Punct::LParen))
+            ) {
+                continue;
+            }
+            if self.sym_defined_now(name) {
+                continue;
+            }
+            let key = self.sym_key(name);
+            let watch = LayoutWatch {
+                what,
+                directive: directive.to_string(),
+                span,
+                named: name.clone(),
+                epoch: self.flow_epoch,
+            };
+            self.layout_watch.entry(key).or_default().push(watch);
+        }
+    }
+
+    /// Whether `toks` is location-derived: it names the location counter, a
+    /// label, or a name already known to be location-derived. Conjunct (d),
+    /// first half.
+    fn expr_is_pc_derived(&self, toks: &[Token]) -> bool {
+        toks.iter().any(|t| match &t.tok {
+            Tok::Dollar => true,
+            Tok::Ident(n) => {
+                let key = self.sym_key(n);
+                self.known_labels.contains(&key)
+                    || self.pc_derived.contains(&key)
+                    || self.known_labels.contains(n)
+                    || self.pc_derived.contains(n)
+            }
+            _ => false,
+        })
+    }
+
+    /// Record how `q` was bound, and close the circularity proof if this binding
+    /// completes one.
+    ///
+    /// Called from the three forms that can bind a location-derived value: a
+    /// label, an `equ` and a `set`. Reaching it IS conjunct (c): the symbol a
+    /// layout expression named earlier in this pass is being bound now, later in
+    /// the same pass, and the binding was actually executed rather than
+    /// predicted from the previous pass's table.
+    ///
+    /// ## Why the four conjuncts are a proof and not a symptom
+    ///
+    /// (a) the expression named `q`; (b) `q` was not defined where it was
+    /// folded; (c) `q` is bound here, after it; (d) `q`'s value comes from the
+    /// location counter and no `org`/`phase`/`dephase`/section change ran in
+    /// between, so the address here is the address there plus the bytes emitted
+    /// between them, and the bytes the expression itself sizes are one of those
+    /// terms. So `q = f(PC + k*E + ...)` with `k > 0`, and `E = g(q)`. The
+    /// expression's value is one of its own inputs, exhibited term by term.
+    ///
+    /// Nothing here is "the value moved", which is the shape a heuristic would
+    /// take. A program that merely needed another attempt fails (c), because its
+    /// forward name is never bound in the pass at all, or fails (d), because its
+    /// forward name is a plain constant or an `org` separates the two points.
+    /// Every approximation in the analysis points toward ACCEPTING; see
+    /// [`Asm::pc_derived`] and [`Asm::flow_epoch`].
+    ///
+    /// The containment argument is the independent second one: conjuncts (a) and
+    /// (b) together are exactly what asl calls `expression must be evaluatable
+    /// in first pass` for these directives, and asl refuses that whole class
+    /// outright. So the set refused here is a subset of asl's, and no program
+    /// that assembles under asl can be refused by it.
+    fn note_layout_binding(&mut self, q: &str, derived: bool, span: Span) {
+        if !derived {
+            return;
+        }
+        self.pc_derived.insert(q.to_string());
+        if self.circular_layout.is_some() {
+            return;
+        }
+        let Some(sites) = self.layout_watch.remove(q) else {
+            return;
+        };
+        let Some(site) = sites.into_iter().find(|s| s.epoch == self.flow_epoch) else {
+            return;
+        };
+        let at = match self.sources.label(span) {
+            Some(l) => format!(" at {l}"),
+            None => String::new(),
+        };
+        let message = format!(
+            "circular {}: this `{}` is sized by `{}`, and `{}` is not defined until later{}. \
+             `{}` takes its value from the location counter, which this {} moves by the bytes it \
+             emits, so the size is one of its own inputs. Give it a value that is already known \
+             where the `{}` stands, or move `{}` above it.",
+            site.what.0,
+            site.directive,
+            site.named,
+            site.named,
+            at,
+            site.named,
+            site.what.1,
+            site.directive,
+            site.named,
+        );
+        self.circular_layout = Some((site.span, message));
     }
 
     /// Whether `name` is defined AT THIS POINT IN THIS PASS: asl's `DEFINED`.
@@ -4509,7 +4839,15 @@ impl Asm {
     /// Handle `rept N … endr`. `N` is folded once at the `rept` line (with `$` =
     /// the current phased VMA). Returns the index past `endr`.
     fn exec_rept(&mut self, lines: &[SrcLine], start: usize) -> usize {
-        let (_, arg_toks, span) = self.line_kw_args(&lines[start]);
+        let (kw, arg_toks, span) = self.line_kw_args(&lines[start]);
+        // Conjuncts (a) and (b) of the circularity proof, taken BEFORE the body
+        // runs so the reading is the state at the `rept` line itself.
+        self.watch_layout_expr(
+            ("repeat count", "repeat"),
+            kw.as_deref().unwrap_or("rept"),
+            &arg_toks,
+            span,
+        );
         let n = match self.eval_all(&arg_toks, span) {
             Some(v) if v >= 0 => v as usize,
             Some(_) => {
@@ -5727,6 +6065,12 @@ impl Asm {
     /// Idempotent: a second call while already closed does nothing (so a directive
     /// that closes an already-closed region can't double-advance `phys_base`).
     fn close_section(&mut self) {
+        // The location counter stops being a running total of what has been
+        // emitted here, so two points either side of this line are not separated
+        // by the bytes between them. Conjunct (d)'s second half: a layout
+        // expression before this and a binding after it are not a loop, and a
+        // refusal must not fire across it.
+        self.flow_epoch = self.flow_epoch.wrapping_add(1);
         if self.in_section {
             self.phys_base += self.builder.current_offset();
             self.in_section = false;
@@ -5892,6 +6236,9 @@ impl Asm {
         // divergence — is raised and nothing else moves.
         self.declare_expansion_local_const(&qualified, span);
         self.define_sym(&qualified, SymbolValue::Int(value));
+        // A label's value IS the location counter, so conjunct (d)'s first half
+        // holds without any expression analysis.
+        self.note_layout_binding(&qualified, true, span);
         self.known_labels.insert(qualified.clone());
         self.builder.define_label(&qualified);
         qualified
@@ -5981,6 +6328,12 @@ impl Asm {
     }
 
     fn directive_phase(&mut self, rest: &[Token], span: Span) {
+        // The location counter stops being a running total of what has been
+        // emitted here, so two points either side of this line are not separated
+        // by the bytes between them. Conjunct (d)'s second half: a layout
+        // expression before this and a binding after it are not a loop, and a
+        // refusal must not fire across it.
+        self.flow_epoch = self.flow_epoch.wrapping_add(1);
         match self.eval_all(rest, span) {
             Some(v) => {
                 // `phase addr` makes `$` report `addr` at the current physical
@@ -5997,6 +6350,12 @@ impl Asm {
     }
 
     fn directive_dephase(&mut self) {
+        // The location counter stops being a running total of what has been
+        // emitted here, so two points either side of this line are not separated
+        // by the bytes between them. Conjunct (d)'s second half: a layout
+        // expression before this and a binding after it are not a loop, and a
+        // refusal must not fire across it.
+        self.flow_epoch = self.flow_epoch.wrapping_add(1);
         // Cancel the phase: `$` reports the physical location again. The physical
         // counter has ADVANCED by the phased block's bytes (folded into `phys_base`
         // by `close_section`), so labels after `dephase` continue from there — they
@@ -6091,6 +6450,12 @@ impl Asm {
     ///   directive's business to pre-judge it, because the target may equally be
     ///   untouched ground.
     fn directive_org(&mut self, rest: &[Token], span: Span) {
+        // The location counter stops being a running total of what has been
+        // emitted here, so two points either side of this line are not separated
+        // by the bytes between them. Conjunct (d)'s second half: a layout
+        // expression before this and a binding after it are not a loop, and a
+        // refusal must not fire across it.
+        self.flow_epoch = self.flow_epoch.wrapping_add(1);
         let target_abs = match self.eval_all(rest, span) {
             Some(v) => v as u32,
             None => {
@@ -6196,7 +6561,11 @@ impl Asm {
         }
         if let Some(v) = self.eval_all(rest, span) {
             self.float_env.remove(&q);
+            let derived = self.expr_is_pc_derived(rest);
             self.define_sym(&q, SymbolValue::Int(v));
+            // Conjunct (d): an equate whose RHS names the location counter, a
+            // label, or another location-derived name carries that derivation.
+            self.note_layout_binding(&q, derived, span);
             // A label-referencing equate (`HandlerPtr = Handler`, the debugger's
             // `DEBUGGER__* = MDDBG__* = ErrorHandler + N` chain): its VALUE is a
             // relaxation-shiftable label address. DETECT and register such a name
@@ -6564,7 +6933,13 @@ impl Asm {
         }
         if let Some(v) = self.eval_all(rest, span) {
             self.float_env.remove(&q);
+            let derived = self.expr_is_pc_derived(rest);
             self.define_sym(&q, SymbolValue::Int(v));
+            // Conjunct (d), as for `equ`. A `set` rebinds, so a name that was
+            // location-derived once stays marked; that direction only ever
+            // suppresses nothing and adds no refusal that the epoch check and
+            // the watch do not already have to agree to.
+            self.note_layout_binding(&q, derived, span);
             // Relocation capability (flip Stage 2): if the RHS — after splicing
             // any set-symbol it CHAINS through (`P_DFG := PC_FG_T`) — references a
             // section LABEL, remember its `relax_safe_fold`ed symbolic snapshot so
@@ -7181,6 +7556,11 @@ impl Asm {
         if unit > 1 {
             self.pad_word_align_reserving(span);
         }
+        // Conjuncts (a) and (b): a reservation count sizes the bytes it reserves
+        // exactly as a repeat count sizes the bodies it runs, so the same loop
+        // is available to it and the same proof closes it.
+        let spelling = format!("ds.{}", unit_suffix(unit));
+        self.watch_layout_expr(("reservation size", "reservation"), &spelling, rest, span);
         match self.eval_all(rest, span) {
             Some(v) if DS_COUNT_RANGE.contains(&v) => {
                 // In range, so the narrowing is exact. The byte total and the
