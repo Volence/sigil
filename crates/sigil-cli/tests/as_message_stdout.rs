@@ -60,17 +60,34 @@ fn a_forward_referenced_message_prints_once_with_its_final_value() {
 /// s1disasm's shape: the line prints and the run fails afterwards. The
 /// message is on stdout, the diagnostic on stderr, exit 1.
 ///
-/// stdout now carries a SECOND line, the failure line, and that is the point
-/// of it: the message alone was a stdout log of a failed run that read as a
-/// successful one. The message still leads, because asl prints it when it is
-/// reached and the failure comes later.
+/// stdout now carries MORE than the message, and that is the point of it: the
+/// message alone was a stdout log of a failed run that read as a successful one.
+/// The message still LEADS, because asl prints it when it is reached and the
+/// failure comes later, and the failure line still TRAILS.
+///
+/// The assertion was an exact string equality until the UXa F5 closure put an
+/// incompleteness caveat between them (this probe stops at LINK, so the image
+/// checks do not run). It is restated over the two properties that were the
+/// point of the equality, the leading message and the trailing failure line,
+/// rather than being loosened to a pair of `contains` that would let anything at
+/// all sit at either end. The caveat's own wording is pinned in
+/// `partial_error_list_stage_note.rs` and deliberately not duplicated here.
 #[test]
 fn a_failing_run_prints_its_message_before_its_diagnostics() {
     let out = run("\tmessage \"size \\{Later}h bytes\"\n\tdc.b 1\n\tdc.w Later-*\nLater:\n\tdc.b nothing_defines_this\n\tend\n");
     assert_eq!(out.status.code(), Some(1));
+    let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
+    let lines: Vec<&str> = stdout.lines().collect();
     assert_eq!(
-        String::from_utf8_lossy(&out.stdout),
-        "size 3h bytes\nassembly failed: 1 error (reported on stderr)\n"
+        lines.first().copied(),
+        Some("size 3h bytes"),
+        "the message must still LEAD stdout: {stdout:?}"
+    );
+    assert_eq!(
+        lines.last().copied(),
+        Some("assembly failed: 1 error (reported on stderr)"),
+        "the failure line must still TRAIL stdout, so a captured log cannot end on the \
+         reassuring line: {stdout:?}"
     );
     let err = String::from_utf8_lossy(&out.stderr);
     assert!(err.contains("nothing_defines_this"), "stderr: {err}");
