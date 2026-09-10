@@ -93,11 +93,52 @@ parcel, repairing the ledger was deliberately not. The renderability assertion i
 12 that fails on GROWTH, never a hard gate, because a hard one would be red on arrival against correct
 history and the remedy a reasonable person reaches for is weakening the check.
 
-**TWO DUPLICATE IDS ARE LIVE AND THEY ARE A RULE-8e SUBJECT, NOT AN 8f ONE:** `d-18` appears **three**
-times and `d-25` **twice**. 8e rules that id-uniqueness wins narrowly and re-iding the LATER line is
+**ONE DUPLICATE ID IS LIVE AND IT IS A RULE-8e SUBJECT, NOT AN 8f ONE:** `d-18` appears **three**
+times. 8e rules that id-uniqueness wins narrowly and re-iding the LATER line is
 the single sanctioned in-place edit - oracle's `tools/land.sh` G2b refused *every* landing on exactly
 this. **So any uniqueness check wired here goes red on arrival**, and the 8e re-id is a precondition
-of wiring it, never a consequence to discover afterwards.
+of wiring it, never a consequence to discover afterwards. *(This sentence said `d-25` **twice** until
+2026-09-10. The second `d-25` was re-ided to `d-14-correction` at `4ebfb950`; the ledger gate's own
+output now reads `1 repeated: d-18 x3`. Derive the count from the gate, never from this line.)*
+
+## A CORRECT ACTION CARRYING A WRONG RATIONALE PROPAGATES THE RATIONALE (2026-09-10)
+
+**This lane re-ided a duplicate `d-25` correctly and stated a false reason for doing it, and the
+reason is the half that travelled.** The commit message at `4ebfb950` said line 28 "is an OPEN,
+UNANSWERED question to the owner" and "He has never been shown it". Line 28 carried
+`"state": "answered"` and his verbatim words at the moment that sentence was written: he answered it
+2026-09-04T15:40:14Z, `accept`, committed at `142709bc`. The re-id itself stands; every other claim
+in that message (the numstat, the line count, the identification of line 29 as a mis-numbered
+embed-path record) is true.
+
+**The decisive fact, and it is worth keeping because it forecloses the charitable reading:** the
+shadowing record is dated 2026-09-04T21:18:23Z and his answer is 15:40:14Z. **The duplicate did not
+exist when he answered.** So there is no version of events in which he answered the wrong card, and
+the shadowing explains only why the answered card later became hard to SEE, never why it would be
+unanswered.
+
+**The mechanism, in the hub's formulation, which is better than mine: downstream readers cannot act
+on the action, they can only act on the sentence.** A correct action is self-justifying to whoever
+performed it and invisible to everyone else; the rationale is the entire interface. So a wrong
+rationale on a right action is not a cosmetic defect, it is the only part of the work that
+propagates. Here it propagated into `docs/lane-status.json` as a `blockedOnOwner` row telling the
+owner he was seeing a six-day-old answered question for the first time, and from there into the
+hub's overnight write-up as one of eight cards awaiting him, which is the one artifact he reads on
+waking. **Three artifacts agreed and none of them was the ledger.**
+
+**What would have caught it, and it is one field:** the line being re-ided around was read for its
+`id` and never for its `state`. **When a record's IDENTITY is the subject of an edit, read its
+CONTENT before writing the reason.** The `id` and the `state` sit in the same JSON object two keys
+apart.
+
+**And the aggregation half, booked by the hub against itself and recorded here because this lane
+supplied the bad input:** an aggregated card count inherits every constituent's confidence and
+states none of them. Six lane boards became "your card is EIGHT", a number he cannot audit and which
+no lane authored. The partial remedy in place is that each card names its lane; there is no full one.
+
+**THE STANDING CHECK THIS EARNS, and it is cheap: before filing anything as `blockedOnOwner`, grep
+the ledger for that id and read its `state` and `answered_at`.** A blocker is a claim that he owes
+you something. This lane held one for six days that he had already paid.
 
 ## STANDING: DO NOT BOOT INTO A STOP WHILE SLEEP MODE IS ON (owner) — read this before waiting
 
