@@ -80,9 +80,18 @@ their `origin/main`.
 
 **⚠ AND THIS LANE COULD NOT HAVE ANSWERED 8f AT THE TIME, which is the finding under the finding.**
 8f makes a red gate the deciding fact and thereby assumes a gate exists to be red. Sigil's ledger
-check (`tools/decisions_reader_audit.py`) has **no caller anywhere** - it transcribes Dominion's own
-reader and runs from nothing - so *"nothing is red"* and *"nothing is looking"* were indistinguishable
-here. That is the `LEDGER-AUDIT-UNWIRED` row.
+check had **no caller anywhere** when this was written - it transcribed Dominion's own reader and ran
+from nothing - so *"nothing is red"* and *"nothing is looking"* were indistinguishable here.
+
+**CLOSED 2026-09-10 at merge `985cba31`: it now has a caller and its verdict reaches the exit code.**
+`scripts/ledger_gate.py` runs from `scripts/landing-run.sh`, and a red from it makes `RESULT FAILED`
+(verified here by an end-to-end control, not by reading: a planted unparseable `docs/*.jsonl` gave
+`LEDGER_EXIT 1`, `RESULT FAILED`, wrapper exit 1, with `CARGO_EXIT 0` so the run failed on the ledger
+ALONE). So 8f is now ANSWERABLE here, which it was not when the paragraph above was written.
+**The 12 rejected lines are unchanged and still listed-not-repaired** - wiring the check was the
+parcel, repairing the ledger was deliberately not. The renderability assertion is a RATCHET pinned at
+12 that fails on GROWTH, never a hard gate, because a hard one would be red on arrival against correct
+history and the remedy a reasonable person reaches for is weakening the check.
 
 **TWO DUPLICATE IDS ARE LIVE AND THEY ARE A RULE-8e SUBJECT, NOT AN 8f ONE:** `d-18` appears **three**
 times and `d-25` **twice**. 8e rules that id-uniqueness wins narrowly and re-iding the LATER line is
