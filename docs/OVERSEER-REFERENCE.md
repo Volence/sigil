@@ -2426,3 +2426,54 @@ than as suspicious. **A result that confirms the local theme is not corroborated
 that name, which is what the shell actually resolves (`whence -w` says `function`, `which grep`
 prints the ugrep router). **Reading one definition out of a config file is not reading what the
 shell resolves.** Ask the shell, do not grep its snapshot.
+
+### A PEER'S "YOUR PIN HAS DRIFTED" IS USUALLY THE PIN GAP (2026-09-10, aeon's report)
+
+**Read this the moment another lane reports that a `pins.rs` value disagrees with their tree.**
+
+Aeon reported two byte-movers touching `pins::CORE` and, beside them, a standing `0x4E` gap they
+had measured before either parcel: `pins::CORE.plain_base` `0x2CCC` against their master's
+`0x2D1A`, with `SPRITES` showing the identical `0x4E`. Read as drift, it is a repin trigger. It is
+not drift.
+
+**`pins.rs` is generated from SIGIL'S OWN resolved layout of the corpus it is PINNED to**, which its
+own header states, and the pinned corpus is `.aeon-sigil-ref`. Measured that day: the pinned tree
+was an ancestor of aeon `origin/master` and **280 commits behind it**. A pin compared against tip
+therefore reports the GAP, and the gap is the pin working. The hub's 2026-09-02 ruling is that the
+pin exists so the corpus does NOT track tip; advancing it is `AEON-REFREEZE-DEBT`, a held decision.
+
+**The discriminator, and it is one grep rather than an argument:** `pins_rs_is_current` is the gate
+that answers "is the pin correct for the tree it describes". Grep the gate's own NAME out of the
+last green landing log, per bar 25 - `RESULT GREEN` alone does not establish that the gate ran. It
+ran and passed against `ec640bcf`, so the pin was current for its own subject while disagreeing
+with tip by `0x4E`. **Those two facts are compatible and only one of them is about a defect.**
+
+**A uniform shift across two adjacent regions, with each region's own LENGTH still matching, is the
+signature of a pin gap rather than a pin fault.** A real pin fault is region-local: the length moves
+too, or one region moves and its neighbour does not.
+
+**What to keep from such a report even when the drift half dissolves.** Aeon serialized their two
+landings and recorded the INTERMEDIATE revision rather than reconstructing it, which is the only
+thing that will let the two be attributed separately whenever the pin is advanced; a differencing of
+the range's ends cannot separate two parcels inside it. And their sharpest observation survives
+entirely: **a CRC change at an UNCHANGED ROM length is positive evidence that bytes moved without
+the image growing**, which is a repin trigger wearing a reassuring shape.
+
+**⚠ AND THE REPORT CARRIED A REFUTATION THAT WAS ITSELF WRONG, IN THE DIRECTION THAT LOOKS
+DILIGENT.** Their agent cited the same `0x4E` as visible in `golden/offcanonical_sizes/s4.txt`;
+the lane checked, reported the path does not exist here, and withheld the claim. **The path exists
+and is tracked** (seven files under that directory; `git ls-files` returns them). The verdict
+"treat the golden half as unverified" was still right, because the golden actually reads
+`InitObjectRAM 0x2ccc`, agreeing with `pins.rs` to the digit and containing no `0x4E` at all. **So a
+true conclusion arrived on a false mechanism, and the mechanism is the half that travels.** Two
+instruments on this machine manufacture exactly that empty: `ls` is aliased to `eza` and errors on
+ordinary flags, and the harness `grep` function routes through `ugrep --ignore-files`. When a peer
+reports a path absent from THIS tree, re-run it here with `git ls-files` before accepting it.
+
+**COMMITMENT MADE TO AEON THE SAME DAY, banked because it binds a later session of this lane.**
+They flagged that `crates/sigil-cli/tests/core_port.rs` (header and the block above
+`debug_shape_length_diverges`) calls the two debug assert sites `bsr.w`, while their debug ROM emits
+`6162`, which is `bsr.s`. **Not acted on, deliberately.** The comment's own arithmetic cannot settle
+it: `0x128` is two call sites plus a whole proc and the proc dominates, so their emitted byte is the
+only discriminator, and it is a byte this lane has not read. Verify it at a moment when the
+reference tree is not under an exclusive agent lease, then fix the prose or say why it stands.
