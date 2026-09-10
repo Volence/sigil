@@ -1101,6 +1101,24 @@ fn published_anchor(stdout: &str) -> Option<(String, String)> {
 /// configuration rather than a defect. Callers must weaken to a containment question there
 /// rather than fail: a check that cannot run has measured nothing, and reporting that as a
 /// failure teaches people to delete it.
+///
+/// ## Why the set is bounded
+///
+/// A reflog only grows. Accepting every position a ref has ever held would make this check
+/// weaker on every push, for as long as the repository lives, and nothing would ever notice:
+/// a passing check looks identical at every strength. The bound holds the question at a
+/// fixed difficulty instead of letting the repository's age dissolve it.
+///
+/// `RECENT_POSITIONS` is sized from the only interval that has to be covered. The tip in the
+/// banner is captured when the build script runs, and it is compared here in the same cargo
+/// invocation, so what must be spanned is one build-and-test run: measured at 0.4 s warm,
+/// 9 s for a cold build of this crate, and 53 s for this crate's whole suite. Against that,
+/// the busiest 30 minute window in 27 days of this ref's reflog holds 13 updates, and the
+/// busiest hour holds 21. Thirty-two positions covers the worst recorded half hour two and a
+/// half times over, covers the worst recorded hour outright, and is roughly one day of
+/// movement at this ref's measured rate of 32 updates per day.
+const RECENT_POSITIONS: usize = 32;
+
 struct Positions {
     values: Vec<String>,
     is_recorded: bool,
@@ -1111,9 +1129,13 @@ fn positions_of(ref_name: &str) -> Positions {
     if let Ok(now) = git(&["rev-parse", ref_name]) {
         values.push(now);
     }
+    // Newest first, so the ordinary case answers on the first candidate and the bound is
+    // spent on the entries most likely to be the one the banner read.
     // Exits 0 with no output when the ref has no reflog, so an empty answer is
     // "nothing recorded" and never a swallowed error.
-    let reflog = git(&["reflog", "show", "--format=%H", ref_name]).unwrap_or_default();
+    let depth = RECENT_POSITIONS.to_string();
+    let reflog =
+        git(&["reflog", "show", "-n", &depth, "--format=%H", ref_name]).unwrap_or_default();
     let is_recorded = !reflog.trim().is_empty();
     for line in reflog.lines() {
         let value = line.trim().to_string();
@@ -1121,6 +1143,7 @@ fn positions_of(ref_name: &str) -> Positions {
             values.push(value);
         }
     }
+    values.truncate(RECENT_POSITIONS);
     Positions { values, is_recorded }
 }
 
@@ -1184,9 +1207,13 @@ fn the_published_line_states_this_revision_s_position_against_a_named_remote_ref
     if positions.is_recorded {
         assert!(
             positions.values.iter().any(|position| position == &tip),
-            "the banner names {tip} as the tip of {name}, which is not a position this \
-             checkout has ever recorded for that ref. A tip that {name} never held did not \
-             come from reading {name}.\n{stdout}"
+            "the banner names {tip} as the tip of {name}, which is not among the {} most \
+             recent positions this checkout has recorded for that ref, newest first. A tip \
+             that {name} did not hold in that window did not come from reading {name}. \
+             Positions older than that window were NOT asked about: the window is sized to \
+             span one build-and-test run, which is the whole interval between the banner \
+             capturing the tip and this check reading it.\n{stdout}",
+            positions.values.len()
         );
     } else {
         // Loud about the weaker question rather than silently asking it: with no reflog,
@@ -1286,8 +1313,10 @@ fn the_published_drift_check_runs_and_is_anchored_at_the_named_ref() {
         let positions = positions_of(&name);
         assert!(
             contained_in_any(&printed, &positions.values),
-            "the check printed {printed}, which is not reachable from any position {name} \
-             is on record for, so it did not ask about that ref.\ncommand: {command}"
+            "the check printed {printed}, which is not reachable from any of the {} most \
+             recent positions {name} is on record for, so it did not ask about that ref. \
+             Positions older than that window were NOT asked about.\ncommand: {command}",
+            positions.values.len()
         );
         ran.push(shell);
     }
