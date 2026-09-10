@@ -1083,6 +1083,59 @@ fn published_anchor(stdout: &str) -> Option<(String, String)> {
     Some((name.to_string(), tip))
 }
 
+/// Every position this checkout has on record for a ref: what it points at now, and every
+/// value its reflog says it has held.
+///
+/// A remote-tracking ref is allowed to move, and it moves whenever anyone on this machine
+/// fetches or pushes. Any gate that reads such a ref a second time and requires the second
+/// reading to agree with a value captured earlier is asserting that nobody worked while it
+/// ran, which is a claim about the machine rather than about the banner, and it goes red on
+/// correct work for that reason alone.
+///
+/// The set of recorded positions is the fixed thing to ask about instead. A reflog is
+/// append-only: advancing a ref adds an entry, and rewinding it adds another, so a value
+/// that is in the set stays in the set. A question asked against this set therefore has one
+/// answer, and later movement cannot change it.
+///
+/// `is_recorded` is false when this checkout keeps no reflog for the ref, which is a real
+/// configuration rather than a defect. Callers must weaken to a containment question there
+/// rather than fail: a check that cannot run has measured nothing, and reporting that as a
+/// failure teaches people to delete it.
+struct Positions {
+    values: Vec<String>,
+    is_recorded: bool,
+}
+
+fn positions_of(ref_name: &str) -> Positions {
+    let mut values = Vec::new();
+    if let Ok(now) = git(&["rev-parse", ref_name]) {
+        values.push(now);
+    }
+    // Exits 0 with no output when the ref has no reflog, so an empty answer is
+    // "nothing recorded" and never a swallowed error.
+    let reflog = git(&["reflog", "show", "--format=%H", ref_name]).unwrap_or_default();
+    let is_recorded = !reflog.trim().is_empty();
+    for line in reflog.lines() {
+        let value = line.trim().to_string();
+        if !value.is_empty() && !values.contains(&value) {
+            values.push(value);
+        }
+    }
+    Positions { values, is_recorded }
+}
+
+/// Whether `rev` is contained in the history of any position on record for `ref_name`.
+fn contained_in_any(rev: &str, positions: &[String]) -> bool {
+    positions.iter().any(|position| {
+        Command::new("git")
+            .args(["merge-base", "--is-ancestor", rev, position])
+            .current_dir(REPO)
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false)
+    })
+}
+
 /// THE DEFECT, as a gate. The banner said whether this binary was behind a tree; it never
 /// said whether that tree was itself anything anybody else could see.
 ///
@@ -1115,11 +1168,36 @@ fn the_published_line_states_this_revision_s_position_against_a_named_remote_ref
         return;
     };
 
-    assert_eq!(
-        git(&["rev-parse", &name]).unwrap_or_else(|e| panic!("resolve {name}: {e}")),
-        tip,
-        "the tip the banner names for {name} is not the one git resolves"
+    // The tip must be a commit this checkout actually has, so a banner cannot name a
+    // well-formed revision that stands for nothing.
+    assert!(
+        git(&["cat-file", "-e", &format!("{tip}^{{commit}}")]).is_ok(),
+        "the banner names {tip} as the tip of {name}, and no such commit exists here, so the \
+         line reports a position against something this checkout cannot see\n{stdout}"
     );
+
+    // And it must be a position {name} is on record for, rather than a plausible revision
+    // from somewhere else in this repository. That distinguishes a tip read off the ref
+    // from one taken from HEAD, which is the way this line can be wrong and still look
+    // right, and it stays true after the ref moves.
+    let positions = positions_of(&name);
+    if positions.is_recorded {
+        assert!(
+            positions.values.iter().any(|position| position == &tip),
+            "the banner names {tip} as the tip of {name}, which is not a position this \
+             checkout has ever recorded for that ref. A tip that {name} never held did not \
+             come from reading {name}.\n{stdout}"
+        );
+    } else {
+        // Loud about the weaker question rather than silently asking it: with no reflog,
+        // the only fixed fact available is that the tip is somewhere in the ref's history.
+        assert!(
+            contained_in_any(&tip, &positions.values),
+            "the banner names {tip} as the tip of {name}, which is not contained in {name}. \
+             This checkout keeps no reflog for {name}, so the stronger question of whether \
+             {name} ever held {tip} cannot be asked here.\n{stdout}"
+        );
+    }
 
     // `merge-base --is-ancestor` is the same question, asked directly.
     let contained = Command::new("git")
@@ -1201,17 +1279,15 @@ fn the_published_drift_check_runs_and_is_anchored_at_the_named_ref() {
              reads to a human as `no drift`.\ncommand: {command}"
         );
         // It must be answering about the NAMED ref, not about HEAD wearing its name: the
-        // revision it reports has to be reachable from that ref.
-        let reachable = Command::new("git")
-            .args(["merge-base", "--is-ancestor", &printed, &name])
-            .current_dir(REPO)
-            .status()
-            .expect("git merge-base must run")
-            .success();
+        // revision it reports has to be reachable from that ref. The command resolves the
+        // ref itself, so the position it answered about is whichever one the ref held at
+        // that instant, and asking again here would be a second reading of a moving ref.
+        // The recorded positions are asked instead, and they include that instant's.
+        let positions = positions_of(&name);
         assert!(
-            reachable,
-            "the check printed {printed}, which is not reachable from {name}, so it did \
-             not ask about that ref.\ncommand: {command}"
+            contained_in_any(&printed, &positions.values),
+            "the check printed {printed}, which is not reachable from any position {name} \
+             is on record for, so it did not ask about that ref.\ncommand: {command}"
         );
         ran.push(shell);
     }
