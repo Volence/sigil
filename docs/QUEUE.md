@@ -23,8 +23,11 @@ here with their closing reason rather than deleted.
 
 ## AS-NAMELESS-LABELS-RC1
 
-- state at archive: `next`  size: `L`  project: `SIGIL-AS-REPLACEMENT`
-- blockedBy: the owner, as decision **d-29** filed 2026-09-09: THE WORK IS NOW BUILT AND UNLANDED on branch
+- state: **LANDED** 2026-09-10 at merge `6b26f7f7`, pushed  size: `L`  project: `SIGIL-AS-REPLACEMENT`
+- Landed on `d-29`, answered `land` **by the HUB** under the owner's delegation, not by him; he overturns
+  it with one word. Landing run GREEN: 5,017 passed / 0 failed, clippy clean, zero skips. Corpus headline
+  reproduced independently at landing (149 rows, `$F9198`, `$989C`, zero unresolved slots).
+- history, kept: blockedBy the owner, as decision **d-29** filed 2026-09-09: THE WORK IS NOW BUILT AND UNLANDED on branch
   `parcel/as-nameless-labels` (tip `c22f6050`, six commits, nothing merged). The hold below still stands and was
   correct; a 2026-09-09 session REVERSED IT WITHOUT READING IT, dispatched the parcel, and told the owner the item
   had never been waiting on him. That was wrong. The question put to him is no longer whether to spend the effort,

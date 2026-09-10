@@ -58,7 +58,8 @@ read never saw.
 
 **And the reason it matters more than the row count, which is the hub's formulation:** a decision
 card carries the QUESTION, a queue row carries the WORK. `AS-NAMELESS-LABELS-RC1` is the row the
-owner's answer to `d-24` lands on. Destroying the row while keeping the card means his go arrives at
+answer to `d-29` lands on (`d-24` is a different question, answered by the owner 2026-09-04; this
+line said `d-24` until 2026-09-10 and was one of three places naming three different cards for one row). Destroying the row while keeping the card means his go arrives at
 a board with nothing to catch it, and the failure appears days later as a decision that seemingly
 produced nothing.
 
@@ -1028,7 +1029,22 @@ is live and belongs here rather than in the narrative: the shipped regression ga
 string literals only, so a shell or Python tool can still grow a dash without reddening
 anything.
 
-### AS-NAMELESS-LABELS-RC1: the sizing, asked for by the owner before dispatch
+### AS-NAMELESS-LABELS-RC1: LANDED 2026-09-10 at merge `6b26f7f7`, pushed
+
+**Landed on `d-29`, answered `land` BY THE HUB** under the owner's *"answer any you can"* delegation,
+taking this lane's own recommendation; he overturns it with one word. Landing run GREEN on the merged
+tree against `.aeon-sigil-ref` at `ec640bcf`: 5,017 passed / 0 failed, clippy clean, zero `skip:` lines,
+reconciling 5,006 baseline + 11 new. The 11 new tests all ran and are named in the log. **The four-shape
+byte gates are green, so aeon's bytes did not move** - and that green is NOT evidence the feature is
+right, because aeon uses no nameless labels at all; it is the reference-artifact form of the
+motivating-case blindness this file already banks. The feature's evidence is its own 11 asl-differential
+tests and the corpus census. Headline reproduced INDEPENDENTLY here from the shared `s2disasm` checkout
+at `e45ebf3` (the parcel measured a private rsync copy of the same revision): 149 diagnostic rows,
+ROM size `$F9198`, padding `$989C`, zero unresolved nameless slots.
+
+The sizing below is kept as the record of what was asked for before dispatch.
+
+#### The sizing, asked for by the owner before dispatch
 
 **Size: L.** The single highest-value row in SIGIL-AS-REPLACEMENT, measured rather than estimated:
 one unimplemented feature is the sole root cause of **4,985 diagnostic rows across four message
