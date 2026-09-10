@@ -465,6 +465,17 @@ impl<'a> Evaluator<'a> {
     /// value/param pairings stay loosely typed at bind time (as before); this
     /// narrowly guards the two comptime-only classes the new arg paths
     /// introduced. An already-poisoned argument is skipped (its error is reported).
+    ///
+    /// The one carve-out is the null-symbol spelling: the integer `0` IS a legal
+    /// `Label` argument, because `0` is how `.emp` spells an absent symbol in a
+    /// pointer slot (D-25). See [`is_null_label`] for why zero and not any
+    /// integer.
+    ///
+    /// This runs on every bound parameter, whether the value came from an
+    /// argument at the call or from the parameter's own DEFAULT. A default is a
+    /// value in the same slot and is held to the same class, so a declared
+    /// default that could never be a legal argument is refused where it is
+    /// written rather than at whichever call first omits it.
     fn check_arg_class(&mut self, v: &Value, pty: &ast::Type, span: Span) {
         if matches!(v, Value::Poison) {
             return;
@@ -485,7 +496,8 @@ impl<'a> Evaluator<'a> {
             ),
             _ => {}
         }
-        // Label class (D-PP.3), symmetric to the register check.
+        // Label class (D-PP.3), symmetric to the register check apart from the
+        // null-symbol carve-out (D-25): `0` is a legal `Label`.
         let param_is_label = param_type_is_label(pty);
         match (matches!(v, Value::Label(_)), param_is_label) {
             (true, false) => self.error(
@@ -495,10 +507,20 @@ impl<'a> Evaluator<'a> {
                     type_display(pty)
                 ),
             ),
-            (false, true) => self.error(
-                span,
-                format!("expected a label (a `Label` argument), got {}", v.type_name()),
-            ),
+            (false, true) if !is_null_label(v) => {
+                let mut msg =
+                    format!("expected a label (a `Label` argument), got {}", v.type_name());
+                // An integer is the near miss worth naming: `0` reaches a
+                // `Label` slot and every other integer does not, and nothing
+                // else in the diagnostic says which.
+                if matches!(v, Value::Int(_)) {
+                    msg.push_str(
+                        ". `0` is the one integer a `Label` accepts, spelling an absent \
+                         symbol in a pointer slot; every other integer names nothing",
+                    );
+                }
+                self.error(span, msg);
+            }
             _ => {}
         }
     }
@@ -516,10 +538,16 @@ impl<'a> Evaluator<'a> {
     /// positional arg after a named one, an unknown named parameter, a parameter
     /// filled twice (positionally then by name, or twice by name), a positional
     /// arg past the last parameter (`too many arguments`), and any parameter left
-    /// unfilled that has NO default (`missing argument`). A param with a default
-    /// (`name: T = expr`, t14 — reverses D-PP.4's original "no defaults") takes
-    /// that default, evaluated in a fresh global-only declaration scope, when
-    /// left unbound.
+    /// unfilled that has NO default (`missing argument`).
+    ///
+    /// A param with a default (`name: T = expr`) takes that default when left
+    /// unbound. The default evaluates through the same path a call argument
+    /// takes, in a fresh global-only declaration scope (never the caller's
+    /// locals, never a sibling param), and is then held to the parameter's
+    /// comptime class exactly as an argument is. So a default is legal precisely
+    /// when the identical text written at a call would be legal, and a
+    /// declaration whose default no call could ever supply is refused at the
+    /// declaration instead of reading as legal until someone omits the argument.
     fn bind_args(
         &mut self,
         decl: &ast::ComptimeFnDecl,
@@ -607,7 +635,19 @@ impl<'a> Evaluator<'a> {
                 None => match decl.params[i].3.clone() {
                     Some(default) => {
                         let mut denv = Env::new();
-                        out.push(self.eval_expr(&default, &mut denv));
+                        // Through the SAME path an argument written at the call
+                        // takes, so a default means what the identical text
+                        // would mean in the caller's parentheses: a bareword in
+                        // a `Label` slot is that symbol's label, a register name
+                        // in a `Reg` slot is that register. Only the environment
+                        // differs (declaration scope, globals only).
+                        let v = self.eval_call_arg(&default, &mut denv);
+                        // Held to the parameter's class like any argument, and
+                        // reported at the PARAMETER's own span: the default is
+                        // written in the declaration, so that is where the
+                        // reader has to go to fix it.
+                        self.check_arg_class(&v, &decl.params[i].1, decl.params[i].2);
+                        out.push(v);
                     }
                     None => {
                         let pname = &decl.params[i].0;
@@ -859,6 +899,34 @@ fn param_type_is_reg(ty: &ast::Type) -> bool {
 /// at the one place that needs it (the arg/param class check).
 fn param_type_is_label(ty: &ast::Type) -> bool {
     matches!(ty, ast::Type::Named(p) if p.segments.len() == 1 && p.segments[0] == "Label")
+}
+
+/// Whether `v` is the null-symbol spelling: the integer `0`, and only `0`,
+/// standing for "no label here" in a pointer slot (D-25).
+///
+/// WHY ZERO AND NOT ANY INTEGER. The comparison surface (`eq_compatible`, in
+/// `expr.rs`) puts `Label` and `Int` in one class for ANY int, which looks like
+/// the precedent to copy here. It is not the same question. There the class
+/// decides whether a comparison is MEANINGFUL, and a non-zero int beside a label
+/// is meaningful: `slot == 5` answers `false`, a real answer about a real value,
+/// and that arm exists so `slot == 0` answers rather than refuses. Here the
+/// value has to INHABIT the type: a mismatch has no answer to fall back on, it
+/// becomes the argument. `0` is the one integer the language gives a label
+/// meaning; every other integer names nothing, so accepting one would delete the
+/// class check and buy no spelling anybody wants.
+///
+/// The test is on the VALUE, after folding, so a named `const` equal to 0 and a
+/// constant expression folding to 0 are accepted exactly as the bare token is.
+/// That matches the comparison surface, where `slot == RASTER_PROGRAM_NONE`
+/// already works: a rule reading only the literal token would refuse the more
+/// readable spelling of the very sentinel it exists to bless, and would put the
+/// two surfaces back out of step, which is the defect this closes.
+///
+/// A `Float` `0.0` and a newtype wrapping `0` are NOT the null symbol. Neither
+/// is the spelling, and `Typed` beside `Label` is refused at the comparison
+/// surface too, so refusing them here keeps the two surfaces agreeing.
+fn is_null_label(v: &Value) -> bool {
+    matches!(v, Value::Int(0))
 }
 
 /// A human-readable rendering of a parameter type for a diagnostic's "expected"
