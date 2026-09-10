@@ -193,7 +193,37 @@ And one corroboration worth recording: the linker's *other* tool-owned bounded f
 count. So `relax.rs:1116` was the only non-compliant surface in the linker, and the
 shape this parcel installs was already the file's habit elsewhere.
 
-## 6. Left open
+## 6. Four things about running the suite from a parcel worktree
+
+None of these are defects in the code under test, and all four cost this parcel a run.
+Recorded because the next agent in a sigil worktree meets all four.
+
+1. **`cargo test --workspace` without `--no-fail-fast` reports how far it got, not a
+   total.** Three runs of the same tree reported `776`, `4628` and `5100` passed. The
+   first two were truncated: cargo stops scheduling binaries after one fails. A suite
+   total taken from a failing run is not a total, and the low number looks like a
+   perfectly ordinary green if you only read the aggregate. Size with `--no-fail-fast`.
+2. **Committing while the suite runs fails `version_reports_the_head_of_the_tree_it_was_built_from`.**
+   The binary bakes its revision at build time; two doc commits landed mid-run and HEAD
+   no longer matched. Standing invariant 11 (commit as you go) and this test are in
+   direct tension. The test names the case in its own failure message and says to re-run,
+   which is the right response, but the cheaper habit is to hold commits until the run
+   ends.
+3. **A parcel worktree needs `EMPYREAN_SUITE_ROOT`, not just `AEON_DIR`.**
+   `oracle_loadfromaslisting_resolves_emit_listing` (`sigil-harness --test m1b_gate`)
+   refuses to measure against a reference tree nobody named, per ruling d-18, and a
+   worktree given only `AEON_DIR` hits it. This is the guard working correctly: it is
+   loud on unmeasurable rather than quietly green. `EMPYREAN_SUITE_ROOT=<suite dir>`
+   resolves it. `SIGIL_ALLOW_PARTIAL=1` also silences it and is the wrong answer, because
+   it leaves the row unmeasured while the run exits 0.
+4. **`origin/master` moves under a run in this shared checkout.** It advanced four times
+   during one 35 minute window (reflog: 05:29, 06:11, 06:20:57, 06:21:17) because other
+   lanes push. `the_published_line_states_this_revision_s_position_against_a_named_remote_ref`
+   compares a build-time capture of that ref against a live read, so it can red on a race
+   with nothing wrong. Mechanism established from the reflog first, then corroborated by a
+   green re-run, in that order: the re-run alone would only have looked like a flake.
+
+## 7. Left open
 
 - **Two dangling `PASS_CAP` references.** `crates/sigil-frontend-as/src/eval.rs:5172` and
   `:8855` cite `PASS_CAP` in doc comments. The constant no longer exists: the assembler
