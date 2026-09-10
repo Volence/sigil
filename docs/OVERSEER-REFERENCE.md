@@ -2438,7 +2438,9 @@ not drift.
 
 **`pins.rs` is generated from SIGIL'S OWN resolved layout of the corpus it is PINNED to**, which its
 own header states, and the pinned corpus is `.aeon-sigil-ref`. Measured that day: the pinned tree
-was an ancestor of aeon `origin/master` and **280 commits behind it**. A pin compared against tip
+was an ancestor of aeon `origin/master` and **280 commits behind it**. **DERIVE that count when you
+need it and never read it off this page** - aeon's master moved twice during the single exchange
+that produced this block, so the figure is a timestamp, not a property. A pin compared against tip
 therefore reports the GAP, and the gap is the pin working. The hub's 2026-09-02 ruling is that the
 pin exists so the corpus does NOT track tip; advancing it is `AEON-REFREEZE-DEBT`, a held decision.
 
@@ -2459,8 +2461,12 @@ aeon's tip while `CORE.debug_base` `0x2FB0` sat `-0x66` AHEAD of it. **A region-
 cannot flip sign between shapes for the same region**, so opposite signs are independent evidence of
 accumulated unrelated change ahead of the region rather than a bad pin. **The operational half: at a
 repin, `debug_base` can legitimately move DOWN.** A repin sanity check written to expect forward
-motion reads a correct value as a fault. *(The tip figures are aeon's measurement, not a second
-observation of it: this lane ran no build, so the sign finding is a consequence of their number.)*
+motion reads a correct value as a fault. *(PROVENANCE, and it is deliberately not upgraded further than it earns. Aeon read
+`InitObjectRAM 0x2F4A` out of `.aeon-land-c1b2/s4.debug.lst` in the tree they built and pushed as
+`9fcf502a`, so the figure now has a named artifact and is REPRODUCIBLE AND REFUTABLE, which the bare
+number was not. **It is still ONE lane's observation, not two.** Two parties reading one listing are
+one witness read twice; this lane has read no byte of it. What improved is the citation, not the
+independence.)*
 
 **What to keep from such a report even when the drift half dissolves.** Aeon serialized their two
 landings and recorded the INTERMEDIATE revision rather than reconstructing it, which is the only
