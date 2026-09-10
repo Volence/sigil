@@ -2581,13 +2581,27 @@ the input exists before believing an emptiness about it. When a peer reports a p
 tree, re-run it here with `git ls-files` before accepting it, and when YOU report a path absent from
 a peer's tree, print the directory you actually looked in.
 
-**COMMITMENT MADE TO AEON THE SAME DAY, banked because it binds a later session of this lane.**
-They flagged that `crates/sigil-cli/tests/core_port.rs` (header and the block above
+**COMMITMENT MADE TO AEON THE SAME DAY, DISCHARGED 2026-09-10: their finding is CONFIRMED and the
+prose is fixed.** They flagged that `crates/sigil-cli/tests/core_port.rs` (header and the block above
 `debug_shape_length_diverges`) calls the two debug assert sites `bsr.w`, while their debug ROM emits
-`6162`, which is `bsr.s`. **Not acted on, deliberately.** The comment's own arithmetic cannot settle
-it: `0x128` is two call sites plus a whole proc and the proc dominates, so their emitted byte is the
-only discriminator, and it is a byte this lane has not read. Verify it at a moment when the
-reference tree is not under an exclusive agent lease, then fix the prose or say why it stands.
+`6162`, which is `bsr.s`. The byte has now been read here, on `.aeon-sigil-ref` at aeon `ec640bcf`:
+`Debug_AssertObjLoop` is at `0x3550` in `s4.debug.lst`, and `s4.debug.bin` carries `61 62` at
+`0x34EC` and `61 0A` at `0x3544`. **Both are `bsr.s` and both displacements land exactly on
+`0x3550`**, which is what makes the reading self-checking rather than a plausible parse: a
+mis-located instruction does not resolve onto the symbol twice.
+
+**The prose now names `jbsr` and states no width at all**, which is the durable fix rather than
+swapping one width for the other. The source writes `jbsr` (auto-reaching, `engine/objects/core.emp`
+lines 556 and 608), so the width is the relaxer's to choose and can move whenever the proc does. A
+comment asserting a width the source does not fix is the coordinate-rot class one level up, and the
+surplus it exists to explain does not need the width, because the proc dominates.
+
+**The arithmetic gap is NOT a second defect, and it looked like one for a few minutes.** Proc span
+`0x3550` to `0x3670` is `0x120`, plus two 2-byte call sites is `0x124`, against a stated surplus of
+`0x128`: four bytes over. Those four are a **short align pad**, which the test's own `pad_ok`
+tolerance already accounts for, since `pins::CORE.*_len` spans to the NEXT section's aligned base
+rather than to the end of the emitted image. Recorded because the gap is exactly the shape that
+invites a second finding to be booked against a correct pin.
 
 ### A CAVEAT RETIRED BY AN ADJACENT IMPROVEMENT LEAVES NO ARTIFACT (2026-09-10, aeon's formulation)
 

@@ -15,7 +15,7 @@
 //!   and the two `cmpi.w #extern("Free_Stack"), (Free_SP).w` bound-checks —
 //!   emit TWO independent fixups (Value16Be imm @2, Abs16Be dest @4).
 //! - **Shape-DEPENDENT region LENGTH from a whole debug-only proc** — plain
-//!   0x1C4, debug 0x2EC. The 0x128 surplus is the two `if DEBUG == 1 { bsr.w
+//!   0x1C4, debug 0x2EC. The 0x128 surplus is the two `if DEBUG == 1 { jbsr
 //!   Debug_AssertObjLoop }` call sites + the `Debug_AssertObjLoop` proc (three
 //!   `assert` construct expansions, rings.emp `.full` precedent).
 //!   The proc emits ZERO bytes in the plain shape (its whole body is inside
@@ -459,7 +459,7 @@ fn core_debug_region_matches_reference() {
 // above: they diff against the REAL asl-built ROMs in BOTH shapes, so any
 // core.asm change moves the ROM and trips the gate. The proof below pins the
 // shape-dependent LENGTH itself: plain 0x1C4, debug 0x2EC (the 0x128 surplus is
-// the two `if DEBUG == 1 { bsr.w Debug_AssertObjLoop }` call sites + the
+// the two `if DEBUG == 1 { jbsr Debug_AssertObjLoop }` call sites + the
 // Debug_AssertObjLoop proc), i.e. the .emp's `if DEBUG == 1 {}` blocks mirror
 // core.asm's `ifdef __DEBUG__` divergence exactly.
 
