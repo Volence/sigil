@@ -331,7 +331,7 @@ fn parse_bp<'a>(
 /// token vocabulary and to every site that matches `Tok::Int`; the shapes are
 /// pinned in `tests/as_signed_int_literal.rs` so the boundary cannot move
 /// without a test saying so.
-fn signed_int_literal<'a>(toks: &'a [Token]) -> Option<(i64, &'a [Token])> {
+fn signed_int_literal(toks: &[Token]) -> Option<(i64, &[Token])> {
     let [plus, num, tail @ ..] = toks else {
         return None;
     };
