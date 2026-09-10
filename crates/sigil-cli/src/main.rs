@@ -315,7 +315,7 @@ fn run_asm(entry: &Entry, args: &[String]) {
         Err(failure) => {
             render_as_messages(&failure.messages);
             render_as_diags(&failure);
-            fail_asm(failure.diags.len());
+            fail_asm(failure.diags.len(), Stage::Frontend);
         }
     };
     // `resolve_layout` before `link`, which is what every other FINAL-link route
@@ -341,14 +341,14 @@ fn run_asm(entry: &Entry, args: &[String]) {
         Ok(secs) => secs,
         Err(diags) => {
             render_located_diags(&diags, &sources);
-            fail_asm(diags.len());
+            fail_asm(diags.len(), Stage::Layout);
         }
     };
     let linked = match sigil_link::link(&resolved, &empty) {
         Ok(img) => img,
         Err(diags) => {
             render_located_diags(&diags, &sources);
-            fail_asm(diags.len());
+            fail_asm(diags.len(), Stage::Link);
         }
     };
     // The cartridge-window check before `flatten`, located against `resolved`
@@ -359,20 +359,20 @@ fn run_asm(entry: &Entry, args: &[String]) {
     let bounds = sigil_link::check_image_bounds(&linked, &resolved);
     if !bounds.is_empty() {
         render_located_diags(&bounds, &sources);
-        fail_asm(bounds.len());
+        fail_asm(bounds.len(), Stage::Image);
     }
     let image = match sigil_link::flatten(&linked, 0x00) {
         Ok(image) => image,
         Err(msg) => {
             eprintln!("error: {msg}");
-            fail_asm(1);
+            fail_asm(1, Stage::Image);
         }
     };
 
     if let Some(out_path) = output {
         if let Err(err) = install_artifact(&out_path, &image) {
             eprintln!("error: cannot write {out_path}: {err}");
-            fail_asm(1);
+            fail_asm(1, Stage::Image);
         }
     }
 
@@ -480,10 +480,94 @@ fn render_as_messages(messages: &[String]) {
 ///
 /// The count is the diagnostics this route rendered, so it is derived from the
 /// list that was printed rather than tallied separately and left to drift.
-fn fail_asm(errors: usize) -> ! {
+///
+/// `stopped_at` names the stage that failed, so the run can say which stages did
+/// NOT run. See [`Stage`] for why that line exists.
+fn fail_asm(errors: usize, stopped_at: Stage) -> ! {
+    // Before the count rather than after it, so the failure line stays the LAST
+    // thing on stdout. That is the F8 property this function was written for
+    // (`asm_failure_line.rs` pins it by reading the last line), and a caveat
+    // read before the verdict is no worse than one read after it.
+    if let Some(rest) = stopped_at.stages_not_run() {
+        println!(
+            "this error list may be incomplete: sigil stopped at {}, so {rest} did not run",
+            stopped_at.name()
+        );
+    }
     let noun = if errors == 1 { "error" } else { "errors" };
     println!("assembly failed: {errors} {noun} (reported on stderr)");
     process::exit(1);
+}
+
+/// The stages [`run_asm`] runs, in order, for the sake of naming the ones a
+/// failure skipped.
+///
+/// **The list a person reads after a failed run is the diagnostics of ONE
+/// stage, and nothing in the output used to say so.** Each stage consumes the
+/// previous stage's success value, so a stage that fails takes every later
+/// stage's diagnostics with it and there is no continuing past it: the front
+/// end returns a `Failure` carrying no `Module`, and `resolve_layout` returns
+/// diagnostics carrying no sections. Measured on the reconstructed UXa F5
+/// probes under `docs/superpowers/notes/2026-09-10-ux-partial-error-list-repro`:
+/// seven errors present and five reported across the front end to link
+/// boundary, three present and one reported across layout to link. `s1disasm`
+/// is the live case and is worse, because a person outside the process cannot
+/// even count what it is holding: its front end is clean, it stops at layout on
+/// one colliding-pins error, and the only thing that could count stages 3 to 5
+/// is a run that gets past the collision.
+///
+/// This is the second half of owner ruling `d-28`'s third option, "the
+/// assembler says plainly when it is holding errors back, so silence is never
+/// mistaken for completeness". `d-28-answered` did not read that half into the
+/// yes; it left it as implementation strategy under `d-2`, conditional on
+/// measurement AFTER the first half showing errors still withheld at a stage
+/// boundary. The measurement above is that condition, met.
+///
+/// The wording promises only what is known. It does not claim a count, because
+/// the count is exactly what the skipped stages could have told us and did not.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Stage {
+    /// `assemble_root_located_warned`.
+    Frontend,
+    /// `resolve_layout`: placement, the relaxation fixpoint, the final equ fold.
+    Layout,
+    /// `link`.
+    Link,
+    /// `check_image_bounds` and everything after it. Collapsed into one variant
+    /// deliberately: `flatten` and `install_artifact` can fail, but neither
+    /// raises a diagnostic ABOUT THE PROGRAM that an earlier failure could have
+    /// hidden, so a run stopping anywhere in here is holding nothing back and
+    /// must not say that it is.
+    Image,
+}
+
+impl Stage {
+    /// What to call this stage to a person. Not the function name: `resolve_layout`
+    /// and `check_image_bounds` are ours, and the reader's question is which part
+    /// of their build stopped.
+    fn name(self) -> &'static str {
+        match self {
+            Stage::Frontend => "the front end",
+            Stage::Layout => "layout",
+            Stage::Link => "link",
+            Stage::Image => "the image checks",
+        }
+    }
+
+    /// The stages after this one that can still hold a diagnostic about the
+    /// program, or `None` when there are none and the list is therefore whole.
+    ///
+    /// `None` for [`Stage::Image`] is the control on the line: a variant that
+    /// always returned `Some` would put the caveat on every failing run, which
+    /// satisfies any gate that looks for it and destroys its meaning.
+    fn stages_not_run(self) -> Option<&'static str> {
+        match self {
+            Stage::Frontend => Some("layout, link and the image checks"),
+            Stage::Layout => Some("link and the image checks"),
+            Stage::Link => Some("the image checks"),
+            Stage::Image => None,
+        }
+    }
 }
 
 /// `sigil --version` / `sigil -V` — report the source revision this executable

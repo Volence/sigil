@@ -77,14 +77,30 @@ fn a_succeeding_run_says_nothing_about_failure() {
 
 /// A failing run with NO `message` still says so. The line is a property of
 /// failing, not of having printed something first.
+///
+/// The assertion was an exact string equality until the UXa F5 closure put an
+/// incompleteness caveat above the failure line (this probe stops at LINK, so
+/// the image checks do not run). It is stated over stdout's SHAPE instead of
+/// being deleted or loosened to a `contains`: two lines and no more, the last
+/// being the failure line, which is what stops a reassuring line from returning
+/// here. The caveat's own wording is pinned in
+/// `partial_error_list_stage_note.rs` and deliberately not duplicated.
 #[test]
 fn a_failing_run_with_no_message_still_says_it_failed() {
     let out = run("\tdc.b nothing_defines_this\n\tend\n");
     assert_eq!(out.status.code(), Some(1));
+    let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
+    let lines: Vec<&str> = stdout.lines().collect();
     assert_eq!(
-        String::from_utf8_lossy(&out.stdout),
-        "assembly failed: 1 error (reported on stderr)\n"
+        lines.len(),
+        2,
+        "stdout must hold the incompleteness caveat and the failure line, nothing else: {stdout:?}"
     );
+    assert!(
+        lines[0].starts_with("this error list may be incomplete:"),
+        "stdout: {stdout:?}"
+    );
+    assert_eq!(lines[1], "assembly failed: 1 error (reported on stderr)");
 }
 
 /// The count is the diagnostics actually rendered, and it pluralises. Two
