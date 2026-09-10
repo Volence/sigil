@@ -156,6 +156,15 @@ fn the_seven_five_two_repro_still_measures_seven_five_two() {
         "this error list may be incomplete: sigil stopped at the front end, so layout, \
          link and the image checks did not run"
     );
+
+    // `many2.asm` reaches LINK and stops there, so it pins the third stage's
+    // wording. Without this the link arm's text is the one arm no test reads,
+    // and a wrong stage list there would ship green.
+    assert_eq!(
+        caveat(&rest).expect("many2.asm stops at link, so the image checks do not run"),
+        "this error list may be incomplete: sigil stopped at link, so the image checks \
+         did not run"
+    );
 }
 
 /// The layout to link boundary, which is the shape `s1disasm` is in: a clean
@@ -278,6 +287,104 @@ fn the_failure_line_is_still_the_last_line_of_stdout() {
     assert!(note_at < fail_at, "the caveat must precede the failure line: {stdout:?}");
 }
 
+/// **`run_asm` reaches its failure exits in the order the enum declares.**
+///
+/// This is the assumption every other test in this file rests on and none of
+/// them can see. The caveat's whole content is "the stages AFTER this one did
+/// not run", which is true only if the stage a call site names is where that
+/// call site actually sits in the sequence. Nothing about a `Stage` argument is
+/// checked by the compiler: passing `Stage::Link` at the layout exit compiles,
+/// prints a confidently wrong list, and leaves the behavioural tests here green
+/// for every boundary they do not happen to probe.
+///
+/// Stated over the source because the alternative is a probe per call site, and
+/// two of the four stages cannot be reached by a probe that also reaches the
+/// others. The expectation is DERIVED: both the declaration order and the call
+/// order are read out of `main.rs`, and the test asserts the relationship
+/// between them rather than a copy of either.
+#[test]
+fn run_asm_reaches_its_stages_in_the_order_the_enum_declares_them() {
+    let variants = stage_variants();
+    let body = run_asm_body();
+    let calls: Vec<usize> = body
+        .match_indices("Stage::")
+        .map(|(i, _)| {
+            let rest = &body[i + "Stage::".len()..];
+            let name: String = rest.chars().take_while(|c| c.is_alphanumeric()).collect();
+            variants
+                .iter()
+                .position(|v| *v == name)
+                .unwrap_or_else(|| panic!("run_asm names Stage::{name}, which the enum does not declare"))
+        })
+        .collect();
+    assert!(
+        calls.len() >= 6,
+        "run_asm names {} stages, fewer than its six failure exits; the slice has \
+         stopped seeing the body",
+        calls.len()
+    );
+    assert!(
+        calls.windows(2).all(|w| w[0] <= w[1]),
+        "run_asm's failure exits name stages out of declaration order: {calls:?} against \
+         {variants:?}. A call site that names a stage other than its own position prints \
+         a confidently wrong list of what did not run."
+    );
+    assert_eq!(
+        calls.first().copied(),
+        Some(0),
+        "the first failure exit must be the first stage"
+    );
+    assert_eq!(
+        calls.last().copied(),
+        Some(variants.len() - 1),
+        "the last failure exit must be the last stage"
+    );
+}
+
+/// `Stage`'s variants, in declaration order, read out of `main.rs`.
+fn stage_variants() -> Vec<String> {
+    const SOURCE: &str = include_str!("../src/main.rs");
+    let start = SOURCE.find("enum Stage {").expect("main.rs declares enum Stage");
+    let body = &SOURCE[start..];
+    let end = body.find("\n}\n").expect("enum Stage closes at column zero");
+    let variants: Vec<String> = body[..end]
+        .lines()
+        .filter_map(|l| {
+            let t = l.trim();
+            t.strip_suffix(',')
+                .filter(|v| {
+                    v.chars().next().is_some_and(char::is_uppercase)
+                        && v.chars().all(char::is_alphanumeric)
+                })
+                .map(str::to_string)
+        })
+        .collect();
+    assert!(
+        variants.len() >= 4,
+        "parsed {} Stage variants, which is fewer than the four these gates were written \
+         over; the slice has stopped seeing the enum: {variants:?}",
+        variants.len()
+    );
+    variants
+}
+
+/// The body of `run_asm` as `main.rs` declares it, from its `fn` line to the
+/// closing brace at column zero. Same device as `asm_failure_line.rs`, and it
+/// asserts its own shape so a slice that came back empty cannot make a gate
+/// green for the wrong reason.
+fn run_asm_body() -> &'static str {
+    const SOURCE: &str = include_str!("../src/main.rs");
+    let start = SOURCE.find("\nfn run_asm(").expect("main.rs declares fn run_asm");
+    let rest = &SOURCE[start + 1..];
+    let end = rest.find("\n}\n").expect("fn run_asm closes at column zero") + 3;
+    let body = &rest[..end];
+    assert!(
+        body.contains("assemble_root_located_warned"),
+        "the slice is not run_asm's body"
+    );
+    body
+}
+
 /// Every stage that can hold a later stage's diagnostics names the stages it
 /// skipped, and the last one names none. Read off `main.rs` so a stage added
 /// later cannot be given a `stages_not_run` arm and no note by accident.
@@ -288,24 +395,7 @@ fn the_failure_line_is_still_the_last_line_of_stdout() {
 #[test]
 fn every_stage_but_the_last_names_what_it_skipped() {
     const SOURCE: &str = include_str!("../src/main.rs");
-    let start = SOURCE.find("enum Stage {").expect("main.rs declares enum Stage");
-    let body = &SOURCE[start..];
-    let end = body.find("\n}\n").expect("enum Stage closes at column zero");
-    let variants: Vec<&str> = body[..end]
-        .lines()
-        .filter_map(|l| {
-            let t = l.trim();
-            t.strip_suffix(',').filter(|v| {
-                v.chars().next().is_some_and(char::is_uppercase) && v.chars().all(char::is_alphanumeric)
-            })
-        })
-        .collect();
-    assert!(
-        variants.len() >= 4,
-        "parsed {} Stage variants, which is fewer than the four this gate was written \
-         over; the slice has stopped seeing the enum: {variants:?}",
-        variants.len()
-    );
+    let variants = stage_variants();
 
     let arms_at = SOURCE.find("fn stages_not_run(").expect("Stage has stages_not_run");
     let arms = &SOURCE[arms_at..];
