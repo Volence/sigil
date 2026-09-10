@@ -198,6 +198,25 @@ keep settling. They are recorded here as a standing divergence for the owner:
 > (`d2`). Each is a program that works here and does not assemble under asl. Closing them
 > is a second decision, not this one.
 
+### The row this section named is closed, and the finding got bigger
+
+`NOTHING-MEASURES-OVER-ACCEPTANCE` is implemented in
+`crates/sigil-frontend-as/tests/as_over_acceptance.rs`. `c4`, `c5` and `d2` are three of
+its 88 probes, under the names `firstpass_rept_forward_constant`,
+`firstpass_rept_org_separated` and `firstpass_if_settles_false`, and they are three of
+fourteen rows in `over_acceptance/ledger.txt`. They stay accepted for the reason this
+section gives; what changed is that they are now WATCHED, and a fourth shape joining them
+is a red instead of a discovery waiting for someone to write a probe by hand.
+
+The number worth carrying out of that parcel is not three. Its corpus was derived from
+asl's own error catalogue rather than from the shapes already known, and its FIRST RUN
+found **three over-acceptances nobody had noticed**: `padding maybe` silently turning
+padding ON rather than being refused (`on_off()` treats every token that is not literally
+`off` as ON, and `supmode` shares the helper), a user `function` called with more
+arguments than it declares, and a `save` with no `restore` at end of file. So section 5's
+claim that nothing measured this direction understated the cost: the direction was not
+merely unmeasured, it had accumulated defects.
+
 ## 7. The corpus gate, and the control that makes its zero mean something
 
 **The result.** Diagnostic streams, baseline `ee6d1941` against this branch, each run from
