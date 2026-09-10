@@ -206,7 +206,20 @@ compaction while its board still reads current.
 `origin/main`, `docs/OVERSEER.md`, the bullet beginning *"2026-09-02T18:20:19Z — CUT THE CEREMONY"*,
 carried by empyrean `90554f2` —
 `git -C ../empyrean fetch -q origin && git -C ../empyrean show origin/main:docs/OVERSEER.md | grep -n "18:20:19Z"`.
-It is in force while EFFECTS-W1 is open. It is what suspends the two `blocked` queue rows below, it
+**⚠ ITS CONDITION IS SPENT, 2026-09-10, AND THE CLAUSES DO NOT ALL FALL WITH IT. TEST IT, DO NOT
+TRUST THIS LINE:** `EFFECTS-W1` reads `done` in the hub's committed `contract/projects.json` at
+empyrean `origin/main` (since 2026-09-06), so **the OUTRANKING has lapsed** and clause 2's
+moratorium, which carried the same condition inside its own sentence, is spent with it.
+**Clauses 1, 3, 4 and 5 carry no end condition and STAND; they merely stopped outranking.**
+So the paired aeon+sigil freeze stays ENDED (clause 1) and nothing here re-imposes it.
+**And his own words under the clauses are undated and were never scoped to a project**, *"cut
+anything that's arbitrarily slowing us down without an actual good reason"*, **so the
+PREFERENCE OUTLIVES THE APPLICATION** and "the moratorium lapsed" invites exactly the wrong
+inference. Read at empyrean `origin/main`, `docs/OVERSEER.md`, the 2026-09-02T18:20:19Z bullet,
+which carries the clause-by-clause split; the hub found the same spent condition in its own copy
+the same day, and this lane's copy had it too. **What governs what this lane WORKS ON tonight is
+his later 2026-09-10 05:45Z instruction, not clause 3**, which is 8 days older and narrower.
+It is what suspends the two `blocked` queue rows below, it
 ended the paired aeon+sigil freeze (so this lane's nightly drift observer is the net, after the fact,
 never a gate on an aeon landing), and **it is the ruling that forbids hand-trimming this document** for
 its own size gate — over the bound, history moves out in one cut, nobody shaves a ruling to hit a number.
@@ -435,9 +448,16 @@ trade, an option deliberately refused. Routine implementation strategy stays unw
 logging everything would restore exactly the volume the lane log exists to replace.
 **Write it at the time, not at the landing** — a call reconstructed afterwards is the
 confident-guess-wearing-a-record's-clothes defect that ruling forbids for the log generally.
-The scope line itself (`d-3`) is still open and is the one that gates work.
-
-**Do not fund work off the broad reading of the scope line while `d-3` is open.**
+**⚠ `d-3` IS NOT OPEN AND HAS NOT BEEN SINCE 2026-08-24, and this paragraph said it was for
+seventeen days while the paragraph ABOVE it recorded the answer.** `docs/decisions.jsonl` carries
+`d-3` at 01:38:39Z and `d-6` at 02:00:22Z the same night: *"Settled, and you answered in your own
+words rather than picking one of the three I offered."* **So the broad reading IS the ruling**,
+propose, discuss, land, and the clause that used to sit here told every cold session not to fund
+work off it. Found 2026-09-10 by grepping this file for the SHAPE of a conditional rule rather
+than for a clause already known wrong (the hub's sweep; four lanes, four hits).
+**The general form is this document's own defect aimed at itself: a rule whose CONDITION names
+something outside the rule is never re-tested, because the condition is read to decide not to act
+and therefore never read again.** Grep the shape, not the clause.
 
 **PUSHING IS STANDING-APPROVED — owner ruling, 2026-08-24, direct in this lane's session.**
 Put to him as decision `d-1` in `docs/decisions.jsonl`; he chose **send finished work up
@@ -637,7 +657,8 @@ consequential half of it had no diagnostics at all.
 
 ### PER-PARCEL-TERM-FEED-CUT — SUSPENDED by the cut ruling; three rules survive it
 
-*(Row suspended while EFFECTS-W1 is open. Full measurement:
+*(**The suspension's condition is SPENT: `EFFECTS-W1` is `done` since 2026-09-06.** The row is no
+longer suspended by it; whether it is worth doing is now an ordinary queue question. Full measurement:
 `docs/superpowers/notes/2026-09-03-per-parcel-term-feed-cut.md`. Narrative and the closed red:
 `docs/OVERSEER-LOG.md`, 2026-09-03 cut, original lines 1205-1256.)*
 
