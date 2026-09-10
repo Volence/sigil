@@ -252,3 +252,62 @@ removed: a `rept` count, a `ds` count, and an `if` condition. Two of them are an
 the circularity proof and the third by the oscillation proof, and both answers are the
 ruling's. No part of the ruling turned out to be unimplementable as stated; the only
 correction is to its scope, which was narrower than the defect.
+
+## 9. A 20% regression this parcel shipped, and how it was found
+
+Not by anything going red. The suite was GREEN at 5,055/0, both corpora were
+byte-identical, and the AS front end had gone from **2.28s to 2.73s** on s2disasm. No gate
+in this repo measures that.
+
+Isolated rather than guessed: stubbing `expr_is_pc_derived` to return `false` gave 2.38s,
+so 0.35s of the 0.45s was in that one function and the rest was an extra `SymbolTable`
+clone per pass. The cause was `sym_key`, which allocates a `String` for every name handed
+to it. `expr_is_pc_derived` ran it on every identifier of every `equ`/`set` right-hand side
+in the unit, and for a plain name outside a macro expansion the key IS the bare spelling,
+so the allocation bought nothing. The bare-name lookup now runs first, and the key is built
+only for a `.`-local or a name a live expansion owns. The oscillation history now takes
+`prev` by move rather than cloning the same table twice.
+
+**2.22s / 2.29s against a baseline 2.21s / 2.29s**, two runs each. Within noise.
+
+Re-verified afterwards, because a performance edit to the exact function conjunct (d) rests
+on could have changed what it decides: 11/11 and 2/2 green, all six accepting probes
+byte-identical to their pre-optimization output, all three corpus diagnostic streams still
+0 lines from baseline with the same census, and both injected-circular controls still
+firing.
+
+## 10. The half-fix question, answered
+
+**What a half-fix looks like here:** a detector that never fires. It would remove the pass
+cap, keep 5,055 tests green, keep all three corpora byte-identical, and turn the diverging
+`rept` into a moving-symbol report, which is a real improvement on its own. Nothing in the
+suite would say a word.
+
+**What proves this one fires when it should.** Four `refuses_*` tests, red-first against a
+committed baseline with the mutation shown on disk, red for three different reasons (two
+silent wrong images, two 16-pass messages), plus a corpus-scale control on copies of
+s1disasm and s2disasm where the injected repeat is refused by name at the right line and
+the census fold count goes 483 to 484 and 667 to 668. That `+1` is the number that
+distinguishes a control that ran from one that did not, and the FIRST version of that
+control did not produce it: appended after the roots' `END`, it changed nothing and would
+have "confirmed" a mechanism it never reached.
+
+**What proves it does NOT fire when it should not.** The six `accepts_*` tests pass on the
+baseline too, so on their own they prove nothing. They were therefore given their own
+positive control: conjunct (d) was deleted on disk (a cycle detector built from the
+dependency graph alone, which is what a reasonable person would write) and exactly two
+tests went red, `accepts_forward_constant_count` and `accepts_count_separated_by_an_org`,
+which are exactly the two written for it. Every `refuses_*` stayed green under that
+mutation, so the two halves are independent. On top of that, the containment argument in
+section 2: the refused set is a subset of asl's, measured probe by probe.
+
+## 11. Follow-ups this parcel did NOT take
+
+1. **The over-acceptance divergence**, section 6: three shapes sigil assembles that asl
+   refuses. The ruling puts them in "everything else settles", so closing them is a second
+   decision.
+2. **`sigil-link/src/relax.rs:1116` still prints a pass count**: *"relaxation width
+   selection did not converge within {cap} passes"*. It is the same class of message the
+   ruling removed from the front end, in a different subsystem with its own convergence
+   argument. Named here rather than changed, because changing it needs its own proof and
+   its own boundary tests; a front-end ruling is not authority over the linker's.
