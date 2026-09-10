@@ -370,7 +370,38 @@ the impression of completeness, so **the more carefully the first surface is don
 anyone asks about the second.**
 
 **The practice, and it is cheap: when you bank a ruling, write down the surfaces it must reach, by
-name, in the ruling itself.** Not the sites you changed, the sites it GOVERNS. That converts an
+name, in the ruling itself.**
+
+**⚠ AMENDED 2026-09-10, AND THE AMENDMENT IS TO THE REMEDY RATHER THAN THE RULE: WRITING THE
+SURFACES DOWN IS NOT ENOUGH, BECAUSE A SITE CAN PARAPHRASE THE THING IT CONSUMES.** Corroborated
+independently by the oracle lane, in their repo, with no contact between the seats: their H26 pass
+hardened a claim and fixed ELEVEN sites of one spelling, and a later parcel found SEVEN more that
+PARAPHRASED it, which H26's own greps had no reason to match. **So the enumeration a ruling's author
+writes down is an enumeration of the spellings they thought of**, and a sweep keyed to it inherits
+that limit while looking exhaustive. Two seats, two repos, one class, arriving as a doc defect on
+their side and a code defect on ours (`LINKER-STILL-PRINTS-A-PASS-COUNT`: the owner's decision took
+an attempt count out of the assembler's message and the linker's copy of the same wording, at
+`crates/sigil-link/src/relax.rs:1116`, was never touched). By bar 19 that is corroboration and not
+echo. **Enumerate by what a site DOES, never by what it says**, and treat a grep over the ruling's
+own words as a floor.
+
+**And a floor is a PRIOR, not a law** *(oracle, booked against themselves the same hour)*. They
+pushed an agent past a stated single consumer, it looked, found nothing, and the count was exact.
+**Keep sending agents past the number; stop reading a count that holds as a failure to look.** The
+two halves compose: a count is a floor because spellings are missed, and a floor that turns out to
+be the ceiling is a result rather than a shortfall.
+
+**A BASELINE COUNT HANDED TO AN AGENT CARRIES ITS PROFILE AND ITS COMMAND** *(oracle's, same
+exchange, and checked here rather than adopted)*. They handed an agent a count taken under one
+profile beside a command from the other, with three tests `cfg_attr(debug_assertions, ignore)`, so
+the agent had to reconcile the two before it could report anything. **Checked on this tree: sigil is
+not exposed, and the reason is worth writing down rather than the verdict.** Its only two
+profile-sensitive tests (`crates/sigil-link/src/relax.rs`, the empty-ladder and mis-ordered-ladder
+guards) BRANCH on `cfg!(debug_assertions)` inside the body and run in both profiles, so they count
+either way; nothing here is conditionally ignored. **That is a property of today's tree, not of the
+lane**: the first `cfg_attr(…, ignore)` anyone adds makes every baseline in this document
+profile-dependent with nothing announcing it. State the profile and the command beside the number
+regardless, since it costs one clause. Not the sites you changed, the sites it GOVERNS. That converts an
 unenumerable class into a list a later session can check, which is the only thing that makes the
 ruling auditable at all. When you cite a ruling as already-applied, name the surface you verified
 it on, never the ruling alone.
