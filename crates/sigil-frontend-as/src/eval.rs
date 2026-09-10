@@ -938,6 +938,15 @@ fn one_pass_with_defer(
     // The census behind `GLOBAL_MACRO_CAP` and `GLOBAL_REPT_CAP`: what one
     // pass over a real program actually drew on each budget, so the figures in
     // those constants' docs can be re-measured rather than believed.
+    if std::env::var_os("SIGIL_CENSUS_LAYOUT").is_some() {
+        eprintln!(
+            "CENSUS-LAYOUT\tpass={mompass}\tcount-exprs-folded={}\twatched={}\tbound-later={}\trefused={}",
+            asm.layout_census[0],
+            asm.layout_census[1],
+            asm.layout_census[2],
+            asm.layout_census[3],
+        );
+    }
     if std::env::var_os("SIGIL_CENSUS_BUDGET").is_some() {
         eprintln!(
             "budget-census\tpass={mompass}\tmacro-expansions={}\trept-bodies={}\twhile-bodies={}",
@@ -1560,6 +1569,22 @@ struct Asm {
     /// [`Asm::note_layout_binding`] for the proof and `run_impl` for why it is
     /// terminal rather than carried.
     circular_layout: Option<(Span, String)>,
+    /// ENGAGEMENT WITNESS for the circularity rule, four counts, env-gated and
+    /// printed by `one_pass` under `SIGIL_CENSUS_LAYOUT`.
+    ///
+    /// A rule that never runs refuses nothing, and a corpus that reports zero
+    /// refusals reads identically whether the rule swept every site and cleared
+    /// them or was never reached at all. These separate the two. In order: how
+    /// many `rept`/`ds` count expressions were folded; how many of those named a
+    /// symbol undefined at that point (conjuncts (a)+(b)); how many of THOSE
+    /// names were later bound in the same pass (conjunct (c), the near misses);
+    /// and how many survived the location-derivation and address-flow test
+    /// (conjunct (d)) to become a refusal.
+    ///
+    /// The third against the fourth is the number worth reading: it is how much
+    /// work conjunct (d) is doing, which is to say how close the corpus comes to
+    /// the false-positive surface.
+    layout_census: [usize; 4],
     /// Names seeded from [`Options::guarded_defines`] — the `.emp`-owned
     /// constants the residual AS may consume but not re-author. An in-file
     /// `=`/`equ` of any of these is a `[defines.collision]` error (the P5
@@ -1820,6 +1845,7 @@ impl Asm {
             pc_derived: std::collections::HashSet::new(),
             flow_epoch: 0,
             circular_layout: None,
+            layout_census: [0; 4],
             guarded_defines: opts.guarded_defines.iter().map(|(k, _)| k.clone()).collect(),
             structs: std::collections::HashMap::new(),
             pending_struct_label: None,
@@ -2024,6 +2050,7 @@ impl Asm {
         toks: &[Token],
         span: Span,
     ) {
+        self.layout_census[0] += 1;
         for (i, t) in toks.iter().enumerate() {
             let Tok::Ident(name) = &t.tok else { continue };
             if matches!(
@@ -2043,6 +2070,7 @@ impl Asm {
                 named: name.clone(),
                 epoch: self.flow_epoch,
             };
+            self.layout_census[1] += 1;
             self.layout_watch.entry(key).or_default().push(watch);
         }
     }
@@ -2106,9 +2134,13 @@ impl Asm {
         let Some(sites) = self.layout_watch.remove(q) else {
             return;
         };
+        // Conjunct (c) met. Counted BEFORE the address-flow test, so the census
+        // can say how many near misses conjunct (d) turned away.
+        self.layout_census[2] += 1;
         let Some(site) = sites.into_iter().find(|s| s.epoch == self.flow_epoch) else {
             return;
         };
+        self.layout_census[3] += 1;
         let at = match self.sources.label(span) {
             Some(l) => format!(" at {l}"),
             None => String::new(),
