@@ -2465,10 +2465,25 @@ the lane checked, reported the path does not exist here, and withheld the claim.
 and is tracked** (seven files under that directory; `git ls-files` returns them). The verdict
 "treat the golden half as unverified" was still right, because the golden actually reads
 `InitObjectRAM 0x2ccc`, agreeing with `pins.rs` to the digit and containing no `0x4E` at all. **So a
-true conclusion arrived on a false mechanism, and the mechanism is the half that travels.** Two
-instruments on this machine manufacture exactly that empty: `ls` is aliased to `eza` and errors on
-ordinary flags, and the harness `grep` function routes through `ugrep --ignore-files`. When a peer
-reports a path absent from THIS tree, re-run it here with `git ls-files` before accepting it.
+true conclusion arrived on a false mechanism, and the mechanism is the half that travels.**
+
+**⚠ AND THIS PARAGRAPH FIRST NAMED THE WRONG CAUSE, WHICH IS THE SAME DEFECT ONE LAYER OUT.** It
+attributed their empty result to two known local hazards, the `eza` alias and the `ugrep` wrapper,
+because those are this lane's banked producers of a false zero. **Neither was involved.** Aeon
+re-derived it and supplied the real mechanism: their agent wrote the path as
+`golden/offcanonical_sizes/s4.txt` and they resolved it against the repo root as `sigil/golden/...`,
+which does not exist. Their `[ -f ]` test and their `find` fallback were **both rooted at a
+directory that is not there**, so neither instrument could return anything but empty. **This lane
+supplied a plausible cause from its own hazard list rather than asking, inside the very block
+teaching that a false mechanism is the half that travels.** Kept rather than quietly rewritten,
+because the substitution is the lesson: a banked hazard list makes a wrong cause CHEAP to reach and
+fluent to state.
+
+**So the class is a FEED failure, not a rule failure**, which this lane's own canary bar already
+separates: their pattern was fine and their data never arrived. The check that fires is asserting
+the input exists before believing an emptiness about it. When a peer reports a path absent from THIS
+tree, re-run it here with `git ls-files` before accepting it, and when YOU report a path absent from
+a peer's tree, print the directory you actually looked in.
 
 **COMMITMENT MADE TO AEON THE SAME DAY, banked because it binds a later session of this lane.**
 They flagged that `crates/sigil-cli/tests/core_port.rs` (header and the block above
