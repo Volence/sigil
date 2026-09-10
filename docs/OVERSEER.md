@@ -840,6 +840,18 @@ the whole reason they are here rather than in a thread.
   read, because nothing executes a document. **So the deletion is NOTIFIED, not self-executed: when
   both halves are true, send them one message saying so.** Written here rather than left as a good
   intention because it binds a later session of this lane and nothing else will surface it.
+  **⚠ THE BLOCK HAS MOVED AND THIS ROW POINTED AT ITS OLD HOME (corrected 2026-09-10).** It is no
+  longer in aeon's boot read: `66978385` moved it to `docs/DEFERRED_WORK.md`, at their
+  `origin/master`, condition intact and verbatim. Re-derive its location when you act on this rather
+  than trusting either coordinate, since it has now moved once.
+  **The near-miss is worth more than the correction, and it is the absence class aimed at an
+  obligation.** Grepping the file this row named returned GONE, which reads as *the block is deleted,
+  the obligation is discharged, nothing to do*. **That emptiness is TWO-VALUED: deleted and moved
+  produce the identical result**, and the second is the reading under which the obligation still
+  stands. What separated them was one further command, a grep of their whole tree at
+  `origin/master`, and nothing prompts that command once the first one has answered. A row that says
+  *"they will delete it themselves"* would have closed here silently and wrongly, with a correctly
+  run check as its evidence.
 - **A peer's occupancy figure for `dac_shared_bank` is a BUILD PRODUCT.** Their 25,754 B occupied
   / 7,014 B free came from `engine/sound/generated/dac_shared_bank.bin` in their working tree —
   the right file, and an artifact of their last build rather than a committed value. So a
