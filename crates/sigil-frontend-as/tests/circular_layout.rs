@@ -175,11 +175,11 @@ fn refuses_a_count_naming_a_forward_label_directly() {
 /// asl, exit 0, listing:
 ///
 /// ```text
-///        4/       0 : 0102 03             	dc.b 1,2,3
-///        7/       3 : 00                  	dc.b 0
-///        7/       4 : 00                  	dc.b 0
-///        7/       5 : 00                  	dc.b 0
-///        9/       6 : FF                  	dc.b $FF
+///        4/       0 : 0102 03                     dc.b 1,2,3
+///        7/       3 : 00                          dc.b 0
+///        7/       4 : 00                          dc.b 0
+///        7/       5 : 00                          dc.b 0
+///        9/       6 : FF                          dc.b $FF
 /// ```
 #[test]
 fn accepts_backward_count() {
@@ -248,11 +248,11 @@ fn accepts_forward_constant_data() {
 /// asl, exit 0, listing:
 ///
 /// ```text
-///        5/       0 : 00                  	dc.b 0
-///        5/       1 : 00                  	dc.b 0
-///        5/       2 : 00                  	dc.b 0
-///        8/       3 : =$3                  N	equ End-Start
-///        9/       3 : 03                  	dc.b N
+///        5/       0 : 00                          dc.b 0
+///        5/       1 : 00                          dc.b 0
+///        5/       2 : 00                          dc.b 0
+///        8/       3 : =$3                  N        equ End-Start
+///        9/       3 : 03                          dc.b N
 /// ```
 #[test]
 fn accepts_literal_count_with_a_derived_equ_below() {
