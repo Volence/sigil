@@ -54,7 +54,9 @@ import sys
 
 RUNNABLE_KINDS = {"test", "lib", "rlib", "dylib", "cdylib", "staticlib", "proc-macro", "bin"}
 DOCTEST_KINDS = {"lib", "rlib", "dylib", "cdylib", "staticlib", "proc-macro"}
-OFF_BY_DEFAULT_KINDS = {"example", "bench"}
+# Whether `cargo test` launches one of these is decided by the target's own resolved
+# `test` flag, not by its kind: false for an example by default, true for a bench.
+FLAG_DECIDED_KINDS = {"example", "bench"}
 
 
 def main(argv: list[str]) -> int:
@@ -83,13 +85,13 @@ def main(argv: list[str]) -> int:
             kinds = set(target.get("kind", []))
             if target.get("required-features"):
                 # Only counted as excluded if it would otherwise have been counted.
-                if kinds & RUNNABLE_KINDS or (kinds & OFF_BY_DEFAULT_KINDS and target.get("test")):
+                if kinds & RUNNABLE_KINDS or (kinds & FLAG_DECIDED_KINDS and target.get("test")):
                     excluded += 1
                 continue
             if kinds & RUNNABLE_KINDS:
                 if target.get("test", True):
                     runnable += 1
-            elif kinds & OFF_BY_DEFAULT_KINDS and target.get("test"):
+            elif kinds & FLAG_DECIDED_KINDS and target.get("test"):
                 runnable += 1
             if kinds & DOCTEST_KINDS and target.get("doctest", True):
                 doctest += 1
