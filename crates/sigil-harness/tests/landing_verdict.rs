@@ -614,3 +614,243 @@ CARGO_EXIT=0
     );
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+// ----------------------------------------------------------------------------------------
+// THE TEST-TARGET CENSUS, the one population in the verdict that does not come out of the
+// log.
+//
+// The launch/report pairing above catches a binary that STARTED and went quiet. It is
+// structurally blind to a target that STOPPED BEING BUILT: such a target neither launches
+// nor reports, so it is absent from both of the log's own populations, and a check that
+// compared them would be asserting a set against itself. `scripts/test_target_census.py`
+// reads the workspace manifests through `cargo metadata --no-deps`, which builds nothing
+// and cannot be affected by what the run did, and the wrapper stamps the figure into the
+// log so `--verdict-only` judges the tree the run was made from.
+// ----------------------------------------------------------------------------------------
+
+/// A census stamp, in the shape `run_landing` writes it.
+fn with_census(census: &str) -> String {
+    format!("{STAMP}{TAIL}").replace(
+        "# baseline       3\n",
+        &format!("# baseline       3\n# test targets   {census}\n"),
+    )
+}
+
+/// A CENSUS SHORTFALL FAILS THE RUN, with the log internally consistent. Every binary that
+/// launched also reported, every test passed, cargo exited 0: nothing inside the log is
+/// wrong. It describes fewer targets than the manifests do, and only a figure from outside
+/// the log can say so.
+#[test]
+fn a_census_shortfall_fails_a_run_whose_log_agrees_with_itself() {
+    let dir = scratch("census-short");
+
+    // The control: the same log with a census that matches its single launch.
+    let ok = dir.join("census-ok.log");
+    std::fs::write(&ok, with_census("1 expected launches (1 runnable + 0 doctest, 0 excluded for required-features; cargo metadata --no-deps)")).unwrap();
+    let (code, text) = judge(&ok, &[]);
+    assert_eq!(code, 0, "a matching census must be GREEN, got {code}:\n{text}");
+    assert!(text.contains("all launched"), "a matching census must say so:\n{text}");
+
+    // The same log, one target the manifests describe that never launched.
+    let short = dir.join("census-short.log");
+    std::fs::write(&short, with_census("2 expected launches (2 runnable + 0 doctest, 0 excluded for required-features; cargo metadata --no-deps)")).unwrap();
+    let (code, text) = judge(&short, &[]);
+    assert_eq!(
+        code, 1,
+        "a target that stopped being built must fail the run. The pairing cannot see it, \
+         so if this is 0 nothing can. Got {code}:\n{text}"
+    );
+    assert!(
+        text.contains("1 target(s) the manifests"),
+        "the verdict must say how many targets are missing:\n{text}"
+    );
+    assert!(
+        text.contains("TEST-TARGET CENSUS does not match"),
+        "the RESULT line must name the census as the reason, with every other bar clean:\n{text}"
+    );
+    assert!(!text.contains("RESULT          GREEN"), "{text}");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// MORE LAUNCHES THAN THE MANIFESTS DESCRIBE also fails, and is named as its own thing. It
+/// is not a run that lost a target, it is a derivation that disagrees with cargo, and
+/// until that is settled neither number is a population.
+#[test]
+fn a_census_that_undercounts_cargo_is_a_finding_of_its_own() {
+    let dir = scratch("census-over");
+    let p = dir.join("census-over.log");
+    std::fs::write(&p, with_census("0 expected launches (0 runnable + 0 doctest, 0 excluded for required-features; cargo metadata --no-deps)")).unwrap();
+    let (code, text) = judge(&p, &[]);
+    assert_eq!(code, 1, "a census below the launch count must fail, got {code}:\n{text}");
+    assert!(
+        text.contains("MORE launch(es) than the"),
+        "the two directions must be told apart; they have different causes:\n{text}"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A CENSUS THAT COULD NOT BE TAKEN IS NOT A SATISFIED CROSS-CHECK. The stamp records the
+/// failure by name rather than a number, and the verdict refuses rather than reading the
+/// absence of a figure as agreement.
+#[test]
+fn a_census_that_could_not_be_taken_fails_rather_than_passing_quietly() {
+    let dir = scratch("census-unmeasured");
+    let p = dir.join("census-unmeasured.log");
+    std::fs::write(
+        &p,
+        with_census("COULD NOT MEASURE (scripts/test_target_census.py exited 2: cargo metadata did not return JSON)"),
+    )
+    .unwrap();
+    let (code, text) = judge(&p, &[]);
+    assert_eq!(code, 1, "an untaken census must fail the run, got {code}:\n{text}");
+    assert!(text.contains("COULD NOT MEASURE"), "{text}");
+    assert!(
+        text.contains("absent cross-check, not a satisfied one"),
+        "the verdict must say which of the two it is:\n{text}"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A LOG PREDATING THE STAMP IS NOT FAILED FOR IT. Every landing log written before this
+/// parcel carries no census line, and a rule that reddened all of them would be one people
+/// learn to route around. The verdict says NOT STATED in words instead, so a reader can
+/// tell a log that was checked from one that could not be.
+#[test]
+fn a_log_predating_the_census_stamp_says_so_rather_than_failing() {
+    let dir = scratch("census-absent");
+    let clean = fixture(&dir, "clean.log", "");
+    let (code, text) = judge(&clean, &[]);
+    assert_eq!(code, 0, "an old log must not be failed for a stamp it could not carry, got {code}:\n{text}");
+    assert!(
+        text.contains("NOT STATED, this log predates the census stamp"),
+        "the verdict must distinguish a missing stamp from a satisfied one:\n{text}"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A --scoped RUN REPORTS THE CENSUS WITHOUT CHECKING IT. A scoped run launches a subset
+/// on purpose, so a shortfall is the flag working rather than a finding, and failing on it
+/// would make the census a reason to stop using `--scoped`.
+#[test]
+fn a_scoped_run_reports_the_census_rather_than_gating_on_it() {
+    let dir = scratch("census-scoped");
+    let p = dir.join("census-scoped.log");
+    let body = with_census("99 expected launches (99 runnable + 0 doctest, 0 excluded for required-features; cargo metadata --no-deps)")
+        .replace(
+            "# scoped         no (full workspace)",
+            "# scoped         YES, this is a PARTIAL run, not a landing",
+        );
+    std::fs::write(&p, body).unwrap();
+    let (code, text) = judge(&p, &[]);
+    assert_eq!(code, 0, "a scoped run must not fail on a census shortfall, got {code}:\n{text}");
+    assert!(
+        text.contains("REPORTED, NOT CHECKED"),
+        "a scoped run must still SHOW the census, or the reader cannot tell it was skipped \
+         from it being satisfied:\n{text}"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// THE DERIVATION ITSELF, against a workspace whose answer is known by construction rather
+/// than copied from a nearby pin. One lib, two integration tests, one bin, one example and
+/// one bench: cargo launches a binary for the lib's unit tests, one per integration test,
+/// one for the bin's unit tests, one for the bench, and a doctest binary for the lib. The
+/// example is NOT launched, because `cargo test` runs an example only when its `test` flag
+/// is true and it is false by default.
+///
+/// THE ANSWER IS NOT ASSERTED FROM THE CARGO BOOK. Run against real cargo on this exact
+/// fixture, `cargo test` prints five `Running` lines (lib, bin, tests/one, tests/two,
+/// benches/cf-bench) and one `Doc-tests`, which is what the numbers below are.
+#[test]
+fn the_census_counts_what_cargo_would_launch() {
+    let dir = scratch("census-derivation");
+    std::fs::create_dir_all(dir.join("src")).unwrap();
+    std::fs::create_dir_all(dir.join("tests")).unwrap();
+    std::fs::create_dir_all(dir.join("examples")).unwrap();
+    std::fs::create_dir_all(dir.join("benches")).unwrap();
+    std::fs::write(
+        dir.join("Cargo.toml"),
+        "[package]\nname = \"census-fixture\"\nversion = \"0.0.0\"\nedition = \"2021\"\n\
+         [workspace]\n\
+         [lib]\npath = \"src/lib.rs\"\n\
+         [[bin]]\nname = \"cf-bin\"\npath = \"src/main.rs\"\n\
+         [[example]]\nname = \"cf-example\"\npath = \"examples/cf-example.rs\"\n\
+         [[bench]]\nname = \"cf-bench\"\npath = \"benches/cf-bench.rs\"\ntest = true\nharness = true\n",
+    )
+    .unwrap();
+    std::fs::write(dir.join("src/lib.rs"), "").unwrap();
+    std::fs::write(dir.join("src/main.rs"), "fn main() {}\n").unwrap();
+    std::fs::write(dir.join("tests/one.rs"), "").unwrap();
+    std::fs::write(dir.join("tests/two.rs"), "").unwrap();
+    std::fs::write(dir.join("examples/cf-example.rs"), "fn main() {}\n").unwrap();
+    std::fs::write(dir.join("benches/cf-bench.rs"), "fn main() {}\n").unwrap();
+
+    let out = Command::new("python3")
+        .arg(repo_root().join("scripts/test_target_census.py"))
+        .arg(dir.join("Cargo.toml"))
+        .output()
+        .expect("COULD NOT MEASURE: python3 could not run the census");
+    let text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(out.status.success(), "the census must succeed on a valid workspace:\n{text}");
+    // lib + bin + tests/one + tests/two + the bench that opted in = 5.
+    assert!(
+        text.contains("runnable 5"),
+        "expected 5 runnable targets (lib, bin, two integration tests, one opted-in bench) \
+         and the example NOT counted, because `cargo test` does not run examples unless \
+         they set `test = true`:\n{text}"
+    );
+    assert!(text.contains("doctest 1"), "one lib target, one doctest binary:\n{text}");
+    assert!(text.contains("excluded-required-features 0"), "{text}");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A TARGET WITH `required-features` IS EXCLUDED AND SAID SO, never silently counted.
+/// Whether cargo builds one depends on the feature set the run selected, which the
+/// manifests alone do not settle; counting it would make the census red on correct work
+/// the first time somebody adds one, and dropping it silently would make the figure a
+/// quiet undercount. It is reported as its own number so a reader knows the census is a
+/// lower bound by that much.
+#[test]
+fn a_required_features_target_is_excluded_by_name_not_silently() {
+    let dir = scratch("census-required-features");
+    std::fs::create_dir_all(dir.join("src")).unwrap();
+    std::fs::create_dir_all(dir.join("tests")).unwrap();
+    std::fs::write(
+        dir.join("Cargo.toml"),
+        "[package]\nname = \"rf-fixture\"\nversion = \"0.0.0\"\nedition = \"2021\"\n\
+         [workspace]\n\
+         [features]\nextra = []\n\
+         [lib]\npath = \"src/lib.rs\"\ndoctest = false\n\
+         [[test]]\nname = \"plain\"\npath = \"tests/plain.rs\"\n\
+         [[test]]\nname = \"gated\"\npath = \"tests/gated.rs\"\nrequired-features = [\"extra\"]\n",
+    )
+    .unwrap();
+    std::fs::write(dir.join("src/lib.rs"), "").unwrap();
+    std::fs::write(dir.join("tests/plain.rs"), "").unwrap();
+    std::fs::write(dir.join("tests/gated.rs"), "").unwrap();
+
+    let out = Command::new("python3")
+        .arg(repo_root().join("scripts/test_target_census.py"))
+        .arg(dir.join("Cargo.toml"))
+        .output()
+        .expect("COULD NOT MEASURE: python3 could not run the census");
+    let text = String::from_utf8_lossy(&out.stdout).into_owned();
+    assert!(
+        text.contains("runnable 2"),
+        "the lib and the plain test are counted, the gated one is not:\n{text}"
+    );
+    assert!(
+        text.contains("doctest 0"),
+        "`doctest = false` must be honoured, or every such crate reads as a lost launch:\n{text}"
+    );
+    assert!(
+        text.contains("excluded-required-features 1"),
+        "the excluded target must be REPORTED, so the census is known to be a lower bound \
+         rather than looking exact:\n{text}"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
