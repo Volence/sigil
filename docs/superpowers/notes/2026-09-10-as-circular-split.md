@@ -330,3 +330,14 @@ section 2: the refused set is a subset of asl's, measured probe by probe.
    ruling removed from the front end, in a different subsystem with its own convergence
    argument. Named here rather than changed, because changing it needs its own proof and
    its own boundary tests; a front-end ruling is not authority over the linker's.
+
+   **Closed**, with the proof and the boundary tests this item asked for:
+   `docs/superpowers/notes/2026-09-10-linker-unsettled-report.md`. The property that
+   improved is that the message now names the fragments and sections still moving and the
+   values each moved between, and names no count. Worth carrying back here: the linker's
+   convergence argument turned out to be strong enough that the ruling's **refuse-half has
+   no members there at all**. Width selection is monotone (grow-only), so a growth can
+   never undo itself and no state can be revisited without having already converged, which
+   makes circularity and oscillation both inexpressible. The honest-report half was the
+   whole of what was available, and the diagnostic itself is unreachable while grow-only
+   holds.
