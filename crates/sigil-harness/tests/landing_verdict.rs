@@ -552,3 +552,65 @@ fn a_log_with_no_launch_lines_is_not_read_as_complete() {
     assert!(!out.contains("RESULT          GREEN"), "{out}");
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// A BINARY THAT DIES WITH OTHERS STILL TO RUN, which is the shape the OOM killer actually
+/// produces: under `--no-fail-fast` cargo carries on to the next target, so the victim is
+/// followed by more launches rather than by the end of the log. That is a DIFFERENT branch
+/// of the pairing from the one above, and it had no test: a mutation blanking the
+/// mid-span emit left the suite green, because both earlier fixtures put the victim last
+/// and the end-of-span emit caught them. This test is what makes the mid-span branch
+/// load bearing.
+#[test]
+fn a_binary_that_dies_with_others_still_to_run_is_still_named() {
+    let dir = scratch("mid-span-victim");
+    let p = dir.join("mid-span.log");
+    std::fs::write(
+        &p,
+        format!(
+            "{STAMP}\
+test b_gate ... ok
+test c_gate ... ok
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/oom_victim.rs (/fixture/.target-land/release/deps/oom_victim-fedcba9876543210)
+
+running 40 tests
+test victim_one ... ok
+
+     Running tests/after_victim.rs (/fixture/.target-land/release/deps/after_victim-00112233445566)
+
+running 1 test
+test after_one ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+CARGO_EXIT=0
+# finished (UTC) 2026-09-07T00:01:00Z
+"
+        ),
+    )
+    .unwrap();
+
+    let (code, text) = judge(&p, &[]);
+    assert_eq!(
+        code, 1,
+        "a binary that died with another still to run must fail the run, got {code}:\n{text}"
+    );
+    assert!(
+        text.contains("binaries        3 launched, 2 reported"),
+        "three launches and two reports must both be shown:\n{text}"
+    );
+    assert!(
+        text.contains("oom_victim"),
+        "the MID-SPAN victim must be named. If this is silent the pairing only reports a \
+         victim that happens to be the last target in the log:\n{text}"
+    );
+    assert!(
+        !text.contains("after_victim"),
+        "the target that ran AFTER the victim reported and must not be named:\n{text}"
+    );
+    assert!(
+        !text.contains("gates.rs"),
+        "the target that ran BEFORE the victim reported and must not be named:\n{text}"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
