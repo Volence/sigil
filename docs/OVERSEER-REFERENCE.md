@@ -427,8 +427,9 @@ agent that guards against one walks into the others.
    measures nothing, while presenting as the exact instrument that would have caught the thing it
    was built after.
    **It is the motivating-case rule arriving on a GATE instead of on a parcel**, and the parcel
-   form is already banked in `docs/OVERSEER.md` (*the motivating case is selected for being broken,
-   never for being representative*). The difference is who is fooled and for how long: a parcel
+   form is already banked in `docs/OVERSEER-REFERENCE.md` (*THE MOTIVATING CASE IS SELECTED FOR
+   BEING BROKEN, NEVER FOR BEING REPRESENTATIVE*, moved out of the boot read on 2026-09-10). The
+   difference is who is fooled and for how long: a parcel
    verified against its own motivating corpus is wrong once, at review. **A gate whose population
    is its own motivating set is wrong every day it runs, and each green makes it more trusted.**
    **The question that finds it, asked while the brief is being written and not at review:** what

@@ -489,9 +489,10 @@ the point it used to sit.
 **Ten more blocks joined them at the 2026-09-05 cut**, and they are indexed separately, under
 *Read at the moment - the 2026-09-05 blocks, and the moment that triggers each*, in the
 2026-09-05 section near the end of this file. The list above is the 2026-09-04 cut's and is not
-the whole of `docs/OVERSEER-REFERENCE.md`. **Two further cuts followed and each carries its own
-index, both near the end of this file**: *Read at the moment - the bars moved to the reference file
-on 2026-09-06*, and *Read at the moment - the blocks moved to the reference file on 2026-09-09*.
+the whole of `docs/OVERSEER-REFERENCE.md`. **Three further cuts followed and each carries its own
+index, all three near the end of this file**: *Read at the moment - the bars moved to the reference
+file on 2026-09-06*, *Read at the moment - the blocks moved to the reference file on 2026-09-09*,
+and *Read at the moment - the blocks moved to the reference file on 2026-09-10*.
 
 ## Queue
 
