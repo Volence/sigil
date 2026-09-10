@@ -1141,6 +1141,18 @@ struct Asm {
     /// `.`-locals: a name's key is stable across passes because the passes
     /// execute the same expansions in the same order.
     expansion_label_seq: usize,
+    /// AS's NAMELESS TEMPORARY LABEL counters (`crate::nameless`): how many
+    /// forward-capable (`+`, `/`) and backward-capable (`-`, `/`) definitions
+    /// this pass has advanced past. A definition bumps its counter and defines
+    /// the slot it lands on; a reference reads them to name a slot.
+    ///
+    /// Per-`Asm`, hence per pass, and for exactly the reason `expansion_label_seq`
+    /// above is: the passes execute the same statements in the same order, so a
+    /// slot number is stable across them. That stability is what lets a FORWARD
+    /// reference work at all -- it is an ordinary reference to a symbol this pass
+    /// has not defined yet, which the convergence loop resolves on the next pass
+    /// exactly as it does for a named forward label.
+    nameless: crate::nameless::NamelessCounts,
     /// [`scan_plain_labels`] of each macro body, by macro name. The twin of
     /// `dot_label_cache`; loop bodies are scanned at the loop rather than cached,
     /// because they have no name to cache under.
@@ -1582,6 +1594,7 @@ impl Asm {
             expansion_depth: 0,
             expansion_labels: Vec::new(),
             expansion_label_seq: 0,
+            nameless: Default::default(),
             plain_label_cache: std::collections::HashMap::new(),
             expansion_label_used: 0,
             cpu_refused: false,
@@ -1847,6 +1860,88 @@ impl Asm {
         self.expansion_labels.pop();
     }
 
+    /// The context every expression parse in this front end runs under: the
+    /// active code page plus the nameless-label counters as they stand RIGHT
+    /// NOW.
+    ///
+    /// Taken fresh at each call rather than held, because "right now" is the
+    /// whole content of the nameless half: a definition earlier on the same line
+    /// has already moved the counters, and that is what makes `-\tdbf\td0,-`
+    /// reach its own line's label while `+\tbra.s\t+` reaches the next one.
+    fn ectx(&self) -> crate::expr::ExprCtx<'_> {
+        crate::expr::ExprCtx {
+            cs: &self.state.charset,
+            nameless: self.nameless,
+        }
+    }
+
+    /// Define one nameless-label slot at the current PC.
+    ///
+    /// Deliberately NOT [`Self::define_label`], and the difference is one line
+    /// there: a plain label assigns `self.scope`, which is what a following
+    /// `.local` qualifies under. A nameless label must not, or every `+` between
+    /// a named label and its own locals would silently re-anchor them -- and
+    /// there are 2,010 `+` definitions in the Sonic 2 corpus to do it with.
+    /// Everything else a placed label needs (a section to live in, the env
+    /// binding a later fold reads, the link-level record the final VMA comes
+    /// from) is the same and is done here.
+    /// Advance the counters for one nameless DEFINITION, define the slot(s) it
+    /// lands on, and return the name the pad machinery should carry -- or `None`
+    /// when the run is one asl refuses.
+    ///
+    /// Shared by the two paths that can reach a definition, which is the point
+    /// of it being a method: `exec_one` for an ordinary line, and
+    /// `bind_head_label` for a line whose remainder is a BLOCK OPENER
+    /// (`-\trept 8`). Two copies of the counter arithmetic would be two chances
+    /// to disagree about how far a `+` advances, and the disagreement would show
+    /// up as a branch to the wrong address rather than as a diagnostic.
+    fn bind_nameless_def(&mut self, def: crate::nameless::Def, span: Span) -> Option<String> {
+        use crate::nameless::Def;
+        match def {
+            Def::Invalid => {
+                // asl: `error: invalid symbol name`. The multi-character form is
+                // a `+` privilege: `--` and `//` in column 1 are both refused,
+                // measured, while `++` is accepted and consumes two slots.
+                self.err(span, "`--` and `//` are not nameless labels; write `-`, `/`, or a run of `+`");
+                None
+            }
+            Def::Forward(m) => {
+                // Saturating for the same reason the reference side is: `m` is
+                // an unbounded token count, and a wrapped counter would make
+                // the NEXT definition land on a slot an earlier one already
+                // holds.
+                self.nameless.fwd = self.nameless.fwd.saturating_add(m);
+                let n = self.nameless.fwd;
+                Some(self.define_nameless_slot(&crate::nameless::fwd_slot(n)))
+            }
+            Def::Backward => {
+                self.nameless.bwd = self.nameless.bwd.saturating_add(1);
+                let n = self.nameless.bwd;
+                Some(self.define_nameless_slot(&crate::nameless::bwd_slot(n)))
+            }
+            Def::Both => {
+                self.nameless.fwd = self.nameless.fwd.saturating_add(1);
+                self.nameless.bwd = self.nameless.bwd.saturating_add(1);
+                let (f, b) = (self.nameless.fwd, self.nameless.bwd);
+                self.define_nameless_slot(&crate::nameless::fwd_slot(f));
+                // A `/` defines two slots and a pad can only be absorbed into
+                // one of them, so the caller carries the BACKWARD one: that is
+                // the direction a `/` exists to be reached from, and the one
+                // whose address a following `align` would otherwise leave stale.
+                Some(self.define_nameless_slot(&crate::nameless::bwd_slot(b)))
+            }
+        }
+    }
+
+    fn define_nameless_slot(&mut self, name: &str) -> String {
+        self.open_section_if_needed();
+        let value = self.here_i64();
+        self.define_sym(name, SymbolValue::Int(value));
+        self.known_labels.insert(name.to_string());
+        self.builder.define_label(name);
+        name.to_string()
+    }
+
     /// The value of a numeric BUILTIN symbol — one whose value the assembler
     /// holds itself rather than reading from the program's symbol table.
     /// Resolved in the front end so such a name folds to a concrete value
@@ -2063,7 +2158,7 @@ impl Asm {
         let expanded = self.expand_int_builtin(&expanded);
         let expanded = self.expand_str_builtins(&expanded);
         let expanded = self.expand_str_comparisons(&expanded);
-        let (e, rest) = crate::expr::parse_expr(&expanded, &self.state.charset)?;
+        let (e, rest) = crate::expr::parse_expr(&expanded, &self.ectx())?;
         if !rest.is_empty() {
             self.err(span, "trailing tokens in expression");
             return None;
@@ -2657,7 +2752,7 @@ impl Asm {
         // Identity when no builtin head is present, so an ordinary arithmetic
         // `pos`/`len` reaches `parse_expr` exactly as it did before.
         let expanded = self.expand_str_builtins_opt(&expanded)?;
-        let (e, rest) = crate::expr::parse_expr(&expanded, &self.state.charset)?;
+        let (e, rest) = crate::expr::parse_expr(&expanded, &self.ectx())?;
         if !rest.is_empty() {
             return None;
         }
@@ -2970,7 +3065,7 @@ impl Asm {
         // Not an integer expression at all (a bare float literal, say). asl has
         // its own diagnostics for those shapes and they are reached through the
         // substituted body; a vaguer word here would be worse than silence.
-        let Some((e, rest)) = crate::expr::parse_expr(&expanded, &self.state.charset) else {
+        let Some((e, rest)) = crate::expr::parse_expr(&expanded, &self.ectx()) else {
             return;
         };
         if !rest.is_empty() {
@@ -3628,6 +3723,33 @@ impl Asm {
             self.dispatch_builtin(&head, &body[1..], span);
             return;
         }
+        // AS's NAMELESS TEMPORARY LABEL DEFINITION: a bare `+`/`++`/`-`/`/` in
+        // COLUMN 1. See `crate::nameless` for the counter rules and the asl
+        // listings behind them.
+        //
+        // Placed here, immediately before the "expected mnemonic, directive, or
+        // label" refusal it replaces, so the two readings of a leading `+` stay
+        // adjacent in the source: this arm takes it when the column rule says
+        // label, and the refusal below takes it otherwise. An INDENTED `+` is
+        // `unknown instruction` to asl, so `col1` is a real gate and not a
+        // formality.
+        //
+        // The label is defined and then the REST OF THE LINE is dispatched, not
+        // returned from: a definition and a reference share one line 18 times in
+        // the corpus (`-\tdbf\td0,-`), and those 18 emitted no diagnostic at all
+        // before this parcel -- the line died on its first token, so its operand
+        // was never reached to complain about.
+        if let Some((def, used)) = crate::nameless::classify_def(&body, body[0].span.start == line.base) {
+            let Some(carried) = self.bind_nameless_def(def, body[0].span) else {
+                return;
+            };
+            self.lone_label_here = Some(carried.clone());
+            if body.len() == used {
+                self.pending_lone_label = Some(carried);
+                return;
+            }
+            body = body[used..].to_vec();
+        }
         let head = match &body[0].tok {
             Tok::Ident(s) => s.clone(),
             _ => {
@@ -3799,7 +3921,7 @@ impl Asm {
         let substituted = self.subst_frame_text(&line.text);
         let text = substituted.as_deref().unwrap_or(&line.text);
         let (toks, lex_err) = lex_line_recover(text, self.state.cpu, &self.state.charset, line.source, line.base);
-        let (kw, idx, body) = self.head_of_tokens(toks)?;
+        let (kw, idx, body) = self.head_of_tokens(toks, line.base)?;
         Some((kw, idx, body, lex_err))
     }
 
@@ -3807,18 +3929,37 @@ impl Asm {
     /// [`Self::dispatch_head_checked`] so the head rules below are stated once
     /// and apply identically to a fully-lexed line and to the clean PREFIX of
     /// one whose operand did not lex.
-    fn head_of_tokens(&self, toks: Vec<Token>) -> Option<(String, usize, Vec<Token>)> {
+    fn head_of_tokens(&self, toks: Vec<Token>, base: u32) -> Option<(String, usize, Vec<Token>)> {
         if toks.is_empty() {
             return None;
         }
         let parsed = parse_line_tokens(&toks);
-        let body = if parsed.label_colon.is_some() {
+        let mut body = if parsed.label_colon.is_some() {
             parsed.tokens
         } else {
             toks
         };
         if body.is_empty() {
             return None;
+        }
+        // A NAMELESS LABEL peels here exactly as a colon label does, and for the
+        // same reason: block structure is decided by the head, and a line whose
+        // head this cannot read is routed to `exec_one` instead of to its block
+        // driver. The corpus writes `-\trept 8` … `endm` … `dbf d0,-`, so the
+        // opener and its label share a line; without this peel the `rept` never
+        // reaches `exec_rept`, the body is never repeated, and the line reports
+        // `rept` as an unrecognized mnemonic.
+        //
+        // That failure did not exist before nameless labels did -- the line died
+        // on its first token -- which is the shape of thing closing one gap
+        // exposes. It was found by diffing the corpus's diagnostic SETS in both
+        // directions rather than its totals: the run went from 5,136 rows to
+        // 153, and these two were the entire ADDED side.
+        if let Some((_, used)) = crate::nameless::classify_def(&body, body[0].span.start == base) {
+            body = body[used..].to_vec();
+            if body.is_empty() {
+                return None;
+            }
         }
         let name = match &body[0].tok {
             Tok::Ident(s) => s.clone(),
@@ -3933,7 +4074,7 @@ impl Asm {
         // line's tokens, so an index of 1 is exactly "token 0 is the label
         // field". Spans are `line.base + column` (see `lex_line`), so column 0
         // is `span.start == line.base`.
-        let (_, idx, body) = self.head_of_tokens(toks)?;
+        let (_, idx, body) = self.head_of_tokens(toks, line.base)?;
         if idx != 1 || body[0].span.start != line.base {
             return None;
         }
@@ -3950,10 +4091,39 @@ impl Asm {
     /// (`L: if 1=1` then `.loc: dc.b $CC` lists ` L : 101 C` and
     /// ` L.loc : 102 C`).
     fn bind_head_label(&mut self, line: &SrcLine) {
+        // A NAMELESS label on a block-opener line, the twin of the named case
+        // below. `head_of_tokens` peels it so the line ROUTES to its block
+        // driver; this is what makes it exist. Without it `-\trept 8` repeats
+        // its body correctly and then the `dbf d0,-` under it counts one
+        // definition too few, which is a branch to the wrong address and no
+        // diagnostic at all -- strictly worse than the unrecognized-mnemonic
+        // error that peeling replaced.
+        if let Some((def, _)) = self.line_nameless_def(line) {
+            let span = Span {
+                source: line.source,
+                start: line.base,
+                end: line.base,
+            };
+            self.bind_nameless_def(def, span);
+            return;
+        }
         if let Some(name) = self.head_label(line) {
             let span = label_span(line, &name);
             self.define_label(&name, span);
         }
+    }
+
+    /// The nameless DEFINITION a block-opener line carries in its label field,
+    /// if any. Reads the line the same way [`Self::head_label`] does -- same
+    /// substitution, same recovering lex -- so the two answers cannot be about
+    /// different text.
+    fn line_nameless_def(&self, line: &SrcLine) -> Option<(crate::nameless::Def, usize)> {
+        let substituted = self.subst_frame_text(&line.text);
+        let text = substituted.as_deref().unwrap_or(&line.text);
+        let (toks, _) =
+            lex_line_recover(text, self.state.cpu, &self.state.charset, line.source, line.base);
+        let first = toks.first()?;
+        crate::nameless::classify_def(&toks, first.span.start == line.base)
     }
 
     /// [`Self::line_kw_args`] for a head whose arguments are about to be
@@ -5084,7 +5254,7 @@ impl Asm {
         let expanded = self.expand_int_builtin(&expanded);
         let expanded = self.expand_str_builtins(&expanded);
         let expanded = self.expand_str_comparisons(&expanded);
-        let (e, _) = crate::expr::parse_expr(&expanded, &self.state.charset)?;
+        let (e, _) = crate::expr::parse_expr(&expanded, &self.ectx())?;
         self.unresolved_names(&e).into_iter().next()
     }
 
@@ -6042,7 +6212,7 @@ impl Asm {
             // subterms — `X = Label + CONST` ships `Sym(Label) + Int(CONST)`); the
             // linker folds it post-relax onto the shifted label. A pure-constant
             // equ never matches and keeps baking `Int(v)`.
-            let sym_rhs = crate::expr::parse_expr(&self.expand_calls_checked(rest), &self.state.charset)
+            let sym_rhs = crate::expr::parse_expr(&self.expand_calls_checked(rest), &self.ectx())
                 .and_then(|(e, tail)| tail.is_empty().then_some(e))
                 .map(|e| self.resolve_dollar(&self.qualify_expr(&e)))
                 .filter(|e| self.expr_refs_label(e));
@@ -6154,7 +6324,7 @@ impl Asm {
     /// `Int` parse would have folded, so the failure was in the parse and the
     /// parser has already said so.
     fn defer_unresolved_assign(&mut self, q: &str, rest: &[Token], span: Span) {
-        let Some(e) = crate::expr::parse_expr(&self.expand_calls_checked(rest), &self.state.charset)
+        let Some(e) = crate::expr::parse_expr(&self.expand_calls_checked(rest), &self.ectx())
             .and_then(|(e, tail)| tail.is_empty().then_some(e))
             .map(|e| self.resolve_dollar(&self.qualify_expr(&e)))
             .filter(expr_has_sym)
@@ -6406,7 +6576,7 @@ impl Asm {
             // deferral pass); byte-neutral because the map is read only under
             // `keep_labels_symbolic`. `relax_safe_fold` splices set-symbols at its
             // root, so a chained set stores the underlying label expr directly.
-            let sym_rhs = crate::expr::parse_expr(&self.expand_calls_checked(rest), &self.state.charset)
+            let sym_rhs = crate::expr::parse_expr(&self.expand_calls_checked(rest), &self.ectx())
                 .and_then(|(e, tail)| tail.is_empty().then_some(e))
                 .map(|e| self.resolve_dollar(&self.qualify_expr(&e)));
             match sym_rhs {
@@ -6682,7 +6852,7 @@ impl Asm {
             // Fold any nested string comparison (`substr(...)="x"`) to 0/1 before
             // the numeric parse (mirrors `eval_all`; T5).
             let expanded = self.expand_str_comparisons(&expanded);
-            let e = match crate::expr::parse_expr(&expanded, &self.state.charset) {
+            let e = match crate::expr::parse_expr(&expanded, &self.ectx()) {
                 Some((e, [])) => e,
                 _ => {
                     self.err(gspan, "bad byte expression");
@@ -6753,7 +6923,7 @@ impl Asm {
                 self.err(ssp, STRING_IN_WIDE_DATA);
                 continue;
             }
-            let e = match crate::expr::parse_expr(&expanded, &self.state.charset) {
+            let e = match crate::expr::parse_expr(&expanded, &self.ectx()) {
                 Some((e, [])) => e,
                 _ => {
                     self.err(gspan, "bad word expression");
@@ -6849,7 +7019,7 @@ impl Asm {
                 self.err(ssp, STRING_IN_WIDE_DATA);
                 continue;
             }
-            let e = match crate::expr::parse_expr(&expanded, &self.state.charset) {
+            let e = match crate::expr::parse_expr(&expanded, &self.ectx()) {
                 Some((e, [])) => e,
                 _ => {
                     self.err(gspan, "bad word expression");
@@ -6940,7 +7110,7 @@ impl Asm {
                 self.err(ssp, STRING_IN_WIDE_DATA);
                 continue;
             }
-            let e = match crate::expr::parse_expr(&expanded, &self.state.charset) {
+            let e = match crate::expr::parse_expr(&expanded, &self.ectx()) {
                 Some((e, [])) => e,
                 _ => {
                     self.err(gspan, "bad long expression");
@@ -7303,9 +7473,9 @@ impl Asm {
             let expanded = self.expand_operand_builtins(g);
             let classified =
                 if !written_indirect && crate::operands::is_whole_paren_group(&expanded) {
-                    crate::operands::classify_as_value(&expanded, span, &self.state.charset)
+                    crate::operands::classify_as_value(&expanded, span, &self.ectx())
                 } else {
-                    crate::operands::classify(&expanded, span, &self.state.charset)
+                    crate::operands::classify(&expanded, span, &self.ectx())
                 };
             match classified {
                 Ok(a) => atoms.push(a),
@@ -7469,7 +7639,7 @@ impl Asm {
             return self.lower_m68k_movem(suffix_size, rest, span);
         }
         if matches!(mnemonic, M68kMnemonic::Jmp | M68kMnemonic::Jsr) {
-            let atoms = match parse_operands(rest, span, &self.state.charset) {
+            let atoms = match parse_operands(rest, span, &self.ectx()) {
                 Ok(a) => a,
                 Err(d) => {
                     self.diags.push(d);
@@ -7593,7 +7763,7 @@ impl Asm {
             return self.lower_m68k_generic(mnemonic, suffix_size, atoms, span);
         }
 
-        let atoms = match parse_operands(rest, span, &self.state.charset) {
+        let atoms = match parse_operands(rest, span, &self.ectx()) {
             Ok(a) => a,
             Err(d) => {
                 self.diags.push(d);
@@ -7932,7 +8102,7 @@ impl Asm {
                 return;
             }
         };
-        let atoms = match parse_operands(rest, span, &self.state.charset) {
+        let atoms = match parse_operands(rest, span, &self.ectx()) {
             Ok(a) => a,
             Err(d) => {
                 self.diags.push(d);
@@ -7966,7 +8136,7 @@ impl Asm {
     /// `self_address - (self_address + 2)`) and against real `asl` (see
     /// `m68k_dbf_d0_self`/`m68k_dbeq_d1_self` in `tests/snippets_golden.txt`).
     fn lower_m68k_dbcc(&mut self, mnemonic: M68kMnemonic, rest: &[Token], span: Span) {
-        let atoms = match parse_operands(rest, span, &self.state.charset) {
+        let atoms = match parse_operands(rest, span, &self.ectx()) {
             Ok(a) => a,
             Err(d) => {
                 self.diags.push(d);
@@ -8060,7 +8230,7 @@ impl Asm {
                 return;
             }
         };
-        let mem_atoms = match parse_operands(mem_toks, span, &self.state.charset) {
+        let mem_atoms = match parse_operands(mem_toks, span, &self.ectx()) {
             Ok(a) => a,
             Err(d) => {
                 self.diags.push(d);

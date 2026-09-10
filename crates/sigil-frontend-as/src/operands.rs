@@ -1,7 +1,6 @@
 //! operands: comma-split + structural classification of operand groups.
 
-use crate::charset::CodePage;
-use crate::expr::parse_expr;
+use crate::expr::{parse_expr, ExprCtx};
 use crate::token::{Punct, Tok, Token};
 use sigil_backend_z80::z80::IndexReg;
 use sigil_ir::Expr;
@@ -63,14 +62,14 @@ fn err(span: Span, msg: &str) -> Diagnostic {
 pub fn parse_operands(
     toks: &[Token],
     at: Span,
-    cs: &CodePage,
+    ctx: &ExprCtx<'_>,
 ) -> Result<Vec<OperandAtom>, Diagnostic> {
     if toks.is_empty() {
         return Ok(Vec::new());
     }
     let mut out = Vec::new();
     for group in split_commas(toks) {
-        out.push(classify(group, at, cs)?);
+        out.push(classify(group, at, ctx)?);
     }
     Ok(out)
 }
@@ -124,10 +123,10 @@ pub fn is_whole_paren_group(g: &[Token]) -> bool {
 pub fn classify_as_value(
     g: &[Token],
     at: Span,
-    cs: &CodePage,
+    ctx: &ExprCtx<'_>,
 ) -> Result<OperandAtom, Diagnostic> {
     let span = g.first().map(|t| t.span).unwrap_or(at);
-    let (e, rest) = parse_expr(g, cs).ok_or_else(|| err(span, "bad operand expression"))?;
+    let (e, rest) = parse_expr(g, ctx).ok_or_else(|| err(span, "bad operand expression"))?;
     if !rest.is_empty() {
         return Err(err(span, "trailing tokens in operand"));
     }
@@ -136,7 +135,7 @@ pub fn classify_as_value(
 
 /// Structurally classify one already-comma-split operand group. `at` stands in
 /// for an empty group's missing span, as in [`parse_operands`].
-pub fn classify(g: &[Token], at: Span, cs: &CodePage) -> Result<OperandAtom, Diagnostic> {
+pub fn classify(g: &[Token], at: Span, ctx: &ExprCtx<'_>) -> Result<OperandAtom, Diagnostic> {
     let span = g.first().map(|t| t.span).unwrap_or(at);
     // `#expr` — 68k immediate marker.
     if let Some(Token {
@@ -144,7 +143,7 @@ pub fn classify(g: &[Token], at: Span, cs: &CodePage) -> Result<OperandAtom, Dia
         ..
     }) = g.first()
     {
-        let (e, rest) = parse_expr(&g[1..], cs).ok_or_else(|| err(span, "bad immediate expression"))?;
+        let (e, rest) = parse_expr(&g[1..], ctx).ok_or_else(|| err(span, "bad immediate expression"))?;
         if !rest.is_empty() {
             return Err(err(span, "trailing tokens in #immediate"));
         }
@@ -243,7 +242,7 @@ pub fn classify(g: &[Token], at: Span, cs: &CodePage) -> Result<OperandAtom, Dia
             if let Some(long) = long {
                 let inner = &g[1..g.len() - 2];
                 if !is_bare_register_token(inner) {
-                    let (e, rest) = parse_expr(inner, cs)
+                    let (e, rest) = parse_expr(inner, ctx)
                         .ok_or_else(|| err(span, "bad absolute address expression"))?;
                     if !rest.is_empty() {
                         return Err(err(span, "trailing tokens in absolute address"));
@@ -299,7 +298,7 @@ pub fn classify(g: &[Token], at: Span, cs: &CodePage) -> Result<OperandAtom, Dia
             }) = inner.first()
             {
                 if let Some(ir) = index_reg(reg) {
-                    let disp = parse_indexed_disp(&inner[1..], span, cs)?;
+                    let disp = parse_indexed_disp(&inner[1..], span, ctx)?;
                     return Ok(OperandAtom::Indexed { reg: ir, disp });
                 }
             }
@@ -314,7 +313,7 @@ pub fn classify(g: &[Token], at: Span, cs: &CodePage) -> Result<OperandAtom, Dia
                         return Ok(atom);
                     }
                 }
-                let (disp, rest) = parse_expr(inner_groups[0], cs)
+                let (disp, rest) = parse_expr(inner_groups[0], ctx)
                     .ok_or_else(|| err(span, "bad displacement expression"))?;
                 if !rest.is_empty() {
                     return Err(err(span, "trailing tokens in displacement"));
@@ -328,7 +327,7 @@ pub fn classify(g: &[Token], at: Span, cs: &CodePage) -> Result<OperandAtom, Dia
                 return Ok(OperandAtom::M68kDisp { disp, an });
             }
             if inner_groups.len() == 3 {
-                let (disp, rest) = parse_expr(inner_groups[0], cs)
+                let (disp, rest) = parse_expr(inner_groups[0], ctx)
                     .ok_or_else(|| err(span, "bad displacement expression"))?;
                 if !rest.is_empty() {
                     return Err(err(span, "trailing tokens in displacement"));
@@ -353,7 +352,7 @@ pub fn classify(g: &[Token], at: Span, cs: &CodePage) -> Result<OperandAtom, Dia
                 });
             }
             // (nn) absolute
-            let (e, rest) = parse_expr(inner, cs).ok_or_else(|| err(span, "bad address expression"))?;
+            let (e, rest) = parse_expr(inner, ctx).ok_or_else(|| err(span, "bad address expression"))?;
             if !rest.is_empty() {
                 return Err(err(span, "trailing tokens in (address)"));
             }
@@ -376,7 +375,7 @@ pub fn classify(g: &[Token], at: Span, cs: &CodePage) -> Result<OperandAtom, Dia
                 // `An`/`An,Xn` base; otherwise fall through to the plain
                 // expression parse (and its diagnostic).
                 if build_disp_ea(Expr::Int(0), inner).is_some() {
-                    let (disp, rest) = parse_expr(&g[..open], cs)
+                    let (disp, rest) = parse_expr(&g[..open], ctx)
                         .ok_or_else(|| err(span, "bad displacement expression in `disp(An)`"))?;
                     if !rest.is_empty() {
                         return Err(err(span, "trailing tokens in `disp(An)` displacement"));
@@ -388,7 +387,7 @@ pub fn classify(g: &[Token], at: Span, cs: &CodePage) -> Result<OperandAtom, Dia
         }
     }
     // Bare expression.
-    let (e, rest) = parse_expr(g, cs).ok_or_else(|| err(span, "bad operand expression"))?;
+    let (e, rest) = parse_expr(g, ctx).ok_or_else(|| err(span, "bad operand expression"))?;
     if !rest.is_empty() {
         return Err(err(span, "trailing tokens in operand"));
     }
@@ -396,17 +395,17 @@ pub fn classify(g: &[Token], at: Span, cs: &CodePage) -> Result<OperandAtom, Dia
 }
 
 /// Parse an index displacement: tokens after `ix`/`iy`, beginning with `+`/`-`.
-fn parse_indexed_disp(rest: &[Token], span: Span, cs: &CodePage) -> Result<Expr, Diagnostic> {
+fn parse_indexed_disp(rest: &[Token], span: Span, ctx: &ExprCtx<'_>) -> Result<Expr, Diagnostic> {
     match rest.first().map(|t| &t.tok) {
         Some(Tok::Punct(Punct::Plus)) => {
-            let (e, tail) = parse_expr(&rest[1..], cs).ok_or_else(|| err(span, "bad +disp"))?;
+            let (e, tail) = parse_expr(&rest[1..], ctx).ok_or_else(|| err(span, "bad +disp"))?;
             if !tail.is_empty() {
                 return Err(err(span, "trailing tokens in disp"));
             }
             Ok(e)
         }
         Some(Tok::Punct(Punct::Minus)) => {
-            let (e, tail) = parse_expr(&rest[1..], cs).ok_or_else(|| err(span, "bad -disp"))?;
+            let (e, tail) = parse_expr(&rest[1..], ctx).ok_or_else(|| err(span, "bad -disp"))?;
             if !tail.is_empty() {
                 return Err(err(span, "trailing tokens in disp"));
             }
@@ -664,6 +663,7 @@ fn is_reg_or_cond_word(w: &str) -> bool {
 mod tests {
     use super::{parse_operands, OperandAtom};
     use crate::charset::CodePage;
+    use crate::expr::ExprCtx;
     use crate::lexer::lex_line;
     use sigil_ir::backend::Cpu;
     use sigil_ir::expr::Fold;
@@ -682,7 +682,7 @@ mod tests {
 
     fn atoms(src: &str) -> Vec<OperandAtom> {
         let toks = lex_line(src, Cpu::Z80, &CodePage::identity(), SourceId(0), 0).unwrap();
-        parse_operands(&toks, line_span(), &CodePage::identity()).unwrap()
+        parse_operands(&toks, line_span(), &ExprCtx::plain(&CodePage::identity())).unwrap()
     }
 
     #[test]
@@ -736,7 +736,7 @@ mod tests {
 
     fn atoms_68k(src: &str) -> Vec<OperandAtom> {
         let toks = lex_line(src, Cpu::M68000, &CodePage::identity(), SourceId(0), 0).unwrap();
-        parse_operands(&toks, line_span(), &CodePage::identity()).unwrap()
+        parse_operands(&toks, line_span(), &ExprCtx::plain(&CodePage::identity())).unwrap()
     }
 
     #[test]
@@ -1005,11 +1005,11 @@ mod tests {
         // silently reinterpreted as an address).
         let toks = lex_line("(a0).w", Cpu::M68000, &CodePage::identity(), SourceId(0), 0).unwrap();
         // Ok → must not be M68kAbs; Err (rejected outright) is also acceptable.
-        if let Ok(atoms) = parse_operands(&toks, line_span(), &CodePage::identity()) {
+        if let Ok(atoms) = parse_operands(&toks, line_span(), &ExprCtx::plain(&CodePage::identity())) {
             assert!(!matches!(atoms.as_slice(), [OperandAtom::M68kAbs { .. }]));
         }
         let toks = lex_line("(d0).w", Cpu::M68000, &CodePage::identity(), SourceId(0), 0).unwrap();
-        if let Ok(atoms) = parse_operands(&toks, line_span(), &CodePage::identity()) {
+        if let Ok(atoms) = parse_operands(&toks, line_span(), &ExprCtx::plain(&CodePage::identity())) {
             assert!(!matches!(atoms.as_slice(), [OperandAtom::M68kAbs { .. }]));
         }
     }

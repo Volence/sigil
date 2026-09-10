@@ -1,9 +1,44 @@
 //! expr: token-slice → `sigil_ir::Expr` with AS-flavoured precedence.
 
 use crate::charset::CodePage;
+use crate::nameless::{self, NamelessCounts};
 use crate::token::{Punct, Tok, Token};
 use sigil_ir::expr::{BinOp, UnOp};
 use sigil_ir::Expr;
+
+/// Everything an expression parse needs from the assembler's state, in one
+/// place.
+///
+/// It started as a bare `&CodePage` and grew the nameless-label counters, which
+/// is the reason it is a struct and not two arguments: both are properties of
+/// WHERE IN THE PASS the statement sits, both are needed at the leaves, and
+/// bundling them means adding a third cannot silently miss a call site. The
+/// counters are a snapshot by value for the same reason the code page is
+/// borrowed read-only -- this parser stays stateless, and a reference resolves
+/// against the position it was parsed at and nothing later.
+#[derive(Copy, Clone)]
+pub struct ExprCtx<'a> {
+    /// The active `charset` translation.
+    pub cs: &'a CodePage,
+    /// The nameless-label counters as of this statement.
+    pub nameless: NamelessCounts,
+}
+
+impl<'a> ExprCtx<'a> {
+    /// A context with no nameless labels in scope.
+    ///
+    /// Test-only on purpose: every production caller is a statement in a pass
+    /// and has real counters to hand (`eval.rs::ectx`), so a convenience that
+    /// zeroes them is a way for one to lose them silently. `#[cfg(test)]` makes
+    /// that a compile error rather than a wrong slot number.
+    #[cfg(test)]
+    pub fn plain(cs: &'a CodePage) -> Self {
+        Self {
+            cs,
+            nameless: NamelessCounts::default(),
+        }
+    }
+}
 
 /// Maximum operand-nesting depth, mirroring the `.emp` front end's own limit.
 ///
@@ -113,8 +148,8 @@ pub(crate) fn string_to_int(s: &str, cs: &CodePage) -> Option<i64> {
 /// `None` if the head is not an expression, or if it nests past
 /// [`MAX_EXPR_DEPTH`] — the same "not an expression here" answer the unbalanced-
 /// paren arm already returns, so callers report a clean parse error either way.
-pub fn parse_expr<'a>(toks: &'a [Token], cs: &CodePage) -> Option<(Expr, &'a [Token])> {
-    parse_bp(toks, 0, 0, cs)
+pub fn parse_expr<'a>(toks: &'a [Token], ctx: &ExprCtx<'_>) -> Option<(Expr, &'a [Token])> {
+    parse_bp(toks, 0, 0, ctx)
 }
 
 /// Binding-power ladder: higher binds tighter. It is asl's, tier for tier, and
@@ -204,15 +239,15 @@ fn parse_bp<'a>(
     toks: &'a [Token],
     min_bp: u8,
     depth: u32,
-    cs: &CodePage,
+    ctx: &ExprCtx<'_>,
 ) -> Option<(Expr, &'a [Token])> {
-    let (mut lhs, mut rest) = parse_atom(toks, depth, cs)?;
+    let (mut lhs, mut rest) = parse_atom(toks, depth, ctx)?;
     while let Some(Tok::Punct(p)) = rest.first().map(|t| &t.tok) {
         let (bp, op) = match infix_bp(*p) {
             Some(x) if x.0 > min_bp => x,
             _ => break,
         };
-        let (rhs, r2) = parse_bp(&rest[1..], bp, depth, cs)?;
+        let (rhs, r2) = parse_bp(&rest[1..], bp, depth, ctx)?;
         lhs = Expr::Binary {
             op,
             lhs: Box::new(lhs),
@@ -223,18 +258,78 @@ fn parse_bp<'a>(
     Some((lhs, rest))
 }
 
-fn parse_atom<'a>(toks: &'a [Token], depth: u32, cs: &CodePage) -> Option<(Expr, &'a [Token])> {
+fn parse_atom<'a>(toks: &'a [Token], depth: u32, ctx: &ExprCtx<'_>) -> Option<(Expr, &'a [Token])> {
     if depth >= MAX_EXPR_DEPTH {
         return None;
     }
     let depth = depth + 1;
+    // AS's NAMELESS TEMPORARY LABELS, in the one position where `+` and `-` can
+    // be a label rather than an operator: the head of a primary expression.
+    //
+    // `parse_atom` runs ONLY where an operand is expected -- `parse_bp` consumes
+    // an infix operator itself and never calls back in with one at the head -- so
+    // reaching here with a `+`/`-` already means "no left-hand side". That is
+    // exactly AS's own condition, and it is why this needs no lookbehind and no
+    // statement-level pre-pass.
+    //
+    // The run rule is [`nameless::starts_atom`]'s doc comment: in a run of n
+    // leading `+`/`-`, the LAST is the binary operator whenever an operand
+    // follows the run, so the reference is the first n-1; with nothing to apply
+    // an operator to, the reference is all n.
+    //
+    // The `ref_len == 0` fall-through is what keeps this feature away from
+    // arithmetic that already worked. A single `-` before an operand -- every
+    // `-1`, `-Base`, `-(SIZE*2)` in every corpus -- takes the unary-negation arm
+    // below, byte for byte as before. What changes for a currently-ACCEPTED
+    // expression is only `-` × m, m >= 2, before an operand: sigil folded that
+    // as m nested negations, and asl reads it as `(nameless) - operand`. The
+    // aeon closure contains no such run (3 files, 899 lines, measured at the
+    // consuming end) and the Sonic 2 corpus's 14 are all nameless references.
+    if let Some(Tok::Punct(kind @ (Punct::Plus | Punct::Minus))) = toks.first().map(|t| &t.tok) {
+        let kind = *kind;
+        let run = toks
+            .iter()
+            .take_while(|t| matches!(t.tok, Tok::Punct(Punct::Plus | Punct::Minus)))
+            .count();
+        let operand_follows = toks.get(run).is_some_and(|t| nameless::starts_atom(&t.tok));
+        let ref_len = if operand_follows { run - 1 } else { run };
+        if ref_len >= 1 {
+            // A MIXED run has no reading: asl splits `+--Base` at its rightmost
+            // `-`, is left with `+-`, splits that at ITS rightmost, and refuses
+            // the empty right-hand side (`error: wrong number of operands`).
+            // `None` here is the caller's own refusal at the same line.
+            if !toks[..ref_len]
+                .iter()
+                .all(|t| matches!(t.tok, Tok::Punct(p) if p == kind))
+            {
+                return None;
+            }
+            // SATURATING, both directions, and the `-` x 60,000 depth-guard
+            // probe is what says this is not paranoia: `ref_len` is a token
+            // count with no bound but the line's length, so plain `+` can wrap
+            // in release and PANIC in debug. A wrapped slot number is the worse
+            // half: it would ALIAS a real slot and branch somewhere plausible,
+            // silently. Saturated, it names a slot nothing can ever define, and
+            // the reference is refused by name.
+            let k = u32::try_from(ref_len).unwrap_or(u32::MAX);
+            let name = match kind {
+                Punct::Plus => nameless::fwd_slot(ctx.nameless.fwd.saturating_add(k)),
+                // Backward slot `bwd - k + 1`. A reference deeper than the
+                // definitions behind it would underflow; naming slot 0 instead
+                // gives an ordinary undefined symbol, which is the diagnostic
+                // asl raises for it (`error: symbol undefined`).
+                _ => nameless::bwd_slot(ctx.nameless.bwd.saturating_add(1).saturating_sub(k)),
+            };
+            return Some((Expr::Sym(name), &toks[ref_len..]));
+        }
+    }
     let (head, rest) = toks.split_first()?;
     match &head.tok {
         Tok::Int(n) => Some((Expr::Int(*n), rest)),
         // A string literal in a primary-expression position is asl's packed
         // integer; see [`string_to_int`] for the rule and for why a `dc`-family
         // directive must never reach this arm.
-        Tok::Str(s) => string_to_int(s, cs).map(|v| (Expr::Int(v), rest)),
+        Tok::Str(s) => string_to_int(s, ctx.cs).map(|v| (Expr::Int(v), rest)),
         Tok::Dollar => Some((Expr::Sym("$".to_string()), rest)),
         // A standalone `*` in atom (primary-expression) position is AS's other
         // spelling of the current-PC symbol (used by `pscStart := *` etc. in
@@ -248,7 +343,7 @@ fn parse_atom<'a>(toks: &'a [Token], depth: u32, cs: &CodePage) -> Option<(Expr,
         Tok::Punct(Punct::Star) => Some((Expr::Sym("$".to_string()), rest)),
         Tok::Ident(name) => Some((Expr::Sym(name.clone()), rest)),
         Tok::Punct(Punct::Minus) => {
-            let (inner, r) = parse_atom(rest, depth, cs)?;
+            let (inner, r) = parse_atom(rest, depth, ctx)?;
             Some((
                 Expr::Unary {
                     op: UnOp::Neg,
@@ -262,7 +357,7 @@ fn parse_atom<'a>(toks: &'a [Token], depth: u32, cs: &CodePage) -> Option<(Expr,
         // `~(mask)` / `~BLOCK_TILE_SIZE-1` parse as `(~x)` then any following
         // binary operator, matching asl.
         Tok::Punct(Punct::Tilde) => {
-            let (inner, r) = parse_atom(rest, depth, cs)?;
+            let (inner, r) = parse_atom(rest, depth, ctx)?;
             Some((
                 Expr::Unary {
                     op: UnOp::Not,
@@ -279,7 +374,7 @@ fn parse_atom<'a>(toks: &'a [Token], depth: u32, cs: &CodePage) -> Option<(Expr,
         // `dc.b ~~0=1` = `01`. `~~~x` is `~~` then `~` by maximal munch:
         // `dc.b ~~~0,~~~1,~~~5` = `00 00 00`.
         Tok::Punct(Punct::TildeTilde) => {
-            let (inner, r) = parse_atom(rest, depth, cs)?;
+            let (inner, r) = parse_atom(rest, depth, ctx)?;
             Some((
                 Expr::Unary {
                     op: UnOp::LogNot,
@@ -289,7 +384,7 @@ fn parse_atom<'a>(toks: &'a [Token], depth: u32, cs: &CodePage) -> Option<(Expr,
             ))
         }
         Tok::Punct(Punct::LParen) => {
-            let (inner, r) = parse_bp(rest, 0, depth, cs)?;
+            let (inner, r) = parse_bp(rest, 0, depth, ctx)?;
             match r.first().map(|t| &t.tok) {
                 Some(Tok::Punct(Punct::RParen)) => Some((inner, &r[1..])),
                 _ => None, // unbalanced paren
@@ -316,7 +411,7 @@ mod depth_guard_tests {
     //! about the guard rather than about whatever stack the harness happens to give
     //! the main thread, and a regression FAILS (thread died) instead of taking the
     //! whole test binary down with it.
-    use super::parse_expr;
+    use super::{parse_expr, ExprCtx};
     use crate::charset::CodePage;
     use crate::lexer::lex_line;
     use sigil_ir::backend::Cpu;
@@ -328,7 +423,8 @@ mod depth_guard_tests {
             .stack_size(4 * 1024 * 1024)
             .spawn(move || {
                 let toks = lex_line(&src, Cpu::M68000, &CodePage::identity(), SourceId(0), 0).expect("lex");
-                let _ = tx.send(parse_expr(&toks, &CodePage::identity()).is_some());
+                let cs = CodePage::identity();
+                let _ = tx.send(parse_expr(&toks, &ExprCtx::plain(&cs)).is_some());
             })
             .expect("spawn");
         let out = rx
@@ -347,10 +443,34 @@ mod depth_guard_tests {
         );
     }
 
+    /// A deep `~` chain is still refused by the depth guard, and a deep `-`
+    /// chain is no longer a recursive shape at all.
+    ///
+    /// This assertion CHANGED when nameless labels landed, and the change is the
+    /// point rather than a concession. A leading run of `-` is now counted with
+    /// a `take_while` and consumed whole, so `-` x 60,000 followed by an operand
+    /// costs ONE stack frame instead of 60,000: the danger the guard exists for
+    /// is gone from this shape by construction rather than bounded. What the
+    /// parser returns is a reference to backward slot 0, which nothing ever
+    /// defines, so the expression is still refused -- at resolution, loudly, by
+    /// name.
+    ///
+    /// The property under test was never "a deep `-` chain is refused"; it was
+    /// "a deep `-` chain does not abort the process". That is what is asserted
+    /// here, and it is asserted the only way it can be: the parse must
+    /// TERMINATE and the child thread must survive it, both of which `parses`
+    /// already checks and neither of which a `SIGABRT` would let it report.
     #[test]
-    fn deep_unary_chains_are_refused_not_aborted() {
+    fn deep_unary_chains_do_not_abort() {
         let n = 60_000;
-        assert!(!parses(format!("{}1", "-".repeat(n))), "deep `-` chain must be refused");
+        // Terminates on a 4 MiB stack and the thread survives; `parses` panics
+        // on either failure, so reaching the assertion at all is half the test.
+        let minus_parses = parses(format!("{}1", "-".repeat(n)));
+        assert!(
+            minus_parses,
+            "a {n}-deep `-` run is a nameless reference now, not 60,000 negations, \
+             and it must parse in constant stack"
+        );
         assert!(!parses(format!("{}1", "~".repeat(n))), "deep `~` chain must be refused");
     }
 
@@ -369,7 +489,7 @@ mod depth_guard_tests {
 
 #[cfg(test)]
 mod tests {
-    use super::parse_expr;
+    use super::{parse_expr, ExprCtx};
     use crate::lexer::lex_line;
     use crate::charset::CodePage;
     use sigil_ir::backend::Cpu;
@@ -378,7 +498,8 @@ mod tests {
 
     fn fold(src: &str, lookup: &dyn Fn(&str) -> Option<i64>) -> i64 {
         let toks = lex_line(src, Cpu::Z80, &CodePage::identity(), SourceId(0), 0).unwrap();
-        let (e, rest) = parse_expr(&toks, &CodePage::identity()).unwrap();
+        let cs = CodePage::identity();
+        let (e, rest) = parse_expr(&toks, &ExprCtx::plain(&cs)).unwrap();
         assert!(rest.is_empty(), "unconsumed tokens: {rest:?}");
         match e.fold(lookup) {
             Fold::Value(v) => v,
