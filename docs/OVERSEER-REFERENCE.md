@@ -427,8 +427,9 @@ agent that guards against one walks into the others.
    measures nothing, while presenting as the exact instrument that would have caught the thing it
    was built after.
    **It is the motivating-case rule arriving on a GATE instead of on a parcel**, and the parcel
-   form is already banked in `docs/OVERSEER.md` (*the motivating case is selected for being broken,
-   never for being representative*). The difference is who is fooled and for how long: a parcel
+   form is already banked in `docs/OVERSEER-REFERENCE.md` (*THE MOTIVATING CASE IS SELECTED FOR
+   BEING BROKEN, NEVER FOR BEING REPRESENTATIVE*, moved out of the boot read on 2026-09-10). The
+   difference is who is fooled and for how long: a parcel
    verified against its own motivating corpus is wrong once, at review. **A gate whose population
    is its own motivating set is wrong every day it runs, and each green makes it more trusted.**
    **The question that finds it, asked while the brief is being written and not at review:** what
@@ -2699,3 +2700,300 @@ no lane authored. The partial remedy in place is that each card names its lane; 
 the ledger for that id and read its `state` and `answered_at`.** A blocker is a claim that he owes
 you something. This lane held one for six days that he had already paid.
 
+## Moved from the boot read on 2026-09-10, the third cut
+
+Twelve blocks, moved VERBATIM when `docs/OVERSEER.md` crossed its byte bound again, under the
+owner's 2026-09-04T15:38:47Z ruling that the split is by WHEN A RULE IS READ. **Nothing was
+shortened to move it**, and no rule was dropped. They keep the order they held in the boot read.
+The index that names the moment triggering each of them is in the boot read, under *Read at the
+moment - the blocks moved to the reference file on 2026-09-10*.
+
+## AN EXCLUSIVE-TREE LEASE HAS NO END UNTIL YOU GIVE IT ONE (2026-09-09)
+
+**This seat told an agent "the reference tree is yours exclusively; I will run nothing against it",
+then started a landing run against that tree while the agent was still alive, and the AGENT caught
+it.** No harm: its three runs closed at 17:34:42Z and mine opened at 17:38:14Z, verified from both
+sides, and it re-checked the tree at `ec640bcf` with 0 modified paths. The promise was still live
+and I broke it anyway.
+
+**The mechanism, and it is structural rather than careless: a completion notification says the agent
+STOPPED, not that it has ENDED.** The notification's own text says the same task id may notify more
+than once and that the agent can be resumed from its transcript. So a lease worded *"while you are
+out"* has **no expiry event on the controller's side at all** - there is no moment the harness tells
+you the lease is over, and the moment that FEELS like one is the report landing in your lap, which is
+exactly when you want the tree back.
+
+**THE RULE: scope the lease to an event YOU control, and say which in the brief.** The merge of that
+agent's branch is the natural one. Until then the tree is theirs, whatever their status looks like.
+If you need it sooner, message the agent and get an explicit release, which costs one round trip and
+is unambiguous.
+
+**Watch the perturbation direction, because it is not symmetric.** Two runs against one aeon tree
+manufacture a false GREEN as readily as a false red: `build.sh` rebuilds `rm`-first, so the loser of
+a race can find a stale ROM the other agent built and read it as its own. A red gets investigated; a
+green gets quoted. That is the mandated-gate asymmetry arriving on the tree instead of on the check.
+
+**And note who found it.** The agent flagged a shared-state violation committed by its own controller,
+against a brief clause written to protect it. A dispatch that tells agents what the controller has
+promised THEM is what made that reportable at all.
+
+## THE MOTIVATING CASE IS SELECTED FOR BEING BROKEN, NEVER FOR BEING REPRESENTATIVE (2026-09-09)
+
+**A corpus earns a parcel by FAILING on it. That says nothing about whether it EXERCISES the fix**,
+and the two get silently conflated because the same file is doing both jobs: it is the reason the
+work exists and the thing the work is verified against. **Its coverage of the fix is accidental.**
+
+Measured instances, and the sample is stated precisely because the pattern is more attractive than
+its evidence:
+
+- **The integer selector.** Sonic 1 refuses the construct, which is why the parcel existed. But
+  `SonicDriverVer = 1` and `case 1` is FIRST in both blocks, and the old code took a refused arm as
+  the default, so a fix that stopped the refusal WITHOUT wiring the comparison would emit zero
+  diagnostics and the correct bytes and pass every byte gate the corpus offers.
+- **`charset`.** Sonic 1 reaches one of the two consumers the seam's own doc comment names: 0 `dc.b`
+  strings after the bare `charset` reset in `sonic.asm`, against 45 elsewhere in the corpus. All nine
+  complaints can vanish with `string_to_int` still unmapped.
+
+**HONEST SAMPLE, because this lane's own bar 19 applies to its own findings.** That is **n=2 on the
+corpus form**, not three: the third instance people will want to add, the four-shape byte gate that
+stayed green under a mutation breaking `exec_switch` outright, is the **reference-artifact** form of
+the same idea and has a different cause (aeon does not use the construct at all). Keep them adjacent
+and do not merge them into one count. **And the two corpus instances are not independent:** the
+second was found by an agent whose brief already carried the first's lesson, so it is corroboration
+under a shared frame rather than a second discovery. It may still be the general case; it has not
+been shown to be.
+
+**THE REMEDY, and it is cheap: build a probe for the half the motivating corpus does NOT reach, and
+derive its expected values from `asl` rather than from your reading of what ought to happen.** The
+selector parcel found the better shape of this without being asked: it built the probe out of the
+corpus's OWN text, the real block with one constant changed so the matching arm is second, choosing
+a block where both arms emit a symbol that exists in both so a wrong pick stays SILENT. A probe made
+of the real construct beats a model of it, and a probe whose failure is silent is the only kind that
+tests this hazard at all.
+
+**The question that finds it before a parcel starts: WHAT WOULD A HALF-FIX LOOK LIKE HERE, AND WOULD
+ANYTHING GO RED?** Ask it while writing the brief, not at review, because by review the green run
+already exists and reads as evidence.
+
+## A RULING HAS CONSUMING SURFACES, AND A PARTIAL ENUMERATION LOOKS EXACTLY LIKE A FINISHED ONE
+
+**Banked 2026-09-09, earned by `UX-CPU-NAME-SILENT-DEFAULT`.** This lane ruled *AS-DEFAULT-CPU is
+REFUSE BY NAME*, shipped it on the AS frontend with four gates and a module doc, and never applied
+it to `.emp`, where `attr_cpu` went on silently turning every unrecognised processor name into a
+68000. The banked rule *gate every consumer of a value* already covers values. **This is the same
+failure one level up, on a RULING, and it is harder rather than easier to watch.**
+
+**Why it is harder, and this is the operative sentence:** a value's consumers are enumerable by a
+mechanical sweep, so a miss is findable by grep. **A ruling's surfaces are not enumerable by any
+sweep**, because nothing in the tree marks a site as one the ruling ought to reach. So the check
+has no population to run over, and the artifact cannot distinguish *we finished* from *we finished
+the first one*.
+
+**The direction that makes it survive: a lane that did most of the work looks identical to one
+that did all of it.** The AS half was not sloppy. It was thorough, tested, documented, and cited
+approvingly for months by this very file. Thoroughness at the completed surface is what supplies
+the impression of completeness, so **the more carefully the first surface is done, the less likely
+anyone asks about the second.**
+
+**The practice, and it is cheap: when you bank a ruling, write down the surfaces it must reach, by
+name, in the ruling itself.**
+
+**⚠ AMENDED 2026-09-10, AND THE AMENDMENT IS TO THE REMEDY RATHER THAN THE RULE: WRITING THE
+SURFACES DOWN IS NOT ENOUGH, BECAUSE A SITE CAN PARAPHRASE THE THING IT CONSUMES.** Corroborated
+independently by the oracle lane, in their repo, with no contact between the seats: their H26 pass
+hardened a claim and fixed ELEVEN sites of one spelling, and a later parcel found SEVEN more that
+PARAPHRASED it, which H26's own greps had no reason to match. **So the enumeration a ruling's author
+writes down is an enumeration of the spellings they thought of**, and a sweep keyed to it inherits
+that limit while looking exhaustive. Two seats, two repos, one class, arriving as a doc defect on
+their side and a code defect on ours (`LINKER-STILL-PRINTS-A-PASS-COUNT`: the owner's decision took
+an attempt count out of the assembler's message and the linker's copy of the same wording, at
+`crates/sigil-link/src/relax.rs:1116`, was never touched). By bar 19 that is corroboration and not
+echo. **Enumerate by what a site DOES, never by what it says**, and treat a grep over the ruling's
+own words as a floor.
+
+**And a floor is a PRIOR, not a law** *(oracle, booked against themselves the same hour)*. They
+pushed an agent past a stated single consumer, it looked, found nothing, and the count was exact.
+**Keep sending agents past the number; stop reading a count that holds as a failure to look.** The
+two halves compose: a count is a floor because spellings are missed, and a floor that turns out to
+be the ceiling is a result rather than a shortfall.
+
+**A BASELINE COUNT HANDED TO AN AGENT CARRIES ITS PROFILE AND ITS COMMAND** *(oracle's, same
+exchange, and checked here rather than adopted)*. They handed an agent a count taken under one
+profile beside a command from the other, with three tests `cfg_attr(debug_assertions, ignore)`, so
+the agent had to reconcile the two before it could report anything. **Checked on this tree: sigil is
+not exposed, and the reason is worth writing down rather than the verdict.** Its only two
+profile-sensitive tests (`crates/sigil-link/src/relax.rs`, the empty-ladder and mis-ordered-ladder
+guards) BRANCH on `cfg!(debug_assertions)` inside the body and run in both profiles, so they count
+either way; nothing here is conditionally ignored. **That is a property of today's tree, not of the
+lane**: the first `cfg_attr(…, ignore)` anyone adds makes every baseline in this document
+profile-dependent with nothing announcing it. State the profile and the command beside the number
+regardless, since it costs one clause. Not the sites you changed, the sites it GOVERNS. That converts an
+unenumerable class into a list a later session can check, which is the only thing that makes the
+ruling auditable at all. When you cite a ruling as already-applied, name the surface you verified
+it on, never the ruling alone.
+
+*(The instance also carries a second lesson worth keeping beside it: the naive application of the
+ruling would have been a REGRESSION. Neither `m68000` nor `m68k` is recognised either, both reach
+`M68000` through the same default the ruling removes, so the accepted spellings were never a policy,
+they are the defect's silhouette. Refusing all but `z80` and `m68000` would newly refuse
+`examples/main.emp`, the newcomer's first-contact file. **Before applying a ruling to a new surface,
+ask what that surface's current behaviour is RESTING on**, here the very default being deleted.)*
+
+## `d-22` IS HUB-ANSWERED: name who answered a decision card in the same sentence that cites it (2026-09-06)
+
+*(Moved from the boot read's `AS-NAMELESS-LABELS-RC1` row, original lines 1126-1136. The rest of
+that row is a landing record and closed history, and is in `docs/OVERSEER-LOG.md`, 2026-09-10 cut.)*
+
+**⚠ `d-22` IS HUB-ANSWERED, AND EVERY EARLIER STATEMENT OF THIS ROW OMITTED THAT** *(established
+2026-09-06, reading the card rather than the row that cites it: `docs/decisions.jsonl` has `d-22`
+answered `by: "hub, under the project declaration"`)*. **So this item has never had an owner
+decision of any kind.** What went to him was the size, and it has not come back. The bare words
+*"Ruled ACCEPT"* in a queue row are how a hub ruling becomes indistinguishable from his, one hop
+later, to a session reading cold, which is this lane's own banked *relay is not approval* with the
+delay that makes it invisible at the time. Instance, and it is why the correction is written into
+the row rather than only into the log: on 2026-09-06 the hub sent a GO resting partly on `d-22`
+read as an acceptance already in hand. This lane held, named the card's author, and the hub
+withdrew the go and corrected its card within minutes. **When citing a decision as grounds, name
+who answered it in the same sentence.**
+
+### A PARTIAL RUN IS NOT A LANDING GATE (2026-09-05)
+
+*(The strict red this came out of is CLOSED. Four of its five failures were this lane's own,
+the survivor was the pins gate, and the reasoning error that produced them is the transferable
+part: `docs/OVERSEER-LOG.md`, 2026-09-05 cut.)*
+
+**What this costs, stated rather than softened: a partial run is not a landing gate, and I treated it
+as one six times today.** Every one of those parcels reported honestly that the byte gates had not
+executed. The reporting was correct and the LANDING DECISION still went ahead on it. The rule this
+lane needs is not better disclosure, which was already perfect, but that **a parcel touching the AS
+frontend gets a strict run before it lands, or it lands knowing the gate is owed.**
+
+### I RAN A SUBSET OF THE LANDING GATE ALL DAY AND IT COST ME TWICE (2026-09-05)
+
+*(The two things that escaped through that gap, and the clippy attribution by `git log -L`:
+`docs/OVERSEER-LOG.md`, 2026-09-05 cut.)*
+
+**Standing rule for this lane, in force: run `scripts/landing-run.sh`, not a hand-assembled subset.**
+If it cannot run (machine load killed two monolithic suites tonight), segment it, give each segment
+its own end marker, and say in the landing which preconditions did not execute. Naming the gap is the
+minimum; running the gate is the job.
+
+*(Both measurements, and why the quoted `asl` tabs make a scoped `allow` the right remedy
+rather than a reflow: `docs/OVERSEER-LOG.md`, 2026-09-05 cut.)*
+
+**The lesson did not transfer because I applied it to the PROCEDURE and not to the COMMANDS INSIDE
+IT.** Reading a gate's precondition and then re-typing it from memory is the same omission the wrapper
+exists to prevent, one layer in. **Copy the invocation out of the script; never retype a gate's
+command.**
+
+### PRINT `pwd` AND `HEAD` BESIDE ANY VERDICT (2026-09-05)
+
+*(The compound command that left the shell in `s2disasm` and produced a clippy exit 101 from
+a tree with no `Cargo.toml`: `docs/OVERSEER-LOG.md`, 2026-09-05 cut.)*
+
+**The rule: a verdict from a compound command inherits wherever the previous part left the shell, and
+an exit code alone cannot tell a tool's failure from the tool never running.** Print `pwd` and `HEAD`
+beside any verdict you intend to act on. This lane already stamps its suite logs that way; the same
+discipline was missing from one-line checks.
+
+### AN A/B WHOSE ARMS AGREE MAY HAVE MEASURED NOTHING: state what each arm PRODUCED
+
+*(Aeon's finding against its own test, widened by them from a bar this seat had stated too narrowly.)*
+
+Their first before/after run had **both arms fail on a missing positional argument**. The failure
+output was identical, so **the pair read as "identical, therefore fine"**. Caught only by looking at
+the exit codes.
+
+**This seat then banked the narrow form, "check exit codes on both arms". Aeon widened it and the
+wider version is the right one: THE EXIT CODE IS THE INSTANCE, NOT THE SHAPE.** The real requirement
+is that **at least one arm must have PRODUCED something**, not merely that the two agree. That covers
+every shared upstream failure an exit code may not even report: a wrong path, an absent input, a
+stale cache, a subprocess that never ran, a tool that resolved its subject from its own location
+rather than from the argument.
+
+**Two arms agreeing perfectly while having measured nothing are the same family as a control that
+bypasses its subject and a test that cannot fail** (the three vacuous-proof shapes already banked
+here). The discipline is one line longer than the habit: report a positive artifact from the arms, a
+row count, an extracted symbol and its value, a byte length, **beside** the agreement. Their corrected
+run does exactly that: `s4budget` exit 0 both arms and byte-identical output, **plus** 1,654 symbol
+rows either way and two named symbols extracted with their values.
+
+**And the same lane bounded its own result before being asked**, which is the other half of the
+practice: their unphased-listing test used a build with the sound driver off, whose listing still
+carries 34 Z80 mentions, so they reported it as *a listing gaining a count-0 trailer where phased
+content is at most minimal*, **not** as a listing with provably zero phased symbols. **A second
+partial result offered as a discharge is exactly what the first correction had just caught**, and
+they refused to let it stand as one.
+
+### VARYING A FLAG IS NOT VARYING A ROUTE: I compared one path with itself and called it two
+
+**The `AS-ASSIGN-UNRESOLVED` row said the divergence was between the LINKER path and a SINGLE-FILE
+route. I reproduced it, ran the CLI with and without `--hex`, got identical behaviour, and wrote in
+the dispatch brief that "both routes behave identically" and the row's framing was wrong.**
+
+**The row was right and I was wrong.** Verified at `e6e942e5`: `main.rs:124` goes
+`assemble_root_located_warned` then `sigil_link::link()` with **no `resolve_layout`**, while every
+other seam (`:436`, `:789`, `:902`) runs `resolve_layout` then `link`. `resolve_layout`'s
+`fold_equ_syms` already refused an unfoldable `equ` **without asking whether anything reads it**, and
+the `.asm` CLI was the one final link that stepped over it.
+
+**Only one CLI route takes a `.asm` file, so both my observations were of the same path.** `--hex`
+changes the OUTPUT FORMAT, not the seam. **I compared a route with itself and reported agreement**,
+which is the same family as a sweep that runs one binary twice, or a cross-validation whose two
+implementations share an author.
+
+**The rule: before claiming two paths agree, name what makes them DIFFERENT PATHS, and check that the
+thing you varied is that.** A flag, an output format, a verbosity level and a file extension are all
+things that feel like route selectors and usually are not. The cheap check is the one I skipped:
+follow the call chain far enough to see where the two supposedly diverge.
+
+**And the fix I proposed in that brief could not be taken at all.** "Evaluate the right-hand side
+where it is written" would refuse the cross-seam equates the mixed AS plus `.emp` build depends on,
+because the front end cannot distinguish a never-defined name from a `.emp` label the link is about to
+supply. **A fix specified from the outside can be impossible for a reason the specifier cannot see**,
+which is the argument for stating the DEFECT precisely and leaving the remedy to whoever can read the
+seam.
+
+### A CANARY PROVES THE PATTERN CAN FIRE, NOT THAT THE INPUT ARRIVED
+
+**The sharpest refinement of the night, and it is a correction to a discipline this document already
+teaches.** This lane has been demanding a canary before believing any zero. An agent then ran one
+correctly and STILL shipped a false clean: its dash scanner used `\+` in an ERE, so it scanned **1
+line instead of 1,365** and printed "clean". **The canary passed, because the canary proved the
+PATTERN could match. It said nothing about whether the 1,365 lines ever reached the matcher.**
+
+**So a canary covers the RULE and not the FEED.** Both need a control, and they are different
+controls: plant a positive to prove the pattern fires, and **assert the input count** to prove the
+data arrived. A zero is only meaningful when both are known. Every false-clean this lane hit tonight
+splits cleanly by that test: the bad pathspec, the shell `grep -r`, the zsh alternation, the empty
+corpus, the truncated scan. **Four were feed failures and only one was a rule failure**, and the
+canary discipline as written only covered the rule.
+
+### AND A REDUCTION CAN SUPPLY THE VERY THING WHOSE ABSENCE IS THE FAULT
+
+I reduced a corpus failure to a small probe, both assemblers agreed, and I reported to the agent that
+**my reduction does not reproduce it** and the isolation was still owed. Correct as far as it went and
+wrong in a way I could not see: the real fault was a **missing build-generated include**, and my
+reduction had supplied a value for the symbol whose absence IS the fault. **The probe tested a
+program in which the defect cannot occur.**
+
+**That is a distinct confound from the ones already banked here.** The others were probes that could
+not distinguish two answers; this one removed the cause while preserving the shape. **When a
+reduction fails to reproduce, ask what the original had that the reduction supplies**, not only what
+the reduction lacks.
+
+**It was the fourth confounded probe from this seat in one night**, which is the real headline: an
+off-by-one index, a value too large for its destination, one route compared with itself, and now a
+reduction that filled in the missing input. **All four looked like measurements and three of them
+reached the dispatch brief.**
+
+### THE RIGHT BASE COMPUTED THE WRONG WAY IS ONE BYTE AT ONE SITE
+
+I warned the parcel that `asl`'s `log` is base 10, so a natural-log implementation answers 4 where the
+reference answers 2. True, and **loud**: wrong by a whole digit, visible in any test.
+
+**The quiet one is finer.** `ln(1000)/ln(10)` is `2.9999999999999996` in binary64, and `int()`
+**floors**, so the right base computed the obvious way emits `7C02` where asl emits `7C03`. **A wrong
+base is loud; a wrong SPELLING of the right base is one byte at one of six sites.** `asl`'s is an
+exact `log10`. **When matching a reference's arithmetic, the function is the easy half and the
+formulation is where the byte moves.**

@@ -7014,3 +7014,53 @@ symbols cannot supply — occupancy is the UNION of tile ranges and `overlay_wit
 toml. So this is a right conclusion resting on a refuted premise, and only the premise is the
 defect; it is the user-facing half that misleads, since it tells an author to add constants that
 already exist.
+
+## 2026-09-10 cut - closed history moved verbatim from the boot read
+
+Moved when `docs/OVERSEER.md` crossed its byte bound a third time. The entry carries its original
+line span and the heading it sat under. The rules this row earned stay live: the one read at a
+moment went to `docs/OVERSEER-REFERENCE.md` in the same cut, and what moved here is the landing
+record and the sizing behind it.
+
+### [cut] original lines 1102-1144 - AS-NAMELESS-LABELS-RC1, the landing record and its sizing
+
+*(original `docs/OVERSEER.md` lines 1102-1125, under: Rules banked 2026-09-05 - read at boot)*
+
+### AS-NAMELESS-LABELS-RC1: LANDED 2026-09-10 at merge `6b26f7f7`, pushed
+
+**Landed on `d-29`, answered `land` BY THE HUB** under the owner's *"answer any you can"* delegation,
+taking this lane's own recommendation; he overturns it with one word. Landing run GREEN on the merged
+tree against `.aeon-sigil-ref` at `ec640bcf`: 5,017 passed / 0 failed, clippy clean, zero `skip:` lines,
+reconciling 5,006 baseline + 11 new. The 11 new tests all ran and are named in the log. **The four-shape
+byte gates are green, so aeon's bytes did not move** - and that green is NOT evidence the feature is
+right, because aeon uses no nameless labels at all; it is the reference-artifact form of the
+motivating-case blindness this file already banks. The feature's evidence is its own 11 asl-differential
+tests and the corpus census. Headline reproduced INDEPENDENTLY here from the shared `s2disasm` checkout
+at `e45ebf3` (the parcel measured a private rsync copy of the same revision): 149 diagnostic rows,
+ROM size `$F9198`, padding `$989C`, zero unresolved nameless slots.
+
+The sizing below is kept as the record of what was asked for before dispatch.
+
+#### The sizing, asked for by the owner before dispatch
+
+**Size: L.** The single highest-value row in SIGIL-AS-REPLACEMENT, measured rather than estimated:
+one unimplemented feature is the sole root cause of **4,985 diagnostic rows across four message
+classes, 86.5 percent of the entire Sonic 2 run** (landed measurement, `49acd05d`, note at
+`docs/superpowers/notes/2026-09-05-s2-top-blocks-decompose.md`). Ruled **ACCEPT** by `d-22` on
+2026-09-03 for the AS surface only; zero of 5,003 constructs are accepted today, so this is not
+started rather than half done.
+
+*(The `d-22` paragraph that sat at original lines 1126-1136, between the two fragments here, is a
+rule read at a moment and went to `docs/OVERSEER-REFERENCE.md` instead, under its own heading. Two
+referents in the text above resolve outside this file: *"this file already banks"* means the boot
+read, and the motivating-case block it names moved to `docs/OVERSEER-REFERENCE.md` in the same cut;
+*"named in the log"* means this file.)*
+
+*(original `docs/OVERSEER.md` lines 1137-1144, under: The sizing, asked for by the owner before dispatch)*
+
+**The rest of this row is read when the parcel is DISPATCHED, not at boot**, so it is in
+`docs/OVERSEER-REFERENCE.md` under this row's own name, verbatim: the six things that have to
+change and where each is refused today, why the row is L and not XL, the arithmetic-regression
+risk that decides the gate, the landing condition with its zero-population premise measured at
+the consuming end, and the prohibition on quoting `5,761 - 4,985 = 776` as a post-fix
+prediction.
