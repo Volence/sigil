@@ -641,3 +641,237 @@ data Entry = E{ code: \"pitcher_plant.init\" }
         diags.iter().filter(|d| d.level == Level::Error).map(|d| &d.message).collect::<Vec<_>>()
     );
 }
+
+// =============================================================================
+// D-25: `0` is the null-symbol spelling at the ARGUMENT surface too, and a
+// parameter's DEFAULT is held to the parameter's class
+// =============================================================================
+//
+// `0` spells "no label here" in a pointer slot, and the comparison surface
+// already answers on it (`slot == 0`). These rows pin the same spelling one
+// position along: as an argument, and as a parameter's declared default.
+//
+// The predicate is ZERO, not "any integer". A non-zero int beside a label is a
+// meaningful comparison that answers `false`, but it is not a value that
+// inhabits `Label`, so it stays refused here. The two directions are asserted
+// separately below because accepting every integer would satisfy every positive
+// row on its own.
+
+/// A helper whose body never touches its `Label` parameter, so these rows
+/// measure the argument/parameter surface and nothing downstream of it.
+const NULL_LABEL_HELPER: &str = "\
+module m
+comptime fn takes(p: Label) -> Code { return asm { nop } }
+";
+
+/// Lower [`NULL_LABEL_HELPER`] plus a proc whose single statement is `stmt`.
+fn lower_with_call(stmt: &str) -> Vec<String> {
+    let src = format!("{NULL_LABEL_HELPER}proc p (a0: *u8) {{\n    {stmt}\n    rts\n}}\n");
+    let (_module, diags) = lower(&src);
+    errors(&diags).iter().map(|e| e.to_string()).collect()
+}
+
+/// The literal `0` in a `Label` argument position is accepted.
+#[test]
+fn null_label_zero_is_accepted_as_a_label_argument() {
+    let errs = lower_with_call("takes 0");
+    assert!(errs.is_empty(), "`0` must be a legal `Label` argument, got: {errs:?}");
+}
+
+/// The paren spelling agrees with the bare one: both reach the same binder.
+#[test]
+fn null_label_zero_is_accepted_in_the_paren_spelling() {
+    let errs = lower_with_call("takes(0)");
+    assert!(errs.is_empty(), "`takes(0)` must be legal, got: {errs:?}");
+}
+
+/// A named argument carries the carve-out too (the second `check_arg_class`
+/// site, which a positional-only row would leave unmeasured).
+#[test]
+fn null_label_zero_is_accepted_as_a_named_argument() {
+    let errs = lower_with_call("takes(p: 0)");
+    assert!(errs.is_empty(), "`takes(p: 0)` must be legal, got: {errs:?}");
+}
+
+/// A named `const` equal to 0 is the null symbol: the test is on the folded
+/// VALUE, so the readable spelling of the sentinel works, exactly as it already
+/// does at the comparison surface.
+#[test]
+fn null_label_zero_from_a_const_is_accepted() {
+    let src = format!("{NULL_LABEL_HELPER}const NO_PROGRAM = 0\nproc p (a0: *u8) {{\n    takes NO_PROGRAM\n    rts\n}}\n");
+    let (_module, diags) = lower(&src);
+    let errs = errors(&diags);
+    assert!(errs.is_empty(), "a const folding to 0 must be a legal `Label` argument, got: {errs:?}");
+}
+
+/// A constant expression folding to 0 is accepted for the same reason.
+#[test]
+fn null_label_zero_from_a_folded_expression_is_accepted() {
+    let errs = lower_with_call("takes(2 - 2)");
+    assert!(errs.is_empty(), "an expression folding to 0 must be legal, got: {errs:?}");
+}
+
+/// A NON-ZERO integer stays refused, and the refusal names the `0` spelling so
+/// the reader learns the rule from the error rather than from a doc.
+#[test]
+fn null_label_nonzero_int_is_still_refused() {
+    let errs = lower_with_call("takes 5");
+    assert!(
+        errs.iter().any(|e| e.contains("expected a label")),
+        "a non-zero int must still be refused at a `Label` parameter, got: {errs:?}"
+    );
+    assert!(
+        errs.iter().any(|e| e.contains("`0` is the one integer a `Label` accepts")),
+        "the refusal must name `0` as the accepted integer, got: {errs:?}"
+    );
+}
+
+/// A negative integer is not the null symbol either.
+#[test]
+fn null_label_negative_int_is_still_refused() {
+    let errs = lower_with_call("takes(0 - 1)");
+    assert!(
+        errs.iter().any(|e| e.contains("expected a label")),
+        "a negative int must still be refused at a `Label` parameter, got: {errs:?}"
+    );
+}
+
+/// A non-label, non-int value is refused with the plain diagnostic and WITHOUT
+/// the integer hint, which would be advice about a value nobody wrote.
+#[test]
+fn null_label_string_argument_is_still_refused() {
+    let errs = lower_with_call("takes(\"shoot\")");
+    assert!(
+        errs.iter().any(|e| e.contains("expected a label")),
+        "a string must be refused at a `Label` parameter, got: {errs:?}"
+    );
+    assert!(
+        !errs.iter().any(|e| e.contains("`0` is the one integer a `Label` accepts")),
+        "the integer hint must not ride on a non-integer refusal, got: {errs:?}"
+    );
+}
+
+// ---- the parameter's own default ------------------------------------------
+//
+// A default is bound without ever passing through the call's argument list, so
+// nothing above reaches it. These rows are the half the motivating case cannot
+// exercise: every one of them measures a call that supplies NO argument.
+
+/// A `Label` parameter defaulting to `0` is legal, and calling it with the
+/// argument omitted raises nothing. This is the spelling aeon's generator emits.
+#[test]
+fn default_label_zero_is_accepted() {
+    let src = "\
+module m
+comptime fn takes(p: Label = 0) -> Code { return asm { nop } }
+proc p (a0: *u8) {
+    takes
+    rts
+}
+";
+    let (_module, diags) = lower(src);
+    let errs = errors(&diags);
+    assert!(errs.is_empty(), "`p: Label = 0` must be legal and bind cleanly, got: {errs:?}");
+}
+
+/// A `Label` parameter defaulting to a NON-ZERO integer is refused. Written as
+/// an argument this has always been an error; a default is held to the same
+/// class, so the misleading spelling cannot be recorded.
+#[test]
+fn default_label_nonzero_int_is_refused() {
+    let src = "\
+module m
+comptime fn takes(p: Label = 5) -> Code { return asm { nop } }
+proc p (a0: *u8) {
+    takes
+    rts
+}
+";
+    let (_module, diags) = lower(src);
+    let errs = errors(&diags);
+    assert!(
+        errs.iter().any(|e| e.contains("expected a label")),
+        "a non-zero int default at a `Label` parameter must be refused, got: {errs:?}"
+    );
+}
+
+/// The same rule for a value that is not an integer at all.
+#[test]
+fn default_label_string_is_refused() {
+    let src = "\
+module m
+comptime fn takes(p: Label = \"shoot\") -> Code { return asm { nop } }
+proc p (a0: *u8) {
+    takes
+    rts
+}
+";
+    let (_module, diags) = lower(src);
+    let errs = errors(&diags);
+    assert!(
+        errs.iter().any(|e| e.contains("expected a label")),
+        "a string default at a `Label` parameter must be refused, got: {errs:?}"
+    );
+}
+
+/// The OTHER direction: a default that IS a label, in a slot that is not a
+/// `Label`, is refused by the same check. Nothing but a default can reach this
+/// pairing, since the value is never written at a call.
+#[test]
+fn default_label_in_a_u8_slot_is_refused() {
+    let src = "\
+module m
+comptime fn takes(v: u8 = shoot) -> Code { return asm { nop } }
+proc p (a0: *u8) {
+    takes
+    rts
+}
+proc shoot (a0: *u8) { rts }
+";
+    let (_module, diags) = lower(src);
+    let errs = errors(&diags);
+    assert!(
+        errs.iter().any(|e| e.contains("a label is not a valid `u8` argument")),
+        "a label default in a `u8` slot must be refused, got: {errs:?}"
+    );
+}
+
+/// A bareword default in a `Label` slot is that symbol's label, because a
+/// default is evaluated through the same path an argument takes. Without that,
+/// `0` would be the only writable `Label` default, which is the inconsistency
+/// this closes rather than one to introduce.
+#[test]
+fn default_label_bareword_resolves_to_a_label() {
+    let src = "\
+module m
+comptime fn takes(p: Label = shoot) -> Code { return asm { jsr {p} } }
+proc p (a0: *u8) {
+    takes
+    rts
+}
+proc shoot (a0: *u8) { rts }
+";
+    let (_module, diags) = lower(src);
+    let errs = errors(&diags);
+    assert!(errs.is_empty(), "a bareword default in a `Label` slot must be that label, got: {errs:?}");
+}
+
+/// The register class is checked on defaults by the same call, so a `Reg`
+/// parameter cannot declare a default no call could supply either.
+#[test]
+fn default_reg_nonregister_is_refused() {
+    let src = "\
+module m
+comptime fn takes(r: Reg = 5) -> Code { return asm { nop } }
+proc p (a0: *u8) {
+    takes
+    rts
+}
+";
+    let (_module, diags) = lower(src);
+    let errs = errors(&diags);
+    assert!(
+        errs.iter().any(|e| e.contains("expected a register")),
+        "a non-register default at a `Reg` parameter must be refused, got: {errs:?}"
+    );
+}
