@@ -1,0 +1,62 @@
+# THE STANDING DIVERGENCE LEDGER: where sigil and the reference asl disagree on
+# whether a program is legal, and why each disagreement is currently tolerated.
+#
+# HAND-WRITTEN. Unlike asl_verdicts.txt beside it, nothing generates this file,
+# and that is the point: a row costs a sentence of justification, so widening
+# what sigil accepts cannot be waved through by re-running a tool.
+#
+# `crates/sigil-frontend-as/tests/as_over_acceptance.rs` reads this file. A
+# divergence observed and NOT listed here is a hard failure. A row listed here
+# that has started agreeing with asl is REPORTED and not a failure: good news
+# should be retired deliberately, not arrive as a red.
+#
+# Adding a row is a decision to tolerate. It is not a way to get green, and the
+# reason column is what a later reader uses to decide whether the toleration
+# still holds.
+#
+# format:  name<TAB>direction<TAB>reason
+# direction:  over-acceptance  = asl refuses it, sigil accepts it
+#             over-refusal     = asl accepts it, sigil refuses it
+
+# ---------------------------------------------------------------------------
+# OVER-ACCEPTANCE
+# ---------------------------------------------------------------------------
+#
+# The three first-pass rows are the standing divergence recorded in
+# docs/superpowers/notes/2026-09-10-as-circular-split.md section 6, and their
+# toleration is grounded in owner ruling d-23-answered: the ruling puts every
+# non-provably-circular layout expression in "everything else settles with no
+# fixed pass count", and asl's rule here is blunt rather than analytic, so
+# adopting it would refuse programs the ruling asked us to keep settling.
+# Closing them is a second decision, not that parcel's and not this one's.
+
+firstpass_rept_forward_constant	over-acceptance	A `rept` count naming a forward symbol that is a pure constant. asl #1820. Settles in two passes and is not circular by ruling d-23-answered's conjunct (d); the note's `c4`.
+firstpass_rept_org_separated	over-acceptance	A `rept` count naming a forward label with an `org` between. asl #1820. Settles, and the intervening `org` breaks the address flow, so it is not circular; the note's `c5`.
+firstpass_if_settles_false	over-acceptance	An `if` condition naming a forward label, settling false. asl #1820. Not a layout-determining expression under the ruling's definition; the note's `d2`.
+
+# The three below were found BY THIS GATE on its first run, which is the whole
+# argument for deriving the corpus from asl's error catalogue rather than from
+# the shapes already known. None of them had been noticed. They are ledgered
+# rather than fixed because fixing them changes what sigil accepts, which is a
+# separate decision with its own landing gate; each is booked in
+# docs/superpowers/notes/campaign-gap-ledger.md.
+
+dir_padding_not_on_off	over-acceptance	`padding maybe`. asl #1520 only ON/OFF allowed. `on_off()` in eval.rs treats every token that is not literally `off` as ON, so a garbage argument silently turns the flag ON rather than being refused. `supmode` shares the helper and the defect.
+expr_function_arg_count	over-acceptance	A user `function` called with more arguments than it declares parameters. asl #1490 wrong numbers of function arguments. sigil does not arity-check `function` calls; the extra argument is evaluated and discarded.
+save_missing_restore	over-acceptance	A `save` with no matching `restore` at end of file. asl #1460 missing RESTORE. sigil does not check that the save stack is empty when the unit ends.
+
+# ---------------------------------------------------------------------------
+# OVER-REFUSAL
+# ---------------------------------------------------------------------------
+#
+# All four are declared scope limits of the AS-compatibility front end rather
+# than disagreements about the language. Each refuses with a diagnostic that
+# says so, which is the behaviour this repo wants from an unimplemented
+# construct: a named refusal, never a silent mis-assembly. They are ledgered so
+# that the day one of them is implemented, the ledger reports it as retirable
+# instead of the gate saying nothing.
+
+dir_unknown_codepage	over-refusal	The `codepage` directive is not implemented; sigil refuses it as an unrecognized mnemonic. asl accepts an unknown codepage name silently, which is itself the looser behaviour.
+expr_string_in_integer_slot	over-refusal	A string operand in a data directive wider than a byte. asl zero-extends one element per character; sigil refuses by name and says it is not implemented.
+m68k_insn_supported_on_68020	over-refusal	`cpu 68020` and a 68020 bitfield instruction. sigil's front end encodes 68000, 68008 and Z80 only, and refuses a wider processor rather than aliasing it onto a narrower one and mis-assembling silently.
+sect_balanced_ok	over-refusal	The `section`/`endsection` directives are not implemented; sigil refuses them as unrecognized mnemonics. No corpus in the suite uses them.
