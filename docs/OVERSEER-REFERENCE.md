@@ -1995,9 +1995,27 @@ everything this document previously asked and still carried a fabricated number.
 the corrupted value was plausible, in range, and of the right shape, which is why nothing announced
 it.
 
-**`asl_ref.sh` checks the binary and NOT the run** (verified here: its four `exit` sites are all
-about selecting the digest). Until that is fixed, checking the exit status is the caller's job on
-every asl invocation. Booked as `ASL-GUARD-EXIT-STATUS`.
+**`ASL-GUARD-EXIT-STATUS` IS CLOSED, and this paragraph used to say it was open.** It said
+`asl_ref.sh` checks the binary and not the run, and that checking the exit status was therefore the
+caller's job on every asl invocation. That was true when written and stopped being true at
+`8e35bd94`: the guard now defines **`asl_run`**, which runs the pinned binary, prints `ASL_EXIT`
+into the transcript whether or not the caller thought to look, refuses out loud on a non-zero
+status, and returns that status so a caller's `|| exit $?` works the way it does for the digest
+check. `asl_run` is the blessed invocation; calling `"$ASL"` directly still works and asks nothing
+about whether the program answered. See `docs/superpowers/notes/2026-09-05-asl-guard-exit-status.md`
+and the `asl_run` header in `docs/superpowers/notes/asl-reference/asl_ref.sh`.
+
+The property that improved is narrow and worth naming rather than deleting the caveat over: the
+guard now answers **"did the run as a whole fail"** in addition to **"which program ran"**. It still
+does not answer **"did the build answer THIS line"**, and no check anywhere does. For a shape asl
+declines, the byte column is an artifact on a clean exit too.
+
+**AND THE RULE INVERTS FOR A CORPUS OF DELIBERATELY-FAILING FILES.**
+`crates/sigil-frontend-as/tests/over_acceptance/` is made of programs asl is SUPPOSED to reject, so
+a non-zero exit there is the subject of the measurement rather than a fault in it, and
+`|| exit $?` would be wrong. The rule that survives the inversion is not "check the exit status", it
+is **never quote an emitted VALUE out of these runs**: read accept-or-refuse and the diagnostic
+text, never a byte. `scripts/mint_over_acceptance_verdicts.sh` states that in its own header.
 
 *(Counting note, and it has now been wrong TWICE. "Four binaries, one bad" was four PATHS and
 TWO PROGRAMS — and that correction was itself a count of what someone happened to check.

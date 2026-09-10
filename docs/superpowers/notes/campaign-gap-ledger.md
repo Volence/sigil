@@ -4983,3 +4983,71 @@ catch. What the half-fix silently adds is `+Base`, `+(1)`, `+(1+2)`, `+ 1`, `1+ 
 widening is invisible to every instrument it has, because nothing measures what sigil accepts that
 asl does not.** **Kill:** a corpus of asl-REFUSED expressions asserted refused, the way
 `as_signed_int_literal.rs` now does for this one operator.
+
+---
+
+## 2026-09-10, `NOTHING-MEASURES-OVER-ACCEPTANCE`
+
+**ROW 5's KILL CONDITION IS DISCHARGED.** It read: *"a corpus of asl-REFUSED expressions
+asserted refused, the way `as_signed_int_literal.rs` now does for this one operator."*
+That corpus exists at `crates/sigil-frontend-as/tests/over_acceptance/`, gated by
+`crates/sigil-frontend-as/tests/as_over_acceptance.rs`, and it is wider than expressions:
+88 probes derived from asl's own error catalogue (`as.msg`), covering 41 distinct numbered
+refusal classes across the 68000 and Z80 surfaces.
+
+The sentence row 5 ends on, *"a widening is invisible to every instrument it has, because
+nothing measures what sigil accepts that asl does not"*, is no longer true. It is now
+measured in both directions, as a set difference and never a count, against a hand-written
+ledger of tolerated divergences.
+
+**ROW 4 IS NOW GATED, and it reproduced.** Its four accept-more shapes are probes
+`expr_minus_after_binary_minus` (`1--2`), `expr_minus_after_multiply` (`2*-3`),
+`expr_minus_after_divide` (`2/-1`) and `expr_minus_both_sides_of_multiply` (`-1*-1`). All
+four measured again here, independently, agreeing with the row: asl `#1110`, sigil folds.
+They are ledgered rather than fixed, so the row stays open as a FIX but is closed as a
+BLIND SPOT. Row 4's three refuse-more shapes (`--1`, `--SZ`, `- -1`) are not probed: they
+are the nameless-label territory `expr.rs` documents as deliberate, and probing them would
+have meant ledgering a divergence the code already argues for by name.
+
+**ROW 3 DID NOT REPRODUCE THROUGH THIS PATH, and that is recorded rather than rounded
+off.** It says the unconditional plus arm makes the typed evaluator accept `+Base` and
+`+(1)`, both `#1110` in asl. Through a data directive sigil REFUSES both, so they are in
+the corpus as live tripwires (`expr_unary_plus_on_symbol`, `expr_unary_plus_paren`) rather
+than in the ledger as divergences. This neither confirms nor refutes row 3: the row speaks
+about `parse_num_atom` in the typed evaluator and the measurement was made on the AS front
+end's data-directive path, which is a different surface. **Kill for row 3 specifically:** a
+probe that reaches `parse_num_atom`, which this corpus does not currently have.
+
+### Three new rows, found by the gate's first run and NOT fixed
+
+Each is ledgered in `over_acceptance/ledger.txt` with its reason. They are booked here
+rather than fixed because fixing changes what sigil accepts, which is a separate decision
+with its own landing gate.
+
+**6. `on_off()` TREATS EVERY TOKEN THAT IS NOT LITERALLY `off` AS ON.**
+`crates/sigil-frontend-as/src/eval.rs`. So `padding maybe` silently turns padding ON where
+asl refuses with `#1520 only ON/OFF allowed`, and `supmode` shares the helper and the
+defect. This is the worst-shaped of the three: the over-acceptance is not merely a file
+that should not assemble, it is a file that assembles with a LAYOUT FLAG SET THE WRONG WAY
+by a typo. Probe `dir_padding_not_on_off`. **Kill:** `on_off` returns an option and the
+caller refuses a third spelling by name.
+
+**7. USER `function` CALLS ARE NOT ARITY-CHECKED.** A `function` declaring one parameter
+called with two arguments assembles; asl refuses with `#1490 wrong numbers of function
+arguments`. The extra argument is evaluated and discarded. Probe
+`expr_function_arg_count`. **Kill:** the call site compares actual against declared arity.
+
+**8. THE SAVE STACK IS NOT CHECKED AT END OF UNIT.** A `save` with no matching `restore`
+assembles; asl refuses with `#1460 missing RESTORE`. Probe `save_missing_restore`.
+**Kill:** end-of-unit refuses a non-empty save stack, the way the block directives already
+refuse an unterminated `rept`.
+
+### Four over-refusals, ledgered, all declared scope limits
+
+`codepage` (unimplemented), a string operand in a data directive wider than a byte
+(unimplemented, refuses by name), `cpu 68020` (the front end encodes 68000/68008/Z80 and
+refuses a wider processor rather than aliasing it onto a narrower one), and
+`section`/`endsection` (unimplemented, no corpus uses them). Each refuses with a
+diagnostic that says so, which is the behaviour this repo wants from an unimplemented
+construct: a named refusal, never a silent mis-assembly. They are ledgered so that the day
+one is implemented, the ledger reports it as retirable instead of the gate saying nothing.
