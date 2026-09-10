@@ -2602,6 +2602,46 @@ file as a measurement while the peer's tip moved TWICE during the conversation t
 Derive counts at read time; a number that goes stale inside its own conversation is the cleanest
 demonstration this rule will get.
 
+## A BLOCKER IS A CLAIM IN A FIELD NOTHING RE-READS, AND IT FAILS IN TWO DIRECTIONS (2026-09-10)
+
+**Found on this lane's own board an hour after reporting three dead blockers on the hub's, and the
+discovery order is the whole lesson: I audited mine only because a peer reported theirs.** Nothing
+about my board looked wrong, and nothing would have.
+
+**Two rows, two DIFFERENT failures, and a sweep aimed at either one misses the other:**
+
+- **`S1-BONUS-PASS-CUT` said `blockedBy: owner` and he had ANSWERED IT**, at `d-28-answered`,
+  2026-09-09T17:27:10Z, whose own text says it *"unblocks the bonus-pass parcel that stopped at its
+  own gate"*. Fifteen hours of a settled decision producing nothing, because the row that would have
+  been picked up still filed itself as waiting on him. **Its TITLE was stale too, and independently**:
+  it carried *"no saving on Sonic 1"* as the rationale, which `d-28`'s own detail records as true of
+  Sonic 1 alone and NOT generally, the cut being a real 20 to 32 percent on five of nine roots. So
+  the row was wrong about who was blocking AND about why.
+- **`EMP-Z80-MNEMONIC-TABLE` said `blockedBy: owner` and NO QUESTION HAS EVER BEEN PUT TO HIM.** No
+  card exists; `d-27` is the cpu-NAME question and a different subject. Under the propose, discuss,
+  land ruling that surface is this lane's to design and offer. **A row asserting he owes an answer to
+  a question he has never seen is the same defect as one asserting he owes an answer he has already
+  given**, and it reads identically on his console: a lane apparently waiting on him.
+
+**THE MECHANISM, and it is structural rather than careless.** A `blockedBy` is a claim about the
+world written once, in a field that is READ to decide not to pick the row up, and therefore never
+re-read against the world. **Every event that would falsify it (his answer arriving, the question
+never being asked, the peer finishing) leaves the field untouched**, and the row looks correctly
+parked for the entire time it is false. It is the inverse of a stale green: a stale RED, which costs
+nothing visible and hides real work in the one pile nobody sweeps.
+
+**THE CHECK, and it is cheap enough to run at every boot: for each blocked row, name the FALSIFIER.**
+Not the state, the event that would end it. Then resolve it: for an owner block, grep
+`docs/decisions.jsonl` for the card and read its `state` (this lane already has that as a filing
+rule and did not apply it in the READ direction); for a peer block, read their live board. **A
+blocker that cannot name an event a reader can resolve in one command is expired**, exactly as the
+hold table at the top of `docs/OVERSEER.md` already says of holds, and for the same reason.
+
+**THE ASYMMETRY THAT MAKES IT WORTH A RULE: `blockedOnOwner` was `[]` while three rows said
+`blockedBy: owner`.** The filed list and the queue disagreed and both were internally consistent.
+The filed list is swept, because it appears on his console and is embarrassing when wrong; the queue
+field is not, because a blocked row asks nothing of anybody. **Sweep the unswept one.**
+
 ## A CORRECT ACTION CARRYING A WRONG RATIONALE PROPAGATES THE RATIONALE (2026-09-10)
 
 **This lane re-ided a duplicate `d-25` correctly and stated a false reason for doing it, and the
