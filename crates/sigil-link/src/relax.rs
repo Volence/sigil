@@ -59,6 +59,94 @@ fn rung_count(frag: &Fragment) -> usize {
     }
 }
 
+/// Floor under the layout fixpoint's resource guard. **Not an attempt count in
+/// any user-facing sense, and its number is never printed**, which is the owner
+/// ruling `d-23-answered` (`docs/decisions.jsonl`): a message that counts our
+/// own attempts describes our effort rather than answering the author, and it is
+/// the exact complaint the community makes about the assembler this project
+/// replaces.
+///
+/// The guard the loop actually uses is `Sigma(rung_count - 1) + 2`, derived from
+/// the input's own flip budget, and this is only its floor for a small input.
+/// What decides in every real case is convergence, because each pass that
+/// changes a fragment's byte length advances at least one rung, rungs only ever
+/// grow, each fragment has finitely many, and placement is a deterministic
+/// function of the rungs. So the guard is sufficient by construction rather than
+/// by being generous, and the non-convergence report below is unreachable unless
+/// the grow-only invariant is broken inside the linker.
+const PASS_GUARD_FLOOR: usize = 64;
+
+/// One fragment whose encoding changed on a pass: the section it sits in, and
+/// what its encoding moved between. This is the subject the unsettled report
+/// names in place of an attempt count.
+struct RungMove {
+    section: String,
+    span: Span,
+    from: String,
+    to: String,
+}
+
+/// One section whose load address changed on a placement pass, and the two
+/// addresses it moved between.
+struct LmaMove {
+    section: String,
+    from: u32,
+    to: u32,
+}
+
+/// How one ladder rung is described in the unsettled report: the reach its fixup
+/// encodes, and what that rung costs in bytes.
+fn candidate_desc(cand: &RelaxCandidate) -> String {
+    format!("{:?} ({} bytes)", cand.fixup.kind, cand.bytes.len())
+}
+
+/// The report for a layout fixpoint that stopped without settling. It names the
+/// fragments and sections that were still moving on the last attempt and the
+/// values each moved between, and it names no attempt count (owner ruling
+/// `d-23-answered`).
+///
+/// Reaching this is a linker defect, not a source defect, so the message says
+/// so: width selection here only ever grows an encoding, every fragment has
+/// finitely many encodings, and the guard is derived from that budget, so no
+/// input can outrun it while those invariants hold.
+fn unsettled_diag(
+    rung_moves: &[RungMove],
+    lma_moves: &[LmaMove],
+    fallback: Option<Span>,
+) -> Diagnostic {
+    let mut parts: Vec<String> = Vec::new();
+    for m in rung_moves {
+        parts.push(format!(
+            "in section `{}` an operand encoding moved from {} to {}",
+            m.section, m.from, m.to
+        ));
+    }
+    for m in lma_moves {
+        parts.push(format!(
+            "section `{}` moved from {:#X} to {:#X}",
+            m.section, m.from, m.to
+        ));
+    }
+    let moving = if parts.is_empty() {
+        "nothing recorded itself as moving, which is itself the broken invariant".to_string()
+    } else {
+        parts.join("; ")
+    };
+    Diagnostic {
+        level: Level::Error,
+        message: format!(
+            "[relax.unsettled] relaxation width selection never settled. Still moving: {moving}. \
+             Encodings here only ever grow and each fragment has finitely many, so no input can \
+             reach this: it means the grow-only invariant is broken inside the linker."
+        ),
+        primary: rung_moves
+            .first()
+            .map(|m| m.span)
+            .or(fallback)
+            .unwrap_or(Span { source: sigil_span::SourceId(0), start: 0, end: 0 }),
+    }
+}
+
 /// Current byte length of a fragment at the given RUNG index.
 ///
 /// `Org` returns 0: it is a cursor *reposition*, not a run of bytes, so it has
@@ -153,11 +241,11 @@ fn image_final_size(sec: &Section, rungs: &[usize]) -> u32 {
 /// final-size arm corrects the growth-past-baseline understatement (the L-H.1
 /// fix). REWRITES `sec.lma` in place. Returns whether any lma moved this pass (so
 /// the joint fixpoint knows placement is not yet stable).
-fn place_pass(placed: &mut [Section], rungs: &[Vec<usize>]) -> bool {
+fn place_pass(placed: &mut [Section], rungs: &[Vec<usize>]) -> Vec<LmaMove> {
     // Per-group write cursor. `None` group shares one anonymous cursor.
     let mut cursors: std::collections::HashMap<Option<String>, u32> =
         std::collections::HashMap::new();
-    let mut moved = false;
+    let mut moved: Vec<LmaMove> = Vec::new();
     for (si, sec) in placed.iter_mut().enumerate() {
         let mut base = match sec.placement {
             SectionPlacement::Pinned => {
@@ -198,8 +286,8 @@ fn place_pass(placed: &mut [Section], rungs: &[Vec<usize>]) -> bool {
         }
         let advance = sec.reserved_span.max(final_sz);
         if sec.lma != base {
+            moved.push(LmaMove { section: sec.name.clone(), from: sec.lma, to: base });
             sec.lma = base;
-            moved = true;
         }
         // Saturating, not plain `+`: a section placed at the top of the address
         // space (`org -1`) reaches this cursor before `check_image_bounds` refuses
@@ -798,24 +886,30 @@ fn resolve_layout_impl(
     // the chained lmas from the stable rungs and the next pass observes neither a
     // rung growth nor an lma move → convergence. (JmpJsrSym/RelaxAbsSym contribute
     // 1 each = the old total-flips bound; a 4-rung ladder contributes 3.) The
-    // `.max(64)` is the honesty backstop the ruling asks for; the non-convergence
-    // Err below is unreachable-in-practice by the grow-only/deterministic argument.
+    // `PASS_GUARD_FLOOR` is the floor for a small input; the guard itself is
+    // derived from the input's own flip budget, so no input can outrun it and the
+    // non-convergence report below is unreachable while grow-only holds.
     let total_flips: usize = sections
         .iter()
         .flat_map(|s| s.fragments.iter())
         .map(|f| rung_count(f) - 1)
         .sum();
-    let cap = (total_flips + 2).max(64);
+    let guard = (total_flips + 2).max(PASS_GUARD_FLOOR);
 
-    // Span of a fragment that grew on the most recent pass, for the backstop diag.
-    let mut last_grown_span: Option<Span> = None;
+    // What moved on the pass most recently run, which is the subject the
+    // unsettled report names. Both are reset at the head of every pass so the
+    // report describes the last attempt rather than the whole history.
+    let mut rung_moves: Vec<RungMove> = Vec::new();
+    let mut lma_moves: Vec<LmaMove> = Vec::new();
 
-    for _ in 0..cap {
+    for _ in 0..guard {
+        rung_moves.clear();
         // (0) Placement pass (R7p.2): re-derive every chained section's lma from
         // the current rungs. A moved lma moves that section's labels (its
         // `vma_origin` shifts when `vma_base` is None), which the symbol-table
         // rebuild in (a) picks up — the intended truth-telling per D7.4.
-        let moved = place_pass(&mut placed, &rungs);
+        lma_moves = place_pass(&mut placed, &rungs);
+        let moved = !lma_moves.is_empty();
 
         // (a) Build the symbol table with label VMAs shifted under current rungs.
         let mut syms = stubs.clone();
@@ -870,7 +964,12 @@ fn resolve_layout_impl(
                         };
                         if asl_width_rule(v, dash_a) == AbsWidth::L && rungs[si][fi] == 0 {
                             rungs[si][fi] = 1;
-                            last_grown_span = Some(*span);
+                            rung_moves.push(RungMove {
+                                section: sec.name.clone(),
+                                span: *span,
+                                from: "abs.w".to_string(),
+                                to: "abs.l".to_string(),
+                            });
                             grew = true;
                         }
                     }
@@ -889,7 +988,12 @@ fn resolve_layout_impl(
                         };
                         if asl_width_rule(v, dash_a) == AbsWidth::L && rungs[si][fi] == 0 {
                             rungs[si][fi] = 1;
-                            last_grown_span = Some(*span);
+                            rung_moves.push(RungMove {
+                                section: sec.name.clone(),
+                                span: *span,
+                                from: "abs.w".to_string(),
+                                to: "abs.l".to_string(),
+                            });
                             grew = true;
                         }
                     }
@@ -933,8 +1037,13 @@ fn resolve_layout_impl(
                         if new != rungs[si][fi] {
                             let len_before = candidates[rungs[si][fi]].bytes.len();
                             let len_after = candidates[new].bytes.len();
+                            rung_moves.push(RungMove {
+                                section: sec.name.clone(),
+                                span: *span,
+                                from: candidate_desc(&candidates[rungs[si][fi]]),
+                                to: candidate_desc(&candidates[new]),
+                            });
                             rungs[si][fi] = new;
-                            last_grown_span = Some(*span);
                             // Only a LENGTH change forces a relayout pass; a
                             // same-length rung move must still persist (done
                             // above) but does not set `grew`.
@@ -1111,15 +1220,10 @@ fn resolve_layout_impl(
         }
     }
 
-    Err(vec![Diagnostic {
-        level: Level::Error,
-        message: format!("relaxation width selection did not converge within {cap} passes"),
-        // Point at a fragment that grew on the final pass (the likely culprit);
-        // fall back to the first fragment's span if nothing grew.
-        primary: last_grown_span
-            .or_else(|| sections.iter().flat_map(|s| s.fragments.iter()).map(frag_span).next())
-            .unwrap_or(Span { source: sigil_span::SourceId(0), start: 0, end: 0 }),
-    }])
+    // Point at a fragment that moved on the final pass (the likely culprit); fall
+    // back to the first fragment's span if nothing did.
+    let fallback = sections.iter().flat_map(|s| s.fragments.iter()).map(frag_span).next();
+    Err(vec![unsettled_diag(&rung_moves, &lma_moves, fallback)])
 }
 
 /// Bounded multi-pass cap for the `equ` fold (R-T0.3): an `equ` may reference
@@ -3555,5 +3659,118 @@ mod tests {
         let linked = crate::link(&out, &stubs).unwrap();
         let bytes = &linked.section("reach").unwrap().bytes;
         assert_eq!(&bytes[128..132], &[0x66, 0x00, 0xFF, 0x7E], "disp16 = 0 - 130 = -130");
+    }
+
+    // ---- The unsettled report (owner ruling `d-23-answered`) -----------------
+
+    /// The layout fixpoint's non-convergence report names what was still moving
+    /// and the values it moved between, and it never names a count of our own
+    /// attempts. The expectations are derived from the guard constant and from
+    /// the inputs handed to the builder, not copied from the message.
+    #[test]
+    fn unsettled_report_names_what_moved_and_never_an_attempt_count() {
+        let rung_moves = vec![
+            RungMove {
+                section: "player".into(),
+                span: sp(),
+                from: "abs.w".into(),
+                to: "abs.l".into(),
+            },
+            RungMove {
+                section: "hud".into(),
+                span: sp(),
+                from: candidate_desc(&bra_s("T")),
+                to: candidate_desc(&bra_w("T")),
+            },
+        ];
+        let lma_moves =
+            vec![LmaMove { section: "tail".into(), from: 0x1000, to: 0x1010 }];
+        let d = unsettled_diag(&rung_moves, &lma_moves, None);
+        let msg = &d.message;
+
+        // The floor: no attempt count reaches the author. The guard's own number
+        // and the vocabulary that used to carry it are both absent.
+        assert!(
+            !msg.contains(&PASS_GUARD_FLOOR.to_string()),
+            "the guard's number must never be printed, got: {msg}"
+        );
+        assert!(!msg.contains("passes"), "no attempt count vocabulary, got: {msg}");
+        assert!(!msg.contains("within"), "no 'within N' shape, got: {msg}");
+
+        // What it must say instead: every moving subject, and both values each
+        // one moved between.
+        for needle in [
+            "player", "abs.w", "abs.l", // the two-rung fragment and its widths
+            "hud", "PcRel8", "PcRelDisp16", // the ladder fragment and its rungs
+            "tail", "0x1000", "0x1010", // the section that moved, and where
+        ] {
+            assert!(msg.contains(needle), "report must name `{needle}`, got: {msg}");
+        }
+        // It points at a moving fragment, not at nothing.
+        assert_eq!(d.primary, sp());
+    }
+
+    /// A worst-case growth cascade: a hundred `abs.w` operands arranged so that
+    /// each one crosses the `abs.w`/`abs.l` boundary only after the operand
+    /// before it has grown, so the fixpoint can retire exactly one per pass and
+    /// needs a hundred of them.
+    ///
+    /// This is the property worth pinning, because the report above is
+    /// unreachable: the guard is `Sigma(rung_count - 1) + 2`, derived from the
+    /// input's own flip budget, so an input that needs more passes brings a
+    /// larger budget with it. The cascade settles, and its widths are correct at
+    /// the end.
+    #[test]
+    fn a_worst_case_growth_cascade_settles_inside_the_derived_guard() {
+        const K: usize = 100;
+        const ORG: u32 = 0x7000;
+        // Each label sits two bytes below the one before it, so `L{i}` reaches
+        // 0x8000 (the first address needing abs.l) only once `i` operands have
+        // each grown by two bytes. Solving ORG + 4K + FILL + 2(K-1) == 0x8000
+        // for the run of filler that puts L0 exactly on the boundary.
+        const FILL: usize = 0x8000 - ORG as usize - 4 * K - 2 * (K - 1);
+
+        let mut fragments: Vec<Fragment> = (0..K).map(|i| relax_move(&format!("L{i}"))).collect();
+        fragments.push(Fragment::Data(DataFragment {
+            bytes: vec![0u8; FILL + 2 * K],
+            fixups: vec![],
+            span: sp(),
+        }));
+        // L0 is last in memory, L99 first, so the addresses descend with the index.
+        let labels: Vec<Label> = (0..K)
+            .map(|i| Label {
+                name: format!("L{i}"),
+                offset: (4 * K + FILL + 2 * (K - 1 - i)) as u32,
+            })
+            .collect();
+
+        let sec = Section {
+            name: "cascade".into(),
+            cpu: Cpu::M68000,
+            vma_base: None,
+            lma: ORG,
+            labels,
+            fragments,
+            placement: sigil_ir::SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
+            bank: None,
+            equ_syms: vec![],
+        };
+
+        let out = resolve_layout(&[sec], &SymbolTable::new(), true)
+            .expect("a grow-only cascade settles; it must never report as unsettled");
+
+        // Every operand ends on abs.l: once the run has grown by 2K bytes, every
+        // label is at or above 0x8000.
+        for (i, frag) in out[0].fragments.iter().take(K).enumerate() {
+            match frag {
+                Fragment::Data(d) => {
+                    assert_eq!(d.bytes.len(), 6, "operand {i} must settle on the 6-byte abs.l form");
+                    assert_eq!(d.fixups[0].kind, FixupKind::Abs32Be, "operand {i}");
+                }
+                other => panic!("operand {i} was not lowered: {other:?}"),
+            }
+        }
     }
 }
