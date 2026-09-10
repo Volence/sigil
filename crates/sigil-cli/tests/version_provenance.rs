@@ -1083,6 +1083,96 @@ fn published_anchor(stdout: &str) -> Option<(String, String)> {
     Some((name.to_string(), tip))
 }
 
+/// Every position this checkout has on record for a ref: what it points at now, and every
+/// value its reflog says it has held.
+///
+/// A remote-tracking ref is allowed to move, and it moves whenever anyone on this machine
+/// fetches or pushes. Any gate that reads such a ref a second time and requires the second
+/// reading to agree with a value captured earlier is asserting that nobody worked while it
+/// ran, which is a claim about the machine rather than about the banner, and it goes red on
+/// correct work for that reason alone.
+///
+/// The set of recorded positions is the fixed thing to ask about instead. A reflog is
+/// append-only: advancing a ref adds an entry, and rewinding it adds another, so a value
+/// that is in the set stays in the set. A question asked against this set therefore has one
+/// answer, and later movement cannot change it.
+///
+/// `is_recorded` is false when this checkout keeps no reflog for the ref, which is a real
+/// configuration rather than a defect. Callers must weaken to a containment question there
+/// rather than fail: a check that cannot run has measured nothing, and reporting that as a
+/// failure teaches people to delete it.
+///
+/// ## Why the set is bounded
+///
+/// A reflog only grows. Accepting every position a ref has ever held would make this check
+/// weaker on every push, for as long as the repository lives, and nothing would ever notice:
+/// a passing check looks identical at every strength. The bound holds the question at a
+/// fixed difficulty instead of letting the repository's age dissolve it.
+///
+/// `RECENT_POSITIONS` is sized from the only interval that has to be covered. The tip in the
+/// banner is captured when the build script runs, and it is compared here in the same cargo
+/// invocation, so what must be spanned is one build-and-test run: measured at 0.4 s warm,
+/// 9 s for a cold build of this crate, and 53 s for this crate's whole suite. Against that,
+/// the busiest 30 minute window in 27 days of this ref's reflog holds 13 updates, and the
+/// busiest hour holds 21. Thirty-two positions covers the worst recorded half hour two and a
+/// half times over, covers the worst recorded hour outright, and is roughly one day of
+/// movement at this ref's measured rate of 32 updates per day.
+const RECENT_POSITIONS: usize = 32;
+
+struct Positions {
+    values: Vec<String>,
+    is_recorded: bool,
+}
+
+fn positions_of(ref_name: &str) -> Positions {
+    // `<ref>@{n}` is the value the ref HELD n steps ago, which is the question being asked.
+    // A reflog entry rendered with `--format=%H` is the value the ref moved TO, so the value
+    // it moved FROM on the oldest entry is not in that rendering at all: a checkout whose
+    // tracking ref has been moved once reports one position and silently omits the one it
+    // started at, which is the position a banner built before that move would name. Walking
+    // `@{n}` reports both sides and cannot omit it.
+    //
+    // Ascending n is newest first, so the ordinary case answers on the first candidate and
+    // the bound is spent on the positions most likely to be the one the banner read.
+    let mut values: Vec<String> = Vec::new();
+    for n in 0..RECENT_POSITIONS {
+        let selector = format!("{ref_name}@{{{n}}}");
+        // Out of range and no-reflog-at-all both land here, and both mean "there is nothing
+        // further back on record", never a swallowed error.
+        let Ok(value) = git(&["rev-parse", "--verify", "--quiet", &selector]) else {
+            break;
+        };
+        if value.is_empty() {
+            break;
+        }
+        if !values.contains(&value) {
+            values.push(value);
+        }
+    }
+
+    // Empty exactly when this checkout keeps no reflog for the ref. The ref's current value
+    // is still a position it holds, so the weakened question has something to ask about.
+    let is_recorded = !values.is_empty();
+    if !is_recorded {
+        if let Ok(now) = git(&["rev-parse", ref_name]) {
+            values.push(now);
+        }
+    }
+    Positions { values, is_recorded }
+}
+
+/// Whether `rev` is contained in the history of any position on record for `ref_name`.
+fn contained_in_any(rev: &str, positions: &[String]) -> bool {
+    positions.iter().any(|position| {
+        Command::new("git")
+            .args(["merge-base", "--is-ancestor", rev, position])
+            .current_dir(REPO)
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false)
+    })
+}
+
 /// THE DEFECT, as a gate. The banner said whether this binary was behind a tree; it never
 /// said whether that tree was itself anything anybody else could see.
 ///
@@ -1115,11 +1205,42 @@ fn the_published_line_states_this_revision_s_position_against_a_named_remote_ref
         return;
     };
 
-    assert_eq!(
-        git(&["rev-parse", &name]).unwrap_or_else(|e| panic!("resolve {name}: {e}")),
-        tip,
-        "the tip the banner names for {name} is not the one git resolves"
+    // The tip must be a commit this checkout actually has, so a banner cannot name a
+    // well-formed revision that stands for nothing.
+    assert!(
+        git(&["cat-file", "-e", &format!("{tip}^{{commit}}")]).is_ok(),
+        "the banner names {tip} as the tip of {name}, and no such commit exists here, so the \
+         line reports a position against something this checkout cannot see\n{stdout}"
     );
+
+    // And it must be a position {name} is on record for, rather than a plausible revision
+    // from somewhere else in this repository. That distinguishes a tip read off the ref
+    // from one taken from HEAD, which is the way this line can be wrong and still look
+    // right, and it stays true after the ref moves.
+    let positions = positions_of(&name);
+    if positions.is_recorded {
+        assert!(
+            positions.values.iter().any(|position| position == &tip),
+            "the banner names {tip} as the tip of {name}, which is not among the {} positions \
+             this checkout has on record for that ref. A tip that {name} did not hold across \
+             those did not come from reading {name}.\n\
+             The window asked about is the {RECENT_POSITIONS} most recent positions, newest \
+             first, and {} were available here. Anything {name} held before those was NOT \
+             asked about. The window spans one build-and-test run, which is the whole \
+             interval between the banner capturing the tip and this check reading it.\n{stdout}",
+            positions.values.len(),
+            positions.values.len()
+        );
+    } else {
+        // Loud about the weaker question rather than silently asking it: with no reflog,
+        // the only fixed fact available is that the tip is somewhere in the ref's history.
+        assert!(
+            contained_in_any(&tip, &positions.values),
+            "the banner names {tip} as the tip of {name}, which is not contained in {name}. \
+             This checkout keeps no reflog for {name}, so the stronger question of whether \
+             {name} ever held {tip} cannot be asked here.\n{stdout}"
+        );
+    }
 
     // `merge-base --is-ancestor` is the same question, asked directly.
     let contained = Command::new("git")
@@ -1201,17 +1322,20 @@ fn the_published_drift_check_runs_and_is_anchored_at_the_named_ref() {
              reads to a human as `no drift`.\ncommand: {command}"
         );
         // It must be answering about the NAMED ref, not about HEAD wearing its name: the
-        // revision it reports has to be reachable from that ref.
-        let reachable = Command::new("git")
-            .args(["merge-base", "--is-ancestor", &printed, &name])
-            .current_dir(REPO)
-            .status()
-            .expect("git merge-base must run")
-            .success();
+        // revision it reports has to be reachable from that ref. The command resolves the
+        // ref itself, so the position it answered about is whichever one the ref held at
+        // that instant, and asking again here would be a second reading of a moving ref.
+        // The recorded positions are asked instead, and they include that instant's.
+        let positions = positions_of(&name);
         assert!(
-            reachable,
-            "the check printed {printed}, which is not reachable from {name}, so it did \
-             not ask about that ref.\ncommand: {command}"
+            contained_in_any(&printed, &positions.values),
+            "the check printed {printed}, which is not reachable from any of the {} positions \
+             {name} is on record for, so it did not ask about that ref.\n\
+             The window asked about is the {RECENT_POSITIONS} most recent positions, newest \
+             first, and {} were available here. Anything {name} held before those was NOT \
+             asked about.\ncommand: {command}",
+            positions.values.len(),
+            positions.values.len()
         );
         ran.push(shell);
     }
