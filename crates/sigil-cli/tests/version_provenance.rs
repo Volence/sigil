@@ -1221,12 +1221,14 @@ fn the_published_line_states_this_revision_s_position_against_a_named_remote_ref
     if positions.is_recorded {
         assert!(
             positions.values.iter().any(|position| position == &tip),
-            "the banner names {tip} as the tip of {name}, which is not among the {} most \
-             recent positions this checkout has recorded for that ref, newest first. A tip \
-             that {name} did not hold in that window did not come from reading {name}. \
-             Positions older than that window were NOT asked about: the window is sized to \
-             span one build-and-test run, which is the whole interval between the banner \
-             capturing the tip and this check reading it.\n{stdout}",
+            "the banner names {tip} as the tip of {name}, which is not among the {} positions \
+             this checkout has on record for that ref. A tip that {name} did not hold across \
+             those did not come from reading {name}.\n\
+             The window asked about is the {RECENT_POSITIONS} most recent positions, newest \
+             first, and {} were available here. Anything {name} held before those was NOT \
+             asked about. The window spans one build-and-test run, which is the whole \
+             interval between the banner capturing the tip and this check reading it.\n{stdout}",
+            positions.values.len(),
             positions.values.len()
         );
     } else {
@@ -1327,9 +1329,12 @@ fn the_published_drift_check_runs_and_is_anchored_at_the_named_ref() {
         let positions = positions_of(&name);
         assert!(
             contained_in_any(&printed, &positions.values),
-            "the check printed {printed}, which is not reachable from any of the {} most \
-             recent positions {name} is on record for, so it did not ask about that ref. \
-             Positions older than that window were NOT asked about.\ncommand: {command}",
+            "the check printed {printed}, which is not reachable from any of the {} positions \
+             {name} is on record for, so it did not ask about that ref.\n\
+             The window asked about is the {RECENT_POSITIONS} most recent positions, newest \
+             first, and {} were available here. Anything {name} held before those was NOT \
+             asked about.\ncommand: {command}",
+            positions.values.len(),
             positions.values.len()
         );
         ran.push(shell);
