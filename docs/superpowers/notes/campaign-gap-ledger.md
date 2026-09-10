@@ -4969,3 +4969,17 @@ asl's rightmost-loosest split strands it after a binary operator. **Exposure**: 
 half is loud; the accept-more half can never put a wrong byte in an image. The first three sit in
 the nameless-label run territory `expr.rs` already documents as a deliberate divergence.
 **Kill:** the atom tier models asl's split rather than a recursive-descent approximation of it.
+
+**5. THE HALF-FIX FOR ROW 1's DEFECT PASSES EVERY PROBE AND THE WHOLE PRE-EXISTING SUITE.** Measured,
+not argued. The naive fix is an unconditional unary-plus arm in `parse_atom` mirroring the `Neg` arm
+three lines below it. With it, `nested.asm`, `flat.asm` and all FOUR Sonic 1 `range` sites are
+byte-identical to asl, and a full `cargo test --release --workspace` is green on all 5,034 tests
+master had. The only red is the two boundary tests this parcel added
+(`an_operator_tighter_than_add_strands_the_sign`, `the_sign_must_be_adjacent_and_at_a_head`); a
+third failure in the same run (`m1b_gate::oracle_loadfromaslisting_resolves_emit_listing`) was the
+ad-hoc invocation missing `ORACLE_DIR` and fails identically with the CORRECT fix, so it is not a
+catch. What the half-fix silently adds is `+Base`, `+(1)`, `+(1+2)`, `+ 1`, `1+ +2`, `+2*3`, `+1*3`,
+`+~0` — every one `#1110` in asl. **This is the standing shape of this repo's expression surface: a
+widening is invisible to every instrument it has, because nothing measures what sigil accepts that
+asl does not.** **Kill:** a corpus of asl-REFUSED expressions asserted refused, the way
+`as_signed_int_literal.rs` now does for this one operator.
