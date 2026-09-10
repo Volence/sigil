@@ -68,6 +68,28 @@ produced nothing.
 `no longer waiting on you` entries carry dropped `blockedOnOwner` text. It holds titles and states;
 it does not hold sizes. Leave an unknown size ABSENT rather than guessing it.)*
 
+## `decisions.jsonl`: FOUR IDS REWRITTEN IN PLACE, DO NOT REPAIR (contract rule 8f)
+
+**Listed once here as rule 8f requires, and deliberately not repaired.** `d-23`, `d-24`, `d-27` and
+`d-29` were rewritten in place by the owner-directed audit session at `32f26b02` (+4/-4 in an
+append-only file); the pre-rewrite state is at **`b64a8af8`**. 8f's discriminator is *repair when a
+GATE IS RED and the repair clears it; otherwise list and leave* - **no sigil gate is red**, the
+answers render correctly, and an append would add a shadowing record without removing the violated
+line. Anchor: empyrean `2d8ab09`, `contract/DECISIONS.md` rules 8e and 8f, verified reachable from
+their `origin/main`.
+
+**⚠ AND THIS LANE COULD NOT HAVE ANSWERED 8f AT THE TIME, which is the finding under the finding.**
+8f makes a red gate the deciding fact and thereby assumes a gate exists to be red. Sigil's ledger
+check (`tools/decisions_reader_audit.py`) has **no caller anywhere** - it transcribes Dominion's own
+reader and runs from nothing - so *"nothing is red"* and *"nothing is looking"* were indistinguishable
+here. That is the `LEDGER-AUDIT-UNWIRED` row.
+
+**TWO DUPLICATE IDS ARE LIVE AND THEY ARE A RULE-8e SUBJECT, NOT AN 8f ONE:** `d-18` appears **three**
+times and `d-25` **twice**. 8e rules that id-uniqueness wins narrowly and re-iding the LATER line is
+the single sanctioned in-place edit - oracle's `tools/land.sh` G2b refused *every* landing on exactly
+this. **So any uniqueness check wired here goes red on arrival**, and the 8e re-id is a precondition
+of wiring it, never a consequence to discover afterwards.
+
 ## STANDING: DO NOT BOOT INTO A STOP WHILE SLEEP MODE IS ON (owner) — read this before waiting
 
 **Two owner rulings, verified here firsthand at commits reachable from empyrean `origin/main` rather
