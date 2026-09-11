@@ -13,7 +13,13 @@ use sigil_ir::{
 use sigil_span::{Diagnostic, Level, Span};
 
 mod relax;
-pub use relax::{asl_width_rule, resolve_layout, resolve_layout_measuring, AbsWidth};
+pub use relax::{asl_width_rule, resolve_layout, resolve_layout_measuring, resolve_layout_placing, AbsWidth};
+
+mod blob;
+pub use blob::{
+    flatten_placing, parse_blob, parse_pad, BlobCodec, BlobFormat, BlobInsert, BlobInstruction, MAX_BLOB,
+    P2BIN_FORMATS,
+};
 
 mod map_load;
 pub use map_load::load_map;

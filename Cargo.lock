@@ -288,6 +288,7 @@ version = "0.1.0"
 dependencies = [
  "serde_json",
  "sigil-backend-m68k",
+ "sigil-clownlzss-sys",
  "sigil-frontend-as",
  "sigil-frontend-emp",
  "sigil-harness",

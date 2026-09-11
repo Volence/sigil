@@ -72,7 +72,14 @@ fn assemble(body: &str) -> Result<Vec<u8>, Vec<String>> {
             let linked = sigil_link::link(&resolved, &sigil_ir::SymbolTable::new()).expect("link");
             Ok(sigil_link::flatten(&linked, 0x00).unwrap())
         }
-        Err(f) => Err(f.diags.iter().map(|d| d.message.clone()).collect()),
+        // The probe's directory is replaced by a fixed name. The messages carry the
+        // definition site's full path, and a temporary directory's random name can
+        // hold any text a negative assertion looks for (`/tmp/.tmpS16yLB` holds
+        // `16`), so the assertions must read only what the assembler wrote.
+        Err(f) => {
+            let dir_text = dir.path().display().to_string();
+            Err(f.diags.iter().map(|d| d.message.replace(&dir_text, "<probe-dir>")).collect())
+        }
     }
 }
 

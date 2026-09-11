@@ -24,6 +24,9 @@ use std::process;
 #[cfg(test)]
 mod tree_class;
 
+/// The compressors the AS route's `-z` placement uses.
+mod p2bin_codec;
+
 /// One entry point of the command line: the words that select it, how help
 /// names it, what it does, its full usage text, and the function that runs it.
 ///
@@ -59,16 +62,24 @@ struct Entry {
 struct Opt {
     name: &'static str,
     takes_value: bool,
+    /// Its value follows an `=` in the same argument, as in `-p=FF`: `p2bin`'s
+    /// spelling, which the AS route takes as a build script writes it.
+    attached: bool,
 }
 
 /// An option that stands alone, such as `--hex`.
 const fn flag(name: &'static str) -> Opt {
-    Opt { name, takes_value: false }
+    Opt { name, takes_value: false, attached: false }
 }
 
 /// An option followed by its value, such as `-o <output.bin>`.
 const fn valued(name: &'static str) -> Opt {
-    Opt { name, takes_value: true }
+    Opt { name, takes_value: true, attached: false }
+}
+
+/// An option whose value follows an `=` in the same argument, such as `-p=FF`.
+const fn attached(name: &'static str) -> Opt {
+    Opt { name, takes_value: false, attached: true }
 }
 
 /// Every entry point of the `sigil` command line, in the order help lists them.
@@ -77,8 +88,16 @@ const ENTRIES: &[Entry] = &[
         words: &[],
         label: "<input.asm>",
         summary: "assemble one AS-syntax source file to a binary image",
-        usage: &["usage: sigil <input.asm> [-o <output.bin>] [--hex]"],
-        options: &[valued("-o"), flag("--hex")],
+        usage: &[
+            "usage: sigil <input.asm> [-o <output.bin>] [--hex] [-p=<pad>]",
+            "                         [-z=<address>,<format>,<constant>,<before|after>]...",
+            "note:  -p and -z take p2bin's own spelling, so a build script's p2bin",
+            "       instruction is passed as written. -p sets the byte every gap holds",
+            "       (00 without it). Each -z places the Z80 code assembled at <address>",
+            "       outside the image into the ROM, as <format>: uncompressed, kosinski",
+            "       or saxman-bugged.",
+        ],
+        options: &[valued("-o"), flag("--hex"), attached("-p"), attached("-z")],
         run: run_asm,
     },
     Entry {
@@ -291,7 +310,8 @@ fn main() {
 /// any. An argument is an option when it starts with `-` and is longer than
 /// the `-` alone, unless it is the value of the listed option before it: in
 /// `-o -x`, `-x` is `-o`'s value, and the entry point's own loop decides what
-/// to make of it.
+/// to make of it. An option listed with an attached value matches itself and
+/// itself followed by `=`: `-p=FF` is `-p`.
 ///
 /// This is what makes [`Entry::options`] the set of options the command line
 /// accepts: an option an argument loop matches and the row does not list
@@ -304,7 +324,10 @@ fn unlisted_option<'a>(entry: &Entry, args: &'a [String]) -> Option<&'a str> {
     while i < args.len() {
         let arg = args[i].as_str();
         if arg.len() > 1 && arg.starts_with('-') {
-            match entry.options.iter().find(|o| o.name == arg) {
+            let names = |o: &&Opt| {
+                o.name == arg || (o.attached && arg.strip_prefix(o.name).is_some_and(|v| v.starts_with('=')))
+            };
+            match entry.options.iter().find(names) {
                 Some(opt) if opt.takes_value => i += 1,
                 Some(_) => {}
                 None => return Some(arg),
@@ -315,13 +338,18 @@ fn unlisted_option<'a>(entry: &Entry, args: &'a [String]) -> Option<&'a str> {
     None
 }
 
-/// `sigil <input.asm> [-o <output.bin>] [--hex]`: assemble one AS-syntax source
-/// file, write or print the image, and end stdout on a line saying how the run
-/// ended: [`emit_image`]'s `built:` line on success, [`fail_asm`]'s on failure.
+/// `sigil <input.asm> [-o <output.bin>] [--hex] [-p=<pad>] [-z=...]...`: assemble
+/// one AS-syntax source file, write or print the image, and end stdout on a line
+/// saying how the run ended: [`emit_image`]'s `built:` line on success,
+/// [`fail_asm`]'s on failure.
 fn run_asm(entry: &Entry, args: &[String]) {
     let mut input: Option<String> = None;
     let mut output: Option<String> = None;
     let mut hex = false;
+    // `p2bin`'s options, in its grammar: the pad byte (the last `-p` wins, as in
+    // p2bin) and every `-z` blob instruction, in the order given.
+    let mut pad: Option<u8> = None;
+    let mut blobs: Vec<sigil_link::BlobInstruction> = Vec::new();
 
     let mut i = 0;
     while i < args.len() {
@@ -337,6 +365,20 @@ fn run_asm(entry: &Entry, args: &[String]) {
                 }
             }
             "--hex" => hex = true,
+            p if p == "-p" || p.starts_with("-p=") => match sigil_link::parse_pad(p) {
+                Ok(byte) => pad = Some(byte),
+                Err(e) => {
+                    eprintln!("error: {e}");
+                    process::exit(2);
+                }
+            },
+            z if z == "-z" || z.starts_with("-z=") => match sigil_link::parse_blob(z) {
+                Ok(blob) => blobs.push(blob),
+                Err(e) => {
+                    eprintln!("error: {e}");
+                    process::exit(2);
+                }
+            },
             other => {
                 if input.is_none() {
                     input = Some(other.to_string());
@@ -411,8 +453,12 @@ fn run_asm(entry: &Entry, args: &[String]) {
     // fixpoint, so a `JmpJsrSym`/`RelaxAbsSym`/`RelaxLadder` fragment (which
     // `link()`'s Pass-1c can only refuse, having no placement to choose a width
     // from) now resolves on this route as it does on the others.
+    //
+    // A second address space a `-z` instruction names is not refused here for
+    // want of a ROM placement: `flatten_placing` below places it and checks it.
     let empty = sigil_ir::SymbolTable::new();
-    let resolved = match sigil_link::resolve_layout(&module.sections, &empty, true) {
+    let placed: Vec<u32> = blobs.iter().map(|b| b.address).collect();
+    let resolved = match sigil_link::resolve_layout_placing(&module.sections, &empty, true, &placed) {
         Ok(secs) => secs,
         Err(diags) => {
             render_located_diags(&diags, &sources);
@@ -436,11 +482,25 @@ fn run_asm(entry: &Entry, args: &[String]) {
         render_located_diags(&bounds, &sources);
         fail_asm(bounds.len(), Stage::Image);
     }
-    let image = match sigil_link::flatten(&linked, 0x00) {
-        Ok(image) => image,
-        Err(msg) => {
-            eprintln!("error: {msg}");
-            fail_asm(1, Stage::Image);
+    // With a `-p` or a `-z` the image is what p2bin makes of the same program:
+    // only the bytes the program writes, each blob stored where its instruction
+    // says, and the pad byte everywhere else, including a reservation's gap
+    // inside a section. Without either, the plain flatten, zero-filled.
+    let image = if pad.is_some() || !blobs.is_empty() {
+        match sigil_link::flatten_placing(&resolved, &linked, &blobs, pad.unwrap_or(0x00), &p2bin_codec::Codec) {
+            Ok(image) => image,
+            Err(diags) => {
+                render_located_diags(&diags, &sources);
+                fail_asm(diags.len(), Stage::Image);
+            }
+        }
+    } else {
+        match sigil_link::flatten(&linked, 0x00) {
+            Ok(image) => image,
+            Err(msg) => {
+                eprintln!("error: {msg}");
+                fail_asm(1, Stage::Image);
+            }
         }
     };
 

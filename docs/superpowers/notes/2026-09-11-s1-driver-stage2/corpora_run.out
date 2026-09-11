@@ -1,0 +1,30 @@
+base sigil 69f6a8d1cd998dd8410e5bf8d0d4e995 new sigil ea1531bfd8dfbd4de6df6a5bdc71823b
+
+== Sonic 1: base rc=1, new without flags rc=1, new with the instruction rc=0, new with an undefined constant name rc=0
+s1 no flags: base 1 rows, new 1 rows; only in base 1, only in new 1
+  < sound/z80.asm(9):3: error: section `sec0#2` [0x0, 0x1BC6) is assembled for the Z80 at origin 0x0, in a second address space this org opens outside the ROM image; the assembler cannot yet place a second address space into the ROM
+  > sound/z80.asm(9):3: error: section `sec0#2` [0x0, 0x1BC6) is assembled for the Z80 at origin 0x0, in a second address space this org opens outside the ROM image, and no -z instruction places it into the ROM
+s1 base vs new with the instruction: base 1 rows, new 0 rows; only in base 1, only in new 0
+  < sound/z80.asm(9):3: error: section `sec0#2` [0x0, 0x1BC6) is assembled for the Z80 at origin 0x0, in a second address space this org opens outside the ROM image; the assembler cannot yet place a second address space into the ROM
+s1-new-flags.bin md5 09dadb5071eb35050067a32462e39c5f crc32 afe05eee size 524288, equal to reference True
+s1-new-typo.bin md5 09dadb5071eb35050067a32462e39c5f crc32 afe05eee size 524288, equal to reference True
+
+== S3K: plain base rc=1 new rc=1; wrapper base rc=1 new (with buildSK instruction) rc=1
+sk plain: base 189 rows, new 189 rows; only in base 0, only in new 0
+sk wrapper: base 172 rows, new 172 rows; only in base 0, only in new 0
+
+== S2 raw clean tree: base rc=1, new (with the instruction) rc=1
+s2 raw: base 149 rows, new 149 rows; only in base 0, only in new 0
+
+== S2 with build.lua generated inputs: base rc=1, new (with the instruction) rc=1
+s2 gen: base 71 rows, new 71 rows; only in base 0, only in new 0
+
+stub C exit 0 stub C edits 108
+ 
+== S2 stub C: base rc=1, new (with the instruction) rc=0
+s2 stub C: base 1 rows, new 0 rows; only in base 1, only in new 0
+  < s2.sounddriver.asm(248):6: error: section `sec0#2` [0x0, 0x1308) is assembled for the Z80 at origin 0x0, in a second address space this org opens outside the ROM image; the assembler cannot yet place a second address space into the ROM
+reference 9feeb724052c39982d432a7851c98d3e 7b905383 1048576
+sigil stub C image md5 9feeb724052c39982d432a7851c98d3e crc32 7b905383 size 1048576
+WHOLE COMPARE, no window: 0 bytes differ in 0 runs; sizes 1048576 vs 1048576
+CORPORA_END

@@ -1,0 +1,22 @@
+== p_pad ['-p=FF'] records [('0x1', '0x0', 2), ('0x1', '0x8', 1), ('0x1', '0xc', 1)]
+   p2bin rc=0  0102ffffffffffff03ffffff04
+   sigil rc=0  0102ffffffffffff03ffffff04
+   SAME
+== p_pad ['-p=0'] records [('0x1', '0x0', 2), ('0x1', '0x8', 1), ('0x1', '0xc', 1)]
+   p2bin rc=0  01020000000000000300000004
+   sigil rc=0  01020000000000000300000004
+   SAME
+== p_pad [] records [('0x1', '0x0', 2), ('0x1', '0x8', 1), ('0x1', '0xc', 1)]
+   p2bin rc=0  01020000000000000300000004
+   sigil rc=0  01020000000000000300000004
+   SAME
+== p_straddle ['-p=FF', '-z=0,saxman-bugged,Guess,after'] records [('0x1', '0x0', 8), ('0x51', '0x0', 100), ('0x1', '0x88', 2)]
+   p2bin rc=0  0102030405060708dd01edf0020201f3f00002a0efff010afeff100beef1001c0001002100420a4effffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffaabb
+   sigil rc=1 p_straddle.asm(8):3: error: `-z=0,saxman-bugged,Guess,after`: the stored saxman-bugged stream does not decompress to the blob that was assembled (sigil's decompressor returns 0x64 bytes against 0x64, first difference at offset 0x2), so the game would load a different driver None
+== p_straddle ['-p=FF', '-z=0,kosinski,Guess,after'] records [('0x1', '0x0', 8), ('0x51', '0x0', 100), ('0x1', '0x88', 2)]
+   p2bin rc=0  0102030405060708c3110100fe020201fe9400f9f5f81ee5f81fb5fd5101ebeafdf80c00f0000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffaabb
+   sigil rc=0  0102030405060708c3110100fe020201fe9400f9f5f81ee5f81fb5fd5101ebeafdf80c00f0000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffaabb
+   SAME
+== p_sameorigin ['-p=FF', '-z=0,uncompressed,Guess,after'] records [('0x1', '0x0', 8), ('0x51', '0x0', 10), ('0x1', '0x18', 2), ('0x51', '0x0', 4), ('0x1', '0x40', 2)]
+   p2bin rc=0  010203040506070810111213141516171819ffffffffffffaabb20212223ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffccdd
+   sigil rc=1 p_sameorigin.asm(16):3: error: section `sec0#2` [0x0, 0x4) is assembled for the Z80 at origin 0x0, in a second address space this org opens outside the ROM image, and no -z instruction places it into the ROM None

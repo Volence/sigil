@@ -1,0 +1,222 @@
+HEAD ea992d37993400128282642e5cbaadb6979dcad0 branch parcel/s1-driver-stage2
+
+######## M1: -z parsed, the blob stored uncompressed
+APPLY rc=0, 1 substitution(s)
+  ON DISK crates/sigil-cli/src/p2bin_codec.rs:15: BlobFormat::Kosinski => data.to_vec(), // MUTATION M1
+  TARGET sigil-cli --test as_driver_placement --test: results [('FAILED', '13', '4'), ('FAILED', '0', '1'), ('ok', '7', '0')], compile error False
+    RED a_blob_larger_than_its_reservation_is_refused_with_both_sizes
+    RED a_stream_the_game_would_read_back_wrong_is_refused
+    RED both_blobs_of_a_two_driver_program_are_placed_in_either_order
+    RED kosinski_and_saxman_bugged_store_the_bytes_p2bin_stores
+    RED sonic_1_builds_to_the_reference_rom_byte_for_byte
+    panicked at crates/sigil-cli/tests/as_driver_placement.rs:374:5
+    panicked at crates/sigil-cli/tests/as_driver_placement.rs:50:5
+    panicked at crates/sigil-cli/tests/as_driver_placement_corpus.rs:197:5
+  WITNESS sigil p_after.asm -p=FF -z=0,kosinski,Guess,after: exit 1; p_after.asm(9):3: error: `-z=0,kosinski,Guess,after`: the stored kosinski stream does not decompress to the blob that was assembled (sigil's decompressor returns 0xD bytes against 0xA, first difference at offset 0x0), so
+  RESTORED from HEAD; git status --porcelain: empty
+
+######## M2: the wrong Kosinski variant: clownlzss optimal
+APPLY rc=0, 1 substitution(s)
+  ON DISK crates/sigil-cli/src/p2bin_codec.rs:15: BlobFormat::Kosinski => sigil_clownlzss_sys::compress_kosinski(data).expect("kosinski"), // MUTATION M2
+  TARGET sigil-cli --test as_driver_placement --test: results [('FAILED', '13', '4'), ('FAILED', '0', '1'), ('ok', '7', '0')], compile error False
+    RED a_blob_larger_than_its_reservation_is_refused_with_both_sizes
+    RED a_stream_the_game_would_read_back_wrong_is_refused
+    RED both_blobs_of_a_two_driver_program_are_placed_in_either_order
+    RED kosinski_and_saxman_bugged_store_the_bytes_p2bin_stores
+    RED sonic_1_builds_to_the_reference_rom_byte_for_byte
+    panicked at crates/sigil-cli/tests/as_driver_placement.rs:316:5
+    panicked at crates/sigil-cli/tests/as_driver_placement.rs:347:9
+    panicked at crates/sigil-cli/tests/as_driver_placement.rs:374:5
+    panicked at crates/sigil-cli/tests/as_driver_placement.rs:428:5
+    panicked at crates/sigil-cli/tests/as_driver_placement_corpus.rs:210:9
+  WITNESS sigil p_after.asm -p=FF -z=0,kosinski,Guess,after: exit 0; 01 02 03 04 05 06 07 08 FF 0B 10 11 12 13 14 15 16 17 18 19 00 F0 00 FF AA BB
+  RESTORED from HEAD; git status --porcelain: empty
+
+######## M2b: the wrong Kosinski variant: Sega mistake 1 corrected (match cap 0x100)
+APPLY rc=0, 1 substitution(s)
+  ON DISK crates/sigil-clownlzss-sys/src/accurate.rs:28: const KOS_MAX_MATCH: usize = 0x100; // MUTATION M2b
+  TARGET sigil-clownlzss-sys --test accurate_vectors --no-fail-fast: results [('FAILED', '6', '2')], compile error False
+    RED kosinski_authentic_matches_accurate_kosinski_past_the_0xa000_boundary
+    RED kosinski_authentic_matches_p2bin_on_every_vector
+    panicked at crates/sigil-clownlzss-sys/tests/accurate_vectors.rs:100:5
+    panicked at crates/sigil-clownlzss-sys/tests/accurate_vectors.rs:152:5
+  TARGET sigil-cli --test as_driver_placement --test: results [('ok', '17', '0'), ('ok', '1', '0'), ('ok', '7', '0')], compile error False
+  RESTORED from HEAD; git status --porcelain: empty
+
+######## M3: `after` read as `before`
+APPLY rc=0, 1 substitution(s)
+  ON DISK crates/sigil-link/src/blob.rs:200: "after" => BlobInsert::Before, // MUTATION M3
+  TARGET sigil-cli --test as_driver_placement --test: results [('FAILED', '6', '11'), ('FAILED', '0', '1'), ('ok', '7', '0')], compile error False
+    RED a_blob_larger_than_its_reservation_is_refused_with_both_sizes
+    RED a_stream_the_game_would_read_back_wrong_is_refused
+    RED after_is_measured_from_the_last_byte_written_not_from_the_label
+    RED after_stores_the_blob_where_the_code_before_it_ends_and_pads_the_rest
+    RED code_written_after_a_restore_is_not_part_of_the_blob
+    RED kosinski_and_saxman_bugged_store_the_bytes_p2bin_stores
+    RED one_instruction_places_every_blob_that_starts_at_its_address
+    RED sonic_1_builds_to_the_reference_rom_byte_for_byte
+    RED the_address_is_hexadecimal
+    RED the_constant_is_a_name_and_its_value_is_never_read
+    RED the_pad_byte_is_p2bins_and_zero_without_it
+    RED with_nothing_written_after_it_the_blob_is_unbounded
+    panicked at crates/sigil-cli/tests/as_driver_placement.rs:369:9
+    panicked at crates/sigil-cli/tests/as_driver_placement.rs:384:5
+    panicked at crates/sigil-cli/tests/as_driver_placement.rs:423:5
+    panicked at crates/sigil-cli/tests/as_driver_placement.rs:50:5
+    panicked at crates/sigil-cli/tests/as_driver_placement_corpus.rs:197:5
+  WITNESS sigil p_after.asm -p=FF -z=0,uncompressed,Guess,after: exit 1; p_after.asm(9):3: error: `-z=0,uncompressed,Guess,after`: the blob [0x0, 0xA) is 0xA bytes stored uncompressed, and only 0x8 are reserved for it, at [0x0, 0x8), the code before it, which it overwrites; set `Guess` to at 
+  RESTORED from HEAD; git status --porcelain: empty
+
+######## M4: the blob stored at its own Z80 address instead of the gap
+APPLY rc=0, 1 substitution(s)
+  ON DISK crates/sigil-link/src/blob.rs:428: (z.address, reserved, where_) /* MUTATION M4 */
+  TARGET sigil-cli --test as_driver_placement --test: results [('FAILED', '8', '9'), ('FAILED', '0', '1'), ('ok', '7', '0')], compile error False
+    RED a_stream_the_game_would_read_back_wrong_is_refused
+    RED after_is_measured_from_the_last_byte_written_not_from_the_label
+    RED after_stores_the_blob_where_the_code_before_it_ends_and_pads_the_rest
+    RED kosinski_and_saxman_bugged_store_the_bytes_p2bin_stores
+    RED one_instruction_places_every_blob_that_starts_at_its_address
+    RED sonic_1_builds_to_the_reference_rom_byte_for_byte
+    RED the_address_is_hexadecimal
+    RED the_constant_is_a_name_and_its_value_is_never_read
+    RED the_pad_byte_is_p2bins_and_zero_without_it
+    RED with_nothing_written_after_it_the_blob_is_unbounded
+    panicked at crates/sigil-cli/tests/as_driver_placement.rs:308:5
+    panicked at crates/sigil-cli/tests/as_driver_placement.rs:50:5
+    panicked at crates/sigil-cli/tests/as_driver_placement_corpus.rs:197:5
+  WITNESS sigil p_after.asm -p=FF -z=0,uncompressed,Guess,after: exit 1; p_after.asm(9):3: error: `-z=0,uncompressed,Guess,after`: the stored stream at [0x0, 0xA) overlaps section `sec0` at [0x0, 0x8)
+  RESTORED from HEAD; git status --porcelain: empty
+
+######## M5: an overflow accepted
+APPLY rc=0, 1 substitution(s)
+  ON DISK crates/sigil-link/src/blob.rs:437: if let Some(reserved) = reserved.filter(|&r| false && (stored.len() as i64) > r) /* MUTATION M5 */ {
+  TARGET sigil-cli --test as_driver_placement --test: results [('FAILED', '15', '2'), ('ok', '1', '0'), ('ok', '7', '0')], compile error False
+    RED a_blob_larger_than_its_reservation_is_refused_with_both_sizes
+    RED code_written_after_a_restore_is_not_part_of_the_blob
+    panicked at crates/sigil-cli/tests/as_driver_placement.rs:369:9
+    panicked at crates/sigil-cli/tests/as_driver_placement.rs:384:5
+  WITNESS sigil p_cont68k.asm -p=FF -z=0,uncompressed,Guess,after: exit 1; p_cont68k.asm(8):3: error: `-z=0,uncompressed,Guess,after`: the stored stream at [0x8, 0x12) overlaps section `sec10` at [0xA, 0xC)
+  RESTORED from HEAD; git status --porcelain: empty
+
+######## M6: -p ignored
+APPLY rc=0, 1 substitution(s)
+  ON DISK crates/sigil-cli/src/main.rs:490: match sigil_link::flatten_placing(&resolved, &linked, &blobs, 0x00, &p2bin_codec::Codec) /* MUTATION M6 */ {
+  TARGET sigil-cli --test as_driver_placement --test: results [('FAILED', '9', '8'), ('FAILED', '0', '1'), ('ok', '7', '0')], compile error False
+    RED a_stream_the_game_would_read_back_wrong_is_refused
+    RED after_is_measured_from_the_last_byte_written_not_from_the_label
+    RED after_stores_the_blob_where_the_code_before_it_ends_and_pads_the_rest
+    RED kosinski_and_saxman_bugged_store_the_bytes_p2bin_stores
+    RED one_instruction_places_every_blob_that_starts_at_its_address
+    RED sonic_1_builds_to_the_reference_rom_byte_for_byte
+    RED the_address_is_hexadecimal
+    RED the_constant_is_a_name_and_its_value_is_never_read
+    RED the_pad_byte_is_p2bins_and_zero_without_it
+    panicked at crates/sigil-cli/tests/as_driver_placement.rs:256:5
+    panicked at crates/sigil-cli/tests/as_driver_placement.rs:265:5
+    panicked at crates/sigil-cli/tests/as_driver_placement.rs:275:5
+    panicked at crates/sigil-cli/tests/as_driver_placement.rs:285:5
+    panicked at crates/sigil-cli/tests/as_driver_placement.rs:308:5
+    panicked at crates/sigil-cli/tests/as_driver_placement.rs:320:5
+    panicked at crates/sigil-cli/tests/as_driver_placement.rs:356:5
+    panicked at crates/sigil-cli/tests/as_driver_placement.rs:428:5
+  WITNESS sigil p_after.asm -p=FF -z=0,uncompressed,Guess,after: exit 0; 01 02 03 04 05 06 07 08 10 11 12 13 14 15 16 17 18 19 00 00 00 00 00 00 AA BB
+  RESTORED from HEAD; git status --porcelain: empty
+
+######## M7: only the first of two -z honoured
+APPLY rc=0, 1 substitution(s)
+  ON DISK crates/sigil-cli/src/main.rs:376: Ok(blob) => if blobs.is_empty() { blobs.push(blob) }, // MUTATION M7
+  TARGET sigil-cli --test as_driver_placement --test: results [('FAILED', '16', '1'), ('ok', '1', '0'), ('ok', '7', '0')], compile error False
+    RED both_blobs_of_a_two_driver_program_are_placed_in_either_order
+    panicked at crates/sigil-cli/tests/as_driver_placement.rs:50:5
+  WITNESS sigil p_two.asm -p=FF -z=0,uncompressed,Guess,before -z=1300,uncompressed,Guess2,before: exit 1; p_two.asm(20):3: error: section `sec4864` [0x1300, 0x1306) is assembled for the Z80 at origin 0x1300, in a second address space this org opens outside the ROM image, and no -z instruction places it into the ROM
+  RESTORED from HEAD; git status --porcelain: empty
+
+######## M8: a second space no -z names placed anyway (both layers)
+APPLY rc=0, 2 substitution(s)
+  ON DISK crates/sigil-link/src/blob.rs:513: if false && matches!(r.space, AddressSpace::Foreign { .. }) && !claimed[idx] { // MUTATION M8
+  ON DISK crates/sigil-link/src/relax.rs:488: .filter(|space| !(space.cpu == sigil_ir::Cpu::Z80 && !placed_origins.is_empty())) /* MUTATION M8 */
+  TARGET sigil-cli --test as_driver_placement --test: results [('FAILED', '16', '1'), ('ok', '1', '0'), ('ok', '7', '0')], compile error False
+    RED a_second_space_no_instruction_names_is_refused_at_its_org
+    panicked at crates/sigil-cli/tests/as_driver_placement.rs:63:5
+  WITNESS sigil p_two.asm -p=FF -z=0,uncompressed,Guess,before: exit 0; 10 11 12 13 14 15 16 17 18 19 EE EE EE EE EE EE EE EE EE EE EE EE EE EE DD DD DD DD DD DD DD DD DD DD DD DD AA BB
+  RESTORED from HEAD; git status --porcelain: empty
+
+######## M8a: the layout layer alone lets the uncovered space through
+APPLY rc=0, 1 substitution(s)
+  ON DISK crates/sigil-link/src/relax.rs:488: .filter(|space| !(space.cpu == sigil_ir::Cpu::Z80 && !placed_origins.is_empty())) /* MUTATION M8a */
+  TARGET sigil-cli --test as_driver_placement --test: results [('FAILED', '16', '1'), ('ok', '1', '0'), ('ok', '7', '0')], compile error False
+    RED a_second_space_no_instruction_names_is_refused_at_its_org
+    panicked at crates/sigil-cli/tests/as_driver_placement.rs:396:5
+  WITNESS sigil p_two.asm -p=FF -z=0,uncompressed,Guess,before: exit 1; p_two.asm(20):3: error: the Z80 code at [0x1300, 0x1306) is outside the ROM image and no -z instruction places it
+  RESTORED from HEAD; git status --porcelain: empty
+
+######## M8b: the placement layer alone lets the uncovered space through
+APPLY rc=0, 1 substitution(s)
+  ON DISK crates/sigil-link/src/blob.rs:513: if false && matches!(r.space, AddressSpace::Foreign { .. }) && !claimed[idx] { // MUTATION M8b
+  TARGET sigil-cli --test as_driver_placement --test: results [('ok', '17', '0'), ('ok', '1', '0'), ('ok', '7', '0')], compile error False
+  WITNESS sigil p_two.asm -p=FF -z=0,uncompressed,Guess,before: exit 1; p_two.asm(20):3: error: section `sec4864` [0x1300, 0x1306) is assembled for the Z80 at origin 0x1300, in a second address space this org opens outside the ROM image, and no -z instruction places it into the ROM
+  RESTORED from HEAD; git status --porcelain: empty
+
+######## M9: the round-trip check removed
+APPLY rc=0, 1 substitution(s)
+  ON DISK crates/sigil-link/src/blob.rs:458: Ok(back) if back == blob || true => {} // MUTATION M9
+  TARGET sigil-cli --test as_driver_placement --test: results [('FAILED', '16', '1'), ('ok', '1', '0'), ('ok', '7', '0')], compile error False
+    RED a_stream_the_game_would_read_back_wrong_is_refused
+    panicked at crates/sigil-cli/tests/as_driver_placement.rs:63:5
+  WITNESS sigil p_straddle.asm -p=FF -z=0,saxman-bugged,Guess,after: exit 0; 01 02 03 04 05 06 07 08 DD 01 ED F0 02 02 01 F3 F0 00 02 A0 EF FF 01 0A FE FF 10 0B EE F1 00 1C 00 01 00 21 00 42 0A 4E FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF F
+  RESTORED from HEAD; git status --porcelain: empty
+
+######## M10: a restore that changes the processor does not end the section
+APPLY rc=0, 1 substitution(s)
+  ON DISK crates/sigil-frontend-as/src/eval.rs:6026: if false && self.state.cpu != before { // MUTATION M10
+  TARGET sigil-cli --test as_driver_placement --test: results [('FAILED', '16', '1'), ('ok', '1', '0'), ('ok', '7', '0')], compile error False
+    RED code_written_after_a_restore_is_not_part_of_the_blob
+    panicked at crates/sigil-cli/tests/as_driver_placement.rs:63:5
+  WITNESS sigil p_cont68k.asm -p=FF -z=0,uncompressed,Guess,after: exit 0; 01 02 03 04 05 06 07 08 10 11 12 13 14 15 16 17 18 19 C0 C1 FF FF FF FF AA BB
+  RESTORED from HEAD; git status --porcelain: empty
+
+######## M11: the saxman-bugged junk byte always 00
+APPLY rc=0, 1 substitution(s)
+  ON DISK crates/sigil-clownlzss-sys/src/accurate.rs:393: let junk = 0x00u8; // MUTATION M11
+  TARGET sigil-clownlzss-sys --test accurate_vectors --no-fail-fast: results [('FAILED', '6', '2')], compile error False
+    RED saxman_bugged_matches_p2bin_on_every_vector
+    RED the_vectors_cover_both_parities_of_the_saxman_junk_byte
+    panicked at crates/sigil-clownlzss-sys/tests/accurate_vectors.rs:100:5
+    panicked at crates/sigil-clownlzss-sys/tests/accurate_vectors.rs:137:9
+  TARGET sigil-cli --test as_driver_placement --test: results [('ok', '17', '0'), ('ok', '1', '0'), ('ok', '7', '0')], compile error False
+  RESTORED from HEAD; git status --porcelain: empty
+
+######## M12: `-p=..` and `-z=..` not matched by the option scan
+APPLY rc=0, 1 substitution(s)
+  ON DISK crates/sigil-cli/src/main.rs:328: o.name == arg /* MUTATION M12 */
+  TARGET sigil-cli --test as_driver_placement --test: results [('FAILED', '0', '17'), ('FAILED', '0', '1'), ('ok', '7', '0')], compile error False
+    RED a_blob_larger_than_its_reservation_is_refused_with_both_sizes
+    RED a_p2bin_grammar_error_stops_the_run
+    RED a_second_space_no_instruction_names_is_refused_at_its_org
+    RED a_stream_the_game_would_read_back_wrong_is_refused
+    RED after_is_measured_from_the_last_byte_written_not_from_the_label
+    RED after_stores_the_blob_where_the_code_before_it_ends_and_pads_the_rest
+    RED an_instruction_that_names_no_second_space_is_refused
+    RED before_stores_the_blob_over_the_start_of_the_code_before_it
+    RED both_blobs_of_a_two_driver_program_are_placed_in_either_order
+    RED code_in_the_space_that_does_not_continue_the_blob_is_refused
+    RED code_written_after_a_restore_is_not_part_of_the_blob
+    RED kosinski_and_saxman_bugged_store_the_bytes_p2bin_stores
+    RED one_instruction_places_every_blob_that_starts_at_its_address
+    RED sonic_1_builds_to_the_reference_rom_byte_for_byte
+    RED the_address_is_hexadecimal
+    RED the_constant_is_a_name_and_its_value_is_never_read
+    RED the_pad_byte_is_p2bins_and_zero_without_it
+    RED with_nothing_written_after_it_the_blob_is_unbounded
+    panicked at crates/sigil-cli/tests/as_driver_placement.rs:369:9
+    panicked at crates/sigil-cli/tests/as_driver_placement.rs:384:5
+    panicked at crates/sigil-cli/tests/as_driver_placement.rs:392:5
+    panicked at crates/sigil-cli/tests/as_driver_placement.rs:404:5
+    panicked at crates/sigil-cli/tests/as_driver_placement.rs:411:5
+    panicked at crates/sigil-cli/tests/as_driver_placement.rs:423:5
+    panicked at crates/sigil-cli/tests/as_driver_placement.rs:446:9
+    panicked at crates/sigil-cli/tests/as_driver_placement.rs:50:5
+  WITNESS sigil p_after.asm -p=FF -z=0,uncompressed,Guess,after: exit 2; error: unexpected argument '-p=FF'
+  RESTORED from HEAD; git status --porcelain: empty
+MATRIX_END
+RUNNER_EXIT=0

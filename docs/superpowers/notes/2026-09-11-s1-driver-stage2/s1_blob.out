@@ -1,0 +1,16 @@
+records 442
+record length: max 0xBA24, most common [(4, 27), (50, 10), (32, 8), (96, 8), (128, 7)]
+splits inside a contiguous same-CPU run: 333 first few [('0xb10', '0x820'), ('0x1b7e', '0x106e'), ('0x1b9e', '0x20'), ('0x1bbe', '0x20'), ('0x1bd0', '0x12'), ('0x1be2', '0x12'), ('0x1c02', '0x20'), ('0x1c4a', '0x48')]
+Z80 records at address 0: [437]
+  rec 435 cpu 0x1 [0x725ED, 0x72D84) len 0x797
+  rec 436 cpu 0x1 [0x72D83, 0x72E7C) len 0xF9
+  rec 437 cpu 0x51 [0x0, 0x32) len 0x32
+  rec 438 cpu 0x51 [0x32, 0x440) len 0x40E
+  rec 439 cpu 0x51 [0x440, 0xBB0) len 0x770
+  rec 440 cpu 0x51 [0xBB0, 0x1BC6) len 0x1016
+blob records 437..440, 7110 bytes (0x1BC6); prev end 0x72E7C; next record 0x745DC; gap 0x1760
+accurate-kosinski compressor /home/volence/sonic_hacks/programs/accurate-kosinski/build/kosinski-compress 044a1bf2e26005d6880ae9d3b36016af
+kosinski-compress rc 0 b''
+accurate-kosinski output 5984 bytes (0x1760), crc a4fd13ad
+ROM[prev_end : prev_end+len] equal: True
+ROM tail after the stream: 0 bytes, set []

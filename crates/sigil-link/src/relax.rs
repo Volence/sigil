@@ -453,9 +453,13 @@ fn cpu_name(cpu: sigil_ir::Cpu) -> &'static str {
 /// at that number as a collision, at that section's line. Neither names the
 /// problem, which is the missing placement. It is reported once per space, at
 /// the `org` that entered it, naming the space's CPU, its origin (the first
-/// section's `lma`) and its sections. Nothing can declare a ROM placement for a
-/// second space yet, so every one that holds bytes is refused.
-fn foreign_space_diags(placed: &[Section], rungs: &[Vec<usize>]) -> Vec<Diagnostic> {
+/// section's `lma`) and its sections.
+///
+/// A Z80 space whose origin is in `placed_origins` is exempt, every such space,
+/// as `p2bin` applies one `-z` to each blob that starts at its address: a `-z`
+/// instruction places it, and `flatten_placing` checks that placement. Every
+/// other space that holds bytes is refused here.
+fn foreign_space_diags(placed: &[Section], rungs: &[Vec<usize>], placed_origins: &[u32]) -> Vec<Diagnostic> {
     /// One second space and the extents of its sections that hold bytes.
     struct Space<'a> {
         cpu: sigil_ir::Cpu,
@@ -481,6 +485,7 @@ fn foreign_space_diags(placed: &[Section], rungs: &[Vec<usize>]) -> Vec<Diagnost
     }
     spaces
         .into_iter()
+        .filter(|space| !(space.cpu == sigil_ir::Cpu::Z80 && placed_origins.contains(&space.secs[0].1)))
         .map(|Space { cpu, entered_at, secs }| {
             let origin = secs[0].1;
             let lo = secs.iter().map(|s| s.1).min().unwrap_or(origin);
@@ -492,8 +497,8 @@ fn foreign_space_diags(placed: &[Section], rungs: &[Vec<usize>]) -> Vec<Diagnost
                 level: Level::Error,
                 message: format!(
                     "{noun} {} [{lo:#X}, {hi:#X}) {verb} assembled for the {cpu} at origin {origin:#X}, \
-                     in a second address space this org opens outside the ROM image; the assembler \
-                     cannot yet place a second address space into the ROM",
+                     in a second address space this org opens outside the ROM image, and no -z \
+                     instruction places it into the ROM",
                     names.join(", ")
                 ),
                 primary: entered_at,
@@ -824,7 +829,21 @@ pub fn resolve_layout(
     stubs: &SymbolTable,
     dash_a: bool,
 ) -> Result<Vec<Section>, Vec<Diagnostic>> {
-    resolve_layout_impl(sections, stubs, dash_a, true)
+    resolve_layout_impl(sections, stubs, dash_a, true, &[])
+}
+
+/// [`resolve_layout`] for a program whose second address spaces `-z`
+/// instructions place: a Z80 space whose origin is in `placed_origins` is not
+/// refused for want of a ROM placement, because [`crate::flatten_placing`]
+/// places it and checks the placement. Every other check is
+/// [`resolve_layout`]'s, unchanged.
+pub fn resolve_layout_placing(
+    sections: &[Section],
+    stubs: &SymbolTable,
+    dash_a: bool,
+    placed_origins: &[u32],
+) -> Result<Vec<Section>, Vec<Diagnostic>> {
+    resolve_layout_impl(sections, stubs, dash_a, true, placed_origins)
 }
 
 /// [`resolve_layout`] as a MEASURING device: the same placement⇄relaxation
@@ -848,7 +867,7 @@ pub fn resolve_layout_measuring(
     stubs: &SymbolTable,
     dash_a: bool,
 ) -> Result<Vec<Section>, Vec<Diagnostic>> {
-    resolve_layout_impl(sections, stubs, dash_a, false)
+    resolve_layout_impl(sections, stubs, dash_a, false, &[])
 }
 
 fn resolve_layout_impl(
@@ -856,6 +875,7 @@ fn resolve_layout_impl(
     stubs: &SymbolTable,
     dash_a: bool,
     check_image: bool,
+    placed_origins: &[u32],
 ) -> Result<Vec<Section>, Vec<Diagnostic>> {
     // Defensive: an empty or mis-ordered RelaxLadder is a front-end
     // construction-contract violation. `debug_assert!` catches both in tests; in
@@ -1206,9 +1226,10 @@ fn resolve_layout_impl(
                     return Err(vec![diag]);
                 }
                 // (c2b) A section outside the image's address space has no ROM
-                // placement, and nothing can declare one yet. After the overlap
-                // scan, so a collision inside one space is still named as one.
-                let foreign = foreign_space_diags(&placed, &rungs);
+                // placement unless a `-z` instruction gives it one. After the
+                // overlap scan, so a collision inside one space is still named
+                // as one.
+                let foreign = foreign_space_diags(&placed, &rungs, placed_origins);
                 if !foreign.is_empty() {
                     return Err(foreign);
                 }
@@ -3960,7 +3981,7 @@ mod tests {
         assert!(
             err[0].message.contains("section `driver` [0x0, 0x4)")
                 && err[0].message.contains("for the Z80 at origin 0x0")
-                && err[0].message.contains("cannot yet place a second address space into the ROM"),
+                && err[0].message.contains("and no -z instruction places it into the ROM"),
             "names the section, its CPU and origin, and the missing placement: {}",
             err[0].message
         );
