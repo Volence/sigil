@@ -2821,7 +2821,8 @@ writes down is an enumeration of the spellings they thought of**, and a sweep ke
 that limit while looking exhaustive. Two seats, two repos, one class, arriving as a doc defect on
 their side and a code defect on ours (`LINKER-STILL-PRINTS-A-PASS-COUNT`: the owner's decision took
 an attempt count out of the assembler's message and the linker's copy of the same wording, at
-`crates/sigil-link/src/relax.rs:1116`, was never touched). By bar 19 that is corroboration and not
+`crates/sigil-link/src/relax.rs:1116`, was never touched; that surface was brought under the ruling
+at merge `4280ee9f`, landed 2026-09-11, so the line cite now names code that has moved). By bar 19 that is corroboration and not
 echo. **Enumerate by what a site DOES, never by what it says**, and treat a grep over the ruling's
 own words as a floor.
 
