@@ -30,7 +30,7 @@
 //!   contract is the deferred S2-D6 sub-milestone.
 
 use crate::ast;
-use crate::eval::eval_proc_body;
+use crate::eval::eval_proc_body_lowering;
 use crate::value::{CodeItem, CodeOperand, Reg};
 use sigil_ir::backend::{Cpu, IrStreamer};
 use sigil_ir::IrBuilder;
@@ -124,7 +124,7 @@ pub(super) fn lower_proc(
         &proc.name,
         proc.span,
     );
-    let (buf, mut ds, next_counter) = eval_proc_body(
+    let (buf, mut ds, next_counter, asserts) = eval_proc_body_lowering(
         file,
         &proc.name,
         &proc.params,
@@ -137,6 +137,9 @@ pub(super) fn lower_proc(
     );
     *asm_counter = next_counter;
     diags.append(&mut ds);
+    for a in asserts {
+        builder.push_link_assert(a);
+    }
     let Some(buf) = buf else { return };
     super::lower_code_buf(&buf, ctx.cpu, ctx.as_compat, builder, diags);
 

@@ -21,7 +21,7 @@ use sigil_frontend_emp::ast;
 use sigil_frontend_emp::lower::{lower_module, LowerOptions};
 use sigil_frontend_emp::parse_str;
 use sigil_ir::backend::Cpu;
-use sigil_ir::{Section, SectionPlacement, SymbolTable};
+use sigil_ir::{LinkAssert, Section, SectionPlacement, SymbolTable};
 
 /// The plain-shape resident blob length: **6176 B** (`$1820`).
 ///
@@ -213,13 +213,42 @@ pub fn check_banked_carrier_drift(aeon: &Path) -> Result<(), String> {
     ))
 }
 
+thread_local! {
+    /// One resident file's in-memory replacement, `(rel_path, text)`, set only
+    /// inside [`with_resident_source_override`].
+    static SOURCE_OVERRIDE: std::cell::RefCell<Option<(String, String)>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Run `f` with the resident module `rel_path` read as `text` instead of from the
+/// reference tree, on this thread only. For gates that prove what the blob's link
+/// verdict refuses without editing the tree; every other read is untouched.
+pub fn with_resident_source_override<R>(rel_path: &str, text: &str, f: impl FnOnce() -> R) -> R {
+    SOURCE_OVERRIDE.with(|o| *o.borrow_mut() = Some((rel_path.to_string(), text.to_string())));
+    let out = std::panic::catch_unwind(std::panic::AssertUnwindSafe(f));
+    SOURCE_OVERRIDE.with(|o| *o.borrow_mut() = None);
+    out.unwrap_or_else(|p| std::panic::resume_unwind(p))
+}
+
+/// A resident module's source text: the override when one names `rel_path`,
+/// otherwise the file in the reference tree.
+fn resident_source(aeon: &Path, rel_path: &str) -> Result<String, String> {
+    let overridden = SOURCE_OVERRIDE.with(|o| {
+        o.borrow().as_ref().filter(|(p, _)| p == rel_path).map(|(_, text)| text.clone())
+    });
+    if let Some(text) = overridden {
+        return Ok(text);
+    }
+    let path = aeon.join(rel_path);
+    sigil_span::read_set::read_to_string(&path).map_err(|e| format!("read {}: {e}", path.display()))
+}
+
 /// Parse one resident `.emp` file, returning its AST + its directory (the include
 /// root). Panics on a parse error — the blob is a hard build dependency.
 fn parse_one(aeon: &Path, spec: &FileSpec) -> (ast::File, PathBuf) {
     let path = aeon.join(spec.rel_path);
     let dir = path.parent().expect("file has a parent dir").to_path_buf();
-    let src = sigil_span::read_set::read_to_string(&path)
-        .unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+    let src = resident_source(aeon, spec.rel_path).unwrap_or_else(|e| panic!("{e}"));
     let (file, pdiags) = parse_str(&src);
     assert!(
         pdiags.iter().all(|d| d.level != sigil_span::Level::Error),
@@ -393,7 +422,7 @@ fn lower_one(
     doctor: Option<(&str, i64)>,
     table: &BTreeMap<String, ast::ExternProcDecl>,
     presets: &[(&'static str, i64)],
-) -> Section {
+) -> (Section, Vec<LinkAssert>) {
     let (file, dir) = parse_one(aeon, spec);
     let mut imported: Vec<ast::Item> = Vec::new();
     use_import_stubs(&file.items, table, &mut imported);
@@ -431,11 +460,12 @@ fn lower_one(
         spec.rel_path,
         ldiags.iter().filter(|d| d.level == sigil_span::Level::Error).collect::<Vec<_>>()
     );
-    module
-        .sections
+    let sigil_ir::Module { sections, link_asserts, .. } = module;
+    let section = sections
         .into_iter()
         .find(|s| s.name == spec.section)
-        .unwrap_or_else(|| panic!("{} did not emit section {}", spec.rel_path, spec.section))
+        .unwrap_or_else(|| panic!("{} did not emit section {}", spec.rel_path, spec.section));
+    (section, link_asserts)
 }
 
 /// The STANDALONE native-linked blob: bytes + the exported-symbol contract. Used by
@@ -452,7 +482,16 @@ pub struct NativeSoundBlob {
 
 /// Build the standalone native-linked blob for `debug`, returning bytes + symbols.
 pub fn native_sound_blob(aeon: &Path, debug: bool) -> NativeSoundBlob {
-    NativeSoundBlob { bytes: native_blob_doctored(aeon, debug, None), symbols: handler_symbols(aeon, debug) }
+    native_sound_blob_checked(aeon, debug).unwrap_or_else(|e| panic!("{e}"))
+}
+
+/// [`native_sound_blob`] with the blob's link verdict as a `Result` (see
+/// [`native_blob_checked`]), for the emitter, whose caller reports the error.
+pub fn native_sound_blob_checked(aeon: &Path, debug: bool) -> Result<NativeSoundBlob, String> {
+    Ok(NativeSoundBlob {
+        bytes: native_blob_checked(aeon, debug, None)?,
+        symbols: handler_symbols(aeon, debug),
+    })
 }
 
 /// The resident sequencer handler VMAs (the seq-opcode table's `dc.w Seq_Op_*` link
@@ -525,7 +564,8 @@ fn handler_symbols(aeon: &Path, debug: bool) -> Vec<(String, u32)> {
     let specs = file_specs();
     let seq_idx =
         specs.iter().position(|s| s.section == "sound_sequencer").expect("sequencer spec");
-    let (sections, bases, _spans) = place_resident_sections(aeon, debug, None, SIZE_ONLY_PRESETS);
+    let (sections, bases, _spans, _asserts) =
+        place_resident_sections(aeon, debug, None, SIZE_ONLY_PRESETS);
     let resolved = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
         .unwrap_or_else(|d| panic!("resolve_layout (handler symbols) failed: {d:?}"));
     let sec = resolved
@@ -589,7 +629,8 @@ fn stamp_cursor_bases(modules: &mut [Section], spans: &[u32], debug: bool) -> Ve
 
 /// The five resident modules, LOWERED and PLACED at DERIVED bases (a running
 /// cursor — module N starts where module N-1 ended), plus the banked carriers.
-/// Returns `(sections, base VMAs, emitted spans)`, the latter two in blob order.
+/// Returns `(sections, base VMAs, emitted spans, each module's link asserts)`, the
+/// last three in blob order.
 ///
 /// TWO PASSES, AND ONE SIZING PASS IS ENOUGH. Z80 section sizes are
 /// BASE-INDEPENDENT: the only length-variable Z80 fragment sigil emits is the
@@ -604,11 +645,11 @@ fn place_resident_sections(
     debug: bool,
     doctor: Option<(&str, i64)>,
     presets: &[(&'static str, i64)],
-) -> (Vec<Section>, Vec<u32>, Vec<u32>) {
+) -> (Vec<Section>, Vec<u32>, Vec<u32>, Vec<Vec<LinkAssert>>) {
     let specs = file_specs();
     let table = import_stub_table(aeon);
-    let lowered: Vec<Section> =
-        specs.iter().map(|spec| lower_one(aeon, spec, debug, doctor, &table, presets)).collect();
+    let (lowered, asserts): (Vec<Section>, Vec<Vec<LinkAssert>>) =
+        specs.iter().map(|spec| lower_one(aeon, spec, debug, doctor, &table, presets)).unzip();
 
     // --- sizing pass: placeholder bases, measured spans ---------------------
     let upper: Vec<u32> = lowered.iter().map(|s| s.placement_span()).collect();
@@ -634,7 +675,7 @@ fn place_resident_sections(
     let mut sections = lowered;
     let bases = stamp_cursor_bases(&mut sections, &spans, debug);
     sections.extend(carrier_sections(doctor));
-    (sections, bases, spans)
+    (sections, bases, spans, asserts)
 }
 
 /// The DERIVED base VMA of each resident module, in blob order
@@ -700,11 +741,25 @@ pub fn resident_sound_modules(
 /// The flattened standalone blob bytes with an optional single-symbol doctor
 /// (const seam `-D` OR a banked carrier). Used by the byte gate + its t24 controls.
 pub fn native_blob_doctored(aeon: &Path, debug: bool, doctor: Option<(&str, i64)>) -> Vec<u8> {
+    native_blob_checked(aeon, debug, doctor).unwrap_or_else(|e| panic!("{e}"))
+}
+
+/// [`native_blob_doctored`] with its link verdict as a `Result`: every resident
+/// module's link asserts (its deferred guards and its `extern()` references) are
+/// decided against the linked blob, and any failure is an `Err` naming the file,
+/// line and column. The blob is linked here and nowhere else, so this is the only
+/// stage that can decide them.
+pub fn native_blob_checked(
+    aeon: &Path,
+    debug: bool,
+    doctor: Option<(&str, i64)>,
+) -> Result<Vec<u8>, String> {
     let specs = file_specs();
-    let (sections, _bases, spans) = place_resident_sections(aeon, debug, doctor, &[]);
+    let (sections, _bases, spans, asserts) = place_resident_sections(aeon, debug, doctor, &[]);
 
     let resolved = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
         .unwrap_or_else(|d| panic!("resolve_layout failed: {d:?}"));
+    resident_link_verdict(aeon, &specs, &resolved, &asserts, debug)?;
     let linked = sigil_link::link(&resolved, &SymbolTable::new())
         .unwrap_or_else(|d| panic!("link failed: {d:?}"));
 
@@ -732,7 +787,41 @@ pub fn native_blob_doctored(aeon: &Path, debug: bool, doctor: Option<(&str, i64)
         );
         out.extend(bytes);
     }
-    out
+    Ok(out)
+}
+
+/// Decide each resident module's link asserts against the linked blob, one module
+/// at a time so each failure is located in its own file (every resident module is
+/// parsed as `SourceId(0)`, so a module's spans only mean something against its
+/// own text).
+fn resident_link_verdict(
+    aeon: &Path,
+    specs: &[FileSpec],
+    resolved: &[Section],
+    asserts: &[Vec<LinkAssert>],
+    debug: bool,
+) -> Result<(), String> {
+    let mut failures = Vec::new();
+    for (spec, module_asserts) in specs.iter().zip(asserts) {
+        let diags = sigil_link::check_link_asserts(resolved, &SymbolTable::new(), module_asserts);
+        let errors: Vec<&sigil_span::Diagnostic> =
+            diags.iter().filter(|d| d.level == sigil_span::Level::Error).collect();
+        if errors.is_empty() {
+            continue;
+        }
+        let src = resident_source(aeon, spec.rel_path)?;
+        let mut texts = crate::diag_render::SourceTexts::new();
+        texts.add(Path::new(spec.rel_path), &src);
+        failures.push(crate::diag_render::render_diag_lines(&errors, &|s| texts.locate(s)));
+    }
+    if failures.is_empty() {
+        return Ok(());
+    }
+    Err(format!(
+        "resident sound blob ({} shape): link-time check(s) failed:\n{}",
+        if debug { "debug" } else { "plain" },
+        failures.join("\n")
+    ))
 }
 
 /// Emit the seam-1 build inputs to `out_dir`: `z80_sound_blob.bin` (plain) and
@@ -753,8 +842,8 @@ pub fn emit_sound_blob(aeon: &Path, out_dir: &Path) -> Result<(), String> {
     // the natural remediation, refreeze, would bless it.
     check_banked_carrier_drift(aeon)?;
 
-    let plain = native_sound_blob(aeon, false);
-    let debug = native_sound_blob(aeon, true);
+    let plain = native_sound_blob_checked(aeon, false)?;
+    let debug = native_sound_blob_checked(aeon, true)?;
     // TRIPWIRE (not an input — the module bases are derived): the emitted length
     // must still be the pinned `Z80_SOUND_SIZE`. A deliberate size change re-pins
     // BLOB_LEN_{PLAIN,DEBUG} here, in lockstep with the `Z80_SOUND_SIZE` mirrors

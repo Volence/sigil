@@ -933,10 +933,12 @@ impl<'a> Evaluator<'a> {
         // Measure as a pure query: snapshot the diagnostic + dropped-instruction
         // state so the throwaway lowering leaves neither behind.
         let diags_len = self.diags.len();
+        let asserts_len = self.link_asserts.len();
         let dropped_before = self.dropped_instrs;
         let code = self.eval_asm_owned(&decl.body, decl.span, env, Some(&name));
         let measured_dropped = self.dropped_instrs > dropped_before;
         self.diags.truncate(diags_len);
+        self.link_asserts.truncate(asserts_len);
         self.dropped_instrs = dropped_before;
         let Value::Code(buf) = code else {
             // eval_asm_owned yields Code unless the evaluation aborted (budget);
@@ -994,6 +996,15 @@ impl<'a> Evaluator<'a> {
             Ok(n) => n,
             Err(poison) => return poison,
         };
+        // Every evaluation records that the link must define `name`, at this
+        // call's span, whatever the value goes on to feed: a guard in a proc body,
+        // a message placeholder, or a comptime result nothing reads. The linker
+        // refuses the name here when no module defines it. One record per
+        // (name, call site) per evaluator.
+        let reference = sigil_ir::LinkAssert::extern_defined(&name, span);
+        if !self.link_asserts.contains(&reference) {
+            self.link_asserts.push(reference);
+        }
         use sigil_ir::expr::Expr;
         Value::LinkExpr(Expr::Sym(name))
     }

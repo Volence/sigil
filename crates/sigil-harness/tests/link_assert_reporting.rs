@@ -51,7 +51,8 @@ fn probe(truths: &[(&str, &str)]) -> (Vec<Diagnostic>, SourceTexts) {
     let opts = LowerOptions { initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] };
     let (module, ldiags) = lower_module(&file, &opts);
     assert!(ldiags.iter().all(|d| d.level != Level::Error), "probe lower: {ldiags:?}");
-    assert_eq!(module.link_asserts.len(), 3, "every extern() guard defers to link");
+    let guards = module.link_asserts.iter().filter(|a| a.kind == sigil_ir::AssertKind::Condition).count();
+    assert_eq!(guards, 3, "every extern() guard defers to link");
 
     let mut sections: Vec<Section> = module.sections;
     place_sequential(&mut sections, 0);
@@ -110,19 +111,25 @@ fn agreeing_authority_passes_both_verdicts() {
     assert!(inapplicable.is_empty());
 }
 
-/// A guard whose `extern()` names a symbol this link does not define is
-/// INAPPLICABLE to the declared chain (a gated-off twin) and rides back for the
-/// allowlist rather than failing the build; a real drift beside it still fails.
+/// A guard whose `extern()` names a symbol this link does not define is not left
+/// inapplicable: the reference itself is refused at its own located line, the
+/// guards that read it add no second report, and the verdict fails. A real drift
+/// beside defined names still fails as drift.
 #[test]
-fn declared_chain_verdict_separates_inapplicable_from_real_drift() {
+fn declared_chain_verdict_refuses_an_undefined_extern_and_still_reports_real_drift() {
     let (diags, texts) = probe(&[("PROBE_TRUTH_B", "9")]);
-    // PROBE_TRUTH_A is undefined: guards 1 and 3 are Poison, guard 2 holds.
+    // PROBE_TRUTH_A is undefined: both references to it are refused, guard 2 holds.
     assert_eq!(diags.len(), 2, "{diags:?}");
-    let inapplicable = declared_chain_drift_verdict(&diags, &|s: Span| texts.locate(s)).unwrap();
-    assert_eq!(inapplicable.len(), 2);
-    assert!(inapplicable.iter().all(|d| d.message.contains("`PROBE_TRUTH_A`")), "{diags:?}");
+    let err = declared_chain_drift_verdict(&diags, &|s: Span| texts.locate(s)).unwrap_err();
+    assert_eq!(
+        err.lines().next(),
+        Some("extern() names a symbol no module in this link defines: 2 error(s):"),
+        "{err}"
+    );
+    assert!(err.contains("probe/guarded.emp:4:8: [Error] [extern.unknown]"), "{err}");
+    assert!(err.contains("probe/guarded.emp:6:8: [Error] [extern.unknown]"), "{err}");
 
-    let (diags, texts) = probe(&[("PROBE_TRUTH_B", "10")]);
+    let (diags, texts) = probe(&[("PROBE_TRUTH_A", "5"), ("PROBE_TRUTH_B", "10")]);
     let err = declared_chain_drift_verdict(&diags, &|s: Span| texts.locate(s)).unwrap_err();
     assert_eq!(err.matches("[Error]").count(), 1, "{err}");
     assert!(err.contains("probe/guarded.emp:5:1: [Error] MIRROR_B drifted"), "{err}");

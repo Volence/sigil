@@ -194,6 +194,9 @@ SOURCE_GATES=(
     # encoder — source only, no ROM and no golden
     m68k_capstone_stream
     native_object_bank_budget
+    # the resident blob's link verdict, driven from in-memory sources over the tree's
+    # .emp files; compares against its own pristine output, never a golden
+    seam1_link_verdict
     seam2_colink_probe
     seam2_phased_head
     subcommands

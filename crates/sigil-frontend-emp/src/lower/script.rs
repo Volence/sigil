@@ -154,7 +154,7 @@ pub(super) fn lower_script_item(
     let mut body_stmts = Vec::with_capacity(flat.len() + 1);
     body_stmts.push(AsmStmt::Label { name: resume_name(0), export: false, span: decl.span });
     body_stmts.extend(flat);
-    let (buf, mut ds, next_counter) = crate::eval::eval_proc_body(
+    let (buf, mut ds, next_counter, asserts) = crate::eval::eval_proc_body_lowering(
         file,
         &decl.name,
         &decl.params,
@@ -167,6 +167,9 @@ pub(super) fn lower_script_item(
     );
     *asm_counter = next_counter;
     diags.append(&mut ds);
+    for a in asserts {
+        builder.push_link_assert(a);
+    }
     let Some(buf) = buf else { return };
     super::lower_code_buf(&buf, placement.cpu, as_compat, builder, diags);
 

@@ -2110,6 +2110,21 @@ pub fn declared_chain_drift_verdict<'a>(
     adiags: &'a [sigil_span::Diagnostic],
     locate: &dyn Fn(sigil_span::Span) -> Option<String>,
 ) -> Result<Vec<&'a sigil_span::Diagnostic>, String> {
+    // An `extern()` naming a symbol nothing in this link defines is refused at the
+    // reference, before the guard partition: it is never an inapplicable twin.
+    let unknown: Vec<&sigil_span::Diagnostic> = adiags
+        .iter()
+        .filter(|d| {
+            d.level == sigil_span::Level::Error && d.message.starts_with(sigil_link::EXTERN_UNKNOWN_ID)
+        })
+        .collect();
+    if !unknown.is_empty() {
+        return Err(format!(
+            "extern() names a symbol no module in this link defines: {} error(s):\n{}",
+            unknown.len(),
+            crate::diag_render::render_diag_lines(&unknown, locate)
+        ));
+    }
     let (inapplicable, real): (Vec<_>, Vec<_>) = adiags
         .iter()
         .filter(|d| d.level == sigil_span::Level::Error)
@@ -3680,9 +3695,13 @@ impl GuardCensus {
         link_asserts: &[sigil_ir::LinkAssert],
         inapplicable: &[&sigil_span::Diagnostic],
     ) -> GuardCensus {
+        // An `extern()` reference record checks a name, not a condition, so it is
+        // not a guard verdict; an undefined one already failed the resolve.
+        let conditions =
+            link_asserts.iter().filter(|a| a.kind == sigil_ir::AssertKind::Condition).count();
         GuardCensus {
             comptime_guards,
-            link_asserts_decided: link_asserts.len() - inapplicable.len(),
+            link_asserts_decided: conditions - inapplicable.len(),
             link_asserts_inapplicable: inapplicable.len(),
         }
     }
@@ -4814,6 +4833,7 @@ mod allowlist_tests {
             fatal: false,
             level: Level::Error,
             span: span(n),
+            kind: sigil_ir::AssertKind::Condition,
         };
         (d, a)
     }
@@ -5957,6 +5977,7 @@ mod warn_tier_tests {
             fatal: false,
             level: Level::Warning,
             span: Span { source: REAL, start: 10, end: 10 },
+            kind: sigil_ir::AssertKind::Condition,
         };
         let adiags = sigil_link::check_link_asserts(
             &[],

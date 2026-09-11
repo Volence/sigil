@@ -201,6 +201,7 @@ impl<'a> Evaluator<'a> {
             fatal,
             level: sigil_span::Level::Error,
             span,
+            kind: sigil_ir::AssertKind::Condition,
         });
         Value::Unit
     }
@@ -275,13 +276,29 @@ impl<'a> Evaluator<'a> {
         if !p.into_diagnostics().is_empty() {
             return bad(self, "parse error");
         }
-        match self.eval_expr(&expr, env) {
+        let asserts_before = self.link_asserts.len();
+        let value = self.eval_expr(&expr, env);
+        self.attribute_placeholder_references(asserts_before, span);
+        match value {
             Value::Poison => bad(self, "evaluation failed"),
             // A provisional `here()` placeholder folds at link — keep it lazy so
             // the message reports the REAL final address (D-H.5).
             Value::LinkExpr(e) => MsgPart::Expr(e),
             Value::Str(s) => MsgPart::Text(s),
             other => MsgPart::Text(other.to_string()),
+        }
+    }
+
+    /// Attribute the `extern()` reference records a guard-message placeholder
+    /// just made (those at index `from` and later) to the guard's `span`. A
+    /// placeholder is lexed from the message text, so its own spans are offsets
+    /// into that text rather than into the file; the guard is where a reader
+    /// finds the reference.
+    fn attribute_placeholder_references(&mut self, from: usize, span: Span) {
+        for a in &mut self.link_asserts[from..] {
+            if a.kind == sigil_ir::AssertKind::ExternDefined {
+                a.span = span;
+            }
         }
     }
 
@@ -339,7 +356,10 @@ impl<'a> Evaluator<'a> {
         // Evaluating the inner expr may itself report (e.g. an unknown name); that
         // diagnostic plus this best-effort one are both acceptable — the guard is
         // already failing, so a noisy interpolation is not a cascade concern.
-        match self.eval_expr(&expr, env) {
+        let asserts_before = self.link_asserts.len();
+        let value = self.eval_expr(&expr, env);
+        self.attribute_placeholder_references(asserts_before, span);
+        match value {
             Value::Poison => bad(self, "evaluation failed"),
             // A string interpolates as its bare contents: `Value`'s `Display`
             // quotes strings (`{s:?}`) for diagnostics, which reads wrong

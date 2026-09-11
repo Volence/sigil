@@ -5,9 +5,10 @@
 //! evaluator's count, drained onto the module beside its deferred asserts at the
 //! two lowering sites that drain them (item guards, data initializers), so the
 //! count and the `LinkAssert` list share one provenance. A `LinkAssert` counts as
-//! decided only when its condition folded: one whose `extern()` names a symbol
-//! the link does not define is inapplicable, neither passed nor failed, and the
-//! census reports it in its own column. These gates drive a two-file probe (a
+//! decided only when its condition folded, and only a condition counts: the
+//! name check each `extern()` call records is not a guard. An `extern()` naming a
+//! symbol the link does not define is refused at the reference, so its guard is
+//! neither counted passed nor left inapplicable. These gates drive a two-file probe (a
 //! guarded module plus an AS equ carrier) through the same lowering, the real
 //! `check_link_asserts`, the real drift verdict and the census constructor the
 //! check-only resolve uses, with no aeon tree.
@@ -22,7 +23,7 @@ use sigil_frontend_emp::resolve::place_sequential;
 use sigil_harness::diag_render::SourceTexts;
 use sigil_harness::native::{declared_chain_drift_verdict, GuardCensus};
 use sigil_ir::backend::Cpu;
-use sigil_ir::{Module, Section, SectionPlacement, SymbolTable};
+use sigil_ir::{AssertKind, Module, Section, SectionPlacement, SymbolTable};
 use sigil_span::{Diagnostic, Level, Span};
 use std::path::Path;
 
@@ -97,7 +98,9 @@ fn comptime_verdicts_are_counted_where_asserts_are_drained() {
     let (module, ldiags, _) = lower(PROBE_SRC);
     assert!(ldiags.iter().all(|d| d.level != Level::Error), "{ldiags:?}");
     assert_eq!(module.comptime_guards, 3, "one item guard + two fn guards from the initializer");
-    assert_eq!(module.link_asserts.len(), 3, "every extern() guard defers");
+    let kinds = |k| module.link_asserts.iter().filter(|a| a.kind == k).count();
+    assert_eq!(kinds(AssertKind::Condition), 3, "every extern() guard defers");
+    assert_eq!(kinds(AssertKind::ExternDefined), 3, "one name check per extern() call site");
 }
 
 /// A failed comptime guard is a verdict too: the count does not drop to two
@@ -125,18 +128,39 @@ fn every_defined_extern_guard_is_decided() {
     );
 }
 
-/// The control: a guard whose extern this link does not define is NOT decided.
-/// With `PROBE_TRUTH_A` absent, the two guards that read it are inapplicable and
-/// the decided column holds only the one that folded; nothing reports them passed.
+/// The control: a guard whose extern this link does not define is NOT decided, and
+/// it is not passed either. With `PROBE_TRUTH_A` absent, each `extern("PROBE_TRUTH_A")`
+/// is refused at its own located line, the two guards that read it add no second
+/// diagnostic, and the verdict fails instead of producing a census.
 #[test]
-fn an_undefined_extern_guard_is_reported_not_decided() {
-    let (census, adiags) = census(&[("PROBE_TRUTH_B", "9")]);
+fn an_undefined_extern_is_refused_at_each_reference() {
+    let (module, _, texts) = lower(PROBE_SRC);
+    let mut sections: Vec<Section> = module.sections;
+    place_sequential(&mut sections, 0);
+    let mut carriers = sigil_harness::test_support::assemble_equ_pairs(&[("PROBE_TRUTH_B", "9")]);
+    for sec in &mut carriers {
+        sec.lma = 0x0010_0000;
+        sec.placement = SectionPlacement::Pinned;
+        sec.group = None;
+    }
+    sections.extend(carriers);
+    let resolved = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
+        .unwrap_or_else(|d| panic!("resolve_layout: {d:?}"));
+    let adiags = sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), &module.link_asserts);
     assert_eq!(adiags.len(), 2, "{adiags:?}");
-    assert!(adiags.iter().all(|d| d.message.contains("`PROBE_TRUTH_A`") && d.message.contains("not defined in this link")), "{adiags:?}");
-    assert_eq!(
-        census,
-        GuardCensus { comptime_guards: 3, link_asserts_decided: 1, link_asserts_inapplicable: 2 }
+    assert!(
+        adiags.iter().all(|d| d.message.starts_with(sigil_link::EXTERN_UNKNOWN_ID)
+            && d.message.contains("`PROBE_TRUTH_A`")),
+        "{adiags:?}"
     );
+    let err = declared_chain_drift_verdict(&adiags, &|s: Span| texts.locate(s)).unwrap_err();
+    assert_eq!(
+        err.lines().next(),
+        Some("extern() names a symbol no module in this link defines: 2 error(s):"),
+        "{err}"
+    );
+    assert!(err.contains("probe/census.emp:9:8: [Error] [extern.unknown]"), "{err}");
+    assert!(err.contains("probe/census.emp:11:8: [Error] [extern.unknown]"), "{err}");
 }
 
 /// A drifted truth is real drift: the verdict fails with the guard's own located

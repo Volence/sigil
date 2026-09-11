@@ -34,7 +34,7 @@ pub(crate) use proc::instr_written_regs;
 pub(crate) use proc::{sr_writes_round_trip, writes_dest_register};
 
 use crate::ast;
-use crate::eval::eval_proc_body;
+use crate::eval::eval_proc_body_lowering;
 use crate::layout::{
     eval_attr_int, eval_data_with_root_and_base, eval_dispatch_with_root, eval_offsets_with_root,
     validate_overlay, HerePos,
@@ -1065,6 +1065,7 @@ fn emit_align_pad(
         fatal: false,
         level: Level::Error,
         span,
+        kind: sigil_ir::AssertKind::Condition,
     });
 }
 
@@ -1141,6 +1142,7 @@ pub(super) fn record_odd_item_assert(
         fatal: false,
         level,
         span,
+        kind: sigil_ir::AssertKind::Condition,
     });
 }
 
@@ -1652,7 +1654,7 @@ fn lower_dispatch_item(
         let ast::DispatchTarget::Body(body) = &member.target else { continue };
         let label = crate::layout::dispatch_body_label(&file.module.path, &decl.name, &member.name);
         builder.define_label(&label);
-        let (buf, mut ds, next_counter) = eval_proc_body(
+        let (buf, mut ds, next_counter, asserts) = eval_proc_body_lowering(
             file,
             &label,
             &[],
@@ -1661,10 +1663,13 @@ fn lower_dispatch_item(
             *asm_counter,
             placement.cpu,
             placement.defines,
-        &crate::contract::InterfaceEnv::empty(),
+            &crate::contract::InterfaceEnv::empty(),
         );
         *asm_counter = next_counter;
         diags.append(&mut ds);
+        for a in asserts {
+            builder.push_link_assert(a);
+        }
         // `None` = the body failed to EVALUATE (already diagnosed) — skip it.
         // An EMPTY body is `Some(empty buf)` and still reaches the lint below.
         let Some(buf) = buf else { continue };

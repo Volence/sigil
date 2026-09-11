@@ -4,7 +4,7 @@ pub mod align;
 pub use align::asl_align_pad;
 
 pub mod assert;
-pub use assert::{LinkAssert, MsgPart};
+pub use assert::{AssertKind, LinkAssert, MsgPart};
 
 pub mod backend;
 pub use backend::Cpu;
