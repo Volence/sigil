@@ -1,0 +1,39 @@
+== s2disasm
+      1  lastbit(                                   s2.asm:91263: cnop	-1,2<<lastbit(*-StartOfRom-1)
+      2  pushv/popv                                 s2.asm:69387: pushv ,SonicDplcVer
+      1  shared                                     s2.asm:91275: shared movewZ80CompSize
+     12  ix/iy half register                        s2.sounddriver.asm:1863: ld	a,iyl
+     35  backslash escape in a string (not \{})     s2.asm:10273: charset 'B',"\4\8\xC\4\x10\x14\x18\x1C\x1E\x22\x26\x2A\4\4\x30\x34\x38\x3C\x40\x
+     35  charset with a string                      s2.asm:10273: charset 'B',"\4\8\xC\4\x10\x14\x18\x1C\x1E\x22\x26\x2A\4\4\x30\x34\x38\x3C\x40\x
+      8  memory shift, no size                      s2.asm:36098: asl	y_vel(a0)
+      1  digit-led struct member                    s2.sounddriver.asm:159: 1upPlaying:		ds.b 1
+      0  empty parens ()                            
+      1  music_metadata-style (FLAGS)               s2.sounddriver.asm:3817: db	(withinSameZ80Bank(DATA.pointer, MusicPoint2)<<7)|((~~DATA.is_compressed)<<5)
+   7824  CONTROL move.w (must be >0 in every tree)  s2.asm:215: move.w	(a4),d0
+     82  CONTROL charset directive of any form      s2.asm:4673: charset '0','9',0
+== s1disasm
+      0  lastbit(                                   
+      0  pushv/popv                                 
+      0  shared                                     
+      0  ix/iy half register                        
+      0  backslash escape in a string (not \{})     
+      0  charset with a string                      
+      0  memory shift, no size                      
+      0  digit-led struct member                    
+      0  empty parens ()                            
+      0  music_metadata-style (FLAGS)               
+   3688  CONTROL move.w (must be >0 in every tree)  s1.sounddriver.asm:404: move.w	(a0,d5.w),d6
+      9  CONTROL charset directive of any form      sonic.asm:2616: charset ' ', $FF
+== skdisasm
+      1  lastbit(                                   sonic3k.asm:203577: cnop -1,2<<lastbit(*)
+      0  pushv/popv                                 
+      0  shared                                     
+      0  ix/iy half register                        
+      0  backslash escape in a string (not \{})     
+      0  charset with a string                      
+     76  memory shift, no size                      sonic3k.asm:6033: asr	y_vel(a0)
+      0  digit-led struct member                    
+      0  empty parens ()                            
+      0  music_metadata-style (FLAGS)               
+  29399  CONTROL move.w (must be >0 in every tree)  sonic3k.macros.asm:27: move.w	#$9700|(((((source)>>1)&$FF0000)>>16)&$7F),(a5)
+     54  CONTROL charset directive of any form      sonic3k.macros.asm:141: charset '0','9', 16

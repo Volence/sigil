@@ -1,0 +1,89 @@
+== raw/stderr rows 149
+    31  cannot include sound/music/generated/<file>
+    30  bad byte expression
+    24  unresolved symbol `X` in operand
+    17  int(): could not evaluate float expression
+    17  division by zero: N / 0
+     8  instruction needs an explicit size suffix (.b/.w/.l)
+     7  cannot include sound/DAC/generated/<file>
+     4  malformed number (hex needs a trailing `X`)
+     3  `X` is not a recognized N mnemonic
+     2  charset operand N out of range 0..=N
+     2  unresolved if condition: `X` has no value, so this condition cannot decide whether the code it guards is assembled
+     1  struct `X` has a member line this cannot read; its size and every member after it would be wrong
+     1  cannot include sound/PCM/generated/<file>
+     1  unresolved if condition: it does not evaluate, so it cannot decide whether the code it guards is assembled
+     1  unresolved elseif condition: it does not evaluate, so it cannot decide whether the code it guards is assembled
+  -- by file
+    57  s2.asm
+     2  s2.macrosetup.asm
+    90  s2.sounddriver.asm
+  -- by file and class
+     3  s2.asm                 `X` is not a recognized N mnemonic
+     7  s2.asm                 cannot include sound/DAC/generated/<file>
+     1  s2.asm                 cannot include sound/PCM/generated/<file>
+    31  s2.asm                 cannot include sound/music/generated/<file>
+     2  s2.asm                 charset operand N out of range 0..=N
+     8  s2.asm                 instruction needs an explicit size suffix (.b/.w/.l)
+     3  s2.asm                 malformed number (hex needs a trailing `X`)
+     2  s2.asm                 unresolved if condition: `X` has no value, so this condition cannot decide whether the code it guards is assembled
+     1  s2.macrosetup.asm      unresolved elseif condition: it does not evaluate, so it cannot decide whether the code it guards is assembled
+     1  s2.macrosetup.asm      unresolved if condition: it does not evaluate, so it cannot decide whether the code it guards is assembled
+    30  s2.sounddriver.asm     bad byte expression
+    17  s2.sounddriver.asm     division by zero: N / 0
+    17  s2.sounddriver.asm     int(): could not evaluate float expression
+     1  s2.sounddriver.asm     malformed number (hex needs a trailing `X`)
+     1  s2.sounddriver.asm     struct `X` has a member line this cannot read; its size and every member after it would be wrong
+    24  s2.sounddriver.asm     unresolved symbol `X` in operand
+  -- unresolved-symbol names (24 rows, 8 names)
+     6  zAbsVar.1upPlaying
+     4  ixl
+     4  ixu
+     3  zVar.1upPlaying
+     2  .loop_counter
+     2  iyl
+     2  iyu
+     1  Snd_Sega.size
+== gen/stderr rows 71
+    30  bad byte expression
+    21  unresolved symbol `X` in operand
+     8  instruction needs an explicit size suffix (.b/.w/.l)
+     4  malformed number (hex needs a trailing `X`)
+     3  `X` is not a recognized N mnemonic
+     2  charset operand N out of range 0..=N
+     1  struct `X` has a member line this cannot read; its size and every member after it would be wrong
+     1  unresolved if condition: it does not evaluate, so it cannot decide whether the code it guards is assembled
+     1  unresolved elseif condition: it does not evaluate, so it cannot decide whether the code it guards is assembled
+  -- by file
+    16  s2.asm
+     2  s2.macrosetup.asm
+    53  s2.sounddriver.asm
+  -- by file and class
+     3  s2.asm                 `X` is not a recognized N mnemonic
+     2  s2.asm                 charset operand N out of range 0..=N
+     8  s2.asm                 instruction needs an explicit size suffix (.b/.w/.l)
+     3  s2.asm                 malformed number (hex needs a trailing `X`)
+     1  s2.macrosetup.asm      unresolved elseif condition: it does not evaluate, so it cannot decide whether the code it guards is assembled
+     1  s2.macrosetup.asm      unresolved if condition: it does not evaluate, so it cannot decide whether the code it guards is assembled
+    30  s2.sounddriver.asm     bad byte expression
+     1  s2.sounddriver.asm     malformed number (hex needs a trailing `X`)
+     1  s2.sounddriver.asm     struct `X` has a member line this cannot read; its size and every member after it would be wrong
+    21  s2.sounddriver.asm     unresolved symbol `X` in operand
+  -- unresolved-symbol names (21 rows, 6 names)
+     6  zAbsVar.1upPlaying
+     4  ixl
+     4  ixu
+     3  zVar.1upPlaying
+     2  iyl
+     2  iyu
+== stubA/stderr rows 1
+     1  sections `X` [0x0, 0x2CA) and `X` [0x0, 0x1308) overlap in the image (colliding pins)
+  -- by file
+     1  s2.asm
+  -- by file and class
+     1  s2.asm                 sections `X` [0x0, 0x2CA) and `X` [0x0, 0x1308) overlap in the image (colliding pins)
+  -- unresolved-symbol names (0 rows, 0 names)
+== stubD/stderr rows 0
+  -- by file
+  -- by file and class
+  -- unresolved-symbol names (0 rows, 0 names)

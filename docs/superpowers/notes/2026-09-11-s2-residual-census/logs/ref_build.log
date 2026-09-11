@@ -1,0 +1,1135 @@
+== stage A: swap reference asl into the copy
+61e672562465725a8c102288a7da9098  build_tools/Linux-x86_64/asl
+b06b8f30ac22e2e0148f2888706d7a5f  build_tools/Linux-x86_64/as.msg
+4831504216367be063bbd5ca60458650  build_tools/Linux-x86_64/cmdarg.msg
+8abd3465fbf0c20976f3e3df512dcd12  build_tools/Linux-x86_64/ioerrs.msg
+4f2fff99c3347bafb93b12d5be1db754  build_tools/Linux-x86_64/p2bin
+704e5c8c361b9959f45bac3e803f0033  build_tools/Linux-x86_64/saxman
+== stage A: lua build.lua (unmodified)
+LUA_BUILD_EXIT=1
+**********************************************************************
+
+LUA_BUILD_EXIT=1
+s2.log PRESENT (asl wrote errors/warnings):
+> > > s2.asm(13535) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo_LoadSubObject_Part3
+> > >                 !bsr.w JmpTo_LoadSubObject_Part3     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~~~~~~~~
+> > > s2.asm(13916) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo_LoadSubObject_Part3
+> > >                 !bsr.w JmpTo_LoadSubObject_Part3     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~~~~~~~~
+> > > s2.asm(14011) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo_LoadSubObject_Part3
+> > >                 !bsr.w JmpTo_LoadSubObject_Part3     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~~~~~~~~
+> > > s2.asm(14051) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo_LoadSubObject_Part3
+> > >                 !bsr.w JmpTo_LoadSubObject_Part3     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~~~~~~~~
+> > > s2.asm(14137) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo_LoadSubObject_Part3
+> > >                 !bsr.w JmpTo_LoadSubObject_Part3     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~~~~~~~~
+> > > s2.asm(62354) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo23_ObjectMove
+> > >                 !bsr.w JmpTo23_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(62701) jmpTos(1) jmpTosInternal(13) jmpTosInternal2(5) IRP:(2):0: error #1010: symbol undefined
+> > > Objec
+> > >         jmp     (extractJmpToName("JmpTo23_Objec")).l
+> > > ~~~~~
+> > > s2.asm(62758) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo61_Adjust2PArtPointer
+> > >                 !bsr.w JmpTo61_Adjust2PArtPointer     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~~~~~~~~~
+> > > s2.asm(62993) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo4_ObjectMoveAndFall
+> > >                 !bsr.w JmpTo4_ObjectMoveAndFall     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~~~~~~~
+> > > s2.asm(63054) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo2_PlayLevelMusic
+> > >                 !bsr.w JmpTo2_PlayLevelMusic     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~~~~
+> > > s2.asm(63066) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo2_LoadPLC_AnimalExplosion
+> > >                 !bsr.w JmpTo2_LoadPLC_AnimalExplosion     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+> > > s2.asm(63323) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo4_ObjectMoveAndFall
+> > >                 !bsr.w JmpTo4_ObjectMoveAndFall     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~~~~~~~
+> > > s2.asm(63369) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo4_ObjectMoveAndFall
+> > >                 !bsr.w JmpTo4_ObjectMoveAndFall     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~~~~~~~
+> > > s2.asm(63404) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo4_ObjectMoveAndFall
+> > >                 !bsr.w JmpTo4_ObjectMoveAndFall     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~~~~~~~
+> > > s2.asm(63612) jmpTos(1) jmpTosInternal(13) jmpTosInternal2(5) IRP:(2):0: error #1010: symbol undefined
+> > > Adjus
+> > >         jmp     (extractJmpToName("JmpTo61_Adjus")).l
+> > > ~~~~~
+> > > s2.asm(64081) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo3_LoadPLC_AnimalExplosion
+> > >                 !bsr.w JmpTo3_LoadPLC_AnimalExplosion     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+> > > s2.asm(64207) jmpTos0(1) jmpTosInternal(13) jmpTosInternal2(5) IRP:(2):0: error #1010: symbol undefined
+> > > LoadP
+> > >         jmp     (extractJmpToName("JmpTo3_LoadP")).l
+> > > ~~~~~
+> > > s2.asm(65021) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_SolidObject
+> > >                 !bsr.w JmpTo26_SolidObject     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~~
+> > > s2.asm(65148) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo8_PlatformObject
+> > >                 !bsr.w JmpTo8_PlatformObject     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~~~~
+> > > s2.asm(65235) jmpTos(1) jmpTosInternal(13) jmpTosInternal2(5) IRP:(2):0: error #1010: symbol undefined
+> > > Pla
+> > >         jmp     (extractJmpToName("JmpTo8_Pla")).l
+> > > ~~~
+> > > s2.asm(67922) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo8_LoadPLC_AnimalExplosion
+> > >                 !bsr.w JmpTo8_LoadPLC_AnimalExplosion     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+> > > s2.asm(68339) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo25_ObjectMove
+> > >                 !bsr.w JmpTo25_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(68486) jmpTos(1) jmpTosInternal(13) jmpTosInternal2(5) IRP:(2):0: error #1010: symbol undefined
+> > > L
+> > >         jmp     (extractJmpToName("JmpTo8_L")).l
+> > > ~
+> > > s2.asm(72854) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bsr.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(72976) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo8_ObjectMoveAndFall
+> > >                 !bsr.w JmpTo8_ObjectMoveAndFall     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~~~~~~~
+> > > s2.asm(73182) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bsr.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(73228) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bsr.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(73341) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bsr.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(73433) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bsr.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(73500) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo64_Adjust2PArtPointer
+> > >                 !bsr.w JmpTo64_Adjust2PArtPointer     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~~~~~~~~~
+> > > s2.asm(73585) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bsr.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(73593) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bsr.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(73642) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bsr.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(73712) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo27_SolidObject
+> > >                 !bsr.w JmpTo27_SolidObject     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~~
+> > > s2.asm(73725) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bsr.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(73748) jmpto(4):24: error #1010: symbol undefined
+> > > JmpTo27_SolidObject
+> > >                 !bra.w JmpTo27_SolidObject     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~~
+> > > s2.asm(73857) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bsr.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(73906) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo8_ObjectMoveAndFall
+> > >                 !bsr.w JmpTo8_ObjectMoveAndFall     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~~~~~~~
+> > > s2.asm(74138) jmpto(4):24: error #1010: symbol undefined
+> > > JmpTo8_ObjectMoveAndFall
+> > >                 !bra.w JmpTo8_ObjectMoveAndFall     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~~~~~~~
+> > > s2.asm(74144) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bsr.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(74153) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bsr.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(74160) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bsr.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(74169) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bsr.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(74177) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bsr.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(74249) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bsr.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(74273) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bsr.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(74352) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bsr.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(74358) jmpto(4):24: error #1010: symbol undefined
+> > > JmpTo9_PlatformObject
+> > >                 !bra.w JmpTo9_PlatformObject     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~~~~
+> > > s2.asm(74651) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bsr.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(74823) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bsr.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(74974) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bsr.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(75193) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bsr.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(75220) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bsr.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(75240) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo8_ObjectMoveAndFall
+> > >                 !bsr.w JmpTo8_ObjectMoveAndFall     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~~~~~~~
+> > > s2.asm(75349) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bsr.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(75437) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bsr.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(75465) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo8_ObjectMoveAndFall
+> > >                 !bsr.w JmpTo8_ObjectMoveAndFall     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~~~~~~~
+> > > s2.asm(75575) jmpto(4):24: error #1010: symbol undefined
+> > > JmpTo2_MarkObjGone_P1
+> > >                 !bra.w JmpTo2_MarkObjGone_P1     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~~~~
+> > > s2.asm(75585) jmpto(4):24: error #1010: symbol undefined
+> > > JmpTo2_MarkObjGone_P1
+> > >                 !bra.w JmpTo2_MarkObjGone_P1     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~~~~
+> > > s2.asm(75622) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bsr.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(75623) jmpto(4):24: error #1010: symbol undefined
+> > > JmpTo2_MarkObjGone_P1
+> > >                 !bra.w JmpTo2_MarkObjGone_P1     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~~~~
+> > > s2.asm(75630) jmpto(4):24: error #1010: symbol undefined
+> > > JmpTo2_MarkObjGone_P1
+> > >                 !bra.w JmpTo2_MarkObjGone_P1     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~~~~
+> > > s2.asm(75669) jmpto(4):24: error #1010: symbol undefined
+> > > JmpTo2_MarkObjGone_P1
+> > >                 !bra.w JmpTo2_MarkObjGone_P1     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~~~~
+> > > s2.asm(75684) jmpto(4):24: error #1010: symbol undefined
+> > > JmpTo2_MarkObjGone_P1
+> > >                 !bra.w JmpTo2_MarkObjGone_P1     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~~~~
+> > > s2.asm(75691) jmpto(4):24: error #1010: symbol undefined
+> > > JmpTo2_MarkObjGone_P1
+> > >                 !bra.w JmpTo2_MarkObjGone_P1     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~~~~
+> > > s2.asm(75697) jmpto(4):24: error #1010: symbol undefined
+> > > JmpTo2_MarkObjGone_P1
+> > >                 !bra.w JmpTo2_MarkObjGone_P1     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~~~~
+> > > s2.asm(75706) jmpto(4):24: error #1010: symbol undefined
+> > > JmpTo2_MarkObjGone_P1
+> > >                 !bra.w JmpTo2_MarkObjGone_P1     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~~~~
+> > > s2.asm(75816) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bsr.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(75925) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bsr.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(75996) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bsr.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(76130) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bsr.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(76740) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bsr.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(76783) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo27_SolidObject
+> > >                 !bsr.w JmpTo27_SolidObject     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~~
+> > > s2.asm(77025) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo5_PlayMusic
+> > >                 !bsr.w JmpTo5_PlayMusic     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~
+> > > s2.asm(77040) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bsr.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(77122) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bsr.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(77391) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo_Boss_LoadExplosion
+> > >                 !bsr.w JmpTo_Boss_LoadExplosion     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~~~~~~~
+> > > s2.asm(77407) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo5_PlayMusic
+> > >                 !bsr.w JmpTo5_PlayMusic     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~
+> > > s2.asm(78280) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo27_SolidObject
+> > >                 !bsr.w JmpTo27_SolidObject     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~~
+> > > s2.asm(78354) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bsr.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(78360) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo27_SolidObject
+> > >                 !bsr.w JmpTo27_SolidObject     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~~
+> > > s2.asm(78394) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bsr.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(78742) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bsr.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(78782) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bsr.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(78788) jmpto(4):24: error #1010: symbol undefined
+> > > JmpTo27_SolidObject
+> > >                 !bra.w JmpTo27_SolidObject     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~~
+> > > s2.asm(78797) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bsr.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(78874) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bsr.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(78925) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bsr.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(79007) jmpto(4):24: error #1010: symbol undefined
+> > > JmpTo_LoadSonicDynPLC_Part2
+> > >                 !bra.w JmpTo_LoadSonicDynPLC_Part2     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~~~~~~~~~~
+> > > s2.asm(79011) jmpto(4):24: error #1010: symbol undefined
+> > > JmpTo_LoadTailsDynPLC_Part2
+> > >                 !bra.w JmpTo_LoadTailsDynPLC_Part2     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~~~~~~~~~~
+> > > s2.asm(79119) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bsr.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(79530) jmpto(4):24: error #1010: symbol undefined
+> > > JmpTo27_SolidObject
+> > >                 !bra.w JmpTo27_SolidObject     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~~
+> > > s2.asm(79539) jmpto(4):24: error #1010: symbol undefined
+> > > JmpTo27_SolidObject
+> > >                 !bra.w JmpTo27_SolidObject     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~~
+> > > s2.asm(79792) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bsr.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(79942) jmpto(4):24: error #1010: symbol undefined
+> > > JmpTo8_MarkObjGone3
+> > >                 !bra.w JmpTo8_MarkObjGone3     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~~
+> > > s2.asm(80019) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bsr.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(80024) jmpto(4):24: error #1010: symbol undefined
+> > > JmpTo9_PlatformObject
+> > >                 !bra.w JmpTo9_PlatformObject     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~~~~
+> > > s2.asm(80133) jmpto(4):24: error #1010: symbol undefined
+> > > JmpTo9_PlatformObject
+> > >                 !bra.w JmpTo9_PlatformObject     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~~~~
+> > > s2.asm(80229) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo9_PlatformObject
+> > >                 !bsr.w JmpTo9_PlatformObject     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~~~~
+> > > s2.asm(80250) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bsr.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(80281) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bsr.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(80464) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bsr.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(80573) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo27_SolidObject
+> > >                 !bsr.w JmpTo27_SolidObject     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~~
+> > > s2.asm(80639) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bsr.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(80766) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo5_PlayMusic
+> > >                 !bsr.w JmpTo5_PlayMusic     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~
+> > > s2.asm(80773) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bsr.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(80817) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bsr.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(80911) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bsr.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(80953) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo_Boss_LoadExplosion
+> > >                 !bsr.w JmpTo_Boss_LoadExplosion     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~~~~~~~
+> > > s2.asm(80959) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo5_PlayMusic
+> > >                 !bsr.w JmpTo5_PlayMusic     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~
+> > > s2.asm(80980) jmpto(4):24: error #1010: symbol undefined
+> > > JmpTo27_SolidObject
+> > >                 !bra.w JmpTo27_SolidObject     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~~
+> > > s2.asm(81069) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bsr.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(81117) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo_Boss_LoadExplosion
+> > >                 !bsr.w JmpTo_Boss_LoadExplosion     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~~~~~~~
+> > > s2.asm(81183) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bsr.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(81188) jmpto(4):24: error #1010: symbol undefined
+> > > JmpTo9_PlatformObject
+> > >                 !bra.w JmpTo9_PlatformObject     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~~~~
+> > > s2.asm(81443) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bsr.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(81448) jmpto(4):24: error #1010: symbol undefined
+> > > JmpTo9_PlatformObject
+> > >                 !bra.w JmpTo9_PlatformObject     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~~~~
+> > > s2.asm(81637) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bsr.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(81662) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bsr.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(81721) jmpto(4):24: error #1010: symbol undefined
+> > > JmpTo27_SolidObject
+> > >                 !bra.w JmpTo27_SolidObject     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~~
+> > > s2.asm(81728) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bsr.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(81804) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bsr.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(82080) jmpto(4):24: error #1010: symbol undefined
+> > > JmpTo5_PlayMusic
+> > >                 !bra.w JmpTo5_PlayMusic     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~
+> > > s2.asm(82088) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bsr.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(82250) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bsr.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(82286) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bsr.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(82414) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo_Boss_LoadExplosion
+> > >                 !bsr.w JmpTo_Boss_LoadExplosion     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~~~~~~~
+> > > s2.asm(82415) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo8_ObjectMoveAndFall
+> > >                 !bsr.w JmpTo8_ObjectMoveAndFall     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~~~~~~~
+> > > s2.asm(82441) jmpto(4):24: error #1010: symbol undefined
+> > > JmpTo_Boss_LoadExplosion
+> > >                 !bra.w JmpTo_Boss_LoadExplosion     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~~~~~~~
+> > > s2.asm(82512) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo_Pal_FadeToWhite.UpdateColour
+> > >                 !bsr.w JmpTo_Pal_FadeToWhite.UpdateColour     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+> > > s2.asm(82627) jmpto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bra.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(82666) jmpto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bra.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(82682) jmpto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bra.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(82980) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bsr.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(83090) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo8_ObjectMoveAndFall
+> > >                 !bsr.w JmpTo8_ObjectMoveAndFall     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~~~~~~~
+> > > s2.asm(83141) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo8_ObjectMoveAndFall
+> > >                 !bsr.w JmpTo8_ObjectMoveAndFall     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~~~~~~~
+> > > s2.asm(84172) jmpTos0(1) jmpTosInternal(13) jmpTosInternal2(5) IRP:(2):0: error #1010: symbol undefined
+> > > Mar
+> > >         jmp     (extractJmpToName("JmpTo2_Mar")).l
+> > > ~~~
+cp: cannot stat 's2built.bin': No such file or directory
+md5sum: /home/volence/sonic_hacks/.scratch/s2-residual-census/refout/stageA-s2built.bin: No such file or directory
+== stage B: hand re-run of the ROM step through asl_run
+guard ASL=/home/volence/sonic_hacks/s1disasm/build_tools/Linux-x86_64/asl md5=61e672562465725a8c102288a7da9098
+ROM size is $100000 bytes (1024 KiB). About $8F1 bytes are padding. 
+ASL_EXIT=2
+ASL_DIAG=INCOMPLETE
+  asl stopped its PASS LOOP on an error, so the diagnostics from
+  the pass it refused to start were NEVER LOOKED FOR. Chiefly
+  'symbol undefined': a forward reference is only judged on a
+  later pass, so undefined symbols in this file are reported as
+  ZERO here whether there are none or thirty. The error count in
+  the footer counts what asl reached, not what is wrong.
+  THIS LINE MAKES THE GAP VISIBLE. IT DOES NOT FILL IT: fix the
+  reported error and assemble again to learn what was hidden.
+  Listing: s2.lst
+REFUSED: asl exited 2, so this run FAILED.
+  NO BYTE COLUMN FROM THIS RUN IS A SOURCE OF VALUES, including the
+  lines that assembled: an error stops the pass loop, so every forward
+  reference is left at its unresolved pass-1 placeholder and the
+  listing prints them looking complete. See partial_failure.asm
+  beside asl_ref.sh, where one bad line leaves 6702 reading 67FE.
+  Fix the source, do not quote the listing.
+HAND_ASL_EXIT=2
+s2.log PRESENT:
+> > > s2.asm(13535) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo_LoadSubObject_Part3
+> > >                 !bsr.w JmpTo_LoadSubObject_Part3     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~~~~~~~~
+> > > s2.asm(13916) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo_LoadSubObject_Part3
+> > >                 !bsr.w JmpTo_LoadSubObject_Part3     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~~~~~~~~
+> > > s2.asm(14011) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo_LoadSubObject_Part3
+> > >                 !bsr.w JmpTo_LoadSubObject_Part3     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~~~~~~~~
+> > > s2.asm(14051) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo_LoadSubObject_Part3
+> > >                 !bsr.w JmpTo_LoadSubObject_Part3     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~~~~~~~~
+> > > s2.asm(14137) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo_LoadSubObject_Part3
+> > >                 !bsr.w JmpTo_LoadSubObject_Part3     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~~~~~~~~
+> > > s2.asm(62354) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo23_ObjectMove
+> > >                 !bsr.w JmpTo23_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(62701) jmpTos(1) jmpTosInternal(13) jmpTosInternal2(5) IRP:(2):0: error #1010: symbol undefined
+> > > Objec
+> > >         jmp     (extractJmpToName("JmpTo23_Objec")).l
+> > > ~~~~~
+> > > s2.asm(62758) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo61_Adjust2PArtPointer
+> > >                 !bsr.w JmpTo61_Adjust2PArtPointer     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~~~~~~~~~
+> > > s2.asm(62993) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo4_ObjectMoveAndFall
+> > >                 !bsr.w JmpTo4_ObjectMoveAndFall     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~~~~~~~
+> > > s2.asm(63054) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo2_PlayLevelMusic
+> > >                 !bsr.w JmpTo2_PlayLevelMusic     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~~~~
+> > > s2.asm(63066) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo2_LoadPLC_AnimalExplosion
+> > >                 !bsr.w JmpTo2_LoadPLC_AnimalExplosion     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+> > > s2.asm(63323) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo4_ObjectMoveAndFall
+> > >                 !bsr.w JmpTo4_ObjectMoveAndFall     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~~~~~~~
+> > > s2.asm(63369) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo4_ObjectMoveAndFall
+> > >                 !bsr.w JmpTo4_ObjectMoveAndFall     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~~~~~~~
+> > > s2.asm(63404) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo4_ObjectMoveAndFall
+> > >                 !bsr.w JmpTo4_ObjectMoveAndFall     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~~~~~~~
+> > > s2.asm(63612) jmpTos(1) jmpTosInternal(13) jmpTosInternal2(5) IRP:(2):0: error #1010: symbol undefined
+> > > Adjus
+> > >         jmp     (extractJmpToName("JmpTo61_Adjus")).l
+> > > ~~~~~
+> > > s2.asm(64081) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo3_LoadPLC_AnimalExplosion
+> > >                 !bsr.w JmpTo3_LoadPLC_AnimalExplosion     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+> > > s2.asm(64207) jmpTos0(1) jmpTosInternal(13) jmpTosInternal2(5) IRP:(2):0: error #1010: symbol undefined
+> > > LoadP
+> > >         jmp     (extractJmpToName("JmpTo3_LoadP")).l
+> > > ~~~~~
+> > > s2.asm(65021) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_SolidObject
+> > >                 !bsr.w JmpTo26_SolidObject     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~~
+> > > s2.asm(65148) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo8_PlatformObject
+> > >                 !bsr.w JmpTo8_PlatformObject     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~~~~
+> > > s2.asm(65235) jmpTos(1) jmpTosInternal(13) jmpTosInternal2(5) IRP:(2):0: error #1010: symbol undefined
+> > > Pla
+> > >         jmp     (extractJmpToName("JmpTo8_Pla")).l
+> > > ~~~
+> > > s2.asm(67922) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo8_LoadPLC_AnimalExplosion
+> > >                 !bsr.w JmpTo8_LoadPLC_AnimalExplosion     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+> > > s2.asm(68339) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo25_ObjectMove
+> > >                 !bsr.w JmpTo25_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(68486) jmpTos(1) jmpTosInternal(13) jmpTosInternal2(5) IRP:(2):0: error #1010: symbol undefined
+> > > L
+> > >         jmp     (extractJmpToName("JmpTo8_L")).l
+> > > ~
+> > > s2.asm(72854) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bsr.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(72976) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo8_ObjectMoveAndFall
+> > >                 !bsr.w JmpTo8_ObjectMoveAndFall     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~~~~~~~
+> > > s2.asm(73182) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bsr.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(73228) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bsr.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(73341) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bsr.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(73433) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bsr.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(73500) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo64_Adjust2PArtPointer
+> > >                 !bsr.w JmpTo64_Adjust2PArtPointer     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~~~~~~~~~
+> > > s2.asm(73585) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bsr.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(73593) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bsr.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(73642) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bsr.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(73712) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo27_SolidObject
+> > >                 !bsr.w JmpTo27_SolidObject     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~~
+> > > s2.asm(73725) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bsr.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(73748) jmpto(4):24: error #1010: symbol undefined
+> > > JmpTo27_SolidObject
+> > >                 !bra.w JmpTo27_SolidObject     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~~
+> > > s2.asm(73857) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bsr.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(73906) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo8_ObjectMoveAndFall
+> > >                 !bsr.w JmpTo8_ObjectMoveAndFall     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~~~~~~~
+> > > s2.asm(74138) jmpto(4):24: error #1010: symbol undefined
+> > > JmpTo8_ObjectMoveAndFall
+> > >                 !bra.w JmpTo8_ObjectMoveAndFall     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~~~~~~~
+> > > s2.asm(74144) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bsr.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(74153) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bsr.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(74160) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bsr.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(74169) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bsr.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(74177) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bsr.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(74249) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bsr.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(74273) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bsr.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(74352) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bsr.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(74358) jmpto(4):24: error #1010: symbol undefined
+> > > JmpTo9_PlatformObject
+> > >                 !bra.w JmpTo9_PlatformObject     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~~~~
+> > > s2.asm(74651) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bsr.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(74823) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bsr.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(74974) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bsr.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(75193) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bsr.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(75220) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bsr.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(75240) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo8_ObjectMoveAndFall
+> > >                 !bsr.w JmpTo8_ObjectMoveAndFall     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~~~~~~~
+> > > s2.asm(75349) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bsr.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(75437) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bsr.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(75465) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo8_ObjectMoveAndFall
+> > >                 !bsr.w JmpTo8_ObjectMoveAndFall     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~~~~~~~
+> > > s2.asm(75575) jmpto(4):24: error #1010: symbol undefined
+> > > JmpTo2_MarkObjGone_P1
+> > >                 !bra.w JmpTo2_MarkObjGone_P1     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~~~~
+> > > s2.asm(75585) jmpto(4):24: error #1010: symbol undefined
+> > > JmpTo2_MarkObjGone_P1
+> > >                 !bra.w JmpTo2_MarkObjGone_P1     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~~~~
+> > > s2.asm(75622) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bsr.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(75623) jmpto(4):24: error #1010: symbol undefined
+> > > JmpTo2_MarkObjGone_P1
+> > >                 !bra.w JmpTo2_MarkObjGone_P1     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~~~~
+> > > s2.asm(75630) jmpto(4):24: error #1010: symbol undefined
+> > > JmpTo2_MarkObjGone_P1
+> > >                 !bra.w JmpTo2_MarkObjGone_P1     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~~~~
+> > > s2.asm(75669) jmpto(4):24: error #1010: symbol undefined
+> > > JmpTo2_MarkObjGone_P1
+> > >                 !bra.w JmpTo2_MarkObjGone_P1     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~~~~
+> > > s2.asm(75684) jmpto(4):24: error #1010: symbol undefined
+> > > JmpTo2_MarkObjGone_P1
+> > >                 !bra.w JmpTo2_MarkObjGone_P1     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~~~~
+> > > s2.asm(75691) jmpto(4):24: error #1010: symbol undefined
+> > > JmpTo2_MarkObjGone_P1
+> > >                 !bra.w JmpTo2_MarkObjGone_P1     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~~~~
+> > > s2.asm(75697) jmpto(4):24: error #1010: symbol undefined
+> > > JmpTo2_MarkObjGone_P1
+> > >                 !bra.w JmpTo2_MarkObjGone_P1     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~~~~
+> > > s2.asm(75706) jmpto(4):24: error #1010: symbol undefined
+> > > JmpTo2_MarkObjGone_P1
+> > >                 !bra.w JmpTo2_MarkObjGone_P1     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~~~~
+> > > s2.asm(75816) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bsr.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(75925) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bsr.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(75996) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bsr.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(76130) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bsr.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(76740) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bsr.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(76783) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo27_SolidObject
+> > >                 !bsr.w JmpTo27_SolidObject     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~~
+> > > s2.asm(77025) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo5_PlayMusic
+> > >                 !bsr.w JmpTo5_PlayMusic     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~
+> > > s2.asm(77040) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bsr.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(77122) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bsr.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(77391) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo_Boss_LoadExplosion
+> > >                 !bsr.w JmpTo_Boss_LoadExplosion     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~~~~~~~
+> > > s2.asm(77407) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo5_PlayMusic
+> > >                 !bsr.w JmpTo5_PlayMusic     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~
+> > > s2.asm(78280) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo27_SolidObject
+> > >                 !bsr.w JmpTo27_SolidObject     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~~
+> > > s2.asm(78354) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bsr.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(78360) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo27_SolidObject
+> > >                 !bsr.w JmpTo27_SolidObject     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~~
+> > > s2.asm(78394) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bsr.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(78742) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bsr.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(78782) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bsr.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(78788) jmpto(4):24: error #1010: symbol undefined
+> > > JmpTo27_SolidObject
+> > >                 !bra.w JmpTo27_SolidObject     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~~
+> > > s2.asm(78797) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bsr.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(78874) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bsr.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(78925) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bsr.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(79007) jmpto(4):24: error #1010: symbol undefined
+> > > JmpTo_LoadSonicDynPLC_Part2
+> > >                 !bra.w JmpTo_LoadSonicDynPLC_Part2     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~~~~~~~~~~
+> > > s2.asm(79011) jmpto(4):24: error #1010: symbol undefined
+> > > JmpTo_LoadTailsDynPLC_Part2
+> > >                 !bra.w JmpTo_LoadTailsDynPLC_Part2     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~~~~~~~~~~
+> > > s2.asm(79119) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bsr.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(79530) jmpto(4):24: error #1010: symbol undefined
+> > > JmpTo27_SolidObject
+> > >                 !bra.w JmpTo27_SolidObject     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~~
+> > > s2.asm(79539) jmpto(4):24: error #1010: symbol undefined
+> > > JmpTo27_SolidObject
+> > >                 !bra.w JmpTo27_SolidObject     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~~
+> > > s2.asm(79792) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bsr.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(79942) jmpto(4):24: error #1010: symbol undefined
+> > > JmpTo8_MarkObjGone3
+> > >                 !bra.w JmpTo8_MarkObjGone3     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~~
+> > > s2.asm(80019) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bsr.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(80024) jmpto(4):24: error #1010: symbol undefined
+> > > JmpTo9_PlatformObject
+> > >                 !bra.w JmpTo9_PlatformObject     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~~~~
+> > > s2.asm(80133) jmpto(4):24: error #1010: symbol undefined
+> > > JmpTo9_PlatformObject
+> > >                 !bra.w JmpTo9_PlatformObject     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~~~~
+> > > s2.asm(80229) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo9_PlatformObject
+> > >                 !bsr.w JmpTo9_PlatformObject     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~~~~
+> > > s2.asm(80250) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bsr.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(80281) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bsr.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(80464) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bsr.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(80573) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo27_SolidObject
+> > >                 !bsr.w JmpTo27_SolidObject     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~~
+> > > s2.asm(80639) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bsr.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(80766) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo5_PlayMusic
+> > >                 !bsr.w JmpTo5_PlayMusic     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~
+> > > s2.asm(80773) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bsr.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(80817) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bsr.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(80911) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bsr.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(80953) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo_Boss_LoadExplosion
+> > >                 !bsr.w JmpTo_Boss_LoadExplosion     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~~~~~~~
+> > > s2.asm(80959) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo5_PlayMusic
+> > >                 !bsr.w JmpTo5_PlayMusic     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~
+> > > s2.asm(80980) jmpto(4):24: error #1010: symbol undefined
+> > > JmpTo27_SolidObject
+> > >                 !bra.w JmpTo27_SolidObject     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~~
+> > > s2.asm(81069) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bsr.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(81117) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo_Boss_LoadExplosion
+> > >                 !bsr.w JmpTo_Boss_LoadExplosion     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~~~~~~~
+> > > s2.asm(81183) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bsr.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(81188) jmpto(4):24: error #1010: symbol undefined
+> > > JmpTo9_PlatformObject
+> > >                 !bra.w JmpTo9_PlatformObject     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~~~~
+> > > s2.asm(81443) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bsr.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(81448) jmpto(4):24: error #1010: symbol undefined
+> > > JmpTo9_PlatformObject
+> > >                 !bra.w JmpTo9_PlatformObject     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~~~~
+> > > s2.asm(81637) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bsr.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(81662) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bsr.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(81721) jmpto(4):24: error #1010: symbol undefined
+> > > JmpTo27_SolidObject
+> > >                 !bra.w JmpTo27_SolidObject     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~~
+> > > s2.asm(81728) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bsr.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(81804) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bsr.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(82080) jmpto(4):24: error #1010: symbol undefined
+> > > JmpTo5_PlayMusic
+> > >                 !bra.w JmpTo5_PlayMusic     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~
+> > > s2.asm(82088) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bsr.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(82250) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bsr.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(82286) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bsr.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(82414) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo_Boss_LoadExplosion
+> > >                 !bsr.w JmpTo_Boss_LoadExplosion     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~~~~~~~
+> > > s2.asm(82415) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo8_ObjectMoveAndFall
+> > >                 !bsr.w JmpTo8_ObjectMoveAndFall     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~~~~~~~
+> > > s2.asm(82441) jmpto(4):24: error #1010: symbol undefined
+> > > JmpTo_Boss_LoadExplosion
+> > >                 !bra.w JmpTo_Boss_LoadExplosion     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~~~~~~~
+> > > s2.asm(82512) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo_Pal_FadeToWhite.UpdateColour
+> > >                 !bsr.w JmpTo_Pal_FadeToWhite.UpdateColour     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+> > > s2.asm(82627) jmpto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bra.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(82666) jmpto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bra.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(82682) jmpto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bra.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(82980) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo26_ObjectMove
+> > >                 !bsr.w JmpTo26_ObjectMove     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~
+> > > s2.asm(83090) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo8_ObjectMoveAndFall
+> > >                 !bsr.w JmpTo8_ObjectMoveAndFall     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~~~~~~~
+> > > s2.asm(83141) jsrto(4):24: error #1010: symbol undefined
+> > > JmpTo8_ObjectMoveAndFall
+> > >                 !bsr.w JmpTo8_ObjectMoveAndFall     ; otherwise, branch to an indirect JmpTo
+> > >                        ~~~~~~~~~~~~~~~~~~~~~~~~
+> > > s2.asm(84172) jmpTos0(1) jmpTosInternal(13) jmpTosInternal2(5) IRP:(2):0: error #1010: symbol undefined
+> > > Mar
+> > >         jmp     (extractJmpToName("JmpTo2_Mar")).l
+> > > ~~~
+REFERENCE RUN FAILED; stopping stage B

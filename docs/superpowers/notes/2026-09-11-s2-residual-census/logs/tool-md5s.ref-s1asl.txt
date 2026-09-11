@@ -1,0 +1,6 @@
+61e672562465725a8c102288a7da9098  build_tools/Linux-x86_64/asl
+b06b8f30ac22e2e0148f2888706d7a5f  build_tools/Linux-x86_64/as.msg
+4831504216367be063bbd5ca60458650  build_tools/Linux-x86_64/cmdarg.msg
+8abd3465fbf0c20976f3e3df512dcd12  build_tools/Linux-x86_64/ioerrs.msg
+4f2fff99c3347bafb93b12d5be1db754  build_tools/Linux-x86_64/p2bin
+704e5c8c361b9959f45bac3e803f0033  build_tools/Linux-x86_64/saxman

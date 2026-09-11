@@ -1,0 +1,471 @@
+WINDOW driver hole [0xEC0E8, 0xED04C) len 0xF64  (Snd_Driver from the p-file, guess from s2.constants.asm)
+WINDOW asserted: exactly one window, extent 0xF64 bytes = 0.376% of the reference
+CONTROL planted outside at 0x200,0x7FFF0,0xFFFFE and inside at 0xEC100 -> reported [('0x200', 1), ('0x7fff0', 1), ('0xffffe', 1)]
+CONTROL passed: the instrument reports planted differences and only the window hides one
+image size 3150600 (0x301308), reference 1048576 (0x100000)
+sigil bytes inside the window: all zero = True
+DIFF outside the window: 2176 bytes in 231 runs
+  [0x007822,0x00783F)   29 B  sigil 34 34 32 34 5c 78 34 5c 5c 78 34 32  ref 00 04 08 04 0c 04 14 04 18 04 1c 02
+      listing line 24002, include depth 0, source line 10300, addr 0x7822: 10300/    7822 : 00                          dc.b "A"                     ; output letter code
+  [0x007A5E,0x007A66)    8 B  sigil 32 34 5c 78 34 32 34 33  ref 08 04 40 04 1c 02 44 04
+      listing line 24255, include depth 0, source line 10472, addr 0x7A5E: 10472/    7A5E : 08                          dc.b "C"                     ; output letter code
+  [0x00874B,0x008752)    7 B  sigil 5c 35 5c 5c 31 32 32  ref 22 2a 22 2f 1e 29 21
+      listing line 25702, include depth 0, source line 11632, addr 0x874B: 11632/    874B : 222A 222F 1E29              dc.b    "EMERALD HILL"
+  [0x008753,0x008757)    4 B  sigil 5c 32 32 32  ref 25 26 29 29
+      listing line 25702, include depth 0, source line 11632, addr 0x874B: 11632/    874B : 222A 222F 1E29              dc.b    "EMERALD HILL"
+  [0x008759,0x00875F)    6 B  sigil 35 33 33 35 32 32  ref 2a 36 30 31 26 20
+      listing line 25707, include depth 0, source line 11633, addr 0x8758: 11633/    8758 : 002A 3630 3126              dc.b    " MYSTIC CAVE"
+  [0x008760,0x008762)    2 B  sigil 32 31  ref 20 1e
+      listing line 25707, include depth 0, source line 11633, addr 0x8758: 11633/    8758 : 002A 3630 3126              dc.b    " MYSTIC CAVE"
+  [0x008763,0x008764)    1 B  sigil 5c  ref 22
+      listing line 25707, include depth 0, source line 11633, addr 0x8758: 11633/    8758 : 002A 3630 3126              dc.b    " MYSTIC CAVE"
+  [0x008765,0x00876B)    6 B  sigil 32 31 33 32 33 5c  ref 20 1e 30 26 2b 2c
+      listing line 25712, include depth 0, source line 11634, addr 0x8765: 11634/    8765 : 201E 3026 2B2C              dc.b    "CASINO NIGHT"
+  [0x00876C,0x008771)    5 B  sigil 33 32 33 5c 35  ref 2b 26 24 25 31
+      listing line 25712, include depth 0, source line 11634, addr 0x8765: 11634/    8765 : 201E 3026 2B2C              dc.b    "CASINO NIGHT"
+  [0x008772,0x008779)    7 B  sigil 33 33 5c 32 32 31 32  ref 30 2d 22 20 26 1e 29
+      listing line 25717, include depth 0, source line 11635, addr 0x8772: 11635/    8772 : 302D 2220 261E              dc.b    "SPECIAL STAGE"
+  [0x00877A,0x00877F)    5 B  sigil 33 35 31 33 5c  ref 30 31 1e 24 22
+      listing line 25717, include depth 0, source line 11635, addr 0x8772: 11635/    8772 : 302D 2220 261E              dc.b    "SPECIAL STAGE"
+  [0x008783,0x00878A)    7 B  sigil 33 33 5c 32 32 31 32  ref 30 2d 22 20 26 1e 29
+      listing line 25722, include depth 0, source line 11636, addr 0x8780: 11636/    8780 : 0000 0030 2D22              dc.b    "   SPECIAL  "
+  [0x00878E,0x008791)    3 B  sigil 5c 33 5c  ref 2c 2b 22
+      listing line 25727, include depth 0, source line 11637, addr 0x878D: 11637/    878D : 372C 2B22 00                dc.b    "ZONE "
+  [0x008793,0x008798)    5 B  sigil 33 35 31 33 5c  ref 30 31 1e 24 22
+      listing line 25731, include depth 0, source line 11638, addr 0x8793: 11638/    8793 : 3031 1E24 22                dc.b    "STAGE"
+  [0x008799,0x00879D)    4 B  sigil 33 31 35 5c  ref 24 1e 2a 22
+      listing line 25735, include depth 0, source line 11639, addr 0x8799: 11639/    8799 : 241E 2A22 002C              dc.b    "GAME OVER"
+  [0x00879E,0x00879F)    1 B  sigil 5c  ref 2c
+      listing line 25735, include depth 0, source line 11639, addr 0x8799: 11639/    8799 : 241E 2A22 002C              dc.b    "GAME OVER"
+  [0x0087A0,0x0087A2)    2 B  sigil 5c 5c  ref 22 2f
+      listing line 25735, include depth 0, source line 11639, addr 0x8799: 11639/    8799 : 241E 2A22 002C              dc.b    "GAME OVER"
+  [0x0087A3,0x0087A7)    4 B  sigil 35 32 35 5c  ref 31 26 2a 22
+      listing line 25740, include depth 0, source line 11640, addr 0x87A3: 11640/    87A3 : 3126 2A22 002C              dc.b    "TIME OVER"
+  [0x0087A8,0x0087A9)    1 B  sigil 5c  ref 2c
+      listing line 25740, include depth 0, source line 11640, addr 0x87A3: 11640/    87A3 : 3126 2A22 002C              dc.b    "TIME OVER"
+  [0x0087AA,0x0087AC)    2 B  sigil 5c 5c  ref 22 2f
+      listing line 25740, include depth 0, source line 11640, addr 0x87A3: 11640/    87A3 : 3126 2A22 002C              dc.b    "TIME OVER"
+  [0x0087AD,0x0087AF)    2 B  sigil 33 5c  ref 2b 2c
+      listing line 25745, include depth 0, source line 11641, addr 0x87AD: 11641/    87AD : 2B2C 0024 1E2A 22           dc.b    "NO GAME"
+  [0x0087B0,0x0087B4)    4 B  sigil 33 31 35 5c  ref 24 1e 2a 22
+      listing line 25745, include depth 0, source line 11641, addr 0x87AD: 11641/    87AD : 2B2C 0024 1E2A 22           dc.b    "NO GAME"
+  [0x0087B5,0x0087B9)    4 B  sigil 35 32 5c 32  ref 31 26 22 21
+      listing line 25749, include depth 0, source line 11642, addr 0x87B5: 11642/    87B5 : 3126 2221                   dc.b    "TIED"
+  [0x0087BB,0x0087BD)    2 B  sigil 1c 33  ref 11 2d
+      listing line 25753, include depth 0, source line 11643, addr 0x87BA: 11643/    87BA : 0011 2D                     dc.b    " 1P"
+  [0x0087BF,0x0087C1)    2 B  sigil 36 33  ref 12 2d
+      listing line 25757, include depth 0, source line 11644, addr 0x87BE: 11644/    87BE : 0012 2D                     dc.b    " 2P"
+  [0x0097CD,0x0097D3)    6 B  sigil 33 32 31 33 5c 5c  ref 2d 29 1e 36 22 2f
+      listing line 27099, include depth 0, source line 12942, addr 0x97CB: 12942/    97CB : 1A00 2D29 1E36              dc.b    "* PLAYER SELECT *"
+  [0x0097D4,0x0097DA)    6 B  sigil 33 5c 32 5c 32 35  ref 30 22 29 22 20 31
+      listing line 27099, include depth 0, source line 12942, addr 0x97CB: 12942/    97CB : 1A00 2D29 1E36              dc.b    "* PLAYER SELECT *"
+  [0x0097DD,0x0097E2)    5 B  sigil 33 5c 33 32 32  ref 30 2c 2b 26 20
+      listing line 27105, include depth 0, source line 12943, addr 0x97DD: 12943/    97DD : 302C 2B26 2000              dc.b    "SONIC AND MILES"
+  [0x0097E3,0x0097E6)    3 B  sigil 31 33 32  ref 1e 2b 21
+      listing line 27105, include depth 0, source line 12943, addr 0x97DD: 12943/    97DD : 302C 2B26 2000              dc.b    "SONIC AND MILES"
+  [0x0097E7,0x0097EC)    5 B  sigil 35 32 32 5c 33  ref 2a 26 29 22 30
+      listing line 27105, include depth 0, source line 12943, addr 0x97DD: 12943/    97DD : 302C 2B26 2000              dc.b    "SONIC AND MILES"
+  [0x0097ED,0x0097F2)    5 B  sigil 33 5c 33 32 32  ref 30 2c 2b 26 20
+      listing line 27111, include depth 0, source line 12944, addr 0x97ED: 12944/    97ED : 302C 2B26 2000              dc.b    "SONIC AND TAILS"
+  [0x0097F3,0x0097F6)    3 B  sigil 31 33 32  ref 1e 2b 21
+      listing line 27111, include depth 0, source line 12944, addr 0x97ED: 12944/    97ED : 302C 2B26 2000              dc.b    "SONIC AND TAILS"
+  [0x0097F7,0x0097FC)    5 B  sigil 35 31 32 32 33  ref 31 1e 26 29 30
+      listing line 27111, include depth 0, source line 12944, addr 0x97ED: 12944/    97ED : 302C 2B26 2000              dc.b    "SONIC AND TAILS"
+  [0x0097FD,0x009802)    5 B  sigil 33 5c 33 32 32  ref 30 2c 2b 26 20
+      listing line 27117, include depth 0, source line 12945, addr 0x97FD: 12945/    97FD : 302C 2B26 2000              dc.b    "SONIC ALONE    "
+  [0x009803,0x009808)    5 B  sigil 31 32 5c 33 5c  ref 1e 29 2c 2b 22
+      listing line 27117, include depth 0, source line 12945, addr 0x97FD: 12945/    97FD : 302C 2B26 2000              dc.b    "SONIC ALONE    "
+  [0x00980D,0x009812)    5 B  sigil 35 32 32 5c 33  ref 2a 26 29 22 30
+      listing line 27123, include depth 0, source line 12946, addr 0x980D: 12946/    980D : 2A26 2922 3000              dc.b    "MILES ALONE    "
+  [0x009813,0x009818)    5 B  sigil 31 32 5c 33 5c  ref 1e 29 2c 2b 22
+      listing line 27123, include depth 0, source line 12946, addr 0x980D: 12946/    980D : 2A26 2922 3000              dc.b    "MILES ALONE    "
+  [0x00981D,0x009822)    5 B  sigil 35 31 32 32 33  ref 31 1e 26 29 30
+      listing line 27129, include depth 0, source line 12947, addr 0x981D: 12947/    981D : 311E 2629 3000              dc.b    "TAILS ALONE    "
+  [0x009823,0x009828)    5 B  sigil 31 32 5c 33 5c  ref 1e 29 2c 2b 22
+      listing line 27129, include depth 0, source line 12947, addr 0x981D: 12947/    981D : 311E 2629 3000              dc.b    "TAILS ALONE    "
+  [0x009830,0x009831)    1 B  sigil 33  ref 30
+      listing line 27135, include depth 0, source line 12948, addr 0x982D: 12948/    982D : 1A00 3330 002A              dc.b    "* VS MODE ITEMS *"
+  [0x009832,0x009836)    4 B  sigil 35 5c 32 5c  ref 2a 2c 21 22
+      listing line 27135, include depth 0, source line 12948, addr 0x982D: 12948/    982D : 1A00 3330 002A              dc.b    "* VS MODE ITEMS *"
+  [0x009837,0x00983C)    5 B  sigil 32 35 5c 35 33  ref 26 31 22 2a 30
+      listing line 27135, include depth 0, source line 12948, addr 0x982D: 12948/    982D : 1A00 3330 002A              dc.b    "* VS MODE ITEMS *"
+  [0x00983F,0x009842)    3 B  sigil 31 32 32  ref 1e 29 29
+      listing line 27141, include depth 0, source line 12949, addr 0x983F: 12949/    983F : 1E29 2900 2826              dc.b    "ALL KINDS ITEMS"
+  [0x009843,0x009848)    5 B  sigil 5c 32 33 32 33  ref 28 26 2b 21 30
+      listing line 27141, include depth 0, source line 12949, addr 0x983F: 12949/    983F : 1E29 2900 2826              dc.b    "ALL KINDS ITEMS"
+  [0x009849,0x00984E)    5 B  sigil 32 35 5c 35 33  ref 26 31 22 2a 30
+      listing line 27141, include depth 0, source line 12949, addr 0x983F: 12949/    983F : 1E29 2900 2826              dc.b    "ALL KINDS ITEMS"
+  [0x00984F,0x009857)    8 B  sigil 35 5c 32 5c 33 5c 5c 35  ref 31 22 29 22 2d 2c 2f 31
+      listing line 27147, include depth 0, source line 12950, addr 0x984F: 12950/    984F : 3122 2922 2D2C              dc.b    "TELEPORT ONLY  "
+  [0x009858,0x00985C)    4 B  sigil 5c 33 32 33  ref 2c 2b 29 36
+      listing line 27147, include depth 0, source line 12950, addr 0x984F: 12950/    984F : 3122 2922 2D2C              dc.b    "TELEPORT ONLY  "
+  [0x009862,0x009867)    5 B  sigil 33 5c 5c 33 32  ref 30 2c 32 2b 21
+      listing line 27153, include depth 0, source line 12951, addr 0x985F: 12951/    985F : 1A00 0030 2C32              dc.b    "*  SOUND TEST   *"
+  [0x009868,0x00986C)    4 B  sigil 35 5c 33 35  ref 31 22 30 31
+      listing line 27153, include depth 0, source line 12951, addr 0x985F: 12951/    985F : 1A00 0030 2C32              dc.b    "*  SOUND TEST   *"
+  [0x009877,0x009879)    2 B  sigil 5c 5c  ref 10 10
+      listing line 27159, include depth 0, source line 12952, addr 0x9871: 12952/    9871 : 0000 0000 0000              dc.b    "      00       "
+  [0x00B55D,0x00B56E)   17 B  sigil 32 78 30 34 32 78 34 39 5c 5c 45 32  ref 0a 0b 2f 30 0a 0b 06 07 29 2a 27 28
+      listing line 30379, include depth 0, source line 14516, addr 0xB55D: 14516/    B55D : 0A                          dc.b "E"
+  [0x00B570,0x00B580)   16 B  sigil 78 31 5c 78 5c 31 31 5c 5c 5c 34 39  ref 1f 20 23 24 1d 1e 08 09 29 2a 06 07
+      listing line 30425, include depth 0, source line 14517, addr 0xB570: 14517/    B570 : 1F                          dc.b "P"
+  [0x00B582,0x00B58C)   10 B  sigil 5c 78 5c 37 5c 5c 5c 37 5c 31  ref 10 11 02 03 31 32 02 03 1d 1e
+      listing line 30470, include depth 0, source line 14518, addr 0xB582: 14518/    B582 : 10                          dc.b "H"
+  [0x00B58E,0x00B59E)   16 B  sigil 41 78 5c 37 38 78 5c 37 5c 5c 5c 37  ref 1b 1c 02 03 15 16 02 03 31 32 02 03
+      listing line 30489, include depth 0, source line 14518, addr 0xB58E: 14518/    B58E : 1B                          dc.b "N"
+  [0x00B5A0,0x00B5AD)   13 B  sigil 78 31 5c 78 36 41 78 5c 31 78 5c 5c  ref 25 26 10 11 12 1b 1c 1d 1e 04 05 29
+      listing line 30534, include depth 0, source line 14519, addr 0xB5A0: 14519/    B5A0 : 25                          dc.b "S"
+  [0x00B5AF,0x00B5BB)   12 B  sigil 45 32 5c 31 5c 5c 5c 31 31 5c 5c 37  ref 27 28 1d 1e 31 32 1d 1e 08 09 02 03
+      listing line 30557, include depth 0, source line 14519, addr 0xB5AF: 14519/    B5AF : 27                          dc.b "T"
+  [0x00B5BD,0x00B5CC)   15 B  sigil 31 5c 36 5c 78 32 78 34 39 45 32 5c  ref 08 09 12 23 24 0a 0b 06 07 27 28 1d
+      listing line 30596, include depth 0, source line 14520, addr 0xB5BD: 14520/    B5BD : 08                          dc.b "D"
+  [0x00B5CE,0x00B5DE)   16 B  sigil 78 5c 5c 37 78 31 5c 37 5c 78 5c 37  ref 19 1a 02 03 25 26 02 03 10 11 02 03
+      listing line 30639, include depth 0, source line 14521, addr 0xB5CE: 14521/    B5CE : 19                          dc.b "M"
+  [0x00B5E0,0x00B5EA)   10 B  sigil 5c 5c 5c 31 78 31 5c 78 36 36  ref 31 32 1d 1e 25 26 10 11 12 12
+      listing line 30667, include depth 0, source line 14521, addr 0xB5E0: 14521/    B5E0 : 31                          dc.b "Y"
+  [0x00B5EC,0x00B5F5)    9 B  sigil 34 39 5c 78 36 32 78 5c 42  ref 06 07 10 11 12 0a 0b 0c 0d
+      listing line 30702, include depth 0, source line 14522, addr 0xB5EC: 14522/    B5EC : 06                          dc.b "C"
+  [0x00B5F7,0x00B60B)   20 B  sigil 78 31 5c 78 5c 31 34 5c 5c 78 5c 37  ref 1f 20 23 24 1d 1e 0e 0f 23 24 02 03
+      listing line 30719, include depth 0, source line 14522, addr 0xB5F7: 14522/    B5F7 : 1F                          dc.b "P"
+  [0x00B60D,0x00B614)    7 B  sigil 5c 5c 5c 5c 5c 5c 36  ref 31 32 29 2a 13 14 12
+      listing line 30770, include depth 0, source line 14523, addr 0xB60D: 14523/    B60D : 31                          dc.b "Y"
+  [0x00B616,0x00B61E)    8 B  sigil 41 78 5c 37 38 78 5c 37  ref 1b 1c 02 03 15 16 02 03
+      listing line 30784, include depth 0, source line 14523, addr 0xB616: 14523/    B616 : 1B                          dc.b "N"
+  [0x00B61F,0x00B627)    8 B  sigil 78 5c 5c 5c 5c 38 44 33  ref 37 31 32 29 2a 35 36 38
+      listing line 30798, include depth 0, source line 14523, addr 0xB61F: 14523/    B61F : 37                          dc.b "("
+  [0x00B629,0x00B631)    8 B  sigil 34 5c 5c 37 78 5c 32 78  ref 0e 0f 02 03 19 1a 0a 0b
+      listing line 30831, include depth 0, source line 14524, addr 0xB629: 14524/    B629 : 0E                          dc.b "G"
+  [0x00B633,0x00B641)   14 B  sigil 78 31 5c 46 5c 37 41 78 41 78 32 78  ref 1f 20 17 18 02 03 1b 1c 1b 1c 0a 0b
+      listing line 30847, include depth 0, source line 14524, addr 0xB633: 14524/    B633 : 1F                          dc.b "P"
+  [0x00B643,0x00B652)   15 B  sigil 5c 78 36 5c 78 5c 31 38 78 5c 37 78  ref 10 11 12 23 24 1d 1e 15 16 02 03 33
+      listing line 30889, include depth 0, source line 14525, addr 0xB643: 14525/    B643 : 10                          dc.b "H"
+  [0x00B654,0x00B664)   16 B  sigil 5c 5c 5c 37 78 31 5c 5c 5c 78 5c 37  ref 31 32 02 03 25 26 29 2a 10 11 02 03
+      listing line 30915, include depth 0, source line 14525, addr 0xB654: 14525/    B654 : 31                          dc.b "Y"
+  [0x00B666,0x00B671)   11 B  sigil 78 34 39 5c 37 5c 78 5c 31 5c 46  ref 37 06 07 02 03 23 24 1d 1e 17 18
+      listing line 30960, include depth 0, source line 14526, addr 0xB666: 14526/    B666 : 37                          dc.b "("
+  [0x00B673,0x00B67A)    7 B  sigil 5c 5c 5c 37 78 31 33  ref 31 32 02 03 25 26 38
+      listing line 30981, include depth 0, source line 14526, addr 0xB673: 14526/    B673 : 31                          dc.b "Y"
+  [0x00B67C,0x00B68E)   18 B  sigil 34 39 5c 78 5c 37 5c 78 5c 37 34 39  ref 06 07 10 11 02 03 23 24 02 03 06 07
+      listing line 31013, include depth 0, source line 14527, addr 0xB67C: 14527/    B67C : 06                          dc.b "C"
+  [0x00B690,0x00B69B)   11 B  sigil 31 5c 32 78 78 31 36 34 5c 41 78  ref 08 09 0a 0b 25 26 12 0e 0f 1b 1c
+      listing line 31044, include depth 0, source line 14527, addr 0xB690: 14527/    B690 : 08                          dc.b "D"
+  [0x00B69D,0x00B6A3)    6 B  sigil 5c 37 41 78 31 5c  ref 02 03 1b 1c 08 09
+      listing line 31081, include depth 0, source line 14528, addr 0xB69D: 14528/    B69D : 02                          dc.b "A"
+  [0x00B6A5,0x00B6AE)    9 B  sigil 34 39 5c 78 36 32 78 5c 42  ref 06 07 10 11 12 0a 0b 0c 0d
+      listing line 31111, include depth 0, source line 14529, addr 0xB6A5: 14529/    B6A5 : 06                          dc.b "C"
+  [0x00B6B0,0x00B6BB)   11 B  sigil 5c 37 5c 78 45 32 36 78 31 45 32  ref 02 03 23 24 27 28 12 25 26 27 28
+      listing line 31128, include depth 0, source line 14529, addr 0xB6B0: 14529/    B6B0 : 02                          dc.b "A"
+  [0x00B6BD,0x00B6CA)   13 B  sigil 5c 5c 5c 37 78 31 5c 5c 78 31 5c 78  ref 31 32 02 03 25 26 29 2a 25 26 10 11
+      listing line 31165, include depth 0, source line 14530, addr 0xB6BD: 14530/    B6BD : 31                          dc.b "Y"
+  [0x00B6CC,0x00B6DD)   17 B  sigil 5c 5c 5c 37 78 5c 5c 37 34 5c 5c 5c  ref 31 32 02 03 19 1a 02 03 0e 0f 29 2a
+      listing line 31188, include depth 0, source line 14530, addr 0xB6CC: 14530/    B6CC : 31                          dc.b "Y"
+  [0x00B6DF,0x00B6E8)    9 B  sigil 78 5c 5c 5c 5c 31 5c 5c 5c  ref 37 13 14 29 2a 08 09 31 32
+      listing line 31234, include depth 0, source line 14531, addr 0xB6DF: 14531/    B6DF : 37                          dc.b "("
+  [0x00B6EA,0x00B6F7)   13 B  sigil 45 32 5c 31 45 32 5c 31 5c 5c 5c 37  ref 27 28 1d 1e 27 28 1d 1e 31 32 02 03
+      listing line 31252, include depth 0, source line 14531, addr 0xB6EA: 14531/    B6EA : 27                          dc.b "T"
+  [0x00B6F9,0x00B70A)   17 B  sigil 5c 37 78 31 78 31 36 78 31 45 32 5c  ref 02 03 25 26 25 26 12 25 26 27 28 02
+      listing line 31293, include depth 0, source line 14532, addr 0xB6F9: 14532/    B6F9 : 02                          dc.b "A"
+  [0x00B70C,0x00B722)   22 B  sigil 78 31 5c 78 5c 31 34 5c 5c 78 5c 37  ref 1f 20 23 24 1d 1e 0e 0f 23 24 02 03
+      listing line 31339, include depth 0, source line 14533, addr 0xB70C: 14533/    B70C : 1F                          dc.b "P"
+  [0x00B724,0x00B72B)    7 B  sigil 78 5c 36 5c 46 5c 46  ref 04 05 12 17 18 17 18
+      listing line 31393, include depth 0, source line 14534, addr 0xB724: 14534/    B724 : 04                          dc.b "B"
+  [0x00B72D,0x00B737)   10 B  sigil 31 31 36 5c 46 5c 46 36 78 31  ref 2d 2e 12 17 18 17 18 12 25 26
+      listing line 31407, include depth 0, source line 14534, addr 0xB72D: 14534/    B72D : 2D                          dc.b "W"
+  [0x00B739,0x00B749)   16 B  sigil 78 5c 5c 37 78 31 5c 37 41 78 5c 31  ref 19 1a 02 03 25 26 02 03 1b 1c 1d 1e
+      listing line 31442, include depth 0, source line 14535, addr 0xB739: 14535/    B739 : 19                          dc.b "M"
+  [0x00B74B,0x00B75B)   16 B  sigil 5c 5c 5c 37 78 5c 5c 37 78 5c 5c 31  ref 31 32 02 03 19 1a 02 03 19 1a 1d 1e
+      listing line 31470, include depth 0, source line 14535, addr 0xB74B: 14535/    B74B : 31                          dc.b "Y"
+  [0x00B75D,0x00B769)   12 B  sigil 5c 31 78 5c 5c 5c 32 78 34 39 45 32  ref 1d 1e 04 05 13 14 0a 0b 06 07 27 28
+      listing line 31515, include depth 0, source line 14536, addr 0xB75D: 14536/    B75D : 1D                          dc.b "O"
+  [0x00B76B,0x00B77D)   18 B  sigil 78 31 5c 46 5c 37 34 39 32 78 78 5c  ref 1f 20 17 18 02 03 06 07 0a 0b 19 1a
+      listing line 31537, include depth 0, source line 14536, addr 0xB76B: 14536/    B76B : 1F                          dc.b "P"
+  [0x00B77F,0x00B78E)   15 B  sigil 45 32 5c 37 38 78 5c 37 5c 78 36 5c  ref 27 28 02 03 15 16 02 03 10 11 12 23
+      listing line 31585, include depth 0, source line 14537, addr 0xB77F: 14537/    B77F : 27                          dc.b "T"
+  [0x00B790,0x00B798)    8 B  sigil 5c 37 41 78 45 32 5c 31  ref 02 03 1b 1c 27 28 1d 1e
+      listing line 31611, include depth 0, source line 14537, addr 0xB790: 14537/    B790 : 02                          dc.b "A"
+  [0x00B79A,0x00B7A6)   12 B  sigil 5c 5c 5c 5c 45 32 5c 37 38 78 5c 37  ref 31 32 29 2a 27 28 02 03 15 16 02 03
+      listing line 31644, include depth 0, source line 14538, addr 0xB79A: 14538/    B79A : 31                          dc.b "Y"
+  [0x00B7A8,0x00B7B4)   12 B  sigil 78 31 5c 5c 34 5c 5c 37 41 78 5c 31  ref 25 26 29 2a 0e 0f 02 03 1b 1c 1d 1e
+      listing line 31666, include depth 0, source line 14538, addr 0xB7A8: 14538/    B7A8 : 25                          dc.b "S"
+  [0x00B7B6,0x00B7CD)   23 B  sigil 78 31 78 31 32 78 34 39 36 5c 37 5c  ref 25 26 1f 20 0a 0b 06 07 12 02 03 17
+      listing line 31705, include depth 0, source line 14539, addr 0xB7B6: 14539/    B7B6 : 25                          dc.b "S"
+  [0x00B7CF,0x00B7D9)   10 B  sigil 34 39 5c 37 5c 78 5c 31 5c 46  ref 06 07 02 03 23 24 1d 1e 17 18
+      listing line 31760, include depth 0, source line 14540, addr 0xB7CF: 14540/    B7CF : 06                          dc.b "C"
+  [0x00B7DB,0x00B7E1)    6 B  sigil 5c 37 41 78 41 78  ref 02 03 1b 1c 1b 1c
+      listing line 31779, include depth 0, source line 14540, addr 0xB7DB: 14540/    B7DB : 02                          dc.b "A"
+  [0x00B7E3,0x00B7F1)   14 B  sigil 5c 78 5c 37 41 78 78 31 5c 78 5c 37  ref 10 11 02 03 1b 1c 25 26 10 11 02 03
+      listing line 31792, include depth 0, source line 14540, addr 0xB7E3: 14540/    B7E3 : 10                          dc.b "H"
+  [0x00B7F3,0x00B7FB)    8 B  sigil 78 78 5c 31 41 78 32 78  ref 33 34 1d 1e 1b 1c 0a 0b
+      listing line 31834, include depth 0, source line 14541, addr 0xB7F3: 14541/    B7F3 : 33                          dc.b "Z"
+  [0x00B7FD,0x00B80A)   13 B  sigil 5c 37 5c 78 45 32 36 78 31 45 32 78  ref 02 03 23 24 27 28 12 25 26 27 28 25
+      listing line 31850, include depth 0, source line 14541, addr 0xB7FD: 14541/    B7FD : 02                          dc.b "A"
+  [0x00B80C,0x00B815)    9 B  sigil 34 39 5c 78 5c 37 36 34 5c  ref 06 07 23 24 02 03 12 0e 0f
+      listing line 31890, include depth 0, source line 14542, addr 0xB80C: 14542/    B80C : 06                          dc.b "C"
+  [0x00B817,0x00B820)    9 B  sigil 78 31 45 32 36 45 32 45 32  ref 25 26 27 28 12 27 28 27 28
+      listing line 31907, include depth 0, source line 14542, addr 0xB817: 14542/    B817 : 25                          dc.b "S"
+  [0x00B822,0x00B82E)   12 B  sigil 78 5c 5c 78 32 78 41 78 31 5c 5c 37  ref 04 05 23 24 0a 0b 1b 1c 08 09 02 03
+      listing line 31941, include depth 0, source line 14543, addr 0xB822: 14543/    B822 : 04                          dc.b "B"
+  [0x00B830,0x00B838)    8 B  sigil 5c 78 5c 31 78 31 78 31  ref 23 24 1d 1e 25 26 25 26
+      listing line 31963, include depth 0, source line 14543, addr 0xB830: 14543/    B830 : 23                          dc.b "R"
+  [0x00B83A,0x00B841)    7 B  sigil 5c 5c 36 41 78 5c 37  ref 13 14 12 1b 1c 02 03
+      listing line 31996, include depth 0, source line 14544, addr 0xB83A: 14544/    B83A : 13                          dc.b "J"
+  [0x00B843,0x00B854)   17 B  sigil 36 78 31 5c 78 36 31 31 5c 37 45 32  ref 12 25 26 10 11 12 2d 2e 02 03 27 28
+      listing line 32010, include depth 0, source line 14544, addr 0xB843: 14544/    B843 : 12                          dc.b "I"
+  [0x00B856,0x00B85C)    6 B  sigil 45 32 5c 31 78 5c  ref 27 28 1d 1e 19 1a
+      listing line 32055, include depth 0, source line 14545, addr 0xB856: 14545/    B856 : 27                          dc.b "T"
+  [0x00B85E,0x00B868)   10 B  sigil 78 31 5c 37 5c 5c 41 78 32 78  ref 1f 20 02 03 31 32 1b 1c 0a 0b
+      listing line 32068, include depth 0, source line 14545, addr 0xB85E: 14545/    B85E : 1F                          dc.b "P"
+  [0x00B86A,0x00B875)   11 B  sigil 78 31 5c 78 32 78 41 78 36 30 34  ref 1f 20 10 11 0a 0b 1b 1c 12 2f 30
+      listing line 32104, include depth 0, source line 14546, addr 0xB86A: 14546/    B86A : 1F                          dc.b "P"
+  [0x00B877,0x00B87C)    5 B  sigil 5c 78 36 32 78  ref 23 24 12 0a 0b
+      listing line 32124, include depth 0, source line 14546, addr 0xB877: 14546/    B877 : 23                          dc.b "R"
+  [0x00B87E,0x00B884)    6 B  sigil 5c 37 5c 78 45 32  ref 02 03 23 24 27 28
+      listing line 32152, include depth 0, source line 14547, addr 0xB87E: 14547/    B87E : 02                          dc.b "A"
+  [0x00B886,0x00B88C)    6 B  sigil 5c 37 41 78 31 5c  ref 02 03 1b 1c 08 09
+      listing line 32165, include depth 0, source line 14547, addr 0xB886: 14547/    B886 : 02                          dc.b "A"
+  [0x00B88E,0x00B892)    4 B  sigil 34 39 34 5c  ref 06 07 0e 0f
+      listing line 32178, include depth 0, source line 14547, addr 0xB88E: 14547/    B88E : 06                          dc.b "C"
+  [0x00B894,0x00B899)    5 B  sigil 45 32 36 78 5c  ref 27 28 12 19 1a
+      listing line 32205, include depth 0, source line 14548, addr 0xB894: 14548/    B894 : 27                          dc.b "T"
+  [0x00B89B,0x00B8A7)   12 B  sigil 78 31 38 78 32 78 5c 46 5c 46 5c 5c  ref 25 26 15 16 0a 0b 17 18 17 18 31 32
+      listing line 32216, include depth 0, source line 14548, addr 0xB89B: 14548/    B89B : 25                          dc.b "S"
+  [0x00B8A9,0x00B8B3)   10 B  sigil 78 31 32 78 45 32 32 78 5c 78  ref 1f 20 0a 0b 27 28 0a 0b 23 24
+      listing line 32255, include depth 0, source line 14549, addr 0xB8A9: 14549/    B8A9 : 1F                          dc.b "P"
+  [0x00B8B5,0x00B8C4)   15 B  sigil 78 5c 5c 31 5c 78 5c 37 31 31 36 32  ref 19 1a 1d 1e 23 24 02 03 2d 2e 12 0a
+      listing line 32274, include depth 0, source line 14549, addr 0xB8B5: 14549/    B8B5 : 19                          dc.b "M"
+  [0x00B8C6,0x00B8CF)    9 B  sigil 78 5c 5c 5c 78 31 36 34 39  ref 19 1a 29 2a 25 26 12 06 07
+      listing line 32317, include depth 0, source line 14550, addr 0xB8C6: 14550/    B8C6 : 19                          dc.b "M"
+  [0x00B8D1,0x00B8E1)   16 B  sigil 34 39 5c 31 78 5c 78 31 5c 31 78 31  ref 06 07 1d 1e 19 1a 1f 20 1d 1e 25 26
+      listing line 32334, include depth 0, source line 14550, addr 0xB8D1: 14550/    B8D1 : 06                          dc.b "C"
+  [0x00B8E3,0x00B8EF)   12 B  sigil 78 5c 5c 37 78 31 5c 37 45 32 5c 31  ref 19 1a 02 03 25 26 02 03 27 28 1d 1e
+      listing line 32379, include depth 0, source line 14551, addr 0xB8E3: 14551/    B8E3 : 19                          dc.b "M"
+  [0x00B8F1,0x00B901)   16 B  sigil 41 78 5c 37 38 78 5c 37 78 5c 5c 5c  ref 1b 1c 02 03 15 16 02 03 19 1a 29 2a
+      listing line 32401, include depth 0, source line 14551, addr 0xB8F1: 14551/    B8F1 : 1B                          dc.b "N"
+  [0x00B903,0x00B904)    1 B  sigil 78  ref 37
+      listing line 32446, include depth 0, source line 14552, addr 0xB903: 14552/    B903 : 37                          dc.b "("
+  [0x00B905,0x00B90E)    9 B  sigil 30 33 5c 33 33 33 33 38 44  ref 3b 3c 3d 3e 3f 3e 3f 35 36
+      listing line 32450, include depth 0, source line 14552, addr 0xB905: 14552/    B905 : 3B                          dc.b "@"
+  [0x00B910,0x00B91C)   12 B  sigil 31 5c 5c 78 32 78 5c 37 78 5c 78 31  ref 08 09 23 24 0a 0b 02 03 19 1a 25 26
+      listing line 32481, include depth 0, source line 14553, addr 0xB910: 14553/    B910 : 08                          dc.b "D"
+  [0x00B91E,0x00B926)    8 B  sigil 34 39 5c 31 78 5c 32 78  ref 06 07 1d 1e 19 1a 0a 0b
+      listing line 32503, include depth 0, source line 14553, addr 0xB91E: 14553/    B91E : 06                          dc.b "C"
+  [0x00B928,0x00B931)    9 B  sigil 45 32 5c 78 5c 5c 32 78 33  ref 27 28 23 24 29 2a 0a 0b 38
+      listing line 32519, include depth 0, source line 14553, addr 0xB928: 14553/    B928 : 27                          dc.b "T"
+  [0x00B933,0x00B93D)   10 B  sigil 78 31 5c 31 5c 5c 41 78 31 5c  ref 25 26 1d 1e 29 2a 1b 1c 08 09
+      listing line 32554, include depth 0, source line 14554, addr 0xB933: 14554/    B933 : 25                          dc.b "S"
+  [0x00B93F,0x00B953)   20 B  sigil 78 31 5c 78 5c 31 34 5c 5c 78 5c 37  ref 1f 20 23 24 1d 1e 0e 0f 23 24 02 03
+      listing line 32573, include depth 0, source line 14554, addr 0xB93F: 14554/    B93F : 1F                          dc.b "P"
+  [0x00B955,0x00B964)   15 B  sigil 45 32 5c 31 78 5c 5c 31 5c 5c 5c 5c  ref 27 28 1d 1e 19 1a 1d 1e 31 32 29 2a
+      listing line 32624, include depth 0, source line 14555, addr 0xB955: 14555/    B955 : 27                          dc.b "T"
+  [0x00B966,0x00B973)   13 B  sigil 78 31 5c 78 36 78 5c 5c 37 31 5c 5c  ref 25 26 10 11 12 19 1a 02 03 08 09 02
+      listing line 32650, include depth 0, source line 14555, addr 0xB966: 14555/    B966 : 25                          dc.b "S"
+  [0x00B975,0x00B97F)   10 B  sigil 78 31 5c 31 5c 5c 41 78 31 5c  ref 25 26 1d 1e 29 2a 1b 1c 08 09
+      listing line 32690, include depth 0, source line 14556, addr 0xB975: 14556/    B975 : 25                          dc.b "S"
+  [0x00B981,0x00B994)   19 B  sigil 5c 37 78 31 78 31 36 78 31 45 32 5c  ref 02 03 25 26 25 26 12 25 26 27 28 02
+      listing line 32709, include depth 0, source line 14556, addr 0xB981: 14556/    B981 : 02                          dc.b "A"
+  [0x00B996,0x00B9A0)   10 B  sigil 78 5c 5c 37 34 39 38 78 5c 5c  ref 19 1a 02 03 06 07 15 16 31 32
+      listing line 32758, include depth 0, source line 14557, addr 0xB996: 14557/    B996 : 19                          dc.b "M"
+  [0x00B9A2,0x00B9AC)   10 B  sigil 5c 5c 36 78 5c 36 45 32 5c 37  ref 13 14 12 19 1a 12 27 28 02 03
+      listing line 32794, include depth 0, source line 14558, addr 0xB9A2: 14558/    B9A2 : 13                          dc.b "J"
+  [0x00B9AE,0x00B9B7)    9 B  sigil 78 5c 36 5c 46 78 31 5c 31  ref 19 1a 12 17 18 1f 20 1d 1e
+      listing line 32829, include depth 0, source line 14559, addr 0xB9AE: 14559/    B9AE : 19                          dc.b "M"
+  [0x00B9B9,0x00B9C0)    7 B  sigil 36 78 31 78 31 5c 31  ref 12 1f 20 1f 20 1d 1e
+      listing line 32863, include depth 0, source line 14560, addr 0xB9B9: 14560/    B9B9 : 12                          dc.b "I"
+  [0x00B9C2,0x00B9C7)    5 B  sigil 78 31 37 5c 31  ref 25 26 3a 1d 1e
+      listing line 32894, include depth 0, source line 14561, addr 0xB9C2: 14561/    B9C2 : 25                          dc.b "S"
+  [0x00B9C9,0x00B9CF)    6 B  sigil 5c 31 5c 5c 78 78  ref 1d 1e 31 32 33 34
+      listing line 32923, include depth 0, source line 14562, addr 0xB9C9: 14562/    B9C9 : 1D                          dc.b "O"
+  [0x00B9D1,0x00B9DA)    9 B  sigil 41 78 37 34 5c 32 78 32 78  ref 1b 1c 3a 0e 0f 0a 0b 0a 0b
+      listing line 32953, include depth 0, source line 14563, addr 0xB9D1: 14563/    B9D1 : 1B                          dc.b "N"
+  [0x00B9DC,0x00B9EA)   14 B  sigil 78 31 5c 78 5c 31 5c 5c 32 78 34 39  ref 1f 20 23 24 1d 1e 13 14 0a 0b 06 07
+      listing line 32988, include depth 0, source line 14564, addr 0xB9DC: 14564/    B9DC : 1F                          dc.b "P"
+  [0x00B9EC,0x00B9FF)   19 B  sigil 5c 37 78 31 78 31 36 78 31 45 32 5c  ref 02 03 25 26 25 26 12 25 26 27 28 02
+      listing line 33013, include depth 0, source line 14564, addr 0xB9EC: 14564/    B9EC : 02                          dc.b "A"
+  [0x00BA01,0x00BA0D)   12 B  sigil 78 31 5c 5c 5c 5c 36 34 39 5c 78 36  ref 25 26 31 32 29 2a 12 06 07 10 11 12
+      listing line 33062, include depth 0, source line 14565, addr 0xBA01: 14565/    BA01 : 25                          dc.b "S"
+  [0x00BA0F,0x00BA1A)   11 B  sigil 38 78 5c 37 45 32 5c 37 34 5c 36  ref 15 16 02 03 27 28 02 03 0e 0f 12
+      listing line 33083, include depth 0, source line 14565, addr 0xBA0F: 14565/    BA0F : 15                          dc.b "K"
+  [0x00BA1C,0x00BA2B)   15 B  sigil 45 32 5c 37 38 78 5c 37 5c 78 36 5c  ref 27 28 02 03 15 16 02 03 10 11 12 23
+      listing line 33120, include depth 0, source line 14566, addr 0xBA1C: 14566/    BA1C : 27                          dc.b "T"
+  [0x00BA2D,0x00BA39)   12 B  sigil 5c 78 5c 37 78 5c 5c 37 41 78 5c 31  ref 10 11 02 03 19 1a 02 03 1b 1c 1d 1e
+      listing line 33146, include depth 0, source line 14566, addr 0xBA2D: 14566/    BA2D : 10                          dc.b "H"
+  [0x00BA3B,0x00BA47)   12 B  sigil 5c 5c 5c 31 78 31 5c 78 36 38 78 36  ref 31 32 1d 1e 25 26 10 11 12 15 16 12
+      listing line 33185, include depth 0, source line 14567, addr 0xBA3B: 14567/    BA3B : 31                          dc.b "Y"
+  [0x00BA49,0x00BA51)    8 B  sigil 5c 31 5c 31 38 78 5c 37  ref 1d 1e 1d 1e 15 16 02 03
+      listing line 33206, include depth 0, source line 14567, addr 0xBA49: 14567/    BA49 : 1D                          dc.b "O"
+  [0x00BA53,0x00BA5D)   10 B  sigil 78 31 45 32 32 78 78 78 32 78  ref 25 26 27 28 0a 0b 2b 2c 0a 0b
+      listing line 33239, include depth 0, source line 14568, addr 0xBA53: 14568/    BA53 : 25                          dc.b "S"
+  [0x00BA5F,0x00BA68)    9 B  sigil 31 31 5c 31 36 45 32 5c 37  ref 2d 2e 1d 1e 12 27 28 02 03
+      listing line 33258, include depth 0, source line 14568, addr 0xBA5F: 14568/    BA5F : 2D                          dc.b "W"
+  [0x00BA6A,0x00BA72)    8 B  sigil 34 5c 5c 37 78 5c 32 78  ref 0e 0f 02 03 19 1a 0a 0b
+      listing line 33292, include depth 0, source line 14569, addr 0xBA6A: 14569/    BA6A : 0E                          dc.b "G"
+  [0x00BA74,0x00BA80)   12 B  sigil 78 5c 5c 37 41 78 5c 5c 5c 37 5c 46  ref 19 1a 02 03 1b 1c 29 2a 02 03 17 18
+      listing line 33308, include depth 0, source line 14569, addr 0xBA74: 14569/    BA74 : 19                          dc.b "M"
+  [0x00BA82,0x00BA8E)   12 B  sigil 5c 5c 5c 31 5c 5c 36 34 39 5c 78 36  ref 31 32 1d 1e 29 2a 12 06 07 10 11 12
+      listing line 33347, include depth 0, source line 14570, addr 0xBA82: 14570/    BA82 : 31                          dc.b "Y"
+  [0x00BA90,0x00BAA1)   17 B  sigil 45 32 5c 37 38 78 5c 37 5c 78 5c 37  ref 27 28 02 03 15 16 02 03 10 11 02 03
+      listing line 33368, include depth 0, source line 14570, addr 0xBA90: 14570/    BA90 : 27                          dc.b "T"
+  [0x00BAA3,0x00BAB7)   20 B  sigil 78 31 5c 5c 78 31 78 31 5c 31 5c 78  ref 25 26 29 2a 1f 20 1f 20 1d 1e 23 24
+      listing line 33414, include depth 0, source line 14571, addr 0xBAA3: 14571/    BAA3 : 25                          dc.b "S"
+  [0x00BAB9,0x00BACC)   19 B  sigil 31 5c 5c 37 36 78 78 5c 37 78 5c 5c  ref 08 09 02 03 12 33 34 02 03 04 05 29
+      listing line 33465, include depth 0, source line 14572, addr 0xBAB9: 14572/    BAB9 : 08                          dc.b "D"
+  [0x00BACE,0x00BADB)   13 B  sigil 78 31 5c 37 38 78 5c 5c 5c 78 5c 37  ref 25 26 02 03 15 16 29 2a 23 24 02 03
+      listing line 33497, include depth 0, source line 14572, addr 0xBACE: 14572/    BACE : 25                          dc.b "S"
+  [0x00BADD,0x00BAE9)   12 B  sigil 5c 78 36 78 31 5c 37 78 31 5c 78 36  ref 10 11 12 25 26 02 03 25 26 10 11 12
+      listing line 33537, include depth 0, source line 14573, addr 0xBADD: 14573/    BADD : 10                          dc.b "H"
+  [0x00BAEB,0x00BAF6)   11 B  sigil 78 31 5c 5c 78 78 5c 5c 38 78 36  ref 25 26 29 2a 33 34 29 2a 15 16 12
+      listing line 33558, include depth 0, source line 14573, addr 0xBAEB: 14573/    BAEB : 25                          dc.b "S"
+  [0x00BAF8,0x00BB04)   12 B  sigil 45 32 5c 78 5c 31 78 5c 5c 37 78 31  ref 27 28 10 11 1d 1e 19 1a 02 03 25 26
+      listing line 33595, include depth 0, source line 14577, addr 0xBAF8: 14577/    BAF8 : 27                          dc.b "T"
+  [0x00BB06,0x00BB15)   15 B  sigil 38 78 5c 37 5c 46 36 41 78 78 31 38  ref 15 16 02 03 17 18 12 1b 1c 25 26 15
+      listing line 33617, include depth 0, source line 14577, addr 0xBB06: 14577/    BB06 : 15                          dc.b "K"
+  [0x00BB17,0x00BB20)    9 B  sigil 5c 42 5c 5c 5c 5c 36 5c 31  ref 0c 0d 29 2a 13 14 12 1d 1e
+      listing line 33660, include depth 0, source line 14579, addr 0xBB17: 14579/    BB17 : 0C                          dc.b "F"
+  [0x00BB22,0x00BB31)   15 B  sigil 78 5c 36 41 78 32 78 34 5c 36 78 31  ref 19 1a 12 1b 1c 0a 0b 0e 0f 12 25 26
+      listing line 33677, include depth 0, source line 14579, addr 0xBB22: 14579/    BB22 : 19                          dc.b "M"
+  [0x00BB33,0x00BB43)   16 B  sigil 45 32 5c 37 38 78 5c 37 5c 78 5c 37  ref 27 28 02 03 15 16 02 03 10 11 02 03
+      listing line 33719, include depth 0, source line 14580, addr 0xBB33: 14580/    BB33 : 27                          dc.b "T"
+  [0x00BB44,0x00BB57)   19 B  sigil 5c 5c 45 32 78 31 5c 5c 41 78 5c 31  ref 29 2a 27 28 25 26 29 2a 1b 1c 1d 1e
+      listing line 33745, include depth 0, source line 14580, addr 0xBB44: 14580/    BB44 : 29                          dc.b "U"
+  [0x00BB59,0x00BB66)   13 B  sigil 78 31 78 31 32 78 34 39 36 5c 37 5c  ref 25 26 1f 20 0a 0b 06 07 12 02 03 17
+      listing line 33794, include depth 0, source line 14581, addr 0xBB59: 14581/    BB59 : 25                          dc.b "S"
+  [0x00BB68,0x00BB74)   12 B  sigil 45 32 5c 78 5c 37 41 78 38 78 78 31  ref 27 28 10 11 02 03 1b 1c 15 16 25 26
+      listing line 33817, include depth 0, source line 14581, addr 0xBB68: 14581/    BB68 : 27                          dc.b "T"
+  [0x00BB76,0x00BB7A)    4 B  sigil 45 32 5c 31  ref 27 28 1d 1e
+      listing line 33856, include depth 0, source line 14582, addr 0xBB76: 14582/    BB76 : 27                          dc.b "T"
+  [0x00BB7C,0x00BB85)    9 B  sigil 34 39 36 41 78 31 5c 5c 5c  ref 06 07 12 1b 1c 08 09 31 32
+      listing line 33883, include depth 0, source line 14583, addr 0xBB7C: 14583/    BB7C : 06                          dc.b "C"
+  [0x00BB87,0x00BB97)   16 B  sigil 34 39 5c 46 5c 37 78 78 32 78 5c 78  ref 06 07 17 18 02 03 2b 2c 0a 0b 23 24
+      listing line 33900, include depth 0, source line 14583, addr 0xBB87: 14583/    BB87 : 06                          dc.b "C"
+  [0x00BB99,0x00BBA7)   14 B  sigil 31 5c 32 78 78 5c 5c 31 5c 78 5c 37  ref 08 09 0a 0b 04 05 1d 1e 23 24 02 03
+      listing line 33945, include depth 0, source line 14584, addr 0xBB99: 14584/    BB99 : 08                          dc.b "D"
+  [0x00BBA9,0x00BBBB)   18 B  sigil 78 5c 34 39 34 39 5c 78 5c 37 34 39  ref 19 1a 06 07 06 07 23 24 02 03 06 07
+      listing line 33970, include depth 0, source line 14584, addr 0xBBA9: 14584/    BBA9 : 19                          dc.b "M"
+  [0x00BBBD,0x00BBC9)   12 B  sigil 45 32 5c 37 45 32 78 31 5c 5c 5c 31  ref 27 28 02 03 27 28 25 26 29 2a 1d 1e
+      listing line 34018, include depth 0, source line 14585, addr 0xBBBD: 14585/    BBBD : 27                          dc.b "T"
+  [0x00BBCB,0x00BBD7)   12 B  sigil 5c 5c 5c 37 78 5c 5c 37 31 5c 5c 37  ref 31 32 02 03 19 1a 02 03 08 09 02 03
+      listing line 34040, include depth 0, source line 14585, addr 0xBBCB: 14585/    BBCB : 31                          dc.b "Y"
+  [0x00BBD9,0x00BBE6)   13 B  sigil 31 5c 5c 37 36 78 31 5c 5c 38 78 32  ref 08 09 02 03 12 25 26 29 2a 15 16 0a
+      listing line 34079, include depth 0, source line 14586, addr 0xBBD9: 14586/    BBD9 : 08                          dc.b "D"
+  [0x00BBE8,0x00BBF1)    9 B  sigil 78 31 5c 37 36 45 32 5c 31  ref 25 26 02 03 12 27 28 1d 1e
+      listing line 34102, include depth 0, source line 14586, addr 0xBBE8: 14586/    BBE8 : 25                          dc.b "S"
+  [0x00BBF3,0x00BC02)   15 B  sigil 38 78 5c 5c 41 78 36 45 32 5c 37 38  ref 15 16 29 2a 1b 1c 12 27 28 02 03 15
+      listing line 34136, include depth 0, source line 14587, addr 0xBBF3: 14587/    BBF3 : 15                          dc.b "K"
+  [0x00BC04,0x00BC0B)    7 B  sigil 5c 37 5c 31 38 78 36  ref 02 03 1d 1e 15 16 12
+      listing line 34162, include depth 0, source line 14587, addr 0xBC04: 14587/    BC04 : 02                          dc.b "A"
+  [0x00BC0D,0x00BC1B)   14 B  sigil 45 32 78 31 5c 5c 41 78 32 78 38 78  ref 27 28 25 26 29 2a 1b 1c 0a 0b 15 16
+      listing line 34193, include depth 0, source line 14588, addr 0xBC0D: 14588/    BC0D : 27                          dc.b "T"
+  [0x00BC1D,0x00BC24)    7 B  sigil 5c 37 5c 31 38 78 36  ref 02 03 1d 1e 15 16 12
+      listing line 34218, include depth 0, source line 14588, addr 0xBC1D: 14588/    BC1D : 02                          dc.b "A"
+  [0x00BC26,0x00BC33)   13 B  sigil 78 5c 5c 37 78 31 5c 37 5c 37 38 78  ref 19 1a 02 03 25 26 02 03 02 03 15 16
+      listing line 34249, include depth 0, source line 14589, addr 0xBC26: 14589/    BC26 : 19                          dc.b "M"
+  [0x00BC35,0x00BC45)   16 B  sigil 38 78 5c 37 31 31 5c 37 78 5c 5c 5c  ref 15 16 02 03 2d 2e 02 03 19 1a 29 2a
+      listing line 34272, include depth 0, source line 14589, addr 0xBC35: 14589/    BC35 : 15                          dc.b "K"
+  [0x00BC47,0x00BC50)    9 B  sigil 78 31 5c 31 41 78 36 34 39  ref 25 26 1d 1e 1b 1c 12 06 07
+      listing line 34317, include depth 0, source line 14590, addr 0xBC47: 14590/    BC47 : 25                          dc.b "S"
+  [0x00BC52,0x00BC54)    2 B  sigil 38 44  ref 35 36
+      listing line 34351, include depth 0, source line 14591, addr 0xBC52: 14591/    BC52 : 35                          dc.b "2"
+  [0x00BC56,0x00BC5E)    8 B  sigil 34 39 5c 37 78 31 45 32  ref 06 07 02 03 25 26 27 28
+      listing line 34374, include depth 0, source line 14592, addr 0xBC56: 14592/    BC56 : 06                          dc.b "C"
+  [0x00BC60,0x00BC64)    4 B  sigil 5c 31 5c 42  ref 1d 1e 0c 0d
+      listing line 34390, include depth 0, source line 14592, addr 0xBC60: 14592/    BC60 : 1D                          dc.b "O"
+  [0x00BC66,0x00BC7A)   20 B  sigil 34 39 5c 78 5c 37 5c 78 5c 37 34 39  ref 06 07 10 11 02 03 23 24 02 03 06 07
+      listing line 34400, include depth 0, source line 14592, addr 0xBC66: 14592/    BC66 : 06                          dc.b "C"
+  [0x00BC7C,0x00BC8E)   18 B  sigil 78 31 5c 78 32 78 78 31 32 78 41 78  ref 1f 20 23 24 0a 0b 25 26 0a 0b 1b 1c
+      listing line 34451, include depth 0, source line 14593, addr 0xBC7C: 14593/    BC7C : 1F                          dc.b "P"
+  [0x00BC90,0x00BC94)    4 B  sigil 78 5c 5c 5c  ref 04 05 31 32
+      listing line 34499, include depth 0, source line 14594, addr 0xBC90: 14594/    BC90 : 04                          dc.b "B"
+  [0x00BC96,0x00BC9E)    8 B  sigil 78 31 32 78 34 5c 5c 37  ref 25 26 0a 0b 0e 0f 02 03
+      listing line 34526, include depth 0, source line 14595, addr 0xBC96: 14595/    BC96 : 25                          dc.b "S"
+  [0x00BCA0,0x00BCAC)   12 B  sigil 5c 42 5c 78 5c 37 41 78 34 39 32 78  ref 0c 0d 23 24 02 03 1b 1c 06 07 0a 0b
+      listing line 34559, include depth 0, source line 14596, addr 0xBCA0: 14596/    BCA0 : 0C                          dc.b "F"
+  [0x00BCAE,0x00BCBD)   15 B  sigil 45 32 5c 37 41 78 45 32 36 5c 37 31  ref 27 28 02 03 1b 1c 27 28 12 02 03 08
+      listing line 34581, include depth 0, source line 14596, addr 0xBCAE: 14596/    BCAE : 27                          dc.b "T"
+  [0x00BCBF,0x00BCC6)    7 B  sigil 5c 78 36 34 39 38 78  ref 23 24 12 06 07 15 16
+      listing line 34624, include depth 0, source line 14597, addr 0xBCBF: 14597/    BCBF : 23                          dc.b "R"
+  [0x00BCC8,0x00BCD8)   16 B  sigil 78 5c 5c 37 34 39 5c 37 5c 78 5c 37  ref 19 1a 02 03 06 07 02 03 23 24 02 03
+      listing line 34638, include depth 0, source line 14597, addr 0xBCC8: 14597/    BCC8 : 19                          dc.b "M"
+  [0x00BCDA,0x00BCE4)   10 B  sigil 5c 46 5c 31 34 39 38 78 5c 5c  ref 17 18 1d 1e 06 07 15 16 31 32
+      listing line 34683, include depth 0, source line 14598, addr 0xBCDA: 14598/    BCDA : 17                          dc.b "L"
+  [0x00BCE6,0x00BCE8)    2 B  sigil 78 31  ref 1f 20
+      listing line 34702, include depth 0, source line 14598, addr 0xBCE6: 14598/    BCE6 : 1F                          dc.b "P"
+  [0x00BCEA,0x00BCED)    3 B  sigil 31 5c 5c  ref 11 1a 1b
+      listing line 34741, include depth 0, source line 14614, addr 0xBCEA: 14614/    BCEA : 11                          dc.b "I"
+  [0x00BCEF,0x00BCF5)    6 B  sigil 45 78 5c 5c 31 5c  ref 01 02 1a 1b 07 08
+      listing line 34766, include depth 0, source line 14615, addr 0xBCEF: 14615/    BCEF : 01                          dc.b "A"
+  [0x00BCF7,0x00BD00)    9 B  sigil 33 33 31 31 32 30 78 78 78  ref 18 19 11 16 17 09 0a 24 25
+      listing line 34796, include depth 0, source line 14616, addr 0xBCF7: 14616/    BCF7 : 18                          dc.b "M"
+  [0x00BD01,0x00BD0C)   11 B  sigil 5c 31 32 45 78 31 31 32 78 78 5c  ref 38 26 27 01 02 11 16 17 24 25 38
+      listing line 34811, include depth 0, source line 14616, addr 0xBD01: 14616/    BD01 : 38                          dc.b "'"
+  [0x00BD0D,0x00BD19)   12 B  sigil 31 32 5c 5c 78 78 78 78 30 78 5c 5c  ref 1e 1f 22 23 1c 1d 2c 2d 09 0a 22 23
+      listing line 34830, include depth 0, source line 14616, addr 0xBD0D: 14616/    BD0D : 1E                          dc.b "P"
+  [0x00BD1B,0x00BD24)    9 B  sigil 78 78 78 78 5c 5c 31 78 46  ref 24 25 1c 1d 1a 1b 11 05 06
+      listing line 34869, include depth 0, source line 14617, addr 0xBD1B: 14617/    BD1B : 24                          dc.b "S"
+  [0x015832,0x015840)   14 B  sigil 34 5c 5c 30 34 34 5c 34 5c 78 5c 78  ref 2a 06 38 04 00 04 26 04 0c 04 18 04
+      listing line 58852, include depth 0, source line 29069, addr 0x15832: 29069/   15832 : 2A                          dc.b "M"                     ; output letter code
+  [0x015842,0x015850)   14 B  sigil 34 5c 5c 78 5c 30 5c 78 5c 34 34 32  ref 2a 06 40 04 38 04 30 04 26 04 1c 02
+      listing line 58889, include depth 0, source line 29071, addr 0x15842: 29071/   15842 : 2A                          dc.b "M"                     ; output letter code
+  [0x015852,0x01585C)   10 B  sigil 5c 78 34 32 5c 34 5c 78 5c 78  ref 18 04 1c 02 26 04 40 04 30 04
+      listing line 58926, include depth 0, source line 29073, addr 0x15852: 29073/   15852 : 18                          dc.b "H"                     ; output letter code
+  [0x01585E,0x01586C)   14 B  sigil 5c 78 34 32 5c 78 5c 78 34 34 5c 34  ref 18 04 1c 02 0c 04 30 04 00 04 26 04
+      listing line 58957, include depth 0, source line 29075, addr 0x1585E: 29075/   1585E : 18                          dc.b "H"                     ; output letter code
+  [0x01586E,0x015876)    8 B  sigil 34 32 5c 34 32 34 34 34  ref 1c 02 26 04 08 04 00 04
+      listing line 58994, include depth 0, source line 29077, addr 0x1586E: 29077/   1586E : 1C                          dc.b "I"                     ; output letter code
+  [0x015878,0x015888)   16 B  sigil 34 5c 34 33 34 5c 5c 78 34 32 32 34  ref 2a 06 56 04 3c 04 40 04 1c 02 08 04
+      listing line 59022, include depth 0, source line 29079, addr 0x15878: 29079/   15878 : 2A                          dc.b "M"                     ; output letter code
+  [0x01588A,0x015898)   14 B  sigil 32 34 34 34 34 5c 34 32 34 5c 5c 78  ref 08 04 00 04 3c 04 1c 02 14 04 18 04
+      listing line 59062, include depth 0, source line 29081, addr 0x1588A: 29081/   1588A : 08                          dc.b "C"                     ; output letter code
+  [0x01589A,0x0158AA)   16 B  sigil 32 34 5c 78 34 5c 34 32 34 34 5c 34  ref 08 04 18 04 2a 06 1c 02 00 04 26 04
+      listing line 59099, include depth 0, source line 29083, addr 0x1589A: 29083/   1589A : 08                          dc.b "C"                     ; output letter code
+  [0x0158AC,0x0158AE)    2 B  sigil 34 34  ref 00 04
+      listing line 59139, include depth 0, source line 29085, addr 0x158AC: 29085/   158AC : 00                          dc.b "A"                     ; output letter code
+  [0x0158AF,0x0158BA)   11 B  sigil 33 34 33 5c 78 34 32 32 34 5c 30  ref 04 44 04 40 04 1c 02 08 04 38 04
+      listing line 59143, include depth 0, source line 29085, addr 0x158AF: 29085/   158AF : 04                          dc.b lowstring("Q")  ; output letter size
+  [0x0158BC,0x0158C8)   12 B  sigil 34 5c 36 5c 34 33 32 34 5c 78 34 34  ref 3c 04 22 04 56 04 08 04 18 04 00 04
+      listing line 59176, include depth 0, source line 29087, addr 0x158BC: 29087/   158BC : 3C                          dc.b "S"                     ; output letter code
+  [0x0158CA,0x0158D8)   14 B  sigil 34 5c 34 32 34 5c 5c 36 5c 30 5c 78  ref 4c 06 1c 02 14 04 10 04 38 04 40 04
+      listing line 59210, include depth 0, source line 29089, addr 0x158CA: 29089/   158CA : 4C                          dc.b "W"                     ; output letter code
+  [0x0158DA,0x0158E4)   10 B  sigil 5c 78 34 34 5c 78 5c 78 34 5c  ref 0c 04 00 04 40 04 18 04 14 04
+      listing line 59247, include depth 0, source line 29091, addr 0x158DA: 29091/   158DA : 0C                          dc.b "D"                     ; output letter code
+  [0x035604,0x035608)    4 B  sigil 31 37 5c 31  ref 03 04 05 00
+      listing line 124602, include depth 0, source line 70914, addr 0x35604: 70914/   35604 : 0304 0500                   dc.b "RING"
+  [0x035609,0x03560E)    5 B  sigil 5c 31 31 31 54  ref 11 08 00 08 02
+      listing line 124605, include depth 0, source line 70915, addr 0x35609: 70915/   35609 : 1108 0008 02                dc.b "!OGOT"
+  [0x03560F,0x035610)    1 B  sigil 31  ref 06
+      listing line 124608, include depth 0, source line 70916, addr 0x3560F: 70916/   3560F : 06                          dc.b "S"
+  [0x035C86,0x035C89)    3 B  sigil 31 78 54  ref 00 01 02
+      listing line 125285, include depth 0, source line 71553, addr 0x35C86: 71553/   35C86 : 0001 02                     dc.b "GET"
+  [0x035C8A,0x035C8F)    5 B  sigil 31 37 5c 31 31  ref 03 04 05 00 06
+      listing line 125289, include depth 0, source line 71555, addr 0x35C8A: 71555/   35C8A : 0304 0500 06                dc.b "RINGS"
+  [0x035C90,0x035C95)    5 B  sigil 44 31 31 31 5c  ref 07 08 08 09 11
+      listing line 125293, include depth 0, source line 71557, addr 0x35C90: 71557/   35C90 : 0708 0809 11                dc.b "COOL!"
+  [0x035C96,0x035C99)    3 B  sigil 5c 31 54  ref 05 08 02
+      listing line 125297, include depth 0, source line 71559, addr 0x35C96: 71559/   35C96 : 0508 02                     dc.b "NOT"
+  [0x035C9A,0x035CA0)    6 B  sigil 78 5c 31 55 31 5c  ref 01 05 08 0a 00 0b
+      listing line 125301, include depth 0, source line 71561, addr 0x35C9A: 71561/   35C9A : 0105 080A 000B              dc.b "ENOUGH"
+  [0x035CA1,0x035CA7)    6 B  sigil 5c 31 5c 59 78 31  ref 0c 09 0d 0e 01 03
+      listing line 125305, include depth 0, source line 71563, addr 0x35CA1: 71563/   35CA1 : 0C09 0D0E 0103              dc.b "PLAYER"
+  [0x035CA8,0x035CAC)    4 B  sigil 31 31 31 54  ref 0f 08 06 02
+      listing line 125309, include depth 0, source line 71565, addr 0x35CA8: 71565/   35CA8 : 0F08 0602                   dc.b "MOST"
+  [0x035CAD,0x035CB2)    5 B  sigil 57 37 5c 31 5c  ref 10 04 05 06 11
+      listing line 125313, include depth 0, source line 71567, addr 0x35CAD: 71567/   35CAD : 1004 0506 11                dc.b "WINS!"
+  [0x035CB3,0x035CB8)    5 B  sigil 31 31 5c 37 44  ref 06 08 05 04 07
+      listing line 125317, include depth 0, source line 71569, addr 0x35CB3: 71569/   35CB3 : 0608 0504 07                dc.b "SONIC"
+  [0x035CB9,0x035CBE)    5 B  sigil 31 37 31 78 31  ref 0f 04 09 01 06
+      listing line 125321, include depth 0, source line 71571, addr 0x35CB9: 71571/   35CB9 : 0F04 0901 06                dc.b "MILES"
+  [0x035CBF,0x035CC3)    4 B  sigil 54 37 78 5c  ref 02 04 01 11
+      listing line 125325, include depth 0, source line 71573, addr 0x35CBF: 71573/   35CBF : 0204 0111                   dc.b "TIE!"
+  [0x035CC4,0x035CC7)    3 B  sigil 57 37 5c  ref 10 04 05
+      listing line 125329, include depth 0, source line 71575, addr 0x35CC4: 71575/   35CC4 : 1004 05                     dc.b "WIN"
+  [0x035CC8,0x035CCD)    5 B  sigil 54 57 37 44 78  ref 02 10 04 07 01
+      listing line 125333, include depth 0, source line 71577, addr 0x35CC8: 71577/   35CC8 : 0210 0407 01                dc.b "TWICE"
+  [0x035CCE,0x035CD2)    4 B  sigil 5c 31 31 5c  ref 0d 09 09 11
+      listing line 125337, include depth 0, source line 71579, addr 0x35CCE: 71579/   35CCE : 0D09 0911                   dc.b "ALL!"
+  [0x035CD3,0x035CD4)    1 B  sigil 5c  ref 11
+      listing line 125341, include depth 0, source line 71581, addr 0x35CD3: 71581/   35CD3 : 11                          dc.b "!"
+  [0x035CD5,0x035CD8)    3 B  sigil 5c 5c 5c  ref 12 12 12
+      listing line 125345, include depth 0, source line 71583, addr 0x35CD5: 71583/   35CD5 : 1212 12                     dc.b "..."
+  [0x035CDB,0x035CE0)    5 B  sigil 54 5c 37 31 31  ref 02 0d 04 09 06
+      listing line 125351, include depth 0, source line 71587, addr 0x35CDB: 71587/   35CDB : 020D 0409 06                dc.b "TAILS"
+DRIVER at 0x300000, 4872 bytes vs asl Z80 record: 0 bytes differ
+image bytes after the driver: 0, nonzero 0

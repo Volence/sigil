@@ -1,0 +1,5 @@
+SIGIL_EXIT=1
+elapsed: 
+stderr lines: 1
+stdout lines: 3
+image: NONE

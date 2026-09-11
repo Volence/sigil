@@ -1,0 +1,111 @@
+S1-palette 3935: 'Pal_SS1_2p:palette Special Stage 1 2p.bin ; Special Stage 1 2p palette' -> 'Pal_SS1_2p:palette Special Stage 1 twop.bin ; Special Stage 1 2p palette'
+S1-palette 3936: 'Pal_SS2_2p:palette Special Stage 2 2p.bin ; Special Stage 2 2p palette' -> 'Pal_SS2_2p:palette Special Stage 2 twop.bin ; Special Stage 2 2p palette'
+S1-palette 3937: 'Pal_SS3_2p:palette Special Stage 3 2p.bin ; Special Stage 3 2p palette' -> 'Pal_SS3_2p:palette Special Stage 3 twop.bin ; Special Stage 3 2p palette'
+S2-charset 14480: ' charset \'\\H\',"\\x39\\x37\\x38"' -> ' charset $27,"\\x39\\x37\\x38"'
+S2-charset 14606: ' charset \'\\H\',"\\x38\\x36\\x37"' -> ' charset $27,"\\x38\\x36\\x37"'
+S3-memshift 36098: '\tasl\ty_vel(a0)' -> '\tasl.w\ty_vel(a0)'
+S3-memshift 37592: '\tasr\ty_vel(a0)' -> '\tasr.w\ty_vel(a0)'
+S3-memshift 39179: '\tasr\tx_vel(a0)' -> '\tasr.w\tx_vel(a0)'
+S3-memshift 39180: '\tasr\ty_vel(a0)' -> '\tasr.w\ty_vel(a0)'
+S3-memshift 39181: '\tasr\ty_vel(a0)' -> '\tasr.w\ty_vel(a0)'
+S3-memshift 39200: '\tasl\ty_vel(a0)' -> '\tasl.w\ty_vel(a0)'
+S3-memshift 40447: '\tasr\ty_vel(a0)' -> '\tasr.w\ty_vel(a0)'
+S3-memshift 46924: '\tasr\ty_vel(a1)' -> '\tasr.w\ty_vel(a1)'
+S4-pushv 69387: '\tpushv ,SonicDplcVer\t; Backup previous value of SonicDplcVer' -> 'SonicDplcVer_stub := SonicDplcVer\t; Backup previous value of SonicDplcVer'
+S4-popv 69774: '\tpopv ,SonicDplcVer\t; Switch back to the previous DPLC format' -> 'SonicDplcVer := SonicDplcVer_stub\t; Switch back to the previous DPLC format'
+S8-lastbit 91263: '\t\tcnop\t-1,2<<lastbit(*-StartOfRom-1)' -> '\t\tcnop\t-1,$100000'
+S9-shared 91275: '\tshared movewZ80CompSize' -> ';\tshared movewZ80CompSize'
+S11-charset 10273: ' charset \'B\',"\\4\\8\\xC\\4\\x10\\x14\\x18\\x1C\\x1E\\x22\\x26\\x2A\\4\\4\\x30\\x34\\x38\\x3C\\x40\\x44\\x48\\x4C\\x52\\x56\\4"' -> 25 single-character lines
+S11-charset 10274: ' charset \'a\',"\\4\\4\\4\\4\\4\\4\\4\\4\\2\\4\\4\\4\\6\\4\\4\\4\\4\\4\\4\\4\\4\\4\\6\\4\\4"' -> 25 single-character lines
+S11-charset 10275: ' charset \'.\',"\\x5A"' -> 1 single-character lines
+S11-charset 10461: ' charset \'B\',"\\4\\8\\xC\\4\\x10\\x14\\x18\\x1C\\x1E\\x22\\x26\\x2A\\4\\4\\x30\\x34\\x38\\x3C\\x40\\x44\\x48\\x4C\\x52\\x56\\4"' -> 25 single-character lines
+S11-charset 10462: ' charset \'a\',"\\4\\4\\4\\4\\4\\4\\4\\4\\2\\4\\4\\4\\6\\4\\4\\4\\4\\4\\4\\4\\4\\4\\6\\4\\4"' -> 25 single-character lines
+S11-charset 10463: ' charset \'.\',"\\x5A"' -> 1 single-character lines
+S11-charset 11624: '\tcharset \'@\',"\\27\\30\\31\\32\\33\\34\\35\\36\\37\\38\\39\\40\\41\\42\\43\\44\\45\\46\\47\\48\\49\\50\\51\\52\\53\\54\\55"' -> 27 single-character lines
+S11-charset 11625: '\tcharset \'0\',"\\16\\17\\18\\19\\20\\21\\22\\23\\24\\25"' -> 10 single-character lines
+S11-charset 12933: '\tcharset \'@\',"\\27\\30\\31\\32\\33\\34\\35\\36\\37\\38\\39\\40\\41\\42\\43\\44\\45\\46\\47\\48\\49\\50\\51\\52\\53\\54\\55"' -> 27 single-character lines
+S11-charset 12934: '\tcharset \'0\',"\\16\\17\\18\\19\\20\\21\\22\\23\\24\\25"' -> 10 single-character lines
+S11-charset 14477: ' charset \'@\',"\\x3B\\2\\4\\6\\8\\xA\\xC\\xE\\x10\\x12\\x13\\x15\\x17\\x19\\x1B\\x1D\\x1F\\x21\\x23\\x25\\x27\\x29\\x2B\\x2D\\x2F\\x31\\x33"' -> 27 single-character lines
+S11-charset 14478: ' charset \'a\',"\\3\\5\\7\\9\\xB\\xD\\xF\\x11\\x12\\x14\\x16\\x18\\x1A\\x1C\\x1E\\x20\\x22\\x24\\x26\\x28\\x2A\\x2C\\x2E\\x30\\x32\\x34"' -> 26 single-character lines
+S11-charset 14479: ' charset \'!\',"\\x3D\\x39\\x3F\\x36"' -> 4 single-character lines
+S11-charset 14480: ' charset $27,"\\x39\\x37\\x38"' -> 3 single-character lines
+S11-charset 14481: ' charset \'9\',"\\x3E\\x40\\x41"' -> 3 single-character lines
+S11-charset 14482: ' charset \'1\',"\\x3C\\x35"' -> 2 single-character lines
+S11-charset 14483: ' charset \'.\',"\\x3A"' -> 1 single-character lines
+S11-charset 14603: ' charset \'@\',"\\x3A\\1\\3\\5\\7\\9\\xB\\xD\\xF\\x11\\x12\\x14\\x16\\x18\\x1A\\x1C\\x1E\\x20\\x22\\x24\\x26\\x28\\x2A\\x2C\\x2E\\x30\\x32"' -> 27 single-character lines
+S11-charset 14604: ' charset \'a\',"\\2\\4\\6\\8\\xA\\xC\\xE\\x10\\x11\\x13\\x15\\x17\\x19\\x1B\\x1D\\x1F\\x21\\x23\\x25\\x27\\x29\\x2B\\x2D\\x2F\\x31\\x33"' -> 26 single-character lines
+S11-charset 14605: ' charset \'!\',"\\x3C\\x38\\x3E\\x35"' -> 4 single-character lines
+S11-charset 14606: ' charset $27,"\\x38\\x36\\x37"' -> 3 single-character lines
+S11-charset 14607: ' charset \'9\',"\\x3D\\x3F\\x40"' -> 3 single-character lines
+S11-charset 14608: ' charset \'1\',"\\x3B\\x34"' -> 2 single-character lines
+S11-charset 14609: ' charset \'.\',"\\x39"' -> 1 single-character lines
+S11-charset 29055: ' charset \'B\',"\\4\\8\\xC\\4\\x10\\x14\\x18\\x1C\\x1E\\x22\\x26\\x2A\\4\\4\\x30\\x34\\x38\\x3C\\x40\\x44\\x48\\x4C\\x52\\x56\\4"' -> 25 single-character lines
+S11-charset 29056: ' charset \'a\',"\\4\\4\\4\\4\\4\\4\\4\\4\\2\\4\\4\\4\\6\\4\\4\\4\\4\\4\\4\\4\\4\\4\\6\\4\\4"' -> 25 single-character lines
+S11-charset 29057: ' charset \'.\',"\\x5A"' -> 1 single-character lines
+S11-charset 70902: ' charset \'A\',"\\xD\\x11\\7\\x11\\1\\x11"' -> 6 single-character lines
+S11-charset 70904: ' charset \'H\',"\\xB\\4\\x11\\x11\\9\\xF\\5\\8\\xC\\x11\\3\\6\\2\\xA\\x11\\x10\\x11\\xE\\x11"' -> 19 single-character lines
+S11-charset 70905: ' charset \'!\',"\\x11"' -> 1 single-character lines
+S11-charset 70906: ' charset \'.\',"\\x12"' -> 1 single-character lines
+S11-charset 71526: ' charset \'A\',"\\xD\\x11\\7\\x11\\1\\x11"' -> 6 single-character lines
+S11-charset 71528: ' charset \'H\',"\\xB\\4\\x11\\x11\\9\\xF\\5\\8\\xC\\x11\\3\\6\\2\\xA\\x11\\x10\\x11\\xE\\x11"' -> 19 single-character lines
+S11-charset 71529: ' charset \'!\',"\\x11"' -> 1 single-character lines
+S11-charset 71530: ' charset \'.\',"\\x12"' -> 1 single-character lines
+S5-1up 159: '\t1upPlaying:\t\tds.b 1' -> '\tOneUpPlaying:\t\tds.b 1'
+S5-1up 1678: '\tld\ta,(zAbsVar.1upPlaying)\t; Check if 1-up sound is already playing' -> '\tld\ta,(zAbsVar.OneUpPlaying)\t; Check if 1-up sound is already playing'
+S5-1up 1712: '\tld\t(zAbsVar.1upPlaying),a\t\t; Set 1-up song playing flag' -> '\tld\t(zAbsVar.OneUpPlaying),a\t\t; Set 1-up song playing flag'
+S5-1up 1730: "\tld\t(zAbsVar.1upPlaying),a\t\t; clear 1-up is playing flag (it isn't)" -> "\tld\t(zAbsVar.OneUpPlaying),a\t\t; clear 1-up is playing flag (it isn't)"
+S5-1up 2118: '\tld\ta,(ix+zVar.1upPlaying)\t\t; Get "is 1-up playing" flag...' -> '\tld\ta,(ix+zVar.OneUpPlaying)\t\t; Get "is 1-up playing" flag...'
+S5-1up 2590: '\tld\tc,(ix+zVar.1upPlaying)\t\t; 1-up playing flag' -> '\tld\tc,(ix+zVar.OneUpPlaying)\t\t; 1-up playing flag'
+S5-1up 2623: '\tld\t(ix+zVar.1upPlaying),c\t\t; 1-up playing flag' -> '\tld\t(ix+zVar.OneUpPlaying),c\t\t; 1-up playing flag'
+S5-1up 2674: '\tld\ta,(zAbsVar.1upPlaying)' -> '\tld\ta,(zAbsVar.OneUpPlaying)'
+S5-1up 2688: '\tld\ta,(zAbsVar.1upPlaying)' -> '\tld\ta,(zAbsVar.OneUpPlaying)'
+S5-1up 2699: '\tld\ta,(zAbsVar.1upPlaying)' -> '\tld\ta,(zAbsVar.OneUpPlaying)'
+S5-1up 3153: "\tld\t(zAbsVar.1upPlaying),a\t\t; Set to zero; 1-up ain't playin' no more" -> "\tld\t(zAbsVar.OneUpPlaying),a\t\t; Set to zero; 1-up ain't playin' no more"
+S6-flags 3822: 'zMusIDPtr_2PResult:\tmusic_metadata Mus_2PResult' -> 'zMusIDPtr_2PResult:\tmusic_metadata Mus_2PResult,0'
+S6-flags 3823: 'zMusIDPtr_EHZ:\t\tmusic_metadata Mus_EHZ' -> 'zMusIDPtr_EHZ:\t\tmusic_metadata Mus_EHZ,0'
+S6-flags 3824: 'zMusIDPtr_MCZ_2P:\tmusic_metadata Mus_MCZ_2P' -> 'zMusIDPtr_MCZ_2P:\tmusic_metadata Mus_MCZ_2P,0'
+S6-flags 3825: 'zMusIDPtr_OOZ:\t\tmusic_metadata Mus_OOZ' -> 'zMusIDPtr_OOZ:\t\tmusic_metadata Mus_OOZ,0'
+S6-flags 3826: 'zMusIDPtr_MTZ:\t\tmusic_metadata Mus_MTZ' -> 'zMusIDPtr_MTZ:\t\tmusic_metadata Mus_MTZ,0'
+S6-flags 3827: 'zMusIDPtr_HTZ:\t\tmusic_metadata Mus_HTZ' -> 'zMusIDPtr_HTZ:\t\tmusic_metadata Mus_HTZ,0'
+S6-flags 3828: 'zMusIDPtr_ARZ:\t\tmusic_metadata Mus_ARZ' -> 'zMusIDPtr_ARZ:\t\tmusic_metadata Mus_ARZ,0'
+S6-flags 3829: 'zMusIDPtr_CNZ_2P:\tmusic_metadata Mus_CNZ_2P' -> 'zMusIDPtr_CNZ_2P:\tmusic_metadata Mus_CNZ_2P,0'
+S6-flags 3830: 'zMusIDPtr_CNZ:\t\tmusic_metadata Mus_CNZ' -> 'zMusIDPtr_CNZ:\t\tmusic_metadata Mus_CNZ,0'
+S6-flags 3831: 'zMusIDPtr_DEZ:\t\tmusic_metadata Mus_DEZ' -> 'zMusIDPtr_DEZ:\t\tmusic_metadata Mus_DEZ,0'
+S6-flags 3832: 'zMusIDPtr_MCZ:\t\tmusic_metadata Mus_MCZ' -> 'zMusIDPtr_MCZ:\t\tmusic_metadata Mus_MCZ,0'
+S6-flags 3833: 'zMusIDPtr_EHZ_2P:\tmusic_metadata Mus_EHZ_2P' -> 'zMusIDPtr_EHZ_2P:\tmusic_metadata Mus_EHZ_2P,0'
+S6-flags 3834: 'zMusIDPtr_SCZ:\t\tmusic_metadata Mus_SCZ' -> 'zMusIDPtr_SCZ:\t\tmusic_metadata Mus_SCZ,0'
+S6-flags 3835: 'zMusIDPtr_CPZ:\t\tmusic_metadata Mus_CPZ' -> 'zMusIDPtr_CPZ:\t\tmusic_metadata Mus_CPZ,0'
+S6-flags 3836: 'zMusIDPtr_WFZ:\t\tmusic_metadata Mus_WFZ' -> 'zMusIDPtr_WFZ:\t\tmusic_metadata Mus_WFZ,0'
+S6-flags 3837: 'zMusIDPtr_HPZ:\t\tmusic_metadata Mus_HPZ' -> 'zMusIDPtr_HPZ:\t\tmusic_metadata Mus_HPZ,0'
+S6-flags 3838: 'zMusIDPtr_Options:\tmusic_metadata Mus_Options' -> 'zMusIDPtr_Options:\tmusic_metadata Mus_Options,0'
+S6-flags 3839: 'zMusIDPtr_SpecStage:\tmusic_metadata Mus_SpecStage' -> 'zMusIDPtr_SpecStage:\tmusic_metadata Mus_SpecStage,0'
+S6-flags 3840: 'zMusIDPtr_Boss:\t\tmusic_metadata Mus_Boss' -> 'zMusIDPtr_Boss:\t\tmusic_metadata Mus_Boss,0'
+S6-flags 3841: 'zMusIDPtr_EndBoss:\tmusic_metadata Mus_EndBoss' -> 'zMusIDPtr_EndBoss:\tmusic_metadata Mus_EndBoss,0'
+S6-flags 3842: 'zMusIDPtr_Ending:\tmusic_metadata Mus_Ending' -> 'zMusIDPtr_Ending:\tmusic_metadata Mus_Ending,0'
+S6-flags 3843: 'zMusIDPtr_SuperSonic:\tmusic_metadata Mus_SuperSonic' -> 'zMusIDPtr_SuperSonic:\tmusic_metadata Mus_SuperSonic,0'
+S6-flags 3844: 'zMusIDPtr_Invincible:\tmusic_metadata Mus_Invincible' -> 'zMusIDPtr_Invincible:\tmusic_metadata Mus_Invincible,0'
+S6-flags 3845: 'zMusIDPtr_ExtraLife:\tmusic_metadata Mus_ExtraLife' -> 'zMusIDPtr_ExtraLife:\tmusic_metadata Mus_ExtraLife,0'
+S6-flags 3846: 'zMusIDPtr_Title:\tmusic_metadata Mus_Title' -> 'zMusIDPtr_Title:\tmusic_metadata Mus_Title,0'
+S6-flags 3847: 'zMusIDPtr_EndLevel:\tmusic_metadata Mus_EndLevel' -> 'zMusIDPtr_EndLevel:\tmusic_metadata Mus_EndLevel,0'
+S6-flags 3848: 'zMusIDPtr_GameOver:\tmusic_metadata Mus_GameOver' -> 'zMusIDPtr_GameOver:\tmusic_metadata Mus_GameOver,0'
+S6-flags 3849: 'zMusIDPtr_Continue:\tmusic_metadata Mus_Continue' -> 'zMusIDPtr_Continue:\tmusic_metadata Mus_Continue,0'
+S6-flags 3850: 'zMusIDPtr_Emerald:\tmusic_metadata Mus_Emerald' -> 'zMusIDPtr_Emerald:\tmusic_metadata Mus_Emerald,0'
+S6-flags 3851: 'zMusIDPtr_Credits:\tmusic_metadata Mus_Credits' -> 'zMusIDPtr_Credits:\tmusic_metadata Mus_Credits,0'
+S7-ixiy 1863: "\tld\ta,iyl\t\t\t\t; current track pointer low byte -> 'a'" -> '\tdb\t0FDh,7Dh\t; stub for: ld a,iyl'
+S7-ixiy 1866: '\tadc\ta,iyu' -> '\tdb\t0FDh,8Ch\t; stub for: adc a,iyu'
+S7-ixiy 1976: "\tld\ta,iyl\t\t\t\t; current track pointer low byte -> 'a'" -> '\tdb\t0FDh,7Dh\t; stub for: ld a,iyl'
+S7-ixiy 1979: '\tadc\ta,iyu' -> '\tdb\t0FDh,8Ch\t; stub for: adc a,iyu'
+S7-ixiy 2258: '\tld\te,ixl' -> '\tdb\t0DDh,5Dh\t; stub for: ld e,ixl'
+S7-ixiy 2259: '\tld\td,ixu\t\t\t; de = ix' -> '\tdb\t0DDh,54h\t; stub for: ld d,ixu'
+S7-ixiy 3475: '\tld\ta,ixl\t\t\t; Get lower byte of current track address (ew :P)' -> '\tdb\t0DDh,7Dh\t; stub for: ld a,ixl'
+S7-ixiy 3478: '\tadc\ta,ixu\t\t\t; If carry occurred, add that to upper part of address' -> '\tdb\t0DDh,8Ch\t; stub for: adc a,ixu'
+S7-ixiy 3650: "\tld\te,ixl\t\t; Set 'de' to beginning of track" -> '\tdb\t0DDh,5Dh\t; stub for: ld e,ixl'
+S7-ixiy 3651: '\tld\td,ixu' -> '\tdb\t0DDh,54h\t; stub for: ld d,ixu'
+S7-ixiy 3687: '\tadd\ta,ixl\t\t; Add low byte of current track pointer to stack offset (low byte of stack location)' -> '\tdb\t0DDh,85h\t; stub for: add a,ixl'
+S7-ixiy 3689: '\tadc\ta,ixu\t\t; Update high byte, if necessary' -> '\tdb\t0DDh,8Ch\t; stub for: adc a,ixu'
+S10-placement 248: '    !org 0 ; Z80 code starting at address 0 has special meaning to s2p2bin.exe' -> '    !org $300000 ; STUB-B: driver outside the ROM image'
+S10-placement 249: '' -> '    phase 0 ; STUB-B'
+S10-placement EOF: appended dephase
+S1-palette file copy: Special Stage 1 2p.bin -> Special Stage 1 twop.bin
+S1-palette file copy: Special Stage 2 2p.bin -> Special Stage 2 twop.bin
+S1-palette file copy: Special Stage 3 2p.bin -> Special Stage 3 twop.bin

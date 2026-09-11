@@ -1,0 +1,11 @@
+	cpu 68000
+	padding off
+	org 0
+	charset '@',"\x3B\2\4\6\8\xA\xC\xE\x10\x12\x13\x15\x17\x19\x1B\x1D\x1F\x21\x23\x25\x27\x29\x2B\x2D\x2F\x31\x33"
+	charset $27,"\x39\x37\x38"
+	dc.b "@ABHIJ"
+	dc.b $27,$28,$29
+	dc.b "()"
+	charset
+	dc.b "HIJ"
+	end

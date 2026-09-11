@@ -1,0 +1,25 @@
+stub A edits 73
+stub B edits 76
+run_sigil.sh: line 18: bc: command not found
+SIGIL_EXIT=1
+elapsed: 
+stderr lines: 1
+stdout lines: 3
+image: NONE
+RUN_END
+run_sigil.sh: line 18: bc: command not found
+SIGIL_EXIT=0
+elapsed: 
+stderr lines: 0
+stdout lines: 1
+image: 04048be02369bad522f5a9b4a9f0eeea size=3150600
+RUN_END
+== stub A through the s2 toolchain (byte-neutrality control)
+STUBA_ASL_EXIT=0 log=absent
+STUBA_P2BIN_EXIT=0
+s2.h: comp_z80_size=0xF64 movewZ80CompSize=nil
+s2.h: comp_z80_size=0xF64 movewZ80CompSize=nil
+fix_header applied to s2built.bin
+stubA asl ROM: 9feeb724052c39982d432a7851c98d3e size=1048576
+STUBA_BYTE_NEUTRAL=yes
+STUB_RUN_END

@@ -1,0 +1,24 @@
+AS_MSGPATH=<unset>
+ASLR: 2
+0dee1f98e6480a4783d27ffd8b90896f  build_tools/Linux-x86_64/asl
+afe3933e5e9d0dfaa498f2a247205f15  build_tools/Linux-x86_64/as.msg
+25bcbdf81e5cc96becec8dd29e4e3c9b  build_tools/Linux-x86_64/cmdarg.msg
+90829aac018f36ed21af7b7b12a670d1  build_tools/Linux-x86_64/ioerrs.msg
+4f2fff99c3347bafb93b12d5be1db754  build_tools/Linux-x86_64/p2bin
+704e5c8c361b9959f45bac3e803f0033  build_tools/Linux-x86_64/saxman
+run1 ASL_EXIT=0 footer=complete ( 2 passes) log=absent p=ecf36eb473c8c8371b945fe1a98fe366 h=3fea7ba095a02145de8cc2039f6ec9d7
+run2 ASL_EXIT=0 footer=complete ( 2 passes) log=absent p=ecf36eb473c8c8371b945fe1a98fe366 h=3fea7ba095a02145de8cc2039f6ec9d7
+run3 ASL_EXIT=0 footer=complete ( 2 passes) log=absent p=ecf36eb473c8c8371b945fe1a98fe366 h=3fea7ba095a02145de8cc2039f6ec9d7
+P2BIN_EXIT=0
+s2.h: comp_z80_size=0xF64 movewZ80CompSize=0xEC04E
+amend: wrote 0F64 at file offset 0xEC050 in /home/volence/sonic_hacks/.scratch/s2-residual-census/ref2out/b2-amended.bin
+s2.h: comp_z80_size=0xF64 movewZ80CompSize=0xEC04E
+amend: wrote 0F64 at file offset 0xEC050 in /home/volence/sonic_hacks/.scratch/s2-residual-census/ref2out/b3-final.bin
+fix_header applied to /home/volence/sonic_hacks/.scratch/s2-residual-census/ref2out/b3-final.bin
+POST_STEPS_EXIT=0
+9feeb724052c39982d432a7851c98d3e size=1048576 crc32=7b905383 /home/volence/sonic_hacks/.scratch/s2-residual-census/ref2out/b1-p2bin.bin
+9feeb724052c39982d432a7851c98d3e size=1048576 crc32=7b905383 /home/volence/sonic_hacks/.scratch/s2-residual-census/ref2out/b2-amended.bin
+9feeb724052c39982d432a7851c98d3e size=1048576 crc32=7b905383 /home/volence/sonic_hacks/.scratch/s2-residual-census/ref2out/b3-final.bin
+9feeb724052c39982d432a7851c98d3e size=1048576 crc32=7b905383 /home/volence/sonic_hacks/.scratch/s2-residual-census/luaref/s2built.bin
+HAND_FINAL_EQUALS_BUILD_LUA=yes
+REF2_END
