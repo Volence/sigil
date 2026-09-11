@@ -1,36 +1,36 @@
-//! A `.emp` `cpu:` attribute naming a processor the front end does not
-//! recognize is REFUSED by name, never coerced to a default.
+//! A `.emp` `cpu:` attribute naming a processor the front end does not accept
+//! is REFUSED by name, never coerced to a default.
 //!
-//! ## What was silently wrong
+//! ## The hazard
 //!
-//! `attr_cpu` selected the Z80 when the value's last path segment folded to
-//! `z80` and returned the 68000 for **everything else**. It took no diagnostics
-//! sink, so it structurally could not report. A typo, or any name we do not
-//! know (`6502`, `Z81`, `m6800`), became a 68000 in silence.
-//!
-//! The consequence is the worst shape this class takes. On a section its author
-//! meant for the Z80, the tool then rejects that section's own correct Z80
-//! instructions as unrecognized 68000 mnemonics. It speaks, and it points
-//! *away* from the cause: the repair it implies to the reader is rewriting
-//! working code.
+//! A resolver that answers an unknown processor name with a default turns a
+//! typo, or any name nobody taught it (`6502`, `Z81`, `m6800`), into a 68000 in
+//! silence. On a section its author meant for the Z80, the tool then rejects
+//! that section's own correct Z80 instructions as unrecognized 68000
+//! mnemonics. It speaks, and it points *away* from the cause: the repair it
+//! implies to the reader is rewriting working code.
 //!
 //! ## The half this is, and the half it is not
 //!
 //! `cpu_undeclared.rs` refuses an assembly unit that declares NO processor.
-//! This file refuses one that declares a processor we do not recognize. Both
-//! are "the assembler picked a processor for you and said nothing", reached
+//! This file refuses one that declares a processor we do not accept. Both are
+//! "the assembler picked a processor for you and said nothing", reached
 //! through different doors, and both refuse rather than warn for the reason
 //! stated there: a run that reports what it skipped still exits 0.
 //!
-//! ## Why the accepted set is `m68000` / `m68k` / `z80`
+//! ## Why the accepted set is `m68000` / `z80`, and `m68k` is refused by name
 //!
-//! Those are exactly the spellings the corpus writes today (aeon's `*.emp`
-//! carry `z80` and `m68000` and nothing else; this tree adds `m68k`, in
-//! `examples/main.emp` and two design docs). Grandfathering the observed set
-//! makes the refusal provably byte-neutral over every source that exists and
-//! leaves it refusing only genuine typos. Narrowing to one canonical spelling
-//! per processor is a language-surface question for the owner, not one this
-//! gate settles.
+//! `.emp` has one name per processor. Decision card `d-27` in
+//! `docs/decisions.jsonl` asked which spellings survive; it is answered
+//! `one_name_each` by the hub session under the owner's delegation, taking this
+//! lane's recommendation, and the owner can overturn it. So `m68000` and `z80`
+//! are the spellings, and `m68k`, another toolchain's name for the 68000, is
+//! refused with the one line to write instead (`cpu: m68000`), a different
+//! message from the refusal a genuine typo earns.
+//!
+//! The spellings aeon's `*.emp` write are exactly `m68000` and `z80`, which is
+//! what makes the narrowing free on the game side; the derived gate below
+//! re-derives that whenever a reference tree is named (`every_cpu_spelling_written_in_the_aeon_tree_is_accepted`).
 //!
 //! The set is deliberately NOT `sigil_frontend_as::CPU_SPELLINGS`. AS accepts
 //! `68000` and `68008`, which the `.emp` grammar cannot even deliver here: a
@@ -39,11 +39,12 @@
 //! ## Why the two call sites are gated separately
 //!
 //! `attr_cpu` is read at a section head and at a module head. A property proven
-//! at one consumer is not a property of the other, and the whole defect this
-//! file closes is one function's behaviour reaching two places unchecked.
+//! at one consumer is not a property of the other, and the defect this file
+//! guards is one function's behaviour reaching two places unchecked.
 
 use sigil_frontend_emp::lower::{
-    cpu_for_spelling, lower_module, LowerOptions, CPU_SPELLINGS,
+    cpu_alias_replacement, cpu_for_spelling, lower_module, LowerOptions, CPU_REFUSED_ALIASES,
+    CPU_SPELLINGS,
 };
 use sigil_frontend_emp::parse_str;
 use sigil_harness::test_support::{aeon_dir, NO_REFERENCE_TREE};
@@ -75,11 +76,33 @@ fn module_head_src(spelling: &str) -> String {
     format!("module m (cpu: {spelling})\n")
 }
 
-/// The refusals in a diagnostic list, as their messages.
+/// The processor refusals in a diagnostic list, as their messages: BOTH
+/// shapes, the generic `unrecognized processor` and the named-alias
+/// `processor `X` is spelled`.
+///
+/// Every "no refusal" assertion in this file reads through here. A helper that
+/// matched one shape only would let the other pass those assertions unseen, so
+/// `examples/main.emp` could declare `cpu: m68k` again and its gate stay green.
 fn refusals(diags: &[sigil_span::Diagnostic]) -> Vec<String> {
     diags
         .iter()
-        .filter(|d| d.level == Level::Error && d.message.starts_with("unrecognized processor"))
+        .filter(|d| {
+            d.level == Level::Error
+                && (d.message.starts_with("unrecognized processor")
+                    || d.message.starts_with(ALIAS_REFUSAL_PREFIX))
+        })
+        .map(|d| d.message.clone())
+        .collect()
+}
+
+/// How the named-alias refusal opens: `processor `m68k` is spelled ...`.
+const ALIAS_REFUSAL_PREFIX: &str = "processor `";
+
+/// The alias refusals only, the shape `m68k` must earn.
+fn alias_refusals(diags: &[sigil_span::Diagnostic]) -> Vec<String> {
+    diags
+        .iter()
+        .filter(|d| d.level == Level::Error && d.message.starts_with(ALIAS_REFUSAL_PREFIX))
         .map(|d| d.message.clone())
         .collect()
 }
@@ -188,6 +211,220 @@ fn the_refusal_points_at_the_offending_value() {
     );
 }
 
+// ---- `m68k`: refused by name, with the line to write ------------------------
+
+/// THE RULING AS A TABLE FACT. Each processor has exactly one accepted
+/// spelling (`d-27`, answered `one_name_each` by the hub under the owner's
+/// delegation).
+#[test]
+fn each_processor_has_exactly_one_accepted_spelling() {
+    let mut seen: Vec<(Cpu, &str)> = Vec::new();
+    for (spelling, cpu) in CPU_SPELLINGS {
+        if let Some((_, first)) = seen.iter().find(|(c, _)| c == cpu) {
+            panic!(
+                "{cpu:?} is accepted as both `{first}` and `{spelling}`. .emp names \
+                 each processor one way; a second name belongs in \
+                 CPU_REFUSED_ALIASES, refused with the line to write"
+            );
+        }
+        seen.push((*cpu, spelling));
+    }
+    for (target, spelling) in [(Cpu::M68000, "m68000"), (Cpu::Z80, "z80")] {
+        assert_eq!(
+            seen.iter().find(|(c, _)| *c == target).map(|(_, s)| *s),
+            Some(spelling),
+            "the ruling names `{spelling}` as the {target:?} spelling. table: {seen:?}"
+        );
+    }
+}
+
+/// The alias table is coherent with the spelling table. An alias that is also
+/// accepted resolves before its refusal is ever reached, and a replacement the
+/// attribute refuses would print a fix that fails too.
+#[test]
+fn every_refused_alias_names_a_replacement_the_attribute_accepts() {
+    assert!(!CPU_REFUSED_ALIASES.is_empty(), "precondition: the alias table has rows to check");
+    for (alias, replacement) in CPU_REFUSED_ALIASES {
+        assert!(
+            cpu_for_spelling(alias).is_none(),
+            "`{alias}` is both accepted and a refused alias; the acceptance wins and \
+             the refusal is dead code"
+        );
+        assert!(
+            cpu_for_spelling(replacement).is_some(),
+            "the alias `{alias}` tells the reader to write `cpu: {replacement}`, which \
+             the attribute itself refuses"
+        );
+    }
+}
+
+/// THE RULING. `m68k` is refused at BOTH call sites, in any case, by the
+/// named-alias refusal: it echoes what was written and prints `cpu: m68000` as
+/// the one line to write, not a menu of every accepted spelling.
+#[test]
+fn m68k_is_refused_by_name_with_the_line_to_write() {
+    // The ruling's words and the table's must agree before the lowering is
+    // asked anything.
+    assert_eq!(
+        cpu_alias_replacement("m68k"),
+        Some("m68000"),
+        "d-27: the line to write in place of `cpu: m68k` is `cpu: m68000`"
+    );
+    assert!(cpu_for_spelling("m68k").is_none(), "`m68k` must not be an accepted spelling");
+
+    for written in ["m68k", "M68K", "M68k"] {
+        for (position, src) in [
+            ("section head", section_head_src(written)),
+            ("module head", module_head_src(written)),
+        ] {
+            let (_, diags) = lower(&src);
+            let found = refusals(&diags);
+            assert_eq!(
+                found.len(),
+                1,
+                "`cpu: {written}` at the {position} must be refused exactly once. \
+                 diagnostics: {:?}",
+                diags.iter().map(|d| &d.message).collect::<Vec<_>>()
+            );
+            let named = alias_refusals(&diags);
+            assert_eq!(
+                named.len(),
+                1,
+                "`cpu: {written}` at the {position} must earn the named-alias refusal, \
+                 not the typo's: {found:?}"
+            );
+            let msg = &named[0];
+            assert!(
+                msg.contains(&format!("`{written}`")),
+                "the refusal must echo the value as written: {msg}"
+            );
+            assert!(
+                msg.contains("write `cpu: m68000`"),
+                "the refusal must print the line to write: {msg}"
+            );
+            for (spelling, _) in CPU_SPELLINGS {
+                if *spelling != "m68000" {
+                    assert!(
+                        !msg.contains(&format!("`cpu: {spelling}`")),
+                        "the refusal names ONE fix, the processor the author meant, \
+                         not `cpu: {spelling}`: {msg}"
+                    );
+                }
+            }
+        }
+    }
+}
+
+/// The named-alias refusal points at the VALUE, like the typo refusal.
+#[test]
+fn the_alias_refusal_points_at_the_offending_value() {
+    let src = section_head_src("m68k");
+    let (_, diags) = lower(&src);
+    let d = diags
+        .iter()
+        .find(|d| d.message.starts_with(ALIAS_REFUSAL_PREFIX))
+        .unwrap_or_else(|| {
+            panic!(
+                "the alias refusal must exist for this gate to measure anything. \
+                 diagnostics: {:?}",
+                diags.iter().map(|d| &d.message).collect::<Vec<_>>()
+            )
+        });
+    let (start, end) = (d.primary.start as usize, d.primary.end as usize);
+    assert!(end <= src.len() && start < end, "a real range: {:?}", d.primary);
+    assert_eq!(&src[start..end], "m68k", "the span must cover the value. Source:\n{src}");
+}
+
+/// A near miss of an alias is a typo and earns the typo's refusal. The alias
+/// table matches whole single-segment names, never a prefix and never a dotted
+/// path's last segment.
+#[test]
+fn a_near_miss_of_an_alias_is_refused_as_unrecognized() {
+    for name in ["m68kk", "m68", "xm68k", "foo.m68k"] {
+        assert!(
+            cpu_for_spelling(name).is_none() && cpu_alias_replacement(name).is_none(),
+            "precondition: `{name}` is neither accepted nor an alias"
+        );
+        let (_, diags) = lower(&section_head_src(name));
+        let found = refusals(&diags);
+        assert_eq!(
+            found.len(),
+            1,
+            "`cpu: {name}` must be refused exactly once. diagnostics: {:?}",
+            diags.iter().map(|d| &d.message).collect::<Vec<_>>()
+        );
+        assert!(
+            found[0].starts_with("unrecognized processor"),
+            "`cpu: {name}` is a typo and must earn the typo's refusal, not an \
+             alias fix-it that guesses: {}",
+            found[0]
+        );
+    }
+}
+
+/// Every accepted spelling works at the MODULE head too, in any case, and
+/// seeds the target its row names. The section-head half is
+/// `every_accepted_spelling_selects_the_target_the_table_names`.
+#[test]
+fn every_accepted_spelling_works_at_the_module_head() {
+    for (spelling, cpu) in CPU_SPELLINGS {
+        for written in [spelling.to_string(), spelling.to_uppercase()] {
+            let src = format!("module m (cpu: {written})\ndata V: u8 = $11\n");
+            let (module, diags) = lower(&src);
+            let errors: Vec<&String> = diags
+                .iter()
+                .filter(|d| d.level == Level::Error)
+                .map(|d| &d.message)
+                .collect();
+            assert!(
+                errors.is_empty(),
+                "`module m (cpu: {written})` must lower clean. errors: {errors:?}"
+            );
+            assert!(
+                !module.sections.is_empty(),
+                "the fixture's data item must open a section, or the target check \
+                 below measures nothing"
+            );
+            for s in &module.sections {
+                assert_eq!(
+                    s.cpu, *cpu,
+                    "`module m (cpu: {written})` must seed {cpu:?} into section `{}`",
+                    s.name
+                );
+            }
+        }
+    }
+}
+
+/// THE PROCESS, for the alias. The shipped `sigil emp` command fails on a
+/// `cpu: m68k` file, prints the line to write, and writes no output.
+#[test]
+fn the_shipped_command_refuses_m68k_and_prints_the_line_to_write() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let src = dir.path().join("m.emp");
+    let out = dir.path().join("out.bin");
+    std::fs::write(&src, section_head_src("m68k")).expect("write m.emp");
+
+    let res = Command::new(env!("CARGO_BIN_EXE_sigil"))
+        .args(["emp", src.to_str().unwrap(), "-o", out.to_str().unwrap()])
+        .output()
+        .expect("spawn sigil");
+
+    let stderr = String::from_utf8_lossy(&res.stderr);
+    let stdout = String::from_utf8_lossy(&res.stdout);
+    assert!(
+        !res.status.success(),
+        "`cpu: m68k` must FAIL the command. status: {:?}\nstderr:\n{stderr}\nstdout:\n{stdout}",
+        res.status
+    );
+    let line = "processor `m68k` is spelled `m68000` in .emp: write `cpu: m68000`";
+    assert!(
+        stderr.contains(line) || stdout.contains(line),
+        "the command must print the refusal with its line to write.\nstderr:\n{stderr}\nstdout:\n{stdout}"
+    );
+    assert!(!out.exists(), "a refused file must produce no output binary");
+}
+
 /// A bare-numeric name reaches this attribute as an INTEGER literal rather than
 /// a path, so the shape that resolved spellings never took is exactly the shape
 /// the old default swallowed most quietly. It is refused, and named by its
@@ -216,8 +453,8 @@ fn a_bare_numeric_processor_name_is_refused_and_named() {
 /// Every spelling in the table is accepted at BOTH call sites and selects the
 /// target the table names, in any case.
 ///
-/// The case arm is not decoration: the old resolver folded case, and dropping
-/// that while grandfathering the set would refuse sources that assemble today.
+/// The case arm is not decoration: `.emp` processor names fold case
+/// (`cpu_for_spelling`), so `Z80` and `z80` are one name and both must lower.
 #[test]
 fn every_accepted_spelling_selects_the_target_the_table_names() {
     assert!(!CPU_SPELLINGS.is_empty(), "precondition: the table has rows to check");
@@ -259,8 +496,8 @@ fn every_accepted_spelling_selects_the_target_the_table_names() {
 
 /// A multi-segment path is not a processor name.
 ///
-/// The old resolver read only the LAST segment, so `foo.z80` selected the Z80
-/// and `foo.bar` selected the 68000 by default. Neither spelling exists in any
+/// A resolver reading only the LAST segment would let `foo.z80` select the Z80
+/// and `foo.bar` select the 68000 by default. Neither spelling exists in any
 /// corpus, and accepting a dotted path here would mean a module path could
 /// silently name a processor.
 #[test]
@@ -547,7 +784,7 @@ fn the_same_fixture_under_an_accepted_spelling_assembles() {
     let dir = tempfile::tempdir().expect("tempdir");
     let src = dir.path().join("m.emp");
     let out = dir.path().join("out.bin");
-    std::fs::write(&src, section_head_src("m68k")).expect("write m.emp");
+    std::fs::write(&src, section_head_src("m68000")).expect("write m.emp");
 
     let res = Command::new(env!("CARGO_BIN_EXE_sigil"))
         .args(["emp", src.to_str().unwrap(), "-o", out.to_str().unwrap()])
@@ -566,12 +803,15 @@ fn the_same_fixture_under_an_accepted_spelling_assembles() {
     );
 }
 
-/// `examples/main.emp` is the newcomer's first-contact file and it declares
-/// `cpu: m68k` five times. Every one of its processor declarations still
-/// resolves, to the target its spelling names.
+/// `examples/main.emp` is the newcomer's first-contact file. Every processor
+/// declaration in it is written in an accepted spelling and resolves to the
+/// target that spelling names, so the first command anyone types never meets a
+/// processor refusal.
 ///
-/// This is the concrete cost of narrowing the accepted set without asking, and
-/// gating it means a later narrowing meets this file rather than discovers it.
+/// The declarations are read out of the file's text and checked against the
+/// table, not counted against a literal: an alias written back into the file is
+/// named here with its replacement, and a section added to it is checked
+/// without editing this gate.
 ///
 /// Asserted at the lowering seam rather than through `sigil emp
 /// examples/main.emp --root examples --hex`. That command does not succeed on
@@ -594,15 +834,40 @@ fn the_first_contact_examples_processor_declarations_all_resolve() {
     let text = std::fs::read_to_string(&main)
         .unwrap_or_else(|e| panic!("read {}: {e}", main.display()));
 
-    // The precondition that makes this gate about `m68k` rather than about
-    // nothing: if the spelling is ever cleaned out of the file, this fails
-    // loudly instead of passing for the wrong reason.
-    let m68k_sites = text.matches("cpu: m68k").count();
-    assert!(
-        m68k_sites >= 5,
-        "precondition: {} declares `cpu: m68k` (found {m68k_sites} sites)",
-        main.display()
+    // Each declared section and the target its spelling must select.
+    let declared = [
+        ("vectors", Cpu::M68000),
+        ("header", Cpu::M68000),
+        ("engine", Cpu::M68000),
+        ("obj_bank", Cpu::M68000),
+        ("data", Cpu::M68000),
+        ("z80drv", Cpu::Z80),
+    ];
+
+    // Every `cpu:` value the file's text carries is an accepted spelling. The
+    // count tie keeps the text census and the lowered check below about the
+    // same declarations: a census that read one the lowering never checks, or
+    // missed one, fails here instead of passing on a partial view.
+    let written = cpu_values_in(&text);
+    assert_eq!(
+        written.len(),
+        declared.len(),
+        "{} carries {} `cpu:` values ({written:?}) and this gate checks {} \
+         sections; the two must cover the same declarations",
+        main.display(),
+        written.len(),
+        declared.len()
     );
+    for value in &written {
+        assert!(
+            cpu_for_spelling(value).is_some(),
+            "{} declares `cpu: {value}`, which the attribute refuses{}",
+            main.display(),
+            cpu_alias_replacement(value)
+                .map(|r| format!(": write `cpu: {r}`"))
+                .unwrap_or_default()
+        );
+    }
 
     let (file, perrs) = parse_str(&text);
     assert!(perrs.is_empty(), "the example must parse: {perrs:?}");
@@ -612,22 +877,14 @@ fn the_first_contact_examples_processor_declarations_all_resolve() {
     );
     assert!(
         refusals(&diags).is_empty(),
-        "the newcomer's first-contact file must not meet this refusal. \
-         Refusing `m68k` breaks it on the first command anyone types. \
-         diagnostics: {:?}",
+        "the newcomer's first-contact file must not meet a processor refusal: \
+         it would fail the first command anyone types. diagnostics: {:?}",
         refusals(&diags)
     );
 
     // Non-vacuity, and the property itself: each declared section carries the
     // target its spelling names.
-    for (name, expected) in [
-        ("vectors", Cpu::M68000),
-        ("header", Cpu::M68000),
-        ("engine", Cpu::M68000),
-        ("obj_bank", Cpu::M68000),
-        ("data", Cpu::M68000),
-        ("z80drv", Cpu::Z80),
-    ] {
+    for (name, expected) in declared {
         let s = module
             .sections
             .iter()

@@ -632,7 +632,7 @@ fn offsets_forward_emits_word_offsets() {
     // Layout: 3 offset words (6 bytes) then frame0,frame1,frame2 (1 byte each).
     //   frame0 @ 6  -> 0x0006 ; frame1 @ 7 -> 0x0007 ; frame2 @ 8 -> 0x0008
     let emp = "\
-section s (cpu: m68k, vma: $000000)\n\
+section s (cpu: m68000, vma: $000000)\n\
 offsets Map in s { F0: frame0, F1: frame1, F2: frame2 }\n\
 data frame0 in s = [0x11]\n\
 data frame1 in s = [0x22]\n\
@@ -756,7 +756,7 @@ Bwd:  dc.b $33\n";
     // (adjust to the AS front-end's exact source dialect used by other ports.rs tests)
     let reference = as_reference(asm);
     let emp = "\
-section s (cpu: m68k, vma: $000000)\n\
+section s (cpu: m68000, vma: $000000)\n\
 offsets Tbl in s { F0: f0, F1: f1, Bwd: bwd }\n\
 data f0 in s = [0x11]\n\
 data f1 in s = [0x22]\n\
@@ -803,7 +803,7 @@ fn offsets_overflow_is_a_compile_error() {
     // A target > $7FFF from the base overflows the signed word -> compile error.
     // Force distance with a large reserved data run between base and target.
     let emp = "\
-section s (cpu: m68k, vma: $000000)\n\
+section s (cpu: m68000, vma: $000000)\n\
 offsets Tbl in s { Far: far }\n\
 data pad in s = [0; 0x8000]\n\
 data far in s = [0x99]\n";
@@ -822,7 +822,7 @@ Add an `emp_lower_diags` helper next to `emp_candidate` that runs parseâ†’lowerâ
 fn offsets_ordinal_usable_as_byte() {
     // Map.Seed == 2 emitted as a dc.b.
     let emp = "\
-section s (cpu: m68k, vma: $000000)\n\
+section s (cpu: m68000, vma: $000000)\n\
 offsets Map in s { Idle: a, Shoot: b, Seed: c }\n\
 data a in s = [0x11]\n\
 data b in s = [0x22]\n\

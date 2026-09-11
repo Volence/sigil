@@ -26,12 +26,12 @@ module sonic4.main
 // enforces the region's budget. This is the map-file / placement policy
 // (S2-D3) — the replacement for "include order decides the address."
 
-section vectors  (cpu: m68k, vma: $000000)   // 68k reset/exception vectors
-section header   (cpu: m68k, vma: $000100)   // ROM header
-section engine   (cpu: m68k, vma: $000200)   // core engine code
-section obj_bank (cpu: m68k, vma: $010000)   // object code   ($10000..$20000)
-section data     (cpu: m68k, vma: $020000)   // tables, mappings, animations
-section z80drv   (cpu: z80,  vma: $000000)   // sound driver, phase-0 inline
+section vectors  (cpu: m68000, vma: $000000)   // 68000 reset/exception vectors
+section header   (cpu: m68000, vma: $000100)   // ROM header
+section engine   (cpu: m68000, vma: $000200)   // core engine code
+section obj_bank (cpu: m68000, vma: $010000)   // object code   ($10000..$20000)
+section data     (cpu: m68000, vma: $020000)   // tables, mappings, animations
+section z80drv   (cpu: z80,    vma: $000000)   // sound driver, phase-0 inline
 
 
 // --- (1) MEMBERSHIP: which modules make up the build ------------------------
