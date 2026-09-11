@@ -106,10 +106,22 @@
 /// Cheap to clone (256 bytes, no allocation) and cheap to compare, which is what
 /// lets it sit in [`crate::state::AsmState`] and be passed by reference into the
 /// expression parser without the parser having to own assembler state.
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone)]
 pub struct CodePage {
     map: [u8; 256],
+    /// Identifies this mapping for memo keys: see [`CodePage::stamp`].
+    stamp: u64,
 }
+
+/// Two pages are equal when they map every character the same way. The stamp
+/// is an identity for memo keys, not part of the value.
+impl PartialEq for CodePage {
+    fn eq(&self, other: &Self) -> bool {
+        self.map == other.map
+    }
+}
+
+impl Eq for CodePage {}
 
 impl Default for CodePage {
     fn default() -> Self {
@@ -138,7 +150,7 @@ impl CodePage {
         for (i, slot) in map.iter_mut().enumerate() {
             *slot = i as u8;
         }
-        CodePage { map }
+        CodePage { map, stamp: crate::eval::next_stamp() }
     }
 
     /// `true` iff nothing has been remapped. Test-only: the assembler never
@@ -158,7 +170,8 @@ impl CodePage {
         self.map[c as u8 as usize]
     }
 
-    /// Reset every entry: the bare `charset` directive.
+    /// Reset every entry: the bare `charset` directive. The page is rebuilt,
+    /// so it takes a fresh stamp.
     pub fn reset(&mut self) {
         *self = CodePage::identity();
     }
@@ -166,5 +179,40 @@ impl CodePage {
     /// `map[src] = tgt`. Both are already range-checked by the caller.
     pub fn set(&mut self, src: u8, tgt: u8) {
         self.map[src as usize] = tgt;
+        self.stamp = crate::eval::next_stamp();
+    }
+
+    /// A value that changes whenever the mapping can: every page is built with
+    /// a fresh one, [`Self::set`] and [`Self::reset`] renew it, and a clone
+    /// shares its original's until either side changes. Two pages with the same
+    /// stamp therefore map every character the same way, which is what lets a
+    /// memo key stand for the whole page with one integer, as the assembler's
+    /// keyword memo (`HeadKey` in `eval.rs`) does.
+    pub fn stamp(&self) -> u64 {
+        self.stamp
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::CodePage;
+
+    /// The stamp moves with the mapping and with nothing else: fresh on every
+    /// new page, renewed by `set` and `reset`, shared by a clone until one side
+    /// changes, and left out of equality.
+    #[test]
+    fn the_stamp_moves_whenever_the_mapping_can() {
+        let a = CodePage::identity();
+        let b = CodePage::identity();
+        assert_ne!(a.stamp(), b.stamp(), "two new pages share a stamp");
+        assert_eq!(a, b, "two identity pages compare unequal, so the stamp is in equality");
+        let mut c = a.clone();
+        assert_eq!(c.stamp(), a.stamp(), "a clone does not carry its original's stamp");
+        c.set(0x41, 0x11);
+        assert_ne!(c.stamp(), a.stamp(), "set left the stamp where it was");
+        let after_set = c.stamp();
+        c.reset();
+        assert_ne!(c.stamp(), after_set, "reset left the stamp where it was");
+        assert_eq!(c, a, "a reset page is not the identity page");
     }
 }

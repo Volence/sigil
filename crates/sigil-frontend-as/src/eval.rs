@@ -106,16 +106,22 @@ impl Clone for SrcLine {
 struct HeadMemo(std::cell::RefCell<Option<(HeadKey, Option<std::rc::Rc<str>>)>>);
 
 /// Every input of [`Asm::dispatch_head`] that is not the line itself. The line
-/// text is lexed under the CPU, after substitution by the innermost live macro
-/// frame, and a name at the head routes as an invocation only while the macro
-/// table holds it; so the same line answers the same keyword exactly while
-/// these three are unchanged. `macros_gen` and `frame` are stamps from
-/// [`next_stamp`]: a new value on every mutation of the table or the frame,
-/// and `frame` is 0 when no frame substitutes (none is live, or the innermost
-/// one is suspended for a loop-body replay).
+/// text is lexed under the CPU and the `charset` code page, after substitution
+/// by the innermost live macro frame, and a name at the head routes as an
+/// invocation only while the macro table holds it; so the same line answers the
+/// same keyword exactly while these four are unchanged. `charset`, `macros_gen`
+/// and `frame` are stamps from [`next_stamp`]: a new value on every mutation of
+/// the page, the table or the frame, and `frame` is 0 when no frame substitutes
+/// (none is live, or the innermost one is suspended for a loop-body replay).
+///
+/// The keyword itself does not depend on the page: the page reaches only
+/// character constants, which lex to integers, and a keyword is an identifier.
+/// The page is in the key because it is an input of the lex, so a memo of
+/// anything else the lex produces stays correct without a second key.
 #[derive(Clone, Copy, PartialEq, Eq)]
 struct HeadKey {
     cpu: Cpu,
+    charset: u64,
     macros_gen: u64,
     frame: u64,
 }
@@ -124,7 +130,7 @@ struct HeadKey {
 /// so a memo filled under one state can never match another state's key, no
 /// matter which assembler or pass produced either. 0 is never returned: it is
 /// the stamp of "no substituting frame".
-fn next_stamp() -> u64 {
+pub(crate) fn next_stamp() -> u64 {
     static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
     NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
 }
@@ -4393,7 +4399,8 @@ impl Asm {
     ///
     /// Memoised per line under [`HeadKey`]: a body line is asked for its keyword
     /// by every enclosing block's scan and by `exec` itself, and the answer is
-    /// the same until the CPU, the macro table or the substituting frame moves.
+    /// the same until the CPU, the code page, the macro table or the
+    /// substituting frame moves.
     fn line_keyword(&self, line: &SrcLine) -> Option<std::rc::Rc<str>> {
         let key = self.head_key();
         if let Some((memo_key, kw)) = &*line.head.0.borrow() {
@@ -4416,7 +4423,12 @@ impl Asm {
             .last()
             .filter(|f| f.suspend == 0)
             .map_or(0, |f| f.stamp);
-        HeadKey { cpu: self.state.cpu, macros_gen: self.macros_gen, frame }
+        HeadKey {
+            cpu: self.state.cpu,
+            charset: self.state.charset.stamp(),
+            macros_gen: self.macros_gen,
+            frame,
+        }
     }
 
     /// The name in the LABEL field of a line whose head is a block directive,
@@ -11848,6 +11860,23 @@ mod tests {
     use crate::Options;
     use sigil_ir::backend::Cpu;
     use sigil_ir::Module;
+
+    /// The keyword memo's key covers the `charset` code page: changing the page
+    /// changes the key, and nothing else in the key moved to make it so.
+    #[test]
+    fn the_keyword_memo_key_covers_the_code_page() {
+        let mut asm = super::Asm::new_with_defer(&Options::default(), false);
+        let before = asm.head_key();
+        asm.state.charset.set(0x41, 0x11);
+        let after = asm.head_key();
+        assert!(
+            before.cpu == after.cpu
+                && before.macros_gen == after.macros_gen
+                && before.frame == after.frame,
+            "the control moved: something besides the page changed the key"
+        );
+        assert!(before != after, "a charset change left the keyword memo's key unchanged");
+    }
 
     /// Assemble AND LINK, so branch displacements to labels are the RESOLVED
     /// bytes rather than the front-end's unapplied-fixup placeholders. Every
