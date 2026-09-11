@@ -73,6 +73,9 @@ impl IrBuilder {
                 cpu: o.cpu,
                 vma_base: o.vma_base,
                 lma: o.lma,
+                // A builder knows one address space, the image's. A front end
+                // that assembles for a second one re-tags the finished sections.
+                space: crate::AddressSpace::Image,
                 labels: o.labels,
                 fragments: o.fragments,
                 placement: o.placement,

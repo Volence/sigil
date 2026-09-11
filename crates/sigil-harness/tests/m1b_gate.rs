@@ -103,6 +103,7 @@ fn multi_section_jsr_and_branch_link_correctly() {
             reserved_span: 0,
             group: None,
             bank: None,
+            space: sigil_ir::AddressSpace::Image,
             equ_syms: Vec::new(),
     };
     let target = Section {
@@ -113,6 +114,7 @@ fn multi_section_jsr_and_branch_link_correctly() {
             reserved_span: 0,
             group: None,
             bank: None,
+            space: sigil_ir::AddressSpace::Image,
             equ_syms: Vec::new(),
     };
     let map = MemoryMap::new(
@@ -141,6 +143,7 @@ fn abs_l_jmp_flows_through_emit_rom() {
             reserved_span: 0,
             group: None,
             bank: None,
+            space: sigil_ir::AddressSpace::Image,
             equ_syms: Vec::new(),
     };
     let map = MemoryMap::new(

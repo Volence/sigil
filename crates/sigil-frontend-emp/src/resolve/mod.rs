@@ -1267,6 +1267,7 @@ mod placement_provenance_tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            space: sigil_ir::AddressSpace::Image,
             equ_syms: Vec::new(),
         }
     }

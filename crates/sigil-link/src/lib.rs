@@ -976,6 +976,7 @@ mod tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            space: sigil_ir::AddressSpace::Image,
             equ_syms: Vec::new(),
         }
     }
@@ -1015,6 +1016,7 @@ mod tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            space: sigil_ir::AddressSpace::Image,
             equ_syms: Vec::new(),
         };
         let mut syms = SymbolTable::new();
@@ -1045,6 +1047,7 @@ mod tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            space: sigil_ir::AddressSpace::Image,
             equ_syms: Vec::new(),
         }
     }
@@ -1235,6 +1238,7 @@ mod tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            space: sigil_ir::AddressSpace::Image,
             equ_syms: vec![sigil_ir::EquSym {
                 name: eq_name.into(),
                 expr: Expr::Int(value),
@@ -1329,6 +1333,7 @@ mod tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            space: sigil_ir::AddressSpace::Image,
             equ_syms: Vec::new(),
         }
     }
@@ -1354,6 +1359,7 @@ mod tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            space: sigil_ir::AddressSpace::Image,
             equ_syms: Vec::new(),
         }
     }
@@ -1397,6 +1403,7 @@ mod tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            space: sigil_ir::AddressSpace::Image,
             equ_syms: Vec::new(),
         };
         let linked = link(&[sec], &stubs).unwrap();
@@ -1422,6 +1429,7 @@ mod tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            space: sigil_ir::AddressSpace::Image,
             equ_syms: Vec::new(),
         };
         let linked = link(&[sec], &SymbolTable::new()).unwrap();
@@ -1447,6 +1455,7 @@ mod tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            space: sigil_ir::AddressSpace::Image,
             equ_syms: Vec::new(),
         };
         let err = link(&[sec], &SymbolTable::new()).unwrap_err();
@@ -1485,6 +1494,7 @@ mod tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            space: sigil_ir::AddressSpace::Image,
             equ_syms: Vec::new(),
         }
     }
@@ -1574,6 +1584,7 @@ mod tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            space: sigil_ir::AddressSpace::Image,
             equ_syms: Vec::new(),
         };
         let err = link(&[mk("a"), mk("b")], &SymbolTable::new()).unwrap_err();
@@ -1601,6 +1612,7 @@ mod tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            space: sigil_ir::AddressSpace::Image,
             equ_syms: Vec::new(),
         };
         let linked = link(&[sec], &SymbolTable::new()).unwrap();
@@ -1623,6 +1635,7 @@ mod tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            space: sigil_ir::AddressSpace::Image,
             equ_syms: Vec::new(),
         };
         assert_eq!(link(&[sec], &SymbolTable::new()).unwrap().section("c").unwrap().bytes, vec![0x60, 0x0E]);
@@ -1646,6 +1659,7 @@ mod tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            space: sigil_ir::AddressSpace::Image,
             equ_syms: Vec::new(),
         };
         let err = link(&[sec], &SymbolTable::new()).unwrap_err();
@@ -1670,6 +1684,7 @@ mod tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            space: sigil_ir::AddressSpace::Image,
             equ_syms: Vec::new(),
         };
         let err = link(&[sec], &SymbolTable::new()).unwrap_err();
@@ -1707,6 +1722,7 @@ mod tests {
                 reserved_span: 0,
                 group: None,
                 bank: None,
+                space: sigil_ir::AddressSpace::Image,
                 equ_syms: Vec::new(),
             };
             let mut stubs = SymbolTable::new();
@@ -1747,6 +1763,7 @@ mod tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            space: sigil_ir::AddressSpace::Image,
             equ_syms: Vec::new(),
         };
         let linked = link(&[sec], &SymbolTable::new()).unwrap();
@@ -1779,6 +1796,7 @@ mod tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            space: sigil_ir::AddressSpace::Image,
             equ_syms: Vec::new(),
         };
         let linked = link(&[sec], &SymbolTable::new()).unwrap();
@@ -1811,6 +1829,7 @@ mod tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            space: sigil_ir::AddressSpace::Image,
             equ_syms: Vec::new(),
         };
         let err = link(&[sec], &SymbolTable::new()).unwrap_err();
@@ -1849,6 +1868,7 @@ mod tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            space: sigil_ir::AddressSpace::Image,
             equ_syms: Vec::new(),
         };
         let err = link(&[sec], &stubs).unwrap_err();
@@ -1885,6 +1905,7 @@ mod tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            space: sigil_ir::AddressSpace::Image,
             equ_syms: Vec::new(),
         };
         let err = link(&[sec], &stubs).unwrap_err();
@@ -1908,6 +1929,7 @@ mod tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            space: sigil_ir::AddressSpace::Image,
             equ_syms: Vec::new(),
         };
         let linked = link(&[sec], &stubs).unwrap();
@@ -1930,6 +1952,7 @@ mod tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            space: sigil_ir::AddressSpace::Image,
             equ_syms: Vec::new(),
         };
         assert_eq!(link(&[ok], &stubs).unwrap().section("ok").unwrap().bytes, vec![0x12, 0x34]);
@@ -1945,6 +1968,7 @@ mod tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            space: sigil_ir::AddressSpace::Image,
             equ_syms: Vec::new(),
         };
         let err = link(&[bad], &stubs).unwrap_err();
@@ -1970,6 +1994,7 @@ mod tests {
                 span: span(),
             })],
             placement: SectionPlacement::Pinned,
+            space: sigil_ir::AddressSpace::Image,
             reserved_span: 0, group: None, bank: None, equ_syms: Vec::new(),
         };
         let shifted = bin(BinOp::Shr, bin(BinOp::Shl, Expr::Sym("L".into()), Expr::Int(62)), Expr::Int(62));
@@ -2006,6 +2031,7 @@ mod tests {
                 span: span(),
             })],
             placement: SectionPlacement::Pinned,
+            space: sigil_ir::AddressSpace::Image,
             reserved_span: 0, group: None, bank: None, equ_syms: Vec::new(),
         };
         assert_eq!(link(&[sec("Bit25")], &stubs).unwrap().section("s").unwrap().bytes, vec![0x7F, 0xFF]);
@@ -2037,6 +2063,7 @@ mod tests {
                     span: span(),
                 })],
                 placement: SectionPlacement::Pinned,
+                space: sigil_ir::AddressSpace::Image,
                 reserved_span: 0, group: None, bank: None, equ_syms: Vec::new(),
             };
             link(&[sec], &stubs).map(|img| img.section("s").unwrap().bytes.clone())
@@ -2075,6 +2102,7 @@ mod tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            space: sigil_ir::AddressSpace::Image,
             equ_syms: Vec::new(),
         };
         let linked = link(&[a], &SymbolTable::new()).unwrap();
@@ -2171,6 +2199,7 @@ mod tests {
                 reserved_span: 3,
                 group: None,
                 bank: None,
+                space: sigil_ir::AddressSpace::Image,
                 equ_syms: vec![],
             },
         ];

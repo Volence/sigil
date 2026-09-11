@@ -86,6 +86,7 @@ fn label_section(name: &str, lma: u32, label: &str) -> Section {
         reserved_span: 0,
         group: None,
         bank: None,
+        space: sigil_ir::AddressSpace::Image,
         equ_syms: Vec::new(),
     }
 }
@@ -104,6 +105,7 @@ fn equ_defining_section(lma: u32, equ_syms: Vec<EquSym>) -> Section {
         reserved_span: 0,
         group: None,
         bank: None,
+        space: sigil_ir::AddressSpace::Image,
         equ_syms,
     }
 }

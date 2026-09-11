@@ -216,6 +216,29 @@ pub enum SectionPlacement {
     Chained,
 }
 
+/// Which address space a [`Section`]'s `lma` is an address in.
+///
+/// A program is assembled for one CPU, and that CPU's address space is the
+/// image: an `Image` section's `lma` is where its bytes land in the flattened
+/// output. A program can also assemble code for a second CPU at that CPU's own
+/// addresses, a Z80 sound driver inside a 68000 program re-based with `org 0`
+/// being the case every Sonic disassembly has. Such a section is `Foreign`: its
+/// `lma` is an address in the second CPU's space and says nothing about where
+/// its bytes belong in the image. It therefore cannot collide with an `Image`
+/// section, and it cannot be written into the image at `lma` either; the
+/// linker refuses it until something declares its ROM placement.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AddressSpace {
+    /// The image's own address space. Every section a front end produces is
+    /// in it unless that front end determines otherwise.
+    Image,
+    /// A second address space belonging to `cpu`, entered at `entered_at`: the
+    /// `org` that re-based the location counter into it. Two `Foreign` values
+    /// are the same space exactly when both fields are equal, so each entry
+    /// into a second space from the image is a space of its own.
+    Foreign { cpu: Cpu, entered_at: Span },
+}
+
 /// A named, ordered collection of [`Fragment`]s laid out at a fixed LMA, whose
 /// labels/PC are computed at `vma_base` (VMA≠LMA when phased).
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -226,8 +249,11 @@ pub struct Section {
     pub cpu: Cpu,
     /// VMA base for labels/PC; `None` ⇒ VMA == LMA.
     pub vma_base: Option<u32>,
-    /// Load address: where this section's bytes land in the ROM image.
+    /// Load address: where this section's bytes land in the ROM image, when
+    /// `space` is [`AddressSpace::Image`]; otherwise an address in `space`.
     pub lma: u32,
+    /// The address space `lma` is an address in (see [`AddressSpace`]).
+    pub space: AddressSpace,
     /// Labels defined in this section (name + byte offset from section start).
     pub labels: Vec<Label>,
     /// Ordered list of fragments that make up this section.
@@ -509,6 +535,7 @@ impl ModuleBuilder {
                 reserved_span,
                 group: None,
                 bank: None,
+                space: AddressSpace::Image,
                 equ_syms: Vec::new(),
             }],
             link_asserts: Vec::new(),
@@ -570,6 +597,7 @@ mod tests {
             reserved_span: 3,
             group: None,
             bank: None,
+            space: AddressSpace::Image,
             equ_syms: Vec::new(),
         };
         assert_eq!(section.image_bytes(), vec![0x00, 0x3E, 0x05]);
@@ -618,6 +646,7 @@ mod tests {
             reserved_span: 3 + 4 + 8,
             group: None,
             bank: None,
+            space: AddressSpace::Image,
             equ_syms: Vec::new(),
         };
         // Data(3) + Fill(4) contribute image bytes; Reserve(8) contributes NONE.
@@ -666,6 +695,7 @@ mod tests {
             reserved_span: 4,
             group: None,
             bank: None,
+            space: AddressSpace::Image,
             equ_syms: Vec::new(),
         };
         // The byte at the back-patched offset (0x00) now differs from the
@@ -697,6 +727,7 @@ mod tests {
             reserved_span: 18,
             group: None,
             bank: None,
+            space: AddressSpace::Image,
             equ_syms: Vec::new(),
         };
         let mut want = vec![1, 2, 3, 4];
@@ -733,6 +764,7 @@ mod tests {
             reserved_span: 8,
             group: None,
             bank: None,
+            space: AddressSpace::Image,
             equ_syms: Vec::new(),
         };
         assert_eq!(sec.image_bytes(), vec![0x63, 2, 3, 4, 5, 6, 7, 8]);

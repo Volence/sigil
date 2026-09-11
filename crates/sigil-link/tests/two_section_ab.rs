@@ -44,6 +44,7 @@ fn two_section_ab_layout_and_cross_fixup() {
             reserved_span: 0,
             group: None,
             bank: None,
+            space: sigil_ir::AddressSpace::Image,
             equ_syms: Vec::new(),
     };
 
@@ -62,6 +63,7 @@ fn two_section_ab_layout_and_cross_fixup() {
             reserved_span: 0,
             group: None,
             bank: None,
+            space: sigil_ir::AddressSpace::Image,
             equ_syms: Vec::new(),
     };
 
