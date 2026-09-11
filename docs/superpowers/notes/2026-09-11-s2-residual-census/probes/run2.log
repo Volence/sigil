@@ -1,0 +1,53 @@
+================ p_digitmember.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       7/       0 : =$3                  zV ENDSTRUCT
+       9/       0 : 01                  	dc.b zV.1upPlaying
+      10/       1 : 02                  	dc.b zV.B
+      11/       2 : 03                  	dc.b zV.len
+sigil exit=1
+p_digitmember.asm(5):2: error: malformed number (hex needs a trailing `h`)
+p_digitmember.asm(5):1: error: struct `zV` has a member line this cannot read; its size and every member after it would be wrong
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 2 errors (reported on stderr)
+================ p_digitlabel.asm
+asl exit=2 ASL_EXIT=2 ASL_DIAG=complete 
+> > > p_digitlabel.asm(5):1: error #1020: invalid symbol name
+> > > p_digitlabel.asm(6):7: error #1020: invalid symbol name
+  lines that assembled: an error stops the pass loop, so every forward
+       4/       0 : 11                  	dc.b $11
+       5/       1 : 22                  1up:	dc.b $22
+sigil exit=1
+p_digitlabel.asm(5):1: error: malformed number (hex needs a trailing `h`)
+p_digitlabel.asm(6):7: error: malformed number (hex needs a trailing `h`)
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 2 errors (reported on stderr)
+================ p_escA.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       4/       0 : 07                  	dc.b "\A"
+       5/       1 : EE                  	dc.b $EE
+sigil exit=0
+5C 41 EE
+================ p_esch.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       4/       0 : 27                  	dc.b "\h"
+       5/       1 : EE                  	dc.b $EE
+sigil exit=0
+5C 68 EE
+================ p_escq.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       4/       0 : 27                  	dc.b "\'"
+       5/       1 : 0027                	dc.w '\''
+       6/       3 : EE                  	dc.b $EE
+sigil exit=1
+p_escq.asm(5):10: error: unterminated character constant
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ p_charsetnum.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       6/       0 : 3B02 0410 1213      	dc.b "@ABHIJ"
+       7/       6 : 2728 29             	dc.b $27,$28,$29
+       8/       9 : 3738                	dc.b "()"
+      10/       B : 4849 4A             	dc.b "HIJ"
+sigil exit=0
+5C 78 33 5C 36 5C 27 28 29 78 33 48 49 4A
+PROBE_END

@@ -1,0 +1,1 @@
+s2.asm(86):2: error: sections `sec0` [0x0, 0x2CA) and `sec0#2` [0x0, 0x1308) overlap in the image (colliding pins)

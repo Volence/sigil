@@ -1,0 +1,115 @@
+================ p_emptyparen.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       4/       0 : =$0                  FLAGSV = 0
+       5/       0 : 12                  	dc.b $10|()|$02
+       6/       1 : 00                  	dc.b ()
+       7/       2 : 20                  	dc.b (FLAGSV)|$20
+sigil exit=1
+p_emptyparen.asm(5):7: error: bad byte expression
+p_emptyparen.asm(6):7: error: bad byte expression
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 2 errors (reported on stderr)
+================ p_emptyparen_z80.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       3/       0 : 12                  	db 10h|()|02h
+       4/       1 : 00                  	db ()
+sigil exit=1
+p_emptyparen_z80.asm(3):5: error: bad byte expression
+p_emptyparen_z80.asm(4):5: error: bad byte expression
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 2 errors (reported on stderr)
+================ p_charsetH.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       4/       0 : 0027                	dc.w '\H'
+       5/       2 : 27                  	dc.b "\H"
+       6/       3 : 0048                	dc.w 'H'
+sigil exit=0
+5C 48 5C 48 00 48
+================ p_charsetH2.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       6/       0 : 3B02 0410 1213      	dc.b "@ABHIJ"
+       8/       6 : 4849 4A             	dc.b "HIJ"
+sigil exit=1
+p_charsetH2.asm(5):2: error: charset operand 12892 out of range 0..=255
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ p_memshift.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       4/       0 : E1E8 001A           	asl	$1A(a0)
+       5/       4 : E0E8 0018           	asr	$18(a0)
+       6/       8 : E0E9 001A           	asr	$1A(a1)
+       7/       C : E1E8 001A           	asl.w	$1A(a0)
+       8/      10 : E2EA 0010           	lsr	$10(a2)
+       9/      14 : E7EA 0010           	rol	$10(a2)
+sigil exit=1
+p_memshift.asm(4):2: error: instruction needs an explicit size suffix (.b/.w/.l)
+p_memshift.asm(5):2: error: instruction needs an explicit size suffix (.b/.w/.l)
+p_memshift.asm(6):2: error: instruction needs an explicit size suffix (.b/.w/.l)
+p_memshift.asm(8):2: error: instruction needs an explicit size suffix (.b/.w/.l)
+p_memshift.asm(9):2: error: instruction needs an explicit size suffix (.b/.w/.l)
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 5 errors (reported on stderr)
+================ p_pushv.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       4/       0 : =$2                  Ver := 2
+       5/       0 : 02                  	dc.b Ver
+       7/       1 : =$4                  Ver := 4
+       8/       1 : 04                  	dc.b Ver
+      10/       2 : 02                  	dc.b Ver
+sigil exit=1
+p_pushv.asm(6):2: error: `pushv` is not a recognized 68000 mnemonic
+p_pushv.asm(9):2: error: `popv` is not a recognized 68000 mnemonic
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 2 errors (reported on stderr)
+================ p_lastbit.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       4/       0 : 00                  	dc.b lastbit(1)
+       5/       1 : 02                  	dc.b lastbit(5)
+       6/       2 : 07                  	dc.b lastbit($80)
+       7/       3 : 13                  	dc.b lastbit($FFFEB)
+       8/       4 : 0010 0000           	dc.l 2<<lastbit($FFFEB)
+sigil exit=1
+p_lastbit.asm(4):7: error: bad byte expression
+p_lastbit.asm(5):7: error: bad byte expression
+p_lastbit.asm(6):7: error: bad byte expression
+p_lastbit.asm(7):7: error: bad byte expression
+p_lastbit.asm(8):7: error: bad long expression
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 5 errors (reported on stderr)
+================ p_ixhalf.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       3/       0 : FD 7D               	ld	a,iyl
+       4/       2 : FD 8C               	adc	a,iyu
+       5/       4 : DD 5D               	ld	e,ixl
+       6/       6 : DD 54               	ld	d,ixu
+       7/       8 : DD 6F               	ld	ixl,a
+       8/       A : DD 60               	ld	ixu,b
+sigil exit=1
+p_ixhalf.asm(7):2: error: unsupported form: Instruction { mnemonic: Ld, ops: [Imm8(0), Reg(A)] }
+p_ixhalf.asm(8):2: error: unsupported form: Instruction { mnemonic: Ld, ops: [Imm8(0), Reg(B)] }
+p_ixhalf.asm(3):2: error: unresolved symbol `iyl` in operand
+p_ixhalf.asm(4):2: error: unresolved symbol `iyu` in operand
+p_ixhalf.asm(5):2: error: unresolved symbol `ixl` in operand
+p_ixhalf.asm(6):2: error: unresolved symbol `ixu` in operand
+p_ixhalf.asm(7):2: error: unresolved symbol `ixl` in operand
+p_ixhalf.asm(8):2: error: unresolved symbol `ixu` in operand
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 8 errors (reported on stderr)
+================ p_shared.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+> > > p_shared.asm(6): warning #30: no sharefile created, SHARED ignored
+       4/       0 : 1234                	dc.w $1234
+       5/       2 : 3E3C 0F64           Foo:	move.w	#$0F64,d7
+sigil exit=1
+p_shared.asm(6):2: error: `shared` is not a recognized 68000 mnemonic
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ p_macroarg2p.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       7/       0 : 5370 6563 6961              dc.b "Special Stage 1.bin"
+       8/      13 : 5370 6563 6961              dc.b "Special Stage 1 2p.bin"
+sigil exit=1
+p_macroarg2p.asm(8):22: error: malformed number (hex needs a trailing `h`)
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+PROBE_END

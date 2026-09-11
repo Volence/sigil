@@ -1,0 +1,3 @@
+ROM size is $F9198 bytes (996.3984375 KiB). About $989C bytes are padding. 
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 149 errors (reported on stderr)

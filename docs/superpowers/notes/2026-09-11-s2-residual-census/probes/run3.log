@@ -1,0 +1,19 @@
+================ p_escx.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       4/       0 : 4142                	dc.b "\x41\x42"
+       5/       2 : EE                  	dc.b $EE
+sigil exit=0
+5C 78 34 31 5C 78 34 32 EE
+================ p_escnum.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       4/       0 : 0208 0C             	dc.b "\2\8\12"
+       5/       3 : EE                  	dc.b $EE
+sigil exit=0
+5C 32 5C 38 5C 31 32 EE
+================ p_charsetx.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       5/       0 : 1011 12             	dc.b "ABC"
+       7/       3 : 4142 43             	dc.b "ABC"
+sigil exit=0
+5C 78 31 41 42 43
+PROBE_END
