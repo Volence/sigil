@@ -115,3 +115,11 @@ section). Pinned on this side by `source_digest_lines_never_parse_as_a_consumer_
 (`crates/sigil-link/src/listing.rs`, which transcribes oracle's header matcher), and on oracle's side
 by a named test riding their next lens parcel. Oracle's fixture pins (`aeon_pin`, `aeon_dimensions`)
 change at their next re-pin from a digest build; that is the added section, not a parse change.
+
+**Oracle's pin landed 2026-09-11, verified here at their pushed revision:** test
+`symbols::tests::a_preamble_before_the_symbol_table_header_is_not_damage` in
+`crates/oracle-core/src/symbols.rs`, at oracle `e6f6083` (merged `a3627ca`), an ancestor of their
+`origin/main` `adcf239` read by `ls-remote`. It prepends `DIGEST-` lines to the frozen
+`fixtures/aeon/s4.lst` and asserts identical symbols, intactness and skip counts, red-first. So the
+pre-header agreement fails a test from both ends: theirs on the parser, ours
+(`source_digest_lines_never_parse_as_a_consumer_row`) on the emitter.
