@@ -266,3 +266,21 @@ fn a_poison_free_failing_run_is_unchanged() {
     assert_reported(&got, 4, "moveq data 511 does not fit in a signed byte");
     assert_not_reported(&got, "unresolved");
 }
+
+/// THE WITNESS `451cb3e2` CITES, read from where it is committed:
+/// `docs/superpowers/notes/2026-09-11-451cb3e2-witness/control.asm`. Nothing
+/// else in it is wrong, so its only error is one the bonus pass would suppress,
+/// and a module the front end used to return `Ok` is refused there instead,
+/// with both lines named. The file is read rather than copied into this test so
+/// the commit's pointer stays one anybody can follow.
+#[test]
+fn the_witness_451cb3e2_cites_is_refused_by_the_front_end() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../docs/superpowers/notes/2026-09-11-451cb3e2-witness/control.asm");
+    let body = std::fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("cannot read the committed witness {}: {e}", path.display()));
+    let got = diags(&body);
+    assert_reported(&got, 4, "unresolved long expression");
+    assert_reported(&got, 5, "unresolved symbol `NoSuchTarget` in operand");
+    assert_eq!(got.len(), 2, "the witness draws exactly two diagnostics; got {got:?}");
+}
