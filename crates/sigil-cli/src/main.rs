@@ -31,7 +31,7 @@ mod tree_class;
 /// the same rows, so the command list a reader is shown is the command list the
 /// binary answers to. The unit tests below hold the rest of that relationship:
 /// every row appears in the top-level list, every row's usage names the row, and
-/// every flag a row's parser accepts appears in that row's usage.
+/// the options a row accepts are exactly the options its usage names.
 struct Entry {
     /// First-argument words that select this entry point. Empty for the
     /// bare-file form, which runs whenever the first argument is not one of the
@@ -43,9 +43,32 @@ struct Entry {
     summary: &'static str,
     /// The usage text, one element per printed line.
     usage: &'static [&'static str],
+    /// Every option this entry point accepts. [`main`] refuses any other option
+    /// before the entry point runs (see [`unlisted_option`]), so an option is
+    /// accepted only if it is listed here, whatever the entry point's own
+    /// argument loop matches. The `usage_names_the_listed_options` gate holds
+    /// this list and the options `usage` names to one set.
+    options: &'static [Opt],
     /// The entry point itself. It receives its own row, so the usage it prints
     /// on a missing argument is the row's text rather than a second copy.
     run: fn(&Entry, &[String]),
+}
+
+/// One option an entry point accepts: the spelling a user types, and whether
+/// it consumes the argument after it as its value.
+struct Opt {
+    name: &'static str,
+    takes_value: bool,
+}
+
+/// An option that stands alone, such as `--hex`.
+const fn flag(name: &'static str) -> Opt {
+    Opt { name, takes_value: false }
+}
+
+/// An option followed by its value, such as `-o <output.bin>`.
+const fn valued(name: &'static str) -> Opt {
+    Opt { name, takes_value: true }
 }
 
 /// Every entry point of the `sigil` command line, in the order help lists them.
@@ -55,6 +78,7 @@ const ENTRIES: &[Entry] = &[
         label: "<input.asm>",
         summary: "assemble one AS-syntax source file to a binary image",
         usage: &["usage: sigil <input.asm> [-o <output.bin>] [--hex]"],
+        options: &[valued("-o"), flag("--hex")],
         run: run_asm,
     },
     Entry {
@@ -73,6 +97,15 @@ const ENTRIES: &[Entry] = &[
             "note:  --deny-todo turns every remaining todo hole into an error, so a",
             "       release build cannot ship one.",
         ],
+        options: &[
+            valued("-o"),
+            valued("--root"),
+            valued("--prelude"),
+            valued("--map"),
+            flag("--hex"),
+            flag("--deny-todo"),
+            valued("-D"),
+        ],
         run: run_emp,
     },
     Entry {
@@ -84,6 +117,7 @@ const ENTRIES: &[Entry] = &[
             "       sigil test --root <dir> [-D NAME=INT]...",
             "note:  pass EITHER a file OR --root, not both.",
         ],
+        options: &[valued("--root"), valued("-D")],
         run: run_test,
     },
     Entry {
@@ -91,6 +125,7 @@ const ENTRIES: &[Entry] = &[
         label: "parse",
         summary: "parse one .emp file and report its diagnostics, emitting nothing",
         usage: &["usage: sigil parse <input.emp>"],
+        options: &[],
         run: run_parse,
     },
     Entry {
@@ -113,6 +148,22 @@ const ENTRIES: &[Entry] = &[
             "       shape and take no other shape selector.",
             "env:   SIGIL_WARNINGS=off|summary|full  (warn-tier detail; default summary)",
         ],
+        options: &[
+            valued("--aeon"),
+            valued("-o"),
+            valued("--emit-lst"),
+            valued("--game"),
+            flag("--native"),
+            flag("--debug"),
+            flag("--config-a"),
+            flag("--config-b"),
+            flag("--lean"),
+            flag("--stress-evict"),
+            flag("--stress-art"),
+            valued("--extra-entry"),
+            flag("--check"),
+            valued("--report"),
+        ],
         run: run_build,
     },
     Entry {
@@ -120,6 +171,7 @@ const ENTRIES: &[Entry] = &[
         label: "--version",
         summary: "print the source revision this assembler was built from",
         usage: &["usage: sigil --version", "       sigil -V"],
+        options: &[],
         run: run_version,
     },
 ];
@@ -225,7 +277,42 @@ fn main() {
         return;
     }
 
+    // An option the row does not list is refused before the entry point runs,
+    // so no argument loop can accept an option its usage does not name.
+    if let Some(option) = unlisted_option(entry, rest) {
+        eprintln!("error: unexpected argument '{option}'");
+        usage_error(entry);
+    }
+
     (entry.run)(entry, rest);
+}
+
+/// The first argument in `args` that is an option `entry` does not list, if
+/// any. An argument is an option when it starts with `-` and is longer than
+/// the `-` alone, unless it is the value of the listed option before it: in
+/// `-o -x`, `-x` is `-o`'s value, and the entry point's own loop decides what
+/// to make of it.
+///
+/// This is what makes [`Entry::options`] the set of options the command line
+/// accepts: an option an argument loop matches and the row does not list
+/// never reaches the loop. What it cannot check is that a loop reads a listed
+/// option's value the way the row says. A loop that takes a value for an
+/// option listed as standing alone, or the reverse, reads a different argument
+/// as an option than this scan did.
+fn unlisted_option<'a>(entry: &Entry, args: &'a [String]) -> Option<&'a str> {
+    let mut i = 0;
+    while i < args.len() {
+        let arg = args[i].as_str();
+        if arg.len() > 1 && arg.starts_with('-') {
+            match entry.options.iter().find(|o| o.name == arg) {
+                Some(opt) if opt.takes_value => i += 1,
+                Some(_) => {}
+                None => return Some(arg),
+            }
+        }
+        i += 1;
+    }
+    None
 }
 
 /// `sigil <input.asm> [-o <output.bin>] [--hex]`: assemble one AS-syntax source
@@ -2636,9 +2723,9 @@ mod help_gates {
     //! [`super::ENTRIES`] removes the copy for the command LIST (dispatch and
     //! help read the same rows, so a seventh command cannot be dispatched
     //! without being listed), and these gates cover what is left: that the list
-    //! renders every row, that each row's usage is about that row, that no flag
-    //! a row accepts is missing from its usage, and that dispatch still goes
-    //! through the table instead of a hand-written match.
+    //! renders every row, that each row's usage is about that row, that the
+    //! options a row accepts are the options its usage names, and that dispatch
+    //! still goes through the table instead of a hand-written match.
     //!
     //! They assert RELATIONSHIPS between the table, the source, and the
     //! rendered text, never a golden copy of the text, so rewording help is
@@ -2647,8 +2734,8 @@ mod help_gates {
     use super::{Entry, ENTRIES};
     use std::collections::BTreeSet;
 
-    /// This binary's own source, read at compile time. The flag and dispatch
-    /// gates ask questions about the code that no runtime value answers.
+    /// This binary's own source, read at compile time. The dispatch gate asks
+    /// a question about the code that no runtime value answers.
     const SOURCE: &str = include_str!("main.rs");
 
     /// The source with its own test modules removed, so a gate cannot be
@@ -2670,30 +2757,6 @@ mod help_gates {
         let rest = &src[start + 1..];
         let end = rest.find("\n}\n").map(|i| i + 3).unwrap_or(rest.len());
         &rest[..end]
-    }
-
-    /// Every flag literal in the match arms of `text`: a line that begins with a
-    /// string literal and carries a `=>` is an argument-match arm, and every
-    /// `-`-prefixed literal on it is a flag that arm accepts.
-    fn flag_arms(text: &str) -> BTreeSet<String> {
-        let mut flags = BTreeSet::new();
-        for line in text.lines() {
-            let trimmed = line.trim_start();
-            if !trimmed.starts_with('"') || !trimmed.contains("=>") {
-                continue;
-            }
-            let mut rest = trimmed;
-            while let Some(open) = rest.find('"') {
-                let after = &rest[open + 1..];
-                let Some(close) = after.find('"') else { break };
-                let literal = &after[..close];
-                if literal.starts_with('-') {
-                    flags.insert(literal.to_string());
-                }
-                rest = &after[close + 1..];
-            }
-        }
-        flags
     }
 
     /// The top-level list names every entry point, by label and by summary.
@@ -2776,91 +2839,175 @@ mod help_gates {
         assert!(!seen.is_empty(), "no entry point has a selecting word");
     }
 
-    /// The function whose argument loop parses each entry point's flags, keyed
-    /// by the entry point's label. [`usage_names_every_accepted_flag`] reads
-    /// each named function's match arms out of this source file. The mapping
-    /// lives here rather than on [`Entry`] because nothing in the shipping
-    /// binary reads it.
-    const FLAG_PARSERS: &[(&str, &str)] = &[
-        ("<input.asm>", "run_asm"),
-        ("emp", "run_emp"),
-        ("test", "run_test"),
-        ("parse", "run_parse"),
-        ("build", "parse_build_args"),
-        ("--version", "run_version"),
-    ];
-
-    /// The flag parser of `entry`, from [`FLAG_PARSERS`].
-    fn flag_parser(entry: &Entry) -> &'static str {
-        FLAG_PARSERS
-            .iter()
-            .find(|(label, _)| *label == entry.label)
-            .map(|(_, parser)| *parser)
-            .unwrap_or_else(|| panic!("`{}` has no row in FLAG_PARSERS", entry.label))
+    /// The options a usage text names: every piece of it that reads as an
+    /// option once the lines are split on whitespace and on the bracket,
+    /// alternation and punctuation characters usage lines are written with. So
+    /// `[--config-a|--config-b|--lean]` names three options, `--root,` names
+    /// one, and `off-canonical` and `sonic4|demo` name none.
+    fn usage_options(usage: &[&str]) -> BTreeSet<String> {
+        let mut out = BTreeSet::new();
+        for line in usage {
+            for piece in line.split(|c: char| c.is_whitespace() || "[]|()<>,;`".contains(c)) {
+                let piece = piece.trim_end_matches(['.', ':']);
+                let Some(body) = piece.strip_prefix("--").or_else(|| piece.strip_prefix('-'))
+                else {
+                    continue;
+                };
+                if body.starts_with(|c: char| c.is_ascii_alphabetic())
+                    && body.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
+                {
+                    out.insert(piece.to_string());
+                }
+            }
+        }
+        out
     }
 
-    /// [`FLAG_PARSERS`] and [`ENTRIES`] name the same entry points, each once,
-    /// so a row added to the table cannot slip past the flag gate unparsed and
-    /// a row removed from it cannot leave a stale parser behind.
+    /// The extractor reads every shape the usage lines are written in, and
+    /// reads no hyphenated word as an option.
     #[test]
-    fn every_entry_names_one_flag_parser() {
-        for e in ENTRIES {
-            let rows = FLAG_PARSERS.iter().filter(|(label, _)| *label == e.label).count();
-            assert_eq!(rows, 1, "`{}` has {rows} rows in FLAG_PARSERS, not one", e.label);
-        }
-        for (label, parser) in FLAG_PARSERS {
-            assert!(
-                ENTRIES.iter().any(|e| e.label == *label),
-                "FLAG_PARSERS maps `{label}` to `{parser}`, and no entry point is labelled `{label}`"
-            );
-        }
+    fn usage_options_reads_the_shapes_usage_lines_use() {
+        let got = usage_options(&[
+            "usage: sigil x [-o <out>] [--config-a|--config-b|--lean] [-D NAME=INT]...",
+            "note:  pass EITHER a file OR --root, not both.",
+            "dev:   an off-canonical shape, sonic4|demo, a no-op; see --check.",
+        ]);
+        let want: BTreeSet<String> =
+            ["-o", "--config-a", "--config-b", "--lean", "-D", "--root", "--check"]
+                .iter()
+                .map(|s| s.to_string())
+                .collect();
+        assert_eq!(got, want);
     }
 
-    /// Every flag an entry point's parser ACCEPTS appears in that entry point's
-    /// usage, and every argument-match arm in the shipping source belongs to
-    /// some entry point's parser.
+    /// Every option an entry point accepts is named in its usage, and every
+    /// option its usage names is one it accepts.
     ///
     /// This is the gate for the defect it closes: `--map` and `--deny-todo` were
     /// accepted by `sigil emp` and named in no usage line at all, so the only
-    /// way to learn they existed was to read the source. It is a relationship
-    /// between the parser and the text, so a flag added tomorrow fails here
-    /// until its usage line exists, and no wording change can fail it.
+    /// way to learn they existed was to read the source. What an entry point
+    /// accepts is its row's `options`, because `main` refuses anything else
+    /// before the row runs, so both sides here are derived from the table and
+    /// no source text is read: an option added to an argument loop and not to
+    /// the row is refused when used, and one added to the row without a usage
+    /// line fails here. The second direction catches help text that names an
+    /// option the command refuses.
     #[test]
-    fn usage_names_every_accepted_flag() {
-        let mut attributed: BTreeSet<String> = BTreeSet::new();
+    fn usage_names_the_listed_options() {
         for e in ENTRIES {
-            let parser = flag_parser(e);
-            let body = fn_body(parser);
-            assert!(
-                body.contains("fn ") && body.len() > 100,
-                "the slice for `{parser}` is too small to be a function body: {body}"
-            );
+            let listed: BTreeSet<String> = e.options.iter().map(|o| o.name.to_string()).collect();
+            assert_eq!(listed.len(), e.options.len(), "`{}` lists an option twice", e.label);
+            let mut named = usage_options(e.usage);
+            for word in e.words {
+                named.remove(*word);
+            }
             let usage = e.usage.join("\n");
-            for flag in flag_arms(body) {
-                assert!(
-                    usage.contains(&flag),
-                    "`{}` accepts `{flag}` and its usage never names it:\n{usage}",
+            let undocumented: Vec<&String> = listed.difference(&named).collect();
+            assert!(
+                undocumented.is_empty(),
+                "`{}` accepts {undocumented:?} and its usage never names them:\n{usage}",
+                e.label
+            );
+            let refused: Vec<&String> = named.difference(&listed).collect();
+            assert!(
+                refused.is_empty(),
+                "`{}` usage names {refused:?}, which the command refuses:\n{usage}",
+                e.label
+            );
+        }
+        assert!(
+            ENTRIES.iter().any(|e| !e.options.is_empty()),
+            "no entry point lists an option, so the comparison above compared nothing"
+        );
+    }
+
+    /// `main`'s scan passes every option a row lists and refuses every other
+    /// one, including an option only another row lists. Every case is derived
+    /// from the table, so a row added tomorrow is covered today.
+    #[test]
+    fn main_refuses_every_option_a_row_does_not_list() {
+        let own = |args: &[&str]| args.iter().map(|a| a.to_string()).collect::<Vec<_>>();
+        let mut cross_row = 0;
+        for e in ENTRIES {
+            for o in e.options {
+                let mut args = vec![o.name];
+                if o.takes_value {
+                    // A value that looks like an option is the option's value.
+                    args.push("-looks-like-an-option");
+                }
+                assert_eq!(
+                    super::unlisted_option(e, &own(&args)),
+                    None,
+                    "`{}` refuses {args:?}, which it lists",
                     e.label
                 );
-                attributed.insert(flag);
+                if !o.takes_value {
+                    // A standalone option does not shelter the argument after it.
+                    assert_eq!(
+                        super::unlisted_option(e, &own(&[o.name, "--not-an-option"])),
+                        Some("--not-an-option"),
+                        "`{}` let `--not-an-option` through after `{}`",
+                        e.label,
+                        o.name
+                    );
+                }
             }
+            for other in ENTRIES {
+                for o in other.options.iter().filter(|o| !e.options.iter().any(|m| m.name == o.name))
+                {
+                    assert_eq!(
+                        super::unlisted_option(e, &own(&[o.name])),
+                        Some(o.name),
+                        "`{}` accepts `{}`, which only `{}` lists",
+                        e.label,
+                        o.name,
+                        other.label
+                    );
+                    cross_row += 1;
+                }
+            }
+            assert_eq!(
+                super::unlisted_option(e, &own(&["input.file", "--not-an-option"])),
+                Some("--not-an-option"),
+                "`{}` let an unlisted option through",
+                e.label
+            );
+            assert_eq!(
+                super::unlisted_option(e, &own(&["-", "input.file"])),
+                None,
+                "`{}` read a lone `-` or a plain word as an option",
+                e.label
+            );
         }
-        // The instrument found something: if the scanner stopped matching, this
-        // is what says so rather than an empty sweep reading as a clean one.
-        assert!(
-            attributed.len() >= 10,
-            "the flag scanner found only {} flags across the whole command line, \
-             which is fewer than this binary is known to accept",
-            attributed.len()
-        );
-        // And it found everything: an argument parser reachable from no entry
-        // point accepts flags nothing documents.
-        let all = flag_arms(shipping_source());
-        let orphans: Vec<&String> = all.difference(&attributed).collect();
-        assert!(
-            orphans.is_empty(),
-            "flags accepted by no entry point's parser, so named in no usage: {orphans:?}"
-        );
+        assert!(cross_row > 0, "no row lists an option another row lacks, so the cross-row check checked nothing");
+    }
+
+    /// `sigil build`'s parser has an arm for every option the build row lists,
+    /// and asks for a value for exactly the options the row says take one. That
+    /// parser returns rather than exits, so it is the one argument loop the
+    /// table can be held to directly.
+    #[test]
+    fn the_build_parser_reads_every_listed_option_as_listed() {
+        let build = super::entry_for("build").expect("the build row");
+        assert!(!build.options.is_empty(), "the build row lists no options");
+        for o in build.options {
+            // The option last, so a value-taking one finds nothing after it.
+            let args: Vec<String> = ["--aeon", "x", o.name].iter().map(|a| a.to_string()).collect();
+            let result = super::parse_build_args(&args);
+            let err = result.as_ref().err().map(String::as_str).unwrap_or("");
+            assert!(
+                !err.contains("unexpected argument"),
+                "`{}` is listed for build and its parser has no arm for it: {err}",
+                o.name
+            );
+            assert_eq!(
+                err.contains("requires a value"),
+                o.takes_value,
+                "`{}` is listed as {} and the parser answered {err:?}",
+                o.name,
+                if o.takes_value { "taking a value" } else { "standing alone" }
+            );
+        }
     }
 
     /// Dispatch reads the table. A hand-written arm in `main` would be an entry
