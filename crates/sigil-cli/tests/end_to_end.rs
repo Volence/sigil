@@ -44,8 +44,13 @@ fn golden_sample_end_to_end() {
     let image = std::fs::read(&bin_path).expect("output .bin was not written");
     assert_eq!(image, GOLDEN_BYTES.to_vec(), "output image bytes mismatch");
 
+    // `--hex` prints the image as one line and the run's `built:` line follows it
+    // as the last line of stdout; the hex line is the one compared.
     let stdout = String::from_utf8(output.stdout).expect("stdout was not valid utf8");
-    assert_eq!(stdout.trim_end(), GOLDEN_HEX, "--hex output mismatch");
+    let lines: Vec<&str> = stdout.lines().collect();
+    assert_eq!(lines.len(), 2, "stdout must hold the hex line and the built line: {stdout:?}");
+    assert_eq!(lines[0], GOLDEN_HEX, "--hex output mismatch");
+    assert!(lines[1].starts_with("built: "), "the built line must follow the hex: {stdout:?}");
 
     // Clean up temp files so the test is re-runnable and parallel-safe.
     let _ = std::fs::remove_dir_all(&dir);

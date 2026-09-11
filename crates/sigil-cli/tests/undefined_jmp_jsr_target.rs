@@ -165,8 +165,8 @@ fn a_forward_jsr_to_a_defined_label_still_assembles() {
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(out.status.success(), "a forward jsr must assemble. stderr:\n{stderr}");
     assert_eq!(
-        String::from_utf8_lossy(&out.stdout).trim(),
-        "4E B8 00 04 4E 75",
-        "jsr Later + rts, abs.w, unchanged by the refusal"
+        String::from_utf8_lossy(&out.stdout).lines().next(),
+        Some("4E B8 00 04 4E 75"),
+        "jsr Later + rts, abs.w, unchanged by the refusal (the `--hex` line leads stdout)"
     );
 }

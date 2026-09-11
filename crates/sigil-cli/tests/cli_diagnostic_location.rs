@@ -261,8 +261,8 @@ fn the_single_file_route_still_accepts_a_forward_reference() {
         String::from_utf8_lossy(&out.stderr)
     );
     assert_eq!(
-        String::from_utf8_lossy(&out.stdout).trim(),
-        "00 00 00 04 00 01",
-        "asl's own listing column for these five lines"
+        String::from_utf8_lossy(&out.stdout).lines().next(),
+        Some("00 00 00 04 00 01"),
+        "asl's own listing column for these five lines (the `--hex` line leads stdout)"
     );
 }

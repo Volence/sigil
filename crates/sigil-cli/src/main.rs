@@ -242,7 +242,8 @@ fn main() {
 }
 
 /// `sigil <input.asm> [-o <output.bin>] [--hex]`: assemble one AS-syntax source
-/// file and write or print the image.
+/// file, write or print the image, and end stdout on a line saying how the run
+/// ended: [`emit_image`]'s `built:` line on success, [`fail_asm`]'s on failure.
 fn run_asm(entry: &Entry, args: &[String]) {
     let mut input: Option<String> = None;
     let mut output: Option<String> = None;
@@ -369,16 +370,11 @@ fn run_asm(entry: &Entry, args: &[String]) {
         }
     };
 
-    if let Some(out_path) = output {
-        if let Err(err) = install_artifact(&out_path, &image) {
-            eprintln!("error: cannot write {out_path}: {err}");
-            fail_asm(1, Stage::Image);
-        }
-    }
-
-    if hex {
-        let rendered: Vec<String> = image.iter().map(|b| format!("{b:02X}")).collect();
-        println!("{}", rendered.join(" "));
+    // The same tail as `sigil emp`, so the two routes report a finished image in
+    // one shape. Its write failure is already on stderr; ending the run is left
+    // here so it goes through `fail_asm` like every other failure on this route.
+    if emit_image(&image, output.as_deref(), hex).is_err() {
+        fail_asm(1, Stage::Image);
     }
 }
 
@@ -869,8 +865,12 @@ fn install_artifact(path: &str, bytes: &[u8]) -> std::io::Result<()> {
     sigil_harness::atomic_write::write_atomic_io(std::path::Path::new(path), bytes)
 }
 
-/// The shared emp output tail: write `image` to `output` (if given), print it as
-/// `--hex` (if set), and report the build. Exits non-zero on a write failure.
+/// A write to `-o`'s path failed. [`emit_image`] has already said so on stderr by
+/// the time a caller sees this; what is left to the caller is how the run ends.
+struct WriteFailed;
+
+/// The shared output tail of `sigil <input.asm>` and `sigil emp`: write `image` to
+/// `output` (if given), print it as `--hex` (if set), and report the build.
 ///
 /// The success line states the DISPOSITION of the image, not only its size, because
 /// those are two different facts and a reader has no other channel for the second
@@ -883,11 +883,23 @@ fn install_artifact(path: &str, bytes: &[u8]) -> std::io::Result<()> {
 /// `built: N bytes` stays the prefix in both cases. The byte count is the fact both
 /// outcomes share, and it is what the acceptance gates assert on; the disposition is
 /// the suffix that separates them.
-fn emit_image(image: &[u8], output: Option<&str>, hex: bool) {
+///
+/// The line goes to STDOUT and comes LAST, after the `--hex` line. That makes it
+/// the success half of what `fail_asm` is on the AS path: whichever way a run
+/// ends, the last line of stdout says how, so a captured `> build.log` always
+/// ends on the verdict. It is not on stderr because stderr is the diagnostic
+/// stream, and `scripts/corpus-baseline.sh` reads a clean assembly off an empty
+/// one. A consumer of `--hex` reads the hex line, not the whole of stdout; on the
+/// AS path, `message` lines already print ahead of it.
+///
+/// A failed write is reported here and returned rather than exited on, so each
+/// route ends the run its own way: `run_asm` through `fail_asm`, which every one
+/// of its failure exits must use.
+fn emit_image(image: &[u8], output: Option<&str>, hex: bool) -> Result<(), WriteFailed> {
     if let Some(out_path) = output {
         if let Err(err) = install_artifact(out_path, image) {
             eprintln!("error: cannot write {out_path}: {err}");
-            process::exit(1);
+            return Err(WriteFailed);
         }
     }
     if hex {
@@ -901,6 +913,7 @@ fn emit_image(image: &[u8], output: Option<&str>, hex: bool) {
             image.len()
         ),
     }
+    Ok(())
 }
 
 /// Consume the value following a value-taking flag at `args[*i]`, advancing `i`.
@@ -1215,7 +1228,9 @@ fn run_emp(entry: &Entry, args: &[String]) {
         _ => process::exit(1),
     };
 
-    emit_image(&image, output.as_deref(), hex);
+    if emit_image(&image, output.as_deref(), hex).is_err() {
+        process::exit(1);
+    }
 }
 
 /// The multi-module `sigil emp <entry> --root <dir>` path: scan the root, derive
@@ -1331,7 +1346,9 @@ fn run_emp_program(
         }
     };
 
-    emit_image(&image, output, hex);
+    if emit_image(&image, output, hex).is_err() {
+        process::exit(1);
+    }
 }
 
 /// Region-placed emp link seam: `resolve_layout` → `link` → deferred-assert check
