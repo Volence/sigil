@@ -200,6 +200,25 @@ a virtue here and a lane that clears early loses nothing, because everything loa
 tree by construction. The failure this prevents is the silent one, a session degrading through a
 compaction while its board still reads current.
 
+## STANDING: A LANE SAYS WHEN IT CAN BE CLEARED (owner, 2026-09-11T23:19:31Z)
+
+**His words, heard directly by the hub and verified here at empyrean `9911fd6`, reachable from their
+`origin/main`** (`git -C ../empyrean show 9911fd6:docs/OVERSEER.md | grep -n "A LANE SAYS WHEN IT CAN BE CLEARED"`):
+*"the overseer should say when theyy can be cleared, I think theyy should tell you then you just clear them if
+yyou're automating them, and clear yourself if you're able to"*, answering the hub's report that no lane had been
+cleared since the 18:17Z launch. At 23:20:23Z he agreed to the rest of the hub's proposal: *"every half hour is fine
+but I agree with the rest of your #3"*.
+
+**What this lane does:** past about 200k tokens (the hub's figure, which his agreement adopted), reach the next landing
+boundary WITHOUT dispatching the next wave. At that boundary set `atBoundary: true` with an empty `inFlight`, tell the
+hub it is clearable with its size as a measured figure (and name what the figure was read from), and end the turn. A
+session cannot clear itself and the hub cannot clear a lane; he presses Clear+Reboot, or sleep mode does it on a
+`rotate` verdict.
+
+**And the traffic changed with it:** message the hub only when the lane STOPS or NEEDS something, not after every
+landing. Landings go in `docs/lane-log.jsonl`, which his changelog reads. This supersedes the per-landing reading of the
+2026-09-03 report-when-you-stop rule below; that rule's "stop" half stands.
+
 ## STANDING: CUT THE CEREMONY (owner, 2026-09-02T18:20:19Z) — OUTRANKS every process bar here
 
 **Read it at the artifact, not from this line, which deliberately does not restate it:** empyrean
