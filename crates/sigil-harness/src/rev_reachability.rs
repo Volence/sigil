@@ -59,6 +59,8 @@
 //! separation matters because the ledger is APPEND-ONLY: its historical entries are facts
 //! that no gate can require anything of, while the revision a tool is ABOUT TO WRITE is
 //! still the operator's to correct.
+//!
+//! read-set: not a build input: asks git where a recorded revision stands, for `refreeze`; no `sigil build` path calls into this module.
 
 use crate::provenance::{is_full_sha, Chain};
 use std::cell::RefCell;

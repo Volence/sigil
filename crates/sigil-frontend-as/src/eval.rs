@@ -3780,7 +3780,7 @@ impl Asm {
             self.aborted = true;
             return;
         }
-        match std::fs::read_to_string(&path) {
+        match sigil_span::read_set::read_to_string(&path) {
             Ok(text) => {
                 // The included file gets its OWN SourceId, so a diagnostic raised
                 // while executing it names that file and its own line number
@@ -3852,7 +3852,7 @@ impl Asm {
             Some(root) => root.join(&rel),
             None => std::path::PathBuf::from(&rel),
         };
-        match std::fs::read(&path) {
+        match sigil_span::read_set::read(&path) {
             Ok(bytes) => self.emit(&bytes, vec![], span),
             Err(e) => self.err(span, format!("cannot BINCLUDE {}: {e}", path.display())),
         }

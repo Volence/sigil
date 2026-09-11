@@ -13,6 +13,8 @@
 //! A resolved root must carry every marker in [`ROOT_MARKERS`], or it is refused by name
 //! with all three facts: what was resolved, where the resolution came from, and what
 //! verification looked for and did not find.
+//!
+//! read-set: not a build input: locates the harness tree with git for `refreeze` and `repin`; no `sigil build` path calls into this module.
 
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};

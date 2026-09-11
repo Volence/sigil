@@ -238,7 +238,7 @@ pub fn assemble_root_relocating_warned(
 }
 
 fn assemble_root_impl(root: &Path, opts: &Options, relocate: bool) -> Result<Assembled, Failure> {
-    let text = std::fs::read_to_string(root).map_err(|e| Failure {
+    let text = sigil_span::read_set::read_to_string(root).map_err(|e| Failure {
         diags: vec![sigil_span::Diagnostic {
             level: sigil_span::Level::Error,
             message: format!("cannot read {}: {e}", root.display()),

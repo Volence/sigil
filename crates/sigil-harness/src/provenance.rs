@@ -35,6 +35,8 @@
 //! CRC set from the blobs (the `--freeze` half). Both reuse [`crate::native::crc32`] and
 //! [`crate::native::assembled_anchor_crc`] so the CRC math never diverges from the
 //! full-file / anchor gates.
+//!
+//! read-set: not a build input: the provenance chain's reader and writer, run by `refreeze` and the suite; no `sigil build` path calls into this module.
 
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
