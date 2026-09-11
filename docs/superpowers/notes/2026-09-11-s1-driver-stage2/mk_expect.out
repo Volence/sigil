@@ -1,0 +1,54 @@
+p2bin 4f2fff99c3347bafb93b12d5be1db754 asl 61e672562465725a8c102288a7da9098
+== p_after -p=FF -z=0,uncompressed,Guess,after
+   rc=0 
+   hex  010203040506070810111213141516171819ffffffffffffaabb
+   size 26 crc32 2b97b98f
+== p_after -p=0 -z=0,uncompressed,Guess,after
+   rc=0 
+   hex  010203040506070810111213141516171819000000000000aabb
+   size 26 crc32 d1d7ab05
+== p_after -p=FF -z=0,kosinski,Guess,after
+   rc=0 
+   hex  0102030405060708ff0b1011121314151617181900f00000aabb
+   size 26 crc32 4b0408a0
+== p_after -p=FF -z=0,saxman-bugged,Guess,after
+   rc=0 
+   hex  0102030405060708ff101112131415161703181900ffffffaabb
+   size 26 crc32 48d26ee1
+== p_gap -p=FF -z=0,uncompressed,Guess,after
+   rc=0 
+   hex  010203040506070810111213141516171819ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffaabb
+   size 50 crc32 feb3932c
+== p_before -p=FF -z=0,uncompressed,Guess,before
+   rc=0 
+   hex  10111213141516171819eeeeeeeeeeeeeeeeeeeeeeeeeeeeaabb
+   size 26 crc32 b096a5dc
+== p_two -p=FF -z=0,uncompressed,Guess,before -z=1300,uncompressed,Guess2,before
+   rc=0 
+   hex  10111213141516171819eeeeeeeeeeeeeeeeeeeeeeeeeeee202122232425ddddddddddddaabb
+   size 38 crc32 edb7c44f
+== p_last -p=FF -z=0,uncompressed,Guess,after
+   rc=0 
+   hex  010203040506070810111213141516171819
+   size 18 crc32 5b4d330f
+== p_hex -p=FF -z=10,uncompressed,Guess,after
+   rc=0 
+   hex  010203040506070810111213141516171819ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffaabb
+   size 58 crc32 50d978dc
+== p_kos -p=FF -z=0,uncompressed,Guess,after
+   rc=0 
+   size 522 crc32 42b2bfe6
+== p_kos -p=FF -z=0,kosinski,Guess,after
+   rc=0 
+   size 522 crc32 e004a55a
+== p_kos -p=FF -z=0,saxman-bugged,Guess,after
+   rc=0 
+   size 522 crc32 d72a6d1a
+== p_big -p=FF -z=0,uncompressed,Guess,after
+   rc=1 Error: Space reserved for the compressed Z80 segments is too small. Set 'Guess' to at least $14.
+== p_s3k -p=FF -z=0,kosinski,Size_of_Snd_driver_guess,before -z=1300,kosinski,Size_of_Snd_driver2_guess,before
+   rc=0 
+   size 268 crc32 eacc2d60
+== p_s3k -p=FF -z=0,uncompressed,Size_of_Snd_driver_guess,before -z=1300,uncompressed,Size_of_Snd_driver2_guess,before
+   rc=0 
+   size 268 crc32 c3956dd1

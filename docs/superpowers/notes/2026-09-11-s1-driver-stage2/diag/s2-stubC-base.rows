@@ -1,0 +1,1 @@
+s2.sounddriver.asm(248):6: error: section `sec0#2` [0x0, 0x1308) is assembled for the Z80 at origin 0x0, in a second address space this org opens outside the ROM image; the assembler cannot yet place a second address space into the ROM

@@ -1,0 +1,43 @@
+== p_after records: [('0x1', '0x0', 8), ('0x51', '0x0', 10), ('0x1', '0x18', 2)]
+== p_cont68k records: [('0x1', '0x0', 8), ('0x51', '0x0', 10), ('0x1', '0xa', 2), ('0x1', '0x18', 2)]
+== p_kos records: [('0x1', '0x0', 8), ('0x51', '0x0', 140), ('0x1', '0x208', 2)]
+== p_hex records: [('0x1', '0x0', 8), ('0x51', '0x10', 10), ('0x1', '0x18', 2)]
+== p_big records: [('0x1', '0x0', 8), ('0x51', '0x0', 20), ('0x1', '0x18', 2)]
+
+# -z address forms (driver at Z80 0x10)
+-z='10'                                  rc=0 out=01 02 03 04 05 06 07 08 10 11 12 13 14 15 16 17 18 19 ff ff ff ff ff ff aa bb
+-z='0x10'                                rc=0 out=01 02 03 04 05 06 07 08 10 11 12 13 14 15 16 17 18 19 ff ff ff ff ff ff aa bb
+-z='010'                                 rc=0 out=01 02 03 04 05 06 07 08 10 11 12 13 14 15 16 17 18 19 ff ff ff ff ff ff aa bb
+-z='10j'                                 rc=0 out=01 02 03 04 05 06 07 08 10 11 12 13 14 15 16 17 18 19 ff ff ff ff ff ff aa bb
+-z='+10'                                 rc=0 out=01 02 03 04 05 06 07 08 10 11 12 13 14 15 16 17 18 19 ff ff ff ff ff ff aa bb
+-z=' 10'                                 rc=0 out=01 02 03 04 05 06 07 08 10 11 12 13 14 15 16 17 18 19 ff ff ff ff ff ff aa bb
+-z='10 '                                 rc=0 out=01 02 03 04 05 06 07 08 10 11 12 13 14 15 16 17 18 19 ff ff ff ff ff ff aa bb
+-z='0x'                                  rc=0 out=01 02 03 04 05 06 07 08 ff ff ff ff ff ff ff ff 10 11 12 13 14 15 16 17 aa bb
+      | Error: Could not parse '-z' argument's options.
+-z='-0'                                  rc=0 out=01 02 03 04 05 06 07 08 ff ff ff ff ff ff ff ff 10 11 12 13 14 15 16 17 aa bb
+
+# CPU continuation: a 68000 record contiguous with the Z80 run
+p_cont68k after                          rc=1 out=None
+      | Error: Space reserved for the compressed Z80 segments is too small. Set 'Guess' to at least $A.
+
+# overflow leaves which output?
+overflow over a pre-existing output: rc=1 exists=False content=None
+
+# header file (third positional)
+rc=0 header now='comp_z80_size 0x60 jklmnopqrstuvwxyz\nsecond line\n'
+
+# compressors on p_kos (driver 140 bytes, gap 0x200)
+uncompressed                             rc=0 out=01 02 03 04 05 06 07 08 54 68 65 20 71 75 69 63 6b 20 62 72 6f 77 6e 20 66 6f 78 20 6a 75 6d 70 73 20 6f 76 65 72 20 74 68 65 20 6c 61 7a 79 20 64 6f 67 2e 20 54 68 65 20 71 75 69 63 6b 20 62 72 6f 77 6e 20 66 6f 78 20 6a 75 6d 70 73 20 61 67 61 69 6e 2e 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 01 02 03 04 05 01 02 03 04 05 0 ...(522 bytes)
+      stored stream ends at +0x8C (trailing FF pad stripped; a stream may itself end in FF)
+kosinski                                 rc=0 out=01 02 03 04 05 06 07 08 ff ff 54 68 65 20 71 75 69 63 6b 20 62 72 6f 77 6e ff ff 20 66 6f 78 20 6a 75 6d 70 73 20 6f 76 65 72 20 f8 bf 74 e1 6c 61 7a 79 20 64 6f 67 2e 20 7f bf d3 f8 19 61 67 61 69 6e 2e 00 ff f8 24 01 02 03 04 05 e1 2f fb f8 09 f3 ff 31 fc 1f dd 21 00 40 00 f0 00 00 00 00 00 00 00 00 00 00 00 ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff f ...(522 bytes)
+      stored stream ends at +0x60 (trailing FF pad stripped; a stream may itself end in FF)
+kosinski-optimised                       rc=0 out=01 02 03 04 05 06 07 08 ff ff 54 68 65 20 71 75 69 63 6b 20 62 72 6f 77 6e ff ff 20 66 6f 78 20 6a 75 6d 70 73 20 6f 76 65 72 20 f8 bf 74 e1 6c 61 7a 79 20 64 6f 67 2e 20 7f 3f d3 f8 19 61 67 61 69 6e 2e 00 ff f8 24 01 02 03 04 05 73 f8 fb fb f3 ff 31 fc 1f dd 0b 00 21 00 40 00 f0 00 ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff f ...(522 bytes)
+      stored stream ends at +0x57 (trailing FF pad stripped; a stream may itself end in FF)
+saxman                                   rc=0 out=01 02 03 04 05 06 07 08 ff 54 68 65 20 71 75 69 63 ff 6b 20 62 72 6f 77 6e 20 ff 66 6f 78 20 6a 75 6d 70 ff 73 20 6f 76 65 72 20 74 fe ef f0 6c 61 7a 79 20 64 6f e7 67 2e 20 ee ff 00 05 61 67 61 e7 69 6e 2e dc ff 4c 0f 00 00 01 ef 02 03 04 05 61 07 f3 f3 f3 7f 31 fc 1f dd 21 00 40 ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff f ...(522 bytes)
+      stored stream ends at +0x56 (trailing FF pad stripped; a stream may itself end in FF)
+saxman-bugged                            rc=0 out=01 02 03 04 05 06 07 08 ff 54 68 65 20 71 75 69 63 ff 6b 20 62 72 6f 77 6e 20 ff 66 6f 78 20 6a 75 6d 70 ff 73 20 6f 76 65 72 20 74 fe ef f0 6c 61 7a 79 20 64 6f e7 67 2e 20 ee ff 00 05 61 67 61 e7 69 6e 2e dc ff 4c 0f 00 00 01 ef 02 03 04 05 61 07 f3 f3 f3 7f 31 fc 1f dd 21 00 40 00 ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff f ...(522 bytes)
+      stored stream ends at +0x57 (trailing FF pad stripped; a stream may itself end in FF)
+saxman-optimised                         rc=0 out=01 02 03 04 05 06 07 08 ff 54 68 65 20 71 75 69 63 ff 6b 20 62 72 6f 77 6e 20 ff 66 6f 78 20 6a 75 6d 70 ff 73 20 6f 76 65 72 20 74 fe ef f0 6c 61 7a 79 20 64 6f e7 67 2e 20 ee f5 f6 ff 61 67 61 c7 69 6e 2e ed f0 ed fe ed ff 01 02 f7 03 04 05 61 07 f3 f3 f3 31 3f fc 1f dd 21 00 40 ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff f ...(522 bytes)
+      stored stream ends at +0x56 (trailing FF pad stripped; a stream may itself end in FF)
+kosinskiplus                             rc=0 out=01 02 03 04 05 06 07 08 ff 54 68 65 20 71 75 69 63 ff 6b 20 62 72 6f 77 6e 20 ff 66 6f 78 20 6a 75 6d 70 ff 73 20 6f 76 65 72 20 74 1f e1 6c 61 7a 79 fd 20 64 6f 67 2e 20 f8 d3 11 fe 61 67 61 69 6e 2e 00 fc f8 ff 1c 01 02 03 04 05 fb ce fb f3 1f ff 31 fc 1f dd 21 d0 00 40 f0 00 00 ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff f ...(522 bytes)
+      stored stream ends at +0x56 (trailing FF pad stripped; a stream may itself end in FF)

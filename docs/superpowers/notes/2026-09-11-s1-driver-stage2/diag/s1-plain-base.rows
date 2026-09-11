@@ -1,0 +1,1 @@
+sound/z80.asm(9):3: error: section `sec0#2` [0x0, 0x1BC6) is assembled for the Z80 at origin 0x0, in a second address space this org opens outside the ROM image; the assembler cannot yet place a second address space into the ROM

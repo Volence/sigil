@@ -1,0 +1,79 @@
+sigil /home/volence/sonic_hacks/.scratch/s1-driver-stage2/target/release/sigil ea1531bfd8dfbd4de6df6a5bdc71823b
+SAME                         p_after        -p=FF -z=0,uncompressed,Guess,after
+SAME                         p_after        -p=0 -z=0,uncompressed,Guess,after
+SAME                         p_after        -z=0,uncompressed,Guess,after
+SAME                         p_after        -p=FF -z=0,kosinski,Guess,after
+SAME                         p_after        -p=FF -z=0,saxman-bugged,Guess,after
+BOTH-REFUSE                  p_after        -p=FF -z=0,uncompressed,Guess,before
+     p2bin rc=1 Error: Space reserved for the compressed Z80 segments is too small. Set 'Guess' to at least $A.
+     sigil rc=1 p_after.asm(9):3: error: `-z=0,uncompressed,Guess,before`: the blob [0x0, 0xA) is 0xA bytes stored uncompressed, and only 0x8 are reserved for it, at [0x0, 0x8), the code before it, which it overwrites; set `Guess` to at least $A
+BOTH-REFUSE                  p_big          -p=FF -z=0,uncompressed,Guess,after
+     p2bin rc=1 Error: Space reserved for the compressed Z80 segments is too small. Set 'Guess' to at least $14.
+     sigil rc=1 p_big.asm(8):3: error: `-z=0,uncompressed,Guess,after`: the blob [0x0, 0x14) is 0x14 bytes stored uncompressed, and only 0x10 are reserved for it, at the gap [0x8, 0x18) up to the code after it; set `Guess` to at least $14
+BOTH-REFUSE                  p_big          -p=FF -z=0,uncompressed,Guess,before
+     p2bin rc=1 Error: Space reserved for the compressed Z80 segments is too small. Set 'Guess' to at least $14.
+     sigil rc=1 p_big.asm(8):3: error: `-z=0,uncompressed,Guess,before`: the blob [0x0, 0x14) is 0x14 bytes stored uncompressed, and only 0x8 are reserved for it, at [0x0, 0x8), the code before it, which it overwrites; set `Guess` to at least $14
+SAME                         p_gap          -p=FF -z=0,uncompressed,Guess,after
+BOTH-REFUSE                  p_gap          -p=FF -z=0,uncompressed,Guess,before
+     p2bin rc=1 Error: Space reserved for the compressed Z80 segments is too small. Set 'Guess' to at least $A.
+     sigil rc=1 p_gap.asm(9):3: error: `-z=0,uncompressed,Guess,before`: the blob [0x0, 0xA) is 0xA bytes stored uncompressed, and only 0x8 are reserved for it, at [0x0, 0x8), the code before it, which it overwrites; set `Guess` to at least $A
+SAME                         p_before       -p=FF -z=0,uncompressed,Guess,before
+BOTH-REFUSE                  p_before       -p=FF -z=0,uncompressed,Guess,after
+     p2bin rc=1 Error: Space reserved for the compressed Z80 segments is too small. Set 'Guess' to at least $A.
+     sigil rc=1 p_before.asm(9):3: error: `-z=0,uncompressed,Guess,after`: the blob [0x0, 0xA) is 0xA bytes stored uncompressed, and only 0x0 are reserved for it, at the gap [0x18, 0x18) up to the code after it; set `Guess` to at least $A
+SAME                         p_two          -p=FF -z=0,uncompressed,Guess,before -z=1300,uncompressed,Guess2,before
+SAME                         p_two          -p=FF -z=1300,uncompressed,Guess2,before -z=0,uncompressed,Guess,before
+SIGIL-REFUSES                p_two          -p=FF -z=0,uncompressed,Guess,before
+     p2bin rc=0 
+     sigil rc=1 p_two.asm(20):3: error: section `sec4864` [0x1300, 0x1306) is assembled for the Z80 at origin 0x1300, in a second address space this org opens outside the ROM image, and no -z instruction places it into the ROM
+SIGIL-REFUSES                p_two          -p=FF -z=1300,uncompressed,Guess2,before
+     p2bin rc=0 
+     sigil rc=1 p_two.asm(10):3: error: section `sec0#1` [0x0, 0xA) is assembled for the Z80 at origin 0x0, in a second address space this org opens outside the ROM image, and no -z instruction places it into the ROM
+BOTH-REFUSE                  p_seg          -p=FF -z=0,uncompressed,Guess,after
+     p2bin rc=1 Error: Space reserved for the compressed Z80 segments is too small. Set 'Guess' to at least $3.
+     sigil rc=1 p_seg.asm(8):3: error: `-z=0,uncompressed,Guess,after`: the blob is the Z80 code at [0x0, 0x3), and its address space also holds [0x8, 0xA), which does not continue it; p2bin would compress only the first and write the rest at its Z80 address
+BOTH-REFUSE                  p_segback      -p=FF -z=0,uncompressed,Guess,after
+     p2bin rc=1 Error: Space reserved for the compressed Z80 segments is too small. Set 'Guess' to at least $8.
+     sigil rc=1 p_segback.asm(8):3: error: `-z=0,uncompressed,Guess,after`: the blob is the Z80 code at [0x0, 0x8), and its address space also holds [0x2, 0x4), which does not continue it; p2bin would compress only the first and write the rest at its Z80 address
+SIGIL-REFUSES                p_phase_after  -p=FF -z=0,uncompressed,Guess,after
+     p2bin rc=0 
+     sigil rc=1 p_phase_after.asm(8):3: error: `-z=0,uncompressed,Guess,after`: the blob is the Z80 code at [0x0, 0xA), and its address space also holds [0x18, 0x1A), which does not continue it; p2bin would compress only the first and write the rest at its Z80 address
+SAME                         p_hex          -p=FF -z=10,uncompressed,Guess,after
+SIGIL-REFUSES                p_hex          -p=FF -z=16,uncompressed,Guess,after
+     p2bin rc=0 
+     sigil rc=1 p_hex.asm(8):3: error: section `sec16` [0x10, 0x1A) is assembled for the Z80 at origin 0x10, in a second address space this org opens outside the ROM image, and no -z instruction places it into the ROM
+BOTH-REFUSE                  p_cont68k      -p=FF -z=0,uncompressed,Guess,after
+     p2bin rc=1 Error: Space reserved for the compressed Z80 segments is too small. Set 'Guess' to at least $A.
+     sigil rc=1 p_cont68k.asm(8):3: error: `-z=0,uncompressed,Guess,after`: the blob [0x0, 0xA) is 0xA bytes stored uncompressed, and only 0x2 are reserved for it, at the gap [0x8, 0xA) up to the code after it; set `Guess` to at least $A
+SAME                         p_last         -p=FF -z=0,uncompressed,Guess,after
+BOTH-REFUSE                  p_last         -p=FF -z=0,uncompressed,Guess,before
+     p2bin rc=1 Error: Space reserved for the compressed Z80 segments is too small. Set 'Guess' to at least $A.
+     sigil rc=1 p_last.asm(8):3: error: `-z=0,uncompressed,Guess,before`: the blob [0x0, 0xA) is 0xA bytes stored uncompressed, and only 0x8 are reserved for it, at [0x0, 0x8), the code before it, which it overwrites; set `Guess` to at least $A
+SIGIL-REFUSES                p_first        -p=FF -z=0,uncompressed,Guess,after
+     p2bin rc=0 
+     sigil rc=1 error: `-z=0,uncompressed,Guess,after` names no second address space: no Z80 code assembled outside the image starts at 0x0 (code outside the image starts at: none)
+BOTH-REFUSE                  p_first        -p=FF -z=0,uncompressed,Guess,before
+     p2bin rc=1 Error: Space reserved for the compressed Z80 segments is too small. Set 'Guess' to at least $A.
+     sigil rc=1 error: `-z=0,uncompressed,Guess,before` names no second address space: no Z80 code assembled outside the image starts at 0x0 (code outside the image starts at: none)
+SAME                         p_kos          -p=FF -z=0,uncompressed,Guess,after
+SAME                         p_kos          -p=FF -z=0,kosinski,Guess,after
+SAME                         p_kos          -p=FF -z=0,saxman-bugged,Guess,after
+BOTH-REFUSE                  p_kos          -p=0 -z=0,kosinski,Guess,before
+     p2bin rc=1 Error: Space reserved for the compressed Z80 segments is too small. Set 'Guess' to at least $60.
+     sigil rc=1 p_kos.asm(8):3: error: `-z=0,kosinski,Guess,before`: the blob [0x0, 0x8C) is 0x60 bytes compressed as kosinski, and only 0x8 are reserved for it, at [0x0, 0x8), the code before it, which it overwrites; set `Guess` to at least $60
+SAME                         p_s3k          -p=FF -z=0,kosinski,Size_of_Snd_driver_guess,before -z=1300,kosinski,Size_of_Snd_driver2_guess,before
+SAME                         p_s3k          -p=FF -z=0,uncompressed,Size_of_Snd_driver_guess,before -z=1300,uncompressed,Size_of_Snd_driver2_guess,before
+SIGIL-REFUSES                p_s3k          -p=FF -z=0,kosinski,Size_of_Snd_driver_guess,before
+     p2bin rc=0 
+     sigil rc=1 p_s3k.asm(83):4: error: section `sec4864` [0x1300, 0x1323) is assembled for the Z80 at origin 0x1300, in a second address space this org opens outside the ROM image, and no -z instruction places it into the ROM
+SAME                         p_sameorigin   -p=FF -z=0,uncompressed,Guess,after
+SAME                         p_pad          -p=FF
+SAME                         p_pad          -p=0
+SIGIL-REFUSES                p_straddle     -p=FF -z=0,saxman-bugged,Guess,after
+     p2bin rc=0 
+     sigil rc=1 p_straddle.asm(8):3: error: `-z=0,saxman-bugged,Guess,after`: the stored saxman-bugged stream does not decompress to the blob that was assembled (sigil's decompressor returns 0x64 bytes against 0x64, first difference at offset 0x2), so the game would load a different driver
+SAME                         p_straddle     -p=FF -z=0,kosinski,Guess,after
+SIGIL-REFUSES                p_after        -p=FF -z=40,uncompressed,Guess,after
+     p2bin rc=0 
+     sigil rc=1 p_after.asm(9):3: error: section `sec0#1` [0x0, 0xA) is assembled for the Z80 at origin 0x0, in a second address space this org opens outside the ROM image, and no -z instruction places it into the ROM
+TALLY {'SAME': 20, 'BOTH-REFUSE': 11, 'SIGIL-REFUSES': 8}
