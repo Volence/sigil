@@ -76,7 +76,7 @@ fn an_unknown_extern_read_by_the_driver_cycle_guards_is_refused() {
     for debug in [false, true] {
         let err = blob_with_driver(&aeon, &text, debug).expect_err("an unknown name must not link");
         assert!(err.contains(&want), "debug={debug}: want `{want}` in:\n{err}");
-        assert_eq!(err.matches("[extern.unknown]").count(), 1, "one refusal, not one per guard:\n{err}");
+        assert_eq!(err.matches("[Error]").count(), 1, "one refusal, not one per guard:\n{err}");
     }
 }
 
