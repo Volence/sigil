@@ -35,7 +35,8 @@ const PROVISIONAL_CPU: Cpu = Cpu::Z80;
 /// - The `cpu X` **directive** resets `padding`/`supmode` to CPU defaults
 ///   **unconditionally** — even when `X` is the current CPU (probe d:
 ///   `padding off; cpu 68000` ends padding ON). See [`AsmState::set_cpu`].
-/// - `save` snapshots only the CPU. `restore` re-applies the saved CPU and, **only
+/// - `save` snapshots the CPU and the undocumented-Z80 mode
+///   ([`AsmState::z80_undoc`]). `restore` re-applies both and, **only
 ///   if it differs from the current one**, resets `padding`/`supmode` to that CPU's
 ///   default (probe t14). If the CPU is unchanged, they are left as-is (probe t12).
 ///   `restore` **never** restores a saved `padding`/`supmode` value (probes b, c:
