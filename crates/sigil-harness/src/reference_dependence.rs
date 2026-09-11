@@ -14,6 +14,8 @@
 //! A derivation that silently returns nothing would report a perfectly measured suite —
 //! this module's own failure mode arriving one level up — so every consumer is expected to
 //! carry a positive control against [`FLOOR`].
+//!
+//! read-set: not a build input: a census of this repo's own test sources; no `sigil build` path calls into this module.
 
 use std::path::{Path, PathBuf};
 

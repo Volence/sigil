@@ -180,7 +180,7 @@ pub fn require_reference_tree(aeon: &Path) -> Result<(), String> {
 /// harness's map reader ([`load_placement_map`]) — no second map engine.
 fn bank_anchors(aeon: &Path) -> Result<BankAnchors, String> {
     let path = aeon.join(SOUND_PLACEMENT_MAP_REL);
-    let src = std::fs::read_to_string(&path).map_err(|e| format!("read {}: {e}", path.display()))?;
+    let src = sigil_span::read_set::read_to_string(&path).map_err(|e| format!("read {}: {e}", path.display()))?;
     bank_anchors_from_str(&src)
 }
 
@@ -434,7 +434,7 @@ pub fn emit_dac_banks(aeon: &Path) -> Result<DacBanks, String> {
 fn emit_dac_banks_at(aeon: &Path, blip_lma: u32, shared_lma: u32) -> Result<DacBanks, String> {
     let dir = aeon.join("games/sonic4/data/sound");
     let emp = dir.join("dac_samples.emp");
-    let src = std::fs::read_to_string(&emp).map_err(|e| format!("read {}: {e}", emp.display()))?;
+    let src = sigil_span::read_set::read_to_string(&emp).map_err(|e| format!("read {}: {e}", emp.display()))?;
 
     let (file, pdiags) = parse_str(&src);
     if pdiags.iter().any(|d| d.level == sigil_span::Level::Error) {
@@ -518,7 +518,7 @@ fn lower_emp_file(
     defines: Vec<(String, i128)>,
     texts: &mut SourceTexts,
 ) -> Result<sigil_ir::Module, String> {
-    let src = std::fs::read_to_string(path).map_err(|e| format!("read {}: {e}", path.display()))?;
+    let src = sigil_span::read_set::read_to_string(path).map_err(|e| format!("read {}: {e}", path.display()))?;
     let (file, pdiags) = parse_file(&src, texts.add(path, &src));
     if pdiags.iter().any(|d| d.level == sigil_span::Level::Error) {
         return Err(format!("{} parse errors: {pdiags:?}", path.display()));
@@ -664,7 +664,7 @@ pub fn emit_dac_artifacts(aeon: &Path, out_dir: &Path) -> Result<(), String> {
     std::fs::create_dir_all(out_dir).map_err(|e| format!("mkdir {}: {e}", out_dir.display()))?;
     let write = |name: &str, bytes: &[u8]| -> Result<(), String> {
         let p = out_dir.join(name);
-        std::fs::write(&p, bytes).map_err(|e| format!("write {}: {e}", p.display()))
+        sigil_span::read_set::write_generated(&p, bytes).map_err(|e| format!("write {}: {e}", p.display()))
     };
     write("dac_blip_bank.bin", &out.blip)?;
     write("dac_shared_bank.bin", &out.shared)?;
@@ -978,7 +978,7 @@ pub fn emit_sound_tables_artifacts(aeon: &Path, out_dir: &Path) -> Result<(), St
     let bytes = emit_sound_tables_z80(aeon)?;
     std::fs::create_dir_all(out_dir).map_err(|e| format!("mkdir {}: {e}", out_dir.display()))?;
     let p = out_dir.join("sound_tables_z80.bin");
-    std::fs::write(&p, &bytes).map_err(|e| format!("write {}: {e}", p.display()))?;
+    sigil_span::read_set::write_generated(&p, &bytes).map_err(|e| format!("write {}: {e}", p.display()))?;
     Ok(())
 }
 
@@ -1010,7 +1010,7 @@ pub fn emit_pitchtable_doctored(aeon: &Path, doctor: bool) -> Result<Vec<u8>, St
     let dir = aeon.join("games/sonic4/data/sound");
     let emp = dir.join("movingtrucks_pitchtable.emp");
     let mut src =
-        std::fs::read_to_string(&emp).map_err(|e| format!("read {}: {e}", emp.display()))?;
+        sigil_span::read_set::read_to_string(&emp).map_err(|e| format!("read {}: {e}", emp.display()))?;
     if doctor {
         // The first data cell: the `$00` immediately after the first `dc.b`.
         let anchor = src.find("dc.b").ok_or("pitchtable has no dc.b to doctor")?;
@@ -1072,7 +1072,7 @@ pub fn emit_pitchtable_artifacts(aeon: &Path, out_dir: &Path) -> Result<(), Stri
     let bytes = emit_pitchtable(aeon)?;
     std::fs::create_dir_all(out_dir).map_err(|e| format!("mkdir {}: {e}", out_dir.display()))?;
     let p = out_dir.join("movingtrucks_pitchtable.bin");
-    std::fs::write(&p, &bytes).map_err(|e| format!("write {}: {e}", p.display()))?;
+    sigil_span::read_set::write_generated(&p, &bytes).map_err(|e| format!("write {}: {e}", p.display()))?;
     Ok(())
 }
 
@@ -1088,7 +1088,7 @@ pub fn emit_seq_opcode_artifacts(aeon: &Path, out_dir: &Path) -> Result<(), Stri
     std::fs::create_dir_all(out_dir).map_err(|e| format!("mkdir {}: {e}", out_dir.display()))?;
     for (name, bytes) in artifacts {
         let p = out_dir.join(name);
-        std::fs::write(&p, &bytes).map_err(|e| format!("write {}: {e}", p.display()))?;
+        sigil_span::read_set::write_generated(&p, &bytes).map_err(|e| format!("write {}: {e}", p.display()))?;
     }
     Ok(())
 }
@@ -1115,7 +1115,7 @@ pub fn emit_sfx_artifacts(aeon: &Path, out_dir: &Path) -> Result<(), String> {
     std::fs::create_dir_all(out_dir).map_err(|e| format!("mkdir {}: {e}", out_dir.display()))?;
     for (name, bytes) in artifacts {
         let p = out_dir.join(name);
-        std::fs::write(&p, &bytes).map_err(|e| format!("write {}: {e}", p.display()))?;
+        sigil_span::read_set::write_generated(&p, &bytes).map_err(|e| format!("write {}: {e}", p.display()))?;
     }
     Ok(())
 }
@@ -1159,7 +1159,7 @@ fn emit_mt_bank_at(
 ) -> Result<MtBank, String> {
     let dir = aeon.join("games/sonic4/data/sound");
     let emp = dir.join("mt_bank.emp");
-    let src = std::fs::read_to_string(&emp).map_err(|e| format!("read {}: {e}", emp.display()))?;
+    let src = sigil_span::read_set::read_to_string(&emp).map_err(|e| format!("read {}: {e}", emp.display()))?;
     let mut texts = SourceTexts::new();
     let (file, pdiags) = parse_file(&src, texts.add(&emp, &src));
     if pdiags.iter().any(|d| d.level == sigil_span::Level::Error) {
@@ -1283,7 +1283,7 @@ pub fn emit_mt_artifacts(aeon: &Path, out_dir: &Path) -> Result<(), String> {
     std::fs::create_dir_all(out_dir).map_err(|e| format!("mkdir {}: {e}", out_dir.display()))?;
     for (name, data) in artifacts {
         let path = out_dir.join(name);
-        std::fs::write(&path, &data).map_err(|e| format!("write {}: {e}", path.display()))?;
+        sigil_span::read_set::write_generated(&path, &data).map_err(|e| format!("write {}: {e}", path.display()))?;
     }
     Ok(())
 }

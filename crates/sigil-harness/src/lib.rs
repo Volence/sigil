@@ -106,6 +106,11 @@ pub mod section_align;
 /// including the file-mode question a rename answers differently from a truncation.
 pub mod atomic_write;
 
+/// The `.lst` source digest of one native build: the files it read (from the
+/// `sigil_span::read_set` recorder), the module scan's membership, the build
+/// configuration and the identity of the ROM it wrote.
+pub mod source_digest;
+
 use sigil_link::LinkedImage;
 
 // The region base LMAs are NOT constants here. Each has exactly one authority, and a

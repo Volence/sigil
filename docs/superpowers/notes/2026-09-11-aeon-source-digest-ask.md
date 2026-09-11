@@ -99,3 +99,19 @@ it would make every aeon build's placement tables vanish.
 **This lane told aeon twice in one thread that no such read existed**, both times from a search piped
 through `head` whose first lines were other files, so the `native.rs` hits were cut off. A truncated
 list was read as an empty one. The correction was sent to aeon the same hour.
+
+## Third amendment, 2026-09-11: the section moved to the top, and oracle's rule that keeps that safe
+
+The implementing parcel moved the section to the TOP of the `.lst`: oracle's `SymbolTable::parse`
+counts every unrecognised line after a section header as damage, so at the end it would have marked
+every listing "not intact" and refused the `--lean` shape outright. Aeon accepted the move
+(revision 2); their primitive finds the section by `^DIGEST-`, never by position.
+
+**Oracle's side, verified by them at their `origin/main` `134aa62` and stated as a behaviour they
+mean to keep:** before the `Symbol Table` header an unrecognised line is explicitly not damage.
+**The emitter rule it imposes on us:** no line before the listing may begin, after leading
+whitespace, with `Symbol Table`, `Equate Table` or `Phase Table` (the last two are matched from any
+section). Pinned on this side by `source_digest_lines_never_parse_as_a_consumer_row`
+(`crates/sigil-link/src/listing.rs`, which transcribes oracle's header matcher), and on oracle's side
+by a named test riding their next lens parcel. Oracle's fixture pins (`aeon_pin`, `aeon_dimensions`)
+change at their next re-pin from a digest build; that is the added section, not a parse change.

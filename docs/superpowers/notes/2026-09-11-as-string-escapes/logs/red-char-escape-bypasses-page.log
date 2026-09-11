@@ -1,0 +1,27 @@
+test a_backslash_with_nothing_after_it_is_refused ... ok
+test a_string_in_an_expression_counts_and_packs_escaped_characters ... ok
+test an_escape_is_judged_only_where_the_literal_is_evaluated ... ok
+test a_charset_target_takes_its_escapes_and_stores_them_raw ... ok
+test a_string_macro_argument_is_unescaped_once_where_it_is_used ... ok
+test a_character_constant_takes_the_same_escapes ... ok
+test an_escaped_character_goes_through_the_live_code_page ... FAILED
+test message_and_warning_text_take_the_escapes ... ok
+test the_z80_data_directive_and_character_constant_take_the_same_escapes ... ok
+test an_interpolation_with_no_value_is_refused_in_data ... ok
+test sonic_2_s_charset_backslash_h_line_assembles ... ok
+test an_escaped_quote_does_not_end_the_literal ... ok
+test an_invalid_escape_is_refused_in_every_context ... ok
+test an_interpolation_and_the_escapes_around_it_are_one_scan ... ok
+test string_builtins_and_string_symbols_see_the_escaped_value ... ok
+test every_escape_form_asl_accepts_emits_asl_s_bytes_in_a_data_string ... ok
+test every_escape_form_asl_refuses_is_refused_out_loud ... ok
+  " charset $41,$11\n charset $27,$55\n charset $5C,$66\n charset $07,$77\n charset $0A,$AA\n charset $22,$BB\n dc.w '\\x41'"
+    asl   [00, 11]
+    sigil Ok([00, 41])
+  " charset $41,$11\n charset $27,$55\n charset $5C,$66\n charset $07,$77\n charset $0A,$AA\n charset $22,$BB\n dc.w '\\H'"
+    asl   [00, 55]
+    sigil Ok([00, 27])
+  " charset $41,$11\n charset $27,$55\n charset $5C,$66\n charset $07,$77\n charset $0A,$AA\n charset $22,$BB\n charset '\\H',$99\n dc.b \"'U\""
+    asl   [55, 99]
+    sigil Ok([99, 55])
+test result: FAILED. 16 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s

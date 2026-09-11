@@ -26,6 +26,10 @@ pub use map_load::load_map;
 
 mod listing;
 pub use listing::{demangle_symbols, emit_listing, ListingSymbol};
+pub use listing::{
+    digest_scan_identity, emit_source_digest, parse_source_digest, DigestOrigin, DigestPath,
+    DigestRead, DigestRoot, SourceDigest, SOURCE_DIGEST_FORMAT, SOURCE_DIGEST_HEADER,
+};
 
 /// One section's resolved bytes and where they load.
 #[derive(Clone, Debug, Eq, PartialEq)]

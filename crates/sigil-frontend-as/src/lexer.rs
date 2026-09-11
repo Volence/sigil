@@ -123,18 +123,18 @@ fn lex_into(
                 }
                 i += 1; // closing brace
             }
+            // A string literal keeps its SOURCE form: escapes are processed where
+            // the string is used as a value (`crate::escape`), not here, so a
+            // string that is never evaluated (an `include` path, a line in an
+            // `if 0` branch) is never judged. Only the extent is escape-aware: a
+            // `\"` does not close the literal.
             b'"' => {
                 let start = i;
-                i += 1;
-                let s0 = i;
-                while i < bytes.len() && bytes[i] != b'"' {
-                    i += 1;
-                }
-                if i >= bytes.len() {
-                    return Err(err(start, i, "unterminated string literal"));
-                }
-                let s = std::str::from_utf8(&bytes[s0..i]).unwrap().to_string();
-                i += 1; // closing quote
+                let Some(close) = crate::escape::literal_end(bytes, i) else {
+                    return Err(err(start, bytes.len(), "unterminated string literal"));
+                };
+                let s = std::str::from_utf8(&bytes[i + 1..close]).unwrap().to_string();
+                i = close + 1;
                 out.push(Token {
                     tok: Tok::Str(s),
                     span: span_at(start, i),
@@ -197,21 +197,31 @@ fn lex_into(
             // '0','9',$00`) never index a character an earlier `charset` moved,
             // so a build that leaves this arm on the identity page emits Sonic
             // 1's 504 bytes correctly.
+            //
+            // An ESCAPE yields a character that goes through the page too: with
+            // `charset $41,$11` live, asl assembles `dc.w '\x41'` as `0011` and
+            // `charset '\H',$99` under `charset $27,$55` remaps index `$55`. So
+            // the body is unescaped first and every resulting byte is mapped.
             b'\'' => {
                 let start = i;
-                i += 1;
-                let s0 = i;
-                while i < bytes.len() && bytes[i] != b'\'' {
-                    i += 1;
-                }
-                if i >= bytes.len() {
-                    return Err(err(start, i, "unterminated character constant"));
-                }
+                let Some(close) = crate::escape::literal_end(bytes, i) else {
+                    return Err(err(start, bytes.len(), "unterminated character constant"));
+                };
+                let body = crate::escape::unescape_bytes(&line[i + 1..close]).map_err(|e| {
+                    let msg = match e {
+                        crate::escape::EscapeError::Interp(_) => {
+                            "string interpolation `\\{...}` is not supported in a character constant"
+                                .to_string()
+                        }
+                        other => other.to_string(),
+                    };
+                    err(start, close + 1, &msg)
+                })?;
                 let mut v: i64 = 0;
-                for &ch in &bytes[s0..i] {
+                for &ch in &body {
                     v = (v << 8) | i64::from(cs.map_char(ch as char));
                 }
-                i += 1; // closing quote
+                i = close + 1;
                 out.push(Token {
                     tok: Tok::Int(v),
                     span: span_at(start, i),

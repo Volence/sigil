@@ -218,7 +218,7 @@ pub fn check_banked_carrier_drift(aeon: &Path) -> Result<(), String> {
 fn parse_one(aeon: &Path, spec: &FileSpec) -> (ast::File, PathBuf) {
     let path = aeon.join(spec.rel_path);
     let dir = path.parent().expect("file has a parent dir").to_path_buf();
-    let src = std::fs::read_to_string(&path)
+    let src = sigil_span::read_set::read_to_string(&path)
         .unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
     let (file, pdiags) = parse_str(&src);
     assert!(
@@ -789,7 +789,7 @@ pub fn emit_sound_blob(aeon: &Path, out_dir: &Path) -> Result<(), String> {
     std::fs::create_dir_all(&out_dir).map_err(|e| format!("mkdir {}: {e}", out_dir.display()))?;
     let write = |name: &str, bytes: &[u8]| -> Result<(), String> {
         let p = out_dir.join(name);
-        std::fs::write(&p, bytes).map_err(|e| format!("write {}: {e}", p.display()))
+        sigil_span::read_set::write_generated(&p, bytes).map_err(|e| format!("write {}: {e}", p.display()))
     };
     write("z80_sound_blob.bin", &plain.bytes)?;
     write("z80_sound_blob_debug.bin", &debug.bytes)?;
@@ -1011,7 +1011,7 @@ pub fn z80_clobbers_report_doctored(
 /// resolve error (the blob is a hard build dependency). Drives the full evaluator,
 /// so `offsetof`/`sizeof`/derivation RHSs fold exactly as in the real build.
 fn eval_pub_consts(path: &Path, aeon: &Path, defines: &[(String, i128)]) -> Vec<(String, i64)> {
-    let src = std::fs::read_to_string(path)
+    let src = sigil_span::read_set::read_to_string(path)
         .unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
     let (file, pdiags) = parse_str(&src);
     assert!(

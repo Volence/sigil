@@ -82,6 +82,8 @@
 //!     this today, and the defect message names the possibility.
 //!
 //! Those residuals are ledgered in `docs/superpowers/notes/campaign-gap-ledger.md`.
+//!
+//! read-set: not a build input: a census of this repo's own test sources; no `sigil build` path calls into this module.
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};

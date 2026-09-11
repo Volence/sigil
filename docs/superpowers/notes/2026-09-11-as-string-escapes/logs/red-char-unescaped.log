@@ -1,0 +1,30 @@
+test a_backslash_with_nothing_after_it_is_refused ... ok
+test a_charset_target_takes_its_escapes_and_stores_them_raw ... ok
+test sonic_2_s_charset_backslash_h_line_assembles ... FAILED
+test an_escaped_quote_does_not_end_the_literal ... ok
+test the_z80_data_directive_and_character_constant_take_the_same_escapes ... FAILED
+test a_string_macro_argument_is_unescaped_once_where_it_is_used ... ok
+test an_escape_is_judged_only_where_the_literal_is_evaluated ... ok
+test a_character_constant_takes_the_same_escapes ... FAILED
+test string_builtins_and_string_symbols_see_the_escaped_value ... ok
+test an_invalid_escape_is_refused_in_every_context ... FAILED
+test every_escape_form_asl_accepts_emits_asl_s_bytes_in_a_data_string ... ok
+test an_interpolation_and_the_escapes_around_it_are_one_scan ... ok
+test a_string_in_an_expression_counts_and_packs_escaped_characters ... ok
+test an_escaped_character_goes_through_the_live_code_page ... FAILED
+test an_interpolation_with_no_value_is_refused_in_data ... ok
+test message_and_warning_text_take_the_escapes ... ok
+test every_escape_form_asl_refuses_is_refused_out_loud ... ok
+  " charset '\\H',\"\\x39\\x37\\x38\"\n dc.b \"'()\""
+    asl   [39, 37, 38]
+    sigil Err(["charset operand 23624 out of range 0..=255"])
+  " charset '@',\"\\x3B\\2\\4\\6\\8\\xA\\xC\\xE\\x10\\x12\\x13\\x15\\x17\\x19\\x1B\\x1D\\x1F\\x21\\x23\\x25\\x27\\x29\\x2B\\x2D\\x2F\\x31\\x33\"\n charset '\\H',\"\\x39\\x37\\x38\"\n dc.b \"@ABHIJ\"\n charset\n dc.b \"HIJ\""
+    asl   [3B, 02, 04, 10, 12, 13, 48, 49, 4A]
+    sigil Err(["charset operand 23568 out of range 0..=255"])
+  " ld a,'\\x41'"
+    asl   [3E, 41]
+    sigil Err(["operand 1551381553 out of range -128..=255"])
+  " dc.w '\\x41'"
+    asl   [00, 41]
+    sigil Err(["operand 1551381553 out of range -32768..=65535"])
+  " dc.w '\\65'"

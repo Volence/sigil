@@ -55,6 +55,8 @@
 //!   * Two concurrent freezes in one tree: the second truncates the first's journal, and
 //!     the extent then reads as understated. Concurrency is already refused a step later,
 //!     by `freeze_open`'s leftover-staging check, and understating is the safe direction.
+//!
+//! read-set: not a build input: the freeze journal, read by `refreeze` and its gates; no `sigil build` path calls into this module.
 
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};

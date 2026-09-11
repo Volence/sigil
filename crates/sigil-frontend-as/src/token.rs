@@ -71,7 +71,9 @@ pub enum Tok {
     /// `eval.rs::eval_float`). Elsewhere it is a parse error, same as any
     /// other unrecognized atom.
     Float(f64),
-    /// String literal contents (raw, quotes stripped; escapes NOT processed).
+    /// String literal contents in SOURCE form: quotes stripped, escapes NOT
+    /// processed. The value, escapes processed, is computed where the string is
+    /// used (`crate::escape`).
     Str(String),
     /// `$` location counter (Z80 context only).
     Dollar,

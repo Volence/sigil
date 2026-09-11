@@ -1,0 +1,28 @@
+stamp (plain commands, before the run, from the worktree):
+  pwd     /home/volence/sonic_hacks/sigil/.claude/worktrees/agent-a3c01b40c82d95852
+  HEAD    9b3f22fdfc015b261fb8008ee5be2a26c2132a25   (the tip; comment-only over 99445b2c)
+  branch  parcel/as-string-escapes
+  git status --porcelain --untracked-files=no: empty
+
+command:
+  SIGIL_ALLOW_PARTIAL=1 CARGO_TARGET_DIR=/home/volence/sonic_hacks/.scratch/as-string-escapes/target \
+    cargo test --release -p sigil-frontend-as -p sigil-cli --no-fail-fast -- --nocapture
+
+result at 9b3f22fd, summed over every `test result:` line (230 of them):
+  passed 1549  failed 0  ignored 1
+  SUITE_EXIT=0
+  lines matching `^test .* FAILED$` or `panicked at`: 0
+  partial-run banner: "130 test binaries are reference-dependent and every row in them is left UNMEASURED"
+  tests/as_string_escapes.rs ran (17 tests)
+  version_reports_the_head_of_the_tree_it_was_built_from ... ok
+  the_published_line_states_this_revision_s_position_against_a_named_remote_ref ... ok
+
+the same command at 99445b2c (implementation + tests, before the comment-only commit):
+  passed 1549  failed 0  ignored 1  SUITE_EXIT=0, 230 binaries, same 130 unmeasured
+
+the same command before tests/as_string_escapes.rs existed (implementation only, dirty tree on 42d3fd29):
+  passed 1532  failed 0  ignored 1  SUITE_EXIT=0, same 130 unmeasured
+
+clippy at 9b3f22fd (and, separately, at 99445b2c):
+  CARGO_TARGET_DIR=... cargo clippy --release -p sigil-frontend-as -p sigil-cli --all-targets -- -D warnings
+  exit 0

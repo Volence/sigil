@@ -30,6 +30,8 @@
 //! written as a literal in this file would move with whatever it was copied
 //! from and could never disagree with the tool actually run; the test
 //! `no_digest_literal_in_this_source` holds that line.
+//!
+//! read-set: not a build input: identifies the retired asl binary for the vector generators and their gates; no `sigil build` path calls into this module.
 
 use std::path::Path;
 use std::process::Command;
