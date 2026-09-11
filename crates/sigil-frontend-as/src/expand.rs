@@ -399,14 +399,71 @@ pub(crate) fn split_top_commas(toks: &[Token]) -> Vec<&[Token]> {
     groups
 }
 
-/// Where a macro call argument's KEYWORD separator sits: the index of the `=`
-/// that splits `name=value`, or `None` for a plain positional argument.
+/// The byte ranges of a macro call's ARGUMENTS within `operand`, the text that
+/// follows the macro's name on the invocation line, each trimmed of blanks.
 ///
-/// asl decides this on the argument's raw text, before it means anything: the
-/// FIRST `=` outside brackets and outside a string literal splits the argument,
-/// and whatever stands to the left of it is the keyword's NAME whether or not
-/// that text is an identifier, a parameter, or even non-empty. asl `-U`,
-/// `m macro px,py,pz` over `dc.b px,py,pz` (probes `k3.asm`–`k7.asm`):
+/// AS arguments are TEXT: asl cuts the operand at commas and pastes each piece
+/// as written. A word no lexer rule reads (`2p.bin`, `1up`, `a@b`, `\x41`) is an
+/// argument like any other, and a number keeps its spelling: `$10` stays `$10`,
+/// `007` stays `007`, `%101` stays `%101`, and a tab inside an argument stays a
+/// tab. asl `-U`, exit 0 (probes `m5*`), the second column read off the
+/// expansion's own listing line:
+///
+/// ```text
+///   pal Special Stage 1 2p.bin       dc.b "Special Stage 1 2p.bin"
+///   m   aa  ,  bb  ,cc   ; comment   (aa)(bb)(cc)   ALLARGS aa,bb,cc   ARGCOUNT 3
+///   m (1,2),3   and   m [1,2],3      one argument each side of the outer comma
+///   m "a,b",c   m "a;b",c   m 'a,b',c   a literal keeps its comma and its `;`
+///   m af',bb                         `af'` is a register name, not a quote
+///   m ,bb,                           ()(bb)()       ARGCOUNT 3
+/// ```
+///
+/// A comma splits only outside parentheses, brackets and literals, and a `;`
+/// outside a literal starts the comment. Each argument is trimmed of blanks at
+/// both ends and keeps the blanks inside it. An operand with no text has no
+/// arguments at all (`ARGCOUNT` 0), while `m ,` has two empty ones.
+pub(crate) fn split_macro_args(operand: &str) -> Vec<(usize, usize)> {
+    let b = operand.as_bytes();
+    let mut pieces = Vec::new();
+    let (mut depth, mut start, mut i) = (0i32, 0usize, 0usize);
+    let mut end = b.len();
+    while i < b.len() {
+        if let Some(next) = skip_literal(b, i) {
+            i = next;
+            continue;
+        }
+        match b[i] {
+            b';' => {
+                end = i;
+                break;
+            }
+            b'(' | b'[' => depth += 1,
+            b')' | b']' => depth -= 1,
+            b',' if depth == 0 => {
+                pieces.push(trim_blanks(b, start, i));
+                start = i + 1;
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+    let last = trim_blanks(b, start, end);
+    if pieces.is_empty() && last.0 == last.1 {
+        return pieces;
+    }
+    pieces.push(last);
+    pieces
+}
+
+/// Where a macro argument's KEYWORD separator sits: the offset of the first `=`
+/// in the argument's text outside parentheses, brackets and literals, or `None`
+/// for a positional argument.
+///
+/// asl decides this on the argument's text, before it means anything: whatever
+/// stands left of that `=`, trimmed, is the keyword's NAME whether or not it is
+/// an identifier, a parameter, or even non-empty, and the trimmed text right of
+/// it is the value. asl `-U`, `m macro px,py,pz` over `dc.b px,py,pz` (probes
+/// `k3.asm`-`k7.asm`):
 ///
 /// ```text
 ///    7/       0 : (MACRO)              	m	1,zz=2,3
@@ -421,40 +478,53 @@ pub(crate) fn split_top_commas(toks: &[Token]) -> Vec<&[Token]> {
 ///   10/       5 : 0101 04                     dc.b    1,2<>3,4
 /// ```
 ///
-/// — `zz=2` and `2=3` split (and bind nothing, which is why both expansions
+/// So `zz=2` and `2=3` split (and bind nothing, which is why both expansions
 /// show two empty fields); a parenthesised or quoted `=` does not split; and
-/// `<>`, carrying no `=` at all, is an ordinary expression. The quoted case
-/// needs no test here: this front end's lexer holds a string literal in ONE
-/// `Tok::Str`, so an `=` inside quotes is not a `Punct::Eq` to begin with. asl
-/// also protects a `[…]`-bracketed `=`; that reaches no decision here, because
-/// this lexer refuses a bare `[` in an operand outright.
-///
-/// The one place this cannot follow asl is `2<=3` and `2>=3`, which asl splits
-/// at the `=` into the keyword names `2<` and `2>`. This front end's lexer folds
-/// those two characters into a single `Le`/`Ge` token by maximal munch, so the
-/// `=` no longer exists to be found here and the argument stays positional.
-/// Reaching that difference needs a bare (unbracketed) `<=`/`>=` in a macro
-/// argument; s1disasm, s2disasm and all four aeon shapes contain none, so the
-/// corner is unreached rather than handled.
-//
-// The `text` block above is asl's listing output pasted verbatim, and the tabs in it
-// are asl's own field separators. They are the evidence: the claim this comment makes
-// is about what the reference assembler PRINTED, and respacing them into four spaces
-// would silently restate that claim about a listing asl never produced. The lint is
-// correct in general and stays on everywhere else in the workspace; it is waived on
-// this item alone, because fidelity to a quoted listing outranks its rendering.
+/// `<>`, carrying no `=` at all, is an ordinary expression. And over `message
+/// "(pa)(pb)(pc)"` (probes `m5k_*`): `m pb==5` binds `pb` to `=5`, because the
+/// FIRST `=` splits; `m pb= 5` and `m pb =5` both bind `5`; and `m 2<=3` is
+/// `#1811 keyword argument not defined in macro`, its name being `2<`.
 #[allow(clippy::tabs_in_doc_comments)]
-pub(crate) fn keyword_eq_index(g: &[Token]) -> Option<usize> {
-    let mut depth = 0i32;
-    for (i, t) in g.iter().enumerate() {
-        match t.tok {
-            Tok::Punct(Punct::LParen) => depth += 1,
-            Tok::Punct(Punct::RParen) => depth -= 1,
-            Tok::Punct(Punct::Eq) if depth == 0 => return Some(i),
+pub(crate) fn keyword_eq_offset(arg: &str) -> Option<usize> {
+    let b = arg.as_bytes();
+    let (mut depth, mut i) = (0i32, 0usize);
+    while i < b.len() {
+        if let Some(next) = skip_literal(b, i) {
+            i = next;
+            continue;
+        }
+        match b[i] {
+            b'(' | b'[' => depth += 1,
+            b')' | b']' => depth -= 1,
+            b'=' if depth == 0 => return Some(i),
             _ => {}
         }
+        i += 1;
     }
     None
+}
+
+/// If a string or character literal opens at `b[i]`, the index just past its
+/// closing quote (or the end of the text, unterminated). A `'` right after an
+/// identifier character is part of that word, the Z80's `af'`, not an opener.
+fn skip_literal(b: &[u8], i: usize) -> Option<usize> {
+    let opens = match b[i] {
+        b'"' => true,
+        b'\'' => i == 0 || !(b[i - 1].is_ascii_alphanumeric() || matches!(b[i - 1], b'_' | b'.' | b'\'')),
+        _ => false,
+    };
+    opens.then(|| crate::escape::literal_end(b, i).map_or(b.len(), |close| close + 1))
+}
+
+/// `[s, e)` with blanks, and the line's own end, removed from both ends.
+fn trim_blanks(b: &[u8], mut s: usize, mut e: usize) -> (usize, usize) {
+    while s < e && matches!(b[s], b' ' | b'\t' | b'\r' | b'\n') {
+        s += 1;
+    }
+    while e > s && matches!(b[e - 1], b' ' | b'\t' | b'\r' | b'\n') {
+        e -= 1;
+    }
+    (s, e)
 }
 
 /// The span covering one argument group, or `None` when the group is empty.

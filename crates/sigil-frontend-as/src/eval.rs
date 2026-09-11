@@ -1,7 +1,8 @@
 //! eval: the driver — line loop, directive dispatch, instruction lowering, emit.
 
 use crate::expand::{
-    group_span, item_span, keyword_eq_index, render_tokens, split_call_args, split_top_commas,
+    group_span, item_span, keyword_eq_offset, render_tokens, split_call_args, split_macro_args,
+    split_top_commas,
     substitute_frame, substitute_name,
 };
 use crate::lexer::{lex_line, lex_line_recover};
@@ -1609,6 +1610,10 @@ struct Asm {
     /// is the default stack). Each entry is a saved value and the `pushv`
     /// line that saved it. See [`Self::directive_pushv`].
     value_stacks: std::collections::BTreeMap<String, Vec<(PushedValue, Span)>>,
+    /// The statement [`Self::exec_one`] is executing, as `(text, base,
+    /// source)`: the text a macro call's arguments are cut from
+    /// ([`Self::call_args`]).
+    call_line: Option<(String, u32, SourceId)>,
     /// Every `equ`/`=` name whose VALUE derives from a section LABEL
     /// (`HandlerPtr = Handler`, `X = Label+4`, or a chain `X = Y` onto another
     /// such equ) — the debugger's `DEBUGGER__*` handler-address table is the
@@ -1968,6 +1973,7 @@ impl Asm {
             known_labels: std::collections::HashSet::new(),
             sym_class: std::collections::HashMap::new(),
             value_stacks: std::collections::BTreeMap::new(),
+            call_line: None,
             label_ref_equs: std::collections::HashSet::new(),
             set_sym_symbolic: std::collections::HashMap::new(),
             defined_this_pass: std::collections::HashSet::new(),
@@ -4124,14 +4130,20 @@ impl Asm {
         let line = composed.as_ref().unwrap_or(line);
         let toks = match lex_line(&line.text, self.state.cpu, &self.state.charset, line.source, line.base) {
             Ok(t) => t,
-            Err(d) => {
-                self.diags.push(d);
-                return;
-            }
+            // A macro call's operand is TEXT, so a word the lexer cannot read
+            // there is not an error ([`Self::macro_call_prefix`]).
+            Err(d) => match self.macro_call_prefix(line) {
+                Some(t) => t,
+                None => {
+                    self.diags.push(d);
+                    return;
+                }
+            },
         };
         if toks.is_empty() {
             return;
         }
+        self.call_line = Some((line.text.clone(), line.base, line.source));
         // This line has content, so it ends any deferral carried into it: take
         // the carry now, and let a pad inside the dispatch below claim it. A
         // line that dispatches without padding simply drops it, which is what
@@ -4455,6 +4467,66 @@ impl Asm {
             return;
         }
         self.dispatch(&head, &body[1..], body[0].span);
+    }
+
+    /// The tokens of a line whose OPERAND does not lex but whose head is a macro
+    /// call, or `None` for any other line (which keeps its lexer diagnostic).
+    ///
+    /// What comes back is the clean prefix [`lex_line_recover`] reads, enough
+    /// for the label and the head: the arguments themselves are cut from the
+    /// line's text ([`Self::call_args`]), so the operand never has to lex. asl
+    /// substitutes `Pal_SS1_2p:palette Special Stage 1 2p.bin` into `dc.b
+    /// "Special Stage 1 2p.bin"` (probe `m5_2p`), where `2p` is no token at all.
+    /// The head is found by the rule [`Self::exec_one`] routes by: after a colon
+    /// label, or the second word after a colon-less column-0 label.
+    fn macro_call_prefix(&self, line: &SrcLine) -> Option<Vec<Token>> {
+        let (toks, _) = lex_line_recover(&line.text, self.state.cpu, &self.state.charset, line.source, line.base);
+        let parsed = parse_line_tokens(&toks);
+        let body: &[Token] = if parsed.label_colon.is_some() { &parsed.tokens } else { &toks };
+        let names_macro = |t: Option<&Token>| {
+            matches!(t.map(|t| &t.tok), Some(Tok::Ident(s))
+                if self.macros.contains_key(s) || self.is_attribute_macro_head(s))
+        };
+        let head_is_macro = names_macro(body.first())
+            || (parsed.label_colon.is_none()
+                && body.first().is_some_and(|t| t.span.start == line.base)
+                && names_macro(body.get(1)));
+        head_is_macro.then_some(toks)
+    }
+
+    /// One macro call's arguments as TEXT, cut from the statement being executed
+    /// ([`Self::call_line`]) with [`split_macro_args`], each with a span for
+    /// its diagnostics. `head` is the span of the macro's name, so the operand is
+    /// everything after it.
+    fn call_args(&self, arg_toks: &[Token], head: Span) -> Vec<CallArg> {
+        if let Some((text, base, source)) = &self.call_line {
+            let operand = head
+                .end
+                .checked_sub(*base)
+                .filter(|_| head.source == *source)
+                .and_then(|o| text.get(o as usize..));
+            if let Some(operand) = operand {
+                return split_macro_args(operand)
+                    .into_iter()
+                    .map(|(s, e)| CallArg {
+                        text: operand[s..e].to_string(),
+                        span: Span {
+                            source: *source,
+                            start: head.end + s as u32,
+                            end: head.end + e as u32,
+                        },
+                    })
+                    .collect();
+            }
+        }
+        // No statement text to cut from: the tokens, rendered.
+        if arg_toks.is_empty() {
+            return Vec::new();
+        }
+        split_top_commas(arg_toks)
+            .into_iter()
+            .map(|g| CallArg { text: render_tokens(g), span: group_span(g).unwrap_or(head) })
+            .collect()
     }
 
     /// The routing keyword of a line, its index within `body`, and `body` (the
@@ -9876,7 +9948,7 @@ impl Asm {
                         ..
                     },
                     text,
-                )) => Some(render_tokens(text)),
+                )) => Some(slice_source(&head.text, lines[start].base, text)),
                 _ => None,
             });
         }
@@ -10303,17 +10375,19 @@ impl Asm {
         // (asl: `dc.b "[]"`, `if ""<>""` FALSE, and the bare `label *` that
         // follows defines nothing and is not an error).
         let int_label = int_label.then(|| captured.unwrap_or_default());
-        let all_args = render_tokens(arg_toks);
-        let groups = split_top_commas(arg_toks);
-        // `ARGCOUNT`'s entry value. `split_top_commas` returns ONE (empty) group
-        // for an empty operand field, which is right for binding — the first
-        // parameter gets the empty default either way — and wrong for counting:
-        // asl reports 0 for `ac` and 2 for `ac ,` (probe `p5.asm`). The empty
-        // field is the reachable case, not a curiosity: `jmpTos` with no
-        // arguments relays an empty `ALLARGS` into `jmpTosInternal2`, whose
-        // `if ARGCOUNT>0` is the only thing standing between that and an
-        // `irp op,` over one empty item defining a nameless label.
-        let argc = if arg_toks.is_empty() { 0 } else { groups.len() as i64 };
+        // AS arguments are TEXT, cut from the invocation line.
+        let args = self.call_args(arg_toks, span);
+        // `ALLARGS` is the arguments rejoined with bare commas: asl turns
+        // `m   aa  ,  bb  ,cc` into `aa,bb,cc` and keeps `m aa, pb = 5` as
+        // `aa,pb = 5` (probes `m5s_trim`, `m5k_both_space`).
+        let all_args = args.iter().map(|a| a.text.as_str()).collect::<Vec<_>>().join(",");
+        // `ARGCOUNT`'s entry value: asl reports 0 for `ac` and 2 for `ac ,`
+        // (probe `p5.asm`). The empty field is the reachable case, not a
+        // curiosity: `jmpTos` with no arguments relays an empty `ALLARGS` into
+        // `jmpTosInternal2`, whose `if ARGCOUNT>0` is the only thing standing
+        // between that and an `irp op,` over one empty item defining a
+        // nameless label.
+        let argc = args.len() as i64;
         let mut keyword: std::collections::BTreeMap<String, String> =
             std::collections::BTreeMap::new();
         let mut positional: Vec<String> = Vec::new();
@@ -10344,46 +10418,28 @@ impl Asm {
         // Accepting these silently is a WRONG PROGRAM, not a missing message: the
         // refused positional is bound here where asl leaves it empty, so the body
         // assembles against arguments asl never supplied.
-        // The whole-call fallback for an argument group with no tokens of its own
-        // (`m py=1,` — the trailing empty group still counts as an argument).
-        let call_span = arg_toks.first().map(|t| t.span).unwrap_or(Span {
-            source: self.source,
-            start: 0,
-            end: 0,
-        });
         let mut seen_keyword = false;
-        for g in &groups {
-            let Some(eq) = keyword_eq_index(g) else {
+        for a in &args {
+            let Some(eq) = keyword_eq_offset(&a.text) else {
                 if seen_keyword {
-                    self.err(
-                        group_span(g).unwrap_or(call_span),
-                        "positional argument no longer allowed after keyword argument",
-                    );
+                    self.err(a.span, "positional argument no longer allowed after keyword argument");
                     continue;
                 }
-                positional.push(render_tokens(g));
+                positional.push(a.text.clone());
                 continue;
             };
             // Every keyword argument arms the rule for the arguments after it,
             // including one asl goes on to reject as undefined.
             seen_keyword = true;
-            let (kw_name, kw_value) = (&g[..eq], &g[eq + 1..]);
-            if let [Token { tok: Tok::Ident(nm), .. }] = kw_name {
-                if params.iter().any(|p| p == nm) {
-                    // An EMPTY value is a real binding to empty text, not a
-                    // non-keyword: asl's `m 1,py=,4` (probe `k6.asm`) leaves `py`
-                    // empty and still refuses the `4` that follows.
-                    keyword.insert(nm.clone(), render_tokens(kw_value));
-                    continue;
-                }
+            let (kw_name, kw_value) = (a.text[..eq].trim(), a.text[eq + 1..].trim());
+            if params.iter().any(|p| p == kw_name) {
+                // An EMPTY value is a real binding to empty text, not a
+                // non-keyword: asl's `m 1,py=,4` (probe `k6.asm`) leaves `py`
+                // empty and still refuses the `4` that follows.
+                keyword.insert(kw_name.to_string(), kw_value.to_string());
+                continue;
             }
-            self.err(
-                group_span(g).unwrap_or(call_span),
-                format!(
-                    "keyword argument `{}` not defined in macro `{name}`",
-                    render_tokens(kw_name)
-                ),
-            );
+            self.err(a.span, format!("keyword argument `{kw_name}` not defined in macro `{name}`"));
         }
         let mut pos_iter = positional.into_iter();
         // The caller's local-label scope, captured BEFORE the expansion swaps in
@@ -10779,11 +10835,9 @@ struct MacroFrame {
     bound: Vec<String>,
     /// Argument groups still in scope for `ALLARGS`. Shifts left, no refill.
     all: Vec<String>,
-    /// `ALLARGS` before any shift: the invocation's argument text rendered as a
-    /// whole, not a re-join of [`Self::all`]. The two agree on every argument
-    /// shape, but rendering the token run once is what the byte-exact
-    /// `%<…>`-string substitution in aeon's debugger macros already depends on,
-    /// so the whole-run rendering stays the source of truth while it is intact.
+    /// `ALLARGS` before any shift: the invocation's arguments as written,
+    /// rejoined with bare commas. Not a re-join of [`Self::all`], which holds
+    /// BOUND values (a `.`-local argument already qualified against the caller).
     all_raw: String,
     /// How many times this expansion has shifted.
     shifted: usize,
@@ -10894,6 +10948,12 @@ impl MacroFrame {
         self.shifted += 1;
         self.stamp = next_stamp();
     }
+}
+
+/// One macro call argument: its text as written, trimmed, and where it is.
+struct CallArg {
+    text: String,
+    span: Span,
 }
 
 /// The text asl pastes for an INTEGER folded out of a `\{expr}` interpolation:
