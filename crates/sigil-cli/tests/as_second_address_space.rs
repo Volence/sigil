@@ -131,7 +131,7 @@ fn the_driver_is_refused_at_its_own_org_line_and_never_as_an_overlap() {
         for part in [
             "[0x0, 0x3) is assembled for the Z80 at origin 0x0",
             "in a second address space this org opens outside the ROM image",
-            "the assembler cannot yet place a second address space into the ROM",
+            "and no -z instruction places it into the ROM",
         ] {
             assert!(errors[0].contains(part), "{shape}: must say `{part}`.\nstderr:\n{stderr}");
         }

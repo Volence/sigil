@@ -375,6 +375,7 @@ version = "0.1.0"
 dependencies = [
  "serde",
  "sigil-backend-z80",
+ "sigil-clownlzss-sys",
  "sigil-ir",
  "sigil-isa",
  "sigil-span",
