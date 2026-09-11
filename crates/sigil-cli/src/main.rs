@@ -43,13 +43,6 @@ struct Entry {
     summary: &'static str,
     /// The usage text, one element per printed line.
     usage: &'static [&'static str],
-    /// Name of the function whose argument loop accepts this entry point's
-    /// flags. The `usage_names_every_accepted_flag` gate reads that function's
-    /// match arms out of this source file and holds each flag it accepts to
-    /// appearing in `usage`. Only that gate reads it, and it compiles under
-    /// `cfg(test)`.
-    #[allow(dead_code)]
-    flags_fn: &'static str,
     /// The entry point itself. It receives its own row, so the usage it prints
     /// on a missing argument is the row's text rather than a second copy.
     run: fn(&Entry, &[String]),
@@ -62,7 +55,6 @@ const ENTRIES: &[Entry] = &[
         label: "<input.asm>",
         summary: "assemble one AS-syntax source file to a binary image",
         usage: &["usage: sigil <input.asm> [-o <output.bin>] [--hex]"],
-        flags_fn: "run_asm",
         run: run_asm,
     },
     Entry {
@@ -81,7 +73,6 @@ const ENTRIES: &[Entry] = &[
             "note:  --deny-todo turns every remaining todo hole into an error, so a",
             "       release build cannot ship one.",
         ],
-        flags_fn: "run_emp",
         run: run_emp,
     },
     Entry {
@@ -93,7 +84,6 @@ const ENTRIES: &[Entry] = &[
             "       sigil test --root <dir> [-D NAME=INT]...",
             "note:  pass EITHER a file OR --root, not both.",
         ],
-        flags_fn: "run_test",
         run: run_test,
     },
     Entry {
@@ -101,7 +91,6 @@ const ENTRIES: &[Entry] = &[
         label: "parse",
         summary: "parse one .emp file and report its diagnostics, emitting nothing",
         usage: &["usage: sigil parse <input.emp>"],
-        flags_fn: "run_parse",
         run: run_parse,
     },
     Entry {
@@ -124,7 +113,6 @@ const ENTRIES: &[Entry] = &[
             "       shape and take no other shape selector.",
             "env:   SIGIL_WARNINGS=off|summary|full  (warn-tier detail; default summary)",
         ],
-        flags_fn: "parse_build_args",
         run: run_build,
     },
     Entry {
@@ -132,7 +120,6 @@ const ENTRIES: &[Entry] = &[
         label: "--version",
         summary: "print the source revision this assembler was built from",
         usage: &["usage: sigil --version", "       sigil -V"],
-        flags_fn: "run_version",
         run: run_version,
     },
 ];
@@ -2789,6 +2776,46 @@ mod help_gates {
         assert!(!seen.is_empty(), "no entry point has a selecting word");
     }
 
+    /// The function whose argument loop parses each entry point's flags, keyed
+    /// by the entry point's label. [`usage_names_every_accepted_flag`] reads
+    /// each named function's match arms out of this source file. The mapping
+    /// lives here rather than on [`Entry`] because nothing in the shipping
+    /// binary reads it.
+    const FLAG_PARSERS: &[(&str, &str)] = &[
+        ("<input.asm>", "run_asm"),
+        ("emp", "run_emp"),
+        ("test", "run_test"),
+        ("parse", "run_parse"),
+        ("build", "parse_build_args"),
+        ("--version", "run_version"),
+    ];
+
+    /// The flag parser of `entry`, from [`FLAG_PARSERS`].
+    fn flag_parser(entry: &Entry) -> &'static str {
+        FLAG_PARSERS
+            .iter()
+            .find(|(label, _)| *label == entry.label)
+            .map(|(_, parser)| *parser)
+            .unwrap_or_else(|| panic!("`{}` has no row in FLAG_PARSERS", entry.label))
+    }
+
+    /// [`FLAG_PARSERS`] and [`ENTRIES`] name the same entry points, each once,
+    /// so a row added to the table cannot slip past the flag gate unparsed and
+    /// a row removed from it cannot leave a stale parser behind.
+    #[test]
+    fn every_entry_names_one_flag_parser() {
+        for e in ENTRIES {
+            let rows = FLAG_PARSERS.iter().filter(|(label, _)| *label == e.label).count();
+            assert_eq!(rows, 1, "`{}` has {rows} rows in FLAG_PARSERS, not one", e.label);
+        }
+        for (label, parser) in FLAG_PARSERS {
+            assert!(
+                ENTRIES.iter().any(|e| e.label == *label),
+                "FLAG_PARSERS maps `{label}` to `{parser}`, and no entry point is labelled `{label}`"
+            );
+        }
+    }
+
     /// Every flag an entry point's parser ACCEPTS appears in that entry point's
     /// usage, and every argument-match arm in the shipping source belongs to
     /// some entry point's parser.
@@ -2802,11 +2829,11 @@ mod help_gates {
     fn usage_names_every_accepted_flag() {
         let mut attributed: BTreeSet<String> = BTreeSet::new();
         for e in ENTRIES {
-            let body = fn_body(e.flags_fn);
+            let parser = flag_parser(e);
+            let body = fn_body(parser);
             assert!(
                 body.contains("fn ") && body.len() > 100,
-                "the slice for `{}` is too small to be a function body: {body}",
-                e.flags_fn
+                "the slice for `{parser}` is too small to be a function body: {body}"
             );
             let usage = e.usage.join("\n");
             for flag in flag_arms(body) {
