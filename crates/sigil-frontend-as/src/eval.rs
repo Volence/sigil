@@ -944,6 +944,7 @@ fn one_pass_with_defer(
     asm.known_labels = seed_labels.clone();
     asm.label_ref_equs = seed_label_ref_equs.clone();
     asm.process(root_name, src);
+    asm.report_unpopped_value_stacks();
     // The census behind `GLOBAL_MACRO_CAP` and `GLOBAL_REPT_CAP`: what one
     // pass over a real program actually drew on each budget, so the figures in
     // those constants' docs can be re-measured rather than believed.
@@ -1604,6 +1605,10 @@ struct Asm {
     /// message in `directive_equate`, and calling them variables would refuse
     /// the one spelling that guard exists to permit.
     sym_class: std::collections::HashMap<String, SymClass>,
+    /// The `pushv`/`popv` stacks of THIS pass, by stack name (the empty name
+    /// is the default stack). Each entry is a saved value and the `pushv`
+    /// line that saved it. See [`Self::directive_pushv`].
+    value_stacks: std::collections::BTreeMap<String, Vec<(PushedValue, Span)>>,
     /// Every `equ`/`=` name whose VALUE derives from a section LABEL
     /// (`HandlerPtr = Handler`, `X = Label+4`, or a chain `X = Y` onto another
     /// such equ) — the debugger's `DEBUGGER__*` handler-address table is the
@@ -1962,6 +1967,7 @@ impl Asm {
             mompass: LATER_PASS,
             known_labels: std::collections::HashSet::new(),
             sym_class: std::collections::HashMap::new(),
+            value_stacks: std::collections::BTreeMap::new(),
             label_ref_equs: std::collections::HashSet::new(),
             set_sym_symbolic: std::collections::HashMap::new(),
             defined_this_pass: std::collections::HashSet::new(),
@@ -6263,6 +6269,8 @@ impl Asm {
             // block closers (handled in block scanning, not dispatch).
             "end" => self.aborted = true,
             "shift" => self.directive_shift(span),
+            "pushv" => self.directive_pushv(rest, span),
+            "popv" => self.directive_popv(rest, span),
             // Unreachable for a plain dispatch (the precedence check at the top
             // of this function has already expanded it) and correctly dead for a
             // forced-builtin one; kept as the explicit statement that a macro
@@ -10029,6 +10037,166 @@ impl Asm {
         }
     }
 
+    /// asl's `pushv [stack],symbol[,symbol...]`: push the CURRENT value of each
+    /// symbol, in list order, onto the named stack; an empty name is the
+    /// default stack. [`Self::directive_popv`] pops into each symbol in list
+    /// order, so the stack is last-in-first-out across one list as well as
+    /// across lines: asl restores `pushv ,A,B` with `popv ,B,A` (`01 02`, probe
+    /// `p4_multi_rev`), and `popv ,A,B` swaps the two (`02 01`,
+    /// `p4_multi_same`). Nested saves unwind in order (`06 04 02`,
+    /// `p4_nested`). Stack names are case-sensitive: `S1` and `s1` are two
+    /// stacks (`p4_stack_case`). A value is an integer or a float; a label's
+    /// value can be saved too (`p4_push_label_pop_var`).
+    ///
+    /// A STRING symbol is refused: asl aborts on it (exit 134, `p4_string`),
+    /// so there is no value to reproduce. An undefined symbol is asl's `#1010`.
+    fn directive_pushv(&mut self, rest: &[Token], span: Span) {
+        let Some((stack, names)) = self.value_stack_operands("pushv", rest, span) else {
+            return;
+        };
+        for (name, nspan) in names {
+            let value = if self.resolve_str(&name).is_some() {
+                self.err(nspan, format!("`pushv` cannot save the string symbol `{name}`"));
+                PushedValue::Unresolved
+            } else if let Some(f) = self.resolve_float_sym(&name) {
+                PushedValue::Float(f)
+            } else if let Some(v) = self.resolve_sym(&name) {
+                PushedValue::Int(v)
+            } else {
+                self.err(nspan, format!("symbol undefined: `{name}` in `pushv`"));
+                PushedValue::Unresolved
+            };
+            self.value_stacks.entry(stack.clone()).or_default().push((value, span));
+        }
+    }
+
+    /// asl's `popv [stack],symbol[,symbol...]`: pop one saved value into each
+    /// symbol, in list order. See [`Self::directive_pushv`] for the order.
+    ///
+    /// An empty stack is asl's `#1530 stack is empty or undefined`, and a target
+    /// that is not defined is `#1010`. asl also OVERWRITES a constant or a label
+    /// with the popped value (`p4_pop_into_equ_diff` makes `E equ 5` read 7).
+    /// sigil restores into a variable only; a constant or label is accepted when
+    /// the popped value is the one it already has (asl's `pushv ,E` / `popv ,E`
+    /// round trip, `p4_equ`) and refused when the value differs.
+    fn directive_popv(&mut self, rest: &[Token], span: Span) {
+        let Some((stack, names)) = self.value_stack_operands("popv", rest, span) else {
+            return;
+        };
+        for (name, nspan) in names {
+            let Some((value, _)) = self.value_stacks.get_mut(&stack).and_then(Vec::pop) else {
+                self.err(nspan, format!("`popv`: {} is empty", stack_label(&stack)));
+                continue;
+            };
+            self.restore_pushed(&name, value, nspan);
+        }
+    }
+
+    /// Bind one popped value to `name`, under the rules [`Self::directive_popv`]
+    /// states.
+    fn restore_pushed(&mut self, name: &str, value: PushedValue, span: Span) {
+        if self.resolve_str(name).is_some() {
+            self.err(span, format!("`popv` cannot restore into the string symbol `{name}`"));
+            return;
+        }
+        let current = self
+            .resolve_float_sym(name)
+            .map(PushedValue::Float)
+            .or_else(|| self.resolve_sym(name).map(PushedValue::Int));
+        let Some(current) = current else {
+            self.err(span, format!("symbol undefined: `{name}` in `popv`"));
+            return;
+        };
+        let q = qualify(name, self.real_scope());
+        if value == PushedValue::Unresolved {
+            return;
+        }
+        if self.sym_class.get(&q).is_some_and(|c| *c != SymClass::Var) {
+            if value != current {
+                self.err(
+                    span,
+                    format!(
+                        "`popv` would give `{name}`, which is not a variable, a new value ({current} to {value}); asl overwrites it, sigil refuses"
+                    ),
+                );
+            }
+            return;
+        }
+        match value {
+            PushedValue::Int(v) => {
+                self.float_env.remove(&q);
+                self.str_env.remove(&q);
+                self.set_sym_symbolic.remove(&q);
+                self.define_sym(&q, SymbolValue::Int(v));
+            }
+            PushedValue::Float(f) => {
+                self.str_env.remove(&q);
+                self.float_env.insert(q, f);
+            }
+            PushedValue::Unresolved => {}
+        }
+    }
+
+    /// The operands `pushv`/`popv` share: a stack name (possibly empty) and at
+    /// least one symbol name. asl refuses `pushv Ver` (no comma, so no symbol)
+    /// as `#1110 wrong number of operands` and `pushv ,` as `#1010`.
+    fn value_stack_operands(
+        &mut self,
+        kw: &str,
+        rest: &[Token],
+        span: Span,
+    ) -> Option<(String, Vec<(String, Span)>)> {
+        let groups = split_top_commas(rest);
+        if groups.len() < 2 {
+            self.err(
+                span,
+                format!("`{kw}` needs a stack name and at least one symbol: `{kw} [stack],symbol[,symbol...]`"),
+            );
+            return None;
+        }
+        let stack = match groups[0] {
+            [] => String::new(),
+            [Token { tok: Tok::Ident(s), .. }] => s.clone(),
+            g => {
+                self.err(item_span(g, span), format!("`{kw}` stack name must be a bare name"));
+                return None;
+            }
+        };
+        let mut names = Vec::new();
+        for g in &groups[1..] {
+            match g {
+                [Token { tok: Tok::Ident(s), span: s_span }] => names.push((s.clone(), *s_span)),
+                _ => {
+                    self.err(item_span(g, span), format!("`{kw}` takes symbol names, and this is not one"));
+                    return None;
+                }
+            }
+        }
+        Some((stack, names))
+    }
+
+    /// asl warns once per stack still holding values when the source ends
+    /// (`warning #230: stack is not empty`; two stacks left, two warnings,
+    /// probe `p4_leftover_two`). The warning points at the last `pushv` onto
+    /// that stack.
+    fn report_unpopped_value_stacks(&mut self) {
+        let left: Vec<(String, usize, Span)> = self
+            .value_stacks
+            .iter()
+            .filter_map(|(k, v)| v.last().map(|(_, s)| (k.clone(), v.len(), *s)))
+            .collect();
+        for (stack, n, span) in left {
+            self.diags.push(Diagnostic {
+                level: Level::Warning,
+                message: format!(
+                    "{} is not empty at the end of the source: {n} value(s) pushed and never popped",
+                    stack_label(&stack)
+                ),
+                primary: span,
+            });
+        }
+    }
+
     /// AS's `exitm`: end the INNERMOST running expansion early. The enclosing
     /// one is untouched and resumes at the line after the construct.
     ///
@@ -10942,6 +11110,36 @@ fn split_src_lines(text: &str, source: SourceId) -> Vec<SrcLine> {
         lines.push(SrcLine::new(acc, start_base, source));
     }
     lines
+}
+
+/// One value `pushv` saved: an integer, a float, or nothing, when the symbol
+/// had no value to save (the `pushv` line reported that already, and the
+/// `popv` that takes it binds nothing).
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum PushedValue {
+    Int(i64),
+    Float(f64),
+    Unresolved,
+}
+
+impl std::fmt::Display for PushedValue {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PushedValue::Int(v) => write!(f, "{v}"),
+            PushedValue::Float(v) => write!(f, "{v}"),
+            PushedValue::Unresolved => f.write_str("no value"),
+        }
+    }
+}
+
+/// How a diagnostic names a `pushv` stack: the empty name is asl's default
+/// stack.
+fn stack_label(stack: &str) -> String {
+    if stack.is_empty() {
+        "the default `pushv` stack".to_string()
+    } else {
+        format!("`pushv` stack `{stack}`")
+    }
 }
 
 /// The name column of a struct-body line whose name starts with a DIGIT, and
