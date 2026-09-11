@@ -385,7 +385,7 @@ fn bank_diag(placed: &[Section], rungs: &[Vec<usize>]) -> Option<Diagnostic> {
 fn overlap_diag(placed: &[Section], rungs: &[Vec<usize>]) -> Option<Diagnostic> {
     // Collect (start, end, name, span, space) for every non-empty section, then
     // scan every pair. O(n²), but n is the section count (small), and this runs
-    // once at convergence — not per pass.
+    // once at convergence, not per pass.
     let ranges: Vec<(u32, u32, &str, Span, sigil_ir::AddressSpace)> = placed
         .iter()
         .enumerate()
