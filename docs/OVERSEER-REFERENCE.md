@@ -1068,6 +1068,12 @@ pair: `sigil` `49ecc532e0b133ab0eab9447e071805c`, `emit_sound_blob` `b1569c67cbd
 built from sigil `af35fa56` in a clean detached worktree (`tree: clean at capture`). The OUTGOING pair
 is kept at `~/sonic_hacks/.sigil-outgoing-135ba589/` with the swap instant beside it, copied aside
 BEFORE the rename, so this refresh is reversible with the original artifacts rather than a rebuild.
+**A SECOND REASON IT MUST SURVIVE, found 2026-09-11:** `native::load_frozen_table`
+(`crates/sigil-harness/src/native.rs:232`) opens `env!("CARGO_MANIFEST_DIR")/golden/offcanonical_sizes/`
+at RUN time, and every shape profile seeds its provisional section bases from it. `CARGO_MANIFEST_DIR`
+is baked in at compile time, so the installed binary reads those tables from THIS worktree on every
+aeon build. Deleting the tree breaks placement, not only the `source:` field. Detail and call sites:
+`docs/superpowers/notes/2026-09-11-aeon-source-digest-ask.md`, second amendment.
 **`.sigil-ls12-pin` is released once aeon confirms it is on the new pair — ask them, not this file.**
 
 **⚠ THIS ARTIFACT EXISTS BECAUSE OF A ONE-CHARACTER MISMATCH IN A PEER'S PARSER, and it dies when
