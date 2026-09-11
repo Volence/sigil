@@ -378,3 +378,161 @@ both passed.
 
 The strict landing gate, with the four engine ROM shapes, is the controller's
 at merge and was not run here.
+
+## Every invocation of the sigil binary outside `crates/*/tests`
+
+Asked for by the controller before landing item 2, because item 2 makes `main`
+refuse any option a row does not list (exit 2) where some rows used to ignore
+one, and the suite cannot see a caller that is not a test. **Result: no caller
+in any of the six repos passes an option its row does not list.** Nothing was
+changed in any caller, and the gate was not touched.
+
+The rows' option lists, as committed in `a9f0589c`:
+
+| row | options it lists |
+|---|---|
+| bare file (`sigil <input.asm>`) | `-o`, `--hex` |
+| `emp` | `-o`, `--root`, `--prelude`, `--map`, `--hex`, `--deny-todo`, `-D` |
+| `test` | `--root`, `-D` |
+| `parse` | none |
+| `build` | `--aeon`, `-o`, `--emit-lst`, `--game`, `--native`, `--debug`, `--config-a`, `--config-b`, `--lean`, `--stress-evict`, `--stress-art`, `--extra-entry`, `--check`, `--report` |
+| `--version` / `-V` | none |
+
+### How it was searched
+
+- **sigil**: this branch's tracked files, `git grep` over every file except
+  `crates/*/tests`, `*.md` and `*.jsonl`. Identifier forms (`$SIGIL`,
+  `$SIGIL_BUILD`, `$SIGIL_BIN`, `$SIG`, `$SB`, `$S`, `$BIN`, `$bin`,
+  `.../release/sigil` executed), the quoted form `"sigil"`, `Command::new` in
+  `crates/*/src`, `scripts/` and `tools/`, and `cargo run ... -p sigil-cli`.
+  Every hit was read, and every option held in a variable was traced to where
+  it is assigned.
+- **aeon, aurora, oracle, seraph, empyrean**: read only at the committed
+  remote-tracking ref, never working files. The server's default branch was
+  read with `git ls-remote --symref origin HEAD` for each: `master` for aeon and
+  aurora, `main` for oracle, seraph and empyrean. Oracle's cached
+  `origin/HEAD` names `m68000-microop-framework`, which is stale; the server
+  says `main`, and `main` was searched. Three searches per repo, each saved and
+  read: the identifier forms (`sigil build|emp|test|parse`, `sigil --version`,
+  `SIGIL_BUILD`, `SIGIL_BIN`, `release/sigil`), the quoted form
+  (`"sigil"`/`'sigil'`), and the option spellings themselves (`--aeon`,
+  `--emit-lst`, `--extra-entry`, `--config-a|b`, `--lean`, `--stress-*`,
+  `--native`), which catches an invocation whose binary sits in a variable
+  neither of the other two names. Plus `cargo run ... -p sigil-cli`.
+- **No fetch.** The controller asked for `git fetch -q origin` first. This
+  parcel's brief forbids moving any ref other than its own branch, and a fetch
+  moves the sibling repos' remote-tracking refs, which other lanes' drift checks
+  read. So each repo's `origin/<branch>` was compared with the server by
+  `git ls-remote` (which reads the remote and moves nothing): all five were
+  equal, so the searched revisions are the current remote heads and a fetch
+  would have changed nothing.
+
+  | repo | searched | server head |
+  |---|---|---|
+  | aeon | `origin/master` `826159e7` | `826159e7` |
+  | aurora | `origin/master` `3676a447` | `3676a447` |
+  | oracle | `origin/main` `9c33ca05` | `9c33ca05` |
+  | seraph | `origin/main` `99173989` | `99173989` |
+  | empyrean | `origin/main` `cf9cf28f` | `cf9cf28f` |
+
+- **Positive controls, before any zero was trusted.** In aeon, the identifier
+  search returns `build.sh` 28 times, including the known call
+  `build.sh:985 "${SIGIL_BUILD}" build --aeon . --native ${NATIVE_FLAGS}`, and
+  the option-spelling search returns `build.sh` 11 times. In sigil, the search
+  returns the known `capture_goldens.sh:289` build call. One search failed its
+  control and was redone: `Command::new` over the pathspec `crates/*/src`
+  returned zero, because that pathspec matches no file path; with
+  `:(glob)crates/*/src/**` it returns 23 hits including the known `convsym`
+  spawn at `crates/sigil-harness/src/native.rs:4699`. None of the 23 spawns
+  sigil (they spawn `git`, `cargo`, `bash`, `asl`, `p2bin`, `convsym`, and
+  `refreeze`'s regeneration scripts).
+
+### The table
+
+Direct invocations. "Listed" means every option passed is in that row's list.
+
+| repo | file:line | command | options passed | listed |
+|---|---|---|---|---|
+| aeon | `build.sh:456` | `--version` | none | yes |
+| aeon | `build.sh:985-986` | `build` | `--aeon`, `--native`, `${NATIVE_FLAGS}` (line 953 `--stress-evict`, or 959 `--stress-art`, or 961-962 `--game <g>` plus `--debug` when `DEBUG=1`), `-o`, `--emit-lst` | yes |
+| aeon | `build.sh:1046-1047` | `build` | `--aeon`, `--native`, `--game`, `-o`, `--emit-lst` | yes |
+| aeon | `tools/emp_expect_fail.py:705-706` | `build` | `--aeon`, `--native`, `--game`, `-o`, `--extra-entry` | yes |
+| aeon | `tools/extern_guard_census.py:260-261` | `build` | `--aeon`, `--native`, `--game`, `-o` | yes |
+| aeon | `tools/test_extern_guard_reachability.py:200` | `build` | `--aeon`, `--native`, `SHAPES` args (lines 123-129: `--game`, `--debug`, `--config-a`), `--check` | yes |
+| aeon | `tools/drift_record.py:360` | `--version` | none | yes |
+| aeon | `tools/landing_build.sh:100` | `--version` | none | yes |
+| sigil | `crates/sigil-harness/golden/capture_goldens.sh:289-290` | `build` | `--aeon`, `--native`, `"$flag"` (lines 335, 336, 341: `--config-a`, `--config-b`, `--lean`), `-o`, `--emit-lst` | yes |
+| sigil | `docs/superpowers/notes/2026-08-30-alignment-flip-packet/measure-shapes.sh:27` | `build` | `--aeon`, `--native`, `"$flag"` (lines 41-43: `--config-a`, `--config-b`, `--lean`), `-o`, `--emit-lst` | yes |
+| sigil | `docs/superpowers/notes/2026-09-05-as-include-repeat-probes/census.sh:40-41` | `build` | `--aeon`, `--game`, `$d` (lines 35-36: empty or `--debug`), `-o` | yes |
+| sigil | `.../2026-09-05-as-include-repeat-probes/fourshapes.sh:20` | `build` | `--aeon`, `--game`, `$d` (16-17: empty or `--debug`), `-o` | yes |
+| sigil | `.../2026-09-05-as-include-repeat-probes/reach.sh:37-38` | `build` | `--aeon`, `--game`, `$d` (33-34: empty or `--debug`), `-o` | yes |
+| sigil | `.../2026-09-05-as-include-repeat-probes/poscontrol.sh:49-50` | `build` | `--aeon`, `--game`, `-o` | yes |
+| sigil | `.../2026-09-05-as-macro-body-label-probes/census.sh:39-40` | `build` | `--aeon`, `--game`, `$d` (34-35: empty or `--debug`), `-o` | yes |
+| sigil | `.../2026-09-05-as-macro-body-label-probes/fourshapes.sh:16` | `build` | `--aeon`, `--game`, `$d` (12-13: empty or `--debug`), `-o` | yes |
+| sigil | `.../2026-09-05-as-macro-body-label-probes/poscontrol-refuse.sh:61, 63, 72, 74, 78, 80` | `build` | `--aeon`, `--game`, and `-o` on 61, 72, 78 | yes |
+| sigil | `.../2026-09-05-as-macro-body-label-probes/poscontrol.sh:39-40, 41, 44-45, 46` | `build` | `--aeon`, `--game`, `-o` | yes |
+| sigil | `.f1probe/cmp.sh:35` | bare | `--hex` | yes |
+| sigil | `.s1probe/2026-09-04/probe/cmp.sh:35` | bare | `--hex` | yes |
+| sigil | `.s1probe/construct_probe.sh:2` | bare | `--hex` | yes |
+| sigil | `.../2026-09-03-as-struct-probes/cmp.sh:19` | bare | `-o` | yes |
+| sigil | `.../2026-09-03-as-struct-probes/sweep.sh:10` | bare | `-o` | yes |
+| sigil | `.../2026-09-03-irp-irpc-probes/diff_bytes.sh:23` | bare | `-o` | yes |
+| sigil | `.../2026-09-03-tilde-tilde-probes/diff_bytes.sh:34` | bare | `-o` | yes |
+| sigil | `.../2026-09-04-as-symbol-class-probes/sigil.sh:11` | bare | `--hex` | yes |
+| sigil | `.../2026-09-05-as-include-repeat-probes/census.sh:50` | bare | `-o` | yes |
+| sigil | `.../2026-09-05-as-include-repeat-probes/census_selfcheck.sh:27` | bare | `-o` | yes |
+| sigil | `.../2026-09-05-as-include-repeat-probes/corpora.sh:17` | bare | `-o` | yes |
+| sigil | `.../2026-09-05-as-include-repeat-probes/depth_sigil.sh:25` | bare | `-o` | yes |
+| sigil | `.../2026-09-05-as-include-repeat-probes/siblings.sh:36` | bare | `-o` | yes |
+| sigil | `.../2026-09-05-as-include-repeat-probes/sigil.sh:28` | bare | `-o` | yes |
+| sigil | `.../2026-09-05-as-macro-body-label-probes/census.sh:49` | bare | none | yes |
+| sigil | `.../2026-09-05-as-macro-body-label-probes/corpora.sh:15` | bare | none | yes |
+| sigil | `.../2026-09-05-as-macro-body-label-probes/sigil.sh:11` | bare | `--hex` | yes |
+| sigil | `.../2026-09-05-as-mompass-probes/countertest.sh:21, 37, 45` | bare | `--hex` | yes |
+| sigil | `.../2026-09-05-as-mompass-probes/fatal3way.sh:37` | bare (`$BIN` is one of three sigil builds, lines 31-35) | none | yes |
+| sigil | `.../2026-09-05-as-mompass-probes/iters.sh:6, 8` | bare | `--hex` | yes |
+| sigil | `.../2026-09-05-as-mompass-probes/refvals.sh:24` | bare | `--hex` | yes |
+| sigil | `.../2026-09-05-as-register-diagnostic-residue-probes/matrix.sh:18` | bare | `--hex` | yes |
+| sigil | `.../2026-09-05-as-undefined-sym-panic-and-silent-if-probes/corpus.sh:29, 31` | bare (`$BIN` is the before or after sigil, line 28) | `--hex` | yes |
+| sigil | `.../2026-09-05-as-undefined-sym-panic-and-silent-if-probes/run.sh:6` | bare | `--hex` | yes |
+| sigil | `.../2026-09-05-asl-silent-decline-regime-probes/sigil_today.sh:42` | `--version` | none | yes |
+| sigil | `.../2026-09-05-asl-silent-decline-regime-probes/sigil_today.sh:115` | bare | `--hex` | yes |
+| sigil | `.../2026-09-05-s2-top-blocks-decompose-probes/run.sh:24, 66` | bare | none | yes |
+| sigil | `.../2026-09-06-as-org-backwards-probes/run.sh:62` | bare | `-o` | yes |
+| sigil | `.../2026-09-06-as-set-opens-scope-probes/matrix.sh:66` | bare | `--hex` | yes |
+| sigil | `.../2026-09-06-as-set-opens-scope-probes/sigil_run.sh:18` | bare | `--hex` | yes |
+| sigil | `.../2026-09-08-failed-run-bonus-pass-probes/run_roots.sh:13` | bare (`$BIN` is argument 1, line 5) | none | yes |
+| sigil | `.../2026-09-10-ux-partial-error-list-repro/run.sh:19` | bare | `-o` | yes |
+| sigil | `scripts/corpus-baseline.sh:160` | bare | none | yes |
+| sigil | `scripts/s1-census.sh:149` | bare | none | yes |
+| sigil | `scripts/z80_byte_sweep.sh:121` | bare | `--hex` | yes |
+| sigil | `scripts/lib/sigil_tool.sh:289` | `--version` | none | yes |
+| sigil | `scripts/nightly_ref_drift.sh:214` | `--version` | none | yes |
+| sigil | `examples/reach_branches.emp:31` (a documented command in a comment) | `emp` | `--hex` | yes |
+
+Callers that reach sigil only through aeon's `build.sh`, whose own sigil
+options are the three aeon `build.sh` rows above (so they pass nothing to sigil
+themselves; their arguments go to `build.sh`):
+
+| repo | file:line | runs |
+|---|---|---|
+| sigil | `scripts/provision-aeon-ref.sh:283-284` (called by `scripts/nightly_ref_drift.sh:238-240`) | `./build.sh $shape_arg`, `SIGIL_BUILD` in the environment |
+| sigil | `.../2026-08-30-alignment-flip-packet/measure-shapes.sh:15, 46, 47` | `./build.sh <game>` |
+| sigil | `.../2026-09-04-as-enum-probes/aeon-four-shapes.sh:16, 18` | `./build.sh <game>` |
+| aeon | `tools/ls8_pin_redproof.py:149` | `./build.sh` |
+| aeon | `tools/nightly_effects_gates.sh:89, 96, 108, 127` | `./build.sh [demo]` |
+| aeon | `tools/oracle-player-debug:52, 54` | `./build.sh $BUILD_ARG` |
+| aurora | `scratchpad/sec7-drop-vsplit-harness.mjs:410`; `src/core/aether/build-plan.ts` (`AEON_REQUIRED_ENV`, line 128) | aeon's `./build.sh` with `SIGIL_BUILD` and `SIGIL_EMIT` in the environment |
+
+Not callers, though a search matched them: `sweep_snippets_golden.sh:72` runs
+`$BIN`, which line 31 sets to `gen_snippet_vectors`; `mutations.sh:108` and
+`reach.sh:59` hand a binary to scripts already listed above; aeon
+`project.json:34` sets `SIGIL_BUILD` as configuration; every other aeon,
+aurora, oracle and empyrean hit is prose, a test fixture string, a lane name
+or a path helper. Seraph returned zero on every form.
+
+**The two refusals item 2 adds, checked directly.** `sigil parse <file>
+--anything` and `sigil --version --anything` used to exit 0 and now exit 2. No
+caller runs `sigil parse`, and all six `--version` callers (aeon `build.sh:456`,
+`drift_record.py:360`, `landing_build.sh:100`; sigil `sigil_tool.sh:289`,
+`nightly_ref_drift.sh:214`, `sigil_today.sh:42`) pass it alone.
