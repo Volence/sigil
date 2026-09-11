@@ -6353,6 +6353,7 @@ impl Asm {
             "shift" => self.directive_shift(span),
             "pushv" => self.directive_pushv(rest, span),
             "popv" => self.directive_popv(rest, span),
+            "shared" => self.directive_shared(span),
             // Unreachable for a plain dispatch (the precedence check at the top
             // of this function has already expanded it) and correctly dead for a
             // forced-builtin one; kept as the explicit statement that a macro
@@ -10255,6 +10256,28 @@ impl Asm {
             }
         }
         Some((stack, names))
+    }
+
+    /// asl's `shared symbol[,symbol...]` writes the symbols to the share file
+    /// `-c` names, and without `-c` it does nothing but say so: every `shared`
+    /// line is `warning #30: no sharefile created, SHARED ignored` at exit 0,
+    /// whatever its operands are, an undefined name or none at all included
+    /// (probes `s7_*`). sigil writes no share file, so it is asl without `-c`:
+    /// the line is accepted, its operands are not evaluated, and every line
+    /// says so rather than being dropped silently.
+    ///
+    /// Sonic 2 ends with `shared movewZ80CompSize`, and its build script reads
+    /// the share file to patch the sound driver's compressed size into the
+    /// `move.w` at that address after `p2bin`. sigil does not perform that
+    /// patch; at the census revision it writes the value already there.
+    fn directive_shared(&mut self, span: Span) {
+        self.diags.push(Diagnostic {
+            level: Level::Warning,
+            message: "`shared` is ignored: sigil writes no share file \
+                      (asl without `-c` says \"no sharefile created, SHARED ignored\")"
+                .to_string(),
+            primary: span,
+        });
     }
 
     /// asl warns once per stack still holding values when the source ends
