@@ -65,14 +65,24 @@ fn a_captured_stdout_log_of_a_failing_run_does_not_end_on_the_message() {
     );
 }
 
-/// A SUCCEEDING run is untouched. This is the control that stops the failure
-/// line from being bought by printing it always, which would satisfy every
-/// other gate here and destroy the meaning of the line.
+/// A SUCCEEDING run says nothing about failure: its stdout is the message and
+/// then the `built:` line every succeeding run ends on (pinned in
+/// `asm_output_disposition.rs`, not duplicated here). This is the control that
+/// stops the failure line from being bought by printing it always, which would
+/// satisfy every other gate here and destroy the meaning of the line.
 #[test]
 fn a_succeeding_run_says_nothing_about_failure() {
     let out = run("\tmessage \"driver size is 42 bytes\"\n\tdc.b 1\n\tend\n");
     assert_eq!(out.status.code(), Some(0), "stderr: {}", String::from_utf8_lossy(&out.stderr));
-    assert_eq!(String::from_utf8_lossy(&out.stdout), "driver size is 42 bytes\n");
+    let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
+    let lines: Vec<&str> = stdout.lines().collect();
+    assert_eq!(
+        lines.len(),
+        2,
+        "stdout must hold the message and the success line, nothing else: {stdout:?}"
+    );
+    assert_eq!(lines[0], "driver size is 42 bytes");
+    assert!(lines[1].starts_with("built: "), "stdout: {stdout:?}");
 }
 
 /// A failing run with NO `message` still says so. The line is a property of

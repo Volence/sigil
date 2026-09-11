@@ -253,7 +253,8 @@ fn a_failure_at_the_output_stage_claims_nothing_is_withheld() {
     );
 }
 
-/// A run that succeeds says nothing at all. The second half of the control
+/// A run that succeeds says only that it did: one `built:` line (pinned in
+/// `asm_output_disposition.rs`) and no caveat. The second half of the control
 /// above: the caveat is a property of failing at an early stage, not of running.
 #[test]
 fn a_succeeding_run_says_nothing_about_withheld_errors() {
@@ -268,7 +269,10 @@ fn a_succeeding_run_says_nothing_about_withheld_errors() {
         .output()
         .expect("spawn sigil");
     assert_eq!(out.status.code(), Some(0), "stderr: {}", String::from_utf8_lossy(&out.stderr));
-    assert_eq!(String::from_utf8_lossy(&out.stdout), "");
+    let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
+    assert_eq!(caveat(&out), None, "a succeeding run withheld nothing: {stdout:?}");
+    assert_eq!(stdout.lines().count(), 1, "stdout must hold only the success line: {stdout:?}");
+    assert!(stdout.starts_with("built: "), "stdout: {stdout:?}");
 }
 
 /// The caveat goes BEFORE the failure line, so `assembly failed: N errors` stays

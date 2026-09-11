@@ -125,7 +125,9 @@ while IFS= read -r line; do
         echo "SIGIL-ERR $line  | asl=$asl_bytes | ${sig_out//$'\n'/ }" >> "$WORK/report.txt"
         continue
     fi
-    sig_bytes="$(echo "$sig_out" | tr -d ' \n' | tr 'a-f' 'A-F')"
+    # A clean run ends stdout on its `built:` line after the hex line. That line
+    # is the run's verdict, not bytes, so it is dropped before the bytes are read.
+    sig_bytes="$(printf '%s\n' "$sig_out" | sed '/^built: /d' | tr -d ' \n' | tr 'a-f' 'A-F')"
 
     if [ "$asl_bytes" = "$sig_bytes" ]; then
         same=$((same+1))

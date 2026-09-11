@@ -40,11 +40,27 @@ fn run(body: &str) -> Output {
         .expect("spawn sigil")
 }
 
+/// A succeeding run's stdout, less the `built:` line that ends it.
+///
+/// The success line's wording is pinned in `asm_output_disposition.rs` and not
+/// duplicated here. This asserts only that it is present and LAST, which leaves
+/// every line before it to be the program's own messages, compared exactly.
+fn message_lines(out: &Output) -> Vec<String> {
+    let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
+    let mut lines: Vec<String> = stdout.lines().map(str::to_string).collect();
+    let last = lines.pop().unwrap_or_default();
+    assert!(
+        last.starts_with("built: "),
+        "a succeeding run must end stdout on its built line: {stdout:?}"
+    );
+    lines
+}
+
 #[test]
 fn a_message_is_a_bare_stdout_line_and_not_a_diagnostic() {
     let out = run("\tmessage \"int \\{42}\"\n\tdc.b 1\n\tend\n");
     assert_eq!(out.status.code(), Some(0), "stderr: {}", String::from_utf8_lossy(&out.stderr));
-    assert_eq!(String::from_utf8_lossy(&out.stdout), "int 2A\n");
+    assert_eq!(message_lines(&out), ["int 2A"]);
     assert_eq!(String::from_utf8_lossy(&out.stderr), "");
 }
 
@@ -54,7 +70,7 @@ fn a_message_is_a_bare_stdout_line_and_not_a_diagnostic() {
 fn a_forward_referenced_message_prints_once_with_its_final_value() {
     let out = run("\tmessage \"fwd \\{Later}\"\n\tdc.b 1\n\tdc.w Later-*\nLater:\n\tend\n");
     assert_eq!(out.status.code(), Some(0), "stderr: {}", String::from_utf8_lossy(&out.stderr));
-    assert_eq!(String::from_utf8_lossy(&out.stdout), "fwd 3\n");
+    assert_eq!(message_lines(&out), ["fwd 3"]);
 }
 
 /// s1disasm's shape: the line prints and the run fails afterwards. The
@@ -105,7 +121,7 @@ fn a_float_division_in_a_message_interpolates() {
     );
     assert_eq!(out.status.code(), Some(0), "stderr: {}", String::from_utf8_lossy(&out.stderr));
     assert_eq!(
-        String::from_utf8_lossy(&out.stdout),
-        "ROM size is $5 bytes (0.0048828125 KiB). About $3 bytes are padding. \n"
+        message_lines(&out),
+        ["ROM size is $5 bytes (0.0048828125 KiB). About $3 bytes are padding. "]
     );
 }
