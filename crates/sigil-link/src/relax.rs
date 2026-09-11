@@ -456,8 +456,15 @@ fn cpu_name(cpu: sigil_ir::Cpu) -> &'static str {
 /// section's `lma`) and its sections. Nothing can declare a ROM placement for a
 /// second space yet, so every one that holds bytes is refused.
 fn foreign_space_diags(placed: &[Section], rungs: &[Vec<usize>]) -> Vec<Diagnostic> {
-    // Each space in first-seen order, with its non-empty sections' (name, start, end).
-    let mut spaces: Vec<(sigil_ir::Cpu, Span, Vec<(&str, u32, u32)>)> = Vec::new();
+    /// One second space and the extents of its sections that hold bytes.
+    struct Space<'a> {
+        cpu: sigil_ir::Cpu,
+        entered_at: Span,
+        /// (name, start, end) per section, in program order.
+        secs: Vec<(&'a str, u32, u32)>,
+    }
+    // Each space in first-seen order.
+    let mut spaces: Vec<Space> = Vec::new();
     for (si, sec) in placed.iter().enumerate() {
         let sigil_ir::AddressSpace::Foreign { cpu, entered_at } = sec.space else {
             continue;
@@ -467,14 +474,14 @@ fn foreign_space_diags(placed: &[Section], rungs: &[Vec<usize>]) -> Vec<Diagnost
             continue;
         }
         let extent = (sec.name.as_str(), sec.lma, sec.lma.saturating_add(size));
-        match spaces.iter_mut().find(|(c, at, _)| *c == cpu && *at == entered_at) {
-            Some((_, _, secs)) => secs.push(extent),
-            None => spaces.push((cpu, entered_at, vec![extent])),
+        match spaces.iter_mut().find(|s| s.cpu == cpu && s.entered_at == entered_at) {
+            Some(space) => space.secs.push(extent),
+            None => spaces.push(Space { cpu, entered_at, secs: vec![extent] }),
         }
     }
     spaces
         .into_iter()
-        .map(|(cpu, entered_at, secs)| {
+        .map(|Space { cpu, entered_at, secs }| {
             let origin = secs[0].1;
             let lo = secs.iter().map(|s| s.1).min().unwrap_or(origin);
             let hi = secs.iter().map(|s| s.2).max().unwrap_or(origin);
