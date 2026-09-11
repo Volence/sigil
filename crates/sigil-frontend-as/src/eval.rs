@@ -5648,6 +5648,13 @@ impl Asm {
     fn struct_embed_name(&mut self, line: &SrcLine) -> Option<String> {
         let substituted = self.subst_frame(line);
         let line = substituted.as_ref().unwrap_or(line);
+        if let Some((_, at)) = digit_led_member_label(&line.text) {
+            let toks = lex_line(&line.text[at..], self.state.cpu, &self.state.charset, line.source, line.base + at as u32).ok()?;
+            return match toks.first().map(|t| &t.tok) {
+                Some(Tok::Ident(s)) if self.structs.contains_key(s) => Some(s.clone()),
+                _ => None,
+            };
+        }
         let toks = lex_line(&line.text, self.state.cpu, &self.state.charset, line.source, line.base).ok()?;
         let parsed = parse_line_tokens(&toks);
         let head = if parsed.label_colon.is_some() {
@@ -5670,6 +5677,13 @@ impl Asm {
     fn parse_struct_field(&mut self, line: &SrcLine) -> Option<(String, i64, i64)> {
         let substituted = self.subst_frame(line);
         let line = substituted.as_ref().unwrap_or(line);
+        // A member NAME may start with a digit, which no symbol name may do:
+        // the member's symbol is `STRUCT.name`, and it is that whole name asl
+        // validates. See [`digit_led_member_label`] for where it is accepted.
+        if let Some((field, at)) = digit_led_member_label(&line.text) {
+            let rest = lex_line(&line.text[at..], self.state.cpu, &self.state.charset, line.source, line.base + at as u32).ok()?;
+            return self.struct_field_width(field, &rest);
+        }
         let toks = lex_line(&line.text, self.state.cpu, &self.state.charset, line.source, line.base).ok()?;
         if toks.is_empty() {
             return None;
@@ -5701,6 +5715,12 @@ impl Asm {
                 _ => return None,
             }
         };
+        self.struct_field_width(field, &rest)
+    }
+
+    /// The `(field, width, count)` of a struct-body line whose name column has
+    /// been read, from the tokens that follow the name.
+    fn struct_field_width(&mut self, field: String, rest: &[Token]) -> Option<(String, i64, i64)> {
         // Width `0` = "the mnemonic column is not a `ds.*`". The line still
         // carries a NAME, and that name is a member either way: a struct-body
         // line with a label and nothing else is a marker, and one whose
@@ -10924,6 +10944,37 @@ fn split_src_lines(text: &str, source: SourceId) -> Vec<SrcLine> {
     lines
 }
 
+/// The name column of a struct-body line whose name starts with a DIGIT, and
+/// the byte offset in `text` where the rest of the line begins.
+///
+/// No symbol name may start with a digit (asl: `1up:` as a label, `1up equ 5`
+/// and a bare reference to `1upPlaying` are all `#1020 invalid symbol name`),
+/// but a struct MEMBER may: the symbol it defines is `STRUCT.name`, which starts
+/// with the struct's letter. asl, exit 0 (probes `d2_member_*`): `1upPlaying:`,
+/// the all-digit `2:`, the hex-shaped `12h:` and the marker `1up:` are members,
+/// under `DOTS` or the default `_`. The column rule is a label's: a colon at any
+/// indentation, or column 0 with no colon; an indented word with no colon is an
+/// instruction (`\t1upPlaying\tds.b 1` is `#1200 unknown instruction`), so that
+/// shape returns `None` and the lexer refuses it.
+fn digit_led_member_label(text: &str) -> Option<(String, usize)> {
+    let bytes = text.as_bytes();
+    let start = bytes.iter().position(|b| !matches!(b, b' ' | b'\t'))?;
+    if !bytes[start].is_ascii_digit() {
+        return None;
+    }
+    let len = bytes[start..]
+        .iter()
+        .position(|b| !(b.is_ascii_alphanumeric() || matches!(b, b'_' | b'.')))
+        .unwrap_or(bytes.len() - start);
+    let end = start + len;
+    let name = text[start..end].to_string();
+    match bytes.get(end) {
+        Some(b':') => Some((name, end + 1)),
+        None | Some(b' ' | b'\t' | b';') if start == 0 => Some((name, end)),
+        _ => None,
+    }
+}
+
 /// The canonical (lower-case) spelling of a DIRECTIVE or MNEMONIC keyword.
 ///
 /// AS matches its own directive and instruction keywords without regard to
@@ -12676,16 +12727,18 @@ mod tests {
     /// `q19.asm`. A struct-body line this cannot read is a wrong SIZE, not a
     /// missing symbol, so it is reported rather than skipped.
     ///
-    /// Sonic 2's `zVar` declares `1upPlaying: ds.b 1`; asl takes an identifier
-    /// beginning with a digit and sigil's lexer does not. Skipped, that made
-    /// `zVar.len` $17 against asl's $18 — **exit 0 on both sides, no
-    /// diagnostic anywhere, and every member after it one byte low.**
+    /// The line here is a digit-led name that is INDENTED and has no colon:
+    /// asl reads that column as an instruction and refuses it (`#1200 unknown
+    /// instruction`, probe `d2_member_indented_nocolon`), and the lexer reads it
+    /// as a malformed number. Skipped, `V.len` would be 2 where the body
+    /// declares three bytes, and every member after it one byte low, at exit 0.
+    /// The same name with a colon is a member (`tests/as_struct_digit_member.rs`).
     #[test]
     fn an_unreadable_struct_member_line_is_reported_not_skipped() {
         let src = "\tcpu 68000\n\torg $0\n\
                    V struct dots\n\
                    \ta:\tds.b 1\n\
-                   \t1upPlaying:\tds.b 1\n\
+                   \t1upPlaying\tds.b 1\n\
                    \tb:\tds.b 1\n\
                    V endstruct\n\
                    \tdc.w V.a,V.b,V.len\n";
