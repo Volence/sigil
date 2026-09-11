@@ -24,6 +24,9 @@ use std::process;
 #[cfg(test)]
 mod tree_class;
 
+/// The compressors the AS route's `-z` placement uses.
+mod p2bin_codec;
+
 /// One entry point of the command line: the words that select it, how help
 /// names it, what it does, its full usage text, and the function that runs it.
 ///
@@ -484,7 +487,7 @@ fn run_asm(entry: &Entry, args: &[String]) {
     // says, and the pad byte everywhere else, including a reservation's gap
     // inside a section. Without either, the plain flatten, zero-filled.
     let image = if pad.is_some() || !blobs.is_empty() {
-        match sigil_link::flatten_placing(&resolved, &linked, &blobs, pad.unwrap_or(0x00)) {
+        match sigil_link::flatten_placing(&resolved, &linked, &blobs, pad.unwrap_or(0x00), &p2bin_codec::Codec) {
             Ok(image) => image,
             Err(diags) => {
                 render_located_diags(&diags, &sources);

@@ -32,8 +32,8 @@
 //! On top of p2bin, this refuses what p2bin does silently: an instruction that
 //! names no second address space, a second address space left partly or wholly
 //! unplaced, a stored stream some other run would overwrite, and a stream that
-//! does not decompress, through sigil's own decompressor, to exactly the bytes
-//! that were assembled.
+//! does not decompress, through the decompressor the caller supplies (on the AS
+//! route, sigil's own), to exactly the bytes that were assembled.
 
 use crate::LinkedImage;
 use sigil_ir::map::MemoryMap;
@@ -83,30 +83,16 @@ impl BlobFormat {
     fn from_name(name: &str) -> Option<BlobFormat> {
         BlobFormat::ALL.into_iter().find(|f| f.name() == name)
     }
+}
 
-    /// The bytes p2bin stores for `data`.
-    pub fn compress(self, data: &[u8]) -> Vec<u8> {
-        match self {
-            BlobFormat::Uncompressed => data.to_vec(),
-            BlobFormat::Kosinski => sigil_clownlzss_sys::accurate::compress_kosinski_authentic(data),
-            BlobFormat::SaxmanBugged => sigil_clownlzss_sys::accurate::compress_saxman_bugged(data),
-        }
-    }
-
-    /// What a reader of the stored bytes gets back, through sigil's own
-    /// decompressors. Saxman is read as Sonic 2's decompressor reads it: the
-    /// stored length counts the junk byte, which is never used, and a match
-    /// whose source starts before the output begins is zeros throughout.
-    pub fn decompress(self, stored: &[u8]) -> Result<Vec<u8>, String> {
-        match self {
-            BlobFormat::Uncompressed => Ok(stored.to_vec()),
-            BlobFormat::Kosinski => sigil_clownlzss_sys::decompress_kosinski(stored).map_err(|e| e.to_string()),
-            BlobFormat::SaxmanBugged => {
-                let used = stored.len().saturating_sub(1);
-                sigil_clownlzss_sys::decompress_saxman_no_header(stored, used).map_err(|e| e.to_string())
-            }
-        }
-    }
+/// The compressors a placement needs. The linker depends on nothing but the IR
+/// and spans, so the caller supplies them; the AS route's are p2bin's authentic
+/// compressors and sigil's own decompressors.
+pub trait BlobCodec {
+    /// The bytes p2bin stores for `data` in `format`.
+    fn compress(&self, format: BlobFormat, data: &[u8]) -> Vec<u8>;
+    /// What a reader of `stored` gets back, or why it cannot be read.
+    fn decompress(&self, format: BlobFormat, stored: &[u8]) -> Result<Vec<u8>, String>;
 }
 
 /// Where p2bin puts the stored stream.
@@ -312,12 +298,14 @@ fn space_span(space: AddressSpace) -> Span {
 /// `pad` everywhere nothing is written.
 ///
 /// `resolved` is `resolve_layout`'s output and `linked` is `link`'s image of it,
-/// one linked section per resolved section in the same order.
+/// one linked section per resolved section in the same order. `codec`
+/// compresses each blob and reads its stream back for the round-trip check.
 pub fn flatten_placing(
     resolved: &[Section],
     linked: &LinkedImage,
     blobs: &[BlobInstruction],
     pad: u8,
+    codec: &dyn BlobCodec,
 ) -> Result<Vec<u8>, Vec<Diagnostic>> {
     assert_eq!(resolved.len(), linked.sections.len(), "one linked section per resolved section");
     let runs = runs(resolved);
@@ -445,7 +433,7 @@ pub fn flatten_placing(
                 format!("[{prev_start:#X}, {prev_end:#X}), the code before it, which it overwrites"),
             ),
         };
-        let stored = z.format.compress(&blob);
+        let stored = codec.compress(z.format, &blob);
         if let Some(reserved) = reserved.filter(|&r| (stored.len() as i64) > r) {
             diags.push(err(
                 format!(
@@ -466,7 +454,7 @@ pub fn flatten_placing(
             ));
             continue;
         }
-        match z.format.decompress(&stored) {
+        match codec.decompress(z.format, &stored) {
             Ok(back) if back == blob => {}
             Ok(back) => {
                 let first = back.iter().zip(&blob).position(|(a, b)| a != b).unwrap_or(back.len().min(blob.len()));

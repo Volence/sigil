@@ -17,7 +17,8 @@ pub use relax::{asl_width_rule, resolve_layout, resolve_layout_measuring, resolv
 
 mod blob;
 pub use blob::{
-    flatten_placing, parse_blob, parse_pad, BlobFormat, BlobInsert, BlobInstruction, MAX_BLOB, P2BIN_FORMATS,
+    flatten_placing, parse_blob, parse_pad, BlobCodec, BlobFormat, BlobInsert, BlobInstruction, MAX_BLOB,
+    P2BIN_FORMATS,
 };
 
 mod map_load;

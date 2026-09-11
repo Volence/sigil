@@ -230,7 +230,7 @@ fn sonic_1_builds_to_the_reference_rom_byte_for_byte() {
     let window = (recs[k - 1].1 + recs[k - 1].2.len() as u32, recs[j].1);
     assert_eq!(window, DRIVER_WINDOW, "asl's records put the driver's gap somewhere else");
     let stored = &image[window.0 as usize..window.1 as usize];
-    let back = sigil_link::BlobFormat::Kosinski.decompress(stored).expect("the stored driver decompresses");
+    let back = sigil_clownlzss_sys::decompress_kosinski(stored).expect("the stored driver decompresses");
     assert_eq!(blob.len(), 0x1BC6, "the driver asl assembled");
     assert!(back == blob, "the stored driver does not decompress to the driver asl assembled");
 }
