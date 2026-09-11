@@ -52,3 +52,13 @@ Zero `unsafe` added; diagnostics read like a product. Red-first is quoted with b
 Decisions: discriminating experiments run (d-28 landing, the integer-selector negative probe, the
 charset third consumer); the two misses (board regenerated from a `head -60` read; an owner hold
 reversed unread) were self-reported and repaired. 35% of commits since 09-06 touch code.
+
+## Addendum, 2026-09-11
+
+Section 2 items 2, 4, 5, 6 and 7 are discharged on `parcel/audit-briefing-cleanups` (7 at
+`f4db79ab`, 2 at `a9f0589c`, 4 at `81b086c6`, 5 at `0be48af4`, 6 at `889b58c8`, as committed on
+that branch). Each item's state at base `5e3d389a`, what was done, and the evidence are in
+`docs/superpowers/notes/2026-09-11-audit-briefing-cleanups.md`, which also records where the
+items' details above did not hold (item 6's "26 added by `9aed994f`" is 25, and item 7's
+`main.rs:127` is an initializer; the field was at line 52). The text above this addendum is
+unchanged.
