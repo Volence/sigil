@@ -118,7 +118,57 @@ assembler and `emit_sound_blob` built from this sigil revision into a private
 revision, so the evidence of a prepared tree here is the four ROMs present and
 built, with CRC32 and size recorded below.
 
-(Results pending.)
+The assembler and `emit_sound_blob` were rebuilt into `ref-target` after this
+note's first commit, so the binary's `--version` revision equals the sigil HEAD
+the trees were provisioned under (`ca3ebfac`, tree clean); aeon's `build.sh`
+compares the two and printed no mismatch banner.
+
+### Provisioning deviations, and the attempt that failed
+
+- `NO_LINT=1` in the environment is DEAD in aeon's `build.sh`: line 355 resets
+  `NO_LINT=0` before parsing flags, and only `-nl`/`--no-lint` sets it. The
+  official provisioner passes the dead environment variable, so it runs aeon's
+  pytest tool-suite lane on every shape; in its own git worktree that lane can pass.
+- Attempt 1 (base, no flag) failed in that lane's PRE-build half before any ROM was
+  written (the tree's `s4.bin` still carried the golden's size and mtime, and no
+  `s4.lst` existed): 29 failed / 2394 passed. Every visible cause is the export
+  having no `.git`: `git ls-files` failing, citation and "tracked by git" checks,
+  an empty population in `test_no_baked_home_paths`. Logs kept as
+  `provision-base.attempt1.log` and `provision-base-build-sonic4.attempt1.log`.
+- Fix: each shape is built as `./build.sh <game> -nl` (the game first, because
+  `GAME="${1:-sonic4}"`). `-nl` skips the lint and tool-suite lane only, which emits
+  no ROM bytes. The half-provisioned base tree was deleted and re-copied from its
+  export, not patched.
+
+### The prepared trees
+
+Both provisioned to their end marker (base 19:20:09, parcel 19:20:57). The four
+goldens verified against the provenance tail on each before being replaced: s4
+`b09ccd65/820229`, s4.debug `1b7fe316/846529`, demo `0ad17404/96863`, demo.debug
+`2565ece2/103185`. Then all four shapes were BUILT (mtime after the build start):
+
+| file | base CRC32 (hex / decimal) / size | parcel |
+|---|---|---|
+| s4.bin         | `064e0ae6` / 105777894 / 821123   | byte-identical to base |
+| s4.debug.bin   | `cb0e2019` / 3406700569 / 847389  | byte-identical to base |
+| demo.bin       | `bc230dd7` / 3156413911 / 97075   | byte-identical to base |
+| demo.debug.bin | `523e0287` / 1379795591 / 103359  | byte-identical to base |
+| s4.lst         | `42a3edd1` / 341447               | `659ec894` / 341447 |
+| s4.debug.lst   | `6c5ca146` / 411733               | `e59ba591` / 411733 |
+
+So with one assembler on both trees, all four ROM shapes are byte-identical at
+base and parcel, which is the engine lane's "the ROM does not move" claim, now
+observed rather than relayed. The listings differ, as they must: the parcel adds
+source lines and symbols.
+
+The engine lane reported its canonical s4 as CRC32 377796925 (`1684a93d`) / 821123
+bytes. The size agrees; the CRC does not. Not established why. Both of these trees
+were built by the same sigil (`ca3ebfac`), which the differential needs and has;
+their assembler is not this one, and sigil's revision reaches its source digest
+(`crates/sigil-cli/src/main.rs:2810`), but whether that digest reaches the image
+was not checked. Do not read the mismatch as a defect in either build.
+
+(Suite results pending.)
 
 ## Name lists
 
