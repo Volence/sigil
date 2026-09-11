@@ -52,6 +52,13 @@ const PROVISIONAL_CPU: Cpu = Cpu::Z80;
 #[derive(Clone, Debug)]
 pub struct AsmState {
     pub cpu: Cpu,
+    /// Whether the Z80 was selected as `z80undoc`, the spelling that enables its
+    /// undocumented instructions. Under it asl reads the index-register halves
+    /// (`ixl`, `ixu`/`ixh`, `iyl`, `iyu`/`iyh`) as registers and reports
+    /// `MOMCPU` as `$80DC`; under plain `z80` those names are ordinary symbols.
+    /// Part of the `save`/`restore` snapshot, measured: `cpu z80undoc`, `save`,
+    /// `cpu z80`, `restore` gives `ld a,ixl` back as `DD 7D`.
+    pub z80_undoc: bool,
     /// Whether a CPU was ever DECLARED for this assembly unit — by the caller
     /// (`Options::initial_cpu = Some(..)`) or by a `cpu` directive anywhere in
     /// the unit, root or included file.
@@ -107,6 +114,7 @@ pub struct AsmState {
 #[derive(Clone, Debug)]
 struct Saved {
     cpu: Cpu,
+    z80_undoc: bool,
 }
 
 impl AsmState {
@@ -121,6 +129,7 @@ impl AsmState {
         let cpu = initial_cpu.unwrap_or(PROVISIONAL_CPU);
         AsmState {
             cpu,
+            z80_undoc: false,
             cpu_declared: initial_cpu.is_some(),
             disp: 0,
             padding: default_padding(cpu),
@@ -132,10 +141,13 @@ impl AsmState {
 
     /// The `cpu` **directive**: [`set_cpu`](AsmState::set_cpu), and latch the
     /// unit as having DECLARED its processor. Only a real declaration calls
-    /// this — `restore` re-applies a CPU without declaring one.
-    pub fn declare_cpu(&mut self, cpu: Cpu) {
+    /// this — `restore` re-applies a CPU without declaring one. `z80_undoc` is
+    /// whether the name was the undocumented Z80's (see [`AsmState::z80_undoc`]);
+    /// every `cpu` line sets it, so `cpu z80` after `cpu z80undoc` clears it.
+    pub fn declare_cpu(&mut self, cpu: Cpu, z80_undoc: bool) {
         self.cpu_declared = true;
         self.set_cpu(cpu);
+        self.z80_undoc = z80_undoc;
     }
 
     /// The `cpu` **directive**: set the CPU and reset `padding`/`supmode` to that
@@ -146,10 +158,11 @@ impl AsmState {
         self.supmode = default_supmode(cpu);
     }
 
-    /// `save`: push a snapshot of the CPU (only the CPU matters on `restore`; the
-    /// padding/supmode reset is a side effect of the CPU re-application).
+    /// `save`: push a snapshot of the CPU and the undocumented-Z80 mode (only
+    /// these matter on `restore`; the padding/supmode reset is a side effect of
+    /// the CPU re-application).
     pub fn save(&mut self) {
-        self.saved.push(Saved { cpu: self.cpu });
+        self.saved.push(Saved { cpu: self.cpu, z80_undoc: self.z80_undoc });
     }
 
     /// `restore`: pop the last snapshot; Err if empty. Re-apply the saved CPU —
@@ -164,6 +177,7 @@ impl AsmState {
         if s.cpu != self.cpu {
             self.set_cpu(s.cpu);
         }
+        self.z80_undoc = s.z80_undoc;
         Ok(())
     }
 }
@@ -271,7 +285,7 @@ mod tests {
         let mut s = AsmState::new(None);
         s.set_cpu(Cpu::M68000);
         assert!(!s.cpu_declared, "restore-style set_cpu must not declare");
-        s.declare_cpu(Cpu::M68000);
+        s.declare_cpu(Cpu::M68000, false);
         assert!(s.cpu_declared);
         s.save();
         s.set_cpu(Cpu::Z80);

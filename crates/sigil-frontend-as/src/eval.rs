@@ -9,13 +9,13 @@ use crate::lexer::{lex_line, lex_line_recover};
 use crate::operands::{parse_operands, OperandAtom};
 use crate::parser::parse_line_tokens;
 use crate::token::{Punct, Tok, Token};
-use crate::{cpu_for_spelling, unsupported_cpu, Failure, Options};
+use crate::{cpu_for_spelling, unsupported_cpu, z80_undocumented, Failure, Options};
 use sigil_backend_m68k::m68k::{
     Cond as M68kCond, Instruction as M68kInstruction, Mnemonic as M68kMnemonic,
     Operand as M68kOperand, Size as M68kSize, Xn as M68kXn,
 };
 use sigil_backend_m68k::M68kBackend;
-use sigil_backend_z80::z80::{Cond, Mnemonic, Operand, Reg16, Reg8};
+use sigil_backend_z80::z80::{Cond, IndexReg, Mnemonic, Operand, Reg16, Reg8};
 use sigil_backend_z80::Z80Backend;
 use sigil_ir::backend::{Backend, Cpu, IrStreamer, LowerError};
 use sigil_ir::expr::{BinOp, Fold};
@@ -2508,8 +2508,11 @@ impl Asm {
     fn builtin_num(&self, name: &str) -> Option<i64> {
         match name {
             "$" => Some(self.here_i64()),
+            // asl: `dw MOMCPU` is `80 00` under `cpu z80` and `DC 80` under
+            // `cpu z80undoc`, whichever case the name is written in.
             "MOMCPU" => Some(match self.state.cpu {
                 Cpu::M68000 => 0x68000,
+                Cpu::Z80 if self.state.z80_undoc => 0x80DC,
                 Cpu::Z80 => 0x80,
             }),
             "MOMPASS" => Some(self.mompass),
@@ -5947,6 +5950,7 @@ impl Asm {
             [Token {
                 tok: Tok::Ident(n), ..
             }] if n == "MOMCPUNAME" => Some(match self.state.cpu {
+                Cpu::Z80 if self.state.z80_undoc => "Z80UNDOC".into(),
                 Cpu::Z80 => "Z80".into(),
                 Cpu::M68000 => "68000".into(),
             }),
@@ -6653,7 +6657,7 @@ impl Asm {
         // `declare_cpu`, not `set_cpu`: this is the unit DECLARING its processor,
         // which is what lifts the `CPU_UNDECLARED` refusal. `restore` re-applies a
         // saved CPU through `set_cpu` and declares nothing.
-        self.state.declare_cpu(cpu);
+        self.state.declare_cpu(cpu, z80_undocumented(&folded));
         self.close_section();
     }
 
@@ -8310,21 +8314,171 @@ impl Asm {
                 return;
             }
         };
-        match self.build_operands(m, &atoms, span) {
-            Some(Lowered::Fixed(ops)) => {
-                let f = self.z80.lower(m, &ops, span);
+        // Under `cpu z80undoc` an index-register half is rewritten to the `h`
+        // or `l` it encodes as, and the prefix byte that selects the half goes
+        // in front of the documented instruction.
+        let prefix = if self.state.z80_undoc {
+            match self.index_halves(m, mn, &mut atoms, span) {
+                Ok(p) => p,
+                Err(()) => return,
+            }
+        } else {
+            None
+        };
+        match (self.build_operands(m, &atoms, span), prefix) {
+            (Some(Lowered::Fixed(ops)), prefix) => {
+                let f = self.z80.lower(m, &ops, span).map(|mut f| {
+                    if let Some(p) = prefix {
+                        f.bytes.insert(0, p);
+                        for fixup in &mut f.fixups {
+                            fixup.offset += 1;
+                        }
+                    }
+                    f
+                });
                 self.emit_frag(f, span);
             }
-            Some(Lowered::Rel(cond, target)) => {
+            // `index_halves` admits only `ld`, the accumulator operations and
+            // `inc`/`dec` on registers and 8-bit immediates, all of which lower
+            // as `Fixed`; a half on any other lowering is refused, never
+            // emitted without its prefix.
+            (Some(_), Some(_)) => {
+                self.err(span, "an index-register half reached a Z80 form that cannot carry its prefix")
+            }
+            (Some(Lowered::Rel(cond, target)), None) => {
                 let f = self.z80.lower_rel(m, cond, target, span);
                 self.emit_frag(f, span);
             }
-            Some(Lowered::Abs16(ops, target)) => {
+            (Some(Lowered::Abs16(ops, target)), None) => {
                 let f = self.z80.lower_abs16(m, &ops, target, span);
                 self.emit_frag(f, span);
             }
-            None => {}
+            (None, _) => {}
         }
+    }
+
+    /// The Z80's undocumented index-register halves, as asl assembles them under
+    /// `cpu z80undoc` (probe tables in
+    /// `docs/superpowers/notes/2026-09-11-z80-half-registers/`).
+    ///
+    /// A half is an operand spelled exactly `ixl`, `ixu`/`ixh`, `iyl` or
+    /// `iyu`/`iyh`, in any case, in an operand position asl decodes as a
+    /// register: every operand of `ld`, the eight accumulator operations,
+    /// `inc`/`dec`, `push`/`pop`, `ex`, `in`/`out` and the CB shifts, and the
+    /// target of `bit`/`res`/`set`. There it is the register even when a symbol
+    /// of that name exists (`ixl equ 5` then `ld b,ixl` is `DD 45`). Everywhere
+    /// else it is an ordinary name: inside an expression (`ixl+1`), inside
+    /// parentheses (`(ixl)`, `(ix+ixl)`), as a `bit` number, and as a
+    /// `jp`/`call`/`jr`/`djnz`/`rst`/`im` operand.
+    ///
+    /// The encoding is the documented instruction on `h` (for the high half) or
+    /// `l` (the low half) behind a `DD` (IX) or `FD` (IY) prefix; the prefix is
+    /// what makes the CPU read `h`/`l` as the half. asl allows exactly these:
+    ///
+    /// - `ld` between a half and one of `a`..`e`, between the two halves of one
+    ///   index register, or from an 8-bit immediate into a half;
+    /// - `add`/`adc`/`sub`/`sbc`/`and`/`xor`/`or`/`cp a,<half>`, and the
+    ///   one-operand `sub`/`and`/`xor`/`or`/`cp <half>` (a one-operand `add`,
+    ///   `adc` or `sbc` with a half is refused);
+    /// - `inc`/`dec <half>`.
+    ///
+    /// Everything else is refused, and the refusals carry weight: `h` or `l`
+    /// beside a half would become a half under the prefix (`ld ixl,h` would
+    /// encode as `ld ixl,ixu`), a half of the other index register cannot share
+    /// the one prefix, and `(hl)` under a prefix is `(ix+d)`.
+    ///
+    /// Rewrites each half in `atoms` to the `h`/`l` it encodes as and returns
+    /// the prefix; `Ok(None)` when the instruction names no half, `Err(())`
+    /// after reporting a refusal.
+    fn index_halves(
+        &mut self,
+        m: Mnemonic,
+        mn: &str,
+        atoms: &mut [OperandAtom],
+        span: Span,
+    ) -> Result<Option<u8>, ()> {
+        use Mnemonic::*;
+        let first_register_operand = match m {
+            Ld | Add | Adc | Sub | Sbc | And | Xor | Or | Cp | Inc | Dec | Push | Pop | Ex | In
+            | Out | Rlc | Rrc | Rl | Rr | Sla | Sra | Srl => 0,
+            Bit | Res | Set => 1,
+            _ => return Ok(None),
+        };
+        let mut halves: Vec<(usize, IndexReg, bool, String)> = Vec::new();
+        for (i, a) in atoms.iter().enumerate().skip(first_register_operand) {
+            if let OperandAtom::Value(Expr::Sym(name)) = a {
+                if let Some((reg, high)) = index_half(name) {
+                    halves.push((i, reg, high, name.clone()));
+                }
+            }
+        }
+        let Some((_, reg, _, first_name)) = halves.first().cloned() else {
+            return Ok(None);
+        };
+        if let Some((_, _, _, other)) = halves.iter().find(|h| h.1 != reg) {
+            self.err(
+                span,
+                format!(
+                    "`{first_name}` and `{other}` are halves of different index registers: \
+                     an instruction carries one prefix, so it can name only one of them"
+                ),
+            );
+            return Err(());
+        }
+        let reg_word = |a: &OperandAtom, allowed: &[&str]| {
+            matches!(a, OperandAtom::RegOrCond(w) if allowed.contains(&w.as_str()))
+        };
+        if atoms.iter().any(|a| reg_word(a, &["h", "l"])) {
+            self.err(
+                span,
+                format!(
+                    "`h` and `l` cannot share an instruction with the index-register half \
+                     `{first_name}`: the prefix that selects the half turns `h` and `l` into \
+                     the halves as well"
+                ),
+            );
+            return Err(());
+        }
+        let is_half = |i: usize| halves.iter().any(|h| h.0 == i);
+        const PLAIN: &[&str] = &["a", "b", "c", "d", "e"];
+        let legal = match (m, atoms.len()) {
+            (Ld, 2) => match (is_half(0), is_half(1)) {
+                (true, true) => true,
+                (true, false) => {
+                    reg_word(&atoms[1], PLAIN) || matches!(atoms[1], OperandAtom::Value(_))
+                }
+                (false, true) => reg_word(&atoms[0], PLAIN),
+                (false, false) => false,
+            },
+            (Add | Adc | Sub | Sbc | And | Xor | Or | Cp, 2) => {
+                reg_word(&atoms[0], &["a"]) && is_half(1)
+            }
+            (Sub | And | Xor | Or | Cp | Inc | Dec, 1) => is_half(0),
+            _ => false,
+        };
+        if !legal {
+            let msg = if matches!(m, Add | Adc | Sbc) && atoms.len() == 1 {
+                format!(
+                    "`{mn} {first_name}` needs its accumulator written out, `{mn} a,{first_name}`: \
+                     asl takes `add`, `adc` and `sbc` with an index-register half only in the \
+                     two-operand form"
+                )
+            } else {
+                format!(
+                    "`{mn}` has no form that takes the index-register half `{first_name}` in this \
+                     position (asl: addressing mode not allowed here)"
+                )
+            };
+            self.err(span, msg);
+            return Err(());
+        }
+        for (i, _, high, _) in &halves {
+            atoms[*i] = OperandAtom::RegOrCond(if *high { "h" } else { "l" }.to_string());
+        }
+        Ok(Some(match reg {
+            IndexReg::Ix => 0xDD,
+            IndexReg::Iy => 0xFD,
+        }))
     }
 
     /// M1.C T4/T5/T5b/T5c: the 68000 core. Straight-line register/immediate
@@ -11615,6 +11769,20 @@ fn reg8(w: &str) -> Option<Reg8> {
         "l" => L,
         _ => return None,
     })
+}
+
+/// The index-register half an operand name spells under `cpu z80undoc`, in any
+/// case: the register and whether it is the high half. asl's spellings,
+/// measured: `ixl`, `ixu` and `ixh` (one register, two names), `iyl`, `iyu` and
+/// `iyh`. `lx`, `hx`, `xl`, `xh`, `ixlo`, `ixhi` and `ix.l` are not registers.
+fn index_half(name: &str) -> Option<(IndexReg, bool)> {
+    match name.to_ascii_lowercase().as_str() {
+        "ixl" => Some((IndexReg::Ix, false)),
+        "ixu" | "ixh" => Some((IndexReg::Ix, true)),
+        "iyl" => Some((IndexReg::Iy, false)),
+        "iyu" | "iyh" => Some((IndexReg::Iy, true)),
+        _ => None,
+    }
 }
 
 fn reg16(w: &str) -> Option<Reg16> {
