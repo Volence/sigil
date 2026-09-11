@@ -1,0 +1,342 @@
+# sigil /home/volence/sonic_hacks/.scratch/z80-half-registers/bin/sigil-base md5 5a5dae03308b46b0321969b674d8a332
+# BOTH-REFUSE=177 DIFFER=5 MATCH=14 SIGIL-REFUSES=144
+BOTH-REFUSE	alu1_adc_ixl	asl=REFUSED	sigil=REFUSED	alu1_adc_ixl.asm(3):2: error: unresolved symbol `ixl` in operand
+BOTH-REFUSE	alu1_adc_ixu	asl=REFUSED	sigil=REFUSED	alu1_adc_ixu.asm(3):2: error: unresolved symbol `ixu` in operand
+BOTH-REFUSE	alu1_adc_iyl	asl=REFUSED	sigil=REFUSED	alu1_adc_iyl.asm(3):2: error: unresolved symbol `iyl` in operand
+BOTH-REFUSE	alu1_adc_iyu	asl=REFUSED	sigil=REFUSED	alu1_adc_iyu.asm(3):2: error: unresolved symbol `iyu` in operand
+BOTH-REFUSE	alu1_add_ixl	asl=REFUSED	sigil=REFUSED	alu1_add_ixl.asm(3):2: error: unresolved symbol `ixl` in operand
+BOTH-REFUSE	alu1_add_ixu	asl=REFUSED	sigil=REFUSED	alu1_add_ixu.asm(3):2: error: unresolved symbol `ixu` in operand
+BOTH-REFUSE	alu1_add_iyl	asl=REFUSED	sigil=REFUSED	alu1_add_iyl.asm(3):2: error: unresolved symbol `iyl` in operand
+BOTH-REFUSE	alu1_add_iyu	asl=REFUSED	sigil=REFUSED	alu1_add_iyu.asm(3):2: error: unresolved symbol `iyu` in operand
+SIGIL-REFUSES	alu1_and_ixl	asl=DD A5 00	sigil=REFUSED	alu1_and_ixl.asm(3):2: error: unresolved symbol `ixl` in operand
+SIGIL-REFUSES	alu1_and_ixu	asl=DD A4 00	sigil=REFUSED	alu1_and_ixu.asm(3):2: error: unresolved symbol `ixu` in operand
+SIGIL-REFUSES	alu1_and_iyl	asl=FD A5 00	sigil=REFUSED	alu1_and_iyl.asm(3):2: error: unresolved symbol `iyl` in operand
+SIGIL-REFUSES	alu1_and_iyu	asl=FD A4 00	sigil=REFUSED	alu1_and_iyu.asm(3):2: error: unresolved symbol `iyu` in operand
+SIGIL-REFUSES	alu1_cp_ixl	asl=DD BD 00	sigil=REFUSED	alu1_cp_ixl.asm(3):2: error: unresolved symbol `ixl` in operand
+SIGIL-REFUSES	alu1_cp_ixu	asl=DD BC 00	sigil=REFUSED	alu1_cp_ixu.asm(3):2: error: unresolved symbol `ixu` in operand
+SIGIL-REFUSES	alu1_cp_iyl	asl=FD BD 00	sigil=REFUSED	alu1_cp_iyl.asm(3):2: error: unresolved symbol `iyl` in operand
+SIGIL-REFUSES	alu1_cp_iyu	asl=FD BC 00	sigil=REFUSED	alu1_cp_iyu.asm(3):2: error: unresolved symbol `iyu` in operand
+SIGIL-REFUSES	alu1_or_ixl	asl=DD B5 00	sigil=REFUSED	alu1_or_ixl.asm(3):2: error: unresolved symbol `ixl` in operand
+SIGIL-REFUSES	alu1_or_ixu	asl=DD B4 00	sigil=REFUSED	alu1_or_ixu.asm(3):2: error: unresolved symbol `ixu` in operand
+SIGIL-REFUSES	alu1_or_iyl	asl=FD B5 00	sigil=REFUSED	alu1_or_iyl.asm(3):2: error: unresolved symbol `iyl` in operand
+SIGIL-REFUSES	alu1_or_iyu	asl=FD B4 00	sigil=REFUSED	alu1_or_iyu.asm(3):2: error: unresolved symbol `iyu` in operand
+BOTH-REFUSE	alu1_sbc_ixl	asl=REFUSED	sigil=REFUSED	alu1_sbc_ixl.asm(3):2: error: unresolved symbol `ixl` in operand
+BOTH-REFUSE	alu1_sbc_ixu	asl=REFUSED	sigil=REFUSED	alu1_sbc_ixu.asm(3):2: error: unresolved symbol `ixu` in operand
+BOTH-REFUSE	alu1_sbc_iyl	asl=REFUSED	sigil=REFUSED	alu1_sbc_iyl.asm(3):2: error: unresolved symbol `iyl` in operand
+BOTH-REFUSE	alu1_sbc_iyu	asl=REFUSED	sigil=REFUSED	alu1_sbc_iyu.asm(3):2: error: unresolved symbol `iyu` in operand
+SIGIL-REFUSES	alu1_sub_ixl	asl=DD 95 00	sigil=REFUSED	alu1_sub_ixl.asm(3):2: error: unresolved symbol `ixl` in operand
+SIGIL-REFUSES	alu1_sub_ixu	asl=DD 94 00	sigil=REFUSED	alu1_sub_ixu.asm(3):2: error: unresolved symbol `ixu` in operand
+SIGIL-REFUSES	alu1_sub_iyl	asl=FD 95 00	sigil=REFUSED	alu1_sub_iyl.asm(3):2: error: unresolved symbol `iyl` in operand
+SIGIL-REFUSES	alu1_sub_iyu	asl=FD 94 00	sigil=REFUSED	alu1_sub_iyu.asm(3):2: error: unresolved symbol `iyu` in operand
+SIGIL-REFUSES	alu1_xor_ixl	asl=DD AD 00	sigil=REFUSED	alu1_xor_ixl.asm(3):2: error: unresolved symbol `ixl` in operand
+SIGIL-REFUSES	alu1_xor_ixu	asl=DD AC 00	sigil=REFUSED	alu1_xor_ixu.asm(3):2: error: unresolved symbol `ixu` in operand
+SIGIL-REFUSES	alu1_xor_iyl	asl=FD AD 00	sigil=REFUSED	alu1_xor_iyl.asm(3):2: error: unresolved symbol `iyl` in operand
+SIGIL-REFUSES	alu1_xor_iyu	asl=FD AC 00	sigil=REFUSED	alu1_xor_iyu.asm(3):2: error: unresolved symbol `iyu` in operand
+SIGIL-REFUSES	alu2_adc_ixl	asl=DD 8D 00	sigil=REFUSED	alu2_adc_ixl.asm(3):2: error: unresolved symbol `ixl` in operand
+SIGIL-REFUSES	alu2_adc_ixu	asl=DD 8C 00	sigil=REFUSED	alu2_adc_ixu.asm(3):2: error: unresolved symbol `ixu` in operand
+SIGIL-REFUSES	alu2_adc_iyl	asl=FD 8D 00	sigil=REFUSED	alu2_adc_iyl.asm(3):2: error: unresolved symbol `iyl` in operand
+SIGIL-REFUSES	alu2_adc_iyu	asl=FD 8C 00	sigil=REFUSED	alu2_adc_iyu.asm(3):2: error: unresolved symbol `iyu` in operand
+SIGIL-REFUSES	alu2_add_ixl	asl=DD 85 00	sigil=REFUSED	alu2_add_ixl.asm(3):2: error: unresolved symbol `ixl` in operand
+SIGIL-REFUSES	alu2_add_ixu	asl=DD 84 00	sigil=REFUSED	alu2_add_ixu.asm(3):2: error: unresolved symbol `ixu` in operand
+SIGIL-REFUSES	alu2_add_iyl	asl=FD 85 00	sigil=REFUSED	alu2_add_iyl.asm(3):2: error: unresolved symbol `iyl` in operand
+SIGIL-REFUSES	alu2_add_iyu	asl=FD 84 00	sigil=REFUSED	alu2_add_iyu.asm(3):2: error: unresolved symbol `iyu` in operand
+SIGIL-REFUSES	alu2_and_ixl	asl=DD A5 00	sigil=REFUSED	alu2_and_ixl.asm(3):2: error: unresolved symbol `ixl` in operand
+SIGIL-REFUSES	alu2_and_ixu	asl=DD A4 00	sigil=REFUSED	alu2_and_ixu.asm(3):2: error: unresolved symbol `ixu` in operand
+SIGIL-REFUSES	alu2_and_iyl	asl=FD A5 00	sigil=REFUSED	alu2_and_iyl.asm(3):2: error: unresolved symbol `iyl` in operand
+SIGIL-REFUSES	alu2_and_iyu	asl=FD A4 00	sigil=REFUSED	alu2_and_iyu.asm(3):2: error: unresolved symbol `iyu` in operand
+SIGIL-REFUSES	alu2_cp_ixl	asl=DD BD 00	sigil=REFUSED	alu2_cp_ixl.asm(3):2: error: unresolved symbol `ixl` in operand
+SIGIL-REFUSES	alu2_cp_ixu	asl=DD BC 00	sigil=REFUSED	alu2_cp_ixu.asm(3):2: error: unresolved symbol `ixu` in operand
+SIGIL-REFUSES	alu2_cp_iyl	asl=FD BD 00	sigil=REFUSED	alu2_cp_iyl.asm(3):2: error: unresolved symbol `iyl` in operand
+SIGIL-REFUSES	alu2_cp_iyu	asl=FD BC 00	sigil=REFUSED	alu2_cp_iyu.asm(3):2: error: unresolved symbol `iyu` in operand
+SIGIL-REFUSES	alu2_or_ixl	asl=DD B5 00	sigil=REFUSED	alu2_or_ixl.asm(3):2: error: unresolved symbol `ixl` in operand
+SIGIL-REFUSES	alu2_or_ixu	asl=DD B4 00	sigil=REFUSED	alu2_or_ixu.asm(3):2: error: unresolved symbol `ixu` in operand
+SIGIL-REFUSES	alu2_or_iyl	asl=FD B5 00	sigil=REFUSED	alu2_or_iyl.asm(3):2: error: unresolved symbol `iyl` in operand
+SIGIL-REFUSES	alu2_or_iyu	asl=FD B4 00	sigil=REFUSED	alu2_or_iyu.asm(3):2: error: unresolved symbol `iyu` in operand
+SIGIL-REFUSES	alu2_sbc_ixl	asl=DD 9D 00	sigil=REFUSED	alu2_sbc_ixl.asm(3):2: error: unresolved symbol `ixl` in operand
+SIGIL-REFUSES	alu2_sbc_ixu	asl=DD 9C 00	sigil=REFUSED	alu2_sbc_ixu.asm(3):2: error: unresolved symbol `ixu` in operand
+SIGIL-REFUSES	alu2_sbc_iyl	asl=FD 9D 00	sigil=REFUSED	alu2_sbc_iyl.asm(3):2: error: unresolved symbol `iyl` in operand
+SIGIL-REFUSES	alu2_sbc_iyu	asl=FD 9C 00	sigil=REFUSED	alu2_sbc_iyu.asm(3):2: error: unresolved symbol `iyu` in operand
+SIGIL-REFUSES	alu2_sub_ixl	asl=DD 95 00	sigil=REFUSED	alu2_sub_ixl.asm(3):2: error: unresolved symbol `ixl` in operand
+SIGIL-REFUSES	alu2_sub_ixu	asl=DD 94 00	sigil=REFUSED	alu2_sub_ixu.asm(3):2: error: unresolved symbol `ixu` in operand
+SIGIL-REFUSES	alu2_sub_iyl	asl=FD 95 00	sigil=REFUSED	alu2_sub_iyl.asm(3):2: error: unresolved symbol `iyl` in operand
+SIGIL-REFUSES	alu2_sub_iyu	asl=FD 94 00	sigil=REFUSED	alu2_sub_iyu.asm(3):2: error: unresolved symbol `iyu` in operand
+SIGIL-REFUSES	alu2_xor_ixl	asl=DD AD 00	sigil=REFUSED	alu2_xor_ixl.asm(3):2: error: unresolved symbol `ixl` in operand
+SIGIL-REFUSES	alu2_xor_ixu	asl=DD AC 00	sigil=REFUSED	alu2_xor_ixu.asm(3):2: error: unresolved symbol `ixu` in operand
+SIGIL-REFUSES	alu2_xor_iyl	asl=FD AD 00	sigil=REFUSED	alu2_xor_iyl.asm(3):2: error: unresolved symbol `iyl` in operand
+SIGIL-REFUSES	alu2_xor_iyu	asl=FD AC 00	sigil=REFUSED	alu2_xor_iyu.asm(3):2: error: unresolved symbol `iyu` in operand
+BOTH-REFUSE	alu_add_hl_ixl	asl=REFUSED	sigil=REFUSED	alu_add_hl_ixl.asm(3):2: error: unsupported form: Instruction { mnemonic: Add, ops: [Pair(Hl), Imm16(0)] }
+BOTH-REFUSE	alu_add_hl_ixu	asl=REFUSED	sigil=REFUSED	alu_add_hl_ixu.asm(3):2: error: unsupported form: Instruction { mnemonic: Add, ops: [Pair(Hl), Imm16(0)] }
+BOTH-REFUSE	alu_add_hl_iyl	asl=REFUSED	sigil=REFUSED	alu_add_hl_iyl.asm(3):2: error: unsupported form: Instruction { mnemonic: Add, ops: [Pair(Hl), Imm16(0)] }
+BOTH-REFUSE	alu_add_hl_iyu	asl=REFUSED	sigil=REFUSED	alu_add_hl_iyu.asm(3):2: error: unsupported form: Instruction { mnemonic: Add, ops: [Pair(Hl), Imm16(0)] }
+BOTH-REFUSE	alud_add_b_ixl	asl=REFUSED	sigil=REFUSED	alud_add_b_ixl.asm(3):2: error: unsupported form: Instruction { mnemonic: Add, ops: [Reg(B), Imm8(0)] }
+BOTH-REFUSE	alud_add_b_ixu	asl=REFUSED	sigil=REFUSED	alud_add_b_ixu.asm(3):2: error: unsupported form: Instruction { mnemonic: Add, ops: [Reg(B), Imm8(0)] }
+BOTH-REFUSE	alud_add_b_iyl	asl=REFUSED	sigil=REFUSED	alud_add_b_iyl.asm(3):2: error: unsupported form: Instruction { mnemonic: Add, ops: [Reg(B), Imm8(0)] }
+BOTH-REFUSE	alud_add_b_iyu	asl=REFUSED	sigil=REFUSED	alud_add_b_iyu.asm(3):2: error: unsupported form: Instruction { mnemonic: Add, ops: [Reg(B), Imm8(0)] }
+BOTH-REFUSE	alud_add_ixl_a	asl=REFUSED	sigil=REFUSED	alud_add_ixl_a.asm(3):2: error: unsupported form: Instruction { mnemonic: Add, ops: [Imm8(0), Reg(A)] }
+BOTH-REFUSE	alud_add_ixu_a	asl=REFUSED	sigil=REFUSED	alud_add_ixu_a.asm(3):2: error: unsupported form: Instruction { mnemonic: Add, ops: [Imm8(0), Reg(A)] }
+BOTH-REFUSE	alud_add_iyl_a	asl=REFUSED	sigil=REFUSED	alud_add_iyl_a.asm(3):2: error: unsupported form: Instruction { mnemonic: Add, ops: [Imm8(0), Reg(A)] }
+BOTH-REFUSE	alud_add_iyu_a	asl=REFUSED	sigil=REFUSED	alud_add_iyu_a.asm(3):2: error: unsupported form: Instruction { mnemonic: Add, ops: [Imm8(0), Reg(A)] }
+BOTH-REFUSE	cb_rl_ixl	asl=REFUSED	sigil=REFUSED	cb_rl_ixl.asm(3):2: error: unsupported form: CB group target must be r or (hl), got Imm8(0)
+BOTH-REFUSE	cb_rl_ixu	asl=REFUSED	sigil=REFUSED	cb_rl_ixu.asm(3):2: error: unsupported form: CB group target must be r or (hl), got Imm8(0)
+BOTH-REFUSE	cb_rl_iyl	asl=REFUSED	sigil=REFUSED	cb_rl_iyl.asm(3):2: error: unsupported form: CB group target must be r or (hl), got Imm8(0)
+BOTH-REFUSE	cb_rl_iyu	asl=REFUSED	sigil=REFUSED	cb_rl_iyu.asm(3):2: error: unsupported form: CB group target must be r or (hl), got Imm8(0)
+BOTH-REFUSE	cb_rlc_ixl	asl=REFUSED	sigil=REFUSED	cb_rlc_ixl.asm(3):2: error: unsupported form: CB group target must be r or (hl), got Imm8(0)
+BOTH-REFUSE	cb_rlc_ixu	asl=REFUSED	sigil=REFUSED	cb_rlc_ixu.asm(3):2: error: unsupported form: CB group target must be r or (hl), got Imm8(0)
+BOTH-REFUSE	cb_rlc_iyl	asl=REFUSED	sigil=REFUSED	cb_rlc_iyl.asm(3):2: error: unsupported form: CB group target must be r or (hl), got Imm8(0)
+BOTH-REFUSE	cb_rlc_iyu	asl=REFUSED	sigil=REFUSED	cb_rlc_iyu.asm(3):2: error: unsupported form: CB group target must be r or (hl), got Imm8(0)
+BOTH-REFUSE	cb_rr_ixl	asl=REFUSED	sigil=REFUSED	cb_rr_ixl.asm(3):2: error: unsupported form: CB group target must be r or (hl), got Imm8(0)
+BOTH-REFUSE	cb_rr_ixu	asl=REFUSED	sigil=REFUSED	cb_rr_ixu.asm(3):2: error: unsupported form: CB group target must be r or (hl), got Imm8(0)
+BOTH-REFUSE	cb_rr_iyl	asl=REFUSED	sigil=REFUSED	cb_rr_iyl.asm(3):2: error: unsupported form: CB group target must be r or (hl), got Imm8(0)
+BOTH-REFUSE	cb_rr_iyu	asl=REFUSED	sigil=REFUSED	cb_rr_iyu.asm(3):2: error: unsupported form: CB group target must be r or (hl), got Imm8(0)
+BOTH-REFUSE	cb_rrc_ixl	asl=REFUSED	sigil=REFUSED	cb_rrc_ixl.asm(3):2: error: unsupported form: CB group target must be r or (hl), got Imm8(0)
+BOTH-REFUSE	cb_rrc_ixu	asl=REFUSED	sigil=REFUSED	cb_rrc_ixu.asm(3):2: error: unsupported form: CB group target must be r or (hl), got Imm8(0)
+BOTH-REFUSE	cb_rrc_iyl	asl=REFUSED	sigil=REFUSED	cb_rrc_iyl.asm(3):2: error: unsupported form: CB group target must be r or (hl), got Imm8(0)
+BOTH-REFUSE	cb_rrc_iyu	asl=REFUSED	sigil=REFUSED	cb_rrc_iyu.asm(3):2: error: unsupported form: CB group target must be r or (hl), got Imm8(0)
+BOTH-REFUSE	cb_sla_ixl	asl=REFUSED	sigil=REFUSED	cb_sla_ixl.asm(3):2: error: unsupported form: CB group target must be r or (hl), got Imm8(0)
+BOTH-REFUSE	cb_sla_ixu	asl=REFUSED	sigil=REFUSED	cb_sla_ixu.asm(3):2: error: unsupported form: CB group target must be r or (hl), got Imm8(0)
+BOTH-REFUSE	cb_sla_iyl	asl=REFUSED	sigil=REFUSED	cb_sla_iyl.asm(3):2: error: unsupported form: CB group target must be r or (hl), got Imm8(0)
+BOTH-REFUSE	cb_sla_iyu	asl=REFUSED	sigil=REFUSED	cb_sla_iyu.asm(3):2: error: unsupported form: CB group target must be r or (hl), got Imm8(0)
+BOTH-REFUSE	cb_sll_ixl	asl=REFUSED	sigil=REFUSED	cb_sll_ixl.asm(3):2: error: unknown directive or mnemonic `sll`
+BOTH-REFUSE	cb_sll_ixu	asl=REFUSED	sigil=REFUSED	cb_sll_ixu.asm(3):2: error: unknown directive or mnemonic `sll`
+BOTH-REFUSE	cb_sll_iyl	asl=REFUSED	sigil=REFUSED	cb_sll_iyl.asm(3):2: error: unknown directive or mnemonic `sll`
+BOTH-REFUSE	cb_sll_iyu	asl=REFUSED	sigil=REFUSED	cb_sll_iyu.asm(3):2: error: unknown directive or mnemonic `sll`
+BOTH-REFUSE	cb_sra_ixl	asl=REFUSED	sigil=REFUSED	cb_sra_ixl.asm(3):2: error: unsupported form: CB group target must be r or (hl), got Imm8(0)
+BOTH-REFUSE	cb_sra_ixu	asl=REFUSED	sigil=REFUSED	cb_sra_ixu.asm(3):2: error: unsupported form: CB group target must be r or (hl), got Imm8(0)
+BOTH-REFUSE	cb_sra_iyl	asl=REFUSED	sigil=REFUSED	cb_sra_iyl.asm(3):2: error: unsupported form: CB group target must be r or (hl), got Imm8(0)
+BOTH-REFUSE	cb_sra_iyu	asl=REFUSED	sigil=REFUSED	cb_sra_iyu.asm(3):2: error: unsupported form: CB group target must be r or (hl), got Imm8(0)
+BOTH-REFUSE	cb_srl_ixl	asl=REFUSED	sigil=REFUSED	cb_srl_ixl.asm(3):2: error: unsupported form: CB group target must be r or (hl), got Imm8(0)
+BOTH-REFUSE	cb_srl_ixu	asl=REFUSED	sigil=REFUSED	cb_srl_ixu.asm(3):2: error: unsupported form: CB group target must be r or (hl), got Imm8(0)
+BOTH-REFUSE	cb_srl_iyl	asl=REFUSED	sigil=REFUSED	cb_srl_iyl.asm(3):2: error: unsupported form: CB group target must be r or (hl), got Imm8(0)
+BOTH-REFUSE	cb_srl_iyu	asl=REFUSED	sigil=REFUSED	cb_srl_iyu.asm(3):2: error: unsupported form: CB group target must be r or (hl), got Imm8(0)
+BOTH-REFUSE	cbb_bit_ixl	asl=REFUSED	sigil=REFUSED	cbb_bit_ixl.asm(3):2: error: unsupported form: CB group target must be r or (hl), got Imm8(0)
+BOTH-REFUSE	cbb_bit_ixu	asl=REFUSED	sigil=REFUSED	cbb_bit_ixu.asm(3):2: error: unsupported form: CB group target must be r or (hl), got Imm8(0)
+BOTH-REFUSE	cbb_bit_iyl	asl=REFUSED	sigil=REFUSED	cbb_bit_iyl.asm(3):2: error: unsupported form: CB group target must be r or (hl), got Imm8(0)
+BOTH-REFUSE	cbb_bit_iyu	asl=REFUSED	sigil=REFUSED	cbb_bit_iyu.asm(3):2: error: unsupported form: CB group target must be r or (hl), got Imm8(0)
+BOTH-REFUSE	cbb_res_ixl	asl=REFUSED	sigil=REFUSED	cbb_res_ixl.asm(3):2: error: unsupported form: CB group target must be r or (hl), got Imm8(0)
+BOTH-REFUSE	cbb_res_ixu	asl=REFUSED	sigil=REFUSED	cbb_res_ixu.asm(3):2: error: unsupported form: CB group target must be r or (hl), got Imm8(0)
+BOTH-REFUSE	cbb_res_iyl	asl=REFUSED	sigil=REFUSED	cbb_res_iyl.asm(3):2: error: unsupported form: CB group target must be r or (hl), got Imm8(0)
+BOTH-REFUSE	cbb_res_iyu	asl=REFUSED	sigil=REFUSED	cbb_res_iyu.asm(3):2: error: unsupported form: CB group target must be r or (hl), got Imm8(0)
+BOTH-REFUSE	cbb_set_ixl	asl=REFUSED	sigil=REFUSED	cbb_set_ixl.asm(3):2: error: unsupported form: CB group target must be r or (hl), got Imm8(0)
+BOTH-REFUSE	cbb_set_ixu	asl=REFUSED	sigil=REFUSED	cbb_set_ixu.asm(3):2: error: unsupported form: CB group target must be r or (hl), got Imm8(0)
+BOTH-REFUSE	cbb_set_iyl	asl=REFUSED	sigil=REFUSED	cbb_set_iyl.asm(3):2: error: unsupported form: CB group target must be r or (hl), got Imm8(0)
+BOTH-REFUSE	cbb_set_iyu	asl=REFUSED	sigil=REFUSED	cbb_set_iyu.asm(3):2: error: unsupported form: CB group target must be r or (hl), got Imm8(0)
+MATCH	ctl_add_a_l	asl=85 00	sigil=85 00	
+MATCH	ctl_dec_h	asl=25 00	sigil=25 00	
+MATCH	ctl_inc_l	asl=2C 00	sigil=2C 00	
+MATCH	ctl_ld_a_h	asl=7C 00	sigil=7C 00	
+MATCH	ctl_ld_a_ix_1_	asl=DD 7E 01 00	sigil=DD 7E 01 00	
+MATCH	ctl_ld_a_l	asl=7D 00	sigil=7D 00	
+MATCH	ctl_ld_h_l	asl=65 00	sigil=65 00	
+MATCH	ctl_ld_l_5	asl=2E 05 00	sigil=2E 05 00	
+MATCH	ctl_ld_l_a	asl=6F 00	sigil=6F 00	
+SIGIL-REFUSES	ctl_sll_a	asl=CB 37 00	sigil=REFUSED	ctl_sll_a.asm(3):2: error: unknown directive or mnemonic `sll`
+SIGIL-REFUSES	ctl_sll_b	asl=CB 30 00	sigil=REFUSED	ctl_sll_b.asm(3):2: error: unknown directive or mnemonic `sll`
+SIGIL-REFUSES	dec_ixl	asl=DD 2D 00	sigil=REFUSED	dec_ixl.asm(3):2: error: unsupported form: Instruction { mnemonic: Dec, ops: [Imm8(0)] }
+SIGIL-REFUSES	dec_ixu	asl=DD 25 00	sigil=REFUSED	dec_ixu.asm(3):2: error: unsupported form: Instruction { mnemonic: Dec, ops: [Imm8(0)] }
+SIGIL-REFUSES	dec_iyl	asl=FD 2D 00	sigil=REFUSED	dec_iyl.asm(3):2: error: unsupported form: Instruction { mnemonic: Dec, ops: [Imm8(0)] }
+SIGIL-REFUSES	dec_iyu	asl=FD 25 00	sigil=REFUSED	dec_iyu.asm(3):2: error: unsupported form: Instruction { mnemonic: Dec, ops: [Imm8(0)] }
+BOTH-REFUSE	doc_ixh	asl=REFUSED	sigil=REFUSED	doc_ixh.asm(3):2: error: unresolved symbol `ixh` in operand
+BOTH-REFUSE	doc_ixl	asl=REFUSED	sigil=REFUSED	doc_ixl.asm(3):2: error: unresolved symbol `ixl` in operand
+BOTH-REFUSE	doc_ixu	asl=REFUSED	sigil=REFUSED	doc_ixu.asm(3):2: error: unresolved symbol `ixu` in operand
+BOTH-REFUSE	doc_iyl	asl=REFUSED	sigil=REFUSED	doc_iyl.asm(3):2: error: unresolved symbol `iyl` in operand
+BOTH-REFUSE	doc_iyu	asl=REFUSED	sigil=REFUSED	doc_iyu.asm(3):2: error: unresolved symbol `iyu` in operand
+MATCH	docsym_ixh	asl=3E 05 00	sigil=3E 05 00	
+MATCH	docsym_ixl	asl=3E 05 00	sigil=3E 05 00	
+MATCH	docsym_ixu	asl=3E 05 00	sigil=3E 05 00	
+MATCH	docsym_iyl	asl=3E 05 00	sigil=3E 05 00	
+MATCH	docsym_iyu	asl=3E 05 00	sigil=3E 05 00	
+BOTH-REFUSE	ex_ixl	asl=REFUSED	sigil=REFUSED	ex_ixl.asm(3):2: error: unsupported form: Instruction { mnemonic: Ex, ops: [Pair(De), Imm16(0)] }
+BOTH-REFUSE	ex_ixu	asl=REFUSED	sigil=REFUSED	ex_ixu.asm(3):2: error: unsupported form: Instruction { mnemonic: Ex, ops: [Pair(De), Imm16(0)] }
+BOTH-REFUSE	ex_iyl	asl=REFUSED	sigil=REFUSED	ex_iyl.asm(3):2: error: unsupported form: Instruction { mnemonic: Ex, ops: [Pair(De), Imm16(0)] }
+BOTH-REFUSE	ex_iyu	asl=REFUSED	sigil=REFUSED	ex_iyu.asm(3):2: error: unsupported form: Instruction { mnemonic: Ex, ops: [Pair(De), Imm16(0)] }
+BOTH-REFUSE	in_ixl	asl=REFUSED	sigil=REFUSED	in_ixl.asm(3):2: error: unsupported form: Instruction { mnemonic: In, ops: [Imm8(0), IndC] }
+BOTH-REFUSE	in_ixu	asl=REFUSED	sigil=REFUSED	in_ixu.asm(3):2: error: unsupported form: Instruction { mnemonic: In, ops: [Imm8(0), IndC] }
+BOTH-REFUSE	in_iyl	asl=REFUSED	sigil=REFUSED	in_iyl.asm(3):2: error: unsupported form: Instruction { mnemonic: In, ops: [Imm8(0), IndC] }
+BOTH-REFUSE	in_iyu	asl=REFUSED	sigil=REFUSED	in_iyu.asm(3):2: error: unsupported form: Instruction { mnemonic: In, ops: [Imm8(0), IndC] }
+SIGIL-REFUSES	inc_ixl	asl=DD 2C 00	sigil=REFUSED	inc_ixl.asm(3):2: error: unsupported form: Instruction { mnemonic: Inc, ops: [Imm8(0)] }
+SIGIL-REFUSES	inc_ixu	asl=DD 24 00	sigil=REFUSED	inc_ixu.asm(3):2: error: unsupported form: Instruction { mnemonic: Inc, ops: [Imm8(0)] }
+SIGIL-REFUSES	inc_iyl	asl=FD 2C 00	sigil=REFUSED	inc_iyl.asm(3):2: error: unsupported form: Instruction { mnemonic: Inc, ops: [Imm8(0)] }
+SIGIL-REFUSES	inc_iyu	asl=FD 24 00	sigil=REFUSED	inc_iyu.asm(3):2: error: unsupported form: Instruction { mnemonic: Inc, ops: [Imm8(0)] }
+BOTH-REFUSE	jp_ixl	asl=REFUSED	sigil=REFUSED	jp_ixl.asm(3):2: error: unsupported form: Instruction { mnemonic: Jp, ops: [Mem(0)] }
+BOTH-REFUSE	jp_ixu	asl=REFUSED	sigil=REFUSED	jp_ixu.asm(3):2: error: unsupported form: Instruction { mnemonic: Jp, ops: [Mem(0)] }
+BOTH-REFUSE	jp_iyl	asl=REFUSED	sigil=REFUSED	jp_iyl.asm(3):2: error: unsupported form: Instruction { mnemonic: Jp, ops: [Mem(0)] }
+BOTH-REFUSE	jp_iyu	asl=REFUSED	sigil=REFUSED	jp_iyu.asm(3):2: error: unsupported form: Instruction { mnemonic: Jp, ops: [Mem(0)] }
+SIGIL-REFUSES	ld_a_ixl	asl=DD 7D 00	sigil=REFUSED	ld_a_ixl.asm(3):2: error: unresolved symbol `ixl` in operand
+SIGIL-REFUSES	ld_a_ixu	asl=DD 7C 00	sigil=REFUSED	ld_a_ixu.asm(3):2: error: unresolved symbol `ixu` in operand
+SIGIL-REFUSES	ld_a_iyl	asl=FD 7D 00	sigil=REFUSED	ld_a_iyl.asm(3):2: error: unresolved symbol `iyl` in operand
+SIGIL-REFUSES	ld_a_iyu	asl=FD 7C 00	sigil=REFUSED	ld_a_iyu.asm(3):2: error: unresolved symbol `iyu` in operand
+SIGIL-REFUSES	ld_b_ixl	asl=DD 45 00	sigil=REFUSED	ld_b_ixl.asm(3):2: error: unresolved symbol `ixl` in operand
+SIGIL-REFUSES	ld_b_ixu	asl=DD 44 00	sigil=REFUSED	ld_b_ixu.asm(3):2: error: unresolved symbol `ixu` in operand
+SIGIL-REFUSES	ld_b_iyl	asl=FD 45 00	sigil=REFUSED	ld_b_iyl.asm(3):2: error: unresolved symbol `iyl` in operand
+SIGIL-REFUSES	ld_b_iyu	asl=FD 44 00	sigil=REFUSED	ld_b_iyu.asm(3):2: error: unresolved symbol `iyu` in operand
+SIGIL-REFUSES	ld_c_ixl	asl=DD 4D 00	sigil=REFUSED	ld_c_ixl.asm(3):2: error: unresolved symbol `ixl` in operand
+SIGIL-REFUSES	ld_c_ixu	asl=DD 4C 00	sigil=REFUSED	ld_c_ixu.asm(3):2: error: unresolved symbol `ixu` in operand
+SIGIL-REFUSES	ld_c_iyl	asl=FD 4D 00	sigil=REFUSED	ld_c_iyl.asm(3):2: error: unresolved symbol `iyl` in operand
+SIGIL-REFUSES	ld_c_iyu	asl=FD 4C 00	sigil=REFUSED	ld_c_iyu.asm(3):2: error: unresolved symbol `iyu` in operand
+SIGIL-REFUSES	ld_d_ixl	asl=DD 55 00	sigil=REFUSED	ld_d_ixl.asm(3):2: error: unresolved symbol `ixl` in operand
+SIGIL-REFUSES	ld_d_ixu	asl=DD 54 00	sigil=REFUSED	ld_d_ixu.asm(3):2: error: unresolved symbol `ixu` in operand
+SIGIL-REFUSES	ld_d_iyl	asl=FD 55 00	sigil=REFUSED	ld_d_iyl.asm(3):2: error: unresolved symbol `iyl` in operand
+SIGIL-REFUSES	ld_d_iyu	asl=FD 54 00	sigil=REFUSED	ld_d_iyu.asm(3):2: error: unresolved symbol `iyu` in operand
+SIGIL-REFUSES	ld_e_ixl	asl=DD 5D 00	sigil=REFUSED	ld_e_ixl.asm(3):2: error: unresolved symbol `ixl` in operand
+SIGIL-REFUSES	ld_e_ixu	asl=DD 5C 00	sigil=REFUSED	ld_e_ixu.asm(3):2: error: unresolved symbol `ixu` in operand
+SIGIL-REFUSES	ld_e_iyl	asl=FD 5D 00	sigil=REFUSED	ld_e_iyl.asm(3):2: error: unresolved symbol `iyl` in operand
+SIGIL-REFUSES	ld_e_iyu	asl=FD 5C 00	sigil=REFUSED	ld_e_iyu.asm(3):2: error: unresolved symbol `iyu` in operand
+BOTH-REFUSE	ld_h_ixl	asl=REFUSED	sigil=REFUSED	ld_h_ixl.asm(3):2: error: unresolved symbol `ixl` in operand
+BOTH-REFUSE	ld_h_ixu	asl=REFUSED	sigil=REFUSED	ld_h_ixu.asm(3):2: error: unresolved symbol `ixu` in operand
+BOTH-REFUSE	ld_h_iyl	asl=REFUSED	sigil=REFUSED	ld_h_iyl.asm(3):2: error: unresolved symbol `iyl` in operand
+BOTH-REFUSE	ld_h_iyu	asl=REFUSED	sigil=REFUSED	ld_h_iyu.asm(3):2: error: unresolved symbol `iyu` in operand
+BOTH-REFUSE	ld_i_ixl	asl=REFUSED	sigil=REFUSED	ld_i_ixl.asm(3):2: error: unsupported form: Instruction { mnemonic: Ld, ops: [RegI, Imm8(0)] }
+BOTH-REFUSE	ld_i_ixu	asl=REFUSED	sigil=REFUSED	ld_i_ixu.asm(3):2: error: unsupported form: Instruction { mnemonic: Ld, ops: [RegI, Imm8(0)] }
+BOTH-REFUSE	ld_i_iyl	asl=REFUSED	sigil=REFUSED	ld_i_iyl.asm(3):2: error: unsupported form: Instruction { mnemonic: Ld, ops: [RegI, Imm8(0)] }
+BOTH-REFUSE	ld_i_iyu	asl=REFUSED	sigil=REFUSED	ld_i_iyu.asm(3):2: error: unsupported form: Instruction { mnemonic: Ld, ops: [RegI, Imm8(0)] }
+BOTH-REFUSE	ld_indhl_ixl	asl=REFUSED	sigil=REFUSED	ld_indhl_ixl.asm(3):2: error: unresolved symbol `ixl` in operand
+BOTH-REFUSE	ld_indhl_ixu	asl=REFUSED	sigil=REFUSED	ld_indhl_ixu.asm(3):2: error: unresolved symbol `ixu` in operand
+BOTH-REFUSE	ld_indhl_iyl	asl=REFUSED	sigil=REFUSED	ld_indhl_iyl.asm(3):2: error: unresolved symbol `iyl` in operand
+BOTH-REFUSE	ld_indhl_iyu	asl=REFUSED	sigil=REFUSED	ld_indhl_iyu.asm(3):2: error: unresolved symbol `iyu` in operand
+BOTH-REFUSE	ld_indix_ixl	asl=REFUSED	sigil=REFUSED	ld_indix_ixl.asm(3):2: error: unresolved symbol `ixl` in operand
+BOTH-REFUSE	ld_indix_ixu	asl=REFUSED	sigil=REFUSED	ld_indix_ixu.asm(3):2: error: unresolved symbol `ixu` in operand
+BOTH-REFUSE	ld_indix_iyl	asl=REFUSED	sigil=REFUSED	ld_indix_iyl.asm(3):2: error: unresolved symbol `iyl` in operand
+BOTH-REFUSE	ld_indix_iyu	asl=REFUSED	sigil=REFUSED	ld_indix_iyu.asm(3):2: error: unresolved symbol `iyu` in operand
+BOTH-REFUSE	ld_indiy_ixl	asl=REFUSED	sigil=REFUSED	ld_indiy_ixl.asm(3):2: error: unresolved symbol `ixl` in operand
+BOTH-REFUSE	ld_indiy_ixu	asl=REFUSED	sigil=REFUSED	ld_indiy_ixu.asm(3):2: error: unresolved symbol `ixu` in operand
+BOTH-REFUSE	ld_indiy_iyl	asl=REFUSED	sigil=REFUSED	ld_indiy_iyl.asm(3):2: error: unresolved symbol `iyl` in operand
+BOTH-REFUSE	ld_indiy_iyu	asl=REFUSED	sigil=REFUSED	ld_indiy_iyu.asm(3):2: error: unresolved symbol `iyu` in operand
+SIGIL-REFUSES	ld_ixl_a	asl=DD 6F 00	sigil=REFUSED	ld_ixl_a.asm(3):2: error: unsupported form: Instruction { mnemonic: Ld, ops: [Imm8(0), Reg(A)] }
+SIGIL-REFUSES	ld_ixl_b	asl=DD 68 00	sigil=REFUSED	ld_ixl_b.asm(3):2: error: unsupported form: Instruction { mnemonic: Ld, ops: [Imm8(0), Reg(B)] }
+SIGIL-REFUSES	ld_ixl_c	asl=DD 69 00	sigil=REFUSED	ld_ixl_c.asm(3):2: error: unsupported form: Instruction { mnemonic: Ld, ops: [Imm8(0), Reg(C)] }
+SIGIL-REFUSES	ld_ixl_d	asl=DD 6A 00	sigil=REFUSED	ld_ixl_d.asm(3):2: error: unsupported form: Instruction { mnemonic: Ld, ops: [Imm8(0), Reg(D)] }
+SIGIL-REFUSES	ld_ixl_e	asl=DD 6B 00	sigil=REFUSED	ld_ixl_e.asm(3):2: error: unsupported form: Instruction { mnemonic: Ld, ops: [Imm8(0), Reg(E)] }
+BOTH-REFUSE	ld_ixl_h	asl=REFUSED	sigil=REFUSED	ld_ixl_h.asm(3):2: error: unsupported form: Instruction { mnemonic: Ld, ops: [Imm8(0), Reg(H)] }
+BOTH-REFUSE	ld_ixl_i	asl=REFUSED	sigil=REFUSED	ld_ixl_i.asm(3):2: error: unsupported form: Instruction { mnemonic: Ld, ops: [Imm8(0), RegI] }
+BOTH-REFUSE	ld_ixl_indhl	asl=REFUSED	sigil=REFUSED	ld_ixl_indhl.asm(3):2: error: unsupported form: Instruction { mnemonic: Ld, ops: [Imm8(0), IndHl] }
+BOTH-REFUSE	ld_ixl_indix	asl=REFUSED	sigil=REFUSED	ld_ixl_indix.asm(3):2: error: unsupported form: unsupported Z80 index form: Instruction { mnemonic: Ld, ops: [Imm8(0), Indexed { reg: Ix, disp: 1 }] }
+BOTH-REFUSE	ld_ixl_indiy	asl=REFUSED	sigil=REFUSED	ld_ixl_indiy.asm(3):2: error: unsupported form: unsupported Z80 index form: Instruction { mnemonic: Ld, ops: [Imm8(0), Indexed { reg: Iy, disp: 1 }] }
+SIGIL-REFUSES	ld_ixl_ixl	asl=DD 6D 00	sigil=REFUSED	ld_ixl_ixl.asm(3):2: error: unsupported form: Instruction { mnemonic: Ld, ops: [Imm8(0), Imm8(0)] }
+SIGIL-REFUSES	ld_ixl_ixu	asl=DD 6C 00	sigil=REFUSED	ld_ixl_ixu.asm(3):2: error: unsupported form: Instruction { mnemonic: Ld, ops: [Imm8(0), Imm8(0)] }
+BOTH-REFUSE	ld_ixl_iyl	asl=REFUSED	sigil=REFUSED	ld_ixl_iyl.asm(3):2: error: unsupported form: Instruction { mnemonic: Ld, ops: [Imm8(0), Imm8(0)] }
+BOTH-REFUSE	ld_ixl_iyu	asl=REFUSED	sigil=REFUSED	ld_ixl_iyu.asm(3):2: error: unsupported form: Instruction { mnemonic: Ld, ops: [Imm8(0), Imm8(0)] }
+BOTH-REFUSE	ld_ixl_l	asl=REFUSED	sigil=REFUSED	ld_ixl_l.asm(3):2: error: unsupported form: Instruction { mnemonic: Ld, ops: [Imm8(0), Reg(L)] }
+BOTH-REFUSE	ld_ixl_mem	asl=REFUSED	sigil=REFUSED	ld_ixl_mem.asm(3):2: error: unsupported form: Instruction { mnemonic: Ld, ops: [Imm8(0), Mem(4660)] }
+SIGIL-REFUSES	ld_ixu_a	asl=DD 67 00	sigil=REFUSED	ld_ixu_a.asm(3):2: error: unsupported form: Instruction { mnemonic: Ld, ops: [Imm8(0), Reg(A)] }
+SIGIL-REFUSES	ld_ixu_b	asl=DD 60 00	sigil=REFUSED	ld_ixu_b.asm(3):2: error: unsupported form: Instruction { mnemonic: Ld, ops: [Imm8(0), Reg(B)] }
+SIGIL-REFUSES	ld_ixu_c	asl=DD 61 00	sigil=REFUSED	ld_ixu_c.asm(3):2: error: unsupported form: Instruction { mnemonic: Ld, ops: [Imm8(0), Reg(C)] }
+SIGIL-REFUSES	ld_ixu_d	asl=DD 62 00	sigil=REFUSED	ld_ixu_d.asm(3):2: error: unsupported form: Instruction { mnemonic: Ld, ops: [Imm8(0), Reg(D)] }
+SIGIL-REFUSES	ld_ixu_e	asl=DD 63 00	sigil=REFUSED	ld_ixu_e.asm(3):2: error: unsupported form: Instruction { mnemonic: Ld, ops: [Imm8(0), Reg(E)] }
+BOTH-REFUSE	ld_ixu_h	asl=REFUSED	sigil=REFUSED	ld_ixu_h.asm(3):2: error: unsupported form: Instruction { mnemonic: Ld, ops: [Imm8(0), Reg(H)] }
+BOTH-REFUSE	ld_ixu_i	asl=REFUSED	sigil=REFUSED	ld_ixu_i.asm(3):2: error: unsupported form: Instruction { mnemonic: Ld, ops: [Imm8(0), RegI] }
+BOTH-REFUSE	ld_ixu_indhl	asl=REFUSED	sigil=REFUSED	ld_ixu_indhl.asm(3):2: error: unsupported form: Instruction { mnemonic: Ld, ops: [Imm8(0), IndHl] }
+BOTH-REFUSE	ld_ixu_indix	asl=REFUSED	sigil=REFUSED	ld_ixu_indix.asm(3):2: error: unsupported form: unsupported Z80 index form: Instruction { mnemonic: Ld, ops: [Imm8(0), Indexed { reg: Ix, disp: 1 }] }
+BOTH-REFUSE	ld_ixu_indiy	asl=REFUSED	sigil=REFUSED	ld_ixu_indiy.asm(3):2: error: unsupported form: unsupported Z80 index form: Instruction { mnemonic: Ld, ops: [Imm8(0), Indexed { reg: Iy, disp: 1 }] }
+SIGIL-REFUSES	ld_ixu_ixl	asl=DD 65 00	sigil=REFUSED	ld_ixu_ixl.asm(3):2: error: unsupported form: Instruction { mnemonic: Ld, ops: [Imm8(0), Imm8(0)] }
+SIGIL-REFUSES	ld_ixu_ixu	asl=DD 64 00	sigil=REFUSED	ld_ixu_ixu.asm(3):2: error: unsupported form: Instruction { mnemonic: Ld, ops: [Imm8(0), Imm8(0)] }
+BOTH-REFUSE	ld_ixu_iyl	asl=REFUSED	sigil=REFUSED	ld_ixu_iyl.asm(3):2: error: unsupported form: Instruction { mnemonic: Ld, ops: [Imm8(0), Imm8(0)] }
+BOTH-REFUSE	ld_ixu_iyu	asl=REFUSED	sigil=REFUSED	ld_ixu_iyu.asm(3):2: error: unsupported form: Instruction { mnemonic: Ld, ops: [Imm8(0), Imm8(0)] }
+BOTH-REFUSE	ld_ixu_l	asl=REFUSED	sigil=REFUSED	ld_ixu_l.asm(3):2: error: unsupported form: Instruction { mnemonic: Ld, ops: [Imm8(0), Reg(L)] }
+BOTH-REFUSE	ld_ixu_mem	asl=REFUSED	sigil=REFUSED	ld_ixu_mem.asm(3):2: error: unsupported form: Instruction { mnemonic: Ld, ops: [Imm8(0), Mem(4660)] }
+SIGIL-REFUSES	ld_iyl_a	asl=FD 6F 00	sigil=REFUSED	ld_iyl_a.asm(3):2: error: unsupported form: Instruction { mnemonic: Ld, ops: [Imm8(0), Reg(A)] }
+SIGIL-REFUSES	ld_iyl_b	asl=FD 68 00	sigil=REFUSED	ld_iyl_b.asm(3):2: error: unsupported form: Instruction { mnemonic: Ld, ops: [Imm8(0), Reg(B)] }
+SIGIL-REFUSES	ld_iyl_c	asl=FD 69 00	sigil=REFUSED	ld_iyl_c.asm(3):2: error: unsupported form: Instruction { mnemonic: Ld, ops: [Imm8(0), Reg(C)] }
+SIGIL-REFUSES	ld_iyl_d	asl=FD 6A 00	sigil=REFUSED	ld_iyl_d.asm(3):2: error: unsupported form: Instruction { mnemonic: Ld, ops: [Imm8(0), Reg(D)] }
+SIGIL-REFUSES	ld_iyl_e	asl=FD 6B 00	sigil=REFUSED	ld_iyl_e.asm(3):2: error: unsupported form: Instruction { mnemonic: Ld, ops: [Imm8(0), Reg(E)] }
+BOTH-REFUSE	ld_iyl_h	asl=REFUSED	sigil=REFUSED	ld_iyl_h.asm(3):2: error: unsupported form: Instruction { mnemonic: Ld, ops: [Imm8(0), Reg(H)] }
+BOTH-REFUSE	ld_iyl_i	asl=REFUSED	sigil=REFUSED	ld_iyl_i.asm(3):2: error: unsupported form: Instruction { mnemonic: Ld, ops: [Imm8(0), RegI] }
+BOTH-REFUSE	ld_iyl_indhl	asl=REFUSED	sigil=REFUSED	ld_iyl_indhl.asm(3):2: error: unsupported form: Instruction { mnemonic: Ld, ops: [Imm8(0), IndHl] }
+BOTH-REFUSE	ld_iyl_indix	asl=REFUSED	sigil=REFUSED	ld_iyl_indix.asm(3):2: error: unsupported form: unsupported Z80 index form: Instruction { mnemonic: Ld, ops: [Imm8(0), Indexed { reg: Ix, disp: 1 }] }
+BOTH-REFUSE	ld_iyl_indiy	asl=REFUSED	sigil=REFUSED	ld_iyl_indiy.asm(3):2: error: unsupported form: unsupported Z80 index form: Instruction { mnemonic: Ld, ops: [Imm8(0), Indexed { reg: Iy, disp: 1 }] }
+BOTH-REFUSE	ld_iyl_ixl	asl=REFUSED	sigil=REFUSED	ld_iyl_ixl.asm(3):2: error: unsupported form: Instruction { mnemonic: Ld, ops: [Imm8(0), Imm8(0)] }
+BOTH-REFUSE	ld_iyl_ixu	asl=REFUSED	sigil=REFUSED	ld_iyl_ixu.asm(3):2: error: unsupported form: Instruction { mnemonic: Ld, ops: [Imm8(0), Imm8(0)] }
+SIGIL-REFUSES	ld_iyl_iyl	asl=FD 6D 00	sigil=REFUSED	ld_iyl_iyl.asm(3):2: error: unsupported form: Instruction { mnemonic: Ld, ops: [Imm8(0), Imm8(0)] }
+SIGIL-REFUSES	ld_iyl_iyu	asl=FD 6C 00	sigil=REFUSED	ld_iyl_iyu.asm(3):2: error: unsupported form: Instruction { mnemonic: Ld, ops: [Imm8(0), Imm8(0)] }
+BOTH-REFUSE	ld_iyl_l	asl=REFUSED	sigil=REFUSED	ld_iyl_l.asm(3):2: error: unsupported form: Instruction { mnemonic: Ld, ops: [Imm8(0), Reg(L)] }
+BOTH-REFUSE	ld_iyl_mem	asl=REFUSED	sigil=REFUSED	ld_iyl_mem.asm(3):2: error: unsupported form: Instruction { mnemonic: Ld, ops: [Imm8(0), Mem(4660)] }
+SIGIL-REFUSES	ld_iyu_a	asl=FD 67 00	sigil=REFUSED	ld_iyu_a.asm(3):2: error: unsupported form: Instruction { mnemonic: Ld, ops: [Imm8(0), Reg(A)] }
+SIGIL-REFUSES	ld_iyu_b	asl=FD 60 00	sigil=REFUSED	ld_iyu_b.asm(3):2: error: unsupported form: Instruction { mnemonic: Ld, ops: [Imm8(0), Reg(B)] }
+SIGIL-REFUSES	ld_iyu_c	asl=FD 61 00	sigil=REFUSED	ld_iyu_c.asm(3):2: error: unsupported form: Instruction { mnemonic: Ld, ops: [Imm8(0), Reg(C)] }
+SIGIL-REFUSES	ld_iyu_d	asl=FD 62 00	sigil=REFUSED	ld_iyu_d.asm(3):2: error: unsupported form: Instruction { mnemonic: Ld, ops: [Imm8(0), Reg(D)] }
+SIGIL-REFUSES	ld_iyu_e	asl=FD 63 00	sigil=REFUSED	ld_iyu_e.asm(3):2: error: unsupported form: Instruction { mnemonic: Ld, ops: [Imm8(0), Reg(E)] }
+BOTH-REFUSE	ld_iyu_h	asl=REFUSED	sigil=REFUSED	ld_iyu_h.asm(3):2: error: unsupported form: Instruction { mnemonic: Ld, ops: [Imm8(0), Reg(H)] }
+BOTH-REFUSE	ld_iyu_i	asl=REFUSED	sigil=REFUSED	ld_iyu_i.asm(3):2: error: unsupported form: Instruction { mnemonic: Ld, ops: [Imm8(0), RegI] }
+BOTH-REFUSE	ld_iyu_indhl	asl=REFUSED	sigil=REFUSED	ld_iyu_indhl.asm(3):2: error: unsupported form: Instruction { mnemonic: Ld, ops: [Imm8(0), IndHl] }
+BOTH-REFUSE	ld_iyu_indix	asl=REFUSED	sigil=REFUSED	ld_iyu_indix.asm(3):2: error: unsupported form: unsupported Z80 index form: Instruction { mnemonic: Ld, ops: [Imm8(0), Indexed { reg: Ix, disp: 1 }] }
+BOTH-REFUSE	ld_iyu_indiy	asl=REFUSED	sigil=REFUSED	ld_iyu_indiy.asm(3):2: error: unsupported form: unsupported Z80 index form: Instruction { mnemonic: Ld, ops: [Imm8(0), Indexed { reg: Iy, disp: 1 }] }
+BOTH-REFUSE	ld_iyu_ixl	asl=REFUSED	sigil=REFUSED	ld_iyu_ixl.asm(3):2: error: unsupported form: Instruction { mnemonic: Ld, ops: [Imm8(0), Imm8(0)] }
+BOTH-REFUSE	ld_iyu_ixu	asl=REFUSED	sigil=REFUSED	ld_iyu_ixu.asm(3):2: error: unsupported form: Instruction { mnemonic: Ld, ops: [Imm8(0), Imm8(0)] }
+SIGIL-REFUSES	ld_iyu_iyl	asl=FD 65 00	sigil=REFUSED	ld_iyu_iyl.asm(3):2: error: unsupported form: Instruction { mnemonic: Ld, ops: [Imm8(0), Imm8(0)] }
+SIGIL-REFUSES	ld_iyu_iyu	asl=FD 64 00	sigil=REFUSED	ld_iyu_iyu.asm(3):2: error: unsupported form: Instruction { mnemonic: Ld, ops: [Imm8(0), Imm8(0)] }
+BOTH-REFUSE	ld_iyu_l	asl=REFUSED	sigil=REFUSED	ld_iyu_l.asm(3):2: error: unsupported form: Instruction { mnemonic: Ld, ops: [Imm8(0), Reg(L)] }
+BOTH-REFUSE	ld_iyu_mem	asl=REFUSED	sigil=REFUSED	ld_iyu_mem.asm(3):2: error: unsupported form: Instruction { mnemonic: Ld, ops: [Imm8(0), Mem(4660)] }
+BOTH-REFUSE	ld_l_ixl	asl=REFUSED	sigil=REFUSED	ld_l_ixl.asm(3):2: error: unresolved symbol `ixl` in operand
+BOTH-REFUSE	ld_l_ixu	asl=REFUSED	sigil=REFUSED	ld_l_ixu.asm(3):2: error: unresolved symbol `ixu` in operand
+BOTH-REFUSE	ld_l_iyl	asl=REFUSED	sigil=REFUSED	ld_l_iyl.asm(3):2: error: unresolved symbol `iyl` in operand
+BOTH-REFUSE	ld_l_iyu	asl=REFUSED	sigil=REFUSED	ld_l_iyu.asm(3):2: error: unresolved symbol `iyu` in operand
+BOTH-REFUSE	ld_mem_ixl	asl=REFUSED	sigil=REFUSED	ld_mem_ixl.asm(3):2: error: unsupported form: Instruction { mnemonic: Ld, ops: [Mem(4660), Imm8(0)] }
+BOTH-REFUSE	ld_mem_ixu	asl=REFUSED	sigil=REFUSED	ld_mem_ixu.asm(3):2: error: unsupported form: Instruction { mnemonic: Ld, ops: [Mem(4660), Imm8(0)] }
+BOTH-REFUSE	ld_mem_iyl	asl=REFUSED	sigil=REFUSED	ld_mem_iyl.asm(3):2: error: unsupported form: Instruction { mnemonic: Ld, ops: [Mem(4660), Imm8(0)] }
+BOTH-REFUSE	ld_mem_iyu	asl=REFUSED	sigil=REFUSED	ld_mem_iyu.asm(3):2: error: unsupported form: Instruction { mnemonic: Ld, ops: [Mem(4660), Imm8(0)] }
+SIGIL-REFUSES	ldi_ixl	asl=DD 2E 05 00	sigil=REFUSED	ldi_ixl.asm(3):2: error: unsupported form: Instruction { mnemonic: Ld, ops: [Imm8(0), Imm8(5)] }
+SIGIL-REFUSES	ldi_ixu	asl=DD 26 05 00	sigil=REFUSED	ldi_ixu.asm(3):2: error: unsupported form: Instruction { mnemonic: Ld, ops: [Imm8(0), Imm8(5)] }
+SIGIL-REFUSES	ldi_iyl	asl=FD 2E 05 00	sigil=REFUSED	ldi_iyl.asm(3):2: error: unsupported form: Instruction { mnemonic: Ld, ops: [Imm8(0), Imm8(5)] }
+SIGIL-REFUSES	ldi_iyu	asl=FD 26 05 00	sigil=REFUSED	ldi_iyu.asm(3):2: error: unsupported form: Instruction { mnemonic: Ld, ops: [Imm8(0), Imm8(5)] }
+BOTH-REFUSE	ldibig_ixl	asl=REFUSED	sigil=REFUSED	ldibig_ixl.asm(3):2: error: operand 256 out of range -128..=255
+BOTH-REFUSE	ldibig_ixu	asl=REFUSED	sigil=REFUSED	ldibig_ixu.asm(3):2: error: operand 256 out of range -128..=255
+BOTH-REFUSE	ldibig_iyl	asl=REFUSED	sigil=REFUSED	ldibig_iyl.asm(3):2: error: operand 256 out of range -128..=255
+BOTH-REFUSE	ldibig_iyu	asl=REFUSED	sigil=REFUSED	ldibig_iyu.asm(3):2: error: operand 256 out of range -128..=255
+SIGIL-REFUSES	ldifwd_ixl	asl=DD 2E 12 00	sigil=REFUSED	ldifwd_ixl.asm(3):2: error: unsupported form: Instruction { mnemonic: Ld, ops: [Imm8(0), Imm8(18)] }
+SIGIL-REFUSES	ldifwd_ixu	asl=DD 26 12 00	sigil=REFUSED	ldifwd_ixu.asm(3):2: error: unsupported form: Instruction { mnemonic: Ld, ops: [Imm8(0), Imm8(18)] }
+SIGIL-REFUSES	ldifwd_iyl	asl=FD 2E 12 00	sigil=REFUSED	ldifwd_iyl.asm(3):2: error: unsupported form: Instruction { mnemonic: Ld, ops: [Imm8(0), Imm8(18)] }
+SIGIL-REFUSES	ldifwd_iyu	asl=FD 26 12 00	sigil=REFUSED	ldifwd_iyu.asm(3):2: error: unsupported form: Instruction { mnemonic: Ld, ops: [Imm8(0), Imm8(18)] }
+SIGIL-REFUSES	ldineg_ixl	asl=DD 2E FF 00	sigil=REFUSED	ldineg_ixl.asm(3):2: error: unsupported form: Instruction { mnemonic: Ld, ops: [Imm8(0), Imm8(255)] }
+SIGIL-REFUSES	ldineg_ixu	asl=DD 26 FF 00	sigil=REFUSED	ldineg_ixu.asm(3):2: error: unsupported form: Instruction { mnemonic: Ld, ops: [Imm8(0), Imm8(255)] }
+SIGIL-REFUSES	ldineg_iyl	asl=FD 2E FF 00	sigil=REFUSED	ldineg_iyl.asm(3):2: error: unsupported form: Instruction { mnemonic: Ld, ops: [Imm8(0), Imm8(255)] }
+SIGIL-REFUSES	ldineg_iyu	asl=FD 26 FF 00	sigil=REFUSED	ldineg_iyu.asm(3):2: error: unsupported form: Instruction { mnemonic: Ld, ops: [Imm8(0), Imm8(255)] }
+SIGIL-REFUSES	ldisym_ixl	asl=DD 2E 7F 00	sigil=REFUSED	ldisym_ixl.asm(4):2: error: unsupported form: Instruction { mnemonic: Ld, ops: [Imm8(0), Imm8(127)] }
+SIGIL-REFUSES	ldisym_ixu	asl=DD 26 7F 00	sigil=REFUSED	ldisym_ixu.asm(4):2: error: unsupported form: Instruction { mnemonic: Ld, ops: [Imm8(0), Imm8(127)] }
+SIGIL-REFUSES	ldisym_iyl	asl=FD 2E 7F 00	sigil=REFUSED	ldisym_iyl.asm(4):2: error: unsupported form: Instruction { mnemonic: Ld, ops: [Imm8(0), Imm8(127)] }
+SIGIL-REFUSES	ldisym_iyu	asl=FD 26 7F 00	sigil=REFUSED	ldisym_iyu.asm(4):2: error: unsupported form: Instruction { mnemonic: Ld, ops: [Imm8(0), Imm8(127)] }
+BOTH-REFUSE	out_ixl	asl=REFUSED	sigil=REFUSED	out_ixl.asm(3):2: error: unsupported form: Instruction { mnemonic: Out, ops: [IndC, Imm8(0)] }
+BOTH-REFUSE	out_ixu	asl=REFUSED	sigil=REFUSED	out_ixu.asm(3):2: error: unsupported form: Instruction { mnemonic: Out, ops: [IndC, Imm8(0)] }
+BOTH-REFUSE	out_iyl	asl=REFUSED	sigil=REFUSED	out_iyl.asm(3):2: error: unsupported form: Instruction { mnemonic: Out, ops: [IndC, Imm8(0)] }
+BOTH-REFUSE	out_iyu	asl=REFUSED	sigil=REFUSED	out_iyu.asm(3):2: error: unsupported form: Instruction { mnemonic: Out, ops: [IndC, Imm8(0)] }
+BOTH-REFUSE	pop_ixl	asl=REFUSED	sigil=REFUSED	pop_ixl.asm(3):2: error: unsupported form: Instruction { mnemonic: Pop, ops: [Imm8(0)] }
+BOTH-REFUSE	pop_ixu	asl=REFUSED	sigil=REFUSED	pop_ixu.asm(3):2: error: unsupported form: Instruction { mnemonic: Pop, ops: [Imm8(0)] }
+BOTH-REFUSE	pop_iyl	asl=REFUSED	sigil=REFUSED	pop_iyl.asm(3):2: error: unsupported form: Instruction { mnemonic: Pop, ops: [Imm8(0)] }
+BOTH-REFUSE	pop_iyu	asl=REFUSED	sigil=REFUSED	pop_iyu.asm(3):2: error: unsupported form: Instruction { mnemonic: Pop, ops: [Imm8(0)] }
+BOTH-REFUSE	push_ixl	asl=REFUSED	sigil=REFUSED	push_ixl.asm(3):2: error: unsupported form: Instruction { mnemonic: Push, ops: [Imm8(0)] }
+BOTH-REFUSE	push_ixu	asl=REFUSED	sigil=REFUSED	push_ixu.asm(3):2: error: unsupported form: Instruction { mnemonic: Push, ops: [Imm8(0)] }
+BOTH-REFUSE	push_iyl	asl=REFUSED	sigil=REFUSED	push_iyl.asm(3):2: error: unsupported form: Instruction { mnemonic: Push, ops: [Imm8(0)] }
+BOTH-REFUSE	push_iyu	asl=REFUSED	sigil=REFUSED	push_iyu.asm(3):2: error: unsupported form: Instruction { mnemonic: Push, ops: [Imm8(0)] }
+SIGIL-REFUSES	sp_IXH	asl=DD 7C 00	sigil=REFUSED	sp_IXH.asm(3):2: error: unresolved symbol `IXH` in operand
+SIGIL-REFUSES	sp_IXL	asl=DD 7D 00	sigil=REFUSED	sp_IXL.asm(3):2: error: unresolved symbol `IXL` in operand
+SIGIL-REFUSES	sp_IXU	asl=DD 7C 00	sigil=REFUSED	sp_IXU.asm(3):2: error: unresolved symbol `IXU` in operand
+SIGIL-REFUSES	sp_IYH	asl=FD 7C 00	sigil=REFUSED	sp_IYH.asm(3):2: error: unresolved symbol `IYH` in operand
+SIGIL-REFUSES	sp_IYL	asl=FD 7D 00	sigil=REFUSED	sp_IYL.asm(3):2: error: unresolved symbol `IYL` in operand
+SIGIL-REFUSES	sp_IYU	asl=FD 7C 00	sigil=REFUSED	sp_IYU.asm(3):2: error: unresolved symbol `IYU` in operand
+SIGIL-REFUSES	sp_IxL	asl=DD 7D 00	sigil=REFUSED	sp_IxL.asm(3):2: error: unresolved symbol `IxL` in operand
+SIGIL-REFUSES	sp_Iyh	asl=FD 7C 00	sigil=REFUSED	sp_Iyh.asm(3):2: error: unresolved symbol `Iyh` in operand
+BOTH-REFUSE	sp_hx	asl=REFUSED	sigil=REFUSED	sp_hx.asm(3):2: error: unresolved symbol `hx` in operand
+BOTH-REFUSE	sp_hy	asl=REFUSED	sigil=REFUSED	sp_hy.asm(3):2: error: unresolved symbol `hy` in operand
+SIGIL-REFUSES	sp_iXu	asl=DD 7C 00	sigil=REFUSED	sp_iXu.asm(3):2: error: unresolved symbol `iXu` in operand
+BOTH-REFUSE	sp_ixdoth	asl=REFUSED	sigil=REFUSED	sp_ixdoth.asm(3):2: error: unresolved symbol `ix.h` in operand
+BOTH-REFUSE	sp_ixdotl	asl=REFUSED	sigil=REFUSED	sp_ixdotl.asm(3):2: error: unresolved symbol `ix.l` in operand
+SIGIL-REFUSES	sp_ixh	asl=DD 7C 00	sigil=REFUSED	sp_ixh.asm(3):2: error: unresolved symbol `ixh` in operand
+BOTH-REFUSE	sp_ixhi	asl=REFUSED	sigil=REFUSED	sp_ixhi.asm(3):2: error: unresolved symbol `ixhi` in operand
+SIGIL-REFUSES	sp_ixl	asl=DD 7D 00	sigil=REFUSED	sp_ixl.asm(3):2: error: unresolved symbol `ixl` in operand
+BOTH-REFUSE	sp_ixlo	asl=REFUSED	sigil=REFUSED	sp_ixlo.asm(3):2: error: unresolved symbol `ixlo` in operand
+SIGIL-REFUSES	sp_ixu	asl=DD 7C 00	sigil=REFUSED	sp_ixu.asm(3):2: error: unresolved symbol `ixu` in operand
+SIGIL-REFUSES	sp_iyh	asl=FD 7C 00	sigil=REFUSED	sp_iyh.asm(3):2: error: unresolved symbol `iyh` in operand
+SIGIL-REFUSES	sp_iyl	asl=FD 7D 00	sigil=REFUSED	sp_iyl.asm(3):2: error: unresolved symbol `iyl` in operand
+SIGIL-REFUSES	sp_iyu	asl=FD 7C 00	sigil=REFUSED	sp_iyu.asm(3):2: error: unresolved symbol `iyu` in operand
+BOTH-REFUSE	sp_lx	asl=REFUSED	sigil=REFUSED	sp_lx.asm(3):2: error: unresolved symbol `lx` in operand
+BOTH-REFUSE	sp_ly	asl=REFUSED	sigil=REFUSED	sp_ly.asm(3):2: error: unresolved symbol `ly` in operand
+BOTH-REFUSE	sp_xh	asl=REFUSED	sigil=REFUSED	sp_xh.asm(3):2: error: unresolved symbol `xh` in operand
+BOTH-REFUSE	sp_xl	asl=REFUSED	sigil=REFUSED	sp_xl.asm(3):2: error: unresolved symbol `xl` in operand
+BOTH-REFUSE	sp_yh	asl=REFUSED	sigil=REFUSED	sp_yh.asm(3):2: error: unresolved symbol `yh` in operand
+BOTH-REFUSE	sp_yl	asl=REFUSED	sigil=REFUSED	sp_yl.asm(3):2: error: unresolved symbol `yl` in operand
+SIGIL-REFUSES	spd_IXH	asl=DD 67 00	sigil=REFUSED	spd_IXH.asm(3):2: error: unsupported form: Instruction { mnemonic: Ld, ops: [Imm8(0), Reg(A)] }
+SIGIL-REFUSES	spd_ixh	asl=DD 67 00	sigil=REFUSED	spd_ixh.asm(3):2: error: unsupported form: Instruction { mnemonic: Ld, ops: [Imm8(0), Reg(A)] }
+SIGIL-REFUSES	spd_iyh	asl=FD 67 00	sigil=REFUSED	spd_iyh.asm(3):2: error: unsupported form: Instruction { mnemonic: Ld, ops: [Imm8(0), Reg(A)] }
+DIFFER	undsym_ixh	asl=DD 7C 00	sigil=3E 05 00	
+DIFFER	undsym_ixl	asl=DD 7D 00	sigil=3E 05 00	
+DIFFER	undsym_ixu	asl=DD 7C 00	sigil=3E 05 00	
+DIFFER	undsym_iyl	asl=FD 7D 00	sigil=3E 05 00	
+DIFFER	undsym_iyu	asl=FD 7C 00	sigil=3E 05 00	

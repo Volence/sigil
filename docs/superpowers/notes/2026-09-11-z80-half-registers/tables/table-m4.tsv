@@ -1,0 +1,12 @@
+# asl md5 61e672562465725a8c102288a7da9098
+# name	cpu	form	exit	footer	bytes	error
+root68k_iyl	68000	ld a,iyl / 	restore / 	move.w #$5678,d1	0	complete	FD 7D	
+root68k_after	68000	ld a,ixl / 	restore	2	complete		error #1010: symbol undefined
+root68k_after_sym	68000	ld a,ixl / 	restore	0	complete	3E 05	
+s2_0	z80undoc	ld a,iyl	0	complete	FD 7D	
+s2_1	z80undoc	adc a,iyu	0	complete	FD 8C	
+s2_2	z80undoc	ld e,ixl	0	complete	DD 5D	
+s2_3	z80undoc	ld d,ixu	0	complete	DD 54	
+s2_4	z80undoc	ld a,ixl	0	complete	DD 7D	
+s2_5	z80undoc	adc a,ixu	0	complete	DD 8C	
+s2_6	z80undoc	add a,ixl	0	complete	DD 85	

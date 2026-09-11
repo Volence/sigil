@@ -268,15 +268,12 @@ fn the_refusal_lists_every_accepted_line() {
 /// exactly the silent-wrong-output defect it was cleared of.
 #[test]
 fn the_undocumented_forms_z80undoc_adds_are_refused_and_emit_nothing() {
-    // The corpus's own uses are the last three: `s2.sounddriver.asm` reads and
-    // writes the index registers' halves, which is what it declares Z80UNDOC
-    // for in the first place.
+    // The index-register halves, which `s2.sounddriver.asm` declares Z80UNDOC
+    // for, are encoded (`as_z80_half_registers.rs`); these two are not. asl
+    // assembles `sll a` as `CB 37`.
     let undocumented = [
         "\tsll\ta\n",         // undocumented shift, no mnemonic for it here
         "\trlc\t(ix+1),b\n",  // undocumented CB form with a result register
-        "\tld\ta,iyl\n",      // index-register half as a source
-        "\tadd\ta,ixl\n",
-        "\tadc\ta,ixu\n",
     ];
     for form in undocumented {
         let run = assemble(&format!("\tcpu z80undoc\n{form}"));

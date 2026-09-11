@@ -92,13 +92,13 @@ pub const INCLUDE_NEST_TOO_DEEP: &str = "INCLUDE nested too deeply";
 ///
 /// - *The same instruction set in different packaging.* `68008` is a 68000 core
 ///   behind an 8-bit data bus — same instructions, so the same target.
-/// - *A superset whose extra instructions this front end refuses by name.*
-///   `z80undoc` is the Z80 with its undocumented instructions enabled. Sigil
-///   encodes the documented subset and rejects the rest at the instruction: an
-///   undocumented mnemonic is `unknown directive or mnemonic`, and an
-///   undocumented operand (`ld a,ixl`) is refused where it appears. Accepting
-///   the spelling therefore widens *where the refusal is reported*, never what
-///   assembles.
+/// - *A superset whose extra instructions this front end either encodes as asl
+///   does or refuses by name.* `z80undoc` is the Z80 with its undocumented
+///   instructions enabled. Sigil encodes the documented subset plus the
+///   index-register halves (`ixl`, `ixu`/`ixh`, `iyl`, `iyu`/`iyh`, see
+///   [`z80_undocumented`]) and rejects the rest at the instruction: an
+///   undocumented mnemonic (`sll`) is `unknown directive or mnemonic`, and an
+///   undocumented operand form (`rlc (ix+1),b`) is refused where it appears.
 ///
 /// A spelling naming an instruction set sigil does not encode gets no row.
 /// `68020`, `z180` and `gbz80` add instructions that would be reported as
@@ -120,6 +120,16 @@ pub fn cpu_for_spelling(folded: &str) -> Option<Cpu> {
         .iter()
         .find(|(spelling, _)| *spelling == folded)
         .map(|(_, cpu)| *cpu)
+}
+
+/// Whether a `cpu` directive's processor name (already lower-cased) selects the
+/// Z80 with its undocumented instructions. The target is the same Z80 as
+/// [`cpu_for_spelling`] gives; what the spelling adds is a mode, and asl
+/// measures it in three places: the index-register halves are registers only
+/// under it (under `cpu z80`, `ixl equ 5` then `ld a,ixl` is `3E 05`), `MOMCPU`
+/// is `$80DC` rather than `$80`, and `MOMCPUNAME` is `"Z80UNDOC"`.
+pub fn z80_undocumented(folded: &str) -> bool {
+    folded == "z80undoc"
 }
 
 /// The refusal raised when a `cpu` directive names a processor this front end

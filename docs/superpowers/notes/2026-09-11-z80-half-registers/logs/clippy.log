@@ -1,0 +1,67 @@
+pwd=/home/volence/sonic_hacks/sigil/.claude/worktrees/agent-a735fcd77afe45035 HEAD=f9505ad649c4cc5ffaab47de1412ced652dc95fc branch=parcel/z80-half-registers tracked-changes=0
+    Checking sigil-span v0.1.0 (/home/volence/sonic_hacks/sigil/.claude/worktrees/agent-a735fcd77afe45035/crates/sigil-span)
+    Checking hashbrown v0.17.1
+    Checking equivalent v1.0.2
+    Checking sigil-isa v0.1.0 (/home/volence/sonic_hacks/sigil/.claude/worktrees/agent-a735fcd77afe45035/crates/sigil-isa)
+    Checking cfg-if v1.0.4
+    Checking winnow v0.7.15
+    Checking toml_write v0.1.2
+    Checking linux-raw-sys v0.12.1
+    Checking bitflags v2.13.0
+    Checking serde_core v1.0.228
+    Checking libc v0.2.186
+    Checking once_cell v1.21.4
+    Checking fastrand v2.4.1
+    Checking typenum v1.20.1
+   Compiling sigil-clownlzss-sys v0.1.0 (/home/volence/sonic_hacks/sigil/.claude/worktrees/agent-a735fcd77afe45035/crates/sigil-clownlzss-sys)
+   Compiling sigil-salvador-sys v0.1.0 (/home/volence/sonic_hacks/sigil/.claude/worktrees/agent-a735fcd77afe45035/crates/sigil-salvador-sys)
+   Compiling sigil-clownnemesis-sys v0.1.0 (/home/volence/sonic_hacks/sigil/.claude/worktrees/agent-a735fcd77afe45035/crates/sigil-clownnemesis-sys)
+    Checking zmij v1.0.21
+    Checking itoa v1.0.18
+    Checking memchr v2.8.2
+    Checking cpufeatures v0.2.17
+    Checking sigil-ir v0.1.0 (/home/volence/sonic_hacks/sigil/.claude/worktrees/agent-a735fcd77afe45035/crates/sigil-ir)
+    Checking sigil-s4lz v0.1.0 (/home/volence/sonic_hacks/sigil/.claude/worktrees/agent-a735fcd77afe45035/crates/sigil-s4lz)
+   Compiling sigil-cli v0.1.0 (/home/volence/sonic_hacks/sigil/.claude/worktrees/agent-a735fcd77afe45035/crates/sigil-cli)
+    Checking rustix v1.1.4
+    Checking sigil-backend-m68k v0.1.0 (/home/volence/sonic_hacks/sigil/.claude/worktrees/agent-a735fcd77afe45035/crates/sigil-backend-m68k)
+    Checking sigil-backend-z80 v0.1.0 (/home/volence/sonic_hacks/sigil/.claude/worktrees/agent-a735fcd77afe45035/crates/sigil-backend-z80)
+    Checking indexmap v2.14.0
+    Checking sigil-frontend-as v0.1.0 (/home/volence/sonic_hacks/sigil/.claude/worktrees/agent-a735fcd77afe45035/crates/sigil-frontend-as)
+    Checking generic-array v0.14.7
+    Checking getrandom v0.4.3
+    Checking crypto-common v0.1.7
+    Checking block-buffer v0.10.4
+    Checking digest v0.10.7
+    Checking sha2 v0.10.9
+    Checking tempfile v3.27.0
+    Checking serde v1.0.228
+    Checking serde_json v1.0.150
+    Checking serde_spanned v0.6.9
+    Checking toml_datetime v0.6.11
+    Checking toml_edit v0.22.27
+warning: sigil-clownlzss-sys@0.1.0: In file included from src/shim.cpp:114:
+warning: sigil-clownlzss-sys@0.1.0: In lambda function,
+warning: sigil-clownlzss-sys@0.1.0:     inlined from 'bool ClownLZSS::Internal::Enigma::Compress(const unsigned char*, std::size_t, ClownLZSS::CompressorOutput<T>&) [with T = std::basic_ostream<char>]' at src/../vendor/compressors/enigma.h:316:37:
+warning: sigil-clownlzss-sys@0.1.0: src/../vendor/compressors/enigma.h:253:110: warning: '*(int*)((char*)&run + offsetof(Run, Run::type))' may be used uninitialized [-Wmaybe-uninitialized]
+warning: sigil-clownlzss-sys@0.1.0:   253 |                                                 return (run.type == Run::Type::Increment || run.length == 1) && ReadWord(input) == special_values->lowest;
+warning: sigil-clownlzss-sys@0.1.0:       |                                                        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+warning: sigil-clownlzss-sys@0.1.0: src/../vendor/compressors/enigma.h: In function 'bool ClownLZSS::Internal::Enigma::Compress(const unsigned char*, std::size_t, ClownLZSS::CompressorOutput<T>&) [with T = std::basic_ostream<char>]':
+warning: sigil-clownlzss-sys@0.1.0: src/../vendor/compressors/enigma.h:263:45: note: '*(int*)((char*)&run + offsetof(Run, Run::type))' was declared here
+warning: sigil-clownlzss-sys@0.1.0:   263 |                                         Run run;
+warning: sigil-clownlzss-sys@0.1.0:       |                                             ^~~
+warning: sigil-clownlzss-sys@0.1.0: In lambda function,
+warning: sigil-clownlzss-sys@0.1.0:     inlined from 'bool ClownLZSS::Internal::Enigma::Compress(const unsigned char*, std::size_t, ClownLZSS::CompressorOutput<T>&) [with T = std::basic_ostream<char>]' at src/../vendor/compressors/enigma.h:316:37:
+warning: sigil-clownlzss-sys@0.1.0: src/../vendor/compressors/enigma.h:253:90: warning: 'run.ClownLZSS::Internal::Enigma::Compress<std::basic_ostream<char> >(const unsigned char*, std::size_t, ClownLZSS::CompressorOutput<std::basic_ostream<char> >&)::Run::length' may be used uninitialized [-Wmaybe-uninitialized]
+warning: sigil-clownlzss-sys@0.1.0:   253 |                                                 return (run.type == Run::Type::Increment || run.length == 1) && ReadWord(input) == special_values->lowest;
+warning: sigil-clownlzss-sys@0.1.0:       |                                                        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~~~~~~~~
+warning: sigil-clownlzss-sys@0.1.0: src/../vendor/compressors/enigma.h: In function 'bool ClownLZSS::Internal::Enigma::Compress(const unsigned char*, std::size_t, ClownLZSS::CompressorOutput<T>&) [with T = std::basic_ostream<char>]':
+warning: sigil-clownlzss-sys@0.1.0: src/../vendor/compressors/enigma.h:263:45: note: 'run.ClownLZSS::Internal::Enigma::Compress<std::basic_ostream<char> >(const unsigned char*, std::size_t, ClownLZSS::CompressorOutput<std::basic_ostream<char> >&)::Run::length' was declared here
+warning: sigil-clownlzss-sys@0.1.0:   263 |                                         Run run;
+warning: sigil-clownlzss-sys@0.1.0:       |                                             ^~~
+    Checking toml v0.8.23
+    Checking sigil-link v0.1.0 (/home/volence/sonic_hacks/sigil/.claude/worktrees/agent-a735fcd77afe45035/crates/sigil-link)
+    Checking sigil-frontend-emp v0.1.0 (/home/volence/sonic_hacks/sigil/.claude/worktrees/agent-a735fcd77afe45035/crates/sigil-frontend-emp)
+    Checking sigil-harness v0.1.0 (/home/volence/sonic_hacks/sigil/.claude/worktrees/agent-a735fcd77afe45035/crates/sigil-harness)
+    Finished `release` profile [optimized] target(s) in 5.58s
+CLIPPY_EXIT=0

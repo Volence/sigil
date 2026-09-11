@@ -1,0 +1,217 @@
+ASL_MD5=61e672562465725a8c102288a7da9098 ASL=/home/volence/sonic_hacks/s1disasm/build_tools/Linux-x86_64/asl
+== expr_ixl.asm ASL_EXIT=0
+ASL_DIAG=complete
+== exprl_ixl.asm ASL_EXIT=0
+ASL_DIAG=complete
+== paren_ixl.asm ASL_EXIT=0
+ASL_DIAG=complete
+== pareni_ixl.asm ASL_EXIT=0
+ASL_DIAG=complete
+== db_ixl.asm ASL_EXIT=0
+ASL_DIAG=complete
+== dbnosym_ixl.asm ASL_EXIT=2
+ASL_DIAG=complete
+== jp_ixl.asm ASL_EXIT=0
+ASL_DIAG=complete
+== ldimm_ixl.asm ASL_EXIT=0
+ASL_DIAG=complete
+== label_ixl.asm ASL_EXIT=0
+ASL_DIAG=complete
+== plus_ixl.asm ASL_EXIT=2
+ASL_DIAG=complete
+== neg_ixl.asm ASL_EXIT=2
+ASL_DIAG=complete
+== expr_iyu.asm ASL_EXIT=0
+ASL_DIAG=complete
+== exprl_iyu.asm ASL_EXIT=0
+ASL_DIAG=complete
+== paren_iyu.asm ASL_EXIT=0
+ASL_DIAG=complete
+== pareni_iyu.asm ASL_EXIT=0
+ASL_DIAG=complete
+== db_iyu.asm ASL_EXIT=0
+ASL_DIAG=complete
+== dbnosym_iyu.asm ASL_EXIT=2
+ASL_DIAG=complete
+== jp_iyu.asm ASL_EXIT=0
+ASL_DIAG=complete
+== ldimm_iyu.asm ASL_EXIT=0
+ASL_DIAG=complete
+== label_iyu.asm ASL_EXIT=0
+ASL_DIAG=complete
+== plus_iyu.asm ASL_EXIT=2
+ASL_DIAG=complete
+== neg_iyu.asm ASL_EXIT=2
+ASL_DIAG=complete
+== mode_save_z80_restore.asm ASL_EXIT=0
+ASL_DIAG=complete
+== mode_save_68k_restore.asm ASL_EXIT=0
+ASL_DIAG=complete
+== mode_z80_then_undoc.asm ASL_EXIT=0
+ASL_DIAG=complete
+== mode_undoc_then_z80.asm ASL_EXIT=2
+ASL_DIAG=complete
+== mode_undoc_then_z80_sym.asm ASL_EXIT=0
+ASL_DIAG=complete
+== mode_68k_save_undoc.asm ASL_EXIT=2
+ASL_DIAG=complete
+== mode_z80_save_undoc_restore.asm ASL_EXIT=0
+ASL_DIAG=complete
+== mode_undoc_upper.asm ASL_EXIT=0
+ASL_DIAG=complete
+== mode_undoc_mixed.asm ASL_EXIT=0
+ASL_DIAG=complete
+== momcpu_z80.asm ASL_EXIT=0
+ASL_DIAG=complete
+== momcpuname_z80.asm ASL_EXIT=0
+ASL_DIAG=complete
+== momcpunamez_z80.asm ASL_EXIT=0
+ASL_DIAG=complete
+== momcpu_z80undoc.asm ASL_EXIT=0
+ASL_DIAG=complete
+== momcpuname_z80undoc.asm ASL_EXIT=0
+ASL_DIAG=complete
+== momcpunamez_z80undoc.asm ASL_EXIT=0
+ASL_DIAG=complete
+== momcpu_Z80UNDOCu.asm ASL_EXIT=0
+ASL_DIAG=complete
+== momcpuname_Z80UNDOCu.asm ASL_EXIT=0
+ASL_DIAG=complete
+== momcpunamez_Z80UNDOCu.asm ASL_EXIT=0
+ASL_DIAG=complete
+== alu1r_add.asm ASL_EXIT=2
+ASL_DIAG=complete
+== alu1r_add_z80.asm ASL_EXIT=2
+ASL_DIAG=complete
+== alu1i_add.asm ASL_EXIT=2
+ASL_DIAG=complete
+== alu2b_add_ixl.asm ASL_EXIT=2
+ASL_DIAG=complete
+== alu1r_adc.asm ASL_EXIT=2
+ASL_DIAG=complete
+== alu1r_adc_z80.asm ASL_EXIT=2
+ASL_DIAG=complete
+== alu1i_adc.asm ASL_EXIT=2
+ASL_DIAG=complete
+== alu2b_adc_ixl.asm ASL_EXIT=2
+ASL_DIAG=complete
+== alu1r_sub.asm ASL_EXIT=0
+ASL_DIAG=complete
+== alu1r_sub_z80.asm ASL_EXIT=0
+ASL_DIAG=complete
+== alu1i_sub.asm ASL_EXIT=0
+ASL_DIAG=complete
+== alu2b_sub_ixl.asm ASL_EXIT=2
+ASL_DIAG=complete
+== alu1r_sbc.asm ASL_EXIT=2
+ASL_DIAG=complete
+== alu1r_sbc_z80.asm ASL_EXIT=2
+ASL_DIAG=complete
+== alu1i_sbc.asm ASL_EXIT=2
+ASL_DIAG=complete
+== alu2b_sbc_ixl.asm ASL_EXIT=2
+ASL_DIAG=complete
+== alu1r_and.asm ASL_EXIT=0
+ASL_DIAG=complete
+== alu1r_and_z80.asm ASL_EXIT=0
+ASL_DIAG=complete
+== alu1i_and.asm ASL_EXIT=0
+ASL_DIAG=complete
+== alu2b_and_ixl.asm ASL_EXIT=2
+ASL_DIAG=complete
+== alu1r_xor.asm ASL_EXIT=0
+ASL_DIAG=complete
+== alu1r_xor_z80.asm ASL_EXIT=0
+ASL_DIAG=complete
+== alu1i_xor.asm ASL_EXIT=0
+ASL_DIAG=complete
+== alu2b_xor_ixl.asm ASL_EXIT=2
+ASL_DIAG=complete
+== alu1r_or.asm ASL_EXIT=0
+ASL_DIAG=complete
+== alu1r_or_z80.asm ASL_EXIT=0
+ASL_DIAG=complete
+== alu1i_or.asm ASL_EXIT=0
+ASL_DIAG=complete
+== alu2b_or_ixl.asm ASL_EXIT=2
+ASL_DIAG=complete
+== alu1r_cp.asm ASL_EXIT=0
+ASL_DIAG=complete
+== alu1r_cp_z80.asm ASL_EXIT=0
+ASL_DIAG=complete
+== alu1i_cp.asm ASL_EXIT=0
+ASL_DIAG=complete
+== alu2b_cp_ixl.asm ASL_EXIT=2
+ASL_DIAG=complete
+== rng_ixl__128.asm ASL_EXIT=0
+ASL_DIAG=complete
+== rng_ixl__129.asm ASL_EXIT=2
+ASL_DIAG=complete
+== rng_ixl_255.asm ASL_EXIT=0
+ASL_DIAG=complete
+== rng_ixl_0FFh.asm ASL_EXIT=0
+ASL_DIAG=complete
+== rng_ixl__A_.asm ASL_EXIT=0
+ASL_DIAG=complete
+== rng_l__128.asm ASL_EXIT=0
+ASL_DIAG=complete
+== rng_l__129.asm ASL_EXIT=2
+ASL_DIAG=complete
+== rng_l_255.asm ASL_EXIT=0
+ASL_DIAG=complete
+== rng_l_0FFh.asm ASL_EXIT=0
+ASL_DIAG=complete
+== rng_l__A_.asm ASL_EXIT=0
+ASL_DIAG=complete
+== mix_ld_hl_ixl.asm ASL_EXIT=2
+ASL_DIAG=complete
+== mix_ld_ixl_hl.asm ASL_EXIT=2
+ASL_DIAG=complete
+== mix_ld_ix_ixl.asm ASL_EXIT=2
+ASL_DIAG=complete
+== mix_ld_ixl_ix.asm ASL_EXIT=2
+ASL_DIAG=complete
+== mix_ld_bc_ixl.asm ASL_EXIT=2
+ASL_DIAG=complete
+== mix_ld_sp_ixl.asm ASL_EXIT=2
+ASL_DIAG=complete
+== mix_ld_ixl_r.asm ASL_EXIT=2
+ASL_DIAG=complete
+== mix_ld_r_ixl.asm ASL_EXIT=2
+ASL_DIAG=complete
+== mix_ld_ixl_af.asm ASL_EXIT=2
+ASL_DIAG=complete
+== mix_ld_ixl_c_.asm ASL_EXIT=2
+ASL_DIAG=INCOMPLETE
+== mix_ld_ixl_nz.asm ASL_EXIT=2
+ASL_DIAG=complete
+== mix_ld_ixl_a.asm ASL_EXIT=2
+ASL_DIAG=complete
+== mix_ld_a_ixl_.asm ASL_EXIT=2
+ASL_DIAG=complete
+== mix_ld_ixl.asm ASL_EXIT=2
+ASL_DIAG=complete
+== mix_ld_ixl_a_b.asm ASL_EXIT=2
+ASL_DIAG=complete
+== mix_inc_ixl_a.asm ASL_EXIT=2
+ASL_DIAG=complete
+== mix_cp_ixl_a.asm ASL_EXIT=2
+ASL_DIAG=complete
+== mix_ld_iyh_iyl.asm ASL_EXIT=0
+ASL_DIAG=complete
+== mix_ld_ixh_ixu.asm ASL_EXIT=0
+ASL_DIAG=complete
+== mix_ld_ixl_iyh.asm ASL_EXIT=2
+ASL_DIAG=complete
+== mix_LD_A_IXL.asm ASL_EXIT=0
+ASL_DIAG=complete
+== mix_ld_A_ixl.asm ASL_EXIT=0
+ASL_DIAG=complete
+== mix_ld_ixl_A.asm ASL_EXIT=0
+ASL_DIAG=complete
+== mix_ld_IXU_B.asm ASL_EXIT=0
+ASL_DIAG=complete
+== mix_ld_ixl_H.asm ASL_EXIT=2
+ASL_DIAG=complete
+== mix_ld_L_ixu.asm ASL_EXIT=2
+ASL_DIAG=complete

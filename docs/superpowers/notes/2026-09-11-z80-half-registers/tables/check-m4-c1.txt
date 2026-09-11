@@ -1,0 +1,12 @@
+# sigil /home/volence/sonic_hacks/.scratch/z80-half-registers/bin/sigil-c1 md5 cec46f181c272451f28a169d9012393b
+# BOTH-REFUSE=1 MATCH=9
+BOTH-REFUSE	root68k_after	asl=REFUSED	sigil=REFUSED	root68k_after.asm(9):2: error: unresolved symbol `ixl` in operand
+MATCH	root68k_after_sym	asl=00 3E 05 00 4E 71	sigil=00 3E 05 00 4E 71	
+MATCH	root68k_iyl	asl=30 3C 12 34 FD 7D 32 3C 56 78 4E 71	sigil=30 3C 12 34 FD 7D 32 3C 56 78 4E 71	
+MATCH	s2_0	asl=FD 7D 00	sigil=FD 7D 00	
+MATCH	s2_1	asl=FD 8C 00	sigil=FD 8C 00	
+MATCH	s2_2	asl=DD 5D 00	sigil=DD 5D 00	
+MATCH	s2_3	asl=DD 54 00	sigil=DD 54 00	
+MATCH	s2_4	asl=DD 7D 00	sigil=DD 7D 00	
+MATCH	s2_5	asl=DD 8C 00	sigil=DD 8C 00	
+MATCH	s2_6	asl=DD 85 00	sigil=DD 85 00	

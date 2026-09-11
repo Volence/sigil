@@ -1,0 +1,11 @@
+s1disasm HEAD f6ece657c1cf253404312137dfcb8ec15fa42318 status-lines 17
+s2disasm HEAD e45ebf332f39987424ca3102e50c717628f71269 status-lines 0
+skdisasm HEAD 2fcd861c208f342b6d14df694c6422c74f20a4be status-lines 110
+prestep_s2.lua: build.lua bytes [0, 5757)
+s2 prestep exit=0
+s2 generated files: 80
+s1 prestep exit=0
+s1disasm status-lines after 17
+s2disasm status-lines after 0
+skdisasm status-lines after 110
+SETUP_END

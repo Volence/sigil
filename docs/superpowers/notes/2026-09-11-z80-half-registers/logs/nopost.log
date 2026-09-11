@@ -1,0 +1,10 @@
+build_nopost.lua written: both post-p2bin calls removed
+build_nopost exit=0
+s2.h:
+comp_z80_size 0xF64 le for C Program */
+#define movewZ80CompSize 0xEC04E
+/* Ende Include File for C Program */
+
+P2BIN-ONLY s2built.bin md5 9feeb724052c39982d432a7851c98d3e crc32 7b905383 size 1048576
+word at 0xEC050 = 0F64; header 0x18E = D951; 0x1A4 = 000fffff
+NOPOST_END

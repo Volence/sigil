@@ -1,0 +1,26 @@
+== m6-only-ld: only ld takes a half
+HEAD 23d7d57de6285ab370f1362e01545cbdee1a6cd9
+APPLIED to crates/sigil-frontend-as/src/eval.rs; read back from disk (deletion site):
+  crates/sigil-frontend-as/src/eval.rs:8452              },
+  crates/sigil-frontend-as/src/eval.rs:8453              _ => false,
+  crates/sigil-frontend-as/src/eval.rs:8454          };
+  old text (now absent from the file): '(Add | Adc | Sub | Sbc | And | Xor | Or | Cp, 2) => {\n                reg_word(&atoms[0], &["a"]) && is_half(1)\n            }\n            (Sub | And | Xor | Or | Cp | Inc | Dec, 1) => is_half(0),'
+test every_probe_is_checked_by_exactly_one_group ... ok
+test a_half_beside_h_l_or_the_other_index_register_is_refused_for_that_reason ... ok
+test sonic_2_s_twelve_lines_assemble_as_asl_assembles_them ... FAILED
+test the_halves_exist_only_under_z80undoc ... ok
+test momcpu_and_momcpuname_report_the_undocumented_z80 ... ok
+test every_spelling_asl_accepts_names_the_register_asl_names ... ok
+test the_arithmetic_and_logic_forms_take_a_half ... FAILED
+test a_half_in_a_form_asl_refuses_is_refused ... ok
+test a_symbol_named_like_a_half_is_read_where_asl_reads_it ... FAILED
+test ld_takes_a_half_in_every_position_asl_allows ... ok
+test result: FAILED. 7 passed; 3 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+error: test failed, to rerun pass `-p sigil-frontend-as --test as_z80_half_registers`
+error: 1 target failed:
+cargo exit 101; compiled=True; FAILED tests: 3
+  panic: 3 of 7 `sonic2` probes disagree with asl:
+  panic: 60 of 107 `arithmetic` probes disagree with asl:
+  panic: 6 of 108 `symbol` probes disagree with asl:
+VERDICT: RED
+restored from HEAD:crates/sigil-frontend-as/src/eval.rs; tracked tree CLEAN

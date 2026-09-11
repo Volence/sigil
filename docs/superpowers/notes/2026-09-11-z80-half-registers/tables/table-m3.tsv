@@ -1,0 +1,84 @@
+# asl md5 61e672562465725a8c102288a7da9098
+# name	cpu	form	exit	footer	bytes	error
+sym_ldhl_ixl	z80undoc	ld hl,ixl	2	complete		error #1350: addressing mode not allowed here
+sym_ldbc_ixl	z80undoc	ld bc,ixl	2	complete		error #1350: addressing mode not allowed here
+sym_ldix_ixl	z80undoc	ld ix,ixl	2	complete		error #1350: addressing mode not allowed here
+sym_ldsp_ixl	z80undoc	ld sp,ixl	2	complete		error #1350: addressing mode not allowed here
+sym_ldindhl_ixl	z80undoc	ld (hl),ixl	2	complete		error #1350: addressing mode not allowed here
+sym_ldindix_ixl	z80undoc	ld (ix+1),ixl	2	complete		error #1350: addressing mode not allowed here
+sym_ldmem_ixl	z80undoc	ld (1234h),ixl	2	complete		error #1350: addressing mode not allowed here
+sym_ldmemd_ixl	z80undoc	ld ixl,(1234h)	2	complete		error #1350: addressing mode not allowed here
+sym_ldhlmem_ixl	z80undoc	ld hl,(ixl)	0	complete	2A 05 00	
+sym_ldixd_ixl	z80undoc	ld a,(ix+ixl)	0	complete	DD 7E 05	
+sym_ldixd2_ixl	z80undoc	ld (ixl+ix),a	2	complete		error #1010: symbol undefined
+sym_ldhexpr_ixl	z80undoc	ld ixl,ixl+1	0	complete	DD 2E 06	
+sym_ldhparen_ixl	z80undoc	ld ixl,(ixl)	2	complete		error #1350: addressing mode not allowed here
+sym_addhl_ixl	z80undoc	add hl,ixl	2	complete		error #1350: addressing mode not allowed here
+sym_adda_ixl	z80undoc	add a,ixl	0	complete	DD 85	
+sym_sub1_ixl	z80undoc	sub ixl	0	complete	DD 95	
+sym_inc_ixl	z80undoc	inc ixl	0	complete	DD 2C	
+sym_ldh5_ixl	z80undoc	ld ixl,5	0	complete	DD 2E 05	
+sym_push_ixl	z80undoc	push ixl	2	complete		error #1350: addressing mode not allowed here
+sym_bit_ixl	z80undoc	bit ixl,b	0	complete	CB 68	
+sym_res_ixl	z80undoc	res ixl,b	0	complete	CB A8	
+sym_set_ixl	z80undoc	set ixl,(hl)	0	complete	CB EE	
+sym_im_ixl	z80undoc	im ixl	2	complete		error #1320: range overflow
+sym_rst_ixl	z80undoc	rst ixl	2	complete		error #1905: invalid jump target
+sym_call_ixl	z80undoc	call ixl	0	complete	CD 05 00	
+sym_jpnz_ixl	z80undoc	jp nz,ixl	0	complete	C2 05 00	
+sym_callnz_ixl	z80undoc	call nz,ixl	0	complete	C4 05 00	
+sym_retnz_ixl	z80undoc	ret ixl	2	complete		error #1360: undefined condition
+sym_ina_ixl	z80undoc	in a,(ixl)	0	complete	DB 05	
+sym_outa_ixl	z80undoc	out (ixl),a	0	complete	D3 05	
+sym_ldia_ixl	z80undoc	ld i,ixl	2	complete		error #1350: addressing mode not allowed here
+sym_exsp_ixl	z80undoc	ex (sp),ixl	2	complete		error #1350: addressing mode not allowed here
+sym_ldab_ixl	z80undoc	ld a,ixl	0	complete	DD 7D	
+lab_jr_ixl	z80undoc	jr ixl / ixl:	0	complete	18 00	
+lab_djnz_ixl	z80undoc	djnz ixl / ixl:	0	complete	10 00	
+lab_jp_ixl	z80undoc	jp ixl / ixl:	0	complete	C3 03 00	
+lab_jrz_ixl	z80undoc	jr z,ixl / ixl:	0	complete	28 00	
+sym_ldhl_iyu	z80undoc	ld hl,iyu	2	complete		error #1350: addressing mode not allowed here
+sym_ldbc_iyu	z80undoc	ld bc,iyu	2	complete		error #1350: addressing mode not allowed here
+sym_ldix_iyu	z80undoc	ld ix,iyu	2	complete		error #1350: addressing mode not allowed here
+sym_ldsp_iyu	z80undoc	ld sp,iyu	2	complete		error #1350: addressing mode not allowed here
+sym_ldindhl_iyu	z80undoc	ld (hl),iyu	2	complete		error #1350: addressing mode not allowed here
+sym_ldindix_iyu	z80undoc	ld (ix+1),iyu	2	complete		error #1350: addressing mode not allowed here
+sym_ldmem_iyu	z80undoc	ld (1234h),iyu	2	complete		error #1350: addressing mode not allowed here
+sym_ldmemd_iyu	z80undoc	ld iyu,(1234h)	2	complete		error #1350: addressing mode not allowed here
+sym_ldhlmem_iyu	z80undoc	ld hl,(iyu)	0	complete	2A 05 00	
+sym_ldixd_iyu	z80undoc	ld a,(ix+iyu)	0	complete	DD 7E 05	
+sym_ldixd2_iyu	z80undoc	ld (iyu+ix),a	2	complete		error #1010: symbol undefined
+sym_ldhexpr_iyu	z80undoc	ld iyu,iyu+1	0	complete	FD 26 06	
+sym_ldhparen_iyu	z80undoc	ld iyu,(iyu)	2	complete		error #1350: addressing mode not allowed here
+sym_addhl_iyu	z80undoc	add hl,iyu	2	complete		error #1350: addressing mode not allowed here
+sym_adda_iyu	z80undoc	add a,iyu	0	complete	FD 84	
+sym_sub1_iyu	z80undoc	sub iyu	0	complete	FD 94	
+sym_inc_iyu	z80undoc	inc iyu	0	complete	FD 24	
+sym_ldh5_iyu	z80undoc	ld iyu,5	0	complete	FD 26 05	
+sym_push_iyu	z80undoc	push iyu	2	complete		error #1350: addressing mode not allowed here
+sym_bit_iyu	z80undoc	bit iyu,b	0	complete	CB 68	
+sym_res_iyu	z80undoc	res iyu,b	0	complete	CB A8	
+sym_set_iyu	z80undoc	set iyu,(hl)	0	complete	CB EE	
+sym_im_iyu	z80undoc	im iyu	2	complete		error #1320: range overflow
+sym_rst_iyu	z80undoc	rst iyu	2	complete		error #1905: invalid jump target
+sym_call_iyu	z80undoc	call iyu	0	complete	CD 05 00	
+sym_jpnz_iyu	z80undoc	jp nz,iyu	0	complete	C2 05 00	
+sym_callnz_iyu	z80undoc	call nz,iyu	0	complete	C4 05 00	
+sym_retnz_iyu	z80undoc	ret iyu	2	complete		error #1360: undefined condition
+sym_ina_iyu	z80undoc	in a,(iyu)	0	complete	DB 05	
+sym_outa_iyu	z80undoc	out (iyu),a	0	complete	D3 05	
+sym_ldia_iyu	z80undoc	ld i,iyu	2	complete		error #1350: addressing mode not allowed here
+sym_exsp_iyu	z80undoc	ex (sp),iyu	2	complete		error #1350: addressing mode not allowed here
+sym_ldab_iyu	z80undoc	ld a,iyu	0	complete	FD 7C	
+lab_jr_iyu	z80undoc	jr iyu / iyu:	0	complete	18 00	
+lab_djnz_iyu	z80undoc	djnz iyu / iyu:	0	complete	10 00	
+lab_jp_iyu	z80undoc	jp iyu / iyu:	0	complete	C3 03 00	
+lab_jrz_iyu	z80undoc	jr z,iyu / iyu:	0	complete	28 00	
+usym_ldaIXL	z80undoc	ld a,IXL	0	complete	DD 7D	
+usym_ldaIYU	z80undoc	ld a,IYU	0	complete	FD 7C	
+usym_dbIXL	z80undoc	db IXL	0	complete	05	
+nosym_bit	z80undoc	bit ixl,b	2	complete		error #1010: symbol undefined
+nosym_im	z80undoc	im ixl	2	complete		error #1010: symbol undefined
+nosym_rst	z80undoc	rst ixl	2	complete		error #1010: symbol undefined
+nosym_ldhl	z80undoc	ld hl,ixl	2	complete		error #1350: addressing mode not allowed here
+nosym_ldindhl	z80undoc	ld (hl),ixl	2	complete		error #1350: addressing mode not allowed here
