@@ -1,0 +1,58 @@
+ AS V1.42 Beta [Bld 212] - Source File p4_multipass.asm - Page 1 - 09/11/2026 05:08:17 PM
+
+
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : =$2                  Ver := 2
+       5/       0 :                     	pushv ,Ver
+       6/       0 : =$4                  Ver := 4
+       7/       0 : 6000 0003           	bra.w Fwd
+       8/       4 : 04                  	dc.b Ver
+       9/       5 :                     	popv ,Ver
+      10/       5 : 02                  Fwd:	dc.b Ver
+      11/       6 : EE                  	dc.b $EE
+      12/       7 :                     	end
+ AS V1.42 Beta [Bld 212] - Source File p4_multipass.asm - Page 2 - 09/11/2026 05:08:17 PM
+
+
+  Symbol Table (* = unused):
+  --------------------------
+
+*ARCHITECTURE :                                      "x86_64-unknown-linux" - |
+*BIGENDIAN :                      0 - | *BRANCHEXT :                      0 - |
+*CASESENSITIVE :                  1 - | *COMPMODE :                       0 - |
+*CONSTPI :        3.141592653589793 - | *CUSTOM :                         0 - |
+*DATE :                "09/11/2026" - | *FALSE :                          0 - |
+*FULLPMMU :                       1 - |  Fwd :                            5 C |
+*HAS64 :                          1 - | *HASDSP :                         0 - |
+*HASFPU :                         0 - | *HASPMMU :                        0 - |
+*INEXTMODE :                      0 - | *INLWORDMODE :                    0 - |
+*INMAXMODE :                      0 - | *INSRCMODE :                      0 - |
+*INSUPMODE :                      0 - | *LISTON :                         1 - |
+*MACEXP :                         7 - | *MOMCPU :                     68000 - |
+*MOMCPUNAME :               "68000" - | *NESTMAX :                      100 - |
+*PACKING :                        0 - | *PADDING :                        0 - |
+*RELAXED :                        0 - | *TIME :               "05:08:17 PM" - |
+*TRUE :                           1 - | *VERSION :                     142F - |
+ Ver :                            2 - | *Z80SYNTAX :                      0 - |
+
+     33 symbols
+     31 unused symbols
+
+ AS V1.42 Beta [Bld 212] - Source File p4_multipass.asm - Page 3 - 09/11/2026 05:08:17 PM
+
+
+  Code Pages:
+  ----------
+
+STANDARD (0 changed characters)
+
+1 code page
+
+0.00 seconds assembly time
+
+     13 lines source file
+      2 passes
+      0 errors
+      0 warnings

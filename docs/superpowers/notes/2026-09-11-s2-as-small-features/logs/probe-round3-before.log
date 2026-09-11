@@ -1,0 +1,186 @@
+asl md5: 61e672562465725a8c102288a7da9098  path: /home/volence/sonic_hacks/s1disasm/build_tools/Linux-x86_64/asl
+sigil md5: 329619a8f409a33dd3c978b30f3d7a27  path: /home/volence/sonic_hacks/.scratch/s2-as-small-features/bin/sigil-before
+================ e1z_music2.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu z80
+       2/       0 :                     	org 0
+       3/       0 : =8000H               z80_bank_size = 8000h
+       4/       0 :                     getZ80BankOffset function label, label # z80_bank_size
+       5/       0 :                     getZ80BankBase function label, label - getZ80BankOffset(label)
+       6/       0 :                     withinSameZ80Bank function label1, label2, getZ80BankBase(label1) == getZ80BankBase(label2)
+       7/       0 : =40H                 MusFlag_SlowerOnPAL = 1 << 6
+       8/       0 :                     music_metadata macro DATA,FLAGS
+       9/       0 :                     	db	(withinSameZ80Bank(DATA.pointer, MusicPoint2)<<7)|((~~DATA.is_compressed)<<5)|(FLAGS)|(getZ80BankOffset(DATA.pointer)/2)
+      10/       0 :                         endm
+      11/       0 : =10020H              Mus_EHZ.pointer = 10020h
+      12/       0 : =1H                  Mus_EHZ.is_compressed = 1
+      13/       0 : =8030H               Mus_X.pointer = 8030h
+      14/       0 : =0H                  Mus_X.is_compressed = 0
+      15/       0 : =10000H              MusicPoint2 = 10000h
+      16/       0 : (MACRO)              	music_metadata Mus_EHZ
+      16/       0 : 90                          db      (withinSameZ80Bank(Mus_EHZ.pointer, MusicPoint2)<<7)|((~~Mus_EHZ.is_compressed)<<5)|()|(getZ80BankOffset(Mus_EHZ.pointer)/2)
+      17/       1 : (MACRO)              	music_metadata Mus_X,MusFlag_SlowerOnPAL
+      17/       1 : 78                          db      (withinSameZ80Bank(Mus_X.pointer, MusicPoint2)<<7)|((~~Mus_X.is_compressed)<<5)|(MusFlag_SlowerOnPAL)|(getZ80BankOffset(Mus_X.pointer)/2)
+      18/       2 : EE                  	db 0EEh
+      19/       3 :                     	end
+sigil exit=1
+e1z_music2.asm(9):5: error: bad byte expression
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ m5k_value_space.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     m	macro pa,pb,pc
+       5/       0 :                     	message "(pa)(pb)(pc)[ALLARGS]"
+       6/       0 :                     	dc.b ARGCOUNT
+       7/       0 :                     	endm
+       8/       0 : (MACRO)              	m pb= 5
+       8/       0 :                             message "()(5)()[pb= 5]"
+       8/       0 : 01                          dc.b 1
+       9/       1 : EE                  	dc.b $EE
+      10/       2 :                     	end
+sigil exit=0
+()(5)()[pb=5]
+01 EE
+built: 2 bytes, no file written (pass -o <path> to write one)
+================ m5k_name_space.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     m	macro pa,pb,pc
+       5/       0 :                     	message "(pa)(pb)(pc)[ALLARGS]"
+       6/       0 :                     	dc.b ARGCOUNT
+       7/       0 :                     	endm
+       8/       0 : (MACRO)              	m pb =5
+       8/       0 :                             message "()(5)()[pb =5]"
+       8/       0 : 01                          dc.b 1
+       9/       1 : EE                  	dc.b $EE
+      10/       2 :                     	end
+sigil exit=0
+()(5)()[pb=5]
+01 EE
+built: 2 bytes, no file written (pass -o <path> to write one)
+================ m5k_both_space.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     m	macro pa,pb,pc
+       5/       0 :                     	message "(pa)(pb)(pc)[ALLARGS]"
+       6/       0 :                     	dc.b ARGCOUNT
+       7/       0 :                     	endm
+       8/       0 : (MACRO)              	m aa, pb = 5 
+       8/       0 :                             message "(aa)(5)()[aa,pb = 5]"
+       8/       0 : 02                          dc.b 2
+       9/       1 : EE                  	dc.b $EE
+      10/       2 :                     	end
+sigil exit=0
+(aa)(5)()[aa,pb=5]
+02 EE
+built: 2 bytes, no file written (pass -o <path> to write one)
+================ m5k_le.asm
+asl exit=2 ASL_EXIT=2 ASL_DIAG=complete 
+> > > m5k_le.asm(8):4: error #1811: keyword argument not defined in macro
+  lines that assembled: an error stops the pass loop, so every forward
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     m	macro pa,pb,pc
+       5/       0 :                     	message "(pa)(pb)(pc)[ALLARGS]"
+       6/       0 :                     	dc.b ARGCOUNT
+       7/       0 :                     	endm
+       8/       0 : (MACRO)              	m 2<=3
+       8/       0 :                             message "()()()[2<=3]"
+       8/       0 : 01                          dc.b 1
+       9/       1 : EE                  	dc.b $EE
+      10/       2 :                     	end
+sigil exit=0
+(2<=3)()()[2<=3]
+01 EE
+built: 2 bytes, no file written (pass -o <path> to write one)
+================ m5k_eq_in_paren.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     m	macro pa,pb,pc
+       5/       0 :                     	message "(pa)(pb)(pc)[ALLARGS]"
+       6/       0 :                     	dc.b ARGCOUNT
+       7/       0 :                     	endm
+       8/       0 : (MACRO)              	m (pb=5)
+       8/       0 :                             message "((pb=5))()()[(pb=5)]"
+       8/       0 : 01                          dc.b 1
+       9/       1 : EE                  	dc.b $EE
+      10/       2 :                     	end
+sigil exit=0
+((pb=5))()()[(pb=5)]
+01 EE
+built: 2 bytes, no file written (pass -o <path> to write one)
+================ m5k_eq_in_str.asm
+asl exit=2 ASL_EXIT=2 ASL_DIAG=complete 
+> > > m5k_eq_in_str.asm(8) m(1):35: error #1020: invalid symbol name
+> > > m5k_eq_in_str.asm(8) m(1):23: error #1020: invalid symbol name
+> > > m5k_eq_in_str.asm(8) m(1):17: error #1020: invalid symbol name
+> > > m5k_eq_in_str.asm(8) m(1): error #1970: invalid string
+  lines that assembled: an error stops the pass loop, so every forward
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     m	macro pa,pb,pc
+       5/       0 :                     	message "(pa)(pb)(pc)[ALLARGS]"
+       6/       0 :                     	dc.b ARGCOUNT
+       7/       0 :                     	endm
+       8/       0 : (MACRO)              	m "pb=5"
+       8/       0 :                             message "("pb=5")()()["pb=5"]"
+       8/       0 : 01                          dc.b 1
+       9/       1 : EE                  	dc.b $EE
+      10/       2 :                     	end
+sigil exit=0
+(
+01 EE
+built: 2 bytes, no file written (pass -o <path> to write one)
+================ e1_func3_middle.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     f function x,y,z,x+y+z
+       5/       0 : 03                  	dc.b f(1,,2)
+       6/       1 : EE                  	dc.b $EE
+       7/       2 :                     	end
+sigil exit=1
+e1_func3_middle.asm(5):7: error: bad byte expression
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ e1_func1_space.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     f function x,x+1
+       5/       0 : 01                  	dc.b f( )
+       6/       1 : EE                  	dc.b $EE
+       7/       2 :                     	end
+sigil exit=1
+e1_func1_space.asm(5):7: error: bad byte expression
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ e1_func2_both.asm
+asl exit=2 ASL_EXIT=2 ASL_DIAG=complete 
+> > > e1_func2_both.asm(5): error #1490: wrong numbers of function arguments
+  lines that assembled: an error stops the pass loop, so every forward
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     f function x,y,x+y
+       5/       0 :                     	dc.b f(,)
+       6/       0 : EE                  	dc.b $EE
+       7/       1 :                     	end
+sigil exit=1
+e1_func2_both.asm(5):7: error: bad byte expression
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+PROBE_END

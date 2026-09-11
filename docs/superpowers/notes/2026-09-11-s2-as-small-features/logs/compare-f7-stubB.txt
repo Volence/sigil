@@ -1,0 +1,9 @@
+WINDOW driver hole [0xEC0E8, 0xED04C) len 0xF64  (Snd_Driver from the p-file, guess from s2.constants.asm)
+WINDOW asserted: exactly one window, extent 0xF64 bytes = 0.376% of the reference
+CONTROL planted outside at 0x200,0x7FFF0,0xFFFFE and inside at 0xEC100 -> reported [('0x200', 1), ('0x7fff0', 1), ('0xffffe', 1)]
+CONTROL passed: the instrument reports planted differences and only the window hides one
+image size 3150600 (0x301308), reference 1048576 (0x100000)
+sigil bytes inside the window: all zero = True
+DIFF outside the window: 0 bytes in 0 runs
+DRIVER at 0x300000, 4872 bytes vs asl Z80 record: 0 bytes differ
+image bytes after the driver: 0, nonzero 0

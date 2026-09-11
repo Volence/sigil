@@ -1,0 +1,1 @@
+                        text: operand[s..e].to_string(),

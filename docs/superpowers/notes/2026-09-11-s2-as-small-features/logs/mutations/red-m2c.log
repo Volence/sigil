@@ -1,0 +1,16 @@
+== mutation m2c on crates/sigil-frontend-as/src/eval.rs, test as_struct_digit_member, HEAD 428342b6b44da515e5e1d912a1fd47d3de9fedd9
+APPLIED to /home/volence/sonic_hacks/sigil/.claude/worktrees/agent-a35527f94a0279a97/crates/sigil-frontend-as/src/eval.rs; mutated region read back from disk:
+  /home/volence/sonic_hacks/sigil/.claude/worktrees/agent-a35527f94a0279a97/crates/sigil-frontend-as/src/eval.rs:10962      if true || !bytes[start].is_ascii_digit() {
+  /home/volence/sonic_hacks/sigil/.claude/worktrees/agent-a35527f94a0279a97/crates/sigil-frontend-as/src/eval.rs:10963          return None;
+  /home/volence/sonic_hacks/sigil/.claude/worktrees/agent-a35527f94a0279a97/crates/sigil-frontend-as/src/eval.rs:10964      }
+test a_z80_operand_reads_the_digit_led_member ... FAILED
+test an_instance_carries_the_digit_led_member ... FAILED
+test an_indented_digit_led_member_without_a_colon_is_refused ... ok
+test a_digit_led_plain_label_is_still_refused ... ok
+test a_digit_led_member_takes_its_offset_and_the_struct_its_length ... FAILED
+thread 'a_z80_operand_reads_the_digit_led_member' (2375646) panicked at crates/sigil-frontend-as/tests/as_struct_digit_member.rs:54:5:
+thread 'an_instance_carries_the_digit_led_member' (2375649) panicked at crates/sigil-frontend-as/tests/as_struct_digit_member.rs:134:41:
+thread 'a_digit_led_member_takes_its_offset_and_the_struct_its_length' (2375644) panicked at crates/sigil-frontend-as/tests/as_struct_digit_member.rs:54:5:
+test result: FAILED. 2 passed; 3 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+TEST_PIPE_DONE
+restored crates/sigil-frontend-as/src/eval.rs from HEAD; tracked changes now: 0

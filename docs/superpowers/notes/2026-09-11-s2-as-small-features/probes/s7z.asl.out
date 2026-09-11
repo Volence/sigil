@@ -1,0 +1,4 @@
+> > > s7z.asm(4): warning #30: no sharefile created, SHARED ignored
+> > >  shared A
+ASL_EXIT=0
+ASL_DIAG=complete

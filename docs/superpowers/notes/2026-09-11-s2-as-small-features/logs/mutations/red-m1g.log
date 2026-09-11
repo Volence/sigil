@@ -1,0 +1,24 @@
+== mutation m1g on crates/sigil-frontend-as/src/expr.rs, test as_empty_parens, HEAD 1b8cb9aeb2da2a4b37e74f38cfc595ec1a675a7d
+APPLIED to /home/volence/sonic_hacks/sigil/.claude/worktrees/agent-a35527f94a0279a97/crates/sigil-frontend-as/src/expr.rs; mutated region read back from disk:
+  /home/volence/sonic_hacks/sigil/.claude/worktrees/agent-a35527f94a0279a97/crates/sigil-frontend-as/src/expr.rs:515          Tok::Punct(Punct::LParen)
+  /home/volence/sonic_hacks/sigil/.claude/worktrees/agent-a35527f94a0279a97/crates/sigil-frontend-as/src/expr.rs:516              if false =>
+  /home/volence/sonic_hacks/sigil/.claude/worktrees/agent-a35527f94a0279a97/crates/sigil-frontend-as/src/expr.rs:517          {
+  /home/volence/sonic_hacks/sigil/.claude/worktrees/agent-a35527f94a0279a97/crates/sigil-frontend-as/src/expr.rs:518              Some((Expr::Int(0), &rest[1..]))
+  /home/volence/sonic_hacks/sigil/.claude/worktrees/agent-a35527f94a0279a97/crates/sigil-frontend-as/src/expr.rs:519          }
+test a_z80_operand_of_empty_parens_is_an_immediate_not_an_indirection ... FAILED
+test an_empty_group_is_zero_where_a_directive_wants_a_constant ... FAILED
+test an_empty_operand_is_still_refused ... FAILED
+test a_user_function_counts_its_arguments_the_way_asl_does ... FAILED
+test an_empty_group_is_zero_in_68000_operands ... FAILED
+test an_omitted_macro_argument_pastes_as_zero ... FAILED
+test an_empty_group_is_zero_in_every_data_width ... FAILED
+thread 'a_z80_operand_of_empty_parens_is_an_immediate_not_an_indirection' (4177729) panicked at crates/sigil-frontend-as/tests/as_empty_parens.rs:58:5:
+thread 'an_empty_group_is_zero_where_a_directive_wants_a_constant' (4177743) panicked at crates/sigil-frontend-as/tests/as_empty_parens.rs:41:85:
+thread 'an_empty_operand_is_still_refused' (4177744) panicked at crates/sigil-frontend-as/tests/as_empty_parens.rs:77:5:
+thread 'a_user_function_counts_its_arguments_the_way_asl_does' (4177728) panicked at crates/sigil-frontend-as/tests/as_empty_parens.rs:58:5:
+thread 'an_empty_group_is_zero_in_68000_operands' (4177730) panicked at crates/sigil-frontend-as/tests/as_empty_parens.rs:58:5:
+thread 'an_omitted_macro_argument_pastes_as_zero' (4177745) panicked at crates/sigil-frontend-as/tests/as_empty_parens.rs:58:5:
+thread 'an_empty_group_is_zero_in_every_data_width' (4177733) panicked at crates/sigil-frontend-as/tests/as_empty_parens.rs:58:5:
+test result: FAILED. 0 passed; 7 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+TEST_PIPE_DONE
+restored crates/sigil-frontend-as/src/expr.rs from HEAD; tracked changes now: 0

@@ -1,0 +1,9 @@
+== mutation m7c on crates/sigil-frontend-as/src/eval.rs, test as_shared, HEAD 4d52fb993223cc2749593fc2938715e6ccb8a38e
+APPLIED to /home/volence/sonic_hacks/sigil/.claude/worktrees/agent-a35527f94a0279a97/crates/sigil-frontend-as/src/eval.rs; mutated region read back from disk:
+  /home/volence/sonic_hacks/sigil/.claude/worktrees/agent-a35527f94a0279a97/crates/sigil-frontend-as/src/eval.rs:6356              "shared" if !rest.is_empty() && rest.iter().all(|t| !matches!(&t.tok, Tok::Ident(n) if self.resolve_sym(n).is_none())) => self.directive_shared(span),
+test the_operands_are_not_evaluated ... FAILED
+test every_shared_line_is_accepted_with_a_warning ... ok
+thread 'the_operands_are_not_evaluated' (1000587) panicked at crates/sigil-frontend-as/tests/as_shared.rs:80:9:
+test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+TEST_PIPE_DONE
+restored crates/sigil-frontend-as/src/eval.rs from HEAD; tracked changes now: 0

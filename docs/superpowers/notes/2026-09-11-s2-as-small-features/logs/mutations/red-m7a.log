@@ -1,0 +1,11 @@
+== mutation m7a on crates/sigil-frontend-as/src/eval.rs, test as_shared, HEAD 4d52fb993223cc2749593fc2938715e6ccb8a38e
+APPLIED to /home/volence/sonic_hacks/sigil/.claude/worktrees/agent-a35527f94a0279a97/crates/sigil-frontend-as/src/eval.rs; mutated region read back from disk:
+  /home/volence/sonic_hacks/sigil/.claude/worktrees/agent-a35527f94a0279a97/crates/sigil-frontend-as/src/eval.rs:10273      fn directive_shared(&mut self, span: Span) {
+  /home/volence/sonic_hacks/sigil/.claude/worktrees/agent-a35527f94a0279a97/crates/sigil-frontend-as/src/eval.rs:10274          std::mem::drop(Diagnostic {
+test every_shared_line_is_accepted_with_a_warning ... FAILED
+test the_operands_are_not_evaluated ... FAILED
+thread 'every_shared_line_is_accepted_with_a_warning' (963967) panicked at crates/sigil-frontend-as/tests/as_shared.rs:57:5:
+thread 'the_operands_are_not_evaluated' (963968) panicked at crates/sigil-frontend-as/tests/as_shared.rs:80:9:
+test result: FAILED. 0 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+TEST_PIPE_DONE
+restored crates/sigil-frontend-as/src/eval.rs from HEAD; tracked changes now: 0

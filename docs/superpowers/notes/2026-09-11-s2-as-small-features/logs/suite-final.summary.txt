@@ -1,0 +1,4 @@
+FAILED tests (0):
+binaries=239 passed=1612 failed=0 ignored=1
+banner: PARTIAL RUN (SIGIL_ALLOW_PARTIAL is set). No reference tree is named, so 130 test binaries are reference-dependent and every row in them is left UNMEASURED. A green result from this run does NOT mean 
+['pwd=/home/volence/sonic_hacks/sigil/.claude/worktrees/agent-a35527f94a0279a97', 'head=4d52fb993223cc2749593fc2938715e6ccb8a38e branch=parcel/s2-as-small-features', 'tracked-changes=0', 'SUITE_END rc=0']

@@ -1,0 +1,11 @@
+free(): double free detected in tcache 2
+/home/volence/sonic_hacks/sigil/.claude/worktrees/agent-a35527f94a0279a97/docs/superpowers/notes/asl-reference/asl_ref.sh: line 262: 1058972 Aborted                    (core dumped) "$ASL" "$@"
+ASL_EXIT=134
+ASL_DIAG=complete
+REFUSED: asl exited 134, so this run FAILED.
+  NO BYTE COLUMN FROM THIS RUN IS A SOURCE OF VALUES, including the
+  lines that assembled: an error stops the pass loop, so every forward
+  reference is left at its unresolved pass-1 placeholder and the
+  listing prints them looking complete. See partial_failure.asm
+  beside asl_ref.sh, where one bad line leaves 6702 reading 67FE.
+  Fix the source, do not quote the listing.

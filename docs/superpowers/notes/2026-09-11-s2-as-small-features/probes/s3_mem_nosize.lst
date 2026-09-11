@@ -1,0 +1,58 @@
+ AS V1.42 Beta [Bld 212] - Source File s3_mem_nosize.asm - Page 1 - 09/11/2026 05:08:18 PM
+
+
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : E1E8 001A           	asl	$1A(a0)
+       5/       4 : E0D1                	asr	(a1)
+       6/       6 : E3DA                	lsl	(a2)+
+       7/       8 : E2E3                	lsr	-(a3)
+       8/       A : E7F4 0010           	rol	$10(a4,d0.w)
+       9/       E : E6F8 1234           	ror	$1234.w
+      10/      12 : E5F9 1234 5678      	roxl	$12345678.l
+      11/      18 : E4E8 0018           	roxr	$18(a0)
+      12/      1C : EE                  	dc.b $EE
+      13/      1D :                     	end
+ AS V1.42 Beta [Bld 212] - Source File s3_mem_nosize.asm - Page 2 - 09/11/2026 05:08:18 PM
+
+
+  Symbol Table (* = unused):
+  --------------------------
+
+*ARCHITECTURE :                                      "x86_64-unknown-linux" - |
+*BIGENDIAN :                      0 - | *BRANCHEXT :                      0 - |
+*CASESENSITIVE :                  1 - | *COMPMODE :                       0 - |
+*CONSTPI :        3.141592653589793 - | *CUSTOM :                         0 - |
+*DATE :                "09/11/2026" - | *FALSE :                          0 - |
+*FULLPMMU :                       1 - | *HAS64 :                          1 - |
+*HASDSP :                         0 - | *HASFPU :                         0 - |
+*HASPMMU :                        0 - | *INEXTMODE :                      0 - |
+*INLWORDMODE :                    0 - | *INMAXMODE :                      0 - |
+*INSRCMODE :                      0 - | *INSUPMODE :                      0 - |
+*LISTON :                         1 - | *MACEXP :                         7 - |
+*MOMCPU :                     68000 - | *MOMCPUNAME :               "68000" - |
+*NESTMAX :                      100 - | *PACKING :                        0 - |
+*PADDING :                        0 - | *RELAXED :                        0 - |
+*TIME :               "05:08:18 PM" - | *TRUE :                           1 - |
+*VERSION :                     142F - | *Z80SYNTAX :                      0 - |
+
+     31 symbols
+     31 unused symbols
+
+ AS V1.42 Beta [Bld 212] - Source File s3_mem_nosize.asm - Page 3 - 09/11/2026 05:08:18 PM
+
+
+  Code Pages:
+  ----------
+
+STANDARD (0 changed characters)
+
+1 code page
+
+0.00 seconds assembly time
+
+     14 lines source file
+      1 pass
+      0 errors
+      0 warnings

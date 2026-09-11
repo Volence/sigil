@@ -1,0 +1,1 @@
+            let Some((value, _)) = self.value_stacks.get_mut(&stack).and_then(|v| if v.is_empty() { None } else { Some(v.remove(0)) }) else {

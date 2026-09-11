@@ -1,0 +1,17 @@
+> > > e1z_music.asm(16) music_metadata(1):17: error #1320: range overflow
+> > > (withinSameZ80Bank(Mus_EHZ.pointer, MusicPoint2)<<7)|((~~Mus_EHZ.is_compressed)<<5)|()|(getZ80BankOffset(Mus_EHZ.pointer)/2)
+> > >         db      (withinSameZ80Bank(Mus_EHZ.pointer, MusicPoint2)<<7)|((~~Mus_EHZ.is_compressed)<<5)|()|(getZ80BankOffset(Mus_EHZ.pointer)/2)
+> > >                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+> > > e1z_music.asm(17) music_metadata(1):17: error #1320: range overflow
+> > > (withinSameZ80Bank(Mus_X.pointer, MusicPoint2)<<7)|((~~Mus_X.is_compressed)<<5)|(MusFlag_SlowerOnPAL)|(getZ80BankOffset(Mus_X.pointer)/2)
+> > >         db      (withinSameZ80Bank(Mus_X.pointer, MusicPoint2)<<7)|((~~Mus_X.is_compressed)<<5)|(MusFlag_SlowerOnPAL)|(getZ80BankOffset(Mus_X.pointer)/2)
+> > >                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+ASL_EXIT=2
+ASL_DIAG=complete
+REFUSED: asl exited 2, so this run FAILED.
+  NO BYTE COLUMN FROM THIS RUN IS A SOURCE OF VALUES, including the
+  lines that assembled: an error stops the pass loop, so every forward
+  reference is left at its unresolved pass-1 placeholder and the
+  listing prints them looking complete. See partial_failure.asm
+  beside asl_ref.sh, where one bad line leaves 6702 reading 67FE.
+  Fix the source, do not quote the listing.

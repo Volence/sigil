@@ -1,0 +1,13 @@
+== mutation m5d on crates/sigil-frontend-as/src/eval.rs, test as_macro_args_text, HEAD b006f40c2c3521ae5178fe2f2f07a987bbbb99e0
+APPLIED to /home/volence/sonic_hacks/sigil/.claude/worktrees/agent-a35527f94a0279a97/crates/sigil-frontend-as/src/eval.rs; mutated region read back from disk:
+  /home/volence/sonic_hacks/sigil/.claude/worktrees/agent-a35527f94a0279a97/crates/sigil-frontend-as/src/eval.rs:10434              let (kw_name, kw_value) = (a.text[..eq].trim(), &a.text[eq + 1..]);
+test a_parameter_default_is_pasted_as_written ... ok
+test a_pasted_argument_is_still_judged_where_it_is_used ... ok
+test sonic_2_s_palette_call_assembles ... ok
+test a_keyword_argument_splits_at_its_first_equals_sign ... FAILED
+test arguments_split_at_commas_and_keep_their_insides ... ok
+test every_argument_is_pasted_as_written ... ok
+thread 'a_keyword_argument_splits_at_its_first_equals_sign' (3843337) panicked at crates/sigil-frontend-as/tests/as_macro_args_text.rs:84:5:
+test result: FAILED. 5 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+TEST_PIPE_DONE
+restored crates/sigil-frontend-as/src/eval.rs from HEAD; tracked changes now: 0

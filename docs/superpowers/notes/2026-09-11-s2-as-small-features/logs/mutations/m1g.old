@@ -1,0 +1,5 @@
+        Tok::Punct(Punct::LParen)
+            if matches!(rest.first().map(|t| &t.tok), Some(Tok::Punct(Punct::RParen))) =>
+        {
+            Some((Expr::Int(0), &rest[1..]))
+        }

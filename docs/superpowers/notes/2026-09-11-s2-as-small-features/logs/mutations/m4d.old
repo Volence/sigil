@@ -1,0 +1,2 @@
+            "pushv" => self.directive_pushv(rest, span),
+            "popv" => self.directive_popv(rest, span),

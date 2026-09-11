@@ -1,0 +1,4 @@
+> > > s7_upper.asm(5): warning #30: no sharefile created, SHARED ignored
+> > >  SHARED A
+ASL_EXIT=0
+ASL_DIAG=complete

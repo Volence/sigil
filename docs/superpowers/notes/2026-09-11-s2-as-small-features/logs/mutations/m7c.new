@@ -1,0 +1,1 @@
+            "shared" if !rest.is_empty() && rest.iter().all(|t| !matches!(&t.tok, Tok::Ident(n) if self.resolve_sym(n).is_none())) => self.directive_shared(span),

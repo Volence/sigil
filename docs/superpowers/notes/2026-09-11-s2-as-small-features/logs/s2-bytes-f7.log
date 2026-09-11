@@ -1,0 +1,30 @@
+reference ROM 9feeb724052c39982d432a7851c98d3e  p-file ecf36eb473c8c8371b945fe1a98fe366  listing 88299a61cea08cc2ac3641e7fbfabcb8  z80 d16f56408b30330335598b2ad358e7ba
+stub H edits 13
+stub B edits 76
+SIGIL_EXIT=0 sigil=d1e28dfab1c73007994259ca2502b506 tree=corpus-stubH rows=1
+image 29d1b81e332245f1bd06cb3c4a0df773 size=3150600
+COMPARE f7 stubH exit=0
+WINDOW driver hole [0xEC0E8, 0xED04C) len 0xF64  (Snd_Driver from the p-file, guess from s2.constants.asm)
+WINDOW asserted: exactly one window, extent 0xF64 bytes = 0.376% of the reference
+CONTROL planted outside at 0x200,0x7FFF0,0xFFFFE and inside at 0xEC100 -> reported [('0x200', 1), ('0x7fff0', 1), ('0xffffe', 1)]
+CONTROL passed: the instrument reports planted differences and only the window hides one
+image size 3150600 (0x301308), reference 1048576 (0x100000)
+sigil bytes inside the window: all zero = True
+DIFF outside the window: 0 bytes in 0 runs
+DRIVER at 0x300000, 4872 bytes vs asl Z80 record: 0 bytes differ
+image bytes after the driver: 0, nonzero 0
+runs listed: 0
+SIGIL_EXIT=0 sigil=d1e28dfab1c73007994259ca2502b506 tree=corpus-stubB rows=0
+image 29d1b81e332245f1bd06cb3c4a0df773 size=3150600
+COMPARE f7 stubB exit=0
+WINDOW driver hole [0xEC0E8, 0xED04C) len 0xF64  (Snd_Driver from the p-file, guess from s2.constants.asm)
+WINDOW asserted: exactly one window, extent 0xF64 bytes = 0.376% of the reference
+CONTROL planted outside at 0x200,0x7FFF0,0xFFFFE and inside at 0xEC100 -> reported [('0x200', 1), ('0x7fff0', 1), ('0xffffe', 1)]
+CONTROL passed: the instrument reports planted differences and only the window hides one
+image size 3150600 (0x301308), reference 1048576 (0x100000)
+sigil bytes inside the window: all zero = True
+DIFF outside the window: 0 bytes in 0 runs
+DRIVER at 0x300000, 4872 bytes vs asl Z80 record: 0 bytes differ
+image bytes after the driver: 0, nonzero 0
+runs listed: 0
+S2_BYTES_END

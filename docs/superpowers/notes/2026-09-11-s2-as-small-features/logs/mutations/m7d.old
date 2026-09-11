@@ -1,0 +1,1 @@
+            "shared" => self.directive_shared(span),

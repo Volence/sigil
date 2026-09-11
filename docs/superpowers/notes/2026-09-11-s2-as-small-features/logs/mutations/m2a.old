@@ -1,0 +1,3 @@
+                } else {
+                    return Err(err(start, i, "malformed number (hex needs a trailing `h`)"));
+                };

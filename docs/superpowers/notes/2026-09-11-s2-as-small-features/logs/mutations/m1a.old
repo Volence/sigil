@@ -1,0 +1,3 @@
+            if inner.is_empty() {
+                return Ok(OperandAtom::Value(Expr::Int(0)));
+            }

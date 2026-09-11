@@ -1,0 +1,1 @@
+        None | Some(b' ' | b'\t' | b';') if start == 0 => Some((name, end)),
