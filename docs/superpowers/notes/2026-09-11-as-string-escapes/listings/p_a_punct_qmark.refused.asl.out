@@ -1,0 +1,15 @@
+> > > p_a_punct_qmark.asm(4): error #2010: invalid escape sequence
+> > >  dc.b "\?"
+> > > p_a_punct_qmark.asm(4):7: error #1020: invalid symbol name
+> > > "\?"
+> > >  dc.b "\?"
+> > >       ~~~~
+ASL_EXIT=2
+ASL_DIAG=complete
+REFUSED: asl exited 2, so this run FAILED.
+  NO BYTE COLUMN FROM THIS RUN IS A SOURCE OF VALUES, including the
+  lines that assembled: an error stops the pass loop, so every forward
+  reference is left at its unresolved pass-1 placeholder and the
+  listing prints them looking complete. See partial_failure.asm
+  beside asl_ref.sh, where one bad line leaves 6702 reading 67FE.
+  Fix the source, do not quote the listing.

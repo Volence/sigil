@@ -1,0 +1,6 @@
+s1 before: exit=1 sigil=952c3fa8ffd4dcf6bd3cd8d1d554b12e rows=1 stdout=3 image=NONE
+s1 final: exit=1 sigil=de9f5a920f61f3e795bd10f7c2317640 rows=1 stdout=3 image=NONE
+--- s1 rows only in before (left) / only in final (right):
+    (row multisets identical)
+--- s1 stdout diff before vs final:
+DIAG_END

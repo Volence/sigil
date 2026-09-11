@@ -1,0 +1,33 @@
+> > > p_c_z80_db.asm(3):10: error #1020: invalid symbol name
+> > > $41
+> > >  charset $41,$11
+> > >          ~~~
+> > > p_c_z80_db.asm(4):10: error #1020: invalid symbol name
+> > > $27
+> > >  charset $27,$55
+> > >          ~~~
+> > > p_c_z80_db.asm(5):10: error #1020: invalid symbol name
+> > > $5C
+> > >  charset $5C,$66
+> > >          ~~~
+> > > p_c_z80_db.asm(6):10: error #1020: invalid symbol name
+> > > $07
+> > >  charset $07,$77
+> > >          ~~~
+> > > p_c_z80_db.asm(7):10: error #1020: invalid symbol name
+> > > $0A
+> > >  charset $0A,$AA
+> > >          ~~~
+> > > p_c_z80_db.asm(8):10: error #1020: invalid symbol name
+> > > $22
+> > >  charset $22,$BB
+> > >          ~~~
+ASL_EXIT=2
+ASL_DIAG=complete
+REFUSED: asl exited 2, so this run FAILED.
+  NO BYTE COLUMN FROM THIS RUN IS A SOURCE OF VALUES, including the
+  lines that assembled: an error stops the pass loop, so every forward
+  reference is left at its unresolved pass-1 placeholder and the
+  listing prints them looking complete. See partial_failure.asm
+  beside asl_ref.sh, where one bad line leaves 6702 reading 67FE.
+  Fix the source, do not quote the listing.

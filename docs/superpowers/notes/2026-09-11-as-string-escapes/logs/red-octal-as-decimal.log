@@ -1,0 +1,40 @@
+test a_backslash_with_nothing_after_it_is_refused ... ok
+test an_escape_is_judged_only_where_the_literal_is_evaluated ... ok
+test an_interpolation_and_the_escapes_around_it_are_one_scan ... ok
+test an_interpolation_with_no_value_is_refused_in_data ... ok
+test a_string_in_an_expression_counts_and_packs_escaped_characters ... ok
+test a_charset_target_takes_its_escapes_and_stores_them_raw ... ok
+test an_escaped_quote_does_not_end_the_literal ... ok
+test message_and_warning_text_take_the_escapes ... ok
+test a_string_macro_argument_is_unescaped_once_where_it_is_used ... ok
+test an_invalid_escape_is_refused_in_every_context ... ok
+test sonic_2_s_charset_backslash_h_line_assembles ... ok
+test the_z80_data_directive_and_character_constant_take_the_same_escapes ... ok
+test a_character_constant_takes_the_same_escapes ... ok
+test string_builtins_and_string_symbols_see_the_escaped_value ... ok
+test an_escaped_character_goes_through_the_live_code_page ... FAILED
+test every_escape_form_asl_accepts_emits_asl_s_bytes_in_a_data_string ... FAILED
+test every_escape_form_asl_refuses_is_refused_out_loud ... FAILED
+  " charset $41,$11\n dc.b \"\\0101\""
+    asl   [11]
+    sigil Ok([65])
+  " dc.b \"\\010\""
+    asl   [08]
+    sigil Ok([0A])
+  " dc.b \"\\012\""
+    asl   [0A]
+    sigil Ok([0C])
+  " dc.b \"\\0123\""
+    asl   [53]
+    sigil Ok([7B])
+  " dc.b \"\\0377\""
+    asl   [FF]
+    sigil Err(["escape sequence `\\0377` is out of range: after `\\0` the digits are octal (0 to 7) and the value is at most 255"])
+  " dc.b \"\\01234\""
+    asl   [53, 34]
+    sigil Ok([7B, 34])
+  " dc.b \"\\08\"" -> Ok([08])
+  " dc.b \"\\09\"" -> Ok([09])
+  " dc.b \"\\018\"" -> Ok([12])
+  " dc.b \"\\08A\"" -> Ok([08, 41])
+test result: FAILED. 14 passed; 3 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s

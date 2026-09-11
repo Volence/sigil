@@ -1,0 +1,16 @@
+> > > p_d_num_range_in_expr.asm(4): error #1320: range overflow
+> > > 256>255
+> > >  move.w #"\256",d0
+> > > p_d_num_range_in_expr.asm(4):10: error #1020: invalid symbol name
+> > > "\256"
+> > >  move.w #"\256",d0
+> > >          ~~~~~~
+ASL_EXIT=2
+ASL_DIAG=complete
+REFUSED: asl exited 2, so this run FAILED.
+  NO BYTE COLUMN FROM THIS RUN IS A SOURCE OF VALUES, including the
+  lines that assembled: an error stops the pass loop, so every forward
+  reference is left at its unresolved pass-1 placeholder and the
+  listing prints them looking complete. See partial_failure.asm
+  beside asl_ref.sh, where one bad line leaves 6702 reading 67FE.
+  Fix the source, do not quote the listing.

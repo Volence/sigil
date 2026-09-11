@@ -1,0 +1,26 @@
+== /home/volence/sonic_hacks/s1disasm
+   lines with a backslash in a literal: 18, literals: 18, unterminated: 0
+       6  message | string | interp-only                e.g. MacroSetup.asm:106: message "#\{tracenum/1.0}: line=\{MOMLINE/1.0} PC=$\{(*)&$FFFFFFFF} msg=ALLARGS"
+       5  fatal | string | interp-only                  e.g. _Variables.asm:483: fatal	"The RAM variable declarations are too large by $\{*} bytes."
+       4  error | string | interp-only                  e.g. MacroSetup.asm:18: error "too much stuff before org $\{address} ($\{(*-address)} bytes)"
+       2  warning | string | interp-only                e.g. Macros.asm:371: warning "Size of loc (\{(._end-loc)/elementsize}) does not match ZoneCount (\{ZoneCount})."
+       1  function | string | interp-only               e.g. MacroSetup.asm:221: signedToString function number,substr("-",0,-sgn(number))+"$\{abs(number)}"
+   escape occurrences by kind: {'interp': 31}
+== /home/volence/sonic_hacks/s2disasm
+   lines with a backslash in a literal: 69, literals: 71, unterminated: 0
+      33  charset | string | escape-only                e.g. s2.asm:10273: charset 'B',"\4\8\xC\4\x10\x14\x18\x1C\x1E\x22\x26\x2A\4\4\x30\x34\x38\x3C\x40\x44\x48\x4C\x52\x56\4"
+      16  fatal | string | interp-only                  e.g. s2.asm:83: fatal "StartOfRom was $\{*} but it should be 0"
+      10  message | string | interp-only                e.g. s2.asm:88575: message "Warning: Table LevelArtPointers has \{cur_zone_id/1.0} entries, but it should have \{no_of_zones/1.0}
+       4  := | string | interp-only                     e.g. s2.asm:88550: cur_zone_str := "\{cur_zone_id}"
+       2  charset | char | escape-only                  e.g. s2.asm:14480: charset '\H',"\x39\x37\x38"
+       2  error | string | interp-only                  e.g. s2.macrosetup.asm:21: error "too much stuff before org $\{address} ($\{(*-address)} bytes)"
+       1  = | string | interp-only                      e.g. s2.macros.asm:246: zoneanimcount_{"\{zoneanimcur}"} = zoneanimcount-1
+       1  warning | string | interp-only                e.g. s2.sounddriver.asm:301: warning "had to insert \{endpad-startpad}h   bytes of padding before improperly located data at 0\{startpad}h 
+   escape occurrences by kind: {'escape:H': 2, 'escape:digit': 202, 'escape:x': 211, 'interp': 61}
+== /home/volence/sonic_hacks/skdisasm
+   lines with a backslash in a literal: 22, literals: 22, unterminated: 0
+      13  fatal | string | interp-only                  e.g. s3.asm:36: fatal "StartOfROM was $\{*} but it should be 0"
+       5  message | string | interp-only                e.g. sonic3k.macros.asm:290: message "soundBank \{soundBankName} has $\{$8000+soundBankStart-*} bytes free at end."
+       3  error | string | interp-only                  e.g. sonic3k.macrosetup.asm:13: error "too much stuff before org $\{address} ($\{(-.diff)} bytes)"
+       1  = | string | interp-only                      e.g. sonic3k.macros.asm:160: zoneanimcount_{"\{zoneanimcur}"} = zoneanimcount-1
+   escape occurrences by kind: {'interp': 38}

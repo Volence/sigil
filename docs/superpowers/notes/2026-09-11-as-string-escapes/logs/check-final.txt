@@ -1,0 +1,8 @@
+b_dcw_str                    MISMATCH                   asl=[00 41 00 42 EE] sigil=[ERR p_b_dcw_str.asm(4):7: error: string operand in a data directive wider than a]
+b_macro_arg_instr            MISMATCH                   asl=[3C 41 3E EE] sigil=[ERR p_b_macro_arg_instr.asm(7):4: error: unexpected character '\\']
+d_char_interp                MISMATCH                   asl=[00 35 EE] sigil=[ERR p_d_char_interp.asm(5):7: error: string interpolation `\{...}` is not suppor]
+d_esc_in_interp_expr         ACCEPTS-WHAT-ASL-REFUSES   asl=[] sigil=[<\{n+\x31}>]
+d_expr_interp                MISMATCH                   asl=[30 3C 00 35 EE] sigil=[ERR p_d_expr_interp.asm(5):9: error: bad immediate expression]
+e_charset_src_plainstr       ACCEPTS-WHAT-ASL-REFUSES   asl=[] sigil=[11 99 EE]
+e_charset_src_str            ACCEPTS-WHAT-ASL-REFUSES   asl=[] sigil=[11 99 EE]
+TOTALS {'ACCEPTS-WHAT-ASL-REFUSES': 3, 'BOTH-REFUSE': 87, 'MATCH': 138, 'MISMATCH': 4} of 232

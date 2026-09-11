@@ -1,0 +1,77 @@
+774b0e37d0be5b35a836d2688c3b839b  sound/DAC/generated/Bongo.dpcm
+66d70dffaa020e88b784b452ef862b21  sound/DAC/generated/Bongo.inc
+07d60c07322aa10a4b1d108d8a98b814  sound/DAC/generated/Clap.dpcm
+04d0c7c76b8f8232cffb3781d1f60b34  sound/DAC/generated/Clap.inc
+f4ce713a317c4c7ea30b9fa588539bde  sound/DAC/generated/Kick.dpcm
+ef1f8eca49b6598e100589af6e1f2f9d  sound/DAC/generated/Kick.inc
+d41d8cd98f00b204e9800998ecf8427e  sound/DAC/generated/raw DPCM data will be generated here
+0cb74dd39ee734e83987a5710e113ad5  sound/DAC/generated/Scratch.dpcm
+f780653e39c76580b721e70046b10a50  sound/DAC/generated/Scratch.inc
+1a0331f1195ba42b9ac96098750f5a5b  sound/DAC/generated/Snare.dpcm
+1e769fcac97e9b87365ee7b585027c2a  sound/DAC/generated/Snare.inc
+f414e820203a52ffdc41915947809c7e  sound/DAC/generated/Timpani.dpcm
+69c7d0ae9ed8602ac360f9cef082c942  sound/DAC/generated/Timpani.inc
+8d81b63898da89349117464e6121f826  sound/DAC/generated/Tom.dpcm
+69c28ca5cffc7d08650251532ad74a0d  sound/DAC/generated/Tom.inc
+6a05839cb1b749c199eb57f1dff3c955  sound/music/generated/81 - 2 Player Menu.inc
+d8cf05cd656a6149b276ee979adc2228  sound/music/generated/81 - 2 Player Menu.sax
+230ae608254bd45b4b026b2cfd62dedf  sound/music/generated/82 - EHZ.inc
+ee8e45765e9611aba17ef4eeffef1d46  sound/music/generated/82 - EHZ.sax
+e871ca1674e2d7e9e50e2591ff47d6a1  sound/music/generated/83 - MCZ 2P.inc
+c8876a1ef1f9e82c6ba9d92166a5d39e  sound/music/generated/83 - MCZ 2P.sax
+675bbb38fd63250d043bb250b3c59d25  sound/music/generated/84 - OOZ.inc
+e9bfc0094c337aaa7e3172a64e0f0ba8  sound/music/generated/84 - OOZ.sax
+033f7bea04c3809806d0aefc39f6d878  sound/music/generated/85 - MTZ.inc
+24c27780d97ee156ad953173f36462a6  sound/music/generated/85 - MTZ.sax
+c298ae59c6c642515671e0d3314e8b74  sound/music/generated/86 - HTZ.inc
+81f7dde21166cb435be7022361a05700  sound/music/generated/86 - HTZ.sax
+cc1a4ce6214a286104be6fdc06af40df  sound/music/generated/87 - ARZ.inc
+c2e86acd56295f94e543c0734cb2639c  sound/music/generated/87 - ARZ.sax
+2bf3ced32d92bfcead9356804412628f  sound/music/generated/88 - CNZ 2P.inc
+27a40940f4f79fe63a16af8f378811f0  sound/music/generated/88 - CNZ 2P.sax
+7faf624bc9ee45f8022edc696edff14d  sound/music/generated/89 - CNZ.inc
+08de6ed68bb3234da78c6c4d09cbe94f  sound/music/generated/89 - CNZ.sax
+adfa1527bbb55a068aa284407607fcc8  sound/music/generated/8A - DEZ.inc
+40dbfd885ab96cd25869c0f25f505f8f  sound/music/generated/8A - DEZ.sax
+3d9efba5a7e54d987ce3eb924f2e90d5  sound/music/generated/8B - MCZ.inc
+8ed0f30a0747c9eec95f486c8ce62300  sound/music/generated/8B - MCZ.sax
+7096ee3438640f0c3b2bcc85b5a0e520  sound/music/generated/8C - EHZ 2P.inc
+45afbe834878729380f8a6a2e70daba5  sound/music/generated/8C - EHZ 2P.sax
+36b075790918f93170d7a52ccd67c364  sound/music/generated/8D - SCZ.inc
+77a27c26e388a16862e3c22f6312b993  sound/music/generated/8D - SCZ.sax
+c4d9999a6d52723b0529077f76b45906  sound/music/generated/8E - CPZ.inc
+91071b71fd3d74462fe29ac794178fc4  sound/music/generated/8E - CPZ.sax
+b25e9141a0c224b5c722ab2d7ccc3ff7  sound/music/generated/8F - WFZ.inc
+1ba6093c31b1de21c9280b106a30d6e0  sound/music/generated/8F - WFZ.sax
+442c7fbbe618c21e513a8611ae591b95  sound/music/generated/90 - HPZ.inc
+f4a002900d6ce1cbccd9e688aa5b7b5c  sound/music/generated/90 - HPZ.sax
+a15cd6fa8987c85d4fcf964aa17abd2a  sound/music/generated/91 - Options.inc
+57c494fcc5174d53a243bd6dafa609b1  sound/music/generated/91 - Options.sax
+cf21396171a2a8adcc14ce1fb6c00669  sound/music/generated/92 - Special Stage.inc
+819d4b19b597d2bb90e22ac2221aabe9  sound/music/generated/92 - Special Stage.sax
+6cb72c8803c25e2d35b2407c24b5bd2d  sound/music/generated/93 - Boss.inc
+db78f435a9e45cf33f2833bacc42e20f  sound/music/generated/93 - Boss.sax
+3dbf74ca8eaa683c38af20364954171a  sound/music/generated/94 - Final Boss.inc
+66405d3ad382018fe1adf90f91ba0a25  sound/music/generated/94 - Final Boss.sax
+a5e8c187663aeaefcdf4ee79e0e8329b  sound/music/generated/95 - Ending.inc
+06ff4e880d0bcadb771177bafabd87b9  sound/music/generated/95 - Ending.sax
+863041b5e0766a3a08c0b1978e8641bd  sound/music/generated/96 - Super Sonic.inc
+14d087a6af8c769569a6aa47955eacf8  sound/music/generated/96 - Super Sonic.sax
+78c8b039a00d0085db1208fb3ded9009  sound/music/generated/97 - Invincible.inc
+c35c4aeb10b06063fcb16ac729c89311  sound/music/generated/97 - Invincible.sax
+20fb1883106f5f86822ec09dd0da0cad  sound/music/generated/98 - Extra Life.inc
+564218412683b0ee36a2b8fb6838bebd  sound/music/generated/99 - Title Screen.inc
+431ff647e67f7d3e5b111ccaa491ce0c  sound/music/generated/99 - Title Screen.sax
+9eccf762928259e6db3af094465b378e  sound/music/generated/9A - End of Act.inc
+18ee608d49d8820983d2e06cb2c3512a  sound/music/generated/9A - End of Act.sax
+98da7c3dd467156f9fbd2c3a0d694ed9  sound/music/generated/9B - Game Over.inc
+05f573e6c2e4a7cce5a74d5940cfe18d  sound/music/generated/9C - Continue.inc
+b6c5fcde6b0b492600b830fece286fe4  sound/music/generated/9C - Continue.sax
+429d28751d34f3b07a5aad47260bdfcd  sound/music/generated/9D - Got Emerald.inc
+8ad35622845a85545fb35170cc92ce30  sound/music/generated/9E - Credits.inc
+9a2be8de8189b40379553798516ae526  sound/music/generated/9F - Drowning.inc
+513236aebf95c66289bc7b245a9f5103  sound/music/generated/9F - Drowning.sax
+d41d8cd98f00b204e9800998ecf8427e  sound/music/generated/music data will be automatically generated here
+d41d8cd98f00b204e9800998ecf8427e  sound/PCM/generated/raw PCM data will be generated here
+76281338a5b43b54f7d060b190e99c7f  sound/PCM/generated/SEGA.inc
+bae62f8be63cc573f1700cfa7c19bee4  sound/PCM/generated/SEGA.pcm
