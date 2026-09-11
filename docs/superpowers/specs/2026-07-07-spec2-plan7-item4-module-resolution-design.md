@@ -55,7 +55,7 @@ Extend `sigil emp` to accept an entry `.emp` file plus `--root <dir>` (the scan 
 
 Unify the two placement concepts that already exist; invent no third:
 
-- `.emp` `section obj_bank (cpu: m68k, vma: $010000)` declares a section and its **VMA**. A top-level module owns the section declarations (as `examples/main.emp` mocks); other modules route into them via `module … in obj_bank`.
+- `.emp` `section obj_bank (cpu: m68000, vma: $010000)` declares a section and its **VMA**. A top-level module owns the section declarations (as `examples/main.emp` mocks); other modules route into them via `module … in obj_bank`.
 - `sigil.map.toml` `[[region]]` supplies **LMA** base, `size` (budget), kind; `emit_rom` already validates against it.
 
 T4 wires `module … in <section>` so each module's items land in the named section, places sections in declared order, and lets the existing region-budget check emit the §7.3 **"over by N bytes"** overflow error with the owning section. The hand-rolled `__BUDGET_*` accounting becomes a free per-section size report.

@@ -1675,8 +1675,10 @@ fn lower_dispatch_item(
     }
 }
 
-/// Read a section's `cpu:`/`vma:`/`bank:` attributes (§7.1, §7-main). `cpu:`
-/// defaults to `M68000` (`z80` selects [`Cpu::Z80`]). `vma:`, when present, is
+/// Read a section's `cpu:`/`vma:`/`bank:` attributes (§7.1, §7-main). An absent
+/// `cpu:` selects `M68000`; a present one resolves through [`attr_cpu`] against
+/// [`CPU_SPELLINGS`] (`m68000`, `z80`) and is refused by name when it names
+/// anything else. `vma:`, when present, is
 /// evaluated to a comptime integer and returned as `Some` — a PIN: the
 /// section's labels resolve from that exact base (unchanged behavior). Absent
 /// `vma:` returns `None` (R7p.5, Plan 7 item-7-pre Task 6): the section's
@@ -2090,21 +2092,53 @@ fn cpu_name(cpu: Cpu) -> &'static str {
 /// Every processor spelling a `.emp` `cpu:` attribute may name, and the target
 /// each one selects. The single source of truth: [`cpu_for_spelling`] resolves
 /// against it and [`unrecognized_cpu`] lists it back to the reader, so the
-/// refusal can never advertise a spelling the attribute does not accept, and
-/// narrowing the language surface later is a change to these rows alone.
+/// refusal can never advertise a spelling the attribute does not accept.
 ///
-/// Two spellings select the 68000. `m68000` and `m68k` name one instruction set,
-/// and both are written across this tree today (`examples/main.emp` is the
-/// second). Neither of AS's bare-numeric forms can appear here: `68000` lexes as
-/// an integer literal rather than a path, so the `.emp` surface and the
+/// One row per processor. `.emp` names each processor one way, so a reader who
+/// meets `cpu: m68000` in one file never meets a second spelling in another and
+/// wonders whether the two select different targets (decision `d-27` in
+/// `docs/decisions.jsonl`, answered `one_name_each` by the hub under the owner's
+/// delegation). Other toolchains' names for these processors are refused by
+/// name with the spelling to write: see [`CPU_REFUSED_ALIASES`].
+///
+/// Neither of AS's bare-numeric forms can appear here: `68000` lexes as an
+/// integer literal rather than a path, so the `.emp` surface and the
 /// `sigil_frontend_as::CPU_SPELLINGS` surface are deliberately different sets.
-/// Which of the two 68000 spellings is canonical is a language-surface question
-/// for the owner, not a matter this table decides.
 pub const CPU_SPELLINGS: &[(&str, Cpu)] = &[
     ("m68000", Cpu::M68000),
-    ("m68k", Cpu::M68000),
     ("z80", Cpu::Z80),
 ];
+
+/// Processor names other toolchains use for a processor `.emp` spells another
+/// way, each paired with the [`CPU_SPELLINGS`] spelling to write instead.
+///
+/// A `cpu:` attribute naming one of these is REFUSED, never accepted and never
+/// defaulted: the author plainly means a processor `.emp` supports, so the
+/// refusal is [`refused_cpu_alias`], which names the one line to write, rather
+/// than [`unrecognized_cpu`]'s list of every accepted spelling. Matched with
+/// the same case folding as [`cpu_for_spelling`].
+pub const CPU_REFUSED_ALIASES: &[(&str, &str)] = &[("m68k", "m68000")];
+
+/// The [`CPU_SPELLINGS`] spelling to write in place of `name`, when `name` is
+/// one of the [`CPU_REFUSED_ALIASES`]. `None` for every other name, accepted or
+/// not.
+pub fn cpu_alias_replacement(name: &str) -> Option<&'static str> {
+    CPU_REFUSED_ALIASES
+        .iter()
+        .find(|(alias, _)| alias.eq_ignore_ascii_case(name))
+        .map(|(_, spelling)| *spelling)
+}
+
+/// The refusal raised when a `cpu:` attribute names one of the
+/// [`CPU_REFUSED_ALIASES`]. It echoes the value as written and prints the exact
+/// line to write, so the repair is a copy rather than a lookup.
+pub fn refused_cpu_alias(written: &str, spelling: &str) -> String {
+    format!(
+        "processor `{written}` is spelled `{spelling}` in .emp: write `cpu: {spelling}`. \
+         .emp has one name for each processor, so a reader never meets two spellings \
+         and has to wonder whether they select two different targets."
+    )
+}
 
 /// The target a `cpu:` attribute's processor name selects, or `None` when the
 /// `.emp` front end does not recognize that spelling. `.emp` processor names are
@@ -2170,7 +2204,9 @@ fn attr_cpu_opt(expr: &ast::Expr) -> Option<Cpu> {
 
 /// Resolve a `cpu:` attribute expression to a [`Cpu`] against [`CPU_SPELLINGS`].
 /// A value that is not one of those spellings is REFUSED by name at its own
-/// span, never coerced to a default.
+/// span, never coerced to a default: one of the [`CPU_REFUSED_ALIASES`] earns
+/// [`refused_cpu_alias`] with the one line to write, anything else earns
+/// [`unrecognized_cpu`].
 ///
 /// Poison-tolerant like the other attribute diagnostics here: the returned
 /// [`Cpu::M68000`] lets the rest of the file lower so a reader sees more than
@@ -2180,11 +2216,16 @@ fn attr_cpu(expr: &ast::Expr, diags: &mut Vec<Diagnostic>) -> Cpu {
     if let Some(cpu) = attr_cpu_opt(expr) {
         return cpu;
     }
-    err(
-        diags,
-        crate::parser::expr_span(expr),
-        unrecognized_cpu(&attr_cpu_written(expr)),
-    );
+    let written = attr_cpu_written(expr);
+    let replacement = match expr {
+        ast::Expr::Path(p) if p.segments.len() == 1 => cpu_alias_replacement(&p.segments[0]),
+        _ => None,
+    };
+    let message = match replacement {
+        Some(spelling) => refused_cpu_alias(&written, spelling),
+        None => unrecognized_cpu(&written),
+    };
+    err(diags, crate::parser::expr_span(expr), message);
     Cpu::M68000
 }
 
@@ -2320,7 +2361,7 @@ fn validate_inout_boundaries(items: &[ast::Item], cpu: Cpu, diags: &mut Vec<Diag
             ast::Item::Section(s) => {
                 // A RE-read of an attribute [`section_attrs`] already resolved and
                 // already refused if unrecognized, so it resolves silently here:
-                // one wrong `cpu:` earns one diagnostic. An unrecognized value
+                // one wrong `cpu:` earns one diagnostic. A refused value
                 // inherits the enclosing processor rather than switching to one
                 // nobody named; the file carries a refusal either way.
                 let sec_cpu = s.attrs.iter()
