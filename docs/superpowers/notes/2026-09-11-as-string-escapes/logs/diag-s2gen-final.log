@@ -1,0 +1,9 @@
+s2gen before: exit=1 sigil=952c3fa8ffd4dcf6bd3cd8d1d554b12e rows=71 stdout=3 image=NONE
+s2gen final: exit=1 sigil=de9f5a920f61f3e795bd10f7c2317640 rows=69 stdout=3 image=NONE
+--- s2gen rows only in before (left) / only in final (right):
+< s2.asm(14480):2: error: charset operand 23644 out of range 0..=255
+< s2.asm(14606):2: error: charset operand 12593 out of range 0..=255
+--- s2gen stdout diff before vs final:
+< assembly failed: 71 errors (reported on stderr)
+> assembly failed: 69 errors (reported on stderr)
+DIAG_END

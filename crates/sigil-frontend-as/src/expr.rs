@@ -127,7 +127,15 @@ const MAX_PACKED_CHARS: usize = 4;
 /// The page is threaded as an argument rather than held: this parser stays
 /// stateless, and every call site is named by the compiler instead of by a
 /// reader's enumeration.
+///
+/// `s` is the literal's SOURCE form, and its escapes are processed here, before
+/// the count and the packing: `move.l #"\x41\x42",d0` is `203C 0000 4142`, two
+/// characters, and under `charset $41,$11` `move.w #"\x41",d0` is `303C 0011`,
+/// so an escaped character goes through the page like any other. An invalid
+/// escape, and a `\{...}` interpolation (this parser has no evaluator), make the
+/// operand not-an-expression, which the caller refuses out loud.
 pub(crate) fn string_to_int(s: &str, cs: &CodePage) -> Option<i64> {
+    let s = crate::escape::unescape_plain(s).ok()?;
     let mut packed: i64 = 0;
     let mut chars = 0usize;
     for c in s.chars() {

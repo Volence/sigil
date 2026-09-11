@@ -1,0 +1,6 @@
+sk before: exit=1 sigil=952c3fa8ffd4dcf6bd3cd8d1d554b12e rows=189 stdout=2 image=NONE
+sk final: exit=1 sigil=de9f5a920f61f3e795bd10f7c2317640 rows=189 stdout=2 image=NONE
+--- sk rows only in before (left) / only in final (right):
+    (row multisets identical)
+--- sk stdout diff before vs final:
+DIAG_END

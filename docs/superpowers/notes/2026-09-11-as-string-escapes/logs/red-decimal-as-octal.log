@@ -1,0 +1,60 @@
+test a_backslash_with_nothing_after_it_is_refused ... ok
+test an_interpolation_with_no_value_is_refused_in_data ... ok
+test sonic_2_s_charset_backslash_h_line_assembles ... ok
+test the_z80_data_directive_and_character_constant_take_the_same_escapes ... FAILED
+test an_escape_is_judged_only_where_the_literal_is_evaluated ... ok
+test an_escaped_quote_does_not_end_the_literal ... ok
+test an_interpolation_and_the_escapes_around_it_are_one_scan ... ok
+test message_and_warning_text_take_the_escapes ... FAILED
+test a_string_in_an_expression_counts_and_packs_escaped_characters ... ok
+test a_charset_target_takes_its_escapes_and_stores_them_raw ... FAILED
+test an_invalid_escape_is_refused_in_every_context ... FAILED
+test a_character_constant_takes_the_same_escapes ... FAILED
+test string_builtins_and_string_symbols_see_the_escaped_value ... FAILED
+test a_string_macro_argument_is_unescaped_once_where_it_is_used ... FAILED
+test an_escaped_character_goes_through_the_live_code_page ... FAILED
+test every_escape_form_asl_accepts_emits_asl_s_bytes_in_a_data_string ... FAILED
+test every_escape_form_asl_refuses_is_refused_out_loud ... FAILED
+  " db \"\\x41\\66\\H\""
+    asl   [41, 42, 27]
+    sigil Ok([41, 36, 27])
+  " charset 'A',\"\\x10\\11\\x12\"\n dc.b \"ABC\""
+    asl   [10, 0B, 12]
+    sigil Ok([10, 09, 12])
+  " move.w #\"\\256\",d0" -> Ok([30, 3C, 00, AE])
+  " dc.w '\\65'"
+    asl   [00, 41]
+    sigil Ok([00, 35])
+  " dc.l 'A\\x42C\\68'"
+    asl   [41, 42, 43, 44]
+    sigil Ok([41, 42, 43, 30])
+  "s := \"\\x41\\66\"\n dc.b s\n dc.b strlen(s)"
+    asl   [41, 42, 02]
+    sigil Ok([41, 36, 02])
+  "s equ \"\\x41\\66\"\n dc.b s"
+    asl   [41, 42]
+    sigil Ok([41, 36])
+  "m macro a\n dc.b a\n endm\n m \"\\x41\\66\""
+    asl   [41, 42]
+    sigil Ok([41, 36])
+  " charset $41,$11\n charset $27,$55\n charset $5C,$66\n charset $07,$77\n charset $0A,$AA\n charset $22,$BB\n dc.b \"A\\x41\\65\""
+    asl   [11, 11, 11]
+    sigil Ok([11, 11, 35])
+  " dc.b \"\\8\""
+    asl   [08]
+    sigil Ok([00])
+  " dc.b \"\\9\""
+    asl   [09]
+    sigil Ok([00])
+  " dc.b \"\\12\""
+    asl   [0C]
+    sigil Ok([0A])
+  " dc.b \"\\18\""
+    asl   [12]
+    sigil Ok([08])
+  " dc.b \"\\99\""
+    asl   [63]
+    sigil Ok([00])
+  " dc.b \"\\123\""
+    asl   [7B]
+    sigil Ok([53])
