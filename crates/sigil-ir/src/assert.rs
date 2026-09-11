@@ -4,9 +4,28 @@
 //! records a [`LinkAssert`] on the [`Module`](crate::Module); the linker
 //! evaluates each against the post-relaxation symbol table and fails the build
 //! on any that folds to `0`.
+//!
+//! The same channel carries one check that is not a condition: every evaluated
+//! `extern(name)` records an [`AssertKind::ExternDefined`] assert, so the name
+//! is refused at its own span when no module in the link defines it, whatever
+//! the value went on to feed.
 
 use crate::expr::Expr;
 use sigil_span::{Level, Span};
+
+/// What a [`LinkAssert`] checks at link.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum AssertKind {
+    /// `cond` folds to an integer: `0` fails, nonzero passes. Every `ensure`
+    /// guard and every layout congruence/parity check is this kind.
+    #[default]
+    Condition,
+    /// `cond` is a bare [`Expr::Sym`] recorded by an `extern(name)` evaluation.
+    /// It passes when the link defines the symbol, whatever its value (an equ of
+    /// `0` or a label at address `0` is defined), and is refused by name at the
+    /// `extern()` call's span when nothing defines it.
+    ExternDefined,
+}
 
 /// One piece of a deferred guard's message (D-H.5). The comptime parts are frozen
 /// to [`Text`](MsgPart::Text) at DEFER time (the comptime env is about to
@@ -46,4 +65,32 @@ pub struct LinkAssert {
     pub level: Level,
     /// The guard's source span, for the failure diagnostic.
     pub span: Span,
+    /// What the linker checks: a folded condition, or that an `extern()` name is
+    /// defined at all.
+    pub kind: AssertKind,
+}
+
+impl LinkAssert {
+    /// The check an `extern(name)` evaluation records: the link must define
+    /// `name`. `span` is the `extern()` call itself, so a refusal points at the
+    /// reference rather than at whatever consumed its value.
+    pub fn extern_defined(name: &str, span: Span) -> LinkAssert {
+        LinkAssert {
+            cond: Expr::Sym(name.to_string()),
+            message: Vec::new(),
+            fatal: false,
+            level: Level::Error,
+            span,
+            kind: AssertKind::ExternDefined,
+        }
+    }
+
+    /// The symbol an [`AssertKind::ExternDefined`] assert requires, or `None`
+    /// for a condition.
+    pub fn extern_name(&self) -> Option<&str> {
+        match (&self.kind, &self.cond) {
+            (AssertKind::ExternDefined, Expr::Sym(name)) => Some(name),
+            _ => None,
+        }
+    }
 }

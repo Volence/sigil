@@ -8,9 +8,14 @@
 use sigil_ir::expr::Fold;
 use sigil_ir::map::MemoryMap;
 use sigil_ir::{
-    Expr, Fixup, FixupKind, Fragment, LinkAssert, MsgPart, Section, SymbolTable, SymbolValue,
+    AssertKind, Expr, Fixup, FixupKind, Fragment, LinkAssert, MsgPart, Section, SymbolTable,
+    SymbolValue,
 };
 use sigil_span::{Diagnostic, Level, Span};
+
+/// The diagnostic id [`check_link_asserts`] opens a message with when an evaluated
+/// `extern(name)` names a symbol no section, equ or stub in the link defines.
+pub const EXTERN_UNKNOWN_ID: &str = "[extern.unknown]";
 
 mod relax;
 pub use relax::{asl_width_rule, resolve_layout, resolve_layout_measuring, AbsWidth};
@@ -365,6 +370,13 @@ pub fn resolved_equates(sections: &[Section], stubs: &SymbolTable) -> Vec<(Strin
 /// defined — is an internal-contract error naming the assert's span (never a
 /// silent pass). `ensure` and `ensure_fatal` are identical in effect at link
 /// (D-H.7): both are an `Error` that fails the build; `fatal` only colors wording.
+///
+/// [`AssertKind::ExternDefined`] asserts (one per evaluated `extern(name)`) are
+/// checked first and test only that the link defines the name: an undefined one
+/// is an [`EXTERN_UNKNOWN_ID`] `Error` at the `extern()` call's own span, once per
+/// call site. A condition whose every unresolved leaf is a name refused that way
+/// adds no second diagnostic, because the refusal already fails the build and
+/// names the symbol where it was written.
 pub fn check_link_asserts(
     resolved: &[Section],
     stubs: &SymbolTable,
@@ -376,7 +388,38 @@ pub fn check_link_asserts(
     let syms = build_symbol_table(resolved, stubs);
     let lookup = |name: &str| syms.resolve(name, None);
     let mut out = Vec::new();
-    for a in asserts {
+    let mut refused: Vec<&str> = Vec::new();
+    let mut reported: Vec<(Span, &str)> = Vec::new();
+    for a in asserts.iter().filter(|a| a.kind == AssertKind::ExternDefined) {
+        let Some(name) = a.extern_name() else {
+            out.push(diag(
+                "internal: an `extern()` reference assert whose condition is not a bare symbol, \
+                 this is a compiler bug"
+                    .to_string(),
+                a.span,
+            ));
+            continue;
+        };
+        if lookup(name).is_some() {
+            continue;
+        }
+        if !refused.contains(&name) {
+            refused.push(name);
+        }
+        if reported.contains(&(a.span, name)) {
+            continue;
+        }
+        reported.push((a.span, name));
+        out.push(Diagnostic {
+            level: Level::Error,
+            message: format!(
+                "{EXTERN_UNKNOWN_ID} `extern(\"{name}\")` names a symbol not defined in this link: \
+                 no label, equ or supplied stub is called `{name}`"
+            ),
+            primary: a.span,
+        });
+    }
+    for a in asserts.iter().filter(|a| a.kind == AssertKind::Condition) {
         match a.cond.fold(&lookup) {
             // Nonzero → the guard holds; silent.
             Fold::Value(v) if v != 0 => {}
@@ -400,6 +443,9 @@ pub fn check_link_asserts(
             // internal-contract error.
             Fold::Poison => {
                 let missing = unresolved_sym_leaves(&a.cond, &lookup);
+                if !missing.is_empty() && missing.iter().all(|n| refused.contains(&n.as_str())) {
+                    continue;
+                }
                 let message = if missing.iter().any(|n| n.starts_with("__here$")) {
                     "internal: deferred link assertion has an unresolvable condition \
                      (an anchor label was never defined), this is a compiler bug in the \
@@ -1109,7 +1155,7 @@ mod tests {
             rhs: Box::new(Expr::Int(0x9000)),
         };
         let a = LinkAssert { cond, message: vec![MsgPart::Text("over".into())], fatal: true,
-            level: sigil_span::Level::Error, span: span() };
+            level: sigil_span::Level::Error, span: span(), kind: sigil_ir::AssertKind::Condition };
         assert!(check_link_asserts(&secs, &SymbolTable::new(), &[a]).is_empty());
     }
 
@@ -1127,7 +1173,7 @@ mod tests {
             MsgPart::Expr(Expr::Sym("A".into())),
         ];
         let a = LinkAssert { cond, message: msg, fatal: true,
-            level: sigil_span::Level::Error, span: span() };
+            level: sigil_span::Level::Error, span: span(), kind: sigil_ir::AssertKind::Condition };
         let ds = check_link_asserts(&secs, &SymbolTable::new(), &[a]);
         assert_eq!(ds.len(), 1);
         assert_eq!(ds[0].level, Level::Error);
@@ -1148,6 +1194,7 @@ mod tests {
             fatal: false,
             level: sigil_span::Level::Error,
             span: span(),
+            kind: sigil_ir::AssertKind::Condition,
         };
         // Two failing asserts ($8004 <= $10 and <= $20 both false) → both reported.
         let ds = check_link_asserts(&secs, &SymbolTable::new(), &[fail(0x10), fail(0x20)]);
@@ -1168,6 +1215,7 @@ mod tests {
             fatal: false,
             level: sigil_span::Level::Error,
             span: span(),
+            kind: sigil_ir::AssertKind::Condition,
         };
         let ds = check_link_asserts(&secs, &SymbolTable::new(), &[a]);
         assert_eq!(ds.len(), 1);
@@ -1202,6 +1250,7 @@ mod tests {
             fatal: false,
             level: sigil_span::Level::Error,
             span: span(),
+            kind: sigil_ir::AssertKind::Condition,
         };
         let ds = check_link_asserts(&secs, &SymbolTable::new(), &[a]);
         assert_eq!(ds.len(), 1);
@@ -1220,7 +1269,7 @@ mod tests {
             rhs: Box::new(Expr::Sym("StillMissing".into())),
         };
         let a = LinkAssert { cond, message: vec![MsgPart::Text("x".into())], fatal: false,
-            level: sigil_span::Level::Error, span: span() };
+            level: sigil_span::Level::Error, span: span(), kind: sigil_ir::AssertKind::Condition };
         let ds = check_link_asserts(&secs, &SymbolTable::new(), &[a]);
         assert_eq!(ds.len(), 1);
         assert!(ds[0].message.contains("StillMissing"), "got: {}", ds[0].message);
@@ -1270,7 +1319,7 @@ mod tests {
             rhs: Box::new(Expr::Int(0x0B)),
         };
         let a = LinkAssert { cond, message: vec![MsgPart::Text("mismatch".into())], fatal: false,
-            level: sigil_span::Level::Error, span: span() };
+            level: sigil_span::Level::Error, span: span(), kind: sigil_ir::AssertKind::Condition };
         assert_eq!(
             check_link_asserts(&secs, &SymbolTable::new(), &[a]),
             Vec::<Diagnostic>::new(),

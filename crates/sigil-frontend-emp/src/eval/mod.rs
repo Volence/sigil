@@ -1854,8 +1854,13 @@ pub fn run_module_tests(
             let _ = ev.exec_stmts(&t.body, &mut env);
             // Belt (Item-10 review): a deferred link-time condition inside a
             // test body would otherwise pass VACUOUSLY (the linker never runs
-            // here) — fail it loudly instead.
-            let leaked = !ev.take_link_asserts().is_empty();
+            // here), so fail it loudly instead. An `extern()` reference record is
+            // not a condition: `sigil test` never links, so no name is checked
+            // here, and a value that reached an assertion deferred a condition.
+            let leaked = ev
+                .take_link_asserts()
+                .iter()
+                .any(|a| a.kind == sigil_ir::AssertKind::Condition);
             (ev.was_aborted() || leaked, {
                 let mut d = ev.diags;
                 if leaked {
@@ -1993,6 +1998,9 @@ pub type ProcBodyEnvResult =
 /// supplies imports via the resolve pass and surfaces the `unknown name` error
 /// itself, so it ignores both counts — always 0/empty in a build that lowers
 /// clean, and redundant with the loud diagnostics in one that does not).
+///
+/// Analyses never link, so the body's deferred link asserts are dropped here;
+/// the lowering pass takes them through [`eval_proc_body_lowering`].
 #[allow(clippy::too_many_arguments)]
 pub fn eval_proc_body_env(
     file: &crate::ast::File,
@@ -2006,6 +2014,58 @@ pub fn eval_proc_body_env(
     ambient: &[ast::Item],
     contracts: &crate::contract::InterfaceEnv,
 ) -> ProcBodyEnvResult {
+    let (buf, diags, counter, dropped, unresolved, _asserts) = eval_proc_body_full(
+        file, name, params, body, span, asm_counter_start, cpu, defines, ambient, contracts,
+    );
+    (buf, diags, counter, dropped, unresolved)
+}
+
+/// [`eval_proc_body`] for the lowering pass: also returns the link asserts the
+/// body recorded, which the caller drains onto the module. A body `ensure` whose
+/// condition is a link-time value defers to one, and every `extern()` evaluated
+/// in the body records one, so dropping them would leave that guard undecided
+/// and that name unchecked.
+#[allow(clippy::too_many_arguments)]
+pub fn eval_proc_body_lowering(
+    file: &crate::ast::File,
+    name: &str,
+    params: &[(String, ast::Type, Span)],
+    body: &[ast::AsmStmt],
+    span: Span,
+    asm_counter_start: u32,
+    cpu: sigil_ir::backend::Cpu,
+    defines: &[(String, i128)],
+    contracts: &crate::contract::InterfaceEnv,
+) -> (Option<crate::value::CodeBuf>, Vec<Diagnostic>, u32, Vec<sigil_ir::LinkAssert>) {
+    let (buf, diags, counter, _dropped, _unresolved, asserts) = eval_proc_body_full(
+        file, name, params, body, span, asm_counter_start, cpu, defines, &[], contracts,
+    );
+    (buf, diags, counter, asserts)
+}
+
+/// The one proc-body evaluation behind [`eval_proc_body_env`] and
+/// [`eval_proc_body_lowering`]: [`ProcBodyEnvResult`] plus the drained link
+/// asserts.
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
+fn eval_proc_body_full(
+    file: &crate::ast::File,
+    name: &str,
+    params: &[(String, ast::Type, Span)],
+    body: &[ast::AsmStmt],
+    span: Span,
+    asm_counter_start: u32,
+    cpu: sigil_ir::backend::Cpu,
+    defines: &[(String, i128)],
+    ambient: &[ast::Item],
+    contracts: &crate::contract::InterfaceEnv,
+) -> (
+    Option<crate::value::CodeBuf>,
+    Vec<Diagnostic>,
+    u32,
+    usize,
+    Vec<(String, Span)>,
+    Vec<sigil_ir::LinkAssert>,
+) {
     run_on_eval_stack(|| {
         let mut ev = Evaluator::with_file_and_ambient(file, ambient);
         ev.seed_defines(defines);
@@ -2053,7 +2113,8 @@ pub fn eval_proc_body_env(
             Value::Code(buf) => Some(buf),
             _ => None,
         };
-        (buf, ev.diags, ev.asm_counter, ev.dropped_instrs, ev.comptime_unresolved)
+        let asserts = ev.take_link_asserts();
+        (buf, ev.diags, ev.asm_counter, ev.dropped_instrs, ev.comptime_unresolved, asserts)
     })
 }
 

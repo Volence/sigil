@@ -689,7 +689,10 @@ pub fn is_drift_guard(a: &LinkAssert) -> bool {
     // odd-address parity asserts and the `[layout.align]` congruence asserts that
     // an `align` / `table item_align:` pad records. Neither is a user DRIFT guard
     // (an `ensure`/twin-mirror co-residency check); they are layout invariants.
-    !a.message.iter().any(|p| {
+    // An `extern()` reference record is not a guard either: it checks that a
+    // name is defined, not a condition.
+    a.kind == sigil_ir::AssertKind::Condition
+        && !a.message.iter().any(|p| {
         matches!(p, MsgPart::Text(t) if t.contains("[layout.odd-item]") || t.contains("[layout.align]"))
     })
 }
