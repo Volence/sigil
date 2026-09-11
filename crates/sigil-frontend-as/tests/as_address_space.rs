@@ -1,0 +1,320 @@
+//! Which address space each section the AS front end produces is in.
+//!
+//! A 68000 program that assembles a Z80 sound driver at the Z80's own addresses
+//! (`save` / `!org 0` / `CPU Z80` / ... / `restore`, the shape of Sonic 1, Sonic 2
+//! and Sonic 3 & Knuckles) produces a section whose `lma` is a Z80 address, not a
+//! ROM offset. These tests pin the rule that tells that section apart from every
+//! section that IS in the image (`eval::assign_address_spaces`):
+//!
+//! - the image's CPU is the CPU of the program's first section with content;
+//! - only an `org` can change the space (one that leaves the open section, or a
+//!   seek back that the section closes behind); after it, the first section with
+//!   content decides: the image's CPU is the image, the CPU of the second space
+//!   the counter is already in stays there, a `phase` open makes the `org` an
+//!   image placement, and anything else enters a new second space at that `org`;
+//! - a section opened on a continued counter is in the counter's space.
+//!
+//! Every source here is written so the rule, not an accident of section
+//! numbering, decides the answer: each test first asserts the section shape it
+//! depends on, so a changed front end that no longer produces that shape fails
+//! loudly instead of passing over nothing.
+
+use sigil_frontend_as::{assemble, Options};
+use sigil_ir::{AddressSpace, Cpu, Module, Section};
+
+fn asm(src: &str) -> Module {
+    assemble(src, &Options::default()).unwrap_or_else(|d| panic!("must assemble: {d:?}\n{src}"))
+}
+
+/// The 1-based line of `src` a byte offset falls on.
+fn line_of(src: &str, offset: u32) -> usize {
+    src[..offset as usize].matches('\n').count() + 1
+}
+
+/// The 1-based line of the first line of `src` containing `needle`.
+fn line_containing(src: &str, needle: &str) -> usize {
+    src.lines()
+        .position(|l| l.contains(needle))
+        .unwrap_or_else(|| panic!("`{needle}` is not in the source"))
+        + 1
+}
+
+/// The sections that hold content, in order: the only ones the rule decides.
+fn with_content(m: &Module) -> Vec<&Section> {
+    m.sections.iter().filter(|s| !s.fragments.is_empty()).collect()
+}
+
+/// The `org` line a foreign section's space was entered at, or a panic naming
+/// what it was instead.
+fn entered_line(src: &str, s: &Section) -> (Cpu, usize) {
+    match s.space {
+        AddressSpace::Foreign { cpu, entered_at } => (cpu, line_of(src, entered_at.start)),
+        AddressSpace::Image => panic!("section `{}` (lma {:#X}) is in the image", s.name, s.lma),
+    }
+}
+
+/// Sonic 1's shape, with a section break before the driver so the open section
+/// begins above 0 and `!org 0` leaves it: the driver is a second Z80 space
+/// entered at `!org 0`, and the code on either side of it is the image.
+#[test]
+fn a_driver_org_d_to_z80_zero_is_a_second_space_entered_at_its_org() {
+    let src = "\tcpu 68000\n\
+               \tdc.l 0, 0\n\
+               \torg $100\n\
+               \tdc.w $4E71\n\
+               DACDriver:\n\
+               \tsave\n\
+               \t!org 0\n\
+               \tcpu z80\n\
+               \tdi\n\
+               \tld a,1\n\
+               \trestore\n\
+               \tpadding off\n\
+               \t!org DACDriver+$10\n\
+               \tdc.w $4E71\n";
+    let m = asm(src);
+    let secs = with_content(&m);
+    assert_eq!(secs.len(), 4, "vectors, $100 code, driver, code after: {:#?}", m.sections);
+    assert_eq!((secs[2].cpu, secs[2].lma), (Cpu::Z80, 0), "the driver section is Z80 at 0");
+    assert_eq!(entered_line(src, secs[2]), (Cpu::Z80, line_containing(src, "!org 0")));
+    for i in [0, 1, 3] {
+        assert_eq!(secs[i].space, AddressSpace::Image, "section {i} `{}` is image code", secs[i].name);
+    }
+}
+
+/// The same driver when the section open at `!org 0` itself begins at 0: the org
+/// is an in-section seek, and the `cpu z80` line closes the section behind it.
+/// The counter was re-based all the same, so the driver is the same second
+/// space, entered at the same line. It must also be `Pinned` at its Z80 origin:
+/// left `Chained`, the linker would pack it straight after the vector table.
+#[test]
+fn a_seek_back_that_its_section_closes_behind_enters_the_space_too() {
+    let src = "\tcpu 68000\n\
+               \tdc.l 0, 0\n\
+               DACDriver:\n\
+               \tsave\n\
+               \t!org 0\n\
+               \tcpu z80\n\
+               \tdi\n\
+               \tld a,1\n\
+               \trestore\n\
+               \tpadding off\n\
+               \t!org DACDriver+$10\n\
+               \tdc.w $4E71\n";
+    let m = asm(src);
+    let secs = with_content(&m);
+    assert_eq!(secs.len(), 3, "vectors, driver, code after: {:#?}", m.sections);
+    assert_eq!((secs[1].cpu, secs[1].lma), (Cpu::Z80, 0), "the driver opens on the rewound counter");
+    assert_eq!(entered_line(src, secs[1]), (Cpu::Z80, line_containing(src, "!org 0")));
+    assert_eq!(secs[1].placement, sigil_ir::SectionPlacement::Pinned, "pinned at its Z80 origin");
+    assert_eq!(secs[0].space, AddressSpace::Image);
+    assert_eq!(secs[2].space, AddressSpace::Image);
+}
+
+/// Sonic 1's `SetupValues_Z80` shape: Z80 code phased to 0 with no `org`. The
+/// counter runs on through it, so it is image bytes, and so is everything after.
+#[test]
+fn a_phased_z80_block_with_no_org_is_in_the_image() {
+    let src = "\tcpu 68000\n\
+               \tdc.l 0\n\
+               \tsave\n\
+               \tcpu z80\n\
+               \tphase 0\n\
+               \tdi\n\
+               \tjp 0\n\
+               \tdephase\n\
+               \trestore\n\
+               \tpadding off\n\
+               \tdc.w $4E71\n";
+    let m = asm(src);
+    let secs = with_content(&m);
+    assert!(
+        secs.iter().any(|s| s.cpu == Cpu::Z80 && s.lma == 4 && s.vma_base == Some(0)),
+        "the Z80 block is loaded at 4 and runs at 0: {:#?}",
+        m.sections
+    );
+    for s in &secs {
+        assert_eq!(s.space, AddressSpace::Image, "section `{}` is image bytes", s.name);
+    }
+}
+
+/// Z80 bytes inline in a 68000 image with neither an `org` nor a `phase`: the
+/// `cpu z80` line breaks the section but the counter runs on, so the Z80 section
+/// is image bytes. Only an `org` can move the counter out of the image.
+#[test]
+fn an_inline_z80_block_with_no_org_and_no_phase_is_in_the_image() {
+    let src = "\tcpu 68000\n\
+               \tdc.l 0\n\
+               \tsave\n\
+               \tcpu z80\n\
+               \tdb 1,2\n\
+               \trestore\n\
+               \tpadding off\n\
+               \tdc.w $4E71\n";
+    let m = asm(src);
+    let secs = with_content(&m);
+    assert!(
+        secs.iter().any(|s| s.cpu == Cpu::Z80 && s.lma == 4 && s.vma_base == Some(4)),
+        "the Z80 bytes continue the counter at 4, unphased: {:#?}",
+        m.sections
+    );
+    for s in &secs {
+        assert_eq!(s.space, AddressSpace::Image, "section `{}` is image bytes", s.name);
+    }
+}
+
+/// An `org` that places Z80 code and a `phase` that gives it its run address:
+/// the load/run split the image models, so the image.
+#[test]
+fn an_org_with_a_phase_open_is_an_image_placement() {
+    let src = "\tcpu 68000\n\
+               \tdc.l 0, 0\n\
+               \torg $200\n\
+               \tdc.w 1\n\
+               \tsave\n\
+               \t!org $100\n\
+               \tcpu z80\n\
+               \tphase 0\n\
+               \tdb 1\n\
+               \tdephase\n\
+               \trestore\n\
+               \t!org $300\n\
+               \tdc.w 2\n";
+    let m = asm(src);
+    let secs = with_content(&m);
+    let z80 = secs.iter().find(|s| s.cpu == Cpu::Z80).expect("a Z80 section");
+    assert_eq!((z80.lma, z80.vma_base), (0x100, Some(0)), "loaded at $100, run at 0");
+    for s in &secs {
+        assert_eq!(s.space, AddressSpace::Image, "section `{}` is image bytes", s.name);
+    }
+}
+
+/// A Z80 program is a Z80 image: its `org 0` is the image's origin, and a later
+/// `org` under the same CPU is an image placement.
+#[test]
+fn a_z80_program_at_org_0_is_the_image() {
+    let src = "\tcpu z80\n\
+               \torg 0\n\
+               \tdi\n\
+               \tld a,1\n\
+               \torg 100h\n\
+               \tdb 2\n";
+    let m = asm(src);
+    let secs = with_content(&m);
+    assert_eq!(secs.len(), 2, "{:#?}", m.sections);
+    for s in &secs {
+        assert_eq!((s.cpu, s.space), (Cpu::Z80, AddressSpace::Image), "section `{}`", s.name);
+    }
+}
+
+/// A label between the `org` and the `cpu` line opens a section under the old
+/// CPU with nothing in it. It must not decide: the code after it is still the
+/// second space, entered at the `org`.
+#[test]
+fn a_label_between_the_org_and_the_cpu_line_does_not_decide() {
+    let src = "\tcpu 68000\n\
+               \tdc.l 0, 0\n\
+               \torg $100\n\
+               \tdc.w 1\n\
+               \tsave\n\
+               \t!org 0\n\
+               DriverStart:\n\
+               \tcpu z80\n\
+               \tdi\n\
+               \trestore\n\
+               \t!org $200\n\
+               \tdc.w 2\n";
+    let m = asm(src);
+    assert!(
+        m.sections.iter().any(|s| s.fragments.is_empty() && s.cpu == Cpu::M68000 && s.lma == 0),
+        "the label opens an empty 68000 section at 0 (the shape this test depends on): {:#?}",
+        m.sections
+    );
+    let secs = with_content(&m);
+    let z80 = secs.iter().find(|s| s.cpu == Cpu::Z80).expect("a Z80 section");
+    assert_eq!(entered_line(src, z80), (Cpu::Z80, line_containing(src, "!org 0")));
+}
+
+/// Sonic 2's driver has an `org 38h` inside it. Under the same CPU, in the space
+/// the counter is already in, that lays the driver out: one space, not two.
+#[test]
+fn an_org_inside_a_driver_stays_in_the_driver_s_space() {
+    let src = "\tcpu 68000\n\
+               \tdc.l 0, 0\n\
+               \torg $100\n\
+               \tdc.w 1\n\
+               \tsave\n\
+               \t!org 0\n\
+               \tcpu z80\n\
+               \tdi\n\
+               \torg 38h\n\
+               \tei\n\
+               \trestore\n\
+               \t!org $200\n\
+               \tdc.w 2\n";
+    let m = asm(src);
+    let z80: Vec<&Section> = with_content(&m).into_iter().filter(|s| s.cpu == Cpu::Z80).collect();
+    assert_eq!(z80.len(), 2, "the `org 38h` splits the driver in two sections: {:#?}", m.sections);
+    assert_eq!(z80[1].lma, 0x38);
+    assert_eq!(z80[0].space, z80[1].space, "one driver, one space");
+    assert_eq!(entered_line(src, z80[1]), (Cpu::Z80, line_containing(src, "!org 0")));
+}
+
+/// Sonic 3 & Knuckles has two Z80 blobs, at 0 and at `1300h`, with a return to
+/// the cartridge between them. Each entry from the image is a space of its own.
+#[test]
+fn two_entries_from_the_image_are_two_spaces() {
+    let src = "\tcpu 68000\n\
+               \tdc.l 0, 0\n\
+               \torg $100\n\
+               \tdc.w 1\n\
+               \tsave\n\
+               \t!org 0\n\
+               \tcpu z80\n\
+               \tdi\n\
+               \trestore\n\
+               \t!org $200\n\
+               \tdc.w 2\n\
+               \tsave\n\
+               \tcpu z80\n\
+               \t!org 1300h\n\
+               \tdb 7\n\
+               \trestore\n\
+               \t!org $300\n\
+               \tdc.w 3\n";
+    let m = asm(src);
+    let secs = with_content(&m);
+    let z80: Vec<&Section> = secs.iter().copied().filter(|s| s.cpu == Cpu::Z80).collect();
+    assert_eq!(z80.len(), 2, "{:#?}", m.sections);
+    assert_eq!(entered_line(src, z80[0]), (Cpu::Z80, line_containing(src, "!org 0")));
+    assert_eq!(entered_line(src, z80[1]), (Cpu::Z80, line_containing(src, "!org 1300h")));
+    assert_ne!(z80[0].space, z80[1].space);
+    let image: Vec<&&Section> = secs.iter().filter(|s| s.cpu == Cpu::M68000).collect();
+    assert_eq!(image.len(), 4, "{:#?}", m.sections);
+    for s in image {
+        assert_eq!(s.space, AddressSpace::Image, "section `{}` (lma {:#X})", s.name, s.lma);
+    }
+}
+
+/// The image's CPU is decided by the first section WITH CONTENT. A label before
+/// the `cpu` line opens an empty section under the provisional processor, and a
+/// 68000 program must not become a Z80 image because of it.
+#[test]
+fn the_image_cpu_is_the_first_section_with_content() {
+    let src = "Start:\n\
+               \tcpu 68000\n\
+               \tdc.w 1\n\
+               \torg $100\n\
+               \tdc.w 2\n";
+    let m = asm(src);
+    assert!(
+        m.sections.first().is_some_and(|s| s.fragments.is_empty() && s.cpu == Cpu::Z80),
+        "the label opens an empty section under the provisional Z80 (the shape this test depends on): {:#?}",
+        m.sections
+    );
+    let secs = with_content(&m);
+    assert_eq!(secs.len(), 2, "{:#?}", m.sections);
+    for s in secs {
+        assert_eq!((s.cpu, s.space), (Cpu::M68000, AddressSpace::Image), "section `{}`", s.name);
+    }
+}

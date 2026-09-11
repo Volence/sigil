@@ -4903,6 +4903,7 @@ mod declared_alignment_tests {
             reserved_span: 0x10,
             group: None,
             bank: None,
+            space: sigil_ir::AddressSpace::Image,
             equ_syms: Vec::new(),
         }
     }
@@ -5040,6 +5041,7 @@ mod align_recompute_tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            space: sigil_ir::AddressSpace::Image,
             equ_syms: vec![],
         }
     }
@@ -5115,6 +5117,7 @@ mod placement_validation_tests {
             reserved_span: len as u32,
             group: None,
             bank: None,
+            space: sigil_ir::AddressSpace::Image,
             equ_syms: Vec::new(),
         }
     }
@@ -6043,6 +6046,7 @@ mod derived_layout_tests {
             reserved_span: len as u32,
             group: None,
             bank: None,
+            space: sigil_ir::AddressSpace::Image,
             equ_syms: Vec::new(),
         }
     }
@@ -6303,6 +6307,7 @@ mod derived_layout_tests {
             reserved_span: 4,
             group: None,
             bank: None,
+            space: sigil_ir::AddressSpace::Image,
             equ_syms: Vec::new(),
         }
     }
@@ -6454,6 +6459,7 @@ mod phase_marker_tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            space: sigil_ir::AddressSpace::Image,
             equ_syms: vec![],
         }
     }

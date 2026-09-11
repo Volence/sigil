@@ -980,6 +980,7 @@ fn one_pass_with_defer(
     }
     let (mut module, mut diags) = asm.builder.finish();
     dedup_section_names(&mut module.sections);
+    assign_address_spaces(&mut module.sections, &asm.section_opens);
     diags.append(&mut asm.diags);
     // Report the refusal FIRST. Everything else an undeclared unit produces is a
     // consequence of it: under the provisional processor a `$` lexes as the
@@ -1064,6 +1065,102 @@ fn dedup_section_names(sections: &mut [sigil_ir::Section]) {
                 counts.insert(sec.name.clone(), 0);
             }
         }
+    }
+}
+
+/// How one section began, as [`assign_address_spaces`] needs to see it.
+#[derive(Clone, Copy, Debug)]
+struct SectionOpen {
+    /// The `org` that re-based the physical counter since the previous section
+    /// opened, if one did (see `Asm::rebased_at`).
+    rebased_at: Option<Span>,
+    /// Whether a `phase` was open when the section opened.
+    phased: bool,
+}
+
+/// Tag every section with the address space its `lma` is an address in
+/// ([`sigil_ir::AddressSpace`]).
+///
+/// **The image's CPU is the CPU of the program's first section with content**,
+/// and every section is in the image unless the rule below moves it out.
+///
+/// **Only an `org` can change the space**, because only an `org` sets the
+/// physical counter to a number instead of letting it run on (an `org` that
+/// leaves the open section, or a seek back into it that the section closes
+/// behind). Every other section break (`cpu`, `phase`, `dephase`) continues the
+/// counter, and a section opened on a continued counter is in the space the
+/// counter was already in. After an `org`, the first section with content
+/// decides:
+///
+/// 1. the image's CPU: in the image. This is how a driver is left, `restore`
+///    then `org` back to the cartridge.
+/// 2. the CPU of the second space the counter is already in: still in that
+///    space. An `org 38h` inside a Z80 driver lays the driver out; it does not
+///    leave it.
+/// 3. another CPU with a `phase` open: in the image. The `org` placed the bytes
+///    and the `phase` gave them their run address, the load/run split the image
+///    already models. Sonic 1's `SetupValues_Z80` block is the phased shape
+///    with no `org` at all, and is in the image by the continuation rule.
+/// 4. another CPU with no `phase`: a new second space of that CPU, entered at
+///    that `org`. The `org` gave the code its own CPU's addresses and nothing
+///    gave it a place in the image: Sonic 1's `!org 0` / `CPU Z80` in
+///    `sound/z80.asm`, and the same pair in Sonic 2 and Sonic 3 & Knuckles.
+///
+/// A section with no content never decides. A label between the `org` and the
+/// `cpu` line opens one under the old CPU, and must not settle the question for
+/// the code after it.
+///
+/// A section with image content that lands in a second space by consuming an
+/// `org` is `Pinned` at its `lma`, which is its address in that space. A seek
+/// back that its section closes behind leaves no `org` to pin it, and a
+/// `Chained` section would be packed after the image section before it. Such a
+/// section is always refused at link, so the pin changes no accepted image.
+fn assign_address_spaces(sections: &mut [sigil_ir::Section], opens: &[SectionOpen]) {
+    assert_eq!(
+        sections.len(),
+        opens.len(),
+        "one SectionOpen is recorded for every section the builder opens"
+    );
+    let Some(first) = sections.iter().position(|s| !s.fragments.is_empty()) else {
+        return;
+    };
+    let host = sections[first].cpu;
+    let mut current = sigil_ir::AddressSpace::Image;
+    let mut pending: Option<Span> = None;
+    for (sec, open) in sections.iter_mut().zip(opens).skip(first + 1) {
+        if open.rebased_at.is_some() {
+            pending = open.rebased_at;
+        }
+        if !sec.fragments.is_empty() {
+            if let Some(org) = pending.take() {
+                current = space_after_org(current, sec.cpu, host, open.phased, org);
+                if matches!(current, sigil_ir::AddressSpace::Foreign { .. })
+                    && sec.fragments.iter().any(|f| {
+                        !matches!(f, sigil_ir::Fragment::Reserve { .. } | sigil_ir::Fragment::Org { .. })
+                    })
+                {
+                    sec.placement = sigil_ir::SectionPlacement::Pinned;
+                }
+            }
+        }
+        sec.space = current;
+    }
+}
+
+/// The space the first section with content after an `org` is in: rules 1-4 of
+/// [`assign_address_spaces`], in order.
+fn space_after_org(
+    current: sigil_ir::AddressSpace,
+    cpu: Cpu,
+    host: Cpu,
+    phased: bool,
+    org: Span,
+) -> sigil_ir::AddressSpace {
+    match current {
+        _ if cpu == host => sigil_ir::AddressSpace::Image,
+        sigil_ir::AddressSpace::Foreign { cpu: space_cpu, .. } if space_cpu == cpu => current,
+        _ if phased => sigil_ir::AddressSpace::Image,
+        _ => sigil_ir::AddressSpace::Foreign { cpu, entered_at: org },
     }
 }
 
@@ -1229,6 +1326,20 @@ struct Asm {
     /// `restore`. `org N` sets it directly; `phase`/`dephase` leave it untouched
     /// and instead adjust `state.disp`. VMA (`$`/labels) = physical + `disp`.
     phys_base: u32,
+    /// The `org` that last set the physical counter to a number instead of
+    /// letting it run on, waiting for the next section to open: an `org` that
+    /// leaves the open section, or an in-section `org` seek that still points
+    /// back into written bytes when its section closes. Read by
+    /// [`assign_address_spaces`] through [`SectionOpen::rebased_at`].
+    rebased_at: Option<Span>,
+    /// The latest in-section `org` seek of the open section: the re-base, if the
+    /// section closes with its cursor still behind its extent.
+    last_seek: Option<Span>,
+    /// Whether a `phase` is open (set by `phase`, cleared by `dephase`).
+    phase_open: bool,
+    /// How each section began, one entry per section in opening order, which is
+    /// the order of `Module::sections` (see [`assign_address_spaces`]).
+    section_opens: Vec<SectionOpen>,
     diags: Vec<Diagnostic>,
     /// The file currently being executed. Spans lexed from a [`SrcLine`] take the
     /// line's own [`SrcLine::source`]; this is the fallback for the few sites that
@@ -1799,6 +1910,10 @@ impl Asm {
             dot_label_cache: std::collections::BTreeMap::new(),
             in_section: false,
             phys_base: 0,
+            rebased_at: None,
+            last_seek: None,
+            phase_open: false,
+            section_opens: Vec::new(),
             diags: Vec::new(),
             source: SourceId(0),
             sources: sigil_span::SourceMap::new(),
@@ -6099,6 +6214,11 @@ impl Asm {
             let name = format!("sec{vma_base}");
             self.builder
                 .switch_section_lma(&name, self.state.cpu, Some(vma_base), self.phys_base);
+            self.section_opens.push(SectionOpen {
+                rebased_at: self.rebased_at.take(),
+                phased: self.phase_open,
+            });
+            self.last_seek = None;
             self.in_section = true;
             // Task B1 (seam re-eval): flush any int `equ`s recorded while no
             // section was open onto this newly opened one (see
@@ -6121,6 +6241,15 @@ impl Asm {
         // refusal must not fire across it.
         self.flow_epoch = self.flow_epoch.wrapping_add(1);
         if self.in_section {
+            // A section closed with its cursor behind its extent hands the next
+            // section a physical counter pointing back into bytes already
+            // written: the `org` seek that put the cursor there re-based the
+            // counter, exactly as an `org` that left the section would have.
+            if self.builder.current_offset() < self.builder.extent() {
+                if let Some(seek) = self.last_seek {
+                    self.rebased_at = Some(seek);
+                }
+            }
             self.phys_base += self.builder.current_offset();
             self.in_section = false;
         }
@@ -6393,6 +6522,7 @@ impl Asm {
                 let phys_now = self.current_physical();
                 self.close_section();
                 self.state.disp = v - phys_now as i64;
+                self.phase_open = true;
             }
             None => self.err(span, "phase needs a constant expression"),
         }
@@ -6412,6 +6542,7 @@ impl Asm {
         // `restore` never touches it).
         self.close_section();
         self.state.disp = 0;
+        self.phase_open = false;
     }
 
     /// AS `listing <mode>` and `page <lines>[,<columns>]`: the controls that
@@ -6493,11 +6624,18 @@ impl Asm {
     ///   inter-section gap-fill rather than a growing `Org`+`JmpJsrSym` mix
     ///   (which `resolve_layout` refuses, see its guard, since real engine code
     ///   between `org 0` and `org $10000` contains bare `jmp`/`jsr`). Backward,
-    ///   the new section may land on top of a region already placed; that is a
-    ///   genuine collision in a flat image, and `relax`'s R7p.4 `overlap_diag`
-    ///   names both sections and both extents at link time. It is NOT this
-    ///   directive's business to pre-judge it, because the target may equally be
-    ///   untouched ground.
+    ///   the new section may land on top of a region already placed. It is NOT
+    ///   this directive's business to pre-judge that, because the target may
+    ///   equally be untouched ground, or an address in a second CPU's own space.
+    ///   This directive records the re-base (`rebased_at`), and
+    ///   [`assign_address_spaces`] decides which space the next section is in:
+    ///   in the image, `relax`'s R7p.4 `overlap_diag` names a collision with both
+    ///   sections and both extents; in a second space (the Z80 driver), the
+    ///   linker refuses the section as having no ROM placement, at this line.
+    ///
+    /// A seek that is still pointing back when its section closes re-bases the
+    /// counter too (`close_section` records it), which is the same driver entry
+    /// when the section open at `!org 0` itself begins at 0.
     fn directive_org(&mut self, rest: &[Token], span: Span) {
         // The location counter stops being a running total of what has been
         // emitted here, so two points either side of this line are not separated
@@ -6521,6 +6659,7 @@ impl Asm {
         let phys_target = (target_abs as i64 - self.state.disp) as u32;
         if !self.in_section {
             self.phys_base = phys_target;
+            self.rebased_at = Some(span);
             // R7p.1: the org is an explicit placement authority. The next section
             // opened here must be `Pinned` at this counter (its gap from the
             // predecessor is intentional), not `Chained` and compacted by the
@@ -6537,9 +6676,11 @@ impl Asm {
         let base = (self.phys_base as i64 + self.state.disp) as u32;
         if target_abs >= base && target_abs - base <= self.builder.extent() {
             self.builder.seek(target_abs - base, 0, span);
+            self.last_seek = Some(span);
         } else {
             self.close_section();
             self.phys_base = phys_target;
+            self.rebased_at = Some(span);
             // R7p.1: an org that leaves the section is an explicit placement
             // authority, so the next auto-opened section is `Pinned` at the
             // org'd counter. Forward, its gap from the predecessor is intentional

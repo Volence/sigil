@@ -375,11 +375,18 @@ fn bank_diag(placed: &[Section], rungs: &[Vec<usize>]) -> Option<Diagnostic> {
 /// that: the gap it opens is filled and therefore placed, so it belongs to the
 /// extent, and a pin landing inside it is a real collision this must name —
 /// `a_reservation_inside_a_section_counts_toward_its_overlap_extent`.
+///
+/// The scan is per address space ([`sigil_ir::AddressSpace`]): two ranges
+/// collide only when both sections are in the same space. A Z80 driver
+/// assembled at Z80 `$0` and the 68000 vector table at ROM `$0` share a number,
+/// not bytes. A section outside the image is refused on its own terms by
+/// [`foreign_space_diags`], never reported as a collision with whichever image
+/// section happens to sit at its address.
 fn overlap_diag(placed: &[Section], rungs: &[Vec<usize>]) -> Option<Diagnostic> {
-    // Collect (start, end, name, span) for every non-empty section, then scan
-    // every pair. O(n²), but n is the section count (small), and this runs once
-    // at convergence — not per pass.
-    let ranges: Vec<(u32, u32, &str, Span)> = placed
+    // Collect (start, end, name, span, space) for every non-empty section, then
+    // scan every pair. O(n²), but n is the section count (small), and this runs
+    // once at convergence, not per pass.
+    let ranges: Vec<(u32, u32, &str, Span, sigil_ir::AddressSpace)> = placed
         .iter()
         .enumerate()
         .filter_map(|(si, sec)| {
@@ -394,19 +401,29 @@ fn overlap_diag(placed: &[Section], rungs: &[Vec<usize>]) -> Option<Diagnostic> 
             });
             // Saturating: an out-of-window section reaches this scan before
             // `check_image_bounds` names it, and this scan must not abort first.
-            Some((sec.lma, sec.lma.saturating_add(size), sec.name.as_str(), span))
+            Some((sec.lma, sec.lma.saturating_add(size), sec.name.as_str(), span, sec.space))
         })
         .collect();
     for i in 0..ranges.len() {
         for j in (i + 1)..ranges.len() {
-            let (a_lo, a_hi, a_name, a_span) = ranges[i];
-            let (b_lo, b_hi, b_name, _) = ranges[j];
+            let (a_lo, a_hi, a_name, a_span, a_space) = ranges[i];
+            let (b_lo, b_hi, b_name, _, b_space) = ranges[j];
+            // An address locates bytes only within its own space.
+            if a_space != b_space {
+                continue;
+            }
             // Half-open ranges intersect iff each starts before the other ends.
             if a_lo < b_hi && b_lo < a_hi {
+                let place = match a_space {
+                    sigil_ir::AddressSpace::Image => "the image".to_string(),
+                    sigil_ir::AddressSpace::Foreign { cpu, .. } => {
+                        format!("a second {} address space", cpu_name(cpu))
+                    }
+                };
                 return Some(Diagnostic {
                     level: Level::Error,
                     message: format!(
-                        "sections `{a_name}` [{a_lo:#X}, {a_hi:#X}) and `{b_name}` [{b_lo:#X}, {b_hi:#X}) overlap in the image (colliding pins)"
+                        "sections `{a_name}` [{a_lo:#X}, {a_hi:#X}) and `{b_name}` [{b_lo:#X}, {b_hi:#X}) overlap in {place} (colliding pins)"
                     ),
                     primary: a_span,
                 });
@@ -414,6 +431,75 @@ fn overlap_diag(placed: &[Section], rungs: &[Vec<usize>]) -> Option<Diagnostic> 
         }
     }
     None
+}
+
+/// A CPU as a diagnostic names it: the processor's own name, as its `cpu`
+/// directive spells it.
+fn cpu_name(cpu: sigil_ir::Cpu) -> &'static str {
+    match cpu {
+        sigil_ir::Cpu::Z80 => "Z80",
+        sigil_ir::Cpu::M68000 => "68000",
+    }
+}
+
+/// The refusal for every section outside the image's address space
+/// ([`sigil_ir::AddressSpace::Foreign`]) that holds image bytes.
+///
+/// Such a section's `lma` is an address in another CPU's space, so nothing says
+/// where its bytes belong in the ROM. Writing them at `lma` puts a Z80 driver
+/// assembled at Z80 `$0` over the 68000 vector table, which is what the
+/// reference toolchain's post-processor does when its placement flag is
+/// withheld; scanning it against the image reports whichever image section sits
+/// at that number as a collision, at that section's line. Neither names the
+/// problem, which is the missing placement. It is reported once per space, at
+/// the `org` that entered it, naming the space's CPU, its origin (the first
+/// section's `lma`) and its sections. Nothing can declare a ROM placement for a
+/// second space yet, so every one that holds bytes is refused.
+fn foreign_space_diags(placed: &[Section], rungs: &[Vec<usize>]) -> Vec<Diagnostic> {
+    /// One second space and the extents of its sections that hold bytes.
+    struct Space<'a> {
+        cpu: sigil_ir::Cpu,
+        entered_at: Span,
+        /// (name, start, end) per section, in program order.
+        secs: Vec<(&'a str, u32, u32)>,
+    }
+    // Each space in first-seen order.
+    let mut spaces: Vec<Space> = Vec::new();
+    for (si, sec) in placed.iter().enumerate() {
+        let sigil_ir::AddressSpace::Foreign { cpu, entered_at } = sec.space else {
+            continue;
+        };
+        let size = image_final_size(sec, &rungs[si]);
+        if size == 0 {
+            continue;
+        }
+        let extent = (sec.name.as_str(), sec.lma, sec.lma.saturating_add(size));
+        match spaces.iter_mut().find(|s| s.cpu == cpu && s.entered_at == entered_at) {
+            Some(space) => space.secs.push(extent),
+            None => spaces.push(Space { cpu, entered_at, secs: vec![extent] }),
+        }
+    }
+    spaces
+        .into_iter()
+        .map(|Space { cpu, entered_at, secs }| {
+            let origin = secs[0].1;
+            let lo = secs.iter().map(|s| s.1).min().unwrap_or(origin);
+            let hi = secs.iter().map(|s| s.2).max().unwrap_or(origin);
+            let names: Vec<String> = secs.iter().map(|s| format!("`{}`", s.0)).collect();
+            let (noun, verb) = if names.len() == 1 { ("section", "is") } else { ("sections", "are") };
+            let cpu = cpu_name(cpu);
+            Diagnostic {
+                level: Level::Error,
+                message: format!(
+                    "{noun} {} [{lo:#X}, {hi:#X}) {verb} assembled for the {cpu} at origin {origin:#X}, \
+                     in a second address space this org opens outside the ROM image; the assembler \
+                     cannot yet place a second address space into the ROM",
+                    names.join(", ")
+                ),
+                primary: entered_at,
+            }
+        })
+        .collect()
 }
 
 /// Post-fixpoint run-overrun check (replaces the M1.C T6b categorical
@@ -1119,6 +1205,13 @@ fn resolve_layout_impl(
                 if let Some(diag) = overlap_diag(&placed, &rungs) {
                     return Err(vec![diag]);
                 }
+                // (c2b) A section outside the image's address space has no ROM
+                // placement, and nothing can declare one yet. After the overlap
+                // scan, so a collision inside one space is still named as one.
+                let foreign = foreign_space_diags(&placed, &rungs);
+                if !foreign.is_empty() {
+                    return Err(foreign);
+                }
             }
 
             // (c3) Bank no-straddle check (R7m.2 / D7.5): every `bank:` section
@@ -1208,6 +1301,7 @@ fn resolve_layout_impl(
                         reserved_span: sec.reserved_span,
                         group: sec.group.clone(),
                         bank: sec.bank,
+                        space: sec.space,
                         // R-T0.3: each equ's `expr` is REPLACED by its folded
                         // integer (`Expr::Int(v)`), computed above against the
                         // final label VMAs. `link()` re-folds these (now trivial)
@@ -1641,6 +1735,7 @@ mod tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            space: sigil_ir::AddressSpace::Image,
             equ_syms: Vec::new(),
         };
         let out = resolve_layout(&[sec], &stubs, true).unwrap();
@@ -1676,6 +1771,7 @@ mod tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            space: sigil_ir::AddressSpace::Image,
             equ_syms: Vec::new(),
         };
         let out = resolve_layout(&[sec], &stubs, true).unwrap();
@@ -1708,6 +1804,7 @@ mod tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            space: sigil_ir::AddressSpace::Image,
             equ_syms: Vec::new(),
         };
         let out = resolve_layout(&[sec], &stubs, true).unwrap();
@@ -1755,6 +1852,7 @@ mod tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            space: sigil_ir::AddressSpace::Image,
             equ_syms: Vec::new(),
         };
         let out = resolve_layout(&[sec], &stubs, true).unwrap();
@@ -1788,6 +1886,7 @@ mod tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            space: sigil_ir::AddressSpace::Image,
             equ_syms: Vec::new(),
         };
         let out = resolve_layout(&[sec], &SymbolTable::new(), true).unwrap();
@@ -1822,6 +1921,7 @@ mod tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            space: sigil_ir::AddressSpace::Image,
             equ_syms: Vec::new(),
         };
         let out = resolve_layout(&[sec], &stubs, true).unwrap();
@@ -1867,6 +1967,7 @@ mod tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            space: sigil_ir::AddressSpace::Image,
             equ_syms: Vec::new(),
         };
         let out = resolve_layout(&[sec], &stubs, true).unwrap();
@@ -1896,6 +1997,7 @@ mod tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            space: sigil_ir::AddressSpace::Image,
             equ_syms: Vec::new(),
         };
         let out = resolve_layout(&[sec], &SymbolTable::new(), true).unwrap();
@@ -1919,6 +2021,7 @@ mod tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            space: sigil_ir::AddressSpace::Image,
             equ_syms: Vec::new(),
         };
         let out = resolve_layout(&[sec], &stubs, true).unwrap();
@@ -1944,6 +2047,7 @@ mod tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            space: sigil_ir::AddressSpace::Image,
             equ_syms: Vec::new(),
         };
         let out = resolve_layout(&[sec], &SymbolTable::new(), true).unwrap();
@@ -1972,6 +2076,7 @@ mod tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            space: sigil_ir::AddressSpace::Image,
             equ_syms: Vec::new(),
         };
         let out = resolve_layout(&[code], &stubs, true).unwrap();
@@ -1993,6 +2098,7 @@ mod tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            space: sigil_ir::AddressSpace::Image,
             equ_syms: Vec::new(),
         };
         assert!(resolve_layout(&[sec], &SymbolTable::new(), true).is_err());
@@ -2171,6 +2277,7 @@ mod tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            space: sigil_ir::AddressSpace::Image,
             equ_syms: Vec::new(),
         };
         let out = resolve_layout(&[sec], &stubs, true).unwrap();
@@ -2212,6 +2319,7 @@ mod tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            space: sigil_ir::AddressSpace::Image,
             equ_syms: Vec::new(),
         };
         let out = resolve_layout(&[sec], &SymbolTable::new(), true).unwrap();
@@ -2250,6 +2358,7 @@ mod tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            space: sigil_ir::AddressSpace::Image,
             equ_syms: Vec::new(),
         };
         let err = resolve_layout(&[sec], &SymbolTable::new(), true).unwrap_err();
@@ -2289,6 +2398,7 @@ mod tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            space: sigil_ir::AddressSpace::Image,
             equ_syms: Vec::new(),
         };
         let out = resolve_layout(&[sec], &SymbolTable::new(), true).unwrap();
@@ -2319,6 +2429,7 @@ mod tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            space: sigil_ir::AddressSpace::Image,
             equ_syms: Vec::new(),
         };
         let out = resolve_layout(&[sec], &SymbolTable::new(), true).unwrap();
@@ -2356,6 +2467,7 @@ mod tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            space: sigil_ir::AddressSpace::Image,
             equ_syms: Vec::new(),
         };
         let out = resolve_layout(&[sec], &SymbolTable::new(), true).unwrap();
@@ -2395,6 +2507,7 @@ mod tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            space: sigil_ir::AddressSpace::Image,
             equ_syms: Vec::new(),
         };
         let out = resolve_layout(&[sec], &stubs, true).unwrap();
@@ -2426,6 +2539,7 @@ mod tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            space: sigil_ir::AddressSpace::Image,
             equ_syms: Vec::new(),
         };
         let out = resolve_layout(&[sec], &stubs, true).unwrap();
@@ -2459,6 +2573,7 @@ mod tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            space: sigil_ir::AddressSpace::Image,
             equ_syms: Vec::new(),
         };
         let out = resolve_layout(&[sec], &SymbolTable::new(), true).unwrap();
@@ -2493,6 +2608,7 @@ mod tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            space: sigil_ir::AddressSpace::Image,
             equ_syms: Vec::new(),
         };
         let out = resolve_layout(&[sec], &SymbolTable::new(), true).unwrap();
@@ -2547,6 +2663,7 @@ mod tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            space: sigil_ir::AddressSpace::Image,
             equ_syms: Vec::new(),
         };
         let out = resolve_layout(&[sec], &SymbolTable::new(), true).unwrap();
@@ -2603,6 +2720,7 @@ mod tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            space: sigil_ir::AddressSpace::Image,
             equ_syms: Vec::new(),
         };
         let out = resolve_layout(&[sec], &stubs, true).unwrap();
@@ -2653,6 +2771,7 @@ mod tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            space: sigil_ir::AddressSpace::Image,
             equ_syms: Vec::new(),
         };
         let err = resolve_layout(&[sec], &stubs, true).unwrap_err();
@@ -2684,6 +2803,7 @@ mod tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            space: sigil_ir::AddressSpace::Image,
             equ_syms: Vec::new(),
         };
         let err = resolve_layout(&[sec], &stubs, true).unwrap_err();
@@ -2713,6 +2833,7 @@ mod tests {
             reserved_span: 0x1000,
             group: None,
             bank: None,
+            space: sigil_ir::AddressSpace::Image,
             equ_syms: Vec::new(),
         };
         let rom = Section {
@@ -2730,6 +2851,7 @@ mod tests {
             reserved_span: 4,
             group: None,
             bank: None,
+            space: sigil_ir::AddressSpace::Image,
             equ_syms: Vec::new(),
         };
         // Must resolve cleanly — no "colliding pins" error.
@@ -2751,6 +2873,7 @@ mod tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            space: sigil_ir::AddressSpace::Image,
             equ_syms: Vec::new(),
         };
         let err = resolve_layout(&[sec], &SymbolTable::new(), true).unwrap_err();
@@ -2781,6 +2904,7 @@ mod tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            space: sigil_ir::AddressSpace::Image,
             equ_syms: Vec::new(),
         };
         let secs = [sec];
@@ -2819,6 +2943,7 @@ mod tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            space: sigil_ir::AddressSpace::Image,
             equ_syms: Vec::new(),
         };
         let secs = [sec];
@@ -2891,6 +3016,7 @@ mod tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            space: sigil_ir::AddressSpace::Image,
             equ_syms,
         }
     }
@@ -2990,6 +3116,7 @@ mod tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            space: sigil_ir::AddressSpace::Image,
             equ_syms: Vec::new(),
         };
         let out = resolve_layout(&[a, w], &SymbolTable::new(), true).unwrap();
@@ -3015,6 +3142,7 @@ mod tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            space: sigil_ir::AddressSpace::Image,
             equ_syms: vec![equ("R", Expr::Int(0xFFFF_8022u32 as i64))],
         };
         let out = resolve_layout(&[sec], &SymbolTable::new(), true).unwrap();
@@ -3044,6 +3172,7 @@ mod tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            space: sigil_ir::AddressSpace::Image,
             equ_syms: vec![equ("X", Expr::Int(0x1_2345))],
         };
         let out = resolve_layout(&[sec], &SymbolTable::new(), true).unwrap();
@@ -3073,6 +3202,7 @@ mod tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            space: sigil_ir::AddressSpace::Image,
             equ_syms: vec![
                 equ("A", Expr::Int(0xFFFF_8022u32 as i64)),
                 equ("B", Expr::Sym("A".into())),
@@ -3109,9 +3239,11 @@ mod tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            space: sigil_ir::AddressSpace::Image,
             equ_syms: Vec::new(),
         };
         let via_equ = Section {
+            space: sigil_ir::AddressSpace::Image,
             equ_syms: vec![equ("P", Expr::Sym("SomeLabel".into()))],
             fragments: vec![
                 Fragment::Data(DataFragment { bytes: vec![0, 0, 0, 0], fixups: vec![], span: sp() }),
@@ -3152,6 +3284,7 @@ mod tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            space: sigil_ir::AddressSpace::Image,
             equ_syms: vec![equ("R", Expr::Int(0x420))],
         };
         let err = resolve_layout(&[sec], &SymbolTable::new(), true).unwrap_err();
@@ -3183,6 +3316,7 @@ mod tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            space: sigil_ir::AddressSpace::Image,
             equ_syms: vec![equ("R", Expr::Int(0xFFFF_8022u32 as i64))],
         };
         let out = resolve_layout(&[sec], &SymbolTable::new(), true).unwrap();
@@ -3212,6 +3346,7 @@ mod tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            space: sigil_ir::AddressSpace::Image,
             equ_syms: vec![equ("P", Expr::Sym("TheLabel".into()))],
         };
         let err = resolve_layout(&[sec], &SymbolTable::new(), true).unwrap_err();
@@ -3240,6 +3375,7 @@ mod tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            space: sigil_ir::AddressSpace::Image,
             equ_syms: Vec::new(),
         };
         let err = resolve_layout(&[sec], &SymbolTable::new(), true).unwrap_err();
@@ -3291,6 +3427,7 @@ mod tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            space: sigil_ir::AddressSpace::Image,
             equ_syms: Vec::new(),
         };
         let err = resolve_layout(&[sec], &SymbolTable::new(), true).unwrap_err();
@@ -3324,6 +3461,7 @@ mod tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            space: sigil_ir::AddressSpace::Image,
             equ_syms: vec![
                 equ("CycA", Expr::Sym("CycB".into())),
                 equ("CycB", Expr::Sym("CycA".into())),
@@ -3368,6 +3506,7 @@ mod tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            space: sigil_ir::AddressSpace::Image,
             equ_syms: Vec::new(),
         };
         let out = resolve_layout(&[sec], &stubs, true).unwrap();
@@ -3404,6 +3543,7 @@ mod tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            space: sigil_ir::AddressSpace::Image,
             equ_syms: Vec::new(),
         };
         let err = resolve_layout(&[sec], &stubs, true).unwrap_err();
@@ -3441,6 +3581,7 @@ mod tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            space: sigil_ir::AddressSpace::Image,
             equ_syms: Vec::new(),
         };
         let out = resolve_layout(&[sec], &stubs, true).unwrap();
@@ -3487,6 +3628,7 @@ mod tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            space: sigil_ir::AddressSpace::Image,
             equ_syms: Vec::new(),
         };
         let out = resolve_layout(&[sec], &stubs, true).unwrap();
@@ -3543,6 +3685,7 @@ mod tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            space: sigil_ir::AddressSpace::Image,
             equ_syms: Vec::new(),
         }
     }
@@ -3641,6 +3784,7 @@ mod tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            space: sigil_ir::AddressSpace::Image,
             equ_syms: Vec::new(),
         };
         let out = resolve_layout(&[sec], &stubs, true).unwrap();
@@ -3755,6 +3899,7 @@ mod tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            space: sigil_ir::AddressSpace::Image,
             equ_syms: vec![],
         };
 
@@ -3772,5 +3917,108 @@ mod tests {
                 other => panic!("operand {i} was not lowered: {other:?}"),
             }
         }
+    }
+
+    /// A pinned four-byte section at `lma` in `space`.
+    fn pinned_in(name: &str, lma: u32, space: sigil_ir::AddressSpace) -> Section {
+        Section {
+            name: name.into(),
+            cpu: Cpu::M68000,
+            vma_base: None,
+            lma,
+            space,
+            labels: vec![],
+            fragments: vec![Fragment::Data(DataFragment { bytes: vec![0xAA; 4], fixups: vec![], span: sp() })],
+            placement: sigil_ir::SectionPlacement::Pinned,
+            reserved_span: 4,
+            group: None,
+            bank: None,
+            equ_syms: Vec::new(),
+        }
+    }
+
+    /// A second Z80 space, entered at a span distinct from `sp()`'s.
+    fn z80_space(at: u32) -> sigil_ir::AddressSpace {
+        sigil_ir::AddressSpace::Foreign {
+            cpu: Cpu::Z80,
+            entered_at: Span { source: sigil_span::SourceId(0), start: at, end: at + 1 },
+        }
+    }
+
+    /// Sonic 1's collision, reduced: an image section and a second-space section
+    /// at the same number. They share no bytes, so no overlap is reported; the
+    /// second-space section is refused as having no ROM placement, at the span
+    /// its space was entered at, naming its CPU and origin.
+    #[test]
+    fn a_second_space_section_is_refused_for_its_placement_not_as_an_overlap() {
+        let image = pinned_in("vectors", 0, sigil_ir::AddressSpace::Image);
+        let driver = pinned_in("driver", 0, z80_space(40));
+        let err = resolve_layout(&[image, driver], &SymbolTable::new(), true)
+            .expect_err("a second-space section with bytes has no ROM placement and must be refused");
+        assert_eq!(err.len(), 1, "one refusal: {err:?}");
+        assert!(!err[0].message.contains("overlap"), "not an overlap: {}", err[0].message);
+        assert!(
+            err[0].message.contains("section `driver` [0x0, 0x4)")
+                && err[0].message.contains("for the Z80 at origin 0x0")
+                && err[0].message.contains("cannot yet place a second address space into the ROM"),
+            "names the section, its CPU and origin, and the missing placement: {}",
+            err[0].message
+        );
+        assert_eq!(err[0].primary.start, 40, "located at the org that entered the space");
+    }
+
+    /// No collision is needed for the refusal: a second-space section on empty
+    /// image ground still has no declared place in the ROM.
+    #[test]
+    fn a_second_space_section_is_refused_even_where_the_image_is_empty() {
+        let image = pinned_in("vectors", 0, sigil_ir::AddressSpace::Image);
+        let driver = pinned_in("driver", 0x100, z80_space(40));
+        let err = resolve_layout(&[image, driver], &SymbolTable::new(), true)
+            .expect_err("a second-space section on free ground is still unplaced");
+        assert_eq!(err.len(), 1, "{err:?}");
+        assert!(err[0].message.contains("section `driver` [0x100, 0x104)"), "{}", err[0].message);
+    }
+
+    /// The per-space scan still refuses a collision inside one space, image or
+    /// second, and names it as the overlap it is.
+    #[test]
+    fn a_collision_inside_one_space_is_still_an_overlap() {
+        for space in [sigil_ir::AddressSpace::Image, z80_space(40)] {
+            let a = pinned_in("a", 0, space);
+            let b = pinned_in("b", 2, space);
+            let err = resolve_layout(&[a, b], &SymbolTable::new(), true)
+                .expect_err("two sections sharing bytes in one space must be refused");
+            assert!(
+                err.len() == 1
+                    && err[0].message.contains("sections `a` [0x0, 0x4) and `b` [0x2, 0x6) overlap"),
+                "{space:?}: {err:?}"
+            );
+        }
+    }
+
+    /// Two entries into second spaces are separate spaces: a driver at Z80 0 and
+    /// a data blob entered elsewhere never collide with each other, and each is
+    /// refused on its own, at its own entry.
+    #[test]
+    fn two_second_spaces_are_refused_separately_and_never_collide() {
+        let image = pinned_in("vectors", 0, sigil_ir::AddressSpace::Image);
+        let first = pinned_in("first", 0, z80_space(40));
+        let second = pinned_in("second", 0, z80_space(80));
+        let err = resolve_layout(&[image, first, second], &SymbolTable::new(), true)
+            .expect_err("two unplaced second spaces");
+        let starts: Vec<u32> = err.iter().map(|d| d.primary.start).collect();
+        assert_eq!(starts, vec![40, 80], "one refusal per space, in order: {err:?}");
+        assert!(err.iter().all(|d| !d.message.contains("overlap")), "{err:?}");
+    }
+
+    /// The measuring entry point applies neither image check, so it neither
+    /// scans nor refuses: a planner measures a second-space section like any other.
+    #[test]
+    fn the_measuring_entry_point_does_not_refuse_a_second_space() {
+        let image = pinned_in("vectors", 0, sigil_ir::AddressSpace::Image);
+        let driver = pinned_in("driver", 0, z80_space(40));
+        let out = resolve_layout_measuring(&[image, driver], &SymbolTable::new(), true)
+            .expect("measuring skips the image checks");
+        assert_eq!(out[1].space, z80_space(40), "the space survives the relax rebuild");
     }
 }
