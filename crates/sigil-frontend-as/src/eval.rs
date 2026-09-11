@@ -6014,8 +6014,17 @@ impl Asm {
             "label" => {}
             "save" => self.state.save(),
             "restore" => {
+                let before = self.state.cpu;
                 if let Err(m) = self.state.restore() {
                     self.err(span, m);
+                }
+                // A `restore` that changes the processor ends the section, as a
+                // `cpu` line does: a section holds one processor's bytes, and asl
+                // starts a new record here. Without this, 68000 bytes after a Z80
+                // driver's `restore` join the driver's section whenever the next
+                // `org` lands on the driver's own counter.
+                if self.state.cpu != before {
+                    self.close_section();
                 }
             }
             "padding" => self.state.padding = on_off(rest),
