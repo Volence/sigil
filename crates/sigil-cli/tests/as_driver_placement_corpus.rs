@@ -19,7 +19,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
-use sigil_harness::test_support::{derive_suite_root_from, suite_root_absent, SUITE_ROOT_VAR};
+use sigil_harness::test_support::{suite_root_absent, unnamed_default_tree};
 
 const WHAT: &str = "Sonic 1 built whole by the AS route with its build script's p2bin instruction";
 const REV: &str = "f6ece657c1cf253404312137dfcb8ec15fa42318";
@@ -82,13 +82,12 @@ fn records(p: &[u8]) -> Vec<(u8, u32, Vec<u8>)> {
     out
 }
 
+/// The suite root by the harness's own precedence (its variable, then the
+/// derivation from this checkout), read through the harness and never here: the
+/// tree a run resolves to when nobody names one sits directly under the root.
 fn suite_root() -> Option<PathBuf> {
-    let root = match std::env::var_os(SUITE_ROOT_VAR).filter(|v| !v.is_empty()) {
-        Some(v) => Ok(PathBuf::from(v)),
-        None => derive_suite_root_from(Path::new(env!("CARGO_MANIFEST_DIR"))),
-    };
-    match root {
-        Ok(r) => Some(r),
+    match unnamed_default_tree() {
+        Ok(tree) => Some(tree.path.parent().expect("a tree under the suite root has a parent").to_path_buf()),
         Err(why) => {
             suite_root_absent(WHAT, &why);
             None
