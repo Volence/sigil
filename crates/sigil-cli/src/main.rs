@@ -2661,15 +2661,6 @@ fn run_build_native(aeon: &std::path::Path, opts: &BuildOpts) {
     };
     report_warnings(&warnings);
 
-    // The sigil-canonical listing (the `.lst`-consumer drop-in), if requested.
-    if let Some(lst_path) = &opts.emit_lst {
-        if let Err(err) = install_artifact(lst_path, sigil_link::emit_listing(&listing).as_bytes())
-        {
-            eprintln!("error: cannot write {lst_path}: {err}");
-            process::exit(1);
-        }
-    }
-
     // The deb2 symbol appendix over the SAME (rom, listing) — byte-identical to the
     // full-file gate function (which folds the checksum in `emit_rom` then appends).
     //
@@ -2705,13 +2696,86 @@ fn run_build_native(aeon: &std::path::Path, opts: &BuildOpts) {
     } else {
         rom
     };
+
+    // The sigil-canonical listing (the `.lst`-consumer drop-in), if requested, opens with
+    // the source digest, which names the FULL shipped file above, appendix included. So
+    // the listing is written after the ROM is final. The appendix is built from the
+    // in-memory `listing`, never from the `.lst` text, so the order moves no ROM byte.
+    // The digest is rendered before either artifact is written, so a read set that
+    // cannot be stated (a file that changed while the build read it) leaves neither.
+    let digest = match &opts.emit_lst {
+        Some(_) => match lst_source_digest(aeon, opts, &full) {
+            Ok(section) => Some(section),
+            Err(err) => {
+                eprintln!("error: native build ({label}) source digest: {err}");
+                process::exit(1);
+            }
+        },
+        None => None,
+    };
     if let Some(out_path) = &opts.output {
         if let Err(err) = install_artifact(out_path, &full) {
             eprintln!("error: cannot write {out_path}: {err}");
             process::exit(1);
         }
     }
+    if let (Some(lst_path), Some(section)) = (&opts.emit_lst, digest) {
+        let text = format!("{section}{}", sigil_link::emit_listing(&listing));
+        if let Err(err) = install_artifact(lst_path, text.as_bytes()) {
+            eprintln!("error: cannot write {lst_path}: {err}");
+            process::exit(1);
+        }
+    }
     println!("built: {label} native ROM, crc={:08x} len={}", native::crc32(&full), full.len());
+}
+
+/// The `.lst` source digest for this build: the read set the recorder captured, the
+/// build configuration, and the identity of the ROM about to be written to `-o`.
+fn lst_source_digest(
+    aeon: &std::path::Path,
+    opts: &BuildOpts,
+    full: &[u8],
+) -> Result<String, String> {
+    use sigil_harness::{native, source_digest};
+
+    let profile = opts.target.label_and_profile().1;
+    // Everything this reads happens before the snapshot below, so the digest names it.
+    let defines = native::shape_defines(&profile, aeon)?;
+    let (target, game) = digest_target(&opts.target);
+    let snapshot = sigil_span::read_set::snapshot();
+    let digest = source_digest::source_digest(
+        aeon,
+        &source_digest::AssemblerIdentity {
+            version: env!("CARGO_PKG_VERSION"),
+            revision: env!("SIGIL_REVISION"),
+            tree_state: env!("SIGIL_TREE_STATE"),
+        },
+        &source_digest::DigestShape {
+            target,
+            game,
+            debug: profile.debug,
+            extra_entries: &opts.extra_entries,
+        },
+        defines,
+        full,
+        opts.output.as_deref().map(std::path::Path::new),
+        &snapshot,
+    )?;
+    sigil_link::emit_source_digest(&digest)
+}
+
+/// The digest's `target=` and `game=` for a build target: the flag that selects it
+/// and the game it builds. Exhaustive, so a new target has to name both.
+fn digest_target(target: &BuildTarget) -> (&'static str, &'static str) {
+    match target {
+        BuildTarget::Sonic4 { .. } => ("sonic4", "sonic4"),
+        BuildTarget::Demo { .. } => ("demo", "demo"),
+        BuildTarget::ConfigA => ("config-a", "sonic4"),
+        BuildTarget::ConfigB => ("config-b", "sonic4"),
+        BuildTarget::Lean => ("lean", "sonic4"),
+        BuildTarget::StressEvict => ("stress-evict", "sonic4"),
+        BuildTarget::StressArt => ("stress-art", "sonic4"),
+    }
 }
 
 #[cfg(test)]

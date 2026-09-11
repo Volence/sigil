@@ -201,6 +201,520 @@ pub fn emit_listing(symbols: &[ListingSymbol]) -> String {
     out
 }
 
+// ---------------------------------------------------------------------------
+// The source digest
+// ---------------------------------------------------------------------------
+
+/// The source digest's format version, written as `DIGEST-FORMAT`. It moves when the
+/// grammar does.
+pub const SOURCE_DIGEST_FORMAT: u32 = 1;
+
+/// The source digest's header line, after its two-space indent.
+pub const SOURCE_DIGEST_HEADER: &str =
+    "Source Digest (the files this build read, and the ROM it wrote):";
+
+/// The base a digest path is written relative to. Declaration order is row order: the
+/// aeon root first, then the named roots by the bytes of their names.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
+pub enum DigestRoot {
+    /// The `--aeon` tree, written with no `root=` field.
+    Aeon,
+    /// `/`, for a file under neither other root: `root=filesystem`.
+    Filesystem,
+    /// The sigil checkout the assembler was compiled from: `root=sigil`.
+    Sigil,
+}
+
+impl DigestRoot {
+    fn token(self) -> Option<&'static str> {
+        match self {
+            DigestRoot::Aeon => None,
+            DigestRoot::Filesystem => Some("filesystem"),
+            DigestRoot::Sigil => Some("sigil"),
+        }
+    }
+
+    fn from_token(token: &str) -> Option<DigestRoot> {
+        match token {
+            "filesystem" => Some(DigestRoot::Filesystem),
+            "sigil" => Some(DigestRoot::Sigil),
+            _ => None,
+        }
+    }
+}
+
+/// How a digested file reached the build: the `origin=` field.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DigestOrigin {
+    /// A file under the aeon root that the build only read.
+    Source,
+    /// A file this same build wrote and then read back.
+    Generated,
+    /// An executable the build ran.
+    Tool,
+    /// A file outside the aeon root.
+    External,
+}
+
+impl DigestOrigin {
+    fn token(self) -> &'static str {
+        match self {
+            DigestOrigin::Source => "source",
+            DigestOrigin::Generated => "generated",
+            DigestOrigin::Tool => "tool",
+            DigestOrigin::External => "external",
+        }
+    }
+
+    fn from_token(token: &str) -> Option<DigestOrigin> {
+        match token {
+            "source" => Some(DigestOrigin::Source),
+            "generated" => Some(DigestOrigin::Generated),
+            "tool" => Some(DigestOrigin::Tool),
+            "external" => Some(DigestOrigin::External),
+            _ => None,
+        }
+    }
+}
+
+/// A path as the digest writes it: relative to `root`, `/`-separated.
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
+pub struct DigestPath {
+    pub root: DigestRoot,
+    pub path: String,
+}
+
+/// One `DIGEST-READ` row: a file the build read, as it was when read.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DigestRead {
+    pub crc: u32,
+    pub size: u64,
+    pub origin: DigestOrigin,
+    pub file: DigestPath,
+}
+
+/// Everything a `Source Digest` section states. [`emit_source_digest`] writes it and
+/// [`parse_source_digest`] reads it back.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SourceDigest {
+    /// The assembler's semver.
+    pub assembler_version: String,
+    /// The assembler's source revision, as `sigil --version` reports it.
+    pub revision: String,
+    /// The assembler's tree state word, as `sigil --version` reports it.
+    pub tree_state: String,
+    /// The build target flag's spelling.
+    pub target: String,
+    /// The game the target builds.
+    pub game: String,
+    /// The debug axis.
+    pub debug: bool,
+    /// Every `--extra-entry` argument, as given.
+    pub extra_entries: Vec<String>,
+    /// The define environment the `.emp` build lowered with.
+    pub defines: Vec<(String, i128)>,
+    /// How many `.emp` files the module scan found.
+    pub scan_files: u64,
+    /// CRC-32 over the scanned paths: see [`digest_scan_identity`].
+    pub scan_crc: u32,
+    /// Every file the build read.
+    pub reads: Vec<DigestRead>,
+    /// CRC-32 of the full shipped ROM file.
+    pub rom_crc: u32,
+    /// Byte size of the full shipped ROM file.
+    pub rom_size: u64,
+    /// Where `-o` wrote the ROM; `None` when the build was given no `-o`.
+    pub rom_output: Option<DigestPath>,
+}
+
+/// `DIGEST-SCAN`'s `(files, crc)` for the paths a module scan found: the count, and
+/// CRC-32 over the paths sorted by bytes, each followed by one LF.
+pub fn digest_scan_identity(paths: &[String]) -> (u64, u32) {
+    let mut sorted: Vec<&str> = paths.iter().map(String::as_str).collect();
+    sorted.sort_unstable();
+    let mut text = String::new();
+    for p in &sorted {
+        text.push_str(p);
+        text.push('\n');
+    }
+    (sorted.len() as u64, sigil_span::read_set::crc32(text.as_bytes()))
+}
+
+/// A value that must be written as one `key=value` token.
+fn digest_token(what: &str, value: &str) -> Result<(), String> {
+    if value.is_empty() || value.chars().any(|c| c.is_whitespace() || c == '=') {
+        return Err(format!(
+            "the digest's {what} `{value}` is empty or contains whitespace or `=`, so it cannot be \
+             written as one key=value token"
+        ));
+    }
+    Ok(())
+}
+
+fn digest_define_name(name: &str) -> Result<(), String> {
+    let mut chars = name.chars();
+    let ok = chars.next().is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+        && chars.all(|c| c.is_ascii_alphanumeric() || c == '_');
+    if !ok {
+        return Err(format!("the define `{name}` is not an identifier, so its digest row would not parse"));
+    }
+    Ok(())
+}
+
+/// A path must be relative, `/`-separated, with no empty, `.` or `..` component and no
+/// line break, or the row that carries it cannot be read back as the same file.
+fn digest_path(p: &DigestPath) -> Result<(), String> {
+    let s = &p.path;
+    let ok = !s.is_empty()
+        && !s.contains(['\n', '\r'])
+        && s.split('/').all(|c| !c.is_empty() && c != "." && c != "..");
+    if !ok {
+        return Err(format!(
+            "the digest path `{}` is not a relative path without `.`/`..` components and line \
+             breaks, so its row would not name one file",
+            s.escape_debug()
+        ));
+    }
+    Ok(())
+}
+
+/// ` path=<p>`, preceded by ` root=<name>` when the root is a named one. `path=` is last
+/// and runs to the end of the line, which is what lets a path contain a space.
+fn digest_path_fields(p: &DigestPath) -> String {
+    match p.root.token() {
+        Some(root) => format!(" root={root} path={}", p.path),
+        None => format!(" path={}", p.path),
+    }
+}
+
+/// Render the `Source Digest` section: the FIRST thing in a listing, so it is written
+/// ahead of [`emit_listing`]'s text and closed by `DIGEST-END` and one blank line.
+///
+/// # Why it goes first
+///
+/// Every consumer of the rest of the listing either anchors on a row shape the section
+/// cannot produce, or reads from the `Symbol Table` header forward. The one that reads
+/// state from section headers, oracle's `SymbolTable::parse`, counts every unrecognised
+/// line after an `Equate Table` or `Phase Table` header as damage and refuses a listing so
+/// damaged when the ROM carries no symbol appendix to bind against; before the `Symbol
+/// Table` header it is in its body state, which by design passes over non-matching lines.
+///
+/// # The grammar
+///
+/// Every line after the header, its rule and one blank line starts with `DIGEST-` and one
+/// keyword from `FORMAT ASSEMBLER SHAPE DEFINE SCAN READ AGGREGATE ROM END`; no keyword is
+/// a prefix of another. Fields are single-space `key=value` tokens, and `path=` is always
+/// the last field of a line that carries it and runs to the end of the line. READ rows are
+/// sorted by `(root, path)` with the aeon root first; the AGGREGATE is CRC-32 over the
+/// READ lines exactly as written, each with its LF. The full grammar and field meanings
+/// are in `docs/superpowers/notes/2026-09-11-lst-source-digest.md`.
+///
+/// Refuses, rather than writes, anything the grammar cannot carry: an empty read set, a
+/// token with whitespace, a path that is absolute or has a line break or a `.`/`..`
+/// component, a path listed twice, or an origin that disagrees with its root.
+pub fn emit_source_digest(d: &SourceDigest) -> Result<String, String> {
+    digest_token("assembler version", &d.assembler_version)?;
+    digest_token("assembler revision", &d.revision)?;
+    digest_token("assembler tree state", &d.tree_state)?;
+    digest_token("target", &d.target)?;
+    digest_token("game", &d.game)?;
+    for e in &d.extra_entries {
+        digest_token("extra entry", e)?;
+        if e.contains(',') || e == "none" {
+            return Err(format!(
+                "the extra entry `{e}` contains `,` or is spelled `none`, so the digest's \
+                 extra-entries list could not be read back as the same entries"
+            ));
+        }
+    }
+
+    let mut defines: Vec<&(String, i128)> = d.defines.iter().collect();
+    defines.sort_by(|a, b| a.0.as_bytes().cmp(b.0.as_bytes()));
+    for (name, _) in &defines {
+        digest_define_name(name)?;
+    }
+    if let Some(w) = defines.windows(2).find(|w| w[0].0 == w[1].0) {
+        return Err(format!("the define `{}` appears twice in the digest's define environment", w[0].0));
+    }
+
+    if d.reads.is_empty() {
+        return Err("the build recorded no file read, so the read set was not captured and the \
+                    digest would vouch for nothing"
+            .to_string());
+    }
+    let mut reads: Vec<&DigestRead> = d.reads.iter().collect();
+    reads.sort_by(|a, b| a.file.cmp(&b.file));
+    for r in &reads {
+        digest_path(&r.file)?;
+        if (r.origin == DigestOrigin::External) != (r.file.root != DigestRoot::Aeon) {
+            return Err(format!(
+                "the digest row for `{}` is origin={} under {:?}, and a row is external exactly \
+                 when it lies outside the aeon root",
+                r.file.path,
+                r.origin.token(),
+                r.file.root
+            ));
+        }
+    }
+    if let Some(w) = reads.windows(2).find(|w| w[0].file == w[1].file) {
+        return Err(format!("the digest lists `{}` twice", w[0].file.path));
+    }
+    if let Some(o) = &d.rom_output {
+        digest_path(o)?;
+    }
+
+    let rule = "-".repeat(SOURCE_DIGEST_HEADER.chars().count());
+    let mut out = format!("  {SOURCE_DIGEST_HEADER}\n  {rule}\n\n");
+    out.push_str(&format!("DIGEST-FORMAT {SOURCE_DIGEST_FORMAT}\n"));
+    out.push_str(&format!(
+        "DIGEST-ASSEMBLER sigil version={} revision={} tree={}\n",
+        d.assembler_version, d.revision, d.tree_state
+    ));
+    let entries =
+        if d.extra_entries.is_empty() { "none".to_string() } else { d.extra_entries.join(",") };
+    out.push_str(&format!(
+        "DIGEST-SHAPE target={} game={} debug={} extra-entries={entries}\n",
+        d.target,
+        d.game,
+        u8::from(d.debug)
+    ));
+    for (name, value) in defines {
+        out.push_str(&format!("DIGEST-DEFINE {name}={value}\n"));
+    }
+    out.push_str(&format!("DIGEST-SCAN pattern=*.emp files={} crc={:08x}\n", d.scan_files, d.scan_crc));
+    let mut read_lines = String::new();
+    for r in &reads {
+        read_lines.push_str(&format!(
+            "DIGEST-READ crc={:08x} size={} origin={}{}\n",
+            r.crc,
+            r.size,
+            r.origin.token(),
+            digest_path_fields(&r.file)
+        ));
+    }
+    let aggregate = sigil_span::read_set::crc32(read_lines.as_bytes());
+    out.push_str(&read_lines);
+    out.push_str(&format!("DIGEST-AGGREGATE crc={aggregate:08x} reads={}\n", reads.len()));
+    let destination = match &d.rom_output {
+        Some(p) => digest_path_fields(p),
+        None => " output=none".to_string(),
+    };
+    out.push_str(&format!("DIGEST-ROM crc={:08x} size={}{destination}\n", d.rom_crc, d.rom_size));
+    out.push_str("DIGEST-END\n\n");
+    Ok(out)
+}
+
+/// One LF-terminated line off the front of `rest`.
+fn digest_line<'a>(rest: &mut &'a str, what: &str) -> Result<&'a str, String> {
+    let Some(end) = rest.find('\n') else {
+        return Err(format!("the digest ends before its {what} line"));
+    };
+    let line = &rest[..end];
+    *rest = &rest[end + 1..];
+    Ok(line)
+}
+
+/// The values of `fields`, which must be exactly the space-separated `key=value` tokens
+/// of `text`, in that order.
+fn digest_fields<'a>(text: &'a str, keys: &[&str], line: &str) -> Result<Vec<&'a str>, String> {
+    let tokens: Vec<&str> = text.split(' ').collect();
+    if tokens.len() != keys.len() {
+        return Err(format!("digest line `{line}` does not carry exactly the fields {keys:?}"));
+    }
+    tokens
+        .iter()
+        .zip(keys)
+        .map(|(t, k)| {
+            t.strip_prefix(k)
+                .and_then(|v| v.strip_prefix('='))
+                .ok_or_else(|| format!("digest line `{line}` has `{t}` where `{k}=` belongs"))
+        })
+        .collect()
+}
+
+fn digest_hex8(v: &str, line: &str) -> Result<u32, String> {
+    if v.len() != 8 || !v.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)) {
+        return Err(format!("digest line `{line}` carries `{v}` where 8 lowercase hex digits belong"));
+    }
+    u32::from_str_radix(v, 16).map_err(|e| format!("digest line `{line}`: {e}"))
+}
+
+fn digest_dec(v: &str, line: &str) -> Result<u64, String> {
+    v.parse::<u64>().map_err(|_| format!("digest line `{line}` carries `{v}` where a decimal count belongs"))
+}
+
+/// `[root=<name>] path=<rest of line>` from the tail of a READ or ROM line.
+fn digest_parse_path(fixed: &str, path: &str, line: &str) -> Result<(Vec<String>, DigestPath), String> {
+    let mut tokens: Vec<String> = fixed.split(' ').map(str::to_string).collect();
+    let mut root = DigestRoot::Aeon;
+    if let Some(last) = tokens.last() {
+        if let Some(name) = last.strip_prefix("root=") {
+            root = DigestRoot::from_token(name)
+                .ok_or_else(|| format!("digest line `{line}` names an unknown root `{name}`"))?;
+            tokens.pop();
+        }
+    }
+    let file = DigestPath { root, path: path.to_string() };
+    digest_path(&file)?;
+    Ok((tokens, file))
+}
+
+/// Read a `Source Digest` section off the front of `text`, returning it and the rest of
+/// the listing after the section's closing blank line.
+///
+/// Strict where the grammar is: every line kind in order, every field present, READ
+/// rows sorted and unique, and the AGGREGATE recomputed from the READ lines as written,
+/// so a doctored or truncated section is an error rather than a digest.
+pub fn parse_source_digest(text: &str) -> Result<(SourceDigest, &str), String> {
+    let mut rest = text;
+    let header = format!("  {SOURCE_DIGEST_HEADER}");
+    let rule = format!("  {}", "-".repeat(SOURCE_DIGEST_HEADER.chars().count()));
+    if digest_line(&mut rest, "header")? != header {
+        return Err("the listing does not start with a Source Digest header".to_string());
+    }
+    if digest_line(&mut rest, "rule")? != rule {
+        return Err("the Source Digest header is not followed by its rule".to_string());
+    }
+    if !digest_line(&mut rest, "blank")?.is_empty() {
+        return Err("the Source Digest rule is not followed by a blank line".to_string());
+    }
+
+    let line = digest_line(&mut rest, "FORMAT")?;
+    if line != format!("DIGEST-FORMAT {SOURCE_DIGEST_FORMAT}") {
+        return Err(format!("expected `DIGEST-FORMAT {SOURCE_DIGEST_FORMAT}`, found `{line}`"));
+    }
+
+    let line = digest_line(&mut rest, "ASSEMBLER")?;
+    let body = line
+        .strip_prefix("DIGEST-ASSEMBLER sigil ")
+        .ok_or_else(|| format!("expected a DIGEST-ASSEMBLER line, found `{line}`"))?;
+    let a = digest_fields(body, &["version", "revision", "tree"], line)?;
+    let (assembler_version, revision, tree_state) = (a[0].to_string(), a[1].to_string(), a[2].to_string());
+
+    let line = digest_line(&mut rest, "SHAPE")?;
+    let body = line
+        .strip_prefix("DIGEST-SHAPE ")
+        .ok_or_else(|| format!("expected a DIGEST-SHAPE line, found `{line}`"))?;
+    let s = digest_fields(body, &["target", "game", "debug", "extra-entries"], line)?;
+    let debug = match s[2] {
+        "0" => false,
+        "1" => true,
+        other => return Err(format!("digest line `{line}` has debug={other}, not 0 or 1")),
+    };
+    let extra_entries: Vec<String> =
+        if s[3] == "none" { Vec::new() } else { s[3].split(',').map(str::to_string).collect() };
+    let (target, game) = (s[0].to_string(), s[1].to_string());
+
+    let mut defines: Vec<(String, i128)> = Vec::new();
+    let mut line = digest_line(&mut rest, "DEFINE or SCAN")?;
+    while let Some(body) = line.strip_prefix("DIGEST-DEFINE ") {
+        let (name, value) =
+            body.split_once('=').ok_or_else(|| format!("digest line `{line}` is not NAME=INT"))?;
+        digest_define_name(name)?;
+        let value: i128 =
+            value.parse().map_err(|_| format!("digest line `{line}` carries a value that is not an integer"))?;
+        if defines.last().is_some_and(|(prev, _)| prev.as_bytes() >= name.as_bytes()) {
+            return Err(format!("digest line `{line}` is out of order or repeats a define"));
+        }
+        defines.push((name.to_string(), value));
+        line = digest_line(&mut rest, "DEFINE or SCAN")?;
+    }
+
+    let body = line
+        .strip_prefix("DIGEST-SCAN ")
+        .ok_or_else(|| format!("expected a DIGEST-SCAN line, found `{line}`"))?;
+    let sc = digest_fields(body, &["pattern", "files", "crc"], line)?;
+    if sc[0] != "*.emp" {
+        return Err(format!("digest line `{line}` scans `{}`, not `*.emp`", sc[0]));
+    }
+    let (scan_files, scan_crc) = (digest_dec(sc[1], line)?, digest_hex8(sc[2], line)?);
+
+    let mut reads: Vec<DigestRead> = Vec::new();
+    let mut read_lines = String::new();
+    let mut line = digest_line(&mut rest, "READ")?;
+    while let Some(body) = line.strip_prefix("DIGEST-READ ") {
+        let (fixed, path) = body
+            .split_once(" path=")
+            .ok_or_else(|| format!("digest line `{line}` carries no path= field"))?;
+        let (tokens, file) = digest_parse_path(fixed, path, line)?;
+        let joined = tokens.join(" ");
+        let f = digest_fields(&joined, &["crc", "size", "origin"], line)?;
+        let origin = DigestOrigin::from_token(f[2])
+            .ok_or_else(|| format!("digest line `{line}` has an unknown origin `{}`", f[2]))?;
+        if (origin == DigestOrigin::External) != (file.root != DigestRoot::Aeon) {
+            return Err(format!("digest line `{line}` is external exactly when it names a root, and it does not"));
+        }
+        if reads.last().is_some_and(|prev: &DigestRead| prev.file >= file) {
+            return Err(format!("digest line `{line}` is out of order or repeats a file"));
+        }
+        reads.push(DigestRead { crc: digest_hex8(f[0], line)?, size: digest_dec(f[1], line)?, origin, file });
+        read_lines.push_str(line);
+        read_lines.push('\n');
+        line = digest_line(&mut rest, "READ or AGGREGATE")?;
+    }
+    if reads.is_empty() {
+        return Err("the digest carries no DIGEST-READ row".to_string());
+    }
+
+    let body = line
+        .strip_prefix("DIGEST-AGGREGATE ")
+        .ok_or_else(|| format!("expected a DIGEST-AGGREGATE line, found `{line}`"))?;
+    let ag = digest_fields(body, &["crc", "reads"], line)?;
+    let (claimed, count) = (digest_hex8(ag[0], line)?, digest_dec(ag[1], line)?);
+    let actual = sigil_span::read_set::crc32(read_lines.as_bytes());
+    if claimed != actual || count != reads.len() as u64 {
+        return Err(format!(
+            "the digest's aggregate says crc={claimed:08x} reads={count} and its READ rows give \
+             crc={actual:08x} reads={}",
+            reads.len()
+        ));
+    }
+
+    let line = digest_line(&mut rest, "ROM")?;
+    let body = line
+        .strip_prefix("DIGEST-ROM ")
+        .ok_or_else(|| format!("expected a DIGEST-ROM line, found `{line}`"))?;
+    let (rom_fields, rom_output) = match body.split_once(" path=") {
+        Some((fixed, path)) => {
+            let (tokens, file) = digest_parse_path(fixed, path, line)?;
+            (tokens.join(" "), Some(file))
+        }
+        None => {
+            let fixed = body
+                .strip_suffix(" output=none")
+                .ok_or_else(|| format!("digest line `{line}` carries neither path= nor output=none"))?;
+            (fixed.to_string(), None)
+        }
+    };
+    let r = digest_fields(&rom_fields, &["crc", "size"], line)?;
+    let (rom_crc, rom_size) = (digest_hex8(r[0], line)?, digest_dec(r[1], line)?);
+
+    if digest_line(&mut rest, "END")? != "DIGEST-END" {
+        return Err("the digest is not closed by DIGEST-END".to_string());
+    }
+    if !digest_line(&mut rest, "closing blank")?.is_empty() {
+        return Err("DIGEST-END is not followed by a blank line".to_string());
+    }
+
+    let digest = SourceDigest {
+        assembler_version,
+        revision,
+        tree_state,
+        target,
+        game,
+        debug,
+        extra_entries,
+        defines,
+        scan_files,
+        scan_crc,
+        reads,
+        rom_crc,
+        rom_size,
+        rom_output,
+    };
+    Ok((digest, rest))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -716,5 +1230,393 @@ mod tests {
         assert!(out.contains("PHASE-COUNT 0"), "an equate was counted as phased:\n{out}");
         assert!(!out.contains("PHASE BANK_BASE"), "an equate got a phase row:\n{out}");
         assert!(out.contains("EQU BANK_BASE = $00008000"), "{out}");
+    }
+
+    fn dp(root: DigestRoot, path: &str) -> DigestPath {
+        DigestPath { root, path: path.into() }
+    }
+
+    /// A digest carrying one row of every origin and root, deliberately out of order,
+    /// with a path that contains a space.
+    fn sample_digest() -> SourceDigest {
+        let (scan_files, scan_crc) =
+            digest_scan_identity(&["games/b.emp".to_string(), "engine/a.emp".to_string()]);
+        SourceDigest {
+            assembler_version: "0.1.0".into(),
+            revision: "158feb5ec84876e5c7ea44e7019b1921ee72d593".into(),
+            tree_state: "clean".into(),
+            target: "sonic4".into(),
+            game: "sonic4".into(),
+            debug: false,
+            extra_entries: Vec::new(),
+            defines: vec![("MAX_RING_BUFFER".into(), 128), ("DEBUG".into(), 0), ("NEG".into(), -3)],
+            scan_files,
+            scan_crc,
+            reads: vec![
+                DigestRead {
+                    crc: 0x946d_49d7,
+                    size: 21741,
+                    origin: DigestOrigin::Source,
+                    file: dp(DigestRoot::Aeon, "games/sonic4/map.toml"),
+                },
+                DigestRead {
+                    crc: 0xa477_aa73,
+                    size: 2195,
+                    origin: DigestOrigin::External,
+                    file: dp(DigestRoot::Sigil, "crates/sigil-harness/golden/offcanonical_sizes/s4.txt"),
+                },
+                DigestRead {
+                    crc: 0xfe15_03bc,
+                    size: 127,
+                    origin: DigestOrigin::Generated,
+                    file: dp(DigestRoot::Aeon, "engine/sound/generated/dac_sample_tab.bin"),
+                },
+                DigestRead {
+                    crc: 0x0102_0304,
+                    size: 9,
+                    origin: DigestOrigin::External,
+                    file: dp(DigestRoot::Filesystem, "opt/some file.bin"),
+                },
+                DigestRead {
+                    crc: 0xf43b_95b0,
+                    size: 1_909_472,
+                    origin: DigestOrigin::Tool,
+                    file: dp(DigestRoot::Aeon, "tools/convsym"),
+                },
+            ],
+            rom_crc: 0xb09c_cd65,
+            rom_size: 820_229,
+            rom_output: Some(dp(DigestRoot::Aeon, "s4.bin")),
+        }
+    }
+
+    /// The emitted text, line for line, against the grammar committed in
+    /// `docs/superpowers/notes/2026-09-11-lst-source-digest.md`.
+    #[test]
+    fn source_digest_spells_the_committed_grammar() {
+        let text = emit_source_digest(&sample_digest()).expect("the sample renders");
+        let lines: Vec<&str> = text.lines().collect();
+        assert_eq!(lines[0], "  Source Digest (the files this build read, and the ROM it wrote):");
+        assert_eq!(lines[1], format!("  {}", "-".repeat(64)));
+        assert_eq!(lines[2], "");
+        assert_eq!(lines[3], "DIGEST-FORMAT 1");
+        assert_eq!(
+            lines[4],
+            "DIGEST-ASSEMBLER sigil version=0.1.0 revision=158feb5ec84876e5c7ea44e7019b1921ee72d593 tree=clean"
+        );
+        assert_eq!(lines[5], "DIGEST-SHAPE target=sonic4 game=sonic4 debug=0 extra-entries=none");
+        assert_eq!(
+            &lines[6..9],
+            ["DIGEST-DEFINE DEBUG=0", "DIGEST-DEFINE MAX_RING_BUFFER=128", "DIGEST-DEFINE NEG=-3"],
+            "defines are sorted by name"
+        );
+        assert_eq!(
+            lines[9],
+            format!("DIGEST-SCAN pattern=*.emp files=2 crc={:08x}", sigil_span::read_set::crc32(b"engine/a.emp\ngames/b.emp\n"))
+        );
+        let reads: Vec<&str> = lines.iter().copied().filter(|l| l.starts_with("DIGEST-READ ")).collect();
+        assert_eq!(
+            reads,
+            [
+                "DIGEST-READ crc=fe1503bc size=127 origin=generated path=engine/sound/generated/dac_sample_tab.bin",
+                "DIGEST-READ crc=946d49d7 size=21741 origin=source path=games/sonic4/map.toml",
+                "DIGEST-READ crc=f43b95b0 size=1909472 origin=tool path=tools/convsym",
+                "DIGEST-READ crc=01020304 size=9 origin=external root=filesystem path=opt/some file.bin",
+                "DIGEST-READ crc=a477aa73 size=2195 origin=external root=sigil path=crates/sigil-harness/golden/offcanonical_sizes/s4.txt",
+            ],
+            "rows sort by (root, path), the aeon root first"
+        );
+        // The aggregate, recomputed here from its stated definition rather than trusted.
+        let mut canonical = String::new();
+        for r in &reads {
+            canonical.push_str(r);
+            canonical.push('\n');
+        }
+        let aggregate =
+            format!("DIGEST-AGGREGATE crc={:08x} reads=5", sigil_span::read_set::crc32(canonical.as_bytes()));
+        assert_eq!(lines[15], aggregate);
+        assert_eq!(lines[16], "DIGEST-ROM crc=b09ccd65 size=820229 path=s4.bin");
+        assert_eq!(lines[17], "DIGEST-END");
+        assert_eq!(lines[18], "", "one blank line closes the section");
+        assert_eq!(lines.len(), 19);
+        assert!(text.ends_with("DIGEST-END\n\n"), "closed by DIGEST-END and exactly one blank line");
+    }
+
+    #[test]
+    fn source_digest_round_trips_through_its_parser() {
+        let d = sample_digest();
+        let section = emit_source_digest(&d).expect("the sample renders");
+        let listing = emit_listing(&[sym("Main", 0x200, false, false), sym("OBJ_len", 0x40, true, false)]);
+        let whole = format!("{section}{listing}");
+        let (back, rest) = parse_source_digest(&whole).expect("the section parses");
+        assert_eq!(rest, listing, "the section must end exactly where the unchanged listing starts");
+        let mut want = d.clone();
+        want.defines.sort_by(|a, b| a.0.cmp(&b.0));
+        want.reads.sort_by(|a, b| a.file.cmp(&b.file));
+        assert_eq!(back, want);
+
+        let mut no_output = sample_digest();
+        no_output.rom_output = None;
+        no_output.extra_entries = vec!["games.sonic4.test.poison".into(), "engine/x.emp".into()];
+        let section = emit_source_digest(&no_output).expect("renders");
+        assert!(section.contains("DIGEST-ROM crc=b09ccd65 size=820229 output=none\n"), "{section}");
+        assert!(section.contains("extra-entries=games.sonic4.test.poison,engine/x.emp\n"), "{section}");
+        let (back, _) = parse_source_digest(&section).expect("parses");
+        assert_eq!(back.rom_output, None);
+        assert_eq!(back.extra_entries, no_output.extra_entries);
+    }
+
+    #[test]
+    fn source_digest_scan_identity_is_the_crc_of_sorted_paths() {
+        let a = digest_scan_identity(&["b/y.emp".to_string(), "a/x.emp".to_string()]);
+        let b = digest_scan_identity(&["a/x.emp".to_string(), "b/y.emp".to_string()]);
+        assert_eq!(a, b, "the identity must not depend on walk order");
+        assert_eq!(a, (2, sigil_span::read_set::crc32(b"a/x.emp\nb/y.emp\n")));
+    }
+
+    #[test]
+    fn source_digest_refuses_what_its_grammar_cannot_carry() {
+        type Mutation = Box<dyn Fn(&mut SourceDigest)>;
+        let cases: Vec<(&str, Mutation)> = vec![
+            ("a line break in a path", Box::new(|d| d.reads[0].file.path = "a\nb".into())),
+            ("an absolute path", Box::new(|d| d.reads[0].file.path = "/etc/passwd".into())),
+            ("a dot-dot component", Box::new(|d| d.reads[0].file.path = "games/../x".into())),
+            ("an empty path", Box::new(|d| d.reads[0].file.path = String::new())),
+            ("a file listed twice", Box::new(|d| d.reads.push(d.reads[0].clone()))),
+            ("an external row under the aeon root", Box::new(|d| d.reads[0].origin = DigestOrigin::External)),
+            ("a source row under a named root", Box::new(|d| d.reads[1].origin = DigestOrigin::Source)),
+            ("an empty read set", Box::new(|d| d.reads.clear())),
+            ("an extra entry with a comma", Box::new(|d| d.extra_entries = vec!["a,b".into()])),
+            ("an extra entry spelled none", Box::new(|d| d.extra_entries = vec!["none".into()])),
+            ("whitespace in a token", Box::new(|d| d.tree_state = "clean at capture".into())),
+            ("a define that is not an identifier", Box::new(|d| d.defines.push(("A-B".into(), 1)))),
+            ("a define listed twice", Box::new(|d| d.defines.push(("DEBUG".into(), 1)))),
+            ("a ROM path with a line break", Box::new(|d| d.rom_output = Some(dp(DigestRoot::Aeon, "s4\n.bin")))),
+        ];
+        assert!(
+            emit_source_digest(&sample_digest()).is_ok(),
+            "the unmutated sample must render, or every refusal below is vacuous"
+        );
+        for (what, mutate) in cases {
+            let mut d = sample_digest();
+            mutate(&mut d);
+            assert!(emit_source_digest(&d).is_err(), "rendered a digest with {what}");
+        }
+    }
+
+    /// The parser is the grammar's executable statement: a doctored row, a reordered
+    /// row or a truncated section is an error, never a digest.
+    #[test]
+    fn source_digest_parser_refuses_a_doctored_section() {
+        let good = emit_source_digest(&sample_digest()).expect("renders");
+        assert!(parse_source_digest(&good).is_ok(), "the control must parse");
+        let doctored = good.replace("crc=946d49d7", "crc=946d49d8");
+        assert_ne!(doctored, good, "the mutation must apply");
+        let err = parse_source_digest(&doctored).expect_err("a doctored row parsed");
+        assert!(err.contains("aggregate"), "{err}");
+        let truncated = good.replace("DIGEST-END\n", "");
+        assert!(parse_source_digest(&truncated).is_err(), "a section without DIGEST-END parsed");
+        let lines: Vec<&str> = good.lines().collect();
+        let (i, j) = (10, 11);
+        assert!(lines[i].starts_with("DIGEST-READ ") && lines[j].starts_with("DIGEST-READ "));
+        let mut swapped: Vec<&str> = lines.clone();
+        swapped.swap(i, j);
+        let swapped = format!("{}\n", swapped.join("\n"));
+        assert!(parse_source_digest(&swapped).is_err(), "out-of-order rows parsed");
+    }
+
+    /// No keyword is a prefix of another, so `^DIGEST-<KEYWORD> ` can only ever match
+    /// its own kind of line. The keyword set is read off the rendered text, not retyped.
+    #[test]
+    fn source_digest_keywords_are_prefix_disjoint() {
+        let text = emit_source_digest(&sample_digest()).expect("renders");
+        let keywords: std::collections::BTreeSet<&str> = text
+            .lines()
+            .filter_map(|l| l.strip_prefix("DIGEST-"))
+            .map(|rest| rest.split(' ').next().expect("a keyword"))
+            .collect();
+        let want: std::collections::BTreeSet<&str> =
+            ["FORMAT", "ASSEMBLER", "SHAPE", "DEFINE", "SCAN", "READ", "AGGREGATE", "ROM", "END"].into();
+        assert_eq!(keywords, want);
+        for a in &keywords {
+            for b in &keywords {
+                assert!(a == b || !b.starts_with(a), "`{a}` is a prefix of `{b}`");
+            }
+        }
+    }
+
+    /// COLLISION CONTROL, and the placement it depends on. Every line the section
+    /// contributes must parse as nothing under each `.lst` consumer grammar read at
+    /// its owner's committed revision, transcribed below with a positive control on a
+    /// real listing row, so a broken transcription cannot pass by matching nothing.
+    ///
+    ///  * oracle `crates/oracle-core/src/symbols.rs` (`origin/main` 9c33ca05):
+    ///    `parse_body_line` (4 tokens, `(..)` then `N/HEX` then `:` then `Name:`) and the
+    ///    three section-header transitions (`Symbol Table`, `Equate Table`, `Phase Table`
+    ///    after `trim_start`). In the body state a non-matching line counts nothing;
+    ///    after an Equate or Phase header every non-matching line counts as damage,
+    ///    which is why the section goes FIRST and why no line of it may look like a
+    ///    header;
+    ///  * aeon `tools/s4budget.py` (`origin/master` 826159e7): `_SRC_ROW_RE`,
+    ///    `_SYMTAB_HEADER_RE`, `_SYM_ROW_RE` and both trailer regexes;
+    ///  * aeon `tools/scene_spans.py` `LST_HEAD_RE`, `tools/effects_gates.py`'s
+    ///    `(0) `-prefix probe, `tools/deb2_probe.py` `SYMROW`, the `^\s*(\S+)\s*:\s*HEX\s+[A-Z]\s*\|`
+    ///    reader of `tools/test_zx0r_resume_net.py`, and the `^EQU ` / `^PHASE` readers;
+    ///  * sigil `test_support::listing_symbol_addr`: a line starting with ` NAME : `.
+    #[test]
+    fn source_digest_lines_never_parse_as_a_consumer_row() {
+        let is_hex = |s: &str| !s.is_empty() && s.bytes().all(|b| b.is_ascii_hexdigit());
+        // oracle parse_body_line, transcribed.
+        let oracle_body = |l: &str| -> bool {
+            let tok: Vec<&str> = l.split_whitespace().collect();
+            if tok.len() != 4 || tok[2] != ":" || !(tok[0].starts_with('(') && tok[0].ends_with(')')) {
+                return false;
+            }
+            let Some((_, hex)) = tok[1].split_once('/') else { return false };
+            is_hex(hex) && tok[3].strip_suffix(':').is_some_and(|n| !n.is_empty())
+        };
+        // oracle's section-header transitions, transcribed.
+        let oracle_header = |l: &str| {
+            let h = l.trim_end().trim_start();
+            h.starts_with("Symbol Table") || h.starts_with("Equate Table") || h.starts_with("Phase Table")
+        };
+        // s4budget _SRC_ROW_RE: ^\((\d+)\)\s*(\d+)\s*/\s*([0-9A-Fa-f]+)\s*:\s+(\S.*):$
+        let src_row = |l: &str| -> bool {
+            let Some(rest) = l.strip_prefix('(') else { return false };
+            let Some((depth, rest)) = rest.split_once(')') else { return false };
+            if depth.is_empty() || !depth.bytes().all(|b| b.is_ascii_digit()) {
+                return false;
+            }
+            let Some((idx, rest)) = rest.split_once('/') else { return false };
+            let idx = idx.trim();
+            if idx.is_empty() || !idx.bytes().all(|b| b.is_ascii_digit()) {
+                return false;
+            }
+            let Some((hex, rest)) = rest.split_once(':') else { return false };
+            is_hex(hex.trim()) && rest.starts_with(char::is_whitespace) && rest.trim().ends_with(':') && rest.trim().len() > 1
+        };
+        // s4budget _SYMTAB_HEADER_RE.
+        let symtab_header = |l: &str| l.trim() == "Symbol Table (* = unused):";
+        // s4budget _SYM_ROW_RE: ^\s*(\*?)([\w.$]+)\s*:\s*([0-9A-Fa-f]+)\s+([C\-])\s*\|\s*$
+        let sym_row = |l: &str| -> bool {
+            let l = l.trim_start().trim_start_matches('*');
+            let Some((name, rest)) = l.split_once(':') else { return false };
+            let name = name.trim_end();
+            if name.is_empty() || !name.bytes().all(|b| b.is_ascii_alphanumeric() || b"_.$".contains(&b)) {
+                return false;
+            }
+            let rest = rest.trim_start();
+            let Some((hex, rest)) = rest.split_once(char::is_whitespace) else { return false };
+            is_hex(hex) && matches!(rest.trim().trim_end_matches('|').trim(), "C" | "-") && rest.trim_end().ends_with('|')
+        };
+        // s4budget's two trailers.
+        let trailer = |l: &str| {
+            let t = l.trim();
+            [" symbols", " unused symbols"].iter().any(|suffix| {
+                t.strip_suffix(suffix).is_some_and(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()))
+            })
+        };
+        // scene_spans LST_HEAD_RE: ^\(\d+\) \d+/([0-9A-F]+) :\s+([A-Za-z_][A-Za-z0-9_]*):\s*$
+        let head_re = |l: &str| -> bool {
+            let Some(rest) = l.strip_prefix('(') else { return false };
+            let Some((depth, rest)) = rest.split_once(") ") else { return false };
+            let Some((idx, rest)) = rest.split_once('/') else { return false };
+            let Some((hex, rest)) = rest.split_once(" :") else { return false };
+            let name = rest.trim();
+            !depth.is_empty()
+                && depth.bytes().all(|b| b.is_ascii_digit())
+                && !idx.is_empty()
+                && idx.bytes().all(|b| b.is_ascii_digit())
+                && is_hex(hex)
+                && name.strip_suffix(':').is_some_and(|n| {
+                    n.bytes().next().is_some_and(|b| b.is_ascii_alphabetic() || b == b'_')
+                        && n.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_')
+                })
+        };
+        // effects_gates' probe: startswith("(0) ").
+        let gate_probe = |l: &str| l.starts_with("(0) ");
+        // deb2_probe SYMROW: ^([ *])(\S+) : ([0-9A-F]+) C \|$
+        let deb2_row = |l: &str| -> bool {
+            let Some(rest) = l.strip_prefix(' ').or_else(|| l.strip_prefix('*')) else { return false };
+            let Some((name, rest)) = rest.split_once(" : ") else { return false };
+            let Some(hex) = rest.strip_suffix(" C |") else { return false };
+            !name.is_empty() && !name.contains(char::is_whitespace) && is_hex(hex)
+        };
+        // test_zx0r_resume_net: ^\s*(\S+)\s*:\s*([0-9A-Fa-f]{4,8})\s+[A-Z]\s*\|
+        let loose_row = |l: &str| -> bool {
+            let t = l.trim_start();
+            let name_end = t.find(char::is_whitespace).unwrap_or(t.len()).min(t.find(':').unwrap_or(t.len()));
+            let (name, rest) = t.split_at(name_end);
+            let Some(rest) = rest.trim_start().strip_prefix(':') else { return false };
+            let rest = rest.trim_start();
+            let hex_end = rest.find(|c: char| !c.is_ascii_hexdigit()).unwrap_or(rest.len());
+            let (hex, rest) = rest.split_at(hex_end);
+            let rest = rest.trim_start();
+            !name.is_empty()
+                && (4..=8).contains(&hex.len())
+                && rest.chars().next().is_some_and(|c| c.is_ascii_uppercase())
+                && rest[1..].trim_start().starts_with('|')
+        };
+        // listing_symbol_addr: a line starting with ` NAME : `.
+        let symbol_addr = |l: &str| l.starts_with(' ') && l.contains(" : ");
+        let equ_or_phase = |l: &str| l.starts_with("EQU ") || l.starts_with("PHASE");
+
+        // A hostile path shaped like a symbol-table row, on top of the sample's own.
+        let mut hostile = sample_digest();
+        hostile.reads.push(DigestRead {
+            crc: 1,
+            size: 1,
+            origin: DigestOrigin::Source,
+            file: dp(DigestRoot::Aeon, "odd : 10AF2 C |"),
+        });
+        let section = emit_source_digest(&hostile).expect("renders");
+        let listing = emit_listing(&[
+            sym("OJZ_GradientStream", 0x10AF2, false, false),
+            sym("OJZ_BUDGET", 0x2C, true, false),
+            phased("BankHead", 0x8000, 0xE0000),
+        ]);
+        for line in section.lines() {
+            assert!(!oracle_body(line), "oracle parse_body_line took a digest line: {line:?}");
+            assert!(!oracle_header(line), "a digest line reads as an oracle section header: {line:?}");
+            assert!(!src_row(line), "s4budget _SRC_ROW_RE took a digest line: {line:?}");
+            assert!(!symtab_header(line), "a digest line reads as the Symbol Table header: {line:?}");
+            assert!(!sym_row(line), "s4budget _SYM_ROW_RE took a digest line: {line:?}");
+            assert!(!trailer(line), "a digest line reads as a symbols trailer: {line:?}");
+            assert!(!head_re(line), "scene_spans LST_HEAD_RE took a digest line: {line:?}");
+            assert!(!gate_probe(line), "effects_gates' probe took a digest line: {line:?}");
+            assert!(!deb2_row(line), "deb2_probe SYMROW took a digest line: {line:?}");
+            assert!(!loose_row(line), "the loose symbol-row reader took a digest line: {line:?}");
+            assert!(!symbol_addr(line), "listing_symbol_addr would read a digest line: {line:?}");
+            assert!(!equ_or_phase(line), "a digest line reads as an EQU or PHASE row: {line:?}");
+        }
+        // Positive controls on the SAME transcriptions, over the listing that follows.
+        let lines: Vec<&str> = listing.lines().collect();
+        assert!(lines.iter().any(|l| oracle_body(l)), "oracle_body transcription is dead:\n{listing}");
+        assert!(lines.iter().any(|l| oracle_header(l)), "oracle_header transcription is dead");
+        assert!(lines.iter().any(|l| src_row(l)), "_SRC_ROW_RE transcription is dead");
+        assert!(lines.iter().any(|l| symtab_header(l)), "_SYMTAB_HEADER_RE transcription is dead");
+        assert!(lines.iter().any(|l| sym_row(l)), "_SYM_ROW_RE transcription is dead");
+        assert!(lines.iter().any(|l| trailer(l)), "trailer transcription is dead");
+        assert!(lines.iter().any(|l| head_re(l)), "LST_HEAD_RE transcription is dead");
+        assert!(lines.iter().any(|l| gate_probe(l)), "gate probe transcription is dead");
+        assert!(lines.iter().any(|l| deb2_row(l)), "SYMROW transcription is dead");
+        assert!(lines.iter().any(|l| loose_row(l)), "loose-row transcription is dead");
+        assert!(lines.iter().any(|l| symbol_addr(l)), "listing_symbol_addr transcription is dead");
+        assert!(lines.iter().any(|l| equ_or_phase(l)), "EQU/PHASE transcription is dead");
+
+        // PLACEMENT: walked with oracle's state machine, every digest line is met in the
+        // body state, the one state that counts nothing it does not recognise.
+        let whole = format!("{section}{listing}");
+        let mut in_body = true;
+        let section_lines = section.lines().count();
+        for (i, line) in whole.lines().enumerate() {
+            if oracle_header(line) {
+                in_body = false;
+            }
+            if i < section_lines {
+                assert!(in_body, "digest line {i} is met after an oracle section header: {line:?}");
+            }
+        }
+        assert!(!in_body, "the walk never reached the listing's own sections, the control is dead");
     }
 }

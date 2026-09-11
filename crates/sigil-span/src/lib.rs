@@ -3,6 +3,8 @@
 use std::fmt;
 use std::sync::OnceLock;
 
+pub mod read_set;
+
 /// Opaque identifier for a source file stored in a [`SourceMap`].
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub struct SourceId(pub u32);

@@ -355,7 +355,7 @@ pub fn game_manifest_path(
 /// a parse error. The loudness half of the derived contract: a moved file must
 /// never degrade into an empty env that satisfies nothing.
 fn parse_emp_or_panic(path: &std::path::Path) -> sigil_frontend_emp::ast::File {
-    let src = std::fs::read_to_string(path)
+    let src = sigil_span::read_set::read_to_string(path)
         .unwrap_or_else(|e| panic!("game contract source missing at {}: {e}", path.display()));
     let (file, diags) = sigil_frontend_emp::parse_str(&src);
     assert!(
@@ -542,7 +542,7 @@ pub fn game_contract_bound_symbols(
 /// that does not carry `name` is a hard error naming it — the caller wanted an
 /// address, and a silent zero would encode a wrong operand into a byte gate.
 pub fn listing_symbol_addr(listing: &std::path::Path, name: &str) -> Option<u32> {
-    let text = std::fs::read_to_string(listing).ok()?;
+    let text = sigil_span::read_set::read_to_string(listing).ok()?;
     let needle = format!(" {name} : ");
     for line in text.lines() {
         let Some(rest) = line.strip_prefix(&needle) else { continue };
@@ -643,7 +643,7 @@ pub fn extend_from_listing(
 /// set, and an empty set would satisfy every caller silently while measuring nothing.
 pub fn listing_symbols_with_prefix(debug: bool, prefixes: &[&str]) -> Vec<(String, u32)> {
     let path = listing_path(debug);
-    let text = std::fs::read_to_string(&path)
+    let text = sigil_span::read_set::read_to_string(&path)
         .unwrap_or_else(|e| panic!("read listing {}: {e}", path.display()));
     let mut out = Vec::new();
     for line in text.lines() {
@@ -947,6 +947,8 @@ pub fn derive_suite_root_from(here: &std::path::Path) -> Result<PathBuf, String>
     // enumerates all four anchors a caller can hand this function and requires one answer
     // from all of them, so a shape nobody thought of is a failing row rather than a
     // sentence missing from this comment — which is how the third shape was lost.
+    // read-set: not a build input. Git locates the suite root for the test and freeze
+    // tooling; a `sigil build` names its tree with `--aeon` and publishes it as AEON_DIR.
     let out = std::process::Command::new("git")
         .args(["rev-parse", "--path-format=absolute", "--git-common-dir"])
         .current_dir(here)
@@ -1697,7 +1699,7 @@ pub fn partial_run_suite_root_banner(context: &str) -> String {
 /// Fails loud two ways rather than returning a default — absent (renamed or
 /// moved) and ambiguous (more than one declaration).
 pub fn emp_const_rhs(path: &std::path::Path, name: &str) -> String {
-    let src = std::fs::read_to_string(path)
+    let src = sigil_span::read_set::read_to_string(path)
         .unwrap_or_else(|e| panic!("emp_const_rhs: cannot read {}: {e}", path.display()));
     let mut hits: Vec<String> = Vec::new();
     for line in src.lines() {
@@ -1783,7 +1785,7 @@ fn parse_emp_int_literal(rhs: &str) -> Option<i128> {
 /// `tools/effects_gates.py` follow.
 pub fn scene_dsl_cap_bits(aeon: &std::path::Path) -> Vec<(String, i128)> {
     let path = aeon.join("engine/level/scene_dsl.emp");
-    let src = std::fs::read_to_string(&path)
+    let src = sigil_span::read_set::read_to_string(&path)
         .unwrap_or_else(|e| panic!("scene_dsl_cap_bits: cannot read {}: {e}", path.display()));
     let mut out = Vec::new();
     for line in src.lines() {
@@ -1920,7 +1922,7 @@ pub fn scanline_caps_contract_env(
 pub fn zero_byte_module(aeon: &std::path::Path, rel: &str) -> sigil_frontend_emp::ast::File {
     use sigil_frontend_emp::ast::Item;
     let path = aeon.join(rel);
-    let src = std::fs::read_to_string(&path)
+    let src = sigil_span::read_set::read_to_string(&path)
         .unwrap_or_else(|e| panic!("zero_byte_module: cannot read {}: {e}", path.display()));
     let (file, diags) = sigil_frontend_emp::parse_str(&src);
     assert!(
@@ -2020,7 +2022,7 @@ impl DacDeclarations {
 /// Read `dac_samples.emp` out of the sound directory and parse its declarations.
 pub fn read_dac_declarations(sound_dir: &std::path::Path) -> DacDeclarations {
     let path = sound_dir.join("dac_samples.emp");
-    let src = std::fs::read_to_string(&path)
+    let src = sigil_span::read_set::read_to_string(&path)
         .unwrap_or_else(|e| panic!("read_dac_declarations: cannot read {}: {e}", path.display()));
     parse_dac_declarations(&src)
 }
@@ -2234,7 +2236,7 @@ pub fn shadow_aeon_tree(
             if e.file_type().map(|t| t.is_dir()).unwrap_or(false) {
                 embed_roots(&p, out);
             } else if p.extension().is_some_and(|x| x == "emp") {
-                let Ok(text) = std::fs::read_to_string(&p) else { continue };
+                let Ok(text) = sigil_span::read_set::read_to_string(&p) else { continue };
                 for tail in text.split("embed(\"").skip(1) {
                     let Some(path) = tail.split('"').next() else { continue };
                     let Some(first) = path.split('/').next() else { continue };
@@ -2611,7 +2613,7 @@ mod strict_witness_tests {
                 });
             }
         });
-        let body = std::fs::read_to_string(&path).unwrap();
+        let body = sigil_span::read_set::read_to_string(&path).unwrap();
         let lines: Vec<&str> = body.lines().collect();
         assert_eq!(lines.len(), 16 * 64, "every write must land as exactly one line");
         for l in &lines {

@@ -233,7 +233,7 @@ pub fn load_frozen_table(name: &str) -> HashMap<String, u32> {
     let p = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("golden/offcanonical_sizes")
         .join(name);
-    let txt = std::fs::read_to_string(&p)
+    let txt = sigil_span::read_set::read_to_string(&p)
         .unwrap_or_else(|e| panic!("read frozen table {}: {e}", p.display()));
     let mut m = HashMap::new();
     for line in txt.lines() {
@@ -1016,7 +1016,7 @@ pub fn shipped_shapes() -> Vec<(&'static str, GameProfile)> {
 pub fn shape_defines(profile: &GameProfile, aeon: &Path) -> Result<Vec<(String, i128)>, String> {
     let map_path = profile.map_path(aeon);
     let origin = map_path.display().to_string();
-    let game_rows = match std::fs::read_to_string(&map_path) {
+    let game_rows = match sigil_span::read_set::read_to_string(&map_path) {
         Ok(src) => crate::game_defines::parse_game_defines(&src, &origin)?,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
             return Err(format!(
@@ -1196,7 +1196,7 @@ pub fn ensure_generated(aeon: &Path) {
 /// emp build.
 pub fn harvest_engine_constants(aeon: &Path) -> Result<Vec<(String, i64)>, String> {
     let path = aeon.join("engine/system/constants.emp");
-    let src = std::fs::read_to_string(&path)
+    let src = sigil_span::read_set::read_to_string(&path)
         .map_err(|e| format!("harvest_engine_constants: read {}: {e}", path.display()))?;
     let (file, pdiags) = sigil_frontend_emp::parse_str(&src);
     if pdiags.iter().any(|d| d.level == sigil_span::Level::Error) {
@@ -1250,7 +1250,7 @@ pub fn harvest_game_constants(aeon: &Path, rel: &str, debug: bool) -> Result<Vec
     seed.push(("DEBUG".to_string(), if debug { 1 } else { 0 }));
 
     let path = aeon.join(rel);
-    let src = std::fs::read_to_string(&path)
+    let src = sigil_span::read_set::read_to_string(&path)
         .map_err(|e| format!("harvest_game_constants: read {}: {e}", path.display()))?;
     let (file, pdiags) = sigil_frontend_emp::parse_str(&src);
     if pdiags.iter().any(|d| d.level == sigil_span::Level::Error) {
@@ -1301,7 +1301,7 @@ const STRUCT_OFFSET_TWINS: &[(&str, &str, &str)] = &[
 pub fn harvest_engine_struct_offsets(aeon: &Path) -> Result<Vec<(String, i64)>, String> {
     use sigil_frontend_emp::layout::layout_struct_ambient;
 
-    let types_src = std::fs::read_to_string(aeon.join("engine/system/types.emp"))
+    let types_src = sigil_span::read_set::read_to_string(aeon.join("engine/system/types.emp"))
         .map_err(|e| format!("harvest_engine_struct_offsets: read types.emp: {e}"))?;
     let (types_file, tdiags) = sigil_frontend_emp::parse_str(&types_src);
     if tdiags.iter().any(|d| d.level == sigil_span::Level::Error) {
@@ -1310,7 +1310,7 @@ pub fn harvest_engine_struct_offsets(aeon: &Path) -> Result<Vec<(String, i64)>, 
 
     let mut out: Vec<(String, i64)> = Vec::new();
     for (rel, sname, prefix) in STRUCT_OFFSET_TWINS {
-        let src = std::fs::read_to_string(aeon.join(rel))
+        let src = sigil_span::read_set::read_to_string(aeon.join(rel))
             .map_err(|e| format!("harvest_engine_struct_offsets: read {rel}: {e}"))?;
         let (file, pdiags) = sigil_frontend_emp::parse_str(&src);
         if pdiags.iter().any(|d| d.level == sigil_span::Level::Error) {
@@ -3722,7 +3722,7 @@ fn resolve_chained(aeon: &Path, profile: &GameProfile) -> Result<ChainedResolve,
     // author the sequence), and the same file's regions/anchors/budget drive emit_rom and
     // the post-resolve `validate_placement`.
     let map_path = profile.map_path(aeon);
-    let map_src = std::fs::read_to_string(&map_path)
+    let map_src = sigil_span::read_set::read_to_string(&map_path)
         .map_err(|e| format!("read {}: {e}", map_path.display()))?;
     let map = sigil_link::load_map(&map_src)
         .map_err(|e| format!("load {}: {e}", map_path.display()))?;
@@ -3881,7 +3881,7 @@ pub fn build_full_file_chained(aeon: &Path, profile: &GameProfile) -> Result<Vec
 /// (`resolve_frozen_sections`) drive from the same declaration.
 fn placement_map(aeon: &Path, profile: &GameProfile) -> Result<crate::map_placement::PlacementMap, String> {
     let map_path = profile.map_path(aeon);
-    let map_src = std::fs::read_to_string(&map_path)
+    let map_src = sigil_span::read_set::read_to_string(&map_path)
         .map_err(|e| format!("read {}: {e}", map_path.display()))?;
     crate::map_placement::load_placement_map(&map_src)
         .map_err(|e| format!("placement {}: {e}", map_path.display()))
@@ -4243,7 +4243,7 @@ pub fn phase_bank_lmas(aeon: &Path, debug: bool) -> Result<HashMap<String, u32>,
 /// the same file the sonic4 emit path reads.
 pub fn project_memory_map(aeon: &Path) -> Result<sigil_ir::map::MemoryMap, String> {
     let map_path = sonic4_profile(false).map_path(aeon);
-    sigil_link::load_map(&std::fs::read_to_string(&map_path).map_err(|e| e.to_string())?)
+    sigil_link::load_map(&sigil_span::read_set::read_to_string(&map_path).map_err(|e| e.to_string())?)
         .map_err(|e| format!("load {}: {e}", map_path.display()))
 }
 
@@ -4302,22 +4302,11 @@ pub fn check_object_bank_budget(
     }
 }
 
-/// CRC-32 (IEEE, the campaign provenance standard alongside byte-size). Small
-/// table-per-call impl — the golden set is a handful of ROMs, so speed is moot.
+/// CRC-32 (IEEE, the campaign provenance standard alongside byte-size): the one
+/// implementation the build's read set hashes with, so a ROM's `built:` CRC and its
+/// digest rows come from the same function.
 pub fn crc32(data: &[u8]) -> u32 {
-    let mut table = [0u32; 256];
-    for (n, slot) in table.iter_mut().enumerate() {
-        let mut c = n as u32;
-        for _ in 0..8 {
-            c = if c & 1 != 0 { 0xEDB8_8320 ^ (c >> 1) } else { c >> 1 };
-        }
-        *slot = c;
-    }
-    let mut c = 0xFFFF_FFFFu32;
-    for &b in data {
-        c = table[((c ^ b as u32) & 0xFF) as usize] ^ (c >> 8);
-    }
-    !c
+    sigil_span::read_set::crc32(data)
 }
 
 /// The header-neutral ASSEMBLED ANCHOR CRC over `bytes[0, eor)`: the checksum (`$18E`)
@@ -4696,7 +4685,8 @@ pub fn append_deb2_appendix(
     std::fs::write(&lst, sigil_link::emit_listing(&deb2_listing)).map_err(|e| e.to_string())?;
 
     // convsym: append the deb2 table (build.sh:170-171 flags verbatim).
-    let out = std::process::Command::new(&convsym)
+    let out = sigil_span::read_set::tool_command(&convsym)
+        .map_err(|e| format!("read convsym {}: {e}", convsym.display()))?
         .arg(&lst)
         .arg(&bin)
         .args(["-input", "as_lst", "-range", "0", "FFFFFF", "-exclude", "-filter"])
@@ -4711,6 +4701,8 @@ pub fn append_deb2_appendix(
             String::from_utf8_lossy(&out.stderr)
         ));
     }
+    // read-set: not a build input. This is convsym's output read back, the build's
+    // own product, and the ROM identity in the digest covers it.
     let mut full = std::fs::read(&bin).map_err(|e| e.to_string())?;
     let _ = std::fs::remove_dir_all(&dir);
 
@@ -4765,7 +4757,8 @@ pub fn convsym_resolve(aeon: &Path, listing: &[sigil_link::ListingSymbol]) -> Re
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let lst = dir.join("resolve.lst");
     std::fs::write(&lst, sigil_link::emit_listing(listing)).map_err(|e| e.to_string())?;
-    let out = std::process::Command::new(&convsym)
+    let out = sigil_span::read_set::tool_command(&convsym)
+        .map_err(|e| format!("read convsym {}: {e}", convsym.display()))?
         .arg(&lst)
         .arg("-")
         .args(["-input", "as_lst", "-output", "log", "-range", "0", "FFFFFF", "-exclude", "-filter"])

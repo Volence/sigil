@@ -55,6 +55,10 @@ impl Manifest {
         let mut files = Vec::new();
         collect_emp(root, root, &mut files, &mut diags);
         files.sort();
+        // The walk's membership is a build input of its own: a module that appears
+        // under the root later changes the next build without changing any file
+        // this one read.
+        sigil_span::read_set::record_scan(root, &files);
         for (i, path) in files.iter().enumerate() {
             // Allocate the SourceId and register its path BEFORE the fallible read,
             // so EVERY allocated id has a `sources` entry. Otherwise a file that
@@ -64,7 +68,7 @@ impl Manifest {
             // density invariant a positional diagnostic renderer relies on.
             let source = SourceId(i as u32);
             sources.insert(source, path.clone());
-            let src = match std::fs::read_to_string(path) {
+            let src = match sigil_span::read_set::read_to_string(path) {
                 Ok(s) => s,
                 Err(e) => {
                     diags.push(Diagnostic {
@@ -138,7 +142,7 @@ impl SourceIndex {
             let entry = manifest
                 .sources
                 .get(&SourceId(k))
-                .and_then(|p| std::fs::read_to_string(p).ok().map(|t| (p.clone(), t)));
+                .and_then(|p| sigil_span::read_set::read_to_string(p).ok().map(|t| (p.clone(), t)));
             match entry {
                 Some((path, text)) => {
                     map.add(text);

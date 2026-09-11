@@ -258,7 +258,7 @@ impl<'a> Evaluator<'a> {
         let Some(resolved) = self.resolve_sandbox_path(&path, path_arg.span) else {
             return Value::Poison;
         };
-        let bytes = match std::fs::read(&resolved) {
+        let bytes = match sigil_span::read_set::read(&resolved) {
             Ok(b) => b,
             Err(_) => {
                 // A missing OR unreadable file is one diagnostic naming the
@@ -421,7 +421,7 @@ impl<'a> Evaluator<'a> {
             self.error(span, "[import.format] import needs a .json or .toml file");
             return Value::Poison;
         }
-        let bytes = match std::fs::read(&resolved) {
+        let bytes = match sigil_span::read_set::read(&resolved) {
             Ok(b) => b,
             Err(_) => {
                 self.error(span, format!("[import.read] cannot read {path}"));
