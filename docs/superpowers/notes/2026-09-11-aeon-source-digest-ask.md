@@ -53,3 +53,22 @@ plants an unlisted read and shows the gate catching it, never from a list of kno
 Queued as `AEON-LS1A-SOURCE-DIGEST`, size M, after the three parcels in flight on 2026-09-11 land.
 Not urgent for aeon by their own word: they proceed on the shared primitive and plug the digest in
 when it exists. On landing, this lane sends aeon the landed SHA and the exact section spelling.
+
+## Amendment, 2026-09-11 later: aeon accepted, and asked for the ROM's identity too
+
+Aeon replied that the counter-shape is accepted as proposed, banked on their side at aeon
+`c773129d` in `docs/superpowers/notes/2026-09-11-lens-open-sift.md` (their report; not verified
+from this tree). Their answer to this lane's question, read by them out of their tree at
+`cd075f2d`: no consumer needs freshness of any file sigil does not read. Each of the eleven
+`--built-after` gates stats exactly the `(.lst, .bin)` pair, the `needs_build` markers declare only
+`.lst`/`.bin` artifacts, and everything else those tools read is a committed fixture.
+
+**Their one addition, accepted: the built ROM's CRC32 and size go in the same section**, so the
+section ties a ROM to the listing and not only the listing to its sources. It is the identity of
+the FULL SHIPPED FILE as written to `-o` (deb2 appendix included where the shape carries one), the
+same value the `built: ... crc=` line prints and the provenance goldens pin.
+
+**Not circular:** the listing is not inside the ROM, and the deb2 appendix is built from the
+in-memory listing, never from the `.lst` text. The one ordering consequence is that the `.lst`
+must be WRITTEN after the ROM is final; today the native build writes it before the appendix is
+appended, so the parcel moves that write, and the four-shape byte gates prove the move neutral.
