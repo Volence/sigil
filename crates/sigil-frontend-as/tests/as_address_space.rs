@@ -138,6 +138,31 @@ fn a_phased_z80_block_with_no_org_is_in_the_image() {
     }
 }
 
+/// Z80 bytes inline in a 68000 image with neither an `org` nor a `phase`: the
+/// `cpu z80` line breaks the section but the counter runs on, so the Z80 section
+/// is image bytes. Only an `org` can move the counter out of the image.
+#[test]
+fn an_inline_z80_block_with_no_org_and_no_phase_is_in_the_image() {
+    let src = "\tcpu 68000\n\
+               \tdc.l 0\n\
+               \tsave\n\
+               \tcpu z80\n\
+               \tdb 1,2\n\
+               \trestore\n\
+               \tpadding off\n\
+               \tdc.w $4E71\n";
+    let m = asm(src);
+    let secs = with_content(&m);
+    assert!(
+        secs.iter().any(|s| s.cpu == Cpu::Z80 && s.lma == 4 && s.vma_base == Some(4)),
+        "the Z80 bytes continue the counter at 4, unphased: {:#?}",
+        m.sections
+    );
+    for s in &secs {
+        assert_eq!(s.space, AddressSpace::Image, "section `{}` is image bytes", s.name);
+    }
+}
+
 /// An `org` that places Z80 code and a `phase` that gives it its run address:
 /// the load/run split the image models, so the image.
 #[test]
