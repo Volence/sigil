@@ -11567,6 +11567,14 @@ fn m68k_default_size(m: M68kMnemonic) -> Option<M68kSize> {
         // Word-only, and asl takes the bare spelling: `move d6,ccr` (S2, 5
         // sites) is the same `44C0 | ea` as `move.w d6,ccr` (S1, 2 sites).
         MoveToCcr => Some(M68kSize::W),
+        // The shifts and rotates default to WORD in every form, not only the
+        // word-only memory form: asl assembles `asl $1A(a0)` as `E1E8 001A`
+        // (Sonic 2 writes that 8 times, S3K 76), `asl #1,d0` as `E340`, `asl
+        // d1,d0` as `E360` and `asl d3` as `E343`, each equal to its `.w`
+        // spelling, for all eight mnemonics (probes `s3_*`). The memory form's
+        // own rules stay the encoder's: `.b`/`.l` there and a count other than
+        // one are refused, as asl refuses them.
+        Asl | Asr | Lsl | Lsr | Rol | Ror | Roxl | Roxr => Some(M68kSize::W),
         Dbcc(_) => Some(M68kSize::W),
         Scc(_) => Some(M68kSize::B),
         _ => None,
