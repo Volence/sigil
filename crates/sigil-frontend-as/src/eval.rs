@@ -2740,7 +2740,7 @@ impl Asm {
                     if let Some((args, next)) = split_call_args(toks, i + 1) {
                         let value = match args.as_slice() {
                             [arg] => self
-                                .eval_num(arg)
+                                .builtin_arg(name, arg)
                                 .and_then(|v| apply_num_builtin(name, v))
                                 .and_then(|v| v.as_i64()),
                             _ => None,
@@ -2805,6 +2805,16 @@ impl Asm {
     fn eval_num(&self, toks: &[Token]) -> Option<Num> {
         let (v, rest) = self.parse_num_bp(toks, 0)?;
         rest.is_empty().then_some(v)
+    }
+
+    /// The value of a numeric builtin's one argument. An EMPTY argument is 0
+    /// for `lastbit`: asl assembles `dc.b lastbit()` as `FF` (probe
+    /// `l6_noarg`), the same zero `()` is.
+    fn builtin_arg(&self, name: &str, arg: &[Token]) -> Option<Num> {
+        if arg.is_empty() && name.eq_ignore_ascii_case("lastbit") {
+            return Some(Num::Int(0));
+        }
+        self.eval_num(arg)
     }
 
     fn parse_num_bp<'t>(&self, toks: &'t [Token], min_bp: u8) -> Option<(Num, &'t [Token])> {
@@ -2885,7 +2895,7 @@ impl Asm {
             {
                 let (args, next) = split_call_args(rest, 0)?;
                 let inner = match args.as_slice() {
-                    [arg] => self.eval_num(arg)?,
+                    [arg] => self.builtin_arg(name, arg)?,
                     _ => return None,
                 };
                 // `INT` of an INTEGER is that integer (probe `f1.asm(11)`:
@@ -18168,7 +18178,22 @@ fn float_builtin(name: &str) -> Option<FloatFn> {
 fn is_num_builtin(name: &str) -> bool {
     name.eq_ignore_ascii_case("int")
         || name.eq_ignore_ascii_case("abs")
+        || name.eq_ignore_ascii_case("lastbit")
         || float_builtin(name).is_some()
+}
+
+/// asl's `lastbit(x)`: the index of the highest set bit of the 64-bit integer
+/// `x`, and -1 when no bit is set. asl, exit 0 (probes `l6_*`): `lastbit(1)` 0,
+/// `lastbit(5)` 2, `lastbit($80)` 7, `lastbit($FFFEB)` 19, `lastbit($7FFFFFFF)`
+/// 30, `lastbit($80000000)` 31, `lastbit($100000000)` 32, `lastbit(-1)` and
+/// `lastbit(-2)` 63, `lastbit(0)` -1. Sonic 2 spends it sizing the end-of-ROM
+/// pad: `cnop -1,2<<lastbit(*-StartOfRom-1)` (`s2.asm(91263)`).
+fn lastbit(x: i64) -> i64 {
+    if x == 0 {
+        -1
+    } else {
+        63 - i64::from((x as u64).leading_zeros())
+    }
 }
 
 /// Apply one of asl's single-argument numeric builtins to an already-evaluated
@@ -18235,6 +18260,14 @@ fn apply_num_builtin(name: &str, arg: Num) -> Option<Num> {
             Num::Int(i) => Num::Int(i.wrapping_abs()),
             Num::Float(f) => Num::Float(f.abs()),
         });
+    }
+    // INTEGER-only: asl aborts on a float argument (`lastbit(5.0)` is `#10000
+    // internal error`, exit 3), so a float is refused here rather than guessed.
+    if name.eq_ignore_ascii_case("lastbit") {
+        return match arg {
+            Num::Int(i) => Some(Num::Int(lastbit(i))),
+            Num::Float(_) => None,
+        };
     }
     let y = float_builtin(name)?(arg.as_f64());
     y.is_finite().then_some(Num::Float(y))
