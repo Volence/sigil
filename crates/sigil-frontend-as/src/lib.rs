@@ -6,6 +6,7 @@
 
 mod ast;
 mod charset;
+mod escape;
 mod eval;
 mod expand;
 mod expr;

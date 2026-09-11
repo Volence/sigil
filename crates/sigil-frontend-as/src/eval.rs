@@ -2925,7 +2925,7 @@ impl Asm {
     /// leaves an ordinary numeric comparison alone.
     fn leading_str_rhs(&self, toks: &[Token]) -> Option<(String, usize)> {
         match toks.first()?.tok {
-            Tok::Str(ref s) => Some((s.clone(), 1)),
+            Tok::Str(ref s) => Some((crate::escape::unescape_keep_interp(s).ok()?, 1)),
             Tok::Punct(Punct::LParen) => {
                 let end = matching_rparen(toks, 0)?;
                 let v = self.eval_str(&toks[..=end])?;
@@ -2995,11 +2995,15 @@ impl Asm {
         if let Some(inner) = peel_parens(toks) {
             return self.eval_str(inner);
         }
+        // A literal's value has its escapes processed (asl: `strlen("\x41\66\\")`
+        // is 3, `substr("\x41\x42\x43",1,1)` is `B`). A `\{expr}` stays in place
+        // for the interpolation the binding sites run; `None` on an invalid
+        // escape, which the caller refuses in its own words.
         if let [Token {
             tok: Tok::Str(s), ..
         }] = toks
         {
-            return Some(s.clone());
+            return crate::escape::unescape_keep_interp(s).ok();
         }
         if let [Token {
             tok: Tok::Ident(name),
@@ -3467,19 +3471,51 @@ impl Asm {
         self.exec(&lines);
     }
 
-    /// Fold `\{expr}` sequences in the first string token to their rendered value.
+    /// The value of the first string token: escapes processed and `\{expr}`
+    /// sequences folded (asl: `message "m\x41\66\H\\z"` prints `mAB'\z`, and
+    /// `message "\\{n}|\{n}"` prints `\{n}|5`). An invalid escape is refused, as
+    /// asl refuses it, and the text is then reported as written.
     fn interp_string(&mut self, rest: &[Token]) -> String {
-        let raw = match rest.iter().find_map(|t| {
+        let (raw, span) = match rest.iter().find_map(|t| {
             if let Tok::Str(s) = &t.tok {
-                Some(s.clone())
+                Some((s.clone(), t.span))
             } else {
                 None
             }
         }) {
-            Some(s) => s,
+            Some(found) => found,
             None => return String::new(),
         };
-        self.interp_text(&raw)
+        match self.literal_value(&raw, true) {
+            Ok(s) => s,
+            Err(e) => {
+                self.err(span, e.to_string());
+                raw
+            }
+        }
+    }
+
+    /// The value of one string literal's source text in a context that can
+    /// evaluate: escapes processed and each `\{expr}` folded by
+    /// [`Self::render_interp_expr`], in ONE left-to-right scan, so `\\{n}` is a
+    /// backslash and the text `{n}` (asl: `s := "\\{n}"` then `dc.b s` is `5C 7B
+    /// 6E 7D`) while `\x41\{n}` with `n equ 5` is `A5`.
+    ///
+    /// An interpolation that does not resolve is kept verbatim when
+    /// `keep_unresolved` (the message and binding sites, where a later pass
+    /// re-runs the line) and is an [`crate::escape::EscapeError::Interp`]
+    /// otherwise (a data directive, whose bytes would otherwise be the source
+    /// text).
+    fn literal_value(
+        &mut self,
+        raw: &str,
+        keep_unresolved: bool,
+    ) -> Result<String, crate::escape::EscapeError> {
+        crate::escape::unescape(raw, &mut |e| match self.render_interp_expr(e) {
+            Some(v) => Some(v),
+            None if keep_unresolved => Some(format!("\\{{{e}}}")),
+            None => None,
+        })
     }
 
     /// Fold every `\{expr}` sequence in `raw` to the expression's value, rendered
@@ -3620,13 +3656,9 @@ impl Asm {
                     out.push_str(&text[i..]);
                     break;
                 }
-                q @ (b'"' | b'\'') => {
+                b'"' | b'\'' => {
                     let start = i;
-                    i += 1;
-                    while i < bytes.len() && bytes[i] != q {
-                        i += 1;
-                    }
-                    i = (i + 1).min(bytes.len());
+                    i = crate::escape::literal_end(bytes, i).map_or(bytes.len(), |close| close + 1);
                     out.push_str(&text[start..i]);
                 }
                 b'{' => match brace_group_end(bytes, i) {
@@ -3686,6 +3718,9 @@ impl Asm {
         let toks = lex_line(inner, self.state.cpu, &self.state.charset, line.source, line.base).ok()?;
         if toks.is_empty() {
             return None;
+        }
+        if let [Token { tok: Tok::Str(raw), .. }] = toks.as_slice() {
+            return self.literal_value(raw, true).ok();
         }
         if let Some(s) = self.eval_str(&toks) {
             return Some(self.interp_text(&s));
@@ -5576,14 +5611,17 @@ impl Asm {
                 tok: Tok::Str(rhs), ..
             }) = toks.get(pos + 1)
             {
+                // Both literals compare by VALUE, escapes processed: `"\x41"="A"`
+                // is true in asl.
+                let rhs = crate::escape::unescape_keep_interp(rhs).ok();
                 let lhs = match &toks[..pos] {
                     [Token {
                         tok: Tok::Str(s), ..
-                    }] => Some(s.clone()),
+                    }] => crate::escape::unescape_keep_interp(s).ok(),
                     other => self.string_value(other),
                 };
-                if let Some(lhs) = lhs {
-                    let eq = lhs == *rhs;
+                if let (Some(lhs), Some(rhs)) = (lhs, rhs) {
+                    let eq = lhs == rhs;
                     let is_ne = matches!(toks[pos].tok, Tok::Punct(Punct::Ne));
                     return Some(if is_ne { !eq } else { eq });
                 }
@@ -6588,15 +6626,25 @@ impl Asm {
         // `directive_set`. Without this a string `equ` was silently dropped
         // (neither map written), so `strlen()`/`substr()` on it could not
         // resolve. The int XOR string invariant per pass still holds.
-        if let Some(s) = self.eval_str(rest) {
-            // `\{expr}` folds where the string is BOUND, not where it is read:
-            // `s equ "\{n}"` with `n equ 42` binds `s` to `"2A"` for good, and a
-            // later `n := 255` leaves `s` alone (asl-verified, probe `r13` — the
-            // image is `32 41` either side of the reassignment, and the value is
-            // rendered in HEX, so neither claim rests on a digit that reads the
-            // same in both radices). Folding here also makes `strlen(s)` see the
-            // rendered text rather than the source spelling.
-            let s = self.interp_text(&s);
+        // `\{expr}` folds where the string is BOUND, not where it is read:
+        // `s equ "\{n}"` with `n equ 42` binds `s` to `"2A"` for good, and a
+        // later `n := 255` leaves `s` alone (asl-verified, probe `r13` — the
+        // image is `32 41` either side of the reassignment, and the value is
+        // rendered in HEX, so neither claim rests on a digit that reads the
+        // same in both radices). Folding here also makes `strlen(s)` see the
+        // rendered text rather than the source spelling. A bare literal takes
+        // its escapes and its interpolations in one scan ([`Self::literal_value`]).
+        let bound = match rest {
+            [Token { tok: Tok::Str(raw), span: lspan }] => match self.literal_value(raw, true) {
+                Ok(s) => Some(s),
+                Err(e) => {
+                    self.err(*lspan, e.to_string());
+                    return;
+                }
+            },
+            _ => self.eval_str(rest).map(|s| self.interp_text(&s)),
+        };
+        if let Some(s) = bound {
             self.float_env.remove(&q);
             self.str_env.insert(q, s);
             self.open_binder_scope(name);
@@ -6961,14 +7009,24 @@ impl Asm {
         // read — probe p1/p4); type-flipping `set` is unsupported. Poison-
         // shadowing the counterpart would be un-probed asl semantics, so it is
         // deliberately NOT done here.
-        if let Some(s) = self.eval_str(rest) {
-            // `\{expr}` folds where the string is BOUND, not where it is read
-            // (asl-verified, probe `r13`): `s := "\{n}"` with `n := 42` captures
-            // `2A` at this assignment, and a later `n := 255` does not reach `s`
-            // — the image stays `32 41`. Both halves of that claim need a value
-            // whose hex and decimal spellings differ, which is why the probe uses
-            // 42 rather than a single digit.
-            let s = self.interp_text(&s);
+        // `\{expr}` folds where the string is BOUND, not where it is read
+        // (asl-verified, probe `r13`): `s := "\{n}"` with `n := 42` captures
+        // `2A` at this assignment, and a later `n := 255` does not reach `s`
+        // — the image stays `32 41`. Both halves of that claim need a value
+        // whose hex and decimal spellings differ, which is why the probe uses
+        // 42 rather than a single digit. A bare literal takes its escapes and
+        // its interpolations in one scan ([`Self::literal_value`]).
+        let bound = match rest {
+            [Token { tok: Tok::Str(raw), span: lspan }] => match self.literal_value(raw, true) {
+                Ok(s) => Some(s),
+                Err(e) => {
+                    self.err(*lspan, e.to_string());
+                    return;
+                }
+            },
+            _ => self.eval_str(rest).map(|s| self.interp_text(&s)),
+        };
+        if let Some(s) = bound {
             self.float_env.remove(&q);
             self.str_env.insert(q, s);
             self.open_binder_scope(name);
@@ -7267,6 +7325,24 @@ impl Asm {
             // (the other is `expr::string_to_int`, for a string in an
             // expression). Under Sonic 1's level-select page, `dc.b "GREEN"`
             // emits `17 22 15 15 1E`.
+            //
+            // A bare literal's escapes are processed and its `\{expr}`s folded
+            // ([`Self::literal_value`]), and the characters that yields go
+            // through the page like any other: under `charset $41,$11`, asl's
+            // `dc.b "A\x41\65"` is `11 11 11`. An invalid escape, or an
+            // interpolation with no value, is refused rather than written as its
+            // source text.
+            if let [Token { tok: Tok::Str(raw), .. }] = expanded.as_slice() {
+                match self.literal_value(raw, false) {
+                    Ok(s) => {
+                        let cs = &self.state.charset;
+                        let bytes: Vec<u8> = s.chars().map(|c| cs.map_char(c)).collect();
+                        self.emit(&bytes, vec![], span);
+                    }
+                    Err(e) => self.err(gspan, e.to_string()),
+                }
+                continue;
+            }
             if let Some(s) = self.eval_str(&expanded) {
                 let cs = &self.state.charset;
                 let bytes: Vec<u8> = s.chars().map(|c| cs.map_char(c)).collect();
@@ -7715,7 +7791,24 @@ impl Asm {
                 // checked first because `charset $61,"AB"` is the two-character
                 // string form, not the packed integer $4142 (asl: `dc.b "ab"`
                 // reads `41 42`, so it is neither packed nor a range refusal).
-                if let Some(s) = self.eval_str(groups[1]) {
+                //
+                // The target's escapes are processed and its characters then
+                // stored raw: Sonic 2's `charset 'A',"\x10\11\x12"` maps `A`,
+                // `B`, `C` to `10 0B 12`, three entries, not the twelve source
+                // characters.
+                let target = match groups[1] {
+                    [Token { tok: Tok::Str(raw), span: lspan }] => {
+                        match self.literal_value(raw, false) {
+                            Ok(s) => Some(s),
+                            Err(e) => {
+                                self.err(*lspan, e.to_string());
+                                return;
+                            }
+                        }
+                    }
+                    g => self.eval_str(g),
+                };
+                if let Some(s) = target {
                     // A string target that would run past $FF is refused whole,
                     // with NOTHING applied. Measured rather than chosen: asl
                     // draws `range overflow` on `charset $FE,"ABC"` and a
@@ -9673,11 +9766,10 @@ impl Asm {
     fn bind_macro_arg(&self, v: String) -> String {
         if is_bare_local(&v) {
             if let Some(s) = self.resolve_str(&v) {
-                // Quoted so it re-lexes as one `Tok::Str`. Assumes the value has
-                // no embedded `"` — true for every debugger operand/param
-                // descriptor (`"d0"`, `".w"`, `"#"`, …); a value containing a
-                // quote would produce a broken literal (none occurs in aeon).
-                return format!("\"{s}\"");
+                // Quoted so it re-lexes as one `Tok::Str` whose VALUE is `s`: a
+                // literal's escapes are processed where it is used, so a
+                // backslash or a quote in the value is written escaped.
+                return format!("\"{}\"", crate::escape::quote(&s));
             }
             return qualify(&v, self.dot_scope(&v));
         }
@@ -10573,17 +10665,15 @@ fn render_interp_float(f: f64) -> String {
 /// Index of the `}` closing the `{` at `open` in `bytes`, or `None` if the group
 /// is unterminated. Nested `{…}` groups are matched by depth, and a `"…"`/`'…'`
 /// literal inside the group is skipped whole — so `{"\{n}"}` closes on its LAST
-/// `}`, not on the one that belongs to the interpolation inside the literal.
+/// `}`, not on the one that belongs to the interpolation inside the literal. An
+/// escaped quote does not end the literal ([`crate::escape::literal_end`]).
 fn brace_group_end(bytes: &[u8], open: usize) -> Option<usize> {
     let mut depth = 0usize;
     let mut i = open;
     while i < bytes.len() {
         match bytes[i] {
-            q @ (b'"' | b'\'') => {
-                i += 1;
-                while i < bytes.len() && bytes[i] != q {
-                    i += 1;
-                }
+            b'"' | b'\'' => {
+                i = crate::escape::literal_end(bytes, i).unwrap_or(bytes.len());
             }
             b'{' => depth += 1,
             b'}' => {
