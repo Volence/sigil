@@ -6628,7 +6628,7 @@ impl Asm {
         // resolve. The int XOR string invariant per pass still holds.
         // `\{expr}` folds where the string is BOUND, not where it is read:
         // `s equ "\{n}"` with `n equ 42` binds `s` to `"2A"` for good, and a
-        // later `n := 255` leaves `s` alone (asl-verified, probe `r13` — the
+        // later `n := 255` leaves `s` alone (asl-verified, probe `r13`: the
         // image is `32 41` either side of the reassignment, and the value is
         // rendered in HEX, so neither claim rests on a digit that reads the
         // same in both radices). Folding here also makes `strlen(s)` see the
@@ -7012,7 +7012,7 @@ impl Asm {
         // `\{expr}` folds where the string is BOUND, not where it is read
         // (asl-verified, probe `r13`): `s := "\{n}"` with `n := 42` captures
         // `2A` at this assignment, and a later `n := 255` does not reach `s`
-        // — the image stays `32 41`. Both halves of that claim need a value
+        // so the image stays `32 41`. Both halves of that claim need a value
         // whose hex and decimal spellings differ, which is why the probe uses
         // 42 rather than a single digit. A bare literal takes its escapes and
         // its interpolations in one scan ([`Self::literal_value`]).
