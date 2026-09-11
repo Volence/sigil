@@ -1,8 +1,8 @@
 # 2026-09-11: aeon lens-Z3 parcel, does it break any sigil test
 
-STATUS: IN PROGRESS. The source-only record below is complete. The prepared-tree
-measurement, which the verdict rests on, has not run yet. Do not read a verdict
-into this file until a `## Verdict` section exists.
+STATUS: COMPLETE. The verdict rests on part 2 (prepared trees, all four ROMs
+built). Part 1 (source-only exports) is kept as a record only and cannot answer
+the question; the section "Why part 1 cannot answer the question" says why.
 
 ## The question
 
@@ -168,7 +168,179 @@ their assembler is not this one, and sigil's revision reaches its source digest
 (`crates/sigil-cli/src/main.rs:2810`), but whether that digest reaches the image
 was not checked. Do not read the mismatch as a defect in either build.
 
-(Suite results pending.)
+### Prepared base suite
+
+Run from sigil `1c286a5f` (clean), started 19:22:55, own end marker at 19:29:05
+(exit 101). 467 binaries launched, 467 reported `test result:`; 5078 passed /
+161 failed / 2 ignored (83 fewer failures than the source-only base).
+
+The 8 tests that lower the parcel's changed engine modules now get PAST the
+reference read and lower. Each fails later, at a point that is only reachable after
+`lower_module` returned without errors:
+
+| test | now fails at | what that point is |
+|---|---|---|
+| `animate_port::animate_region_matches_reference` | `animate_port.rs:347` | region byte compare, "first diff at offset 0x0" |
+| `animate_port::animate_debug_region_matches_reference` | `animate_port.rs:347` | same, debug shape |
+| `dplc_port::dplc_region_matches_reference` | `dplc_port.rs:296` | region byte compare |
+| `dplc_port::dplc_debug_region_matches_reference` | `dplc_port.rs:296` | same, debug shape |
+| `dplc_port::two_module_ownership_flip_plain` | `dplc_port.rs:535` | link-assert drift guard: `DMA_Queue_End` not defined in this link |
+| `dplc_port::two_module_ownership_flip_debug` | `dplc_port.rs:535` | same, debug shape |
+| `raster_port::raster_region_matches_reference` | `raster_port.rs:364` | region byte compare |
+| `raster_port::raster_debug_region_matches_reference` | `raster_port.rs:364` | same, debug shape |
+
+They stay red because `pins.rs` places each window at the `ec640bcf` addresses and
+today's ROM carries other code there (the "expected" bytes at offset 0 are not the
+module). That red is drift since the pinned revision, the same on both trees, and
+it sits AFTER lowering, so a lowering error in `animate.emp`, `dplc.emp` or
+`raster.emp` would change these tests' failure text. One limit: a region compare
+prints only the first differing offset and 16 bytes around it, and every one of
+these differs at offset 0, so a byte change deeper in a module would not change
+the text. The four ROMs being byte-identical at base and parcel (above) covers that
+gap for emitted bytes.
+
+In all, 75 port tests pass on the prepared base (29 on the source-only base). The
+ROMs unmask these 27 (source-only base FAILED, prepared base ok):
+`compression_selftest_port` (2),
+`controllers_port` (1), `dac_bank_port` (2), `hblank_port` (1), `header_port` (2),
+`mt_bank_port` (4), `particle_anims_port` (1), `soundbankhead_port` (3), the
+`test_g1`..`test_g4` doctored-reference tests (4), `test_p1_player_port` (3),
+`test_p2_player_states_port` (3), `test_p4_player_sensors_port` (1).
+
+The instrument that compares these 8 tests' failure text across two logs was
+checked both ways before use: prepared base against itself gives IDENTICAL for all
+8 with real panic text on both sides (no empty capture passing as agreement), and
+source-only base against prepared base gives DIFFERS for all 8 ("reference
+missing" against the region and link-assert failures above), so it can see a
+change.
+
+One confound is known and bounded. The prepared base ran with the sigil worktree
+clean throughout; this note was edited (uncommitted) about a minute into the
+prepared parcel run. The only test binary that reads the live sigil worktree's git
+status at runtime is `version_provenance` (`current_dir(REPO)`, `REPO` =
+`CARGO_MANIFEST_DIR`); its tree-status test only asserts MORE when the tree is
+clean. Any NEW failure in that binary is re-run on both trees in one worktree state
+before being attributed.
+
+### Prepared parcel suite, and the differential
+
+Same sigil `1c286a5f`, same test binaries, own end marker at 19:36:43 (exit 101).
+467 binaries launched, 467 reported; 5078 passed / 161 failed / 2 ignored, the same
+totals as the prepared base.
+
+- NEW: empty. FIXED: empty. BOTH: 161.
+- BOTH text comparison: 5 of 161 differ, none attributable to the parcel.
+  `camera_port::camera_region_matches_reference` is identical apart from an `ok`
+  token `--nocapture` interleaved into it; `load_object_port::load_object_region_matches_reference`
+  likewise with a `FAILED` token; `sfx_bank_port::sfx_bank_matches_reference` and
+  `sfx_bank_debug_matches_reference` swap which of the two hits the length assertion
+  and which sees the shared mutex's `PoisonError` (the lock-order race `dac_bank_port`
+  showed in part 1); `test_g3_objects_port::g3_undoctored_compile_equals_the_reference_window`
+  had its parcel-side panic header merged with another test's result line
+  (`run-prep-parcel.log:2772`), so the parser missed it, and read directly the
+  assertion text (message, left, right, 2483 characters each side) is identical.
+- `corpus_builds`: "7 of 7 shipped shapes build from source" on both.
+- The 8 target tests: FAILED on both trees with IDENTICAL failure text, including the
+  first 16 bytes of the lowered module (`candidate`) at each region compare.
+- `*_port` view: 62 binaries. Two per-test differences, both "ok on base, absent on
+  parcel", both parse artifacts: `camera_port::jump_lock_off_compiles_without_game_symbols`
+  (its result line split by an interleave, `run-prep-parcel.log:415`) and
+  `test_g3_objects_port::g3_doctored_reference_diverges` (merged into the panic header
+  at `:2772`). Both binaries report "2 passed; 2 failed" on both trees. Zero real
+  port differences.
+- Flake control: owed for NEW names only, and NEW is empty in both differentials, so
+  there was nothing to re-run. The `version_provenance` confound above produced no
+  NEW.
+
+### Canaries on the prepared parcel
+
+Three `animate_port` runs, one after another, same binaries, trees differing from
+the prepared parcel by exactly one line each (checked with `diff -r`):
+
+| run | tree | planted edit | `animate_port` result |
+|---|---|---|---|
+| control | prepared parcel | none | FAILED at `animate_port.rs:347`, region compare; text identical to the suite's |
+| canary A (the briefed one) | `prep-canary-use` | `animate.emp:40` use list: `refresh_piece_count` renamed `refresh_piece_count_CANARY` | IDENTICAL to control. NOT SEEN |
+| canary B | `prep-canary-body` | `animate.emp:299` body call renamed the same way, import untouched | FAILED at `animate_port.rs:257`, "animate.emp lower errors: [... unknown function `refresh_piece_count_CANARY` ...]". SEEN |
+
+Canary B is the positive control: on a prepared tree, `animate_port` lowers the real
+`animate.emp`, and a cross-module name that nothing supplies moves its failure from
+the region compare to the lowering assert. The test is red on both trees already
+(pin drift), so "goes red" cannot be the observable here; the changed failure point
+and text is, and the BOTH text comparison is what reports it.
+
+Canary A is invisible, and not only to the port test. `animate_port` prepends
+`frames.emp`'s items and lowers one file, so the import line is never consulted.
+But the whole-tree build accepts it as well: `corpus_builds` on `prep-canary-use`
+says "7 of 7 shipped shapes build from source" at that tree with zero `CANARY`
+mentions, and a direct `sigil build --native` of it exits 0 with no diagnostic, the
+same warning tally as the control (165, same breakdown), and a ROM byte-identical
+(`cmp`) to the control build and to the provisioned parcel `s4.bin`. So a `use`
+list naming an item that does not exist is accepted SILENTLY by sigil itself.
+
+The mechanism is NOT established, and the code read says it should not happen. The
+"module `X` has no `pub` name `n`" Error is pushed by `resolve_use`
+(`crates/sigil-frontend-emp/src/resolve/imports.rs:384`) whenever
+`ExportIndex::is_exported` (`:104`) is false; `resolve_use` runs from
+`collect_uses` inside `ResolveEnv::build` (`:295`); and `ResolveEnv::build`'s only
+caller extends the build's diagnostics with what it returns
+(`crates/sigil-frontend-emp/src/resolve/mod.rs:879-880`), inside the loop over
+every reachable module, which includes `engine.objects.animate` (its code is in the
+ROM). Yet the build printed no such diagnostic. So either `is_exported` answered
+true for `refresh_piece_count_CANARY`, or something after `:880` drops or
+downgrades the Error. Which one was not measured. This is a sigil finding
+independent of the parcel, reported here and not fixed (no file under `crates/`
+changed); the one-line reproduction is canary A on any prepared tree.
+
+## Verdict
+
+**No. The parcel breaks no sigil test.** On prepared trees with all four ROMs built,
+the full strict suite gives NEW = FIXED = empty; every failing name fails on both
+trees with the same text apart from five output-ordering artifacts; the 8 tests
+that lower `animate.emp`, `dplc.emp` and `raster.emp` get past the reference read,
+lower the parcel's versions, and fail identically on both trees at post-lowering
+points; the four ROM shapes are byte-identical at base and parcel; `corpus_builds`
+builds 7 of 7 shapes on both; and canary B shows the same run would have seen a
+lowering break of this kind.
+
+What the verdict does NOT say:
+
+- It does not say those 8 port tests pass. They are red on both trees because
+  `pins.rs` is at `ec640bcf`. It says the parcel changes nothing they observe.
+- A byte change deeper than 16 bytes into a region would not change a region
+  compare's text; the byte-identical ROMs cover that for emitted bytes.
+- Because a broken `use` name alone is invisible to the whole suite and to
+  `sigil build` (canary A), nothing in sigil checks the parcel's new `use` lines
+  as imports. They are exercised only through their callers, which build.
+
+## What the brief got wrong
+
+1. **The source-only differential was blind to the question.** Absent ROMs, the 8
+   tests that lower the changed modules stop at the reference read on both trees, so
+   they sit in BOTH regardless of the parcel. The controller redirected to prepared
+   trees; part 1 stays only as a record.
+2. **`provision-aeon-ref.sh` cannot provision this parcel.** Its step 1 refuses any
+   revision not reachable from aeon `origin/master`, and `79e78980` is unpushed; its
+   steps 1 and 2 also run `git fetch` and `worktree add` inside aeon's repository,
+   which this isolated worktree may not do and the brief's ref invariant forbids.
+   Steps 3 to 6 were run on the exports instead.
+3. **`NO_LINT=1` does nothing in aeon's `build.sh`** (reset at line 355); the
+   official provisioner passes it and so runs the pytest lane, which fails
+   wholesale in a tree without `.git`.
+4. **The canary as specified could not prove sight.** "Break one `use` name ... show
+   that test goes red": the target test is already red on both trees, and a broken
+   `use` name alone changes nothing sigil can see anywhere. A break of a REFERENCED
+   cross-module name (canary B) is the one that proves the run is sighted.
+5. **The engine lane's canonical CRC did not reproduce.** Its s4 (377796925 /
+   821123) and this sigil's s4 (`064e0ae6` / 821123) agree on size only; why was not
+   established. Its other claim, "the ROM does not move", did reproduce for all four
+   shapes.
+
+## Name lists
+
+`2026-09-11-aeon-lensz3-portcheck/`, one `binary::test` per line:
+`source-only-{base,parcel}-failing.txt`, `source-only-{new,fixed,both}.txt`,
+`prepared-{base,parcel}-failing.txt`, `prepared-{new,fixed,both}.txt`.
 
 ## Name lists
 
