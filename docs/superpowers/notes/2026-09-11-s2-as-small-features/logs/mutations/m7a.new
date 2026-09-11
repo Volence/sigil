@@ -1,0 +1,2 @@
+    fn directive_shared(&mut self, span: Span) {
+        std::mem::drop(Diagnostic {

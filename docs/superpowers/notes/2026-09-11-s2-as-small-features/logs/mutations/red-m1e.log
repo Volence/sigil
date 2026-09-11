@@ -1,0 +1,16 @@
+== mutation m1e on crates/sigil-frontend-as/src/expr.rs, test as_empty_parens, HEAD 1b8cb9aeb2da2a4b37e74f38cfc595ec1a675a7d
+APPLIED to /home/volence/sonic_hacks/sigil/.claude/worktrees/agent-a35527f94a0279a97/crates/sigil-frontend-as/src/expr.rs; mutated region read back from disk:
+  /home/volence/sonic_hacks/sigil/.claude/worktrees/agent-a35527f94a0279a97/crates/sigil-frontend-as/src/expr.rs:159  pub fn parse_expr<'a>(toks: &'a [Token], ctx: &ExprCtx<'_>) -> Option<(Expr, &'a [Token])> {
+  /home/volence/sonic_hacks/sigil/.claude/worktrees/agent-a35527f94a0279a97/crates/sigil-frontend-as/src/expr.rs:160      if toks.is_empty() { return Some((Expr::Int(0), toks)); }
+  /home/volence/sonic_hacks/sigil/.claude/worktrees/agent-a35527f94a0279a97/crates/sigil-frontend-as/src/expr.rs:161      parse_bp(toks, 0, 0, ctx)
+test a_z80_operand_of_empty_parens_is_an_immediate_not_an_indirection ... ok
+test an_empty_group_is_zero_in_68000_operands ... ok
+test an_empty_operand_is_still_refused ... FAILED
+test a_user_function_counts_its_arguments_the_way_asl_does ... ok
+test an_empty_group_is_zero_where_a_directive_wants_a_constant ... ok
+test an_omitted_macro_argument_pastes_as_zero ... ok
+test an_empty_group_is_zero_in_every_data_width ... ok
+thread 'an_empty_operand_is_still_refused' (4077364) panicked at crates/sigil-frontend-as/tests/as_empty_parens.rs:77:5:
+test result: FAILED. 6 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+TEST_PIPE_DONE
+restored crates/sigil-frontend-as/src/expr.rs from HEAD; tracked changes now: 0

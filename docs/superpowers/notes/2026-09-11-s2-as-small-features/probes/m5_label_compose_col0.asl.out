@@ -1,0 +1,13 @@
+> > > m5_label_compose_col0.asm(8):7: error #1010: symbol undefined
+> > > Lab_2p
+> > >  dc.l Lab_2p
+> > >       ~~~~~~
+ASL_EXIT=2
+ASL_DIAG=complete
+REFUSED: asl exited 2, so this run FAILED.
+  NO BYTE COLUMN FROM THIS RUN IS A SOURCE OF VALUES, including the
+  lines that assembled: an error stops the pass loop, so every forward
+  reference is left at its unresolved pass-1 placeholder and the
+  listing prints them looking complete. See partial_failure.asm
+  beside asl_ref.sh, where one bad line leaves 6702 reading 67FE.
+  Fix the source, do not quote the listing.

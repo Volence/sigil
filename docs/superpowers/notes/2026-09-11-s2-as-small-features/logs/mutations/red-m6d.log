@@ -1,0 +1,11 @@
+== mutation m6d on crates/sigil-frontend-as/src/eval.rs, test as_lastbit, HEAD 97413ee982f60d9b1f67b8ba8f5d9f298bd08d42
+APPLIED to /home/volence/sonic_hacks/sigil/.claude/worktrees/agent-a35527f94a0279a97/crates/sigil-frontend-as/src/eval.rs; mutated region read back from disk:
+  /home/volence/sonic_hacks/sigil/.claude/worktrees/agent-a35527f94a0279a97/crates/sigil-frontend-as/src/eval.rs:18181          || name == "lastbit"
+test what_asl_refuses_is_refused ... ok
+test lastbit_works_wherever_an_integer_is_read ... FAILED
+test lastbit_is_the_highest_set_bit_of_a_64_bit_integer ... ok
+test sonic_2_s_end_of_rom_pad_assembles ... ok
+thread 'lastbit_works_wherever_an_integer_is_read' (416040) panicked at crates/sigil-frontend-as/tests/as_lastbit.rs:54:5:
+test result: FAILED. 3 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+TEST_PIPE_DONE
+restored crates/sigil-frontend-as/src/eval.rs from HEAD; tracked changes now: 0

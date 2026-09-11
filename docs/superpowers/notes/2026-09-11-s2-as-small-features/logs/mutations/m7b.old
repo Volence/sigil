@@ -1,0 +1,3 @@
+    fn directive_shared(&mut self, span: Span) {
+        self.diags.push(Diagnostic {
+            level: Level::Warning,

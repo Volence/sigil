@@ -1,0 +1,2727 @@
+asl md5: 61e672562465725a8c102288a7da9098  path: /home/volence/sonic_hacks/s1disasm/build_tools/Linux-x86_64/asl
+sigil md5: 329619a8f409a33dd3c978b30f3d7a27  path: /home/volence/sonic_hacks/.scratch/s2-as-small-features/bin/sigil-before
+================ d2_instance.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     zV STRUCT DOTS
+       5/       0 :                     	A:		ds.b 1
+       6/       1 :                     	1upPlaying:	ds.b 1
+       7/       0 : =$2                  zV ENDSTRUCT
+       8/       0 : 11                  	dc.b $11
+       9/       1 : (STRUCT)             Inst:	zV
+      10/       3 : 0000 0002           	dc.l Inst.1upPlaying
+      11/       7 : EE                  	dc.b $EE
+      12/       8 :                     	end
+sigil exit=1
+d2_instance.asm(6):2: error: malformed number (hex needs a trailing `h`)
+d2_instance.asm(6):1: error: struct `zV` has a member line this cannot read; its size and every member after it would be wrong
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 2 errors (reported on stderr)
+================ d2_label.asm
+asl exit=2 ASL_EXIT=2 ASL_DIAG=complete 
+> > > d2_label.asm(5):1: error #1020: invalid symbol name
+  lines that assembled: an error stops the pass loop, so every forward
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : 11                  	dc.b $11
+       5/       1 : 22                  1up:	dc.b $22
+       6/       2 : EE                  	dc.b $EE
+       7/       3 :                     	end
+sigil exit=1
+d2_label.asm(5):1: error: malformed number (hex needs a trailing `h`)
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ d2_label_dotted.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : 11                  	dc.b $11
+       5/       1 : 22                  Foo.1up:	dc.b $22
+       6/       2 : 01                  	dc.b Foo.1up
+       7/       3 : EE                  	dc.b $EE
+       8/       4 :                     	end
+sigil exit=0
+11 22 01 EE
+built: 4 bytes, no file written (pass -o <path> to write one)
+================ d2_label_equ.asm
+asl exit=2 ASL_EXIT=2 ASL_DIAG=complete 
+> > > d2_label_equ.asm(4):1: error #1020: invalid symbol name
+  lines that assembled: an error stops the pass loop, so every forward
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : =$5                  1up equ 5
+       5/       0 : EE                  	dc.b $EE
+       6/       1 :                     	end
+sigil exit=1
+d2_label_equ.asm(4):1: error: malformed number (hex needs a trailing `h`)
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ d2_label_nocolon.asm
+asl exit=2 ASL_EXIT=2 ASL_DIAG=complete 
+> > > d2_label_nocolon.asm(5):1: error #1020: invalid symbol name
+  lines that assembled: an error stops the pass loop, so every forward
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : 11                  	dc.b $11
+       5/       1 : 22                  1up	dc.b $22
+       6/       2 : EE                  	dc.b $EE
+       7/       3 :                     	end
+sigil exit=1
+d2_label_nocolon.asm(5):1: error: malformed number (hex needs a trailing `h`)
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ d2_label_set.asm
+asl exit=2 ASL_EXIT=2 ASL_DIAG=complete 
+> > > d2_label_set.asm(4):1: error #1020: invalid symbol name
+  lines that assembled: an error stops the pass loop, so every forward
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : =$5                  1up = 5
+       5/       0 : EE                  	dc.b $EE
+       6/       1 :                     	end
+sigil exit=1
+d2_label_set.asm(4):1: error: malformed number (hex needs a trailing `h`)
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ d2_member_alldigit.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     zV STRUCT DOTS
+       5/       0 :                     	A:		ds.b 1
+       6/       1 :                     	2:	ds.b 1
+       7/       0 : =$2                  zV ENDSTRUCT
+       8/       0 : 02                  	dc.b zV.len
+       9/       1 : EE                  	dc.b $EE
+      10/       2 :                     	end
+sigil exit=1
+d2_member_alldigit.asm(6):1: error: struct `zV` has a member line this cannot read; its size and every member after it would be wrong
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ d2_member_bare_ref.asm
+asl exit=2 ASL_EXIT=2 ASL_DIAG=complete 
+> > > d2_member_bare_ref.asm(8):7: error #1020: invalid symbol name
+  lines that assembled: an error stops the pass loop, so every forward
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     zV STRUCT DOTS
+       5/       0 :                     	A:		ds.b 1
+       6/       1 :                     	1upPlaying:	ds.b 1
+       7/       0 : =$2                  zV ENDSTRUCT
+       8/       0 :                     	dc.b 1upPlaying
+       9/       0 : EE                  	dc.b $EE
+      10/       1 :                     	end
+sigil exit=1
+d2_member_bare_ref.asm(6):2: error: malformed number (hex needs a trailing `h`)
+d2_member_bare_ref.asm(6):1: error: struct `zV` has a member line this cannot read; its size and every member after it would be wrong
+d2_member_bare_ref.asm(8):7: error: malformed number (hex needs a trailing `h`)
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 3 errors (reported on stderr)
+================ d2_member_dots.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     zV STRUCT DOTS
+       5/       0 :                     	A:		ds.b 1
+       6/       1 :                     	1upPlaying:	ds.b 1
+       7/       2 :                     	B:		ds.b 1
+       8/       0 : =$3                  zV ENDSTRUCT
+       9/       0 : 01                  	dc.b zV.1upPlaying
+      10/       1 : 02                  	dc.b zV.B
+      11/       2 : 03                  	dc.b zV.len
+      12/       3 : EE                  	dc.b $EE
+      13/       4 :                     	end
+sigil exit=1
+d2_member_dots.asm(6):2: error: malformed number (hex needs a trailing `h`)
+d2_member_dots.asm(6):1: error: struct `zV` has a member line this cannot read; its size and every member after it would be wrong
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 2 errors (reported on stderr)
+================ d2_member_expr.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     zV STRUCT DOTS
+       5/       0 :                     	A:		ds.b 2
+       6/       2 :                     	1upPlaying:	ds.b 1
+       7/       0 : =$3                  zV ENDSTRUCT
+       8/       0 : 03                  	dc.b zV.1upPlaying+1
+       9/       1 : 04                  	dc.b 2*zV.1upPlaying
+      10/       2 : EE                  	dc.b $EE
+      11/       3 :                     	end
+sigil exit=1
+d2_member_expr.asm(6):2: error: malformed number (hex needs a trailing `h`)
+d2_member_expr.asm(6):1: error: struct `zV` has a member line this cannot read; its size and every member after it would be wrong
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 2 errors (reported on stderr)
+================ d2_member_hexh.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     zV STRUCT DOTS
+       5/       0 :                     	A:		ds.b 1
+       6/       1 :                     	12h:	ds.b 1
+       7/       2 :                     	B:	ds.b 1
+       8/       0 : =$3                  zV ENDSTRUCT
+       9/       0 : 02                  	dc.b zV.B
+      10/       1 : 03                  	dc.b zV.len
+      11/       2 : EE                  	dc.b $EE
+      12/       3 :                     	end
+sigil exit=1
+d2_member_hexh.asm(6):1: error: struct `zV` has a member line this cannot read; its size and every member after it would be wrong
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ d2_member_marker.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     zV STRUCT DOTS
+       5/       0 :                     	A:		ds.b 1
+       6/       1 :                     	1up:
+       7/       1 :                     	B:		ds.b 1
+       8/       0 : =$2                  zV ENDSTRUCT
+       9/       0 : 01                  	dc.b zV.1up
+      10/       1 : 01                  	dc.b zV.B
+      11/       2 : 02                  	dc.b zV.len
+      12/       3 : EE                  	dc.b $EE
+      13/       4 :                     	end
+sigil exit=1
+d2_member_marker.asm(6):2: error: malformed number (hex needs a trailing `h`)
+d2_member_marker.asm(6):1: error: struct `zV` has a member line this cannot read; its size and every member after it would be wrong
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 2 errors (reported on stderr)
+================ d2_member_nocolon.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     zV STRUCT DOTS
+       5/       0 :                     	A:		ds.b 1
+       6/       1 :                     1upPlaying	ds.b 1
+       7/       2 :                     	B:		ds.b 1
+       8/       0 : =$3                  zV ENDSTRUCT
+       9/       0 : 01                  	dc.b zV.1upPlaying
+      10/       1 : 02                  	dc.b zV.B
+      11/       2 : 03                  	dc.b zV.len
+      12/       3 : EE                  	dc.b $EE
+      13/       4 :                     	end
+sigil exit=1
+d2_member_nocolon.asm(6):1: error: malformed number (hex needs a trailing `h`)
+d2_member_nocolon.asm(6):1: error: struct `zV` has a member line this cannot read; its size and every member after it would be wrong
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 2 errors (reported on stderr)
+================ d2_member_nodots.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     zV STRUCT
+       5/       0 :                     	A:		ds.b 1
+       6/       1 :                     	1upPlaying:	ds.b 1
+       7/       2 :                     	B:		ds.b 1
+       8/       0 : =$3                  zV ENDSTRUCT
+       9/       0 : 01                  	dc.b zV_1upPlaying
+      10/       1 : 02                  	dc.b zV_B
+      11/       2 : 03                  	dc.b zV_len
+      12/       3 : EE                  	dc.b $EE
+      13/       4 :                     	end
+sigil exit=1
+d2_member_nodots.asm(6):2: error: malformed number (hex needs a trailing `h`)
+d2_member_nodots.asm(6):1: error: struct `zV` has a member line this cannot read; its size and every member after it would be wrong
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 2 errors (reported on stderr)
+================ d2_member_undef.asm
+asl exit=2 ASL_EXIT=2 ASL_DIAG=complete 
+> > > d2_member_undef.asm(8):7: error #1010: symbol undefined
+  lines that assembled: an error stops the pass loop, so every forward
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     zV STRUCT DOTS
+       5/       0 :                     	A:		ds.b 1
+       6/       1 :                     	1upPlaying:	ds.b 1
+       7/       0 : =$2                  zV ENDSTRUCT
+       8/       0 :                     	dc.b zV.1foo
+       9/       0 : EE                  	dc.b $EE
+      10/       1 :                     	end
+sigil exit=1
+d2_member_undef.asm(6):2: error: malformed number (hex needs a trailing `h`)
+d2_member_undef.asm(6):1: error: struct `zV` has a member line this cannot read; its size and every member after it would be wrong
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 2 errors (reported on stderr)
+================ d2z_instance.asm
+asl exit=2 ASL_EXIT=2 ASL_DIAG=complete 
+> > > d2z_instance.asm(4):6: error #1200: unknown instruction
+> > > d2z_instance.asm(5):14: error #1200: unknown instruction
+  lines that assembled: an error stops the pass loop, so every forward
+       1/       0 :                     	cpu z80
+       2/       0 :                     	org 0
+       3/       0 :                     zV STRUCT DOTS
+       4/       0 :                     	A:		ds.b 1
+       5/       0 :                     	1upPlaying:	ds.b 1
+       6/       0 : =0H                  zV ENDSTRUCT
+       7/       0 : 11                  	db 11h
+       8/       1 : (STRUCT)             zAbs:	zV
+       9/       1 : 3A 01 00            	ld a,(zAbs.1upPlaying)
+      10/       4 : EE                  	db 0EEh
+      11/       5 :                     	end
+sigil exit=1
+d2z_instance.asm(5):2: error: malformed number (hex needs a trailing `h`)
+d2z_instance.asm(5):1: error: struct `zV` has a member line this cannot read; its size and every member after it would be wrong
+d2z_instance.asm(9):2: error: unresolved symbol `zAbs.1upPlaying` in operand
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 3 errors (reported on stderr)
+================ d2z_member.asm
+asl exit=2 ASL_EXIT=2 ASL_DIAG=complete 
+> > > d2z_member.asm(4):6: error #1200: unknown instruction
+> > > d2z_member.asm(5):14: error #1200: unknown instruction
+  lines that assembled: an error stops the pass loop, so every forward
+       1/       0 :                     	cpu z80
+       2/       0 :                     	org 0
+       3/       0 :                     zV STRUCT DOTS
+       4/       0 :                     	A:		ds.b 1
+       5/       0 :                     	1upPlaying:	ds.b 1
+       6/       0 : =0H                  zV ENDSTRUCT
+       7/       0 : 3A 00 00            	ld a,(zV.1upPlaying)
+       8/       3 : DD 7E 00            	ld a,(ix+zV.1upPlaying)
+       9/       6 : EE                  	db 0EEh
+      10/       7 :                     	end
+sigil exit=1
+d2z_member.asm(5):2: error: malformed number (hex needs a trailing `h`)
+d2z_member.asm(5):1: error: struct `zV` has a member line this cannot read; its size and every member after it would be wrong
+d2z_member.asm(7):2: error: unresolved symbol `zV.1upPlaying` in operand
+d2z_member.asm(8):2: error: unresolved symbol `zV.1upPlaying` in operand
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 4 errors (reported on stderr)
+================ e1_absw.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : 3038 0000           	move.w ().w,d0
+       5/       4 : EE                  	dc.b $EE
+       6/       5 :                     	end
+sigil exit=1
+e1_absw.asm(4):9: error: bad operand expression
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ e1_coloneq.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : =$0                  X := ()
+       5/       0 : 00                  	dc.b X
+       6/       1 : EE                  	dc.b $EE
+       7/       2 :                     	end
+sigil exit=1
+e1_coloneq.asm(5):2: error: unresolved symbol `X` for fixup in section sec0 at offset 0
+this error list may be incomplete: sigil stopped at link, so the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ e1_db_add_after.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : 01                  	dc.b ()+1
+       5/       1 : EE                  	dc.b $EE
+       6/       2 :                     	end
+sigil exit=1
+e1_db_add_after.asm(4):7: error: bad byte expression
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ e1_db_add_before.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : 01                  	dc.b 1+()
+       5/       1 : EE                  	dc.b $EE
+       6/       2 :                     	end
+sigil exit=1
+e1_db_add_before.asm(4):7: error: bad byte expression
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ e1_db_bare.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : 00                  	dc.b ()
+       5/       1 : EE                  	dc.b $EE
+       6/       2 :                     	end
+sigil exit=1
+e1_db_bare.asm(4):7: error: bad byte expression
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ e1_db_cmp.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : 01                  	dc.b ()=0
+       5/       1 : EE                  	dc.b $EE
+       6/       2 :                     	end
+sigil exit=1
+e1_db_cmp.asm(4):7: error: bad byte expression
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ e1_db_div.asm
+asl exit=2 ASL_EXIT=2 ASL_DIAG=complete 
+> > > e1_db_div.asm(4): error #1310: division by 0
+  lines that assembled: an error stops the pass loop, so every forward
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     	dc.b 4/()
+       5/       0 : EE                  	dc.b $EE
+       6/       1 :                     	end
+sigil exit=1
+e1_db_div.asm(4):7: error: bad byte expression
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ e1_db_empty_item.asm
+asl exit=2 ASL_EXIT=2 ASL_DIAG=complete 
+> > > e1_db_empty_item.asm(4): error #2050: empty argument
+  lines that assembled: an error stops the pass loop, so every forward
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     	dc.b 1,,2
+       5/       0 : EE                  	dc.b $EE
+       6/       1 :                     	end
+sigil exit=1
+e1_db_empty_item.asm(4):2: error: bad byte expression
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ e1_db_lognot.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : 01                  	dc.b ~~()
+       5/       1 : EE                  	dc.b $EE
+       6/       2 :                     	end
+sigil exit=1
+e1_db_lognot.asm(4):7: error: bad byte expression
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ e1_db_mul.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : 00                  	dc.b 5*()
+       5/       1 : EE                  	dc.b $EE
+       6/       2 :                     	end
+sigil exit=1
+e1_db_mul.asm(4):7: error: bad byte expression
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ e1_db_neg.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : 00                  	dc.b -()
+       5/       1 : EE                  	dc.b $EE
+       6/       2 :                     	end
+sigil exit=1
+e1_db_neg.asm(4):7: error: bad byte expression
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ e1_db_nested.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : 00                  	dc.b (())
+       5/       1 : EE                  	dc.b $EE
+       6/       2 :                     	end
+sigil exit=1
+e1_db_nested.asm(4):7: error: bad byte expression
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ e1_db_not.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : FF                  	dc.b ~()
+       5/       1 : EE                  	dc.b $EE
+       6/       2 :                     	end
+sigil exit=1
+e1_db_not.asm(4):7: error: bad byte expression
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ e1_db_or.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : 12                  	dc.b $10|()|$02
+       5/       1 : EE                  	dc.b $EE
+       6/       2 :                     	end
+sigil exit=1
+e1_db_or.asm(4):7: error: bad byte expression
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ e1_db_shl.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : 00                  	dc.b ()<<1
+       5/       1 : EE                  	dc.b $EE
+       6/       2 :                     	end
+sigil exit=1
+e1_db_shl.asm(4):7: error: bad byte expression
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ e1_db_space.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : 00                  	dc.b ( )
+       5/       1 : EE                  	dc.b $EE
+       6/       2 :                     	end
+sigil exit=1
+e1_db_space.asm(4):7: error: bad byte expression
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ e1_db_trailing_comma.asm
+asl exit=2 ASL_EXIT=2 ASL_DIAG=complete 
+> > > e1_db_trailing_comma.asm(4): error #2050: empty argument
+  lines that assembled: an error stops the pass loop, so every forward
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     	dc.b 1,
+       5/       0 : EE                  	dc.b $EE
+       6/       1 :                     	end
+sigil exit=1
+e1_db_trailing_comma.asm(4):2: error: bad byte expression
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ e1_disp.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : 3010                	move.w ()(a0),d0
+       5/       2 : EE                  	dc.b $EE
+       6/       3 :                     	end
+sigil exit=1
+e1_disp.asm(4):9: error: bad displacement expression in `disp(An)`
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ e1_dl.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : 0000 0000           	dc.l ()
+       5/       4 : EE                  	dc.b $EE
+       6/       5 :                     	end
+sigil exit=1
+e1_dl.asm(4):7: error: bad long expression
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ e1_ds.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     	ds.b ()
+       5/       0 : EE                  	dc.b $EE
+       6/       1 :                     	end
+sigil exit=1
+e1_ds.asm(4):2: error: unresolved ds count
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ e1_dw.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : 0000                	dc.w ()
+       5/       2 : EE                  	dc.b $EE
+       6/       3 :                     	end
+sigil exit=1
+e1_dw.asm(4):7: error: bad word expression
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ e1_equ.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : =$0                  X equ ()
+       5/       0 : 00                  	dc.b X
+       6/       1 : EE                  	dc.b $EE
+       7/       2 :                     	end
+sigil exit=1
+e1_equ.asm(5):2: error: unresolved symbol `X` for fixup in section sec0 at offset 0
+this error list may be incomplete: sigil stopped at link, so the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ e1_func_call.asm
+asl exit=2 ASL_EXIT=2 ASL_DIAG=complete 
+> > > e1_func_call.asm(5): error #1490: wrong numbers of function arguments
+  lines that assembled: an error stops the pass loop, so every forward
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     f function x,x+1
+       5/       0 :                     	dc.b f()
+       6/       0 : EE                  	dc.b $EE
+       7/       1 :                     	end
+sigil exit=1
+e1_func_call.asm(5):7: error: bad byte expression
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ e1_func_paren.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     f function x,x+1
+       5/       0 : 01                  	dc.b f(())
+       6/       1 : EE                  	dc.b $EE
+       7/       2 :                     	end
+sigil exit=1
+e1_func_paren.asm(5):7: error: bad byte expression
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ e1_if.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : =>FALSE              	if ()
+       5/       0 :                     	dc.b 1
+       6/       0 : =>TRUE               	else
+       7/       0 : 02                  	dc.b 2
+       8/       1 : [4]                  	endif
+       9/       1 : EE                  	dc.b $EE
+      10/       2 :                     	end
+sigil exit=1
+e1_if.asm(4):2: error: unresolved if condition: it does not evaluate, so it cannot decide whether the code it guards is assembled
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ e1_if_or.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : =>TRUE               	if ()|1
+       5/       0 : 01                  	dc.b 1
+       6/       1 : =>FALSE              	else
+       7/       1 :                     	dc.b 2
+       8/       1 : [4]                  	endif
+       9/       1 : EE                  	dc.b $EE
+      10/       2 :                     	end
+sigil exit=1
+e1_if_or.asm(4):2: error: unresolved if condition: it does not evaluate, so it cannot decide whether the code it guards is assembled
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ e1_imm.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : 303C 0000           	move.w #(),d0
+       5/       4 : EE                  	dc.b $EE
+       6/       5 :                     	end
+sigil exit=1
+e1_imm.asm(4):9: error: bad immediate expression
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ e1_imm_or.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : 303C 0001           	move.w #1|(),d0
+       5/       4 : EE                  	dc.b $EE
+       6/       5 :                     	end
+sigil exit=1
+e1_imm_or.asm(4):9: error: bad immediate expression
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ e1_indirect.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : 3038 0000           	move.w (),d0
+       5/       4 : EE                  	dc.b $EE
+       6/       5 :                     	end
+sigil exit=1
+e1_indirect.asm(4):9: error: bad address expression
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ e1_macro_omitted.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     m macro a,b
+       5/       0 :                     	dc.b (a)|(b)
+       6/       0 :                     	endm
+       7/       0 : (MACRO)              	m 5
+       7/       0 : 0005                        dc. (5)|()
+       8/       2 : EE                  	dc.b $EE
+       9/       3 :                     	end
+sigil exit=1
+e1_macro_omitted.asm(5):2: error: `dc.` is not a recognized 68000 mnemonic
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ e1_macro_omitted_bare.asm
+asl exit=2 ASL_EXIT=2 ASL_DIAG=complete 
+> > > e1_macro_omitted_bare.asm(7) m(1): error #1110: wrong number of operands
+  lines that assembled: an error stops the pass loop, so every forward
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     m macro a,b
+       5/       0 :                     	dc.b b
+       6/       0 :                     	endm
+       7/       0 : (MACRO)              	m 5
+       7/       0 :                             dc. 
+       8/       0 : EE                  	dc.b $EE
+       9/       1 :                     	end
+sigil exit=1
+e1_macro_omitted_bare.asm(5):2: error: `dc.` is not a recognized 68000 mnemonic
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ e1_rept.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     	rept ()
+       5/       0 :                     	dc.b 1
+       6/       0 :                     	endm
+       7/       0 : EE                  	dc.b $EE
+       8/       1 :                     	end
+sigil exit=1
+e1_rept.asm(4):2: error: unresolved rept count
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ e1_set.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : =$0                  X set ()
+       5/       0 : 00                  	dc.b X
+       6/       1 : EE                  	dc.b $EE
+       7/       2 :                     	end
+sigil exit=1
+e1_set.asm(5):2: error: unresolved symbol `X` for fixup in section sec0 at offset 0
+this error list may be incomplete: sigil stopped at link, so the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ e1z_db_bare.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu z80
+       2/       0 :                     	org 0
+       3/       0 : 00                  	db ()
+       4/       1 : EE                  	db 0EEh
+       5/       2 :                     	end
+sigil exit=1
+e1z_db_bare.asm(3):5: error: bad byte expression
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ e1z_db_or.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu z80
+       2/       0 :                     	org 0
+       3/       0 : 12                  	db 10h|()|02h
+       4/       1 : EE                  	db 0EEh
+       5/       2 :                     	end
+sigil exit=1
+e1z_db_or.asm(3):5: error: bad byte expression
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ e1z_dw.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu z80
+       2/       0 :                     	org 0
+       3/       0 : 00 00               	dw ()
+       4/       2 : EE                  	db 0EEh
+       5/       3 :                     	end
+sigil exit=1
+e1z_dw.asm(3):5: error: bad word expression
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ e1z_ld_a.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu z80
+       2/       0 :                     	org 0
+       3/       0 : 3E 00               	ld a,()
+       4/       2 : EE                  	db 0EEh
+       5/       3 :                     	end
+sigil exit=1
+e1z_ld_a.asm(3):7: error: bad address expression
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ e1z_ld_a_or.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu z80
+       2/       0 :                     	org 0
+       3/       0 : 3E 01               	ld a,1|()
+       4/       2 : EE                  	db 0EEh
+       5/       3 :                     	end
+sigil exit=1
+e1z_ld_a_or.asm(3):7: error: bad operand expression
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ e1z_ld_a_paren_or.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu z80
+       2/       0 :                     	org 0
+       3/       0 : 3A 01 00            	ld a,(1|())
+       4/       3 : EE                  	db 0EEh
+       5/       4 :                     	end
+sigil exit=1
+e1z_ld_a_paren_or.asm(3):7: error: bad address expression
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ e1z_ld_hl.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu z80
+       2/       0 :                     	org 0
+       3/       0 : 21 00 00            	ld hl,()
+       4/       3 : EE                  	db 0EEh
+       5/       4 :                     	end
+sigil exit=1
+e1z_ld_hl.asm(3):8: error: bad address expression
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ e1z_macro_omitted.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu z80
+       2/       0 :                     	org 0
+       3/       0 :                     m macro a,b
+       4/       0 :                     	db (a)|(b)
+       5/       0 :                     	endm
+       6/       0 : (MACRO)              	m 5
+       6/       0 : 05                          db (5)|()
+       7/       1 : EE                  	db 0EEh
+       8/       2 :                     	end
+sigil exit=1
+e1z_macro_omitted.asm(4):5: error: bad byte expression
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ l6_64.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : 0000 0020           	dc.l lastbit($100000000)
+       5/       4 : EE                  	dc.b $EE
+       6/       5 :                     	end
+sigil exit=1
+l6_64.asm(4):7: error: bad long expression
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ l6_bitcnt.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : 03                  	dc.b bitcnt(7)
+       5/       1 : EE                  	dc.b $EE
+       6/       2 :                     	end
+sigil exit=1
+l6_bitcnt.asm(4):7: error: bad byte expression
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ l6_case.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : 02                  	dc.b LASTBIT(5)
+       5/       1 : 03                  	dc.b LastBit(9)
+       6/       2 : EE                  	dc.b $EE
+       7/       3 :                     	end
+sigil exit=1
+l6_case.asm(4):7: error: bad byte expression
+l6_case.asm(5):7: error: bad byte expression
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 2 errors (reported on stderr)
+================ l6_cnop.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     org	macro address
+       5/       0 :                     	if address < *
+       6/       0 :                     	error "too much"
+       7/       0 :                     	elseif address > *
+       8/       0 :                     	!org address
+       9/       0 :                     	endif
+      10/       0 :                     	endm
+      11/       0 :                     cnop	macro offset,alignment
+      12/       0 :                     	org (*-1+(alignment)-((*-1+(-(offset)))#(alignment)))
+      13/       0 :                     	endm
+      14/       0 :                     Start:
+      15/       0 : 0102 03             	dc.b 1,2,3
+      16/       3 : (MACRO)              	cnop -1,2<<lastbit(*-Start-1)
+      16/       3 :  (MACRO-2)                   org (*-1+(2<<lastbit(*-Start-1))-((*-1+(-(-1)))#(2<<lastbit(*-Start-1))))
+      16/       3 : =>FALSE                      if (*-1+(2<<lastbit(*-Start-1))-((*-1+(-(-1)))#(2<<lastbit(*-Start-1)))) < *
+      16/       3 :                             error "too much"
+      16/       3 : =>FALSE                      elseif (*-1+(2<<lastbit(*-Start-1))-((*-1+(-(-1)))#(2<<lastbit(*-Start-1)))) > *
+      16/       3 :                             !org (*-1+(2<<lastbit(*-Start-1))-((*-1+(-(-1)))#(2<<lastbit(*-Start-1))))
+      16/       3 : [16]                         endif
+      17/       3 : 00                  	dc.b $00
+      18/       4 : EE                  	dc.b $EE
+      19/       5 :                     	end
+sigil exit=1
+l6_cnop.asm(5):2: error: unresolved if condition: it does not evaluate, so it cannot decide whether the code it guards is assembled
+l6_cnop.asm(7):2: error: unresolved elseif condition: it does not evaluate, so it cannot decide whether the code it guards is assembled
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 2 errors (reported on stderr)
+================ l6_cnop_big.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     org	macro address
+       5/       0 :                     	if address < *
+       6/       0 :                     	error "too much"
+       7/       0 :                     	elseif address > *
+       8/       0 :                     	!org address
+       9/       0 :                     	endif
+      10/       0 :                     	endm
+      11/       0 :                     cnop	macro offset,alignment
+      12/       0 :                     	org (*-1+(alignment)-((*-1+(-(offset)))#(alignment)))
+      13/       0 :                     	endm
+      14/       0 :                     Start:
+      15/       0 :                     	ds.b $123
+      16/     123 : (MACRO)              	cnop -1,2<<lastbit(*-Start-1)
+      16/     123 :  (MACRO-2)                   org (*-1+(2<<lastbit(*-Start-1))-((*-1+(-(-1)))#(2<<lastbit(*-Start-1))))
+      16/     123 : =>FALSE                      if (*-1+(2<<lastbit(*-Start-1))-((*-1+(-(-1)))#(2<<lastbit(*-Start-1)))) < *
+      16/     123 :                             error "too much"
+      16/     123 : =>TRUE                       elseif (*-1+(2<<lastbit(*-Start-1))-((*-1+(-(-1)))#(2<<lastbit(*-Start-1)))) > *
+      16/     1FF :                             !org (*-1+(2<<lastbit(*-Start-1))-((*-1+(-(-1)))#(2<<lastbit(*-Start-1))))
+      16/     1FF : [16]                         endif
+      17/     1FF : 00                  	dc.b $00
+      18/     200 :                     EndR:
+      19/     200 : 0000 0200           	dc.l EndR
+      20/     204 : EE                  	dc.b $EE
+      21/     205 :                     	end
+sigil exit=1
+l6_cnop_big.asm(5):2: error: unresolved if condition: it does not evaluate, so it cannot decide whether the code it guards is assembled
+l6_cnop_big.asm(7):2: error: unresolved elseif condition: it does not evaluate, so it cannot decide whether the code it guards is assembled
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 2 errors (reported on stderr)
+================ l6_ds.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     	ds.b lastbit(5)
+       5/       2 : EE                  	dc.b $EE
+       6/       3 :                     	end
+sigil exit=1
+l6_ds.asm(4):2: error: trailing tokens in expression
+l6_ds.asm(4):2: error: unresolved ds count
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 2 errors (reported on stderr)
+================ l6_equ.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : =$2                  X equ lastbit(5)
+       5/       0 : 02                  	dc.b X
+       6/       1 : EE                  	dc.b $EE
+       7/       2 :                     	end
+sigil exit=1
+l6_equ.asm(4):1: error: trailing tokens in expression
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ l6_firstbit.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : 02                  	dc.b firstbit(12)
+       5/       1 : EE                  	dc.b $EE
+       6/       2 :                     	end
+sigil exit=1
+l6_firstbit.asm(4):7: error: bad byte expression
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ l6_float.asm
+asl exit=3 ASL_EXIT=3 ASL_DIAG=unknown (l6_float.lst has no pass footer: the run died before 
+> > > l6_float.asm(4):15: error #10000: internal error
+fatal error, assembly terminated
+  from the listing. Absence of the warning is NOT completeness.)
+  lines that assembled: an error stops the pass loop, so every forward
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+sigil exit=1
+l6_float.asm(4):15: error: floating point value where an integer is required (wrap it in `int(...)`)
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ l6_fwd.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : 02                  	dc.b lastbit(Later)
+       5/       1 : =$5                  Later equ 5
+       6/       1 : EE                  	dc.b $EE
+       7/       2 :                     	end
+sigil exit=1
+l6_fwd.asm(4):7: error: bad byte expression
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ l6_fwd_label.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : 06                  	dc.b lastbit(Later)
+       5/       1 :                     	ds.b $40
+       6/      41 : 01                  Later:	dc.b 1
+       7/      42 : EE                  	dc.b $EE
+       8/      43 :                     	end
+sigil exit=1
+l6_fwd_label.asm(4):7: error: bad byte expression
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ l6_high.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : 0000 001F           	dc.l lastbit($80000000)
+       5/       4 : 0000 001E           	dc.l lastbit($7FFFFFFF)
+       6/       8 : EE                  	dc.b $EE
+       7/       9 :                     	end
+sigil exit=1
+l6_high.asm(4):7: error: bad long expression
+l6_high.asm(5):7: error: bad long expression
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 2 errors (reported on stderr)
+================ l6_if.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : =>TRUE               	if lastbit(4)=2
+       5/       0 : 01                  	dc.b 1
+       6/       1 : =>FALSE              	else
+       7/       1 :                     	dc.b 2
+       8/       1 : [4]                  	endif
+       9/       1 : EE                  	dc.b $EE
+      10/       2 :                     	end
+sigil exit=1
+l6_if.asm(4):2: error: trailing tokens in expression
+l6_if.asm(4):2: error: unresolved if condition: `lastbit` has no value, so this condition cannot decide whether the code it guards is assembled
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 2 errors (reported on stderr)
+================ l6_imm.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : 203C 0010 0000      	move.l #2<<lastbit($FFFEB),d0
+       5/       6 : EE                  	dc.b $EE
+       6/       7 :                     	end
+sigil exit=1
+l6_imm.asm(4):9: error: trailing tokens in #immediate
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ l6_neg2.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : 0000 003F           	dc.l lastbit(-2)
+       5/       4 : EE                  	dc.b $EE
+       6/       5 :                     	end
+sigil exit=1
+l6_neg2.asm(4):7: error: bad long expression
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ l6_neg.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : 0000 003F           	dc.l lastbit(-1)
+       5/       4 : EE                  	dc.b $EE
+       6/       5 :                     	end
+sigil exit=1
+l6_neg.asm(4):7: error: bad long expression
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ l6_nested.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : 04                  	dc.b lastbit(lastbit($FFFEB))
+       5/       1 : EE                  	dc.b $EE
+       6/       2 :                     	end
+sigil exit=1
+l6_nested.asm(4):7: error: bad byte expression
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ l6_noarg.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : FF                  	dc.b lastbit()
+       5/       1 : EE                  	dc.b $EE
+       6/       2 :                     	end
+sigil exit=1
+l6_noarg.asm(4):7: error: bad byte expression
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ l6_star.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/     123 :                     	org $123
+       5/     123 : 0000 0200           	dc.l 2<<lastbit(*-1)
+       6/     127 : EE                  	dc.b $EE
+       7/     128 :                     	end
+sigil exit=1
+l6_star.asm(5):7: error: bad long expression
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ l6_string.asm
+asl exit=2 ASL_EXIT=2 ASL_DIAG=complete 
+> > > l6_string.asm(4):15: error #1136: expected floating point number, but got string
+  lines that assembled: an error stops the pass loop, so every forward
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     	dc.b lastbit("A")
+       5/       0 : EE                  	dc.b $EE
+       6/       1 :                     	end
+sigil exit=1
+l6_string.asm(4):7: error: bad byte expression
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ l6_twoarg.asm
+asl exit=2 ASL_EXIT=2 ASL_DIAG=complete 
+> > > l6_twoarg.asm(4): error #1490: wrong numbers of function arguments
+  lines that assembled: an error stops the pass loop, so every forward
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     	dc.b lastbit(1,2)
+       5/       0 : EE                  	dc.b $EE
+       6/       1 :                     	end
+sigil exit=1
+l6_twoarg.asm(4):7: error: bad byte expression
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ l6_undef.asm
+asl exit=2 ASL_EXIT=2 ASL_DIAG=complete 
+> > > l6_undef.asm(4):15: error #1010: symbol undefined
+  lines that assembled: an error stops the pass loop, so every forward
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     	dc.b lastbit(Nope)
+       5/       0 : EE                  	dc.b $EE
+       6/       1 :                     	end
+sigil exit=1
+l6_undef.asm(4):7: error: bad byte expression
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ l6_values.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : 00                  	dc.b lastbit(1)
+       5/       1 : 02                  	dc.b lastbit(5)
+       6/       2 : 07                  	dc.b lastbit($80)
+       7/       3 : 13                  	dc.b lastbit($FFFEB)
+       8/       4 : 0010 0000           	dc.l 2<<lastbit($FFFEB)
+       9/       8 : EE                  	dc.b $EE
+      10/       9 :                     	end
+sigil exit=1
+l6_values.asm(4):7: error: bad byte expression
+l6_values.asm(5):7: error: bad byte expression
+l6_values.asm(6):7: error: bad byte expression
+l6_values.asm(7):7: error: bad byte expression
+l6_values.asm(8):7: error: bad long expression
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 5 errors (reported on stderr)
+================ l6z_db.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu z80
+       2/       0 :                     	org 0
+       3/       0 : 02                  	db lastbit(5)
+       4/       1 : 3E 03               	ld a,lastbit(9)
+       5/       3 : EE                  	db 0EEh
+       6/       4 :                     	end
+sigil exit=1
+l6z_db.asm(3):5: error: bad byte expression
+l6z_db.asm(4):7: error: trailing tokens in operand
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 2 errors (reported on stderr)
+================ l6_zero.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : FFFF FFFF           	dc.l lastbit(0)
+       5/       4 : EE                  	dc.b $EE
+       6/       5 :                     	end
+sigil exit=1
+l6_zero.asm(4):7: error: bad long expression
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ m5_0x.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     pal	macro path
+       5/       0 :                     	dc.b "path"
+       6/       0 :                     	endm
+       7/       0 : (MACRO)              	pal 0x41
+       7/       0 : 3078 3431                   dc.b "0x41"
+       8/       4 : EE                  	dc.b $EE
+       9/       5 :                     	end
+sigil exit=1
+m5_0x.asm(7):6: error: malformed number (hex needs a trailing `h`)
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ m5_1bin.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     pal	macro path
+       5/       0 :                     	dc.b "path"
+       6/       0 :                     	endm
+       7/       0 : (MACRO)              	pal Special Stage 1.bin
+       7/       0 : 5370 6563 6961              dc.b "Special Stage 1.bin"
+       8/      13 : EE                  	dc.b $EE
+       9/      14 :                     	end
+sigil exit=0
+53 70 65 63 69 61 6C 20 53 74 61 67 65 20 31 2E 62 69 6E EE
+built: 20 bytes, no file written (pass -o <path> to write one)
+================ m5_1up.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     pal	macro path
+       5/       0 :                     	dc.b "path"
+       6/       0 :                     	endm
+       7/       0 : (MACRO)              	pal 1up
+       7/       0 : 3175 70                     dc.b "1up"
+       8/       3 : EE                  	dc.b $EE
+       9/       4 :                     	end
+sigil exit=1
+m5_1up.asm(7):6: error: malformed number (hex needs a trailing `h`)
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ m5_2p.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     pal	macro path
+       5/       0 :                     	dc.b "path"
+       6/       0 :                     	endm
+       7/       0 : (MACRO)              	pal Special Stage 1 2p.bin
+       7/       0 : 5370 6563 6961              dc.b "Special Stage 1 2p.bin"
+       8/      16 : EE                  	dc.b $EE
+       9/      17 :                     	end
+sigil exit=1
+m5_2p.asm(7):22: error: malformed number (hex needs a trailing `h`)
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ m5_char.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     pal	macro path
+       5/       0 :                     	dc.b "path"
+       6/       0 :                     	endm
+       7/       0 : (MACRO)              	pal 'A'
+       7/       0 : 2741 27                     dc.b "'A'"
+       8/       3 : EE                  	dc.b $EE
+       9/       4 :                     	end
+sigil exit=0
+36 35 EE
+built: 3 bytes, no file written (pass -o <path> to write one)
+================ m5_digitdot.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     pal	macro path
+       5/       0 :                     	dc.b "path"
+       6/       0 :                     	endm
+       7/       0 : (MACRO)              	pal 2.bin
+       7/       0 : 322E 6269 6E                dc.b "2.bin"
+       8/       5 : EE                  	dc.b $EE
+       9/       6 :                     	end
+sigil exit=0
+32 2E 62 69 6E EE
+built: 6 bytes, no file written (pass -o <path> to write one)
+================ m5_dollar.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     pal	macro path
+       5/       0 :                     	dc.b "path"
+       6/       0 :                     	endm
+       7/       0 : (MACRO)              	pal $10
+       7/       0 : 2431 30                     dc.b "$10"
+       8/       3 : EE                  	dc.b $EE
+       9/       4 :                     	end
+sigil exit=0
+31 36 EE
+built: 3 bytes, no file written (pass -o <path> to write one)
+================ m5_expr.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     pal	macro path
+       5/       0 :                     	dc.b "path"
+       6/       0 :                     	endm
+       7/       0 : (MACRO)              	pal 1+2
+       7/       0 : 312B 32                     dc.b "1+2"
+       8/       3 : EE                  	dc.b $EE
+       9/       4 :                     	end
+sigil exit=0
+31 2B 32 EE
+built: 4 bytes, no file written (pass -o <path> to write one)
+================ m5_float.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     pal	macro path
+       5/       0 :                     	dc.b "path"
+       6/       0 :                     	endm
+       7/       0 : (MACRO)              	pal 1.5e3
+       7/       0 : 312E 3565 33                dc.b "1.5e3"
+       8/       5 : EE                  	dc.b $EE
+       9/       6 :                     	end
+sigil exit=0
+31 35 30 30 EE
+built: 5 bytes, no file written (pass -o <path> to write one)
+================ m5_hexh.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     pal	macro path
+       5/       0 :                     	dc.b "path"
+       6/       0 :                     	endm
+       7/       0 : (MACRO)              	pal 12h
+       7/       0 : 3132 68                     dc.b "12h"
+       8/       3 : EE                  	dc.b $EE
+       9/       4 :                     	end
+sigil exit=0
+31 38 EE
+built: 3 bytes, no file written (pass -o <path> to write one)
+================ m5_hexish.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     pal	macro path
+       5/       0 :                     	dc.b "path"
+       6/       0 :                     	endm
+       7/       0 : (MACRO)              	pal 0FFh 1F 2G
+       7/       0 : 3046 4668 2031              dc.b "0FFh 1F 2G"
+       8/       A : EE                  	dc.b $EE
+       9/       B :                     	end
+sigil exit=1
+m5_hexish.asm(7):11: error: malformed number (hex needs a trailing `h`)
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ m5_interp.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     pal	macro path
+       5/       0 :                     	message "[path]"
+       6/       0 :                     	endm
+       7/       0 : (MACRO)              	pal Special Stage 1 2p.bin
+       7/       0 :                             message "[Special Stage 1 2p.bin]"
+       8/       0 : EE                  	dc.b $EE
+       9/       1 :                     	end
+sigil exit=1
+m5_interp.asm(7):22: error: malformed number (hex needs a trailing `h`)
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ m5_label_compose.asm
+asl exit=2 ASL_EXIT=2 ASL_DIAG=complete 
+> > > m5_label_compose.asm(8):7: error #1010: symbol undefined
+  lines that assembled: an error stops the pass loop, so every forward
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     lbl	macro n
+       5/       0 :                     Lab_n:	dc.b 1
+       6/       0 :                     	endm
+       7/       0 : (MACRO)              	lbl 2p
+       7/       0 : 01                  Lab_2p:  dc.b 1
+       8/       1 :                     	dc.l Lab_2p
+       9/       1 : EE                  	dc.b $EE
+      10/       2 :                     	end
+sigil exit=1
+m5_label_compose.asm(7):6: error: malformed number (hex needs a trailing `h`)
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ m5_leading_zero.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     pal	macro path
+       5/       0 :                     	dc.b "path"
+       6/       0 :                     	endm
+       7/       0 : (MACRO)              	pal 007
+       7/       0 : 3030 37                     dc.b "007"
+       8/       3 : EE                  	dc.b $EE
+       9/       4 :                     	end
+sigil exit=0
+37 EE
+built: 2 bytes, no file written (pass -o <path> to write one)
+================ m5_neg.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     pal	macro path
+       5/       0 :                     	dc.b "path"
+       6/       0 :                     	endm
+       7/       0 : (MACRO)              	pal -1
+       7/       0 : 2D31                        dc.b "-1"
+       8/       2 : EE                  	dc.b $EE
+       9/       3 :                     	end
+sigil exit=0
+2D 31 EE
+built: 3 bytes, no file written (pass -o <path> to write one)
+================ m5_percent.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     pal	macro path
+       5/       0 :                     	dc.b "path"
+       6/       0 :                     	endm
+       7/       0 : (MACRO)              	pal %101
+       7/       0 : 2531 3031                   dc.b "%101"
+       8/       4 : EE                  	dc.b $EE
+       9/       5 :                     	end
+sigil exit=0
+35 EE
+built: 2 bytes, no file written (pass -o <path> to write one)
+================ m5_spaces.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     pal	macro path
+       5/       0 :                     	dc.b "path"
+       6/       0 :                     	endm
+       7/       0 : (MACRO)              	pal a  1   2p
+       7/       0 : 6120 2031 2020              dc.b "a  1   2p"
+       8/       9 : EE                  	dc.b $EE
+       9/       A :                     	end
+sigil exit=1
+m5_spaces.asm(7):13: error: malformed number (hex needs a trailing `h`)
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ m5_value_2p.asm
+asl exit=2 ASL_EXIT=2 ASL_DIAG=complete 
+> > > m5_value_2p.asm(7) val(1):14: error #1020: invalid symbol name
+  lines that assembled: an error stops the pass loop, so every forward
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     val	macro n
+       5/       0 :                     	dc.b n
+       6/       0 :                     	endm
+       7/       0 : (MACRO)              	val 2p
+       7/       0 :                             dc.b 2p
+       8/       0 : EE                  	dc.b $EE
+       9/       1 :                     	end
+sigil exit=1
+m5_value_2p.asm(7):6: error: malformed number (hex needs a trailing `h`)
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ m5_value_dollar.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     val	macro n
+       5/       0 :                     	dc.b n
+       6/       0 :                     	endm
+       7/       0 : (MACRO)              	val $10
+       7/       0 : 10                          dc.b $10
+       8/       1 : EE                  	dc.b $EE
+       9/       2 :                     	end
+sigil exit=0
+10 EE
+built: 2 bytes, no file written (pass -o <path> to write one)
+================ m5_value_hexh.asm
+asl exit=2 ASL_EXIT=2 ASL_DIAG=complete 
+> > > m5_value_hexh.asm(7) val(1):14: error #1020: invalid symbol name
+  lines that assembled: an error stops the pass loop, so every forward
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     val	macro n
+       5/       0 :                     	dc.b n
+       6/       0 :                     	endm
+       7/       0 : (MACRO)              	val 12h
+       7/       0 :                             dc.b 12h
+       8/       0 : EE                  	dc.b $EE
+       9/       1 :                     	end
+sigil exit=0
+12 EE
+built: 2 bytes, no file written (pass -o <path> to write one)
+================ m5_value_zero.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     val	macro n
+       5/       0 :                     	dc.b n
+       6/       0 :                     	endm
+       7/       0 : (MACRO)              	val 007
+       7/       0 : 07                          dc.b 007
+       8/       1 : EE                  	dc.b $EE
+       9/       2 :                     	end
+sigil exit=0
+07 EE
+built: 2 bytes, no file written (pass -o <path> to write one)
+================ m5_words.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     pal	macro path
+       5/       0 :                     	dc.b "path"
+       6/       0 :                     	endm
+       7/       0 : (MACRO)              	pal 1st 2nd 3rd 4th.bin
+       7/       0 : 3173 7420 326E              dc.b "1st 2nd 3rd 4th.bin"
+       8/      13 : EE                  	dc.b $EE
+       9/      14 :                     	end
+sigil exit=1
+m5_words.asm(7):6: error: malformed number (hex needs a trailing `h`)
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ m5z_2p.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu z80
+       2/       0 :                     	org 0
+       3/       0 :                     pal	macro path
+       4/       0 :                     	db "path"
+       5/       0 :                     	endm
+       6/       0 : (MACRO)              	pal Special Stage 1 2p.bin
+       6/       0 : 53 70 65 63 69 61           db "Special Stage 1 2p.bin"
+       7/      16 : EE                  	db 0EEh
+       8/      17 :                     	end
+sigil exit=1
+m5z_2p.asm(6):22: error: malformed number (hex needs a trailing `h`)
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ m5z_hex.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu z80
+       2/       0 :                     	org 0
+       3/       0 :                     pal	macro path
+       4/       0 :                     	db "path"
+       5/       0 :                     	endm
+       6/       0 : (MACRO)              	pal 0101b 1Fh 0FFh
+       6/       0 : 30 31 30 31 62 20           db "0101b 1Fh 0FFh"
+       7/       E : EE                  	db 0EEh
+       8/       F :                     	end
+sigil exit=1
+m5z_hex.asm(6):6: error: malformed number (hex needs a trailing `h`)
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ p4_basic.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : =$2                  Ver := 2
+       5/       0 : 02                  	dc.b Ver
+       6/       1 :                     	pushv ,Ver
+       7/       1 : =$4                  Ver := 4
+       8/       1 : 04                  	dc.b Ver
+       9/       2 :                     	popv ,Ver
+      10/       2 : 02                  	dc.b Ver
+      11/       3 : EE                  	dc.b $EE
+      12/       4 :                     	end
+sigil exit=1
+p4_basic.asm(6):2: error: `pushv` is not a recognized 68000 mnemonic
+p4_basic.asm(9):2: error: `popv` is not a recognized 68000 mnemonic
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 2 errors (reported on stderr)
+================ p4_empty_list.asm
+asl exit=2 ASL_EXIT=2 ASL_DIAG=complete 
+> > > p4_empty_list.asm(4):9: error #1010: symbol undefined
+  lines that assembled: an error stops the pass loop, so every forward
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     	pushv ,
+       5/       0 : EE                  	dc.b $EE
+       6/       1 :                     	end
+sigil exit=1
+p4_empty_list.asm(4):2: error: `pushv` is not a recognized 68000 mnemonic
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ p4_equ.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : =$5                  E equ 5
+       5/       0 :                     	pushv ,E
+       6/       0 :                     	popv ,E
+       7/       0 : 05                  	dc.b E
+       8/       1 : EE                  	dc.b $EE
+       9/       2 :                     	end
+sigil exit=1
+p4_equ.asm(5):2: error: `pushv` is not a recognized 68000 mnemonic
+p4_equ.asm(6):2: error: `popv` is not a recognized 68000 mnemonic
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 2 errors (reported on stderr)
+================ p4_float.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : =1.5                 F := 1.5
+       5/       0 :                     	pushv ,F
+       6/       0 : =2.5                 F := 2.5
+       7/       0 :                     	popv ,F
+       8/       0 : 0000 0003           	dc.l int(F*2)
+       9/       4 : EE                  	dc.b $EE
+      10/       5 :                     	end
+sigil exit=1
+p4_float.asm(5):2: error: `pushv` is not a recognized 68000 mnemonic
+p4_float.asm(7):2: error: `popv` is not a recognized 68000 mnemonic
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 2 errors (reported on stderr)
+================ p4_label.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : 01                  Lbl:	dc.b 1
+       5/       1 :                     	pushv ,Lbl
+       6/       1 :                     	popv ,Lbl
+       7/       1 : EE                  	dc.b $EE
+       8/       2 :                     	end
+sigil exit=1
+p4_label.asm(5):2: error: `pushv` is not a recognized 68000 mnemonic
+p4_label.asm(6):2: error: `popv` is not a recognized 68000 mnemonic
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 2 errors (reported on stderr)
+================ p4_leftover.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+> > > INTERNAL: warning #230: stack is not empty
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : =$1                  A := 1
+       5/       0 :                     	pushv ,A
+       6/       0 : 01                  	dc.b A
+       7/       1 : EE                  	dc.b $EE
+       8/       2 :                     	end
+sigil exit=1
+p4_leftover.asm(5):2: error: `pushv` is not a recognized 68000 mnemonic
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ p4_multipass.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : =$2                  Ver := 2
+       5/       0 :                     	pushv ,Ver
+       6/       0 : =$4                  Ver := 4
+       7/       0 : 6000 0003           	bra.w Fwd
+       8/       4 : 04                  	dc.b Ver
+       9/       5 :                     	popv ,Ver
+      10/       5 : 02                  Fwd:	dc.b Ver
+      11/       6 : EE                  	dc.b $EE
+      12/       7 :                     	end
+sigil exit=1
+p4_multipass.asm(5):2: error: `pushv` is not a recognized 68000 mnemonic
+p4_multipass.asm(9):2: error: `popv` is not a recognized 68000 mnemonic
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 2 errors (reported on stderr)
+================ p4_multi_rev.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : =$1                  A := 1
+       5/       0 : =$2                  B := 2
+       6/       0 :                     	pushv ,A,B
+       7/       0 : =$3                  A := 3
+       8/       0 : =$4                  B := 4
+       9/       0 :                     	popv ,B,A
+      10/       0 : 0102                	dc.b A,B
+      11/       2 : EE                  	dc.b $EE
+      12/       3 :                     	end
+sigil exit=1
+p4_multi_rev.asm(6):2: error: `pushv` is not a recognized 68000 mnemonic
+p4_multi_rev.asm(9):2: error: `popv` is not a recognized 68000 mnemonic
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 2 errors (reported on stderr)
+================ p4_multi_same.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : =$1                  A := 1
+       5/       0 : =$2                  B := 2
+       6/       0 :                     	pushv ,A,B
+       7/       0 : =$3                  A := 3
+       8/       0 : =$4                  B := 4
+       9/       0 :                     	popv ,A,B
+      10/       0 : 0201                	dc.b A,B
+      11/       2 : EE                  	dc.b $EE
+      12/       3 :                     	end
+sigil exit=1
+p4_multi_same.asm(6):2: error: `pushv` is not a recognized 68000 mnemonic
+p4_multi_same.asm(9):2: error: `popv` is not a recognized 68000 mnemonic
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 2 errors (reported on stderr)
+================ p4_multi_split.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : =$1                  A := 1
+       5/       0 : =$2                  B := 2
+       6/       0 :                     	pushv ,A,B
+       7/       0 : =$3                  A := 3
+       8/       0 : =$4                  B := 4
+       9/       0 :                     	popv ,A
+      10/       0 : 0204                	dc.b A,B
+      11/       2 :                     	popv ,A
+      12/       2 : 0104                	dc.b A,B
+      13/       4 : EE                  	dc.b $EE
+      14/       5 :                     	end
+sigil exit=1
+p4_multi_split.asm(6):2: error: `pushv` is not a recognized 68000 mnemonic
+p4_multi_split.asm(9):2: error: `popv` is not a recognized 68000 mnemonic
+p4_multi_split.asm(11):2: error: `popv` is not a recognized 68000 mnemonic
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 3 errors (reported on stderr)
+================ p4_named.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : =$1                  A := 1
+       5/       0 :                     	pushv s1,A
+       6/       0 : =$2                  A := 2
+       7/       0 :                     	pushv s2,A
+       8/       0 : =$3                  A := 3
+       9/       0 :                     	popv s1,A
+      10/       0 : 01                  	dc.b A
+      11/       1 :                     	popv s2,A
+      12/       1 : 02                  	dc.b A
+      13/       2 : EE                  	dc.b $EE
+      14/       3 :                     	end
+sigil exit=1
+p4_named.asm(5):2: error: `pushv` is not a recognized 68000 mnemonic
+p4_named.asm(7):2: error: `pushv` is not a recognized 68000 mnemonic
+p4_named.asm(9):2: error: `popv` is not a recognized 68000 mnemonic
+p4_named.asm(11):2: error: `popv` is not a recognized 68000 mnemonic
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 4 errors (reported on stderr)
+================ p4_named_vs_default.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : =$1                  A := 1
+       5/       0 :                     	pushv ,A
+       6/       0 : =$2                  A := 2
+       7/       0 :                     	pushv s1,A
+       8/       0 : =$3                  A := 3
+       9/       0 :                     	popv ,A
+      10/       0 : 01                  	dc.b A
+      11/       1 :                     	popv s1,A
+      12/       1 : 02                  	dc.b A
+      13/       2 : EE                  	dc.b $EE
+      14/       3 :                     	end
+sigil exit=1
+p4_named_vs_default.asm(5):2: error: `pushv` is not a recognized 68000 mnemonic
+p4_named_vs_default.asm(7):2: error: `pushv` is not a recognized 68000 mnemonic
+p4_named_vs_default.asm(9):2: error: `popv` is not a recognized 68000 mnemonic
+p4_named_vs_default.asm(11):2: error: `popv` is not a recognized 68000 mnemonic
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 4 errors (reported on stderr)
+================ p4_nested.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : =$2                  Ver := 2
+       5/       0 :                     	pushv ,Ver
+       6/       0 : =$4                  Ver := 4
+       7/       0 :                     	pushv ,Ver
+       8/       0 : =$6                  Ver := 6
+       9/       0 : 06                  	dc.b Ver
+      10/       1 :                     	popv ,Ver
+      11/       1 : 04                  	dc.b Ver
+      12/       2 :                     	popv ,Ver
+      13/       2 : 02                  	dc.b Ver
+      14/       3 : EE                  	dc.b $EE
+      15/       4 :                     	end
+sigil exit=1
+p4_nested.asm(5):2: error: `pushv` is not a recognized 68000 mnemonic
+p4_nested.asm(7):2: error: `pushv` is not a recognized 68000 mnemonic
+p4_nested.asm(10):2: error: `popv` is not a recognized 68000 mnemonic
+p4_nested.asm(12):2: error: `popv` is not a recognized 68000 mnemonic
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 4 errors (reported on stderr)
+================ p4_nocomma.asm
+asl exit=2 ASL_EXIT=2 ASL_DIAG=complete 
+> > > p4_nocomma.asm(5): error #1110: wrong number of operands
+> > > p4_nocomma.asm(6): error #1110: wrong number of operands
+  lines that assembled: an error stops the pass loop, so every forward
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : =$2                  Ver := 2
+       5/       0 :                     	pushv Ver
+       6/       0 :                     	popv Ver
+       7/       0 : 02                  	dc.b Ver
+       8/       1 : EE                  	dc.b $EE
+       9/       2 :                     	end
+sigil exit=1
+p4_nocomma.asm(5):2: error: `pushv` is not a recognized 68000 mnemonic
+p4_nocomma.asm(6):2: error: `popv` is not a recognized 68000 mnemonic
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 2 errors (reported on stderr)
+================ p4_pop_empty.asm
+asl exit=2 ASL_EXIT=2 ASL_DIAG=complete 
+> > > p4_pop_empty.asm(5):7: error #1530: stack is empty or undefined
+  lines that assembled: an error stops the pass loop, so every forward
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : =$1                  A := 1
+       5/       0 :                     	popv ,A
+       6/       0 : 01                  	dc.b A
+       7/       1 : EE                  	dc.b $EE
+       8/       2 :                     	end
+sigil exit=1
+p4_pop_empty.asm(5):2: error: `popv` is not a recognized 68000 mnemonic
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ p4_pop_into_new.asm
+asl exit=2 ASL_EXIT=2 ASL_DIAG=INCOMPLETE 
+> > > p4_pop_into_new.asm(6):8: error #1010: symbol undefined
+> > > INTERNAL: warning #230: stack is not empty
+  asl stopped its PASS LOOP on an error, so the diagnostics from
+  ZERO here whether there are none or thirty. The error count in
+  reported error and assemble again to learn what was hidden.
+  lines that assembled: an error stops the pass loop, so every forward
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : =$7                  A := 7
+       5/       0 :                     	pushv ,A
+       6/       0 :                     	popv ,B
+       7/       0 : 0700                	dc.b A,B
+       8/       2 : EE                  	dc.b $EE
+       9/       3 :                     	end
+sigil exit=1
+p4_pop_into_new.asm(5):2: error: `pushv` is not a recognized 68000 mnemonic
+p4_pop_into_new.asm(6):2: error: `popv` is not a recognized 68000 mnemonic
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 2 errors (reported on stderr)
+================ p4_pop_twice.asm
+asl exit=2 ASL_EXIT=2 ASL_DIAG=complete 
+> > > p4_pop_twice.asm(7):7: error #1530: stack is empty or undefined
+  lines that assembled: an error stops the pass loop, so every forward
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : =$1                  A := 1
+       5/       0 :                     	pushv ,A
+       6/       0 :                     	popv ,A
+       7/       0 :                     	popv ,A
+       8/       0 : 01                  	dc.b A
+       9/       1 : EE                  	dc.b $EE
+      10/       2 :                     	end
+sigil exit=1
+p4_pop_twice.asm(5):2: error: `pushv` is not a recognized 68000 mnemonic
+p4_pop_twice.asm(6):2: error: `popv` is not a recognized 68000 mnemonic
+p4_pop_twice.asm(7):2: error: `popv` is not a recognized 68000 mnemonic
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 3 errors (reported on stderr)
+================ p4_set.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : =$2                  Ver set 2
+       5/       0 :                     	pushv ,Ver
+       6/       0 : =$4                  Ver set 4
+       7/       0 : 04                  	dc.b Ver
+       8/       1 :                     	popv ,Ver
+       9/       1 : 02                  	dc.b Ver
+      10/       2 : EE                  	dc.b $EE
+      11/       3 :                     	end
+sigil exit=1
+p4_set.asm(5):2: error: `pushv` is not a recognized 68000 mnemonic
+p4_set.asm(8):2: error: `popv` is not a recognized 68000 mnemonic
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 2 errors (reported on stderr)
+================ p4_string.asm
+asl exit=134 ASL_EXIT=134 ASL_DIAG=complete 
+  lines that assembled: an error stops the pass loop, so every forward
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : ="ab"                S := "ab"
+       5/       0 :                     	pushv ,S
+       6/       0 : ="cd"                S := "cd"
+       7/       0 : 6364                	dc.b S
+       8/       2 :                     	popv ,S
+       9/       2 : 4BCA                	dc.b S
+      10/       4 : EE                  	dc.b $EE
+      11/       5 :                     	end
+sigil exit=1
+p4_string.asm(5):2: error: `pushv` is not a recognized 68000 mnemonic
+p4_string.asm(8):2: error: `popv` is not a recognized 68000 mnemonic
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 2 errors (reported on stderr)
+================ p4_undef.asm
+asl exit=2 ASL_EXIT=2 ASL_DIAG=complete 
+> > > p4_undef.asm(4):9: error #1010: symbol undefined
+> > > p4_undef.asm(5):8: error #1010: symbol undefined
+  lines that assembled: an error stops the pass loop, so every forward
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     	pushv ,Nope
+       5/       0 :                     	popv ,Nope
+       6/       0 : EE                  	dc.b $EE
+       7/       1 :                     	end
+sigil exit=1
+p4_undef.asm(4):2: error: `pushv` is not a recognized 68000 mnemonic
+p4_undef.asm(5):2: error: `popv` is not a recognized 68000 mnemonic
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 2 errors (reported on stderr)
+================ p4_upper.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : =$2                  Ver := 2
+       5/       0 :                     	PUSHV ,Ver
+       6/       0 : =$4                  Ver := 4
+       7/       0 : 04                  	dc.b Ver
+       8/       1 :                     	POPV ,Ver
+       9/       1 : 02                  	dc.b Ver
+      10/       2 : EE                  	dc.b $EE
+      11/       3 :                     	end
+sigil exit=1
+p4_upper.asm(5):2: error: `PUSHV` is not a recognized 68000 mnemonic
+p4_upper.asm(8):2: error: `POPV` is not a recognized 68000 mnemonic
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 2 errors (reported on stderr)
+================ p4_z80.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu z80
+       2/       0 :                     	org 0
+       3/       0 : =2H                  Ver := 2
+       4/       0 :                     	pushv ,Ver
+       5/       0 : =4H                  Ver := 4
+       6/       0 : 04                  	db Ver
+       7/       1 :                     	popv ,Ver
+       8/       1 : 02                  	db Ver
+       9/       2 : EE                  	db 0EEh
+      10/       3 :                     	end
+sigil exit=1
+p4_z80.asm(4):2: error: unknown directive or mnemonic `pushv`
+p4_z80.asm(7):2: error: unknown directive or mnemonic `popv`
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 2 errors (reported on stderr)
+================ s3_mem_b_asl.asm
+asl exit=2 ASL_EXIT=2 ASL_DIAG=complete 
+> > > s3_mem_b_asl.asm(4): error #1130: invalid operand size
+  lines that assembled: an error stops the pass loop, so every forward
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     	asl.b	(a0)
+       5/       0 : EE                  	dc.b $EE
+       6/       1 :                     	end
+sigil exit=1
+s3_mem_b_asl.asm(4):2: error: unsupported form: Asl memory-shift form is word-only, got size B
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ s3_mem_b_asr.asm
+asl exit=2 ASL_EXIT=2 ASL_DIAG=complete 
+> > > s3_mem_b_asr.asm(4): error #1130: invalid operand size
+  lines that assembled: an error stops the pass loop, so every forward
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     	asr.b	(a0)
+       5/       0 : EE                  	dc.b $EE
+       6/       1 :                     	end
+sigil exit=1
+s3_mem_b_asr.asm(4):2: error: unsupported form: Asr memory-shift form is word-only, got size B
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ s3_mem_b_lsl.asm
+asl exit=2 ASL_EXIT=2 ASL_DIAG=complete 
+> > > s3_mem_b_lsl.asm(4): error #1130: invalid operand size
+  lines that assembled: an error stops the pass loop, so every forward
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     	lsl.b	(a0)
+       5/       0 : EE                  	dc.b $EE
+       6/       1 :                     	end
+sigil exit=1
+s3_mem_b_lsl.asm(4):2: error: unsupported form: Lsl memory-shift form is word-only, got size B
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ s3_mem_b_lsr.asm
+asl exit=2 ASL_EXIT=2 ASL_DIAG=complete 
+> > > s3_mem_b_lsr.asm(4): error #1130: invalid operand size
+  lines that assembled: an error stops the pass loop, so every forward
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     	lsr.b	(a0)
+       5/       0 : EE                  	dc.b $EE
+       6/       1 :                     	end
+sigil exit=1
+s3_mem_b_lsr.asm(4):2: error: unsupported form: Lsr memory-shift form is word-only, got size B
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ s3_mem_b_rol.asm
+asl exit=2 ASL_EXIT=2 ASL_DIAG=complete 
+> > > s3_mem_b_rol.asm(4): error #1130: invalid operand size
+  lines that assembled: an error stops the pass loop, so every forward
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     	rol.b	(a0)
+       5/       0 : EE                  	dc.b $EE
+       6/       1 :                     	end
+sigil exit=1
+s3_mem_b_rol.asm(4):2: error: unsupported form: Rol memory-shift form is word-only, got size B
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ s3_mem_b_ror.asm
+asl exit=2 ASL_EXIT=2 ASL_DIAG=complete 
+> > > s3_mem_b_ror.asm(4): error #1130: invalid operand size
+  lines that assembled: an error stops the pass loop, so every forward
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     	ror.b	(a0)
+       5/       0 : EE                  	dc.b $EE
+       6/       1 :                     	end
+sigil exit=1
+s3_mem_b_ror.asm(4):2: error: unsupported form: Ror memory-shift form is word-only, got size B
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ s3_mem_b_roxl.asm
+asl exit=2 ASL_EXIT=2 ASL_DIAG=complete 
+> > > s3_mem_b_roxl.asm(4): error #1130: invalid operand size
+  lines that assembled: an error stops the pass loop, so every forward
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     	roxl.b	(a0)
+       5/       0 : EE                  	dc.b $EE
+       6/       1 :                     	end
+sigil exit=1
+s3_mem_b_roxl.asm(4):2: error: unsupported form: Roxl memory-shift form is word-only, got size B
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ s3_mem_b_roxr.asm
+asl exit=2 ASL_EXIT=2 ASL_DIAG=complete 
+> > > s3_mem_b_roxr.asm(4): error #1130: invalid operand size
+  lines that assembled: an error stops the pass loop, so every forward
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     	roxr.b	(a0)
+       5/       0 : EE                  	dc.b $EE
+       6/       1 :                     	end
+sigil exit=1
+s3_mem_b_roxr.asm(4):2: error: unsupported form: Roxr memory-shift form is word-only, got size B
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ s3_mem_count.asm
+asl exit=2 ASL_EXIT=2 ASL_DIAG=complete 
+> > > s3_mem_count.asm(4):6: error #1391: operand must be one
+  lines that assembled: an error stops the pass loop, so every forward
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     	asl	#2,(a0)
+       5/       0 : EE                  	dc.b $EE
+       6/       1 :                     	end
+sigil exit=1
+s3_mem_count.asm(4):2: error: instruction needs an explicit size suffix (.b/.w/.l)
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ s3_mem_l_asl.asm
+asl exit=2 ASL_EXIT=2 ASL_DIAG=complete 
+> > > s3_mem_l_asl.asm(4): error #1130: invalid operand size
+  lines that assembled: an error stops the pass loop, so every forward
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     	asl.l	(a0)
+       5/       0 : EE                  	dc.b $EE
+       6/       1 :                     	end
+sigil exit=1
+s3_mem_l_asl.asm(4):2: error: unsupported form: Asl memory-shift form is word-only, got size L
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ s3_mem_l_asr.asm
+asl exit=2 ASL_EXIT=2 ASL_DIAG=complete 
+> > > s3_mem_l_asr.asm(4): error #1130: invalid operand size
+  lines that assembled: an error stops the pass loop, so every forward
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     	asr.l	(a0)
+       5/       0 : EE                  	dc.b $EE
+       6/       1 :                     	end
+sigil exit=1
+s3_mem_l_asr.asm(4):2: error: unsupported form: Asr memory-shift form is word-only, got size L
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ s3_mem_l_lsl.asm
+asl exit=2 ASL_EXIT=2 ASL_DIAG=complete 
+> > > s3_mem_l_lsl.asm(4): error #1130: invalid operand size
+  lines that assembled: an error stops the pass loop, so every forward
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     	lsl.l	(a0)
+       5/       0 : EE                  	dc.b $EE
+       6/       1 :                     	end
+sigil exit=1
+s3_mem_l_lsl.asm(4):2: error: unsupported form: Lsl memory-shift form is word-only, got size L
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ s3_mem_l_lsr.asm
+asl exit=2 ASL_EXIT=2 ASL_DIAG=complete 
+> > > s3_mem_l_lsr.asm(4): error #1130: invalid operand size
+  lines that assembled: an error stops the pass loop, so every forward
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     	lsr.l	(a0)
+       5/       0 : EE                  	dc.b $EE
+       6/       1 :                     	end
+sigil exit=1
+s3_mem_l_lsr.asm(4):2: error: unsupported form: Lsr memory-shift form is word-only, got size L
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ s3_mem_l_rol.asm
+asl exit=2 ASL_EXIT=2 ASL_DIAG=complete 
+> > > s3_mem_l_rol.asm(4): error #1130: invalid operand size
+  lines that assembled: an error stops the pass loop, so every forward
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     	rol.l	(a0)
+       5/       0 : EE                  	dc.b $EE
+       6/       1 :                     	end
+sigil exit=1
+s3_mem_l_rol.asm(4):2: error: unsupported form: Rol memory-shift form is word-only, got size L
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ s3_mem_l_ror.asm
+asl exit=2 ASL_EXIT=2 ASL_DIAG=complete 
+> > > s3_mem_l_ror.asm(4): error #1130: invalid operand size
+  lines that assembled: an error stops the pass loop, so every forward
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     	ror.l	(a0)
+       5/       0 : EE                  	dc.b $EE
+       6/       1 :                     	end
+sigil exit=1
+s3_mem_l_ror.asm(4):2: error: unsupported form: Ror memory-shift form is word-only, got size L
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ s3_mem_l_roxl.asm
+asl exit=2 ASL_EXIT=2 ASL_DIAG=complete 
+> > > s3_mem_l_roxl.asm(4): error #1130: invalid operand size
+  lines that assembled: an error stops the pass loop, so every forward
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     	roxl.l	(a0)
+       5/       0 : EE                  	dc.b $EE
+       6/       1 :                     	end
+sigil exit=1
+s3_mem_l_roxl.asm(4):2: error: unsupported form: Roxl memory-shift form is word-only, got size L
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ s3_mem_l_roxr.asm
+asl exit=2 ASL_EXIT=2 ASL_DIAG=complete 
+> > > s3_mem_l_roxr.asm(4): error #1130: invalid operand size
+  lines that assembled: an error stops the pass loop, so every forward
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     	roxr.l	(a0)
+       5/       0 : EE                  	dc.b $EE
+       6/       1 :                     	end
+sigil exit=1
+s3_mem_l_roxr.asm(4):2: error: unsupported form: Roxr memory-shift form is word-only, got size L
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ s3_mem_nosize.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : E1E8 001A           	asl	$1A(a0)
+       5/       4 : E0D1                	asr	(a1)
+       6/       6 : E3DA                	lsl	(a2)+
+       7/       8 : E2E3                	lsr	-(a3)
+       8/       A : E7F4 0010           	rol	$10(a4,d0.w)
+       9/       E : E6F8 1234           	ror	$1234.w
+      10/      12 : E5F9 1234 5678      	roxl	$12345678.l
+      11/      18 : E4E8 0018           	roxr	$18(a0)
+      12/      1C : EE                  	dc.b $EE
+      13/      1D :                     	end
+sigil exit=1
+s3_mem_nosize.asm(4):2: error: instruction needs an explicit size suffix (.b/.w/.l)
+s3_mem_nosize.asm(5):2: error: instruction needs an explicit size suffix (.b/.w/.l)
+s3_mem_nosize.asm(6):2: error: instruction needs an explicit size suffix (.b/.w/.l)
+s3_mem_nosize.asm(7):2: error: instruction needs an explicit size suffix (.b/.w/.l)
+s3_mem_nosize.asm(8):2: error: instruction needs an explicit size suffix (.b/.w/.l)
+s3_mem_nosize.asm(9):6: error: trailing tokens in operand
+s3_mem_nosize.asm(10):7: error: trailing tokens in operand
+s3_mem_nosize.asm(11):2: error: instruction needs an explicit size suffix (.b/.w/.l)
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 8 errors (reported on stderr)
+================ s3_mem_nosize_rot.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : E1D1                	asl	(a1)
+       5/       2 : E0DA                	asr	(a2)+
+       6/       4 : E3E3                	lsl	-(a3)
+       7/       6 : E2F4 0010           	lsr	$10(a4,d0.w)
+       8/       A : E7F8 1234           	rol	$1234.w
+       9/       E : E6F9 1234 5678      	ror	$12345678.l
+      10/      14 : E5E8 0018           	roxl	$18(a0)
+      11/      18 : E4E8 001A           	roxr	$1A(a0)
+      12/      1C : EE                  	dc.b $EE
+      13/      1D :                     	end
+sigil exit=1
+s3_mem_nosize_rot.asm(4):2: error: instruction needs an explicit size suffix (.b/.w/.l)
+s3_mem_nosize_rot.asm(5):2: error: instruction needs an explicit size suffix (.b/.w/.l)
+s3_mem_nosize_rot.asm(6):2: error: instruction needs an explicit size suffix (.b/.w/.l)
+s3_mem_nosize_rot.asm(7):2: error: instruction needs an explicit size suffix (.b/.w/.l)
+s3_mem_nosize_rot.asm(8):6: error: trailing tokens in operand
+s3_mem_nosize_rot.asm(9):6: error: trailing tokens in operand
+s3_mem_nosize_rot.asm(10):2: error: instruction needs an explicit size suffix (.b/.w/.l)
+s3_mem_nosize_rot.asm(11):2: error: instruction needs an explicit size suffix (.b/.w/.l)
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 8 errors (reported on stderr)
+================ s3_mem_w.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : E1E8 001A           	asl.w	$1A(a0)
+       5/       4 : E0D1                	asr.w	(a1)
+       6/       6 : E3DA                	lsl.w	(a2)+
+       7/       8 : E2E3                	lsr.w	-(a3)
+       8/       A : E7F4 0010           	rol.w	$10(a4,d0.w)
+       9/       E : E6F8 1234           	ror.w	$1234.w
+      10/      12 : E5F9 1234 5678      	roxl.w	$12345678.l
+      11/      18 : E4E8 0018           	roxr.w	$18(a0)
+      12/      1C : EE                  	dc.b $EE
+      13/      1D :                     	end
+sigil exit=1
+s3_mem_w.asm(9):8: error: trailing tokens in operand
+s3_mem_w.asm(10):9: error: trailing tokens in operand
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 2 errors (reported on stderr)
+================ s3_reg_imm_nosize.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : E340                	asl	#1,d0
+       5/       2 : E441                	asr	#2,d1
+       6/       4 : E74A                	lsl	#3,d2
+       7/       6 : E84B                	lsr	#4,d3
+       8/       8 : EB5C                	rol	#5,d4
+       9/       A : EC5D                	ror	#6,d5
+      10/       C : EF56                	roxl	#7,d6
+      11/       E : E057                	roxr	#8,d7
+      12/      10 : EE                  	dc.b $EE
+      13/      11 :                     	end
+sigil exit=1
+s3_reg_imm_nosize.asm(4):2: error: instruction needs an explicit size suffix (.b/.w/.l)
+s3_reg_imm_nosize.asm(5):2: error: instruction needs an explicit size suffix (.b/.w/.l)
+s3_reg_imm_nosize.asm(6):2: error: instruction needs an explicit size suffix (.b/.w/.l)
+s3_reg_imm_nosize.asm(7):2: error: instruction needs an explicit size suffix (.b/.w/.l)
+s3_reg_imm_nosize.asm(8):2: error: instruction needs an explicit size suffix (.b/.w/.l)
+s3_reg_imm_nosize.asm(9):2: error: instruction needs an explicit size suffix (.b/.w/.l)
+s3_reg_imm_nosize.asm(10):2: error: instruction needs an explicit size suffix (.b/.w/.l)
+s3_reg_imm_nosize.asm(11):2: error: instruction needs an explicit size suffix (.b/.w/.l)
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 8 errors (reported on stderr)
+================ s3_reg_imm_w.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : E340                	asl.w	#1,d0
+       5/       2 : E441                	asr.w	#2,d1
+       6/       4 : E74A                	lsl.w	#3,d2
+       7/       6 : E84B                	lsr.w	#4,d3
+       8/       8 : EB5C                	rol.w	#5,d4
+       9/       A : EC5D                	ror.w	#6,d5
+      10/       C : EF56                	roxl.w	#7,d6
+      11/       E : E057                	roxr.w	#8,d7
+      12/      10 : EE                  	dc.b $EE
+      13/      11 :                     	end
+sigil exit=0
+E3 40 E4 41 E7 4A E8 4B EB 5C EC 5D EF 56 E0 57 EE
+built: 17 bytes, no file written (pass -o <path> to write one)
+================ s3_reg_reg_nosize.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : E360                	asl	d1,d0
+       5/       2 : E461                	asr	d2,d1
+       6/       4 : E76A                	lsl	d3,d2
+       7/       6 : E86B                	lsr	d4,d3
+       8/       8 : EB7C                	rol	d5,d4
+       9/       A : EC7D                	ror	d6,d5
+      10/       C : EF76                	roxl	d7,d6
+      11/       E : E077                	roxr	d0,d7
+      12/      10 : EE                  	dc.b $EE
+      13/      11 :                     	end
+sigil exit=1
+s3_reg_reg_nosize.asm(4):2: error: instruction needs an explicit size suffix (.b/.w/.l)
+s3_reg_reg_nosize.asm(5):2: error: instruction needs an explicit size suffix (.b/.w/.l)
+s3_reg_reg_nosize.asm(6):2: error: instruction needs an explicit size suffix (.b/.w/.l)
+s3_reg_reg_nosize.asm(7):2: error: instruction needs an explicit size suffix (.b/.w/.l)
+s3_reg_reg_nosize.asm(8):2: error: instruction needs an explicit size suffix (.b/.w/.l)
+s3_reg_reg_nosize.asm(9):2: error: instruction needs an explicit size suffix (.b/.w/.l)
+s3_reg_reg_nosize.asm(10):2: error: instruction needs an explicit size suffix (.b/.w/.l)
+s3_reg_reg_nosize.asm(11):2: error: instruction needs an explicit size suffix (.b/.w/.l)
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 8 errors (reported on stderr)
+================ s3_reg_reg_w.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : E360                	asl.w	d1,d0
+       5/       2 : E461                	asr.w	d2,d1
+       6/       4 : E76A                	lsl.w	d3,d2
+       7/       6 : E86B                	lsr.w	d4,d3
+       8/       8 : EB7C                	rol.w	d5,d4
+       9/       A : EC7D                	ror.w	d6,d5
+      10/       C : EF76                	roxl.w	d7,d6
+      11/       E : E077                	roxr.w	d0,d7
+      12/      10 : EE                  	dc.b $EE
+      13/      11 :                     	end
+sigil exit=0
+E3 60 E4 61 E7 6A E8 6B EB 7C EC 7D EF 76 E0 77 EE
+built: 17 bytes, no file written (pass -o <path> to write one)
+================ s3_reg_single_asl.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : E343                	asl	d3
+       5/       2 : EE                  	dc.b $EE
+       6/       3 :                     	end
+sigil exit=1
+s3_reg_single_asl.asm(4):2: error: instruction needs an explicit size suffix (.b/.w/.l)
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ s3_reg_single_asr.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : E243                	asr	d3
+       5/       2 : EE                  	dc.b $EE
+       6/       3 :                     	end
+sigil exit=1
+s3_reg_single_asr.asm(4):2: error: instruction needs an explicit size suffix (.b/.w/.l)
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ s3_reg_single_lsl.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : E34B                	lsl	d3
+       5/       2 : EE                  	dc.b $EE
+       6/       3 :                     	end
+sigil exit=1
+s3_reg_single_lsl.asm(4):2: error: instruction needs an explicit size suffix (.b/.w/.l)
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ s3_reg_single_lsr.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : E24B                	lsr	d3
+       5/       2 : EE                  	dc.b $EE
+       6/       3 :                     	end
+sigil exit=1
+s3_reg_single_lsr.asm(4):2: error: instruction needs an explicit size suffix (.b/.w/.l)
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ s3_reg_single_rol.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : E35B                	rol	d3
+       5/       2 : EE                  	dc.b $EE
+       6/       3 :                     	end
+sigil exit=1
+s3_reg_single_rol.asm(4):2: error: instruction needs an explicit size suffix (.b/.w/.l)
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ s3_reg_single_ror.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : E25B                	ror	d3
+       5/       2 : EE                  	dc.b $EE
+       6/       3 :                     	end
+sigil exit=1
+s3_reg_single_ror.asm(4):2: error: instruction needs an explicit size suffix (.b/.w/.l)
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ s3_reg_single_roxl.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : E353                	roxl	d3
+       5/       2 : EE                  	dc.b $EE
+       6/       3 :                     	end
+sigil exit=1
+s3_reg_single_roxl.asm(4):2: error: instruction needs an explicit size suffix (.b/.w/.l)
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ s3_reg_single_roxr.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : E253                	roxr	d3
+       5/       2 : EE                  	dc.b $EE
+       6/       3 :                     	end
+sigil exit=1
+s3_reg_single_roxr.asm(4):2: error: instruction needs an explicit size suffix (.b/.w/.l)
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ s3_reg_single_w_asl.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : E343                	asl.w	d3
+       5/       2 : EE                  	dc.b $EE
+       6/       3 :                     	end
+sigil exit=0
+E3 43 EE
+built: 3 bytes, no file written (pass -o <path> to write one)
+================ s3_reg_single_w_asr.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : E243                	asr.w	d3
+       5/       2 : EE                  	dc.b $EE
+       6/       3 :                     	end
+sigil exit=0
+E2 43 EE
+built: 3 bytes, no file written (pass -o <path> to write one)
+================ s3_reg_single_w_lsl.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : E34B                	lsl.w	d3
+       5/       2 : EE                  	dc.b $EE
+       6/       3 :                     	end
+sigil exit=0
+E3 4B EE
+built: 3 bytes, no file written (pass -o <path> to write one)
+================ s3_reg_single_w_lsr.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : E24B                	lsr.w	d3
+       5/       2 : EE                  	dc.b $EE
+       6/       3 :                     	end
+sigil exit=0
+E2 4B EE
+built: 3 bytes, no file written (pass -o <path> to write one)
+================ s3_reg_single_w_rol.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : E35B                	rol.w	d3
+       5/       2 : EE                  	dc.b $EE
+       6/       3 :                     	end
+sigil exit=0
+E3 5B EE
+built: 3 bytes, no file written (pass -o <path> to write one)
+================ s3_reg_single_w_ror.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : E25B                	ror.w	d3
+       5/       2 : EE                  	dc.b $EE
+       6/       3 :                     	end
+sigil exit=0
+E2 5B EE
+built: 3 bytes, no file written (pass -o <path> to write one)
+================ s3_reg_single_w_roxl.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : E353                	roxl.w	d3
+       5/       2 : EE                  	dc.b $EE
+       6/       3 :                     	end
+sigil exit=0
+E3 53 EE
+built: 3 bytes, no file written (pass -o <path> to write one)
+================ s3_reg_single_w_roxr.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : E253                	roxr.w	d3
+       5/       2 : EE                  	dc.b $EE
+       6/       3 :                     	end
+sigil exit=0
+E2 53 EE
+built: 3 bytes, no file written (pass -o <path> to write one)
+================ s3_upper.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : E1E8 001A           	ASL	$1A(a0)
+       5/       4 : E4D1                	RoXr	(a1)
+       6/       6 : EE                  	dc.b $EE
+       7/       7 :                     	end
+sigil exit=1
+s3_upper.asm(4):2: error: instruction needs an explicit size suffix (.b/.w/.l)
+s3_upper.asm(5):2: error: instruction needs an explicit size suffix (.b/.w/.l)
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 2 errors (reported on stderr)
+================ s7_basic.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+> > > s7_basic.asm(6): warning #30: no sharefile created, SHARED ignored
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : 1234                	dc.w $1234
+       5/       2 : 3E3C 0F64           Foo:	move.w #$0F64,d7
+       6/       6 :                     	shared Foo
+       7/       6 : EE                  	dc.b $EE
+       8/       7 :                     	end
+sigil exit=1
+s7_basic.asm(6):2: error: `shared` is not a recognized 68000 mnemonic
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ s7_expr.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+> > > s7_expr.asm(5): warning #30: no sharefile created, SHARED ignored
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : 01                  A:	dc.b 1
+       5/       1 :                     	shared A+1
+       6/       1 : EE                  	dc.b $EE
+       7/       2 :                     	end
+sigil exit=1
+s7_expr.asm(5):2: error: `shared` is not a recognized 68000 mnemonic
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ s7_fwd.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+> > > s7_fwd.asm(4): warning #30: no sharefile created, SHARED ignored
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     	shared Later
+       5/       0 : 01                  Later:	dc.b 1
+       6/       1 : EE                  	dc.b $EE
+       7/       2 :                     	end
+sigil exit=1
+s7_fwd.asm(4):2: error: `shared` is not a recognized 68000 mnemonic
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ s7_multi.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+> > > s7_multi.asm(6): warning #30: no sharefile created, SHARED ignored
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : 01                  A:	dc.b 1
+       5/       1 : 02                  B:	dc.b 2
+       6/       2 :                     	shared A,B
+       7/       2 : EE                  	dc.b $EE
+       8/       3 :                     	end
+sigil exit=1
+s7_multi.asm(6):2: error: `shared` is not a recognized 68000 mnemonic
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ s7_noarg.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+> > > s7_noarg.asm(4): warning #30: no sharefile created, SHARED ignored
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     	shared
+       5/       0 : EE                  	dc.b $EE
+       6/       1 :                     	end
+sigil exit=1
+s7_noarg.asm(4):2: error: `shared` is not a recognized 68000 mnemonic
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ s7_set.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+> > > s7_set.asm(5): warning #30: no sharefile created, SHARED ignored
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : =$3                  V := 3
+       5/       0 :                     	shared V
+       6/       0 : EE                  	dc.b $EE
+       7/       1 :                     	end
+sigil exit=1
+s7_set.asm(5):2: error: `shared` is not a recognized 68000 mnemonic
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ s7_twice.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+> > > s7_twice.asm(5): warning #30: no sharefile created, SHARED ignored
+> > > s7_twice.asm(6): warning #30: no sharefile created, SHARED ignored
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : 01                  A:	dc.b 1
+       5/       1 :                     	shared A
+       6/       1 :                     	shared A
+       7/       1 : EE                  	dc.b $EE
+       8/       2 :                     	end
+sigil exit=1
+s7_twice.asm(5):2: error: `shared` is not a recognized 68000 mnemonic
+s7_twice.asm(6):2: error: `shared` is not a recognized 68000 mnemonic
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 2 errors (reported on stderr)
+================ s7_undef.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+> > > s7_undef.asm(4): warning #30: no sharefile created, SHARED ignored
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     	shared Nope
+       5/       0 : EE                  	dc.b $EE
+       6/       1 :                     	end
+sigil exit=1
+s7_undef.asm(4):2: error: `shared` is not a recognized 68000 mnemonic
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ s7_upper.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+> > > s7_upper.asm(5): warning #30: no sharefile created, SHARED ignored
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : 01                  A:	dc.b 1
+       5/       1 :                     	SHARED A
+       6/       1 : EE                  	dc.b $EE
+       7/       2 :                     	end
+sigil exit=1
+s7_upper.asm(5):2: error: `SHARED` is not a recognized 68000 mnemonic
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ s7z.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+> > > s7z.asm(4): warning #30: no sharefile created, SHARED ignored
+       1/       0 :                     	cpu z80
+       2/       0 :                     	org 0
+       3/       0 : 01                  A:	db 1
+       4/       1 :                     	shared A
+       5/       1 : EE                  	db 0EEh
+       6/       2 :                     	end
+sigil exit=1
+s7z.asm(4):2: error: unknown directive or mnemonic `shared`
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+PROBE_END

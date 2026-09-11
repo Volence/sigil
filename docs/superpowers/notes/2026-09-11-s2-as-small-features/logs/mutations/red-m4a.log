@@ -1,0 +1,14 @@
+== mutation m4a on crates/sigil-frontend-as/src/eval.rs, test as_pushv_popv, HEAD 89a33bbaf6e632a519b7876e44ba3c512eb943f0
+APPLIED to /home/volence/sonic_hacks/sigil/.claude/worktrees/agent-a35527f94a0279a97/crates/sigil-frontend-as/src/eval.rs; mutated region read back from disk:
+  /home/volence/sonic_hacks/sigil/.claude/worktrees/agent-a35527f94a0279a97/crates/sigil-frontend-as/src/eval.rs:10087              let Some((value, _)) = self.value_stacks.get_mut(&stack).and_then(|v| if v.is_empty() { None } else { Some(v.remove(0)) }) else {
+test each_stack_name_is_its_own_stack ... ok
+test a_saved_value_comes_back ... ok
+test a_stack_left_full_is_one_warning_per_stack ... ok
+test nested_saves_unwind_last_in_first_out ... FAILED
+test one_list_is_last_in_first_out_too ... FAILED
+test what_asl_refuses_is_refused ... ok
+thread 'nested_saves_unwind_last_in_first_out' (113725) panicked at crates/sigil-frontend-as/tests/as_pushv_popv.rs:68:5:
+thread 'one_list_is_last_in_first_out_too' (113726) panicked at crates/sigil-frontend-as/tests/as_pushv_popv.rs:68:5:
+test result: FAILED. 4 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+TEST_PIPE_DONE
+restored crates/sigil-frontend-as/src/eval.rs from HEAD; tracked changes now: 0

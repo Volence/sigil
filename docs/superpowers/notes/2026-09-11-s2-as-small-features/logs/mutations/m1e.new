@@ -1,0 +1,3 @@
+pub fn parse_expr<'a>(toks: &'a [Token], ctx: &ExprCtx<'_>) -> Option<(Expr, &'a [Token])> {
+    if toks.is_empty() { return Some((Expr::Int(0), toks)); }
+    parse_bp(toks, 0, 0, ctx)

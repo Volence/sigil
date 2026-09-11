@@ -1,0 +1,16 @@
+== mutation m4c on crates/sigil-frontend-as/src/eval.rs, test as_pushv_popv, HEAD 89a33bbaf6e632a519b7876e44ba3c512eb943f0
+APPLIED to /home/volence/sonic_hacks/sigil/.claude/worktrees/agent-a35527f94a0279a97/crates/sigil-frontend-as/src/eval.rs; mutated region read back from disk:
+  /home/volence/sonic_hacks/sigil/.claude/worktrees/agent-a35527f94a0279a97/crates/sigil-frontend-as/src/eval.rs:10159              [Token { tok: Tok::Ident(_), .. }] => String::new(),
+  /home/volence/sonic_hacks/sigil/.claude/worktrees/agent-a35527f94a0279a97/crates/sigil-frontend-as/src/eval.rs:10160              g => {
+  /home/volence/sonic_hacks/sigil/.claude/worktrees/agent-a35527f94a0279a97/crates/sigil-frontend-as/src/eval.rs:10161                  self.err(item_span(g, span), format!("`{kw}` stack name must be a bare name"));
+test a_saved_value_comes_back ... ok
+test one_list_is_last_in_first_out_too ... ok
+test a_stack_left_full_is_one_warning_per_stack ... FAILED
+test each_stack_name_is_its_own_stack ... FAILED
+test what_asl_refuses_is_refused ... ok
+test nested_saves_unwind_last_in_first_out ... ok
+thread 'a_stack_left_full_is_one_warning_per_stack' (176327) panicked at crates/sigil-frontend-as/tests/as_pushv_popv.rs:194:5:
+thread 'each_stack_name_is_its_own_stack' (176328) panicked at crates/sigil-frontend-as/tests/as_pushv_popv.rs:68:5:
+test result: FAILED. 4 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+TEST_PIPE_DONE
+restored crates/sigil-frontend-as/src/eval.rs from HEAD; tracked changes now: 0

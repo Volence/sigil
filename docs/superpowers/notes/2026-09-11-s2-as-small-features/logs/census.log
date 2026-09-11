@@ -1,0 +1,10 @@
+HEAD 4d52fb993223cc2749593fc2938715e6ccb8a38e
+census scaffold applied
+4530:                if std::env::var_os("SIGIL_ARGTEXT_CENSUS").is_some() {
+    Finished `release` profile [optimized] target(s) in 22.84s
+restored; tracked changes now: 0
+census binary md5 197b2723eada0092b34396a6af693dbf
+== s1: census lines 23145, distinct 7299
+== s2: census lines 50905, distinct 9847
+== s3k: census lines 44253, distinct 12792
+CENSUS_END

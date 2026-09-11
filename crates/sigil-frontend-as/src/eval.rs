@@ -1,7 +1,8 @@
 //! eval: the driver — line loop, directive dispatch, instruction lowering, emit.
 
 use crate::expand::{
-    group_span, item_span, keyword_eq_index, render_tokens, split_call_args, split_top_commas,
+    group_span, item_span, keyword_eq_offset, render_tokens, split_call_args, split_macro_args,
+    split_top_commas,
     substitute_frame, substitute_name,
 };
 use crate::lexer::{lex_line, lex_line_recover};
@@ -944,6 +945,7 @@ fn one_pass_with_defer(
     asm.known_labels = seed_labels.clone();
     asm.label_ref_equs = seed_label_ref_equs.clone();
     asm.process(root_name, src);
+    asm.report_unpopped_value_stacks();
     // The census behind `GLOBAL_MACRO_CAP` and `GLOBAL_REPT_CAP`: what one
     // pass over a real program actually drew on each budget, so the figures in
     // those constants' docs can be re-measured rather than believed.
@@ -1604,6 +1606,14 @@ struct Asm {
     /// message in `directive_equate`, and calling them variables would refuse
     /// the one spelling that guard exists to permit.
     sym_class: std::collections::HashMap<String, SymClass>,
+    /// The `pushv`/`popv` stacks of THIS pass, by stack name (the empty name
+    /// is the default stack). Each entry is a saved value and the `pushv`
+    /// line that saved it. See [`Self::directive_pushv`].
+    value_stacks: std::collections::BTreeMap<String, Vec<(PushedValue, Span)>>,
+    /// The statement [`Self::exec_one`] is executing, as `(text, base,
+    /// source)`: the text a macro call's arguments are cut from
+    /// ([`Self::call_args`]).
+    call_line: Option<(String, u32, SourceId)>,
     /// Every `equ`/`=` name whose VALUE derives from a section LABEL
     /// (`HandlerPtr = Handler`, `X = Label+4`, or a chain `X = Y` onto another
     /// such equ) — the debugger's `DEBUGGER__*` handler-address table is the
@@ -1962,6 +1972,8 @@ impl Asm {
             mompass: LATER_PASS,
             known_labels: std::collections::HashSet::new(),
             sym_class: std::collections::HashMap::new(),
+            value_stacks: std::collections::BTreeMap::new(),
+            call_line: None,
             label_ref_equs: std::collections::HashSet::new(),
             set_sym_symbolic: std::collections::HashMap::new(),
             defined_this_pass: std::collections::HashSet::new(),
@@ -2728,7 +2740,7 @@ impl Asm {
                     if let Some((args, next)) = split_call_args(toks, i + 1) {
                         let value = match args.as_slice() {
                             [arg] => self
-                                .eval_num(arg)
+                                .builtin_arg(name, arg)
                                 .and_then(|v| apply_num_builtin(name, v))
                                 .and_then(|v| v.as_i64()),
                             _ => None,
@@ -2795,6 +2807,16 @@ impl Asm {
         rest.is_empty().then_some(v)
     }
 
+    /// The value of a numeric builtin's one argument. An EMPTY argument is 0
+    /// for `lastbit`: asl assembles `dc.b lastbit()` as `FF` (probe
+    /// `l6_noarg`), the same zero `()` is.
+    fn builtin_arg(&self, name: &str, arg: &[Token]) -> Option<Num> {
+        if arg.is_empty() && name.eq_ignore_ascii_case("lastbit") {
+            return Some(Num::Int(0));
+        }
+        self.eval_num(arg)
+    }
+
     fn parse_num_bp<'t>(&self, toks: &'t [Token], min_bp: u8) -> Option<(Num, &'t [Token])> {
         let (mut lhs, mut rest) = self.parse_num_atom(toks)?;
         while let Some(Tok::Punct(p)) = rest.first().map(|t| &t.tok) {
@@ -2846,6 +2868,12 @@ impl Asm {
                 let (v, r) = self.parse_num_atom(rest)?;
                 Some((Num::Int((v.as_i64()? == 0) as i64), r))
             }
+            // `()` is the integer 0 here exactly as in `crate::expr::parse_expr`.
+            Tok::Punct(Punct::LParen)
+                if matches!(rest.first().map(|t| &t.tok), Some(Tok::Punct(Punct::RParen))) =>
+            {
+                Some((Num::Int(0), &rest[1..]))
+            }
             Tok::Punct(Punct::LParen) => {
                 let (v, r) = self.parse_num_bp(rest, 0)?;
                 match r.first().map(|t| &t.tok) {
@@ -2867,7 +2895,7 @@ impl Asm {
             {
                 let (args, next) = split_call_args(rest, 0)?;
                 let inner = match args.as_slice() {
-                    [arg] => self.eval_num(arg)?,
+                    [arg] => self.builtin_arg(name, arg)?,
                     _ => return None,
                 };
                 // `INT` of an INTEGER is that integer (probe `f1.asm(11)`:
@@ -3520,6 +3548,23 @@ impl Asm {
                 i += 1;
                 continue;
             };
+            // ARITY, by asl's count of argument text rather than by group
+            // count: an argument that counts but is empty is `()`, the value
+            // 0, so a wrong count is the only thing that stops `f()` or `f(1,)`
+            // from folding a parameter asl never bound.
+            let passed = crate::expand::asl_call_arg_count(toks, i + 1, next - 1, &args);
+            if passed != params.len() {
+                let span = toks[i].span;
+                if self.arg_faults_seen.insert((span.source.0, span.start, span.end)) {
+                    self.err(
+                        span,
+                        format!(
+                            "wrong number of function arguments: `{name}` takes {}, this call passes {passed}",
+                            params.len()
+                        ),
+                    );
+                }
+            }
             for (idx, arg) in args.iter().enumerate() {
                 self.check_call_args(arg, depth + 1);
                 if params.get(idx).is_some_and(|p| !body_mentions(&body, p)) {
@@ -4095,14 +4140,20 @@ impl Asm {
         let line = composed.as_ref().unwrap_or(line);
         let toks = match lex_line(&line.text, self.state.cpu, &self.state.charset, line.source, line.base) {
             Ok(t) => t,
-            Err(d) => {
-                self.diags.push(d);
-                return;
-            }
+            // A macro call's operand is TEXT, so a word the lexer cannot read
+            // there is not an error ([`Self::macro_call_prefix`]).
+            Err(d) => match self.macro_call_prefix(line) {
+                Some(t) => t,
+                None => {
+                    self.diags.push(d);
+                    return;
+                }
+            },
         };
         if toks.is_empty() {
             return;
         }
+        self.call_line = Some((line.text.clone(), line.base, line.source));
         // This line has content, so it ends any deferral carried into it: take
         // the carry now, and let a pad inside the dispatch below claim it. A
         // line that dispatches without padding simply drops it, which is what
@@ -4426,6 +4477,66 @@ impl Asm {
             return;
         }
         self.dispatch(&head, &body[1..], body[0].span);
+    }
+
+    /// The tokens of a line whose OPERAND does not lex but whose head is a macro
+    /// call, or `None` for any other line (which keeps its lexer diagnostic).
+    ///
+    /// What comes back is the clean prefix [`lex_line_recover`] reads, enough
+    /// for the label and the head: the arguments themselves are cut from the
+    /// line's text ([`Self::call_args`]), so the operand never has to lex. asl
+    /// substitutes `Pal_SS1_2p:palette Special Stage 1 2p.bin` into `dc.b
+    /// "Special Stage 1 2p.bin"` (probe `m5_2p`), where `2p` is no token at all.
+    /// The head is found by the rule [`Self::exec_one`] routes by: after a colon
+    /// label, or the second word after a colon-less column-0 label.
+    fn macro_call_prefix(&self, line: &SrcLine) -> Option<Vec<Token>> {
+        let (toks, _) = lex_line_recover(&line.text, self.state.cpu, &self.state.charset, line.source, line.base);
+        let parsed = parse_line_tokens(&toks);
+        let body: &[Token] = if parsed.label_colon.is_some() { &parsed.tokens } else { &toks };
+        let names_macro = |t: Option<&Token>| {
+            matches!(t.map(|t| &t.tok), Some(Tok::Ident(s))
+                if self.macros.contains_key(s) || self.is_attribute_macro_head(s))
+        };
+        let head_is_macro = names_macro(body.first())
+            || (parsed.label_colon.is_none()
+                && body.first().is_some_and(|t| t.span.start == line.base)
+                && names_macro(body.get(1)));
+        head_is_macro.then_some(toks)
+    }
+
+    /// One macro call's arguments as TEXT, cut from the statement being executed
+    /// ([`Self::call_line`]) with [`split_macro_args`], each with a span for
+    /// its diagnostics. `head` is the span of the macro's name, so the operand is
+    /// everything after it.
+    fn call_args(&self, arg_toks: &[Token], head: Span) -> Vec<CallArg> {
+        if let Some((text, base, source)) = &self.call_line {
+            let operand = head
+                .end
+                .checked_sub(*base)
+                .filter(|_| head.source == *source)
+                .and_then(|o| text.get(o as usize..));
+            if let Some(operand) = operand {
+                return split_macro_args(operand)
+                    .into_iter()
+                    .map(|(s, e)| CallArg {
+                        text: operand[s..e].to_string(),
+                        span: Span {
+                            source: *source,
+                            start: head.end + s as u32,
+                            end: head.end + e as u32,
+                        },
+                    })
+                    .collect();
+            }
+        }
+        // No statement text to cut from: the tokens, rendered.
+        if arg_toks.is_empty() {
+            return Vec::new();
+        }
+        split_top_commas(arg_toks)
+            .into_iter()
+            .map(|g| CallArg { text: render_tokens(g), span: group_span(g).unwrap_or(head) })
+            .collect()
     }
 
     /// The routing keyword of a line, its index within `body`, and `body` (the
@@ -5625,6 +5736,13 @@ impl Asm {
     fn struct_embed_name(&mut self, line: &SrcLine) -> Option<String> {
         let substituted = self.subst_frame(line);
         let line = substituted.as_ref().unwrap_or(line);
+        if let Some((_, at)) = digit_led_member_label(&line.text) {
+            let toks = lex_line(&line.text[at..], self.state.cpu, &self.state.charset, line.source, line.base + at as u32).ok()?;
+            return match toks.first().map(|t| &t.tok) {
+                Some(Tok::Ident(s)) if self.structs.contains_key(s) => Some(s.clone()),
+                _ => None,
+            };
+        }
         let toks = lex_line(&line.text, self.state.cpu, &self.state.charset, line.source, line.base).ok()?;
         let parsed = parse_line_tokens(&toks);
         let head = if parsed.label_colon.is_some() {
@@ -5647,6 +5765,13 @@ impl Asm {
     fn parse_struct_field(&mut self, line: &SrcLine) -> Option<(String, i64, i64)> {
         let substituted = self.subst_frame(line);
         let line = substituted.as_ref().unwrap_or(line);
+        // A member NAME may start with a digit, which no symbol name may do:
+        // the member's symbol is `STRUCT.name`, and it is that whole name asl
+        // validates. See [`digit_led_member_label`] for where it is accepted.
+        if let Some((field, at)) = digit_led_member_label(&line.text) {
+            let rest = lex_line(&line.text[at..], self.state.cpu, &self.state.charset, line.source, line.base + at as u32).ok()?;
+            return self.struct_field_width(field, &rest);
+        }
         let toks = lex_line(&line.text, self.state.cpu, &self.state.charset, line.source, line.base).ok()?;
         if toks.is_empty() {
             return None;
@@ -5678,6 +5803,12 @@ impl Asm {
                 _ => return None,
             }
         };
+        self.struct_field_width(field, &rest)
+    }
+
+    /// The `(field, width, count)` of a struct-body line whose name column has
+    /// been read, from the tokens that follow the name.
+    fn struct_field_width(&mut self, field: String, rest: &[Token]) -> Option<(String, i64, i64)> {
         // Width `0` = "the mnemonic column is not a `ds.*`". The line still
         // carries a NAME, and that name is a member either way: a struct-body
         // line with a label and nothing else is a marker, and one whose
@@ -6229,6 +6360,9 @@ impl Asm {
             // block closers (handled in block scanning, not dispatch).
             "end" => self.aborted = true,
             "shift" => self.directive_shift(span),
+            "pushv" => self.directive_pushv(rest, span),
+            "popv" => self.directive_popv(rest, span),
+            "shared" => self.directive_shared(span),
             // Unreachable for a plain dispatch (the precedence check at the top
             // of this function has already expanded it) and correctly dead for a
             // forced-builtin one; kept as the explicit statement that a macro
@@ -9834,7 +9968,7 @@ impl Asm {
                         ..
                     },
                     text,
-                )) => Some(render_tokens(text)),
+                )) => Some(slice_source(&head.text, lines[start].base, text)),
                 _ => None,
             });
         }
@@ -9995,6 +10129,188 @@ impl Asm {
         }
     }
 
+    /// asl's `pushv [stack],symbol[,symbol...]`: push the CURRENT value of each
+    /// symbol, in list order, onto the named stack; an empty name is the
+    /// default stack. [`Self::directive_popv`] pops into each symbol in list
+    /// order, so the stack is last-in-first-out across one list as well as
+    /// across lines: asl restores `pushv ,A,B` with `popv ,B,A` (`01 02`, probe
+    /// `p4_multi_rev`), and `popv ,A,B` swaps the two (`02 01`,
+    /// `p4_multi_same`). Nested saves unwind in order (`06 04 02`,
+    /// `p4_nested`). Stack names are case-sensitive: `S1` and `s1` are two
+    /// stacks (`p4_stack_case`). A value is an integer or a float; a label's
+    /// value can be saved too (`p4_push_label_pop_var`).
+    ///
+    /// A STRING symbol is refused: asl aborts on it (exit 134, `p4_string`),
+    /// so there is no value to reproduce. An undefined symbol is asl's `#1010`.
+    fn directive_pushv(&mut self, rest: &[Token], span: Span) {
+        let Some((stack, names)) = self.value_stack_operands("pushv", rest, span) else {
+            return;
+        };
+        for (name, nspan) in names {
+            let value = if self.resolve_str(&name).is_some() {
+                self.err(nspan, format!("`pushv` cannot save the string symbol `{name}`"));
+                PushedValue::Unresolved
+            } else if let Some(f) = self.resolve_float_sym(&name) {
+                PushedValue::Float(f)
+            } else if let Some(v) = self.resolve_sym(&name) {
+                PushedValue::Int(v)
+            } else {
+                self.err(nspan, format!("symbol undefined: `{name}` in `pushv`"));
+                PushedValue::Unresolved
+            };
+            self.value_stacks.entry(stack.clone()).or_default().push((value, span));
+        }
+    }
+
+    /// asl's `popv [stack],symbol[,symbol...]`: pop one saved value into each
+    /// symbol, in list order. See [`Self::directive_pushv`] for the order.
+    ///
+    /// An empty stack is asl's `#1530 stack is empty or undefined`, and a target
+    /// that is not defined is `#1010`. asl also OVERWRITES a constant or a label
+    /// with the popped value (`p4_pop_into_equ_diff` makes `E equ 5` read 7).
+    /// sigil restores into a variable only; a constant or label is accepted when
+    /// the popped value is the one it already has (asl's `pushv ,E` / `popv ,E`
+    /// round trip, `p4_equ`) and refused when the value differs.
+    fn directive_popv(&mut self, rest: &[Token], span: Span) {
+        let Some((stack, names)) = self.value_stack_operands("popv", rest, span) else {
+            return;
+        };
+        for (name, nspan) in names {
+            let Some((value, _)) = self.value_stacks.get_mut(&stack).and_then(Vec::pop) else {
+                self.err(nspan, format!("`popv`: {} is empty", stack_label(&stack)));
+                continue;
+            };
+            self.restore_pushed(&name, value, nspan);
+        }
+    }
+
+    /// Bind one popped value to `name`, under the rules [`Self::directive_popv`]
+    /// states.
+    fn restore_pushed(&mut self, name: &str, value: PushedValue, span: Span) {
+        if self.resolve_str(name).is_some() {
+            self.err(span, format!("`popv` cannot restore into the string symbol `{name}`"));
+            return;
+        }
+        let current = self
+            .resolve_float_sym(name)
+            .map(PushedValue::Float)
+            .or_else(|| self.resolve_sym(name).map(PushedValue::Int));
+        let Some(current) = current else {
+            self.err(span, format!("symbol undefined: `{name}` in `popv`"));
+            return;
+        };
+        let q = qualify(name, self.real_scope());
+        if value == PushedValue::Unresolved {
+            return;
+        }
+        if self.sym_class.get(&q).is_some_and(|c| *c != SymClass::Var) {
+            if value != current {
+                self.err(
+                    span,
+                    format!(
+                        "`popv` would give `{name}`, which is not a variable, a new value ({current} to {value}); asl overwrites it, sigil refuses"
+                    ),
+                );
+            }
+            return;
+        }
+        match value {
+            PushedValue::Int(v) => {
+                self.float_env.remove(&q);
+                self.str_env.remove(&q);
+                self.set_sym_symbolic.remove(&q);
+                self.define_sym(&q, SymbolValue::Int(v));
+            }
+            PushedValue::Float(f) => {
+                self.str_env.remove(&q);
+                self.float_env.insert(q, f);
+            }
+            PushedValue::Unresolved => {}
+        }
+    }
+
+    /// The operands `pushv`/`popv` share: a stack name (possibly empty) and at
+    /// least one symbol name. asl refuses `pushv Ver` (no comma, so no symbol)
+    /// as `#1110 wrong number of operands` and `pushv ,` as `#1010`.
+    fn value_stack_operands(
+        &mut self,
+        kw: &str,
+        rest: &[Token],
+        span: Span,
+    ) -> Option<(String, Vec<(String, Span)>)> {
+        let groups = split_top_commas(rest);
+        if groups.len() < 2 {
+            self.err(
+                span,
+                format!("`{kw}` needs a stack name and at least one symbol: `{kw} [stack],symbol[,symbol...]`"),
+            );
+            return None;
+        }
+        let stack = match groups[0] {
+            [] => String::new(),
+            [Token { tok: Tok::Ident(s), .. }] => s.clone(),
+            g => {
+                self.err(item_span(g, span), format!("`{kw}` stack name must be a bare name"));
+                return None;
+            }
+        };
+        let mut names = Vec::new();
+        for g in &groups[1..] {
+            match g {
+                [Token { tok: Tok::Ident(s), span: s_span }] => names.push((s.clone(), *s_span)),
+                _ => {
+                    self.err(item_span(g, span), format!("`{kw}` takes symbol names, and this is not one"));
+                    return None;
+                }
+            }
+        }
+        Some((stack, names))
+    }
+
+    /// asl's `shared symbol[,symbol...]` writes the symbols to the share file
+    /// `-c` names, and without `-c` it does nothing but say so: every `shared`
+    /// line is `warning #30: no sharefile created, SHARED ignored` at exit 0,
+    /// whatever its operands are, an undefined name or none at all included
+    /// (probes `s7_*`). sigil writes no share file, so it is asl without `-c`:
+    /// the line is accepted, its operands are not evaluated, and every line
+    /// says so rather than being dropped silently.
+    ///
+    /// Sonic 2 ends with `shared movewZ80CompSize`, and its build script reads
+    /// the share file to patch the sound driver's compressed size into the
+    /// `move.w` at that address after `p2bin`. sigil does not perform that
+    /// patch; at the census revision it writes the value already there.
+    fn directive_shared(&mut self, span: Span) {
+        self.diags.push(Diagnostic {
+            level: Level::Warning,
+            message: "`shared` is ignored: sigil writes no share file \
+                      (asl without `-c` says \"no sharefile created, SHARED ignored\")"
+                .to_string(),
+            primary: span,
+        });
+    }
+
+    /// asl warns once per stack still holding values when the source ends
+    /// (`warning #230: stack is not empty`; two stacks left, two warnings,
+    /// probe `p4_leftover_two`). The warning points at the last `pushv` onto
+    /// that stack.
+    fn report_unpopped_value_stacks(&mut self) {
+        let left: Vec<(String, usize, Span)> = self
+            .value_stacks
+            .iter()
+            .filter_map(|(k, v)| v.last().map(|(_, s)| (k.clone(), v.len(), *s)))
+            .collect();
+        for (stack, n, span) in left {
+            self.diags.push(Diagnostic {
+                level: Level::Warning,
+                message: format!(
+                    "{} is not empty at the end of the source: {n} value(s) pushed and never popped",
+                    stack_label(&stack)
+                ),
+                primary: span,
+            });
+        }
+    }
+
     /// AS's `exitm`: end the INNERMOST running expansion early. The enclosing
     /// one is untouched and resumes at the line after the construct.
     ///
@@ -10101,17 +10417,19 @@ impl Asm {
         // (asl: `dc.b "[]"`, `if ""<>""` FALSE, and the bare `label *` that
         // follows defines nothing and is not an error).
         let int_label = int_label.then(|| captured.unwrap_or_default());
-        let all_args = render_tokens(arg_toks);
-        let groups = split_top_commas(arg_toks);
-        // `ARGCOUNT`'s entry value. `split_top_commas` returns ONE (empty) group
-        // for an empty operand field, which is right for binding — the first
-        // parameter gets the empty default either way — and wrong for counting:
-        // asl reports 0 for `ac` and 2 for `ac ,` (probe `p5.asm`). The empty
-        // field is the reachable case, not a curiosity: `jmpTos` with no
-        // arguments relays an empty `ALLARGS` into `jmpTosInternal2`, whose
-        // `if ARGCOUNT>0` is the only thing standing between that and an
-        // `irp op,` over one empty item defining a nameless label.
-        let argc = if arg_toks.is_empty() { 0 } else { groups.len() as i64 };
+        // AS arguments are TEXT, cut from the invocation line.
+        let args = self.call_args(arg_toks, span);
+        // `ALLARGS` is the arguments rejoined with bare commas: asl turns
+        // `m   aa  ,  bb  ,cc` into `aa,bb,cc` and keeps `m aa, pb = 5` as
+        // `aa,pb = 5` (probes `m5s_trim`, `m5k_both_space`).
+        let all_args = args.iter().map(|a| a.text.as_str()).collect::<Vec<_>>().join(",");
+        // `ARGCOUNT`'s entry value: asl reports 0 for `ac` and 2 for `ac ,`
+        // (probe `p5.asm`). The empty field is the reachable case, not a
+        // curiosity: `jmpTos` with no arguments relays an empty `ALLARGS` into
+        // `jmpTosInternal2`, whose `if ARGCOUNT>0` is the only thing standing
+        // between that and an `irp op,` over one empty item defining a
+        // nameless label.
+        let argc = args.len() as i64;
         let mut keyword: std::collections::BTreeMap<String, String> =
             std::collections::BTreeMap::new();
         let mut positional: Vec<String> = Vec::new();
@@ -10142,46 +10460,28 @@ impl Asm {
         // Accepting these silently is a WRONG PROGRAM, not a missing message: the
         // refused positional is bound here where asl leaves it empty, so the body
         // assembles against arguments asl never supplied.
-        // The whole-call fallback for an argument group with no tokens of its own
-        // (`m py=1,` — the trailing empty group still counts as an argument).
-        let call_span = arg_toks.first().map(|t| t.span).unwrap_or(Span {
-            source: self.source,
-            start: 0,
-            end: 0,
-        });
         let mut seen_keyword = false;
-        for g in &groups {
-            let Some(eq) = keyword_eq_index(g) else {
+        for a in &args {
+            let Some(eq) = keyword_eq_offset(&a.text) else {
                 if seen_keyword {
-                    self.err(
-                        group_span(g).unwrap_or(call_span),
-                        "positional argument no longer allowed after keyword argument",
-                    );
+                    self.err(a.span, "positional argument no longer allowed after keyword argument");
                     continue;
                 }
-                positional.push(render_tokens(g));
+                positional.push(a.text.clone());
                 continue;
             };
             // Every keyword argument arms the rule for the arguments after it,
             // including one asl goes on to reject as undefined.
             seen_keyword = true;
-            let (kw_name, kw_value) = (&g[..eq], &g[eq + 1..]);
-            if let [Token { tok: Tok::Ident(nm), .. }] = kw_name {
-                if params.iter().any(|p| p == nm) {
-                    // An EMPTY value is a real binding to empty text, not a
-                    // non-keyword: asl's `m 1,py=,4` (probe `k6.asm`) leaves `py`
-                    // empty and still refuses the `4` that follows.
-                    keyword.insert(nm.clone(), render_tokens(kw_value));
-                    continue;
-                }
+            let (kw_name, kw_value) = (a.text[..eq].trim(), a.text[eq + 1..].trim());
+            if params.iter().any(|p| p == kw_name) {
+                // An EMPTY value is a real binding to empty text, not a
+                // non-keyword: asl's `m 1,py=,4` (probe `k6.asm`) leaves `py`
+                // empty and still refuses the `4` that follows.
+                keyword.insert(kw_name.to_string(), kw_value.to_string());
+                continue;
             }
-            self.err(
-                group_span(g).unwrap_or(call_span),
-                format!(
-                    "keyword argument `{}` not defined in macro `{name}`",
-                    render_tokens(kw_name)
-                ),
-            );
+            self.err(a.span, format!("keyword argument `{kw_name}` not defined in macro `{name}`"));
         }
         let mut pos_iter = positional.into_iter();
         // The caller's local-label scope, captured BEFORE the expansion swaps in
@@ -10577,11 +10877,9 @@ struct MacroFrame {
     bound: Vec<String>,
     /// Argument groups still in scope for `ALLARGS`. Shifts left, no refill.
     all: Vec<String>,
-    /// `ALLARGS` before any shift: the invocation's argument text rendered as a
-    /// whole, not a re-join of [`Self::all`]. The two agree on every argument
-    /// shape, but rendering the token run once is what the byte-exact
-    /// `%<…>`-string substitution in aeon's debugger macros already depends on,
-    /// so the whole-run rendering stays the source of truth while it is intact.
+    /// `ALLARGS` before any shift: the invocation's arguments as written,
+    /// rejoined with bare commas. Not a re-join of [`Self::all`], which holds
+    /// BOUND values (a `.`-local argument already qualified against the caller).
     all_raw: String,
     /// How many times this expansion has shifted.
     shifted: usize,
@@ -10692,6 +10990,12 @@ impl MacroFrame {
         self.shifted += 1;
         self.stamp = next_stamp();
     }
+}
+
+/// One macro call argument: its text as written, trimmed, and where it is.
+struct CallArg {
+    text: String,
+    span: Span,
 }
 
 /// The text asl pastes for an INTEGER folded out of a `\{expr}` interpolation:
@@ -10908,6 +11212,67 @@ fn split_src_lines(text: &str, source: SourceId) -> Vec<SrcLine> {
         lines.push(SrcLine::new(acc, start_base, source));
     }
     lines
+}
+
+/// One value `pushv` saved: an integer, a float, or nothing, when the symbol
+/// had no value to save (the `pushv` line reported that already, and the
+/// `popv` that takes it binds nothing).
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum PushedValue {
+    Int(i64),
+    Float(f64),
+    Unresolved,
+}
+
+impl std::fmt::Display for PushedValue {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PushedValue::Int(v) => write!(f, "{v}"),
+            PushedValue::Float(v) => write!(f, "{v}"),
+            PushedValue::Unresolved => f.write_str("no value"),
+        }
+    }
+}
+
+/// How a diagnostic names a `pushv` stack: the empty name is asl's default
+/// stack.
+fn stack_label(stack: &str) -> String {
+    if stack.is_empty() {
+        "the default `pushv` stack".to_string()
+    } else {
+        format!("`pushv` stack `{stack}`")
+    }
+}
+
+/// The name column of a struct-body line whose name starts with a DIGIT, and
+/// the byte offset in `text` where the rest of the line begins.
+///
+/// No symbol name may start with a digit (asl: `1up:` as a label, `1up equ 5`
+/// and a bare reference to `1upPlaying` are all `#1020 invalid symbol name`),
+/// but a struct MEMBER may: the symbol it defines is `STRUCT.name`, which starts
+/// with the struct's letter. asl, exit 0 (probes `d2_member_*`): `1upPlaying:`,
+/// the all-digit `2:`, the hex-shaped `12h:` and the marker `1up:` are members,
+/// under `DOTS` or the default `_`. The column rule is a label's: a colon at any
+/// indentation, or column 0 with no colon; an indented word with no colon is an
+/// instruction (`\t1upPlaying\tds.b 1` is `#1200 unknown instruction`), so that
+/// shape returns `None` and the lexer refuses it.
+fn digit_led_member_label(text: &str) -> Option<(String, usize)> {
+    let bytes = text.as_bytes();
+    let start = bytes.iter().position(|b| !matches!(b, b' ' | b'\t'))?;
+    if !bytes[start].is_ascii_digit() {
+        return None;
+    }
+    let len = bytes[start..]
+        .iter()
+        .position(|b| !(b.is_ascii_alphanumeric() || matches!(b, b'_' | b'.')))
+        .unwrap_or(bytes.len() - start);
+    let end = start + len;
+    let name = text[start..end].to_string();
+    match bytes.get(end) {
+        Some(b':') => Some((name, end + 1)),
+        None | Some(b' ' | b'\t' | b';') if start == 0 => Some((name, end)),
+        _ => None,
+    }
 }
 
 /// The canonical (lower-case) spelling of a DIRECTIVE or MNEMONIC keyword.
@@ -11502,6 +11867,14 @@ fn m68k_default_size(m: M68kMnemonic) -> Option<M68kSize> {
         // Word-only, and asl takes the bare spelling: `move d6,ccr` (S2, 5
         // sites) is the same `44C0 | ea` as `move.w d6,ccr` (S1, 2 sites).
         MoveToCcr => Some(M68kSize::W),
+        // The shifts and rotates default to WORD in every form, not only the
+        // word-only memory form: asl assembles `asl $1A(a0)` as `E1E8 001A`
+        // (Sonic 2 writes that 8 times, S3K 76), `asl #1,d0` as `E340`, `asl
+        // d1,d0` as `E360` and `asl d3` as `E343`, each equal to its `.w`
+        // spelling, for all eight mnemonics (probes `s3_*`). The memory form's
+        // own rules stay the encoder's: `.b`/`.l` there and a count other than
+        // one are refused, as asl refuses them.
+        Asl | Asr | Lsl | Lsr | Rol | Ror | Roxl | Roxr => Some(M68kSize::W),
         Dbcc(_) => Some(M68kSize::W),
         Scc(_) => Some(M68kSize::B),
         _ => None,
@@ -12662,16 +13035,18 @@ mod tests {
     /// `q19.asm`. A struct-body line this cannot read is a wrong SIZE, not a
     /// missing symbol, so it is reported rather than skipped.
     ///
-    /// Sonic 2's `zVar` declares `1upPlaying: ds.b 1`; asl takes an identifier
-    /// beginning with a digit and sigil's lexer does not. Skipped, that made
-    /// `zVar.len` $17 against asl's $18 — **exit 0 on both sides, no
-    /// diagnostic anywhere, and every member after it one byte low.**
+    /// The line here is a digit-led name that is INDENTED and has no colon:
+    /// asl reads that column as an instruction and refuses it (`#1200 unknown
+    /// instruction`, probe `d2_member_indented_nocolon`), and the lexer reads it
+    /// as a malformed number. Skipped, `V.len` would be 2 where the body
+    /// declares three bytes, and every member after it one byte low, at exit 0.
+    /// The same name with a colon is a member (`tests/as_struct_digit_member.rs`).
     #[test]
     fn an_unreadable_struct_member_line_is_reported_not_skipped() {
         let src = "\tcpu 68000\n\torg $0\n\
                    V struct dots\n\
                    \ta:\tds.b 1\n\
-                   \t1upPlaying:\tds.b 1\n\
+                   \t1upPlaying\tds.b 1\n\
                    \tb:\tds.b 1\n\
                    V endstruct\n\
                    \tdc.w V.a,V.b,V.len\n";
@@ -17835,7 +18210,22 @@ fn float_builtin(name: &str) -> Option<FloatFn> {
 fn is_num_builtin(name: &str) -> bool {
     name.eq_ignore_ascii_case("int")
         || name.eq_ignore_ascii_case("abs")
+        || name.eq_ignore_ascii_case("lastbit")
         || float_builtin(name).is_some()
+}
+
+/// asl's `lastbit(x)`: the index of the highest set bit of the 64-bit integer
+/// `x`, and -1 when no bit is set. asl, exit 0 (probes `l6_*`): `lastbit(1)` 0,
+/// `lastbit(5)` 2, `lastbit($80)` 7, `lastbit($FFFEB)` 19, `lastbit($7FFFFFFF)`
+/// 30, `lastbit($80000000)` 31, `lastbit($100000000)` 32, `lastbit(-1)` and
+/// `lastbit(-2)` 63, `lastbit(0)` -1. Sonic 2 spends it sizing the end-of-ROM
+/// pad: `cnop -1,2<<lastbit(*-StartOfRom-1)` (`s2.asm(91263)`).
+fn lastbit(x: i64) -> i64 {
+    if x == 0 {
+        -1
+    } else {
+        63 - i64::from((x as u64).leading_zeros())
+    }
 }
 
 /// Apply one of asl's single-argument numeric builtins to an already-evaluated
@@ -17902,6 +18292,14 @@ fn apply_num_builtin(name: &str, arg: Num) -> Option<Num> {
             Num::Int(i) => Num::Int(i.wrapping_abs()),
             Num::Float(f) => Num::Float(f.abs()),
         });
+    }
+    // INTEGER-only: asl aborts on a float argument (`lastbit(5.0)` is `#10000
+    // internal error`, exit 3), so a float is refused here rather than guessed.
+    if name.eq_ignore_ascii_case("lastbit") {
+        return match arg {
+            Num::Int(i) => Some(Num::Int(lastbit(i))),
+            Num::Float(_) => None,
+        };
     }
     let y = float_builtin(name)?(arg.as_f64());
     y.is_finite().then_some(Num::Float(y))

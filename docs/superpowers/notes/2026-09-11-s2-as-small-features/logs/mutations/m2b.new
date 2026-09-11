@@ -1,0 +1,1 @@
+        None | Some(b' ' | b'\t' | b';') => Some((name, end)),

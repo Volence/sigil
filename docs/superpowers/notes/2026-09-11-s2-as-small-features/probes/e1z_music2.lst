@@ -1,0 +1,90 @@
+ AS V1.42 Beta [Bld 212] - Source File e1z_music2.asm - Page 1 - 09/11/2026 05:08:17 PM
+
+
+       1/       0 :                     	cpu z80
+       2/       0 :                     	org 0
+       3/       0 : =8000H               z80_bank_size = 8000h
+       4/       0 :                     getZ80BankOffset function label, label # z80_bank_size
+       5/       0 :                     getZ80BankBase function label, label - getZ80BankOffset(label)
+       6/       0 :                     withinSameZ80Bank function label1, label2, getZ80BankBase(label1) == getZ80BankBase(label2)
+       7/       0 : =40H                 MusFlag_SlowerOnPAL = 1 << 6
+       8/       0 :                     music_metadata macro DATA,FLAGS
+       9/       0 :                     	db	(withinSameZ80Bank(DATA.pointer, MusicPoint2)<<7)|((~~DATA.is_compressed)<<5)|(FLAGS)|(getZ80BankOffset(DATA.pointer)/2)
+      10/       0 :                         endm
+      11/       0 : =10020H              Mus_EHZ.pointer = 10020h
+      12/       0 : =1H                  Mus_EHZ.is_compressed = 1
+      13/       0 : =8030H               Mus_X.pointer = 8030h
+      14/       0 : =0H                  Mus_X.is_compressed = 0
+      15/       0 : =10000H              MusicPoint2 = 10000h
+      16/       0 : (MACRO)              	music_metadata Mus_EHZ
+      16/       0 : 90                          db      (withinSameZ80Bank(Mus_EHZ.pointer, MusicPoint2)<<7)|((~~Mus_EHZ.is_compressed)<<5)|()|(getZ80BankOffset(Mus_EHZ.pointer)/2)
+      17/       1 : (MACRO)              	music_metadata Mus_X,MusFlag_SlowerOnPAL
+      17/       1 : 78                          db      (withinSameZ80Bank(Mus_X.pointer, MusicPoint2)<<7)|((~~Mus_X.is_compressed)<<5)|(MusFlag_SlowerOnPAL)|(getZ80BankOffset(Mus_X.pointer)/2)
+      18/       2 : EE                  	db 0EEh
+      19/       3 :                     	end
+ AS V1.42 Beta [Bld 212] - Source File e1z_music2.asm - Page 2 - 09/11/2026 05:08:17 PM
+
+
+  Symbol Table (* = unused):
+  --------------------------
+
+*ARCHITECTURE :                                      "x86_64-unknown-linux" - |
+*BIGENDIAN :                      0 - | *BRANCHEXT :                      0 - |
+*CASESENSITIVE :                  1 - | *COMPMODE :                       0 - |
+*CONSTPI :        3.141592653589793 - | *CUSTOM :                         0 - |
+*DATE :                "09/11/2026" - | *FALSE :                          0 - |
+*FULLPMMU :                       1 - | *HAS64 :                          1 - |
+*HASDSP :                         0 - | *HASFPU :                         0 - |
+*HASPMMU :                        0 - | *INEXTMODE :                      0 - |
+*INLWORDMODE :                    0 - | *INMAXMODE :                      0 - |
+*INSRCMODE :                      0 - | *INSUPMODE :                      0 - |
+*LISTON :                         1 - | *MACEXP :                         7 - |
+*MOMCPU :                        80 - | *MOMCPUNAME :                 "Z80" - |
+ MusFlag_SlowerOnPAL :           40 - |  Mus_EHZ.is_compressed :          1 - |
+ Mus_EHZ.pointer :            10020 - |  Mus_X.is_compressed :            0 - |
+ Mus_X.pointer :               8030 - |  MusicPoint2 :                10000 - |
+*NESTMAX :                      100 - | *PACKING :                        0 - |
+*PADDING :                        1 - | *RELAXED :                        0 - |
+*TIME :               "05:08:17 PM" - | *TRUE :                           1 - |
+*VERSION :                     142F - | *Z80SYNTAX :                      0 - |
+ z80_bank_size :               8000 - |
+
+     38 symbols
+     31 unused symbols
+
+ AS V1.42 Beta [Bld 212] - Source File e1z_music2.asm - Page 3 - 09/11/2026 05:08:17 PM
+
+
+  Defined Macros:
+  ---------------
+
+music_metadata                        |
+
+      1 macro
+
+ AS V1.42 Beta [Bld 212] - Source File e1z_music2.asm - Page 4 - 09/11/2026 05:08:17 PM
+
+
+  Defined Functions:
+  ------------------
+
+withinSameZ80Bank                     | getZ80BankBase                       
+getZ80BankOffset                      |
+
+ AS V1.42 Beta [Bld 212] - Source File e1z_music2.asm - Page 5 - 09/11/2026 05:08:17 PM
+
+
+  Code Pages:
+  ----------
+
+STANDARD (0 changed characters)
+
+1 code page
+
+0.00 seconds assembly time
+
+     20 lines source file
+     22 lines incl. macro expansions
+      1 pass
+      0 errors
+      0 warnings

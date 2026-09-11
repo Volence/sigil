@@ -1,0 +1,5 @@
+> > > INTERNAL: warning #230: stack is not empty
+> > > DEFSTACK(1)
+> > > 
+ASL_EXIT=0
+ASL_DIAG=complete

@@ -1,0 +1,17 @@
+== mutation m4d on crates/sigil-frontend-as/src/eval.rs, test as_pushv_popv, HEAD 89a33bbaf6e632a519b7876e44ba3c512eb943f0
+APPLIED to /home/volence/sonic_hacks/sigil/.claude/worktrees/agent-a35527f94a0279a97/crates/sigil-frontend-as/src/eval.rs; mutated region read back from disk:
+  /home/volence/sonic_hacks/sigil/.claude/worktrees/agent-a35527f94a0279a97/crates/sigil-frontend-as/src/eval.rs:1  //! eval: the driver — line loop, directive dispatch, instruction lowering, emit.
+test nested_saves_unwind_last_in_first_out ... FAILED
+test each_stack_name_is_its_own_stack ... FAILED
+test a_stack_left_full_is_one_warning_per_stack ... FAILED
+test what_asl_refuses_is_refused ... ok
+test one_list_is_last_in_first_out_too ... FAILED
+test a_saved_value_comes_back ... FAILED
+thread 'nested_saves_unwind_last_in_first_out' (203015) panicked at crates/sigil-frontend-as/tests/as_pushv_popv.rs:68:5:
+thread 'each_stack_name_is_its_own_stack' (203014) panicked at crates/sigil-frontend-as/tests/as_pushv_popv.rs:68:5:
+thread 'a_stack_left_full_is_one_warning_per_stack' (203013) panicked at crates/sigil-frontend-as/tests/as_pushv_popv.rs:191:10:
+thread 'one_list_is_last_in_first_out_too' (203016) panicked at crates/sigil-frontend-as/tests/as_pushv_popv.rs:68:5:
+thread 'a_saved_value_comes_back' (203006) panicked at crates/sigil-frontend-as/tests/as_pushv_popv.rs:68:5:
+test result: FAILED. 1 passed; 5 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+TEST_PIPE_DONE
+restored crates/sigil-frontend-as/src/eval.rs from HEAD; tracked changes now: 0

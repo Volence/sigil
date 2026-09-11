@@ -1,0 +1,1 @@
+        let all_args = args.iter().map(|a| a.text.as_str()).collect::<Vec<_>>().join(",");

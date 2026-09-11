@@ -1,0 +1,6 @@
+ AS V1.42 Beta [Bld 212] - Source File l6_float.asm - Page 1 - 09/11/2026 05:08:17 PM
+
+
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0

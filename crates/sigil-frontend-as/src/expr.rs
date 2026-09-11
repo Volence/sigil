@@ -503,6 +503,20 @@ fn parse_atom<'a>(
                 r,
             ))
         }
+        // An EMPTY group `()` is the value 0. asl, exit 0 (probes
+        // `e1_*` in `docs/superpowers/notes/2026-09-11-s2-as-small-features/`):
+        // `dc.b $10|()|$02` is `12`, `dc.b ()` is `00`, `dc.b ~()` is `FF`,
+        // `dc.b ~~()` is `01`, `dc.b ()=0` is `01`, and `dc.b 4/()` is
+        // `#1310 division by 0`, so it is a real zero and not an absent
+        // operand. Sonic 2 reaches it through a macro argument left off
+        // (`music_metadata Mus_EHZ` pastes `(FLAGS)` as `()`). An empty
+        // OPERAND is still refused (`dc.b 1,,2` is `#2050 empty argument`):
+        // that shape never reaches this arm.
+        Tok::Punct(Punct::LParen)
+            if matches!(rest.first().map(|t| &t.tok), Some(Tok::Punct(Punct::RParen))) =>
+        {
+            Some((Expr::Int(0), &rest[1..]))
+        }
         Tok::Punct(Punct::LParen) => {
             let (inner, r) = parse_bp(rest, 0, depth, ctx)?;
             match r.first().map(|t| &t.tok) {

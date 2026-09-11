@@ -1,0 +1,3 @@
+    if !bytes[start].is_ascii_digit() {
+        return None;
+    }

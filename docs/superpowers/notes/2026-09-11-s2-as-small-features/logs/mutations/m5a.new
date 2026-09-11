@@ -1,0 +1,1 @@
+                        text: match lex_line(&operand[s..e], self.state.cpu, &self.state.charset, *source, 0) { Ok(t) if !t.is_empty() => render_tokens(&t), _ => operand[s..e].to_string() },

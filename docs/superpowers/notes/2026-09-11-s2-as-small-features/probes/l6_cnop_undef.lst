@@ -1,0 +1,88 @@
+ AS V1.42 Beta [Bld 212] - Source File l6_cnop_undef.asm - Page 1 - 09/11/2026 05:08:17 PM
+
+
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     org	macro address
+       5/       0 :                     	if address < *
+       6/       0 :                     	error "too much"
+       7/       0 :                     	elseif address > *
+       8/       0 :                     	!org address
+       9/       0 :                     	endif
+      10/       0 :                     	endm
+      11/       0 :                     cnop	macro offset,alignment
+      12/       0 :                     	org (*-1+(alignment)-((*-1+(-(offset)))#(alignment)))
+      13/       0 :                     	endm
+      14/       0 :                     Start:
+      15/       0 : 0102 03             	dc.b 1,2,3
+      16/       3 : (MACRO)              	cnop -1,2<<lastbit(Nope)
+      16/       3 :  (MACRO-2)                   org (*-1+(2<<lastbit(Nope))-((*-1+(-(-1)))#(2<<lastbit(Nope))))
+> > > l6_cnop_undef.asm(16) cnop(1) org(1): error #1820: expression must be evaluatable in first pass
+> > >         if (*-1+(2<<lastbit(Nope))-((*-1+(-(-1)))#(2<<lastbit(Nope)))) < *
+      16/       3 : =>TRUE                       if (*-1+(2<<lastbit(Nope))-((*-1+(-(-1)))#(2<<lastbit(Nope)))) < *
+> > > l6_cnop_undef.asm(16) cnop(1) org(2): error: too much
+> > >         error "too much"
+      16/       3 :                             error "too much"
+      16/       3 : =>FALSE                      elseif (*-1+(2<<lastbit(Nope))-((*-1+(-(-1)))#(2<<lastbit(Nope)))) > *
+      16/       3 :                             !org (*-1+(2<<lastbit(Nope))-((*-1+(-(-1)))#(2<<lastbit(Nope))))
+      16/       3 : [16]                         endif
+      17/       3 : 00                  	dc.b $00
+      18/       4 : EE                  	dc.b $EE
+      19/       5 :                     	end
+ AS V1.42 Beta [Bld 212] - Source File l6_cnop_undef.asm - Page 2 - 09/11/2026 05:08:17 PM
+
+
+  Symbol Table (* = unused):
+  --------------------------
+
+*ARCHITECTURE :                                      "x86_64-unknown-linux" - |
+*BIGENDIAN :                      0 - | *BRANCHEXT :                      0 - |
+*CASESENSITIVE :                  1 - | *COMPMODE :                       0 - |
+*CONSTPI :        3.141592653589793 - | *CUSTOM :                         0 - |
+*DATE :                "09/11/2026" - | *FALSE :                          0 - |
+*FULLPMMU :                       1 - | *HAS64 :                          1 - |
+*HASDSP :                         0 - | *HASFPU :                         0 - |
+*HASPMMU :                        0 - | *INEXTMODE :                      0 - |
+*INLWORDMODE :                    0 - | *INMAXMODE :                      0 - |
+*INSRCMODE :                      0 - | *INSUPMODE :                      0 - |
+*LISTON :                         1 - | *MACEXP :                         7 - |
+*MOMCPU :                     68000 - | *MOMCPUNAME :               "68000" - |
+*NESTMAX :                      100 - | *PACKING :                        0 - |
+*PADDING :                        0 - | *RELAXED :                        0 - |
+*Start :                          0 C | *TIME :               "05:08:17 PM" - |
+*TRUE :                           1 - | *VERSION :                     142F - |
+*Z80SYNTAX :                      0 - |
+
+     32 symbols
+     32 unused symbols
+
+ AS V1.42 Beta [Bld 212] - Source File l6_cnop_undef.asm - Page 3 - 09/11/2026 05:08:17 PM
+
+
+  Defined Macros:
+  ---------------
+
+cnop                                  | org                                  
+
+      2 macros
+
+ AS V1.42 Beta [Bld 212] - Source File l6_cnop_undef.asm - Page 4 - 09/11/2026 05:08:17 PM
+
+
+  Code Pages:
+  ----------
+
+STANDARD (0 changed characters)
+
+1 code page
+
+0.00 seconds assembly time
+
+     20 lines source file
+     26 lines incl. macro expansions
+      1 pass
+        Additional necessary passes not started due to
+        errors, listing possibly incorrect.
+      2 errors
+      0 warnings

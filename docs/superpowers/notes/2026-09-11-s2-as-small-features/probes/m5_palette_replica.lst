@@ -1,0 +1,94 @@
+ AS V1.42 Beta [Bld 212] - Source File m5_palette_replica.asm - Page 1 - 09/11/2026 05:08:17 PM
+
+
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     palette macro {INTLABEL},path,path2
+       5/       0 :                     __LABEL__ label *
+       6/       0 :                     	dc.b "path"
+       7/       0 :                         if "path2"<>""
+       8/       0 :                     	dc.b "path2"
+       9/       0 :                         endif
+      10/       0 :                     __LABEL___End label *
+      11/       0 :                     	endm
+      12/       0 : (MACRO)              Pal_SS1_2p:palette Special Stage 1 2p.bin ; Special Stage 1 2p palette
+      12/       0 : =$0                  Pal_SS1_2p label *
+      12/       0 : 5370 6563 6961              dc.b "Special Stage 1 2p.bin"
+                6 : 6C20 5374 6167 
+                C : 6520 3120 3270 
+               12 : 2E62 696E          
+      12/      16 : =>FALSE                  if ""<>""
+      12/      16 :                             dc.b ""
+      12/      16 : [12]                     endif
+      12/      16 : =$16                 Pal_SS1_2p_End label *
+      13/      16 : (MACRO)              Pal_SS2:   palette Special Stage 2.bin,Sonic and 2p.bin ; two
+      13/      16 : =$16                 Pal_SS2 label *
+      13/      16 : 5370 6563 6961              dc.b "Special Stage 2.bin"
+               1C : 6C20 5374 6167 
+               22 : 6520 322E 6269 6E 
+      13/      29 : =>TRUE                   if "Sonic and 2p.bin"<>""
+      13/      29 : 536F 6E69 6320              dc.b "Sonic and 2p.bin"
+               2F : 616E 6420 3270 
+               35 : 2E62 696E          
+      13/      39 : [13]                     endif
+      13/      39 : =$39                 Pal_SS2_End label *
+      14/      39 : 0000 0016           	dc.l Pal_SS1_2p_End-Pal_SS1_2p
+      15/      3D : 0000 0023           	dc.l Pal_SS2_End-Pal_SS2
+      16/      41 : EE                  	dc.b $EE
+      17/      42 :                     	end
+ AS V1.42 Beta [Bld 212] - Source File m5_palette_replica.asm - Page 2 - 09/11/2026 05:08:17 PM
+
+
+  Symbol Table (* = unused):
+  --------------------------
+
+*ARCHITECTURE :                                      "x86_64-unknown-linux" - |
+*BIGENDIAN :                      0 - | *BRANCHEXT :                      0 - |
+*CASESENSITIVE :                  1 - | *COMPMODE :                       0 - |
+*CONSTPI :        3.141592653589793 - | *CUSTOM :                         0 - |
+*DATE :                "09/11/2026" - | *FALSE :                          0 - |
+*FULLPMMU :                       1 - | *HAS64 :                          1 - |
+*HASDSP :                         0 - | *HASFPU :                         0 - |
+*HASPMMU :                        0 - | *INEXTMODE :                      0 - |
+*INLWORDMODE :                    0 - | *INMAXMODE :                      0 - |
+*INSRCMODE :                      0 - | *INSUPMODE :                      0 - |
+*LISTON :                         1 - | *MACEXP :                         7 - |
+*MOMCPU :                     68000 - | *MOMCPUNAME :               "68000" - |
+*NESTMAX :                      100 - | *PACKING :                        0 - |
+*PADDING :                        0 - |  Pal_SS1_2p :                     0 C |
+ Pal_SS1_2p_End :                16 C |  Pal_SS2 :                       16 C |
+ Pal_SS2_End :                   39 C | *RELAXED :                        0 - |
+*TIME :               "05:08:17 PM" - | *TRUE :                           1 - |
+*VERSION :                     142F - | *Z80SYNTAX :                      0 - |
+
+     35 symbols
+     31 unused symbols
+
+ AS V1.42 Beta [Bld 212] - Source File m5_palette_replica.asm - Page 3 - 09/11/2026 05:08:17 PM
+
+
+  Defined Macros:
+  ---------------
+
+palette                               |
+
+      1 macro
+
+ AS V1.42 Beta [Bld 212] - Source File m5_palette_replica.asm - Page 4 - 09/11/2026 05:08:17 PM
+
+
+  Code Pages:
+  ----------
+
+STANDARD (0 changed characters)
+
+1 code page
+
+0.00 seconds assembly time
+
+     18 lines source file
+     30 lines incl. macro expansions
+      1 pass
+      0 errors
+      0 warnings

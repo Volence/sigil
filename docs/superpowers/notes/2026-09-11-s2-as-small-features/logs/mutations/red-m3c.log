@@ -1,0 +1,11 @@
+== mutation m3c on crates/sigil-frontend-as/src/eval.rs, test as_shift_default_size, HEAD d0cea72b3ad457fb48129edf7d75345419ed1873
+APPLIED to /home/volence/sonic_hacks/sigil/.claude/worktrees/agent-a35527f94a0279a97/crates/sigil-frontend-as/src/eval.rs; mutated region read back from disk:
+  /home/volence/sonic_hacks/sigil/.claude/worktrees/agent-a35527f94a0279a97/crates/sigil-frontend-as/src/eval.rs:11577          Asl | Asr | Lsl | Lsr | Rol | Ror | Roxl | Roxr => None,
+test a_memory_shift_is_still_word_only_and_counts_one ... ok
+test every_memory_shift_and_rotate_defaults_to_word ... FAILED
+test every_register_shift_and_rotate_defaults_to_word ... FAILED
+thread 'every_memory_shift_and_rotate_defaults_to_word' (2939514) panicked at crates/sigil-frontend-as/tests/as_shift_default_size.rs:52:5:
+thread 'every_register_shift_and_rotate_defaults_to_word' (2939515) panicked at crates/sigil-frontend-as/tests/as_shift_default_size.rs:52:5:
+test result: FAILED. 1 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+TEST_PIPE_DONE
+restored crates/sigil-frontend-as/src/eval.rs from HEAD; tracked changes now: 0

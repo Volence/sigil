@@ -1,0 +1,3616 @@
+asl md5: 61e672562465725a8c102288a7da9098  path: /home/volence/sonic_hacks/s1disasm/build_tools/Linux-x86_64/asl
+sigil md5: d1e28dfab1c73007994259ca2502b506  path: /home/volence/sonic_hacks/.scratch/s2-as-small-features/bin/sigil-f7
+================ cli_warn_count.asm
+asl exit=2 ASL_EXIT=2 ASL_DIAG=complete 
+> > > cli_warn_count.asm(4): warning: author
+> > >  warning "author"
+> > > cli_warn_count.asm(5):2: error #1200: unknown instruction
+  lines that assembled: an error stops the pass loop, so every forward
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     	warning "author"
+       5/       0 :                     	zzbogus d0
+       6/       0 :                     	end
+sigil exit=1
+cli_warn_count.asm(4):2: warning: [as.warning] author
+cli_warn_count.asm(5):2: error: `zzbogus` is not a recognized 68000 mnemonic
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 2 errors (reported on stderr)
+================ d2_instance.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     zV STRUCT DOTS
+       5/       0 :                     	A:		ds.b 1
+       6/       1 :                     	1upPlaying:	ds.b 1
+       7/       0 : =$2                  zV ENDSTRUCT
+       8/       0 : 11                  	dc.b $11
+       9/       1 : (STRUCT)             Inst:	zV
+      10/       3 : 0000 0002           	dc.l Inst.1upPlaying
+      11/       7 : EE                  	dc.b $EE
+      12/       8 :                     	end
+sigil exit=0
+11 00 00 00 00 00 02 EE
+built: 8 bytes, no file written (pass -o <path> to write one)
+================ d2_label.asm
+asl exit=2 ASL_EXIT=2 ASL_DIAG=complete 
+> > > d2_label.asm(5):1: error #1020: invalid symbol name
+  lines that assembled: an error stops the pass loop, so every forward
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : 11                  	dc.b $11
+       5/       1 : 22                  1up:	dc.b $22
+       6/       2 : EE                  	dc.b $EE
+       7/       3 :                     	end
+sigil exit=1
+d2_label.asm(5):1: error: malformed number (hex needs a trailing `h`)
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ d2_label_dotted.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : 11                  	dc.b $11
+       5/       1 : 22                  Foo.1up:	dc.b $22
+       6/       2 : 01                  	dc.b Foo.1up
+       7/       3 : EE                  	dc.b $EE
+       8/       4 :                     	end
+sigil exit=0
+11 22 01 EE
+built: 4 bytes, no file written (pass -o <path> to write one)
+================ d2_label_equ.asm
+asl exit=2 ASL_EXIT=2 ASL_DIAG=complete 
+> > > d2_label_equ.asm(4):1: error #1020: invalid symbol name
+  lines that assembled: an error stops the pass loop, so every forward
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : =$5                  1up equ 5
+       5/       0 : EE                  	dc.b $EE
+       6/       1 :                     	end
+sigil exit=1
+d2_label_equ.asm(4):1: error: malformed number (hex needs a trailing `h`)
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ d2_label_nocolon.asm
+asl exit=2 ASL_EXIT=2 ASL_DIAG=complete 
+> > > d2_label_nocolon.asm(5):1: error #1020: invalid symbol name
+  lines that assembled: an error stops the pass loop, so every forward
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : 11                  	dc.b $11
+       5/       1 : 22                  1up	dc.b $22
+       6/       2 : EE                  	dc.b $EE
+       7/       3 :                     	end
+sigil exit=1
+d2_label_nocolon.asm(5):1: error: malformed number (hex needs a trailing `h`)
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ d2_label_set.asm
+asl exit=2 ASL_EXIT=2 ASL_DIAG=complete 
+> > > d2_label_set.asm(4):1: error #1020: invalid symbol name
+  lines that assembled: an error stops the pass loop, so every forward
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : =$5                  1up = 5
+       5/       0 : EE                  	dc.b $EE
+       6/       1 :                     	end
+sigil exit=1
+d2_label_set.asm(4):1: error: malformed number (hex needs a trailing `h`)
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ d2_member_alldigit.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     zV STRUCT DOTS
+       5/       0 :                     	A:		ds.b 1
+       6/       1 :                     	2:	ds.b 1
+       7/       0 : =$2                  zV ENDSTRUCT
+       8/       0 : 02                  	dc.b zV.len
+       9/       1 : EE                  	dc.b $EE
+      10/       2 :                     	end
+sigil exit=0
+02 EE
+built: 2 bytes, no file written (pass -o <path> to write one)
+================ d2_member_bare_ref.asm
+asl exit=2 ASL_EXIT=2 ASL_DIAG=complete 
+> > > d2_member_bare_ref.asm(8):7: error #1020: invalid symbol name
+  lines that assembled: an error stops the pass loop, so every forward
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     zV STRUCT DOTS
+       5/       0 :                     	A:		ds.b 1
+       6/       1 :                     	1upPlaying:	ds.b 1
+       7/       0 : =$2                  zV ENDSTRUCT
+       8/       0 :                     	dc.b 1upPlaying
+       9/       0 : EE                  	dc.b $EE
+      10/       1 :                     	end
+sigil exit=1
+d2_member_bare_ref.asm(8):7: error: malformed number (hex needs a trailing `h`)
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ d2_member_dots.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     zV STRUCT DOTS
+       5/       0 :                     	A:		ds.b 1
+       6/       1 :                     	1upPlaying:	ds.b 1
+       7/       2 :                     	B:		ds.b 1
+       8/       0 : =$3                  zV ENDSTRUCT
+       9/       0 : 01                  	dc.b zV.1upPlaying
+      10/       1 : 02                  	dc.b zV.B
+      11/       2 : 03                  	dc.b zV.len
+      12/       3 : EE                  	dc.b $EE
+      13/       4 :                     	end
+sigil exit=0
+01 02 03 EE
+built: 4 bytes, no file written (pass -o <path> to write one)
+================ d2_member_expr.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     zV STRUCT DOTS
+       5/       0 :                     	A:		ds.b 2
+       6/       2 :                     	1upPlaying:	ds.b 1
+       7/       0 : =$3                  zV ENDSTRUCT
+       8/       0 : 03                  	dc.b zV.1upPlaying+1
+       9/       1 : 04                  	dc.b 2*zV.1upPlaying
+      10/       2 : EE                  	dc.b $EE
+      11/       3 :                     	end
+sigil exit=0
+03 04 EE
+built: 3 bytes, no file written (pass -o <path> to write one)
+================ d2_member_hexh.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     zV STRUCT DOTS
+       5/       0 :                     	A:		ds.b 1
+       6/       1 :                     	12h:	ds.b 1
+       7/       2 :                     	B:	ds.b 1
+       8/       0 : =$3                  zV ENDSTRUCT
+       9/       0 : 02                  	dc.b zV.B
+      10/       1 : 03                  	dc.b zV.len
+      11/       2 : EE                  	dc.b $EE
+      12/       3 :                     	end
+sigil exit=0
+02 03 EE
+built: 3 bytes, no file written (pass -o <path> to write one)
+================ d2_member_indented_nocolon.asm
+asl exit=2 ASL_EXIT=2 ASL_DIAG=complete 
+> > > d2_member_indented_nocolon.asm(6): warning #180: address is not properly aligned
+> > > d2_member_indented_nocolon.asm(6):2: error #1200: unknown instruction
+  lines that assembled: an error stops the pass loop, so every forward
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     zV STRUCT DOTS
+       5/       0 :                     	A:		ds.b 1
+       6/       1 :                     	1upPlaying	ds.b 1
+       7/       1 :                     	B:		ds.b 1
+       8/       0 : =$2                  zV ENDSTRUCT
+       9/       0 : 01                  	dc.b zV.B
+      10/       1 : 02                  	dc.b zV.len
+      11/       2 : EE                  	dc.b $EE
+      12/       3 :                     	end
+sigil exit=1
+d2_member_indented_nocolon.asm(6):2: error: malformed number (hex needs a trailing `h`)
+d2_member_indented_nocolon.asm(6):1: error: struct `zV` has a member line this cannot read; its size and every member after it would be wrong
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 2 errors (reported on stderr)
+================ d2_member_marker.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     zV STRUCT DOTS
+       5/       0 :                     	A:		ds.b 1
+       6/       1 :                     	1up:
+       7/       1 :                     	B:		ds.b 1
+       8/       0 : =$2                  zV ENDSTRUCT
+       9/       0 : 01                  	dc.b zV.1up
+      10/       1 : 01                  	dc.b zV.B
+      11/       2 : 02                  	dc.b zV.len
+      12/       3 : EE                  	dc.b $EE
+      13/       4 :                     	end
+sigil exit=0
+01 01 02 EE
+built: 4 bytes, no file written (pass -o <path> to write one)
+================ d2_member_nocolon.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     zV STRUCT DOTS
+       5/       0 :                     	A:		ds.b 1
+       6/       1 :                     1upPlaying	ds.b 1
+       7/       2 :                     	B:		ds.b 1
+       8/       0 : =$3                  zV ENDSTRUCT
+       9/       0 : 01                  	dc.b zV.1upPlaying
+      10/       1 : 02                  	dc.b zV.B
+      11/       2 : 03                  	dc.b zV.len
+      12/       3 : EE                  	dc.b $EE
+      13/       4 :                     	end
+sigil exit=0
+01 02 03 EE
+built: 4 bytes, no file written (pass -o <path> to write one)
+================ d2_member_nodots.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     zV STRUCT
+       5/       0 :                     	A:		ds.b 1
+       6/       1 :                     	1upPlaying:	ds.b 1
+       7/       2 :                     	B:		ds.b 1
+       8/       0 : =$3                  zV ENDSTRUCT
+       9/       0 : 01                  	dc.b zV_1upPlaying
+      10/       1 : 02                  	dc.b zV_B
+      11/       2 : 03                  	dc.b zV_len
+      12/       3 : EE                  	dc.b $EE
+      13/       4 :                     	end
+sigil exit=0
+01 02 03 EE
+built: 4 bytes, no file written (pass -o <path> to write one)
+================ d2_member_undef.asm
+asl exit=2 ASL_EXIT=2 ASL_DIAG=complete 
+> > > d2_member_undef.asm(8):7: error #1010: symbol undefined
+  lines that assembled: an error stops the pass loop, so every forward
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     zV STRUCT DOTS
+       5/       0 :                     	A:		ds.b 1
+       6/       1 :                     	1upPlaying:	ds.b 1
+       7/       0 : =$2                  zV ENDSTRUCT
+       8/       0 :                     	dc.b zV.1foo
+       9/       0 : EE                  	dc.b $EE
+      10/       1 :                     	end
+sigil exit=1
+d2_member_undef.asm(8):2: error: unresolved symbol `zV.1foo` for fixup in section sec0 at offset 0
+this error list may be incomplete: sigil stopped at link, so the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ d2_member_word.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     zV STRUCT DOTS
+       5/       0 :                     	A:		ds.b 1
+       6/       1 :                     	1up:	ds.w 1
+       7/       3 :                     	2up:	ds.l 2
+       8/       B :                     	B:		ds.b 1
+       9/       0 : =$C                  zV ENDSTRUCT
+      10/       0 : 01                  	dc.b zV.1up
+      11/       1 : 03                  	dc.b zV.2up
+      12/       2 : 0B                  	dc.b zV.B
+      13/       3 : 0C                  	dc.b zV.len
+      14/       4 : EE                  	dc.b $EE
+      15/       5 :                     	end
+sigil exit=0
+01 03 0B 0C EE
+built: 5 bytes, no file written (pass -o <path> to write one)
+================ d2z_instance.asm
+asl exit=2 ASL_EXIT=2 ASL_DIAG=complete 
+> > > d2z_instance.asm(4):6: error #1200: unknown instruction
+> > > d2z_instance.asm(5):14: error #1200: unknown instruction
+  lines that assembled: an error stops the pass loop, so every forward
+       1/       0 :                     	cpu z80
+       2/       0 :                     	org 0
+       3/       0 :                     zV STRUCT DOTS
+       4/       0 :                     	A:		ds.b 1
+       5/       0 :                     	1upPlaying:	ds.b 1
+       6/       0 : =0H                  zV ENDSTRUCT
+       7/       0 : 11                  	db 11h
+       8/       1 : (STRUCT)             zAbs:	zV
+       9/       1 : 3A 01 00            	ld a,(zAbs.1upPlaying)
+      10/       4 : EE                  	db 0EEh
+      11/       5 :                     	end
+sigil exit=0
+11 00 00 3A 02 00 EE
+built: 7 bytes, no file written (pass -o <path> to write one)
+================ d2z_member2.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     zV STRUCT DOTS
+       3/       0 :                     	A:		ds.b 1
+       4/       1 :                     	1upPlaying:	ds.b 1
+       5/       0 : =$2                  zV ENDSTRUCT
+       6/       0 :                     	cpu z80
+       7/       0 :                     	org 0
+       8/       0 : 3A 01 00            	ld a,(zV.1upPlaying)
+       9/       3 : DD 7E 01            	ld a,(ix+zV.1upPlaying)
+      10/       6 : EE                  	db 0EEh
+      11/       7 :                     	end
+sigil exit=0
+3A 01 00 DD 7E 01 EE
+built: 7 bytes, no file written (pass -o <path> to write one)
+================ d2z_member.asm
+asl exit=2 ASL_EXIT=2 ASL_DIAG=complete 
+> > > d2z_member.asm(4):6: error #1200: unknown instruction
+> > > d2z_member.asm(5):14: error #1200: unknown instruction
+  lines that assembled: an error stops the pass loop, so every forward
+       1/       0 :                     	cpu z80
+       2/       0 :                     	org 0
+       3/       0 :                     zV STRUCT DOTS
+       4/       0 :                     	A:		ds.b 1
+       5/       0 :                     	1upPlaying:	ds.b 1
+       6/       0 : =0H                  zV ENDSTRUCT
+       7/       0 : 3A 00 00            	ld a,(zV.1upPlaying)
+       8/       3 : DD 7E 00            	ld a,(ix+zV.1upPlaying)
+       9/       6 : EE                  	db 0EEh
+      10/       7 :                     	end
+sigil exit=0
+3A 01 00 DD 7E 01 EE
+built: 7 bytes, no file written (pass -o <path> to write one)
+================ e1_abs_empty.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : 0000 0000           	dc.l abs()
+       5/       4 : EE                  	dc.b $EE
+       6/       5 :                     	end
+sigil exit=1
+e1_abs_empty.asm(4):7: error: bad long expression
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ e1_absw.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : 3038 0000           	move.w ().w,d0
+       5/       4 : EE                  	dc.b $EE
+       6/       5 :                     	end
+sigil exit=0
+30 38 00 00 EE
+built: 5 bytes, no file written (pass -o <path> to write one)
+================ e1_coloneq.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : =$0                  X := ()
+       5/       0 : 00                  	dc.b X
+       6/       1 : EE                  	dc.b $EE
+       7/       2 :                     	end
+sigil exit=0
+00 EE
+built: 2 bytes, no file written (pass -o <path> to write one)
+================ e1_db_add_after.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : 01                  	dc.b ()+1
+       5/       1 : EE                  	dc.b $EE
+       6/       2 :                     	end
+sigil exit=0
+01 EE
+built: 2 bytes, no file written (pass -o <path> to write one)
+================ e1_db_add_before.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : 01                  	dc.b 1+()
+       5/       1 : EE                  	dc.b $EE
+       6/       2 :                     	end
+sigil exit=0
+01 EE
+built: 2 bytes, no file written (pass -o <path> to write one)
+================ e1_db_bare.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : 00                  	dc.b ()
+       5/       1 : EE                  	dc.b $EE
+       6/       2 :                     	end
+sigil exit=0
+00 EE
+built: 2 bytes, no file written (pass -o <path> to write one)
+================ e1_db_cmp.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : 01                  	dc.b ()=0
+       5/       1 : EE                  	dc.b $EE
+       6/       2 :                     	end
+sigil exit=0
+01 EE
+built: 2 bytes, no file written (pass -o <path> to write one)
+================ e1_db_div.asm
+asl exit=2 ASL_EXIT=2 ASL_DIAG=complete 
+> > > e1_db_div.asm(4): error #1310: division by 0
+  lines that assembled: an error stops the pass loop, so every forward
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     	dc.b 4/()
+       5/       0 : EE                  	dc.b $EE
+       6/       1 :                     	end
+sigil exit=1
+e1_db_div.asm(4):7: error: division by zero: 4 / 0
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ e1_db_empty_item.asm
+asl exit=2 ASL_EXIT=2 ASL_DIAG=complete 
+> > > e1_db_empty_item.asm(4): error #2050: empty argument
+  lines that assembled: an error stops the pass loop, so every forward
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     	dc.b 1,,2
+       5/       0 : EE                  	dc.b $EE
+       6/       1 :                     	end
+sigil exit=1
+e1_db_empty_item.asm(4):2: error: bad byte expression
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ e1_db_lognot.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : 01                  	dc.b ~~()
+       5/       1 : EE                  	dc.b $EE
+       6/       2 :                     	end
+sigil exit=0
+01 EE
+built: 2 bytes, no file written (pass -o <path> to write one)
+================ e1_db_mul.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : 00                  	dc.b 5*()
+       5/       1 : EE                  	dc.b $EE
+       6/       2 :                     	end
+sigil exit=0
+00 EE
+built: 2 bytes, no file written (pass -o <path> to write one)
+================ e1_db_neg.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : 00                  	dc.b -()
+       5/       1 : EE                  	dc.b $EE
+       6/       2 :                     	end
+sigil exit=0
+00 EE
+built: 2 bytes, no file written (pass -o <path> to write one)
+================ e1_db_nested.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : 00                  	dc.b (())
+       5/       1 : EE                  	dc.b $EE
+       6/       2 :                     	end
+sigil exit=0
+00 EE
+built: 2 bytes, no file written (pass -o <path> to write one)
+================ e1_db_not.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : FF                  	dc.b ~()
+       5/       1 : EE                  	dc.b $EE
+       6/       2 :                     	end
+sigil exit=0
+FF EE
+built: 2 bytes, no file written (pass -o <path> to write one)
+================ e1_db_or.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : 12                  	dc.b $10|()|$02
+       5/       1 : EE                  	dc.b $EE
+       6/       2 :                     	end
+sigil exit=0
+12 EE
+built: 2 bytes, no file written (pass -o <path> to write one)
+================ e1_db_shl.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : 00                  	dc.b ()<<1
+       5/       1 : EE                  	dc.b $EE
+       6/       2 :                     	end
+sigil exit=0
+00 EE
+built: 2 bytes, no file written (pass -o <path> to write one)
+================ e1_db_space.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : 00                  	dc.b ( )
+       5/       1 : EE                  	dc.b $EE
+       6/       2 :                     	end
+sigil exit=0
+00 EE
+built: 2 bytes, no file written (pass -o <path> to write one)
+================ e1_db_trailing_comma.asm
+asl exit=2 ASL_EXIT=2 ASL_DIAG=complete 
+> > > e1_db_trailing_comma.asm(4): error #2050: empty argument
+  lines that assembled: an error stops the pass loop, so every forward
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     	dc.b 1,
+       5/       0 : EE                  	dc.b $EE
+       6/       1 :                     	end
+sigil exit=1
+e1_db_trailing_comma.asm(4):2: error: bad byte expression
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ e1_disp0.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : 3010                	move.w 0(a0),d0
+       5/       2 : EE                  	dc.b $EE
+       6/       3 :                     	end
+sigil exit=0
+30 10 EE
+built: 3 bytes, no file written (pass -o <path> to write one)
+================ e1_disp.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : 3010                	move.w ()(a0),d0
+       5/       2 : EE                  	dc.b $EE
+       6/       3 :                     	end
+sigil exit=0
+30 10 EE
+built: 3 bytes, no file written (pass -o <path> to write one)
+================ e1_dl.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : 0000 0000           	dc.l ()
+       5/       4 : EE                  	dc.b $EE
+       6/       5 :                     	end
+sigil exit=0
+00 00 00 00 EE
+built: 5 bytes, no file written (pass -o <path> to write one)
+================ e1_ds.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     	ds.b ()
+       5/       0 : EE                  	dc.b $EE
+       6/       1 :                     	end
+sigil exit=0
+EE
+built: 1 bytes, no file written (pass -o <path> to write one)
+================ e1_dw.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : 0000                	dc.w ()
+       5/       2 : EE                  	dc.b $EE
+       6/       3 :                     	end
+sigil exit=0
+00 00 EE
+built: 3 bytes, no file written (pass -o <path> to write one)
+================ e1_equ.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : =$0                  X equ ()
+       5/       0 : 00                  	dc.b X
+       6/       1 : EE                  	dc.b $EE
+       7/       2 :                     	end
+sigil exit=0
+00 EE
+built: 2 bytes, no file written (pass -o <path> to write one)
+================ e1_float_int.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : 0000 0001           	dc.l int(()+1.5)
+       5/       4 : EE                  	dc.b $EE
+       6/       5 :                     	end
+sigil exit=0
+00 00 00 01 EE
+built: 5 bytes, no file written (pass -o <path> to write one)
+================ e1_func1_space.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     f function x,x+1
+       5/       0 : 01                  	dc.b f( )
+       6/       1 : EE                  	dc.b $EE
+       7/       2 :                     	end
+sigil exit=0
+01 EE
+built: 2 bytes, no file written (pass -o <path> to write one)
+================ e1_func2_both.asm
+asl exit=2 ASL_EXIT=2 ASL_DIAG=complete 
+> > > e1_func2_both.asm(5): error #1490: wrong numbers of function arguments
+  lines that assembled: an error stops the pass loop, so every forward
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     f function x,y,x+y
+       5/       0 :                     	dc.b f(,)
+       6/       0 : EE                  	dc.b $EE
+       7/       1 :                     	end
+sigil exit=1
+e1_func2_both.asm(5):7: error: wrong number of function arguments: `f` takes 2, this call passes 1
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ e1_func2_leading.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     f function x,y,x+y
+       5/       0 : 01                  	dc.b f(,1)
+       6/       1 : EE                  	dc.b $EE
+       7/       2 :                     	end
+sigil exit=0
+01 EE
+built: 2 bytes, no file written (pass -o <path> to write one)
+================ e1_func2_parens.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     f function x,y,x+y
+       5/       0 : 01                  	dc.b f((),1)
+       6/       1 : EE                  	dc.b $EE
+       7/       2 :                     	end
+sigil exit=0
+01 EE
+built: 2 bytes, no file written (pass -o <path> to write one)
+================ e1_func2_trailing.asm
+asl exit=2 ASL_EXIT=2 ASL_DIAG=complete 
+> > > e1_func2_trailing.asm(5): error #1490: wrong numbers of function arguments
+  lines that assembled: an error stops the pass loop, so every forward
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     f function x,y,x+y
+       5/       0 :                     	dc.b f(1,)
+       6/       0 : EE                  	dc.b $EE
+       7/       1 :                     	end
+sigil exit=1
+e1_func2_trailing.asm(5):7: error: wrong number of function arguments: `f` takes 2, this call passes 1
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ e1_func3_middle.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     f function x,y,z,x+y+z
+       5/       0 : 03                  	dc.b f(1,,2)
+       6/       1 : EE                  	dc.b $EE
+       7/       2 :                     	end
+sigil exit=0
+03 EE
+built: 2 bytes, no file written (pass -o <path> to write one)
+================ e1_func_call.asm
+asl exit=2 ASL_EXIT=2 ASL_DIAG=complete 
+> > > e1_func_call.asm(5): error #1490: wrong numbers of function arguments
+  lines that assembled: an error stops the pass loop, so every forward
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     f function x,x+1
+       5/       0 :                     	dc.b f()
+       6/       0 : EE                  	dc.b $EE
+       7/       1 :                     	end
+sigil exit=1
+e1_func_call.asm(5):7: error: wrong number of function arguments: `f` takes 1, this call passes 0
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ e1_func_paren.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     f function x,x+1
+       5/       0 : 01                  	dc.b f(())
+       6/       1 : EE                  	dc.b $EE
+       7/       2 :                     	end
+sigil exit=0
+01 EE
+built: 2 bytes, no file written (pass -o <path> to write one)
+================ e1_if.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : =>FALSE              	if ()
+       5/       0 :                     	dc.b 1
+       6/       0 : =>TRUE               	else
+       7/       0 : 02                  	dc.b 2
+       8/       1 : [4]                  	endif
+       9/       1 : EE                  	dc.b $EE
+      10/       2 :                     	end
+sigil exit=0
+02 EE
+built: 2 bytes, no file written (pass -o <path> to write one)
+================ e1_if_or.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : =>TRUE               	if ()|1
+       5/       0 : 01                  	dc.b 1
+       6/       1 : =>FALSE              	else
+       7/       1 :                     	dc.b 2
+       8/       1 : [4]                  	endif
+       9/       1 : EE                  	dc.b $EE
+      10/       2 :                     	end
+sigil exit=0
+01 EE
+built: 2 bytes, no file written (pass -o <path> to write one)
+================ e1_imm.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : 303C 0000           	move.w #(),d0
+       5/       4 : EE                  	dc.b $EE
+       6/       5 :                     	end
+sigil exit=0
+30 3C 00 00 EE
+built: 5 bytes, no file written (pass -o <path> to write one)
+================ e1_imm_or.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : 303C 0001           	move.w #1|(),d0
+       5/       4 : EE                  	dc.b $EE
+       6/       5 :                     	end
+sigil exit=0
+30 3C 00 01 EE
+built: 5 bytes, no file written (pass -o <path> to write one)
+================ e1_indirect.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : 3038 0000           	move.w (),d0
+       5/       4 : EE                  	dc.b $EE
+       6/       5 :                     	end
+sigil exit=0
+30 38 00 00 EE
+built: 5 bytes, no file written (pass -o <path> to write one)
+================ e1_macro_omitted2.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     m macro pa,pb
+       5/       0 :                     	dc.b (pa)|(pb)
+       6/       0 :                     	endm
+       7/       0 : (MACRO)              	m 5
+       7/       0 : 05                          dc.b (5)|()
+       8/       1 : EE                  	dc.b $EE
+       9/       2 :                     	end
+sigil exit=0
+05 EE
+built: 2 bytes, no file written (pass -o <path> to write one)
+================ e1_macro_omitted.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     m macro a,b
+       5/       0 :                     	dc.b (a)|(b)
+       6/       0 :                     	endm
+       7/       0 : (MACRO)              	m 5
+       7/       0 : 0005                        dc. (5)|()
+       8/       2 : EE                  	dc.b $EE
+       9/       3 :                     	end
+sigil exit=1
+e1_macro_omitted.asm(5):2: error: `dc.` is not a recognized 68000 mnemonic
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ e1_macro_omitted_bare2.asm
+asl exit=2 ASL_EXIT=2 ASL_DIAG=complete 
+> > > e1_macro_omitted_bare2.asm(7) m(1): error #1110: wrong number of operands
+  lines that assembled: an error stops the pass loop, so every forward
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     m macro pa,pb
+       5/       0 :                     	dc.b pb
+       6/       0 :                     	endm
+       7/       0 : (MACRO)              	m 5
+       7/       0 :                             dc.b 
+       8/       0 : EE                  	dc.b $EE
+       9/       1 :                     	end
+sigil exit=1
+e1_macro_omitted_bare2.asm(5):2: error: bad byte expression
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ e1_macro_omitted_bare.asm
+asl exit=2 ASL_EXIT=2 ASL_DIAG=complete 
+> > > e1_macro_omitted_bare.asm(7) m(1): error #1110: wrong number of operands
+  lines that assembled: an error stops the pass loop, so every forward
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     m macro a,b
+       5/       0 :                     	dc.b b
+       6/       0 :                     	endm
+       7/       0 : (MACRO)              	m 5
+       7/       0 :                             dc. 
+       8/       0 : EE                  	dc.b $EE
+       9/       1 :                     	end
+sigil exit=1
+e1_macro_omitted_bare.asm(5):2: error: `dc.` is not a recognized 68000 mnemonic
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ e1_paren0.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : 3038 0000           	move.w (0),d0
+       5/       4 : EE                  	dc.b $EE
+       6/       5 :                     	end
+sigil exit=1
+e1_paren0.asm(4):2: error: absolute address operand `(expr)` needs an explicit `.w`/`.l` width suffix (width-selecting bare `(expr)` is out of scope)
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ e1_rept.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     	rept ()
+       5/       0 :                     	dc.b 1
+       6/       0 :                     	endm
+       7/       0 : EE                  	dc.b $EE
+       8/       1 :                     	end
+sigil exit=0
+EE
+built: 1 bytes, no file written (pass -o <path> to write one)
+================ e1_set.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : =$0                  X set ()
+       5/       0 : 00                  	dc.b X
+       6/       1 : EE                  	dc.b $EE
+       7/       2 :                     	end
+sigil exit=0
+00 EE
+built: 2 bytes, no file written (pass -o <path> to write one)
+================ e1z_db_bare.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu z80
+       2/       0 :                     	org 0
+       3/       0 : 00                  	db ()
+       4/       1 : EE                  	db 0EEh
+       5/       2 :                     	end
+sigil exit=0
+00 EE
+built: 2 bytes, no file written (pass -o <path> to write one)
+================ e1z_db_or.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu z80
+       2/       0 :                     	org 0
+       3/       0 : 12                  	db 10h|()|02h
+       4/       1 : EE                  	db 0EEh
+       5/       2 :                     	end
+sigil exit=0
+12 EE
+built: 2 bytes, no file written (pass -o <path> to write one)
+================ e1z_dw.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu z80
+       2/       0 :                     	org 0
+       3/       0 : 00 00               	dw ()
+       4/       2 : EE                  	db 0EEh
+       5/       3 :                     	end
+sigil exit=0
+00 00 EE
+built: 3 bytes, no file written (pass -o <path> to write one)
+================ e1z_ld_a.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu z80
+       2/       0 :                     	org 0
+       3/       0 : 3E 00               	ld a,()
+       4/       2 : EE                  	db 0EEh
+       5/       3 :                     	end
+sigil exit=0
+3E 00 EE
+built: 3 bytes, no file written (pass -o <path> to write one)
+================ e1z_ld_a_or.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu z80
+       2/       0 :                     	org 0
+       3/       0 : 3E 01               	ld a,1|()
+       4/       2 : EE                  	db 0EEh
+       5/       3 :                     	end
+sigil exit=0
+3E 01 EE
+built: 3 bytes, no file written (pass -o <path> to write one)
+================ e1z_ld_a_paren0.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu z80
+       2/       0 :                     	org 0
+       3/       0 : 3A 00 00            	ld a,(0)
+       4/       3 : EE                  	db 0EEh
+       5/       4 :                     	end
+sigil exit=0
+3A 00 00 EE
+built: 4 bytes, no file written (pass -o <path> to write one)
+================ e1z_ld_a_paren_or.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu z80
+       2/       0 :                     	org 0
+       3/       0 : 3A 01 00            	ld a,(1|())
+       4/       3 : EE                  	db 0EEh
+       5/       4 :                     	end
+sigil exit=0
+3A 01 00 EE
+built: 4 bytes, no file written (pass -o <path> to write one)
+================ e1z_ld_hl.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu z80
+       2/       0 :                     	org 0
+       3/       0 : 21 00 00            	ld hl,()
+       4/       3 : EE                  	db 0EEh
+       5/       4 :                     	end
+sigil exit=0
+21 00 00 EE
+built: 4 bytes, no file written (pass -o <path> to write one)
+================ e1z_macro_omitted2.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu z80
+       2/       0 :                     	org 0
+       3/       0 :                     m macro pa,pb
+       4/       0 :                     	db (pa)|(pb)
+       5/       0 :                     	endm
+       6/       0 : (MACRO)              	m 5
+       6/       0 : 05                          db (5)|()
+       7/       1 : EE                  	db 0EEh
+       8/       2 :                     	end
+sigil exit=0
+05 EE
+built: 2 bytes, no file written (pass -o <path> to write one)
+================ e1z_macro_omitted.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu z80
+       2/       0 :                     	org 0
+       3/       0 :                     m macro a,b
+       4/       0 :                     	db (a)|(b)
+       5/       0 :                     	endm
+       6/       0 : (MACRO)              	m 5
+       6/       0 : 05                          db (5)|()
+       7/       1 : EE                  	db 0EEh
+       8/       2 :                     	end
+sigil exit=0
+05 EE
+built: 2 bytes, no file written (pass -o <path> to write one)
+================ e1z_music2.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu z80
+       2/       0 :                     	org 0
+       3/       0 : =8000H               z80_bank_size = 8000h
+       4/       0 :                     getZ80BankOffset function label, label # z80_bank_size
+       5/       0 :                     getZ80BankBase function label, label - getZ80BankOffset(label)
+       6/       0 :                     withinSameZ80Bank function label1, label2, getZ80BankBase(label1) == getZ80BankBase(label2)
+       7/       0 : =40H                 MusFlag_SlowerOnPAL = 1 << 6
+       8/       0 :                     music_metadata macro DATA,FLAGS
+       9/       0 :                     	db	(withinSameZ80Bank(DATA.pointer, MusicPoint2)<<7)|((~~DATA.is_compressed)<<5)|(FLAGS)|(getZ80BankOffset(DATA.pointer)/2)
+      10/       0 :                         endm
+      11/       0 : =10020H              Mus_EHZ.pointer = 10020h
+      12/       0 : =1H                  Mus_EHZ.is_compressed = 1
+      13/       0 : =8030H               Mus_X.pointer = 8030h
+      14/       0 : =0H                  Mus_X.is_compressed = 0
+      15/       0 : =10000H              MusicPoint2 = 10000h
+      16/       0 : (MACRO)              	music_metadata Mus_EHZ
+      16/       0 : 90                          db      (withinSameZ80Bank(Mus_EHZ.pointer, MusicPoint2)<<7)|((~~Mus_EHZ.is_compressed)<<5)|()|(getZ80BankOffset(Mus_EHZ.pointer)/2)
+      17/       1 : (MACRO)              	music_metadata Mus_X,MusFlag_SlowerOnPAL
+      17/       1 : 78                          db      (withinSameZ80Bank(Mus_X.pointer, MusicPoint2)<<7)|((~~Mus_X.is_compressed)<<5)|(MusFlag_SlowerOnPAL)|(getZ80BankOffset(Mus_X.pointer)/2)
+      18/       2 : EE                  	db 0EEh
+      19/       3 :                     	end
+sigil exit=0
+90 78 EE
+built: 3 bytes, no file written (pass -o <path> to write one)
+================ e1z_music.asm
+asl exit=2 ASL_EXIT=2 ASL_DIAG=complete 
+> > > e1z_music.asm(16) music_metadata(1):17: error #1320: range overflow
+> > > e1z_music.asm(17) music_metadata(1):17: error #1320: range overflow
+  lines that assembled: an error stops the pass loop, so every forward
+       1/       0 :                     	cpu z80
+       2/       0 :                     	org 0
+       3/       0 : =8000H               z80_bank_size = 8000h
+       4/       0 :                     getZ80BankOffset function label, label # z80_bank_size
+       5/       0 :                     getZ80BankBase function label, label - getZ80BankOffset(label)
+       6/       0 :                     withinSameZ80Bank function label1, label2, getZ80BankBase(label1) == getZ80BankBase(label2)
+       7/       0 : =40H                 MusFlag_SlowerOnPAL = 1 << 6
+       8/       0 :                     music_metadata macro DATA,FLAGS
+       9/       0 :                     	db	(withinSameZ80Bank(DATA.pointer, MusicPoint2)<<7)|((~~DATA.is_compressed)<<5)|(FLAGS)|(getZ80BankOffset(DATA.pointer)/2)
+      10/       0 :                         endm
+      11/       0 : =12344H              Mus_EHZ.pointer = 12344h
+      12/       0 : =1H                  Mus_EHZ.is_compressed = 1
+      13/       0 : =9876H               Mus_X.pointer = 9876h
+      14/       0 : =0H                  Mus_X.is_compressed = 0
+      15/       0 : =10000H              MusicPoint2 = 10000h
+      16/       0 : (MACRO)              	music_metadata Mus_EHZ
+      16/       0 :                             db      (withinSameZ80Bank(Mus_EHZ.pointer, MusicPoint2)<<7)|((~~Mus_EHZ.is_compressed)<<5)|()|(getZ80BankOffset(Mus_EHZ.pointer)/2)
+      17/       0 : (MACRO)              	music_metadata Mus_X,MusFlag_SlowerOnPAL
+      17/       0 :                             db      (withinSameZ80Bank(Mus_X.pointer, MusicPoint2)<<7)|((~~Mus_X.is_compressed)<<5)|(MusFlag_SlowerOnPAL)|(getZ80BankOffset(Mus_X.pointer)/2)
+      18/       0 : EE                  	db 0EEh
+      19/       1 :                     	end
+sigil exit=1
+e1z_music.asm(9):5: error: operand 4514 out of range -128..=255
+e1z_music.asm(9):5: error: operand 3195 out of range -128..=255
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 2 errors (reported on stderr)
+================ l6_64.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : 0000 0020           	dc.l lastbit($100000000)
+       5/       4 : EE                  	dc.b $EE
+       6/       5 :                     	end
+sigil exit=0
+00 00 00 20 EE
+built: 5 bytes, no file written (pass -o <path> to write one)
+================ l6_bitcnt.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : 03                  	dc.b bitcnt(7)
+       5/       1 : EE                  	dc.b $EE
+       6/       2 :                     	end
+sigil exit=1
+l6_bitcnt.asm(4):7: error: bad byte expression
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ l6_case.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : 02                  	dc.b LASTBIT(5)
+       5/       1 : 03                  	dc.b LastBit(9)
+       6/       2 : EE                  	dc.b $EE
+       7/       3 :                     	end
+sigil exit=0
+02 03 EE
+built: 3 bytes, no file written (pass -o <path> to write one)
+================ l6_cnop.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     org	macro address
+       5/       0 :                     	if address < *
+       6/       0 :                     	error "too much"
+       7/       0 :                     	elseif address > *
+       8/       0 :                     	!org address
+       9/       0 :                     	endif
+      10/       0 :                     	endm
+      11/       0 :                     cnop	macro offset,alignment
+      12/       0 :                     	org (*-1+(alignment)-((*-1+(-(offset)))#(alignment)))
+      13/       0 :                     	endm
+      14/       0 :                     Start:
+      15/       0 : 0102 03             	dc.b 1,2,3
+      16/       3 : (MACRO)              	cnop -1,2<<lastbit(*-Start-1)
+      16/       3 :  (MACRO-2)                   org (*-1+(2<<lastbit(*-Start-1))-((*-1+(-(-1)))#(2<<lastbit(*-Start-1))))
+      16/       3 : =>FALSE                      if (*-1+(2<<lastbit(*-Start-1))-((*-1+(-(-1)))#(2<<lastbit(*-Start-1)))) < *
+      16/       3 :                             error "too much"
+      16/       3 : =>FALSE                      elseif (*-1+(2<<lastbit(*-Start-1))-((*-1+(-(-1)))#(2<<lastbit(*-Start-1)))) > *
+      16/       3 :                             !org (*-1+(2<<lastbit(*-Start-1))-((*-1+(-(-1)))#(2<<lastbit(*-Start-1))))
+      16/       3 : [16]                         endif
+      17/       3 : 00                  	dc.b $00
+      18/       4 : EE                  	dc.b $EE
+      19/       5 :                     	end
+sigil exit=0
+01 02 03 00 EE
+built: 5 bytes, no file written (pass -o <path> to write one)
+================ l6_cnop_big.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     org	macro address
+       5/       0 :                     	if address < *
+       6/       0 :                     	error "too much"
+       7/       0 :                     	elseif address > *
+       8/       0 :                     	!org address
+       9/       0 :                     	endif
+      10/       0 :                     	endm
+      11/       0 :                     cnop	macro offset,alignment
+      12/       0 :                     	org (*-1+(alignment)-((*-1+(-(offset)))#(alignment)))
+      13/       0 :                     	endm
+      14/       0 :                     Start:
+      15/       0 :                     	ds.b $123
+      16/     123 : (MACRO)              	cnop -1,2<<lastbit(*-Start-1)
+      16/     123 :  (MACRO-2)                   org (*-1+(2<<lastbit(*-Start-1))-((*-1+(-(-1)))#(2<<lastbit(*-Start-1))))
+      16/     123 : =>FALSE                      if (*-1+(2<<lastbit(*-Start-1))-((*-1+(-(-1)))#(2<<lastbit(*-Start-1)))) < *
+      16/     123 :                             error "too much"
+      16/     123 : =>TRUE                       elseif (*-1+(2<<lastbit(*-Start-1))-((*-1+(-(-1)))#(2<<lastbit(*-Start-1)))) > *
+      16/     1FF :                             !org (*-1+(2<<lastbit(*-Start-1))-((*-1+(-(-1)))#(2<<lastbit(*-Start-1))))
+      16/     1FF : [16]                         endif
+      17/     1FF : 00                  	dc.b $00
+      18/     200 :                     EndR:
+      19/     200 : 0000 0200           	dc.l EndR
+      20/     204 : EE                  	dc.b $EE
+      21/     205 :                     	end
+sigil exit=0
+00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 02 00 EE
+built: 517 bytes, no file written (pass -o <path> to write one)
+================ l6_cnop_undef.asm
+asl exit=2 ASL_EXIT=2 ASL_DIAG=INCOMPLETE 
+> > > l6_cnop_undef.asm(16) cnop(1) org(1): error #1820: expression must be evaluatable in first pass
+> > > l6_cnop_undef.asm(16) cnop(1) org(2): error: too much
+> > >         error "too much"
+  asl stopped its PASS LOOP on an error, so the diagnostics from
+  ZERO here whether there are none or thirty. The error count in
+  reported error and assemble again to learn what was hidden.
+  lines that assembled: an error stops the pass loop, so every forward
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     org	macro address
+       5/       0 :                     	if address < *
+       6/       0 :                     	error "too much"
+       7/       0 :                     	elseif address > *
+       8/       0 :                     	!org address
+       9/       0 :                     	endif
+      10/       0 :                     	endm
+      11/       0 :                     cnop	macro offset,alignment
+      12/       0 :                     	org (*-1+(alignment)-((*-1+(-(offset)))#(alignment)))
+      13/       0 :                     	endm
+      14/       0 :                     Start:
+      15/       0 : 0102 03             	dc.b 1,2,3
+      16/       3 : (MACRO)              	cnop -1,2<<lastbit(Nope)
+      16/       3 :  (MACRO-2)                   org (*-1+(2<<lastbit(Nope))-((*-1+(-(-1)))#(2<<lastbit(Nope))))
+      16/       3 : =>TRUE                       if (*-1+(2<<lastbit(Nope))-((*-1+(-(-1)))#(2<<lastbit(Nope)))) < *
+      16/       3 :                             error "too much"
+      16/       3 : =>FALSE                      elseif (*-1+(2<<lastbit(Nope))-((*-1+(-(-1)))#(2<<lastbit(Nope)))) > *
+      16/       3 :                             !org (*-1+(2<<lastbit(Nope))-((*-1+(-(-1)))#(2<<lastbit(Nope))))
+      16/       3 : [16]                         endif
+      17/       3 : 00                  	dc.b $00
+      18/       4 : EE                  	dc.b $EE
+      19/       5 :                     	end
+sigil exit=1
+l6_cnop_undef.asm(5):2: error: unresolved if condition: it does not evaluate, so it cannot decide whether the code it guards is assembled
+l6_cnop_undef.asm(7):2: error: unresolved elseif condition: it does not evaluate, so it cannot decide whether the code it guards is assembled
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 2 errors (reported on stderr)
+================ l6_ds.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     	ds.b lastbit(5)
+       5/       2 : EE                  	dc.b $EE
+       6/       3 :                     	end
+sigil exit=0
+00 00 EE
+built: 3 bytes, no file written (pass -o <path> to write one)
+================ l6_equ.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : =$2                  X equ lastbit(5)
+       5/       0 : 02                  	dc.b X
+       6/       1 : EE                  	dc.b $EE
+       7/       2 :                     	end
+sigil exit=0
+02 EE
+built: 2 bytes, no file written (pass -o <path> to write one)
+================ l6_firstbit.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : 02                  	dc.b firstbit(12)
+       5/       1 : EE                  	dc.b $EE
+       6/       2 :                     	end
+sigil exit=1
+l6_firstbit.asm(4):7: error: bad byte expression
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ l6_float.asm
+asl exit=3 ASL_EXIT=3 ASL_DIAG=unknown (l6_float.lst has no pass footer: the run died before 
+> > > l6_float.asm(4):15: error #10000: internal error
+fatal error, assembly terminated
+  from the listing. Absence of the warning is NOT completeness.)
+  lines that assembled: an error stops the pass loop, so every forward
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+sigil exit=1
+l6_float.asm(4):15: error: floating point value where an integer is required (wrap it in `int(...)`)
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ l6_fwd.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : 02                  	dc.b lastbit(Later)
+       5/       1 : =$5                  Later equ 5
+       6/       1 : EE                  	dc.b $EE
+       7/       2 :                     	end
+sigil exit=0
+02 EE
+built: 2 bytes, no file written (pass -o <path> to write one)
+================ l6_fwd_label.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : 06                  	dc.b lastbit(Later)
+       5/       1 :                     	ds.b $40
+       6/      41 : 01                  Later:	dc.b 1
+       7/      42 : EE                  	dc.b $EE
+       8/      43 :                     	end
+sigil exit=0
+06 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 01 EE
+built: 67 bytes, no file written (pass -o <path> to write one)
+================ l6_high.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : 0000 001F           	dc.l lastbit($80000000)
+       5/       4 : 0000 001E           	dc.l lastbit($7FFFFFFF)
+       6/       8 : EE                  	dc.b $EE
+       7/       9 :                     	end
+sigil exit=0
+00 00 00 1F 00 00 00 1E EE
+built: 9 bytes, no file written (pass -o <path> to write one)
+================ l6_if.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : =>TRUE               	if lastbit(4)=2
+       5/       0 : 01                  	dc.b 1
+       6/       1 : =>FALSE              	else
+       7/       1 :                     	dc.b 2
+       8/       1 : [4]                  	endif
+       9/       1 : EE                  	dc.b $EE
+      10/       2 :                     	end
+sigil exit=0
+01 EE
+built: 2 bytes, no file written (pass -o <path> to write one)
+================ l6_imm.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : 203C 0010 0000      	move.l #2<<lastbit($FFFEB),d0
+       5/       6 : EE                  	dc.b $EE
+       6/       7 :                     	end
+sigil exit=0
+20 3C 00 10 00 00 EE
+built: 7 bytes, no file written (pass -o <path> to write one)
+================ l6_neg2.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : 0000 003F           	dc.l lastbit(-2)
+       5/       4 : EE                  	dc.b $EE
+       6/       5 :                     	end
+sigil exit=0
+00 00 00 3F EE
+built: 5 bytes, no file written (pass -o <path> to write one)
+================ l6_neg.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : 0000 003F           	dc.l lastbit(-1)
+       5/       4 : EE                  	dc.b $EE
+       6/       5 :                     	end
+sigil exit=0
+00 00 00 3F EE
+built: 5 bytes, no file written (pass -o <path> to write one)
+================ l6_nested.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : 04                  	dc.b lastbit(lastbit($FFFEB))
+       5/       1 : EE                  	dc.b $EE
+       6/       2 :                     	end
+sigil exit=0
+04 EE
+built: 2 bytes, no file written (pass -o <path> to write one)
+================ l6_noarg.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : FF                  	dc.b lastbit()
+       5/       1 : EE                  	dc.b $EE
+       6/       2 :                     	end
+sigil exit=0
+FF EE
+built: 2 bytes, no file written (pass -o <path> to write one)
+================ l6_star.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/     123 :                     	org $123
+       5/     123 : 0000 0200           	dc.l 2<<lastbit(*-1)
+       6/     127 : EE                  	dc.b $EE
+       7/     128 :                     	end
+sigil exit=0
+00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 02 00 EE
+built: 296 bytes, no file written (pass -o <path> to write one)
+================ l6_string.asm
+asl exit=2 ASL_EXIT=2 ASL_DIAG=complete 
+> > > l6_string.asm(4):15: error #1136: expected floating point number, but got string
+  lines that assembled: an error stops the pass loop, so every forward
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     	dc.b lastbit("A")
+       5/       0 : EE                  	dc.b $EE
+       6/       1 :                     	end
+sigil exit=1
+l6_string.asm(4):7: error: bad byte expression
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ l6_twoarg.asm
+asl exit=2 ASL_EXIT=2 ASL_DIAG=complete 
+> > > l6_twoarg.asm(4): error #1490: wrong numbers of function arguments
+  lines that assembled: an error stops the pass loop, so every forward
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     	dc.b lastbit(1,2)
+       5/       0 : EE                  	dc.b $EE
+       6/       1 :                     	end
+sigil exit=1
+l6_twoarg.asm(4):7: error: bad byte expression
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ l6_undef.asm
+asl exit=2 ASL_EXIT=2 ASL_DIAG=complete 
+> > > l6_undef.asm(4):15: error #1010: symbol undefined
+  lines that assembled: an error stops the pass loop, so every forward
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     	dc.b lastbit(Nope)
+       5/       0 : EE                  	dc.b $EE
+       6/       1 :                     	end
+sigil exit=1
+l6_undef.asm(4):7: error: bad byte expression
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ l6_values.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : 00                  	dc.b lastbit(1)
+       5/       1 : 02                  	dc.b lastbit(5)
+       6/       2 : 07                  	dc.b lastbit($80)
+       7/       3 : 13                  	dc.b lastbit($FFFEB)
+       8/       4 : 0010 0000           	dc.l 2<<lastbit($FFFEB)
+       9/       8 : EE                  	dc.b $EE
+      10/       9 :                     	end
+sigil exit=0
+00 02 07 13 00 10 00 00 EE
+built: 9 bytes, no file written (pass -o <path> to write one)
+================ l6z_abs_ctl.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu z80
+       2/       0 :                     	org 0
+       3/       0 : 3E 03               	ld a,abs(-3)
+       4/       2 : 04                  	db abs(-4)
+       5/       3 : EE                  	db 0EEh
+       6/       4 :                     	end
+sigil exit=0
+3E 03 04 EE
+built: 4 bytes, no file written (pass -o <path> to write one)
+================ l6z_db.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu z80
+       2/       0 :                     	org 0
+       3/       0 : 02                  	db lastbit(5)
+       4/       1 : 3E 03               	ld a,lastbit(9)
+       5/       3 : EE                  	db 0EEh
+       6/       4 :                     	end
+sigil exit=0
+02 3E 03 EE
+built: 4 bytes, no file written (pass -o <path> to write one)
+================ l6_zero.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : FFFF FFFF           	dc.l lastbit(0)
+       5/       4 : EE                  	dc.b $EE
+       6/       5 :                     	end
+sigil exit=0
+FF FF FF FF EE
+built: 5 bytes, no file written (pass -o <path> to write one)
+================ m5_0x.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     pal	macro path
+       5/       0 :                     	dc.b "path"
+       6/       0 :                     	endm
+       7/       0 : (MACRO)              	pal 0x41
+       7/       0 : 3078 3431                   dc.b "0x41"
+       8/       4 : EE                  	dc.b $EE
+       9/       5 :                     	end
+sigil exit=0
+30 78 34 31 EE
+built: 5 bytes, no file written (pass -o <path> to write one)
+================ m5_1bin.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     pal	macro path
+       5/       0 :                     	dc.b "path"
+       6/       0 :                     	endm
+       7/       0 : (MACRO)              	pal Special Stage 1.bin
+       7/       0 : 5370 6563 6961              dc.b "Special Stage 1.bin"
+       8/      13 : EE                  	dc.b $EE
+       9/      14 :                     	end
+sigil exit=0
+53 70 65 63 69 61 6C 20 53 74 61 67 65 20 31 2E 62 69 6E EE
+built: 20 bytes, no file written (pass -o <path> to write one)
+================ m5_1up.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     pal	macro path
+       5/       0 :                     	dc.b "path"
+       6/       0 :                     	endm
+       7/       0 : (MACRO)              	pal 1up
+       7/       0 : 3175 70                     dc.b "1up"
+       8/       3 : EE                  	dc.b $EE
+       9/       4 :                     	end
+sigil exit=0
+31 75 70 EE
+built: 4 bytes, no file written (pass -o <path> to write one)
+================ m5_2p.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     pal	macro path
+       5/       0 :                     	dc.b "path"
+       6/       0 :                     	endm
+       7/       0 : (MACRO)              	pal Special Stage 1 2p.bin
+       7/       0 : 5370 6563 6961              dc.b "Special Stage 1 2p.bin"
+       8/      16 : EE                  	dc.b $EE
+       9/      17 :                     	end
+sigil exit=0
+53 70 65 63 69 61 6C 20 53 74 61 67 65 20 31 20 32 70 2E 62 69 6E EE
+built: 23 bytes, no file written (pass -o <path> to write one)
+================ m5_char.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     pal	macro path
+       5/       0 :                     	dc.b "path"
+       6/       0 :                     	endm
+       7/       0 : (MACRO)              	pal 'A'
+       7/       0 : 2741 27                     dc.b "'A'"
+       8/       3 : EE                  	dc.b $EE
+       9/       4 :                     	end
+sigil exit=0
+27 41 27 EE
+built: 4 bytes, no file written (pass -o <path> to write one)
+================ m5d_default_2p.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     m	macro pa=2p.bin
+       5/       0 :                     	dc.b "pa"
+       6/       0 :                     	endm
+       7/       0 : (MACRO)              	m
+       7/       0 : 3270 2E62 696E              dc.b "2p.bin"
+       8/       6 : EE                  	dc.b $EE
+       9/       7 :                     	end
+sigil exit=1
+m5d_default_2p.asm(4):1: error: macro needs a name
+m5d_default_2p.asm(7):2: error: `m` is not a recognized 68000 mnemonic
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 2 errors (reported on stderr)
+================ m5d_default_dollar.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     m	macro pa=$10
+       5/       0 :                     	dc.b "pa"
+       6/       0 :                     	endm
+       7/       0 : (MACRO)              	m
+       7/       0 : 2431 30                     dc.b "$10"
+       8/       3 : EE                  	dc.b $EE
+       9/       4 :                     	end
+sigil exit=0
+24 31 30 EE
+built: 4 bytes, no file written (pass -o <path> to write one)
+================ m5d_default_mixed.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     m	macro pa=007 %101
+       5/       0 :                     	dc.b "pa"
+       6/       0 :                     	endm
+       7/       0 : (MACRO)              	m
+       7/       0 : 3030 3720 2531              dc.b "007 %101"
+       8/       8 : EE                  	dc.b $EE
+       9/       9 :                     	end
+sigil exit=0
+30 30 37 20 25 31 30 31 EE
+built: 9 bytes, no file written (pass -o <path> to write one)
+================ m5_digitdot.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     pal	macro path
+       5/       0 :                     	dc.b "path"
+       6/       0 :                     	endm
+       7/       0 : (MACRO)              	pal 2.bin
+       7/       0 : 322E 6269 6E                dc.b "2.bin"
+       8/       5 : EE                  	dc.b $EE
+       9/       6 :                     	end
+sigil exit=0
+32 2E 62 69 6E EE
+built: 6 bytes, no file written (pass -o <path> to write one)
+================ m5_dollar.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     pal	macro path
+       5/       0 :                     	dc.b "path"
+       6/       0 :                     	endm
+       7/       0 : (MACRO)              	pal $10
+       7/       0 : 2431 30                     dc.b "$10"
+       8/       3 : EE                  	dc.b $EE
+       9/       4 :                     	end
+sigil exit=0
+24 31 30 EE
+built: 4 bytes, no file written (pass -o <path> to write one)
+================ m5_expr.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     pal	macro path
+       5/       0 :                     	dc.b "path"
+       6/       0 :                     	endm
+       7/       0 : (MACRO)              	pal 1+2
+       7/       0 : 312B 32                     dc.b "1+2"
+       8/       3 : EE                  	dc.b $EE
+       9/       4 :                     	end
+sigil exit=0
+31 2B 32 EE
+built: 4 bytes, no file written (pass -o <path> to write one)
+================ m5_float.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     pal	macro path
+       5/       0 :                     	dc.b "path"
+       6/       0 :                     	endm
+       7/       0 : (MACRO)              	pal 1.5e3
+       7/       0 : 312E 3565 33                dc.b "1.5e3"
+       8/       5 : EE                  	dc.b $EE
+       9/       6 :                     	end
+sigil exit=0
+31 2E 35 65 33 EE
+built: 6 bytes, no file written (pass -o <path> to write one)
+================ m5_hexh.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     pal	macro path
+       5/       0 :                     	dc.b "path"
+       6/       0 :                     	endm
+       7/       0 : (MACRO)              	pal 12h
+       7/       0 : 3132 68                     dc.b "12h"
+       8/       3 : EE                  	dc.b $EE
+       9/       4 :                     	end
+sigil exit=0
+31 32 68 EE
+built: 4 bytes, no file written (pass -o <path> to write one)
+================ m5_hexish.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     pal	macro path
+       5/       0 :                     	dc.b "path"
+       6/       0 :                     	endm
+       7/       0 : (MACRO)              	pal 0FFh 1F 2G
+       7/       0 : 3046 4668 2031              dc.b "0FFh 1F 2G"
+       8/       A : EE                  	dc.b $EE
+       9/       B :                     	end
+sigil exit=0
+30 46 46 68 20 31 46 20 32 47 EE
+built: 11 bytes, no file written (pass -o <path> to write one)
+================ m5_interp.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     pal	macro path
+       5/       0 :                     	message "[path]"
+       6/       0 :                     	endm
+       7/       0 : (MACRO)              	pal Special Stage 1 2p.bin
+       7/       0 :                             message "[Special Stage 1 2p.bin]"
+       8/       0 : EE                  	dc.b $EE
+       9/       1 :                     	end
+sigil exit=0
+[Special Stage 1 2p.bin]
+EE
+built: 1 bytes, no file written (pass -o <path> to write one)
+================ m5k_both_space.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     m	macro pa,pb,pc
+       5/       0 :                     	message "(pa)(pb)(pc)[ALLARGS]"
+       6/       0 :                     	dc.b ARGCOUNT
+       7/       0 :                     	endm
+       8/       0 : (MACRO)              	m aa, pb = 5 
+       8/       0 :                             message "(aa)(5)()[aa,pb = 5]"
+       8/       0 : 02                          dc.b 2
+       9/       1 : EE                  	dc.b $EE
+      10/       2 :                     	end
+sigil exit=0
+(aa)(5)()[aa,pb = 5]
+02 EE
+built: 2 bytes, no file written (pass -o <path> to write one)
+================ m5k_eq_in_paren.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     m	macro pa,pb,pc
+       5/       0 :                     	message "(pa)(pb)(pc)[ALLARGS]"
+       6/       0 :                     	dc.b ARGCOUNT
+       7/       0 :                     	endm
+       8/       0 : (MACRO)              	m (pb=5)
+       8/       0 :                             message "((pb=5))()()[(pb=5)]"
+       8/       0 : 01                          dc.b 1
+       9/       1 : EE                  	dc.b $EE
+      10/       2 :                     	end
+sigil exit=0
+((pb=5))()()[(pb=5)]
+01 EE
+built: 2 bytes, no file written (pass -o <path> to write one)
+================ m5k_eq_in_str.asm
+asl exit=2 ASL_EXIT=2 ASL_DIAG=complete 
+> > > m5k_eq_in_str.asm(8) m(1):35: error #1020: invalid symbol name
+> > > m5k_eq_in_str.asm(8) m(1):23: error #1020: invalid symbol name
+> > > m5k_eq_in_str.asm(8) m(1):17: error #1020: invalid symbol name
+> > > m5k_eq_in_str.asm(8) m(1): error #1970: invalid string
+  lines that assembled: an error stops the pass loop, so every forward
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     m	macro pa,pb,pc
+       5/       0 :                     	message "(pa)(pb)(pc)[ALLARGS]"
+       6/       0 :                     	dc.b ARGCOUNT
+       7/       0 :                     	endm
+       8/       0 : (MACRO)              	m "pb=5"
+       8/       0 :                             message "("pb=5")()()["pb=5"]"
+       8/       0 : 01                          dc.b 1
+       9/       1 : EE                  	dc.b $EE
+      10/       2 :                     	end
+sigil exit=0
+(
+01 EE
+built: 2 bytes, no file written (pass -o <path> to write one)
+================ m5k_le.asm
+asl exit=2 ASL_EXIT=2 ASL_DIAG=complete 
+> > > m5k_le.asm(8):4: error #1811: keyword argument not defined in macro
+  lines that assembled: an error stops the pass loop, so every forward
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     m	macro pa,pb,pc
+       5/       0 :                     	message "(pa)(pb)(pc)[ALLARGS]"
+       6/       0 :                     	dc.b ARGCOUNT
+       7/       0 :                     	endm
+       8/       0 : (MACRO)              	m 2<=3
+       8/       0 :                             message "()()()[2<=3]"
+       8/       0 : 01                          dc.b 1
+       9/       1 : EE                  	dc.b $EE
+      10/       2 :                     	end
+sigil exit=1
+()()()[2<=3]
+m5k_le.asm(8):4: error: keyword argument `2<` not defined in macro `m`
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ m5k_name_space.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     m	macro pa,pb,pc
+       5/       0 :                     	message "(pa)(pb)(pc)[ALLARGS]"
+       6/       0 :                     	dc.b ARGCOUNT
+       7/       0 :                     	endm
+       8/       0 : (MACRO)              	m pb =5
+       8/       0 :                             message "()(5)()[pb =5]"
+       8/       0 : 01                          dc.b 1
+       9/       1 : EE                  	dc.b $EE
+      10/       2 :                     	end
+sigil exit=0
+()(5)()[pb =5]
+01 EE
+built: 2 bytes, no file written (pass -o <path> to write one)
+================ m5k_value_space.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     m	macro pa,pb,pc
+       5/       0 :                     	message "(pa)(pb)(pc)[ALLARGS]"
+       6/       0 :                     	dc.b ARGCOUNT
+       7/       0 :                     	endm
+       8/       0 : (MACRO)              	m pb= 5
+       8/       0 :                             message "()(5)()[pb= 5]"
+       8/       0 : 01                          dc.b 1
+       9/       1 : EE                  	dc.b $EE
+      10/       2 :                     	end
+sigil exit=0
+()(5)()[pb= 5]
+01 EE
+built: 2 bytes, no file written (pass -o <path> to write one)
+================ m5_label_compose.asm
+asl exit=2 ASL_EXIT=2 ASL_DIAG=complete 
+> > > m5_label_compose.asm(8):7: error #1010: symbol undefined
+  lines that assembled: an error stops the pass loop, so every forward
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     lbl	macro n
+       5/       0 :                     Lab_n:	dc.b 1
+       6/       0 :                     	endm
+       7/       0 : (MACRO)              	lbl 2p
+       7/       0 : 01                  Lab_2p:  dc.b 1
+       8/       1 :                     	dc.l Lab_2p
+       9/       1 : EE                  	dc.b $EE
+      10/       2 :                     	end
+sigil exit=0
+01 00 00 00 00 EE
+built: 6 bytes, no file written (pass -o <path> to write one)
+================ m5_label_compose_col0.asm
+asl exit=2 ASL_EXIT=2 ASL_DIAG=complete 
+> > > m5_label_compose_col0.asm(8):7: error #1010: symbol undefined
+  lines that assembled: an error stops the pass loop, so every forward
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     lbl	macro n
+       5/       0 :                     Lab_n:	dc.b 1
+       6/       0 :                     	endm
+       7/       0 : (MACRO)              	lbl 2p
+       7/       0 : 01                  Lab_2p:  dc.b 1
+       8/       1 :                     	dc.l Lab_2p
+       9/       1 : EE                  	dc.b $EE
+      10/       2 :                     	end
+sigil exit=0
+01 00 00 00 00 EE
+built: 6 bytes, no file written (pass -o <path> to write one)
+================ m5_label_compose_ctl.asm
+asl exit=2 ASL_EXIT=2 ASL_DIAG=complete 
+> > > m5_label_compose_ctl.asm(8):7: error #1010: symbol undefined
+  lines that assembled: an error stops the pass loop, so every forward
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     lbl	macro n
+       5/       0 :                     Lab_n:	dc.b 1
+       6/       0 :                     	endm
+       7/       0 : (MACRO)              	lbl 5
+       7/       0 : 01                  Lab_5:  dc.b 1
+       8/       1 :                     	dc.l Lab_5
+       9/       1 : EE                  	dc.b $EE
+      10/       2 :                     	end
+sigil exit=0
+01 00 00 00 00 EE
+built: 6 bytes, no file written (pass -o <path> to write one)
+================ m5_label_compose_str.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     lbl	macro n
+       5/       0 :                     	dc.b "Lab_n"
+       6/       0 :                     	endm
+       7/       0 : (MACRO)              	lbl 2p
+       7/       0 : 4C61 625F 3270              dc.b "Lab_2p"
+       8/       6 : EE                  	dc.b $EE
+       9/       7 :                     	end
+sigil exit=0
+4C 61 62 5F 32 70 EE
+built: 7 bytes, no file written (pass -o <path> to write one)
+================ m5_leading_zero.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     pal	macro path
+       5/       0 :                     	dc.b "path"
+       6/       0 :                     	endm
+       7/       0 : (MACRO)              	pal 007
+       7/       0 : 3030 37                     dc.b "007"
+       8/       3 : EE                  	dc.b $EE
+       9/       4 :                     	end
+sigil exit=0
+30 30 37 EE
+built: 4 bytes, no file written (pass -o <path> to write one)
+================ m5_neg.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     pal	macro path
+       5/       0 :                     	dc.b "path"
+       6/       0 :                     	endm
+       7/       0 : (MACRO)              	pal -1
+       7/       0 : 2D31                        dc.b "-1"
+       8/       2 : EE                  	dc.b $EE
+       9/       3 :                     	end
+sigil exit=0
+2D 31 EE
+built: 3 bytes, no file written (pass -o <path> to write one)
+================ m5_palette_replica.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     palette macro {INTLABEL},path,path2
+       5/       0 :                     __LABEL__ label *
+       6/       0 :                     	dc.b "path"
+       7/       0 :                         if "path2"<>""
+       8/       0 :                     	dc.b "path2"
+       9/       0 :                         endif
+      10/       0 :                     __LABEL___End label *
+      11/       0 :                     	endm
+      12/       0 : (MACRO)              Pal_SS1_2p:palette Special Stage 1 2p.bin ; Special Stage 1 2p palette
+      12/       0 : =$0                  Pal_SS1_2p label *
+      12/       0 : 5370 6563 6961              dc.b "Special Stage 1 2p.bin"
+      12/      16 : =>FALSE                  if ""<>""
+      12/      16 :                             dc.b ""
+      12/      16 : [12]                     endif
+      12/      16 : =$16                 Pal_SS1_2p_End label *
+      13/      16 : (MACRO)              Pal_SS2:   palette Special Stage 2.bin,Sonic and 2p.bin ; two
+      13/      16 : =$16                 Pal_SS2 label *
+      13/      16 : 5370 6563 6961              dc.b "Special Stage 2.bin"
+      13/      29 : =>TRUE                   if "Sonic and 2p.bin"<>""
+      13/      29 : 536F 6E69 6320              dc.b "Sonic and 2p.bin"
+      13/      39 : [13]                     endif
+      13/      39 : =$39                 Pal_SS2_End label *
+      14/      39 : 0000 0016           	dc.l Pal_SS1_2p_End-Pal_SS1_2p
+      15/      3D : 0000 0023           	dc.l Pal_SS2_End-Pal_SS2
+      16/      41 : EE                  	dc.b $EE
+      17/      42 :                     	end
+sigil exit=0
+53 70 65 63 69 61 6C 20 53 74 61 67 65 20 31 20 32 70 2E 62 69 6E 53 70 65 63 69 61 6C 20 53 74 61 67 65 20 32 2E 62 69 6E 53 6F 6E 69 63 20 61 6E 64 20 32 70 2E 62 69 6E 00 00 00 16 00 00 00 23 EE
+built: 66 bytes, no file written (pass -o <path> to write one)
+================ m5_percent.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     pal	macro path
+       5/       0 :                     	dc.b "path"
+       6/       0 :                     	endm
+       7/       0 : (MACRO)              	pal %101
+       7/       0 : 2531 3031                   dc.b "%101"
+       8/       4 : EE                  	dc.b $EE
+       9/       5 :                     	end
+sigil exit=0
+25 31 30 31 EE
+built: 5 bytes, no file written (pass -o <path> to write one)
+================ m5s_at.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     m	macro pa,pb,pc
+       5/       0 :                     	message "(pa)(pb)(pc)[ALLARGS]"
+       6/       0 :                     	dc.b ARGCOUNT
+       7/       0 :                     	endm
+       8/       0 : (MACRO)              	m a@b
+       8/       0 :                             message "(a@b)()()[a@b]"
+       8/       0 : 01                          dc.b 1
+       9/       1 : EE                  	dc.b $EE
+      10/       2 :                     	end
+sigil exit=0
+(a@b)()()[a@b]
+01 EE
+built: 2 bytes, no file written (pass -o <path> to write one)
+================ m5s_backslash.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     pal	macro path
+       5/       0 :                     	dc.b "<path>"
+       6/       0 :                     	endm
+       7/       0 : (MACRO)              	pal \x41
+       7/       0 : 3C41 3E                     dc.b "<\x41>"
+       8/       3 : EE                  	dc.b $EE
+       9/       4 :                     	end
+sigil exit=0
+3C 41 3E EE
+built: 4 bytes, no file written (pass -o <path> to write one)
+================ m5s_bracket.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     m	macro pa,pb,pc
+       5/       0 :                     	message "(pa)(pb)(pc)[ALLARGS]"
+       6/       0 :                     	dc.b ARGCOUNT
+       7/       0 :                     	endm
+       8/       0 : (MACRO)              	m [1,2],3
+       8/       0 :                             message "([1,2])(3)()[[1,2],3]"
+       8/       0 : 02                          dc.b 2
+       9/       1 : EE                  	dc.b $EE
+      10/       2 :                     	end
+sigil exit=0
+([1,2])(3)()[[1,2],3]
+02 EE
+built: 2 bytes, no file written (pass -o <path> to write one)
+================ m5s_digits.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     m	macro pa,pb,pc
+       5/       0 :                     	message "(pa)(pb)(pc)[ALLARGS]"
+       6/       0 :                     	dc.b ARGCOUNT
+       7/       0 :                     	endm
+       8/       0 : (MACRO)              	m 1up,2p.bin,3rd
+       8/       0 :                             message "(1up)(2p.bin)(3rd)[1up,2p.bin,3rd]"
+       8/       0 : 03                          dc.b 3
+       9/       1 : EE                  	dc.b $EE
+      10/       2 :                     	end
+sigil exit=0
+(1up)(2p.bin)(3rd)[1up,2p.bin,3rd]
+03 EE
+built: 2 bytes, no file written (pass -o <path> to write one)
+================ m5s_empty.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     m	macro pa,pb,pc
+       5/       0 :                     	message "(pa)(pb)(pc)[ALLARGS]"
+       6/       0 :                     	dc.b ARGCOUNT
+       7/       0 :                     	endm
+       8/       0 : (MACRO)              	m ,bb,
+       8/       0 :                             message "()(bb)()[,bb,]"
+       8/       0 : 03                          dc.b 3
+       9/       1 : EE                  	dc.b $EE
+      10/       2 :                     	end
+sigil exit=0
+()(bb)()[,bb,]
+03 EE
+built: 2 bytes, no file written (pass -o <path> to write one)
+================ m5s_eqeq.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     m	macro pa,pb,pc
+       5/       0 :                     	message "(pa)(pb)(pc)[ALLARGS]"
+       6/       0 :                     	dc.b ARGCOUNT
+       7/       0 :                     	endm
+       8/       0 : (MACRO)              	m pb==5
+       8/       0 :                             message "()(=5)()[pb==5]"
+       8/       0 : 01                          dc.b 1
+       9/       1 : EE                  	dc.b $EE
+      10/       2 :                     	end
+sigil exit=0
+()(=5)()[pb==5]
+01 EE
+built: 2 bytes, no file written (pass -o <path> to write one)
+================ m5s_mixed.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     m	macro pa,pb,pc
+       5/       0 :                     	message "(pa)(pb)(pc)[ALLARGS]"
+       6/       0 :                     	dc.b ARGCOUNT
+       7/       0 :                     	endm
+       8/       0 : (MACRO)              	m $10,007,%101
+       8/       0 :                             message "($10)(007)(%101)[$10,007,%101]"
+       8/       0 : 03                          dc.b 3
+       9/       1 : EE                  	dc.b $EE
+      10/       2 :                     	end
+sigil exit=0
+($10)(007)(%101)[$10,007,%101]
+03 EE
+built: 2 bytes, no file written (pass -o <path> to write one)
+================ m5_spaces.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     pal	macro path
+       5/       0 :                     	dc.b "path"
+       6/       0 :                     	endm
+       7/       0 : (MACRO)              	pal a  1   2p
+       7/       0 : 6120 2031 2020              dc.b "a  1   2p"
+       8/       9 : EE                  	dc.b $EE
+       9/       A :                     	end
+sigil exit=0
+61 20 20 31 20 20 20 32 70 EE
+built: 10 bytes, no file written (pass -o <path> to write one)
+================ m5s_paren.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     m	macro pa,pb,pc
+       5/       0 :                     	message "(pa)(pb)(pc)[ALLARGS]"
+       6/       0 :                     	dc.b ARGCOUNT
+       7/       0 :                     	endm
+       8/       0 : (MACRO)              	m (1,2),3
+       8/       0 :                             message "((1,2))(3)()[(1,2),3]"
+       8/       0 : 02                          dc.b 2
+       9/       1 : EE                  	dc.b $EE
+      10/       2 :                     	end
+sigil exit=0
+((1,2))(3)()[(1,2),3]
+02 EE
+built: 2 bytes, no file written (pass -o <path> to write one)
+================ m5s_quote.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     m	macro pa,pb
+       5/       0 :                     	dc.b pa
+       6/       0 :                     	message "(pb)"
+       7/       0 :                     	dc.b ARGCOUNT
+       8/       0 :                     	endm
+       9/       0 : (MACRO)              	m "a,b",c
+       9/       0 : 612C 62                     dc.b "a,b"
+       9/       3 :                             message "(c)"
+       9/       3 : 02                          dc.b 2
+      10/       4 : EE                  	dc.b $EE
+      11/       5 :                     	end
+sigil exit=0
+(c)
+61 2C 62 02 EE
+built: 5 bytes, no file written (pass -o <path> to write one)
+================ m5s_quote_semi.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     m	macro pa,pb
+       5/       0 :                     	dc.b pa
+       6/       0 :                     	message "(pb)"
+       7/       0 :                     	dc.b ARGCOUNT
+       8/       0 :                     	endm
+       9/       0 : (MACRO)              	m "a;b",c
+       9/       0 : 613B 62                     dc.b "a;b"
+       9/       3 :                             message "(c)"
+       9/       3 : 02                          dc.b 2
+      10/       4 : EE                  	dc.b $EE
+      11/       5 :                     	end
+sigil exit=0
+(c)
+61 3B 62 02 EE
+built: 5 bytes, no file written (pass -o <path> to write one)
+================ m5s_quote_ws.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     m	macro pa,pb
+       5/       0 :                     	dc.b pa
+       6/       0 :                     	message "(pb)"
+       7/       0 :                     	dc.b ARGCOUNT
+       8/       0 :                     	endm
+       9/       0 : (MACRO)              	m " a ",c
+       9/       0 : 2061 20                     dc.b " a "
+       9/       3 :                             message "(c)"
+       9/       3 : 02                          dc.b 2
+      10/       4 : EE                  	dc.b $EE
+      11/       5 :                     	end
+sigil exit=0
+(c)
+20 61 20 02 EE
+built: 5 bytes, no file written (pass -o <path> to write one)
+================ m5s_spaceonly.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     m	macro pa,pb,pc
+       5/       0 :                     	message "(pa)(pb)(pc)[ALLARGS]"
+       6/       0 :                     	dc.b ARGCOUNT
+       7/       0 :                     	endm
+       8/       0 : (MACRO)              	m aa,   ,cc
+       8/       0 :                             message "(aa)()(cc)[aa,,cc]"
+       8/       0 : 03                          dc.b 3
+       9/       1 : EE                  	dc.b $EE
+      10/       2 :                     	end
+sigil exit=0
+(aa)()(cc)[aa,,cc]
+03 EE
+built: 2 bytes, no file written (pass -o <path> to write one)
+================ m5s_squote.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     m	macro pa,pb
+       5/       0 :                     	dc.l pa
+       6/       0 :                     	message "(pb)"
+       7/       0 :                     	dc.b ARGCOUNT
+       8/       0 :                     	endm
+       9/       0 : (MACRO)              	m 'a,b',c
+       9/       0 : 0061 2C62                   dc.l 'a,b'
+       9/       4 :                             message "(c)"
+       9/       4 : 02                          dc.b 2
+      10/       5 : EE                  	dc.b $EE
+      11/       6 :                     	end
+sigil exit=0
+(c)
+00 61 2C 62 02 EE
+built: 6 bytes, no file written (pass -o <path> to write one)
+================ m5s_tab.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     m	macro pa,pb,pc
+       5/       0 :                     	message "(pa)(pb)(pc)[ALLARGS]"
+       6/       0 :                     	dc.b ARGCOUNT
+       7/       0 :                     	endm
+       8/       0 : (MACRO)              	m a		b
+       8/       0 :                             message "(a		b)()()[a		b]"
+       8/       0 : 01                          dc.b 1
+       9/       1 : EE                  	dc.b $EE
+      10/       2 :                     	end
+sigil exit=0
+(a		b)()()[a		b]
+01 EE
+built: 2 bytes, no file written (pass -o <path> to write one)
+================ m5s_trim.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     m	macro pa,pb,pc
+       5/       0 :                     	message "(pa)(pb)(pc)[ALLARGS]"
+       6/       0 :                     	dc.b ARGCOUNT
+       7/       0 :                     	endm
+       8/       0 : (MACRO)              	m   aa  ,  bb  ,cc   ; comment
+       8/       0 :                             message "(aa)(bb)(cc)[aa,bb,cc]"
+       8/       0 : 03                          dc.b 3
+       9/       1 : EE                  	dc.b $EE
+      10/       2 :                     	end
+sigil exit=0
+(aa)(bb)(cc)[aa,bb,cc]
+03 EE
+built: 2 bytes, no file written (pass -o <path> to write one)
+================ m5_value_2p.asm
+asl exit=2 ASL_EXIT=2 ASL_DIAG=complete 
+> > > m5_value_2p.asm(7) val(1):14: error #1020: invalid symbol name
+  lines that assembled: an error stops the pass loop, so every forward
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     val	macro n
+       5/       0 :                     	dc.b n
+       6/       0 :                     	endm
+       7/       0 : (MACRO)              	val 2p
+       7/       0 :                             dc.b 2p
+       8/       0 : EE                  	dc.b $EE
+       9/       1 :                     	end
+sigil exit=1
+m5_value_2p.asm(5):7: error: malformed number (hex needs a trailing `h`)
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ m5_value_dollar.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     val	macro n
+       5/       0 :                     	dc.b n
+       6/       0 :                     	endm
+       7/       0 : (MACRO)              	val $10
+       7/       0 : 10                          dc.b $10
+       8/       1 : EE                  	dc.b $EE
+       9/       2 :                     	end
+sigil exit=0
+10 EE
+built: 2 bytes, no file written (pass -o <path> to write one)
+================ m5_value_hexh.asm
+asl exit=2 ASL_EXIT=2 ASL_DIAG=complete 
+> > > m5_value_hexh.asm(7) val(1):14: error #1020: invalid symbol name
+  lines that assembled: an error stops the pass loop, so every forward
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     val	macro n
+       5/       0 :                     	dc.b n
+       6/       0 :                     	endm
+       7/       0 : (MACRO)              	val 12h
+       7/       0 :                             dc.b 12h
+       8/       0 : EE                  	dc.b $EE
+       9/       1 :                     	end
+sigil exit=0
+12 EE
+built: 2 bytes, no file written (pass -o <path> to write one)
+================ m5_value_zero.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     val	macro n
+       5/       0 :                     	dc.b n
+       6/       0 :                     	endm
+       7/       0 : (MACRO)              	val 007
+       7/       0 : 07                          dc.b 007
+       8/       1 : EE                  	dc.b $EE
+       9/       2 :                     	end
+sigil exit=0
+07 EE
+built: 2 bytes, no file written (pass -o <path> to write one)
+================ m5_words.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     pal	macro path
+       5/       0 :                     	dc.b "path"
+       6/       0 :                     	endm
+       7/       0 : (MACRO)              	pal 1st 2nd 3rd 4th.bin
+       7/       0 : 3173 7420 326E              dc.b "1st 2nd 3rd 4th.bin"
+       8/      13 : EE                  	dc.b $EE
+       9/      14 :                     	end
+sigil exit=0
+31 73 74 20 32 6E 64 20 33 72 64 20 34 74 68 2E 62 69 6E EE
+built: 20 bytes, no file written (pass -o <path> to write one)
+================ m5z_2p.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu z80
+       2/       0 :                     	org 0
+       3/       0 :                     pal	macro path
+       4/       0 :                     	db "path"
+       5/       0 :                     	endm
+       6/       0 : (MACRO)              	pal Special Stage 1 2p.bin
+       6/       0 : 53 70 65 63 69 61           db "Special Stage 1 2p.bin"
+       7/      16 : EE                  	db 0EEh
+       8/      17 :                     	end
+sigil exit=0
+53 70 65 63 69 61 6C 20 53 74 61 67 65 20 31 20 32 70 2E 62 69 6E EE
+built: 23 bytes, no file written (pass -o <path> to write one)
+================ m5z_afshadow.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu z80
+       2/       0 :                     	org 0
+       3/       0 :                     m	macro pa,pb
+       4/       0 :                     	message "(pa)(pb)"
+       5/       0 :                     	db ARGCOUNT
+       6/       0 :                     	endm
+       7/       0 : (MACRO)              	m af',bb
+       7/       0 :                             message "(af')(bb)"
+       7/       0 : 02                          db 2
+       8/       1 : EE                  	db 0EEh
+       9/       2 :                     	end
+sigil exit=0
+(af')(bb)
+02 EE
+built: 2 bytes, no file written (pass -o <path> to write one)
+================ m5z_hex.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu z80
+       2/       0 :                     	org 0
+       3/       0 :                     pal	macro path
+       4/       0 :                     	db "path"
+       5/       0 :                     	endm
+       6/       0 : (MACRO)              	pal 0101b 1Fh 0FFh
+       6/       0 : 30 31 30 31 62 20           db "0101b 1Fh 0FFh"
+       7/       E : EE                  	db 0EEh
+       8/       F :                     	end
+sigil exit=0
+30 31 30 31 62 20 31 46 68 20 30 46 46 68 EE
+built: 15 bytes, no file written (pass -o <path> to write one)
+================ p4_basic.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : =$2                  Ver := 2
+       5/       0 : 02                  	dc.b Ver
+       6/       1 :                     	pushv ,Ver
+       7/       1 : =$4                  Ver := 4
+       8/       1 : 04                  	dc.b Ver
+       9/       2 :                     	popv ,Ver
+      10/       2 : 02                  	dc.b Ver
+      11/       3 : EE                  	dc.b $EE
+      12/       4 :                     	end
+sigil exit=0
+02 04 02 EE
+built: 4 bytes, no file written (pass -o <path> to write one)
+================ p4_empty_list.asm
+asl exit=2 ASL_EXIT=2 ASL_DIAG=complete 
+> > > p4_empty_list.asm(4):9: error #1010: symbol undefined
+  lines that assembled: an error stops the pass loop, so every forward
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     	pushv ,
+       5/       0 : EE                  	dc.b $EE
+       6/       1 :                     	end
+sigil exit=1
+p4_empty_list.asm(4):2: error: `pushv` takes symbol names, and this is not one
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ p4_equ.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : =$5                  E equ 5
+       5/       0 :                     	pushv ,E
+       6/       0 :                     	popv ,E
+       7/       0 : 05                  	dc.b E
+       8/       1 : EE                  	dc.b $EE
+       9/       2 :                     	end
+sigil exit=0
+05 EE
+built: 2 bytes, no file written (pass -o <path> to write one)
+================ p4_float.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : =1.5                 F := 1.5
+       5/       0 :                     	pushv ,F
+       6/       0 : =2.5                 F := 2.5
+       7/       0 :                     	popv ,F
+       8/       0 : 0000 0003           	dc.l int(F*2)
+       9/       4 : EE                  	dc.b $EE
+      10/       5 :                     	end
+sigil exit=0
+00 00 00 03 EE
+built: 5 bytes, no file written (pass -o <path> to write one)
+================ p4_in_macro.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     sv macro
+       5/       0 :                     	pushv ,Ver
+       6/       0 :                     Ver := 9
+       7/       0 :                     	dc.b Ver
+       8/       0 :                     	popv ,Ver
+       9/       0 :                     	endm
+      10/       0 : =$3                  Ver := 3
+      11/       0 : (MACRO)              	sv
+      11/       0 :                             pushv ,Ver
+      11/       0 : =$9                  Ver := 9
+      11/       0 : 09                          dc.b Ver
+      11/       1 :                             popv ,Ver
+      12/       1 : 03                  	dc.b Ver
+      13/       2 : EE                  	dc.b $EE
+      14/       3 :                     	end
+sigil exit=0
+09 03 EE
+built: 3 bytes, no file written (pass -o <path> to write one)
+================ p4_label.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : 01                  Lbl:	dc.b 1
+       5/       1 :                     	pushv ,Lbl
+       6/       1 :                     	popv ,Lbl
+       7/       1 : EE                  	dc.b $EE
+       8/       2 :                     	end
+sigil exit=0
+01 EE
+built: 2 bytes, no file written (pass -o <path> to write one)
+================ p4_leftover.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+> > > INTERNAL: warning #230: stack is not empty
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : =$1                  A := 1
+       5/       0 :                     	pushv ,A
+       6/       0 : 01                  	dc.b A
+       7/       1 : EE                  	dc.b $EE
+       8/       2 :                     	end
+sigil exit=0
+p4_leftover.asm(5):2: warning: the default `pushv` stack is not empty at the end of the source: 1 value(s) pushed and never popped
+01 EE
+built: 2 bytes, no file written (pass -o <path> to write one)
+================ p4_leftover_two.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+> > > INTERNAL: warning #230: stack is not empty
+> > > INTERNAL: warning #230: stack is not empty
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : =$1                  A := 1
+       5/       0 :                     	pushv ,A
+       6/       0 :                     	pushv s1,A
+       7/       0 :                     	pushv s1,A
+       8/       0 : 01                  	dc.b A
+       9/       1 : EE                  	dc.b $EE
+      10/       2 :                     	end
+sigil exit=0
+p4_leftover_two.asm(5):2: warning: the default `pushv` stack is not empty at the end of the source: 1 value(s) pushed and never popped
+p4_leftover_two.asm(7):2: warning: `pushv` stack `s1` is not empty at the end of the source: 2 value(s) pushed and never popped
+01 EE
+built: 2 bytes, no file written (pass -o <path> to write one)
+================ p4_multipass.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : =$2                  Ver := 2
+       5/       0 :                     	pushv ,Ver
+       6/       0 : =$4                  Ver := 4
+       7/       0 : 6000 0003           	bra.w Fwd
+       8/       4 : 04                  	dc.b Ver
+       9/       5 :                     	popv ,Ver
+      10/       5 : 02                  Fwd:	dc.b Ver
+      11/       6 : EE                  	dc.b $EE
+      12/       7 :                     	end
+sigil exit=0
+60 00 00 03 04 02 EE
+built: 7 bytes, no file written (pass -o <path> to write one)
+================ p4_multi_rev.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : =$1                  A := 1
+       5/       0 : =$2                  B := 2
+       6/       0 :                     	pushv ,A,B
+       7/       0 : =$3                  A := 3
+       8/       0 : =$4                  B := 4
+       9/       0 :                     	popv ,B,A
+      10/       0 : 0102                	dc.b A,B
+      11/       2 : EE                  	dc.b $EE
+      12/       3 :                     	end
+sigil exit=0
+01 02 EE
+built: 3 bytes, no file written (pass -o <path> to write one)
+================ p4_multi_same.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : =$1                  A := 1
+       5/       0 : =$2                  B := 2
+       6/       0 :                     	pushv ,A,B
+       7/       0 : =$3                  A := 3
+       8/       0 : =$4                  B := 4
+       9/       0 :                     	popv ,A,B
+      10/       0 : 0201                	dc.b A,B
+      11/       2 : EE                  	dc.b $EE
+      12/       3 :                     	end
+sigil exit=0
+02 01 EE
+built: 3 bytes, no file written (pass -o <path> to write one)
+================ p4_multi_split.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : =$1                  A := 1
+       5/       0 : =$2                  B := 2
+       6/       0 :                     	pushv ,A,B
+       7/       0 : =$3                  A := 3
+       8/       0 : =$4                  B := 4
+       9/       0 :                     	popv ,A
+      10/       0 : 0204                	dc.b A,B
+      11/       2 :                     	popv ,A
+      12/       2 : 0104                	dc.b A,B
+      13/       4 : EE                  	dc.b $EE
+      14/       5 :                     	end
+sigil exit=0
+02 04 01 04 EE
+built: 5 bytes, no file written (pass -o <path> to write one)
+================ p4_named.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : =$1                  A := 1
+       5/       0 :                     	pushv s1,A
+       6/       0 : =$2                  A := 2
+       7/       0 :                     	pushv s2,A
+       8/       0 : =$3                  A := 3
+       9/       0 :                     	popv s1,A
+      10/       0 : 01                  	dc.b A
+      11/       1 :                     	popv s2,A
+      12/       1 : 02                  	dc.b A
+      13/       2 : EE                  	dc.b $EE
+      14/       3 :                     	end
+sigil exit=0
+01 02 EE
+built: 3 bytes, no file written (pass -o <path> to write one)
+================ p4_named_vs_default.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : =$1                  A := 1
+       5/       0 :                     	pushv ,A
+       6/       0 : =$2                  A := 2
+       7/       0 :                     	pushv s1,A
+       8/       0 : =$3                  A := 3
+       9/       0 :                     	popv ,A
+      10/       0 : 01                  	dc.b A
+      11/       1 :                     	popv s1,A
+      12/       1 : 02                  	dc.b A
+      13/       2 : EE                  	dc.b $EE
+      14/       3 :                     	end
+sigil exit=0
+01 02 EE
+built: 3 bytes, no file written (pass -o <path> to write one)
+================ p4_nested.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : =$2                  Ver := 2
+       5/       0 :                     	pushv ,Ver
+       6/       0 : =$4                  Ver := 4
+       7/       0 :                     	pushv ,Ver
+       8/       0 : =$6                  Ver := 6
+       9/       0 : 06                  	dc.b Ver
+      10/       1 :                     	popv ,Ver
+      11/       1 : 04                  	dc.b Ver
+      12/       2 :                     	popv ,Ver
+      13/       2 : 02                  	dc.b Ver
+      14/       3 : EE                  	dc.b $EE
+      15/       4 :                     	end
+sigil exit=0
+06 04 02 EE
+built: 4 bytes, no file written (pass -o <path> to write one)
+================ p4_nocomma.asm
+asl exit=2 ASL_EXIT=2 ASL_DIAG=complete 
+> > > p4_nocomma.asm(5): error #1110: wrong number of operands
+> > > p4_nocomma.asm(6): error #1110: wrong number of operands
+  lines that assembled: an error stops the pass loop, so every forward
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : =$2                  Ver := 2
+       5/       0 :                     	pushv Ver
+       6/       0 :                     	popv Ver
+       7/       0 : 02                  	dc.b Ver
+       8/       1 : EE                  	dc.b $EE
+       9/       2 :                     	end
+sigil exit=1
+p4_nocomma.asm(5):2: error: `pushv` needs a stack name and at least one symbol: `pushv [stack],symbol[,symbol...]`
+p4_nocomma.asm(6):2: error: `popv` needs a stack name and at least one symbol: `popv [stack],symbol[,symbol...]`
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 2 errors (reported on stderr)
+================ p4_pop_empty.asm
+asl exit=2 ASL_EXIT=2 ASL_DIAG=complete 
+> > > p4_pop_empty.asm(5):7: error #1530: stack is empty or undefined
+  lines that assembled: an error stops the pass loop, so every forward
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : =$1                  A := 1
+       5/       0 :                     	popv ,A
+       6/       0 : 01                  	dc.b A
+       7/       1 : EE                  	dc.b $EE
+       8/       2 :                     	end
+sigil exit=1
+p4_pop_empty.asm(5):8: error: `popv`: the default `pushv` stack is empty
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ p4_pop_into_equ_diff.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : =$5                  E equ 5
+       5/       0 : =$7                  A := 7
+       6/       0 :                     	pushv ,A
+       7/       0 :                     	popv ,E
+       8/       0 : 07                  	dc.b E
+       9/       1 : EE                  	dc.b $EE
+      10/       2 :                     	end
+sigil exit=1
+p4_pop_into_equ_diff.asm(7):8: error: `popv` would give `E`, which is not a variable, a new value (5 to 7); asl overwrites it, sigil refuses
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ p4_pop_into_label_diff.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : 01                  Lbl:	dc.b 1
+       5/       1 : =$7                  A := 7
+       6/       1 :                     	pushv ,A
+       7/       1 :                     	popv ,Lbl
+       8/       1 : 07                  	dc.b Lbl
+       9/       2 : EE                  	dc.b $EE
+      10/       3 :                     	end
+sigil exit=1
+p4_pop_into_label_diff.asm(7):8: error: `popv` would give `Lbl`, which is not a variable, a new value (0 to 7); asl overwrites it, sigil refuses
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ p4_pop_into_new.asm
+asl exit=2 ASL_EXIT=2 ASL_DIAG=INCOMPLETE 
+> > > p4_pop_into_new.asm(6):8: error #1010: symbol undefined
+> > > INTERNAL: warning #230: stack is not empty
+  asl stopped its PASS LOOP on an error, so the diagnostics from
+  ZERO here whether there are none or thirty. The error count in
+  reported error and assemble again to learn what was hidden.
+  lines that assembled: an error stops the pass loop, so every forward
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : =$7                  A := 7
+       5/       0 :                     	pushv ,A
+       6/       0 :                     	popv ,B
+       7/       0 : 0700                	dc.b A,B
+       8/       2 : EE                  	dc.b $EE
+       9/       3 :                     	end
+sigil exit=1
+p4_pop_into_new.asm(6):8: error: symbol undefined: `B` in `popv`
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ p4_pop_twice.asm
+asl exit=2 ASL_EXIT=2 ASL_DIAG=complete 
+> > > p4_pop_twice.asm(7):7: error #1530: stack is empty or undefined
+  lines that assembled: an error stops the pass loop, so every forward
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : =$1                  A := 1
+       5/       0 :                     	pushv ,A
+       6/       0 :                     	popv ,A
+       7/       0 :                     	popv ,A
+       8/       0 : 01                  	dc.b A
+       9/       1 : EE                  	dc.b $EE
+      10/       2 :                     	end
+sigil exit=1
+p4_pop_twice.asm(7):8: error: `popv`: the default `pushv` stack is empty
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ p4_push_label_pop_var.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : 00                  	dc.b 0
+       5/       1 : 01                  Lbl:	dc.b 1
+       6/       2 : =$7                  A := 7
+       7/       2 :                     	pushv ,Lbl
+       8/       2 :                     	popv ,A
+       9/       2 : 01                  	dc.b A
+      10/       3 : EE                  	dc.b $EE
+      11/       4 :                     	end
+sigil exit=0
+00 01 01 EE
+built: 4 bytes, no file written (pass -o <path> to write one)
+================ p4_set.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : =$2                  Ver set 2
+       5/       0 :                     	pushv ,Ver
+       6/       0 : =$4                  Ver set 4
+       7/       0 : 04                  	dc.b Ver
+       8/       1 :                     	popv ,Ver
+       9/       1 : 02                  	dc.b Ver
+      10/       2 : EE                  	dc.b $EE
+      11/       3 :                     	end
+sigil exit=0
+04 02 EE
+built: 3 bytes, no file written (pass -o <path> to write one)
+================ p4_stack_case.asm
+asl exit=2 ASL_EXIT=2 ASL_DIAG=complete 
+> > > p4_stack_case.asm(7):7: error #1530: stack is empty or undefined
+> > > INTERNAL: warning #230: stack is not empty
+  lines that assembled: an error stops the pass loop, so every forward
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : =$1                  A := 1
+       5/       0 :                     	pushv S1,A
+       6/       0 : =$2                  A := 2
+       7/       0 :                     	popv s1,A
+       8/       0 : 02                  	dc.b A
+       9/       1 : EE                  	dc.b $EE
+      10/       2 :                     	end
+sigil exit=1
+p4_stack_case.asm(7):10: error: `popv`: `pushv` stack `s1` is empty
+p4_stack_case.asm(5):2: warning: `pushv` stack `S1` is not empty at the end of the source: 1 value(s) pushed and never popped
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 2 errors (reported on stderr)
+================ p4_string.asm
+asl exit=134 ASL_EXIT=134 ASL_DIAG=complete 
+  lines that assembled: an error stops the pass loop, so every forward
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : ="ab"                S := "ab"
+       5/       0 :                     	pushv ,S
+       6/       0 : ="cd"                S := "cd"
+       7/       0 : 6364                	dc.b S
+       8/       2 :                     	popv ,S
+       9/       2 : DD59                	dc.b S
+      10/       4 : EE                  	dc.b $EE
+      11/       5 :                     	end
+sigil exit=1
+p4_string.asm(5):9: error: `pushv` cannot save the string symbol `S`
+p4_string.asm(8):8: error: `popv` cannot restore into the string symbol `S`
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 2 errors (reported on stderr)
+================ p4_undef.asm
+asl exit=2 ASL_EXIT=2 ASL_DIAG=complete 
+> > > p4_undef.asm(4):9: error #1010: symbol undefined
+> > > p4_undef.asm(5):8: error #1010: symbol undefined
+  lines that assembled: an error stops the pass loop, so every forward
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     	pushv ,Nope
+       5/       0 :                     	popv ,Nope
+       6/       0 : EE                  	dc.b $EE
+       7/       1 :                     	end
+sigil exit=1
+p4_undef.asm(4):9: error: symbol undefined: `Nope` in `pushv`
+p4_undef.asm(5):8: error: symbol undefined: `Nope` in `popv`
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 2 errors (reported on stderr)
+================ p4_upper.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : =$2                  Ver := 2
+       5/       0 :                     	PUSHV ,Ver
+       6/       0 : =$4                  Ver := 4
+       7/       0 : 04                  	dc.b Ver
+       8/       1 :                     	POPV ,Ver
+       9/       1 : 02                  	dc.b Ver
+      10/       2 : EE                  	dc.b $EE
+      11/       3 :                     	end
+sigil exit=0
+04 02 EE
+built: 3 bytes, no file written (pass -o <path> to write one)
+================ p4_z80.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu z80
+       2/       0 :                     	org 0
+       3/       0 : =2H                  Ver := 2
+       4/       0 :                     	pushv ,Ver
+       5/       0 : =4H                  Ver := 4
+       6/       0 : 04                  	db Ver
+       7/       1 :                     	popv ,Ver
+       8/       1 : 02                  	db Ver
+       9/       2 : EE                  	db 0EEh
+      10/       3 :                     	end
+sigil exit=0
+04 02 EE
+built: 3 bytes, no file written (pass -o <path> to write one)
+================ s3_mem_a0.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : E1D0                	asl	(a0)
+       5/       2 : E0D0                	asr	(a0)
+       6/       4 : E3D0                	lsl	(a0)
+       7/       6 : E2D0                	lsr	(a0)
+       8/       8 : E7D0                	rol	(a0)
+       9/       A : E6D0                	ror	(a0)
+      10/       C : E5D0                	roxl	(a0)
+      11/       E : E4D0                	roxr	(a0)
+      12/      10 : EE                  	dc.b $EE
+      13/      11 :                     	end
+sigil exit=0
+E1 D0 E0 D0 E3 D0 E2 D0 E7 D0 E6 D0 E5 D0 E4 D0 EE
+built: 17 bytes, no file written (pass -o <path> to write one)
+================ s3_mem_b_asl.asm
+asl exit=2 ASL_EXIT=2 ASL_DIAG=complete 
+> > > s3_mem_b_asl.asm(4): error #1130: invalid operand size
+  lines that assembled: an error stops the pass loop, so every forward
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     	asl.b	(a0)
+       5/       0 : EE                  	dc.b $EE
+       6/       1 :                     	end
+sigil exit=1
+s3_mem_b_asl.asm(4):2: error: unsupported form: Asl memory-shift form is word-only, got size B
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ s3_mem_b_asr.asm
+asl exit=2 ASL_EXIT=2 ASL_DIAG=complete 
+> > > s3_mem_b_asr.asm(4): error #1130: invalid operand size
+  lines that assembled: an error stops the pass loop, so every forward
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     	asr.b	(a0)
+       5/       0 : EE                  	dc.b $EE
+       6/       1 :                     	end
+sigil exit=1
+s3_mem_b_asr.asm(4):2: error: unsupported form: Asr memory-shift form is word-only, got size B
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ s3_mem_b_lsl.asm
+asl exit=2 ASL_EXIT=2 ASL_DIAG=complete 
+> > > s3_mem_b_lsl.asm(4): error #1130: invalid operand size
+  lines that assembled: an error stops the pass loop, so every forward
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     	lsl.b	(a0)
+       5/       0 : EE                  	dc.b $EE
+       6/       1 :                     	end
+sigil exit=1
+s3_mem_b_lsl.asm(4):2: error: unsupported form: Lsl memory-shift form is word-only, got size B
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ s3_mem_b_lsr.asm
+asl exit=2 ASL_EXIT=2 ASL_DIAG=complete 
+> > > s3_mem_b_lsr.asm(4): error #1130: invalid operand size
+  lines that assembled: an error stops the pass loop, so every forward
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     	lsr.b	(a0)
+       5/       0 : EE                  	dc.b $EE
+       6/       1 :                     	end
+sigil exit=1
+s3_mem_b_lsr.asm(4):2: error: unsupported form: Lsr memory-shift form is word-only, got size B
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ s3_mem_b_rol.asm
+asl exit=2 ASL_EXIT=2 ASL_DIAG=complete 
+> > > s3_mem_b_rol.asm(4): error #1130: invalid operand size
+  lines that assembled: an error stops the pass loop, so every forward
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     	rol.b	(a0)
+       5/       0 : EE                  	dc.b $EE
+       6/       1 :                     	end
+sigil exit=1
+s3_mem_b_rol.asm(4):2: error: unsupported form: Rol memory-shift form is word-only, got size B
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ s3_mem_b_ror.asm
+asl exit=2 ASL_EXIT=2 ASL_DIAG=complete 
+> > > s3_mem_b_ror.asm(4): error #1130: invalid operand size
+  lines that assembled: an error stops the pass loop, so every forward
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     	ror.b	(a0)
+       5/       0 : EE                  	dc.b $EE
+       6/       1 :                     	end
+sigil exit=1
+s3_mem_b_ror.asm(4):2: error: unsupported form: Ror memory-shift form is word-only, got size B
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ s3_mem_b_roxl.asm
+asl exit=2 ASL_EXIT=2 ASL_DIAG=complete 
+> > > s3_mem_b_roxl.asm(4): error #1130: invalid operand size
+  lines that assembled: an error stops the pass loop, so every forward
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     	roxl.b	(a0)
+       5/       0 : EE                  	dc.b $EE
+       6/       1 :                     	end
+sigil exit=1
+s3_mem_b_roxl.asm(4):2: error: unsupported form: Roxl memory-shift form is word-only, got size B
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ s3_mem_b_roxr.asm
+asl exit=2 ASL_EXIT=2 ASL_DIAG=complete 
+> > > s3_mem_b_roxr.asm(4): error #1130: invalid operand size
+  lines that assembled: an error stops the pass loop, so every forward
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     	roxr.b	(a0)
+       5/       0 : EE                  	dc.b $EE
+       6/       1 :                     	end
+sigil exit=1
+s3_mem_b_roxr.asm(4):2: error: unsupported form: Roxr memory-shift form is word-only, got size B
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ s3_mem_count.asm
+asl exit=2 ASL_EXIT=2 ASL_DIAG=complete 
+> > > s3_mem_count.asm(4):6: error #1391: operand must be one
+  lines that assembled: an error stops the pass loop, so every forward
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     	asl	#2,(a0)
+       5/       0 : EE                  	dc.b $EE
+       6/       1 :                     	end
+sigil exit=1
+s3_mem_count.asm(4):2: error: unsupported form: Asl requires Dn destination, got Ind(0)
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ s3_mem_l_asl.asm
+asl exit=2 ASL_EXIT=2 ASL_DIAG=complete 
+> > > s3_mem_l_asl.asm(4): error #1130: invalid operand size
+  lines that assembled: an error stops the pass loop, so every forward
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     	asl.l	(a0)
+       5/       0 : EE                  	dc.b $EE
+       6/       1 :                     	end
+sigil exit=1
+s3_mem_l_asl.asm(4):2: error: unsupported form: Asl memory-shift form is word-only, got size L
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ s3_mem_l_asr.asm
+asl exit=2 ASL_EXIT=2 ASL_DIAG=complete 
+> > > s3_mem_l_asr.asm(4): error #1130: invalid operand size
+  lines that assembled: an error stops the pass loop, so every forward
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     	asr.l	(a0)
+       5/       0 : EE                  	dc.b $EE
+       6/       1 :                     	end
+sigil exit=1
+s3_mem_l_asr.asm(4):2: error: unsupported form: Asr memory-shift form is word-only, got size L
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ s3_mem_l_lsl.asm
+asl exit=2 ASL_EXIT=2 ASL_DIAG=complete 
+> > > s3_mem_l_lsl.asm(4): error #1130: invalid operand size
+  lines that assembled: an error stops the pass loop, so every forward
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     	lsl.l	(a0)
+       5/       0 : EE                  	dc.b $EE
+       6/       1 :                     	end
+sigil exit=1
+s3_mem_l_lsl.asm(4):2: error: unsupported form: Lsl memory-shift form is word-only, got size L
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ s3_mem_l_lsr.asm
+asl exit=2 ASL_EXIT=2 ASL_DIAG=complete 
+> > > s3_mem_l_lsr.asm(4): error #1130: invalid operand size
+  lines that assembled: an error stops the pass loop, so every forward
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     	lsr.l	(a0)
+       5/       0 : EE                  	dc.b $EE
+       6/       1 :                     	end
+sigil exit=1
+s3_mem_l_lsr.asm(4):2: error: unsupported form: Lsr memory-shift form is word-only, got size L
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ s3_mem_l_rol.asm
+asl exit=2 ASL_EXIT=2 ASL_DIAG=complete 
+> > > s3_mem_l_rol.asm(4): error #1130: invalid operand size
+  lines that assembled: an error stops the pass loop, so every forward
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     	rol.l	(a0)
+       5/       0 : EE                  	dc.b $EE
+       6/       1 :                     	end
+sigil exit=1
+s3_mem_l_rol.asm(4):2: error: unsupported form: Rol memory-shift form is word-only, got size L
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ s3_mem_l_ror.asm
+asl exit=2 ASL_EXIT=2 ASL_DIAG=complete 
+> > > s3_mem_l_ror.asm(4): error #1130: invalid operand size
+  lines that assembled: an error stops the pass loop, so every forward
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     	ror.l	(a0)
+       5/       0 : EE                  	dc.b $EE
+       6/       1 :                     	end
+sigil exit=1
+s3_mem_l_ror.asm(4):2: error: unsupported form: Ror memory-shift form is word-only, got size L
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ s3_mem_l_roxl.asm
+asl exit=2 ASL_EXIT=2 ASL_DIAG=complete 
+> > > s3_mem_l_roxl.asm(4): error #1130: invalid operand size
+  lines that assembled: an error stops the pass loop, so every forward
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     	roxl.l	(a0)
+       5/       0 : EE                  	dc.b $EE
+       6/       1 :                     	end
+sigil exit=1
+s3_mem_l_roxl.asm(4):2: error: unsupported form: Roxl memory-shift form is word-only, got size L
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ s3_mem_l_roxr.asm
+asl exit=2 ASL_EXIT=2 ASL_DIAG=complete 
+> > > s3_mem_l_roxr.asm(4): error #1130: invalid operand size
+  lines that assembled: an error stops the pass loop, so every forward
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     	roxr.l	(a0)
+       5/       0 : EE                  	dc.b $EE
+       6/       1 :                     	end
+sigil exit=1
+s3_mem_l_roxr.asm(4):2: error: unsupported form: Roxr memory-shift form is word-only, got size L
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+================ s3_mem_nosize.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : E1E8 001A           	asl	$1A(a0)
+       5/       4 : E0D1                	asr	(a1)
+       6/       6 : E3DA                	lsl	(a2)+
+       7/       8 : E2E3                	lsr	-(a3)
+       8/       A : E7F4 0010           	rol	$10(a4,d0.w)
+       9/       E : E6F8 1234           	ror	$1234.w
+      10/      12 : E5F9 1234 5678      	roxl	$12345678.l
+      11/      18 : E4E8 0018           	roxr	$18(a0)
+      12/      1C : EE                  	dc.b $EE
+      13/      1D :                     	end
+sigil exit=1
+s3_mem_nosize.asm(9):6: error: trailing tokens in operand
+s3_mem_nosize.asm(10):7: error: trailing tokens in operand
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 2 errors (reported on stderr)
+================ s3_mem_nosize_rot.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : E1D1                	asl	(a1)
+       5/       2 : E0DA                	asr	(a2)+
+       6/       4 : E3E3                	lsl	-(a3)
+       7/       6 : E2F4 0010           	lsr	$10(a4,d0.w)
+       8/       A : E7F8 1234           	rol	$1234.w
+       9/       E : E6F9 1234 5678      	ror	$12345678.l
+      10/      14 : E5E8 0018           	roxl	$18(a0)
+      11/      18 : E4E8 001A           	roxr	$1A(a0)
+      12/      1C : EE                  	dc.b $EE
+      13/      1D :                     	end
+sigil exit=1
+s3_mem_nosize_rot.asm(8):6: error: trailing tokens in operand
+s3_mem_nosize_rot.asm(9):6: error: trailing tokens in operand
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 2 errors (reported on stderr)
+================ s3_mem_w.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : E1E8 001A           	asl.w	$1A(a0)
+       5/       4 : E0D1                	asr.w	(a1)
+       6/       6 : E3DA                	lsl.w	(a2)+
+       7/       8 : E2E3                	lsr.w	-(a3)
+       8/       A : E7F4 0010           	rol.w	$10(a4,d0.w)
+       9/       E : E6F8 1234           	ror.w	$1234.w
+      10/      12 : E5F9 1234 5678      	roxl.w	$12345678.l
+      11/      18 : E4E8 0018           	roxr.w	$18(a0)
+      12/      1C : EE                  	dc.b $EE
+      13/      1D :                     	end
+sigil exit=1
+s3_mem_w.asm(9):8: error: trailing tokens in operand
+s3_mem_w.asm(10):9: error: trailing tokens in operand
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 2 errors (reported on stderr)
+================ s3_reg_imm_nosize.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : E340                	asl	#1,d0
+       5/       2 : E441                	asr	#2,d1
+       6/       4 : E74A                	lsl	#3,d2
+       7/       6 : E84B                	lsr	#4,d3
+       8/       8 : EB5C                	rol	#5,d4
+       9/       A : EC5D                	ror	#6,d5
+      10/       C : EF56                	roxl	#7,d6
+      11/       E : E057                	roxr	#8,d7
+      12/      10 : EE                  	dc.b $EE
+      13/      11 :                     	end
+sigil exit=0
+E3 40 E4 41 E7 4A E8 4B EB 5C EC 5D EF 56 E0 57 EE
+built: 17 bytes, no file written (pass -o <path> to write one)
+================ s3_reg_imm_w.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : E340                	asl.w	#1,d0
+       5/       2 : E441                	asr.w	#2,d1
+       6/       4 : E74A                	lsl.w	#3,d2
+       7/       6 : E84B                	lsr.w	#4,d3
+       8/       8 : EB5C                	rol.w	#5,d4
+       9/       A : EC5D                	ror.w	#6,d5
+      10/       C : EF56                	roxl.w	#7,d6
+      11/       E : E057                	roxr.w	#8,d7
+      12/      10 : EE                  	dc.b $EE
+      13/      11 :                     	end
+sigil exit=0
+E3 40 E4 41 E7 4A E8 4B EB 5C EC 5D EF 56 E0 57 EE
+built: 17 bytes, no file written (pass -o <path> to write one)
+================ s3_reg_reg_nosize.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : E360                	asl	d1,d0
+       5/       2 : E461                	asr	d2,d1
+       6/       4 : E76A                	lsl	d3,d2
+       7/       6 : E86B                	lsr	d4,d3
+       8/       8 : EB7C                	rol	d5,d4
+       9/       A : EC7D                	ror	d6,d5
+      10/       C : EF76                	roxl	d7,d6
+      11/       E : E077                	roxr	d0,d7
+      12/      10 : EE                  	dc.b $EE
+      13/      11 :                     	end
+sigil exit=0
+E3 60 E4 61 E7 6A E8 6B EB 7C EC 7D EF 76 E0 77 EE
+built: 17 bytes, no file written (pass -o <path> to write one)
+================ s3_reg_reg_w.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : E360                	asl.w	d1,d0
+       5/       2 : E461                	asr.w	d2,d1
+       6/       4 : E76A                	lsl.w	d3,d2
+       7/       6 : E86B                	lsr.w	d4,d3
+       8/       8 : EB7C                	rol.w	d5,d4
+       9/       A : EC7D                	ror.w	d6,d5
+      10/       C : EF76                	roxl.w	d7,d6
+      11/       E : E077                	roxr.w	d0,d7
+      12/      10 : EE                  	dc.b $EE
+      13/      11 :                     	end
+sigil exit=0
+E3 60 E4 61 E7 6A E8 6B EB 7C EC 7D EF 76 E0 77 EE
+built: 17 bytes, no file written (pass -o <path> to write one)
+================ s3_reg_single_asl.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : E343                	asl	d3
+       5/       2 : EE                  	dc.b $EE
+       6/       3 :                     	end
+sigil exit=0
+E3 43 EE
+built: 3 bytes, no file written (pass -o <path> to write one)
+================ s3_reg_single_asr.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : E243                	asr	d3
+       5/       2 : EE                  	dc.b $EE
+       6/       3 :                     	end
+sigil exit=0
+E2 43 EE
+built: 3 bytes, no file written (pass -o <path> to write one)
+================ s3_reg_single_lsl.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : E34B                	lsl	d3
+       5/       2 : EE                  	dc.b $EE
+       6/       3 :                     	end
+sigil exit=0
+E3 4B EE
+built: 3 bytes, no file written (pass -o <path> to write one)
+================ s3_reg_single_lsr.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : E24B                	lsr	d3
+       5/       2 : EE                  	dc.b $EE
+       6/       3 :                     	end
+sigil exit=0
+E2 4B EE
+built: 3 bytes, no file written (pass -o <path> to write one)
+================ s3_reg_single_rol.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : E35B                	rol	d3
+       5/       2 : EE                  	dc.b $EE
+       6/       3 :                     	end
+sigil exit=0
+E3 5B EE
+built: 3 bytes, no file written (pass -o <path> to write one)
+================ s3_reg_single_ror.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : E25B                	ror	d3
+       5/       2 : EE                  	dc.b $EE
+       6/       3 :                     	end
+sigil exit=0
+E2 5B EE
+built: 3 bytes, no file written (pass -o <path> to write one)
+================ s3_reg_single_roxl.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : E353                	roxl	d3
+       5/       2 : EE                  	dc.b $EE
+       6/       3 :                     	end
+sigil exit=0
+E3 53 EE
+built: 3 bytes, no file written (pass -o <path> to write one)
+================ s3_reg_single_roxr.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : E253                	roxr	d3
+       5/       2 : EE                  	dc.b $EE
+       6/       3 :                     	end
+sigil exit=0
+E2 53 EE
+built: 3 bytes, no file written (pass -o <path> to write one)
+================ s3_reg_single_w_asl.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : E343                	asl.w	d3
+       5/       2 : EE                  	dc.b $EE
+       6/       3 :                     	end
+sigil exit=0
+E3 43 EE
+built: 3 bytes, no file written (pass -o <path> to write one)
+================ s3_reg_single_w_asr.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : E243                	asr.w	d3
+       5/       2 : EE                  	dc.b $EE
+       6/       3 :                     	end
+sigil exit=0
+E2 43 EE
+built: 3 bytes, no file written (pass -o <path> to write one)
+================ s3_reg_single_w_lsl.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : E34B                	lsl.w	d3
+       5/       2 : EE                  	dc.b $EE
+       6/       3 :                     	end
+sigil exit=0
+E3 4B EE
+built: 3 bytes, no file written (pass -o <path> to write one)
+================ s3_reg_single_w_lsr.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : E24B                	lsr.w	d3
+       5/       2 : EE                  	dc.b $EE
+       6/       3 :                     	end
+sigil exit=0
+E2 4B EE
+built: 3 bytes, no file written (pass -o <path> to write one)
+================ s3_reg_single_w_rol.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : E35B                	rol.w	d3
+       5/       2 : EE                  	dc.b $EE
+       6/       3 :                     	end
+sigil exit=0
+E3 5B EE
+built: 3 bytes, no file written (pass -o <path> to write one)
+================ s3_reg_single_w_ror.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : E25B                	ror.w	d3
+       5/       2 : EE                  	dc.b $EE
+       6/       3 :                     	end
+sigil exit=0
+E2 5B EE
+built: 3 bytes, no file written (pass -o <path> to write one)
+================ s3_reg_single_w_roxl.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : E353                	roxl.w	d3
+       5/       2 : EE                  	dc.b $EE
+       6/       3 :                     	end
+sigil exit=0
+E3 53 EE
+built: 3 bytes, no file written (pass -o <path> to write one)
+================ s3_reg_single_w_roxr.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : E253                	roxr.w	d3
+       5/       2 : EE                  	dc.b $EE
+       6/       3 :                     	end
+sigil exit=0
+E2 53 EE
+built: 3 bytes, no file written (pass -o <path> to write one)
+================ s3_reg_sized.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : E320                	asl.b	d1,d0
+       5/       2 : E782                	asl.l	#3,d2
+       6/       4 : E208                	lsr.b	d0
+       7/       6 : E297                	roxr.l	d7
+       8/       8 : EE                  	dc.b $EE
+       9/       9 :                     	end
+sigil exit=0
+E3 20 E7 82 E2 08 E2 97 EE
+built: 9 bytes, no file written (pass -o <path> to write one)
+================ s3_upper.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : E1E8 001A           	ASL	$1A(a0)
+       5/       4 : E4D1                	RoXr	(a1)
+       6/       6 : EE                  	dc.b $EE
+       7/       7 :                     	end
+sigil exit=0
+E1 E8 00 1A E4 D1 EE
+built: 7 bytes, no file written (pass -o <path> to write one)
+================ s7_basic.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+> > > s7_basic.asm(6): warning #30: no sharefile created, SHARED ignored
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : 1234                	dc.w $1234
+       5/       2 : 3E3C 0F64           Foo:	move.w #$0F64,d7
+       6/       6 :                     	shared Foo
+       7/       6 : EE                  	dc.b $EE
+       8/       7 :                     	end
+sigil exit=0
+s7_basic.asm(6):2: warning: `shared` is ignored: sigil writes no share file (asl without `-c` says "no sharefile created, SHARED ignored")
+12 34 3E 3C 0F 64 EE
+built: 7 bytes, no file written (pass -o <path> to write one)
+================ s7_expr.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+> > > s7_expr.asm(5): warning #30: no sharefile created, SHARED ignored
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : 01                  A:	dc.b 1
+       5/       1 :                     	shared A+1
+       6/       1 : EE                  	dc.b $EE
+       7/       2 :                     	end
+sigil exit=0
+s7_expr.asm(5):2: warning: `shared` is ignored: sigil writes no share file (asl without `-c` says "no sharefile created, SHARED ignored")
+01 EE
+built: 2 bytes, no file written (pass -o <path> to write one)
+================ s7_fwd.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+> > > s7_fwd.asm(4): warning #30: no sharefile created, SHARED ignored
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     	shared Later
+       5/       0 : 01                  Later:	dc.b 1
+       6/       1 : EE                  	dc.b $EE
+       7/       2 :                     	end
+sigil exit=0
+s7_fwd.asm(4):2: warning: `shared` is ignored: sigil writes no share file (asl without `-c` says "no sharefile created, SHARED ignored")
+01 EE
+built: 2 bytes, no file written (pass -o <path> to write one)
+================ s7_multi.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+> > > s7_multi.asm(6): warning #30: no sharefile created, SHARED ignored
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : 01                  A:	dc.b 1
+       5/       1 : 02                  B:	dc.b 2
+       6/       2 :                     	shared A,B
+       7/       2 : EE                  	dc.b $EE
+       8/       3 :                     	end
+sigil exit=0
+s7_multi.asm(6):2: warning: `shared` is ignored: sigil writes no share file (asl without `-c` says "no sharefile created, SHARED ignored")
+01 02 EE
+built: 3 bytes, no file written (pass -o <path> to write one)
+================ s7_noarg.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+> > > s7_noarg.asm(4): warning #30: no sharefile created, SHARED ignored
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     	shared
+       5/       0 : EE                  	dc.b $EE
+       6/       1 :                     	end
+sigil exit=0
+s7_noarg.asm(4):2: warning: `shared` is ignored: sigil writes no share file (asl without `-c` says "no sharefile created, SHARED ignored")
+EE
+built: 1 bytes, no file written (pass -o <path> to write one)
+================ s7_set.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+> > > s7_set.asm(5): warning #30: no sharefile created, SHARED ignored
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : =$3                  V := 3
+       5/       0 :                     	shared V
+       6/       0 : EE                  	dc.b $EE
+       7/       1 :                     	end
+sigil exit=0
+s7_set.asm(5):2: warning: `shared` is ignored: sigil writes no share file (asl without `-c` says "no sharefile created, SHARED ignored")
+EE
+built: 1 bytes, no file written (pass -o <path> to write one)
+================ s7_twice.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+> > > s7_twice.asm(5): warning #30: no sharefile created, SHARED ignored
+> > > s7_twice.asm(6): warning #30: no sharefile created, SHARED ignored
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : 01                  A:	dc.b 1
+       5/       1 :                     	shared A
+       6/       1 :                     	shared A
+       7/       1 : EE                  	dc.b $EE
+       8/       2 :                     	end
+sigil exit=0
+s7_twice.asm(5):2: warning: `shared` is ignored: sigil writes no share file (asl without `-c` says "no sharefile created, SHARED ignored")
+s7_twice.asm(6):2: warning: `shared` is ignored: sigil writes no share file (asl without `-c` says "no sharefile created, SHARED ignored")
+01 EE
+built: 2 bytes, no file written (pass -o <path> to write one)
+================ s7_undef.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+> > > s7_undef.asm(4): warning #30: no sharefile created, SHARED ignored
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     	shared Nope
+       5/       0 : EE                  	dc.b $EE
+       6/       1 :                     	end
+sigil exit=0
+s7_undef.asm(4):2: warning: `shared` is ignored: sigil writes no share file (asl without `-c` says "no sharefile created, SHARED ignored")
+EE
+built: 1 bytes, no file written (pass -o <path> to write one)
+================ s7_upper.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+> > > s7_upper.asm(5): warning #30: no sharefile created, SHARED ignored
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : 01                  A:	dc.b 1
+       5/       1 :                     	SHARED A
+       6/       1 : EE                  	dc.b $EE
+       7/       2 :                     	end
+sigil exit=0
+s7_upper.asm(5):2: warning: `shared` is ignored: sigil writes no share file (asl without `-c` says "no sharefile created, SHARED ignored")
+01 EE
+built: 2 bytes, no file written (pass -o <path> to write one)
+================ s7_with_error.asm
+asl exit=2 ASL_EXIT=2 ASL_DIAG=complete 
+> > > s7_with_error.asm(5): warning #30: no sharefile created, SHARED ignored
+> > > s7_with_error.asm(6): warning #180: address is not properly aligned
+> > > s7_with_error.asm(6):2: error #1200: unknown instruction
+  lines that assembled: an error stops the pass loop, so every forward
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : 01                  A:	dc.b 1
+       5/       1 :                     	shared A
+       6/       1 :                     	zzbogus d0
+       7/       1 :                     	end
+sigil exit=1
+s7_with_error.asm(5):2: warning: `shared` is ignored: sigil writes no share file (asl without `-c` says "no sharefile created, SHARED ignored")
+s7_with_error.asm(6):2: error: `zzbogus` is not a recognized 68000 mnemonic
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 2 errors (reported on stderr)
+================ s7z.asm
+asl exit=0 ASL_EXIT=0 ASL_DIAG=complete 
+> > > s7z.asm(4): warning #30: no sharefile created, SHARED ignored
+       1/       0 :                     	cpu z80
+       2/       0 :                     	org 0
+       3/       0 : 01                  A:	db 1
+       4/       1 :                     	shared A
+       5/       1 : EE                  	db 0EEh
+       6/       2 :                     	end
+sigil exit=0
+s7z.asm(4):2: warning: `shared` is ignored: sigil writes no share file (asl without `-c` says "no sharefile created, SHARED ignored")
+01 EE
+built: 2 bytes, no file written (pass -o <path> to write one)
+PROBE_END

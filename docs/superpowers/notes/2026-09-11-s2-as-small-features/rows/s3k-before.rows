@@ -1,0 +1,189 @@
+sonic3k.asm(100959):3: error: `subx` is not a recognized 68000 mnemonic
+sonic3k.asm(1023):9: error: `$` with no hex digits
+sonic3k.asm(1025):9: error: `$` with no hex digits
+sonic3k.asm(1027):1: error: `$` with no hex digits
+sonic3k.asm(1040):10: error: `$` with no hex digits
+sonic3k.asm(1042):1: error: `$` with no hex digits
+sonic3k.asm(1080):9: error: `$` with no hex digits
+sonic3k.asm(1082):9: error: `$` with no hex digits
+sonic3k.asm(1084):1: error: `$` with no hex digits
+sonic3k.asm(10862):2: error: unresolved if condition: `Sonic3_Complete` has no value, so this condition cannot decide whether the code it guards is assembled
+sonic3k.asm(1097):10: error: `$` with no hex digits
+sonic3k.asm(1099):1: error: `$` with no hex digits
+sonic3k.asm(1136):9: error: `$` with no hex digits
+sonic3k.asm(1138):9: error: `$` with no hex digits
+sonic3k.asm(1140):1: error: `$` with no hex digits
+sonic3k.asm(1152):10: error: `$` with no hex digits
+sonic3k.asm(1154):1: error: `$` with no hex digits
+sonic3k.asm(1191):9: error: `$` with no hex digits
+sonic3k.asm(1193):9: error: `$` with no hex digits
+sonic3k.asm(1195):1: error: `$` with no hex digits
+sonic3k.asm(119898):3: error: `subx` is not a recognized 68000 mnemonic
+sonic3k.asm(119919):3: error: `subx` is not a recognized 68000 mnemonic
+sonic3k.asm(1207):10: error: `$` with no hex digits
+sonic3k.asm(1209):1: error: `$` with no hex digits
+sonic3k.asm(1319):1: error: `$` with no hex digits
+sonic3k.asm(1321):10: error: `$` with no hex digits
+sonic3k.asm(1332):1: error: `$` with no hex digits
+sonic3k.asm(1334):10: error: `$` with no hex digits
+sonic3k.asm(144342):3: error: instruction needs an explicit size suffix (.b/.w/.l)
+sonic3k.asm(144343):3: error: instruction needs an explicit size suffix (.b/.w/.l)
+sonic3k.asm(16232):2: error: unresolved if condition: `Sonic3_Complete` has no value, so this condition cannot decide whether the code it guards is assembled
+sonic3k.asm(1673):2: error: unresolved if condition: `Sonic3_Complete` has no value, so this condition cannot decide whether the code it guards is assembled
+sonic3k.asm(1710):2: error: unresolved if condition: `Sonic3_Complete` has no value, so this condition cannot decide whether the code it guards is assembled
+sonic3k.asm(174875):3: error: `(d8,PC,Xn)` indexed PC-relative addressing is not yet supported (only `(d16,PC)` lowers)
+sonic3k.asm(174882):3: error: `(d8,PC,Xn)` indexed PC-relative addressing is not yet supported (only `(d16,PC)` lowers)
+sonic3k.asm(1751):1: error: `$` with no hex digits
+sonic3k.asm(1753):9: error: `$` with no hex digits
+sonic3k.asm(1762):9: error: `$` with no hex digits
+sonic3k.asm(1764):1: error: `$` with no hex digits
+sonic3k.asm(200194):2: error: unresolved if condition: `strip_padding` has no value, so this condition cannot decide whether the code it guards is assembled
+sonic3k.asm(200210):2: error: unresolved if condition: `Sonic3_Complete` has no value, so this condition cannot decide whether the code it guards is assembled
+sonic3k.asm(200642):2: error: unresolved if condition: `strip_padding` has no value, so this condition cannot decide whether the code it guards is assembled
+sonic3k.asm(200919):2: error: unresolved if condition: `strip_padding` has no value, so this condition cannot decide whether the code it guards is assembled
+sonic3k.asm(200927):2: error: unresolved if condition: `Sonic3_Complete` has no value, so this condition cannot decide whether the code it guards is assembled
+sonic3k.asm(2011):1: error: `$` with no hex digits
+sonic3k.asm(2013):9: error: `$` with no hex digits
+sonic3k.asm(2015):9: error: `$` with no hex digits
+sonic3k.asm(2018):1: error: `$` with no hex digits
+sonic3k.asm(201931):2: error: unresolved if condition: `strip_padding` has no value, so this condition cannot decide whether the code it guards is assembled
+sonic3k.asm(2020):9: error: `$` with no hex digits
+sonic3k.asm(202157):2: error: unresolved if condition: `strip_padding` has no value, so this condition cannot decide whether the code it guards is assembled
+sonic3k.asm(2022):1: error: `$` with no hex digits
+sonic3k.asm(2025):10: error: `$` with no hex digits
+sonic3k.asm(2027):1: error: `$` with no hex digits
+sonic3k.asm(203576):2: error: unresolved if condition: `strip_padding` has no value, so this condition cannot decide whether the code it guards is assembled
+sonic3k.asm(203583):2: error: unresolved if condition: `Sonic3_Complete` has no value, so this condition cannot decide whether the code it guards is assembled
+sonic3k.asm(2043):1: error: `$` with no hex digits
+sonic3k.asm(2045):9: error: `$` with no hex digits
+sonic3k.asm(2047):9: error: `$` with no hex digits
+sonic3k.asm(2050):1: error: `$` with no hex digits
+sonic3k.asm(2052):9: error: `$` with no hex digits
+sonic3k.asm(2054):1: error: `$` with no hex digits
+sonic3k.asm(2057):10: error: `$` with no hex digits
+sonic3k.asm(2059):1: error: `$` with no hex digits
+sonic3k.asm(2081):9: error: `$` with no hex digits
+sonic3k.asm(2083):1: error: `$` with no hex digits
+sonic3k.asm(2086):10: error: `$` with no hex digits
+sonic3k.asm(2088):1: error: `$` with no hex digits
+sonic3k.asm(2104):1: error: `$` with no hex digits
+sonic3k.asm(2106):10: error: `$` with no hex digits
+sonic3k.asm(22241):3: error: instruction needs an explicit size suffix (.b/.w/.l)
+sonic3k.asm(22242):3: error: instruction needs an explicit size suffix (.b/.w/.l)
+sonic3k.asm(22243):3: error: instruction needs an explicit size suffix (.b/.w/.l)
+sonic3k.asm(22274):3: error: instruction needs an explicit size suffix (.b/.w/.l)
+sonic3k.asm(2272):1: error: `$` with no hex digits
+sonic3k.asm(2282):10: error: `$` with no hex digits
+sonic3k.asm(2352):1: error: `$` with no hex digits
+sonic3k.asm(2354):10: error: `$` with no hex digits
+sonic3k.asm(2361):1: error: `$` with no hex digits
+sonic3k.asm(2364):10: error: `$` with no hex digits
+sonic3k.asm(2371):1: error: `$` with no hex digits
+sonic3k.asm(2374):10: error: `$` with no hex digits
+sonic3k.asm(2382):1: error: `$` with no hex digits
+sonic3k.asm(2385):10: error: `$` with no hex digits
+sonic3k.asm(24099):3: error: instruction needs an explicit size suffix (.b/.w/.l)
+sonic3k.asm(2478):9: error: `$` with no hex digits
+sonic3k.asm(2489):1: error: `$` with no hex digits
+sonic3k.asm(2500):1: error: `$` with no hex digits
+sonic3k.asm(2501):9: error: `$` with no hex digits
+sonic3k.asm(2511):1: error: `$` with no hex digits
+sonic3k.asm(2513):9: error: `$` with no hex digits
+sonic3k.asm(2673):1: error: `$` with no hex digits
+sonic3k.asm(2675):9: error: `$` with no hex digits
+sonic3k.asm(2677):9: error: `$` with no hex digits
+sonic3k.asm(2680):1: error: `$` with no hex digits
+sonic3k.asm(2727):9: error: `$` with no hex digits
+sonic3k.asm(2729):1: error: `$` with no hex digits
+sonic3k.asm(2733):1: error: `$` with no hex digits
+sonic3k.asm(2734):9: error: `$` with no hex digits
+sonic3k.asm(2736):9: error: `$` with no hex digits
+sonic3k.asm(2744):1: error: `$` with no hex digits
+sonic3k.asm(27460):3: error: instruction needs an explicit size suffix (.b/.w/.l)
+sonic3k.asm(27461):3: error: instruction needs an explicit size suffix (.b/.w/.l)
+sonic3k.asm(27462):3: error: instruction needs an explicit size suffix (.b/.w/.l)
+sonic3k.asm(2746):9: error: `$` with no hex digits
+sonic3k.asm(27496):3: error: instruction needs an explicit size suffix (.b/.w/.l)
+sonic3k.asm(289):2: error: unresolved if condition: `Sonic3_Complete` has no value, so this condition cannot decide whether the code it guards is assembled
+sonic3k.asm(28935):3: error: instruction needs an explicit size suffix (.b/.w/.l)
+sonic3k.asm(302):1: error: `$` with no hex digits
+sonic3k.asm(30577):3: error: instruction needs an explicit size suffix (.b/.w/.l)
+sonic3k.asm(30578):3: error: instruction needs an explicit size suffix (.b/.w/.l)
+sonic3k.asm(30579):3: error: instruction needs an explicit size suffix (.b/.w/.l)
+sonic3k.asm(305):9: error: `$` with no hex digits
+sonic3k.asm(30609):3: error: instruction needs an explicit size suffix (.b/.w/.l)
+sonic3k.asm(308):1: error: `$` with no hex digits
+sonic3k.asm(309):10: error: `$` with no hex digits
+sonic3k.asm(315):3: error: unresolved symbol `LockonHeader` in operand
+sonic3k.asm(322):1: error: `$` with no hex digits
+sonic3k.asm(327):1: error: `$` with no hex digits
+sonic3k.asm(330):9: error: `$` with no hex digits
+sonic3k.asm(333):1: error: `$` with no hex digits
+sonic3k.asm(334):10: error: `$` with no hex digits
+sonic3k.asm(337):10: error: `$` with no hex digits
+sonic3k.asm(43756):3: error: instruction needs an explicit size suffix (.b/.w/.l)
+sonic3k.asm(43757):3: error: instruction needs an explicit size suffix (.b/.w/.l)
+sonic3k.asm(492):1: error: `$` with no hex digits
+sonic3k.asm(495):9: error: `$` with no hex digits
+sonic3k.asm(497):1: error: `$` with no hex digits
+sonic3k.asm(500):9: error: `$` with no hex digits
+sonic3k.asm(502):1: error: `$` with no hex digits
+sonic3k.asm(506):9: error: `$` with no hex digits
+sonic3k.asm(51902):3: error: instruction needs an explicit size suffix (.b/.w/.l)
+sonic3k.asm(51903):3: error: instruction needs an explicit size suffix (.b/.w/.l)
+sonic3k.asm(6033):3: error: instruction needs an explicit size suffix (.b/.w/.l)
+sonic3k.asm(62886):3: error: `abcd` is not a recognized 68000 mnemonic
+sonic3k.asm(62887):3: error: `abcd` is not a recognized 68000 mnemonic
+sonic3k.asm(62888):3: error: `abcd` is not a recognized 68000 mnemonic
+sonic3k.asm(65019):3: error: instruction needs an explicit size suffix (.b/.w/.l)
+sonic3k.asm(65020):3: error: instruction needs an explicit size suffix (.b/.w/.l)
+sonic3k.asm(6960):3: error: instruction needs an explicit size suffix (.b/.w/.l)
+sonic3k.asm(72154):3: error: instruction needs an explicit size suffix (.b/.w/.l)
+sonic3k.asm(73755):3: error: instruction needs an explicit size suffix (.b/.w/.l)
+sonic3k.asm(75075):3: error: instruction needs an explicit size suffix (.b/.w/.l)
+sonic3k.asm(75076):3: error: instruction needs an explicit size suffix (.b/.w/.l)
+sonic3k.asm(77694):3: error: instruction needs an explicit size suffix (.b/.w/.l)
+sonic3k.asm(77992):3: error: instruction needs an explicit size suffix (.b/.w/.l)
+sonic3k.asm(79422):3: error: instruction needs an explicit size suffix (.b/.w/.l)
+sonic3k.asm(81):2: error: unresolved if condition: `Sonic3_Complete` has no value, so this condition cannot decide whether the code it guards is assembled
+sonic3k.asm(83235):3: error: instruction needs an explicit size suffix (.b/.w/.l)
+sonic3k.asm(83256):3: error: instruction needs an explicit size suffix (.b/.w/.l)
+sonic3k.asm(84613):3: error: instruction needs an explicit size suffix (.b/.w/.l)
+sonic3k.asm(84614):3: error: instruction needs an explicit size suffix (.b/.w/.l)
+sonic3k.asm(84650):3: error: instruction needs an explicit size suffix (.b/.w/.l)
+sonic3k.asm(84656):3: error: instruction needs an explicit size suffix (.b/.w/.l)
+sonic3k.asm(84725):3: error: instruction needs an explicit size suffix (.b/.w/.l)
+sonic3k.asm(84726):3: error: instruction needs an explicit size suffix (.b/.w/.l)
+sonic3k.asm(84767):3: error: instruction needs an explicit size suffix (.b/.w/.l)
+sonic3k.asm(84869):3: error: instruction needs an explicit size suffix (.b/.w/.l)
+sonic3k.asm(84885):3: error: instruction needs an explicit size suffix (.b/.w/.l)
+sonic3k.asm(84940):3: error: instruction needs an explicit size suffix (.b/.w/.l)
+sonic3k.asm(84942):3: error: instruction needs an explicit size suffix (.b/.w/.l)
+sonic3k.asm(85006):3: error: instruction needs an explicit size suffix (.b/.w/.l)
+sonic3k.asm(85013):3: error: instruction needs an explicit size suffix (.b/.w/.l)
+sonic3k.asm(85910):3: error: instruction needs an explicit size suffix (.b/.w/.l)
+sonic3k.asm(85911):3: error: instruction needs an explicit size suffix (.b/.w/.l)
+sonic3k.asm(85921):3: error: instruction needs an explicit size suffix (.b/.w/.l)
+sonic3k.asm(85922):3: error: instruction needs an explicit size suffix (.b/.w/.l)
+sonic3k.asm(9217):3: error: instruction needs an explicit size suffix (.b/.w/.l)
+sonic3k.asm(9232):3: error: instruction needs an explicit size suffix (.b/.w/.l)
+sonic3k.asm(9548):2: error: unresolved if condition: `Sonic3_Complete` has no value, so this condition cannot decide whether the code it guards is assembled
+sonic3k.asm(9951):3: error: `codepage` is not a recognized 68000 mnemonic
+sonic3k.macros.asm(133):2: error: `codepage` is not a recognized 68000 mnemonic
+sonic3k.macros.asm(133):2: error: `codepage` is not a recognized 68000 mnemonic
+sonic3k.macros.asm(133):2: error: `codepage` is not a recognized 68000 mnemonic
+sonic3k.macros.asm(133):2: error: `codepage` is not a recognized 68000 mnemonic
+sonic3k.macros.asm(133):2: error: `codepage` is not a recognized 68000 mnemonic
+sonic3k.macros.asm(133):2: error: `codepage` is not a recognized 68000 mnemonic
+sonic3k.macros.asm(133):2: error: `codepage` is not a recognized 68000 mnemonic
+sonic3k.macros.asm(133):2: error: `codepage` is not a recognized 68000 mnemonic
+sonic3k.macros.asm(133):2: error: `codepage` is not a recognized 68000 mnemonic
+sonic3k.macros.asm(133):2: error: `codepage` is not a recognized 68000 mnemonic
+sonic3k.macros.asm(133):2: error: `codepage` is not a recognized 68000 mnemonic
+sonic3k.macros.asm(133):2: error: `codepage` is not a recognized 68000 mnemonic
+sonic3k.macros.asm(133):2: error: `codepage` is not a recognized 68000 mnemonic
+sonic3k.macros.asm(133):2: error: `codepage` is not a recognized 68000 mnemonic
+sonic3k.macros.asm(133):2: error: `codepage` is not a recognized 68000 mnemonic
+sonic3k.macros.asm(133):2: error: `codepage` is not a recognized 68000 mnemonic
+sonic3k.macros.asm(133):2: error: `codepage` is not a recognized 68000 mnemonic
+sonic3k.macros.asm(140):2: error: `codepage` is not a recognized 68000 mnemonic

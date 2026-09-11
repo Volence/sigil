@@ -1,0 +1,13 @@
+S7-ixiy 1863: "\tld\ta,iyl\t\t\t\t; current track pointer low byte -> 'a'" -> '\tdb\t0FDh,7Dh\t; stub for: ld a,iyl'
+S7-ixiy 1866: '\tadc\ta,iyu' -> '\tdb\t0FDh,8Ch\t; stub for: adc a,iyu'
+S7-ixiy 1976: "\tld\ta,iyl\t\t\t\t; current track pointer low byte -> 'a'" -> '\tdb\t0FDh,7Dh\t; stub for: ld a,iyl'
+S7-ixiy 1979: '\tadc\ta,iyu' -> '\tdb\t0FDh,8Ch\t; stub for: adc a,iyu'
+S7-ixiy 2258: '\tld\te,ixl' -> '\tdb\t0DDh,5Dh\t; stub for: ld e,ixl'
+S7-ixiy 2259: '\tld\td,ixu\t\t\t; de = ix' -> '\tdb\t0DDh,54h\t; stub for: ld d,ixu'
+S7-ixiy 3475: '\tld\ta,ixl\t\t\t; Get lower byte of current track address (ew :P)' -> '\tdb\t0DDh,7Dh\t; stub for: ld a,ixl'
+S7-ixiy 3478: '\tadc\ta,ixu\t\t\t; If carry occurred, add that to upper part of address' -> '\tdb\t0DDh,8Ch\t; stub for: adc a,ixu'
+S7-ixiy 3650: "\tld\te,ixl\t\t; Set 'de' to beginning of track" -> '\tdb\t0DDh,5Dh\t; stub for: ld e,ixl'
+S7-ixiy 3651: '\tld\td,ixu' -> '\tdb\t0DDh,54h\t; stub for: ld d,ixu'
+S7-ixiy 3687: '\tadd\ta,ixl\t\t; Add low byte of current track pointer to stack offset (low byte of stack location)' -> '\tdb\t0DDh,85h\t; stub for: add a,ixl'
+S7-ixiy 3689: '\tadc\ta,ixu\t\t; Update high byte, if necessary' -> '\tdb\t0DDh,8Ch\t; stub for: adc a,ixu'
+S10-placement 248/249 + EOF dephase

@@ -1,0 +1,14 @@
+== mutation m1c on crates/sigil-frontend-as/src/expand.rs, test as_empty_parens, HEAD 1b8cb9aeb2da2a4b37e74f38cfc595ec1a675a7d
+APPLIED to /home/volence/sonic_hacks/sigil/.claude/worktrees/agent-a35527f94a0279a97/crates/sigil-frontend-as/src/expand.rs; mutated region read back from disk:
+  /home/volence/sonic_hacks/sigil/.claude/worktrees/agent-a35527f94a0279a97/crates/sigil-frontend-as/src/expand.rs:352      if last_empty && rparen > lparen {
+test an_empty_operand_is_still_refused ... ok
+test an_empty_group_is_zero_in_68000_operands ... ok
+test a_z80_operand_of_empty_parens_is_an_immediate_not_an_indirection ... ok
+test an_empty_group_is_zero_in_every_data_width ... ok
+test an_empty_group_is_zero_where_a_directive_wants_a_constant ... ok
+test an_omitted_macro_argument_pastes_as_zero ... ok
+test a_user_function_counts_its_arguments_the_way_asl_does ... FAILED
+thread 'a_user_function_counts_its_arguments_the_way_asl_does' (4039889) panicked at crates/sigil-frontend-as/tests/as_empty_parens.rs:58:5:
+test result: FAILED. 6 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+TEST_PIPE_DONE
+restored crates/sigil-frontend-as/src/expand.rs from HEAD; tracked changes now: 0

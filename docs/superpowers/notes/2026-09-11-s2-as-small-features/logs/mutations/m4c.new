@@ -1,0 +1,3 @@
+            [Token { tok: Tok::Ident(_), .. }] => String::new(),
+            g => {
+                self.err(item_span(g, span), format!("`{kw}` stack name must be a bare name"));
