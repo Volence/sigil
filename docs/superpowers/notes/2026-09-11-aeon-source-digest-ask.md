@@ -72,3 +72,30 @@ same value the `built: ... crc=` line prints and the provenance goldens pin.
 in-memory listing, never from the `.lst` text. The one ordering consequence is that the `.lst`
 must be WRITTEN after the ROM is final; today the native build writes it before the appendix is
 appended, so the parcel moves that write, and the four-shape byte gates prove the move neutral.
+
+## Second amendment, 2026-09-11: aeon's spelling review, and a coupling this lane misreported twice
+
+**The spelling, reviewed by aeon and ruled in here:** `DIGEST-ROM` names the output (`path=` the
+`-o` as given, relative to the aeon root when inside it), so a mispaired `.lst` and `.bin` fail by
+name before they fail by CRC; on every row carrying `path=`, it is the LAST field and runs to end of
+line, so a path with spaces needs no quoting; `DIGEST-DEFINE` values never contain a space; and a
+file outside the aeon root is written `origin=external root=<root> path=<relative>`, so the
+aggregate is stable across checkouts for identical inputs. Aeon parses `tree=` for reporting only,
+fail-closed on an unknown word, never gating its freshness on it.
+
+**The build reads sigil's own frozen tables at run time.** `crates/sigil-harness/src/native.rs:232`,
+`load_frozen_table`, opens `env!("CARGO_MANIFEST_DIR")/golden/offcanonical_sizes/<name>.txt`, and
+every shape profile calls it to seed provisional section bases (`native.rs:701`, `:748`, `:809`,
+`:866`, `:918`, read at master `704966f3`). Aeon's record (their `games/sonic4/map.toml`) says it
+can move ROM bytes; the parcel's probe decides that, not either lane's reading. This is the frozen-
+table cord that `SIGIL-DECOUPLE` step 1 exists to cut, now with an exact call site.
+
+**A consequence nobody had written down.** `CARGO_MANIFEST_DIR` is baked in at COMPILE time, so an
+installed `sigil` binary reads these tables from the worktree it was BUILT in, at every build it
+runs. The durable pin worktree behind the installed shared pair (see `docs/OVERSEER-REFERENCE.md`,
+STANDING ARTIFACTS) must therefore survive for a second reason beyond its `source:` field: deleting
+it would make every aeon build's placement tables vanish.
+
+**This lane told aeon twice in one thread that no such read existed**, both times from a search piped
+through `head` whose first lines were other files, so the `native.rs` hits were cut off. A truncated
+list was read as an empty one. The correction was sent to aeon the same hour.
