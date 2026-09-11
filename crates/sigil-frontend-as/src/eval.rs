@@ -2846,6 +2846,12 @@ impl Asm {
                 let (v, r) = self.parse_num_atom(rest)?;
                 Some((Num::Int((v.as_i64()? == 0) as i64), r))
             }
+            // `()` is the integer 0 here exactly as in `crate::expr::parse_expr`.
+            Tok::Punct(Punct::LParen)
+                if matches!(rest.first().map(|t| &t.tok), Some(Tok::Punct(Punct::RParen))) =>
+            {
+                Some((Num::Int(0), &rest[1..]))
+            }
             Tok::Punct(Punct::LParen) => {
                 let (v, r) = self.parse_num_bp(rest, 0)?;
                 match r.first().map(|t| &t.tok) {
@@ -3520,6 +3526,23 @@ impl Asm {
                 i += 1;
                 continue;
             };
+            // ARITY, by asl's count of argument text rather than by group
+            // count: an argument that counts but is empty is `()`, the value
+            // 0, so a wrong count is the only thing that stops `f()` or `f(1,)`
+            // from folding a parameter asl never bound.
+            let passed = crate::expand::asl_call_arg_count(toks, i + 1, next - 1, &args);
+            if passed != params.len() {
+                let span = toks[i].span;
+                if self.arg_faults_seen.insert((span.source.0, span.start, span.end)) {
+                    self.err(
+                        span,
+                        format!(
+                            "wrong number of function arguments: `{name}` takes {}, this call passes {passed}",
+                            params.len()
+                        ),
+                    );
+                }
+            }
             for (idx, arg) in args.iter().enumerate() {
                 self.check_call_args(arg, depth + 1);
                 if params.get(idx).is_some_and(|p| !body_mentions(&body, p)) {

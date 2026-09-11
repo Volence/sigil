@@ -315,6 +315,47 @@ pub(crate) fn split_call_args(toks: &[Token], lparen: usize) -> Option<(Vec<Vec<
     None
 }
 
+/// How many arguments asl counts in the user-function call whose `(` is
+/// `toks[lparen]` and whose `)` is `toks[rparen]`, given the groups
+/// [`split_call_args`] returned for it.
+///
+/// asl counts argument TEXT: every comma starts an argument, but the text after
+/// the LAST comma (or the whole text, with no comma) counts only when it is not
+/// empty, and a blank is not empty. Measured, `x` a one-parameter function and
+/// `y`/`z` two and three (probes `e1_func*`, exit status quoted):
+///
+/// ```text
+///   f()      #1490 wrong numbers of function arguments   (0 arguments)
+///   f( )     01                                          (1: " ")
+///   f(,1)    01                                          (2: "", "1")
+///   f(1,)    #1490                                       (1: "1")
+///   f(,)     #1490                                       (1: "")
+///   f(1,,2)  03                                          (3: "1", "", "2")
+/// ```
+///
+/// The lexer has dropped the blanks, so "empty" is read off the spans: the last
+/// group is empty text only when the token before the `)` ends where the `)`
+/// begins. Every empty argument that does count is the value 0 (`()`), which is
+/// why this count, and not the group count, is what decides arity.
+pub(crate) fn asl_call_arg_count(
+    toks: &[Token],
+    lparen: usize,
+    rparen: usize,
+    groups: &[Vec<Token>],
+) -> usize {
+    let n = groups.len();
+    let last_empty = groups.last().is_some_and(Vec::is_empty);
+    let (Some(before), Some(close)) = (rparen.checked_sub(1).and_then(|i| toks.get(i)), toks.get(rparen)) else {
+        return n;
+    };
+    let adjacent = before.span.source == close.span.source && before.span.end == close.span.start;
+    if last_empty && adjacent && rparen > lparen {
+        n - 1
+    } else {
+        n
+    }
+}
+
 /// Where to blame a diagnostic about ONE item of a comma-separated list: the
 /// item's own first token, falling back to the directive's span when the group
 /// is empty.

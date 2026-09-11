@@ -217,8 +217,8 @@ pub fn classify(g: &[Token], at: Span, ctx: &ExprCtx<'_>) -> Result<OperandAtom,
     // expression qualifies — `(a0)`/`(d0)`/etc. never reach here anyway (no
     // trailing width token), but a hypothetical `(a0).w` is guarded off too
     // so it falls through to a diagnostic rather than being silently
-    // reinterpreted as an absolute address.
-    if g.len() >= 4 {
+    // reinterpreted as an absolute address. Three tokens is `().w`.
+    if g.len() >= 3 {
         if let (
             Some(Token {
                 tok: Tok::Punct(Punct::LParen),
@@ -241,6 +241,10 @@ pub fn classify(g: &[Token], at: Span, ctx: &ExprCtx<'_>) -> Result<OperandAtom,
             };
             if let Some(long) = long {
                 let inner = &g[1..g.len() - 2];
+                // `().w` is address 0 (asl: `move.w ().w,d0` is `3038 0000`).
+                if inner.is_empty() {
+                    return Ok(OperandAtom::M68kAbs { addr: Expr::Int(0), long });
+                }
                 if !is_bare_register_token(inner) {
                     let (e, rest) = parse_expr(inner, ctx)
                         .ok_or_else(|| err(span, "bad absolute address expression"))?;
@@ -271,6 +275,13 @@ pub fn classify(g: &[Token], at: Span, ctx: &ExprCtx<'_>) -> Result<OperandAtom,
     {
         if trailing_group_open(g) == Some(0) {
             let inner = &g[1..g.len() - 1];
+            // `()` alone is the VALUE 0, never an indirection through address
+            // 0. asl, exit 0: Z80 `ld a,()` is `3E 00` and `ld hl,()` is
+            // `21 00 00` (immediates), where `ld a,(0)` is `3A 00 00`; 68000
+            // `move.w (),d0` is `3038 0000`, the same absolute as a bare `0`.
+            if inner.is_empty() {
+                return Ok(OperandAtom::Value(Expr::Int(0)));
+            }
             // (hl)/(bc)/(de), plus (sp) for `ex (sp),hl` (eval gates it by mnemonic).
             if let [Token {
                 tok: Tok::Ident(w), ..
