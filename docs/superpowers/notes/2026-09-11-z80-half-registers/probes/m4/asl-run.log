@@ -1,0 +1,21 @@
+ASL_MD5=61e672562465725a8c102288a7da9098 ASL=/home/volence/sonic_hacks/s1disasm/build_tools/Linux-x86_64/asl
+== root68k_iyl.asm ASL_EXIT=0
+ASL_DIAG=complete
+== root68k_after.asm ASL_EXIT=2
+ASL_DIAG=complete
+== root68k_after_sym.asm ASL_EXIT=0
+ASL_DIAG=complete
+== s2_0.asm ASL_EXIT=0
+ASL_DIAG=complete
+== s2_1.asm ASL_EXIT=0
+ASL_DIAG=complete
+== s2_2.asm ASL_EXIT=0
+ASL_DIAG=complete
+== s2_3.asm ASL_EXIT=0
+ASL_DIAG=complete
+== s2_4.asm ASL_EXIT=0
+ASL_DIAG=complete
+== s2_5.asm ASL_EXIT=0
+ASL_DIAG=complete
+== s2_6.asm ASL_EXIT=0
+ASL_DIAG=complete

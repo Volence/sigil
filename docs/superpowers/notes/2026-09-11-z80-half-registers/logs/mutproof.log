@@ -1,0 +1,382 @@
+== m1-no-high-halves: ixl/iyl recognised, the high halves not
+HEAD 23d7d57de6285ab370f1362e01545cbdee1a6cd9
+APPLIED to crates/sigil-frontend-as/src/eval.rs; read back from disk (deletion site):
+  crates/sigil-frontend-as/src/eval.rs:11780          "ixl" => Some((IndexReg::Ix, false)),
+  crates/sigil-frontend-as/src/eval.rs:11781          "iyl" => Some((IndexReg::Iy, false)),
+  crates/sigil-frontend-as/src/eval.rs:11782          "iyu" | "iyh" => Some((IndexReg::Iy, true)),
+  old text (now absent from the file): '"ixu" | "ixh" => Some((IndexReg::Ix, true)),'
+APPLIED to crates/sigil-frontend-as/src/eval.rs; read back from disk (deletion site):
+  crates/sigil-frontend-as/src/eval.rs:11782          _ => None,
+  crates/sigil-frontend-as/src/eval.rs:11783      }
+  crates/sigil-frontend-as/src/eval.rs:11784  }
+  old text (now absent from the file): '"iyu" | "iyh" => Some((IndexReg::Iy, true)),'
+test a_half_beside_h_l_or_the_other_index_register_is_refused_for_that_reason ... FAILED
+test every_probe_is_checked_by_exactly_one_group ... ok
+test momcpu_and_momcpuname_report_the_undocumented_z80 ... ok
+test sonic_2_s_twelve_lines_assemble_as_asl_assembles_them ... FAILED
+test every_spelling_asl_accepts_names_the_register_asl_names ... FAILED
+test the_halves_exist_only_under_z80undoc ... ok
+test a_half_in_a_form_asl_refuses_is_refused ... FAILED
+test a_symbol_named_like_a_half_is_read_where_asl_reads_it ... FAILED
+test the_arithmetic_and_logic_forms_take_a_half ... FAILED
+test ld_takes_a_half_in_every_position_asl_allows ... FAILED
+test result: FAILED. 3 passed; 7 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+error: test failed, to rerun pass `-p sigil-frontend-as --test as_z80_half_registers`
+error: 1 target failed:
+cargo exit 101; compiled=True; FAILED tests: 7
+  panic: 14 of 24:
+  panic: 3 of 7 `sonic2` probes disagree with asl:
+  panic: 13 of 39 `spellings` probes disagree with asl:
+  panic: 2 of 91 `forms` probes disagree with asl:
+  panic: 18 of 108 `symbol` probes disagree with asl:
+  panic: 30 of 107 `arithmetic` probes disagree with asl:
+  panic: 34 of 142 `ld` probes disagree with asl:
+VERDICT: RED
+restored from HEAD:crates/sigil-frontend-as/src/eval.rs; tracked tree CLEAN
+== m2-no-low-halves: the high halves recognised, ixl/iyl not
+HEAD 23d7d57de6285ab370f1362e01545cbdee1a6cd9
+APPLIED to crates/sigil-frontend-as/src/eval.rs; read back from disk (deletion site):
+  crates/sigil-frontend-as/src/eval.rs:11779      match name.to_ascii_lowercase().as_str() {
+  crates/sigil-frontend-as/src/eval.rs:11780          "ixu" | "ixh" => Some((IndexReg::Ix, true)),
+  crates/sigil-frontend-as/src/eval.rs:11781          "iyl" => Some((IndexReg::Iy, false)),
+  old text (now absent from the file): '"ixl" => Some((IndexReg::Ix, false)),'
+APPLIED to crates/sigil-frontend-as/src/eval.rs; read back from disk (deletion site):
+  crates/sigil-frontend-as/src/eval.rs:11781          "iyu" | "iyh" => Some((IndexReg::Iy, true)),
+  crates/sigil-frontend-as/src/eval.rs:11782          _ => None,
+  crates/sigil-frontend-as/src/eval.rs:11783      }
+  old text (now absent from the file): '"iyl" => Some((IndexReg::Iy, false)),'
+test every_probe_is_checked_by_exactly_one_group ... ok
+test momcpu_and_momcpuname_report_the_undocumented_z80 ... ok
+test a_half_beside_h_l_or_the_other_index_register_is_refused_for_that_reason ... FAILED
+test sonic_2_s_twelve_lines_assemble_as_asl_assembles_them ... FAILED
+test the_halves_exist_only_under_z80undoc ... FAILED
+test every_spelling_asl_accepts_names_the_register_asl_names ... FAILED
+test a_half_in_a_form_asl_refuses_is_refused ... FAILED
+test a_symbol_named_like_a_half_is_read_where_asl_reads_it ... FAILED
+test the_arithmetic_and_logic_forms_take_a_half ... FAILED
+test ld_takes_a_half_in_every_position_asl_allows ... FAILED
+test result: FAILED. 2 passed; 8 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+error: test failed, to rerun pass `-p sigil-frontend-as --test as_z80_half_registers`
+error: 1 target failed:
+cargo exit 101; compiled=True; FAILED tests: 8
+  panic: 14 of 24:
+  panic: 4 of 7 `sonic2` probes disagree with asl:
+  panic: 6 of 21 `mode` probes disagree with asl:
+  panic: 5 of 39 `spellings` probes disagree with asl:
+  panic: 1 of 91 `forms` probes disagree with asl:
+  panic: 17 of 108 `symbol` probes disagree with asl:
+  panic: 30 of 107 `arithmetic` probes disagree with asl:
+  panic: 38 of 142 `ld` probes disagree with asl:
+VERDICT: RED
+restored from HEAD:crates/sigil-frontend-as/src/eval.rs; tracked tree CLEAN
+== m3-wrong-prefix: IY written, IX's prefix encoded
+HEAD 23d7d57de6285ab370f1362e01545cbdee1a6cd9
+APPLIED to crates/sigil-frontend-as/src/eval.rs; read back from disk (mutated lines):
+  crates/sigil-frontend-as/src/eval.rs:8480              IndexReg::Iy => 0xDD,
+  crates/sigil-frontend-as/src/eval.rs:8481          }))
+  crates/sigil-frontend-as/src/eval.rs:8482      }
+  old text (now absent from the file): 'IndexReg::Iy => 0xFD,\n        }))'
+test a_half_beside_h_l_or_the_other_index_register_is_refused_for_that_reason ... ok
+test every_probe_is_checked_by_exactly_one_group ... ok
+test sonic_2_s_twelve_lines_assemble_as_asl_assembles_them ... FAILED
+test momcpu_and_momcpuname_report_the_undocumented_z80 ... ok
+test the_halves_exist_only_under_z80undoc ... FAILED
+test every_spelling_asl_accepts_names_the_register_asl_names ... FAILED
+test the_arithmetic_and_logic_forms_take_a_half ... FAILED
+test a_half_in_a_form_asl_refuses_is_refused ... FAILED
+test a_symbol_named_like_a_half_is_read_where_asl_reads_it ... FAILED
+test ld_takes_a_half_in_every_position_asl_allows ... FAILED
+test result: FAILED. 3 passed; 7 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+error: test failed, to rerun pass `-p sigil-frontend-as --test as_z80_half_registers`
+error: 1 target failed:
+cargo exit 101; compiled=True; FAILED tests: 7
+  panic: 2 of 7 `sonic2` probes disagree with asl:
+  panic: 1 of 21 `mode` probes disagree with asl:
+  panic: 8 of 39 `spellings` probes disagree with asl:
+  panic: 30 of 107 `arithmetic` probes disagree with asl:
+  panic: 1 of 91 `forms` probes disagree with asl:
+  panic: 11 of 108 `symbol` probes disagree with asl:
+  panic: 32 of 142 `ld` probes disagree with asl:
+VERDICT: RED
+restored from HEAD:crates/sigil-frontend-as/src/eval.rs; tracked tree CLEAN
+== m4-h-l-mix-accepted: h and l accepted beside a half
+HEAD 23d7d57de6285ab370f1362e01545cbdee1a6cd9
+APPLIED to crates/sigil-frontend-as/src/eval.rs; read back from disk (mutated lines):
+  crates/sigil-frontend-as/src/eval.rs:8431          if false && atoms.iter().any(|a| reg_word(a, &["h", "l"])) {
+  crates/sigil-frontend-as/src/eval.rs:8432              self.err(
+  old text (now absent from the file): 'if atoms.iter().any(|a| reg_word(a, &["h", "l"])) {'
+APPLIED to crates/sigil-frontend-as/src/eval.rs; read back from disk (mutated lines):
+  crates/sigil-frontend-as/src/eval.rs:8443          const PLAIN: &[&str] = &["a", "b", "c", "d", "e", "h", "l"];
+  crates/sigil-frontend-as/src/eval.rs:8444          let legal = match (m, atoms.len()) {
+  old text (now absent from the file): 'const PLAIN: &[&str] = &["a", "b", "c", "d", "e"];'
+test a_half_beside_h_l_or_the_other_index_register_is_refused_for_that_reason ... FAILED
+test every_probe_is_checked_by_exactly_one_group ... ok
+test momcpu_and_momcpuname_report_the_undocumented_z80 ... ok
+test sonic_2_s_twelve_lines_assemble_as_asl_assembles_them ... ok
+test the_halves_exist_only_under_z80undoc ... ok
+test every_spelling_asl_accepts_names_the_register_asl_names ... ok
+test the_arithmetic_and_logic_forms_take_a_half ... ok
+test a_symbol_named_like_a_half_is_read_where_asl_reads_it ... ok
+test a_half_in_a_form_asl_refuses_is_refused ... ok
+test ld_takes_a_half_in_every_position_asl_allows ... FAILED
+test result: FAILED. 8 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+error: test failed, to rerun pass `-p sigil-frontend-as --test as_z80_half_registers`
+error: 1 target failed:
+cargo exit 101; compiled=True; FAILED tests: 2
+  panic: 16 of 24:
+  panic: 16 of 142 `ld` probes disagree with asl:
+VERDICT: RED
+restored from HEAD:crates/sigil-frontend-as/src/eval.rs; tracked tree CLEAN
+== m5-ix-iy-mix-accepted: halves of IX and IY accepted together
+HEAD 23d7d57de6285ab370f1362e01545cbdee1a6cd9
+APPLIED to crates/sigil-frontend-as/src/eval.rs; read back from disk (mutated lines):
+  crates/sigil-frontend-as/src/eval.rs:8418          if let Some((_, _, _, other)) = halves.iter().find(|h| false && h.1 != reg) {
+  crates/sigil-frontend-as/src/eval.rs:8419              self.err(
+  old text (now absent from the file): 'halves.iter().find(|h| h.1 != reg)'
+test every_probe_is_checked_by_exactly_one_group ... ok
+test a_half_beside_h_l_or_the_other_index_register_is_refused_for_that_reason ... FAILED
+test sonic_2_s_twelve_lines_assemble_as_asl_assembles_them ... ok
+test the_halves_exist_only_under_z80undoc ... ok
+test every_spelling_asl_accepts_names_the_register_asl_names ... ok
+test momcpu_and_momcpuname_report_the_undocumented_z80 ... ok
+test the_arithmetic_and_logic_forms_take_a_half ... ok
+test a_symbol_named_like_a_half_is_read_where_asl_reads_it ... ok
+test a_half_in_a_form_asl_refuses_is_refused ... FAILED
+test ld_takes_a_half_in_every_position_asl_allows ... FAILED
+test result: FAILED. 7 passed; 3 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+error: test failed, to rerun pass `-p sigil-frontend-as --test as_z80_half_registers`
+error: 1 target failed:
+cargo exit 101; compiled=True; FAILED tests: 3
+  panic: 8 of 24:
+  panic: 1 of 91 `forms` probes disagree with asl:
+  panic: 8 of 142 `ld` probes disagree with asl:
+VERDICT: RED
+restored from HEAD:crates/sigil-frontend-as/src/eval.rs; tracked tree CLEAN
+== m6-only-ld: only ld takes a half
+HEAD 23d7d57de6285ab370f1362e01545cbdee1a6cd9
+APPLIED to crates/sigil-frontend-as/src/eval.rs; read back from disk (deletion site):
+  crates/sigil-frontend-as/src/eval.rs:8452              },
+  crates/sigil-frontend-as/src/eval.rs:8453              _ => false,
+  crates/sigil-frontend-as/src/eval.rs:8454          };
+  old text (now absent from the file): '(Add | Adc | Sub | Sbc | And | Xor | Or | Cp, 2) => {\n                reg_word(&atoms[0], &["a"]) && is_half(1)\n            }\n            (Sub | And | Xor | Or | Cp | Inc | Dec, 1) => is_half(0),'
+test every_probe_is_checked_by_exactly_one_group ... ok
+test a_half_beside_h_l_or_the_other_index_register_is_refused_for_that_reason ... ok
+test sonic_2_s_twelve_lines_assemble_as_asl_assembles_them ... FAILED
+test the_halves_exist_only_under_z80undoc ... ok
+test momcpu_and_momcpuname_report_the_undocumented_z80 ... ok
+test every_spelling_asl_accepts_names_the_register_asl_names ... ok
+test the_arithmetic_and_logic_forms_take_a_half ... FAILED
+test a_half_in_a_form_asl_refuses_is_refused ... ok
+test a_symbol_named_like_a_half_is_read_where_asl_reads_it ... FAILED
+test ld_takes_a_half_in_every_position_asl_allows ... ok
+test result: FAILED. 7 passed; 3 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+error: test failed, to rerun pass `-p sigil-frontend-as --test as_z80_half_registers`
+error: 1 target failed:
+cargo exit 101; compiled=True; FAILED tests: 3
+  panic: 3 of 7 `sonic2` probes disagree with asl:
+  panic: 60 of 107 `arithmetic` probes disagree with asl:
+  panic: 6 of 108 `symbol` probes disagree with asl:
+VERDICT: RED
+restored from HEAD:crates/sigil-frontend-as/src/eval.rs; tracked tree CLEAN
+== m7-mode-ignored: the halves recognised under plain cpu z80 too
+HEAD 23d7d57de6285ab370f1362e01545cbdee1a6cd9
+APPLIED to crates/sigil-frontend-as/src/eval.rs; read back from disk (mutated lines):
+  crates/sigil-frontend-as/src/eval.rs:8320          let prefix = if true {
+  crates/sigil-frontend-as/src/eval.rs:8321              match self.index_halves(m, mn, &mut atoms, span) {
+  old text (now absent from the file): 'let prefix = if self.state.z80_undoc {'
+test every_probe_is_checked_by_exactly_one_group ... ok
+test a_half_beside_h_l_or_the_other_index_register_is_refused_for_that_reason ... ok
+test every_spelling_asl_accepts_names_the_register_asl_names ... ok
+test sonic_2_s_twelve_lines_assemble_as_asl_assembles_them ... ok
+test a_half_in_a_form_asl_refuses_is_refused ... ok
+test a_symbol_named_like_a_half_is_read_where_asl_reads_it ... ok
+test momcpu_and_momcpuname_report_the_undocumented_z80 ... ok
+test the_halves_exist_only_under_z80undoc ... FAILED
+test ld_takes_a_half_in_every_position_asl_allows ... ok
+test the_arithmetic_and_logic_forms_take_a_half ... ok
+test result: FAILED. 9 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+error: test failed, to rerun pass `-p sigil-frontend-as --test as_z80_half_registers`
+error: 1 target failed:
+cargo exit 101; compiled=True; FAILED tests: 1
+  panic: 15 of 21 `mode` probes disagree with asl:
+VERDICT: RED
+restored from HEAD:crates/sigil-frontend-as/src/eval.rs; tracked tree CLEAN
+== m8-register-everywhere: the half is a register in every operand position
+HEAD 23d7d57de6285ab370f1362e01545cbdee1a6cd9
+APPLIED to crates/sigil-frontend-as/src/eval.rs; read back from disk (mutated lines):
+  crates/sigil-frontend-as/src/eval.rs:3249              _ => 0,
+  crates/sigil-frontend-as/src/eval.rs:3250          };
+  old text (now absent from the file): 'Bit | Res | Set => 1,\n            _ => return Ok(None),'
+test every_probe_is_checked_by_exactly_one_group ... ok
+test momcpu_and_momcpuname_report_the_undocumented_z80 ... ok
+test sonic_2_s_twelve_lines_assemble_as_asl_assembles_them ... ok
+test a_half_beside_h_l_or_the_other_index_register_is_refused_for_that_reason ... ok
+test every_spelling_asl_accepts_names_the_register_asl_names ... ok
+test the_halves_exist_only_under_z80undoc ... ok
+test a_half_in_a_form_asl_refuses_is_refused ... ok
+test a_symbol_named_like_a_half_is_read_where_asl_reads_it ... FAILED
+test ld_takes_a_half_in_every_position_asl_allows ... ok
+test the_arithmetic_and_logic_forms_take_a_half ... ok
+test result: FAILED. 9 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+error: test failed, to rerun pass `-p sigil-frontend-as --test as_z80_half_registers`
+error: 1 target failed:
+cargo exit 101; compiled=True; FAILED tests: 1
+  panic: 22 of 108 `symbol` probes disagree with asl:
+VERDICT: RED
+restored from HEAD:crates/sigil-frontend-as/src/eval.rs; tracked tree CLEAN
+== m9-restore-loses-mode: restore does not bring the mode back
+HEAD 23d7d57de6285ab370f1362e01545cbdee1a6cd9
+APPLIED to crates/sigil-frontend-as/src/state.rs; read back from disk (deletion site):
+  crates/sigil-frontend-as/src/state.rs:179          }
+  crates/sigil-frontend-as/src/state.rs:180          Ok(())
+  crates/sigil-frontend-as/src/state.rs:181      }
+  old text (now absent from the file): 'self.z80_undoc = s.z80_undoc;'
+test every_probe_is_checked_by_exactly_one_group ... ok
+test a_half_beside_h_l_or_the_other_index_register_is_refused_for_that_reason ... ok
+test sonic_2_s_twelve_lines_assemble_as_asl_assembles_them ... ok
+test momcpu_and_momcpuname_report_the_undocumented_z80 ... ok
+test every_spelling_asl_accepts_names_the_register_asl_names ... ok
+test the_halves_exist_only_under_z80undoc ... FAILED
+test a_half_in_a_form_asl_refuses_is_refused ... ok
+test ld_takes_a_half_in_every_position_asl_allows ... ok
+test the_arithmetic_and_logic_forms_take_a_half ... ok
+test a_symbol_named_like_a_half_is_read_where_asl_reads_it ... ok
+test result: FAILED. 9 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+error: test failed, to rerun pass `-p sigil-frontend-as --test as_z80_half_registers`
+error: 1 target failed:
+cargo exit 101; compiled=True; FAILED tests: 1
+  panic: 3 of 21 `mode` probes disagree with asl:
+VERDICT: RED
+restored from HEAD:crates/sigil-frontend-as/src/state.rs; tracked tree CLEAN
+== m10-momcpu-unchanged: MOMCPU still $80 under z80undoc
+HEAD 23d7d57de6285ab370f1362e01545cbdee1a6cd9
+APPLIED to crates/sigil-frontend-as/src/eval.rs; read back from disk (deletion site):
+  crates/sigil-frontend-as/src/eval.rs:2514                  Cpu::M68000 => 0x68000,
+  crates/sigil-frontend-as/src/eval.rs:2515                  Cpu::Z80 => 0x80,
+  crates/sigil-frontend-as/src/eval.rs:2516              }),
+  old text (now absent from the file): 'Cpu::Z80 if self.state.z80_undoc => 0x80DC,'
+test every_probe_is_checked_by_exactly_one_group ... ok
+test a_half_beside_h_l_or_the_other_index_register_is_refused_for_that_reason ... ok
+test momcpu_and_momcpuname_report_the_undocumented_z80 ... FAILED
+test sonic_2_s_twelve_lines_assemble_as_asl_assembles_them ... ok
+test a_half_in_a_form_asl_refuses_is_refused ... ok
+test every_spelling_asl_accepts_names_the_register_asl_names ... ok
+test the_halves_exist_only_under_z80undoc ... ok
+test a_symbol_named_like_a_half_is_read_where_asl_reads_it ... ok
+test the_arithmetic_and_logic_forms_take_a_half ... ok
+test ld_takes_a_half_in_every_position_asl_allows ... ok
+test result: FAILED. 9 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+error: test failed, to rerun pass `-p sigil-frontend-as --test as_z80_half_registers`
+error: 1 target failed:
+cargo exit 101; compiled=True; FAILED tests: 1
+  panic: 2 of 9 `momcpu` probes disagree with asl:
+VERDICT: RED
+restored from HEAD:crates/sigil-frontend-as/src/eval.rs; tracked tree CLEAN
+== m11-one-operand-add: one-operand add/adc/sbc accepted with a half
+HEAD 23d7d57de6285ab370f1362e01545cbdee1a6cd9
+APPLIED to crates/sigil-frontend-as/src/eval.rs; read back from disk (mutated lines):
+  crates/sigil-frontend-as/src/eval.rs:8456              (Add | Adc | Sbc | Sub | And | Xor | Or | Cp | Inc | Dec, 1) => is_half(0),
+  crates/sigil-frontend-as/src/eval.rs:8457              _ => false,
+  old text (now absent from the file): '(Sub | And | Xor | Or | Cp | Inc | Dec, 1) => is_half(0),'
+test a_half_beside_h_l_or_the_other_index_register_is_refused_for_that_reason ... ok
+test every_probe_is_checked_by_exactly_one_group ... ok
+test sonic_2_s_twelve_lines_assemble_as_asl_assembles_them ... ok
+test momcpu_and_momcpuname_report_the_undocumented_z80 ... ok
+test every_spelling_asl_accepts_names_the_register_asl_names ... ok
+test the_halves_exist_only_under_z80undoc ... ok
+test a_half_in_a_form_asl_refuses_is_refused ... ok
+test the_arithmetic_and_logic_forms_take_a_half ... FAILED
+test a_symbol_named_like_a_half_is_read_where_asl_reads_it ... ok
+test ld_takes_a_half_in_every_position_asl_allows ... ok
+test result: FAILED. 9 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+error: test failed, to rerun pass `-p sigil-frontend-as --test as_z80_half_registers`
+error: 1 target failed:
+cargo exit 101; compiled=True; FAILED tests: 1
+  panic: 12 of 107 `arithmetic` probes disagree with asl:
+VERDICT: RED
+restored from HEAD:crates/sigil-frontend-as/src/eval.rs; tracked tree CLEAN
+== m12-feature-absent: no half registers at all
+HEAD 23d7d57de6285ab370f1362e01545cbdee1a6cd9
+APPLIED to crates/sigil-frontend-as/src/eval.rs; read back from disk (mutated lines):
+  crates/sigil-frontend-as/src/eval.rs:8320          let prefix = if false {
+  crates/sigil-frontend-as/src/eval.rs:8321              match self.index_halves(m, mn, &mut atoms, span) {
+  old text (now absent from the file): 'let prefix = if self.state.z80_undoc {'
+test every_probe_is_checked_by_exactly_one_group ... ok
+test momcpu_and_momcpuname_report_the_undocumented_z80 ... ok
+test a_half_beside_h_l_or_the_other_index_register_is_refused_for_that_reason ... FAILED
+test sonic_2_s_twelve_lines_assemble_as_asl_assembles_them ... FAILED
+test the_halves_exist_only_under_z80undoc ... FAILED
+test every_spelling_asl_accepts_names_the_register_asl_names ... FAILED
+test a_half_in_a_form_asl_refuses_is_refused ... FAILED
+test ld_takes_a_half_in_every_position_asl_allows ... FAILED
+test a_symbol_named_like_a_half_is_read_where_asl_reads_it ... FAILED
+test the_arithmetic_and_logic_forms_take_a_half ... FAILED
+test result: FAILED. 2 passed; 8 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+error: test failed, to rerun pass `-p sigil-frontend-as --test as_z80_half_registers`
+error: 1 target failed:
+cargo exit 101; compiled=True; FAILED tests: 8
+  panic: 24 of 24:
+  panic: 7 of 7 `sonic2` probes disagree with asl:
+  panic: 6 of 21 `mode` probes disagree with asl:
+  panic: 18 of 39 `spellings` probes disagree with asl:
+  panic: 2 of 91 `forms` probes disagree with asl:
+  panic: 68 of 142 `ld` probes disagree with asl:
+  panic: 35 of 108 `symbol` probes disagree with asl:
+  panic: 60 of 107 `arithmetic` probes disagree with asl:
+VERDICT: RED
+restored from HEAD:crates/sigil-frontend-as/src/eval.rs; tracked tree CLEAN
+== m13-no-immediate: ld half,n refused
+HEAD 23d7d57de6285ab370f1362e01545cbdee1a6cd9
+APPLIED to crates/sigil-frontend-as/src/eval.rs; read back from disk (mutated lines):
+  crates/sigil-frontend-as/src/eval.rs:8448                      reg_word(&atoms[1], PLAIN)
+  crates/sigil-frontend-as/src/eval.rs:8449                  }
+  old text (now absent from the file): 'reg_word(&atoms[1], PLAIN) || matches!(atoms[1], OperandAtom::Value(_))'
+test every_probe_is_checked_by_exactly_one_group ... ok
+test a_half_beside_h_l_or_the_other_index_register_is_refused_for_that_reason ... ok
+test every_spelling_asl_accepts_names_the_register_asl_names ... ok
+test sonic_2_s_twelve_lines_assemble_as_asl_assembles_them ... ok
+test momcpu_and_momcpuname_report_the_undocumented_z80 ... ok
+test the_halves_exist_only_under_z80undoc ... ok
+test a_half_in_a_form_asl_refuses_is_refused ... ok
+test the_arithmetic_and_logic_forms_take_a_half ... ok
+test ld_takes_a_half_in_every_position_asl_allows ... FAILED
+test a_symbol_named_like_a_half_is_read_where_asl_reads_it ... FAILED
+test result: FAILED. 8 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+error: test failed, to rerun pass `-p sigil-frontend-as --test as_z80_half_registers`
+error: 1 target failed:
+cargo exit 101; compiled=True; FAILED tests: 2
+  panic: 20 of 142 `ld` probes disagree with asl:
+  panic: 4 of 108 `symbol` probes disagree with asl:
+VERDICT: RED
+restored from HEAD:crates/sigil-frontend-as/src/eval.rs; tracked tree CLEAN
+== s2a-wrong-prefix: Sonic 2 whole ROM: IY written, IX's prefix encoded
+HEAD 23d7d57de6285ab370f1362e01545cbdee1a6cd9
+APPLIED to crates/sigil-frontend-as/src/eval.rs; read back from disk (mutated lines):
+  crates/sigil-frontend-as/src/eval.rs:8480              IndexReg::Iy => 0xDD,
+  crates/sigil-frontend-as/src/eval.rs:8481          }))
+  crates/sigil-frontend-as/src/eval.rs:8482      }
+  old text (now absent from the file): 'IndexReg::Iy => 0xFD,\n        }))'
+test sonic_2_builds_to_the_reference_rom_byte_for_byte ... FAILED
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.81s
+error: test failed, to rerun pass `-p sigil-cli --test as_sonic2_whole_rom`
+error: 1 target failed:
+cargo exit 101; compiled=True; FAILED tests: 1
+  panic: sigil's ROM is 1048576 bytes, the reference 1048576; 695 bytes differ in 18 runs, the first: [0x0EC898, 0x0EC899) [0x0EC89D, 0x0EC89E) [0x0ECD87, 0x0ECDF7) [0x0ECDF8, 0x0ECE23) [0x0ECE24, 0x0ECE3F) [0x0ECE40, 0x0ECEAB) [0x0ECEAC, 0x0ECEB8) [0x0ECEB9, 0x0ECEBB) [0x0ECEBC, 0x0ECEC1) [0x0ECEC2, 0x0ECEE
+VERDICT: RED
+restored from HEAD:crates/sigil-frontend-as/src/eval.rs; tracked tree CLEAN
+== s2b-feature-absent: Sonic 2 whole ROM: no half registers at all
+HEAD 23d7d57de6285ab370f1362e01545cbdee1a6cd9
+APPLIED to crates/sigil-frontend-as/src/eval.rs; read back from disk (mutated lines):
+  crates/sigil-frontend-as/src/eval.rs:8320          let prefix = if false {
+  crates/sigil-frontend-as/src/eval.rs:8321              match self.index_halves(m, mn, &mut atoms, span) {
+  old text (now absent from the file): 'let prefix = if self.state.z80_undoc {'
+test sonic_2_builds_to_the_reference_rom_byte_for_byte ... FAILED
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.47s
+error: test failed, to rerun pass `-p sigil-cli --test as_sonic2_whole_rom`
+error: 1 target failed:
+cargo exit 101; compiled=True; FAILED tests: 1
+  panic: sigil failed:
+VERDICT: RED
+restored from HEAD:crates/sigil-frontend-as/src/eval.rs; tracked tree CLEAN
+SUMMARY m1-no-high-halves=RED m2-no-low-halves=RED m3-wrong-prefix=RED m4-h-l-mix-accepted=RED m5-ix-iy-mix-accepted=RED m6-only-ld=RED m7-mode-ignored=RED m8-register-everywhere=RED m9-restore-loses-mode=RED m10-momcpu-unchanged=RED m11-one-operand-add=RED m12-feature-absent=RED m13-no-immediate=RED s2a-wrong-prefix=RED s2b-feature-absent=RED
+MUTPROOF_END

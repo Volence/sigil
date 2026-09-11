@@ -1,0 +1,342 @@
+# sigil /home/volence/sonic_hacks/.scratch/z80-half-registers/bin/sigil-c1 md5 cec46f181c272451f28a169d9012393b
+# BOTH-REFUSE=177 MATCH=161 SIGIL-REFUSES=2
+BOTH-REFUSE	alu1_adc_ixl	asl=REFUSED	sigil=REFUSED	alu1_adc_ixl.asm(3):2: error: `adc ixl` needs its accumulator written out, `adc a,ixl`: asl takes `add`, `adc` and `sbc` with an index-register half only in the
+BOTH-REFUSE	alu1_adc_ixu	asl=REFUSED	sigil=REFUSED	alu1_adc_ixu.asm(3):2: error: `adc ixu` needs its accumulator written out, `adc a,ixu`: asl takes `add`, `adc` and `sbc` with an index-register half only in the
+BOTH-REFUSE	alu1_adc_iyl	asl=REFUSED	sigil=REFUSED	alu1_adc_iyl.asm(3):2: error: `adc iyl` needs its accumulator written out, `adc a,iyl`: asl takes `add`, `adc` and `sbc` with an index-register half only in the
+BOTH-REFUSE	alu1_adc_iyu	asl=REFUSED	sigil=REFUSED	alu1_adc_iyu.asm(3):2: error: `adc iyu` needs its accumulator written out, `adc a,iyu`: asl takes `add`, `adc` and `sbc` with an index-register half only in the
+BOTH-REFUSE	alu1_add_ixl	asl=REFUSED	sigil=REFUSED	alu1_add_ixl.asm(3):2: error: `add ixl` needs its accumulator written out, `add a,ixl`: asl takes `add`, `adc` and `sbc` with an index-register half only in the
+BOTH-REFUSE	alu1_add_ixu	asl=REFUSED	sigil=REFUSED	alu1_add_ixu.asm(3):2: error: `add ixu` needs its accumulator written out, `add a,ixu`: asl takes `add`, `adc` and `sbc` with an index-register half only in the
+BOTH-REFUSE	alu1_add_iyl	asl=REFUSED	sigil=REFUSED	alu1_add_iyl.asm(3):2: error: `add iyl` needs its accumulator written out, `add a,iyl`: asl takes `add`, `adc` and `sbc` with an index-register half only in the
+BOTH-REFUSE	alu1_add_iyu	asl=REFUSED	sigil=REFUSED	alu1_add_iyu.asm(3):2: error: `add iyu` needs its accumulator written out, `add a,iyu`: asl takes `add`, `adc` and `sbc` with an index-register half only in the
+MATCH	alu1_and_ixl	asl=DD A5 00	sigil=DD A5 00	
+MATCH	alu1_and_ixu	asl=DD A4 00	sigil=DD A4 00	
+MATCH	alu1_and_iyl	asl=FD A5 00	sigil=FD A5 00	
+MATCH	alu1_and_iyu	asl=FD A4 00	sigil=FD A4 00	
+MATCH	alu1_cp_ixl	asl=DD BD 00	sigil=DD BD 00	
+MATCH	alu1_cp_ixu	asl=DD BC 00	sigil=DD BC 00	
+MATCH	alu1_cp_iyl	asl=FD BD 00	sigil=FD BD 00	
+MATCH	alu1_cp_iyu	asl=FD BC 00	sigil=FD BC 00	
+MATCH	alu1_or_ixl	asl=DD B5 00	sigil=DD B5 00	
+MATCH	alu1_or_ixu	asl=DD B4 00	sigil=DD B4 00	
+MATCH	alu1_or_iyl	asl=FD B5 00	sigil=FD B5 00	
+MATCH	alu1_or_iyu	asl=FD B4 00	sigil=FD B4 00	
+BOTH-REFUSE	alu1_sbc_ixl	asl=REFUSED	sigil=REFUSED	alu1_sbc_ixl.asm(3):2: error: `sbc ixl` needs its accumulator written out, `sbc a,ixl`: asl takes `add`, `adc` and `sbc` with an index-register half only in the
+BOTH-REFUSE	alu1_sbc_ixu	asl=REFUSED	sigil=REFUSED	alu1_sbc_ixu.asm(3):2: error: `sbc ixu` needs its accumulator written out, `sbc a,ixu`: asl takes `add`, `adc` and `sbc` with an index-register half only in the
+BOTH-REFUSE	alu1_sbc_iyl	asl=REFUSED	sigil=REFUSED	alu1_sbc_iyl.asm(3):2: error: `sbc iyl` needs its accumulator written out, `sbc a,iyl`: asl takes `add`, `adc` and `sbc` with an index-register half only in the
+BOTH-REFUSE	alu1_sbc_iyu	asl=REFUSED	sigil=REFUSED	alu1_sbc_iyu.asm(3):2: error: `sbc iyu` needs its accumulator written out, `sbc a,iyu`: asl takes `add`, `adc` and `sbc` with an index-register half only in the
+MATCH	alu1_sub_ixl	asl=DD 95 00	sigil=DD 95 00	
+MATCH	alu1_sub_ixu	asl=DD 94 00	sigil=DD 94 00	
+MATCH	alu1_sub_iyl	asl=FD 95 00	sigil=FD 95 00	
+MATCH	alu1_sub_iyu	asl=FD 94 00	sigil=FD 94 00	
+MATCH	alu1_xor_ixl	asl=DD AD 00	sigil=DD AD 00	
+MATCH	alu1_xor_ixu	asl=DD AC 00	sigil=DD AC 00	
+MATCH	alu1_xor_iyl	asl=FD AD 00	sigil=FD AD 00	
+MATCH	alu1_xor_iyu	asl=FD AC 00	sigil=FD AC 00	
+MATCH	alu2_adc_ixl	asl=DD 8D 00	sigil=DD 8D 00	
+MATCH	alu2_adc_ixu	asl=DD 8C 00	sigil=DD 8C 00	
+MATCH	alu2_adc_iyl	asl=FD 8D 00	sigil=FD 8D 00	
+MATCH	alu2_adc_iyu	asl=FD 8C 00	sigil=FD 8C 00	
+MATCH	alu2_add_ixl	asl=DD 85 00	sigil=DD 85 00	
+MATCH	alu2_add_ixu	asl=DD 84 00	sigil=DD 84 00	
+MATCH	alu2_add_iyl	asl=FD 85 00	sigil=FD 85 00	
+MATCH	alu2_add_iyu	asl=FD 84 00	sigil=FD 84 00	
+MATCH	alu2_and_ixl	asl=DD A5 00	sigil=DD A5 00	
+MATCH	alu2_and_ixu	asl=DD A4 00	sigil=DD A4 00	
+MATCH	alu2_and_iyl	asl=FD A5 00	sigil=FD A5 00	
+MATCH	alu2_and_iyu	asl=FD A4 00	sigil=FD A4 00	
+MATCH	alu2_cp_ixl	asl=DD BD 00	sigil=DD BD 00	
+MATCH	alu2_cp_ixu	asl=DD BC 00	sigil=DD BC 00	
+MATCH	alu2_cp_iyl	asl=FD BD 00	sigil=FD BD 00	
+MATCH	alu2_cp_iyu	asl=FD BC 00	sigil=FD BC 00	
+MATCH	alu2_or_ixl	asl=DD B5 00	sigil=DD B5 00	
+MATCH	alu2_or_ixu	asl=DD B4 00	sigil=DD B4 00	
+MATCH	alu2_or_iyl	asl=FD B5 00	sigil=FD B5 00	
+MATCH	alu2_or_iyu	asl=FD B4 00	sigil=FD B4 00	
+MATCH	alu2_sbc_ixl	asl=DD 9D 00	sigil=DD 9D 00	
+MATCH	alu2_sbc_ixu	asl=DD 9C 00	sigil=DD 9C 00	
+MATCH	alu2_sbc_iyl	asl=FD 9D 00	sigil=FD 9D 00	
+MATCH	alu2_sbc_iyu	asl=FD 9C 00	sigil=FD 9C 00	
+MATCH	alu2_sub_ixl	asl=DD 95 00	sigil=DD 95 00	
+MATCH	alu2_sub_ixu	asl=DD 94 00	sigil=DD 94 00	
+MATCH	alu2_sub_iyl	asl=FD 95 00	sigil=FD 95 00	
+MATCH	alu2_sub_iyu	asl=FD 94 00	sigil=FD 94 00	
+MATCH	alu2_xor_ixl	asl=DD AD 00	sigil=DD AD 00	
+MATCH	alu2_xor_ixu	asl=DD AC 00	sigil=DD AC 00	
+MATCH	alu2_xor_iyl	asl=FD AD 00	sigil=FD AD 00	
+MATCH	alu2_xor_iyu	asl=FD AC 00	sigil=FD AC 00	
+BOTH-REFUSE	alu_add_hl_ixl	asl=REFUSED	sigil=REFUSED	alu_add_hl_ixl.asm(3):2: error: `add` has no form that takes the index-register half `ixl` in this position (asl: addressing mode not allowed here)
+BOTH-REFUSE	alu_add_hl_ixu	asl=REFUSED	sigil=REFUSED	alu_add_hl_ixu.asm(3):2: error: `add` has no form that takes the index-register half `ixu` in this position (asl: addressing mode not allowed here)
+BOTH-REFUSE	alu_add_hl_iyl	asl=REFUSED	sigil=REFUSED	alu_add_hl_iyl.asm(3):2: error: `add` has no form that takes the index-register half `iyl` in this position (asl: addressing mode not allowed here)
+BOTH-REFUSE	alu_add_hl_iyu	asl=REFUSED	sigil=REFUSED	alu_add_hl_iyu.asm(3):2: error: `add` has no form that takes the index-register half `iyu` in this position (asl: addressing mode not allowed here)
+BOTH-REFUSE	alud_add_b_ixl	asl=REFUSED	sigil=REFUSED	alud_add_b_ixl.asm(3):2: error: `add` has no form that takes the index-register half `ixl` in this position (asl: addressing mode not allowed here)
+BOTH-REFUSE	alud_add_b_ixu	asl=REFUSED	sigil=REFUSED	alud_add_b_ixu.asm(3):2: error: `add` has no form that takes the index-register half `ixu` in this position (asl: addressing mode not allowed here)
+BOTH-REFUSE	alud_add_b_iyl	asl=REFUSED	sigil=REFUSED	alud_add_b_iyl.asm(3):2: error: `add` has no form that takes the index-register half `iyl` in this position (asl: addressing mode not allowed here)
+BOTH-REFUSE	alud_add_b_iyu	asl=REFUSED	sigil=REFUSED	alud_add_b_iyu.asm(3):2: error: `add` has no form that takes the index-register half `iyu` in this position (asl: addressing mode not allowed here)
+BOTH-REFUSE	alud_add_ixl_a	asl=REFUSED	sigil=REFUSED	alud_add_ixl_a.asm(3):2: error: `add` has no form that takes the index-register half `ixl` in this position (asl: addressing mode not allowed here)
+BOTH-REFUSE	alud_add_ixu_a	asl=REFUSED	sigil=REFUSED	alud_add_ixu_a.asm(3):2: error: `add` has no form that takes the index-register half `ixu` in this position (asl: addressing mode not allowed here)
+BOTH-REFUSE	alud_add_iyl_a	asl=REFUSED	sigil=REFUSED	alud_add_iyl_a.asm(3):2: error: `add` has no form that takes the index-register half `iyl` in this position (asl: addressing mode not allowed here)
+BOTH-REFUSE	alud_add_iyu_a	asl=REFUSED	sigil=REFUSED	alud_add_iyu_a.asm(3):2: error: `add` has no form that takes the index-register half `iyu` in this position (asl: addressing mode not allowed here)
+BOTH-REFUSE	cb_rl_ixl	asl=REFUSED	sigil=REFUSED	cb_rl_ixl.asm(3):2: error: `rl` has no form that takes the index-register half `ixl` in this position (asl: addressing mode not allowed here)
+BOTH-REFUSE	cb_rl_ixu	asl=REFUSED	sigil=REFUSED	cb_rl_ixu.asm(3):2: error: `rl` has no form that takes the index-register half `ixu` in this position (asl: addressing mode not allowed here)
+BOTH-REFUSE	cb_rl_iyl	asl=REFUSED	sigil=REFUSED	cb_rl_iyl.asm(3):2: error: `rl` has no form that takes the index-register half `iyl` in this position (asl: addressing mode not allowed here)
+BOTH-REFUSE	cb_rl_iyu	asl=REFUSED	sigil=REFUSED	cb_rl_iyu.asm(3):2: error: `rl` has no form that takes the index-register half `iyu` in this position (asl: addressing mode not allowed here)
+BOTH-REFUSE	cb_rlc_ixl	asl=REFUSED	sigil=REFUSED	cb_rlc_ixl.asm(3):2: error: `rlc` has no form that takes the index-register half `ixl` in this position (asl: addressing mode not allowed here)
+BOTH-REFUSE	cb_rlc_ixu	asl=REFUSED	sigil=REFUSED	cb_rlc_ixu.asm(3):2: error: `rlc` has no form that takes the index-register half `ixu` in this position (asl: addressing mode not allowed here)
+BOTH-REFUSE	cb_rlc_iyl	asl=REFUSED	sigil=REFUSED	cb_rlc_iyl.asm(3):2: error: `rlc` has no form that takes the index-register half `iyl` in this position (asl: addressing mode not allowed here)
+BOTH-REFUSE	cb_rlc_iyu	asl=REFUSED	sigil=REFUSED	cb_rlc_iyu.asm(3):2: error: `rlc` has no form that takes the index-register half `iyu` in this position (asl: addressing mode not allowed here)
+BOTH-REFUSE	cb_rr_ixl	asl=REFUSED	sigil=REFUSED	cb_rr_ixl.asm(3):2: error: `rr` has no form that takes the index-register half `ixl` in this position (asl: addressing mode not allowed here)
+BOTH-REFUSE	cb_rr_ixu	asl=REFUSED	sigil=REFUSED	cb_rr_ixu.asm(3):2: error: `rr` has no form that takes the index-register half `ixu` in this position (asl: addressing mode not allowed here)
+BOTH-REFUSE	cb_rr_iyl	asl=REFUSED	sigil=REFUSED	cb_rr_iyl.asm(3):2: error: `rr` has no form that takes the index-register half `iyl` in this position (asl: addressing mode not allowed here)
+BOTH-REFUSE	cb_rr_iyu	asl=REFUSED	sigil=REFUSED	cb_rr_iyu.asm(3):2: error: `rr` has no form that takes the index-register half `iyu` in this position (asl: addressing mode not allowed here)
+BOTH-REFUSE	cb_rrc_ixl	asl=REFUSED	sigil=REFUSED	cb_rrc_ixl.asm(3):2: error: `rrc` has no form that takes the index-register half `ixl` in this position (asl: addressing mode not allowed here)
+BOTH-REFUSE	cb_rrc_ixu	asl=REFUSED	sigil=REFUSED	cb_rrc_ixu.asm(3):2: error: `rrc` has no form that takes the index-register half `ixu` in this position (asl: addressing mode not allowed here)
+BOTH-REFUSE	cb_rrc_iyl	asl=REFUSED	sigil=REFUSED	cb_rrc_iyl.asm(3):2: error: `rrc` has no form that takes the index-register half `iyl` in this position (asl: addressing mode not allowed here)
+BOTH-REFUSE	cb_rrc_iyu	asl=REFUSED	sigil=REFUSED	cb_rrc_iyu.asm(3):2: error: `rrc` has no form that takes the index-register half `iyu` in this position (asl: addressing mode not allowed here)
+BOTH-REFUSE	cb_sla_ixl	asl=REFUSED	sigil=REFUSED	cb_sla_ixl.asm(3):2: error: `sla` has no form that takes the index-register half `ixl` in this position (asl: addressing mode not allowed here)
+BOTH-REFUSE	cb_sla_ixu	asl=REFUSED	sigil=REFUSED	cb_sla_ixu.asm(3):2: error: `sla` has no form that takes the index-register half `ixu` in this position (asl: addressing mode not allowed here)
+BOTH-REFUSE	cb_sla_iyl	asl=REFUSED	sigil=REFUSED	cb_sla_iyl.asm(3):2: error: `sla` has no form that takes the index-register half `iyl` in this position (asl: addressing mode not allowed here)
+BOTH-REFUSE	cb_sla_iyu	asl=REFUSED	sigil=REFUSED	cb_sla_iyu.asm(3):2: error: `sla` has no form that takes the index-register half `iyu` in this position (asl: addressing mode not allowed here)
+BOTH-REFUSE	cb_sll_ixl	asl=REFUSED	sigil=REFUSED	cb_sll_ixl.asm(3):2: error: unknown directive or mnemonic `sll`
+BOTH-REFUSE	cb_sll_ixu	asl=REFUSED	sigil=REFUSED	cb_sll_ixu.asm(3):2: error: unknown directive or mnemonic `sll`
+BOTH-REFUSE	cb_sll_iyl	asl=REFUSED	sigil=REFUSED	cb_sll_iyl.asm(3):2: error: unknown directive or mnemonic `sll`
+BOTH-REFUSE	cb_sll_iyu	asl=REFUSED	sigil=REFUSED	cb_sll_iyu.asm(3):2: error: unknown directive or mnemonic `sll`
+BOTH-REFUSE	cb_sra_ixl	asl=REFUSED	sigil=REFUSED	cb_sra_ixl.asm(3):2: error: `sra` has no form that takes the index-register half `ixl` in this position (asl: addressing mode not allowed here)
+BOTH-REFUSE	cb_sra_ixu	asl=REFUSED	sigil=REFUSED	cb_sra_ixu.asm(3):2: error: `sra` has no form that takes the index-register half `ixu` in this position (asl: addressing mode not allowed here)
+BOTH-REFUSE	cb_sra_iyl	asl=REFUSED	sigil=REFUSED	cb_sra_iyl.asm(3):2: error: `sra` has no form that takes the index-register half `iyl` in this position (asl: addressing mode not allowed here)
+BOTH-REFUSE	cb_sra_iyu	asl=REFUSED	sigil=REFUSED	cb_sra_iyu.asm(3):2: error: `sra` has no form that takes the index-register half `iyu` in this position (asl: addressing mode not allowed here)
+BOTH-REFUSE	cb_srl_ixl	asl=REFUSED	sigil=REFUSED	cb_srl_ixl.asm(3):2: error: `srl` has no form that takes the index-register half `ixl` in this position (asl: addressing mode not allowed here)
+BOTH-REFUSE	cb_srl_ixu	asl=REFUSED	sigil=REFUSED	cb_srl_ixu.asm(3):2: error: `srl` has no form that takes the index-register half `ixu` in this position (asl: addressing mode not allowed here)
+BOTH-REFUSE	cb_srl_iyl	asl=REFUSED	sigil=REFUSED	cb_srl_iyl.asm(3):2: error: `srl` has no form that takes the index-register half `iyl` in this position (asl: addressing mode not allowed here)
+BOTH-REFUSE	cb_srl_iyu	asl=REFUSED	sigil=REFUSED	cb_srl_iyu.asm(3):2: error: `srl` has no form that takes the index-register half `iyu` in this position (asl: addressing mode not allowed here)
+BOTH-REFUSE	cbb_bit_ixl	asl=REFUSED	sigil=REFUSED	cbb_bit_ixl.asm(3):2: error: `bit` has no form that takes the index-register half `ixl` in this position (asl: addressing mode not allowed here)
+BOTH-REFUSE	cbb_bit_ixu	asl=REFUSED	sigil=REFUSED	cbb_bit_ixu.asm(3):2: error: `bit` has no form that takes the index-register half `ixu` in this position (asl: addressing mode not allowed here)
+BOTH-REFUSE	cbb_bit_iyl	asl=REFUSED	sigil=REFUSED	cbb_bit_iyl.asm(3):2: error: `bit` has no form that takes the index-register half `iyl` in this position (asl: addressing mode not allowed here)
+BOTH-REFUSE	cbb_bit_iyu	asl=REFUSED	sigil=REFUSED	cbb_bit_iyu.asm(3):2: error: `bit` has no form that takes the index-register half `iyu` in this position (asl: addressing mode not allowed here)
+BOTH-REFUSE	cbb_res_ixl	asl=REFUSED	sigil=REFUSED	cbb_res_ixl.asm(3):2: error: `res` has no form that takes the index-register half `ixl` in this position (asl: addressing mode not allowed here)
+BOTH-REFUSE	cbb_res_ixu	asl=REFUSED	sigil=REFUSED	cbb_res_ixu.asm(3):2: error: `res` has no form that takes the index-register half `ixu` in this position (asl: addressing mode not allowed here)
+BOTH-REFUSE	cbb_res_iyl	asl=REFUSED	sigil=REFUSED	cbb_res_iyl.asm(3):2: error: `res` has no form that takes the index-register half `iyl` in this position (asl: addressing mode not allowed here)
+BOTH-REFUSE	cbb_res_iyu	asl=REFUSED	sigil=REFUSED	cbb_res_iyu.asm(3):2: error: `res` has no form that takes the index-register half `iyu` in this position (asl: addressing mode not allowed here)
+BOTH-REFUSE	cbb_set_ixl	asl=REFUSED	sigil=REFUSED	cbb_set_ixl.asm(3):2: error: `set` has no form that takes the index-register half `ixl` in this position (asl: addressing mode not allowed here)
+BOTH-REFUSE	cbb_set_ixu	asl=REFUSED	sigil=REFUSED	cbb_set_ixu.asm(3):2: error: `set` has no form that takes the index-register half `ixu` in this position (asl: addressing mode not allowed here)
+BOTH-REFUSE	cbb_set_iyl	asl=REFUSED	sigil=REFUSED	cbb_set_iyl.asm(3):2: error: `set` has no form that takes the index-register half `iyl` in this position (asl: addressing mode not allowed here)
+BOTH-REFUSE	cbb_set_iyu	asl=REFUSED	sigil=REFUSED	cbb_set_iyu.asm(3):2: error: `set` has no form that takes the index-register half `iyu` in this position (asl: addressing mode not allowed here)
+MATCH	ctl_add_a_l	asl=85 00	sigil=85 00	
+MATCH	ctl_dec_h	asl=25 00	sigil=25 00	
+MATCH	ctl_inc_l	asl=2C 00	sigil=2C 00	
+MATCH	ctl_ld_a_h	asl=7C 00	sigil=7C 00	
+MATCH	ctl_ld_a_ix_1_	asl=DD 7E 01 00	sigil=DD 7E 01 00	
+MATCH	ctl_ld_a_l	asl=7D 00	sigil=7D 00	
+MATCH	ctl_ld_h_l	asl=65 00	sigil=65 00	
+MATCH	ctl_ld_l_5	asl=2E 05 00	sigil=2E 05 00	
+MATCH	ctl_ld_l_a	asl=6F 00	sigil=6F 00	
+SIGIL-REFUSES	ctl_sll_a	asl=CB 37 00	sigil=REFUSED	ctl_sll_a.asm(3):2: error: unknown directive or mnemonic `sll`
+SIGIL-REFUSES	ctl_sll_b	asl=CB 30 00	sigil=REFUSED	ctl_sll_b.asm(3):2: error: unknown directive or mnemonic `sll`
+MATCH	dec_ixl	asl=DD 2D 00	sigil=DD 2D 00	
+MATCH	dec_ixu	asl=DD 25 00	sigil=DD 25 00	
+MATCH	dec_iyl	asl=FD 2D 00	sigil=FD 2D 00	
+MATCH	dec_iyu	asl=FD 25 00	sigil=FD 25 00	
+BOTH-REFUSE	doc_ixh	asl=REFUSED	sigil=REFUSED	doc_ixh.asm(3):2: error: unresolved symbol `ixh` in operand
+BOTH-REFUSE	doc_ixl	asl=REFUSED	sigil=REFUSED	doc_ixl.asm(3):2: error: unresolved symbol `ixl` in operand
+BOTH-REFUSE	doc_ixu	asl=REFUSED	sigil=REFUSED	doc_ixu.asm(3):2: error: unresolved symbol `ixu` in operand
+BOTH-REFUSE	doc_iyl	asl=REFUSED	sigil=REFUSED	doc_iyl.asm(3):2: error: unresolved symbol `iyl` in operand
+BOTH-REFUSE	doc_iyu	asl=REFUSED	sigil=REFUSED	doc_iyu.asm(3):2: error: unresolved symbol `iyu` in operand
+MATCH	docsym_ixh	asl=3E 05 00	sigil=3E 05 00	
+MATCH	docsym_ixl	asl=3E 05 00	sigil=3E 05 00	
+MATCH	docsym_ixu	asl=3E 05 00	sigil=3E 05 00	
+MATCH	docsym_iyl	asl=3E 05 00	sigil=3E 05 00	
+MATCH	docsym_iyu	asl=3E 05 00	sigil=3E 05 00	
+BOTH-REFUSE	ex_ixl	asl=REFUSED	sigil=REFUSED	ex_ixl.asm(3):2: error: `ex` has no form that takes the index-register half `ixl` in this position (asl: addressing mode not allowed here)
+BOTH-REFUSE	ex_ixu	asl=REFUSED	sigil=REFUSED	ex_ixu.asm(3):2: error: `ex` has no form that takes the index-register half `ixu` in this position (asl: addressing mode not allowed here)
+BOTH-REFUSE	ex_iyl	asl=REFUSED	sigil=REFUSED	ex_iyl.asm(3):2: error: `ex` has no form that takes the index-register half `iyl` in this position (asl: addressing mode not allowed here)
+BOTH-REFUSE	ex_iyu	asl=REFUSED	sigil=REFUSED	ex_iyu.asm(3):2: error: `ex` has no form that takes the index-register half `iyu` in this position (asl: addressing mode not allowed here)
+BOTH-REFUSE	in_ixl	asl=REFUSED	sigil=REFUSED	in_ixl.asm(3):2: error: `in` has no form that takes the index-register half `ixl` in this position (asl: addressing mode not allowed here)
+BOTH-REFUSE	in_ixu	asl=REFUSED	sigil=REFUSED	in_ixu.asm(3):2: error: `in` has no form that takes the index-register half `ixu` in this position (asl: addressing mode not allowed here)
+BOTH-REFUSE	in_iyl	asl=REFUSED	sigil=REFUSED	in_iyl.asm(3):2: error: `in` has no form that takes the index-register half `iyl` in this position (asl: addressing mode not allowed here)
+BOTH-REFUSE	in_iyu	asl=REFUSED	sigil=REFUSED	in_iyu.asm(3):2: error: `in` has no form that takes the index-register half `iyu` in this position (asl: addressing mode not allowed here)
+MATCH	inc_ixl	asl=DD 2C 00	sigil=DD 2C 00	
+MATCH	inc_ixu	asl=DD 24 00	sigil=DD 24 00	
+MATCH	inc_iyl	asl=FD 2C 00	sigil=FD 2C 00	
+MATCH	inc_iyu	asl=FD 24 00	sigil=FD 24 00	
+BOTH-REFUSE	jp_ixl	asl=REFUSED	sigil=REFUSED	jp_ixl.asm(3):2: error: unsupported form: Instruction { mnemonic: Jp, ops: [Mem(0)] }
+BOTH-REFUSE	jp_ixu	asl=REFUSED	sigil=REFUSED	jp_ixu.asm(3):2: error: unsupported form: Instruction { mnemonic: Jp, ops: [Mem(0)] }
+BOTH-REFUSE	jp_iyl	asl=REFUSED	sigil=REFUSED	jp_iyl.asm(3):2: error: unsupported form: Instruction { mnemonic: Jp, ops: [Mem(0)] }
+BOTH-REFUSE	jp_iyu	asl=REFUSED	sigil=REFUSED	jp_iyu.asm(3):2: error: unsupported form: Instruction { mnemonic: Jp, ops: [Mem(0)] }
+MATCH	ld_a_ixl	asl=DD 7D 00	sigil=DD 7D 00	
+MATCH	ld_a_ixu	asl=DD 7C 00	sigil=DD 7C 00	
+MATCH	ld_a_iyl	asl=FD 7D 00	sigil=FD 7D 00	
+MATCH	ld_a_iyu	asl=FD 7C 00	sigil=FD 7C 00	
+MATCH	ld_b_ixl	asl=DD 45 00	sigil=DD 45 00	
+MATCH	ld_b_ixu	asl=DD 44 00	sigil=DD 44 00	
+MATCH	ld_b_iyl	asl=FD 45 00	sigil=FD 45 00	
+MATCH	ld_b_iyu	asl=FD 44 00	sigil=FD 44 00	
+MATCH	ld_c_ixl	asl=DD 4D 00	sigil=DD 4D 00	
+MATCH	ld_c_ixu	asl=DD 4C 00	sigil=DD 4C 00	
+MATCH	ld_c_iyl	asl=FD 4D 00	sigil=FD 4D 00	
+MATCH	ld_c_iyu	asl=FD 4C 00	sigil=FD 4C 00	
+MATCH	ld_d_ixl	asl=DD 55 00	sigil=DD 55 00	
+MATCH	ld_d_ixu	asl=DD 54 00	sigil=DD 54 00	
+MATCH	ld_d_iyl	asl=FD 55 00	sigil=FD 55 00	
+MATCH	ld_d_iyu	asl=FD 54 00	sigil=FD 54 00	
+MATCH	ld_e_ixl	asl=DD 5D 00	sigil=DD 5D 00	
+MATCH	ld_e_ixu	asl=DD 5C 00	sigil=DD 5C 00	
+MATCH	ld_e_iyl	asl=FD 5D 00	sigil=FD 5D 00	
+MATCH	ld_e_iyu	asl=FD 5C 00	sigil=FD 5C 00	
+BOTH-REFUSE	ld_h_ixl	asl=REFUSED	sigil=REFUSED	ld_h_ixl.asm(3):2: error: `h` and `l` cannot share an instruction with the index-register half `ixl`: the prefix that selects the half turns `h` and `l` into th
+BOTH-REFUSE	ld_h_ixu	asl=REFUSED	sigil=REFUSED	ld_h_ixu.asm(3):2: error: `h` and `l` cannot share an instruction with the index-register half `ixu`: the prefix that selects the half turns `h` and `l` into th
+BOTH-REFUSE	ld_h_iyl	asl=REFUSED	sigil=REFUSED	ld_h_iyl.asm(3):2: error: `h` and `l` cannot share an instruction with the index-register half `iyl`: the prefix that selects the half turns `h` and `l` into th
+BOTH-REFUSE	ld_h_iyu	asl=REFUSED	sigil=REFUSED	ld_h_iyu.asm(3):2: error: `h` and `l` cannot share an instruction with the index-register half `iyu`: the prefix that selects the half turns `h` and `l` into th
+BOTH-REFUSE	ld_i_ixl	asl=REFUSED	sigil=REFUSED	ld_i_ixl.asm(3):2: error: `ld` has no form that takes the index-register half `ixl` in this position (asl: addressing mode not allowed here)
+BOTH-REFUSE	ld_i_ixu	asl=REFUSED	sigil=REFUSED	ld_i_ixu.asm(3):2: error: `ld` has no form that takes the index-register half `ixu` in this position (asl: addressing mode not allowed here)
+BOTH-REFUSE	ld_i_iyl	asl=REFUSED	sigil=REFUSED	ld_i_iyl.asm(3):2: error: `ld` has no form that takes the index-register half `iyl` in this position (asl: addressing mode not allowed here)
+BOTH-REFUSE	ld_i_iyu	asl=REFUSED	sigil=REFUSED	ld_i_iyu.asm(3):2: error: `ld` has no form that takes the index-register half `iyu` in this position (asl: addressing mode not allowed here)
+BOTH-REFUSE	ld_indhl_ixl	asl=REFUSED	sigil=REFUSED	ld_indhl_ixl.asm(3):2: error: `ld` has no form that takes the index-register half `ixl` in this position (asl: addressing mode not allowed here)
+BOTH-REFUSE	ld_indhl_ixu	asl=REFUSED	sigil=REFUSED	ld_indhl_ixu.asm(3):2: error: `ld` has no form that takes the index-register half `ixu` in this position (asl: addressing mode not allowed here)
+BOTH-REFUSE	ld_indhl_iyl	asl=REFUSED	sigil=REFUSED	ld_indhl_iyl.asm(3):2: error: `ld` has no form that takes the index-register half `iyl` in this position (asl: addressing mode not allowed here)
+BOTH-REFUSE	ld_indhl_iyu	asl=REFUSED	sigil=REFUSED	ld_indhl_iyu.asm(3):2: error: `ld` has no form that takes the index-register half `iyu` in this position (asl: addressing mode not allowed here)
+BOTH-REFUSE	ld_indix_ixl	asl=REFUSED	sigil=REFUSED	ld_indix_ixl.asm(3):2: error: `ld` has no form that takes the index-register half `ixl` in this position (asl: addressing mode not allowed here)
+BOTH-REFUSE	ld_indix_ixu	asl=REFUSED	sigil=REFUSED	ld_indix_ixu.asm(3):2: error: `ld` has no form that takes the index-register half `ixu` in this position (asl: addressing mode not allowed here)
+BOTH-REFUSE	ld_indix_iyl	asl=REFUSED	sigil=REFUSED	ld_indix_iyl.asm(3):2: error: `ld` has no form that takes the index-register half `iyl` in this position (asl: addressing mode not allowed here)
+BOTH-REFUSE	ld_indix_iyu	asl=REFUSED	sigil=REFUSED	ld_indix_iyu.asm(3):2: error: `ld` has no form that takes the index-register half `iyu` in this position (asl: addressing mode not allowed here)
+BOTH-REFUSE	ld_indiy_ixl	asl=REFUSED	sigil=REFUSED	ld_indiy_ixl.asm(3):2: error: `ld` has no form that takes the index-register half `ixl` in this position (asl: addressing mode not allowed here)
+BOTH-REFUSE	ld_indiy_ixu	asl=REFUSED	sigil=REFUSED	ld_indiy_ixu.asm(3):2: error: `ld` has no form that takes the index-register half `ixu` in this position (asl: addressing mode not allowed here)
+BOTH-REFUSE	ld_indiy_iyl	asl=REFUSED	sigil=REFUSED	ld_indiy_iyl.asm(3):2: error: `ld` has no form that takes the index-register half `iyl` in this position (asl: addressing mode not allowed here)
+BOTH-REFUSE	ld_indiy_iyu	asl=REFUSED	sigil=REFUSED	ld_indiy_iyu.asm(3):2: error: `ld` has no form that takes the index-register half `iyu` in this position (asl: addressing mode not allowed here)
+MATCH	ld_ixl_a	asl=DD 6F 00	sigil=DD 6F 00	
+MATCH	ld_ixl_b	asl=DD 68 00	sigil=DD 68 00	
+MATCH	ld_ixl_c	asl=DD 69 00	sigil=DD 69 00	
+MATCH	ld_ixl_d	asl=DD 6A 00	sigil=DD 6A 00	
+MATCH	ld_ixl_e	asl=DD 6B 00	sigil=DD 6B 00	
+BOTH-REFUSE	ld_ixl_h	asl=REFUSED	sigil=REFUSED	ld_ixl_h.asm(3):2: error: `h` and `l` cannot share an instruction with the index-register half `ixl`: the prefix that selects the half turns `h` and `l` into th
+BOTH-REFUSE	ld_ixl_i	asl=REFUSED	sigil=REFUSED	ld_ixl_i.asm(3):2: error: `ld` has no form that takes the index-register half `ixl` in this position (asl: addressing mode not allowed here)
+BOTH-REFUSE	ld_ixl_indhl	asl=REFUSED	sigil=REFUSED	ld_ixl_indhl.asm(3):2: error: `ld` has no form that takes the index-register half `ixl` in this position (asl: addressing mode not allowed here)
+BOTH-REFUSE	ld_ixl_indix	asl=REFUSED	sigil=REFUSED	ld_ixl_indix.asm(3):2: error: `ld` has no form that takes the index-register half `ixl` in this position (asl: addressing mode not allowed here)
+BOTH-REFUSE	ld_ixl_indiy	asl=REFUSED	sigil=REFUSED	ld_ixl_indiy.asm(3):2: error: `ld` has no form that takes the index-register half `ixl` in this position (asl: addressing mode not allowed here)
+MATCH	ld_ixl_ixl	asl=DD 6D 00	sigil=DD 6D 00	
+MATCH	ld_ixl_ixu	asl=DD 6C 00	sigil=DD 6C 00	
+BOTH-REFUSE	ld_ixl_iyl	asl=REFUSED	sigil=REFUSED	ld_ixl_iyl.asm(3):2: error: `ixl` and `iyl` are halves of different index registers: an instruction carries one prefix, so it can name only one of them
+BOTH-REFUSE	ld_ixl_iyu	asl=REFUSED	sigil=REFUSED	ld_ixl_iyu.asm(3):2: error: `ixl` and `iyu` are halves of different index registers: an instruction carries one prefix, so it can name only one of them
+BOTH-REFUSE	ld_ixl_l	asl=REFUSED	sigil=REFUSED	ld_ixl_l.asm(3):2: error: `h` and `l` cannot share an instruction with the index-register half `ixl`: the prefix that selects the half turns `h` and `l` into th
+BOTH-REFUSE	ld_ixl_mem	asl=REFUSED	sigil=REFUSED	ld_ixl_mem.asm(3):2: error: `ld` has no form that takes the index-register half `ixl` in this position (asl: addressing mode not allowed here)
+MATCH	ld_ixu_a	asl=DD 67 00	sigil=DD 67 00	
+MATCH	ld_ixu_b	asl=DD 60 00	sigil=DD 60 00	
+MATCH	ld_ixu_c	asl=DD 61 00	sigil=DD 61 00	
+MATCH	ld_ixu_d	asl=DD 62 00	sigil=DD 62 00	
+MATCH	ld_ixu_e	asl=DD 63 00	sigil=DD 63 00	
+BOTH-REFUSE	ld_ixu_h	asl=REFUSED	sigil=REFUSED	ld_ixu_h.asm(3):2: error: `h` and `l` cannot share an instruction with the index-register half `ixu`: the prefix that selects the half turns `h` and `l` into th
+BOTH-REFUSE	ld_ixu_i	asl=REFUSED	sigil=REFUSED	ld_ixu_i.asm(3):2: error: `ld` has no form that takes the index-register half `ixu` in this position (asl: addressing mode not allowed here)
+BOTH-REFUSE	ld_ixu_indhl	asl=REFUSED	sigil=REFUSED	ld_ixu_indhl.asm(3):2: error: `ld` has no form that takes the index-register half `ixu` in this position (asl: addressing mode not allowed here)
+BOTH-REFUSE	ld_ixu_indix	asl=REFUSED	sigil=REFUSED	ld_ixu_indix.asm(3):2: error: `ld` has no form that takes the index-register half `ixu` in this position (asl: addressing mode not allowed here)
+BOTH-REFUSE	ld_ixu_indiy	asl=REFUSED	sigil=REFUSED	ld_ixu_indiy.asm(3):2: error: `ld` has no form that takes the index-register half `ixu` in this position (asl: addressing mode not allowed here)
+MATCH	ld_ixu_ixl	asl=DD 65 00	sigil=DD 65 00	
+MATCH	ld_ixu_ixu	asl=DD 64 00	sigil=DD 64 00	
+BOTH-REFUSE	ld_ixu_iyl	asl=REFUSED	sigil=REFUSED	ld_ixu_iyl.asm(3):2: error: `ixu` and `iyl` are halves of different index registers: an instruction carries one prefix, so it can name only one of them
+BOTH-REFUSE	ld_ixu_iyu	asl=REFUSED	sigil=REFUSED	ld_ixu_iyu.asm(3):2: error: `ixu` and `iyu` are halves of different index registers: an instruction carries one prefix, so it can name only one of them
+BOTH-REFUSE	ld_ixu_l	asl=REFUSED	sigil=REFUSED	ld_ixu_l.asm(3):2: error: `h` and `l` cannot share an instruction with the index-register half `ixu`: the prefix that selects the half turns `h` and `l` into th
+BOTH-REFUSE	ld_ixu_mem	asl=REFUSED	sigil=REFUSED	ld_ixu_mem.asm(3):2: error: `ld` has no form that takes the index-register half `ixu` in this position (asl: addressing mode not allowed here)
+MATCH	ld_iyl_a	asl=FD 6F 00	sigil=FD 6F 00	
+MATCH	ld_iyl_b	asl=FD 68 00	sigil=FD 68 00	
+MATCH	ld_iyl_c	asl=FD 69 00	sigil=FD 69 00	
+MATCH	ld_iyl_d	asl=FD 6A 00	sigil=FD 6A 00	
+MATCH	ld_iyl_e	asl=FD 6B 00	sigil=FD 6B 00	
+BOTH-REFUSE	ld_iyl_h	asl=REFUSED	sigil=REFUSED	ld_iyl_h.asm(3):2: error: `h` and `l` cannot share an instruction with the index-register half `iyl`: the prefix that selects the half turns `h` and `l` into th
+BOTH-REFUSE	ld_iyl_i	asl=REFUSED	sigil=REFUSED	ld_iyl_i.asm(3):2: error: `ld` has no form that takes the index-register half `iyl` in this position (asl: addressing mode not allowed here)
+BOTH-REFUSE	ld_iyl_indhl	asl=REFUSED	sigil=REFUSED	ld_iyl_indhl.asm(3):2: error: `ld` has no form that takes the index-register half `iyl` in this position (asl: addressing mode not allowed here)
+BOTH-REFUSE	ld_iyl_indix	asl=REFUSED	sigil=REFUSED	ld_iyl_indix.asm(3):2: error: `ld` has no form that takes the index-register half `iyl` in this position (asl: addressing mode not allowed here)
+BOTH-REFUSE	ld_iyl_indiy	asl=REFUSED	sigil=REFUSED	ld_iyl_indiy.asm(3):2: error: `ld` has no form that takes the index-register half `iyl` in this position (asl: addressing mode not allowed here)
+BOTH-REFUSE	ld_iyl_ixl	asl=REFUSED	sigil=REFUSED	ld_iyl_ixl.asm(3):2: error: `iyl` and `ixl` are halves of different index registers: an instruction carries one prefix, so it can name only one of them
+BOTH-REFUSE	ld_iyl_ixu	asl=REFUSED	sigil=REFUSED	ld_iyl_ixu.asm(3):2: error: `iyl` and `ixu` are halves of different index registers: an instruction carries one prefix, so it can name only one of them
+MATCH	ld_iyl_iyl	asl=FD 6D 00	sigil=FD 6D 00	
+MATCH	ld_iyl_iyu	asl=FD 6C 00	sigil=FD 6C 00	
+BOTH-REFUSE	ld_iyl_l	asl=REFUSED	sigil=REFUSED	ld_iyl_l.asm(3):2: error: `h` and `l` cannot share an instruction with the index-register half `iyl`: the prefix that selects the half turns `h` and `l` into th
+BOTH-REFUSE	ld_iyl_mem	asl=REFUSED	sigil=REFUSED	ld_iyl_mem.asm(3):2: error: `ld` has no form that takes the index-register half `iyl` in this position (asl: addressing mode not allowed here)
+MATCH	ld_iyu_a	asl=FD 67 00	sigil=FD 67 00	
+MATCH	ld_iyu_b	asl=FD 60 00	sigil=FD 60 00	
+MATCH	ld_iyu_c	asl=FD 61 00	sigil=FD 61 00	
+MATCH	ld_iyu_d	asl=FD 62 00	sigil=FD 62 00	
+MATCH	ld_iyu_e	asl=FD 63 00	sigil=FD 63 00	
+BOTH-REFUSE	ld_iyu_h	asl=REFUSED	sigil=REFUSED	ld_iyu_h.asm(3):2: error: `h` and `l` cannot share an instruction with the index-register half `iyu`: the prefix that selects the half turns `h` and `l` into th
+BOTH-REFUSE	ld_iyu_i	asl=REFUSED	sigil=REFUSED	ld_iyu_i.asm(3):2: error: `ld` has no form that takes the index-register half `iyu` in this position (asl: addressing mode not allowed here)
+BOTH-REFUSE	ld_iyu_indhl	asl=REFUSED	sigil=REFUSED	ld_iyu_indhl.asm(3):2: error: `ld` has no form that takes the index-register half `iyu` in this position (asl: addressing mode not allowed here)
+BOTH-REFUSE	ld_iyu_indix	asl=REFUSED	sigil=REFUSED	ld_iyu_indix.asm(3):2: error: `ld` has no form that takes the index-register half `iyu` in this position (asl: addressing mode not allowed here)
+BOTH-REFUSE	ld_iyu_indiy	asl=REFUSED	sigil=REFUSED	ld_iyu_indiy.asm(3):2: error: `ld` has no form that takes the index-register half `iyu` in this position (asl: addressing mode not allowed here)
+BOTH-REFUSE	ld_iyu_ixl	asl=REFUSED	sigil=REFUSED	ld_iyu_ixl.asm(3):2: error: `iyu` and `ixl` are halves of different index registers: an instruction carries one prefix, so it can name only one of them
+BOTH-REFUSE	ld_iyu_ixu	asl=REFUSED	sigil=REFUSED	ld_iyu_ixu.asm(3):2: error: `iyu` and `ixu` are halves of different index registers: an instruction carries one prefix, so it can name only one of them
+MATCH	ld_iyu_iyl	asl=FD 65 00	sigil=FD 65 00	
+MATCH	ld_iyu_iyu	asl=FD 64 00	sigil=FD 64 00	
+BOTH-REFUSE	ld_iyu_l	asl=REFUSED	sigil=REFUSED	ld_iyu_l.asm(3):2: error: `h` and `l` cannot share an instruction with the index-register half `iyu`: the prefix that selects the half turns `h` and `l` into th
+BOTH-REFUSE	ld_iyu_mem	asl=REFUSED	sigil=REFUSED	ld_iyu_mem.asm(3):2: error: `ld` has no form that takes the index-register half `iyu` in this position (asl: addressing mode not allowed here)
+BOTH-REFUSE	ld_l_ixl	asl=REFUSED	sigil=REFUSED	ld_l_ixl.asm(3):2: error: `h` and `l` cannot share an instruction with the index-register half `ixl`: the prefix that selects the half turns `h` and `l` into th
+BOTH-REFUSE	ld_l_ixu	asl=REFUSED	sigil=REFUSED	ld_l_ixu.asm(3):2: error: `h` and `l` cannot share an instruction with the index-register half `ixu`: the prefix that selects the half turns `h` and `l` into th
+BOTH-REFUSE	ld_l_iyl	asl=REFUSED	sigil=REFUSED	ld_l_iyl.asm(3):2: error: `h` and `l` cannot share an instruction with the index-register half `iyl`: the prefix that selects the half turns `h` and `l` into th
+BOTH-REFUSE	ld_l_iyu	asl=REFUSED	sigil=REFUSED	ld_l_iyu.asm(3):2: error: `h` and `l` cannot share an instruction with the index-register half `iyu`: the prefix that selects the half turns `h` and `l` into th
+BOTH-REFUSE	ld_mem_ixl	asl=REFUSED	sigil=REFUSED	ld_mem_ixl.asm(3):2: error: `ld` has no form that takes the index-register half `ixl` in this position (asl: addressing mode not allowed here)
+BOTH-REFUSE	ld_mem_ixu	asl=REFUSED	sigil=REFUSED	ld_mem_ixu.asm(3):2: error: `ld` has no form that takes the index-register half `ixu` in this position (asl: addressing mode not allowed here)
+BOTH-REFUSE	ld_mem_iyl	asl=REFUSED	sigil=REFUSED	ld_mem_iyl.asm(3):2: error: `ld` has no form that takes the index-register half `iyl` in this position (asl: addressing mode not allowed here)
+BOTH-REFUSE	ld_mem_iyu	asl=REFUSED	sigil=REFUSED	ld_mem_iyu.asm(3):2: error: `ld` has no form that takes the index-register half `iyu` in this position (asl: addressing mode not allowed here)
+MATCH	ldi_ixl	asl=DD 2E 05 00	sigil=DD 2E 05 00	
+MATCH	ldi_ixu	asl=DD 26 05 00	sigil=DD 26 05 00	
+MATCH	ldi_iyl	asl=FD 2E 05 00	sigil=FD 2E 05 00	
+MATCH	ldi_iyu	asl=FD 26 05 00	sigil=FD 26 05 00	
+BOTH-REFUSE	ldibig_ixl	asl=REFUSED	sigil=REFUSED	ldibig_ixl.asm(3):2: error: operand 256 out of range -128..=255
+BOTH-REFUSE	ldibig_ixu	asl=REFUSED	sigil=REFUSED	ldibig_ixu.asm(3):2: error: operand 256 out of range -128..=255
+BOTH-REFUSE	ldibig_iyl	asl=REFUSED	sigil=REFUSED	ldibig_iyl.asm(3):2: error: operand 256 out of range -128..=255
+BOTH-REFUSE	ldibig_iyu	asl=REFUSED	sigil=REFUSED	ldibig_iyu.asm(3):2: error: operand 256 out of range -128..=255
+MATCH	ldifwd_ixl	asl=DD 2E 12 00	sigil=DD 2E 12 00	
+MATCH	ldifwd_ixu	asl=DD 26 12 00	sigil=DD 26 12 00	
+MATCH	ldifwd_iyl	asl=FD 2E 12 00	sigil=FD 2E 12 00	
+MATCH	ldifwd_iyu	asl=FD 26 12 00	sigil=FD 26 12 00	
+MATCH	ldineg_ixl	asl=DD 2E FF 00	sigil=DD 2E FF 00	
+MATCH	ldineg_ixu	asl=DD 26 FF 00	sigil=DD 26 FF 00	
+MATCH	ldineg_iyl	asl=FD 2E FF 00	sigil=FD 2E FF 00	
+MATCH	ldineg_iyu	asl=FD 26 FF 00	sigil=FD 26 FF 00	
+MATCH	ldisym_ixl	asl=DD 2E 7F 00	sigil=DD 2E 7F 00	
+MATCH	ldisym_ixu	asl=DD 26 7F 00	sigil=DD 26 7F 00	
+MATCH	ldisym_iyl	asl=FD 2E 7F 00	sigil=FD 2E 7F 00	
+MATCH	ldisym_iyu	asl=FD 26 7F 00	sigil=FD 26 7F 00	
+BOTH-REFUSE	out_ixl	asl=REFUSED	sigil=REFUSED	out_ixl.asm(3):2: error: `out` has no form that takes the index-register half `ixl` in this position (asl: addressing mode not allowed here)
+BOTH-REFUSE	out_ixu	asl=REFUSED	sigil=REFUSED	out_ixu.asm(3):2: error: `out` has no form that takes the index-register half `ixu` in this position (asl: addressing mode not allowed here)
+BOTH-REFUSE	out_iyl	asl=REFUSED	sigil=REFUSED	out_iyl.asm(3):2: error: `out` has no form that takes the index-register half `iyl` in this position (asl: addressing mode not allowed here)
+BOTH-REFUSE	out_iyu	asl=REFUSED	sigil=REFUSED	out_iyu.asm(3):2: error: `out` has no form that takes the index-register half `iyu` in this position (asl: addressing mode not allowed here)
+BOTH-REFUSE	pop_ixl	asl=REFUSED	sigil=REFUSED	pop_ixl.asm(3):2: error: `pop` has no form that takes the index-register half `ixl` in this position (asl: addressing mode not allowed here)
+BOTH-REFUSE	pop_ixu	asl=REFUSED	sigil=REFUSED	pop_ixu.asm(3):2: error: `pop` has no form that takes the index-register half `ixu` in this position (asl: addressing mode not allowed here)
+BOTH-REFUSE	pop_iyl	asl=REFUSED	sigil=REFUSED	pop_iyl.asm(3):2: error: `pop` has no form that takes the index-register half `iyl` in this position (asl: addressing mode not allowed here)
+BOTH-REFUSE	pop_iyu	asl=REFUSED	sigil=REFUSED	pop_iyu.asm(3):2: error: `pop` has no form that takes the index-register half `iyu` in this position (asl: addressing mode not allowed here)
+BOTH-REFUSE	push_ixl	asl=REFUSED	sigil=REFUSED	push_ixl.asm(3):2: error: `push` has no form that takes the index-register half `ixl` in this position (asl: addressing mode not allowed here)
+BOTH-REFUSE	push_ixu	asl=REFUSED	sigil=REFUSED	push_ixu.asm(3):2: error: `push` has no form that takes the index-register half `ixu` in this position (asl: addressing mode not allowed here)
+BOTH-REFUSE	push_iyl	asl=REFUSED	sigil=REFUSED	push_iyl.asm(3):2: error: `push` has no form that takes the index-register half `iyl` in this position (asl: addressing mode not allowed here)
+BOTH-REFUSE	push_iyu	asl=REFUSED	sigil=REFUSED	push_iyu.asm(3):2: error: `push` has no form that takes the index-register half `iyu` in this position (asl: addressing mode not allowed here)
+MATCH	sp_IXH	asl=DD 7C 00	sigil=DD 7C 00	
+MATCH	sp_IXL	asl=DD 7D 00	sigil=DD 7D 00	
+MATCH	sp_IXU	asl=DD 7C 00	sigil=DD 7C 00	
+MATCH	sp_IYH	asl=FD 7C 00	sigil=FD 7C 00	
+MATCH	sp_IYL	asl=FD 7D 00	sigil=FD 7D 00	
+MATCH	sp_IYU	asl=FD 7C 00	sigil=FD 7C 00	
+MATCH	sp_IxL	asl=DD 7D 00	sigil=DD 7D 00	
+MATCH	sp_Iyh	asl=FD 7C 00	sigil=FD 7C 00	
+BOTH-REFUSE	sp_hx	asl=REFUSED	sigil=REFUSED	sp_hx.asm(3):2: error: unresolved symbol `hx` in operand
+BOTH-REFUSE	sp_hy	asl=REFUSED	sigil=REFUSED	sp_hy.asm(3):2: error: unresolved symbol `hy` in operand
+MATCH	sp_iXu	asl=DD 7C 00	sigil=DD 7C 00	
+BOTH-REFUSE	sp_ixdoth	asl=REFUSED	sigil=REFUSED	sp_ixdoth.asm(3):2: error: unresolved symbol `ix.h` in operand
+BOTH-REFUSE	sp_ixdotl	asl=REFUSED	sigil=REFUSED	sp_ixdotl.asm(3):2: error: unresolved symbol `ix.l` in operand
+MATCH	sp_ixh	asl=DD 7C 00	sigil=DD 7C 00	
+BOTH-REFUSE	sp_ixhi	asl=REFUSED	sigil=REFUSED	sp_ixhi.asm(3):2: error: unresolved symbol `ixhi` in operand
+MATCH	sp_ixl	asl=DD 7D 00	sigil=DD 7D 00	
+BOTH-REFUSE	sp_ixlo	asl=REFUSED	sigil=REFUSED	sp_ixlo.asm(3):2: error: unresolved symbol `ixlo` in operand
+MATCH	sp_ixu	asl=DD 7C 00	sigil=DD 7C 00	
+MATCH	sp_iyh	asl=FD 7C 00	sigil=FD 7C 00	
+MATCH	sp_iyl	asl=FD 7D 00	sigil=FD 7D 00	
+MATCH	sp_iyu	asl=FD 7C 00	sigil=FD 7C 00	
+BOTH-REFUSE	sp_lx	asl=REFUSED	sigil=REFUSED	sp_lx.asm(3):2: error: unresolved symbol `lx` in operand
+BOTH-REFUSE	sp_ly	asl=REFUSED	sigil=REFUSED	sp_ly.asm(3):2: error: unresolved symbol `ly` in operand
+BOTH-REFUSE	sp_xh	asl=REFUSED	sigil=REFUSED	sp_xh.asm(3):2: error: unresolved symbol `xh` in operand
+BOTH-REFUSE	sp_xl	asl=REFUSED	sigil=REFUSED	sp_xl.asm(3):2: error: unresolved symbol `xl` in operand
+BOTH-REFUSE	sp_yh	asl=REFUSED	sigil=REFUSED	sp_yh.asm(3):2: error: unresolved symbol `yh` in operand
+BOTH-REFUSE	sp_yl	asl=REFUSED	sigil=REFUSED	sp_yl.asm(3):2: error: unresolved symbol `yl` in operand
+MATCH	spd_IXH	asl=DD 67 00	sigil=DD 67 00	
+MATCH	spd_ixh	asl=DD 67 00	sigil=DD 67 00	
+MATCH	spd_iyh	asl=FD 67 00	sigil=FD 67 00	
+MATCH	undsym_ixh	asl=DD 7C 00	sigil=DD 7C 00	
+MATCH	undsym_ixl	asl=DD 7D 00	sigil=DD 7D 00	
+MATCH	undsym_ixu	asl=DD 7C 00	sigil=DD 7C 00	
+MATCH	undsym_iyl	asl=FD 7D 00	sigil=FD 7D 00	
+MATCH	undsym_iyu	asl=FD 7C 00	sigil=FD 7C 00	

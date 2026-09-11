@@ -1,0 +1,4 @@
+pwd=/home/volence/sonic_hacks/sigil/.claude/worktrees/agent-a735fcd77afe45035 HEAD=f9505ad649c4cc5ffaab47de1412ced652dc95fc branch=parcel/z80-half-registers tracked-changes=0
+CARGO_EXIT=0
+binaries 75 passed 835 failed 0 ignored 0
+FAILED tests: none

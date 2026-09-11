@@ -1,0 +1,3960 @@
+# every probe's listing: code lines and pass footer. asl md5 61e672562465725a8c102288a7da9098
+== m1/sp_ixl ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : DD 7D               	ld a,ixl
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/sp_ixu ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : DD 7C               	ld a,ixu
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/sp_ixh ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : DD 7C               	ld a,ixh
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/sp_iyl ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : FD 7D               	ld a,iyl
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/sp_iyu ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : FD 7C               	ld a,iyu
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/sp_iyh ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : FD 7C               	ld a,iyh
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/sp_IXL ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : DD 7D               	ld a,IXL
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/sp_IXU ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : DD 7C               	ld a,IXU
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/sp_IXH ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : DD 7C               	ld a,IXH
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/sp_IYL ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : FD 7D               	ld a,IYL
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/sp_IYU ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : FD 7C               	ld a,IYU
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/sp_IYH ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : FD 7C               	ld a,IYH
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/sp_IxL ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : DD 7D               	ld a,IxL
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/sp_iXu ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : DD 7C               	ld a,iXu
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/sp_Iyh ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : FD 7C               	ld a,Iyh
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/sp_lx ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	ld a,lx
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [2 passes, 1 error, 0 warnings]
+== m1/sp_hx ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	ld a,hx
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [2 passes, 1 error, 0 warnings]
+== m1/sp_xl ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	ld a,xl
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [2 passes, 1 error, 0 warnings]
+== m1/sp_xh ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	ld a,xh
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [2 passes, 1 error, 0 warnings]
+== m1/sp_ly ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	ld a,ly
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [2 passes, 1 error, 0 warnings]
+== m1/sp_hy ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	ld a,hy
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [2 passes, 1 error, 0 warnings]
+== m1/sp_yl ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	ld a,yl
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [2 passes, 1 error, 0 warnings]
+== m1/sp_yh ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	ld a,yh
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [2 passes, 1 error, 0 warnings]
+== m1/sp_ixlo ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	ld a,ixlo
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [2 passes, 1 error, 0 warnings]
+== m1/sp_ixhi ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	ld a,ixhi
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [2 passes, 1 error, 0 warnings]
+== m1/sp_ixdotl ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	ld a,ix.l
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [2 passes, 1 error, 0 warnings]
+== m1/sp_ixdoth ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	ld a,ix.h
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [2 passes, 1 error, 0 warnings]
+== m1/spd_ixh ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : DD 67               	ld ixh,a
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/spd_iyh ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : FD 67               	ld iyh,a
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/spd_IXH ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : DD 67               	ld IXH,a
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/doc_ixl ASL_EXIT=2
+       1/       0 :                     	cpu z80
+       2/       0 :                     	org 0
+       3/       0 :                     	ld a,ixl
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [2 passes, 1 error, 0 warnings]
+== m1/docsym_ixl ASL_EXIT=0
+       1/       0 :                     	cpu z80
+       2/       0 :                     	org 0
+       3/       0 : =5H                  ixl equ 5
+       4/       0 : 3E 05               	ld a,ixl
+       5/       2 : 00                  	nop
+       6/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/undsym_ixl ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : =5H                  ixl equ 5
+       4/       0 : DD 7D               	ld a,ixl
+       5/       2 : 00                  	nop
+       6/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/doc_ixu ASL_EXIT=2
+       1/       0 :                     	cpu z80
+       2/       0 :                     	org 0
+       3/       0 :                     	ld a,ixu
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [2 passes, 1 error, 0 warnings]
+== m1/docsym_ixu ASL_EXIT=0
+       1/       0 :                     	cpu z80
+       2/       0 :                     	org 0
+       3/       0 : =5H                  ixu equ 5
+       4/       0 : 3E 05               	ld a,ixu
+       5/       2 : 00                  	nop
+       6/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/undsym_ixu ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : =5H                  ixu equ 5
+       4/       0 : DD 7C               	ld a,ixu
+       5/       2 : 00                  	nop
+       6/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/doc_iyl ASL_EXIT=2
+       1/       0 :                     	cpu z80
+       2/       0 :                     	org 0
+       3/       0 :                     	ld a,iyl
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [2 passes, 1 error, 0 warnings]
+== m1/docsym_iyl ASL_EXIT=0
+       1/       0 :                     	cpu z80
+       2/       0 :                     	org 0
+       3/       0 : =5H                  iyl equ 5
+       4/       0 : 3E 05               	ld a,iyl
+       5/       2 : 00                  	nop
+       6/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/undsym_iyl ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : =5H                  iyl equ 5
+       4/       0 : FD 7D               	ld a,iyl
+       5/       2 : 00                  	nop
+       6/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/doc_iyu ASL_EXIT=2
+       1/       0 :                     	cpu z80
+       2/       0 :                     	org 0
+       3/       0 :                     	ld a,iyu
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [2 passes, 1 error, 0 warnings]
+== m1/docsym_iyu ASL_EXIT=0
+       1/       0 :                     	cpu z80
+       2/       0 :                     	org 0
+       3/       0 : =5H                  iyu equ 5
+       4/       0 : 3E 05               	ld a,iyu
+       5/       2 : 00                  	nop
+       6/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/undsym_iyu ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : =5H                  iyu equ 5
+       4/       0 : FD 7C               	ld a,iyu
+       5/       2 : 00                  	nop
+       6/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/doc_ixh ASL_EXIT=2
+       1/       0 :                     	cpu z80
+       2/       0 :                     	org 0
+       3/       0 :                     	ld a,ixh
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [2 passes, 1 error, 0 warnings]
+== m1/docsym_ixh ASL_EXIT=0
+       1/       0 :                     	cpu z80
+       2/       0 :                     	org 0
+       3/       0 : =5H                  ixh equ 5
+       4/       0 : 3E 05               	ld a,ixh
+       5/       2 : 00                  	nop
+       6/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/undsym_ixh ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : =5H                  ixh equ 5
+       4/       0 : DD 7C               	ld a,ixh
+       5/       2 : 00                  	nop
+       6/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/ld_a_ixl ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : DD 7D               	ld a,ixl
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/ld_ixl_a ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : DD 6F               	ld ixl,a
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/ld_b_ixl ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : DD 45               	ld b,ixl
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/ld_ixl_b ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : DD 68               	ld ixl,b
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/ld_c_ixl ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : DD 4D               	ld c,ixl
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/ld_ixl_c ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : DD 69               	ld ixl,c
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/ld_d_ixl ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : DD 55               	ld d,ixl
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/ld_ixl_d ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : DD 6A               	ld ixl,d
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/ld_e_ixl ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : DD 5D               	ld e,ixl
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/ld_ixl_e ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : DD 6B               	ld ixl,e
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/ld_h_ixl ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	ld h,ixl
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/ld_ixl_h ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	ld ixl,h
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/ld_l_ixl ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	ld l,ixl
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/ld_ixl_l ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	ld ixl,l
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/ld_ixl_ixl ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : DD 6D               	ld ixl,ixl
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/ld_ixl_ixu ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : DD 6C               	ld ixl,ixu
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/ld_ixl_iyl ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	ld ixl,iyl
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/ld_ixl_iyu ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	ld ixl,iyu
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/ldi_ixl ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : DD 2E 05            	ld ixl,5
+       4/       3 : 00                  	nop
+       5/       4 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/ldineg_ixl ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : DD 2E FF            	ld ixl,-1
+       4/       3 : 00                  	nop
+       5/       4 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/ldibig_ixl ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	ld ixl,256
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/ldisym_ixl ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : =7FH                 val equ 7Fh
+       4/       0 : DD 2E 7F            	ld ixl,val
+       5/       3 : 00                  	nop
+       6/       4 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/ldifwd_ixl ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : DD 2E 12            	ld ixl,fwd
+       4/       3 : =12H                 fwd equ 12h
+       5/       3 : 00                  	nop
+       6/       4 :                     	end
+  [2 passes, 0 errors, 0 warnings]
+== m1/ld_ixl_indhl ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	ld ixl,(hl)
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/ld_indhl_ixl ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	ld (hl),ixl
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/ld_ixl_indix ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	ld ixl,(ix+1)
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/ld_indix_ixl ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	ld (ix+1),ixl
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/ld_ixl_indiy ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	ld ixl,(iy+1)
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/ld_indiy_ixl ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	ld (iy+1),ixl
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/ld_ixl_mem ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	ld ixl,(1234h)
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/ld_mem_ixl ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	ld (1234h),ixl
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/ld_ixl_i ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	ld ixl,i
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/ld_i_ixl ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	ld i,ixl
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/alu2_add_ixl ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : DD 85               	add a,ixl
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/alu1_add_ixl ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	add ixl
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/alu2_adc_ixl ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : DD 8D               	adc a,ixl
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/alu1_adc_ixl ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	adc ixl
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/alu2_sub_ixl ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : DD 95               	sub a,ixl
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/alu1_sub_ixl ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : DD 95               	sub ixl
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/alu2_sbc_ixl ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : DD 9D               	sbc a,ixl
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/alu1_sbc_ixl ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	sbc ixl
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/alu2_and_ixl ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : DD A5               	and a,ixl
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/alu1_and_ixl ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : DD A5               	and ixl
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/alu2_xor_ixl ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : DD AD               	xor a,ixl
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/alu1_xor_ixl ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : DD AD               	xor ixl
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/alu2_or_ixl ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : DD B5               	or a,ixl
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/alu1_or_ixl ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : DD B5               	or ixl
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/alu2_cp_ixl ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : DD BD               	cp a,ixl
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/alu1_cp_ixl ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : DD BD               	cp ixl
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/alud_add_ixl_a ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	add ixl,a
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/alud_add_b_ixl ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	add b,ixl
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/alu_add_hl_ixl ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	add hl,ixl
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/inc_ixl ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : DD 2C               	inc ixl
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/dec_ixl ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : DD 2D               	dec ixl
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/cb_rlc_ixl ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	rlc ixl
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/cb_rrc_ixl ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	rrc ixl
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/cb_rl_ixl ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	rl ixl
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/cb_rr_ixl ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	rr ixl
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/cb_sla_ixl ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	sla ixl
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/cb_sra_ixl ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	sra ixl
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/cb_srl_ixl ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	srl ixl
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/cb_sll_ixl ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	sll ixl
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/cbb_bit_ixl ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	bit 0,ixl
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/cbb_res_ixl ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	res 0,ixl
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/cbb_set_ixl ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	set 0,ixl
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/push_ixl ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	push ixl
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/pop_ixl ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	pop ixl
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/in_ixl ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	in ixl,(c)
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/out_ixl ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	out (c),ixl
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/jp_ixl ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	jp (ixl)
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [2 passes, 1 error, 0 warnings]
+== m1/ex_ixl ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	ex de,ixl
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/ld_a_ixu ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : DD 7C               	ld a,ixu
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/ld_ixu_a ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : DD 67               	ld ixu,a
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/ld_b_ixu ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : DD 44               	ld b,ixu
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/ld_ixu_b ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : DD 60               	ld ixu,b
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/ld_c_ixu ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : DD 4C               	ld c,ixu
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/ld_ixu_c ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : DD 61               	ld ixu,c
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/ld_d_ixu ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : DD 54               	ld d,ixu
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/ld_ixu_d ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : DD 62               	ld ixu,d
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/ld_e_ixu ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : DD 5C               	ld e,ixu
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/ld_ixu_e ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : DD 63               	ld ixu,e
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/ld_h_ixu ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	ld h,ixu
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/ld_ixu_h ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	ld ixu,h
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/ld_l_ixu ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	ld l,ixu
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/ld_ixu_l ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	ld ixu,l
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/ld_ixu_ixl ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : DD 65               	ld ixu,ixl
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/ld_ixu_ixu ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : DD 64               	ld ixu,ixu
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/ld_ixu_iyl ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	ld ixu,iyl
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/ld_ixu_iyu ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	ld ixu,iyu
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/ldi_ixu ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : DD 26 05            	ld ixu,5
+       4/       3 : 00                  	nop
+       5/       4 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/ldineg_ixu ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : DD 26 FF            	ld ixu,-1
+       4/       3 : 00                  	nop
+       5/       4 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/ldibig_ixu ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	ld ixu,256
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/ldisym_ixu ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : =7FH                 val equ 7Fh
+       4/       0 : DD 26 7F            	ld ixu,val
+       5/       3 : 00                  	nop
+       6/       4 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/ldifwd_ixu ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : DD 26 12            	ld ixu,fwd
+       4/       3 : =12H                 fwd equ 12h
+       5/       3 : 00                  	nop
+       6/       4 :                     	end
+  [2 passes, 0 errors, 0 warnings]
+== m1/ld_ixu_indhl ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	ld ixu,(hl)
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/ld_indhl_ixu ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	ld (hl),ixu
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/ld_ixu_indix ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	ld ixu,(ix+1)
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/ld_indix_ixu ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	ld (ix+1),ixu
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/ld_ixu_indiy ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	ld ixu,(iy+1)
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/ld_indiy_ixu ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	ld (iy+1),ixu
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/ld_ixu_mem ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	ld ixu,(1234h)
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/ld_mem_ixu ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	ld (1234h),ixu
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/ld_ixu_i ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	ld ixu,i
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/ld_i_ixu ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	ld i,ixu
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/alu2_add_ixu ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : DD 84               	add a,ixu
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/alu1_add_ixu ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	add ixu
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/alu2_adc_ixu ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : DD 8C               	adc a,ixu
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/alu1_adc_ixu ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	adc ixu
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/alu2_sub_ixu ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : DD 94               	sub a,ixu
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/alu1_sub_ixu ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : DD 94               	sub ixu
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/alu2_sbc_ixu ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : DD 9C               	sbc a,ixu
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/alu1_sbc_ixu ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	sbc ixu
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/alu2_and_ixu ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : DD A4               	and a,ixu
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/alu1_and_ixu ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : DD A4               	and ixu
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/alu2_xor_ixu ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : DD AC               	xor a,ixu
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/alu1_xor_ixu ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : DD AC               	xor ixu
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/alu2_or_ixu ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : DD B4               	or a,ixu
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/alu1_or_ixu ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : DD B4               	or ixu
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/alu2_cp_ixu ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : DD BC               	cp a,ixu
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/alu1_cp_ixu ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : DD BC               	cp ixu
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/alud_add_ixu_a ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	add ixu,a
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/alud_add_b_ixu ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	add b,ixu
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/alu_add_hl_ixu ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	add hl,ixu
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/inc_ixu ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : DD 24               	inc ixu
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/dec_ixu ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : DD 25               	dec ixu
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/cb_rlc_ixu ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	rlc ixu
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/cb_rrc_ixu ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	rrc ixu
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/cb_rl_ixu ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	rl ixu
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/cb_rr_ixu ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	rr ixu
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/cb_sla_ixu ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	sla ixu
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/cb_sra_ixu ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	sra ixu
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/cb_srl_ixu ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	srl ixu
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/cb_sll_ixu ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	sll ixu
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/cbb_bit_ixu ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	bit 0,ixu
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/cbb_res_ixu ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	res 0,ixu
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/cbb_set_ixu ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	set 0,ixu
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/push_ixu ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	push ixu
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/pop_ixu ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	pop ixu
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/in_ixu ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	in ixu,(c)
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/out_ixu ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	out (c),ixu
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/jp_ixu ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	jp (ixu)
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [2 passes, 1 error, 0 warnings]
+== m1/ex_ixu ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	ex de,ixu
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/ld_a_iyl ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : FD 7D               	ld a,iyl
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/ld_iyl_a ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : FD 6F               	ld iyl,a
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/ld_b_iyl ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : FD 45               	ld b,iyl
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/ld_iyl_b ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : FD 68               	ld iyl,b
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/ld_c_iyl ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : FD 4D               	ld c,iyl
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/ld_iyl_c ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : FD 69               	ld iyl,c
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/ld_d_iyl ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : FD 55               	ld d,iyl
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/ld_iyl_d ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : FD 6A               	ld iyl,d
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/ld_e_iyl ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : FD 5D               	ld e,iyl
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/ld_iyl_e ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : FD 6B               	ld iyl,e
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/ld_h_iyl ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	ld h,iyl
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/ld_iyl_h ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	ld iyl,h
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/ld_l_iyl ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	ld l,iyl
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/ld_iyl_l ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	ld iyl,l
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/ld_iyl_ixl ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	ld iyl,ixl
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/ld_iyl_ixu ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	ld iyl,ixu
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/ld_iyl_iyl ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : FD 6D               	ld iyl,iyl
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/ld_iyl_iyu ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : FD 6C               	ld iyl,iyu
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/ldi_iyl ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : FD 2E 05            	ld iyl,5
+       4/       3 : 00                  	nop
+       5/       4 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/ldineg_iyl ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : FD 2E FF            	ld iyl,-1
+       4/       3 : 00                  	nop
+       5/       4 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/ldibig_iyl ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	ld iyl,256
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/ldisym_iyl ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : =7FH                 val equ 7Fh
+       4/       0 : FD 2E 7F            	ld iyl,val
+       5/       3 : 00                  	nop
+       6/       4 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/ldifwd_iyl ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : FD 2E 12            	ld iyl,fwd
+       4/       3 : =12H                 fwd equ 12h
+       5/       3 : 00                  	nop
+       6/       4 :                     	end
+  [2 passes, 0 errors, 0 warnings]
+== m1/ld_iyl_indhl ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	ld iyl,(hl)
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/ld_indhl_iyl ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	ld (hl),iyl
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/ld_iyl_indix ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	ld iyl,(ix+1)
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/ld_indix_iyl ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	ld (ix+1),iyl
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/ld_iyl_indiy ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	ld iyl,(iy+1)
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/ld_indiy_iyl ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	ld (iy+1),iyl
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/ld_iyl_mem ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	ld iyl,(1234h)
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/ld_mem_iyl ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	ld (1234h),iyl
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/ld_iyl_i ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	ld iyl,i
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/ld_i_iyl ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	ld i,iyl
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/alu2_add_iyl ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : FD 85               	add a,iyl
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/alu1_add_iyl ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	add iyl
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/alu2_adc_iyl ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : FD 8D               	adc a,iyl
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/alu1_adc_iyl ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	adc iyl
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/alu2_sub_iyl ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : FD 95               	sub a,iyl
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/alu1_sub_iyl ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : FD 95               	sub iyl
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/alu2_sbc_iyl ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : FD 9D               	sbc a,iyl
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/alu1_sbc_iyl ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	sbc iyl
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/alu2_and_iyl ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : FD A5               	and a,iyl
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/alu1_and_iyl ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : FD A5               	and iyl
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/alu2_xor_iyl ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : FD AD               	xor a,iyl
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/alu1_xor_iyl ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : FD AD               	xor iyl
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/alu2_or_iyl ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : FD B5               	or a,iyl
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/alu1_or_iyl ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : FD B5               	or iyl
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/alu2_cp_iyl ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : FD BD               	cp a,iyl
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/alu1_cp_iyl ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : FD BD               	cp iyl
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/alud_add_iyl_a ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	add iyl,a
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/alud_add_b_iyl ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	add b,iyl
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/alu_add_hl_iyl ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	add hl,iyl
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/inc_iyl ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : FD 2C               	inc iyl
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/dec_iyl ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : FD 2D               	dec iyl
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/cb_rlc_iyl ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	rlc iyl
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/cb_rrc_iyl ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	rrc iyl
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/cb_rl_iyl ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	rl iyl
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/cb_rr_iyl ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	rr iyl
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/cb_sla_iyl ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	sla iyl
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/cb_sra_iyl ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	sra iyl
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/cb_srl_iyl ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	srl iyl
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/cb_sll_iyl ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	sll iyl
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/cbb_bit_iyl ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	bit 0,iyl
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/cbb_res_iyl ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	res 0,iyl
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/cbb_set_iyl ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	set 0,iyl
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/push_iyl ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	push iyl
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/pop_iyl ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	pop iyl
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/in_iyl ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	in iyl,(c)
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/out_iyl ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	out (c),iyl
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/jp_iyl ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	jp (iyl)
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [2 passes, 1 error, 0 warnings]
+== m1/ex_iyl ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	ex de,iyl
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/ld_a_iyu ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : FD 7C               	ld a,iyu
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/ld_iyu_a ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : FD 67               	ld iyu,a
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/ld_b_iyu ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : FD 44               	ld b,iyu
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/ld_iyu_b ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : FD 60               	ld iyu,b
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/ld_c_iyu ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : FD 4C               	ld c,iyu
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/ld_iyu_c ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : FD 61               	ld iyu,c
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/ld_d_iyu ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : FD 54               	ld d,iyu
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/ld_iyu_d ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : FD 62               	ld iyu,d
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/ld_e_iyu ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : FD 5C               	ld e,iyu
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/ld_iyu_e ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : FD 63               	ld iyu,e
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/ld_h_iyu ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	ld h,iyu
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/ld_iyu_h ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	ld iyu,h
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/ld_l_iyu ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	ld l,iyu
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/ld_iyu_l ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	ld iyu,l
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/ld_iyu_ixl ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	ld iyu,ixl
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/ld_iyu_ixu ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	ld iyu,ixu
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/ld_iyu_iyl ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : FD 65               	ld iyu,iyl
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/ld_iyu_iyu ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : FD 64               	ld iyu,iyu
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/ldi_iyu ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : FD 26 05            	ld iyu,5
+       4/       3 : 00                  	nop
+       5/       4 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/ldineg_iyu ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : FD 26 FF            	ld iyu,-1
+       4/       3 : 00                  	nop
+       5/       4 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/ldibig_iyu ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	ld iyu,256
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/ldisym_iyu ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : =7FH                 val equ 7Fh
+       4/       0 : FD 26 7F            	ld iyu,val
+       5/       3 : 00                  	nop
+       6/       4 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/ldifwd_iyu ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : FD 26 12            	ld iyu,fwd
+       4/       3 : =12H                 fwd equ 12h
+       5/       3 : 00                  	nop
+       6/       4 :                     	end
+  [2 passes, 0 errors, 0 warnings]
+== m1/ld_iyu_indhl ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	ld iyu,(hl)
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/ld_indhl_iyu ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	ld (hl),iyu
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/ld_iyu_indix ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	ld iyu,(ix+1)
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/ld_indix_iyu ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	ld (ix+1),iyu
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/ld_iyu_indiy ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	ld iyu,(iy+1)
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/ld_indiy_iyu ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	ld (iy+1),iyu
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/ld_iyu_mem ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	ld iyu,(1234h)
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/ld_mem_iyu ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	ld (1234h),iyu
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/ld_iyu_i ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	ld iyu,i
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/ld_i_iyu ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	ld i,iyu
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/alu2_add_iyu ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : FD 84               	add a,iyu
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/alu1_add_iyu ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	add iyu
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/alu2_adc_iyu ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : FD 8C               	adc a,iyu
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/alu1_adc_iyu ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	adc iyu
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/alu2_sub_iyu ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : FD 94               	sub a,iyu
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/alu1_sub_iyu ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : FD 94               	sub iyu
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/alu2_sbc_iyu ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : FD 9C               	sbc a,iyu
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/alu1_sbc_iyu ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	sbc iyu
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/alu2_and_iyu ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : FD A4               	and a,iyu
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/alu1_and_iyu ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : FD A4               	and iyu
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/alu2_xor_iyu ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : FD AC               	xor a,iyu
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/alu1_xor_iyu ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : FD AC               	xor iyu
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/alu2_or_iyu ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : FD B4               	or a,iyu
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/alu1_or_iyu ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : FD B4               	or iyu
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/alu2_cp_iyu ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : FD BC               	cp a,iyu
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/alu1_cp_iyu ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : FD BC               	cp iyu
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/alud_add_iyu_a ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	add iyu,a
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/alud_add_b_iyu ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	add b,iyu
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/alu_add_hl_iyu ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	add hl,iyu
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/inc_iyu ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : FD 24               	inc iyu
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/dec_iyu ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : FD 25               	dec iyu
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/cb_rlc_iyu ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	rlc iyu
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/cb_rrc_iyu ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	rrc iyu
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/cb_rl_iyu ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	rl iyu
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/cb_rr_iyu ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	rr iyu
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/cb_sla_iyu ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	sla iyu
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/cb_sra_iyu ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	sra iyu
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/cb_srl_iyu ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	srl iyu
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/cb_sll_iyu ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	sll iyu
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/cbb_bit_iyu ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	bit 0,iyu
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/cbb_res_iyu ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	res 0,iyu
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/cbb_set_iyu ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	set 0,iyu
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/push_iyu ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	push iyu
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/pop_iyu ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	pop iyu
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/in_iyu ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	in iyu,(c)
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/out_iyu ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	out (c),iyu
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/jp_iyu ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	jp (iyu)
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [2 passes, 1 error, 0 warnings]
+== m1/ex_iyu ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	ex de,iyu
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m1/ctl_ld_a_l ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : 7D                  	ld a,l
+       4/       1 : 00                  	nop
+       5/       2 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/ctl_ld_a_h ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : 7C                  	ld a,h
+       4/       1 : 00                  	nop
+       5/       2 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/ctl_ld_l_a ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : 6F                  	ld l,a
+       4/       1 : 00                  	nop
+       5/       2 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/ctl_ld_h_l ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : 65                  	ld h,l
+       4/       1 : 00                  	nop
+       5/       2 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/ctl_ld_l_5 ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : 2E 05               	ld l,5
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/ctl_add_a_l ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : 85                  	add a,l
+       4/       1 : 00                  	nop
+       5/       2 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/ctl_inc_l ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : 2C                  	inc l
+       4/       1 : 00                  	nop
+       5/       2 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/ctl_dec_h ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : 25                  	dec h
+       4/       1 : 00                  	nop
+       5/       2 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/ctl_ld_a_ix_1_ ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : DD 7E 01            	ld a,(ix+1)
+       4/       3 : 00                  	nop
+       5/       4 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/ctl_sll_a ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : CB 37               	sll a
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m1/ctl_sll_b ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : CB 30               	sll b
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m2/expr_ixl ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : =5H                  ixl equ 5
+       4/       0 : 3E 06               	ld a,ixl+1
+       5/       2 : 00                  	nop
+       6/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m2/exprl_ixl ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : =5H                  ixl equ 5
+       4/       0 : 3E 06               	ld a,1+ixl
+       5/       2 : 00                  	nop
+       6/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m2/paren_ixl ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : =1234H               ixl equ 1234h
+       4/       0 : 3A 34 12            	ld a,(ixl)
+       5/       3 : 00                  	nop
+       6/       4 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m2/pareni_ixl ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : =5H                  ixl equ 5
+       4/       0 : 3E 06               	ld a,(ixl)+1
+       5/       2 : 00                  	nop
+       6/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m2/db_ixl ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : =5H                  ixl equ 5
+       4/       0 : 05                  	db ixl
+       5/       1 : 00                  	nop
+       6/       2 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m2/dbnosym_ixl ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	db ixl
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [2 passes, 1 error, 0 warnings]
+== m2/jp_ixl ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : =1234H               ixl equ 1234h
+       4/       0 : C3 34 12            	jp ixl
+       5/       3 : 00                  	nop
+       6/       4 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m2/ldimm_ixl ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : =5H                  ixl equ 5
+       4/       0 : DD 45               	ld b,ixl
+       5/       2 : 00                  	nop
+       6/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m2/label_ixl ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : 00                  	ixl: nop
+       4/       1 : DD 7D               	ld a,ixl
+       5/       3 : 00                  	nop
+       6/       4 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m2/plus_ixl ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	ld a,+ixl
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m2/neg_ixl ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	ld a,-ixl
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [2 passes, 1 error, 0 warnings]
+== m2/expr_iyu ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : =5H                  iyu equ 5
+       4/       0 : 3E 06               	ld a,iyu+1
+       5/       2 : 00                  	nop
+       6/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m2/exprl_iyu ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : =5H                  iyu equ 5
+       4/       0 : 3E 06               	ld a,1+iyu
+       5/       2 : 00                  	nop
+       6/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m2/paren_iyu ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : =1234H               iyu equ 1234h
+       4/       0 : 3A 34 12            	ld a,(iyu)
+       5/       3 : 00                  	nop
+       6/       4 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m2/pareni_iyu ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : =5H                  iyu equ 5
+       4/       0 : 3E 06               	ld a,(iyu)+1
+       5/       2 : 00                  	nop
+       6/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m2/db_iyu ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : =5H                  iyu equ 5
+       4/       0 : 05                  	db iyu
+       5/       1 : 00                  	nop
+       6/       2 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m2/dbnosym_iyu ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	db iyu
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [2 passes, 1 error, 0 warnings]
+== m2/jp_iyu ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : =1234H               iyu equ 1234h
+       4/       0 : C3 34 12            	jp iyu
+       5/       3 : 00                  	nop
+       6/       4 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m2/ldimm_iyu ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : =5H                  iyu equ 5
+       4/       0 : FD 44               	ld b,iyu
+       5/       2 : 00                  	nop
+       6/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m2/label_iyu ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : 00                  	iyu: nop
+       4/       1 : FD 7C               	ld a,iyu
+       5/       3 : 00                  	nop
+       6/       4 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m2/plus_iyu ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	ld a,+iyu
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m2/neg_iyu ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	ld a,-iyu
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [2 passes, 1 error, 0 warnings]
+== m2/mode_save_z80_restore ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	save
+       4/       0 :                     	cpu z80
+       5/       0 : ALL                  	restore
+       6/       0 : DD 7D               	ld a,ixl
+       7/       2 : 00                  	nop
+       8/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m2/mode_save_68k_restore ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	save
+       4/       0 :                     	cpu 68000
+       5/       0 : ALL                  	restore
+       6/       0 : DD 7D               	ld a,ixl
+       7/       2 : 00                  	nop
+       8/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m2/mode_z80_then_undoc ASL_EXIT=0
+       1/       0 :                     	cpu z80
+       2/       0 :                     	org 0
+       3/       0 :                     	cpu z80undoc
+       4/       0 : DD 7D               	ld a,ixl
+       5/       2 : 00                  	nop
+       6/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m2/mode_undoc_then_z80 ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	cpu z80
+       4/       0 :                     	ld a,ixl
+       5/       0 : 00                  	nop
+       6/       1 :                     	end
+  [2 passes, 1 error, 0 warnings]
+== m2/mode_undoc_then_z80_sym ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : =5H                  ixl equ 5
+       4/       0 :                     	cpu z80
+       5/       0 : 3E 05               	ld a,ixl
+       6/       2 : 00                  	nop
+       7/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m2/mode_68k_save_undoc ASL_EXIT=2
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	org 0
+       3/       0 :                     	save
+       4/       0 :                     	cpu z80undoc
+       5/       0 : DD 7D               	ld a,ixl
+       6/       2 : 00                  	nop
+       7/       3 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m2/mode_z80_save_undoc_restore ASL_EXIT=0
+       1/       0 :                     	cpu z80
+       2/       0 :                     	org 0
+       3/       0 : =5H                  ixl equ 5
+       4/       0 :                     	save
+       5/       0 :                     	cpu z80undoc
+       6/       0 : ALL                  	restore
+       7/       0 : 3E 05               	ld a,ixl
+       8/       2 : 00                  	nop
+       9/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m2/mode_undoc_upper ASL_EXIT=0
+       1/       0 :                     	cpu Z80UNDOC
+       2/       0 :                     	org 0
+       3/       0 : DD 7D               	ld a,ixl
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m2/mode_undoc_mixed ASL_EXIT=0
+       1/       0 :                     	cpu Z80UnDoc
+       2/       0 :                     	org 0
+       3/       0 : DD 7D               	ld a,ixl
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m2/momcpu_z80 ASL_EXIT=0
+       1/       0 :                     	cpu z80
+       2/       0 :                     	org 0
+       3/       0 : 80 00               	dw MOMCPU
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m2/momcpuname_z80 ASL_EXIT=0
+       1/       0 :                     	cpu z80
+       2/       0 :                     	org 0
+       3/       0 : =>FALSE              	if MOMCPUNAME="Z80UNDOC"
+       4/       0 :                     	db 1
+       5/       0 : =>TRUE               	else
+       6/       0 : 02                  	db 2
+       7/       1 : [3]                  	endif
+       8/       1 : 00                  	nop
+       9/       2 : 00                  	nop
+      10/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m2/momcpunamez_z80 ASL_EXIT=0
+       1/       0 :                     	cpu z80
+       2/       0 :                     	org 0
+       3/       0 : =>TRUE               	if MOMCPUNAME="Z80"
+       4/       0 : 01                  	db 1
+       5/       1 : =>FALSE              	else
+       6/       1 :                     	db 2
+       7/       1 : [3]                  	endif
+       8/       1 : 00                  	nop
+       9/       2 : 00                  	nop
+      10/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m2/momcpu_z80undoc ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : DC 80               	dw MOMCPU
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m2/momcpuname_z80undoc ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : =>TRUE               	if MOMCPUNAME="Z80UNDOC"
+       4/       0 : 01                  	db 1
+       5/       1 : =>FALSE              	else
+       6/       1 :                     	db 2
+       7/       1 : [3]                  	endif
+       8/       1 : 00                  	nop
+       9/       2 : 00                  	nop
+      10/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m2/momcpunamez_z80undoc ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : =>FALSE              	if MOMCPUNAME="Z80"
+       4/       0 :                     	db 1
+       5/       0 : =>TRUE               	else
+       6/       0 : 02                  	db 2
+       7/       1 : [3]                  	endif
+       8/       1 : 00                  	nop
+       9/       2 : 00                  	nop
+      10/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m2/momcpu_Z80UNDOCu ASL_EXIT=0
+       1/       0 :                     	cpu Z80UNDOC
+       2/       0 :                     	org 0
+       3/       0 : DC 80               	dw MOMCPU
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m2/momcpuname_Z80UNDOCu ASL_EXIT=0
+       1/       0 :                     	cpu Z80UNDOC
+       2/       0 :                     	org 0
+       3/       0 : =>TRUE               	if MOMCPUNAME="Z80UNDOC"
+       4/       0 : 01                  	db 1
+       5/       1 : =>FALSE              	else
+       6/       1 :                     	db 2
+       7/       1 : [3]                  	endif
+       8/       1 : 00                  	nop
+       9/       2 : 00                  	nop
+      10/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m2/momcpunamez_Z80UNDOCu ASL_EXIT=0
+       1/       0 :                     	cpu Z80UNDOC
+       2/       0 :                     	org 0
+       3/       0 : =>FALSE              	if MOMCPUNAME="Z80"
+       4/       0 :                     	db 1
+       5/       0 : =>TRUE               	else
+       6/       0 : 02                  	db 2
+       7/       1 : [3]                  	endif
+       8/       1 : 00                  	nop
+       9/       2 : 00                  	nop
+      10/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m2/alu1r_add ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	add b
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m2/alu1r_add_z80 ASL_EXIT=2
+       1/       0 :                     	cpu z80
+       2/       0 :                     	org 0
+       3/       0 :                     	add b
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m2/alu1i_add ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	add 5
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m2/alu2b_add_ixl ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	add b,ixl
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m2/alu1r_adc ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	adc b
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m2/alu1r_adc_z80 ASL_EXIT=2
+       1/       0 :                     	cpu z80
+       2/       0 :                     	org 0
+       3/       0 :                     	adc b
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m2/alu1i_adc ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	adc 5
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m2/alu2b_adc_ixl ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	adc b,ixl
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m2/alu1r_sub ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : 90                  	sub b
+       4/       1 : 00                  	nop
+       5/       2 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m2/alu1r_sub_z80 ASL_EXIT=0
+       1/       0 :                     	cpu z80
+       2/       0 :                     	org 0
+       3/       0 : 90                  	sub b
+       4/       1 : 00                  	nop
+       5/       2 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m2/alu1i_sub ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : D6 05               	sub 5
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m2/alu2b_sub_ixl ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	sub b,ixl
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m2/alu1r_sbc ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	sbc b
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m2/alu1r_sbc_z80 ASL_EXIT=2
+       1/       0 :                     	cpu z80
+       2/       0 :                     	org 0
+       3/       0 :                     	sbc b
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m2/alu1i_sbc ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	sbc 5
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m2/alu2b_sbc_ixl ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	sbc b,ixl
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m2/alu1r_and ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : A0                  	and b
+       4/       1 : 00                  	nop
+       5/       2 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m2/alu1r_and_z80 ASL_EXIT=0
+       1/       0 :                     	cpu z80
+       2/       0 :                     	org 0
+       3/       0 : A0                  	and b
+       4/       1 : 00                  	nop
+       5/       2 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m2/alu1i_and ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : E6 05               	and 5
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m2/alu2b_and_ixl ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	and b,ixl
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m2/alu1r_xor ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : A8                  	xor b
+       4/       1 : 00                  	nop
+       5/       2 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m2/alu1r_xor_z80 ASL_EXIT=0
+       1/       0 :                     	cpu z80
+       2/       0 :                     	org 0
+       3/       0 : A8                  	xor b
+       4/       1 : 00                  	nop
+       5/       2 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m2/alu1i_xor ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : EE 05               	xor 5
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m2/alu2b_xor_ixl ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	xor b,ixl
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m2/alu1r_or ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : B0                  	or b
+       4/       1 : 00                  	nop
+       5/       2 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m2/alu1r_or_z80 ASL_EXIT=0
+       1/       0 :                     	cpu z80
+       2/       0 :                     	org 0
+       3/       0 : B0                  	or b
+       4/       1 : 00                  	nop
+       5/       2 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m2/alu1i_or ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : F6 05               	or 5
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m2/alu2b_or_ixl ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	or b,ixl
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m2/alu1r_cp ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : B8                  	cp b
+       4/       1 : 00                  	nop
+       5/       2 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m2/alu1r_cp_z80 ASL_EXIT=0
+       1/       0 :                     	cpu z80
+       2/       0 :                     	org 0
+       3/       0 : B8                  	cp b
+       4/       1 : 00                  	nop
+       5/       2 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m2/alu1i_cp ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : FE 05               	cp 5
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m2/alu2b_cp_ixl ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	cp b,ixl
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m2/rng_ixl__128 ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : DD 2E 80            	ld ixl,-128
+       4/       3 : 00                  	nop
+       5/       4 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m2/rng_ixl__129 ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	ld ixl,-129
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m2/rng_ixl_255 ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : DD 2E FF            	ld ixl,255
+       4/       3 : 00                  	nop
+       5/       4 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m2/rng_ixl_0FFh ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : DD 2E FF            	ld ixl,0FFh
+       4/       3 : 00                  	nop
+       5/       4 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m2/rng_ixl__A_ ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : DD 2E 41            	ld ixl,'A'
+       4/       3 : 00                  	nop
+       5/       4 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m2/rng_l__128 ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : 2E 80               	ld l,-128
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m2/rng_l__129 ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	ld l,-129
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m2/rng_l_255 ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : 2E FF               	ld l,255
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m2/rng_l_0FFh ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : 2E FF               	ld l,0FFh
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m2/rng_l__A_ ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : 2E 41               	ld l,'A'
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m2/mix_ld_hl_ixl ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	ld hl,ixl
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m2/mix_ld_ixl_hl ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	ld ixl,hl
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m2/mix_ld_ix_ixl ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	ld ix,ixl
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m2/mix_ld_ixl_ix ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	ld ixl,ix
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m2/mix_ld_bc_ixl ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	ld bc,ixl
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m2/mix_ld_sp_ixl ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	ld sp,ixl
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m2/mix_ld_ixl_r ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	ld ixl,r
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m2/mix_ld_r_ixl ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	ld r,ixl
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m2/mix_ld_ixl_af ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	ld ixl,af
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [2 passes, 1 error, 0 warnings]
+== m2/mix_ld_ixl_c_ ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	ld ixl,(c)
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m2/mix_ld_ixl_nz ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	ld ixl,nz
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [2 passes, 1 error, 0 warnings]
+== m2/mix_ld_ixl_a ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	ld (ixl),a
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [2 passes, 1 error, 0 warnings]
+== m2/mix_ld_a_ixl_ ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	ld a,(ixl)
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [2 passes, 1 error, 0 warnings]
+== m2/mix_ld_ixl ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	ld ixl
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m2/mix_ld_ixl_a_b ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	ld ixl,a,b
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m2/mix_inc_ixl_a ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	inc ixl,a
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m2/mix_cp_ixl_a ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	cp ixl,a
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m2/mix_ld_iyh_iyl ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : FD 65               	ld iyh,iyl
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m2/mix_ld_ixh_ixu ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : DD 64               	ld ixh,ixu
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m2/mix_ld_ixl_iyh ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	ld ixl,iyh
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m2/mix_LD_A_IXL ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : DD 7D               	LD A,IXL
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m2/mix_ld_A_ixl ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : DD 7D               	ld A,ixl
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m2/mix_ld_ixl_A ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : DD 6F               	ld ixl,A
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m2/mix_ld_IXU_B ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : DD 60               	ld IXU,B
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m2/mix_ld_ixl_H ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	ld ixl,H
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m2/mix_ld_L_ixu ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	ld L,ixu
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m3/sym_ldhl_ixl ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : =5H                  ixl equ 5
+       4/       0 :                     	ld hl,ixl
+       5/       0 : 00                  	nop
+       6/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m3/sym_ldbc_ixl ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : =5H                  ixl equ 5
+       4/       0 :                     	ld bc,ixl
+       5/       0 : 00                  	nop
+       6/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m3/sym_ldix_ixl ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : =5H                  ixl equ 5
+       4/       0 :                     	ld ix,ixl
+       5/       0 : 00                  	nop
+       6/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m3/sym_ldsp_ixl ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : =5H                  ixl equ 5
+       4/       0 :                     	ld sp,ixl
+       5/       0 : 00                  	nop
+       6/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m3/sym_ldindhl_ixl ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : =5H                  ixl equ 5
+       4/       0 :                     	ld (hl),ixl
+       5/       0 : 00                  	nop
+       6/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m3/sym_ldindix_ixl ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : =5H                  ixl equ 5
+       4/       0 :                     	ld (ix+1),ixl
+       5/       0 : 00                  	nop
+       6/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m3/sym_ldmem_ixl ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : =5H                  ixl equ 5
+       4/       0 :                     	ld (1234h),ixl
+       5/       0 : 00                  	nop
+       6/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m3/sym_ldmemd_ixl ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : =5H                  ixl equ 5
+       4/       0 :                     	ld ixl,(1234h)
+       5/       0 : 00                  	nop
+       6/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m3/sym_ldhlmem_ixl ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : =5H                  ixl equ 5
+       4/       0 : 2A 05 00            	ld hl,(ixl)
+       5/       3 : 00                  	nop
+       6/       4 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m3/sym_ldixd_ixl ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : =5H                  ixl equ 5
+       4/       0 : DD 7E 05            	ld a,(ix+ixl)
+       5/       3 : 00                  	nop
+       6/       4 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m3/sym_ldixd2_ixl ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : =5H                  ixl equ 5
+       4/       0 :                     	ld (ixl+ix),a
+       5/       0 : 00                  	nop
+       6/       1 :                     	end
+  [2 passes, 1 error, 0 warnings]
+== m3/sym_ldhexpr_ixl ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : =5H                  ixl equ 5
+       4/       0 : DD 2E 06            	ld ixl,ixl+1
+       5/       3 : 00                  	nop
+       6/       4 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m3/sym_ldhparen_ixl ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : =5H                  ixl equ 5
+       4/       0 :                     	ld ixl,(ixl)
+       5/       0 : 00                  	nop
+       6/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m3/sym_addhl_ixl ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : =5H                  ixl equ 5
+       4/       0 :                     	add hl,ixl
+       5/       0 : 00                  	nop
+       6/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m3/sym_adda_ixl ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : =5H                  ixl equ 5
+       4/       0 : DD 85               	add a,ixl
+       5/       2 : 00                  	nop
+       6/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m3/sym_sub1_ixl ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : =5H                  ixl equ 5
+       4/       0 : DD 95               	sub ixl
+       5/       2 : 00                  	nop
+       6/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m3/sym_inc_ixl ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : =5H                  ixl equ 5
+       4/       0 : DD 2C               	inc ixl
+       5/       2 : 00                  	nop
+       6/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m3/sym_ldh5_ixl ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : =5H                  ixl equ 5
+       4/       0 : DD 2E 05            	ld ixl,5
+       5/       3 : 00                  	nop
+       6/       4 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m3/sym_push_ixl ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : =5H                  ixl equ 5
+       4/       0 :                     	push ixl
+       5/       0 : 00                  	nop
+       6/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m3/sym_bit_ixl ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : =5H                  ixl equ 5
+       4/       0 : CB 68               	bit ixl,b
+       5/       2 : 00                  	nop
+       6/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m3/sym_res_ixl ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : =5H                  ixl equ 5
+       4/       0 : CB A8               	res ixl,b
+       5/       2 : 00                  	nop
+       6/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m3/sym_set_ixl ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : =5H                  ixl equ 5
+       4/       0 : CB EE               	set ixl,(hl)
+       5/       2 : 00                  	nop
+       6/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m3/sym_im_ixl ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : =5H                  ixl equ 5
+       4/       0 :                     	im ixl
+       5/       0 : 00                  	nop
+       6/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m3/sym_rst_ixl ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : =5H                  ixl equ 5
+       4/       0 :                     	rst ixl
+       5/       0 : 00                  	nop
+       6/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m3/sym_call_ixl ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : =5H                  ixl equ 5
+       4/       0 : CD 05 00            	call ixl
+       5/       3 : 00                  	nop
+       6/       4 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m3/sym_jpnz_ixl ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : =5H                  ixl equ 5
+       4/       0 : C2 05 00            	jp nz,ixl
+       5/       3 : 00                  	nop
+       6/       4 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m3/sym_callnz_ixl ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : =5H                  ixl equ 5
+       4/       0 : C4 05 00            	call nz,ixl
+       5/       3 : 00                  	nop
+       6/       4 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m3/sym_retnz_ixl ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : =5H                  ixl equ 5
+       4/       0 :                     	ret ixl
+       5/       0 : 00                  	nop
+       6/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m3/sym_ina_ixl ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : =5H                  ixl equ 5
+       4/       0 : DB 05               	in a,(ixl)
+       5/       2 : 00                  	nop
+       6/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m3/sym_outa_ixl ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : =5H                  ixl equ 5
+       4/       0 : D3 05               	out (ixl),a
+       5/       2 : 00                  	nop
+       6/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m3/sym_ldia_ixl ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : =5H                  ixl equ 5
+       4/       0 :                     	ld i,ixl
+       5/       0 : 00                  	nop
+       6/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m3/sym_exsp_ixl ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : =5H                  ixl equ 5
+       4/       0 :                     	ex (sp),ixl
+       5/       0 : 00                  	nop
+       6/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m3/sym_ldab_ixl ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : =5H                  ixl equ 5
+       4/       0 : DD 7D               	ld a,ixl
+       5/       2 : 00                  	nop
+       6/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m3/lab_jr_ixl ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : 18 00               	jr ixl
+       4/       2 :                     ixl:
+       5/       2 : 00                  	nop
+       6/       3 :                     	end
+  [2 passes, 0 errors, 0 warnings]
+== m3/lab_djnz_ixl ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : 10 00               	djnz ixl
+       4/       2 :                     ixl:
+       5/       2 : 00                  	nop
+       6/       3 :                     	end
+  [2 passes, 0 errors, 0 warnings]
+== m3/lab_jp_ixl ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : C3 03 00            	jp ixl
+       4/       3 :                     ixl:
+       5/       3 : 00                  	nop
+       6/       4 :                     	end
+  [2 passes, 0 errors, 0 warnings]
+== m3/lab_jrz_ixl ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : 28 00               	jr z,ixl
+       4/       2 :                     ixl:
+       5/       2 : 00                  	nop
+       6/       3 :                     	end
+  [2 passes, 0 errors, 0 warnings]
+== m3/sym_ldhl_iyu ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : =5H                  iyu equ 5
+       4/       0 :                     	ld hl,iyu
+       5/       0 : 00                  	nop
+       6/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m3/sym_ldbc_iyu ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : =5H                  iyu equ 5
+       4/       0 :                     	ld bc,iyu
+       5/       0 : 00                  	nop
+       6/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m3/sym_ldix_iyu ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : =5H                  iyu equ 5
+       4/       0 :                     	ld ix,iyu
+       5/       0 : 00                  	nop
+       6/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m3/sym_ldsp_iyu ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : =5H                  iyu equ 5
+       4/       0 :                     	ld sp,iyu
+       5/       0 : 00                  	nop
+       6/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m3/sym_ldindhl_iyu ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : =5H                  iyu equ 5
+       4/       0 :                     	ld (hl),iyu
+       5/       0 : 00                  	nop
+       6/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m3/sym_ldindix_iyu ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : =5H                  iyu equ 5
+       4/       0 :                     	ld (ix+1),iyu
+       5/       0 : 00                  	nop
+       6/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m3/sym_ldmem_iyu ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : =5H                  iyu equ 5
+       4/       0 :                     	ld (1234h),iyu
+       5/       0 : 00                  	nop
+       6/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m3/sym_ldmemd_iyu ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : =5H                  iyu equ 5
+       4/       0 :                     	ld iyu,(1234h)
+       5/       0 : 00                  	nop
+       6/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m3/sym_ldhlmem_iyu ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : =5H                  iyu equ 5
+       4/       0 : 2A 05 00            	ld hl,(iyu)
+       5/       3 : 00                  	nop
+       6/       4 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m3/sym_ldixd_iyu ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : =5H                  iyu equ 5
+       4/       0 : DD 7E 05            	ld a,(ix+iyu)
+       5/       3 : 00                  	nop
+       6/       4 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m3/sym_ldixd2_iyu ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : =5H                  iyu equ 5
+       4/       0 :                     	ld (iyu+ix),a
+       5/       0 : 00                  	nop
+       6/       1 :                     	end
+  [2 passes, 1 error, 0 warnings]
+== m3/sym_ldhexpr_iyu ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : =5H                  iyu equ 5
+       4/       0 : FD 26 06            	ld iyu,iyu+1
+       5/       3 : 00                  	nop
+       6/       4 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m3/sym_ldhparen_iyu ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : =5H                  iyu equ 5
+       4/       0 :                     	ld iyu,(iyu)
+       5/       0 : 00                  	nop
+       6/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m3/sym_addhl_iyu ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : =5H                  iyu equ 5
+       4/       0 :                     	add hl,iyu
+       5/       0 : 00                  	nop
+       6/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m3/sym_adda_iyu ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : =5H                  iyu equ 5
+       4/       0 : FD 84               	add a,iyu
+       5/       2 : 00                  	nop
+       6/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m3/sym_sub1_iyu ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : =5H                  iyu equ 5
+       4/       0 : FD 94               	sub iyu
+       5/       2 : 00                  	nop
+       6/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m3/sym_inc_iyu ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : =5H                  iyu equ 5
+       4/       0 : FD 24               	inc iyu
+       5/       2 : 00                  	nop
+       6/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m3/sym_ldh5_iyu ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : =5H                  iyu equ 5
+       4/       0 : FD 26 05            	ld iyu,5
+       5/       3 : 00                  	nop
+       6/       4 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m3/sym_push_iyu ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : =5H                  iyu equ 5
+       4/       0 :                     	push iyu
+       5/       0 : 00                  	nop
+       6/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m3/sym_bit_iyu ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : =5H                  iyu equ 5
+       4/       0 : CB 68               	bit iyu,b
+       5/       2 : 00                  	nop
+       6/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m3/sym_res_iyu ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : =5H                  iyu equ 5
+       4/       0 : CB A8               	res iyu,b
+       5/       2 : 00                  	nop
+       6/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m3/sym_set_iyu ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : =5H                  iyu equ 5
+       4/       0 : CB EE               	set iyu,(hl)
+       5/       2 : 00                  	nop
+       6/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m3/sym_im_iyu ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : =5H                  iyu equ 5
+       4/       0 :                     	im iyu
+       5/       0 : 00                  	nop
+       6/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m3/sym_rst_iyu ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : =5H                  iyu equ 5
+       4/       0 :                     	rst iyu
+       5/       0 : 00                  	nop
+       6/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m3/sym_call_iyu ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : =5H                  iyu equ 5
+       4/       0 : CD 05 00            	call iyu
+       5/       3 : 00                  	nop
+       6/       4 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m3/sym_jpnz_iyu ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : =5H                  iyu equ 5
+       4/       0 : C2 05 00            	jp nz,iyu
+       5/       3 : 00                  	nop
+       6/       4 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m3/sym_callnz_iyu ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : =5H                  iyu equ 5
+       4/       0 : C4 05 00            	call nz,iyu
+       5/       3 : 00                  	nop
+       6/       4 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m3/sym_retnz_iyu ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : =5H                  iyu equ 5
+       4/       0 :                     	ret iyu
+       5/       0 : 00                  	nop
+       6/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m3/sym_ina_iyu ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : =5H                  iyu equ 5
+       4/       0 : DB 05               	in a,(iyu)
+       5/       2 : 00                  	nop
+       6/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m3/sym_outa_iyu ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : =5H                  iyu equ 5
+       4/       0 : D3 05               	out (iyu),a
+       5/       2 : 00                  	nop
+       6/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m3/sym_ldia_iyu ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : =5H                  iyu equ 5
+       4/       0 :                     	ld i,iyu
+       5/       0 : 00                  	nop
+       6/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m3/sym_exsp_iyu ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : =5H                  iyu equ 5
+       4/       0 :                     	ex (sp),iyu
+       5/       0 : 00                  	nop
+       6/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m3/sym_ldab_iyu ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : =5H                  iyu equ 5
+       4/       0 : FD 7C               	ld a,iyu
+       5/       2 : 00                  	nop
+       6/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m3/lab_jr_iyu ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : 18 00               	jr iyu
+       4/       2 :                     iyu:
+       5/       2 : 00                  	nop
+       6/       3 :                     	end
+  [2 passes, 0 errors, 0 warnings]
+== m3/lab_djnz_iyu ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : 10 00               	djnz iyu
+       4/       2 :                     iyu:
+       5/       2 : 00                  	nop
+       6/       3 :                     	end
+  [2 passes, 0 errors, 0 warnings]
+== m3/lab_jp_iyu ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : C3 03 00            	jp iyu
+       4/       3 :                     iyu:
+       5/       3 : 00                  	nop
+       6/       4 :                     	end
+  [2 passes, 0 errors, 0 warnings]
+== m3/lab_jrz_iyu ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : 28 00               	jr z,iyu
+       4/       2 :                     iyu:
+       5/       2 : 00                  	nop
+       6/       3 :                     	end
+  [2 passes, 0 errors, 0 warnings]
+== m3/usym_ldaIXL ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : =5H                  IXL equ 5
+       4/       0 : DD 7D               	ld a,IXL
+       5/       2 : 00                  	nop
+       6/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m3/usym_ldaIYU ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : =5H                  IYU equ 5
+       4/       0 : FD 7C               	ld a,IYU
+       5/       2 : 00                  	nop
+       6/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m3/usym_dbIXL ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : =5H                  IXL equ 5
+       4/       0 : 05                  	db IXL
+       5/       1 : 00                  	nop
+       6/       2 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m3/nosym_bit ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	bit ixl,b
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [2 passes, 1 error, 0 warnings]
+== m3/nosym_im ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	im ixl
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [2 passes, 1 error, 0 warnings]
+== m3/nosym_rst ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	rst ixl
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [2 passes, 1 error, 0 warnings]
+== m3/nosym_ldhl ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	ld hl,ixl
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m3/nosym_ldindhl ASL_EXIT=2
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 :                     	ld (hl),ixl
+       4/       0 : 00                  	nop
+       5/       1 :                     	end
+  [1 pass, 1 error, 0 warnings]
+== m4/root68k_iyl ASL_EXIT=0
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	org 0
+       3/       0 : 303C 1234           	move.w #$1234,d0
+       4/       4 :                     	save
+       5/       4 :                     	cpu z80undoc
+       6/       4 : FD 7D               	ld a,iyl
+       7/       6 : ALL                  	restore
+       8/       6 : 323C 5678           	move.w #$5678,d1
+       9/       A : 4E71                	nop
+      10/       C :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m4/root68k_after ASL_EXIT=2
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	org 0
+       3/       0 :                     	save
+       4/       0 :                     	cpu z80undoc
+       5/       0 : 00                  	nop
+       6/       1 : ALL                  	restore
+       7/       1 :                     	save
+       8/       1 :                     	cpu z80
+       9/       1 :                     	ld a,ixl
+      10/       1 : ALL                  	restore
+      11/       1 : 00                  <padding>
+      11/       2 : 4E71                	nop
+      12/       4 :                     	end
+  [2 passes, 1 error, 0 warnings]
+== m4/root68k_after_sym ASL_EXIT=0
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	org 0
+       3/       0 : =$5                  ixl equ 5
+       4/       0 :                     	save
+       5/       0 :                     	cpu z80undoc
+       6/       0 : 00                  	nop
+       7/       1 : ALL                  	restore
+       8/       1 :                     	save
+       9/       1 :                     	cpu z80
+      10/       1 : 3E 05               	ld a,ixl
+      11/       3 : ALL                  	restore
+      12/       3 : 00                  <padding>
+      12/       4 : 4E71                	nop
+      13/       6 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m4/s2_0 ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : FD 7D               	ld a,iyl
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m4/s2_1 ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : FD 8C               	adc a,iyu
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m4/s2_2 ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : DD 5D               	ld e,ixl
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m4/s2_3 ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : DD 54               	ld d,ixu
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m4/s2_4 ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : DD 7D               	ld a,ixl
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m4/s2_5 ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : DD 8C               	adc a,ixu
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]
+== m4/s2_6 ASL_EXIT=0
+       1/       0 :                     	cpu z80undoc
+       2/       0 :                     	org 0
+       3/       0 : DD 85               	add a,ixl
+       4/       2 : 00                  	nop
+       5/       3 :                     	end
+  [1 pass, 0 errors, 0 warnings]

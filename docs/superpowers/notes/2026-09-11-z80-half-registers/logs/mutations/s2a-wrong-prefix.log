@@ -1,0 +1,15 @@
+== s2a-wrong-prefix: Sonic 2 whole ROM: IY written, IX's prefix encoded
+HEAD 23d7d57de6285ab370f1362e01545cbdee1a6cd9
+APPLIED to crates/sigil-frontend-as/src/eval.rs; read back from disk (mutated lines):
+  crates/sigil-frontend-as/src/eval.rs:8480              IndexReg::Iy => 0xDD,
+  crates/sigil-frontend-as/src/eval.rs:8481          }))
+  crates/sigil-frontend-as/src/eval.rs:8482      }
+  old text (now absent from the file): 'IndexReg::Iy => 0xFD,\n        }))'
+test sonic_2_builds_to_the_reference_rom_byte_for_byte ... FAILED
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.81s
+error: test failed, to rerun pass `-p sigil-cli --test as_sonic2_whole_rom`
+error: 1 target failed:
+cargo exit 101; compiled=True; FAILED tests: 1
+  panic: sigil's ROM is 1048576 bytes, the reference 1048576; 695 bytes differ in 18 runs, the first: [0x0EC898, 0x0EC899) [0x0EC89D, 0x0EC89E) [0x0ECD87, 0x0ECDF7) [0x0ECDF8, 0x0ECE23) [0x0ECE24, 0x0ECE3F) [0x0ECE40, 0x0ECEAB) [0x0ECEAC, 0x0ECEB8) [0x0ECEB9, 0x0ECEBB) [0x0ECEBC, 0x0ECEC1) [0x0ECEC2, 0x0ECEE
+VERDICT: RED
+restored from HEAD:crates/sigil-frontend-as/src/eval.rs; tracked tree CLEAN

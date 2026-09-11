@@ -1,0 +1,110 @@
+# asl md5 61e672562465725a8c102288a7da9098
+# name	cpu	form	exit	footer	bytes	error
+expr_ixl	z80undoc	ld a,ixl+1	0	complete	3E 06	
+exprl_ixl	z80undoc	ld a,1+ixl	0	complete	3E 06	
+paren_ixl	z80undoc	ld a,(ixl)	0	complete	3A 34 12	
+pareni_ixl	z80undoc	ld a,(ixl)+1	0	complete	3E 06	
+db_ixl	z80undoc	db ixl	0	complete	05	
+dbnosym_ixl	z80undoc	db ixl	2	complete		error #1010: symbol undefined
+jp_ixl	z80undoc	jp ixl	0	complete	C3 34 12	
+ldimm_ixl	z80undoc	ld b,ixl	0	complete	DD 45	
+label_ixl	z80undoc	ld a,ixl	0	complete	DD 7D	
+plus_ixl	z80undoc	ld a,+ixl	2	complete		error #1110: wrong number of operands
+neg_ixl	z80undoc	ld a,-ixl	2	complete		error #1010: symbol undefined
+expr_iyu	z80undoc	ld a,iyu+1	0	complete	3E 06	
+exprl_iyu	z80undoc	ld a,1+iyu	0	complete	3E 06	
+paren_iyu	z80undoc	ld a,(iyu)	0	complete	3A 34 12	
+pareni_iyu	z80undoc	ld a,(iyu)+1	0	complete	3E 06	
+db_iyu	z80undoc	db iyu	0	complete	05	
+dbnosym_iyu	z80undoc	db iyu	2	complete		error #1010: symbol undefined
+jp_iyu	z80undoc	jp iyu	0	complete	C3 34 12	
+ldimm_iyu	z80undoc	ld b,iyu	0	complete	FD 44	
+label_iyu	z80undoc	ld a,iyu	0	complete	FD 7C	
+plus_iyu	z80undoc	ld a,+iyu	2	complete		error #1110: wrong number of operands
+neg_iyu	z80undoc	ld a,-iyu	2	complete		error #1010: symbol undefined
+mode_save_z80_restore	z80undoc	ld a,ixl	0	complete	DD 7D	
+mode_save_68k_restore	z80undoc	ld a,ixl	0	complete	DD 7D	
+mode_z80_then_undoc	z80	ld a,ixl	0	complete	DD 7D	
+mode_undoc_then_z80	z80undoc	ld a,ixl	2	complete		error #1010: symbol undefined
+mode_undoc_then_z80_sym	z80undoc	ld a,ixl	0	complete	3E 05	
+mode_68k_save_undoc	68000	ld a,ixl	2	complete		error #1460: missing RESTORE
+mode_z80_save_undoc_restore	z80	ld a,ixl	0	complete	3E 05	
+mode_undoc_upper	Z80UNDOC	ld a,ixl	0	complete	DD 7D	
+mode_undoc_mixed	Z80UnDoc	ld a,ixl	0	complete	DD 7D	
+momcpu_z80	z80	dw MOMCPU	0	complete	80 00	
+momcpuname_z80	z80	nop	0	complete	00	
+momcpunamez_z80	z80	nop	0	complete	00	
+momcpu_z80undoc	z80undoc	dw MOMCPU	0	complete	DC 80	
+momcpuname_z80undoc	z80undoc	nop	0	complete	00	
+momcpunamez_z80undoc	z80undoc	nop	0	complete	00	
+momcpu_Z80UNDOCu	Z80UNDOC	dw MOMCPU	0	complete	DC 80	
+momcpuname_Z80UNDOCu	Z80UNDOC	nop	0	complete	00	
+momcpunamez_Z80UNDOCu	Z80UNDOC	nop	0	complete	00	
+alu1r_add	z80undoc	add b	2	complete		error #1110: wrong number of operands
+alu1r_add_z80	z80	add b	2	complete		error #1110: wrong number of operands
+alu1i_add	z80undoc	add 5	2	complete		error #1110: wrong number of operands
+alu2b_add_ixl	z80undoc	add b,ixl	2	complete		error #1350: addressing mode not allowed here
+alu1r_adc	z80undoc	adc b	2	complete		error #1110: wrong number of operands
+alu1r_adc_z80	z80	adc b	2	complete		error #1110: wrong number of operands
+alu1i_adc	z80undoc	adc 5	2	complete		error #1110: wrong number of operands
+alu2b_adc_ixl	z80undoc	adc b,ixl	2	complete		error #1350: addressing mode not allowed here
+alu1r_sub	z80undoc	sub b	0	complete	90	
+alu1r_sub_z80	z80	sub b	0	complete	90	
+alu1i_sub	z80undoc	sub 5	0	complete	D6 05	
+alu2b_sub_ixl	z80undoc	sub b,ixl	2	complete		error #1350: addressing mode not allowed here
+alu1r_sbc	z80undoc	sbc b	2	complete		error #1110: wrong number of operands
+alu1r_sbc_z80	z80	sbc b	2	complete		error #1110: wrong number of operands
+alu1i_sbc	z80undoc	sbc 5	2	complete		error #1110: wrong number of operands
+alu2b_sbc_ixl	z80undoc	sbc b,ixl	2	complete		error #1350: addressing mode not allowed here
+alu1r_and	z80undoc	and b	0	complete	A0	
+alu1r_and_z80	z80	and b	0	complete	A0	
+alu1i_and	z80undoc	and 5	0	complete	E6 05	
+alu2b_and_ixl	z80undoc	and b,ixl	2	complete		error #1350: addressing mode not allowed here
+alu1r_xor	z80undoc	xor b	0	complete	A8	
+alu1r_xor_z80	z80	xor b	0	complete	A8	
+alu1i_xor	z80undoc	xor 5	0	complete	EE 05	
+alu2b_xor_ixl	z80undoc	xor b,ixl	2	complete		error #1350: addressing mode not allowed here
+alu1r_or	z80undoc	or b	0	complete	B0	
+alu1r_or_z80	z80	or b	0	complete	B0	
+alu1i_or	z80undoc	or 5	0	complete	F6 05	
+alu2b_or_ixl	z80undoc	or b,ixl	2	complete		error #1350: addressing mode not allowed here
+alu1r_cp	z80undoc	cp b	0	complete	B8	
+alu1r_cp_z80	z80	cp b	0	complete	B8	
+alu1i_cp	z80undoc	cp 5	0	complete	FE 05	
+alu2b_cp_ixl	z80undoc	cp b,ixl	2	complete		error #1350: addressing mode not allowed here
+rng_ixl__128	z80undoc	ld ixl,-128	0	complete	DD 2E 80	
+rng_ixl__129	z80undoc	ld ixl,-129	2	complete		error #1320: range overflow
+rng_ixl_255	z80undoc	ld ixl,255	0	complete	DD 2E FF	
+rng_ixl_0FFh	z80undoc	ld ixl,0FFh	0	complete	DD 2E FF	
+rng_ixl__A_	z80undoc	ld ixl,'A'	0	complete	DD 2E 41	
+rng_l__128	z80undoc	ld l,-128	0	complete	2E 80	
+rng_l__129	z80undoc	ld l,-129	2	complete		error #1320: range overflow
+rng_l_255	z80undoc	ld l,255	0	complete	2E FF	
+rng_l_0FFh	z80undoc	ld l,0FFh	0	complete	2E FF	
+rng_l__A_	z80undoc	ld l,'A'	0	complete	2E 41	
+mix_ld_hl_ixl	z80undoc	ld hl,ixl	2	complete		error #1350: addressing mode not allowed here
+mix_ld_ixl_hl	z80undoc	ld ixl,hl	2	complete		error #1350: addressing mode not allowed here
+mix_ld_ix_ixl	z80undoc	ld ix,ixl	2	complete		error #1350: addressing mode not allowed here
+mix_ld_ixl_ix	z80undoc	ld ixl,ix	2	complete		error #1350: addressing mode not allowed here
+mix_ld_bc_ixl	z80undoc	ld bc,ixl	2	complete		error #1350: addressing mode not allowed here
+mix_ld_sp_ixl	z80undoc	ld sp,ixl	2	complete		error #1350: addressing mode not allowed here
+mix_ld_ixl_r	z80undoc	ld ixl,r	2	complete		error #1350: addressing mode not allowed here
+mix_ld_r_ixl	z80undoc	ld r,ixl	2	complete		error #1350: addressing mode not allowed here
+mix_ld_ixl_af	z80undoc	ld ixl,af	2	complete		error #1010: symbol undefined
+mix_ld_ixl_c_	z80undoc	ld ixl,(c)	2	INCOMPLETE/none		error #1350: addressing mode not allowed here
+mix_ld_ixl_nz	z80undoc	ld ixl,nz	2	complete		error #1010: symbol undefined
+mix_ld_ixl_a	z80undoc	ld (ixl),a	2	complete		error #1010: symbol undefined
+mix_ld_a_ixl_	z80undoc	ld a,(ixl)	2	complete		error #1010: symbol undefined
+mix_ld_ixl	z80undoc	ld ixl	2	complete		error #1110: wrong number of operands
+mix_ld_ixl_a_b	z80undoc	ld ixl,a,b	2	complete		error #1110: wrong number of operands
+mix_inc_ixl_a	z80undoc	inc ixl,a	2	complete		error #1110: wrong number of operands
+mix_cp_ixl_a	z80undoc	cp ixl,a	2	complete		error #1350: addressing mode not allowed here
+mix_ld_iyh_iyl	z80undoc	ld iyh,iyl	0	complete	FD 65	
+mix_ld_ixh_ixu	z80undoc	ld ixh,ixu	0	complete	DD 64	
+mix_ld_ixl_iyh	z80undoc	ld ixl,iyh	2	complete		error #1350: addressing mode not allowed here
+mix_LD_A_IXL	z80undoc	LD A,IXL	0	complete	DD 7D	
+mix_ld_A_ixl	z80undoc	ld A,ixl	0	complete	DD 7D	
+mix_ld_ixl_A	z80undoc	ld ixl,A	0	complete	DD 6F	
+mix_ld_IXU_B	z80undoc	ld IXU,B	0	complete	DD 60	
+mix_ld_ixl_H	z80undoc	ld ixl,H	2	complete		error #1350: addressing mode not allowed here
+mix_ld_L_ixu	z80undoc	ld L,ixu	2	complete		error #1350: addressing mode not allowed here

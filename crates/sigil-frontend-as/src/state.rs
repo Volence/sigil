@@ -142,7 +142,7 @@ impl AsmState {
 
     /// The `cpu` **directive**: [`set_cpu`](AsmState::set_cpu), and latch the
     /// unit as having DECLARED its processor. Only a real declaration calls
-    /// this — `restore` re-applies a CPU without declaring one. `z80_undoc` is
+    /// this; `restore` re-applies a CPU without declaring one. `z80_undoc` is
     /// whether the name was the undocumented Z80's (see [`AsmState::z80_undoc`]);
     /// every `cpu` line sets it, so `cpu z80` after `cpu z80undoc` clears it.
     pub fn declare_cpu(&mut self, cpu: Cpu, z80_undoc: bool) {

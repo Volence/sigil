@@ -1,0 +1,11 @@
+s2disasm HEAD e45ebf332f39987424ca3102e50c717628f71269
+s2disasm status lines before: 0
+0dee1f98e6480a4783d27ffd8b90896f  build_tools/Linux-x86_64/asl
+4f2fff99c3347bafb93b12d5be1db754  build_tools/Linux-x86_64/p2bin
+704e5c8c361b9959f45bac3e803f0033  build_tools/Linux-x86_64/saxman
+6c07a63a91719d9b42a76b2c342efedc  /usr/bin/lua
+build.lua exit=0
+-rw-r--r-- 1 volence volence 1048576 Sep 11 17:44 s2built.bin
+REF s2built.bin md5 9feeb724052c39982d432a7851c98d3e crc32 7b905383 size 1048576
+s2disasm status lines after: 0
+LUAREF_END

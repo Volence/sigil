@@ -1,0 +1,23 @@
+== m7-mode-ignored: the halves recognised under plain cpu z80 too
+HEAD 23d7d57de6285ab370f1362e01545cbdee1a6cd9
+APPLIED to crates/sigil-frontend-as/src/eval.rs; read back from disk (mutated lines):
+  crates/sigil-frontend-as/src/eval.rs:8320          let prefix = if true {
+  crates/sigil-frontend-as/src/eval.rs:8321              match self.index_halves(m, mn, &mut atoms, span) {
+  old text (now absent from the file): 'let prefix = if self.state.z80_undoc {'
+test every_probe_is_checked_by_exactly_one_group ... ok
+test a_half_beside_h_l_or_the_other_index_register_is_refused_for_that_reason ... ok
+test every_spelling_asl_accepts_names_the_register_asl_names ... ok
+test sonic_2_s_twelve_lines_assemble_as_asl_assembles_them ... ok
+test a_half_in_a_form_asl_refuses_is_refused ... ok
+test a_symbol_named_like_a_half_is_read_where_asl_reads_it ... ok
+test momcpu_and_momcpuname_report_the_undocumented_z80 ... ok
+test the_halves_exist_only_under_z80undoc ... FAILED
+test ld_takes_a_half_in_every_position_asl_allows ... ok
+test the_arithmetic_and_logic_forms_take_a_half ... ok
+test result: FAILED. 9 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+error: test failed, to rerun pass `-p sigil-frontend-as --test as_z80_half_registers`
+error: 1 target failed:
+cargo exit 101; compiled=True; FAILED tests: 1
+  panic: 15 of 21 `mode` probes disagree with asl:
+VERDICT: RED
+restored from HEAD:crates/sigil-frontend-as/src/eval.rs; tracked tree CLEAN

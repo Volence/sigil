@@ -1,0 +1,165 @@
+ASL_MD5=61e672562465725a8c102288a7da9098 ASL=/home/volence/sonic_hacks/s1disasm/build_tools/Linux-x86_64/asl
+== sym_ldhl_ixl.asm ASL_EXIT=2
+ASL_DIAG=complete
+== sym_ldbc_ixl.asm ASL_EXIT=2
+ASL_DIAG=complete
+== sym_ldix_ixl.asm ASL_EXIT=2
+ASL_DIAG=complete
+== sym_ldsp_ixl.asm ASL_EXIT=2
+ASL_DIAG=complete
+== sym_ldindhl_ixl.asm ASL_EXIT=2
+ASL_DIAG=complete
+== sym_ldindix_ixl.asm ASL_EXIT=2
+ASL_DIAG=complete
+== sym_ldmem_ixl.asm ASL_EXIT=2
+ASL_DIAG=complete
+== sym_ldmemd_ixl.asm ASL_EXIT=2
+ASL_DIAG=complete
+== sym_ldhlmem_ixl.asm ASL_EXIT=0
+ASL_DIAG=complete
+== sym_ldixd_ixl.asm ASL_EXIT=0
+ASL_DIAG=complete
+== sym_ldixd2_ixl.asm ASL_EXIT=2
+ASL_DIAG=complete
+== sym_ldhexpr_ixl.asm ASL_EXIT=0
+ASL_DIAG=complete
+== sym_ldhparen_ixl.asm ASL_EXIT=2
+ASL_DIAG=complete
+== sym_addhl_ixl.asm ASL_EXIT=2
+ASL_DIAG=complete
+== sym_adda_ixl.asm ASL_EXIT=0
+ASL_DIAG=complete
+== sym_sub1_ixl.asm ASL_EXIT=0
+ASL_DIAG=complete
+== sym_inc_ixl.asm ASL_EXIT=0
+ASL_DIAG=complete
+== sym_ldh5_ixl.asm ASL_EXIT=0
+ASL_DIAG=complete
+== sym_push_ixl.asm ASL_EXIT=2
+ASL_DIAG=complete
+== sym_bit_ixl.asm ASL_EXIT=0
+ASL_DIAG=complete
+== sym_res_ixl.asm ASL_EXIT=0
+ASL_DIAG=complete
+== sym_set_ixl.asm ASL_EXIT=0
+ASL_DIAG=complete
+== sym_im_ixl.asm ASL_EXIT=2
+ASL_DIAG=complete
+== sym_rst_ixl.asm ASL_EXIT=2
+ASL_DIAG=complete
+== sym_call_ixl.asm ASL_EXIT=0
+ASL_DIAG=complete
+== sym_jpnz_ixl.asm ASL_EXIT=0
+ASL_DIAG=complete
+== sym_callnz_ixl.asm ASL_EXIT=0
+ASL_DIAG=complete
+== sym_retnz_ixl.asm ASL_EXIT=2
+ASL_DIAG=complete
+== sym_ina_ixl.asm ASL_EXIT=0
+ASL_DIAG=complete
+== sym_outa_ixl.asm ASL_EXIT=0
+ASL_DIAG=complete
+== sym_ldia_ixl.asm ASL_EXIT=2
+ASL_DIAG=complete
+== sym_exsp_ixl.asm ASL_EXIT=2
+ASL_DIAG=complete
+== sym_ldab_ixl.asm ASL_EXIT=0
+ASL_DIAG=complete
+== lab_jr_ixl.asm ASL_EXIT=0
+ASL_DIAG=complete
+== lab_djnz_ixl.asm ASL_EXIT=0
+ASL_DIAG=complete
+== lab_jp_ixl.asm ASL_EXIT=0
+ASL_DIAG=complete
+== lab_jrz_ixl.asm ASL_EXIT=0
+ASL_DIAG=complete
+== sym_ldhl_iyu.asm ASL_EXIT=2
+ASL_DIAG=complete
+== sym_ldbc_iyu.asm ASL_EXIT=2
+ASL_DIAG=complete
+== sym_ldix_iyu.asm ASL_EXIT=2
+ASL_DIAG=complete
+== sym_ldsp_iyu.asm ASL_EXIT=2
+ASL_DIAG=complete
+== sym_ldindhl_iyu.asm ASL_EXIT=2
+ASL_DIAG=complete
+== sym_ldindix_iyu.asm ASL_EXIT=2
+ASL_DIAG=complete
+== sym_ldmem_iyu.asm ASL_EXIT=2
+ASL_DIAG=complete
+== sym_ldmemd_iyu.asm ASL_EXIT=2
+ASL_DIAG=complete
+== sym_ldhlmem_iyu.asm ASL_EXIT=0
+ASL_DIAG=complete
+== sym_ldixd_iyu.asm ASL_EXIT=0
+ASL_DIAG=complete
+== sym_ldixd2_iyu.asm ASL_EXIT=2
+ASL_DIAG=complete
+== sym_ldhexpr_iyu.asm ASL_EXIT=0
+ASL_DIAG=complete
+== sym_ldhparen_iyu.asm ASL_EXIT=2
+ASL_DIAG=complete
+== sym_addhl_iyu.asm ASL_EXIT=2
+ASL_DIAG=complete
+== sym_adda_iyu.asm ASL_EXIT=0
+ASL_DIAG=complete
+== sym_sub1_iyu.asm ASL_EXIT=0
+ASL_DIAG=complete
+== sym_inc_iyu.asm ASL_EXIT=0
+ASL_DIAG=complete
+== sym_ldh5_iyu.asm ASL_EXIT=0
+ASL_DIAG=complete
+== sym_push_iyu.asm ASL_EXIT=2
+ASL_DIAG=complete
+== sym_bit_iyu.asm ASL_EXIT=0
+ASL_DIAG=complete
+== sym_res_iyu.asm ASL_EXIT=0
+ASL_DIAG=complete
+== sym_set_iyu.asm ASL_EXIT=0
+ASL_DIAG=complete
+== sym_im_iyu.asm ASL_EXIT=2
+ASL_DIAG=complete
+== sym_rst_iyu.asm ASL_EXIT=2
+ASL_DIAG=complete
+== sym_call_iyu.asm ASL_EXIT=0
+ASL_DIAG=complete
+== sym_jpnz_iyu.asm ASL_EXIT=0
+ASL_DIAG=complete
+== sym_callnz_iyu.asm ASL_EXIT=0
+ASL_DIAG=complete
+== sym_retnz_iyu.asm ASL_EXIT=2
+ASL_DIAG=complete
+== sym_ina_iyu.asm ASL_EXIT=0
+ASL_DIAG=complete
+== sym_outa_iyu.asm ASL_EXIT=0
+ASL_DIAG=complete
+== sym_ldia_iyu.asm ASL_EXIT=2
+ASL_DIAG=complete
+== sym_exsp_iyu.asm ASL_EXIT=2
+ASL_DIAG=complete
+== sym_ldab_iyu.asm ASL_EXIT=0
+ASL_DIAG=complete
+== lab_jr_iyu.asm ASL_EXIT=0
+ASL_DIAG=complete
+== lab_djnz_iyu.asm ASL_EXIT=0
+ASL_DIAG=complete
+== lab_jp_iyu.asm ASL_EXIT=0
+ASL_DIAG=complete
+== lab_jrz_iyu.asm ASL_EXIT=0
+ASL_DIAG=complete
+== usym_ldaIXL.asm ASL_EXIT=0
+ASL_DIAG=complete
+== usym_ldaIYU.asm ASL_EXIT=0
+ASL_DIAG=complete
+== usym_dbIXL.asm ASL_EXIT=0
+ASL_DIAG=complete
+== nosym_bit.asm ASL_EXIT=2
+ASL_DIAG=complete
+== nosym_im.asm ASL_EXIT=2
+ASL_DIAG=complete
+== nosym_rst.asm ASL_EXIT=2
+ASL_DIAG=complete
+== nosym_ldhl.asm ASL_EXIT=2
+ASL_DIAG=complete
+== nosym_ldindhl.asm ASL_EXIT=2
+ASL_DIAG=complete

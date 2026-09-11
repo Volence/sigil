@@ -1,0 +1,5 @@
+	cpu z80undoc
+	org 0
+	res 0,iyu
+	nop
+	end

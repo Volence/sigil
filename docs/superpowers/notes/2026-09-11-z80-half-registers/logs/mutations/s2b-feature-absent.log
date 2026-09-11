@@ -1,0 +1,14 @@
+== s2b-feature-absent: Sonic 2 whole ROM: no half registers at all
+HEAD 23d7d57de6285ab370f1362e01545cbdee1a6cd9
+APPLIED to crates/sigil-frontend-as/src/eval.rs; read back from disk (mutated lines):
+  crates/sigil-frontend-as/src/eval.rs:8320          let prefix = if false {
+  crates/sigil-frontend-as/src/eval.rs:8321              match self.index_halves(m, mn, &mut atoms, span) {
+  old text (now absent from the file): 'let prefix = if self.state.z80_undoc {'
+test sonic_2_builds_to_the_reference_rom_byte_for_byte ... FAILED
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.47s
+error: test failed, to rerun pass `-p sigil-cli --test as_sonic2_whole_rom`
+error: 1 target failed:
+cargo exit 101; compiled=True; FAILED tests: 1
+  panic: sigil failed:
+VERDICT: RED
+restored from HEAD:crates/sigil-frontend-as/src/eval.rs; tracked tree CLEAN

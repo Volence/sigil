@@ -1,0 +1,110 @@
+# sigil /home/volence/sonic_hacks/.scratch/z80-half-registers/bin/sigil-base md5 5a5dae03308b46b0321969b674d8a332
+# BOTH-REFUSE=38 DIFFER=10 MATCH=36 SIGIL-ACCEPTS=9 SIGIL-REFUSES=15
+SIGIL-ACCEPTS	alu1i_adc	asl=REFUSED	sigil=CE 05 00	
+SIGIL-ACCEPTS	alu1i_add	asl=REFUSED	sigil=C6 05 00	
+MATCH	alu1i_and	asl=E6 05 00	sigil=E6 05 00	
+MATCH	alu1i_cp	asl=FE 05 00	sigil=FE 05 00	
+MATCH	alu1i_or	asl=F6 05 00	sigil=F6 05 00	
+SIGIL-ACCEPTS	alu1i_sbc	asl=REFUSED	sigil=DE 05 00	
+MATCH	alu1i_sub	asl=D6 05 00	sigil=D6 05 00	
+MATCH	alu1i_xor	asl=EE 05 00	sigil=EE 05 00	
+SIGIL-ACCEPTS	alu1r_adc	asl=REFUSED	sigil=88 00	
+SIGIL-ACCEPTS	alu1r_adc_z80	asl=REFUSED	sigil=88 00	
+SIGIL-ACCEPTS	alu1r_add	asl=REFUSED	sigil=80 00	
+SIGIL-ACCEPTS	alu1r_add_z80	asl=REFUSED	sigil=80 00	
+MATCH	alu1r_and	asl=A0 00	sigil=A0 00	
+MATCH	alu1r_and_z80	asl=A0 00	sigil=A0 00	
+MATCH	alu1r_cp	asl=B8 00	sigil=B8 00	
+MATCH	alu1r_cp_z80	asl=B8 00	sigil=B8 00	
+MATCH	alu1r_or	asl=B0 00	sigil=B0 00	
+MATCH	alu1r_or_z80	asl=B0 00	sigil=B0 00	
+SIGIL-ACCEPTS	alu1r_sbc	asl=REFUSED	sigil=98 00	
+SIGIL-ACCEPTS	alu1r_sbc_z80	asl=REFUSED	sigil=98 00	
+MATCH	alu1r_sub	asl=90 00	sigil=90 00	
+MATCH	alu1r_sub_z80	asl=90 00	sigil=90 00	
+MATCH	alu1r_xor	asl=A8 00	sigil=A8 00	
+MATCH	alu1r_xor_z80	asl=A8 00	sigil=A8 00	
+BOTH-REFUSE	alu2b_adc_ixl	asl=REFUSED	sigil=REFUSED	alu2b_adc_ixl.asm(3):2: error: unsupported form: Instruction { mnemonic: Adc, ops: [Reg(B), Imm8(0)] }
+BOTH-REFUSE	alu2b_add_ixl	asl=REFUSED	sigil=REFUSED	alu2b_add_ixl.asm(3):2: error: unsupported form: Instruction { mnemonic: Add, ops: [Reg(B), Imm8(0)] }
+BOTH-REFUSE	alu2b_and_ixl	asl=REFUSED	sigil=REFUSED	alu2b_and_ixl.asm(3):2: error: unsupported form: Instruction { mnemonic: And, ops: [Reg(B), Imm8(0)] }
+BOTH-REFUSE	alu2b_cp_ixl	asl=REFUSED	sigil=REFUSED	alu2b_cp_ixl.asm(3):2: error: unsupported form: Instruction { mnemonic: Cp, ops: [Reg(B), Imm8(0)] }
+BOTH-REFUSE	alu2b_or_ixl	asl=REFUSED	sigil=REFUSED	alu2b_or_ixl.asm(3):2: error: unsupported form: Instruction { mnemonic: Or, ops: [Reg(B), Imm8(0)] }
+BOTH-REFUSE	alu2b_sbc_ixl	asl=REFUSED	sigil=REFUSED	alu2b_sbc_ixl.asm(3):2: error: unsupported form: Instruction { mnemonic: Sbc, ops: [Reg(B), Imm8(0)] }
+BOTH-REFUSE	alu2b_sub_ixl	asl=REFUSED	sigil=REFUSED	alu2b_sub_ixl.asm(3):2: error: unsupported form: Instruction { mnemonic: Sub, ops: [Reg(B), Imm8(0)] }
+BOTH-REFUSE	alu2b_xor_ixl	asl=REFUSED	sigil=REFUSED	alu2b_xor_ixl.asm(3):2: error: unsupported form: Instruction { mnemonic: Xor, ops: [Reg(B), Imm8(0)] }
+MATCH	db_ixl	asl=05 00	sigil=05 00	
+MATCH	db_iyu	asl=05 00	sigil=05 00	
+BOTH-REFUSE	dbnosym_ixl	asl=REFUSED	sigil=REFUSED	dbnosym_ixl.asm(3):2: error: unresolved symbol `ixl` for fixup in section sec0 at offset 0
+BOTH-REFUSE	dbnosym_iyu	asl=REFUSED	sigil=REFUSED	dbnosym_iyu.asm(3):2: error: unresolved symbol `iyu` for fixup in section sec0 at offset 0
+MATCH	expr_ixl	asl=3E 06 00	sigil=3E 06 00	
+MATCH	expr_iyu	asl=3E 06 00	sigil=3E 06 00	
+MATCH	exprl_ixl	asl=3E 06 00	sigil=3E 06 00	
+MATCH	exprl_iyu	asl=3E 06 00	sigil=3E 06 00	
+MATCH	jp_ixl	asl=C3 34 12 00	sigil=C3 34 12 00	
+MATCH	jp_iyu	asl=C3 34 12 00	sigil=C3 34 12 00	
+DIFFER	label_ixl	asl=00 DD 7D 00	sigil=00 3E 00 00	
+DIFFER	label_iyu	asl=00 FD 7C 00	sigil=00 3E 00 00	
+DIFFER	ldimm_ixl	asl=DD 45 00	sigil=06 05 00	
+DIFFER	ldimm_iyu	asl=FD 44 00	sigil=06 05 00	
+SIGIL-REFUSES	mix_LD_A_IXL	asl=DD 7D 00	sigil=REFUSED	mix_LD_A_IXL.asm(3):2: error: unsupported form: Instruction { mnemonic: Ld, ops: [Imm8(0), Imm8(0)] }
+BOTH-REFUSE	mix_cp_ixl_a	asl=REFUSED	sigil=REFUSED	mix_cp_ixl_a.asm(3):2: error: unsupported form: Instruction { mnemonic: Cp, ops: [Imm8(0), Reg(A)] }
+BOTH-REFUSE	mix_inc_ixl_a	asl=REFUSED	sigil=REFUSED	mix_inc_ixl_a.asm(3):2: error: unsupported form: Instruction { mnemonic: Inc, ops: [Imm8(0), Reg(A)] }
+SIGIL-REFUSES	mix_ld_A_ixl	asl=DD 7D 00	sigil=REFUSED	mix_ld_A_ixl.asm(3):2: error: unsupported form: Instruction { mnemonic: Ld, ops: [Imm8(0), Imm8(0)] }
+SIGIL-REFUSES	mix_ld_IXU_B	asl=DD 60 00	sigil=REFUSED	mix_ld_IXU_B.asm(3):2: error: unsupported form: Instruction { mnemonic: Ld, ops: [Imm8(0), Imm8(0)] }
+BOTH-REFUSE	mix_ld_L_ixu	asl=REFUSED	sigil=REFUSED	mix_ld_L_ixu.asm(3):2: error: unsupported form: Instruction { mnemonic: Ld, ops: [Imm8(0), Imm8(0)] }
+BOTH-REFUSE	mix_ld_a_ixl_	asl=REFUSED	sigil=REFUSED	mix_ld_a_ixl_.asm(3):2: error: unresolved symbol `ixl` in operand
+BOTH-REFUSE	mix_ld_bc_ixl	asl=REFUSED	sigil=REFUSED	mix_ld_bc_ixl.asm(3):2: error: unresolved symbol `ixl` for fixup in section sec0 at offset 1
+BOTH-REFUSE	mix_ld_hl_ixl	asl=REFUSED	sigil=REFUSED	mix_ld_hl_ixl.asm(3):2: error: unresolved symbol `ixl` for fixup in section sec0 at offset 1
+BOTH-REFUSE	mix_ld_ix_ixl	asl=REFUSED	sigil=REFUSED	mix_ld_ix_ixl.asm(3):2: error: unresolved symbol `ixl` for fixup in section sec0 at offset 2
+SIGIL-REFUSES	mix_ld_ixh_ixu	asl=DD 64 00	sigil=REFUSED	mix_ld_ixh_ixu.asm(3):2: error: unsupported form: Instruction { mnemonic: Ld, ops: [Imm8(0), Imm8(0)] }
+BOTH-REFUSE	mix_ld_ixl	asl=REFUSED	sigil=REFUSED	mix_ld_ixl.asm(3):2: error: unsupported form: Instruction { mnemonic: Ld, ops: [Imm8(0)] }
+SIGIL-REFUSES	mix_ld_ixl_A	asl=DD 6F 00	sigil=REFUSED	mix_ld_ixl_A.asm(3):2: error: unsupported form: Instruction { mnemonic: Ld, ops: [Imm8(0), Imm8(0)] }
+BOTH-REFUSE	mix_ld_ixl_H	asl=REFUSED	sigil=REFUSED	mix_ld_ixl_H.asm(3):2: error: unsupported form: Instruction { mnemonic: Ld, ops: [Imm8(0), Imm8(0)] }
+BOTH-REFUSE	mix_ld_ixl_a	asl=REFUSED	sigil=REFUSED	mix_ld_ixl_a.asm(3):2: error: unresolved symbol `ixl` in operand
+BOTH-REFUSE	mix_ld_ixl_a_b	asl=REFUSED	sigil=REFUSED	mix_ld_ixl_a_b.asm(3):2: error: unsupported form: Instruction { mnemonic: Ld, ops: [Imm8(0), Reg(A), Reg(B)] }
+BOTH-REFUSE	mix_ld_ixl_af	asl=REFUSED	sigil=REFUSED	mix_ld_ixl_af.asm(3):2: error: unsupported form: Instruction { mnemonic: Ld, ops: [Imm16(0), Pair(Af)] }
+BOTH-REFUSE	mix_ld_ixl_c_	asl=REFUSED	sigil=REFUSED	mix_ld_ixl_c_.asm(3):2: error: unsupported form: Instruction { mnemonic: Ld, ops: [Imm8(0), Mem(0)] }
+BOTH-REFUSE	mix_ld_ixl_hl	asl=REFUSED	sigil=REFUSED	mix_ld_ixl_hl.asm(3):2: error: unsupported form: Instruction { mnemonic: Ld, ops: [Imm16(0), Pair(Hl)] }
+BOTH-REFUSE	mix_ld_ixl_ix	asl=REFUSED	sigil=REFUSED	mix_ld_ixl_ix.asm(3):2: error: unsupported form: unsupported Z80 index form: Instruction { mnemonic: Ld, ops: [Imm16(0), Pair(Ix)] }
+BOTH-REFUSE	mix_ld_ixl_iyh	asl=REFUSED	sigil=REFUSED	mix_ld_ixl_iyh.asm(3):2: error: unsupported form: Instruction { mnemonic: Ld, ops: [Imm8(0), Imm8(0)] }
+BOTH-REFUSE	mix_ld_ixl_nz	asl=REFUSED	sigil=REFUSED	mix_ld_ixl_nz.asm(3):2: error: unsupported form: Instruction { mnemonic: Ld, ops: [Imm8(0), Cc(Nz)] }
+BOTH-REFUSE	mix_ld_ixl_r	asl=REFUSED	sigil=REFUSED	mix_ld_ixl_r.asm(3):2: error: unsupported form: Instruction { mnemonic: Ld, ops: [Imm8(0), RegR] }
+SIGIL-REFUSES	mix_ld_iyh_iyl	asl=FD 65 00	sigil=REFUSED	mix_ld_iyh_iyl.asm(3):2: error: unsupported form: Instruction { mnemonic: Ld, ops: [Imm8(0), Imm8(0)] }
+BOTH-REFUSE	mix_ld_r_ixl	asl=REFUSED	sigil=REFUSED	mix_ld_r_ixl.asm(3):2: error: unsupported form: Instruction { mnemonic: Ld, ops: [RegR, Imm8(0)] }
+BOTH-REFUSE	mix_ld_sp_ixl	asl=REFUSED	sigil=REFUSED	mix_ld_sp_ixl.asm(3):2: error: unresolved symbol `ixl` for fixup in section sec0 at offset 1
+BOTH-REFUSE	mode_68k_save_undoc	asl=REFUSED	sigil=REFUSED	mode_68k_save_undoc.asm(5):2: error: unresolved symbol `ixl` in operand
+SIGIL-REFUSES	mode_save_68k_restore	asl=DD 7D 00	sigil=REFUSED	mode_save_68k_restore.asm(6):2: error: unresolved symbol `ixl` in operand
+SIGIL-REFUSES	mode_save_z80_restore	asl=DD 7D 00	sigil=REFUSED	mode_save_z80_restore.asm(6):2: error: unresolved symbol `ixl` in operand
+SIGIL-REFUSES	mode_undoc_mixed	asl=DD 7D 00	sigil=REFUSED	mode_undoc_mixed.asm(3):2: error: unresolved symbol `ixl` in operand
+BOTH-REFUSE	mode_undoc_then_z80	asl=REFUSED	sigil=REFUSED	mode_undoc_then_z80.asm(4):2: error: unresolved symbol `ixl` in operand
+MATCH	mode_undoc_then_z80_sym	asl=3E 05 00	sigil=3E 05 00	
+SIGIL-REFUSES	mode_undoc_upper	asl=DD 7D 00	sigil=REFUSED	mode_undoc_upper.asm(3):2: error: unresolved symbol `ixl` in operand
+MATCH	mode_z80_save_undoc_restore	asl=3E 05 00	sigil=3E 05 00	
+SIGIL-REFUSES	mode_z80_then_undoc	asl=DD 7D 00	sigil=REFUSED	mode_z80_then_undoc.asm(4):2: error: unresolved symbol `ixl` in operand
+DIFFER	momcpu_Z80UNDOCu	asl=DC 80 00	sigil=80 00 00	
+MATCH	momcpu_z80	asl=80 00 00	sigil=80 00 00	
+DIFFER	momcpu_z80undoc	asl=DC 80 00	sigil=80 00 00	
+DIFFER	momcpuname_Z80UNDOCu	asl=01 00 00	sigil=02 00 00	
+MATCH	momcpuname_z80	asl=02 00 00	sigil=02 00 00	
+DIFFER	momcpuname_z80undoc	asl=01 00 00	sigil=02 00 00	
+DIFFER	momcpunamez_Z80UNDOCu	asl=02 00 00	sigil=01 00 00	
+MATCH	momcpunamez_z80	asl=01 00 00	sigil=01 00 00	
+DIFFER	momcpunamez_z80undoc	asl=02 00 00	sigil=01 00 00	
+BOTH-REFUSE	neg_ixl	asl=REFUSED	sigil=REFUSED	neg_ixl.asm(3):2: error: unresolved symbol `ixl` in operand
+BOTH-REFUSE	neg_iyu	asl=REFUSED	sigil=REFUSED	neg_iyu.asm(3):2: error: unresolved symbol `iyu` in operand
+MATCH	paren_ixl	asl=3A 34 12 00	sigil=3A 34 12 00	
+MATCH	paren_iyu	asl=3A 34 12 00	sigil=3A 34 12 00	
+MATCH	pareni_ixl	asl=3E 06 00	sigil=3E 06 00	
+MATCH	pareni_iyu	asl=3E 06 00	sigil=3E 06 00	
+BOTH-REFUSE	plus_ixl	asl=REFUSED	sigil=REFUSED	plus_ixl.asm(3):7: error: bad operand expression
+BOTH-REFUSE	plus_iyu	asl=REFUSED	sigil=REFUSED	plus_iyu.asm(3):7: error: bad operand expression
+SIGIL-REFUSES	rng_ixl_0FFh	asl=DD 2E FF 00	sigil=REFUSED	rng_ixl_0FFh.asm(3):2: error: unsupported form: Instruction { mnemonic: Ld, ops: [Imm8(0), Imm8(255)] }
+SIGIL-REFUSES	rng_ixl_255	asl=DD 2E FF 00	sigil=REFUSED	rng_ixl_255.asm(3):2: error: unsupported form: Instruction { mnemonic: Ld, ops: [Imm8(0), Imm8(255)] }
+SIGIL-REFUSES	rng_ixl__128	asl=DD 2E 80 00	sigil=REFUSED	rng_ixl__128.asm(3):2: error: unsupported form: Instruction { mnemonic: Ld, ops: [Imm8(0), Imm8(128)] }
+BOTH-REFUSE	rng_ixl__129	asl=REFUSED	sigil=REFUSED	rng_ixl__129.asm(3):2: error: operand -129 out of range -128..=255
+SIGIL-REFUSES	rng_ixl__A_	asl=DD 2E 41 00	sigil=REFUSED	rng_ixl__A_.asm(3):2: error: unsupported form: Instruction { mnemonic: Ld, ops: [Imm8(0), Imm8(65)] }
+MATCH	rng_l_0FFh	asl=2E FF 00	sigil=2E FF 00	
+MATCH	rng_l_255	asl=2E FF 00	sigil=2E FF 00	
+MATCH	rng_l__128	asl=2E 80 00	sigil=2E 80 00	
+BOTH-REFUSE	rng_l__129	asl=REFUSED	sigil=REFUSED	rng_l__129.asm(3):2: error: operand -129 out of range -128..=255
+MATCH	rng_l__A_	asl=2E 41 00	sigil=2E 41 00	

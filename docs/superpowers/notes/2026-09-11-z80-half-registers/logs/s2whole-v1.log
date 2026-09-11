@@ -1,0 +1,11 @@
+sigil /home/volence/sonic_hacks/.scratch/z80-half-registers/bin/sigil-v1 md5 8e152f4f0da29e0d5c66adeff83c9ba7
+command (cwd /home/volence/sonic_hacks/.scratch/z80-half-registers/corpora/s2disasm): /home/volence/sonic_hacks/.scratch/z80-half-registers/bin/sigil-v1 s2.asm -o /home/volence/sonic_hacks/.scratch/z80-half-registers/runs/s2whole-v1/s2sigil.bin -p=0 -z=0,saxman-bugged,Size_of_Snd_driver_guess,after
+SIGIL_EXIT=0 seconds=4 stderr-rows=1
+s2.asm(91275):2: warning: `shared` is ignored: sigil writes no share file (asl without `-c` says "no sharefile created, SHARED ignored")
+stdout:
+ROM size is $100000 bytes (1024 KiB). About $661 bytes are padding. 
+built: 1048576 bytes, wrote /home/volence/sonic_hacks/.scratch/z80-half-registers/runs/s2whole-v1/s2sigil.bin
+REF   md5 9feeb724052c39982d432a7851c98d3e crc32 7b905383 size 1048576
+SIGIL md5 9feeb724052c39982d432a7851c98d3e crc32 7b905383 size 1048576
+DIFF 0 bytes in 0 runs; sizes equal: True
+S2WHOLE_END

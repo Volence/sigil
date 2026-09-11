@@ -1,0 +1,36 @@
+== m2-no-low-halves: the high halves recognised, ixl/iyl not
+HEAD 23d7d57de6285ab370f1362e01545cbdee1a6cd9
+APPLIED to crates/sigil-frontend-as/src/eval.rs; read back from disk (deletion site):
+  crates/sigil-frontend-as/src/eval.rs:11779      match name.to_ascii_lowercase().as_str() {
+  crates/sigil-frontend-as/src/eval.rs:11780          "ixu" | "ixh" => Some((IndexReg::Ix, true)),
+  crates/sigil-frontend-as/src/eval.rs:11781          "iyl" => Some((IndexReg::Iy, false)),
+  old text (now absent from the file): '"ixl" => Some((IndexReg::Ix, false)),'
+APPLIED to crates/sigil-frontend-as/src/eval.rs; read back from disk (deletion site):
+  crates/sigil-frontend-as/src/eval.rs:11781          "iyu" | "iyh" => Some((IndexReg::Iy, true)),
+  crates/sigil-frontend-as/src/eval.rs:11782          _ => None,
+  crates/sigil-frontend-as/src/eval.rs:11783      }
+  old text (now absent from the file): '"iyl" => Some((IndexReg::Iy, false)),'
+test every_probe_is_checked_by_exactly_one_group ... ok
+test momcpu_and_momcpuname_report_the_undocumented_z80 ... ok
+test a_half_beside_h_l_or_the_other_index_register_is_refused_for_that_reason ... FAILED
+test sonic_2_s_twelve_lines_assemble_as_asl_assembles_them ... FAILED
+test the_halves_exist_only_under_z80undoc ... FAILED
+test every_spelling_asl_accepts_names_the_register_asl_names ... FAILED
+test a_half_in_a_form_asl_refuses_is_refused ... FAILED
+test a_symbol_named_like_a_half_is_read_where_asl_reads_it ... FAILED
+test the_arithmetic_and_logic_forms_take_a_half ... FAILED
+test ld_takes_a_half_in_every_position_asl_allows ... FAILED
+test result: FAILED. 2 passed; 8 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+error: test failed, to rerun pass `-p sigil-frontend-as --test as_z80_half_registers`
+error: 1 target failed:
+cargo exit 101; compiled=True; FAILED tests: 8
+  panic: 14 of 24:
+  panic: 4 of 7 `sonic2` probes disagree with asl:
+  panic: 6 of 21 `mode` probes disagree with asl:
+  panic: 5 of 39 `spellings` probes disagree with asl:
+  panic: 1 of 91 `forms` probes disagree with asl:
+  panic: 17 of 108 `symbol` probes disagree with asl:
+  panic: 30 of 107 `arithmetic` probes disagree with asl:
+  panic: 38 of 142 `ld` probes disagree with asl:
+VERDICT: RED
+restored from HEAD:crates/sigil-frontend-as/src/eval.rs; tracked tree CLEAN

@@ -1,0 +1,84 @@
+# sigil /home/volence/sonic_hacks/.scratch/z80-half-registers/bin/sigil-base md5 5a5dae03308b46b0321969b674d8a332
+# BOTH-REFUSE=27 DIFFER=8 MATCH=29 SIGIL-ACCEPTS=12 SIGIL-REFUSES=6
+MATCH	lab_djnz_ixl	asl=10 00 00	sigil=10 00 00	
+MATCH	lab_djnz_iyu	asl=10 00 00	sigil=10 00 00	
+MATCH	lab_jp_ixl	asl=C3 03 00 00	sigil=C3 03 00 00	
+MATCH	lab_jp_iyu	asl=C3 03 00 00	sigil=C3 03 00 00	
+MATCH	lab_jr_ixl	asl=18 00 00	sigil=18 00 00	
+MATCH	lab_jr_iyu	asl=18 00 00	sigil=18 00 00	
+MATCH	lab_jrz_ixl	asl=28 00 00	sigil=28 00 00	
+MATCH	lab_jrz_iyu	asl=28 00 00	sigil=28 00 00	
+BOTH-REFUSE	nosym_bit	asl=REFUSED	sigil=REFUSED	nosym_bit.asm(3):2: error: unresolved symbol `ixl` in operand
+BOTH-REFUSE	nosym_im	asl=REFUSED	sigil=REFUSED	nosym_im.asm(3):2: error: unresolved symbol `ixl` in operand
+BOTH-REFUSE	nosym_ldhl	asl=REFUSED	sigil=REFUSED	nosym_ldhl.asm(3):2: error: unresolved symbol `ixl` for fixup in section sec0 at offset 1
+BOTH-REFUSE	nosym_ldindhl	asl=REFUSED	sigil=REFUSED	nosym_ldindhl.asm(3):2: error: unresolved symbol `ixl` in operand
+BOTH-REFUSE	nosym_rst	asl=REFUSED	sigil=REFUSED	nosym_rst.asm(3):2: error: unresolved symbol `ixl` in operand
+DIFFER	sym_adda_ixl	asl=DD 85 00	sigil=C6 05 00	
+DIFFER	sym_adda_iyu	asl=FD 84 00	sigil=C6 05 00	
+BOTH-REFUSE	sym_addhl_ixl	asl=REFUSED	sigil=REFUSED	sym_addhl_ixl.asm(4):2: error: unsupported form: Instruction { mnemonic: Add, ops: [Pair(Hl), Imm16(5)] }
+BOTH-REFUSE	sym_addhl_iyu	asl=REFUSED	sigil=REFUSED	sym_addhl_iyu.asm(4):2: error: unsupported form: Instruction { mnemonic: Add, ops: [Pair(Hl), Imm16(5)] }
+MATCH	sym_bit_ixl	asl=CB 68 00	sigil=CB 68 00	
+MATCH	sym_bit_iyu	asl=CB 68 00	sigil=CB 68 00	
+MATCH	sym_call_ixl	asl=CD 05 00 00	sigil=CD 05 00 00	
+MATCH	sym_call_iyu	asl=CD 05 00 00	sigil=CD 05 00 00	
+MATCH	sym_callnz_ixl	asl=C4 05 00 00	sigil=C4 05 00 00	
+MATCH	sym_callnz_iyu	asl=C4 05 00 00	sigil=C4 05 00 00	
+BOTH-REFUSE	sym_exsp_ixl	asl=REFUSED	sigil=REFUSED	sym_exsp_ixl.asm(4):2: error: unsupported form: Instruction { mnemonic: Ex, ops: [Pair(Sp), Imm8(5)] }
+BOTH-REFUSE	sym_exsp_iyu	asl=REFUSED	sigil=REFUSED	sym_exsp_iyu.asm(4):2: error: unsupported form: Instruction { mnemonic: Ex, ops: [Pair(Sp), Imm8(5)] }
+BOTH-REFUSE	sym_im_ixl	asl=REFUSED	sigil=REFUSED	sym_im_ixl.asm(4):2: error: operand 5 out of range 0..=2
+BOTH-REFUSE	sym_im_iyu	asl=REFUSED	sigil=REFUSED	sym_im_iyu.asm(4):2: error: operand 5 out of range 0..=2
+MATCH	sym_ina_ixl	asl=DB 05 00	sigil=DB 05 00	
+MATCH	sym_ina_iyu	asl=DB 05 00	sigil=DB 05 00	
+SIGIL-REFUSES	sym_inc_ixl	asl=DD 2C 00	sigil=REFUSED	sym_inc_ixl.asm(4):2: error: unsupported form: Instruction { mnemonic: Inc, ops: [Imm8(5)] }
+SIGIL-REFUSES	sym_inc_iyu	asl=FD 24 00	sigil=REFUSED	sym_inc_iyu.asm(4):2: error: unsupported form: Instruction { mnemonic: Inc, ops: [Imm8(5)] }
+MATCH	sym_jpnz_ixl	asl=C2 05 00 00	sigil=C2 05 00 00	
+MATCH	sym_jpnz_iyu	asl=C2 05 00 00	sigil=C2 05 00 00	
+DIFFER	sym_ldab_ixl	asl=DD 7D 00	sigil=3E 05 00	
+DIFFER	sym_ldab_iyu	asl=FD 7C 00	sigil=3E 05 00	
+SIGIL-ACCEPTS	sym_ldbc_ixl	asl=REFUSED	sigil=01 05 00 00	
+SIGIL-ACCEPTS	sym_ldbc_iyu	asl=REFUSED	sigil=01 05 00 00	
+SIGIL-REFUSES	sym_ldh5_ixl	asl=DD 2E 05 00	sigil=REFUSED	sym_ldh5_ixl.asm(4):2: error: unsupported form: Instruction { mnemonic: Ld, ops: [Imm8(5), Imm8(5)] }
+SIGIL-REFUSES	sym_ldh5_iyu	asl=FD 26 05 00	sigil=REFUSED	sym_ldh5_iyu.asm(4):2: error: unsupported form: Instruction { mnemonic: Ld, ops: [Imm8(5), Imm8(5)] }
+SIGIL-REFUSES	sym_ldhexpr_ixl	asl=DD 2E 06 00	sigil=REFUSED	sym_ldhexpr_ixl.asm(4):2: error: unsupported form: Instruction { mnemonic: Ld, ops: [Imm8(5), Imm8(6)] }
+SIGIL-REFUSES	sym_ldhexpr_iyu	asl=FD 26 06 00	sigil=REFUSED	sym_ldhexpr_iyu.asm(4):2: error: unsupported form: Instruction { mnemonic: Ld, ops: [Imm8(5), Imm8(6)] }
+SIGIL-ACCEPTS	sym_ldhl_ixl	asl=REFUSED	sigil=21 05 00 00	
+SIGIL-ACCEPTS	sym_ldhl_iyu	asl=REFUSED	sigil=21 05 00 00	
+MATCH	sym_ldhlmem_ixl	asl=2A 05 00 00	sigil=2A 05 00 00	
+MATCH	sym_ldhlmem_iyu	asl=2A 05 00 00	sigil=2A 05 00 00	
+BOTH-REFUSE	sym_ldhparen_ixl	asl=REFUSED	sigil=REFUSED	sym_ldhparen_ixl.asm(4):2: error: unsupported form: Instruction { mnemonic: Ld, ops: [Imm8(5), Mem(5)] }
+BOTH-REFUSE	sym_ldhparen_iyu	asl=REFUSED	sigil=REFUSED	sym_ldhparen_iyu.asm(4):2: error: unsupported form: Instruction { mnemonic: Ld, ops: [Imm8(5), Mem(5)] }
+BOTH-REFUSE	sym_ldia_ixl	asl=REFUSED	sigil=REFUSED	sym_ldia_ixl.asm(4):2: error: unsupported form: Instruction { mnemonic: Ld, ops: [RegI, Imm8(5)] }
+BOTH-REFUSE	sym_ldia_iyu	asl=REFUSED	sigil=REFUSED	sym_ldia_iyu.asm(4):2: error: unsupported form: Instruction { mnemonic: Ld, ops: [RegI, Imm8(5)] }
+SIGIL-ACCEPTS	sym_ldindhl_ixl	asl=REFUSED	sigil=36 05 00	
+SIGIL-ACCEPTS	sym_ldindhl_iyu	asl=REFUSED	sigil=36 05 00	
+SIGIL-ACCEPTS	sym_ldindix_ixl	asl=REFUSED	sigil=DD 36 01 05 00	
+SIGIL-ACCEPTS	sym_ldindix_iyu	asl=REFUSED	sigil=DD 36 01 05 00	
+SIGIL-ACCEPTS	sym_ldix_ixl	asl=REFUSED	sigil=DD 21 05 00 00	
+SIGIL-ACCEPTS	sym_ldix_iyu	asl=REFUSED	sigil=DD 21 05 00 00	
+BOTH-REFUSE	sym_ldixd2_ixl	asl=REFUSED	sigil=REFUSED	sym_ldixd2_ixl.asm(4):2: error: unresolved symbol `ix` in operand
+BOTH-REFUSE	sym_ldixd2_iyu	asl=REFUSED	sigil=REFUSED	sym_ldixd2_iyu.asm(4):2: error: unresolved symbol `ix` in operand
+MATCH	sym_ldixd_ixl	asl=DD 7E 05 00	sigil=DD 7E 05 00	
+MATCH	sym_ldixd_iyu	asl=DD 7E 05 00	sigil=DD 7E 05 00	
+BOTH-REFUSE	sym_ldmem_ixl	asl=REFUSED	sigil=REFUSED	sym_ldmem_ixl.asm(4):2: error: unsupported form: Instruction { mnemonic: Ld, ops: [Mem(4660), Imm8(5)] }
+BOTH-REFUSE	sym_ldmem_iyu	asl=REFUSED	sigil=REFUSED	sym_ldmem_iyu.asm(4):2: error: unsupported form: Instruction { mnemonic: Ld, ops: [Mem(4660), Imm8(5)] }
+BOTH-REFUSE	sym_ldmemd_ixl	asl=REFUSED	sigil=REFUSED	sym_ldmemd_ixl.asm(4):2: error: unsupported form: Instruction { mnemonic: Ld, ops: [Imm8(5), Mem(4660)] }
+BOTH-REFUSE	sym_ldmemd_iyu	asl=REFUSED	sigil=REFUSED	sym_ldmemd_iyu.asm(4):2: error: unsupported form: Instruction { mnemonic: Ld, ops: [Imm8(5), Mem(4660)] }
+SIGIL-ACCEPTS	sym_ldsp_ixl	asl=REFUSED	sigil=31 05 00 00	
+SIGIL-ACCEPTS	sym_ldsp_iyu	asl=REFUSED	sigil=31 05 00 00	
+MATCH	sym_outa_ixl	asl=D3 05 00	sigil=D3 05 00	
+MATCH	sym_outa_iyu	asl=D3 05 00	sigil=D3 05 00	
+BOTH-REFUSE	sym_push_ixl	asl=REFUSED	sigil=REFUSED	sym_push_ixl.asm(4):2: error: unsupported form: Instruction { mnemonic: Push, ops: [Imm8(5)] }
+BOTH-REFUSE	sym_push_iyu	asl=REFUSED	sigil=REFUSED	sym_push_iyu.asm(4):2: error: unsupported form: Instruction { mnemonic: Push, ops: [Imm8(5)] }
+MATCH	sym_res_ixl	asl=CB A8 00	sigil=CB A8 00	
+MATCH	sym_res_iyu	asl=CB A8 00	sigil=CB A8 00	
+BOTH-REFUSE	sym_retnz_ixl	asl=REFUSED	sigil=REFUSED	sym_retnz_ixl.asm(4):2: error: unsupported form: Instruction { mnemonic: Ret, ops: [Imm8(5)] }
+BOTH-REFUSE	sym_retnz_iyu	asl=REFUSED	sigil=REFUSED	sym_retnz_iyu.asm(4):2: error: unsupported form: Instruction { mnemonic: Ret, ops: [Imm8(5)] }
+BOTH-REFUSE	sym_rst_ixl	asl=REFUSED	sigil=REFUSED	sym_rst_ixl.asm(4):2: error: operand out of range: rst target must be one of $00,$08,$10,$18,$20,$28,$30,$38, got 0x05
+BOTH-REFUSE	sym_rst_iyu	asl=REFUSED	sigil=REFUSED	sym_rst_iyu.asm(4):2: error: operand out of range: rst target must be one of $00,$08,$10,$18,$20,$28,$30,$38, got 0x05
+MATCH	sym_set_ixl	asl=CB EE 00	sigil=CB EE 00	
+MATCH	sym_set_iyu	asl=CB EE 00	sigil=CB EE 00	
+DIFFER	sym_sub1_ixl	asl=DD 95 00	sigil=D6 05 00	
+DIFFER	sym_sub1_iyu	asl=FD 94 00	sigil=D6 05 00	
+MATCH	usym_dbIXL	asl=05 00	sigil=05 00	
+DIFFER	usym_ldaIXL	asl=DD 7D 00	sigil=3E 05 00	
+DIFFER	usym_ldaIYU	asl=FD 7C 00	sigil=3E 05 00	

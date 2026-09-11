@@ -1,0 +1,12 @@
+# sigil /home/volence/sonic_hacks/.scratch/z80-half-registers/bin/sigil-base md5 5a5dae03308b46b0321969b674d8a332
+# BOTH-REFUSE=1 MATCH=1 SIGIL-REFUSES=8
+BOTH-REFUSE	root68k_after	asl=REFUSED	sigil=REFUSED	root68k_after.asm(9):2: error: unresolved symbol `ixl` in operand
+MATCH	root68k_after_sym	asl=00 3E 05 00 4E 71	sigil=00 3E 05 00 4E 71	
+SIGIL-REFUSES	root68k_iyl	asl=30 3C 12 34 FD 7D 32 3C 56 78 4E 71	sigil=REFUSED	root68k_iyl.asm(6):2: error: unresolved symbol `iyl` in operand
+SIGIL-REFUSES	s2_0	asl=FD 7D 00	sigil=REFUSED	s2_0.asm(3):2: error: unresolved symbol `iyl` in operand
+SIGIL-REFUSES	s2_1	asl=FD 8C 00	sigil=REFUSED	s2_1.asm(3):2: error: unresolved symbol `iyu` in operand
+SIGIL-REFUSES	s2_2	asl=DD 5D 00	sigil=REFUSED	s2_2.asm(3):2: error: unresolved symbol `ixl` in operand
+SIGIL-REFUSES	s2_3	asl=DD 54 00	sigil=REFUSED	s2_3.asm(3):2: error: unresolved symbol `ixu` in operand
+SIGIL-REFUSES	s2_4	asl=DD 7D 00	sigil=REFUSED	s2_4.asm(3):2: error: unresolved symbol `ixl` in operand
+SIGIL-REFUSES	s2_5	asl=DD 8C 00	sigil=REFUSED	s2_5.asm(3):2: error: unresolved symbol `ixu` in operand
+SIGIL-REFUSES	s2_6	asl=DD 85 00	sigil=REFUSED	s2_6.asm(3):2: error: unresolved symbol `ixl` in operand
