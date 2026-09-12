@@ -96,7 +96,7 @@ Wording, from `failure_line`:
 Why: asl keeps the severities apart and prints both, so the line names both. A zero warning
 count is omitted rather than printed as `0 warnings`, following sigil's own `warning_summary`,
 which omits an empty bucket; that also keeps the common warning-free spelling byte-identical, so
-the six tests that pin it and every frozen transcript under `docs/` still describe current
+the five test files that pin it and every frozen transcript under `docs/` still describe current
 behaviour. The error count is always printed, zero included, because the line's first job is to
 say what failed the build; a zero there is a defect in sigil, not in the program, and saying so
 stops a reader concluding that the warnings it names were promoted to errors. The incompleteness
