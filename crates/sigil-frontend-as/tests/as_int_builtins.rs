@@ -210,3 +210,55 @@ fn what_asl_refuses_in_firstbit_is_refused() {
         refused(name);
     }
 }
+
+/// `bitcnt` over its whole table. It counts all 64 bits of the two's-complement
+/// value, so a negative argument counts its sign extension; `t_bitcnt.lst`:
+///
+/// ```text
+///        4/       0 : 0000 0000           	dc.l bitcnt($0)
+///       11/      1C : 0000 0003           	dc.l bitcnt($7)
+///     1373/    1564 : 0000 0020           	dc.l bitcnt($FFFFFFFF)
+///     1496/    1750 : 0000 003F           	dc.l bitcnt($7FFFFFFFFFFFFFFF)
+///     1028/    1000 : 0000 0040           	dc.l bitcnt(-$1)
+///     1029/    1004 : 0000 003F           	dc.l bitcnt(-$2)
+///     1155/    11FC : 0000 0039           	dc.l bitcnt(-$80)
+///     1495/    174C : 0000 0001           	dc.l bitcnt((-$7FFFFFFFFFFFFFFF-1))
+/// ```
+#[test]
+fn bitcnt_matches_asl_over_its_table() {
+    builds("t_bitcnt");
+}
+
+/// Every integer context, both CPUs. `ctx_bitcnt.lst` and `ctx_bitcnt_z80.lst`:
+///
+/// ```text
+///        4/       0 : 01                  	dc.b bitcnt(FwdL)
+///        8/      41 : 03                  	dc.b BITCNT(7)
+///       12/      45 : 03                  	dc.b bitcnt(Later)
+///       23/      4F : 323C 000C           	move.w #bitcnt(7)<<2,d1
+///       25/      54 : 02                  	dc.b bitcnt(bitcnt(7))
+///       26/      55 : 33                  	dc.b "\{bitcnt(7)}"
+///       27/      56 : 00                  	dc.b bitcnt()
+///        5/       3 : 21 03 00            	ld hl,bitcnt(7)
+/// ```
+#[test]
+fn bitcnt_works_wherever_an_integer_is_read() {
+    builds("ctx_bitcnt");
+    builds("ctx_bitcnt_z80");
+}
+
+/// What asl refuses: a float aborts it (`error #10000`, exit 3); a string is
+/// `error #1136`, two arguments `error #1490`, an undefined symbol
+/// `error #1010` (exit 2).
+#[test]
+fn what_asl_refuses_in_bitcnt_is_refused() {
+    for name in [
+        "ref_bitcnt_float",
+        "ref_bitcnt_floatsym",
+        "ref_bitcnt_string",
+        "ref_bitcnt_twoarg",
+        "ref_bitcnt_undef",
+    ] {
+        refused(name);
+    }
+}

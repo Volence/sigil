@@ -18827,6 +18827,7 @@ type IntFn = fn(i64) -> Option<i64>;
 const INT_BUILTINS: &[(&str, IntFn)] = &[
     ("lastbit", lastbit),
     ("firstbit", firstbit),
+    ("bitcnt", bitcnt),
 ];
 
 /// asl's `firstbit(x)`. For an EVEN `x` it is the index of the lowest set
@@ -18843,6 +18844,15 @@ const INT_BUILTINS: &[(&str, IntFn)] = &[
 fn firstbit(x: i64) -> Option<i64> {
     let x = if x & 1 == 1 { x >> 1 } else { x };
     Some(if x == 0 { -1 } else { i64::from(x.trailing_zeros()) })
+}
+
+/// asl's `bitcnt(x)`: how many bits of the 64-bit two's-complement `x` are
+/// set, so a negative value counts its sign extension. asl, exit 0
+/// (`t_bitcnt.lst`): `bitcnt($7)` 3, `bitcnt($FFFFFFFF)` 32,
+/// `bitcnt($7FFFFFFFFFFFFFFF)` 63, `bitcnt(-$1)` 64, `bitcnt(-$2)` 63,
+/// `bitcnt(-$80)` 57, `bitcnt((-$7FFFFFFFFFFFFFFF-1))` 1, `bitcnt($0)` 0.
+fn bitcnt(x: i64) -> Option<i64> {
+    Some(i64::from(x.count_ones()))
 }
 
 /// The function behind an integer-only builtin name, or `None`, matched
