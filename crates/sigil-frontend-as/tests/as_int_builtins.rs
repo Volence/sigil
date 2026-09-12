@@ -152,3 +152,61 @@ fn an_empty_argument_is_refused_where_zero_is() {
         refused(name);
     }
 }
+
+/// `firstbit` over its whole table: 1,862 values, every one from the same
+/// clean run. It is NOT the lowest set bit on an odd value, which is what a
+/// half-fix would write; `t_firstbit.lst`:
+///
+/// ```text
+///        4/       0 : FFFF FFFF           	dc.l firstbit($0)
+///        5/       4 : FFFF FFFF           	dc.l firstbit($1)
+///        7/       C : 0000 0000           	dc.l firstbit($3)
+///        9/      14 : 0000 0001           	dc.l firstbit($5)
+///       16/      30 : 0000 0002           	dc.l firstbit($C)
+///      357/     584 : 0000 0004           	dc.l firstbit($161)
+///     1028/    1000 : 0000 0000           	dc.l firstbit(-$1)
+///     1029/    1004 : 0000 0001           	dc.l firstbit(-$2)
+///     1368/    1550 : 0000 001F           	dc.l firstbit($80000000)
+///     1372/    1560 : 0000 0020           	dc.l firstbit($100000000)
+///     1495/    174C : 0000 003F           	dc.l firstbit((-$7FFFFFFFFFFFFFFF-1))
+/// ```
+#[test]
+fn firstbit_matches_asl_over_its_table() {
+    builds("t_firstbit");
+}
+
+/// Every integer context, both CPUs: any case, a forward label and a forward
+/// `equ`, `equ`/`set`, an `if`, two immediates, nesting, interpolation and the
+/// empty argument. `ctx_firstbit.lst` and `ctx_firstbit_z80.lst`:
+///
+/// ```text
+///        4/       0 : 06                  	dc.b firstbit(FwdL)
+///        8/      41 : 02                  	dc.b FIRSTBIT(12)
+///       12/      45 : 02                  	dc.b firstbit(Later)
+///       23/      4F : 323C 0008           	move.w #firstbit(12)<<2,d1
+///       25/      54 : 01                  	dc.b firstbit(firstbit(12))
+///       26/      55 : 32                  	dc.b "\{firstbit(12)}"
+///       27/      56 : FF                  	dc.b firstbit()
+///        5/       3 : 21 02 00            	ld hl,firstbit(12)
+/// ```
+#[test]
+fn firstbit_works_wherever_an_integer_is_read() {
+    builds("ctx_firstbit");
+    builds("ctx_firstbit_z80");
+}
+
+/// What asl refuses: a float (`firstbit(5.0)`, and a float `set` symbol) aborts
+/// it (`error #10000: internal error`, exit 3); a string is `error #1136`, two
+/// arguments `error #1490`, an undefined symbol `error #1010` (exit 2).
+#[test]
+fn what_asl_refuses_in_firstbit_is_refused() {
+    for name in [
+        "ref_firstbit_float",
+        "ref_firstbit_floatsym",
+        "ref_firstbit_string",
+        "ref_firstbit_twoarg",
+        "ref_firstbit_undef",
+    ] {
+        refused(name);
+    }
+}

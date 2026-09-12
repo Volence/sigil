@@ -18824,7 +18824,26 @@ fn lastbit(x: i64) -> Option<i64> {
 /// the other.
 type IntFn = fn(i64) -> Option<i64>;
 
-const INT_BUILTINS: &[(&str, IntFn)] = &[("lastbit", lastbit)];
+const INT_BUILTINS: &[(&str, IntFn)] = &[
+    ("lastbit", lastbit),
+    ("firstbit", firstbit),
+];
+
+/// asl's `firstbit(x)`. For an EVEN `x` it is the index of the lowest set
+/// bit; for an ODD `x` it is the index of the lowest set bit of `x >> 1`, and
+/// -1 when that is 0, so bit 0 is never the answer and `firstbit(1)` is -1.
+///
+/// The rule is measured, not read off the name: it fits all 1,862 rows of
+/// asl's `t_firstbit` table (exit 0), and the plain lowest-set-bit reading
+/// misses 452 of them. asl: `firstbit($C)` 2, `firstbit($80000000)` 31,
+/// `firstbit($100000000)` 32, `firstbit(-$2)` 1,
+/// `firstbit((-$7FFFFFFFFFFFFFFF-1))` 63, `firstbit($0)` -1; and on odd values
+/// `firstbit($1)` -1, `firstbit($3)` 0, `firstbit($5)` 1, `firstbit($161)` 4,
+/// `firstbit(-$1)` 0.
+fn firstbit(x: i64) -> Option<i64> {
+    let x = if x & 1 == 1 { x >> 1 } else { x };
+    Some(if x == 0 { -1 } else { i64::from(x.trailing_zeros()) })
+}
 
 /// The function behind an integer-only builtin name, or `None`, matched
 /// case-insensitively as [`float_builtin`] is.
