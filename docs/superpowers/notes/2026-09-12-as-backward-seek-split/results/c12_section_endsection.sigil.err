@@ -1,0 +1,4 @@
+c12_section_endsection.asm(9):9: error: `section` is not a recognized 68000 mnemonic
+c12_section_endsection.asm(10):9: error: `public` is not a recognized 68000 mnemonic
+c12_section_endsection.asm(13):9: error: `endsection` is not a recognized 68000 mnemonic
+SIGIL_EXIT=1

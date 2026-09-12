@@ -1,0 +1,2 @@
+c10_cpu_z80_unphased.asm(7):9: error: sections `sec12`, `sec14` [0xC, 0x10) are assembled for the Z80 at origin 0xC, in a second address space this org opens outside the ROM image, and no -z instruction places it into the ROM
+SIGIL_EXIT=1

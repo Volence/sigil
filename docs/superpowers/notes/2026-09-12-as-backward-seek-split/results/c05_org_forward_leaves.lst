@@ -1,0 +1,62 @@
+ AS V1.42 Beta [Bld 212] - Source File c05_org_forward_leaves.asm - Page 1 - 09/12/2026 12:42:52 AM
+
+
+       1/       0 :                     ; shape c05_org_forward_leaves, written by gen.py
+       2/       0 :                             cpu 68000
+       3/       0 :                             org 0
+       4/       0 : 0000 0040                   dc.l L_next
+       5/       4 : 0000 0046                   dc.l L_after
+       6/       8 : AAAA BBBB CCCC      Start:  dc.w $AAAA,$BBBB,$CCCC,$DDDD
+                E : DDDD             
+       7/       A :                             org Start+2
+       8/       A : EEEE                        dc.w $EEEE
+       9/      40 :                             org $40
+      10/      40 : 1234                L_next: dc.w $1234
+      11/      42 : 0000 0042                   dc.l *
+      12/      46 :                             cpu 68000
+      13/      46 : 5678                L_after: dc.w $5678
+      14/      48 :                     
+ AS V1.42 Beta [Bld 212] - Source File c05_org_forward_leaves.asm - Page 2 - 09/12/2026 12:42:52 AM
+
+
+  Symbol Table (* = unused):
+  --------------------------
+
+*ARCHITECTURE :                                      "x86_64-unknown-linux" - |
+*BIGENDIAN :                      0 - | *BRANCHEXT :                      0 - |
+*CASESENSITIVE :                  1 - | *COMPMODE :                       0 - |
+*CONSTPI :        3.141592653589793 - | *CUSTOM :                         0 - |
+*DATE :                "09/12/2026" - | *FALSE :                          0 - |
+*FULLPMMU :                       1 - | *HAS64 :                          1 - |
+*HASDSP :                         0 - | *HASFPU :                         0 - |
+*HASPMMU :                        0 - | *INEXTMODE :                      0 - |
+*INLWORDMODE :                    0 - | *INMAXMODE :                      0 - |
+*INSRCMODE :                      0 - | *INSUPMODE :                      0 - |
+*LISTON :                         1 - |  L_after :                       46 C |
+ L_next :                        40 C | *MACEXP :                         7 - |
+*MOMCPU :                     68000 - | *MOMCPUNAME :               "68000" - |
+*NESTMAX :                      100 - | *PACKING :                        0 - |
+*PADDING :                        1 - | *RELAXED :                        0 - |
+ Start :                          8 C | *TIME :               "12:42:52 AM" - |
+*TRUE :                           1 - | *VERSION :                     142F - |
+*Z80SYNTAX :                      0 - |
+
+     34 symbols
+     31 unused symbols
+
+ AS V1.42 Beta [Bld 212] - Source File c05_org_forward_leaves.asm - Page 3 - 09/12/2026 12:42:52 AM
+
+
+  Code Pages:
+  ----------
+
+STANDARD (0 changed characters)
+
+1 code page
+
+0.00 seconds assembly time
+
+     14 lines source file
+      2 passes
+      0 errors
+      0 warnings

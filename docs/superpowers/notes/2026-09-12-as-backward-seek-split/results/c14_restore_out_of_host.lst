@@ -1,0 +1,66 @@
+ AS V1.42 Beta [Bld 212] - Source File c14_restore_out_of_host.asm - Page 1 - 09/12/2026 12:42:52 AM
+
+
+       1/       0 :                     ; shape c14_restore_out_of_host, written by gen.py
+       2/       0 :                             cpu z80
+       3/       0 :                             save
+       4/       0 :                             cpu 68000
+       5/       0 :                             org 0
+       6/       0 : 0000 8000                   dc.l L_next
+       7/       4 : 0000 0010                   dc.l L_after
+       8/       8 : AAAA BBBB CCCC      Start:  dc.w $AAAA,$BBBB,$CCCC,$DDDD
+                E : DDDD             
+       9/       A :                             org Start+2
+      10/       A : EEEE                        dc.w $EEEE
+      11/       C : ALL                          restore
+      12/    8000 :                             phase 8000h
+      13/    8000 : 12 34               L_next: db 12h,34h
+      14/    8002 : 02 80                       dw $
+      15/      10 :                             dephase
+      16/      10 :                             cpu 68000
+      17/      10 : 5678                L_after: dc.w $5678
+      18/      12 :                     
+ AS V1.42 Beta [Bld 212] - Source File c14_restore_out_of_host.asm - Page 2 - 09/12/2026 12:42:52 AM
+
+
+  Symbol Table (* = unused):
+  --------------------------
+
+*ARCHITECTURE :                                      "x86_64-unknown-linux" - |
+*BIGENDIAN :                      0 - | *BRANCHEXT :                      0 - |
+*CASESENSITIVE :                  1 - | *COMPMODE :                       0 - |
+*CONSTPI :        3.141592653589793 - | *CUSTOM :                         0 - |
+*DATE :                "09/12/2026" - | *FALSE :                          0 - |
+*FULLPMMU :                       1 - | *HAS64 :                          1 - |
+*HASDSP :                         0 - | *HASFPU :                         0 - |
+*HASPMMU :                        0 - | *INEXTMODE :                      0 - |
+*INLWORDMODE :                    0 - | *INMAXMODE :                      0 - |
+*INSRCMODE :                      0 - | *INSUPMODE :                      0 - |
+*LISTON :                         1 - |  L_after :                       10 C |
+ L_next :                      8000 C | *MACEXP :                         7 - |
+*MOMCPU :                     68000 - | *MOMCPUNAME :               "68000" - |
+*NESTMAX :                      100 - | *PACKING :                        0 - |
+*PADDING :                        1 - | *RELAXED :                        0 - |
+ Start :                          8 C | *TIME :               "12:42:52 AM" - |
+*TRUE :                           1 - | *VERSION :                     142F - |
+*Z80SYNTAX :                      0 - |
+
+     34 symbols
+     31 unused symbols
+
+ AS V1.42 Beta [Bld 212] - Source File c14_restore_out_of_host.asm - Page 3 - 09/12/2026 12:42:52 AM
+
+
+  Code Pages:
+  ----------
+
+STANDARD (0 changed characters)
+
+1 code page
+
+0.00 seconds assembly time
+
+     18 lines source file
+      2 passes
+      0 errors
+      0 warnings

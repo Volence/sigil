@@ -1,0 +1,29 @@
+== s1: SEEKFEED by site
+     80 MacroSetup.asm(140)
+     11 MacroSetup.asm(161)
+      6 MacroSetup.asm(128)
+      2 MacroSetup.asm(156)
+      2 MacroSetup.asm(154)
+      1 MacroSetup.asm(151)
+      1 MacroSetup.asm(149)
+== s1: non-instrument diagnostics: 1
+== s2: SEEKFEED by site
+    374 s2.macros.asm(191)
+    110 s2.macrosetup.asm(128)
+     29 s2.macrosetup.asm(144)
+     29 s2.macrosetup.asm(142)
+     23 s2.macros.asm(227)
+     17 s2.macros.asm(208)
+     17 s2.asm(88545)
+     10 s2.macrosetup.asm(149)
+      4 s2.macrosetup.asm(139)
+      4 s2.macrosetup.asm(137)
+      2 s2.macrosetup.asm(116)
+      1 s2.asm(88577)
+== s2: non-instrument diagnostics: 2
+== sk: SEEKFEED by site
+== sk: non-instrument diagnostics: 137
+== sk0: SEEKFEED by site
+== sk0: non-instrument diagnostics: 120
+== sk1: SEEKFEED by site
+== sk1: non-instrument diagnostics: 110
