@@ -377,11 +377,18 @@ run does not read a delta as their own parcel's doing.
 
 If a sigil-internal change would ripple into those files, message the aeon overseer
 (find it via `ListAgents`; address by repo, not session name) and let that session
-sequence the landing. **A byte-changing parcel costs ONE hand-edited file, not five.**
-`repin` writes exactly one — `crates/sigil-harness/src/bin/repin.rs:89` resolves
-`root.join("src/pins.rs")` and `:192` is its only write — and `repin.toml` changes only
-when a region is added. `crates/sigil-harness/**tests**/repin_pins.rs` is a **currency
-gate** (`pins_rs_is_current`), not a site anybody edits by hand, and neither
+sequence the landing. **A byte-changing parcel is `refreeze --freeze` plus ONE hand-edited
+file.** The freeze regenerates the goldens, the size tables, `pins.rs` (through `repin`) and the
+provenance entry in one step, and `repin.toml` changes only when a region is added. The hand-edited
+file is `crates/sigil-harness/tests/repin_pins.rs`, which holds TWO different things: the currency
+gate `pins_rs_is_current`, which the freeze satisfies, and `generated_pins_match_the_hand_typed_baseline`,
+hand-typed literals that countersign the freeze and that the freeze deliberately does NOT regenerate.
+**Every byte-moving refreeze brief carries the resync step:** derive each new literal from the
+parcel's own moved-section record, only then compare it with the regenerated `pins.rs` (a
+disagreement is a finding, never a value to copy), and put each literal's cause in the commit body,
+not in the test comment. Precedents: `c14fca39`, `cd7551dd`, `3097dd0d`. *(Until 2026-09-12 this
+sentence called the file a currency gate nobody edits by hand. That conflated the two tests, and
+the placement landing went red on the second one because its brief trusted this line.)* Neither
 `mixed_dac_rom.rs` nor `engine.inc` is tracked in this repo (`git ls-files` returns
 neither). **Over-pricing is the error direction that survives**, because an over-estimate
 never fails loudly — it just makes byte-movers get deferred. That ripple belongs to the
@@ -538,29 +545,6 @@ and *Read at the moment - the blocks moved to the reference file on 2026-09-10*.
 The standing sigil-native arc is the **`.emp` language work (Spec 2)** — specs in
 `empyrean/docs/SIGIL_*.md`. The whole sound stack is sigil-native, the language round
 + §17 optimization arc + conversion tail are done, and the map drives the build.
-
-### RESUME 2026-09-12: LINK-ZERO-BYTE-MOVE-PLACEMENT IS FIXED ON A BRANCH AND IS A BYTE-MOVER AWAITING ITS LANDING
-
-Branch `parcel/link-zero-byte-move-placement`, tip `720b9726`, note
-`docs/superpowers/notes/2026-09-12-link-zero-byte-move-placement.md` (on the branch). Reviewed by the
-2026-09-12 session and judged sound; not landed only because that session reached its context line.
-
-- **Mechanism, measured:** a top-level `ensure` after a file's last `section {}` makes
-  `lower_module_inner` open a zero-byte label-less section. `native::lens_pinned` gives never-pinned
-  sections scratch slots at `0x70_0000 + k*0x10_0000`, so every later section moves up one slot; slot
-  k=9 is `0x100_0000`, which `asl_width_rule` masks to 0 and measures as abs.w, so a `jbsr` into it packs
-  2 bytes short and two sections collide at their real bases. The const move alone is byte-identical.
-- **Fix:** `far_scratch_slot` skips any slot that does not encode abs.l across its stride, and
-  `next_scratch` refuses to wrap. Two tests, red-first with the mutation shown applied.
-- **IT MOVES EVERY SHIPPED SHAPE** (s4 25 sections, s4.debug 27, demo 7, demo.debug 9; `EndOfRom`
-  unchanged). The agent's suite has 28 byte, frozen-table and pin reds, which ARE the refreeze, plus one
-  `ORACLE_DIR` environment red that `scripts/landing-run.sh` does not have. So landing is the refreeze
-  ritual: provenance entry, frozen size tables REGENERATED (never hand-edited), `pins.rs` via `repin`,
-  then the landing run. Send aeon the one line: which of the four shapes moved.
-- **Unmeasured, and say so at landing:** the pointer half of `deform_pointer_equals_placed_label_vma`
-  (its frozen-table check fails first), per-site attribution on the reference tree, runtime behaviour.
-
-Delete this block in the landing commit.
 
 ### SIGIL-AS-REPLACEMENT — active on the owner's own words; source locations LANDED
 
