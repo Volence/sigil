@@ -1,0 +1,6 @@
+ AS V1.42 Beta [Bld 212] - Source File ref_abs_char.asm - Page 1 - 09/12/2026 05:50:15 AM
+
+
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0

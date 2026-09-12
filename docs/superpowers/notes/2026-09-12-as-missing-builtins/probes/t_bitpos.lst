@@ -1,0 +1,116 @@
+ AS V1.42 Beta [Bld 212] - Source File t_bitpos.asm - Page 1 - 09/12/2026 05:50:15 AM
+
+
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : 0000 0000           	dc.l bitpos($1)
+       5/       4 : 0000 0001           	dc.l bitpos($2)
+       6/       8 : 0000 0002           	dc.l bitpos($4)
+       7/       C : 0000 0003           	dc.l bitpos($8)
+       8/      10 : 0000 0004           	dc.l bitpos($10)
+       9/      14 : 0000 0005           	dc.l bitpos($20)
+      10/      18 : 0000 0006           	dc.l bitpos($40)
+      11/      1C : 0000 0007           	dc.l bitpos($80)
+      12/      20 : 0000 0008           	dc.l bitpos($100)
+      13/      24 : 0000 0009           	dc.l bitpos($200)
+      14/      28 : 0000 000A           	dc.l bitpos($400)
+      15/      2C : 0000 000B           	dc.l bitpos($800)
+      16/      30 : 0000 000C           	dc.l bitpos($1000)
+      17/      34 : 0000 000D           	dc.l bitpos($2000)
+      18/      38 : 0000 000E           	dc.l bitpos($4000)
+      19/      3C : 0000 000F           	dc.l bitpos($8000)
+      20/      40 : 0000 0010           	dc.l bitpos($10000)
+      21/      44 : 0000 0011           	dc.l bitpos($20000)
+      22/      48 : 0000 0012           	dc.l bitpos($40000)
+      23/      4C : 0000 0013           	dc.l bitpos($80000)
+      24/      50 : 0000 0014           	dc.l bitpos($100000)
+      25/      54 : 0000 0015           	dc.l bitpos($200000)
+      26/      58 : 0000 0016           	dc.l bitpos($400000)
+      27/      5C : 0000 0017           	dc.l bitpos($800000)
+      28/      60 : 0000 0018           	dc.l bitpos($1000000)
+      29/      64 : 0000 0019           	dc.l bitpos($2000000)
+      30/      68 : 0000 001A           	dc.l bitpos($4000000)
+      31/      6C : 0000 001B           	dc.l bitpos($8000000)
+      32/      70 : 0000 001C           	dc.l bitpos($10000000)
+      33/      74 : 0000 001D           	dc.l bitpos($20000000)
+      34/      78 : 0000 001E           	dc.l bitpos($40000000)
+      35/      7C : 0000 001F           	dc.l bitpos($80000000)
+      36/      80 : 0000 0020           	dc.l bitpos($100000000)
+      37/      84 : 0000 0021           	dc.l bitpos($200000000)
+      38/      88 : 0000 0022           	dc.l bitpos($400000000)
+      39/      8C : 0000 0023           	dc.l bitpos($800000000)
+      40/      90 : 0000 0024           	dc.l bitpos($1000000000)
+      41/      94 : 0000 0025           	dc.l bitpos($2000000000)
+      42/      98 : 0000 0026           	dc.l bitpos($4000000000)
+      43/      9C : 0000 0027           	dc.l bitpos($8000000000)
+      44/      A0 : 0000 0028           	dc.l bitpos($10000000000)
+      45/      A4 : 0000 0029           	dc.l bitpos($20000000000)
+      46/      A8 : 0000 002A           	dc.l bitpos($40000000000)
+      47/      AC : 0000 002B           	dc.l bitpos($80000000000)
+      48/      B0 : 0000 002C           	dc.l bitpos($100000000000)
+      49/      B4 : 0000 002D           	dc.l bitpos($200000000000)
+      50/      B8 : 0000 002E           	dc.l bitpos($400000000000)
+      51/      BC : 0000 002F           	dc.l bitpos($800000000000)
+      52/      C0 : 0000 0030           	dc.l bitpos($1000000000000)
+      53/      C4 : 0000 0031           	dc.l bitpos($2000000000000)
+      54/      C8 : 0000 0032           	dc.l bitpos($4000000000000)
+      55/      CC : 0000 0033           	dc.l bitpos($8000000000000)
+      56/      D0 : 0000 0034           	dc.l bitpos($10000000000000)
+      57/      D4 : 0000 0035           	dc.l bitpos($20000000000000)
+      58/      D8 : 0000 0036           	dc.l bitpos($40000000000000)
+      59/      DC : 0000 0037           	dc.l bitpos($80000000000000)
+      60/      E0 : 0000 0038           	dc.l bitpos($100000000000000)
+ AS V1.42 Beta [Bld 212] - Source File t_bitpos.asm - Page 2 - 09/12/2026 05:50:15 AM
+
+
+      61/      E4 : 0000 0039           	dc.l bitpos($200000000000000)
+      62/      E8 : 0000 003A           	dc.l bitpos($400000000000000)
+      63/      EC : 0000 003B           	dc.l bitpos($800000000000000)
+      64/      F0 : 0000 003C           	dc.l bitpos($1000000000000000)
+      65/      F4 : 0000 003D           	dc.l bitpos($2000000000000000)
+      66/      F8 : 0000 003E           	dc.l bitpos($4000000000000000)
+      67/      FC : EE                  	dc.b $EE
+      68/      FD :                     	end
+ AS V1.42 Beta [Bld 212] - Source File t_bitpos.asm - Page 3 - 09/12/2026 05:50:15 AM
+
+
+  Symbol Table (* = unused):
+  --------------------------
+
+*ARCHITECTURE :                                      "x86_64-unknown-linux" - |
+*BIGENDIAN :                      0 - | *BRANCHEXT :                      0 - |
+*CASESENSITIVE :                  1 - | *COMPMODE :                       0 - |
+*CONSTPI :        3.141592653589793 - | *CUSTOM :                         0 - |
+*DATE :                "09/12/2026" - | *FALSE :                          0 - |
+*FULLPMMU :                       1 - | *HAS64 :                          1 - |
+*HASDSP :                         0 - | *HASFPU :                         0 - |
+*HASPMMU :                        0 - | *INEXTMODE :                      0 - |
+*INLWORDMODE :                    0 - | *INMAXMODE :                      0 - |
+*INSRCMODE :                      0 - | *INSUPMODE :                      0 - |
+*LISTON :                         1 - | *MACEXP :                         7 - |
+*MOMCPU :                     68000 - | *MOMCPUNAME :               "68000" - |
+*NESTMAX :                      100 - | *PACKING :                        0 - |
+*PADDING :                        0 - | *RELAXED :                        0 - |
+*TIME :               "05:50:15 AM" - | *TRUE :                           1 - |
+*VERSION :                     142F - | *Z80SYNTAX :                      0 - |
+
+     31 symbols
+     31 unused symbols
+
+ AS V1.42 Beta [Bld 212] - Source File t_bitpos.asm - Page 4 - 09/12/2026 05:50:15 AM
+
+
+  Code Pages:
+  ----------
+
+STANDARD (0 changed characters)
+
+1 code page
+
+0.00 seconds assembly time
+
+     69 lines source file
+      1 pass
+      0 errors
+      0 warnings

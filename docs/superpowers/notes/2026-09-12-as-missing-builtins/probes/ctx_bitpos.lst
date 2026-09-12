@@ -1,0 +1,70 @@
+ AS V1.42 Beta [Bld 212] - Source File ctx_bitpos.asm - Page 1 - 09/12/2026 05:50:15 AM
+
+
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : 03                  	dc.b bitpos(8)
+       5/       1 : 03                  	dc.b BITPOS(8)
+       6/       2 : 03                  	dc.b BitPos(8)
+       7/       3 : 03                  	dc.b bitpos( 8 )
+       8/       4 : 03                  	dc.b bitpos((8))
+       9/       5 : =$3                  X equ bitpos(8)
+      10/       5 : 03                  	dc.b X
+      11/       6 : =$3                  Y set bitpos(8)
+      12/       6 : 03                  	dc.b Y
+      13/       7 : =>FALSE              	if bitpos(8)=bitpos(8)+1
+      14/       7 :                     	dc.b 2
+      15/       7 : =>TRUE               	else
+      16/       7 : 01                  	dc.b 1
+      17/       8 : [13]                 	endif
+      18/       8 : 203C 0000 0003      	move.l #bitpos(8),d0
+      19/       E : 323C 000C           	move.w #bitpos(8)<<2,d1
+      20/      12 : 04                  	dc.b bitpos(8)+1
+      21/      13 : 01                  	dc.b bitpos(bitpos(4))
+      22/      14 : 33                  	dc.b "\{bitpos(8)}"
+      23/      15 : EE                  	dc.b $EE
+      24/      16 :                     	end
+ AS V1.42 Beta [Bld 212] - Source File ctx_bitpos.asm - Page 2 - 09/12/2026 05:50:15 AM
+
+
+  Symbol Table (* = unused):
+  --------------------------
+
+*ARCHITECTURE :                                      "x86_64-unknown-linux" - |
+*BIGENDIAN :                      0 - | *BRANCHEXT :                      0 - |
+*CASESENSITIVE :                  1 - | *COMPMODE :                       0 - |
+*CONSTPI :        3.141592653589793 - | *CUSTOM :                         0 - |
+*DATE :                "09/12/2026" - | *FALSE :                          0 - |
+*FULLPMMU :                       1 - | *HAS64 :                          1 - |
+*HASDSP :                         0 - | *HASFPU :                         0 - |
+*HASPMMU :                        0 - | *INEXTMODE :                      0 - |
+*INLWORDMODE :                    0 - | *INMAXMODE :                      0 - |
+*INSRCMODE :                      0 - | *INSUPMODE :                      0 - |
+*LISTON :                         1 - | *MACEXP :                         7 - |
+*MOMCPU :                     68000 - | *MOMCPUNAME :               "68000" - |
+*NESTMAX :                      100 - | *PACKING :                        0 - |
+*PADDING :                        0 - | *RELAXED :                        0 - |
+*TIME :               "05:50:15 AM" - | *TRUE :                           1 - |
+*VERSION :                     142F - |  X :                              3 - |
+ Y :                              3 - | *Z80SYNTAX :                      0 - |
+
+     33 symbols
+     31 unused symbols
+
+ AS V1.42 Beta [Bld 212] - Source File ctx_bitpos.asm - Page 3 - 09/12/2026 05:50:15 AM
+
+
+  Code Pages:
+  ----------
+
+STANDARD (0 changed characters)
+
+1 code page
+
+0.00 seconds assembly time
+
+     25 lines source file
+      1 pass
+      0 errors
+      0 warnings

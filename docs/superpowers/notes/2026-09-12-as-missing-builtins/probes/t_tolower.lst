@@ -1,0 +1,318 @@
+ AS V1.42 Beta [Bld 212] - Source File t_tolower.asm - Page 1 - 09/12/2026 05:50:15 AM
+
+
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : 00                  	dc.b tolower(0)
+       5/       1 : 01                  	dc.b tolower(1)
+       6/       2 : 02                  	dc.b tolower(2)
+       7/       3 : 03                  	dc.b tolower(3)
+       8/       4 : 04                  	dc.b tolower(4)
+       9/       5 : 05                  	dc.b tolower(5)
+      10/       6 : 06                  	dc.b tolower(6)
+      11/       7 : 07                  	dc.b tolower(7)
+      12/       8 : 08                  	dc.b tolower(8)
+      13/       9 : 09                  	dc.b tolower(9)
+      14/       A : 0A                  	dc.b tolower(10)
+      15/       B : 0B                  	dc.b tolower(11)
+      16/       C : 0C                  	dc.b tolower(12)
+      17/       D : 0D                  	dc.b tolower(13)
+      18/       E : 0E                  	dc.b tolower(14)
+      19/       F : 0F                  	dc.b tolower(15)
+      20/      10 : 10                  	dc.b tolower(16)
+      21/      11 : 11                  	dc.b tolower(17)
+      22/      12 : 12                  	dc.b tolower(18)
+      23/      13 : 13                  	dc.b tolower(19)
+      24/      14 : 14                  	dc.b tolower(20)
+      25/      15 : 15                  	dc.b tolower(21)
+      26/      16 : 16                  	dc.b tolower(22)
+      27/      17 : 17                  	dc.b tolower(23)
+      28/      18 : 18                  	dc.b tolower(24)
+      29/      19 : 19                  	dc.b tolower(25)
+      30/      1A : 1A                  	dc.b tolower(26)
+      31/      1B : 1B                  	dc.b tolower(27)
+      32/      1C : 1C                  	dc.b tolower(28)
+      33/      1D : 1D                  	dc.b tolower(29)
+      34/      1E : 1E                  	dc.b tolower(30)
+      35/      1F : 1F                  	dc.b tolower(31)
+      36/      20 : 20                  	dc.b tolower(32)
+      37/      21 : 21                  	dc.b tolower(33)
+      38/      22 : 22                  	dc.b tolower(34)
+      39/      23 : 23                  	dc.b tolower(35)
+      40/      24 : 24                  	dc.b tolower(36)
+      41/      25 : 25                  	dc.b tolower(37)
+      42/      26 : 26                  	dc.b tolower(38)
+      43/      27 : 27                  	dc.b tolower(39)
+      44/      28 : 28                  	dc.b tolower(40)
+      45/      29 : 29                  	dc.b tolower(41)
+      46/      2A : 2A                  	dc.b tolower(42)
+      47/      2B : 2B                  	dc.b tolower(43)
+      48/      2C : 2C                  	dc.b tolower(44)
+      49/      2D : 2D                  	dc.b tolower(45)
+      50/      2E : 2E                  	dc.b tolower(46)
+      51/      2F : 2F                  	dc.b tolower(47)
+      52/      30 : 30                  	dc.b tolower(48)
+      53/      31 : 31                  	dc.b tolower(49)
+      54/      32 : 32                  	dc.b tolower(50)
+      55/      33 : 33                  	dc.b tolower(51)
+      56/      34 : 34                  	dc.b tolower(52)
+      57/      35 : 35                  	dc.b tolower(53)
+      58/      36 : 36                  	dc.b tolower(54)
+      59/      37 : 37                  	dc.b tolower(55)
+      60/      38 : 38                  	dc.b tolower(56)
+ AS V1.42 Beta [Bld 212] - Source File t_tolower.asm - Page 2 - 09/12/2026 05:50:15 AM
+
+
+      61/      39 : 39                  	dc.b tolower(57)
+      62/      3A : 3A                  	dc.b tolower(58)
+      63/      3B : 3B                  	dc.b tolower(59)
+      64/      3C : 3C                  	dc.b tolower(60)
+      65/      3D : 3D                  	dc.b tolower(61)
+      66/      3E : 3E                  	dc.b tolower(62)
+      67/      3F : 3F                  	dc.b tolower(63)
+      68/      40 : 40                  	dc.b tolower(64)
+      69/      41 : 61                  	dc.b tolower(65)
+      70/      42 : 62                  	dc.b tolower(66)
+      71/      43 : 63                  	dc.b tolower(67)
+      72/      44 : 64                  	dc.b tolower(68)
+      73/      45 : 65                  	dc.b tolower(69)
+      74/      46 : 66                  	dc.b tolower(70)
+      75/      47 : 67                  	dc.b tolower(71)
+      76/      48 : 68                  	dc.b tolower(72)
+      77/      49 : 69                  	dc.b tolower(73)
+      78/      4A : 6A                  	dc.b tolower(74)
+      79/      4B : 6B                  	dc.b tolower(75)
+      80/      4C : 6C                  	dc.b tolower(76)
+      81/      4D : 6D                  	dc.b tolower(77)
+      82/      4E : 6E                  	dc.b tolower(78)
+      83/      4F : 6F                  	dc.b tolower(79)
+      84/      50 : 70                  	dc.b tolower(80)
+      85/      51 : 71                  	dc.b tolower(81)
+      86/      52 : 72                  	dc.b tolower(82)
+      87/      53 : 73                  	dc.b tolower(83)
+      88/      54 : 74                  	dc.b tolower(84)
+      89/      55 : 75                  	dc.b tolower(85)
+      90/      56 : 76                  	dc.b tolower(86)
+      91/      57 : 77                  	dc.b tolower(87)
+      92/      58 : 78                  	dc.b tolower(88)
+      93/      59 : 79                  	dc.b tolower(89)
+      94/      5A : 7A                  	dc.b tolower(90)
+      95/      5B : 5B                  	dc.b tolower(91)
+      96/      5C : 5C                  	dc.b tolower(92)
+      97/      5D : 5D                  	dc.b tolower(93)
+      98/      5E : 5E                  	dc.b tolower(94)
+      99/      5F : 5F                  	dc.b tolower(95)
+     100/      60 : 60                  	dc.b tolower(96)
+     101/      61 : 61                  	dc.b tolower(97)
+     102/      62 : 62                  	dc.b tolower(98)
+     103/      63 : 63                  	dc.b tolower(99)
+     104/      64 : 64                  	dc.b tolower(100)
+     105/      65 : 65                  	dc.b tolower(101)
+     106/      66 : 66                  	dc.b tolower(102)
+     107/      67 : 67                  	dc.b tolower(103)
+     108/      68 : 68                  	dc.b tolower(104)
+     109/      69 : 69                  	dc.b tolower(105)
+     110/      6A : 6A                  	dc.b tolower(106)
+     111/      6B : 6B                  	dc.b tolower(107)
+     112/      6C : 6C                  	dc.b tolower(108)
+     113/      6D : 6D                  	dc.b tolower(109)
+     114/      6E : 6E                  	dc.b tolower(110)
+     115/      6F : 6F                  	dc.b tolower(111)
+     116/      70 : 70                  	dc.b tolower(112)
+     117/      71 : 71                  	dc.b tolower(113)
+     118/      72 : 72                  	dc.b tolower(114)
+     119/      73 : 73                  	dc.b tolower(115)
+     120/      74 : 74                  	dc.b tolower(116)
+ AS V1.42 Beta [Bld 212] - Source File t_tolower.asm - Page 3 - 09/12/2026 05:50:15 AM
+
+
+     121/      75 : 75                  	dc.b tolower(117)
+     122/      76 : 76                  	dc.b tolower(118)
+     123/      77 : 77                  	dc.b tolower(119)
+     124/      78 : 78                  	dc.b tolower(120)
+     125/      79 : 79                  	dc.b tolower(121)
+     126/      7A : 7A                  	dc.b tolower(122)
+     127/      7B : 7B                  	dc.b tolower(123)
+     128/      7C : 7C                  	dc.b tolower(124)
+     129/      7D : 7D                  	dc.b tolower(125)
+     130/      7E : 7E                  	dc.b tolower(126)
+     131/      7F : 7F                  	dc.b tolower(127)
+     132/      80 : 80                  	dc.b tolower(128)
+     133/      81 : 81                  	dc.b tolower(129)
+     134/      82 : 82                  	dc.b tolower(130)
+     135/      83 : 83                  	dc.b tolower(131)
+     136/      84 : 84                  	dc.b tolower(132)
+     137/      85 : 85                  	dc.b tolower(133)
+     138/      86 : 86                  	dc.b tolower(134)
+     139/      87 : 87                  	dc.b tolower(135)
+     140/      88 : 88                  	dc.b tolower(136)
+     141/      89 : 89                  	dc.b tolower(137)
+     142/      8A : 8A                  	dc.b tolower(138)
+     143/      8B : 8B                  	dc.b tolower(139)
+     144/      8C : 8C                  	dc.b tolower(140)
+     145/      8D : 8D                  	dc.b tolower(141)
+     146/      8E : 8E                  	dc.b tolower(142)
+     147/      8F : 8F                  	dc.b tolower(143)
+     148/      90 : 90                  	dc.b tolower(144)
+     149/      91 : 91                  	dc.b tolower(145)
+     150/      92 : 92                  	dc.b tolower(146)
+     151/      93 : 93                  	dc.b tolower(147)
+     152/      94 : 94                  	dc.b tolower(148)
+     153/      95 : 95                  	dc.b tolower(149)
+     154/      96 : 96                  	dc.b tolower(150)
+     155/      97 : 97                  	dc.b tolower(151)
+     156/      98 : 98                  	dc.b tolower(152)
+     157/      99 : 99                  	dc.b tolower(153)
+     158/      9A : 9A                  	dc.b tolower(154)
+     159/      9B : 9B                  	dc.b tolower(155)
+     160/      9C : 9C                  	dc.b tolower(156)
+     161/      9D : 9D                  	dc.b tolower(157)
+     162/      9E : 9E                  	dc.b tolower(158)
+     163/      9F : 9F                  	dc.b tolower(159)
+     164/      A0 : A0                  	dc.b tolower(160)
+     165/      A1 : A1                  	dc.b tolower(161)
+     166/      A2 : A2                  	dc.b tolower(162)
+     167/      A3 : A3                  	dc.b tolower(163)
+     168/      A4 : A4                  	dc.b tolower(164)
+     169/      A5 : A5                  	dc.b tolower(165)
+     170/      A6 : A6                  	dc.b tolower(166)
+     171/      A7 : A7                  	dc.b tolower(167)
+     172/      A8 : A8                  	dc.b tolower(168)
+     173/      A9 : A9                  	dc.b tolower(169)
+     174/      AA : AA                  	dc.b tolower(170)
+     175/      AB : AB                  	dc.b tolower(171)
+     176/      AC : AC                  	dc.b tolower(172)
+     177/      AD : AD                  	dc.b tolower(173)
+     178/      AE : AE                  	dc.b tolower(174)
+     179/      AF : AF                  	dc.b tolower(175)
+     180/      B0 : B0                  	dc.b tolower(176)
+ AS V1.42 Beta [Bld 212] - Source File t_tolower.asm - Page 4 - 09/12/2026 05:50:15 AM
+
+
+     181/      B1 : B1                  	dc.b tolower(177)
+     182/      B2 : B2                  	dc.b tolower(178)
+     183/      B3 : B3                  	dc.b tolower(179)
+     184/      B4 : B4                  	dc.b tolower(180)
+     185/      B5 : B5                  	dc.b tolower(181)
+     186/      B6 : B6                  	dc.b tolower(182)
+     187/      B7 : B7                  	dc.b tolower(183)
+     188/      B8 : B8                  	dc.b tolower(184)
+     189/      B9 : B9                  	dc.b tolower(185)
+     190/      BA : BA                  	dc.b tolower(186)
+     191/      BB : BB                  	dc.b tolower(187)
+     192/      BC : BC                  	dc.b tolower(188)
+     193/      BD : BD                  	dc.b tolower(189)
+     194/      BE : BE                  	dc.b tolower(190)
+     195/      BF : BF                  	dc.b tolower(191)
+     196/      C0 : C0                  	dc.b tolower(192)
+     197/      C1 : C1                  	dc.b tolower(193)
+     198/      C2 : C2                  	dc.b tolower(194)
+     199/      C3 : C3                  	dc.b tolower(195)
+     200/      C4 : C4                  	dc.b tolower(196)
+     201/      C5 : C5                  	dc.b tolower(197)
+     202/      C6 : C6                  	dc.b tolower(198)
+     203/      C7 : C7                  	dc.b tolower(199)
+     204/      C8 : C8                  	dc.b tolower(200)
+     205/      C9 : C9                  	dc.b tolower(201)
+     206/      CA : CA                  	dc.b tolower(202)
+     207/      CB : CB                  	dc.b tolower(203)
+     208/      CC : CC                  	dc.b tolower(204)
+     209/      CD : CD                  	dc.b tolower(205)
+     210/      CE : CE                  	dc.b tolower(206)
+     211/      CF : CF                  	dc.b tolower(207)
+     212/      D0 : D0                  	dc.b tolower(208)
+     213/      D1 : D1                  	dc.b tolower(209)
+     214/      D2 : D2                  	dc.b tolower(210)
+     215/      D3 : D3                  	dc.b tolower(211)
+     216/      D4 : D4                  	dc.b tolower(212)
+     217/      D5 : D5                  	dc.b tolower(213)
+     218/      D6 : D6                  	dc.b tolower(214)
+     219/      D7 : D7                  	dc.b tolower(215)
+     220/      D8 : D8                  	dc.b tolower(216)
+     221/      D9 : D9                  	dc.b tolower(217)
+     222/      DA : DA                  	dc.b tolower(218)
+     223/      DB : DB                  	dc.b tolower(219)
+     224/      DC : DC                  	dc.b tolower(220)
+     225/      DD : DD                  	dc.b tolower(221)
+     226/      DE : DE                  	dc.b tolower(222)
+     227/      DF : DF                  	dc.b tolower(223)
+     228/      E0 : E0                  	dc.b tolower(224)
+     229/      E1 : E1                  	dc.b tolower(225)
+     230/      E2 : E2                  	dc.b tolower(226)
+     231/      E3 : E3                  	dc.b tolower(227)
+     232/      E4 : E4                  	dc.b tolower(228)
+     233/      E5 : E5                  	dc.b tolower(229)
+     234/      E6 : E6                  	dc.b tolower(230)
+     235/      E7 : E7                  	dc.b tolower(231)
+     236/      E8 : E8                  	dc.b tolower(232)
+     237/      E9 : E9                  	dc.b tolower(233)
+     238/      EA : EA                  	dc.b tolower(234)
+     239/      EB : EB                  	dc.b tolower(235)
+     240/      EC : EC                  	dc.b tolower(236)
+ AS V1.42 Beta [Bld 212] - Source File t_tolower.asm - Page 5 - 09/12/2026 05:50:15 AM
+
+
+     241/      ED : ED                  	dc.b tolower(237)
+     242/      EE : EE                  	dc.b tolower(238)
+     243/      EF : EF                  	dc.b tolower(239)
+     244/      F0 : F0                  	dc.b tolower(240)
+     245/      F1 : F1                  	dc.b tolower(241)
+     246/      F2 : F2                  	dc.b tolower(242)
+     247/      F3 : F3                  	dc.b tolower(243)
+     248/      F4 : F4                  	dc.b tolower(244)
+     249/      F5 : F5                  	dc.b tolower(245)
+     250/      F6 : F6                  	dc.b tolower(246)
+     251/      F7 : F7                  	dc.b tolower(247)
+     252/      F8 : F8                  	dc.b tolower(248)
+     253/      F9 : F9                  	dc.b tolower(249)
+     254/      FA : FA                  	dc.b tolower(250)
+     255/      FB : FB                  	dc.b tolower(251)
+     256/      FC : FC                  	dc.b tolower(252)
+     257/      FD : FD                  	dc.b tolower(253)
+     258/      FE : FE                  	dc.b tolower(254)
+     259/      FF : FF                  	dc.b tolower(255)
+     260/     100 : EE                  	dc.b $EE
+     261/     101 :                     	end
+ AS V1.42 Beta [Bld 212] - Source File t_tolower.asm - Page 6 - 09/12/2026 05:50:15 AM
+
+
+  Symbol Table (* = unused):
+  --------------------------
+
+*ARCHITECTURE :                                      "x86_64-unknown-linux" - |
+*BIGENDIAN :                      0 - | *BRANCHEXT :                      0 - |
+*CASESENSITIVE :                  1 - | *COMPMODE :                       0 - |
+*CONSTPI :        3.141592653589793 - | *CUSTOM :                         0 - |
+*DATE :                "09/12/2026" - | *FALSE :                          0 - |
+*FULLPMMU :                       1 - | *HAS64 :                          1 - |
+*HASDSP :                         0 - | *HASFPU :                         0 - |
+*HASPMMU :                        0 - | *INEXTMODE :                      0 - |
+*INLWORDMODE :                    0 - | *INMAXMODE :                      0 - |
+*INSRCMODE :                      0 - | *INSUPMODE :                      0 - |
+*LISTON :                         1 - | *MACEXP :                         7 - |
+*MOMCPU :                     68000 - | *MOMCPUNAME :               "68000" - |
+*NESTMAX :                      100 - | *PACKING :                        0 - |
+*PADDING :                        0 - | *RELAXED :                        0 - |
+*TIME :               "05:50:15 AM" - | *TRUE :                           1 - |
+*VERSION :                     142F - | *Z80SYNTAX :                      0 - |
+
+     31 symbols
+     31 unused symbols
+
+ AS V1.42 Beta [Bld 212] - Source File t_tolower.asm - Page 7 - 09/12/2026 05:50:15 AM
+
+
+  Code Pages:
+  ----------
+
+STANDARD (0 changed characters)
+
+1 code page
+
+0.00 seconds assembly time
+
+    262 lines source file
+      1 pass
+      0 errors
+      0 warnings

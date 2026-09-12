@@ -1,0 +1,10 @@
+> > > ctx_toupper.asm(22): warning #180: address is not properly aligned
+> > >  move.l #toupper(97),d0
+> > > ctx_toupper.asm(23): warning #180: address is not properly aligned
+> > >  move.w #toupper(97)<<2,d1
+> > > ctx_toupper.asm(22): warning #180: address is not properly aligned
+> > >  move.l #toupper(97),d0
+> > > ctx_toupper.asm(23): warning #180: address is not properly aligned
+> > >  move.w #toupper(97)<<2,d1
+ASL_EXIT=0
+ASL_DIAG=complete

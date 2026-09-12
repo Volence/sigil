@@ -1,0 +1,4 @@
+> > > empty.asm(10): warning #180: address is not properly aligned
+> > >  move.l #abs(),d0
+ASL_EXIT=0
+ASL_DIAG=complete

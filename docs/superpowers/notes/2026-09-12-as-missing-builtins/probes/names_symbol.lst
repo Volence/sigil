@@ -1,0 +1,73 @@
+ AS V1.42 Beta [Bld 212] - Source File names_symbol.asm - Page 1 - 09/12/2026 05:50:15 AM
+
+
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : =$7                  sgn equ 7
+       5/       0 : =$7                  bitcnt equ 7
+       6/       0 : =$7                  firstbit equ 7
+       7/       0 : =$7                  bitpos equ 7
+       8/       0 : =$7                  toupper equ 7
+       9/       0 : =$7                  tolower equ 7
+      10/       0 : =$7                  lastbit equ 7
+      11/       0 : =$7                  abs equ 7
+      12/       0 : =$7                  int equ 7
+      13/       0 : 0701                	dc.b sgn,sgn(8)
+      14/       2 : 0701                	dc.b bitcnt,bitcnt(8)
+      15/       4 : 0703                	dc.b firstbit,firstbit(8)
+      16/       6 : 0703                	dc.b bitpos,bitpos(8)
+      17/       8 : 0708                	dc.b toupper,toupper(8)
+      18/       A : 0708                	dc.b tolower,tolower(8)
+      19/       C : 0703                	dc.b lastbit,lastbit(8)
+      20/       E : 0708                	dc.b abs,abs(8)
+      21/      10 : 0708                	dc.b int,int(8)
+      22/      12 : EE                  	dc.b $EE
+      23/      13 :                     	end
+ AS V1.42 Beta [Bld 212] - Source File names_symbol.asm - Page 2 - 09/12/2026 05:50:15 AM
+
+
+  Symbol Table (* = unused):
+  --------------------------
+
+*ARCHITECTURE :                                      "x86_64-unknown-linux" - |
+*BIGENDIAN :                      0 - | *BRANCHEXT :                      0 - |
+*CASESENSITIVE :                  1 - | *COMPMODE :                       0 - |
+*CONSTPI :        3.141592653589793 - | *CUSTOM :                         0 - |
+*DATE :                "09/12/2026" - | *FALSE :                          0 - |
+*FULLPMMU :                       1 - | *HAS64 :                          1 - |
+*HASDSP :                         0 - | *HASFPU :                         0 - |
+*HASPMMU :                        0 - | *INEXTMODE :                      0 - |
+*INLWORDMODE :                    0 - | *INMAXMODE :                      0 - |
+*INSRCMODE :                      0 - | *INSUPMODE :                      0 - |
+*LISTON :                         1 - | *MACEXP :                         7 - |
+*MOMCPU :                     68000 - | *MOMCPUNAME :               "68000" - |
+*NESTMAX :                      100 - | *PACKING :                        0 - |
+*PADDING :                        0 - | *RELAXED :                        0 - |
+*TIME :               "05:50:15 AM" - | *TRUE :                           1 - |
+*VERSION :                     142F - | *Z80SYNTAX :                      0 - |
+ abs :                            7 - |  bitcnt :                         7 - |
+ bitpos :                         7 - |  firstbit :                       7 - |
+ int :                            7 - |  lastbit :                        7 - |
+ sgn :                            7 - |  tolower :                        7 - |
+ toupper :                        7 - |
+
+     40 symbols
+     31 unused symbols
+
+ AS V1.42 Beta [Bld 212] - Source File names_symbol.asm - Page 3 - 09/12/2026 05:50:15 AM
+
+
+  Code Pages:
+  ----------
+
+STANDARD (0 changed characters)
+
+1 code page
+
+0.00 seconds assembly time
+
+     24 lines source file
+      1 pass
+      0 errors
+      0 warnings

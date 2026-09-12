@@ -1,0 +1,82 @@
+ctx_bitcnt	0	complete	01                   dc.b bitcnt(FwdL)	warning #180: address is not properly aligned;warning #180: address is not properly aligned;warning #180: address is not properly aligned;	1		ctx_bitcnt.asm(4):7: error: bad byte expression
+ctx_bitcnt_z80	0	complete	03                   db bitcnt(7)		1		ctx_bitcnt_z80.asm(3):5: error: bad byte expression
+ctx_bitpos	0	complete	03                   dc.b bitpos(8)		1		ctx_bitpos.asm(4):7: error: bad byte expression
+ctx_bitpos_z80	0	complete	03                   db bitpos(8)		1		ctx_bitpos_z80.asm(3):5: error: bad byte expression
+ctx_firstbit	0	complete	06                   dc.b firstbit(FwdL)	warning #180: address is not properly aligned;warning #180: address is not properly aligned;warning #180: address is not properly aligned;	1		ctx_firstbit.asm(4):7: error: bad byte expression
+ctx_firstbit_z80	0	complete	02                   db firstbit(12)		1		ctx_firstbit_z80.asm(3):5: error: bad byte expression
+ctx_sgn	0	complete	01                   dc.b sgn(FwdL)	warning #180: address is not properly aligned;warning #180: address is not properly aligned;warning #180: address is not properly aligned;	1		ctx_sgn.asm(4):7: error: bad byte expression
+ctx_sgn_float	0	complete	FFFF FFFF            dc.l sgn(-2.5)	warning #180: address is not properly aligned;	1		ctx_sgn_float.asm(4):12: error: floating point value where an integer is required (wrap it in `int(...)`)
+ctx_sgn_z80	0	complete	FF                   db sgn(-5)		1		ctx_sgn_z80.asm(3):5: error: bad byte expression
+ctx_tolower	0	complete	40                   dc.b tolower(FwdL)	warning #180: address is not properly aligned;warning #180: address is not properly aligned;warning #180: address is not properly aligned;	1		ctx_tolower.asm(4):7: error: bad byte expression
+ctx_tolower_z80	0	complete	61                   db tolower(65)		1		ctx_tolower_z80.asm(3):5: error: bad byte expression
+ctx_toupper	0	complete	40                   dc.b toupper(FwdL)	warning #180: address is not properly aligned;warning #180: address is not properly aligned;warning #180: address is not properly aligned;	1		ctx_toupper.asm(4):7: error: bad byte expression
+ctx_toupper_z80	0	complete	41                   db toupper(97)		1		ctx_toupper_z80.asm(3):5: error: bad byte expression
+empty	0	complete	0000 0000            dc.l int()	warning #180: address is not properly aligned;	1		empty.asm(4):7: error: int(): could not evaluate float expression
+empty_z80	0	complete	00                   db abs()		1		empty_z80.asm(3):5: error: bad byte expression
+names_symbol	0	complete	=$7                  sgn equ 7		1		names_symbol.asm(13):11: error: bad byte expression
+names_userfn	0	complete	                    sgn function x,x+100		0	656565656565656565EEbuilt:10bytes,nofilewritten(pass-o<path>towriteone)	
+names_userfn_upper	0	complete	                    SGN function x,x+100		1		names_userfn_upper.asm(13):7: error: bad byte expression
+ref_abs_char	3	unknown		error #10000: internal error;	0	00000061EEbuilt:5bytes,nofilewritten(pass-o<path>towriteone)	
+ref_bitcnt_char	2	complete	                     dc.l bitcnt('a')	error #1136: expected floating point number, but got string;	1		ref_bitcnt_char.asm(4):7: error: bad long expression
+ref_bitcnt_float	3	unknown		error #10000: internal error;	1		ref_bitcnt_float.asm(4):14: error: floating point value where an integer is required (wrap it in `int(...)`)
+ref_bitcnt_floatsym	3	unknown	=2.5                 F set 2.5	error #10000: internal error;	1		ref_bitcnt_floatsym.asm(5):14: error: floating point value where an integer is required (wrap it in `int(...)`)
+ref_bitcnt_string	2	complete	                     dc.l bitcnt("A")	error #1136: expected floating point number, but got string;	1		ref_bitcnt_string.asm(4):14: error: string operand in a data directive wider than a byte: asl emits one zero-extended element per character here, which is not implemented
+ref_bitcnt_twoarg	2	complete	                     dc.l bitcnt(1,2)	error #1490: wrong numbers of function arguments;	1		ref_bitcnt_twoarg.asm(4):7: error: bad long expression
+ref_bitcnt_undef	2	complete	                     dc.l bitcnt(Nope)	error #1010: symbol undefined;	1		ref_bitcnt_undef.asm(4):7: error: bad long expression
+ref_bitpos_0	2	complete	FFFF FFFF            dc.l bitpos(0)	error #1540: not exactly one bit set;	1		ref_bitpos_0.asm(4):7: error: bad long expression
+ref_bitpos_6	2	complete	FFFF FFFF            dc.l bitpos(6)	error #1540: not exactly one bit set;	1		ref_bitpos_6.asm(4):7: error: bad long expression
+ref_bitpos_char	2	complete	                     dc.l bitpos('a')	error #1136: expected floating point number, but got string;	1		ref_bitpos_char.asm(4):7: error: bad long expression
+ref_bitpos_fffeb	2	complete	FFFF FFFF            dc.l bitpos($FFFEB)	error #1540: not exactly one bit set;	1		ref_bitpos_fffeb.asm(4):7: error: bad long expression
+ref_bitpos_float	3	unknown		error #10000: internal error;	1		ref_bitpos_float.asm(4):14: error: floating point value where an integer is required (wrap it in `int(...)`)
+ref_bitpos_floatsym	3	unknown	=2.5                 F set 2.5	error #10000: internal error;	1		ref_bitpos_floatsym.asm(5):14: error: floating point value where an integer is required (wrap it in `int(...)`)
+ref_bitpos_fwd	2	INCOMPLETE	FF                   dc.b bitpos(Later)	error #1540: not exactly one bit set;	1		ref_bitpos_fwd.asm(4):7: error: bad byte expression
+ref_bitpos_fwdlabel	2	INCOMPLETE	FF                   dc.b bitpos(FwdL)	error #1540: not exactly one bit set;	1		ref_bitpos_fwdlabel.asm(4):7: error: bad byte expression
+ref_bitpos_m1	2	complete	FFFF FFFF            dc.l bitpos(-1)	error #1540: not exactly one bit set;	1		ref_bitpos_m1.asm(4):7: error: bad long expression
+ref_bitpos_min	2	complete	FFFF FFFF            dc.l bitpos(-$7FFFFFFFFFFFFFFF-1)	error #1540: not exactly one bit set;	1		ref_bitpos_min.asm(4):7: error: bad long expression
+ref_bitpos_string	2	complete	                     dc.l bitpos("A")	error #1136: expected floating point number, but got string;	1		ref_bitpos_string.asm(4):14: error: string operand in a data directive wider than a byte: asl emits one zero-extended element per character here, which is not implemented
+ref_bitpos_twoarg	2	complete	                     dc.l bitpos(1,2)	error #1490: wrong numbers of function arguments;	1		ref_bitpos_twoarg.asm(4):7: error: bad long expression
+ref_bitpos_undef	2	INCOMPLETE	FFFF FFFF            dc.l bitpos(Nope)	error #1540: not exactly one bit set;	1		ref_bitpos_undef.asm(4):7: error: bad long expression
+ref_empty_acosh	2	complete	                     dc.l INT(acosh())	error #1880: floating point overflow;	1		ref_empty_acosh.asm(4):7: error: int(): could not evaluate float expression
+ref_empty_bitpos	2	complete	FFFF FFFF            dc.l bitpos()	error #1540: not exactly one bit set;	1		ref_empty_bitpos.asm(4):7: error: bad long expression
+ref_empty_ln	2	complete	                     dc.l INT(ln())	error #1870: function argument out of definition range;	1		ref_empty_ln.asm(4):7: error: int(): could not evaluate float expression
+ref_empty_log	2	complete	                     dc.l INT(log())	error #1870: function argument out of definition range;	1		ref_empty_log.asm(4):7: error: int(): could not evaluate float expression
+ref_empty_sin_bare	2	complete	                     dc.l sin()	error #1133: expected integer or string, but got floating point number;	1		ref_empty_sin_bare.asm(4):7: error: bad long expression
+ref_firstbit_char	2	complete	                     dc.l firstbit('a')	error #1136: expected floating point number, but got string;	1		ref_firstbit_char.asm(4):7: error: bad long expression
+ref_firstbit_float	3	unknown		error #10000: internal error;	1		ref_firstbit_float.asm(4):16: error: floating point value where an integer is required (wrap it in `int(...)`)
+ref_firstbit_floatsym	3	unknown	=2.5                 F set 2.5	error #10000: internal error;	1		ref_firstbit_floatsym.asm(5):16: error: floating point value where an integer is required (wrap it in `int(...)`)
+ref_firstbit_string	2	complete	                     dc.l firstbit("A")	error #1136: expected floating point number, but got string;	1		ref_firstbit_string.asm(4):16: error: string operand in a data directive wider than a byte: asl emits one zero-extended element per character here, which is not implemented
+ref_firstbit_twoarg	2	complete	                     dc.l firstbit(1,2)	error #1490: wrong numbers of function arguments;	1		ref_firstbit_twoarg.asm(4):7: error: bad long expression
+ref_firstbit_undef	2	complete	                     dc.l firstbit(Nope)	error #1010: symbol undefined;	1		ref_firstbit_undef.asm(4):7: error: bad long expression
+ref_int_char	3	unknown		error #10000: internal error;	0	00000061EEbuilt:5bytes,nofilewritten(pass-o<path>towriteone)	
+ref_lastbit_char	2	complete	                     dc.l lastbit('a')	error #1136: expected floating point number, but got string;	0	00000006EEbuilt:5bytes,nofilewritten(pass-o<path>towriteone)	
+ref_lastbit_charsym	2	complete	='a'                 Q equ 'a'	error #1136: expected floating point number, but got string;	0	00000006EEbuilt:5bytes,nofilewritten(pass-o<path>towriteone)	
+ref_sgn_char	3	unknown		error #10000: internal error;	1		ref_sgn_char.asm(4):7: error: bad long expression
+ref_sgn_string	3	unknown		error #10000: internal error;	1		ref_sgn_string.asm(4):11: error: string operand in a data directive wider than a byte: asl emits one zero-extended element per character here, which is not implemented
+ref_sgn_twoarg	2	complete	                     dc.l sgn(1,2)	error #1490: wrong numbers of function arguments;	1		ref_sgn_twoarg.asm(4):7: error: bad long expression
+ref_sgn_undef	2	complete	                     dc.l sgn(Nope)	error #1010: symbol undefined;	1		ref_sgn_undef.asm(4):7: error: bad long expression
+ref_tolower_256	2	complete	                     dc.b tolower(256)	error #1320: range overflow;	1		ref_tolower_256.asm(4):7: error: bad byte expression
+ref_tolower_char	2	complete	                     dc.l tolower('a')	error #1136: expected floating point number, but got string;	1		ref_tolower_char.asm(4):7: error: bad long expression
+ref_tolower_float	3	unknown		error #10000: internal error;	1		ref_tolower_float.asm(4):15: error: floating point value where an integer is required (wrap it in `int(...)`)
+ref_tolower_floatsym	3	unknown	=2.5                 F set 2.5	error #10000: internal error;	1		ref_tolower_floatsym.asm(5):15: error: floating point value where an integer is required (wrap it in `int(...)`)
+ref_tolower_m1	2	complete	                     dc.b tolower(-1)	error #1320: range overflow;	1		ref_tolower_m1.asm(4):7: error: bad byte expression
+ref_tolower_string	2	complete	                     dc.l tolower("A")	error #1136: expected floating point number, but got string;	1		ref_tolower_string.asm(4):15: error: string operand in a data directive wider than a byte: asl emits one zero-extended element per character here, which is not implemented
+ref_tolower_twoarg	2	complete	                     dc.l tolower(1,2)	error #1490: wrong numbers of function arguments;	1		ref_tolower_twoarg.asm(4):7: error: bad long expression
+ref_tolower_undef	2	complete	                     dc.l tolower(Nope)	error #1010: symbol undefined;	1		ref_tolower_undef.asm(4):7: error: bad long expression
+ref_toupper_256	2	complete	                     dc.b toupper(256)	error #1320: range overflow;	1		ref_toupper_256.asm(4):7: error: bad byte expression
+ref_toupper_char	2	complete	                     dc.l toupper('a')	error #1136: expected floating point number, but got string;	1		ref_toupper_char.asm(4):7: error: bad long expression
+ref_toupper_float	3	unknown		error #10000: internal error;	1		ref_toupper_float.asm(4):15: error: floating point value where an integer is required (wrap it in `int(...)`)
+ref_toupper_floatsym	3	unknown	=2.5                 F set 2.5	error #10000: internal error;	1		ref_toupper_floatsym.asm(5):15: error: floating point value where an integer is required (wrap it in `int(...)`)
+ref_toupper_m1	2	complete	                     dc.b toupper(-1)	error #1320: range overflow;	1		ref_toupper_m1.asm(4):7: error: bad byte expression
+ref_toupper_string	2	complete	                     dc.l toupper("A")	error #1136: expected floating point number, but got string;	1		ref_toupper_string.asm(4):15: error: string operand in a data directive wider than a byte: asl emits one zero-extended element per character here, which is not implemented
+ref_toupper_twoarg	2	complete	                     dc.l toupper(1,2)	error #1490: wrong numbers of function arguments;	1		ref_toupper_twoarg.asm(4):7: error: bad long expression
+ref_toupper_undef	2	complete	                     dc.l toupper(Nope)	error #1010: symbol undefined;	1		ref_toupper_undef.asm(4):7: error: bad long expression
+signed	0	complete	2D24 35              dc.b signedToString(-5)		1		signed.asm(5):7: error: bad byte expression
+t_abs	0	complete	0000 0000 0000       dc.l abs($0)>>32,abs($0)&$FFFFFFFF		0	000000000000000000000000000000010000000000000002000000000000000300000000000000040000000000000005000000000000000600000000	
+t_bitcnt	0	complete	0000 0000            dc.l bitcnt($0)		1		t_bitcnt.asm(4):7: error: bad long expression
+t_bitpos	0	complete	0000 0000            dc.l bitpos($1)		1		t_bitpos.asm(4):7: error: bad long expression
+t_firstbit	0	complete	FFFF FFFF            dc.l firstbit($0)		1		t_firstbit.asm(4):7: error: bad long expression
+t_lastbit	0	complete	FFFF FFFF            dc.l lastbit($0)		0	FFFFFFFF0000000000000001000000010000000200000002000000020000000200000003000000030000000300000003000000030000000300000003	
+t_sgn	0	complete	0000 0000            dc.l sgn($0)		1		t_sgn.asm(4):7: error: bad long expression
+t_sgn_float	0	complete	0000 0000            dc.l sgn(0.0)		1		t_sgn_float.asm(4):11: error: floating point value where an integer is required (wrap it in `int(...)`)
+t_tolower	0	complete	00                   dc.b tolower(0)		1		t_tolower.asm(4):7: error: bad byte expression
+t_toupper	0	complete	00                   dc.b toupper(0)		1		t_toupper.asm(4):7: error: bad byte expression

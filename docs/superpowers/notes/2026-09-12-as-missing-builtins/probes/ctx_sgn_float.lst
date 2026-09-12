@@ -1,0 +1,62 @@
+ AS V1.42 Beta [Bld 212] - Source File ctx_sgn_float.asm - Page 1 - 09/12/2026 05:50:15 AM
+
+
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : FFFF FFFF           	dc.l sgn(-2.5)
+       5/       4 : 01                  	dc.b sgn(2.5)
+> > > ctx_sgn_float.asm(6): warning #180: address is not properly aligned
+> > >  move.l #sgn(-0.5),d0
+       6/       5 : 203C FFFF FFFF      	move.l #sgn(-0.5),d0
+       7/       B : =2.5                 F set 2.5
+       8/       B : 0000 0001           	dc.l sgn(F)
+       9/       F : FFFF FFFF           	dc.l sgn(0.1-0.2)
+      10/      13 : 0000 0001           	dc.l sgn(sqrt(2))
+      11/      17 : FFFF FFFF           	dc.l INT(sgn(-2.5))
+      12/      1B : 0000 0000           	dc.l sgn(-0.0)
+      13/      1F : EE                  	dc.b $EE
+      14/      20 :                     	end
+ AS V1.42 Beta [Bld 212] - Source File ctx_sgn_float.asm - Page 2 - 09/12/2026 05:50:15 AM
+
+
+  Symbol Table (* = unused):
+  --------------------------
+
+*ARCHITECTURE :                                      "x86_64-unknown-linux" - |
+*BIGENDIAN :                      0 - | *BRANCHEXT :                      0 - |
+*CASESENSITIVE :                  1 - | *COMPMODE :                       0 - |
+*CONSTPI :        3.141592653589793 - | *CUSTOM :                         0 - |
+*DATE :                "09/12/2026" - |  F :                            2.5 - |
+*FALSE :                          0 - | *FULLPMMU :                       1 - |
+*HAS64 :                          1 - | *HASDSP :                         0 - |
+*HASFPU :                         0 - | *HASPMMU :                        0 - |
+*INEXTMODE :                      0 - | *INLWORDMODE :                    0 - |
+*INMAXMODE :                      0 - | *INSRCMODE :                      0 - |
+*INSUPMODE :                      0 - | *LISTON :                         1 - |
+*MACEXP :                         7 - | *MOMCPU :                     68000 - |
+*MOMCPUNAME :               "68000" - | *NESTMAX :                      100 - |
+*PACKING :                        0 - | *PADDING :                        0 - |
+*RELAXED :                        0 - | *TIME :               "05:50:15 AM" - |
+*TRUE :                           1 - | *VERSION :                     142F - |
+*Z80SYNTAX :                      0 - |
+
+     32 symbols
+     31 unused symbols
+
+ AS V1.42 Beta [Bld 212] - Source File ctx_sgn_float.asm - Page 3 - 09/12/2026 05:50:15 AM
+
+
+  Code Pages:
+  ----------
+
+STANDARD (0 changed characters)
+
+1 code page
+
+0.00 seconds assembly time
+
+     15 lines source file
+      1 pass
+      0 errors
+      1 warning

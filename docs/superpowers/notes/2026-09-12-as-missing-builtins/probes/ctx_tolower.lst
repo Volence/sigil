@@ -1,0 +1,83 @@
+ AS V1.42 Beta [Bld 212] - Source File ctx_tolower.asm - Page 1 - 09/12/2026 05:50:15 AM
+
+
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : 40                  	dc.b tolower(FwdL)
+       5/       1 :                     	ds.b $3F
+       6/      40 :                     FwdL:
+       7/      40 : 61                  	dc.b tolower(65)
+       8/      41 : 61                  	dc.b TOLOWER(65)
+       9/      42 : 61                  	dc.b ToLower(65)
+      10/      43 : 61                  	dc.b tolower( 65 )
+      11/      44 : 61                  	dc.b tolower((65))
+      12/      45 : 61                  	dc.b tolower(Later)
+      13/      46 : =$61                 X equ tolower(65)
+      14/      46 : 61                  	dc.b X
+      15/      47 : =$61                 Y set tolower(65)
+      16/      47 : 61                  	dc.b Y
+      17/      48 : =>FALSE              	if tolower(65)=tolower(65)+1
+      18/      48 :                     	dc.b 2
+      19/      48 : =>TRUE               	else
+      20/      48 : 01                  	dc.b 1
+      21/      49 : [17]                 	endif
+> > > ctx_tolower.asm(22): warning #180: address is not properly aligned
+> > >  move.l #tolower(65),d0
+      22/      49 : 203C 0000 0061      	move.l #tolower(65),d0
+> > > ctx_tolower.asm(23): warning #180: address is not properly aligned
+> > >  move.w #tolower(65)<<2,d1
+      23/      4F : 323C 0184           	move.w #tolower(65)<<2,d1
+      24/      53 : 62                  	dc.b tolower(65)+1
+      25/      54 : 61                  	dc.b tolower(tolower(65))
+      26/      55 : 3631                	dc.b "\{tolower(65)}"
+      27/      57 : 00                  	dc.b tolower()
+      28/      58 : 00                  	dc.b tolower( )
+      29/      59 : 00                  	dc.b tolower(())
+      30/      5A : =$41                 Later equ 65
+      31/      5A : EE                  	dc.b $EE
+      32/      5B :                     	end
+ AS V1.42 Beta [Bld 212] - Source File ctx_tolower.asm - Page 2 - 09/12/2026 05:50:15 AM
+
+
+  Symbol Table (* = unused):
+  --------------------------
+
+*ARCHITECTURE :                                      "x86_64-unknown-linux" - |
+*BIGENDIAN :                      0 - | *BRANCHEXT :                      0 - |
+*CASESENSITIVE :                  1 - | *COMPMODE :                       0 - |
+*CONSTPI :        3.141592653589793 - | *CUSTOM :                         0 - |
+*DATE :                "09/12/2026" - | *FALSE :                          0 - |
+*FULLPMMU :                       1 - |  FwdL :                          40 C |
+*HAS64 :                          1 - | *HASDSP :                         0 - |
+*HASFPU :                         0 - | *HASPMMU :                        0 - |
+*INEXTMODE :                      0 - | *INLWORDMODE :                    0 - |
+*INMAXMODE :                      0 - | *INSRCMODE :                      0 - |
+*INSUPMODE :                      0 - | *LISTON :                         1 - |
+ Later :                         41 - | *MACEXP :                         7 - |
+*MOMCPU :                     68000 - | *MOMCPUNAME :               "68000" - |
+*NESTMAX :                      100 - | *PACKING :                        0 - |
+*PADDING :                        0 - | *RELAXED :                        0 - |
+*TIME :               "05:50:15 AM" - | *TRUE :                           1 - |
+*VERSION :                     142F - |  X :                             61 - |
+ Y :                             61 - | *Z80SYNTAX :                      0 - |
+
+     35 symbols
+     31 unused symbols
+
+ AS V1.42 Beta [Bld 212] - Source File ctx_tolower.asm - Page 3 - 09/12/2026 05:50:15 AM
+
+
+  Code Pages:
+  ----------
+
+STANDARD (0 changed characters)
+
+1 code page
+
+0.00 seconds assembly time
+
+     33 lines source file
+      2 passes
+      0 errors
+      2 warnings
