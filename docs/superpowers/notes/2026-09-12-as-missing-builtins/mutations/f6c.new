@@ -1,0 +1,2 @@
+            Num::Int(i) => f(i).map(Num::Int),
+            Num::Float(v) => f(v as i64).map(Num::Int),
