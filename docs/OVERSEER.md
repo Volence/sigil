@@ -559,8 +559,14 @@ Branch `parcel/link-zero-byte-move-placement`, tip `720b9726`, note
   then the landing run. Send aeon the one line: which of the four shapes moved.
 - **Unmeasured, and say so at landing:** the pointer half of `deform_pointer_equals_placed_label_vma`
   (its frozen-table check fails first), per-site attribution on the reference tree, runtime behaviour.
+- **OWED TO AEON (asked 2026-09-12, for their LS-1a pin, promised by message):** once the landing is on
+  `origin/master`, send aeon the tip SHA from `git ls-remote` output plus the four-shape line, and say
+  whether `AS-MACRO-DIAG-CALL-SITE` is in it. They pin THAT revision and nothing earlier: the installed
+  binary reads `golden/offcanonical_sizes/` from its build tree at run time, so the fix without its
+  refrozen tables is the wrong pin. If the landing fails, tell them that instead; silence leaves them
+  waiting on a pin that is not coming.
 
-Delete this block in the landing commit.
+Delete this block in the landing commit, after the message to aeon has gone.
 
 ### SIGIL-AS-REPLACEMENT — active on the owner's own words; source locations LANDED
 
