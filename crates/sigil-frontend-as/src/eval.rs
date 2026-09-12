@@ -2945,10 +2945,10 @@ impl Asm {
     /// report a normal "bad expression" diagnostic).
     ///
     /// EVERY numeric builtin is scanned for, not only `int` -- but only a call
-    /// that resolves to an INTEGER is rewritten. In practice that is `int` and
-    /// `abs`, the two type-preserving entries in [`apply_num_builtin`]; the
-    /// float-returning family always declines here and is left for `int(...)`
-    /// or for the float-operand path to handle. The corpus demand is S1's
+    /// that resolves to an INTEGER is rewritten: `int`, `abs` of an integer,
+    /// and every entry of [`INT_BUILTINS`]. The float-returning family always
+    /// declines here and is left for `int(...)` or for the float-operand path
+    /// to handle. The corpus demand is S1's
     /// `Macros.asm(353)`, `rept 1+(abs(first-last)/abs(step))`, which reaches
     /// this function through `eval_all` and has no float token anywhere in it,
     /// so nothing else in the pipeline can give `abs` a meaning. asl assembles
@@ -2970,7 +2970,7 @@ impl Asm {
                     if let Some((args, next)) = split_call_args(toks, i + 1) {
                         let value = match args.as_slice() {
                             [arg] => self
-                                .builtin_arg(name, arg)
+                                .builtin_arg(arg)
                                 .and_then(|v| apply_num_builtin(name, v))
                                 .and_then(|v| v.as_i64()),
                             _ => None,
@@ -3037,11 +3037,16 @@ impl Asm {
         rest.is_empty().then_some(v)
     }
 
-    /// The value of a numeric builtin's one argument. An EMPTY argument is 0
-    /// for `lastbit`: asl assembles `dc.b lastbit()` as `FF` (probe
-    /// `l6_noarg`), the same zero `()` is.
-    fn builtin_arg(&self, name: &str, arg: &[Token]) -> Option<Num> {
-        if arg.is_empty() && name.eq_ignore_ascii_case("lastbit") {
+    /// The value of a numeric builtin's one argument. An EMPTY argument is the
+    /// integer 0, the same zero `()` is, for EVERY builtin: asl, exit 0
+    /// (`empty.asm`), assembles `dc.l abs()` and `dc.l int()` as `0000 0000`,
+    /// `dc.l lastbit()` as `FFFF FFFF`, `dc.l INT(cos())` as `0000 0001` and
+    /// `dc.l INT(exp())` as `0000 0001`; and where the builtin refuses 0 it
+    /// refuses the empty call the same way (`ref_empty_log.asm`, `INT(log())`:
+    /// `error #1870`). An integer and not a float: `dc.l abs()` is not the
+    /// `error #1133` a float in a `dc.l` draws.
+    fn builtin_arg(&self, arg: &[Token]) -> Option<Num> {
+        if arg.is_empty() {
             return Some(Num::Int(0));
         }
         self.eval_num(arg)
@@ -3125,7 +3130,7 @@ impl Asm {
             {
                 let (args, next) = split_call_args(rest, 0)?;
                 let inner = match args.as_slice() {
-                    [arg] => self.builtin_arg(name, arg)?,
+                    [arg] => self.builtin_arg(arg)?,
                     _ => return None,
                 };
                 // `INT` of an INTEGER is that integer (probe `f1.asm(11)`:
@@ -18735,9 +18740,10 @@ fn floor_to_i64(f: f64) -> Option<i64> {
 /// asl's single-argument builtins that take a number and return a FLOAT,
 /// paired with the `f64` method that reproduces each.
 ///
-/// The two builtins missing from this table, `int` and `abs`, are the only
-/// TYPE-PRESERVING ones and so cannot be `fn(f64) -> f64`; they are handled by
-/// name in [`apply_num_builtin`]. Everything here returns a float even when the
+/// The builtins missing from this table are `int` and `abs`, which are
+/// TYPE-PRESERVING and so cannot be `fn(f64) -> f64` (they are handled by name
+/// in [`apply_num_builtin`]), and the integer-only family in
+/// [`INT_BUILTINS`]. Everything here returns a float even when the
 /// value is integral, which is byte-visible: `dc.l SQRT(16)` is `error #1133:
 /// expected integer or string, but got floating point number`, not `4`
 /// (`types.asm(10)`).
@@ -18791,7 +18797,7 @@ fn float_builtin(name: &str) -> Option<FloatFn> {
 fn is_num_builtin(name: &str) -> bool {
     name.eq_ignore_ascii_case("int")
         || name.eq_ignore_ascii_case("abs")
-        || name.eq_ignore_ascii_case("lastbit")
+        || int_builtin(name).is_some()
         || float_builtin(name).is_some()
 }
 
@@ -18801,12 +18807,32 @@ fn is_num_builtin(name: &str) -> bool {
 /// 30, `lastbit($80000000)` 31, `lastbit($100000000)` 32, `lastbit(-1)` and
 /// `lastbit(-2)` 63, `lastbit(0)` -1. Sonic 2 spends it sizing the end-of-ROM
 /// pad: `cnop -1,2<<lastbit(*-StartOfRom-1)` (`s2.asm(91263)`).
-fn lastbit(x: i64) -> i64 {
-    if x == 0 {
-        -1
-    } else {
-        63 - i64::from((x as u64).leading_zeros())
-    }
+fn lastbit(x: i64) -> Option<i64> {
+    Some(if x == 0 { -1 } else { 63 - i64::from((x as u64).leading_zeros()) })
+}
+
+/// asl's single-argument builtins that take an INTEGER and return one, paired
+/// with the function that reproduces each; `None` is an argument asl refuses.
+///
+/// A FLOAT argument is refused for every one of them, once, in
+/// [`apply_num_builtin`]: asl aborts on it rather than answering
+/// (`lastbit(5.0)`: `error #10000: internal error`, exit 3), so there is no
+/// value to reproduce and a guess would be a byte asl never emits.
+///
+/// This is the ONE list for these names, read by both [`is_num_builtin`] and
+/// [`apply_num_builtin`], so a name cannot be recognized by one and unknown to
+/// the other.
+type IntFn = fn(i64) -> Option<i64>;
+
+const INT_BUILTINS: &[(&str, IntFn)] = &[("lastbit", lastbit)];
+
+/// The function behind an integer-only builtin name, or `None`, matched
+/// case-insensitively as [`float_builtin`] is.
+fn int_builtin(name: &str) -> Option<IntFn> {
+    INT_BUILTINS
+        .iter()
+        .find(|(n, _)| name.eq_ignore_ascii_case(n))
+        .map(|(_, f)| *f)
 }
 
 /// Apply one of asl's single-argument numeric builtins to an already-evaluated
@@ -18874,11 +18900,11 @@ fn apply_num_builtin(name: &str, arg: Num) -> Option<Num> {
             Num::Float(f) => Num::Float(f.abs()),
         });
     }
-    // INTEGER-only: asl aborts on a float argument (`lastbit(5.0)` is `#10000
-    // internal error`, exit 3), so a float is refused here rather than guessed.
-    if name.eq_ignore_ascii_case("lastbit") {
+    // INTEGER-only: a float argument is refused here rather than guessed, for
+    // the reason `INT_BUILTINS` gives.
+    if let Some(f) = int_builtin(name) {
         return match arg {
-            Num::Int(i) => Some(Num::Int(lastbit(i))),
+            Num::Int(i) => f(i).map(Num::Int),
             Num::Float(_) => None,
         };
     }
