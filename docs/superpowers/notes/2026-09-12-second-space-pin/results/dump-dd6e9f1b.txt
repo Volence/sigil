@@ -1,0 +1,111 @@
+== p01_empty1
+0 sec0 M68000 frags=2 image Pinned lma=0x0 placed_lma=0x0 labels=[]
+1 sec256 M68000 frags=1 image Pinned lma=0x100 placed_lma=0x100 labels=[]
+2 sec0 M68000 frags=0 image Pinned lma=0x0 placed_lma=0x0 labels=[DriverStart=0x0]
+3 sec0#1 Z80 frags=2 foreign-Z80@80 Pinned lma=0x0 placed_lma=0x0 labels=[]
+4 sec272 M68000 frags=1 image Pinned lma=0x110 placed_lma=0x110 labels=[]
+verdict: section `sec0#1` [0x0, 0x3) is assembled for the Z80 at origin 0x0, in a second address space this org opens outside the ROM image, and no -z instruction places it into the ROM
+== p02_empty1_z
+0 sec0 M68000 frags=2 image Pinned lma=0x0 placed_lma=0x0 labels=[]
+1 sec256 M68000 frags=1 image Pinned lma=0x100 placed_lma=0x100 labels=[]
+2 sec0 M68000 frags=0 image Pinned lma=0x0 placed_lma=0x0 labels=[DriverStart=0x0]
+3 sec0#1 Z80 frags=2 foreign-Z80@80 Pinned lma=0x0 placed_lma=0x0 labels=[]
+4 sec272 M68000 frags=1 image Pinned lma=0x110 placed_lma=0x110 labels=[]
+verdict: ok
+== p03_empty2
+0 sec0 M68000 frags=2 image Pinned lma=0x0 placed_lma=0x0 labels=[]
+1 sec256 M68000 frags=1 image Pinned lma=0x100 placed_lma=0x100 labels=[]
+2 sec0 M68000 frags=0 image Pinned lma=0x0 placed_lma=0x0 labels=[DriverStart=0x0]
+3 sec0 Z80 frags=0 image Chained lma=0x0 placed_lma=0x0 labels=[Inner=0x0]
+4 sec0#1 Z80 frags=2 foreign-Z80@80 Pinned lma=0x0 placed_lma=0x0 labels=[]
+5 sec272 M68000 frags=1 image Pinned lma=0x110 placed_lma=0x110 labels=[]
+verdict: section `sec0#1` [0x0, 0x3) is assembled for the Z80 at origin 0x0, in a second address space this org opens outside the ROM image, and no -z instruction places it into the ROM
+== p04_phase_in_driver
+0 sec0 M68000 frags=2 image Pinned lma=0x0 placed_lma=0x0 labels=[]
+1 sec256 M68000 frags=1 image Pinned lma=0x100 placed_lma=0x100 labels=[]
+2 sec0#1 Z80 frags=1 foreign-Z80@80 Pinned lma=0x0 placed_lma=0x0 labels=[]
+3 sec64 Z80 frags=0 foreign-Z80@80 Pinned lma=0x40 placed_lma=0x40 labels=[L40=0x40]
+4 sec4096 Z80 frags=1 foreign-Z80@80 Pinned lma=0x40 placed_lma=0x40 labels=[]
+5 sec272 M68000 frags=1 image Pinned lma=0x110 placed_lma=0x110 labels=[]
+verdict: sections `sec0#1`, `sec4096` [0x0, 0x41) are assembled for the Z80 at origin 0x0, in a second address space this org opens outside the ROM image, and no -z instruction places it into the ROM
+== p05_reserve_then_code
+0 sec0 M68000 frags=2 image Pinned lma=0x0 placed_lma=0x0 labels=[]
+1 sec256 M68000 frags=1 image Pinned lma=0x100 placed_lma=0x100 labels=[]
+2 sec0 M68000 frags=0 image Pinned lma=0x0 placed_lma=0x0 labels=[DriverStart=0x0]
+3 sec0#1 Z80 frags=2 foreign-Z80@80 Pinned lma=0x0 placed_lma=0x0 labels=[]
+4 sec272 M68000 frags=1 image Pinned lma=0x110 placed_lma=0x110 labels=[]
+verdict: section `sec0#1` [0x0, 0x5) is assembled for the Z80 at origin 0x0, in a second address space this org opens outside the ROM image, and no -z instruction places it into the ROM
+== p06_reserve_only_first
+0 sec0 M68000 frags=2 image Pinned lma=0x0 placed_lma=0x0 labels=[]
+1 sec256 M68000 frags=1 image Pinned lma=0x100 placed_lma=0x100 labels=[]
+2 sec0 M68000 frags=0 image Pinned lma=0x0 placed_lma=0x0 labels=[DriverStart=0x0]
+3 sec0#1 Z80 frags=1 foreign-Z80@80 Chained lma=0x0 placed_lma=0x0 labels=[]
+4 sec4 Z80 frags=1 foreign-Z80@80 Chained lma=0x4 placed_lma=0x4 labels=[]
+5 sec272 M68000 frags=1 image Pinned lma=0x110 placed_lma=0x110 labels=[]
+verdict: section `sec4` [0x4, 0x5) is assembled for the Z80 at origin 0x4, in a second address space this org opens outside the ROM image, and no -z instruction places it into the ROM
+== p07_later_seek
+0 sec0 M68000 frags=2 image Pinned lma=0x0 placed_lma=0x0 labels=[]
+1 sec256 M68000 frags=1 image Pinned lma=0x100 placed_lma=0x100 labels=[]
+2 sec0 M68000 frags=0 image Pinned lma=0x0 placed_lma=0x0 labels=[DriverStart=0x0]
+3 sec0#1 Z80 frags=6 foreign-Z80@80 Pinned lma=0x0 placed_lma=0x0 labels=[]
+4 sec3 Z80 frags=1 foreign-Z80@80 Pinned lma=0x3 placed_lma=0x3 labels=[Next=0x3]
+5 sec272 M68000 frags=1 image Pinned lma=0x110 placed_lma=0x110 labels=[]
+verdict: sections `sec0#1` [0x0, 0x4) and `sec3` [0x3, 0x4) overlap in a second Z80 address space: this `org` left the write position at 0x3, inside bytes already written up to 0x4, when its section ended, and `sec3` was placed there (asl writes the later bytes over the earlier ones; sigil refuses the overlap)
+== p08_overlap_in_space
+0 sec0 M68000 frags=2 image Pinned lma=0x0 placed_lma=0x0 labels=[]
+1 sec256 M68000 frags=1 image Pinned lma=0x100 placed_lma=0x100 labels=[]
+2 sec0 M68000 frags=0 image Pinned lma=0x0 placed_lma=0x0 labels=[DriverStart=0x0]
+3 sec0#1 Z80 frags=4 foreign-Z80@80 Pinned lma=0x0 placed_lma=0x0 labels=[]
+4 sec16 Z80 frags=1 foreign-Z80@80 Pinned lma=0x10 placed_lma=0x10 labels=[]
+5 sec2 Z80 frags=1 foreign-Z80@80 Pinned lma=0x2 placed_lma=0x2 labels=[]
+6 sec272 M68000 frags=1 image Pinned lma=0x110 placed_lma=0x110 labels=[]
+verdict: sections `sec0#1` [0x0, 0x4) and `sec2` [0x2, 0x3) overlap in a second Z80 address space (colliding pins)
+== p09_z80_host_68k_space
+0 sec0 Z80 frags=1 image Pinned lma=0x0 placed_lma=0x0 labels=[]
+1 sec256 Z80 frags=0 image Pinned lma=0x100 placed_lma=0x100 labels=[Mark=0x100]
+2 sec256 M68000 frags=1 foreign-M68000@23 Pinned lma=0x100 placed_lma=0x100 labels=[]
+verdict: section `sec256` [0x100, 0x102) is assembled for the 68000 at origin 0x100, in a second address space this org opens outside the ROM image, and no -z instruction places it into the ROM
+== p10_image_control
+0 sec0 M68000 frags=1 image Pinned lma=0x0 placed_lma=0x0 labels=[]
+1 sec512 M68000 frags=0 image Pinned lma=0x200 placed_lma=0x200 labels=[Mark=0x200]
+2 sec512 M68000 frags=1 image Chained lma=0x200 placed_lma=0x200 labels=[]
+verdict: ok
+== p11_two_spaces_z
+0 sec0 M68000 frags=2 image Pinned lma=0x0 placed_lma=0x0 labels=[]
+1 sec256 M68000 frags=1 image Pinned lma=0x100 placed_lma=0x100 labels=[]
+2 sec0 M68000 frags=0 image Pinned lma=0x0 placed_lma=0x0 labels=[D1=0x0]
+3 sec0#1 Z80 frags=2 foreign-Z80@80 Pinned lma=0x0 placed_lma=0x0 labels=[]
+4 sec272 M68000 frags=1 image Pinned lma=0x110 placed_lma=0x110 labels=[]
+5 sec4864 M68000 frags=0 image Pinned lma=0x1300 placed_lma=0x1300 labels=[D2=0x1300]
+6 sec4864 Z80 frags=2 foreign-Z80@164 Pinned lma=0x1300 placed_lma=0x1300 labels=[]
+7 sec288 M68000 frags=1 image Pinned lma=0x120 placed_lma=0x120 labels=[]
+verdict: ok
+== p12_empty2_z
+0 sec0 M68000 frags=2 image Pinned lma=0x0 placed_lma=0x0 labels=[]
+1 sec256 M68000 frags=1 image Pinned lma=0x100 placed_lma=0x100 labels=[]
+2 sec0 M68000 frags=0 image Pinned lma=0x0 placed_lma=0x0 labels=[DriverStart=0x0]
+3 sec0 Z80 frags=0 image Chained lma=0x0 placed_lma=0x0 labels=[Inner=0x0]
+4 sec0#1 Z80 frags=2 foreign-Z80@80 Pinned lma=0x0 placed_lma=0x0 labels=[]
+5 sec272 M68000 frags=1 image Pinned lma=0x110 placed_lma=0x110 labels=[]
+verdict: ok
+== p13_reserve_then_code_z
+0 sec0 M68000 frags=2 image Pinned lma=0x0 placed_lma=0x0 labels=[]
+1 sec256 M68000 frags=1 image Pinned lma=0x100 placed_lma=0x100 labels=[]
+2 sec0 M68000 frags=0 image Pinned lma=0x0 placed_lma=0x0 labels=[DriverStart=0x0]
+3 sec0#1 Z80 frags=2 foreign-Z80@80 Pinned lma=0x0 placed_lma=0x0 labels=[]
+4 sec272 M68000 frags=1 image Pinned lma=0x110 placed_lma=0x110 labels=[]
+verdict: section `sec0#1` [0x0, 0x5) is assembled for the Z80 at origin 0x0, in a second address space this org opens outside the ROM image, and no -z instruction places it into the ROM
+== p14_phase_rule3_control
+0 sec0 M68000 frags=2 image Pinned lma=0x0 placed_lma=0x0 labels=[]
+1 sec256 M68000 frags=1 image Pinned lma=0x100 placed_lma=0x100 labels=[]
+2 sec260 M68000 frags=0 image Pinned lma=0x104 placed_lma=0x104 labels=[Mark=0x104]
+3 sec0#1 Z80 frags=1 image Chained lma=0x104 placed_lma=0x104 labels=[]
+4 sec272 M68000 frags=1 image Pinned lma=0x110 placed_lma=0x110 labels=[]
+verdict: ok
+== p15_reserve_then_code_z0
+0 sec0 M68000 frags=2 image Pinned lma=0x0 placed_lma=0x0 labels=[]
+1 sec256 M68000 frags=1 image Pinned lma=0x100 placed_lma=0x100 labels=[]
+2 sec0 M68000 frags=0 image Pinned lma=0x0 placed_lma=0x0 labels=[DriverStart=0x0]
+3 sec0#1 Z80 frags=2 foreign-Z80@80 Pinned lma=0x0 placed_lma=0x0 labels=[]
+4 sec272 M68000 frags=1 image Pinned lma=0x110 placed_lma=0x110 labels=[]
+verdict: ok

@@ -23,6 +23,9 @@
 //! - an `org` with a `phase` open, Sonic 1's phased `SetupValues_Z80` block, and
 //!   a Z80 program at `org 0`: still assemble, to the bytes their sources and the
 //!   reference assembler give.
+//! - a driver whose `!org` opens sections with no content before its code, placed
+//!   by `-z`: the reference toolchain's image, so a driver placed anywhere but its
+//!   origin is refused by `-z` or lands its bytes somewhere else, and fails here.
 
 use std::path::Path;
 use std::process::{Command, Output};
@@ -42,10 +45,17 @@ fn error_lines(stderr: &str) -> Vec<&str> {
 /// Assemble `src` as `root.asm` in a fresh directory and return the image, or
 /// panic with everything sigil printed.
 fn assemble_ok(src: &str) -> Vec<u8> {
+    assemble_ok_with(src, &[])
+}
+
+/// [`assemble_ok`] with further arguments after `-o`, such as a `-z`.
+fn assemble_ok_with(src: &str, extra: &[&str]) -> Vec<u8> {
     let dir = tempfile::tempdir().expect("tempdir");
     std::fs::write(dir.path().join("root.asm"), src).expect("write root.asm");
     let out_path = dir.path().join("out.bin");
-    let out = run(dir.path(), "root.asm", &["-o", out_path.to_str().expect("utf-8 path")]);
+    let mut args = vec!["-o", out_path.to_str().expect("utf-8 path")];
+    args.extend_from_slice(extra);
+    let out = run(dir.path(), "root.asm", &args);
     assert!(
         out.status.success(),
         "must assemble.\nstderr:\n{}\nsource:\n{src}",
@@ -257,4 +267,51 @@ fn sonic_1_s_phased_setup_block_assembles_to_the_reference_bytes() {
 fn a_z80_program_at_org_0_still_assembles() {
     let image = assemble_ok("\tcpu z80\n\torg 0\n\tdi\n\tld a,1\n\tjp 0\n");
     assert_eq!(image, [0xF3, 0x3E, 0x01, 0xC3, 0x00, 0x00]);
+}
+
+/// A driver whose `!org 0` opens sections with no content before its code,
+/// placed by `-z` where p2bin places it. The expected images are the reference
+/// toolchain's for the same sources and the same `-z` (`asl` md5
+/// 61e672562465725a8c102288a7da9098 through `asl_ref.sh`'s `asl_run`, exit 0,
+/// 0 errors; `p2bin` md5 4f2fff99c3347bafb93b12d5be1db754), and every byte reads
+/// off the source: the listing binds the driver's labels at Z80 0, `di` F3 at 0
+/// and `ld a,1` 3E 01 at 1, and p2bin stores those three bytes right after the
+/// image code before the driver, at $102. The third source enters a second space
+/// again at `!org $1300` the same way, and its `db 7,8` follows the code at $110.
+/// The sources are probes p12, p16 and p11 of
+/// `docs/superpowers/notes/2026-09-12-second-space-pin/`.
+#[test]
+fn a_driver_behind_sections_with_no_content_is_placed_where_p2bin_places_it() {
+    const HEAD: &str = "\tcpu 68000\nSize1 equ $10\nSize2 equ $10\n\tdc.l 0, 0\n\torg $100\n\tdc.w $4E71\n";
+    let two_labels = format!(
+        "{HEAD}\tsave\n\t!org 0\nDriverStart:\n\tcpu z80\nInner:\n\tcpu z80\n\tdi\n\tld a,1\n\
+         \trestore\n\tpadding off\n\t!org $110\n\tdc.w $4E71\n"
+    );
+    let no_section_open: &str = "\tcpu 68000\nSize1 equ $10\n\tdc.l 0, 0\n\torg $100\n\tdc.w $4E71\n\tcpu 68000\n\
+                                 \tsave\n\t!org 0\nDriverStart:\n\tcpu z80\n\tdi\n\tld a,1\n\
+                                 \trestore\n\tpadding off\n\t!org $110\n\tdc.w $4E71\n";
+    let two_spaces = format!(
+        "{HEAD}\tsave\n\t!org 0\nD1:\n\tcpu z80\n\tdi\n\tld a,1\n\trestore\n\tpadding off\n\
+         \t!org $110\n\tdc.w $4E71\n\tsave\n\t!org $1300\nD2:\n\tcpu z80\n\tdb 7,8\n\
+         \trestore\n\tpadding off\n\t!org $120\n\tdc.w $4E71\n"
+    );
+    // One driver: the vectors, the code at $100, the driver after it, the code at $110.
+    let mut one = vec![0u8; 0x112];
+    one[0x100..0x105].copy_from_slice(&[0x4E, 0x71, 0xF3, 0x3E, 0x01]);
+    one[0x110..0x112].copy_from_slice(&[0x4E, 0x71]);
+    // Two spaces: the same, then `db 7,8` after the code at $110, and the code at $120.
+    let mut two = one.clone();
+    two.resize(0x122, 0);
+    two[0x112..0x114].copy_from_slice(&[0x07, 0x08]);
+    two[0x120..0x122].copy_from_slice(&[0x4E, 0x71]);
+    let z0 = "-z=0,uncompressed,Size1,after";
+    let cases: [(&str, &str, &[&str], &[u8]); 3] = [
+        ("two labels between the org and the code", &two_labels, &[z0], &one),
+        ("the org finds no section open", no_section_open, &[z0], &one),
+        ("two spaces, each behind a label", &two_spaces, &[z0, "-z=1300h,uncompressed,Size2,after"], &two),
+    ];
+    for (shape, src, z, want) in cases {
+        let image = assemble_ok_with(src, z);
+        assert_eq!(image, want, "{shape}: the reference toolchain's image");
+    }
 }

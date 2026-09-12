@@ -154,6 +154,103 @@ fn a_seek_back_that_an_image_section_closes_behind_pins_the_next_section_at_its_
     }
 }
 
+/// A second space's code, as the link-time placement pass places it, when
+/// sections with no content open between the `org` and the code: a label between
+/// the `org` and the `cpu` line, a second label under the new CPU, a label before
+/// a `phase`. The section the builder opens at the `org` is `Pinned` at the
+/// counter the `org` set. A section with no fragments spans nothing, so every
+/// section after it up to the code is placed at that same counter, and so is the
+/// code: its bytes load where its labels are bound. Each case names the label the
+/// reference assembler binds at that counter, `asl` md5
+/// 61e672562465725a8c102288a7da9098 through `asl_ref.sh`'s `asl_run` (exit 0,
+/// 0 errors), with the listing line quoted. The sources are the probes of
+/// `docs/superpowers/notes/2026-09-12-second-space-pin/`. The shipped command's
+/// image for the placed shapes is `as_second_address_space`'s
+/// `a_driver_behind_sections_with_no_content_is_placed_where_p2bin_places_it`.
+#[test]
+fn a_second_space_behind_sections_with_no_content_is_placed_at_its_org() {
+    let cases: [(&str, &str, &str, u32, &str); 5] = [
+        (
+            // p01: `9/ 0 : DriverStart:`; the `!org 0` leaves the section open at $100.
+            "one label between the org and the cpu line",
+            "\tcpu 68000\nSize1 equ $10\nSize2 equ $10\n\tdc.l 0, 0\n\torg $100\n\tdc.w $4E71\n\
+             \tsave\n\t!org 0\nDriverStart:\n\tcpu z80\n\tdi\n\tld a,1\n\
+             \trestore\n\tpadding off\n\t!org $110\n\tdc.w $4E71\n",
+            "DriverStart",
+            0,
+            "!org 0",
+        ),
+        (
+            // p03: `9/ 0 : DriverStart:` and `11/ 0 : Inner:`.
+            "a second label under the new cpu",
+            "\tcpu 68000\nSize1 equ $10\nSize2 equ $10\n\tdc.l 0, 0\n\torg $100\n\tdc.w $4E71\n\
+             \tsave\n\t!org 0\nDriverStart:\n\tcpu z80\nInner:\n\tcpu z80\n\tdi\n\tld a,1\n\
+             \trestore\n\tpadding off\n\t!org $110\n\tdc.w $4E71\n",
+            "DriverStart",
+            0,
+            "!org 0",
+        ),
+        (
+            // p16: `9/ 0 : DriverStart:`; a `cpu` line closed the section, so the
+            // `!org 0` finds none open.
+            "the org finds no section open",
+            "\tcpu 68000\nSize1 equ $10\n\tdc.l 0, 0\n\torg $100\n\tdc.w $4E71\n\tcpu 68000\n\
+             \tsave\n\t!org 0\nDriverStart:\n\tcpu z80\n\tdi\n\tld a,1\n\
+             \trestore\n\tpadding off\n\t!org $110\n\tdc.w $4E71\n",
+            "DriverStart",
+            0,
+            "!org 0",
+        ),
+        (
+            // p04: `12/ 40 : L40:`, then `14/ 1000 : 05 db 5` under the phase. The
+            // `org 40h` stays in the driver's space, so the space is still the one
+            // entered at `!org 0`, and the phased byte loads at $40.
+            "an org inside the driver, a label, then a phase",
+            "\tcpu 68000\nSize1 equ $10\nSize2 equ $10\n\tdc.l 0, 0\n\torg $100\n\tdc.w $4E71\n\
+             \tsave\n\t!org 0\n\tcpu z80\n\tdi\n\torg 40h\nL40:\n\tphase 1000h\n\tdb 5\n\tdephase\n\
+             \trestore\n\tpadding off\n\t!org $110\n\tdc.w $4E71\n",
+            "L40",
+            0x40,
+            "!org 0",
+        ),
+        (
+            // p09: `5/ 100 : Mark:` and `7/ 100 : 1234 dc.w $1234`. A Z80 program
+            // entering a 68000 second space.
+            "a Z80 image entering a 68000 space",
+            "\tcpu z80\n\torg 0\n\tdb 1\n\torg 100h\nMark:\n\tcpu 68000\n\tdc.w $1234\n",
+            "Mark",
+            0x100,
+            "org 100h",
+        ),
+    ];
+    for (shape, src, label, at, entered) in cases {
+        let m = asm(src);
+        let at_label = m
+            .sections
+            .iter()
+            .position(|s| label_address(s, label).is_some())
+            .unwrap_or_else(|| panic!("{shape}: `{label}` is bound in no section: {:#?}", m.sections));
+        assert_eq!(label_address(&m.sections[at_label], label), Some(at), "{shape}: `{label}` is bound where asl binds it");
+        let code = (at_label..m.sections.len())
+            .find(|&i| !m.sections[i].fragments.is_empty())
+            .unwrap_or_else(|| panic!("{shape}: no code after `{label}`: {:#?}", m.sections));
+        assert!(
+            code > at_label,
+            "{shape}: `{label}` opens a section with no content ahead of the code (the shape this test depends on): {:#?}",
+            m.sections
+        );
+        let (_, line) = entered_line(src, &m.sections[code]);
+        assert_eq!(line, line_containing(src, entered), "{shape}: the code is a second space entered at `{entered}`");
+        let placed = sigil_link::resolve_layout_measuring(&m.sections, &sigil_ir::SymbolTable::new(), true)
+            .unwrap_or_else(|d| panic!("{shape}: placement: {d:?}"));
+        assert_eq!(
+            placed[code].lma, at,
+            "{shape}: the code is placed at the org's counter, where `{label}` is bound; `{}` [{:#X}] was placed at {:#X}",
+            placed[code].name, m.sections[code].lma, placed[code].lma
+        );
+    }
+}
+
 /// Sonic 1's `SetupValues_Z80` shape: Z80 code phased to 0 with no `org`. The
 /// counter runs on through it, so it is image bytes, and so is everything after.
 #[test]
