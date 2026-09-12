@@ -327,3 +327,89 @@ fn what_asl_refuses_in_bitpos_is_refused() {
         refused(name);
     }
 }
+
+/// `sgn` over its integer table and its float table. On integers it is the
+/// plain sign of the 64-bit value; `t_sgn.lst` and `t_sgn_float.lst`:
+///
+/// ```text
+///        4/       0 : 0000 0000           	dc.l sgn($0)
+///        5/       4 : 0000 0001           	dc.l sgn($1)
+///     1032/    1010 : FFFF FFFF           	dc.l sgn(-$5)
+///     1496/    1750 : 0000 0001           	dc.l sgn($7FFFFFFFFFFFFFFF)
+///     1495/    174C : FFFF FFFF           	dc.l sgn((-$7FFFFFFFFFFFFFFF-1))
+///        5/       4 : 0000 0000           	dc.l sgn(-0.0)
+///        7/       C : FFFF FFFF           	dc.l sgn(-0.5)
+///       14/      28 : 0000 0001           	dc.l sgn(0.000001)
+/// ```
+#[test]
+fn sgn_matches_asl_over_its_tables() {
+    builds("t_sgn");
+    builds("t_sgn_float");
+}
+
+/// A float argument is accepted and the answer is an INTEGER, so it fits a
+/// `dc.l` and an immediate with no `#1133`; `ctx_sgn_float.lst`:
+///
+/// ```text
+///        4/       0 : FFFF FFFF           	dc.l sgn(-2.5)
+///        6/       5 : 203C FFFF FFFF      	move.l #sgn(-0.5),d0
+///        8/       B : 0000 0001           	dc.l sgn(F)
+///        9/       F : FFFF FFFF           	dc.l sgn(0.1-0.2)
+///       10/      13 : 0000 0001           	dc.l sgn(sqrt(2))
+/// ```
+#[test]
+fn sgn_takes_a_float_and_answers_an_integer() {
+    builds("ctx_sgn_float");
+}
+
+/// Every integer context, both CPUs. `ctx_sgn.lst` and `ctx_sgn_z80.lst`:
+///
+/// ```text
+///       12/      45 : FF                  	dc.b sgn(Later)
+///       13/      46 : =$FFFFFFFFFFFFFFFF   X equ sgn(-5)
+///       23/      4F : 323C FFFC           	move.w #sgn(-5)<<2,d1
+///       24/      53 : 00                  	dc.b sgn(-5)+1
+///       26/      55 : 4646 4646 4646      	dc.b "\{sgn(-5)}"
+///       27/      65 : 00                  	dc.b sgn()
+///        5/       3 : 21 FF FF            	ld hl,sgn(-5)
+/// ```
+///
+/// The interpolated `-1` is sixteen `F`s: its row continues past the six the
+/// listing prints, and the next line starts at `$65`.
+#[test]
+fn sgn_works_wherever_an_integer_is_read() {
+    builds("ctx_sgn");
+    builds("ctx_sgn_z80");
+}
+
+/// The corpus use is Sonic 1's `signedToString` (`s1disasm/MacroSetup.asm(221)`),
+/// `substr("-",0,-sgn(number))+"$\{abs(number)}"`. Its `sgn` half is `sgn`
+/// reaching `substr`'s length through a user function, and that assembles as
+/// asl does, including asl's answer for 0: a `substr` length of 0 means "to
+/// the end", so the `-` survives. `signed_sgn.lst` and `signed_sgn_pos.lst`:
+///
+/// ```text
+///        5/       0 : 2D                  	dc.b signPrefix(-5)
+///        6/       1 : 2D                  	dc.b signPrefix(0)
+///        7/       2 : 2D24                	dc.b signPrefix(-$123),"$"
+///        8/       4 : 2D78                	dc.b substr("-",0,-sgn(-5)),"x"
+///        5/       0 : 3C3E                	dc.b "<",signPrefix(5),">"
+/// ```
+///
+/// The whole function (`signed.asm`) does not assemble in sigil: its `+` joins
+/// two strings, which asl concatenates and sigil does not (the note and the gap
+/// ledger, `AS-STRING-PLUS-CONCAT`).
+#[test]
+fn sgn_reaches_substr_s_length_through_a_user_function() {
+    builds("signed_sgn");
+    builds("signed_sgn_pos");
+}
+
+/// What asl refuses: a string aborts it (`error #10000`, exit 3); two
+/// arguments are `error #1490`, an undefined symbol `error #1010` (exit 2).
+#[test]
+fn what_asl_refuses_in_sgn_is_refused() {
+    for name in ["ref_sgn_string", "ref_sgn_twoarg", "ref_sgn_undef"] {
+        refused(name);
+    }
+}

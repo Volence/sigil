@@ -2946,7 +2946,7 @@ impl Asm {
     ///
     /// EVERY numeric builtin is scanned for, not only `int` -- but only a call
     /// that resolves to an INTEGER is rewritten: `int`, `abs` of an integer,
-    /// and every entry of [`INT_BUILTINS`]. The float-returning family always
+    /// `sgn`, and every entry of [`INT_BUILTINS`]. The float-returning family always
     /// declines here and is left for `int(...)` or for the float-operand path
     /// to handle. The corpus demand is S1's
     /// `Macros.asm(353)`, `rept 1+(abs(first-last)/abs(step))`, which reaches
@@ -18741,9 +18741,10 @@ fn floor_to_i64(f: f64) -> Option<i64> {
 /// paired with the `f64` method that reproduces each.
 ///
 /// The builtins missing from this table are `int` and `abs`, which are
-/// TYPE-PRESERVING and so cannot be `fn(f64) -> f64` (they are handled by name
-/// in [`apply_num_builtin`]), and the integer-only family in
-/// [`INT_BUILTINS`]. Everything here returns a float even when the
+/// TYPE-PRESERVING, and `sgn`, which answers an integer for either type, so
+/// none of the three is `fn(f64) -> f64` (they are handled by name in
+/// [`apply_num_builtin`]); and the integer-only family in [`INT_BUILTINS`].
+/// Everything here returns a float even when the
 /// value is integral, which is byte-visible: `dc.l SQRT(16)` is `error #1133:
 /// expected integer or string, but got floating point number`, not `4`
 /// (`types.asm(10)`).
@@ -18797,6 +18798,7 @@ fn float_builtin(name: &str) -> Option<FloatFn> {
 fn is_num_builtin(name: &str) -> bool {
     name.eq_ignore_ascii_case("int")
         || name.eq_ignore_ascii_case("abs")
+        || name.eq_ignore_ascii_case("sgn")
         || int_builtin(name).is_some()
         || float_builtin(name).is_some()
 }
@@ -18940,6 +18942,17 @@ fn apply_num_builtin(name: &str, arg: Num) -> Option<Num> {
             Num::Int(i) => Num::Int(i.wrapping_abs()),
             Num::Float(f) => Num::Float(f.abs()),
         });
+    }
+    // `sgn` takes EITHER type and answers an INTEGER for both, which is why it
+    // is neither a `FLOAT_BUILTINS` row nor an `INT_BUILTINS` one (whose rows
+    // refuse a float). asl, exit 0 (`ctx_sgn_float.lst`): `dc.l sgn(-2.5)` is
+    // `FFFF FFFF` with no `#1133`, `sgn(0.1-0.2)` -1, `sgn(sqrt(2))` 1, and
+    // `sgn(-0.0)` 0; on integers the plain sign of the 64-bit value.
+    if name.eq_ignore_ascii_case("sgn") {
+        return Some(Num::Int(match arg {
+            Num::Int(i) => i.signum(),
+            Num::Float(f) => i64::from(f > 0.0) - i64::from(f < 0.0),
+        }));
     }
     // INTEGER-only: a float argument is refused here rather than guessed, for
     // the reason `INT_BUILTINS` gives.
