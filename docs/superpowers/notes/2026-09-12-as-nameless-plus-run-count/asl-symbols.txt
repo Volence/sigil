@@ -1,0 +1,268 @@
+=== a01_p_pp_p_p  ASL_EXIT=2  complete
+> > > a01_p_pp_p_p.asm(9): error #1000: symbol double defined
+*__forw0 :                      102
+*__forw1 :                      106
+*__forw2 :                      104
+=== a02_pp_pp  ASL_EXIT=2  complete
+> > > a02_pp_pp.asm(7): error #1000: symbol double defined
+*__forw1 :                      102
+=== a03_ppp_p_p_p  ASL_EXIT=2  complete
+> > > a03_ppp_p_p_p.asm(9): error #1000: symbol double defined
+*__forw0 :                      104
+*__forw1 :                      106
+*__forw2 :                      102
+=== a04_pp_p_p  ASL_EXIT=2  complete
+> > > a04_pp_p_p.asm(8): error #1000: symbol double defined
+*__forw0 :                      104
+*__forw1 :                      102
+=== a05_ppp_pp  ASL_EXIT=0  complete
+*__forw1 :                      104
+*__forw2 :                      102
+hex@100 1111222233334444
+=== a06_pp_ppp  ASL_EXIT=0  complete
+*__forw1 :                      102
+*__forw2 :                      104
+hex@100 1111222233334444
+=== a07_pppp  ASL_EXIT=2  complete
+> > > a07_pppp.asm(6):1: error #1020: invalid symbol name
+=== a08_p_p_pp_p  ASL_EXIT=0  complete
+*__forw0 :                      102
+*__forw1 :                      104
+*__forw2 :                      108
+*__forw3 :                      106
+hex@100 111122223333555566664444
+=== a09_slash_minus  ASL_EXIT=0  complete
+*__back0 :                      104
+*__forw0 :                      102
+hex@100 1111222233334444
+=== a10_minus_slash_minus  ASL_EXIT=0  complete
+*__back0 :                      102
+*__back1 :                      106
+*__forw0 :                      104
+hex@100 11112222333355554444
+=== a11_slash_pp_p  ASL_EXIT=0  complete
+*__forw0 :                      102
+*__forw1 :                      106
+*__forw2 :                      104
+hex@100 11112222333355554444
+=== a12_p_pp_p_p_pp  ASL_EXIT=2  complete
+> > > a12_p_pp_p_p_pp.asm(9): error #1000: symbol double defined
+*__forw0 :                      102
+*__forw1 :                      106
+*__forw2 :                      104
+*__forw4 :                      10A
+=== b01_ref_p_over_p_pp_p  ASL_EXIT=0  complete
+ __forw0 :                      104
+*__forw1 :                      108
+*__forw2 :                      106
+hex@100 111101042222333355554444
+=== b02_ref_pp_over_p_pp_p  ASL_EXIT=0  complete
+*__forw0 :                      104
+ __forw1 :                      108
+*__forw2 :                      106
+hex@100 111101082222333355554444
+=== b03_ref_ppp_over_p_pp_p  ASL_EXIT=0  complete
+*__forw0 :                      104
+*__forw1 :                      108
+ __forw2 :                      106
+hex@100 111101062222333355554444
+=== b04_ref_pppp_over_p_pp_p  ASL_EXIT=2  complete
+> > > b04_ref_pppp_over_p_pp_p.asm(6):7: error #1110: wrong number of operands
+*__forw0 :                      102
+*__forw1 :                      106
+*__forw2 :                      104
+=== b05_pp_ref_p_p  ASL_EXIT=0  complete
+ __forw0 :                      106
+*__forw1 :                      102
+hex@100 11112222010633334444
+=== b06_pp_ref_pp_p  ASL_EXIT=0  complete
+*__forw0 :                      106
+ __forw1 :                      102
+hex@100 11112222010233334444
+=== b07_pp_sameline_ref_p  ASL_EXIT=0  complete
+ __forw0 :                      104
+*__forw1 :                      102
+hex@100 1111010433334444
+=== b08_pp_sameline_ref_pp  ASL_EXIT=0  complete
+*__forw0 :                      104
+ __forw1 :                      102
+hex@100 1111010233334444
+=== b09_bra_pp_over_run  ASL_EXIT=0  complete
+*__forw0 :                      104
+ __forw1 :                      108
+*__forw2 :                      106
+hex@100 111160042222333355554444
+=== b10_bra_ppp_over_run  ASL_EXIT=0  complete
+*__forw0 :                      104
+*__forw1 :                      108
+ __forw2 :                      106
+hex@100 111160022222333355554444
+=== b11_p_pp_ref_p_p  ASL_EXIT=0  complete
+*__forw0 :                      102
+ __forw1 :                      108
+*__forw2 :                      104
+hex@100 111122223333010855554444
+=== b12_p_pp_ref_pp_p  ASL_EXIT=0  complete
+*__forw0 :                      102
+*__forw1 :                      108
+ __forw2 :                      104
+hex@100 111122223333010455554444
+=== b13_ref_p_over_ppp_p_p  ASL_EXIT=0  complete
+ __forw0 :                      106
+*__forw1 :                      108
+*__forw2 :                      104
+hex@100 111101062222333355554444
+=== b14_ref_ppp_over_ppp_p_p  ASL_EXIT=0  complete
+*__forw0 :                      106
+*__forw1 :                      108
+ __forw2 :                      104
+hex@100 111101042222333355554444
+=== b15_minus_run_ref  ASL_EXIT=0  complete
+ __back0 :                      102
+*__back1 :                      104
+*__back2 :                      106
+hex@100 111122223333555501024444
+=== b16_bra_p_after_pp  ASL_EXIT=0  complete
+> > > b16_bra_p_after_pp.asm(7): warning #60: distance of 0 not allowed for short jump (NOP created instead)
+ __forw0 :                      106
+*__forw1 :                      102
+hex@100 111122224e7133334444
+=== b17_bra_pp_after_pp  ASL_EXIT=0  complete
+*__forw0 :                      106
+ __forw1 :                      102
+hex@100 1111222260fc33334444
+=== b18_slash_pp_p_ref_pp  ASL_EXIT=0  complete
+*__forw0 :                      104
+ __forw1 :                      108
+*__forw2 :                      106
+hex@100 111101082222333355554444
+=== b19_bra_p_after_pp_nop  ASL_EXIT=0  complete
+ __forw0 :                      108
+*__forw1 :                      102
+hex@100 1111222260024e7133334444
+=== c01_body_pp_ref_pp  ASL_EXIT=0  complete
+hex@100 1111222201024444
+=== c02_body_ref_pp_over_run  ASL_EXIT=0  complete
+hex@100 111101082222333355554444
+=== c03_ref_p_body_pp_file_p  ASL_EXIT=0  complete
+ __forw0 :                      106
+hex@100 11110106222233334444
+=== c04_ref_p_body_ppp_twice  ASL_EXIT=0  complete
+ __forw0 :                      108
+hex@100 111101082222222233334444
+=== c05_body_pp_then_file_ref  ASL_EXIT=2  INCOMPLETE
+> > > c05_body_pp_then_file_ref.asm(10):7: error #1010: symbol undefined
+*__forw0 :                      104
+=== c06_body_p_pp_then_file  ASL_EXIT=0  complete
+ __forw1 :                      108
+*__forw2 :                      10A
+hex@100 1111222233330108555566664444
+=== d01_ref_p_rept2_pp_file_p  ASL_EXIT=0  complete
+ __forw0 :                      108
+hex@100 111101082222222233334444
+=== d02_rept2_pp_ref_pp  ASL_EXIT=0  complete
+hex@100 111122220102222201064444
+=== d03_ref_ppp_rept2_p_file_pp_p  ASL_EXIT=0  complete
+ __forw2 :                      10A
+*__forw3 :                      108
+hex@100 1111010a22222222333355554444
+=== d04_rept2_ref_p_pp_p  ASL_EXIT=0  complete
+hex@100 1111010622223333010c222233334444
+=== e01_mm_def  ASL_EXIT=2  complete
+> > > e01_mm_def.asm(6):1: error #1020: invalid symbol name
+=== e02_ss_def  ASL_EXIT=2  complete
+> > > e02_ss_def.asm(6):1: error #1020: invalid symbol name
+=== e03_body_mm_def  ASL_EXIT=2  complete
+> > > e03_body_mm_def.asm(9) mac(1):1: error #1020: invalid symbol name
+=== e04_body_slash_minus_ref_mm  ASL_EXIT=0  complete
+hex@100 11112222333301024444
+=== e05_body_minus_slash_ref_mm  ASL_EXIT=0  complete
+hex@100 11112222333301024444
+=== e06_file_minus_body_slash_file_minus_ref_mm  ASL_EXIT=2  complete
+> > > e06_file_minus_body_slash_file_minus_ref_mm.asm(12):7: error #1010: symbol undefined
+*__back0 :                      102
+*__back1 :                      106
+=== e07_body_slash_twice_file_minus  ASL_EXIT=0  complete
+*__back0 :                      106
+hex@100 11112222222233334444
+=== e08_rept_slash_file_minus  ASL_EXIT=0  complete
+*__back0 :                      104
+hex@100 1111222233334444
+=== e09_body_slash_file_plus_minus  ASL_EXIT=0  complete
+ __back0 :                      106
+*__forw1 :                      104
+hex@100 111122223333555501064444
+=== e10_file_minus_rept_slash_file_minus_ref_mm  ASL_EXIT=2  complete
+> > > e10_file_minus_rept_slash_file_minus_ref_mm.asm(11):7: error #1010: symbol undefined
+*__back0 :                      102
+*__back1 :                      106
+=== e11_body_minus_file_minus_ref_mm  ASL_EXIT=2  complete
+> > > e11_body_minus_file_minus_ref_mm.asm(12):7: error #1010: symbol undefined
+*__back0 :                      102
+*__back2 :                      106
+=== e12_body_slash_ref_p_file_p  ASL_EXIT=0  complete
+ __forw1 :                      106
+hex@100 11112222010633334444
+=== f01_ref_pppp_over_four_p  ASL_EXIT=2  complete
+> > > f01_ref_pppp_over_four_p.asm(6):7: error #1110: wrong number of operands
+*__forw0 :                      102
+*__forw1 :                      104
+*__forw2 :                      106
+*__forw3 :                      108
+=== f02_four_m_ref_mmmm  ASL_EXIT=2  complete
+> > > f02_four_m_ref_mmmm.asm(10):7: error #1110: wrong number of operands
+*__back0 :                      102
+*__back1 :                      104
+*__back2 :                      106
+*__back3 :                      108
+=== f03_ppppp_def  ASL_EXIT=2  complete
+> > > f03_ppppp_def.asm(6):1: error #1020: invalid symbol name
+=== f04_bra_pppp_over_four_p  ASL_EXIT=2  complete
+> > > f04_bra_pppp_over_four_p.asm(6):8: error #1110: wrong number of operands
+*__forw0 :                      102
+*__forw1 :                      104
+*__forw2 :                      106
+*__forw3 :                      108
+=== f05_three_m_ref_mmm_minus_1  ASL_EXIT=0  complete
+ __back0 :                      102
+*__back1 :                      104
+*__back2 :                      106
+hex@100 111122223333555501014444
+=== f06_four_m_ref_mmmmm_minus_1  ASL_EXIT=2  complete
+> > > f06_four_m_ref_mmmmm_minus_1.asm(10):7: error #1110: wrong number of operands
+*__back0 :                      102
+*__back1 :                      104
+*__back2 :                      106
+*__back3 :                      108
+=== f07_ref_pppp_plus_1_over_three_p  ASL_EXIT=0  complete
+*__forw0 :                      104
+*__forw1 :                      106
+ __forw2 :                      108
+hex@100 111101092222333355554444
+=== f08_dbf_mmmm  ASL_EXIT=2  complete
+> > > f08_dbf_mmmm.asm(10):9: error #1110: wrong number of operands
+*__back0 :                      102
+*__back1 :                      104
+*__back2 :                      106
+*__back3 :                      108
+=== g01_body_p_pp_p_p  ASL_EXIT=2  complete
+> > > g01_body_p_pp_p_p.asm(12) mac(4): error #1000: symbol double defined
+=== g02_pp_slash_p  ASL_EXIT=2  complete
+> > > g02_pp_slash_p.asm(8): error #1000: symbol double defined
+*__forw0 :                      104
+*__forw1 :                      102
+=== g03_rept2_p_pp_p_p  ASL_EXIT=2  complete
+> > > g03_rept2_p_pp_p_p.asm(11) REPT 1(4): error #1000: symbol double defined
+> > > g03_rept2_p_pp_p_p.asm(11) REPT 2(4): error #1000: symbol double defined
+=== g04_pp_body_p_file_p  ASL_EXIT=2  complete
+> > > g04_pp_body_p_file_p.asm(11): error #1000: symbol double defined
+*__forw1 :                      102
+=== h01_same_address_collision  ASL_EXIT=2  complete
+> > > h01_same_address_collision.asm(9): error #1000: symbol double defined
+*__forw0 :                      102
+*__forw1 :                      102
+*__forw2 :                      102
+=== h02_body_same_address_collision  ASL_EXIT=2  complete
+> > > h02_body_same_address_collision.asm(12) mac(4): error #1000: symbol double defined
+SHAPES_RUN=67
+SYMRUN_END_MARKER

@@ -28,13 +28,16 @@
 //!
 //! | | |
 //! |---|---|
-//! | definition `+` × m | forward counter += m; define the slot it lands on |
+//! | definition `+` | forward counter += 1; define the slot it lands on |
+//! | definition `++`, `+++` | define forward slot `fwd + 2`, `fwd + 3`; the counter stays |
 //! | definition `-` | backward counter += 1; define the slot it lands on |
 //! | definition `/` | both counters += 1; define both slots |
 //! | reference `+` × k | forward slot `fwd + k` |
 //! | reference `-` × k | backward slot `bwd - k + 1` |
 //!
-//! Column 1 only, and `--`/`//` are refused. See `src/nameless.rs`.
+//! Column 1 only; `--`, `//` and runs longer than three are refused, and so is
+//! a reference longer than three. See `src/nameless.rs`, and
+//! `as_nameless_plus_run_count.rs` for the run rule's own probes.
 
 use sigil_frontend_as::{assemble_root_located, Options};
 
@@ -131,14 +134,16 @@ fn ordinals_count_forward_and_backward_and_slash_counts_for_both() {
     );
 }
 
-/// A column-1 `++` consumes TWO forward slots rather than aliasing `+`.
+/// A column-1 `++` names the forward slot TWO past the counter rather than
+/// aliasing `+`.
 ///
-/// This is the case that tells the two candidate models apart, and it is the
-/// reason the definition side carries a count at all: under "a `++` definition
-/// is another spelling of `+`" the `++` here would be slot 2 and `bra.s +++`
-/// would be undefined. asl resolves `+++` to it, so it is slot 3 -- and slot 2
-/// is then never defined by anything, which is exactly why a `bra.s ++` in this
-/// same file is `error: symbol undefined`.
+/// This is the reason the definition side carries a count at all: under "a
+/// `++` definition is another spelling of `+`" the `++` here would be slot 2
+/// and `bra.s +++` would be undefined. asl resolves `+++` to it, so it is slot
+/// 3 -- and nothing in this file defines slot 2, which is why a `bra.s ++` here
+/// is `error: symbol undefined`. A single `+` written AFTER the `++` would take
+/// slot 2, because the run leaves the counter where it stood; that half is
+/// `as_nameless_plus_run_count.rs`.
 ///
 /// asl probe `q8.asm`, exit 0:
 ///
@@ -149,7 +154,7 @@ fn ordinals_count_forward_and_backward_and_slash_counts_for_both() {
 ///       9/    1008 :                     ++
 /// ```
 #[test]
-fn a_multi_plus_definition_consumes_that_many_slots() {
+fn a_multi_plus_definition_names_the_slot_that_many_ahead() {
     let src = format!(
         "{HEAD}\tbra.s\t+\n\tbra.s\t+++\n\tnop\n+\n\tnop\n++\n\tnop\n"
     );
