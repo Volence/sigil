@@ -170,7 +170,10 @@ be one proc's code buffer, which is the same fact arriving from the structural s
 
 `z80_cycles.rs`'s module doc contradicted itself. The `[cycles.unknown-op]` bullet said "any op/form
 outside the driver-demand table. The table is the timed-region subset ONLY", while the SCOPE
-paragraph eight lines below said "The table is no longer the driver-demand subset". **A consumer
+paragraph further down said "The table is no longer the driver-demand subset" (the bullet occupies
+lines 27-29 and SCOPE begins at line 37 of `cbe10440^`, so any "N lines apart" depends on which line
+of a three-line bullet the counter anchors to; aeon measured 9 from line 28, this lane said 8 from
+line 29, and the span is the figure that cannot drift). **A consumer
 reading top to bottom hits the stale sentence first**, and blocker 2's wording ("absent from
 `instr_cost`'s demand subset") is that sentence's vocabulary, so this is the likeliest source of a
 correct-looking wrong booking in a peer's tree. Fixed in the same commit as this note, with the

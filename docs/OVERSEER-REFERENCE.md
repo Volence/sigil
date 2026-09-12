@@ -500,7 +500,7 @@ one is invisible precisely because the reader believes they have already checked
 
 **This lane's independent instance, found the same day and hours BEFORE the rule existed, in Rust:**
 `z80_cycles.rs`'s module doc had a `[cycles.unknown-op]` bullet asserting the table is the
-driver-demand subset, eight lines above a SCOPE paragraph saying it is not, and a consumer in another
+driver-demand subset (lines 27-29 of `cbe10440^`) above a SCOPE paragraph saying it is not (line 37), and a consumer in another
 repo booked a defect in that stale sentence's vocabulary, citing a real file correctly. Different
 repo, different language, different comment convention, found by a different route. **That makes it
 corroboration rather than echo (bar 19), and it says the rule is not a fact about `.emp` header
