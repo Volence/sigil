@@ -74,20 +74,36 @@
 //! -- backward `-` with k=1 lands on slot `bwd`, which the line just defined,
 //! while forward `+` with k=1 wants slot `fwd + 1`, one past it.
 //!
+//! ## Scope: the counters are global, the definitions are not
+//!
+//! asl keeps ONE pair of counters for the whole pass, but files each definition
+//! in the namespace of the expansion instance (a macro expansion, or one
+//! iteration of a `rept` / `irp` / `irpc` / `while`) that is innermost where it
+//! is written -- the same namespace a plain label written there lands in. A
+//! reference names its slot by the global counters exactly as above, and then
+//! reaches it only if the instance that owns the slot is live around the
+//! reference. So a `+` written in a macro body is `error: symbol undefined` to a
+//! reference made before the call, even when a later definition outside the
+//! macro sits one slot further on (`c03`), and a `-` written in a body is out of
+//! reach once the expansion has returned (`c01`). Both directions from INSIDE a
+//! body to a definition outside it resolve (`c06`, `c07`), as do a nested
+//! expansion reaching its caller's definition (`n04`, `n05`). Probes and asl's
+//! verdicts: `docs/superpowers/notes/2026-09-12-as-macro-label-leak.md`.
+//!
+//! This module does not implement that half, `Asm::define_nameless_slot` and
+//! `Asm::sym_key` do: a slot is just a name, and it is filed and looked up by
+//! the same rule a plain label is.
+//!
 //! ## What this module deliberately does NOT model
 //!
-//! asl scopes a definition made INSIDE A MACRO BODY to that expansion: a `+`
-//! defined in a body is invisible to a reference outside it, and -- measured --
-//! it does not merely fail to satisfy that reference, it makes the reference
-//! `error: symbol undefined` even though a later definition outside the macro
-//! would otherwise have served it. The counters here are global to the pass, so
-//! sigil would resolve that reference to the outer definition instead.
-//!
-//! The construct has ZERO occurrences in the corpus this feature exists for
-//! (Sonic 2: 2,339 column-1 definitions, none of them inside a macro body), so
-//! there is nothing here to be right about yet. Recorded rather than
-//! implemented, because the shape of the divergence is the thing a later reader
-//! needs and it is cheaper to write down while the oracle is open.
+//! asl's `+` run DEFINITION of length m >= 2 does NOT advance the forward
+//! counter: it defines slot `c + m - 1` (zero-based, asl's own `__forwN`) and a
+//! following single `+` still defines slot `c`. Read off asl's symbol table,
+//! `+`, `++`, `+` at $102/$104/$106 is `__forw0 = 102, __forw2 = 104,
+//! __forw1 = 106`. [`classify_def`]'s `Forward(m)` advances by m, which agrees
+//! on every reference measured when this module was written (none had a `+`
+//! after a `++`) and disagrees on a reference spanning both. A separate row,
+//! recorded in the 2026-09-12 note; not changed here.
 
 use crate::token::{Punct, Tok, Token};
 

@@ -169,6 +169,19 @@ struct MacroDef {
     /// Whether the parameter list carries a `{INTLABEL}` group, which makes the
     /// invocation line's label the macro's to place rather than the assembler's.
     int_label: bool,
+    /// Whether the parameter list carries a `{GLOBALSYMBOLS}` group. Such an
+    /// expansion opens NO namespace of its own: every name its body writes goes
+    /// wherever the same line written in the caller would have gone. Measured
+    /// against asl (`2026-09-12-as-macro-label-leak`): a body label reads back
+    /// from file level (`f_globalsymbols`, `$0102`), and a second expansion
+    /// writing it is `#1000` (`f_globalsymbols_twice`); a body `.dl:` is the
+    /// caller's `Base.dl` (`gs6`) and twice is `#1000` (`gs7`); a nameless `+`
+    /// written in the body is reached from before the call (`n19`). Called from
+    /// inside a PLAIN expansion, its labels land in THAT expansion: the outer
+    /// body reads one back (`gs1`), file level cannot (`gs2`), and two outer
+    /// expansions do not collide (`gs3`). A loop inside such a body still gets
+    /// its per-iteration namespace (`gs4`).
+    global_symbols: bool,
 }
 /// Collected function definitions: name → (params, body tokens).
 type FunctionTable = std::collections::BTreeMap<String, (Vec<String>, Vec<Token>)>;
@@ -939,6 +952,7 @@ fn one_pass_with_defer(
     let mut asm = Asm::new_with_defer(opts, defer_unresolved_jsr_jmp);
     asm.mompass = mompass;
     asm.env = seed_env.clone();
+    asm.prev_owned = index_instance_owned(seed_env);
     asm.macros = seed_macros.clone();
     asm.macros_gen = next_stamp();
     asm.functions = seed_functions.clone();
@@ -1427,6 +1441,12 @@ struct Asm {
     /// names that scope owns; see [`scan_plain_labels`] for the measurement and
     /// [`Asm::plain_label_scope`] for the lookup rule.
     expansion_labels: Vec<ExpansionLabelScope>,
+    /// Which instances filed each name on the PREVIOUS pass: bare name to the
+    /// instance keys (` exp#N`) the seed environment carries it under. Built
+    /// once per pass by [`index_instance_owned`]; read by
+    /// [`Asm::plain_label_scope`] so a forward reference inside a body finds a
+    /// definition the body scan could not claim.
+    prev_owned: std::collections::HashMap<String, Vec<String>>,
     /// Monotonic instance counter behind the keys in `expansion_labels`. It
     /// counts iterations as well as expansions, so two iterations of one `rept`
     /// get two namespaces, which is what `p7` measures. Per-`Asm`, hence per
@@ -1950,6 +1970,7 @@ impl Asm {
             exit_expansion: false,
             expansion_depth: 0,
             expansion_labels: Vec::new(),
+            prev_owned: std::collections::HashMap::new(),
             expansion_label_seq: 0,
             nameless: Default::default(),
             plain_label_cache: std::collections::HashMap::new(),
@@ -2076,7 +2097,9 @@ impl Asm {
     /// READER build the same key the writer used, instead of refusing for want of
     /// a scope name.
     fn real_scope(&self) -> Option<&str> {
-        let s = if self.macro_frames.is_empty() {
+        // A `{GLOBALSYMBOLS}` frame is transparent and records no `outer_scope`,
+        // so a stack of nothing but such frames is file level for this purpose.
+        let s = if self.macro_frames.iter().all(|f| f.transparent) {
             self.scope.as_deref()
         } else {
             self.outer_scope.as_deref()
@@ -2113,6 +2136,12 @@ impl Asm {
     /// `Base.tgt : 1006 C` is in the symbol table.
     fn dot_scope(&self, name: &str) -> Option<&str> {
         match self.macro_frames.last() {
+            // A `{GLOBALSYMBOLS}` body writes and reads every `.`-local in the
+            // scope in force, as the caller would (`gs6`, `gs11`). Nested inside
+            // a PLAIN expansion that is the plain one's private scope, and the
+            // plain body reading such a `.dl` back after the call is a known gap
+            // (`gs8`, asl `$0104`, sigil refuses); see the 2026-09-12 note.
+            Some(f) if f.transparent => Some(self.scope.as_deref().unwrap_or("")),
             Some(f) if !f.dot_labels.contains(name) => self.real_scope(),
             _ => Some(self.scope.as_deref().unwrap_or("")),
         }
@@ -2132,12 +2161,59 @@ impl Asm {
     /// Reader and writer share this function, so the key a reference builds is
     /// the key the definition wrote — the same "a reader can never disagree with
     /// its writer about where a name lives" rule [`Self::resolve_str`] states.
+    ///
+    /// An instance OWNS a name on any of three pieces of evidence, and they are
+    /// one fact read at three times. The body scan ([`scan_plain_labels`])
+    /// claims the names the body text spells, before the body runs. `written`
+    /// holds every name the instance has filed so far THIS pass, whatever
+    /// spelling produced it: `__LABEL__`, `{expr}`, a parameter, an included
+    /// file, an `enum` member, a nameless slot. And `prev_owned` says which
+    /// instances filed the name on the PREVIOUS pass, which is what lets a
+    /// forward reference inside a body reach a definition the scan could not
+    /// see (`s01`, `s02`, `n01`). That last one is safe for the same reason
+    /// every forward reference is: convergence demands two consecutive passes
+    /// with identical environments, and the environment carries the key each
+    /// name was filed under, so on the pass that is returned the previous
+    /// pass's owner and this pass's owner are the same instance.
     fn plain_label_scope(&self, name: &str) -> Option<&str> {
+        if self.expansion_labels.is_empty() {
+            return None;
+        }
+        let prev = self.prev_owned.get(name);
         self.expansion_labels
             .iter()
             .rev()
-            .find(|e| e.labels.contains(name))
+            .find(|e| {
+                e.labels.contains(name)
+                    || e.written.contains(name)
+                    || prev.is_some_and(|p| p.iter().any(|k| *k == e.key))
+            })
             .map(|e| e.key.as_str())
+    }
+
+    /// The key for `q` when its HEAD (the text before its first `.`) is a
+    /// label a live instance owns: `Lp.x` written or read inside the body that
+    /// wrote `Lp:` is filed under that instance, as `Lp` itself is. asl: `Lp.x`
+    /// from outside is `#1010` (`a10`), two expansions writing it do not collide
+    /// (`dx2`), and inside the body `.x`, `Lp.x` and a `.x` passed to a nested
+    /// macro all read `$0104` (`dx1`, `dx3`, `dx5`).
+    ///
+    /// The SCOPE a body label opens stays its bare, spellable name. Only the key
+    /// is private, and that is what keeps `dx5` working: a `.x` argument is
+    /// pasted into the nested body as the TEXT `Lp.x`, which re-lexes and comes
+    /// back here to be keyed, where an unspellable scope would not re-lex at all.
+    fn owned_by_head(&self, q: String) -> String {
+        if self.expansion_labels.is_empty() || q.starts_with(' ') {
+            return q;
+        }
+        let Some(dot) = q.find('.') else { return q };
+        if dot == 0 {
+            return q;
+        }
+        match self.plain_label_scope(&q[..dot]) {
+            Some(k) => format!("{k}.{q}"),
+            None => q,
+        }
     }
 
     /// The symbol-table key for a reference to `name` from where the evaluator
@@ -2328,11 +2404,11 @@ impl Asm {
 
     fn sym_key(&self, name: &str) -> String {
         if name.starts_with('.') {
-            qualify(name, self.dot_scope(name))
+            self.owned_by_head(qualify(name, self.dot_scope(name)))
         } else {
             match self.plain_label_scope(name) {
                 Some(k) => format!("{k}.{name}"),
-                None => name.to_string(),
+                None => self.owned_by_head(name.to_string()),
             }
         }
     }
@@ -2365,11 +2441,31 @@ impl Asm {
             self.expansion_label_used += 1;
         }
         let key = format!(" exp#{}", self.expansion_label_seq);
-        self.expansion_labels.push(ExpansionLabelScope { key, labels });
+        self.expansion_labels.push(ExpansionLabelScope { key, labels, written: Default::default() });
     }
 
     fn pop_expansion_labels(&mut self) {
         self.expansion_labels.pop();
+    }
+
+    /// File `name` in the innermost live expansion instance and return the key
+    /// it is filed under, or `None` at file level (where the name is its own
+    /// key).
+    ///
+    /// THE ONE WRITER RULE for every name a body can define that is not a
+    /// value binding: plain labels ([`Self::define_label`]), nameless slots
+    /// ([`Self::define_nameless_slot`]) and `enum` members. asl files each of
+    /// them in the instance that is innermost where it is written, whatever
+    /// spelling produced the name, and whether or not the body text spells it
+    /// (probes `g01`..`g14`, `h01`, `en5`, `i01`, `c01`..`c15`). It records the
+    /// name in the instance's `written` set, which is how the reader
+    /// ([`Self::plain_label_scope`]) finds a name the body scan could not claim.
+    fn file_in_innermost(&mut self, name: &str) -> Option<String> {
+        let e = self.expansion_labels.last_mut()?;
+        e.written.insert(name.to_string());
+        let key = format!("{}.{name}", e.key);
+        self.expansion_label_used += 1;
+        Some(key)
     }
 
     /// The context every expression parse in this front end runs under: the
@@ -2445,13 +2541,19 @@ impl Asm {
         }
     }
 
+    ///
+    /// The slot NUMBER is global to the pass, but the slot is FILED in the
+    /// innermost instance, exactly as a plain label is (see
+    /// [`crate::nameless`], "Scope"). The key returned is the filed one, which
+    /// is what the pad machinery must move.
     fn define_nameless_slot(&mut self, name: &str) -> String {
         self.open_section_if_needed();
         let value = self.here_i64();
-        self.define_sym(name, SymbolValue::Int(value));
-        self.known_labels.insert(name.to_string());
-        self.builder.define_label(name);
-        name.to_string()
+        let key = self.file_in_innermost(name).unwrap_or_else(|| name.to_string());
+        self.define_sym(&key, SymbolValue::Int(value));
+        self.known_labels.insert(key.clone());
+        self.builder.define_label(&key);
+        key
     }
 
     /// The value of a numeric BUILTIN symbol — one whose value the assembler
@@ -4001,12 +4103,16 @@ impl Asm {
                 // for the splice is what reproduces that; restoring it after is
                 // what lets the macro's own body keep using `exitm` afterwards.
                 let outer_depth = std::mem::take(&mut self.expansion_depth);
-                // The label namespaces go with the counter, for the same reason
-                // and on the same evidence: `m14.asm` includes one header twice
-                // and asl answers `#1000` on its label, so a name written in an
-                // included file is GLOBAL even when the `include` itself sits
-                // inside a macro body.
-                let outer_labels = std::mem::take(&mut self.expansion_labels);
+                // The label namespaces do NOT go with the counter. An included
+                // file's names land in whatever expansion instance the `include`
+                // line runs in, as the same lines written in the body would:
+                // asl refuses a label from a file included in a macro body when
+                // read after the call (`i01`, `#1010`), lets two expansions
+                // include it (`i02`), reads it from later in the body (`in1`)
+                // and lets the included file read the body's own label (`in3`);
+                // the same inside a loop iteration (`in6`). `m14.asm`'s `#1000`
+                // for a header included twice is a FILE-LEVEL include, where no
+                // instance is live and the name is global either way.
                 let lines = split_src_lines(self.sources.text(id), id);
                 self.include_census.executed += 1;
                 // Paired with the decrement below rather than with a guard type:
@@ -4016,7 +4122,6 @@ impl Asm {
                 self.include_depth += 1;
                 self.exec(&lines);
                 self.include_depth -= 1;
-                self.expansion_labels = outer_labels;
                 self.expansion_depth = outer_depth;
                 self.source = outer;
             }
@@ -6547,7 +6652,20 @@ impl Asm {
     /// drivers, and RESET across an `include` (probe `e14`), which is also what
     /// `m14.asm` wants: a header's label included twice IS `#1000` to asl.
     fn declare_expansion_local_const(&mut self, q: &str, span: Span) -> bool {
-        if self.expansion_depth > 0 {
+        // A key filed in an expansion instance (` exp#N.…`) is private to that
+        // instance: no other definition can ever name it, so there is no class
+        // to record and no collision to report. That also covers an `include`
+        // spliced into a body, which runs at `expansion_depth` zero (`e14`)
+        // with its instance still live.
+        if q.starts_with(' ') {
+            return true;
+        }
+        // Inside `{GLOBALSYMBOLS}` expansions and nothing else, a name is as
+        // global as it would be written in the caller, and a second expansion
+        // writing it IS `#1000` (`f_globalsymbols_twice`, `gs7`).
+        let global_only = self.expansion_labels.is_empty()
+            && self.macro_frames.iter().all(|f| f.transparent);
+        if self.expansion_depth > 0 && !global_only {
             return true;
         }
         self.declare_class(q, SymClass::Const, span)
@@ -6557,40 +6675,37 @@ impl Asm {
         self.open_section_if_needed();
         let value = self.here_i64();
         let qualified = if name.starts_with('.') {
-            qualify(name, self.scope.as_deref())
+            // A `.x` under a label the body owns is the body's too (`a10`,
+            // `dx2`); see [`Self::owned_by_head`].
+            self.owned_by_head(qualify(name, self.scope.as_deref()))
         } else {
             // The scope a `.`-local opens is still the BARE name, unchanged: what
             // the expansion owns is where the label's own value is filed, not
             // what it names for the locals under it.
             self.scope = Some(name.to_string());
-            // The innermost live instance, and only it: a definition executes in
-            // the body of the innermost expansion, so if any instance owns this
-            // name it is that one. Reading the whole chain here — the way a
-            // REFERENCE must (`p4`) — would file an inner macro's own label under
-            // an outer macro that happens to use the same name.
-            let owned = matches!(self.expansion_labels.last(), Some(e) if e.labels.contains(name));
             // THE CENSUS INSTRUMENT, env-gated. It prints every plain label
-            // defined inside an expansion and says whether the scan claimed it,
-            // so the population and the SCAN'S COVERAGE OF IT are two separate
-            // numbers rather than one. `scoped=no` is the fail-safe fallback —
-            // an interpolated or substituted name the body text does not carry —
-            // and counting it is the only way to know how much of the
-            // construct the rule actually reaches.
+            // defined inside an expansion and says whether the body SCAN claimed
+            // it (`scanned=yes`) or only the run-time filing did (`scanned=no`:
+            // a `__LABEL__`, `{expr}`, parameter, `ALLARGS` or included name the
+            // body text does not spell). Both are filed in the instance; the
+            // split is the scan's coverage, which is what a forward reference
+            // on the FIRST pass depends on.
             if self.expansion_depth > 0 && std::env::var_os("SIGIL_CENSUS_EXPLABEL").is_some() {
-                let scoped = if owned { "yes" } else { "no" };
+                let scanned = match self.expansion_labels.last() {
+                    Some(e) if e.labels.contains(name) => "yes",
+                    _ => "no",
+                };
                 eprintln!(
-                    "CENSUS-EXPLABEL\t{name}\tdepth={}\tscoped={scoped}",
+                    "CENSUS-EXPLABEL\t{name}\tdepth={}\tscanned={scanned}",
                     self.expansion_depth
                 );
             }
-            if owned {
-                self.expansion_label_used += 1;
-                // `last()` is `Some` whenever `owned` is true — that is what
-                // `owned` was computed from.
-                format!("{}.{name}", self.expansion_labels[self.expansion_labels.len() - 1].key)
-            } else {
-                name.to_string()
-            }
+            // The innermost live instance, and only it: a definition executes in
+            // the body of the innermost expansion, so that is the instance that
+            // owns it. Reading the whole chain here — the way a REFERENCE must
+            // (`p4`) — would file an inner macro's own label under an outer
+            // macro that happens to use the same name.
+            self.file_in_innermost(name).unwrap_or_else(|| name.to_string())
         };
         // A PC label is asl's CONSTANT class, in both directions: `Cl:` then
         // `Cl set 2` is `#2030` (probe `m3.asm`) and `Av set 1` then `Av:` is
@@ -7228,7 +7343,17 @@ impl Asm {
                     None => continue,
                 }
             }
-            let q = qualify(&name, self.real_scope());
+            // Inside an expansion instance a member is FILED there, exactly as a
+            // label written on that line would be: asl refuses it from outside a
+            // macro body (`h01`, `h04`), a loop iteration (`en5`) and a file
+            // included from a body (`en6`), while the body reads it back
+            // (`en1`) and two expansions do not collide (`en2`). The running
+            // COUNTER is not scoped (`en4`: a file-level `nextenum` after the
+            // call continues from the body's last member).
+            let q = match self.file_in_innermost(&name) {
+                Some(key) => key,
+                None => qualify(&name, self.real_scope()),
+            };
             // An `enum` member is asl's constant class: `enum Ar=5` then
             // `Ar set 2` is `#2030` and `enum Br=5` then `Br equ 2` is `#1000`
             // (probe `m5.asm`); `Dv set 1` then `enum Dv=5` is `#2035` (probe
@@ -10146,9 +10271,10 @@ impl Asm {
             .collect();
         self.dot_label_cache.remove(&name);
         self.plain_label_cache.remove(&name);
-        let int_label = head_declares_int_label(&head.text);
+        let int_label = head_declares_option(&head.text, "intlabel");
+        let global_symbols = head_declares_option(&head.text, "globalsymbols");
         self.macros
-            .insert(name, MacroDef { params, defaults, body, int_label });
+            .insert(name, MacroDef { params, defaults, body, int_label, global_symbols });
         self.macros_gen = next_stamp();
         end + 1
     }
@@ -10561,7 +10687,7 @@ impl Asm {
             return;
         }
         self.macro_budget -= 1;
-        let MacroDef { params, defaults, body, int_label } = match self.macros.get(name) {
+        let MacroDef { params, defaults, body, int_label, global_symbols } = match self.macros.get(name) {
             Some(m) => m.clone(),
             None => return,
         };
@@ -10782,12 +10908,24 @@ impl Asm {
         // The outermost expansion on the stack records the scope it was invoked
         // from; every expansion nested inside it keeps that same real scope, so a
         // value-binding `.`-local reaches out through the whole nest in one step.
+        //
+        // A `{GLOBALSYMBOLS}` expansion is TRANSPARENT to all of this: it opens no
+        // `.`-local scope (a body `.dl:` is the caller's `Base.dl`, probe `gs6`),
+        // no plain-label namespace (see [`MacroDef::global_symbols`]), and it
+        // does not hand the caller's scope back on the way out, because its body
+        // behaves as if written in the caller: a body `Inner:` leaves `.b := 2`
+        // after the call writing `Inner.b` (probe `gs5`). So "outermost" means
+        // "no non-transparent frame below", and a transparent frame neither
+        // records nor restores `outer_scope`.
+        let dot_labels = if global_symbols { std::rc::Rc::default() } else { dot_labels };
         let outer_scope = self.outer_scope.clone();
-        let outermost = self.macro_frames.is_empty();
-        if outermost {
-            self.outer_scope = caller_scope.clone();
+        let outermost = self.macro_frames.iter().all(|f| f.transparent);
+        if !global_symbols {
+            if outermost {
+                self.outer_scope = caller_scope.clone();
+            }
+            self.scope = Some(format!(" macro#{}", self.macro_expansion_seq));
         }
-        self.scope = Some(format!(" macro#{}", self.macro_expansion_seq));
         self.macro_depth += 1;
         let shift_cap = params.len().max(argc.max(0) as usize);
         self.macro_frames.push(MacroFrame {
@@ -10802,16 +10940,21 @@ impl Asm {
             suspend: 0,
             dot_labels,
             int_label,
+            transparent: global_symbols,
             stamp: next_stamp(),
         });
         self.expansion_depth += 1;
-        self.push_expansion_labels(plain_labels);
+        if !global_symbols {
+            self.push_expansion_labels(plain_labels);
+        }
         self.exec(&body);
         // An `exitm` still pending here was written for THIS expansion (any
         // nested frame would have taken it already), so it stops here and goes
         // no further: the caller's next line runs (probe `e2`).
         self.take_exit_expansion();
-        self.pop_expansion_labels();
+        if !global_symbols {
+            self.pop_expansion_labels();
+        }
         self.expansion_depth -= 1;
         self.macro_frames.pop();
         self.macro_depth -= 1;
@@ -10830,7 +10973,10 @@ impl Asm {
         //   17/ 100E : =$7                  .cnt := 7
         //   19/ 1019 : 07                  	dc.b Tbl.cnt
         // ```
-        if outermost {
+        if global_symbols {
+            // Transparent: whatever scope the body left is the caller's own, as
+            // it would be had the lines been written in the caller (`gs5`).
+        } else if outermost {
             self.scope = self.outer_scope.clone();
             self.outer_scope = outer_scope;
         } else {
@@ -10841,18 +10987,22 @@ impl Asm {
 
 // ── free helpers ────────────────────────────────────────────────────────────
 
-/// Whether a `NAME macro …` head declares the internal-label capture.
+/// Whether a `NAME macro …` head declares the brace-group option `opt`
+/// (`intlabel` for the internal-label capture, `globalsymbols` for an
+/// expansion that opens no namespace of its own).
 ///
-/// AS writes it as a brace group in the parameter list, and the group is a
-/// KEYWORD, so it folds even under `-U` (asl: `lo macro {intlabel}` under
-/// `Aa:` emits `lo=<Aa> <Aa>` for `"lo=<__LABEL__> <__label__>"`). Declaring it
-/// twice is not an error and means what declaring it once means.
+/// AS writes an option as a brace group in the parameter list, and the group is
+/// a KEYWORD, so it folds even under `-U` (asl: `lo macro {intlabel}` under
+/// `Aa:` emits `lo=<Aa> <Aa>` for `"lo=<__LABEL__> <__label__>"`, and
+/// `{globalsymbols}` behaves as `{GLOBALSYMBOLS}`, probe
+/// `f_globalsymbols_lower`). Declaring one twice is not an error and means what
+/// declaring it once means.
 ///
 /// The scan stops at a `;` so a brace inside a trailing comment is inert, and it
 /// reads the raw head text because the lexer swallows a `{…}` group without
 /// emitting a token — which is also why the group never reaches the parameter
 /// list as a phantom slot.
-fn head_declares_int_label(text: &str) -> bool {
+fn head_declares_option(text: &str, opt: &str) -> bool {
     let bytes = text.as_bytes();
     let mut i = 0usize;
     while i < bytes.len() {
@@ -10867,7 +11017,7 @@ fn head_declares_int_label(text: &str) -> bool {
                 if j >= bytes.len() {
                     return false;
                 }
-                if text[start..j].trim().eq_ignore_ascii_case("intlabel") {
+                if text[start..j].trim().eq_ignore_ascii_case(opt) {
                     return true;
                 }
                 i = j + 1;
@@ -11022,6 +11172,13 @@ struct ExpansionLabelScope {
     /// Shared across the iterations of one loop (the body does not change),
     /// which is why it is an `Rc` and not a set per instance.
     labels: std::rc::Rc<std::collections::BTreeSet<String>>,
+    /// Every name this instance has FILED so far this pass: plain labels,
+    /// nameless slots and `enum` members, whatever spelling produced them. The
+    /// scan above cannot see a name the body text does not spell (`__LABEL__`,
+    /// `{expr}`, a parameter, `ALLARGS`, an included file), and asl files those
+    /// in the instance all the same (`g01`..`g14`, `i01`, `h01`). Per instance,
+    /// not per body, because two iterations of one loop are two namespaces.
+    written: std::collections::BTreeSet<String>,
 }
 
 struct MacroFrame {
@@ -11074,6 +11231,10 @@ struct MacroFrame {
     ///   12/ 100B : 3C36 3E20 3C4C     dc.b "<6> <Lb2> <>"
     /// ```
     int_label: Option<String>,
+    /// A `{GLOBALSYMBOLS}` expansion: it opens no `.`-local scope and no label
+    /// namespace, so every scope question asked inside it is answered as if the
+    /// frame were not there. See [`MacroDef::global_symbols`].
+    transparent: bool,
     /// The [`HeadKey::frame`] stamp: renewed by every mutation of a
     /// substitution input, so a keyword memoised under this frame answers only
     /// while the frame still substitutes the same text.
@@ -12273,14 +12434,17 @@ fn is_mem_dest(op: &M68kOperand) -> bool {
 /// — the `label` directive's `Al` resolves to `$100` from outside the expansion
 /// while the PC label beside it does not exist).
 ///
-/// **The fallback is deliberate and is what makes this safe.** A name this scan
-/// misses — one built by `\{}` interpolation or by parameter substitution, so
-/// that the text in the body is not the name the definition ends up with — is
-/// simply not in the set, and both the writer ([`Asm::define_label`]) and the
-/// reader ([`Asm::plain_label_scope`]) then treat it as global, which is what
-/// sigil did before this existed. Writer and reader consult the SAME set, so
-/// they cannot disagree about where a name lives; a miss costs fidelity on that
-/// name and can never strand a definition the reader cannot find.
+/// **The scan is not what decides where a name is FILED.** Every name a body
+/// defines is filed in the innermost instance ([`Asm::file_in_innermost`]),
+/// whether or not this scan saw it, because asl does exactly that for names the
+/// body text does not spell (`__LABEL__`, `{expr}`, a parameter, `ALLARGS`, an
+/// included file: probes `g01`..`g14`, `i01` in the 2026-09-12 note). Filing
+/// them globally when the scan missed them, which is what this paragraph used
+/// to call a safe fallback, was the AS-MACRO-LABEL-LEAK row: such a name
+/// resolved from file level where asl says it does not exist. What the scan
+/// still decides is the READER's answer before the definition has run on the
+/// FIRST pass; after that, [`Asm::plain_label_scope`] also reads what the
+/// instance has written this pass and what it filed on the previous one.
 fn scan_plain_labels(body: &[SrcLine]) -> std::collections::BTreeSet<String> {
     let mut out = std::collections::BTreeSet::new();
     let mut nested = 0usize;
@@ -12412,6 +12576,28 @@ fn scan_plain_labels(body: &[SrcLine]) -> std::collections::BTreeSet<String> {
         if colon || !indented {
             out.insert(name.to_string());
         }
+    }
+    out
+}
+
+/// Index an environment's instance-filed keys by the name they file:
+/// ` exp#7.Lp` contributes `Lp -> [" exp#7"]`, ` exp#3. nameless+#2` contributes
+/// ` nameless+#2 -> [" exp#3"]`. A name several instances filed (a macro invoked
+/// twice) maps to every one of them; the reader picks the one that is live.
+///
+/// Only ` exp#` keys are read: the `.`-local scopes a macro expansion opens
+/// (` macro#N`) have their own resolution rule and are not instances.
+fn index_instance_owned(env: &SymbolTable) -> std::collections::HashMap<String, Vec<String>> {
+    const PREFIX: &str = " exp#";
+    let mut out: std::collections::HashMap<String, Vec<String>> = std::collections::HashMap::new();
+    for (key, _) in env.iter() {
+        let Some(rest) = key.strip_prefix(PREFIX) else { continue };
+        let Some(dot) = rest.find('.') else { continue };
+        if dot == 0 || !rest[..dot].bytes().all(|b| b.is_ascii_digit()) {
+            continue;
+        }
+        let instance = &key[..PREFIX.len() + dot];
+        out.entry(rest[dot + 1..].to_string()).or_default().push(instance.to_string());
     }
     out
 }
