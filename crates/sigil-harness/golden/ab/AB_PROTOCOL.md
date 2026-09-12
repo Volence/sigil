@@ -38,11 +38,25 @@ not before the evidence.
    nothing; they respawn on the same file. The root cause is aeon's main checkout sitting behind
    its remote, which is an open owner call and not this lane's to take.
 
-   **Scope, stated so this is not read as wider than it is:** no gate in `scripts/` invokes
-   anything in this directory (checked, zero hits), so no automated sigil gate can go green on a
-   stale cart. The exposure is hand-run A/B measurement only, which is the only way this
-   directory is ever used. **That makes it worse to leave unwritten, not better** — a hand-run
-   instrument has no CI to catch it and no second reader.
+   **Scope and coverage, measured with controls.** No gate in `scripts/` or `crates/*/src`
+   invokes anything in this directory (zero, against a control of 30 tracked files in `scripts/`,
+   26 matching `bash|python`), so no automated sigil gate can go green on a stale cart. The
+   exposure is hand-run A/B measurement only, which is the only way this directory is ever used.
+   **That makes it worse to leave unwritten, not better** — a hand-run instrument has no CI to
+   catch it and no second reader.
+
+   **The coverage figure, which is the reason step 0 is a rule and not a reminder: of the 19
+   instruments here, 9 call `reload_rom` with an explicit path and ZERO verify the cart.** Not
+   one reads `romBytes` back or hashes it, against a control showing that matcher fires 87 times
+   elsewhere under `crates/`, so the zero is the subject rather than a broken matcher.
+   `reload_rom` says *load this*, and nothing anywhere confirms the emulator holds it. The nine
+   are defended against a stale PRELOAD and none of the nineteen is defended against a load that
+   silently did not take.
+
+   *(Enumerate these by what they IMPORT, `from aether import BusClient` / `suite_paths`, never
+   by the literal vocabulary `emulator_`/`romBytes`: that matcher finds 10 of the 19, because the
+   rest reach the bus through the shared client and contain none of those tokens. This lane
+   published the smaller population before catching it.)*
 
    *(The discipline existed in this lane's session memory as "verify the cart by hash" and was
    never written into the file the runner reads. That gap is the day's recurring shape: an
