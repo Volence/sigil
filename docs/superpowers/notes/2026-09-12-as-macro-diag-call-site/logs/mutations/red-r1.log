@@ -1,0 +1,58 @@
+== r1   HEAD 11e3dca25cd0e7065d5d5279c268ffb3035620f4   branch parcel/as-macro-diag-call-site
+tracked-changes before: 0
+MUTATED crates/sigil-harness/src/diag_render.rs
+  57:         if span.source.0 as usize >= self.map.len() {
+ crates/sigil-harness/src/diag_render.rs | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+---- cargo test --release -p sigil-harness --lib diag_render
+warning: sigil-clownlzss-sys@0.1.0: In file included from src/shim.cpp:114:
+warning: sigil-clownlzss-sys@0.1.0: In lambda function,
+warning: sigil-clownlzss-sys@0.1.0:     inlined from 'bool ClownLZSS::Internal::Enigma::Compress(const unsigned char*, std::size_t, ClownLZSS::CompressorOutput<T>&) [with T = std::basic_ostream<char>]' at src/../vendor/compressors/enigma.h:316:37:
+warning: sigil-clownlzss-sys@0.1.0: src/../vendor/compressors/enigma.h:253:110: warning: '*(int*)((char*)&run + offsetof(Run, Run::type))' may be used uninitialized [-Wmaybe-uninitialized]
+warning: sigil-clownlzss-sys@0.1.0:   253 |                                                 return (run.type == Run::Type::Increment || run.length == 1) && ReadWord(input) == special_values->lowest;
+warning: sigil-clownlzss-sys@0.1.0:       |                                                        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+warning: sigil-clownlzss-sys@0.1.0: src/../vendor/compressors/enigma.h: In function 'bool ClownLZSS::Internal::Enigma::Compress(const unsigned char*, std::size_t, ClownLZSS::CompressorOutput<T>&) [with T = std::basic_ostream<char>]':
+warning: sigil-clownlzss-sys@0.1.0: src/../vendor/compressors/enigma.h:263:45: note: '*(int*)((char*)&run + offsetof(Run, Run::type))' was declared here
+warning: sigil-clownlzss-sys@0.1.0:   263 |                                         Run run;
+warning: sigil-clownlzss-sys@0.1.0:       |                                             ^~~
+warning: sigil-clownlzss-sys@0.1.0: In lambda function,
+warning: sigil-clownlzss-sys@0.1.0:     inlined from 'bool ClownLZSS::Internal::Enigma::Compress(const unsigned char*, std::size_t, ClownLZSS::CompressorOutput<T>&) [with T = std::basic_ostream<char>]' at src/../vendor/compressors/enigma.h:316:37:
+warning: sigil-clownlzss-sys@0.1.0: src/../vendor/compressors/enigma.h:253:90: warning: 'run.ClownLZSS::Internal::Enigma::Compress<std::basic_ostream<char> >(const unsigned char*, std::size_t, ClownLZSS::CompressorOutput<std::basic_ostream<char> >&)::Run::length' may be used uninitialized [-Wmaybe-uninitialized]
+warning: sigil-clownlzss-sys@0.1.0:   253 |                                                 return (run.type == Run::Type::Increment || run.length == 1) && ReadWord(input) == special_values->lowest;
+warning: sigil-clownlzss-sys@0.1.0:       |                                                        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~~~~~~~~
+warning: sigil-clownlzss-sys@0.1.0: src/../vendor/compressors/enigma.h: In function 'bool ClownLZSS::Internal::Enigma::Compress(const unsigned char*, std::size_t, ClownLZSS::CompressorOutput<T>&) [with T = std::basic_ostream<char>]':
+warning: sigil-clownlzss-sys@0.1.0: src/../vendor/compressors/enigma.h:263:45: note: 'run.ClownLZSS::Internal::Enigma::Compress<std::basic_ostream<char> >(const unsigned char*, std::size_t, ClownLZSS::CompressorOutput<std::basic_ostream<char> >&)::Run::length' was declared here
+warning: sigil-clownlzss-sys@0.1.0:   263 |                                         Run run;
+warning: sigil-clownlzss-sys@0.1.0:       |                                             ^~~
+   Compiling sigil-harness v0.1.0 (/home/volence/sonic_hacks/sigil/.claude/worktrees/agent-a46ef34b369e42312/crates/sigil-harness)
+    Finished `release` profile [optimized] target(s) in 4.39s
+     Running unittests src/lib.rs (/home/volence/sonic_hacks/.scratch/as-macro-diag/target/release/deps/sigil_harness-76c46838d2a7f381)
+
+running 4 tests
+test diag_render::tests::located_line_carries_path_line_col_and_the_level_token ... ok
+test diag_render::tests::unlocatable_span_keeps_its_bytes_and_the_level_token ... ok
+test diag_render::tests::verdict_is_ok_without_errors_and_lists_every_error_otherwise ... ok
+test diag_render::tests::a_span_inside_an_expansion_of_the_map_is_located_in_its_body_file ... FAILED
+
+failures:
+
+---- diag_render::tests::a_span_inside_an_expansion_of_the_map_is_located_in_its_body_file stdout ----
+
+thread 'diag_render::tests::a_span_inside_an_expansion_of_the_map_is_located_in_its_body_file' (1989843) panicked at crates/sigil-harness/src/diag_render.rs:140:9:
+assertion `left == right` failed
+  left: "  [Error] bad @ Span { source: SourceId(2147483648), start: 14, end: 15 }"
+ right: "  probe/m.asm:3:2: [Error] bad"
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    diag_render::tests::a_span_inside_an_expansion_of_the_map_is_located_in_its_body_file
+
+test result: FAILED. 3 passed; 1 failed; 0 ignored; 0 measured; 220 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p sigil-harness --lib`
+error: 1 target failed:
+    `-p sigil-harness --lib`
+exit=101
+restored crates/sigil-harness/src/diag_render.rs from HEAD; tracked-changes after: 0
+r1 :: passed 3, failed 1 :: RED: diag_render::tests::a_span_inside_an_expansion_of_the_map_is_located_in_its_body_file 

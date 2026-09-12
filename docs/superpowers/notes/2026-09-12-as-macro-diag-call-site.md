@@ -124,7 +124,7 @@ zero constructions touched.
 | carries a diagnostic across passes | `terminal_fatal`, `author_warnings`, `carried_*`, `merge_carried_*` | carry the physical span beside the span (`Carried`), because run ids are handed out per pass |
 | renders a location | CLI `render_as_diags`, `render_located_diags`, `render_as_warnings`; harness `BuildWarning.location`; eval's `fatal`/`warning` labels and the circular-layout "at" text | `label()`: now the trail |
 | reads text, name, line | `text`, `name`, `location` (eval, harness `diag_render`, the `.emp` CLI paths) | resolve through `physical`: identical answers |
-| counts sources | `len()` / `is_empty()` (harness `diag_render`'s range check) | files only, as documented |
+| counts sources | `len()` / `is_empty()`; the harness `diag_render` range check | files only, as documented. **The range check was a defect**, not "fine": it read every expansion id as no file. Found in review, fixed by `SourceMap::contains`; see "Review finding" at the end |
 | linker | sigil-link never reads a `SourceMap`; its diagnostics carry the fixup span | rendered by the CLI through `label`: the trail (test `a_link_time_error_inside_a_macro_names_the_call`) |
 
 `SourceMap`'s three parallel per-file vectors became one `Vec<File>`: a third vector would
@@ -329,3 +329,78 @@ commit contains U+2013 or U+2014.
 4. **"~129 `Diagnostic {` lines across 7 crates"** did not need re-deriving: the chosen
    route constructs no `Diagnostic` differently, and the linker fact rules out the
    field route before its cost matters.
+
+## Review finding: a locator that range-checked the file count
+
+The coordinator's review, from this note's own "counts sources" row: the harness renderer
+`SourceTexts::locate` (`sigil-harness/src/diag_render.rs`) refused any span whose source id
+was `>= SourceMap::len()`. `len()` counts files only, and an expansion id has bit 31 set, so
+the check read every VALID expansion span of its own map as "no file" and printed the raw
+byte span. The consumer table above listed the check and called it fine; that was wrong.
+
+**Who can reach it, enumerated by what constructs and passes the map:**
+
+| locator | constructed at | map holds | spans it is handed |
+|---|---|---|---|
+| `SourceTexts` | `seam1.rs` x2 (resident sound modules), `seam2.rs` x7 (dac_samples, sfx_bank, seq_opcode_tab, sound_tables_z80, movingtrucks_pitchtable, mt_bank, via `lower_emp_file` and direct `parse_file`), `tests/check_only_census.rs` x1 | `.emp` files only (`add` is its only way in; every registration is a `.emp` path through the `.emp` parser) | `.emp` parse, import and `check_link_asserts` diagnostics; the AS frontend constructs no `LinkAssert` (0 hits) |
+| `SourceIndex` (emp manifest) | `native.rs` `build_emp` error render, `BuildWarning::new`, `collect_warnings`, `resolve_chained` (`true_bases_by_index`, `render_declared_chain`, `declared_chain_drift_verdict`); CLI `render_program_diags` and the contract-baseline `report_added`; `test_support.rs` link-assert filter | `.emp` manifest files only (built by `SourceMap::add`) | `.emp` diagnostics, EXCEPT `resolve_chained`: its `resolve_layout` errors and `true_bases_by_index` flips range over a section list holding the AS side's sections too |
+| AS `SourceMap` | the AS frontend; rendered by `label()` in the CLI and in `BuildWarning::from_as` | files and expansions | AS diagnostics |
+
+So **no path hands `SourceTexts` an AS map or an AS span**, and its map cannot hold an
+expansion: the check could not misfire today. It is fixed anyway, because the next map
+that holds one would lose every location without a word: `SourceMap::contains(id)` (a file
+of this map or an expansion of this map) replaces the range check, and a span inside an
+expansion locates in the file its body was written in. Physical rather than the asl trail,
+because this renderer speaks the `.emp` dialect, `path:line:col`, which has no place for a
+trail, and `label` is where the AS surface renders it.
+
+**A second finding, pre-existing and not fixed here.** `resolve_chained` locates spans from
+BOTH front ends through the `.emp` index. Span ids are not namespaced by front end, so an AS
+file id `k` there named the `.emp` manifest's `k`-th file, at a line computed against the
+wrong text (the harness's own `BuildWarning::from_as` comment names this hazard). An AS
+expansion id now finds no path and prints its raw span instead: less wrong, still not right.
+Fixing it needs the span to say which map it belongs to, or the mixed list to carry both
+maps. Ledgered as `MIXED-MAP-LOCATE`.
+
+**Every other range check on a `SourceId`, workspace-wide** (`git grep` for `.source.0`,
+`SourceId(...)`, `as usize >= ….len()`):
+
+- `sigil-frontend-emp/src/resolve/manifest.rs:163`, `SourceIndex::locate`,
+  `self.paths.get(span.source.0 as usize)`: the same shape, left as it is. Its map is built
+  only by `add` over manifest files and holds no expansion, so an expansion id reaching it
+  is necessarily foreign and `None` is the right answer. Changing it would touch the `.emp`
+  surface for no reachable difference.
+- Everything else is an identity or ordering key, not a range check: `eval.rs` `site_key`,
+  `corpus_contracts.rs:1254` (sort key), `preserves.rs:1448` (dedup), `lower/code.rs:132`
+  (net name), `native.rs:2130` (`generated` identity) and `:2954` (fallback text), and the
+  synthetic `SourceId(manifest.modules.len())` ids in `native.rs` and two tests, which are
+  past the manifest on purpose.
+- `sigil-span` itself: `text` and `location` index files after `backing`; `name` and `label`
+  use `get`.
+
+**Red-first** (`logs/mutations/red-r*.log`, each on the committed tree `11e3dca2`, quoted
+back from disk, restored with `git show HEAD:<path>`, tree clean before and after):
+
+| # | half-fix | mutated line, read back from disk | red |
+|---|---|---|---|
+| r1 | the file-count range check back in the locator | `diag_render.rs:57 if span.source.0 as usize >= self.map.len() {` | `a_span_inside_an_expansion_of_the_map_is_located_in_its_body_file` |
+| r2 | `contains` that knows files only | `lib.rs:214 (id.0 as usize) < self.files.len()` | that test and `contains_answers_for_files_and_this_maps_own_expansions` |
+| r3 | `contains` that answers yes for anything | `lib.rs:214 let _ = id; true` | `contains_answers_for_files_and_this_maps_own_expansions` |
+
+None stayed green. The locator test renders through `render_diag_lines`, so its red is the
+line a reader would have seen: the raw span, not `probe/m.asm:3:2`.
+
+**Suites and clippy on `11e3dca2`**, tracked tree clean at the start of every run:
+
+| crate | result lines | passed | failed | ignored |
+|---|---:|---:|---:|---:|
+| sigil-span | 3 | 21 | 0 | 0 |
+| sigil-frontend-as | 79 | 876 | 0 | 0 |
+| sigil-cli (`SIGIL_ALLOW_PARTIAL=1`, no `AEON_DIR`) | 172 | 822 | 0 | 1 |
+| sigil-harness (`SIGIL_ALLOW_PARTIAL=1`, no `AEON_DIR`) | 52 | 486 | 0 | 1 |
+
+The ignored two are `sigil_diff_reports_byte_identity` (reads the aeon tree) and
+`secondary_pin_classes_match_the_hand_typed_baseline` (retired by Wave-B B-0). The
+harness's aeon-dependent tests do not run in a partial run; the landing gate runs them.
+`cargo clippy --release -p sigil-span -p sigil-frontend-as -p sigil-cli -p sigil-harness
+--all-targets -- -D warnings`: exit 0.
