@@ -98,20 +98,26 @@ fn a_diagnostic_names_its_own_file_and_line_across_an_include() {
     }
 }
 
-/// A macro body executes wherever it is called, but its text lives where it was
-/// written — and that is the file the report names.
+/// A macro body executes wherever it is called, and the report names the CALL:
+/// the file and line that invoked the macro, then the macro and the line of its
+/// body, in asl's own spelling. asl (md5 `61e672562465725a8c102288a7da9098`) on
+/// the same two files, the body written in the included `mac.inc`:
 ///
-/// This is the reason each source line carries its own file rather than the
-/// assembler carrying "the file currently being executed": a macro defined in an
-/// included file and expanded in the root would otherwise be reported against the
-/// root, at an offset into text that never contained the mistake. The line a reader
-/// has to edit is the macro body's.
+/// ```text
+/// mroot.asm(3) mymac(1):9: error #1200: unknown instruction
+/// ```
+///
+/// The file holding the body is not named, because asl does not name it. The
+/// fixture keeps the body in another file so that a report naming the body
+/// (`mac.inc(3):`) and one naming the call (`mroot.asm(3) mymac(1):`) cannot
+/// be confused with each other.
 #[test]
-fn an_error_in_a_macro_body_names_the_file_the_body_was_written_in() {
+fn an_error_in_a_macro_body_names_the_call_then_the_macro_line() {
     let dir = tempfile::tempdir().expect("tempdir");
     let src = dir.path();
 
-    // The bad line is line 3 of the definition file; the call is line 3 of the root.
+    // The bad line is line 3 of the definition file and line 1 of the body; the
+    // call is line 3 of the root.
     std::fs::write(
         src.join("mac.inc"),
         "; line 1\nmymac macro\n\tnotamnemonic_in_macro_body\n\tendm\n",
@@ -135,12 +141,46 @@ fn an_error_in_a_macro_body_names_the_file_the_body_was_written_in() {
          vacuous.\nstderr:\n{stderr}"
     );
     // Column matched as present, not pinned; see the note in the include gate.
-    let body_at_3 = format!("{}(3):", src.join("mac.inc").display());
+    let call = format!("{}(3) mymac(1):", src.join("mroot.asm").display());
     assert!(
-        stderr.contains(&body_at_3),
-        "a macro body's error must be reported as `{body_at_3}<col>: error: …`, the file \
-         the body was written in.\nstderr:\n{stderr}"
+        stderr.contains(&call),
+        "a macro body's error must be reported as `{call}<col>: error: …`, the call \
+         and then the macro's own line.\nstderr:\n{stderr}"
     );
+    let body_file = src.join("mac.inc").display().to_string();
+    for line in stderr.lines().filter(|l| l.contains("notamnemonic_in_macro_body")) {
+        assert!(!line.starts_with(&body_file), "the error was located at the body, not the call: {line}");
+    }
+}
+
+/// A diagnostic the LINKER raises carries the same trail: the linker has only
+/// the span, and the span is what names the expansion. asl on this file
+/// (`p7_undef.asm`), where the name is judged after the last pass:
+///
+/// ```text
+/// p7_undef.asm(6) mymac(1):14: error #1010: symbol undefined
+/// ```
+#[test]
+fn a_link_time_error_inside_a_macro_names_the_call() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let src = dir.path();
+    std::fs::write(
+        src.join("p7_undef.asm"),
+        "\tcpu 68000\nmymac macro\n\tdc.w undefined_sym\n\tendm\n\tnop\n\tmymac\n",
+    )
+    .expect("write p7_undef.asm");
+    let out = Command::new(env!("CARGO_BIN_EXE_sigil"))
+        .arg(src.join("p7_undef.asm"))
+        .output()
+        .expect("spawn sigil");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(!out.status.success(), "an undefined symbol must fail.\nstderr:\n{stderr}");
+    let line = stderr
+        .lines()
+        .find(|l| l.contains("`undefined_sym`"))
+        .unwrap_or_else(|| panic!("the undefined name must be reported.\nstderr:\n{stderr}"));
+    let call = format!("{}(6) mymac(1):", src.join("p7_undef.asm").display());
+    assert!(line.starts_with(&call), "want `{call}<col>: error: …`, got: {line}");
 }
 
 /// Every line of a failing report carries a location — the property the corpus run

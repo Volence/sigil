@@ -33,46 +33,54 @@
 
 use sigil_frontend_as::{assemble_root_located, Options};
 
-/// Assemble one body and return `Err((line, message))` per diagnostic, or `Ok`
-/// with the diagnostic-free module's section count.
-fn run(body: &str) -> Result<usize, Vec<(u32, String)>> {
+/// Assemble one body and return `Err((location, message))` per diagnostic, or
+/// `Ok` with the diagnostic-free module's section count.
+///
+/// The location is the label with its directory and its `:col` cut off:
+/// `probe.asm(21)` for a line of the file, and asl's call-site trail,
+/// `probe.asm(13) levartptrs(1)`, for a line of a macro body. It is compared
+/// WHOLE, never parsed for one number: inside a macro the last number in the
+/// label is a line of the BODY, so a parsed number can match a file line it has
+/// nothing to do with, or never match one, and a negative assertion keyed on it
+/// then passes whatever the run reports.
+fn run(body: &str) -> Result<usize, Vec<(String, String)>> {
     let dir = tempfile::tempdir().expect("tempdir");
     let path = dir.path().join("probe.asm");
     std::fs::write(&path, body).expect("write probe");
+    let prefix = format!("{}/", dir.path().display());
     match assemble_root_located(&path, &Options::default()) {
         Ok(m) => Ok(m.sections.len()),
         Err(f) => Err(f
             .diags
             .iter()
             .map(|d| {
-                let line = f
+                let at = f
                     .sources
                     .label(d.primary)
-                    .and_then(|l| {
-                        l.rsplit_once('(')
-                            .and_then(|(_, rest)| rest.split_once(')'))
-                            .and_then(|(n, _)| n.parse().ok())
+                    .map(|l| {
+                        let head = l.rsplit_once(':').map_or(l.as_str(), |(h, _)| h);
+                        head.strip_prefix(&prefix).unwrap_or(head).to_string()
                     })
-                    .unwrap_or(0);
-                (line, d.message.clone())
+                    .unwrap_or_else(|| "<none>".to_string());
+                (at, d.message.clone())
             })
             .collect()),
     }
 }
 
-fn diags(body: &str) -> Vec<(u32, String)> {
+fn diags(body: &str) -> Vec<(String, String)> {
     match run(body) {
         Ok(n) => panic!("expected a failing run, got Ok with {n} sections"),
         Err(d) => d,
     }
 }
 
-/// `line` carries a diagnostic whose message contains `needle`. Prints the whole
+/// `at` carries a diagnostic whose message contains `needle`. Prints the whole
 /// diagnostic set on failure, never a tail excerpt.
-fn assert_reported(got: &[(u32, String)], line: u32, needle: &str) {
+fn assert_reported(got: &[(String, String)], at: &str, needle: &str) {
     assert!(
-        got.iter().any(|(l, m)| *l == line && m.contains(needle)),
-        "expected `{needle}` at line {line}; the run reported {} diagnostics:\n{}",
+        got.iter().any(|(l, m)| l == at && m.contains(needle)),
+        "expected `{needle}` at {at}; the run reported {} diagnostics:\n{}",
         got.len(),
         got.iter()
             .map(|(l, m)| format!("  ({l}) {m}"))
@@ -81,7 +89,7 @@ fn assert_reported(got: &[(u32, String)], line: u32, needle: &str) {
     );
 }
 
-fn assert_not_reported(got: &[(u32, String)], needle: &str) {
+fn assert_not_reported(got: &[(String, String)], needle: &str) {
     assert!(
         !got.iter().any(|(_, m)| m.contains(needle)),
         "did NOT expect `{needle}`; the run reported {} diagnostics:\n{}",
@@ -98,13 +106,17 @@ fn assert_not_reported(got: &[(u32, String)], needle: &str) {
 /// leftover poison (`jsr LoadLevelLayout`) to force the bonus-pass decision,
 /// plus one unrelated error to make the run a FAILING one.
 ///
-/// Line map, used by every assertion below, so a body edit that shifts a line
-/// fails loudly rather than silently testing a different line:
-///   7  `dc.l (plc1<<24)|art`          -> unresolved long expression
-///   8  `dc.l (plc2<<24)|map16x16`     -> unresolved long expression
-///   9  `dc.l (palette<<24)|map128x128` -> CLEAN (the palette id resolves)
-///  21  `jsr LoadLevelLayout`          -> unresolved symbol in operand
-///  23  `moveq #$1FF,d0`               -> the unrelated error
+/// Location map, used by every assertion below, so a body edit that shifts a
+/// line fails loudly rather than silently testing a different line. File lines
+/// 7 to 9 are the macro's body, run by the call on line 13, so a diagnostic on
+/// one of them is located as that call and the line of the body, asl's
+/// call-site trail (`p1_simple.asm(7) mymac(2)` in the probes of
+/// `2026-09-12-as-macro-diag-call-site`):
+///   `probe.asm(13) levartptrs(1)`  `dc.l (plc1<<24)|art`           -> unresolved long expression
+///   `probe.asm(13) levartptrs(2)`  `dc.l (plc2<<24)|map16x16`      -> unresolved long expression
+///   `probe.asm(13) levartptrs(3)`  `dc.l (palette<<24)|map128x128` -> CLEAN (the palette id resolves)
+///   `probe.asm(21)`                `jsr LoadLevelLayout`           -> unresolved symbol in operand
+///   `probe.asm(23)`                `moveq #$1FF,d0`                -> the unrelated error
 const LEVARTPTRS_FAILING: &str = "\tcpu 68000\n\
 id function ptr,(ptr-PLCPointers)/4\n\
 PLCID_Ojz1 =\t\tid(PLCPtr_Ojz1)\n\
@@ -135,8 +147,8 @@ Bad:\n\
 #[test]
 fn levartptrs_shape_reports_both_unresolved_long_expressions_on_a_failing_run() {
     let got = diags(LEVARTPTRS_FAILING);
-    assert_reported(&got, 7, "unresolved long expression");
-    assert_reported(&got, 8, "unresolved long expression");
+    assert_reported(&got, "probe.asm(13) levartptrs(1)", "unresolved long expression");
+    assert_reported(&got, "probe.asm(13) levartptrs(2)", "unresolved long expression");
 }
 
 /// The third `dc.l` of the same macro resolves, so it must stay clean: the gate
@@ -144,9 +156,17 @@ fn levartptrs_shape_reports_both_unresolved_long_expressions_on_a_failing_run() 
 #[test]
 fn levartptrs_shape_leaves_the_resolvable_third_pointer_alone() {
     let got = diags(LEVARTPTRS_FAILING);
+    // The location this refuses is one the run DOES produce for the macro's
+    // other two lines, so the refusal below can fail: a run whose labels lost
+    // the trail would miss both of these instead of passing.
     assert!(
-        !got.iter().any(|(l, _)| *l == 9),
-        "line 9 resolves and must carry no diagnostic; got:\n{}",
+        got.iter().any(|(l, _)| l == "probe.asm(13) levartptrs(1)")
+            && got.iter().any(|(l, _)| l == "probe.asm(13) levartptrs(2)"),
+        "the macro's first two lines must be located by the call and the body line; got {got:?}"
+    );
+    assert!(
+        !got.iter().any(|(l, _)| l == "probe.asm(13) levartptrs(3)"),
+        "the macro's third line resolves and must carry no diagnostic; got:\n{}",
         got.iter()
             .map(|(l, m)| format!("  ({l}) {m}"))
             .collect::<Vec<_>>()
@@ -162,7 +182,7 @@ fn levartptrs_shape_leaves_the_resolvable_third_pointer_alone() {
 #[test]
 fn a_skipped_bonus_pass_still_reports_its_leftover_poison() {
     let got = diags(LEVARTPTRS_FAILING);
-    assert_reported(&got, 21, "unresolved symbol `LoadLevelLayout` in operand");
+    assert_reported(&got, "probe.asm(21)", "unresolved symbol `LoadLevelLayout` in operand");
 }
 
 /// The unrelated error that makes the run a failing one is itself still
@@ -170,7 +190,7 @@ fn a_skipped_bonus_pass_still_reports_its_leftover_poison() {
 #[test]
 fn the_error_that_opened_the_gate_is_still_reported() {
     let got = diags(LEVARTPTRS_FAILING);
-    assert_reported(&got, 23, "moveq data 511 does not fit in a signed byte");
+    assert_reported(&got, "probe.asm(23)", "moveq data 511 does not fit in a signed byte");
 }
 
 /// THE GATE'S OTHER DIRECTION. The same file with the unrelated error removed
@@ -225,7 +245,7 @@ fn a_warning_alone_does_not_open_the_gate() {
 #[test]
 fn the_new_diagnostic_set_contains_the_old_one() {
     let got = diags(LEVARTPTRS_FAILING);
-    let old: &[(u32, &str)] = &[(23, "unsupported form: moveq data 511 does not fit in a signed byte")];
+    let old: &[(&str, &str)] = &[("probe.asm(23)", "unsupported form: moveq data 511 does not fit in a signed byte")];
     let missing: Vec<_> = old
         .iter()
         .filter(|(l, m)| !got.iter().any(|(gl, gm)| gl == l && gm == m))
@@ -248,9 +268,9 @@ fn the_new_diagnostic_set_contains_the_old_one() {
     assert_eq!(
         appeared,
         vec![
-            "(7) unresolved long expression".to_string(),
-            "(8) unresolved long expression".to_string(),
-            "(21) unresolved symbol `LoadLevelLayout` in operand".to_string(),
+            "(probe.asm(13) levartptrs(1)) unresolved long expression".to_string(),
+            "(probe.asm(13) levartptrs(2)) unresolved long expression".to_string(),
+            "(probe.asm(21)) unresolved symbol `LoadLevelLayout` in operand".to_string(),
         ],
         "the set the gate ADDS changed"
     );
@@ -263,7 +283,7 @@ fn a_poison_free_failing_run_is_unchanged() {
     let body = "\tcpu 68000\n\torg 0\nBad:\n\tmoveq #$1FF,d0\n";
     let got = diags(body);
     assert_eq!(got.len(), 1, "got {got:?}");
-    assert_reported(&got, 4, "moveq data 511 does not fit in a signed byte");
+    assert_reported(&got, "probe.asm(4)", "moveq data 511 does not fit in a signed byte");
     assert_not_reported(&got, "unresolved");
 }
 
@@ -280,7 +300,7 @@ fn the_witness_451cb3e2_cites_is_refused_by_the_front_end() {
     let body = std::fs::read_to_string(&path)
         .unwrap_or_else(|e| panic!("cannot read the committed witness {}: {e}", path.display()));
     let got = diags(&body);
-    assert_reported(&got, 4, "unresolved long expression");
-    assert_reported(&got, 5, "unresolved symbol `NoSuchTarget` in operand");
+    assert_reported(&got, "probe.asm(4)", "unresolved long expression");
+    assert_reported(&got, "probe.asm(5)", "unresolved symbol `NoSuchTarget` in operand");
     assert_eq!(got.len(), 2, "the witness draws exactly two diagnostics; got {got:?}");
 }

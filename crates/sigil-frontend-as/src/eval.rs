@@ -23,7 +23,7 @@ use sigil_ir::{
     asl_width_rule, AbsWidth, DataFragment, EquSym, Expr, Fixup, FixupKind, IrBuilder, Module,
     SymbolTable, SymbolValue,
 };
-use sigil_span::{Diagnostic, Level, SourceId, Span};
+use sigil_span::{Diagnostic, Frame, Level, SourceId, Span};
 
 const EXPAND_CAP: usize = 64;
 /// Last-resort resource guard on the settle loop. **Not a pass count in any
@@ -98,6 +98,15 @@ impl Clone for SrcLine {
     fn clone(&self) -> Self {
         SrcLine::new(self.text.clone(), self.base, self.source)
     }
+}
+
+/// The span a loop is entered from: its CLOSING line. asl collects the whole
+/// block before it runs it, so the enclosing frame names the `endm`, not the
+/// line that opened the loop and not the line inside it: `mymac(3) REPT 1(1)`
+/// for a `rept` on body line 1 closed on line 3 (probe `p4_rept`), and
+/// `p8_toprept.asm(5) REPT 1(1)` at file level, where line 5 is the `endm`.
+fn loop_entry(close: &SrcLine) -> Span {
+    Span { source: close.source, start: close.base, end: close.base }
 }
 
 /// The memo behind [`SrcLine::head`]: the keyword answered, under the key it
@@ -306,11 +315,11 @@ fn run_impl(
     // Every distinct `fatal` any pass raised, in raise order. See the comment at
     // the `terminal_fatal` arm below for why this one diagnostic outlives its
     // pass when no other does.
-    let mut carried_fatals: Vec<(Span, String, Option<String>)> = Vec::new();
+    let mut carried_fatals: Vec<Carried> = Vec::new();
     // Every SITE at which any pass ran the `warning` directive, in raise order.
     // See `merge_carried_author_warnings` for why an author's own `warning`
     // outlives its pass and an assembler-raised one does not.
-    let mut carried_author_warnings: Vec<(Span, String, Option<String>)> = Vec::new();
+    let mut carried_author_warnings: Vec<Carried> = Vec::new();
     for pass in 0..SETTLE_GUARD {
         let PassOutput {
             module,
@@ -387,14 +396,10 @@ fn run_impl(
         // over all six roots shows it changes nothing anywhere that does not
         // have a dropped `fatal` to begin with.
         if let Some(f) = terminal_fatal {
-            if !carried_fatals.contains(&f) {
-                carried_fatals.push(f);
-            }
+            carry_fatal(&mut carried_fatals, f);
         }
         for w in author_warnings {
-            if !carried_author_warnings.iter().any(|(s, _, _)| *s == w.0) {
-                carried_author_warnings.push(w);
-            }
+            carry_author_warning(&mut carried_author_warnings, w);
         }
         for sec in &module.sections {
             for eq in &sec.equ_syms {
@@ -507,14 +512,10 @@ fn run_impl(
             // The bonus pass raises its own `fatal`s and `warning`s too, and it
             // is a pass like any other for this purpose.
             if let Some(f) = bonus.terminal_fatal {
-                if !carried_fatals.contains(&f) {
-                    carried_fatals.push(f);
-                }
+                carry_fatal(&mut carried_fatals, f);
             }
             for w in bonus.author_warnings {
-                if !carried_author_warnings.iter().any(|(s, _, _)| *s == w.0) {
-                    carried_author_warnings.push(w);
-                }
+                carry_author_warning(&mut carried_author_warnings, w);
             }
             let diags = merge_carried_fatals(diags, &carried_fatals, &bonus.sources);
             let diags =
@@ -645,6 +646,38 @@ fn moving_symbols(a: &SymbolTable, b: &SymbolTable) -> String {
     out
 }
 
+/// A diagnostic a pass hands to the run because it may outlive the pass: a
+/// `fatal`, or an author's `warning`.
+///
+/// `label` is the location THIS pass's map renders for `span`. `physical` is
+/// the source position with any expansion forgotten
+/// ([`sigil_span::SourceMap::physical`]), and it is what two passes' copies of
+/// one diagnostic are compared by: expansion ids are handed out per pass, so a
+/// span alone would call one line of source two positions.
+#[derive(Clone)]
+struct Carried {
+    span: Span,
+    physical: Span,
+    message: String,
+    label: Option<String>,
+}
+
+/// Keep a pass's `fatal` unless an earlier pass already carried the same text
+/// from the same source position.
+fn carry_fatal(carried: &mut Vec<Carried>, f: Carried) {
+    if !carried.iter().any(|c| c.physical == f.physical && c.message == f.message) {
+        carried.push(f);
+    }
+}
+
+/// Keep a pass's `warning` site unless an earlier pass already carried that
+/// source position.
+fn carry_author_warning(carried: &mut Vec<Carried>, w: Carried) {
+    if !carried.iter().any(|c| c.physical == w.physical) {
+        carried.push(w);
+    }
+}
+
 /// Add every `fatal` a non-final pass raised to a returned diagnostic list.
 ///
 /// Deduped against what the list already carries, because the overwhelmingly
@@ -655,13 +688,13 @@ fn moving_symbols(a: &SymbolTable, b: &SymbolTable) -> String {
 /// the converged pass's output, and this adds nothing to either.
 fn merge_carried_fatals(
     mut diags: Vec<Diagnostic>,
-    carried: &[(Span, String, Option<String>)],
+    carried: &[Carried],
     sources: &sigil_span::SourceMap,
 ) -> Vec<Diagnostic> {
-    for (span, message, raised_label) in carried {
+    for Carried { span, physical, message, label: raised_label } in carried {
         if diags
             .iter()
-            .any(|d| d.primary == *span && d.message == *message)
+            .any(|d| sources.physical(d.primary) == *physical && d.message == *message)
         {
             continue;
         }
@@ -740,13 +773,13 @@ fn merge_carried_fatals(
 /// louder and can never change a byte.
 fn merge_carried_author_warnings(
     mut diags: Vec<Diagnostic>,
-    carried: &[(Span, String, Option<String>)],
+    carried: &[Carried],
     sources: &sigil_span::SourceMap,
 ) -> Vec<Diagnostic> {
-    for (span, message, raised_label) in carried {
+    for Carried { span, physical, message, label: raised_label } in carried {
         // The returning pass already speaks about this position, so it has the
         // authoritative text for it (interpolated against the converged env).
-        if diags.iter().any(|d| d.primary == *span) {
+        if diags.iter().any(|d| sources.physical(d.primary) == *physical) {
             continue;
         }
         // Same span-validity guard the carried `fatal` needs, and for the same
@@ -818,10 +851,10 @@ struct PassOutput {
     circular_layout: Option<(Span, String)>,
     /// The first `fatal` this pass raised, with the `file(line)` label THIS
     /// pass's own source map renders for it. See [`Asm::terminal_fatal`].
-    terminal_fatal: Option<(Span, String, Option<String>)>,
+    terminal_fatal: Option<Carried>,
     /// Every site at which this pass ran the `warning` directive. See
     /// [`Asm::author_warnings`].
-    author_warnings: Vec<(Span, String, Option<String>)>,
+    author_warnings: Vec<Carried>,
     /// Every line the `message` directive produced this pass. See
     /// [`Asm::messages`].
     messages: Vec<String>,
@@ -1578,7 +1611,7 @@ struct Asm {
     /// Separate from `aborted` because `aborted` is shared with `end`, which
     /// every well-formed corpus file uses and which is not a refusal at all.
     /// See [`run_impl`] for what the run does with it.
-    terminal_fatal: Option<(Span, String, Option<String>)>,
+    terminal_fatal: Option<Carried>,
     /// Every distinct SITE at which this pass ran the `warning` DIRECTIVE, with
     /// the text it produced there and the `file(line)` label THIS pass's own
     /// source map renders for it. See [`run_impl`] for what the run does with
@@ -1589,7 +1622,7 @@ struct Asm {
     /// a `warning` inside a macro the corpus expands 81 times is one line the
     /// author wrote, not 81. Within a pass the FIRST text at a position wins,
     /// which matters only when a re-expansion interpolates different values.
-    author_warnings: Vec<(Span, String, Option<String>)>,
+    author_warnings: Vec<Carried>,
     /// Every line the `message` directive produced on THIS pass, in execution
     /// order, interpolated against this pass's env. One entry per FIRING (a
     /// `message` inside a macro expanded three times is three lines, exactly
@@ -2780,10 +2813,8 @@ impl Asm {
                 continue;
             }
             found = true;
-            if self
-                .reg_faults_seen
-                .insert((span.source.0, span.start, span.end, name.clone()))
-            {
+            let (source, start, end) = self.site_key(span);
+            if self.reg_faults_seen.insert((source, start, end, name.clone())) {
                 self.err(span, register_in_value_position(&name));
             }
         }
@@ -2799,7 +2830,7 @@ impl Asm {
     /// is wrong and where; a second line about the same token, phrased as if a
     /// definition were missing, is the residue rather than an addition.
     fn register_reported_at(&self, span: Span) -> bool {
-        let key = (span.source.0, span.start, span.end);
+        let key = self.site_key(span);
         self.reg_faults_seen
             .iter()
             .any(|(s, a, b, _)| (*s, *a, *b) == key)
@@ -3754,7 +3785,8 @@ impl Asm {
             let passed = crate::expand::asl_call_arg_count(toks, i + 1, next - 1, &args);
             if passed != params.len() {
                 let span = toks[i].span;
-                if self.arg_faults_seen.insert((span.source.0, span.start, span.end)) {
+                let key = self.site_key(span);
+                if self.arg_faults_seen.insert(key) {
                     self.err(
                         span,
                         format!(
@@ -3792,10 +3824,8 @@ impl Asm {
         let Some(span) = group_span(arg) else {
             return;
         };
-        if !self
-            .arg_faults_seen
-            .insert((span.source.0, span.start, span.end))
-        {
+        let key = self.site_key(span);
+        if !self.arg_faults_seen.insert(key) {
             return;
         }
         // A string literal is one of AS's three legal argument types, and is
@@ -5389,7 +5419,11 @@ impl Asm {
             return lines.len();
         };
         let captured = self.capture_loop_body(&lines[start + 1..end]);
-        let body: &[SrcLine] = captured.as_deref().unwrap_or(&lines[start + 1..end]);
+        let was_captured = captured.is_some();
+        // Owned: every iteration restamps it as a run of its own, entered from
+        // the closing line (`loop_entry`).
+        let mut body: Vec<SrcLine> = captured.unwrap_or_else(|| lines[start + 1..end].to_vec());
+        let entry = loop_entry(&lines[end]);
         // A `rept` IS an expansion for `exitm`'s purposes, top-level one included
         // (probe `e6`), so it counts here and clears the flag below.
         self.expansion_depth += 1;
@@ -5397,13 +5431,13 @@ impl Asm {
         // the set is too. What is per-iteration is the KEY, pushed inside the
         // loop — `p7`'s `rept 2` reads `Ra` back as `$0000` then `$0002`, which
         // is a namespace per iteration, not per loop.
-        let plain_labels = std::rc::Rc::new(scan_plain_labels(body));
+        let plain_labels = std::rc::Rc::new(scan_plain_labels(&body));
         // A body with no lines at all runs nothing, defines nothing and costs no
         // budget, whatever its count: asl finishes a nested pair of `rept
         // 100000` with no body line in 80 ms with exit 0, while the same pair
         // around a single comment line runs past a 30-second timeout.
         let iterations = if body.is_empty() { 0 } else { n };
-        for _ in 0..iterations {
+        for iteration in 0..iterations {
             // `end` (and `fatal`) inside the body stop the unit, so the
             // remaining iterations must not run. `exec` already returns
             // immediately once `aborted` is set, so this is byte-neutral; it is
@@ -5429,15 +5463,17 @@ impl Asm {
                 break;
             }
             self.rept_budget -= 1;
+            let n = u32::try_from(iteration + 1).unwrap_or(u32::MAX);
+            self.enter_expansion(&mut body, entry, Frame::Rept(n));
             self.push_expansion_labels(plain_labels.clone());
-            self.exec(body);
+            self.exec(&body);
             self.pop_expansion_labels();
             if self.take_exit_expansion() {
                 break;
             }
         }
         self.expansion_depth -= 1;
-        self.release_loop_body(captured.is_some());
+        self.release_loop_body(was_captured);
         end + 1
     }
 
@@ -5510,14 +5546,25 @@ impl Asm {
         // for why this one arm has NO asl oracle behind it (asl segfaults on
         // `exitm` inside an `irp`).
         self.expansion_depth += 1;
-        for item in &items {
+        let entry = loop_entry(&lines[end]);
+        for (at, item) in items.iter().enumerate() {
             if self.aborted {
                 break;
             }
-            let iter: Vec<SrcLine> = body
+            let mut iter: Vec<SrcLine> = body
                 .iter()
                 .map(|l| SrcLine::new(substitute_name(&l.text, &name, item), l.base, l.source))
                 .collect();
+            // asl names an iteration by the item AFTER it: `IRP:bb` for the
+            // first of `aa,bb,cc` and `IRP:` for the last; `irpc` quotes the
+            // next character, `IRPC:'b'`, and prints a lone `IRPC:'` on the
+            // last (probes `q1_irp3`, `r6_irpc_abc`).
+            let next = items.get(at + 1);
+            let frame = match kind {
+                IterKind::Groups => Frame::Irp(next.map_or("", String::as_str).into()),
+                IterKind::Chars => Frame::Irpc(next.and_then(|s| s.chars().next())),
+            };
+            self.enter_expansion(&mut iter, entry, frame);
             // Scanned from the SUBSTITUTED body, unlike `rept`/`while`: `irp`
             // rewrites the text per item, so a label spelled with the loop
             // variable is a different name each iteration and only the
@@ -5606,6 +5653,39 @@ impl Asm {
         Some((name, items))
     }
 
+    /// Give a body's lines, for ONE run, the id of a new expansion entered from
+    /// `call` and printed as `frame` (see [`sigil_span::SourceMap::add_expansion`]).
+    ///
+    /// A line keeps its text and its offsets and changes only the id it
+    /// carries, so nothing a line assembles to can depend on this. What changes
+    /// is where a span taken from it LOCATES: [`sigil_span::SourceMap::label`]
+    /// renders asl's call-site trail from the id. A loop restamps its body on
+    /// every iteration, so each iteration is its own run.
+    ///
+    /// A body is one contiguous run of lines of one source (a block is closed
+    /// in the text it opened in, and an `include` inside it splices its lines
+    /// at run time under the included file's own id), so the first line's id
+    /// is the whole body's.
+    fn enter_expansion(&mut self, body: &mut [SrcLine], call: Span, frame: Frame) {
+        let Some(first) = body.first() else {
+            return;
+        };
+        let id = self.sources.add_expansion(first.source, first.base, call, frame);
+        for l in body.iter_mut() {
+            l.source = id;
+        }
+    }
+
+    /// The key "already reported at this source position" compares: the span's
+    /// bytes in the file they were written in. Physical, so a body line reached
+    /// from a second call or a second iteration is the SAME position it was
+    /// before each run carried an id of its own, and a rule that reports a
+    /// position once per pass still reports it once.
+    fn site_key(&self, span: Span) -> (u32, u32, u32) {
+        let p = self.sources.physical(span);
+        (p.source.0, p.start, p.end)
+    }
+
     /// Materialize a `rept`/`while` body against the innermost expansion and
     /// suspend that expansion's substitution for the replay, matching AS: the
     /// loop body is substituted ONCE where the loop is entered, and a `shift`
@@ -5653,13 +5733,16 @@ impl Asm {
             return lines.len();
         };
         let captured = self.capture_loop_body(&lines[start + 1..end]);
-        let body: &[SrcLine] = captured.as_deref().unwrap_or(&lines[start + 1..end]);
+        let was_captured = captured.is_some();
+        // Owned and restamped per iteration, as in `exec_rept`.
+        let mut body: Vec<SrcLine> = captured.unwrap_or_else(|| lines[start + 1..end].to_vec());
+        let entry = loop_entry(&lines[end]);
         let mut iterations = 0usize;
         // A `while` IS an expansion for `exitm` (probe `e7`: `A0 C0 A1 FF` — one
         // iteration, then the enclosing macro's own trailing line).
         self.expansion_depth += 1;
         // Scanned once, keyed per iteration — see `exec_rept`.
-        let plain_labels = std::rc::Rc::new(scan_plain_labels(body));
+        let plain_labels = std::rc::Rc::new(scan_plain_labels(&body));
         loop {
             if self.aborted {
                 break;
@@ -5683,8 +5766,10 @@ impl Asm {
                         break;
                     }
                     self.while_budget -= 1;
+                    let n = u32::try_from(iterations + 1).unwrap_or(u32::MAX);
+                    self.enter_expansion(&mut body, entry, Frame::While(n));
                     self.push_expansion_labels(plain_labels.clone());
-                    self.exec(body);
+                    self.exec(&body);
                     self.pop_expansion_labels();
                     if self.take_exit_expansion() {
                         break;
@@ -5700,7 +5785,7 @@ impl Asm {
             }
         }
         self.expansion_depth -= 1;
-        self.release_loop_body(captured.is_some());
+        self.release_loop_body(was_captured);
         end + 1
     }
 
@@ -6110,10 +6195,8 @@ impl Asm {
         if self.register_reported_at(span) {
             return;
         }
-        if !self
-            .cond_faults_seen
-            .insert((span.source.0, span.start, span.end))
-        {
+        let key = self.site_key(span);
+        if !self.cond_faults_seen.insert(key) {
             return;
         }
         let name = self.first_unresolved_cond_name(toks);
@@ -6466,7 +6549,8 @@ impl Asm {
                     // `inc/b.asm(1)`, because ids are handed out in splice order
                     // and dropping one include shifts every id after it.
                     let label = self.sources.label(span);
-                    self.terminal_fatal = Some((span, m, label));
+                    let physical = self.sources.physical(span);
+                    self.terminal_fatal = Some(Carried { span, physical, message: m, label });
                 }
             }
             // `message "text"` writes its interpolated text to STDOUT,
@@ -6507,9 +6591,10 @@ impl Asm {
                     return;
                 }
                 let m = self.interp_string(rest);
-                if !self.author_warnings.iter().any(|(s, _, _)| *s == span) {
+                let physical = self.sources.physical(span);
+                if !self.author_warnings.iter().any(|c| c.physical == physical) {
                     let label = self.sources.label(span);
-                    self.author_warnings.push((span, m.clone(), label));
+                    self.author_warnings.push(Carried { span, physical, message: m.clone(), label });
                 }
                 self.diags.push(Diagnostic {
                     level: Level::Warning,
@@ -10779,10 +10864,8 @@ impl Asm {
         if self.macro_depth >= EXPAND_CAP {
             // Once per invocation position per pass (`expand_faults_seen`);
             // the return is unconditional, so the leaf is still cut either way.
-            if self
-                .expand_faults_seen
-                .insert((span.source.0, span.start, span.end))
-            {
+            let key = self.site_key(span);
+            if self.expand_faults_seen.insert(key) {
                 self.err(
                     span,
                     format!("macro `{name}` expansion too deep (recursive macro?)"),
@@ -10809,10 +10892,14 @@ impl Asm {
             return;
         }
         self.macro_budget -= 1;
-        let MacroDef { params, defaults, body, int_label, global_symbols } = match self.macros.get(name) {
+        let MacroDef { params, defaults, mut body, int_label, global_symbols } = match self.macros.get(name) {
             Some(m) => m.clone(),
             None => return,
         };
+        // This run's lines execute under an id of their own, entered from the
+        // call, so a diagnostic raised anywhere inside it names this call site
+        // and not only the body line (asl: `p1_simple.asm(7) mymac(2)`).
+        self.enter_expansion(&mut body, span, Frame::Macro(name.into()));
         // A macro that does not declare the capture never sees a label; one that
         // does but was invoked bare gets the EMPTY text — which is what makes the
         // corpus's `if "__LABEL__"<>""` guard in `rsttarget` a guard at all
