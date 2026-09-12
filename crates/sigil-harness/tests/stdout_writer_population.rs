@@ -16,9 +16,11 @@
 //! - no LIBRARY file may print to stdout at all: its `println!` is std's in every
 //!   binary that calls it, and no import in the binary reaches it.
 //!
-//! Only the shipping text of a file is read: from its first inline
-//! `#[cfg(test)] mod <name> {` on, the text is cut, because a test's output goes
-//! to libtest and no reader of it goes away. A comment line is skipped.
+//! Only the shipping text of a file is read. Each top-level inline
+//! `#[cfg(test)] mod <name> {` block is removed, from its attribute to the
+//! column-zero `}` that closes it, because a test's output goes to libtest and no
+//! reader of it goes away; code after the block is read. A comment line is
+//! skipped.
 //!
 //! # Outside the population
 //!
@@ -89,22 +91,32 @@ fn bin_roots(crate_dir: &Path) -> Vec<PathBuf> {
     roots
 }
 
-/// The shipping text of a source file: everything before its first inline
-/// `#[cfg(test)] mod <name> {`. A `#[cfg(test)] mod <name>;` naming a file is
-/// not a cut.
-fn shipping(src: &str) -> &str {
+/// The shipping text of a source file: the file with each top-level inline
+/// `#[cfg(test)] mod <name> {` block removed, from its attribute to the first
+/// line holding only `}`, which is where rustfmt closes a module at column zero.
+/// Code after the block is kept. A `#[cfg(test)] mod <name>;` naming a file is
+/// not a block, and an indented attribute is not top-level; both are kept, so a
+/// print under either is read as shipping, which fails loudly rather than
+/// passing quietly.
+fn shipping(src: &str) -> String {
     const ATTR: &str = "#[cfg(test)]";
-    let mut from = 0;
-    while let Some(rel) = src[from..].find(ATTR) {
-        let at = from + rel;
-        let after = src[at + ATTR.len()..].trim_start();
-        let first = after.lines().next().unwrap_or("");
-        if first.starts_with("mod ") && first.trim_end().ends_with('{') {
-            return &src[..at];
+    let mut out = String::new();
+    let mut kept_from = 0;
+    let mut search = 0;
+    while let Some(rel) = src[search..].find(ATTR) {
+        let at = search + rel;
+        let top_level = at == 0 || src.as_bytes()[at - 1] == b'\n';
+        let first = src[at + ATTR.len()..].trim_start().lines().next().unwrap_or("");
+        if top_level && first.starts_with("mod ") && first.trim_end().ends_with('{') {
+            out.push_str(&src[kept_from..at]);
+            kept_from = src[at..].find("\n}\n").map_or(src.len(), |end| at + end + 3);
+            search = kept_from;
+        } else {
+            search = at + ATTR.len();
         }
-        from = at + ATTR.len();
     }
-    src
+    out.push_str(&src[kept_from..]);
+    out
 }
 
 /// The stdout writes a text makes.
@@ -192,7 +204,7 @@ fn every_stdout_write_in_a_binary_goes_through_the_broken_pipe_rule() {
             let rel = file.strip_prefix(&ws).unwrap_or(&file).display().to_string();
             let text = std::fs::read_to_string(&file).unwrap_or_else(|e| panic!("read {rel}: {e}"));
             let ship = shipping(&text);
-            let w = writes(ship);
+            let w = writes(&ship);
             if w.handle {
                 violations.push(format!(
                     "{rel}: takes a stdout handle, which writes around `sigil_harness::stdout`"
@@ -210,7 +222,7 @@ fn every_stdout_write_in_a_binary_goes_through_the_broken_pipe_rule() {
                 continue;
             }
             writers.push(rel.clone());
-            let names = imported(ship);
+            let names = imported(&ship);
             for (used, name) in [(w.print, "print"), (w.println, "println")] {
                 if used && !names.iter().any(|n| n == name) {
                     violations.push(format!(
@@ -255,7 +267,14 @@ fn the_detector_answers_known_snippets() {
     assert!(imported("use sigil_harness::native;").is_empty());
 
     let src = "fn main() {}\n#[cfg(test)]\nmod named_file;\nfn kept() {}\n\
-               #[cfg(test)]\nmod tests {\n    fn t() { println!(\"z\"); }\n}\n";
-    assert!(shipping(src).contains("fn kept()"), "a `mod x;` under cfg(test) is not a cut");
-    assert!(!writes(shipping(src)).println, "an inline test module is cut");
+               #[cfg(test)]\nmod tests {\n    fn t() { println!(\"z\"); }\n}\n\
+               fn after() { print!(\"y\"); }\n";
+    let ship = shipping(src);
+    assert!(ship.contains("fn kept()"), "a `mod x;` under cfg(test) is not a block");
+    assert!(!writes(&ship).println, "an inline test module is removed");
+    assert!(writes(&ship).print, "shipping code after a test module is read");
+
+    let nested = "mod outer {\n    #[cfg(test)]\n    mod t {\n        fn x() {}\n    }\n\
+                  \x20   fn y() { println!(\"n\"); }\n}\n";
+    assert!(writes(&shipping(nested)).println, "an indented test module is not removed");
 }
