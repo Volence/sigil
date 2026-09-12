@@ -2851,6 +2851,16 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
   frozen equilibrium and byte identity ride on it. — OPEN (kill: a refreeze that names
   the un-frozen sections' bases, or map rows that pin them; then measure them at real
   bases like every frozen-labeled section and delete the legacy cursor)
+  - AMENDED [LINK-ZERO-BYTE-MOVE-PLACEMENT, 2026-09-12]: the ALIAS half was live, not
+    latent. A reference from a FROZEN-labeled section into a never-pinned one takes its width
+    from the target's slot, so aeon's trailing top-level `ensure` (one extra zero-byte `text`
+    section, one slot shift) put `preset` on k = 9, measured three `jbsr`s in
+    `ojz_scroll_test` 4 B instead of 6, and turned sonic4 debug red; at `cae58661` the control
+    already had `page_in` on k = 9. The alias half is CLOSED on that branch:
+    `native.rs::far_scratch_slot` skips every slot whose stride reaches an abs.w window, gated
+    by `derived_layout_tests::a_reference_into_the_far_scratch_measures_abs_l_at_every_slot_ordinal`
+    and `zero_byte_sections_ahead_of_a_never_pinned_target_move_nothing`. The CURSOR itself
+    stays OPEN under the kill above; see `2026-09-12-link-zero-byte-move-placement.md`.
 
 - [BGROOM-3 measure-at-packed-base, 2026-08-26] **No constructive red test for the
   packing walk's 8-round non-convergence exit:** a genuine abs.w/abs.l oscillator needs
