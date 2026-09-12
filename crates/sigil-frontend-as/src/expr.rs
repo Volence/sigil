@@ -406,6 +406,16 @@ fn parse_atom<'a>(
         let operand_follows = toks.get(run).is_some_and(|t| nameless::starts_atom(&t.tok));
         let ref_len = if operand_follows { run - 1 } else { run };
         if ref_len >= 1 {
+            // A nameless name is one to three characters. asl reads a longer
+            // run as operators and refuses it (`error #1110: wrong number of
+            // operands`), even where a fourth definition is in place: `++++`,
+            // `----`, `dbf d0,----`, `-----1` (see `crate::nameless`,
+            // "Reference"). `None` here is the caller's own refusal at the same
+            // line. The run was counted with a `take_while`, so a run of any
+            // length is refused in constant stack.
+            if ref_len > nameless::MAX_RUN {
+                return None;
+            }
             // A MIXED run has no reading: asl splits `+--Base` at its rightmost
             // `-`, is left with `+-`, splits that at ITS rightmost, and refuses
             // the empty right-hand side (`error: wrong number of operands`).
@@ -416,13 +426,10 @@ fn parse_atom<'a>(
             {
                 return None;
             }
-            // SATURATING, both directions, and the `-` x 60,000 depth-guard
-            // probe is what says this is not paranoia: `ref_len` is a token
-            // count with no bound but the line's length, so plain `+` can wrap
-            // in release and PANIC in debug. A wrapped slot number is the worse
-            // half: it would ALIAS a real slot and branch somewhere plausible,
-            // silently. Saturated, it names a slot nothing can ever define, and
-            // the reference is refused by name.
+            // SATURATING, both directions: the counters grow with the source,
+            // and a wrapped slot number would ALIAS a real slot and branch
+            // somewhere plausible, silently. Saturated, it names a slot
+            // nothing can ever define, and the reference is refused by name.
             let k = u32::try_from(ref_len).unwrap_or(u32::MAX);
             let name = match kind {
                 Punct::Plus => nameless::fwd_slot(ctx.nameless.fwd.saturating_add(k)),
@@ -577,33 +584,31 @@ mod depth_guard_tests {
         );
     }
 
-    /// A deep `~` chain is still refused by the depth guard, and a deep `-`
-    /// chain is no longer a recursive shape at all.
+    /// A deep `~` chain is refused by the depth guard, and a deep `-` chain is
+    /// not a recursive shape at all.
     ///
-    /// This assertion CHANGED when nameless labels landed, and the change is the
-    /// point rather than a concession. A leading run of `-` is now counted with
-    /// a `take_while` and consumed whole, so `-` x 60,000 followed by an operand
-    /// costs ONE stack frame instead of 60,000: the danger the guard exists for
-    /// is gone from this shape by construction rather than bounded. What the
-    /// parser returns is a reference to backward slot 0, which nothing ever
-    /// defines, so the expression is still refused -- at resolution, loudly, by
-    /// name.
+    /// A leading run of `-` is counted with a `take_while` and consumed whole,
+    /// so `-` x 60,000 followed by an operand costs ONE stack frame, not
+    /// 60,000: the danger the guard exists for is absent from this shape by
+    /// construction rather than bounded. The run is then refused outright,
+    /// because a nameless name is at most three characters and asl refuses a
+    /// longer run in front of an operand too (`-----1` is `error #1110: wrong
+    /// number of operands`, probe `f06` of 2026-09-12-as-nameless-plus-run-count).
     ///
-    /// The property under test was never "a deep `-` chain is refused"; it was
-    /// "a deep `-` chain does not abort the process". That is what is asserted
-    /// here, and it is asserted the only way it can be: the parse must
+    /// The property under test is "a deep `-` chain does not abort the
+    /// process", and it is asserted the only way it can be: the parse must
     /// TERMINATE and the child thread must survive it, both of which `parses`
-    /// already checks and neither of which a `SIGABRT` would let it report.
+    /// checks and neither of which a `SIGABRT` would let it report. What the
+    /// parse then answers is the refusal, asserted as well.
     #[test]
     fn deep_unary_chains_do_not_abort() {
         let n = 60_000;
         // Terminates on a 4 MiB stack and the thread survives; `parses` panics
         // on either failure, so reaching the assertion at all is half the test.
-        let minus_parses = parses(format!("{}1", "-".repeat(n)));
         assert!(
-            minus_parses,
-            "a {n}-deep `-` run is a nameless reference now, not 60,000 negations, \
-             and it must parse in constant stack"
+            !parses(format!("{}1", "-".repeat(n))),
+            "a {n}-deep `-` run is longer than any nameless name and must be refused, \
+             in constant stack"
         );
         assert!(!parses(format!("{}1", "~".repeat(n))), "deep `~` chain must be refused");
     }

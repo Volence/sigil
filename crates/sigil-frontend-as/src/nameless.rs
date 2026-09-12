@@ -19,9 +19,9 @@
 //!
 //! ## Definition
 //!
-//! A definition is a run of `+`, a single `-`, or a single `/`, **in column 1**.
-//! Indentation is not cosmetic: an indented `+` is `error: unknown instruction`,
-//! not a label.
+//! A definition is a run of one to three `+`, a single `-`, or a single `/`,
+//! **in column 1**. Indentation is not cosmetic: an indented `+` is
+//! `error: unknown instruction`, not a label.
 //!
 //! ```text
 //!   4/    1000 : 60FE                bra.s  +
@@ -29,36 +29,69 @@
 //!   > > > q1.asm(6):2: error: unknown instruction
 //! ```
 //!
-//! Each definition ADVANCES a counter and then defines the slot at the counter's
-//! new value:
-//!
-//! * `+` × m advances the FORWARD counter by m and defines forward slot `fwd`.
+//! * `+` defines forward slot `fwd + 1` and ADVANCES the forward counter to it.
+//! * `++` and `+++` define forward slot `fwd + 2` and `fwd + 3` and leave the
+//!   forward counter WHERE IT STANDS. They name a slot ahead of the counter,
+//!   and the single `+` definitions after them count up toward it.
 //! * `-` advances the BACKWARD counter by 1 and defines backward slot `bwd`.
-//! * `/` advances BOTH by 1 and defines both slots -- it is the bidirectional
-//!   form, reachable from either side.
+//! * `/` advances BOTH by 1 and defines both slots: the bidirectional form,
+//!   reachable from either side. On the forward side it is a single `+`.
 //!
-//! The `m > 1` case is not a curiosity invented here, it is measured, and it is
-//! the case that distinguishes "a `++` definition is an alias for `+`" from
-//! "a `++` definition consumes two slots". It consumes two:
+//! Read off asl's own symbol table, where the names are `__forwN`, zero-based,
+//! so asl's `__forwN` is slot `N + 1` here. `+`, `++`, `+` at $102/$104/$106
+//! (probe `x1`, and `a08` for `+`, `+`, `++`, `+`):
+//!
+//! ```text
+//!   __forw0 = 102     `+`    slot 1   counter 0 -> 1
+//!   __forw2 = 104     `++`   slot 3   counter stays 1
+//!   __forw1 = 106     `+`    slot 2   counter 1 -> 2
+//! ```
+//!
+//! So a `++` definition is neither another spelling of `+` (it names slot 3,
+//! not 2) nor two slots consumed (the `+` after it takes slot 2). A reference
+//! spanning the run sees the difference: in probe `b02` a `dc.w ++` at $102
+//! precedes `+`, `++`, `+` at $104/$106/$108 and is `$0108`, the LAST `+`;
+//! `bra.s ++` is the same shape (`b09`). With no `+` after the run the gap
+//! stays open, which is why `bra.s ++` over `+`, `++` alone is
+//! `error: symbol undefined`:
 //!
 //! ```text
 //!   4/    1000 : 6004                bra.s  +          ; -> $1006, slot 1
 //!   5/    1002 : 6004                bra.s  +++        ; -> $1008, slot 3
 //!   7/    1006 :                     +                 ; slot 1
-//!   9/    1008 :                     ++                ; slot 3, NOT slot 2
+//!   9/    1008 :                     ++                ; slot 3
 //! ```
 //!
-//! -- and slot 2 is then never defined at all, which is why a `bra.s ++` in that
-//! file is `error: symbol undefined`.
+//! Two consequences of the counter standing still, both measured:
 //!
-//! The multi-character form is a `+` privilege and not a general one. `--` and
-//! `//` in column 1 are both `error: invalid symbol name`, so [`classify_def`]
-//! accepts a run only for `+`.
+//! * A later single `+` can REACH the run's slot, and then two definitions name
+//!   one slot. asl answers `error #1000: symbol double defined`: `+`, `++`,
+//!   `+`, `+` on its fourth line (`a01`), `++`, `++` (`a02`), inside one macro
+//!   expansion or loop iteration (`g01`, `g03`), and where the second
+//!   definition is a `/` (`g02`). The collision is per namespace: a body's
+//!   slot 3 and a file-level slot 3 are different symbols (`c06`, accepted),
+//!   while a body's `+` still moves the shared counter onto a file-level run's
+//!   slot (`g04`, refused).
+//! * A forward reference may land BEHIND itself. After a `++` at $102,
+//!   `dc.w ++` names slot 2, which is that `++` (`b06`, `$0102`; `b17` for
+//!   `bra.s ++`, `60FC`; `c01` and `d02` in a macro body and a loop).
+//!
+//! A run of four or more `+` is not a nameless name at all: `++++` and `+++++`
+//! in column 1 are `error: invalid symbol name` (`a07`, `f03`), as `--` and
+//! `//` are. The multi-character form is a `+` privilege, and only up to
+//! [`MAX_RUN`]; [`classify_def`] accepts nothing else.
 //!
 //! ## Reference
 //!
 //! * `+` × k is forward slot `fwd + k`.
 //! * `-` × k is backward slot `bwd - k + 1`.
+//!
+//! k is one to [`MAX_RUN`]. asl reads a longer run as operators rather than a
+//! name, and refuses it with `error #1110: wrong number of operands` even when
+//! a fourth definition is in place: `dc.w ++++` (`f01`), `bra.s ++++` (`f04`),
+//! `dc.w ----` (`f02`), `dbf d0,----` (`f08`), `dc.w -----1` (`f06`). In front
+//! of an operand the LAST sign is the operator (below), so `----1` is
+//! `(---) - 1` and `++++1` is `(+++) + 1`, both accepted (`f05`, `f07`).
 //!
 //! Both read the counters as they stand when the REFERENCING STATEMENT is
 //! parsed, which is what makes the ordinals positional. It also settles the
@@ -94,18 +127,28 @@
 //! `Asm::sym_key` do: a slot is just a name, and it is filed and looked up by
 //! the same rule a plain label is.
 //!
-//! ## What this module deliberately does NOT model
+//! ## Where the backward count differs from asl's names, and agrees on addresses
 //!
-//! asl's `+` run DEFINITION of length m >= 2 does NOT advance the forward
-//! counter: it defines slot `c + m - 1` (zero-based, asl's own `__forwN`) and a
-//! following single `+` still defines slot `c`. Read off asl's symbol table,
-//! `+`, `++`, `+` at $102/$104/$106 is `__forw0 = 102, __forw2 = 104,
-//! __forw1 = 106`. [`classify_def`]'s `Forward(m)` advances by m, which agrees
-//! on every reference measured when this module was written (none had a `+`
-//! after a `++`) and disagrees on a reference spanning both. A separate row,
-//! recorded in the 2026-09-12 note; not changed here.
+//! asl gives a `/` a FORWARD name only, and its backward counter counts `-`
+//! definitions alone: `/` then `-` at file level is `__forw0` and `__back0`
+//! (`a09`), and a `/` in a macro body leaves the next file-level `-` at
+//! `__back0` (`x7`, `e07`). A backward reference still reaches a `/` (`ord2` in
+//! the 2026-09-09 note, `e04`, `e05`), so asl does not resolve `-` × k through
+//! its `__back` counter alone. Here ONE backward sequence counts `-` and `/`
+//! together, as above. The slot NAMES therefore differ from asl's symbol
+//! table, and every measured reference resolves to the same address (`e04`..
+//! `e12`, `b15`). Copying asl's counter literally, a `/` that does not advance
+//! `bwd`, would break exactly that: `e04`'s `--` after a `/` and a `-` would
+//! name a slot below the `/`. Probes and answers:
+//! `docs/superpowers/notes/2026-09-12-as-nameless-plus-run-count.md`.
 
 use crate::token::{Punct, Tok, Token};
+
+/// The longest run of `+` or `-` asl reads as a nameless NAME, in a definition
+/// and in a reference alike (see the module doc, "Definition" and
+/// "Reference"). A longer run is not a nameless label: `invalid symbol name`
+/// in column 1, `wrong number of operands` in an operand.
+pub const MAX_RUN: usize = 3;
 
 /// The two nameless-label counters, as they stand at one point in the pass.
 ///
@@ -145,14 +188,15 @@ pub fn bwd_slot(n: u32) -> String {
 /// What a column-1 token run defines, if anything.
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum Def {
-    /// `+` × m: advance the forward counter by m, define the slot it lands on.
+    /// `+` × m, m from 1 to [`MAX_RUN`]: define forward slot `fwd + m`. Only
+    /// m = 1 advances the forward counter, onto the slot it defines.
     Forward(u32),
     /// `-`: advance the backward counter, define the slot it lands on.
     Backward,
     /// `/`: advance both counters, define both slots.
     Both,
-    /// A run asl refuses outright: `-` × m or `/` × m for m > 1
-    /// (`error: invalid symbol name`).
+    /// A run asl refuses outright: `-` × m or `/` × m for m > 1, or `+` × m
+    /// for m > [`MAX_RUN`] (`error: invalid symbol name`).
     Invalid,
 }
 
@@ -179,7 +223,7 @@ pub fn classify_def(body: &[Token], col1: bool) -> Option<(Def, usize)> {
         .take_while(|t| matches!(t.tok, Tok::Punct(p) if p == kind))
         .count();
     let def = match kind {
-        Punct::Plus => Def::Forward(n as u32),
+        Punct::Plus if n <= MAX_RUN => Def::Forward(n as u32),
         Punct::Minus if n == 1 => Def::Backward,
         Punct::Slash if n == 1 => Def::Both,
         _ => Def::Invalid,

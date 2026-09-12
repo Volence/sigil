@@ -112,7 +112,7 @@ P = {
     "f03_ppppp_def": ("def +++++", d("+++++", 2222)),
     "f04_bra_pppp_over_four_p": ("bra.s ++++ before four single + defs",
                                  "\tbra.s\t++++\t; REF\n+\tdc.w\t$2222\n+\tdc.w\t$3333\n+\tdc.w\t$5555\n+\tdc.w\t$6666\n"),
-    "f05_three_m_ref_mmm_minus_1": ("three - defs, ref ---1 read as (--) - 1... no: (---)-1 needs ----1",
+    "f05_three_m_ref_mmm_minus_1": ("three - defs, ref ----1 read as (---) - 1",
                                     d("-", 2222) + d("-", 3333) + d("-", 5555) + ref("----1")),
     "f06_four_m_ref_mmmmm_minus_1": ("four - defs, ref -----1",
                                      d("-", 2222) + d("-", 3333) + d("-", 5555) + d("-", 6666) + ref("-----1")),

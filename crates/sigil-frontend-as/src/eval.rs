@@ -2483,16 +2483,6 @@ impl Asm {
         }
     }
 
-    /// Define one nameless-label slot at the current PC.
-    ///
-    /// Deliberately NOT [`Self::define_label`], and the difference is one line
-    /// there: a plain label assigns `self.scope`, which is what a following
-    /// `.local` qualifies under. A nameless label must not, or every `+` between
-    /// a named label and its own locals would silently re-anchor them -- and
-    /// there are 2,010 `+` definitions in the Sonic 2 corpus to do it with.
-    /// Everything else a placed label needs (a section to live in, the env
-    /// binding a later fold reads, the link-level record the final VMA comes
-    /// from) is the same and is done here.
     /// Advance the counters for one nameless DEFINITION, define the slot(s) it
     /// lands on, and return the name the pad machinery should carry -- or `None`
     /// when the run is one asl refuses.
@@ -2508,48 +2498,87 @@ impl Asm {
         match def {
             Def::Invalid => {
                 // asl: `error: invalid symbol name`. The multi-character form is
-                // a `+` privilege: `--` and `//` in column 1 are both refused,
-                // measured, while `++` is accepted and consumes two slots.
-                self.err(span, "`--` and `//` are not nameless labels; write `-`, `/`, or a run of `+`");
+                // a `+` privilege and stops at three: `--`, `//` and `++++` in
+                // column 1 are all refused, measured.
+                self.err(
+                    span,
+                    "`--`, `//` and a run of four or more `+` are not nameless labels; \
+                     write `-`, `/`, `+`, `++` or `+++`",
+                );
                 None
             }
             Def::Forward(m) => {
-                // Saturating for the same reason the reference side is: `m` is
-                // an unbounded token count, and a wrapped counter would make
-                // the NEXT definition land on a slot an earlier one already
-                // holds.
-                self.nameless.fwd = self.nameless.fwd.saturating_add(m);
-                let n = self.nameless.fwd;
-                Some(self.define_nameless_slot(&crate::nameless::fwd_slot(n)))
+                // `+` x m names the slot m past the counter, and only a single
+                // `+` moves the counter onto it. A `++` or `+++` names a slot
+                // AHEAD and leaves the counter standing, so the single `+`
+                // definitions after it count up toward that slot (asl's own
+                // `__forwN` names; `crate::nameless`, "Definition"). Saturating
+                // so that a counter at its limit names a slot nothing else can
+                // rather than wrapping onto one an earlier definition holds.
+                let n = self.nameless.fwd.saturating_add(m);
+                if m == 1 {
+                    self.nameless.fwd = n;
+                }
+                Some(self.define_nameless_slot(&crate::nameless::fwd_slot(n), span))
             }
             Def::Backward => {
                 self.nameless.bwd = self.nameless.bwd.saturating_add(1);
                 let n = self.nameless.bwd;
-                Some(self.define_nameless_slot(&crate::nameless::bwd_slot(n)))
+                Some(self.define_nameless_slot(&crate::nameless::bwd_slot(n), span))
             }
             Def::Both => {
                 self.nameless.fwd = self.nameless.fwd.saturating_add(1);
                 self.nameless.bwd = self.nameless.bwd.saturating_add(1);
                 let (f, b) = (self.nameless.fwd, self.nameless.bwd);
-                self.define_nameless_slot(&crate::nameless::fwd_slot(f));
+                self.define_nameless_slot(&crate::nameless::fwd_slot(f), span);
                 // A `/` defines two slots and a pad can only be absorbed into
                 // one of them, so the caller carries the BACKWARD one: that is
                 // the direction a `/` exists to be reached from, and the one
                 // whose address a following `align` would otherwise leave stale.
-                Some(self.define_nameless_slot(&crate::nameless::bwd_slot(b)))
+                Some(self.define_nameless_slot(&crate::nameless::bwd_slot(b), span))
             }
         }
     }
 
+    /// Define one nameless-label slot at the current PC.
+    ///
+    /// Deliberately NOT [`Self::define_label`], and the difference is one line
+    /// there: a plain label assigns `self.scope`, which is what a following
+    /// `.local` qualifies under. A nameless label must not, or every `+` between
+    /// a named label and its own locals would silently re-anchor them -- and
+    /// there are 2,010 `+` definitions in the Sonic 2 corpus to do it with.
+    /// Everything else a placed label needs (a section to live in, the env
+    /// binding a later fold reads, the link-level record the final VMA comes
+    /// from) is the same and is done here.
     ///
     /// The slot NUMBER is global to the pass, but the slot is FILED in the
     /// innermost instance, exactly as a plain label is (see
     /// [`crate::nameless`], "Scope"). The key returned is the filed one, which
     /// is what the pad machinery must move.
-    fn define_nameless_slot(&mut self, name: &str) -> String {
+    ///
+    /// A key this pass has already defined is asl's `#1000 symbol double
+    /// defined`. Only a forward slot can be reached twice: a `++` or `+++`
+    /// names a slot ahead of the counter, and the single `+` or `/`
+    /// definitions after it count up onto it (`crate::nameless`,
+    /// "Definition"). The key is the filed one, so the check is per namespace,
+    /// which is where asl draws it. Reported, and the slot is still bound, as
+    /// [`Self::define_label`] does for a PC label: the diagnostic is the whole
+    /// divergence, and it fails the build.
+    fn define_nameless_slot(&mut self, name: &str, span: Span) -> String {
         self.open_section_if_needed();
         let value = self.here_i64();
         let key = self.file_in_innermost(name).unwrap_or_else(|| name.to_string());
+        if self.defined_this_pass.contains(&key) {
+            self.err(
+                span,
+                format!(
+                    "symbol double defined: `{}` already holds an earlier definition on this \
+                     pass (a `++` or `+++` names a slot ahead of the next `+`, and the single \
+                     `+` or `/` definitions after it count up onto it)",
+                    name.trim_start()
+                ),
+            );
+        }
         self.define_sym(&key, SymbolValue::Int(value));
         self.known_labels.insert(key.clone());
         self.builder.define_label(&key);

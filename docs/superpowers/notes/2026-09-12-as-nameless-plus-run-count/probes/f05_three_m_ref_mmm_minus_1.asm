@@ -1,4 +1,4 @@
-; three - defs, ref ---1 read as (--) - 1... no: (---)-1 needs ----1
+; three - defs, ref ----1 read as (---) - 1
 	cpu	68000
 	padding	off
 	org	$100
