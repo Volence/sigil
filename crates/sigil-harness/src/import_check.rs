@@ -11,9 +11,54 @@ use sigil_frontend_emp::ast;
 use sigil_frontend_emp::resolve::imports::{
     unknown_module_error, use_decl_errors, use_decls, ExportIndex,
 };
-use sigil_frontend_emp::resolve::manifest::Manifest;
+use sigil_frontend_emp::resolve::manifest::{emp_files, Manifest};
 use sigil_span::Diagnostic;
-use std::path::Path;
+use std::cell::RefCell;
+use std::path::{Path, PathBuf};
+use std::rc::Rc;
+
+/// A tree's `.emp` file set with a CRC32 of each file's contents (`None` for one that
+/// cannot be read). Equal fingerprints mean no `.emp` file was added, removed or
+/// rewritten, a same-length rewrite included.
+type Fingerprint = Vec<(PathBuf, Option<u32>)>;
+
+thread_local! {
+    /// The last scan of each root this thread made, with the fingerprint it was taken at.
+    static SCANS: RefCell<Vec<(PathBuf, Fingerprint, Rc<Manifest>)>> = const { RefCell::new(Vec::new()) };
+}
+
+fn fingerprint(root: &Path) -> Fingerprint {
+    emp_files(root)
+        .into_iter()
+        .map(|p| {
+            let crc = std::fs::read(&p).ok().map(|bytes| sigil_span::read_set::crc32(&bytes));
+            (p, crc)
+        })
+        .collect()
+}
+
+/// [`Manifest::scan`] of `root`, parsed once per tree state per thread. One build lowers
+/// the seam-2 files that import outside themselves several times (six scans per
+/// `sigil build`, about 45 ms each on aeon, measured), and every scan parses the whole
+/// tree. The kept scan is reused only while the tree's fingerprint is unchanged, so an
+/// edit, an added file or a removed one is always seen. The first scan in the process
+/// records every read in the read ledger, which is never reset, so a reuse loses no
+/// provenance.
+fn scan_cached(root: &Path) -> Rc<Manifest> {
+    let now = fingerprint(root);
+    SCANS.with(|scans| {
+        let mut scans = scans.borrow_mut();
+        if let Some((_, seen, manifest)) = scans.iter().find(|(r, _, _)| r == root) {
+            if *seen == now {
+                return Rc::clone(manifest);
+            }
+        }
+        let manifest = Rc::new(Manifest::scan(root).0);
+        scans.retain(|(r, _, _)| r != root);
+        scans.push((root.to_path_buf(), now, Rc::clone(&manifest)));
+        manifest
+    })
+}
 
 /// Every import-rule Error in `files`, each paired with the index of the file it is
 /// in: a `use` whose module does not exist, a listed name that is not a `pub` item
@@ -22,7 +67,8 @@ use std::path::Path;
 /// A `use` resolves first among `files` themselves, each under its declared module
 /// id and exactly as the caller parsed it (so an in-memory source override is what
 /// gets checked), and otherwise among the modules scanned from `root`. The tree is
-/// scanned only when some `use` names a module outside `files`.
+/// scanned only when some `use` names a module outside `files`, and parsed at most
+/// once per tree state ([`scan_cached`]).
 pub fn standalone_import_errors(root: &Path, files: &[&ast::File]) -> Vec<(usize, Diagnostic)> {
     let local: Vec<(String, &ast::File)> =
         files.iter().map(|f| (f.module.path.segments.join("."), *f)).collect();
@@ -30,7 +76,7 @@ pub fn standalone_import_errors(root: &Path, files: &[&ast::File]) -> Vec<(usize
     let needs_scan = files
         .iter()
         .any(|f| use_decls(&f.items).iter().any(|u| !is_local(&u.base.segments.join("."))));
-    let scanned = needs_scan.then(|| Manifest::scan(root).0);
+    let scanned = needs_scan.then(|| scan_cached(root));
 
     let mut pairs: Vec<(&str, &ast::File)> = local.iter().map(|(id, f)| (id.as_str(), *f)).collect();
     if let Some(m) = &scanned {
@@ -105,5 +151,24 @@ mod tests {
             &["module pkg.b\nconst X = 1\n", "module pkg.a\nuse pkg.c.{Y}\nuse pkg.b.{X}\n"],
         );
         assert_eq!(got, vec![(1, "module `pkg.b` has no `pub` name `X`".to_string())]);
+    }
+
+    /// The kept scan is not reused once the tree moves. The rewrite keeps the file's
+    /// LENGTH (`X` becomes `Z`) and lands within milliseconds, inside one coarse mtime
+    /// tick, so only a content fingerprint can see it: the import accepted before the
+    /// edit is refused after it, in the same thread.
+    #[test]
+    fn a_tree_rewritten_in_place_is_scanned_again() {
+        let dir = tree();
+        let src = ["module pkg.a\nuse pkg.b.{X}\n"];
+        assert!(messages(dir.path(), &src).is_empty(), "the unedited tree exports `X`");
+        let b = dir.path().join("pkg/b.emp");
+        let before = std::fs::metadata(&b).unwrap().len();
+        std::fs::write(&b, "module pkg.b\npub const Z = 1\n").unwrap();
+        assert_eq!(std::fs::metadata(&b).unwrap().len(), before, "the rewrite must keep the length");
+        assert_eq!(
+            messages(dir.path(), &src),
+            vec![(0, "module `pkg.b` has no `pub` name `X`".to_string())]
+        );
     }
 }
