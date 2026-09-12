@@ -18831,6 +18831,8 @@ const INT_BUILTINS: &[(&str, IntFn)] = &[
     ("firstbit", firstbit),
     ("bitcnt", bitcnt),
     ("bitpos", bitpos),
+    ("toupper", toupper),
+    ("tolower", tolower),
 ];
 
 /// asl's `firstbit(x)`. For an EVEN `x` it is the index of the lowest set
@@ -18867,6 +18869,23 @@ fn bitcnt(x: i64) -> Option<i64> {
 /// `bitpos(-$7FFFFFFFFFFFFFFF-1)`, whose one set bit is the sign bit.
 fn bitpos(x: i64) -> Option<i64> {
     (x > 0 && x & (x - 1) == 0).then(|| i64::from(x.trailing_zeros()))
+}
+
+/// asl's `toupper(x)`: a character CODE 0..255 with an ASCII lower-case letter
+/// mapped to its capital and every other code, `$80..$FF` included, unchanged;
+/// outside 0..255 it is refused. asl, exit 0 (`t_toupper.lst`, every code):
+/// `toupper(97)` $41, `toupper(122)` $5A, `toupper(123)` $7B, `toupper(128)`
+/// $80, `toupper(228)` $E4; and `toupper(256)`, `toupper(-1)` are `error #1320:
+/// range overflow` (exit 2).
+fn toupper(x: i64) -> Option<i64> {
+    u8::try_from(x).ok().map(|c| i64::from(c.to_ascii_uppercase()))
+}
+
+/// asl's `tolower(x)`, the mirror of [`toupper`]: `tolower(65)` $61,
+/// `tolower(90)` $7A, `tolower(91)` $5B, `tolower(196)` $C4 (`t_tolower.lst`,
+/// every code, exit 0); `tolower(256)` and `tolower(-1)` are `error #1320`.
+fn tolower(x: i64) -> Option<i64> {
+    u8::try_from(x).ok().map(|c| i64::from(c.to_ascii_lowercase()))
 }
 
 /// The function behind an integer-only builtin name, or `None`, matched

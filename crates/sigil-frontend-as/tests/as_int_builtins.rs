@@ -413,3 +413,92 @@ fn what_asl_refuses_in_sgn_is_refused() {
         refused(name);
     }
 }
+
+/// `toupper` and `tolower` over every code 0..255: the ASCII letters map, and
+/// every other code, `$80..$FF` included, comes back unchanged.
+/// `t_toupper.lst` and `t_tolower.lst`:
+///
+/// ```text
+///      101/      61 : 41                  	dc.b toupper(97)
+///      126/      7A : 5A                  	dc.b toupper(122)
+///      127/      7B : 7B                  	dc.b toupper(123)
+///      132/      80 : 80                  	dc.b toupper(128)
+///      232/      E4 : E4                  	dc.b toupper(228)
+///       69/      41 : 61                  	dc.b tolower(65)
+///       94/      5A : 7A                  	dc.b tolower(90)
+///       95/      5B : 5B                  	dc.b tolower(91)
+///      200/      C4 : C4                  	dc.b tolower(196)
+/// ```
+#[test]
+fn toupper_and_tolower_match_asl_over_every_code() {
+    builds("t_toupper");
+    builds("t_tolower");
+}
+
+/// Every integer context, both CPUs. `ctx_toupper.lst`, `ctx_tolower.lst` and
+/// their Z80 twins:
+///
+/// ```text
+///        8/      41 : 41                  	dc.b TOUPPER(97)
+///       23/      4F : 323C 0104           	move.w #toupper(97)<<2,d1
+///       26/      55 : 3431                	dc.b "\{toupper(97)}"
+///       27/      57 : 00                  	dc.b toupper()
+///       12/      45 : 61                  	dc.b tolower(Later)
+///       26/      55 : 3631                	dc.b "\{tolower(65)}"
+///        5/       3 : 21 41 00            	ld hl,toupper(97)
+///        5/       3 : 21 61 00            	ld hl,tolower(65)
+/// ```
+#[test]
+fn toupper_and_tolower_work_wherever_an_integer_is_read() {
+    for name in ["ctx_toupper", "ctx_toupper_z80", "ctx_tolower", "ctx_tolower_z80"] {
+        builds(name);
+    }
+}
+
+/// What asl refuses: a code outside 0..255 is `error #1320: range overflow`
+/// (`toupper(256)`, `toupper(-1)`, and the same for `tolower`, exit 2); a float
+/// aborts it (`error #10000`, exit 3); a string is `error #1136`, so
+/// `toupper("a")` is not a way to spell a character; two arguments are
+/// `error #1490`, an undefined symbol `error #1010`.
+#[test]
+fn what_asl_refuses_in_toupper_and_tolower_is_refused() {
+    for f in ["toupper", "tolower"] {
+        for case in ["256", "m1", "float", "floatsym", "string", "twoarg", "undef"] {
+            refused(&format!("ref_{f}_{case}"));
+        }
+    }
+}
+
+/// A user `function` spelled like a builtin, in the same case, WINS: every one
+/// of the nine answers the function's `x+100`. `names_userfn.lst`:
+///
+/// ```text
+///        4/       0 :                     sgn function x,x+100
+///       13/       0 : 65                  	dc.b sgn(1)
+///       16/       3 : 65                  	dc.b bitpos(1)
+///       20/       7 : 65                  	dc.b abs(1)
+/// ```
+#[test]
+fn a_user_function_spelled_like_a_builtin_wins() {
+    builds("names_userfn");
+}
+
+/// One spelled in CAPITALS does not shadow the lower-case builtin, because
+/// `-U` makes user names case-sensitive and builtin names never are; and a
+/// symbol spelled like a builtin is that symbol when bare and the builtin in
+/// call shape. `names_userfn_upper.lst` and `names_symbol.lst`:
+///
+/// ```text
+///        4/       0 :                     SGN function x,x+100
+///       13/       0 : 01                  	dc.b sgn(8)
+///       15/       2 : 03                  	dc.b firstbit(8)
+///       17/       4 : 08                  	dc.b toupper(8)
+///        4/       0 : =$7                  sgn equ 7
+///       13/       0 : 0701                	dc.b sgn,sgn(8)
+///       16/       6 : 0703                	dc.b bitpos,bitpos(8)
+/// ```
+#[test]
+fn a_builtin_name_is_the_builtin_only_in_call_shape() {
+    builds("names_userfn_upper");
+    builds("names_symbol");
+}
