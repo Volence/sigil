@@ -55,16 +55,22 @@ run_one() {
     echo "-- restored, tree clean"
 }
 
+# ONLY="M12 M14" runs just those tags; unset runs every one.
+selected() { [ -z "${ONLY:-}" ] || [[ " $ONLY " == *" $1 "* ]]; }
+
 m() {  # tag desc anchor replacement
     local tag="$1" desc="$2"
+    selected "$tag" || return 0
     patch "$3" "$4" || { echo "ABORT at $tag"; git checkout HEAD -- "$EVAL"; exit 3; }
     run_one "$tag" "$desc"
 }
 
 # M0: the whole fix, reverted to the parcel's base.
-git show 3bc0d81a:crates/sigil-frontend-as/src/eval.rs > "$EVAL"
-git show 3bc0d81a:crates/sigil-frontend-as/src/nameless.rs > crates/sigil-frontend-as/src/nameless.rs
-run_one M0 "eval.rs and nameless.rs at base 3bc0d81a (the whole fix reverted)"
+if selected M0; then
+    git show 3bc0d81a:crates/sigil-frontend-as/src/eval.rs > "$EVAL"
+    git show 3bc0d81a:crates/sigil-frontend-as/src/nameless.rs > crates/sigil-frontend-as/src/nameless.rs
+    run_one M0 "eval.rs and nameless.rs at base 3bc0d81a (the whole fix reverted)"
+fi
 
 m M1 "file_in_innermost files nothing: every name global again" \
 '    fn file_in_innermost(&mut self, name: &str) -> Option<String> {
@@ -112,8 +118,12 @@ m M7 "the reader ignores what the instance has written this pass" \
 '                    || e.written.contains(name)' \
 '                    || std::hint::black_box(false)'
 
-patch '    asm.prev_owned = index_instance_owned(seed_env);' \
-      '    asm.prev_owned = { let _ = index_instance_owned(seed_env); Default::default() };' || exit 3
+# The raw patch is guarded too: applied without its run, it would never be
+# restored and every later mutation would carry it.
+if selected M6M7; then
+    patch '    asm.prev_owned = index_instance_owned(seed_env);' \
+          '    asm.prev_owned = { let _ = index_instance_owned(seed_env); Default::default() };' || exit 3
+fi
 m M6M7 "both: no previous-pass index AND the reader ignores written" \
 '                    || e.written.contains(name)' \
 '                    || std::hint::black_box(false)'

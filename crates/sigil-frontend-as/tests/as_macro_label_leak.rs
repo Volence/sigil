@@ -259,6 +259,25 @@ fn a_globalsymbols_expansion_opens_no_namespace_of_its_own() {
     refused("probes2", "gs7_global_body_dot_twice", "double defined");
 }
 
+/// Transparency is the same rule NESTED as at file level: a `{GLOBALSYMBOLS}`
+/// body inside a plain expansion reads its own `.dl` back per expansion
+/// (`gs13`) and its `.v :=` still reaches the real caller scope (`gs12`); a
+/// plain macro called from a file-level `{GLOBALSYMBOLS}` body is the
+/// OUTERMOST plain one, so its `.v :=` (`gs14`) and its `label` directive's
+/// scope (`gs15`) reach the caller exactly as a direct call's would.
+///
+/// WHAT OTHER ANSWER COULD THESE HAVE GIVEN: `gs13` refused, had the `.dl`
+/// read looked in the caller's scope while the write went to the plain
+/// expansion's; `gs14` and `gs15` refused, had the plain frame under a
+/// transparent one not recorded the caller's scope as its real scope.
+#[test]
+fn a_globalsymbols_expansion_nested_with_a_plain_one_is_transparent_there_too() {
+    builds("probes4", "gs12_value_binding_in_global_in_plain", "1111 5555 0007 4444");
+    builds("probes4", "gs13_dot_read_inside_global_in_plain", "1111 5555 2222 0104 2222 0108 4444");
+    builds("probes4", "gs14_plain_value_binding_in_global", "1111 5555 0007 4444");
+    builds("probes4", "gs15_plain_label_dir_in_global", "1111 5555 0003 4444");
+}
+
 /// A `.x` written under a plain label of the body is as private as the label:
 /// `Lp.x` from outside is `#1010` (`a10`), two expansions do not collide
 /// (`dx2`), and inside the body it answers to all three spellings: `.x`,
