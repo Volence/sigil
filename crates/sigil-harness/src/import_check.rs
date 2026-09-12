@@ -31,7 +31,7 @@ fn fingerprint(root: &Path) -> Fingerprint {
     emp_files(root)
         .into_iter()
         .map(|p| {
-            let crc = std::fs::read(&p).ok().map(|bytes| sigil_span::read_set::crc32(&bytes));
+            let crc = sigil_span::read_set::read(&p).ok().map(|bytes| sigil_span::read_set::crc32(&bytes));
             (p, crc)
         })
         .collect()
@@ -41,9 +41,9 @@ fn fingerprint(root: &Path) -> Fingerprint {
 /// the seam-2 files that import outside themselves several times (six scans per
 /// `sigil build`, about 45 ms each on aeon, measured), and every scan parses the whole
 /// tree. The kept scan is reused only while the tree's fingerprint is unchanged, so an
-/// edit, an added file or a removed one is always seen. The first scan in the process
-/// records every read in the read ledger, which is never reset, so a reuse loses no
-/// provenance.
+/// edit, an added file or a removed one is always seen. The fingerprint reads each file
+/// through the read ledger, so a reuse still records the bytes it compared, and a file
+/// that changed between two checks is kept there as a conflict rather than lost.
 fn scan_cached(root: &Path) -> Rc<Manifest> {
     let now = fingerprint(root);
     SCANS.with(|scans| {
