@@ -1,0 +1,69 @@
+asl md5 61e672562465725a8c102288a7da9098  sigil sigil 0.1.0 (ee1c8807)
+a01_p_pp_p_p                             asl=2 error #1000: symbol double defin -                | sigil=1 symbol double defined: `nameless+#3` already -                MATCH
+a02_pp_pp                                asl=2 error #1000: symbol double defin -                | sigil=1 symbol double defined: `nameless+#2` already -                MATCH
+a03_ppp_p_p_p                            asl=2 error #1000: symbol double defin -                | sigil=1 symbol double defined: `nameless+#3` already -                MATCH
+a04_pp_p_p                               asl=2 error #1000: symbol double defin -                | sigil=1 symbol double defined: `nameless+#2` already -                MATCH
+a05_ppp_pp                               asl=0 -                                1111222233334444 | sigil=0 -                                            1111222233334444 MATCH
+a06_pp_ppp                               asl=0 -                                1111222233334444 | sigil=0 -                                            1111222233334444 MATCH
+a07_pppp                                 asl=2 error #1020: invalid symbol name -                | sigil=1 `--`, `//` and a run of four or more `+` are -                MATCH
+a08_p_p_pp_p                             asl=0 -                                3333555566664444 | sigil=0 -                                            3333555566664444 MATCH
+a09_slash_minus                          asl=0 -                                1111222233334444 | sigil=0 -                                            1111222233334444 MATCH
+a10_minus_slash_minus                    asl=0 -                                2222333355554444 | sigil=0 -                                            2222333355554444 MATCH
+a11_slash_pp_p                           asl=0 -                                2222333355554444 | sigil=0 -                                            2222333355554444 MATCH
+a12_p_pp_p_p_pp                          asl=2 error #1000: symbol double defin -                | sigil=1 symbol double defined: `nameless+#3` already -                MATCH
+b01_ref_p_over_p_pp_p                    asl=0 -                                2222333355554444 | sigil=0 -                                            2222333355554444 MATCH
+b02_ref_pp_over_p_pp_p                   asl=0 -                                2222333355554444 | sigil=0 -                                            2222333355554444 MATCH
+b03_ref_ppp_over_p_pp_p                  asl=0 -                                2222333355554444 | sigil=0 -                                            2222333355554444 MATCH
+b04_ref_pppp_over_p_pp_p                 asl=2 error #1110: wrong number of ope -                | sigil=1 bad word expression                          -                MATCH
+b05_pp_ref_p_p                           asl=0 -                                2222010633334444 | sigil=0 -                                            2222010633334444 MATCH
+b06_pp_ref_pp_p                          asl=0 -                                2222010233334444 | sigil=0 -                                            2222010233334444 MATCH
+b07_pp_sameline_ref_p                    asl=0 -                                1111010433334444 | sigil=0 -                                            1111010433334444 MATCH
+b08_pp_sameline_ref_pp                   asl=0 -                                1111010233334444 | sigil=0 -                                            1111010233334444 MATCH
+b09_bra_pp_over_run                      asl=0 -                                2222333355554444 | sigil=0 -                                            2222333355554444 MATCH
+b10_bra_ppp_over_run                     asl=0 -                                2222333355554444 | sigil=0 -                                            2222333355554444 MATCH
+b11_p_pp_ref_p_p                         asl=0 -                                3333010855554444 | sigil=0 -                                            3333010855554444 MATCH
+b12_p_pp_ref_pp_p                        asl=0 -                                3333010455554444 | sigil=0 -                                            3333010455554444 MATCH
+b13_ref_p_over_ppp_p_p                   asl=0 -                                2222333355554444 | sigil=0 -                                            2222333355554444 MATCH
+b14_ref_ppp_over_ppp_p_p                 asl=0 -                                2222333355554444 | sigil=0 -                                            2222333355554444 MATCH
+b15_minus_run_ref                        asl=0 -                                3333555501024444 | sigil=0 -                                            3333555501024444 MATCH
+b16_bra_p_after_pp                       asl=0 warning #60: distance of 0 not a 22224e7133334444 | sigil=1 bra.s/Bcc.s displacement is 0 in section sec -                OVER-REFUSE
+b17_bra_pp_after_pp                      asl=0 -                                222260fc33334444 | sigil=0 -                                            222260fc33334444 MATCH
+b18_slash_pp_p_ref_pp                    asl=0 -                                2222333355554444 | sigil=0 -                                            2222333355554444 MATCH
+b19_bra_p_after_pp_nop                   asl=0 -                                60024e7133334444 | sigil=0 -                                            60024e7133334444 MATCH
+c01_body_pp_ref_pp                       asl=0 -                                1111222201024444 | sigil=0 -                                            1111222201024444 MATCH
+c02_body_ref_pp_over_run                 asl=0 -                                2222333355554444 | sigil=0 -                                            2222333355554444 MATCH
+c03_ref_p_body_pp_file_p                 asl=0 -                                0106222233334444 | sigil=0 -                                            0106222233334444 MATCH
+c04_ref_p_body_ppp_twice                 asl=0 -                                2222222233334444 | sigil=0 -                                            2222222233334444 MATCH
+c05_body_pp_then_file_ref                asl=2 error #1010: symbol undefined    -                | sigil=1 unresolved symbol ` nameless+#2` for fixup i -                MATCH
+c06_body_p_pp_then_file                  asl=0 -                                0108555566664444 | sigil=0 -                                            0108555566664444 MATCH
+d01_ref_p_rept2_pp_file_p                asl=0 -                                2222222233334444 | sigil=0 -                                            2222222233334444 MATCH
+d02_rept2_pp_ref_pp                      asl=0 -                                0102222201064444 | sigil=0 -                                            0102222201064444 MATCH
+d03_ref_ppp_rept2_p_file_pp_p            asl=0 -                                2222333355554444 | sigil=0 -                                            2222333355554444 MATCH
+d04_rept2_ref_p_pp_p                     asl=0 -                                010c222233334444 | sigil=0 -                                            010c222233334444 MATCH
+e01_mm_def                               asl=2 error #1020: invalid symbol name -                | sigil=1 `--`, `//` and a run of four or more `+` are -                MATCH
+e02_ss_def                               asl=2 error #1020: invalid symbol name -                | sigil=1 `--`, `//` and a run of four or more `+` are -                MATCH
+e03_body_mm_def                          asl=2 error #1020: invalid symbol name -                | sigil=1 `--`, `//` and a run of four or more `+` are -                MATCH
+e04_body_slash_minus_ref_mm              asl=0 -                                2222333301024444 | sigil=0 -                                            2222333301024444 MATCH
+e05_body_minus_slash_ref_mm              asl=0 -                                2222333301024444 | sigil=0 -                                            2222333301024444 MATCH
+e06_file_minus_body_slash_file_minus_ref_mm asl=2 error #1010: symbol undefined    -                | sigil=1 unresolved symbol ` nameless-#2` for fixup i -                MATCH
+e07_body_slash_twice_file_minus          asl=0 -                                2222222233334444 | sigil=0 -                                            2222222233334444 MATCH
+e08_rept_slash_file_minus                asl=0 -                                1111222233334444 | sigil=0 -                                            1111222233334444 MATCH
+e09_body_slash_file_plus_minus           asl=0 -                                3333555501064444 | sigil=0 -                                            3333555501064444 MATCH
+e10_file_minus_rept_slash_file_minus_ref_mm asl=2 error #1010: symbol undefined    -                | sigil=1 unresolved symbol ` nameless-#2` for fixup i -                MATCH
+e11_body_minus_file_minus_ref_mm         asl=2 error #1010: symbol undefined    -                | sigil=1 unresolved symbol ` nameless-#2` for fixup i -                MATCH
+e12_body_slash_ref_p_file_p              asl=0 -                                2222010633334444 | sigil=0 -                                            2222010633334444 MATCH
+f01_ref_pppp_over_four_p                 asl=2 error #1110: wrong number of ope -                | sigil=1 bad word expression                          -                MATCH
+f02_four_m_ref_mmmm                      asl=2 error #1110: wrong number of ope -                | sigil=1 bad word expression                          -                MATCH
+f03_ppppp_def                            asl=2 error #1020: invalid symbol name -                | sigil=1 `--`, `//` and a run of four or more `+` are -                MATCH
+f04_bra_pppp_over_four_p                 asl=2 error #1110: wrong number of ope -                | sigil=1 bad operand expression                       -                MATCH
+f05_three_m_ref_mmm_minus_1              asl=0 -                                3333555501014444 | sigil=0 -                                            3333555501014444 MATCH
+f06_four_m_ref_mmmmm_minus_1             asl=2 error #1110: wrong number of ope -                | sigil=1 bad word expression                          -                MATCH
+f07_ref_pppp_plus_1_over_three_p         asl=0 -                                2222333355554444 | sigil=0 -                                            2222333355554444 MATCH
+f08_dbf_mmmm                             asl=2 error #1110: wrong number of ope -                | sigil=1 bad operand expression                       -                MATCH
+g01_body_p_pp_p_p                        asl=2 error #1000: symbol double defin -                | sigil=1 symbol double defined: `nameless+#3` already -                MATCH
+g02_pp_slash_p                           asl=2 error #1000: symbol double defin -                | sigil=1 symbol double defined: `nameless+#2` already -                MATCH
+g03_rept2_p_pp_p_p                       asl=2 error #1000: symbol double defin -                | sigil=1 symbol double defined: `nameless+#3` already -                MATCH
+g04_pp_body_p_file_p                     asl=2 error #1000: symbol double defin -                | sigil=1 symbol double defined: `nameless+#2` already -                MATCH
+h01_same_address_collision               asl=2 error #1000: symbol double defin -                | sigil=1 symbol double defined: `nameless+#3` already -                MATCH
+h02_body_same_address_collision          asl=2 error #1000: symbol double defin -                | sigil=1 symbol double defined: `nameless+#3` already -                MATCH
+TOTAL 67 MATCH=66 OVER-REFUSE=1

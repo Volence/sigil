@@ -1,0 +1,6 @@
+asl md5 61e672562465725a8c102288a7da9098  sigil sigil 0.1.0 (c6651e45)
+gs12_value_binding_in_global_in_plain    asl=0 -                                1111555500074444 | sigil=0 -                                            1111555500074444 MATCH
+gs13_dot_read_inside_global_in_plain     asl=0 -                                0104222201084444 | sigil=0 -                                            0104222201084444 MATCH
+gs14_plain_value_binding_in_global       asl=0 -                                1111555500074444 | sigil=0 -                                            1111555500074444 MATCH
+gs15_plain_label_dir_in_global           asl=0 -                                1111555500034444 | sigil=0 -                                            1111555500034444 MATCH
+TOTAL 4 MATCH=4

@@ -1,0 +1,56 @@
+asl md5 61e672562465725a8c102288a7da9098  sigil sigil 0.1.0 (ee1c8807)
+d04b_irpc                                asl=2 error #1010: symbol undefined    -                | sigil=1 unresolved symbol `Lc` for fixup in section  -                MATCH
+d09b_irpc_var_name                       asl=2 error #1010: symbol undefined    -                | sigil=1 unresolved symbol `Q` for fixup in section s -                MATCH
+dx1_two_scopes_one_body                  asl=0 -                                0104333301084444 | sigil=0 -                                            0104333301084444 MATCH
+dx2_twice                                asl=0 -                                2222333355554444 | sigil=0 -                                            2222333355554444 MATCH
+dx3_read_qualified_inside                asl=0 -                                2222333301044444 | sigil=0 -                                            2222333301044444 MATCH
+en1_inside                               asl=0 -                                0000111100064444 | sigil=0 -                                            0000111100064444 MATCH
+en2_twice                                asl=0 -                                0000111133334444 | sigil=0 -                                            0000111133334444 MATCH
+en3_file_enum_then_body_nextenum_inside  asl=0 -                                0000111100064444 | sigil=0 -                                            0000111100064444 MATCH
+en4_enum_counter_continues               asl=0 -                                0000111100064444 | sigil=0 -                                            0000111100064444 MATCH
+gs1_global_inner_read_in_outer           asl=0 -                                1111222201024444 | sigil=0 -                                            1111222201024444 MATCH
+gs2_global_inner_read_outside            asl=2 error #1010: symbol undefined    -                | sigil=1 unresolved symbol `Lg` for fixup in section  -                MATCH
+gs3_global_inner_twice_in_outer          asl=0 -                                2222222233334444 | sigil=0 -                                            2222222233334444 MATCH
+gs4_rept_in_global_body                  asl=2 error #1010: symbol undefined    -                | sigil=1 unresolved symbol `Lr` for fixup in section  -                MATCH
+gs5_global_body_scope_after              asl=0 -                                5555222200024444 | sigil=0 -                                            5555222200024444 MATCH
+gs6_global_body_dot_then_base            asl=0 -                                5555222201044444 | sigil=0 -                                            5555222201044444 MATCH
+gs7_global_body_dot_twice                asl=2 error #1000: symbol double defin -                | sigil=1 symbol double defined: `Base.dl`             -                MATCH
+in1_inside_after                         asl=0 -                                0102222201064444 | sigil=0 -                                            0102222201064444 MATCH
+in2_inc_refs_own                         asl=0 -                                0102222201064444 | sigil=0 -                                            0102222201064444 MATCH
+in3_inc_reads_caller_body                asl=0 -                                0102222201064444 | sigil=0 -                                            0102222201064444 MATCH
+in4_inc_fwd_inside                       asl=0 -                                2222010822224444 | sigil=0 -                                            2222010822224444 MATCH
+in5_file_include_control                 asl=0 -                                1111222201024444 | sigil=0 -                                            1111222201024444 MATCH
+in6_include_in_rept                      asl=2 error #1010: symbol undefined    -                | sigil=1 unresolved symbol `Linc` for fixup in sectio -                MATCH
+n01_fwd_inside_own                       asl=0 -                                2222010822224444 | sigil=0 -                                            2222010822224444 MATCH
+n02_outer_fwd_to_inner_def               asl=2 error #1010: symbol undefined    -                | sigil=1 unresolved symbol ` nameless+#1` for fixup i -                MATCH
+n03_outer_back_to_closed_inner           asl=2 error #1010: symbol undefined    -                | sigil=1 unresolved symbol ` nameless-#1` for fixup i -                MATCH
+n04_inner_back_to_outer_def              asl=0 -                                0102222201064444 | sigil=0 -                                            0102222201064444 MATCH
+n05_inner_fwd_to_outer_def               asl=0 -                                2222010822224444 | sigil=0 -                                            2222010822224444 MATCH
+n06_rept_fwd_in_iter                     asl=0 -                                2222010822224444 | sigil=0 -                                            2222010822224444 MATCH
+n07_rept_back_in_iter                    asl=0 -                                0102222201064444 | sigil=0 -                                            0102222201064444 MATCH
+n08_rept_reads_outer                     asl=0 -                                3333010201024444 | sigil=0 -                                            3333010201024444 MATCH
+n09_label_on_rept_line                   asl=0 -                                4e7151c8fffa4444 | sigil=0 -                                            4e7151c8fffa4444 MATCH
+n10_other_macro_later                    asl=2 error #1010: symbol undefined    -                | sigil=1 unresolved symbol ` nameless-#1` for fixup i -                MATCH
+n11_ref_in_arg                           asl=0 -                                1111333301024444 | sigil=0 -                                            1111333301024444 MATCH
+n12_ref_in_arg_body_def                  asl=0 -                                3333222201044444 | sigil=0 -                                            3333222201044444 MATCH
+n13_inner_fwd_past_closed_nested         asl=2 error #1010: symbol undefined    -                | sigil=1 unresolved symbol ` nameless+#1` for fixup i -                MATCH
+n14_while_fwd_in_iter                    asl=0 -                                2222010822224444 | sigil=0 -                                            2222010822224444 MATCH
+n15_irp_back_in_iter                     asl=0 -                                0102000201064444 | sigil=0 -                                            0102000201064444 MATCH
+n16_back_from_nested_child               asl=0 -                                1111222201024444 | sigil=0 -                                            1111222201024444 MATCH
+n17_fwd_child_ref_parent_def             asl=0 -                                1111010422224444 | sigil=0 -                                            1111010422224444 MATCH
+n18_slash_in_body_back_inside            asl=0 -                                0102222201064444 | sigil=0 -                                            0102222201064444 MATCH
+n19_globalsymbols_fwd_from_outside       asl=0 -                                1111010422224444 | sigil=0 -                                            1111010422224444 MATCH
+n20_if_in_body                           asl=2 error #1010: symbol undefined    -                | sigil=1 unresolved symbol ` nameless-#1` for fixup i -                MATCH
+n21_plusplus_in_body                     asl=2 error #1010: symbol undefined    -                | sigil=1 unresolved symbol ` nameless+#3` for fixup i -                MATCH
+n22_fwd_outside_skips_body               asl=0 -                                0106222233334444 | sigil=0 -                                            0106222233334444 MATCH
+n23_back_outside_skips_body              asl=0 -                                3333222201024444 | sigil=0 -                                            3333222201024444 MATCH
+s01_brace_fwd_inside                     asl=0 -                                2222010822224444 | sigil=0 -                                            2222010822224444 MATCH
+s02_param_fwd_inside                     asl=0 -                                2222010822224444 | sigil=0 -                                            2222010822224444 MATCH
+s03_intlabel_fwd_inside                  asl=0 -                                2222010822224444 | sigil=0 -                                            2222010822224444 MATCH
+s04_brace_global_fwd_inside              asl=0 -                                1111010422224444 | sigil=0 -                                            1111010422224444 MATCH
+s05_brace_changes_in_body                asl=0 -                                1111222201024444 | sigil=0 -                                            1111222201024444 MATCH
+s06_param_nested_arg                     asl=2 error #1010: symbol undefined    -                | sigil=1 unresolved symbol `Foo` for fixup in section -                MATCH
+s07_param_nested_outside                 asl=2 error #1010: symbol undefined    -                | sigil=1 unresolved symbol `Foo` for fixup in section -                MATCH
+s08_param_value_binding                  asl=0 -                                0000111101234444 | sigil=0 -                                            0000111101234444 MATCH
+s09_param_label_dir                      asl=0 -                                0000111101024444 | sigil=0 -                                            0000111101024444 MATCH
+TOTAL 54 MATCH=54
