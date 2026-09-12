@@ -126,6 +126,10 @@ P = {
     "g03_rept2_p_pp_p_p": ("rept 2 { defs + ++ + + }", "\trept\t2\n" + d("+", 2222) + d("++", 3333) + d("+", 5555) + d("+", 6666) + "\tendm\n"),
     "g04_pp_body_p_file_p": ("file ++; body +; file + (lands on the file ++'s slot)",
                              d("++", 2222) + mac(d("+", 3333)) + CALL + d("+", 5555)),
+    # H: a collision where both definitions sit at ONE address.
+    "h01_same_address_collision": ("defs + ++ + + with no bytes between them", "+\n++\n+\n" + d("+", 2222)),
+    "h02_body_same_address_collision": ("body: defs + ++ + + with no bytes between them",
+                                        mac("+\n", "++\n", "+\n", d("+", 2222)) + CALL),
     # b16 without the zero branch distance.
     "b19_bra_p_after_pp_nop": ("def ++, bra.s +, nop, def +",
                                "++\tdc.w\t$2222\n\tbra.s\t+\t; REF\n\tnop\n+\tdc.w\t$3333\n"),

@@ -2562,8 +2562,10 @@ impl Asm {
     /// definitions after it count up onto it (`crate::nameless`,
     /// "Definition"). The key is the filed one, so the check is per namespace,
     /// which is where asl draws it. Reported, and the slot is still bound, as
-    /// [`Self::define_label`] does for a PC label: the diagnostic is the whole
-    /// divergence, and it fails the build.
+    /// [`Self::define_label`] does for a PC label. The IR builder's
+    /// duplicate-label check would refuse the same file without this one, at
+    /// link, naming the internal slot and line 1; this one refuses it where asl
+    /// does, in the front end, at the colliding line, in asl's words.
     fn define_nameless_slot(&mut self, name: &str, span: Span) -> String {
         self.open_section_if_needed();
         let value = self.here_i64();

@@ -257,5 +257,12 @@ hex@100 111101092222333355554444
 === g04_pp_body_p_file_p  ASL_EXIT=2  complete
 > > > g04_pp_body_p_file_p.asm(11): error #1000: symbol double defined
 *__forw1 :                      102
-SHAPES_RUN=65
+=== h01_same_address_collision  ASL_EXIT=2  complete
+> > > h01_same_address_collision.asm(9): error #1000: symbol double defined
+*__forw0 :                      102
+*__forw1 :                      102
+*__forw2 :                      102
+=== h02_body_same_address_collision  ASL_EXIT=2  complete
+> > > h02_body_same_address_collision.asm(12) mac(4): error #1000: symbol double defined
+SHAPES_RUN=67
 SYMRUN_END_MARKER

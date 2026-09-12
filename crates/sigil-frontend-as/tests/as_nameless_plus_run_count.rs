@@ -160,12 +160,16 @@ fn a_plus_run_in_a_macro_body_or_a_loop_iteration_leaves_the_counter_too() {
 /// `a01` (`+`, `++`, `+`, `+`: the fourth), `a02` (`++`, `++`), `a03`, `a04`,
 /// `a12`; inside one macro expansion (`g01`), in each iteration of a `rept`
 /// (`g03`, reported for both), where the second definition is a `/` (`g02`),
-/// and where a body's `+` moves the shared counter onto a file-level run's
-/// slot (`g04`).
+/// where a body's `+` moves the shared counter onto a file-level run's slot
+/// (`g04`), and where both definitions sit at one address (`h01`, `h02`).
 ///
-/// WHAT OTHER ANSWER COULD THESE HAVE GIVEN: a slot bound twice is silently
-/// rebound to the later address, and the file builds. That is what happens
-/// with the counter rule alone and no check.
+/// WHAT OTHER ANSWER COULD THESE HAVE GIVEN: the same refusal, later and
+/// elsewhere. With the front end's check removed, every one of these is still
+/// refused, by the IR builder's duplicate-label check (`symbol ` nameless+#3`
+/// redefined by section`), which names the internal slot and line 1. What the
+/// check carries is asl's stage, asl's line and asl's words, which is why the
+/// fragment is `symbol double defined` and not anything the builder's message
+/// also contains.
 #[test]
 fn a_single_plus_that_reaches_a_runs_slot_is_symbol_double_defined() {
     for name in [
@@ -178,6 +182,8 @@ fn a_single_plus_that_reaches_a_runs_slot_is_symbol_double_defined() {
         "g02_pp_slash_p",
         "g03_rept2_p_pp_p_p",
         "g04_pp_body_p_file_p",
+        "h01_same_address_collision",
+        "h02_body_same_address_collision",
     ] {
         refused(name, "symbol double defined");
     }
