@@ -17,6 +17,12 @@
 //! listing is only read when the run was clean. [`refused`] requires the
 //! recorded exit to be non-zero, and reads no byte from it.
 
+// REASON: the doc comments quote asl's listing rows verbatim, and asl separates
+// a row's byte column from its echoed source with a TAB. The tabs are the
+// evidence, so they are not reflowed to spaces (the same call `charset.rs`
+// makes). Scoped to this test file.
+#![allow(clippy::tabs_in_doc_comments)]
+
 use std::path::PathBuf;
 
 use sigil_frontend_as::{assemble_root_located, Options};
@@ -61,7 +67,7 @@ fn listing_image(name: &str) -> Vec<u8> {
             continue;
         }
         let hex: String = column.chars().filter(|c| *c != ' ').collect();
-        assert!(hex.len() % 2 == 0, "{name}.lst: odd byte column in {line:?}");
+        assert!(hex.len().is_multiple_of(2), "{name}.lst: odd byte column in {line:?}");
         for (k, pair) in hex.as_bytes().chunks(2).enumerate() {
             let byte = u8::from_str_radix(std::str::from_utf8(pair).unwrap(), 16).unwrap();
             if image.len() <= addr + k {
