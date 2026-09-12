@@ -28,6 +28,7 @@
 use sigil_frontend_emp::ast::{Item, ProcDecl};
 use sigil_frontend_emp::lower::proc_written_registers;
 use sigil_frontend_emp::{ast, eval, parse_str};
+use sigil_harness::stdout::println;
 use sigil_ir::backend::Cpu;
 use sigil_span::SourceMap;
 

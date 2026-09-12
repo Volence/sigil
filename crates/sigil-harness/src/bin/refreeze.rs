@@ -76,6 +76,7 @@ use sigil_harness::provenance::{
     SUPERSEDE_WITHOUT_A_RED_RUN,
 };
 use sigil_harness::rev_reachability::{self, GitRevOracle, RevOracle, RevState, UnavailableRepo};
+use sigil_harness::stdout::{print, println};
 use sigil_harness::strict_census;
 
 /// target-key -> (committed golden blob, off-canonical size-table file or "" for the

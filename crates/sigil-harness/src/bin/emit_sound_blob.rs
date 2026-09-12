@@ -18,6 +18,8 @@
 use std::path::Path;
 use std::process;
 
+use sigil_harness::stdout::println;
+
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     let mut aeon: Option<String> = None;

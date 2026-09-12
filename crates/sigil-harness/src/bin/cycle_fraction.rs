@@ -37,6 +37,7 @@ use sigil_frontend_emp::parse_str;
 use sigil_frontend_emp::value::{CodeItem, CodeOperand, Width};
 use sigil_frontend_emp::{cycle_budget, m68k_cycles, z80_cycles};
 use sigil_harness::native;
+use sigil_harness::stdout::println;
 use sigil_ir::backend::Cpu;
 use sigil_isa::m68k_cycles::CycleCost;
 use std::collections::{BTreeMap, BTreeSet};

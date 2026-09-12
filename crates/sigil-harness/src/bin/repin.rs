@@ -37,6 +37,7 @@ use sigil_harness::harness_root::{
     announce_root, resolve_passed_root, ROOT_FLAG, ROOT_OVERRIDE,
 };
 use sigil_harness::native;
+use sigil_harness::stdout::{print, println};
 use sigil_harness::repin::{
     build_dir_of_this_run, drift_report, load_manifest, regenerate_command, render, resolve,
     zero_consumer_pins, zero_consumer_report, Listing, Provenance,

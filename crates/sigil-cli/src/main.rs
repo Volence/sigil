@@ -17,6 +17,11 @@
 
 use std::process;
 
+// Every `print!` and `println!` below is these, not std's: a closed stdout stops the
+// writes and the run ends with its own status instead of std's exit-101 panic. The
+// rule and its limits are in `sigil_harness::stdout`.
+use sigil_harness::stdout::{print, println};
+
 /// The working-tree classifier `build.rs` reaches by path. It is declared here
 /// under `cfg(test)` so its unit tests run in the normal suite — a build
 /// script's code is otherwise never compiled into any test binary — without

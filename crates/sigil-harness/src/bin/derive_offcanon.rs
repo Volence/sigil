@@ -18,6 +18,7 @@
 use std::path::PathBuf;
 
 use sigil_harness::native::{self, GameProfile};
+use sigil_harness::stdout::println;
 
 fn main() -> std::process::ExitCode {
     let aeon = match std::env::var("AEON_DIR") {

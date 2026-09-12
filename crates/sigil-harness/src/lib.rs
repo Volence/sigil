@@ -108,6 +108,12 @@ pub mod section_align;
 /// including the file-mode question a rename answers differently from a truncation.
 pub mod atomic_write;
 
+/// The stdout writes of every sigil binary, through `print!`/`println!` macros that
+/// shadow std's. When stdout's reader has gone, the writes stop and the run ends with
+/// its own status, silently, rather than std's exit-101 panic; the module doc states
+/// the rule, why it is not exit 0 or SIGPIPE's 141, and what it leaves alone.
+pub mod stdout;
+
 /// The `.lst` source digest of one native build: the files it read (from the
 /// `sigil_span::read_set` recorder), the module scan's membership, the build
 /// configuration and the identity of the ROM it wrote.
