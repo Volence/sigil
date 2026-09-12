@@ -113,7 +113,7 @@ fn a_failing_run_with_no_message_still_says_it_failed() {
     assert_eq!(lines[1], "assembly failed: 1 error (reported on stderr)");
 }
 
-/// The count is the diagnostics actually rendered, and it pluralises. Two
+/// The count is the errors actually rendered, and it pluralises. Two
 /// errors rather than one, so a hard-coded `1` cannot pass.
 #[test]
 fn the_count_is_the_number_of_diagnostics_and_it_pluralises() {
@@ -126,6 +126,52 @@ fn the_count_is_the_number_of_diagnostics_and_it_pluralises() {
         last_stdout_line(&out),
         format!("assembly failed: {rendered} errors (reported on stderr)"),
         "the count is derived from what was rendered, not from a literal"
+    );
+}
+
+/// Count the rendered stderr lines at `level` (`error` or `warning`), so each
+/// test below can confirm its probe produced the population its expected line
+/// names before asserting on that line.
+fn rendered_at(out: &Output, level: &str) -> usize {
+    let needle = format!(": {level}: ");
+    String::from_utf8_lossy(&out.stderr).lines().filter(|l| l.contains(&needle)).count()
+}
+
+/// A warning is not counted as an error. One error and TWO warnings, so a line
+/// that folds warnings into errors (`3 errors`) and one that swaps the two counts
+/// (`2 errors, 1 warning`) both fail. The front end refuses this probe, so the
+/// three diagnostics arrive in one list.
+#[test]
+fn a_front_end_failure_counts_its_warnings_apart_from_its_errors() {
+    let out = run("\twarning \"first\"\n\twarning \"second\"\n\tzzbogus d0\n\tend\n");
+    assert_eq!(out.status.code(), Some(1));
+    assert_eq!(rendered_at(&out, "error"), 1, "stderr: {}", String::from_utf8_lossy(&out.stderr));
+    assert_eq!(rendered_at(&out, "warning"), 2, "stderr: {}", String::from_utf8_lossy(&out.stderr));
+    let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
+    assert!(stdout.contains("sigil stopped at the front end"), "stdout: {stdout:?}");
+    assert_eq!(
+        last_stdout_line(&out),
+        "assembly failed: 1 error, 2 warnings (reported on stderr)",
+        "stdout: {stdout:?}"
+    );
+}
+
+/// The warnings a run printed are counted when a LATER stage fails. The front
+/// end accepts this probe and prints its two warnings, then link refuses the
+/// undefined symbol, so the error and the warnings come from two different lists.
+/// Counting only the failing stage's list reads `1 error` here.
+#[test]
+fn a_later_stage_failure_counts_the_front_ends_warnings() {
+    let out = run("\twarning \"first\"\n\twarning \"second\"\n\tdc.b nothing_defines_this\n\tend\n");
+    assert_eq!(out.status.code(), Some(1));
+    assert_eq!(rendered_at(&out, "error"), 1, "stderr: {}", String::from_utf8_lossy(&out.stderr));
+    assert_eq!(rendered_at(&out, "warning"), 2, "stderr: {}", String::from_utf8_lossy(&out.stderr));
+    let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
+    assert!(stdout.contains("sigil stopped at link"), "stdout: {stdout:?}");
+    assert_eq!(
+        last_stdout_line(&out),
+        "assembly failed: 1 error, 2 warnings (reported on stderr)",
+        "stdout: {stdout:?}"
     );
 }
 
