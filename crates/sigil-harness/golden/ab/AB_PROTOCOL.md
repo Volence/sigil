@@ -38,9 +38,13 @@ not before the evidence.
    nothing; they respawn on the same file. The root cause is aeon's main checkout sitting behind
    its remote, which is an open owner call and not this lane's to take.
 
-   **Scope and coverage, measured with controls.** No gate in `scripts/` or `crates/*/src`
-   invokes anything in this directory (zero, against a control of 30 tracked files in `scripts/`,
-   26 matching `bash|python`), so no automated sigil gate can go green on a stale cart. The
+   **Scope and coverage, measured with controls.** No gate in `scripts/` or anywhere under
+   `crates/` invokes anything in this directory (zero, against a control of 30 tracked files in
+   `scripts/` of which 26 match `bash|python`, and 591 files matching `fn ` under `crates`), so no
+   automated sigil gate can go green on a stale cart. **This claim first cited the pathspec
+   `crates/*/src`, which matches NOTHING in this repo, so that half of the evidence was vacuous
+   and the zero could not have been anything else. Re-measured 2026-09-12 with `crates/`: the
+   conclusion holds and the evidence did not.** The
    exposure is hand-run A/B measurement only, which is the only way this directory is ever used.
    **That makes it worse to leave unwritten, not better** — a hand-run instrument has no CI to
    catch it and no second reader.
