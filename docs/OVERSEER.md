@@ -521,6 +521,11 @@ trigger a reader cannot recognise is a rule nobody looks up.
   line, and telling every agent that its branch is deleted at the landing.
 - **Writing a brief that names an aeon tree** — *`AEON_DIR` IN EVERY BRIEF*: unconditional,
   exclusive and prepared, plus the template line that carries all three.
+- **Judging any claim whose ground is a COMMENT** — *A comment beside a declaration is evidence
+  about an author's intent, never about the declaration*: four correct comments sat above four wrong
+  declarations and a fifth restated its declaration verbatim, so agreement can mean only that one was
+  copied; why ADJACENCY is the hazard rather than distance; and this lane's own independent instance
+  in Rust the same day. Banked 2026-09-12, aeon's rule.
 - **Preparing, judging or landing a full-suite run** — *Quality bars*: deriving the reference
   tree by property rather than by name, the full-suite bar and its command span, how long a
   strict run takes and why a capped run still reads green, the pairing gate, reconciling the

@@ -471,6 +471,48 @@ it with 6(c) or it becomes face 2 with a number attached.
 
 ## Quality bars
 
+### A COMMENT BESIDE A DECLARATION IS EVIDENCE ABOUT AN AUTHOR'S INTENT, NEVER ABOUT THE DECLARATION (2026-09-12)
+
+*(Read when judging any claim whose ground is a comment: a returned agent's, a peer's, or your own.
+Aeon's formulation, generalised past its instance by them, at aeon `538c6d57`, `CODING_CONVENTIONS.md`
+§2.8, verified reachable from their `origin/master`. This lane supplied the adjacency reading and an
+independent instance in Rust; the rule is theirs.)*
+
+**When a comment and the thing it sits on disagree, nothing tells you. When they agree, that may only
+mean one was copied from the other.** Check a contract against the BODY.
+
+**The evidence is a clean five, and the distribution is the finding.** All five aeon labels due for
+rename had their answer adjacent. Four had the RIGHT answer written directly above the wrong
+declaration: `sound_psg.emp:199/221/259` over `:209/233/265`, and `z80_sound_driver.emp:1041-1043`
+over `:1051`. A parcel classifying those from comments would have reproduced the error **with every
+citation accurate**.
+
+**The fifth is the limit case and it is the one that generalises.** `sound_sfx.emp:475` does not
+contradict `:476`, it **restates it verbatim**. There was never a contradiction to notice, because
+the comment is a COPY rather than a claim. So the reading "the comment and the declaration agree" was
+literally correct and told the reader nothing.
+
+**Why adjacency is the hazard rather than distance**, which is the half this lane contributed: a
+declaration and the comment directly above it are read as restatements of each other, so the comment
+is scanned as a description of the line below rather than as a second claim that could be false. A
+contradiction two files away at least has a chance of being met by someone holding both. An adjacent
+one is invisible precisely because the reader believes they have already checked it.
+
+**This lane's independent instance, found the same day and hours BEFORE the rule existed, in Rust:**
+`z80_cycles.rs`'s module doc had a `[cycles.unknown-op]` bullet asserting the table is the
+driver-demand subset, eight lines above a SCOPE paragraph saying it is not, and a consumer in another
+repo booked a defect in that stale sentence's vocabulary, citing a real file correctly. Different
+repo, different language, different comment convention, found by a different route. **That makes it
+corroboration rather than echo (bar 19), and it says the rule is not a fact about `.emp` header
+comments.**
+
+**Operationally, for this seat:** a brief that hands an agent a mechanism sourced from a doc comment
+labels it a hypothesis and says the body outranks it, which the dispatch practice above already
+requires for a different reason. And when a returned claim's only ground is a comment, the follow-up
+question is not "is the comment right" but **"what would the body say, and has anyone looked"**.
+This lane wrote up `EMP-DISCARDS-NAME-UNMATCHED` as latent on the strength of
+`corpus_contracts.rs:1961` saying no corpus call site discards; the corpus had 17.
+
 **⚠ THE REFERENCE TREE IS WHATEVER `golden/provenance.toml`'s TIP PAIRS WITH — and every
 CRC written into THIS file is a snapshot that a refreeze silently invalidates**
 
