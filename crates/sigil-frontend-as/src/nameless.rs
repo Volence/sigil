@@ -137,9 +137,10 @@
 //! its `__back` counter alone. Here ONE backward sequence counts `-` and `/`
 //! together, as above. The slot NAMES therefore differ from asl's symbol
 //! table, and every measured reference resolves to the same address (`e04`..
-//! `e12`, `b15`). Copying asl's counter literally, a `/` that does not advance
-//! `bwd`, would break exactly that: `e04`'s `--` after a `/` and a `-` would
-//! name a slot below the `/`. Probes and answers:
+//! `e12`, `b15`). Copying asl's counter literally, a `/` that neither advances
+//! `bwd` nor defines a backward slot, would break exactly that: `e04`'s `--`
+//! after a `/` and a `-` would name backward slot 0, which nothing defines,
+//! and so would `ord2`'s `bra.s --`. Probes and answers:
 //! `docs/superpowers/notes/2026-09-12-as-nameless-plus-run-count.md`.
 
 use crate::token::{Punct, Tok, Token};
