@@ -1165,13 +1165,16 @@ struct SectionOpen {
 /// `cpu` line opens one under the old CPU, and must not settle the question for
 /// the code after it.
 ///
-/// A section with image content that lands in a second space by consuming an
-/// `org` is `Pinned` at its `lma`, which is its address in that space. The next
-/// section the builder opens after a re-base is pinned already (the `org` arms
-/// of `directive_org`, and `close_section` for a seek back its section closes
-/// behind); this pin also covers the first section WITH CONTENT when an empty
-/// one opened first. A section outside the image that holds bytes is refused at
-/// link.
+/// This function sets only `space`. Placement is the builder's: the section it
+/// opens at a re-base is `Pinned` at the counter (the `org` arms of
+/// `directive_org`, and `close_section` for a seek back its section closes
+/// behind), and every section after it until the next re-base is `Chained`. A
+/// section with no fragments spans nothing, so a `Chained` section behind one or
+/// more of them is placed at the counter they all opened at, which is its `lma`,
+/// in the image and in a second space alike (`as_address_space`'s
+/// `a_second_space_behind_sections_with_no_content_is_placed_at_its_org`). A
+/// section outside the image that holds bytes is refused at link unless a `-z`
+/// instruction places it.
 fn assign_address_spaces(sections: &mut [sigil_ir::Section], opens: &[SectionOpen]) {
     assert_eq!(
         sections.len(),
@@ -1191,13 +1194,6 @@ fn assign_address_spaces(sections: &mut [sigil_ir::Section], opens: &[SectionOpe
         if !sec.fragments.is_empty() {
             if let Some(org) = pending.take() {
                 current = space_after_org(current, sec.cpu, host, open.phased, org);
-                if matches!(current, sigil_ir::AddressSpace::Foreign { .. })
-                    && sec.fragments.iter().any(|f| {
-                        !matches!(f, sigil_ir::Fragment::Reserve { .. } | sigil_ir::Fragment::Org { .. })
-                    })
-                {
-                    sec.placement = sigil_ir::SectionPlacement::Pinned;
-                }
             }
         }
         sec.space = current;
