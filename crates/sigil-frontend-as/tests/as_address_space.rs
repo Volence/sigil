@@ -111,6 +111,49 @@ fn a_seek_back_that_its_section_closes_behind_enters_the_space_too() {
     assert_eq!(secs[2].space, AddressSpace::Image);
 }
 
+/// The address a section binds label `name` at, if the label is in it.
+fn label_address(s: &Section, name: &str) -> Option<u32> {
+    s.labels.iter().find(|l| l.name == name).map(|l| s.vma_origin() + l.offset)
+}
+
+/// The same seek back and close in a program with no second CPU: probe
+/// `c01_cpu_same` of `docs/superpowers/notes/2026-09-12-as-backward-seek-split/`.
+/// Four marker words at $8, `org Start+2`, one overwrite, and a `cpu` line that
+/// closes the section with its cursor at $C and its bytes running to $10. asl
+/// binds `L_next` at $C and `L_after` at $12 (listing lines
+/// `10/ C : 1234 L_next: dc.w $1234` and `13/ 12 : 5678 L_after: dc.w $5678`,
+/// clean exit). The section after the close is in the image, and it is `Pinned`
+/// at $C, the address its labels are bound at: left `Chained`, the linker packs
+/// its bytes at $10, the end of the section before it. The section after that
+/// continues the counter, so it stays `Chained`.
+#[test]
+fn a_seek_back_that_an_image_section_closes_behind_pins_the_next_section_at_its_labels() {
+    let src = "\tcpu 68000\n\
+               \torg 0\n\
+               \tdc.l L_next\n\
+               \tdc.l L_after\n\
+               Start:\tdc.w $AAAA,$BBBB,$CCCC,$DDDD\n\
+               \torg Start+2\n\
+               \tdc.w $EEEE\n\
+               \tcpu 68000\n\
+               L_next:\tdc.w $1234\n\
+               \tdc.l *\n\
+               \tcpu 68000\n\
+               L_after:\tdc.w $5678\n";
+    let m = asm(src);
+    let secs = with_content(&m);
+    assert_eq!(secs.len(), 3, "the seek's section, the code at L_next, the code at L_after: {:#?}", m.sections);
+    let (next, after) = (secs[1], secs[2]);
+    assert_eq!(label_address(next, "L_next"), Some(0xC), "L_next is bound where asl binds it");
+    assert_eq!(next.lma, 0xC, "the section's bytes load at its labels");
+    assert_eq!(next.placement, sigil_ir::SectionPlacement::Pinned, "and the linker may not move them");
+    assert_eq!(label_address(after, "L_after"), Some(0x12));
+    assert_eq!((after.lma, after.placement), (0x12, sigil_ir::SectionPlacement::Chained));
+    for s in &secs {
+        assert_eq!(s.space, AddressSpace::Image, "section `{}` is image bytes", s.name);
+    }
+}
+
 /// Sonic 1's `SetupValues_Z80` shape: Z80 code phased to 0 with no `org`. The
 /// counter runs on through it, so it is image bytes, and so is everything after.
 #[test]
