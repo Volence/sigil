@@ -2186,7 +2186,7 @@ impl Asm {
             .find(|e| {
                 e.labels.contains(name)
                     || e.written.contains(name)
-                    || prev.is_some_and(|p| p.iter().any(|k| *k == e.key))
+                    || prev.is_some_and(|p| p.contains(&e.key))
             })
             .map(|e| e.key.as_str())
     }
