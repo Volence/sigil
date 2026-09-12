@@ -18,15 +18,20 @@
 //!
 //! The DAC loop makes this scope EXACT rather than approximate: every hot-loop
 //! conditional is `jp cc` (10 T-states taken OR not-taken), so a span's cost is a
-//! plain SUM with no branch-outcome dependence. Two HARD bails keep the accounting
-//! honest and turn the driver's prose disciplines into compile errors:
+//! plain SUM with no branch-outcome dependence. The HARD bails below keep the
+//! accounting honest and turn the driver's prose disciplines into compile errors
+//! (deliberately count-free: this list has grown twice):
 //!
 //!   * `[cycles.ambiguous-branch]` — a `jr cc` / `djnz` / `ret cc` / `call cc` inside
 //!     a span has DIFFERING taken/not-taken cost, so no single cost is assignable.
 //!     This is the `jp`-never-`jr`-on-the-hot-path discipline as a type error.
-//!   * `[cycles.unknown-op]` — any op/form outside the driver-demand table. The table
-//!     is the timed-region subset ONLY; a future timed region adds its ops
-//!     explicitly, never a silent default cost.
+//!   * `[cycles.unknown-op]`: an op/form this table does not price. Read SCOPE
+//!     below for what that means today. The table is NOT the driver-demand subset
+//!     and has not been since `ce059de8`, so this fires only where the assembler
+//!     could not encode the form either. This bullet said the opposite until
+//!     2026-09-12, and a reader who stopped here concluded that ordinary ops
+//!     (`pop`, `call`, `ret`, `bit`, `add a,n`) are unpriced. That reading is
+//!     booked in aeon's `engine/sound/sound_fm.emp` ledger, blocker 2.
 //!   * `[cycles.path-end]` — a RETURN inside a span. A straight-line sum cannot
 //!     represent a path ending, so it would go on costing instructions the
 //!     machine never reaches.
