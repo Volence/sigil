@@ -274,7 +274,7 @@ carries. The rejected alternative, letting the linker overwrite, was not built.
 - **c10** (stage 1's second-space refusal) and **c12** (AS `section` / `public` /
   `endsection` unimplemented) are unchanged, as the measurement found them.
 - **M4**, above: the second-space pin in `assign_address_spaces` has no test that
-  needs it any more.
+  needs it any more. Decided DEAD and removed: `2026-09-12-second-space-pin.md`.
 - The diagnostic names the sections by sigil's synthetic names (`sec0`, `sec12`)
   and does not name the line that ended the section (`cpu`, `phase`, ...),
   which the linker does not know. The location (the seek) and the two addresses

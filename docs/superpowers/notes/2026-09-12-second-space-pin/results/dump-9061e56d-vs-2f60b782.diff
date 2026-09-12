@@ -1,0 +1,56 @@
+5c5
+< 3 sec0#1 Z80 frags=2 foreign-Z80@80 Pinned lma=0x0 placed_lma=0x0 labels=[]
+---
+> 3 sec0#1 Z80 frags=2 foreign-Z80@80 Chained lma=0x0 placed_lma=0x0 labels=[]
+12c12
+< 3 sec0#1 Z80 frags=2 foreign-Z80@80 Pinned lma=0x0 placed_lma=0x0 labels=[]
+---
+> 3 sec0#1 Z80 frags=2 foreign-Z80@80 Chained lma=0x0 placed_lma=0x0 labels=[]
+20c20
+< 4 sec0#1 Z80 frags=2 foreign-Z80@80 Pinned lma=0x0 placed_lma=0x0 labels=[]
+---
+> 4 sec0#1 Z80 frags=2 foreign-Z80@80 Chained lma=0x0 placed_lma=0x0 labels=[]
+28c28
+< 4 sec4096 Z80 frags=1 foreign-Z80@80 Pinned lma=0x40 placed_lma=0x40 labels=[]
+---
+> 4 sec4096 Z80 frags=1 foreign-Z80@80 Chained lma=0x40 placed_lma=0x40 labels=[]
+35c35
+< 3 sec0#1 Z80 frags=2 foreign-Z80@80 Pinned lma=0x0 placed_lma=0x0 labels=[]
+---
+> 3 sec0#1 Z80 frags=2 foreign-Z80@80 Chained lma=0x0 placed_lma=0x0 labels=[]
+50c50
+< 3 sec0#1 Z80 frags=6 foreign-Z80@80 Pinned lma=0x0 placed_lma=0x0 labels=[]
+---
+> 3 sec0#1 Z80 frags=6 foreign-Z80@80 Chained lma=0x0 placed_lma=0x0 labels=[]
+58c58
+< 3 sec0#1 Z80 frags=4 foreign-Z80@80 Pinned lma=0x0 placed_lma=0x0 labels=[]
+---
+> 3 sec0#1 Z80 frags=4 foreign-Z80@80 Chained lma=0x0 placed_lma=0x0 labels=[]
+66c66
+< 2 sec256 M68000 frags=1 foreign-M68000@23 Pinned lma=0x100 placed_lma=0x100 labels=[]
+---
+> 2 sec256 M68000 frags=1 foreign-M68000@23 Chained lma=0x100 placed_lma=0x100 labels=[]
+77c77
+< 3 sec0#1 Z80 frags=2 foreign-Z80@80 Pinned lma=0x0 placed_lma=0x0 labels=[]
+---
+> 3 sec0#1 Z80 frags=2 foreign-Z80@80 Chained lma=0x0 placed_lma=0x0 labels=[]
+80c80
+< 6 sec4864 Z80 frags=2 foreign-Z80@164 Pinned lma=0x1300 placed_lma=0x1300 labels=[]
+---
+> 6 sec4864 Z80 frags=2 foreign-Z80@164 Chained lma=0x1300 placed_lma=0x1300 labels=[]
+88c88
+< 4 sec0#1 Z80 frags=2 foreign-Z80@80 Pinned lma=0x0 placed_lma=0x0 labels=[]
+---
+> 4 sec0#1 Z80 frags=2 foreign-Z80@80 Chained lma=0x0 placed_lma=0x0 labels=[]
+95c95
+< 3 sec0#1 Z80 frags=2 foreign-Z80@80 Pinned lma=0x0 placed_lma=0x0 labels=[]
+---
+> 3 sec0#1 Z80 frags=2 foreign-Z80@80 Chained lma=0x0 placed_lma=0x0 labels=[]
+109c109
+< 3 sec0#1 Z80 frags=2 foreign-Z80@80 Pinned lma=0x0 placed_lma=0x0 labels=[]
+---
+> 3 sec0#1 Z80 frags=2 foreign-Z80@80 Chained lma=0x0 placed_lma=0x0 labels=[]
+116c116
+< 3 sec0#1 Z80 frags=2 foreign-Z80@77 Pinned lma=0x0 placed_lma=0x0 labels=[]
+---
+> 3 sec0#1 Z80 frags=2 foreign-Z80@77 Chained lma=0x0 placed_lma=0x0 labels=[]

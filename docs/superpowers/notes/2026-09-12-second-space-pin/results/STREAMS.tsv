@@ -1,0 +1,17 @@
+probe	exit	errors	image_bytes	image_md5	stderr (base; m4 is identical in every stream, diff -r exit 0)
+p01_empty1	1	1	none	-	root.asm(8):3: error: section `sec0#1` [0x0, 0x3) is assembled for the Z80 at origin 0x0, in a second address space this org opens outside the ROM image, and no -z instruction places it into the ROM 
+p02_empty1_z	0	0	274	32a0d294af01c3eaca363433766058a7	
+p03_empty2	1	1	none	-	root.asm(8):3: error: section `sec0#1` [0x0, 0x3) is assembled for the Z80 at origin 0x0, in a second address space this org opens outside the ROM image, and no -z instruction places it into the ROM 
+p04_phase_in_driver	1	1	none	-	root.asm(8):3: error: sections `sec0#1`, `sec4096` [0x0, 0x41) are assembled for the Z80 at origin 0x0, in a second address space this org opens outside the ROM image, and no -z instruction places it into the ROM 
+p05_reserve_then_code	1	1	none	-	root.asm(8):3: error: section `sec0#1` [0x0, 0x5) is assembled for the Z80 at origin 0x0, in a second address space this org opens outside the ROM image, and no -z instruction places it into the ROM 
+p06_reserve_only_first	1	1	none	-	root.asm(8):3: error: section `sec4` [0x4, 0x5) is assembled for the Z80 at origin 0x4, in a second address space this org opens outside the ROM image, and no -z instruction places it into the ROM 
+p07_later_seek	1	1	none	-	root.asm(12):2: error: sections `sec0#1` [0x0, 0x4) and `sec3` [0x3, 0x4) overlap in a second Z80 address space: this `org` left the write position at 0x3, inside bytes already written up to 0x4, when its section ended, and `sec3` was placed there (asl writes the later bytes over the earlier ones; sigil refuses the overlap) 
+p08_overlap_in_space	1	1	none	-	root.asm(11):2: error: sections `sec0#1` [0x0, 0x4) and `sec2` [0x2, 0x3) overlap in a second Z80 address space (colliding pins) 
+p09_z80_host_68k_space	1	1	none	-	root.asm(4):2: error: section `sec256` [0x100, 0x102) is assembled for the 68000 at origin 0x100, in a second address space this org opens outside the ROM image, and no -z instruction places it into the ROM 
+p10_image_control	0	0	514	72229973f7da3e38b0336010a326e035	
+p11_two_spaces_z	0	0	290	24613fe2bc5b193fff4d15600d03dfb2	
+p12_empty2_z	0	0	274	32a0d294af01c3eaca363433766058a7	
+p13_reserve_then_code_z	1	1	none	-	root.asm(8):3: error: section `sec0#1` [0x0, 0x5) is assembled for the Z80 at origin 0x0, in a second address space this org opens outside the ROM image, and no -z instruction places it into the ROM 
+p14_phase_rule3_control	0	0	274	879f639c8a1f1217468bcec9eff7df2d	
+p15_reserve_then_code_z0	1	1	none	-	error: `-z=0,uncompressed,Size1,after` names no second address space: no Z80 code assembled outside the image starts at 0x0 (code outside the image starts at: 0x4) root.asm(8):3: error: the Z80 code at [0x4, 0x5) is outside the ROM image and no -z instruction places it 
+p16_org_no_section_open	0	0	274	32a0d294af01c3eaca363433766058a7	
