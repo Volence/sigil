@@ -11593,3 +11593,58 @@ demo_debug = "2565ece2/103185"
 lean = "0b5d25f5/773136"
 s4 = "b09ccd65/820229"
 s4_debug = "1b7fe316/846529"
+
+[[entry]]
+name = "link-zero-byte-move-placement"
+ab = "docs/superpowers/notes/2026-09-12-link-zero-byte-move-placement.md"
+aeon_rev = "ec640bcf70e263167223a33d987d4661ff221b7e"
+note = "far-scratch slots skip the 24-bit alias; a zero-byte section no longer moves placement"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "a300dafc"
+full_size = 846881
+anchor_crc = "76ff62c1"
+anchor_end = 0xc14f4
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "06bad0ef"
+full_size = 620727
+anchor_crc = "15ad9598"
+anchor_end = 0x8d3d4
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "1c7a34d3"
+full_size = 96863
+anchor_crc = "1df823f1"
+anchor_end = 0x1121a
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "72e405a5"
+full_size = 103185
+anchor_crc = "0d8d5b1d"
+anchor_end = 0x1121a
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "302ea1ee"
+full_size = 773136
+anchor_crc = "29a745eb"
+anchor_end = 0xbcc10
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "91c46c94"
+full_size = 820209
+anchor_crc = "b582e945"
+anchor_end = 0xbdc92
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "8a378de6"
+full_size = 846509
+anchor_crc = "2859a5cf"
+anchor_end = 0xc14f4
