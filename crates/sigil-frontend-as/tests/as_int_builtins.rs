@@ -262,3 +262,68 @@ fn what_asl_refuses_in_bitcnt_is_refused() {
         refused(name);
     }
 }
+
+/// `bitpos` over every value it accepts, 2^0..2^62; `t_bitpos.lst`:
+///
+/// ```text
+///        4/       0 : 0000 0000           	dc.l bitpos($1)
+///        5/       4 : 0000 0001           	dc.l bitpos($2)
+///       11/      1C : 0000 0007           	dc.l bitpos($80)
+///       35/      7C : 0000 001F           	dc.l bitpos($80000000)
+///       36/      80 : 0000 0020           	dc.l bitpos($100000000)
+///       66/      F8 : 0000 003E           	dc.l bitpos($4000000000000000)
+/// ```
+#[test]
+fn bitpos_matches_asl_over_every_value_it_accepts() {
+    builds("t_bitpos");
+}
+
+/// Every integer context, both CPUs, except a forward reference, which asl
+/// refuses (see the note). `ctx_bitpos.lst` and `ctx_bitpos_z80.lst`:
+///
+/// ```text
+///        5/       1 : 03                  	dc.b BITPOS(8)
+///       19/       E : 323C 000C           	move.w #bitpos(8)<<2,d1
+///       21/      13 : 01                  	dc.b bitpos(bitpos(4))
+///       22/      14 : 33                  	dc.b "\{bitpos(8)}"
+///        5/       3 : 21 03 00            	ld hl,bitpos(8)
+/// ```
+#[test]
+fn bitpos_works_wherever_an_integer_is_read() {
+    builds("ctx_bitpos");
+    builds("ctx_bitpos_z80");
+}
+
+/// Anything but one set bit in a positive value is `error #1540: not exactly
+/// one bit set` (exit 2): `bitpos(0)`, `bitpos(6)`, `bitpos(-1)`,
+/// `bitpos(-$7FFFFFFFFFFFFFFF-1)` (one bit, but the sign bit),
+/// `bitpos($FFFEB)` and the empty call.
+#[test]
+fn bitpos_refuses_anything_but_one_positive_bit() {
+    for name in [
+        "ref_bitpos_0",
+        "ref_bitpos_6",
+        "ref_bitpos_m1",
+        "ref_bitpos_min",
+        "ref_bitpos_fffeb",
+        "ref_empty_bitpos",
+    ] {
+        refused(name);
+    }
+}
+
+/// What else asl refuses: a float aborts it (`error #10000`, exit 3); a string
+/// is `error #1136`, two arguments `error #1490`; an undefined symbol is
+/// `error #1540` here, not `#1010`, because pass 1 reads it as 0 (exit 2).
+#[test]
+fn what_asl_refuses_in_bitpos_is_refused() {
+    for name in [
+        "ref_bitpos_float",
+        "ref_bitpos_floatsym",
+        "ref_bitpos_string",
+        "ref_bitpos_twoarg",
+        "ref_bitpos_undef",
+    ] {
+        refused(name);
+    }
+}

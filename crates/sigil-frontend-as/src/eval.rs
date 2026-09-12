@@ -18828,6 +18828,7 @@ const INT_BUILTINS: &[(&str, IntFn)] = &[
     ("lastbit", lastbit),
     ("firstbit", firstbit),
     ("bitcnt", bitcnt),
+    ("bitpos", bitpos),
 ];
 
 /// asl's `firstbit(x)`. For an EVEN `x` it is the index of the lowest set
@@ -18853,6 +18854,17 @@ fn firstbit(x: i64) -> Option<i64> {
 /// `bitcnt(-$80)` 57, `bitcnt((-$7FFFFFFFFFFFFFFF-1))` 1, `bitcnt($0)` 0.
 fn bitcnt(x: i64) -> Option<i64> {
     Some(i64::from(x.count_ones()))
+}
+
+/// asl's `bitpos(x)`: the index of the one set bit of a POSITIVE power of two,
+/// refused for every other value. asl, exit 0 (`t_bitpos.lst`, every value
+/// 2^0..2^62): `bitpos($1)` 0, `bitpos($80)` 7, `bitpos($80000000)` 31,
+/// `bitpos($100000000)` 32, `bitpos($4000000000000000)` 62. Everything else is
+/// `error #1540: not exactly one bit set` (exit 2): `bitpos(0)`, `bitpos(6)`,
+/// `bitpos(-1)`, `bitpos($FFFEB)`, the empty call, and
+/// `bitpos(-$7FFFFFFFFFFFFFFF-1)`, whose one set bit is the sign bit.
+fn bitpos(x: i64) -> Option<i64> {
+    (x > 0 && x & (x - 1) == 0).then(|| i64::from(x.trailing_zeros()))
 }
 
 /// The function behind an integer-only builtin name, or `None`, matched
