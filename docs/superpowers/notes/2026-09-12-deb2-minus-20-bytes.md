@@ -58,3 +58,18 @@ appendix lengths before and after the new pair. That is the expected result when
 `0x8000`, so no size change is expected there. The -20 B was a property of the ec640bcf addresses, not of
 the pair. To check any tree, read its listing for more than one symbol at `8000`:
 `grep -E ' : 8000 [A-Z] \|' <shape>.lst`.
+
+## Before anyone fixes it
+
+Ranked out of `next` on 2026-09-12 for two reasons, both checkable:
+
+1. **Any repair moves bytes.** The deb2 appendix is inside both debug ROMs, and the provenance chain
+   pins the full file (crc32 plus size) for `s4_debug` and `demo_debug`. So a fix is a byte-mover and
+   rides the refreeze ritual, including the hand-typed `tests/repin_pins.rs` resync.
+2. **It changes a surface the engine lane consumes.** `convsym` reads the listing's symbol table, and
+   aeon's own tools read the listing too. Talk to them before changing what the listing exports.
+
+**The first measurement, before any design:** what `asl` itself prints in its listing's symbol table
+for a label inside a `PHASE` block. If `asl` also lists it at its phase (Z80) address, sigil is being
+compatible and the collision is `convsym`'s, so the fix may belong on the consuming side. Read
+`docs/OVERSEER-REFERENCE.md`, "Selecting and citing the `asl` oracle", before invoking it.
