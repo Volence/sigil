@@ -863,6 +863,9 @@ pub fn emit_sound_blob(aeon: &Path, out_dir: &Path) -> Result<(), String> {
     // eager mkdir inside an absent reference tree would manufacture that tree's root
     // and flip the suite's root-probing skip guards. Validate, then read, then create.
     crate::seam2::require_reference_tree(aeon)?;
+    // Before any placement: the placement step's own import check is a panic (its
+    // other callers have no error channel), and this is the caller with one.
+    resident_import_verdict(aeon, &file_specs())?;
     let out_dir: PathBuf = out_dir.to_path_buf();
 
     // Before any bytes: the hand-written banked-head VMAs must still agree with

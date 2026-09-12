@@ -59,11 +59,12 @@ mod tests {
     use super::standalone_import_errors;
     use sigil_frontend_emp::parse_str;
 
-    /// A scratch tree holding `pkg.b` on disk, with one `pub` const.
+    /// A scratch tree holding `pkg.b` and `pkg.c` on disk, each with one `pub` const.
     fn tree() -> tempfile::TempDir {
         let dir = tempfile::tempdir().unwrap();
         std::fs::create_dir_all(dir.path().join("pkg")).unwrap();
         std::fs::write(dir.path().join("pkg/b.emp"), "module pkg.b\npub const X = 1\n").unwrap();
+        std::fs::write(dir.path().join("pkg/c.emp"), "module pkg.c\npub const Y = 2\n").unwrap();
         dir
     }
 
@@ -92,11 +93,17 @@ mod tests {
 
     /// A given file outranks the tree's copy of the same module, so an in-memory
     /// override is what gets checked: here the override drops `X`, and the import
-    /// of `X` from the second file is refused although the disk copy has it.
+    /// of `X` from the second file is refused although the disk copy has it. The
+    /// second file also imports `pkg.c`, which only the tree has, so the tree IS
+    /// scanned and its copy of `pkg.b` is in reach: without that import nothing is
+    /// scanned and the precedence this test names is never exercised.
     #[test]
     fn a_given_file_outranks_the_trees_copy_of_its_module() {
         let dir = tree();
-        let got = messages(dir.path(), &["module pkg.b\nconst X = 1\n", "module pkg.a\nuse pkg.b.{X}\n"]);
+        let got = messages(
+            dir.path(),
+            &["module pkg.b\nconst X = 1\n", "module pkg.a\nuse pkg.c.{Y}\nuse pkg.b.{X}\n"],
+        );
         assert_eq!(got, vec![(1, "module `pkg.b` has no `pub` name `X`".to_string())]);
     }
 }

@@ -12,7 +12,7 @@
 //! SIGIL_STRICT_GATE=1 AEON_DIR=/path/to/aeon cargo test -p sigil-harness --test seam1_import_check
 //! ```
 
-use sigil_harness::seam1::{native_blob_checked, with_resident_source_override};
+use sigil_harness::seam1::{emit_sound_blob, native_blob_checked, with_resident_source_override};
 use sigil_harness::test_support::reference_tree;
 use std::path::{Path, PathBuf};
 
@@ -92,6 +92,30 @@ fn an_unread_resident_import_of_a_missing_module_is_refused() {
         "{DRIVER}:{line}:1: [Error] no module `engine.no_such_module_unused_import` found under the scan root"
     );
     assert!(err.contains(&want), "want `{want}` in:\n{err}");
+}
+
+/// The emitter (what `sigil build` and `emit_sound_blob` run) reports the refusal as
+/// an `Err`, the error channel its callers render, never as a panic out of the
+/// placement step, and writes nothing.
+#[test]
+fn an_unread_resident_import_reaches_the_emitter_as_an_error() {
+    let Some(aeon) = sound_tree() else { return };
+    let (text, line) = driver_with_use(&aeon, "use engine.sound_fm.{NO_SUCH_ITEM_UNUSED_IMPORT}");
+    let out = tempfile::tempdir().unwrap();
+    let got = std::panic::catch_unwind(|| {
+        with_resident_source_override(DRIVER, &text, || emit_sound_blob(&aeon, out.path()))
+    });
+    let err = match got {
+        Ok(Err(e)) => e,
+        Ok(Ok(())) => panic!("a missing name must not emit"),
+        Err(_) => panic!("the refusal escaped as a panic, not as the emitter's Err"),
+    };
+    let want = format!(
+        "{DRIVER}:{line}:1: [Error] module `engine.sound_fm` has no `pub` name `NO_SUCH_ITEM_UNUSED_IMPORT`"
+    );
+    assert!(err.contains(&want), "want `{want}` in:\n{err}");
+    let written = std::fs::read_dir(out.path()).unwrap().count();
+    assert_eq!(written, 0, "a refused emit wrote {written} file(s)");
 }
 
 /// The accept arm: an unread import of a real `pub` item of another module in the
