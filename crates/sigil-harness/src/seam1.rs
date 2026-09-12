@@ -647,6 +647,7 @@ fn place_resident_sections(
     presets: &[(&'static str, i64)],
 ) -> (Vec<Section>, Vec<u32>, Vec<u32>, Vec<Vec<LinkAssert>>) {
     let specs = file_specs();
+    resident_import_verdict(aeon, &specs).unwrap_or_else(|e| panic!("{e}"));
     let table = import_stub_table(aeon);
     let (lowered, asserts): (Vec<Section>, Vec<Vec<LinkAssert>>) =
         specs.iter().map(|spec| lower_one(aeon, spec, debug, doctor, &table, presets)).unzip();
@@ -755,6 +756,7 @@ pub fn native_blob_checked(
     doctor: Option<(&str, i64)>,
 ) -> Result<Vec<u8>, String> {
     let specs = file_specs();
+    resident_import_verdict(aeon, &specs)?;
     let (sections, _bases, spans, asserts) = place_resident_sections(aeon, debug, doctor, &[]);
 
     let resolved = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
@@ -788,6 +790,33 @@ pub fn native_blob_checked(
         out.extend(bytes);
     }
     Ok(out)
+}
+
+/// The import rule over the five resident modules, which seam 1 lowers with no
+/// resolve pass: `Ok`, or an `Err` naming every refused `use` at its own file, line
+/// and column. [`use_import_stubs`] reads a `use` list only for the `pub proc`
+/// stubs it can derive and skips every other name, so without this a resident
+/// `use` naming nothing that exists lowered clean whenever nothing read it.
+fn resident_import_verdict(aeon: &Path, specs: &[FileSpec]) -> Result<(), String> {
+    let parsed: Vec<ast::File> = specs.iter().map(|spec| parse_one(aeon, spec).0).collect();
+    let files: Vec<&ast::File> = parsed.iter().collect();
+    let errors = crate::import_check::standalone_import_errors(aeon, &files);
+    if errors.is_empty() {
+        return Ok(());
+    }
+    let mut failures = Vec::new();
+    for (i, spec) in specs.iter().enumerate() {
+        let mine: Vec<&sigil_span::Diagnostic> =
+            errors.iter().filter(|(f, _)| *f == i).map(|(_, d)| d).collect();
+        if mine.is_empty() {
+            continue;
+        }
+        let src = resident_source(aeon, spec.rel_path)?;
+        let mut texts = crate::diag_render::SourceTexts::new();
+        texts.add(Path::new(spec.rel_path), &src);
+        failures.push(crate::diag_render::render_diag_lines(&mine, &|s| texts.locate(s)));
+    }
+    Err(format!("resident sound modules: import check failed:\n{}", failures.join("\n")))
 }
 
 /// Decide each resident module's link asserts against the linked blob, one module

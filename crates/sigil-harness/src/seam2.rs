@@ -440,6 +440,9 @@ fn emit_dac_banks_at(aeon: &Path, blip_lma: u32, shared_lma: u32) -> Result<DacB
     if pdiags.iter().any(|d| d.level == sigil_span::Level::Error) {
         return Err(format!("dac_samples.emp parse errors: {pdiags:?}"));
     }
+    let mut texts = SourceTexts::new();
+    texts.add(&emp, &src);
+    import_verdict(aeon, &file, "dac_samples.emp", &|s| texts.locate(s))?;
 
     let opts = LowerOptions {
         initial_cpu: Cpu::M68000,
@@ -506,12 +509,31 @@ pub struct DacBodyAndHead {
     pub head: Vec<u8>,
 }
 
+/// The import rule for one file seam 2 lowers with no resolve pass: `Ok`, or an
+/// `Err` naming each refused `use` at its own file, line and column (`locate`
+/// resolves the file's spans). `aeon` is the tree a `use` of another module
+/// resolves in.
+fn import_verdict(
+    aeon: &Path,
+    file: &sigil_frontend_emp::ast::File,
+    what: &str,
+    locate: &dyn Fn(sigil_span::Span) -> Option<String>,
+) -> Result<(), String> {
+    let errors = crate::import_check::standalone_import_errors(aeon, &[file]);
+    if errors.is_empty() {
+        return Ok(());
+    }
+    let refused: Vec<&sigil_span::Diagnostic> = errors.iter().map(|(_, d)| d).collect();
+    Err(format!("{what} import errors:\n{}", crate::diag_render::render_diag_lines(&refused, locate)))
+}
+
 /// Lower one `.emp` file at `initial_cpu` with `dir` as the embed/include root,
 /// returning its full `Module` (sections + link_asserts). Panics-free: lower/parse
 /// errors surface as `Err`. The file's text registers in `texts` and is parsed
 /// under the id it is handed, so a link-time diagnostic against this module
 /// locates as `path:line:col` in the emitter's own report.
 fn lower_emp_file(
+    aeon: &Path,
     path: &Path,
     dir: &Path,
     initial_cpu: Cpu,
@@ -523,6 +545,7 @@ fn lower_emp_file(
     if pdiags.iter().any(|d| d.level == sigil_span::Level::Error) {
         return Err(format!("{} parse errors: {pdiags:?}", path.display()));
     }
+    import_verdict(aeon, &file, &path.display().to_string(), &|s| texts.locate(s))?;
     let opts = LowerOptions {
         initial_cpu,
         include_root: Some(dir.to_path_buf()),
@@ -584,7 +607,7 @@ fn emit_dac_body_and_head_at(
     let mut texts = SourceTexts::new();
     // dac_samples.emp is m68000 (the banks + the SND_* equ carrier).
     let samples =
-        lower_emp_file(&dac_dir.join("dac_samples.emp"), &dac_dir, Cpu::M68000, vec![], &mut texts)?;
+        lower_emp_file(aeon, &dac_dir.join("dac_samples.emp"), &dac_dir, Cpu::M68000, vec![], &mut texts)?;
     // dac_sample_tab.emp declares `module ... (cpu: z80)`; its head cells reference
     // the SND_* equs cross-module (link-resolved against dac_samples.emp). Its size
     // guard `use`s DAC_SAMPLE_COUNT / DacSample_len from the sound-constants
@@ -604,6 +627,7 @@ fn emit_dac_body_and_head_at(
         })
         .collect();
     let tab = lower_emp_file(
+        aeon,
         &eng_dir.join("dac_sample_tab.emp"),
         &eng_dir,
         Cpu::M68000,
@@ -740,10 +764,11 @@ fn emit_sfx_body_and_head_at(
     // sfx_bank.emp is m68000 (the blob table + the SFX_WIN_* equ layer); it lives
     // in sound/sfx/ so its 18 embed("sfx_*.bin") fixtures resolve there.
     let mut texts = SourceTexts::new();
-    let body = lower_emp_file(&sfx_dir.join("sfx_bank.emp"), &sfx_dir, Cpu::M68000, vec![], &mut texts)?;
+    let body = lower_emp_file(aeon, &sfx_dir.join("sfx_bank.emp"), &sfx_dir, Cpu::M68000, vec![], &mut texts)?;
     // sfx_blob_win_tab.emp declares (cpu: z80); its cells reference the SFX_WIN_*
     // equs cross-module and its span guard defers to a link assert.
     let head = lower_emp_file(
+        aeon,
         &snd_dir.join("sfx_blob_win_tab.emp"),
         &snd_dir,
         Cpu::M68000,
@@ -851,7 +876,7 @@ pub fn emit_seq_opcode_tab_doctored(
 ) -> Result<Vec<u8>, String> {
     let dir = aeon.join("engine/sound");
     let mut texts = SourceTexts::new();
-    let module = lower_emp_file(&dir.join("seq_opcode_tab.emp"), &dir, Cpu::M68000, vec![], &mut texts)?;
+    let module = lower_emp_file(aeon, &dir.join("seq_opcode_tab.emp"), &dir, Cpu::M68000, vec![], &mut texts)?;
     let link_asserts = module.link_asserts.clone();
 
     // The table places at VMA $8000; its cell VALUES (resident Seq_Op_* addresses)
@@ -933,7 +958,7 @@ pub fn emit_sound_tables_z80_doctored(
     let dir = aeon.join("engine/sound");
     let mut texts = SourceTexts::new();
     let module =
-        lower_emp_file(&dir.join("sound_tables_z80.emp"), &dir, Cpu::M68000, vec![], &mut texts)?;
+        lower_emp_file(aeon, &dir.join("sound_tables_z80.emp"), &dir, Cpu::M68000, vec![], &mut texts)?;
     let link_asserts = module.link_asserts.clone();
 
     // Place at the map-derived head LMA (the `sound_bank` anchor) with the section's
@@ -1025,6 +1050,7 @@ pub fn emit_pitchtable_doctored(aeon: &Path, doctor: bool) -> Result<Vec<u8>, St
     if pdiags.iter().any(|d| d.level == sigil_span::Level::Error) {
         return Err(format!("movingtrucks_pitchtable parse errors: {pdiags:?}"));
     }
+    import_verdict(aeon, &file, "movingtrucks_pitchtable.emp", &|s| texts.locate(s))?;
     let opts = LowerOptions {
         initial_cpu: Cpu::M68000,
         include_root: Some(dir.clone()),
@@ -1165,6 +1191,7 @@ fn emit_mt_bank_at(
     if pdiags.iter().any(|d| d.level == sigil_span::Level::Error) {
         return Err(format!("mt_bank.emp parse errors: {pdiags:?}"));
     }
+    import_verdict(aeon, &file, "mt_bank.emp", &|s| texts.locate(s))?;
     let debug_val: i128 = if debug { 1 } else { 0 };
     let opts = LowerOptions {
         initial_cpu: Cpu::M68000,

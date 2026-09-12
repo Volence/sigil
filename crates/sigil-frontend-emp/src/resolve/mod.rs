@@ -642,6 +642,11 @@ pub struct BuiltProgram {
     pub comptime_guards: usize,
     /// Every diagnostic from reachability, lowering and the whole-program checks.
     pub diags: Vec<Diagnostic>,
+    /// The id of every module this build lowered, in lowering order: the `use`
+    /// closure of the entry. A caller that checks something about the modules
+    /// outside this pass (a `use` it removed before the pass ran) scopes that
+    /// check to this set, the set whose code the build contains.
+    pub lowered: Vec<String>,
 }
 
 /// Shared body of [`build_program`] / [`build_program_open`]. `closed` gates the
@@ -977,7 +982,8 @@ fn build_program_with(
         .collect();
     diags.extend(fold_faults);
 
-    BuiltProgram { sections, link_asserts, comptime_guards, diags }
+    let lowered = reachable.iter().map(|&i| manifest.modules[i].id.clone()).collect();
+    BuiltProgram { sections, link_asserts, comptime_guards, diags, lowered }
 }
 
 /// Assign each section a physical LMA from the memory map, keyed by SECTION NAME
@@ -1125,11 +1131,7 @@ fn reachable_modules(
         let idx = match manifest.by_id.get(&id) {
             Some(&idx) => idx,
             None => {
-                diags.push(Diagnostic {
-                    level: Level::Error,
-                    message: format!("no module `{id}` found under the scan root"),
-                    primary: blame,
-                });
+                diags.push(imports::unknown_module_error(&id, blame));
                 continue;
             }
         };
