@@ -192,6 +192,14 @@ L_next: db 12h,34h
         cpu 68000
 """ + AFTER68
 
+# c15: control. A `restore` that does NOT change the CPU does not close the
+# section, so the bytes after it overwrite in place, exactly as in asl.
+SHAPES["c15_restore_same_cpu_control"] = HEAD + """\
+        save
+""" + SEEK68 + """\
+        restore
+""" + NEXT68 + "        cpu 68000\n" + AFTER68
+
 
 def main():
     os.makedirs(OUT, exist_ok=True)

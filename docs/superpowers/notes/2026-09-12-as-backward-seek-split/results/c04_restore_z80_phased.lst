@@ -1,4 +1,4 @@
- AS V1.42 Beta [Bld 212] - Source File c04_restore_z80_phased.asm - Page 1 - 09/12/2026 12:32:56 AM
+ AS V1.42 Beta [Bld 212] - Source File c04_restore_z80_phased.asm - Page 1 - 09/12/2026 12:42:52 AM
 
 
        1/       0 :                     ; shape c04_restore_z80_phased, written by gen.py
@@ -19,7 +19,7 @@
       16/      10 :                             cpu 68000
       17/      10 : 5678                L_after: dc.w $5678
       18/      12 :                     
- AS V1.42 Beta [Bld 212] - Source File c04_restore_z80_phased.asm - Page 2 - 09/12/2026 12:32:56 AM
+ AS V1.42 Beta [Bld 212] - Source File c04_restore_z80_phased.asm - Page 2 - 09/12/2026 12:42:52 AM
 
 
   Symbol Table (* = unused):
@@ -40,13 +40,13 @@
 *MOMCPU :                     68000 - | *MOMCPUNAME :               "68000" - |
 *NESTMAX :                      100 - | *PACKING :                        0 - |
 *PADDING :                        1 - | *RELAXED :                        0 - |
-*TIME :               "12:32:56 AM" - | *TRUE :                           1 - |
+*TIME :               "12:42:52 AM" - | *TRUE :                           1 - |
 *VERSION :                     142F - | *Z80SYNTAX :                      0 - |
 
      33 symbols
      31 unused symbols
 
- AS V1.42 Beta [Bld 212] - Source File c04_restore_z80_phased.asm - Page 3 - 09/12/2026 12:32:56 AM
+ AS V1.42 Beta [Bld 212] - Source File c04_restore_z80_phased.asm - Page 3 - 09/12/2026 12:42:52 AM
 
 
   Code Pages:

@@ -1,0 +1,31 @@
+c01_cpu_same.asm(7):9: warning: SEEKFEED seek to 0xa, extent 0x10
+c01_cpu_same.asm(7):9: warning: SEEKSPLIT close with cursor 0xc behind extent 0x10, phys base 0x0
+c02_phase.asm(7):9: warning: SEEKFEED seek to 0xa, extent 0x10
+c02_phase.asm(7):9: warning: SEEKSPLIT close with cursor 0xc behind extent 0x10, phys base 0x0
+c03_dephase.asm(8):9: warning: SEEKFEED seek to 0x8002, extent 0x8
+c03_dephase.asm(8):9: warning: SEEKSPLIT close with cursor 0x4 behind extent 0x8, phys base 0x8
+c04_restore_z80_phased.asm(10):9: warning: SEEKFEED seek to 0x8001, extent 0x4
+c04_restore_z80_phased.asm(10):9: warning: SEEKSPLIT close with cursor 0x2 behind extent 0x4, phys base 0x8
+c05_org_forward_leaves.asm(7):9: warning: SEEKFEED seek to 0xa, extent 0x10
+c05_org_forward_leaves.asm(7):9: warning: SEEKSPLIT-BY-ORG
+c05_org_forward_leaves.asm(7):9: warning: SEEKSPLIT close with cursor 0xc behind extent 0x10, phys base 0x0
+c06_org_backward_leaves.asm(8):9: warning: SEEKFEED seek to 0x22, extent 0x8
+c06_org_backward_leaves.asm(8):9: warning: SEEKSPLIT-BY-ORG
+c06_org_backward_leaves.asm(8):9: warning: SEEKSPLIT close with cursor 0x4 behind extent 0x8, phys base 0x20
+c07_seek_back_then_to_extent.asm(7):9: warning: SEEKFEED seek to 0xa, extent 0x10
+c07_seek_back_then_to_extent.asm(9):9: warning: SEEKFEED seek to 0x10, extent 0x10
+c08_two_seeks_short_of_extent.asm(7):9: warning: SEEKFEED seek to 0x8, extent 0x10
+c08_two_seeks_short_of_extent.asm(9):9: warning: SEEKFEED seek to 0xc, extent 0x10
+c08_two_seeks_short_of_extent.asm(9):9: warning: SEEKSPLIT close with cursor 0xc behind extent 0x10, phys base 0x0
+c09_seek_no_bytes_then_cpu.asm(7):9: warning: SEEKFEED seek to 0xa, extent 0x10
+c09_seek_no_bytes_then_cpu.asm(7):9: warning: SEEKSPLIT close with cursor 0xa behind extent 0x10, phys base 0x0
+c10_cpu_z80_unphased.asm(7):9: warning: SEEKFEED seek to 0xa, extent 0x10
+c10_cpu_z80_unphased.asm(7):9: warning: SEEKSPLIT close with cursor 0xc behind extent 0x10, phys base 0x0
+c11_cpu_z80_phased.asm(7):9: warning: SEEKFEED seek to 0xa, extent 0x10
+c11_cpu_z80_phased.asm(7):9: warning: SEEKSPLIT close with cursor 0xc behind extent 0x10, phys base 0x0
+c12_section_endsection.asm(7):9: warning: SEEKFEED seek to 0xa, extent 0x10
+c13_z80_host_cpu_same.asm(7):9: warning: SEEKFEED seek to 0x5, extent 0x8
+c13_z80_host_cpu_same.asm(7):9: warning: SEEKSPLIT close with cursor 0x6 behind extent 0x8, phys base 0x0
+c14_restore_out_of_host.asm(9):9: warning: SEEKFEED seek to 0xa, extent 0x10
+c14_restore_out_of_host.asm(9):9: warning: SEEKSPLIT close with cursor 0xc behind extent 0x10, phys base 0x0
+c15_restore_same_cpu_control.asm(8):9: warning: SEEKFEED seek to 0xa, extent 0x10
