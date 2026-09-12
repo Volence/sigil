@@ -1,0 +1,4 @@
+gs12_value_binding_in_global_in_plain	plain outer (under Base) calls {GLOBALSYMBOLS} inner writing `.v := 7`; read `Base.v` after
+gs13_dot_read_inside_global_in_plain	plain outer calls {GLOBALSYMBOLS} inner writing `.dl:` and reading `.dl` itself
+gs14_plain_value_binding_in_global	{GLOBALSYMBOLS} outer (under Base) calls plain inner writing `.v := 7`; read `Base.v` after
+gs15_plain_label_dir_in_global	{GLOBALSYMBOLS} outer calls plain inner writing `Tbl label *`; after, `.c := 3`, read `Tbl.c`

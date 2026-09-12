@@ -1,0 +1,8 @@
+en5_enum_in_rept	`enum` member written in a file-level `rept 1` body, read after
+en6_enum_in_include_in_body	`enum` member written in a file included from a body, read after
+gs8_global_dot_in_plain_outer_read_in_outer	outer (under Base) calls {GLOBALSYMBOLS} inner writing `.dl:`; outer reads `.dl`
+gs9_global_dot_in_plain_outer_read_outside	outer (under Base) calls {GLOBALSYMBOLS} inner writing `.dl:`; read `Base.dl` after
+gs10_plain_in_global_outer	{GLOBALSYMBOLS} outer calls plain inner writing `Ln:`; outer reads Ln after inner
+gs11_global_value_binding_dot	{GLOBALSYMBOLS} body `.v := 7` under Base, read `Base.v` after
+dx4_body_label_scope_after_rept	file-level `rept 1` body `Lr:`; after the loop `.x:` and `dc.w .x`
+dx5_body_label_dot_arg_to_nested	body `Lp:` `.x:`, then passes `.x` to a nested macro that emits it

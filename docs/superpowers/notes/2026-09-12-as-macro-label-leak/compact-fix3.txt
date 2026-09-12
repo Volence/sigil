@@ -1,0 +1,10 @@
+asl md5 61e672562465725a8c102288a7da9098  sigil sigil 0.1.0 (9c84159b)
+dx4_body_label_scope_after_rept          asl=0 -                                2222333301044444 | sigil=0 -                                            2222333301044444 MATCH
+dx5_body_label_dot_arg_to_nested         asl=0 -                                2222333301044444 | sigil=0 -                                            2222333301044444 MATCH
+en5_enum_in_rept                         asl=2 error #1010: symbol undefined    -                | sigil=1 unresolved symbol `Eb` for fixup in section  -                MATCH
+en6_enum_in_include_in_body              asl=2 error #1010: symbol undefined    -                | sigil=1 unresolved symbol `Eb` for fixup in section  -                MATCH
+gs10_plain_in_global_outer               asl=2 error #1010: symbol undefined    -                | sigil=1 unresolved symbol `Ln` for fixup in section  -                MATCH
+gs11_global_value_binding_dot            asl=0 -                                1111555500074444 | sigil=0 -                                            1111555500074444 MATCH
+gs8_global_dot_in_plain_outer_read_in_outer asl=0 -                                5555222201044444 | sigil=1 unresolved symbol `Base.dl` for fixup in sec -                OVER-REFUSE
+gs9_global_dot_in_plain_outer_read_outside asl=2 error #1010: symbol undefined    -                | sigil=1 unresolved symbol `Base.dl` for fixup in sec -                MATCH
+TOTAL 8 MATCH=7 OVER-REFUSE=1
