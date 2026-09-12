@@ -1,0 +1,74 @@
+//! Probe instrument, never committed: for every probe under PROBE_DIR, the
+//! front end's sections (cpu, space, placement, baked lma) and the lma each
+//! lands at after the link-time placement pass, plus the checked verdict.
+use sigil_frontend_as::{assemble_root, Options};
+use sigil_ir::{AddressSpace, SymbolTable};
+
+fn parse_addr(a: &str) -> u32 {
+    if let Some(h) = a.strip_suffix('h') {
+        u32::from_str_radix(h, 16).expect("hex address")
+    } else {
+        a.parse().expect("decimal address")
+    }
+}
+
+#[test]
+fn zz_dump() {
+    let dir = std::env::var("PROBE_DIR").expect("PROBE_DIR");
+    let out = std::env::var("DUMP_OUT").expect("DUMP_OUT");
+    let mut s = String::new();
+    let mut dirs: Vec<_> = std::fs::read_dir(&dir)
+        .expect("probe dir")
+        .map(|e| e.expect("entry").path())
+        .filter(|p| p.is_dir())
+        .collect();
+    dirs.sort();
+    for d in dirs {
+        s += &format!("== {}\n", d.file_name().expect("name").to_string_lossy());
+        let m = match assemble_root(&d.join("root.asm"), &Options::default()) {
+            Ok(m) => m,
+            Err(e) => {
+                s += &format!("front end refused: {}\n", e.iter().map(|x| x.message.clone()).collect::<Vec<_>>().join(" | "));
+                continue;
+            }
+        };
+        let args = std::fs::read_to_string(d.join("args")).expect("args");
+        let placed: Vec<u32> = args
+            .lines()
+            .filter_map(|l| l.strip_prefix("-z="))
+            .map(|l| parse_addr(l.split(',').next().expect("address")))
+            .collect();
+        let measured = sigil_link::resolve_layout_measuring(&m.sections, &SymbolTable::new(), true);
+        for (i, sec) in m.sections.iter().enumerate() {
+            let space = match sec.space {
+                AddressSpace::Image => "image".to_string(),
+                AddressSpace::Foreign { cpu, entered_at } => format!("foreign-{cpu:?}@{}", entered_at.start),
+            };
+            let (resolved, labels) = match &measured {
+                Ok(r) => (
+                    format!("{:#X}", r[i].lma),
+                    r[i].labels
+                        .iter()
+                        .map(|l| format!("{}={:#X}", l.name, r[i].vma_origin() + l.offset))
+                        .collect::<Vec<_>>()
+                        .join(","),
+                ),
+                Err(_) => ("-".to_string(), String::new()),
+            };
+            s += &format!(
+                "{i} {} {:?} frags={} {space} {:?} lma={:#X} placed_lma={resolved} labels=[{labels}]\n",
+                sec.name,
+                sec.cpu,
+                sec.fragments.len(),
+                sec.placement,
+                sec.lma
+            );
+        }
+        let verdict = match sigil_link::resolve_layout_placing(&m.sections, &SymbolTable::new(), true, &placed) {
+            Ok(_) => "ok".to_string(),
+            Err(d) => d.iter().map(|x| x.message.clone()).collect::<Vec<_>>().join(" | "),
+        };
+        s += &format!("verdict: {verdict}\n");
+    }
+    std::fs::write(out, s).expect("write dump");
+}

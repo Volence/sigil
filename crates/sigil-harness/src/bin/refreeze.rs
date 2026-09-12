@@ -9,8 +9,10 @@
 //!
 //! # RECORD that the strict full suite ran on the tree carrying the chain tip. Run this
 //! # AFTER the freeze is committed; it runs the suite itself, with SIGIL_STRICT_GATE=1
-//! # set BY THE TOOL:
-//! AEON_DIR=/path/to/aeon cargo run -p sigil-harness --bin refreeze -- \
+//! # set BY THE TOOL and the legacy oracle tree handed to the suite BY THE TOOL. That
+//! # tree must be NAMED (ORACLE_DIR, or EMPYREAN_SUITE_ROOT); a derived one is refused:
+//! AEON_DIR=/path/to/aeon ORACLE_DIR=/path/to/oracle-old \
+//!   cargo run -p sigil-harness --bin refreeze -- \
 //!   --attest [--expect-test <a-test-this-parcel-added>]
 //!
 //! # re-freeze after a byte-CHANGING optimization parcel (regenerates everything):
@@ -78,6 +80,9 @@ use sigil_harness::provenance::{
 use sigil_harness::rev_reachability::{self, GitRevOracle, RevOracle, RevState, UnavailableRepo};
 use sigil_harness::stdout::{print, println};
 use sigil_harness::strict_census;
+use sigil_harness::test_support::{
+    oracle_legacy_checkout, ResolvedCheckout, ORACLE_DIR_VAR, ORACLE_LEGACY_SPEC, SUITE_ROOT_VAR,
+};
 
 /// target-key -> (committed golden blob, off-canonical size-table file or "" for the
 /// canonical shapes whose EndOfRom lives in pins.rs).
@@ -689,6 +694,82 @@ fn strict_bodies_ratchet(
     }
 }
 
+/// The phrase only the legacy-oracle refusal uses, so a test can tell this refusal from
+/// every other one `--attest` raises and from the suite's own bare-run refusal.
+const ORACLE_REFUSAL: &str = "needs a NAMED legacy oracle tree";
+
+/// Resolve the legacy oracle tree (`oracle-old`) the strict suite measures against, or
+/// refuse. `--attest` ONLY.
+///
+/// The suite `--attest` runs contains a gate that compiles against that tree (the M1.B
+/// listing gate, `tests/m1b_gate.rs`), and under `SIGIL_STRICT_GATE` that gate refuses a
+/// tree nobody named. Left to the suite, the refusal arrives twenty minutes into the run
+/// and is recorded as a FAILED strict run in a file nobody may edit. So the tree is
+/// resolved here, before anything expensive, by the resolver that gate itself calls
+/// ([`oracle_legacy_checkout`], the `contract/SUITE_PATHS.md` precedence), and held to the
+/// same acceptance rule ([`vet_oracle_legacy`]).
+fn resolve_oracle_legacy() -> Result<ResolvedCheckout, String> {
+    vet_oracle_legacy(oracle_legacy_checkout())
+}
+
+/// The acceptance half of [`resolve_oracle_legacy`], pure so every branch is reachable
+/// without arranging the environment that produces it.
+///
+/// Steps 1 and 2 are accepted. Step 3 is REFUSED, for the reason the resolver's own
+/// [`sigil_harness::test_support::PathStep::names_a_reference_tree`] gives and the
+/// contract adopts: step 3 answers WHICH CHECKOUT and is refused for reference-dependent
+/// measurement, because it derives a working checkout nobody chose, whose revision can
+/// change under the run. The gate this tree serves compiles a file out of it, which is a
+/// reference-dependent measurement, and an attestation is the measurement that is
+/// recorded permanently.
+fn vet_oracle_legacy(
+    resolved: Result<ResolvedCheckout, String>,
+) -> Result<ResolvedCheckout, String> {
+    let spec = ORACLE_LEGACY_SPEC;
+    let answer = match resolved {
+        Ok(r) if r.step.names_a_reference_tree() => return Ok(r),
+        Ok(r) => format!(
+            "{}. That answer is DERIVED: nobody chose that checkout, its revision can change \
+             under the run, and a strict result measured against it could not be attributed \
+             to a tree (SUITE_PATHS: step 3 answers which checkout, and is refused for \
+             reference-dependent measurement).",
+            r.announcement()
+        ),
+        Err(e) => e,
+    };
+    Err(format!(
+        "refusing to attest, the strict suite {ORACLE_REFUSAL} ({}) and this run has none. \
+         A strict-gated test compiles against that tree and refuses one nobody named, so the \
+         suite would go red inside the run and this tool would record a FAILED strict run in \
+         provenance.toml, which nobody may edit. Nothing was run and nothing was \
+         recorded.\n\nThe resolver's own answer: {answer}\n\nSet {}=<{} checkout> ({}), or \
+         {SUITE_ROOT_VAR}=<the directory holding the suite>, and attest again.",
+        spec.repo_dir, spec.var, spec.repo_dir, spec.provision
+    ))
+}
+
+/// A named checkout's revision, for the log stamp: `HEAD` and whether the tree is clean,
+/// or `?` with the reason when the directory is not the root of a git checkout.
+///
+/// Read-only on a peer's tree: `--no-optional-locks` keeps `git status` from refreshing
+/// that checkout's index, which it otherwise does opportunistically.
+fn checkout_revision(dir: &Path) -> String {
+    let top = match git_at(dir, &["rev-parse", "--show-toplevel"]) {
+        Ok(t) => PathBuf::from(t),
+        Err(_) => return "? (not a git checkout)".to_string(),
+    };
+    if std::fs::canonicalize(&top).ok() != std::fs::canonicalize(dir).ok() {
+        return format!("? (not the root of a git checkout, it sits inside {})", top.display());
+    }
+    let head = git_at(dir, &["rev-parse", "HEAD"]).unwrap_or_else(|_| "?".to_string());
+    let state = match git_at(dir, &["--no-optional-locks", "status", "--porcelain"]) {
+        Ok(s) if s.is_empty() => "clean",
+        Ok(_) => "DIRTY",
+        Err(_) => "cleanliness unreadable",
+    };
+    format!("{head} ({state})")
+}
+
 /// `--attest` — RUN the strict full suite and record it against the chain tip.
 ///
 /// The tool runs the suite itself rather than accepting a log or a hand-written field,
@@ -703,6 +784,17 @@ fn strict_bodies_ratchet(
 /// `strict_bodies != 0` — was satisfiable by the failure it existed to catch: a deleted,
 /// `#[ignore]`d or unguarded gate lands at 28 of 29 and records a pass, so a gate going
 /// dark read back as a smaller green.
+///
+/// THE TREES THE SUITE MEASURES AGAINST are the tool's to name as well, before anything
+/// expensive runs, for the same reason the flag is: a precondition the operator has to
+/// remember is one the record ends up paying for. `AEON_DIR` must name a clean checkout
+/// of the revision the tip was frozen from ([`resolve_aeon_rev`]); only step 1 is accepted
+/// for it, so the value the child inherits is the value vetted. The legacy oracle tree is
+/// resolved by the suite's own resolver and refused at step 3 ([`resolve_oracle_legacy`]),
+/// and it is handed to the child EXPLICITLY as `ORACLE_DIR`, so the tree the log stamp
+/// names is the tree the suite measured whichever step named it. The provenance record
+/// carries `aeon_rev` and no oracle field; the oracle tree's path, step and revision are
+/// in the log stamp.
 fn do_attest(
     harness_root: &Path,
     expect: &[String],
@@ -794,6 +886,13 @@ fn do_attest(
             ));
         }
     }
+    // The legacy oracle tree, vetted here rather than discovered by the suite twenty
+    // minutes in; see `resolve_oracle_legacy`. It reaches the child explicitly at (3).
+    let oracle = match resolve_oracle_legacy() {
+        Ok(r) => r,
+        Err(e) => return fail(e),
+    };
+    eprintln!("refreeze --attest: {ORACLE_DIR_VAR} {}", oracle.announcement());
 
     // (1b) WILL THESE COORDINATES SURVIVE? Both revisions are about to be written into an
     // append-only ledger as this run's tree identity, and a coordinate is only worth what
@@ -865,12 +964,19 @@ fn do_attest(
          # sigil branch   {branch}\n\
          # AEON_DIR       {aeon_dir}\n\
          # aeon HEAD      {aeon_rev}\n\
+         # ORACLE_DIR     {} (step {}, {})\n\
+         # oracle HEAD    {}\n\
          # provenance tip {} (entry #{number})\n\
          # witness        {}\n\
-         # command        SIGIL_STRICT_GATE=1 cargo test --release --workspace --no-fail-fast -- --nocapture\n\n",
+         # command        SIGIL_STRICT_GATE=1 ORACLE_DIR={} cargo test --release --workspace --no-fail-fast -- --nocapture\n\n",
         root.display(),
+        oracle.path.display(),
+        oracle.step.number(),
+        oracle.step.describe(oracle.spec),
+        checkout_revision(&oracle.path),
         tip.name,
-        witness.display()
+        witness.display(),
+        oracle.path.display()
     );
     let mut file = match std::fs::File::create(&log_path) {
         Ok(f) => f,
@@ -894,6 +1000,11 @@ fn do_attest(
         // SET BY THE TOOL, never asked of the operator. This one missing variable is the
         // entire defect being closed.
         .env("SIGIL_STRICT_GATE", "1")
+        // SET BY THE TOOL as well: the tree vetted at (1), never whatever the child would
+        // resolve for itself. At step 2 the child could re-derive the same answer, but the
+        // stamp above names this value, and only a handed-over value is certain to be the
+        // one the suite measured.
+        .env(ORACLE_DIR_VAR, &oracle.path)
         .env(sigil_harness::test_support::STRICT_WITNESS_VAR, &witness)
         .stdout(std::process::Stdio::from(file))
         .stderr(std::process::Stdio::from(err_half))
@@ -1932,5 +2043,51 @@ test result: FAILED. 40 passed; 1 failed; 3 ignored; 0 measured; 0 filtered out;
         // A mere MENTION is not an execution: the name has to appear on a libtest
         // result line, not in some test's own output.
         assert!(!test_ran("running my_new_gate now\n", "my_new_gate"));
+    }
+
+    fn oracle_at(step: sigil_harness::test_support::PathStep) -> ResolvedCheckout {
+        ResolvedCheckout {
+            path: PathBuf::from("/scratch/suite/oracle-old"),
+            step,
+            spec: ORACLE_LEGACY_SPEC,
+        }
+    }
+
+    /// THE ACCEPTANCE RULE, every branch. Steps 1 and 2 name a tree and are accepted as
+    /// the resolver returned them; step 3 is refused, naming the path it declined; a
+    /// resolver refusal stays a refusal and carries the resolver's own words. Pure, so the
+    /// step-3 branch is reached on every machine, not only on one whose layout derives a
+    /// suite root.
+    #[test]
+    fn attest_accepts_a_named_legacy_oracle_tree_and_refuses_a_derived_one() {
+        use sigil_harness::test_support::PathStep;
+        for step in [PathStep::CheckoutVar, PathStep::SuiteRootVar] {
+            let got = vet_oracle_legacy(Ok(oracle_at(step))).unwrap_or_else(|e| {
+                panic!("a tree named at step {} must be accepted: {e}", step.number())
+            });
+            assert_eq!(got, oracle_at(step), "an accepted tree is returned unchanged");
+        }
+
+        let e = vet_oracle_legacy(Ok(oracle_at(PathStep::Derived)))
+            .expect_err("a DERIVED legacy oracle tree must be refused");
+        assert!(e.contains(ORACLE_REFUSAL), "{e}");
+        assert!(
+            e.contains("/scratch/suite/oracle-old") && e.contains("SUITE_PATHS step 3"),
+            "the refusal must name the tree it declined and the step that derived it: {e}"
+        );
+        let set = format!("{ORACLE_DIR_VAR}=<oracle-old checkout>");
+        assert!(
+            e.contains(&set) && e.contains(SUITE_ROOT_VAR),
+            "the refusal must give the line to set: {e}"
+        );
+
+        let e = vet_oracle_legacy(Err(
+            "no oracle-old checkout could be resolved. ORACLE_DIR is unset".to_string(),
+        ))
+        .expect_err("a resolver refusal must stay a refusal");
+        assert!(
+            e.contains(ORACLE_REFUSAL) && e.contains("ORACLE_DIR is unset"),
+            "the resolver's own answer must be carried into the refusal: {e}"
+        );
     }
 }

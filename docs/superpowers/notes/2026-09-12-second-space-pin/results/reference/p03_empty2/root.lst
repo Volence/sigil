@@ -1,0 +1,67 @@
+ AS V1.42 Beta [Bld 212] - Source File root.asm - Page 1 - 09/12/2026 05:20:02 AM
+
+
+       1/       0 :                     	cpu 68000
+       2/       0 : =$10                 Size1 equ $10
+       3/       0 : =$10                 Size2 equ $10
+       4/       0 : 0000 0000 0000      	dc.l 0, 0
+                6 : 0000             
+       5/     100 :                     	org $100
+       6/     100 : 4E71                	dc.w $4E71
+       7/     102 :                     	save
+       8/       0 :                     	!org 0
+       9/       0 :                     DriverStart:
+      10/       0 :                     	cpu z80
+      11/       0 :                     Inner:
+      12/       0 :                     	cpu z80
+      13/       0 : F3                  	di
+      14/       1 : 3E 01               	ld a,1
+      15/       3 : ALL                  	restore
+      16/       3 :                     	padding off
+      17/     110 :                     	!org $110
+      18/     110 : 4E71                	dc.w $4E71
+      19/     112 :                     
+ AS V1.42 Beta [Bld 212] - Source File root.asm - Page 2 - 09/12/2026 05:20:02 AM
+
+
+  Symbol Table (* = unused):
+  --------------------------
+
+*ARCHITECTURE :                                      "x86_64-unknown-linux" - |
+*BIGENDIAN :                      0 - | *BRANCHEXT :                      0 - |
+*CASESENSITIVE :                  1 - | *COMPMODE :                       0 - |
+*CONSTPI :        3.141592653589793 - | *CUSTOM :                         0 - |
+*DATE :                "09/12/2026" - | *DriverStart :                    0 C |
+*FALSE :                          0 - | *FULLPMMU :                       1 - |
+*HAS64 :                          1 - | *HASDSP :                         0 - |
+*HASFPU :                         0 - | *HASPMMU :                        0 - |
+*INEXTMODE :                      0 - | *INLWORDMODE :                    0 - |
+*INMAXMODE :                      0 - | *INSRCMODE :                      0 - |
+*INSUPMODE :                      0 - | *Inner :                          0 C |
+*LISTON :                         1 - | *MACEXP :                         7 - |
+*MOMCPU :                     68000 - | *MOMCPUNAME :               "68000" - |
+*NESTMAX :                      100 - | *PACKING :                        0 - |
+*PADDING :                        0 - | *RELAXED :                        0 - |
+*Size1 :                         10 - | *Size2 :                         10 - |
+*TIME :               "05:20:02 AM" - | *TRUE :                           1 - |
+*VERSION :                     142F - | *Z80SYNTAX :                      0 - |
+
+     35 symbols
+     35 unused symbols
+
+ AS V1.42 Beta [Bld 212] - Source File root.asm - Page 3 - 09/12/2026 05:20:02 AM
+
+
+  Code Pages:
+  ----------
+
+STANDARD (0 changed characters)
+
+1 code page
+
+0.00 seconds assembly time
+
+     19 lines source file
+      1 pass
+      0 errors
+      0 warnings

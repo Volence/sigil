@@ -1092,6 +1092,24 @@ aeon build. Deleting the tree breaks placement, not only the `source:` field. De
 `docs/superpowers/notes/2026-09-11-aeon-source-digest-ask.md`, second amendment.
 **`.sigil-ls12-pin` is released once aeon confirms it is on the new pair — ask them, not this file.**
 
+**THE INSTALLED PAIR SINCE 2026-09-12T08:57:35Z IS THE 6884bfba BUILD, and three trees must survive for it.**
+Swapped on the hub's OPEN (aeon LS-1a) by the approved method: `/proc` exe scan (0 hits), outgoing pair
+copied aside and md5-verified, each new file `cp -p`'d to a staging name inside `sigil/target/release/`
+and `mv`'d over, so each installed file has its own inode (link count 1). Installed: `sigil`
+`2e7c25920b95cec2c462ea51b4f078b5`, `emit_sound_blob` `d258341604bbf735a8af8438c2b8d642`, built from sigil
+`6884bfba` in the durable worktree `~/sonic_hacks/.sigil-pin-6884bfba` with target dir
+`~/sonic_hacks/.sigil-pin-6884bfba-target` (banner: `tree: clean at capture`, `source:` that worktree).
+Aeon's four-shape decider PASSED at aeon `57528c22` in `.aeon-ls8-land`, re-read here from disk rather
+than taken from their message: s4 `7a552cde`/821155, s4.debug `b93a889f`/847533, demo `dd589fe7`/97109,
+demo.debug `c3eda757`/103501, every listing's `DIGEST-ASSEMBLER` naming revision `6884bfba`.
+**The outgoing pair is KEPT at `~/sonic_hacks/.sigil-outgoing-49ecc532/`** (sigil `49ecc532...`, emitter
+`36ef302c...`, with `README-ASIDE.txt` carrying the instant and the restore recipe), as provenance for the
+aeon builds of 2026-09-12 06:25Z to 08:57Z and as the restore path. **So keep all three:**
+`.sigil-pin-6884bfba` (the installed pair reads its size tables from it at run time, per the
+`load_frozen_table` paragraph above), `.sigil-pin-6884bfba-target` (the build that the aside recipe
+does not cover), and `.sigil-pin-af35fa56` (the aside pair reads ITS tables from there, so a restore
+without it breaks placement). Ask the aeon lane before retiring any of them.
+
 **⚠ THIS ARTIFACT EXISTS BECAUSE OF A ONE-CHARACTER MISMATCH IN A PEER'S PARSER, and it dies when
 they fix it.** Measured by the aeon lane 2026-09-07 across all four arms of their `tree:` switch:
 `clean`, `clean at capture, no uncommitted changes` and bare `clean-sources` are all ACCEPTED, while
