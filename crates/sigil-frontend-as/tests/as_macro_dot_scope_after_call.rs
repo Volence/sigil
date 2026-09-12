@@ -146,6 +146,29 @@ fn inside_the_body_a_binding_or_reference_after_its_plain_label_uses_that_label(
     refused("v08_body_dot_before_label_read_after", "unresolved");
 }
 
+/// A `.`-local under a body label is looked up in the expansion first and
+/// outside it second. The expansion holds only the body's own PC `.`-labels;
+/// a value binding under the same label is global, so the body reads its own
+/// `.v := 5` back as `.v` and as `Inner.v` (`v09`, `v10`), and a `.x` it never
+/// wrote reaches a file-level `Inner.x`, written before or after the call
+/// (`v04` above, `v13` `$010A`, `v14` `$0104`). An inner body reaches the
+/// `.x` of a label its CALLER's body wrote, before or after the call (`v11`
+/// `$0106`, `v12` `$0108`).
+///
+/// WHAT OTHER ANSWER COULD THESE HAVE GIVEN: `v09` built at base and was
+/// refused by the first cut of this fix, which moved the scope but still read
+/// every `Inner.v` inside the body as the expansion's private key; `v10` was
+/// refused at base for the same reason; `v11`..`v14` read `Base.x` at base.
+#[test]
+fn a_dot_local_under_a_body_label_is_looked_up_in_the_expansion_then_outside() {
+    builds("v09_body_bind_after_label_read_in_body", "1111 5555 2222 0005 4444");
+    builds("v10_body_bind_after_label_read_qualified_in_body", "1111 5555 2222 0005 4444");
+    builds("v11_outer_label_dot_inner_reads_dot", "1111 5555 3333 3334 0106 4444");
+    builds("v12_outer_label_inner_reads_dot_forward", "1111 5555 3333 0108 3334 4444");
+    builds("v13_body_label_reads_dot_file_inner_forward", "1111 5555 2222 010a 7777 8888 4444");
+    builds("v14_body_label_bind_dot_file_inner", "1111 7777 8888 5555 2222 0104 4444");
+}
+
 /// A nested body's plain label moves the scope of the enclosing body for the
 /// rest of it, and of the caller after the whole nest (`n01`, `n13`). The
 /// enclosing body's own later label moves it again (`n04`). A `.`-label the

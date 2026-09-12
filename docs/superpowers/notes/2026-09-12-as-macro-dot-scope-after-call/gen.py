@@ -248,6 +248,20 @@ S("v06_body_reads_caller_dot_before_label", "`.x:` under Base; body reads `.x` t
   BASE_X + "mac\tmacro\n\tdc.w\t.x\t; REF\nInner:\tdc.w\t$2222\n\tendm\n\tmac\n")
 S("v08_body_dot_before_label_read_after", "body `.lp:`, then `Inner:`, then reads `.lp`",
   BASE + "mac\tmacro\n.lp:\tdc.w\t$2222\nInner:\tdc.w\t$2223\n\tdc.w\t.lp\t; REF\n\tendm\n\tmac\n")
+S("v09_body_bind_after_label_read_in_body", "body `Inner:`, `.v := 5`, then reads `.v` in the body",
+  BASE + "mac\tmacro\nInner:\tdc.w\t$2222\n.v\t:=\t5\n\tdc.w\t.v\t; REF\n\tendm\n\tmac\n")
+S("v10_body_bind_after_label_read_qualified_in_body", "body `Inner:`, `.v := 5`, then reads `Inner.v` in the body",
+  BASE + "mac\tmacro\nInner:\tdc.w\t$2222\n.v\t:=\t5\n\tdc.w\tInner.v\t; REF\n\tendm\n\tmac\n")
+S("v11_outer_label_dot_inner_reads_dot", "outer body `Lp:` and `.x:`, then calls inner, which reads `.x`",
+  BASE + "inner\tmacro\n\tdc.w\t.x\t; REF\n\tendm\n"
+  "outer\tmacro\nLp:\tdc.w\t$3333\n.x:\tdc.w\t$3334\n\tinner\n\tendm\n\touter\n")
+S("v12_outer_label_inner_reads_dot_forward", "outer body `Lp:`, calls inner, which reads `.x`; outer defines `.x:` after",
+  BASE + "inner\tmacro\n\tdc.w\t.x\t; REF\n\tendm\n"
+  "outer\tmacro\nLp:\tdc.w\t$3333\n\tinner\n.x:\tdc.w\t$3334\n\tendm\n\touter\n")
+S("v13_body_label_reads_dot_file_inner_forward", "body `Inner:` reads `.x`; the file-level `Inner:`/`.x:` comes after the call",
+  BASE + "mac\tmacro\nInner:\tdc.w\t$2222\n\tdc.w\t.x\t; REF\n\tendm\n\tmac\n" + FILE_INNER_X)
+S("v14_body_label_bind_dot_file_inner", "file `Inner:`/`.x:`; body `Inner:`, `.v := 5`, then reads `.x`",
+  FILE_INNER_X + BASE + "mac\tmacro\nInner:\tdc.w\t$2222\n.v\t:=\t5\n\tdc.w\t.x\t; REF\n\tendm\n\tmac\n")
 S("v07_body_own_dot_after_label","body `Inner:` then `.q:` and `dc.w .q` (control)",
   BASE + "mac\tmacro\nInner:\tdc.w\t$2222\n.q:\tdc.w\t$2223\n\tdc.w\t.q\t; REF\n\tendm\n\tmac\n")
 

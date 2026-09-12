@@ -88,6 +88,12 @@ v04_body_reads_caller_dot_file_inner	file `Inner:`/`.x:`; `.x:` under Base; body
 v05_body_bind_before_label_read_base	body `.v := 5` then `Inner:`; read `Base.v` after the call
 v06_body_reads_caller_dot_before_label	`.x:` under Base; body reads `.x` then writes `Inner:`
 v08_body_dot_before_label_read_after	body `.lp:`, then `Inner:`, then reads `.lp`
+v09_body_bind_after_label_read_in_body	body `Inner:`, `.v := 5`, then reads `.v` in the body
+v10_body_bind_after_label_read_qualified_in_body	body `Inner:`, `.v := 5`, then reads `Inner.v` in the body
+v11_outer_label_dot_inner_reads_dot	outer body `Lp:` and `.x:`, then calls inner, which reads `.x`
+v12_outer_label_inner_reads_dot_forward	outer body `Lp:`, calls inner, which reads `.x`; outer defines `.x:` after
+v13_body_label_reads_dot_file_inner_forward	body `Inner:` reads `.x`; the file-level `Inner:`/`.x:` comes after the call
+v14_body_label_bind_dot_file_inner	file `Inner:`/`.x:`; body `Inner:`, `.v := 5`, then reads `.x`
 v07_body_own_dot_after_label	body `Inner:` then `.q:` and `dc.w .q` (control)
 f01_forced_passes_read_inner	a11 shape with an unrelated forward reference forcing more passes; read `Inner.b`
 f02_forced_passes_dot_forward	`.x` read after the call, defined later in the same scope; forced passes

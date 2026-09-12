@@ -92,4 +92,10 @@ v05_body_bind_before_label_read_base     asl=0 -                                
 v06_body_reads_caller_dot_before_label   asl=0 -                                6666010422224444 | sigil=0 -                                            6666010422224444 MATCH
 v07_body_own_dot_after_label             asl=0 -                                2222222301064444 | sigil=0 -                                            2222222301064444 MATCH
 v08_body_dot_before_label_read_after     asl=2 error #1010: symbol undefined    -                | sigil=1 unresolved symbol ` exp#1.Inner.lp` for fixu -                MATCH
-TOTAL 93 LEAK=26 MATCH=31 OVER-REFUSE=29 VALUE-DIFF=7
+v09_body_bind_after_label_read_in_body   asl=0 -                                5555222200054444 | sigil=0 -                                            5555222200054444 MATCH
+v10_body_bind_after_label_read_qualified_in_body asl=0 -                                5555222200054444 | sigil=1 unresolved symbol ` exp#1.Inner.v` for fixup -                OVER-REFUSE
+v11_outer_label_dot_inner_reads_dot      asl=0 -                                3333333401064444 | sigil=1 unresolved symbol `Base.x` for fixup in sect -                OVER-REFUSE
+v12_outer_label_inner_reads_dot_forward  asl=0 -                                3333010833344444 | sigil=1 unresolved symbol `Base.x` for fixup in sect -                OVER-REFUSE
+v13_body_label_reads_dot_file_inner_forward asl=0 -                                010a777788884444 | sigil=1 unresolved symbol `Base.x` for fixup in sect -                OVER-REFUSE
+v14_body_label_bind_dot_file_inner       asl=0 -                                5555222201044444 | sigil=1 unresolved symbol `Base.x` for fixup in sect -                OVER-REFUSE
+TOTAL 99 LEAK=26 MATCH=32 OVER-REFUSE=34 VALUE-DIFF=7
