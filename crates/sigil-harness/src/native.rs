@@ -1096,6 +1096,71 @@ fn normalize_helper_imports(
     }
 }
 
+/// The whole-program build's helper rewrite: [`publicize_helper_comptime`], then
+/// [`normalize_helper_imports`], over `helpers`. Returns the import-rule Errors of
+/// the `use` lines the rewrite removes ([`helper_import_errors`]), taken BEFORE
+/// either step, against the tree as written: the removed lines never reach the
+/// resolve pass, and after publicizing a private helper name would pass. The
+/// caller reports them for the modules its build lowers
+/// ([`helper_import_errors_in`]).
+fn rewrite_helper_imports(
+    manifest: &mut resolve::manifest::Manifest,
+    helpers: &[&str],
+) -> Vec<(usize, sigil_span::Diagnostic)> {
+    let removed = helper_import_errors(manifest, helpers);
+    publicize_helper_comptime(manifest, helpers);
+    normalize_helper_imports(manifest, helpers, &[]);
+    removed
+}
+
+/// The import rule for the `use` lines [`normalize_helper_imports`] removes: every
+/// `use` of one of `helper_ids`, in every module, checked against the tree as
+/// written (before [`publicize_helper_comptime`] widens the helpers' exports). Each
+/// entry is the importing module's index and the Error at that `use`'s own span.
+///
+/// The rewrite replaces an author's `use engine.objects.frames.{refresh_piece_count}`
+/// with a glob, so the resolve pass, which owns the rule, never sees the line. Without
+/// this, a helper `use` naming an item that does not exist, or a private one, built
+/// clean whenever nothing read the name. Kill condition: retire this with
+/// `normalize_helper_imports`. Once the author's `use` lines reach the resolve pass
+/// unrewritten, the pass applies the rule itself.
+fn helper_import_errors(
+    manifest: &resolve::manifest::Manifest,
+    helper_ids: &[&str],
+) -> Vec<(usize, sigil_span::Diagnostic)> {
+    use sigil_frontend_emp::resolve::imports::{use_decl_errors, use_decls, ExportIndex};
+    let pairs: Vec<(&str, &sigil_frontend_emp::ast::File)> =
+        manifest.modules.iter().map(|pm| (pm.id.as_str(), &pm.file)).collect();
+    let index = ExportIndex::build(&pairs);
+    let mut out = Vec::new();
+    for (i, pm) in manifest.modules.iter().enumerate() {
+        for u in use_decls(&pm.file.items) {
+            if helper_ids.contains(&u.base.segments.join(".").as_str()) {
+                out.extend(use_decl_errors(u, &index).into_iter().map(|d| (i, d)));
+            }
+        }
+    }
+    out
+}
+
+/// The [`helper_import_errors`] whose importing module the build lowered (`lowered`,
+/// the modules whose code the build contains), minus any the build already
+/// reported: the rewrite removes top-level `use` lines only, so a helper `use`
+/// inside a `section {}` body reaches the resolve pass and is reported there too.
+fn helper_import_errors_in(
+    manifest: &resolve::manifest::Manifest,
+    errors: &[(usize, sigil_span::Diagnostic)],
+    lowered: &[String],
+    reported: &[sigil_span::Diagnostic],
+) -> Vec<sigil_span::Diagnostic> {
+    let lowered: std::collections::HashSet<&str> = lowered.iter().map(String::as_str).collect();
+    errors
+        .iter()
+        .filter(|(i, d)| lowered.contains(manifest.modules[*i].id.as_str()) && !reported.contains(d))
+        .map(|(_, d)| d.clone())
+        .collect()
+}
+
 /// Publicize the PRIVATE comptime items (const/struct/enum/bitfield/newtype/
 /// comptime-fn/vars-overlay) of the helper modules, so glob ambient injection pulls
 /// a helper's full comptime closure — including private callees like `vdp.emp`'s
@@ -1898,8 +1963,7 @@ pub fn build_emp(aeon: &Path, profile: &GameProfile) -> Result<EmpProgram, Strin
         "engine.effects.palette_dsl",
         "engine.effects.raster_dsl",
     ];
-    publicize_helper_comptime(&mut manifest, COMPTIME_HELPERS);
-    normalize_helper_imports(&mut manifest, COMPTIME_HELPERS, &[]);
+    let removed_import_errors = rewrite_helper_imports(&mut manifest, COMPTIME_HELPERS);
 
     // `--extra-entry`: resolve each name against the SCANNED manifest (so an id and a
     // path both work) and refuse one that would contribute to the artifact, BEFORE the
@@ -1978,8 +2042,11 @@ pub fn build_emp(aeon: &Path, profile: &GameProfile) -> Result<EmpProgram, Strin
     // root-relative path would then join onto the module dir and resolve one level deep.
     let aeon_root = aeon.to_path_buf();
     let embed_base_for = move |_id: &str| -> Option<std::path::PathBuf> { Some(aeon_root.clone()) };
-    let resolve::BuiltProgram { mut sections, link_asserts, comptime_guards, diags: bdiags } =
+    let resolve::BuiltProgram { mut sections, link_asserts, comptime_guards, diags: mut bdiags, lowered } =
         resolve::build_program_open_embed_counted(&manifest, &entry_id, None, &opts, &embed_base_for);
+    // The helper imports `normalize_helper_imports` removed, checked above against
+    // the pre-rewrite tree, reported for the modules this build contains.
+    bdiags.extend(helper_import_errors_in(&manifest, &removed_import_errors, &lowered, &bdiags));
     let berr: Vec<_> = bdiags.iter().filter(|d| d.level == sigil_span::Level::Error).collect();
     if !berr.is_empty() {
         // Every error, one per line, located through the manifest's own index: a
@@ -5739,6 +5806,102 @@ mod entry_synth_tests {
         // With no extras the source carries no extra `use` line.
         let bare = synthetic_entry_src(&[], "games.sonic4.ram", "games.sonic4.game", &[]);
         assert!(!bare.contains("games.a.one"));
+    }
+}
+
+#[cfg(test)]
+mod helper_import_tests {
+    //! The helper-import rewrite keeps the import rule. `build_emp` replaces every
+    //! author `use` of a comptime helper with a glob before the resolve pass runs,
+    //! so the pass that owns "module `X` has no `pub` name `n`" never saw those
+    //! lines, and a helper `use` naming nothing that exists built clean whenever
+    //! nothing read the name (EMP-UNUSED-IMPORT-UNCHECKED). Each test builds a
+    //! scratch tree the way `build_emp` does: [`rewrite_helper_imports`], the
+    //! whole-program build, then [`helper_import_errors_in`] over what it lowered.
+    use super::{helper_import_errors_in, rewrite_helper_imports};
+    use sigil_frontend_emp::lower::LowerOptions;
+    use sigil_frontend_emp::resolve::{self, manifest::Manifest};
+
+    const HELPER: &str = "module pkg.h\npub const W = 4\nconst PRIV = 2\n";
+
+    /// A consumer of the helper `pkg.h` whose import list is `names`, and nothing
+    /// in it reads an imported name.
+    fn consumer(id: &str, names: &str) -> String {
+        format!("module {id}\nuse pkg.h.{{{names}}}\nproc init (a0: *u8) {{\n    rts\n}}\n")
+    }
+
+    /// Every Error message a `build_emp`-shaped build of `entry` produces.
+    fn build_errors(files: &[(&str, &str)], entry: &str) -> Vec<String> {
+        let dir = tempfile::tempdir().unwrap();
+        for (rel, src) in files {
+            let path = dir.path().join(rel);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(&path, src).unwrap();
+        }
+        let (mut manifest, sdiags): (Manifest, _) = Manifest::scan(dir.path());
+        assert!(
+            sdiags.iter().all(|d| d.level != sigil_span::Level::Error),
+            "the scratch tree must scan clean: {sdiags:?}"
+        );
+        let removed = rewrite_helper_imports(&mut manifest, &["pkg.h"]);
+        let opts = LowerOptions {
+            initial_cpu: sigil_ir::Cpu::M68000,
+            include_root: None,
+            embed_base: None,
+            defines: vec![],
+        };
+        let resolve::BuiltProgram { mut diags, lowered, .. } =
+            resolve::build_program_open_embed_counted(&manifest, entry, None, &opts, &|_| None);
+        let extra = helper_import_errors_in(&manifest, &removed, &lowered, &diags);
+        diags.extend(extra);
+        diags
+            .into_iter()
+            .filter(|d| d.level == sigil_span::Level::Error)
+            .map(|d| d.message)
+            .collect()
+    }
+
+    /// THE ROW: a helper `use` naming an item the helper does not have, read by
+    /// nothing, is refused with the rule's own wording.
+    #[test]
+    fn an_unread_helper_import_of_a_missing_name_is_refused() {
+        let c = consumer("pkg.c", "NOPE_UNUSED_IMPORT");
+        let errors = build_errors(&[("pkg/h.emp", HELPER), ("pkg/c.emp", &c)], "pkg.c");
+        assert_eq!(errors, vec!["module `pkg.h` has no `pub` name `NOPE_UNUSED_IMPORT`"]);
+    }
+
+    /// A private helper item is refused too, although the rewrite publicizes it: the
+    /// rule is decided against the tree as written.
+    #[test]
+    fn an_unread_helper_import_of_a_private_name_is_refused() {
+        let c = consumer("pkg.c", "PRIV");
+        let errors = build_errors(&[("pkg/h.emp", HELPER), ("pkg/c.emp", &c)], "pkg.c");
+        assert_eq!(errors, vec!["module `pkg.h` has no `pub` name `PRIV`"]);
+    }
+
+    /// The accept arm: an unread import of a real `pub` helper item builds clean. A
+    /// check that refused every removed import fails here and nowhere else.
+    #[test]
+    fn an_unread_helper_import_of_a_pub_name_is_accepted() {
+        let c = consumer("pkg.c", "W");
+        let errors = build_errors(&[("pkg/h.emp", HELPER), ("pkg/c.emp", &c)], "pkg.c");
+        assert!(errors.is_empty(), "{errors:?}");
+    }
+
+    /// The scope arm: a module outside the build's `use` closure contributes no code,
+    /// so its stale import is not this build's error, as the resolve pass also
+    /// judges only the modules it lowers.
+    #[test]
+    fn a_stale_helper_import_outside_the_build_is_not_reported() {
+        let c = consumer("pkg.c", "W");
+        let other = consumer("pkg.other", "NOPE_UNUSED_IMPORT");
+        let files = [("pkg/h.emp", HELPER), ("pkg/c.emp", c.as_str()), ("pkg/other.emp", other.as_str())];
+        assert!(build_errors(&files, "pkg.c").is_empty());
+        assert_eq!(
+            build_errors(&files, "pkg.other"),
+            vec!["module `pkg.h` has no `pub` name `NOPE_UNUSED_IMPORT`"],
+            "the same module built as the entry is refused, so the silence above is scope"
+        );
     }
 }
 

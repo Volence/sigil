@@ -194,6 +194,9 @@ SOURCE_GATES=(
     # encoder — source only, no ROM and no golden
     m68k_capstone_stream
     native_object_bank_budget
+    # the resident modules' import check: one planted `use` line fed from memory over
+    # the tree's .emp files, judged by the refusal text; compares against no golden
+    seam1_import_check
     # the resident blob's link verdict, driven from in-memory sources over the tree's
     # .emp files; compares against its own pristine output, never a golden
     seam1_link_verdict

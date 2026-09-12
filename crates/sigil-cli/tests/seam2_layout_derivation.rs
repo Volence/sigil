@@ -65,13 +65,18 @@ fn sound_layout_derives_the_frozen_addresses() {
     assert_eq!(got, want, "map-derived seam-2 placement drifted from the frozen chain-22 addresses");
 }
 
-/// Materialize a doctored aeon: `engine/` symlinked to the real tree, `games/` a
-/// real dir whose `sonic4/` children are all symlinks to the real tree EXCEPT a
-/// doctored `map.toml`. `sound_layout` reads only `engine/` (via seam-1) and
-/// `games/sonic4/`, so this is a faithful whole-derivation substrate.
+/// Materialize a doctored aeon: `engine/` COPIED from the real tree, `games/` a real
+/// dir whose `sonic4/` children are all symlinks to the real tree EXCEPT a doctored
+/// `map.toml`. `sound_layout` reads only `engine/` (via seam-1) and `games/sonic4/`,
+/// so this is a faithful whole-derivation substrate.
+///
+/// `engine/` is a real copy, not a symlink: the seam-2 import check resolves a `use`
+/// of another module (`dac_sample_tab.emp`'s `use engine.sound_constants.{..}`) by
+/// scanning the tree, and the module scan does not follow a symlinked directory, so
+/// a symlinked `engine/` holds no module the check can find.
 fn doctored_aeon(root: &Path, doctor: impl FnOnce(String) -> String) {
     let real = aeon_dir();
-    std::os::unix::fs::symlink(real.join("engine"), root.join("engine")).unwrap();
+    copy_tree(&real.join("engine"), &root.join("engine"));
 
     let s4 = root.join("games/sonic4");
     std::fs::create_dir_all(&s4).unwrap();
@@ -85,6 +90,21 @@ fn doctored_aeon(root: &Path, doctor: impl FnOnce(String) -> String) {
     }
     let real_map = std::fs::read_to_string(real.join("games/sonic4/map.toml")).unwrap();
     std::fs::write(s4.join("map.toml"), doctor(real_map)).unwrap();
+}
+
+/// Copy the directory tree at `from` to `to`, files and subdirectories, following
+/// nothing but real entries.
+fn copy_tree(from: &Path, to: &Path) {
+    std::fs::create_dir_all(to).unwrap();
+    for entry in std::fs::read_dir(from).unwrap() {
+        let entry = entry.unwrap();
+        let dest = to.join(entry.file_name());
+        if entry.file_type().unwrap().is_dir() {
+            copy_tree(&entry.path(), &dest);
+        } else {
+            std::fs::copy(entry.path(), &dest).unwrap();
+        }
+    }
 }
 
 /// NON-VACUITY: a doctored `dac_banks` anchor (moved one bank DOWN from wherever the

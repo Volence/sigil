@@ -170,6 +170,17 @@ impl SourceIndex {
 /// original scan root: a failed `read_dir` on `root` itself is reported as an
 /// error (a mistyped/nonexistent root must not silently look like an empty
 /// tree); a failed `read_dir` on a subdirectory is swallowed.
+/// Every `*.emp` file under `root`, sorted: exactly the file set [`Manifest::scan`] parses,
+/// from the same walk, without reading any file's contents. A caller that keeps a scan can
+/// compare this list (with each file's length and mtime) to tell whether the tree moved.
+pub fn emp_files(root: &Path) -> Vec<PathBuf> {
+    let mut files = Vec::new();
+    let mut diags = Vec::new();
+    collect_emp(root, root, &mut files, &mut diags);
+    files.sort();
+    files
+}
+
 fn collect_emp(dir: &Path, root: &Path, out: &mut Vec<PathBuf>, diags: &mut Vec<Diagnostic>) {
     let entries = match std::fs::read_dir(dir) {
         Ok(entries) => entries,

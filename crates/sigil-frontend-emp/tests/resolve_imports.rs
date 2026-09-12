@@ -1,5 +1,7 @@
 use sigil_frontend_emp::parse_str;
-use sigil_frontend_emp::resolve::imports::{canonical, ExportIndex, ResolveEnv};
+use sigil_frontend_emp::resolve::imports::{
+    canonical, use_decl_errors, use_decls, ExportIndex, ResolveEnv,
+};
 
 #[test]
 fn canonical_is_module_qualified() {
@@ -171,4 +173,74 @@ fn private_equ_is_not_exported() {
         "expected the module-visibility rejection, got {diags:?}"
     );
     assert_eq!(env.resolve("WIDTH"), None);
+}
+
+/// The import rule applied without binding (`use_decl_errors`, what a path that
+/// removes or never resolves a `use` calls): a listed name the module does not
+/// export is refused, private or absent alike, each at the `use`'s own span, and a
+/// real `pub` name beside them is not.
+#[test]
+fn the_import_rule_refuses_each_listed_name_the_module_does_not_export() {
+    let (a, _) = parse_str("module mod.a\npub const W = 4\nconst PRIV = 2\n");
+    let (b, _) = parse_str("module mod.b\nuse mod.a.{W, NOPE, PRIV}\n");
+    let idx = ExportIndex::build(&[("mod.a", &a), ("mod.b", &b)]);
+    let uses = use_decls(&b.items);
+    assert_eq!(uses.len(), 1, "{uses:?}");
+    let errors = use_decl_errors(uses[0], &idx);
+    for d in &errors {
+        assert_eq!(d.level, sigil_span::Level::Error);
+        assert_eq!(d.primary, uses[0].span, "anchored at the `use`, not at a reader");
+    }
+    let messages: Vec<&str> = errors.iter().map(|d| d.message.as_str()).collect();
+    assert_eq!(
+        messages,
+        vec!["module `mod.a` has no `pub` name `NOPE`", "module `mod.a` has no `pub` name `PRIV`"]
+    );
+}
+
+/// The resolve pass and the unbound rule speak with one voice: the same `use` yields
+/// the same Errors from both, so a message seen on a standalone path is the map
+/// build's message.
+#[test]
+fn the_import_rule_and_the_resolve_pass_refuse_identically() {
+    let (a, _) = parse_str("module mod.a\npub const W = 4\n");
+    let (b, _) = parse_str("module mod.b\nuse mod.a.{NOPE}\nuse mod.a.{W}\n");
+    let idx = ExportIndex::build(&[("mod.a", &a), ("mod.b", &b)]);
+    let (_env, resolved) = ResolveEnv::build("mod.b", &b, &idx, None);
+    let unbound: Vec<_> = use_decls(&b.items).into_iter().flat_map(|u| use_decl_errors(u, &idx)).collect();
+    assert_eq!(unbound.len(), 1, "{unbound:?}");
+    assert_eq!(resolved, unbound);
+}
+
+/// A glob over a module that exports nothing is refused; a glob over one that
+/// exports something, and the two forms that name nothing, have nothing to check.
+#[test]
+fn the_import_rule_refuses_only_a_glob_that_brings_nothing() {
+    let (a, _) = parse_str("module mod.a\npub const W = 4\n");
+    let (e, _) = parse_str("module mod.empty\nconst K = 1\n");
+    let (b, _) = parse_str("module mod.b\nuse mod.empty.*\nuse mod.a.*\nuse mod.a\nuse mod.a._\n");
+    let idx = ExportIndex::build(&[("mod.a", &a), ("mod.empty", &e), ("mod.b", &b)]);
+    let per_use: Vec<Vec<String>> = use_decls(&b.items)
+        .into_iter()
+        .map(|u| use_decl_errors(u, &idx).into_iter().map(|d| d.message).collect())
+        .collect();
+    assert_eq!(
+        per_use,
+        vec![
+            vec!["glob `use mod.empty.*` matches no module with `pub` names".to_string()],
+            vec![],
+            vec![],
+            vec![],
+        ]
+    );
+}
+
+/// `has_module` tells a module that exports nothing from one that does not exist,
+/// the distinction a standalone path needs before it can say which is wrong.
+#[test]
+fn has_module_tells_an_empty_module_from_a_missing_one() {
+    let (e, _) = parse_str("module mod.empty\nconst K = 1\n");
+    let idx = ExportIndex::build(&[("mod.empty", &e)]);
+    assert!(idx.has_module("mod.empty"));
+    assert!(!idx.has_module("mod.missing"));
 }

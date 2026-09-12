@@ -3,7 +3,7 @@
 //! or the prelude), and offer an "add `use`" fix-it for names that are exported
 //! elsewhere but not yet imported.
 use crate::ast;
-use sigil_span::{Diagnostic, Level};
+use sigil_span::{Diagnostic, Level, Span};
 use std::collections::{HashMap, HashSet};
 
 /// The canonical, collision-proof name of a top-level item: its module id and
@@ -74,6 +74,10 @@ pub struct ExportIndex {
     /// binds the short name to the bare symbol rather than to a module-qualified
     /// canonical one — see [`ExportIndex::import_target`].
     equ_exports: HashSet<(String, String)>,
+    /// Every module id the index was built over, `pub` names or not, so a `use`
+    /// of a module that exists but exports nothing is told apart from a `use` of
+    /// a module that does not exist.
+    modules: HashSet<String>,
 }
 
 impl ExportIndex {
@@ -82,6 +86,7 @@ impl ExportIndex {
         let mut by_name: HashMap<String, Vec<String>> = HashMap::new();
         let mut exported = HashSet::new();
         let mut equ_exports = HashSet::new();
+        let module_ids = modules.iter().map(|(id, _)| (*id).to_string()).collect();
         for (id, file) in modules {
             for name in exported_names(file) {
                 // Guard against the same module appearing twice in `modules`:
@@ -97,12 +102,23 @@ impl ExportIndex {
                 equ_exports.insert(((*id).to_string(), name));
             }
         }
-        ExportIndex { by_name, exported, equ_exports }
+        ExportIndex { by_name, exported, equ_exports, modules: module_ids }
     }
 
     /// Whether `module_id` exports a `pub` top-level name `name`.
     pub fn is_exported(&self, module_id: &str, name: &str) -> bool {
         self.exported.contains(&(module_id.to_string(), name.to_string()))
+    }
+
+    /// Whether the index was built over a module called `module_id`.
+    pub fn has_module(&self, module_id: &str) -> bool {
+        self.modules.contains(module_id)
+    }
+
+    /// Whether `module_id` exports at least one `pub` name, the condition a glob
+    /// `use module_id.*` needs to bring anything into scope.
+    fn exports_any(&self, module_id: &str) -> bool {
+        self.by_name.values().any(|owners| owners.iter().any(|o| o == module_id))
     }
 
     /// The symbol an importer must bind the short name `name` to when it comes
@@ -351,6 +367,79 @@ impl<'a> ResolveEnv<'a> {
     }
 }
 
+/// The Error for `use base.{name}` when `name` is not a `pub` item of `base`.
+/// One wording for every path that checks an import, so a message seen from
+/// the map build and from a standalone-lowering path is the same message.
+pub fn no_pub_name_error(base: &str, name: &str, span: Span) -> Diagnostic {
+    Diagnostic {
+        level: Level::Error,
+        message: format!("module `{base}` has no `pub` name `{name}`"),
+        primary: span,
+    }
+}
+
+/// The Error for `use base.*` when `base` exports nothing.
+fn glob_matches_nothing_error(base: &str, span: Span) -> Diagnostic {
+    Diagnostic {
+        level: Level::Error,
+        message: format!("glob `use {base}.*` matches no module with `pub` names"),
+        primary: span,
+    }
+}
+
+/// The Error for a `use` whose module is not among the modules being built. The
+/// map build's reachability walk raises it for every `use` edge it follows; a
+/// path that lowers files one at a time raises it through [`use_decl_errors`]'s
+/// callers.
+pub fn unknown_module_error(base: &str, span: Span) -> Diagnostic {
+    Diagnostic {
+        level: Level::Error,
+        message: format!("no module `{base}` found under the scan root"),
+        primary: span,
+    }
+}
+
+/// The import rule for one `use`, applied without binding anything: every name
+/// a `use base.{..}` list names must be a `pub` item of `base`, and a glob
+/// `use base.*` must match a module that exports something. The Errors are
+/// anchored at the `use` declaration's own span, so they fire whether or not
+/// anything reads the imported names.
+///
+/// The resolve pass applies this rule while it binds ([`ResolveEnv::build`]).
+/// A path that removes a `use` before that pass runs, or that lowers a file with
+/// no resolve pass at all, calls this so the rule still holds there. It does not
+/// check that `base` exists: the caller decides that against its own module set
+/// ([`unknown_module_error`]). A whole-module or blank `use` names nothing, so
+/// it has nothing to check here.
+pub fn use_decl_errors(u: &ast::UseDecl, index: &ExportIndex) -> Vec<Diagnostic> {
+    let base = u.base.segments.join(".");
+    match &u.names {
+        ast::UseNames::List(names) => names
+            .iter()
+            .filter(|n| !index.is_exported(&base, n))
+            .map(|n| no_pub_name_error(&base, n, u.span))
+            .collect(),
+        ast::UseNames::Glob if !index.exports_any(&base) => {
+            vec![glob_matches_nothing_error(&base, u.span)]
+        }
+        ast::UseNames::Glob | ast::UseNames::Whole | ast::UseNames::Blank => Vec::new(),
+    }
+}
+
+/// Every `use` declaration in `items`, recursing one level into `section {}`
+/// bodies, the same walk the resolve pass makes over a module's imports.
+pub fn use_decls(items: &[ast::Item]) -> Vec<&ast::UseDecl> {
+    let mut out = Vec::new();
+    for item in items {
+        match item {
+            ast::Item::Use(u) => out.push(u),
+            ast::Item::Section(sec) => out.extend(use_decls(&sec.items)),
+            _ => {}
+        }
+    }
+    out
+}
+
 /// Walk `items` calling `resolve_use` on every `Item::Use`, recursing one level
 /// into `section {}` bodies so a section-nested `use` is honored too (mirrors
 /// `collect_exported`/`collect_defined`'s recursion shape).
@@ -382,11 +471,7 @@ fn resolve_use(
         ast::UseNames::List(names) => {
             for n in names {
                 if !index.is_exported(&base, n) {
-                    diags.push(Diagnostic {
-                        level: Level::Error,
-                        message: format!("module `{base}` has no `pub` name `{n}`"),
-                        primary: u.span,
-                    });
+                    diags.push(no_pub_name_error(&base, n, u.span));
                     continue;
                 }
                 let target = index.import_target(&base, n);
@@ -427,11 +512,7 @@ fn resolve_use(
                 }
             }
             if !matched_any {
-                diags.push(Diagnostic {
-                    level: Level::Error,
-                    message: format!("glob `use {base}.*` matches no module with `pub` names"),
-                    primary: u.span,
-                });
+                diags.push(glob_matches_nothing_error(&base, u.span));
             }
         }
         ast::UseNames::Whole => {

@@ -54,6 +54,8 @@ pub mod seam2;
 /// one `path:line:col: [Error] message` line per diagnostic, for the comptime
 /// guards, the deferred link asserts, and the sound emitters' co-link guards alike.
 pub mod diag_render;
+/// The import rule for the seams that lower `.emp` files with no resolve pass.
+pub mod import_check;
 
 /// The strict-gate CENSUS: the population of `if !strict_gate()` consultations the
 /// test tree declares, derived from source at attest time, plus the set comparison

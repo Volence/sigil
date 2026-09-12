@@ -879,6 +879,34 @@ fn run_parse(entry: &Entry, args: &[String]) {
     process::exit(1);
 }
 
+/// The import rule for a single-file `sigil emp` build, whose program is this one
+/// module: a `use` of any other module names nothing the build contains, and a
+/// `use` of the file's own module must list `pub` names of it. Without this the
+/// single-file path never read a `use` at all, so `use nowhere.{X}` built clean
+/// whenever nothing read `X`.
+fn single_file_import_errors(file: &sigil_frontend_emp::ast::File) -> Vec<sigil_span::Diagnostic> {
+    use sigil_frontend_emp::resolve::imports::{use_decl_errors, use_decls, ExportIndex};
+    let own = file.module.path.segments.join(".");
+    let index = ExportIndex::build(&[(own.as_str(), file)]);
+    let mut out = Vec::new();
+    for u in use_decls(&file.items) {
+        let base = u.base.segments.join(".");
+        if base == own {
+            out.extend(use_decl_errors(u, &index));
+        } else {
+            out.push(sigil_span::Diagnostic {
+                level: sigil_span::Level::Error,
+                message: format!(
+                    "no module `{base}` in this build: a single-file `sigil emp` compiles only \
+                     module `{own}`, pass `--root <dir>` to build it with the modules it imports"
+                ),
+                primary: u.span,
+            });
+        }
+    }
+    out
+}
+
 /// Compile a Spec 2 `.emp` source string to its flat linked binary image.
 /// Mirrors the top-level `.asm` path but through the emp front end: parse →
 /// [`lower_module`](sigil_frontend_emp::lower::lower_module) (threading
@@ -897,6 +925,7 @@ fn compile_emp(
     if diags.iter().any(|d| d.level == sigil_span::Level::Error) {
         return (None, diags);
     }
+    diags.extend(single_file_import_errors(&file));
     let opts = sigil_frontend_emp::lower::LowerOptions {
         initial_cpu: sigil_ir::Cpu::M68000,
         include_root: include_root.map(std::path::Path::to_path_buf),
