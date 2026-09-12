@@ -1,0 +1,54 @@
+n01_fwd_inside_own	body `dc.w +` then its own `+`, invoked twice
+n02_outer_fwd_to_inner_def	outer body `dc.w +` then calls inner, which defines `+`
+n03_outer_back_to_closed_inner	outer calls inner (defines `-`), then outer references `-`
+n04_inner_back_to_outer_def	outer defines `-` then calls inner, which references `-`
+n05_inner_fwd_to_outer_def	inner references `+`; outer calls inner then defines `+`
+n06_rept_fwd_in_iter	`rept 2` body `dc.w +` then its own `+`
+n07_rept_back_in_iter	`rept 2` body `-` then `dc.w -`
+n08_rept_reads_outer	outer `-` before; `rept 2` body references `-`
+n09_label_on_rept_line	the corpus shape: `-` on the `rept` line, `dbf d0,-` after
+n10_other_macro_later	`-` defined in one macro's body, referenced from a later different macro
+n11_ref_in_arg	file-level `-`, then a macro whose body emits its argument, called with `-`
+n12_ref_in_arg_body_def	body defines `-` then emits its argument; called with `-` (whose `-`?)
+n13_inner_fwd_past_closed_nested	outer: `dc.w +`, calls inner (defines `+`), then defines its own `+`
+n14_while_fwd_in_iter	`while` body `dc.w +` then its own `+`
+n15_irp_back_in_iter	`irp` body `-` then `dc.w -`
+n16_back_from_nested_child	outer defines `-`; inner (called after) does `rept 1` whose body refs `-`
+n17_fwd_child_ref_parent_def	outer: calls inner (whose rept body refs `+`), then outer defines `+`
+n18_slash_in_body_back_inside	body `/` then `dc.w -` inside, invoked twice
+n19_globalsymbols_fwd_from_outside	`dc.w +` before; a {GLOBALSYMBOLS} body defines `+`
+n20_if_in_body	body `if 1` / `-` / `endif`; `-` after the expansion
+n21_plusplus_in_body	body `++`; `+++` referenced before the call, `+` after the call defined outside
+n22_fwd_outside_skips_body	`dc.w ++` before; body defines `+`; outer `+` after
+n23_back_outside_skips_body	outer `-`; body `-`; after the call `dc.w --`
+s01_brace_fwd_inside	body `dc.w Lab{n}` then `Lab{n}:`, invoked with 3 and 4
+s02_param_fwd_inside	body `dc.w nm` then `nm:`, invoked with Foo and Bar
+s03_intlabel_fwd_inside	{INTLABEL} body `dc.w __LABEL___B` then `__LABEL___B:`
+s04_brace_global_fwd_inside	file-level cnt; body `dc.w Lab{cnt}` then `Lab{cnt}:`
+s05_brace_changes_in_body	body sets `cnt` then defines `Lab{cnt}:`, reads `Lab5` inside
+s06_param_nested_arg	outer passes its argument to inner as the label name; read outside
+s07_param_nested_outside	outer passes its argument to inner as the label name; read at file level
+s08_param_value_binding	argument-text name bound with `equ` in the body, read after (control)
+s09_param_label_dir	argument-text name bound with `label *` in the body, read after (control)
+en1_inside	`enum` member read inside the body (control)
+en2_twice	`enum` in a body, macro invoked twice
+en3_file_enum_then_body_nextenum_inside	file-level `enum`; body `nextenum Eb`, read inside
+en4_enum_counter_continues	body `enum Ea=5`; after the call, file-level `nextenum Ez`, read Ez
+in1_inside_after	a label from a file included in a body, read later in the body
+in2_inc_refs_own	an included file that defines and references its own label, from a body
+in3_inc_reads_caller_body	a body label read from a file included later in the same body
+in4_inc_fwd_inside	a body reads, BEFORE the include, a label the included file defines
+in5_file_include_control	a file-level include's label, read after (control)
+in6_include_in_rept	a label from a file included inside `rept 1`, read after
+gs1_global_inner_read_in_outer	plain outer calls {GLOBALSYMBOLS} inner (defines Lg); outer reads Lg after
+gs2_global_inner_read_outside	plain outer calls {GLOBALSYMBOLS} inner (defines Lg); read at file level
+gs3_global_inner_twice_in_outer	plain outer invoked twice, each calls {GLOBALSYMBOLS} inner (defines Lg)
+gs4_rept_in_global_body	{GLOBALSYMBOLS} body `rept 1` with a label, read after
+gs5_global_body_scope_after	{GLOBALSYMBOLS} body `Inner:`; after the call `.b := 2`; read `Inner.b`
+gs6_global_body_dot_then_base	{GLOBALSYMBOLS} body `.dl:`, read `Base.dl` after
+gs7_global_body_dot_twice	{GLOBALSYMBOLS} body `.dl:`, invoked twice under `Base:`
+dx1_two_scopes_one_body	body `La:` `.x:` `Lb:` `.x:`, read `.x` inside after each
+dx2_twice	body `Lp:` `.x:`, macro invoked twice
+dx3_read_qualified_inside	body `Lp:` `.x:` then `dc.w Lp.x` inside
+d04b_irpc	plain label in a file-level `irpc` body, read after
+d09b_irpc_var_name	`irpc` label spelled by the loop variable, read after

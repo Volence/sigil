@@ -1,0 +1,86 @@
+asl md5 61e672562465725a8c102288a7da9098  sigil sigil 0.1.0 (3bc0d81a)
+a01_colon                                asl=2 error #1010: symbol undefined    -                | sigil=1 unresolved symbol `Lp` for fixup in section  -                MATCH
+a02_bare_col0                            asl=2 error #1010: symbol undefined    -                | sigil=1 unresolved symbol `Lp` for fixup in section  -                MATCH
+a03_bare_alone                           asl=2 error #1010: symbol undefined    -                | sigil=1 unresolved symbol `Lp` for fixup in section  -                MATCH
+a04_indented_colon                       asl=2 error #1010: symbol undefined    -                | sigil=1 unresolved symbol `Lp` for fixup in section  -                MATCH
+a05_forward                              asl=2 error #1010: symbol undefined    -                | sigil=1 unresolved symbol `Lp` for fixup in section  -                MATCH
+a06_later_other_macro                    asl=2 error #1010: symbol undefined    -                | sigil=1 unresolved symbol `Lp` for fixup in section  -                MATCH
+a07_earlier_other_macro                  asl=2 error #1010: symbol undefined    -                | sigil=1 unresolved symbol `Lp` for fixup in section  -                MATCH
+a08_defined_fn                           asl=0 -                                11112222bbbb4444 | sigil=0 -                                            11112222bbbb4444 MATCH
+a09_ifdef                                asl=0 -                                11112222bbbb4444 | sigil=0 -                                            11112222bbbb4444 MATCH
+a10_dot_under_body_label                 asl=2 error #1010: symbol undefined    -                | sigil=0 -                                            2222333301044444 LEAK
+a11_scope_after_body_label_inner         asl=0 -                                5555222200024444 | sigil=1 unresolved symbol `Inner.b` for fixup in sec -                OVER-REFUSE
+a12_scope_after_body_label_base          asl=2 error #1010: symbol undefined    -                | sigil=0 -                                            5555222200024444 LEAK
+a13_twice_then_outside                   asl=2 error #1010: symbol undefined    -                | sigil=1 unresolved symbol `Lp` for fixup in section  -                MATCH
+b01_dot_colon                            asl=2 error #1010: symbol undefined    -                | sigil=1 unresolved symbol `Base.dl` for fixup in sec -                MATCH
+b02_dot_qualified                        asl=2 error #1010: symbol undefined    -                | sigil=1 unresolved symbol `Base.dl` for fixup in sec -                MATCH
+b03_dot_no_scope                         asl=2 error #1010: symbol undefined    -                | sigil=1 unresolved symbol `.dl` for fixup in section -                MATCH
+b04_dot_bare_col0                        asl=2 error #1010: symbol undefined    -                | sigil=1 unresolved symbol `Base.dl` for fixup in sec -                MATCH
+b05_dot_forward                          asl=2 error #1010: symbol undefined    -                | sigil=1 unresolved symbol `Base.dl` for fixup in sec -                MATCH
+c01_minus_after                          asl=2 error #1010: symbol undefined    -                | sigil=0 -                                            1111222201024444 LEAK
+c02_plus_before                          asl=2 error #1010: symbol undefined    -                | sigil=0 -                                            1111010422224444 LEAK
+c03_plus_before_outer_after              asl=2 error #1010: symbol undefined    -                | sigil=0 -                                            0104222233334444 LEAK
+c04_slash_then_minus                     asl=2 error #1010: symbol undefined    -                | sigil=0 -                                            1111222201024444 LEAK
+c05_plus_before_slash                    asl=2 error #1010: symbol undefined    -                | sigil=0 -                                            1111010422224444 LEAK
+c06_inside_reads_outer_minus             asl=0 -                                1111333301024444 | sigil=0 -                                            1111333301024444 MATCH
+c07_inside_reads_outer_plus              asl=0 -                                1111010433334444 | sigil=0 -                                            1111010433334444 MATCH
+c08_minus_outer_before_body              asl=2 error #1010: symbol undefined    -                | sigil=0 -                                            3333222201044444 LEAK
+c09_own_minus_control                    asl=0 -                                0102222201064444 | sigil=0 -                                            0102222201064444 MATCH
+c10_minus_rept_file                      asl=2 error #1010: symbol undefined    -                | sigil=0 -                                            1111222201024444 LEAK
+c11_minus_irp_file                       asl=2 error #1010: symbol undefined    -                | sigil=0 -                                            1111222201024444 LEAK
+c12_minus_while_file                     asl=2 error #1010: symbol undefined    -                | sigil=0 -                                            1111222201024444 LEAK
+c13_minus_globalsymbols                  asl=0 -                                1111222201024444 | sigil=0 -                                            1111222201024444 MATCH
+c14_plus_before_twice                    asl=2 error #1010: symbol undefined    -                | sigil=0 -                                            0104222222224444 LEAK
+c15_minus_rept_in_macro                  asl=2 error #1010: symbol undefined    -                | sigil=0 -                                            1111222201024444 LEAK
+d01_rept1                                asl=2 error #1010: symbol undefined    -                | sigil=1 unresolved symbol `Lr` for fixup in section  -                MATCH
+d02_rept2                                asl=2 error #1010: symbol undefined    -                | sigil=1 unresolved symbol `Lr` for fixup in section  -                MATCH
+d03_irp                                  asl=2 error #1010: symbol undefined    -                | sigil=1 unresolved symbol `Li` for fixup in section  -                MATCH
+d04_irpc                                 asl=2 error #1010: symbol undefined    -                | sigil=1 unresolved `irpc` string expression          -                MATCH
+d05_while                                asl=2 error #1010: symbol undefined    -                | sigil=1 unresolved symbol `Lw` for fixup in section  -                MATCH
+d06_irp_var_name                         asl=2 error #1010: symbol undefined    -                | sigil=1 unresolved symbol `Aa` for fixup in section  -                MATCH
+d07_rept_in_macro_read_in_body           asl=2 error #1010: symbol undefined    -                | sigil=1 unresolved symbol ` exp#1.Lr` for fixup in s -                MATCH
+d08_rept_in_macro_read_outside           asl=2 error #1010: symbol undefined    -                | sigil=1 unresolved symbol `Lr` for fixup in section  -                MATCH
+d09_irpc_var_name                        asl=2 error #1010: symbol undefined    -                | sigil=1 unresolved `irpc` string expression          -                MATCH
+e01_inner_label_outside                  asl=2 error #1010: symbol undefined    -                | sigil=1 unresolved symbol `Ln` for fixup in section  -                MATCH
+e02_outer_label_outside                  asl=2 error #1010: symbol undefined    -                | sigil=1 unresolved symbol `Lo` for fixup in section  -                MATCH
+e03_macro_defined_in_macro               asl=2 error #1010: symbol undefined    -                | sigil=1 unresolved symbol `Ld` for fixup in section  -                MATCH
+f_expand                                 asl=2 error #1010: symbol undefined    -                | sigil=1 unresolved symbol `Lp` for fixup in section  -                MATCH
+f_expif                                  asl=2 error #1010: symbol undefined    -                | sigil=1 unresolved symbol `Lp` for fixup in section  -                MATCH
+f_expmacro                               asl=2 error #1010: symbol undefined    -                | sigil=1 unresolved symbol `Lp` for fixup in section  -                MATCH
+f_export                                 asl=2 error #1010: symbol undefined    -                | sigil=1 unresolved symbol `Lp` for fixup in section  -                MATCH
+f_globalsymbols                          asl=0 -                                1111222201024444 | sigil=1 unresolved symbol `Lp` for fixup in section  -                OVER-REFUSE
+f_globalsymbols_dot                      asl=0 -                                5555222201044444 | sigil=1 unresolved symbol `Base.dl` for fixup in sec -                OVER-REFUSE
+f_globalsymbols_forward                  asl=0 -                                1111010422224444 | sigil=1 unresolved symbol `Lp` for fixup in section  -                OVER-REFUSE
+f_globalsymbols_inside                   asl=0 -                                1111222201024444 | sigil=0 -                                            1111222201024444 MATCH
+f_globalsymbols_intlabel                 asl=0 -                                1111222201024444 | sigil=0 -                                            1111222201024444 MATCH
+f_globalsymbols_lower                    asl=0 -                                1111222201024444 | sigil=1 unresolved symbol `Lp` for fixup in section  -                OVER-REFUSE
+f_globalsymbols_nested_inner             asl=2 error #1010: symbol undefined    -                | sigil=1 unresolved symbol `Ln` for fixup in section  -                MATCH
+f_globalsymbols_twice                    asl=2 error #1000: symbol double defin -                | sigil=1 unresolved symbol `Lp` for fixup in section  -                MATCH
+f_intlabel                               asl=2 error #1010: symbol undefined    -                | sigil=1 unresolved symbol `Lp` for fixup in section  -                MATCH
+f_noexpand                               asl=2 error #1010: symbol undefined    -                | sigil=1 unresolved symbol `Lp` for fixup in section  -                MATCH
+f_noexpif                                asl=2 error #1010: symbol undefined    -                | sigil=1 unresolved symbol `Lp` for fixup in section  -                MATCH
+f_noexpmacro                             asl=2 error #1010: symbol undefined    -                | sigil=1 unresolved symbol `Lp` for fixup in section  -                MATCH
+f_noexport                               asl=2 error #1010: symbol undefined    -                | sigil=1 unresolved symbol `Lp` for fixup in section  -                MATCH
+f_noglobalsymbols                        asl=2 error #1010: symbol undefined    -                | sigil=1 unresolved symbol `Lp` for fixup in section  -                MATCH
+g01_intlabel_suffix                      asl=2 error #1010: symbol undefined    -                | sigil=0 -                                            1111222201024444 LEAK
+g02_intlabel_bare                        asl=2 error #1010: symbol undefined    -                | sigil=0 -                                            1111222201024444 LEAK
+g03_intlabel_literal                     asl=2 error #1010: symbol undefined    -                | sigil=1 unresolved symbol `__LABEL__Plc` for fixup i -                MATCH
+g04_brace_global                         asl=2 error #1010: symbol undefined    -                | sigil=0 -                                            1111222201024444 LEAK
+g05_brace_param                          asl=2 error #1010: symbol undefined    -                | sigil=0 -                                            1111222201024444 LEAK
+g06_param_name_colon                     asl=2 error #1010: symbol undefined    -                | sigil=0 -                                            1111222201024444 LEAK
+g07_param_name_bare                      asl=2 error #1010: symbol undefined    -                | sigil=0 -                                            1111222201024444 LEAK
+g08_param_name_dot                       asl=2 error #1010: symbol undefined    -                | sigil=0 -                                            5555222201044444 LEAK
+g09_param_name_twice                     asl=0 -                                2222222233334444 | sigil=1 symbol `Foo` redefined by section `sec256` ( -                OVER-REFUSE
+g10_brace_twice                          asl=0 -                                2222222233334444 | sigil=1 symbol `Lab3` redefined by section `sec256`  -                OVER-REFUSE
+g11_intlabel_suffix_twice                asl=0 -                                2222222233334444 | sigil=0 -                                            2222222233334444 MATCH
+g12_param_name_inside                    asl=0 -                                0102222201064444 | sigil=0 -                                            0102222201064444 MATCH
+g13_brace_inside                         asl=0 -                                0102222201064444 | sigil=0 -                                            0102222201064444 MATCH
+g14_allargs_name                         asl=2 error #1010: symbol undefined    -                | sigil=0 -                                            1111222201024444 LEAK
+h01_enum                                 asl=2 error #1010: symbol undefined    -                | sigil=0 -                                            0000111100064444 LEAK
+h02_equ_control                          asl=0 -                                0000111101234444 | sigil=0 -                                            0000111101234444 MATCH
+h03_label_dir_control                    asl=0 -                                0000111101024444 | sigil=0 -                                            0000111101024444 MATCH
+h04_nextenum                             asl=2 error #1010: symbol undefined    -                | sigil=0 -                                            0000111100064444 LEAK
+i01_include_in_body                      asl=2 error #1010: symbol undefined    -                | sigil=0 -                                            1111222201024444 LEAK
+i02_include_in_body_twice                asl=0 -                                2222222233334444 | sigil=1 symbol double defined: `Linc`                -                OVER-REFUSE
+i03_include_nameless                     asl=2 error #1010: symbol undefined    -                | sigil=0 -                                            1111222201024444 LEAK
+TOTAL 84 LEAK=25 MATCH=51 OVER-REFUSE=8
