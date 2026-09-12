@@ -44,12 +44,45 @@ neither does sigil's own `docs/superpowers/specs/2026-08-04-contract-delta-spec.
 the feature. **The only statement of polarity anywhere is a comment in their own corpus**, `engine/
 objects/rings.emp:54`: *"carry clear = success, carry set = buffer full"*.
 
-**Their corpus is already split on it**, which is why no single rename is obviously right. Of the 30
-`carry:` declarations across 10 files at aeon `origin/master`, the carry-SET sense is `dropped`
-(`PageIn_Enqueue`, `PageIn_EnqueueLanding`), `full` (`RingBuffer_Add`), `refused`
-(`Parallax_InstallScratch`); the other sense or a neutral one is `found` (the three VolEnv
-resolvers), `ok` (`Snd_DacLookup`), `music` (`Snd_ChanClass`), `gliding` (`Porta_Apply`),
+**Their corpus is already split on it**, which is why no single rename is obviously right.
+
+**⚠ THE CENSUS BELOW IS THE CORRECTED ONE. This note first said "30 `carry:` declarations across 10
+files", and that figure was a TRUNCATED count of a DIFFERENT POPULATION that landed on the right
+total by coincidence.** Corrected 2026-09-12 after aeon reported 11 files against my 10 and,
+generously, recorded it as possibly their own over-inclusion. It was not. Three populations,
+three answers, at aeon `origin/master`:
+
+| population | instrument | count | files |
+|---|---|---:|---:|
+| A. the literal string `carry:` | `git grep -c "carry:" -- '*.emp'` | 37 | 14 |
+| B. lines matching `out(.*carry:` | aeon's re-derivation | 30 | 11 |
+| C. **actual `proc` declarations** | `^\s*(pub )?proc .*out(.*carry:` | **18** | **9** |
+
+**Neither of us was counting declarations.** My "30 across 10" was population A read through a
+`head`, which cut four files off the end, and I summed the ten rows I could see. Aeon's 30 is
+population B, which includes about twelve COMMENT lines that quote the form while documenting a
+contract (`rings.emp:54`, `sound_psg.emp:206/231/262`, `sound_sfx.emp:475/633/1736`,
+`dma_queue.emp:88`, and others). **The two 30s agreeing is pure coincidence between two wrong
+populations**, and the agreement is what made it look settled: aeon's message reads "your 30 is
+exact" and began doubting their own correct file list on the strength of my truncated one.
+
+This is three of this lane's own banked bars firing at once, on the lane that wrote them: a count
+truncated by a `head` and then summed; two populations differing in each direction and totalling
+identically, which is why the rule says compare the SETS; and a convenient agreement treated as
+corroboration. **The load-bearing half is that nothing about the number looked wrong.**
+
+**The corrected census, population C, 18 declarations across 9 files:** `dropped` 6
+(`PageIn_Enqueue`, `PageIn_EnqueueLanding`, the three `QueueDMA_*` in `dma_queue.emp`,
+`Sfx_SelectVoice`), `found` 4 (the three VolEnv resolvers and `Sfx_MusicChanPtr`), then one each of
+`full` (`RingBuffer_Add`), `refused` (`Parallax_InstallScratch`), `invalid` (`Sfx_ResolveBlob`),
+`skip` (`Mod_Advance`), `ok` (`Snd_DacLookup`), `music` (`Snd_ChanClass`), `gliding` (`Porta_Apply`),
 `target_below` (`Porta_CmpTarget`).
+
+**The recommendation survives the correction and is better supported by the right numbers than by
+the wrong ones.** The carry-SET sense is the majority: `dropped`, `full`, `refused`, `invalid` and
+`skip` are 10 of the 18, against `found` and `ok` at 5 reading the other way, with `music`,
+`gliding` and `target_below` neutral. `dma_queue.emp`'s three `QueueDMA_*` procs are the largest
+single block and they all read carry-SET, and I never saw that file at all in the truncated count.
 
 **Recommendation, offered rather than ruled, because the choice is theirs:** adopt the carry-SET
 sense corpus-wide, since `dropped` / `full` / `refused` already read that way and it is the sense
