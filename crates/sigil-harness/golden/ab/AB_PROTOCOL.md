@@ -45,18 +45,27 @@ not before the evidence.
    **That makes it worse to leave unwritten, not better** — a hand-run instrument has no CI to
    catch it and no second reader.
 
-   **The coverage figure, which is the reason step 0 is a rule and not a reminder: of the 19
-   instruments here, 9 call `reload_rom` with an explicit path and ZERO verify the cart.** Not
-   one reads `romBytes` back or hashes it, against a control showing that matcher fires 87 times
-   elsewhere under `crates/`, so the zero is the subject rather than a broken matcher.
-   `reload_rom` says *load this*, and nothing anywhere confirms the emulator holds it. The nine
-   are defended against a stale PRELOAD and none of the nineteen is defended against a load that
-   silently did not take.
+   **The coverage figure, which is the reason step 0 is a rule and not a reminder: of the 18
+   instruments here, 8 call `reload_rom` with an explicit path and ZERO verify the cart.** Not
+   one reads `romBytes` back or hashes it, against a control confirming all 18 are readable files
+   the matcher could have fired on, so the zero is the subject rather than a broken matcher.
+   `reload_rom` says *load this*, and nothing anywhere confirms the emulator holds it. **The eight
+   are defended against a stale PRELOAD; none of the eighteen is defended against a load that
+   silently did not take.**
 
-   *(Enumerate these by what they IMPORT, `from aether import BusClient` / `suite_paths`, never
-   by the literal vocabulary `emulator_`/`romBytes`: that matcher finds 10 of the 19, because the
-   rest reach the bus through the shared client and contain none of those tokens. This lane
-   published the smaller population before catching it.)*
+   **Enumerate the population by the BUS CLIENT it imports (`from aether import` / `BusClient`),
+   across the whole repo, and nothing else.** Three wrong populations preceded this one and each
+   was published: the literal vocabulary `emulator_`/`romBytes` finds 10 of the 18, because the
+   rest reach the bus through the shared client and name none of those tokens; a first pass was
+   additionally truncated by a `head`; and adding `suite_paths` to the matcher inflates it with a
+   path-resolution helper used all over `scripts/` and `docs/` that has nothing to do with the
+   emulator, while scoping the search to `golden/ab/**` hides anything outside it. **Matcher and
+   population are separate choices and fixing one does not prompt a look at the other.**
+
+   **The number that never moved is the one that matters: ZERO, under every population.** Three
+   denominators, three matchers, one numerator. A conclusion invariant across independent wrong
+   framings is the one worth acting on, and it is the reason step 0 is a binding rule here rather
+   than a caution.
 
    *(The discipline existed in this lane's session memory as "verify the cart by hash" and was
    never written into the file the runner reads. That gap is the day's recurring shape: an
