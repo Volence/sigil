@@ -1,0 +1,37 @@
+== mutation c6g on crates/sigil-frontend-as/src/eval.rs, test binary as_int_builtins, HEAD 786e18c8dd05a589728928852f8a44f4fdb959e4 branch parcel/as-missing-builtins
+MUTATED /home/volence/sonic_hacks/sigil/.claude/worktrees/agent-a09c77cfcd76b4fb6/crates/sigil-frontend-as/src/eval.rs, lines 3601..3603 now read:
+  3601:                 if let Some((params, body)) = self.functions.get(name).filter(|_| !is_num_builtin(name)) {
+  3602:                     if matches!(
+git diff --stat:
+ crates/sigil-frontend-as/src/eval.rs | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+test a_user_function_spelled_like_a_builtin_wins ... FAILED
+test an_empty_argument_is_refused_where_zero_is ... ok
+test a_builtin_name_is_the_builtin_only_in_call_shape ... ok
+test an_empty_argument_is_zero_for_every_builtin ... ok
+test bitpos_refuses_anything_but_one_positive_bit ... ok
+test bitpos_works_wherever_an_integer_is_read ... ok
+test bitpos_matches_asl_over_every_value_it_accepts ... ok
+test bitcnt_works_wherever_an_integer_is_read ... ok
+test sgn_reaches_substr_s_length_through_a_user_function ... ok
+test what_asl_refuses_in_firstbit_is_refused ... ok
+test sgn_takes_a_float_and_answers_an_integer ... ok
+test what_asl_refuses_in_bitpos_is_refused ... ok
+test what_asl_refuses_in_sgn_is_refused ... ok
+test sgn_works_wherever_an_integer_is_read ... ok
+test what_asl_refuses_in_bitcnt_is_refused ... ok
+test what_asl_refuses_in_toupper_and_tolower_is_refused ... ok
+test firstbit_works_wherever_an_integer_is_read ... ok
+test toupper_and_tolower_work_wherever_an_integer_is_read ... ok
+test toupper_and_tolower_match_asl_over_every_code ... ok
+test sgn_matches_asl_over_its_tables ... ok
+test bitcnt_matches_asl_over_its_table ... ok
+test firstbit_matches_asl_over_its_table ... ok
+thread 'a_user_function_spelled_like_a_builtin_wins' (2790517) panicked at crates/sigil-frontend-as/tests/as_int_builtins.rs:483:5:
+names_userfn: sigil's image differs from asl's listing at $0 (asl 10 bytes, sigil 10):
+  asl   [65, 65, 65, 65, 65, 65, 65, 65]
+  sigil [01, 01, FF, 00, 01, 01, 00, 01]
+test result: FAILED. 21 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+error: test failed, to rerun pass `-p sigil-frontend-as --test as_int_builtins`
+TEST_PIPE_DONE
+restored crates/sigil-frontend-as/src/eval.rs from HEAD; tracked changes now: 0

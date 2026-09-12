@@ -1,0 +1,15 @@
+== mutation c1a on crates/sigil-frontend-as/src/eval.rs, test binary as_int_builtins, HEAD 8b7fcae66ad801151cf1ef3bd64f59060779c05f branch parcel/as-missing-builtins
+MUTATED /home/volence/sonic_hacks/sigil/.claude/worktrees/agent-a09c77cfcd76b4fb6/crates/sigil-frontend-as/src/eval.rs, lines 3049..3051 now read:
+  3049:         if arg.is_empty() && false {
+  3050:             return Some(Num::Int(0));
+git diff --stat:
+ crates/sigil-frontend-as/src/eval.rs | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+test an_empty_argument_is_refused_where_zero_is ... ok
+test an_empty_argument_is_zero_for_every_builtin ... FAILED
+thread 'an_empty_argument_is_zero_for_every_builtin' (45862) panicked at crates/sigil-frontend-as/tests/as_int_builtins.rs:139:5:
+empty: asl assembles it, sigil refused: ["int(): could not evaluate float expression", "bad long expression", "bad byte expression", "bad long expression", "bad long expression", "trailing tokens in #immediate", "trailing tokens in expression", "bad long expression", "int(): could not evaluate float expression", "trailing tokens in expression", "unresolved if condition: `abs` has no value, so this condition cannot decide whether the code it guards is assembled", "int(): could not evaluate float expression", "int(): could not evaluate float expression", "int(): could not evaluate float expression", "int(): could not evaluate float expression", "int(): could not evaluate float expression", "int(): could not evaluate float expression", "int(): could not evaluate float expression", "int(): could not evaluate float expression", "int(): could not evaluate float expression", "int(): could not evaluate float expression", "int(): could not evaluate float expression", "int(): could not evaluate float expression", "int(): could not evaluate float expression"]
+test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+error: test failed, to rerun pass `-p sigil-frontend-as --test as_int_builtins`
+TEST_PIPE_DONE
+restored crates/sigil-frontend-as/src/eval.rs from HEAD; tracked changes now: 0

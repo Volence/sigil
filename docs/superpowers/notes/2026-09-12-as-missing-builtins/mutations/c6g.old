@@ -1,0 +1,2 @@
+                if let Some((params, body)) = self.functions.get(name) {
+                    if matches!(
