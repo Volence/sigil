@@ -1,0 +1,101 @@
+a01_bind_read_inner	body `Inner:`; after the call `.b := 2`; read `Inner.b`
+a02_bind_read_base	body `Inner:`; after the call `.b := 2`; read `Base.b`
+a03_bind_read_dot	body `Inner:`; after the call `.b := 2`; read `.b` (control: same scope both sides)
+a04_label_read_inner	body `Inner:`; after the call `.y:`; read `Inner.y`
+a05_label_read_base	body `Inner:`; after the call `.y:`; read `Base.y`
+a06_inner_itself	body `Inner:`; read `Inner` after the call (control: body label stays in the body)
+a07_twice	macro called twice; after `.b := 2` read `Inner.b`
+a08_no_base	no caller label at all; after `.b := 2` read `Inner.b`
+s01_dot_before_read_after	`.x:` under Base before the call; read `.x` after
+s02_dot_before_read_after_file_inner_before	file-level `Inner:`/`.x:` first; `.x:` under Base; call; read `.x` after
+s03_dot_before_read_after_file_inner_after	`.x:` under Base; call; read `.x` after; file-level `Inner:`/`.x:` last
+s04_dot_before_read_base_qualified	`.x:` under Base before the call; read `Base.x` after
+s05_set_before_read_after	`.a := 3` under Base before the call; read `.a` after
+s06_set_before_read_after_file_inner	file `Inner:` with `.a := 9`; Base `.a := 3`; call; read `.a` after
+s07_defined_after	`.x:` under Base; call; `if defined(.x)` after picks a word
+s08_ifdef_after	`.x:` under Base; call; `ifdef .x` after picks a word
+s09_forward_ref_before_call	`bra.s .x` before the call; `.x:` defined after it
+s10_forward_ref_before_call_base_x_later	`bra.s .x` before the call; `.x:` after it; then a second `Base2:`/`.x:` control
+s11_redefine_after_call_file_inner	file `Inner:`/`.x:` first; Base; call; `.x:` again after the call (double definition?)
+s12_redefine_after_call_base_x	`.x:` under Base; call; `.x:` again after the call
+s13_two_callers_same_local	two routines, each calls mac then defines and reads `.lp` (collide as Inner.lp?)
+c01_no_label_read_base	body with no label; after `.b := 2` read `Base.b`
+c02_no_label_read_dot_before	body with no label; `.x:` under Base before; read `.x` after
+c03_dot_label_body_read_base	body writes only `.q:`; after `.b := 2` read `Base.b`
+c04_label_directive_read_inner	body `Inner label *`; after `.b := 2` read `Inner.b`
+c05_set_body_read_vv	body `Vv set 5`; after `.b := 2` read `Vv.b`
+c06_untaken_if_read_base	body `if 0` / `Inner:` / `endif`; after `.b := 2` read `Base.b`
+c07_exitm_before_label_read_base	body `exitm` before `Inner:`; after `.b := 2` read `Base.b`
+c08_taken_if_read_inner	body `if 1` / `Inner:` / `endif`; after `.b := 2` read `Inner.b`
+t01_two_read_second	body `In1:` `In2:`; after `.b := 2` read `In2.b`
+t02_two_read_first	body `In1:` `In2:`; after `.b := 2` read `In1.b`
+t03_two_read_base	body `In1:` `In2:`; after `.b := 2` read `Base.b`
+n01_inner_writes_read_inner	outer calls inner, inner writes `Inner:`; after outer `.b := 2` read `Inner.b`
+n02_inner_writes_read_base	outer calls inner, inner writes `Inner:`; after outer read `Base.b`
+n03_outer_writes_then_inner_plain	outer writes `Outer:` then calls a label-less inner; read `Outer.b`
+n04_inner_then_outer_label_read_outer2	outer calls inner (writes `Inner:`) then writes `Outer2:`; read `Outer2.b`
+n05_inner_then_outer_label_read_inner	outer calls inner (writes `Inner:`) then writes `Outer2:`; read `Inner.b`
+n06_outer_binds_after_inner_read_inner	outer calls inner, then `.v := 3` in the outer body; read `Inner.v` after
+n07_outer_binds_after_inner_read_base	outer calls inner, then `.v := 3` in the outer body; read `Base.v` after
+n08_outer_label_after_inner_read_in_body	outer calls inner, then `.y:` in the outer body read as `.y` there
+n09_outer_label_after_inner_read_inner_y_outside	outer calls inner, then `.y:` in the outer body; read `Inner.y` after outer
+n10_outer_reads_caller_dot_after_inner	`.x:` under Base; outer calls inner, then reads `.x` in its body
+n11_outer_label_then_inner_then_dot_read_outer_y	outer writes `Outer:`, calls inner, then `.y:`; the outer body reads `Outer.y`
+n12_outer_label_then_inner_then_dot_read_inner_y	outer writes `Outer:`, calls inner, then `.y:`; the outer body reads `Inner.y`
+n14_outer_dot_before_inner_read_after	outer body `.lp:`, calls inner (writes `Inner:`), then reads `.lp` in its body
+n15_outer_dot_before_inner_read_after_file_inner	file `Inner:`/`.lp:`; outer body `.lp:`, calls inner (writes `Inner:`), then reads `.lp` in its body
+n16_inner_label_directive_outer_dot_read_qualified	inner writes `Lx label *`; outer body then `.y:` and reads `Lx.y` in its body
+n17_outer_forward_dot_after_inner	outer calls inner (writes `Inner:`), then `bra.s .y` forward to its own `.y:`
+n18_outer_dot_after_inner_twice	outer (calls inner, then `.y:`) expanded twice; the second reads `.y` (no collision)
+n19_outer_defined_own_dot_after_inner	outer calls inner (writes `Inner:`), then `.y:`, then `if defined(.y)` in its body picks a word
+n20_outer_ifdef_own_dot_after_inner	outer calls inner (writes `Inner:`), then `.y:`, then `ifdef .y` in its body picks a word
+n13_three_deep	a calls b calls c, c writes `Deep:`; after a `.b := 2` read `Deep.b`
+r01_file_rept_read_inner	file-level `rept 1` / `Inner:`; after `.b := 2` read `Inner.b`
+r02_file_rept_read_base	file-level `rept 1` / `Inner:`; after `.b := 2` read `Base.b`
+r03_macro_rept_read_inner	body `rept 1` / `Inner:`; after the call `.b := 2` read `Inner.b`
+r04_macro_rept_read_base	body `rept 1` / `Inner:`; after the call `.b := 2` read `Base.b`
+r05_file_irp_read_inner	file-level `irp` / `Inner:`; after `.b := 2` read `Inner.b`
+r06_macro_irp_read_inner	body `irp` / `Inner:`; after the call `.b := 2` read `Inner.b`
+r07_macro_irp_read_base	body `irp` / `Inner:`; after the call `.b := 2` read `Base.b`
+r08_macro_irp_var_label_read_last	body `irp v,Aa,Bb` / `v:`; after the call `.b := 2` read `Bb.b`
+r09_macro_rept2_read_inner	body `rept 2` / `Inner:`; after the call `.b := 2` read `Inner.b`
+r11_macro_rept_label_then_dot_read_outside	body `rept 1` / `Inner:` / `endr`, then `.y:`; read `Inner.y` after the call
+r12_macro_rept_label_then_dot_read_in_body	body `rept 1` / `Inner:` / `endr`, then `.y:`; the body reads `.y`
+r10_file_rept_dot_before_read_after	`.x:` under Base; file-level `rept 1` / `Inner:`; read `.x` after
+l_colon_alone_read_inner	body label spelled colon_alone; after the call `.b := 2` read `Inner.b`
+l_colon_alone_read_base	body label spelled colon_alone; after the call `.b := 2` read `Base.b`
+l_bare_alone_read_inner	body label spelled bare_alone; after the call `.b := 2` read `Inner.b`
+l_bare_alone_read_base	body label spelled bare_alone; after the call `.b := 2` read `Base.b`
+l_bare_data_read_inner	body label spelled bare_data; after the call `.b := 2` read `Inner.b`
+l_bare_data_read_base	body label spelled bare_data; after the call `.b := 2` read `Base.b`
+l_indented_colon_read_inner	body label spelled indented_colon; after the call `.b := 2` read `Inner.b`
+l_indented_colon_read_base	body label spelled indented_colon; after the call `.b := 2` read `Base.b`
+g01_globalsymbols_read_inner	`{GLOBALSYMBOLS}` body `Inner:`; after `.b := 2` read `Inner.b`
+g02_globalsymbols_read_base	`{GLOBALSYMBOLS}` body `Inner:`; after `.b := 2` read `Base.b`
+g03_intlabel_label_read_tbl	`{INTLABEL}` body `__LABEL__:`, called `Tbl mac`; after `.b := 2` read `Tbl.b`
+g04_intlabel_label_read_base	`{INTLABEL}` body `__LABEL__:`, called `Tbl mac`; after `.b := 2` read `Base.b`
+g05_intlabel_inner_read_inner	`{INTLABEL}` body `Inner:`, called `Tbl mac`; after `.b := 2` read `Inner.b`
+g06_intlabel_inner_read_tbl	`{INTLABEL}` body `Inner:`, called `Tbl mac`; after `.b := 2` read `Tbl.b`
+g07_call_label_body_inner_read_inner	plain macro called `Lbl mac`, body `Inner:`; after `.b := 2` read `Inner.b`
+g08_call_label_body_inner_read_lbl	plain macro called `Lbl mac`, body `Inner:`; after `.b := 2` read `Lbl.b`
+g09_call_label_no_body_label_read_lbl	plain macro called `Lbl mac`, no body label; after `.b := 2` read `Lbl.b` (control)
+g10_plain_outer_gs_inner_read_inner	plain outer calls `{GLOBALSYMBOLS}` inner writing `Inner:`; read `Inner.b` after outer
+g11_gs_outer_plain_inner_read_inner	`{GLOBALSYMBOLS}` outer calls plain inner writing `Inner:`; read `Inner.b` after outer
+g12_plain_outer_gs_inner_read_base	plain outer calls `{GLOBALSYMBOLS}` inner writing `Inner:`; read `Base.b` after outer
+g13_gs_outer_plain_inner_read_base	`{GLOBALSYMBOLS}` outer calls plain inner writing `Inner:`; read `Base.b` after outer
+v01_body_bind_read_inner	body `Inner:` then `.v := 5`; read `Inner.v` after the call
+v02_body_bind_read_base	body `Inner:` then `.v := 5`; read `Base.v` after the call
+v03_body_reads_caller_dot	`.x:` under Base; body `Inner:` then reads `.x`
+v04_body_reads_caller_dot_file_inner	file `Inner:`/`.x:`; `.x:` under Base; body `Inner:` then reads `.x`
+v05_body_bind_before_label_read_base	body `.v := 5` then `Inner:`; read `Base.v` after the call
+v06_body_reads_caller_dot_before_label	`.x:` under Base; body reads `.x` then writes `Inner:`
+v08_body_dot_before_label_read_after	body `.lp:`, then `Inner:`, then reads `.lp`
+v09_body_bind_after_label_read_in_body	body `Inner:`, `.v := 5`, then reads `.v` in the body
+v10_body_bind_after_label_read_qualified_in_body	body `Inner:`, `.v := 5`, then reads `Inner.v` in the body
+v11_outer_label_dot_inner_reads_dot	outer body `Lp:` and `.x:`, then calls inner, which reads `.x`
+v12_outer_label_inner_reads_dot_forward	outer body `Lp:`, calls inner, which reads `.x`; outer defines `.x:` after
+v13_body_label_reads_dot_file_inner_forward	body `Inner:` reads `.x`; the file-level `Inner:`/`.x:` comes after the call
+v14_body_label_bind_dot_file_inner	file `Inner:`/`.x:`; body `Inner:`, `.v := 5`, then reads `.x`
+v07_body_own_dot_after_label	body `Inner:` then `.q:` and `dc.w .q` (control)
+f01_forced_passes_read_inner	a11 shape with an unrelated forward reference forcing more passes; read `Inner.b`
+f02_forced_passes_dot_forward	`.x` read after the call, defined later in the same scope; forced passes

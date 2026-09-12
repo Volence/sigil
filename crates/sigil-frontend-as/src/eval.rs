@@ -1339,6 +1339,13 @@ struct Asm {
     /// outer expansion, and `dc.b .v` reads `05` both inside the outer body and
     /// after the whole nest returns.
     outer_scope: Option<String>,
+    /// Counts every write of the real `.`-local scope: a plain label anywhere
+    /// ([`Self::define_label`]) and every scope a value binder or the `label`
+    /// directive opens ([`Self::open_scope`]). A nested expansion compares it
+    /// on the way out to learn whether its body opened a scope the enclosing
+    /// body must now see (probes `n11`, `n12`, `n14`, `n16` of
+    /// `2026-09-12-as-macro-dot-scope-after-call`).
+    scope_epoch: u64,
     /// [`scan_dot_labels`] per macro name. The body is fixed once captured, so
     /// the set is too; `capture_macro` drops the entry when a name is redefined.
     dot_label_cache: std::collections::BTreeMap<String, std::rc::Rc<std::collections::BTreeSet<String>>>,
@@ -1945,6 +1952,7 @@ impl Asm {
             enum_step: 1,
             scope: None,
             outer_scope: None,
+            scope_epoch: 0,
             dot_label_cache: std::collections::BTreeMap::new(),
             in_section: false,
             phys_base: 0,
@@ -2212,10 +2220,46 @@ impl Asm {
         if dot == 0 {
             return q;
         }
-        match self.plain_label_scope(&q[..dot]) {
+        // The head first; then the WHOLE dotted name, which is how a body's own
+        // `.y:` written under a scope no live instance owns is found again
+        // (see [`Self::file_in_body_instance`]).
+        match self.plain_label_scope(&q[..dot]).or_else(|| self.plain_label_scope(&q)) {
             Some(k) => format!("{k}.{q}"),
             None => q,
         }
+    }
+
+    /// File a body's own PC `.`-label in the instance of the macro expansion
+    /// whose body writes it, when the scope in force is a name no live
+    /// instance owns. Returns the private key, or `None` when this rule does
+    /// not apply and the name keys as it always has.
+    ///
+    /// The case it exists for: a nested expansion's plain label is the scope
+    /// the ENCLOSING body sees after the nested call returns, and that label
+    /// belonged to the nested instance, which is gone. asl still keeps the
+    /// enclosing body's `.y:` in the enclosing expansion (`n09`: `Inner.y`
+    /// from outside is `#1010`) while qualifying it by the nested label (`n12`
+    /// reads it as `Inner.y` inside the body, `n11` cannot as `Outer.y`). The
+    /// name is recorded in the instance's `written` set, so the reader
+    /// ([`Self::owned_by_head`], whole-name arm) finds it by the key it was
+    /// filed under, and a forward reference finds it on the next pass through
+    /// `prev_owned`.
+    ///
+    /// Only a `.`-label the body text writes ([`scan_dot_labels`]) and only a
+    /// non-transparent frame: every other `.`-local is the caller's.
+    fn file_in_body_instance(&mut self, name: &str, q: &str) -> Option<String> {
+        if q.starts_with(' ') {
+            return None;
+        }
+        let f = self.macro_frames.last()?;
+        if f.transparent || !f.dot_labels.contains(name) {
+            return None;
+        }
+        let key = f.instance.clone()?;
+        let e = self.expansion_labels.iter_mut().rev().find(|e| e.key == key)?;
+        e.written.insert(q.to_string());
+        self.expansion_label_used += 1;
+        Some(format!("{key}.{q}"))
     }
 
     /// The symbol-table key for a reference to `name` from where the evaluator
@@ -2405,13 +2449,30 @@ impl Asm {
     }
 
     fn sym_key(&self, name: &str) -> String {
-        if name.starts_with('.') {
-            self.owned_by_head(qualify(name, self.dot_scope(name)))
+        let q = if name.starts_with('.') {
+            qualify(name, self.dot_scope(name))
         } else {
             match self.plain_label_scope(name) {
-                Some(k) => format!("{k}.{name}"),
-                None => self.owned_by_head(name.to_string()),
+                Some(k) => return format!("{k}.{name}"),
+                None => name.to_string(),
             }
+        };
+        // `Inner.x` under a head a live instance owns names the instance's own
+        // `.x:` when the instance filed one, and the GLOBAL `Inner.x` when it
+        // did not: asl looks in the expansion first and then outside it. Only
+        // a PC `.`-label is ever filed in an instance; a value binding under
+        // the same head is global (`.v := 5` after a body `Inner:` reads as
+        // `Inner.v` after the call, probe `v01`), and so is a file-level
+        // `Inner:`'s `.x:` (`v04`, `$0104`). Presence is read from the
+        // environment, which carries the previous pass, so a forward
+        // definition of the instance's own `.x:` wins from the pass after it
+        // is first written and the answer cannot change between two returned
+        // passes.
+        let k = self.owned_by_head(q.clone());
+        if k != q && self.env.resolve(&k, Some("")).is_none() && !self.defined_this_pass.contains(&k) {
+            q
+        } else {
+            k
         }
     }
 
@@ -6178,6 +6239,7 @@ impl Asm {
     /// holds the expansion's own unspellable name — so writing `self.scope` there
     /// would be undone the moment the expansion returns.
     fn open_scope(&mut self, name: &str) {
+        self.scope_epoch += 1;
         if self.macro_frames.is_empty() {
             self.scope = Some(name.to_string());
         } else {
@@ -6715,13 +6777,33 @@ impl Asm {
         let value = self.here_i64();
         let qualified = if name.starts_with('.') {
             // A `.x` under a label the body owns is the body's too (`a10`,
-            // `dx2`); see [`Self::owned_by_head`].
-            self.owned_by_head(qualify(name, self.scope.as_deref()))
+            // `dx2`); see [`Self::owned_by_head`]. Under a label no live
+            // instance owns, a body's own `.x:` still stays in its expansion;
+            // see [`Self::file_in_body_instance`].
+            let q = qualify(name, self.scope.as_deref());
+            let k = self.owned_by_head(q.clone());
+            if k == q {
+                self.file_in_body_instance(name, &q).unwrap_or(q)
+            } else {
+                k
+            }
         } else {
             // The scope a `.`-local opens is still the BARE name, unchanged: what
             // the expansion owns is where the label's own value is filed, not
             // what it names for the locals under it.
             self.scope = Some(name.to_string());
+            // And it is the REAL scope, the one the caller sees after the
+            // expansion and every value binding or caller-scope reference sees
+            // after this line, however deep in expansions the label is written
+            // (asl: body `Inner:`, then `.b := 2` after the call is `Inner.b`
+            // and `Base.b` is `#1010`, probes `a01`/`a02`; the body's own
+            // `.v := 5` after it is `Inner.v`, `v01`; three macros deep,
+            // `n13`). Only a `{GLOBALSYMBOLS}`-only stack has no separate real
+            // scope to write, since there `self.scope` already is it.
+            if !self.macro_frames.iter().all(|f| f.transparent) {
+                self.outer_scope = Some(name.to_string());
+            }
+            self.scope_epoch += 1;
             // THE CENSUS INSTRUMENT, env-gated. It prints every plain label
             // defined inside an expansion and says whether the body SCAN claimed
             // it (`scanned=yes`) or only the run-time filing did (`scanned=no`:
@@ -10921,10 +11003,9 @@ impl Asm {
         // aeon body `.`-locals are def+ref within one expansion and reached only
         // by fixed-length short branches, so this affects no layout.
         //
-        // Limitations (none exercised by aeon): a macro body that references a
-        // caller-scope `.`-local WITHOUT it being passed as an argument, or
-        // defines a NON-dotted global label meant to become the outer scope
-        // afterwards, would diverge — aeon does neither.
+        // A plain label the body writes replaces this private scope for the
+        // rest of the body and becomes the caller's real scope as well; see
+        // [`Self::define_label`] and the scope hand-back below.
         self.macro_expansion_seq += 1;
         let dot_labels = match self.dot_label_cache.get(name) {
             Some(set) => set.clone(),
@@ -10981,12 +11062,18 @@ impl Asm {
             dot_labels,
             int_label,
             transparent: global_symbols,
+            instance: None,
             stamp: next_stamp(),
         });
         self.expansion_depth += 1;
         if !global_symbols {
             self.push_expansion_labels(plain_labels);
+            let key = self.expansion_labels.last().map(|e| e.key.clone());
+            if let Some(f) = self.macro_frames.last_mut() {
+                f.instance = key;
+            }
         }
+        let epoch = self.scope_epoch;
         self.exec(&body);
         // An `exitm` still pending here was written for THIS expansion (any
         // nested frame would have taken it already), so it stops here and goes
@@ -10998,15 +11085,22 @@ impl Asm {
         self.expansion_depth -= 1;
         self.macro_frames.pop();
         self.macro_depth -= 1;
-        // A `label` directive inside the body opens the CALLER's scope, and the
-        // scope it opened OUTLIVES the expansion — that is what carries
-        // `zoneOrderedTable`'s `.zone_table_name` and every `Table.cnt` read
-        // after the call. The real scope lives in `outer_scope` while an
+        // A plain label, a `label` directive or a value binder inside the body
+        // opens the CALLER's scope, and the scope it opened OUTLIVES the
+        // expansion: that is what carries `zoneOrderedTable`'s
+        // `.zone_table_name` and every `Table.cnt` read after the call, and
+        // what makes `.b := 2` after a call whose body wrote `Inner:` bind
+        // `Inner.b` (`a01`). The real scope lives in `outer_scope` while an
         // expansion is running, so the outermost frame hands it back as
         // `self.scope` on the way out instead of restoring the stale entry
         // scope, and a nested frame leaves `outer_scope` alone rather than
-        // restoring over a change an inner body made. asl, `Tbl outer 3` where
-        // `outer` calls `inner` and `inner` writes `__LABEL__ label *`:
+        // restoring over a change an inner body made. A nested frame whose body
+        // opened a scope hands THAT to the enclosing body as its `self.scope`
+        // too (asl: the enclosing body's `.y:` after the call is `Inner.y`,
+        // `n12`, and its `.lp` from before the call is out of reach, `n14`);
+        // one whose body opened none restores the enclosing body's own scope,
+        // private name included. asl, `Tbl outer 3` where `outer` calls
+        // `inner` and `inner` writes `__LABEL__ label *`:
         //
         // ```text
         //   17/ 1000 : =$1000               Tbl label *
@@ -11019,6 +11113,8 @@ impl Asm {
         } else if outermost {
             self.scope = self.outer_scope.clone();
             self.outer_scope = outer_scope;
+        } else if self.scope_epoch != epoch {
+            self.scope = self.outer_scope.clone();
         } else {
             self.scope = caller_scope;
         }
@@ -11275,6 +11371,10 @@ struct MacroFrame {
     /// namespace, so every scope question asked inside it is answered as if the
     /// frame were not there. See [`MacroDef::global_symbols`].
     transparent: bool,
+    /// The key of the label namespace this expansion pushed (` exp#N`), or
+    /// `None` for a transparent frame, which pushes none. Where
+    /// [`Asm::file_in_body_instance`] files the body's own `.`-labels.
+    instance: Option<String>,
     /// The [`HeadKey::frame`] stamp: renewed by every mutation of a
     /// substitution input, so a keyword memoised under this frame answers only
     /// while the frame still substitutes the same text.

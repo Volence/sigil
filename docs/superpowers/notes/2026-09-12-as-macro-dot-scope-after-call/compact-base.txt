@@ -1,0 +1,103 @@
+asl md5 61e672562465725a8c102288a7da9098  sigil sigil 0.1.0 (07edc95f)
+a01_bind_read_inner                      asl=0 -                                5555222200024444 | sigil=1 unresolved symbol `Inner.b` for fixup in sec -                OVER-REFUSE
+a02_bind_read_base                       asl=2 error #1010: symbol undefined    -                | sigil=0 -                                            5555222200024444 LEAK
+a03_bind_read_dot                        asl=0 -                                5555222200024444 | sigil=0 -                                            5555222200024444 MATCH
+a04_label_read_inner                     asl=0 -                                2222666601064444 | sigil=1 unresolved symbol `Inner.y` for fixup in sec -                OVER-REFUSE
+a05_label_read_base                      asl=2 error #1010: symbol undefined    -                | sigil=0 -                                            2222666601064444 LEAK
+a06_inner_itself                         asl=2 error #1010: symbol undefined    -                | sigil=1 unresolved symbol `Inner` for fixup in secti -                MATCH
+a07_twice                                asl=0 -                                2222222200024444 | sigil=1 unresolved symbol `Inner.b` for fixup in sec -                OVER-REFUSE
+a08_no_base                              asl=0 -                                1111222200024444 | sigil=1 unresolved symbol `Inner.b` for fixup in sec -                OVER-REFUSE
+c01_no_label_read_base                   asl=0 -                                5555222200024444 | sigil=0 -                                            5555222200024444 MATCH
+c02_no_label_read_dot_before             asl=0 -                                6666222201044444 | sigil=0 -                                            6666222201044444 MATCH
+c03_dot_label_body_read_base             asl=0 -                                5555222200024444 | sigil=0 -                                            5555222200024444 MATCH
+c04_label_directive_read_inner           asl=0 -                                1111555500024444 | sigil=0 -                                            1111555500024444 MATCH
+c05_set_body_read_vv                     asl=0 -                                1111555500024444 | sigil=0 -                                            1111555500024444 MATCH
+c06_untaken_if_read_base                 asl=0 -                                1111555500024444 | sigil=0 -                                            1111555500024444 MATCH
+c07_exitm_before_label_read_base         asl=0 -                                5555222200024444 | sigil=0 -                                            5555222200024444 MATCH
+c08_taken_if_read_inner                  asl=0 -                                5555222200024444 | sigil=1 unresolved symbol `Inner.b` for fixup in sec -                OVER-REFUSE
+f01_forced_passes_read_inner             asl=0 -                                2222000299994444 | sigil=1 unresolved symbol `Inner.b` for fixup in sec -                OVER-REFUSE
+f02_forced_passes_dot_forward            asl=0 -                                010a666699994444 | sigil=0 -                                            010a666699994444 MATCH
+g01_globalsymbols_read_inner             asl=0 -                                5555222200024444 | sigil=0 -                                            5555222200024444 MATCH
+g02_globalsymbols_read_base              asl=2 error #1010: symbol undefined    -                | sigil=1 unresolved symbol `Base.b` for fixup in sect -                MATCH
+g03_intlabel_label_read_tbl              asl=0 -                                5555222200024444 | sigil=1 unresolved symbol `Tbl.b` for fixup in secti -                OVER-REFUSE
+g04_intlabel_label_read_base             asl=2 error #1010: symbol undefined    -                | sigil=0 -                                            5555222200024444 LEAK
+g05_intlabel_inner_read_inner            asl=0 -                                5555222200024444 | sigil=1 unresolved symbol `Inner.b` for fixup in sec -                OVER-REFUSE
+g06_intlabel_inner_read_tbl              asl=2 error #1010: symbol undefined    -                | sigil=1 unresolved symbol `Tbl.b` for fixup in secti -                MATCH
+g07_call_label_body_inner_read_inner     asl=0 -                                5555222200024444 | sigil=1 unresolved symbol `Inner.b` for fixup in sec -                OVER-REFUSE
+g08_call_label_body_inner_read_lbl       asl=2 error #1010: symbol undefined    -                | sigil=0 -                                            5555222200024444 LEAK
+g09_call_label_no_body_label_read_lbl    asl=0 -                                5555222200024444 | sigil=0 -                                            5555222200024444 MATCH
+g10_plain_outer_gs_inner_read_inner      asl=0 -                                5555222200024444 | sigil=1 unresolved symbol `Inner.b` for fixup in sec -                OVER-REFUSE
+g11_gs_outer_plain_inner_read_inner      asl=0 -                                5555222200024444 | sigil=1 unresolved symbol `Inner.b` for fixup in sec -                OVER-REFUSE
+g12_plain_outer_gs_inner_read_base       asl=2 error #1010: symbol undefined    -                | sigil=0 -                                            5555222200024444 LEAK
+g13_gs_outer_plain_inner_read_base       asl=2 error #1010: symbol undefined    -                | sigil=0 -                                            5555222200024444 LEAK
+l_bare_alone_read_base                   asl=2 error #1010: symbol undefined    -                | sigil=0 -                                            5555222200024444 LEAK
+l_bare_alone_read_inner                  asl=0 -                                5555222200024444 | sigil=1 unresolved symbol `Inner.b` for fixup in sec -                OVER-REFUSE
+l_bare_data_read_base                    asl=2 error #1010: symbol undefined    -                | sigil=0 -                                            5555222200024444 LEAK
+l_bare_data_read_inner                   asl=0 -                                5555222200024444 | sigil=1 unresolved symbol `Inner.b` for fixup in sec -                OVER-REFUSE
+l_colon_alone_read_base                  asl=2 error #1010: symbol undefined    -                | sigil=0 -                                            5555222200024444 LEAK
+l_colon_alone_read_inner                 asl=0 -                                5555222200024444 | sigil=1 unresolved symbol `Inner.b` for fixup in sec -                OVER-REFUSE
+l_indented_colon_read_base               asl=2 error #1010: symbol undefined    -                | sigil=0 -                                            5555222200024444 LEAK
+l_indented_colon_read_inner              asl=0 -                                5555222200024444 | sigil=1 unresolved symbol `Inner.b` for fixup in sec -                OVER-REFUSE
+n01_inner_writes_read_inner              asl=0 -                                5555222200024444 | sigil=1 unresolved symbol `Inner.b` for fixup in sec -                OVER-REFUSE
+n02_inner_writes_read_base               asl=2 error #1010: symbol undefined    -                | sigil=0 -                                            5555222200024444 LEAK
+n03_outer_writes_then_inner_plain        asl=0 -                                3333222200024444 | sigil=1 unresolved symbol `Outer.b` for fixup in sec -                OVER-REFUSE
+n04_inner_then_outer_label_read_outer2   asl=0 -                                2222333300024444 | sigil=1 unresolved symbol `Outer2.b` for fixup in se -                OVER-REFUSE
+n05_inner_then_outer_label_read_inner    asl=2 error #1010: symbol undefined    -                | sigil=1 unresolved symbol `Inner.b` for fixup in sec -                MATCH
+n06_outer_binds_after_inner_read_inner   asl=0 -                                5555222200034444 | sigil=1 unresolved symbol `Inner.v` for fixup in sec -                OVER-REFUSE
+n07_outer_binds_after_inner_read_base    asl=2 error #1010: symbol undefined    -                | sigil=0 -                                            5555222200034444 LEAK
+n08_outer_label_after_inner_read_in_body asl=0 -                                2222333301064444 | sigil=0 -                                            2222333301064444 MATCH
+n09_outer_label_after_inner_read_inner_y_outside asl=2 error #1010: symbol undefined    -                | sigil=1 unresolved symbol `Inner.y` for fixup in sec -                MATCH
+n10_outer_reads_caller_dot_after_inner   asl=2 error #1010: symbol undefined    -                | sigil=0 -                                            6666222201044444 LEAK
+n11_outer_label_then_inner_then_dot_read_outer_y asl=2 error #1010: symbol undefined    -                | sigil=0 -                                            2222333401084444 LEAK
+n12_outer_label_then_inner_then_dot_read_inner_y asl=0 -                                2222333401084444 | sigil=1 unresolved symbol `Inner.y` for fixup in sec -                OVER-REFUSE
+n13_three_deep                           asl=0 -                                5555222200024444 | sigil=1 unresolved symbol `Deep.b` for fixup in sect -                OVER-REFUSE
+n14_outer_dot_before_inner_read_after    asl=2 error #1010: symbol undefined    -                | sigil=0 -                                            3333222201044444 LEAK
+n15_outer_dot_before_inner_read_after_file_inner asl=0 -                                3333222201044444 | sigil=0 -                                            3333222201084444 VALUE-DIFF
+n16_inner_label_directive_outer_dot_read_qualified asl=0 -                                5555333301044444 | sigil=1 unresolved symbol `Lx.y` for fixup in sectio -                OVER-REFUSE
+n17_outer_forward_dot_after_inner        asl=0 -                                6002333333344444 | sigil=0 -                                            6002333333344444 MATCH
+n18_outer_dot_after_inner_twice          asl=0 -                                3333010c33354444 | sigil=0 -                                            3333010c33354444 MATCH
+n19_outer_defined_own_dot_after_inner    asl=0 -                                22223333aaaa4444 | sigil=0 -                                            22223333aaaa4444 MATCH
+n20_outer_ifdef_own_dot_after_inner      asl=0 -                                22223333aaaa4444 | sigil=0 -                                            22223333aaaa4444 MATCH
+r01_file_rept_read_inner                 asl=0 -                                5555222200024444 | sigil=0 -                                            5555222200024444 MATCH
+r02_file_rept_read_base                  asl=2 error #1010: symbol undefined    -                | sigil=1 unresolved symbol `Base.b` for fixup in sect -                MATCH
+r03_macro_rept_read_inner                asl=0 -                                5555222200024444 | sigil=1 unresolved symbol `Inner.b` for fixup in sec -                OVER-REFUSE
+r04_macro_rept_read_base                 asl=2 error #1010: symbol undefined    -                | sigil=0 -                                            5555222200024444 LEAK
+r05_file_irp_read_inner                  asl=0 -                                5555222200024444 | sigil=0 -                                            5555222200024444 MATCH
+r06_macro_irp_read_inner                 asl=0 -                                5555222200024444 | sigil=1 unresolved symbol `Inner.b` for fixup in sec -                OVER-REFUSE
+r07_macro_irp_read_base                  asl=2 error #1010: symbol undefined    -                | sigil=0 -                                            5555222200024444 LEAK
+r08_macro_irp_var_label_read_last        asl=0 -                                2222222200024444 | sigil=1 unresolved symbol `Bb.b` for fixup in sectio -                OVER-REFUSE
+r09_macro_rept2_read_inner               asl=0 -                                2222222200024444 | sigil=1 unresolved symbol `Inner.b` for fixup in sec -                OVER-REFUSE
+r10_file_rept_dot_before_read_after      asl=2 error #1010: symbol undefined    -                | sigil=1 unresolved symbol `Inner.x` for fixup in sec -                MATCH
+r11_macro_rept_label_then_dot_read_outside asl=2 error #1010: symbol undefined    -                | sigil=1 unresolved symbol `Inner.y` for fixup in sec -                MATCH
+r12_macro_rept_label_then_dot_read_in_body asl=0 -                                2222222301064444 | sigil=0 -                                            2222222301064444 MATCH
+s01_dot_before_read_after                asl=2 error #1010: symbol undefined    -                | sigil=0 -                                            6666222201044444 LEAK
+s02_dot_before_read_after_file_inner_before asl=0 -                                6666222201044444 | sigil=0 -                                            6666222201084444 VALUE-DIFF
+s03_dot_before_read_after_file_inner_after asl=0 -                                4444777788884444 | sigil=0 -                                            4444777788884444 VALUE-DIFF
+s04_dot_before_read_base_qualified       asl=0 -                                6666222201044444 | sigil=0 -                                            6666222201044444 MATCH
+s05_set_before_read_after                asl=2 error #1010: symbol undefined    -                | sigil=0 -                                            5555222200034444 LEAK
+s06_set_before_read_after_file_inner     asl=0 -                                5555222200094444 | sigil=0 -                                            5555222200034444 VALUE-DIFF
+s07_defined_after                        asl=0 -                                66662222bbbb4444 | sigil=0 -                                            66662222aaaa4444 VALUE-DIFF
+s08_ifdef_after                          asl=0 -                                66662222bbbb4444 | sigil=0 -                                            66662222aaaa4444 VALUE-DIFF
+s09_forward_ref_before_call              asl=2 error #1010: symbol undefined    -                | sigil=0 -                                            6002222266664444 LEAK
+s10_forward_ref_before_call_base_x_later asl=2 error #1010: symbol undefined    -                | sigil=0 -                                            6666999999984444 LEAK
+s11_redefine_after_call_file_inner       asl=2 error #1000: symbol double defin -                | sigil=0 -                                            5555222266664444 LEAK
+s12_redefine_after_call_base_x           asl=0 -                                6666222266674444 | sigil=1 symbol double defined: `Base.x`              -                OVER-REFUSE
+s13_two_callers_same_local               asl=2 error #1000: symbol double defin -                | sigil=0 -                                            22226667010e4444 LEAK
+t01_two_read_second                      asl=0 -                                2222222300024444 | sigil=1 unresolved symbol `In2.b` for fixup in secti -                OVER-REFUSE
+t02_two_read_first                       asl=2 error #1010: symbol undefined    -                | sigil=1 unresolved symbol `In1.b` for fixup in secti -                MATCH
+t03_two_read_base                        asl=2 error #1010: symbol undefined    -                | sigil=0 -                                            2222222300024444 LEAK
+v01_body_bind_read_inner                 asl=0 -                                5555222200054444 | sigil=1 unresolved symbol `Inner.v` for fixup in sec -                OVER-REFUSE
+v02_body_bind_read_base                  asl=2 error #1010: symbol undefined    -                | sigil=0 -                                            5555222200054444 LEAK
+v03_body_reads_caller_dot                asl=2 error #1010: symbol undefined    -                | sigil=0 -                                            6666222201044444 LEAK
+v04_body_reads_caller_dot_file_inner     asl=0 -                                6666222201044444 | sigil=0 -                                            6666222201084444 VALUE-DIFF
+v05_body_bind_before_label_read_base     asl=0 -                                5555222200054444 | sigil=0 -                                            5555222200054444 MATCH
+v06_body_reads_caller_dot_before_label   asl=0 -                                6666010422224444 | sigil=0 -                                            6666010422224444 MATCH
+v07_body_own_dot_after_label             asl=0 -                                2222222301064444 | sigil=0 -                                            2222222301064444 MATCH
+v08_body_dot_before_label_read_after     asl=2 error #1010: symbol undefined    -                | sigil=1 unresolved symbol ` exp#1.Inner.lp` for fixu -                MATCH
+v09_body_bind_after_label_read_in_body   asl=0 -                                5555222200054444 | sigil=0 -                                            5555222200054444 MATCH
+v10_body_bind_after_label_read_qualified_in_body asl=0 -                                5555222200054444 | sigil=1 unresolved symbol ` exp#1.Inner.v` for fixup -                OVER-REFUSE
+v11_outer_label_dot_inner_reads_dot      asl=0 -                                3333333401064444 | sigil=1 unresolved symbol `Base.x` for fixup in sect -                OVER-REFUSE
+v12_outer_label_inner_reads_dot_forward  asl=0 -                                3333010833344444 | sigil=1 unresolved symbol `Base.x` for fixup in sect -                OVER-REFUSE
+v13_body_label_reads_dot_file_inner_forward asl=0 -                                010a777788884444 | sigil=1 unresolved symbol `Base.x` for fixup in sect -                OVER-REFUSE
+v14_body_label_bind_dot_file_inner       asl=0 -                                5555222201044444 | sigil=1 unresolved symbol `Base.x` for fixup in sect -                OVER-REFUSE
+TOTAL 101 LEAK=26 MATCH=34 OVER-REFUSE=34 VALUE-DIFF=7
