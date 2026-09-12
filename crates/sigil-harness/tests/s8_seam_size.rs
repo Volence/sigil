@@ -64,10 +64,22 @@ fn scratch(tag: &str) -> PathBuf {
 
 /// One `  <label>   <number> [trailing prose]` row, as `(label, number)`.
 ///
+/// A row is an INDENTED line, because that is how the script prints one
+/// (`printf '  %-22s %6d'`), and nothing else in the report is indented: the
+/// title, the `tree:` and `counting:` header, the seam and section heads and the
+/// `THE MOVE:` headline all start in column 0. Keying on the row's own shape
+/// rather than on which header lines happen to hold a number keeps every header
+/// field out of the sums whatever it holds. The `tree:` line carries HEAD's short
+/// SHA, and a SHA made only of decimal digits (`tree: 64156924`) would otherwise
+/// read as a row worth 64,156,924 and be summed into the first seam.
+///
 /// The number is the FIRST integer token on the line, not the last: the `lib` row
 /// carries an explanatory clause after its count, and reading from the right would
 /// silently take a number out of prose the day another row grows one.
 fn row(line: &str) -> Option<(String, i64)> {
+    if !line.starts_with(char::is_whitespace) {
+        return None;
+    }
     let toks: Vec<&str> = line.split_whitespace().collect();
     let at = toks.iter().position(|t| t.parse::<i64>().is_ok())?;
     if at == 0 {
@@ -119,7 +131,13 @@ fn the_seam_report_arithmetic_agrees_with_itself() {
         String::from_utf8_lossy(&out.stderr)
     );
     let text = String::from_utf8_lossy(&out.stdout).into_owned();
+    assert_report_agrees(&text);
+}
 
+/// The five relations of `the_seam_report_arithmetic_agrees_with_itself`, over any
+/// report text, so a fixture report goes through exactly the checks the real one
+/// does.
+fn assert_report_agrees(text: &str) {
     let mut seam_totals: Vec<i64> = Vec::new();
     let mut seam_rows: Vec<i64> = Vec::new();
     let mut module_rows = 0usize;
@@ -210,6 +228,60 @@ fn the_seam_report_arithmetic_agrees_with_itself() {
          is being reported at a size nothing accounts for:\n{text}",
         whole_crate - (move_lines + unassigned_total)
     );
+}
+
+/// A report in the script's own shape whose HEADER FIELDS ARE ALL DIGITS: the
+/// `tree:` line an all-digit short SHA prints, and a second numeric header field.
+/// Its arithmetic balances (seams 30 + 5 = 35 over 3 module rows, remainder
+/// 7 + 3 = 10, and 35 + 10 = 45, the whole crate), so every relation holds and
+/// only a parser that reads a header line as a row can refuse it.
+const DIGIT_HEADER_REPORT: &str = "\
+S8 seam sizing, measured 2026-09-12T08:32:40Z
+tree: 64156924
+revision: 20260912
+counting: physical lines of crates/sigil-harness/src/<module>.rs
+
+sigil-build   <-
+  native                     10
+  seam1                      20
+  -- seam total              30
+
+sigil-pins    <-
+  pins                        5
+  -- seam total               5
+
+THE MOVE: 35 lines across 3 modules.
+
+UNASSIGNED by the seam plan (stays in sigil-harness, or wants a fourth seam):
+  atomic_write                7
+  lib                         3  (the module tree itself; rewritten by any split)
+  -- unassigned total        10
+
+CONTEXT (not part of the move):
+  src/*.rs whole crate       45
+  src/bin/*.rs                0
+  tests/*.rs                 99
+";
+
+/// A header line is never a row, whatever number it carries. The real report's
+/// `tree:` line holds HEAD's short SHA, which is all decimal digits for about one
+/// commit in fifty (`64156924` was one).
+#[test]
+fn a_header_field_of_digits_is_never_read_as_a_row() {
+    assert_report_agrees(DIGIT_HEADER_REPORT);
+}
+
+/// The control for the test above: the same report with one seam row off by one
+/// is still refused, at the seam it breaks. A parser that stopped reading rows
+/// altogether would pass the test above over empty sums and fail this one on a
+/// different message.
+#[test]
+#[should_panic(expected = "a seam declares a total of 30 over rows summing to 31")]
+fn a_seam_total_that_does_not_balance_is_still_refused() {
+    let broken = DIGIT_HEADER_REPORT
+        .replace("  seam1                      20", "  seam1                      21");
+    assert_ne!(broken, DIGIT_HEADER_REPORT, "the fixture edit did not apply");
+    assert_report_agrees(&broken);
 }
 
 /// THE REFUSAL PATH RUNS, AND IT REFUSES FOR THE REASON CLAIMED.
