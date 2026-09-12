@@ -878,6 +878,30 @@ the whole reason they are here rather than in a thread.
   either side has been ruled out, and **the tiebreak is a rebuild.** Report mtime and the tree's
   revision beside any such number.
 
+## COMMITMENT TO AEON 2026-09-12: `preserves_corpus` WILL GO RED, AND THE REMEDY IS PRE-DECIDED
+
+Aeon told this lane on 2026-09-12 that their branch `parcel/c4a2-findslot-hoist` (tip `62ee1599`,
+not landed, queued behind three others) deletes `Collected_CheckRing` and `Killed_CheckObject` from
+`engine/objects/entity_window.emp`. Those two procs are rows in
+`crates/sigil-cli/tests/preserves_corpus.rs` (`cases`, the `Reg::D1` pair). **Verified here, not
+taken from the message:** both procs are present at `ec640bcf` and at aeon `origin/master` `88dfaba4`,
+absent at `62ee1599`; a missing proc panics by name (`proc {proc} not found`, in `residue_status`).
+
+**Who sees it.** The landing gate does not: it reads the reference tree pinned at `ec640bcf`. The
+nightly source gates DO: `scripts/nightly_source_gates.sh` checks out aeon `master` (`AEON_REF`), so
+the first nightly after their landing goes red on `preserves_corpus`, naming one of the two procs.
+
+**The remedy, decided now so nobody weakens the check under a red:** drop those two rows in one
+commit, and change nothing else about the test. **Do not make a row skip when its proc is absent**
+(aeon offered that option): a renamed or moved proc would then pass silently, which is the
+vacuous-green shape. The shape the two rows exercised, a mid-body `movem` of `d1` around a call, stays
+pinned by the self-contained tests in `crates/sigil-frontend-emp/tests/preserves.rs` and
+`lower_proc.rs`, which name these procs only in comments. Dropping the rows early is equally fine once
+their branch is verified on aeon's `origin/master`. **The trigger is our own nightly, never their
+ping:** we told them none is needed, so nothing depends on a message surviving a `/clear` on either
+side. Queue row `PRESERVES-CORPUS-TWO-PROCS-LEAVING`. Delete this block in the commit that drops the
+rows.
+
 ## Standing cross-session obligations (2026-08-22)
 
 The aeon session owes sigil ONE thing, triggered by sigil work rather than by time.
