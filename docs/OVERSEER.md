@@ -107,7 +107,18 @@ that downstream readers can act only on the sentence, and the standing check tha
 `blockedOnOwner` id is grepped in the ledger for its `state` before it is filed. Read it when you
 are writing the REASON for an edit to a record, or filing anything as blocked on the owner.
 
-## STANDING: DO NOT BOOT INTO A STOP WHILE SLEEP MODE IS ON (owner) — read this before waiting
+## STANDING: DO NOT BOOT INTO A STOP (owner): sleep mode is NOT the condition. Read this before waiting
+
+**CORRECTED 2026-09-12, on the hub's catch, verified here at empyrean `origin/main` (`ec553e2` an
+ancestor).** This heading said *"while sleep mode is on"* until then, and a boot that day measured
+Dominion's `/ws` sleep state to decide whether to stop. **The licence does not depend on sleep mode.**
+Its ground is empyrean `docs/OVERSEER.md`: the still-live *"Do not boot into a stop and wait for a
+pick"* and *"a lane rebooted mid-project does NOT stop at its boot stop waiting for a pick - its pick
+is its own `next` row"*, under his 2026-09-11T18:23:49Z standing instruction. Find them with
+`git -C ../empyrean show origin/main:docs/OVERSEER.md | command grep -n -e 'Do not boot into a stop' -e 'does NOT stop at its boot stop'`.
+Sleep state matters only for ROTATION, which fires when the mode is armed AND inside its window;
+`enabled:true, asleep:false` is armed and outside it. The two rulings below are the history of the
+same licence, and their gate still applies: take a row not waiting on another lane or an owner call.
 
 **Two owner rulings, verified here firsthand at commits reachable from empyrean `origin/main` rather
 than taken from the relay.** Both are his verbatim words in empyrean's `docs/OVERSEER.md`:
@@ -123,7 +134,8 @@ sleep mode armed: *"If anything besides seraph runs out of tasks from the lists 
 other stuff to work on (sigil can start looking to replacing AS in the github disassembly …) as long
 as other agents aren't waiting on them for anything"*.
 
-**So a fresh sigil session does NOT stop for a go while sleep mode is on.** It takes the next queue
+**So a fresh sigil session does NOT stop for a go** (this said *"while sleep mode is on"* until
+2026-09-12; see the correction above). It takes the next queue
 row that is not itself waiting on another lane or an owner call; the named fallback is
 **SIGIL-AS-REPLACEMENT**. The `overseer` skill's
 boot stop is real and is overridden HERE, by him: it names an exception for a standing instruction
