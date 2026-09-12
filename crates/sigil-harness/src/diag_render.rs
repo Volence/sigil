@@ -45,8 +45,16 @@ impl SourceTexts {
 
     /// `path:line:col` of `span`'s start, or `None` when `span` belongs to no
     /// registered file.
+    ///
+    /// "Belongs" is [`SourceMap::contains`], not a range check against the
+    /// file count: an expansion id is past every file index, so a range check
+    /// reads a valid expansion span as unlocated. A span inside an expansion
+    /// locates in the file its body was written in ([`SourceMap::physical`]),
+    /// because this renderer speaks the `.emp` dialect, `path:line:col`, which
+    /// has no call-site trail; the AS surface renders that trail through
+    /// [`SourceMap::label`].
     pub fn locate(&self, span: Span) -> Option<String> {
-        if span.source.0 as usize >= self.map.len() {
+        if !self.map.contains(span.source) {
             return None;
         }
         let name = self.map.name(span.source);
@@ -107,6 +115,30 @@ mod tests {
         let d = diag(Level::Error, "no", 0, 21);
         let line = render_diag_lines(&[&d], &|s| texts.locate(s));
         assert_eq!(line, "  probe/a.emp:3:1: [Error] no");
+    }
+
+    /// A span inside an expansion of the renderer's own map is located, in the
+    /// file its body was written in: `path:line:col`, this renderer's dialect,
+    /// with no call-site trail. Before `contains`, the file-count range check
+    /// read the expansion id (bit 31 set, past every file index) as "no file"
+    /// and the line fell back to its raw byte span. An expansion id the map
+    /// never handed out is still no location.
+    #[test]
+    fn a_span_inside_an_expansion_of_the_map_is_located_in_its_body_file() {
+        let mut texts = SourceTexts::new();
+        // Line 2 (`\tnop`) is the body's first line, at byte 8; `bad` is byte
+        // 14, line 3 column 2; the call `m` is byte 25, line 5.
+        let id = texts.add(Path::new("probe/m.asm"), "m macro\n\tnop\n\tbad\n\tendm\n\tm\n");
+        let call = Span { source: id, start: 25, end: 26 };
+        let run = texts.map.add_expansion(id, 8, call, sigil_span::Frame::Macro("m".into()));
+        let d = Diagnostic {
+            level: Level::Error,
+            message: "bad".to_string(),
+            primary: Span { source: run, start: 14, end: 15 },
+        };
+        let line = render_diag_lines(&[&d], &|s| texts.locate(s));
+        assert_eq!(line, "  probe/m.asm:3:2: [Error] bad");
+        assert_eq!(texts.locate(Span { source: SourceId(run.0 + 1), start: 0, end: 0 }), None);
     }
 
     #[test]

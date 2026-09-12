@@ -202,6 +202,18 @@ impl SourceMap {
         self.expansion(id).map_or(id, |e| e.backing)
     }
 
+    /// Whether `id` is a source of THIS map: one of its files, or one of its
+    /// expansions. Every accessor that indexes by id is safe to call exactly
+    /// when this is true.
+    ///
+    /// A range check against [`len`](Self::len) answers the question for files
+    /// only. An expansion id is past every file index by construction, so such
+    /// a check calls a valid expansion "no source" and silently drops its
+    /// location. Ask this instead.
+    pub fn contains(&self, id: SourceId) -> bool {
+        (self.backing(id).0 as usize) < self.files.len()
+    }
+
     /// The same bytes of the same file, with the expansion forgotten.
     ///
     /// Two runs of one macro body raise diagnostics at spans that differ only
@@ -652,6 +664,22 @@ mod tests {
         let end = map.add_expansion(f, line_start(t, 3), at(&map, f, 4, 2), Frame::Irpc(None));
         assert_eq!(map.label(at(&map, mid, 3, 2)).as_deref(), Some("r6_irpc_abc.asm(4) IRPC:'b'(1):2"));
         assert_eq!(map.label(at(&map, end, 3, 2)).as_deref(), Some("r6_irpc_abc.asm(4) IRPC:'(1):2"));
+    }
+
+    /// `contains` answers for this map's files AND its expansions, and for
+    /// nothing else. The last assertion is the trap it replaces: a range check
+    /// against `len()` calls the valid run "no source".
+    #[test]
+    fn contains_answers_for_files_and_this_maps_own_expansions() {
+        let mut map = SourceMap::new();
+        let f = map.add_named("f.asm".into(), "a\nb\n".into());
+        let run = map.add_expansion(f, 2, Span { source: f, start: 0, end: 1 }, Frame::Rept(1));
+        assert!(map.contains(f));
+        assert!(map.contains(run));
+        assert!(!map.contains(SourceId(1)));
+        assert!(!map.contains(SourceId(run.0 + 1)));
+        assert!(!map.contains(SourceId(u32::MAX)));
+        assert!(run.0 as usize >= map.len());
     }
 
     /// An id this map never handed out, and the no-source sentinel, still
