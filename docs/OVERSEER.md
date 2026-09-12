@@ -902,48 +902,6 @@ ping:** we told them none is needed, so nothing depends on a message surviving a
 side. Queue row `PRESERVES-CORPUS-TWO-PROCS-LEAVING`. Delete this block in the commit that drops the
 rows.
 
-## COMMITMENT TO AEON 2026-09-12: THE SPLIT SHARED PAIR IS REINSTALLED FROM `af35fa56`, IN A HUB WINDOW, ON AEON'S CLEAR
-
-Found at boot 2026-09-12: `target/release/emit_sound_blob` was relinked 2026-09-08 23:04:49 -0400
-from THIS main checkout (its embedded source path is `sigil/crates/sigil-harness`; the reflog puts
-HEAD at `55b14261` at that instant; the command that did it is unidentified). Its md5 is `8d80a578...`
-against the installed pair's recorded `b1569c67...`, while `target/release/sigil` is untouched
-(`49ecc532...`, `af35fa56`, built in `.sigil-pin-af35fa56`). Aeon confirmed every aeon build since
-09-09 used the relinked emitter. Their CRC pins cover the bytes; their build banner records nothing
-about `SIGIL_EMIT`, and they are booking an md5 of it there.
-
-Made in mail, so written here (protocol bar 20, sending side):
-
-- **No swap until aeon says their running landing has pushed, and none once their next parcel starts.**
-  Their clear AND a hub-opened window are both required (the hub's 2026-09-06 ruling in
-  `docs/OVERSEER-REFERENCE.md`, *THE OWNERSHIP BAR I WROTE TODAY BROKE A PEER'S RUN*).
-- **Rebuild from `af35fa56`, never a newer revision**: advancing the pin is aeon's LS-1a and goes out
-  with notice first. **Aeon chose, 2026-09-12: rebuild ONLY `emit_sound_blob`**, inside the durable
-  pin worktree with an outside target dir, and keep the installed `sigil` (`49ecc532...`, the original
-  build) as it is. **Their condition: leave `.sigil-pin-af35fa56` exactly clean at `af35fa56`**
-  (`--locked`, no `Cargo.lock` change, `git status --porcelain` empty), because their landing lane
-  runs a sigil test from that checkout.
-- **Copy the outgoing pair aside before the rename.** The hub announces the instant and the identity,
-  with an md5 for every executable from the derived command; aeon gets both new md5s directly and
-  builds four shapes on their master, expecting identity.
-
-**HUB RULING 2026-09-12, made in the owner's place (reversible): install the rebuilt emitter, md5
-`36ef302c...`, though it cannot match `b1569c67...`.** Grounds: a same-revision rebuild of `sigil`
-from the same tree gave `4061cd32...` against the installed `49ecc532...`, so an md5 match was never
-on offer on this machine, and KNOWN SOURCE (a clean tree at the pinned revision, the tree the installed
-`sigil` names) beats unknown source. Correctness is decided by aeon's four-shape CRC re-check under the
-new emitter, run first. **If any shape moves, put the copied-aside `8d80a578...` back and report; do
-not debug it live.** Keep the aside copy (`~/sonic_hacks/.sigil-outgoing-8d80a578/`) until that
-re-check is green. At the swap, the reference file's STANDING ARTIFACTS record replaces `b1569c67` with
-`36ef302c`, `af35fa56`, the build instant and the target dir. OPEN still waits on aeon's push.
-
-**SWAPPED 2026-09-12T06:25:12Z** inside the hub's window: emitter `36ef302c...` installed, `sigil`
-`49ecc532...` unchanged, pin worktree porcelain 0 before and after. The identity is recorded in
-`docs/OVERSEER-REFERENCE.md`, STANDING ARTIFACTS.
-
-Queue row `SHARED-PAIR-SPLIT-EMITTER`. Delete this block once aeon's four-shape re-check under the new
-emitter is green, or after restoring `8d80a578` if a shape moved.
-
 ## Standing cross-session obligations (2026-08-22)
 
 The aeon session owes sigil ONE thing, triggered by sigil work rather than by time.

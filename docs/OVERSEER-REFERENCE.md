@@ -1080,7 +1080,10 @@ the one in this heading. `sigil` stays `49ecc532...`, the original. It cannot ma
 same-revision rebuild of `sigil` from the same tree gave `4061cd32...`, so builds here do not reproduce
 md5s, and the hub ruled known source over a byte match. The outgoing `8d80a578` is kept at
 `~/sonic_hacks/.sigil-outgoing-8d80a578/` until aeon's four-shape re-check under the new emitter is
-green. **The next drift check compares against `36ef302c`.**
+green. **Re-check GREEN 2026-09-12** (aeon `808141f7`, all four shapes byte-identical to master's ROMs
+built under `8d80a578`, per aeon's own run): the swap stays, and the copy is RETAINED as provenance for
+the aeon builds of 09-09 to 09-12, not deleted. What that re-check cannot say, in aeon's words: nothing
+about `b1569c67`, which no longer exists anywhere. **The next drift check compares against `36ef302c`.**
 **A SECOND REASON IT MUST SURVIVE, found 2026-09-11:** `native::load_frozen_table`
 (`crates/sigil-harness/src/native.rs:232`) opens `env!("CARGO_MANIFEST_DIR")/golden/offcanonical_sizes/`
 at RUN time, and every shape profile seeds its provisional section bases from it. `CARGO_MANIFEST_DIR`
