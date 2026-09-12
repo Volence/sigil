@@ -1,0 +1,11 @@
+HEAD: d1ec0fa96e5fb67c71321678b576d557accae99f  branch: parcel/as-macro-diag-call-site
+tracked-changes before scaffold: 0
+SCAFFOLD APPLIED to /home/volence/sonic_hacks/sigil/.claude/worktrees/agent-a46ef34b369e42312/crates/sigil-span/src/lib.rs
+ crates/sigil-span/src/lib.rs | 13 +++++++++++++
+ 1 file changed, 13 insertions(+)
+fe CARGO_EXIT=0
+cli CARGO_EXIT=0
+span CARGO_EXIT=0
+restored crates/sigil-span/src/lib.rs from HEAD; tracked-changes now: 0
+census lines: 66
+END_MARKER

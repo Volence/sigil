@@ -1,0 +1,12 @@
+rows before: 2   rows after: 2
+(level, message) multiset: IDENTICAL
+  in before, not after: 0
+  in after, not before: 0
+per-class decomposition (level, message class): before -> after
+     1 ->    1  error: soundBank MusicPoint2 must fit in $N bytes but was $9D34. Try moving something to the other bank.
+     1 ->    1  error: unresolved long expression
+row order and messages identical position by position: True
+rows whose location changed: 1
+    s2.macros.asm(118):3  ->  s2.asm(91259) finishBank(2):3   [soundBank MusicPoint2 must fit in $8000 bytes but was $9D34.]
+rows with a trail before: 0   after: 1
+distinct locations before: 2   after: 2

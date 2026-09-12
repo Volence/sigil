@@ -1,0 +1,68 @@
+== m6   HEAD d1ec0fa96e5fb67c71321678b576d557accae99f   branch parcel/as-macro-diag-call-site
+tracked-changes before: 0
+MUTATED crates/sigil-frontend-as/src/eval.rs
+  5562:             let next = items.get(at);
+ crates/sigil-frontend-as/src/eval.rs | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+---- cargo test --release -p sigil-frontend-as --test as_macro_call_site_trail
+   Compiling sigil-span v0.1.0 (/home/volence/sonic_hacks/sigil/.claude/worktrees/agent-a46ef34b369e42312/crates/sigil-span)
+   Compiling sigil-ir v0.1.0 (/home/volence/sonic_hacks/sigil/.claude/worktrees/agent-a46ef34b369e42312/crates/sigil-ir)
+   Compiling sigil-backend-z80 v0.1.0 (/home/volence/sonic_hacks/sigil/.claude/worktrees/agent-a46ef34b369e42312/crates/sigil-backend-z80)
+   Compiling sigil-backend-m68k v0.1.0 (/home/volence/sonic_hacks/sigil/.claude/worktrees/agent-a46ef34b369e42312/crates/sigil-backend-m68k)
+   Compiling sigil-link v0.1.0 (/home/volence/sonic_hacks/sigil/.claude/worktrees/agent-a46ef34b369e42312/crates/sigil-link)
+   Compiling sigil-frontend-as v0.1.0 (/home/volence/sonic_hacks/sigil/.claude/worktrees/agent-a46ef34b369e42312/crates/sigil-frontend-as)
+    Finished `release` profile [optimized] target(s) in 5.10s
+     Running tests/as_macro_call_site_trail.rs (/home/volence/sonic_hacks/.scratch/as-macro-diag/target/release/deps/as_macro_call_site_trail-4bd245532aad8c81)
+
+running 13 tests
+test a_body_line_reported_once_per_pass_stays_reported_once ... ok
+test a_carried_warning_is_matched_by_position_when_run_ids_shift_between_passes ... ok
+test a_body_written_in_an_included_file_is_named_by_its_call ... ok
+test a_call_written_in_an_included_file_names_that_file ... ok
+test a_file_included_from_a_macro_body_is_named_alone ... ok
+test a_line_outside_every_expansion_is_located_as_before ... ok
+test an_expansion_assembles_the_bytes_its_body_says ... ok
+test each_call_of_a_macro_names_its_own_line ... ok
+test nested_macros_print_every_frame_outermost_first ... ok
+test a_file_level_loop_is_a_frame_named_by_its_closing_line ... FAILED
+test a_warning_in_a_macro_carries_the_trail_too ... ok
+test a_space_follows_a_macro_frame_and_not_a_loop_frame ... ok
+test a_loop_in_a_macro_is_a_frame_entered_from_its_closing_line ... FAILED
+
+failures:
+
+---- a_file_level_loop_is_a_frame_named_by_its_closing_line stdout ----
+
+thread 'a_file_level_loop_is_a_frame_named_by_its_closing_line' (2890880) panicked at crates/sigil-frontend-as/tests/as_macro_call_site_trail.rs:198:5:
+assertion `left == right` failed: [
+    "q1_irp3.asm(5) IRP:aa(2):2: error: `bogus_irp3` is not a recognized 68000 mnemonic",
+    "q1_irp3.asm(5) IRP:bb(2):2: error: `bogus_irp3` is not a recognized 68000 mnemonic",
+    "q1_irp3.asm(5) IRP:cc(2):2: error: `bogus_irp3` is not a recognized 68000 mnemonic",
+]
+  left: ["q1_irp3.asm(5) IRP:aa(2):2", "q1_irp3.asm(5) IRP:bb(2):2", "q1_irp3.asm(5) IRP:cc(2):2"]
+ right: ["q1_irp3.asm(5) IRP:bb(2):2", "q1_irp3.asm(5) IRP:cc(2):2", "q1_irp3.asm(5) IRP:(2):2"]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- a_loop_in_a_macro_is_a_frame_entered_from_its_closing_line stdout ----
+
+thread 'a_loop_in_a_macro_is_a_frame_entered_from_its_closing_line' (2890882) panicked at crates/sigil-frontend-as/tests/as_macro_call_site_trail.rs:141:5:
+assertion `left == right` failed: [
+    "p10_macirp.asm(8) mymac(3) IRP:1(1):2: error: `bogus_irp` is not a recognized 68000 mnemonic",
+    "p10_macirp.asm(8) mymac(3) IRP:2(1):2: error: `bogus_irp` is not a recognized 68000 mnemonic",
+]
+  left: ["p10_macirp.asm(8) mymac(3) IRP:1(1):2", "p10_macirp.asm(8) mymac(3) IRP:2(1):2"]
+ right: ["p10_macirp.asm(8) mymac(3) IRP:2(1):2", "p10_macirp.asm(8) mymac(3) IRP:(1):2"]
+
+
+failures:
+    a_file_level_loop_is_a_frame_named_by_its_closing_line
+    a_loop_in_a_macro_is_a_frame_entered_from_its_closing_line
+
+test result: FAILED. 11 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p sigil-frontend-as --test as_macro_call_site_trail`
+error: 1 target failed:
+    `-p sigil-frontend-as --test as_macro_call_site_trail`
+exit=101
+restored crates/sigil-frontend-as/src/eval.rs from HEAD; tracked-changes after: 0
+m6 :: passed 11, failed 2 :: RED: a_file_level_loop_is_a_frame_named_by_its_closing_line a_loop_in_a_macro_is_a_frame_entered_from_its_closing_line 

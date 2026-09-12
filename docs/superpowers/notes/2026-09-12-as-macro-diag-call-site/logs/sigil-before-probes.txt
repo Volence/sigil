@@ -1,0 +1,154 @@
+sigil md5: 40ee4e28c0a132210a1102ed0ce8f7a3  path: /home/volence/sonic_hacks/.scratch/as-macro-diag/bin/sigil-base-ff580724
+=== p1_simple.asm
+p1_simple.asm(4):2: error: `bogus_in_body` is not a recognized 68000 mnemonic
+p1_simple.asm(4):2: error: `bogus_in_body` is not a recognized 68000 mnemonic
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 2 errors (reported on stderr)
+SIGIL_EXIT=1
+=== p2_nested.asm
+p2_nested.asm(2):2: error: `bogus_inner` is not a recognized 68000 mnemonic
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+SIGIL_EXIT=1
+=== p3_incbody.asm
+p3_mac.inc(3):2: error: `bogus_in_inc_body` is not a recognized 68000 mnemonic
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+SIGIL_EXIT=1
+=== p4_rept.asm
+p4_rept.asm(4):2: error: `bogus_in_rept` is not a recognized 68000 mnemonic
+p4_rept.asm(4):2: error: `bogus_in_rept` is not a recognized 68000 mnemonic
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 2 errors (reported on stderr)
+SIGIL_EXIT=1
+=== p5_while.asm
+p5_while.asm(5):2: error: `bogus_in_while` is not a recognized 68000 mnemonic
+p5_while.asm(5):2: error: `bogus_in_while` is not a recognized 68000 mnemonic
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 2 errors (reported on stderr)
+SIGIL_EXIT=1
+=== p6_warn.asm
+p6_warn.asm(3):2: warning: [as.warning] warn from body
+error: cannot write /dev/null: Permission denied (os error 13)
+assembly failed: 1 error, 1 warning (reported on stderr)
+SIGIL_EXIT=1
+=== p7_undef.asm
+p7_undef.asm(3):2: error: unresolved symbol `undefined_sym` for fixup in section sec0 at offset 2
+this error list may be incomplete: sigil stopped at link, so the image checks did not run
+assembly failed: 1 error (reported on stderr)
+SIGIL_EXIT=1
+=== p8_toprept.asm
+p8_toprept.asm(4):2: error: `bogus_top_rept` is not a recognized 68000 mnemonic
+p8_toprept.asm(4):2: error: `bogus_top_rept` is not a recognized 68000 mnemonic
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 2 errors (reported on stderr)
+SIGIL_EXIT=1
+=== p9_topirp.asm
+p9_topirp.asm(4):2: error: `bogus_top_irp` is not a recognized 68000 mnemonic
+p9_topirp.asm(4):2: error: `bogus_top_irp` is not a recognized 68000 mnemonic
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 2 errors (reported on stderr)
+SIGIL_EXIT=1
+=== p10_macirp.asm
+p10_macirp.asm(4):2: error: `bogus_irp` is not a recognized 68000 mnemonic
+p10_macirp.asm(4):2: error: `bogus_irp` is not a recognized 68000 mnemonic
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 2 errors (reported on stderr)
+SIGIL_EXIT=1
+=== p11_inccall.asm
+p11_def.inc(2):2: error: `bogus_from_inc_call` is not a recognized 68000 mnemonic
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+SIGIL_EXIT=1
+=== p12_nest_rept.asm
+p12_nest_rept.asm(2):2: error: `bogus_inner_rept` is not a recognized 68000 mnemonic
+p12_nest_rept.asm(2):2: error: `bogus_inner_rept` is not a recognized 68000 mnemonic
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 2 errors (reported on stderr)
+SIGIL_EXIT=1
+=== p13_usererr.asm
+p13_usererr.asm(3):2: error: user error from body
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+SIGIL_EXIT=1
+=== p14_top_control.asm
+p14_top_control.asm(3):2: error: `bogus_top` is not a recognized 68000 mnemonic
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+SIGIL_EXIT=1
+=== p15_incinmac.asm
+p15_body.inc(2):2: error: `bogus_in_included_from_macro` is not a recognized 68000 mnemonic
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+SIGIL_EXIT=1
+=== p16_arg.asm
+p16_arg.asm(3):2: error: unresolved symbol `undefined_arg` for fixup in section sec0 at offset 2
+this error list may be incomplete: sigil stopped at link, so the image checks did not run
+assembly failed: 1 error (reported on stderr)
+SIGIL_EXIT=1
+=== p17_twolines.asm
+p17_twolines.asm(4):2: error: `bogus1` is not a recognized 68000 mnemonic
+p17_twolines.asm(6):2: error: `bogus2` is not a recognized 68000 mnemonic
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 2 errors (reported on stderr)
+SIGIL_EXIT=1
+=== p18_warn_err.asm
+p18_warn_err.asm(3):2: warning: [as.warning] w1
+p18_warn_err.asm(4):2: error: `bogus_after_warn` is not a recognized 68000 mnemonic
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error, 1 warning (reported on stderr)
+SIGIL_EXIT=1
+=== q1_irp3.asm
+q1_irp3.asm(4):2: error: `bogus_irp3` is not a recognized 68000 mnemonic
+q1_irp3.asm(4):2: error: `bogus_irp3` is not a recognized 68000 mnemonic
+q1_irp3.asm(4):2: error: `bogus_irp3` is not a recognized 68000 mnemonic
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 3 errors (reported on stderr)
+SIGIL_EXIT=1
+=== q2_irpc.asm
+q2_irpc.asm(2):2: error: unresolved `irpc` string expression
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+SIGIL_EXIT=1
+=== q3_topwhile.asm
+q3_topwhile.asm(5):2: error: `bogus_while2` is not a recognized 68000 mnemonic
+q3_topwhile.asm(5):2: error: `bogus_while2` is not a recognized 68000 mnemonic
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 2 errors (reported on stderr)
+SIGIL_EXIT=1
+=== q4_rept2lines.asm
+q4_rept2lines.asm(4):2: error: `bogus_rept2` is not a recognized 68000 mnemonic
+q4_rept2lines.asm(4):2: error: `bogus_rept2` is not a recognized 68000 mnemonic
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 2 errors (reported on stderr)
+SIGIL_EXIT=1
+=== q5_reptrept.asm
+q5_reptrept.asm(4):2: error: `bogus_reptrept` is not a recognized 68000 mnemonic
+q5_reptrept.asm(4):2: error: `bogus_reptrept` is not a recognized 68000 mnemonic
+q5_reptrept.asm(4):2: error: `bogus_reptrept` is not a recognized 68000 mnemonic
+q5_reptrept.asm(4):2: error: `bogus_reptrept` is not a recognized 68000 mnemonic
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 4 errors (reported on stderr)
+SIGIL_EXIT=1
+=== q6_three.asm
+q6_three.asm(3):2: error: `bogus_inner` is not a recognized 68000 mnemonic
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+SIGIL_EXIT=1
+=== q7_nest_rept_space.asm
+q7_nest_rept_space.asm(2):2: error: `bogus_inner` is not a recognized 68000 mnemonic
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+SIGIL_EXIT=1
+=== q8_rept_in_inner.asm
+q8_rept_in_inner.asm(3):2: error: `bogus_inner_rept` is not a recognized 68000 mnemonic
+q8_rept_in_inner.asm(3):2: error: `bogus_inner_rept` is not a recognized 68000 mnemonic
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 2 errors (reported on stderr)
+SIGIL_EXIT=1
+=== q10_mac_in_toprept.asm
+q10_mac_in_toprept.asm(2):2: error: `bogus_m` is not a recognized 68000 mnemonic
+q10_mac_in_toprept.asm(2):2: error: `bogus_m` is not a recognized 68000 mnemonic
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 2 errors (reported on stderr)
+SIGIL_EXIT=1

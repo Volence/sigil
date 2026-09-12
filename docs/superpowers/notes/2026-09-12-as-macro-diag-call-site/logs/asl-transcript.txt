@@ -1,0 +1,362 @@
+asl md5: 61e672562465725a8c102288a7da9098  path: /home/volence/sonic_hacks/s1disasm/build_tools/Linux-x86_64/asl
+=== p10_macirp.asm
+> > > p10_macirp.asm(8) mymac(3) IRP:2(1):9: error #1200: unknown instruction
+> > > BOGUS_IRP
+> > >         bogus_irp 1
+> > >         ~~~~~~~~~
+> > > p10_macirp.asm(8) mymac(3) IRP:(1):9: error #1200: unknown instruction
+> > > BOGUS_IRP
+> > >         bogus_irp 2
+> > >         ~~~~~~~~~
+ASL_EXIT=2
+ASL_DIAG=complete
+=== p11_inccall.asm
+> > > p11_call.inc(3) mymac(1):9: error #1200: unknown instruction
+> > > BOGUS_FROM_INC_CALL
+> > >         bogus_from_inc_call
+> > >         ~~~~~~~~~~~~~~~~~~~
+ASL_EXIT=2
+ASL_DIAG=complete
+=== p12_nest_rept.asm
+> > > p12_nest_rept.asm(10) outer(3) REPT 1(1)inner(1):9: error #1200: unknown instruction
+> > > BOGUS_INNER_REPT
+> > >         bogus_inner_rept
+> > >         ~~~~~~~~~~~~~~~~
+> > > p12_nest_rept.asm(10) outer(3) REPT 2(1)inner(1):9: error #1200: unknown instruction
+> > > BOGUS_INNER_REPT
+> > >         bogus_inner_rept
+> > >         ~~~~~~~~~~~~~~~~
+ASL_EXIT=2
+ASL_DIAG=complete
+=== p13_usererr.asm
+> > > p13_usererr.asm(6) mymac(1): error: user error from body
+> > >         error "user error from body"
+ASL_EXIT=2
+ASL_DIAG=complete
+=== p14_top_control.asm
+> > > p14_top_control.asm(3):2: error #1200: unknown instruction
+> > > BOGUS_TOP
+> > >  bogus_top
+> > >  ~~~~~~~~~
+ASL_EXIT=2
+ASL_DIAG=INCOMPLETE
+=== p15_incinmac.asm
+> > > p15_body.inc(2):2: error #1200: unknown instruction
+> > > BOGUS_IN_INCLUDED_FROM_MACRO
+> > >  bogus_in_included_from_macro
+> > >  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+ASL_EXIT=2
+ASL_DIAG=complete
+=== p16_arg.asm
+> > > p16_arg.asm(6) mymac(1):14: error #1010: symbol undefined
+> > > undefined_arg
+> > >         dc.w undefined_arg
+> > >              ~~~~~~~~~~~~~
+ASL_EXIT=2
+ASL_DIAG=complete
+=== p17_twolines.asm
+> > > p17_twolines.asm(8) mymac(2):9: error #1200: unknown instruction
+> > > BOGUS1
+> > >         bogus1
+> > >         ~~~~~~
+> > > p17_twolines.asm(8) mymac(4):9: error #1200: unknown instruction
+> > > BOGUS2
+> > >         bogus2
+> > >         ~~~~~~
+ASL_EXIT=2
+ASL_DIAG=complete
+=== p18_warn_err.asm
+> > > p18_warn_err.asm(6) mymac(1): warning: w1
+> > >         warning "w1"
+> > > p18_warn_err.asm(6) mymac(2):9: error #1200: unknown instruction
+> > > BOGUS_AFTER_WARN
+> > >         bogus_after_warn
+> > >         ~~~~~~~~~~~~~~~~
+ASL_EXIT=2
+ASL_DIAG=complete
+=== p1_simple.asm
+> > > p1_simple.asm(7) mymac(2):9: error #1200: unknown instruction
+> > > BOGUS_IN_BODY
+> > >         bogus_in_body
+> > >         ~~~~~~~~~~~~~
+> > > p1_simple.asm(8) mymac(2):9: error #1200: unknown instruction
+> > > BOGUS_IN_BODY
+> > >         bogus_in_body
+> > >         ~~~~~~~~~~~~~
+ASL_EXIT=2
+ASL_DIAG=complete
+=== p2_nested.asm
+> > > p2_nested.asm(9) outer(2) inner(1):9: error #1200: unknown instruction
+> > > BOGUS_INNER
+> > >         bogus_inner
+> > >         ~~~~~~~~~~~
+ASL_EXIT=2
+ASL_DIAG=complete
+=== p3_incbody.asm
+> > > p3_incbody.asm(3) mymac(1):9: error #1200: unknown instruction
+> > > BOGUS_IN_INC_BODY
+> > >         bogus_in_inc_body
+> > >         ~~~~~~~~~~~~~~~~~
+ASL_EXIT=2
+ASL_DIAG=complete
+=== p4_rept.asm
+> > > p4_rept.asm(8) mymac(3) REPT 1(1):9: error #1200: unknown instruction
+> > > BOGUS_IN_REPT
+> > >         bogus_in_rept
+> > >         ~~~~~~~~~~~~~
+> > > p4_rept.asm(8) mymac(3) REPT 2(1):9: error #1200: unknown instruction
+> > > BOGUS_IN_REPT
+> > >         bogus_in_rept
+> > >         ~~~~~~~~~~~~~
+ASL_EXIT=2
+ASL_DIAG=complete
+=== p5_while.asm
+> > > p5_while.asm(10) mymac(5) WHILE 1/1:9: error #1200: unknown instruction
+> > > BOGUS_IN_WHILE
+> > >         bogus_in_while
+> > >         ~~~~~~~~~~~~~~
+> > > p5_while.asm(10) mymac(5) WHILE 2/1:9: error #1200: unknown instruction
+> > > BOGUS_IN_WHILE
+> > >         bogus_in_while
+> > >         ~~~~~~~~~~~~~~
+ASL_EXIT=2
+ASL_DIAG=complete
+=== p6_warn.asm
+> > > p6_warn.asm(6) mymac(1): warning: warn from body
+> > >         warning "warn from body"
+ASL_EXIT=0
+ASL_DIAG=complete
+=== p7_undef.asm
+> > > p7_undef.asm(6) mymac(1):14: error #1010: symbol undefined
+> > > undefined_sym
+> > >         dc.w undefined_sym
+> > >              ~~~~~~~~~~~~~
+ASL_EXIT=2
+ASL_DIAG=complete
+=== p8_toprept.asm
+> > > p8_toprept.asm(5) REPT 1(1):2: error #1200: unknown instruction
+> > > BOGUS_TOP_REPT
+> > >  bogus_top_rept
+> > >  ~~~~~~~~~~~~~~
+> > > p8_toprept.asm(5) REPT 2(1):2: error #1200: unknown instruction
+> > > BOGUS_TOP_REPT
+> > >  bogus_top_rept
+> > >  ~~~~~~~~~~~~~~
+ASL_EXIT=2
+ASL_DIAG=complete
+=== p9_topirp.asm
+> > > p9_topirp.asm(5) IRP:2(1):9: error #1200: unknown instruction
+> > > BOGUS_TOP_IRP
+> > >         bogus_top_irp
+> > >         ~~~~~~~~~~~~~
+> > > p9_topirp.asm(5) IRP:(1):9: error #1200: unknown instruction
+> > > BOGUS_TOP_IRP
+> > >         bogus_top_irp
+> > >         ~~~~~~~~~~~~~
+ASL_EXIT=2
+ASL_DIAG=complete
+=== q10_mac_in_toprept.asm
+> > > q10_mac_in_toprept.asm(7) REPT 1(1)mymac(1):9: error #1200: unknown instruction
+> > > BOGUS_M
+> > >         bogus_m
+> > >         ~~~~~~~
+> > > q10_mac_in_toprept.asm(7) REPT 2(1)mymac(1):9: error #1200: unknown instruction
+> > > BOGUS_M
+> > >         bogus_m
+> > >         ~~~~~~~
+ASL_EXIT=2
+ASL_DIAG=complete
+=== q1_irp3.asm
+> > > q1_irp3.asm(5) IRP:bb(2):9: error #1200: unknown instruction
+> > > BOGUS_IRP3
+> > >         bogus_irp3 aa
+> > >         ~~~~~~~~~~
+> > > q1_irp3.asm(5) IRP:cc(2):9: error #1200: unknown instruction
+> > > BOGUS_IRP3
+> > >         bogus_irp3 bb
+> > >         ~~~~~~~~~~
+> > > q1_irp3.asm(5) IRP:(2):9: error #1200: unknown instruction
+> > > BOGUS_IRP3
+> > >         bogus_irp3 cc
+> > >         ~~~~~~~~~~
+ASL_EXIT=2
+ASL_DIAG=complete
+=== q2_irpc.asm
+> > > q2_irpc.asm(5) IRPC:'(2):9: error #1200: unknown instruction
+> > > BOGUS_IRPC
+> > >         bogus_irpc 0
+> > >         ~~~~~~~~~~
+ASL_EXIT=2
+ASL_DIAG=INCOMPLETE
+=== q3_topwhile.asm
+> > > q3_topwhile.asm(7) WHILE 1/2:2: error #1200: unknown instruction
+> > > BOGUS_WHILE2
+> > >  bogus_while2
+> > >  ~~~~~~~~~~~~
+> > > q3_topwhile.asm(7) WHILE 2/2:2: error #1200: unknown instruction
+> > > BOGUS_WHILE2
+> > >  bogus_while2
+> > >  ~~~~~~~~~~~~
+ASL_EXIT=2
+ASL_DIAG=complete
+=== q4_rept2lines.asm
+> > > q4_rept2lines.asm(5) REPT 1(2):2: error #1200: unknown instruction
+> > > BOGUS_REPT2
+> > >  bogus_rept2
+> > >  ~~~~~~~~~~~
+> > > q4_rept2lines.asm(5) REPT 2(2):2: error #1200: unknown instruction
+> > > BOGUS_REPT2
+> > >  bogus_rept2
+> > >  ~~~~~~~~~~~
+ASL_EXIT=2
+ASL_DIAG=complete
+=== q5_reptrept.asm
+> > > q5_reptrept.asm(6) REPT 1(3)REPT 1(1):2: error #1200: unknown instruction
+> > > BOGUS_REPTREPT
+> > >  bogus_reptrept
+> > >  ~~~~~~~~~~~~~~
+> > > q5_reptrept.asm(6) REPT 1(3)REPT 2(1):2: error #1200: unknown instruction
+> > > BOGUS_REPTREPT
+> > >  bogus_reptrept
+> > >  ~~~~~~~~~~~~~~
+> > > q5_reptrept.asm(6) REPT 2(3)REPT 1(1):2: error #1200: unknown instruction
+> > > BOGUS_REPTREPT
+> > >  bogus_reptrept
+> > >  ~~~~~~~~~~~~~~
+> > > q5_reptrept.asm(6) REPT 2(3)REPT 2(1):2: error #1200: unknown instruction
+> > > BOGUS_REPTREPT
+> > >  bogus_reptrept
+> > >  ~~~~~~~~~~~~~~
+ASL_EXIT=2
+ASL_DIAG=complete
+=== q6_three.asm
+> > > q6_three.asm(14) outer(1) mid(3) inner(2):9: error #1200: unknown instruction
+> > > BOGUS_INNER
+> > >         bogus_inner
+> > >         ~~~~~~~~~~~
+ASL_EXIT=2
+ASL_DIAG=complete
+=== q7_nest_rept_space.asm
+> > > q7_nest_rept_space.asm(11) outer(4) REPT 1(2)inner(1):9: error #1200: unknown instruction
+> > > BOGUS_INNER
+> > >         bogus_inner
+> > >         ~~~~~~~~~~~
+ASL_EXIT=2
+ASL_DIAG=complete
+=== q8_rept_in_inner.asm
+> > > q8_rept_in_inner.asm(11) outer(2) inner(3) REPT 1(1):9: error #1200: unknown instruction
+> > > BOGUS_INNER_REPT
+> > >         bogus_inner_rept
+> > >         ~~~~~~~~~~~~~~~~
+> > > q8_rept_in_inner.asm(11) outer(2) inner(3) REPT 2(1):9: error #1200: unknown instruction
+> > > BOGUS_INNER_REPT
+> > >         bogus_inner_rept
+> > >         ~~~~~~~~~~~~~~~~
+ASL_EXIT=2
+ASL_DIAG=complete
+=== q9_fwdmac.asm
+> > > q9_fwdmac.asm(4) REPT 1(1):2: error #1200: unknown instruction
+> > > MYMAC
+> > >  mymac
+> > >  ~~~~~
+ASL_EXIT=2
+ASL_DIAG=complete
+=== r1_irp1.asm
+> > > r1_irp1.asm(4) IRP:(1):9: error #1200: unknown instruction
+> > > BOGUS_IRP1
+> > >         bogus_irp1 only
+> > >         ~~~~~~~~~~
+ASL_EXIT=2
+ASL_DIAG=complete
+=== r2_irpc_q.asm
+> > > r2_irpc_q.asm(4) IRPC:'b'(1):9: error #1200: unknown instruction
+> > > BOGUS_IRPC
+> > >         bogus_irpc a
+> > >         ~~~~~~~~~~
+> > > r2_irpc_q.asm(4) IRPC:'(1):9: error #1200: unknown instruction
+> > > BOGUS_IRPC
+> > >         bogus_irpc b
+> > >         ~~~~~~~~~~
+ASL_EXIT=2
+ASL_DIAG=complete
+=== r3_irp_space.asm
+> > > r3_irp_space.asm(4) IRP:bb cc(1):9: error #1200: unknown instruction
+> > > BOGUS_IRP
+> > >         bogus_irp aa
+> > >         ~~~~~~~~~
+> > > r3_irp_space.asm(4) IRP:dd(1):9: error #1200: unknown instruction
+> > > BOGUS_IRP
+> > >         bogus_irp bb cc
+> > >         ~~~~~~~~~
+> > > r3_irp_space.asm(4) IRP:(1):9: error #1200: unknown instruction
+> > > BOGUS_IRP
+> > >         bogus_irp dd
+> > >         ~~~~~~~~~
+ASL_EXIT=2
+ASL_DIAG=complete
+=== r4_irpc_bare.asm
+> > > r4_irpc_bare.asm(4) IRPC:'(1):9: error #1200: unknown instruction
+> > > BOGUS_IRPC
+> > >         bogus_irpc 0
+> > >         ~~~~~~~~~~
+ASL_EXIT=2
+ASL_DIAG=INCOMPLETE
+=== r5_irp_args.asm
+> > > r5_irp_args.asm(7) mymac(3) IRP:p2(1):9: error #1200: unknown instruction
+> > > BOGUS_M
+> > >         bogus_m p1
+> > >         ~~~~~~~
+> > > r5_irp_args.asm(7) mymac(3) IRP:(1):9: error #1200: unknown instruction
+> > > BOGUS_M
+> > >         bogus_m p2
+> > >         ~~~~~~~
+ASL_EXIT=2
+ASL_DIAG=complete
+=== r6_irpc_abc.asm
+> > > r6_irpc_abc.asm(4) IRPC:'b'(1):9: error #1200: unknown instruction
+> > > BOGUS_IRPC
+> > >         bogus_irpc a
+> > >         ~~~~~~~~~~
+> > > r6_irpc_abc.asm(4) IRPC:'c'(1):9: error #1200: unknown instruction
+> > > BOGUS_IRPC
+> > >         bogus_irpc b
+> > >         ~~~~~~~~~~
+> > > r6_irpc_abc.asm(4) IRPC:'(1):9: error #1200: unknown instruction
+> > > BOGUS_IRPC
+> > >         bogus_irpc c
+> > >         ~~~~~~~~~~
+ASL_EXIT=2
+ASL_DIAG=complete
+=== r7_irpc_one.asm
+> > > r7_irpc_one.asm(4) IRPC:'(1):9: error #1200: unknown instruction
+> > > BOGUS_IRPC
+> > >         bogus_irpc a
+> > >         ~~~~~~~~~~
+ASL_EXIT=2
+ASL_DIAG=complete
+=== r8_irpc_num.asm
+> > > r8_irpc_num.asm(4) IRPC:'5'(1):9: error #1200: unknown instruction
+> > > BOGUS_IRPC
+> > >         bogus_irpc 6
+> > >         ~~~~~~~~~~
+> > > r8_irpc_num.asm(4) IRPC:'(1):9: error #1200: unknown instruction
+> > > BOGUS_IRPC
+> > >         bogus_irpc 5
+> > >         ~~~~~~~~~~
+ASL_EXIT=2
+ASL_DIAG=complete
+=== r9_irpc_sym.asm
+> > > r9_irpc_sym.asm(5) IRPC:'y'(1):9: error #1200: unknown instruction
+> > > BOGUS_IRPC
+> > >         bogus_irpc x
+> > >         ~~~~~~~~~~
+> > > r9_irpc_sym.asm(5) IRPC:'z'(1):9: error #1200: unknown instruction
+> > > BOGUS_IRPC
+> > >         bogus_irpc y
+> > >         ~~~~~~~~~~
+> > > r9_irpc_sym.asm(5) IRPC:'(1):9: error #1200: unknown instruction
+> > > BOGUS_IRPC
+> > >         bogus_irpc z
+> > >         ~~~~~~~~~~
+ASL_EXIT=2
+ASL_DIAG=complete

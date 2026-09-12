@@ -5051,3 +5051,13 @@ refuses a wider processor rather than aliasing it onto a narrower one), and
 diagnostic that says so, which is the behaviour this repo wants from an unimplemented
 construct: a named refusal, never a silent mis-assembly. They are ledgered so that the day
 one is implemented, the ledger reports it as retirable instead of the gate saying nothing.
+
+### 2026-09-12, `AS-MACRO-DIAG-CALL-SITE`: what the call-site trail did not build
+
+Details and the asl lines behind each: `2026-09-12-as-macro-diag-call-site.md`.
+
+- `AS-TRAIL-COLUMN-TAB8` - inside an expansion asl counts a tab as eight columns (`p1_simple.asm(7) mymac(2):9` for a tab-indented mnemonic), sigil counts characters (`:2`), so every in-expansion column differs from asl's; asl is not consistent about it either (a file-level `rept` body gives `:2`, a file-level `irp` body `:9`).
+- `AS-TRAIL-DIRECTIVE-NO-COLUMN` - asl prints no column on a `warning`/`error` directive's line (`p6_warn.asm(6) mymac(1): warning: ...`); sigil prints one there, as on every line.
+- `AS-TRAIL-BODY-FILE` - the file a macro body is written in is not named, because asl does not name it; a separate `note:` line naming the body's `file(line)` would help a reader of a many-file corpus and was not built (it adds a line per diagnostic, and a count).
+- `AS-IRPC-BARE-WORD` - `irpc x,abc` with a bare word: asl iterates over it (probes `q2_irpc`, `r4_irpc_bare`), sigil refuses "unresolved `irpc` string expression"; pre-existing and loud.
+- `AS-TRAIL-ONCE-PER-POSITION` - the four per-pass dedup sets (arg, reg, cond, expand) report a body line once per pass, at the FIRST call that reached it; asl reports every call. Sigil's standing rule, kept on purpose: the trail changes where the one report points, not how many there are.

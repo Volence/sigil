@@ -1,0 +1,7 @@
+binary md5: b08524d13df9fa6e517e357fb0ee37e3  path: /home/volence/sonic_hacks/.scratch/as-macro-diag/bin/sigil-c2
+corpus: /home/volence/sonic_hacks/.scratch/as-macro-diag/corpus/s2disasm  s2disasm HEAD e45ebf332f39987424ca3102e50c717628f71269 (git archive)
+start: 2026-09-12T03:56:10-04:00
+SIGIL_EXIT=1
+end: 2026-09-12T03:56:13-04:00
+image: none
+END_MARKER

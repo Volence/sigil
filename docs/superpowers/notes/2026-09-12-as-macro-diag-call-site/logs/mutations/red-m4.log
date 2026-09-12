@@ -1,0 +1,112 @@
+== m4   HEAD d1ec0fa96e5fb67c71321678b576d557accae99f   branch parcel/as-macro-diag-call-site
+tracked-changes before: 0
+MUTATED crates/sigil-span/src/lib.rs
+  160:         true
+ crates/sigil-span/src/lib.rs | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+---- cargo test --release -p sigil-span --lib
+   Compiling sigil-span v0.1.0 (/home/volence/sonic_hacks/sigil/.claude/worktrees/agent-a46ef34b369e42312/crates/sigil-span)
+    Finished `release` profile [optimized] target(s) in 0.48s
+     Running unittests src/lib.rs (/home/volence/sonic_hacks/.scratch/as-macro-diag/target/release/deps/sigil_span-28d0bc7661975e22)
+
+running 17 tests
+test read_set::tests::a_file_read_with_two_contents_is_a_conflict_not_a_row ... ok
+test read_set::tests::a_generated_write_and_a_tool_mark_their_reads ... ok
+test tests::a_span_in_a_macro_run_labels_as_the_call_then_the_macro_line ... ok
+test read_set::tests::crc32_matches_the_standard_check_value ... ok
+test read_set::tests::a_scan_records_its_membership_and_a_changed_walk_conflicts ... ok
+test tests::a_nested_trail_through_a_loop_spells_every_frame_as_asl_does ... FAILED
+test tests::diagnostic_display_matches_contract ... ok
+test tests::an_unknown_expansion_id_labels_as_nothing ... ok
+test tests::label_names_the_source_the_span_belongs_to ... ok
+test read_set::tests::a_read_records_the_bytes_it_returned ... ok
+test tests::location_columns_count_characters_not_bytes ... ok
+test read_set::tests::two_spellings_of_one_file_are_one_record ... ok
+test tests::loop_frames_spell_rept_while_irp_and_irpc_as_asl_does ... ok
+test tests::source_map_add_text_and_location ... ok
+test tests::span_and_source_id_are_copy_with_public_fields ... ok
+test tests::two_runs_of_one_body_differ_by_id_and_agree_physically ... ok
+test tests::location_at_the_bottom_costs_no_more_than_at_the_top ... ok
+
+failures:
+
+---- tests::a_nested_trail_through_a_loop_spells_every_frame_as_asl_does stdout ----
+
+thread 'tests::a_nested_trail_through_a_loop_spells_every_frame_as_asl_does' (2826937) panicked at crates/sigil-span/src/lib.rs:613:9:
+assertion `left == right` failed
+  left: Some("q7_nest_rept_space.asm(11) outer(4) REPT 1(2) inner(1):2")
+ right: Some("q7_nest_rept_space.asm(11) outer(4) REPT 1(2)inner(1):2")
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    tests::a_nested_trail_through_a_loop_spells_every_frame_as_asl_does
+
+test result: FAILED. 16 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p sigil-span --lib`
+error: 1 target failed:
+    `-p sigil-span --lib`
+exit=101
+---- cargo test --release -p sigil-frontend-as --test as_macro_call_site_trail
+   Compiling sigil-span v0.1.0 (/home/volence/sonic_hacks/sigil/.claude/worktrees/agent-a46ef34b369e42312/crates/sigil-span)
+   Compiling sigil-ir v0.1.0 (/home/volence/sonic_hacks/sigil/.claude/worktrees/agent-a46ef34b369e42312/crates/sigil-ir)
+   Compiling sigil-backend-m68k v0.1.0 (/home/volence/sonic_hacks/sigil/.claude/worktrees/agent-a46ef34b369e42312/crates/sigil-backend-m68k)
+   Compiling sigil-backend-z80 v0.1.0 (/home/volence/sonic_hacks/sigil/.claude/worktrees/agent-a46ef34b369e42312/crates/sigil-backend-z80)
+   Compiling sigil-link v0.1.0 (/home/volence/sonic_hacks/sigil/.claude/worktrees/agent-a46ef34b369e42312/crates/sigil-link)
+   Compiling sigil-frontend-as v0.1.0 (/home/volence/sonic_hacks/sigil/.claude/worktrees/agent-a46ef34b369e42312/crates/sigil-frontend-as)
+    Finished `release` profile [optimized] target(s) in 4.92s
+     Running tests/as_macro_call_site_trail.rs (/home/volence/sonic_hacks/.scratch/as-macro-diag/target/release/deps/as_macro_call_site_trail-4bd245532aad8c81)
+
+running 13 tests
+test a_body_line_reported_once_per_pass_stays_reported_once ... ok
+test a_body_written_in_an_included_file_is_named_by_its_call ... ok
+test a_call_written_in_an_included_file_names_that_file ... ok
+test a_carried_warning_is_matched_by_position_when_run_ids_shift_between_passes ... ok
+test a_space_follows_a_macro_frame_and_not_a_loop_frame ... FAILED
+test a_line_outside_every_expansion_is_located_as_before ... ok
+test a_file_included_from_a_macro_body_is_named_alone ... ok
+test each_call_of_a_macro_names_its_own_line ... ok
+test a_warning_in_a_macro_carries_the_trail_too ... ok
+test an_expansion_assembles_the_bytes_its_body_says ... ok
+test a_loop_in_a_macro_is_a_frame_entered_from_its_closing_line ... ok
+test nested_macros_print_every_frame_outermost_first ... ok
+test a_file_level_loop_is_a_frame_named_by_its_closing_line ... FAILED
+
+failures:
+
+---- a_space_follows_a_macro_frame_and_not_a_loop_frame stdout ----
+
+thread 'a_space_follows_a_macro_frame_and_not_a_loop_frame' (2849035) panicked at crates/sigil-frontend-as/tests/as_macro_call_site_trail.rs:157:5:
+assertion `left == right` failed: [
+    "q7_nest_rept_space.asm(11) outer(4) REPT 1(2) inner(1):2: error: `bogus_inner` is not a recognized 68000 mnemonic",
+]
+  left: ["q7_nest_rept_space.asm(11) outer(4) REPT 1(2) inner(1):2"]
+ right: ["q7_nest_rept_space.asm(11) outer(4) REPT 1(2)inner(1):2"]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- a_file_level_loop_is_a_frame_named_by_its_closing_line stdout ----
+
+thread 'a_file_level_loop_is_a_frame_named_by_its_closing_line' (2849032) panicked at crates/sigil-frontend-as/tests/as_macro_call_site_trail.rs:210:5:
+assertion `left == right` failed: [
+    "q5_reptrept.asm(6) REPT 1(3) REPT 1(1):2: error: `bogus_reptrept` is not a recognized 68000 mnemonic",
+    "q5_reptrept.asm(6) REPT 1(3) REPT 2(1):2: error: `bogus_reptrept` is not a recognized 68000 mnemonic",
+    "q5_reptrept.asm(6) REPT 2(3) REPT 1(1):2: error: `bogus_reptrept` is not a recognized 68000 mnemonic",
+    "q5_reptrept.asm(6) REPT 2(3) REPT 2(1):2: error: `bogus_reptrept` is not a recognized 68000 mnemonic",
+]
+  left: ["q5_reptrept.asm(6) REPT 1(3) REPT 1(1):2", "q5_reptrept.asm(6) REPT 1(3) REPT 2(1):2", "q5_reptrept.asm(6) REPT 2(3) REPT 1(1):2", "q5_reptrept.asm(6) REPT 2(3) REPT 2(1):2"]
+ right: ["q5_reptrept.asm(6) REPT 1(3)REPT 1(1):2", "q5_reptrept.asm(6) REPT 1(3)REPT 2(1):2", "q5_reptrept.asm(6) REPT 2(3)REPT 1(1):2", "q5_reptrept.asm(6) REPT 2(3)REPT 2(1):2"]
+
+
+failures:
+    a_file_level_loop_is_a_frame_named_by_its_closing_line
+    a_space_follows_a_macro_frame_and_not_a_loop_frame
+
+test result: FAILED. 11 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p sigil-frontend-as --test as_macro_call_site_trail`
+error: 1 target failed:
+    `-p sigil-frontend-as --test as_macro_call_site_trail`
+exit=101
+restored crates/sigil-span/src/lib.rs from HEAD; tracked-changes after: 0
+m4 :: passed 27, failed 3 :: RED: a_file_level_loop_is_a_frame_named_by_its_closing_line a_space_follows_a_macro_frame_and_not_a_loop_frame tests::a_nested_trail_through_a_loop_spells_every_frame_as_asl_does 

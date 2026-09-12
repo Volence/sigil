@@ -1,0 +1,66 @@
+thread=thread=thread=thread=SomeSome("SomeSome(a_call_written_in_an_included_file_names_that_file((""""a_body_line_reported_once_per_pass_stays_reported_once)a_body_written_in_an_included_file_is_named_by_its_calla_carried_warning_is_matched_by_position_when_run_ids_shift_between_passes" arg1=""))None) arg1= arg1= label= arg1=NoneNone/tmp/.tmp96jrbq/p11_call.inc(3) mymac(1):2None label= label=/tmp/.tmpHdrR0n/once.asm(7) m(1):2
+ label=/tmp/.tmp27RTQe/carry.asm(11) w(1):2
+/tmp/.tmp5hwWcd/p3_incbody.asm(3) mymac(1):2
+
+thread=Some("a_file_level_loop_is_a_frame_named_by_its_closing_line") arg1=None label=/tmp/.tmpgi8536/p8_toprept.asm(5) REPT 1(1):2
+thread=Some("a_file_level_loop_is_a_frame_named_by_its_closing_line") arg1=thread=NoneSome label=(/tmp/.tmpgi8536/p8_toprept.asm(5) REPT 2(1):2"
+a_carried_warning_is_matched_by_position_when_run_ids_shift_between_passes") arg1=None label=/tmp/.tmp27RTQe/carry.asm(11) w(1):2
+thread=Some("a_carried_warning_is_matched_by_position_when_run_ids_shift_between_passes") arg1=None label=/tmp/.tmp27RTQe/carry.asm(11) w(1):2
+thread=Some("nested_macros_print_every_frame_outermost_first") arg1=None label=/tmp/.tmpp1A2zg/p2_nested.asm(9) outer(2) inner(1):2
+thread=Some("a_file_level_loop_is_a_frame_named_by_its_closing_line") arg1=None label=/tmp/.tmpkKVOAl/q3_topwhile.asm(7) WHILE 1/2:2
+thread=Some("a_file_level_loop_is_a_frame_named_by_its_closing_line") arg1=None label=/tmp/.tmpkKVOAl/q3_topwhile.asm(7) WHILE 2/2:2
+thread=Some("nested_macros_print_every_frame_outermost_first") arg1=None label=/tmp/.tmpP3bTOe/q6_three.asm(14) outer(1) mid(3) inner(2):2
+thread=Some("a_file_level_loop_is_a_frame_named_by_its_closing_line") arg1=None label=/tmp/.tmpzEdMAv/q1_irp3.asm(5) IRP:bb(2):2
+thread=Some("a_file_level_loop_is_a_frame_named_by_its_closing_line") arg1=None label=/tmp/.tmpzEdMAv/q1_irp3.asm(5) IRP:cc(2):2
+thread=Some("a_file_level_loop_is_a_frame_named_by_its_closing_line") arg1=None label=/tmp/.tmpzEdMAv/q1_irp3.asm(5) IRP:(2):2
+thread=Some("a_file_level_loop_is_a_frame_named_by_its_closing_line") arg1=None label=/tmp/.tmpNrXY0u/r6_irpc_abc.asm(4) IRPC:'b'(1):2
+thread=Some("a_file_level_loop_is_a_frame_named_by_its_closing_line") arg1=None label=/tmp/.tmpNrXY0u/r6_irpc_abc.asm(4) IRPC:'c'(1):2
+thread=Some("a_file_level_loop_is_a_frame_named_by_its_closing_line") arg1=None label=/tmp/.tmpNrXY0u/r6_irpc_abc.asm(4) IRPC:'(1):2
+thread=Some("a_file_level_loop_is_a_frame_named_by_its_closing_line") arg1=None label=/tmp/.tmpzgA1ED/q5_reptrept.asm(6) REPT 1(3)REPT 1(1):2
+thread=Some("a_file_level_loop_is_a_frame_named_by_its_closing_line") arg1=None label=/tmp/.tmpzgA1ED/q5_reptrept.asm(6) REPT 1(3)REPT 2(1):2
+thread=Some("a_file_level_loop_is_a_frame_named_by_its_closing_line") arg1=None label=/tmp/.tmpzgA1ED/q5_reptrept.asm(6) REPT 2(3)REPT 1(1):2
+thread=Some("a_file_level_loop_is_a_frame_named_by_its_closing_line") arg1=None label=/tmp/.tmpzgA1ED/q5_reptrept.asm(6) REPT 2(3)REPT 2(1):2
+thread=Some("a_warning_in_a_macro_carries_the_trail_too") arg1=None label=/tmp/.tmpreaMNz/p18_warn_err.asm(6) mymac(1):2
+thread=Some(thread="Somea_warning_in_a_macro_carries_the_trail_too("thread=")Someeach_call_of_a_macro_names_its_own_line arg1=(None"" label=a_loop_in_a_macro_is_a_frame_entered_from_its_closing_line/tmp/.tmpreaMNz/p18_warn_err.asm(6) mymac(1):2)
+" arg1=)None arg1= label=None/tmp/.tmprmGKA6/p1_simple.asm(7) mymac(2):2 label=
+/tmp/.tmp3TnzYF/p4_rept.asm(8) mymac(3) REPT 1(1):2
+thread=Some("each_call_of_a_macro_names_its_own_linethread="thread=Some)Some arg1=((None"" label=thread=a_loop_in_a_macro_is_a_frame_entered_from_its_closing_lineSomea_warning_in_a_macro_carries_the_trail_too/tmp/.tmprmGKA6/p1_simple.asm(8) mymac(2):2"("
+)") arg1=a_space_follows_a_macro_frame_and_not_a_loop_frame arg1=None"None label=) label=/tmp/.tmp3TnzYF/p4_rept.asm(8) mymac(3) REPT 2(1):2 arg1=/tmp/.tmpreaMNz/p18_warn_err.asm(6) mymac(1):2
+None
+ label=/tmp/.tmpbLai8R/q7_nest_rept_space.asm(11) outer(4) REPT 1(2)inner(1):2
+thread=Some("a_warning_in_a_macro_carries_the_trail_too") arg1=None label=/tmp/.tmpreaMNz/p18_warn_err.asm(6) mymac(2):2
+thread=Some("a_warning_in_a_macro_carries_the_trail_too") arg1=None label=/tmp/.tmp7OxjXC/p6_warn.asm(6) mymac(1):2
+thread=Some("a_warning_in_a_macro_carries_the_trail_too") arg1=None label=/tmp/.tmp7OxjXC/p6_warn.asm(6) mymac(1):2
+thread=Some("a_warning_in_a_macro_carries_the_trail_too") arg1=None label=/tmp/.tmp7OxjXC/p6_warn.asm(6) mymac(1):2
+thread=Some("a_space_follows_a_macro_frame_and_not_a_loop_frame") arg1=None label=/tmp/.tmpVICIna/q8_rept_in_inner.asm(11) outer(2) inner(3) REPT 1(1):2
+thread=Some("a_space_follows_a_macro_frame_and_not_a_loop_frame") arg1=None label=/tmp/.tmpVICIna/q8_rept_in_inner.asm(11) outer(2) inner(3) REPT 2(1):2
+thread=Some("a_loop_in_a_macro_is_a_frame_entered_from_its_closing_line") arg1=None label=/tmp/.tmpBrADaR/p5_while.asm(10) mymac(5) WHILE 1/1:2
+thread=Some("a_loop_in_a_macro_is_a_frame_entered_from_its_closing_line") arg1=None label=/tmp/.tmpBrADaR/p5_while.asm(10) mymac(5) WHILE 2/1:2
+thread=Some("a_space_follows_a_macro_frame_and_not_a_loop_frame") arg1=None label=/tmp/.tmpi2dbcc/q10_mac_in_toprept.asm(7) REPT 1(1)mymac(1):2
+thread=Some("a_space_follows_a_macro_frame_and_not_a_loop_frame") arg1=None label=/tmp/.tmpi2dbcc/q10_mac_in_toprept.asm(7) REPT 2(1)mymac(1):2
+thread=Some("a_loop_in_a_macro_is_a_frame_entered_from_its_closing_line") arg1=None label=/tmp/.tmpUaBl5G/p10_macirp.asm(8) mymac(3) IRP:2(1):2
+thread=Some("a_loop_in_a_macro_is_a_frame_entered_from_its_closing_line") arg1=None label=/tmp/.tmpUaBl5G/p10_macirp.asm(8) mymac(3) IRP:(1):2
+thread=Some("one_condition_reached_many_times_is_reported_once") arg1=None label=/tmp/.tmp8y2fat/probe.asm(7) m(1):2
+thread=Some("levartptrs_shape_leaves_the_resolvable_third_pointer_alone") arg1=None label=/tmp/.tmp1iXB7Y/probe.asm(13) levartptrs(1):7
+thread=Some("levartptrs_shape_leaves_the_resolvable_third_pointer_alone") arg1=None label=/tmp/.tmp1iXB7Y/probe.asm(13) levartptrs(2):7
+thread=Some("levartptrs_shape_reports_both_unresolved_long_expressions_on_a_failing_run") arg1=None label=/tmp/.tmp7yxFiJ/probe.asm(13) levartptrs(1):7
+thread=Some("levartptrs_shape_reports_both_unresolved_long_expressions_on_a_failing_run") arg1=None label=/tmp/.tmp7yxFiJ/probe.asm(13) levartptrs(2):7
+thread=Some("the_error_that_opened_the_gate_is_still_reported") arg1=None label=/tmp/.tmp69CFsJ/probe.asm(13) levartptrs(1):7
+thread=Some("the_error_that_opened_the_gate_is_still_reported") arg1=None label=/tmp/.tmp69CFsJ/probe.asm(13) levartptrs(2):7
+thread=thread=SomeSome((""the_new_diagnostic_set_contains_the_old_onea_skipped_bonus_pass_still_reports_its_leftover_poison"")) arg1= arg1=NoneNone label= label=/tmp/.tmpeMexZw/probe.asm(13) levartptrs(1):7/tmp/.tmpYmB5Au/probe.asm(13) levartptrs(1):7
+
+thread=thread=SomeSome((""a_skipped_bonus_pass_still_reports_its_leftover_poisonthe_new_diagnostic_set_contains_the_old_one"")) arg1= arg1=NoneNone label= label=/tmp/.tmpYmB5Au/probe.asm(13) levartptrs(2):7/tmp/.tmpeMexZw/probe.asm(13) levartptrs(2):7
+
+thread=Some("main") arg1=Some("/tmp/.tmpwwhp4o/p7_undef.asm"thread=)Some label=(/tmp/.tmpwwhp4o/p7_undef.asm(6) mymac(1):2"
+main") arg1=Some("/tmp/.tmppVnd5W/mroot.asm") label=/tmp/.tmppVnd5W/mroot.asm(3) mymac(1):2
+thread=Some("tests::a_span_in_a_macro_run_labels_as_the_call_then_the_macro_line") arg1=None label=p3_incbody.asm(3) mymac(1):2
+thread=Some("tests::a_nested_trail_through_a_loop_spells_every_frame_as_asl_does") arg1=None label=q7_nest_rept_space.asm(11) outer(4) REPT 1(2)inner(1):2
+thread=Some("tests::a_nested_trail_through_a_loop_spells_every_frame_as_asl_does") arg1=None label=q6_three.asm(14) outer(1) mid(3) inner(2):2
+thread=Some("tests::loop_frames_spell_rept_while_irp_and_irpc_as_asl_does") arg1=None label=p8_toprept.asm(5) REPT 2(1):2
+thread=Some("tests::loop_frames_spell_rept_while_irp_and_irpc_as_asl_does") arg1=None label=q3_topwhile.asm(7) WHILE 1/2:2
+thread=Some("tests::loop_frames_spell_rept_while_irp_and_irpc_as_asl_does") arg1=None label=q1_irp3.asm(5) IRP:bb(2):2
+thread=Some("tests::loop_frames_spell_rept_while_irp_and_irpc_as_asl_does") arg1=None label=q1_irp3.asm(5) IRP:(2):2
+thread=Some("tests::loop_frames_spell_rept_while_irp_and_irpc_as_asl_does") arg1=None label=r6_irpc_abc.asm(4) IRPC:'b'(1):2
+thread=Some("tests::loop_frames_spell_rept_while_irp_and_irpc_as_asl_does") arg1=None label=r6_irpc_abc.asm(4) IRPC:'(1):2
+thread=Some("tests::two_runs_of_one_body_differ_by_id_and_agree_physically") arg1=None label=p1_simple.asm(7) mymac(2):2
+thread=Some("tests::two_runs_of_one_body_differ_by_id_and_agree_physically") arg1=None label=p1_simple.asm(8) mymac(2):2

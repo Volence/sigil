@@ -1,0 +1,60 @@
+== m9   HEAD d1ec0fa96e5fb67c71321678b576d557accae99f   branch parcel/as-macro-diag-call-site
+tracked-changes before: 0
+MUTATED crates/sigil-frontend-as/src/eval.rs
+  782:         if diags.iter().any(|d| d.primary == *span) {
+ crates/sigil-frontend-as/src/eval.rs | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+---- cargo test --release -p sigil-frontend-as --test as_macro_call_site_trail
+   Compiling sigil-frontend-as v0.1.0 (/home/volence/sonic_hacks/sigil/.claude/worktrees/agent-a46ef34b369e42312/crates/sigil-frontend-as)
+warning: unused variable: `physical`
+   --> crates/sigil-frontend-as/src/eval.rs:779:25
+    |
+779 |     for Carried { span, physical, message, label: raised_label } in carried {
+    |                         ^^^^^^^^ help: try ignoring the field: `physical: _`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: `sigil-frontend-as` (lib) generated 1 warning (run `cargo fix --lib -p sigil-frontend-as` to apply 1 suggestion)
+    Finished `release` profile [optimized] target(s) in 4.48s
+     Running tests/as_macro_call_site_trail.rs (/home/volence/sonic_hacks/.scratch/as-macro-diag/target/release/deps/as_macro_call_site_trail-4bd245532aad8c81)
+
+running 13 tests
+test a_body_line_reported_once_per_pass_stays_reported_once ... ok
+test a_call_written_in_an_included_file_names_that_file ... ok
+test a_body_written_in_an_included_file_is_named_by_its_call ... ok
+test an_expansion_assembles_the_bytes_its_body_says ... ok
+test each_call_of_a_macro_names_its_own_line ... ok
+test a_line_outside_every_expansion_is_located_as_before ... ok
+test a_warning_in_a_macro_carries_the_trail_too ... ok
+test a_file_included_from_a_macro_body_is_named_alone ... ok
+test nested_macros_print_every_frame_outermost_first ... ok
+test a_carried_warning_is_matched_by_position_when_run_ids_shift_between_passes ... FAILED
+test a_file_level_loop_is_a_frame_named_by_its_closing_line ... ok
+test a_space_follows_a_macro_frame_and_not_a_loop_frame ... ok
+test a_loop_in_a_macro_is_a_frame_entered_from_its_closing_line ... ok
+
+failures:
+
+---- a_carried_warning_is_matched_by_position_when_run_ids_shift_between_passes stdout ----
+
+thread 'a_carried_warning_is_matched_by_position_when_run_ids_shift_between_passes' (2933675) panicked at crates/sigil-frontend-as/tests/as_macro_call_site_trail.rs:285:5:
+assertion `left == right` failed: [
+    "carry.asm(11) w(1):2: warning: [as.warning] from w",
+    "<none>: warning: [as.warning] /tmp/.tmpDtKOIT/carry.asm(11) w(1):2: from w",
+]
+  left: 2
+ right: 1
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    a_carried_warning_is_matched_by_position_when_run_ids_shift_between_passes
+
+test result: FAILED. 12 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p sigil-frontend-as --test as_macro_call_site_trail`
+error: 1 target failed:
+    `-p sigil-frontend-as --test as_macro_call_site_trail`
+exit=101
+restored crates/sigil-frontend-as/src/eval.rs from HEAD; tracked-changes after: 0
+m9 :: passed 12, failed 1 :: RED: a_carried_warning_is_matched_by_position_when_run_ids_shift_between_passes 

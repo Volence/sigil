@@ -1,0 +1,52 @@
+== m8b   HEAD d1ec0fa96e5fb67c71321678b576d557accae99f   branch parcel/as-macro-diag-call-site
+tracked-changes before: 0
+MUTATED crates/sigil-frontend-as/src/eval.rs
+  5685:         let p = span;
+  5686:         (p.source.0, p.start, p.end)
+   Compiling sigil-span v0.1.0 (/home/volence/sonic_hacks/sigil/.claude/worktrees/agent-a46ef34b369e42312/crates/sigil-span)
+   Compiling sigil-ir v0.1.0 (/home/volence/sonic_hacks/sigil/.claude/worktrees/agent-a46ef34b369e42312/crates/sigil-ir)
+   Compiling sigil-backend-z80 v0.1.0 (/home/volence/sonic_hacks/sigil/.claude/worktrees/agent-a46ef34b369e42312/crates/sigil-backend-z80)
+   Compiling sigil-backend-m68k v0.1.0 (/home/volence/sonic_hacks/sigil/.claude/worktrees/agent-a46ef34b369e42312/crates/sigil-backend-m68k)
+   Compiling sigil-link v0.1.0 (/home/volence/sonic_hacks/sigil/.claude/worktrees/agent-a46ef34b369e42312/crates/sigil-link)
+   Compiling sigil-frontend-as v0.1.0 (/home/volence/sonic_hacks/sigil/.claude/worktrees/agent-a46ef34b369e42312/crates/sigil-frontend-as)
+    Finished `release` profile [optimized] target(s) in 4.76s
+     Running tests/as_unresolved_if_condition.rs (/home/volence/sonic_hacks/.scratch/as-macro-diag/target/release/deps/as_unresolved_if_condition-8df1000a488f79c3)
+
+running 14 tests
+test a_compound_expression_condition_does_not_fire ... ok
+test a_defined_constant_condition_does_not_fire ... ok
+test a_forward_equ_condition_does_not_fire ... ok
+test a_forward_label_condition_does_not_fire ... ok
+test an_elseif_after_a_taken_arm_is_not_evaluated ... ok
+test an_elseif_on_an_undefined_symbol_is_refused_and_names_it ... ok
+test a_forward_set_condition_does_not_fire ... ok
+test an_explicit_true_still_assembles_both ... ok
+test a_string_comparison_condition_does_not_fire ... ok
+test an_explicit_false_still_assembles_silently_to_the_same_bytes ... ok
+test an_if_inside_a_skipped_arm_is_not_evaluated ... ok
+test an_if_on_an_undefined_symbol_is_refused_and_names_it ... ok
+test ifdef_on_an_undefined_name_does_not_fire ... ok
+test one_condition_reached_many_times_is_reported_once ... FAILED
+
+failures:
+
+---- one_condition_reached_many_times_is_reported_once stdout ----
+
+thread 'one_condition_reached_many_times_is_reported_once' (3072519) panicked at crates/sigil-frontend-as/tests/as_unresolved_if_condition.rs:290:5:
+assertion `left == right` failed: four expansions of one line, one verdict: [(1, "unresolved if condition: `Nowhere` has no value, so this condition cannot decide whether the code it guards is assembled"), (1, "unresolved if condition: `Nowhere` has no value, so this condition cannot decide whether the code it guards is assembled"), (1, "unresolved if condition: `Nowhere` has no value, so this condition cannot decide whether the code it guards is assembled"), (1, "unresolved if condition: `Nowhere` has no value, so this condition cannot decide whether the code it guards is assembled")]
+  left: 4
+ right: 1
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    one_condition_reached_many_times_is_reported_once
+
+test result: FAILED. 13 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p sigil-frontend-as --test as_unresolved_if_condition`
+error: 1 target failed:
+    `-p sigil-frontend-as --test as_unresolved_if_condition`
+exit=101
+restored crates/sigil-frontend-as/src/eval.rs from HEAD; tracked-changes after: 0
+m8b :: passed 13, failed 1 :: RED: one_condition_reached_many_times_is_reported_once 

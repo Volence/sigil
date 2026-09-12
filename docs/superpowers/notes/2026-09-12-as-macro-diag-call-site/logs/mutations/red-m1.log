@@ -1,0 +1,262 @@
+== m1   HEAD d1ec0fa96e5fb67c71321678b576d557accae99f   branch parcel/as-macro-diag-call-site
+tracked-changes before: 0
+MUTATED crates/sigil-frontend-as/src/eval.rs
+  5670:         let Some(first) = body.first().filter(|_| false) else {
+  5671:             return;
+  5672:         };
+  5673:         let id = self.sources.add_expansion(first.source, first.base, call, frame);
+ crates/sigil-frontend-as/src/eval.rs | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+---- cargo test --release -p sigil-frontend-as --test as_macro_call_site_trail
+   Compiling sigil-span v0.1.0 (/home/volence/sonic_hacks/sigil/.claude/worktrees/agent-a46ef34b369e42312/crates/sigil-span)
+   Compiling sigil-ir v0.1.0 (/home/volence/sonic_hacks/sigil/.claude/worktrees/agent-a46ef34b369e42312/crates/sigil-ir)
+   Compiling sigil-backend-m68k v0.1.0 (/home/volence/sonic_hacks/sigil/.claude/worktrees/agent-a46ef34b369e42312/crates/sigil-backend-m68k)
+   Compiling sigil-backend-z80 v0.1.0 (/home/volence/sonic_hacks/sigil/.claude/worktrees/agent-a46ef34b369e42312/crates/sigil-backend-z80)
+   Compiling sigil-link v0.1.0 (/home/volence/sonic_hacks/sigil/.claude/worktrees/agent-a46ef34b369e42312/crates/sigil-link)
+   Compiling sigil-frontend-as v0.1.0 (/home/volence/sonic_hacks/sigil/.claude/worktrees/agent-a46ef34b369e42312/crates/sigil-frontend-as)
+    Finished `release` profile [optimized] target(s) in 4.84s
+     Running tests/as_macro_call_site_trail.rs (/home/volence/sonic_hacks/.scratch/as-macro-diag/target/release/deps/as_macro_call_site_trail-4bd245532aad8c81)
+
+running 13 tests
+test a_body_line_reported_once_per_pass_stays_reported_once ... FAILED
+test a_body_written_in_an_included_file_is_named_by_its_call ... FAILED
+test a_carried_warning_is_matched_by_position_when_run_ids_shift_between_passes ... FAILED
+test an_expansion_assembles_the_bytes_its_body_says ... ok
+test a_line_outside_every_expansion_is_located_as_before ... ok
+test a_call_written_in_an_included_file_names_that_file ... FAILED
+test a_file_included_from_a_macro_body_is_named_alone ... ok
+test a_loop_in_a_macro_is_a_frame_entered_from_its_closing_line ... FAILED
+test a_file_level_loop_is_a_frame_named_by_its_closing_line ... FAILED
+test nested_macros_print_every_frame_outermost_first ... FAILED
+test a_warning_in_a_macro_carries_the_trail_too ... FAILED
+test a_space_follows_a_macro_frame_and_not_a_loop_frame ... FAILED
+test each_call_of_a_macro_names_its_own_line ... FAILED
+
+failures:
+
+---- a_body_line_reported_once_per_pass_stays_reported_once stdout ----
+
+thread 'a_body_line_reported_once_per_pass_stays_reported_once' (2772531) panicked at crates/sigil-frontend-as/tests/as_macro_call_site_trail.rs:268:5:
+[
+    "once.asm(3):2: error: unresolved if condition: `Undefined_cond` has no value, so this condition cannot decide whether the code it guards is assembled",
+]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- a_body_written_in_an_included_file_is_named_by_its_call stdout ----
+
+thread 'a_body_written_in_an_included_file_is_named_by_its_call' (2772532) panicked at crates/sigil-frontend-as/tests/as_macro_call_site_trail.rs:80:5:
+assertion `left == right` failed: [
+    "p3_mac.inc(3):2: error: `bogus_in_inc_body` is not a recognized 68000 mnemonic",
+]
+  left: ["p3_mac.inc(3):2"]
+ right: ["p3_incbody.asm(3) mymac(1):2"]
+
+---- a_carried_warning_is_matched_by_position_when_run_ids_shift_between_passes stdout ----
+
+thread 'a_carried_warning_is_matched_by_position_when_run_ids_shift_between_passes' (2772535) panicked at crates/sigil-frontend-as/tests/as_macro_call_site_trail.rs:286:5:
+[
+    "carry.asm(6):2: warning: [as.warning] from w",
+]
+
+---- a_call_written_in_an_included_file_names_that_file stdout ----
+
+thread 'a_call_written_in_an_included_file_names_that_file' (2772534) panicked at crates/sigil-frontend-as/tests/as_macro_call_site_trail.rs:92:5:
+assertion `left == right` failed: [
+    "p11_def.inc(2):2: error: `bogus_from_inc_call` is not a recognized 68000 mnemonic",
+]
+  left: ["p11_def.inc(2):2"]
+ right: ["p11_call.inc(3) mymac(1):2"]
+
+---- a_loop_in_a_macro_is_a_frame_entered_from_its_closing_line stdout ----
+
+thread 'a_loop_in_a_macro_is_a_frame_entered_from_its_closing_line' (2772539) panicked at crates/sigil-frontend-as/tests/as_macro_call_site_trail.rs:127:5:
+assertion `left == right` failed: [
+    "p4_rept.asm(4):2: error: `bogus_in_rept` is not a recognized 68000 mnemonic",
+    "p4_rept.asm(4):2: error: `bogus_in_rept` is not a recognized 68000 mnemonic",
+]
+  left: ["p4_rept.asm(4):2", "p4_rept.asm(4):2"]
+ right: ["p4_rept.asm(8) mymac(3) REPT 1(1):2", "p4_rept.asm(8) mymac(3) REPT 2(1):2"]
+
+---- a_file_level_loop_is_a_frame_named_by_its_closing_line stdout ----
+
+thread 'a_file_level_loop_is_a_frame_named_by_its_closing_line' (2772537) panicked at crates/sigil-frontend-as/tests/as_macro_call_site_trail.rs:191:5:
+assertion `left == right` failed: [
+    "p8_toprept.asm(4):2: error: `bogus_top_rept` is not a recognized 68000 mnemonic",
+    "p8_toprept.asm(4):2: error: `bogus_top_rept` is not a recognized 68000 mnemonic",
+]
+  left: ["p8_toprept.asm(4):2", "p8_toprept.asm(4):2"]
+ right: ["p8_toprept.asm(5) REPT 1(1):2", "p8_toprept.asm(5) REPT 2(1):2"]
+
+---- nested_macros_print_every_frame_outermost_first stdout ----
+
+thread 'nested_macros_print_every_frame_outermost_first' (2772544) panicked at crates/sigil-frontend-as/tests/as_macro_call_site_trail.rs:105:5:
+assertion `left == right` failed: [
+    "p2_nested.asm(2):2: error: `bogus_inner` is not a recognized 68000 mnemonic",
+]
+  left: ["p2_nested.asm(2):2"]
+ right: ["p2_nested.asm(9) outer(2) inner(1):2"]
+
+---- a_warning_in_a_macro_carries_the_trail_too stdout ----
+
+thread 'a_warning_in_a_macro_carries_the_trail_too' (2772541) panicked at crates/sigil-frontend-as/tests/as_macro_call_site_trail.rs:249:5:
+assertion `left == right` failed: [
+    "p18_warn_err.asm(3):2: warning: [as.warning] w1",
+    "p18_warn_err.asm(4):2: error: `bogus_after_warn` is not a recognized 68000 mnemonic",
+]
+  left: ["p18_warn_err.asm(3):2", "p18_warn_err.asm(4):2"]
+ right: ["p18_warn_err.asm(6) mymac(1):2", "p18_warn_err.asm(6) mymac(2):2"]
+
+---- a_space_follows_a_macro_frame_and_not_a_loop_frame stdout ----
+
+thread 'a_space_follows_a_macro_frame_and_not_a_loop_frame' (2772540) panicked at crates/sigil-frontend-as/tests/as_macro_call_site_trail.rs:157:5:
+assertion `left == right` failed: [
+    "q7_nest_rept_space.asm(2):2: error: `bogus_inner` is not a recognized 68000 mnemonic",
+]
+  left: ["q7_nest_rept_space.asm(2):2"]
+ right: ["q7_nest_rept_space.asm(11) outer(4) REPT 1(2)inner(1):2"]
+
+---- each_call_of_a_macro_names_its_own_line stdout ----
+
+thread 'each_call_of_a_macro_names_its_own_line' (2772543) panicked at crates/sigil-frontend-as/tests/as_macro_call_site_trail.rs:68:5:
+assertion `left == right` failed: [
+    "p1_simple.asm(4):2: error: `bogus_in_body` is not a recognized 68000 mnemonic",
+    "p1_simple.asm(4):2: error: `bogus_in_body` is not a recognized 68000 mnemonic",
+]
+  left: ["p1_simple.asm(4):2", "p1_simple.asm(4):2"]
+ right: ["p1_simple.asm(7) mymac(2):2", "p1_simple.asm(8) mymac(2):2"]
+
+
+failures:
+    a_body_line_reported_once_per_pass_stays_reported_once
+    a_body_written_in_an_included_file_is_named_by_its_call
+    a_call_written_in_an_included_file_names_that_file
+    a_carried_warning_is_matched_by_position_when_run_ids_shift_between_passes
+    a_file_level_loop_is_a_frame_named_by_its_closing_line
+    a_loop_in_a_macro_is_a_frame_entered_from_its_closing_line
+    a_space_follows_a_macro_frame_and_not_a_loop_frame
+    a_warning_in_a_macro_carries_the_trail_too
+    each_call_of_a_macro_names_its_own_line
+    nested_macros_print_every_frame_outermost_first
+
+test result: FAILED. 3 passed; 10 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p sigil-frontend-as --test as_macro_call_site_trail`
+error: 1 target failed:
+    `-p sigil-frontend-as --test as_macro_call_site_trail`
+exit=101
+---- cargo test --release -p sigil-frontend-as --test failed_run_reports_everything
+   Compiling sigil-frontend-as v0.1.0 (/home/volence/sonic_hacks/sigil/.claude/worktrees/agent-a46ef34b369e42312/crates/sigil-frontend-as)
+    Finished `release` profile [optimized] target(s) in 0.29s
+     Running tests/failed_run_reports_everything.rs (/home/volence/sonic_hacks/.scratch/as-macro-diag/target/release/deps/failed_run_reports_everything-683598208efb4faf)
+
+running 9 tests
+test a_poison_free_failing_run_is_unchanged ... ok
+test a_run_with_nothing_else_wrong_still_takes_the_bonus_pass ... ok
+test a_warning_alone_does_not_open_the_gate ... ok
+test the_witness_451cb3e2_cites_is_refused_by_the_front_end ... ok
+test levartptrs_shape_leaves_the_resolvable_third_pointer_alone ... FAILED
+test the_error_that_opened_the_gate_is_still_reported ... ok
+test the_new_diagnostic_set_contains_the_old_one ... FAILED
+test a_skipped_bonus_pass_still_reports_its_leftover_poison ... ok
+test levartptrs_shape_reports_both_unresolved_long_expressions_on_a_failing_run ... FAILED
+
+failures:
+
+---- levartptrs_shape_leaves_the_resolvable_third_pointer_alone stdout ----
+
+thread 'levartptrs_shape_leaves_the_resolvable_third_pointer_alone' (2773045) panicked at crates/sigil-frontend-as/tests/failed_run_reports_everything.rs:162:5:
+the macro's first two lines must be located by the call and the body line; got [("probe.asm(7)", "unresolved long expression"), ("probe.asm(8)", "unresolved long expression"), ("probe.asm(23)", "unsupported form: moveq data 511 does not fit in a signed byte"), ("probe.asm(21)", "unresolved symbol `LoadLevelLayout` in operand")]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- the_new_diagnostic_set_contains_the_old_one stdout ----
+
+thread 'the_new_diagnostic_set_contains_the_old_one' (2773049) panicked at crates/sigil-frontend-as/tests/failed_run_reports_everything.rs:268:5:
+assertion `left == right` failed: the set the gate ADDS changed
+  left: ["(probe.asm(7)) unresolved long expression", "(probe.asm(8)) unresolved long expression", "(probe.asm(21)) unresolved symbol `LoadLevelLayout` in operand"]
+ right: ["(probe.asm(13) levartptrs(1)) unresolved long expression", "(probe.asm(13) levartptrs(2)) unresolved long expression", "(probe.asm(21)) unresolved symbol `LoadLevelLayout` in operand"]
+
+---- levartptrs_shape_reports_both_unresolved_long_expressions_on_a_failing_run stdout ----
+
+thread 'levartptrs_shape_reports_both_unresolved_long_expressions_on_a_failing_run' (2773047) panicked at crates/sigil-frontend-as/tests/failed_run_reports_everything.rs:81:5:
+expected `unresolved long expression` at probe.asm(13) levartptrs(1); the run reported 4 diagnostics:
+  (probe.asm(7)) unresolved long expression
+  (probe.asm(8)) unresolved long expression
+  (probe.asm(23)) unsupported form: moveq data 511 does not fit in a signed byte
+  (probe.asm(21)) unresolved symbol `LoadLevelLayout` in operand
+
+
+failures:
+    levartptrs_shape_leaves_the_resolvable_third_pointer_alone
+    levartptrs_shape_reports_both_unresolved_long_expressions_on_a_failing_run
+    the_new_diagnostic_set_contains_the_old_one
+
+test result: FAILED. 6 passed; 3 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p sigil-frontend-as --test failed_run_reports_everything`
+error: 1 target failed:
+    `-p sigil-frontend-as --test failed_run_reports_everything`
+exit=101
+---- cargo test --release -p sigil-cli --test cli_diagnostic_location
+warning: sigil-clownlzss-sys@0.1.0: In file included from src/shim.cpp:114:
+warning: sigil-clownlzss-sys@0.1.0: In lambda function,
+warning: sigil-clownlzss-sys@0.1.0:     inlined from 'bool ClownLZSS::Internal::Enigma::Compress(const unsigned char*, std::size_t, ClownLZSS::CompressorOutput<T>&) [with T = std::basic_ostream<char>]' at src/../vendor/compressors/enigma.h:316:37:
+warning: sigil-clownlzss-sys@0.1.0: src/../vendor/compressors/enigma.h:253:110: warning: '*(int*)((char*)&run + offsetof(Run, Run::type))' may be used uninitialized [-Wmaybe-uninitialized]
+warning: sigil-clownlzss-sys@0.1.0:   253 |                                                 return (run.type == Run::Type::Increment || run.length == 1) && ReadWord(input) == special_values->lowest;
+warning: sigil-clownlzss-sys@0.1.0:       |                                                        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+warning: sigil-clownlzss-sys@0.1.0: src/../vendor/compressors/enigma.h: In function 'bool ClownLZSS::Internal::Enigma::Compress(const unsigned char*, std::size_t, ClownLZSS::CompressorOutput<T>&) [with T = std::basic_ostream<char>]':
+warning: sigil-clownlzss-sys@0.1.0: src/../vendor/compressors/enigma.h:263:45: note: '*(int*)((char*)&run + offsetof(Run, Run::type))' was declared here
+warning: sigil-clownlzss-sys@0.1.0:   263 |                                         Run run;
+warning: sigil-clownlzss-sys@0.1.0:       |                                             ^~~
+warning: sigil-clownlzss-sys@0.1.0: In lambda function,
+warning: sigil-clownlzss-sys@0.1.0:     inlined from 'bool ClownLZSS::Internal::Enigma::Compress(const unsigned char*, std::size_t, ClownLZSS::CompressorOutput<T>&) [with T = std::basic_ostream<char>]' at src/../vendor/compressors/enigma.h:316:37:
+warning: sigil-clownlzss-sys@0.1.0: src/../vendor/compressors/enigma.h:253:90: warning: 'run.ClownLZSS::Internal::Enigma::Compress<std::basic_ostream<char> >(const unsigned char*, std::size_t, ClownLZSS::CompressorOutput<std::basic_ostream<char> >&)::Run::length' may be used uninitialized [-Wmaybe-uninitialized]
+warning: sigil-clownlzss-sys@0.1.0:   253 |                                                 return (run.type == Run::Type::Increment || run.length == 1) && ReadWord(input) == special_values->lowest;
+warning: sigil-clownlzss-sys@0.1.0:       |                                                        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~~~~~~~~
+warning: sigil-clownlzss-sys@0.1.0: src/../vendor/compressors/enigma.h: In function 'bool ClownLZSS::Internal::Enigma::Compress(const unsigned char*, std::size_t, ClownLZSS::CompressorOutput<T>&) [with T = std::basic_ostream<char>]':
+warning: sigil-clownlzss-sys@0.1.0: src/../vendor/compressors/enigma.h:263:45: note: 'run.ClownLZSS::Internal::Enigma::Compress<std::basic_ostream<char> >(const unsigned char*, std::size_t, ClownLZSS::CompressorOutput<std::basic_ostream<char> >&)::Run::length' was declared here
+warning: sigil-clownlzss-sys@0.1.0:   263 |                                         Run run;
+warning: sigil-clownlzss-sys@0.1.0:       |                                             ^~~
+   Compiling sigil-cli v0.1.0 (/home/volence/sonic_hacks/sigil/.claude/worktrees/agent-a46ef34b369e42312/crates/sigil-cli)
+   Compiling sigil-link v0.1.0 (/home/volence/sonic_hacks/sigil/.claude/worktrees/agent-a46ef34b369e42312/crates/sigil-link)
+   Compiling sigil-frontend-emp v0.1.0 (/home/volence/sonic_hacks/sigil/.claude/worktrees/agent-a46ef34b369e42312/crates/sigil-frontend-emp)
+   Compiling sigil-harness v0.1.0 (/home/volence/sonic_hacks/sigil/.claude/worktrees/agent-a46ef34b369e42312/crates/sigil-harness)
+    Finished `release` profile [optimized] target(s) in 11.50s
+     Running tests/cli_diagnostic_location.rs (/home/volence/sonic_hacks/.scratch/as-macro-diag/target/release/deps/cli_diagnostic_location-2728aa8f0cf4d769)
+
+running 6 tests
+test every_diagnostic_line_carries_a_file_and_line ... ok
+test a_diagnostic_names_its_own_file_and_line_across_an_include ... ok
+test a_link_time_error_inside_a_macro_names_the_call ... FAILED
+test the_single_file_route_still_accepts_a_forward_reference ... ok
+test an_error_in_a_macro_body_names_the_call_then_the_macro_line ... FAILED
+test an_unresolved_assignment_is_refused_whether_or_not_it_is_read ... ok
+
+failures:
+
+---- a_link_time_error_inside_a_macro_names_the_call stdout ----
+
+thread 'a_link_time_error_inside_a_macro_names_the_call' (2798499) panicked at crates/sigil-cli/tests/cli_diagnostic_location.rs:183:5:
+want `/tmp/.tmp2iO4Jb/p7_undef.asm(6) mymac(1):<col>: error: …`, got: /tmp/.tmp2iO4Jb/p7_undef.asm(3):2: error: unresolved symbol `undefined_sym` for fixup in section sec0 at offset 2
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- an_error_in_a_macro_body_names_the_call_then_the_macro_line stdout ----
+
+thread 'an_error_in_a_macro_body_names_the_call_then_the_macro_line' (2798500) panicked at crates/sigil-cli/tests/cli_diagnostic_location.rs:145:5:
+a macro body's error must be reported as `/tmp/.tmpxxI4Rj/mroot.asm(3) mymac(1):<col>: error: …`, the call and then the macro's own line.
+stderr:
+/tmp/.tmpxxI4Rj/mac.inc(3):2: error: `notamnemonic_in_macro_body` is not a recognized 68000 mnemonic
+
+
+
+failures:
+    a_link_time_error_inside_a_macro_names_the_call
+    an_error_in_a_macro_body_names_the_call_then_the_macro_line
+
+test result: FAILED. 4 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p sigil-cli --test cli_diagnostic_location`
+error: 1 target failed:
+    `-p sigil-cli --test cli_diagnostic_location`
+exit=101
+restored crates/sigil-frontend-as/src/eval.rs from HEAD; tracked-changes after: 0
+m1 :: passed 13, failed 15 :: RED: a_body_line_reported_once_per_pass_stays_reported_once a_body_written_in_an_included_file_is_named_by_its_call a_call_written_in_an_included_file_names_that_file a_carried_warning_is_matched_by_position_when_run_ids_shift_between_passes a_file_level_loop_is_a_frame_named_by_its_closing_line a_link_time_error_inside_a_macro_names_the_call a_loop_in_a_macro_is_a_frame_entered_from_its_closing_line an_error_in_a_macro_body_names_the_call_then_the_macro_line a_space_follows_a_macro_frame_and_not_a_loop_frame a_warning_in_a_macro_carries_the_trail_too each_call_of_a_macro_names_its_own_line levartptrs_shape_leaves_the_resolvable_third_pointer_alone levartptrs_shape_reports_both_unresolved_long_expressions_on_a_failing_run nested_macros_print_every_frame_outermost_first the_new_diagnostic_set_contains_the_old_one 

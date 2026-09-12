@@ -1,0 +1,87 @@
+rows before: 79   rows after: 79
+(level, message) multiset: IDENTICAL
+  in before, not after: 0
+  in after, not before: 0
+per-class decomposition (level, message class): before -> after
+     1 ->    1  error: cannot include sound/DAC/generated/Bongo.inc: No such file or directory (os error N)
+     1 ->    1  error: cannot include sound/DAC/generated/Clap.inc: No such file or directory (os error N)
+     1 ->    1  error: cannot include sound/DAC/generated/Kick.inc: No such file or directory (os error N)
+     1 ->    1  error: cannot include sound/DAC/generated/Scratch.inc: No such file or directory (os error N)
+     1 ->    1  error: cannot include sound/DAC/generated/Snare.inc: No such file or directory (os error N)
+     1 ->    1  error: cannot include sound/DAC/generated/Timpani.inc: No such file or directory (os error N)
+     1 ->    1  error: cannot include sound/DAC/generated/Tom.inc: No such file or directory (os error N)
+     1 ->    1  error: cannot include sound/PCM/generated/SEGA.inc: No such file or directory (os error N)
+     1 ->    1  error: cannot include sound/music/generated/8A - DEZ.inc: No such file or directory (os error N)
+     1 ->    1  error: cannot include sound/music/generated/8B - MCZ.inc: No such file or directory (os error N)
+     1 ->    1  error: cannot include sound/music/generated/8C - EHZ 2P.inc: No such file or directory (os error N)
+     1 ->    1  error: cannot include sound/music/generated/8D - SCZ.inc: No such file or directory (os error N)
+     1 ->    1  error: cannot include sound/music/generated/8E - CPZ.inc: No such file or directory (os error N)
+     1 ->    1  error: cannot include sound/music/generated/8F - WFZ.inc: No such file or directory (os error N)
+     1 ->    1  error: cannot include sound/music/generated/9A - End of Act.inc: No such file or directory (os error N)
+     1 ->    1  error: cannot include sound/music/generated/9B - Game Over.inc: No such file or directory (os error N)
+     1 ->    1  error: cannot include sound/music/generated/9C - Continue.inc: No such file or directory (os error N)
+     1 ->    1  error: cannot include sound/music/generated/9D - Got Emerald.inc: No such file or directory (os error N)
+     1 ->    1  error: cannot include sound/music/generated/9E - Credits.inc: No such file or directory (os error N)
+     1 ->    1  error: cannot include sound/music/generated/9F - Drowning.inc: No such file or directory (os error N)
+     1 ->    1  error: cannot include sound/music/generated/N - ARZ.inc: No such file or directory (os error N)
+     1 ->    1  error: cannot include sound/music/generated/N - Boss.inc: No such file or directory (os error N)
+     1 ->    1  error: cannot include sound/music/generated/N - CNZ 2P.inc: No such file or directory (os error N)
+     1 ->    1  error: cannot include sound/music/generated/N - CNZ.inc: No such file or directory (os error N)
+     1 ->    1  error: cannot include sound/music/generated/N - EHZ.inc: No such file or directory (os error N)
+     1 ->    1  error: cannot include sound/music/generated/N - Ending.inc: No such file or directory (os error N)
+     1 ->    1  error: cannot include sound/music/generated/N - Extra Life.inc: No such file or directory (os error N)
+     1 ->    1  error: cannot include sound/music/generated/N - Final Boss.inc: No such file or directory (os error N)
+     1 ->    1  error: cannot include sound/music/generated/N - HPZ.inc: No such file or directory (os error N)
+     1 ->    1  error: cannot include sound/music/generated/N - HTZ.inc: No such file or directory (os error N)
+     1 ->    1  error: cannot include sound/music/generated/N - Invincible.inc: No such file or directory (os error N)
+     1 ->    1  error: cannot include sound/music/generated/N - MCZ 2P.inc: No such file or directory (os error N)
+     1 ->    1  error: cannot include sound/music/generated/N - MTZ.inc: No such file or directory (os error N)
+     1 ->    1  error: cannot include sound/music/generated/N - N Player Menu.inc: No such file or directory (os error N)
+     1 ->    1  error: cannot include sound/music/generated/N - OOZ.inc: No such file or directory (os error N)
+     1 ->    1  error: cannot include sound/music/generated/N - Options.inc: No such file or directory (os error N)
+     1 ->    1  error: cannot include sound/music/generated/N - Special Stage.inc: No such file or directory (os error N)
+     1 ->    1  error: cannot include sound/music/generated/N - Super Sonic.inc: No such file or directory (os error N)
+     1 ->    1  error: cannot include sound/music/generated/N - Title Screen.inc: No such file or directory (os error N)
+    17 ->   17  error: division by zero: N / N
+    17 ->   17  error: int(): could not evaluate float expression
+     2 ->    2  error: unresolved if condition: `_` has no value, so this condition cannot decide whether the code it guards is assembled
+     3 ->    3  error: unresolved symbol `_` in operand
+     1 ->    1  warning: `_` is ignored: sigil writes no share file (asl without `_` says "no sharefile created, SHARED ignored")
+row order and messages identical position by position: True
+rows whose location changed: 34
+    s2.sounddriver.asm(3905):45  ->  s2.sounddriver.asm(3908) dac_sample_metadata(5):45   [int(): could not evaluate float expression]
+    s2.sounddriver.asm(3905):29  ->  s2.sounddriver.asm(3908) dac_sample_metadata(5):29   [division by zero: 3579545 / 0]
+    s2.sounddriver.asm(3905):46  ->  s2.sounddriver.asm(3909) dac_sample_metadata(5):46   [int(): could not evaluate float expression]
+    s2.sounddriver.asm(3905):30  ->  s2.sounddriver.asm(3909) dac_sample_metadata(5):30   [division by zero: 3579545 / 0]
+    s2.sounddriver.asm(3905):45  ->  s2.sounddriver.asm(3910) dac_sample_metadata(5):45   [int(): could not evaluate float expression]
+    s2.sounddriver.asm(3905):29  ->  s2.sounddriver.asm(3910) dac_sample_metadata(5):29   [division by zero: 3579545 / 0]
+    s2.sounddriver.asm(3905):48  ->  s2.sounddriver.asm(3911) dac_sample_metadata(5):48   [int(): could not evaluate float expression]
+    s2.sounddriver.asm(3905):32  ->  s2.sounddriver.asm(3911) dac_sample_metadata(5):32   [division by zero: 3579545 / 0]
+    s2.sounddriver.asm(3905):48  ->  s2.sounddriver.asm(3912) dac_sample_metadata(5):48   [int(): could not evaluate float expression]
+    s2.sounddriver.asm(3905):32  ->  s2.sounddriver.asm(3912) dac_sample_metadata(5):32   [division by zero: 3579545 / 0]
+    s2.sounddriver.asm(3905):44  ->  s2.sounddriver.asm(3913) dac_sample_metadata(5):44   [int(): could not evaluate float expression]
+    s2.sounddriver.asm(3905):28  ->  s2.sounddriver.asm(3913) dac_sample_metadata(5):28   [division by zero: 3579545 / 0]
+    s2.sounddriver.asm(3905):46  ->  s2.sounddriver.asm(3914) dac_sample_metadata(5):46   [int(): could not evaluate float expression]
+    s2.sounddriver.asm(3905):30  ->  s2.sounddriver.asm(3914) dac_sample_metadata(5):30   [division by zero: 3579545 / 0]
+    s2.sounddriver.asm(3905):48  ->  s2.sounddriver.asm(3915) dac_sample_metadata(5):48   [int(): could not evaluate float expression]
+    s2.sounddriver.asm(3905):32  ->  s2.sounddriver.asm(3915) dac_sample_metadata(5):32   [division by zero: 3579545 / 0]
+    s2.sounddriver.asm(3905):48  ->  s2.sounddriver.asm(3916) dac_sample_metadata(5):48   [int(): could not evaluate float expression]
+    s2.sounddriver.asm(3905):32  ->  s2.sounddriver.asm(3916) dac_sample_metadata(5):32   [division by zero: 3579545 / 0]
+    s2.sounddriver.asm(3905):48  ->  s2.sounddriver.asm(3917) dac_sample_metadata(5):48   [int(): could not evaluate float expression]
+    s2.sounddriver.asm(3905):32  ->  s2.sounddriver.asm(3917) dac_sample_metadata(5):32   [division by zero: 3579545 / 0]
+    s2.sounddriver.asm(3905):48  ->  s2.sounddriver.asm(3918) dac_sample_metadata(5):48   [int(): could not evaluate float expression]
+    s2.sounddriver.asm(3905):32  ->  s2.sounddriver.asm(3918) dac_sample_metadata(5):32   [division by zero: 3579545 / 0]
+    s2.sounddriver.asm(3905):44  ->  s2.sounddriver.asm(3919) dac_sample_metadata(5):44   [int(): could not evaluate float expression]
+    s2.sounddriver.asm(3905):28  ->  s2.sounddriver.asm(3919) dac_sample_metadata(5):28   [division by zero: 3579545 / 0]
+    s2.sounddriver.asm(3905):44  ->  s2.sounddriver.asm(3920) dac_sample_metadata(5):44   [int(): could not evaluate float expression]
+    s2.sounddriver.asm(3905):28  ->  s2.sounddriver.asm(3920) dac_sample_metadata(5):28   [division by zero: 3579545 / 0]
+    s2.sounddriver.asm(3905):44  ->  s2.sounddriver.asm(3921) dac_sample_metadata(5):44   [int(): could not evaluate float expression]
+    s2.sounddriver.asm(3905):28  ->  s2.sounddriver.asm(3921) dac_sample_metadata(5):28   [division by zero: 3579545 / 0]
+    s2.sounddriver.asm(3905):46  ->  s2.sounddriver.asm(3922) dac_sample_metadata(5):46   [int(): could not evaluate float expression]
+    s2.sounddriver.asm(3905):30  ->  s2.sounddriver.asm(3922) dac_sample_metadata(5):30   [division by zero: 3579545 / 0]
+    s2.sounddriver.asm(3905):46  ->  s2.sounddriver.asm(3923) dac_sample_metadata(5):46   [int(): could not evaluate float expression]
+    s2.sounddriver.asm(3905):30  ->  s2.sounddriver.asm(3923) dac_sample_metadata(5):30   [division by zero: 3579545 / 0]
+    s2.sounddriver.asm(3905):46  ->  s2.sounddriver.asm(3924) dac_sample_metadata(5):46   [int(): could not evaluate float expression]
+    s2.sounddriver.asm(3905):30  ->  s2.sounddriver.asm(3924) dac_sample_metadata(5):30   [division by zero: 3579545 / 0]
+rows with a trail before: 0   after: 34
+distinct locations before: 53   after: 79

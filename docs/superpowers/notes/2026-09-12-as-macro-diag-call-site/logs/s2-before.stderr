@@ -1,0 +1,79 @@
+s2.sounddriver.asm(3905):45: error: int(): could not evaluate float expression
+s2.sounddriver.asm(3905):29: error: division by zero: 3579545 / 0
+s2.sounddriver.asm(3905):46: error: int(): could not evaluate float expression
+s2.sounddriver.asm(3905):30: error: division by zero: 3579545 / 0
+s2.sounddriver.asm(3905):45: error: int(): could not evaluate float expression
+s2.sounddriver.asm(3905):29: error: division by zero: 3579545 / 0
+s2.sounddriver.asm(3905):48: error: int(): could not evaluate float expression
+s2.sounddriver.asm(3905):32: error: division by zero: 3579545 / 0
+s2.sounddriver.asm(3905):48: error: int(): could not evaluate float expression
+s2.sounddriver.asm(3905):32: error: division by zero: 3579545 / 0
+s2.sounddriver.asm(3905):44: error: int(): could not evaluate float expression
+s2.sounddriver.asm(3905):28: error: division by zero: 3579545 / 0
+s2.sounddriver.asm(3905):46: error: int(): could not evaluate float expression
+s2.sounddriver.asm(3905):30: error: division by zero: 3579545 / 0
+s2.sounddriver.asm(3905):48: error: int(): could not evaluate float expression
+s2.sounddriver.asm(3905):32: error: division by zero: 3579545 / 0
+s2.sounddriver.asm(3905):48: error: int(): could not evaluate float expression
+s2.sounddriver.asm(3905):32: error: division by zero: 3579545 / 0
+s2.sounddriver.asm(3905):48: error: int(): could not evaluate float expression
+s2.sounddriver.asm(3905):32: error: division by zero: 3579545 / 0
+s2.sounddriver.asm(3905):48: error: int(): could not evaluate float expression
+s2.sounddriver.asm(3905):32: error: division by zero: 3579545 / 0
+s2.sounddriver.asm(3905):44: error: int(): could not evaluate float expression
+s2.sounddriver.asm(3905):28: error: division by zero: 3579545 / 0
+s2.sounddriver.asm(3905):44: error: int(): could not evaluate float expression
+s2.sounddriver.asm(3905):28: error: division by zero: 3579545 / 0
+s2.sounddriver.asm(3905):44: error: int(): could not evaluate float expression
+s2.sounddriver.asm(3905):28: error: division by zero: 3579545 / 0
+s2.sounddriver.asm(3905):46: error: int(): could not evaluate float expression
+s2.sounddriver.asm(3905):30: error: division by zero: 3579545 / 0
+s2.sounddriver.asm(3905):46: error: int(): could not evaluate float expression
+s2.sounddriver.asm(3905):30: error: division by zero: 3579545 / 0
+s2.sounddriver.asm(3905):46: error: int(): could not evaluate float expression
+s2.sounddriver.asm(3905):30: error: division by zero: 3579545 / 0
+s2.asm(90887):14: error: cannot include sound/DAC/generated/Kick.inc: No such file or directory (os error 2)
+s2.asm(90888):15: error: cannot include sound/DAC/generated/Snare.inc: No such file or directory (os error 2)
+s2.asm(90889):17: error: cannot include sound/DAC/generated/Timpani.inc: No such file or directory (os error 2)
+s2.asm(90890):13: error: cannot include sound/DAC/generated/Tom.inc: No such file or directory (os error 2)
+s2.asm(90891):14: error: cannot include sound/DAC/generated/Clap.inc: No such file or directory (os error 2)
+s2.asm(90892):17: error: cannot include sound/DAC/generated/Scratch.inc: No such file or directory (os error 2)
+s2.asm(90893):15: error: cannot include sound/DAC/generated/Bongo.inc: No such file or directory (os error 2)
+s2.asm(90917):15: error: cannot include sound/music/generated/9C - Continue.inc: No such file or directory (os error 2)
+s2.asm(90998):11: error: cannot include sound/PCM/generated/SEGA.inc: No such file or directory (os error 2)
+s2.asm(91000):2: error: unresolved if condition: `Snd_Sega.size` has no value, so this condition cannot decide whether the code it guards is assembled
+s2.asm(91003):2: error: unresolved if condition: `Snd_Sega.size` has no value, so this condition cannot decide whether the code it guards is assembled
+s2.asm(91044):10: error: cannot include sound/music/generated/90 - HPZ.inc: No such file or directory (os error 2)
+s2.asm(91045):15: error: cannot include sound/music/generated/9F - Drowning.inc: No such file or directory (os error 2)
+s2.asm(91046):17: error: cannot include sound/music/generated/97 - Invincible.inc: No such file or directory (os error 2)
+s2.asm(91047):13: error: cannot include sound/music/generated/88 - CNZ 2P.inc: No such file or directory (os error 2)
+s2.asm(91048):10: error: cannot include sound/music/generated/82 - EHZ.inc: No such file or directory (os error 2)
+s2.asm(91049):10: error: cannot include sound/music/generated/85 - MTZ.inc: No such file or directory (os error 2)
+s2.asm(91050):10: error: cannot include sound/music/generated/89 - CNZ.inc: No such file or directory (os error 2)
+s2.asm(91051):10: error: cannot include sound/music/generated/8B - MCZ.inc: No such file or directory (os error 2)
+s2.asm(91052):13: error: cannot include sound/music/generated/83 - MCZ 2P.inc: No such file or directory (os error 2)
+s2.asm(91053):10: error: cannot include sound/music/generated/87 - ARZ.inc: No such file or directory (os error 2)
+s2.asm(91054):10: error: cannot include sound/music/generated/8A - DEZ.inc: No such file or directory (os error 2)
+s2.asm(91055):16: error: cannot include sound/music/generated/92 - Special Stage.inc: No such file or directory (os error 2)
+s2.asm(91056):14: error: cannot include sound/music/generated/91 - Options.inc: No such file or directory (os error 2)
+s2.asm(91057):13: error: cannot include sound/music/generated/95 - Ending.inc: No such file or directory (os error 2)
+s2.asm(91058):14: error: cannot include sound/music/generated/94 - Final Boss.inc: No such file or directory (os error 2)
+s2.asm(91059):10: error: cannot include sound/music/generated/8E - CPZ.inc: No such file or directory (os error 2)
+s2.asm(91060):11: error: cannot include sound/music/generated/93 - Boss.inc: No such file or directory (os error 2)
+s2.asm(91061):10: error: cannot include sound/music/generated/8D - SCZ.inc: No such file or directory (os error 2)
+s2.asm(91062):10: error: cannot include sound/music/generated/84 - OOZ.inc: No such file or directory (os error 2)
+s2.asm(91063):10: error: cannot include sound/music/generated/8F - WFZ.inc: No such file or directory (os error 2)
+s2.asm(91064):13: error: cannot include sound/music/generated/8C - EHZ 2P.inc: No such file or directory (os error 2)
+s2.asm(91065):15: error: cannot include sound/music/generated/81 - 2 Player Menu.inc: No such file or directory (os error 2)
+s2.asm(91066):17: error: cannot include sound/music/generated/96 - Super Sonic.inc: No such file or directory (os error 2)
+s2.asm(91067):10: error: cannot include sound/music/generated/86 - HTZ.inc: No such file or directory (os error 2)
+s2.asm(91068):12: error: cannot include sound/music/generated/99 - Title Screen.inc: No such file or directory (os error 2)
+s2.asm(91069):15: error: cannot include sound/music/generated/9A - End of Act.inc: No such file or directory (os error 2)
+s2.asm(91070):16: error: cannot include sound/music/generated/98 - Extra Life.inc: No such file or directory (os error 2)
+s2.asm(91071):15: error: cannot include sound/music/generated/9B - Game Over.inc: No such file or directory (os error 2)
+s2.asm(91072):14: error: cannot include sound/music/generated/9D - Got Emerald.inc: No such file or directory (os error 2)
+s2.asm(91073):14: error: cannot include sound/music/generated/9E - Credits.inc: No such file or directory (os error 2)
+s2.asm(91275):2: warning: `shared` is ignored: sigil writes no share file (asl without `-c` says "no sharefile created, SHARED ignored")
+s2.sounddriver.asm(1620):2: error: unresolved symbol `Snd_Sega.size` in operand
+s2.sounddriver.asm(1632):2: error: unresolved symbol `.loop_counter` in operand
+s2.sounddriver.asm(1643):2: error: unresolved symbol `.loop_counter` in operand
