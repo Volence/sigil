@@ -15,6 +15,39 @@ not before the evidence.
 
 ## Determinism (binding on every A/B)
 
+0. **PROVE WHICH CART IS LOADED, BEFORE EITHER ARM, AND AGAIN AFTER EACH LOAD.** Hash the ROM
+   file on disk, load it, and read enough of the loaded cart back to confirm the emulator holds
+   THAT file. `emulator_reload_rom` recovers a stale one, but only for a runner who checks first.
+   Everything below this line hashes RAM, VRAM, CRAM and the plane: **nothing in this protocol
+   hashed the CART until 2026-09-12**, and that is the one input both arms share.
+
+   **Why this is step 0 and not a footnote: a stale cart makes an A/B agree, and agreement is the
+   direction nobody audits.** If the emulator was started against some other ROM and neither arm
+   reloads, OLD and NEW measure the identical cart, every region hash matches, every `cmp` is
+   pixel-identical, and the packet reports a clean PS verdict having compared nothing. The
+   existing bar *an A/B whose arms agree may have measured nothing* is exactly this, arriving
+   one layer below where that bar looks: it asks what each arm PRODUCED, and here both arms
+   produce real, correct, identical measurements of the wrong program.
+
+   **This is live, not hypothetical, and it was flagged by the aeon lane on 2026-09-12 rather
+   than found here.** Nine `oracle-aether` processes were running, one per Claude session and
+   spawned at session start, every one preloading `/home/volence/sonic_hacks/aeon/s4.debug.bin`.
+   Verified firsthand here at 19:4xZ: that file is md5 `c34c3f92b1fb5693680de20b23cfed39`,
+   847367 B, mtime 2026-09-11T02:24:34, while `origin/master` builds md5 `06e50f02`, 847533 B.
+   **166 bytes and two days apart, behind a `romPath` that reads correctly.** Killing them fixes
+   nothing; they respawn on the same file. The root cause is aeon's main checkout sitting behind
+   its remote, which is an open owner call and not this lane's to take.
+
+   **Scope, stated so this is not read as wider than it is:** no gate in `scripts/` invokes
+   anything in this directory (checked, zero hits), so no automated sigil gate can go green on a
+   stale cart. The exposure is hand-run A/B measurement only, which is the only way this
+   directory is ever used. **That makes it worse to leave unwritten, not better** — a hand-run
+   instrument has no CI to catch it and no second reader.
+
+   *(The discipline existed in this lane's session memory as "verify the cart by hash" and was
+   never written into the file the runner reads. That gap is the day's recurring shape: an
+   obligation recorded where the person who must discharge it will not be standing.)*
+
 1. **Reset-deterministic scene** — no human input timing. Drive from `emulator_reset`
    then a fixed poke/press sequence, or the ObjectTest soak via the `Game_Entry` flip.
 2. **Frame-anchored** — advance to a fixed `Frame_Counter` (run_to / step by frames),
