@@ -481,3 +481,29 @@ non-debug shapes and 10 in the three debug ones.** Its floor is `widest >= 1`, w
 direction that matters: it could never notice growth. Same class as the stale-comment rows this file
 already carries, with the addition that the gate's own tolerance hides the drift its comment
 misdescribes.
+
+## WORDING-LOCKS-LATENT-TWO: OPEN
+
+- state at archive: `open`  size: `S`  project: `-`
+- blockedBy: nothing
+- moved out of `docs/lane-status.json` 2026-09-12, under rule 7's 20-row bound, to make headroom
+
+Checked: only ONE test pins a sentence for a feature that is not built yet (field assignment,
+`eval_control_flow.rs`); the second was a permanent error, not a wording lock. Low value, and the
+reason is worth keeping rather than just the verdict: whoever eventually builds that feature has to
+rewrite the test anyway, so the lock costs nothing until the day it is removed as a side effect of
+the work it would have obstructed. Moved here rather than closed because "low value" is a judgement
+that a later seat may reverse, and a closed row does not get re-read.
+
+## PARTIAL-ROWS-PRINT-PLAIN-OK: OPEN
+
+- state at archive: `open`  size: `S`  project: `-`
+- blockedBy: nothing
+- moved out of `docs/lane-status.json` 2026-09-12, under rule 7's 20-row bound, to make headroom
+
+Narrower than it was first booked. The partial-run marker IS printed and the nightly check reads it,
+so the automated backstop is intact. What remains is that a HAND-RUN suite hides it, because cargo
+swallows a passing test's stdout unless asked for it. So the exposure is an operator reading a green
+scoped run and not seeing which binaries went unmeasured, which is the same hand-run-has-no-second-reader
+shape as `AB-PROTOCOL-CART-UNVERIFIED`. Kill: have the partial banner print to stderr, or have the
+runner script surface the unmeasured count in its own summary line.

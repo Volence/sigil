@@ -225,6 +225,32 @@
 #   scoped run still requires a real reference tree, and only relaxes which of its built
 #   ROMs must be present.
 #
+# (9) TWO RULES ABOUT THE OPERATOR, NOT THE SCRIPT. Both from oracle, measured against
+#     their own landings on 2026-09-12, relayed by the hub; their account is at oracle
+#     origin/main 760f832. Neither is enforceable from in here, which is exactly why they
+#     are written where the operator reads rather than left in a peer's lane log.
+#
+#     (9a) THE HARNESS'S REPORTED EXIT CODE IS NOT THIS SCRIPT'S VERDICT, and oracle had
+#     them disagree TWICE IN ONE DAY. Once from an `&` nested inside a backgrounded call,
+#     where the tracked process was the outer shell: reported 0 while the log stopped
+#     mid-run. Once from a chained command where the reported code belonged to a trailing
+#     `grep`, which announced a RED landing as "exit code 0". THE ONLY TRUTHFUL ARTIFACT
+#     IS THE LOG'S OWN VERDICT LINE, which is why (5) stamps it and (6) writes the real
+#     code into the log rather than relying on the caller's view. Composes with a trap
+#     this lane hit: after a pipe `$?` is the LAST element's status, so in zsh the real
+#     one is ${pipestatus[1]}. A wrapper's exit code is a claim about a process, never
+#     about a suite.
+#
+#     (9b) DO NOT EDIT THE TREE WHILE THIS RUNS. NOT EVEN DOCS. Oracle edited two docs
+#     mid-run and their G10 gate turned an otherwise-green landing RED, CORRECTLY: one of
+#     those files is `include_str!`d into a test, so the run could no longer prove it had
+#     tested the committed bytes. The gate was right and the landing was not
+#     re-measurable. This lane is the likeliest in the suite to trip it, because an
+#     overseer session banks rulings, ledger rows and notes continuously while a landing
+#     runs in another shell, and "it is only a doc" is precisely the reasoning that fails
+#     here. Land first, write after; if something must be banked mid-run, note it and
+#     apply it once the verdict line is in the log.
+#
 # EXIT CODES
 #   0  the suite ran, passed, reconciled against the stated baseline, and the lint bar
 #      exited 0
