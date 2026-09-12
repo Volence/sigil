@@ -5072,3 +5072,11 @@ Details and the asl lines behind each: `2026-09-12-as-macro-diag-call-site.md`.
 - `AS-IRPC-BARE-WORD` - `irpc x,abc` with a bare word: asl iterates over it (probes `q2_irpc`, `r4_irpc_bare`), sigil refuses "unresolved `irpc` string expression"; pre-existing and loud.
 - `MIXED-MAP-LOCATE` - `native.rs` `resolve_chained` locates `resolve_layout` errors and `true_bases_by_index` flips through the `.emp` manifest's `SourceIndex` over a section list that holds AS sections too; span ids are not namespaced by front end, so an AS file id `k` names the `.emp` manifest's `k`-th file (pre-existing), and an AS expansion id now names nothing. Needs the span to say which map it belongs to, or the list to carry both maps.
 - `AS-TRAIL-ONCE-PER-POSITION` - the four per-pass dedup sets (arg, reg, cond, expand) report a body line once per pass, at the FIRST call that reached it; asl reports every call. Sigil's standing rule, kept on purpose: the trail changes where the one report points, not how many there are.
+
+### 2026-09-12, `VERSION-BROKEN-PIPE-PANIC`: what the stdout rule did not build
+
+The rule and its reasons: `crates/sigil-harness/src/stdout.rs`.
+
+- `STDOUT-RULE-UNRUN-BINARIES` - `repin`, `emit_sound_blob`, `cycle_fraction` and `derive_offcanon` are under the broken-pipe rule by their import alone, which `tests/stdout_writer_population.rs` holds; no closed-stdout RUN of any of them exists, because each needs an aeon tree before its first stdout write. A run against a provisioned tree, in the shape of `tests/stdout_broken_pipe.rs` (a live and a closed run compared on status and stderr), would close it.
+- `STDOUT-RULE-SIGPIPE-UNMUTATED` - that SIGPIPE's default disposition fails every closed-stdout test rests on `status.code()` being `None` for a run ended by a signal; it is not shown by mutation, because stable Rust restores the default disposition only through `libc` (`#[unix_sigpipe]` and `-Zon-broken-pipe` are nightly).
+- `STDOUT-RULE-TEST-CAPTURE` - a `print!` through `sigil_harness::stdout` from a binary's own unit test goes to the process's stdout, not libtest's capture buffer (std's `set_output_capture` is unstable). No test code in a binary prints.
