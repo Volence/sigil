@@ -1,0 +1,235 @@
+// ===========================================================================
+// engine/system/boot_data.emp — the BootData boot table (movem preloads, VDP
+// register bytes, DMA fill, the resident Z80 program, PSG silence, post-DMA
+// commands).
+// ===========================================================================
+// The boot code (engine/system/boot.emp) walks this table with ONE sequential
+// `(a5)+` cursor: `lea BootData(pc), a5`, then movem the preload head, loop the
+// 24 VDP registers, read the VRAM-fill command, copy the Z80 program, then read
+// the PSG bytes + post-DMA commands. Every waypoint the blind cursor reads is
+// locked by the table geometry below.
+//
+// THE $3FE MAP HOLE (no-sound shapes). The table splits into two sections,
+// `boot_head` and `boot_tail`, with the resident Z80 program placed BETWEEN
+// them:
+//   - SOUND-ON: `boot_head` carries the head (54 B) + the sound driver blob
+//     (`embed`); `boot_tail`
+//     abuts it. `engine.z80_init` is absent (the sound driver replaces the
+//     idle).
+//   - SOUND-OFF: `boot_head` is the 54-byte head alone; `engine.z80_init`'s
+//     38-byte idle program packs into the $3d8..$3fe hole by declared order
+//     (`BootData` < `Z80_IdleProgram` < `BootData_PostBlob`); `boot_tail`
+//     resumes at $3fe. This IS the map's `[[hole]] after = "Z80_IdleProgram"
+//     at = 0x3FE filled_by = "engine.z80_init"` relationship, made real: the
+//     idle fills the hole and the post-hole content resumes at the right
+//     address purely through contiguous packing — no absolute `org`. A drift in
+//     either direction moves `boot_tail`'s base and fails the whole-ROM anchor
+//     gate loud.
+//
+// Native placement packs the three sections contiguously in declared order, so
+// the hole is the natural gap the chained idle occupies (no absolute `org`) — the
+// frozen `BootData` / `Z80_IdleProgram` / `BootData_End` pins pin every boundary
+// and the six-target anchor gate proves it.
+// ===========================================================================
+
+module engine.boot_data
+
+use engine.constants.{Z80_RAM, Z80_BUS_REQUEST, Z80_RESET, VDP_DATA, VDP_CTRL, VDP_REG_0C_BOOT, VDP_REG_PLANE_SIZE}
+// The VRAM bases the five base registers below are DERIVED from — named here so
+// the register table has one authority instead of a transcribed literal each.
+use engine.constants.{VRAM_PLANE_A, VRAM_PLANE_B, VRAM_PLANE_B_BYTES, VRAM_WINDOW}
+use engine.constants.{VRAM_SPRITE_TABLE, VRAM_HSCROLL_TABLE}
+use engine.vdp.{vdp_comm, vdp_reg, bytes_to_lcnt, vdp_base_reg, VdpBase}
+use engine.sound_constants.{SND_STATE_BASE}
+
+// The resident sound driver blob (seam-1 emit). Direct-embed consts (the
+// mt_bank pattern) so the data item
+// below infers its type; the embeds are referenced ONLY inside the sound-on
+// comptime branch, so no-sound shapes (demo, config_b) — which never generate
+// these files — never read them.
+const SoundBlobPlain = embed("engine/sound/generated/z80_sound_blob.bin")
+const SoundBlobDebug = embed("engine/sound/generated/z80_sound_blob_debug.bin")
+// The shape's blob (referenced only in the sound-on branch below, so no-sound
+// shapes never force either embed).
+const ShapeBlob = if DEBUG == 1 { SoundBlobDebug } else { SoundBlobPlain }
+
+// Z80_SOUND_SIZE: the resident blob's byte count, read by boot.emp's sound-on
+// copy loop. A LINK difference of the two blob-bracket labels, so it
+// stays 0 in a no-sound shape (the labels coincide, the blob is `Data.empty`)
+// without reading `.len` off the gated blob — and boot.emp's sound-on arm (the
+// sole consumer) is comptime-elided there anyway.
+pub equ Z80_SOUND_SIZE = extern("Z80_Sound_End") - extern("Z80_Sound_Start")
+
+// Parity net for the COPY LOOP's own cursor. `move.b (a5)+` is byte-wide so the
+// blob's own parity does not bother it, but Z80_SOUND_SIZE is also the width the
+// blob occupies in ROM, and keeping it even keeps every downstream `dc.w`/`dc.l`
+// in this file on an even address. The `align 2` inside the blob brackets is what
+// MAKES this true; this keeps it true.
+//
+// THIS ENSURE IS NOT THE BOOT-CURSOR NET, and used to claim it was. It said
+// "boot.emp walks a5 through the blob into boot_tail's word-wide VDP commands",
+// which was accurate about the CODE but guarded the wrong PROPERTY: the thing that
+// shears that walk is the ALIGNMENT PAD the chainer inserts before boot_tail (whose
+// width comes from boot_tail's frozen pin, not from the blob), and a pad is even, so
+// this parity check passed happily in both shapes while release booted to a blank
+// screen. Measured 2026-08-14: gap Z80_Sound_End -> BootData_PostBlob was 4 bytes in
+// DEBUG and 6 in release. The walk no longer crosses that seam — boot.emp re-anchors
+// a5 with `lea BootData_PostBlob(pc), a5` — so the hazard is gone by construction
+// rather than by a guard, which is why no continuity `ensure` replaces it here: with
+// the label named directly there is no longer an invariant for one to check.
+ensure((Z80_SOUND_SIZE & 1) == 0,
+       "Z80_SOUND_SIZE ({Z80_SOUND_SIZE}) is ODD — the blob would leave every following dc.w/dc.l in boot_data on an odd address")
+
+// The resident CODE blob grows up from Z80 $0000 and the playback STATE block
+// starts at SND_STATE_BASE. Nothing related them: the blob grows every time an
+// opcode is added to the driver, and an overrun would silently overwrite the
+// state block — no crash, no golden byte, audible only as corruption.
+ensure(Z80_SOUND_SIZE <= SND_STATE_BASE,
+       "Z80_SOUND_SIZE ({Z80_SOUND_SIZE}) has grown past SND_STATE_BASE ({SND_STATE_BASE}) — the resident driver code would overwrite the playback state block")
+
+// Z80_IDLE_SIZE: the no-sound idle program's
+// byte count, read by boot.emp's idle copy loop AND cross-checked by
+// engine.z80_init's `ensure(extern("Z80_IDLE_SIZE") == 40)` self-guard (the
+// idle's BootData-relative waypoints are link-external — the row-52 wall — so the
+// numeric mirror is the comptime-foldable half; the whole-ROM anchor gate proves
+// the idle body actually spans the hole).
+// It is a plain BYTE COUNT. It used to be spelled `$3FE - $3D8`, which read like
+// a position constraint but was only ever "38"; the addresses in that spelling
+// went stale the moment boot's code length moved. 38 -> 40 on 2026-08-04 (review
+// item 27 finding 11 gave the idle a real `ld sp, nn`, +2 B).
+pub equ Z80_IDLE_SIZE = 40
+ensure((Z80_IDLE_SIZE % 2) == 0,
+    "Z80_IDLE_SIZE is odd — the post-idle boundary would shear the (a5)+ cursor by one")
+
+// Comptime-folded table cells (bound to consts so the `dc` emitters below carry
+// bare identifiers — a `f(...)` call in an asm-proc `dc` operand parses as an
+// addressing mode, so the fold lives here). vdpComm/vdpReg/bytesToLcnt (the last
+// three consumers in the AS macro file that has since been deleted) fold at comptime into these.
+const RAM_CLEAR_LCNT   = bytes_to_lcnt($10000)                       // d6 preload ($3FFF)
+const VRAM_FILL_CMD    = vdp_comm(0, VdpTarget.Vram, VdpOp.Dma)      // VRAM DMA-fill command
+const AUTO_INC_2_CMD   = vdp_reg($0F, $02)                           // restore auto-increment to 2
+const CRAM_WRITE_CMD   = vdp_comm(0, VdpTarget.Cram, VdpOp.Write)
+
+const VSRAM_WRITE_CMD  = vdp_comm(0, VdpTarget.Vsram, VdpOp.Write)
+
+// The five VDP base registers, DERIVED from the VRAM map rather than
+// transcribed beside it. Each of these registers encodes only the address bits
+// above its granule and drops the rest without a diagnostic, so the residue is
+// a real requirement that used to live only in the byte written here — the
+// class DEFERRED_WORK books as "BASE-RESIDUE ASSUMPTIONS WITHOUT AN `ensure`".
+// `vdp_base_reg` (engine/vdp.emp) carries both halves: the derivation, so the
+// byte follows the base when a `vram.toml` moves it, and the `ensure`, so a
+// base that cannot be encoded fails the build instead of pointing the VDP
+// somewhere no consumer writes. These fold to $30/$3C/$07/$5C/$2F on the
+// shipped map, which is what the literals said.
+const VDP_REG_PLANE_A  = vdp_base_reg(VdpBase.PlaneA,      VRAM_PLANE_A)
+const VDP_REG_WINDOW   = vdp_base_reg(VdpBase.Window,      VRAM_WINDOW)
+const VDP_REG_PLANE_B  = vdp_base_reg(VdpBase.PlaneB,      VRAM_PLANE_B)
+const VDP_REG_SPRITES  = vdp_base_reg(VdpBase.SpriteTable, VRAM_SPRITE_TABLE)
+const VDP_REG_HSCROLL  = vdp_base_reg(VdpBase.HScroll,     VRAM_HSCROLL_TABLE)
+
+// The plane-B base has TWO spellings in engine.constants — VRAM_PLANE_B
+// ($E000, the one the generated vram.toml cross-checks pin) and
+// VRAM_PLANE_B_BYTES ($E000, what bg/plane_buffer/section import). Nothing
+// pinned them together, so a relayout that moved one would leave the other
+// pointing at the old plane. The register above is derived from VRAM_PLANE_B;
+// this is the wall that keeps the consumers' spelling with it.
+ensure(VRAM_PLANE_B == VRAM_PLANE_B_BYTES,
+       "engine.constants disagrees with itself about Plane B: VRAM_PLANE_B is {VRAM_PLANE_B} and VRAM_PLANE_B_BYTES is {VRAM_PLANE_B_BYTES}. Reg $04 is derived from the first and bg/plane_buffer/section address the plane through the second, so a split makes the VDP fetch the nametable from one address while the engine writes it to another.")
+
+// -----------------------------------------------
+// boot_head — the movem-preload head (26 B) + the 24 VDP register bytes + the
+// VRAM DMA-fill command (4 B) = 54 B, then the resident sound blob (sound-on) or
+// the $3d8 hole the idle fills (sound-off).
+// -----------------------------------------------
+section boot_head (cpu: m68000) {
+    // Movem preload — d5-d7 (3 words) then a0-a4 (5 longs). The 5 longs are LINK
+    // labels (the hardware ports), the reason a flat blob can't hold this head.
+    // The 26-byte head width is what boot.emp's `movem.w (a5)+, d5-d7` /
+    // `movem.l (a5)+, a0-a4` pair reads before the register loop.
+    pub proc BootData () clobbers() {
+        dc.w    $8000                       // d5: VDP reg command base
+        dc.w    RAM_CLEAR_LCNT              // d6: RAM clear longword count ($3FFF)
+        dc.w    $0100                       // d7: Z80 bus/reset value
+        dc.l    Z80_RAM                     // a0
+        dc.l    Z80_BUS_REQUEST             // a1
+        dc.l    Z80_RESET                   // a2
+        dc.l    VDP_DATA                    // a3
+        dc.l    VDP_CTRL                    // a4
+    }
+
+    // VDP register values $00-$17 (read cross-seam by vdp_init.emp) + the VRAM
+    // DMA-fill command. 28 bytes, so the blob/idle begins at BootData+54.
+    pub proc BootData_VDPRegs () clobbers() {
+        dc.b    $04                         // $00: HInt off, HV counter readable
+        dc.b    $14                         // $01: display OFF, VInt OFF, DMA ON
+        dc.b    VDP_REG_PLANE_A             // $02: Plane A nametable ($C000)
+        // $03: Window nametable at $F000. CONSTRAINT, not a free choice: with
+        // 64x64 planes (reg $10 = $11) Plane B at $E000 spans $E000-$FFFF, so
+        // $F000 lies INSIDE Plane B. Harmless today — the window is disabled
+        // (regs $11/$12 = 0), so the VDP never fetches from it — but there is
+        // NO free window space anywhere in this VRAM map. Enabling the window
+        // means first re-planning the VRAM layout, not just writing $11/$12.
+        dc.b    VDP_REG_WINDOW              // $03: Window nametable ($F000; see above)
+        dc.b    VDP_REG_PLANE_B             // $04: Plane B nametable ($E000)
+        dc.b    VDP_REG_SPRITES             // $05: Sprite table ($B800)
+        dc.b    $00                         // $06: unused
+        dc.b    $00                         // $07: BG color = pal 0, entry 0
+        dc.b    $00                         // $08: unused (SMS compat)
+        dc.b    $00                         // $09: unused (SMS compat)
+        dc.b    $FF                         // $0A: HInt counter = every 256 lines
+        dc.b    $00                         // $0B: full-screen V/H scroll
+        dc.b    VDP_REG_0C_BOOT             // $0C: H40 (320px), no interlace
+        dc.b    VDP_REG_HSCROLL             // $0D: HScroll table ($BC00)
+        dc.b    $00                         // $0E: unused
+        dc.b    $02                         // $0F: auto-increment = 2 (normal word access)
+        dc.b    VDP_REG_PLANE_SIZE          // $10: 64x64 scroll planes ($11, pinned in engine/system/constants.emp)
+        dc.b    $00                         // $11: window H disabled
+        dc.b    $00                         // $12: window V disabled
+        dc.b    $FF                         // $13: DMA length low = $FF
+        dc.b    $FF                         // $14: DMA length high = $FF
+        dc.b    $00                         // $15: DMA source low
+        dc.b    $00                         // $16: DMA source mid
+        dc.b    $80                         // $17: DMA fill mode
+        dc.l    VRAM_FILL_CMD              // VRAM DMA fill command
+    }
+
+    // The resident Z80 program: the sound driver blob (sound-on) or nothing
+    // (sound-off — the idle program engine.z80_init packs into the $3d8..$3fe hole
+    // here). Z80_Sound_End brackets the blob so Z80_SOUND_SIZE folds as the link
+    // difference.
+    data Z80_Sound_Start = if SOUND_DRIVER_ENABLED == 1 { ShapeBlob } else { Data.empty }
+    // EVENNESS PAD — load-bearing, and its absence is a BOOT ADDRESS ERROR.
+    // boot.emp's copy loop walks a5 THROUGH this blob and then keeps going: the
+    // 4 PSG-silence bytes and the word-wide VDP commands in `boot_tail` are read
+    // with the SAME a5. So a5's alignment past the blob — and boot_tail's own
+    // placement — are a function of the blob's length. An ODD blob makes every
+    // `move.w (a5)+` past it land on an odd address and the 68k takes an address
+    // error before the first frame. The 2026-07-16 review listed exactly this
+    // ("odd blob = boot address error") and marked it closed by a pending linker
+    // mechanism that never landed; the wave-4 reclaim then shrank the blob from
+    // 6172/6298 (even) to an odd length and crashed both shapes on boot.
+    // Aligning INSIDE the brackets makes Z80_SOUND_SIZE itself even as well, so
+    // the copy count and the tail placement are fixed by one directive.
+    align 2
+    data Z80_Sound_End = Data.empty
+}
+
+// -----------------------------------------------
+// boot_tail — PSG silence (4 B) + the post-DMA VDP commands (auto-increment
+// restore + CRAM/VSRAM command words) = 14 B. Resumes at $3fe in the no-sound
+// shapes (right after the idle program), directly after the blob in sound-on.
+// -----------------------------------------------
+section boot_tail (cpu: m68000) {
+    pub proc BootData_PostBlob () clobbers() {
+        dc.b    $9F, $BF, $DF, $FF          // PSG silence
+        dc.w    AUTO_INC_2_CMD             // restore auto-increment to 2
+        dc.l    CRAM_WRITE_CMD
+        dc.l    VSRAM_WRITE_CMD
+    }
+    // BootData_End — the table's one-past terminus (the frozen boundary pin the
+    // chainer keys boot_tail's base off).
+    pub data BootData_End = Data.empty
+}
+
+ensure(1 == 1, "zbm")
