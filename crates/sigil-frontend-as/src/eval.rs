@@ -11078,7 +11078,7 @@ impl Asm {
         self.macro_depth -= 1;
         // A plain label, a `label` directive or a value binder inside the body
         // opens the CALLER's scope, and the scope it opened OUTLIVES the
-        // expansion — that is what carries `zoneOrderedTable`'s
+        // expansion: that is what carries `zoneOrderedTable`'s
         // `.zone_table_name` and every `Table.cnt` read after the call, and
         // what makes `.b := 2` after a call whose body wrote `Inner:` bind
         // `Inner.b` (`a01`). The real scope lives in `outer_scope` while an
