@@ -207,3 +207,40 @@ the resulting booking carries a correct citation to a real file and nothing anno
   that the name is unchecked in both directions. Not reported to aeon as a defect of theirs: under
   the current rules their line is legal, and it becomes a finding only if sigil starts checking the
   name.
+
+## AEON RULED IT, 2026-09-12: the label names what carry SET means
+
+Banked here so a later sigil session reads the ANSWER beside the question and does not re-litigate a
+recommendation that has since been taken.
+
+**Their rule, verified firsthand at aeon `454682fe` (an ancestor of their `origin/master`), in
+`CODING_CONVENTIONS.md` §2.8 "Subroutine Discipline", lines 494 onward** rather than taken from their
+message: *"`out(carry: <label>)`: THE LABEL NAMES WHAT CARRY SET MEANS. Always."* It records that
+the compiler cannot help, that sigil documents no polarity, that this is therefore aeon's convention
+or nobody's, and it promotes `rings.emp:54`'s comment from a comment to the rule. It carries the
+corrected three-population census, the 10 / 5 / 3 split, and an instruction that the rename parcel
+re-derive each classification FROM THE BODY rather than from a comment, since a comment-sourced
+classification is what produced the original wrong booking.
+
+**Their deciding argument is a call site rather than a count, and checking it firsthand made it
+stronger than they stated.** They cited `VolEnv_ResolveScan`, which declares `out(hl, carry: found)`
+while its body ends `scf // not found` (`sound_psg.emp:233` and `:241`), against a call-site comment
+two files away in `sound_sequencer.emp:726/776`. What the file itself adds: the THREE sibling
+contract comments at `sound_psg.emp:199`, `:221` and `:259` all already read *"carry clear + hl =
+body base on a match; carry set on an unknown id"*, each sitting a few lines ABOVE the declaration
+it contradicts. So the contradiction was never two files apart. It was adjacent, three times over,
+and survived because a declaration and the comment above it are read as agreeing by construction.
+
+**What this closes and what it does not.** It closes the gap that produced their booking: a contract
+author now has a polarity to read. It does not close `EMP-CARRY-LABEL-POLARITY-UNCHECKED`, and the
+row's subject has changed rather than shrunk. A convention now exists to check against, so
+"should sigil enforce it" becomes answerable for the first time. **The answer is not a lint**, and
+this is worth writing down before someone tries: aeon's rule is a statement about a label's MEANING,
+and no checker can read meaning off an identifier. Enforcement would need a machine-readable marker
+in the grammar, which is language surface and goes to the owner. Their convention being written
+where it is read was the real gap, and it is now shut.
+
+They also took `EMP-DISCARDS-NAME-UNMATCHED` as a rider on their rename: every `@discards(<label>)`
+site moves with its declaration, even though nothing checks the name today, because a left-behind
+site is silently wrong now and loudly wrong the day we close that gap. **This lane undertook to warn
+them before any such check lands**, and that undertaking is recorded in their tree as well as here.
