@@ -200,6 +200,53 @@ SHAPES["c15_restore_same_cpu_control"] = HEAD + """\
         restore
 """ + NEXT68 + "        cpu 68000\n" + AFTER68
 
+# c16: the section's tail behind the cursor is a trailing reservation, not
+# bytes. Seek back to where the `ds.b` began, then close. The next section's
+# bytes land on ground no byte was written to.
+SHAPES["c16_trailing_ds_then_seek_to_it"] = HEAD + """\
+Start:  dc.w $AAAA,$BBBB
+        ds.b 4
+        org Start+4
+        cpu 68000
+""" + NEXT68 + "        cpu 68000\n" + AFTER68
+
+# c17: the next section writes nothing into the stale tail: its label is at the
+# cursor, and an `org` moves it past the old extent before its first byte.
+SHAPES["c17_next_orgs_past_the_tail"] = HEAD + SEEK68 + """\
+        cpu 68000
+L_next:
+        org Start+8
+        dc.w $1234
+        dc.l *
+        cpu 68000
+""" + AFTER68
+
+# c18: the next section writes nothing into the stale tail either, but steps
+# over it with a reservation instead of an `org`.
+SHAPES["c18_next_reserves_over_the_tail"] = HEAD + SEEK68 + """\
+        cpu 68000
+L_next: ds.b 4
+        dc.w $1234
+        dc.l *
+        cpu 68000
+""" + AFTER68
+
+# c19: after the close, an `org` of the author's own puts the next code inside
+# the stale tail, but not at the cursor the seek left there.
+SHAPES["c19_org_into_the_tail_off_the_cursor"] = HEAD + SEEK68 + """\
+        cpu 68000
+        org Start+6
+""" + NEXT68 + "        cpu 68000\n" + AFTER68
+
+# c20: after the close, other code first, then an `org` of the author's own back
+# to exactly the cursor the seek left.
+SHAPES["c20_org_back_to_the_cursor_after_other_code"] = HEAD + SEEK68 + """\
+        cpu 68000
+        org $20
+        dc.w $9999
+        org Start+4
+""" + NEXT68 + "        cpu 68000\n" + AFTER68
+
 
 def main():
     os.makedirs(OUT, exist_ok=True)

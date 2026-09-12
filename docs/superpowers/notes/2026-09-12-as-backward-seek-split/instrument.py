@@ -61,11 +61,27 @@ SUBS = [
     ),
 ]
 
+# The fix for this row (`2026-09-12-as-backward-seek-split-fix.md`) adds one
+# line to the block substitution 1 anchors on, `self.builder.pin_next_section();`
+# after `self.rebased_at = Some(seek);`. The same instrument, with that line kept
+# in place, is the alternative anchor, so the census runs on either revision.
+# Exactly one of the two must match, exactly once.
+PIN = "                    self.builder.pin_next_section();\n"
+REBASE = "                    self.rebased_at = Some(seek);\n"
+old1, new1 = SUBS[1]
+ALTERNATIVES = {1: [(old1, new1), (old1.replace(REBASE, REBASE + PIN), new1.replace(REBASE, REBASE + PIN))]}
+
+chosen = []
 for i, (old, new) in enumerate(SUBS):
-    n = src.count(old)
-    if n != 1:
-        sys.exit("REFUSED: substitution %d matched %d sites, want 1" % (i, n))
-for old, new in SUBS:
+    options = ALTERNATIVES.get(i, [(old, new)])
+    hits = [(o, n) for o, n in options if src.count(o) == 1]
+    counts = [src.count(o) for o, _ in options]
+    if len(hits) != 1 or sum(counts) != 1:
+        sys.exit("REFUSED: substitution %d matched %s sites across its anchors, want exactly one" % (i, counts))
+    chosen.append(hits[0])
+    if len(options) > 1:
+        print("SUBSTITUTION_%d_ANCHOR=%d" % (i, options.index(hits[0])))
+for old, new in chosen:
     src = src.replace(old, new)
 open(path, "w").write(src)
 for ln, line in enumerate(src.splitlines(), 1):
