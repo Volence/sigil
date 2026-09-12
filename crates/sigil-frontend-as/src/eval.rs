@@ -6702,9 +6702,9 @@ impl Asm {
             }
             // The innermost live instance, and only it: a definition executes in
             // the body of the innermost expansion, so that is the instance that
-            // owns it. Reading the whole chain here — the way a REFERENCE must
-            // (`p4`) — would file an inner macro's own label under an outer
-            // macro that happens to use the same name.
+            // owns it. Reading the whole chain here (the way a REFERENCE must,
+            // `p4`) would file an inner macro's own label under an outer macro
+            // that happens to use the same name.
             self.file_in_innermost(name).unwrap_or_else(|| name.to_string())
         };
         // A PC label is asl's CONSTANT class, in both directions: `Cl:` then
