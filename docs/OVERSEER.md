@@ -546,6 +546,24 @@ The standing sigil-native arc is the **`.emp` language work (Spec 2)** — specs
 `empyrean/docs/SIGIL_*.md`. The whole sound stack is sigil-native, the language round
 + §17 optimization arc + conversion tail are done, and the map drives the build.
 
+### PENDING: THE SHARED-PAIR SWAP TO 6884bfba, ONLY AT THE HUB'S OPEN (aeon LS-1a, 2026-09-12)
+
+**Ruled by the hub in the owner's place, 2026-09-12 about 08:28Z:** one swap of
+`sigil/target/release/{sigil,emit_sound_blob}` to the pair built at sigil `6884bfba` in the durable
+worktree `~/sonic_hacks/.sigil-pin-6884bfba`, from `~/sonic_hacks/.sigil-pin-6884bfba-target/release/`
+(sigil `2e7c25920b95cec2c462ea51b4f078b5`, emitter `d258341604bbf735a8af8438c2b8d642`). **Nothing happens
+until the hub sends OPEN**, which it sends only when aeon's NEXT session asks with the -20 B answer in hand
+(`docs/superpowers/notes/2026-09-12-deb2-minus-20-bytes.md`). The macro-error fix is not part of it.
+
+**The method, approved over a plain rename-in** because the private files share an inode with cargo's
+`deps/` (link count 2): refuse if any process's `exe` is the installed pair; copy the outgoing pair (sigil
+`49ecc532e0b133ab0eab9447e071805c`, emitter `36ef302cbf5eeca693ecbf981ce8a53a`) to
+`~/sonic_hacks/.sigil-outgoing-49ecc532/`; `cp -p` each new file to a staging name inside
+`sigil/target/release/`; `mv` it over; report both md5s, link count 1 on both, the mtimes and the
+`date -u` instant to the hub; record it under STANDING ARTIFACTS in `docs/OVERSEER-REFERENCE.md`. Keep
+both `.sigil-pin-af35fa56` and `.sigil-pin-6884bfba`: each installed binary reads its size tables from
+its build tree at run time. Delete this block in the commit that records the swap.
+
 ### SIGIL-AS-REPLACEMENT — active on the owner's own words; source locations LANDED
 
 Project row: empyrean `contract/projects.json`, `state: active`, lanes `["sigil","empyrean"]` —
