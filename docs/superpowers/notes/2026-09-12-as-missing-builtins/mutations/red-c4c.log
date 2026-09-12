@@ -1,0 +1,29 @@
+== mutation c4c on crates/sigil-frontend-as/src/eval.rs, test binary as_int_builtins, HEAD e86acb993a624ad9531363a2cd338a7e72cff4ac branch parcel/as-missing-builtins
+MUTATED /home/volence/sonic_hacks/sigil/.claude/worktrees/agent-a09c77cfcd76b4fb6/crates/sigil-frontend-as/src/eval.rs, lines 18948..18950 now read:
+  18948:             Num::Int(i) => f(i).map(Num::Int),
+  18949:             Num::Float(v) => f(v as i64).map(Num::Int),
+git diff --stat:
+ crates/sigil-frontend-as/src/eval.rs | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+test what_asl_refuses_in_bitcnt_is_refused ... FAILED
+test what_asl_refuses_in_firstbit_is_refused ... FAILED
+test bitpos_matches_asl_over_every_value_it_accepts ... ok
+test bitpos_works_wherever_an_integer_is_read ... ok
+test an_empty_argument_is_refused_where_zero_is ... ok
+test an_empty_argument_is_zero_for_every_builtin ... ok
+test what_asl_refuses_in_bitpos_is_refused ... FAILED
+test bitpos_refuses_anything_but_one_positive_bit ... ok
+test firstbit_works_wherever_an_integer_is_read ... ok
+test bitcnt_works_wherever_an_integer_is_read ... ok
+test firstbit_matches_asl_over_its_table ... ok
+test bitcnt_matches_asl_over_its_table ... ok
+thread 'what_asl_refuses_in_bitcnt_is_refused' (1181288) panicked at crates/sigil-frontend-as/tests/as_int_builtins.rs:262:9:
+ref_bitcnt_float: asl refuses it, sigil built [00, 00, 00, 02, EE]
+thread 'what_asl_refuses_in_firstbit_is_refused' (1181290) panicked at crates/sigil-frontend-as/tests/as_int_builtins.rs:210:9:
+ref_firstbit_float: asl refuses it, sigil built [00, 00, 00, 01, EE]
+thread 'what_asl_refuses_in_bitpos_is_refused' (1181289) panicked at crates/sigil-frontend-as/tests/as_int_builtins.rs:327:9:
+ref_bitpos_floatsym: asl refuses it, sigil built [00, 00, 00, 01, EE]
+test result: FAILED. 9 passed; 3 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+error: test failed, to rerun pass `-p sigil-frontend-as --test as_int_builtins`
+TEST_PIPE_DONE
+restored crates/sigil-frontend-as/src/eval.rs from HEAD; tracked changes now: 0

@@ -1,0 +1,2 @@
+                if let Some((params, body)) = self.functions.iter().find(|(k, _)| k.eq_ignore_ascii_case(name)).map(|(_, v)| v) {
+                    if matches!(

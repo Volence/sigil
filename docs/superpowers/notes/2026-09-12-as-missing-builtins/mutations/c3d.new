@@ -1,0 +1,1 @@
+    Some(i64::from((x as u32).count_ones()))

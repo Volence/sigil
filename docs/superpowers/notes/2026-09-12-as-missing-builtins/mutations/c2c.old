@@ -1,0 +1,2 @@
+            Num::Int(i) => f(i).map(Num::Int),
+            Num::Float(_) => None,

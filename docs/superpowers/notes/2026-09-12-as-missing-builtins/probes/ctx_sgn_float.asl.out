@@ -1,0 +1,4 @@
+> > > ctx_sgn_float.asm(6): warning #180: address is not properly aligned
+> > >  move.l #sgn(-0.5),d0
+ASL_EXIT=0
+ASL_DIAG=complete

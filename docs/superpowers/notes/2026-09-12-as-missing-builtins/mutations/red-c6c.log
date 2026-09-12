@@ -1,0 +1,41 @@
+== mutation c6c on crates/sigil-frontend-as/src/eval.rs, test binary as_int_builtins, HEAD 786e18c8dd05a589728928852f8a44f4fdb959e4 branch parcel/as-missing-builtins
+MUTATED /home/volence/sonic_hacks/sigil/.claude/worktrees/agent-a09c77cfcd76b4fb6/crates/sigil-frontend-as/src/eval.rs, lines 18980..18982 now read:
+  18980:             Num::Int(i) => f(i).map(Num::Int),
+  18981:             Num::Float(v) => f(v as i64).map(Num::Int),
+git diff --stat:
+ crates/sigil-frontend-as/src/eval.rs | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+test a_user_function_spelled_like_a_builtin_wins ... ok
+test an_empty_argument_is_refused_where_zero_is ... ok
+test a_builtin_name_is_the_builtin_only_in_call_shape ... ok
+test an_empty_argument_is_zero_for_every_builtin ... ok
+test sgn_takes_a_float_and_answers_an_integer ... ok
+test firstbit_works_wherever_an_integer_is_read ... ok
+test sgn_reaches_substr_s_length_through_a_user_function ... ok
+test bitcnt_works_wherever_an_integer_is_read ... ok
+test bitpos_refuses_anything_but_one_positive_bit ... ok
+test bitpos_matches_asl_over_every_value_it_accepts ... ok
+test what_asl_refuses_in_bitpos_is_refused ... FAILED
+test what_asl_refuses_in_firstbit_is_refused ... FAILED
+test bitpos_works_wherever_an_integer_is_read ... ok
+test what_asl_refuses_in_bitcnt_is_refused ... FAILED
+test what_asl_refuses_in_sgn_is_refused ... ok
+test what_asl_refuses_in_toupper_and_tolower_is_refused ... FAILED
+test sgn_works_wherever_an_integer_is_read ... ok
+test toupper_and_tolower_work_wherever_an_integer_is_read ... ok
+test toupper_and_tolower_match_asl_over_every_code ... ok
+test sgn_matches_asl_over_its_tables ... ok
+test bitcnt_matches_asl_over_its_table ... ok
+test firstbit_matches_asl_over_its_table ... ok
+thread 'what_asl_refuses_in_bitpos_is_refused' (2790241) panicked at crates/sigil-frontend-as/tests/as_int_builtins.rs:327:9:
+ref_bitpos_floatsym: asl refuses it, sigil built [00, 00, 00, 01, EE]
+thread 'what_asl_refuses_in_firstbit_is_refused' (2790242) panicked at crates/sigil-frontend-as/tests/as_int_builtins.rs:210:9:
+ref_firstbit_float: asl refuses it, sigil built [00, 00, 00, 01, EE]
+thread 'what_asl_refuses_in_bitcnt_is_refused' (2790240) panicked at crates/sigil-frontend-as/tests/as_int_builtins.rs:262:9:
+ref_bitcnt_float: asl refuses it, sigil built [00, 00, 00, 02, EE]
+thread 'what_asl_refuses_in_toupper_and_tolower_is_refused' (2790244) panicked at crates/sigil-frontend-as/tests/as_int_builtins.rs:467:13:
+ref_toupper_float: asl refuses it, sigil built [00, 00, 00, 05, EE]
+test result: FAILED. 18 passed; 4 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+error: test failed, to rerun pass `-p sigil-frontend-as --test as_int_builtins`
+TEST_PIPE_DONE
+restored crates/sigil-frontend-as/src/eval.rs from HEAD; tracked changes now: 0

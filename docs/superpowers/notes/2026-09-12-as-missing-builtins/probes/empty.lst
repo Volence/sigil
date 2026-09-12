@@ -1,0 +1,82 @@
+ AS V1.42 Beta [Bld 212] - Source File empty.asm - Page 1 - 09/12/2026 05:50:15 AM
+
+
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : 0000 0000           	dc.l int()
+       5/       4 : 0000 0000           	dc.l abs()
+       6/       8 : 00                  	dc.b abs()
+       7/       9 : FFFF FFFF           	dc.l lastbit()
+       8/       D : 0000 0000           	dc.l abs( )
+       9/      11 : 0000 0000           	dc.l abs(())
+> > > empty.asm(10): warning #180: address is not properly aligned
+> > >  move.l #abs(),d0
+      10/      15 : 203C 0000 0000      	move.l #abs(),d0
+      11/      1B : =$0                  X equ abs()
+      12/      1B : 0000 0000           	dc.l X
+      13/      1F : 0000 0005           	dc.l abs()+5
+      14/      23 : 00                  	dc.b int( )
+      15/      24 : =>TRUE               	if abs()=0
+      16/      24 : 01                  	dc.b 1
+      17/      25 : =>FALSE              	else
+      18/      25 :                     	dc.b 2
+      19/      25 : [15]                 	endif
+      20/      25 : 0000 0000           	dc.l INT(sin())
+      21/      29 : 0000 0001           	dc.l INT(cos())
+      22/      2D : 0000 0000           	dc.l INT(tan())
+      23/      31 : 0000 0000           	dc.l INT(atan())
+      24/      35 : 0000 0000           	dc.l INT(asin())
+      25/      39 : 0000 0001           	dc.l INT(acos())
+      26/      3D : 0000 0000           	dc.l INT(sinh())
+      27/      41 : 0000 0001           	dc.l INT(cosh())
+      28/      45 : 0000 0000           	dc.l INT(tanh())
+      29/      49 : 0000 0000           	dc.l INT(asinh())
+      30/      4D : 0000 0000           	dc.l INT(atanh())
+      31/      51 : 0000 0000           	dc.l INT(sqrt())
+      32/      55 : 0000 0001           	dc.l INT(exp())
+      33/      59 : EE                  	dc.b $EE
+      34/      5A :                     	end
+ AS V1.42 Beta [Bld 212] - Source File empty.asm - Page 2 - 09/12/2026 05:50:15 AM
+
+
+  Symbol Table (* = unused):
+  --------------------------
+
+*ARCHITECTURE :                                      "x86_64-unknown-linux" - |
+*BIGENDIAN :                      0 - | *BRANCHEXT :                      0 - |
+*CASESENSITIVE :                  1 - | *COMPMODE :                       0 - |
+*CONSTPI :        3.141592653589793 - | *CUSTOM :                         0 - |
+*DATE :                "09/12/2026" - | *FALSE :                          0 - |
+*FULLPMMU :                       1 - | *HAS64 :                          1 - |
+*HASDSP :                         0 - | *HASFPU :                         0 - |
+*HASPMMU :                        0 - | *INEXTMODE :                      0 - |
+*INLWORDMODE :                    0 - | *INMAXMODE :                      0 - |
+*INSRCMODE :                      0 - | *INSUPMODE :                      0 - |
+*LISTON :                         1 - | *MACEXP :                         7 - |
+*MOMCPU :                     68000 - | *MOMCPUNAME :               "68000" - |
+*NESTMAX :                      100 - | *PACKING :                        0 - |
+*PADDING :                        0 - | *RELAXED :                        0 - |
+*TIME :               "05:50:15 AM" - | *TRUE :                           1 - |
+*VERSION :                     142F - |  X :                              0 - |
+*Z80SYNTAX :                      0 - |
+
+     32 symbols
+     31 unused symbols
+
+ AS V1.42 Beta [Bld 212] - Source File empty.asm - Page 3 - 09/12/2026 05:50:15 AM
+
+
+  Code Pages:
+  ----------
+
+STANDARD (0 changed characters)
+
+1 code page
+
+0.00 seconds assembly time
+
+     35 lines source file
+      1 pass
+      0 errors
+      1 warning

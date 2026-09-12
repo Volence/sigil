@@ -1,0 +1,85 @@
+ AS V1.42 Beta [Bld 212] - Source File ctx_sgn.asm - Page 1 - 09/12/2026 05:50:15 AM
+
+
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : 01                  	dc.b sgn(FwdL)
+       5/       1 :                     	ds.b $3F
+       6/      40 :                     FwdL:
+       7/      40 : FF                  	dc.b sgn(-5)
+       8/      41 : FF                  	dc.b SGN(-5)
+       9/      42 : FF                  	dc.b Sgn(-5)
+      10/      43 : FF                  	dc.b sgn( -5 )
+      11/      44 : FF                  	dc.b sgn((-5))
+      12/      45 : FF                  	dc.b sgn(Later)
+      13/      46 : =$FFFFFFFFFFFFFFFF   X equ sgn(-5)
+      14/      46 : FF                  	dc.b X
+      15/      47 : =$FFFFFFFFFFFFFFFF   Y set sgn(-5)
+      16/      47 : FF                  	dc.b Y
+      17/      48 : =>FALSE              	if sgn(-5)=sgn(-5)+1
+      18/      48 :                     	dc.b 2
+      19/      48 : =>TRUE               	else
+      20/      48 : 01                  	dc.b 1
+      21/      49 : [17]                 	endif
+> > > ctx_sgn.asm(22): warning #180: address is not properly aligned
+> > >  move.l #sgn(-5),d0
+      22/      49 : 203C FFFF FFFF      	move.l #sgn(-5),d0
+> > > ctx_sgn.asm(23): warning #180: address is not properly aligned
+> > >  move.w #sgn(-5)<<2,d1
+      23/      4F : 323C FFFC           	move.w #sgn(-5)<<2,d1
+      24/      53 : 00                  	dc.b sgn(-5)+1
+      25/      54 : FF                  	dc.b sgn(sgn(-5))
+      26/      55 : 4646 4646 4646      	dc.b "\{sgn(-5)}"
+               5B : 4646 4646 4646 
+               61 : 4646 4646          
+      27/      65 : 00                  	dc.b sgn()
+      28/      66 : 00                  	dc.b sgn( )
+      29/      67 : 00                  	dc.b sgn(())
+      30/      68 : =$FFFFFFFFFFFFFFFB   Later equ -5
+      31/      68 : EE                  	dc.b $EE
+      32/      69 :                     	end
+ AS V1.42 Beta [Bld 212] - Source File ctx_sgn.asm - Page 2 - 09/12/2026 05:50:15 AM
+
+
+  Symbol Table (* = unused):
+  --------------------------
+
+*ARCHITECTURE :                                      "x86_64-unknown-linux" - |
+*BIGENDIAN :                      0 - | *BRANCHEXT :                      0 - |
+*CASESENSITIVE :                  1 - | *COMPMODE :                       0 - |
+*CONSTPI :        3.141592653589793 - | *CUSTOM :                         0 - |
+*DATE :                "09/12/2026" - | *FALSE :                          0 - |
+*FULLPMMU :                       1 - |  FwdL :                          40 C |
+*HAS64 :                          1 - | *HASDSP :                         0 - |
+*HASFPU :                         0 - | *HASPMMU :                        0 - |
+*INEXTMODE :                      0 - | *INLWORDMODE :                    0 - |
+*INMAXMODE :                      0 - | *INSRCMODE :                      0 - |
+*INSUPMODE :                      0 - | *LISTON :                         1 - |
+ Later :           FFFFFFFFFFFFFFFB - | *MACEXP :                         7 - |
+*MOMCPU :                     68000 - | *MOMCPUNAME :               "68000" - |
+*NESTMAX :                      100 - | *PACKING :                        0 - |
+*PADDING :                        0 - | *RELAXED :                        0 - |
+*TIME :               "05:50:15 AM" - | *TRUE :                           1 - |
+*VERSION :                     142F - |  X :               FFFFFFFFFFFFFFFF - |
+ Y :               FFFFFFFFFFFFFFFF - | *Z80SYNTAX :                      0 - |
+
+     35 symbols
+     31 unused symbols
+
+ AS V1.42 Beta [Bld 212] - Source File ctx_sgn.asm - Page 3 - 09/12/2026 05:50:15 AM
+
+
+  Code Pages:
+  ----------
+
+STANDARD (0 changed characters)
+
+1 code page
+
+0.00 seconds assembly time
+
+     33 lines source file
+      2 passes
+      0 errors
+      2 warnings

@@ -1,0 +1,318 @@
+ AS V1.42 Beta [Bld 212] - Source File t_toupper.asm - Page 1 - 09/12/2026 05:50:16 AM
+
+
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : 00                  	dc.b toupper(0)
+       5/       1 : 01                  	dc.b toupper(1)
+       6/       2 : 02                  	dc.b toupper(2)
+       7/       3 : 03                  	dc.b toupper(3)
+       8/       4 : 04                  	dc.b toupper(4)
+       9/       5 : 05                  	dc.b toupper(5)
+      10/       6 : 06                  	dc.b toupper(6)
+      11/       7 : 07                  	dc.b toupper(7)
+      12/       8 : 08                  	dc.b toupper(8)
+      13/       9 : 09                  	dc.b toupper(9)
+      14/       A : 0A                  	dc.b toupper(10)
+      15/       B : 0B                  	dc.b toupper(11)
+      16/       C : 0C                  	dc.b toupper(12)
+      17/       D : 0D                  	dc.b toupper(13)
+      18/       E : 0E                  	dc.b toupper(14)
+      19/       F : 0F                  	dc.b toupper(15)
+      20/      10 : 10                  	dc.b toupper(16)
+      21/      11 : 11                  	dc.b toupper(17)
+      22/      12 : 12                  	dc.b toupper(18)
+      23/      13 : 13                  	dc.b toupper(19)
+      24/      14 : 14                  	dc.b toupper(20)
+      25/      15 : 15                  	dc.b toupper(21)
+      26/      16 : 16                  	dc.b toupper(22)
+      27/      17 : 17                  	dc.b toupper(23)
+      28/      18 : 18                  	dc.b toupper(24)
+      29/      19 : 19                  	dc.b toupper(25)
+      30/      1A : 1A                  	dc.b toupper(26)
+      31/      1B : 1B                  	dc.b toupper(27)
+      32/      1C : 1C                  	dc.b toupper(28)
+      33/      1D : 1D                  	dc.b toupper(29)
+      34/      1E : 1E                  	dc.b toupper(30)
+      35/      1F : 1F                  	dc.b toupper(31)
+      36/      20 : 20                  	dc.b toupper(32)
+      37/      21 : 21                  	dc.b toupper(33)
+      38/      22 : 22                  	dc.b toupper(34)
+      39/      23 : 23                  	dc.b toupper(35)
+      40/      24 : 24                  	dc.b toupper(36)
+      41/      25 : 25                  	dc.b toupper(37)
+      42/      26 : 26                  	dc.b toupper(38)
+      43/      27 : 27                  	dc.b toupper(39)
+      44/      28 : 28                  	dc.b toupper(40)
+      45/      29 : 29                  	dc.b toupper(41)
+      46/      2A : 2A                  	dc.b toupper(42)
+      47/      2B : 2B                  	dc.b toupper(43)
+      48/      2C : 2C                  	dc.b toupper(44)
+      49/      2D : 2D                  	dc.b toupper(45)
+      50/      2E : 2E                  	dc.b toupper(46)
+      51/      2F : 2F                  	dc.b toupper(47)
+      52/      30 : 30                  	dc.b toupper(48)
+      53/      31 : 31                  	dc.b toupper(49)
+      54/      32 : 32                  	dc.b toupper(50)
+      55/      33 : 33                  	dc.b toupper(51)
+      56/      34 : 34                  	dc.b toupper(52)
+      57/      35 : 35                  	dc.b toupper(53)
+      58/      36 : 36                  	dc.b toupper(54)
+      59/      37 : 37                  	dc.b toupper(55)
+      60/      38 : 38                  	dc.b toupper(56)
+ AS V1.42 Beta [Bld 212] - Source File t_toupper.asm - Page 2 - 09/12/2026 05:50:16 AM
+
+
+      61/      39 : 39                  	dc.b toupper(57)
+      62/      3A : 3A                  	dc.b toupper(58)
+      63/      3B : 3B                  	dc.b toupper(59)
+      64/      3C : 3C                  	dc.b toupper(60)
+      65/      3D : 3D                  	dc.b toupper(61)
+      66/      3E : 3E                  	dc.b toupper(62)
+      67/      3F : 3F                  	dc.b toupper(63)
+      68/      40 : 40                  	dc.b toupper(64)
+      69/      41 : 41                  	dc.b toupper(65)
+      70/      42 : 42                  	dc.b toupper(66)
+      71/      43 : 43                  	dc.b toupper(67)
+      72/      44 : 44                  	dc.b toupper(68)
+      73/      45 : 45                  	dc.b toupper(69)
+      74/      46 : 46                  	dc.b toupper(70)
+      75/      47 : 47                  	dc.b toupper(71)
+      76/      48 : 48                  	dc.b toupper(72)
+      77/      49 : 49                  	dc.b toupper(73)
+      78/      4A : 4A                  	dc.b toupper(74)
+      79/      4B : 4B                  	dc.b toupper(75)
+      80/      4C : 4C                  	dc.b toupper(76)
+      81/      4D : 4D                  	dc.b toupper(77)
+      82/      4E : 4E                  	dc.b toupper(78)
+      83/      4F : 4F                  	dc.b toupper(79)
+      84/      50 : 50                  	dc.b toupper(80)
+      85/      51 : 51                  	dc.b toupper(81)
+      86/      52 : 52                  	dc.b toupper(82)
+      87/      53 : 53                  	dc.b toupper(83)
+      88/      54 : 54                  	dc.b toupper(84)
+      89/      55 : 55                  	dc.b toupper(85)
+      90/      56 : 56                  	dc.b toupper(86)
+      91/      57 : 57                  	dc.b toupper(87)
+      92/      58 : 58                  	dc.b toupper(88)
+      93/      59 : 59                  	dc.b toupper(89)
+      94/      5A : 5A                  	dc.b toupper(90)
+      95/      5B : 5B                  	dc.b toupper(91)
+      96/      5C : 5C                  	dc.b toupper(92)
+      97/      5D : 5D                  	dc.b toupper(93)
+      98/      5E : 5E                  	dc.b toupper(94)
+      99/      5F : 5F                  	dc.b toupper(95)
+     100/      60 : 60                  	dc.b toupper(96)
+     101/      61 : 41                  	dc.b toupper(97)
+     102/      62 : 42                  	dc.b toupper(98)
+     103/      63 : 43                  	dc.b toupper(99)
+     104/      64 : 44                  	dc.b toupper(100)
+     105/      65 : 45                  	dc.b toupper(101)
+     106/      66 : 46                  	dc.b toupper(102)
+     107/      67 : 47                  	dc.b toupper(103)
+     108/      68 : 48                  	dc.b toupper(104)
+     109/      69 : 49                  	dc.b toupper(105)
+     110/      6A : 4A                  	dc.b toupper(106)
+     111/      6B : 4B                  	dc.b toupper(107)
+     112/      6C : 4C                  	dc.b toupper(108)
+     113/      6D : 4D                  	dc.b toupper(109)
+     114/      6E : 4E                  	dc.b toupper(110)
+     115/      6F : 4F                  	dc.b toupper(111)
+     116/      70 : 50                  	dc.b toupper(112)
+     117/      71 : 51                  	dc.b toupper(113)
+     118/      72 : 52                  	dc.b toupper(114)
+     119/      73 : 53                  	dc.b toupper(115)
+     120/      74 : 54                  	dc.b toupper(116)
+ AS V1.42 Beta [Bld 212] - Source File t_toupper.asm - Page 3 - 09/12/2026 05:50:16 AM
+
+
+     121/      75 : 55                  	dc.b toupper(117)
+     122/      76 : 56                  	dc.b toupper(118)
+     123/      77 : 57                  	dc.b toupper(119)
+     124/      78 : 58                  	dc.b toupper(120)
+     125/      79 : 59                  	dc.b toupper(121)
+     126/      7A : 5A                  	dc.b toupper(122)
+     127/      7B : 7B                  	dc.b toupper(123)
+     128/      7C : 7C                  	dc.b toupper(124)
+     129/      7D : 7D                  	dc.b toupper(125)
+     130/      7E : 7E                  	dc.b toupper(126)
+     131/      7F : 7F                  	dc.b toupper(127)
+     132/      80 : 80                  	dc.b toupper(128)
+     133/      81 : 81                  	dc.b toupper(129)
+     134/      82 : 82                  	dc.b toupper(130)
+     135/      83 : 83                  	dc.b toupper(131)
+     136/      84 : 84                  	dc.b toupper(132)
+     137/      85 : 85                  	dc.b toupper(133)
+     138/      86 : 86                  	dc.b toupper(134)
+     139/      87 : 87                  	dc.b toupper(135)
+     140/      88 : 88                  	dc.b toupper(136)
+     141/      89 : 89                  	dc.b toupper(137)
+     142/      8A : 8A                  	dc.b toupper(138)
+     143/      8B : 8B                  	dc.b toupper(139)
+     144/      8C : 8C                  	dc.b toupper(140)
+     145/      8D : 8D                  	dc.b toupper(141)
+     146/      8E : 8E                  	dc.b toupper(142)
+     147/      8F : 8F                  	dc.b toupper(143)
+     148/      90 : 90                  	dc.b toupper(144)
+     149/      91 : 91                  	dc.b toupper(145)
+     150/      92 : 92                  	dc.b toupper(146)
+     151/      93 : 93                  	dc.b toupper(147)
+     152/      94 : 94                  	dc.b toupper(148)
+     153/      95 : 95                  	dc.b toupper(149)
+     154/      96 : 96                  	dc.b toupper(150)
+     155/      97 : 97                  	dc.b toupper(151)
+     156/      98 : 98                  	dc.b toupper(152)
+     157/      99 : 99                  	dc.b toupper(153)
+     158/      9A : 9A                  	dc.b toupper(154)
+     159/      9B : 9B                  	dc.b toupper(155)
+     160/      9C : 9C                  	dc.b toupper(156)
+     161/      9D : 9D                  	dc.b toupper(157)
+     162/      9E : 9E                  	dc.b toupper(158)
+     163/      9F : 9F                  	dc.b toupper(159)
+     164/      A0 : A0                  	dc.b toupper(160)
+     165/      A1 : A1                  	dc.b toupper(161)
+     166/      A2 : A2                  	dc.b toupper(162)
+     167/      A3 : A3                  	dc.b toupper(163)
+     168/      A4 : A4                  	dc.b toupper(164)
+     169/      A5 : A5                  	dc.b toupper(165)
+     170/      A6 : A6                  	dc.b toupper(166)
+     171/      A7 : A7                  	dc.b toupper(167)
+     172/      A8 : A8                  	dc.b toupper(168)
+     173/      A9 : A9                  	dc.b toupper(169)
+     174/      AA : AA                  	dc.b toupper(170)
+     175/      AB : AB                  	dc.b toupper(171)
+     176/      AC : AC                  	dc.b toupper(172)
+     177/      AD : AD                  	dc.b toupper(173)
+     178/      AE : AE                  	dc.b toupper(174)
+     179/      AF : AF                  	dc.b toupper(175)
+     180/      B0 : B0                  	dc.b toupper(176)
+ AS V1.42 Beta [Bld 212] - Source File t_toupper.asm - Page 4 - 09/12/2026 05:50:16 AM
+
+
+     181/      B1 : B1                  	dc.b toupper(177)
+     182/      B2 : B2                  	dc.b toupper(178)
+     183/      B3 : B3                  	dc.b toupper(179)
+     184/      B4 : B4                  	dc.b toupper(180)
+     185/      B5 : B5                  	dc.b toupper(181)
+     186/      B6 : B6                  	dc.b toupper(182)
+     187/      B7 : B7                  	dc.b toupper(183)
+     188/      B8 : B8                  	dc.b toupper(184)
+     189/      B9 : B9                  	dc.b toupper(185)
+     190/      BA : BA                  	dc.b toupper(186)
+     191/      BB : BB                  	dc.b toupper(187)
+     192/      BC : BC                  	dc.b toupper(188)
+     193/      BD : BD                  	dc.b toupper(189)
+     194/      BE : BE                  	dc.b toupper(190)
+     195/      BF : BF                  	dc.b toupper(191)
+     196/      C0 : C0                  	dc.b toupper(192)
+     197/      C1 : C1                  	dc.b toupper(193)
+     198/      C2 : C2                  	dc.b toupper(194)
+     199/      C3 : C3                  	dc.b toupper(195)
+     200/      C4 : C4                  	dc.b toupper(196)
+     201/      C5 : C5                  	dc.b toupper(197)
+     202/      C6 : C6                  	dc.b toupper(198)
+     203/      C7 : C7                  	dc.b toupper(199)
+     204/      C8 : C8                  	dc.b toupper(200)
+     205/      C9 : C9                  	dc.b toupper(201)
+     206/      CA : CA                  	dc.b toupper(202)
+     207/      CB : CB                  	dc.b toupper(203)
+     208/      CC : CC                  	dc.b toupper(204)
+     209/      CD : CD                  	dc.b toupper(205)
+     210/      CE : CE                  	dc.b toupper(206)
+     211/      CF : CF                  	dc.b toupper(207)
+     212/      D0 : D0                  	dc.b toupper(208)
+     213/      D1 : D1                  	dc.b toupper(209)
+     214/      D2 : D2                  	dc.b toupper(210)
+     215/      D3 : D3                  	dc.b toupper(211)
+     216/      D4 : D4                  	dc.b toupper(212)
+     217/      D5 : D5                  	dc.b toupper(213)
+     218/      D6 : D6                  	dc.b toupper(214)
+     219/      D7 : D7                  	dc.b toupper(215)
+     220/      D8 : D8                  	dc.b toupper(216)
+     221/      D9 : D9                  	dc.b toupper(217)
+     222/      DA : DA                  	dc.b toupper(218)
+     223/      DB : DB                  	dc.b toupper(219)
+     224/      DC : DC                  	dc.b toupper(220)
+     225/      DD : DD                  	dc.b toupper(221)
+     226/      DE : DE                  	dc.b toupper(222)
+     227/      DF : DF                  	dc.b toupper(223)
+     228/      E0 : E0                  	dc.b toupper(224)
+     229/      E1 : E1                  	dc.b toupper(225)
+     230/      E2 : E2                  	dc.b toupper(226)
+     231/      E3 : E3                  	dc.b toupper(227)
+     232/      E4 : E4                  	dc.b toupper(228)
+     233/      E5 : E5                  	dc.b toupper(229)
+     234/      E6 : E6                  	dc.b toupper(230)
+     235/      E7 : E7                  	dc.b toupper(231)
+     236/      E8 : E8                  	dc.b toupper(232)
+     237/      E9 : E9                  	dc.b toupper(233)
+     238/      EA : EA                  	dc.b toupper(234)
+     239/      EB : EB                  	dc.b toupper(235)
+     240/      EC : EC                  	dc.b toupper(236)
+ AS V1.42 Beta [Bld 212] - Source File t_toupper.asm - Page 5 - 09/12/2026 05:50:16 AM
+
+
+     241/      ED : ED                  	dc.b toupper(237)
+     242/      EE : EE                  	dc.b toupper(238)
+     243/      EF : EF                  	dc.b toupper(239)
+     244/      F0 : F0                  	dc.b toupper(240)
+     245/      F1 : F1                  	dc.b toupper(241)
+     246/      F2 : F2                  	dc.b toupper(242)
+     247/      F3 : F3                  	dc.b toupper(243)
+     248/      F4 : F4                  	dc.b toupper(244)
+     249/      F5 : F5                  	dc.b toupper(245)
+     250/      F6 : F6                  	dc.b toupper(246)
+     251/      F7 : F7                  	dc.b toupper(247)
+     252/      F8 : F8                  	dc.b toupper(248)
+     253/      F9 : F9                  	dc.b toupper(249)
+     254/      FA : FA                  	dc.b toupper(250)
+     255/      FB : FB                  	dc.b toupper(251)
+     256/      FC : FC                  	dc.b toupper(252)
+     257/      FD : FD                  	dc.b toupper(253)
+     258/      FE : FE                  	dc.b toupper(254)
+     259/      FF : FF                  	dc.b toupper(255)
+     260/     100 : EE                  	dc.b $EE
+     261/     101 :                     	end
+ AS V1.42 Beta [Bld 212] - Source File t_toupper.asm - Page 6 - 09/12/2026 05:50:16 AM
+
+
+  Symbol Table (* = unused):
+  --------------------------
+
+*ARCHITECTURE :                                      "x86_64-unknown-linux" - |
+*BIGENDIAN :                      0 - | *BRANCHEXT :                      0 - |
+*CASESENSITIVE :                  1 - | *COMPMODE :                       0 - |
+*CONSTPI :        3.141592653589793 - | *CUSTOM :                         0 - |
+*DATE :                "09/12/2026" - | *FALSE :                          0 - |
+*FULLPMMU :                       1 - | *HAS64 :                          1 - |
+*HASDSP :                         0 - | *HASFPU :                         0 - |
+*HASPMMU :                        0 - | *INEXTMODE :                      0 - |
+*INLWORDMODE :                    0 - | *INMAXMODE :                      0 - |
+*INSRCMODE :                      0 - | *INSUPMODE :                      0 - |
+*LISTON :                         1 - | *MACEXP :                         7 - |
+*MOMCPU :                     68000 - | *MOMCPUNAME :               "68000" - |
+*NESTMAX :                      100 - | *PACKING :                        0 - |
+*PADDING :                        0 - | *RELAXED :                        0 - |
+*TIME :               "05:50:16 AM" - | *TRUE :                           1 - |
+*VERSION :                     142F - | *Z80SYNTAX :                      0 - |
+
+     31 symbols
+     31 unused symbols
+
+ AS V1.42 Beta [Bld 212] - Source File t_toupper.asm - Page 7 - 09/12/2026 05:50:16 AM
+
+
+  Code Pages:
+  ----------
+
+STANDARD (0 changed characters)
+
+1 code page
+
+0.00 seconds assembly time
+
+    262 lines source file
+      1 pass
+      0 errors
+      0 warnings

@@ -1,0 +1,83 @@
+ AS V1.42 Beta [Bld 212] - Source File ctx_toupper.asm - Page 1 - 09/12/2026 05:50:15 AM
+
+
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : 40                  	dc.b toupper(FwdL)
+       5/       1 :                     	ds.b $3F
+       6/      40 :                     FwdL:
+       7/      40 : 41                  	dc.b toupper(97)
+       8/      41 : 41                  	dc.b TOUPPER(97)
+       9/      42 : 41                  	dc.b ToUpper(97)
+      10/      43 : 41                  	dc.b toupper( 97 )
+      11/      44 : 41                  	dc.b toupper((97))
+      12/      45 : 41                  	dc.b toupper(Later)
+      13/      46 : =$41                 X equ toupper(97)
+      14/      46 : 41                  	dc.b X
+      15/      47 : =$41                 Y set toupper(97)
+      16/      47 : 41                  	dc.b Y
+      17/      48 : =>FALSE              	if toupper(97)=toupper(97)+1
+      18/      48 :                     	dc.b 2
+      19/      48 : =>TRUE               	else
+      20/      48 : 01                  	dc.b 1
+      21/      49 : [17]                 	endif
+> > > ctx_toupper.asm(22): warning #180: address is not properly aligned
+> > >  move.l #toupper(97),d0
+      22/      49 : 203C 0000 0041      	move.l #toupper(97),d0
+> > > ctx_toupper.asm(23): warning #180: address is not properly aligned
+> > >  move.w #toupper(97)<<2,d1
+      23/      4F : 323C 0104           	move.w #toupper(97)<<2,d1
+      24/      53 : 42                  	dc.b toupper(97)+1
+      25/      54 : 41                  	dc.b toupper(toupper(97))
+      26/      55 : 3431                	dc.b "\{toupper(97)}"
+      27/      57 : 00                  	dc.b toupper()
+      28/      58 : 00                  	dc.b toupper( )
+      29/      59 : 00                  	dc.b toupper(())
+      30/      5A : =$61                 Later equ 97
+      31/      5A : EE                  	dc.b $EE
+      32/      5B :                     	end
+ AS V1.42 Beta [Bld 212] - Source File ctx_toupper.asm - Page 2 - 09/12/2026 05:50:15 AM
+
+
+  Symbol Table (* = unused):
+  --------------------------
+
+*ARCHITECTURE :                                      "x86_64-unknown-linux" - |
+*BIGENDIAN :                      0 - | *BRANCHEXT :                      0 - |
+*CASESENSITIVE :                  1 - | *COMPMODE :                       0 - |
+*CONSTPI :        3.141592653589793 - | *CUSTOM :                         0 - |
+*DATE :                "09/12/2026" - | *FALSE :                          0 - |
+*FULLPMMU :                       1 - |  FwdL :                          40 C |
+*HAS64 :                          1 - | *HASDSP :                         0 - |
+*HASFPU :                         0 - | *HASPMMU :                        0 - |
+*INEXTMODE :                      0 - | *INLWORDMODE :                    0 - |
+*INMAXMODE :                      0 - | *INSRCMODE :                      0 - |
+*INSUPMODE :                      0 - | *LISTON :                         1 - |
+ Later :                         61 - | *MACEXP :                         7 - |
+*MOMCPU :                     68000 - | *MOMCPUNAME :               "68000" - |
+*NESTMAX :                      100 - | *PACKING :                        0 - |
+*PADDING :                        0 - | *RELAXED :                        0 - |
+*TIME :               "05:50:15 AM" - | *TRUE :                           1 - |
+*VERSION :                     142F - |  X :                             41 - |
+ Y :                             41 - | *Z80SYNTAX :                      0 - |
+
+     35 symbols
+     31 unused symbols
+
+ AS V1.42 Beta [Bld 212] - Source File ctx_toupper.asm - Page 3 - 09/12/2026 05:50:15 AM
+
+
+  Code Pages:
+  ----------
+
+STANDARD (0 changed characters)
+
+1 code page
+
+0.00 seconds assembly time
+
+     33 lines source file
+      2 passes
+      0 errors
+      2 warnings

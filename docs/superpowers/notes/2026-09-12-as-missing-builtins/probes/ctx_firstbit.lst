@@ -1,0 +1,83 @@
+ AS V1.42 Beta [Bld 212] - Source File ctx_firstbit.asm - Page 1 - 09/12/2026 05:50:15 AM
+
+
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : 06                  	dc.b firstbit(FwdL)
+       5/       1 :                     	ds.b $3F
+       6/      40 :                     FwdL:
+       7/      40 : 02                  	dc.b firstbit(12)
+       8/      41 : 02                  	dc.b FIRSTBIT(12)
+       9/      42 : 02                  	dc.b FirstBit(12)
+      10/      43 : 02                  	dc.b firstbit( 12 )
+      11/      44 : 02                  	dc.b firstbit((12))
+      12/      45 : 02                  	dc.b firstbit(Later)
+      13/      46 : =$2                  X equ firstbit(12)
+      14/      46 : 02                  	dc.b X
+      15/      47 : =$2                  Y set firstbit(12)
+      16/      47 : 02                  	dc.b Y
+      17/      48 : =>FALSE              	if firstbit(12)=firstbit(12)+1
+      18/      48 :                     	dc.b 2
+      19/      48 : =>TRUE               	else
+      20/      48 : 01                  	dc.b 1
+      21/      49 : [17]                 	endif
+> > > ctx_firstbit.asm(22): warning #180: address is not properly aligned
+> > >  move.l #firstbit(12),d0
+      22/      49 : 203C 0000 0002      	move.l #firstbit(12),d0
+> > > ctx_firstbit.asm(23): warning #180: address is not properly aligned
+> > >  move.w #firstbit(12)<<2,d1
+      23/      4F : 323C 0008           	move.w #firstbit(12)<<2,d1
+      24/      53 : 03                  	dc.b firstbit(12)+1
+      25/      54 : 01                  	dc.b firstbit(firstbit(12))
+      26/      55 : 32                  	dc.b "\{firstbit(12)}"
+      27/      56 : FF                  	dc.b firstbit()
+      28/      57 : FF                  	dc.b firstbit( )
+      29/      58 : FF                  	dc.b firstbit(())
+      30/      59 : =$C                  Later equ 12
+      31/      59 : EE                  	dc.b $EE
+      32/      5A :                     	end
+ AS V1.42 Beta [Bld 212] - Source File ctx_firstbit.asm - Page 2 - 09/12/2026 05:50:15 AM
+
+
+  Symbol Table (* = unused):
+  --------------------------
+
+*ARCHITECTURE :                                      "x86_64-unknown-linux" - |
+*BIGENDIAN :                      0 - | *BRANCHEXT :                      0 - |
+*CASESENSITIVE :                  1 - | *COMPMODE :                       0 - |
+*CONSTPI :        3.141592653589793 - | *CUSTOM :                         0 - |
+*DATE :                "09/12/2026" - | *FALSE :                          0 - |
+*FULLPMMU :                       1 - |  FwdL :                          40 C |
+*HAS64 :                          1 - | *HASDSP :                         0 - |
+*HASFPU :                         0 - | *HASPMMU :                        0 - |
+*INEXTMODE :                      0 - | *INLWORDMODE :                    0 - |
+*INMAXMODE :                      0 - | *INSRCMODE :                      0 - |
+*INSUPMODE :                      0 - | *LISTON :                         1 - |
+ Later :                          C - | *MACEXP :                         7 - |
+*MOMCPU :                     68000 - | *MOMCPUNAME :               "68000" - |
+*NESTMAX :                      100 - | *PACKING :                        0 - |
+*PADDING :                        0 - | *RELAXED :                        0 - |
+*TIME :               "05:50:15 AM" - | *TRUE :                           1 - |
+*VERSION :                     142F - |  X :                              2 - |
+ Y :                              2 - | *Z80SYNTAX :                      0 - |
+
+     35 symbols
+     31 unused symbols
+
+ AS V1.42 Beta [Bld 212] - Source File ctx_firstbit.asm - Page 3 - 09/12/2026 05:50:15 AM
+
+
+  Code Pages:
+  ----------
+
+STANDARD (0 changed characters)
+
+1 code page
+
+0.00 seconds assembly time
+
+     33 lines source file
+      2 passes
+      0 errors
+      2 warnings

@@ -1,0 +1,24 @@
+== mutation c4d on crates/sigil-frontend-as/src/eval.rs, test binary as_int_builtins, HEAD e86acb993a624ad9531363a2cd338a7e72cff4ac branch parcel/as-missing-builtins
+MUTATED /home/volence/sonic_hacks/sigil/.claude/worktrees/agent-a09c77cfcd76b4fb6/crates/sigil-frontend-as/src/eval.rs, lines 18867..18868 now read:
+  18867:     (x != 0).then(|| i64::from(x.trailing_zeros()))
+git diff --stat:
+ crates/sigil-frontend-as/src/eval.rs | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+test an_empty_argument_is_refused_where_zero_is ... ok
+test bitpos_refuses_anything_but_one_positive_bit ... FAILED
+test what_asl_refuses_in_bitpos_is_refused ... ok
+test bitpos_matches_asl_over_every_value_it_accepts ... ok
+test bitpos_works_wherever_an_integer_is_read ... ok
+test what_asl_refuses_in_firstbit_is_refused ... ok
+test an_empty_argument_is_zero_for_every_builtin ... ok
+test bitcnt_works_wherever_an_integer_is_read ... ok
+test what_asl_refuses_in_bitcnt_is_refused ... ok
+test firstbit_works_wherever_an_integer_is_read ... ok
+test firstbit_matches_asl_over_its_table ... ok
+test bitcnt_matches_asl_over_its_table ... ok
+thread 'bitpos_refuses_anything_but_one_positive_bit' (1168521) panicked at crates/sigil-frontend-as/tests/as_int_builtins.rs:311:9:
+ref_bitpos_6: asl refuses it, sigil built [00, 00, 00, 01, EE]
+test result: FAILED. 11 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+error: test failed, to rerun pass `-p sigil-frontend-as --test as_int_builtins`
+TEST_PIPE_DONE
+restored crates/sigil-frontend-as/src/eval.rs from HEAD; tracked changes now: 0

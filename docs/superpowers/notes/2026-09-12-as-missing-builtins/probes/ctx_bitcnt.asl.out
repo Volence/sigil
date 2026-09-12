@@ -1,0 +1,10 @@
+> > > ctx_bitcnt.asm(22): warning #180: address is not properly aligned
+> > >  move.l #bitcnt(7),d0
+> > > ctx_bitcnt.asm(23): warning #180: address is not properly aligned
+> > >  move.w #bitcnt(7)<<2,d1
+> > > ctx_bitcnt.asm(22): warning #180: address is not properly aligned
+> > >  move.l #bitcnt(7),d0
+> > > ctx_bitcnt.asm(23): warning #180: address is not properly aligned
+> > >  move.w #bitcnt(7)<<2,d1
+ASL_EXIT=0
+ASL_DIAG=complete

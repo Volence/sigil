@@ -1,0 +1,10 @@
+> > > ctx_firstbit.asm(22): warning #180: address is not properly aligned
+> > >  move.l #firstbit(12),d0
+> > > ctx_firstbit.asm(23): warning #180: address is not properly aligned
+> > >  move.w #firstbit(12)<<2,d1
+> > > ctx_firstbit.asm(22): warning #180: address is not properly aligned
+> > >  move.l #firstbit(12),d0
+> > > ctx_firstbit.asm(23): warning #180: address is not properly aligned
+> > >  move.w #firstbit(12)<<2,d1
+ASL_EXIT=0
+ASL_DIAG=complete

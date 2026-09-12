@@ -1,0 +1,10 @@
+> > > ctx_tolower.asm(22): warning #180: address is not properly aligned
+> > >  move.l #tolower(65),d0
+> > > ctx_tolower.asm(23): warning #180: address is not properly aligned
+> > >  move.w #tolower(65)<<2,d1
+> > > ctx_tolower.asm(22): warning #180: address is not properly aligned
+> > >  move.l #tolower(65),d0
+> > > ctx_tolower.asm(23): warning #180: address is not properly aligned
+> > >  move.w #tolower(65)<<2,d1
+ASL_EXIT=0
+ASL_DIAG=complete

@@ -1,0 +1,2 @@
+        if arg.is_empty() {
+            return Some(Num::Int(1));

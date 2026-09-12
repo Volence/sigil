@@ -1,0 +1,27 @@
+== mutation c2b on crates/sigil-frontend-as/src/eval.rs, test binary as_int_builtins, HEAD 22936a0ab2be8e5c017e065f3130afb3b67b4723 branch parcel/as-missing-builtins
+MUTATED /home/volence/sonic_hacks/sigil/.claude/worktrees/agent-a09c77cfcd76b4fb6/crates/sigil-frontend-as/src/eval.rs, lines 18845..18847 now read:
+  18845:     let x = if x & 1 == 1 { x >> 1 } else { x };
+  18846:     Some(if x == 0 { -1 } else { i64::from(x.trailing_zeros()) + 1 })
+git diff --stat:
+ crates/sigil-frontend-as/src/eval.rs | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+test an_empty_argument_is_refused_where_zero_is ... ok
+test what_asl_refuses_in_bitcnt_is_refused ... ok
+test an_empty_argument_is_zero_for_every_builtin ... ok
+test what_asl_refuses_in_firstbit_is_refused ... ok
+test firstbit_works_wherever_an_integer_is_read ... FAILED
+test bitcnt_works_wherever_an_integer_is_read ... ok
+test firstbit_matches_asl_over_its_table ... FAILED
+test bitcnt_matches_asl_over_its_table ... ok
+thread 'firstbit_works_wherever_an_integer_is_read' (529566) panicked at crates/sigil-frontend-as/tests/as_int_builtins.rs:194:5:
+ctx_firstbit: sigil's image differs from asl's listing at $0 (asl 90 bytes, sigil 90):
+  asl   [06, 00, 00, 00, 00, 00, 00, 00]
+  sigil [07, 00, 00, 00, 00, 00, 00, 00]
+thread 'firstbit_matches_asl_over_its_table' (529565) panicked at crates/sigil-frontend-as/tests/as_int_builtins.rs:175:5:
+t_firstbit: sigil's image differs from asl's listing at $B (asl 7449 bytes, sigil 7449):
+  asl   [01, 00, 00, 00, 00, 00, 00, 00]
+  sigil [02, 00, 00, 00, 01, 00, 00, 00]
+test result: FAILED. 6 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+error: test failed, to rerun pass `-p sigil-frontend-as --test as_int_builtins`
+TEST_PIPE_DONE
+restored crates/sigil-frontend-as/src/eval.rs from HEAD; tracked changes now: 0

@@ -21,7 +21,7 @@
 //! |---|---|
 //! | a 32-bit index (`lastbit(-1)` as 31, `lastbit($100000000)` refused or 0) | `lastbit_is_the_highest_set_bit_of_a_64_bit_integer` |
 //! | no bit set read as 0 instead of -1 | `lastbit_is_the_highest_set_bit_of_a_64_bit_integer` |
-//! | the LOWEST set bit (asl's `firstbit`) | `lastbit_is_the_highest_set_bit_of_a_64_bit_integer` |
+//! | the LOWEST set bit (which is not asl's `firstbit` either; `as_int_builtins.rs`) | `lastbit_is_the_highest_set_bit_of_a_64_bit_integer` |
 //! | the name matched in one case only | `lastbit_works_wherever_an_integer_is_read` |
 //! | the value right but not through Sonic 2's `cnop`/`org` macros | `sonic_2_s_end_of_rom_pad_assembles` |
 

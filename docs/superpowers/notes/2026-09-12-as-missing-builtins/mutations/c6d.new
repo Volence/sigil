@@ -1,0 +1,1 @@
+    u8::try_from(x & 0xFF).ok().map(|c| i64::from(c.to_ascii_uppercase()))

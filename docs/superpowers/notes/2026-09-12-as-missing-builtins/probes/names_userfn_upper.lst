@@ -1,0 +1,80 @@
+ AS V1.42 Beta [Bld 212] - Source File names_userfn_upper.asm - Page 1 - 09/12/2026 05:50:15 AM
+
+
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     SGN function x,x+100
+       5/       0 :                     BITCNT function x,x+100
+       6/       0 :                     FIRSTBIT function x,x+100
+       7/       0 :                     BITPOS function x,x+100
+       8/       0 :                     TOUPPER function x,x+100
+       9/       0 :                     TOLOWER function x,x+100
+      10/       0 :                     LASTBIT function x,x+100
+      11/       0 :                     ABS function x,x+100
+      12/       0 :                     INT function x,x+100
+      13/       0 : 01                  	dc.b sgn(8)
+      14/       1 : 01                  	dc.b bitcnt(8)
+      15/       2 : 03                  	dc.b firstbit(8)
+      16/       3 : 03                  	dc.b bitpos(8)
+      17/       4 : 08                  	dc.b toupper(8)
+      18/       5 : 08                  	dc.b tolower(8)
+      19/       6 : 03                  	dc.b lastbit(8)
+      20/       7 : 08                  	dc.b abs(8)
+      21/       8 : 08                  	dc.b int(8)
+      22/       9 : EE                  	dc.b $EE
+      23/       A :                     	end
+ AS V1.42 Beta [Bld 212] - Source File names_userfn_upper.asm - Page 2 - 09/12/2026 05:50:15 AM
+
+
+  Symbol Table (* = unused):
+  --------------------------
+
+*ARCHITECTURE :                                      "x86_64-unknown-linux" - |
+*BIGENDIAN :                      0 - | *BRANCHEXT :                      0 - |
+*CASESENSITIVE :                  1 - | *COMPMODE :                       0 - |
+*CONSTPI :        3.141592653589793 - | *CUSTOM :                         0 - |
+*DATE :                "09/12/2026" - | *FALSE :                          0 - |
+*FULLPMMU :                       1 - | *HAS64 :                          1 - |
+*HASDSP :                         0 - | *HASFPU :                         0 - |
+*HASPMMU :                        0 - | *INEXTMODE :                      0 - |
+*INLWORDMODE :                    0 - | *INMAXMODE :                      0 - |
+*INSRCMODE :                      0 - | *INSUPMODE :                      0 - |
+*LISTON :                         1 - | *MACEXP :                         7 - |
+*MOMCPU :                     68000 - | *MOMCPUNAME :               "68000" - |
+*NESTMAX :                      100 - | *PACKING :                        0 - |
+*PADDING :                        0 - | *RELAXED :                        0 - |
+*TIME :               "05:50:15 AM" - | *TRUE :                           1 - |
+*VERSION :                     142F - | *Z80SYNTAX :                      0 - |
+
+     31 symbols
+     31 unused symbols
+
+ AS V1.42 Beta [Bld 212] - Source File names_userfn_upper.asm - Page 3 - 09/12/2026 05:50:15 AM
+
+
+  Defined Functions:
+  ------------------
+
+INT                                   | ABS                                  
+LASTBIT                               | TOLOWER                              
+TOUPPER                               | BITPOS                               
+FIRSTBIT                              | BITCNT                               
+SGN                                   |
+
+ AS V1.42 Beta [Bld 212] - Source File names_userfn_upper.asm - Page 4 - 09/12/2026 05:50:15 AM
+
+
+  Code Pages:
+  ----------
+
+STANDARD (0 changed characters)
+
+1 code page
+
+0.00 seconds assembly time
+
+     24 lines source file
+      1 pass
+      0 errors
+      0 warnings

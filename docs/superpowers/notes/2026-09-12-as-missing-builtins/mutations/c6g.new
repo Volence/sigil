@@ -1,0 +1,2 @@
+                if let Some((params, body)) = self.functions.get(name).filter(|_| !is_num_builtin(name)) {
+                    if matches!(

@@ -1,0 +1,89 @@
+o_bitpos_equ	0	complete	=$3                  X equ bitpos(8)		1		o_bitpos_equ.asm(4):1: error: trailing tokens in expression
+o_bitpos_fwd	2	INCOMPLETE	FFFF FFFF            dc.l bitpos(Later)	error #1540: not exactly one bit set;	1		o_bitpos_fwd.asm(4):7: error: bad long expression
+o_bitpos_imm	0	complete	203C 0000 0003       move.l #bitpos(8),d0		1		o_bitpos_imm.asm(4):9: error: trailing tokens in #immediate
+o_bitpos_min	2	complete	FFFF FFFF            dc.l bitpos(-$7FFFFFFFFFFFFFFF-1)	error #1540: not exactly one bit set;	1		o_bitpos_min.asm(4):7: error: bad long expression
+o_bitpos_neg1	2	complete	FFFF FFFF            dc.l bitpos(-1)	error #1540: not exactly one bit set;	1		o_bitpos_neg1.asm(4):7: error: bad long expression
+o_bitpos_nested	0	complete	0000 0001            dc.l bitpos(bitpos(4))		1		o_bitpos_nested.asm(4):7: error: bad long expression
+o_bitpos_space	0	complete	0000 0003            dc.l bitpos( 8 )		1		o_bitpos_space.asm(4):7: error: bad long expression
+o_bitpos_upper	0	complete	0000 0003            dc.l BITPOS(8)		1		o_bitpos_upper.asm(4):7: error: bad long expression
+o_c_abs_dq	3	unknown		error #10000: internal error;	1		o_c_abs_dq.asm(4):11: error: string operand in a data directive wider than a byte: asl emits one zero-extended element per character here, which is not implemented
+o_c_abs_q	3	unknown		error #10000: internal error;	0	00000061EEbuilt:5bytes,nofilewritten(pass-o<path>towriteone)	
+o_c_abs_qparen	3	unknown		error #10000: internal error;	0	00000061EEbuilt:5bytes,nofilewritten(pass-o<path>towriteone)	
+o_c_abs_qplus	3	unknown		error #10000: internal error;	0	00000061EEbuilt:5bytes,nofilewritten(pass-o<path>towriteone)	
+o_c_abs_qsym	3	unknown	='a'                 Q equ 'a'	error #10000: internal error;	0	00000061EEbuilt:5bytes,nofilewritten(pass-o<path>towriteone)	
+o_c_bitcnt_dq	2	complete	                     dc.l bitcnt("a"+0)	error #1136: expected floating point number, but got string;	1		o_c_bitcnt_dq.asm(4):14: error: string operand in a data directive wider than a byte: asl emits one zero-extended element per character here, which is not implemented
+o_c_bitcnt_q	2	complete	                     dc.l bitcnt('a')	error #1136: expected floating point number, but got string;	1		o_c_bitcnt_q.asm(4):7: error: bad long expression
+o_c_bitcnt_qparen	2	complete	                     dc.l bitcnt(('a'))	error #1136: expected floating point number, but got string;	1		o_c_bitcnt_qparen.asm(4):7: error: bad long expression
+o_c_bitcnt_qplus	2	complete	                     dc.l bitcnt('a'+0)	error #1136: expected floating point number, but got string;	1		o_c_bitcnt_qplus.asm(4):7: error: bad long expression
+o_c_bitcnt_qsym	2	complete	='a'                 Q equ 'a'	error #1136: expected floating point number, but got string;	1		o_c_bitcnt_qsym.asm(5):7: error: bad long expression
+o_c_firstbit_dq	2	complete	                     dc.l firstbit("a"+0)	error #1136: expected floating point number, but got string;	1		o_c_firstbit_dq.asm(4):16: error: string operand in a data directive wider than a byte: asl emits one zero-extended element per character here, which is not implemented
+o_c_firstbit_q	2	complete	                     dc.l firstbit('a')	error #1136: expected floating point number, but got string;	1		o_c_firstbit_q.asm(4):7: error: bad long expression
+o_c_firstbit_qparen	2	complete	                     dc.l firstbit(('a'))	error #1136: expected floating point number, but got string;	1		o_c_firstbit_qparen.asm(4):7: error: bad long expression
+o_c_firstbit_qplus	2	complete	                     dc.l firstbit('a'+0)	error #1136: expected floating point number, but got string;	1		o_c_firstbit_qplus.asm(4):7: error: bad long expression
+o_c_firstbit_qsym	2	complete	='a'                 Q equ 'a'	error #1136: expected floating point number, but got string;	1		o_c_firstbit_qsym.asm(5):7: error: bad long expression
+o_c_int_dq	3	unknown		error #10000: internal error;	1		o_c_int_dq.asm(4):7: error: int(): could not evaluate float expression
+o_c_int_q	3	unknown		error #10000: internal error;	0	00000061EEbuilt:5bytes,nofilewritten(pass-o<path>towriteone)	
+o_c_int_qparen	3	unknown		error #10000: internal error;	0	00000061EEbuilt:5bytes,nofilewritten(pass-o<path>towriteone)	
+o_c_int_qplus	3	unknown		error #10000: internal error;	0	00000061EEbuilt:5bytes,nofilewritten(pass-o<path>towriteone)	
+o_c_int_qsym	3	unknown	='a'                 Q equ 'a'	error #10000: internal error;	0	00000061EEbuilt:5bytes,nofilewritten(pass-o<path>towriteone)	
+o_c_int_str	3	unknown		error #10000: internal error;	1		o_c_int_str.asm(4):7: error: int(): could not evaluate float expression
+o_c_lastbit_dq	2	complete	                     dc.l lastbit("a"+0)	error #1136: expected floating point number, but got string;	1		o_c_lastbit_dq.asm(4):15: error: string operand in a data directive wider than a byte: asl emits one zero-extended element per character here, which is not implemented
+o_c_lastbit_q	2	complete	                     dc.l lastbit('a')	error #1136: expected floating point number, but got string;	0	00000006EEbuilt:5bytes,nofilewritten(pass-o<path>towriteone)	
+o_c_lastbit_qparen	2	complete	                     dc.l lastbit(('a'))	error #1136: expected floating point number, but got string;	0	00000006EEbuilt:5bytes,nofilewritten(pass-o<path>towriteone)	
+o_c_lastbit_qplus	2	complete	                     dc.l lastbit('a'+0)	error #1136: expected floating point number, but got string;	0	00000006EEbuilt:5bytes,nofilewritten(pass-o<path>towriteone)	
+o_c_lastbit_qsym	2	complete	='a'                 Q equ 'a'	error #1136: expected floating point number, but got string;	0	00000006EEbuilt:5bytes,nofilewritten(pass-o<path>towriteone)	
+o_c_plain_q	0	complete	0000 0061            dc.l 'a'		0	00000061EEbuilt:5bytes,nofilewritten(pass-o<path>towriteone)	
+o_c_plain_qplus	0	complete	0000 0062            dc.l 'a'+1		0	00000062EEbuilt:5bytes,nofilewritten(pass-o<path>towriteone)	
+o_c_sgn_dq	3	unknown		error #10000: internal error;	1		o_c_sgn_dq.asm(4):11: error: string operand in a data directive wider than a byte: asl emits one zero-extended element per character here, which is not implemented
+o_c_sgn_q	3	unknown		error #10000: internal error;	1		o_c_sgn_q.asm(4):7: error: bad long expression
+o_c_sgn_qparen	3	unknown		error #10000: internal error;	1		o_c_sgn_qparen.asm(4):7: error: bad long expression
+o_c_sgn_qplus	3	unknown		error #10000: internal error;	1		o_c_sgn_qplus.asm(4):7: error: bad long expression
+o_c_sgn_qsym	3	unknown	='a'                 Q equ 'a'	error #10000: internal error;	1		o_c_sgn_qsym.asm(5):7: error: bad long expression
+o_c_sin_dq	3	unknown		error #10000: internal error;	1		o_c_sin_dq.asm(4):11: error: string operand in a data directive wider than a byte: asl emits one zero-extended element per character here, which is not implemented
+o_c_sin_q	3	unknown		error #10000: internal error;	1		o_c_sin_q.asm(4):7: error: bad long expression
+o_c_sin_qparen	3	unknown		error #10000: internal error;	1		o_c_sin_qparen.asm(4):7: error: bad long expression
+o_c_sin_qplus	3	unknown		error #10000: internal error;	1		o_c_sin_qplus.asm(4):7: error: bad long expression
+o_c_sin_qsym	3	unknown	='a'                 Q equ 'a'	error #10000: internal error;	1		o_c_sin_qsym.asm(5):7: error: bad long expression
+o_c_toupper_dq	2	complete	                     dc.l toupper("a"+0)	error #1136: expected floating point number, but got string;	1		o_c_toupper_dq.asm(4):15: error: string operand in a data directive wider than a byte: asl emits one zero-extended element per character here, which is not implemented
+o_c_toupper_q	2	complete	                     dc.l toupper('a')	error #1136: expected floating point number, but got string;	1		o_c_toupper_q.asm(4):7: error: bad long expression
+o_c_toupper_qparen	2	complete	                     dc.l toupper(('a'))	error #1136: expected floating point number, but got string;	1		o_c_toupper_qparen.asm(4):7: error: bad long expression
+o_c_toupper_qplus	2	complete	                     dc.l toupper('a'+0)	error #1136: expected floating point number, but got string;	1		o_c_toupper_qplus.asm(4):7: error: bad long expression
+o_c_toupper_qsym	2	complete	='a'                 Q equ 'a'	error #1136: expected floating point number, but got string;	1		o_c_toupper_qsym.asm(5):7: error: bad long expression
+o_e_abs_empty_b	0	complete	00                   dc.b abs()		1		o_e_abs_empty_b.asm(4):7: error: bad byte expression
+o_e_abs_empty_equ	0	complete	=$0                  X equ abs()		1		o_e_abs_empty_equ.asm(4):1: error: trailing tokens in expression
+o_e_abs_empty_imm	0	complete	203C 0000 0000       move.l #abs(),d0		1		o_e_abs_empty_imm.asm(4):9: error: trailing tokens in #immediate
+o_e_abs_empty_sp	0	complete	0000 0000            dc.l abs( )		1		o_e_abs_empty_sp.asm(4):7: error: bad long expression
+o_e_cos_empty_int	0	complete	01                   dc.b int(cos())		1		o_e_cos_empty_int.asm(4):7: error: int(): could not evaluate float expression
+o_e_firstbit_empty_b	0	complete	FF                   dc.b firstbit()		1		o_e_firstbit_empty_b.asm(4):7: error: bad byte expression
+o_e_int_empty_b	0	complete	00                   dc.b int()		1		o_e_int_empty_b.asm(4):7: error: int(): could not evaluate float expression
+o_e_sgn_empty_expr	0	complete	0000 0005            dc.l sgn()+5		1		o_e_sgn_empty_expr.asm(4):7: error: bad long expression
+o_e_sin_empty_int	0	complete	00                   dc.b int(sin())		1		o_e_sin_empty_int.asm(4):7: error: int(): could not evaluate float expression
+o_interp_firstbit	0	complete	32                   dc.b "\{firstbit(12)}"		1		o_interp_firstbit.asm(1):1: error: trailing tokens in expression
+o_interp_m1	0	complete	4646 4646 4646       dc.b "\{-1}"		0	46464646464646464646464646464646EEbuilt:17bytes,nofilewritten(pass-o<path>towriteone)	
+o_interp_m1_sgn	0	complete	4646 4646 4646       dc.b "\{sgn(-1)}"		1		o_interp_m1_sgn.asm(1):1: error: trailing tokens in expression
+o_interp_toupper	0	complete	3431                 dc.b "\{toupper(97)}"		1		o_interp_toupper.asm(1):1: error: trailing tokens in expression
+o_tolower_255	0	complete	FF                   dc.b tolower(255)		1		o_tolower_255.asm(4):7: error: bad byte expression
+o_tolower_256	2	complete	                     dc.b tolower(256)	error #1320: range overflow;	1		o_tolower_256.asm(4):7: error: bad byte expression
+o_tolower_65	0	complete	61                   dc.b tolower(65)		1		o_tolower_65.asm(4):7: error: bad byte expression
+o_tolower_97	0	complete	61                   dc.b tolower(97)		1		o_tolower_97.asm(4):7: error: bad byte expression
+o_tolower_m1	2	complete	                     dc.b tolower(-1)	error #1320: range overflow;	1		o_tolower_m1.asm(4):7: error: bad byte expression
+o_tolower_neg_expr	0	complete	00                   dc.b tolower(0-1+1)		1		o_tolower_neg_expr.asm(4):7: error: bad byte expression
+o_tolower_word	0	complete	0061                 dc.w tolower($61)		1		o_tolower_word.asm(4):7: error: bad word expression
+o_toupper_255	0	complete	FF                   dc.b toupper(255)		1		o_toupper_255.asm(4):7: error: bad byte expression
+o_toupper_256	2	complete	                     dc.b toupper(256)	error #1320: range overflow;	1		o_toupper_256.asm(4):7: error: bad byte expression
+o_toupper_65	0	complete	41                   dc.b toupper(65)		1		o_toupper_65.asm(4):7: error: bad byte expression
+o_toupper_97	0	complete	41                   dc.b toupper(97)		1		o_toupper_97.asm(4):7: error: bad byte expression
+o_toupper_m1	2	complete	                     dc.b toupper(-1)	error #1320: range overflow;	1		o_toupper_m1.asm(4):7: error: bad byte expression
+o_toupper_neg_expr	0	complete	00                   dc.b toupper(0-1+1)		1		o_toupper_neg_expr.asm(4):7: error: bad byte expression
+o_toupper_word	0	complete	0041                 dc.w toupper($61)		1		o_toupper_word.asm(4):7: error: bad word expression
+o_z80_family	0	complete	FF                   db sgn(-5)		1		o_z80_family.asm(3):5: error: bad byte expression
+t_abs	0	complete	0000 0000 0000       dc.l abs($0)>>32,abs($0)&$FFFFFFFF		0	000000000000000000000000000000010000000000000002000000000000000300000000000000040000000000000005000000000000000600000000	
+t_bitcnt	0	complete	0000 0000            dc.l bitcnt($0)		1		t_bitcnt.asm(4):7: error: bad long expression
+t_bitpos	0	complete	0000 0000            dc.l bitpos($1)		1		t_bitpos.asm(4):7: error: bad long expression
+t_firstbit	0	complete	FFFF FFFF            dc.l firstbit($0)		1		t_firstbit.asm(4):7: error: bad long expression
+t_lastbit	0	complete	FFFF FFFF            dc.l lastbit($0)		0	FFFFFFFF0000000000000001000000010000000200000002000000020000000200000003000000030000000300000003000000030000000300000003	
+t_sgn	0	complete	0000 0000            dc.l sgn($0)		1		t_sgn.asm(4):7: error: bad long expression
+t_sgn_float	0	complete	0000 0000            dc.l sgn(0.0)		1		t_sgn_float.asm(4):11: error: floating point value where an integer is required (wrap it in `int(...)`)
+t_sgn_floatexpr	0	complete	0000 0000            dc.l sgn(1.5-1.5)		1		t_sgn_floatexpr.asm(4):11: error: floating point value where an integer is required (wrap it in `int(...)`)
+t_tolower	0	complete	00                   dc.b tolower(0)		1		t_tolower.asm(4):7: error: bad byte expression
+t_toupper	0	complete	00                   dc.b toupper(0)		1		t_toupper.asm(4):7: error: bad byte expression

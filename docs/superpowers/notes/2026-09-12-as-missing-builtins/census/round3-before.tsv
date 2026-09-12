@@ -1,0 +1,57 @@
+m_body_2p	0	complete	                    m macro pa		0	32702E62696EEEbuilt:7bytes,nofilewritten(pass-o<path>towriteone)	
+m_default_1x	0	complete	                    m macro pa=1x2		1		m_default_1x.asm(4):1: error: macro needs a name
+m_default_2p	0	complete	                    m macro pa=2p.bin		1		m_default_2p.asm(4):1: error: macro needs a name
+m_default_2p_given	0	complete	                    m macro pa=2p.bin		1		m_default_2p_given.asm(4):1: error: macro needs a name
+m_default_2p_second	0	complete	                    m macro qq,pa=2p.bin		1		m_default_2p_second.asm(4):1: error: macro needs a name
+m_default_2p_two	0	complete	                    m macro pa=2p.bin,qq		1		m_default_2p_two.asm(4):1: error: macro needs a name
+m_default_amp	0	complete	                    m macro pa=2p&q		1		m_default_amp.asm(4):1: error: macro needs a name
+m_default_digit	0	complete	                    m macro pa=2p		1		m_default_digit.asm(4):1: error: macro needs a name
+m_default_hexh	2	complete	                    m macro pa=0Fh	error #1020: invalid symbol name;	0	0FEEbuilt:2bytes,nofilewritten(pass-o<path>towriteone)	
+m_default_num	0	complete	                    m macro pa=12		0	0CEEbuilt:2bytes,nofilewritten(pass-o<path>towriteone)	
+m_default_space	0	complete	                    m macro pa=2p bin		1		m_default_space.asm(4):1: error: macro needs a name
+m_default_str	0	complete	                    m macro pa="2p,x"		0	32702C78EEbuilt:5bytes,nofilewritten(pass-o<path>towriteone)	
+u_fn_abs	0	complete	                    abs function x,x+100		0	65EEbuilt:2bytes,nofilewritten(pass-o<path>towriteone)	
+u_fn_bitcnt	0	complete	                    bitcnt function x,x+100		0	65EEbuilt:2bytes,nofilewritten(pass-o<path>towriteone)	
+u_fn_bitpos	0	complete	                    bitpos function x,x+100		0	65EEbuilt:2bytes,nofilewritten(pass-o<path>towriteone)	
+u_fn_firstbit	0	complete	                    firstbit function x,x+100		0	65EEbuilt:2bytes,nofilewritten(pass-o<path>towriteone)	
+u_fn_int	0	complete	                    int function x,x+100		0	65EEbuilt:2bytes,nofilewritten(pass-o<path>towriteone)	
+u_fn_lastbit	0	complete	                    lastbit function x,x+100		0	65EEbuilt:2bytes,nofilewritten(pass-o<path>towriteone)	
+u_fn_sgn	0	complete	                    sgn function x,x+100		0	65EEbuilt:2bytes,nofilewritten(pass-o<path>towriteone)	
+u_fn_tolower	0	complete	                    tolower function x,x+100		0	65EEbuilt:2bytes,nofilewritten(pass-o<path>towriteone)	
+u_fn_toupper	0	complete	                    toupper function x,x+100		0	65EEbuilt:2bytes,nofilewritten(pass-o<path>towriteone)	
+u_fnU_abs	0	complete	                    ABS function x,x+100		0	01EEbuilt:2bytes,nofilewritten(pass-o<path>towriteone)	
+u_fnU_bitcnt	0	complete	                    BITCNT function x,x+100		1		u_fnU_bitcnt.asm(5):7: error: bad byte expression
+u_fnU_bitpos	0	complete	                    BITPOS function x,x+100		1		u_fnU_bitpos.asm(5):7: error: bad byte expression
+u_fnU_firstbit	0	complete	                    FIRSTBIT function x,x+100		1		u_fnU_firstbit.asm(5):7: error: bad byte expression
+u_fnU_int	0	complete	                    INT function x,x+100		0	01EEbuilt:2bytes,nofilewritten(pass-o<path>towriteone)	
+u_fnU_lastbit	0	complete	                    LASTBIT function x,x+100		0	00EEbuilt:2bytes,nofilewritten(pass-o<path>towriteone)	
+u_fnU_sgn	0	complete	                    SGN function x,x+100		1		u_fnU_sgn.asm(5):7: error: bad byte expression
+u_fnU_tolower	0	complete	                    TOLOWER function x,x+100		1		u_fnU_tolower.asm(5):7: error: bad byte expression
+u_fnU_toupper	0	complete	                    TOUPPER function x,x+100		1		u_fnU_toupper.asm(5):7: error: bad byte expression
+u_label_abs	0	complete	08                  abs: dc.b abs(8)		0	08EEbuilt:2bytes,nofilewritten(pass-o<path>towriteone)	
+u_label_bitcnt	0	complete	01                  bitcnt: dc.b bitcnt(8)		1		u_label_bitcnt.asm(4):14: error: bad byte expression
+u_label_bitpos	0	complete	03                  bitpos: dc.b bitpos(8)		1		u_label_bitpos.asm(4):14: error: bad byte expression
+u_label_firstbit	0	complete	03                  firstbit: dc.b firstbit(8)		1		u_label_firstbit.asm(4):16: error: bad byte expression
+u_label_int	0	complete	08                  int: dc.b int(8)		0	08EEbuilt:2bytes,nofilewritten(pass-o<path>towriteone)	
+u_label_lastbit	0	complete	03                  lastbit: dc.b lastbit(8)		0	03EEbuilt:2bytes,nofilewritten(pass-o<path>towriteone)	
+u_label_sgn	0	complete	01                  sgn: dc.b sgn(8)		1		u_label_sgn.asm(4):11: error: bad byte expression
+u_label_tolower	0	complete	08                  tolower: dc.b tolower(8)		1		u_label_tolower.asm(4):15: error: bad byte expression
+u_label_toupper	0	complete	08                  toupper: dc.b toupper(8)		1		u_label_toupper.asm(4):15: error: bad byte expression
+u_sym_abs	0	complete	=$7                  abs equ 7		0	07EEbuilt:2bytes,nofilewritten(pass-o<path>towriteone)	
+u_sym_bitcnt	0	complete	=$7                  bitcnt equ 7		0	07EEbuilt:2bytes,nofilewritten(pass-o<path>towriteone)	
+u_sym_bitpos	0	complete	=$7                  bitpos equ 7		0	07EEbuilt:2bytes,nofilewritten(pass-o<path>towriteone)	
+u_symcall_abs	0	complete	=$7                  abs equ 7		0	01EEbuilt:2bytes,nofilewritten(pass-o<path>towriteone)	
+u_symcall_bitcnt	0	complete	=$7                  bitcnt equ 7		1		u_symcall_bitcnt.asm(5):7: error: bad byte expression
+u_symcall_bitpos	0	complete	=$7                  bitpos equ 7		1		u_symcall_bitpos.asm(5):7: error: bad byte expression
+u_symcall_firstbit	0	complete	=$7                  firstbit equ 7		1		u_symcall_firstbit.asm(5):7: error: bad byte expression
+u_symcall_int	0	complete	=$7                  int equ 7		0	01EEbuilt:2bytes,nofilewritten(pass-o<path>towriteone)	
+u_symcall_lastbit	0	complete	=$7                  lastbit equ 7		0	00EEbuilt:2bytes,nofilewritten(pass-o<path>towriteone)	
+u_symcall_sgn	0	complete	=$7                  sgn equ 7		1		u_symcall_sgn.asm(5):7: error: bad byte expression
+u_symcall_tolower	0	complete	=$7                  tolower equ 7		1		u_symcall_tolower.asm(5):7: error: bad byte expression
+u_symcall_toupper	0	complete	=$7                  toupper equ 7		1		u_symcall_toupper.asm(5):7: error: bad byte expression
+u_sym_firstbit	0	complete	=$7                  firstbit equ 7		0	07EEbuilt:2bytes,nofilewritten(pass-o<path>towriteone)	
+u_sym_int	0	complete	=$7                  int equ 7		0	07EEbuilt:2bytes,nofilewritten(pass-o<path>towriteone)	
+u_sym_lastbit	0	complete	=$7                  lastbit equ 7		0	07EEbuilt:2bytes,nofilewritten(pass-o<path>towriteone)	
+u_sym_sgn	0	complete	=$7                  sgn equ 7		0	07EEbuilt:2bytes,nofilewritten(pass-o<path>towriteone)	
+u_sym_tolower	0	complete	=$7                  tolower equ 7		0	07EEbuilt:2bytes,nofilewritten(pass-o<path>towriteone)	
+u_sym_toupper	0	complete	=$7                  toupper equ 7		0	07EEbuilt:2bytes,nofilewritten(pass-o<path>towriteone)	

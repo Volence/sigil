@@ -1,0 +1,16 @@
+> > > ref_tolower_float.asm(4):15: error #10000: internal error
+> > > 5.0
+> > >  dc.l tolower(5.0)
+> > >               ~~~
+fatal error, assembly terminated
+ASL_EXIT=3
+ASL_DIAG=unknown (ref_tolower_float.lst has no pass footer: the run died before
+  writing one, so whether asl finished its pass loop is unknowable
+  from the listing. Absence of the warning is NOT completeness.)
+REFUSED: asl exited 3, so this run FAILED.
+  NO BYTE COLUMN FROM THIS RUN IS A SOURCE OF VALUES, including the
+  lines that assembled: an error stops the pass loop, so every forward
+  reference is left at its unresolved pass-1 placeholder and the
+  listing prints them looking complete. See partial_failure.asm
+  beside asl_ref.sh, where one bad line leaves 6702 reading 67FE.
+  Fix the source, do not quote the listing.

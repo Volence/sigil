@@ -1,0 +1,2 @@
+    let x = if x & 1 == 1 { x >> 1 } else { x };
+    Some(if x == 0 { -1 } else { i64::from(x.trailing_zeros()) + 1 })

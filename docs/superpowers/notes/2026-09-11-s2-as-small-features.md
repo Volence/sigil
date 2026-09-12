@@ -416,6 +416,8 @@ commit changes no compiled path.
 - **The call-site chain for in-macro diagnostics** (BLOCKED, feature 6).
 - **`abs()`, `firstbit`, `bitcnt`, an unlexable parameter default**: asl accepts, sigil refuses
   loudly. No corpus uses them.
+  Closed 2026-09-12 for `abs()`, `firstbit` and `bitcnt`: see `2026-09-12-as-missing-builtins.md`.
+  The parameter default is still open (`AS-MACRO-DEFAULT-UNLEXABLE` in the gap ledger).
 - **A label defined in a macro body is visible outside the expansion in sigil, not in asl**
   (`m5_label_compose_ctl`): accept-more and silent; not a feature of this parcel.
 - **The CLI's failure line counts warnings as errors**: one error and one `shared` warning print
