@@ -56,6 +56,8 @@ n15_outer_dot_before_inner_read_after_file_inner asl=0 -                        
 n16_inner_label_directive_outer_dot_read_qualified asl=0 -                                5555333301044444 | sigil=1 unresolved symbol `Lx.y` for fixup in sectio -                OVER-REFUSE
 n17_outer_forward_dot_after_inner        asl=0 -                                6002333333344444 | sigil=0 -                                            6002333333344444 MATCH
 n18_outer_dot_after_inner_twice          asl=0 -                                3333010c33354444 | sigil=0 -                                            3333010c33354444 MATCH
+n19_outer_defined_own_dot_after_inner    asl=0 -                                22223333aaaa4444 | sigil=0 -                                            22223333aaaa4444 MATCH
+n20_outer_ifdef_own_dot_after_inner      asl=0 -                                22223333aaaa4444 | sigil=0 -                                            22223333aaaa4444 MATCH
 r01_file_rept_read_inner                 asl=0 -                                5555222200024444 | sigil=0 -                                            5555222200024444 MATCH
 r02_file_rept_read_base                  asl=2 error #1010: symbol undefined    -                | sigil=1 unresolved symbol `Base.b` for fixup in sect -                MATCH
 r03_macro_rept_read_inner                asl=0 -                                5555222200024444 | sigil=1 unresolved symbol `Inner.b` for fixup in sec -                OVER-REFUSE
@@ -98,4 +100,4 @@ v11_outer_label_dot_inner_reads_dot      asl=0 -                                
 v12_outer_label_inner_reads_dot_forward  asl=0 -                                3333010833344444 | sigil=1 unresolved symbol `Base.x` for fixup in sect -                OVER-REFUSE
 v13_body_label_reads_dot_file_inner_forward asl=0 -                                010a777788884444 | sigil=1 unresolved symbol `Base.x` for fixup in sect -                OVER-REFUSE
 v14_body_label_bind_dot_file_inner       asl=0 -                                5555222201044444 | sigil=1 unresolved symbol `Base.x` for fixup in sect -                OVER-REFUSE
-TOTAL 99 LEAK=26 MATCH=32 OVER-REFUSE=34 VALUE-DIFF=7
+TOTAL 101 LEAK=26 MATCH=34 OVER-REFUSE=34 VALUE-DIFF=7
