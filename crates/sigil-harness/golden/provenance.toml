@@ -11648,3 +11648,25 @@ full_crc = "8a378de6"
 full_size = 846509
 anchor_crc = "2859a5cf"
 anchor_end = 0xc14f4
+
+[entry.strict]
+outcome = "passed"
+sigil_rev = "3097dd0d353a30bf631422d0c8da30aaba1fbdc2"
+aeon_rev = "ec640bcf70e263167223a33d987d4661ff221b7e"
+strict_bodies = 29
+suites = 477
+passed = 5319
+failed = 0
+ignored = 2
+skips = 0
+ran_at = "unix:1789200833"
+expected_tests = ["a_reference_into_the_far_scratch_measures_abs_l_at_every_slot_ordinal", "zero_byte_sections_ahead_of_a_never_pinned_target_move_nothing"]
+
+[entry.strict.goldens]
+config_a = "a300dafc/846881"
+config_b = "06bad0ef/620727"
+demo = "1c7a34d3/96863"
+demo_debug = "72e405a5/103185"
+lean = "302ea1ee/773136"
+s4 = "91c46c94/820209"
+s4_debug = "8a378de6/846509"
