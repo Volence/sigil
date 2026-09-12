@@ -1068,6 +1068,19 @@ pair: `sigil` `49ecc532e0b133ab0eab9447e071805c`, `emit_sound_blob` `b1569c67cbd
 built from sigil `af35fa56` in a clean detached worktree (`tree: clean at capture`). The OUTGOING pair
 is kept at `~/sonic_hacks/.sigil-outgoing-135ba589/` with the swap instant beside it, copied aside
 BEFORE the rename, so this refresh is reversible with the original artifacts rather than a rebuild.
+**⚠ THE INSTALLED EMITTER CHANGED 2026-09-12T06:25:12Z, AND `b1569c67` ABOVE IS NO LONGER WHAT IS ON
+DISK.** On 2026-09-08 23:04:49 -0400 a cargo command in the main checkout relinked
+`target/release/emit_sound_blob` to `8d80a57809979d43fe8d7c3a0a9ded13` (embedded source path: the main
+checkout; HEAD `55b14261` by reflog; the command is unidentified), splitting the pair silently for three
+days. Repaired inside a hub-opened window on aeon's clear: the installed `emit_sound_blob` is now
+**`36ef302cbf5eeca693ecbf981ce8a53a`**, built from `af35fa56` INSIDE `.sigil-pin-af35fa56` (porcelain 0
+before and after, `--locked`) with target dir `~/sonic_hacks/.scratch/pair-reinstall/target`, build
+instant 2026-09-12T06:18:12Z. That is also the file's mtime, since `cp -p` kept it; the swap instant is
+the one in this heading. `sigil` stays `49ecc532...`, the original. It cannot match `b1569c67`: a
+same-revision rebuild of `sigil` from the same tree gave `4061cd32...`, so builds here do not reproduce
+md5s, and the hub ruled known source over a byte match. The outgoing `8d80a578` is kept at
+`~/sonic_hacks/.sigil-outgoing-8d80a578/` until aeon's four-shape re-check under the new emitter is
+green. **The next drift check compares against `36ef302c`.**
 **A SECOND REASON IT MUST SURVIVE, found 2026-09-11:** `native::load_frozen_table`
 (`crates/sigil-harness/src/native.rs:232`) opens `env!("CARGO_MANIFEST_DIR")/golden/offcanonical_sizes/`
 at RUN time, and every shape profile seeds its provisional section bases from it. `CARGO_MANIFEST_DIR`

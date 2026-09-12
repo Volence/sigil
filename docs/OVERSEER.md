@@ -937,7 +937,12 @@ not debug it live.** Keep the aside copy (`~/sonic_hacks/.sigil-outgoing-8d80a57
 re-check is green. At the swap, the reference file's STANDING ARTIFACTS record replaces `b1569c67` with
 `36ef302c`, `af35fa56`, the build instant and the target dir. OPEN still waits on aeon's push.
 
-Queue row `SHARED-PAIR-SPLIT-EMITTER`. Delete this block in the commit that records the swap.
+**SWAPPED 2026-09-12T06:25:12Z** inside the hub's window: emitter `36ef302c...` installed, `sigil`
+`49ecc532...` unchanged, pin worktree porcelain 0 before and after. The identity is recorded in
+`docs/OVERSEER-REFERENCE.md`, STANDING ARTIFACTS.
+
+Queue row `SHARED-PAIR-SPLIT-EMITTER`. Delete this block once aeon's four-shape re-check under the new
+emitter is green, or after restoring `8d80a578` if a shape moved.
 
 ## Standing cross-session obligations (2026-08-22)
 
