@@ -198,6 +198,11 @@ fn a_nested_body_label_moves_the_scope_of_every_body_it_returns_to() {
     builds("n16_inner_label_directive_outer_dot_read_qualified", "1111 5555 3333 0104 4444");
     builds("n17_outer_forward_dot_after_inner", "1111 5555 2222 6002 3333 3334 4444");
     builds("n18_outer_dot_after_inner_twice", "1111 5555 2222 3333 0106 2222 3333 010c 3335 4444");
+    // `defined(.y)` / `ifdef .y` ask the key ONCE, where an operand is keyed
+    // and then keyed again by the fold, so these two are what see the
+    // expansion's own `Inner.y` found by its whole name: TRUE, `$AAAA`.
+    builds("n19_outer_defined_own_dot_after_inner", "1111 5555 2222 3333 aaaa 4444");
+    builds("n20_outer_ifdef_own_dot_after_inner", "1111 5555 2222 3333 aaaa 4444");
 }
 
 /// A body label written inside a `rept` or `irp` iteration moves the scope the

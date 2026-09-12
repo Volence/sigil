@@ -47,6 +47,8 @@ n15_outer_dot_before_inner_read_after_file_inner	file `Inner:`/`.lp:`; outer bod
 n16_inner_label_directive_outer_dot_read_qualified	inner writes `Lx label *`; outer body then `.y:` and reads `Lx.y` in its body
 n17_outer_forward_dot_after_inner	outer calls inner (writes `Inner:`), then `bra.s .y` forward to its own `.y:`
 n18_outer_dot_after_inner_twice	outer (calls inner, then `.y:`) expanded twice; the second reads `.y` (no collision)
+n19_outer_defined_own_dot_after_inner	outer calls inner (writes `Inner:`), then `.y:`, then `if defined(.y)` in its body picks a word
+n20_outer_ifdef_own_dot_after_inner	outer calls inner (writes `Inner:`), then `.y:`, then `ifdef .y` in its body picks a word
 n13_three_deep	a calls b calls c, c writes `Deep:`; after a `.b := 2` read `Deep.b`
 r01_file_rept_read_inner	file-level `rept 1` / `Inner:`; after `.b := 2` read `Inner.b`
 r02_file_rept_read_base	file-level `rept 1` / `Inner:`; after `.b := 2` read `Base.b`

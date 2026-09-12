@@ -159,6 +159,14 @@ S("n17_outer_forward_dot_after_inner", "outer calls inner (writes `Inner:`), the
   BASE + INNER + "outer\tmacro\n\tinner\n\tbra.s\t.y\t; REF\n\tdc.w\t$3333\n.y:\tdc.w\t$3334\n\tendm\n\touter\n")
 S("n18_outer_dot_after_inner_twice", "outer (calls inner, then `.y:`) expanded twice; the second reads `.y` (no collision)",
   BASE + INNER + "outer\tmacro\n\tinner\n.y:\tdc.w\t$3333\n\tdc.w\t.y\n\tendm\n\touter\n\touter\n\tdc.w\t$3335\t; REF\n")
+S("n19_outer_defined_own_dot_after_inner",
+  "outer calls inner (writes `Inner:`), then `.y:`, then `if defined(.y)` in its body picks a word",
+  BASE + INNER + "outer\tmacro\n\tinner\n.y:\tdc.w\t$3333\n\tif\tdefined(.y)\t; REF\n\tdc.w\t$AAAA\n\telse\n"
+  "\tdc.w\t$BBBB\n\tendif\n\tendm\n\touter\n")
+S("n20_outer_ifdef_own_dot_after_inner",
+  "outer calls inner (writes `Inner:`), then `.y:`, then `ifdef .y` in its body picks a word",
+  BASE + INNER + "outer\tmacro\n\tinner\n.y:\tdc.w\t$3333\n\tifdef\t.y\t; REF\n\tdc.w\t$AAAA\n\telse\n"
+  "\tdc.w\t$BBBB\n\tendif\n\tendm\n\touter\n")
 S("n13_three_deep","a calls b calls c, c writes `Deep:`; after a `.b := 2` read `Deep.b`",
   BASE + "mc\tmacro\nDeep:\tdc.w\t$2222\n\tendm\nmb\tmacro\n\tmc\n\tendm\nma\tmacro\n\tmb\n\tendm\n"
   "\tma\n.b\t:=\t2\n\tdc.w\tDeep.b\t; REF\n")
