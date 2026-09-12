@@ -2321,19 +2321,69 @@ struct Measured {
 /// spread step to outgrow (the old rig could not even measure a single section grown
 /// past ~0x400).
 ///
-/// A ROM section with NO pin keeps the LEGACY far-scratch slot (`0x70_0000 +
-/// k·0x10_0000`): those are the sections outside the frozen table, and the far slot
-/// is what reproduces asl's conservative widths for references that touch them (asl
-/// encodes a forward reference abs.l; a near base would relax it abs.w and the
-/// chained layout would settle tighter than the golden shapes). The slot arithmetic
-/// is part of the frozen equilibrium the six byte gates prove — its own 24-bit alias
-/// hazard is a ledger row for the next refreeze, not a live measuring input, because
-/// every FROZEN-labeled section now measures at a real base in every round.
+/// A ROM section with NO pin measures at a FAR-SCRATCH slot ([`far_scratch_slot`], from
+/// [`SCRATCH_FIRST`] in steps of [`SCRATCH_STRIDE`]): those are the sections outside the
+/// frozen table, and the far slot is what reproduces asl's conservative widths for
+/// references that touch them (asl encodes a forward reference abs.l; a near base would
+/// relax it abs.w and the chained layout would settle tighter than the golden shapes).
+///
+/// A reference from a PINNED section into a never-pinned one takes its width from the
+/// slot its target draws, so the slot address is a live measuring input for the pinned
+/// sections as well. The slot a section draws is its ordinal among the never-pinned ROM
+/// sections, and any never-pinned section ahead of it shifts that ordinal, a zero-byte
+/// label-less one included (the `.emp` lowering opens one for a run of top-level items,
+/// such as an `ensure` after a file's last `section {}` block). Every slot is therefore
+/// one whose whole stride encodes abs.l on the 24-bit bus, so the ordinal decides no
+/// width and moves no section.
 fn measure_pinned(
     sections: &[Section],
     pin_lma: &[Option<u32>],
 ) -> Result<Measured, String> {
     lens_pinned(sections, pin_lma, true)
+}
+
+/// The first far-scratch slot address, above every ROM address a pinned section holds.
+const SCRATCH_FIRST: u32 = 0x0070_0000;
+
+/// The distance between consecutive far-scratch slots, and so the largest never-pinned
+/// section a slot holds without running into the next slot.
+const SCRATCH_STRIDE: u32 = 0x0010_0000;
+
+/// The first far-scratch slot at or above `from` whose whole stride encodes abs.l.
+///
+/// A slot's addresses reach the width choice through [`sigil_ir::asl_width_rule`], which
+/// masks to the 68000's 24-bit bus and selects abs.w in `[0, 0x7FFF]` and
+/// `[0xFF_8000, 0xFF_FFFF]`. The raw slot addresses climb past that wrap every 16 slots,
+/// and a slot whose masked range reaches either window would measure a reference into its
+/// section SHORT (abs.w) where every other slot measures it abs.l, so such a slot is
+/// skipped. The abs.w windows are the two ends of the 24-bit space, so a stride that does
+/// not straddle the wrap and whose first and last addresses both encode abs.l encodes
+/// abs.l throughout.
+fn far_scratch_slot(from: u32) -> Result<u32, String> {
+    let mut slot = from;
+    loop {
+        let first = slot as i64;
+        let last = first + SCRATCH_STRIDE as i64 - 1;
+        let one_wrap = first >> 24 == last >> 24;
+        if one_wrap
+            && sigil_ir::asl_width_rule(first, true) == sigil_ir::AbsWidth::L
+            && sigil_ir::asl_width_rule(last, true) == sigil_ir::AbsWidth::L
+        {
+            return Ok(slot);
+        }
+        slot = next_scratch(slot)?;
+    }
+}
+
+/// The raw far-scratch slot after `slot`. LOUD ON EXHAUSTION: a cursor that would pass
+/// the top of the address type is a refusal, never a wrap.
+fn next_scratch(slot: u32) -> Result<u32, String> {
+    slot.checked_add(SCRATCH_STRIDE).ok_or_else(|| {
+        format!(
+            "span pass: the far-scratch cursor ran out of 32-bit address space past {slot:#x}; \
+             there are more never-pinned ROM sections than it has slots"
+        )
+    })
 }
 
 /// [`measure_pinned`]'s body, shared with the checked form. `tolerate_overlap`
@@ -2348,7 +2398,7 @@ fn lens_pinned(
     tolerate_overlap: bool,
 ) -> Result<Measured, String> {
     let mut tagged: Vec<Section> = sections.to_vec();
-    let mut scratch: u32 = 0x0070_0000;
+    let mut scratch: u32 = SCRATCH_FIRST;
     for (i, s) in tagged.iter_mut().enumerate() {
         s.name = format!("{}\u{0}{i}", s.name);
         if is_rom_section(s) {
@@ -2359,12 +2409,13 @@ fn lens_pinned(
             match pin_lma.get(i) {
                 Some(Some(p)) => s.lma = *p,
                 _ => {
-                    s.lma = scratch;
+                    let slot = far_scratch_slot(scratch)?;
+                    s.lma = slot;
                     // keep vma tracking the scratch lma so labels don't leak a stale base
                     if s.vma_base.map(|v| v < 0x8000).unwrap_or(false) {
                         s.vma_base = None;
                     }
-                    scratch += 0x10_0000;
+                    scratch = next_scratch(slot)?;
                 }
             }
         }
@@ -6589,6 +6640,118 @@ mod derived_layout_tests {
             "games/sonic4/player/player_sensors.emp:202:17 (4 B -> 6 B)",
         ] {
             assert!(report.contains(needle), "missing {needle:?} in {report:?}");
+        }
+    }
+
+    // ── the far scratch at every slot ordinal: a never-pinned section measures at a
+    // scratch slot drawn by its ordinal among the never-pinned sections, so anything that
+    // shifts that ordinal (a zero-byte, label-less section the `.emp` lowering opens for a
+    // run of top-level items such as an `ensure` after a file's last `section {}` block)
+    // must decide no width and move no section.
+
+    /// A zero-byte, label-less ROM section: no label names it, so nothing can reference
+    /// it, and it emits nothing.
+    fn zero_byte_blob() -> Section {
+        Section {
+            name: "text".into(),
+            cpu: Cpu::M68000,
+            vma_base: None,
+            lma: 0,
+            labels: Vec::new(),
+            fragments: Vec::new(),
+            placement: SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
+            bank: None,
+            space: sigil_ir::AddressSpace::Image,
+            equ_syms: Vec::new(),
+        }
+    }
+
+    /// The largest count of zero-byte sections the two tests below put ahead of the
+    /// never-pinned target: its slot ordinal then runs 0..=41, which covers every ordinal
+    /// whose raw slot address is a multiple of 0x100_0000 (k = 9, 25 and 41), the ones a
+    /// 24-bit mask turns into 0x0.
+    const MAX_ZERO_BYTE_AHEAD: usize = 41;
+
+    /// A reference from a PINNED section into a NEVER-PINNED one takes its width from the
+    /// scratch slot the target measures at. `lea T, a0` with `T` in a never-pinned section
+    /// must measure the abs.l form, 6 bytes (opcode 0x41F9 and a 4-byte address), whatever
+    /// slot `T` draws: that is the width asl gives a reference whose target it cannot place,
+    /// and the reason the far scratch exists.
+    #[test]
+    fn a_reference_into_the_far_scratch_measures_abs_l_at_every_slot_ordinal() {
+        use super::measure_pinned;
+        for ahead in 0..=MAX_ZERO_BYTE_AHEAD {
+            let mut secs = vec![code_abs(L_CODE, HEAD, L_T)];
+            secs.extend((0..ahead).map(|_| zero_byte_blob()));
+            secs.push(data(L_T, 0, 0x10));
+            let mut pins = vec![Some(HEAD)];
+            pins.extend(std::iter::repeat_n(None, ahead + 1));
+            let m = measure_pinned(&secs, &pins).unwrap_or_else(|e| panic!("{e}"));
+            assert_eq!(
+                m.img[0],
+                6,
+                "`lea T, a0` measured {} B with T's never-pinned section at scratch ordinal {ahead} \
+                 (behind {ahead} zero-byte label-less sections): the far scratch must encode abs.l \
+                 (6 B) at every ordinal, or a pinned referrer's length depends on how many \
+                 never-pinned sections precede its target",
+                m.img[0]
+            );
+        }
+    }
+
+    /// THE PRINCIPLE, end to end: where a zero-byte item sits must not move any section.
+    /// `Head` (the anchor) | `Code` (`lea T, a0`) | `Next` | `Wide` (0x8000 bytes) | `T`, with
+    /// `T` outside the frozen table and `ahead` zero-byte label-less sections before it in
+    /// declaration order. Derived, and the same for every `ahead`: `Code` sits at
+    /// Head + 0x10 = 0x1010 and measures 6 B (T is never pinned, so the walk measures the
+    /// abs.l form, and T's real base is above $8000, where the form is abs.l anyway); `Next`
+    /// packs at 0x1016, `Wide` at 0x1026, `T` at 0x1026 + 0x8000 = 0x9026 (each head label
+    /// declares the 68000 word rule, 2). The declared-span pass, which measures every
+    /// section at its real base, must accept that layout.
+    #[test]
+    fn zero_byte_sections_ahead_of_a_never_pinned_target_move_nothing() {
+        use super::declared_spans_by_index;
+        // Five distinct heads, each a real WORD row of `section_align::DECLARED`.
+        const E_HEAD: &str = "Vectors";
+        const E_CODE: &str = "EntryPoint";
+        const E_NEXT: &str = "GameHeader";
+        const E_WIDE: &str = "BootData_PostBlob";
+        const E_T: &str = "GameLoop";
+        let code = HEAD + HEAD_LEN as u32; // 0x1010
+        let next = code + 6; // 0x1016
+        let wide = next + 0x10; // 0x1026
+        let t = wide + 0x8000; // 0x9026
+        for ahead in 0..=MAX_ZERO_BYTE_AHEAD {
+            let mut secs = vec![
+                data(E_HEAD, HEAD, HEAD_LEN),
+                code_abs(E_CODE, code, E_T),
+                data(E_NEXT, next, 0x10),
+                data(E_WIDE, wide, 0x8000),
+            ];
+            secs.extend((0..ahead).map(|_| zero_byte_blob()));
+            secs.push(data(E_T, 0, 0x10));
+            let last = secs.len() - 1;
+            let prov: Vec<Option<i64>> = secs.iter().map(|s| Some(s.lma as i64)).collect();
+            let mut labeled = vec![true; 4];
+            labeled.extend(std::iter::repeat_n(false, ahead + 1));
+            let order: Vec<String> =
+                [E_HEAD, E_CODE, E_NEXT, E_WIDE, E_T].iter().map(|s| s.to_string()).collect();
+            let mut w = Vec::new();
+            let bases = packed_true_bases(&secs, &prov, &labeled, &order, false, &head_only(), &mut w, &|_| None)
+                .unwrap_or_else(|e| panic!("{ahead} zero-byte sections ahead: the walk refused: {e}"));
+            let got = [bases[0], bases[1], bases[2], bases[3], bases[last]];
+            assert_eq!(
+                got,
+                [Some(HEAD), Some(code), Some(next), Some(wide), Some(t)],
+                "with {ahead} zero-byte label-less sections ahead of the never-pinned `{E_T}`, the \
+                 walk placed [Head, Code, Next, Wide, T] differently: a zero-byte section moved \
+                 the layout through the scratch slot `{E_T}` measured at"
+            );
+            declared_spans_by_index(&secs, &bases).unwrap_or_else(|e| {
+                panic!("{ahead} zero-byte sections ahead: the declared-span pass refused the walk's layout: {e}")
+            });
         }
     }
 }
