@@ -422,6 +422,7 @@ commit changes no compiled path.
   `assembly failed: 2 errors`; the same holds before this parcel for an author `warning`
   (`probes/cli_warn_count.asm`, baseline binary). It lives in `sigil-cli`'s `run_asm`, which
   another agent owns.
+  Closed 2026-09-12: see `2026-09-12-cli-failure-counts-warnings.md`.
 - **Sonic 1 and S3K argument texts** changed by feature 5 are unproven in bytes until those
   corpora reach an image.
 

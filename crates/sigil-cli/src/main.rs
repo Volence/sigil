@@ -420,19 +420,25 @@ fn run_asm(entry: &Entry, args: &[String]) {
     // no file and no line, the one thing a user needs first. Same map, same
     // renderer, so a front-end and a link diagnostic about the same source line
     // print the same way.
-    let (module, sources) = match sigil_frontend_as::assemble_root_located_warned(
+    // `shown` is what this run has put on stderr so far, by severity. It starts
+    // with the front end's warnings because a later stage's failure line counts
+    // them too: they are on stderr above that stage's errors, and a line that
+    // counted only the failing stage's list would report `1 error` over a
+    // stream holding a warning as well.
+    let (module, sources, shown) = match sigil_frontend_as::assemble_root_located_warned(
         std::path::Path::new(&input),
         &opts,
     ) {
         Ok(a) => {
             render_as_messages(&a.messages);
             render_as_warnings(&a);
-            (a.module, a.sources)
+            let shown = Shown::default().plus(&a.warnings);
+            (a.module, a.sources, shown)
         }
         Err(failure) => {
             render_as_messages(&failure.messages);
             render_as_diags(&failure);
-            fail_asm(failure.diags.len(), Stage::Frontend);
+            fail_asm(Shown::default().plus(&failure.diags), Stage::Frontend);
         }
     };
     // `resolve_layout` before `link`, which is what every other FINAL-link route
@@ -462,14 +468,14 @@ fn run_asm(entry: &Entry, args: &[String]) {
         Ok(secs) => secs,
         Err(diags) => {
             render_located_diags(&diags, &sources);
-            fail_asm(diags.len(), Stage::Layout);
+            fail_asm(shown.plus(&diags), Stage::Layout);
         }
     };
     let linked = match sigil_link::link(&resolved, &empty) {
         Ok(img) => img,
         Err(diags) => {
             render_located_diags(&diags, &sources);
-            fail_asm(diags.len(), Stage::Link);
+            fail_asm(shown.plus(&diags), Stage::Link);
         }
     };
     // The cartridge-window check before `flatten`, located against `resolved`
@@ -480,7 +486,7 @@ fn run_asm(entry: &Entry, args: &[String]) {
     let bounds = sigil_link::check_image_bounds(&linked, &resolved);
     if !bounds.is_empty() {
         render_located_diags(&bounds, &sources);
-        fail_asm(bounds.len(), Stage::Image);
+        fail_asm(shown.plus(&bounds), Stage::Image);
     }
     // With a `-p` or a `-z` the image is what p2bin makes of the same program:
     // only the bytes the program writes, each blob stored where its instruction
@@ -491,15 +497,19 @@ fn run_asm(entry: &Entry, args: &[String]) {
             Ok(image) => image,
             Err(diags) => {
                 render_located_diags(&diags, &sources);
-                fail_asm(diags.len(), Stage::Image);
+                fail_asm(shown.plus(&diags), Stage::Image);
             }
         }
     } else {
         match sigil_link::flatten(&linked, 0x00) {
             Ok(image) => image,
             Err(msg) => {
-                eprintln!("error: {msg}");
-                fail_asm(1, Stage::Image);
+                // Made a diagnostic so it is counted from the list it is printed
+                // from. It belongs to no source line, so it renders bare, as
+                // `error: <msg>`.
+                let diags = [unlocated_error(msg)];
+                render_located_diags(&diags, &sources);
+                fail_asm(shown.plus(&diags), Stage::Image);
             }
         }
     };
@@ -508,7 +518,7 @@ fn run_asm(entry: &Entry, args: &[String]) {
     // one shape. Its write failure is already on stderr; ending the run is left
     // here so it goes through `fail_asm` like every other failure on this route.
     if emit_image(&image, output.as_deref(), hex).is_err() {
-        fail_asm(1, Stage::Image);
+        fail_asm(shown.plus_printed_error(), Stage::Image);
     }
 }
 
@@ -608,12 +618,13 @@ fn render_as_messages(messages: &[String]) {
 /// the count, added unclassified rows, and made every stored baseline
 /// incomparable, to fix a log nobody had to keep.
 ///
-/// The count is the diagnostics this route rendered, so it is derived from the
-/// list that was printed rather than tallied separately and left to drift.
+/// `shown` is every diagnostic this run put on stderr, counted by severity from
+/// the lists that were printed rather than tallied separately and left to drift.
+/// The line it becomes is [`failure_line`].
 ///
 /// `stopped_at` names the stage that failed, so the run can say which stages did
 /// NOT run. See [`Stage`] for why that line exists.
-fn fail_asm(errors: usize, stopped_at: Stage) -> ! {
+fn fail_asm(shown: Shown, stopped_at: Stage) -> ! {
     // Before the count rather than after it, so the failure line stays the LAST
     // thing on stdout. That is the F8 property this function was written for
     // (`asm_failure_line.rs` pins it by reading the last line), and a caveat
@@ -624,9 +635,73 @@ fn fail_asm(errors: usize, stopped_at: Stage) -> ! {
             stopped_at.name()
         );
     }
-    let noun = if errors == 1 { "error" } else { "errors" };
-    println!("assembly failed: {errors} {noun} (reported on stderr)");
+    println!("{}", failure_line(shown));
     process::exit(1);
+}
+
+/// The diagnostics a failed `sigil <root.asm>` run has put on stderr, one count
+/// per severity, for [`fail_asm`]'s closing line.
+///
+/// Each severity keeps its own count because a warning does not fail the run
+/// (asl exits 0 over one), so a line that counted it as an error would name a
+/// cause of the failure that is not one. asl's own footer keeps them apart too,
+/// `1 error` and `2 warnings` on separate lines.
+#[derive(Clone, Copy, Default, Debug, PartialEq, Eq)]
+struct Shown {
+    errors: usize,
+    warnings: usize,
+    notes: usize,
+}
+
+impl Shown {
+    /// `self` plus every diagnostic in `diags`, each under its own level.
+    ///
+    /// The match is exhaustive on purpose: a severity added to
+    /// [`Level`](sigil_span::Level) stops this compiling rather than being
+    /// counted as whichever arm a wildcard happened to name.
+    fn plus(mut self, diags: &[sigil_span::Diagnostic]) -> Shown {
+        for d in diags {
+            match d.level {
+                sigil_span::Level::Error => self.errors += 1,
+                sigil_span::Level::Warning => self.warnings += 1,
+                sigil_span::Level::Note => self.notes += 1,
+            }
+        }
+        self
+    }
+
+    /// `self` plus one error a callee printed itself without handing back a
+    /// diagnostic: [`emit_image`]'s `error: cannot write` line.
+    fn plus_printed_error(self) -> Shown {
+        Shown { errors: self.errors + 1, ..self }
+    }
+}
+
+/// The closing stdout line of a failed `sigil <root.asm>` run.
+///
+/// `assembly failed: 1 error, 2 warnings (reported on stderr)`. The error count
+/// is always there, the warning and note counts only when they are not zero, so
+/// a run with no warning reads `assembly failed: 1 error (reported on stderr)`.
+///
+/// Every failure exit on this route carries at least one error: each front-end
+/// `Failure` holds a `Level::Error`, and every list the later stages hand back
+/// is built of errors only. A zero is therefore a sigil defect, not a program's,
+/// and the line says so rather than leaving a reader to conclude that the
+/// warnings it names are what failed the build.
+fn failure_line(shown: Shown) -> String {
+    let count = |n: usize, word: &str| format!("{n} {word}{}", if n == 1 { "" } else { "s" });
+    let mut parts = vec![count(shown.errors, "error")];
+    if shown.warnings != 0 {
+        parts.push(count(shown.warnings, "warning"));
+    }
+    if shown.notes != 0 {
+        parts.push(count(shown.notes, "note"));
+    }
+    let mut line = format!("assembly failed: {} (reported on stderr)", parts.join(", "));
+    if shown.errors == 0 {
+        line.push_str("; a failure with no error is a sigil defect, please report it");
+    }
+    line
 }
 
 /// The stages [`run_asm`] runs, in order, for the sake of naming the ones a
@@ -3242,6 +3317,61 @@ mod tests {
         );
         let blob = std::fs::read(dir.join("blob.bin")).expect("read blob.bin");
         assert_eq!(image.expect("image bytes"), blob);
+    }
+
+    /// `Shown::plus` counts each diagnostic under its own level. Three levels at
+    /// three different counts, so a swap of any two arms changes the answer.
+    #[test]
+    fn shown_counts_each_severity_under_its_own_name() {
+        use sigil_span::{Diagnostic, Level, SourceId, Span};
+        let at = Span { source: SourceId(0), start: 0, end: 0 };
+        let d = |level| Diagnostic { level, message: String::new(), primary: at };
+        let diags = [
+            d(Level::Warning),
+            d(Level::Note),
+            d(Level::Error),
+            d(Level::Note),
+            d(Level::Warning),
+            d(Level::Note),
+        ];
+        assert_eq!(
+            crate::Shown::default().plus(&diags),
+            crate::Shown { errors: 1, warnings: 2, notes: 3 }
+        );
+        assert_eq!(
+            crate::Shown { errors: 4, warnings: 0, notes: 0 }.plus(&diags).plus_printed_error(),
+            crate::Shown { errors: 6, warnings: 2, notes: 3 },
+            "plus accumulates onto what the run had already shown"
+        );
+    }
+
+    /// The failure line's wording at every shape a count can take: no warning,
+    /// warnings, notes, and a zero error count, which no failure exit produces
+    /// today and which the line names as a sigil defect if one ever does.
+    #[test]
+    fn failure_line_names_each_severity_and_flags_a_failure_with_no_error() {
+        use crate::{failure_line, Shown};
+        assert_eq!(
+            failure_line(Shown { errors: 1, warnings: 0, notes: 0 }),
+            "assembly failed: 1 error (reported on stderr)"
+        );
+        assert_eq!(
+            failure_line(Shown { errors: 1, warnings: 2, notes: 0 }),
+            "assembly failed: 1 error, 2 warnings (reported on stderr)"
+        );
+        assert_eq!(
+            failure_line(Shown { errors: 2, warnings: 1, notes: 0 }),
+            "assembly failed: 2 errors, 1 warning (reported on stderr)"
+        );
+        assert_eq!(
+            failure_line(Shown { errors: 3, warnings: 0, notes: 1 }),
+            "assembly failed: 3 errors, 1 note (reported on stderr)"
+        );
+        assert_eq!(
+            failure_line(Shown { errors: 0, warnings: 2, notes: 0 }),
+            "assembly failed: 0 errors, 2 warnings (reported on stderr); a failure with no \
+             error is a sigil defect, please report it"
+        );
     }
 
     /// The `-D` value parser's accepted forms (decimal incl. negative, `$hex`,
