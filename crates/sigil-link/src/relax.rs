@@ -209,11 +209,33 @@ fn final_size(sec: &Section, rungs: &[usize]) -> u32 {
 /// check keys on THIS, not `final_size`: it must match what `flatten` places,
 /// in both directions.
 fn image_final_size(sec: &Section, rungs: &[usize]) -> u32 {
+    image_replay(sec, rungs).extent
+}
+
+/// What one replay of a section's image cursor finds (see [`image_final_size`]
+/// for the rules the replay follows).
+struct ImageReplay {
+    /// The image extent: the highest offset any byte reaches.
+    extent: u32,
+    /// Where the write cursor stands when the section ends, as an offset from
+    /// its start.
+    end_cursor: u32,
+    /// The last `org` seek in the section, if it holds one.
+    last_org: Option<Span>,
+}
+
+/// The image-cursor replay behind [`image_final_size`], also reporting where the
+/// cursor ends and the last `org` that moved it.
+fn image_replay(sec: &Section, rungs: &[usize]) -> ImageReplay {
     let mut cursor: u32 = 0;
     let mut max_extent: u32 = 0;
+    let mut last_org: Option<Span> = None;
     for (fi, frag) in sec.fragments.iter().enumerate() {
         match frag {
-            Fragment::Org { target, .. } => cursor = *target,
+            Fragment::Org { target, span, .. } => {
+                cursor = *target;
+                last_org = Some(*span);
+            }
             // Advances the write cursor without EXTENDING the image: a
             // reservation with bytes after it inside one section is materialised
             // by whatever writes next (so those bytes reach `max_extent` through
@@ -230,7 +252,16 @@ fn image_final_size(sec: &Section, rungs: &[usize]) -> u32 {
             max_extent = cursor;
         }
     }
-    max_extent
+    ImageReplay { extent: max_extent, end_cursor: cursor, last_org }
+}
+
+/// Where `sec`'s write cursor stands when the section ends, as an offset from
+/// its start, and the last `org` in it; `None` when it holds no `org`. The
+/// cursor is inside the section's bytes exactly when it is below the image
+/// extent; [`overlap_diag`] gets that from the overlap itself.
+fn end_cursor_after_org(sec: &Section, rungs: &[usize]) -> Option<(u32, Span)> {
+    let replay = image_replay(sec, rungs);
+    replay.last_org.map(|org| (replay.end_cursor, org))
 }
 
 /// The link-time placement pass (R7p.2). Walk sections in vec order with a cursor
@@ -376,6 +407,14 @@ fn bank_diag(placed: &[Section], rungs: &[Vec<usize>]) -> Option<Diagnostic> {
 /// extent, and a pin landing inside it is a real collision this must name —
 /// `a_reservation_inside_a_section_counts_toward_its_overlap_extent`.
 ///
+/// One pair is located elsewhere: a section and the next one holding bytes, when
+/// that next one begins exactly where an `org` inside the first left its write
+/// cursor, inside bytes the first already holds, when it ended. The AS front end
+/// pins the code after such a section at that cursor, where asl binds its labels
+/// (`close_section`), and asl writes its bytes over the tail. The diagnostic is
+/// located at that `org` and says so, because the first section's first line can
+/// be any distance from it.
+///
 /// The scan is per address space ([`sigil_ir::AddressSpace`]): two ranges
 /// collide only when both sections are in the same space. A Z80 driver
 /// assembled at Z80 `$0` and the 68000 vector table at ROM `$0` share a number,
@@ -383,10 +422,10 @@ fn bank_diag(placed: &[Section], rungs: &[Vec<usize>]) -> Option<Diagnostic> {
 /// [`foreign_space_diags`], never reported as a collision with whichever image
 /// section happens to sit at its address.
 fn overlap_diag(placed: &[Section], rungs: &[Vec<usize>]) -> Option<Diagnostic> {
-    // Collect (start, end, name, span, space) for every non-empty section, then
-    // scan every pair. O(n²), but n is the section count (small), and this runs
-    // once at convergence, not per pass.
-    let ranges: Vec<(u32, u32, &str, Span, sigil_ir::AddressSpace)> = placed
+    // Collect (start, end, name, span, space, section index) for every non-empty
+    // section, then scan every pair. O(n²), but n is the section count (small),
+    // and this runs once at convergence, not per pass.
+    let ranges: Vec<(u32, u32, &str, Span, sigil_ir::AddressSpace, usize)> = placed
         .iter()
         .enumerate()
         .filter_map(|(si, sec)| {
@@ -401,13 +440,13 @@ fn overlap_diag(placed: &[Section], rungs: &[Vec<usize>]) -> Option<Diagnostic> 
             });
             // Saturating: an out-of-window section reaches this scan before
             // `check_image_bounds` names it, and this scan must not abort first.
-            Some((sec.lma, sec.lma.saturating_add(size), sec.name.as_str(), span, sec.space))
+            Some((sec.lma, sec.lma.saturating_add(size), sec.name.as_str(), span, sec.space, si))
         })
         .collect();
     for i in 0..ranges.len() {
         for j in (i + 1)..ranges.len() {
-            let (a_lo, a_hi, a_name, a_span, a_space) = ranges[i];
-            let (b_lo, b_hi, b_name, _, b_space) = ranges[j];
+            let (a_lo, a_hi, a_name, a_span, a_space, a_si) = ranges[i];
+            let (b_lo, b_hi, b_name, _, b_space, _) = ranges[j];
             // An address locates bytes only within its own space.
             if a_space != b_space {
                 continue;
@@ -420,6 +459,25 @@ fn overlap_diag(placed: &[Section], rungs: &[Vec<usize>]) -> Option<Diagnostic> 
                         format!("a second {} address space", cpu_name(cpu))
                     }
                 };
+                // The section that holds bytes next after `a` begins exactly
+                // where an `org` inside `a` left `a`'s write cursor when `a`
+                // ended. It overlaps `a`, so that cursor is inside bytes `a`
+                // already holds: the code after `a`'s end continued from it.
+                // The line to show is that `org`, since the first line of `a`
+                // can be any distance from it.
+                if j == i + 1 {
+                    if let Some((cursor, org)) = end_cursor_after_org(&placed[a_si], &rungs[a_si]) {
+                        if b_lo == a_lo.saturating_add(cursor) {
+                            return Some(Diagnostic {
+                                level: Level::Error,
+                                message: format!(
+                                    "sections `{a_name}` [{a_lo:#X}, {a_hi:#X}) and `{b_name}` [{b_lo:#X}, {b_hi:#X}) overlap in {place}: this `org` left the write position at {b_lo:#X}, inside bytes already written up to {a_hi:#X}, when its section ended, and `{b_name}` was placed there (asl writes the later bytes over the earlier ones; sigil refuses the overlap)"
+                                ),
+                                primary: org,
+                            });
+                        }
+                    }
+                }
                 return Some(Diagnostic {
                     level: Level::Error,
                     message: format!(

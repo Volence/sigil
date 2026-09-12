@@ -7,13 +7,19 @@
 #   census-prepare.sh <sigil-worktree> <work-dir> <sigil-rev>
 #
 # 1. `git archive <sigil-rev>` -> <work-dir>/instr-src, instrument.py over it,
-#    `cargo build --release --bin sigil` into <sigil-worktree>/target/instr.
+#    `cargo build --release --bin sigil` into <sigil-worktree>/target/instr-<sha>,
+#    <sha> the short commit <sigil-rev> names. One target directory per commit:
+#    two archive copies built into ONE directory share cargo's unit names, and
+#    cargo can judge a crate of the second copy fresh from the first copy's
+#    build. Measured: a build of `c5a2564d` after one of `8f5e03c3` in a shared
+#    `target/instr` recompiled sigil-frontend-as, sigil-harness and sigil-cli but
+#    not sigil-link, and the binary ran `8f5e03c3`'s linker.
 # 2. `git archive HEAD` of s1disasm, s2disasm, skdisasm -> <work-dir>/{s1,s2,sk},
 #    then the repo's scripts/corpus-prepare.sh over each copy.
 # 3. The two skdisasm wrapper roots (Sonic3_Complete = 0 and = 1).
 #
 # Then run:
-#   census.sh <sigil-worktree>/target/instr/release/sigil <out-dir> \
+#   census.sh <sigil-worktree>/target/instr-<sha>/release/sigil <out-dir> \
 #     s1=<work-dir>/s1:sonic.asm s2=<work-dir>/s2:s2.asm sk=<work-dir>/sk:sonic3k.asm \
 #     sk0=<work-dir>/sk:wrap_sk0.asm sk1=<work-dir>/sk:wrap_sk1.asm
 set -euo pipefail
@@ -31,8 +37,9 @@ mkdir -p "$WORK/instr-src" "$WORK/s1" "$WORK/s2" "$WORK/sk"
 git -C "$WT" archive --format=tar -o "$WORK/instr-src.tar" "$REV"
 tar -xf "$WORK/instr-src.tar" -C "$WORK/instr-src"
 python3 "$HERE/instrument.py" "$WORK/instr-src"
-(cd "$WORK/instr-src" && CARGO_TARGET_DIR="$WT/target/instr" cargo build --release --bin sigil)
-md5sum "$WT/target/instr/release/sigil"
+SHA="$(git -C "$WT" rev-parse --short "$REV^{commit}")"
+(cd "$WORK/instr-src" && CARGO_TARGET_DIR="$WT/target/instr-$SHA" cargo build --release --bin sigil)
+md5sum "$WT/target/instr-$SHA/release/sigil"
 
 for pair in s1:s1disasm s2:s2disasm sk:skdisasm; do
     short="${pair%%:*}"; repo="${pair#*:}"

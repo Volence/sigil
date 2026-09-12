@@ -1133,10 +1133,12 @@ struct SectionOpen {
 /// the code after it.
 ///
 /// A section with image content that lands in a second space by consuming an
-/// `org` is `Pinned` at its `lma`, which is its address in that space. A seek
-/// back that its section closes behind leaves no `org` to pin it, and a
-/// `Chained` section would be packed after the image section before it. Such a
-/// section is always refused at link, so the pin changes no accepted image.
+/// `org` is `Pinned` at its `lma`, which is its address in that space. The next
+/// section the builder opens after a re-base is pinned already (the `org` arms
+/// of `directive_org`, and `close_section` for a seek back its section closes
+/// behind); this pin also covers the first section WITH CONTENT when an empty
+/// one opened first. A section outside the image that holds bytes is refused at
+/// link.
 fn assign_address_spaces(sections: &mut [sigil_ir::Section], opens: &[SectionOpen]) {
     assert_eq!(
         sections.len(),
@@ -6578,9 +6580,15 @@ impl Asm {
             // section a physical counter pointing back into bytes already
             // written: the `org` seek that put the cursor there re-based the
             // counter, exactly as an `org` that left the section would have.
+            // The next section's labels are bound at that counter, so it is
+            // `Pinned` there too. `Chained`, the placer would pack its bytes
+            // after this section's extent instead, away from its labels. Where
+            // its bytes land on this section's tail, `relax`'s overlap check
+            // refuses the program at the seek; asl writes them over the tail.
             if self.builder.current_offset() < self.builder.extent() {
                 if let Some(seek) = self.last_seek {
                     self.rebased_at = Some(seek);
+                    self.builder.pin_next_section();
                 }
             }
             self.phys_base += self.builder.current_offset();
@@ -6977,8 +6985,9 @@ impl Asm {
     ///   linker refuses the section as having no ROM placement, at this line.
     ///
     /// A seek that is still pointing back when its section closes re-bases the
-    /// counter too (`close_section` records it), which is the same driver entry
-    /// when the section open at `!org 0` itself begins at 0.
+    /// counter too, and pins the next section at it (`close_section` does both),
+    /// which is the same driver entry when the section open at `!org 0` itself
+    /// begins at 0.
     fn directive_org(&mut self, rest: &[Token], span: Span) {
         // The location counter stops being a running total of what has been
         // emitted here, so two points either side of this line are not separated
