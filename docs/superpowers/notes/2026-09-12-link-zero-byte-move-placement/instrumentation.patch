@@ -1,0 +1,44 @@
+diff --git a/crates/sigil-harness/src/native.rs b/crates/sigil-harness/src/native.rs
+index b23d1568..b60ee5c7 100644
+--- a/crates/sigil-harness/src/native.rs
++++ b/crates/sigil-harness/src/native.rs
+@@ -2380,6 +2380,39 @@ fn lens_pinned(
+     })?;
+     let mut img = vec![0u32; sections.len()];
+     let mut sites = vec![Vec::new(); sections.len()];
++    if let Ok(path) = std::env::var("ZBM_DUMP") {
++        use std::io::Write as _;
++        let mut f = std::fs::OpenOptions::new().create(true).append(true).open(&path).unwrap();
++        let _ = writeln!(f, "=== lens_pinned tolerate_overlap={tolerate_overlap} n={}", sections.len());
++        for s in &resolved {
++            if let Some(idx) = s.name.rsplit('\u{0}').next().and_then(|t| t.parse::<usize>().ok()) {
++                if is_rom_section(s) {
++                    let head = head_label(&sections[idx]).unwrap_or("-");
++                    let pinned = matches!(pin_lma.get(idx), Some(Some(_)));
++                    let _ = writeln!(
++                        f,
++                        "{idx} {} head={head} lma={:#x} img={:#x} pinned={pinned} nfrag={}",
++                        sections[idx].name, s.lma, s.image_len(), sections[idx].fragments.len()
++                    );
++                    let watched = ["ojz_scroll_test", "vblank", "parallax", "page_in", "page_cache"];
++                    if watched.contains(&sections[idx].name.as_str())
++                        && s.fragments.len() == sections[idx].fragments.len()
++                    {
++                        for (before, after) in sections[idx].fragments.iter().zip(&s.fragments) {
++                            if is_relaxable(before) {
++                                let sp = fragment_span(before);
++                                let _ = writeln!(
++                                    f,
++                                    "  SITE {} src={} start={} len={}",
++                                    sections[idx].name, sp.source.0, sp.start, fragment_len(after)
++                                );
++                            }
++                        }
++                    }
++                }
++            }
++        }
++    }
+     for s in &resolved {
+         if let Some(idx) = s.name.rsplit('\u{0}').next().and_then(|t| t.parse::<usize>().ok()) {
+             if is_rom_section(s) {

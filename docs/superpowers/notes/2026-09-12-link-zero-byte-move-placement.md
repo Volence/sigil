@@ -254,3 +254,140 @@ sonic4 shapes the first moved label is the one after `vblank`, consistent with t
 measured at `cae58661` in section 3 (`vblank.emp:503` `jbsr PageIn_Process`, 4 B at the
 alias, 6 B far); in both demo shapes it is the one after `tile_cache`, consistent with a
 far reference into `page_cache`.
+
+### Record (the committed fix `78b084c3`, binaries built from a clean tree)
+
+All builds are canonical `./build.sh` (the pytest lane included) unless marked FAST. Unfixed
+means sigil `dec6dcb0`.
+
+| shape | (a) `cae58661`, unfixed | (b) `cae58661`, fixed | (c) `.aeon-sigil-ref` (`ec640bcf`), fixed | tip entry `ls12-parallax-discards-refused` |
+|---|---|---|---|---|
+| s4 | `8FBE85E7` 821103 | `3D5B04CB` 821103, MOVED | `91c46c94` 820209, MOVED (-20 B) | `b09ccd65` 820229 |
+| s4.debug | `07343B59` 847367 | `97162DF6` 847367, MOVED | `8a378de6` 846509, MOVED (-20 B) | `1b7fe316` 846529 |
+| demo | `F7FDF77D` 97051 | `5BE17CB0` 97051, MOVED | `1c7a34d3` 96863, MOVED (same size) | `0ad17404` 96863 |
+| demo.debug | `FF11E22D` 103335 | `50C8221C` 103335, MOVED | `72e405a5` 103185, MOVED (same size) | `2565ece2` 103185 |
+
+Every build exited 0. Arm (a)'s canonical ROMs equal its FAST ROMs (section 1), and arm (c)
+equals the probe. `.aeon-sigil-ref`'s prepared artifacts (the four ROMs and listings, `tags`,
+`engine/debug/generated/`, and `engine/sound/generated/` via the unfixed `emit_sound_blob`)
+were restored after arm (c), and the four restored ROMs re-check to the tip CRCs.
+
+**Moved sections** (every boundary label of the shape's frozen size table, before and after;
+`sectdiff.py`). Arms (b) and (c) name the same sections with the same deltas, except the
+s4.debug tail (+10 on `cae58661`, +12 on `ec640bcf`):
+
+- **s4** (25 of 68 moved): +2 from `HBlank_Install` through `Level_LoadArt` (`HBlank_Install`,
+  `Read_Controllers`, `GameLoop`, `S4LZ_DecompressDict`, `GetSineCosine`, `Perform_DPLC`,
+  `InitObjectRAM`, `InitSpriteSystem`, `AnimateSprite`, `TouchResponse`, `RingBuffer_Add`,
+  `Collected_Init`, `PopulateSpawnedPieceCount`, `Load_Object`, `Plane_Buffer_Reset`,
+  `Tile_Cache_GetTile`, `Collision_GetType`, `Collision_ProbeDown`, `Section_Init`,
+  `Camera_Init`, `Parallax_Init`, `Level_LoadArt`); +10 for `BG_Init`, `BgAnim_Init`,
+  `Sound_PostByte`.
+- **s4.debug** (27 of 80 moved): the same +2 run; then `BG_Init`, `BgAnim_Init`,
+  `CompressionSelfTest`, `CSelf_S4LZ_Plain`, `Sound_PostByte` at +10 (b) / +12 (c).
+- **demo** (7 of 39 moved): +8 for `Collision_GetType`, `Section_Init`, `Camera_Init`,
+  `Parallax_Init`, `Level_LoadArt`; +20 for `BG_Init`, `BgAnim_Init`.
+- **demo.debug** (9 of 41 moved): +10 for the same five; +22 for `BG_Init`, `BgAnim_Init`,
+  `CompressionSelfTest`, `CSelf_S4LZ_Plain`.
+
+Nothing past those runs moves (`EndOfRom` and every later boundary is unchanged): the growth
+is absorbed before the next declared anchor.
+
+### The principle, on the real tree
+
+FAST, fixed `78b084c3`, pristine `cae58661` against the red `boot_data.emp`:
+
+| shape | pristine | red | |
+|---|---|---|---|
+| s4 | exit 0, `3D5B04CB` 821103 | exit 0, `3D5B04CB` 821103 | identical |
+| s4.debug | exit 0, `97162DF6` 847367 | exit 0, `97162DF6` 847367 | identical (was the overlap) |
+| demo | exit 0, `5BE17CB0` 97051 | exit 0, `5BE17CB0` 97051 | identical |
+| demo.debug | exit 0, `50C8221C` 103335 | exit 0, `50C8221C` 103335 | identical |
+
+With the fix, where the zero-byte `ensure` sits changes no byte of any shape. This is also
+the measurement section 3 named for the "only the alias" inference: nothing else carried the
+extra section's ordinal into a width.
+
+## 6. Suite
+
+`CARGO_TARGET_DIR=<scratch> AEON_DIR=.aeon-sigil-ref SIGIL_STRICT_GATE=1 cargo test --release
+--workspace --no-fail-fast`, stamped `HEAD=93bfb0645bef` (this branch, clean), aeon
+`ec640bcf`, 02:43:26 to 02:49:33, exit 101, END marker present. Whole-log totals: **477 `test
+result:` lines, 5286 passed, 29 failed, 2 ignored; 464 test binaries run; 11 targets failed.**
+It overlapped the repro-tree record run on the other tree (load); no failure below is
+load-shaped, since each names a moved byte or a stale table.
+
+28 of the 29 are byte, frozen-table or pin gates, all expected red for a byte-moving layout
+change:
+
+- full-image or anchor CRC against a frozen golden: `a_passing_extra_entry_moves_no_bytes`
+  (820209 against 820229), `both_spellings_of_the_section_row_build_the_same_rom`,
+  `config_a_anchor_matches_golden`, `config_b_anchor_matches_golden`,
+  `config_b_doctored_size_table_moves_no_bytes` (its undoctored control),
+  `demo_debug_anchor_matches_golden`, `demo_plain_anchor_matches_golden`,
+  `demo_debug_full_file`, `demo_plain_full_file`, `flipped_config_a_anchor_matches_golden`,
+  `lean_anchor_matches_golden`;
+- against the reference tree's built ROMs: `declared_chain_debug`, `declared_chain_plain`,
+  `native_full_sonic4_debug`, `native_full_sonic4_plain`, `native_rom_debug`,
+  `native_rom_plain`;
+- against the committed frozen size tables: `config_a_full_file`, `config_b_full_file`,
+  `lean_full_file` (each "`GameLoop` resolved to X, size table says X - 2"),
+  `config_a_size_table_rederives_native`, `config_b_size_table_rederives_native`,
+  `demo_size_table_rederives_native`, `demo_debug_size_table_rederives_native`,
+  `lean_size_table_rederives_native`, `config_b_frozen_placement_exact`,
+  `deform_pointer_equals_placed_label_vma`;
+- against `src/pins.rs`: `pins_rs_is_current`.
+
+The config_a, config_b and lean shapes move as well (their gates above), which this parcel
+did not otherwise measure.
+
+`deform_pointer_equals_placed_label_vma` failed on its FIRST assertion (the frozen-table
+placement check), so its fold check (the emitted `dc.l DeformTable_Zero` against the placed
+label) was **not reached and is UNMEASURED under the fix**, not passed.
+
+The 29th, `m1b_gate::oracle_loadfromaslisting_resolves_emit_listing`, refused because
+`ORACLE_DIR` was not named ("NO REFERENCE TREE IS NAMED ... DECLINED to use
+/home/volence/sonic_hacks/oracle-old"): an environment gap in the brief, not this parcel.
+Re-run alone with `ORACLE_DIR=/home/volence/sonic_hacks/oracle-old` (03:09:01 to 03:09:02):
+`m1b_gate` 5 passed, 0 failed.
+
+## 7. Open, and why
+
+- **Landing is a byte decision, not made here.** The fix moves every shipped shape
+  (section 5), so it needs the refreeze a byte-changing parcel carries: the provenance entry,
+  the frozen size tables, `pins.rs`, the full-image CRC gates, and aeon's own goldens if it
+  pins any. Per the brief this parcel commits the fix, reports the moves and stops; nothing
+  was repinned and no golden was touched.
+- **The far-scratch cursor itself stays.** The campaign gap ledger's BGROOM-3 row keeps its
+  kill condition (pin the un-frozen sections, then measure them at real bases and delete the
+  cursor), which is R2's ruled remedy. This parcel closes only the alias half; the row is
+  amended, not closed.
+- **The trailing-`ensure` section stays.** The `.emp` lowering still opens a zero-byte `text`
+  section for a top-level item after a file's last `section {}` block. After the fix it moves
+  nothing; removing it would itself shift every later never-pinned ordinal.
+- **Not measured:** which relaxable site moves on the reference tree (inferred from the first
+  moved label, section 5); the deform-pointer fold check under the fix (section 6); runtime
+  behaviour of any moved ROM (no emulator was used, by rule; the moved layouts are the same
+  code at shifted addresses, tagged for the controller).
+
+## 8. What the brief and the report got wrong
+
+- **"No emitted byte changed"** (aeon's commit message): true of the `dc.b` byte, false of the
+  image. The move relocated 1157 labels in plain sonic4 and 1059 in plain demo; only the
+  debug shape was loud about it.
+- **The trigger is the `ensure`, not the const or the forward reference**, and not
+  `boot_head`: `ensure(1 == 1, "zbm")` alone reproduces the red, and the const alone is
+  byte-identical to the control.
+- **Hypothesis 1, frozen-table seeding** (`native::load_frozen_table`): not involved. The
+  frozen table only decides which sections are pinned; it did not change between the runs.
+- **Hypothesis 2, an extra resolution pass for a forward reference**: refuted by
+  `v_const_end`.
+- **The recipe's open call** (remove constants.emp's copy or not): both work; its presence is
+  irrelevant (`v_ensure_end` keeps it and is red). The faithful form removes it.
+- **The second arm at sigil `af35fa56`** was not needed: the red reproduces at this branch's
+  base `dec6dcb0`.
+- **The brief's environment** omitted `ORACLE_DIR`, which one suite test requires
+  (section 6).
+- **The `measure_pinned` doc's reasoning** ("its own 24-bit alias hazard is ... not a live
+  measuring input, because every FROZEN-labeled section now measures at a real base in every
+  round"): wrong in the direction that mattered, and now rewritten to describe the function.
