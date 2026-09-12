@@ -241,6 +241,22 @@
 #     one is ${pipestatus[1]}. A wrapper's exit code is a claim about a process, never
 #     about a suite.
 #
+#     A THIRD CAUSE, oracle again, the next session (oracle origin/main 4392a74): the
+#     harness reported "completed (exit code 0)" for a land script that died **127 on a
+#     WRONG PATH** (`./land.sh` where the script is `tools/land.sh`) and ran ZERO gates.
+#     Three distinct causes in three consecutive sessions, and this one breaks the rule
+#     as first written here. "Read the log's verdict line" ASSUMES A LOG WITH A VERDICT
+#     IN IT. **A run that never started leaves no verdict line at all, and an ABSENT
+#     verdict must read as RED, never as missing information.** Absence is the class:
+#     a command that failed and a command that found nothing produce the same output.
+#
+#     So do not read the log by eye. Run `scripts/check_landing_log.py <log>`, which is
+#     built so that EVERY failure mode of its own subject resolves to non-zero: missing
+#     file, empty file, no verdict line, a truncated run, or a verdict that is not
+#     GREEN. Exit 0 only for a GREEN verdict line that exists. Proven on four controls,
+#     including a green that does pass, because a checker that cannot come out green is
+#     the always-red defect rather than a gate.
+#
 #     (9b) DO NOT EDIT THE TREE WHILE THIS RUNS. NOT EVEN DOCS. Oracle edited two docs
 #     mid-run and their G10 gate turned an otherwise-green landing RED, CORRECTLY: one of
 #     those files is `include_str!`d into a test, so the run could no longer prove it had
