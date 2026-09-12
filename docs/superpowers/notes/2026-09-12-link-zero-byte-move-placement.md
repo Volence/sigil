@@ -205,6 +205,28 @@ Both fail at ordinal 9 and not before, and the second one is the aeon shape in m
 Next packed 2 B early (0x1014) because Code was measured at the alias. With the fix:
 `derived_layout_tests` 16 passed, 0 failed, 0 ignored.
 
+**Red-first against the committed fix** (`78b084c3`, `mutation-proof.sh` and
+`mutation-no-skip.py` in scratch, log kept): the mutation perturbs the SUBJECT, making
+`far_scratch_slot` accept every slot (the pre-fix cursor), and is shown applied before the run:
+
+```
+--- git diff --stat (the mutation, applied):
+ crates/sigil-harness/src/native.rs | 2 +-
+2368:        if true || one_wrap
+test native::derived_layout_tests::a_reference_into_the_far_scratch_measures_abs_l_at_every_slot_ordinal ... FAILED
+test native::derived_layout_tests::zero_byte_sections_ahead_of_a_never_pinned_target_move_nothing ... FAILED
+assertion `left == right` failed: `lea T, a0` measured 4 B with T's never-pinned section at scratch ordinal 9 ...
+assertion `left == right` failed: with 9 zero-byte label-less sections ahead of the never-pinned `GameLoop`, the walk placed [Head, Code, Next, Wide, T] differently ...
+test result: FAILED. 0 passed; 2 failed; 0 ignored; 0 measured; 223 filtered out
+--- restore from the committed fix 78b084c3cd9d254902d44856d3fcf91cd0c28d76:
+post-restore status: 0 dirty paths
+diff against 78b084c3cd9d254902d44856d3fcf91cd0c28d76 for crates/sigil-harness/src/native.rs: 0 lines
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 223 filtered out
+```
+
+Both failing assertions are the tests' own mechanism texts (the scratch ordinal and the moved
+layout), not a neighbouring guard: the walk and the declared-span pass ran to completion.
+
 ## 5. Bytes: the fix moves every shipped shape
 
 ### Probe (a binary built from the uncommitted fix; the record run is below)
