@@ -927,6 +927,16 @@ Made in mail, so written here (protocol bar 20, sending side):
   with an md5 for every executable from the derived command; aeon gets both new md5s directly and
   builds four shapes on their master, expecting identity.
 
+**HUB RULING 2026-09-12, made in the owner's place (reversible): install the rebuilt emitter, md5
+`36ef302c...`, though it cannot match `b1569c67...`.** Grounds: a same-revision rebuild of `sigil`
+from the same tree gave `4061cd32...` against the installed `49ecc532...`, so an md5 match was never
+on offer on this machine, and KNOWN SOURCE (a clean tree at the pinned revision, the tree the installed
+`sigil` names) beats unknown source. Correctness is decided by aeon's four-shape CRC re-check under the
+new emitter, run first. **If any shape moves, put the copied-aside `8d80a578...` back and report; do
+not debug it live.** Keep the aside copy (`~/sonic_hacks/.sigil-outgoing-8d80a578/`) until that
+re-check is green. At the swap, the reference file's STANDING ARTIFACTS record replaces `b1569c67` with
+`36ef302c`, `af35fa56`, the build instant and the target dir. OPEN still waits on aeon's push.
+
 Queue row `SHARED-PAIR-SPLIT-EMITTER`. Delete this block in the commit that records the swap.
 
 ## Standing cross-session obligations (2026-08-22)
