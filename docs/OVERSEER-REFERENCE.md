@@ -1148,6 +1148,11 @@ check under the new pair reports; the hub named the targets as d83e2780 / 621182
 if they move the aside pair goes back in. **Keep `.sigil-pin-1532b72f`** (the installed binary reads its size
 tables from it at run time) **and `.sigil-pin-6884bfba`** (the aside pair reads its tables from there). What
 this pair adds for aeon: `sigil build` refuses an unconsumed carry-flag result (merge `eb0b3915`).
+**Re-check GREEN 2026-09-13, per aeon's own run** (their `landing_build.sh` at aeon `62fe88f7`, 2595 passed /
+0 failed per shape): all four ROMs byte-identical to d83e2780 / 6211829d / a8a84b6f / b4443af7 under the new
+pair, its md5s unchanged across the run, and the flag-result gate fired 0 times. So the swap stands. The aside
+copy is RETAINED as provenance for the aeon builds of 2026-09-12 08:57Z to 2026-09-13 09:36Z, not deleted; ask
+the hub before retiring it or either pin worktree.
 
 **THE INSTALLED PAIR FROM 2026-09-12T08:57:35Z TO 2026-09-13T09:36:09Z WAS THE 6884bfba BUILD, and three trees must survive for it.**
 Swapped on the hub's OPEN (aeon LS-1a) by the approved method: `/proc` exe scan (0 hits), outgoing pair
