@@ -514,22 +514,58 @@ fn digest_line<'a>(rest: &mut &'a str, what: &str) -> Result<&'a str, String> {
     Ok(line)
 }
 
-/// The values of `fields`, which must be exactly the space-separated `key=value` tokens
-/// of `text`, in that order.
-fn digest_fields<'a>(text: &'a str, keys: &[&str], line: &str) -> Result<Vec<&'a str>, String> {
-    let tokens: Vec<&str> = text.split(' ').collect();
-    if tokens.len() != keys.len() {
-        return Err(format!("digest line `{line}` does not carry exactly the fields {keys:?}"));
+/// Every `key=value` field of one digest line, in the order the line wrote them.
+struct DigestFields<'a>(Vec<(&'a str, &'a str)>);
+
+impl<'a> DigestFields<'a> {
+    /// The value of `key`, when the line carries it.
+    fn get(&self, key: &str) -> Option<&'a str> {
+        self.0.iter().find(|(k, _)| *k == key).map(|(_, v)| *v)
     }
-    tokens
-        .iter()
-        .zip(keys)
-        .map(|(t, k)| {
-            t.strip_prefix(k)
-                .and_then(|v| v.strip_prefix('='))
-                .ok_or_else(|| format!("digest line `{line}` has `{t}` where `{k}=` belongs"))
-        })
-        .collect()
+}
+
+/// The single-space separated `key=value` fields of `text`, found by key and never by
+/// position, which is the grammar's rule: a field added later breaks no reader that
+/// follows it. Returns the values of `required` in the order `required` names them, and
+/// every field the line carries, for the optional ones.
+///
+/// Each required key must be present, and the refusal names the ones that are not. A key
+/// the caller does not name is passed over. A key given twice is refused, naming it,
+/// whether or not the caller knows it, since a reader finding fields by key cannot say
+/// which of the two the line means. A token that is not `key=value` with a non-empty key
+/// (a bare word, or the empty token a doubled space leaves) is refused, naming it. Empty
+/// `text` carries no fields.
+fn digest_fields<'a>(
+    text: &'a str,
+    required: &[&str],
+    line: &str,
+) -> Result<(Vec<&'a str>, DigestFields<'a>), String> {
+    let mut fields = DigestFields(Vec::new());
+    if !text.is_empty() {
+        for token in text.split(' ') {
+            let (key, value) = token
+                .split_once('=')
+                .filter(|(key, _)| !key.is_empty())
+                .ok_or_else(|| format!("digest line `{line}` carries the token `{token}`, which is not key=value"))?;
+            if fields.get(key).is_some() {
+                return Err(format!("digest line `{line}` repeats the field `{key}`"));
+            }
+            fields.0.push((key, value));
+        }
+    }
+    let mut values = Vec::with_capacity(required.len());
+    let mut missing = Vec::new();
+    for key in required {
+        match fields.get(key) {
+            Some(value) => values.push(value),
+            None => missing.push(format!("`{key}`")),
+        }
+    }
+    if !missing.is_empty() {
+        let plural = if missing.len() == 1 { "" } else { "s" };
+        return Err(format!("digest line `{line}` lacks the field{plural} {}", missing.join(", ")));
+    }
+    Ok((values, fields))
 }
 
 fn digest_hex8(v: &str, line: &str) -> Result<u32, String> {
@@ -543,28 +579,42 @@ fn digest_dec(v: &str, line: &str) -> Result<u64, String> {
     v.parse::<u64>().map_err(|_| format!("digest line `{line}` carries `{v}` where a decimal count belongs"))
 }
 
-/// `[root=<name>] path=<rest of line>` from the tail of a READ or ROM line.
-fn digest_parse_path(fixed: &str, path: &str, line: &str) -> Result<(Vec<String>, DigestPath), String> {
-    let mut tokens: Vec<String> = fixed.split(' ').map(str::to_string).collect();
-    let mut root = DigestRoot::Aeon;
-    if let Some(last) = tokens.last() {
-        if let Some(name) = last.strip_prefix("root=") {
-            root = DigestRoot::from_token(name)
-                .ok_or_else(|| format!("digest line `{line}` names an unknown root `{name}`"))?;
-            tokens.pop();
-        }
-    }
+/// A READ or ROM line's body split at its `path=` field: `(the fields before it, the
+/// path)`, or `None` when the line carries no `path=`. `path=` is the last field and its
+/// value runs to the end of the line, so the split is at the first `path=` token and
+/// everything after it is the path, spaces included.
+fn digest_split_path(body: &str) -> Option<(&str, &str)> {
+    body.strip_prefix("path=").map(|path| ("", path)).or_else(|| body.split_once(" path="))
+}
+
+/// The file a READ or ROM line names: `path` relative to the root its `root=` field names,
+/// or to the aeon root when it carries none.
+fn digest_parse_path(root: Option<&str>, path: &str, line: &str) -> Result<DigestPath, String> {
+    let root = match root {
+        None => DigestRoot::Aeon,
+        Some(name) => DigestRoot::from_token(name)
+            .ok_or_else(|| format!("digest line `{line}` names an unknown root `{name}`"))?,
+    };
     let file = DigestPath { root, path: path.to_string() };
     digest_path(&file)?;
-    Ok((tokens, file))
+    Ok(file)
 }
 
 /// Read a `Source Digest` section off the front of `text`, returning it and the rest of
 /// the listing after the section's closing blank line.
 ///
-/// Strict where the grammar is: every line kind in order, every field present, READ
-/// rows sorted and unique, and the AGGREGATE recomputed from the READ lines as written,
-/// so a doctored or truncated section is an error rather than a digest.
+/// Fields are found by key, never by position (see [`digest_fields`]): each required
+/// field must be present exactly once wherever it sits on its line, a field this reader
+/// does not know is passed over, and a repeated field or a token that is not `key=value`
+/// is refused. `root=`, and the ROM line's `output=none`, are keyed fields like the rest;
+/// `path=` is the last field and runs to the end of the line.
+///
+/// Strict where the grammar is: every line kind in order, `root=` on exactly the
+/// `origin=external` READ rows, a ROM line carrying either a path or `output=none` (never
+/// both, and `root=` only beside a path), READ rows sorted and unique, and the AGGREGATE
+/// recomputed from the READ lines as written, so a doctored or truncated section is an
+/// error rather than a digest. The AGGREGATE covers a READ row's unknown fields too, since
+/// it is over the lines as written.
 pub fn parse_source_digest(text: &str) -> Result<(SourceDigest, &str), String> {
     let mut rest = text;
     let header = format!("  {SOURCE_DIGEST_HEADER}");
@@ -588,14 +638,14 @@ pub fn parse_source_digest(text: &str) -> Result<(SourceDigest, &str), String> {
     let body = line
         .strip_prefix("DIGEST-ASSEMBLER sigil ")
         .ok_or_else(|| format!("expected a DIGEST-ASSEMBLER line, found `{line}`"))?;
-    let a = digest_fields(body, &["version", "revision", "tree"], line)?;
+    let (a, _) = digest_fields(body, &["version", "revision", "tree"], line)?;
     let (assembler_version, revision, tree_state) = (a[0].to_string(), a[1].to_string(), a[2].to_string());
 
     let line = digest_line(&mut rest, "SHAPE")?;
     let body = line
         .strip_prefix("DIGEST-SHAPE ")
         .ok_or_else(|| format!("expected a DIGEST-SHAPE line, found `{line}`"))?;
-    let s = digest_fields(body, &["target", "game", "debug", "extra-entries"], line)?;
+    let (s, _) = digest_fields(body, &["target", "game", "debug", "extra-entries"], line)?;
     let debug = match s[2] {
         "0" => false,
         "1" => true,
@@ -623,7 +673,7 @@ pub fn parse_source_digest(text: &str) -> Result<(SourceDigest, &str), String> {
     let body = line
         .strip_prefix("DIGEST-SCAN ")
         .ok_or_else(|| format!("expected a DIGEST-SCAN line, found `{line}`"))?;
-    let sc = digest_fields(body, &["pattern", "files", "crc"], line)?;
+    let (sc, _) = digest_fields(body, &["pattern", "files", "crc"], line)?;
     if sc[0] != "*.emp" {
         return Err(format!("digest line `{line}` scans `{}`, not `*.emp`", sc[0]));
     }
@@ -633,12 +683,10 @@ pub fn parse_source_digest(text: &str) -> Result<(SourceDigest, &str), String> {
     let mut read_lines = String::new();
     let mut line = digest_line(&mut rest, "READ")?;
     while let Some(body) = line.strip_prefix("DIGEST-READ ") {
-        let (fixed, path) = body
-            .split_once(" path=")
-            .ok_or_else(|| format!("digest line `{line}` carries no path= field"))?;
-        let (tokens, file) = digest_parse_path(fixed, path, line)?;
-        let joined = tokens.join(" ");
-        let f = digest_fields(&joined, &["crc", "size", "origin"], line)?;
+        let (fixed, path) =
+            digest_split_path(body).ok_or_else(|| format!("digest line `{line}` carries no path= field"))?;
+        let (f, fields) = digest_fields(fixed, &["crc", "size", "origin"], line)?;
+        let file = digest_parse_path(fields.get("root"), path, line)?;
         let origin = DigestOrigin::from_token(f[2])
             .ok_or_else(|| format!("digest line `{line}` has an unknown origin `{}`", f[2]))?;
         if (origin == DigestOrigin::External) != (file.root != DigestRoot::Aeon) {
@@ -659,7 +707,7 @@ pub fn parse_source_digest(text: &str) -> Result<(SourceDigest, &str), String> {
     let body = line
         .strip_prefix("DIGEST-AGGREGATE ")
         .ok_or_else(|| format!("expected a DIGEST-AGGREGATE line, found `{line}`"))?;
-    let ag = digest_fields(body, &["crc", "reads"], line)?;
+    let (ag, _) = digest_fields(body, &["crc", "reads"], line)?;
     let (claimed, count) = (digest_hex8(ag[0], line)?, digest_dec(ag[1], line)?);
     let actual = sigil_span::read_set::crc32(read_lines.as_bytes());
     if claimed != actual || count != reads.len() as u64 {
@@ -674,19 +722,25 @@ pub fn parse_source_digest(text: &str) -> Result<(SourceDigest, &str), String> {
     let body = line
         .strip_prefix("DIGEST-ROM ")
         .ok_or_else(|| format!("expected a DIGEST-ROM line, found `{line}`"))?;
-    let (rom_fields, rom_output) = match body.split_once(" path=") {
-        Some((fixed, path)) => {
-            let (tokens, file) = digest_parse_path(fixed, path, line)?;
-            (tokens.join(" "), Some(file))
-        }
-        None => {
-            let fixed = body
-                .strip_suffix(" output=none")
-                .ok_or_else(|| format!("digest line `{line}` carries neither path= nor output=none"))?;
-            (fixed.to_string(), None)
-        }
+    let (fixed, path) = match digest_split_path(body) {
+        Some((fixed, path)) => (fixed, Some(path)),
+        None => (body, None),
     };
-    let r = digest_fields(&rom_fields, &["crc", "size"], line)?;
+    let (r, fields) = digest_fields(fixed, &["crc", "size"], line)?;
+    let rom_output = match (path, fields.get("output")) {
+        (Some(path), None) => Some(digest_parse_path(fields.get("root"), path, line)?),
+        (None, Some("none")) if fields.get("root").is_none() => None,
+        (None, Some("none")) => {
+            return Err(format!("digest line `{line}` names a root= but no path= for it to root"));
+        }
+        (Some(_), Some(_)) => {
+            return Err(format!("digest line `{line}` carries both output= and path=, and a ROM line names one"));
+        }
+        (None, Some(other)) => {
+            return Err(format!("digest line `{line}` has output={other}, and without a path= only output=none is defined"));
+        }
+        (None, None) => return Err(format!("digest line `{line}` carries neither path= nor output=none")),
+    };
     let (rom_crc, rom_size) = (digest_hex8(r[0], line)?, digest_dec(r[1], line)?);
 
     if digest_line(&mut rest, "END")? != "DIGEST-END" {
