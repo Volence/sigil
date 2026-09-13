@@ -23,8 +23,9 @@ use crate::ast::{self, AsmStmt, ContractTypeDecl, ExternProcDecl, InstrLine, Ite
 use crate::calls::{check_input_undefined, check_live_clobbered, InputFiring, LiveClobberFiring};
 use crate::closure::{check_firings, compute_closure, Closure, Firing, ProcNode, RegEffect};
 use crate::flag_check::{
-    check_discard_names, check_flag_unused, check_result_invalid_path, DeclaredFlagResults,
-    DiscardFiring, DiscardResolved, DiscardSite, FlagFiring,
+    check_discard_names, check_flag_unused_sites, check_result_invalid_path,
+    check_result_invalid_path_sites, DeclaredFlagResults, DiscardFiring, DiscardResolved,
+    DiscardSite, FlagFiring, FlagFiringKind, FlagSite,
 };
 use crate::lower::{
     expand_reglist_regs, preserve_oracle_inputs, proc_written_registers, verified_preserves_regs,
@@ -94,6 +95,10 @@ pub struct ContractReport {
     /// declared credit is suppressing a real §6 firing on a shipping ERROR gate, and
     /// the tripwire test fails loudly instead of the firing silently vanishing.
     pub flag_firings_verified_credit: Vec<FlagFiring>,
+    /// Every call the §6 flag checks met, both CPUs, with what each check did
+    /// there: the population `flag_firings` ranges over, so an empty firing list
+    /// can be told apart from a walk that evaluated nothing. Sorted (proc, span).
+    pub flag_sites: Vec<FlagSite>,
     /// The `[call.discards-unmatched]` refusals: a `@discards(name)` whose name is
     /// not a flag result its target declares, or whose target declares none or
     /// cannot be resolved to a declared proc. Both CPUs, sorted (proc, span).
@@ -730,24 +735,41 @@ pub fn analyze_corpus_with_contracts(
     // change makes declared-credit SUPPRESS a §6 firing the verified credit would
     // show, the tripwire fails loudly instead of a real firing silently vanishing
     // on a shipping ERROR gate.
+    //
+    // Every proc and extern proc declared for each CPU, with its `(flag, name)`
+    // pairs: a must-use firing takes the abandoned result's name from here, and
+    // `[call.discards-unmatched]` below resolves each `@discards(name)` against
+    // it. Each CPU resolves against its OWN declarations (a Z80 proc is reachable
+    // only from Z80).
+    let mut declared_68k: DeclaredFlagResults = BTreeMap::new();
+    let mut declared_z80: DeclaredFlagResults = BTreeMap::new();
+    for file in files {
+        let map = if module_is_z80(&file.module) { &mut declared_z80 } else { &mut declared_68k };
+        collect_declared_flag_results(&file.items, map);
+    }
     let mut flag_firings: Vec<FlagFiring> = Vec::new();
     let mut flag_firings_verified: Vec<FlagFiring> = Vec::new();
+    let mut flag_sites: Vec<FlagSite> = Vec::new();
     for pb in &proc_bufs {
-        let unused = check_flag_unused(
+        let (mut unused, sites) = check_flag_unused_sites(
             &pb.name,
             &pb.buf.items,
             &flag_callees,
             &discard_spans(&pb.discarded),
             Cpu::M68000,
         );
+        name_flag_results(&mut unused, &declared_68k);
+        flag_sites.extend(sites);
         flag_firings_verified.extend(unused.iter().cloned());
         flag_firings.extend(unused);
-        flag_firings.extend(check_result_invalid_path(
+        let (invalid, sites) = check_result_invalid_path_sites(
             &pb.name,
             &pb.buf.items,
             &cond_callees,
             &callee_uncond_out,
-        ));
+        );
+        flag_sites.extend(sites);
+        flag_firings.extend(invalid);
         flag_firings_verified.extend(check_result_invalid_path(
             &pb.name,
             &pb.buf.items,
@@ -784,26 +806,21 @@ pub fn analyze_corpus_with_contracts(
         }
     }
     for pb in &z80_proc_bufs {
-        let unused = check_flag_unused(
+        let (mut unused, sites) = check_flag_unused_sites(
             &pb.name,
             &pb.buf.items,
             &z80_flag_callees,
             &discard_spans(&pb.discarded),
             Cpu::Z80,
         );
+        name_flag_results(&mut unused, &declared_z80);
+        flag_sites.extend(sites);
         flag_firings_verified.extend(unused.iter().cloned());
         flag_firings.extend(unused);
     }
 
     // `[call.discards-unmatched]`: every `@discards(name)` names a flag result its
-    // target declares. Each CPU resolves against its OWN declarations, the same
-    // split the flag-result check keeps (a Z80 proc is reachable only from Z80).
-    let mut declared_68k: DeclaredFlagResults = BTreeMap::new();
-    let mut declared_z80: DeclaredFlagResults = BTreeMap::new();
-    for file in files {
-        let map = if module_is_z80(&file.module) { &mut declared_z80 } else { &mut declared_68k };
-        collect_declared_flag_results(&file.items, map);
-    }
+    // target declares, resolved against the per-CPU declaration maps built above.
     let mut discard_firings: Vec<DiscardFiring> = Vec::new();
     let mut discards_resolved: Vec<DiscardResolved> = Vec::new();
     let mut discards_unreached: Vec<(String, DiscardSite)> = Vec::new();
@@ -868,6 +885,7 @@ pub fn analyze_corpus_with_contracts(
     };
     flag_firings.sort_by(flag_sort);
     flag_firings_verified.sort_by(flag_sort);
+    flag_sites.sort_by(|a, b| (&a.proc, span_key(&a.span)).cmp(&(&b.proc, span_key(&b.span))));
 
     // D1d dead-save worklist: run over every proc's CodeBuf against the closure's
     // VERIFIED effective sets (never raw declared text — pass-3 cuts code on this).
@@ -1313,6 +1331,7 @@ pub fn analyze_corpus_with_contracts(
         bounded_indirect_sites,
         flag_firings,
         flag_firings_verified_credit: flag_firings_verified,
+        flag_sites,
         discard_firings,
         discards_resolved,
         discards_unreached,
@@ -1988,6 +2007,18 @@ fn flags_of(out_flags: &[ast::FlagResult]) -> BTreeSet<String> {
 /// [`check_flag_unused`] reads.
 fn discard_spans(sites: &[DiscardSite]) -> Vec<Span> {
     sites.iter().map(|s| s.span).collect()
+}
+
+/// Fill each must-use firing's [`FlagFiring::name`] from its callee's declared
+/// `(flag, name)` pairs, so the diagnostic names the `@discards(name)` that would
+/// opt the call out.
+fn name_flag_results(firings: &mut [FlagFiring], declared: &DeclaredFlagResults) {
+    for f in firings.iter_mut().filter(|f| f.kind == FlagFiringKind::Unused) {
+        f.name = declared
+            .get(&f.callee)
+            .and_then(|pairs| pairs.iter().find(|(flag, _)| *flag == f.flag))
+            .map(|(_, name)| name.clone());
+    }
 }
 
 /// Record every proc and extern proc in `items` (recursing sections) with the
