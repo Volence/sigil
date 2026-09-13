@@ -3114,3 +3114,560 @@ reference answers 2. True, and **loud**: wrong by a whole digit, visible in any 
 base is loud; a wrong SPELLING of the right base is one byte at one of six sites.** `asl`'s is an
 exact `log10`. **When matching a reference's arithmetic, the function is the easy half and the
 formulation is where the byte moves.**
+
+## Moved from the boot read on 2026-09-13, the fourth cut
+
+Fourteen blocks, moved VERBATIM out of `docs/OVERSEER.md` at sigil `0236c5f7`, on the owner's
+2026-09-13 words *"do the split asap so sigil doesn't take almost 200k tokens to start up"*
+(empyrean `e33a5e3`, `docs/OVERSEER.md` line 75), under his 2026-09-04T15:38:47Z ruling that the
+split is by WHEN A RULE IS READ. **Nothing was shortened to move it**, and no rule was dropped. They
+keep the order they held in the boot read, and each carries a locator giving its original line span
+and the heading it sat under. The index that names the moment triggering each is in the boot read,
+under *Read at the moment - the blocks moved to the reference file on 2026-09-13*.
+
+**Where a moved sentence says *"this file"*, *"this document"* or *"this page"*, it means the boot
+read, `docs/OVERSEER.md`, where it was written.** The queue rows three of these blocks belong to
+(SIGIL-AS-REPLACEMENT, PER-PARCEL-TERM-FEED-CUT and SIGIL-DECOUPLE) stay in the boot read under the
+same names, and each names its block here.
+
+### The ledger gate and rule 8f: why 8f was unanswerable here, the closure, and the live `d-18` duplicate
+
+*(original `docs/OVERSEER.md` lines 81-102, under: `decisions.jsonl`: FOUR IDS REWRITTEN IN PLACE,
+DO NOT REPAIR (contract rule 8f). The listing of the four ids stays in the boot read under that
+heading, because rule 8f puts it in the lane's own `OVERSEER.md`; *"the finding under the finding"*
+in the first paragraph means that listing.)*
+
+**⚠ AND THIS LANE COULD NOT HAVE ANSWERED 8f AT THE TIME, which is the finding under the finding.**
+8f makes a red gate the deciding fact and thereby assumes a gate exists to be red. Sigil's ledger
+check had **no caller anywhere** when this was written - it transcribed Dominion's own reader and ran
+from nothing - so *"nothing is red"* and *"nothing is looking"* were indistinguishable here.
+
+**CLOSED 2026-09-10 at merge `985cba31`: it now has a caller and its verdict reaches the exit code.**
+`scripts/ledger_gate.py` runs from `scripts/landing-run.sh`, and a red from it makes `RESULT FAILED`
+(verified here by an end-to-end control, not by reading: a planted unparseable `docs/*.jsonl` gave
+`LEDGER_EXIT 1`, `RESULT FAILED`, wrapper exit 1, with `CARGO_EXIT 0` so the run failed on the ledger
+ALONE). So 8f is now ANSWERABLE here, which it was not when the paragraph above was written.
+**The 12 rejected lines are unchanged and still listed-not-repaired** - wiring the check was the
+parcel, repairing the ledger was deliberately not. The renderability assertion is a RATCHET pinned at
+12 that fails on GROWTH, never a hard gate, because a hard one would be red on arrival against correct
+history and the remedy a reasonable person reaches for is weakening the check.
+
+**ONE DUPLICATE ID IS LIVE AND IT IS A RULE-8e SUBJECT, NOT AN 8f ONE:** `d-18` appears **three**
+times. 8e rules that id-uniqueness wins narrowly and re-iding the LATER line is
+the single sanctioned in-place edit - oracle's `tools/land.sh` G2b refused *every* landing on exactly
+this. **So any uniqueness check wired here goes red on arrival**, and the 8e re-id is a precondition
+of wiring it, never a consequence to discover afterwards. *(This sentence said `d-25` **twice** until
+2026-09-10. The second `d-25` was re-ided to `d-14-correction` at `4ebfb950`; the ledger gate's own
+output now reads `1 repeated: d-18 x3`. Derive the count from the gate, never from this line.)*
+
+*(original `docs/OVERSEER.md` lines 283-299, under: NO ACTIVE HOLD - read this before running
+anything that builds.)*
+
+### THE TEST for a relayed authorization (2026-09-02)
+
+**Not "did the hub speak" but "is there an owner decision under this, AND IS IT THIS QUESTION."**
+Two clauses, and the second does the work: the first is usually easy and usually satisfied, while
+the second is where a general authorization gets silently stretched over a parcel it never
+contemplated. **So verify the JOIN, not the endpoints.**
+
+**A relay of his ruling is his ruling; a ruling made in his place is the hub's** — legitimate for
+decision cards, and not his word on whether a lane runs.
+
+**The failure this prevents is TIME-DELAYED, which is why a rule is needed and vigilance is not.**
+Nothing goes wrong at the moment a relayed go is accepted; everyone acts in good faith and the work
+is real. It goes wrong later, when the row is prose and *"the hub said go"* and *"he said go"* are
+indistinguishable to a session reading it cold. **That is why a banked ruling carries its own
+provenance disclaimer in its text** rather than relying on anyone remembering it.
+
+*(The episode that earned it: `docs/OVERSEER-LOG.md`, 2026-09-03 cut, original lines 124-151.)*
+
+*(original `docs/OVERSEER.md` lines 300-327, under: NO ACTIVE HOLD - read this before running
+anything that builds.)*
+
+### Standing rules — independent of whether a row is active
+
+**The R7 alignment flip: LANDED at `e2517405` (2026-08-30), verified an ancestor of master.**
+*(Its pre-flip measurement, 81 to 91% of declared sections over-aligned with the dominant case
+declaring 2 and handed 16, and the ratchet hazard under it, are in `docs/OVERSEER-LOG.md`,
+2026-08-30, original lines 1342 to 1391.)*
+
+The packing walk now reads `align_up(running, required_for(head label))`; the declaration is the
+ONLY alignment input and a section with no declaration is **refused by name, never given a
+default**. `packed_align_of` is gone from every Rust source file in the workspace and survives only
+as prose inside `golden/provenance.toml` history. Frozen as chain 196, whose note records seven
+shapes shrinking (s4 -62, s4_debug -46, demo -18, demo_debug -36, config_a -62, config_b -152,
+lean -14).
+
+**⚠ THIS BLOCK SAID *"what remains is the flip itself"* FOR A WEEK AFTER THE FLIP LANDED**, and it
+is the boot read, so every session since 2026-08-30 booted holding a landed parcel as outstanding.
+Nothing surfaced it because nothing executes this file, which is this document's own banked defect
+(*a snapshot wearing the grammar of a standing fact*) aimed at itself. It was caught on 2026-09-06
+only because the hub asked which decouple pieces were landed and the answer was verified in code
+rather than read off this page. **The general form, and it is why the correction is written here
+rather than quietly applied: a parcel's completion has to be written back to the document that
+DISPATCHES it, and no gate anywhere makes that happen.** When you land something this file
+describes as pending, edit this file in the landing commit.
+
+**A RE-BASELINE DOES NOT EXPLAIN A GREEN — IT MANUFACTURES ONE** sat here and is now in
+`docs/OVERSEER-REFERENCE.md`, beside the ways a red-first proof goes vacuous. Read both at
+the moment you are judging a green or building the witness that gates one — including the
+red-first witness this parcel already has.
+
+### `pad(N)` / `pad_to(N)`: the owner's ruling, `d-12`, closed as `d-13`
+
+*(original `docs/OVERSEER.md` lines 460-471, under: The autonomy directive - and its scope, which is
+the part that matters.)*
+
+**`pad(N)` / `pad_to(N)` — RULED YES BY THE OWNER, 2026-08-26, directly in this lane's
+session.** Put to him as `d-12`; his answer was a bare **yes** against the recommendation, so
+the ruling is the **`both`** option: `pad_to(N)` derives the filler width from the next field's
+offset, AND the plain `pad(N)` reserve-N-bytes spelling stays for the case where the count is
+the author's real intention, with a diagnostic that names the mistake and prints the exact line
+to write when the deriving form was clearly meant. Closed as `d-13` (rule 8c supersession).
+`(align: N)` stays mandatory and is not the derivation's casualty — that is §1.3 of the draft
+and the argument the whole design rests on.
+
+*(The spec text's landing SHA, the six `(align: N)` diagnostic strings the review found
+unpinned, the tests owed by the `pad`/`pad_to` parcel, and the sequencing that keeps the spec
+empyrean's to land: `docs/OVERSEER-REFERENCE.md`, read when that parcel is dispatched.)*
+
+### SIGIL-AS-REPLACEMENT: the rulings and measurement rules read while working it
+
+*(original `docs/OVERSEER.md` lines 575-699, under: SIGIL-AS-REPLACEMENT - active on the owner's own
+words; source locations LANDED. The row itself, its state and its provenance, stays in the boot
+read's queue.)*
+
+**RULED HERE — the two diagnostic dialects STAY, and the split is deliberate.** `.emp` renders
+`path:line:col:`; the AS surface renders `file(line):`. This is a divergence inside one binary
+and it was flagged rather than committed silently. Ruled under the autonomy directive's
+just-do-it clause, which names *diagnostic wording* explicitly, and logged because a reasonable
+person could rule it the other way: **a compatibility surface's job is to be the thing it is
+compatible with.** A user moving off AS reads the same shape in the same place, which is the
+adoption argument the whole project rests on; `.emp` is a modern language and keeps the shape
+modern tooling parses. **The failure mode this ruling is written to prevent is not the split —
+it is an UNDOCUMENTED split**, which reads as a bug to the next person and gets "fixed" into
+one dialect by someone who cannot tell which was intended.
+
+**RULED HERE — the AS FRONTEND must fold case; whether `.emp` proper does is PARKED for the owner.**
+*(This ruling said `@as_compat` until 2026-09-03. Wrong surface: `@as_compat` is an `.emp` module
+attribute and the name appears nowhere in `sigil-frontend-as`. The subject is the frontend crate.)*
+Same shape as `d-22` (nameless labels) and settled the same way, by evidence rather than taste:
+the canonical community disassembly writes `CPU 68000`, `EQU`, `STRUCT` in capitals, so the
+corpus is unassemblable without folding. **The RULING is live; its evidence figures are not
+carried here** — they were a snapshot and this document has already misled one boot with them.
+DERIVE the corpus counts when you need them (build a current `sigil`, run it on a pristine
+corpus worktree, decompose by class). The `.emp` half is a language-surface call and is **not**
+ruled here.
+
+**⚠ THE ROOT IS WORSE THAN CASE AND MUST NOT BE FOLDED INTO IT.** `initial_cpu` defaults to
+`Z80` (`Options`' default, honest for the Z80-only M0 build), `dispatch`'s directive match takes
+`"cpu"` lower case only, and under `Cpu::Z80` the lexer's `b'$'` arm yields `Tok::Dollar` — the
+program counter — not a hex prefix. So a 68000 disassembly assembles **as Z80**.
+Case folding fixes this corpus *because s2disasm happens to carry a `CPU` line at all*. A 68000
+source with no `cpu` directive still silently assembles as Z80, and **that is a separate defect
+with its own fix** (the CLI's default for a general-purpose assembler is not the M0 build's
+default). Booked separately so folding case does not look like it closed both.
+
+**RULED — AS-DEFAULT-CPU is REFUSE BY NAME.** A source with no `cpu` directive is a hard error
+naming what was not declared and printing the line to write; never a silent default of any
+processor. Grounds are this lane's own `d-18` (now in `docs/OVERSEER-REFERENCE.md`; `R4` is the rule
+number on empyrean card `4e8e865b`, not a marker in either file): a run that reports what it skipped **still
+exits 0**, and a silent green is the class we never drop. Amends the hub's first form (empyrean
+`802fdee`), whose acceptance named an asl oracle — episode in `docs/OVERSEER-LOG.md`,
+2026-09-03. The RULING stands on the `d-18` grounds above and needs no oracle. **Pinning AS as a
+dependency of the project that exists to replace it is a real cost and is the OWNER'S
+alternative, not taken.**
+
+**⚠ THE ORACLE EXISTS, AND THIS PARAGRAPH SAID IT DID NOT — corrected 2026-09-03 after four
+parcels had been run without it.** A working **`asl` 1.42 Beta Bld 212** is committed in the
+corpus repos. It runs. It is a **differential oracle for the entire AS-replacement project** —
+the name-composition parcel used `asl -L` for every expected value in every new test, which is
+why that delivery could quote listings instead of asserting semantics. **Use it.**
+
+**Selecting and citing it is a ritual with three faces, and it is read at the moment you invoke
+`asl`:** which build to use and which to refuse, by md5; why the banner cannot discriminate; the
+reference build's stable-but-invented answers on shapes it declines; why a run carrying any error
+is not a source of values for the lines that did assemble; and the seven-paths-four-digests
+population. In `docs/OVERSEER-REFERENCE.md`.
+
+**Why it survived four parcels:** `git grep asl` **in the sigil repo** returns the 68000 shift
+mnemonic, so a true local finding hardened into a claim about the workspace. The rule is protocol
+bar 16(d), verbatim there — an absence leaves nothing to be suspicious of. *(Episode:
+`docs/OVERSEER-LOG.md`, 2026-09-04 cut.)*
+
+**⚠ THE CASE FOLD IS IN AEON'S SHIPPING BUILD PATH — fold DIRECTIVES AND MNEMONICS ONLY, NEVER
+SYMBOLS.** `sigil-frontend-as` is not a compatibility side-car: aeon's `build.sh` routes the
+residual `.asm` DATA through it and three files still go that way (`engine/debug/debugger.asm`,
+both `game_root.asm`). So this parcel can move aeon bytes and must prove it did not. Symbols
+are deliberately case-sensitive (`lib.rs:31`, *"Names are case-sensitive"*) and `.emp` shares
+its symbol namespace with those files — folding symbol case would collide the two.
+
+**CLOSED — `landing-run.sh` runs clippy**, as precondition (7) in its header: `--release
+--workspace --all-targets -- -D warnings` in its own command span, `CLIPPY_EXIT` and every lint
+site in the verdict block, a red bar makes `RESULT` not-green, nothing skips it (`--scoped`
+included). **A COUNT TAKEN UNDER `-D warnings` IS NOT THE POPULATION** — the first crate to fail
+aborts and cargo stops scheduling the rest, so the visible count is how far the build got. This
+one read 10, then 35 more, then 71 more: **116** sites in 7 files, all quoted asl listings whose
+tabs are evidence. Size such work with clippy run *without* `-D warnings`, where nothing aborts.
+
+**⚠ THE CORPUS DIAGNOSTIC COUNT IS THE PROJECT'S HEADLINE METRIC AND IT IS STRUCTURALLY BLIND
+TO THE DEFECT CLASS THIS PROJECT KEEPS FINDING** *(2026-09-03, earned by the `{INTLABEL}` parcel;
+this is the rule, and it should be read before any parcel is sized off a diagnostic count)*.
+
+A complaint count measures **what the frontend refused**. It cannot see:
+
+- **A silent wrong answer.** `zoneID macro zoneID,{INTLABEL}` bound every zone constant to a
+  program counter and emitted **zero diagnostics**. The count was not merely unhelpful here — it
+  was *maximally* reassuring about the worst case in the file.
+- **Anything that fails at LINK.** A frontend-only corpus run never gets there. Seven
+  ordinary-parameter sites (41 invocations) were broken and invisible for exactly this reason.
+
+Both halves have now been met repeatedly: **five silent-wrong-answer faults closed in one day**,
+of which the two largest were invisible to every measurement the project had. The `×26` stride
+bug and `[layout.odd-field]` are the same shape one layer out, already banked in
+`docs/OVERSEER-REFERENCE.md` (the SIGIL-DECOUPLE block *what the coupling buys*) and in
+`docs/OVERSEER-REFERENCE.md`'s source-gate lane.
+
+**COMPARE THE SETS, NOT THE TOTALS — a summary statistic answers a question nobody asked.**
+Two populations can differ by one member in each direction and total identically, so a count
+difference is consistent with a change it cannot see. The assertion worth gating is therefore not
+`debug = release + 1` but **`release` is CONTAINED IN `debug`** — `release \ debug` empty, with
+`debug \ release` computed and REPORTED rather than asserted. A future release-only equate is a
+genuine anomaly, and a count-difference check passes straight through it.
+
+**⚠ THE MEASUREMENT THIS RULE ORIGINALLY CITED WAS WRONG IN BOTH HALVES, and the rule is stated
+above WITHOUT it on purpose** *(refuted 2026-09-05 by the parcel that implemented it; verified
+firsthand here on the reference tree at `483b3e12`)*. It read: *"across five aeon trees spanning
+155 commits, the debug listing carries exactly one more equate than release"*, and prescribed
+**strict** subset. Both fail on a SHIPPED SHAPE: **demo is 555/555, sets IDENTICAL** (sonic4 is
+737/738). The cited pairs were five revisions of **sonic4 alone**, so one game's property was
+written down as a property of the shapes.
+
+**The consequence is the failure this document warns about elsewhere, aimed at itself:** a gate
+built to this text — `debug == release + 1`, `debug > release`, or `release ⊂ debug` strictly —
+would have been **RED ON DEMO the day it was written**, on correct code, and the remedy a
+reasonable person reaches for is weakening the check. **A right conclusion does not launder the
+evidence offered for it:** the set-comparison rule survives entirely, and it survives on its own
+argument (two populations can differ by one member each way and total identically), never on the
+figure that was attached to it. Assert containment; never strictness; and derive the shapes'
+counts when you need them rather than reading any number off this page. The same shape is why
+this project compares unresolved-symbol *name sets in both directions* rather than their sizes.
+
+**So: a falling diagnostic count is evidence that noise was removed, never that correctness
+improved.** The discriminators that DO see this class, and which a parcel should report beside
+the count: the **per-class decomposition** (did any class rise, did a new one appear), the
+**sorted unresolved-symbol sets** compared in both directions (newly-unresolved AND
+newly-resolved, since a name that silently starts resolving to the wrong thing leaves the set),
+byte identity against the aeon shapes, and — the one nothing else covers — **reaching link at
+all**. Sizing a row off a diagnostic count alone systematically under-prices the dangerous work
+and over-prices the loud work: this row was booked at 492 and delivered 5,381, and the
+consequential half of it had no diagnostics at all.
+
+### PER-PARCEL-TERM-FEED-CUT: the three rules that survive the suspension
+
+*(original `docs/OVERSEER.md` lines 708-717, under: PER-PARCEL-TERM-FEED-CUT - SUSPENDED by the cut
+ruling; three rules survive it. The row and its status stay in the boot read's queue.)*
+
+- **⚠ FILE SIZE IS NOT ASSEMBLED LENGTH, and the gap is large.** `file = assembled + appendix`.
+  Taking file deltas as terms once gave a baseline 1,632 B wrong that read as nine measured numbers.
+- **⚠ DO NOT RETIRE THE ASSERT TO CLEAR THE RED.** Its sibling was retired on reasoning that applies
+  to this one word for word, which makes the move look pre-blessed. Retiring a check **while it is
+  red, because it is red** is bar 9 with the causation hidden — the tell is that the conclusion
+  requires work from nobody.
+- **A "live state" bullet is a snapshot wearing the grammar of a standing fact.** A stale suite
+  figure here was read at boot, believed, and written into a dispatch brief as a fact about the
+  tree, telling an agent a pre-existing red existed when none did. **Derive the suite figure when
+  you need it; never quote one from this document.**
+
+*(original `docs/OVERSEER.md` lines 724-736, under: Queue, a row of its own.)*
+
+### DPLC-ENTRY-INSTRUMENT REPIN — an ask that must outlive both sessions
+
+`parcel/dplc-entry-instrument` is parked on the aeon lane and is the CANDIDATE owner of a
+`+$60`-shaped delta — flagged as candidate, explicitly **not** attribution, by the session that
+flagged it. If it moves: four cross-seam symbols need the three-site treatment (`repin.toml`,
+`pins.rs`, addr_labels) with **full** `tests` lists; `game_loop_port` and `load_art_port`
+additionally face region byte gates, DEBUG shape only, because the parcel grows `VInt_Level`
+itself — a byte-gate re-prove, not a table row; and the plain-shape falsifier runs FIRST, since it
+is one command and it indicts the parcel or clears it. Written down rather than left in a thread
+because both sessions that held it were rotated the same night.
+
+*(The symbol names and their per-test mappings: `docs/OVERSEER-LOG.md`, 2026-09-04 cut, original
+lines 1203-1220.)*
+
+*(original `docs/OVERSEER.md` lines 737-749, under: Queue, a row of its own.)*
+
+### PROVENANCE-REV-REACHABILITY — LANDED
+
+`sigil_harness::rev_reachability` judges every `aeon_rev` / `strict.*_rev` against its own remote
+branch with `git ls-remote` **at measurement time**, never a tracking ref. **REPORTED, not GATED —
+a ruling, not an oversight:** an exception list is a population to maintain whose failure mode is
+"green because nobody maintained it", and a pinned ratchet goes red during the normal ritual, so
+the teeth are at the WRITE site. Chain 181's `strict.sigil_rev` is DIVERGENT and is **not** being
+repaired — re-attesting would record a different tree's run under 181's name; it stands and the
+report names it. For the aeon lane: **push the freeze commit BEFORE `--attest`**, since a revision
+already in `origin/master` cannot be orphaned by a later rebase.
+
+*(The four measured reachability states and their remedies, the design argument and the chain-181
+instance: `docs/OVERSEER-LOG.md`, 2026-09-04 cut, original lines 1221-1239.)*
+
+### SIGIL-DECOUPLE: the step-1 gate and the position sent to the hub
+
+*(original `docs/OVERSEER.md` lines 763-783, under: SIGIL-DECOUPLE - the owner ruled 2026-08-26, in
+this lane's session: follow aeon's plan. The ruling, the four steps in order and the row's status
+stay in the boot read's queue, and *"step 1"* here means the first of those steps.)*
+
+*(What the coupling actually buys, measured before the ruling rather than assumed, and the
+residual cost that byte coverage AGES: `docs/OVERSEER-REFERENCE.md`, read when working step 1
+or step 4.)*
+
+**The gate this lane holds on step 1, and it is aeon's own sentence rather than an addition:**
+*"Every constraint the frozen tables encode today must be recaptured as an explicit rule
+BEFORE the tables stop being authority, or it silently stops being enforced."* Treat that as a
+precondition with a deliverable, not a caution. **Enumerate by what TOUCHES placement, never
+by what the frozen table lists** (bar 8) — the table is the artifact whose authority is being
+retired, so taking it as the enumeration is the shared-frame failure aimed at ourselves.
+BGROOM-2's leftovers are the same territory and should be read as part of this, not beside it.
+
+*(Why the strict run needs a PAIRED aeon tree, the 58 failures the live one produces, and the
+recipe that turns the same branch from 58 red to 0: `docs/OVERSEER-REFERENCE.md`, read when a
+strict run comes back with a wall of byte diffs.)*
+
+- **The 79 pad-sweeping region ends convert before the flip** and are this lane's to
+  sequence; they touch the aeon-owned lane files, so they wait for the pair too.
+- **Ruled jointly with aeon and NOT to be re-opened unilaterally:** when the rules are
+  written, declare each section's alignment as what its CONTENT needs; never transcribe
+  the accidental quanta. Anything that held only by accident stops holding once, visibly.
+
+*(original `docs/OVERSEER.md` lines 789-802, under: the same section. Lines 785-787 between the two
+fragments, the row's *"Not started"* status, stay in the boot read.)*
+
+**POSITION SENT TO THE HUB 2026-09-06T07:29Z, banked here because a position that lives only in
+mail does not survive a `/clear` (protocol bar 20, sending side).** Asked what would make this item
+CLOSED as an EFFECTS-W1 completion requirement, this lane answered that neither *done* nor *ruled
+closed with the residual named* is honest, since steps 2 to 4 are unstarted and step 2 is not
+sigil's to start, **and recommended repointing the requirement instead**: the only decouple-adjacent
+thing that can hurt EFFECTS-W1 is a decaying margin silently eating the effects reserve, and that is
+**B7/F1/F2**, an aeon instrument defect closeable on its own with no decouple step moving. So the
+requirement should read *B7 closed, the terminus assumption asserted rather than assumed*, and
+SIGIL-DECOUPLE returns to its own clock. **It is a scope call on the hub's board, so it is theirs or
+the owner's and NOT this lane's to take**; the recommendation is recorded, the ruling is not made.
+Sent with it: a figure for aeon to settle, the project row's `DATA_GROWTH_RESERVE = 0x4000` against
+this lane's 2026-09-05 read of `0xC000` with `DATA_GROWTH_GRACE = 0x8000`, offered as a discrepancy
+to check rather than as a correction, since it is aeon's constant and the two reads have different
+dates.
+
+*(original `docs/OVERSEER.md` lines 804-837, under: its own `##` section in the boot read.)*
+
+## A ROUTED ROW MUST NAME ITS ARTIFACT, AND "ROUTED" IS TWO CLAIMS (2026-09-06)
+
+**Found when aeon reported that a row this lane had marked `routed` had no content anywhere in
+their tree.** Their reading was that the findings had died with the session that received them.
+They had not: all five were committed here, across three notes, all reachable from
+`origin/master`, and two of them sat under a section literally headed *"Left open, and routed
+elsewhere"* with *"Aeon lane"* written against them. **The recording was never the failure. The
+routing was.**
+
+**The rule, and it is the sending-side twin of aeon's** *(theirs: a finding routed TO a lane gets
+an artifact in that lane's own repo at the moment it is accepted)*: **a row that says `routed` is
+asserting two separate things, that an artifact exists and that the recipient was told where it
+is, and only the first is under this lane's nose.** Protocol bar 20 governs the first and is
+silent on the second, so a lane can satisfy the bar completely and the receiver still ends up
+with nothing. **Write the path into the row, and send the path, not the summary.**
+
+**The naming half, which was this lane's own contribution to the mess.** The row was
+`AEON-S1-S3-S9-ROUTED`. `S1`, `S3` and `S9` are section numbers inside one of *our* notes, so the
+id was unreadable to the only lane that needed to act on it. Renamed. **An id built from this
+lane's internal coordinates is a private note wearing an address.**
+
+*(The enumeration that found it, this lane's 2026-09-06 conclusion that
+`S4BUDGET-STALE-ASSUMPTION` had drifted from its source, the commitment made to aeon, and the
+2026-09-07 discharge that REFUTED that conclusion, the row being grounded and the failing lookup
+having searched the wrong tree: `docs/OVERSEER-LOG.md`, 2026-09-09 cut, original lines 847-854
+and 864-889.)*
+
+**The direction of that risk is the transferable part: a row that has drifted from its source
+reads exactly like a row that has one.** Had the peer asked for that row instead of the one they
+did, this lane would have restated it in good faith and they would have booked a finding no
+measurement stands behind. **A queue row is a POINTER, and a pointer with nothing at the far end
+cannot be distinguished from a row somebody invented** (aeon's formulation, better than mine).
+So before answering any request to hand a peer a routed finding, resolve the row to a committed
+path first, and **say plainly when it does not resolve** rather than reconstructing it.
+
+*(original `docs/OVERSEER.md` lines 839-848, under: its own `##` section in the boot read.)*
+
+## A `mark` IS NOT ZERO-BYTE, and no brief may call any deb2-visible symbol zero-byte (2026-09-07)
+
+Aeon measured it (aeon `22d0bbb5`): `build.sh` appends the deb2 symbol table into the debug ROMs, so
+one added `mark` moved `demo.debug` (b2df205f to 1180c261), isolated by bisect with a determinism
+control. Sigil's chain pins the FULL file, crc32 plus size with the appendix, for both debug shapes,
+which is why the movement is visible here without any new gate. The rule for this lane: a parcel that
+adds a `mark`, a `pub equ` reaching the listing, or anything else the deb2 appendix records is a
+BYTE-MOVER and rides the repin ritual; a brief that says "zero-byte" about such a change states a
+mechanism the artifact refutes. (The `pub equ` listing-visibility contract with aeon, below, is the
+same surface from the other side: listing-visible and appendix-invisible are different claims.)
+
+*(original `docs/OVERSEER.md` lines 850-903, under: its own `##` section in the boot read.)*
+
+## COMMITMENTS MADE TO AEON 2026-09-07, banked because they live only in mail otherwise
+
+Protocol bar 20, sending side: a cross-lane commitment gets an in-tree artifact in the SENDING
+repo. Three were made in one exchange and all three bind a FUTURE session of this lane, which is
+the whole reason they are here rather than in a thread.
+
+- **The shared-pair swap waits on aeon's word, not on the hub's window.** The hub opened the
+  window for the second refresh (the installed pair still names branch `parcel/ls12-blob-repin`);
+  aeon asked to hold because their running parcel builds all four shapes at the end and a rename
+  mid-run is the concurrent-relink hazard. **The window being open and the moment being clear are
+  different things and BOTH are required.** When their message arrives: send "about to swap" with
+  the three fields off the binary, wait for their explicit clear, copy the outgoing pair aside
+  next to `~/sonic_hacks/.sigil-outgoing-e6e942e5` so the refresh is reversible, install by
+  rename, then message aeon and the hub with the SHA, the swap instant, both md5 pairs, **and the
+  installed revision's CONTENTS** — naming `82838687` (the link-assert renderer emitting
+  `[Error]`) and `d90a297c` (`build --check`) as present, read out of the installed binary rather
+  than inferred from the SHA. Their `LS-16c` and `LS-16a-check` rows are written to wait on
+  exactly those two, and they asked to read the boundary off the message rather than infer it.
+- **Predictions about the align parcel's byte movement are exchanged SIMULTANEOUSLY.** Aeon
+  proposed "you send yours, I predict independently" and then withdrew it themselves: once one
+  number is in front of the other operator, the second derivation is an anchored estimate wearing
+  independence's clothes. Neither side sends first. This is bar 19 applied to two operators rather
+  than two greps, and it only works if nobody is helpful early.
+  **And the prediction ships with its own falsifier, in the same message, before either side knows**
+  (aeon's addition, adopted here): say what would have made it wrong at the moment you send it. A
+  prediction whose falsifier is written after the result is a description, and a prediction reported
+  only when it lands is not a method.
+- **THIS LANE OWES AEON THE DELETION SIGNAL for their transient commitments block** (aeon
+  `6f75078c`, verified an ancestor of their `origin/master`). They banked their reciprocal five in
+  their own boot read with a self-delete condition: *both* that we are on the post-align pair AND
+  that the align parcel has landed. **Both halves are events THIS lane generates**, so a condition
+  they cannot observe is a condition that will not fire. Precedent from this very file, same shape:
+  the R7 block said *"what remains is the flip itself"* for a week after the flip landed, in the boot
+  read, because nothing executes a document. **So the deletion is NOTIFIED, not self-executed: when
+  both halves are true, send them one message saying so.** Written here rather than left as a good
+  intention because it binds a later session of this lane and nothing else will surface it.
+  **⚠ THE BLOCK HAS MOVED AND THIS ROW POINTED AT ITS OLD HOME (corrected 2026-09-10).** It is no
+  longer in aeon's boot read: `66978385` moved it to `docs/DEFERRED_WORK.md`, at their
+  `origin/master`, condition intact and verbatim. Re-derive its location when you act on this rather
+  than trusting either coordinate, since it has now moved once.
+  **The near-miss is worth more than the correction, and it is the absence class aimed at an
+  obligation.** Grepping the file this row named returned GONE, which reads as *the block is deleted,
+  the obligation is discharged, nothing to do*. **That emptiness is TWO-VALUED: deleted and moved
+  produce the identical result**, and the second is the reading under which the obligation still
+  stands. What separated them was one further command, a grep of their whole tree at
+  `origin/master`, and nothing prompts that command once the first one has answered. A row that says
+  *"they will delete it themselves"* would have closed here silently and wrongly, with a correctly
+  run check as its evidence.
+- **A peer's occupancy figure for `dac_shared_bank` is a BUILD PRODUCT.** Their 25,754 B occupied
+  / 7,014 B free came from `engine/sound/generated/dac_shared_bank.bin` in their working tree —
+  the right file, and an artifact of their last build rather than a committed value. So a
+  disagreement with our own measurement is not a finding about sigil until a stale artifact on
+  either side has been ruled out, and **the tiebreak is a rebuild.** Report mtime and the tree's
+  revision beside any such number.
+
+*(original `docs/OVERSEER.md` lines 905-957, under: its own `##` section in the boot read. Lines
+918-929 are not here; see the note where they sat.)*
+
+## Standing cross-session obligations (2026-08-22)
+
+The aeon session owes sigil ONE thing, triggered by sigil work rather than by time.
+**⚠ AND THE PING IS NOT THE MECHANISM, which is the correction this block needed (aeon's, 2026-09-10).**
+*"Ping them, don't assume they are watching"* was this row's whole remedy and it is one `/clear` away
+from never arriving. **An obligation whose TRIGGER lives in the peer's repo is untestable by the peer,
+who cannot see that their own confirmation never ran, and untested by the holder, because nothing
+prompts a look.** It needs nobody to forget. **Test the trigger on a schedule you control; never wait
+for the promised ping.** Banked their side at aeon `8d99deeb`.
+
+- **On the `game-defines` ship notice:** they re-run T8's three measured contexts
+  (data-binding layout, struct harvest, RAM harvest) against a capability-derived
+  define and confirm all three see it. Cheap, theirs to run.
+
+*(Lines 918-929, the bullet recording that aeon had paid the `offsetof(Scene, …)` obligation fifteen
+days before this lane noticed, went to `docs/OVERSEER-LOG.md`, 2026-09-13 cut, as closed history.)*
+
+**Sigil owes aeon a warning before changing either of these** *(registered 2026-08-22)*:
+
+- **`pub equ` is zero-byte and listing-visible — aeon depends on exactly that.** It reaches
+  the `.lst` and **not** the deb2 appendix; aeon measured it (two added, ROM length
+  unchanged) and is using the property as a reachability witness. So it is a contract, not
+  an implementation detail: if a change would put equates into deb2, tell them **before**
+  it lands rather than letting a ROM length move be their notification.
+- **`[map.order-undeclared]` keys on BYTE-EMITTING sections** (`sigil-harness/src/native.rs`,
+  verified by them firsthand). That scoping is load-bearing for aeon: it let them ship a
+  zero-byte generated section with **no** `order` row, plus a guarantee the build stops by
+  name the moment there is content to place. A row would have been inert *and* unverifiable —
+  a gate that cannot measure its subject. A well-meant "require `order` rows everywhere"
+  tightening would break the honest option; do not take it without talking to them.
+
+**⚠ An empty commit range does not mean an empty branch** — that triple is the signature of a branch ALREADY MERGED, and two lanes here read it as proof of no work. The rule is protocol bar 16(a); disambiguate with `git log <branch>`, or `--is-ancestor` on a commit you expect the branch to CONTAIN. *(Episode: `docs/OVERSEER-LOG.md`, 2026-09-04 cut.)*
+
+Their side is banked at aeon `1ee8f8e6` (handoff) and `ba189b40` (the `br_ext` unlock
+row, cuttable cold) — both verified reachable from aeon's `origin/master`.
+
+**The rule that outlives the incident, and it did NOT stay true by itself:** a note saying
+"this is local-only" is true when written and rots on the next push, exactly as a note
+saying "this is reachable" rots on the next rewrite. **Whoever acts on a cross-repo row
+re-verifies reachability at read time rather than trusting either kind of note.** The
+general form, which composes with the SHA-class rule: **a SHA has a class, a path has a
+time, and a revision has a reachability.** Nothing about sigil being pushed today makes a
+*future* citation fetchable — push before you cite, every time, and verify against the
+remote.
+
+*(original `docs/OVERSEER.md` lines 1052-1108, under: Rules banked 2026-09-05 - read at boot.)*
+
+### SHELL `grep -r` SKIPS GITIGNORED FILES HERE, RETURNING A CLEAN ZERO. MEASURE IT IN YOUR OWN SESSION
+
+*(Reported by the aeon lane at aeon `56e42f00`, reproduced by aurora with a canary, and REPRODUCED
+HERE before being banked. It had already put a false "symbol appears nowhere" into one lane's brief.)*
+
+`type grep` on this machine returns **"grep is a shell function"**, sourced from the harness's shell
+snapshot.
+*(The 2026-09-05 reproduction, including the first attempt that was VOID because the canary went
+into a path that was not ignored, and this lane's audit of its own zeroes:
+`docs/OVERSEER-LOG.md`, 2026-09-05 cut.)*
+
+**⚠ THIS SEAT "REFUTED" THIS RULE ON 2026-09-09 AND THE REFUTATION WAS WRONG. THE RULE IS TRUE;
+the retraction is kept because the confound is worth more than the rule.** Measured here with a
+needle in a path ignored by a real `.gitignore` entry: shell `grep -rl` **0 hits**,
+`/usr/bin/grep -rl` **1**, control (a tracked needle) 8. The hub measured its own session
+independently and got the same 0.
+
+**How the false refutation happened, and it is a control failure rather than a careless one.** The
+first canary was ignored via `.git/info/exclude`, and the control was `git check-ignore`, which
+confirmed, correctly, that **git** ignores the path. But the instrument under test is the harness's
+`grep` function, which runs `ugrep --ignore-files`, and that reads **`.gitignore` FILES**. Those are
+two different notions of "ignored". **The control verified a true predicate that was not the
+instrument's predicate**, so it passed while the canary was invisible to the thing being tested.
+See *A CONTROL CAN VERIFY THE WRONG PREDICATE* in `docs/OVERSEER-REFERENCE.md`.
+
+**Also wrong in that retraction: the CAUSE.** It blamed the snapshot's
+`alias grep='grep --color=auto --exclude-dir={...}'`. An alias is present, and so is a function of
+the same name that the shell actually resolves (`whence -w grep` says `function`); `which grep`
+prints it, and it is the ugrep router. **Reading one definition out of a file is not reading what
+the shell resolves.**
+
+**What IS per-session, and the hub established it rather than this seat:** their session and this one
+can differ in `grep` semantics at the same minute, because the snapshot is regenerated per session.
+So the rule is not a property of the machine and neither lane's measurement settles the other's.
+**Run `type grep` and a canary in YOUR session**, and put the canary behind a `.gitignore` entry,
+not `.git/info/exclude`.
+
+**What survives, and it is the load-bearing half: `/usr/bin/grep` is right for an artifact and the
+words BY ABSOLUTE PATH are doing the work, not the choice of binary.** Pointed at the repo root it
+is the worst of the three.
+
+**Pick the instrument by what the subject IS:**
+
+- **tracked source** (corpus `.asm`/`.inc`, our `.rs`, docs): `git grep`, which is also faster and
+  respects the repo boundary;
+- **ignored artifacts** (a listing, an output binary, anything under a build dir): `/usr/bin/grep -r`
+  **by absolute path to the artifact**, never at the repo root, where it descends into every worktree
+  this checkout hosts;
+- **either, when a zero would be a finding**: plant a canary of the same class, confirm it is ignored,
+  and confirm the instrument finds it *before* believing the zero.
+
+**And it is the FOURTH instrument that returned a confident wrong zero to this lane in one day**, all
+different mechanisms: a `git grep` pathspec that matched no files; a hand-rolled lexer desynchronised
+by a char literal; a peer's `\|` alternation inside `$'...'` under zsh; and now this. **The rule is
+not "watch out for greps", it is that AN EMPTINESS IS NEVER A FINDING WITHOUT AN INSTRUMENT THAT
+COULD HAVE RETURNED NON-EMPTY.** Same family as `cmd | sed ... || echo`, where the `||` binds to the
+whole pipeline.
