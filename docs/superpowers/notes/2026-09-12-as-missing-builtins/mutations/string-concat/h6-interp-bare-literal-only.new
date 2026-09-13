@@ -1,0 +1,2 @@
+                match Ok::<Vec<Token>, (Span, crate::escape::EscapeError)>(called.clone()) {
+                    Ok(t) => t,

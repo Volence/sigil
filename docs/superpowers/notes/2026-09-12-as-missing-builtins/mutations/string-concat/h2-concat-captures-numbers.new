@@ -1,0 +1,1 @@
+                out.push_str(&self.eval_str(part).or_else(|| self.fold_const(part).map(|v| v.to_string()))?);

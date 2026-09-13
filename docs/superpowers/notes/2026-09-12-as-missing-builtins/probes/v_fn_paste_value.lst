@@ -1,0 +1,67 @@
+ AS V1.42 Beta [Bld 212] - Source File v_fn_paste_value.asm - Page 1 - 09/13/2026 01:44:26 AM
+
+
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     fm function n,"n"
+       5/       0 : 2831 3229 EE        	dc.b fm(12),$EE
+       6/       5 : 2831 3629 EE        	dc.b fm($10),$EE
+       7/       A : 2833 29EE           	dc.b fm(1+2),$EE
+       8/       E : 282D 3529 EE        	dc.b fm(-5),$EE
+       9/      13 : 2833 3129 EE        	dc.b fm(n2),$EE
+      10/      18 : 2835 29EE           	dc.b fm(%101),$EE
+      11/      1C : 2832 3535 29EE      	dc.b fm(255),$EE
+      12/      22 : =$1F                 n2 equ $1F
+      13/      22 :                     	end
+ AS V1.42 Beta [Bld 212] - Source File v_fn_paste_value.asm - Page 2 - 09/13/2026 01:44:26 AM
+
+
+  Symbol Table (* = unused):
+  --------------------------
+
+*ARCHITECTURE :                                      "x86_64-unknown-linux" - |
+*BIGENDIAN :                      0 - | *BRANCHEXT :                      0 - |
+*CASESENSITIVE :                  1 - | *COMPMODE :                       0 - |
+*CONSTPI :        3.141592653589793 - | *CUSTOM :                         0 - |
+*DATE :                "09/13/2026" - | *FALSE :                          0 - |
+*FULLPMMU :                       1 - | *HAS64 :                          1 - |
+*HASDSP :                         0 - | *HASFPU :                         0 - |
+*HASPMMU :                        0 - | *INEXTMODE :                      0 - |
+*INLWORDMODE :                    0 - | *INMAXMODE :                      0 - |
+*INSRCMODE :                      0 - | *INSUPMODE :                      0 - |
+*LISTON :                         1 - | *MACEXP :                         7 - |
+*MOMCPU :                     68000 - | *MOMCPUNAME :               "68000" - |
+*NESTMAX :                      100 - | *PACKING :                        0 - |
+*PADDING :                        0 - | *RELAXED :                        0 - |
+*TIME :               "01:44:26 AM" - | *TRUE :                           1 - |
+*VERSION :                     142F - | *Z80SYNTAX :                      0 - |
+ n2 :                            1F - |
+
+     32 symbols
+     31 unused symbols
+
+ AS V1.42 Beta [Bld 212] - Source File v_fn_paste_value.asm - Page 3 - 09/13/2026 01:44:26 AM
+
+
+  Defined Functions:
+  ------------------
+
+fm                                    |
+
+ AS V1.42 Beta [Bld 212] - Source File v_fn_paste_value.asm - Page 4 - 09/13/2026 01:44:26 AM
+
+
+  Code Pages:
+  ----------
+
+STANDARD (0 changed characters)
+
+1 code page
+
+0.00 seconds assembly time
+
+     14 lines source file
+      2 passes
+      0 errors
+      0 warnings

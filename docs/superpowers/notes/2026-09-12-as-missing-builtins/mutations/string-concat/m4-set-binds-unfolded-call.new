@@ -1,0 +1,2 @@
+        let called = self.expand_calls(rest, 0);
+        self.eval_str(&called)

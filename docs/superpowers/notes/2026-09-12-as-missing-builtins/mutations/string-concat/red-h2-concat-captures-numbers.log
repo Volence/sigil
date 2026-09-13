@@ -1,0 +1,46 @@
+== mutation h2-concat-captures-numbers on crates/sigil-frontend-as/src/eval.rs, test binary as_string_concat
+== HEAD 45ec1a87b848fe820133b06c57b6d96ab6d34637 branch parcel/as-string-concat
+MUTATED /home/volence/sonic_hacks/sigil/.worktrees/as-string-concat/crates/sigil-frontend-as/src/eval.rs, lines 3421..3421 now read:
+  3421:                 out.push_str(&self.eval_str(part).or_else(|| self.fold_const(part).map(|v| v.to_string()))?);
+git diff --stat:
+ crates/sigil-frontend-as/src/eval.rs | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+test a_function_result_bound_by_equ_keeps_its_integer_reading ... FAILED
+test a_chain_of_concatenations_folds_left_to_right ... FAILED
+test a_string_valued_function_bound_by_set_is_never_silently_wrong ... ok
+test a_quote_inside_an_interpolation_belongs_to_it ... ok
+test a_parameter_word_is_letters_and_digits_only ... ok
+test a_string_or_float_argument_pasted_into_a_literal_is_refused ... ok
+test a_pasted_argument_is_its_decimal_value ... FAILED
+test a_string_value_is_not_scanned_again_for_interpolation ... ok
+test a_function_parameter_reaches_inside_a_string_literal ... FAILED
+test a_string_valued_function_pastes_its_string_into_an_interpolation ... ok
+test a_string_valued_function_result_reaches_bytes ... ok
+test plus_over_non_strings_stays_numeric ... FAILED
+test an_interpolation_is_folded_in_a_computed_string ... ok
+test sonic_1_signed_to_string_assembles ... ok
+test the_substr_and_sgn_half_assembles_without_concatenation ... ok
+test plus_between_two_strings_concatenates ... ok
+test an_interpolation_is_folded_where_its_literal_is ... ok
+thread 'a_function_result_bound_by_equ_keeps_its_integer_reading' (3413127) panicked at crates/sigil-frontend-as/tests/as_string_concat.rs:437:5:
+v_fn_str_equ_int: sigil's image differs from asl's listing at $6 (asl 8 bytes, sigil 10):
+  asl   [62, EE]
+  sigil [39, 37, 31, EE]
+thread 'a_chain_of_concatenations_folds_left_to_right' (3413124) panicked at crates/sigil-frontend-as/tests/as_string_concat.rs:254:5:
+v_concat_chain: sigil's image differs from asl's listing at $12 (asl 28 bytes, sigil 30):
+  asl   [03, EE, 62, EE, 65, 6C, 2D, 78]
+  sigil [31, 32, EE, 61, 31, EE, 65, 6C]
+thread 'a_pasted_argument_is_its_decimal_value' (3413129) panicked at crates/sigil-frontend-as/tests/as_string_concat.rs:333:5:
+v_fn_paste_value: asl assembles it, sigil refused: ["`fm` pastes its parameter `n` into a string literal, and this argument is a string: only an integer argument can be pasted there"]
+thread 'a_function_parameter_reaches_inside_a_string_literal' (3413125) panicked at crates/sigil-frontend-as/tests/as_string_concat.rs:311:5:
+v_fn_str_body: sigil's image differs from asl's listing at $15 (asl 25 bytes, sigil 26):
+  asl   [34, EE, 63, EE]
+  sigil [33, 31, EE, 63, EE]
+thread 'plus_over_non_strings_stays_numeric' (3413142) panicked at crates/sigil-frontend-as/tests/as_string_concat.rs:279:5:
+assertion `left == right` failed: the numeric `+` rows moved
+  left: [49, 50, 238, 97]
+ right: [3, 238, 98, 238]
+test result: FAILED. 12 passed; 5 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+error: test failed, to rerun pass `-p sigil-frontend-as --test as_string_concat`
+TEST_PIPE_DONE
+restored crates/sigil-frontend-as/src/eval.rs from HEAD; tracked changes now: 0

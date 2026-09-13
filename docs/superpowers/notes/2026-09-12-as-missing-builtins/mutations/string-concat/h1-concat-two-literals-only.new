@@ -1,0 +1,1 @@
+        if let Some(parts) = split_top_plus(toks).filter(|p| p.len() == 2 && p.iter().all(|x| matches!(x, [Token { tok: Tok::Str(_), .. }]))) {

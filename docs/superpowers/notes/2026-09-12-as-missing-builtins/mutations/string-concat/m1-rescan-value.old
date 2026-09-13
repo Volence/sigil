@@ -1,0 +1,2 @@
+            if let Some(s) = self.eval_str(&expanded) {
+                let cs = &self.state.charset;

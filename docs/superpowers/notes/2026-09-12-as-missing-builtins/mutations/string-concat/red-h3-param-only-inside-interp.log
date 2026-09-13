@@ -1,0 +1,56 @@
+== mutation h3-param-only-inside-interp on crates/sigil-frontend-as/src/eval.rs, test binary as_string_concat
+== HEAD 45ec1a87b848fe820133b06c57b6d96ab6d34637 branch parcel/as-string-concat
+MUTATED /home/volence/sonic_hacks/sigil/.worktrees/as-string-concat/crates/sigil-frontend-as/src/eval.rs, lines 3861..3867 now read:
+  3861:                 Some(arg) => {
+  3862:                     if !out.ends_with("\\{") {
+  3863:                         out.push_str(word);
+  3864:                         rest = tail;
+  3865:                         continue;
+  3866:                     }
+  3867:                     let pasted = match self.fold_const(arg) {
+git diff --stat:
+ crates/sigil-frontend-as/src/eval.rs | 5 +++++
+ 1 file changed, 5 insertions(+)
+test a_chain_of_concatenations_folds_left_to_right ... ok
+test a_function_result_bound_by_equ_keeps_its_integer_reading ... ok
+test a_parameter_word_is_letters_and_digits_only ... FAILED
+test a_function_parameter_reaches_inside_a_string_literal ... FAILED
+test a_quote_inside_an_interpolation_belongs_to_it ... ok
+test a_string_valued_function_pastes_its_string_into_an_interpolation ... FAILED
+test a_string_value_is_not_scanned_again_for_interpolation ... ok
+test a_pasted_argument_is_its_decimal_value ... FAILED
+test a_string_or_float_argument_pasted_into_a_literal_is_refused ... FAILED
+test a_string_valued_function_bound_by_set_is_never_silently_wrong ... ok
+test plus_over_non_strings_stays_numeric ... ok
+test a_string_valued_function_result_reaches_bytes ... FAILED
+test plus_between_two_strings_concatenates ... ok
+test sonic_1_signed_to_string_assembles ... FAILED
+test an_interpolation_is_folded_in_a_computed_string ... ok
+test the_substr_and_sgn_half_assembles_without_concatenation ... ok
+test an_interpolation_is_folded_where_its_literal_is ... ok
+thread 'a_parameter_word_is_letters_and_digits_only' (3252184) panicked at crates/sigil-frontend-as/tests/as_string_concat.rs:359:5:
+v_fn_word_edges: sigil's image differs from asl's listing at $2 (asl 58 bytes, sigil 38):
+  asl   [28, 33, 29, 20, 28, 33, 29, 2E]
+  sigil [6E, 20, 6E, 2E, 62, 20, 6E, EE]
+thread 'a_function_parameter_reaches_inside_a_string_literal' (3252182) panicked at crates/sigil-frontend-as/tests/as_string_concat.rs:311:5:
+v_fn_str_body: sigil's image differs from asl's listing at $0 (asl 25 bytes, sigil 21):
+  asl   [28, 33, 29, EE, 33, EE, 28, 33]
+  sigil [6E, EE, 33, EE, 6E, 20, 69, 73]
+thread 'a_string_valued_function_pastes_its_string_into_an_interpolation' (3252190) panicked at crates/sigil-frontend-as/tests/as_string_concat.rs:549:5:
+v_fn_in_interp: asl assembles it, sigil refused: ["trailing tokens in expression", "trailing tokens in expression", "string interpolation `\\{signedToString(-5)}` has no value here", "trailing tokens in expression", "string interpolation `\\{signedToString($123)}` has no value here"]
+thread 'a_pasted_argument_is_its_decimal_value' (3252185) panicked at crates/sigil-frontend-as/tests/as_string_concat.rs:333:5:
+v_fn_paste_value: sigil's image differs from asl's listing at $0 (asl 34 bytes, sigil 14):
+  asl   [28, 31, 32, 29, EE, 28, 31, 36]
+  sigil [6E, EE, 6E, EE, 6E, EE, 6E, EE]
+---- a_string_or_float_argument_pasted_into_a_literal_is_refused stdout ----
+thread 'a_string_or_float_argument_pasted_into_a_literal_is_refused' (3252187) panicked at crates/sigil-frontend-as/tests/as_string_concat.rs:377:5:
+v_fn_escape_letter: asl refuses it, sigil built [61, 0A, 20, 62, EE]
+thread 'a_string_valued_function_result_reaches_bytes' (3252191) panicked at crates/sigil-frontend-as/tests/as_string_concat.rs:416:5:
+v_fn_interp_only: asl assembles it, sigil refused: ["trailing tokens in expression", "string interpolation `\\{abs(number)}` has no value here"]
+thread 'sonic_1_signed_to_string_assembles' (3252196) panicked at crates/sigil-frontend-as/tests/as_string_concat.rs:574:5:
+signed: asl assembles it, sigil refused: ["trailing tokens in expression", "string interpolation `\\{abs(number)}` has no value here", "trailing tokens in expression", "string interpolation `\\{abs(number)}` has no value here", "trailing tokens in expression", "string interpolation `\\{abs(number)}` has no value here", "trailing tokens in expression", "string interpolation `\\{abs(number)}` has no value here"]
+    a_string_or_float_argument_pasted_into_a_literal_is_refused
+test result: FAILED. 10 passed; 7 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+error: test failed, to rerun pass `-p sigil-frontend-as --test as_string_concat`
+TEST_PIPE_DONE
+restored crates/sigil-frontend-as/src/eval.rs from HEAD; tracked changes now: 0

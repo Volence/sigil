@@ -1,0 +1,72 @@
+ AS V1.42 Beta [Bld 212] - Source File v_fn_str_body.asm - Page 1 - 09/12/2026 06:02:38 PM
+
+
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     fa function n,"n"
+       5/       0 : 2833 29EE           	dc.b fa(3),$EE
+       6/       4 :                     fb function n,"\{n}"
+       7/       4 : 33EE                	dc.b fb(3),$EE
+       8/       6 :                     fc function n,"n is \{n}"
+       9/       6 : 2833 2920 6973      	dc.b fc(3),$EE
+                C : 2033 EE          
+      10/       F :                     fd function n,"none\{n}"
+      11/       F : 6E6F 6E65 33EE      	dc.b fd(3),$EE
+      12/      15 :                     fe function num,"\{num+1}"
+      13/      15 : 34EE                	dc.b fe(3),$EE
+      14/      17 :                     ff function n,substr("abcdef",n,1)
+      15/      17 : 63EE                	dc.b ff(2),$EE
+      16/      19 :                     	end
+ AS V1.42 Beta [Bld 212] - Source File v_fn_str_body.asm - Page 2 - 09/12/2026 06:02:38 PM
+
+
+  Symbol Table (* = unused):
+  --------------------------
+
+*ARCHITECTURE :                                      "x86_64-unknown-linux" - |
+*BIGENDIAN :                      0 - | *BRANCHEXT :                      0 - |
+*CASESENSITIVE :                  1 - | *COMPMODE :                       0 - |
+*CONSTPI :        3.141592653589793 - | *CUSTOM :                         0 - |
+*DATE :                "09/12/2026" - | *FALSE :                          0 - |
+*FULLPMMU :                       1 - | *HAS64 :                          1 - |
+*HASDSP :                         0 - | *HASFPU :                         0 - |
+*HASPMMU :                        0 - | *INEXTMODE :                      0 - |
+*INLWORDMODE :                    0 - | *INMAXMODE :                      0 - |
+*INSRCMODE :                      0 - | *INSUPMODE :                      0 - |
+*LISTON :                         1 - | *MACEXP :                         7 - |
+*MOMCPU :                     68000 - | *MOMCPUNAME :               "68000" - |
+*NESTMAX :                      100 - | *PACKING :                        0 - |
+*PADDING :                        0 - | *RELAXED :                        0 - |
+*TIME :               "06:02:38 PM" - | *TRUE :                           1 - |
+*VERSION :                     142F - | *Z80SYNTAX :                      0 - |
+
+     31 symbols
+     31 unused symbols
+
+ AS V1.42 Beta [Bld 212] - Source File v_fn_str_body.asm - Page 3 - 09/12/2026 06:02:38 PM
+
+
+  Defined Functions:
+  ------------------
+
+ff                                    | fe                                   
+fd                                    | fc                                   
+fb                                    | fa                                   
+
+ AS V1.42 Beta [Bld 212] - Source File v_fn_str_body.asm - Page 4 - 09/12/2026 06:02:38 PM
+
+
+  Code Pages:
+  ----------
+
+STANDARD (0 changed characters)
+
+1 code page
+
+0.00 seconds assembly time
+
+     17 lines source file
+      1 pass
+      0 errors
+      0 warnings

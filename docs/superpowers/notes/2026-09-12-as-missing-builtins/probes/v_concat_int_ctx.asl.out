@@ -1,0 +1,6 @@
+> > > v_concat_int_ctx.asm(7): warning #180: address is not properly aligned
+> > >  move.w #X,d0
+> > > v_concat_int_ctx.asm(8): warning #180: address is not properly aligned
+> > >  move.w #"a"+"b",d0
+ASL_EXIT=0
+ASL_DIAG=complete

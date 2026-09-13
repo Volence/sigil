@@ -1,0 +1,2 @@
+            if let Some(s) = self.eval_str(&expanded).map(|s| self.interp_text(&s)) {
+                let cs = &self.state.charset;

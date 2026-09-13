@@ -1,0 +1,67 @@
+ AS V1.42 Beta [Bld 212] - Source File s1_warning_verbatim.asm - Page 1 - 09/13/2026 02:09:38 AM
+
+
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     signedToString function number,substr("-",0,-sgn(number))+"$\{abs(number)}"
+       5/       0 : =$FFFFFF0C           v_chunk0collision equ $FFFFFF0C
+> > > s1_warning_verbatim.asm(6): warning: RAM variable declarations are -$6 bytes smaller than expected. Some variables may be missing or not aligned correctly!
+> > >  warning "RAM variable declarations are \{signedToString(-6)} bytes smaller than expected. Some variables may be missing or not aligned correctly!"
+       6/       0 :                     	warning	"RAM variable declarations are \{signedToString(-6)} bytes smaller than expected. Some variables may be missing or not aligned correctly!"
+> > > s1_warning_verbatim.asm(7): warning: v_chunk0collision needs to be at address $FFFFFF00 so that FindNearestTile works correctly (currently offset by $C bytes) .
+> > >  warning "v_chunk0collision needs to be at address $FFFFFF00 so that FindNearestTile works correctly (currently offset by \{signedToString(v_chunk0collision-$FFFFFF00)} bytes) ."
+       7/       0 :                     	warning "v_chunk0collision needs to be at address $FFFFFF00 so that FindNearestTile works correctly (currently offset by \{signedToString(v_chunk0collision-$FFFFFF00)} bytes) ."
+       8/       0 : EE                  	dc.b $EE
+       9/       1 :                     	end
+ AS V1.42 Beta [Bld 212] - Source File s1_warning_verbatim.asm - Page 2 - 09/13/2026 02:09:38 AM
+
+
+  Symbol Table (* = unused):
+  --------------------------
+
+*ARCHITECTURE :                                      "x86_64-unknown-linux" - |
+*BIGENDIAN :                      0 - | *BRANCHEXT :                      0 - |
+*CASESENSITIVE :                  1 - | *COMPMODE :                       0 - |
+*CONSTPI :        3.141592653589793 - | *CUSTOM :                         0 - |
+*DATE :                "09/13/2026" - | *FALSE :                          0 - |
+*FULLPMMU :                       1 - | *HAS64 :                          1 - |
+*HASDSP :                         0 - | *HASFPU :                         0 - |
+*HASPMMU :                        0 - | *INEXTMODE :                      0 - |
+*INLWORDMODE :                    0 - | *INMAXMODE :                      0 - |
+*INSRCMODE :                      0 - | *INSUPMODE :                      0 - |
+*LISTON :                         1 - | *MACEXP :                         7 - |
+*MOMCPU :                     68000 - | *MOMCPUNAME :               "68000" - |
+*NESTMAX :                      100 - | *PACKING :                        0 - |
+*PADDING :                        0 - | *RELAXED :                        0 - |
+*TIME :               "02:09:38 AM" - | *TRUE :                           1 - |
+*VERSION :                     142F - | *Z80SYNTAX :                      0 - |
+ v_chunk0collision :       FFFFFF0C - |
+
+     32 symbols
+     31 unused symbols
+
+ AS V1.42 Beta [Bld 212] - Source File s1_warning_verbatim.asm - Page 3 - 09/13/2026 02:09:38 AM
+
+
+  Defined Functions:
+  ------------------
+
+signedToString                        |
+
+ AS V1.42 Beta [Bld 212] - Source File s1_warning_verbatim.asm - Page 4 - 09/13/2026 02:09:38 AM
+
+
+  Code Pages:
+  ----------
+
+STANDARD (0 changed characters)
+
+1 code page
+
+0.00 seconds assembly time
+
+     10 lines source file
+      1 pass
+      0 errors
+      2 warnings

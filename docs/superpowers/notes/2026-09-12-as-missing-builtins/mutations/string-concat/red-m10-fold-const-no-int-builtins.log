@@ -1,0 +1,30 @@
+== mutation m10-fold-const-no-int-builtins on crates/sigil-frontend-as/src/eval.rs, test binary as_string_concat
+== HEAD 45ec1a87b848fe820133b06c57b6d96ab6d34637 branch parcel/as-string-concat
+MUTATED /home/volence/sonic_hacks/sigil/.worktrees/as-string-concat/crates/sigil-frontend-as/src/eval.rs, lines 3567..3567 now read:
+  3567:         let expanded = expanded;
+git diff --stat:
+ crates/sigil-frontend-as/src/eval.rs | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+test a_function_result_bound_by_equ_keeps_its_integer_reading ... ok
+test a_string_or_float_argument_pasted_into_a_literal_is_refused ... ok
+test a_string_valued_function_bound_by_set_is_never_silently_wrong ... ok
+test plus_between_two_strings_concatenates ... ok
+test a_function_parameter_reaches_inside_a_string_literal ... ok
+test a_string_valued_function_result_reaches_bytes ... ok
+test a_chain_of_concatenations_folds_left_to_right ... ok
+test a_parameter_word_is_letters_and_digits_only ... ok
+test a_string_valued_function_pastes_its_string_into_an_interpolation ... FAILED
+test an_interpolation_is_folded_in_a_computed_string ... ok
+test a_string_value_is_not_scanned_again_for_interpolation ... ok
+test a_quote_inside_an_interpolation_belongs_to_it ... ok
+test sonic_1_signed_to_string_assembles ... ok
+test an_interpolation_is_folded_where_its_literal_is ... ok
+test the_substr_and_sgn_half_assembles_without_concatenation ... ok
+test a_pasted_argument_is_its_decimal_value ... ok
+test plus_over_non_strings_stays_numeric ... ok
+thread 'a_string_valued_function_pastes_its_string_into_an_interpolation' (3133586) panicked at crates/sigil-frontend-as/tests/as_string_concat.rs:549:5:
+v_fn_in_interp: asl assembles it, sigil refused: ["string interpolation `\\{signedToString(-5)}` has no value here", "string interpolation `\\{signedToString($123)}` has no value here"]
+test result: FAILED. 16 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+error: test failed, to rerun pass `-p sigil-frontend-as --test as_string_concat`
+TEST_PIPE_DONE
+restored crates/sigil-frontend-as/src/eval.rs from HEAD; tracked changes now: 0
