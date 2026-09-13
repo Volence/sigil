@@ -592,8 +592,8 @@ fn preserves_matching_movem_pair_ok() {
 fn preserves_superset_save_verifies_declared_subset() {
     // §5 upgrade over the D2.32 intersects-must-equal rule: a movem that saves a
     // SUPERSET of the declared set still preserves the declared subset (each
-    // declared register round-trips). This is the Collected_CheckRing shape
-    // (`movem.l d0-d1` saves both, but only `d1` is declared preserved). No error.
+    // declared register round-trips), as when a `movem.l d0-d1` pair saves
+    // both but only `d1` is declared preserved. No error.
     let src = "module m\n\
                proc h() preserves(d0-d1/a0) {\n\
                \x20   movem.l d0-d2/a0, -(sp)\n\
