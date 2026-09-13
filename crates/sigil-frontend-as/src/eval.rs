@@ -3748,11 +3748,11 @@ impl Asm {
 
     /// Replace each body identifier equal to a parameter with its (expanded,
     /// parenthesised) argument tokens, AND each whole-word occurrence of a
-    /// parameter inside a string literal's text with the same argument's source
-    /// spelling, parenthesised.
+    /// parameter inside a string literal's text with the argument's value,
+    /// parenthesised ([`Self::substitute_in_literal`]).
     ///
-    /// The string half is not an extra: asl's `function` expansion is TEXTUAL
-    /// and does not stop at a quote. Measured, probe `v_fn_str_body`, exit 0:
+    /// The string half is asl's: its `function` expansion reaches inside a
+    /// quote. Measured, probe `v_fn_str_body`, exit 0:
     ///
     /// ```text
     ///    5/       0 : 2833 29EE           	dc.b fa(3),$EE      fa function n,"n"
@@ -3760,15 +3760,11 @@ impl Asm {
     ///   11/       F : 6E6F 6E65 33EE      	dc.b fd(3),$EE      fd function n,"none\{n}"
     /// ```
     ///
-    /// `fa` is `(3)` and not `3`, so the parentheses are part of what is pasted;
-    /// that is what makes `fe function num,"\{num+1}"` read `(3)+1` and answer
-    /// `4`. `fd` is `none3`, so the `n` inside `none` is not an occurrence and
-    /// the boundary is a whole WORD.
-    ///
-    /// Without this, Sonic 1's `signedToString` pasted the characters of its own
-    /// source text into the image and exited 0: the parameter inside
-    /// `"$\{abs(number)}"` was never bound, so the interpolation had nothing to
-    /// evaluate and the literal reached `dc.b` as fifteen bytes of `$\{abs(...`.
+    /// `fa` is `(3)` and not `3`, so the parentheses are part of what is pasted,
+    /// and `fe function num,"\{num+1}"` reads `(3)+1` and answers `4`. `fd` is
+    /// `none3`, so the `n` inside `none` is not an occurrence. Sonic 1's
+    /// `signedToString` depends on this half: its `"$\{abs(number)}"` names the
+    /// parameter only inside a literal.
     // REASON: the doc comment above quotes an asl listing verbatim, and asl
     // separates its byte column from the echoed source with a TAB. The tabs are
     // the evidence. Scoped to this item.
@@ -3808,17 +3804,39 @@ impl Asm {
     }
 
     /// One string literal's SOURCE text with every whole-word parameter
-    /// occurrence replaced by `(<argument as written>)`. `None` when the text
-    /// holds no occurrence, so an untouched literal keeps its own token.
+    /// occurrence replaced by `(<the argument's value, in decimal>)`. `None`
+    /// when the text holds no occurrence, so an untouched literal keeps its own
+    /// token.
     ///
-    /// ONE left-to-right scan, and the replacement text is never rescanned. A
-    /// second pass over what was pasted could find a parameter name inside an
-    /// argument and substitute it again, which asl does not do.
+    /// asl pastes the argument's VALUE, not its spelling, and writes it in
+    /// decimal. Probe `v_fn_paste_value`, exit 0, `fm function n,"n"`:
     ///
-    /// A word here is a run of characters an AS identifier can be spelled from
-    /// (alphanumerics, `_`, `.`). The `.` matters: `.local` is one name in AS,
-    /// so a parameter `local` must not match inside it, exactly as `n` does not
-    /// match inside `none`.
+    /// ```text
+    ///    6/       5 : 2831 3629 EE        	dc.b fm($10),$EE
+    ///    7/       A : 2833 29EE           	dc.b fm(1+2),$EE
+    ///    8/       E : 282D 3529 EE        	dc.b fm(-5),$EE
+    ///    9/      13 : 2833 3129 EE        	dc.b fm(n2),$EE      n2 equ $1F, below
+    /// ```
+    ///
+    /// A word is a run of ASCII letters and digits and nothing else: `_` and `.`
+    /// end one here although both can spell an AS name. Probe `v_fn_word_edges`,
+    /// exit 0: `"a.n n.b n"` is `a.(3) (3).b (3)` and `"n_1 1n n1 _n"` is
+    /// `(3)_1 1n n1 _(3)`.
+    ///
+    /// ONE left-to-right scan, and the pasted text is never rescanned, so a
+    /// parameter name inside a pasted value is not substituted again.
+    ///
+    /// An argument that does not fold to an integer HERE pastes its own
+    /// spelling. That is a forward reference on an early pass, which the pass
+    /// that converges resolves; an argument that never resolves is reported by
+    /// [`Self::check_call_args`], whose strict check reaches a parameter named
+    /// only inside a literal because the body's tokens do not mention it. A
+    /// string or a float argument has no integer to paste either, and
+    /// [`Self::check_pasted_arg`] refuses it.
+    // REASON: the doc comment above quotes an asl listing verbatim, and asl
+    // separates its byte column from the echoed source with a TAB. The tabs are
+    // the evidence. Scoped to this item.
+    #[allow(clippy::tabs_in_doc_comments)]
     fn substitute_in_literal(
         &self,
         raw: &str,
@@ -3826,12 +3844,13 @@ impl Asm {
         args: &[Vec<Token>],
         depth: usize,
     ) -> Option<String> {
-        let is_word = |c: char| c.is_alphanumeric() || c == '_' || c == '.';
         let mut out = String::new();
         let mut changed = false;
         let mut rest = raw;
         while !rest.is_empty() {
-            let word_len = rest.find(|c| !is_word(c)).unwrap_or(rest.len());
+            let word_len = rest
+                .find(|c: char| !c.is_ascii_alphanumeric())
+                .unwrap_or(rest.len());
             if word_len == 0 {
                 // Not at a word: copy one character and look again.
                 let c = rest.chars().next().expect("rest is non-empty");
@@ -3846,8 +3865,12 @@ impl Asm {
                 .and_then(|idx| args.get(idx))
             {
                 Some(arg) => {
+                    let pasted = match self.fold_const(arg) {
+                        Some(v) => v.to_string(),
+                        None => render_tokens(&self.expand_calls(arg, depth + 1)),
+                    };
                     out.push('(');
-                    out.push_str(&render_tokens(&self.expand_calls(arg, depth + 1)));
+                    out.push_str(&pasted);
                     out.push(')');
                     changed = true;
                 }
@@ -3947,13 +3970,68 @@ impl Asm {
             }
             for (idx, arg) in args.iter().enumerate() {
                 self.check_call_args(arg, depth + 1);
-                if params.get(idx).is_some_and(|p| !body_mentions(&body, p)) {
+                let Some(param) = params.get(idx) else {
+                    continue;
+                };
+                // The pasted-argument check first: when it reports, it claims
+                // the argument's site, so the strict check below does not say a
+                // second thing about the same argument.
+                if Self::literal_mentions(&body, param) {
+                    self.check_pasted_arg(name, param, arg);
+                }
+                if !body_mentions(&body, param) {
                     self.check_ignored_arg(arg);
                 }
             }
             let expanded = self.substitute(&body, &params, &args, depth);
             self.check_call_args(&expanded, depth + 1);
             i = next;
+        }
+    }
+
+    /// Whether `param` occurs as a whole word inside one of `body`'s string
+    /// literals, by [`Self::substitute_in_literal`]'s rule: a word is a run of
+    /// ASCII letters and digits.
+    fn literal_mentions(body: &[Token], param: &str) -> bool {
+        body.iter().any(|t| match &t.tok {
+            Tok::Str(raw) => raw
+                .split(|c: char| !c.is_ascii_alphanumeric())
+                .any(|word| word == param),
+            _ => false,
+        })
+    }
+
+    /// Refuse an argument that has no integer to paste into a string literal of
+    /// the body ([`Self::substitute_in_literal`]).
+    ///
+    /// A STRING argument is an error to asl there: `fm function n,"n"` /
+    /// `dc.b fm("ab")` is `error #1020: invalid symbol name` (probe
+    /// `v_fn_paste_str`, exit 2). A FLOAT argument asl accepts and pastes in a
+    /// fixed exponent form, `fm(2.5)` as `(2.5000000000000000E+00)` (probe
+    /// `v_fn_paste_float`, exit 0). That rendering is not implemented, so the
+    /// float is refused by name rather than pasted in some other form.
+    fn check_pasted_arg(&mut self, fname: &str, param: &str, arg: &[Token]) {
+        let Some(span) = group_span(arg) else {
+            return;
+        };
+        let expanded = self.expand_calls(arg, 0);
+        let kind = if self.eval_str(&expanded).is_some() {
+            "a string"
+        } else if self.float_leaf(&expanded).is_some()
+            && matches!(self.eval_num(&expanded), Some(Num::Float(_)))
+        {
+            "a floating-point value"
+        } else {
+            return;
+        };
+        let key = self.site_key(span);
+        if self.arg_faults_seen.insert(key) {
+            self.err(
+                span,
+                format!(
+                    "`{fname}` pastes its parameter `{param}` into a string literal, and this argument is {kind}: only an integer argument can be pasted there"
+                ),
+            );
         }
     }
 

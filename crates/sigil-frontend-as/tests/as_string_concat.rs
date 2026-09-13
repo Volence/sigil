@@ -187,6 +187,15 @@ fn builds_or_refuses(name: &str) {
     }
 }
 
+/// asl REFUSED the probe (its recorded exit is not 0), and sigil refuses it too.
+#[track_caller]
+fn refused(name: &str) {
+    assert_ne!(asl_exit(name), 0, "{name}: asl assembled it, so it is not a refusal probe");
+    if let Ok(got) = sigil_image(name) {
+        panic!("{name}: asl refuses it, sigil built {got:02X?}");
+    }
+}
+
 /// `+` between two string literals is CONCATENATION, not the sum of their
 /// packed character codes. `v_concat_lit.lst`, exit 0:
 ///
@@ -285,6 +294,72 @@ fn plus_over_non_strings_stays_numeric() {
 #[test]
 fn a_function_parameter_reaches_inside_a_string_literal() {
     builds("v_fn_str_body");
+}
+
+/// A function argument pasted into a body literal is the argument's VALUE,
+/// written in DECIMAL. `v_fn_paste_value.lst`, exit 0, `fm function n,"n"`:
+///
+/// ```text
+///        5/       0 : 2831 3229 EE        	dc.b fm(12),$EE
+///        6/       5 : 2831 3629 EE        	dc.b fm($10),$EE
+///        7/       A : 2833 29EE           	dc.b fm(1+2),$EE
+///        8/       E : 282D 3529 EE        	dc.b fm(-5),$EE
+///        9/      13 : 2833 3129 EE        	dc.b fm(n2),$EE
+///       10/      18 : 2835 29EE           	dc.b fm(%101),$EE
+///       11/      1C : 2832 3535 29EE      	dc.b fm(255),$EE
+///       12/      22 : =$1F                 n2 equ $1F
+/// ```
+///
+/// Pasting the argument's spelling gives `(1+2)` and `(n2)`, and pasting a
+/// hex rendering gives `(10)` for `$10`. `n2` is defined BELOW its use, so the
+/// value comes from a later pass.
+#[test]
+fn a_pasted_argument_is_its_decimal_value() {
+    builds("v_fn_paste_value");
+}
+
+/// A parameter occurrence inside a literal is a run of LETTERS AND DIGITS, and
+/// nothing else. `v_fn_word_edges.lst`, exit 0, each called with 3 (`fk` with
+/// 1 and 2, `fl` with `n2`, `n2 equ 7`):
+///
+/// ```text
+///        5/       0 : 612E 2833 2920      	dc.b fg(3),$EE      fg function n,"a.n n.b n"
+///                 6 : 2833 292E 6220
+///                 C : 2833 29EE
+///        7/      10 : 2833 295F 3120      	dc.b fh(3),$EE      fh function n,"n_1 1n n1 _n"
+///                16 : 316E 206E 3120
+///                1C : 5F28 3329 EE
+///        9/      21 : 4E2D 2833 29EE      	dc.b fi(3),$EE      fi function n,"N-n"
+///       11/      27 : 2828 3329 29EE      	dc.b fj(3),$EE      fj function n,"(n)"
+///       13/      2D : 2832 2920 2831      	dc.b fk(1,2),$EE    fk function n,m,"m n"
+///                33 : 29EE
+///       15/      35 : 3728 3729 EE        	dc.b fl(n2),$EE     fl function n,"\{n}n"
+/// ```
+///
+/// `.` and `_` END a word here although both can spell an AS name: `a.n` is
+/// `a.(3)` and `n_1` is `(3)_1`. A boundary that counts either of them as part
+/// of a word leaves those rows alone. Case is exact under `-U` (`N-n`).
+#[test]
+fn a_parameter_word_is_letters_and_digits_only() {
+    builds("v_fn_word_edges");
+}
+
+/// An argument with no integer to paste into a body literal is refused. A
+/// STRING is an asl error there (`v_fn_paste_str`, `dc.b fm("ab")`, `error
+/// #1020: invalid symbol name`, exit 2). A FLOAT asl pastes in a fixed exponent
+/// form, `fm(2.5)` as `(2.5000000000000000E+00)` (`v_fn_paste_float`, exit 0);
+/// sigil does not render that form, so it must either write asl's twenty-four
+/// bytes or refuse, and never paste the float some other way.
+///
+/// The paste is textual right through an escape: `fq function n,"a\n b"` /
+/// `dc.b fq(3)` makes `\(3)`, which asl refuses as `error #2010: invalid escape
+/// sequence` (`v_fn_escape_letter`, exit 2). A scan that stepped over escape
+/// sequences would leave `\n` alone and write a newline.
+#[test]
+fn a_string_or_float_argument_pasted_into_a_literal_is_refused() {
+    refused("v_fn_paste_str");
+    builds_or_refuses("v_fn_paste_float");
+    refused("v_fn_escape_letter");
 }
 
 /// A `\{expr}` inside a string literal is folded even when the string arrives
