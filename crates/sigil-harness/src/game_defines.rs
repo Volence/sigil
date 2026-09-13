@@ -29,8 +29,8 @@
 /// Parse the `[defines]` table of a `games/<g>/map.toml` source into define rows.
 ///
 /// `origin` names the source in every diagnostic (the map.toml path). A map with
-/// no `[defines]` table parses to an empty row set — the byte-neutral default
-/// every shipped map has today. Each value must be a TOML integer (hex literals
+/// no `[defines]` table parses to an empty row set, the byte-neutral default.
+/// Each value must be a TOML integer (hex literals
 /// like `0x3E8` are TOML integers); each key must be define-identifier-shaped.
 /// A key declared twice fails loud, naming the key and both lines.
 pub fn parse_game_defines(toml_src: &str, origin: &str) -> Result<Vec<(String, i128)>, String> {
@@ -443,8 +443,8 @@ at = 0x0
 
     #[test]
     fn map_without_defines_table_parses_to_no_rows() {
-        // The byte-neutral default: every shipped map.toml today. A region-only
-        // fixture map must also yield no rows.
+        // The byte-neutral default: a map whose only keys are region and
+        // placement keys yields no rows.
         let src = "fill = 0x00\n[[region]]\nname=\"rom\"\nlma_base=0\nsize=0x400000\nkind=\"rom\"\n";
         assert_eq!(parse_game_defines(src, "fixture/map.toml").unwrap(), Vec::new());
     }
@@ -619,9 +619,9 @@ at = 0x0
 
     #[test]
     fn no_game_declared_rows_is_an_empty_walk_not_an_error() {
-        // CONTROL for the whole audit: today's state — every shipped map declares
-        // nothing, so the adjudicated key set is empty and nothing is charged.
-        // An audit that charged here would fire on the shipped corpus.
+        // CONTROL for the whole audit: when no map declares a game row, the
+        // adjudicated key set is empty and nothing is charged. An audit that
+        // charged here would fire on every corpus whose maps declare nothing.
         let shapes = [
             shape("sonic4 plain", &[("DEBUG", 1)]),
             shape("demo plain", &[("DEBUG", 0)]),
@@ -785,9 +785,10 @@ at = 0x0
 
     #[test]
     fn a_name_the_program_does_not_publish_is_not_a_collision() {
-        // CONTROL: the shipped state. Every define name today is absent from every
-        // shipped listing, so a refusal here would fire on correct trees — the
-        // always-red shape this must not have.
+        // CONTROL: the normal case. On a tree that builds, no define name is one
+        // the program publishes, because such a collision refuses the build. A
+        // refusal here would fire on every correct tree, the always-red shape this
+        // must not have.
         let out = define_listing_rows(
             &rows(&[("DEBUG", 0), ("MAX_RING_BUFFER", 16)]),
             BUILTIN,

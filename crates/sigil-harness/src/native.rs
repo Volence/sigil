@@ -1011,8 +1011,8 @@ pub fn shipped_shapes() -> Vec<(&'static str, GameProfile)> {
 /// (`unknown name X` at lower time, or an un-gated arm in a corpus walk) pointing
 /// at the `.emp` consumer instead of at the missing file. There is no waiver: a
 /// synthetic fixture tree supplies the file, and a map that EXISTS with no
-/// `[defines]` table contributes no game rows — the byte-neutral state every
-/// shipped map is in today. Any other read failure is loud.
+/// `[defines]` table contributes no game rows, the byte-neutral case. Any other
+/// read failure is loud.
 pub fn shape_defines(profile: &GameProfile, aeon: &Path) -> Result<Vec<(String, i128)>, String> {
     let map_path = profile.map_path(aeon);
     let origin = map_path.display().to_string();
@@ -1024,7 +1024,7 @@ pub fn shape_defines(profile: &GameProfile, aeon: &Path) -> Result<Vec<(String, 
                  rows there, so a missing or renamed map is a MISSING config, not an \
                  empty one, and no shape may walk with the built-in rows alone. A \
                  synthetic fixture tree supplies the file; a map with no `[defines]` \
-                 table declares no game rows, which is what every shipped map does today",
+                 table is a valid config that declares no game rows",
                 profile.name
             ));
         }
