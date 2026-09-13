@@ -1,21 +1,22 @@
-//! `+` over STRING operands, and the two things that ride with it: a
-//! `function` body's parameters reaching inside a string literal, and a
-//! `\{expr}` interpolation inside a string that arrives at bytes through
-//! something other than a bare literal.
+//! `+` over STRING operands, and what rides with it: a `function` body's
+//! parameters reaching inside a string literal, a `\{expr}` interpolation
+//! folded where its literal is, and a quote inside an interpolation.
 //!
-//! Row AS-STRING-PLUS-SILENT. What made this worth a parcel is that three of
-//! the four shapes below were silently WRONG rather than refused: sigil exited
-//! 0 and wrote different bytes from asl, so nothing in a build said so.
+//! Row AS-STRING-PLUS-SILENT. The failures these tests are aimed at are SILENT
+//! ones: a build that exits 0 with bytes asl does not write.
 //!
-//! | source | asl | sigil before |
+//! | source | asl | the wrong reading |
 //! |---|---|---|
-//! | `dc.b "-"+"x"` | `2D 78` | `A5`, exit 0 |
-//! | `f function number,"a"+"b"` / `dc.b f(1)` | `61 62` | `C3`, exit 0 |
-//! | `f function number,"$\{abs(number)}"` / `dc.b f(-5)` | `24 35` | the 15 bytes of the source text, exit 0 |
-//! | `dc.b substr("$\{abs(-5)}",0,0)` | `24 35` | the 11 bytes of the source text, exit 0 |
+//! | `dc.b "-"+"x"` | `2D 78` | `A5`, the sum of the packed codes |
+//! | `f function number,"a"+"b"` / `dc.b f(1)` | `61 62` | `C3` |
+//! | `f function number,"$\{abs(number)}"` / `dc.b f(-5)` | `24 35` | the 15 bytes of the source text |
+//! | `dc.b substr("$\{abs(-5)}",0,0)` | `24 35` | the 11 bytes of the source text |
+//! | `dc.b lowstring("\{N}")` with `N equ $AB` | `61 62` | `35`, an interpolation of a different symbol, `n` |
+//! | `dc.b s` with `s := "\\{n}"` | `5C 7B 6E 7D` | `35`, the value scanned for `\{` a second time |
 //!
-//! The consequence: Sonic 1's `signedToString`
-//! (`s1disasm/MacroSetup.asm(221)`) did not assemble.
+//! The corpus demand is Sonic 1's `signedToString`
+//! (`s1disasm/MacroSetup.asm(221)`), which Sonic 1 calls inside `\{…}` in its
+//! `error`/`warning` text.
 //!
 //! # Provenance
 //!
@@ -39,12 +40,25 @@
 //! |---|---|
 //! | `+` concatenates, but only for two bare literals | `a_chain_of_concatenations_folds_left_to_right` |
 //! | `+` concatenates any pair, numeric `+` caught with it | `plus_over_non_strings_stays_numeric` |
+//! | no concatenation at all | `sonic_1_signed_to_string_assembles` |
 //! | a function parameter substituted only inside `\{…}` | `a_function_parameter_reaches_inside_a_string_literal` |
 //! | a parameter substituted as a SUBSTRING rather than a whole word | `a_function_parameter_reaches_inside_a_string_literal` |
 //! | the argument pasted unparenthesised | `a_function_parameter_reaches_inside_a_string_literal` |
-//! | interpolation run for a bare literal only, not for a computed string | `an_interpolation_is_folded_in_a_computed_string` |
-//! | a string-valued function result not bindable by `set` | `a_string_valued_function_result_binds_to_a_symbol` |
-//! | the whole feature, minus `sgn`/`substr` (which already worked) | `sonic_1_signed_to_string_assembles` |
+//! | the argument pasted as its spelling, not its decimal value | `a_pasted_argument_is_its_decimal_value` |
+//! | `_` or `.` counted as part of a parameter word | `a_parameter_word_is_letters_and_digits_only` |
+//! | a string or float argument pasted into a literal unchecked | `a_string_or_float_argument_pasted_into_a_literal_is_refused` |
+//! | interpolation folded for a bare literal only, not a computed string | `an_interpolation_is_folded_in_a_computed_string` |
+//! | interpolation folded where the string lands, not at its literal | `an_interpolation_is_folded_where_its_literal_is` |
+//! | a string VALUE scanned for `\{` a second time | `a_string_value_is_not_scanned_again_for_interpolation` |
+//! | a call's string result bound by `equ` as a string | `a_function_result_bound_by_equ_keeps_its_integer_reading` |
+//! | a call's result bound by `set` with its interpolation unfolded | `a_string_valued_function_bound_by_set_is_never_silently_wrong` |
+//! | an interpolation's string probe run before its call is expanded | `a_string_valued_function_pastes_its_string_into_an_interpolation` |
+//! | integer builtins not folded inside a constant fold | `a_string_valued_function_pastes_its_string_into_an_interpolation` |
+//! | a literal ended at a quote inside `\{…}` | `a_quote_inside_an_interpolation_belongs_to_it` |
+//! | an interpolation ended at its first `}`, inside a quoted `"}"` | `a_quote_inside_an_interpolation_belongs_to_it` |
+//!
+//! Every row was applied as a mutation to the committed tree and its test went
+//! red: `2026-09-12-as-missing-builtins/mutations/string-concat/`.
 
 // REASON: the doc comments quote asl's listing rows verbatim, and asl separates
 // a row's byte column from its echoed source with a TAB. The tabs are the
@@ -203,10 +217,10 @@ fn refused(name: &str) {
 ///        4/       0 : 2D78                	dc.b "-"+"x"
 /// ```
 ///
-/// `2D 78`, two bytes. sigil read each one-character string as its character
-/// code and added them, writing the one byte `A5` and exiting 0. The two
-/// readings are distinguishable in the LENGTH as well as the value, which is
-/// why this probe uses two characters that do not sum to either of them.
+/// `2D 78`, two bytes. The arithmetic reading takes each one-character string
+/// as its code and adds them, the one byte `A5`. The two readings differ in
+/// LENGTH as well as value, which is why this probe uses two characters that
+/// do not sum to either of them.
 ///
 /// `v_concat_substr` is the same law with a computed left operand
 /// (`substr("-",0,1)+"x"`, also `2D78`), so a fix that special-cased a pair of
@@ -225,14 +239,16 @@ fn plus_between_two_strings_concatenates() {
 ///        6/       9 : 42EE                	dc.b ""+"B",$EE
 ///        7/       B : EE                  	dc.b ""+"",$EE
 ///        8/       C : 6162 63EE           	dc.b ("a"+"b")+"c",$EE
-///        9/      10 : 34EE                	dc.b "\{strlen("ab"+"cd")}",$EE
-///       12/      16 : 656C 2D78 79EE      	dc.b substr("hello",1,2)+"-"+lowstring("XY"),$EE
+///        9/      10 : ="abcd"              T set "ab"+"cd"
+///       10/      10 : 04EE                	dc.b strlen(T),$EE
+///       13/      16 : 656C 2D78 79EE      	dc.b substr("hello",1,2)+"-"+lowstring("XY"),$EE
 /// ```
 ///
 /// Three operands, so a fix that handles exactly one `+` is red. The empty
 /// string is an identity on both sides and `""+""` contributes nothing at all
-/// (line 7 is the `$EE` alone). Line 9 is the one that proves the result is a
-/// STRING and not merely bytes at a data directive: `strlen` of it is 4.
+/// (line 7 is the `$EE` alone). Lines 9 and 10 are the ones that prove the
+/// result is a STRING and not merely bytes at a data directive: `set` binds
+/// `"abcd"` and `strlen` of it is 4.
 #[test]
 fn a_chain_of_concatenations_folds_left_to_right() {
     builds("v_concat_chain");
@@ -242,16 +258,15 @@ fn a_chain_of_concatenations_folds_left_to_right() {
 /// exit 0:
 ///
 /// ```text
-///       10/      12 : 03EE                	dc.b 1+2,$EE
-///       11/      14 : 62EE                	dc.b "a"+1,$EE
+///       11/      12 : 03EE                	dc.b 1+2,$EE
+///       12/      14 : 62EE                	dc.b "a"+1,$EE
 /// ```
 ///
 /// These are the negative rows, and they are in the acceptance set on purpose:
 /// the risk in teaching `+` about strings is that it stops being addition. A
 /// one-character string plus an integer is asl's packed-character arithmetic
-/// (`"a"+1` is `b`), which sigil already reached through its numeric path, and
-/// this test exists to keep it there. `1+2` is `03` and not a concatenation of
-/// two digits.
+/// (`"a"+1` is `b`), which is the numeric path's answer, and this test keeps
+/// it there. `1+2` is `03` and not a concatenation of two digits.
 ///
 /// This test shares a probe with the one above and is deliberately not merged
 /// into it: a single test over `v_concat_chain` would let a reader see one
@@ -289,8 +304,8 @@ fn plus_over_non_strings_stays_numeric() {
 /// * `fb` and `fe` are the interpolating rows, `fa` and `fc` the plain-text
 ///   ones, so a fix that substituted only inside `\{…}` leaves `fa` red.
 ///
-/// sigil before this parcel emitted the literal source text for every row: `6E`
-/// for `fa(3)` and the six bytes of `\{n}` for `fb(3)`, exit 0.
+/// A body whose literal is left alone writes its source text for every row:
+/// `6E` for `fa(3)` and the six bytes of `\{n}` for `fb(3)`.
 #[test]
 fn a_function_parameter_reaches_inside_a_string_literal() {
     builds("v_fn_str_body");
@@ -373,12 +388,11 @@ fn a_string_or_float_argument_pasted_into_a_literal_is_refused() {
 ///        7/       B : 3521 EE             	dc.b "\{abs(-5)}"+"!",$EE
 /// ```
 ///
-/// The first two rows carry no `+` at all, and they were silently wrong before
-/// this parcel: sigil wrote the eleven bytes of the source text `$\{abs(-5)}`
-/// and exited 0. So the interpolation gap is a defect in its own right that
-/// this parcel's fix closes, and not a consequence of `+`. It is guarded here
-/// rather than left to `v_concat`'s coverage precisely because `+` is not what
-/// causes it.
+/// The first two rows carry no `+` at all. A data directive that does not fold
+/// a computed string's interpolation writes the eleven source characters
+/// `$\{abs(-5)}` for them, so the interpolation is guarded here in its own
+/// right rather than left to `v_concat`'s coverage: `+` is not what it
+/// depends on.
 #[test]
 fn an_interpolation_is_folded_in_a_computed_string() {
     builds("v_interp_substr");
@@ -561,7 +575,8 @@ fn sonic_1_signed_to_string_assembles() {
 }
 
 /// The control. `signed_sgn` is the `sgn`/`substr` half of `signedToString`
-/// with the `+` removed, and it assembled correctly BEFORE this parcel:
+/// with the `+` removed, so it exercises `substr` and `sgn` with no
+/// concatenation anywhere:
 ///
 /// ```text
 ///        5/       0 : 2D                  	dc.b signPrefix(-5)
@@ -570,11 +585,9 @@ fn sonic_1_signed_to_string_assembles() {
 ///        8/       4 : 2D78                	dc.b substr("-",0,-sgn(-5)),"x"
 /// ```
 ///
-/// It is in this file so that the parcel's own suite says whether the machinery
-/// it extended still answers what it already answered. A change to `eval_str`
-/// that taught it `+` at the cost of the plain `substr` path would be green
-/// everywhere else here and red only on this.
+/// A change to `eval_str` that taught it `+` at the cost of the plain `substr`
+/// path is green everywhere else in this file and red only here.
 #[test]
-fn the_substr_half_that_already_worked_still_works() {
+fn the_substr_and_sgn_half_assembles_without_concatenation() {
     builds("signed_sgn");
 }

@@ -3401,24 +3401,20 @@ impl Asm {
         if let Some(inner) = peel_parens(toks) {
             return self.eval_str(inner);
         }
-        // asl's `+` over STRING operands is CONCATENATION. It is not the sum of
-        // their packed character codes, which is what an evaluator with no
-        // string type in its `+` path computes, and the difference is SILENT:
-        // `dc.b "-"+"x"` is `2D 78` to asl and was one byte `A5` here, exit 0
-        // either way (probe `v_concat_lit`, and `v_concat_chain` for the rest of
-        // the law). The two readings differ in LENGTH as well as value, so a
-        // concatenation can never be mistaken for the arithmetic.
+        // asl's `+` over STRING operands is CONCATENATION, not the sum of the
+        // operands' packed character codes: `dc.b "-"+"x"` is `2D 78` (probe
+        // `v_concat_lit`, and `v_concat_chain` for the rest of the law). The
+        // arithmetic reading is the one byte `A5`, so the two differ in LENGTH
+        // as well as value and a concatenation cannot pass for the sum.
         //
         // EVERY operand must be a string or this returns `None` and the caller's
-        // numeric path runs unchanged. That is the whole safety argument for
-        // putting this here: `1+2` splits, finds no string, and folds to `03` as
-        // it always did (probe `v_concat_chain` line 10). A MIXED pair also
-        // falls through, and for the shape the corpus can reach it agrees:
-        // asl's `"a"+1` is `62`, which is what the numeric path already computes
-        // from the packed code. The multi-character mixed case (`"ab"+1` is
-        // `61 63` to asl, packed arithmetic that preserves the string's length)
-        // diverges LOUDLY here as a `dc.b` range overflow; it is ledgered as
-        // AS-STRING-PLUS-INT rather than guessed at.
+        // numeric path runs unchanged, which is what keeps this from capturing
+        // an addition: `1+2` splits, finds no string, and folds to `03` (probe
+        // `v_concat_chain` line 11). A MIXED pair also falls through, and in its
+        // one-character shape the numeric path agrees with asl: `"a"+1` is `62`,
+        // the packed code plus one. The multi-character mixed case (`"ab"+1` is
+        // `61 63` to asl, packed arithmetic that keeps the string's length) is
+        // refused as a `dc.b` range overflow and ledgered as AS-STRING-PLUS-INT.
         if let Some(parts) = split_top_plus(toks) {
             let mut out = String::new();
             for part in &parts {
@@ -3559,17 +3555,15 @@ impl Asm {
     /// `pos`/`len` arguments, and `val`'s re-lexed expression text).
     fn fold_const(&self, toks: &[Token]) -> Option<i64> {
         let expanded = self.expand_calls(toks, 0);
-        // An INTEGER builtin may appear here too, and asl's constant
-        // expressions include those just as they include the string ones.
-        // Sonic 1's `signedToString` is the shape that needs it:
-        // `substr("-",0,-sgn(number))` folds its length through `sgn`, and a
-        // data directive got away without this only because the operand
-        // pipeline (`expand_operand_builtins`) had already folded the builtin
-        // before `eval_str` ever saw the tokens. Every OTHER caller of a string
-        // expression (`set`, `equ`, `switch`, `irpc`, `{…}` name composition)
-        // has no such pipeline, so `S set signedToString(-5)` declined here and
-        // then failed as an undefined symbol. Ordered int-then-string, the same
-        // order `expand_operand_builtins` uses, so the two cannot disagree.
+        // An INTEGER builtin may appear here too: asl's constant expressions
+        // include those just as they include the string ones. Sonic 1's
+        // `signedToString` needs it: `substr("-",0,-sgn(number))` folds its
+        // length through `sgn`. A data directive's operand pipeline
+        // (`expand_operand_builtins`) folds the builtin before `eval_str` sees
+        // the tokens, but a call expanded inside a `\{…}` interpolation, or a
+        // string expression bound by `set`/`equ`, reaches `substr` with the
+        // builtin still in place. Ordered int-then-string, the order
+        // `expand_operand_builtins` uses, so the two cannot disagree.
         let expanded = self.expand_int_builtin_opt(&expanded)?;
         // A string builtin may appear here: `substr(s, strstr(s,"_")+1,
         // strlen(s))` is Sonic 2's whole jump-table generator
@@ -12341,7 +12335,7 @@ fn peel_parens(toks: &[Token]) -> Option<&[Token]> {
 
 /// `toks` cut at every TOP-LEVEL `+`, or `None` when there is no such `+` or
 /// any piece would be empty. The operand list of a candidate string
-/// concatenation, for [`Evaluator::eval_str`].
+/// concatenation, for [`Asm::eval_str`].
 ///
 /// `None` rather than a one-element vector when there is no `+`: the caller
 /// recurses into each piece, and a single piece that is the whole input would
@@ -12351,13 +12345,13 @@ fn peel_parens(toks: &[Token]) -> Option<&[Token]> {
 /// label out of here. AS spells a forward nameless label `+`, so `+`, `++` and
 /// a leading `+` are label syntax rather than addition; each of those leaves an
 /// empty piece and is declined, which sends the slice down the path that
-/// already understood it. A trailing `+` (a malformed expression) is declined
-/// for the same reason and keeps its existing diagnostic.
+/// understands it. A trailing `+` (a malformed expression) is declined for the
+/// same reason and draws the numeric path's diagnostic.
 ///
 /// Only `+`. A `-` is NOT a separator: asl's `-` over strings is not
 /// concatenation, and splitting on it would offer `eval_str` operands it would
 /// have to decline one at a time. `"a"+"b"-1` therefore declines as a whole and
-/// folds numerically, which is what it did before.
+/// folds numerically.
 fn split_top_plus(toks: &[Token]) -> Option<Vec<&[Token]>> {
     let mut parts = Vec::new();
     let mut depth = 0i32;
