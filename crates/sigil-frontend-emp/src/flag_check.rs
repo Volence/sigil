@@ -56,6 +56,82 @@ pub struct FlagFiring {
     pub span: Span,
     /// Which check fired.
     pub kind: FlagFiringKind,
+    /// For an [`FlagFiringKind::Unused`] firing, the declared NAME of the
+    /// abandoned flag result (`dropped` in `out(carry: dropped)`), the name a
+    /// `@discards(...)` at this call must give. The checkers take flags without
+    /// names, so they leave this `None`; the corpus walk fills it from the
+    /// callee's declaration. Always `None` for an invalid-path firing, which no
+    /// attribute opts out of.
+    pub name: Option<String>,
+}
+
+impl FlagFiring {
+    /// The diagnostic text, rule prefix included, ending in what to do about it.
+    /// One rendering shared by every consumer (the build gate, the report, tests).
+    pub fn message(&self) -> String {
+        let (proc, callee, flag) = (&self.proc, &self.callee, &self.flag);
+        match &self.kind {
+            FlagFiringKind::Unused => {
+                let name = self.name.as_deref().unwrap_or("<name>");
+                format!(
+                    "[call.flag-result-unused] `{proc}` calls `{callee}` and abandons its \
+                     `{flag}` result `{name}` on some path: the flag is redefined, or the proc \
+                     returns, before anything reads it. Consume it (a conditional branch on \
+                     `{flag}`) before it is redefined, or mark the call `@discards({name})` if \
+                     dropping it is intended"
+                )
+            }
+            FlagFiringKind::InvalidPathRead { reg, cc } => format!(
+                "[call.result-invalid-path] `{proc}` calls `{callee}`, whose `{reg}` result is \
+                 valid only where `{cc}` holds, and reads `{reg}` on the path where `{cc}` does \
+                 not hold. Read `{reg}` only on the `{cc}` path, or redefine it first"
+            ),
+        }
+    }
+}
+
+/// What the flag checks did at one call to a callee declaring a flag result
+/// (`out(carry: name)`) or a conditional register result (`out(rN if cc)`): the
+/// population the firing lists range over, so an empty firing list can be told
+/// apart from a walk that evaluated nothing.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FlagSite {
+    /// The calling proc.
+    pub proc: String,
+    /// The callee declaring the result.
+    pub callee: String,
+    /// The result this site owes: the flag (`carry`) for the must-use check,
+    /// `rN if cc` for the invalid-path check.
+    pub result: String,
+    /// The call instruction's span.
+    pub span: Span,
+    /// The CPU the calling proc was evaluated for.
+    pub cpu: Cpu,
+    /// What the check did here.
+    pub outcome: FlagSiteOutcome,
+}
+
+/// The outcome of one [`FlagSite`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FlagSiteOutcome {
+    /// `[call.flag-result-unused]` walked every path from the call. A firing, if
+    /// any, is in the firing list; otherwise every path consumed the flag.
+    Walked,
+    /// The call carries `@discards`, so the must-use walk did not run.
+    Discarded,
+    /// The declared flag has no consumer model (only `carry` has one), so the
+    /// must-use walk did not run and an abandoned result is NOT caught here.
+    NoConsumerModel,
+    /// `[call.result-invalid-path]` found the branch testing the guard and walked
+    /// its invalid edge.
+    InvalidEdgeWalked,
+    /// No branch testing the guard follows the call before the guard is
+    /// redefined, the path returns, or an unrelated branch is reached, so the
+    /// invalid-path walk had no edge to start from and did not run.
+    NoGuardBranch,
+    /// The declared result register is not a register name this check models,
+    /// so the invalid-path walk did not run.
+    UnknownRegister,
 }
 
 /// Call/tail mnemonics (both the `.emp` `jbsr`/`jbra` idioms and their resolved
@@ -774,8 +850,23 @@ pub fn check_flag_unused(
     discarded: &[Span],
     cpu: Cpu,
 ) -> Vec<FlagFiring> {
+    check_flag_unused_sites(proc_name, items, flag_callees, discarded, cpu).0
+}
+
+/// [`check_flag_unused`] plus the site census: one [`FlagSite`] per (call to a
+/// flag-result callee, declared flag), recorded by the same loop that decides the
+/// firings, so the population and the firings cannot disagree on which calls
+/// were seen.
+pub fn check_flag_unused_sites(
+    proc_name: &str,
+    items: &[CodeItem],
+    flag_callees: &BTreeMap<String, BTreeSet<String>>,
+    discarded: &[Span],
+    cpu: Cpu,
+) -> (Vec<FlagFiring>, Vec<FlagSite>) {
     let cfg = Cfg::build(items);
     let mut firings = Vec::new();
+    let mut sites = Vec::new();
 
     for (idx, it) in items.iter().enumerate() {
         let CodeItem::Instr { mnemonic, ops, span, .. } = it else { continue };
@@ -787,16 +878,27 @@ pub fn check_flag_unused(
         // has no bare Sym operand and is skipped.)
         let Some(callee) = branch_target(ops) else { continue };
         let Some(flags) = flag_callees.get(callee) else { continue };
+        let site = |flag: &str, outcome| FlagSite {
+            proc: proc_name.to_string(),
+            callee: callee.to_string(),
+            result: flag.to_string(),
+            span: *span,
+            cpu,
+            outcome,
+        };
         // The explicit opt-out.
         if discarded.contains(span) {
+            sites.extend(flags.iter().map(|f| site(f, FlagSiteOutcome::Discarded)));
             continue;
         }
         // The carry flag is the only §6 must-use flag today; a callee may in
         // principle return several. Fire once per unconsumed flag.
         for flag in flags {
             if flag != "carry" {
+                sites.push(site(flag, FlagSiteOutcome::NoConsumerModel));
                 continue; // only carry has a consumer model today
             }
+            sites.push(site(flag, FlagSiteOutcome::Walked));
             if abandons_flag(&cfg, idx, cpu) {
                 firings.push(FlagFiring {
                     proc: proc_name.to_string(),
@@ -804,11 +906,12 @@ pub fn check_flag_unused(
                     flag: flag.clone(),
                     span: *span,
                     kind: FlagFiringKind::Unused,
+                    name: None,
                 });
             }
         }
     }
-    firings
+    (firings, sites)
 }
 
 // ---------------------------------------------------------------------------
@@ -1027,10 +1130,11 @@ pub fn check_discard_names(
 // §6 / G2.4 — [call.result-invalid-path] for out(rN if cc) conditional register
 // results. D2.35's deferred sibling, riding the SAME CFG. A conditional
 // register result `rN` is valid only on the path where the guard `cc` holds;
-// reading `rN` on the other (invalid) path is an error. Forward machinery: no
-// corpus site declares a conditional register result today (like G1's
-// subcontract check — built + TDD'd against synthetic cases, inert on the real
-// corpus until the first such contract appears).
+// reading `rN` on the other (invalid) path is an error. 68k only: the walk
+// reads 68k branch conditions and return mnemonics. The corpus's callers of
+// `out(a1 if eq)` procs (`AllocDynamic`, `AllocEffect`,
+// `TileCache_FindStagedBlock`) are walked here in every shipped shape, and the
+// contract report counts them as invalid-path walked sites.
 // ---------------------------------------------------------------------------
 
 /// The condition a `bXX`/`sXX` branch/set tests, stripped of the mnemonic prefix
@@ -1116,8 +1220,21 @@ pub fn check_result_invalid_path(
     cond_callees: &BTreeMap<String, Vec<(String, String)>>,
     callee_uncond_out: &BTreeMap<String, BTreeSet<String>>,
 ) -> Vec<FlagFiring> {
+    check_result_invalid_path_sites(proc_name, items, cond_callees, callee_uncond_out).0
+}
+
+/// [`check_result_invalid_path`] plus the site census: one [`FlagSite`] per
+/// (call to a conditional-result callee, declared `rN if cc`), recorded by the
+/// same loop that decides the firings.
+pub fn check_result_invalid_path_sites(
+    proc_name: &str,
+    items: &[CodeItem],
+    cond_callees: &BTreeMap<String, Vec<(String, String)>>,
+    callee_uncond_out: &BTreeMap<String, BTreeSet<String>>,
+) -> (Vec<FlagFiring>, Vec<FlagSite>) {
     let cfg = Cfg::build(items);
     let mut firings = Vec::new();
+    let mut sites = Vec::new();
 
     for (idx, it) in items.iter().enumerate() {
         let CodeItem::Instr { mnemonic, ops, span, .. } = it else { continue };
@@ -1127,8 +1244,25 @@ pub fn check_result_invalid_path(
         let Some(callee) = branch_target(ops) else { continue };
         let Some(conds) = cond_callees.get(callee) else { continue };
         for (reg_name, cc) in conds {
-            let Some(reg) = Reg::from_name(reg_name) else { continue };
-            let Some(invalid_start) = cfg.invalid_edge(idx, cc) else { continue };
+            let mut site = |outcome| {
+                sites.push(FlagSite {
+                    proc: proc_name.to_string(),
+                    callee: callee.to_string(),
+                    result: format!("{reg_name} if {cc}"),
+                    span: *span,
+                    cpu: Cpu::M68000,
+                    outcome,
+                })
+            };
+            let Some(reg) = Reg::from_name(reg_name) else {
+                site(FlagSiteOutcome::UnknownRegister);
+                continue;
+            };
+            let Some(invalid_start) = cfg.invalid_edge(idx, cc) else {
+                site(FlagSiteOutcome::NoGuardBranch);
+                continue;
+            };
+            site(FlagSiteOutcome::InvalidEdgeWalked);
             if reads_reg_before_redefine(&cfg, invalid_start, reg, callee_uncond_out) {
                 firings.push(FlagFiring {
                     proc: proc_name.to_string(),
@@ -1139,11 +1273,12 @@ pub fn check_result_invalid_path(
                         reg: reg_name.clone(),
                         cc: cc.clone(),
                     },
+                    name: None,
                 });
             }
         }
     }
-    firings
+    (firings, sites)
 }
 
 /// Breadth-first: does any path from `start` READ `reg` (as a source / address

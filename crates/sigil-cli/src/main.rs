@@ -2133,6 +2133,23 @@ fn run_contract_gate(aeon: &std::path::Path, target: &BuildTarget) {
         }
         failed = true;
     }
+    // Every §6 flag-check kind, both CPUs: `[call.flag-result-unused]` (a flag
+    // result abandoned on some path) and `[call.result-invalid-path]` (a
+    // conditional register result read where its guard says it is invalid).
+    if !report.flag_firings.is_empty() {
+        eprintln!(
+            "error: [call.flag-result-unused]/[call.result-invalid-path], {} firing(s); \
+             zero-firing by contract:",
+            report.flag_firings.len()
+        );
+        for f in &report.flag_firings {
+            match src_index.locate(f.span) {
+                Some(loc) => eprintln!("  {loc}: {}", f.message()),
+                None => eprintln!("  (no span recorded): {}", f.message()),
+            }
+        }
+        failed = true;
+    }
 
     if failed {
         eprintln!(
@@ -2197,16 +2214,26 @@ fn print_contract_report(report: &sigil_frontend_emp::corpus_contracts::Contract
         println!("  {:<28} {kind}", f.proc);
     }
 
-    use sigil_frontend_emp::flag_check::FlagFiringKind;
-    println!("\n-- flag-result firings (§6, {}): --", report.flag_firings.len());
+    use sigil_frontend_emp::flag_check::FlagSiteOutcome as O;
+    let sites = |o: O| report.flag_sites.iter().filter(|s| s.outcome == o).count();
+    let z80_sites =
+        report.flag_sites.iter().filter(|s| s.cpu == sigil_ir::backend::Cpu::Z80).count();
+    println!(
+        "\n-- flag-result firings (§6, {} over {} call site(s), {} of them Z80: {} walked, {} \
+         discarded, {} with no consumer model; {} invalid-path walked, {} with no guard branch, \
+         {} unknown register): --",
+        report.flag_firings.len(),
+        report.flag_sites.len(),
+        z80_sites,
+        sites(O::Walked),
+        sites(O::Discarded),
+        sites(O::NoConsumerModel),
+        sites(O::InvalidEdgeWalked),
+        sites(O::NoGuardBranch),
+        sites(O::UnknownRegister),
+    );
     for f in &report.flag_firings {
-        let kind = match &f.kind {
-            FlagFiringKind::Unused => format!("[call.flag-result-unused] {} unconsumed", f.flag),
-            FlagFiringKind::InvalidPathRead { reg, cc } => {
-                format!("[call.result-invalid-path] {reg} read where !{cc}")
-            }
-        };
-        println!("  {:<28} calls {:<24} {kind}", f.proc, f.callee);
+        println!("  {}", f.message());
     }
 
     println!(
