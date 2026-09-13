@@ -1,0 +1,3 @@
+        let rest = &self.expand_calls(rest, 0);
+        self.eval_str(rest)?;
+        let folded = self.fold_literal_interps(rest, true).ok()?;

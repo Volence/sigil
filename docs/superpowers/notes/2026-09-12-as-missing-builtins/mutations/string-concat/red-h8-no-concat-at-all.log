@@ -1,0 +1,51 @@
+== mutation h8-no-concat-at-all on crates/sigil-frontend-as/src/eval.rs, test binary as_string_concat
+== HEAD 45ec1a87b848fe820133b06c57b6d96ab6d34637 branch parcel/as-string-concat
+MUTATED /home/volence/sonic_hacks/sigil/.worktrees/as-string-concat/crates/sigil-frontend-as/src/eval.rs, lines 3418..3418 now read:
+  3418:         if let Some(parts) = split_top_plus(toks).filter(|_| false) {
+git diff --stat:
+ crates/sigil-frontend-as/src/eval.rs | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+test a_quote_inside_an_interpolation_belongs_to_it ... FAILED
+test an_interpolation_is_folded_in_a_computed_string ... FAILED
+test a_string_valued_function_result_reaches_bytes ... FAILED
+test a_function_result_bound_by_equ_keeps_its_integer_reading ... ok
+test a_string_valued_function_bound_by_set_is_never_silently_wrong ... ok
+test a_string_or_float_argument_pasted_into_a_literal_is_refused ... ok
+test a_chain_of_concatenations_folds_left_to_right ... FAILED
+test a_pasted_argument_is_its_decimal_value ... ok
+test an_interpolation_is_folded_where_its_literal_is ... FAILED
+test a_string_value_is_not_scanned_again_for_interpolation ... FAILED
+test a_string_valued_function_pastes_its_string_into_an_interpolation ... FAILED
+test a_function_parameter_reaches_inside_a_string_literal ... ok
+test a_parameter_word_is_letters_and_digits_only ... ok
+test sonic_1_signed_to_string_assembles ... FAILED
+test the_substr_and_sgn_half_assembles_without_concatenation ... ok
+test plus_between_two_strings_concatenates ... FAILED
+test plus_over_non_strings_stays_numeric ... FAILED
+thread 'a_quote_inside_an_interpolation_belongs_to_it' (3144498) panicked at crates/sigil-frontend-as/tests/as_string_concat.rs:527:5:
+v_interp_nested_quote: asl assembles it, sigil refused: ["strlen(): could not evaluate string builtin"]
+thread 'an_interpolation_is_folded_in_a_computed_string' (3144505) panicked at crates/sigil-frontend-as/tests/as_string_concat.rs:398:5:
+v_interp_substr: asl assembles it, sigil refused: ["operand 9314 out of range -128..=255"]
+thread 'a_string_valued_function_result_reaches_bytes' (3144503) panicked at crates/sigil-frontend-as/tests/as_string_concat.rs:415:5:
+v_fn_concat_const: sigil's image differs from asl's listing at $0 (asl 3 bytes, sigil 2):
+  asl   [61, 62, EE]
+  sigil [C3, EE]
+thread 'a_chain_of_concatenations_folds_left_to_right' (3144493) panicked at crates/sigil-frontend-as/tests/as_string_concat.rs:254:5:
+v_concat_chain: asl assembles it, sigil refused: ["operand 76332 out of range -128..=255", "bad byte expression", "bad byte expression", "bad byte expression", "operand 294 out of range -128..=255", "strlen(): could not evaluate string builtin", "bad byte expression"]
+thread 'an_interpolation_is_folded_where_its_literal_is' (3144506) panicked at crates/sigil-frontend-as/tests/as_string_concat.rs:506:5:
+v_interp_at_literal: asl assembles it, sigil refused: ["strlen(): could not evaluate string builtin"]
+thread 'a_string_value_is_not_scanned_again_for_interpolation' (3144500) panicked at crates/sigil-frontend-as/tests/as_string_concat.rs:477:5:
+v_value_not_rescanned: asl assembles it, sigil refused: ["[Diagnostic { level: Error, message: \"unresolved target expression (dangling symbol(s) `s`) for fixup in section sec0 at offset 10\", primary: Span { source: SourceId(0), start: 89, end: 93 } }]"]
+thread 'a_string_valued_function_pastes_its_string_into_an_interpolation' (3144502) panicked at crates/sigil-frontend-as/tests/as_string_concat.rs:549:5:
+v_fn_in_interp: asl assembles it, sigil refused: ["string interpolation `\\{signedToString(-5)}` has no value here", "string interpolation `\\{signedToString($123)}` has no value here"]
+thread 'sonic_1_signed_to_string_assembles' (3144509) panicked at crates/sigil-frontend-as/tests/as_string_concat.rs:574:5:
+signed: asl assembles it, sigil refused: ["bad byte expression", "bad byte expression", "bad byte expression", "bad byte expression"]
+thread 'plus_between_two_strings_concatenates' (3144507) panicked at crates/sigil-frontend-as/tests/as_string_concat.rs:230:5:
+v_concat_lit: sigil's image differs from asl's listing at $0 (asl 3 bytes, sigil 2):
+  asl   [2D, 78, EE]
+  sigil [A5, EE]
+thread 'plus_over_non_strings_stays_numeric' (3144508) panicked at crates/sigil-frontend-as/tests/as_string_concat.rs:277:45:
+test result: FAILED. 7 passed; 10 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+error: test failed, to rerun pass `-p sigil-frontend-as --test as_string_concat`
+TEST_PIPE_DONE
+restored crates/sigil-frontend-as/src/eval.rs from HEAD; tracked changes now: 0

@@ -1,0 +1,7 @@
+                Some(arg) => {
+                    if !out.ends_with("\\{") {
+                        out.push_str(word);
+                        rest = tail;
+                        continue;
+                    }
+                    let pasted = match self.fold_const(arg) {

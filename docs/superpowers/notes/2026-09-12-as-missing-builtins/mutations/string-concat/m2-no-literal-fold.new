@@ -1,0 +1,2 @@
+                if raw.contains("\\{") && false {
+                    let value = self

@@ -1,0 +1,3 @@
+            let word_len = rest
+                .find(|c: char| !c.is_ascii_alphanumeric())
+                .unwrap_or(rest.len());

@@ -1,0 +1,1 @@
+                    let pasted = match self.fold_const(arg) {

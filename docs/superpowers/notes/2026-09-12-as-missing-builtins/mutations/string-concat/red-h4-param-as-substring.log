@@ -1,0 +1,39 @@
+== mutation h4-param-as-substring on crates/sigil-frontend-as/src/eval.rs, test binary as_string_concat
+== HEAD 45ec1a87b848fe820133b06c57b6d96ab6d34637 branch parcel/as-string-concat
+MUTATED /home/volence/sonic_hacks/sigil/.worktrees/as-string-concat/crates/sigil-frontend-as/src/eval.rs, lines 3845..3848 now read:
+  3845:             let word_len = params
+  3846:                 .iter()
+  3847:                 .find(|p| rest.starts_with(p.as_str()))
+  3848:                 .map_or(0, |p| p.len());
+git diff --stat:
+ crates/sigil-frontend-as/src/eval.rs | 7 ++++---
+ 1 file changed, 4 insertions(+), 3 deletions(-)
+test a_chain_of_concatenations_folds_left_to_right ... ok
+test a_pasted_argument_is_its_decimal_value ... ok
+test a_string_or_float_argument_pasted_into_a_literal_is_refused ... ok
+test a_function_parameter_reaches_inside_a_string_literal ... FAILED
+test a_parameter_word_is_letters_and_digits_only ... FAILED
+test a_string_valued_function_result_reaches_bytes ... ok
+test plus_between_two_strings_concatenates ... ok
+test a_function_result_bound_by_equ_keeps_its_integer_reading ... ok
+test a_string_valued_function_pastes_its_string_into_an_interpolation ... ok
+test a_string_valued_function_bound_by_set_is_never_silently_wrong ... ok
+test a_string_value_is_not_scanned_again_for_interpolation ... ok
+test an_interpolation_is_folded_in_a_computed_string ... ok
+test a_quote_inside_an_interpolation_belongs_to_it ... ok
+test sonic_1_signed_to_string_assembles ... ok
+test an_interpolation_is_folded_where_its_literal_is ... ok
+test the_substr_and_sgn_half_assembles_without_concatenation ... ok
+test plus_over_non_strings_stays_numeric ... ok
+thread 'a_function_parameter_reaches_inside_a_string_literal' (3138566) panicked at crates/sigil-frontend-as/tests/as_string_concat.rs:311:5:
+v_fn_str_body: sigil's image differs from asl's listing at $F (asl 25 bytes, sigil 29):
+  asl   [6E, 6F, 6E, 65, 33, EE, 34, EE]
+  sigil [28, 33, 29, 6F, 28, 33, 29, 65]
+thread 'a_parameter_word_is_letters_and_digits_only' (3138568) panicked at crates/sigil-frontend-as/tests/as_string_concat.rs:359:5:
+v_fn_word_edges: sigil's image differs from asl's listing at $17 (asl 58 bytes, sigil 62):
+  asl   [6E, 20, 6E, 31, 20, 5F, 28, 33]
+  sigil [28, 33, 29, 20, 28, 33, 29, 31]
+test result: FAILED. 15 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+error: test failed, to rerun pass `-p sigil-frontend-as --test as_string_concat`
+TEST_PIPE_DONE
+restored crates/sigil-frontend-as/src/eval.rs from HEAD; tracked changes now: 0

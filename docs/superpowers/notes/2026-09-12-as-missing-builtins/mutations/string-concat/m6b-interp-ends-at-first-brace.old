@@ -1,0 +1,1 @@
+            b'"' | b'\'' => i = literal_end(bytes, i)? + 1,

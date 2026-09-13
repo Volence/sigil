@@ -1,0 +1,2 @@
+                match self.fold_literal_interps(&called, false) {
+                    Ok(t) => t,

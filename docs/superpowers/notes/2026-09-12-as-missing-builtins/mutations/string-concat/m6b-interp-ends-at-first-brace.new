@@ -1,0 +1,1 @@
+            b'"' | b'\'' if false => i = literal_end(bytes, i)? + 1,
