@@ -4,7 +4,7 @@
 //! status flag the caller MUST consume. `[call.flag-result-unused]` verifies
 //! that, for every call to a flag-result callee, the flag is READ (a conditional
 //! transfer or set testing it) before it is REDEFINED (an instruction writing it
-//! / an intervening call) or the proc RETURNS — on EVERY path. A path that
+//! / an intervening call) or the proc RETURNS, on EVERY path. A path that
 //! abandons the flag fires, unless the call carries an explicit
 //! `@discards(name)`, and `[call.discards-unmatched]` ([`check_discard_names`])
 //! refuses any such name that is not a flag result the callee declares.
@@ -1563,7 +1563,7 @@ fn reads_reg_before_redefine(
 /// there a path that REACHES a redefine / return / proc-end ([`Edge::Return`] or
 /// [`Edge::FallOff`]) without first crossing a consumer of `flag`? Consumers
 /// PRUNE (that path is satisfied); a transfer-out edge in either flavor also
-/// prunes (the flag flows out of the proc — not a local abandonment). The
+/// prunes (the flag flows out of the proc, which is not a local abandonment). The
 /// visited set gives the CFG real joins so loops terminate.
 fn abandons_flag(cfg: &Cfg, call_idx: usize, cpu: Cpu, flag: TrackedFlag) -> bool {
     // The Z80 terminator/edge model diverges from 68k (`ret` vs `rts`, `jr`/`jp`

@@ -79,3 +79,51 @@ Two observations about the population itself, recorded rather than acted on:
 - The ledger's "9 code call sites without `@discards` (a grep of the three names)" and
   this census agree on the nine, and the census adds the shape split: a grep cannot see
   that #3 and #9 sit in comptime arms only the debug family builds.
+
+## After the model (same aeon tree, sigil `e1ee333b`)
+
+The zero model (`2b918b4a`) walks every site above. Census from
+`corpus_flag_results_are_all_consumed --nocapture`:
+
+```
+census `sonic4 plain`: 0 firing(s) over 78 site(s): 45 walked (28 Z80), 10 discarded, 0 no consumer model, 23 invalid-path walked, 0 no guard branch, 0 unknown register
+census `sonic4 plain`: 7 of the walked sites owe a `zero` result
+census `sonic4 debug`: 0 firing(s) over 84 site(s): 48 walked (28 Z80), 13 discarded, 0 no consumer model, 23 invalid-path walked, 0 no guard branch, 0 unknown register
+census `sonic4 debug`: 9 of the walked sites owe a `zero` result
+census `demo plain`: 0 firing(s) over 77 site(s): 44 walked (28 Z80), 10 discarded, 0 no consumer model, 23 invalid-path walked, 0 no guard branch, 0 unknown register
+census `demo plain`: 7 of the walked sites owe a `zero` result
+census `demo debug`: 0 firing(s) over 83 site(s): 47 walked (28 Z80), 13 discarded, 0 no consumer model, 23 invalid-path walked, 0 no guard branch, 0 unknown register
+census `demo debug`: 9 of the walked sites owe a `zero` result
+census `config_a`: 0 firing(s) over 84 site(s): 48 walked (28 Z80), 13 discarded, 0 no consumer model, 23 invalid-path walked, 0 no guard branch, 0 unknown register
+census `config_a`: 9 of the walked sites owe a `zero` result
+census `config_b`: 0 firing(s) over 78 site(s): 45 walked (28 Z80), 10 discarded, 0 no consumer model, 23 invalid-path walked, 0 no guard branch, 0 unknown register
+census `config_b`: 7 of the walked sites owe a `zero` result
+census `lean`: 0 firing(s) over 78 site(s): 45 walked (28 Z80), 10 discarded, 0 no consumer model, 23 invalid-path walked, 0 no guard branch, 0 unknown register
+census `lean`: 7 of the walked sites owe a `zero` result
+```
+
+Each shape's walked count rose by exactly its zero sites (38 to 45, 39 to 48, and so
+on), and "no consumer model" is 0 everywhere. The build path agrees: `sigil build
+--report contracts` prints 0 firings over 78 / 84 / 77 / 83 sites with 45 / 48 / 44 / 47
+walked for sonic4 plain / sonic4 debug / demo plain / demo debug.
+
+**Firings on the real corpus: zero.** All four `build.sh` shapes (plain and `DEBUG=1`,
+sonic4 and demo; `NO_LINT=1`, as the provisioner builds) exit 0 with this binary and
+print no flag-family line. ROMs: `s4.bin` `1b350bab/820223`, `s4.debug.bin`
+`e36d98ba/846601` (both byte-identical to the provisioner's builds with the pre-parcel
+binary, as an analysis-only change should be), `demo.bin` `3170d31e/97109`,
+`demo.debug.bin` `3cf4f104/103501`.
+
+**Red on the subject.** With `btst #0, d0` inserted between `buffers.emp:505`'s call and
+its `beq` (BTST writes Z and leaves C, so only the zero model sees it),
+`sigil build --game sonic4 --debug` refuses with one firing and nothing else:
+
+```
+error: [call.flag-result-unused]/[call.result-invalid-path], 1 firing(s); zero-firing by contract:
+  .../engine/system/buffers.emp:505:9: [call.flag-result-unused] `Enqueue_Dirty_Buffers` calls `Parallax_Active_Config` and abandons its `zero` result `inert` on some path: ...
+```
+
+Through aeon's own `DEBUG=1 ./build.sh` the same edit exits 1 with the same single
+located line (`./engine/system/buffers.emp:505:9`). Restored with `git checkout --` in
+that tree (clean `status --porcelain`), `DEBUG=1 ./build.sh` exits 0 again and
+`s4.debug.bin` is `e36d98ba/846601`, byte-identical to the build before the edit.
