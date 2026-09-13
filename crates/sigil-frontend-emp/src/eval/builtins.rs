@@ -597,9 +597,15 @@ impl<'a> Evaluator<'a> {
     /// SAME owner-mangled symbol the buf's `CodeItem::Label` holds. Both labels
     /// MUST be defined textually BEFORE this ensure (the annotation sits at/after
     /// the loop) — a forward/missing label is a loud error, never a silent 0.
-    /// A `jr cc`/`djnz`/`ret cc`/`call cc` in the span is `[cycles.ambiguous-branch]`
-    /// (the jp-not-jr hot-path discipline as a compile error); an op off the
-    /// timed-region table is `[cycles.unknown-op]`.
+    /// A form whose cost depends on its outcome is `[cycles.ambiguous-branch]`:
+    /// a `jr cc` or `djnz` (the jp-not-jr hot-path discipline as a compile
+    /// error), or a repeating block op such as `ldir`. Those forms are
+    /// [`crate::z80_cycles::AMBIGUOUS_BRANCH_CONDITIONALS`] and
+    /// [`crate::z80_cycles::AMBIGUOUS_BRANCH_REPEATS`], and the refusal text is
+    /// built from them. A `ret cc` in the span is `[cycles.path-end]` and a
+    /// `call cc` is `[cycles.opaque-call]`, the same refusals as their
+    /// unconditional forms; an op the table does not price is
+    /// `[cycles.unknown-op]`.
     pub(super) fn eval_cycles(&mut self, args: &[ast::Arg], span: Span, env: &mut Env) -> Value {
         // FIRST, before the labels are even resolved: this is a Z80-only
         // measurement (`require_z80_for_timing`). Checking it here keeps the
@@ -645,10 +651,29 @@ impl<'a> Evaluator<'a> {
         match crate::z80_cycles::span_cost(span_items) {
             Ok(n) => Value::Int(n as i128),
             Err(crate::z80_cycles::CycleBail::AmbiguousBranch { mnemonic, span: isp }) => {
-                self.error(
-                    isp,
-                    format!("[cycles.ambiguous-branch] `{mnemonic}` has different taken/not-taken cost, a timed span must use `jp`/`jp cc` (constant), never `jr cc`/`djnz`/`ret cc`/`call cc`"),
-                );
+                // Two classes reach this refusal and they need different
+                // advice: a branch has a constant-cost replacement, a block
+                // repeat has none, so its span has to be cut.
+                let message = if crate::z80_cycles::AMBIGUOUS_BRANCH_REPEATS.contains(&mnemonic.as_str()) {
+                    format!(
+                        "[cycles.ambiguous-branch] `{mnemonic}` repeats a number of times decided \
+                         at run time, and a repeat costs a different number of T-states than the \
+                         final step, so no single cost is assignable; cut the span before it, or \
+                         unroll the repeat into instructions of fixed cost"
+                    )
+                } else {
+                    let forbidden = crate::z80_cycles::AMBIGUOUS_BRANCH_CONDITIONALS
+                        .iter()
+                        .map(|form| format!("`{form}`"))
+                        .collect::<Vec<_>>()
+                        .join("/");
+                    format!(
+                        "[cycles.ambiguous-branch] `{mnemonic}` has different taken/not-taken \
+                         cost, a timed span must use `jp`/`jp cc` (the same cost taken or not), \
+                         never {forbidden}"
+                    )
+                };
+                self.error(isp, message);
                 Value::Poison
             }
             Err(crate::z80_cycles::CycleBail::PathEnd { mnemonic, span: isp }) => {

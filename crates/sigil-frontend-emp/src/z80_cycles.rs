@@ -22,9 +22,18 @@
 //! accounting honest and turn the driver's prose disciplines into compile errors
 //! (deliberately count-free: this list has grown twice):
 //!
-//!   * `[cycles.ambiguous-branch]` — a `jr cc` / `djnz` / `ret cc` / `call cc` inside
-//!     a span has DIFFERING taken/not-taken cost, so no single cost is assignable.
-//!     This is the `jp`-never-`jr`-on-the-hot-path discipline as a type error.
+//!   * `[cycles.ambiguous-branch]`: an instruction inside a span whose cost depends
+//!     on its outcome ([`Cost::Split`]), so no single cost is assignable. Two
+//!     classes reach it. A `jr cc` or `djnz` has DIFFERING taken/not-taken cost
+//!     ([`AMBIGUOUS_BRANCH_CONDITIONALS`]); refusing it is the
+//!     `jp`-never-`jr`-on-the-hot-path discipline as a type error. A repeating
+//!     block op (`ldir`, `lddr`, `cpir`, `cpdr`, `inir`, `indr`, `otir`, `otdr`,
+//!     [`AMBIGUOUS_BRANCH_REPEATS`]) pays one cost per repeat and another for the
+//!     final step, and the repeat count is a run-time value. `ret cc` and
+//!     `call cc` carry split costs too but never get here: [`span_cost`] refuses
+//!     a `ret cc` as `[cycles.path-end]` and a `call cc` as `[cycles.opaque-call]`
+//!     before it reads any cost. `tests::encoder_coverage` derives the reaching
+//!     set from the encoder and requires the two constants to equal it.
 //!   * `[cycles.unknown-op]`: an op/form this table does not price. Read SCOPE
 //!     below for what that means today. The table is NOT the driver-demand subset
 //!     and has not been since `ce059de8`, so this fires only where the assembler
@@ -62,11 +71,15 @@ use sigil_span::Span;
 pub enum Cost {
     /// A single, outcome-independent T-state count.
     Fixed(u16),
-    /// A conditional whose taken and not-taken costs DIFFER (`jr cc`, `djnz`,
-    /// `ret cc`, `call cc`). The two costs are OUTCOME-KEYED, not unknown: a
-    /// consumer that can tell the branch edge from the fall-through edge charges
-    /// each its own number. Straight-line accounting cannot, so [`span_cost`]
-    /// treats this as the `[cycles.ambiguous-branch]` bail.
+    /// An instruction whose cost depends on its outcome: a conditional whose
+    /// taken and not-taken costs DIFFER (`jr cc`, `djnz`, `ret cc`, `call cc`),
+    /// or a repeating block op (`ldir` and its family), which pays `taken` for
+    /// each repeat and `not_taken` for the final step. The two costs are
+    /// OUTCOME-KEYED, not unknown: a consumer that can tell the branch edge from
+    /// the fall-through edge charges each its own number. Straight-line
+    /// accounting cannot, so a split cost that reaches [`span_cost`]'s cost
+    /// lookup is the `[cycles.ambiguous-branch]` bail. `ret cc` and `call cc`
+    /// never reach that lookup, because the return and call refusals run first.
     Split {
         /// T-states when the branch is taken.
         taken: u16,
@@ -109,10 +122,31 @@ pub const MAX_SPAN_T_STATES: TStates =
 /// is lossless BY CONSTRUCTION and this is where that is proved.
 const _: () = assert!(MAX_SPAN_T_STATES <= i128::MAX as TStates);
 
+/// The conditional control transfers that [`span_cost`] refuses as
+/// [`CycleBail::AmbiguousBranch`], spelled as source forms (`cc` stands for any
+/// condition code). The refusal message names these as the forms a timed span
+/// must not use, so this list is exactly the conditionals that can produce it:
+/// `ret cc` and `call cc` are split-cost conditionals as well, but `span_cost`
+/// refuses them as a path end and an opaque call before it reads a cost.
+/// `tests::encoder_coverage::ambiguous_branch_forms_are_the_split_forms_span_cost_reaches`
+/// derives the reaching set from the encoder and requires this list and
+/// [`AMBIGUOUS_BRANCH_REPEATS`] together to equal it.
+pub const AMBIGUOUS_BRANCH_CONDITIONALS: [&str; 2] = ["jr cc", "djnz"];
+
+/// The repeating block ops that [`span_cost`] refuses as
+/// [`CycleBail::AmbiguousBranch`]. Each pays one cost per repeat and another for
+/// the final step, and how many times it repeats is decided at run time. They
+/// take no operands, so the mnemonic is the whole form. Held to the derived set
+/// by the same test as [`AMBIGUOUS_BRANCH_CONDITIONALS`].
+pub const AMBIGUOUS_BRANCH_REPEATS: [&str; 8] =
+    ["ldir", "lddr", "cpir", "cpdr", "inir", "indr", "otir", "otdr"];
+
 /// Why a span-cost sum could not be produced.
 #[derive(Debug, Clone)]
 pub enum CycleBail {
-    /// A variable-timing conditional sits inside the span.
+    /// An instruction whose cost depends on its outcome ([`Cost::Split`]) sits
+    /// inside the span: one of [`AMBIGUOUS_BRANCH_CONDITIONALS`] or
+    /// [`AMBIGUOUS_BRANCH_REPEATS`].
     AmbiguousBranch { mnemonic: String, span: Span },
     /// An op/form outside the table sits inside the span.
     UnknownOp { mnemonic: String, span: Span },
@@ -411,9 +445,11 @@ pub fn instr_cost(mnemonic: &str, ops: &[CodeOperand]) -> Cost {
         ("jr", [t]) if is_sym(t) => Cost::Fixed(12),
 
         // --- the OUTCOME-SPLIT conditionals: taken/not-taken DIFFER ---
-        // A straight-line span cannot assign these one cost (hence the
-        // `[cycles.ambiguous-branch]` bail in `span_cost`); a path walk charges
-        // `taken` on the branch edge and `not_taken` on the fall-through.
+        // A straight-line span cannot assign these one cost; a path walk charges
+        // `taken` on the branch edge and `not_taken` on the fall-through. In
+        // `span_cost`, `jr cc` and `djnz` are the `[cycles.ambiguous-branch]`
+        // bail, while `ret cc` and `call cc` are refused earlier, as a path end
+        // and an opaque call, exactly like their unconditional forms.
         ("jr", [cc, _]) if is_cc(cc) => Cost::Split { taken: 12, not_taken: 7 },
         ("djnz", _) => Cost::Split { taken: 13, not_taken: 8 },
         ("ret", [cc]) if is_cc(cc) => Cost::Split { taken: 11, not_taken: 5 },
@@ -1199,6 +1235,119 @@ mod tests {
                  {unencodable:?}):\n  {}",
                 unpriced.len(),
                 unpriced.join("\n  ")
+            );
+        }
+
+        /// THE AMBIGUOUS-BRANCH LIST GUARD: the forms the refusal names are the
+        /// forms that reach it.
+        ///
+        /// A split cost is necessary for `[cycles.ambiguous-branch]` and not
+        /// sufficient, because `span_cost` asks the return and call classifiers
+        /// before it reads a cost. So the reaching set is DERIVED, not listed:
+        /// every encodable form `instr_cost` prices as `Split` is run through
+        /// `span_cost` on its own, and what comes back `AmbiguousBranch` must
+        /// equal the two constants the refusal message and the docs are built
+        /// from. Adding or dropping a split-cost form, editing either constant,
+        /// or reordering the refusals inside `span_cost` moves one side of the
+        /// comparison and fails here.
+        #[test]
+        fn ambiguous_branch_forms_are_the_split_forms_span_cost_reaches() {
+            use super::super::{
+                span_cost, CycleBail, AMBIGUOUS_BRANCH_CONDITIONALS, AMBIGUOUS_BRANCH_REPEATS,
+            };
+            use std::collections::{BTreeMap, BTreeSet};
+
+            // The source spelling of a form: the mnemonic, plus ` cc` when it
+            // leads with a condition code, since the lists abstract over which.
+            fn spelling(name: &str, ops: &[IsaOp]) -> String {
+                match ops.first() {
+                    Some(IsaOp::Cc(_)) => format!("{name} cc"),
+                    _ => name.to_string(),
+                }
+            }
+
+            let pool = shape_pool();
+            let mut reaching: Vec<(&'static str, Vec<IsaOp>)> = Vec::new();
+            let mut refused_first: BTreeMap<String, &'static str> = BTreeMap::new();
+            for (m, name) in all_mnemonics() {
+                for ops in &pool {
+                    if z80::encode(&Instruction { mnemonic: m, ops: ops.clone() }).is_err() {
+                        continue;
+                    }
+                    // `(c)` forms have no emp image; `every_encodable_form_is_priced`
+                    // already holds that this is the only reason one is skipped.
+                    let Some(emp) = ops.iter().map(emp_image).collect::<Option<Vec<CodeOperand>>>()
+                    else {
+                        continue;
+                    };
+                    if !matches!(instr_cost(name, &emp), Cost::Split { .. }) {
+                        continue;
+                    }
+                    let form = spelling(name, ops);
+                    match span_cost(&[super::instr(name, emp)]) {
+                        Err(CycleBail::AmbiguousBranch { .. }) => {
+                            reaching.push((name, ops.clone()));
+                        }
+                        Err(CycleBail::PathEnd { .. }) => {
+                            refused_first.insert(form, "path-end");
+                        }
+                        Err(CycleBail::OpaqueCall { .. }) => {
+                            refused_first.insert(form, "opaque-call");
+                        }
+                        other => panic!(
+                            "`{form}` has a split cost, so a straight-line span must refuse it; \
+                             got {other:?}"
+                        ),
+                    }
+                }
+            }
+
+            // The message tells a conditional to use `jp`/`jp cc` instead and a
+            // block repeat to cut the span, choosing by membership in these two
+            // lists, so the SPLIT between them is checked as well as the union.
+            // A block op is a whole instruction with no operands; a branch never
+            // is, because it needs its target. So a mnemonic whose operand-free
+            // form reaches the refusal is a repeat, and is named bare. The
+            // encoder's `ldir` arm ignores its operands, so `ldir` also encodes
+            // with every shape in the pool; keying the class on the mnemonic
+            // keeps those forms in the repeat class instead of spelling them
+            // as conditionals.
+            let operand_free: BTreeSet<String> = reaching
+                .iter()
+                .filter(|(_, ops)| ops.is_empty())
+                .map(|(name, _)| name.to_string())
+                .collect();
+            let with_operands: BTreeSet<String> = reaching
+                .iter()
+                .filter(|(name, _)| !operand_free.contains(*name))
+                .map(|(name, ops)| spelling(name, ops))
+                .collect();
+            let named = |list: &[&str]| list.iter().map(|s| s.to_string()).collect::<BTreeSet<_>>();
+            assert_eq!(
+                named(&AMBIGUOUS_BRANCH_CONDITIONALS),
+                with_operands,
+                "AMBIGUOUS_BRANCH_CONDITIONALS must name exactly the conditional forms that \
+                 `span_cost` refuses as [cycles.ambiguous-branch] (left: the constant, right: \
+                 derived from the encoder)"
+            );
+            assert_eq!(
+                named(&AMBIGUOUS_BRANCH_REPEATS),
+                operand_free,
+                "AMBIGUOUS_BRANCH_REPEATS must name exactly the operand-free forms that \
+                 `span_cost` refuses as [cycles.ambiguous-branch] (left: the constant, right: \
+                 derived from the encoder)"
+            );
+            // The docs' other clause: `ret cc` and `call cc` have split costs and
+            // are refused before the cost is read. This also keeps the derivation
+            // honest, since a population that lost the conditional returns and
+            // calls would come back short here.
+            let expected_refused_first = BTreeMap::from([
+                ("call cc".to_string(), "opaque-call"),
+                ("ret cc".to_string(), "path-end"),
+            ]);
+            assert_eq!(
+                refused_first, expected_refused_first,
+                "the split-cost forms `span_cost` refuses before reading a cost"
             );
         }
     }

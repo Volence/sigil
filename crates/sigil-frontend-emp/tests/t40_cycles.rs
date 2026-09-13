@@ -65,6 +65,47 @@ fn cycles_off_table_bails() {
     assert!(w.iter().any(|m| m.contains("LDI-DRIFT")), "got {w:?}");
 }
 
+// `ret cc` and `call cc` have split costs, but a span refuses them as a path end
+// and an opaque call before it reads a cost, the same refusals their unconditional
+// forms get, so neither earns `[cycles.ambiguous-branch]`.
+#[test]
+fn cycles_ret_cc_and_call_cc_are_refused_before_the_cost_is_read() {
+    let r = errs("    .a:\n    ret nz\n    .b:\n    ensure(cycles(.a, .b) == 0, \"x\")");
+    assert!(r.iter().any(|m| m.contains("[cycles.path-end]")), "got {r:?}");
+    assert!(!r.iter().any(|m| m.contains("[cycles.ambiguous-branch]")), "got {r:?}");
+    let c = errs("    .a:\n    call nz, P\n    .b:\n    ensure(cycles(.a, .b) == 0, \"x\")");
+    assert!(c.iter().any(|m| m.contains("[cycles.opaque-call]")), "got {c:?}");
+    assert!(!c.iter().any(|m| m.contains("[cycles.ambiguous-branch]")), "got {c:?}");
+}
+
+// The ambiguous-branch refusal advises by what it refused. A conditional branch
+// has a constant-cost replacement, so it is told `jp`/`jp cc` and shown the forms
+// to avoid, which are exactly the forms that produce this message. A block repeat
+// has no replacement, so it is told to cut the span instead.
+#[test]
+fn cycles_ambiguous_branch_advice_fits_what_was_refused() {
+    let find = |e: &[String]| {
+        e.iter()
+            .find(|m| m.contains("[cycles.ambiguous-branch]"))
+            .cloned()
+            .unwrap_or_else(|| panic!("no ambiguous-branch diagnostic in {e:?}"))
+    };
+    let j = find(&errs("    .a:\n    jr z, .a\n    .b:\n    ensure(cycles(.a, .b) == 0, \"x\")"));
+    assert!(j.contains("`jp`/`jp cc`"), "a branch must be told the constant-cost form; got {j:?}");
+    for form in sigil_frontend_emp::z80_cycles::AMBIGUOUS_BRANCH_CONDITIONALS {
+        assert!(j.contains(&format!("`{form}`")), "the message must name `{form}`; got {j:?}");
+    }
+    for refused_elsewhere in ["`ret cc`", "`call cc`"] {
+        assert!(
+            !j.contains(refused_elsewhere),
+            "{refused_elsewhere} never produces this message, so it must not be named; got {j:?}"
+        );
+    }
+    let l = find(&errs("    .a:\n    ldir\n    .b:\n    ensure(cycles(.a, .b) == 0, \"x\")"));
+    assert!(l.contains("cut the span"), "a block repeat must be told to cut the span; got {l:?}");
+    assert!(!l.contains("`jp`/`jp cc`"), "a block repeat has no jump replacement; got {l:?}");
+}
+
 // `jp cc` is the POSITIVE control for the ambiguous bail — fixed 10, passes.
 #[test]
 fn cycles_jp_cc_is_the_positive_control() {
