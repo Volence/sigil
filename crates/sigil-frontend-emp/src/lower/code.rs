@@ -2103,7 +2103,7 @@ fn map_z80_cond(c: Z80Cond) -> Z80IsaCond {
 /// The Z80 mnemonic table. Recognizing a mnemonic is not the same as encoding a
 /// form: a recognized mnemonic whose operand shape the model does not reach is
 /// `[lower.z80-unsupported]` (bounded scope), never a "not recognized" error.
-fn z80_mnemonic(base: &str) -> Option<Z80Mnemonic> {
+pub(crate) fn z80_mnemonic(base: &str) -> Option<Z80Mnemonic> {
     use Z80Mnemonic::*;
     Some(match base {
         "nop" => Nop,
