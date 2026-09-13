@@ -6,7 +6,8 @@
 	dc.b ""+"B",$EE
 	dc.b ""+"",$EE
 	dc.b ("a"+"b")+"c",$EE
-	dc.b "\{strlen("ab"+"cd")}",$EE
+T set "ab"+"cd"
+	dc.b strlen(T),$EE
 	dc.b 1+2,$EE
 	dc.b "a"+1,$EE
 	dc.b substr("hello",1,2)+"-"+lowstring("XY"),$EE

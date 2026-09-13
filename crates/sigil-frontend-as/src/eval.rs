@@ -2951,6 +2951,32 @@ impl Asm {
     /// `dc.l ABS(-3)` to `0000 0003` with no diagnostic (`clean2.asm(8)`,
     /// `ASL_EXIT=0`), so the integer type really does survive the call.
     fn expand_int_builtin(&mut self, toks: &[Token]) -> Vec<Token> {
+        let (out, failures) = self.scan_int_builtins(toks);
+        for span in failures {
+            self.err(span, "int(): could not evaluate float expression");
+        }
+        out
+    }
+
+    /// [`Self::expand_int_builtin`] without the diagnostics: `None` when an
+    /// `int(...)` in `toks` could not be evaluated.
+    ///
+    /// The same shape [`Self::expand_str_builtins_opt`] has, for the same
+    /// reason. [`Self::fold_const`] is the silent counterpart of `eval_all`, and
+    /// it is reached from INSIDE an outer construct that reports in its own
+    /// words; a message here would name a call the source did not get wrong.
+    /// Declining (rather than accepting the `0` the reporting form substitutes)
+    /// is what keeps a `substr` bound that did not evaluate from silently
+    /// becoming zero.
+    fn expand_int_builtin_opt(&self, toks: &[Token]) -> Option<Vec<Token>> {
+        let (out, failures) = self.scan_int_builtins(toks);
+        failures.is_empty().then_some(out)
+    }
+
+    /// The one scan both forms above share: the rewritten tokens, and the span
+    /// of every `int(...)` that could not be evaluated.
+    fn scan_int_builtins(&self, toks: &[Token]) -> (Vec<Token>, Vec<Span>) {
+        let mut failures = Vec::new();
         let mut out = Vec::new();
         let mut i = 0;
         while i < toks.len() {
@@ -2985,7 +3011,7 @@ impl Asm {
                             // getting one is the caller's error and is reported
                             // here.
                             None if is_int => {
-                                self.err(span, "int(): could not evaluate float expression");
+                                failures.push(span);
                                 out.push(Token {
                                     tok: Tok::Int(0),
                                     span,
@@ -3012,7 +3038,7 @@ impl Asm {
             out.push(toks[i].clone());
             i += 1;
         }
-        out
+        (out, failures)
     }
 
     /// Evaluate a front-end-only TYPED expression tree — the evaluator behind
@@ -3375,6 +3401,31 @@ impl Asm {
         if let Some(inner) = peel_parens(toks) {
             return self.eval_str(inner);
         }
+        // asl's `+` over STRING operands is CONCATENATION. It is not the sum of
+        // their packed character codes, which is what an evaluator with no
+        // string type in its `+` path computes, and the difference is SILENT:
+        // `dc.b "-"+"x"` is `2D 78` to asl and was one byte `A5` here, exit 0
+        // either way (probe `v_concat_lit`, and `v_concat_chain` for the rest of
+        // the law). The two readings differ in LENGTH as well as value, so a
+        // concatenation can never be mistaken for the arithmetic.
+        //
+        // EVERY operand must be a string or this returns `None` and the caller's
+        // numeric path runs unchanged. That is the whole safety argument for
+        // putting this here: `1+2` splits, finds no string, and folds to `03` as
+        // it always did (probe `v_concat_chain` line 10). A MIXED pair also
+        // falls through, and for the shape the corpus can reach it agrees:
+        // asl's `"a"+1` is `62`, which is what the numeric path already computes
+        // from the packed code. The multi-character mixed case (`"ab"+1` is
+        // `61 63` to asl, packed arithmetic that preserves the string's length)
+        // diverges LOUDLY here as a `dc.b` range overflow; it is ledgered as
+        // AS-STRING-PLUS-INT rather than guessed at.
+        if let Some(parts) = split_top_plus(toks) {
+            let mut out = String::new();
+            for part in &parts {
+                out.push_str(&self.eval_str(part)?);
+            }
+            return Some(out);
+        }
         // A literal's value has its escapes processed (asl: `strlen("\x41\66\\")`
         // is 3, `substr("\x41\x42\x43",1,1)` is `B`). A `\{expr}` stays in place
         // for the interpolation the binding sites run; `None` on an invalid
@@ -3508,6 +3559,18 @@ impl Asm {
     /// `pos`/`len` arguments, and `val`'s re-lexed expression text).
     fn fold_const(&self, toks: &[Token]) -> Option<i64> {
         let expanded = self.expand_calls(toks, 0);
+        // An INTEGER builtin may appear here too, and asl's constant
+        // expressions include those just as they include the string ones.
+        // Sonic 1's `signedToString` is the shape that needs it:
+        // `substr("-",0,-sgn(number))` folds its length through `sgn`, and a
+        // data directive got away without this only because the operand
+        // pipeline (`expand_operand_builtins`) had already folded the builtin
+        // before `eval_str` ever saw the tokens. Every OTHER caller of a string
+        // expression (`set`, `equ`, `switch`, `irpc`, `{…}` name composition)
+        // has no such pipeline, so `S set signedToString(-5)` declined here and
+        // then failed as an undefined symbol. Ordered int-then-string, the same
+        // order `expand_operand_builtins` uses, so the two cannot disagree.
+        let expanded = self.expand_int_builtin_opt(&expanded)?;
         // A string builtin may appear here: `substr(s, strstr(s,"_")+1,
         // strlen(s))` is Sonic 2's whole jump-table generator
         // (`s2.macrosetup.asm:280`), and asl evaluates those arguments as
@@ -3684,7 +3747,32 @@ impl Asm {
     }
 
     /// Replace each body identifier equal to a parameter with its (expanded,
-    /// parenthesised) argument tokens.
+    /// parenthesised) argument tokens, AND each whole-word occurrence of a
+    /// parameter inside a string literal's text with the same argument's source
+    /// spelling, parenthesised.
+    ///
+    /// The string half is not an extra: asl's `function` expansion is TEXTUAL
+    /// and does not stop at a quote. Measured, probe `v_fn_str_body`, exit 0:
+    ///
+    /// ```text
+    ///    5/       0 : 2833 29EE           	dc.b fa(3),$EE      fa function n,"n"
+    ///    7/       4 : 33EE                	dc.b fb(3),$EE      fb function n,"\{n}"
+    ///   11/       F : 6E6F 6E65 33EE      	dc.b fd(3),$EE      fd function n,"none\{n}"
+    /// ```
+    ///
+    /// `fa` is `(3)` and not `3`, so the parentheses are part of what is pasted;
+    /// that is what makes `fe function num,"\{num+1}"` read `(3)+1` and answer
+    /// `4`. `fd` is `none3`, so the `n` inside `none` is not an occurrence and
+    /// the boundary is a whole WORD.
+    ///
+    /// Without this, Sonic 1's `signedToString` pasted the characters of its own
+    /// source text into the image and exited 0: the parameter inside
+    /// `"$\{abs(number)}"` was never bound, so the interpolation had nothing to
+    /// evaluate and the literal reached `dc.b` as fifteen bytes of `$\{abs(...`.
+    // REASON: the doc comment above quotes an asl listing verbatim, and asl
+    // separates its byte column from the echoed source with a TAB. The tabs are
+    // the evidence. Scoped to this item.
+    #[allow(clippy::tabs_in_doc_comments)]
     fn substitute(
         &self,
         body: &[Token],
@@ -3705,9 +3793,69 @@ impl Asm {
                     }
                 }
             }
+            if let Tok::Str(raw) = &t.tok {
+                if let Some(sub) = self.substitute_in_literal(raw, params, args, depth) {
+                    out.push(Token {
+                        tok: Tok::Str(sub),
+                        span: t.span,
+                    });
+                    continue;
+                }
+            }
             out.push(t.clone());
         }
         out
+    }
+
+    /// One string literal's SOURCE text with every whole-word parameter
+    /// occurrence replaced by `(<argument as written>)`. `None` when the text
+    /// holds no occurrence, so an untouched literal keeps its own token.
+    ///
+    /// ONE left-to-right scan, and the replacement text is never rescanned. A
+    /// second pass over what was pasted could find a parameter name inside an
+    /// argument and substitute it again, which asl does not do.
+    ///
+    /// A word here is a run of characters an AS identifier can be spelled from
+    /// (alphanumerics, `_`, `.`). The `.` matters: `.local` is one name in AS,
+    /// so a parameter `local` must not match inside it, exactly as `n` does not
+    /// match inside `none`.
+    fn substitute_in_literal(
+        &self,
+        raw: &str,
+        params: &[String],
+        args: &[Vec<Token>],
+        depth: usize,
+    ) -> Option<String> {
+        let is_word = |c: char| c.is_alphanumeric() || c == '_' || c == '.';
+        let mut out = String::new();
+        let mut changed = false;
+        let mut rest = raw;
+        while !rest.is_empty() {
+            let word_len = rest.find(|c| !is_word(c)).unwrap_or(rest.len());
+            if word_len == 0 {
+                // Not at a word: copy one character and look again.
+                let c = rest.chars().next().expect("rest is non-empty");
+                out.push(c);
+                rest = &rest[c.len_utf8()..];
+                continue;
+            }
+            let (word, tail) = rest.split_at(word_len);
+            match params
+                .iter()
+                .position(|p| p == word)
+                .and_then(|idx| args.get(idx))
+            {
+                Some(arg) => {
+                    out.push('(');
+                    out.push_str(&render_tokens(&self.expand_calls(arg, depth + 1)));
+                    out.push(')');
+                    changed = true;
+                }
+                None => out.push_str(word),
+            }
+            rest = tail;
+        }
+        changed.then_some(out)
     }
 
     /// AS `function` argument evaluation is STRICT: every actual argument is
@@ -3954,6 +4102,42 @@ impl Asm {
         }
         out.push_str(cur);
         out
+    }
+
+    /// [`Self::interp_text`] for a context whose output is BYTES: an
+    /// interpolation with no value is an [`crate::escape::EscapeError::Interp`]
+    /// rather than text left verbatim.
+    ///
+    /// The two differ only in what they do with an unresolved expression, and
+    /// which one a site wants follows from what it writes. A message or a
+    /// binding is re-run on a later pass, so keeping the sequence is how a
+    /// forward reference survives to be resolved. A data directive writes the
+    /// text into the image, where `\{Later}` would become five bytes that look
+    /// deliberate; the bare-literal branch of `dc.b` has always refused this
+    /// (`literal_value(raw, false)`) and this is the same refusal for a string
+    /// that arrived computed.
+    fn interp_value(&mut self, raw: &str) -> Result<String, crate::escape::EscapeError> {
+        let mut out = String::new();
+        let mut cur = raw;
+        while let Some(pos) = cur.find("\\{") {
+            out.push_str(&cur[..pos]);
+            let after = &cur[pos + 2..];
+            let Some(end) = after.find('}') else {
+                // An unterminated `\{` is not an interpolation at all: the text
+                // stands, as it does in `interp_text`.
+                out.push_str("\\{");
+                cur = after;
+                continue;
+            };
+            let expr_text = &after[..end];
+            match self.render_interp_expr(expr_text) {
+                Some(v) => out.push_str(&v),
+                None => return Err(crate::escape::EscapeError::Interp(expr_text.to_string())),
+            }
+            cur = &after[end + 1..];
+        }
+        out.push_str(cur);
+        Ok(out)
     }
 
     /// The text one `\{expr}` interpolation pastes, by the TYPE the expression
@@ -7265,7 +7449,18 @@ impl Asm {
                     return;
                 }
             },
-            _ => self.eval_str(rest).map(|s| self.interp_text(&s)),
+            // `expand_calls` FIRST: a user `function` whose body is a string
+            // is a string RHS, and `eval_str` does not expand calls of its own.
+            // Without this, `S set f(-5)` did not look like a string, fell
+            // through to the integer path, and refused with `unresolved symbol
+            // S` while asl bound `S` to `"-$5"` (probe `v_fn_full_str`). The
+            // SILENT expansion is the right one here: this is a probe for a
+            // shape, and `eval_all` below expands again with diagnostics, so
+            // reporting here would say the same thing twice about one RHS.
+            _ => {
+                let called = self.expand_calls(rest, 0);
+                self.eval_str(&called).map(|s| self.interp_text(&s))
+            }
         };
         if let Some(s) = bound {
             self.float_env.remove(&q);
@@ -7657,7 +7852,18 @@ impl Asm {
                     return;
                 }
             },
-            _ => self.eval_str(rest).map(|s| self.interp_text(&s)),
+            // `expand_calls` FIRST: a user `function` whose body is a string
+            // is a string RHS, and `eval_str` does not expand calls of its own.
+            // Without this, `S set f(-5)` did not look like a string, fell
+            // through to the integer path, and refused with `unresolved symbol
+            // S` while asl bound `S` to `"-$5"` (probe `v_fn_full_str`). The
+            // SILENT expansion is the right one here: this is a probe for a
+            // shape, and `eval_all` below expands again with diagnostics, so
+            // reporting here would say the same thing twice about one RHS.
+            _ => {
+                let called = self.expand_calls(rest, 0);
+                self.eval_str(&called).map(|s| self.interp_text(&s))
+            }
         };
         if let Some(s) = bound {
             self.float_env.remove(&q);
@@ -7976,7 +8182,30 @@ impl Asm {
                 }
                 continue;
             }
+            // A COMPUTED string (a `substr`/`lowstring` chain, a concatenation,
+            // a string-valued symbol or function result) reaches bytes here, and
+            // its `\{expr}` interpolations are folded on the way exactly as the
+            // bare literal's are one branch up. `eval_str` deliberately KEEPS
+            // `\{…}` so that each of its callers folds where its own value is
+            // bound; this is that fold for the data directives.
+            //
+            // Leaving it out was a SILENT wrong answer in its own right, with no
+            // `+` anywhere near it: `dc.b substr("$\{abs(-5)}",0,0)` is `24 35`
+            // to asl and was the eleven bytes of the source text here, exit 0
+            // (probe `v_interp_substr`, lines 4 and 5).
+            //
+            // An interpolation with no value is REFUSED, not written out as its
+            // own source text, which is the call the bare-literal branch already
+            // makes (`literal_value(raw, false)`): at a data directive the
+            // alternative is bytes nobody asked for.
             if let Some(s) = self.eval_str(&expanded) {
+                let s = match self.interp_value(&s) {
+                    Ok(s) => s,
+                    Err(e) => {
+                        self.err(gspan, e.to_string());
+                        continue;
+                    }
+                };
                 let cs = &self.state.charset;
                 let bytes: Vec<u8> = s.chars().map(|c| cs.map_char(c)).collect();
                 self.emit(&bytes, vec![], span);
@@ -11992,6 +12221,50 @@ fn peel_parens(toks: &[Token]) -> Option<&[Token]> {
         return None;
     }
     Some(&toks[1..toks.len() - 1])
+}
+
+/// `toks` cut at every TOP-LEVEL `+`, or `None` when there is no such `+` or
+/// any piece would be empty. The operand list of a candidate string
+/// concatenation, for [`Evaluator::eval_str`].
+///
+/// `None` rather than a one-element vector when there is no `+`: the caller
+/// recurses into each piece, and a single piece that is the whole input would
+/// not terminate.
+///
+/// EVERY PIECE MUST BE NON-EMPTY, and that is the rule that keeps a nameless
+/// label out of here. AS spells a forward nameless label `+`, so `+`, `++` and
+/// a leading `+` are label syntax rather than addition; each of those leaves an
+/// empty piece and is declined, which sends the slice down the path that
+/// already understood it. A trailing `+` (a malformed expression) is declined
+/// for the same reason and keeps its existing diagnostic.
+///
+/// Only `+`. A `-` is NOT a separator: asl's `-` over strings is not
+/// concatenation, and splitting on it would offer `eval_str` operands it would
+/// have to decline one at a time. `"a"+"b"-1` therefore declines as a whole and
+/// folds numerically, which is what it did before.
+fn split_top_plus(toks: &[Token]) -> Option<Vec<&[Token]>> {
+    let mut parts = Vec::new();
+    let mut depth = 0i32;
+    let mut start = 0usize;
+    for (i, t) in toks.iter().enumerate() {
+        match t.tok {
+            Tok::Punct(Punct::LParen) | Tok::Punct(Punct::LBracket) => depth += 1,
+            Tok::Punct(Punct::RParen) | Tok::Punct(Punct::RBracket) => depth -= 1,
+            Tok::Punct(Punct::Plus) if depth == 0 => {
+                if i == start {
+                    return None;
+                }
+                parts.push(&toks[start..i]);
+                start = i + 1;
+            }
+            _ => {}
+        }
+    }
+    if parts.is_empty() || start == toks.len() {
+        return None;
+    }
+    parts.push(&toks[start..]);
+    Some(parts)
 }
 
 /// Length (in tokens) of the trailing string-expression at the END of `out`, or
