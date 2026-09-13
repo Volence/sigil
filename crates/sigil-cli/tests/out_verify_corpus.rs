@@ -8,8 +8,11 @@
 //! reads — one copy, so a pin cannot fork into two halves that disagree.
 
 use sigil_frontend_emp::corpus_contracts::{analyze_corpus, ContractReport};
+use sigil_frontend_emp::lexer::{lex, Tok};
 use sigil_frontend_emp::out_verify::survives_message;
 use sigil_frontend_emp::parse_str;
+use sigil_span::SourceId;
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 fn emp_files(dir: &Path, out: &mut Vec<PathBuf>) {
@@ -27,13 +30,13 @@ fn emp_files(dir: &Path, out: &mut Vec<PathBuf>) {
     }
 }
 
-/// The whole-corpus contract report over the reference aeon tree, or `None` when
-/// that tree is absent and the run is not strict.
+/// The reference aeon tree's `.emp` sources as `(path, text)`, sorted by path, or
+/// `None` when that tree is absent and the run is not strict.
 ///
 /// House reference-gate pattern (repin_pins/mt_port, c5505f8): default the
 /// sibling aeon tree; under `SIGIL_STRICT_GATE` a missing reference hard-fails so
 /// these gates actually run under the standard strict invocation.
-fn corpus_report() -> Option<ContractReport> {
+fn corpus_sources() -> Option<Vec<(PathBuf, String)>> {
     let aeon = sigil_harness::test_support::aeon_dir();
     if !aeon.exists() {
         if std::env::var("SIGIL_STRICT_GATE").is_ok() {
@@ -47,9 +50,138 @@ fn corpus_report() -> Option<ContractReport> {
     emp_files(&aeon.join("games"), &mut paths);
     paths.sort();
     assert!(!paths.is_empty(), "no .emp files under {}", aeon.display());
-    let files: Vec<_> =
-        paths.iter().map(|p| parse_str(&std::fs::read_to_string(p).unwrap()).0).collect();
-    Some(analyze_corpus(&files))
+    Some(
+        paths
+            .into_iter()
+            .map(|p| {
+                let text = std::fs::read_to_string(&p)
+                    .unwrap_or_else(|e| panic!("{}: {e}", p.display()));
+                (p, text)
+            })
+            .collect(),
+    )
+}
+
+/// The whole-corpus contract report over `sources`, each parsed on its own.
+fn analyze_sources(sources: &[(PathBuf, String)]) -> ContractReport {
+    let files: Vec<_> = sources.iter().map(|(_, text)| parse_str(text).0).collect();
+    analyze_corpus(&files)
+}
+
+/// The whole-corpus contract report over the reference aeon tree, or `None` when
+/// that tree is absent and the run is not strict.
+fn corpus_report() -> Option<ContractReport> {
+    corpus_sources().map(|sources| analyze_sources(&sources))
+}
+
+/// The canonical 68k register a slot names, spelled as the report spells it
+/// (`d0`..`d7`, `a0`..`a7`, with `sp` as `a7`), or `None` for any other name (a
+/// flag such as `carry`, a Z80 register).
+fn register_name(name: &str) -> Option<String> {
+    if name == "sp" {
+        return Some("a7".to_string());
+    }
+    let b = name.as_bytes();
+    (b.len() == 2 && matches!(b[0], b'd' | b'a') && (b'0'..=b'7').contains(&b[1]))
+        .then(|| name.to_string())
+}
+
+/// Every `out(rN: T)` slot the sources DECLARE, as `(declaration, register)`,
+/// sorted. This is the expectation half of the coverage check in
+/// [`no_corpus_out_type_is_unresolvable`], so it is read off the LEXER's token
+/// stream and runs neither the parser nor the report's type walk, the two things
+/// whose product it is compared with.
+///
+/// A slot is a register name followed by `:` at the start of a top-level segment
+/// of an `out(...)` group, where segments separate on `,` and `/` as the out
+/// clause's grammar has them. The flag form `carry: name` names no register and
+/// is not a slot, and `inout(...)` is a different keyword that is not read. The
+/// declaration owning a group is the nearest head before it: `proc NAME` (plain
+/// or `extern`), `hook NAME`, or `type NAME = proc` for a contract type. An
+/// interface `hook` is a head here although the report's walk visits no
+/// interface member, so a typed hook result reads as a slot the walk did not
+/// see. A typed register with no head before it refuses, naming the file, rather
+/// than being dropped.
+fn declared_typed_out_slots(sources: &[(PathBuf, String)]) -> Vec<(String, String)> {
+    let mut slots = Vec::new();
+    for (path, text) in sources {
+        let (tokens, _) = lex(text, SourceId(0));
+        let toks: Vec<&Tok> = tokens
+            .iter()
+            .map(|t| &t.tok)
+            .filter(|t| !matches!(t, Tok::Newline | Tok::DocLine(_)))
+            .collect();
+        let ident = |i: usize| match toks.get(i) {
+            Some(Tok::Ident(s)) => Some(s.as_str()),
+            _ => None,
+        };
+        let mut owner: Option<&str> = None;
+        for i in 0..toks.len() {
+            match ident(i) {
+                Some("proc" | "hook") if ident(i + 1).is_some() => owner = ident(i + 1),
+                Some("proc") if i >= 2 && *toks[i - 1] == Tok::Eq => owner = ident(i - 2),
+                Some("out") if toks.get(i + 1) == Some(&&Tok::LParen) => {
+                    let mut depth = 1usize;
+                    let mut at_segment_start = true;
+                    let mut j = i + 2;
+                    while depth > 0 {
+                        let Some(t) = toks.get(j) else {
+                            panic!("{}: an `out(` group never closes", path.display())
+                        };
+                        if depth == 1 && at_segment_start {
+                            if let (Tok::Ident(name), Some(Tok::Colon)) = (t, toks.get(j + 1)) {
+                                if let Some(reg) = register_name(name) {
+                                    let Some(owner) = owner else {
+                                        panic!(
+                                            "{}: `out({name}: T)` has no `proc`, `hook` or \
+                                             `type = proc` head before it",
+                                            path.display()
+                                        )
+                                    };
+                                    slots.push((owner.to_string(), reg));
+                                }
+                            }
+                        }
+                        match t {
+                            Tok::LParen | Tok::LBracket => depth += 1,
+                            Tok::RParen | Tok::RBracket => depth -= 1,
+                            _ => {}
+                        }
+                        at_segment_start = depth == 1 && matches!(t, Tok::Comma | Tok::Slash);
+                        j += 1;
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    slots.sort();
+    slots
+}
+
+/// `(in a and not in b, in b and not in a)`, counting repeats, so the two lists
+/// hold the same slots exactly when both halves are empty.
+fn slot_difference(
+    a: &[(String, String)],
+    b: &[(String, String)],
+) -> (Vec<(String, String)>, Vec<(String, String)>) {
+    let mut count: BTreeMap<&(String, String), i64> = BTreeMap::new();
+    for s in a {
+        *count.entry(s).or_default() += 1;
+    }
+    for s in b {
+        *count.entry(s).or_default() -= 1;
+    }
+    let (mut only_a, mut only_b) = (Vec::new(), Vec::new());
+    for (s, n) in count {
+        for _ in 0..n.max(0) {
+            only_a.push(s.clone());
+        }
+        for _ in 0..(-n).max(0) {
+            only_b.push(s.clone());
+        }
+    }
+    (only_a, only_b)
 }
 
 #[test]
@@ -125,7 +257,8 @@ fn cond_out_survives_claims_all_prove() {
 /// both are fixed rather than pinned.
 #[test]
 fn no_corpus_out_type_is_unresolvable() {
-    let Some(r) = corpus_report() else { return };
+    let Some(sources) = corpus_sources() else { return };
+    let r = analyze_sources(&sources);
     let rows: Vec<String> = r
         .unresolvable_out_types
         .iter()
@@ -156,23 +289,85 @@ fn no_corpus_out_type_is_unresolvable() {
             exemplar.1
         );
     }
-    // The corpus's typed out slots, pinned exactly. A count that only ever grows
-    // would let a deletion pass; this notices in both directions and prints the
-    // set, so an intended change is adjudicated rather than absorbed.
-    // 28 -> 30 for art-streaming-p2-task6 (2026-08-08): PageCache_AllocFrame :: out(d0)
-    // PageCache_AllocFrame :: out(d0) is the residency cache's typed return
-    // (PageCache_Lookup deleted — zero callers, lens F-6 fixup 2026-08-09).
-    // 29 -> 30 for sound-pkg1 (2026-08-09): Sound_ReadStat :: out(d0) — the
-    // API v2 status-mirror reader's typed return.
-    // 30 -> 31 for aeon-arctan (2026-08-11): GetArcTan :: out(d0) — the engine
-    // arctan the Tails appendage banks its roll frames off, math.emp's second
-    // typed-return proc alongside GetSineCosine.
-    // 31 -> 34 for parcel-w (2026-08-15): Raster_GetChannelBand :: out(d0, d1, d2) —
-    // the patch channel's authored clamp band, read by the parallax overlay so both
-    // boundaries clamp at one fact. THREE slots, and typed rather than bare on purpose:
-    // a bare out(dN) claims all 32 bits, which only a .l write or moveq satisfies, and
-    // the band words arrive through move.w. d0 is the found flag, d1/d2 the pair.
-    assert_eq!(slots.len(), 34, "the corpus's typed out slots: {slots:?}");
+    // COVERAGE, in both directions: the walk sees exactly the typed out slots the
+    // corpus declares, so a slot it stops visiting and a slot it invents are each
+    // named. The expectation is `declared_typed_out_slots`, an enumeration of the
+    // same sources off the lexer's token stream that runs neither the parser nor
+    // the walk, so it moves when the corpus moves and stays put when the walk
+    // does. The declared set is printed, so a changed population is readable in
+    // the run's output.
+    let declared = declared_typed_out_slots(&sources);
+    let (unseen, invented) = slot_difference(&declared, &r.typed_out_slots);
+    assert!(
+        unseen.is_empty() && invented.is_empty(),
+        "the type walk's typed out slots are not the ones the corpus declares, so the \
+         assert above ranges over the wrong set.\n  declared, not seen by the walk: \
+         {unseen:?}\n  seen by the walk, not declared: {invented:?}"
+    );
+    eprintln!("=== typed out slots, declared and seen by the walk: {} ===", declared.len());
+    for (p, g) in &declared {
+        eprintln!("  {p} :: out({g}: T)");
+    }
+}
+
+/// The typed out slots of a FIXED input, from both routes the coverage check in
+/// [`no_corpus_out_type_is_unresolvable`] compares. The two share the lexer and
+/// the file list, and the real corpus exercises only some declaration forms, so
+/// this holds them to an input sigil owns: every head the walk visits (`proc`,
+/// `extern proc`, a contract `type`, a proc inside a `section`), a conditional
+/// typed result, an address register, a type with a comma inside it, a
+/// `/`-separated segment, and three things that are not slots (a bare register, a
+/// flag result, a typed `inout`). The literal cannot go stale, because the input
+/// is written here.
+#[test]
+fn typed_out_slots_of_a_fixed_input() {
+    let sources: Vec<(PathBuf, String)> = [
+        "module m\n\
+         pub newtype Id = u8\n\
+         extern proc Ext () out(d0: Id, d1)\n\
+         type Probe = proc () clobbers(d0) out(d4: i16, a1: *u8)\n\
+         proc Plain () out(d2: u16, carry: failed) {\n move.w #1, d2\n rts\n}\n\
+         proc Cond () out(d3: u8 if cc) {\n move.b #1, d3\n rts\n}\n\
+         proc Wide () out(d0: fixed<8,8>, d1: fixed<8,8>) {\n move.w #1, d0\n move.w #1, d1\n rts\n}\n\
+         proc Moves () out(d0/d5: u16) {\n moveq #0, d0\n move.w #1, d5\n rts\n}\n\
+         proc InOut (d6: u16) inout(d6: u16) {\n addq.w #1, d6\n rts\n}\n",
+        "module n\n\
+         section s {\n\
+         proc InSection () out(d7: u8) {\n move.b #1, d7\n rts\n}\n\
+         }\n",
+    ]
+    .iter()
+    .enumerate()
+    .map(|(i, text)| (PathBuf::from(format!("fixed{i}.emp")), text.to_string()))
+    .collect();
+    for (path, text) in &sources {
+        let (_, diags) = parse_str(text);
+        assert!(diags.is_empty(), "{}: the fixed input must parse cleanly: {diags:?}", path.display());
+    }
+    let want: Vec<(String, String)> = [
+        ("Cond", "d3"),
+        ("Ext", "d0"),
+        ("InSection", "d7"),
+        ("Moves", "d5"),
+        ("Plain", "d2"),
+        ("Probe", "a1"),
+        ("Probe", "d4"),
+        ("Wide", "d0"),
+        ("Wide", "d1"),
+    ]
+    .iter()
+    .map(|(p, g)| (p.to_string(), g.to_string()))
+    .collect();
+    assert_eq!(
+        analyze_sources(&sources).typed_out_slots,
+        want,
+        "the report's type walk over the fixed input"
+    );
+    assert_eq!(
+        declared_typed_out_slots(&sources),
+        want,
+        "the token enumeration over the fixed input"
+    );
 }
 
 /// Every proc that declares `out(rN if cc)` with rN ABSENT from its `clobbers` —
