@@ -164,6 +164,29 @@ fn builds(name: &str) {
     }
 }
 
+/// asl assembled the probe cleanly, and sigil either writes the image its
+/// listing shows or refuses the file. The one outcome this rejects is a
+/// DIFFERENT image, which is a silent wrong answer; it is the guard for a shape
+/// asl accepts and sigil has not built yet.
+#[track_caller]
+fn builds_or_refuses(name: &str) {
+    assert_eq!(
+        asl_exit(name),
+        0,
+        "{name}: not a clean asl run, so its listing is no source of values"
+    );
+    let want = listing_image(name);
+    assert!(!want.is_empty(), "{name}: the listing shows no bytes");
+    if let Ok(got) = sigil_image(name) {
+        assert_eq!(
+            got, want,
+            "{name}: sigil built an image asl's listing does not show (asl {} bytes, sigil {})",
+            want.len(),
+            got.len()
+        );
+    }
+}
+
 /// `+` between two string literals is CONCATENATION, not the sum of their
 /// packed character codes. `v_concat_lit.lst`, exit 0:
 ///
@@ -287,29 +310,112 @@ fn an_interpolation_is_folded_in_a_computed_string() {
     builds("v_concat");
 }
 
-/// A function whose body is a string, called and bound with `set`, and the
-/// symbol emitted. `v_fn_full_str.lst`, exit 0:
+/// A function whose body is a string reaches the bytes of a data directive as
+/// that string. `v_fn_concat_const.lst` and `v_fn_interp_only.lst`, exit 0:
 ///
 /// ```text
-///        4/       0 :                     f function number,substr("-",0,-sgn(number))+"$\{abs(number)}"
+///        5/       0 : 6162                	dc.b f(1)      f function number,"a"+"b"
+///        5/       0 : 2435                	dc.b f(-5)     f function number,"$\{abs(number)}"
+/// ```
+///
+/// The arithmetic reading of the first gives the one byte `C3`, and a body
+/// whose parameter is not bound inside its literal gives the literal's fifteen
+/// source characters.
+#[test]
+fn a_string_valued_function_result_reaches_bytes() {
+    builds("v_fn_concat_const");
+    builds("v_fn_interp_only");
+}
+
+/// A function whose body is a ONE-character string, bound by `equ` and read in
+/// integer slots, keeps its integer reading. `v_fn_str_equ_int.lst`, exit 0:
+///
+/// ```text
+///        4/       0 :                     f function x,"a"
+///        5/       0 : ="a"                 Z equ f(1)
+///        6/       0 : 303C 0061           	move.w #Z,d0
+///        7/       4 : 61EE                	dc.b Z,$EE
+///        8/       6 : 62EE                	dc.b Z+1,$EE
+/// ```
+///
+/// asl binds `Z` as the string `"a"` and reads it in an integer slot as its
+/// packed code. sigil binds the call's value as an integer, which gives the
+/// same bytes on every row. Binding it as a string gives a symbol that sigil's
+/// integer paths do not read, so `move.w #Z,d0` and `dc.b Z+1` are refused:
+/// that is the half-fix this test is here for.
+#[test]
+fn a_function_result_bound_by_equ_keeps_its_integer_reading() {
+    builds("v_fn_str_equ_int");
+}
+
+/// A string-valued function bound by `set` and then emitted. asl binds the
+/// string (`v_fn_full_str.lst`, exit 0):
+///
+/// ```text
 ///        5/       0 : ="-$5"               S set f(-5)
 ///        6/       0 : 2D24 35             	dc.b S
 /// ```
 ///
-/// asl's symbol table carries `S : "-$5"`, so the binding is string-typed and
-/// the three bytes come from it. sigil before this parcel refused with
-/// `unresolved symbol S`: the `set` string branch probed `eval_str` without
-/// expanding the `function` call first, so `f(-5)` was not a string to it and
-/// fell through to the integer path, which had nothing to resolve.
-///
-/// This is the one shape of the five that failed LOUDLY, and it is still worth
-/// a test of its own: a fix aimed only at the byte-emitting sites leaves it
-/// exactly as it was.
+/// sigil does not bind a call's string (see `a_function_result_bound_by_equ_
+/// keeps_its_integer_reading` for why), so this shape is OPEN in the gap
+/// ledger as `AS-STRING-FUNCTION-SET`. What this test holds is the direction
+/// of the gap: sigil either writes asl's three bytes or refuses the file. Any
+/// other image is a silent wrong answer and fails here, and building the
+/// feature later turns this green without editing it.
 #[test]
-fn a_string_valued_function_result_binds_to_a_symbol() {
-    builds("v_fn_full_str");
-    builds("v_fn_concat_const");
-    builds("v_fn_interp_only");
+fn a_string_valued_function_bound_by_set_is_never_silently_wrong() {
+    builds_or_refuses("v_fn_full_str");
+}
+
+/// A string VALUE is not scanned for `\{` a second time. `v_value_not_
+/// rescanned.lst`, exit 0, `n equ 5` and `s := "\\{n}"` above these rows:
+///
+/// ```text
+///        6/       0 : 5C7B 6E7D EE        	dc.b s,$EE
+///        7/       5 : 5C7B 6E7D EE        	dc.b substr(s,0,0),$EE
+///        8/       A : 2D5C 7B6E 7DEE      	dc.b "-"+s,$EE
+///        9/      10 : 5C7B 6E7D EE        	dc.b substr("\\{n}",0,0),$EE
+///       11/      15 : 5C7B 6E7D EE        	dc.b t,$EE          t set s
+///       13/      1A : 5C7B 6E7D EE        	dc.b u,$EE          u set substr("\\{n}",0,0)
+/// ```
+///
+/// `\\{n}` is an escaped backslash followed by `{n}`, and its value is those
+/// four characters. A pass that folds interpolations over a string's VALUE
+/// finds a `\{n}` in it and writes `35` in every row; so does a `set` that
+/// folds over the value it binds.
+#[test]
+fn a_string_value_is_not_scanned_again_for_interpolation() {
+    builds("v_value_not_rescanned");
+}
+
+/// A `\{expr}` is folded where its LITERAL is evaluated, before any string
+/// operation runs on it. `v_interp_at_literal.lst`, exit 0, `n equ 5` and
+/// `N equ $AB`:
+///
+/// ```text
+///        6/       0 : 01EE                	dc.b strlen("\{n}"),$EE
+///        7/       2 : 35EE                	dc.b substr("\{n}xy",0,1),$EE
+///        8/       4 : 6162 EE             	dc.b lowstring("\{N}"),$EE
+///        9/       7 : 41EE                	dc.b substr("ab\{N}",2,1),$EE
+///       10/       9 : 03EE                	dc.b strlen("-"+"\{N}"),$EE
+/// ```
+///
+/// Folding where the string lands instead gives `04`, `5C`, `35` (the
+/// lowercased expression reads a different symbol, `n`), `5C` and `05`. The
+/// `substr` rows use a nonzero length on purpose: `substr(s,0,0)` means "to the
+/// end", which is the same under both readings. `v_interp_fwd` is the same
+/// fold with the symbol defined BELOW its use, so a fold that only works on a
+/// symbol already known is red there:
+///
+/// ```text
+///        4/       0 : 35EE                	dc.b "\{Later}",$EE
+///        5/       2 : 35EE                	dc.b substr("\{Later}",0,0),$EE
+///        6/       4 : 2D35 EE             	dc.b "-"+"\{Later}",$EE
+/// ```
+#[test]
+fn an_interpolation_is_folded_where_its_literal_is() {
+    builds("v_interp_at_literal");
+    builds("v_interp_fwd");
 }
 
 /// The whole feature, on Sonic 1's real definition. `signed.lst`, exit 0:

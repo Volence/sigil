@@ -4104,40 +4104,87 @@ impl Asm {
         out
     }
 
-    /// [`Self::interp_text`] for a context whose output is BYTES: an
-    /// interpolation with no value is an [`crate::escape::EscapeError::Interp`]
-    /// rather than text left verbatim.
+    /// `toks` with every string literal that holds a `\{expr}` replaced by its
+    /// VALUE, spelled again as a literal ([`crate::escape::quote`]), so every
+    /// string operation downstream of it sees the interpolated text.
     ///
-    /// The two differ only in what they do with an unresolved expression, and
-    /// which one a site wants follows from what it writes. A message or a
-    /// binding is re-run on a later pass, so keeping the sequence is how a
-    /// forward reference survives to be resolved. A data directive writes the
-    /// text into the image, where `\{Later}` would become five bytes that look
-    /// deliberate; the bare-literal branch of `dc.b` has always refused this
-    /// (`literal_value(raw, false)`) and this is the same refusal for a string
-    /// that arrived computed.
-    fn interp_value(&mut self, raw: &str) -> Result<String, crate::escape::EscapeError> {
-        let mut out = String::new();
-        let mut cur = raw;
-        while let Some(pos) = cur.find("\\{") {
-            out.push_str(&cur[..pos]);
-            let after = &cur[pos + 2..];
-            let Some(end) = after.find('}') else {
-                // An unterminated `\{` is not an interpolation at all: the text
-                // stands, as it does in `interp_text`.
-                out.push_str("\\{");
-                cur = after;
-                continue;
-            };
-            let expr_text = &after[..end];
-            match self.render_interp_expr(expr_text) {
-                Some(v) => out.push_str(&v),
-                None => return Err(crate::escape::EscapeError::Interp(expr_text.to_string())),
+    /// asl folds an interpolation where its LITERAL is evaluated, before any
+    /// operation on the string runs. Measured, probe `v_interp_at_literal`,
+    /// exit 0, with `n equ 5` and `N equ $AB`:
+    ///
+    /// ```text
+    ///    6/       0 : 01EE                	dc.b strlen("\{n}"),$EE
+    ///    7/       2 : 35EE                	dc.b substr("\{n}xy",0,1),$EE
+    ///    8/       4 : 6162 EE             	dc.b lowstring("\{N}"),$EE
+    /// ```
+    ///
+    /// Folding at the point of use instead (the string's value carried with its
+    /// `\{…}` still in it, and the sequence folded wherever the value lands)
+    /// gives each of those a different answer: `strlen` counts the four source
+    /// characters, `substr` cuts the source text, and `lowstring` lowercases the
+    /// EXPRESSION, so `\{N}` would interpolate a different symbol, `n`.
+    ///
+    /// Folding here is also what keeps a string VALUE from being scanned a
+    /// second time. `s := "\\{n}"` binds the four characters `\{n}`, and
+    /// `dc.b s`, `dc.b substr(s,0,0)` and `dc.b "-"+s` write those characters
+    /// (probe `v_value_not_rescanned`: `5C 7B 6E 7D` in every row). A value's
+    /// `\{` is text; only a literal's is an interpolation, and a literal is the
+    /// one thing this rewrites.
+    ///
+    /// `keep_unresolved` is [`Self::literal_value`]'s: `true` keeps an
+    /// interpolation that has no value as its own text (a binding, re-run on a
+    /// later pass), `false` makes it an error returned with the literal's span.
+    /// A literal with no `\{` in it is left as it is.
+    // REASON: the doc comment above quotes an asl listing verbatim, and asl
+    // separates its byte column from the echoed source with a TAB. The tabs are
+    // the evidence. Scoped to this item.
+    #[allow(clippy::tabs_in_doc_comments)]
+    fn fold_literal_interps(
+        &mut self,
+        toks: &[Token],
+        keep_unresolved: bool,
+    ) -> Result<Vec<Token>, (Span, crate::escape::EscapeError)> {
+        let mut out = Vec::with_capacity(toks.len());
+        for t in toks {
+            if let Tok::Str(raw) = &t.tok {
+                if raw.contains("\\{") {
+                    let value = self
+                        .literal_value(raw, keep_unresolved)
+                        .map_err(|e| (t.span, e))?;
+                    out.push(Token {
+                        tok: Tok::Str(crate::escape::quote(&value)),
+                        span: t.span,
+                    });
+                    continue;
+                }
             }
-            cur = &after[end + 1..];
+            out.push(t.clone());
         }
-        out.push_str(cur);
         Ok(out)
+    }
+
+    /// The string a `set`/`equ` right-hand side that is not a bare literal
+    /// binds, or `None` when it is not a string expression.
+    ///
+    /// The shape is decided by [`Self::eval_str`] on the tokens as written, and
+    /// only a string-shaped side has its literals' interpolations folded
+    /// ([`Self::fold_literal_interps`], unresolved ones kept for a later pass)
+    /// and is then evaluated. So an integer right-hand side never has an
+    /// interpolation rendered on its behalf, and the value bound is never
+    /// scanned for `\{` again: `t set s` after `s := "\\{n}"` binds `\{n}`,
+    /// four characters (probe `v_value_not_rescanned`, line 10).
+    ///
+    /// A user `function` call is NOT expanded here, so a call whose body is a
+    /// string does not bind a string. That is deliberate: sigil reads a string
+    /// symbol in an integer slot as unresolved, and asl reads it as the string's
+    /// packed code. `f function x,"a"` / `Z equ f(1)` / `move.w #Z,d0` is
+    /// `303C 0061` to asl (probe `v_fn_str_equ_int`), which the integer binding
+    /// this leaves in place also produces. Binding the call's string would
+    /// refuse that line (`AS-STRING-FUNCTION-SET` in the gap ledger).
+    fn bind_str_rhs(&mut self, rest: &[Token]) -> Option<String> {
+        self.eval_str(rest)?;
+        let folded = self.fold_literal_interps(rest, true).ok()?;
+        self.eval_str(&folded)
     }
 
     /// The text one `\{expr}` interpolation pastes, by the TYPE the expression
@@ -7449,18 +7496,7 @@ impl Asm {
                     return;
                 }
             },
-            // `expand_calls` FIRST: a user `function` whose body is a string
-            // is a string RHS, and `eval_str` does not expand calls of its own.
-            // Without this, `S set f(-5)` did not look like a string, fell
-            // through to the integer path, and refused with `unresolved symbol
-            // S` while asl bound `S` to `"-$5"` (probe `v_fn_full_str`). The
-            // SILENT expansion is the right one here: this is a probe for a
-            // shape, and `eval_all` below expands again with diagnostics, so
-            // reporting here would say the same thing twice about one RHS.
-            _ => {
-                let called = self.expand_calls(rest, 0);
-                self.eval_str(&called).map(|s| self.interp_text(&s))
-            }
+            _ => self.bind_str_rhs(rest),
         };
         if let Some(s) = bound {
             self.float_env.remove(&q);
@@ -7852,18 +7888,7 @@ impl Asm {
                     return;
                 }
             },
-            // `expand_calls` FIRST: a user `function` whose body is a string
-            // is a string RHS, and `eval_str` does not expand calls of its own.
-            // Without this, `S set f(-5)` did not look like a string, fell
-            // through to the integer path, and refused with `unresolved symbol
-            // S` while asl bound `S` to `"-$5"` (probe `v_fn_full_str`). The
-            // SILENT expansion is the right one here: this is a probe for a
-            // shape, and `eval_all` below expands again with diagnostics, so
-            // reporting here would say the same thing twice about one RHS.
-            _ => {
-                let called = self.expand_calls(rest, 0);
-                self.eval_str(&called).map(|s| self.interp_text(&s))
-            }
+            _ => self.bind_str_rhs(rest),
         };
         if let Some(s) = bound {
             self.float_env.remove(&q);
@@ -8142,6 +8167,23 @@ impl Asm {
         for g in groups {
             let gspan = item_span(g, span);
             let called = self.expand_calls_checked(g);
+            // Every literal but a bare one has its interpolations folded here,
+            // before the builtins below operate on it (see
+            // [`Self::fold_literal_interps`]). A bare literal is folded by its
+            // own branch further down, in the same one scan with its escapes. An
+            // interpolation with no value is refused, as the bare branch refuses
+            // it: written out, it would be its own source text in the image.
+            let called = if matches!(called.as_slice(), [Token { tok: Tok::Str(_), .. }]) {
+                called
+            } else {
+                match self.fold_literal_interps(&called, false) {
+                    Ok(t) => t,
+                    Err((_, e)) => {
+                        self.err(gspan, e.to_string());
+                        continue;
+                    }
+                }
+            };
             let expanded = self.expand_int_builtin(&called);
             let expanded = self.expand_str_builtins(&expanded);
             let expanded = match self.collapse_float_operand(&expanded) {
@@ -8183,29 +8225,14 @@ impl Asm {
                 continue;
             }
             // A COMPUTED string (a `substr`/`lowstring` chain, a concatenation,
-            // a string-valued symbol or function result) reaches bytes here, and
-            // its `\{expr}` interpolations are folded on the way exactly as the
-            // bare literal's are one branch up. `eval_str` deliberately KEEPS
-            // `\{…}` so that each of its callers folds where its own value is
-            // bound; this is that fold for the data directives.
-            //
-            // Leaving it out was a SILENT wrong answer in its own right, with no
-            // `+` anywhere near it: `dc.b substr("$\{abs(-5)}",0,0)` is `24 35`
-            // to asl and was the eleven bytes of the source text here, exit 0
-            // (probe `v_interp_substr`, lines 4 and 5).
-            //
-            // An interpolation with no value is REFUSED, not written out as its
-            // own source text, which is the call the bare-literal branch already
-            // makes (`literal_value(raw, false)`): at a data directive the
-            // alternative is bytes nobody asked for.
+            // a string-valued symbol or function result) emits its characters
+            // the same way. Its literals' interpolations were folded at the top
+            // of this loop, so what `eval_str` returns is the final text and is
+            // written as it stands: a `\{` in it is a character of a value, and
+            // is not scanned again (`dc.b substr("$\{abs(-5)}",0,0)` is `24 35`,
+            // probe `v_interp_substr`; `dc.b s` with `s := "\\{n}"` is
+            // `5C 7B 6E 7D`, probe `v_value_not_rescanned`).
             if let Some(s) = self.eval_str(&expanded) {
-                let s = match self.interp_value(&s) {
-                    Ok(s) => s,
-                    Err(e) => {
-                        self.err(gspan, e.to_string());
-                        continue;
-                    }
-                };
                 let cs = &self.state.charset;
                 let bytes: Vec<u8> = s.chars().map(|c| cs.map_char(c)).collect();
                 self.emit(&bytes, vec![], span);
