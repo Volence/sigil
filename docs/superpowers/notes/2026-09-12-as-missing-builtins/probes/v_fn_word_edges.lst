@@ -1,0 +1,78 @@
+ AS V1.42 Beta [Bld 212] - Source File v_fn_word_edges.asm - Page 1 - 09/13/2026 01:40:45 AM
+
+
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 :                     fg function n,"a.n n.b n"
+       5/       0 : 612E 2833 2920      	dc.b fg(3),$EE
+                6 : 2833 292E 6220 
+                C : 2833 29EE          
+       6/      10 :                     fh function n,"n_1 1n n1 _n"
+       7/      10 : 2833 295F 3120      	dc.b fh(3),$EE
+               16 : 316E 206E 3120 
+               1C : 5F28 3329 EE       
+       8/      21 :                     fi function n,"N-n"
+       9/      21 : 4E2D 2833 29EE      	dc.b fi(3),$EE
+      10/      27 :                     fj function n,"(n)"
+      11/      27 : 2828 3329 29EE      	dc.b fj(3),$EE
+      12/      2D :                     fk function n,m,"m n"
+      13/      2D : 2832 2920 2831      	dc.b fk(1,2),$EE
+               33 : 29EE             
+      14/      35 :                     fl function n,"\{n}n"
+      15/      35 : 3728 3729 EE        	dc.b fl(n2),$EE
+      16/      3A : =$7                  n2 equ 7
+      17/      3A :                     	end
+ AS V1.42 Beta [Bld 212] - Source File v_fn_word_edges.asm - Page 2 - 09/13/2026 01:40:45 AM
+
+
+  Symbol Table (* = unused):
+  --------------------------
+
+*ARCHITECTURE :                                      "x86_64-unknown-linux" - |
+*BIGENDIAN :                      0 - | *BRANCHEXT :                      0 - |
+*CASESENSITIVE :                  1 - | *COMPMODE :                       0 - |
+*CONSTPI :        3.141592653589793 - | *CUSTOM :                         0 - |
+*DATE :                "09/13/2026" - | *FALSE :                          0 - |
+*FULLPMMU :                       1 - | *HAS64 :                          1 - |
+*HASDSP :                         0 - | *HASFPU :                         0 - |
+*HASPMMU :                        0 - | *INEXTMODE :                      0 - |
+*INLWORDMODE :                    0 - | *INMAXMODE :                      0 - |
+*INSRCMODE :                      0 - | *INSUPMODE :                      0 - |
+*LISTON :                         1 - | *MACEXP :                         7 - |
+*MOMCPU :                     68000 - | *MOMCPUNAME :               "68000" - |
+*NESTMAX :                      100 - | *PACKING :                        0 - |
+*PADDING :                        0 - | *RELAXED :                        0 - |
+*TIME :               "01:40:45 AM" - | *TRUE :                           1 - |
+*VERSION :                     142F - | *Z80SYNTAX :                      0 - |
+ n2 :                             7 - |
+
+     32 symbols
+     31 unused symbols
+
+ AS V1.42 Beta [Bld 212] - Source File v_fn_word_edges.asm - Page 3 - 09/13/2026 01:40:45 AM
+
+
+  Defined Functions:
+  ------------------
+
+fl                                    | fk                                   
+fj                                    | fi                                   
+fh                                    | fg                                   
+
+ AS V1.42 Beta [Bld 212] - Source File v_fn_word_edges.asm - Page 4 - 09/13/2026 01:40:45 AM
+
+
+  Code Pages:
+  ----------
+
+STANDARD (0 changed characters)
+
+1 code page
+
+0.00 seconds assembly time
+
+     18 lines source file
+      2 passes
+      0 errors
+      0 warnings
