@@ -5,7 +5,7 @@ scope, the queue, the standing owner rulings that change what a session does fir
 obligations this lane owes now. It names this file by path at every point one of the blocks below
 used to sit.
 (Since the 2026-09-13 cut the obligations and commitments between this lane and aeon are here, and
-the boot read names them only as rows in that cut's index; the same cut moved each queue project's
+the boot read names them only as rows in its index; the same cut moved each queue project's
 working detail here and left the rows in the boot read.)
 
 **Split by WHEN A RULE IS READ, never by size** — owner ruling 2026-09-04T15:38:47Z, carried in
@@ -33,6 +33,9 @@ would have made the move unprovable. Read them by moment instead.
   quirks*.
 - **About to sweep, delete or rebuild trees under `~/sonic_hacks/`** — *Standing artifacts this
   lane depends on*.
+
+The boot read's index, *Read at the moment: the index to `docs/OVERSEER-REFERENCE.md`*, has a row
+for every block in this file, including the many this list does not name.
 
 ## Freeze, proof and review bars
 
@@ -1536,7 +1539,8 @@ alone.** So the lock records that an agent *claimed* a tree, never that one stil
 
 The blocks below, verbatim, moved under the owner's 2026-09-04T15:38:47Z ruling that the boot read is
 split by WHEN A RULE IS READ rather than by size. **Nothing was shortened to move it.** The boot
-file names every one of them by its own heading at the point they used to sit.
+file names every one of them by its own heading, in its index, *Read at the moment: the index to
+`docs/OVERSEER-REFERENCE.md`*.
 ### A DO-NOT-TOUCH RULE WITH NO NAMED OWNER FOR THE DELIBERATE TOUCH ROTS THE THING IT PROTECTS
 
 *(Aeon's framing, adopted in their words because it is better than mine: **the protection and the
@@ -2030,7 +2034,9 @@ under the owner's 2026-09-04T15:38:47Z ruling that the split is by WHEN A RULE I
 **Nothing was shortened to move it.** They keep the order they held in the boot read, so the
 move is provable as an order-preserving subsequence; each carries a locator giving its original
 line span and the heading it sat under. The moment that triggers each is in the boot read's
-index, *Read at the moment - the blocks moved to the reference file on 2026-09-09*. The last
+index, *Read at the moment: the index to `docs/OVERSEER-REFERENCE.md`*. This cut's own index,
+*Read at the moment - the blocks moved to the reference file on 2026-09-09*, is at the end of this
+file, under *The per-cut indexes, as each cut wrote them*. The last
 four keep their own `##` headings, so they read as sections in their own right below this one.
 
 ### `pad`/`pad_to`: the spec text's landing, the diagnostic-string debt, and the sequencing
@@ -2825,7 +2831,9 @@ Twelve blocks, moved VERBATIM when `docs/OVERSEER.md` crossed its byte bound aga
 owner's 2026-09-04T15:38:47Z ruling that the split is by WHEN A RULE IS READ. **Nothing was
 shortened to move it**, and no rule was dropped. They keep the order they held in the boot read.
 The index that names the moment triggering each of them is in the boot read, under *Read at the
-moment - the blocks moved to the reference file on 2026-09-10*.
+moment: the index to `docs/OVERSEER-REFERENCE.md`*. This cut's own index, *Read at the moment -
+the blocks moved to the reference file on 2026-09-10*, is at the end of this file, under *The
+per-cut indexes, as each cut wrote them*.
 
 ## AN EXCLUSIVE-TREE LEASE HAS NO END UNTIL YOU GIVE IT ONE (2026-09-09)
 
@@ -3126,7 +3134,9 @@ Fourteen blocks, moved VERBATIM out of `docs/OVERSEER.md` at sigil `0236c5f7`, o
 split is by WHEN A RULE IS READ. **Nothing was shortened to move it**, and no rule was dropped. They
 keep the order they held in the boot read, and each carries a locator giving its original line span
 and the heading it sat under. The index that names the moment triggering each is in the boot read,
-under *Read at the moment - the blocks moved to the reference file on 2026-09-13*.
+under *Read at the moment: the index to `docs/OVERSEER-REFERENCE.md`*. This cut's own index, *Read
+at the moment - the blocks moved to the reference file on 2026-09-13*, is at the end of this file,
+under *The per-cut indexes, as each cut wrote them*.
 
 **Where a moved sentence says *"this file"*, *"this document"* or *"this page"*, it means the boot
 read, `docs/OVERSEER.md`, where it was written.** The queue rows three of these blocks belong to

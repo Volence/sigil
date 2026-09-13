@@ -45,6 +45,10 @@ DECLARED_REPAIRS = {
     "bug and `[layout.odd-field]` are the same shape one layer out, already banked in the": 1,
     # the 2026-09-04 index now names the two later cuts, so the chain of indexes is followable
     "the whole of `docs/OVERSEER-REFERENCE.md`.": 1,
+    # 2026-09-13 index consolidation (OMD_BASE=089edd4f): the preamble said there is one index per
+    # cut, the newest last; the six moved to the reference file and one index replaced them, so the
+    # line now names that index by its heading
+    "> one index per cut, each a section headed *Read at the moment*, the newest last.": 1,
 }
 
 

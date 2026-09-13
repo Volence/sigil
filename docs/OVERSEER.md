@@ -24,7 +24,7 @@ are in `docs/OVERSEER-REFERENCE.md`.
 > moment* below, and each row states the moment that triggers its block.
 > Since the 2026-09-13 cut it also holds the working detail of each queue project (the rows stay
 > here), the ledger gate, and the commitments and obligations between this lane and aeon. There is
-> one index per cut, each a section headed *Read at the moment*, the newest last.
+> one index, *Read at the moment: the index to `docs/OVERSEER-REFERENCE.md`*, with a row per block.
 >
 > **Split by WHEN A RULE IS READ, never by size** — owner ruling 2026-09-04T15:38:47Z, carried in
 > `empyrean/docs/OVERSEER-PROTOCOL.md` at `origin/main`. **No rule is shorter for having moved**;
@@ -663,6 +663,7 @@ landing an arc — a stale queue snapshot misleads the next boot more than no sn
 The findings of 2026-09-05 that a fresh session needs before it acts. Their episodes are
 not here: this section carries the rule and names where the narrative went, per the owner's
 2026-09-04T15:38:47Z ruling that the boot read is split by WHEN A RULE IS READ.
+The narrative is in `docs/OVERSEER-LOG.md`, 2026-09-05 cut.
 
 **Two live bookings are named only in that narrative, so they are named here too**, because the
 queue board `docs/lane-status.json` is untracked and a rotated session cannot be shown to hold
