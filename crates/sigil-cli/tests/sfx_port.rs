@@ -3,7 +3,7 @@
 //! `mt_port.rs`'s sibling (Task 4): compiles the ACTUAL ported file from aeon's
 //! tree — `games/sonic4/data/sound/sfx/sfx_bank.emp` — through the production
 //! parse -> lower -> place -> resolve -> link pipeline, with `include_root` set
-//! to the module's OWN directory (so the eighteen `embed(...)` blobs resolve),
+//! to the module's OWN directory (so its `embed(...)` blobs resolve),
 //! and asserts the `sfx_bank` section's flattened bytes equal the reference ROM
 //! window at the pinned addresses, in BOTH build shapes.
 //!
@@ -65,16 +65,17 @@ fn layout(sfx_dir: &Path) -> SoundLayout {
 }
 
 /// REFERENCE-DEPENDENT: the module's own directory in aeon's tree — the
-/// `include_root` under which the eighteen `embed("sfx_*.bin")` fixtures
+/// `include_root` under which the module's `embed("sfx_*.bin")` fixtures
 /// resolve. `Some(dir)` when the tree carries the module and its fixtures (the
-/// first pair stands for the set — they ship together in this one directory);
-/// `None` — both tests SKIP green — when it does not, unless
-/// `SIGIL_STRICT_GATE=1` makes absence a hard failure.
+/// first blob stands for the set, since they ship together in this one
+/// directory); `None` (both tests SKIP green) when it does not, unless
+/// `SIGIL_STRICT_GATE=1` makes absence a hard failure. The probe names no
+/// `sfx_NN_patches.bin`: newer aeon trees carry each patch bank inside its blob
+/// and ship no such file, so a probe naming one would skip a complete tree.
 fn sound_dir() -> Option<PathBuf> {
     reference_tree(&[
         "games/sonic4/data/sound/sfx/sfx_bank.emp",
         "games/sonic4/data/sound/sfx/sfx_33.bin",
-        "games/sonic4/data/sound/sfx/sfx_33_patches.bin",
     ])
     .map(|aeon| aeon.join("games/sonic4/data/sound/sfx"))
 }
