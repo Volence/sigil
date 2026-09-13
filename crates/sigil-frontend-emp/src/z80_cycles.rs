@@ -1349,5 +1349,113 @@ mod tests {
                 "the split-cost forms `span_cost` refuses before reading a cost"
             );
         }
+
+        /// THE BUDGET WALK'S HALF: in `@budget`, `[cycles.ambiguous-branch]` is
+        /// reached by the repeating block ops and by nothing else, which is what
+        /// lets its message be worded by that class.
+        ///
+        /// Every encodable form `instr_cost` prices as `Split` is placed in a body
+        /// where every leg stays inside and ends at a return: a branch target is
+        /// `.target`, which labels a second `ret`. So no transfer-out refusal can
+        /// stand in front of the cost, and what reaches the guard is decided by
+        /// the edge count alone. What comes back `AmbiguousBranch` must be
+        /// exactly [`AMBIGUOUS_BRANCH_REPEATS`], each operand-free and carrying
+        /// the repeat wording, and the conditionals that do reach the `cycles()`
+        /// builtin's refusal must MEASURE here, because a conditional presents a
+        /// taken edge and a fall-through and the walk charges one cost to each.
+        #[test]
+        fn budget_ambiguous_branch_is_reached_only_by_the_block_repeats() {
+            use super::super::{AMBIGUOUS_BRANCH_CONDITIONALS, AMBIGUOUS_BRANCH_REPEATS};
+            use crate::cycle_budget::{path_costs, BudgetFindingKind};
+            use sigil_ir::backend::Cpu;
+            use std::collections::{BTreeMap, BTreeSet};
+
+            fn spelling(name: &str, ops: &[IsaOp]) -> String {
+                match ops.first() {
+                    Some(IsaOp::Cc(_)) => format!("{name} cc"),
+                    _ => name.to_string(),
+                }
+            }
+
+            let pool = shape_pool();
+            let mut examined = 0usize;
+            let mut reaching: BTreeSet<String> = BTreeSet::new();
+            let mut measured: BTreeSet<String> = BTreeSet::new();
+            let mut refused_otherwise: BTreeMap<String, &'static str> = BTreeMap::new();
+            for (m, name) in all_mnemonics() {
+                for ops in &pool {
+                    if z80::encode(&Instruction { mnemonic: m, ops: ops.clone() }).is_err() {
+                        continue;
+                    }
+                    let Some(emp) = ops.iter().map(emp_image).collect::<Option<Vec<CodeOperand>>>()
+                    else {
+                        continue;
+                    };
+                    if !matches!(instr_cost(name, &emp), Cost::Split { .. }) {
+                        continue;
+                    }
+                    examined += 1;
+                    let form = spelling(name, ops);
+                    let items = vec![
+                        super::instr(name, emp),
+                        super::instr("ret", vec![]),
+                        super::label(".target"),
+                        super::instr("ret", vec![]),
+                    ];
+                    match path_costs(&items, Cpu::Z80, super::sp(), &BTreeSet::new()) {
+                        Ok(_) => {
+                            measured.insert(form);
+                        }
+                        Err(e) => match &e.kind {
+                            BudgetFindingKind::AmbiguousBranch { mnemonic } => {
+                                assert!(
+                                    ops.is_empty(),
+                                    "`{form}` reached [cycles.ambiguous-branch] carrying \
+                                     operands {ops:?}"
+                                );
+                                let text = e.kind.message();
+                                let repeat_wording = format!(
+                                    "`{mnemonic}` repeats a number of times decided at run time"
+                                );
+                                assert!(
+                                    text.starts_with(&repeat_wording),
+                                    "`{form}` reaches the refusal as a block repeat, so its \
+                                     message must say so; got: {text}"
+                                );
+                                reaching.insert(mnemonic.clone());
+                            }
+                            other => {
+                                refused_otherwise.insert(form, other.lint_id());
+                            }
+                        },
+                    }
+                }
+            }
+
+            assert!(examined > 0, "no split-cost form was examined; the population is empty");
+            let named = |list: &[&str]| list.iter().map(|s| s.to_string()).collect::<BTreeSet<_>>();
+            assert_eq!(
+                reaching,
+                named(&AMBIGUOUS_BRANCH_REPEATS),
+                "the `@budget` walk's [cycles.ambiguous-branch] must be reached by exactly \
+                 the block repeats (left: derived from the encoder, right: the constant)"
+            );
+            for form in AMBIGUOUS_BRANCH_CONDITIONALS {
+                assert!(
+                    measured.contains(form),
+                    "`{form}` presents a taken edge and a fall-through, so a body that keeps \
+                     both inside must measure; measured: {measured:?}, refused otherwise: \
+                     {refused_otherwise:?}"
+                );
+            }
+            // A `call cc` carries a split cost over one edge, the refusal's own
+            // shape, and never gets there because the walk refuses a call first.
+            let expected_refused_otherwise =
+                BTreeMap::from([("call cc".to_string(), "cycles.opaque-call")]);
+            assert_eq!(
+                refused_otherwise, expected_refused_otherwise,
+                "the split-cost forms the `@budget` walk refuses under another id"
+            );
+        }
     }
 }
