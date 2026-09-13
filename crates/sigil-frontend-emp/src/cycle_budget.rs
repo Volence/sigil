@@ -31,7 +31,7 @@
 //! | a tail transfer out, or control off the end of the body | `[cycles.unbounded-transfer]` | the path continues into code this walk cannot see |
 //! | a transfer to a COMPUTED target (`jp (hl)`, `jmp .table(a1)`) | `[cycles.computed-transfer]` | the destination set is data, not structure — UNLESS a `targets(...)` clause enumerates the reachable local labels (see below) |
 //! | an op outside the CPU's cost table | `[cycles.unknown-op]` | no cost is assignable |
-//! | an outcome-split conditional whose two edges cannot be told apart | `[cycles.ambiguous-branch]` | the two costs cannot be routed to their edges (a defensive guard with no input from THIS walk — see [`BudgetFindingKind::AmbiguousBranch`]; the id's live producer is the `cycles(L1, L2)` span builtin) |
+//! | a split cost over an instruction that does not present two edges (a repeating block op such as `ldir`) | `[cycles.ambiguous-branch]` | the two costs cannot be routed to their edges; see [`BudgetFindingKind::AmbiguousBranch`], and the `cycles(L1, L2)` span builtin emits the same id |
 //! | inline data in the code stream | `[cycles.inline-data]` | those bytes DECODE if control reaches them, and the CFG does not model them as instructions |
 //! | a body with no instructions | `[cycles.empty-body]` | its one path never returns, so there is no path cost to bound |
 //! | `@cycles_exact` over an instruction whose cost is a CEILING | `[cycles.inexact-cost]` | a maximum can bound a budget but cannot prove an equality |
