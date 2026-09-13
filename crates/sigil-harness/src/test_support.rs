@@ -102,97 +102,63 @@ pub fn sst_field_equs() -> Vec<(&'static str, &'static str)> {
     ]
 }
 
-/// The `Act_*` / `Sec_*` / `DMAEntry_*` / `parallax_config_*` struct-field equs
-/// a standalone gate may SUPPLY. Post the conv-a structs flip, `engine.structs`
-/// OWNS these layouts (the per-field drift wall retired; the build harvests the
-/// offsets from the structs), so this is a SUPPLY-ONLY blob matching what the
-/// harvest injects — the values track the struct declarations. Act's `$21` pad is
-/// anonymous (covered by `Act_len`). SOURCE OF TRUTH: `engine/structs.emp`.
+/// The structs [`act_sec_field_equs`] supplies, as the prefixes their AS equs carry.
+const ACT_SEC_PREFIXES: &[&str] = &["Act_", "Sec_", "DMAEntry_", "parallax_config_"];
+
+/// The rows of a struct-offset harvest that [`act_sec_field_equs`] supplies: every
+/// equ whose name carries one of [`ACT_SEC_PREFIXES`], in harvest order, its value
+/// spelled as an AS hex literal.
+fn act_sec_rows(harvest: &[(String, i64)]) -> Vec<(String, String)> {
+    harvest
+        .iter()
+        .filter(|(name, _)| ACT_SEC_PREFIXES.iter().any(|p| name.starts_with(p)))
+        .map(|(name, value)| (name.clone(), format!("${value:02X}")))
+        .collect()
+}
+
+/// The [`act_sec_field_equs`] rows for the tree at `aeon`, or the harvest's error
+/// with that tree named in it.
+fn act_sec_supply_from(aeon: &std::path::Path) -> Result<Vec<(String, String)>, String> {
+    let harvest = crate::native::harvest_engine_struct_offsets(aeon).map_err(|e| {
+        format!(
+            "the Act/Sec/DMAEntry/parallax_config field supply is the struct-offset harvest \
+             of {}, and that harvest failed, so no gate reading the supply can measure \
+             anything: {e}",
+            aeon.display()
+        )
+    })?;
+    Ok(act_sec_rows(&harvest))
+}
+
+/// The `Act_*` / `Sec_*` / `DMAEntry_*` / `parallax_config_*` struct-field equs a
+/// standalone gate SUPPLIES, derived from the reference tree the gate runs against.
+///
+/// `engine.structs` owns these layouts, and the real build injects them as the
+/// struct-offset harvest of the tree it builds
+/// ([`crate::native::harvest_engine_struct_offsets`]). This supply is that harvest
+/// over [`aeon_dir`], restricted to these four structs, so a standalone gate resolves
+/// each name to the value the build of the same tree would. A port gate reads its
+/// `.emp` sources and its reference ROM from that same tree, so the offsets supplied,
+/// the code compiled and the bytes compared all describe one tree, and a struct change
+/// in aeon reaches the supply with no edit here.
+///
+/// Harvested once per test process. A harvest that cannot run PANICS naming the tree,
+/// because a gate whose supply could not be derived has measured nothing.
 pub fn act_sec_field_equs() -> Vec<(&'static str, &'static str)> {
-    vec![
-        // Act (40 bytes / $28) — tracked by `tests/act_fixture_drift.rs` against
-        // `harvest_engine_struct_offsets`, which reads the live struct.
-        ("Act_sec_grid_ptr", "$00"),
-        ("Act_grid_w", "$04"),
-        ("Act_grid_h", "$06"),
-        ("Act_start_local_x", "$08"),
-        ("Act_start_local_y", "$0A"),
-        ("Act_start_sec_x", "$0C"),
-        ("Act_start_sec_y", "$0D"),
-        ("Act_act_bg_layout", "$0E"),
-        ("Act_act_bg_tiles", "$12"),
-        ("Act_act_parallax_config", "$16"),
-        ("Act_act_art_pool_table", "$1A"),
-        ("Act_act_art_pool_pages", "$1E"),
-        ("Act_edge_mode", "$20"),
-        ("Act_pad_21", "$21"),
-        ("Act_act_sec_local_maps", "$22"),
-        ("Act_act_art_budget", "$26"),
-        ("Act_len", "$28"),
-        // Sec (34 bytes / $22). Every per-channel field the record used to carry
-        // — art PLC, palette, raster table, palette cycle, DAC bank, animated
-        // blocks, flags, music, camera lookahead and the three reserved pads —
-        // is reached through `sec_effects`'s EffectsPreset instead, so the
-        // section record names only what the preset does not.
-        ("Sec_sec_block_index", "$00"),
-        ("Sec_sec_objects", "$04"),
-        ("Sec_sec_rings", "$08"),
-        ("Sec_sec_parallax_config", "$0C"),
-        ("Sec_sec_bg_layout", "$10"),
-        ("Sec_sec_type_table", "$14"),
-        ("Sec_sec_block_dict", "$18"),
-        ("Sec_sec_effects", "$1C"),
-        ("Sec_sec_block_dict_len", "$20"),
-        ("Sec_len", "$22"),
-        // DMAEntry (the 14-byte DMA-queue entry twin, tranche 20) — the
-        // structs.emp per-field wall reads these like the Act/Sec walls.
-        ("DMAEntry_Reg94", "0"),
-        ("DMAEntry_SizeH", "1"),
-        ("DMAEntry_Reg93", "2"),
-        ("DMAEntry_SizeL", "3"),
-        ("DMAEntry_Reg97", "4"),
-        ("DMAEntry_SrcH", "5"),
-        ("DMAEntry_Reg96", "6"),
-        ("DMAEntry_SrcM", "7"),
-        ("DMAEntry_Reg95", "8"),
-        ("DMAEntry_SrcL", "9"),
-        ("DMAEntry_Command", "10"),
-        // parallax_config (30 bytes / $1E) — moved to engine.structs at the
-        // tranche-21 buffers port (2nd .emp consumer).
-        // band-ceiling-16 (2026-08-27): MAX_PARALLAX_BANDS 8 -> 16 forced
-        // `pcfg_layer_mask` (one bit per band) from u8 to u16, and a u16 needs an
-        // EVEN slot. It took $02 — the slot `pcfg_v_factor_fg` held — so the mask's
-        // low byte stays at $03 where the u8 sat and bytes $00..$1B of every shipped
-        // record are byte-identical. `pcfg_v_factor_fg` is not deleted (it is still a
-        // live authoring/schema field, read by both lowerings and scene_equiv_proof's
-        // differ); it moved to the tail at $1C. 29 payload bytes do not round to an
-        // even record, so $1D is the one byte the evenness costs; `pcfg_bob` occupies
-        // it and carries the vertical-bob selector, so the byte is spent rather than
-        // reserved and `sizeof(parallax_config)` stays 30.
-        ("parallax_config_len", "$1E"),
-        ("parallax_config_pcfg_band_count", "0"),
-        ("parallax_config_pcfg_v_factor_bg", "1"),
-        ("parallax_config_pcfg_layer_mask", "2"),
-        ("parallax_config_pcfg_v_center_y", "4"),
-        ("parallax_config_pcfg_v_offset", "6"),
-        ("parallax_config_pcfg_transition", "8"),
-        ("parallax_config_pcfg_deform_speed_fg", "9"),
-        ("parallax_config_pcfg_deform_speed_bg", "10"),
-        ("parallax_config_pcfg_anchor_ch", "11"),
-        ("parallax_config_pcfg_deform_table_fg", "12"),
-        ("parallax_config_pcfg_deform_table_bg", "16"),
-        ("parallax_config_pcfg_v_deform_table_bg", "20"),
-        ("parallax_config_pcfg_v_deform_speed_bg", "24"),
-        ("parallax_config_pcfg_v_deform_shift_bg", "25"),
-        ("parallax_config_pcfg_anchor_dsa", "26"),
-        ("parallax_config_pcfg_anchor_dsb", "27"),
-        // The record tail. $1C = 28 is the RESERVED `pcfg_v_factor_fg` rehomed from
-        // $02; $1D = 29 is `pcfg_bob`, the byte the even-size requirement costs, now
-        // carrying the vertical-bob selector.
-        ("parallax_config_pcfg_v_factor_fg", "28"),
-        ("parallax_config_pcfg_bob", "29"),
-        ("DMAEntry_len", "14"),
-    ]
+    static SUPPLY: std::sync::OnceLock<Vec<(&'static str, &'static str)>> =
+        std::sync::OnceLock::new();
+    SUPPLY
+        .get_or_init(|| {
+            let rows = act_sec_supply_from(&aeon_dir()).unwrap_or_else(|e| panic!("{e}"));
+            rows.into_iter()
+                .map(|(name, value)| {
+                    let name: &'static str = Box::leak(name.into_boxed_str());
+                    let value: &'static str = Box::leak(value.into_boxed_str());
+                    (name, value)
+                })
+                .collect()
+        })
+        .clone()
 }
 
 /// The engine-constant equs that `engine.constants`'s SURVIVING drift guards
@@ -2414,13 +2380,6 @@ mod tests {
         let _ = with_engine_constant_override("NOT_A_CONSTANT", "0");
     }
 
-    /// EFX-6: the `act_sec_field_equs` supply-only blob had nothing cross-checking
-    /// it against the live structs, so a renamed `Act`/`Sec` field could leave a
-    /// STALE name in the blob — a dead equ that standalone port test oracles then
-    /// resolve against nothing. `act_fixture_drift.rs` already checks the fixture's
-    /// VALUES against the harvest and that the harvest's fields are all COVERED by
-    /// the fixture, but neither direction catches a name the fixture still supplies
-    /// that the live structs no longer declare. This is that missing direction.
     /// A read with no reference tree NAMED stops with a message a reader can act on, and
     /// that message is not countable as a skipped test.
     ///
@@ -2567,22 +2526,74 @@ mod tests {
         );
     }
 
+    /// The supply keeps exactly the four structs it names and spells each value as an
+    /// AS hex literal. Measured on a planted harvest, so no tree is needed: a prefix list
+    /// that lost a struct would leave that struct's names unsupplied, and nothing reports
+    /// that until an `.emp` module externs one of them.
     #[test]
-    fn sec_field_equ_names_match_the_harvest() {
+    fn act_sec_rows_keep_exactly_the_four_supplied_structs() {
+        let planted: Vec<(String, i64)> = [
+            ("Act_grid_w", 4),
+            ("Act_len", 0x2E),
+            ("Sec_sec_block_dict_len", 0x18),
+            ("DMAEntry_Command", 10),
+            ("parallax_config_len", 0x1E),
+            ("VDP_Shadow_len", 19),
+            ("SST_interact", 0x4E),
+            ("EntityScanState_len", 0x1A),
+            ("band_entry_len", 10),
+            ("Sec_len", 0x11A),
+        ]
+        .into_iter()
+        .map(|(n, v)| (n.to_string(), v))
+        .collect();
+        let want: Vec<(String, String)> = [
+            ("Act_grid_w", "$04"),
+            ("Act_len", "$2E"),
+            ("Sec_sec_block_dict_len", "$18"),
+            ("DMAEntry_Command", "$0A"),
+            ("parallax_config_len", "$1E"),
+            ("Sec_len", "$11A"),
+        ]
+        .into_iter()
+        .map(|(n, v)| (n.to_string(), v.to_string()))
+        .collect();
+        assert_eq!(
+            act_sec_rows(&planted),
+            want,
+            "the supply must keep every Act_/Sec_/DMAEntry_/parallax_config_ row, in harvest \
+             order, spelled `$<hex>`, and no row of any other struct"
+        );
+    }
+
+    /// Over the reference tree, the derived supply carries a `_len` row for each struct
+    /// it names. A derivation that came back empty for one struct reads exactly like a
+    /// correct supply until some gate externs a field of it.
+    #[test]
+    fn act_sec_supply_sizes_each_struct_it_names() {
         let Some(aeon) = reference_tree(&["engine/structs.emp"]) else { return };
-        let harvested = crate::native::harvest_engine_struct_offsets(&aeon)
-            .expect("harvest_engine_struct_offsets must succeed");
-        let names: std::collections::BTreeSet<&str> =
-            harvested.iter().map(|(n, _)| n.as_str()).collect();
-        for (name, _) in act_sec_field_equs() {
+        let supply = act_sec_field_equs();
+        for prefix in ACT_SEC_PREFIXES {
+            let len = format!("{prefix}len");
             assert!(
-                names.contains(name),
-                "test_support.rs supplies `{name}`, which no longer exists in \
-                 engine/structs.emp, a renamed Act/Sec/DMAEntry/parallax_config field \
-                 leaves this blob supplying a DEAD equ that standalone port test oracles \
-                 then resolve against nothing (EFX-6)"
+                supply.iter().any(|(name, _)| *name == len),
+                "the supply derived from {} carries no `{len}` row: {supply:?}",
+                aeon.display()
             );
         }
+    }
+
+    /// A tree the harvest cannot read yields an error naming that tree, which
+    /// [`act_sec_field_equs`] raises as a panic rather than as an empty supply.
+    #[test]
+    fn a_supply_that_cannot_be_derived_names_the_tree() {
+        let tmp = tempfile::tempdir().unwrap();
+        let err = act_sec_supply_from(tmp.path())
+            .expect_err("a tree with no engine sources has no structs to harvest");
+        assert!(
+            err.contains(&tmp.path().display().to_string()),
+            "the error must name the tree it could not harvest; got: {err}"
+        );
     }
 }
 

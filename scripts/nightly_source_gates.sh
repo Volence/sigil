@@ -143,7 +143,6 @@ SOURCE_GATES=(
     tranche24_spelling_probes
     z80_clobbers_incomplete
     # source-derived drift and derivation gates
-    act_fixture_drift
     banked_carrier_drift
     # the derived-layout invariants, read off the same source resolve the ROM comes from
     derived_layout
