@@ -685,6 +685,291 @@ fn z80_flag_result_dropped_over_corpus_fires() {
     assert_eq!(flag_fires(&r, "Caller", "Resolve"), 1, "flag firings: {:?}", r.flag_firings);
 }
 
+// ---------------------------------------------------------------------------
+// [call.discards-unmatched]: the NAME in `@discards(name)` must be a flag
+// result the target declares. The must-use check suppresses on the attribute's
+// presence, so these are the tests that see the name at all.
+// ---------------------------------------------------------------------------
+
+/// The `[call.discards-unmatched]` diagnostic texts of a report.
+fn discard_messages(r: &sigil_frontend_emp::corpus_contracts::ContractReport) -> Vec<String> {
+    r.discard_firings.iter().map(|f| f.message()).collect()
+}
+
+/// The accepted `@discards` sites as `(proc, callee, name)`.
+fn discards_matched(
+    r: &sigil_frontend_emp::corpus_contracts::ContractReport,
+) -> Vec<(String, String, String)> {
+    r.discards_resolved.iter().map(|d| (d.proc.clone(), d.callee.clone(), d.name.clone())).collect()
+}
+
+/// A misspelled discard name on a carry callee is refused, and the diagnostic
+/// quotes the name written, names the callee, and prints what it does declare.
+/// The must-use check stays suppressed: the refusal is the report, not a second
+/// `[call.flag-result-unused]` beside it.
+#[test]
+fn discards_typo_is_refused_naming_the_declared_results() {
+    let r = analyze(&[
+        "module m\n\
+         extern proc Queue (d1) clobbers(d0) out(carry: dropped)\n\
+         proc Caller () clobbers(d0-d1) {\n\
+             jbsr Queue @discards(droped)\n\
+             moveq #0, d0\n\
+             rts\n\
+         }\n",
+    ]);
+    let msgs = discard_messages(&r);
+    assert_eq!(msgs.len(), 1, "exactly one refusal: {msgs:#?}");
+    assert!(msgs[0].starts_with("[call.discards-unmatched] `@discards(droped)`"), "{}", msgs[0]);
+    assert!(
+        msgs[0].contains(
+            "`Queue` declares no flag result named `droped`; it declares `dropped` (carry)"
+        ),
+        "{}",
+        msgs[0]
+    );
+    assert!(msgs[0].contains("in `Caller`"), "{}", msgs[0]);
+    assert_eq!(flag_fires(&r, "Caller", "Queue"), 0, "flag firings: {:?}", r.flag_firings);
+    assert!(discards_matched(&r).is_empty(), "nothing matched: {:?}", r.discards_resolved);
+}
+
+/// The case a presence-only check cannot catch: the callee DOES declare a flag
+/// result, and the site discards a different, real-looking name. `Load_Object`'s
+/// shape: its flag result is `zero: success`, not a carry, and `dropped` is a
+/// name other callees really declare.
+#[test]
+fn discards_a_real_looking_name_the_callee_does_not_declare_is_refused() {
+    let r = analyze(&[
+        "module m\n\
+         extern proc Load_Object (d0) clobbers(d0) out(a1, zero: success)\n\
+         proc Caller () clobbers(d0/a1) {\n\
+             jbsr Load_Object @discards(dropped)\n\
+             rts\n\
+         }\n",
+    ]);
+    let msgs = discard_messages(&r);
+    assert_eq!(msgs.len(), 1, "exactly one refusal: {msgs:#?}");
+    assert!(
+        msgs[0].contains(
+            "`Load_Object` declares no flag result named `dropped`; it declares `success` (zero)"
+        ),
+        "{}",
+        msgs[0]
+    );
+}
+
+/// Every declared flag result is printed, in declaration order.
+#[test]
+fn discards_refusal_prints_every_declared_name() {
+    let r = analyze(&[
+        "module m\n\
+         extern proc Take (d1) clobbers(d0) out(carry: dropped, zero: empty)\n\
+         proc Caller () clobbers(d0-d1) {\n\
+             jbsr Take @discards(full)\n\
+             rts\n\
+         }\n",
+    ]);
+    let msgs = discard_messages(&r);
+    assert_eq!(msgs.len(), 1, "exactly one refusal: {msgs:#?}");
+    assert!(
+        msgs[0].ends_with("it declares `dropped` (carry), `empty` (zero)"),
+        "{}",
+        msgs[0]
+    );
+}
+
+/// A callee declaring no flag result has nothing to discard: refused, with the
+/// instruction to remove the attribute.
+#[test]
+fn discards_on_a_callee_with_no_flag_result_is_refused() {
+    let r = analyze(&[
+        "module m\n\
+         proc Sub () clobbers(d0) {\n\
+             moveq #0, d0\n\
+             rts\n\
+         }\n\
+         proc Caller () clobbers(d0) {\n\
+             jbsr Sub @discards(success)\n\
+             rts\n\
+         }\n",
+    ]);
+    let msgs = discard_messages(&r);
+    assert_eq!(msgs.len(), 1, "exactly one refusal: {msgs:#?}");
+    assert!(
+        msgs[0].contains(
+            "`Sub` declares no flag result, so there is nothing to discard; remove the attribute"
+        ),
+        "{}",
+        msgs[0]
+    );
+}
+
+/// The right name is accepted, for a carry result and for a zero result alike,
+/// and each accepted site is recorded in the matched population.
+#[test]
+fn discards_matching_names_are_accepted() {
+    let r = analyze(&[
+        "module m\n\
+         extern proc Queue (d1) clobbers(d0) out(carry: dropped)\n\
+         extern proc Load_Object (d0) clobbers(d0) out(a1, zero: success)\n\
+         proc Caller () clobbers(d0-d1/a1) {\n\
+             jbsr Queue @discards(dropped)\n\
+             jbsr Load_Object @discards(success)\n\
+             rts\n\
+         }\n",
+    ]);
+    assert!(r.discard_firings.is_empty(), "{:#?}", discard_messages(&r));
+    assert_eq!(
+        discards_matched(&r),
+        vec![
+            ("Caller".to_string(), "Queue".to_string(), "dropped".to_string()),
+            ("Caller".to_string(), "Load_Object".to_string(), "success".to_string()),
+        ]
+    );
+}
+
+/// A tail transfer carrying `@discards` is resolved like a call: the right name
+/// is accepted, a wrong one is refused.
+#[test]
+fn discards_on_a_tail_transfer_is_checked() {
+    let src = |name: &str| {
+        format!(
+            "module m\n\
+             extern proc Queue (d1) clobbers(d0) out(carry: dropped)\n\
+             proc Caller () clobbers(d0-d1) {{\n\
+                 jbra Queue @discards({name})\n\
+             }}\n"
+        )
+    };
+    let good = analyze(&[&src("dropped")]);
+    assert!(good.discard_firings.is_empty(), "{:#?}", discard_messages(&good));
+    assert_eq!(discards_matched(&good).len(), 1, "{:?}", good.discards_resolved);
+    let bad = analyze(&[&src("refused")]);
+    let msgs = discard_messages(&bad);
+    assert_eq!(msgs.len(), 1, "exactly one refusal: {msgs:#?}");
+    assert!(
+        msgs[0].contains("`Queue` declares no flag result named `refused`; it declares `dropped` (carry)"),
+        "{}",
+        msgs[0]
+    );
+}
+
+/// A site whose target the check cannot resolve is REFUSED, never accepted
+/// unchecked: an indirect call names no target, an undeclared symbol is no proc,
+/// and a non-transfer has no callee. The must-use check sees none of the three,
+/// so the attribute there discards nothing.
+#[test]
+fn discards_on_an_unresolvable_target_is_refused() {
+    let r = analyze(&[
+        "module m\n\
+         proc Caller () clobbers(d0/a1) {\n\
+             jsr (a1) @discards(dropped)\n\
+             jbsr Nowhere @discards(dropped)\n\
+             moveq #0, d0 @discards(dropped)\n\
+             rts\n\
+         }\n",
+    ]);
+    let msgs = discard_messages(&r);
+    assert_eq!(msgs.len(), 3, "three refusals: {msgs:#?}");
+    assert!(
+        msgs.iter().any(|m| m.contains(
+            "the transfer names no target symbol (an indirect or computed target)"
+        )),
+        "{msgs:#?}"
+    );
+    assert!(
+        msgs.iter().any(|m| m.contains(
+            "`Nowhere` is not a proc or extern proc declared for this CPU, so no declared flag \
+             result can match `dropped`"
+        )),
+        "{msgs:#?}"
+    );
+    assert!(
+        msgs.iter().any(|m| m.contains("it is not a call or a branch")),
+        "{msgs:#?}"
+    );
+    assert!(discards_matched(&r).is_empty(), "{:?}", r.discards_resolved);
+}
+
+/// Z80: the name resolves against the Z80 declarations, through a `call` and a
+/// `jp` tail alike. A misspelling and a no-flag callee are refused; the right
+/// name is accepted.
+#[test]
+fn z80_discards_names_are_checked() {
+    let r = analyze(&[
+        "module m (cpu: z80)\n\
+         section s (cpu: z80, vma: $0) {\n\
+           proc Resolve () out(carry: found) {\n\
+               scf\n\
+               ret\n\
+           }\n\
+           proc Plain () {\n\
+               ret\n\
+           }\n\
+           proc Caller () {\n\
+               call Resolve @discards(fond)\n\
+               call Resolve @discards(found)\n\
+               call Plain @discards(found)\n\
+               jp Resolve @discards(found)\n\
+           }\n\
+         }\n",
+    ]);
+    let msgs = discard_messages(&r);
+    assert_eq!(msgs.len(), 2, "two refusals: {msgs:#?}");
+    assert!(
+        msgs.iter().any(|m| m.contains(
+            "`Resolve` declares no flag result named `fond`; it declares `found` (carry)"
+        )),
+        "{msgs:#?}"
+    );
+    assert!(
+        msgs.iter().any(|m| m.contains("`Plain` declares no flag result, so there is nothing to discard")),
+        "{msgs:#?}"
+    );
+    assert_eq!(
+        discards_matched(&r),
+        vec![
+            ("Caller".to_string(), "Resolve".to_string(), "found".to_string()),
+            ("Caller".to_string(), "Resolve".to_string(), "found".to_string()),
+        ]
+    );
+}
+
+/// A site in the comptime arm the define set does not select is reported
+/// unreached, not refused and not accepted; the selected arm's site is checked.
+/// Flipping the define swaps which site is which.
+#[test]
+fn discards_in_an_unselected_comptime_arm_is_unreached() {
+    let src = "module m\n\
+         extern proc Queue (d1) clobbers(d0) out(carry: dropped)\n\
+         proc Caller () clobbers(d0-d1) {\n\
+             if FEATURE == 1 {\n\
+                 jbsr Queue @discards(droped)\n\
+             } else {\n\
+                 jbsr Queue @discards(dropped)\n\
+             }\n\
+             rts\n\
+         }\n";
+    let (file, perrs) = parse_str(src);
+    assert!(perrs.is_empty(), "parse: {perrs:?}");
+    let off = sigil_frontend_emp::corpus_contracts::analyze_corpus_with(
+        std::slice::from_ref(&file),
+        &[("FEATURE".to_string(), 0)],
+    );
+    assert!(off.discard_firings.is_empty(), "{:#?}", discard_messages(&off));
+    assert_eq!(discards_matched(&off).len(), 1, "{:?}", off.discards_resolved);
+    let unreached: Vec<&str> = off.discards_unreached.iter().map(|(_, s)| s.name.as_str()).collect();
+    assert_eq!(unreached, vec!["droped"]);
+
+    let on = sigil_frontend_emp::corpus_contracts::analyze_corpus_with(
+        &[file],
+        &[("FEATURE".to_string(), 1)],
+    );
+    assert_eq!(discard_messages(&on).len(), 1, "{:#?}", discard_messages(&on));
+    let unreached: Vec<&str> = on.discards_unreached.iter().map(|(_, s)| s.name.as_str()).collect();
+    assert_eq!(unreached, vec!["dropped"]);
+}
+
 /// A bounded indirect dispatch charges the bound's `out` registers as well as its
 /// `clobbers` — an `out` register is WRITTEN by whatever target is installed, so
 /// a caller holding a live value in it across the dispatch is wrong. The live

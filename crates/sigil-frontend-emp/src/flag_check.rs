@@ -5,7 +5,9 @@
 //! flag-result callee, the carry is READ (a `Bcc`/`Scc`/ADDX-class consumer)
 //! before it is REDEFINED (a CC-writing instruction / an intervening call) or
 //! the proc RETURNS — on EVERY path. A path that abandons the flag fires, unless
-//! the call carries an explicit `@discards(name)`.
+//! the call carries an explicit `@discards(name)`, and `[call.discards-unmatched]`
+//! ([`check_discard_names`]) refuses any such name that is not a flag result the
+//! callee declares.
 //!
 //! The analysis is a lightweight CFG over a proc's *evaluated* CodeBuf — the §11
 //! Q1 decision: a real CFG with joins (a visited-set breadth-first reachability),
@@ -807,6 +809,218 @@ pub fn check_flag_unused(
         }
     }
     firings
+}
+
+// ---------------------------------------------------------------------------
+// §6, [call.discards-unmatched]: the NAME in `@discards(name)` must be a flag
+// result the transfer's target declares. `check_flag_unused` suppresses on the
+// attribute's presence alone, so without this check `@discards(typo)` would
+// silence the must-use check exactly as the right name does, and a flag result
+// renamed at its declaration would leave every discard site behind unnoticed.
+// ---------------------------------------------------------------------------
+
+/// One `@discards(name)` attribute as written in a proc body: the span of the
+/// instruction carrying it, and the flag-result name it gives.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DiscardSite {
+    /// The source span of the instruction carrying the attribute. The same span
+    /// the evaluated CodeBuf instruction carries, which is how a site is found.
+    pub span: Span,
+    /// The flag-result name as written inside `@discards(...)`.
+    pub name: String,
+}
+
+/// Every proc and extern proc declared for one CPU, each mapped to the flag
+/// results it declares as `(flag, name)` pairs (`("carry", "dropped")`). A proc
+/// declaring none maps to an EMPTY list: presence in the map is what separates
+/// "declares no flag result" from "is not a declared proc at all".
+pub type DeclaredFlagResults = BTreeMap<String, Vec<(String, String)>>;
+
+/// Why a `@discards(name)` site is refused.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum DiscardRefusal {
+    /// The target declares flag results, and none of them is named as written.
+    /// Carries the declared `(flag, name)` pairs for the diagnostic.
+    Unmatched { declared: Vec<(String, String)> },
+    /// The target is a declared proc with no flag result at all.
+    NothingToDiscard,
+    /// The transfer names a symbol that is not a proc or extern proc declared
+    /// for this CPU (a local label, or a symbol with no declaration).
+    UndeclaredTarget,
+    /// The transfer names no target symbol: an indirect or computed target
+    /// (`jsr (a1)`, `jp (hl)`).
+    NoNamedTarget,
+    /// The instruction is not a call or a branch.
+    NotATransfer,
+}
+
+/// One refused `@discards(name)` site.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DiscardFiring {
+    /// The proc whose body holds the site.
+    pub proc: String,
+    /// The mnemonic of the instruction carrying the attribute.
+    pub mnemonic: String,
+    /// The target symbol the instruction names, or `None` when it names none.
+    pub callee: Option<String>,
+    /// The name written inside `@discards(...)`.
+    pub written: String,
+    /// The instruction's span.
+    pub span: Span,
+    /// Why the site is refused.
+    pub refusal: DiscardRefusal,
+}
+
+impl DiscardFiring {
+    /// The diagnostic text, `[call.discards-unmatched]` prefix included. One
+    /// rendering shared by every consumer (the build gate, the report, tests).
+    pub fn message(&self) -> String {
+        let written = &self.written;
+        let site = match &self.callee {
+            Some(c) => format!("`{} {c}`", self.mnemonic),
+            None => format!("`{}`", self.mnemonic),
+        };
+        let head = format!("[call.discards-unmatched] `@discards({written})` on {site} in `{}`", self.proc);
+        let callee = self.callee.as_deref().unwrap_or("?");
+        match &self.refusal {
+            DiscardRefusal::Unmatched { declared } => {
+                let names: Vec<String> =
+                    declared.iter().map(|(flag, name)| format!("`{name}` ({flag})")).collect();
+                format!(
+                    "{head}: `{callee}` declares no flag result named `{written}`; it declares {}",
+                    names.join(", ")
+                )
+            }
+            DiscardRefusal::NothingToDiscard => format!(
+                "{head}: `{callee}` declares no flag result, so there is nothing to discard; \
+                 remove the attribute"
+            ),
+            DiscardRefusal::UndeclaredTarget => format!(
+                "{head}: `{callee}` is not a proc or extern proc declared for this CPU, so no \
+                 declared flag result can match `{written}`; remove the attribute, or declare \
+                 `{callee}`"
+            ),
+            DiscardRefusal::NoNamedTarget => format!(
+                "{head}: the transfer names no target symbol (an indirect or computed target), \
+                 so no declared flag result can match `{written}` and the flag-result check does \
+                 not see this call; remove the attribute"
+            ),
+            DiscardRefusal::NotATransfer => format!(
+                "{head}: it is not a call or a branch, so there is no callee whose flag result \
+                 it could discard; remove the attribute"
+            ),
+        }
+    }
+}
+
+/// A `@discards(name)` site whose name matched a flag result its target
+/// declares: the accepted population, reported so an empty refusal list can be
+/// told apart from a check that saw nothing.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DiscardResolved {
+    /// The proc whose body holds the site.
+    pub proc: String,
+    /// The declared proc the transfer targets.
+    pub callee: String,
+    /// The matched flag-result name.
+    pub name: String,
+    /// The instruction's span.
+    pub span: Span,
+}
+
+/// The outcome of [`check_discard_names`] over one proc.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct DiscardCheck {
+    /// The refused sites.
+    pub firings: Vec<DiscardFiring>,
+    /// The accepted sites.
+    pub resolved: Vec<DiscardResolved>,
+    /// The sites no instruction of this CodeBuf carries: the attribute sits in a
+    /// comptime-`if` arm this walk's define set did not select, so this walk
+    /// neither built nor checked it. A walk whose defines select the arm checks
+    /// it; an arm no walk selects is out of this check's reach.
+    pub unreached: Vec<DiscardSite>,
+}
+
+/// Is `mnem` a transfer whose named target can be a proc: a call, an
+/// unconditional tail transfer, or (68k) a conditional branch.
+fn discard_transfer(mnem: &str, cpu: Cpu) -> bool {
+    match cpu {
+        Cpu::Z80 => matches!(mnem, "call" | "jp" | "jr"),
+        _ => {
+            CALL_MNEMONICS.contains(&mnem)
+                || UNCOND_MNEMONICS.contains(&mnem)
+                || (mnem.starts_with('b') && mnem.len() == 3)
+        }
+    }
+}
+
+/// Run `[call.discards-unmatched]` over one proc's evaluated CodeBuf `items`.
+///
+/// Each `@discards(name)` site is found by its span among the instructions, and
+/// the target the instruction names (calls and tail transfers alike, so `jbra X
+/// @discards(...)` is checked as `jbsr X @discards(...)` is) is looked up in
+/// `declared`, the flag results of every proc and extern proc declared for
+/// `cpu`. A name matching one of the target's declared flag-result names is
+/// accepted. Every other outcome is refused, including every site whose target
+/// cannot be resolved: an indirect or computed target, a symbol that is no
+/// declared proc, a non-transfer instruction. At none of those does the
+/// must-use check see a flag result, so the attribute can discard nothing and
+/// its name can match nothing.
+///
+/// A site no instruction carries is reported as `unreached`, not refused (see
+/// [`DiscardCheck::unreached`]). If several instructions carry one site's span
+/// (a template-expanded instruction sharing it), every one is checked.
+pub fn check_discard_names(
+    proc_name: &str,
+    items: &[CodeItem],
+    declared: &DeclaredFlagResults,
+    sites: &[DiscardSite],
+    cpu: Cpu,
+) -> DiscardCheck {
+    let mut out = DiscardCheck::default();
+    for site in sites {
+        let mut reached = false;
+        for it in items {
+            let CodeItem::Instr { mnemonic, ops, span, .. } = it else { continue };
+            if *span != site.span {
+                continue;
+            }
+            reached = true;
+            let is_transfer = discard_transfer(mnemonic, cpu);
+            let target = if is_transfer { transfer_target_sym(ops) } else { None };
+            let refusal = match (is_transfer, target) {
+                (false, _) => Some(DiscardRefusal::NotATransfer),
+                (true, None) => Some(DiscardRefusal::NoNamedTarget),
+                (true, Some(t)) => match declared.get(t) {
+                    None => Some(DiscardRefusal::UndeclaredTarget),
+                    Some(flags) if flags.is_empty() => Some(DiscardRefusal::NothingToDiscard),
+                    Some(flags) if flags.iter().any(|(_, name)| *name == site.name) => None,
+                    Some(flags) => Some(DiscardRefusal::Unmatched { declared: flags.clone() }),
+                },
+            };
+            match refusal {
+                None => out.resolved.push(DiscardResolved {
+                    proc: proc_name.to_string(),
+                    callee: target.unwrap_or_default().to_string(),
+                    name: site.name.clone(),
+                    span: *span,
+                }),
+                Some(refusal) => out.firings.push(DiscardFiring {
+                    proc: proc_name.to_string(),
+                    mnemonic: mnemonic.clone(),
+                    callee: target.map(str::to_string),
+                    written: site.name.clone(),
+                    span: *span,
+                    refusal,
+                }),
+            }
+        }
+        if !reached {
+            out.unreached.push(site.clone());
+        }
+    }
+    out
 }
 
 // ---------------------------------------------------------------------------
