@@ -1134,7 +1134,22 @@ aeon build. Deleting the tree breaks placement, not only the `source:` field. De
 `docs/superpowers/notes/2026-09-11-aeon-source-digest-ask.md`, second amendment.
 **`.sigil-ls12-pin` is released once aeon confirms it is on the new pair — ask them, not this file.**
 
-**THE INSTALLED PAIR SINCE 2026-09-12T08:57:35Z IS THE 6884bfba BUILD, and three trees must survive for it.**
+**THE INSTALLED PAIR SINCE 2026-09-13T09:36:09Z IS THE 1532b72f BUILD, and it supersedes the 6884bfba
+paragraph below.** Swapped on the hub's OPEN (conditions banked at empyrean `909a869`, verified an ancestor
+of their `origin/main` at the instant) after aeon's clear (their `21747f03`, the tip of their `origin/master`).
+Method unchanged: a `/proc` scan over exe and cmdline at 09:36:08Z found 0 users, the script checked that the
+installed pair matched the aside copy before moving anything, and each new file was `cp -p`'d to a staging name
+inside `sigil/target/release/` and then `mv`'d over (link count 1 each). Installed: `sigil`
+`739016647ad1ab92f4d072e3013b8818`, `emit_sound_blob` `1f936ebb805d39eae23844ee66fb458a`, built in the durable
+worktree `~/sonic_hacks/.sigil-pin-1532b72f` (HEAD `1532b72f`, porcelain 0; target dir is that worktree's own
+`target/`). Banner: `tree: clean at capture`, `closure-revision` `2d45fa39`. **Outgoing pair kept at
+`~/sonic_hacks/.sigil-outgoing-6884bfba/`** (sigil `2e7c2592...`, emitter `d2583416...`) until aeon's four-shape
+check under the new pair reports; the hub named the targets as d83e2780 / 6211829d / a8a84b6f / b4443af7, and
+if they move the aside pair goes back in. **Keep `.sigil-pin-1532b72f`** (the installed binary reads its size
+tables from it at run time) **and `.sigil-pin-6884bfba`** (the aside pair reads its tables from there). What
+this pair adds for aeon: `sigil build` refuses an unconsumed carry-flag result (merge `eb0b3915`).
+
+**THE INSTALLED PAIR FROM 2026-09-12T08:57:35Z TO 2026-09-13T09:36:09Z WAS THE 6884bfba BUILD, and three trees must survive for it.**
 Swapped on the hub's OPEN (aeon LS-1a) by the approved method: `/proc` exe scan (0 hits), outgoing pair
 copied aside and md5-verified, each new file `cp -p`'d to a staging name inside `sigil/target/release/`
 and `mv`'d over, so each installed file has its own inode (link count 1). Installed: `sigil`
