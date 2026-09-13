@@ -418,6 +418,28 @@ fn an_interpolation_is_folded_where_its_literal_is() {
     builds("v_interp_fwd");
 }
 
+/// A quoted string inside `\{…}`, even one holding a `}`, belongs to the
+/// interpolation's expression: it ends neither the interpolation nor the
+/// literal around it. Three probes, each exit 0:
+///
+/// ```text
+///        4/       0 : 32EE                	dc.b "\{strlen("ab")}",$EE
+///        5/       2 : 34EE                	dc.b "\{strlen("ab"+"cd")}",$EE
+///        4/       0 : 31EE                	dc.b "\{strlen("}")}",$EE
+///        4/       0 : 33EE                	dc.b "\{strlen("a}b")}",$EE
+/// ```
+///
+/// A literal scan that closes at the next quote cuts the first line into
+/// `"\{strlen("`, `ab` and `")}"`. One that ends the interpolation at the
+/// first `}` cuts the third and fourth lines inside `"}"` and `"a}b"`. The
+/// second line is a concatenation inside an interpolation.
+#[test]
+fn a_quote_inside_an_interpolation_belongs_to_it() {
+    builds("v_interp_nested_quote");
+    builds("v_interp_brace_in_quote");
+    builds("v_interp_brace_mid_quote");
+}
+
 /// A string-valued function called INSIDE an interpolation pastes its string.
 /// This is the shape Sonic 1 itself uses `signedToString` in, inside `\{…}` in
 /// `error`/`warning` text (`_Variables.asm` 430 and 486). `v_fn_in_interp.lst`,

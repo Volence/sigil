@@ -4081,7 +4081,7 @@ impl Asm {
         while let Some(pos) = cur.find("\\{") {
             out.push_str(&cur[..pos]);
             let after = &cur[pos + 2..];
-            match after.find('}') {
+            match crate::escape::interp_close(after.as_bytes(), 0) {
                 Some(end) => {
                     let expr_text = &after[..end];
                     match self.render_interp_expr(expr_text) {

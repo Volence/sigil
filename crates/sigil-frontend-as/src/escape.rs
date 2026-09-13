@@ -145,13 +145,40 @@ pub(crate) fn unescape_bytes(raw: &str) -> Result<Vec<u8>, EscapeError> {
 /// The index of the quote that closes the literal opened at `bytes[open]`, or
 /// `None` when the line ends first. A backslash consumes the byte after it, so
 /// an escaped quote does not close the literal.
+///
+/// Inside a `"…"` string, a `\{expr}` interpolation is scanned as ONE unit,
+/// and the literals its expression holds are skipped whole: asl reads
+/// `dc.b "\{strlen("}")}",$EE` as one string and writes `31 EE` (probe
+/// `v_interp_brace_in_quote`), so the quote that opens `"}"` neither closes the
+/// outer literal nor lets its `}` end the interpolation. An interpolation with
+/// no closing brace is scanned as the two characters `\{`, and [`escape_at`]
+/// refuses it where the string is used.
 pub(crate) fn literal_end(bytes: &[u8], open: usize) -> Option<usize> {
     let quote = bytes[open];
     let mut i = open + 1;
     while i < bytes.len() {
         match bytes[i] {
+            b'\\' if quote == b'"' && bytes.get(i + 1) == Some(&b'{') => {
+                i = interp_close(bytes, i + 2).map_or(i + 2, |close| close + 1);
+            }
             b'\\' => i += 2,
             b if b == quote => return Some(i),
+            _ => i += 1,
+        }
+    }
+    None
+}
+
+/// The index of the `}` that ends a `\{expr}` interpolation whose expression
+/// begins at `bytes[start]`, or `None` when nothing ends it. A string or
+/// character literal inside the expression is skipped whole ([`literal_end`]),
+/// so a `}` or a quote inside it belongs to that literal.
+pub(crate) fn interp_close(bytes: &[u8], start: usize) -> Option<usize> {
+    let mut i = start;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'}' => return Some(i),
+            b'"' | b'\'' => i = literal_end(bytes, i)? + 1,
             _ => i += 1,
         }
     }
@@ -211,10 +238,10 @@ fn escape_at(seq: &str) -> Result<(Piece<'_>, usize), EscapeError> {
     Ok(match c {
         b'\\' | b'"' | b'\'' => (Piece::Byte(c), 2),
         b'{' => {
-            let Some(close) = seq[2..].find('}') else {
+            let Some(close) = interp_close(b, 2) else {
                 return Err(EscapeError::Invalid("\\{".to_string()));
             };
-            (Piece::Interp(&seq[2..2 + close]), 2 + close + 1)
+            (Piece::Interp(&seq[2..close]), close + 1)
         }
         b'x' | b'X' => {
             let end = 2 + run(&b[2..], 2, u8::is_ascii_hexdigit);
