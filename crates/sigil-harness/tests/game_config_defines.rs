@@ -4,9 +4,9 @@
 //!
 //! Synthetic trees, plus reference-gated closers against the real maps.
 //! `shape_defines` reads nothing but the game's map.toml, so a tempdir holding
-//! just `games/sonic4/map.toml` is a complete fixture — no aeon checkout is
-//! written, and no shipped map declares a row (the byte gates hold that neutral
-//! state; adoption is the aeon-owned paired lane).
+//! just `games/sonic4/map.toml` is a complete fixture, and no aeon checkout is
+//! written. Which rows the shipped maps declare is aeon's to decide; the closers
+//! read that population from the maps rather than assuming it.
 //!
 //! Two properties beyond the merge itself live here. A shipped shape whose map is
 //! ABSENT fails naming the file (a synthetic fixture opts out explicitly), and the
@@ -78,8 +78,8 @@ fn a_duplicated_key_in_the_defines_table_is_a_loud_error() {
 
 #[test]
 fn a_map_without_a_defines_table_yields_exactly_the_builtin_rows() {
-    // The byte-neutral default every shipped map has today: region/placement
-    // keys only. The merged env must equal the built-ins verbatim.
+    // The byte-neutral default: region/placement keys only. The merged env must
+    // equal the built-ins verbatim.
     let tmp = tree_with_sonic4_map(
         "fill = 0x00\n[[region]]\nname = \"rom\"\nlma_base = 0\nsize = 0x400000\nkind = \"rom\"\n",
     );
@@ -216,11 +216,10 @@ fn shape_or_panic(
 
 /// Game-declared defines whose blind arm is an accepted, reasoned decision.
 ///
-/// EMPTY: no shipped `games/<g>/map.toml` declares a `[defines]` row today. A row
-/// that lands and cannot be walked in both polarities is named here with the
-/// reason its other arm needs no coverage — the audit rejects a reason-less row
-/// and rejects an entry no shape declares, so this list can neither be a blanket
-/// nor outlive its subject.
+/// A game-declared row that cannot be walked in both polarities is named here
+/// with the reason its other arm needs no coverage. The audit rejects a
+/// reason-less entry and an entry no shape declares, so this list can neither be
+/// a blanket nor outlive its subject.
 const GAME_DECLARED_EXEMPT: &[(&str, &str)] = &[];
 
 /// The audit over one tree: every shipped shape's merged env, minus the built-in
@@ -277,9 +276,83 @@ fn a_game_declared_toggle_walked_in_both_polarities_is_accepted() {
     assert!(keys.contains("FANCY_ARM"), "the audit must have SEEN the row: {keys:?}");
 }
 
-/// The real maps: the audit runs over the shipped tree, not only over fixtures.
-/// Reference-gated through the canonical seam — skips green when the tree is
-/// absent, panics under `SIGIL_STRICT_GATE=1`.
+/// The `[defines]` keys the shipped maps declare, read from the files by a route
+/// that shares nothing with the subject: `std::fs` and the `toml` crate's own
+/// document model, never `shape_defines`, `parse_game_defines` or the audit.
+///
+/// The SET of maps is every distinct `map.toml` a shipped shape reads, resolved
+/// by `GameProfile::map_path` (the path `shape_defines` opens), so a map a shape
+/// starts reading joins the expectation with no edit here. A map key that
+/// shadows a built-in never reaches the comparison this feeds: `audit_tree`
+/// stops on it first, naming both sources.
+fn declared_game_define_keys(aeon: &Path) -> std::collections::BTreeSet<String> {
+    use std::collections::BTreeSet;
+
+    let maps: BTreeSet<std::path::PathBuf> = native::shipped_shapes()
+        .iter()
+        .map(|(_, profile)| profile.map_path(aeon))
+        .collect();
+    let mut keys = BTreeSet::new();
+    for map in &maps {
+        let src = std::fs::read_to_string(map)
+            .unwrap_or_else(|e| panic!("read {}: {e}", map.display()));
+        let doc: toml::Table = toml::from_str(&src)
+            .unwrap_or_else(|e| panic!("{}: not a TOML document: {e}", map.display()));
+        match doc.get("defines") {
+            None => {}
+            Some(toml::Value::Table(rows)) => keys.extend(rows.keys().cloned()),
+            Some(other) => panic!(
+                "{}: `defines` is a {}, not a table",
+                map.display(),
+                other.type_str()
+            ),
+        }
+    }
+    keys
+}
+
+/// The audit's judged key set, held EQUAL to the keys the maps declare.
+///
+/// A key a map declares that the audit did not report is a row the polarity net
+/// never judged; a key the audit reported that no map declares came from
+/// somewhere other than a game config. Either direction fails, naming the keys.
+/// The polarity judgement on each row stays the audit's, which panics on an
+/// uncovered row before this comparison runs. Returns the judged set.
+fn assert_audit_judged_every_declared_key(aeon: &Path) -> std::collections::BTreeSet<String> {
+    let judged = audit_tree(aeon).unwrap_or_else(|e| panic!("{e}"));
+    let declared = declared_game_define_keys(aeon);
+    let unjudged: Vec<&String> = declared.difference(&judged).collect();
+    let undeclared: Vec<&String> = judged.difference(&declared).collect();
+    assert!(
+        unjudged.is_empty() && undeclared.is_empty(),
+        "the polarity audit must judge exactly the game [defines] keys the shipped \
+         maps declare: declared but not judged {unjudged:?}, judged but not declared \
+         {undeclared:?} (the maps declare {declared:?}, the audit judged {judged:?})"
+    );
+    judged
+}
+
+#[test]
+fn a_planted_game_row_is_judged_exactly_as_the_maps_declare_it() {
+    // CONTROL for the derived expectation, measured with no aeon tree: both maps
+    // declare a toggle walked in both polarities and a value walked at two sizes,
+    // so the audit accepts both rows and the key set read from the files is not
+    // empty. A map reader that came back empty disagrees with the audit here,
+    // where a real tree whose maps declare nothing could not show it.
+    let tmp = tree_with_both_maps(
+        "[defines]\nFANCY_ARM = 1\nBAND_CAPS = 0x0FDE\n",
+        "[defines]\nFANCY_ARM = 0\nBAND_CAPS = 0\n",
+    );
+    let judged = assert_audit_judged_every_declared_key(tmp.path());
+    let planted: std::collections::BTreeSet<String> =
+        ["BAND_CAPS", "FANCY_ARM"].map(String::from).into();
+    assert_eq!(judged, planted, "the audit must have judged both planted rows");
+}
+
+/// The real maps: the audit runs over the shipped tree, not only over fixtures,
+/// and judges exactly the rows those maps declare. Reference-gated through the
+/// canonical seam: skips green when the tree is absent, panics under
+/// `SIGIL_STRICT_GATE=1`.
 #[test]
 fn the_shipped_maps_game_declared_rows_are_polarity_covered() {
     let Some(aeon) = sigil_harness::test_support::reference_tree(&[
@@ -288,13 +361,5 @@ fn the_shipped_maps_game_declared_rows_are_polarity_covered() {
     ]) else {
         return;
     };
-    let keys = audit_tree(&aeon).unwrap_or_else(|e| panic!("{e}"));
-    // Today's state, asserted rather than assumed: no shipped map declares a row,
-    // so the audit walked an empty residue. When the first row lands this line is
-    // the one that changes, in the same commit as the row.
-    assert!(
-        keys.is_empty(),
-        "the shipped maps now declare game defines {keys:?}, update this expectation \
-         in the same commit as the row"
-    );
+    assert_audit_judged_every_declared_key(&aeon);
 }
