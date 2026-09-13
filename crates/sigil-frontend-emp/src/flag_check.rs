@@ -76,9 +76,9 @@ impl FlagFiring {
                 format!(
                     "[call.flag-result-unused] `{proc}` calls `{callee}` and abandons its \
                      `{flag}` result `{name}` on some path: the flag is redefined, or the proc \
-                     returns, before anything reads it. Consume it (branch on it, e.g. `bcs`) \
-                     before it is redefined, or mark the call `@discards({name})` if dropping it \
-                     is intended"
+                     returns, before anything reads it. Consume it (a conditional branch on \
+                     `{flag}`) before it is redefined, or mark the call `@discards({name})` if \
+                     dropping it is intended"
                 )
             }
             FlagFiringKind::InvalidPathRead { reg, cc } => format!(
