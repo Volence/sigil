@@ -23,11 +23,28 @@ use sigil_frontend_emp::preserves::{
 };
 use sigil_frontend_emp::value::Reg;
 use sigil_ir::backend::Cpu;
+use sigil_span::Level;
 use std::collections::{BTreeMap, BTreeSet};
 
 /// Eval the first proc in `src` and return the preserve status of `reg` under
 /// `policy`.
 fn status_with(src: &str, reg: Reg, policy: CallPolicy) -> PreserveStatus {
+    status_under(src, reg, policy, &[]).status
+}
+
+/// What one evaluation under a comptime define set produced: the status of the
+/// checked register, how many items the body lowered to (the witness that a
+/// define-gated arm lowered), and the error-level eval diagnostics.
+struct DefinedEval {
+    status: PreserveStatus,
+    items: usize,
+    errors: Vec<String>,
+}
+
+/// [`status_with`] under the comptime `defines` a shape supplies, so an arm
+/// gated on a define (an `assert`, live only when `DEBUG == 1`) lowers as it
+/// does in that shape.
+fn status_under(src: &str, reg: Reg, policy: CallPolicy, defines: &[(String, i128)]) -> DefinedEval {
     let (file, diags) = parse_str(src);
     assert!(diags.is_empty(), "parse: {diags:?}");
     let p = file
@@ -49,11 +66,28 @@ fn status_with(src: &str, reg: Reg, policy: CallPolicy) -> PreserveStatus {
             _ => None,
         })
         .collect();
-    let (buf, _d, _n) =
-        eval_proc_body(&file, &p.name, &p.params, &p.body, p.span, 0, Cpu::M68000, &[], &sigil_frontend_emp::contract::InterfaceEnv::empty());
+    let (buf, eval_diags, _n) = eval_proc_body(
+        &file,
+        &p.name,
+        &p.params,
+        &p.body,
+        p.span,
+        0,
+        Cpu::M68000,
+        defines,
+        &sigil_frontend_emp::contract::InterfaceEnv::empty(),
+    );
     let buf = buf.expect("codebuf");
     let mut r = verify_preserved(&buf.items, &[reg], policy, p.falls_into.as_deref(), &noreturn);
-    r.remove(&reg).expect("status for the checked reg")
+    DefinedEval {
+        status: r.remove(&reg).expect("status for the checked reg"),
+        items: buf.items.len(),
+        errors: eval_diags
+            .iter()
+            .filter(|d| d.level == Level::Error)
+            .map(|d| d.message.clone())
+            .collect(),
+    }
 }
 
 /// Eval + status under the conservative (no callee-contract) model — the byte
@@ -275,6 +309,72 @@ fn call_without_restore_not_preserved() {
         Reg::D1,
     );
     assert!(!is_verified(&s), "call, no restore → not Verified, got {s:?}");
+}
+
+/// Aeon's `Collected_CheckRing` (`engine/objects/entity_window.emp`),
+/// transcribed; `Killed_CheckObject` is the same body with
+/// `KILLED_BITMASK_OFFSET` and an `.alive` label. The save is a
+/// SINGLE-register `movem.l d1` around the call, and the returning path after
+/// the restore carries a DEBUG-gated `assert.w d1`. Self-contained stand-ins:
+/// the two constants the real module imports from `engine.constants` are local
+/// consts with the same values, and the callee `Collected_FindSlot`, whose body
+/// reads engine RAM, is an extern carrying its real header.
+const CHECKRING_SHAPE: &str = "module m\n\
+     const COLLECTED_BITMASK_OFFSET = 2\n\
+     const MAX_LIST_ENTRIES = 128\n\
+     extern proc Collected_FindSlot () clobbers(d1) out(a0)\n\
+     proc Collected_CheckRing () clobbers(d2, a0) preserves(d1) {\n\
+         movem.l d1, -(sp)\n\
+         jbsr    Collected_FindSlot\n\
+         movem.l (sp)+, d1\n\
+         beq     .uncollected\n\
+         assert.w d1, lo, #MAX_LIST_ENTRIES\n\
+         move.w  d1, d2\n\
+         lsr.w   #3, d2\n\
+         btst    d1, COLLECTED_BITMASK_OFFSET(a0, d2.w)\n\
+         rts\n\
+     .uncollected:\n\
+         moveq   #0, d2\n\
+         rts\n\
+     }\n";
+
+/// The `DEBUG` define a shape supplies; every shipped shape defines it.
+fn debug_define(value: i128) -> [(String, i128); 1] {
+    [("DEBUG".to_string(), value)]
+}
+
+/// The plain shapes (`DEBUG == 0`): the assert lowers to nothing, and d1
+/// round-trips through the single-register movem pair around the call.
+#[test]
+fn checkring_single_register_movem_around_call_preserves() {
+    let e = status_under(CHECKRING_SHAPE, Reg::D1, CallPolicy::ClobberAll, &debug_define(0));
+    assert!(e.errors.is_empty(), "eval errors: {:?}", e.errors);
+    assert!(
+        is_verified(&e.status),
+        "d1 must round-trip the single-register movem around Collected_FindSlot, got {:?}",
+        e.status
+    );
+}
+
+/// The debug shapes (`DEBUG == 1`): the assert expansion lowers between the
+/// restore and the `rts`, pushing and popping SR on the returning path and
+/// diverging on its raise path, and d1 still round-trips.
+#[test]
+fn checkring_debug_assert_after_restore_preserves() {
+    let plain = status_under(CHECKRING_SHAPE, Reg::D1, CallPolicy::ClobberAll, &debug_define(0));
+    let debug = status_under(CHECKRING_SHAPE, Reg::D1, CallPolicy::ClobberAll, &debug_define(1));
+    assert!(debug.errors.is_empty(), "eval errors: {:?}", debug.errors);
+    assert!(
+        debug.items > plain.items,
+        "DEBUG == 1 must lower the assert arm: {} items, {} with DEBUG == 0",
+        debug.items,
+        plain.items
+    );
+    assert!(
+        is_verified(&debug.status),
+        "d1 must round-trip past the DEBUG assert arm, got {:?}",
+        debug.status
+    );
 }
 
 /// The trivial fast path (HBlank_Dispatch / sound_api shape): a movem pair
