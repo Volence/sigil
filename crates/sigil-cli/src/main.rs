@@ -2120,6 +2120,19 @@ fn run_contract_gate(aeon: &std::path::Path, target: &BuildTarget) {
         }
         failed = true;
     }
+    if !report.discard_firings.is_empty() {
+        eprintln!(
+            "error: [call.discards-unmatched], {} firing(s); zero-firing by contract:",
+            report.discard_firings.len()
+        );
+        for f in &report.discard_firings {
+            match src_index.locate(f.span) {
+                Some(loc) => eprintln!("  {loc}: {}", f.message()),
+                None => eprintln!("  (no span recorded): {}", f.message()),
+            }
+        }
+        failed = true;
+    }
 
     if failed {
         eprintln!(
@@ -2194,6 +2207,23 @@ fn print_contract_report(report: &sigil_frontend_emp::corpus_contracts::Contract
             }
         };
         println!("  {:<28} calls {:<24} {kind}", f.proc, f.callee);
+    }
+
+    println!(
+        "\n-- [call.discards-unmatched] firings ({} over {} matched site(s), {} unreached): --",
+        report.discard_firings.len(),
+        report.discards_resolved.len(),
+        report.discards_unreached.len()
+    );
+    for f in &report.discard_firings {
+        println!("  {}", f.message());
+    }
+    for (proc, site) in &report.discards_unreached {
+        println!(
+            "  UNREACHED  {proc:<28} @discards({}) sits in a comptime arm this shape does not \
+             build, so this shape does not check it",
+            site.name
+        );
     }
 
     println!("\n-- [call.input-undefined] firings (D1b, {}): --", report.input_firings.len());

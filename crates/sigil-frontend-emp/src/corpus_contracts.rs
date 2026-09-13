@@ -22,7 +22,10 @@
 use crate::ast::{self, AsmStmt, ContractTypeDecl, ExternProcDecl, InstrLine, Item, Operand, ProcDecl, ProcSig, TextOrSplice};
 use crate::calls::{check_input_undefined, check_live_clobbered, InputFiring, LiveClobberFiring};
 use crate::closure::{check_firings, compute_closure, Closure, Firing, ProcNode, RegEffect};
-use crate::flag_check::{check_flag_unused, check_result_invalid_path, FlagFiring};
+use crate::flag_check::{
+    check_discard_names, check_flag_unused, check_result_invalid_path, DeclaredFlagResults,
+    DiscardFiring, DiscardResolved, DiscardSite, FlagFiring,
+};
 use crate::lower::{
     expand_reglist_regs, preserve_oracle_inputs, proc_written_registers, verified_preserves_regs,
 };
@@ -91,6 +94,17 @@ pub struct ContractReport {
     /// declared credit is suppressing a real §6 firing on a shipping ERROR gate, and
     /// the tripwire test fails loudly instead of the firing silently vanishing.
     pub flag_firings_verified_credit: Vec<FlagFiring>,
+    /// The `[call.discards-unmatched]` refusals: a `@discards(name)` whose name is
+    /// not a flag result its target declares, or whose target declares none or
+    /// cannot be resolved to a declared proc. Both CPUs, sorted (proc, span).
+    pub discard_firings: Vec<DiscardFiring>,
+    /// The `@discards(name)` sites whose name matched a declared flag result:
+    /// the population the refusal list ranges over, so an empty refusal list can
+    /// be told apart from a walk that checked nothing. Sorted (proc, span).
+    pub discards_resolved: Vec<DiscardResolved>,
+    /// `(proc, site)` for each `@discards` site in a comptime-`if` arm this
+    /// walk's define set did not select: not built, so not checked, by THIS walk.
+    pub discards_unreached: Vec<(String, DiscardSite)>,
     /// Names declared BOTH `extern proc` and `proc` (§11 Q4) — with the extern's
     /// span (the mirror that should be deleted when the callee ports).
     pub extern_collisions: Vec<(String, Span)>,
@@ -719,8 +733,13 @@ pub fn analyze_corpus_with_contracts(
     let mut flag_firings: Vec<FlagFiring> = Vec::new();
     let mut flag_firings_verified: Vec<FlagFiring> = Vec::new();
     for pb in &proc_bufs {
-        let unused =
-            check_flag_unused(&pb.name, &pb.buf.items, &flag_callees, &pb.discarded, Cpu::M68000);
+        let unused = check_flag_unused(
+            &pb.name,
+            &pb.buf.items,
+            &flag_callees,
+            &discard_spans(&pb.discarded),
+            Cpu::M68000,
+        );
         flag_firings_verified.extend(unused.iter().cloned());
         flag_firings.extend(unused);
         flag_firings.extend(check_result_invalid_path(
@@ -765,11 +784,42 @@ pub fn analyze_corpus_with_contracts(
         }
     }
     for pb in &z80_proc_bufs {
-        let unused =
-            check_flag_unused(&pb.name, &pb.buf.items, &z80_flag_callees, &pb.discarded, Cpu::Z80);
+        let unused = check_flag_unused(
+            &pb.name,
+            &pb.buf.items,
+            &z80_flag_callees,
+            &discard_spans(&pb.discarded),
+            Cpu::Z80,
+        );
         flag_firings_verified.extend(unused.iter().cloned());
         flag_firings.extend(unused);
     }
+
+    // `[call.discards-unmatched]`: every `@discards(name)` names a flag result its
+    // target declares. Each CPU resolves against its OWN declarations, the same
+    // split the flag-result check keeps (a Z80 proc is reachable only from Z80).
+    let mut declared_68k: DeclaredFlagResults = BTreeMap::new();
+    let mut declared_z80: DeclaredFlagResults = BTreeMap::new();
+    for file in files {
+        let map = if module_is_z80(&file.module) { &mut declared_z80 } else { &mut declared_68k };
+        collect_declared_flag_results(&file.items, map);
+    }
+    let mut discard_firings: Vec<DiscardFiring> = Vec::new();
+    let mut discards_resolved: Vec<DiscardResolved> = Vec::new();
+    let mut discards_unreached: Vec<(String, DiscardSite)> = Vec::new();
+    let discard_passes = [(&proc_bufs, &declared_68k, Cpu::M68000), (&z80_proc_bufs, &declared_z80, Cpu::Z80)];
+    for (bufs, declared, cpu) in discard_passes {
+        for pb in bufs {
+            let c = check_discard_names(&pb.name, &pb.buf.items, declared, &pb.discarded, cpu);
+            discard_firings.extend(c.firings);
+            discards_resolved.extend(c.resolved);
+            discards_unreached.extend(c.unreached.into_iter().map(|s| (pb.name.clone(), s)));
+        }
+    }
+    let span_key = |s: &Span| (s.source.0, s.start, s.end);
+    discard_firings.sort_by(|a, b| (&a.proc, span_key(&a.span)).cmp(&(&b.proc, span_key(&b.span))));
+    discards_resolved.sort_by(|a, b| (&a.proc, span_key(&a.span)).cmp(&(&b.proc, span_key(&b.span))));
+    discards_unreached.sort_by(|a, b| (&a.0, span_key(&a.1.span)).cmp(&(&b.0, span_key(&b.1.span))));
 
     // §G4.5 Z80 callee-side out-honesty. The Z80 unit-domain twin of the 68k
     // out-verify below: every declared `out(rN)` register unit must be PRODUCED on
@@ -1263,6 +1313,9 @@ pub fn analyze_corpus_with_contracts(
         bounded_indirect_sites,
         flag_firings,
         flag_firings_verified_credit: flag_firings_verified,
+        discard_firings,
+        discards_resolved,
+        discards_unreached,
         extern_collisions,
         proc_count,
         extern_count,
@@ -1901,7 +1954,7 @@ fn collect_env(items: &[Item], out: &mut Vec<Item>) {
 struct ProcBuf {
     name: String,
     buf: CodeBuf,
-    discarded: Vec<Span>,
+    discarded: Vec<DiscardSite>,
     span: Span,
     /// The callee-preserves oracle round's inputs (built once from the ProcDecl):
     /// the declared `preserves` registers to re-verify under the closure oracle,
@@ -1931,6 +1984,37 @@ fn flags_of(out_flags: &[ast::FlagResult]) -> BTreeSet<String> {
     out_flags.iter().map(|f| f.flag.clone()).collect()
 }
 
+/// The instruction spans of a proc's `@discards` sites: the opt-out set
+/// [`check_flag_unused`] reads.
+fn discard_spans(sites: &[DiscardSite]) -> Vec<Span> {
+    sites.iter().map(|s| s.span).collect()
+}
+
+/// Record every proc and extern proc in `items` (recursing sections) with the
+/// `(flag, name)` pairs of its declared flag results, an empty list for one that
+/// declares none. A name declared twice (the §11 Q4 extern/proc collision,
+/// refused on its own) contributes the union of both declarations.
+fn collect_declared_flag_results(items: &[Item], out: &mut DeclaredFlagResults) {
+    for item in items {
+        let (name, flags) = match item {
+            Item::Proc(p) => (&p.name, &p.out_flags),
+            Item::ExternProc(e) => (&e.name, &e.sig.out_flags),
+            Item::Section(s) => {
+                collect_declared_flag_results(&s.items, out);
+                continue;
+            }
+            _ => continue,
+        };
+        let entry = out.entry(name.clone()).or_default();
+        for f in flags {
+            let pair = (f.flag.clone(), f.name.clone());
+            if !entry.contains(&pair) {
+                entry.push(pair);
+            }
+        }
+    }
+}
+
 /// The `(reg, cc)` pairs a decl's `out(rN if cc)` clauses name.
 /// The register is CANONICALIZED through the 68k register file (`sp` → `a7`) —
 /// this pass is 68k-only (a `(cpu: z80)` module is skipped above).
@@ -1955,14 +2039,23 @@ fn conds_of(out_cond: &[ast::CondResult]) -> Vec<(String, String)> {
         .collect()
 }
 
-/// The spans of a proc body's call instructions carrying `@discards` (recursing
-/// comptime-`if` branches, like [`collect_indirect_sites`]). A `@discards` inside
-/// a comptime-fn template body is not seen (the AST-body limitation the walk
-/// already carries for indirect sites); no corpus call site discards today.
-fn collect_discarded(body: &[AsmStmt], out: &mut Vec<Span>) {
+/// The `@discards(name)` sites of a proc body, as (instruction span, name),
+/// recursing comptime-`if` branches and `with` bodies like
+/// [`collect_indirect_sites`]. Both arms of an `if` are collected; the check
+/// finds each site among the evaluated instructions by span, so a site in the
+/// arm the define set did not select is reported unreached rather than checked.
+///
+/// A `@discards` written inside a comptime fn's `asm { }` template is NOT
+/// collected: this walk reads the proc's own AST body only. Such an attribute
+/// neither suppresses `[call.flag-result-unused]` at the expanded call nor has
+/// its name checked by `[call.discards-unmatched]`; it is out of both checks'
+/// reach.
+fn collect_discarded(body: &[AsmStmt], out: &mut Vec<DiscardSite>) {
     for stmt in body {
         match stmt {
-            AsmStmt::Instr(i) if i.discards.is_some() => out.push(i.span),
+            AsmStmt::Instr(InstrLine { discards: Some(name), span, .. }) => {
+                out.push(DiscardSite { span: *span, name: name.clone() })
+            }
             AsmStmt::If { then, els, .. } => {
                 collect_discarded(then, out);
                 if let Some(e) = els {

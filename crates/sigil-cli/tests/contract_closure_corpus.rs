@@ -855,6 +855,43 @@ fn corpus_flag_results_are_all_consumed() {
     }
 }
 
+/// `[call.discards-unmatched]` over the real corpus, every shipped shape: each
+/// `@discards(name)` names a flag result its target declares (`carry:`, `zero:`,
+/// or any other flag), so the refusal list is empty in every shape.
+///
+/// Two controls keep the empty list from being vacuous. The matched population
+/// must be non-empty, so a walk that found no site (a span-matching break, a lost
+/// collector) fails here instead of passing. And every site some shape leaves
+/// unreached (a comptime arm it does not build) must be matched by another shape,
+/// so no `@discards` in the reference tree sits where no shipped shape checks it.
+#[test]
+fn corpus_discard_names_all_match_a_declared_flag_result() {
+    let Some(srcs) = corpus_sources() else { return };
+    let mut matched: BTreeSet<(String, u32, u32)> = BTreeSet::new();
+    let mut unreached: BTreeSet<(String, u32, u32)> = BTreeSet::new();
+    for (label, _profile, r) in analyze_every_shape(&srcs) {
+        assert!(
+            r.discard_firings.is_empty(),
+            "shape `{label}`: [call.discards-unmatched] firings: {:#?}",
+            r.discard_firings.iter().map(|f| f.message()).collect::<Vec<_>>()
+        );
+        matched.extend(r.discards_resolved.iter().map(|d| (d.proc.clone(), d.span.start, d.span.end)));
+        unreached.extend(
+            r.discards_unreached.iter().map(|(p, s)| (p.clone(), s.span.start, s.span.end)),
+        );
+    }
+    assert!(
+        !matched.is_empty(),
+        "no shipped shape matched a single `@discards` site, so the empty refusal list above \
+         checked nothing"
+    );
+    let never: Vec<_> = unreached.difference(&matched).collect();
+    assert!(
+        never.is_empty(),
+        "`@discards` sites no shipped shape builds, so no shape checks their names: {never:?}"
+    );
+}
+
 /// Load the aeon corpus + run the contract analysis, or `None` (skip) when the
 /// reference tree is absent — hard-failing under `SIGIL_STRICT_GATE` (the house
 /// reference-gate pattern). Shared by the D1b/§3.2/§3.3 gates below.
