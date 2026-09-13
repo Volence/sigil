@@ -4,6 +4,9 @@ Rules this lane reads **at a moment**, not at boot. The boot read is `docs/OVERS
 scope, the queue, the standing owner rulings that change what a session does first, and the
 obligations this lane owes now. It names this file by path at every point one of the blocks below
 used to sit.
+(Since the 2026-09-13 cut the obligations and commitments between this lane and aeon are here, and
+the boot read names them only as rows in that cut's index; the same cut moved each queue project's
+working detail here and left the rows in the boot read.)
 
 **Split by WHEN A RULE IS READ, never by size** — owner ruling 2026-09-04T15:38:47Z, carried in
 `empyrean/docs/OVERSEER-PROTOCOL.md` at `origin/main`. **No rule here is shorter for having
@@ -1328,7 +1331,7 @@ one reader, and NOTHING compares the committed header against it.** So the commi
 drift from their own generator silently, forever, and the dash ruling is merely what made one
 instance visible. Booked as `GOLDEN-HEADER-UNGATED`: close it by REGENERATING (never by hand), and
 add the missing comparison so the next drift is loud. Regeneration invokes `asl`, so it is subject
-to the exit-status rule under SIGIL-AS-REPLACEMENT in `docs/OVERSEER.md`, and it is its own
+to the exit-status rule in *Selecting and citing the `asl` oracle* in `docs/OVERSEER-REFERENCE.md`, and it is its own
 small parcel with its own verification
 because it rewrites committed test vectors.
 

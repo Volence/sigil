@@ -22,6 +22,9 @@ are in `docs/OVERSEER-REFERENCE.md`.
 > depends on. That file is not read at boot; it is read at the moment its rule applies, and this
 > file names it by path at every point one of its blocks used to sit. The index is *Read at the
 > moment* below, and each row states the moment that triggers its block.
+> Since the 2026-09-13 cut it also holds the working detail of each queue project (the rows stay
+> here), the ledger gate, and the commitments and obligations between this lane and aeon. There is
+> one index per cut, each a section headed *Read at the moment*, the newest last.
 >
 > **Split by WHEN A RULE IS READ, never by size** — owner ruling 2026-09-04T15:38:47Z, carried in
 > `empyrean/docs/OVERSEER-PROTOCOL.md` at `origin/main`. **No rule is shorter for having moved**;
@@ -474,6 +477,8 @@ the whole of `docs/OVERSEER-REFERENCE.md`. **Three further cuts followed and eac
 index, all three near the end of this file**: *Read at the moment - the bars moved to the reference
 file on 2026-09-06*, *Read at the moment - the blocks moved to the reference file on 2026-09-09*,
 and *Read at the moment - the blocks moved to the reference file on 2026-09-10*.
+A fourth cut followed on 2026-09-13, and its index is the last in this file:
+*Read at the moment - the blocks moved to the reference file on 2026-09-13*.
 
 ## Queue
 
