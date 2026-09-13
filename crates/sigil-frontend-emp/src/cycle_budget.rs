@@ -122,8 +122,10 @@ pub enum BudgetFindingKind {
         /// The transferring mnemonic.
         mnemonic: String,
     },
-    /// `[cycles.ambiguous-branch]` — an outcome-split conditional whose taken and
-    /// fall-through edges cannot be told apart.
+    /// `[cycles.ambiguous-branch]`: a split-cost instruction that does not present
+    /// one taken edge and one fall-through, so its two costs have nowhere to go.
+    /// The input that reaches it is a repeating block op; the message is worded
+    /// by that class, and says something different for any other mnemonic.
     ///
     /// **THIS VARIANT NOW HAS A REACHABLE INPUT**, and it acquired one exactly the
     /// way the kill condition below predicted a table change could: the eight
@@ -170,7 +172,7 @@ pub enum BudgetFindingKind {
     /// deleting it would make the block repeats route one of two numbers to their
     /// single edge.
     AmbiguousBranch {
-        /// The conditional's mnemonic.
+        /// The refused instruction's mnemonic.
         mnemonic: String,
     },
     /// `[cycles.unknown-op]` — an op outside the T-state table.
@@ -240,10 +242,28 @@ impl BudgetFindingKind {
                  text does not name; name the reachable LOCAL labels with a `targets(...)` \
                  clause on the transfer to budget it"
             ),
-            Self::AmbiguousBranch { mnemonic } => format!(
-                "`{mnemonic}` costs differently taken and not-taken, and its two edges are \
-                 not distinguishable here"
-            ),
+            // Worded by class, as the `cycles(L1, L2)` builtin's refusal is. A
+            // repeating block op is the live input: one edge, two costs. Any
+            // other mnemonic here is a split cost on a form that does not present
+            // a taken edge and a fall-through, which the tables and the edge
+            // builders are meant never to produce.
+            Self::AmbiguousBranch { mnemonic } => {
+                if crate::z80_cycles::AMBIGUOUS_BRANCH_REPEATS.contains(&mnemonic.as_str()) {
+                    format!(
+                        "`{mnemonic}` repeats a number of times decided at run time, and a \
+                         repeat costs a different number of T-states than the final step, so \
+                         no single cost is assignable; a cycle budget needs the repeat \
+                         unrolled into instructions of fixed cost"
+                    )
+                } else {
+                    format!(
+                        "`{mnemonic}` is priced with separate taken and not-taken costs, but \
+                         here it does not present one taken edge and one fall-through, so \
+                         neither cost can be charged to a path; the cost table and the edge \
+                         model disagree about this form"
+                    )
+                }
+            }
             Self::UnknownOp { mnemonic } => format!(
                 "`{mnemonic}` is not in this CPU's cycle table, add it to `z80_cycles` / \
                  `m68k_cycles` if a budgeted proc legitimately needs it"
@@ -1229,6 +1249,29 @@ mod tests {
         let stepped = vec![instr("ldi", vec![]), instr("ret", vec![])];
         let c = path_costs(&stepped, Cpu::Z80, sp(), &nr()).unwrap();
         assert_eq!((c.min, c.max), (26, 26)); // ldi 16 + ret 10
+    }
+
+    // The refusal is worded by what reaches it. A block repeat is the live input
+    // and is told why it has no single cost; any other mnemonic arriving here is a
+    // split cost on a form without a taken edge and a fall-through, and is told
+    // that instead. `z80_cycles`'s
+    // `budget_ambiguous_branch_is_reached_only_by_the_block_repeats` holds the
+    // reaching set to the repeats, so the first text is the one a source sees.
+    #[test]
+    fn the_ambiguous_branch_message_is_worded_by_class() {
+        assert_eq!(
+            BudgetFindingKind::AmbiguousBranch { mnemonic: "ldir".into() }.message(),
+            "`ldir` repeats a number of times decided at run time, and a repeat costs a \
+             different number of T-states than the final step, so no single cost is \
+             assignable; a cycle budget needs the repeat unrolled into instructions of \
+             fixed cost"
+        );
+        assert_eq!(
+            BudgetFindingKind::AmbiguousBranch { mnemonic: "jp".into() }.message(),
+            "`jp` is priced with separate taken and not-taken costs, but here it does not \
+             present one taken edge and one fall-through, so neither cost can be charged to \
+             a path; the cost table and the edge model disagree about this form"
+        );
     }
 
     // A 68000 straight line measures through the M68000UM table: nop 4 + rts 16.

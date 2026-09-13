@@ -791,7 +791,10 @@ pub fn encode(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
         (Mnemonic::Res, _) => encode_cb_bit(0x80, &inst.ops),
         (Mnemonic::Set, _) => encode_cb_bit(0xC0, &inst.ops),
         // ---- Task 6: ED group — bare one-offs ----
-        (Mnemonic::Neg, _) => Ok(vec![ED_PREFIX, 0x44]),
+        // `neg` negates the accumulator and names nothing else: asl accepts it
+        // bare or with `a` spelled out (both ED 44) and refuses any other
+        // operand, so this does too.
+        (Mnemonic::Neg, [] | [Operand::Reg(Reg8::A)]) => Ok(vec![ED_PREFIX, 0x44]),
         // The block-op grid: sub-opcode bit 4 selects repeating, bit 3 selects
         // decrementing, bits 1..0 select the family. Every arm here is asl's own
         // answer rather than that arithmetic, because the arithmetic is what a
@@ -804,7 +807,7 @@ pub fn encode(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
         (Mnemonic::Cpd, []) => Ok(vec![ED_PREFIX, 0xA9]),
         (Mnemonic::Ind, []) => Ok(vec![ED_PREFIX, 0xAA]),
         (Mnemonic::Outd, []) => Ok(vec![ED_PREFIX, 0xAB]),
-        (Mnemonic::Ldir, _) => Ok(vec![ED_PREFIX, 0xB0]),
+        (Mnemonic::Ldir, []) => Ok(vec![ED_PREFIX, 0xB0]),
         (Mnemonic::Cpir, []) => Ok(vec![ED_PREFIX, 0xB1]),
         (Mnemonic::Inir, []) => Ok(vec![ED_PREFIX, 0xB2]),
         (Mnemonic::Otir, []) => Ok(vec![ED_PREFIX, 0xB3]),
@@ -1197,6 +1200,65 @@ mod tests {
             encode(&Instruction { mnemonic: Mnemonic::Ldir, ops: vec![] }).unwrap(),
             vec![0xED, 0xB0]
         );
+    }
+
+    #[test]
+    fn ldir_with_an_operand_is_refused_like_its_siblings() {
+        // asl refuses each of these with error #1110, "wrong number of operands,
+        // expected no argument but got N", and answers `lddr a` the same way:
+        // a repeating block op names no operand at all.
+        let shapes = [
+            vec![Operand::Reg(Reg8::A)],
+            vec![Operand::IndHl],
+            vec![Operand::Pair(Reg16::De), Operand::Pair(Reg16::Hl)],
+        ];
+        for ops in shapes {
+            let ldir = encode(&Instruction { mnemonic: Mnemonic::Ldir, ops: ops.clone() });
+            let lddr = encode(&Instruction { mnemonic: Mnemonic::Lddr, ops: ops.clone() });
+            let lddr_text = lddr.expect_err("lddr takes no operand").to_string();
+            assert_eq!(
+                ldir.expect_err("ldir takes no operand").to_string(),
+                lddr_text.replace("Lddr", "Ldir"),
+                "`ldir {ops:?}` must get the refusal its sibling `lddr` gets"
+            );
+        }
+        assert_eq!(
+            encode(&Instruction { mnemonic: Mnemonic::Ldir, ops: vec![Operand::Reg(Reg8::A)] })
+                .unwrap_err()
+                .to_string(),
+            "unsupported form: Instruction { mnemonic: Ldir, ops: [Reg(A)] }"
+        );
+    }
+
+    #[test]
+    fn neg_takes_no_operand_but_the_accumulator() {
+        // asl: `neg` and `neg a` are both ED 44. `neg b`, `neg (hl)` and `neg 0`
+        // are error #1350 "addressing mode not allowed here", and `neg a,a` is
+        // #1110 "wrong number of operands".
+        let neg = |ops: Vec<Operand>| encode(&Instruction { mnemonic: Mnemonic::Neg, ops });
+        assert_eq!(neg(vec![]).unwrap(), vec![0xED, 0x44]);
+        assert_eq!(neg(vec![Operand::Reg(Reg8::A)]).unwrap(), vec![0xED, 0x44]);
+        for ops in [
+            vec![Operand::Reg(Reg8::B)],
+            vec![Operand::IndHl],
+            vec![Operand::Imm8(0)],
+            vec![Operand::Reg(Reg8::A), Operand::Reg(Reg8::A)],
+        ] {
+            assert_eq!(
+                neg(ops.clone()).expect_err("neg names only the accumulator").to_string(),
+                format!("unsupported form: Instruction {{ mnemonic: Neg, ops: {ops:?} }}")
+            );
+        }
+        assert_eq!(
+            neg(vec![Operand::Reg(Reg8::B)]).unwrap_err().to_string(),
+            "unsupported form: Instruction { mnemonic: Neg, ops: [Reg(B)] }"
+        );
+        // An indexed operand falls through to the index encoder, which owns no
+        // `neg` form and refuses it under its own wording.
+        assert!(matches!(
+            neg(vec![Operand::Indexed { reg: IndexReg::Ix, disp: 5 }]),
+            Err(IsaError::UnsupportedForm(_))
+        ));
     }
 
     #[test]
