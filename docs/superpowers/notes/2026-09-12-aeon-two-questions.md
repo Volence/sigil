@@ -156,8 +156,14 @@ that:
   so the sum would be a true T-state count of less code than actually runs.
 - **`ret` in a span fires `[cycles.path-end]`** (`eval/builtins.rs:658`). A straight-line sum cannot
   represent a path ending.
-- **`ret cc` / `call cc` additionally fire `[cycles.ambiguous-branch]`** where taken and not-taken
-  differ.
+- **`ret cc` / `call cc` get the same two refusals as their unconditional forms, and never
+  `[cycles.ambiguous-branch]`.** Both carry a split cost in `instr_cost`, but `span_cost` asks the
+  return and call classifiers before it reads a cost, so `ret nz` earns only `[cycles.path-end]` and
+  `call nz` only `[cycles.opaque-call]`. The forms that do reach `[cycles.ambiguous-branch]` are
+  `jr cc`, `djnz` and the repeating block ops (`ldir` and its family); `z80_cycles.rs` holds them in
+  two constants that a test derives from the encoder. **Corrected 2026-09-13 on aeon's report:**
+  this bullet first said `ret cc` / `call cc` additionally fire `[cycles.ambiguous-branch]`, as the
+  module doc and the refusal message did; aeon probed both and neither fires it.
 
 `pop af`, `bit n,r` and `add a,n` are clean: nothing bails on them any more.
 
