@@ -10,9 +10,12 @@
 //!
 //! Every case is driven end-to-end from real `.emp` through `eval_proc_body`, so
 //! the real `movem` RegList lowering + PreDec/PostInc operands are exercised, not
-//! a hand-built stub. The shapes mirror the six G1-residue procs (AllocDynamic,
-//! Collected_Park/UnparkSlot, Collected_CheckRing, Killed_CheckObject) — the real
-//! procs are additionally covered by the corpus checkpoint.
+//! a hand-built stub. The shapes mirror the G1-residue procs (AllocDynamic,
+//! Collected_Park/UnparkSlot, Collected_CheckRing, Killed_CheckObject). The
+//! corpus checkpoint (`sigil-cli/tests/preserves_corpus.rs`) runs the real
+//! AllocDynamic and Collected_Park/UnparkSlot under every shipped shape;
+//! `CHECKRING_SHAPE` below transcribes the Collected_CheckRing and
+//! Killed_CheckObject shape.
 
 use sigil_frontend_emp::ast::Item;
 use sigil_frontend_emp::eval::eval_proc_body;

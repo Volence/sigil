@@ -162,6 +162,11 @@ fn residue_procs_verify_as_predicted() {
             }
         }
     }
+    report.push_str(&format!(
+        "  {evals} (proc, shape) evaluations: {} procs x {} shapes\n",
+        cases.len(),
+        native::shipped_shapes().len()
+    ));
     eprintln!("{report}");
     assert!(mismatches.is_empty(), "residue verification drifted:\n{}", mismatches.join("\n"));
 
