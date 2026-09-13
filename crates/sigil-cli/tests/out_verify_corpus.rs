@@ -74,6 +74,10 @@ fn corpus_report() -> Option<ContractReport> {
     corpus_sources().map(|sources| analyze_sources(&sources))
 }
 
+/// A typed out slot, `(declaration, register)`: the shape of the report's
+/// `typed_out_slots` rows and of every list compared with them here.
+type Slot = (String, String);
+
 /// The canonical 68k register a slot names, spelled as the report spells it
 /// (`d0`..`d7`, `a0`..`a7`, with `sp` as `a7`), or `None` for any other name (a
 /// flag such as `carry`, a Z80 register).
@@ -102,7 +106,7 @@ fn register_name(name: &str) -> Option<String> {
 /// interface member, so a typed hook result reads as a slot the walk did not
 /// see. A typed register with no head before it refuses, naming the file, rather
 /// than being dropped.
-fn declared_typed_out_slots(sources: &[(PathBuf, String)]) -> Vec<(String, String)> {
+fn declared_typed_out_slots(sources: &[(PathBuf, String)]) -> Vec<Slot> {
     let mut slots = Vec::new();
     for (path, text) in sources {
         let (tokens, _) = lex(text, SourceId(0));
@@ -161,11 +165,8 @@ fn declared_typed_out_slots(sources: &[(PathBuf, String)]) -> Vec<(String, Strin
 
 /// `(in a and not in b, in b and not in a)`, counting repeats, so the two lists
 /// hold the same slots exactly when both halves are empty.
-fn slot_difference(
-    a: &[(String, String)],
-    b: &[(String, String)],
-) -> (Vec<(String, String)>, Vec<(String, String)>) {
-    let mut count: BTreeMap<&(String, String), i64> = BTreeMap::new();
+fn slot_difference(a: &[Slot], b: &[Slot]) -> (Vec<Slot>, Vec<Slot>) {
+    let mut count: BTreeMap<&Slot, i64> = BTreeMap::new();
     for s in a {
         *count.entry(s).or_default() += 1;
     }
@@ -344,7 +345,7 @@ fn typed_out_slots_of_a_fixed_input() {
         let (_, diags) = parse_str(text);
         assert!(diags.is_empty(), "{}: the fixed input must parse cleanly: {diags:?}", path.display());
     }
-    let want: Vec<(String, String)> = [
+    let want: Vec<Slot> = [
         ("Cond", "d3"),
         ("Ext", "d0"),
         ("InSection", "d7"),
