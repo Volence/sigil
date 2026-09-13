@@ -573,6 +573,345 @@ fn z80_jr_z_is_carry_transparent() {
     assert!(f.is_empty(), "jr z is carry-transparent, carry survives to jr c: {f:?}");
 }
 
+// ---------------------------------------------------------------------------
+// The zero-flag model (`out(zero: name)`). Its readers and writers come from the
+// ISA manuals (M68000PRM Tables 3-18/3-19 and per-instruction condition codes;
+// UM0080 "Condition Bits Affected"), not from the carry tables, and several
+// instructions sit on opposite sides for the two flags. Each class below is
+// driven end to end from `.emp` source through `eval_proc_body`.
+// ---------------------------------------------------------------------------
+
+/// Eval the first proc in `src` for `cpu` and run the flag-unused check with
+/// `callee` declared to return `flag`, `discarded` the opted-out call spans.
+fn run_flag(src: &str, callee: &str, flag: &str, cpu: Cpu, discarded: &[Span]) -> Vec<FlagFiring> {
+    let (file, diags) = parse_str(src);
+    assert!(diags.iter().all(|d| d.level != sigil_span::Level::Error), "parse: {diags:?}");
+    let p = file
+        .items
+        .iter()
+        .find_map(|i| match i {
+            Item::Proc(p) => Some(p),
+            _ => None,
+        })
+        .expect("a proc");
+    let (buf, _d, _n) = eval_proc_body(
+        &file,
+        &p.name,
+        &p.params,
+        &p.body,
+        p.span,
+        0,
+        cpu,
+        &[],
+        &sigil_frontend_emp::contract::InterfaceEnv::empty(),
+    );
+    let buf = buf.expect("codebuf");
+    let mut fc: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    fc.insert(callee.to_string(), BTreeSet::from([flag.to_string()]));
+    check_flag_unused(&p.name, &buf.items, &fc, discarded, cpu)
+}
+
+/// A 68k proc that calls `Find` and then runs `body`.
+fn m68k_src(body: &str) -> String {
+    format!("module m\nproc P () clobbers(d0-d1/a0-a1) {{\n    jbsr Find\n{body}}}\n")
+}
+
+/// A Z80 proc that calls `Find` and then runs `body`.
+fn z80_src(body: &str) -> String {
+    format!("module m\nproc P () {{\n    call Find\n{body}}}\n")
+}
+
+fn m68k_zero(body: &str) -> Vec<FlagFiring> {
+    run_flag(&m68k_src(body), "Find", "zero", Cpu::M68000, NONE)
+}
+fn m68k_carry(body: &str) -> Vec<FlagFiring> {
+    run_flag(&m68k_src(body), "Find", "carry", Cpu::M68000, NONE)
+}
+fn z80_zero(body: &str) -> Vec<FlagFiring> {
+    run_flag(&z80_src(body), "Find", "zero", Cpu::Z80, NONE)
+}
+fn z80_carry(body: &str) -> Vec<FlagFiring> {
+    run_flag(&z80_src(body), "Find", "carry", Cpu::Z80, NONE)
+}
+
+/// Assert `run(body)` fires exactly once on a `zero` result, or not at all.
+fn expect(run: fn(&str) -> Vec<FlagFiring>, body: &str, fires: bool, why: &str) {
+    let f = run(body);
+    if fires {
+        assert_eq!(f.len(), 1, "{why}: expected one firing for\n{body}got {f:?}");
+    } else {
+        assert!(f.is_empty(), "{why}: expected no firing for\n{body}got {f:?}");
+    }
+}
+
+/// 68k READERS of Z (Table 3-19: EQ, NE, HI, LS, GT, LE include Z), in the
+/// Bcc, Scc and DBcc forms, and MOVE from SR, which copies the whole CCR out.
+#[test]
+fn m68k_zero_is_consumed_by_every_z_testing_condition() {
+    for body in [
+        "    beq .x\n    moveq #0, d0\n.x:\n    rts\n",
+        "    bne .x\n    moveq #0, d0\n.x:\n    rts\n",
+        "    bhi .x\n.x:\n    rts\n",
+        "    bls .x\n.x:\n    rts\n",
+        "    bgt .x\n.x:\n    rts\n",
+        "    ble .x\n.x:\n    rts\n",
+        "    seq d0\n    rts\n",
+        "    sne d0\n    rts\n",
+        "    dbne d1, .x\n.x:\n    rts\n",
+        "    dbeq d1, .x\n.x:\n    rts\n",
+        "    move.w sr, -(sp)\n    rts\n",
+    ] {
+        expect(m68k_zero, body, false, "a Z reader consumes the zero result");
+    }
+    let f = m68k_zero("    rts\n");
+    assert_eq!(f.len(), 1, "the control: returning unread fires, got {f:?}");
+    assert_eq!(f[0].flag, "zero");
+}
+
+/// 68k conditions whose test does NOT include Z (CC, CS, GE, LT, PL, MI, VC,
+/// VS) neither consume nor redefine it: both edges are walked, so a path
+/// returning unread still fires. `bcs` is the asymmetric member: it consumes a
+/// carry result and not a zero one.
+#[test]
+fn m68k_zero_is_not_consumed_by_a_condition_without_z() {
+    for cc in ["bcs", "bcc", "bge", "blt", "bpl", "bmi", "bvc", "bvs"] {
+        let body = format!("    {cc} .x\n    rts\n.x:\n    rts\n");
+        expect(m68k_zero, &body, true, "a condition without Z leaves the zero result unread");
+    }
+    expect(m68k_carry, "    bcs .x\n    rts\n.x:\n    rts\n", false, "bcs consumes carry");
+}
+
+/// 68k WRITERS of Z before the reader end the window: a result-setting data
+/// operation, a bit test, CLR, MOVE to CCR / SR, and an intervening call.
+#[test]
+fn m68k_zero_writers_redefine_it_before_the_beq() {
+    for op in [
+        "moveq #0, d0",
+        "move.w d0, d1",
+        "tst.w d0",
+        "cmpi.w #1, d0",
+        "addq.w #1, d0",
+        "clr.w d0",
+        "lsl.w #1, d0",
+        "btst #0, d0",
+        "move.w #0, ccr",
+        "move.w #$2700, sr",
+        "jbsr Other",
+    ] {
+        let body = format!("    {op}\n    beq .x\n.x:\n    rts\n");
+        expect(m68k_zero, &body, true, "a Z writer redefines the zero result");
+    }
+}
+
+/// 68k instructions the manual lists as not affecting the condition codes are
+/// transparent: MOVEA, LEA, MOVEM, and an address-register destination for
+/// MOVE / ADDQ / SUBQ ("the condition codes are not affected when the
+/// destination is an address register").
+#[test]
+fn m68k_zero_survives_instructions_that_leave_the_ccr_alone() {
+    for op in [
+        "movea.l a0, a1",
+        "lea (a0), a1",
+        "movem.l (sp)+, d0-d1",
+        "move.l d0, a1",
+        "addq.l #2, sp",
+        "subq.l #4, a0",
+    ] {
+        let body = format!("    {op}\n    beq .x\n.x:\n    rts\n");
+        expect(m68k_zero, &body, false, "an instruction leaving the CCR alone is transparent");
+    }
+}
+
+/// THE STICKY CASE. ADDX: "Z: Cleared if the result is nonzero; unchanged
+/// otherwise." It can only clear Z, so a later reader still reads the callee's
+/// value where it survived: the walk goes through it rather than stopping. A
+/// path that then returns unread still fires. For carry ADDX is a full writer,
+/// so the same body fires there: the asymmetric member.
+#[test]
+fn m68k_addx_clears_zero_only_and_the_walk_goes_on_through_it() {
+    expect(m68k_zero, "    addx.w d0, d1\n    beq .x\n.x:\n    rts\n", false, "addx then beq");
+    expect(m68k_zero, "    addx.w d0, d1\n    rts\n", true, "addx then return, unread");
+    expect(m68k_zero, "    addx.w d0, d1\n    tst.w d0\n    beq .x\n.x:\n    rts\n", true, "addx then a writer");
+    expect(m68k_carry, "    addx.w d0, d1\n    bcs .x\n.x:\n    rts\n", true, "addx writes carry");
+}
+
+/// ANDI / ORI / EORI to CCR move Z only as bit 2 of the immediate says: ANDI
+/// clears it when bit 2 is zero, ORI sets it and EORI changes it when bit 2 is
+/// one, and each leaves it unchanged otherwise. The corpus's own
+/// `andi.b #$FE, ccr` (carry clear) leaves Z standing.
+#[test]
+fn m68k_ccr_immediate_forms_move_zero_by_bit_2() {
+    for (op, fires) in [
+        ("andi.b #$FE, ccr", false),
+        ("andi.b #$FB, ccr", true),
+        ("ori.b #$01, ccr", false),
+        ("ori.b #$04, ccr", true),
+        ("eori.b #$01, ccr", false),
+        ("eori.b #$04, ccr", true),
+    ] {
+        let body = format!("    {op}\n    beq .x\n.x:\n    rts\n");
+        expect(m68k_zero, &body, fires, "bit 2 of the CCR immediate");
+    }
+}
+
+/// BTST writes Z and leaves C alone: it redefines a zero result and is
+/// transparent to a carry one. The asymmetric pair, one body per flag.
+#[test]
+fn m68k_btst_writes_zero_and_not_carry() {
+    expect(m68k_zero, "    btst #0, d0\n    beq .x\n.x:\n    rts\n", true, "btst writes Z");
+    expect(m68k_carry, "    btst #0, d0\n    bcs .x\n.x:\n    rts\n", false, "btst leaves C");
+}
+
+/// Must-use is every-path on the zero result too: the `bcs` taken edge returns
+/// before any Z reader, so the call fires though the other path reads Z.
+#[test]
+fn m68k_zero_one_unconsumed_path_at_a_join_fires() {
+    let body = "    bcs .skip\n    beq .done\n.skip:\n    rts\n.done:\n    rts\n";
+    expect(m68k_zero, body, true, "the .skip path returns unread");
+}
+
+/// `@discards(name)` opts a zero result out exactly as it does a carry one.
+#[test]
+fn m68k_zero_discards_suppresses_the_firing() {
+    let src = "module m\n\
+               proc P () clobbers(d0) {\n\
+                   jbsr Find @discards(found)\n\
+                   moveq #0, d0\n\
+                   rts\n\
+               }\n";
+    let with = run_flag(src, "Find", "zero", Cpu::M68000, &discards_spans(src));
+    assert!(with.is_empty(), "@discards must suppress a zero result: {with:?}");
+    let without = run_flag(src, "Find", "zero", Cpu::M68000, NONE);
+    assert_eq!(without.len(), 1, "the same call fires without the discard span");
+}
+
+/// Z80 READERS of Z: the NZ and Z conditions of `jr`, `jp`, `call` and `ret`
+/// (the `cc` table, relevant flag Z), and PUSH AF, which copies F out.
+#[test]
+fn z80_zero_is_consumed_by_the_z_conditions() {
+    for body in [
+        "    jr z, .x\n.x:\n    ret\n",
+        "    jr nz, .x\n    ret\n.x:\n    ret\n",
+        "    jp z, .x\n    ret\n.x:\n    ret\n",
+        "    ret nz\n    ret\n",
+        "    call z, Other\n    ret\n",
+        "    push af\n    pop af\n    ret\n",
+    ] {
+        expect(z80_zero, body, false, "a Z reader consumes the zero result");
+    }
+    let f = z80_zero("    ret\n");
+    assert_eq!(f.len(), 1, "the control: returning unread fires, got {f:?}");
+    assert_eq!(f[0].flag, "zero");
+}
+
+/// Z80 carry conditions do not read Z: `jr c` consumes a carry result and not a
+/// zero one.
+#[test]
+fn z80_zero_is_not_consumed_by_a_carry_condition() {
+    expect(z80_zero, "    jr c, .x\n    ret\n.x:\n    ret\n", true, "jr c leaves Z unread");
+    expect(z80_carry, "    jr c, .x\n    ret\n.x:\n    ret\n", false, "jr c consumes carry");
+}
+
+/// Z80 WRITERS of Z: 8-bit arithmetic and logic, 8-bit INC / DEC, BIT, the CB
+/// rotates, POP AF and EX AF, AF' (which replace F), and an intervening call.
+#[test]
+fn z80_zero_writers_redefine_it_before_the_jr_z() {
+    for op in [
+        "add a, b",
+        "cp 1",
+        "or a",
+        "inc a",
+        "dec b",
+        "inc (hl)",
+        "bit 0, a",
+        "rlc a",
+        "srl a",
+        "pop af",
+        "ex af, af'",
+        "call Other",
+    ] {
+        let body = format!("    {op}\n    jr z, .x\n.x:\n    ret\n");
+        expect(z80_zero, &body, true, "a Z writer redefines the zero result");
+    }
+}
+
+/// Z80 instructions the manual lists as "Z is not affected" or affecting no
+/// condition bit are transparent: `ld`, 16-bit INC / DEC and ADD HL, ss, SCF,
+/// CCF, CPL, the accumulator rotates, SET / RES, LDIR, `ex de, hl`.
+#[test]
+fn z80_zero_survives_instructions_that_leave_z_alone() {
+    for op in [
+        "ld a, b",
+        "inc hl",
+        "dec de",
+        "add hl, bc",
+        "scf",
+        "ccf",
+        "cpl",
+        "rlca",
+        "rra",
+        "set 0, a",
+        "res 1, b",
+        "ldir",
+        "ex de, hl",
+    ] {
+        let body = format!("    {op}\n    jr z, .x\n.x:\n    ret\n");
+        expect(z80_zero, &body, false, "an instruction leaving Z alone is transparent");
+    }
+}
+
+/// The Z80 asymmetric members, one body per flag: 8-bit INC and BIT write Z and
+/// leave C; SCF, RLCA and ADD HL, ss write C and leave Z.
+#[test]
+fn z80_zero_and_carry_disagree_where_the_manual_does() {
+    for (op, zero_fires, carry_fires) in [
+        ("inc a", true, false),
+        ("bit 0, a", true, false),
+        ("scf", false, true),
+        ("rlca", false, true),
+        ("add hl, bc", false, true),
+    ] {
+        expect(z80_zero, &format!("    {op}\n    jr z, .x\n.x:\n    ret\n"), zero_fires, op);
+        expect(z80_carry, &format!("    {op}\n    jr c, .x\n.x:\n    ret\n"), carry_fires, op);
+    }
+}
+
+/// The site census: a `zero` site is walked, a flag with no model (`negative`)
+/// is recorded as such and not walked, on the same call.
+#[test]
+fn a_zero_site_is_walked_and_a_flag_without_a_model_is_not() {
+    use sigil_frontend_emp::flag_check::{check_flag_unused_sites, FlagSiteOutcome};
+    let src = m68k_src("    beq .x\n.x:\n    rts\n");
+    let (file, _d) = parse_str(&src);
+    let p = file
+        .items
+        .iter()
+        .find_map(|i| match i {
+            Item::Proc(p) => Some(p),
+            _ => None,
+        })
+        .expect("a proc");
+    let (buf, _d, _n) = eval_proc_body(
+        &file,
+        &p.name,
+        &p.params,
+        &p.body,
+        p.span,
+        0,
+        Cpu::M68000,
+        &[],
+        &sigil_frontend_emp::contract::InterfaceEnv::empty(),
+    );
+    let buf = buf.expect("codebuf");
+    let mut fc: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    fc.insert("Find".to_string(), BTreeSet::from(["zero".to_string(), "negative".to_string()]));
+    let (firings, sites) = check_flag_unused_sites(&p.name, &buf.items, &fc, NONE, Cpu::M68000);
+    assert!(firings.is_empty(), "the beq consumes Z, and negative is not walked: {firings:?}");
+    let outcome = |r: &str| sites.iter().find(|s| s.result == r).map(|s| s.outcome);
+    assert_eq!(outcome("zero"), Some(FlagSiteOutcome::Walked));
+    assert_eq!(outcome("negative"), Some(FlagSiteOutcome::NoConsumerModel));
+}
+
 /// JOIN: one path consumes the carry (`jr c`), the other returns unconsumed —
 /// must-use is every-path, so it fires (the Z80 CFG has real joins via
 /// z80_edges' two-way conditional split).

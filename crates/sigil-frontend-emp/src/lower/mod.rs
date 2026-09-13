@@ -28,7 +28,7 @@ pub use proc::{
 };
 pub(crate) use code::encoded_len_m68k;
 pub(crate) use code::is_recognized_mnemonic;
-pub(crate) use code::m68k_mnemonic;
+pub(crate) use code::{m68k_mnemonic, z80_mnemonic};
 pub(crate) use code::{m68k_default_size, reg_kind};
 pub(crate) use proc::instr_written_regs;
 pub(crate) use proc::{sr_writes_round_trip, writes_dest_register};

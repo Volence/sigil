@@ -1,13 +1,19 @@
 //! Contract-grammar v2 §6 — the caller-side flag-result must-use check.
 //!
-//! A callee declaring `out(carry: name)` (§6) returns a status flag the caller
-//! MUST consume. `[call.flag-result-unused]` verifies that, for every call to a
-//! flag-result callee, the carry is READ (a `Bcc`/`Scc`/ADDX-class consumer)
-//! before it is REDEFINED (a CC-writing instruction / an intervening call) or
-//! the proc RETURNS — on EVERY path. A path that abandons the flag fires, unless
-//! the call carries an explicit `@discards(name)`, and `[call.discards-unmatched]`
-//! ([`check_discard_names`]) refuses any such name that is not a flag result the
-//! callee declares.
+//! A callee declaring `out(carry: name)` or `out(zero: name)` (§6) returns a
+//! status flag the caller MUST consume. `[call.flag-result-unused]` verifies
+//! that, for every call to a flag-result callee, the flag is READ (a conditional
+//! transfer or set testing it) before it is REDEFINED (an instruction writing it
+//! / an intervening call) or the proc RETURNS, on EVERY path. A path that
+//! abandons the flag fires, unless the call carries an explicit
+//! `@discards(name)`, and `[call.discards-unmatched]` ([`check_discard_names`])
+//! refuses any such name that is not a flag result the callee declares.
+//!
+//! Each tracked flag has its own reader and writer tables: carry's
+//! ([`consumes_carry`], [`writes_carry`]) and zero's ([`zero_role`], taken from
+//! the ISA manuals, see the section above it). The other flags the grammar
+//! accepts (`negative`, `overflow`, `extend`) have no model, so a call site
+//! owing one is recorded as [`FlagSiteOutcome::NoConsumerModel`] and not walked.
 //!
 //! The analysis is a lightweight CFG over a proc's *evaluated* CodeBuf — the §11
 //! Q1 decision: a real CFG with joins (a visited-set breadth-first reachability),
@@ -26,7 +32,7 @@
 use crate::calls::call_unconditional_outs;
 use crate::lower::instr_written_regs;
 use crate::out_verify::{cc_transparent, OutWidth, OutWidthMap};
-use crate::value::{CodeItem, CodeOperand, Reg, Z80Cond};
+use crate::value::{CodeItem, CodeOperand, Reg, Z80Cond, Z80Pair};
 use sigil_ir::backend::Cpu;
 use sigil_span::Span;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
@@ -50,7 +56,7 @@ pub struct FlagFiring {
     pub proc: String,
     /// The flag-result callee whose result was abandoned / mis-read.
     pub callee: String,
-    /// The flag (`carry`) that went unconsumed.
+    /// The flag (`carry`, `zero`) that went unconsumed.
     pub flag: String,
     /// The call site (for the diagnostic span).
     pub span: Span,
@@ -119,8 +125,9 @@ pub enum FlagSiteOutcome {
     Walked,
     /// The call carries `@discards`, so the must-use walk did not run.
     Discarded,
-    /// The declared flag has no consumer model (only `carry` has one), so the
-    /// must-use walk did not run and an abandoned result is NOT caught here.
+    /// The declared flag has no consumer model (`carry` and `zero` have one;
+    /// `negative`, `overflow` and `extend` do not), so the must-use walk did not
+    /// run and an abandoned result is NOT caught here.
     NoConsumerModel,
     /// `[call.result-invalid-path]` found the branch testing the guard and walked
     /// its invalid edge.
@@ -276,6 +283,229 @@ fn z80_writes_carry(mnem: &str) -> bool {
 /// the mnemonic is classified (G2.6 rider — the move-to-ccr/sr forms).
 fn writes_ccr_operand(ops: &[CodeOperand]) -> bool {
     matches!(ops.last(), Some(CodeOperand::Ccr) | Some(CodeOperand::Sr))
+}
+
+// ---------------------------------------------------------------------------
+// The zero-flag model. Every row comes from the ISA manuals, not from the carry
+// tables above, whose readers and writers differ from Z's on both CPUs:
+//   68k: M68000 Family Programmer's Reference Manual (M68000PRM/AD), Table 3-18
+//        "Integer Unit Condition Code Computations", Table 3-19 "Conditional
+//        Tests", and each instruction's "Condition Codes" entry.
+//   Z80: Zilog Z80 CPU User Manual (UM0080), each instruction's "Condition Bits
+//        Affected" entry and the `cc` table under `JP cc, nn`.
+// `sigil-isa` carries no flag-effect table, so the tables live here; each is an
+// exhaustive match over the ISA's own `Mnemonic` enum, reached through the
+// lowering's recognizers (`m68k_mnemonic`, `z80_mnemonic`), so a mnemonic added
+// to the ISA does not compile until its Z effect is decided.
+// ---------------------------------------------------------------------------
+
+/// What one instruction does to a tracked status flag.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum FlagRole {
+    /// Reads the flag: a conditional transfer or set whose test includes it, or
+    /// a copy of the whole flag register to memory, where the walk cannot follow
+    /// it (as a transfer out of the proc is not followed). Discharges the
+    /// must-use obligation.
+    Reads,
+    /// Writes the flag regardless of its previous value, or may (a call, whose
+    /// callee can write it). Ends the must-use window.
+    Writes,
+    /// Can only CLEAR the flag and leaves it unchanged otherwise: the 68k Z rule
+    /// of `addx`/`subx`/`negx`/`abcd`/`sbcd`/`nbcd`, "Cleared if the result is
+    /// nonzero; unchanged otherwise". Neither a reader nor a writer: the flag
+    /// after it is the previous value AND a local test, so it can never be set
+    /// by the instruction, and a later reader still reads the callee's value
+    /// wherever that value survived. The walk goes on through it, so a path
+    /// that then returns or meets a writer still fires.
+    ClearsOnly,
+    /// Leaves the flag alone.
+    Untouched,
+}
+
+/// A declared flag result the must-use walk has a model for.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum TrackedFlag {
+    Carry,
+    Zero,
+}
+
+impl TrackedFlag {
+    /// The model for a declared flag name, or `None` for a flag with none.
+    fn from_name(flag: &str) -> Option<Self> {
+        match flag {
+            "carry" => Some(TrackedFlag::Carry),
+            "zero" => Some(TrackedFlag::Zero),
+            _ => None,
+        }
+    }
+
+    /// Does this instruction read the tracked flag, discharging the obligation?
+    fn consumed_by(self, mnem: &str, ops: &[CodeOperand], cpu: Cpu) -> bool {
+        match self {
+            TrackedFlag::Carry => consumes_carry(mnem, ops, cpu),
+            TrackedFlag::Zero => zero_role(mnem, ops, cpu) == Some(FlagRole::Reads),
+        }
+    }
+
+    /// Does this instruction redefine the tracked flag, ending the window?
+    fn redefined_by(self, mnem: &str, ops: &[CodeOperand], cpu: Cpu) -> bool {
+        match self {
+            TrackedFlag::Carry => writes_carry(mnem, cpu) || writes_ccr_operand(ops),
+            TrackedFlag::Zero => zero_role(mnem, ops, cpu) == Some(FlagRole::Writes),
+        }
+    }
+}
+
+/// The zero flag's role in one resolved instruction, or `None` for a word the
+/// model does not know. The walk treats `None` as leaving Z alone, the same
+/// false-negative-leaning stance as an unmodeled carry mnemonic; every spelling
+/// the lowering recognizes has a role.
+pub(crate) fn zero_role(mnem: &str, ops: &[CodeOperand], cpu: Cpu) -> Option<FlagRole> {
+    match cpu {
+        Cpu::Z80 => z80_zero_role(mnem, ops),
+        _ => m68k_zero_role(mnem, ops),
+    }
+}
+
+/// The 68k zero-flag role: the `.emp` words the ISA does not have, then the
+/// manual's instructions the lowering does not encode, then every ISA mnemonic.
+fn m68k_zero_role(mnem: &str, ops: &[CodeOperand]) -> Option<FlagRole> {
+    match mnem {
+        // The call idiom: the callee may write the condition codes, which is not
+        // locally provable, so a call ends the window.
+        "jbsr" => return Some(FlagRole::Writes),
+        // The tail idioms and the niche-option marker, which emits no bytes.
+        "jbra" | "jra" | "assume_some" => return Some(FlagRole::Untouched),
+        // SUBX, NEGX, ABCD, SBCD, NBCD: "Cleared if the result is nonzero;
+        // unchanged otherwise" (the ISA enum carries only ADDX of this family).
+        "subx" | "negx" | "abcd" | "sbcd" | "nbcd" => return Some(FlagRole::ClearsOnly),
+        _ => {}
+    }
+    let m = crate::lower::m68k_mnemonic(mnem)?;
+    Some(m68k_isa_zero_role(m, ops))
+}
+
+/// [`m68k_zero_role`] over the ISA enum, refined by the operands for the forms
+/// the lowering spells with a plain mnemonic (`move … sr`, `andi … ccr`, an
+/// address-register destination).
+fn m68k_isa_zero_role(m: sigil_backend_m68k::m68k::Mnemonic, ops: &[CodeOperand]) -> FlagRole {
+    use sigil_backend_m68k::m68k::Mnemonic::*;
+    use FlagRole::*;
+    let to_ccr_or_sr = matches!(ops.last(), Some(CodeOperand::Ccr | CodeOperand::Sr));
+    let to_an = matches!(ops.last(), Some(CodeOperand::Reg(r)) if crate::lower::reg_kind(*r).0);
+    match m {
+        // MOVE from SR, SR -> destination: reads the whole CCR, Z included.
+        Move if matches!(ops.first(), Some(CodeOperand::Sr)) => Reads,
+        MoveFromSr => Reads,
+        // MOVE to CCR / to SR: "Set to the value of bit 2 of the source operand."
+        Move if to_ccr_or_sr => Writes,
+        MoveToCcr | MoveToSr => Writes,
+        // ANDI / ORI / EORI to CCR or SR move Z only as bit 2 of the immediate says.
+        AndiCcr => ccr_imm_z_role(true, ops),
+        OriCcr => ccr_imm_z_role(false, ops),
+        Andi if to_ccr_or_sr => ccr_imm_z_role(true, ops),
+        Ori | Eori if to_ccr_or_sr => ccr_imm_z_role(false, ops),
+        // An address-register destination is MOVEA / ADDA / SUBA ("Not
+        // affected"), and ADDQ / SUBQ to one: "the condition codes are not
+        // affected when the destination is an address register".
+        Move | Add | Sub | Addq | Subq if to_an => Untouched,
+        // Z set or cleared by the result (Table 3-18, `*`), always set (CLR),
+        // the complement of the tested bit (BTST, BCHG, BCLR, BSET), or undefined
+        // on a division overflow: none of them leaves the old Z standing.
+        Move | Moveq | Add | Addi | Addq | Sub | Subi | Subq | And | Andi | Or | Ori | Eor
+        | Eori | Not | Neg | Clr | Cmp | Cmpa | Cmpi | Cmpm | Tst | Tas | Ext | Swap | Muls
+        | Mulu | Divs | Divu | Asl | Asr | Lsl | Lsr | Rol | Ror | Roxl | Roxr | Btst | Bset
+        | Bclr | Bchg => Writes,
+        // ADDX: "Cleared if the result is nonzero; unchanged otherwise."
+        Addx => ClearsOnly,
+        // A call: the callee may write the condition codes.
+        Jsr | Bsr => Writes,
+        // RTE loads SR from the stack (and returns).
+        Rte => Writes,
+        // Bcc / Scc / DBcc read Z exactly when their condition's test does.
+        Bcc(c) | Scc(c) | Dbcc(c) => {
+            if m68k_cond_reads_z(c) {
+                Reads
+            } else {
+                Untouched
+            }
+        }
+        // "Condition Codes: Not affected."
+        Movea | Adda | Suba | Lea | Pea | Movem | Movep | Exg | Nop | Jmp | Bra | Rts | Trap
+        | Illegal | MoveToUsp | MoveFromUsp => Untouched,
+    }
+}
+
+/// ANDI / ORI / EORI to CCR or SR: bit 2 of the immediate is the Z position.
+/// ANDI: "Cleared if bit 2 of immediate operand is zero; unchanged otherwise."
+/// ORI: "Set if bit 2 of immediate operand is one; unchanged otherwise." EORI:
+/// "Changed if bit 2 of immediate operand is one; unchanged otherwise." An
+/// immediate the evaluator did not fold to a number cannot show that Z
+/// survived, so it counts as a write.
+fn ccr_imm_z_role(and_form: bool, ops: &[CodeOperand]) -> FlagRole {
+    let Some(CodeOperand::Imm(v)) = ops.first() else { return FlagRole::Writes };
+    let bit2 = (v >> 2) & 1 == 1;
+    // ANDI moves Z when bit 2 is zero; ORI and EORI when it is one.
+    if bit2 != and_form {
+        FlagRole::Writes
+    } else {
+        FlagRole::Untouched
+    }
+}
+
+/// Does a 68k condition's test read Z? Table 3-19: EQ is Z, NE is not Z, HI is
+/// not C and not Z, LS is C or Z, and GT and LE both include Z; CC, CS, VC, VS,
+/// PL, MI, GE and LT test C, V or N only, and T and F test nothing.
+fn m68k_cond_reads_z(c: sigil_backend_m68k::m68k::Cond) -> bool {
+    use sigil_backend_m68k::m68k::Cond::*;
+    match c {
+        Eq | Ne | Hi | Ls | Gt | Le => true,
+        T | F | Cc | Cs | Vc | Vs | Pl | Mi | Ge | Lt => false,
+    }
+}
+
+/// The Z80 zero-flag role over the ISA enum, refined by the operands for the
+/// forms whose Z effect depends on them.
+fn z80_zero_role(mnem: &str, ops: &[CodeOperand]) -> Option<FlagRole> {
+    use sigil_backend_z80::z80::Mnemonic::*;
+    use FlagRole::*;
+    let m = crate::lower::z80_mnemonic(mnem)?;
+    let first = ops.first();
+    let tests_z = matches!(first, Some(CodeOperand::Z80Cc(Z80Cond::Z | Z80Cond::Nz)));
+    let pair_first = matches!(first, Some(CodeOperand::Z80Pair(_)));
+    let af_first = matches!(first, Some(CodeOperand::Z80Pair(Z80Pair::Af)));
+    Some(match m {
+        // The Z conditions of the `cc` table: NZ and Z, relevant flag Z.
+        Jr | Jp | Call | Ret if tests_z => Reads,
+        // PUSH AF copies F, Z included, to the stack.
+        Push if af_first => Reads,
+        // POP AF loads F from the stack and EX AF, AF' exchanges it with F'. The
+        // manual lists neither as affecting a condition bit, because neither
+        // computes one, but after either the live Z is no longer the callee's.
+        Pop if af_first => Writes,
+        Ex if ops.iter().any(|o| matches!(o, CodeOperand::Z80AfShadow)) => Writes,
+        // The 16-bit forms: ADD HL / IX / IY, ss "Z is not affected"; INC / DEC
+        // ss, IX, IY "None".
+        Add | Inc | Dec if pair_first => Untouched,
+        // LD A, I and LD A, R: "Z is set if the I [R] Register is 0". The
+        // reverse moves LD I, A and LD R, A (the ISA's `LdIA` / `LdRA`) affect
+        // no flag.
+        Ld if matches!(ops.get(1), Some(CodeOperand::Z80RegI | CodeOperand::Z80RegR)) => Writes,
+        // Z set per the result (8-bit arithmetic and logic, ADC / SBC HL, DAA,
+        // NEG, the CB shifts and rotates, RLD / RRD), the complement of the
+        // tested bit (BIT), A = (HL) (the CP block), B - 1 = 0 or "Z is set"
+        // (the I/O block), or the input byte (IN r, (C); the IN A, (n) form
+        // affects no flag, and the `.emp` operand model spells neither form).
+        Add | Adc | Sub | Sbc | And | Or | Xor | Cp | Inc | Dec | Daa | Neg | Rlc | Rl | Rrc
+        | Rr | Sla | Sra | Srl | Rld | Rrd | Bit | Cpi | Cpir | Cpd | Cpdr | Ini | Inir | Ind
+        | Indr | Outi | Otir | Outd | Otdr | In => Writes,
+        // A call: the callee may write F.
+        Call | Rst => Writes,
+        // "Z is not affected" or "Condition Bits Affected: None."
+        Ld | LdIA | LdRA | Push | Pop | Ex | Exx | Ldi | Ldir | Ldd | Lddr | Cpl | Ccf | Scf
+        | Rlca | Rla | Rrca | Rra | Set | Res | Jp | Jr | Ret | Reti | Retn | Djnz | Nop | Halt
+        | Di | Ei | Im | Out => Untouched,
+    })
 }
 
 /// The target label of a branch/tail/call instruction — the LAST `Sym` operand.
@@ -891,15 +1121,15 @@ pub fn check_flag_unused_sites(
             sites.extend(flags.iter().map(|f| site(f, FlagSiteOutcome::Discarded)));
             continue;
         }
-        // The carry flag is the only §6 must-use flag today; a callee may in
-        // principle return several. Fire once per unconsumed flag.
+        // A callee may return several flags; each one with a model is walked on
+        // its own tables, and each unconsumed one fires once.
         for flag in flags {
-            if flag != "carry" {
+            let Some(tracked) = TrackedFlag::from_name(flag) else {
                 sites.push(site(flag, FlagSiteOutcome::NoConsumerModel));
-                continue; // only carry has a consumer model today
-            }
+                continue;
+            };
             sites.push(site(flag, FlagSiteOutcome::Walked));
-            if abandons_flag(&cfg, idx, cpu) {
+            if abandons_flag(&cfg, idx, cpu, tracked) {
                 firings.push(FlagFiring {
                     proc: proc_name.to_string(),
                     callee: callee.to_string(),
@@ -1331,12 +1561,11 @@ fn reads_reg_before_redefine(
 
 /// Breadth-first reachability from the successors of the call at `call_idx`: is
 /// there a path that REACHES a redefine / return / proc-end ([`Edge::Return`] or
-/// [`Edge::FallOff`]) without first crossing a carry consumer? Consumers PRUNE
-/// (that path is
-/// satisfied); a transfer-out edge in either flavor also prunes (the flag flows
-/// out of the proc — not a local abandonment). The visited set gives the CFG
-/// real joins so loops terminate.
-fn abandons_flag(cfg: &Cfg, call_idx: usize, cpu: Cpu) -> bool {
+/// [`Edge::FallOff`]) without first crossing a consumer of `flag`? Consumers
+/// PRUNE (that path is satisfied); a transfer-out edge in either flavor also
+/// prunes (the flag flows out of the proc, which is not a local abandonment). The
+/// visited set gives the CFG real joins so loops terminate.
+fn abandons_flag(cfg: &Cfg, call_idx: usize, cpu: Cpu, flag: TrackedFlag) -> bool {
     // The Z80 terminator/edge model diverges from 68k (`ret` vs `rts`, `jr`/`jp`
     // vs `bra`/`jmp`, conditional `jr cc`), so the carry-tracking walk consults
     // the matching edge builder — leaving the 68k `edges` byte-untouched.
@@ -1365,17 +1594,87 @@ fn abandons_flag(cfg: &Cfg, call_idx: usize, cpu: Cpu) -> bool {
             continue; // join / back-edge already explored
         }
         let Some((mnem, ops)) = cfg.instr(idx) else { continue };
-        if consumes_carry(mnem, ops, cpu) {
+        if flag.consumed_by(mnem, ops, cpu) {
             continue; // this path is satisfied
         }
-        if writes_carry(mnem, cpu) || writes_ccr_operand(ops) {
-            return true; // carry redefined before any consumer
+        if flag.redefined_by(mnem, ops, cpu) {
+            return true; // the flag is redefined before any consumer
         }
         for e in edges(idx) {
             queue.push_back(e);
         }
     }
     false
+}
+
+#[cfg(test)]
+mod zero_model_tests {
+    //! The zero model's coverage over the ISA, through the same string path the
+    //! walk takes. Its per-class behaviour is pinned end to end in
+    //! `tests/flag_check.rs`; this pins that no encodable family falls through
+    //! to "unknown", which the walk would read as leaving Z alone.
+
+    use super::*;
+
+    /// The `.emp` spellings of one ISA family, each with operands selecting it.
+    fn spellings(family: &str) -> Vec<(String, Vec<CodeOperand>)> {
+        const CONDS: [&str; 18] = [
+            "t", "f", "hi", "ls", "cc", "cs", "hs", "lo", "ne", "eq", "vc", "vs", "pl", "mi", "ge",
+            "lt", "gt", "le",
+        ];
+        let imm_to = |reg: CodeOperand| vec![CodeOperand::Imm(0), reg];
+        match family {
+            "bcc" => CONDS.iter().map(|c| (format!("b{c}"), vec![])).collect(),
+            "scc" => CONDS.iter().map(|c| (format!("s{c}"), vec![])).collect(),
+            "dbcc" => CONDS
+                .iter()
+                .map(|c| format!("db{c}"))
+                .chain(["dbra".to_string()])
+                .map(|m| (m, vec![]))
+                .collect(),
+            "move-to-sr" => vec![("move".into(), imm_to(CodeOperand::Sr))],
+            "move-to-ccr" => vec![("move".into(), imm_to(CodeOperand::Ccr))],
+            "move-from-sr" => vec![("move".into(), vec![CodeOperand::Sr, CodeOperand::Reg(Reg::D0)])],
+            "andi-ccr" => vec![("andi".into(), imm_to(CodeOperand::Ccr))],
+            "ori-ccr" => vec![("ori".into(), imm_to(CodeOperand::Ccr))],
+            plain => vec![(plain.to_string(), vec![])],
+        }
+    }
+
+    /// Every family `sigil-isa` encodes has a zero role through the walk's string
+    /// path. The USP moves are the one exception, named: the `.emp` operand model
+    /// has no `usp` operand, so no CodeBuf can hold one.
+    #[test]
+    fn every_encodable_68k_family_has_a_zero_role() {
+        let unspellable = ["move-to-usp", "move-from-usp"];
+        let mut checked = 0;
+        for family in sigil_backend_m68k::m68k::ALL_FAMILY_NAMES {
+            if unspellable.contains(family) {
+                continue;
+            }
+            for (mnem, ops) in spellings(family) {
+                assert!(
+                    zero_role(&mnem, &ops, Cpu::M68000).is_some(),
+                    "family `{family}`: `{mnem}` has no zero role, so the walk would read it \
+                     as leaving Z alone"
+                );
+                checked += 1;
+            }
+        }
+        assert!(checked > 60, "the sweep checked only {checked} spellings");
+    }
+
+    /// The `.emp` words that are not ISA mnemonics have a role too, and a word
+    /// nothing recognizes has none.
+    #[test]
+    fn the_emp_words_have_a_zero_role_and_an_unknown_word_has_none() {
+        assert_eq!(zero_role("jbsr", &[], Cpu::M68000), Some(FlagRole::Writes));
+        assert_eq!(zero_role("jbra", &[], Cpu::M68000), Some(FlagRole::Untouched));
+        assert_eq!(zero_role("assume_some", &[], Cpu::M68000), Some(FlagRole::Untouched));
+        assert_eq!(zero_role("subx", &[], Cpu::M68000), Some(FlagRole::ClearsOnly));
+        assert_eq!(zero_role("frobnicate", &[], Cpu::M68000), None);
+        assert_eq!(zero_role("frobnicate", &[], Cpu::Z80), None);
+    }
 }
 
 #[cfg(test)]

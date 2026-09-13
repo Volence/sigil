@@ -17,11 +17,14 @@
 use std::path::Path;
 use std::process::Command;
 
-/// A 68k caller abandoning `Queue`'s carry, and a 68k caller reading `Alloc`'s
-/// conditional `a1` on its invalid (carry-set) edge.
+/// A 68k caller abandoning `Queue`'s carry, a 68k caller reading `Alloc`'s
+/// conditional `a1` on its invalid (carry-set) edge, and a 68k caller whose
+/// `btst` redefines `Find`'s zero result before its `beq` (BTST writes Z and
+/// leaves C, so only the zero model sees this one).
 const M68K_FIRING: &str = "module engine.flagfix
 extern proc Queue (d1) clobbers(d0) out(carry: dropped)
 extern proc Alloc () clobbers(d0) out(a1 if cc)
+extern proc Find () clobbers(d0) out(zero: found)
 proc Caller () clobbers(d0-d1) {
     moveq #0, d1
     jbsr Queue
@@ -37,23 +40,42 @@ proc Reader () clobbers(d0-d1/a1) {
     move.w (a1), d1
     rts
 }
+proc ZCaller () clobbers(d0) {
+    jbsr Find
+    btst #0, d0
+    beq .x
+.x:
+    rts
+}
 ";
 
-/// A Z80 caller abandoning `Resolve`'s carry (`scf` redefines it before `ret`).
+/// A Z80 caller abandoning `Resolve`'s carry (`scf` redefines it before `ret`),
+/// and a Z80 caller whose `inc a` redefines `Lookup`'s zero result before its
+/// `jr z` (8-bit INC writes Z and leaves C).
 const Z80_FIRING: &str = "module engine.sndfix (cpu: z80)
 extern proc Resolve () out(carry: missing)
+extern proc Lookup () out(zero: absent)
 proc SndCaller () {
     call Resolve
     scf
     ret
 }
+proc ZSndCaller () {
+    call Lookup
+    inc a
+    jr z, .done
+.done:
+    ret
+}
 ";
 
-/// The same three calls written correctly: `@discards` on the drop, `a1` read
-/// only on the valid edge, the Z80 carry consumed by `jr c`.
+/// The same five calls written correctly: `@discards` on the drop, `a1` read
+/// only on the valid edge, the Z80 carry consumed by `jr c`, and each zero
+/// result read by its branch before the instruction that would redefine it.
 const M68K_CLEAN: &str = "module engine.flagfix
 extern proc Queue (d1) clobbers(d0) out(carry: dropped)
 extern proc Alloc () clobbers(d0) out(a1 if cc)
+extern proc Find () clobbers(d0) out(zero: found)
 proc Caller () clobbers(d0-d1) {
     moveq #0, d1
     jbsr Queue @discards(dropped)
@@ -67,13 +89,28 @@ proc Reader () clobbers(d0-d1/a1) {
 .fail:
     rts
 }
+proc ZCaller () clobbers(d0) {
+    jbsr Find
+    beq .x
+    btst #0, d0
+.x:
+    rts
+}
 ";
 
 const Z80_CLEAN: &str = "module engine.sndfix (cpu: z80)
 extern proc Resolve () out(carry: missing)
+extern proc Lookup () out(zero: absent)
 proc SndCaller () {
     call Resolve
     jr c, .done
+.done:
+    ret
+}
+proc ZSndCaller () {
+    call Lookup
+    jr z, .done
+    inc a
 .done:
     ret
 }
@@ -142,6 +179,16 @@ fn the_build_gate_refuses_every_flag_result_firing_with_its_location() {
              `carry` result `missing` on some path",
             loc(&z80, Z80_FIRING, "call Resolve")
         ),
+        format!(
+            "  {}: [call.flag-result-unused] `ZCaller` calls `Find` and abandons its `zero` \
+             result `found` on some path",
+            loc(&m68k, M68K_FIRING, "jbsr Find")
+        ),
+        format!(
+            "  {}: [call.flag-result-unused] `ZSndCaller` calls `Lookup` and abandons its \
+             `zero` result `absent` on some path",
+            loc(&z80, Z80_FIRING, "call Lookup")
+        ),
     ];
     assert!(
         err.contains(&format!(
@@ -154,7 +201,7 @@ fn the_build_gate_refuses_every_flag_result_firing_with_its_location() {
     for line in &expected {
         assert!(err.contains(line.as_str()), "missing refusal line\n  {line}\ngot:\n{err}");
     }
-    for name in ["dropped", "missing"] {
+    for name in ["dropped", "missing", "found", "absent"] {
         assert!(
             err.contains(&format!("or mark the call `@discards({name})` if dropping it is intended")),
             "the must-use refusal must name `@discards({name})`, got:\n{err}"
