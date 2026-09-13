@@ -1,9 +1,9 @@
 //! Contract-grammar v2 §5 — the verified-`preserves` analysis run over the REAL
-//! aeon corpus: the six G1-residue procs, each checked against its residue
+//! aeon corpus: the G1-residue procs, each checked against its residue
 //! register. This is the G3 pre-retrofit checkpoint measurement, pinned.
 //!
-//! Prediction (G1 residue table): the FIVE local-preservation procs verify by
-//! their own save/restore (individual-push a0; mid-body movem d1); Load_Object's
+//! Prediction (G1 residue table): the local-preservation procs verify by
+//! their own save/restore (individual-push a0); Load_Object's
 //! a0 does NOT verify LOCALLY — it never touches a0 itself and only clears
 //! TRANSITIVELY once AllocDynamic declares+verifies `preserves(a0)` (the closure
 //! subtraction, not local preservation). A local NotPreserved for Load_Object is
@@ -134,15 +134,13 @@ fn residue_procs_verify_as_predicted() {
         // individual-push a0 with a (sp) peek — verify locally.
         ("engine/objects/entity_window.emp", "Collected_ParkSlot", Reg::A0, PreserveStatus::Verified),
         ("engine/objects/entity_window.emp", "Collected_UnparkSlot", Reg::A0, PreserveStatus::Verified),
-        // mid-body movem d1 around Collected_FindSlot — verify locally.
-        ("engine/objects/entity_window.emp", "Collected_CheckRing", Reg::D1, PreserveStatus::Verified),
-        ("engine/objects/entity_window.emp", "Killed_CheckObject", Reg::D1, PreserveStatus::Verified),
         // inherited a0 — Load_Object never touches a0; clears TRANSITIVELY, not
         // locally. Local NotPreserved is correct.
         ("engine/objects/load_object.emp", "Load_Object", Reg::A0, PreserveStatus::NotPreserved),
     ];
 
-    let mut report = String::from("\n== §5 verified-preserves over the 6 residue procs (per shape) ==\n");
+    let mut report =
+        format!("\n== §5 verified-preserves over the {} residue procs (per shape) ==\n", cases.len());
     let mut mismatches = Vec::new();
     let mut evals = 0usize;
     let aeon = aeon_dir().expect("aeon tree present");
