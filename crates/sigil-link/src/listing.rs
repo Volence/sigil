@@ -1425,6 +1425,276 @@ mod tests {
         assert!(parse_source_digest(&swapped).is_err(), "out-of-order rows parsed");
     }
 
+    /// Each line of `section` rewritten by `edit` (`None` keeps the line), with the
+    /// AGGREGATE's `crc` recomputed by the grammar's own rule: CRC-32 over the READ lines
+    /// exactly as written, each with its LF, in file order. The `crc=` token is found by
+    /// key, so a reordered AGGREGATE line is recomputed too.
+    fn edit_digest(section: &str, edit: impl Fn(&str) -> Option<String>) -> String {
+        let mut lines: Vec<String> = section.lines().map(|l| edit(l).unwrap_or_else(|| l.to_string())).collect();
+        let mut read_lines = String::new();
+        for l in lines.iter().filter(|l| l.starts_with("DIGEST-READ ")) {
+            read_lines.push_str(l);
+            read_lines.push('\n');
+        }
+        let crc = sigil_span::read_set::crc32(read_lines.as_bytes());
+        for l in &mut lines {
+            if let Some(body) = l.strip_prefix("DIGEST-AGGREGATE ") {
+                let tokens: Vec<String> = body
+                    .split(' ')
+                    .map(|t| if t.starts_with("crc=") { format!("crc={crc:08x}") } else { t.to_string() })
+                    .collect();
+                *l = format!("DIGEST-AGGREGATE {}", tokens.join(" "));
+            }
+        }
+        format!("{}\n", lines.join("\n"))
+    }
+
+    /// Every digest line kind that carries `key=value` fields, spelled up to its first field.
+    const FIELDED: [&str; 6] =
+        ["DIGEST-ASSEMBLER sigil ", "DIGEST-SHAPE ", "DIGEST-SCAN ", "DIGEST-READ ", "DIGEST-AGGREGATE ", "DIGEST-ROM "];
+
+    /// `line` with its fixed fields (every token before `path=`) replaced by what `f` makes
+    /// of them, `path=` kept last; `None` for a line that carries no fields.
+    fn with_fields(line: &str, f: impl Fn(Vec<String>) -> Vec<String>) -> Option<String> {
+        let (head, body) = FIELDED.iter().find_map(|h| line.strip_prefix(h).map(|b| (*h, b)))?;
+        let (fixed, path) = match body.split_once(" path=") {
+            Some((fixed, path)) => (fixed, Some(path)),
+            None => (body, None),
+        };
+        let mut out = format!("{head}{}", f(fixed.split(' ').map(str::to_string).collect()).join(" "));
+        if let Some(path) = path {
+            out.push_str(" path=");
+            out.push_str(path);
+        }
+        Some(out)
+    }
+
+    /// `f` applied to the fields of the lines starting with `prefix` only.
+    fn on_lines(prefix: &'static str, f: impl Fn(Vec<String>) -> Vec<String> + Copy) -> impl Fn(&str) -> Option<String> {
+        move |l: &str| if l.starts_with(prefix) { with_fields(l, f) } else { None }
+    }
+
+    /// The grammar note's rule: fields are found by key, never by position. Every fielded
+    /// line with its fixed fields reversed (so `root=` leads each external READ row and
+    /// `path=` stays last) reads as the same digest.
+    #[test]
+    fn source_digest_parser_finds_fields_by_key() {
+        let good = emit_source_digest(&sample_digest()).expect("renders");
+        let (want, _) = parse_source_digest(&good).expect("the control must parse");
+        let reversed = edit_digest(&good, |l| {
+            with_fields(l, |mut t| {
+                t.reverse();
+                t
+            })
+        });
+        assert!(
+            reversed.contains("\nDIGEST-SHAPE extra-entries=none debug=0 game=sonic4 target=sonic4\n"),
+            "the mutation must apply:\n{reversed}"
+        );
+        assert!(!reversed.contains("\nDIGEST-READ crc="), "every READ row must be reordered:\n{reversed}");
+        let (back, rest) =
+            parse_source_digest(&reversed).unwrap_or_else(|e| panic!("a reordered section is refused: {e}"));
+        assert_eq!(back, want);
+        assert_eq!(rest, "");
+    }
+
+    /// `root=` is a keyed field like the rest: a READ row may carry it before `crc=`.
+    #[test]
+    fn source_digest_parser_reads_a_read_row_root_before_its_crc() {
+        let good = emit_source_digest(&sample_digest()).expect("renders");
+        let (want, _) = parse_source_digest(&good).expect("the control must parse");
+        let moved = edit_digest(
+            &good,
+            on_lines("DIGEST-READ ", |mut t| {
+                if let Some(i) = t.iter().position(|x| x.starts_with("root=")) {
+                    let root = t.remove(i);
+                    t.insert(0, root);
+                }
+                t
+            }),
+        );
+        assert_eq!(moved.matches("\nDIGEST-READ root=").count(), 2, "both external rows must lead with root=:\n{moved}");
+        let (back, _) = parse_source_digest(&moved).unwrap_or_else(|e| panic!("a leading root= is refused: {e}"));
+        assert_eq!(back, want);
+    }
+
+    /// The ROM line's `output=none`, and its `root=`, are keyed fields: either may come
+    /// before `crc=`.
+    #[test]
+    fn source_digest_parser_reads_rom_fields_in_any_order() {
+        let lead = |mut t: Vec<String>| {
+            t.rotate_right(1);
+            t
+        };
+        let mut no_output = sample_digest();
+        no_output.rom_output = None;
+        let mut rooted = sample_digest();
+        rooted.rom_output = Some(dp(DigestRoot::Sigil, "out/s4.bin"));
+        for (d, leading) in [(no_output, "DIGEST-ROM output=none crc="), (rooted, "DIGEST-ROM root=sigil crc=")] {
+            let good = emit_source_digest(&d).expect("renders");
+            let (want, _) = parse_source_digest(&good).expect("the control must parse");
+            let moved = edit_digest(&good, on_lines("DIGEST-ROM ", lead));
+            assert!(moved.contains(leading), "the mutation must apply:\n{moved}");
+            let (back, _) = parse_source_digest(&moved).unwrap_or_else(|e| panic!("`{leading}` is refused: {e}"));
+            assert_eq!(back, want);
+        }
+    }
+
+    /// A field this reader does not know is passed over wherever it sits, and the fields
+    /// it does know read the same. That is what lets a later format add a field.
+    #[test]
+    fn source_digest_parser_passes_over_an_unknown_field() {
+        let good = emit_source_digest(&sample_digest()).expect("renders");
+        let (want, _) = parse_source_digest(&good).expect("the control must parse");
+        let fielded = good.lines().filter(|l| FIELDED.iter().any(|h| l.starts_with(h))).count();
+        assert_eq!(fielded, 10, "ASSEMBLER, SHAPE, SCAN, five READ rows, AGGREGATE and ROM");
+        let leading = edit_digest(&good, |l| {
+            with_fields(l, |mut t| {
+                t.insert(0, "later=1".into());
+                t
+            })
+        });
+        let trailing = edit_digest(&good, |l| {
+            with_fields(l, |mut t| {
+                t.push("later=a,b".into());
+                t
+            })
+        });
+        for (what, text) in [("a leading", &leading), ("a trailing", &trailing)] {
+            assert_eq!(text.matches(" later=").count(), fielded, "the mutation must reach every fielded line:\n{text}");
+            let (back, _) =
+                parse_source_digest(text).unwrap_or_else(|e| panic!("{what} unknown field is refused: {e}"));
+            assert_eq!(back, want, "{what} unknown field moved a value");
+        }
+    }
+
+    /// A required field that is absent is refused, and the refusal names it.
+    #[test]
+    fn source_digest_parser_refuses_a_missing_field_naming_it() {
+        let good = emit_source_digest(&sample_digest()).expect("renders");
+        assert!(parse_source_digest(&good).is_ok(), "the control must parse");
+        let cases: [(&'static str, &'static str); 6] = [
+            ("DIGEST-ASSEMBLER ", "tree"),
+            ("DIGEST-SHAPE ", "game"),
+            ("DIGEST-SCAN ", "files"),
+            ("DIGEST-READ ", "size"),
+            ("DIGEST-AGGREGATE ", "reads"),
+            ("DIGEST-ROM ", "crc"),
+        ];
+        for (prefix, key) in cases {
+            let cut = edit_digest(&good, |l| {
+                if !l.starts_with(prefix) {
+                    return None;
+                }
+                with_fields(l, |t| t.into_iter().filter(|x| !x.starts_with(&format!("{key}="))).collect())
+            });
+            assert_ne!(cut, good, "the mutation must apply for `{key}`");
+            let err = parse_source_digest(&cut).expect_err(&format!("a {prefix}line without `{key}` parsed"));
+            assert!(err.contains(&format!("lacks the field `{key}`")), "the refusal must name `{key}`: {err}");
+        }
+    }
+
+    /// A field given twice is refused, naming it: a key-finding reader cannot say which
+    /// of the two the line means. That holds for a field this reader does not know, too.
+    #[test]
+    fn source_digest_parser_refuses_a_repeated_field_naming_it() {
+        let good = emit_source_digest(&sample_digest()).expect("renders");
+        assert!(parse_source_digest(&good).is_ok(), "the control must parse");
+        let cases: [(&'static str, &'static str); 5] = [
+            ("DIGEST-SCAN ", "crc"),
+            ("DIGEST-SHAPE ", "debug"),
+            ("DIGEST-READ ", "root"),
+            ("DIGEST-ROM ", "size"),
+            ("DIGEST-ASSEMBLER ", "later"),
+        ];
+        for (prefix, key) in cases {
+            let doubled = edit_digest(&good, |l| {
+                if !l.starts_with(prefix) {
+                    return None;
+                }
+                with_fields(l, |mut t| {
+                    let tag = format!("{key}=");
+                    match t.iter().find(|x| x.starts_with(&tag)).cloned() {
+                        Some(token) => t.push(token),
+                        None if key == "later" => t.extend([format!("{tag}1"), format!("{tag}1")]),
+                        None => {}
+                    }
+                    t
+                })
+            });
+            assert_ne!(doubled, good, "the mutation must apply for `{key}`");
+            let err = parse_source_digest(&doubled).expect_err(&format!("a {prefix}line repeating `{key}` parsed"));
+            assert!(err.contains(&format!("repeats the field `{key}`")), "the refusal must name `{key}`: {err}");
+        }
+    }
+
+    /// A token that is not `key=value` (a bare word, an empty token from a doubled space,
+    /// or a token with no key before its `=`) is refused, naming the token.
+    #[test]
+    fn source_digest_parser_refuses_a_token_that_is_not_a_field() {
+        let good = emit_source_digest(&sample_digest()).expect("renders");
+        assert!(parse_source_digest(&good).is_ok(), "the control must parse");
+        let cases: [(&'static str, &'static str); 3] =
+            [("DIGEST-SHAPE ", "stray"), ("DIGEST-READ ", ""), ("DIGEST-ROM ", "=1")];
+        for (prefix, token) in cases {
+            let marred = edit_digest(&good, |l| {
+                if !l.starts_with(prefix) {
+                    return None;
+                }
+                with_fields(l, |mut t| {
+                    t.insert(1, token.to_string());
+                    t
+                })
+            });
+            assert_ne!(marred, good, "the mutation must apply for `{token}`");
+            let err = parse_source_digest(&marred).expect_err(&format!("a {prefix}line carrying `{token}` parsed"));
+            assert!(
+                err.contains(&format!("carries the token `{token}`, which is not key=value")),
+                "the refusal must name `{token}`: {err}"
+            );
+        }
+    }
+
+    /// Finding fields by key keeps every rule that is not about position: `root=` exactly
+    /// on the external READ rows, and a ROM line that names either `output=none` or a
+    /// path, never both, with `root=` only beside a path.
+    #[test]
+    fn source_digest_parser_keeps_the_root_and_output_rules() {
+        let good = emit_source_digest(&sample_digest()).expect("renders");
+        assert!(parse_source_digest(&good).is_ok(), "the control must parse");
+        let mut no_output = sample_digest();
+        no_output.rom_output = None;
+        let bare = emit_source_digest(&no_output).expect("renders");
+        assert!(parse_source_digest(&bare).is_ok(), "the output=none control must parse");
+
+        let cases: Vec<(&str, String)> = vec![
+            (
+                "a root= on an aeon-root row",
+                edit_digest(&good, |l| {
+                    (l.starts_with("DIGEST-READ ") && l.contains(" origin=source ")).then(|| l.replace(" path=", " root=sigil path="))
+                }),
+            ),
+            (
+                "an external row without root=",
+                edit_digest(&good, on_lines("DIGEST-READ ", |t| t.into_iter().filter(|x| !x.starts_with("root=")).collect())),
+            ),
+            ("output=none beside a path", edit_digest(&good, on_lines("DIGEST-ROM ", |mut t| {
+                t.push("output=none".into());
+                t
+            }))),
+            ("root= beside output=none", edit_digest(&bare, on_lines("DIGEST-ROM ", |mut t| {
+                t.push("root=sigil".into());
+                t
+            }))),
+            ("an output other than none", bare.replace(" output=none\n", " output=elsewhere\n")),
+            ("neither a path nor output=none", bare.replace(" output=none\n", "\n")),
+        ];
+        for (what, text) in cases {
+            assert!(text != good && text != bare, "the mutation must apply for {what}");
+            assert!(parse_source_digest(&text).is_err(), "a section with {what} parsed:\n{text}");
+        }
+    }
+
     /// No keyword is a prefix of another, so `^DIGEST-<KEYWORD> ` can only ever match
     /// its own kind of line. The keyword set is read off the rendered text, not retyped.
     #[test]
