@@ -87,7 +87,7 @@ fn sound_bank_window() -> (u32, u32) {
 }
 
 /// The `sfx_bank.emp` module dir (`sound/sfx`) — its own `include_root`, under
-/// which the eighteen `embed("sfx_*.bin")` fixtures resolve (`sfx_port.rs`).
+/// which its `embed("sfx_*.bin")` fixtures resolve (`sfx_port.rs`).
 fn sfx_dir() -> PathBuf {
     sound_dir().join("sfx")
 }

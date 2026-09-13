@@ -762,7 +762,7 @@ fn emit_sfx_body_and_head_at(
     let snd_dir = aeon.join("games/sonic4/data/sound");
 
     // sfx_bank.emp is m68000 (the blob table + the SFX_WIN_* equ layer); it lives
-    // in sound/sfx/ so its 18 embed("sfx_*.bin") fixtures resolve there.
+    // in sound/sfx/ so its embed("sfx_*.bin") fixtures resolve there.
     let mut texts = SourceTexts::new();
     let body = lower_emp_file(aeon, &sfx_dir.join("sfx_bank.emp"), &sfx_dir, Cpu::M68000, vec![], &mut texts)?;
     // sfx_blob_win_tab.emp declares (cpu: z80); its cells reference the SFX_WIN_*
