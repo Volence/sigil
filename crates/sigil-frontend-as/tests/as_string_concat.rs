@@ -418,6 +418,26 @@ fn an_interpolation_is_folded_where_its_literal_is() {
     builds("v_interp_fwd");
 }
 
+/// A string-valued function called INSIDE an interpolation pastes its string.
+/// This is the shape Sonic 1 itself uses `signedToString` in, inside `\{…}` in
+/// `error`/`warning` text (`_Variables.asm` 430 and 486). `v_fn_in_interp.lst`,
+/// exit 0:
+///
+/// ```text
+///        5/       0 :                     	message "A\{signedToString(-5)}B"
+///        6/       0 : 2D24 35EE           	dc.b "\{signedToString(-5)}",$EE
+///        7/       4 : 2431 3233 EE        	dc.b "\{signedToString($123)}",$EE
+/// ```
+///
+/// asl prints `A-$5B` for the `message`; the data rows go through the same
+/// interpolation renderer and are what an image can show. A renderer that
+/// probes for a string before expanding the call finds no string, and the
+/// interpolation has no value.
+#[test]
+fn a_string_valued_function_pastes_its_string_into_an_interpolation() {
+    builds("v_fn_in_interp");
+}
+
 /// The whole feature, on Sonic 1's real definition. `signed.lst`, exit 0:
 ///
 /// ```text

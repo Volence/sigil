@@ -4215,12 +4215,23 @@ impl Asm {
     /// method existed, which is what keeps the string-binding `equ`/`set`
     /// branches (which reach BYTES) unchanged for every program that already
     /// assembled.
+    ///
+    /// The string probe runs on the expression with its `function` calls
+    /// expanded, so a function whose body is a string pastes that string:
+    /// Sonic 1 spends `signedToString` exactly this way, inside a `\{…}` in
+    /// `error`/`warning` text (`_Variables.asm` 430, 486). asl prints `A-$5B`
+    /// for `message "A\{signedToString(-5)}B"` and writes `2D 24 35` for
+    /// `dc.b "\{signedToString(-5)}"` (probe `v_fn_in_interp`). The expanded
+    /// body's own literals carry interpolations of their own (`"$\{abs(..)}"`),
+    /// folded at their literals first ([`Self::fold_literal_interps`]); one
+    /// with no value leaves this whole interpolation without one.
     fn render_interp_expr(&mut self, text: &str) -> Option<String> {
         let toks = lex_line(text, self.state.cpu, &self.state.charset, self.source, 0).ok()?;
-        if let Some(s) = self.eval_str(&toks) {
-            return Some(s);
-        }
         let expanded = self.expand_calls(&toks, 0);
+        if self.eval_str(&expanded).is_some() {
+            let folded = self.fold_literal_interps(&expanded, false).ok()?;
+            return self.eval_str(&folded);
+        }
         if self.float_leaf(&expanded).is_some() {
             return match self.eval_num(&expanded)? {
                 Num::Float(f) => Some(render_interp_float(f)),
