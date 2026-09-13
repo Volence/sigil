@@ -836,6 +836,11 @@ fn a_lost_hotkeys_define_fails_the_interface_bind_in_the_sonic4_shapes() {
     );
 }
 
+/// The declared flags `[call.flag-result-unused]` has a consumer model for. A
+/// site owing one of these is walked; a site owing any other declared flag is
+/// recorded as having no consumer model.
+const MODELED_FLAGS: [&str; 2] = ["carry", "zero"];
+
 /// Contract-grammar v2 G2, the §6 flag-result must-use pin: every `.emp` caller
 /// of a flag-result callee (`out(carry:)`) consumes the carry or marks the call
 /// `@discards(name)`, so every shipped shape has ZERO `[call.flag-result-unused]`
@@ -845,8 +850,11 @@ fn a_lost_hotkeys_define_fails_the_interface_bind_in_the_sonic4_shapes() {
 /// The site population keeps the empty list from being vacuous: every shape must
 /// have walked at least one must-use call site, and some shape must have walked a
 /// Z80 one, so a walk that stopped reaching flag-result calls (a lost callee map,
-/// a CPU pass gone dark) fails here instead of passing. Each shape's census is
-/// printed (`--nocapture` shows it).
+/// a CPU pass gone dark) fails here instead of passing. The zero model is held to
+/// the same bar: every shape must walk a site owing a `zero` result, and no site
+/// owing a flag in [`MODELED_FLAGS`] may be recorded as having no consumer model,
+/// so a zero walk that stopped reaching its sites fails here too. Each shape's
+/// census is printed (`--nocapture` shows it).
 #[test]
 fn corpus_flag_results_are_all_consumed() {
     use sigil_frontend_emp::flag_check::FlagSiteOutcome as O;
@@ -860,6 +868,30 @@ fn corpus_flag_results_are_all_consumed() {
             .iter()
             .filter(|s| s.outcome == O::Walked && s.cpu == Cpu::Z80)
             .count();
+        let walked_zero = r
+            .flag_sites
+            .iter()
+            .filter(|s| s.outcome == O::Walked && s.result == "zero")
+            .count();
+        // A flag with a consumer model is walked at every site that owes it, so
+        // "no consumer model" may only ever name a flag without one.
+        let unwalked_modeled: Vec<_> = r
+            .flag_sites
+            .iter()
+            .filter(|s| s.outcome == O::NoConsumerModel && MODELED_FLAGS.contains(&s.result.as_str()))
+            .map(|s| format!("{} -> {} [{}]", s.proc, s.callee, s.result))
+            .collect();
+        assert!(
+            unwalked_modeled.is_empty(),
+            "shape `{label}`: sites owing a flag the must-use check models were recorded as \
+             having no consumer model, so they were never walked: {unwalked_modeled:?}"
+        );
+        assert!(
+            walked_zero > 0,
+            "shape `{label}`: no call site owing a `zero` result was walked, so the zero model \
+             checked nothing on this shape. If the corpus no longer calls a proc declaring \
+             `out(zero: ...)`, this control is unmeasurable, not green: update it deliberately"
+        );
         eprintln!(
             "census `{label}`: {} firing(s) over {} site(s): {} walked ({walked_z80} Z80), {} \
              discarded, {} no consumer model, {} invalid-path walked, {} no guard branch, {} \
@@ -873,6 +905,7 @@ fn corpus_flag_results_are_all_consumed() {
             count(O::NoGuardBranch),
             count(O::UnknownRegister),
         );
+        eprintln!("census `{label}`: {walked_zero} of the walked sites owe a `zero` result");
         assert!(
             r.flag_firings.is_empty(),
             "shape `{label}`: flag-result firings: {:#?}",
