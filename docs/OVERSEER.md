@@ -24,7 +24,7 @@ are in `docs/OVERSEER-REFERENCE.md`.
 > moment* below, and each row states the moment that triggers its block.
 > Since the 2026-09-13 cut it also holds the working detail of each queue project (the rows stay
 > here), the ledger gate, and the commitments and obligations between this lane and aeon. There is
-> one index per cut, each a section headed *Read at the moment*, the newest last.
+> one index, *Read at the moment: the index to `docs/OVERSEER-REFERENCE.md`*, with a row per block.
 >
 > **Split by WHEN A RULE IS READ, never by size** — owner ruling 2026-09-04T15:38:47Z, carried in
 > `empyrean/docs/OVERSEER-PROTOCOL.md` at `origin/main`. **No rule is shorter for having moved**;
@@ -430,55 +430,161 @@ radius, it is not covered here, and it still goes to him. Verify every push agai
 `git ls-remote origin refs/heads/master`, never the local tracking ref, which is the only
 check that distinguishes "pushed" from "looks pushed".
 
-## Read at the moment — `docs/OVERSEER-REFERENCE.md`
+## Read at the moment: the index to `docs/OVERSEER-REFERENCE.md`
 
-Six blocks that sat here at the 2026-09-04 cut are read at a specific moment rather than at
-boot, so they live in `docs/OVERSEER-REFERENCE.md` and are read when that moment arrives.
-**Nothing was shortened to move it.** Each entry below states the moment that triggers its block, because a rule whose
-trigger a reader cannot recognise is a rule nobody looks up.
+Every block in `docs/OVERSEER-REFERENCE.md`, written `ref` below, is read when its moment arrives and
+never at boot. Each row gives the moment in bold, then the block by its heading and the file it lives
+in; a long heading is quoted by its opening words, which is enough to grep for. There is one row per
+block, whichever cut moved it, including the blocks banked straight into `ref`. The six per-cut
+indexes this one replaced, with each cut's own description of its blocks, are in `ref` under *The
+per-cut indexes, as each cut wrote them*. Each cut's closed history is in `docs/OVERSEER-LOG.md`
+under that cut's heading.
 
-- **Writing a brief for any agent** — *Dispatch practice*: why a stated MECHANISM is more
-  dangerous than a stated FACT, the required *"anything in this brief you concluded was wrong"*
-  line, and telling every agent that its branch is deleted at the landing.
-- **Writing a brief that names an aeon tree** — *`AEON_DIR` IN EVERY BRIEF*: unconditional,
-  exclusive and prepared, plus the template line that carries all three.
-- **Judging any claim whose ground is a COMMENT** — *A comment beside a declaration is evidence
-  about an author's intent, never about the declaration*: four correct comments sat above four wrong
-  declarations and a fifth restated its declaration verbatim, so agreement can mean only that one was
-  copied; why ADJACENCY is the hazard rather than distance; and this lane's own independent instance
-  in Rust the same day. Banked 2026-09-12, aeon's rule.
-- **Preparing, judging or landing a full-suite run** — *Quality bars*: deriving the reference
-  tree by property rather than by name, the full-suite bar and its command span, how long a
-  strict run takes and why a capped run still reads green, the pairing gate, reconciling the
-  declared count, and the port loop.
-- **A source-gate notification fires, or a new `crates/*/tests/*.rs` reads the aeon tree** —
-  *The source-gate lane*: what it runs, its three buckets and its exit codes, and how a
-  warn-tier firing is adjudicated.
-- **Setting up a worktree, or running any cargo command in this shared checkout** — *Worktree
-  and environment quirks*: including the relink of the shared `target/release/sigil` that
-  overwrites the assembler another lane's freeze is pinned to, and the phantom failures a live
-  aeon tree produces.
-- **About to sweep, delete or rebuild trees under `~/sonic_hacks/`** — *STANDING ARTIFACTS THIS
-  LANE DEPENDS ON*: the pinned assembler at `~/sonic_hacks/.pinned/` and the aeon reference
-  tree, neither of which any other lane's worktree list can see.
-- **Asked why aeon's board says `blockedBy: sigil`** — *LS-13b*: its artifact is aeon's, the id is
-  aeon's coordinate, and the ask is an `.emp` language question rather than a lint.
-- **Dispatching the UX seat pair** — *what oracle's pilot already refuted in the brief*, including
-  the substitution a seat with no input path makes silently.
+### Writing a brief, or dispatching an agent or a seat pair
 
-Four further blocks moved from earlier in this file — the positive freeze witness, `d-18`, the
-rules banked from closed findings, and the drift watch's timer — and each is named by path at
-the point it used to sit.
+- **Writing a brief for any agent**:
+  - *Dispatch practice* (ref).
+  - *THE FACES OF A CHECK* (ref, inside *Dispatch practice*).
+  - *A BEFORE/AFTER STREAM DIFF* (ref, inside *Dispatch practice*).
+- **Writing a brief that names an aeon tree**: *`AEON_DIR` IN EVERY BRIEF* (ref).
+- **Building a count, or writing a brief**: *THREE THINGS THIS PARCEL TAUGHT* (ref).
+- **Naming a path in a brief**: *AND MY OWN INSTRUCTION CAUSED* (ref).
+- **Handing an agent a tree, or promising a peer exclusive use of one**: *AN EXCLUSIVE-TREE LEASE* (ref).
+- **Choosing the corpus a parcel is verified against, or sizing one off it**: *THE MOTIVATING CASE*
+  (ref).
+- **Writing a bar, a brief, or a diagnostic that tells somebody what to check**: *A PRESCRIPTION IS
+  NOT A PROOF* (ref).
+- **Writing any seat brief**: *THE EXCLUSIONS THIS LANE'S SEATS* (ref).
+- **Dispatching the UX seat pair**: *THE UX SEAT PAIR* (ref).
+- **Dispatching a seat pair, or two seats agree on a finding**: *CONVERGENCE IS EVIDENCE* (ref).
 
-**Ten more blocks joined them at the 2026-09-05 cut**, and they are indexed separately, under
-*Read at the moment - the 2026-09-05 blocks, and the moment that triggers each*, in the
-2026-09-05 section near the end of this file. The list above is the 2026-09-04 cut's and is not
-the whole of `docs/OVERSEER-REFERENCE.md`. **Three further cuts followed and each carries its own
-index, all three near the end of this file**: *Read at the moment - the bars moved to the reference
-file on 2026-09-06*, *Read at the moment - the blocks moved to the reference file on 2026-09-09*,
-and *Read at the moment - the blocks moved to the reference file on 2026-09-10*.
-A fourth cut followed on 2026-09-13, and its index is the last in this file:
-*Read at the moment - the blocks moved to the reference file on 2026-09-13*.
+### Building a proof, planting a control, or judging a green or a zero
+
+- **Building a proof, or judging a claim, a green, or a detached run**:
+  - *Rules banked from closed findings* (ref).
+  - *A re-baseline does not explain a green* (ref).
+- **Certifying that a length-neutral parcel's build actually ran**: *Freeze, proof and review bars*,
+  which opens with *PREFER A POSITIVE FREEZE WITNESS* (ref).
+- **Building or judging any red-first proof, or writing a bar for someone else**: *A PROOF THAT
+  CANNOT FAIL ON DEMAND* (ref).
+- **Proving a mutation applied**: *`git checkout <rev> -- <path>` STAGES* (ref).
+- **Designing a probe for anything on an error path**: *ERROR-PATH BEHAVIOUR* (ref).
+- **Making something newly refuse**: *WHEN A CHANGE MAKES SOMETHING NEWLY REFUSE* (ref).
+- **Judging a control, or a report's own severity**: *A CONTROL CAN BE CONFOUNDED* (ref).
+- **Planting any canary or control, or believing a refutation you produced yourself**: *A CONTROL CAN
+  VERIFY THE WRONG PREDICATE* (ref).
+- **Designing any check whose clean result you intend to believe**: *A CHECK CAN BE BLIND* (ref).
+- **Believing a zero after planting a canary**: *A CANARY PROVES* (ref).
+- **About to believe a zero from `grep`, or choosing the instrument for a search**: *SHELL `grep -r`
+  SKIPS GITIGNORED FILES* (ref).
+- **Judging an instrument, or believing a comparison**: *THE FOUR-CORPUS SWEEP* (ref).
+- **Judging an A/B, or any pair whose arms agree**: *AN A/B WHOSE ARMS AGREE* (ref).
+- **About to claim two code paths agree**: *VARYING A FLAG IS NOT VARYING A ROUTE* (ref).
+- **A reduction fails to reproduce the fault**: *AND A REDUCTION CAN SUPPLY* (ref).
+- **Judging a derivation that walks a structure**: *A DERIVATION THAT CAPTURES PARENTS* (ref).
+- **Matching a reference implementation's arithmetic**: *THE RIGHT BASE COMPUTED THE WRONG WAY* (ref).
+- **Carrying a bound past its first use**: *A BOUND IS SAFE ONLY IN THE DIRECTION* (ref).
+- **Building a guard**: *AND THE PIN FAILED* (ref).
+- **Acting on a verdict from a one-line or compound command**: *PRINT `pwd` AND `HEAD`* (ref).
+- **Judging any claim whose ground is a comment**: *A COMMENT BESIDE A DECLARATION* (ref).
+- **A peer's result agrees with yours**: *CUSTODY-INDEPENDENCE* (ref).
+- **Relying on a change log to reconstruct prior state**: *A TICK-DIFF LOG* (ref).
+- **Running any mechanical text change**: *A SWEEP KILLS ANY NEGATIVE ASSERTION* (ref).
+
+### Landing, committing, and running the suite or a gate
+
+- **Preparing, judging or landing a full-suite run**: *Quality bars* (ref).
+- **Starting any full-suite or landing run**:
+  - *DO NOT COMMIT WHILE A GATE IS READING THE TREE* (ref).
+  - *A MONITOR FILTER* (ref).
+- **Writing any commit**: *NEVER PASS A COMMIT MESSAGE THROUGH `-m "..."`* (ref).
+- **Landing anything that touches the AS frontend**: *A PARTIAL RUN IS NOT A LANDING GATE* (ref).
+- **Assembling a gate run by hand, or retyping a command out of one**: *I RAN A SUBSET OF THE LANDING
+  GATE* (ref).
+- **Touching section alignment or the packing walk, landing anything this file describes as
+  pending, or judging a green**: *Standing rules*, independent of whether a row is active (ref).
+- **A strict `--workspace` run comes back with a wall of byte diffs**: *SIGIL-DECOUPLE: the strict
+  run needs a paired aeon tree* (ref).
+- **A run refuses for want of a reference tree**: *d-18: REFUSE BARE, OPT IN TO PARTIAL* (ref).
+- **A source-gate notification fires, or a new `crates/*/tests/*.rs` reads the aeon tree**: *The
+  source-gate lane* (ref).
+
+### Trees, worktrees and the shared binary
+
+- **Setting up a worktree, or running any cargo command in this shared checkout**:
+  - *Worktree and environment quirks* (ref).
+  - *THE REFERENCE TREE IS `.aeon-sigil-ref`* (ref, inside *Worktree and environment quirks*).
+- **About to sweep, delete or rebuild trees under `~/sonic_hacks/`**: *STANDING ARTIFACTS THIS LANE
+  DEPENDS ON* (ref).
+- **Pruning worktrees**: *WORKTREE PRUNING* (ref).
+- **About to touch the shared `target/release/sigil`**:
+  - *A DO-NOT-TOUCH RULE WITH NO NAMED OWNER* (ref).
+  - *THE OWNERSHIP BAR I WROTE TODAY* (ref).
+- **Planning any work off the drift record**: *The drift watch's timer* (ref).
+
+### Invoking `asl`, generated artifacts, and the version banner
+
+- **About to invoke `asl`, or to quote a value out of one of its listings**: *Selecting and citing the
+  `asl` oracle* (ref).
+- **Touching a committed generated artifact**: *RULED: the three golden-vector headers* (ref).
+- **Changing the `--version` banner's tree vocabulary**: *THE `--version` BANNER'S TREE VOCABULARY*
+  (ref).
+
+### Working a named queue project
+
+- **Working SIGIL-AS-REPLACEMENT or dispatching a parcel under it, or sizing any parcel off
+  a diagnostic count**: *SIGIL-AS-REPLACEMENT: the rulings and measurement rules* (ref).
+- **Sizing or dispatching AS-NAMELESS-LABELS-RC1**: *AS-NAMELESS-LABELS-RC1: the sizing detail* (ref).
+- **Working PER-PARCEL-TERM-FEED-CUT, retiring an assert while it is red, or quoting a
+  suite figure**: *PER-PARCEL-TERM-FEED-CUT: the three rules* (ref).
+- **Working SIGIL-DECOUPLE step 1 or step 4**: *SIGIL-DECOUPLE: what the coupling actually buys* (ref).
+- **Working SIGIL-DECOUPLE step 1, or answering the hub on its scope**: *SIGIL-DECOUPLE: the step-1
+  gate* (ref).
+- **Dispatching or implementing the `pad`/`pad_to` parcel**: *`pad`/`pad_to`: the spec text's
+  landing* (ref).
+- **Working the `pad`/`pad_to` surface**: *`pad(N)` / `pad_to(N)`: the owner's ruling* (ref).
+- **Asked why aeon's board says `blockedBy: sigil`**: *LS-13b, THE AEON ROW BLOCKED ON SIGIL* (ref).
+- **Aeon's `parcel/dplc-entry-instrument` lands or moves bytes, or a `+$60`-shaped delta appears**:
+  *DPLC-ENTRY-INSTRUMENT REPIN* (ref).
+- **Attesting a freeze, or reading the rev-reachability report**: *PROVENANCE-REV-REACHABILITY* (ref).
+
+### Aeon and the other lanes
+
+- **Acting on a go, a ruling or an authorization that reached this lane by relay**: *THE TEST for a
+  relayed authorization* (ref).
+- **Swapping the shared sigil pair, exchanging byte predictions with aeon, landing the align
+  parcel, or comparing a peer's `dac_shared_bank` figure**: *COMMITMENTS MADE TO AEON 2026-09-07* (ref).
+- **Shipping `game-defines`, changing `pub equ` visibility or `[map.order-undeclared]` scoping,
+  reading an empty commit range, or acting on a cross-repo row**: *Standing cross-session
+  obligations* (ref).
+- **Briefing a parcel that adds a `mark`, a listing-visible `pub equ`, or anything else the
+  deb2 appendix records**: *A `mark` IS NOT ZERO-BYTE* (ref).
+- **Another lane reports that a `pins.rs` value disagrees with their tree**: *A PEER'S "YOUR PIN HAS
+  DRIFTED"* (ref).
+- **Sending or quoting a CRC to another lane**: *A CRC QUOTED WITHOUT ITS AEON REVISION* (ref).
+- **Reconciling two lanes' numbers**: *AND "NOT WORTH CHASING"* (ref).
+- **Enumerating a symbol's consumers, or pricing a deletion**: *A NAME-STRING ENUMERATION* (ref).
+- **Marking a queue row `routed`, or handing a peer a routed finding**: *A ROUTED ROW MUST NAME ITS
+  ARTIFACT* (ref).
+- **Something arrives that appears to satisfy a caveat you are carrying**: *A CAVEAT RETIRED BY AN
+  ADJACENT IMPROVEMENT* (ref).
+- **Attributing a finding**: *ATTRIBUTION, CORRECTED TWICE* (ref).
+
+### Queue rows, records, rulings and standing documents
+
+- **Writing a queue row's title**: *AND A ROW'S TITLE* (ref).
+- **Filing a row as blocked, or reading a row that says it is**: *A BLOCKER IS A CLAIM* (ref).
+- **Writing the reason for an edit to a record, or filing anything as blocked on the owner**: *A
+  CORRECT ACTION CARRYING A WRONG RATIONALE* (ref).
+- **Citing a decision card as grounds for anything**: *`d-22` IS HUB-ANSWERED* (ref).
+- **Touching the ledger gate, or wiring an id-uniqueness check on `docs/decisions.jsonl`**: *The
+  ledger gate and rule 8f* (ref).
+- **Banking a ruling, or citing one as already-applied**: *A RULING HAS CONSUMING SURFACES* (ref).
+- **Writing a citation into source**: *CITE THE ARTEFACT THAT CAN BREAK* (ref).
+- **Auditing any standing document for rot, or deciding which stale line to fix first**: *SORT A
+  STALENESS AUDIT BY MOOD* (ref).
+- **Cutting or reorganising any standing document, or booking a row off text you just moved**: *A
+  VERBATIM MOVE LAUNDERS STALENESS* (ref).
 
 ## Queue
 
@@ -557,51 +663,13 @@ landing an arc — a stale queue snapshot misleads the next boot more than no sn
 The findings of 2026-09-05 that a fresh session needs before it acts. Their episodes are
 not here: this section carries the rule and names where the narrative went, per the owner's
 2026-09-04T15:38:47Z ruling that the boot read is split by WHEN A RULE IS READ.
-
-### Read at the moment - the 2026-09-05 blocks, and the moment that triggers each
-
-Nothing below was shortened to move it. Each row names the moment its block is read, because a
-rule whose trigger a reader cannot recognise is a rule nobody looks up.
-
-**In `docs/OVERSEER-REFERENCE.md`:**
-
-- **Sizing or dispatching AS-NAMELESS-LABELS-RC1** - the six change sites, the L sizing, the
-  arithmetic risk, the landing condition and the no-prediction prohibition.
-- **Touching a committed generated artifact** - *the three golden-vector headers are NOT
-  hand-edited*: why a hand-freshened generator header is indistinguishable from an adjusted
-  measurement, and `GOLDEN-HEADER-UNGATED`.
-- **Building a count, or writing a brief** - *THREE THINGS THIS PARCEL TAUGHT*: the lexer with
-  no char-literal state, the control that made three wrong counts detectable, and why a brief
-  that states a constraint in the abstract when exactly one value works has stated a preference
-  and called it a rule.
-- **Proving a mutation applied** - *`git checkout <rev> -- <path>` STAGES*, so plain
-  `git diff --stat` reports nothing on an applied mutation.
-- **Naming a path in a brief** - the `.target-land` instruction that caused a shared-state
-  mutation because it named the value and dropped the tree.
-- **Designing a probe for anything on an error path** - *error-path behaviour is CONDITIONAL ON
-  WHAT ELSE FAILED*, so both directions must be run.
-- **Making something newly refuse** - ask what the OLD code did on the same path; a panic or an
-  `unreachable!` cannot regress a working build, and that quantifies where a green run samples.
-- **Judging a control, or a report's own severity** - *A CONTROL CAN BE CONFOUNDED BY THE VERY
-  THING IT CONTROLS FOR* (MOMPASS): a pre-existing claim needs its own instrument, fidelity is a
-  cost rather than a goal, and a reporting change should be strictly additive.
-- **Running any mechanical text change** - *a sweep kills any negative assertion keyed to what
-  it changed*, and the grep that finds them runs against the PRE-sweep revision.
-- **Pruning worktrees** - the lock is not a liveness signal, the ancestor test is wrong in both
-  directions, and `du -sh` comes before any count.
+The narrative is in `docs/OVERSEER-LOG.md`, 2026-09-05 cut.
 
 **Two live bookings are named only in that narrative, so they are named here too**, because the
 queue board `docs/lane-status.json` is untracked and a rotated session cannot be shown to hold
 them: **`PINS-GATE-MESSAGE-MISLEADS`** (make the count and the verdict describe the same
 comparison; the printed command was fixed at `81d92f80`) and **`AS-IF-REFUSAL-DIAG-VECTOR`**,
 which is CLOSED at `34dad07c` and is listed so nobody re-opens it from the narrative alone.
-
-**In `docs/OVERSEER-LOG.md`, 2026-09-05 cut:** the dash ruling's scope gap and its measured
-counts; the ratification of the sweep's extension to shell and Python; the 518-block bisection
-that this seat got wrong twice and an agent refuted; the register fault and its silent
-acceptance; how the `if` refusal was cleared without an aeon build; master's strict red and the
-enumeration error under it; the pins gate's two true halves; and the four landing-gate
-episodes whose rules are kept below.
 
 ### NO EM OR EN DASHES IN TOOL TEXT (owner ruling, 2026-09-05): booked, and the count is measured
 
@@ -630,168 +698,3 @@ control and size the sweep off the CONSUMING end**, never off the producer count
 is live and belongs here rather than in the narrative: the shipped regression gate covers Rust
 string literals only, so a shell or Python tool can still grow a dash without reddening
 anything.
-
-### Read at the moment - the bars moved to the reference file on 2026-09-06
-
-Moved VERBATIM to `docs/OVERSEER-REFERENCE.md` when the boot read crossed its byte bound, under the
-owner's 2026-09-04T15:38:47Z ruling that the split is by WHEN A RULE IS READ. **Nothing was
-shortened to move it.** None of these changes what a session does FIRST; each is read at a moment:
-
-- **About to touch the shared `target/release/sigil`** - *a do-not-touch rule with no named owner
-  rots the thing it protects*, and *the ownership bar that broke a peer's run the first time it was
-  exercised*, which carries the hub-opens-the-window ruling and the installed binary's identity.
-- **Reconciling two lanes' numbers** - *"not worth chasing" was worth chasing: 29 and 30 reconciled
-  exactly*.
-- **Judging a derivation that walks a structure** - *a derivation that captures parents and drops
-  locals misses exactly the boundary markers*.
-- **Judging an instrument, or believing a comparison** - *the four-corpus sweep compares almost no
-  bytes, and this seat prescribed it three times*.
-- **Writing a queue row's title** - *a row's title can be the narrowest true statement of its own
-  defect*.
-- **Writing a citation into source** - *cite the artefact that can break, not the session that
-  asked*.
-- **Building a guard** - *the pin failed in the exact way the pin existed to prevent*, including the
-  refuse-to-run-over-an-empty-row-set clause.
-- **Attributing a finding** - *attribution, corrected twice in one exchange*.
-- **A peer's result agrees with yours** - *custody-independence is not observation-independence*:
-  a source outside your control is independent of your BIAS, not of your OBSERVATION, so two lanes
-  reading one file are one witness read twice. Name which claim has two observations behind it.
-- **Relying on a change log to reconstruct prior state** - *a tick-diff log is silent on what
-  happened between ticks*, and its honest-degradation clause fails only on events that exist, so it
-  reassures most exactly where it is blind. Carries the completeness test this seat confounded with
-  its own repair.
-
-### Read at the moment - the blocks moved to the reference file on 2026-09-09
-
-The boot read went over its byte bound a second time, hours after three rules were banked into it in
-one day. Eight blocks moved VERBATIM to `docs/OVERSEER-REFERENCE.md` under the owner's
-2026-09-04T15:38:47Z ruling that the split is by WHEN A RULE IS READ. **Nothing was shortened to
-move it**, and no rule was dropped. Each row names the moment its block is read:
-
-- **Dispatching or implementing the `pad`/`pad_to` parcel** - the spec text's landing SHA, the six
-  `(align: N)` diagnostic strings the review found unpinned, the tests still owed, and the
-  sequencing that keeps the spec empyrean's to land. **The moved text says nothing is implemented
-  and that is stale: `pad_to` landed at `ffa7bdb8` on 2026-08-26.** The correction is written beside
-  it in the reference file rather than into it.
-- **About to invoke `asl`, or to quote a value out of one of its listings** - the md5 that selects
-  the reference build and the one that refuses the varying build, why the banner cannot discriminate
-  between them, the reference build's stable-but-invented answers on shapes it declines, why a run
-  carrying any error is not a source of values for the lines that did assemble, and the
-  seven-paths-four-digests population.
-- **Working SIGIL-DECOUPLE step 1 or step 4** - what the coupling actually buys, measured before the
-  ruling rather than assumed, and the residual cost that byte coverage AGES.
-- **A strict `--workspace` run comes back with a wall of byte diffs** - why it needs a PAIRED aeon
-  tree, and the recipe that turns the same branch from 58 red to 0.
-- **Enumerating a symbol's consumers, or pricing a deletion** - *A NAME-STRING ENUMERATION CANNOT
-  TELL A CONSUMER FROM A FIXTURE*: the tell is position rather than spelling, widening the alphabet
-  made the answer worse rather than better, and write the SET rather than the count.
-- **Sending or quoting a CRC to another lane** - *A CRC QUOTED WITHOUT ITS AEON REVISION CANNOT BE
-  REPRODUCED OR REFUTED*, and the stronger form, send a DIFFERENTIAL rather than a table.
-- **Changing the `--version` banner's tree vocabulary** - it is a live two-way contract, aeon's
-  `build.sh` fails CLOSED on a word it does not know, and a DO-NOT-MERGE in a commit message is not
-  a gate.
-- **Carrying a bound past its first use** - an upper bound proves impossibility and prices nothing.
-
-*(Closed history moved to `docs/OVERSEER-LOG.md` in the same cut: the
-`REPIN-TESTS-HINT-UNDERLISTED` landing record, and the `S4BUDGET-STALE-ASSUMPTION` arc from the
-enumeration that found it to its 2026-09-07 discharge.)*
-
-### Read at the moment - the blocks moved to the reference file on 2026-09-10
-
-The boot read went over its byte bound a third time. Twelve blocks moved VERBATIM to
-`docs/OVERSEER-REFERENCE.md` under the owner's 2026-09-04T15:38:47Z ruling that the split is by
-WHEN A RULE IS READ. **Nothing was shortened to move it**, and no rule was dropped. Each row names
-the moment its block is read:
-
-- **Handing an agent a tree, or writing any brief that promises a peer exclusive use of one** -
-  *AN EXCLUSIVE-TREE LEASE HAS NO END UNTIL YOU GIVE IT ONE*: a completion notification says the
-  agent STOPPED, not that it has ENDED, so scope the lease to an event YOU control and say which in
-  the brief. Carries the perturbation direction, where two runs against one aeon tree manufacture a
-  false GREEN as readily as a false red.
-- **Choosing the corpus a parcel is verified against, or sizing one off it** - *THE MOTIVATING CASE
-  IS SELECTED FOR BEING BROKEN, NEVER FOR BEING REPRESENTATIVE*: a corpus earns a parcel by FAILING
-  on it and that says nothing about whether it EXERCISES the fix, the honest n=2 sample, the probe
-  built out of the corpus's own text, and the question to ask while the brief is being written -
-  what would a half-fix look like here, and would anything go red?
-- **Banking a ruling, or citing one as already-applied** - *A RULING HAS CONSUMING SURFACES, AND A
-  PARTIAL ENUMERATION LOOKS EXACTLY LIKE A FINISHED ONE*: why a ruling's surfaces are enumerable by
-  no sweep, the 2026-09-10 amendment that a site can PARAPHRASE what it consumes so a grep over the
-  ruling's own words is a floor, oracle's clause that a floor is a prior and not a law, and the
-  baseline-count-carries-its-profile check this tree passes today for a reason worth reading.
-- **Citing a decision card as grounds for anything** - *`d-22` IS HUB-ANSWERED*: a hub answer
-  becomes indistinguishable from the owner's one hop later, so name who answered a card in the same
-  sentence that cites it.
-- **Landing anything that touches the AS frontend** - *A PARTIAL RUN IS NOT A LANDING GATE*: the
-  disclosure was honest six times over and the landing decision went ahead on it anyway, so the
-  rule is the run, not better wording.
-- **Assembling a gate run by hand, or retyping a command out of one** - *I RAN A SUBSET OF THE
-  LANDING GATE ALL DAY AND IT COST ME TWICE*: run `scripts/landing-run.sh`, segment it if it cannot
-  run, and copy a gate's invocation out of the script rather than re-typing it from memory.
-- **Acting on a verdict from a one-line or compound command** - *PRINT `pwd` AND `HEAD` BESIDE ANY
-  VERDICT*: a verdict inherits wherever the previous part left the shell, and an exit code alone
-  cannot tell a tool's failure from the tool never running.
-- **Judging an A/B, or any pair whose arms agree** - *AN A/B WHOSE ARMS AGREE MAY HAVE MEASURED
-  NOTHING*: at least one arm must have PRODUCED something, reported as a positive artifact beside
-  the agreement, and a second partial result offered as a discharge is the same defect again.
-- **About to claim two code paths agree** - *VARYING A FLAG IS NOT VARYING A ROUTE*: name what makes
-  them DIFFERENT PATHS and check that the thing you varied is that; and a fix specified from outside
-  a seam can be impossible for a reason the specifier cannot see.
-- **Believing a zero after planting a canary** - *A CANARY PROVES THE PATTERN CAN FIRE, NOT THAT THE
-  INPUT ARRIVED*: a canary covers the RULE and an input count covers the FEED, and four of that
-  night's five false cleans were feed failures.
-- **A reduction fails to reproduce the fault** - *AND A REDUCTION CAN SUPPLY THE VERY THING WHOSE
-  ABSENCE IS THE FAULT*: ask what the original had that the reduction supplies, not only what the
-  reduction lacks.
-- **Matching a reference implementation's arithmetic** - *THE RIGHT BASE COMPUTED THE WRONG WAY IS
-  ONE BYTE AT ONE SITE*: a wrong base is loud, a wrong SPELLING of the right base is one byte at one
-  of six sites.
-
-*(Closed history moved to `docs/OVERSEER-LOG.md` in the same cut: the `AS-NAMELESS-LABELS-RC1`
-landing record and the sizing the owner asked for before its dispatch.)*
-
-### Read at the moment - the blocks moved to the reference file on 2026-09-13
-
-The fourth cut, on the owner's 2026-09-13 words *"do the split asap so sigil doesn't take almost
-200k tokens to start up"* (empyrean `e33a5e3`, `docs/OVERSEER.md` line 75), under his
-2026-09-04T15:38:47Z ruling that the split is by WHEN A RULE IS READ. Fourteen blocks moved VERBATIM
-to `docs/OVERSEER-REFERENCE.md`, under *Moved from the boot read on 2026-09-13, the fourth cut*.
-**Nothing was shortened to move it.** Each row names the moment its block is read:
-
-- **Touching the ledger gate, or wiring an id-uniqueness check on `docs/decisions.jsonl`** - *The
-  ledger gate and rule 8f*, including the live `d-18` duplicate that turns any uniqueness check red
-  on arrival. The four-id listing rule 8f requires stays in this file, under *`decisions.jsonl`:
-  FOUR IDS REWRITTEN IN PLACE, DO NOT REPAIR*.
-- **Acting on a go, a ruling or an authorization that reached this lane by relay** - *THE TEST for a
-  relayed authorization*: verify the join.
-- **Touching section alignment or the packing walk, landing anything this file describes as pending,
-  or judging a green** - *Standing rules, independent of whether a row is active*: the landed R7
-  flip, writing a parcel's completion back in its landing commit, and the pointer to *A RE-BASELINE
-  DOES NOT EXPLAIN A GREEN*.
-- **Working the `pad`/`pad_to` surface** - the owner's `pad(N)` / `pad_to(N)` ruling (`d-12`, closed
-  as `d-13`).
-- **Working SIGIL-AS-REPLACEMENT or dispatching a parcel under it, or sizing any parcel off a
-  diagnostic count** - *SIGIL-AS-REPLACEMENT: the rulings and measurement rules read while working
-  it*: the dialect split, the case fold, AS-DEFAULT-CPU, the `asl` oracle, clippy counts, and why a
-  diagnostic count is blind to silent wrong answers.
-- **Working PER-PARCEL-TERM-FEED-CUT, retiring an assert while it is red, or quoting a suite
-  figure** - its three surviving rules.
-- **Aeon's `parcel/dplc-entry-instrument` lands or moves bytes, or a `+$60`-shaped delta appears** -
-  *DPLC-ENTRY-INSTRUMENT REPIN*.
-- **Attesting a freeze, or reading the rev-reachability report** - *PROVENANCE-REV-REACHABILITY*.
-- **Working SIGIL-DECOUPLE step 1, or answering the hub on its scope** - *SIGIL-DECOUPLE: the step-1
-  gate and the position sent to the hub*.
-- **Marking a queue row `routed`, or handing a peer a routed finding** - *A ROUTED ROW MUST NAME ITS
-  ARTIFACT*.
-- **Briefing a parcel that adds a `mark`, a listing-visible `pub equ`, or anything else the deb2
-  appendix records** - *A `mark` IS NOT ZERO-BYTE*.
-- **Swapping the shared sigil pair, exchanging byte predictions with aeon, landing the align parcel,
-  or comparing a peer's `dac_shared_bank` figure** - *COMMITMENTS MADE TO AEON 2026-09-07*,
-  including the deletion signal this lane owes aeon.
-- **Shipping `game-defines` (then test aeon's confirmation on your own schedule, never on their
-  ping), changing `pub equ` visibility or `[map.order-undeclared]` scoping, reading an empty commit
-  range, or acting on a cross-repo row** - *Standing cross-session obligations (2026-08-22)*.
-- **About to believe a zero from `grep`, or choosing the instrument for a search** - *SHELL
-  `grep -r` SKIPS GITIGNORED FILES HERE*.
-
-*(Closed history moved to `docs/OVERSEER-LOG.md` in the same cut: the bullet recording that aeon had
-paid the `offsetof(Scene, …)` obligation fifteen days before this lane noticed.)*
