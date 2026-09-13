@@ -1130,10 +1130,11 @@ pub fn check_discard_names(
 // §6 / G2.4 — [call.result-invalid-path] for out(rN if cc) conditional register
 // results. D2.35's deferred sibling, riding the SAME CFG. A conditional
 // register result `rN` is valid only on the path where the guard `cc` holds;
-// reading `rN` on the other (invalid) path is an error. Forward machinery: no
-// corpus site declares a conditional register result today (like G1's
-// subcontract check — built + TDD'd against synthetic cases, inert on the real
-// corpus until the first such contract appears).
+// reading `rN` on the other (invalid) path is an error. 68k only: the walk
+// reads 68k branch conditions and return mnemonics. The corpus's callers of
+// `out(a1 if eq)` procs (`AllocDynamic`, `AllocEffect`,
+// `TileCache_FindStagedBlock`) are walked here in every shipped shape, and the
+// contract report counts them as invalid-path walked sites.
 // ---------------------------------------------------------------------------
 
 /// The condition a `bXX`/`sXX` branch/set tests, stripped of the mnemonic prefix
