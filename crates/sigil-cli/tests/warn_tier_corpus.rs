@@ -1074,8 +1074,8 @@ fn the_build_binary_prints_the_tally_and_off_silences_it() {
     std::fs::write(tmp.path().join("engine/ram.emp"), "module engine.ram\n").unwrap();
     // A synthetic tree still owes the game config `shape_defines` reads: a
     // missing `games/<g>/map.toml` is a MISSING config and fails loud, so this
-    // fixture supplies an empty one — no `[defines]` table, hence no game rows,
-    // which is the state every shipped map is in.
+    // fixture supplies an empty one. An empty map declares no `[defines]` rows,
+    // and this fixture's one module reads none.
     std::fs::create_dir_all(tmp.path().join("games/sonic4")).unwrap();
     std::fs::write(tmp.path().join("games/sonic4/map.toml"), "").unwrap();
     let mut cmd = std::process::Command::new(env!("CARGO_BIN_EXE_sigil"));
