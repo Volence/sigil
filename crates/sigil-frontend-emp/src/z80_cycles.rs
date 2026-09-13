@@ -1307,11 +1307,10 @@ mod tests {
             // lists, so the SPLIT between them is checked as well as the union.
             // A block op is a whole instruction with no operands; a branch never
             // is, because it needs its target. So a mnemonic whose operand-free
-            // form reaches the refusal is a repeat, and is named bare. The
-            // encoder's `ldir` arm ignores its operands, so `ldir` also encodes
-            // with every shape in the pool; keying the class on the mnemonic
-            // keeps those forms in the repeat class instead of spelling them
-            // as conditionals.
+            // form reaches the refusal is a repeat, and is named bare. The class
+            // is keyed on the mnemonic rather than the form, so any other form
+            // of a repeat mnemonic stays in the repeat class instead of being
+            // spelled as a conditional.
             let operand_free: BTreeSet<String> = reaching
                 .iter()
                 .filter(|(_, ops)| ops.is_empty())

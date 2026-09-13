@@ -804,7 +804,7 @@ pub fn encode(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
         (Mnemonic::Cpd, []) => Ok(vec![ED_PREFIX, 0xA9]),
         (Mnemonic::Ind, []) => Ok(vec![ED_PREFIX, 0xAA]),
         (Mnemonic::Outd, []) => Ok(vec![ED_PREFIX, 0xAB]),
-        (Mnemonic::Ldir, _) => Ok(vec![ED_PREFIX, 0xB0]),
+        (Mnemonic::Ldir, []) => Ok(vec![ED_PREFIX, 0xB0]),
         (Mnemonic::Cpir, []) => Ok(vec![ED_PREFIX, 0xB1]),
         (Mnemonic::Inir, []) => Ok(vec![ED_PREFIX, 0xB2]),
         (Mnemonic::Otir, []) => Ok(vec![ED_PREFIX, 0xB3]),
@@ -1196,6 +1196,34 @@ mod tests {
         assert_eq!(
             encode(&Instruction { mnemonic: Mnemonic::Ldir, ops: vec![] }).unwrap(),
             vec![0xED, 0xB0]
+        );
+    }
+
+    #[test]
+    fn ldir_with_an_operand_is_refused_like_its_siblings() {
+        // asl refuses each of these with error #1110, "wrong number of operands,
+        // expected no argument but got N", and answers `lddr a` the same way:
+        // a repeating block op names no operand at all.
+        let shapes = [
+            vec![Operand::Reg(Reg8::A)],
+            vec![Operand::IndHl],
+            vec![Operand::Pair(Reg16::De), Operand::Pair(Reg16::Hl)],
+        ];
+        for ops in shapes {
+            let ldir = encode(&Instruction { mnemonic: Mnemonic::Ldir, ops: ops.clone() });
+            let lddr = encode(&Instruction { mnemonic: Mnemonic::Lddr, ops: ops.clone() });
+            let lddr_text = lddr.expect_err("lddr takes no operand").to_string();
+            assert_eq!(
+                ldir.expect_err("ldir takes no operand").to_string(),
+                lddr_text.replace("Lddr", "Ldir"),
+                "`ldir {ops:?}` must get the refusal its sibling `lddr` gets"
+            );
+        }
+        assert_eq!(
+            encode(&Instruction { mnemonic: Mnemonic::Ldir, ops: vec![Operand::Reg(Reg8::A)] })
+                .unwrap_err()
+                .to_string(),
+            "unsupported form: Instruction { mnemonic: Ldir, ops: [Reg(A)] }"
         );
     }
 
