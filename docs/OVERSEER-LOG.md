@@ -7064,3 +7064,35 @@ change and where each is refused today, why the row is L and not XL, the arithme
 risk that decides the gate, the landing condition with its zero-population premise measured at
 the consuming end, and the prohibition on quoting `5,761 - 4,985 = 776` as a post-fix
 prediction.
+
+## 2026-09-13 cut - closed history moved verbatim from the boot read
+
+Moved when `docs/OVERSEER.md` was cut a fourth time by WHEN A RULE IS READ, on the owner's
+2026-09-13 words *"do the split asap so sigil doesn't take almost 200k tokens to start up"*
+(empyrean `e33a5e3`). The entry carries its original line span at sigil `0236c5f7` and the heading
+it sat under. Everything else that left the boot read in this cut is a rule read at a moment, and it
+went to `docs/OVERSEER-REFERENCE.md`.
+
+**Two pointers earlier in this file went stale in this cut, and this file is append-only, so they
+are corrected here rather than in place.** Line 2086 sends you to *"the
+`PROVENANCE-REV-REACHABILITY` row in the Queue"*: that row is now in `docs/OVERSEER-REFERENCE.md`
+under its own name. The 2026-09-05 cut's locator for the `grep -r` reproduction says the
+instrument-picking rules and the emptiness rule *"stay in the boot read"*: they did until this cut,
+and they are now in `docs/OVERSEER-REFERENCE.md` under *SHELL `grep -r` SKIPS GITIGNORED FILES
+HERE*.
+
+*(original `docs/OVERSEER.md` lines 918-929, under: Standing cross-session obligations
+(2026-08-22).)*
+
+- **DISCHARGED 2026-09-10, and it had been done for FIFTEEN DAYS.** The `offsetof(Scene, …) % 2 == 0`
+  migration landed at aeon `1c3dd0cf` on 2026-08-25, subject *"the two bridges' parity is structural,
+  `(align: 2)` replaces the offsetof ensures"*. **Verified here firsthand rather than taken from their
+  message:** that SHA is an ancestor of their `origin/master`, and `offsetof(Scene` returns zero in
+  their `engine/` at that revision, with the `sc_mask_raw` / `sc_v_deform_shift_raw` bridges present.
+  **They established it with `git log -S` and said why, which is the part worth keeping: the guards'
+  ABSENCE is two-valued (migrated, moved, or renamed) and the `-S` result is one-valued.**
+  **THE SHAPE, and it is the mirror of what the suite swept all morning.** Today's sweep found rows
+  asserting a debt that was NEVER INCURRED. This is a row asserting a debt ALREADY PAID. Same field,
+  opposite sign, **and neither side can see it alone**: this lane cannot watch their migration land,
+  and they never read this list. A sweep that looks for unsent asks finds one direction and is
+  structurally blind to the other.
