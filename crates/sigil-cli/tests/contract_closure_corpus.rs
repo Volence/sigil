@@ -836,23 +836,59 @@ fn a_lost_hotkeys_define_fails_the_interface_bind_in_the_sonic4_shapes() {
     );
 }
 
-/// Contract-grammar v2 G2 — the §6 flag-result must-use pin: every `.emp` caller
-/// of a flag-result callee (`out(carry:)`) CONSUMES the carry, so the corpus has
-/// ZERO `[call.flag-result-unused]` / `[call.result-invalid-path]` firings. The
-/// three retrofitted callees (QueueDMA_Important/_Deferrable `dropped`,
-/// RingBuffer_Add `full`) are all consumed via a `bcs` — no `@discards` anywhere.
-/// This pin is the G2 regression guard (mirrors the G1 residue pin); a future
-/// caller that drops a flag result breaks it.
+/// Contract-grammar v2 G2, the §6 flag-result must-use pin: every `.emp` caller
+/// of a flag-result callee (`out(carry:)`) consumes the carry or marks the call
+/// `@discards(name)`, so every shipped shape has ZERO `[call.flag-result-unused]`
+/// / `[call.result-invalid-path]` firings. `sigil build`'s contract gate refuses
+/// the same list for the shape it builds; this is its CI twin over all seven.
+///
+/// The site population keeps the empty list from being vacuous: every shape must
+/// have walked at least one must-use call site, and some shape must have walked a
+/// Z80 one, so a walk that stopped reaching flag-result calls (a lost callee map,
+/// a CPU pass gone dark) fails here instead of passing. Each shape's census is
+/// printed (`--nocapture` shows it).
 #[test]
 fn corpus_flag_results_are_all_consumed() {
+    use sigil_frontend_emp::flag_check::FlagSiteOutcome as O;
+    use sigil_ir::backend::Cpu;
     let Some(srcs) = corpus_sources() else { return };
+    let mut z80_walked = 0;
     for (label, _profile, r) in analyze_every_shape(&srcs) {
+        let count = |o: O| r.flag_sites.iter().filter(|s| s.outcome == o).count();
+        let walked_z80 = r
+            .flag_sites
+            .iter()
+            .filter(|s| s.outcome == O::Walked && s.cpu == Cpu::Z80)
+            .count();
+        eprintln!(
+            "census `{label}`: {} firing(s) over {} site(s): {} walked ({walked_z80} Z80), {} \
+             discarded, {} no consumer model, {} invalid-path walked, {} no guard branch, {} \
+             unknown register",
+            r.flag_firings.len(),
+            r.flag_sites.len(),
+            count(O::Walked),
+            count(O::Discarded),
+            count(O::NoConsumerModel),
+            count(O::InvalidEdgeWalked),
+            count(O::NoGuardBranch),
+            count(O::UnknownRegister),
+        );
         assert!(
             r.flag_firings.is_empty(),
-            "shape `{label}`: unexpected flag-result firings (a dropped carry?): {:?}",
-            r.flag_firings
+            "shape `{label}`: flag-result firings: {:#?}",
+            r.flag_firings.iter().map(|f| f.message()).collect::<Vec<_>>()
         );
+        assert!(
+            count(O::Walked) > 0,
+            "shape `{label}`: no must-use call site was walked, so the empty firing list above \
+             checked nothing"
+        );
+        z80_walked += walked_z80;
     }
+    assert!(
+        z80_walked > 0,
+        "no shipped shape walked a Z80 must-use call site, so the Z80 pass is unmeasured"
+    );
 }
 
 /// `[call.discards-unmatched]` over the real corpus, every shipped shape: each
