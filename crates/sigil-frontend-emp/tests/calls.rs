@@ -631,9 +631,10 @@ fn conditional_out_unrelated_guard_still_fires() {
 /// conditional-out call and its `beq` guard clobbers Z. `valid_edge`'s bail is
 /// `cc_transparent`, which treats `btst` as NON-transparent → BAIL → a1 not
 /// credited on the eq edge → the merge intersection drops a1 → the consumer STILL
-/// fires. MUTATION: swapping the bail predicate to `writes_carry` (which lets
-/// `btst` through as transparent) credits a1 on a stale-Z edge and this test goes
-/// GREEN — proving the sound-complete bail is load-bearing.
+/// fires. MUTATION: swapping the bail predicate to a carry-writer test over
+/// `carry_role` (the carry model, where `btst` leaves C alone, so it is walked
+/// past) credits a1 on a stale-Z edge and this test goes GREEN, proving the
+/// sound-complete bail is load-bearing.
 #[test]
 fn conditional_out_z_clobber_before_guard_still_fires() {
     let f = run_input_full(
