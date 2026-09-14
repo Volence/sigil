@@ -99,3 +99,60 @@ A re-derived carry table moves neither rule on aeon at either revision, since no
 reaches a changed row. The after-census must show the same walked counts, the same
 per-site traces, and zero firings; an empty diff here is backed by the walked counts
 above, and a planted abandonment (below, after the change) shows the census can fire.
+
+## After the change (sigil `fe0ca8e3`, the derived table and its tests)
+
+Same instrument, same trees. The census lines are identical to the table above at both
+revisions, 0 firings from either rule in every shape. The per-site trace (every
+instruction every walk reached, and its verdict) is byte-identical to the one taken
+before: 562 lines at `ec640bcf`, 555 at `55c062a4`, `diff` empty both times. So the
+prediction held, and the empty diff covers 38 or 39 walked carry sites and 23 walked
+invalid-path sites per shape, not a walk that reached nothing.
+
+A third consumer of the walk the table feeds, found while closing: the verified-credit
+recomputation of the invalid-path check (`flag_firings_verified_credit`), which
+`corpus_flag_results_declared_vs_verified_credit_agree` holds equal to `flag_firings`.
+It walks the same bodies with the same table, so it cannot move where the census did not.
+
+## The census can fire (positive control)
+
+A scratch copy of the `55c062a4` export with two plants, `diff -r` against the export
+showing exactly these three lines:
+
+- `engine/sound/sound_sequencer.emp:1740`, in `Seq_Op_Jump`: `pop hl` after
+  `call Snd_ChanClass` made `pop af`, so the `jr c` tests the F restored from the stack;
+- `games/sonic4/test/object_test_state.emp`: `addq.l #2, a2` inserted between
+  `jbsr AllocDynamic` and its `bne .emitters_done`, and `move.w (a1), d0` inserted after
+  `.emitters_done:`, the invalid (`ne`) edge.
+
+With the derived table, every shape reports both:
+
+```
+CENSUS2 `sonic4 plain`: must-use firings 1, carry walked 38 (28 Z80); invalid-path firings 1, walked 23, no guard 0
+FIRING `sonic4 plain` @5544: [call.result-invalid-path] `GameState_ObjectTest_Init` calls `AllocDynamic`, whose `a1` result is valid only where `eq` holds, and reads `a1` on the path where `eq` does not hold. Read `a1` only on the `eq` path, or redefine it first
+FIRING `sonic4 plain` @98136: [call.flag-result-unused] `Seq_Op_Jump` calls `Snd_ChanClass` and abandons its `carry` result `music` on some path: the flag is redefined, or the proc returns, before anything reads it. Consume it (a conditional branch on `carry`) before it is redefined, or mark the call `@discards(music)` if dropping it is intended
+```
+
+With the tables as they were (the pre-change `flag_check.rs` restored into the working
+tree for one run), the same tree reports neither, in every shape:
+
+```
+CENSUS2 `sonic4 plain`: must-use firings 0, carry walked 38 (28 Z80); invalid-path firings 0, walked 22, no guard 1
+TRACE mu|Z80|Seq_Op_Jump|Snd_ChanClass|carry|@98136|fired=false|pop [Z80Pair(Af)]=.; jr [Z80Cc(C), ...]=C
+TRACE ip|GameState_ObjectTest_Init|AllocDynamic|a1 if eq|@5544|walked=false|fired=false|addq [Imm(2), Reg(A2)]=W
+```
+
+So both firings come from the derived rows: the old gate walked through the `pop af`,
+and stopped the invalid-path walk at an address-register ADDQ that leaves the CCR.
+
+## The table change, checked mechanically
+
+A temporary test (not committed) held verbatim copies of the five old functions and
+compared them with `carry_role` over 430 spellings: every 68k family through the string
+path with data- and address-register operands, the 18 condition spellings in the Bcc,
+Scc and DBcc forms, ANDI/ORI/EORI/MOVE to CCR and SR at seven immediates, MOVE from SR,
+and the `.emp` words; every Z80 mnemonic with the eight conditions, PUSH/POP of four
+pairs, and both EX forms. 61 changed and 369 did not, and every change falls in a class
+the commit `37426527` lists: address-register MOVE/ADD/SUB/ADDQ/SUBQ, ANDI/ORI/EORI to
+CCR or SR by bit 0, DBLO/DBHS, MOVE from SR, RTE, EXTB; Z80 ADC/SBC/RLA/RRA/RL/RR/DAA,
+CCF, POP AF, EX AF, AF', PUSH AF, SLL.
