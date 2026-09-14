@@ -1811,10 +1811,11 @@ impl Flags {
 ///
 /// **Sound-complete for #2's edge-identification** (`flag_check::Cfg::valid_edge`,
 /// the corrected banner): the Z-only writers `btst`/`bset`/`bclr`/`bchg` are NOT
-/// listed, so they BAIL — unlike `flag_check::writes_carry` (§6's carry-polarity
-/// allowlist), which lets them through as transparent. #2's cc is `eq`(Z), so a
-/// Z-clobber between a conditional-out call and its `beq` guard MUST bail; reusing
-/// `writes_carry` there would credit on a stale-Z edge = a must-def false negative.
+/// listed, so they BAIL, unlike a carry-writer test over `flag_check::carry_role`
+/// (the carry model, where they leave C alone), which lets them through. #2's cc
+/// is `eq`(Z), so a Z-clobber between a conditional-out call and its `beq` guard
+/// MUST bail; a carry-writer test there would credit on a stale-Z edge = a
+/// must-def false negative.
 pub(crate) fn cc_transparent(mnem: &str) -> bool {
     cc_inert_data_op(mnem) || is_branch_or_return(mnem)
 }

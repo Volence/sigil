@@ -18,9 +18,11 @@ use std::path::Path;
 use std::process::Command;
 
 /// A 68k caller abandoning `Queue`'s carry, a 68k caller reading `Alloc`'s
-/// conditional `a1` on its invalid (carry-set) edge, and a 68k caller whose
-/// `btst` redefines `Find`'s zero result before its `beq` (BTST writes Z and
-/// leaves C, so only the zero model sees this one).
+/// conditional `a1` on its invalid (carry-set) edge, the same read with an
+/// address-register ADDQ between the call and the guard (it leaves the CCR, so
+/// the walk reaches the `bcs`), and a 68k caller whose `btst` redefines `Find`'s
+/// zero result before its `beq` (BTST writes Z and leaves C, so only the zero
+/// model sees this one).
 const M68K_FIRING: &str = "module engine.flagfix
 extern proc Queue (d1) clobbers(d0) out(carry: dropped)
 extern proc Alloc () clobbers(d0) out(a1 if cc)
@@ -40,6 +42,16 @@ proc Reader () clobbers(d0-d1/a1) {
     move.w (a1), d1
     rts
 }
+proc AnReader () clobbers(d0-d1/a0-a1) {
+    jbsr Alloc
+    addq.l #2, a0
+    bcs .fail
+    move.w (a1), d0
+    rts
+.fail:
+    move.w (a1), d1
+    rts
+}
 proc ZCaller () clobbers(d0) {
     jbsr Find
     btst #0, d0
@@ -50,14 +62,24 @@ proc ZCaller () clobbers(d0) {
 ";
 
 /// A Z80 caller abandoning `Resolve`'s carry (`scf` redefines it before `ret`),
-/// and a Z80 caller whose `inc a` redefines `Lookup`'s zero result before its
-/// `jr z` (8-bit INC writes Z and leaves C).
+/// a Z80 caller whose `pop af` restores the F it saved before the call, so the
+/// `jr c` tests that and not `Resolve`'s carry, and a Z80 caller whose `inc a`
+/// redefines `Lookup`'s zero result before its `jr z` (8-bit INC writes Z and
+/// leaves C).
 const Z80_FIRING: &str = "module engine.sndfix (cpu: z80)
 extern proc Resolve () out(carry: missing)
 extern proc Lookup () out(zero: absent)
 proc SndCaller () {
     call Resolve
     scf
+    ret
+}
+proc PopCaller () {
+    push af
+    call Resolve
+    pop af
+    jr c, .done
+.done:
     ret
 }
 proc ZSndCaller () {
@@ -69,9 +91,12 @@ proc ZSndCaller () {
 }
 ";
 
-/// The same five calls written correctly: `@discards` on the drop, `a1` read
-/// only on the valid edge, the Z80 carry consumed by `jr c`, and each zero
-/// result read by its branch before the instruction that would redefine it.
+/// The same seven calls written correctly: `@discards` on the drop, `a1` read
+/// only on the valid edge, the Z80 carry consumed by `jr c` before the `pop af`,
+/// and each zero result read by its branch before the instruction that would
+/// redefine it. Three more calls keep their carry through instructions the
+/// manual says leave C, or consume it into a value: an address-register ADDQ
+/// and a MOVE from SR before the `bcs`, and a Z80 `adc a, 0`.
 const M68K_CLEAN: &str = "module engine.flagfix
 extern proc Queue (d1) clobbers(d0) out(carry: dropped)
 extern proc Alloc () clobbers(d0) out(a1 if cc)
@@ -87,6 +112,28 @@ proc Reader () clobbers(d0-d1/a1) {
     bcs .fail
     move.w (a1), d0
 .fail:
+    rts
+}
+proc AnReader () clobbers(d0-d1/a0-a1) {
+    jbsr Alloc
+    addq.l #2, a0
+    bcs .fail
+    move.w (a1), d0
+.fail:
+    rts
+}
+proc AnCaller () clobbers(d0-d1/a0) {
+    moveq #0, d1
+    jbsr Queue
+    addq.l #2, a0
+    bcs .x
+.x:
+    rts
+}
+proc SrCaller () clobbers(d0-d1) {
+    moveq #0, d1
+    jbsr Queue
+    move.w sr, d0
     rts
 }
 proc ZCaller () clobbers(d0) {
@@ -105,6 +152,19 @@ proc SndCaller () {
     call Resolve
     jr c, .done
 .done:
+    ret
+}
+proc PopCaller () {
+    push af
+    call Resolve
+    jr c, .done
+.done:
+    pop af
+    ret
+}
+proc AdcCaller () {
+    call Resolve
+    adc a, 0
     ret
 }
 proc ZSndCaller () {
@@ -152,6 +212,23 @@ fn loc(file: &Path, src: &str, needle: &str) -> String {
     format!("{}:{}:{col}", file.display(), i + 1)
 }
 
+/// [`loc`] of the first line containing `needle` after the first line containing
+/// `after`, for a needle more than one proc in the fixture has.
+fn loc_after(file: &Path, src: &str, after: &str, needle: &str) -> String {
+    let start = src
+        .lines()
+        .position(|l| l.contains(after))
+        .unwrap_or_else(|| panic!("fixture has no line containing {after:?}"));
+    let (i, line) = src
+        .lines()
+        .enumerate()
+        .skip(start + 1)
+        .find(|(_, l)| l.contains(needle))
+        .unwrap_or_else(|| panic!("fixture has no {needle:?} after {after:?}"));
+    let col = line.len() - line.trim_start().len() + 1;
+    format!("{}:{}:{col}", file.display(), i + 1)
+}
+
 /// Every flag-check kind the build walk produces, on both CPUs, stops the build
 /// with the family header and one located line per firing, and each line says
 /// what to do: the must-use lines name the declared result for `@discards`.
@@ -175,9 +252,19 @@ fn the_build_gate_refuses_every_flag_result_firing_with_its_location() {
             loc(&m68k, M68K_FIRING, "jbsr Alloc")
         ),
         format!(
+            "  {}: [call.result-invalid-path] `AnReader` calls `Alloc`, whose `a1` result is \
+             valid only where `cc` holds",
+            loc_after(&m68k, M68K_FIRING, "proc AnReader", "jbsr Alloc")
+        ),
+        format!(
             "  {}: [call.flag-result-unused] `SndCaller` calls `Resolve` and abandons its \
              `carry` result `missing` on some path",
             loc(&z80, Z80_FIRING, "call Resolve")
+        ),
+        format!(
+            "  {}: [call.flag-result-unused] `PopCaller` calls `Resolve` and abandons its \
+             `carry` result `missing` on some path",
+            loc_after(&z80, Z80_FIRING, "proc PopCaller", "call Resolve")
         ),
         format!(
             "  {}: [call.flag-result-unused] `ZCaller` calls `Find` and abandons its `zero` \
