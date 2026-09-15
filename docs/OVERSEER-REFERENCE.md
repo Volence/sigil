@@ -1200,6 +1200,34 @@ that silently skipped ignored files; this one).
 hub banked the two together deliberately: one-directional behavioural evidence cannot distinguish a working
 gate from a dead one.**
 
+### A PROBE THAT GOES RED ON AN ADJACENT PATH REPORTS A TRUE-LOOKING ARTIFACT FOR A FALSE CLAIM
+
+*(Aeon's catch, 2026-09-15, made BEFORE either lane spent the run, which is the only reason it cost nothing.)*
+
+Confirming `82838687` by behaviour means reaching a **link-decided** LinkAssert failure. This lane proposed the
+fixture "one `ensure` that cannot hold" - `ensure(here() <= $0, ...)`. **That folds at COMPTIME and never
+reaches the path the claim is about.** It would have gone red; the report would have read *"link-assert failure
+rendered located, not a panic"*; the exit code, the located output and the red would all have been real. **Only
+the sentence naming which path produced them would have been false, and nothing in the artifact can say so.**
+
+**The instrument that would have caught it was already in this lane's own hand and had already been quoted.**
+The `--check` census separates the buckets by name and by count in the very output cited two paragraphs above:
+*89,664 ensure verdict(s) at comptime, 653 LinkAssert(s) decided at link.* The proposal was written without
+re-reading the number it had just pasted. **A census that partitions the population is a statement about which
+bucket YOUR probe lands in, and it is worth re-reading at the moment a probe is designed rather than only when
+it is reported.**
+
+**THE BAR: before believing a red, name which of the code's own partitions produced it, and say how the probe
+is forced into that partition rather than the one beside it.** For this family the forcing fact is mechanical:
+`extern("Sym")` poisons comptime-ness (aeon's measurement, off-screen-ship parcel, 2026-08-15), so an `ensure`
+spanning two link-time symbol addresses cannot fold. The working model is aeon `engine/debug/sound_debug.emp:98`,
+over `extern("Dynamic_Live") - extern("Sound_Dbg_Mirror")`; the fixture is that assert inverted.
+
+**This is the sibling of *A CONTROL CAN VERIFY THE WRONG PREDICATE*, one level out.** That block is about a
+control that checks the wrong PROPERTY; this is a probe that exercises the wrong PATH. Both produce a green or
+a red that is genuine, and in both the falsehood lives only in the prose attaching the result to a claim - which
+is the half no artifact carries and no reviewer re-derives.
+
 **THE INSTALLED PAIR FROM 2026-09-13T09:36:09Z TO 2026-09-15T23:52:38Z WAS THE 1532b72f BUILD, and it superseded the 6884bfba
 paragraph below.** Swapped on the hub's OPEN (conditions banked at empyrean `909a869`, verified an ancestor
 of their `origin/main` at the instant) after aeon's clear (their `21747f03`, the tip of their `origin/master`).
