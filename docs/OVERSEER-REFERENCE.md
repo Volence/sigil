@@ -1140,7 +1140,67 @@ aeon build. Deleting the tree breaks placement, not only the `source:` field. De
 `docs/superpowers/notes/2026-09-11-aeon-source-digest-ask.md`, second amendment.
 **`.sigil-ls12-pin` is released once aeon confirms it is on the new pair — ask them, not this file.**
 
-**THE INSTALLED PAIR SINCE 2026-09-13T09:36:09Z IS THE 1532b72f BUILD, and it supersedes the 6884bfba
+**THE INSTALLED PAIR SINCE 2026-09-15T23:52:38Z IS THE 700177b1 BUILD, and it supersedes the 1532b72f
+paragraph below.** Swapped on the hub's OPEN (granted in the same minutes, with its reason: the owner had
+just given the go for REGIONS part 2, so aeon was idle at a boundary and an hour later would not be) after
+aeon's explicit clear, which they gave firsthand and backed by verifying the outgoing md5s against the files
+on disk themselves. Method unchanged: `/proc` exe scan at 23:52:17Z found 0 users (the five cmdline hits were
+the scanning shell and its own `tr`, checked one by one rather than counted), outgoing pair copied aside and
+md5-verified against the installed files BEFORE the rename, each new file `cp -p`'d to a staging name inside
+`sigil/target/release/` and then `mv`'d over (link count 1 each). Installed: `sigil`
+`324d85d6ad5267a99bd57f118871ed1f`, `emit_sound_blob` `8c874ce1f50d57f4841c5324329c2216`, built `--locked` in
+the durable worktree `~/sonic_hacks/.sigil-pin-700177b1` (HEAD `700177b1`, porcelain 0 before and after; target
+dir is that worktree's own `target/`). Banner: `tree: clean at capture`, `source:` that worktree. **Outgoing pair
+kept at `~/sonic_hacks/.sigil-outgoing-1532b72f/`** (sigil `73901664...`, emitter `1f936ebb...`, with
+`README-ASIDE.txt` carrying the instant and the restore recipe). **Keep `.sigil-pin-700177b1`** (the installed
+binary reads its size tables from it at run time, per the `load_frozen_table` paragraph above) **and
+`.sigil-pin-1532b72f`** (the aside pair reads ITS tables from there, so a restore without it breaks placement).
+What this pair adds for aeon: the flag-check tables derive from M68000PRM and UM0080 instead of a hand-typed
+list, and the zero-flag check.
+
+**THE CONTENTS WERE READ OUT OF THE INSTALLED BINARY IN BOTH DIRECTIONS, and the second direction is the one
+that earns the claim.** A carry-consuming `adc a, 0` after a call draws nothing under the new pair where the
+old one refused it; a `pop af` between a call and its `jr c` fires under the new pair where the old one was
+silent. **The first alone would not have been evidence**: a gate that had been switched off entirely produces
+exactly that result, so a refusal that disappears must be paired with a refusal that appears before the new
+table can be called present rather than merely absent.
+
+**⚠ WHAT CLOSED IT WAS AEON'S REBUILD, NOT THIS LANE'S MEASUREMENT, and the distinction is the reusable part.**
+The pre-swap evidence was a no-op measured at aeon `ec640bcf`, `55c062a4` and `eec81e48` — all ancestors of
+their master, and 747, 37 and 31 commits behind its tip, so **none of them carried the night region or the fade
+fix, which is the newest code the incoming binary actually assembles.** Aeon caught that themselves and supplied
+the control this lane had not asked for: their master's delta from `2e6709a1` is docs-only, so the ROMs in the
+main folder were built with the OUTGOING pair and are a valid before-image (s4 `4d9b2524`, s4.debug `76ea409b`,
+demo.debug `d326c9e7`; **demo.bin `e3e7190e` is excluded as stale by design**, since the pre-merge check stopped
+building demo-normal, so a difference there would be theirs and not ours). **THE RULE: a no-op measured before
+the relink is evidence about the FIX, never about the INSTALLED PAIR, and evidence taken at an ancestor says
+nothing about the tip. Ask the CONSUMING lane for a control at their tip as part of requesting the clear, not
+merely as a courtesy notice that a swap is coming.** From the hub's seat the claim was well-formed and true; the
+gap was the distance between where the evidence was taken and where the binary gets used, and **only the lane
+holding the tip could see it.**
+
+**AND ONE CHECK IN THIS SWAP WAS BLIND, caught only by a control, which is why it is written down.** Confirming
+`82838687` by grepping the installed binary's strings for its `[Error]` token returned **0**, which reads as the
+feature being absent. Running the identical grep against the OUTGOING binary also returned 0 — **the token is
+assembled at run time, so the check could not have returned anything else on either arm**, and a zero it was
+structurally incapable of contradicting would have been reported as a finding. Both `82838687` and `d90a297c`
+are ancestors of `700177b1` and `--check` is in the help output, so they are present; that is ancestry, and it
+was reported to aeon AS ancestry rather than dressed as a behavioural read.
+
+**AND THE DIRECTION THE MISTAKE WOULD HAVE RUN IS THE HALF THIS LANE MISSED** *(the hub's extension, banked
+suite-wide at empyrean `6cf3ade`; read it there)*. The zero is the memorable failure, but **had that same grep
+returned a HIT, the feature would have been reported present on exactly as little ground. A check that cannot
+fail cannot pass either**, so the defect is the instrument and not the verdict it happened to produce.
+**THE BAR, short enough to carry: before a zero is allowed to mean anything, run the same instrument somewhere
+it MUST produce a hit; if no such place exists, the instrument is wrong for the question.** The suite has now
+booked this class from three directions (bar 16(d), an absence read as a finding; the shell-function `grep`
+that silently skipped ignored files; this one).
+
+**The same insight from the other side is why the behavioural read above was run in BOTH directions, and the
+hub banked the two together deliberately: one-directional behavioural evidence cannot distinguish a working
+gate from a dead one.**
+
+**THE INSTALLED PAIR FROM 2026-09-13T09:36:09Z TO 2026-09-15T23:52:38Z WAS THE 1532b72f BUILD, and it superseded the 6884bfba
 paragraph below.** Swapped on the hub's OPEN (conditions banked at empyrean `909a869`, verified an ancestor
 of their `origin/main` at the instant) after aeon's clear (their `21747f03`, the tip of their `origin/master`).
 Method unchanged: a `/proc` scan over exe and cmdline at 09:36:08Z found 0 users, the script checked that the
