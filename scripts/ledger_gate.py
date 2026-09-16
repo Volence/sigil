@@ -206,6 +206,135 @@ def check_json(files: list[Path]) -> bool:
 
 
 # ---------------------------------------------------------------------------------------
+# (1b) HARD: a record's time field is present AND usable.
+#
+# DELIBERATELY A SEPARATE ROW FROM (1) AND NOT A WIDENING OF IT (aurora's method note,
+# relayed 2026-09-16). Presence and non-emptiness are different properties, and a merged
+# row reports the first while HIDING the second: a predicate that asks "does it have an
+# `at`" answers yes for `at: ""` and the row goes green with the defect inside it.
+#
+# WHY READER-SIDE AND NOT ONLY AT THE WRITE. empyrean's scripts/ledger_append.py refuses
+# these shapes at write time and this lane vendors it, but EVERY refusal in it is skipped
+# by `open(p, "a").write(...)`, which is one line and is what a hurried seat reaches for.
+# The honest guarantee a producer-side guard offers is that a record written THROUGH IT
+# cannot corrupt the previous one, never that the ledger is safe. A gate judges entries
+# the bypass stops mattering here. THE ONLY MEASURED CLAIM BEHIND THIS ROW IS THIS LANE'S
+# OWN: scripts/ledger_gate.py exited 0 on a record with no `at`, measured here by appending
+# one to docs/lane-log.jsonl and restoring from a copy. A relayed sentence generalising that
+# into a suite-wide condition, one blind reader-side row per repo, was WITHDRAWN by its
+# author within the hour after aurora planted rather than reasoned and found its own row
+# caught both shapes. It is recorded as withdrawn rather than deleted because a gate comment
+# asserting a property of another repo's tests is exactly the unverifiable citation this
+# lane refuses elsewhere, and the temptation was to keep it because it read well.
+#
+# TWO PROPERTIES, REPORTED SEPARATELY FOR THE SAME REASON THE ROW IS SEPARATE:
+#   unusable  a time field is present and carries no time: empty, blank, null, or a
+#             non-string. This is the shape a CORRECTLY READ clock makes when it is
+#             dropped in transit -- `VAR=$(date -u ...) cmd "$VAR"` yields "" because the
+#             assignment is not in scope on that line, and `os.environ.get("NOW")` yields
+#             None when NOW is unset. The value was never invented; it was lost.
+#   absent    no time field at all. JUDGED ONLY WHERE THE FILE'S OWN RECORDS ESTABLISH
+#             THE FIELD, because this gate has no schema for any ledger and will not
+#             invent one. A key counts as required for a file when ANY record carries it,
+#             NOT when every record does: a gate reads the file after the candidate is
+#             already in it, so a unanimity rule lets one bad record break its own file's
+#             unanimity and switch the check off. Measured, not reasoned: that draft went
+#             green on the absent shape with the judged population silently falling from
+#             469 to 118. A file that establishes no time field at all is REPORTED as unjudged
+#             rather than counted green: "I could not look" and "I looked and it is fine"
+#             must not be the same answer.
+#
+# FORMAT AND PLAUSIBILITY ARE OUT OF SCOPE, deliberately. A wrong-but-present timestamp is
+# a different failure with different evidence, and a format rule here would go red on
+# ratified history, which is the shape whose remedy everyone reaches for is weakening it.
+# ---------------------------------------------------------------------------------------
+
+TIME_KEYS = ("at", "updatedAt", "since", "ts")
+
+
+def _usable_time(value) -> bool:
+    """A time field carries a time. A str that is empty or blank does not, and neither
+    does null or a number: both are what a lost value deserialises to."""
+    return isinstance(value, str) and value.strip() != ""
+
+
+def check_time_fields(files: list[Path]) -> bool:
+    unusable: list[str] = []
+    absent: list[str] = []
+    unjudged: list[str] = []
+    judged = 0
+
+    for path in files:
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError as exc:
+            raise Unmeasurable(f"cannot read {path}: {exc}") from None
+        records: list[tuple[int, dict]] = []
+        for number, line in enumerate(text.split("\n"), start=1):
+            if not line.strip():
+                continue
+            try:
+                obj = json.loads(line)
+            except ValueError:
+                # (1) owns unparseable lines and has already failed the run over them.
+                # Counting them again here would report one defect as two.
+                continue
+            if isinstance(obj, dict):
+                records.append((number, obj))
+
+        for number, obj in records:
+            for key in TIME_KEYS:
+                if key in obj and not _usable_time(obj[key]):
+                    unusable.append(f"{path.name}:{number}  {key} = {obj[key]!r}")
+
+        # A key is REQUIRED for this file when the file's own records all carry it.
+        # ANY, NOT ALL, AND THE RED-FIRST PROOF IS WHY. This read `all(...)` for one
+        # draft: a key was required only where EVERY record carried it. A gate reads
+        # the file AFTER the candidate record is already in it, so the single record
+        # with no time field broke its own file's unanimity, dropped that file out of
+        # the judged set, and the absent check went GREEN on the exact shape it exists
+        # to catch -- 469 records judged fell to 118 and the row still said ok. The
+        # predicate disabled itself with the defect. Note the same rule is SOUND in
+        # empyrean's producer-side ledger_append.py, because that evaluates the file
+        # BEFORE the candidate joins it, so the candidate cannot dilute the population
+        # it is being judged against. Same rule, opposite soundness, decided by which
+        # side of the write it runs on.
+        required = [k for k in TIME_KEYS if any(k in obj for _, obj in records)]
+        if not required:
+            if records:
+                unjudged.append(f"{path.name} ({len(records)} records)")
+            continue
+        judged += len(records)
+        for number, obj in records:
+            missing = [k for k in required if k not in obj]
+            if missing:
+                absent.append(f"{path.name}:{number}  missing {', '.join(missing)}")
+
+    ok = not unusable and not absent
+    emit(
+        f"time      {judged} record(s) judged for an absent field, {len(unusable)} unusable, "
+        f"{len(absent)} absent  -- HARD, {'ok' if ok else 'FAILED'}"
+    )
+    for entry in unusable:
+        emit(f"  unusable  {entry}")
+    for entry in absent:
+        emit(f"  absent    {entry}")
+    for entry in unjudged:
+        emit(f"  UNJUDGED  {entry} establishes no time field, so the absent check did not")
+        emit("            run on it. This is not a pass; it is a file this gate cannot")
+        emit("            judge, and it is named so nobody reads the green above as cover.")
+    if not ok:
+        emit("  A record whose time field is present and empty is a clock that WAS read and")
+        emit("  was lost in transit, most often `VAR=$(date -u ...) cmd \"$VAR\"`, where the")
+        emit("  assignment is not in scope on that same line, or os.environ.get on an unset")
+        emit("  name. Set it on its own line, then pass it. The standing rule against typing")
+        emit("  a time from a session's own sense of it is OBEYED while this happens, which")
+        emit("  is why it needs a check rather than more care: that rule guards against an")
+        emit("  INVENTED number and is blind to a correct one that never arrived.")
+    return ok
+
+
+# ---------------------------------------------------------------------------------------
 # (2) RATCHET: console-renderability may shrink, never grow.
 # ---------------------------------------------------------------------------------------
 def check_renderability(repo: Path, ledger: Path, pin: int, pin_origin: str) -> bool:
@@ -357,6 +486,7 @@ def main(argv: list[str]) -> int:
         emit(f"docs      {docs}")
 
         json_ok = check_json(files)
+        time_ok = check_time_fields(files)
 
         ledger = docs / LEDGER_NAME
         if not ledger.is_file():
@@ -376,7 +506,7 @@ def main(argv: list[str]) -> int:
         print(f"ledger-gate: UNMEASURABLE, {exc}", file=sys.stderr)
         return 2
 
-    ok = json_ok and render_ok
+    ok = json_ok and time_ok and render_ok
     emit(f"result    {'ok' if ok else 'FAILED'}")
     return 0 if ok else 1
 
