@@ -5686,3 +5686,33 @@ the four should be corrected by append, and do it as one act rather than four.
 visible only in the console. A gate over this file's own `answered.by` is cheap and would have caught
 all six. It needs invariant 8 treatment like any other check: red-first, with the mutation shown on
 disk.
+
+**AMENDED 2026-09-16, and the amendment lands on this entry's own method. The sweep above was
+keyed to one spelling.** It asked whether `answered.by` is IN the enum. That is a legality question,
+and it cannot ask whether the value is TRUE. **Aeon turned that question on their own ledger after
+reading this booking, found their "37 clean" was the same one-spelling sweep, and reported the fact
+lost in the OPPOSITE direction.** Their instance: `by: "owner"` with `did` opening *"Transcribed by
+the hub"*. He decided, the hub carried it, `by: "owner"` is true, and the relay is gone.
+
+**Re-run here against the truth question, five in-enum entries carry a fact their `by` value does not:
+`d-21`, `d-14-correction`, `d-26-answered`, `d-27`, `d-29`, all `by: "hub"`, all of them the hub
+ruling IN THE OWNER'S PLACE under a delegation and declared overturnable by him.** That is a
+materially different act from the hub deciding on its own authority, and `by: "hub"` is true and
+incomplete for every one. The distinction survives only in `did` prose. The four out-of-enum values
+this entry originally found are therefore not the population; they are one half of it.
+
+**So the generalisation has an instance in each direction rather than four in one lane: qualify the
+value and lose the field, use the bare value and lose the distinction.** Aeon's point about which is
+worse is worth carrying and runs against this lane's own interest: **the out-of-enum version at least
+raises an issue on the console, while the true-but-incomplete version is undetectable by any reader**,
+and it is the one that was sitting behind a report of cleanliness in both lanes.
+
+**DO NOT FILE A SECOND CARD FOR THIS.** Aeon escalated it to the hub as ONE question covering both
+lanes, with the recommendation to add an optional `via` field rather than widen `by`, on the ground
+that the ledgers are append-only so widening makes every committed `owner` line retroactively
+ambiguous about whether its author meant direct or had never met the distinction, whereas a companion
+field leaves every existing line true and needs no backfill. They also banked that *"not worth it"* is
+a real answer. Attribution as they sent it: the reader half (`dominion/server/src/decisions.ts:369-379`)
+is this lane's firsthand read and they declined to restate it as their own. **This entry's kill
+condition is now that hub ruling, not a local fix**, and a gate built here before it would be the
+six-private-fixes outcome wearing a tool's clothes.
