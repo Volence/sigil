@@ -1,4 +1,4 @@
-//! `context <name>(param: Code = asm {})` and `with <ctx>(param: asm { … })` —
+//! `context <name>(param: Code = asm {})` and `with <ctx>(param: asm { … })`,
 //! the NAMED SLOT (decision `d-33`, answered `named-slot` by the owner on
 //! 2026-09-16).
 //!
@@ -45,7 +45,7 @@ const SLOT_CTX: &str = "context z80_stopped(interleave: Code = asm {}) {\n\
      \x20   release = asm { move.w #$0000, Z80_BUS_REQUEST }\n\
      }\n";
 
-/// The SAME context with no parameter at all — the corpus's shape today. Its
+/// The SAME context with no parameter at all, the corpus's shape today. Its
 /// acquire is spelled as one `asm { }` rather than as a `++` chain, which is
 /// deliberate: the byte-identity test below compares the two, so anything the
 /// concatenation did differently would show up there.
@@ -96,7 +96,7 @@ fn tagged<'d>(diags: &'d [Diagnostic], tag: &str) -> Vec<&'d Diagnostic> {
 }
 
 // ---------------------------------------------------------------------------
-// 1. THE SAFETY PROOFS — the compiler still owns the release on every exit path
+// 1. THE SAFETY PROOFS: the compiler still owns the release on every exit path
 // ---------------------------------------------------------------------------
 
 /// THE HEADLINE. An `rts` written in the SLOT is a return taken between the bus
@@ -148,7 +148,7 @@ fn a_straight_line_slot_fires_nothing() {
 }
 
 /// A BRANCH OUT of the region taken from the slot is the same escape by a
-/// different edge — the shape `bg.emp`'s header describes in prose ("a guard
+/// different edge, the shape `bg.emp`'s header describes in prose ("a guard
 /// branch taken from inside the bracket would leave the Z80 halted for the rest
 /// of the level"), now written in the one place that had no bracket to put it in.
 #[test]
@@ -273,8 +273,8 @@ fn a_local_label_in_the_slot_is_not_an_entry_skip() {
 /// slot defined. It is not accepted quietly: the branch reads as a transfer out
 /// of the region and `[context.escape]` fires as an ERROR.
 ///
-/// PRE-EXISTING AND NOT CAUSED BY THE SLOT — the same is true of a body branch
-/// naming the acquire's own `.wait_z80` — but it is the first shape where
+/// PRE-EXISTING AND NOT CAUSED BY THE SLOT: the same is true of a body branch
+/// naming the acquire's own `.wait_z80`, but it is the first shape where
 /// somebody might reasonably try it, so it is pinned here rather than left to be
 /// rediscovered.
 #[test]
@@ -299,7 +299,7 @@ fn a_body_branch_naming_a_slot_label_is_refused() {
 }
 
 // ---------------------------------------------------------------------------
-// 2. THE AUTHORSHIP SEAM — a consumer's slot code stays the consumer's
+// 2. THE AUTHORSHIP SEAM: a consumer's slot code stays the consumer's
 // ---------------------------------------------------------------------------
 
 /// THE DEFINITION-SITE CHECK MUST NOT READ CONSUMER CODE. `lower_with`'s
@@ -393,7 +393,7 @@ fn an_sr_write_in_the_slot_is_charged_to_the_consumer() {
 
 /// A CONTEXT'S PARAMETER NAMES BELONG TO THE CONTEXT. The parameter scope wraps
 /// each spliced half and not the whole bracket, so a consumer's body goes on
-/// meaning what it meant before the context author added a parameter — here a
+/// meaning what it meant before the context author added a parameter, here a
 /// module `const` of the same name, which the body must still see.
 #[test]
 fn a_parameter_name_does_not_leak_into_the_bracket_body() {
@@ -419,13 +419,13 @@ fn a_parameter_name_does_not_leak_into_the_bracket_body() {
 }
 
 // ---------------------------------------------------------------------------
-// 3. BYTE IDENTITY — the no-argument spelling is the corpus's 22 sites
+// 3. BYTE IDENTITY: the no-argument spelling is the corpus's 22 sites
 // ---------------------------------------------------------------------------
 
 /// THE ACCEPTANCE BAR IN MINIATURE. A bracket that passes no argument to a
 /// context that declares a slot emits the IDENTICAL bytes to the same bracket
 /// over the same context declared without one. The empty default concatenates
-/// nothing, so the slot costs nothing when unused — which is what lets aeon's
+/// nothing, so the slot costs nothing when unused, which is what lets aeon's
 /// 22 existing `with z80_stopped` sites go untouched.
 #[test]
 fn an_unfilled_slot_emits_the_bytes_of_a_context_with_no_slot() {
@@ -447,14 +447,14 @@ fn an_unfilled_slot_emits_the_bytes_of_a_context_with_no_slot() {
     assert_eq!(a, b, "a declared-but-unfilled slot moves no bytes");
     // NOT VACUOUS: both really assembled the bracket. The acquire's first line
     // is `move.w #$0100, <abs>`, whose opcode word and immediate are `31 FC`
-    // and `01 00` — derived from that source line, not copied from a pin.
+    // and `01 00`, derived from that source line, not copied from a pin.
     assert_eq!(&a[0..4], &[0x31, 0xFC, 0x01, 0x00], "the bus request heads the proc: {a:02X?}");
 }
 
 /// AND THE FILLED SLOT IS THE DIFFERENCE, stated as bytes rather than as a
 /// description of bytes: the same bracket with one statement in the slot emits
 /// exactly the unfilled stream plus that statement, positioned between the bus
-/// request and the grant spin. That position is the whole ask — boot's reset
+/// request and the grant spin. That position is the whole ask: boot's reset
 /// flick has to land after the request and before the grant poll.
 #[test]
 fn a_filled_slot_adds_exactly_its_own_code_where_the_context_put_it() {
@@ -499,8 +499,8 @@ fn a_filled_slot_adds_exactly_its_own_code_where_the_context_put_it() {
 /// and splices NEITHER half: there is no acquire, no release and no region, so
 /// the context is genuinely not held in that shape. The slot lives inside the
 /// acquire, so it goes with it. That is coherent rather than surprising once
-/// stated — the gate's whole purpose is "this bracket does not exist in that
-/// build shape" — but it is not obvious from the spelling, so it is a test and a
+/// stated (the gate's whole purpose is "this bracket does not exist in that
+/// build shape"), but it is not obvious from the spelling, so it is a test and a
 /// line in the spec rather than something to be rediscovered in an OFF build.
 #[test]
 fn a_false_gate_takes_the_slot_with_the_acquire() {

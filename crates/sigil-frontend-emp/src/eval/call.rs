@@ -917,7 +917,7 @@ fn param_type_is_reg(ty: &ast::Type) -> bool {
 
 /// Whether a parameter's declared type is the comptime-only `Code` type: a
 /// single-segment `Named` path spelled exactly `Code`. Recognized structurally
-/// here alongside `Reg` and `Label`, and for the same reason — `Code` is a
+/// here alongside `Reg` and `Label`, and for the same reason, `Code` is a
 /// comptime value class, never a data layout, so `resolve_type` never sees it.
 ///
 /// Read by the `with <ctx>(…)` slot binder (d-33) to name the one near miss

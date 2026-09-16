@@ -379,7 +379,7 @@ pub enum ItemAuthor {
     /// WHY IT HAS TO EXIST AT ALL: [`reauthor_user_items`] claims every `User`
     /// item in a spliced context half for the CONTEXT, which is right for the
     /// context author's own lines and wrong for the consumer's. The consumer's
-    /// slot code is the consumer's to answer for — `[proc.sr-undeclared]`
+    /// slot code is the consumer's to answer for, `[proc.sr-undeclared]`
     /// exempts `Context`-authored items at the consumer (`lower/proc.rs`) and
     /// charges them to the context's DECLARATION span instead, in another file.
     /// Marking the argument before the splice makes it invisible to

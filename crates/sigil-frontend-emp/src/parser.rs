@@ -1874,7 +1874,7 @@ impl Parser {
     /// (trailing comma tolerated). Shared by `proc` and `script` — R9b.1 pins
     /// script params as "exactly as `proc`", so there is ONE grammar.
     /// Parse a `(name: T [= default], …)` parameter list, consuming both
-    /// parens — the DECLARATION side of the language's one argument rule,
+    /// parens, the DECLARATION side of the language's one argument rule,
     /// shared by [`Parser::comptime_fn_decl`] and [`Parser::context_decl`] so
     /// the two cannot drift into two spellings of one idea.
     ///
@@ -3143,7 +3143,7 @@ impl Parser {
         AsmStmt::If { cond, then, els, span: start.merge(self.prev_span()) }
     }
 
-    /// `with <ctx> [(args)] [if <cond>] { asm... }` — a context bracket (§3.2).
+    /// `with <ctx> [(args)] [if <cond>] { asm... }`, a context bracket (§3.2).
     /// The body parses with the SAME statement grammar as the enclosing block,
     /// so labels, nested `if`s, and nested brackets all work inside. The
     /// optional gate parses with struct literals disabled, exactly as
@@ -3151,8 +3151,8 @@ impl Parser {
     /// `block_depth` ceiling.
     ///
     /// The optional ARGUMENT LIST (d-33) fills the parameters the context
-    /// declared. It uses the language's one call-argument grammar — positional
-    /// args first, then `name: value` — so a `Code`-typed parameter is filled
+    /// declared. It uses the language's one call-argument grammar, positional
+    /// args first, then `name: value`, so a `Code`-typed parameter is filled
     /// with `with ctx(slot: asm { … }) { … }`. It parses BEFORE the `if` gate
     /// because it belongs to the context name, while the gate is about this
     /// bracket. `with <ctx> (` is unambiguous: the only other things that may

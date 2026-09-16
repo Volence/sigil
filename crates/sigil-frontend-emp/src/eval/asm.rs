@@ -839,7 +839,7 @@ impl Evaluator<'_> {
         // SR write to the context author would be a diagnostic pointing at the
         // wrong person's code. Past this line the slot's instructions carry
         // `ItemAuthor::User`, which is exactly what they would carry written in
-        // the bracket's body — so every consumer-side rule (`[proc.clobber-*]`,
+        // the bracket's body, so every consumer-side rule (`[proc.clobber-*]`,
         // `[proc.sr-undeclared]`, the preserves model) sees them and none of
         // them has to know this feature exists.
         for slot in &slots {
@@ -872,7 +872,7 @@ impl Evaluator<'_> {
     /// returning one [`SlotArg`] per parameter the CALLER filled with code.
     ///
     /// Returns EMPTY, having evaluated nothing and diagnosed nothing, when the
-    /// context declares no parameters and the bracket passes no arguments —
+    /// context declares no parameters and the bracket passes no arguments,
     /// the corpus's every bracket, which must keep lowering byte-for-byte as it
     /// did before parameters existed.
     fn bind_context_args(

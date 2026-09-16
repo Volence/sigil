@@ -180,7 +180,7 @@ sites that might exist. There is one hand-spelled site in the engine and it was 
 `context` at all, which predates this feature. The line it needs, with the parameter list
 folded in:
 
-> `context NAME [(params)] { acquire = …  release = … | released_by_rte | granted }` — a
+> `context NAME [(params)] { acquire = …  release = … | released_by_rte | granted }`, a
 > declared machine-state context, entered by the `with NAME [(args)] [if …] { … }` bracket.
 
 ---
