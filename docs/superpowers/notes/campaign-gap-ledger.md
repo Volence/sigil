@@ -5869,3 +5869,23 @@ shape, or to the omission of `by`. **It is keyed to the LEDGER as the population
 entry, was additionally keyed to the IN-ENUM SUBSET, which silently excluded six entries. An authority
 fact living only in `docs/OVERSEER-LOG.md`, a commit message or a board blocker is still invisible to
 it. That is a boundary the next reader can widen, which is what a boundary is for.
+
+**THE CLEAN RESULT NEEDS ITS OWN DISCRIMINATOR, and this entry's six CLEAN entries pass it**
+*(aeon, 2026-09-16, aiming this file's own unauditable finding at a clean result rather than at a
+claim)*. Their formulation, adopted: ***"my search found none"* and *"there are none"* are different
+sentences, and a clean result is the one place nobody asks which was meant.** A wrong number invites
+a recount; a clean one ends the inquiry as firmly as a knowability claim. **The discriminator is not
+confidence, it is whether some check OTHER than the blind one established the population.**
+
+**Tested here on the six scored clean, and they hold, by POSITIVE SELF-DECLARATION rather than by
+this instrument's silence.** Four of the six (`d-28-answered`, `d-23-answered`, `d-32-answered`,
+`d-33-answered`) say `direct in this lane's session` inside `by` itself, which is an assertion that
+the answer was not relayed rather than an absence of relay words. The remaining two
+(`d-32-correction`, `d-33-correction`) were written at this seat today with the provenance known
+firsthand. **So none of the six rests on search silence.**
+
+*(Aeon ran the same test on their 37 and found zero qualified `by` values, meaning the population this
+file's fourth key exposes is genuinely EMPTY there rather than unsearched. They could only tell those
+apart because an in-enum check run hours earlier for a different purpose had established it
+independently, and they said plainly that without that accident of sequence they would have had no
+basis to distinguish "my pass finds none" from "my pass cannot see them".)*
