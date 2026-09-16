@@ -13,6 +13,18 @@
 //! `check_link_asserts`, the real drift verdict and the census constructor the
 //! check-only resolve uses, with no aeon tree.
 //!
+//! The decided figure is OBSERVED, read off the link's own
+//! [`sigil_link::LinkAssertTally`], not worked out as `conditions - inapplicable`.
+//! A gate that only re-checked the observation against that subtraction would be
+//! circular, since both count the same population, so two cases here build
+//! populations where the two genuinely DISAGREE and pin the observation as the
+//! right answer: [`a_condition_that_folded_to_nothing_is_not_counted_decided`]
+//! (observed 1, derived 3) and
+//! [`an_inapplicable_with_no_unresolvable_condition_is_refused`] (observed 1,
+//! derived 0). [`derived_decided`] keeps the superseded arithmetic alive in this
+//! file, and nowhere else, so those disagreements can be stated rather than
+//! described.
+//!
 //! ```text
 //! cargo test -p sigil-harness --test check_only_census
 //! ```
@@ -57,9 +69,14 @@ const PROBE_FAILING_SRC: &str = "module probe.census\n\
 
 /// The gated-off-twin probe. `bankid(sym)` lowers to a residual `Sym` leaf with
 /// NO `extern()` reference record beside it, so when the link does not define the
-/// name the condition poisons WITHOUT a refusal: this is the one shape that
-/// reaches the drift verdict's inapplicable partition, and the only way to
-/// exercise the census's cross-path check on its passing side.
+/// name the condition poisons WITHOUT a refusal and reaches the drift verdict's
+/// inapplicable partition.
+///
+/// That CLASS is what matters, not this builtin: `winptr()` and an
+/// immediate-normalized label leave the same bare leaf, while an undefined
+/// `extern()` is refused at its own reference and never gets there. `bankid` is
+/// the cheapest representative, and the cross-path check's passing side has to be
+/// exercised through one of them or not at all.
 const TWIN_PATH: &str = "probe/twin.emp";
 const TWIN_SRC: &str = "module probe.twin\n\
                         ensure(bankid(\"PROBE_ABSENT_BANK\") == 0, \"twin bank guard\")\n\
@@ -244,8 +261,8 @@ fn a_condition_that_folded_to_nothing_is_not_counted_decided() {
     assert!(err.starts_with("extern() names a symbol no module in this link defines:"), "{err}");
 }
 
-/// The passing side of the census's cross-path check, on the one shape that
-/// actually reaches the inapplicable partition. `bankid("PROBE_ABSENT_BANK")`
+/// The passing side of the census's cross-path check, on a shape that actually
+/// reaches the inapplicable partition. `bankid("PROBE_ABSENT_BANK")`
 /// leaves a `Sym` leaf with no `extern()` reference record, so the condition
 /// poisons with no refusal: the link RECORDS its span unresolvable, the verdict
 /// partitions the same guard as an inapplicable gated-off twin, and the two

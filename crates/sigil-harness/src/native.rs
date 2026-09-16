@@ -3800,9 +3800,16 @@ pub struct GuardCensus {
     /// Read straight off the tally's `decided`, so a condition that folded to
     /// nothing at all cannot arrive here as a decided guard.
     pub link_asserts_decided: usize,
-    /// `LinkAssert`s whose `extern()` names a symbol this link does not define
-    /// (a gated-off twin); neither passed nor failed, and each one is on the
-    /// profile's allowlist or the resolve would have failed.
+    /// `LinkAssert` conditions whose fold named a symbol this link does not
+    /// define (a gated-off twin); neither passed nor failed, and each one is on
+    /// the profile's allowlist or the resolve would have failed.
+    ///
+    /// NOT an undefined `extern()`: that is refused at the reference itself
+    /// ([`sigil_link::EXTERN_UNKNOWN_ID`]) and fails the drift verdict before any
+    /// census is built, so it never reaches this column. What does reach it is a
+    /// residual `Sym` leaf with no `extern()` reference record beside it, which
+    /// today means `bankid()`, `winptr()`, or an immediate-normalized label
+    /// naming a section outside this profile's closure.
     pub link_asserts_inapplicable: usize,
 }
 
