@@ -10435,10 +10435,20 @@ impl Asm {
 
     /// Convert operand atoms to resolved 68k operands for the fold-based
     /// (no-fixup) core: `Dn`/`An`/`Imm` (plus bare `sr`/`ccr`), the
-    /// register-indirect family, and explicit-width absolute (`M68kAbs`).
-    /// Any width-selecting bare-`(expr)` or `(d8,PC,Xn)` atom is rejected
-    /// with a diagnostic (the latter is the only PC-relative form still
-    /// unsupported — see [`Self::lower_m68k_pcrel`] for `(d16,PC)`).
+    /// register-indirect family, explicit-width absolute (`M68kAbs`), and
+    /// WIDTH-SELECTING absolute in both spellings asl accepts for it, the
+    /// bare `expr` and the parenthesised `(expr)`.
+    ///
+    /// The PC-relative forms never reach here: `(d16,PC)` and `(d8,PC,Xn)`
+    /// are both deflected by [`Self::lower_m68k_generic`] to
+    /// [`Self::lower_m68k_pcrel`] / [`Self::lower_m68k_pcrel_idx`] before
+    /// this runs.
+    ///
+    /// What this still refuses, and it is a refusal about SPELLING rather
+    /// than about addressing modes: a `(Reg)` whose register name is written
+    /// in a case [`crate::operands::classify`] does not claim (`(A0)`,
+    /// `(SP)`), plus `(dN)` and `(pc)` in any case. See the `Mem` arm of
+    /// [`Self::convert_one_atom_m68k`].
     fn convert_atoms_m68k(
         &mut self,
         mnemonic: M68kMnemonic,
@@ -10572,12 +10582,50 @@ impl Asm {
                 // width-selected like the bare-symbol case above (M1.D T2).
                 self.abs_ea_from_expr(e, span)
             }
-            OperandAtom::Mem(_) => {
-                self.err(
-                        span,
-                        "absolute address operand `(expr)` needs an explicit `.w`/`.l` width suffix (width-selecting bare `(expr)` is out of scope)",
-                    );
-                return None;
+            // `(expr)` in an EA position is the SAME absolute-address operand
+            // as a bare `expr`, and asl width-selects abs.w/abs.l over it by
+            // the same rule: probe-verified line for line on this build,
+            // `move.w (Sym),d0` == `move.w Sym,d0` == `3038 1000` at $1000 and
+            // `3039 00A0 0000` at $A00000, on both sides of a `move`, for
+            // `lea`/`clr`/`tst`/`pea`/`movem`/`cmpi`/`btst`, at every width
+            // boundary ($7FFE / $8000 / $FF8000 / $FFFFFE), through a forward
+            // reference, and under a nested `((Sym))`. `jmp (Sym)` is `4EF8
+            // 0000` where `jmp (a0)` stays `4ED0`. See
+            // docs/superpowers/notes/2026-09-16-as-width-suffix-bare-expr.md.
+            //
+            // A REGISTER NAME IN A SPELLING THE CLASSIFIER DID NOT CLAIM IS
+            // REFUSED HERE RATHER THAN READ AS AN ADDRESS. `classify` matches
+            // `(a0)`..`(a7)`/`(sp)` in LOWER CASE only, while asl's register
+            // names are case-insensitive even under `-U`: with `A0: equ $1234`
+            // in scope it still assembles `move.w (A0),d0` as `3010`, a0
+            // indirect. Routing that here would turn a loud refusal into a
+            // silently different encoding, which is strictly worse than the
+            // refusal. `(dN)` is refused for the same reason from the other
+            // side: asl answers `error #1505: addressing mode not supported on
+            // 68000`, so reading it as an absolute address would be an
+            // over-acceptance. `(pc)` reaches here too (it is not an address
+            // register, so `classify` does not claim it) and asl reads it as
+            // PC-relative at zero displacement, `303A FFFE`, which sigil has
+            // no operand for: refused. `(sr)`/`(ccr)`/`(usp)` deliberately are
+            // NOT guarded: asl reads those as ordinary symbols inside parens
+            // (`3038 2000` for `sr: equ $2000`), so absolute is the faithful
+            // reading. Uppercase register indirect is booked as
+            // AS-UPPERCASE-REGISTER-INDIRECT in the campaign gap ledger.
+            OperandAtom::Mem(e) => {
+                if let Expr::Sym(s) = e {
+                    if m68k_reg_name_any_case(s) {
+                        self.err(
+                            span,
+                            format!(
+                                "`({s})` names a 68k register, so it is not an absolute address; \
+                                 sigil reads register indirect only in the lower-case spelling \
+                                 `(a0)`..`(a7)`/`(sp)`, and has no `(pc)`/`(dN)` operand at all"
+                            ),
+                        );
+                        return None;
+                    }
+                }
+                self.abs_ea_from_expr(e, span)
             }
             OperandAtom::M68kAbs { addr, long } => {
                 let qualified = self.qualify_expr(addr);
@@ -13294,6 +13342,31 @@ fn m68k_disp_an_error(an: &str) -> String {
 }
 
 /// `a0`..`a7` → `Some(0..=7)`; `sp` is the `a7` alias. Anything else → `None`.
+/// `true` iff `w` spells a 68k DATA or ADDRESS register, or `pc`, in ANY case
+/// (`a0`, `A0`, `d7`, `D7`, `sp`, `SP`, `pc`, `PC`).
+///
+/// The case-folding one, used only by the `Mem` arm of
+/// [`Eval::convert_one_atom_m68k`] to keep a `(Reg)` that the operand
+/// classifier did not claim from being read as an absolute address. The
+/// lowercase-only [`m68k_addr_reg`] / [`m68k_data_reg`] stay as they are:
+/// they answer "which register is this", and widening them would newly
+/// ACCEPT uppercase register operands, which is a separate change with its
+/// own byte risk on the Z80 side of the shared classifier.
+///
+/// `pc` IS here, in both cases, and the reason is measured rather than
+/// symmetric: `(pc)` is not claimed by `classify` either (it is not an
+/// address register, so it falls through to `Mem`), and asl reads it as
+/// PC-relative at zero displacement, `303A FFFE`. sigil has no such operand,
+/// so the faithful answer is a refusal.
+///
+/// `sr`/`ccr`/`usp` are deliberately ABSENT: asl reads those as ordinary
+/// symbols inside parens (`sr: equ $2000` gives `3038 2000`), so absolute
+/// addressing is the faithful reading and guarding them would over-refuse.
+fn m68k_reg_name_any_case(w: &str) -> bool {
+    let w = w.to_ascii_lowercase();
+    w == "pc" || m68k_addr_reg(&w).is_some() || m68k_data_reg(&w).is_some()
+}
+
 fn m68k_addr_reg(w: &str) -> Option<u8> {
     if w == "sp" {
         return Some(7);

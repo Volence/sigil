@@ -72,13 +72,16 @@ ACK_UNREADABLE = {
 # adjudicated and booked. The value must equal the class the run computes, so an
 # acknowledgement cannot quietly cover a result that changed underneath it.
 ACK_DISAGREE = {
-    ("s1disasm", "s1disasm-FixBugs-1"): "SIGIL-DECLINED",
+    # `("s1disasm", "s1disasm-FixBugs-1"): "SIGIL-DECLINED"` USED TO BE HERE and
+    # is gone because the row closed, not because the leg stopped being run.
     # `_incObj/DebugMode.asm:245`, reachable only under FixBugs, reads
     # `move.w (v_limitright2),d0`: an absolute address operand with no width
-    # suffix. asl selects a width; sigil refuses. Every other reference to that
-    # variable in the corpus writes `.w`, so this is the one bare site, and it
-    # is a front-end width-selection row, not a ROM-writing one. Booked by
-    # `SWITCH-SETTING-SILENT-ROMS` as fault 3 and deliberately untouched there.
+    # suffix. sigil refused it; `AS-WIDTH-SUFFIX-BARE-EXPR` routes the
+    # parenthesised absolute operand through the same width selection the bare
+    # one already used, and the leg now AGREES at crc32 `888defef` / 551,288
+    # bytes with no source edit. The entry has to go rather than be re-labelled:
+    # this table is asserted equal to what the run finds in both directions, so
+    # a stale entry is a loud failure and not a comment.
 
     ("s2disasm", "s2disasm-fixBugs-1"): "SIGIL-DECLINED",
     # Under fixBugs the Saxman stream grows to $F88 while the source declares
