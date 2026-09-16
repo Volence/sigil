@@ -5831,3 +5831,41 @@ widened.
 0.** Each widening of the instrument found more, and this lane twice wrote the new figure down as
 though the widening were finished. **Aeon's four-pass observation now has a fifth pass, and the
 pattern holds: not one of the five was a lane auditing itself unprompted.**
+
+**⚠ A FOURTH KEY, AND IT IS THE ONE WORTH THE WHOLE THREAD: EVERY PASS ABOVE EXCLUDED THE FIELD
+UNDER EXAMINATION FROM ITS OWN SEARCH.** Aeon's three keys are spelling, field and record shape. This
+is a fourth and it is not a widening of theirs. Each count here built its search text from `said`,
+`did` and eventually `detail`, **and never from `by` itself**. The provenance of the six out-of-enum
+entries is written INSIDE `by`, which is exactly why they are out of enum, so a search assembled from
+every other field reported all six CLEAN.
+
+**`d-30-answered` is `by: "owner, relayed by the hub, which heard him directly"` and every pass above
+scored it clean on the relay axis.** It is the plainest relay instance in this ledger and it names
+itself in the field being audited. `d-22` is `by: "hub, under the project declaration"`, an authority
+instance, likewise scored clean.
+
+**The general form: when the defect lives in field X, a search built from "all the other fields"
+is blind to precisely the population that states its defect openly.** The better-documented an
+instance is, the more certainly this instrument misses it, because documenting it IN `by` is what
+put it out of enum in the first place. That inverts the usual expectation that a clearly-stated
+instance is the easy one to find.
+
+**Corrected population, all 18 answered entries, reading every field including `by`:**
+**10 authority, 3 relay, 1 assembled-not-heard, 12 of 18 carrying something `by` does not, 6 clean.**
+The 6 clean are the four entries that say `direct` in prose and the two corrections that say it in
+the enum. *(The two superseded originals `d-32-answered` and `d-33-answered` are counted as entries,
+since they are lines in the file; excluding them gives 12 of 16.)*
+
+**AND THE AXIS DEFINITION WAS WRONG IN THE SAME WAY AEON'S WAS.** This file said the authority axis
+is *"EVERY `by: "hub"` entry without exception"*. `d-22` is an authority instance whose `by` is not
+the bare enum value at all, and aeon found a `by: "lane"` authority instance in theirs. **The axis is
+who HELD the authority; `by` records who is NAMED. They coincide often enough to look like a law,
+and both lanes wrote the coincidence down as the definition** on consecutive passes, aeon's version
+reaching the hub before it was caught.
+
+**Boundary, stated because a shrug is the wrong bequest once you can name it** *(aeon's correction of
+this file's previous ending, adopted)*. This count is no longer keyed to a spelling, a field, a record
+shape, or to the omission of `by`. **It is keyed to the LEDGER as the population** and, until this
+entry, was additionally keyed to the IN-ENUM SUBSET, which silently excluded six entries. An authority
+fact living only in `docs/OVERSEER-LOG.md`, a commit message or a board blocker is still invisible to
+it. That is a boundary the next reader can widen, which is what a boundary is for.
