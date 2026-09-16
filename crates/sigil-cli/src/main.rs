@@ -266,6 +266,134 @@ fn usage_error(entry: &Entry) -> ! {
     process::exit(2);
 }
 
+/// Whether a first argument that selects no row of [`ENTRIES`] is a mistyped
+/// command word rather than the bare-file row's input path.
+///
+/// # Why this question has to be asked at all
+///
+/// The bare-file row has no selecting word, so `sigil foo.asm` works without
+/// typing a command. The cost is that the fallthrough to it used to be
+/// unconditional: every word that was not a command became a FILENAME, so
+/// `sigil check <args>` (there is no `check` command; it is `build --check`)
+/// reported `cannot read check` and an assembly failure, never that the command
+/// does not exist. `sigil help check` had always said `unknown command`, so the
+/// tool gave two different answers about the same word depending on how it was
+/// asked.
+///
+/// # The rule, and why each clause is in it
+///
+/// A word is read as a command only when it looks like nothing else:
+///
+/// * **It does not start with `-`.** A leading dash is an option, and the
+///   bare-file row's own options may come before its input (`sigil -o out.bin
+///   in.asm`). Those are left to [`unlisted_option`], which already names the
+///   offending argument.
+/// * **Nothing of that name exists.** Existence is the one unambiguous signal,
+///   and it is checked with `symlink_metadata` rather than `exists` so that a
+///   broken symlink still counts as a name that is there.
+/// * **It holds no path separator.** `sigil nosuch/thing` is a path whatever
+///   else it is; no command word can contain one.
+/// * **It holds no `.`.** No command word contains a dot, so a dot is a
+///   positive signal for a path and never an ambiguous one. An allowlist of
+///   source extensions was the alternative and is worse: it would have to be
+///   maintained, and it would refuse to assemble a file whose extension is not
+///   on it, which is a new failure in exchange for a sharper message.
+///
+/// # What this deliberately gets wrong
+///
+/// A path that has no extension, no directory part, and does not exist, such as
+/// `sigil Makefle`, is reported as an unknown command rather than as a missing
+/// file. That case is why [`unknown_command`] prints the line saying no file of
+/// that name exists: the decision the tool made is on the screen, so a user who
+/// meant a file can see which of the two readings they got. Nothing is lost but
+/// the wording, because the file was not there either way.
+fn looks_like_a_command_word(word: &str) -> bool {
+    !word.is_empty()
+        && !word.starts_with('-')
+        && !word.contains('.')
+        && !word.chars().any(std::path::is_separator)
+        && std::fs::symlink_metadata(word).is_err()
+}
+
+/// The edit distance between two words, for suggesting the command a typo
+/// meant. Plain Levenshtein over `char`s, one row at a time.
+fn edit_distance(a: &str, b: &str) -> usize {
+    let b: Vec<char> = b.chars().collect();
+    let mut prev: Vec<usize> = (0..=b.len()).collect();
+    let mut row = vec![0usize; b.len() + 1];
+    for (i, ca) in a.chars().enumerate() {
+        row[0] = i + 1;
+        for (j, cb) in b.iter().enumerate() {
+            let cost = usize::from(ca != *cb);
+            row[j + 1] = (prev[j] + cost).min(prev[j + 1] + 1).min(row[j] + 1);
+        }
+        std::mem::swap(&mut prev, &mut row);
+    }
+    prev[b.len()]
+}
+
+/// One line of advice for a word that selects no row, or nothing if there is
+/// none to give.
+///
+/// Both sources are read out of [`ENTRIES`], so a command or an option added
+/// tomorrow is suggested today and no second list can drift from the table.
+///
+/// The option match comes first because it is the exact reported case: `check`
+/// is not a command, it is `build --check`, and no amount of edit distance
+/// finds `build` from `check`. The typo match is the fallback, with the usual
+/// length-scaled ceiling so that a short word does not match everything.
+fn suggestion_for(word: &str) -> Option<String> {
+    // A word that some row accepts as an option, written without its dashes.
+    for entry in ENTRIES {
+        if let Some(opt) = entry.options.iter().find(|o| o.name.trim_start_matches('-') == word) {
+            // The bare-file row has no selecting word, so it is named by its
+            // label (`<input.asm>`), which is how its usage line spells it.
+            let command = entry.words.first().copied().unwrap_or(entry.label);
+            return Some(format!(
+                "`{word}` is an option of `{command}`: try `sigil {command} {}`",
+                opt.name
+            ));
+        }
+    }
+    // Otherwise, the nearest command word, if one is near enough to be a typo.
+    // Each word is measured both as it is spelled and with its leading dashes
+    // removed, so `sigil versio` reaches `--version`: the dashes are two edits
+    // a user who forgot them should not be charged for. The suggestion is
+    // printed as the word is spelled, dashes and all, because that is what has
+    // to be typed.
+    let limit = if word.chars().count() <= 3 { 1 } else { 2 };
+    ENTRIES
+        .iter()
+        .flat_map(|e| e.words.iter().copied())
+        .map(|w| (edit_distance(word, w).min(edit_distance(word, w.trim_start_matches('-'))), w))
+        .filter(|(distance, _)| *distance <= limit)
+        .min_by_key(|(distance, w)| (*distance, w.len()))
+        .map(|(_, w)| format!("did you mean `{w}`?"))
+}
+
+/// Report a word that selects no row of [`ENTRIES`] and exit 2. Naming a
+/// command that does not exist is a mistake, not a request, so it goes to
+/// stderr and keeps the usage-error exit code.
+///
+/// `read_as_command` is set on the dispatch path, where the word could have
+/// been a path and [`looks_like_a_command_word`] decided it was not. That
+/// decision is then printed, because a user who meant a file is owed the reason
+/// they were answered about a command. On the `sigil help <word>` path the word
+/// was named as a command explicitly, so there is nothing to explain.
+fn unknown_command(word: &str, read_as_command: bool) -> ! {
+    eprintln!("error: unknown command '{word}'");
+    if let Some(note) = suggestion_for(word) {
+        eprintln!("note: {note}");
+    }
+    if read_as_command {
+        eprintln!(
+            "note: no file named '{word}' exists, so it was read as a command, not as a path"
+        );
+    }
+    eprint!("{}", top_level_help());
+    process::exit(2);
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     let first = args.get(1).map(String::as_str);
@@ -278,21 +406,24 @@ fn main() {
                 Some(entry) => print!("{}", entry_help(entry)),
                 // Naming a command that does not exist is a mistake, not a
                 // request, so it keeps the usage-error exit code.
-                None => {
-                    eprintln!("error: unknown command '{word}'");
-                    eprint!("{}", top_level_help());
-                    process::exit(2);
-                }
+                None => unknown_command(word, false),
             },
         }
         return;
     }
 
     // A word selects its row and consumes itself; anything else is the first
-    // argument of the bare-file row.
+    // argument of the bare-file row, unless it looks like a command word that
+    // does not exist, which used to fall through and be assembled as a
+    // filename. See `looks_like_a_command_word` for the rule and its cost.
     let (entry, rest) = match first.and_then(entry_for) {
         Some(entry) => (entry, &args[2..]),
-        None => (bare_entry(), &args[1..]),
+        None => {
+            if let Some(word) = first.filter(|w| looks_like_a_command_word(w)) {
+                unknown_command(word, true);
+            }
+            (bare_entry(), &args[1..])
+        }
     };
 
     // `sigil <command> --help` prints that command's usage instead of running it.
@@ -3270,6 +3401,80 @@ mod help_gates {
             );
         }
         assert!(cross_row > 0, "no row lists an option another row lacks, so the cross-row check checked nothing");
+    }
+
+    /// Each clause of the rule that separates a mistyped command word from a
+    /// path carries its weight, and the table's own command words all pass it,
+    /// so no row of [`ENTRIES`] could be shadowed by the check that runs before
+    /// dispatch. The clauses a process cannot easily be put in front of (a
+    /// leading dash, an empty argument) are asserted here; the rest are
+    /// exercised end to end in `tests/cli_help.rs`.
+    #[test]
+    fn the_command_word_rule_holds_each_of_its_clauses() {
+        use super::looks_like_a_command_word as is_word;
+
+        // A word that is none of the things that say "path".
+        assert!(is_word("nosuchcommand9d2f"), "a plain word is not read as a command");
+
+        // Each clause, one at a time, turns the same word into a path.
+        assert!(!is_word(""), "an empty argument is read as a command");
+        assert!(!is_word("-nosuchcommand9d2f"), "a leading dash is read as a command");
+        assert!(!is_word("nosuchcommand9d2f.asm"), "a dot is read as a command");
+        assert!(!is_word("dir/nosuchcommand9d2f"), "a separator is read as a command");
+        // Existence. Unit tests run from the crate root, which holds `src`: a
+        // name with no dot and no separator that is nonetheless there.
+        assert!(
+            std::path::Path::new("src").exists(),
+            "no `src` in the test's working directory, so the existence clause is unmeasured"
+        );
+        assert!(!is_word("src"), "a name that exists on disk is read as a command");
+
+        // Every word the table dispatches on must still reach its row. These
+        // are checked by `entry_for` before the rule is consulted, so this is a
+        // belt-and-braces gate on a word that could look like a path.
+        for e in ENTRIES {
+            for word in e.words {
+                assert!(
+                    super::entry_for(word).is_some(),
+                    "`{word}` selects no row, so the rule would answer for it"
+                );
+            }
+        }
+    }
+
+    /// Every option the table lists is suggested by name, with the row that
+    /// takes it, when it is typed as a command word: `check` is `build
+    /// --check`. Derived from the table, so an option added tomorrow is
+    /// suggested today.
+    #[test]
+    fn every_option_typed_as_a_command_word_suggests_its_row() {
+        let mut checked = 0;
+        for e in ENTRIES {
+            for o in e.options {
+                let word = o.name.trim_start_matches('-');
+                // A word that also selects a row never reaches the suggestion.
+                if super::entry_for(word).is_some() {
+                    continue;
+                }
+                let note = super::suggestion_for(word)
+                    .unwrap_or_else(|| panic!("`{word}` suggests nothing, though `{}` lists it", e.label));
+                // The FIRST row listing the option is the one named, which is
+                // the rule `suggestion_for` applies; a later row that lists the
+                // same option is not a contradiction.
+                let owner = ENTRIES
+                    .iter()
+                    .find(|r| r.options.iter().any(|x| x.name == o.name))
+                    .expect("the option's own row lists it");
+                let command = owner.words.first().copied().unwrap_or(owner.label);
+                assert!(
+                    note.contains(o.name) && note.contains(command),
+                    "`{word}` is answered `{note}`, which does not name `{}` and `{command}`",
+                    o.name
+                );
+                checked += 1;
+            }
+        }
+        assert!(checked >= 15, "only {checked} option words were exercised");
     }
 
     /// `sigil build`'s parser has an arm for every option the build row lists,
