@@ -1,0 +1,5 @@
+sigil md5: 878ed5704aac873f47290b7b1a9524c9
+tree: /home/volence/sonic_hacks/.scratch/as-corpus-census/trees/s1disasm-pristine
+root: sonic.asm
+args: 
+uptime:  02:04:09 up  6:20,  1 user,  load average: 3.37, 3.90, 5.18

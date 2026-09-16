@@ -1,0 +1,17 @@
+ M "artnem/GHZ Bridge.nem"
+ M artnem/Signpost.nem
+?? .aurora/
+?? Test.hsproject
+!! s1built.bin
+!! s1built.prev.bin
+!! sonic.lst
+!! sound/dac/dpcm/generated/hashes.lua
+!! sound/dac/dpcm/generated/kick.dpcm
+!! sound/dac/dpcm/generated/kick.inc
+!! sound/dac/dpcm/generated/snare.dpcm
+!! sound/dac/dpcm/generated/snare.inc
+!! sound/dac/dpcm/generated/timpani.dpcm
+!! sound/dac/dpcm/generated/timpani.inc
+!! sound/dac/pcm/generated/hashes.lua
+!! sound/dac/pcm/generated/sega.inc
+!! sound/dac/pcm/generated/sega.pcm

@@ -1,0 +1,14 @@
+s1.sounddriver.asm(337):51: error: int(): could not evaluate float expression
+s1.sounddriver.asm(340):8: error: division by zero: 3579545 / 0
+s1.sounddriver.asm(337):51: error: int(): could not evaluate float expression
+s1.sounddriver.asm(341):8: error: division by zero: 3579545 / 0
+s1.sounddriver.asm(337):51: error: int(): could not evaluate float expression
+s1.sounddriver.asm(342):8: error: division by zero: 3579545 / 0
+s1.sounddriver.asm(337):51: error: int(): could not evaluate float expression
+s1.sounddriver.asm(343):8: error: division by zero: 3579545 / 0
+sound/z80.asm(223):12: error: cannot include sound/dac/dpcm/generated/kick.inc: No such file or directory (os error 2)
+sound/z80.asm(224):13: error: cannot include sound/dac/dpcm/generated/snare.inc: No such file or directory (os error 2)
+sound/z80.asm(225):15: error: cannot include sound/dac/dpcm/generated/timpani.inc: No such file or directory (os error 2)
+s1.sounddriver.asm(2858):10: error: cannot include sound/dac/pcm/generated/sega.inc: No such file or directory (os error 2)
+s1.sounddriver.asm(2861):3: error: unresolved if condition: `SegaPCM.size` has no value, so this condition cannot decide whether the code it guards is assembled
+s1.sounddriver.asm(2864):3: error: unresolved if condition: `SegaPCM.size` has no value, so this condition cannot decide whether the code it guards is assembled
