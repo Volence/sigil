@@ -5647,3 +5647,42 @@ question about the aeon-paired half.** The landing gate the controller runs on t
 what answers it. **Kill:** provision an `AEON_DIR` worktree per the standing requirement (a clean
 worktree of a committed SHA, plus the gitignored artifacts a bare checkout lacks) before quoting a
 workspace figure from a lane again.
+
+### 2026-09-16, `LEDGER-ANSWERED-BY-OUT-OF-ENUM`: the careful spelling is what costs the field
+
+**`answered.by` is a soft enum, `owner` | `hub` | `lane`. Six of this ledger's sixteen `answered`
+entries wrote something else, and every one of the six did it while being careful about
+provenance.** The values: `"owner, direct in this lane's session"` (four), `"owner, relayed by the
+hub, which heard him directly"`, `"hub, under the project declaration"`.
+
+**Verified in both halves rather than on report.** The contract clause is `contract/DECISIONS.md`
+rule 8d at empyrean `origin/main`: *"an unknown value costs the field and carries an issue; it never
+rejects the line."* The reader is `dominion/server/src/decisions.ts:369-379`, which sets `by` to
+null and pushes `answered.by is <value>; expected owner | hub | lane`. So the line is accepted, the
+answer survives, and **the one field recording WHO answered is dropped.**
+
+**The shape worth keeping: the sentence was written to state provenance and the provenance is
+exactly what it destroyed.** A bare `owner` would have preserved the fact; qualifying it lost it.
+The qualification belongs in `did`, which is lane prose and is rendered.
+
+**Found by the aeon lane against this lane's fresh entries. Two things about how they reported it
+are the reason it was actionable:** they swept their own 37 entries first and found themselves
+clean, and they **scoped the claim to the contract and said plainly they had not read Dominion's
+reader**, which is the check this seat then ran and which is what turned a contract-shaped claim
+into a measured one.
+
+**Closed today:** `d-32-answered` and `d-33-answered`, corrected by append (`d-32-correction`,
+`d-33-correction`) with `by: "owner"` and the provenance moved into `did`. The originals stay as
+written; the file is append-only.
+
+**Open, and deliberately not mass-rewritten:** `d-22`, `d-23-answered`, `d-28-answered`,
+`d-30-answered`. Four appends to fix four fields nobody is currently reading is a poor trade against
+the risk of touching settled records, and `d-30-answered`'s value carries a real distinction (relayed
+rather than direct) that `owner` alone does not. **Kill:** decide whether the enum should widen or
+the four should be corrected by append, and do it as one act rather than four.
+
+**The durable half, and it is the one that stops a seventh:** `scripts/ledger_gate.py` does not check
+`by` against the enum, so nothing here goes red on the next instance and the reader's issue is
+visible only in the console. A gate over this file's own `answered.by` is cheap and would have caught
+all six. It needs invariant 8 treatment like any other check: red-first, with the mutation shown on
+disk.
