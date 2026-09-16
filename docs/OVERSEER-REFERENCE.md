@@ -210,6 +210,25 @@ report the conflict, and **it has almost none of the standing a peer overseer ha
 **So label mechanisms in a brief as hypotheses, and say outright that the agent's own command
 output outranks anything the brief asserts.**
 
+**AND A COST ESTIMATE IN A BRIEF IS THE HALF THAT DOES NOT SELF-CORRECT.** Suite rule, banked at
+empyrean `63b70715` (verified here as an ancestor of their `origin/main`),
+`docs/OVERSEER-PROTOCOL-REFERENCE.md`; **read it there, the empyrean copy governs.** The mechanism in
+one line, because it is the reason this pointer sits in THIS block: a brief's factual error competes
+with the agent's evidence and loses, while **a cost estimate does not compete, because nothing the
+agent measures contradicts it.** This lane's own instance is why it exists. The `SWITCH-MATRIX-SWEEP`
+brief said a full cross product was infeasible; it was fifteen minutes, and the estimate was
+load-bearing because it told the agent what NOT to attempt. It failed only because that agent chose to
+price it rather than obey it, **which is not something a brief can rely on.** So: state a cost
+estimate together with the measurement that would settle it, so it reads as a question rather than a
+boundary.
+
+**AND PREFER ONE FALSIFIER TO A BLOCK OF STEPS**, same commit, same file, same precedence. A
+Reproducing block that names an absent path is catchable with `git ls-files`; **a block whose paths
+all exist and whose steps no longer produce the figure is indistinguishable from a working one by
+reading**, and that is the common case, because paths rot slower than procedures. A single falsifier
+the parcel runs early is self-checking in the way a procedure never is, **because running it is the
+same act as trusting it.**
+
 **Every dispatch's deliverable section ends with a required line:** *"and anything in this brief you
 concluded was wrong."* Measured hit rate when introduced: a correction in **3 of 3** dispatches.
 Pair it with an explicit invitation wherever the brief carries a design position.
