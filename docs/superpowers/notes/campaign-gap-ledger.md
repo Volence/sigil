@@ -5413,3 +5413,44 @@ measurements**, deliberately outside their step 3 so that parcel's byte accounti
 Listed here ONLY so a later sigil probe that re-finds it can see it was routed rather than dropped;
 **the artifact is aeon's book, not this one**, and the general question of whether sigil should
 check such declarations at all is the owner's, filed as `d-32`.
+
+### 2026-09-16, `Z80-DRIVER-SIZE-UNDER-RUN-STAYS-SILENT`: the half of fault 2 a refusal cannot reach
+
+`SWITCH-SETTING-SILENT-ROMS` closed the direction that is checkable. `flatten_placing` now refuses a
+`-z` stream LARGER than the `<constant>` its instruction names, which is Sonic 2's `fixBugs = 1`
+fault (`$F88` stored against a declared `$F64`). **The opposite direction is still silent and still
+wrong in Sonic 2's idiom**: a driver that compressed SMALLER than `$F64` would leave
+`movewZ80CompSize`'s `move.w #$F64,d7` too large, and the game's Saxman decompressor would read past
+the stream.
+
+**It is not a wider check, and that is measured rather than assumed.** `skdisasm` ships
+`Size_of_Snd_driver_guess = $E00` against a stream of about `$DFB` (read off the ROM `buildSK.lua`
+itself writes, between `Z80_SoundDriver` at `0xF6960` and `Z80_SoundDriverData` at `0xF7760`), so
+refusing or even warning on a stream smaller than its constant fires on a corpus at its own shipped
+settings. That is the always-red shape, and it trains people to weaken the check that does work.
+
+**Kill:** the number has to reach the SOURCE, not a bigger check. Either sigil grows asl's `-c`
+share-file output so `build.lua`'s own `amend_sound_driver_size` can run against sigil (which also
+closes the `shared` directive's standing warning), or sigil performs that patch itself. It cannot do
+the second soundly today: `build.lua` locates `movewZ80CompSize` through the share file, and a
+general assembler cannot hardcode a Sonic 2 label name. `-c` is the smaller and more honest of the
+two and it is the one this ledger recommends.
+
+### 2026-09-16, `RELAX-U32-ADD-PANICS-UNDER-DEBUG-OVERFLOW-CHECKS`: every corpus gate is dev-profile-only-red
+
+`crates/sigil-link/src/relax.rs:1084` computes `(origin + shift_offset(&bps, label.offset)) as i64`
+with both halves `u32`. It wraps in release, which is the intended modular address arithmetic, and
+**panics with `attempt to add with overflow` under the debug profile's overflow checks**.
+
+**Every corpus row in `sigil-cli` dies there before reaching an assertion when run without
+`--release`**, at the corpora's SHIPPED settings, including `as_driver_placement_corpus`, which
+predates this parcel and which was not touched by it. So it is pre-existing and it is not a defect
+this parcel introduced; it was found because `SWITCH-SETTING-SILENT-ROMS` ran its new gate the
+casual way first. The suite is run with `--release` (`scripts/landing-run.sh`), so nothing in the
+landing path sees it.
+
+**Why it is worth a row anyway:** a defect that only appears in the profile nobody runs is a defect
+with no instrument pointed at it, and the failure it produces (a panic in the middle of a corpus
+run) reads as a regression in whatever branch is checked out. **Kill:** make the intent explicit,
+`origin.wrapping_add(...)`, with the reason in a comment naming the phased RAM/foreign-space origins
+that reach it, and one dev-profile unit test over a high origin that panics today.
