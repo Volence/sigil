@@ -5716,3 +5716,39 @@ a real answer. Attribution as they sent it: the reader half (`dominion/server/sr
 is this lane's firsthand read and they declined to restate it as their own. **This entry's kill
 condition is now that hub ruling, not a local fix**, and a gate built here before it would be the
 six-private-fixes outcome wearing a tool's clothes.
+
+**CLOSED 2026-09-16 by hub ruling, contract rule 8g, empyrean `9fda52f`.** Read at that revision and
+not from the relay; `merge-base --is-ancestor` against their `origin/main` returns true, and
+`git log --oneline origin/main -- contract/DECISIONS.md` names `9fda52f` as the commit that CHANGED
+the file rather than one merely containing it.
+
+**The ruling:** `by` is unchanged and means exactly one thing, whose decision it is, enum
+`owner` | `hub` | `lane`. A new optional companion **`via`** (soft enum `hub` | `lane`, absent by
+default) carries who relayed it. The relay case is `"by": "owner", "via": "hub"`. **Never qualify
+`by` in prose again:** it takes an enum value or is omitted.
+
+**NOTHING IS REPAIRED AND NOTHING IS BACKFILLED, and the ruling says so explicitly.** 8d's no-rewrite
+rule governs; existing entries stay as written. That includes this lane's four out-of-enum values and
+its five true-but-incomplete `hub` values. They are history that shows the drift, which this contract
+values above history edited to look compliant. **This lane's own `d-32-correction` and `d-33-correction`
+need no `via`:** he answered directly in this lane's session, so `by: "owner"` alone is complete.
+
+**The argument that settled it, verified here rather than taken.** `dominion/server/src/decisions.ts`
+assembles the `answered` object from named keys and returns a fixed key set at `:406`, with no
+strict-key check anywhere in the file, so an unknown field is silently ignored. **`via` is therefore
+writable from today and lights up retroactively when Dominion implements it**, while widening the enum
+could not be: until `ANSWERED_BY` changes, every widened value costs the field exactly as this lane's
+did. Forward-compatibility, not the design argument, is what decided it.
+
+**⚠ AND IT SITS IN TENSION WITH 8c, WHICH A COLD READER WILL MEET FIRST.** 8c forbids inventing a
+top-level key, on the ground that a consumer rebuilding each item with a fixed key set **drops an
+unknown key silently**, so the encoding *"loses the outcome entirely at the reader while looking
+complete in the file"*. **8g relies on that same mechanism as a feature.** Both are correct and the
+discriminator is not written in either: `outcome` was the SOLE carrier of its information, so dropping
+it lost the fact, whereas `via` is additive beside a `did` that still carries the prose. **A lane
+reading 8c alone would reasonably conclude that `via` must not be written yet.** Raised with the hub;
+the fix belongs in the contract, not here.
+
+**The check that would have caught all of this is booked once and is NOT this lane's:** empyrean
+`ANSWERED-CONFORMANCE-CHECK`. `scripts/ledger_gate.py` stays blind to the field deliberately, because
+a gate built per-lane is the six-private-fixes outcome wearing a tool's clothes.
