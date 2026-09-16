@@ -1831,6 +1831,78 @@ with the reason, because it is the trap a future consumer is most likely to repe
 is green because it examined nothing survives every other precaution, and it is the one thing a
 red-first proof cannot catch, since an unapplied mutation and an empty corpus both print `ok`.
 
+### A SPEC'S PAIRING CLAUSE OUTLIVES THE RULING THAT RETIRED IT (2026-09-16)
+
+*(Read at the moment a cross-repo spec says a step "pairs with sigil", or a row on this board says
+another lane will send an ask.)*
+
+**Aeon's words, and they are better than the form this lane's board carried:** the regions part 2
+spec's step table says step 1 *"pairs with sigil for the cross-seam names"*, and that clause is
+**stale against aeon's own landing lane**, which since the paired-freeze retirement reads *"aeon
+certifies ALONE"* and *"a byte-mover lands with our own gates and asks sigil for nothing"*. **A byte
+change is not a name.** The durable sentence: **the spec's step-table pairing clauses for regions
+part 2 are stale; check the LANDING LANE, not the step table.** Verified at aeon `origin/master`
+`c2c90854`; step 1 landed alone and green at aeon `7009d555`.
+
+**The shape, which generalises past regions:** a spec written before a ruling keeps describing the
+world the ruling ended, and it is read by people who never saw the ruling. **The honest form of a
+row is not "they never sent the ask" but "the ruling removed the ask"**, and only the second one
+tells a successor to stop waiting.
+
+**AND THE ROW THAT CARRIED IT DIED AT A CLEAR, WHICH IS THE PART TO FIX RATHER THAN MOURN.**
+`AEON-P2-STEP1-NAMES` survived a rotation as a TITLE ONLY. What was actually wanted, which names on
+which seam, lived in the cleared session's context; `grep -rn AEON-P2-STEP1-NAMES docs/` returned
+exactly one hit, the row in `docs/lane-status.json` itself, which is untracked and gitignored.
+**A row whose own words describe a MESSAGE ("they send the ask when they reach it") has recorded an
+event, not an artifact**, and a clear is precisely the event it cannot survive. **THE RULE: a
+cross-lane obligation is banked in a COMMITTED file in this tree before it is worked, and the board
+row points at it.** The board is a view, never the record.
+
+**RULED INTO THE SUITE CONTRACT the same hour, and the hub's measurement widens it past this lane.**
+`contract/LANE_STATUS.md`, *The board is not where a cross-lane obligation lives*, ruled
+2026-09-16T05:28:08Z; banked at empyrean `341e80e` and **verified here as reachable from their
+`origin/main` rather than taken from the relay**. It requires the record in a committed file in the
+tree of the lane that OWES the obligation, and says explicitly that the message which created it
+does not count either. The hub then measured `git check-ignore docs/lane-status.json` across all six
+lanes before ruling: **sigil and aurora are gitignored, the other four track theirs**, so for two
+lanes of six the board is not a poor record but **not in the repository at all**, and those two were
+the lanes cleared or asking to be cleared that night. **The contract deliberately does NOT say
+"track your board"** - whether this lane commits its own status file stays this lane's call, because
+the rule is about where an obligation lives, not about a gitignore.
+
+**Why it needed a rule rather than a note: the failure is invisible from BOTH ends.** This lane
+could not see it, because after the clear it did not know what it had lost. Aeon could not see it
+either, because its own record of the ask is its own sent message, which still looks fine from where
+it sits. **Only a rule about where the writing goes catches it, and only before the clear.**
+
+### A NAME GREP IS BLIND TO A STRIDE (2026-09-16)
+
+*(Read at the moment a peer asks whether a symbol they are deleting is cross-seam, or you answer
+such a question about this lane.)*
+
+Aeon checked `Sec.sec_bg_layout` against the four places a name can cross the seam (both
+`map.toml`, both `game_root.asm`, `debugger.asm`) and correctly found none. This lane confirmed the
+same for its own functional surface, instrumented rather than bare: zero hits across `crates/`,
+`scripts/`, every `.toml` and every `.rs`, with `Parallax_CheckBoundary` at 9 files and `Region` at
+47 in the same scope as the positive control that proves the instrument could have returned
+non-empty.
+
+**And the answer was still incomplete, because what crosses the seam here is the struct's SIZE.**
+Deleting a field changes `sizeof`, `sizeof` is a `mul_const` multiplier, and
+`crates/sigil-frontend-emp/src/mul_lower.rs` proves its chosen lowerings against a **hand-maintained
+`NS` list** under `#[cfg(test)]` whose own comment states the bar nothing enforces: *"a multiplier
+the corpus emits but the oracle never runs is an unexecuted claim."* **26 is in that list and 22 is
+not.** So a field deletion can move a live stride out of the executed set with nothing red anywhere:
+not a build that breaks quietly, a PROOF that quietly stops covering what it names.
+
+**The tell that the list was already rotting, and it cost nothing to see:** the comment glosses 66
+as `sizeof(Sec)`, while `pub struct Sec` at aeon `c2c90854` is 26 bytes. **A list maintained against
+a memory of another repo is a snapshot wearing the grammar of a derivation.**
+
+**So when a peer asks "is this name cross-seam", answer the question they asked AND the one they
+could not: what does this repo pin about that symbol's SIZE, OFFSET or STRIDE.** Fixing it by adding
+the new number closes the instance and keeps the mechanism.
+
 ### A PEER'S CREDIT TO THIS LANE IS A CONVENIENT RESULT (2026-09-15)
 
 Read when another lane credits sigil with a finding, a derivation or a priority claim.

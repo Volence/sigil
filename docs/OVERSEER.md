@@ -602,6 +602,11 @@ under that cut's heading.
 - **Attributing a finding**: *ATTRIBUTION, CORRECTED TWICE* (ref).
 - **Another lane credits this lane with a finding, a derivation or a priority claim**: *A PEER'S
   CREDIT TO THIS LANE IS A CONVENIENT RESULT* (ref).
+- **A cross-repo spec says a step "pairs with sigil", or a board row says another lane will send an
+  ask**: *A SPEC'S PAIRING CLAUSE OUTLIVES THE RULING THAT RETIRED IT* (ref), which also carries the
+  suite contract rule that a cross-lane obligation lives in a committed file, never on the board.
+- **A peer asks whether a symbol they are deleting is cross-seam, or you answer one**: *A NAME GREP
+  IS BLIND TO A STRIDE* (ref).
 
 ### Queue rows, records, rulings and standing documents
 
