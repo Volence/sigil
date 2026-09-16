@@ -65,6 +65,7 @@ clean).
 | corpora | `s1disasm f6ece657`, `s2disasm e45ebf332`, each extracted by `git archive` into scratch. |
 | references | `s1built.bin` CRC32 `afe05eee` / 524,288 B; `s2built.bin` CRC32 `7b905383` / 1,048,576 B, each from the corpus's own unmodified `build.lua`. Both reproduce the previous parcel's figures exactly, from a different method. |
 | runner | `scripts/switch_matrix_sweep.py`, committed. |
+| committed evidence | `docs/superpowers/notes/2026-09-16-switch-matrix-sweep/logs/`: `cross-run-green.log` (the 422-leg run, per-leg lines and every reconciliation), `red-A.log`, `red-B.log`, `red-C.log` (each opening with the mutation quoted from disk and a `git diff --stat`). |
 | authoritative run | `--cross`, 422 legs launched and 422 reported, exit 0, `logs/cross-FINAL3.log`, plus one `.lua.log` and one `.sigil.err` per leg under the same directory. The 90-second run without `--cross` is 38 of those legs. |
 
 CRC32 throughout is IEEE/zlib, computed by `zlib.crc32` in CPython 3, rendered as
