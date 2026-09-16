@@ -5223,13 +5223,36 @@ lines, s2disasm 82, skdisasm 139. (Those three exit non-zero on both binaries, t
 being in flight, so their ROM images are not a comparison and are not offered as one.)
 `.aeon-sigil-ref` porcelain 0 before and after.
 
-**RED ON THE SUBJECT: ten mutations of the committed baseline, each quoted from disk before its
-run, each restored to a clean tree.** (1) the operand packing removed, (2) string+integer falling
+**RED ON THE SUBJECT: eleven mutations of the committed baseline, each quoted from disk before its
+run, each restored to a clean tree, all eleven re-run against the final tip.** (1) the operand packing removed, (2) string+integer falling
 back to the numeric path, (3) the length taken from the string instead of the sum, (4)
 `resolve_str_packed` dropped from `fold`, (5) the predecessor's split-at-the-first-`+`, (6) the
 wide-data guard blinded, (7) a `Refuse` routed as "not a string", (8) two non-strings under a `+`
 made string-typed, (9) `MAX_PACKED_CHARS` widened to 8, (10) the register guard removed, which
-reproduces the exact s2 signature `Imm8(99)`.
+reproduces the exact s2 signature `Imm8(99)`, and (11) the literal length refusal no longer naming
+its reason.
+
+**TWO DEFECTS OF THIS PARCEL'S OWN THAT THE GATES FOUND AFTER THE CODE LOOKED FINISHED**, both
+worth the row they cost. The full-suite run turned `as_string_literal_integer`'s
+`an_empty_or_over_long_string_is_refused` red: its doc comment says "the wording differs; the
+refusal is the point" and its assertion pinned the wording `bad immediate expression`, which this
+parcel replaced with asl's own reason. The assertion now requires what the comment always claimed,
+and is STRONGER for it (`bad immediate expression` is what `parse_expr` says about any unparseable
+operand, so the old line passed for a dozen unrelated reasons). And a read of the finished code
+found `packed + n` where the comment beside it claimed a wrapping add:
+`dc.b "a"+$7FFFFFFFFFFFFFFF` was an arithmetic-overflow PANIC in a debug build, no diagnostic and
+no line number, while release wrapped and reached the right refusal by accident. `saturating_add`
+sends it to the range check; `a_hostile_addend_is_refused_and_not_a_panic` holds it, proven red
+first on the panic itself.
+
+**SUITE, fail-fast off, `SIGIL_STRICT_GATE=1`, `AEON_DIR=.aeon-sigil-ref` (`ec640bcf`), each run
+stamped with its own tree and HEAD.** master `591bbd77`: 484 test binaries, 5464 passed, 1 failed,
+2 ignored. Branch tip: 485 binaries (this parcel's new one), 5476 passed, 1 failed, 2 ignored. The
+single failure is the SAME one in both arms and is an environment precondition rather than a
+result: `m1b_gate::oracle_loadfromaslisting_resolves_emit_listing` refuses because no `ORACLE_DIR`
+was named, and it refuses rather than measure against a tree it cannot attribute. `cargo clippy
+--release --workspace --all-targets -- -D warnings` exits 0, 33 crates checked, with a positive
+control (a planted `len() == 0`) taking it to 101.
 
 **MUTATION 9 FIRST STAYED GREEN, and that was a defect in the test rather than a pass.** Widening
 the window leaves `move.w #"abcde",d0` refused anyway, by the immediate's RANGE check instead of
@@ -5273,11 +5296,17 @@ WHAT STAYS OPEN, each of them loud, none of them a byte anyone writes:
   reference, a shape `fold_const` declines), answers "not a string" and takes the path it took
   before this parcel rather than inventing one. In the one-character case that path agrees with
   asl; the multi-character case would be a `dc.b` range refusal. No corpus writes it.
-- `AS-STRING-FUNCTION-SET` - the row below predicted its test would go green without an edit once
-  this landed. **VERIFY IT AGAINST THE SUITE RUN RATHER THAN THIS SENTENCE**, and do not read a
-  green `a_string_valued_function_bound_by_set_is_never_silently_wrong` as the row being closed:
-  that test holds the DIRECTION (asl's bytes or a refusal), so it is satisfied by a refusal too.
-  Deliberately not attempted here, per the parcel's scope.
+- `AS-STRING-FUNCTION-SET` - **STILL OPEN, UNCHANGED, and the row below's prediction about it was
+  VACUOUS.** That row says `a_string_valued_function_bound_by_set_is_never_silently_wrong` "goes
+  green without an edit when this is built". Measured on both arms: it is `ok` in the master run
+  TOO, so it was already green and its greenness says nothing about this parcel. It holds the
+  DIRECTION (asl's bytes or a refusal) and a refusal satisfies it.
+  The row's actual subject is unmoved, measured on both binaries against its own probe
+  `v_fn_full_str` (`f function number,substr("-",0,-sgn(number))+"$\{abs(number)}"` / `S set f(-5)`
+  / `dc.b S`): asl `2D 24 35` at exit 0, and BOTH the baseline binary and this branch say
+  `unresolved symbol S`, byte for byte the same message. Deliberately not attempted, per the
+  parcel's scope. **The lesson for the next reader is the prediction's shape, not its content: "a
+  test goes green when X lands" is only evidence if the test is RED before X.**
 
 ### 2026-09-13, `CYCLES-AMBIGUOUS-LIST-WRONG`: what the timing-message fix found and did not fix
 

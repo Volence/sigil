@@ -72,6 +72,13 @@
 //! | a string symbol packed into `dc.w`/`dc.l` instead of refused | `a_string_symbol_in_wide_data_stays_loud` |
 //! | a declined string+integer answered instead of refused | `a_string_plus_integer_asl_declines_is_refused_not_guessed` |
 //! | a refusal routed as "not a string" and folded numerically | `a_string_plus_integer_asl_declines_is_refused_not_guessed` |
+//! | string+integer not doing packed arithmetic at all | `a_string_plus_an_integer_is_packed_arithmetic` |
+//! | the packing window widened past asl's 1 to 4 | `a_string_with_no_packed_value_is_refused_in_an_integer_slot` |
+//! | a length refusal not naming its reason | `a_string_with_no_packed_value_is_refused_in_an_integer_slot` |
+//! | #1141 and #1320 collapsed into one complaint | `a_packed_string_too_wide_for_its_slot_is_a_range_complaint` |
+//! | ordinary numeric `+` captured by the string path | `plus_over_non_strings_stays_numeric` |
+//! | a REGISTER operand read as a string symbol | `a_register_in_operand_position_is_never_a_string_symbol` |
+//! | the packed add overflowing `i64` instead of refusing | `a_hostile_addend_is_refused_and_not_a_panic` |
 
 // REASON: the doc comments quote asl's listing rows verbatim, and asl separates
 // a row's byte column from its echoed source with a TAB. The tabs are the
@@ -608,4 +615,29 @@ fn a_register_in_operand_position_is_never_a_string_symbol() {
         assemble("l := \"c\"\n\tdc.b l,$EE").expect("`dc.b l` is the string"),
         vec![0x63, 0xEE]
     );
+}
+
+/// A hostile addend does not take the process down.
+///
+/// `str_plus_int` packs the string into an `i64` and adds the folded integer.
+/// The packed side is at most `0xFFFFFFFF`, so `packed + n` overflows `i64`
+/// only for an `n` within `0xFFFFFFFF` of `i64::MAX`, and AS spells such a
+/// constant in four characters: `$7FFFFFFFFFFFFFFF`. In a DEBUG build that is
+/// an arithmetic-overflow PANIC, which is not a diagnostic and has no line
+/// number; release wrapped silently and reached the right refusal by accident.
+///
+/// This test runs in the dev profile, so it is the panic that it catches.
+#[test]
+fn a_hostile_addend_is_refused_and_not_a_panic() {
+    for body in [
+        "\tdc.b \"a\"+$7FFFFFFFFFFFFFFF,$EE",
+        "\tdc.b \"abcd\"+$7FFFFFFFFFFFFFFF,$EE",
+        "\tmove.w #\"ab\"+$7FFFFFFFFFFFFFFF,d0",
+    ] {
+        let d = diags(body).join(" ");
+        assert!(
+            d.contains("1 to 4 character string"),
+            "{body:?}: a refusal, not a panic and not a value: {d:?}"
+        );
+    }
 }

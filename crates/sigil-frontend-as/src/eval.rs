@@ -3688,7 +3688,14 @@ impl Asm {
         // here; `asl_ref.sh` says in its own header that this build's
         // out-of-range substitutions agree with themselves forever and so read
         // like measurements.
-        let sum = packed + n;
+        // `saturating_add`, not `+`. The packed side is at most `0xFFFFFFFF`, so
+        // an addend within that distance of `i64::MAX` overflows, and AS spells
+        // one in four characters: `dc.b "a"+$7FFFFFFFFFFFFFFF` was an
+        // arithmetic-overflow PANIC in a debug build (no diagnostic, no line
+        // number, the process gone) and wrapped silently in release, where it
+        // then reached the right refusal by accident. Saturating sends it to the
+        // range check below, which refuses it in words.
+        let sum = packed.saturating_add(n);
         if sum > i64::from(u32::MAX) || sum < i64::from(i32::MIN) {
             return StrTyped::Refuse(STRING_PLUS_INT_UNDEFINED.to_string());
         }
