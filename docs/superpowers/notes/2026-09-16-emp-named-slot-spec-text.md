@@ -129,7 +129,11 @@ it**, and the arguments are not even evaluated.
 That is coherent once said (the gate's whole purpose is "this bracket does not exist in
 that build shape") and it is the one place where a consumer's own statement disappears on
 a condition the consumer wrote, so it is stated here rather than left to be met in an OFF
-build. Four of the corpus's 22 brackets carry such a gate today.
+build. THREE of the corpus's 22 brackets carry such a gate today, measured here at aeon
+`ec640bcf` (`section.emp:266`, `vblank.emp:137`, `vblank.emp:353`). The measurement note
+says four, and its own parenthesis is what corrects it: the fourth site it counts,
+`controllers.emp:39`, is annotated there as explicitly UNCONDITIONAL, so it is a bracket
+with no gate.
 
 ### Diagnostics
 
@@ -188,10 +192,13 @@ folded in:
 ## What this compounds, and what it does not create
 
 `context` and `with` are **absent from empyrean's `docs/SIGIL_SPEC2_LANGUAGE.md`
-altogether** (measured at empyrean `origin/main` `cabaa0d8`, with a positive control: the 21
-lines of that file containing the substring "context" are "contextual opener", "contextual
-bareword" and "data context", none of them the item or the bracket), while 22 shipping
-sites in aeon use the bracket. Their specification lives in sigil, at
+altogether**, while 22 shipping sites in aeon use the bracket. The measurement note found
+this at empyrean `origin/main` `cabaa0d8`; **re-verified here at `77092db4`**, which is a
+LATER revision, so the gap is current and not a stale reading. The positive control is the
+same: 21 lines of that file contain the substring "context" and every one of them is
+"contextual opener", "contextual bareword" or "data context", never the item or the
+bracket, and §10's declaration inventory at `:940` lists every declaration form the
+language has without listing this one. Their specification lives in sigil, at
 `docs/superpowers/specs/2026-08-03-contract-unification-spec.md` §3.1-3.2 and
 `docs/superpowers/specs/2026-08-04-contract-delta-spec.md` §2.
 
