@@ -2404,6 +2404,33 @@ one shape the design must NOT take.
 
 **CONSTRAINT 3 IS REVERSED, NOT WEAKENED: THE REGISTER FORM IS THE SHAPE TO AVOID. 2026-09-16, on aeon's insistence that this be said plainly.**
 
+**⚠ `d-33`'s `detail` FIELD CARRIES THE SUPERSEDED FRAMING, AND THE LEDGER IS APPEND-ONLY.** The card
+was written before aeon's catch and its `detail` says the bus-analysis finding *"is the third reason
+offered for the absolute spelling, the first that holds"*. That is the framing corrected above. It
+is **not** repaired in the ledger, under this lane's own rule that a `detail`-only correction gets no
+new entry when `question`, `options` and `recommend` are unmoved, which they are. **Anyone citing
+`d-33`'s detail cites this block instead for the direction of travel.** The owner-facing halves of
+the card carry no wrong claim: the question, the three options and the recommendation never mention
+constraint 3.
+
+**BANKED FROM AEON, 2026-09-16, AND IT IS BETTER PLACED THAN THE RULE IT SHARPENS: THE HIGHEST-RISK
+MOMENT FOR A STALE SENTENCE IS IMMEDIATELY AFTER A CORRECTION, NOT BEFORE ONE.** This lane sent aeon
+the mechanical test (after correcting something, grep your own tree for the sentence you corrected).
+**Aeon ran it on themselves and it found FIVE survivors, four of them inside the single row they had
+finished correcting twenty minutes earlier**, landed at aeon `b79553c3`. The sharpest was a heading
+reading `⚠ THE DEMAND STANDS` over the paragraph proving it does not, written in the same edit that
+documented the reversal. **Aeon's generalisation, offered rather than asserted and adopted here:
+correcting an artifact puts you inside it with a clear sense of having just dealt with the thing,
+and that is precisely the state in which a second instance one clause away is invisible.** So the
+test fires at the moment of maximum blindness rather than at a review, which is why it beats
+judgement: judgement caught none of aeon's five and one grep caught all five.
+**Run on this seat immediately afterwards and it found two survivors here**, both introduced before
+the correction rather than by it: `d-33`'s detail (above) and the note's own line 285, which stated
+the register requirement in the present tense 350 lines ahead of its refutation. Both bannered.
+**Three lanes, twelve instances, one grep each time.**
+
+
+
 Measured at sigil `26de6eb7`, `crates/sigil-frontend-emp/src/z80_bus.rs:153-166`. `bus_toggle`
 recognises a bus request only when the destination resolves to the bus-request address **and** the
 source is the literal immediate `$0100`. Boot's `move.w d7,(a1)` satisfies neither, so
@@ -2419,12 +2446,19 @@ spelling, and both fell. This one is an argument FOR the absolute spelling. A re
 sequence concludes the constraint stands on firmer ground; it stands **inverted**. The landed note
 carried that framing and is corrected at its tail.
 
-**AEON'S HALF, which this lane would not have reached: the blast radius, not the rule.** Every
-previous instance of this vacuity shape in either lane was one of our own gates going quiet about our
-own code. This one is **the engine's source SPELLING silencing sigil's analysis, tree-wide, from a
-single site.** A shape choice at one hand-spelled hold determines whether every proc in the tree that
-declares the context is analysed at all, and neither lane's model of the problem had a way to
-represent that. Landed on their side at aeon `14a46a35`.
+**THE BLAST RADIUS, AND THE ATTRIBUTION STATED AS FACTS RATHER THAN SETTLED AS A PROPORTION.** The
+consequence: every previous instance of this vacuity shape in either lane was one of our own gates
+going quiet about our own code, whereas this one is **the engine's source SPELLING silencing sigil's
+analysis, tree-wide, from a single site.** A shape choice at one hand-spelled hold determines whether
+every proc in the tree that declares the context is analysed at all.
+**Who did what, because both directions of credit here are convenient to somebody.** This lane
+measured the mechanism (`region_acquires_bus` false, the union staying empty, an empty union being
+indistinguishable from a tree with no bus contexts) and stopped at *therefore the absolute spelling*.
+Aeon named the consequence as a class and landed it at `14a46a35`. **This block first credited the
+observation wholly to aeon; aeon then declined that, unprompted and against their own interest,
+saying the mechanism was published here and the credit is split at best.** A peer handing credit BACK
+is as convenient a result as a peer taking it, so neither version is adopted on the peer's say-so:
+the two sentences above are what each lane did, and no proportion is asserted.
 
 **CONSTRAINT 3 HAS OUTLIVED TWO REASONS, AND THE DEMAND IS WEAKER THAN IT LOOKED. 2026-09-16.**
 

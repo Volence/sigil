@@ -282,6 +282,13 @@ The first placement is the one the existing rules already reward.
 
 ### One more thing `region_acquires_bus` says about the register demand
 
+**⚠ REFUTED AT THE TAIL OF THIS NOTE, AND THE REFUTATION INVERTS THIS SENTENCE. Read
+*Overseer correction* and *Correction to the correction* below before using this paragraph.**
+The register demand does not survive, and the code quoted immediately below is what kills it
+rather than what accommodates it. Left in place because the refutation needs the claim it
+refutes, and bannered here because a reader arriving at this line has 350 lines to go before
+meeting the reversal.
+
 `LS-13b` requires the form to emit through a caller-supplied register. That does not break
 the declared tier, and the reason is worth recording because it is load-bearing and fragile:
 
@@ -667,7 +674,10 @@ never enter that set, so **every `requires(z80_stopped)` proc in the tree would 
 anything. Nothing diagnoses this: an empty `bus_contexts` is indistinguishable from a tree with
 no bus contexts in it. That is finding Q2-a, and this is the mechanism that makes it matter.
 
-**So the third reason for the absolute spelling, and the first one that holds.** Reason one
+**So the third reason for the absolute spelling, and the first one that holds.** *(⚠ This
+sentence and the series it opens are themselves corrected below, under* Correction to the
+correction*: presenting these as a numbered series hides that the constraint was INVERTED
+rather than grounded. Aeon's catch, and they were right.)* Reason one
 (aeon's register economy for the reset path) was refuted by aeon. Reason two (a DMA-window
 cycle-count hazard) was refuted by this lane on ordering and direction. Reason three is that
 **the absolute spelling is what our own bus analysis can see**, and a register spelling blinds it
