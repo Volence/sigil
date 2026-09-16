@@ -5752,3 +5752,38 @@ the fix belongs in the contract, not here.
 **The check that would have caught all of this is booked once and is NOT this lane's:** empyrean
 `ANSWERED-CONFORMANCE-CHECK`. `scripts/ledger_gate.py` stays blind to the field deliberately, because
 a gate built per-lane is the six-private-fixes outcome wearing a tool's clothes.
+
+**⚠ THE "FIVE" ABOVE WAS ITSELF A SPELLING-KEYED COUNT, AND IT IS A LOWER BOUND RATHER THAN A
+POPULATION. Corrected 2026-09-16 on aeon's caveat against their own number.** They put the caveat on
+their five before this lane thought to put one on its own: their count came from a regex over `did`
+prose, they named it auditable, re-runnable and blind, and said plainly that a comparable number had
+to be derived from what TOUCHES the value. **This entry's five came from exactly the same instrument,
+a regex over `did` and `said` for `in the owner`, `owner's place`, `delegat`, `overturn`, `relay`, and
+it was reported here without the caveat.** Third spelling-keyed count in one thread.
+
+**Re-derived by reading all 12 in-enum entries with no filter applied**, which is a population read
+rather than a match, and the number is not five:
+
+- **Caught by the regex and confirmed by reading (5):** `d-21`, `d-14-correction`, `d-26-answered`,
+  `d-27`, `d-29`.
+- **MISSED by the regex, found by reading (3):** `d-17`, whose basis is *"reversible on read-back; if
+  the owner disagrees"* and which matches no keyed spelling; the second `d-18` entry, whose `said`
+  quotes the owner's own delegating words *"Feel free to make some decisions in the direction yyou
+  generally know I want to go"* and contains none of the keyed terms; and `d-24`, `by: "owner"`, whose
+  own `did` says it was **reconstructed by an audit session from `docs/OVERSEER.md:101` rather than
+  heard**, and whose `said` says outright *"not a fresh owner statement"*. That last one is a third
+  axis: not relay, not authority, but a ledger entry assembled after the fact from a document.
+- **UNRESOLVABLE from the card alone (2):** `d-16-answered` and the first `d-18` entry record no
+  authority basis at all, so nothing in them says whether the hub ruled on its own authority or in
+  his place. **That is the more interesting residue: the field cannot be audited from the record,
+  which no count of either kind can show.**
+
+**So 8 of 12 carry something their `by` value does not, 2 more cannot be checked, and the regex saw
+five.** `via` addresses one axis of the three; the authority axis the hub explicitly declined is the
+common case here as it is in aeon's lane, at 5 of the 8.
+
+**Aeon's sentence about all of it, which is the one to keep, and it indicts this lane symmetrically:
+each of us was rigorous exactly where we were the author and blind exactly where we were the subject.**
+They verified this lane's SHA properly and then reported their own sweep clean without asking what it
+had tested; this lane checked the reader firsthand and then published a prose-matched count as a
+population. **None of the three passes was a lane being careful about itself.**
