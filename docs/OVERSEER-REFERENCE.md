@@ -2448,6 +2448,31 @@ opposite way: there the shell instrument was blind to ignored files and here the
 so neither tool is the safe default and the question is always which population the instrument can
 see.)*
 
+**NOW SUITE CONTRACT, and the anchor is verified here rather than taken from the hub's message.**
+empyrean `contract/LANE_STATUS.md`, inside the three-states ruling, amended at **`e28601a`**
+(2026-09-16T07:25:06-0400). Checked two ways before being written down: `merge-base --is-ancestor`
+against their freshly-fetched `origin/main` returns true, and
+`git log --oneline origin/main -- contract/LANE_STATUS.md` names `e28601a` as the commit that
+**changed** the file rather than one that merely contains the bytes, which is this lane's own
+derive-a-pin rule applied to a claim it was the carrier of. The ruling's operative words for this
+lane: **state 3 stays legitimate and "sigil need change nothing"** — what the amendment adds is the
+price, not a prohibition.
+
+**THE TWO-INSTRUMENT SWEEP, which is what actually discharges this.** After any correction, and
+before believing any zero about where a name still appears, run BOTH, because neither instrument can
+see the other's population:
+
+```sh
+git grep -n '<id-or-phrase>' -- docs/          # tracked; blind to the board
+command grep -n '<id-or-phrase>' docs/lane-status.json   # the board; invisible to git grep
+```
+
+**A zero from the first alone is not a result**, and that is the sentence to keep: it is the same
+shape as this file's rule that a sweep reports which spelling it tested and its silence on the others
+is not coverage. The hub attached the caveat to the check itself in the contract so it cannot be
+relayed bare, which is the correct place for it: a mechanical check is a rule encoded, and it carries
+the relay defect the same way a sentence does.
+
 **AEON'S OBSERVATION ABOUT ALL OF THEM, WHICH IS THE ONE TO CARRY: NEITHER LANE HAS EVER FOUND ONE
 OF THESE BY LOOKING FOR IT.** Every instance across both lanes arrived when a mechanical sweep was
 pointed at a surface that had just been certified by hand. That is the same shape as this file's
