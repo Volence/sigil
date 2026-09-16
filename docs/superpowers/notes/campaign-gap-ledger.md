@@ -5380,3 +5380,36 @@ Branch `parcel/flag-result-build-gate`; the commit bodies carry the derivation.
 - `CHECK-BANNER-NAMES-A-MECHANISM-THAT-CANNOT-PRODUCE-IT` - wrong tool text, OPEN, found by the guard-census agent 2026-09-16 and deliberately left out of that parcel. `crates/sigil-cli/src/main.rs:2922` prints `LinkAssert(s) inapplicable (extern not defined in this link, allowlisted)`. **That mechanism cannot produce that column.** An `extern()` naming a symbol the link does not define is refused at the reference and fails the verdict before a census exists, which the guard-census gate now proves as its own fact (`an_undefined_extern_is_refused_at_each_reference`). What actually reaches the inapplicable column is a bare `Sym` leaf with NO reference record: `bankid()`, `winptr()`, an immediate-normalized label. **Ruled here 2026-09-16: this is diagnostic wording, not language surface, so it is the lane's own call under the owner's `d-2` grant and does not go to him.** It stays out of the census parcel because changing user-facing output is a different act from correcting a count, and the branch was reviewed as submitted. **Kill:** reword to name the class that reaches it, and move the pin at `crates/sigil-cli/tests/build_check.rs:101` in the same commit. Red-first is available and cheap: the pin asserts the phrase verbatim, so the old wording goes red the moment the string changes. **A diagnostic that names the wrong mechanism is worse than a vague one**, because a reader who trusts it goes looking for an undefined `extern()` that is not there.
 
 - `CENSUS-CROSS-PATH-CHECK-UNREACHABLE-END-TO-END` - a reachability CONDITION, not a defect, OPEN, recorded 2026-09-16 so nobody reads the gate as covering more than it does. `GuardCensus::from_verdict`'s new cross-path refusal (every inapplicable diagnostic must match a span the link recorded unresolvable) is **unreachable through the shipping path today**: `enforce_inapplicable_allowlist_against` runs FIRST, and with both shipping allowlists (`STAGE1_`/`DEMO_INAPPLICABLE_GUARDS`) empty, any inapplicable at all errors at the allowlist before the census is built. **The agent's call not to reorder is RATIFIED**: for an allowlist problem the allowlist error is the more actionable message, and reordering changes which message an operator sees for the commoner cause. **This is a condition and not a permanent fact, which is why it is written as one.** It ends the moment any profile gains its first allowlist entry, and nothing will announce that. **What keeps it from being a blind check in the meantime:** it is reachable and proven at the unit level, red-first, by `an_inapplicable_with_no_unresolvable_condition_is_refused`, so the invariant is enforced where it is testable even while the end-to-end path cannot reach it. **Kill:** when a profile first gains an allowlist entry, re-derive whether the ordering still puts the more actionable message first, and add an end-to-end case at that point.
+
+### 2026-09-16, `BLANK-IMPORT-DOC-REFUTED`: a comment in this repo says selective import does not elaborate, and it does
+
+`crates/sigil-cli/tests/blank_import.rs:6-10` states that a selective `use base.{X}` does NOT put
+the module in the target's use closure, which is the contrast the blank form's `[import.no-names]`
+justification is written against. **Measured with that file's OWN `FAILING_GUARD` fixture:**
+`use guard.{GK}` gives `error: the guard elaborated`, exit 1, identical to `use guard._`. So the
+selective form elaborates too.
+
+**Nothing in the suite tests that clause.** The name-list arm asserts only that the name BINDS, so
+the claim has never been able to go red, which is why it could drift or be aspirational from the
+start without anything noticing.
+
+**The comment was deliberately NOT edited to match the binary**, because that is fitting the doc to
+behaviour that may itself have regressed, and the two readings need different fixes: if the
+behaviour regressed, the fix is in `resolve`; if the comment was aspirational, the fix is the
+comment plus a test that can fail. **The blank form's own `[import.no-names]` justification is
+unaffected either way**, since it rests on there being no names to bind rather than on the contrast.
+
+**Kill:** either a test that pins the selective form's elaboration behaviour and a comment that
+matches it, or a `resolve` fix that restores the documented behaviour with that same test as its
+red-first proof. Found by the `STRUCT-SIZE-OUTSIDE-CLOSURE` probe (merged `b356214f`), which needed
+the closure semantics for its own arms and checked the comment rather than believing it.
+
+### 2026-09-16, `SPAWNDESC-UNCHECKED-SIZE`: routed to aeon, listed here so it is not re-found
+
+`engine/objects/children.emp:84`, `pub struct SpawnDesc (size: 4)` at aeon `c283b95b`, is a declared
+size nothing forces: mutated to `(size: 41)` it builds clean at exit 0 under both `--game sonic4`
+and `--game demo`. **Aeon owns the file and has booked it into their `DEFERRED_WORK.md` with both
+measurements**, deliberately outside their step 3 so that parcel's byte accounting stays readable.
+Listed here ONLY so a later sigil probe that re-finds it can see it was routed rather than dropped;
+**the artifact is aeon's book, not this one**, and the general question of whether sigil should
+check such declarations at all is the owner's, filed as `d-32`.
