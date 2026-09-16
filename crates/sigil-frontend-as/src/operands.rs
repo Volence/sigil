@@ -3,6 +3,7 @@
 use crate::expr::{parse_expr, ExprCtx};
 use crate::token::{Punct, Tok, Token};
 use sigil_backend_z80::z80::IndexReg;
+use sigil_ir::backend::Cpu;
 use sigil_ir::Expr;
 use sigil_span::{Diagnostic, Level, Span};
 
@@ -154,10 +155,18 @@ pub fn classify(g: &[Token], at: Span, ctx: &ExprCtx<'_>) -> Result<OperandAtom,
         tok: Tok::Ident(w), ..
     }] = g
     {
-        if w == "af'" {
+        // `af'`, in any case: asl assembles `ex AF,AF'` as `08`, the same as
+        // `ex af,af'`.
+        if w.eq_ignore_ascii_case("af'") {
             return Ok(OperandAtom::AfShadow);
         }
-        if is_reg_or_cond_word(w) {
+        // The Z80 spellings, in any case on a Z80 (`ld B,C` is `41` on the
+        // reference build). The exact-case arm is kept for EVERY cpu so that
+        // nothing about the lower-case reading moves: on the 68000 the folded
+        // arm is not taken and `sp`/`a`/`c`/... reach eval exactly as before.
+        if is_reg_or_cond_word(w)
+            || (ctx.cpu != Cpu::M68000 && is_reg_or_cond_word(&w.to_ascii_lowercase()))
+        {
             return Ok(OperandAtom::RegOrCond(w.clone()));
         }
     }
@@ -282,24 +291,49 @@ pub fn classify(g: &[Token], at: Span, ctx: &ExprCtx<'_>) -> Result<OperandAtom,
             if inner.is_empty() {
                 return Ok(OperandAtom::Value(Expr::Int(0)));
             }
-            // (hl)/(bc)/(de), plus (sp) for `ex (sp),hl` (eval gates it by mnemonic).
+            // (hl)/(bc)/(de), plus (sp) for `ex (sp),hl` (eval gates it by
+            // mnemonic) and for the 68000, where `(SP)` is the `a7` alias and
+            // asl assembles `move.w (SP),d0` as `3017`.
+            //
+            // The case fold on `hl`/`bc`/`de` is Z80-only, and on `sp` is not.
+            // `(SP)` has a register reading on BOTH cpus; `(HL)` has one only
+            // on the Z80, and on a 68000 asl reads `(HL)` as an absolute
+            // address through a symbol of that name. The exact-case arm stays
+            // unconditional so the lower-case reading is untouched everywhere.
             if let [Token {
                 tok: Tok::Ident(w), ..
             }] = inner
             {
-                if matches!(w.as_str(), "hl" | "bc" | "de" | "sp") {
+                let lower = w.to_ascii_lowercase();
+                let folded_ok = if ctx.cpu == Cpu::M68000 {
+                    lower == "sp"
+                } else {
+                    matches!(lower.as_str(), "hl" | "bc" | "de" | "sp")
+                };
+                if matches!(w.as_str(), "hl" | "bc" | "de" | "sp") || folded_ok {
                     return Ok(OperandAtom::IndReg(w.clone()));
                 }
             }
-            // (An) — 68k address-register indirect. `a`+digit is unambiguously
-            // 68k (Z80 has no such register names), so this is safe to recognize
-            // structurally without a CPU flag.
-            if let [Token {
-                tok: Tok::Ident(w), ..
-            }] = inner
-            {
-                if is_m68k_areg_name(w) {
-                    return Ok(OperandAtom::M68kInd(w.clone()));
+            // (An) — 68k address-register indirect, IN ANY CASE AND ON THE
+            // 68000 ONLY.
+            //
+            // This branch used to run on every cpu, with a comment arguing that
+            // `a`+digit is unambiguously 68k because the Z80 has no such
+            // register. That is an argument about the NAME, and the reference
+            // build settles it the other way by measurement: under `cpu z80`
+            // with `A0: equ 05678h` in scope, `ld a,(A0)` assembles to
+            // `3A 78 56` -- an ABSOLUTE load through the symbol. asl's register
+            // table is per-CPU, so `(a0)` is a memory reference in Z80 source in
+            // either case, and claiming it here was wrong before the fold and
+            // would have been wrong in more places after it.
+            if ctx.cpu == Cpu::M68000 {
+                if let [Token {
+                    tok: Tok::Ident(w), ..
+                }] = inner
+                {
+                    if is_m68k_areg_name(w) {
+                        return Ok(OperandAtom::M68kInd(w.clone()));
+                    }
                 }
             }
             // (ix±d)/(iy±d)
@@ -430,7 +464,7 @@ fn parse_indexed_disp(rest: &[Token], span: Span, ctx: &ExprCtx<'_>) -> Result<E
 }
 
 fn index_reg(w: &str) -> Option<IndexReg> {
-    match w {
+    match w.to_ascii_lowercase().as_str() {
         "ix" => Some(IndexReg::Ix),
         "iy" => Some(IndexReg::Iy),
         _ => None,
@@ -441,14 +475,16 @@ fn index_reg(w: &str) -> Option<IndexReg> {
 /// excludes `sp`: that alias stays on the pre-existing Z80 `hl`/`bc`/`de`/`sp`
 /// branch (see `classify`), so `(sp)` still parses as `IndReg("sp")`.
 fn is_m68k_areg_name(w: &str) -> bool {
-    w.strip_prefix('a')
+    w.to_ascii_lowercase()
+        .strip_prefix('a')
         .and_then(|d| d.parse::<u8>().ok())
         .is_some_and(|n| n <= 7)
 }
 
 /// `true` iff `w` is `d0`..`d7` — the 68k data-register spelling.
 fn is_m68k_dreg_name(w: &str) -> bool {
-    w.strip_prefix('d')
+    w.to_ascii_lowercase()
+        .strip_prefix('d')
         .and_then(|d| d.parse::<u8>().ok())
         .is_some_and(|n| n <= 7)
 }
@@ -462,7 +498,8 @@ fn is_bare_register_token(toks: &[Token]) -> bool {
     matches!(
         toks,
         [Token { tok: Tok::Ident(w), .. }]
-            if is_m68k_areg_name(w) || is_m68k_dreg_name(w) || matches!(w.as_str(), "ix" | "iy" | "hl" | "bc" | "de" | "sp")
+            if is_m68k_areg_name(w) || is_m68k_dreg_name(w)
+                || matches!(w.to_ascii_lowercase().as_str(), "ix" | "iy" | "hl" | "bc" | "de" | "sp")
     )
 }
 
@@ -472,10 +509,16 @@ fn is_bare_register_token(toks: &[Token]) -> bool {
 /// suffix into the identifier itself (`.` is an identifier character), so
 /// this is plain string surgery, not further tokenising.
 fn split_index_reg_size(w: &str) -> (String, bool) {
-    if let Some(base) = w.strip_suffix(".l") {
-        (base.to_string(), true)
-    } else if let Some(base) = w.strip_suffix(".w") {
-        (base.to_string(), false)
+    // The SUFFIX folds case with the register name it is glued to: asl reads
+    // `move.w (A0,D1.L),d0` as `3030 1800`, the long-index encoding, the same
+    // as `(a0,d1.l)`. The base is returned in the spelling it was written in --
+    // downstream is what decides whether it names a register, and its
+    // diagnostic echoes what the author typed.
+    let lower = w.to_ascii_lowercase();
+    if lower.ends_with(".l") {
+        (w[..w.len() - 2].to_string(), true)
+    } else if lower.ends_with(".w") {
+        (w[..w.len() - 2].to_string(), false)
     } else {
         (w.to_string(), false)
     }
@@ -492,7 +535,7 @@ fn disp_base_reg(g: &[Token]) -> Option<String> {
         tok: Tok::Ident(w), ..
     }] = g
     {
-        if is_m68k_areg_name(w) || w == "sp" || w == "pc" {
+        if is_m68k_areg_name(w) || matches!(w.to_ascii_lowercase().as_str(), "sp" | "pc") {
             return Some(w.clone());
         }
     }
@@ -728,7 +771,7 @@ mod tests {
 
     fn atoms(src: &str) -> Vec<OperandAtom> {
         let toks = lex_line(src, Cpu::Z80, &CodePage::identity(), SourceId(0), 0).unwrap();
-        parse_operands(&toks, line_span(), &ExprCtx::plain(&CodePage::identity())).unwrap()
+        parse_operands(&toks, line_span(), &ExprCtx::plain(&CodePage::identity(), Cpu::Z80)).unwrap()
     }
 
     #[test]
@@ -782,7 +825,7 @@ mod tests {
 
     fn atoms_68k(src: &str) -> Vec<OperandAtom> {
         let toks = lex_line(src, Cpu::M68000, &CodePage::identity(), SourceId(0), 0).unwrap();
-        parse_operands(&toks, line_span(), &ExprCtx::plain(&CodePage::identity())).unwrap()
+        parse_operands(&toks, line_span(), &ExprCtx::plain(&CodePage::identity(), Cpu::M68000)).unwrap()
     }
 
     #[test]
@@ -1051,11 +1094,11 @@ mod tests {
         // silently reinterpreted as an address).
         let toks = lex_line("(a0).w", Cpu::M68000, &CodePage::identity(), SourceId(0), 0).unwrap();
         // Ok → must not be M68kAbs; Err (rejected outright) is also acceptable.
-        if let Ok(atoms) = parse_operands(&toks, line_span(), &ExprCtx::plain(&CodePage::identity())) {
+        if let Ok(atoms) = parse_operands(&toks, line_span(), &ExprCtx::plain(&CodePage::identity(), Cpu::M68000)) {
             assert!(!matches!(atoms.as_slice(), [OperandAtom::M68kAbs { .. }]));
         }
         let toks = lex_line("(d0).w", Cpu::M68000, &CodePage::identity(), SourceId(0), 0).unwrap();
-        if let Ok(atoms) = parse_operands(&toks, line_span(), &ExprCtx::plain(&CodePage::identity())) {
+        if let Ok(atoms) = parse_operands(&toks, line_span(), &ExprCtx::plain(&CodePage::identity(), Cpu::M68000)) {
             assert!(!matches!(atoms.as_slice(), [OperandAtom::M68kAbs { .. }]));
         }
     }

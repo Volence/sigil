@@ -2572,6 +2572,7 @@ impl Asm {
         crate::expr::ExprCtx {
             cs: &self.state.charset,
             nameless: self.nameless,
+            cpu: self.state.cpu,
         }
     }
 
@@ -9504,8 +9505,12 @@ impl Asm {
             );
             return Err(());
         }
+        // Case-folded, like every other register-name lookup on this path:
+        // under `cpu z80undoc` asl assembles `ld A,ixl` as `DD 7D` and
+        // `ld IXU,B` as `DD 60`, so the plain register beside a half folds too.
+        // `allowed` is always written in lower case.
         let reg_word = |a: &OperandAtom, allowed: &[&str]| {
-            matches!(a, OperandAtom::RegOrCond(w) if allowed.contains(&w.as_str()))
+            matches!(a, OperandAtom::RegOrCond(w) if allowed.contains(&w.to_ascii_lowercase().as_str()))
         };
         if atoms.iter().any(|a| reg_word(a, &["h", "l"])) {
             self.err(
@@ -9852,13 +9857,13 @@ impl Asm {
         };
         if let Some(pc_idx) = atoms
             .iter()
-            .position(|a| matches!(a, OperandAtom::M68kDisp { an, .. } if an == "pc"))
+            .position(|a| matches!(a, OperandAtom::M68kDisp { an, .. } if an.eq_ignore_ascii_case("pc")))
         {
             return self.lower_m68k_pcrel(mnemonic, size, &atoms, pc_idx, span);
         }
         if let Some(pc_idx) = atoms
             .iter()
-            .position(|a| matches!(a, OperandAtom::M68kIdx { an, .. } if an == "pc"))
+            .position(|a| matches!(a, OperandAtom::M68kIdx { an, .. } if an.eq_ignore_ascii_case("pc")))
         {
             return self.lower_m68k_pcrel_idx(mnemonic, size, &atoms, pc_idx, span);
         }
@@ -10565,11 +10570,11 @@ impl Asm {
                     M68kOperand::Dn(n)
                 } else if let Some(n) = m68k_addr_reg(name) {
                     M68kOperand::An(n)
-                } else if name == "sr" {
+                } else if name.eq_ignore_ascii_case("sr") {
                     M68kOperand::Sr
-                } else if name == "ccr" {
+                } else if name.eq_ignore_ascii_case("ccr") {
                     M68kOperand::Ccr
-                } else if name == "usp" {
+                } else if name.eq_ignore_ascii_case("usp") {
                     M68kOperand::Usp
                 } else {
                     // Bare symbol in EA position = absolute address; asl
@@ -10593,33 +10598,24 @@ impl Asm {
             // 0000` where `jmp (a0)` stays `4ED0`. See
             // docs/superpowers/notes/2026-09-16-as-width-suffix-bare-expr.md.
             //
-            // A REGISTER NAME IN A SPELLING THE CLASSIFIER DID NOT CLAIM IS
-            // REFUSED HERE RATHER THAN READ AS AN ADDRESS. `classify` matches
-            // `(a0)`..`(a7)`/`(sp)` in LOWER CASE only, while asl's register
-            // names are case-insensitive even under `-U`: with `A0: equ $1234`
-            // in scope it still assembles `move.w (A0),d0` as `3010`, a0
-            // indirect. Routing that here would turn a loud refusal into a
-            // silently different encoding, which is strictly worse than the
-            // refusal. `(dN)` is refused for the same reason from the other
-            // side: asl answers `error #1505: addressing mode not supported on
-            // 68000`, so reading it as an absolute address would be an
-            // over-acceptance. `(pc)` reaches here too (it is not an address
-            // register, so `classify` does not claim it) and asl reads it as
-            // PC-relative at zero displacement, `303A FFFE`, which sigil has
-            // no operand for: refused. `(sr)`/`(ccr)`/`(usp)` deliberately are
-            // NOT guarded: asl reads those as ordinary symbols inside parens
-            // (`3038 2000` for `sr: equ $2000`), so absolute is the faithful
-            // reading. Uppercase register indirect is booked as
-            // AS-UPPERCASE-REGISTER-INDIRECT in the campaign gap ledger.
+            // A REGISTER SIGIL HAS NO OPERAND FOR IS REFUSED HERE RATHER THAN
+            // READ AS AN ADDRESS. Only two names reach this arm and are
+            // registers to asl -- `(pc)` and `(dN)` -- and neither has a sigil
+            // operand; see [`m68k_paren_reg_without_operand`] for what each one
+            // measures. `(A0)`/`(SP)` no longer arrive: `classify` claims an
+            // address-register indirect in either case now, which is what asl
+            // does (`move.w (A0),d0` is `3010` with `A0: equ $1234` in scope).
+            // `(sr)`/`(ccr)`/`(usp)` deliberately are NOT guarded: asl reads
+            // those as ordinary symbols inside parens (`3038 2000` for
+            // `sr: equ $2000`), so absolute is the faithful reading.
             OperandAtom::Mem(e) => {
                 if let Expr::Sym(s) = e {
-                    if m68k_reg_name_any_case(s) {
+                    if m68k_paren_reg_without_operand(s) {
                         self.err(
                             span,
                             format!(
-                                "`({s})` names a 68k register, so it is not an absolute address; \
-                                 sigil reads register indirect only in the lower-case spelling \
-                                 `(a0)`..`(a7)`/`(sp)`, and has no `(pc)`/`(dN)` operand at all"
+                                "`({s})` names a 68k register, so it is not an absolute address, \
+                                 and sigil has no `(pc)`/`(dN)` operand"
                             ),
                         );
                         return None;
@@ -10638,7 +10634,7 @@ impl Asm {
             }
             // `(sp)` is the `a7` alias but lexes down the pre-existing Z80
             // `hl`/`bc`/`de`/`sp` branch (see `classify`), not `M68kInd`.
-            OperandAtom::IndReg(w) if w == "sp" => M68kOperand::Ind(7),
+            OperandAtom::IndReg(w) if w.eq_ignore_ascii_case("sp") => M68kOperand::Ind(7),
             OperandAtom::IndReg(w) => {
                 self.err(
                     span,
@@ -11043,7 +11039,9 @@ impl Asm {
                         self.reg_operand(w, span)?
                     }
                 }
-                OperandAtom::IndReg(w) => match w.as_str() {
+                // Case-folded: asl's Z80 register names are case-insensitive
+                // under `-U` too (`ld a,(HL)` is `7E`, `ld B,C` is `41`).
+                OperandAtom::IndReg(w) => match w.to_ascii_lowercase().as_str() {
                     "hl" => Operand::IndHl,
                     "bc" => Operand::IndBc,
                     "de" => Operand::IndDe,
@@ -11076,7 +11074,7 @@ impl Asm {
                 // (c),d0` still reads `c` as the symbol it is.
                 OperandAtom::Mem(e)
                     if matches!(m, Mnemonic::In | Mnemonic::Out)
-                        && matches!(e, Expr::Sym(s) if s == "c") =>
+                        && matches!(e, Expr::Sym(s) if s.eq_ignore_ascii_case("c")) =>
                 {
                     Operand::IndC
                 }
@@ -11135,9 +11133,9 @@ impl Asm {
             Some(Operand::Reg(r))
         } else if let Some(rr) = reg16(w) {
             Some(Operand::Pair(rr))
-        } else if w == "i" {
+        } else if w.eq_ignore_ascii_case("i") {
             Some(Operand::RegI)
-        } else if w == "r" {
+        } else if w.eq_ignore_ascii_case("r") {
             Some(Operand::RegR)
         } else if let Some(cc) = cond_word(w) {
             Some(Operand::Cc(cc))
@@ -13000,9 +12998,11 @@ fn mnemonic(s: &str) -> Option<Mnemonic> {
     })
 }
 
+/// A Z80 condition name, in any case: asl folds these under `-U` like every
+/// other register-table name (`jr NZ,x` is the same instruction as `jr nz,x`).
 fn cond_word(w: &str) -> Option<Cond> {
     use Cond::*;
-    Some(match w {
+    Some(match w.to_ascii_lowercase().as_str() {
         "nz" => Nz,
         "z" => Z,
         "nc" => Nc,
@@ -13015,9 +13015,10 @@ fn cond_word(w: &str) -> Option<Cond> {
     })
 }
 
+/// An 8-bit Z80 register name, in any case; see [`cond_word`].
 fn reg8(w: &str) -> Option<Reg8> {
     use Reg8::*;
-    Some(match w {
+    Some(match w.to_ascii_lowercase().as_str() {
         "a" => A,
         "b" => B,
         "c" => C,
@@ -13043,9 +13044,10 @@ fn index_half(name: &str) -> Option<(IndexReg, bool)> {
     }
 }
 
+/// A 16-bit Z80 register-pair name, in any case; see [`cond_word`].
 fn reg16(w: &str) -> Option<Reg16> {
     use Reg16::*;
-    Some(match w {
+    Some(match w.to_ascii_lowercase().as_str() {
         "bc" => Bc,
         "de" => De,
         "hl" => Hl,
@@ -13249,7 +13251,12 @@ fn m68k_special_reg_size(m: M68kMnemonic, atoms: &[OperandAtom]) -> Option<M68kS
         return None;
     }
     atoms.iter().find_map(|a| match a {
-        OperandAtom::Value(Expr::Sym(name)) => match name.as_str() {
+        // Case-folded, like the `Value(Sym)` arm that turns these names into
+        // operands: asl gives `move D6,CCR` the same `44C6` it gives
+        // `move d6,ccr`, so the implicit size has to recognise the same
+        // spellings the operand converter does or the line dies asking for a
+        // suffix asl never needed.
+        OperandAtom::Value(Expr::Sym(name)) => match name.to_ascii_lowercase().as_str() {
             // `move <ea>,ccr` and `move <ea>,sr` / `move sr,<ea>` are word ops.
             "ccr" | "sr" => Some(M68kSize::W),
             // `move An,usp` / `move usp,An` are long ops.
@@ -13320,8 +13327,16 @@ fn m68k_imm_bounds(size: M68kSize) -> (i64, i64) {
 }
 
 /// `d0`..`d7` → `Some(0..=7)`; anything else (including out-of-range `d8`+) → `None`.
+/// `d0`..`d7` -> `Some(0..=7)`, IN ANY CASE. Anything else -> `None`.
+///
+/// The fold is asl's rule and is measured: `move.w D0,d1` is `3200` on the
+/// reference build under `-U` with `D0: equ $9abc` in scope, so the register
+/// wins over a symbol of its own name and the spelling does not matter. It is
+/// safe to fold HERE, with no CPU argument, because every caller of this
+/// function is on a 68000 lowering path -- a Z80 statement never reaches one --
+/// so the per-CPU half of asl's rule is carried by which lowering ran.
 fn m68k_data_reg(w: &str) -> Option<u8> {
-    let n: u8 = w.strip_prefix('d')?.parse().ok()?;
+    let n: u8 = w.to_ascii_lowercase().strip_prefix('d')?.parse().ok()?;
     (n <= 7).then_some(n)
 }
 
@@ -13333,7 +13348,7 @@ fn m68k_data_reg(w: &str) -> Option<u8> {
 /// atom) — hence its own naming diagnostic rather than the generic
 /// "not a valid address register" one.
 fn m68k_disp_an_error(an: &str) -> String {
-    if an == "pc" {
+    if an.eq_ignore_ascii_case("pc") {
         "`(d8,PC,Xn)` indexed PC-relative addressing is not yet supported (only `(d16,PC)` lowers)"
             .to_string()
     } else {
@@ -13341,33 +13356,41 @@ fn m68k_disp_an_error(an: &str) -> String {
     }
 }
 
-/// `true` iff `w` spells a 68k DATA or ADDRESS register, or `pc`, in ANY case
-/// (`a0`, `A0`, `d7`, `D7`, `sp`, `SP`, `pc`, `PC`).
+/// `true` iff `w` spells `pc` or a 68k DATA register, in ANY case (`pc`, `PC`,
+/// `d7`, `D7`) -- the two register names that CAN stand inside parens in an
+/// operand, are registers to asl, and have NO sigil operand at all.
 ///
-/// The case-folding one, used only by the `Mem` arm of
-/// [`Asm::convert_one_atom_m68k`] to keep a `(Reg)` that the operand
-/// classifier did not claim from being read as an absolute address. The
-/// lowercase-only [`m68k_addr_reg`] / [`m68k_data_reg`] stay as they are:
-/// they answer "which register is this", and widening them would newly
-/// ACCEPT uppercase register operands, which is a separate change with its
-/// own byte risk on the Z80 side of the shared classifier.
+/// Used only by the `Mem` arm of [`Asm::convert_one_atom_m68k`], to keep a
+/// `(Reg)` from being read as an absolute address. Both readings are measured:
 ///
-/// `pc` IS here, in both cases, and the reason is measured rather than
-/// symmetric: `(pc)` is not claimed by `classify` either (it is not an
-/// address register, so it falls through to `Mem`), and asl reads it as
-/// PC-relative at zero displacement, `303A FFFE`. sigil has no such operand,
-/// so the faithful answer is a refusal.
+/// * `(pc)` is PC-relative at zero displacement, `303A EFFE` at `$1000`
+///   (`0 - ($1002)`). sigil has no such operand, so the faithful answer is a
+///   refusal rather than an address.
+/// * `(dN)` is asl's own `error #1505: addressing mode not supported on
+///   68000`, so reading it as an address would be an over-acceptance.
 ///
-/// `sr`/`ccr`/`usp` are deliberately ABSENT: asl reads those as ordinary
-/// symbols inside parens (`sr: equ $2000` gives `3038 2000`), so absolute
-/// addressing is the faithful reading and guarding them would over-refuse.
-fn m68k_reg_name_any_case(w: &str) -> bool {
-    let w = w.to_ascii_lowercase();
-    w == "pc" || m68k_addr_reg(&w).is_some() || m68k_data_reg(&w).is_some()
+/// ADDRESS registers used to be in this set and are deliberately gone. They
+/// were here because `classify` matched `(a0)`..`(a7)`/`(sp)` in lower case
+/// only while asl's register names fold case, so an uppercase `(A0)` arrived
+/// here and a refusal was the least-wrong answer available. `classify` now
+/// claims it in either case (`3010`, measured), so nothing address-register
+/// shaped reaches this arm and listing them would only make this predicate
+/// describe a path that no longer exists.
+///
+/// `sr`/`ccr`/`usp` were never here and still are not: asl reads those as
+/// ordinary symbols inside parens (`sr: equ $2000` gives `3038 2000`), so
+/// absolute addressing is the faithful reading and guarding them would
+/// over-refuse. BARE `sr`/`ccr`/`usp`, with no parens, are a different
+/// question and are registers -- see the `Value(Sym)` arm.
+fn m68k_paren_reg_without_operand(w: &str) -> bool {
+    w.eq_ignore_ascii_case("pc") || m68k_data_reg(w).is_some()
 }
 
-/// `a0`..`a7` → `Some(0..=7)`; `sp` is the `a7` alias. Anything else → `None`.
+/// `a0`..`a7` -> `Some(0..=7)`; `sp` is the `a7` alias. Anything else ->
+/// `None`. Case-insensitive, for the reason given on [`m68k_data_reg`]:
+/// `move.w A0,d0` is `3008` and `move.w SP,d0` is `300F`.
 fn m68k_addr_reg(w: &str) -> Option<u8> {
+    let w = w.to_ascii_lowercase();
     if w == "sp" {
         return Some(7);
     }

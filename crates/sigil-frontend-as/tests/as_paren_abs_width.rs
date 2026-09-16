@@ -35,15 +35,14 @@
 //! absolute addressing would be byte-silent on programs that build today, so
 //! each is pinned here against asl's encoding.
 //!
-//! And one spelling is refused rather than accepted, deliberately. asl's
-//! register names are case-insensitive even under `-U`: with `A0: equ $1234`
-//! in scope it still assembles `move.w (A0),d0` as `3010`, a0 indirect. sigil's
-//! operand classifier claims `(a0)`..`(a7)`/`(sp)` in LOWER CASE only, so
-//! `(A0)` arrives at the absolute-address arm. Reading it as an address would
-//! turn a loud refusal into a silently different encoding, which is worse than
-//! the refusal this parcel removed, so it stays a refusal until uppercase
-//! register indirect is implemented (`AS-UPPERCASE-REGISTER-INDIRECT` in the
-//! campaign gap ledger).
+//! One family of spellings was refused here when this file was written and is
+//! now accepted, which is the `AS-UPPERCASE-REGISTER-INDIRECT` row being
+//! closed rather than this file changing its mind. asl's register names are
+//! case-insensitive even under `-U`, so `move.w (A0),d0` is `3010` with
+//! `A0: equ $1234` in scope, and sigil now reads it the same way. The bytes
+//! and the per-CPU rule behind them are pinned in `as_uppercase_registers.rs`;
+//! what stays REFUSED here, in either case, is `(dN)` and `(pc)`, which are
+//! registers to asl and have no sigil operand at all.
 
 use sigil_frontend_as::{assemble_root_relocating_warned, Options};
 use sigil_ir::{Module, SymbolTable};
@@ -267,23 +266,28 @@ fn pc_relative_is_still_pc_relative() {
     );
 }
 
-/// An UPPERCASE register indirect is REFUSED, not read as an absolute address.
-/// asl reads `(A0)` as a0 indirect (`3010`, p2.lst 6) even with `A0: equ $1234`
-/// in scope, so accepting it here would emit a different instruction silently.
-/// The refusal names the register, so the reader is told which of the two
-/// readings sigil declined to guess between.
+/// An UPPERCASE register indirect is the REGISTER, not an absolute address
+/// through a symbol of that name. asl reads `(A0)` as a0 indirect (`3010`,
+/// p2.lst 6) even with `A0: equ $1234` in scope.
+///
+/// This is here, in the file that owns the absolute-address arm, because the
+/// two readings are one decision: every spelling below would otherwise land on
+/// that arm and be read as an address. The wider story, the bare `A0` half and
+/// the per-CPU rule are in `as_uppercase_registers.rs`.
 #[test]
-fn an_uppercase_register_indirect_is_refused_rather_than_read_as_an_address() {
-    for spelling in ["A0", "A7", "SP", "Sp"] {
-        refused(
-            &format!("{CPU}{spelling}:\tequ $1234\n\tmove.w ({spelling}),d0\n"),
-            &["names a 68k register", spelling],
+fn an_uppercase_register_indirect_is_the_register_not_an_address() {
+    for (spelling, asl) in [("A0", "3010"), ("A7", "3017"), ("SP", "3017"), ("Sp", "3017")] {
+        assert_eq!(
+            bytes(&format!("{CPU}{spelling}:\tequ $1234\n\tmove.w ({spelling}),d0\n")),
+            hex(asl),
+            "{spelling} shadowed by an equate",
         );
-        // ... and with no such symbol in scope either, so the refusal is about
+        // ... and with no such symbol in scope either, so the reading is about
         // the register name and not about symbol resolution.
-        refused(
-            &format!("{CPU}\tmove.w ({spelling}),d0\n"),
-            &["names a 68k register", spelling],
+        assert_eq!(
+            bytes(&format!("{CPU}\tmove.w ({spelling}),d0\n")),
+            hex(asl),
+            "{spelling} with no symbol in scope",
         );
     }
 }

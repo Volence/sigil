@@ -151,6 +151,15 @@ message blames the half, because `A` reads as an immediate); and a `save` with n
 because `mode_68k_save_undoc` (the missing `restore`) was refused before only by the
 unresolved `ixl` it contained.
 
+**AMENDED 2026-09-16, and re-measured before the amendment was believed.** The 4
+upper-case probes are no longer a difference. The reason is NOT that
+`AS-UPPERCASE-REGISTER-INDIRECT` folded register names in general: `index_half`
+already folded when this note was written, so `ld a,IXL` already agreed, and
+`ld A,ixl` still failed after the general fold because the PLAIN register beside
+the half went through a separate exact-case comparison. That comparison is the
+site that closed them. The other 12 still differ. See
+`2026-09-16-as-uppercase-registers.md`.
+
 ## The half-fix matrix: red-first proofs
 
 `scripts/mutproof.py`: each mutation reads its files' committed baseline (`git show

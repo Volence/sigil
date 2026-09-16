@@ -22,20 +22,43 @@ pub struct ExprCtx<'a> {
     pub cs: &'a CodePage,
     /// The nameless-label counters as of this statement.
     pub nameless: NamelessCounts,
+    /// The CPU this statement is being assembled for.
+    ///
+    /// Not used by the expression parser itself: it is here because
+    /// `operands::classify` takes this struct and NEEDS the CPU to tell a
+    /// register spelling from a symbol. MEASURED on the reference build under
+    /// `-U`, with a symbol of each name deliberately in scope:
+    ///
+    /// ```text
+    /// cpu 68000   move.w (A0),d0   ->  3010        a0 indirect
+    /// cpu z80     ld     a,(HL)    ->  7E          hl indirect
+    /// cpu z80     ld     a,(A0)    ->  3A 78 56    ABSOLUTE through the symbol
+    /// ```
+    ///
+    /// So asl's register names are case-insensitive AND per-CPU, and the two
+    /// facts are inseparable: folding `(A0)` to a register with no CPU to hand
+    /// would take the third line away from the Z80 corpora, where `A0` is an
+    /// ordinary memory reference. `classify` could not ask that question before
+    /// this field existed, which is the whole reason the case fold had not been
+    /// done.
+    pub cpu: sigil_ir::backend::Cpu,
 }
 
 impl<'a> ExprCtx<'a> {
-    /// A context with no nameless labels in scope.
+    /// A context with no nameless labels in scope, for `cpu`.
     ///
     /// Test-only on purpose: every production caller is a statement in a pass
     /// and has real counters to hand (`eval.rs::ectx`), so a convenience that
     /// zeroes them is a way for one to lose them silently. `#[cfg(test)]` makes
-    /// that a compile error rather than a wrong slot number.
+    /// that a compile error rather than a wrong slot number. The CPU is an
+    /// argument for the same reason it is a field: a default would let a test
+    /// ask a CPU-keyed question without saying which CPU it meant.
     #[cfg(test)]
-    pub fn plain(cs: &'a CodePage) -> Self {
+    pub fn plain(cs: &'a CodePage, cpu: sigil_ir::backend::Cpu) -> Self {
         Self {
             cs,
             nameless: NamelessCounts::default(),
+            cpu,
         }
     }
 }
@@ -583,7 +606,7 @@ mod depth_guard_tests {
             .spawn(move || {
                 let toks = lex_line(&src, Cpu::M68000, &CodePage::identity(), SourceId(0), 0).expect("lex");
                 let cs = CodePage::identity();
-                let _ = tx.send(parse_expr(&toks, &ExprCtx::plain(&cs)).is_some());
+                let _ = tx.send(parse_expr(&toks, &ExprCtx::plain(&cs, sigil_ir::backend::Cpu::M68000)).is_some());
             })
             .expect("spawn");
         let out = rx
@@ -656,7 +679,7 @@ mod tests {
     fn fold(src: &str, lookup: &dyn Fn(&str) -> Option<i64>) -> i64 {
         let toks = lex_line(src, Cpu::Z80, &CodePage::identity(), SourceId(0), 0).unwrap();
         let cs = CodePage::identity();
-        let (e, rest) = parse_expr(&toks, &ExprCtx::plain(&cs)).unwrap();
+        let (e, rest) = parse_expr(&toks, &ExprCtx::plain(&cs, sigil_ir::backend::Cpu::M68000)).unwrap();
         assert!(rest.is_empty(), "unconsumed tokens: {rest:?}");
         match e.fold(lookup) {
             Fold::Value(v) => v,

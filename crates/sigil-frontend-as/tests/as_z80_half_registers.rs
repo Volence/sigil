@@ -33,6 +33,12 @@
 //! and listed in the note: `sll`, one-operand `add`/`adc`/`sbc` on a plain
 //! register or immediate, upper-case documented registers, and a `save` with no
 //! `restore`.
+//!
+//! The upper-case four (`ld A,ixl`, `ld IXU,B` and their pair) are NO LONGER a
+//! difference: `AS-UPPERCASE-REGISTER-INDIRECT` made sigil fold register-name
+//! case the way asl does, on both CPUs, on 2026-09-16. They are still absent
+//! from the table below, because this file's table is generated and pins the
+//! HALVES; the case rule is pinned in `as_uppercase_registers.rs` instead.
 
 use sigil_frontend_as::{assemble, Options};
 use sigil_ir::SymbolTable;

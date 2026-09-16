@@ -1,0 +1,79 @@
+ AS V1.42 Beta [Bld 212] - Source File p9.asm - Page 1 - 09/16/2026 09:24:27 AM
+
+
+       1/       0 :                     	cpu	68000
+       2/       0 : =$1234               A0:	equ	$1234
+       3/       0 : =$5678               SP:	equ	$5678
+       4/       0 : =$9ABC               D0:	equ	$9abc
+       5/       0 : =$4444               SR:	equ	$4444
+       6/       0 : =$2222               CCR:	equ	$2222
+       7/       0 : =$3333               USP:	equ	$3333
+       8/       0 : 3010                	move.w	(A0),d0
+       9/       2 : 3008                	move.w	A0,d0
+      10/       4 : 3017                	move.w	(SP),d0
+      11/       6 : 300F                	move.w	SP,d0
+      12/       8 : 300F                	move.w	Sp,d0
+      13/       A : 3200                	move.w	D0,d1
+      14/       C : 3018                	move.w	(A0)+,d0
+      15/       E : 3020                	move.w	-(A0),d0
+      16/      10 : 3028 0004           	move.w	(4,A0),d0
+      17/      14 : 3028 0004           	move.w	4(A0),d0
+      18/      18 : 3030 1004           	move.w	(4,A0,D1.W),d0
+      19/      1C : 3030 1000           	move.w	(A0,D1),d0
+      20/      20 : 3030 1800           	move.w	(A0,D1.L),d0
+      21/      24 : 48A7 8080           	movem.w	D0/A0,-(sp)
+      22/      28 : 43D0                	lea	(A0),A1
+      23/      2A : 40C0                	move.w	SR,d0
+      24/      2C : 44C0                	move.b	d0,CCR
+> > > p9.asm(25):2: warning #50: privileged instruction
+> > > MOVE
+> > >  move.l a0,USP
+> > >  ~~~~
+      25/      2E : 4E60                	move.l	a0,USP
+      26/      30 :                     	end
+ AS V1.42 Beta [Bld 212] - Source File p9.asm - Page 2 - 09/16/2026 09:24:27 AM
+
+
+  Symbol Table (* = unused):
+  --------------------------
+
+*A0 :                          1234 - |
+*ARCHITECTURE :                                      "x86_64-unknown-linux" - |
+*BIGENDIAN :                      0 - | *BRANCHEXT :                      0 - |
+*CASESENSITIVE :                  1 - | *CCR :                         2222 - |
+*COMPMODE :                       0 - | *CONSTPI :        3.141592653589793 - |
+*CUSTOM :                         0 - | *D0 :                          9ABC - |
+*DATE :                "09/16/2026" - | *FALSE :                          0 - |
+*FULLPMMU :                       1 - | *HAS64 :                          1 - |
+*HASDSP :                         0 - | *HASFPU :                         0 - |
+*HASPMMU :                        0 - | *INEXTMODE :                      0 - |
+*INLWORDMODE :                    0 - | *INMAXMODE :                      0 - |
+*INSRCMODE :                      0 - | *INSUPMODE :                      0 - |
+*LISTON :                         1 - | *MACEXP :                         7 - |
+*MOMCPU :                     68000 - | *MOMCPUNAME :               "68000" - |
+*NESTMAX :                      100 - | *PACKING :                        0 - |
+*PADDING :                        1 - | *RELAXED :                        0 - |
+*SP :                          5678 - | *SR :                          4444 - |
+*TIME :               "09:24:27 AM" - | *TRUE :                           1 - |
+*USP :                         3333 - | *VERSION :                     142F - |
+*Z80SYNTAX :                      0 - |
+
+     37 symbols
+     37 unused symbols
+
+ AS V1.42 Beta [Bld 212] - Source File p9.asm - Page 3 - 09/16/2026 09:24:27 AM
+
+
+  Code Pages:
+  ----------
+
+STANDARD (0 changed characters)
+
+1 code page
+
+0.00 seconds assembly time
+
+     27 lines source file
+      1 pass
+      0 errors
+      1 warning

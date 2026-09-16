@@ -225,6 +225,17 @@ the campaign gap ledger, with the reason it is a separate change: widening
 `is_m68k_areg_name` widens a CPU-AGNOSTIC classifier, and `(A0)` in a Z80 file
 is a legitimate memory reference through a symbol named `A0`.
 
+**SUPERSEDED 2026-09-16 by `AS-UPPERCASE-REGISTER-INDIRECT`, on the same day.**
+The two rows of the table above that read REFUSED for an ADDRESS register now
+read "register indirect, matching asl": `classify` claims `(A0)`..`(A7)`/`(SP)`
+in either case, and `(dN)` and `(pc)` are the only names the `Mem` arm still
+refuses. The reason given here for deferring it was half right. `classify` is
+not CPU-agnostic by design, it simply took a context struct with no CPU in it;
+and the Z80 concern was NOT hypothetical and NOT created by the case fold -- the
+`(aN)` branch already ran on every CPU in LOWER case, which was already wrong
+for a Z80 `(a0)`. Threading the CPU through closed both. See
+`2026-09-16-as-uppercase-registers.md`; the rest of this note stands.
+
 ## The doc comment was stale in a clause nobody was looking at
 
 The brief named the doc comment on `convert_atoms_m68k` as a consuming surface
