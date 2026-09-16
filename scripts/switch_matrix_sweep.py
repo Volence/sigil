@@ -96,6 +96,28 @@ ACK_DISAGREE = {
 ACK_UNMEASURABLE = {
 }
 
+# (corpus, key): a diagnostic one toolchain emits and the other does not, on a
+# leg where both toolchains ran. Keys are `asl#<code>` for a coded asl warning,
+# `asl-text:<text>` / `sigil-text:<text>` for a source `warning` directive only
+# one of them fired, and `sigil-only:<head>` for a warning sigil raises about
+# itself. The observed set and this set are asserted equal in both directions,
+# so a diagnostic either toolchain starts or stops emitting at any corner is
+# loud. This is a MEASUREMENT of parity, not a demand for it: sigil is a
+# drop-in for asl plus p2bin, not a reimplementation of asl's lint set.
+ACK_WARNING_GAP = {
+    ("s2disasm", "asl#180"):
+        "asl reports `address is not properly aligned` on `move.w (1).w,d0` at "
+        "s2.asm:30438, which sits inside `if gameRevision=0` and is annotated "
+        "in the source as deliberately crashing. sigil is silent. The bytes "
+        "agree, so this is a diagnostic sigil does not have rather than a ROM "
+        "fault, and it is the only asl warning code either corpus raises at any "
+        "corner.",
+    ("s2disasm", "sigil-only:`shared` is ignored"):
+        "sigil writes no share file, so it says so where s2's source uses the "
+        "`shared` directive. asl without `-c` says the same thing; this fires "
+        "on every Sonic 2 leg and is the standing `-c` residual.",
+}
+
 # (corpus, partial assignment, why): a combination of the corpus's own
 # documented build options that the CORPUS'S OWN toolchain cannot build. sigil
 # has nothing to agree with at such a corner, and calling it a sigil result
@@ -401,6 +423,28 @@ def apply_edit(path, lineno, name, want, log):
 # The compare, which carries its own positive control
 # ---------------------------------------------------------------------------
 
+def asl_warnings(text):
+    """asl's coded warnings, and the text of `warning` directives the SOURCE
+    wrote. Only the second has a counterpart sigil could emit, so they are
+    keyed apart rather than compared as one bag of strings."""
+    coded = set(re.findall(r"warning #(\d+)", text))
+    texts = {t.strip() for t in re.findall(r"warning: (?!#)([^\n]+)", text)}
+    return coded, texts
+
+
+def sigil_warnings(text):
+    """sigil's rendering of a source `warning` directive, which it prefixes
+    `[as.warning]`, separated from warnings sigil raises about itself."""
+    texts, own = set(), set()
+    for t in re.findall(r"warning: ([^\n]+)", text):
+        t = t.strip()
+        if t.startswith("[as.warning] "):
+            texts.add(t[len("[as.warning] "):].strip())
+        else:
+            own.add(t.split(":")[0].strip())
+    return texts, own
+
+
 def ident(path):
     d = open(path, "rb").read()
     return d, "%08x" % (zlib.crc32(d) & 0xffffffff), len(d)
@@ -487,6 +531,10 @@ def run_leg(cfg, tag, edits, log, vacuity_ref=None, post_lua_edits=()):
     r["lua_wrote"] = os.path.isfile(refbin)
     lualog = os.path.join(cfg["scratch"], "logs", tag + ".lua.log")
     open(lualog, "w").write(lua.stdout + lua.stderr)
+    # asl distinguishes a coded warning of its own from a `warning` directive
+    # the source wrote. Only the second has a counterpart sigil could emit, so
+    # the two are keyed apart rather than compared as one bag of strings.
+    r["asl_coded"], r["asl_text"] = asl_warnings(lua.stdout + lua.stderr)
     log("   BUILD_LUA exit=%d wrote=%s  (%s)"
         % (lua.returncode, r["lua_wrote"], os.path.basename(lualog)))
     if not r["lua_wrote"]:
@@ -525,6 +573,7 @@ def run_leg(cfg, tag, edits, log, vacuity_ref=None, post_lua_edits=()):
                          if l.strip() and "`shared` is ignored" not in l]
     siglog = os.path.join(cfg["scratch"], "logs", tag + ".sigil.err")
     open(siglog, "w").write(sg.stderr)
+    r["sig_text"], r["sig_own"] = sigil_warnings(sg.stderr)
     log("   SIGIL exit=%d wrote=%s  stderr lines=%d (%s)"
         % (sg.returncode, r["sigil_wrote"], len(r["sigil_stderr"]),
            os.path.basename(siglog)))
@@ -652,6 +701,31 @@ def self_test(scratch, log):
     expect_fail("C6 one-element-domain",
                 lambda: classify(t3, "selftest", "root.asm"),
                 "execute no leg")
+
+    # C8: the warning-parity normaliser, on the two real diagnostic shapes
+    # observed in these corpora. It needs its own control because the shape
+    # that matters most, a source `warning` directive both toolchains fire,
+    # occurs only at corners sigil refuses for an unrelated reason, so no leg
+    # in a passing run ever exercises it: an untested normaliser would report
+    # parity it never checked.
+    asl_src = ("> > > sonic.asm(139): warning: 'Revision = 2' is unnecessary "
+               "with 'FixBugs' enabled (use 'Revision = 1' instead).\n"
+               "> > > s2.asm(30438): warning #180: address is not properly "
+               "aligned\n")
+    sig_src = ("sonic.asm(139):2: warning: [as.warning] 'Revision = 2' is "
+               "unnecessary with 'FixBugs' enabled (use 'Revision = 1' "
+               "instead).\n"
+               "s2.asm(91275):2: warning: `shared` is ignored: sigil writes no "
+               "share file\n")
+    ac, at = asl_warnings(asl_src)
+    st, so = sigil_warnings(sig_src)
+    c8 = (ac == {"180"} and at == st and at and so == {"`shared` is ignored"})
+    log("CONTROL C8 warning-normaliser: %s"
+        % ("PASSED, the source warning both toolchains fire normalises to one "
+           "string and the coded and sigil-only ones stay apart"
+           if c8 else "FAILED: asl coded=%s asl text=%s sigil text=%s "
+                      "sigil own=%s" % (ac, at, st, so)))
+    ok = ok and c8
 
     shutil.rmtree(d)
     log("SELF_TEST %s" % ("PASSED" if ok else "FAILED"))
@@ -1059,6 +1133,41 @@ def main():
         failures.append("unreadable-domain acknowledgements are stale: "
                         "found-not-acknowledged=%s acknowledged-not-found=%s"
                         % (sorted(got_keys - ack_keys), sorted(ack_keys - got_keys)))
+    # Diagnostic parity, measured over every leg where BOTH toolchains ran. A
+    # leg one of them refused proves nothing about what the other would have
+    # said, so those are excluded rather than counted as silence.
+    gaps = {}
+    both = 0
+    for r in all_rows:
+        if not (r.get("lua_wrote") and r.get("sigil_wrote")):
+            continue
+        both += 1
+        c = r["corpus"]
+        for code in r.get("asl_coded", ()):
+            gaps.setdefault((c, "asl#" + code), 0)
+            gaps[(c, "asl#" + code)] += 1
+        for t in r.get("asl_text", set()) - r.get("sig_text", set()):
+            k = (c, "asl-text:" + t[:60])
+            gaps[k] = gaps.get(k, 0) + 1
+        for t in r.get("sig_text", set()) - r.get("asl_text", set()):
+            k = (c, "sigil-text:" + t[:60])
+            gaps[k] = gaps.get(k, 0) + 1
+        for t in r.get("sig_own", set()):
+            k = (c, "sigil-only:" + t)
+            gaps[k] = gaps.get(k, 0) + 1
+    log("RECONCILE diagnostics: %d leg(s) where both toolchains ran, %d "
+        "warning-parity key(s) seen, %d acknowledged"
+        % (both, len(gaps), len(ACK_WARNING_GAP)))
+    for k in sorted(gaps):
+        log("  %s %s on %d leg(s)%s"
+            % (k[0], k[1], gaps[k],
+               "" if k in ACK_WARNING_GAP else "   UNACKNOWLEDGED"))
+    if set(gaps) != set(ACK_WARNING_GAP) and not a.only:
+        failures.append("warning-parity acknowledgements are stale: "
+                        "found-not-acknowledged=%s acknowledged-not-found=%s"
+                        % (sorted(set(gaps) - set(ACK_WARNING_GAP)),
+                           sorted(set(ACK_WARNING_GAP) - set(gaps))))
+
     log("RECONCILE unreadable-domain: found=%d acknowledged=%d %s"
         % (len(got_keys), len(ack_keys),
            "MATCH" if ack_keys == got_keys else "MISMATCH"))
