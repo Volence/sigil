@@ -2818,7 +2818,23 @@ impl Asm {
             out.push(last.clone());
             return Some(out);
         }
-        if matches!(toks, [Token { tok: Tok::Str(_), .. }]) {
+        // A lone string LITERAL: the existing path owns its VALUE, so this
+        // returns `None` and leaves it there. What it does add is asl's own
+        // WORD for the two lengths that have no packed value at all, which
+        // `parse_expr` could only report as "bad immediate expression" —
+        // accurate about the parse and silent about the reason.
+        //
+        // The value is still `string_to_int`'s, asked here only to find out
+        // WHETHER it has one, so this cannot move a byte. An escape this
+        // cannot process (an invalid one, or a `\{...}` interpolation, which
+        // has no value at this layer) is left to the path that understands it.
+        if let [Token { tok: Tok::Str(raw), span }] = toks {
+            if crate::expr::string_to_int(raw, &self.state.charset).is_none() {
+                if let Ok(value) = crate::escape::unescape_plain(raw) {
+                    self.err(*span, string_not_an_integer(&value));
+                    return Some(vec![Token { tok: Tok::Int(0), span: *span }]);
+                }
+            }
             return None;
         }
         let span = item_span(toks, first.span);

@@ -402,6 +402,23 @@ fn the_root_operator_decides_the_type() {
 fn a_string_with_no_packed_value_is_refused_in_an_integer_slot() {
     refused("t_str_too_long_imm");
     refused("t_empty_str_imm");
+    // AND REFUSED AS THAT, not as something else. Asserting only "sigil
+    // refuses" is too weak to hold the window: widening MAX_PACKED_CHARS to 8
+    // leaves both probes refused, because a 5-character string then packs to a
+    // 40-bit value the immediate's own RANGE check rejects. The refusal would
+    // have moved from asl's #1141 to asl's #1320 with nothing going red, so
+    // these two name the reason.
+    for (body, chars) in [("\tmove.w #\"abcde\",d0", "5-character"), ("\tmove.w #\"\",d0", "0-character")] {
+        let d = diags(body).join(" ");
+        assert!(
+            d.contains(chars) && d.contains("no integer value in this slot"),
+            "{body:?}: must say WHY it has no integer value, got {d:?}"
+        );
+        assert!(
+            !d.contains("out of range"),
+            "{body:?}: this is asl's #1141, not a range complaint: {d:?}"
+        );
+    }
 }
 
 /// A string that packs but does not fit is a RANGE complaint, not a
