@@ -1786,6 +1786,29 @@ was untouched.
 agreement forever.** Before believing any comparison, ask what the population actually contains of
 the thing being compared. A file count is not a byte count.
 
+### DISPATCHING CONSUMES THE `next` ROW, AND NOTHING IN THE ACT PROMPTS YOU TO REFILL IT (2026-09-16)
+
+Read at the moment you move a row to `doing`.
+
+**This seat emptied the board's `next` set at boot, inside the same minute it dispatched.** The row
+was `next`, the dispatch was right, the state change to `doing` was right, and no successor was
+named. The hub found it with `hub_check` twenty minutes later: 15 rows, one `doing`, one on the
+owner, **zero `next`**.
+
+**Why it is structural rather than inattentive.** Starting a row is the one operation that removes a
+member from the `next` set, and it is also the operation whose whole attention is pointed at the
+brief. The board it leaves behind is the picture of a healthy lane: a `doing` row with a live agent
+under it. Nothing looks wrong, and the cost lands later, at the boundary, when the owner's standing
+instruction (take the next item rather than stop) arrives at a list with no next item on it.
+
+**THE RULE: name the successor in the same write that sets `doing`.** Not afterwards, for the same
+reason `updatedAt` comes from the clock: the write is the only moment both facts are in front of you.
+
+**And refuse the vacuous answer.** "The parcel in flight will size the next one, so THAT is the next
+row" is usually true and is not a row: it names no work a fresh session could start if the agent
+dies, which is the one case the field exists for. If the honest successor is thin, write the thin
+one; a row a successor can begin beats a sentence about the row that will exist later.
+
 ### AND A ROW'S TITLE CAN BE THE NARROWEST TRUE STATEMENT OF ITS OWN DEFECT
 
 `AS-SET-OPENS-SCOPE` named `set`. **Twelve spellings diverged** (`set`, `equ`, `=`, `:=`, `eval`, each
@@ -4118,6 +4141,8 @@ shortened to move it.** None of these changes what a session does FIRST; each is
   bytes, and this seat prescribed it three times*.
 - **Writing a queue row's title** - *a row's title can be the narrowest true statement of its own
   defect*.
+- **Moving a queue row to `doing`** - *dispatching consumes the `next` row, and nothing in the act
+  prompts you to refill it*, including the clause that refuses the vacuous successor.
 - **Writing a citation into source** - *cite the artefact that can break, not the session that
   asked*.
 - **Building a guard** - *the pin failed in the exact way the pin existed to prevent*, including the
