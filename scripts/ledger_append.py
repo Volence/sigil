@@ -1,9 +1,27 @@
 #!/usr/bin/env python3
 # VENDORED FROM EMPYREAN, NOT WRITTEN HERE.
-# Source: empyrean scripts/ledger_append.py at 51a48d4, verified at adoption time
-# as an ancestor of their origin/main. Cited by SHA so staleness is detectable
-# rather than invisible; empyrean's copy governs on any disagreement, and a
-# divergence between the two is a finding rather than a value to reconcile.
+# Source: empyrean scripts/ledger_append.py. Empyrean's copy governs on any
+# disagreement, and a divergence between the two is a finding rather than a
+# value to reconcile.
+#
+# CITED BY CONTENT, NOT ONLY BY SHA, AND THE REASON IS A DEFECT THIS HEADER HAD.
+# It first named 51a48d4 alone, which is the revision the hub announced and the
+# one verified here as an ancestor of their origin/main. That is a true statement
+# about a revision where this content exists and it is NOT the commit that
+# introduced the file: `git log --all -- scripts/ledger_append.py` in empyrean
+# returns ba1de1f and does not return 51a48d4, so a successor tracing provenance
+# the obvious way would find a SHA that does not match the citation and have no
+# way to tell a rename from an error. Both are recorded below, distinguished.
+#
+#   introduced upstream at:  ba1de1f
+#   verified here at:        51a48d4 (content identical to their origin/main tip)
+#   content identity:        CRC32 37e98d6b, 2705 bytes
+#
+# The DIGEST is the part that cannot rot. A SHA stops resolving across a rewrite
+# and says nothing about whether the bytes moved; CRC32 plus size answers the
+# only question a successor actually has, which is whether this copy still is
+# what was verified. Recompute it over empyrean's file with zlib.crc32 (IEEE, the
+# campaign provenance standard) and compare. A decimal figure is a foreign tool.
 #
 # ADOPTED 2026-09-16 as the PREVENTION half of this lane's open row
 # LANE-LOG-APPEND-CORRUPTS-ON-MISSING-NEWLINE. scripts/ledger_gate.py is the
