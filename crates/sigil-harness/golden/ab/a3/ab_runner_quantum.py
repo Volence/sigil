@@ -15,6 +15,7 @@ import asyncio, json, os, sys, zlib
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from suite_paths import add_empyrean_clients  # noqa: E402
+from cart_check import verify_cart_bus  # noqa: E402
 add_empyrean_clients()
 from aether import BusClient
 
@@ -73,6 +74,10 @@ async def one_run(bus, name, rom, run_idx):
     run_dir = os.path.join(OUT, f"{name}_run{run_idx}")
     r = await call(bus, "reload_rom", {"path": rom, "reset": True, "wait": True})
     assert r.get("reloaded"), f"reload failed: {r}"
+    # reload_rom says LOAD THIS. This says the emulator HOLDS it (AB_PROTOCOL
+    # step 0, after each load): a load that silently did not take leaves both
+    # arms measuring the same wrong program, and every hash below still agrees.
+    await verify_cart_bus(bus, rom, label=f"{name} after reload")
     await call(bus, "reset", {"run": False})
     await call(bus, "run_frames", {"frames": BOOT_FRAMES})
     fc = int.from_bytes(await read_block(bus, FRAME_COUNTER, 2), "big")

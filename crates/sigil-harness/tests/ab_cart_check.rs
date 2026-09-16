@@ -217,6 +217,81 @@ fn the_rust_gate_runs_every_case_the_module_declares() {
     println!("cart_check.py declares {} cases, all run here", declared.len());
 }
 
+/// **The population stays wired.** Every instrument that drives the bus calls the cart check.
+///
+/// Enumerated by WHAT IT IMPORTS (`from aether import` / `BusClient`), which is the parameter
+/// that matters: an earlier enumeration by the literal vocabulary `emulator_` / `romBytes`
+/// found 10 of the 18, because eight reach the bus through the shared client and contain
+/// none of those tokens. A new instrument that imports the client and forgets the check is a
+/// red here, which is the only place it could be one: nothing else in this repo executes
+/// anything in that directory.
+#[test]
+fn every_bus_driving_instrument_calls_the_cart_check() {
+    let ab = sigil_harness::reference_dependence::workspace_root().join("crates/sigil-harness/golden/ab");
+    let mut scanned = 0usize;
+    let mut population: Vec<String> = Vec::new();
+    let mut unwired: Vec<String> = Vec::new();
+
+    let mut dirs = vec![ab.clone()];
+    while let Some(dir) = dirs.pop() {
+        for entry in std::fs::read_dir(&dir).unwrap_or_else(|e| panic!("cannot read {}: {e}", dir.display())) {
+            let path = entry.expect("dir entry").path();
+            if path.is_dir() {
+                dirs.push(path);
+                continue;
+            }
+            if path.extension().and_then(|e| e.to_str()) != Some("py") {
+                continue;
+            }
+            scanned += 1;
+            let text = std::fs::read_to_string(&path)
+                .unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()));
+            // The file that DEFINES the check is not an instrument that must call it. Excluded
+            // by the definition it carries, not by its name, so a rename cannot quietly drop a
+            // real instrument out of the population.
+            if text.contains("async def verify_cart_bus") {
+                continue;
+            }
+            // The bus client, by import. `suite_paths.py` names neither and is not in scope.
+            if !(text.contains("from aether import") || text.contains("BusClient")) {
+                continue;
+            }
+            let name = path.strip_prefix(&ab).unwrap_or(&path).display().to_string();
+            population.push(name.clone());
+            if !text.contains("verify_cart_bus") {
+                unwired.push(name);
+            }
+        }
+    }
+    population.sort();
+    unwired.sort();
+
+    // Against a vacuous zero: a matcher that found nothing would report every instrument
+    // wired. The scan must have seen files, and the population must be a PROPER subset of
+    // them, or the matcher is matching everything and says nothing.
+    assert!(scanned > 0, "no .py files under {}: the scan measured nothing", ab.display());
+    assert!(
+        !population.is_empty(),
+        "the bus-client matcher found no instrument among {scanned} files, so this gate is vacuous"
+    );
+    assert!(
+        population.len() < scanned,
+        "the matcher selected all {scanned} files, including the helpers that drive no bus, \
+         so it is not selecting on the bus client at all"
+    );
+    assert!(
+        unwired.is_empty(),
+        "these bus-driving instruments do not call the cart check: {unwired:?}\n\
+         Every instrument that loads or measures a cart must call `verify_cart_bus` at step 0 \
+         before either arm, and again after each load. A stale cart makes an A/B AGREE, and \
+         nothing else in this repo executes this directory."
+    );
+    println!(
+        "{} bus-driving instruments of {scanned} python files under golden/ab, all wired",
+        population.len()
+    );
+}
+
 /// Every declared case, in one run, reported as aggregate totals rather than a tail.
 #[test]
 fn the_whole_case_set_behaves_as_declared() {

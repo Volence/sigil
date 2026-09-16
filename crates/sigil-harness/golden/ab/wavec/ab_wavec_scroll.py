@@ -17,6 +17,7 @@ import asyncio, json, os, sys, zlib
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from suite_paths import add_empyrean_clients, debug_listing  # noqa: E402
+from cart_check import verify_cart_bus  # noqa: E402
 add_empyrean_clients()
 from aether import BusClient
 
@@ -93,6 +94,11 @@ async def main():
     bus = BusClient(client_id="wcscr", client_name="wavec-scroll-ab", client_version="1", want_events=False)
     await bus.connect()
     await call(bus, "breakpoint_clear", {"all": True})
+    # AB_PROTOCOL step 0: PROVE WHICH CART IS LOADED, before either arm. The
+    # in-ROM end-pointer check below reads the image's LENGTH out of the loaded
+    # cart; it cannot tell two builds of the same length apart, and that is the
+    # case that makes an A/B agree having compared nothing.
+    await verify_cart_bus(bus, ROM, label=f"{NAME} step 0")
     want = os.path.getsize(ROM); want += want % 2
     r = await call(bus, "read_memory", {"addr": "0x1A0", "len": 8})
     end = int(r["bytes"][8:], 16)
