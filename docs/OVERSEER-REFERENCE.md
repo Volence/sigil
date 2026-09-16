@@ -1790,6 +1790,13 @@ the thing being compared. A file count is not a byte count.
 
 Read at the moment you move a row to `doing`.
 
+**⚠ THIS IS NOW SUITE CONTRACT, AND THE CONTRACT GOVERNS ON ANY DISAGREEMENT.** It is rule 8 of
+`contract/LANE_STATUS.md` in empyrean, verified here at their `origin/main` `678b736` rather than
+taken from the relay that announced it, and it carries this lane's test for a `next` row with it.
+Read it there. What follows is kept because the boot pair is upstream of that read for a session
+that has not got to it yet, and it is deliberately the same rule and not a richer one; the moment a
+successor finds the two disagreeing, the contract wins and this block is the stale half.
+
 **This seat emptied the board's `next` set at boot, inside the same minute it dispatched.** The row
 was `next`, the dispatch was right, the state change to `doing` was right, and no successor was
 named. The hub found it with `hub_check` twenty minutes later: 15 rows, one `doing`, one on the
