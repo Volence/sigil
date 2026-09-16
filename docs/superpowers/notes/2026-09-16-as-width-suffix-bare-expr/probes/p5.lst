@@ -1,0 +1,60 @@
+ AS V1.42 Beta [Bld 212] - Source File p5.asm - Page 1 - 09/16/2026 06:04:07 AM
+
+
+       1/       0 :                     	cpu	68000
+       2/       0 :                     	padding	off
+       3/       0 :                     	supmode	on
+       4/       0 :                     	org	0
+       5/       0 : 303A FFFE           	move.w	(pc),d0
+       6/       4 : 3038 0004           	move.w	(sr),d0
+       7/       8 : 3038 0008           	move.w	(usp),d0
+> > > p5.asm(8):9: error #1505: addressing mode not supported on 68000
+> > > (d0)
+> > >  move.w (d0),d0
+> > >         ~~~~
+       8/       C :                     	move.w	(d0),d0
+       9/       C :                     
+ AS V1.42 Beta [Bld 212] - Source File p5.asm - Page 2 - 09/16/2026 06:04:07 AM
+
+
+  Symbol Table (* = unused):
+  --------------------------
+
+*ARCHITECTURE :                                      "x86_64-unknown-linux" - |
+*BIGENDIAN :                      0 - | *BRANCHEXT :                      0 - |
+*CASESENSITIVE :                  1 - | *COMPMODE :                       0 - |
+*CONSTPI :        3.141592653589793 - | *CUSTOM :                         0 - |
+*DATE :                "09/16/2026" - | *FALSE :                          0 - |
+*FULLPMMU :                       1 - | *HAS64 :                          1 - |
+*HASDSP :                         0 - | *HASFPU :                         0 - |
+*HASPMMU :                        0 - | *INEXTMODE :                      0 - |
+*INLWORDMODE :                    0 - | *INMAXMODE :                      0 - |
+*INSRCMODE :                      0 - | *INSUPMODE :                      1 - |
+*LISTON :                         1 - | *MACEXP :                         7 - |
+*MOMCPU :                     68000 - | *MOMCPUNAME :               "68000" - |
+*NESTMAX :                      100 - | *PACKING :                        0 - |
+*PADDING :                        0 - | *RELAXED :                        0 - |
+*TIME :               "06:04:07 AM" - | *TRUE :                           1 - |
+*VERSION :                     142F - | *Z80SYNTAX :                      0 - |
+
+     31 symbols
+     31 unused symbols
+
+ AS V1.42 Beta [Bld 212] - Source File p5.asm - Page 3 - 09/16/2026 06:04:07 AM
+
+
+  Code Pages:
+  ----------
+
+STANDARD (0 changed characters)
+
+1 code page
+
+0.00 seconds assembly time
+
+      9 lines source file
+      1 pass
+        Additional necessary passes not started due to
+        errors, listing possibly incorrect.
+      1 error
+      0 warnings

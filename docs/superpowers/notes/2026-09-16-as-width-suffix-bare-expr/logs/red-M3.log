@@ -1,0 +1,32 @@
+=== RED CONTROL M3: let the classifier stop claiming (An), so register indirect falls into the absolute arm ===
+tree: /home/volence/sonic_hacks/.wt-width-suffix  HEAD: 132fdce1e35666d508b3455709e8e44419c8d037  branch: parcel/as-width-suffix-bare-expr
+--- mutation quoted back from disk ---
+443:fn is_m68k_areg_name(w: &str) -> bool {
+444-    let _ = w;
+445-    false
+446-}
+447-
+--- git diff HEAD --stat ---
+ crates/sigil-frontend-as/src/operands.rs | 5 ++---
+ 1 file changed, 2 insertions(+), 3 deletions(-)
+--- red run ---
+
+---- the_register_indirect_family_is_untouched stdout ----
+
+thread 'the_register_indirect_family_is_untouched' (3730924) panicked at crates/sigil-frontend-as/tests/as_paren_abs_width.rs:77:28:
+front end accepts: [(2, "`(a0)` names a 68k register, so it is not an absolute address; sigil reads register indirect only in the lower-case spelling `(a0)`..`(a7)`/`(sp)`, and has no `(pc)`/`(dN)` operand at all")]
+
+---- control_flow_and_the_special_ea_paths stdout ----
+
+thread 'control_flow_and_the_special_ea_paths' (3730918) panicked at crates/sigil-frontend-as/tests/as_paren_abs_width.rs:77:28:
+front end accepts: [(4, "`(a0)` names a 68k register, so it is not an absolute address; sigil reads register indirect only in the lower-case spelling `(a0)`..`(a7)`/`(sp)`, and has no `(pc)`/`(dN)` operand at all")]
+
+
+failures:
+    a_symbol_named_like_a_register_does_not_capture_the_indirect_form
+    control_flow_and_the_special_ea_paths
+    the_register_indirect_family_is_untouched
+
+test result: FAILED. 10 passed; 3 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p sigil-frontend-as --test as_paren_abs_width`

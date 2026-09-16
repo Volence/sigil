@@ -1,0 +1,49 @@
+=== RED CONTROL M1: revert the Mem arm to the pre-parcel unconditional refusal ===
+tree: /home/volence/sonic_hacks/.wt-width-suffix  HEAD: 132fdce1e35666d508b3455709e8e44419c8d037  branch: parcel/as-width-suffix-bare-expr
+--- mutation quoted back from disk ---
+10614:            OperandAtom::Mem(_) => {
+10615-                self.err(
+10616-                        span,
+10617-                        "absolute address operand `(expr)` needs an explicit `.w`/`.l` width suffix (width-selecting bare `(expr)` is out of scope)",
+10618-                    );
+10619-                return None;
+10620-            }
+10621-            OperandAtom::M68kAbs { addr, long } => {
+--
+11068:                OperandAtom::Mem(e)
+11069-                    if matches!(m, Mnemonic::In | Mnemonic::Out)
+11070-                        && matches!(e, Expr::Sym(s) if s == "c") =>
+--- git diff HEAD --stat ---
+ crates/sigil-frontend-as/src/eval.rs | 21 ++++++---------------
+ 1 file changed, 6 insertions(+), 15 deletions(-)
+--- red run ---
+---- paren_and_bare_absolute_select_the_same_width stdout ----
+
+thread 'paren_and_bare_absolute_select_the_same_width' (3689170) panicked at crates/sigil-frontend-as/tests/as_paren_abs_width.rs:77:28:
+front end accepts: [(3, "absolute address operand `(expr)` needs an explicit `.w`/`.l` width suffix (width-selecting bare `(expr)` is out of scope)")]
+
+---- the_corpus_line_assembles_and_selects_abs_w stdout ----
+
+thread 'the_corpus_line_assembles_and_selects_abs_w' (3689173) panicked at crates/sigil-frontend-as/tests/as_paren_abs_width.rs:77:28:
+front end accepts: [(3, "absolute address operand `(expr)` needs an explicit `.w`/`.l` width suffix (width-selecting bare `(expr)` is out of scope)")]
+
+---- sr_ccr_and_usp_in_parens_are_ordinary_symbols stdout ----
+
+thread 'sr_ccr_and_usp_in_parens_are_ordinary_symbols' (3689172) panicked at crates/sigil-frontend-as/tests/as_paren_abs_width.rs:77:28:
+front end accepts: [(3, "absolute address operand `(expr)` needs an explicit `.w`/`.l` width suffix (width-selecting bare `(expr)` is out of scope)")]
+
+
+failures:
+    a_bare_pc_in_parens_is_refused_rather_than_read_as_an_address
+    a_data_register_in_parens_is_refused_in_either_case
+    a_forward_reference_inside_the_parens_converges_to_asls_width
+    an_uppercase_register_indirect_is_refused_rather_than_read_as_an_address
+    control_flow_and_the_special_ea_paths
+    paren_absolute_in_every_position_asl_was_asked_about
+    paren_and_bare_absolute_select_the_same_width
+    sr_ccr_and_usp_in_parens_are_ordinary_symbols
+    the_corpus_line_assembles_and_selects_abs_w
+
+test result: FAILED. 4 passed; 9 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p sigil-frontend-as --test as_paren_abs_width`

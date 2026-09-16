@@ -1,0 +1,32 @@
+=== RED CONTROL M2: drop the register-spelling guard, so (A0)/(D0)/(pc) become absolute ===
+tree: /home/volence/sonic_hacks/.wt-width-suffix  HEAD: 132fdce1e35666d508b3455709e8e44419c8d037  branch: parcel/as-width-suffix-bare-expr
+--- mutation quoted back from disk ---
+13365:fn m68k_reg_name_any_case(w: &str) -> bool {
+13366-    let _ = w;
+13367-    false
+13368-}
+13369-
+--- git diff HEAD --stat ---
+ crates/sigil-frontend-as/src/eval.rs | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+--- red run ---
+
+
+---- an_uppercase_register_indirect_is_refused_rather_than_read_as_an_address stdout ----
+
+thread 'an_uppercase_register_indirect_is_refused_rather_than_read_as_an_address' (3710089) panicked at crates/sigil-frontend-as/tests/as_paren_abs_width.rs:90:18:
+assembled instead of refusing:
+	cpu 68000
+A0:	equ $1234
+	move.w (A0),d0
+
+
+
+failures:
+    a_bare_pc_in_parens_is_refused_rather_than_read_as_an_address
+    a_data_register_in_parens_is_refused_in_either_case
+    an_uppercase_register_indirect_is_refused_rather_than_read_as_an_address
+
+test result: FAILED. 10 passed; 3 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p sigil-frontend-as --test as_paren_abs_width`

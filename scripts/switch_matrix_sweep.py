@@ -72,13 +72,16 @@ ACK_UNREADABLE = {
 # adjudicated and booked. The value must equal the class the run computes, so an
 # acknowledgement cannot quietly cover a result that changed underneath it.
 ACK_DISAGREE = {
-    ("s1disasm", "s1disasm-FixBugs-1"): "SIGIL-DECLINED",
+    # `("s1disasm", "s1disasm-FixBugs-1"): "SIGIL-DECLINED"` USED TO BE HERE and
+    # is gone because the row closed, not because the leg stopped being run.
     # `_incObj/DebugMode.asm:245`, reachable only under FixBugs, reads
     # `move.w (v_limitright2),d0`: an absolute address operand with no width
-    # suffix. asl selects a width; sigil refuses. Every other reference to that
-    # variable in the corpus writes `.w`, so this is the one bare site, and it
-    # is a front-end width-selection row, not a ROM-writing one. Booked by
-    # `SWITCH-SETTING-SILENT-ROMS` as fault 3 and deliberately untouched there.
+    # suffix. sigil refused it; `AS-WIDTH-SUFFIX-BARE-EXPR` routes the
+    # parenthesised absolute operand through the same width selection the bare
+    # one already used, and the leg now AGREES at crc32 `888defef` / 551,288
+    # bytes with no source edit. The entry has to go rather than be re-labelled:
+    # this table is asserted equal to what the run finds in both directions, so
+    # a stale entry is a loud failure and not a comment.
 
     ("s2disasm", "s2disasm-fixBugs-1"): "SIGIL-DECLINED",
     # Under fixBugs the Saxman stream grows to $F88 while the source declares
@@ -125,6 +128,18 @@ ACK_WARNING_GAP = {
 # assignment responsible; `--cross` asserts that the corners the stock
 # toolchain declined and the corners some rule covers are the same set, and
 # that no rule covers zero corners.
+# (corpus, corner tag): a corner the STOCK toolchain could not build where
+# sigil wrote an image anyway. There is no reference to compare such an image
+# against, so it is a finding and never a pass, and the set is asserted equal
+# to what the run observes in both directions. It is EMPTY, and that emptiness
+# is a measurement: at Sonic 1's 24 `Revision=0 + FixBugs=1 +
+# AllOptimizations=0` corners sigil refuses too, at the same source line asl
+# names, with `(d16,PC)/bra.w displacement out of range (32790) in section
+# sec752` against asl's `error #1370: jump distance too big`. That is the
+# answer to the `BRA-W-RANGE-UNCHECKED` row, and it was unmeasurable until
+# `AS-WIDTH-SUFFIX-BARE-EXPR` let sigil reach those corners at all.
+ACK_STOCK_DECLINE_SIGIL_BUILT = set()
+
 ACK_STOCK_DECLINE = [
     ("s1disasm", {"Revision": 0, "FixBugs": 1, "AllOptimizations": 0},
      "asl reports `87, 88, 89 Ending Sequence Sonic, Emeralds, Logo.asm(270): "
@@ -617,6 +632,48 @@ def run_leg(cfg, tag, edits, log, vacuity_ref=None, post_lua_edits=()):
 # Controls on this program itself, proven red
 # ---------------------------------------------------------------------------
 
+def reconcile_stock_declines(rows, ack):
+    """Split the corners the STOCK toolchain could not build by what sigil did
+    there, and say which of those need acknowledging.
+
+    At such a corner there is no reference image, so the two outcomes mean
+    opposite things and must never be counted together:
+
+      sigil ALSO declined  the two toolchains agree that the corner is not
+                           buildable. Nothing to check, and this is what the
+                           Sonic 1 `Revision=0 + FixBugs=1 + AllOptimizations=0`
+                           corners do: both refuse at the same source line, asl
+                           with `error #1370: jump distance too big` and sigil
+                           with `(d16,PC)/bra.w displacement out of range`.
+
+      sigil BUILT          sigil wrote a ROM nothing can compare against. That
+                           is the silent-wrong-ROM direction this whole campaign
+                           exists to close, so it is a FINDING: it must be named
+                           in `ACK_STOCK_DECLINE_SIGIL_BUILT` or the run fails.
+
+    The acknowledgement set is asserted equal to the observed set in BOTH
+    directions, so an entry that stops matching a corner is as loud as a corner
+    no entry covers.
+    """
+    agreed, unverifiable = [], []
+    for r in rows:
+        if r.get("lua_wrote"):
+            continue
+        (unverifiable if r.get("sigil_wrote") else agreed).append(r["tag"])
+    problems = []
+    for t in unverifiable:
+        if t not in ack:
+            problems.append(
+                "corner %s: the stock toolchain declined it and sigil wrote an "
+                "image anyway, which nothing can check against a reference" % t)
+    for t in sorted(ack):
+        if t not in unverifiable:
+            problems.append(
+                "ACK_STOCK_DECLINE_SIGIL_BUILT names %s, which this run did not "
+                "produce; the acknowledgement is stale" % t)
+    return agreed, unverifiable, problems
+
+
 def self_test(scratch, log):
     """Four controls. Each shows the gate it exercises firing on a mutation, on
     disk, because a gate that has never been seen red is a gate nobody has
@@ -726,6 +783,33 @@ def self_test(scratch, log):
            if c8 else "FAILED: asl coded=%s asl text=%s sigil text=%s "
                       "sigil own=%s" % (ac, at, st, so)))
     ok = ok and c8
+
+    # C9: the stock-decline adjudicator. A corner only sigil builds has no
+    # reference image, and the whole risk this runner exists to catch is an
+    # image nothing checked being read as agreement. It needs its own control
+    # because in a passing run the observed set is EMPTY, and a function that
+    # can only ever return an empty set is indistinguishable from a working one.
+    c9_rows = [
+        {"tag": "both-built", "lua_wrote": True, "sigil_wrote": True},
+        {"tag": "stock-declined-sigil-declined", "lua_wrote": False,
+         "sigil_wrote": False, "sigil_stderr": ["bra.w out of range"]},
+        {"tag": "stock-declined-sigil-built", "lua_wrote": False,
+         "sigil_wrote": True},
+    ]
+    ag, un, pr = reconcile_stock_declines(c9_rows, set())
+    c9_finds = (ag == ["stock-declined-sigil-declined"]
+                and un == ["stock-declined-sigil-built"]
+                and len(pr) == 1 and "nothing can check" in pr[0])
+    # ... and the OTHER direction: an acknowledgement matching no corner.
+    _, _, pr2 = reconcile_stock_declines(c9_rows[:2], {"gone"})
+    c9_stale = len(pr2) == 1 and "stale" in pr2[0]
+    log("CONTROL C9 stock-decline-adjudicator: %s"
+        % ("PASSED, an image only sigil produced is a finding and an "
+           "acknowledgement matching no corner is stale"
+           if c9_finds and c9_stale
+           else "FAILED: agreed=%s unverifiable=%s problems=%s stale=%s"
+                % (ag, un, pr, pr2)))
+    ok = ok and c9_finds and c9_stale
 
     shutil.rmtree(d)
     log("SELF_TEST %s" % ("PASSED" if ok else "FAILED"))
@@ -1024,7 +1108,8 @@ def main():
             rules = [(d, why) for (c, d, why) in ACK_STOCK_DECLINE if c == corpus]
             log("   acknowledged stock-decline rules: %d" % len(rules))
 
-            comp_ok, comp_bad = 0, []
+            comp_ok, comp_bad, comp_skipped = 0, [], 0
+            corner_rows = []
             stock_bad, rule_hits = [], [0] * len(rules)
             agreed, disagreed, crcs = 0, [], {}
             for corner in corners:
@@ -1051,13 +1136,26 @@ def main():
                 reported += 1
                 r["cross"] = True
                 all_rows.append(r)
+                corner_rows.append(r)
                 if r.get("ref_crc"):
                     crcs.setdefault(r["ref_crc"], tag)
                 if r.get("ref") and os.path.isfile(r["ref"]):
                     os.remove(r["ref"])
 
                 got = "BUILT" if r.get("sigil_wrote") else "DECLINED"
-                if got == pred:
+                # THE COMPOSITION PREDICTION IS ONLY ASKED WHERE THE STOCK
+                # TOOLCHAIN BUILT. It predicts sigil's own front-end refusals
+                # from the single settings phase 1 saw sigil refuse. At a
+                # corner the corpus's OWN toolchain cannot assemble, sigil
+                # declining is agreement with the reference rather than a
+                # surprise on the sigil side, and the interesting question is
+                # the opposite one, handled by `reconcile_stock_declines`
+                # below. Scoring those corners against the prediction would
+                # make the runner permanently red on a Sonic 1 defect it
+                # already reports through its own rule.
+                if not r.get("lua_wrote"):
+                    comp_skipped += 1
+                elif got == pred:
                     comp_ok += 1
                 else:
                     comp_bad.append((tag, pred, got))
@@ -1076,8 +1174,10 @@ def main():
 
             log("")
             log("== CROSS %s: %d corners" % (corpus, len(corners)))
-            log("   composition prediction on the sigil side: %d held, %d broke"
-                % (comp_ok, len(comp_bad)))
+            log("   composition prediction on the sigil side: %d held, %d "
+                "broke, %d not asked (the stock toolchain declined the corner, "
+                "so there is no reference and a sigil refusal there agrees "
+                "with it)" % (comp_ok, len(comp_bad), comp_skipped))
             for t, pd, g in comp_bad:
                 log("     BROKE %s: predicted sigil %s, sigil %s" % (t, pd, g))
             log("   both toolchains built: %d corners, %d agreed byte for "
@@ -1091,6 +1191,21 @@ def main():
             for t, c in stock_bad:
                 if not c:
                     log("     UNACKNOWLEDGED STOCK DECLINE %s" % t)
+            sd_agreed, sd_unver, sd_problems = reconcile_stock_declines(
+                corner_rows, {t for (c, t) in ACK_STOCK_DECLINE_SIGIL_BUILT
+                              if c == corpus})
+            log("   ... of those, sigil ALSO declined %d and BUILT %d. A "
+                "corner only sigil builds has no reference image, so it is a "
+                "finding and not a pass." % (len(sd_agreed), len(sd_unver)))
+            for t in sd_unver:
+                log("     UNVERIFIABLE IMAGE %s: sigil wrote a ROM at a corner "
+                    "the corpus's own toolchain refuses" % t)
+            for t in sd_agreed[:2]:
+                row = next(r for r in corner_rows if r["tag"] == t)
+                log("     sigil's refusal at %s: %s"
+                    % (t, (row.get("sigil_stderr") or ["no message"])[0][:110]))
+            for pr in sd_problems:
+                failures.append("%s: %s" % (corpus, pr))
             for i, (d, w) in enumerate(rules):
                 log("   rule %s covered %d corner(s)" % (d, rule_hits[i]))
             log("   distinct stock images across the corners: %d" % len(crcs))

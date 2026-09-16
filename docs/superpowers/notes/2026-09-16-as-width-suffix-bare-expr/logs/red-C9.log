@@ -1,0 +1,23 @@
+=== RED CONTROL C9: the stock-decline adjudicator stops reporting an image only sigil produced ===
+tree: /home/volence/sonic_hacks/.wt-width-suffix  HEAD: a49f86b74c87effc2c4cb5d96391d4fe343a7a07  branch: parcel/as-width-suffix-bare-expr
+--- GREEN first, unmutated, so the control is known to have a possible green ---
+CONTROL C9 stock-decline-adjudicator: PASSED, an image only sigil produced is a finding and an acknowledgement matching no corner is stale
+SELF_TEST PASSED
+--- mutation quoted back from disk ---
+658-    agreed, unverifiable = [], []
+659-    for r in rows:
+660-        if r.get("lua_wrote"):
+661-            continue
+662:        agreed.append(r["tag"])  # MUTATION: never report the unverifiable half
+--- git diff HEAD --stat ---
+ scripts/switch_matrix_sweep.py | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+--- red run ---
+CONTROL C9 stock-decline-adjudicator: FAILED: agreed=['stock-declined-sigil-declined', 'stock-declined-sigil-built'] unverifiable=[] problems=[] stale=['ACK_STOCK_DECLINE_SIGIL_BUILT names gone, which this run did not produce; the acknowledgement is stale']
+SELF_TEST FAILED
+self_test returned False
+--- restore from the COMMITTED baseline a49f86b7 and re-run ---
+(empty diff above = restored)
+CONTROL C9 stock-decline-adjudicator: PASSED, an image only sigil produced is a finding and an acknowledgement matching no corner is stale
+SELF_TEST PASSED
+self_test returned True

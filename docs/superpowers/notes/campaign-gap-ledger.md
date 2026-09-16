@@ -5485,6 +5485,14 @@ is no second site behind it. **Kill:** the front-end width-selection row. On the
 `--cross` and 120 Sonic 1 corners and 48 Sonic 2 corners become measured for the first time. Nothing
 says what is in them.
 
+**CLOSED 2026-09-16 by `AS-WIDTH-SUFFIX-BARE-EXPR`, and the row stays here because its kill condition
+was met rather than abandoned.** No `.w` was added anywhere. `OperandAtom::Mem` now routes to
+`abs_ea_from_expr`, the same width selection the bare-symbol and bare-expression spellings already
+used, so the unpatched tree builds: crc32 `888defef` / 551,288 bytes, byte-identical to the stock
+ROM. `--cross` was re-run and **all 120 Sonic 1 corners build and all 120 agree byte for byte**.
+Nothing was behind the wall. The 48 Sonic 2 corners remain declined for the unrelated driver-size
+row. See `docs/superpowers/notes/2026-09-16-as-width-suffix-bare-expr.md`.
+
 ### 2026-09-16, `SWITCH-MATRIX-SWEEP`: sigil's reach beyond a corner the stock toolchain cannot build
 
 `Revision = 0` + `FixBugs = 1` + `AllOptimizations = 0` cannot be assembled by asl at all: `bra.w
@@ -5497,6 +5505,22 @@ exactly the class this campaign has been closing.
 **Kill:** after the width row lands, the `--cross` run will reach them, and the expected outcome
 becomes a refusal naming the branch. If it instead produces an image, that is a new fault and the
 corner tags are already in the log. Booked so nobody reads the current `BOTH-DECLINED` as agreement.
+
+**CLOSED 2026-09-16 by `AS-WIDTH-SUFFIX-BARE-EXPR`, and the answer is the good one.** With the width
+row landed sigil reaches that instruction, and it refuses it, at the same file and line asl names:
+
+```text
+asl    87, 88, 89 Ending Sequence Sonic, Emeralds, Logo.asm(270): error #1370: jump distance too big
+sigil  _incObj/87, 88, 89 Ending Sequence Sonic, Emeralds, Logo.asm(270):3:
+       error: (d16,PC)/bra.w displacement out of range (32790) in section sec752
+```
+
+32790 is 23 past `bra.w`'s 32767, and sigil names the displacement. **No silent wrong ROM.** The
+answer is now a standing gate rather than an observation: `reconcile_stock_declines` in
+`scripts/switch_matrix_sweep.py` splits stock-declined corners by what sigil did, and a corner only
+sigil builds must be named in `ACK_STOCK_DECLINE_SIGIL_BUILT` or the run fails. That table is empty
+and its emptiness is asserted in both directions, so the day sigil starts building one of them the
+sweep says so. Control C9 covers the adjudicator, since in a passing run its observed set is empty.
 
 ### 2026-09-16, `SWITCH-MATRIX-SWEEP`: no runtime confirmation of any ROM the sweep built
 
@@ -5556,3 +5580,70 @@ documented-declaration derivation cannot see them by construction. **Kill:** che
 `derive_tool_args` already evaluates the `<local boolean> and "a" or "b"` expression to resolve the
 algorithm name. It would need a second derivation step over `build.lua`'s locals and a second flip
 mechanism (edit the Lua, not the asm), and the same edit-proves-it-applied gate.
+
+### 2026-09-16, `AS-WIDTH-SUFFIX-BARE-EXPR`: `AS-UPPERCASE-REGISTER-INDIRECT`, and a SILENT half nobody had seen
+
+**asl's register names are case-insensitive even under `-U`, and sigil's operand classifier matches
+them in lower case only.** Measured on the reference build, exit 0, with a symbol of that name
+deliberately in scope (`A0: equ $1234`):
+
+```text
+       6/       0 : 3010                	move.w	(A0),d0     ; a0 INDIRECT, the register wins
+       7/       2 : 3010                	move.w	(a0),d0
+       8/       4 : 3008                	move.w	A0,d0       ; a0 DIRECT, the register wins again
+      10/       6 : 3017                	move.w	(SP),d0
+```
+
+**The two halves are not equally dangerous and must not be booked as one line.**
+
+*The indirect half is LOUD, and this parcel keeps it loud.* `(A0)`/`(SP)` reach the absolute-address
+arm, which now refuses them by name rather than reading them as addresses. A user who writes
+uppercase register indirect gets a diagnostic naming the register.
+
+*The BARE half is SILENT, and it is on master today.* `move.w A0,d0` with `A0: equ $1234` in scope:
+asl writes `3008`, sigil writes `3038 1234`. **Two different instructions, both toolchains exit 0,
+neither says a word.** This is the silent-wrong-ROM shape, on the `Value` path, and it is not
+reachable from either corpus's build-option space (nothing in them spells a register in upper case),
+which is why 422 sweep legs never met it.
+
+**Kill:** make register recognition case-insensitive at both sites. `classify`'s paren branch is the
+indirect half and `convert_one_atom_m68k`'s `Value(Sym)` arm is the bare half, and both should ask
+one case-folding predicate. **The thing to check first, and the reason this was not done inside
+`AS-WIDTH-SUFFIX-BARE-EXPR`:** `classify` is CPU-AGNOSTIC. Its comment argues `a`+digit is
+unambiguously 68k because Z80 has no such register, which is an argument about the NAME and not
+about the language, and widening it to upper case widens the assumption over Z80 source where `(A0)`
+is a perfectly ordinary memory reference through a symbol. A byte gate over the Z80 corpora is the
+gate that change needs, and it is a different gate from the one the width row needed.
+
+### 2026-09-16, `AS-WIDTH-SUFFIX-BARE-EXPR`: `jmp (Sym)` does not take the deferral path `jmp Sym` takes
+
+`lower_m68k` special-cases `jmp`/`jsr` with a BARE `[OperandAtom::Value(e)]` target and gives it the
+`JmpJsrSym` length-variable deferral, the `keep_labels_symbolic` relaxation and the
+`defer_unresolved_jsr_jmp` bonus pass. The parenthesised `jmp (Sym)` classifies as `Mem`, misses that
+block, and falls through to the generic eager fold.
+
+**This is not a defect for the AS corpora and was not one before the parcel either** (before it, the
+form was refused outright). For a resolved target the two paths produce identical bytes, which is
+asserted in `as_paren_abs_width.rs::control_flow_and_the_special_ea_paths` against asl's `4EF8 0000`.
+It only matters for an UNRESOLVED cross-seam target, which is an `.emp` concern, and `.emp` does not
+spell its jumps this way.
+
+**Kill:** if a `.emp`-side consumer ever writes `jmp (SomeExternLabel)`, extend the `jmp`/`jsr`
+pre-check in `lower_m68k` to accept `[OperandAtom::Mem(e)]` alongside `[OperandAtom::Value(e)]`. The
+same argument applies to `try_defer_long_imm` and `try_defer_lea_abs`, which also match on `Value`
+and `M68kAbs` and not on `Mem`.
+
+### 2026-09-16, `AS-WIDTH-SUFFIX-BARE-EXPR`: the sweep's own suite cannot be run here
+
+`cargo test --workspace --no-fail-fast` in this lane reports **5,142 passed / 392 failed**, and the
+baseline `e87dcec6` reports **5,129 passed / 392 failed** with the SAME 375 distinct failing test
+names, so the parcel adds 13 passes (its own tests) and moves nothing else. **389 of the 392 are one
+environment gap**, `test_support.rs` refusing to name a reference tree because no `AEON_DIR` is
+provisioned; the remaining 3 are `PoisonError` cascading from those panics inside the same test
+binary.
+
+**This is not a finding about the parcel, it is a note that the lane's own suite cannot answer a
+question about the aeon-paired half.** The landing gate the controller runs on the merged tree is
+what answers it. **Kill:** provision an `AEON_DIR` worktree per the standing requirement (a clean
+worktree of a committed SHA, plus the gitignored artifacts a bare checkout lacks) before quoting a
+workspace figure from a lane again.
