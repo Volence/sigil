@@ -26,14 +26,21 @@
 //!   is refused;
 //! * every address no run writes holds the pad byte.
 //!
-//! `<constant>` is a name and nothing else: p2bin never reads its value, it
-//! only names it in the overflow message, and so does this module.
+//! `<constant>` is a name and nothing else TO p2bin, which has no symbol table:
+//! it never reads the value and only quotes the name in its overflow message.
+//! sigil assembled the program, so the value is on the section as an `EquSym`
+//! and this module DOES read it. That is a deliberate divergence and it is the
+//! last item below.
 //!
 //! On top of p2bin, this refuses what p2bin does silently: an instruction that
 //! names no second address space, a second address space left partly or wholly
-//! unplaced, a stored stream some other run would overwrite, and a stream that
+//! unplaced, a stored stream some other run would overwrite, a stream that
 //! does not decompress, through the decompressor the caller supplies (on the AS
-//! route, sigil's own), to exactly the bytes that were assembled.
+//! route, sigil's own), to exactly the bytes that were assembled, and a stream
+//! larger than the size `<constant>` declares for it. That last one is not the
+//! same check as the reservation above: the reservation is the physical gap,
+//! which is all p2bin can measure, and the constant is the number the SOURCE
+//! wrote down and computed other bytes from.
 
 use crate::LinkedImage;
 use sigil_ir::map::MemoryMap;
@@ -286,6 +293,32 @@ fn err(message: String, primary: Span) -> Diagnostic {
     Diagnostic { level: Level::Error, message, primary }
 }
 
+/// The value the assembled program gives `name`, when it gives it exactly one
+/// and that one is an integer: the `<constant>` a `-z` instruction names is an
+/// ordinary source equate (`Size_of_Snd_driver_guess = $F64`), and an AS equate
+/// reaches the link as an [`EquSym`](sigil_ir::EquSym) on its section.
+///
+/// `None` rather than a guess whenever the answer is not unambiguous: a name the
+/// program never binds (p2bin accepts any name, so an instruction may name one
+/// that is not in the source at all), a name bound to a link expression rather
+/// than a number, or a name several sections bind to DIFFERENT numbers. Each of
+/// those is a program sigil cannot speak about, and the caller's check is skipped
+/// rather than taken on an invented value. A NEGATIVE value is treated the same
+/// way: it is not a size, and comparing a length against it would refuse every
+/// program that named it, which is a refusal about the name rather than about the
+/// stream.
+fn declared_size(resolved: &[Section], name: &str) -> Option<i64> {
+    let mut found: Option<i64> = None;
+    for eq in resolved.iter().flat_map(|s| s.equ_syms.iter()).filter(|e| e.name == name) {
+        let sigil_ir::expr::Expr::Int(v) = eq.expr else { return None };
+        match found {
+            Some(prior) if prior != v => return None,
+            _ => found = Some(v),
+        }
+    }
+    found.filter(|&v| v >= 0)
+}
+
 fn space_span(space: AddressSpace) -> Span {
     match space {
         AddressSpace::Foreign { entered_at, .. } => entered_at,
@@ -453,6 +486,57 @@ pub fn flatten_placing(
                 span,
             ));
             continue;
+        }
+        // The reservation the SOURCE declared, which is the `<constant>` the
+        // instruction names, and which is not the same as the physical gap
+        // checked above. p2bin never reads the constant's value, having no
+        // symbol table; it only names it in the message above. sigil assembled
+        // the program, so it has the value, and the two corpora that use the
+        // `after` form leave a gap LARGER than the constant (Sonic 2 reserves
+        // $F64 and the next code starts $1018 later), so the check above passes
+        // on a stream the source's own declared size cannot hold.
+        //
+        // That difference is a wrong ROM at exit 0. `Snd_Driver_End - Snd_Driver`
+        // is the constant, and Sonic 2 loads exactly that into the `move.w` its
+        // Saxman decompressor reads as the byte count (`movewZ80CompSize`),
+        // which the build script then patches from the size p2bin reports
+        // through asl's share file. sigil writes no share file, so the patch
+        // finds nothing and skips in silence; measured with `fixBugs = 1`, where
+        // the driver stores as $F88 and the immediate stays $F64 and the game
+        // decompresses $24 bytes too few. Sonic 3's `s3.asm` bakes the same two
+        // constants into an immediate and has no patch step at all.
+        //
+        // ONE DIRECTION ONLY, and the asymmetry is measured rather than chosen:
+        // a stream SMALLER than the constant is what `skdisasm` ships (its
+        // `Size_of_Snd_driver_guess` is $E00 and the Kosinski stream in the ROM
+        // its own build script writes is about $DFB), so refusing or even
+        // warning on that direction would fire on a corpus at its shipped
+        // settings, which is the always-red shape. A stream LARGER than the
+        // constant overflows a reservation the source wrote down, and the
+        // message above already tells a reader to raise that same name.
+        if let Some(declared) = declared_size(resolved, &z.constant) {
+            if stored.len() as i64 > declared {
+                diags.push(err(
+                    format!(
+                        "`{}`: the blob [{:#X}, {:#X}) is {:#X} bytes {}, and `{}`, the size the source declares for it, is ${:X}; every byte the source computed from that name is short by {:#X}, and p2bin's own message for this is to raise it, so set `{}` to ${:X}",
+                        z.text,
+                        z.address,
+                        end,
+                        stored.len(),
+                        match z.format {
+                            BlobFormat::Uncompressed => "stored uncompressed".to_string(),
+                            f => format!("compressed as {}", f.name()),
+                        },
+                        z.constant,
+                        declared,
+                        stored.len() as i64 - declared,
+                        z.constant,
+                        stored.len()
+                    ),
+                    span,
+                ));
+                continue;
+            }
         }
         match codec.decompress(z.format, &stored) {
             Ok(back) if back == blob => {}

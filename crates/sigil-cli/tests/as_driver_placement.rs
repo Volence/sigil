@@ -7,7 +7,12 @@
 //! same arguments (`docs/superpowers/notes/2026-09-11-s1-driver-stage2/`,
 //! `mk_expect.py` and `new_probes.out`). Where p2bin refuses, sigil refuses too.
 //! Where p2bin places nothing, or writes a stream the game would read back
-//! wrong, sigil refuses by name, and each such test says so.
+//! wrong, sigil refuses by name, and each such test says so. There is one
+//! DIVERGENCE in the other direction, where p2bin builds and sigil refuses:
+//! a stream larger than the size its `<constant>` declares, which p2bin cannot
+//! see because it has no symbol table. It is named in
+//! `the_constant_is_a_name_to_p2bin_and_a_declared_size_to_sigil` with the
+//! p2bin measurement it departs from kept beside it.
 //!
 //! What would go red, by half-fix: a `-z` parsed and the blob stored
 //! uncompressed (the kosinski and saxman-bugged images); the wrong Kosinski
@@ -257,13 +262,30 @@ fn after_stores_the_blob_where_the_code_before_it_ends_and_pads_the_rest() {
 }
 
 /// p2bin never reads the constant's value: it only names it in its overflow
-/// message. A different constant, or one that does not exist, gives the same
-/// image (measured: `Small` and `Nope` in place of `Guess`).
+/// message, and a different constant or one that does not exist gives it the
+/// same image (measured: `Small` and `Nope` in place of `Guess`, both writing
+/// `010203…aabb`).
+///
+/// **sigil DIVERGES on the first of those two, deliberately** (`SWITCH-SETTING-
+/// SILENT-ROMS`, 2026-09-16). sigil assembled the program, so `Small = 4` is a
+/// number it has, and a 10-byte stream stored against a declared 4 means every
+/// byte the source computed from `Small` is wrong: Sonic 2 computes its
+/// decompressor's byte count that way, and the silent version of this wrote a
+/// ROM whose sound driver loaded `0x24` bytes short. The physical gap cannot
+/// catch it, which is the point: here the gap runs to `$10` and the stream fits.
+///
+/// `Nope` does NOT diverge, and that is the same measurement kept: a name the
+/// program never binds is a name sigil cannot read either, so it is still just a
+/// name and the image is unchanged.
 #[test]
-fn the_constant_is_a_name_and_its_value_is_never_read() {
+fn the_constant_is_a_name_to_p2bin_and_a_declared_size_to_sigil() {
     let want = hex("010203040506070810111213141516171819ffffffffffffaabb");
-    assert_eq!(build(P_AFTER, &[], &["-p=FF", "-z=0,uncompressed,Small,after"]), want);
     assert_eq!(build(P_AFTER, &[], &["-p=FF", "-z=0,uncompressed,Nope,after"]), want);
+    assert_eq!(build(P_AFTER, &[], &["-p=FF", "-z=0,uncompressed,Guess,after"]), want);
+    let row = refused(P_AFTER, &[], &["-p=FF", "-z=0,uncompressed,Small,after"]);
+    for needle in ["Small", "0xA", "$4", "set `Small` to $A"] {
+        assert!(row.contains(needle), "the refusal does not name {needle}:\n{row}");
+    }
 }
 
 #[test]

@@ -315,3 +315,83 @@ fn a_driver_behind_sections_with_no_content_is_placed_where_p2bin_places_it() {
         assert_eq!(image, want, "{shape}: the reference toolchain's image");
     }
 }
+
+/// [`assemble_refused`] with further arguments, such as a `-z`.
+fn assemble_refused_with(src: &str, extra: &[&str]) -> String {
+    let dir = tempfile::tempdir().expect("tempdir");
+    std::fs::write(dir.path().join("root.asm"), src).expect("write root.asm");
+    let out_path = dir.path().join("out.bin");
+    let mut args = vec!["-o", out_path.to_str().expect("utf-8 path")];
+    args.extend_from_slice(extra);
+    let out = run(dir.path(), "root.asm", &args);
+    let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
+    assert!(!out.status.success(), "must be refused.\nstderr:\n{stderr}\nsource:\n{src}");
+    assert!(!out_path.exists(), "a refused program must write no image.\nstderr:\n{stderr}");
+    let errors = error_lines(&stderr);
+    assert_eq!(errors.len(), 1, "exactly one error.\nstderr:\n{stderr}");
+    errors[0].to_string()
+}
+
+/// The `<constant>` a `-z` instruction names is the size the SOURCE declares for
+/// the stored stream, and a stream LARGER than it overflows a reservation the
+/// program wrote down, whatever the physical gap after it happens to be.
+///
+/// p2bin cannot check this: it has no symbol table and only quotes the name in
+/// its own overflow message. sigil assembled the program, so the value is on the
+/// section as an `EquSym` and the check costs a lookup. This is Sonic 2's
+/// `fixBugs = 1` fault in miniature: there the driver compresses to `$F88`
+/// against a declared `$F64` while the gap runs to `$1018`, so the gap check
+/// passes and the ROM carries a `move.w #$F64,d7` the game reads as the byte
+/// count. `tests/as_switch_setting_roms.rs` is the same fault on the corpus
+/// itself; this row needs no corpus and so runs everywhere.
+///
+/// THE OTHER DIRECTION IS ACCEPTED, and deliberately: `skdisasm` ships a
+/// `Size_of_Snd_driver_guess` of `$E00` against a stream of about `$DFB`, so
+/// refusing or warning on a stream smaller than its constant would fire on a
+/// corpus at its own shipped settings.
+#[test]
+fn a_blob_larger_than_the_size_its_constant_declares_is_refused() {
+    // Three Z80 bytes (`di` F3, `ld a,1` 3E 01) stored uncompressed, in a gap
+    // that runs from $102 to $110, so the PHYSICAL reservation is $E and never
+    // overflows: only the declared size can.
+    let src = |declared: &str| {
+        format!(
+            "\tcpu 68000\nSize1 equ {declared}\n\tdc.l 0, 0\n\torg $100\n\tdc.w $4E71\n\
+             \tsave\n\t!org 0\nDriverStart:\n\tcpu z80\n\tdi\n\tld a,1\n\
+             \trestore\n\tpadding off\n\t!org $110\n\tdc.w $4E71\n"
+        )
+    };
+    let z = "-z=0,uncompressed,Size1,after";
+
+    let row = assemble_refused_with(&src("2"), &[z]);
+    for needle in ["Size1", "0x3", "$2", "short by 0x1", "set `Size1` to $3"] {
+        assert!(row.contains(needle), "the refusal does not name {needle}:\n{row}");
+    }
+
+    // Equal is the corpora's own shipped state and must stay silent.
+    assert_eq!(assemble_ok_with(&src("3"), &[z])[0x100..0x105], [0x4E, 0x71, 0xF3, 0x3E, 0x01]);
+    // Larger is skdisasm's shipped state and must stay silent.
+    assert_eq!(assemble_ok_with(&src("$10"), &[z])[0x100..0x105], [0x4E, 0x71, 0xF3, 0x3E, 0x01]);
+}
+
+/// p2bin accepts any name in the `<constant>` field, including one the program
+/// never binds, so a name sigil cannot resolve to a single integer leaves the
+/// check unmade rather than taken on an invented value.
+#[test]
+fn a_constant_the_program_does_not_bind_leaves_the_declared_size_check_unmade() {
+    let src = "\tcpu 68000\nSize1 equ 2\n\tdc.l 0, 0\n\torg $100\n\tdc.w $4E71\n\
+               \tsave\n\t!org 0\nDriverStart:\n\tcpu z80\n\tdi\n\tld a,1\n\
+               \trestore\n\tpadding off\n\t!org $110\n\tdc.w $4E71\n";
+    // The same program whose `Size1 equ 2` is refused above, named through a
+    // symbol that is not there: accepted, and the bytes are unchanged.
+    let image = assemble_ok_with(src, &["-z=0,uncompressed,NoSuchName,after"]);
+    assert_eq!(image[0x100..0x105], [0x4E, 0x71, 0xF3, 0x3E, 0x01]);
+
+    // And a name bound to something that is not a size at all. Comparing a
+    // length against a negative number refuses every program that names it,
+    // which is a refusal about the NAME rather than about the stream.
+    let negative = src.replace("Size1 equ 2", "Size1 equ -1");
+    assert!(negative.contains("Size1 equ -1"), "the fixture edit did not apply");
+    let image = assemble_ok_with(&negative, &["-z=0,uncompressed,Size1,after"]);
+    assert_eq!(image[0x100..0x105], [0x4E, 0x71, 0xF3, 0x3E, 0x01]);
+}

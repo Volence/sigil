@@ -1061,6 +1061,16 @@ pub fn apply_header_checksum(rom: &mut [u8]) {
     if rom.len() < 0x200 {
         return;
     }
+    let sum = header_checksum(rom);
+    rom[0x18E] = (sum >> 8) as u8;
+    rom[0x18F] = (sum & 0xFF) as u8;
+}
+
+/// The checksum [`apply_header_checksum`] writes, without writing it: the 16-bit
+/// big-endian additive word-sum over `[0x200, EOF)`. An odd trailing byte is
+/// summed as the high half of a word (low half 0x00). Zero for an image with no
+/// `0x200` to sum from.
+pub fn header_checksum(rom: &[u8]) -> u16 {
     let mut sum: u16 = 0;
     let mut i = 0x200;
     while i + 1 < rom.len() {
@@ -1070,8 +1080,80 @@ pub fn apply_header_checksum(rom: &mut [u8]) {
     if i < rom.len() {
         sum = sum.wrapping_add((rom[i] as u16) << 8);
     }
-    rom[0x18E] = (sum >> 8) as u8;
-    rom[0x18F] = (sum & 0xFF) as u8;
+    sum
+}
+
+/// The offset of the console-name field, which is where a Mega Drive cartridge
+/// header starts.
+const CONSOLE_NAME: usize = 0x100;
+/// The offset of the end-of-ROM field: the address of the cartridge's LAST byte.
+const ROM_END_FIELD: usize = 0x1A4;
+/// The offset of the header checksum field.
+const CHECKSUM_FIELD: usize = 0x18E;
+
+/// Whether `rom` carries a Mega Drive cartridge header, by the same mark the
+/// console's own TMSS lock reads: the string `SEGA` at the start of the
+/// console-name field at `0x100`. The ` SEGA` spelling (one leading space, used
+/// by part of the licensed library) is accepted too, so a real cartridge is not
+/// missed over a space.
+///
+/// This is the guard on [`apply_sega_header`], and it is what keeps that pass off
+/// an output that is not a cartridge. The AS route assembles whatever it is
+/// given: `s2disasm`'s own `build.lua` runs the assembler over a generated
+/// `song.asm` to make a music binary, and a sound-driver or art blob is the same
+/// shape. Those are longer than `0x200` and have no header, so an unguarded
+/// header pass would silently overwrite four bytes of somebody's data.
+pub fn has_sega_header(rom: &[u8]) -> bool {
+    rom.len() >= CONSOLE_NAME + 0x10
+        && (&rom[CONSOLE_NAME..CONSOLE_NAME + 4] == b"SEGA" || &rom[CONSOLE_NAME + 1..CONSOLE_NAME + 5] == b"SEGA")
+}
+
+/// What [`apply_sega_header`] found stale, for a caller that wants to say so.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SegaHeaderFix {
+    /// The word that was at `0x18E`, and the word now there.
+    pub checksum: (u16, u16),
+    /// The longword that was at `0x1A4`, and the longword now there.
+    pub rom_end: (u32, u32),
+}
+
+impl SegaHeaderFix {
+    /// Whether either field moved. A header already correct fixes nothing.
+    pub fn changed(&self) -> bool {
+        self.checksum.0 != self.checksum.1 || self.rom_end.0 != self.rom_end.1
+    }
+}
+
+/// The two header fields a Mega Drive disassembly's build script rewrites after
+/// the image exists, because neither can be known while it is being assembled:
+/// the end-of-ROM address at `0x1A4` (the offset of the image's LAST byte) and
+/// the checksum at `0x18E` (the word-sum over `[0x200, EOF)`). Both fields sit
+/// below `0x200`, so neither write is inside the summed range and their order
+/// cannot matter; they are written end-first anyway, in `common.lua`'s order.
+///
+/// This is `s1disasm`/`s2disasm`/`skdisasm` `build_tools/lua/common.lua`'s
+/// `fix_header`, arithmetic for arithmetic. A source cannot compute either value:
+/// the checksum covers the bytes the source is still emitting, and the end-of-ROM
+/// address covers padding the image gains after assembly. Both disassemblies
+/// therefore hardcode a literal (`s2.asm` `dc.w $D951`; `sonic.asm` a
+/// `Revision`-conditional pair) that is right only for the settings it was last
+/// written for. Flip one assembly option the source itself offers and the literal
+/// is stale, which is a ROM that fails its own boot checksum with nothing said.
+///
+/// Returns `None` when the image is not a cartridge ([`has_sega_header`]) or is
+/// too short to hold the fields; otherwise the before/after of both fields, so a
+/// caller can report a header it had to correct.
+pub fn apply_sega_header(rom: &mut [u8]) -> Option<SegaHeaderFix> {
+    if rom.len() < ROM_END_FIELD + 4 || !has_sega_header(rom) {
+        return None;
+    }
+    let was_end = u32::from_be_bytes(rom[ROM_END_FIELD..ROM_END_FIELD + 4].try_into().expect("four bytes"));
+    let now_end = (rom.len() - 1) as u32;
+    rom[ROM_END_FIELD..ROM_END_FIELD + 4].copy_from_slice(&now_end.to_be_bytes());
+    let was_sum = u16::from_be_bytes(rom[CHECKSUM_FIELD..CHECKSUM_FIELD + 2].try_into().expect("two bytes"));
+    let now_sum = header_checksum(rom);
+    rom[CHECKSUM_FIELD..CHECKSUM_FIELD + 2].copy_from_slice(&now_sum.to_be_bytes());
+    Some(SegaHeaderFix { checksum: (was_sum, now_sum), rom_end: (was_end, now_end) })
 }
 
 #[cfg(test)]
@@ -2413,6 +2495,78 @@ mod tests {
         apply_header_checksum(&mut rom);
         assert_eq!(rom[0x18E], 0x12);
         assert_eq!(rom[0x18F], 0x35);
+    }
+
+    /// A cartridge image with the console-name mark and both header fields
+    /// stale, as a source that hardcodes them leaves them.
+    fn cartridge(len: usize) -> Vec<u8> {
+        let mut rom = vec![0u8; len];
+        rom[0x100..0x110].copy_from_slice(b"SEGA MEGA DRIVE ");
+        // A stale checksum and a stale end-of-ROM, the shape a flipped assembly
+        // option leaves behind.
+        rom[0x18E..0x190].copy_from_slice(&0xDEADu16.to_be_bytes());
+        rom[0x1A4..0x1A8].copy_from_slice(&0x0000_0001u32.to_be_bytes());
+        for (i, b) in rom[0x200..].iter_mut().enumerate() {
+            *b = (i % 251) as u8;
+        }
+        rom
+    }
+
+    #[test]
+    fn sega_header_fix_rewrites_both_fields_and_reports_what_moved() {
+        let mut rom = cartridge(0x400);
+        let want_sum = header_checksum(&rom);
+        let fix = apply_sega_header(&mut rom).expect("a cartridge image");
+        assert_eq!(fix.checksum, (0xDEAD, want_sum), "the checksum before and after");
+        assert_eq!(fix.rom_end, (0x0000_0001, 0x3FF), "the end-of-ROM field before and after");
+        assert!(fix.changed());
+        assert_eq!(u16::from_be_bytes([rom[0x18E], rom[0x18F]]), want_sum);
+        assert_eq!(u32::from_be_bytes(rom[0x1A4..0x1A8].try_into().unwrap()), 0x3FF);
+    }
+
+    /// The property the whole pass exists for: after it, the header cannot be
+    /// stale, whatever the source wrote. Running it twice changes nothing more,
+    /// which is what lets a build script's own `fix_header` run after sigil.
+    #[test]
+    fn sega_header_fix_is_idempotent_and_leaves_no_stale_field() {
+        let mut rom = cartridge(0x1000);
+        apply_sega_header(&mut rom).expect("a cartridge image");
+        let once = rom.clone();
+        let again = apply_sega_header(&mut rom).expect("a cartridge image");
+        assert!(!again.changed(), "a second pass moved a field: {again:?}");
+        assert_eq!(rom, once, "a second pass changed a byte");
+        assert_eq!(u16::from_be_bytes([rom[0x18E], rom[0x18F]]), header_checksum(&rom));
+        assert_eq!(u32::from_be_bytes(rom[0x1A4..0x1A8].try_into().unwrap()), (rom.len() - 1) as u32);
+    }
+
+    /// The guard. An assembled blob that is not a cartridge must come out of the
+    /// AS route byte for byte, or the pass that fixes a header would corrupt a
+    /// music binary (`s2disasm`'s `build.lua` assembles one per song).
+    #[test]
+    fn a_non_cartridge_image_is_not_touched() {
+        let mut blob = vec![0xA5u8; 0x2000];
+        let before = blob.clone();
+        assert!(!has_sega_header(&blob));
+        assert_eq!(apply_sega_header(&mut blob), None);
+        assert_eq!(blob, before);
+    }
+
+    /// The ` SEGA` spelling is a cartridge too.
+    #[test]
+    fn the_space_prefixed_console_name_is_a_cartridge() {
+        let mut rom = cartridge(0x400);
+        rom[0x100..0x110].copy_from_slice(b" SEGA GENESIS   ");
+        assert!(has_sega_header(&rom));
+        assert!(apply_sega_header(&mut rom).is_some());
+    }
+
+    /// An image with no `0x200` to sum from, and none of the fields, is left
+    /// alone rather than indexed into.
+    #[test]
+    fn an_image_shorter_than_the_header_is_not_touched() {
+        let mut short = b"SEGA".to_vec();
+        assert_eq!(apply_sega_header(&mut short), None);
+        assert_eq!(short, b"SEGA");
     }
 
     #[test]
