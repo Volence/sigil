@@ -1,5 +1,15 @@
 # The Z80 hold interleave slot: what the artifact actually requires
 
+**⚠ THE MECHANISM THIS NOTE MEASURED THE NEED FOR NOW EXISTS, and every present-tense
+sentence here about what the bracket CANNOT do is about the state at sigil `26de6eb7`.**
+`d-33` was answered `named-slot` by the owner on 2026-09-16 and landed on branch
+`parcel/emp-named-slot`: a context may declare parameters and a `with` bracket may fill
+them, so the bracket HAS a seam now. Line 101's *"the bracket has no seam, not a wrong
+seam"* is the diagnosis that produced the design, not a standing fact. The surface is
+specified at `docs/superpowers/notes/2026-09-16-emp-named-slot-spec-text.md`. The two
+open questions at the foot of this note are answered in place; everything else stands as
+measured.
+
 2026-09-16. A measurement note, not a design. Nothing in sigil was changed to write it,
 and nothing was built (this parcel is read-only by instruction: a `cargo` invocation in
 this checkout relinks the shared `target/release/sigil` another lane may be using).

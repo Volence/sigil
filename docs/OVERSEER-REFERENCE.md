@@ -2329,6 +2329,16 @@ anything that is NOT a failure match this."**
 
 ### LS-13b, THE AEON ROW BLOCKED ON SIGIL: WHERE IT ACTUALLY LIVES (routed 2026-09-09)
 
+**⚠ THE BARRIER IS GONE. `d-33` was answered `named-slot` by the owner on 2026-09-16 and the
+mechanism is IMPLEMENTED: a context may declare parameters and a `with` bracket may fill them, so
+`with z80_stopped` CAN now take boot's shape. Every sentence in this block saying the bracket cannot
+is about the state before that, and is kept because the two refutations it records are still
+correct.** What aeon's `LS-13b` now waits on is their own adoption at `engine/system/boot.emp`,
+which is their work and not this lane's: sigil landed the mechanism, its proofs and the spec text
+(drafted at `docs/superpowers/notes/2026-09-16-emp-named-slot-spec-text.md`, which still has to
+reach empyrean's `SIGIL_SPEC2_LANGUAGE.md` through the hub). The four constraints below are what the
+form was built to meet, and it meets them; read them as the design's bar rather than as an open ask.
+
 Read when anyone asks why aeon's board carries a row `blockedBy: sigil`, or before starting it.
 
 **The artifact is aeon `origin/master d3339973`, `docs/DEFERRED_WORK.md`, the row beginning
@@ -2377,16 +2387,6 @@ carries an ANSWERED banner and an aeon correction under it:
    targeting a label inside it*. A backward edge within the region is not that. What IS load-bearing
    is that `.ym_delay` stays a LOCAL label: `export` it and it becomes reachable from any proc, and
    the check fires correctly. **That is a rule about the body, not a demand on the slot.**
-
-**⚠ THE BARRIER IS GONE. `d-33` was answered `named-slot` by the owner on 2026-09-16 and the
-mechanism is IMPLEMENTED: a context may declare parameters and a `with` bracket may fill them, so
-`with z80_stopped` CAN now take boot's shape. Every sentence in this block saying the bracket cannot
-is about the state before that, and is kept because the two refutations it records are still
-correct.** What aeon's `LS-13b` now waits on is their own adoption at `engine/system/boot.emp`,
-which is their work and not this lane's: sigil landed the mechanism, its proofs and the spec text
-(drafted at `docs/superpowers/notes/2026-09-16-emp-named-slot-spec-text.md`, which still has to
-reach empyrean's `SIGIL_SPEC2_LANGUAGE.md` through the hub). The four constraints below are what the
-form was built to meet, and it meets them; read them as the design's bar rather than as an open ask.
 
 **SO THE HEAD OF THIS CHAIN IS SIGIL, AND AEON'S BOARD IS RIGHT TO SAY `blockedBy: sigil`.** Their
 row's closing words are *"Routed to sigil the same day; their design is not yet written, so this is a
