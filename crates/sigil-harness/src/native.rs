@@ -3787,41 +3787,90 @@ struct ChainedResolve {
     guards: GuardCensus,
 }
 
-/// How many guards a resolve decided, by family. Derived from the evaluator's
-/// own records (the comptime count the lowering drains beside the deferred
-/// asserts, and the `LinkAssert` list `check_link_asserts` folded), never from a
-/// source scan, so a family that decided nothing reads as zero.
+/// How many guards a resolve decided, by family. Every figure is OBSERVED at the
+/// moment the guard decided, never a source scan and never one count subtracted
+/// from another: the comptime count the evaluator increments per verdict, and the
+/// link's own [`sigil_link::LinkAssertTally`]. A family that decided nothing reads
+/// as zero, and a guard that decided nothing is counted in neither column.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct GuardCensus {
     /// `ensure` evaluations that reached a comptime verdict.
     pub comptime_guards: usize,
-    /// `LinkAssert`s whose condition folded against the final placement.
+    /// `LinkAssert` conditions the link WATCHED fold to a value, pass or fail.
+    /// Read straight off the tally's `decided`, so a condition that folded to
+    /// nothing at all cannot arrive here as a decided guard.
     pub link_asserts_decided: usize,
-    /// `LinkAssert`s whose `extern()` names a symbol this link does not define
-    /// (a gated-off twin); neither passed nor failed, and each one is on the
-    /// profile's allowlist or the resolve would have failed.
+    /// `LinkAssert` conditions whose fold named a symbol this link does not
+    /// define (a gated-off twin); neither passed nor failed, and each one is on
+    /// the profile's allowlist or the resolve would have failed.
+    ///
+    /// NOT an undefined `extern()`: that is refused at the reference itself
+    /// ([`sigil_link::EXTERN_UNKNOWN_ID`]) and fails the drift verdict before any
+    /// census is built, so it never reaches this column. What does reach it is a
+    /// residual `Sym` leaf with no `extern()` reference record beside it, which
+    /// today means `bankid()`, `winptr()`, or an immediate-normalized label
+    /// naming a section outside this profile's closure.
     pub link_asserts_inapplicable: usize,
 }
 
 impl GuardCensus {
     /// The census from a resolve's records: the comptime count the lowering
-    /// drained, the `LinkAssert` list the link folded, and the inapplicable
-    /// subset the drift verdict handed back. Every assert not inapplicable was
-    /// decided (it folded to a value, and a zero already failed the resolve).
+    /// drained, the link's OWN observation of what each `LinkAssert` condition
+    /// did ([`sigil_link::LinkAssertTally`]), and the inapplicable subset the
+    /// drift verdict handed back.
+    ///
+    /// `link_asserts_decided` is `tally.decided`: the count the fold incremented
+    /// when it produced a value. It is NOT `conditions - inapplicable`. The
+    /// difference is what a subtraction cannot see: a condition that folded to
+    /// NOTHING (poisoned, faulted, or skipped because its every unresolved leaf
+    /// was already refused at its `extern()` reference) is neither decided nor
+    /// inapplicable, and subtraction reports it as decided.
+    ///
+    /// Two reconciliations, both hard errors rather than a quiet wrong number:
+    ///
+    /// 1. The tally's own bucket identity (`decided + undecided == conditions`),
+    ///    false only on a counting bug inside the walk.
+    /// 2. Every diagnostic the verdict partitioned as inapplicable must carry the
+    ///    span of a condition the link RECORDED unresolvable, matched one-to-one.
+    ///    The partition is a text match on "not defined in this link" over a
+    ///    different code path; this is where the two paths are made to agree
+    ///    about what a condition is, instead of being assumed to.
     pub fn from_verdict(
         comptime_guards: usize,
-        link_asserts: &[sigil_ir::LinkAssert],
+        tally: &sigil_link::LinkAssertTally,
         inapplicable: &[&sigil_span::Diagnostic],
-    ) -> GuardCensus {
-        // An `extern()` reference record checks a name, not a condition, so it is
-        // not a guard verdict; an undefined one already failed the resolve.
-        let conditions =
-            link_asserts.iter().filter(|a| a.kind == sigil_ir::AssertKind::Condition).count();
-        GuardCensus {
-            comptime_guards,
-            link_asserts_decided: conditions - inapplicable.len(),
-            link_asserts_inapplicable: inapplicable.len(),
+    ) -> Result<GuardCensus, String> {
+        if !tally.accounted() {
+            return Err(format!(
+                "internal: the link-assert walk lost a condition: {} decided + {} undecided != {} \
+                 conditions. The guard census cannot be reported from a walk that does not \
+                 account for every condition it saw.",
+                tally.decided, tally.undecided, tally.conditions
+            ));
         }
+        let mut unmatched: Vec<sigil_span::Span> = tally.unresolvable_spans.clone();
+        for d in inapplicable {
+            match unmatched.iter().position(|s| *s == d.primary) {
+                Some(i) => {
+                    unmatched.remove(i);
+                }
+                None => {
+                    return Err(format!(
+                        "internal: a diagnostic was partitioned as an INAPPLICABLE guard but the \
+                         link recorded no unresolvable condition at its span, so it is not a \
+                         gated-off twin. Its wording matched \"not defined in this link\" while \
+                         coming from somewhere else, which would both hide a real verdict and \
+                         miscount the census.\n  message: {}",
+                        d.message
+                    ));
+                }
+            }
+        }
+        Ok(GuardCensus {
+            comptime_guards,
+            link_asserts_decided: tally.decided,
+            link_asserts_inapplicable: inapplicable.len(),
+        })
     }
 }
 
@@ -3903,14 +3952,17 @@ fn resolve_chained(aeon: &Path, profile: &GameProfile) -> Result<ChainedResolve,
         .map_err(|d| render_declared_chain("resolve_layout", &d, &sources))?;
     // Same drift partition as the pinned driver: real Value(0) drift is a hard fail;
     // gated-off-twin (unresolvable-extern) guards are inapplicable here.
-    let adiags = sigil_link::check_link_asserts(&resolved, &stubs, &link_asserts);
+    // The TALLIED form: the same diagnostics, plus the link's own record of what
+    // each condition was watched doing. The census counts decided guards from that
+    // record, so it never has to infer a verdict from the absence of a diagnostic.
+    let (adiags, tally) = sigil_link::check_link_asserts_tallied(&resolved, &stubs, &link_asserts);
     // A `LinkAssert` carries its own severity: `[layout.odd-item]`'s data-item check
     // is `Level::Warning` and fails at LINK time, so the warn tier is only complete
     // once these join it.
     warnings.extend(collect_warnings(&sources, &[&adiags], None));
     let inapplicable = declared_chain_drift_verdict(&adiags, &|span| sources.locate(span))?;
     enforce_inapplicable_allowlist_against(&inapplicable, &link_asserts, &profile.inapplicable_guards)?;
-    let guards = GuardCensus::from_verdict(comptime_guards, &link_asserts, &inapplicable);
+    let guards = GuardCensus::from_verdict(comptime_guards, &tally, &inapplicable)?;
     Ok(ChainedResolve { resolved, stubs, warnings, sources, map, pmap, guards })
 }
 
