@@ -628,7 +628,7 @@ fn run_asm(entry: &Entry, args: &[String]) {
     // only the bytes the program writes, each blob stored where its instruction
     // says, and the pad byte everywhere else, including a reservation's gap
     // inside a section. Without either, the plain flatten, zero-filled.
-    let image = if pad.is_some() || !blobs.is_empty() {
+    let mut image = if pad.is_some() || !blobs.is_empty() {
         match sigil_link::flatten_placing(&resolved, &linked, &blobs, pad.unwrap_or(0x00), &p2bin_codec::Codec) {
             Ok(image) => image,
             Err(diags) => {
@@ -649,6 +649,29 @@ fn run_asm(entry: &Entry, args: &[String]) {
             }
         }
     };
+
+    // `fix_header`, the last step of every one of these disassemblies' build
+    // scripts, folded in here: the end-of-ROM address at 0x1A4 and the checksum
+    // at 0x18E, which no source can compute about itself and every one of them
+    // therefore HARDCODES. The literal is right only for the assembly options it
+    // was last written for, so flipping one the source itself offers (`s1disasm`
+    // `CheatsEnabled`, `s2disasm` `fixBugs`, measured) leaves a ROM that fails
+    // its own boot checksum, with nothing said, at exit 0.
+    //
+    // Unconditional on this route rather than behind an option, because an
+    // option nobody passes is the same silence one step further away: the header
+    // is a derived field, and a derived field a tool declines to derive is the
+    // defect. `apply_sega_header` is guarded on the cartridge mark instead, so an
+    // assembled blob that is not a cartridge (a music binary, a driver, an art
+    // blob) is never touched, and it is idempotent, so a build script that still
+    // runs its own `fix_header` after sigil writes the same two fields again.
+    //
+    // Silent when it changes something, like `fix_header` itself: the value is
+    // self-referential (the literal the source would need is the sum of the image
+    // that literal is part of), so there is nothing a reader could do with the
+    // news except see it on every build of a tree whose author does not maintain
+    // a field sigil now maintains for them.
+    sigil_link::apply_sega_header(&mut image);
 
     // The same tail as `sigil emp`, so the two routes report a finished image in
     // one shape. Its write failure is already on stderr; ending the run is left
