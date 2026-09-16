@@ -2389,10 +2389,41 @@ found twice.
 lane's earlier position: the compiler still owns the release on every exit path, since that is the
 property all three proofs rest on; the slot admits at least one statement between the acquire and
 the spliced poll, which is all boot demands (whether it should admit more is this lane's call, and
-no site asks for it); it emits through a **caller-supplied register**, because boot's `movem`-preloaded spelling exists for
-the reset path and a bracket emitting `abs.l` would move boot's bytes on the one path nobody can
-re-run to check; and it lands under propose, discuss, then land, because it adds a construct the
+no site asks for it); it emits through a **caller-supplied register** (the DEMAND stands; **BOTH reasons offered for it
+have now failed, and it is no longer a safety constraint**, see below); and it lands under propose, discuss, then land, because it adds a construct the
 game's source is written in.
+
+**CONSTRAINT 3 HAS OUTLIVED TWO REASONS, AND THE DEMAND IS WEAKER THAN IT LOOKED. 2026-09-16.**
+
+**Reason one, aeon's original, retracted by them:** boot's `movem` preload *exists for the reset
+path*. False, and verified here at their `origin/master` `engine/system/boot.emp:92-98`: the preload
+is `d5` VDP register command base, `d6` the RAM-clear `dbf` count, `d7` register stride and the Z80
+bus value, `a0-a4` = Z80_RAM, Z80_BUS_REQUEST, Z80_RESET, VDP_DATA, VDP_CTRL. **It serves the whole
+cold-boot sequence and the two Z80 registers are two of five.** A general register economy attributed
+to the narrowest thing it happens to serve.
+
+**Reason two, aeon's replacement, which THIS LANE refutes on direction:** that the Z80 dance sits in
+a DMA-fill window whose safety rests on an unchecked cycle-count relationship, so a longer encoding
+is hazardous. **The ordering says otherwise**, read at the same file: the fill is triggered at `:112`,
+the window holds the Z80 dance (`:128-171`) and the 64KB RAM clear (`:172-186`), **`.wait_fill` at
+`:189` is an explicit synchronisation**, and the PSG writes sit at `:217` BELOW it. So the window is
+topologically safe today and the temporal argument in that comment describes the **2026-08-04
+placement that was already fixed**. More decisively, **the hazard direction is inverted**: the comment
+names a *shrink* of the RAM clear as what would re-open the race, while an `abs.l` encoding ADDS
+cycles inside the window. Nothing there carries an upper time bound; `.ym_delay`'s is a lower bound.
+
+**What actually survives, and it is this lane's concern rather than a hardware one.** Boot sits in a
+byte-verified ROM, so an `abs.l` emission moves bytes in a golden-checked path and costs a
+re-verification; and the registers are already loaded, so emitting an absolute would be strictly
+worse code for no gain. **Both are quality and verification arguments. Neither is a safety argument,
+and the difference is load-bearing at design time: a safety constraint cannot be traded and a
+verification cost can be.** Do not carry this constraint as though the Z80 could be left halted by
+disobeying it.
+
+**The general shape, which is aeon's own lesson pointed at their correction:** a constraint whose
+reason is wrong is more fragile than one with no reason at all, because refuting the reason looks
+like refuting the constraint. This one survived two wrong reasons and is still right, **and it was
+only by testing the second that it became clear the demand was never a safety demand.**
 
 ### THE UX SEAT PAIR: WHAT ORACLE'S PILOT ALREADY REFUTED IN THE BRIEF (relayed 2026-09-09)
 
