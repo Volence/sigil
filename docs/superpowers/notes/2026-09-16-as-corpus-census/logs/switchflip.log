@@ -1,0 +1,73 @@
+== s2-rev00 : s2.asm   gameRevision = 1  ->  gameRevision = 0
+   on disk: 20:gameRevision = 0
+   SIGIL_EXIT=0
+   BUILDLUA_EXIT=1
+     > > > s2.asm(30438): warning #180: address is not properly aligned
+     > > >  move.w (1).w,d0 ; causes a crash because of the word operation at an odd address
+     > > > s2.asm(30438): warning #180: address is not properly aligned
+   REFERENCE /home/volence/sonic_hacks/.scratch/as-corpus-census/trees/flip-s2-rev00/s2built.bin crc32=24ab4c3a size=1048576
+   CANDIDATE /home/volence/sonic_hacks/.scratch/as-corpus-census/trees/flip-s2-rev00/sigil.bin crc32=31c85773 size=1048576
+   SIZE EQUAL
+   DIFF 2 bytes in 1 runs
+     [0x00018E,0x000190) ref de b8 cand d9 51
+   CONTROL planted at ['0x200', '0x80000', '0xffffe'] -> 5 bytes in 4 runs, offsets ['0x18e', '0x200', '0x80000', '0xffffe']
+   CONTROL PASSED: the comparer reports planted differences
+
+== s2-fixbugs : s2.asm   fixBugs = 0  ->  fixBugs = 1
+   on disk: 27:fixBugs = 1
+   SIGIL_EXIT=0
+   BUILDLUA_EXIT=0
+   REFERENCE /home/volence/sonic_hacks/.scratch/as-corpus-census/trees/flip-s2-fixbugs/s2built.bin crc32=9d758b6f size=2097152
+   CANDIDATE /home/volence/sonic_hacks/.scratch/as-corpus-census/trees/flip-s2-fixbugs/sigil.bin crc32=08acb6a8 size=2097152
+   SIZE EQUAL
+   DIFF 3 bytes in 2 runs
+     [0x00018E,0x000190) ref ca a9 cand d9 51
+     [0x0ED051,0x0ED052) ref 88 cand 64
+   CONTROL planted at ['0x200', '0x100000', '0x1ffffe'] -> 6 bytes in 5 runs, offsets ['0x18e', '0x200', '0xed051', '0x100000', '0x1ffffe']
+   CONTROL PASSED: the comparer reports planted differences
+
+== s2-allopt : s2.asm   allOptimizations = 0  ->  allOptimizations = 1
+   on disk: 31:allOptimizations = 1
+   SIGIL_EXIT=0
+   BUILDLUA_EXIT=0
+   REFERENCE /home/volence/sonic_hacks/.scratch/as-corpus-census/trees/flip-s2-allopt/s2built.bin crc32=6c8cbd9b size=1048576
+   CANDIDATE /home/volence/sonic_hacks/.scratch/as-corpus-census/trees/flip-s2-allopt/sigil.bin crc32=e678b408 size=1048576
+   SIZE EQUAL
+   DIFF 2 bytes in 1 runs
+     [0x00018E,0x000190) ref 04 28 cand d9 51
+   CONTROL planted at ['0x200', '0x80000', '0xffffe'] -> 5 bytes in 4 runs, offsets ['0x18e', '0x200', '0x80000', '0xffffe']
+   CONTROL PASSED: the comparer reports planted differences
+
+== s1-fixbugs : sonic.asm   FixBugs = 0  ->  FixBugs = 1
+   on disk: 20:FixBugs = 1
+   SIGIL_EXIT=1
+     _incObj/DebugMode.asm(245):3: error: absolute address operand `(expr)` needs an explicit `.w`/`.l` width suffix (width-selecting bare `(expr)` is out of scope)
+   BUILDLUA_EXIT=0
+   NOT COMPARABLE: sigil.bin=no reference=yes
+
+== s1-allopt : sonic.asm   AllOptimizations = 0  ->  AllOptimizations = 1
+   on disk: 28:AllOptimizations = 1
+   SIGIL_EXIT=0
+   BUILDLUA_EXIT=0
+   REFERENCE /home/volence/sonic_hacks/.scratch/as-corpus-census/trees/flip-s1-allopt/s1built.bin crc32=95dd2ddc size=520974
+   CANDIDATE /home/volence/sonic_hacks/.scratch/as-corpus-census/trees/flip-s1-allopt/sigil.bin crc32=6c3b0172 size=520974
+   SIZE EQUAL
+   DIFF 2 bytes in 1 runs
+     [0x00018E,0x000190) ref 64 69 cand af c7
+   CONTROL planted at ['0x200', '0x3f987', '0x7f30c'] -> 5 bytes in 4 runs, offsets ['0x18e', '0x200', '0x3f987', '0x7f30c']
+   CONTROL PASSED: the comparer reports planted differences
+
+Traceback (most recent call last):
+  File "<stdin>", line 4, in <module>
+AssertionError: ('site count', '/home/volence/sonic_hacks/.scratch/as-corpus-census/trees/flip-s1-rev00/sonic.asm', 'Revision = 1', 2)
+== s1-rev00 : sonic.asm   Revision = 1  ->  Revision = 0
+   SIGIL_EXIT=0
+   BUILDLUA_EXIT=0
+   REFERENCE /home/volence/sonic_hacks/.scratch/as-corpus-census/trees/flip-s1-rev00/s1built.bin crc32=afe05eee size=524288
+   CANDIDATE /home/volence/sonic_hacks/.scratch/as-corpus-census/trees/flip-s1-rev00/sigil.bin crc32=afe05eee size=524288
+   SIZE EQUAL
+   DIFF 0 bytes in 0 runs
+   CONTROL planted at ['0x200', '0x40000', '0x7fffe'] -> 3 bytes in 3 runs, offsets ['0x200', '0x40000', '0x7fffe']
+   CONTROL PASSED: the comparer reports planted differences
+
+SWITCHFLIP_END
