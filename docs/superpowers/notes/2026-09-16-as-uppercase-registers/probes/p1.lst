@@ -1,0 +1,67 @@
+ AS V1.42 Beta [Bld 212] - Source File p1.asm - Page 1 - 09/16/2026 09:14:42 AM
+
+
+       1/       0 :                     	cpu	68000
+       2/    1000 :                     	org	$1000
+       3/    1000 : =$1234               A0:	equ	$1234
+       4/    1000 : =$5678               SP:	equ	$5678
+       5/    1000 : =$9ABC               D0:	equ	$9abc
+       6/    1000 : 3010                	move.w	(A0),d0
+       7/    1002 : 3010                	move.w	(a0),d0
+       8/    1004 : 3008                	move.w	A0,d0
+       9/    1006 : 3008                	move.w	a0,d0
+      10/    1008 : 3017                	move.w	(SP),d0
+      11/    100A : 300F                	move.w	SP,d0
+      12/    100C : 3200                	move.w	D0,d1
+      13/    100E : 3018                	move.w	(A0)+,d0
+      14/    1010 : 3020                	move.w	-(A0),d0
+      15/    1012 : 3028 0004           	move.w	(4,A0),d0
+      16/    1016 : 3028 0004           	move.w	4(A0),d0
+      17/    101A : 3030 1004           	move.w	(4,A0,D1.W),d0
+      18/    101E : 48A7 8080           	movem.w	D0/A0,-(sp)
+      19/    1022 : 43D0                	lea	(A0),A1
+      20/    1024 :                     	end
+ AS V1.42 Beta [Bld 212] - Source File p1.asm - Page 2 - 09/16/2026 09:14:42 AM
+
+
+  Symbol Table (* = unused):
+  --------------------------
+
+*A0 :                          1234 - |
+*ARCHITECTURE :                                      "x86_64-unknown-linux" - |
+*BIGENDIAN :                      0 - | *BRANCHEXT :                      0 - |
+*CASESENSITIVE :                  1 - | *COMPMODE :                       0 - |
+*CONSTPI :        3.141592653589793 - | *CUSTOM :                         0 - |
+*D0 :                          9ABC - | *DATE :                "09/16/2026" - |
+*FALSE :                          0 - | *FULLPMMU :                       1 - |
+*HAS64 :                          1 - | *HASDSP :                         0 - |
+*HASFPU :                         0 - | *HASPMMU :                        0 - |
+*INEXTMODE :                      0 - | *INLWORDMODE :                    0 - |
+*INMAXMODE :                      0 - | *INSRCMODE :                      0 - |
+*INSUPMODE :                      0 - | *LISTON :                         1 - |
+*MACEXP :                         7 - | *MOMCPU :                     68000 - |
+*MOMCPUNAME :               "68000" - | *NESTMAX :                      100 - |
+*PACKING :                        0 - | *PADDING :                        1 - |
+*RELAXED :                        0 - | *SP :                          5678 - |
+*TIME :               "09:14:42 AM" - | *TRUE :                           1 - |
+*VERSION :                     142F - | *Z80SYNTAX :                      0 - |
+
+     34 symbols
+     34 unused symbols
+
+ AS V1.42 Beta [Bld 212] - Source File p1.asm - Page 3 - 09/16/2026 09:14:42 AM
+
+
+  Code Pages:
+  ----------
+
+STANDARD (0 changed characters)
+
+1 code page
+
+0.00 seconds assembly time
+
+     21 lines source file
+      1 pass
+      0 errors
+      0 warnings

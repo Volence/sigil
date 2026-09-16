@@ -5581,9 +5581,9 @@ documented-declaration derivation cannot see them by construction. **Kill:** che
 algorithm name. It would need a second derivation step over `build.lua`'s locals and a second flip
 mechanism (edit the Lua, not the asm), and the same edit-proves-it-applied gate.
 
-### 2026-09-16, `AS-WIDTH-SUFFIX-BARE-EXPR`: `AS-UPPERCASE-REGISTER-INDIRECT`, and a SILENT half nobody had seen
+### 2026-09-16, `AS-UPPERCASE-REGISTER-INDIRECT`: CLOSED, and the booking's own framing was the obstacle
 
-**asl's register names are case-insensitive even under `-U`, and sigil's operand classifier matches
+**asl's register names are case-insensitive even under `-U`, and sigil's operand classifier matched
 them in lower case only.** Measured on the reference build, exit 0, with a symbol of that name
 deliberately in scope (`A0: equ $1234`):
 
@@ -5594,26 +5594,54 @@ deliberately in scope (`A0: equ $1234`):
       10/       6 : 3017                	move.w	(SP),d0
 ```
 
-**The two halves are not equally dangerous and must not be booked as one line.**
+**CLOSED 2026-09-16** on `parcel/as-uppercase-registers`. Both halves now match asl. The bare half
+was the silent one and is what mattered: `move.w A0,d0` was `3038 1234` to sigil against asl's
+`3008`, two different instructions, both toolchains exit 0, neither saying a word. The indirect half
+was loud and is now simply right rather than loud; what stays REFUSED, in either case, is `(dN)` and
+`(pc)`, which are registers to asl and have no sigil operand at all. Bytes pinned in
+`crates/sigil-frontend-as/tests/as_uppercase_registers.rs`, story in
+`docs/superpowers/notes/2026-09-16-as-uppercase-registers.md`.
 
-*The indirect half is LOUD, and this parcel keeps it loud.* `(A0)`/`(SP)` reach the absolute-address
-arm, which now refuses them by name rather than reading them as addresses. A user who writes
-uppercase register indirect gets a diagnostic naming the register.
+**The kill plan above said `classify` is CPU-AGNOSTIC BY DESIGN and that widening it would widen an
+assumption over Z80 source. Half right, and the half that was wrong is the half that mattered.**
+`classify` is not CPU-agnostic by design; it takes `ExprCtx`, and `ExprCtx` had two fields, neither
+of them a CPU. Threading one in reached three call sites and one test-only constructor. And the Z80
+hazard the plan worried about was NOT hypothetical and NOT created by the case fold: the `(aN)`
+branch already ran on every CPU, in LOWER case, with a comment arguing that `a`+digit is
+unambiguously 68k because the Z80 has no such register. That is an argument about the NAME. asl
+settles it by CPU, measured: under `cpu z80` with `A0: equ 05678h` in scope, `ld a,(A0)` is
+`3A 78 56`, an ABSOLUTE load through the symbol, where the same text under `cpu 68000` is `3010`.
+Gating the branch on `M68000` closed that alongside the case fold.
 
-*The BARE half is SILENT, and it is on master today.* `move.w A0,d0` with `A0: equ $1234` in scope:
-asl writes `3008`, sigil writes `3038 1234`. **Two different instructions, both toolchains exit 0,
-neither says a word.** This is the silent-wrong-ROM shape, on the `Value` path, and it is not
-reachable from either corpus's build-option space (nothing in them spells a register in upper case),
-which is why 422 sweep legs never met it.
+**A predicate the plan asked for already existed.** `operands::is_operand_register_word(w, cpu)` was
+already CPU-keyed and already case-folding, with the measured s2disasm reason (`l` is a Z80 register
+AND a live string-valued symbol) in its doc comment. It was not reachable from `classify` for the
+one reason above.
 
-**Kill:** make register recognition case-insensitive at both sites. `classify`'s paren branch is the
-indirect half and `convert_one_atom_m68k`'s `Value(Sym)` arm is the bare half, and both should ask
-one case-folding predicate. **The thing to check first, and the reason this was not done inside
-`AS-WIDTH-SUFFIX-BARE-EXPR`:** `classify` is CPU-AGNOSTIC. Its comment argues `a`+digit is
-unambiguously 68k because Z80 has no such register, which is an argument about the NAME and not
-about the language, and widening it to upper case widens the assumption over Z80 source where `(A0)`
-is a perfectly ordinary memory reference through a symbol. A byte gate over the Z80 corpora is the
-gate that change needs, and it is a different gate from the one the width row needed.
+### 2026-09-16, `AS-UPPERCASE-REGISTER-INDIRECT`: a register name in EXPRESSION position, which is a different row
+
+Found while closing the row above and deliberately NOT closed with it. asl claims register names for
+its register table before the symbol table is consulted, in expressions as well as operands, and
+sigil consults the symbol table. Measured, `cpu 68000`, probes `p2`/`p11`/`p12`/`p13`/`p14` beside
+the note:
+
+| source | equate in scope | asl | sigil |
+|---|---|---|---|
+| `dc.w a0` | none | exit 0, EMITS NOTHING, no diagnostic | `error: \`a0\` is a register, not a value` |
+| `dc.w a0` | `a0: equ $1234` | exit 0, EMITS NOTHING, no diagnostic | emits `1234` |
+| `dc.w A0+1` | `A0: equ $1234` | `error #1145: ... but got register` | emits `1235` |
+| `move.w #A0+1,d0` | `A0: equ $1234` | same `#1145` | emits `303C 1235` |
+
+`is_expr_register_name` / `register_in_value_position` were built for exactly this and are already
+CPU-keyed and already fold case; they fire only when the name is UNRESOLVED, so a shadowing equate
+slips past them. **It is orthogonal to case** -- the lower-case row diverges identically -- which is
+why it is its own row and not part of the fold.
+
+**Kill:** make the 68000 expression evaluator refuse a bare register name before it looks the name up,
+not only when the lookup fails. **The reason this is not a one-liner:** it makes any symbol named
+`a0`..`a7`, `d0`..`d7` or `sp` unusable in a 68000 expression, which is a wider blast radius than an
+operand-position fold, and the bare-in-a-data-directive row wants a decision of its own -- asl emits
+NOTHING there and exits 0, which is its silent-decline regime and not obviously a behaviour to copy.
 
 ### 2026-09-16, `AS-WIDTH-SUFFIX-BARE-EXPR`: `jmp (Sym)` does not take the deferral path `jmp Sym` takes
 

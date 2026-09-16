@@ -1,0 +1,73 @@
+ AS V1.42 Beta [Bld 212] - Source File p2.asm - Page 1 - 09/16/2026 09:14:54 AM
+
+
+       1/       0 :                     	cpu	68000
+       2/    1000 :                     	org	$1000
+       3/    1000 : =$1234               A0:	equ	$1234
+       4/    1000 : =$5678               SP:	equ	$5678
+       5/    1000 : =$9ABC               D0:	equ	$9abc
+       6/    1000 :                     	dc.w	A0
+> > > p2.asm(7):7: error #1145: expected integer, floating point number or string but got register
+> > > A0+1
+> > >  dc.w A0+1
+> > >       ~~
+       7/    1000 :                     	dc.w	A0+1
+> > > p2.asm(8):10: error #1145: expected integer, floating point number or string but got register
+> > > A0+1
+> > >  move.w #A0+1,d0
+> > >          ~~
+       8/    1000 : 303C 0000           	move.w	#A0+1,d0
+> > > p2.asm(9):10: error #1145: expected integer, floating point number or string but got register
+> > > A0+0
+> > >  move.w (A0+0),d0
+> > >          ~~
+       9/    1004 :                     	move.w	(A0+0),d0
+      10/    1004 : 300F                	move.w	Sp,d0
+      11/    1006 : 3038 1006           	move.w	aO,d0
+      12/    100A :                     	end
+ AS V1.42 Beta [Bld 212] - Source File p2.asm - Page 2 - 09/16/2026 09:14:54 AM
+
+
+  Symbol Table (* = unused):
+  --------------------------
+
+*A0 :                          1234 - |
+*ARCHITECTURE :                                      "x86_64-unknown-linux" - |
+*BIGENDIAN :                      0 - | *BRANCHEXT :                      0 - |
+*CASESENSITIVE :                  1 - | *COMPMODE :                       0 - |
+*CONSTPI :        3.141592653589793 - | *CUSTOM :                         0 - |
+*D0 :                          9ABC - | *DATE :                "09/16/2026" - |
+*FALSE :                          0 - | *FULLPMMU :                       1 - |
+*HAS64 :                          1 - | *HASDSP :                         0 - |
+*HASFPU :                         0 - | *HASPMMU :                        0 - |
+*INEXTMODE :                      0 - | *INLWORDMODE :                    0 - |
+*INMAXMODE :                      0 - | *INSRCMODE :                      0 - |
+*INSUPMODE :                      0 - | *LISTON :                         1 - |
+*MACEXP :                         7 - | *MOMCPU :                     68000 - |
+*MOMCPUNAME :               "68000" - | *NESTMAX :                      100 - |
+*PACKING :                        0 - | *PADDING :                        1 - |
+*RELAXED :                        0 - | *SP :                          5678 - |
+*TIME :               "09:14:54 AM" - | *TRUE :                           1 - |
+*VERSION :                     142F - | *Z80SYNTAX :                      0 - |
+
+     34 symbols
+     34 unused symbols
+
+ AS V1.42 Beta [Bld 212] - Source File p2.asm - Page 3 - 09/16/2026 09:14:54 AM
+
+
+  Code Pages:
+  ----------
+
+STANDARD (0 changed characters)
+
+1 code page
+
+0.00 seconds assembly time
+
+     13 lines source file
+      1 pass
+        Additional necessary passes not started due to
+        errors, listing possibly incorrect.
+      3 errors
+      0 warnings

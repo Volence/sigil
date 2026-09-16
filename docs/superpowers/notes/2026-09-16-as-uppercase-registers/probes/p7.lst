@@ -1,0 +1,77 @@
+ AS V1.42 Beta [Bld 212] - Source File p7.asm - Page 1 - 09/16/2026 09:17:50 AM
+
+
+       1/       0 :                     	cpu	68000
+       2/    1000 :                     	org	$1000
+       3/    1000 : =$1234               SR:	equ	$1234
+       4/    1000 : =$2222               CCR:	equ	$2222
+       5/    1000 : =$3333               USP:	equ	$3333
+       6/    1000 : 40C0                	move.w	SR,d0
+> > > p7.asm(7):2: warning #50: privileged instruction
+> > > MOVE
+> > >  move.w d0,SR
+> > >  ~~~~
+       7/    1002 : 46C0                	move.w	d0,SR
+> > > p7.asm(8):2: error #1500: instruction not supported on 68000
+> > > MOVE
+> > >  move.b CCR,d0
+> > >  ~~~~
+       8/    1004 :                     	move.b	CCR,d0
+       9/    1004 : 44C0                	move.b	d0,CCR
+> > > p7.asm(10):2: warning #50: privileged instruction
+> > > MOVE
+> > >  move.l USP,a0
+> > >  ~~~~
+      10/    1006 : 4E68                	move.l	USP,a0
+> > > p7.asm(11):2: warning #50: privileged instruction
+> > > MOVE
+> > >  move.l a0,USP
+> > >  ~~~~
+      11/    1008 : 4E60                	move.l	a0,USP
+      12/    100A : 3030 1000           	move.w	(A0,D1),d0
+      13/    100E : 3030 1800           	move.w	(A0,D1.L),d0
+      14/    1012 :                     	end
+ AS V1.42 Beta [Bld 212] - Source File p7.asm - Page 2 - 09/16/2026 09:17:50 AM
+
+
+  Symbol Table (* = unused):
+  --------------------------
+
+*ARCHITECTURE :                                      "x86_64-unknown-linux" - |
+*BIGENDIAN :                      0 - | *BRANCHEXT :                      0 - |
+*CASESENSITIVE :                  1 - | *CCR :                         2222 - |
+*COMPMODE :                       0 - | *CONSTPI :        3.141592653589793 - |
+*CUSTOM :                         0 - | *DATE :                "09/16/2026" - |
+*FALSE :                          0 - | *FULLPMMU :                       1 - |
+*HAS64 :                          1 - | *HASDSP :                         0 - |
+*HASFPU :                         0 - | *HASPMMU :                        0 - |
+*INEXTMODE :                      0 - | *INLWORDMODE :                    0 - |
+*INMAXMODE :                      0 - | *INSRCMODE :                      0 - |
+*INSUPMODE :                      0 - | *LISTON :                         1 - |
+*MACEXP :                         7 - | *MOMCPU :                     68000 - |
+*MOMCPUNAME :               "68000" - | *NESTMAX :                      100 - |
+*PACKING :                        0 - | *PADDING :                        1 - |
+*RELAXED :                        0 - | *SR :                          1234 - |
+*TIME :               "09:17:50 AM" - | *TRUE :                           1 - |
+*USP :                         3333 - | *VERSION :                     142F - |
+*Z80SYNTAX :                      0 - |
+
+     34 symbols
+     34 unused symbols
+
+ AS V1.42 Beta [Bld 212] - Source File p7.asm - Page 3 - 09/16/2026 09:17:50 AM
+
+
+  Code Pages:
+  ----------
+
+STANDARD (0 changed characters)
+
+1 code page
+
+0.00 seconds assembly time
+
+     15 lines source file
+      1 pass
+      1 error
+      3 warnings
