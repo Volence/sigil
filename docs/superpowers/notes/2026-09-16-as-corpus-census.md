@@ -55,6 +55,13 @@ per run, so identical outputs are the evidence no declined operand reached a byt
 Neither reference build left a `.log` file, and `common.lua` runs asl with `-E`, so asl
 emitted no diagnostics on either corpus.
 
+**Master moved while this ran, and it does not touch the figures.** The parcel started at
+`72aca2e2`, read from the tree rather than taken from the brief. By the end master was
+`9c431394`; the two commits between them (`7a271bfc`, `9c431394`) change only
+`docs/OVERSEER.md` and `docs/OVERSEER-REFERENCE.md`, so no assembler behaviour moved and
+every number below still describes the current assembler. Checked with `git diff --stat`,
+not assumed from the subject lines.
+
 **Wall clock.** Every sigil run is under 2.5 s (`runs/*/exit` carries the elapsed
 seconds and the machine uptime at the time of the run; at the start of the parcel the
 box was up 6 h 19 m at load 3.30, at the end 6 h 35 m at load 3.01). The release build
