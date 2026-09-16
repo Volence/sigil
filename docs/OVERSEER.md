@@ -340,7 +340,11 @@ neither). **Over-pricing is the error direction that survives**, because an over
 never fails loudly — it just makes byte-movers get deferred. That ripple belongs to the
 aeon-owned lane.
 
-Provenance identity is **CRC32 + size**, never SHA1 — the campaign standard.
+Provenance identity is **CRC32 + size**, never SHA1 — the campaign standard. **NAME THE CONVENTION
+WHEN YOU QUOTE ONE: this lane's figures are `cksum`**, and `python3 zlib.crc32` over the same bytes
+gives a DIFFERENT number (measured 2026-09-15 on one aeon shape: `cksum` 559008248, `zlib` 2445569172,
+identical file). Both are "CRC32" and both are right, so a bare figure is two lanes agreeing or
+disagreeing by luck. Size is the half that is unambiguous; quote it always.
 
 ## The autonomy directive — and its scope, which is the part that matters
 
