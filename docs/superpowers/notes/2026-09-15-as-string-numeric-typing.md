@@ -80,7 +80,10 @@ dc.b "\xff\xff\xff"+1  01 00 00 00  4        (the carry GROWS it 3 -> 4)
 dc.b "\x00a"+1      62              1        (a leading zero byte is DROPPED)
 dc.b "\x00ab"+1     61 63           2        (same, and this is the discriminator)
 dc.b "a"+(0-97)     <nothing>       0        (the sum is 0: the EMPTY string)
-dc.b "a"+(-98)      FF FF FF FF     4        (a NEGATIVE sum takes all four)
+dc.b "a"+(-98)      FF FF FF FF     4        (a NEGATIVE sum takes all four ...)
+dc.b "a"+(0-300)    FF FF FF 35     4        (... as the 32-bit two's complement)
+dc.b "ab"+(0-30000) FF FF EC 32     4
+dc.b "\xfe\xff\xff\xff"+$20000  FF 01 FF FF  4   (four bytes of its own, not a floor)
 ```
 
 `"\x00a"+1` is the measurement that settles it: the string is two characters,
@@ -145,8 +148,8 @@ DECLINES, silently.** This is a new instance of the standing
 
 ```
 dc.b "abcde"+1,$EE        emits NOTHING AT ALL, exit 0, no diagnostic
+dc.b "abcde"+0,$EE        emits nothing too: it is the PACK that fails, not the sum
 dc.b "abcdefgh"+1,$EE     emits nothing, and swallows the $EE with it
-dc.b "\xff\xff\xff\xff"+1,$EE   emits only the EE (the sum needs 5 bytes)
 move.w #"abcde"+1,d0      exit 0, no diagnostic, and NOT A VALUE:
 ```
 
@@ -161,8 +164,34 @@ and with one accepted `move.w #$1234,d0` above it, three runs all returned
 shapes is a value.** Sigil refuses them loudly instead of reproducing either
 the silence or the garbage.
 
+**CORRECTION, and the test is what forced it.** This section first said that
+`dc.b "\xff\xff\xff\xff"+1,$EE` "emits only the EE". **That was a misreading of
+the listing: it emits `00 EE`**, one byte from the string. The first
+implementation wrapped the sum to 32 bits, which reproduced the wrong reading
+exactly, and `the_length_is_the_sums_minimal_bytes_not_the_strings` went red on
+the byte. So the second refused region is not the string's length but **the
+SUM's**: a sum needing five bytes.
+
+Re-measured before deciding, because a stable value is not an answer. It IS
+stable (five runs identical, and identical again under a preceding accepted
+line), and it is still not a value:
+
+```
+dc.b "\xff\xff\xff\xff"+1,$EE      00 EE      sum 0x1_00000000
+dc.b "\xff\xff\xff\xff"+2,$EE      01 EE      sum 0x1_00000001
+dc.b "\xff\xff\xff\xff"+256,$EE    FF EE      sum 0x1_000000FF
+dc.b "abcde"+1,$EE                 <nothing>  also a five-byte sum
+```
+
+The first three emit ONE low byte; the fourth, in the same class, emits none.
+No rule produces both, and the minimal-bytes rule that explains every four-byte
+case explains neither. Sigil refuses the whole region rather than pick the half
+that happens to be adjacent. `asl_ref.sh` makes the general point in its own
+header: this build's out-of-range substitutions agree with themselves forever
+and therefore read like measurements.
+
 Note that string + STRING has no such cap: `dc.b "abcde"+"f"` is fine. The cap
-is on the arithmetic, which asl does in 32 bits.
+is on the arithmetic.
 
 ## 3. The `charset` seam, and the one thing left unmeasurable
 

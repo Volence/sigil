@@ -1,0 +1,67 @@
+ AS V1.42 Beta [Bld 212] - Source File t_plus_int_arith.asm - Page 1 - 09/15/2026 08:29:28 PM
+
+
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : 62EE                	dc.b "a"+1,$EE
+       5/       2 : 6163 EE             	dc.b "ab"+1,$EE
+       6/       5 : 6162 64EE           	dc.b "abc"+1,$EE
+       7/       9 : 6162 6365 EE        	dc.b "abcd"+1,$EE
+       8/       E : 6163 EE             	dc.b 1+"ab",$EE
+       9/      11 : 6260 EE             	dc.b "aa"+255,$EE
+      10/      14 : 6262 EE             	dc.b "ab"+256,$EE
+> > > t_plus_int_arith.asm(11): warning #180: address is not properly aligned
+> > >  move.w #"ab"+1,d0
+      11/      17 : 303C 6163           	move.w #"ab"+1,d0
+> > > t_plus_int_arith.asm(12): warning #180: address is not properly aligned
+> > >  move.l #"abcd"+1,d0
+      12/      1B : 203C 6162 6365      	move.l #"abcd"+1,d0
+> > > t_plus_int_arith.asm(13): warning #180: address is not properly aligned
+> > >  move.w "ab"+1,d0
+> > > t_plus_int_arith.asm(13): warning #180: address is not properly aligned
+> > >  move.w "ab"+1,d0
+      13/      21 : 3038 6163           	move.w "ab"+1,d0
+      14/      25 :                     	end
+ AS V1.42 Beta [Bld 212] - Source File t_plus_int_arith.asm - Page 2 - 09/15/2026 08:29:28 PM
+
+
+  Symbol Table (* = unused):
+  --------------------------
+
+*ARCHITECTURE :                                      "x86_64-unknown-linux" - |
+*BIGENDIAN :                      0 - | *BRANCHEXT :                      0 - |
+*CASESENSITIVE :                  1 - | *COMPMODE :                       0 - |
+*CONSTPI :        3.141592653589793 - | *CUSTOM :                         0 - |
+*DATE :                "09/15/2026" - | *FALSE :                          0 - |
+*FULLPMMU :                       1 - | *HAS64 :                          1 - |
+*HASDSP :                         0 - | *HASFPU :                         0 - |
+*HASPMMU :                        0 - | *INEXTMODE :                      0 - |
+*INLWORDMODE :                    0 - | *INMAXMODE :                      0 - |
+*INSRCMODE :                      0 - | *INSUPMODE :                      0 - |
+*LISTON :                         1 - | *MACEXP :                         7 - |
+*MOMCPU :                     68000 - | *MOMCPUNAME :               "68000" - |
+*NESTMAX :                      100 - | *PACKING :                        0 - |
+*PADDING :                        0 - | *RELAXED :                        0 - |
+*TIME :               "08:29:28 PM" - | *TRUE :                           1 - |
+*VERSION :                     142F - | *Z80SYNTAX :                      0 - |
+
+     31 symbols
+     31 unused symbols
+
+ AS V1.42 Beta [Bld 212] - Source File t_plus_int_arith.asm - Page 3 - 09/15/2026 08:29:28 PM
+
+
+  Code Pages:
+  ----------
+
+STANDARD (0 changed characters)
+
+1 code page
+
+0.00 seconds assembly time
+
+     15 lines source file
+      1 pass
+      0 errors
+      4 warnings

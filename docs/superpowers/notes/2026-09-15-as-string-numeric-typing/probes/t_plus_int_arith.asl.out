@@ -1,0 +1,10 @@
+> > > t_plus_int_arith.asm(11): warning #180: address is not properly aligned
+> > >  move.w #"ab"+1,d0
+> > > t_plus_int_arith.asm(12): warning #180: address is not properly aligned
+> > >  move.l #"abcd"+1,d0
+> > > t_plus_int_arith.asm(13): warning #180: address is not properly aligned
+> > >  move.w "ab"+1,d0
+> > > t_plus_int_arith.asm(13): warning #180: address is not properly aligned
+> > >  move.w "ab"+1,d0
+ASL_EXIT=0
+ASL_DIAG=complete

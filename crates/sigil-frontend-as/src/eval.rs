@@ -3627,26 +3627,42 @@ impl Asm {
             return StrTyped::Refuse(STRING_PLUS_INT_CHARSET.to_string());
         }
         let bytes: Vec<u8> = s.chars().map(|c| cs.map_char(c)).collect();
-        // asl DECLINES both of these, silently, at exit 0 — see
-        // `STRING_PLUS_INT_UNDEFINED` for the measurement. They are refused
-        // here rather than answered, because the only alternative is to invent
-        // an answer asl does not have.
+        // THE OPERAND must pack. asl declines a 5-character string here
+        // whatever the addend: `dc.b "abcde"+1,$EE` and `dc.b "abcde"+0,$EE`
+        // both emit nothing at all, so it is the PACK that fails and not the
+        // arithmetic. The empty string is refused by the same door.
         if bytes.is_empty() || bytes.len() > MAX_PACKED_STR_BYTES {
             return StrTyped::Refuse(STRING_PLUS_INT_UNDEFINED.to_string());
         }
-        let mut packed: u32 = 0;
+        let mut packed: i64 = 0;
         for b in &bytes {
-            packed = (packed << 8) | u32::from(*b);
+            packed = (packed << 8) | i64::from(*b);
         }
-        // 32-bit, wrapping, and signed at the end: that is what makes
-        // `"a"+(-98)` four bytes of `FF` and `"\xff\xff\xff\xff"+1` the empty
-        // string. `wrapping_add` rather than `+` so a hostile constant is an
-        // asl-shaped answer and not a debug panic.
-        let sum = (packed as i32).wrapping_add(n as i32);
+        // Computed in 64 bits and RANGE-CHECKED, rather than wrapped to 32.
+        // The difference is a byte, and only the test caught it: this arm first
+        // wrapped, which made `"\xff\xff\xff\xff"+1` the empty string, and asl
+        // emits one byte `00` there.
+        //
+        // AND THAT VALUE IS NOT ONE TO MATCH, which is the whole reason the
+        // check below is a refusal rather than a wider window. The sums needing
+        // five bytes do not agree with each other, let alone with any rule that
+        // explains the four-byte ones: `"\xff\xff\xff\xff"+1` is `00`, `+2` is
+        // `01` and `+256` is `FF` (one low byte each), while `"abcde"+1` — the
+        // same five-byte class — emits NOTHING. Stability is not an answer
+        // here; `asl_ref.sh` says in its own header that this build's
+        // out-of-range substitutions agree with themselves forever and so read
+        // like measurements.
+        let sum = packed + n;
+        if sum > i64::from(u32::MAX) || sum < i64::from(i32::MIN) {
+            return StrTyped::Refuse(STRING_PLUS_INT_UNDEFINED.to_string());
+        }
         let out: Vec<u8> = if sum < 0 {
-            sum.to_be_bytes().to_vec()
+            // A negative sum takes all four bytes, as the 32-bit two's
+            // complement: `dc.b "a"+(-98)` is `FF FF FF FF`, `dc.b "a"+(0-300)`
+            // is `FF FF FF 35` and `dc.b "ab"+(0-30000)` is `FF FF EC 32`.
+            (sum as i32).to_be_bytes().to_vec()
         } else {
-            let be = sum.to_be_bytes();
+            let be = (sum as u32).to_be_bytes();
             // Drop the leading zero bytes; a sum of 0 keeps NONE of them and is
             // the empty string, which is the measured `dc.b "a"+(0-97)`.
             be.iter().copied().skip_while(|b| *b == 0).collect()

@@ -1,0 +1,64 @@
+ AS V1.42 Beta [Bld 212] - Source File t_strsym_slots.asm - Page 1 - 09/15/2026 08:29:28 PM
+
+
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : ="a"                 S1 equ "a"
+       5/       0 : ="ab"                S2 equ "ab"
+       6/       0 : ="abcd"              S4 equ "abcd"
+       7/       0 : 61EE                	dc.b S1,$EE
+       8/       2 : 6162 EE             	dc.b S2,$EE
+       9/       5 : 6163 EE             	dc.b S2+1,$EE
+      10/       8 : 6161 62EE           	dc.b S1+S2,$EE
+      11/       C : 303C 0061           	move.w #S1,d0
+      12/      10 : 303C 6162           	move.w #S2,d0
+      13/      14 : 203C 6162 6364      	move.l #S4,d0
+      14/      1A : 3038 6162           	move.w S2,d0
+      15/      1E : 303C 6163           	move.w #S2+1,d0
+      16/      22 : 6161                	dc.w S2-1
+      17/      24 :                     	end
+ AS V1.42 Beta [Bld 212] - Source File t_strsym_slots.asm - Page 2 - 09/15/2026 08:29:28 PM
+
+
+  Symbol Table (* = unused):
+  --------------------------
+
+*ARCHITECTURE :                                      "x86_64-unknown-linux" - |
+*BIGENDIAN :                      0 - | *BRANCHEXT :                      0 - |
+*CASESENSITIVE :                  1 - | *COMPMODE :                       0 - |
+*CONSTPI :        3.141592653589793 - | *CUSTOM :                         0 - |
+*DATE :                "09/15/2026" - | *FALSE :                          0 - |
+*FULLPMMU :                       1 - | *HAS64 :                          1 - |
+*HASDSP :                         0 - | *HASFPU :                         0 - |
+*HASPMMU :                        0 - | *INEXTMODE :                      0 - |
+*INLWORDMODE :                    0 - | *INMAXMODE :                      0 - |
+*INSRCMODE :                      0 - | *INSUPMODE :                      0 - |
+*LISTON :                         1 - | *MACEXP :                         7 - |
+*MOMCPU :                     68000 - | *MOMCPUNAME :               "68000" - |
+*NESTMAX :                      100 - | *PACKING :                        0 - |
+*PADDING :                        0 - | *RELAXED :                        0 - |
+ S1 :                           "a" - |  S2 :                          "ab" - |
+ S4 :                        "abcd" - | *TIME :               "08:29:28 PM" - |
+*TRUE :                           1 - | *VERSION :                     142F - |
+*Z80SYNTAX :                      0 - |
+
+     34 symbols
+     31 unused symbols
+
+ AS V1.42 Beta [Bld 212] - Source File t_strsym_slots.asm - Page 3 - 09/15/2026 08:29:28 PM
+
+
+  Code Pages:
+  ----------
+
+STANDARD (0 changed characters)
+
+1 code page
+
+0.00 seconds assembly time
+
+     18 lines source file
+      1 pass
+      0 errors
+      0 warnings

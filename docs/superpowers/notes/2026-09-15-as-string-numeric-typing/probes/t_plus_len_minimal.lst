@@ -1,0 +1,59 @@
+ AS V1.42 Beta [Bld 212] - Source File t_plus_len_minimal.asm - Page 1 - 09/15/2026 08:33:32 PM
+
+
+       1/       0 :                     	cpu 68000
+       2/       0 :                     	padding off
+       3/       0 :                     	org 0
+       4/       0 : 62EE                	dc.b "\x00a"+1,$EE
+       5/       2 : 6163 EE             	dc.b "\x00ab"+1,$EE
+       6/       5 : 0100 0000 EE        	dc.b "\xff\xff\xff"+1,$EE
+       7/       A : EE                  	dc.b "a"+(0-97),$EE
+       8/       B : FFFF FFFF EE        	dc.b "a"+(-98),$EE
+       9/      10 : FFFF FF35 EE        	dc.b "a"+(0-300),$EE
+      10/      15 : FFFF EC32 EE        	dc.b "ab"+(0-30000),$EE
+      11/      1A : 6161 EE             	dc.b "ab"+(0-1),$EE
+      12/      1D : 0160 EE             	dc.b "a"+255,$EE
+      13/      20 : FF01 FFFF EE        	dc.b "\xfe\xff\xff\xff"+$20000,$EE
+      14/      25 :                     	end
+ AS V1.42 Beta [Bld 212] - Source File t_plus_len_minimal.asm - Page 2 - 09/15/2026 08:33:32 PM
+
+
+  Symbol Table (* = unused):
+  --------------------------
+
+*ARCHITECTURE :                                      "x86_64-unknown-linux" - |
+*BIGENDIAN :                      0 - | *BRANCHEXT :                      0 - |
+*CASESENSITIVE :                  1 - | *COMPMODE :                       0 - |
+*CONSTPI :        3.141592653589793 - | *CUSTOM :                         0 - |
+*DATE :                "09/15/2026" - | *FALSE :                          0 - |
+*FULLPMMU :                       1 - | *HAS64 :                          1 - |
+*HASDSP :                         0 - | *HASFPU :                         0 - |
+*HASPMMU :                        0 - | *INEXTMODE :                      0 - |
+*INLWORDMODE :                    0 - | *INMAXMODE :                      0 - |
+*INSRCMODE :                      0 - | *INSUPMODE :                      0 - |
+*LISTON :                         1 - | *MACEXP :                         7 - |
+*MOMCPU :                     68000 - | *MOMCPUNAME :               "68000" - |
+*NESTMAX :                      100 - | *PACKING :                        0 - |
+*PADDING :                        0 - | *RELAXED :                        0 - |
+*TIME :               "08:33:32 PM" - | *TRUE :                           1 - |
+*VERSION :                     142F - | *Z80SYNTAX :                      0 - |
+
+     31 symbols
+     31 unused symbols
+
+ AS V1.42 Beta [Bld 212] - Source File t_plus_len_minimal.asm - Page 3 - 09/15/2026 08:33:32 PM
+
+
+  Code Pages:
+  ----------
+
+STANDARD (0 changed characters)
+
+1 code page
+
+0.00 seconds assembly time
+
+     15 lines source file
+      1 pass
+      0 errors
+      0 warnings
