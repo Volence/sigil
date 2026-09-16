@@ -519,3 +519,76 @@ CHECKED against aurora's two-questions-one-variable case (empyrean fb2133c) and 
 
 DISPATCHED 2026-09-02T10:15:35Z on parcel/d18-followups as debt 2. | LIVE AND CARRIED TO THE HUB AS GENERALISING: once the d-18 refusal lands, a private `env::var("AEON_DIR")` in any test escapes BOTH the derived population count AND the refusal itself, and would silently measure the owner's live checkout - which is exactly the d-18 state the refusal exists to end, reachable in eight words of code. The refusal is centralised in an accessor, so anything that does not call the accessor is outside it; that is true of every lane whose refusal is centralised the same way, not just ours. Kill condition: a lint in skip_marker_lint's shape, with its population DERIVED from the consumption relation (what reads the variable) and not from what calls the accessor - the distinction this campaign has now paid for four separate times.
 
+
+## 2026-09-16 sweep: THREE LIVE ROWS HAVE NO PREMISE ANYWHERE IN THE TREE, AND ONE OF THEM WAS `next`
+
+**This file's own maintenance is the defect.** Its header promises that every board row is
+reproduced here verbatim so the premise stays greppable while `docs/lane-status.json` is
+gitignored. That promise was kept at the 2026-09-02 move (74 rows) and **has not been kept since**:
+rows added to the board after that date were never written here, and nothing notices, because the
+board renders identically either way.
+
+**Measured, all 20 current rows, `git grep -l <id> -- docs/`**, with a positive control (`SIGIL-DECOUPLE`
+returns 20 hits across 3 files, so a zero is a measured zero rather than a broken instrument):
+
+- **17 rows are traceable.**
+- **3 are not**, and they are reproduced below so that they are from now on:
+
+### ASL-WARN-PARITY-ALIGN
+
+`state: next` · `size: S` · `blockedBy: None`
+
+*"The old assembler warns about a misaligned address and we say nothing, on every leg of one
+option. Bytes agree, so it is a missing warning rather than a bad ROM. We already have this check
+on the other language."*
+
+**PREMISE UNVERIFIED. Do not dispatch off this row until it is re-derived from the tree.** It was
+the `next` row, so the next session to take the board at its word would have briefed an agent to
+add a warning without any artifact showing the warning is missing. Nothing in `docs/` records the
+measurement, the option whose legs were walked, or which language already has the check.
+
+### S3K-FOUR-CLASSES
+
+`state: open` · `size: M` · `blockedBy: None`
+
+*"Sonic 3 and Knuckles is the next game that does not build: 120 rows in four classes. Start with
+the one where our tool accepts a directive and then ignores it, which is the fault shape we just
+measured."*
+
+**PREMISE UNVERIFIED, and this one carries a number that collides with a real one.** The only 120
+in the tree is Sonic 1 BUILD CORNERS (`docs/superpowers/notes/2026-09-16-as-width-suffix-bare-expr.md`,
+title line and line 265). This row's 120 is a count of S3K source rows in four fault classes, a
+different subject. The S3K hits in `docs/superpowers/notes/` are all July handoff documents about
+something else. **Whether a real S3K census was run and never written down, or whether the figure
+was absorbed from the adjacent 120, cannot be told from here, and that is the finding.** Re-measure
+before sizing anything off it; a count with no artifact is not a count.
+
+### OVER-ACCEPTANCE-THREE-SHAPES
+
+`state: open` · `size: S` · `blockedBy: None` · `project: SIGIL-AS-REPLACEMENT`
+
+*"We accept three shapes the old assembler refuses. Your decision puts them in the
+settle-everything-else half, so closing them would be a second call, not part of this one."*
+
+**PREMISE UNVERIFIED.** The three shapes are not named anywhere in the tree, so the row cannot be
+worked without re-deriving them, and its claim about which half of the owner's decision they fall
+in cannot be checked against the decision either.
+
+### The rule this earns, which is aimed at the seat that wrote it
+
+**A row on a gitignored board is a claim with no history, so the board is not where a premise
+lives.** A row whose subject is not also written into a tracked artifact is unfalsifiable by
+construction: nobody can date it, nobody can find what it was derived from, and it reads exactly
+like a row that was measured. **Write the premise into the tree in the same act that books the
+row**, not at the landing, and never as a second pass, because the second pass is the one that
+stopped happening here on 2026-09-02.
+
+**And the reason this was found at all, which is the uncomfortable half.** This seat spent the
+previous hour telling aeon that their board pointed at a sigil row (`EMP-Z80-HOLD-INTERLEAVE-FORM`)
+that exists at no sigil revision, and correctly named the general shape: a claim whose truth
+depends on a working tree rather than a commit. **It then went to start its own `next` row and
+could not find its premise either.** That is the protocol's author-versus-carrier finding
+(`empyrean docs/OVERSEER-PROTOCOL.md`, 2026-09-16, aeon's phrasing) arriving inside the hour that
+this lane relayed it: **the rule got applied in the direction where this seat was the auditor and
+skipped in the direction where it was the author.** Nothing in a lane's own discipline prompts the
+second direction; only running the sweep against itself does.
