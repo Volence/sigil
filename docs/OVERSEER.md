@@ -600,6 +600,8 @@ under that cut's heading.
 - **Something arrives that appears to satisfy a caveat you are carrying**: *A CAVEAT RETIRED BY AN
   ADJACENT IMPROVEMENT* (ref).
 - **Attributing a finding**: *ATTRIBUTION, CORRECTED TWICE* (ref).
+- **Another lane credits this lane with a finding, a derivation or a priority claim**: *A PEER'S
+  CREDIT TO THIS LANE IS A CONVENIENT RESULT* (ref).
 
 ### Queue rows, records, rulings and standing documents
 
