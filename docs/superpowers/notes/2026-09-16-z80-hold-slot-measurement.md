@@ -627,3 +627,59 @@ Stated as a measured requirement, from a population of one hand-rolled site at a
 7. **Sites that CONSUME a hold without manipulating the bus were not enumerated.** Out of
    scope for a pre-grant slot; stated so that the population-of-one claim is not read wider
    than it was measured.
+
+---
+
+## Overseer correction, 2026-09-16: requirement 2 is REFUTED, and the refutation is the design's load-bearing fact
+
+Added at the sigil overseer seat after recomputing this note's claims with this lane's own
+instruments. Everything above stands as measured except **"What a form must admit" item 2**,
+*"an acquire and a release that can emit through registers the caller supplies"*. That is not a
+requirement of the form. It is the constraint this lane's `docs/OVERSEER-REFERENCE.md` already
+records as having outlived two reasons, and the measurement below is a third reason that points
+the OTHER WAY: a register-emitting form is the one shape the design must NOT take.
+
+**The code that decides it**, `crates/sigil-frontend-emp/src/z80_bus.rs:153-166`, read at sigil
+`26de6eb7`:
+
+```rust
+fn bus_toggle(mnem: &str, ops: &[CodeOperand]) -> Option<BusState> {
+    if mnem != "move" { return None; }
+    let dst = ops.last()?;
+    if !is_z80_bus_request(dst) { return None; }
+    match ops.first() {
+        Some(CodeOperand::Imm(0x0100)) => Some(STOPPED),
+        ...
+```
+
+Recognition needs **both** a destination that resolves to the bus-request address and a source
+that is the literal immediate `$0100`. Boot's `move.w d7, (a1)` supplies neither: the destination
+is register-indirect (the documented soundness bailout) and the source is a register. So
+`bus_toggle` returns `None`, and `region_acquires_bus` (`z80_bus.rs:196-202`), which scans the
+emitted items of `enter..acquire_end` for exactly that toggle, returns false.
+
+**The consequence is a silent loss of a whole tier, not a missed lint.**
+`corpus_contracts.rs:1160-1169` builds `bus_contexts` as a tree-wide union of the contexts
+`region_acquires_bus` recognises, and `:1253` seeds a proc `BusEntry::Held` only when its
+`requires(...)` names one of them. A `z80_stopped` whose acquire emitted through registers would
+never enter that set, so **every `requires(z80_stopped)` proc in the tree would silently seed
+`Unknown` instead of `Held`**, and the `[bus.*]` crash-class analysis would quietly stop saying
+anything. Nothing diagnoses this: an empty `bus_contexts` is indistinguishable from a tree with
+no bus contexts in it. That is finding Q2-a, and this is the mechanism that makes it matter.
+
+**So the third reason for the absolute spelling, and the first one that holds.** Reason one
+(aeon's register economy for the reset path) was refuted by aeon. Reason two (a DMA-window
+cycle-count hazard) was refuted by this lane on ordering and direction. Reason three is that
+**the absolute spelling is what our own bus analysis can see**, and a register spelling blinds it
+without a word of complaint. That is a constraint about this toolchain rather than about the
+hardware, which is why neither hardware argument could ever have established it.
+
+**What this does to the byte figure.** The hand-derived 18 bytes at boot (item 4 of the open
+questions, still unbuilt and still not to be cited bindingly) stops being a cost with nothing
+bought. It is the price of a machine-checked bus-state property at the one site that has never
+had one. That is a trade a person can weigh; "18 bytes for a tidier spelling" is not.
+
+**And it keeps the general shape this note already names**, aeon's own lesson pointed at a third
+instance: a constraint whose reason is wrong is more fragile than one with no reason at all,
+because refuting the reason looks like refuting the constraint. This one has now survived two
+wrong reasons. It is right, and for neither of them.
