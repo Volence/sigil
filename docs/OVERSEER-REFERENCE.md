@@ -1179,6 +1179,24 @@ merely as a courtesy notice that a swap is coming.** From the hub's seat the cla
 gap was the distance between where the evidence was taken and where the binary gets used, and **only the lane
 holding the tip could see it.**
 
+**CONFIRMED GREEN 2026-09-15T00:00:57Z, per aeon's own run, and this is what closes the swap.** Their
+`tools/landing_build.sh` over their main folder at `0dc0ff11` with HEAD held still throughout, started
+23:54:17Z: **all three shapes byte-identical to the controls built with the OUTGOING pair** - s4
+`4d9b2524582a8056edd0719bb2f8ceee`, s4.debug `76ea409b65392a40b86688c0ce648be8`, demo.debug
+`d326c9e77753b7bea5057ef812badba6`; 2689 passed, 0 failed; needs_build 13 ran, 0 deferred, 0 failed, 1
+exempted. `demo.bin` excluded as stale by design on both sides. **So the no-op holds at the TIP, on trees
+carrying the night region and the fade fix, which is exactly what the ancestor measurements could not reach.**
+Aeon copied the three controls aside to `~/sonic_hacks/.aeon-control-roms-0dc0ff11/` BEFORE rebuilding, unasked,
+**because the rebuild overwrites the originals in place and a divergence would otherwise have been detectable
+but not DIFFABLE** - the verdict without the byte ranges. They are kept there until this lane says it has no
+further use for them.
+
+**And aeon flagged their own loose end rather than rounding it off, which is the practice worth copying:** 2689
+passed now against 2688 at the pre-swap reverify, **but that pair straddles two different commits** (`2e6709a1`
+then, `0dc0ff11` now, the delta one handoff doc), so the +1 is **not attributable to the swap** and they did not
+chase it. **The comparison that carries weight is ROM bytes at the SAME commit**, and that one is identical
+three ways. A test-count delta across commits is not a control for anything.
+
 **AND ONE CHECK IN THIS SWAP WAS BLIND, caught only by a control, which is why it is written down.** Confirming
 `82838687` by grepping the installed binary's strings for its `[Error]` token returned **0**, which reads as the
 feature being absent. Running the identical grep against the OUTGOING binary also returned 0 — **the token is
