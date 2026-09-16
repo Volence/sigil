@@ -5,8 +5,8 @@
 # value to reconcile.
 #
 #   introduced upstream at:  ba1de1f
-#   vendored here from:      d6ce7a2 (verified an ancestor of their origin/main)
-#   content identity:        CRC32 79f5187b, 5936 bytes
+#   vendored here from:      658502e (verified an ancestor of their origin/main)
+#   content identity:        CRC32 bb7e374f, 9341 bytes
 #
 # CITED BY CONTENT, NOT ONLY BY SHA. An earlier header named 51a48d4 alone, the
 # revision the hub announced, which is a true statement about a revision where
@@ -19,34 +19,37 @@
 # with zlib.crc32 (IEEE, the campaign provenance standard); a decimal figure came
 # from a foreign tool and does not compare.
 #
-# THIS PIN HAS FIRED TWICE ON LEGITIMATE CHANGES, which is the only exercise that
-# tests the mechanism without also reporting a fault: a docstring correction
-# (37e98d6b -> c36dd014) and then a real behaviour change, the empty-time guard
-# (-> 79f5187b). Both reconciled after checking, not after being told.
+# THE PIN HAS FIRED THREE TIMES ON LEGITIMATE CHANGES, which is the only exercise
+# that tests the mechanism without also reporting a fault: a docstring correction
+# (37e98d6b -> c36dd014), the empty-time guard (-> 79f5187b), and the two fixes
+# below (-> bb7e374f). Each reconciled after checking, not after being told.
 #
-# RE-VERIFIED AT THIS REVISION rather than carried over, since red-first custody
-# attaches to the BYTES that were proved and not to a file name. Digest
-# recomputed here. Arm 1, no trailing newline: repaired, BOTH prior records
-# intact. Arm 2, already-damaged tail: exit 1, md5 identical before and after.
-# Exit codes read UNPIPED: zsh has no PIPESTATUS, so a piped read reports the
-# downstream command's status and turns a refusal into a green that means
-# nothing.
+# WHAT THIS REFUSES, RE-PROVED HERE AT THESE BYTES rather than carried over, since
+# red-first custody attaches to the BYTES that were proved and not to a file name.
+# Every refusal md5-unchanged, every exit code read UNPIPED (zsh has no
+# PIPESTATUS, so a piped read reports the downstream command's status and turns a
+# refusal into a green that means nothing):
+#   a file whose last line does not parse  -> exit 1, nothing written
+#   a missing trailing newline             -> repaired, BOTH prior records intact
+#   a time field present and empty         -> exit 1
+#   a time field present and null          -> exit 1
+#   a time field absent                    -> exit 1, WHEN the ledger's own
+#                                             records all carry one
 #
-# TWO THINGS THE TIME GUARD DOES NOT CATCH, MEASURED HERE AND REPORTED UPSTREAM.
-# Recorded so this copy does not overclaim. This lane does NOT fork the behaviour
-# to close them locally; empyrean owns the fix.
-#   at: null    PASSES AND WRITES. The check is `key in record and
-#               isinstance(record[key], str) and not record[key].strip()`, so a
-#               JSON null is present, carries no time, and is not a str. That is
-#               INSIDE the guard's own stated domain (present but empty), and it
-#               is the author's own transit failure one language over: in shell a
-#               dropped clock arrives as "", while in Python
-#               `os.environ.get("NOW")` with NOW unset arrives as None, which is
-#               the forgiving spelling a caller reaches for.
-#   at absent   PASSES AND WRITES, by the author's stated boundary. Measured
-#               here: scripts/ledger_gate.py does not catch it either. So it is a
-#               hole in BOTH halves at once, which is the one thing a detection
-#               plus prevention pair is supposed to make impossible.
+# THE GUARD'S ACTIVATION IS DATA-DERIVED AND THEREFORE SILENT. The tool has no
+# schema for any ledger, so it takes the ledger itself as the evidence: absent is
+# refused only when EVERY record already in the file carries a time field.
+# Measured consequences, and they are correct behaviour rather than defects, but
+# they are invisible from the output, so a lane can believe it is protected when
+# it is not:
+#   a MIXED file (one legacy record without a time field) accepts records
+#     without one, permanently, and says nothing;
+#   a NEW or EMPTY file constrains nothing, so a first record written without a
+#     time field leaves that ledger unconstrained for good.
+# CHECKED FOR THIS LANE AT ADOPTION, and this is the fact that goes stale, so
+# re-measure rather than trusting this line: docs/lane-log.jsonl 351 of 351 and
+# docs/decisions.jsonl 41 of 41 carry a time field, so the guard is ACTIVE on
+# both and all three bad shapes were refused against copies of the real files.
 #
 # ADOPTED as the PREVENTION half of this lane's open row
 # LANE-LOG-APPEND-CORRUPTS-ON-MISSING-NEWLINE. scripts/ledger_gate.py is the
@@ -127,16 +130,70 @@ def check_timestamps(record: dict) -> None:
     command, never a record that looks complete and is not. Set the variable on its own
     line, or pass $(date -u +%Y-%m-%dT%H:%M:%SZ) directly as the argument.
 
-    Deliberately NOT validated: the format, or whether the time is plausible. This
-    refuses a field that is present and empty -- the failure the shell actually causes.
-    A record with no time field at all is a different shape and not this tool's call.
+    WIDENED TWICE ON SIGIL'S MEASUREMENT, 2026-09-16, and both were holes in the scope
+    this docstring already CLAIMED rather than scope it declined.
+
+    (1) `at: null` PASSED AND WROTE. The first guard read
+    `isinstance(record[key], str) and not record[key].strip()`, so a JSON null -- present,
+    carrying no time, not a str -- went straight through. The docstring said "present and
+    empty", and null is present and empty of content, so the stated scope was simply not
+    met. AND IT IS THE SAME DEFECT ONE LANGUAGE OVER: in shell a dropped clock arrives as
+    "", in Python it arrives as None, from os.environ.get("NOW") with NOW unset -- the
+    forgiving spelling a caller reaches for over the raising one. A guard built from the
+    shape of the instance that produced it is a sampled domain, which is the failure this
+    whole tool exists to stop, arriving on the FIX instead of on the claim.
+
+    (2) AN ABSENT TIME FIELD WAS A HOLE IN BOTH HALVES AT ONCE. It passed here, and sigil
+    measured that ledger_gate.py also exits 0 on a record with no `at` -- so detection and
+    prevention had the SAME gap, which is the one thing a pair is supposed to make
+    impossible, and neither side could have found it by looking at its own half. It also
+    contradicted aurora's principle, which this lane had relayed two hours earlier: a
+    missing field must be a NAMED failure, never an implicit pass, because "I could not
+    look" and "I looked and it is empty" must not return the same answer. They did.
+
+    THE BOUNDARY MOVED, AND HOW IT MOVED MATTERS. This tool appends to ANY .jsonl ledger
+    and has no schema for any of them -- so it does not invent one. THE LEDGER ITSELF IS
+    THE EVIDENCE: if the records already in the file carry a time field, a new record
+    without one is refused; if they do not, it is allowed. The convention is read from the
+    population rather than hardcoded, so lane-log.jsonl and decisions.jsonl are covered
+    without breaking a ledger that legitimately has no time field. An empty or new file
+    has no population and constrains nothing.
+
+    Still deliberately NOT validated: the FORMAT, or whether the time is plausible. A
+    wrong-but-present timestamp is a different failure with different evidence, and
+    guessing at formats here would refuse records this tool has no standing to judge.
     """
     for key in TIME_FIELDS:
-        if key in record and isinstance(record[key], str) and not record[key].strip():
+        if key not in record:
+            continue
+        value = record[key]
+        if value is None:
+            sys.exit(f"REFUSING: record has {key}=null. A time field was read and lost in "
+                     "transit -- in Python most often os.environ.get(\"NOW\") with NOW unset, "
+                     "which returns None instead of raising. Nothing was written.")
+        if isinstance(value, str) and not value.strip():
             sys.exit(f"REFUSING: record has {key}=\"\" (empty). A time field was read "
                      "and lost in transit, most often by `VAR=$(date -u ...) python3 ... \"$VAR\"`, "
                      "where the assignment is not in scope for that same line. Set it on its "
                      "own line first, then pass it. Nothing was written.")
+
+
+def check_conforms_to_ledger(record: dict, last_record: dict) -> None:
+    """Refuse a record missing a time field that this ledger's own records carry.
+
+    See check_timestamps' docstring, point (2): an absent field was a hole in BOTH this
+    tool and sigil's gate simultaneously. The population is the authority -- no schema is
+    invented here.
+    """
+    if not isinstance(last_record, dict):
+        return
+    expected = [k for k in TIME_FIELDS if k in last_record]
+    missing = [k for k in expected if k not in record]
+    if missing:
+        sys.exit(f"REFUSING: record omits {', '.join(missing)}, which every record already "
+                 "in this ledger carries. An absent time field must be a NAMED failure, not "
+                 "an implicit pass: 'I could not look' and 'I looked and it is empty' must "
+                 "not give the same answer. Nothing was written.")
 
 
 def append(path: str, record: dict) -> None:
@@ -152,10 +209,11 @@ def append(path: str, record: dict) -> None:
             tail = [ln for ln in f.read().split("\n") if ln.strip()]
         if tail:
             try:
-                json.loads(tail[-1])
+                last = json.loads(tail[-1])
             except Exception as e:
                 sys.exit(f"REFUSING: {path} last line does not parse ({e}). "
                          "Repair it before appending; an append hides the damage.")
+            check_conforms_to_ledger(record, last)
     else:
         needs_nl = False
     with open(path, "a", encoding="utf-8") as f:
