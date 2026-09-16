@@ -193,9 +193,24 @@ CARGO_TARGET_DIR=<on disk> cargo build --release --bin sigil
 git -C <corpus> archive --format=tar HEAD | tar -x -C <scratch>/trees/<corpus>-pristine
 cp -a <scratch>/trees/<corpus>-pristine <scratch>/trees/<corpus>-luaref
 (cd <scratch>/trees/<corpus>-luaref && lua build.lua)   # the reference ROM
-bash scripts/mk_gen_trees.sh                            # pristine + the pre-step outputs
-bash scripts/flip.sh <tag> <base tree> <root.asm> <file> <line> '<new text>' -- <sigil args...>
 ```
+
+**⚠ THE TWO SCRIPT LINES THAT SAT HERE NAMED PATHS THAT DO NOT EXIST, and the block was
+never runnable as written.** Corrected 2026-09-16 on the `SWITCH-MATRIX-SWEEP` agent's
+catch, verified here: `scripts/mk_gen_trees.sh` is not under `scripts/` (the only tracked
+copy is `docs/superpowers/notes/2026-09-16-as-corpus-census/scripts/mk_gen_trees.sh`, the
+census's own directory), and `scripts/flip.sh` **exists nowhere in the tree** under any
+path; the census's nearest script is `switchflip.sh`, which is a different thing. Check
+with `git ls-files | grep -E 'mk_gen_trees|flip'`.
+
+**Use `scripts/switch_matrix_sweep.py` instead**, landed at `f06dfa5a`, which supersedes
+both: it derives the option set from the corpus rather than taking a flip on the command
+line, and it reproduces all nine of this note's flip CRC32s. The rest of the block above
+stands.
+
+*(The general rule this broke is already banked as CITE THE ARTEFACT THAT CAN BREAK: a
+path written into a record is a claim about the tree, and this one was never checked
+against it. A citation costs one `ls` to verify and rots in silence otherwise.)*
 
 and in the suite, which needs no scratch at all:
 
