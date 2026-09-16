@@ -2841,7 +2841,7 @@ impl Asm {
         // A lone string LITERAL: the existing path owns its VALUE, so this
         // returns `None` and leaves it there. What it does add is asl's own
         // WORD for the two lengths that have no packed value at all, which
-        // `parse_expr` could only report as "bad immediate expression" —
+        // `parse_expr` could only report as "bad immediate expression":
         // accurate about the parse and silent about the reason.
         //
         // The value is still `string_to_int`'s, asked here only to find out
@@ -3566,7 +3566,7 @@ impl Asm {
         // Parentheses around a string expression are transparent, exactly as
         // they are around a numeric one: asl folds `strlen(("abc"))` to 3 and
         // `strlen(lowstring(("ABCD")))` to 4, and `dc.w ("ab")` is `0061 0062`,
-        // still a string. This is not a curiosity —
+        // still a string. This is not a curiosity:
         // `expand_calls` PARENTHESISES every argument it substitutes into a
         // user `function` body, so `chkop function op,ref,(...strlen(ref)...)`
         // hands its own `strlen` a `("0(")`, and a `substr`/`lowstring`/
@@ -3683,8 +3683,8 @@ impl Asm {
         // check below is a refusal rather than a wider window. The sums needing
         // five bytes do not agree with each other, let alone with any rule that
         // explains the four-byte ones: `"\xff\xff\xff\xff"+1` is `00`, `+2` is
-        // `01` and `+256` is `FF` (one low byte each), while `"abcde"+1` — the
-        // same five-byte class — emits NOTHING. Stability is not an answer
+        // `01` and `+256` is `FF` (one low byte each), while `"abcde"+1`, the
+        // same five-byte class, emits NOTHING. Stability is not an answer
         // here; `asl_ref.sh` says in its own header that this build's
         // out-of-range substitutions agree with themselves forever and so read
         // like measurements.
@@ -8379,7 +8379,7 @@ impl Asm {
     ///
     /// This is a separate function, and not a fifth layer inside
     /// `expand_operand_builtins`, because the wider DATA directives share that
-    /// one and must NOT pack — `dc.w "ab"` is `0061 0062` to asl, so packing it
+    /// one and must NOT pack: `dc.w "ab"` is `0061 0062` to asl, so packing it
     /// to `6162` there would be silently wrong bytes. They keep the plain
     /// expander and their own [`STRING_IN_WIDE_DATA`] refusal; only the
     /// instruction paths, where packing IS asl's rendering, call this.
@@ -8693,7 +8693,7 @@ impl Asm {
             // A `Refuse` here is NOT allowed to fall through to the numeric
             // path below. It marks a string-typed operand asl has no dependable
             // answer for, and the numeric path would pack it into a plausible
-            // wrong byte at exit 0 — which is the defect class this whole
+            // wrong byte at exit 0, which is the defect class this whole
             // parcel closes, so re-opening it one directive down would be a
             // poor trade.
             match self.eval_str_typed(&expanded) {
@@ -19427,14 +19427,14 @@ const MAX_PACKED_STR_BYTES: usize = 4;
 /// `string + integer` where asl has no answer, measured 2026-09-15 and refused
 /// rather than reproduced.
 ///
-/// THIS IS A SHAPE asl DECLINES SILENTLY, ON THE REFERENCE BUILD, AT EXIT 0 —
+/// THIS IS A SHAPE asl DECLINES SILENTLY, ON THE REFERENCE BUILD, AT EXIT 0:
 /// a fresh instance of the standing `ASL-SILENT-WRONG-ON-BOTH-BUILDS` hazard
 /// that `asl_ref.sh` documents. `dc.b "abcde"+1,$EE` emits NOTHING AT ALL with
 /// no diagnostic, and `dc.b "abcdefgh"+1,$EE` swallows the `$EE` with it. In an
 /// immediate slot it is not a value either: five consecutive runs of
 /// `move.w #"abcde"+1,d0` returned `5605`, `0000`, `564D`, `5608` and `55C6`,
 /// and with one accepted `move.w #$1234,d0` above it three runs all returned
-/// `1234` — the stale-slot echo.
+/// `1234`, the stale-slot echo.
 ///
 /// So there is no byte here to match. Refusing is the only honest answer, and
 /// the alternative is not "match asl" but "invent a value and call it asl's".
@@ -19482,7 +19482,7 @@ fn string_not_an_integer(s: &str) -> String {
 /// The third arm is the load-bearing one. A string-typed expression that asl
 /// has no dependable answer for must NOT be reported as "not a string", because
 /// the caller's integer path would then pack it and emit a plausible wrong
-/// value — which is the exact defect (`AS-STRING-PLUS-NUMERIC-CONTEXT`) this
+/// value, which is the exact defect (`AS-STRING-PLUS-NUMERIC-CONTEXT`) this
 /// parcel exists to close, rebuilt one level up.
 enum StrTyped {
     /// String-typed, and this is its value.

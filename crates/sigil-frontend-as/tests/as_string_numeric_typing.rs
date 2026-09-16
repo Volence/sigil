@@ -311,7 +311,7 @@ fn a_string_plus_an_integer_is_packed_arithmetic() {
 /// it: a sum needing FIVE bytes. `dc.b "\xff\xff\xff\xff"+1,$EE` is `00 EE`,
 /// and the first draft of this parcel wrapped to 32 bits and emitted the `$EE`
 /// alone. Widening the window to match would have been the wrong repair,
-/// because that region is not an answer — see
+/// because that region is not an answer, see
 /// [`a_string_plus_integer_asl_declines_is_refused_not_guessed`], which asserts
 /// the refusal instead.
 #[test]
@@ -449,7 +449,7 @@ fn a_packed_string_too_wide_for_its_slot_is_a_range_complaint() {
 /// wrong on at EXIT 0: `dc.b "abcde"+1,$EE` emits NOTHING AT ALL with no
 /// diagnostic, `dc.b "abcdefgh"+1,$EE` swallows the `$EE` with it, and five
 /// consecutive runs of `move.w #"abcde"+1,d0` returned `5605`, `0000`, `564D`,
-/// `5608` and `55C6` — with an accepted `move.w #$1234,d0` above it, three runs
+/// `5608` and `55C6`, with an accepted `move.w #$1234,d0` above it, three runs
 /// all returned `1234`, the stale-slot echo.
 ///
 /// So there is NO asl byte to compare against, and that is exactly why this
@@ -459,7 +459,7 @@ fn a_packed_string_too_wide_for_its_slot_is_a_range_complaint() {
 ///
 /// THE SECOND ASSERTION IS THE LOAD-BEARING ONE. A refusal must not be routed
 /// as "this is not a string", because the integer path would then pack it and
-/// emit a plausible wrong byte at exit 0 — which is
+/// emit a plausible wrong byte at exit 0, which is
 /// `AS-STRING-PLUS-NUMERIC-CONTEXT` rebuilt one level up. Both the data
 /// directive and the integer slot are checked, because they are different call
 /// sites and only one of them was wired first.
@@ -474,8 +474,8 @@ fn a_string_plus_integer_asl_declines_is_refused_not_guessed() {
         "\tdc.b \"\"+1,$EE",
         // The SUM does not fit four bytes. asl is stable here and still not
         // answering: `"\xff\xff\xff\xff"` plus 1, 2 and 256 gives `00`, `01`
-        // and `FF`, one low byte each, while `"abcde"+1` — the same five-byte
-        // class — gives nothing at all. No rule explains both, and the rule
+        // and `FF`, one low byte each, while `"abcde"+1`, the same five-byte
+        // class, gives nothing at all. No rule explains both, and the rule
         // that explains the four-byte cases explains neither.
         "\tdc.b \"\\xff\\xff\\xff\\xff\"+1,$EE",
         "\tdc.b \"\\xff\\xff\\xff\\xff\"+256,$EE",
@@ -514,7 +514,7 @@ fn a_string_plus_integer_asl_declines_is_refused_not_guessed() {
 ///
 /// It can now. Once `resolve_str_packed` answers for a string symbol, `dc.w S2`
 /// would reach the numeric fold, pack to `6162`, and assemble CLEANLY where asl
-/// writes two zero-extended words — this parcel's own defect class, re-created
+/// writes two zero-extended words. That is this parcel's own defect class, re-created
 /// by its own fix. Every width is checked because the guard is three call
 /// sites, not one.
 #[test]
@@ -573,7 +573,7 @@ fn plus_over_non_strings_stays_numeric() {
 ///
 /// asl settles it by POSITION: it peels the addressing mode before it evaluates
 /// anything. So the same name is a register here and a symbol in an expression,
-/// and the last assertion is the one that keeps the fix honest — `dc.b l` two
+/// and the last assertion is the one that keeps the fix honest: `dc.b l` two
 /// lines below that `:=` is the STRING, and a guard in the string evaluator
 /// would have traded one corpus regression for another.
 ///

@@ -653,7 +653,7 @@ fn build_disp_ea(disp: Expr, inner: &[Token]) -> Option<OperandAtom> {
 ///
 /// MEASURED, and this is why the guard exists rather than being a precaution.
 /// `s2disasm/s2.asm:14504` writes `l := lowstring("char")` inside an `irpc`, so
-/// `l` is a live string-valued symbol for the rest of the assembly — and
+/// `l` is a live string-valued symbol for the rest of the assembly, and
 /// `s2.sounddriver.asm` is Z80 and writes `ld l,(ix+zTrack.Detune)` 148 times.
 /// Without this, the string typing rewrote the REGISTER `l` into the packed
 /// character it was last assigned and s2 gained 24 errors of the shape

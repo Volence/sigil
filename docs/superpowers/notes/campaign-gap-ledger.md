@@ -5123,12 +5123,157 @@ Details, probes and asl's listing lines: `2026-09-12-as-missing-builtins.md`.
 Branch `parcel/as-string-concat`. Probes in `2026-09-12-as-missing-builtins/probes/`, all from the reference asl (md5 `61e672562465725a8c102288a7da9098`) through `asl_run`; the commit bodies on the branch carry every measurement.
 
 - `AS-STRING-PLUS-CONCAT` (above) - **closed in data directives and bindings.** `+` over operands that are all strings concatenates in `eval_str`, so `dc.b`, `set`/`equ` and every string builtin see asl's value (`v_concat_lit`, `v_concat_substr`, `v_concat_chain`, `v_concat`, `v_fn_concat_const`, `signed`). What stays open is the numeric path, the next row.
-- `AS-STRING-PLUS-NUMERIC-CONTEXT` - **silent wrong bytes, pre-existing, OPEN.** An all-string `+` in an INTEGER slot outside the data directives is still the sum of packed codes: `move.w #"a"+"b",d0` is `303C 6162` in asl (concatenate, then pack) and `303C 00C3` in sigil, exit 0 (`v_concat_int_ctx` line 8, master `06620722` and the branch alike). No corpus writes it (a grep of s1disasm, s2disasm, skdisasm, S.C.E. and aeon finds no `"..."+"` anywhere). **Kill:** the numeric evaluator types a string operand, so `+` on two strings concatenates before the value is packed; the same change is the kill for the next row.
-- `AS-STRING-PLUS-INT` - loud, OPEN. A string plus an integer: asl's `dc.b "ab"+1` is `61 63`, packed arithmetic that keeps the string's length, and sigil overflows `dc.b` with a range error. The one-character case agrees (`dc.b "a"+1` is `62` in both, `v_concat_chain`). **Kill:** as above; measure `dc.w`/`dc.l` and the immediate forms before building, because asl's `dc.w X` for a two-character string symbol is one element PER CHARACTER (`0061 0062`, `v_concat_int_ctx` line 6) while `move.w #X,d0` packs (`6162`).
-- `AS-STRING-SYMBOL-INT-SLOT` - loud, pre-existing, OPEN. A string symbol read in an integer slot is refused as unresolved: `Y equ "a"` / `move.w #Y,d0` is `303C 0061` and `dc.b Y+1` is `62` in asl (`v_strsym_int_ctx`); sigil says `unresolved symbol Y`. It is what keeps the next row open. **Kill:** the integer paths read a string symbol as its literal would read (packed code; per character in `dc.w`/`dc.l`, which sigil refuses by name for literals today).
+- `AS-STRING-PLUS-NUMERIC-CONTEXT` - **CLOSED on branch `parcel/as-string-numeric-typing`; see the CLUSTER CLOSURE below the three rows for the whole record.** silent wrong bytes, pre-existing. An all-string `+` in an INTEGER slot outside the data directives is still the sum of packed codes: `move.w #"a"+"b",d0` is `303C 6162` in asl (concatenate, then pack) and `303C 00C3` in sigil, exit 0 (`v_concat_int_ctx` line 8, master `06620722` and the branch alike). No corpus writes it (a grep of s1disasm, s2disasm, skdisasm, S.C.E. and aeon finds no `"..."+"` anywhere). **Kill:** the numeric evaluator types a string operand, so `+` on two strings concatenates before the value is packed; the same change is the kill for the next row.
+- `AS-STRING-PLUS-INT` - **CLOSED, same branch and same change (see CLUSTER CLOSURE). The length rule stated in this row is WRONG and the closure says how.** loud. A string plus an integer: asl's `dc.b "ab"+1` is `61 63`, packed arithmetic that keeps the string's length, and sigil overflows `dc.b` with a range error. The one-character case agrees (`dc.b "a"+1` is `62` in both, `v_concat_chain`). **Kill:** as above; measure `dc.w`/`dc.l` and the immediate forms before building, because asl's `dc.w X` for a two-character string symbol is one element PER CHARACTER (`0061 0062`, `v_concat_int_ctx` line 6) while `move.w #X,d0` packs (`6162`).
+- `AS-STRING-SYMBOL-INT-SLOT` - **CLOSED, same branch and same change (see CLUSTER CLOSURE).** loud, pre-existing. A string symbol read in an integer slot is refused as unresolved: `Y equ "a"` / `move.w #Y,d0` is `303C 0061` and `dc.b Y+1` is `62` in asl (`v_strsym_int_ctx`); sigil says `unresolved symbol Y`. It is what keeps the next row open. **Kill:** the integer paths read a string symbol as its literal would read (packed code; per character in `dc.w`/`dc.l`, which sigil refuses by name for literals today).
 - `AS-STRING-FUNCTION-SET` (above) - **still OPEN, now with a measured reason.** Binding the call's string (expanding the call before the `set`/`equ` string probe) was tried on this branch and reverted: `f function x,"a"` / `Z equ f(1)` / `move.w #Z,d0` / `dc.b Z+1` is `303C 0061` / `62` in asl and on master, because master binds the call's value as an integer, and binding it as a string sends `Z` into `AS-STRING-SYMBOL-INT-SLOT`, where both lines are refused (`v_fn_str_equ_int`). Land that row first. `a_string_valued_function_bound_by_set_is_never_silently_wrong` holds the direction meanwhile (asl's bytes or a refusal) and goes green without an edit when this is built.
 - `AS-FUNCTION-BODY-INTERPOLATION` (above) - **closed.** A parameter inside a body literal is replaced by the argument's value in decimal, parenthesised, whole word by letters and digits (`v_fn_str_body`, `v_fn_paste_value`, `v_fn_word_edges`, `v_fn_interp_only`), and a string-valued call inside an interpolation pastes its string (`v_fn_in_interp`, the shape Sonic 1's two `signedToString` calls use).
 - `AS-FN-PASTE-FLOAT` - loud, OPEN. A float argument pasted into a body literal: asl writes `(2.5000000000000000E+00)` for `fm function n,"n"` / `fm(2.5)` (`v_fn_paste_float`, exit 0); sigil refuses it by name rather than paste another rendering. A string argument there is an asl error (`#1020`, `v_fn_paste_str`) and sigil refuses it too. **Kill:** asl's fixed-exponent float rendering for the paste (not `render_interp_float`, which gives `2.5`); no corpus passes a float to a string-bodied function.
+
+#### CLUSTER CLOSURE, 2026-09-15: `AS-STRING-PLUS-NUMERIC-CONTEXT`, `AS-STRING-PLUS-INT`, `AS-STRING-SYMBOL-INT-SLOT`
+
+**CLOSED on branch `parcel/as-string-numeric-typing`** (`b6f2987b` measurement, `db5b120b` the
+change, `7f9a4be1` + `a2cba32b` + `f36548b9` the tests, `9c4ba7f6` the regression the byte gate
+caught). One root cause, one change: the numeric evaluator now TYPES a string operand. Nothing
+under `golden/`, `pins.rs`, `repin.toml` or `tests/repin_pins.rs` moved.
+
+**MEASURED FIRST**, before a line was built, and the matrix is
+`docs/superpowers/notes/2026-09-15-as-string-numeric-typing.md` with its probes beside it. Pinned
+reference asl (md5 `61e672562465725a8c102288a7da9098`) through `asl_ref.sh`'s `asl_run`, invoked
+`asl_run -xx -n -q -A -L -U -i . <probe>.asm`, every quoted value from a run that exited 0.
+
+**THE LAW IS THREE RULES, and the matrix did NOT need a non-uniform one.**
+
+- **R1 TYPE.** `+` is the ONLY operator that propagates stringness. Every other operator, unary
+  `-` and `~` included, packs a string operand and yields an INTEGER: `dc.w "ab"-1` is `6161`,
+  `"ab"*2` is `C2C4`, `-"ab"` is `9E9E`, `"ab">>8` is `0061`, `~"ab"` is `9E9D`, `"ab"/2` is
+  `30B1`, each ONE word. (`^` is POWER in AS, not xor: `"ab"^1` is `6162`.) So the type turns on
+  the ROOT of the operator tree, not on whether a `+` appears: `dc.w "ab"+1-1` is `6162` (root
+  `-`, an integer) and `dc.w "ab"+(1-1)` is `0061 0062` (root `+`, a string). `split_root_plus`
+  is that test and reads the ladder out of `expr::infix_bp` rather than keeping a second copy.
+- **R2 RENDERING, BY SLOT**, which is the asymmetry the rows warned about and it holds:
+  per character in a data directive (`dc.b "ab"` = `61 62`, `dc.w "ab"` = `0061 0062`,
+  `dc.l "ab"` = `00000061 00000062`), PACKED in an integer slot (`move.w #"ab",d0` = `303C 6162`)
+  and the ABSOLUTE-ADDRESS slot renders identically to the immediate (`move.w "ab",d0` =
+  `3038 6162`; `lea "abcd",a0` = `41F9 6162 6364`).
+- **R3 `+`'s VALUE.** string+string CONCATENATES at any length (`dc.b "abcde"+"f"` is six bytes);
+  string+integer, either order, is packed arithmetic.
+
+**THE LENGTH RULE IN `AS-STRING-PLUS-INT` IS WRONG, and measuring is what caught it.** It says
+"packed arithmetic that keeps the string's length". That is right for every case anyone had tried
+and wrong in general. It is the MINIMAL number of whole bytes THE SUM needs. The discriminator is a
+leading zero byte: `dc.b "\x00a"+1` is ONE byte `62`, not `00 62`, and `dc.b "\x00ab"+1` is
+`61 63`. Nor is it `max(len, needed)`: `dc.b "a"+(0-97)` emits NOTHING (the sum is 0, so the value
+is the EMPTY string) and `dc.b "a"+(-98)` emits `FF FF FF FF`. A negative sum takes all four as the
+32-bit two's complement, measured at -1, -203 and -5070 (`FF FF FF FF`, `FF FF FF 35`,
+`FF FF EC 32`); a carry GROWS it (`dc.b "\xff\xff\xff"+1` is `01 00 00 00`).
+
+The zero case needed its own proof, because "zero bytes, exit 0" is also what a DECLINED shape
+looks like. It is a real empty string: in an integer slot `move.w #"a"+(0-97),d0` raises
+`#1141 expected integer, but got string`, the same as `move.w #"",d0`, on all four runs.
+
+**A STRING SYMBOL IS ITS LITERAL IN EVERY SLOT**, measured cell by cell with `S2 equ "ab"`, so
+`AS-STRING-SYMBOL-INT-SLOT` was a RESOLUTION gap and not a semantics one. `resolve_str_packed`
+answers LAST, after the integer environment, which makes it byte-neutral by construction: the only
+inputs it changes are ones that previously failed to assemble.
+
+**AND THE FIX RE-CREATED THIS CLUSTER'S OWN DEFECT CLASS ONE DIRECTIVE OVER.** Once a string symbol
+resolves, `dc.w S2` would reach the numeric fold, pack to `6162` and assemble CLEANLY where asl
+writes `0061 0062`. `string_leaf` only ever saw a LITERAL, because until now a string with no
+literal in it could not resolve at all. `wide_data_string_refusal` closes it for all three widths,
+so the direction is a LOUDER refusal and never a quieter one. `dc.w S2-1` is deliberately not
+caught: root `-`, so asl gives the single word `6161` and the numeric path now answers it.
+
+**REFUSED RATHER THAN GUESSED**, both shapes where emitting anything means inventing a value and
+calling it asl's. (1) A `string + integer` whose OPERAND or SUM exceeds four bytes. **A NEW
+INSTANCE OF `ASL-SILENT-WRONG-ON-BOTH-BUILDS`, on the REFERENCE build at exit 0:**
+`dc.b "abcde"+1,$EE` emits nothing at all with no diagnostic, `dc.b "abcde"+0,$EE` likewise (so it
+is the PACK that fails, not the sum), `dc.b "abcdefgh"+1,$EE` swallows the `$EE` with it, and five
+runs of `move.w #"abcde"+1,d0` returned `5605`, `0000`, `564D`, `5608`, `55C6`, echoing `1234` when
+an accepted `move.w #$1234,d0` sat above it. The five-BYTE-SUM half is stable and still not an
+answer: `"\xff\xff\xff\xff"` plus 1, 2 and 256 give `00`, `01` and `FF`, one low byte each, while
+`"abcde"+1` in the same class gives nothing. No rule produces both. (2) The same under a
+non-identity `charset`: `charset 'a',$11` gives `dc.b "ab"+1` = `11 63`, so the arithmetic runs on
+the MAPPED bytes, but no probe can say whether asl maps the RESULT bytes a second time and the two
+readings differ in the emitted byte.
+
+**THE BYTE GATE CAUGHT A REAL REGRESSION AND NOTHING ELSE WOULD HAVE**, and it was not the form
+anyone predicted. `s2disasm/s2.asm:14504` writes `l := lowstring("char")` inside an `irpc`, leaving
+`l` a live string-valued symbol for the rest of the assembly, and `s2.sounddriver.asm` is Z80 and
+writes `ld l,(ix+zTrack.Detune)` 148 times. The operand packing rewrote the REGISTER into the
+packed character `l` last held: s2 went from 78 errors to 102, the new ones reading
+`Ld, ops: [Imm8(99), Indexed { reg: Ix, disp: 3 }]`, 99 being `'c'`. All 12 parcel tests were green
+at the time. Fixed at `9c4ba7f6`: `pack_str_operand` leaves any operand carrying a register word
+alone, via `operands::is_operand_register_word`, CPU-keyed in both directions. The guard is
+POSITIONAL because asl's rule is (it peels the addressing mode before evaluating), and deliberately
+NOT in the string evaluator: the same s2 file writes `dc.b l` two lines below the `:=`, where `l`
+IS the string, so a global guard would have traded one corpus regression for another.
+
+**AFTER, and the gate is the reason to believe it.** All SEVEN shipped aeon ROM shapes byte-identical
+between the baseline binary (master `591bbd77`) and this branch, built from the pinned
+`.aeon-sigil-ref` (`ec640bcf`): `sonic4` 820209 B cksum 559008248, `sonic4 --debug` 846509 B
+1708751487, `demo` 96863 B 3777578245, `demo --debug` 103185 B 1080928224, `config-a` 846881 B
+130857782, `config-b` 620727 B 3432467511, `lean` 773136 B 1310839501. The three disassembly
+corpora produce DIAGNOSTICS byte-identical to the baseline binary's, same exit status: s1disasm 4
+lines, s2disasm 82, skdisasm 139. (Those three exit non-zero on both binaries, their port campaigns
+being in flight, so their ROM images are not a comparison and are not offered as one.)
+`.aeon-sigil-ref` porcelain 0 before and after.
+
+**RED ON THE SUBJECT: ten mutations of the committed baseline, each quoted from disk before its
+run, each restored to a clean tree.** (1) the operand packing removed, (2) string+integer falling
+back to the numeric path, (3) the length taken from the string instead of the sum, (4)
+`resolve_str_packed` dropped from `fold`, (5) the predecessor's split-at-the-first-`+`, (6) the
+wide-data guard blinded, (7) a `Refuse` routed as "not a string", (8) two non-strings under a `+`
+made string-typed, (9) `MAX_PACKED_CHARS` widened to 8, (10) the register guard removed, which
+reproduces the exact s2 signature `Imm8(99)`.
+
+**MUTATION 9 FIRST STAYED GREEN, and that was a defect in the test rather than a pass.** Widening
+the window leaves `move.w #"abcde",d0` refused anyway, by the immediate's RANGE check instead of
+asl's #1141, and no test could tell the two apart. Repaired at `a2cba32b`, which also gave the
+product the words: a 0- or 5+-character LITERAL in an integer slot said "bad immediate expression",
+accurate about the parse and silent about the cause.
+
+**A SECOND SELF-CORRECTION, for the record, because the note carried it first.** The first draft
+read `dc.b "\xff\xff\xff\xff"+1,$EE` as emitting only the `$EE`. It emits `00 EE`. The first
+implementation wrapped the sum to 32 bits and reproduced that misreading exactly;
+`the_length_is_the_sums_minimal_bytes_not_the_strings` went red on the one byte. The repair was not
+to widen the window but to refuse the region, for the reason given above.
+
+WHAT STAYS OPEN, each of them loud, none of them a byte anyone writes:
+
+- `AS-STRING-WIDE-DATA-PER-CHAR` - `dc.w`/`dc.l`/`dw` still refuse a string-typed operand by name
+  (`STRING_IN_WIDE_DATA`) instead of emitting one zero-extended element per character
+  (`dc.w "ab"` is `0061 0062`, `dc.l "ab"` is `00000061 00000062`). Unchanged by this parcel except
+  that the refusal now also covers the string-SYMBOL form, which previously said `unresolved
+  symbol`. **Kill:** emit per character at both widths; the code page is a consumer on day one
+  (asl translates each character, so `dc.w "AB"` under `charset 'A',$11` is `0011 0042`).
+- `AS-STRING-PLUS-INT-CHARSET` - `string + integer` under a non-identity code page is refused
+  rather than answered, because the probe cannot decide whether asl maps the RESULT bytes a second
+  time. **Kill:** a code page whose output byte is itself a mapped input character discriminates
+  it in one probe; no corpus writes a string in an arithmetic expression at all.
+- `ASL-STRING-PLUS-INT-OVERWIDE` - not ours to fix, booked as a measured instance of
+  `ASL-SILENT-WRONG-ON-BOTH-BUILDS` so the next reader does not mistake its stability for an
+  answer. Figures above.
+- `AS-STRING-SYM-DCB-Z80` - PRE-EXISTING and measured identical on the baseline binary: `dc.b l`
+  with `l := "c"` emits `63` under `cpu 68000` and is refused `bad byte expression` under
+  `cpu z80undoc`. The data path reads the Z80 register spelling as a register where asl reads the
+  symbol. Found while writing the register regression test; not touched here, the parcel's guard
+  being about OPERAND position.
+- `AS-STRING-COMPUTED-COMPARISON-LHS` - `dc.w "ab"+1="ab"` is `0000` in asl (the comparison is
+  tier 1, so the root is `=` and the value is an INTEGER, and it compares the STRING `"ac"` against
+  `"ab"`). sigil refuses it with `STRING_IN_WIDE_DATA`, identical before and after this parcel:
+  `expand_str_comparisons` finds a comparison's LHS through `trailing_str_expr_len`, which accepts
+  a literal or a call but not a `+` expression. Loud. **Kill:** let that LHS scan accept a
+  string-typed expression, now that `eval_str_typed` can answer what one is.
+- `AS-STRING-PLUS-UNFOLDABLE-INT` - `"ab"+FWD`, where the integer side has no value yet (a forward
+  reference, a shape `fold_const` declines), answers "not a string" and takes the path it took
+  before this parcel rather than inventing one. In the one-character case that path agrees with
+  asl; the multi-character case would be a `dc.b` range refusal. No corpus writes it.
+- `AS-STRING-FUNCTION-SET` - the row below predicted its test would go green without an edit once
+  this landed. **VERIFY IT AGAINST THE SUITE RUN RATHER THAN THIS SENTENCE**, and do not read a
+  green `a_string_valued_function_bound_by_set_is_never_silently_wrong` as the row being closed:
+  that test holds the DIRECTION (asl's bytes or a refusal), so it is satisfied by a refusal too.
+  Deliberately not attempted here, per the parcel's scope.
 
 ### 2026-09-13, `CYCLES-AMBIGUOUS-LIST-WRONG`: what the timing-message fix found and did not fix
 
