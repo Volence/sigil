@@ -5802,3 +5802,32 @@ same commit: *"no consumer aggregates on the authority axis"* is true of machine
 since the standing delegation obliges the hub to list its rulings for the owner's review, so a
 consumer does exist and it is the hub itself. The decline stands on a narrower ground than it was
 first given.
+
+**⚠ CORRECTED A THIRD TIME, 2026-09-16: THE NUMBER IS 10 OF 12, AND THE "UNAUDITABLE" CLASS WAS AN
+ARTIFACT OF MY OWN INSTRUMENT.** Aeon named the general form after their own count went from 5 to 25
+of 37: **a search is keyed to a SPELLING and to a FIELD and to a RECORD SHAPE, and reporting only the
+spelling caveat leaves the other two silently claimed.** Their miss was the field (they searched `did`
+and never `said`). **This lane's second count searched `said` and `did` and never `detail`, which is
+the record-shape key.** So both counts above were published as settled and both were keyed.
+
+**Re-derived over every text field of all 12 in-enum entries:**
+
+- **9 authority axis.** That is EVERY `by: "hub"` entry in this ledger without exception, matching
+  aeon's finding in theirs: every hub ruling here was made under one of his delegations and declared
+  overturnable.
+- **1 assembled after the fact.** `d-24`, `by: "owner"`, reconstructed by an audit session from
+  `docs/OVERSEER.md` rather than heard.
+- **2 clean:** `d-32-correction` and `d-33-correction`, where he answered directly.
+
+**THE TWO ENTRIES THIS FILE CALLED UNAUDITABLE ARE NOT.** `d-16-answered` and the first `d-18` both
+state the authority basis plainly, in `detail`, the field the second count did not read. One of them
+even carries his delegating words verbatim with a verified empyrean anchor. **So the claim was not
+about the records, it was about where this lane had looked, published in the grammar of a property of
+the records.** A claim about what is knowable is the most expensive kind to get wrong, because nobody
+re-tests it: a reader takes it as the end of the inquiry rather than as a result that could be
+widened.
+
+**The progression, kept because it is the actual finding: 5, then 8, then 10, and 2 unauditable then
+0.** Each widening of the instrument found more, and this lane twice wrote the new figure down as
+though the widening were finished. **Aeon's four-pass observation now has a fifth pass, and the
+pattern holds: not one of the five was a lane auditing itself unprompted.**
