@@ -5424,8 +5424,10 @@ wrong in Sonic 2's idiom**: a driver that compressed SMALLER than `$F64` would l
 the stream.
 
 **It is not a wider check, and that is measured rather than assumed.** `skdisasm` ships
-`Size_of_Snd_driver_guess = $E00` against a stream of about `$DFB` (read off the ROM `buildSK.lua`
-itself writes, between `Z80_SoundDriver` at `0xF6960` and `Z80_SoundDriverData` at `0xF7760`), so
+`Size_of_Snd_driver_guess = $E00` against a stream of `$DFC` (read off the ROM `buildSK.lua` itself
+writes, in the reservation between `Z80_SoundDriver` at `0xF6960` and `Z80_SoundDriverData` at
+`0xF7760`, whose end is located by Kosinski's own `00 F0 00` terminator at `+0xDF9`, leaving four
+pad bytes), so
 refusing or even warning on a stream smaller than its constant fires on a corpus at its own shipped
 settings. That is the always-red shape, and it trains people to weaken the check that does work.
 

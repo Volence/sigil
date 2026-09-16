@@ -151,8 +151,10 @@ same refusal moved from the gap to the constant.
 ### The asymmetry, and why it is not a symmetric check
 
 `skdisasm`'s `Size_of_Snd_driver_guess` is `$E00` and the Kosinski stream in the
-ROM `buildSK.lua` itself writes runs to about `$DFB` (read off `skbuilt.bin`
-between `Z80_SoundDriver` at `0xF6960` and `Z80_SoundDriverData` at `0xF7760`).
+ROM `buildSK.lua` itself writes is `$DFC` (read off `skbuilt.bin` in the
+reservation between `Z80_SoundDriver` at `0xF6960` and `Z80_SoundDriverData` at
+`0xF7760`; its end is located by Kosinski's own `00 F0 00` terminator at
+`+0xDF9`, not by guessing from trailing zeros, and four pad bytes follow it).
 **Refusing or even warning on a stream smaller than its constant would fire on a
 corpus at its shipped settings**, which is the always-red shape: a check that
 fires on correct code trains people to weaken the check that works. So the
