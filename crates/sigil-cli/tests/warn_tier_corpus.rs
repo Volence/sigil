@@ -948,6 +948,22 @@ fn debug_shape_sr_writes_are_author_checked() {
                      synthesis emits no instructions today, and no obligation home exists \
                      for one that writes SR; build the receiving contract before shipping it"
                 ),
+                // `ContextSlot` is TRANSIENT by construction (d-33): `lower_with`
+                // marks a bracket argument's items so the two definition-site
+                // checks can tell the consumer's slot code from the context
+                // author's acquire, then `normalize_context_slots` turns every one
+                // of them back into `User` before that function returns. Seeing one
+                // HERE, in a corpus walk over finished buffers, means the
+                // normalization was skipped on some path and the consumer's slot
+                // code is wearing an author no downstream rule was taught. That is
+                // a compiler defect, not a corpus finding, and the whole claim that
+                // slot code is charged to the consumer rests on it, so it panics
+                // rather than being folded in with `User`.
+                ItemAuthor::ContextSlot { context, param } => panic!(
+                    "`{label}`: a ContextSlot-authored SR write in `{proc}` (context \
+                     `{context}`, parameter `{param}`). That author must never survive \
+                     `lower_with`; `normalize_context_slots` did not reach it"
+                ),
             }
         }
     }
