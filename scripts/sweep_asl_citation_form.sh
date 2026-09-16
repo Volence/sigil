@@ -20,8 +20,23 @@
 #
 # Exit 0 always: this reports a population, it is not a gate. Wiring it as a gate
 # would need a red-first proof and a derived expectation, neither of which exists.
+#
+# TWO THINGS ABOUT THIS WORKSPACE THAT THIS SCRIPT DEPENDS ON.
+#   * `grep` here is ugrep (7.8.4), not GNU grep. Everything below sticks to flags
+#     the two agree on (-c, -l, -x, -v and basic regex). Do not reach for a GNU
+#     extension without checking it against `grep --version` on the box.
+#   * Run it BY PATH (`./scripts/sweep_asl_citation_form.sh`). Invoking it through
+#     process substitution (`bash <(git show HEAD:...)`) makes `$0` a /dev/fd entry,
+#     the `cd` below lands outside the repo, and every count comes back 0. The
+#     positive control catches that and refuses to print the population, which is
+#     the control doing its job rather than a finding about the tree.
 set -uo pipefail
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/.." || { echo "cannot reach the repo root from \$0=$0; run this by path, not through process substitution" >&2; exit 0; }
+if [ ! -d docs/superpowers/notes ]; then
+    echo "NOT IN THE SIGIL REPO ROOT (pwd=$(pwd)); every count below would be a vacuous zero." >&2
+    echo "Run it as ./scripts/sweep_asl_citation_form.sh from anywhere in a sigil checkout." >&2
+    exit 0
+fi
 
 BANNER='Bld 212\|1\.42 Beta'
 MD5S='61e672562465725a8c102288a7da9098\|0dee1f98e6480a4783d27ffd8b90896f'

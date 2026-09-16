@@ -29,9 +29,19 @@ instance is `2026-09-05-disp-or-call-probes/README.md`, which reconstructs a not
 never committed, and which names both binaries by md5 precisely because the banner cannot separate
 them.
 
-**Population, from `scripts/sweep_asl_citation_form.sh` at `946e83c9`: 51 notes cite the banner, 79
-cite an identifying md5, and 22 cite the banner and never an md5.** The 22 are listed by the script
-rather than transcribed here, so the list cannot rot away from the instrument that produces it.
+**Population, from `scripts/sweep_asl_citation_form.sh`: at `946e83c9`, 51 notes cited the banner, 79
+cited an identifying md5, and 22 cited the banner and never an md5.** The list is printed by the
+script rather than transcribed here, so it cannot rot away from the instrument that produces it.
+
+**THE FIGURES ARE A FUNCTION OF THE NOTES DISCUSSING THE DEFECT, INCLUDING THIS ONE, SO THE SCRIPT
+IS THE AUTHORITY AND THESE NUMBERS ARE A SNAPSHOT.** Committing this note moved the count from 22 to
+23, because the paragraph above quotes the banner while the first draft cited no md5: **the note
+documenting the defect became an instance of it, inside the commit that documented it.** The md5s
+are now cited here (`61e672562465725a8c102288a7da9098` reference,
+`0dee1f98e6480a4783d27ffd8b90896f` varying, from `asl-reference/README.md`), which takes this file
+back out of the population. `engine/z80_bus.emp`'s census header in the aeon tree carries the same
+warning from its own parcel, so this is a known class rather than a surprise: a count partly derived
+from the document stating it moves whenever that document is edited.
 
 ## What this sweep does NOT establish, stated so its silence is not read as coverage
 
