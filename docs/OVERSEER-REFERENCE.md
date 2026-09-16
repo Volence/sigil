@@ -1786,6 +1786,40 @@ was untouched.
 agreement forever.** Before believing any comparison, ask what the population actually contains of
 the thing being compared. A file count is not a byte count.
 
+### SWITCH-SETTING-SILENT-ROMS: THE FAULTS, AND THE SHAPE OF THE FIX (2026-09-16)
+
+Read before starting `SWITCH-SETTING-SILENT-ROMS` or `SWITCH-MATRIX-SWEEP`. The row on the board
+carries one or two sentences under contract rule 7; the working detail is here, which is where that
+rule says it goes.
+
+**The measurement is `docs/superpowers/notes/2026-09-16-as-corpus-census.md`, Q5**, landed at
+`3704df29`. Eleven flips of switches the corpora themselves offer, three distinct faults:
+
+1. **The ROM header checksum at `0x18E`, both corpora, silent.** The source hardcodes it and
+   `build.lua`'s `fix_header` rewrites it from the 16-bit sum of big-endian words from `0x200`. At
+   the shipped settings the literal already IS that sum, which is the only reason byte identity
+   holds. Reproduced at the overseer seat: s1 `CheatsEnabled = 1` needs `BF37`, sigil writes
+   `AFC7`, exit 0, zero diagnostics.
+2. **Sonic 2's compressed-driver size immediate, silent.** With `fixBugs=1` the driver is `0xF88`
+   against `Size_of_Snd_driver_guess = $F64`, and sigil has no `-c` and writes no share file, so
+   `build.lua` finds no `movewZ80CompSize` and skips its patch without a word.
+3. **One loud class (b) row**, s1 `FixBugs=1`: sigil refuses `move.w (v_limitright2),d0` that asl
+   assembles.
+
+**THE FIX SHAPE, AND IT IS NOT A LONGER LIST.** The hub banked this as mechanism (3), a TRUE result
+whose GENERALITY is assumed: nothing has rotted and no test is lying, what is missing is a sampled
+DOMAIN. Verified here at empyrean `origin/main` `43f0604d`,
+`docs/OVERSEER-PROTOCOL-REFERENCE.md`, the three-mechanism table; read it there. The remedy is the
+one this lane built the same morning in `MUL-ORACLE-CORPUS-DERIVED`: **do not widen the list, make
+the executed domain BE the accepted domain.** For the sweep that means deriving the switch set from
+the corpus sources rather than typing one out, so the set exercised cannot drift from the set the
+corpora offer.
+
+**And the reason this block exists rather than a longer board row: this seat put the pointer in the
+row's `title` and blew contract rule 7's 240-character bound on four rows at once**, the longest at
+470, one of them grown from 131 to 255 in the same write. The board is a payload every lane's
+console read pulls, so detail there is not free, and rule 7 already says where detail goes.
+
 ### DISPATCHING CONSUMES THE `next` ROW, AND NOTHING IN THE ACT PROMPTS YOU TO REFILL IT (2026-09-16)
 
 Read at the moment you move a row to `doing`.
@@ -4150,6 +4184,8 @@ shortened to move it.** None of these changes what a session does FIRST; each is
   defect*.
 - **Moving a queue row to `doing`** - *dispatching consumes the `next` row, and nothing in the act
   prompts you to refill it*, including the clause that refuses the vacuous successor.
+- **Starting `SWITCH-SETTING-SILENT-ROMS` or `SWITCH-MATRIX-SWEEP`** - *the faults, and the shape of
+  the fix*: three measured faults and why the remedy is a derived domain rather than a longer list.
 - **Writing a citation into source** - *cite the artefact that can break, not the session that
   asked*.
 - **Building a guard** - *the pin failed in the exact way the pin existed to prevent*, including the

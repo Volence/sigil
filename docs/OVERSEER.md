@@ -612,6 +612,7 @@ under that cut's heading.
 
 - **Writing a queue row's title**: *AND A ROW'S TITLE* (ref).
 - **Moving a queue row to `doing`**: *DISPATCHING CONSUMES THE `next` ROW* (ref).
+- **Starting `SWITCH-SETTING-SILENT-ROMS` or `SWITCH-MATRIX-SWEEP`**: *THE FAULTS, AND THE SHAPE OF THE FIX* (ref).
 - **Filing a row as blocked, or reading a row that says it is**: *A BLOCKER IS A CLAIM* (ref).
 - **Writing the reason for an edit to a record, or filing anything as blocked on the owner**: *A
   CORRECT ACTION CARRYING A WRONG RATIONALE* (ref).
