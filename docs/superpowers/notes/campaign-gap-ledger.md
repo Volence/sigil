@@ -5787,3 +5787,18 @@ each of us was rigorous exactly where we were the author and blind exactly where
 They verified this lane's SHA properly and then reported their own sweep clean without asking what it
 had tested; this lane checked the reader firsthand and then published a prose-matched count as a
 population. **None of the three passes was a lane being careful about itself.**
+
+**THE 8c/8g TENSION IS CLOSED, so nobody re-raises it.** Banked by the hub in 8g at empyrean
+`beadba3`, verified here as an ancestor of their `origin/main` and as the commit that CHANGED
+`contract/DECISIONS.md` rather than one merely containing it. The discriminator is written into the
+rule at `:486`: **`outcome` was the SOLE carrier of its information, so dropping it lost the fact,
+while `via` is ADDITIVE beside a `did` that still carries the same provenance in prose.** A dropped
+`via` degrades to today's state; a dropped `outcome` degraded to no record at all. **So the test is
+not whether the reader will drop a key, but whether that key is the only thing carrying its fact.**
+
+**`via` is therefore safe to write here from now on**, and the earlier caution in this entry that a
+lane meeting 8c first would conclude otherwise is spent. The hub also narrowed its own reason in the
+same commit: *"no consumer aggregates on the authority axis"* is true of machine consumers only,
+since the standing delegation obliges the hub to list its rulings for the owner's review, so a
+consumer does exist and it is the hub itself. The decline stands on a narrower ground than it was
+first given.
