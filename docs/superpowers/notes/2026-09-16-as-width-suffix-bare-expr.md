@@ -54,7 +54,7 @@ behind it is measured for the first time.
 
 | Instrument | Identity |
 |---|---|
-| sigil | built from `132fdce1` (this branch) with `CARGO_TARGET_DIR=/home/volence/sonic_hacks/.scratch/width-suffix/target`. md5 `fc8ff6ab5f436e483afb6010c400f6f0`, `--version` `132fdce1`. The branch's later commit `a49f86b7` changes only `scripts/`, which is not compiled, so this binary is the binary for every figure here. |
+| sigil | every figure here was measured with the binary built from `132fdce1`, md5 `fc8ff6ab5f436e483afb6010c400f6f0`, `--version` `132fdce1`, `CARGO_TARGET_DIR=/home/volence/sonic_hacks/.scratch/width-suffix/target`. The branch tip is later than that and the difference is stated rather than waved past: `a49f86b7` and `1f4ae2c5` change only `scripts/` and `docs/`, which are not compiled, `4e26f122` is rustfmt on a test file, and `a1a62575` moves a doc comment in `eval.rs` between two functions. That last one recompiles, so the tip binary has a different digest (md5 `bd78436136373827c96ff481ed2676b8`) and no different behaviour: the three whole-file asl differentials below were RE-RUN against it and came back at the same three CRC32s. |
 | asl | `s1disasm/build_tools/Linux-x86_64/asl`, md5 `61e672562465725a8c102288a7da9098`, the reference build pinned by `docs/superpowers/notes/asl-reference/asl_ref.sh`. Every probe invoked through `asl_run`; every listing quoted below came from a run reporting `ASL_EXIT=0` and `ASL_DIAG=complete`. |
 | p2bin | `s1disasm/build_tools/Linux-x86_64/p2bin`, beside that asl. |
 | corpora | `s1disasm f6ece657`, `s2disasm e45ebf332`, extracted read-only by `git archive` into scratch. The shared checkouts were never written to. |
