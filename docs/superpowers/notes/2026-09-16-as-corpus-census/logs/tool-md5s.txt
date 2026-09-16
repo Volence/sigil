@@ -1,0 +1,31 @@
+# every instrument, by md5, as used by this parcel
+## sigil, built from 72aca2e2 with CARGO_TARGET_DIR in this parcel's scratch
+878ed5704aac873f47290b7b1a9524c9  /home/volence/sonic_hacks/.scratch/as-corpus-census/target/release/sigil
+## corpus toolchains (from the git-archive extracted trees, so these are the tracked blobs)
+61e672562465725a8c102288a7da9098  /home/volence/sonic_hacks/.scratch/as-corpus-census/trees/s1disasm-luaref/build_tools/Linux-x86_64/asl
+b06b8f30ac22e2e0148f2888706d7a5f  /home/volence/sonic_hacks/.scratch/as-corpus-census/trees/s1disasm-luaref/build_tools/Linux-x86_64/as.msg
+4831504216367be063bbd5ca60458650  /home/volence/sonic_hacks/.scratch/as-corpus-census/trees/s1disasm-luaref/build_tools/Linux-x86_64/cmdarg.msg
+8abd3465fbf0c20976f3e3df512dcd12  /home/volence/sonic_hacks/.scratch/as-corpus-census/trees/s1disasm-luaref/build_tools/Linux-x86_64/ioerrs.msg
+4f2fff99c3347bafb93b12d5be1db754  /home/volence/sonic_hacks/.scratch/as-corpus-census/trees/s1disasm-luaref/build_tools/Linux-x86_64/p2bin
+0dee1f98e6480a4783d27ffd8b90896f  /home/volence/sonic_hacks/.scratch/as-corpus-census/trees/s2disasm-luaref/build_tools/Linux-x86_64/asl
+afe3933e5e9d0dfaa498f2a247205f15  /home/volence/sonic_hacks/.scratch/as-corpus-census/trees/s2disasm-luaref/build_tools/Linux-x86_64/as.msg
+25bcbdf81e5cc96becec8dd29e4e3c9b  /home/volence/sonic_hacks/.scratch/as-corpus-census/trees/s2disasm-luaref/build_tools/Linux-x86_64/cmdarg.msg
+90829aac018f36ed21af7b7b12a670d1  /home/volence/sonic_hacks/.scratch/as-corpus-census/trees/s2disasm-luaref/build_tools/Linux-x86_64/ioerrs.msg
+4f2fff99c3347bafb93b12d5be1db754  /home/volence/sonic_hacks/.scratch/as-corpus-census/trees/s2disasm-luaref/build_tools/Linux-x86_64/p2bin
+704e5c8c361b9959f45bac3e803f0033  /home/volence/sonic_hacks/.scratch/as-corpus-census/trees/s2disasm-luaref/build_tools/Linux-x86_64/saxman
+## lua
+Lua 5.5.1  Copyright (C) 1994-2026 Lua.org, PUC-Rio
+6c07a63a91719d9b42a76b2c342efedc  /usr/bin/lua
+## python3
+Python 3.14.7 (main, Aug 13 2026, 07:40:04) [GCC 16.2.1 20260810]
+## corpus revisions
+s1disasm f6ece657c1cf253404312137dfcb8ec15fa42318
+s2disasm e45ebf332f39987424ca3102e50c717628f71269
+skdisasm 2fcd861c208f342b6d14df694c6422c74f20a4be
+## reference ROMs built here
+09dadb5071eb35050067a32462e39c5f  /home/volence/sonic_hacks/.scratch/as-corpus-census/trees/s1disasm-luaref/s1built.bin
+9feeb724052c39982d432a7851c98d3e  /home/volence/sonic_hacks/.scratch/as-corpus-census/trees/s2disasm-luaref/s2built.bin
+9feeb724052c39982d432a7851c98d3e  /home/volence/sonic_hacks/.scratch/as-corpus-census/trees/s2disasm-stubC-luaref/s2built.bin
+crc32=afe05eee size=524288 /home/volence/sonic_hacks/.scratch/as-corpus-census/trees/s1disasm-luaref/s1built.bin
+crc32=7b905383 size=1048576 /home/volence/sonic_hacks/.scratch/as-corpus-census/trees/s2disasm-luaref/s2built.bin
+crc32=7b905383 size=1048576 /home/volence/sonic_hacks/.scratch/as-corpus-census/trees/s2disasm-stubC-luaref/s2built.bin

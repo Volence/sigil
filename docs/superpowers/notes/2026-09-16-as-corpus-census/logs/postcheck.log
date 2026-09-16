@@ -1,0 +1,16 @@
+== Sonic 1 (no header file, no amend step; fix_header only)
+   asl md5 61e672562465725a8c102288a7da9098   p2bin md5 4f2fff99c3347bafb93b12d5be1db754
+Uncompressed driver size: 1BC6h bytes.
+   ASL_EXIT=0
+   no sonic.log: asl emitted no diagnostics
+   P2BIN_EXIT=0
+   p2bin RAW output: md5 09dadb5071eb35050067a32462e39c5f size 524288
+== Sonic 2 (-c header file, amend_sound_driver_size + fix_header)
+   asl md5 0dee1f98e6480a4783d27ffd8b90896f   p2bin md5 4f2fff99c3347bafb93b12d5be1db754
+ROM size is $100000 bytes (1024 KiB). About $661 bytes are padding. 
+   ASL_EXIT=0
+   no s2.log: asl emitted no diagnostics
+   P2BIN_EXIT=0
+   share file after p2bin: comp_z80_size 0xF64 le for C Program */#define movewZ80CompSize 0xEC04E/* Ende
+   p2bin RAW output: md5 9feeb724052c39982d432a7851c98d3e size 1048576
+POSTCHECK_END

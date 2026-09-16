@@ -1,0 +1,23 @@
+### Sonic 1: reference vs sigil (pristine + build.lua pre-steps, build.lua's p2bin line)
+REFERENCE /home/volence/sonic_hacks/.scratch/as-corpus-census/trees/s1disasm-luaref/s1built.bin crc32=afe05eee size=524288
+CANDIDATE /home/volence/sonic_hacks/.scratch/as-corpus-census/runs/s1-gen-instr/image.bin crc32=afe05eee size=524288
+SIZE EQUAL
+DIFF 0 bytes in 0 runs
+CONTROL planted at ['0x200', '0x40000', '0x7fffe'] -> 3 bytes in 3 runs, offsets ['0x200', '0x40000', '0x7fffe']
+CONTROL PASSED: the comparer reports planted differences
+
+### Sonic 2: reference vs sigil (pristine + build.lua pre-steps, build.lua's p2bin line)
+REFERENCE /home/volence/sonic_hacks/.scratch/as-corpus-census/trees/s2disasm-luaref/s2built.bin crc32=7b905383 size=1048576
+CANDIDATE /home/volence/sonic_hacks/.scratch/as-corpus-census/runs/s2-gen-instr/image.bin crc32=7b905383 size=1048576
+SIZE EQUAL
+DIFF 0 bytes in 0 runs
+CONTROL planted at ['0x200', '0x80000', '0xffffe'] -> 3 bytes in 3 runs, offsets ['0x200', '0x80000', '0xffffe']
+CONTROL PASSED: the comparer reports planted differences
+
+### Sonic 2: reference vs sigil on the census's stub C tree
+REFERENCE /home/volence/sonic_hacks/.scratch/as-corpus-census/trees/s2disasm-luaref/s2built.bin crc32=7b905383 size=1048576
+CANDIDATE /home/volence/sonic_hacks/.scratch/as-corpus-census/runs/s2-stubC-instr/image.bin crc32=7b905383 size=1048576
+SIZE EQUAL
+DIFF 0 bytes in 0 runs
+CONTROL planted at ['0x200', '0x80000', '0xffffe'] -> 3 bytes in 3 runs, offsets ['0x200', '0x80000', '0xffffe']
+CONTROL PASSED: the comparer reports planted differences

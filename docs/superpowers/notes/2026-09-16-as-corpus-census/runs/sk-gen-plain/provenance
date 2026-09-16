@@ -1,0 +1,5 @@
+sigil md5: 878ed5704aac873f47290b7b1a9524c9
+tree: /home/volence/sonic_hacks/.scratch/as-corpus-census/trees/skdisasm-gen
+root: sonic3k.asm
+args: 
+uptime:  02:12:36 up  6:29,  1 user,  load average: 2.73, 2.96, 4.15

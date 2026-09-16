@@ -1,0 +1,5 @@
+sigil md5: 878ed5704aac873f47290b7b1a9524c9
+tree: /home/volence/sonic_hacks/.scratch/as-corpus-census/trees/s1disasm-gen
+root: sonic.asm
+args: -p=FF -z=0,kosinski,Size_of_DAC_driver_guess,after
+uptime:  02:05:24 up  6:22,  1 user,  load average: 3.13, 3.73, 5.02

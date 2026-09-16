@@ -1,0 +1,68 @@
+   was: 'Revision = 1'
+   now: 'Revision = 0'
+== s1-rev00 : sonic.asm:14
+   on disk: Revision = 0
+   SIGIL_EXIT=0
+   BUILDLUA_EXIT=0
+   REFERENCE /home/volence/sonic_hacks/.scratch/as-corpus-census/trees/flip-s1-rev00/s1built.bin crc32=f9394e97 size=524288
+   CANDIDATE /home/volence/sonic_hacks/.scratch/as-corpus-census/trees/flip-s1-rev00/sigil.bin crc32=f9394e97 size=524288
+   SIZE EQUAL
+   DIFF 0 bytes in 0 runs
+   CONTROL planted at ['0x200', '0x40000', '0x7fffe'] -> 3 bytes in 3 runs, offsets ['0x200', '0x40000', '0x7fffe']
+   CONTROL PASSED: the comparer reports planted differences
+
+   was: 'CheatsEnabled = 0'
+   now: 'CheatsEnabled = 1'
+== s1-cheats : sonic.asm:24
+   on disk: CheatsEnabled = 1
+   SIGIL_EXIT=0
+   BUILDLUA_EXIT=0
+   REFERENCE /home/volence/sonic_hacks/.scratch/as-corpus-census/trees/flip-s1-cheats/s1built.bin crc32=ac362f3d size=524288
+   CANDIDATE /home/volence/sonic_hacks/.scratch/as-corpus-census/trees/flip-s1-cheats/sigil.bin crc32=1281cbd4 size=524288
+   SIZE EQUAL
+   DIFF 2 bytes in 1 runs
+     [0x00018E,0x000190) ref bf 37 cand af c7
+   CONTROL planted at ['0x200', '0x40000', '0x7fffe'] -> 5 bytes in 4 runs, offsets ['0x18e', '0x200', '0x40000', '0x7fffe']
+   CONTROL PASSED: the comparer reports planted differences
+
+   was: 'EnableSRAM = 0'
+   now: 'EnableSRAM = 1'
+== s1-sram : sonic.asm:37
+   on disk: EnableSRAM = 1
+   SIGIL_EXIT=0
+   BUILDLUA_EXIT=0
+   REFERENCE /home/volence/sonic_hacks/.scratch/as-corpus-census/trees/flip-s1-sram/s1built.bin crc32=649236ea size=524288
+   CANDIDATE /home/volence/sonic_hacks/.scratch/as-corpus-census/trees/flip-s1-sram/sigil.bin crc32=649236ea size=524288
+   SIZE EQUAL
+   DIFF 0 bytes in 0 runs
+   CONTROL planted at ['0x200', '0x40000', '0x7fffe'] -> 3 bytes in 3 runs, offsets ['0x200', '0x40000', '0x7fffe']
+   CONTROL PASSED: the comparer reports planted differences
+
+   was: 'useFullWaterTables = 0'
+   now: 'useFullWaterTables = 1'
+== s2-water : s2.asm:49
+   on disk: useFullWaterTables = 1
+   SIGIL_EXIT=0
+   BUILDLUA_EXIT=0
+   REFERENCE /home/volence/sonic_hacks/.scratch/as-corpus-census/trees/flip-s2-water/s2built.bin crc32=bbaffa38 size=1048576
+   CANDIDATE /home/volence/sonic_hacks/.scratch/as-corpus-census/trees/flip-s2-water/sigil.bin crc32=a300293c size=1048576
+   SIZE EQUAL
+   DIFF 2 bytes in 1 runs
+     [0x00018E,0x000190) ref c9 46 cand d9 51
+   CONTROL planted at ['0x200', '0x80000', '0xffffe'] -> 5 bytes in 4 runs, offsets ['0x18e', '0x200', '0x80000', '0xffffe']
+   CONTROL PASSED: the comparer reports planted differences
+
+   was: 'padToPowerOfTwo = 1'
+   now: 'padToPowerOfTwo = 0'
+== s2-nopad : s2.asm:24
+   on disk: padToPowerOfTwo = 0
+   SIGIL_EXIT=0
+   BUILDLUA_EXIT=0
+   REFERENCE /home/volence/sonic_hacks/.scratch/as-corpus-census/trees/flip-s2-nopad/s2built.bin crc32=dd0ebd72 size=1048556
+   CANDIDATE /home/volence/sonic_hacks/.scratch/as-corpus-census/trees/flip-s2-nopad/sigil.bin crc32=dd0ebd72 size=1048556
+   SIZE EQUAL
+   DIFF 0 bytes in 0 runs
+   CONTROL planted at ['0x200', '0x7fff6', '0xfffea'] -> 3 bytes in 3 runs, offsets ['0x200', '0x7fff6', '0xfffea']
+   CONTROL PASSED: the comparer reports planted differences
+
+SWITCHFLIP2_END

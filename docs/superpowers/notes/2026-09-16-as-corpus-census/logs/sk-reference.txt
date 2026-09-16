@@ -1,0 +1,4 @@
+skdisasm reference, buildSK.lua run unmodified in a copy:
+4ea493ea4e9f6c9ebfccbdb15110367e  /home/volence/sonic_hacks/.scratch/as-corpus-census/trees/skdisasm-luaref/skbuilt.bin
+crc32=0658f691 size=2097152
+skdisasm rev: 2fcd861c208f342b6d14df694c6422c74f20a4be

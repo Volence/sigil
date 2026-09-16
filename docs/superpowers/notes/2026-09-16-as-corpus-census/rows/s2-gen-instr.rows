@@ -1,0 +1,1 @@
+s2.asm(91275):2: warning: `shared` is ignored: sigil writes no share file (asl without `-c` says "no sharefile created, SHARED ignored")

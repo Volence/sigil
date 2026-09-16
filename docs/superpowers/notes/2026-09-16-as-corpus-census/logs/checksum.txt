@@ -1,0 +1,15 @@
+# the ROM header checksum at 0x18E: the 16-bit sum of the big-endian words from 0x200,
+# against the word the source assembles there. The source hardcodes it
+# (s2.asm:169  dc.w $D951  ; Checksum (patched later if incorrect);
+#  sonic.asm:175-180  if Revision=0 / dc.w $264A / else / dc.w $AFC7 / endif)
+# and build.lua's fix_header rewrites it. sigil writes neither and says nothing.
+s1 shipped switches, reference   sum(0x200..)=AFC7  header@0x18E=AFC7  MATCH
+s1 shipped switches, sigil       sum(0x200..)=AFC7  header@0x18E=AFC7  MATCH
+s1 CheatsEnabled=1, reference    sum(0x200..)=BF37  header@0x18E=BF37  MATCH
+s1 CheatsEnabled=1, sigil        sum(0x200..)=BF37  header@0x18E=AFC7  STALE
+s1 Revision=0, reference         sum(0x200..)=264A  header@0x18E=264A  MATCH
+s1 Revision=0, sigil             sum(0x200..)=264A  header@0x18E=264A  MATCH
+s2 shipped switches, reference   sum(0x200..)=D951  header@0x18E=D951  MATCH
+s2 shipped switches, sigil       sum(0x200..)=D951  header@0x18E=D951  MATCH
+s2 fixBugs=1, reference          sum(0x200..)=CAA9  header@0x18E=CAA9  MATCH
+s2 fixBugs=1, sigil              sum(0x200..)=CA85  header@0x18E=D951  STALE

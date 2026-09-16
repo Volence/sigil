@@ -1,0 +1,92 @@
+# skdisasm 2fcd861c, buildSK's -D wrapper root, buildSK's two -z instructions
+# 2026-09-11 rows: 172 ; 2026-09-16 rows: 120
+
+== LEFT THE SET (present 09-11, absent today) ==
+sonic3k.asm(144342):3: error: instruction needs an explicit size suffix (.b/.w/.l)
+sonic3k.asm(144343):3: error: instruction needs an explicit size suffix (.b/.w/.l)
+sonic3k.asm(22241):3: error: instruction needs an explicit size suffix (.b/.w/.l)
+sonic3k.asm(22242):3: error: instruction needs an explicit size suffix (.b/.w/.l)
+sonic3k.asm(22243):3: error: instruction needs an explicit size suffix (.b/.w/.l)
+sonic3k.asm(22274):3: error: instruction needs an explicit size suffix (.b/.w/.l)
+sonic3k.asm(24099):3: error: instruction needs an explicit size suffix (.b/.w/.l)
+sonic3k.asm(27460):3: error: instruction needs an explicit size suffix (.b/.w/.l)
+sonic3k.asm(27461):3: error: instruction needs an explicit size suffix (.b/.w/.l)
+sonic3k.asm(27462):3: error: instruction needs an explicit size suffix (.b/.w/.l)
+sonic3k.asm(27496):3: error: instruction needs an explicit size suffix (.b/.w/.l)
+sonic3k.asm(28935):3: error: instruction needs an explicit size suffix (.b/.w/.l)
+sonic3k.asm(30577):3: error: instruction needs an explicit size suffix (.b/.w/.l)
+sonic3k.asm(30578):3: error: instruction needs an explicit size suffix (.b/.w/.l)
+sonic3k.asm(30579):3: error: instruction needs an explicit size suffix (.b/.w/.l)
+sonic3k.asm(30609):3: error: instruction needs an explicit size suffix (.b/.w/.l)
+sonic3k.asm(43756):3: error: instruction needs an explicit size suffix (.b/.w/.l)
+sonic3k.asm(43757):3: error: instruction needs an explicit size suffix (.b/.w/.l)
+sonic3k.asm(51902):3: error: instruction needs an explicit size suffix (.b/.w/.l)
+sonic3k.asm(51903):3: error: instruction needs an explicit size suffix (.b/.w/.l)
+sonic3k.asm(6033):3: error: instruction needs an explicit size suffix (.b/.w/.l)
+sonic3k.asm(65019):3: error: instruction needs an explicit size suffix (.b/.w/.l)
+sonic3k.asm(65020):3: error: instruction needs an explicit size suffix (.b/.w/.l)
+sonic3k.asm(6960):3: error: instruction needs an explicit size suffix (.b/.w/.l)
+sonic3k.asm(72154):3: error: instruction needs an explicit size suffix (.b/.w/.l)
+sonic3k.asm(73755):3: error: instruction needs an explicit size suffix (.b/.w/.l)
+sonic3k.asm(75075):3: error: instruction needs an explicit size suffix (.b/.w/.l)
+sonic3k.asm(75076):3: error: instruction needs an explicit size suffix (.b/.w/.l)
+sonic3k.asm(77694):3: error: instruction needs an explicit size suffix (.b/.w/.l)
+sonic3k.asm(77992):3: error: instruction needs an explicit size suffix (.b/.w/.l)
+sonic3k.asm(79422):3: error: instruction needs an explicit size suffix (.b/.w/.l)
+sonic3k.asm(83235):3: error: instruction needs an explicit size suffix (.b/.w/.l)
+sonic3k.asm(83256):3: error: instruction needs an explicit size suffix (.b/.w/.l)
+sonic3k.asm(84613):3: error: instruction needs an explicit size suffix (.b/.w/.l)
+sonic3k.asm(84614):3: error: instruction needs an explicit size suffix (.b/.w/.l)
+sonic3k.asm(84650):3: error: instruction needs an explicit size suffix (.b/.w/.l)
+sonic3k.asm(84656):3: error: instruction needs an explicit size suffix (.b/.w/.l)
+sonic3k.asm(84725):3: error: instruction needs an explicit size suffix (.b/.w/.l)
+sonic3k.asm(84726):3: error: instruction needs an explicit size suffix (.b/.w/.l)
+sonic3k.asm(84767):3: error: instruction needs an explicit size suffix (.b/.w/.l)
+sonic3k.asm(84869):3: error: instruction needs an explicit size suffix (.b/.w/.l)
+sonic3k.asm(84885):3: error: instruction needs an explicit size suffix (.b/.w/.l)
+sonic3k.asm(84940):3: error: instruction needs an explicit size suffix (.b/.w/.l)
+sonic3k.asm(84942):3: error: instruction needs an explicit size suffix (.b/.w/.l)
+sonic3k.asm(85006):3: error: instruction needs an explicit size suffix (.b/.w/.l)
+sonic3k.asm(85013):3: error: instruction needs an explicit size suffix (.b/.w/.l)
+sonic3k.asm(85910):3: error: instruction needs an explicit size suffix (.b/.w/.l)
+sonic3k.asm(85911):3: error: instruction needs an explicit size suffix (.b/.w/.l)
+sonic3k.asm(85921):3: error: instruction needs an explicit size suffix (.b/.w/.l)
+sonic3k.asm(85922):3: error: instruction needs an explicit size suffix (.b/.w/.l)
+sonic3k.asm(9217):3: error: instruction needs an explicit size suffix (.b/.w/.l)
+sonic3k.asm(9232):3: error: instruction needs an explicit size suffix (.b/.w/.l)
+sonic3k.macros.asm(133):2: error: `codepage` is not a recognized 68000 mnemonic
+sonic3k.macros.asm(133):2: error: `codepage` is not a recognized 68000 mnemonic
+sonic3k.macros.asm(133):2: error: `codepage` is not a recognized 68000 mnemonic
+sonic3k.macros.asm(133):2: error: `codepage` is not a recognized 68000 mnemonic
+sonic3k.macros.asm(133):2: error: `codepage` is not a recognized 68000 mnemonic
+sonic3k.macros.asm(133):2: error: `codepage` is not a recognized 68000 mnemonic
+sonic3k.macros.asm(133):2: error: `codepage` is not a recognized 68000 mnemonic
+sonic3k.macros.asm(133):2: error: `codepage` is not a recognized 68000 mnemonic
+sonic3k.macros.asm(133):2: error: `codepage` is not a recognized 68000 mnemonic
+sonic3k.macros.asm(133):2: error: `codepage` is not a recognized 68000 mnemonic
+sonic3k.macros.asm(133):2: error: `codepage` is not a recognized 68000 mnemonic
+sonic3k.macros.asm(133):2: error: `codepage` is not a recognized 68000 mnemonic
+sonic3k.macros.asm(133):2: error: `codepage` is not a recognized 68000 mnemonic
+sonic3k.macros.asm(133):2: error: `codepage` is not a recognized 68000 mnemonic
+sonic3k.macros.asm(133):2: error: `codepage` is not a recognized 68000 mnemonic
+sonic3k.macros.asm(133):2: error: `codepage` is not a recognized 68000 mnemonic
+sonic3k.macros.asm(133):2: error: `codepage` is not a recognized 68000 mnemonic
+
+== ENTERED THE SET (absent 09-11, present today) ==
+sonic3k.asm(10553) levselstr(2):2: error: `codepage` is not a recognized 68000 mnemonic
+sonic3k.asm(10554) levselstr(2):2: error: `codepage` is not a recognized 68000 mnemonic
+sonic3k.asm(10555) levselstr(2):2: error: `codepage` is not a recognized 68000 mnemonic
+sonic3k.asm(10556) levselstr(2):2: error: `codepage` is not a recognized 68000 mnemonic
+sonic3k.asm(10557) levselstr(2):2: error: `codepage` is not a recognized 68000 mnemonic
+sonic3k.asm(10558) levselstr(2):2: error: `codepage` is not a recognized 68000 mnemonic
+sonic3k.asm(10559) levselstr(2):2: error: `codepage` is not a recognized 68000 mnemonic
+sonic3k.asm(10560) levselstr(2):2: error: `codepage` is not a recognized 68000 mnemonic
+sonic3k.asm(10561) levselstr(2):2: error: `codepage` is not a recognized 68000 mnemonic
+sonic3k.asm(10562) levselstr(2):2: error: `codepage` is not a recognized 68000 mnemonic
+sonic3k.asm(10563) levselstr(2):2: error: `codepage` is not a recognized 68000 mnemonic
+sonic3k.asm(10564) levselstr(2):2: error: `codepage` is not a recognized 68000 mnemonic
+sonic3k.asm(10565) levselstr(2):2: error: `codepage` is not a recognized 68000 mnemonic
+sonic3k.asm(10566) levselstr(2):2: error: `codepage` is not a recognized 68000 mnemonic
+sonic3k.asm(10567) levselstr(2):2: error: `codepage` is not a recognized 68000 mnemonic
+sonic3k.asm(10568) levselstr(2):2: error: `codepage` is not a recognized 68000 mnemonic
+sonic3k.asm(10569) levselstr(2):2: error: `codepage` is not a recognized 68000 mnemonic

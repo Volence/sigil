@@ -1,0 +1,5 @@
+sigil md5: 878ed5704aac873f47290b7b1a9524c9
+tree: /home/volence/sonic_hacks/.scratch/as-corpus-census/trees/skdisasm-gen
+root: wrapper.asm
+args: -p=FF -z=0,kosinski,Size_of_Snd_driver_guess,before -z=1300,kosinski,Size_of_Snd_driver2_guess,before
+uptime:  02:12:39 up  6:29,  1 user,  load average: 2.91, 2.99, 4.15
