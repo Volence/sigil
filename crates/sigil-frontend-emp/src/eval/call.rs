@@ -555,8 +555,29 @@ impl<'a> Evaluator<'a> {
         span: Span,
         env: &mut Env,
     ) -> Vec<Value> {
-        let n = decl.params.len();
+        self.bind_params(&decl.params, args, span, env).0
+    }
+
+    /// The binder [`Self::bind_args`] is made of, taking the parameter list
+    /// directly so a construct that is not a comptime fn can use the language's
+    /// ONE argument rule rather than grow a second one. `with <ctx>(…)` (d-33)
+    /// is the other caller: a context's parameters are declared and filled by
+    /// exactly the grammar and exactly the diagnostics a comptime fn's are, so
+    /// nobody has to learn a second spelling for the same idea.
+    pub(crate) fn bind_params(
+        &mut self,
+        params: &[(String, ast::Type, Span, Option<ast::Expr>)],
+        args: &[ast::Arg],
+        span: Span,
+        env: &mut Env,
+    ) -> (Vec<Value>, Vec<Option<Span>>) {
+        let n = params.len();
         let mut slots: Vec<Option<Value>> = vec![None; n];
+        // Which parameters were filled by an ARGUMENT (and at what span), as
+        // opposed to falling back to a default. `with <ctx>(…)` needs the
+        // distinction: an argument is the CONSUMER's code and stays theirs,
+        // while a default is written in the declaration and is the context's.
+        let mut from_arg: Vec<Option<Span>> = vec![None; n];
         let mut pos = 0usize;
         let mut seen_named = false;
         for arg in args {
@@ -585,21 +606,22 @@ impl<'a> Evaluator<'a> {
                     } else if pos >= n {
                         self.error(arg.span, "too many arguments");
                     } else if slots[pos].is_some() {
-                        let pname = &decl.params[pos].0;
+                        let pname = &params[pos].0;
                         self.error(
                             arg.span,
                             format!("parameter `{pname}` given more than once"),
                         );
                         pos += 1;
                     } else {
-                        self.check_arg_class(&v, &decl.params[pos].1, arg.span);
+                        self.check_arg_class(&v, &params[pos].1, arg.span);
                         slots[pos] = Some(v);
+                        from_arg[pos] = Some(arg.span);
                         pos += 1;
                     }
                 }
                 Some(pname) => {
                     seen_named = true;
-                    match decl.params.iter().position(|(p, _, _, _)| p == pname) {
+                    match params.iter().position(|(p, _, _, _)| p == pname) {
                         None => {
                             self.error(arg.span, format!("unknown named parameter `{pname}`"));
                         }
@@ -610,8 +632,9 @@ impl<'a> Evaluator<'a> {
                                     format!("parameter `{pname}` given more than once"),
                                 );
                             } else {
-                                self.check_arg_class(&v, &decl.params[idx].1, arg.span);
+                                self.check_arg_class(&v, &params[idx].1, arg.span);
                                 slots[idx] = Some(v);
+                                from_arg[idx] = Some(arg.span);
                             }
                         }
                     }
@@ -622,7 +645,7 @@ impl<'a> Evaluator<'a> {
         // design; skip missing-arg reporting (spurious) — the caller discards
         // this result anyway.
         if self.aborted || self.pending_return.is_some() {
-            return vec![Value::Poison; n];
+            return (vec![Value::Poison; n], vec![None; n]);
         }
         // Fill any unbound slot from its default (t14), else report it missing.
         // A default evaluates in a FRESH global-only env — declaration scope,
@@ -632,7 +655,7 @@ impl<'a> Evaluator<'a> {
         for (i, s) in slots.into_iter().enumerate() {
             match s {
                 Some(v) => out.push(v),
-                None => match decl.params[i].3.clone() {
+                None => match params[i].3.clone() {
                     Some(default) => {
                         let mut denv = Env::new();
                         // Through the SAME path an argument written at the call
@@ -646,18 +669,18 @@ impl<'a> Evaluator<'a> {
                         // reported at the PARAMETER's own span: the default is
                         // written in the declaration, so that is where the
                         // reader has to go to fix it.
-                        self.check_arg_class(&v, &decl.params[i].1, decl.params[i].2);
+                        self.check_arg_class(&v, &params[i].1, params[i].2);
                         out.push(v);
                     }
                     None => {
-                        let pname = &decl.params[i].0;
+                        let pname = &params[i].0;
                         self.error(span, format!("missing argument `{pname}`"));
                         out.push(Value::Poison);
                     }
                 },
             }
         }
-        out
+        (out, from_arg)
     }
 
     /// `Name(x)` where `Name` is a `newtype` (T4): comptime construction.
@@ -890,6 +913,19 @@ impl<'a> Evaluator<'a> {
 /// so it is recognized structurally here at the one place that needs it.
 fn param_type_is_reg(ty: &ast::Type) -> bool {
     matches!(ty, ast::Type::Named(p) if p.segments.len() == 1 && p.segments[0] == "Reg")
+}
+
+/// Whether a parameter's declared type is the comptime-only `Code` type: a
+/// single-segment `Named` path spelled exactly `Code`. Recognized structurally
+/// here alongside `Reg` and `Label`, and for the same reason — `Code` is a
+/// comptime value class, never a data layout, so `resolve_type` never sees it.
+///
+/// Read by the `with <ctx>(…)` slot binder (d-33) to name the one near miss
+/// worth naming: a `Code` parameter handed something that is not code. It is
+/// deliberately NOT wired into `check_arg_class`, which would be a new refusal
+/// for every existing comptime fn with a `Code` parameter.
+pub(crate) fn param_type_is_code(ty: &ast::Type) -> bool {
+    matches!(ty, ast::Type::Named(p) if p.segments.len() == 1 && p.segments[0] == "Code")
 }
 
 /// Whether a parameter's declared type is the comptime-only `Label` type

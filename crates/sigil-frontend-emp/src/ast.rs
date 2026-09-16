@@ -177,6 +177,21 @@ pub struct ContextDecl {
     pub name: String,
     /// Acquired (with acquire/release Code exprs) or granted (a trust root).
     pub kind: ContextKind,
+    /// The context's NAMED PARAMETERS, as `(name, type, span, default)` — the
+    /// same tuple and the same grammar a [`ComptimeFnDecl`] parameter uses
+    /// (`name: T = expr`), so a reader who knows one knows the other.
+    ///
+    /// A parameter is in scope while the context's OWN `acquire`/`release`
+    /// expressions evaluate, and nowhere else. That is what lets a context
+    /// author name a place inside the acquire where a consumer's code goes:
+    /// `acquire = asm { … } ++ interleave ++ asm { … }`. A `Code`-typed
+    /// parameter defaulting to `asm {}` is the SLOT form — left unfilled it
+    /// concatenates nothing, so a bracket that passes no arguments emits
+    /// exactly the stream it emitted before the parameter existed.
+    ///
+    /// EMPTY for every context declared without a parameter list, which is
+    /// every context in the corpus today.
+    pub params: Vec<(String, Type, Span, Option<Expr>)>,
     /// Span of the whole declaration.
     pub span: Span,
 }
@@ -2273,6 +2288,13 @@ pub enum AsmStmt {
         cond: Option<Expr>,
         /// The bracketed statements.
         body: Vec<AsmStmt>,
+        /// Arguments passed to the context's declared parameters, in source
+        /// order — the same [`Arg`] a comptime-fn call carries, bound by the
+        /// same rule (positional first, then named). EMPTY for the
+        /// no-argument spelling `with <ctx> { … }`, which is every bracket in
+        /// the corpus today and lowers exactly as it did before parameters
+        /// existed.
+        args: Vec<Arg>,
         /// Span of the `with <ctx>` header (the diagnostics' anchor).
         span: Span,
     },

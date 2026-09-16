@@ -1873,6 +1873,38 @@ impl Parser {
     /// Parse a parenthesized `(name: Ty, ...)` typed-register parameter list
     /// (trailing comma tolerated). Shared by `proc` and `script` — R9b.1 pins
     /// script params as "exactly as `proc`", so there is ONE grammar.
+    /// Parse a `(name: T [= default], …)` parameter list, consuming both
+    /// parens — the DECLARATION side of the language's one argument rule,
+    /// shared by [`Parser::comptime_fn_decl`] and [`Parser::context_decl`] so
+    /// the two cannot drift into two spellings of one idea.
+    ///
+    /// Newlines inside the list are insignificant (t14): a wide signature
+    /// (objdef's 14 params) reads one-per-line with a trailing comma, like a
+    /// multi-line struct decl. `name: T = expr` gives the parameter a default
+    /// and makes it optional; a parameter with no default is required, and
+    /// omitting it at a call is a `missing argument` error.
+    fn default_param_list(&mut self) -> Vec<(String, Type, Span, Option<Expr>)> {
+        self.expect(&Tok::LParen, "`(`");
+        self.skip_newlines();
+        let mut params = Vec::new();
+        if !self.at(&Tok::RParen) {
+            loop {
+                let pspan = self.span();
+                let pname = self.expect_ident("parameter name");
+                self.expect(&Tok::Colon, "`:`");
+                let pty = self.ty();
+                let default = if self.eat(&Tok::Eq) { Some(self.expr()) } else { None };
+                params.push((pname, pty, pspan, default));
+                if !self.eat(&Tok::Comma) { break; }
+                self.skip_newlines();
+                if self.at(&Tok::RParen) { break; } // trailing comma
+            }
+        }
+        self.skip_newlines();
+        self.expect(&Tok::RParen, "`)`");
+        params
+    }
+
     fn param_list(&mut self) -> Vec<(String, Type, Span)> {
         self.expect(&Tok::LParen, "`(`");
         let mut params = Vec::new();
@@ -2151,6 +2183,10 @@ impl Parser {
         let start = self.span();
         self.bump(); // `context`
         let name = self.expect_decl_name("context name");
+        // The OPTIONAL parameter list (d-33). `context <name> (` can only be a
+        // parameter list: the only other thing that may follow a context name
+        // is its `{` body, so this is unambiguous and needs no new word.
+        let params = if self.at(&Tok::LParen) { self.default_param_list() } else { Vec::new() };
         self.expect(&Tok::LBrace, "`{`");
         let mut acquire: Option<Expr> = None;
         let mut release: Option<Expr> = None;
@@ -2221,7 +2257,7 @@ impl Parser {
                 ContextKind::Granted
             }
         };
-        ContextDecl { public, name, kind, span }
+        ContextDecl { public, name, kind, params, span }
     }
 
     /// Parse a proc SIGNATURE — `(params) [clobbers(...)] [out(...)]
@@ -3107,22 +3143,32 @@ impl Parser {
         AsmStmt::If { cond, then, els, span: start.merge(self.prev_span()) }
     }
 
-    /// `with <ctx> [if <cond>] { asm... }` — a context bracket (§3.2). The body
-    /// parses with the SAME statement grammar as the enclosing block, so labels,
-    /// nested `if`s, and nested brackets all work inside. The optional gate
-    /// parses with struct literals disabled, exactly as [`Parser::asm_if`]'s
-    /// condition does, and is bounded by the same `block_depth` ceiling.
+    /// `with <ctx> [(args)] [if <cond>] { asm... }` — a context bracket (§3.2).
+    /// The body parses with the SAME statement grammar as the enclosing block,
+    /// so labels, nested `if`s, and nested brackets all work inside. The
+    /// optional gate parses with struct literals disabled, exactly as
+    /// [`Parser::asm_if`]'s condition does, and is bounded by the same
+    /// `block_depth` ceiling.
+    ///
+    /// The optional ARGUMENT LIST (d-33) fills the parameters the context
+    /// declared. It uses the language's one call-argument grammar — positional
+    /// args first, then `name: value` — so a `Code`-typed parameter is filled
+    /// with `with ctx(slot: asm { … }) { … }`. It parses BEFORE the `if` gate
+    /// because it belongs to the context name, while the gate is about this
+    /// bracket. `with <ctx> (` is unambiguous: the only other things that may
+    /// follow the context name are `if` and the body's `{`.
     fn asm_with(&mut self, splices_allowed: bool) -> AsmStmt {
         let start = self.span();
         self.bump(); // `with`
         let ctx = self.expect_ident("context name");
+        let args = if self.at(&Tok::LParen) { self.with_args() } else { Vec::new() };
         let cond = if self.eat_kw("if") { Some(self.expr_no_struct_lit()) } else { None };
         let span = start.merge(self.prev_span());
         if self.block_depth >= MAX_EXPR_DEPTH {
             let sp = self.span();
             self.diag_at(sp, "block nesting too deep (max 128)");
             self.skip_unparsed_block();
-            return AsmStmt::With { ctx, cond, body: Vec::new(), span };
+            return AsmStmt::With { ctx, cond, body: Vec::new(), args, span };
         }
         self.block_depth += 1;
         self.expect(&Tok::LBrace, "`{`");
@@ -3130,7 +3176,29 @@ impl Parser {
         self.expect(&Tok::RBrace, "`}` to close the `with` bracket");
         self.trailing_junk_after_brace();
         self.block_depth -= 1;
-        AsmStmt::With { ctx, cond, body, span }
+        AsmStmt::With { ctx, cond, body, args, span }
+    }
+
+    /// Parse a bracket's `(arg, …)` argument list, consuming both parens.
+    /// Newlines inside are insignificant, matching the parameter list that
+    /// declares them: a slot argument is an `asm { … }` block and reads
+    /// one-per-line.
+    fn with_args(&mut self) -> Vec<Arg> {
+        self.expect(&Tok::LParen, "`(`");
+        self.skip_newlines();
+        let mut args = Vec::new();
+        if !self.at(&Tok::RParen) {
+            loop {
+                args.push(self.arg());
+                self.skip_newlines();
+                if !self.eat(&Tok::Comma) { break; }
+                self.skip_newlines();
+                if self.at(&Tok::RParen) { break; } // trailing comma
+            }
+        }
+        self.skip_newlines();
+        self.expect(&Tok::RParen, "`)` to close the `with` argument list");
+        args
     }
 
     /// Diagnose a statement continuing on the same line after a closing `}`
@@ -3624,29 +3692,7 @@ impl Parser {
             self.diag_at(sp, "expected `fn` after `comptime` at item position");
         }
         let name = self.expect_ident("function name");
-        self.expect(&Tok::LParen, "`(`");
-        // Newlines inside the parameter list are insignificant (t14): a wide
-        // emitter signature (objdef's 14 params) reads one-per-line with a
-        // trailing comma, like a multi-line struct decl.
-        self.skip_newlines();
-        let mut params = Vec::new();
-        if !self.at(&Tok::RParen) {
-            loop {
-                let pspan = self.span();
-                let pname = self.expect_ident("parameter name");
-                self.expect(&Tok::Colon, "`:`");
-                let pty = self.ty();
-                // `name: T = expr` — an optional default (t14). Same spelling
-                // as struct-field defaults; the parameter becomes optional.
-                let default = if self.eat(&Tok::Eq) { Some(self.expr()) } else { None };
-                params.push((pname, pty, pspan, default));
-                if !self.eat(&Tok::Comma) { break; }
-                self.skip_newlines();
-                if self.at(&Tok::RParen) { break; } // trailing comma
-            }
-        }
-        self.skip_newlines();
-        self.expect(&Tok::RParen, "`)`");
+        let params = self.default_param_list();
         let ret = if self.eat(&Tok::Arrow) { Some(self.ty()) } else { None };
         let body = self.stmt_block();
         ComptimeFnDecl { public, name, params, ret, body, span: start.merge(self.prev_span()) }

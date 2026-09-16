@@ -365,6 +365,32 @@ pub enum ItemAuthor {
         /// non-call splice expression).
         template: String,
     },
+    /// A CONSUMER's slot code, passed as an argument to a context's declared
+    /// parameter and spliced through the context's `acquire`/`release`
+    /// expression (d-33).
+    ///
+    /// TRANSIENT, AND THE TRANSIENCE IS THE POINT. It exists only between the
+    /// moment `lower_with` binds a bracket's arguments and the moment that same
+    /// call returns, and `normalize_context_slots` turns every one of them back
+    /// into [`ItemAuthor::User`] before the stream leaves that function. No
+    /// item carrying this author ever reaches a later pass, a listing, or a
+    /// ROM byte, so no downstream rule has to learn about it.
+    ///
+    /// WHY IT HAS TO EXIST AT ALL: [`reauthor_user_items`] claims every `User`
+    /// item in a spliced context half for the CONTEXT, which is right for the
+    /// context author's own lines and wrong for the consumer's. The consumer's
+    /// slot code is the consumer's to answer for — `[proc.sr-undeclared]`
+    /// exempts `Context`-authored items at the consumer (`lower/proc.rs`) and
+    /// charges them to the context's DECLARATION span instead, in another file.
+    /// Marking the argument before the splice makes it invisible to
+    /// `reauthor_user_items` (which only rewrites `User`), which is exactly the
+    /// authorship the code would have had if it were written in the body.
+    ContextSlot {
+        /// The context whose parameter carried it.
+        context: String,
+        /// The parameter's name.
+        param: String,
+    },
     /// The line carries a compiler-RESOLVED `irq_frame.pc` accessor (bookmark
     /// ask 3): a `(disp, sp)` memory operand the toolchain derived from the
     /// handler's full-save `movem` to address the stacked interrupted PC. The
@@ -396,6 +422,28 @@ pub fn reauthor_user_items(items: &mut [CodeItem], author: &ItemAuthor) {
             }
         }
     }
+}
+
+/// Turn every [`ItemAuthor::ContextSlot`] item in `items` back into
+/// [`ItemAuthor::User`], and report whether any was found.
+///
+/// Called once at the end of `lower_with`, AFTER the two definition-site checks
+/// that need to tell the context's own acquire from the consumer's slot code
+/// apart. Past this point the slot's lines carry the authorship they would have
+/// carried written in the bracket's body, which is the whole claim the feature
+/// rests on: the consumer answers for consumer code, wherever the context author
+/// chose to put it.
+pub fn normalize_context_slots(items: &mut [CodeItem], param: &str) -> bool {
+    let mut found = false;
+    for item in items {
+        if let CodeItem::Instr { author: a, .. } = item {
+            if matches!(a, ItemAuthor::ContextSlot { param: p, .. } if p == param) {
+                *a = ItemAuthor::User;
+                found = true;
+            }
+        }
+    }
+    found
 }
 
 /// One ordered piece of a [`CodeBuf`] (T1): a label, a single instruction, or a
