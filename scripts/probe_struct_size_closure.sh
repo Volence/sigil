@@ -288,3 +288,12 @@ $BAD_STRUCT
 ensure(sizeof(Sst) == 99, \"Sst is not 99 bytes\")
 pub data D: [u8; 1] = [\$11]" > "$S/Q/main.emp"
 run_arm Q main.emp "?"
+
+# R: a `data` item initialised with a STRUCT LITERAL forces the layout -- the
+#    shape the engine's SpawnDesc consumers use. Both same-module and
+#    cross-module spellings FIRE, so a literal is not the hole.
+mkdir -p "$S/R"
+echo "module main
+$BAD_STRUCT
+pub data D: Sst = Sst { id: 1, x_pos: 2, sst_custom: [0,0,0,0,0,0,0,0] }" > "$S/R/main.emp"
+run_arm R main.emp "?"
