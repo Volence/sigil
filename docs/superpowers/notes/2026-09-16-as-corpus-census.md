@@ -9,10 +9,16 @@ logs and every tool digest are in `2026-09-16-as-corpus-census/` beside this not
 
 ## Headlines
 
-1. **Both corpora assemble whole and byte-identical, from a PRISTINE checkout, with no
-   stub tree.** Sonic 1 exits 0 with zero diagnostics; Sonic 2 exits 0 with one
-   warning. The 2026-09-11 census's stub C scaffold is no longer load-bearing for the
-   image.
+1. **Both corpora assemble whole and byte-identical with NO STUB TREE, on a tree
+   carrying nothing but `build.lua`'s own generated inputs.** Sonic 1 exits 0 with zero
+   diagnostics; Sonic 2 exits 0 with one warning. The 2026-09-11 census's stub C
+   scaffold is no longer load-bearing for the image. **A genuinely pristine checkout
+   does NOT build**: it stops at exit 1 with 14 rows (Sonic 1) and 78 rows plus 1
+   warning (Sonic 2), and every one of those rows is a build input `build.lua` generates
+   before it assembles. That is the whole of the remaining gap, and it is the
+   toolchain's job rather than the assembler's; see headline 3 and Q1. The claim here is
+   already strictly stronger than the census's, so read it as it is written: the stubs
+   are gone, the pre-steps are not.
 2. **The whole 71-row, 9-class source residual the census measured is gone, and so is
    the address-0 overlap wall and the silent string-escape class.** Every class is
    pinned to a landed commit below.
@@ -150,7 +156,7 @@ s2.asm(91275):2: warning: `shared` is ignored: sigil writes no share file (asl w
 ```
 
 which is the intended behaviour landed at `4d52fb99`, and which stub C comments out (the
-only diagnostic difference between the stub C run and the pristine gen run).
+only diagnostic difference between the stub C run and the unstubbed `gen` run).
 
 **Classes (b), (c) and (d): empty at the shipped settings.** Q4 is about what that
 sentence is and is not worth.
@@ -228,8 +234,9 @@ the same **108 edits** the stage-2 note records (`logs/stub-C.edits`), and it is
 byte-neutral under the stock toolchain: `build.lua` on the stub C tree writes
 `9feeb724052c39982d432a7851c98d3e`.
 
-**And the claim is now weaker than the tree needs.** The pristine `gen` tree, with no
-stub at all, gives the same image. Stub C's only remaining effect on the run is
+**And the claim is now weaker than the tree needs.** The unstubbed `gen` tree, which is
+a pristine checkout plus `build.lua`'s pre-step outputs and nothing else, gives the same
+image. Stub C's only remaining effect on the run is
 commenting out the `shared` line, which removes the warning. Whoever maintains
 `as_sonic2_whole_rom.rs` can drop the scaffold.
 
