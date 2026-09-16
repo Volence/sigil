@@ -522,6 +522,21 @@ DISPATCHED 2026-09-02T10:15:35Z on parcel/d18-followups as debt 2. | LIVE AND CA
 
 ## 2026-09-16 sweep: THREE LIVE ROWS HAVE NO PREMISE ANYWHERE IN THE TREE, AND ONE OF THEM WAS `next`
 
+> **⚠ FILED IN THE WRONG ARTIFACT AND CORRECTED THE SAME DAY. The three rows below are LIVE, and a
+> live row belongs in `docs/QUEUE.md`, which is this lane's tracked queue; THIS file is where rows
+> land when they LEAVE the board.** They are reproduced in `QUEUE.md` under their own headings with
+> the premise-unverified banner, which is the copy to work from. Kept here because the sweep and its
+> lesson are real and because deleting the section would lose both.
+>
+> **How it happened is worth more than the fix, and it is this page's own subject aimed at its own
+> author.** This file's header promises that every board row is reproduced verbatim, so it read as
+> the home for a row with nowhere else to live. The seat hand-certified the first artifact carrying
+> a right-sounding promise and never swept for a sibling, in the same hour it was correcting two
+> other lanes' worth of exactly that. `git grep -l ASL-WARN-PARITY-ALIGN -- docs/` would have
+> returned `QUEUE.md` the moment the row was written into it, and one `ls docs/` would have shown
+> the file. **Neither was run, because the destination had already been decided by a sentence in a
+> header.**
+
 **This file's own maintenance is the defect.** Its header promises that every board row is
 reproduced here verbatim so the premise stays greppable while `docs/lane-status.json` is
 gitignored. That promise was kept at the 2026-09-02 move (74 rows) and **has not been kept since**:

@@ -507,3 +507,60 @@ swallows a passing test's stdout unless asked for it. So the exposure is an oper
 scoped run and not seeing which binaries went unmeasured, which is the same hand-run-has-no-second-reader
 shape as `AB-PROTOCOL-CART-UNVERIFIED`. Kill: have the partial banner print to stderr, or have the
 runner script surface the unmeasured count in its own summary line.
+
+## ASL-WARN-PARITY-ALIGN: PREMISE UNVERIFIED, do not dispatch as written
+
+- state at archive: `open`  size: `S`  project: `-`
+- blockedBy: nothing, but see below
+
+Board text, reproduced verbatim so it is greppable: *"The old assembler warns about a misaligned
+address and we say nothing, on every leg of one option. Bytes agree, so it is a missing warning
+rather than a bad ROM. We already have this check on the other language."*
+
+**Nothing in the tree records the measurement behind this.** Not the option whose legs were walked,
+not which language already carries the check, not the comparison that showed `asl` warning where we
+are silent. Measured 2026-09-16 with a positive control. **It was the `next` row**, so a session
+taking the board at its word would have briefed an agent to add a warning with no artifact showing
+one is missing. Re-derive against `asl` before working it, under this file's own opening rule that a
+stale open row does not read as stale, it reads as work.
+
+## S3K-FOUR-CLASSES: PREMISE UNVERIFIED, and its count collides with a real one
+
+- state at archive: `open`  size: `M`  project: `-`
+- blockedBy: nothing, but see below
+
+Board text: *"Sonic 3 and Knuckles is the next game that does not build: 120 rows in four classes.
+Start with the one where our tool accepts a directive and then ignores it, which is the fault shape
+we just measured."*
+
+**The only 120 in the tree counts Sonic 1 BUILD CORNERS** (`docs/superpowers/notes/2026-09-16-as-width-suffix-bare-expr.md`),
+a different subject entirely. This row's 120 is a count of S3K source rows in four fault classes and
+has no artifact. The S3K hits under `docs/superpowers/notes/` are July handoffs about something else.
+**Whether a real census was run and never written down, or the figure was absorbed from the adjacent
+one, is not decidable from here, and that is the finding.** Re-measure before sizing anything off it.
+
+## OVER-ACCEPTANCE-THREE-SHAPES: PREMISE UNVERIFIED
+
+- state at archive: `open`  size: `S`  project: `SIGIL-AS-REPLACEMENT`
+- blockedBy: nothing, but see below
+
+Board text: *"We accept three shapes the old assembler refuses. Your decision puts them in the
+settle-everything-else half, so closing them would be a second call, not part of this one."*
+
+**The three shapes are named nowhere in the tree**, so the row cannot be worked without re-deriving
+them, and its claim about which half of the owner's decision they fall in cannot be checked against
+the decision either.
+
+## Where these three came from, and the correction to where they were first filed
+
+Found 2026-09-16 by trying to start the `next` row and failing to locate its premise. Swept all 20
+board rows with `git grep -l <id> -- docs/` and a positive control: 17 traceable, these 3 not.
+
+**They were first written into `docs/OVERSEER-ROW-HISTORY.md`, which was the wrong file, and the
+reasoning that put them there was wrong in an instructive way.** That file's header promises every
+board row is reproduced verbatim, so it looked like the home for an untraceable row. **It is a
+HISTORY file** — rows land there when they leave the board — **and THIS file is the live tracked
+queue.** The seat hand-certified the first artifact it found carrying the right-sounding promise and
+never swept for a sibling, which is the same defect the same seat had spent the hour correcting in
+two other places. The `ROW-HISTORY` section is kept, since the sweep and its lesson are real, and now
+points here for the live rows.
