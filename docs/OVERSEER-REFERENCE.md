@@ -1828,6 +1828,40 @@ row's `title` and blew contract rule 7's 240-character bound on four rows at onc
 470, one of them grown from 131 to 255 in the same write. The board is a payload every lane's
 console read pulls, so detail there is not free, and rule 7 already says where detail goes.
 
+### THE RIGHT ARTIFACT WITH THE WRONG INSTRUMENT: A THIRD SHAPE BESIDE THE WRONG POPULATION (2026-09-16)
+
+Read when a measurement comes back clean and you are deciding whether it settles the question, and
+when writing any brief that says how to look at something.
+
+**The instance.** The as-corpus census read `fix_header` and reported ONE stale header field. There
+are two: `fix_header` rewrites the end-of-ROM address at `0x1A4` as well as the checksum at `0x18E`,
+and the second goes stale on its own. Six silent bytes, not two. The second field was found the next
+night by **planting `$100` bytes of `dcb.b` past `sonic.asm`'s `EndOfRom:` label** and watching the
+reference write `000800FF` where sigil wrote `0007FFFF`.
+
+**THE POINT IS THE DIRECTION, and it is the hub's sharper statement of it rather than mine.** The
+census was looking at the RIGHT artifact. It read the very function that rewrites both fields. What
+it did not do is DISTURB the tree and watch what moved. **Reading the spec would have found the
+field and not the staleness**, because a field's presence and a field's freshness are different
+properties and only one of them is written down.
+
+**So it is not the wrong-population class, and filing it there loses what it teaches.** Aurora's
+*correct measurement over the wrong population* (a predicate that measured `docs/` and was cited for
+`scripts/`) is about the SUBJECT being wrong. Here the subject was right and the INSTRUMENT could not
+see the property being claimed. The two look identical from the outside, because both produce a true
+sentence that is read as a larger one.
+
+**The check that fires: does this instrument DISTURB anything?** A read of source, a spec, a doc
+comment or a declaration enumerates what exists; it cannot tell you whether what exists is CURRENT,
+DERIVED, or REACHED. Those are properties only a mutation reveals. When the claim is about staleness,
+liveness or coverage, the instrument has to perturb the tree and observe, and a reading instrument
+answering that question is an absence dressed as an outcome.
+
+**And it is the same reasoning that makes a planted-byte control non-negotiable in an image compare,**
+which is the reason it is banked beside the switch blocks rather than in the general proof section: a
+comparator that cannot report a difference reports agreement, and a reader that cannot observe
+staleness reports currency. Same defect, one at the instrument and one at the control.
+
 ### DISPATCHING CONSUMES THE `next` ROW, AND NOTHING IN THE ACT PROMPTS YOU TO REFILL IT (2026-09-16)
 
 Read at the moment you move a row to `doing`.

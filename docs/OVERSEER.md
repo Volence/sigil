@@ -505,6 +505,8 @@ under that cut's heading.
 - **Planting any canary or control, or believing a refutation you produced yourself**: *A CONTROL CAN
   VERIFY THE WRONG PREDICATE* (ref).
 - **Designing any check whose clean result you intend to believe**: *A CHECK CAN BE BLIND* (ref).
+- **Deciding whether a clean measurement settles the question, or writing a brief that says how to
+  look at something**: *THE RIGHT ARTIFACT WITH THE WRONG INSTRUMENT* (ref).
 - **Believing a zero after planting a canary**: *A CANARY PROVES* (ref).
 - **About to believe a zero from `grep`, or choosing the instrument for a search**: *SHELL `grep -r`
   SKIPS GITIGNORED FILES* (ref).
