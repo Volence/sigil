@@ -76,8 +76,7 @@ fn assemble(body: &str) -> Result<Module, Vec<(u32, String)>> {
 fn bytes(body: &str) -> Vec<u8> {
     let m = assemble(body).expect("front end accepts");
     let stubs = SymbolTable::new();
-    let resolved =
-        sigil_link::resolve_layout(&m.sections, &stubs, true).expect("resolve_layout");
+    let resolved = sigil_link::resolve_layout(&m.sections, &stubs, true).expect("resolve_layout");
     let linked = sigil_link::link(&resolved, &stubs).expect("link");
     m.sections
         .iter()
@@ -255,11 +254,15 @@ fn a_symbol_named_like_a_register_does_not_capture_the_indirect_form() {
 #[test]
 fn pc_relative_is_still_pc_relative() {
     assert_eq!(
-        bytes(&format!("{CPU}\torg 0\nTbl:\tdc.w 1,2\n\tmove.w (Tbl,pc,d0.w),d1\n")),
+        bytes(&format!(
+            "{CPU}\torg 0\nTbl:\tdc.w 1,2\n\tmove.w (Tbl,pc,d0.w),d1\n"
+        )),
         hex("0001 0002 323B 00FA")
     );
     assert_eq!(
-        bytes(&format!("{CPU}\torg 0\nTbl:\tdc.w 1,2\n\tmove.w (Tbl,pc),d1\n")),
+        bytes(&format!(
+            "{CPU}\torg 0\nTbl:\tdc.w 1,2\n\tmove.w (Tbl,pc),d1\n"
+        )),
         hex("0001 0002 323A FFFA")
     );
 }
