@@ -388,8 +388,59 @@ pub fn check_link_asserts(
     stubs: &SymbolTable,
     asserts: &[LinkAssert],
 ) -> Vec<Diagnostic> {
+    check_link_asserts_tallied(resolved, stubs, asserts).0
+}
+
+/// What the check OBSERVED each `AssertKind::Condition` assert do, recorded at
+/// the decision site rather than worked out afterwards from the diagnostics.
+///
+/// The census `sigil build --check` prints reads `decided` from here, so a guard
+/// is counted decided because the fold was watched producing a value, never
+/// because it was not something else. The bucket counts partition `conditions`
+/// exactly (each condition increments one and only one), which is what makes a
+/// condition that folded to NOTHING impossible to mistake for a decided one:
+/// there is no bucket it can fall out of, and the identity
+/// `decided + undecided == conditions` is checkable.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct LinkAssertTally {
+    /// Every `AssertKind::Condition` assert the check walked.
+    pub conditions: usize,
+    /// Conditions whose `cond` folded to a value: the guard DECIDED, pass or fail.
+    pub decided: usize,
+    /// The subset of `decided` that folded to zero (the guard said no). A failing
+    /// guard is still a verdict, so it is inside `decided`, not beside it.
+    pub decided_fail: usize,
+    /// Conditions that did NOT decide: the fold poisoned or faulted, or every
+    /// unresolved leaf was already refused at its own `extern()` reference and
+    /// the condition was skipped without a second diagnostic.
+    pub undecided: usize,
+    /// The span of every condition whose fold named unresolved symbols, i.e. the
+    /// exact population a caller's "not defined in this link" partition (the
+    /// inapplicable gated-off twins) must be drawn from. A diagnostic that reaches
+    /// that partition with a span absent from here came from some OTHER path and
+    /// is not an inapplicable guard, whatever its wording says.
+    pub unresolvable_spans: Vec<Span>,
+}
+
+impl LinkAssertTally {
+    /// The bucket identity every walk must satisfy: each condition landed in
+    /// exactly one of `decided` / `undecided`. False only on a counting bug in
+    /// [`check_link_asserts_tallied`] itself.
+    pub fn accounted(&self) -> bool {
+        self.decided + self.undecided == self.conditions
+    }
+}
+
+/// [`check_link_asserts`] plus the per-assert record of what was observed. The
+/// diagnostics are identical; the tally is the observation the census counts from.
+pub fn check_link_asserts_tallied(
+    resolved: &[Section],
+    stubs: &SymbolTable,
+    asserts: &[LinkAssert],
+) -> (Vec<Diagnostic>, LinkAssertTally) {
+    let mut tally = LinkAssertTally::default();
     if asserts.is_empty() {
-        return Vec::new();
+        return (Vec::new(), tally);
     }
     let syms = build_symbol_table(resolved, stubs);
     let lookup = |name: &str| syms.resolve(name, None);
@@ -426,12 +477,17 @@ pub fn check_link_asserts(
         });
     }
     for a in asserts.iter().filter(|a| a.kind == AssertKind::Condition) {
+        tally.conditions += 1;
         match a.cond.fold(&lookup) {
-            // Nonzero → the guard holds; silent.
-            Fold::Value(v) if v != 0 => {}
+            // Nonzero → the guard holds; silent. WATCHED deciding: counted here,
+            // at the fold, and nowhere else.
+            Fold::Value(v) if v != 0 => tally.decided += 1,
             // Zero → report at the assert's own severity (Error fails the
-            // build; the [layout.odd-item] data check is Warning-tier).
+            // build; the [layout.odd-item] data check is Warning-tier). A `no`
+            // is a verdict, so this is `decided` too.
             Fold::Value(_) => {
+                tally.decided += 1;
+                tally.decided_fail += 1;
                 out.push(Diagnostic {
                     level: a.level,
                     message: render_assert_message(&a.message, &lookup),
@@ -448,8 +504,14 @@ pub fn check_link_asserts(
             // anchor) is structurally unreachable today and stays an
             // internal-contract error.
             Fold::Poison => {
+                tally.undecided += 1;
                 let missing = unresolved_sym_leaves(&a.cond, &lookup);
                 if !missing.is_empty() && missing.iter().all(|n| refused.contains(&n.as_str())) {
+                    // Folded to NOTHING: no verdict, and no diagnostic of its own
+                    // either (the `extern()` refusal above already fails the build
+                    // and names the symbol). Counted undecided and NOT recorded
+                    // unresolvable, so nothing downstream can read it as either
+                    // a decided guard or an inapplicable twin.
                     continue;
                 }
                 let message = if missing.iter().any(|n| n.starts_with("__here$")) {
@@ -462,6 +524,10 @@ pub fn check_link_asserts(
                     // zero) reaching this far is still never a silent pass.
                     "link assertion condition is unresolvable at link time".to_string()
                 } else {
+                    // The ONE wording a caller may partition as an inapplicable
+                    // gated-off twin, so this is the one place a span joins
+                    // `unresolvable_spans`.
+                    tally.unresolvable_spans.push(a.span);
                     let names: Vec<String> = missing.iter().map(|n| format!("`{n}`")).collect();
                     format!(
                         "link assertion condition references symbol(s) {} not defined in this \
@@ -473,11 +539,12 @@ pub fn check_link_asserts(
                 out.push(Diagnostic { level: Level::Error, message, primary: a.span });
             }
             Fold::Fault(f) => {
+                tally.undecided += 1;
                 out.push(diag(format!("[value.fault] link assertion condition: {f}"), a.span));
             }
         }
     }
-    out
+    (out, tally)
 }
 
 /// Walk `expr`'s `Sym` leaves against `lookup`, collecting the names that do
