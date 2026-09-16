@@ -1,0 +1,34 @@
+== Sonic 2: s2.sounddriver.asm:2674 sits inside if OptimiseDriver (OptimiseDriver = 0)
+   planted at s2.sounddriver.asm:2674
+     was: '\tld\ta,(zAbsVar.1upPlaying)'
+     now: '\t%%% THIS IS NOT AN INSTRUCTION %%% ,,, ((('
+   grep proof the mutation is on disk:
+     2674:	%%% THIS IS NOT AN INSTRUCTION %%% ,,, (((
+ROM size is $100000 bytes (1024 KiB). About $661 bytes are padding. 
+s2.asm(91275):2: warning: `shared` is ignored: sigil writes no share file (asl without `-c` says "no sharefile created, SHARED ignored")
+built: 1048576 bytes, wrote blind.bin
+   SIGIL_EXIT=0
+   sigil image: 9feeb724052c39982d432a7851c98d3e
+   BUILDLUA_EXIT=0
+   build.lua image: 9feeb724052c39982d432a7851c98d3e
+   reference:       9feeb724052c39982d432a7851c98d3e
+
+== CONTROL: the same marker on a LIVE line (s2.sounddriver.asm:2678) must be refused
+   planted at s2.sounddriver.asm:2678
+     was: '+'
+     now: '\t%%% THIS IS NOT AN INSTRUCTION %%% ,,, ((('
+ROM size is $100000 bytes (1024 KiB). About $661 bytes are padding. 
+s2.asm(91275):2: warning: `shared` is ignored: sigil writes no share file (asl without `-c` says "no sharefile created, SHARED ignored")
+built: 1048576 bytes, wrote blind.bin
+   SIGIL_EXIT=0
+BLINDSPOT_END
+== CONTROL (corrected): the same marker on a LIVE line, s2.sounddriver.asm:1678
+   was: '\tld\ta,(zAbsVar.1upPlaying)\t; Check if 1-up sound is already playing'
+   now: '\t%%% THIS IS NOT AN INSTRUCTION %%% ,,, ((('
+     1678:	%%% THIS IS NOT AN INSTRUCTION %%% ,,, (((
+   SIGIL_EXIT=1
+     s2.sounddriver.asm(1678):2: error: unexpected character '%'
+   BUILDLUA_EXIT=1
+     > > > s2.sounddriver.asm(1678):2: error #1200: unknown instruction
+     *       There were build errors. See s2.log for more details.        *
+CONTROL2_END
