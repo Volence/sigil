@@ -153,10 +153,15 @@ impl CodePage {
         CodePage { map, stamp: crate::eval::next_stamp() }
     }
 
-    /// `true` iff nothing has been remapped. Test-only: the assembler never
-    /// asks, and `#[cfg(test)]` rather than an `allow(dead_code)` so a future
-    /// non-test caller is a compile error here instead of silent dead weight.
-    #[cfg(test)]
+    /// `true` iff nothing has been remapped.
+    ///
+    /// This was `#[cfg(test)]`, with a note saying that a future non-test
+    /// caller should be a compile error here rather than silent dead weight.
+    /// It was, and this is that caller: `eval.rs::str_plus_int` refuses a
+    /// `string + integer` under a non-identity page, because the probe cannot
+    /// settle whether asl maps the arithmetic's RESULT bytes a second time and
+    /// the two readings emit different bytes. So the assembler does ask now,
+    /// and the guard did its job on the way in.
     pub fn is_identity(&self) -> bool {
         (0..256usize).all(|i| self.map[i] == i as u8)
     }
