@@ -9505,8 +9505,12 @@ impl Asm {
             );
             return Err(());
         }
+        // Case-folded, like every other register-name lookup on this path:
+        // under `cpu z80undoc` asl assembles `ld A,ixl` as `DD 7D` and
+        // `ld IXU,B` as `DD 60`, so the plain register beside a half folds too.
+        // `allowed` is always written in lower case.
         let reg_word = |a: &OperandAtom, allowed: &[&str]| {
-            matches!(a, OperandAtom::RegOrCond(w) if allowed.contains(&w.as_str()))
+            matches!(a, OperandAtom::RegOrCond(w) if allowed.contains(&w.to_ascii_lowercase().as_str()))
         };
         if atoms.iter().any(|a| reg_word(a, &["h", "l"])) {
             self.err(
@@ -9853,13 +9857,13 @@ impl Asm {
         };
         if let Some(pc_idx) = atoms
             .iter()
-            .position(|a| matches!(a, OperandAtom::M68kDisp { an, .. } if an == "pc"))
+            .position(|a| matches!(a, OperandAtom::M68kDisp { an, .. } if an.eq_ignore_ascii_case("pc")))
         {
             return self.lower_m68k_pcrel(mnemonic, size, &atoms, pc_idx, span);
         }
         if let Some(pc_idx) = atoms
             .iter()
-            .position(|a| matches!(a, OperandAtom::M68kIdx { an, .. } if an == "pc"))
+            .position(|a| matches!(a, OperandAtom::M68kIdx { an, .. } if an.eq_ignore_ascii_case("pc")))
         {
             return self.lower_m68k_pcrel_idx(mnemonic, size, &atoms, pc_idx, span);
         }
@@ -13247,7 +13251,12 @@ fn m68k_special_reg_size(m: M68kMnemonic, atoms: &[OperandAtom]) -> Option<M68kS
         return None;
     }
     atoms.iter().find_map(|a| match a {
-        OperandAtom::Value(Expr::Sym(name)) => match name.as_str() {
+        // Case-folded, like the `Value(Sym)` arm that turns these names into
+        // operands: asl gives `move D6,CCR` the same `44C6` it gives
+        // `move d6,ccr`, so the implicit size has to recognise the same
+        // spellings the operand converter does or the line dies asking for a
+        // suffix asl never needed.
+        OperandAtom::Value(Expr::Sym(name)) => match name.to_ascii_lowercase().as_str() {
             // `move <ea>,ccr` and `move <ea>,sr` / `move sr,<ea>` are word ops.
             "ccr" | "sr" => Some(M68kSize::W),
             // `move An,usp` / `move usp,An` are long ops.

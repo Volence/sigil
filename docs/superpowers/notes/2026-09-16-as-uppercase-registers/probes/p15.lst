@@ -1,0 +1,52 @@
+ AS V1.42 Beta [Bld 212] - Source File p15.asm - Page 1 - 09/16/2026 09:31:23 AM
+
+
+       1/       0 :                     	cpu	z80undoc
+       2/       0 :                     	org	0
+       3/       0 : DD 7D               	ld	A,ixl
+       4/       2 : DD 60               	ld	IXU,B
+       5/       4 : DD 7D               	ld	a,IXL
+       6/       6 : FD 67               	ld	IYU,A
+       7/       8 :                     	end
+ AS V1.42 Beta [Bld 212] - Source File p15.asm - Page 2 - 09/16/2026 09:31:23 AM
+
+
+  Symbol Table (* = unused):
+  --------------------------
+
+*ARCHITECTURE :                                      "x86_64-unknown-linux" - |
+*BIGENDIAN :                      0 - | *BRANCHEXT :                      0 - |
+*CASESENSITIVE :                  1 - | *COMPMODE :                       0 - |
+*CONSTPI :        3.141592653589793 - | *CUSTOM :                         0 - |
+*DATE :                "09/16/2026" - | *FALSE :                          0 - |
+*FULLPMMU :                       1 - | *HAS64 :                          1 - |
+*HASDSP :                         0 - | *HASFPU :                         0 - |
+*HASPMMU :                        0 - | *INEXTMODE :                      0 - |
+*INLWORDMODE :                    0 - | *INMAXMODE :                      0 - |
+*INSRCMODE :                      0 - | *INSUPMODE :                      0 - |
+*LISTON :                         1 - | *MACEXP :                         7 - |
+*MOMCPU :                      80DC - | *MOMCPUNAME :            "Z80UNDOC" - |
+*NESTMAX :                      100 - | *PACKING :                        0 - |
+*PADDING :                        1 - | *RELAXED :                        0 - |
+*TIME :               "09:31:23 AM" - | *TRUE :                           1 - |
+*VERSION :                     142F - | *Z80SYNTAX :                      0 - |
+
+     31 symbols
+     31 unused symbols
+
+ AS V1.42 Beta [Bld 212] - Source File p15.asm - Page 3 - 09/16/2026 09:31:23 AM
+
+
+  Code Pages:
+  ----------
+
+STANDARD (0 changed characters)
+
+1 code page
+
+0.00 seconds assembly time
+
+      8 lines source file
+      1 pass
+      0 errors
+      0 warnings

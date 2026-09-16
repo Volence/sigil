@@ -33,12 +33,14 @@
 //!
 //! asl, reference build md5 `61e672562465725a8c102288a7da9098`, invoked through
 //! `asl_run` (`docs/superpowers/notes/asl-reference/asl_ref.sh`) with
-//! `-xx -n -q -A -L -U`, exit 0 and `ASL_DIAG=complete` on both probes. The
-//! probes are `.probe/p9.asm` (68000) and `.probe/p10.asm` (Z80) as reproduced
-//! in `docs/superpowers/notes/2026-09-16-as-uppercase-registers.md`, both
-//! assembled with NO `org`, which is the origin the assertions below compare
-//! at. Every symbol in the 68000 probe's listing is marked unused (`*`), which
-//! is asl saying in its own output that it never consulted the equates.
+//! `-xx -n -q -A -L -U`, exit 0 and `ASL_DIAG=complete` on every probe quoted.
+//! The probes and their listings are committed beside the note, in
+//! `docs/superpowers/notes/2026-09-16-as-uppercase-registers/probes/`: `p9`
+//! (68000), `p10` (Z80), `p15` (`z80undoc` halves) and `p16` (PC-relative and
+//! the control-register `move` forms). `p9` and `p10` are assembled with NO
+//! `org`, which is the origin the assertions below compare at. Every symbol in
+//! `p9`'s listing is marked unused (`*`), which is asl saying in its own output
+//! that it never consulted the equates.
 
 use sigil_frontend_as::{assemble, Options};
 use sigil_ir::SymbolTable;
@@ -204,6 +206,44 @@ fn the_shapes_asl_refuses_are_still_refused_in_upper_case() {
     }
     for spelling in ["a0", "A0", "sp", "SP"] {
         refused(&format!("{M68K}\tmove.w ({spelling}).w,d0\n"), "operand");
+    }
+}
+
+/// PC-relative addressing is spelled out of the same register table, and the
+/// implicit size of the control-register `move` forms is read off the operand
+/// name before the operand is converted, so both had to learn the fold or the
+/// line dies asking for a suffix asl never needed. asl `probes/p16.asm` 4, 6,
+/// 7, 8, exit 0 and `ASL_DIAG=complete`.
+#[test]
+fn pc_relative_and_the_implicit_control_register_sizes_fold_case() {
+    assert_eq!(
+        bytes("\tcpu 68000\n\torg 0\nTbl:\tdc.w 1,2\n\tmove.w (Tbl,PC),d1\n"),
+        hex("0001 0002 323A FFFA")
+    );
+    for (src, asl) in [
+        ("\tmove D6,CCR\n", "44C6"),
+        ("\tmove #$2700,SR\n", "46FC 2700"),
+        ("\tmove A6,USP\n", "4E66"),
+    ] {
+        assert_eq!(bytes(&format!("\tcpu 68000\n{src}")), hex(asl), "{src}");
+    }
+}
+
+/// The `z80undoc` index-register halves take a plain register beside them, and
+/// that register folds too. asl `probes/p15.asm` 3 to 6.
+#[test]
+fn an_index_register_half_takes_an_uppercase_plain_register() {
+    for (src, asl) in [
+        ("\tld A,ixl\n", "DD 7D"),
+        ("\tld IXU,B\n", "DD 60"),
+        ("\tld a,IXL\n", "DD 7D"),
+        ("\tld IYU,A\n", "FD 67"),
+    ] {
+        assert_eq!(
+            bytes(&format!("\tcpu z80undoc\n\torg 0\n{src}")),
+            hex(asl),
+            "{src}"
+        );
     }
 }
 

@@ -128,6 +128,37 @@ The refusals, each from a run that reports the error rather than a byte:
   registers were in it because `classify` could not claim an uppercase `(A0)`,
   and that path no longer exists.
 
+## Four more sites, found by MEASURING a claim instead of asserting it
+
+The first commit on this branch amended `2026-09-11-z80-half-registers.md` to
+say its four upper-case probes were now closed. That amendment was written from
+the shape of the change, not from a run, and it was WRONG. Measured on
+`probes/p15.asm`, `cpu z80undoc`:
+
+```text
+       3/       0 : DD 7D               	ld	A,ixl      sigil: REFUSED
+       4/       2 : DD 60               	ld	IXU,B      sigil: REFUSED
+       5/       4 : DD 7D               	ld	a,IXL      sigil: agreed
+       6/       6 : FD 67               	ld	IYU,A      sigil: REFUSED
+```
+
+`index_half` already folded, so the HALF's own spelling was fine; the plain
+register beside it went through a `reg_word` closure comparing `w.as_str()`
+against a lower-case list. Widening the search from there found three sites of
+the same shape, all LOUD rather than silent, all now folded and pinned:
+
+* `lower_m68k_generic`'s PC-relative scan matched `an == "pc"` exactly, so
+  `move.w (Tbl,PC),d1` missed the PC-relative lowering and died on
+  `m68k_addr_reg("PC")`. asl: `323A FFFA` (`probes/p16.asm` 4).
+* `m68k_special_reg_size` read the implicit size off the operand NAME with an
+  exact match, so `move D6,CCR` was refused for want of a size suffix asl never
+  needed. asl: `44C6` / `46FC 2700` / `4E66` (`probes/p16.asm` 6 to 8).
+* the half-register `reg_word` above.
+
+**The lesson is the one in the memory note about names and behaviour: a fold in
+one function is not a fold in the paths that read its output.** The amendment
+has been rewritten to say what a run says.
+
 ## What is NOT in this parcel, and is booked instead
 
 asl reads a register name as a register in EXPRESSION position too, not only in
