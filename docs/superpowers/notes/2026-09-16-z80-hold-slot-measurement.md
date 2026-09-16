@@ -683,3 +683,30 @@ had one. That is a trade a person can weigh; "18 bytes for a tidier spelling" is
 instance: a constraint whose reason is wrong is more fragile than one with no reason at all,
 because refuting the reason looks like refuting the constraint. This one has now survived two
 wrong reasons. It is right, and for neither of them.
+
+### Correction to the correction, 2026-09-16, on aeon's catch: this is a REVERSAL, not a third reason
+
+The block above closes by calling the bus-analysis finding *"the third reason offered for the
+absolute spelling and the first that holds"*, inside a series that begins with two refuted reasons.
+**Aeon asked for that to be said plainly instead of filed as a refinement, and they are right.**
+
+Reasons one and two were arguments **for the register spelling**: aeon's register economy, and the
+DMA-window cycle hazard. Both fell. The finding here is an argument **for the absolute spelling**.
+Presenting the three as a numbered series invites the reader to conclude that a surviving constraint
+has finally been grounded, when what actually happened is that **the constraint was inverted**: the
+row demanded for six days that any form must be able to emit through a caller-supplied register, and
+the measurement says that is the one shape the design must not take. A reader who takes "reason
+three" at face value gets the conclusion exactly backwards while believing the record supports them.
+
+Amended in `docs/OVERSEER-REFERENCE.md` under *CONSTRAINT 3 IS REVERSED, NOT WEAKENED*, which is the
+copy a future boot actually reads. Aeon landed their side at `14a46a35`.
+
+**And the general rule, which is aeon's and which this lane needs more than they do: A CORRECTION
+SENT TO A PEER IS NOT A CORRECTION MADE TO THE RECORD, AND THE MESSAGE IS THE EASIER HALF.** Aeon
+found three instances in one session, all theirs, all the same shape: the fix went where the
+conversation was rather than where the artifact was. **This lane then did it twice inside the same
+hour.** The `:129` correction aeon had already sent by message was still wrong in their row, which is
+their instance; and this seat's own `docs/OVERSEER-REFERENCE.md` still carried the register DEMAND as
+standing, hours after the seat had measured its reversal and sent that measurement to a peer. The
+message felt like the delivery. **The test is mechanical and is the only thing that catches it: after
+sending a correction, grep your own tree for the sentence you just corrected.**

@@ -2389,9 +2389,42 @@ found twice.
 lane's earlier position: the compiler still owns the release on every exit path, since that is the
 property all three proofs rest on; the slot admits at least one statement between the acquire and
 the spliced poll, which is all boot demands (whether it should admit more is this lane's call, and
-no site asks for it); it emits through a **caller-supplied register** (the DEMAND stands; **BOTH reasons offered for it
-have now failed, and it is no longer a safety constraint**, see below); and it lands under propose, discuss, then land, because it adds a construct the
+no site asks for it); **it emits the bus request as a resolvable absolute with a literal `$0100`
+source, which is the REVERSAL of what constraint 3 used to demand and is not a refinement of it**
+(see the reversal block below, and `docs/superpowers/notes/2026-09-16-z80-hold-slot-measurement.md`
+at `d326420c`); and it lands under propose, discuss, then land, because it adds a construct the
 game's source is written in.
+
+**⚠ SUPERSEDED THE SAME DAY, AND BY A REVERSAL RATHER THAN A REFINEMENT. Read the block below this
+one first: constraint 3 is INVERTED, not merely weakened.** This heading and the paragraphs under it
+are kept because the two refutations they record are still correct and still worth reading. What they
+get wrong is the direction of travel: they leave a reader believing the register demand survives its
+two dead reasons in a weakened form, when the measurement of 2026-09-16 says the register form is the
+one shape the design must NOT take.
+
+**CONSTRAINT 3 IS REVERSED, NOT WEAKENED: THE REGISTER FORM IS THE SHAPE TO AVOID. 2026-09-16, on aeon's insistence that this be said plainly.**
+
+Measured at sigil `26de6eb7`, `crates/sigil-frontend-emp/src/z80_bus.rs:153-166`. `bus_toggle`
+recognises a bus request only when the destination resolves to the bus-request address **and** the
+source is the literal immediate `$0100`. Boot's `move.w d7,(a1)` satisfies neither, so
+`region_acquires_bus` (`:196-202`) returns false, the context never joins the tree-wide
+`bus_contexts` union built at `corpus_contracts.rs:1160-1169`, and `:1253` then seeds **every**
+`requires(z80_stopped)` proc in the tree `BusEntry::Unknown` instead of `Held`. The `[bus.*]`
+crash-class tier goes silent tree-wide and nothing diagnoses it, because an empty `bus_contexts` is
+indistinguishable from a tree that has no bus contexts in it.
+
+**The three reasons are NOT a series, and calling this one "reason three" is the error aeon caught.**
+Reasons one (register economy) and two (the DMA-window cycle hazard) were arguments FOR the register
+spelling, and both fell. This one is an argument FOR the absolute spelling. A reader taking them as a
+sequence concludes the constraint stands on firmer ground; it stands **inverted**. The landed note
+carried that framing and is corrected at its tail.
+
+**AEON'S HALF, which this lane would not have reached: the blast radius, not the rule.** Every
+previous instance of this vacuity shape in either lane was one of our own gates going quiet about our
+own code. This one is **the engine's source SPELLING silencing sigil's analysis, tree-wide, from a
+single site.** A shape choice at one hand-spelled hold determines whether every proc in the tree that
+declares the context is analysed at all, and neither lane's model of the problem had a way to
+represent that. Landed on their side at aeon `14a46a35`.
 
 **CONSTRAINT 3 HAS OUTLIVED TWO REASONS, AND THE DEMAND IS WEAKER THAN IT LOOKED. 2026-09-16.**
 
