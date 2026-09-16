@@ -477,6 +477,39 @@ it with 6(c) or it becomes face 2 with a number attached.
 
 ## Quality bars
 
+### REVIEW STEP, UNCONDITIONAL: RECOMPUTE EVERY QUOTED FIGURE WITH THIS LANE'S OWN INSTRUMENT (2026-09-16)
+
+**Read when judging ANY returned agent work or peer report. This is a STEP, not a thing to notice, and
+that distinction is the entire finding.**
+
+**The procedure.** For every number a returned report quotes as evidence, recompute it here with the
+instrument this lane's own chain uses, before believing the figure agrees with anything. Do not run the
+tool the report used. **Reproducing a foreign figure with the foreign tool reproduces the foreign result
+BY CONSTRUCTION**, so it tests transcription and nothing else. If you cannot recompute it, the figure is
+unverified and says so in your record.
+
+**The instance, which is this seat's own and is why the rule is a step.** A subagent reported a
+seven-shape table in `cksum`. This seat reproduced `559008248` **with `cksum`** and recorded that the
+figure "reproduces exactly". The lane's standard is IEEE/zlib in 8 hex digits and was sitting in
+`golden/provenance.toml` as `s4 = "91c46c94/820209"` the whole time. The agreement was real, correctly
+labelled in the agent's own terms, and meant nothing about the chain. **No naming convention would have
+fired**, which is why "name the implementation" is the weaker rule and this one replaces it for review.
+
+**⚠ WHY IT CANNOT BE A THING YOU WATCH FOR, and this is the hub's conclusion rather than this lane's
+consolation.** This seat committed the spurious-agreement failure **within about an hour of the hub
+describing that exact class to it, and did not recognise it while doing it.** That is the strongest
+evidence the suite holds that **being TOLD about a failure class is nearly worthless as a defence**;
+only a procedure that runs whether or not you suspect anything works. Aeon reached the same conclusion
+the same night from the opposite direction, by inferring from how a result's neatness FELT that the
+control had to be a fixed step rather than a thing to notice. **Two lanes, two routes, one conclusion,
+and one of the routes was a relapse.** Banked at empyrean `d8814c1`.
+
+**And bound a retraction when you make one.** The correction above named the string-typing parcel's
+byte neutrality as UNAFFECTED, because it rested on building both arms and comparing directly plus
+sizes matching `provenance.toml`, never on the checksum's units. **A retraction that does not say what
+it does NOT reach invites a re-run of everything it touched**, and that over-correction is its own
+defect.
+
 ### A COMMENT BESIDE A DECLARATION IS EVIDENCE ABOUT AN AUTHOR'S INTENT, NEVER ABOUT THE DECLARATION (2026-09-12)
 
 *(Read when judging any claim whose ground is a comment: a returned agent's, a peer's, or your own.

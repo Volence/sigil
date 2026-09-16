@@ -489,6 +489,8 @@ under that cut's heading.
 
 ### Building a proof, planting a control, or judging a green or a zero
 
+- **Judging ANY returned agent work or peer report, as an unconditional step**: *REVIEW STEP,
+  UNCONDITIONAL: RECOMPUTE EVERY QUOTED FIGURE WITH THIS LANE'S OWN INSTRUMENT* (ref).
 - **Building a proof, or judging a claim, a green, or a detached run**:
   - *Rules banked from closed findings* (ref).
   - *A re-baseline does not explain a green* (ref).
