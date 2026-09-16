@@ -1,0 +1,11 @@
+dc.b S1,$EE|61ee
+dc.b S2,$EE|6162ee
+dc.b S2+1,$EE|6163ee
+dc.b S1+S2,$EE|616162ee
+move.w #S1,d0|303c0061
+move.w #S2,d0|303c6162
+move.l #S4,d0|203c61626364
+move.w S2,d0|30386162
+move.w #S2+1,d0|303c6163
+dc.w S2-1|6161
+dc.b S2*2,$EE|

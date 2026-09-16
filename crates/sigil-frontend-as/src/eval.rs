@@ -2748,7 +2748,136 @@ impl Asm {
     }
 
     fn fold(&self, e: &Expr) -> Fold {
-        e.fold(&|name| self.builtin_num(name).or_else(|| self.resolve_sym(name)))
+        e.fold(&|name| {
+            self.builtin_num(name)
+                .or_else(|| self.resolve_sym(name))
+                .or_else(|| self.resolve_str_packed(name))
+        })
+    }
+
+    /// A STRING-valued symbol read where an integer is wanted, as its packed
+    /// value. `AS-STRING-SYMBOL-INT-SLOT`.
+    ///
+    /// MEASURED 2026-09-15: a string symbol behaves EXACTLY as its literal
+    /// would, in every slot. With `S2 equ "ab"`, `move.w #S2,d0` is `303C 6162`
+    /// and `move.w S2,d0` is `3038 6162`, the same as the literal, and
+    /// `dc.w S2-1` is `6161`, the same integer `dc.w "ab"-1` gives. Not one
+    /// cell of the matrix differs. That is what makes this a RESOLUTION gap
+    /// rather than a semantics one: the value was always right, sigil just had
+    /// no route from the name to it and said `unresolved symbol`.
+    ///
+    /// Asked LAST, after the integer environment, so a name bound in both
+    /// resolves exactly as it did before and this can only ever answer for a
+    /// name that had no answer at all. That ordering is also what makes it
+    /// byte-neutral on any corpus by construction: the only inputs it changes
+    /// are ones that previously FAILED to assemble.
+    ///
+    /// The 1-to-4 character window comes from [`crate::expr::pack_str_value`],
+    /// so a longer string stays the loud refusal it is in an integer slot
+    /// rather than silently packing its first four characters.
+    fn resolve_str_packed(&self, name: &str) -> Option<i64> {
+        crate::expr::pack_str_value(&self.resolve_str(name)?, &self.state.charset)
+    }
+
+    /// Replace a STRING-typed operand with its PACKED integer, which is R2's
+    /// integer-slot rendering: `move.w #"a"+"b",d0` is `303C 6162` and
+    /// `move.w "ab",d0` is `3038 6162`.
+    ///
+    /// Returns `None` when nothing changed, so every operand that was not
+    /// string-typed reaches the classifier as the identical token slice it did
+    /// before this parcel.
+    ///
+    /// THREE SHAPES ARE PEELED AND PUT BACK rather than folded through, because
+    /// each of them is part of the operand's ADDRESSING MODE and not of its
+    /// value, and losing one would silently change the instruction:
+    ///
+    /// - a leading `#`, which marks the immediate. `classify` consumes it after
+    ///   this runs, so it is still standing here.
+    /// - an outer paren group, which on the Z80 is an INDIRECTION: packing
+    ///   `("ab")` down to a bare `Tok::Int` would rewrite `ld de,("ab")` from a
+    ///   4-byte `ED 5B nn nn` into a 3-byte immediate load. The parens are
+    ///   re-wrapped around the packed value, so the shape `classify` reads is
+    ///   unchanged.
+    /// - a lone string LITERAL, which is left entirely alone: `parse_atom`
+    ///   already packs that by [`crate::expr::string_to_int`], through the
+    ///   literal's own escape processing. Routing it here instead would be a
+    ///   second path to the same byte, and the two could disagree about a
+    ///   `\{...}` interpolation.
+    fn pack_str_operand(&mut self, toks: &[Token]) -> Option<Vec<Token>> {
+        let (first, last) = (toks.first()?, toks.last()?);
+        // AN OPERAND CARRYING A REGISTER NAME IS AN ADDRESSING MODE, NOT A
+        // VALUE, and is left exactly as written. asl settles this by position:
+        // it peels the mode before it evaluates anything, so a register
+        // spelling is a register here and an ordinary symbol in an expression.
+        //
+        // This is not a precaution. `s2disasm/s2.asm:14504` writes
+        // `l := lowstring("char")` inside an `irpc`, which leaves `l` a live
+        // string-valued symbol for the rest of the assembly, and
+        // `s2.sounddriver.asm` is Z80 and writes `ld l,(ix+...)` 148 times.
+        // Without this the typing rule rewrote the REGISTER `l` into the packed
+        // character it was last assigned, and s2 gained 24 errors reading
+        // `Ld, ops: [Imm8(99), Indexed { reg: Ix, disp: 3 }]` (99 is `'c'`).
+        // The whole-operand scan, rather than a check on the bare identifier
+        // alone, is what also covers `(hl)` and `(ix+3)`, where the register
+        // sits inside parens or under a `+`.
+        if toks.iter().any(|t| {
+            matches!(&t.tok, Tok::Ident(w) if crate::operands::is_operand_register_word(w, self.state.cpu))
+        }) {
+            return None;
+        }
+        if matches!(first.tok, Tok::Punct(Punct::Hash)) {
+            let inner = self.pack_str_operand(&toks[1..])?;
+            let mut out = vec![first.clone()];
+            out.extend(inner);
+            return Some(out);
+        }
+        if peel_parens(toks).is_some() {
+            let inner = self.pack_str_operand(&toks[1..toks.len() - 1])?;
+            let mut out = vec![first.clone()];
+            out.extend(inner);
+            out.push(last.clone());
+            return Some(out);
+        }
+        // A lone string LITERAL: the existing path owns its VALUE, so this
+        // returns `None` and leaves it there. What it does add is asl's own
+        // WORD for the two lengths that have no packed value at all, which
+        // `parse_expr` could only report as "bad immediate expression":
+        // accurate about the parse and silent about the reason.
+        //
+        // The value is still `string_to_int`'s, asked here only to find out
+        // WHETHER it has one, so this cannot move a byte. An escape this
+        // cannot process (an invalid one, or a `\{...}` interpolation, which
+        // has no value at this layer) is left to the path that understands it.
+        if let [Token { tok: Tok::Str(raw), span }] = toks {
+            if crate::expr::string_to_int(raw, &self.state.charset).is_none() {
+                if let Ok(value) = crate::escape::unescape_plain(raw) {
+                    self.err(*span, string_not_an_integer(&value));
+                    return Some(vec![Token { tok: Tok::Int(0), span: *span }]);
+                }
+            }
+            return None;
+        }
+        let span = item_span(toks, first.span);
+        let packed = match self.eval_str_typed(toks) {
+            StrTyped::NotStr => return None,
+            StrTyped::Refuse(msg) => {
+                self.err(span, msg);
+                // A placeholder keeps the pass's shape, exactly as `fold_imm`
+                // does for an arithmetic fault. The error above fails the run.
+                0
+            }
+            StrTyped::Str(s) => match crate::expr::pack_str_value(&s, &self.state.charset) {
+                Some(v) => v,
+                // asl's own refusal for a string of length 0, or 5 and longer,
+                // in an integer slot: `error #1141: expected integer, but got
+                // string` (`move.w #"",d0`, `move.w #"abcde",d0`, exit 2).
+                None => {
+                    self.err(span, string_not_an_integer(&s));
+                    0
+                }
+            },
+        };
+        Some(vec![Token { tok: Tok::Int(packed), span }])
     }
 
     /// Report a fold that has no 64-bit value (`Fold::Fault`: an overflow, a
@@ -3390,38 +3519,209 @@ impl Asm {
     /// `lowstring(substr(...))` / `substr(lowstring(...), ...)` nest freely
     /// (T9.3).
     fn eval_str(&self, toks: &[Token]) -> Option<String> {
+        match self.eval_str_typed(toks) {
+            StrTyped::Str(s) => Some(s),
+            StrTyped::Refuse(_) | StrTyped::NotStr => None,
+        }
+    }
+
+    /// asl's VALUE TYPE for `toks`, which is the whole of this parcel.
+    ///
+    /// MEASURED 2026-09-15 against the pinned reference asl through `asl_run`,
+    /// every value below from a run that exited 0; the matrix and the probes
+    /// are `docs/superpowers/notes/2026-09-15-as-string-numeric-typing.md`.
+    /// Three rules cover every cell:
+    ///
+    /// **R1. `+` is the ONLY operator that propagates stringness.** Every other
+    /// operator, unary `-` and `~` included, packs a string operand to its
+    /// integer and yields an INTEGER: `dc.w "ab"-1` is `6161`, `"ab"*2` is
+    /// `C2C4`, `-"ab"` is `9E9E`, `"ab">>8` is `0061`, `~"ab"` is `9E9D`, each
+    /// ONE word rather than a two-character string. So the type turns on the
+    /// ROOT of the operator tree, not on whether a `+` appears somewhere:
+    /// `dc.w "ab"+1-1` is `6162` (root `-`, an integer) while `dc.w "ab"+(1-1)`
+    /// is `0061 0062` (root `+`, a string). [`split_root_plus`] is that test,
+    /// and it reads the ladder out of [`crate::expr::infix_bp`] rather than
+    /// keeping a second copy of it.
+    ///
+    /// **R2. RENDERING is the CALLER's, and it differs by slot.** A string
+    /// value renders one element PER CHARACTER in a data directive
+    /// (`dc.b "ab"` is `61 62`, `dc.w "ab"` is `0061 0062`) and PACKS in an
+    /// integer slot (`move.w #"ab",d0` is `303C 6162`, and the absolute-address
+    /// slot is identical). This function answers only "what is the string";
+    /// `directive_db` spells the first rendering and [`Self::pack_str_operand`]
+    /// the second.
+    ///
+    /// **R3. `+`'s VALUE**: string+string CONCATENATES at any length,
+    /// string+integer (either order) is packed arithmetic. See
+    /// [`Self::str_plus_int`] for the length rule, which is the one the ledger
+    /// had wrong.
+    ///
+    /// `NotStr` is the answer for every ordinary numeric expression and means
+    /// "your integer path runs unchanged", so nothing that was not string-typed
+    /// before this parcel takes a new route. `Refuse` is for a string-typed
+    /// expression that asl gives no dependable answer for; it is never routed
+    /// as `NotStr`, because falling through to the integer path there is
+    /// exactly how silently-wrong bytes are made.
+    fn eval_str_typed(&self, toks: &[Token]) -> StrTyped {
         // Parentheses around a string expression are transparent, exactly as
         // they are around a numeric one: asl folds `strlen(("abc"))` to 3 and
-        // `strlen(lowstring(("ABCD")))` to 4. This is not a curiosity —
+        // `strlen(lowstring(("ABCD")))` to 4, and `dc.w ("ab")` is `0061 0062`,
+        // still a string. This is not a curiosity:
         // `expand_calls` PARENTHESISES every argument it substitutes into a
         // user `function` body, so `chkop function op,ref,(...strlen(ref)...)`
         // hands its own `strlen` a `("0(")`, and a `substr`/`lowstring`/
         // comparison chain over function parameters is unreachable without
         // this peel.
         if let Some(inner) = peel_parens(toks) {
-            return self.eval_str(inner);
+            return self.eval_str_typed(inner);
         }
-        // asl's `+` over STRING operands is CONCATENATION, not the sum of the
-        // operands' packed character codes: `dc.b "-"+"x"` is `2D 78` (probe
-        // `v_concat_lit`, and `v_concat_chain` for the rest of the law). The
-        // arithmetic reading is the one byte `A5`, so the two differ in LENGTH
-        // as well as value and a concatenation cannot pass for the sum.
+        if let Some((lhs, rhs)) = split_root_plus(toks) {
+            return self.eval_plus_typed(lhs, rhs);
+        }
+        match self.eval_str_atom(toks) {
+            Some(s) => StrTyped::Str(s),
+            None => StrTyped::NotStr,
+        }
+    }
+
+    /// The root operator is a binary `+`: R1 says the result is a STRING if
+    /// EITHER side is, and R3 says what its value is.
+    ///
+    /// Both sides are asked for their type FIRST, and the integer fold runs
+    /// only on a side the string path declined. That ordering is what keeps an
+    /// ordinary `a+b` off the (much more expensive) `fold_const` path entirely:
+    /// two failed atom probes and it answers `NotStr`.
+    fn eval_plus_typed(&self, lhs: &[Token], rhs: &[Token]) -> StrTyped {
+        let lt = self.eval_str_typed(lhs);
+        let rt = self.eval_str_typed(rhs);
+        if let StrTyped::Refuse(m) = lt {
+            return StrTyped::Refuse(m);
+        }
+        if let StrTyped::Refuse(m) = rt {
+            return StrTyped::Refuse(m);
+        }
+        match (lt, rt) {
+            // asl's `+` over STRING operands is CONCATENATION, not the sum of
+            // the operands' packed character codes: `dc.b "-"+"x"` is `2D 78`
+            // (probe `v_concat_lit`). The arithmetic reading is the one byte
+            // `A5`, so the two differ in LENGTH as well as value and a
+            // concatenation cannot pass for the sum. No length cap here:
+            // `dc.b "abcde"+"f"` is six bytes.
+            (StrTyped::Str(a), StrTyped::Str(b)) => StrTyped::Str(a + &b),
+            // COMMUTATIVE, measured both ways: `dc.b "ab"+1` and `dc.b 1+"ab"`
+            // are both `61 63`.
+            (StrTyped::Str(a), StrTyped::NotStr) => match self.fold_const(rhs) {
+                Some(n) => self.str_plus_int(&a, n),
+                // The integer side has no value yet (a forward reference, a
+                // register name, a shape this cannot fold). Answering `NotStr`
+                // leaves the caller on precisely the path it took before this
+                // parcel rather than inventing one, and in the one-character
+                // case that path agrees with asl anyway (`"a"+1` is `62`).
+                None => StrTyped::NotStr,
+            },
+            (StrTyped::NotStr, StrTyped::Str(b)) => match self.fold_const(lhs) {
+                Some(n) => self.str_plus_int(&b, n),
+                None => StrTyped::NotStr,
+            },
+            _ => StrTyped::NotStr,
+        }
+    }
+
+    /// R3's arithmetic half: pack the string, add, and render the sum **in the
+    /// MINIMAL number of whole bytes it needs**.
+    ///
+    /// THE LENGTH RULE IS NOT THE ONE THE LEDGER BOOKED, and only measuring
+    /// caught it. The ledger says "packed arithmetic that keeps the string's
+    /// length", which is right for every case anyone had tried and wrong in
+    /// general. The discriminator is a leading zero byte: `dc.b "\x00a"+1` is
+    /// ONE byte `62`, not `00 62`, and `dc.b "\x00ab"+1` is `61 63`. Nor is it
+    /// `max(len, needed)`: `dc.b "a"+(0-97)` emits NOTHING (the sum is 0, so
+    /// the value is the EMPTY string) and `dc.b "a"+(-98)` emits `FF FF FF FF`
+    /// (a negative sum takes all four). The carry may GROW it, which is the
+    /// same rule read forwards: `dc.b "\xff\xff\xff"+1` is `01 00 00 00`.
+    ///
+    /// The zero case needed its own proof, because "zero bytes, exit 0" is also
+    /// what a DECLINED shape looks like here. It is a real empty string: in an
+    /// integer slot `move.w #"a"+(0-97),d0` raises `#1141 expected integer, but
+    /// got string`, the same as `move.w #"",d0`, on all four runs.
+    ///
+    /// The arithmetic is 32-bit, which is where both refusals come from.
+    fn str_plus_int(&self, s: &str, n: i64) -> StrTyped {
+        let cs = &self.state.charset;
+        // THE ONE CELL THE PROBE COULD NOT SETTLE, refused rather than guessed.
+        // `charset 'a',$11` gives `dc.b "ab"` = `11 62` and `dc.b "ab"+1` =
+        // `11 63`, so the arithmetic runs on the MAPPED bytes. Whether the
+        // result bytes are then emitted raw or mapped a SECOND time is
+        // undecidable on that page, both bytes being fixed points of it, and
+        // the two readings differ in the emitted byte. Sigil does the packing
+        // through the page (as `string_to_int` does) and hands the caller
+        // characters that the caller maps again, so it implements the
+        // second reading; under a non-identity page that is a byte it cannot
+        // prove, so it refuses instead. No corpus writes a string in an
+        // arithmetic expression at all, let alone under a `charset`.
+        if !cs.is_identity() {
+            return StrTyped::Refuse(STRING_PLUS_INT_CHARSET.to_string());
+        }
+        let bytes: Vec<u8> = s.chars().map(|c| cs.map_char(c)).collect();
+        // THE OPERAND must pack. asl declines a 5-character string here
+        // whatever the addend: `dc.b "abcde"+1,$EE` and `dc.b "abcde"+0,$EE`
+        // both emit nothing at all, so it is the PACK that fails and not the
+        // arithmetic. The empty string is refused by the same door.
+        if bytes.is_empty() || bytes.len() > MAX_PACKED_STR_BYTES {
+            return StrTyped::Refuse(STRING_PLUS_INT_UNDEFINED.to_string());
+        }
+        let mut packed: i64 = 0;
+        for b in &bytes {
+            packed = (packed << 8) | i64::from(*b);
+        }
+        // Computed in 64 bits and RANGE-CHECKED, rather than wrapped to 32.
+        // The difference is a byte, and only the test caught it: this arm first
+        // wrapped, which made `"\xff\xff\xff\xff"+1` the empty string, and asl
+        // emits one byte `00` there.
         //
-        // EVERY operand must be a string or this returns `None` and the caller's
-        // numeric path runs unchanged, which is what keeps this from capturing
-        // an addition: `1+2` splits, finds no string, and folds to `03` (probe
-        // `v_concat_chain` line 11). A MIXED pair also falls through, and in its
-        // one-character shape the numeric path agrees with asl: `"a"+1` is `62`,
-        // the packed code plus one. The multi-character mixed case (`"ab"+1` is
-        // `61 63` to asl, packed arithmetic that keeps the string's length) is
-        // refused as a `dc.b` range overflow and ledgered as AS-STRING-PLUS-INT.
-        if let Some(parts) = split_top_plus(toks) {
-            let mut out = String::new();
-            for part in &parts {
-                out.push_str(&self.eval_str(part)?);
-            }
-            return Some(out);
+        // AND THAT VALUE IS NOT ONE TO MATCH, which is the whole reason the
+        // check below is a refusal rather than a wider window. The sums needing
+        // five bytes do not agree with each other, let alone with any rule that
+        // explains the four-byte ones: `"\xff\xff\xff\xff"+1` is `00`, `+2` is
+        // `01` and `+256` is `FF` (one low byte each), while `"abcde"+1`, the
+        // same five-byte class, emits NOTHING. Stability is not an answer
+        // here; `asl_ref.sh` says in its own header that this build's
+        // out-of-range substitutions agree with themselves forever and so read
+        // like measurements.
+        // `saturating_add`, not `+`. The packed side is at most `0xFFFFFFFF`, so
+        // an addend within that distance of `i64::MAX` overflows, and AS spells
+        // one in four characters: `dc.b "a"+$7FFFFFFFFFFFFFFF` was an
+        // arithmetic-overflow PANIC in a debug build (no diagnostic, no line
+        // number, the process gone) and wrapped silently in release, where it
+        // then reached the right refusal by accident. Saturating sends it to the
+        // range check below, which refuses it in words.
+        let sum = packed.saturating_add(n);
+        if sum > i64::from(u32::MAX) || sum < i64::from(i32::MIN) {
+            return StrTyped::Refuse(STRING_PLUS_INT_UNDEFINED.to_string());
         }
+        let out: Vec<u8> = if sum < 0 {
+            // A negative sum takes all four bytes, as the 32-bit two's
+            // complement: `dc.b "a"+(-98)` is `FF FF FF FF`, `dc.b "a"+(0-300)`
+            // is `FF FF FF 35` and `dc.b "ab"+(0-30000)` is `FF FF EC 32`.
+            (sum as i32).to_be_bytes().to_vec()
+        } else {
+            let be = (sum as u32).to_be_bytes();
+            // Drop the leading zero bytes; a sum of 0 keeps NONE of them and is
+            // the empty string, which is the measured `dc.b "a"+(0-97)`.
+            be.iter().copied().skip_while(|b| *b == 0).collect()
+        };
+        // `u8 as char` is U+0000..U+00FF, and the identity page maps each back
+        // to the same byte (`map_char` indexes `c as u8`), so the round trip
+        // through the caller's per-character emit is the identity. That
+        // equivalence is exactly what the non-identity refusal above protects.
+        StrTyped::Str(out.into_iter().map(char::from).collect())
+    }
+
+    /// The ATOMS of a string expression: a literal, a string-valued symbol, or
+    /// a `substr`/`lowstring` call. Split out of `eval_str` so
+    /// [`Self::eval_str_typed`] owns the operator rules and this owns the
+    /// leaves, which is what lets the operator rules be stated once.
+    fn eval_str_atom(&self, toks: &[Token]) -> Option<String> {
         // A literal's value has its escapes processed (asl: `strlen("\x41\66\\")`
         // is 3, `substr("\x41\x42\x43",1,1)` is `B`). A `\{expr}` stays in place
         // for the interpolation the binding sites run; `None` on an invalid
@@ -8080,6 +8380,60 @@ impl Asm {
         self.expand_str_comparisons(&expanded)
     }
 
+    /// [`Self::expand_operand_builtins`] plus R2's integer-slot rendering: an
+    /// INSTRUCTION operand that is string-typed is PACKED
+    /// ([`Self::pack_str_operand`]).
+    ///
+    /// This is a separate function, and not a fifth layer inside
+    /// `expand_operand_builtins`, because the wider DATA directives share that
+    /// one and must NOT pack: `dc.w "ab"` is `0061 0062` to asl, so packing it
+    /// to `6162` there would be silently wrong bytes. They keep the plain
+    /// expander and their own [`STRING_IN_WIDE_DATA`] refusal; only the
+    /// instruction paths, where packing IS asl's rendering, call this.
+    /// The packing is applied PER OPERAND, at every top-level comma, because
+    /// the two instruction paths hand this different slices. The Z80 path is
+    /// already split into groups, so the split below is the identity there. The
+    /// 68000 path expands the WHOLE operand list at once (it has to: the
+    /// held-back EA base spans are computed over the whole line), so without
+    /// this `move.w #"a"+"b",d0` arrives as `# "a" + "b" , d0` and the root-`+`
+    /// test straddles the comma, reading `"b" , d0` as one operand and
+    /// answering `NotStr`. The literal fix worked and the immediate one did
+    /// not, which is exactly how this was found.
+    fn expand_instruction_operand(&mut self, toks: &[Token]) -> Vec<Token> {
+        let expanded = self.expand_operand_builtins(toks);
+        let mut out: Vec<Token> = Vec::new();
+        let mut depth = 0i32;
+        let mut start = 0usize;
+        for i in 0..=expanded.len() {
+            let at_comma = match expanded.get(i).map(|t| &t.tok) {
+                Some(Tok::Punct(Punct::LParen)) | Some(Tok::Punct(Punct::LBracket)) => {
+                    depth += 1;
+                    false
+                }
+                Some(Tok::Punct(Punct::RParen)) | Some(Tok::Punct(Punct::RBracket)) => {
+                    depth -= 1;
+                    false
+                }
+                Some(Tok::Punct(Punct::Comma)) => depth == 0,
+                Some(_) => false,
+                None => true,
+            };
+            if !at_comma {
+                continue;
+            }
+            let group = &expanded[start..i];
+            match self.pack_str_operand(group) {
+                Some(packed) => out.extend(packed),
+                None => out.extend_from_slice(group),
+            }
+            if let Some(t) = expanded.get(i) {
+                out.push(t.clone());
+            }
+            start = i + 1;
+        }
+        out
+    }
+
     /// The position of the first STRING literal in `toks`.
     ///
     /// Used by the data directives wider than a byte, which must refuse a string
@@ -8091,6 +8445,33 @@ impl Asm {
         toks.iter()
             .find(|t| matches!(t.tok, Tok::Str(_)))
             .map(|t| t.span)
+    }
+
+    /// Why a `dc.w`/`dc.l`/`dw` operand that is STRING-typed must be refused,
+    /// or `None` when it is not string-typed and the numeric path may run.
+    ///
+    /// [`Self::string_leaf`] catches a string LITERAL still standing in the
+    /// operand, and until this parcel that was the whole population, because a
+    /// string with no literal in it could not resolve at all. It can now: a
+    /// string-valued SYMBOL resolves through [`Self::resolve_str_packed`], and
+    /// a `+` over one is string-typed. So `dc.w S2` with `S2 equ "ab"` would
+    /// reach the numeric fold, pack to `6162`, and assemble CLEANLY where asl
+    /// writes `0061 0062`.
+    ///
+    /// That is this parcel's own defect class, re-created by its own fix, and
+    /// this guard is what keeps the fix from opening it. The per-character
+    /// rendering for these widths stays unimplemented; what changes is that the
+    /// refusal now covers the symbol form too, so the direction is a LOUDER
+    /// refusal and never a quieter one.
+    ///
+    /// `dc.w S2-1` is deliberately NOT caught: its root is `-`, so it is an
+    /// INTEGER to asl (`6161`), and the numeric path now answers it correctly.
+    fn wide_data_string_refusal(&self, toks: &[Token]) -> Option<String> {
+        match self.eval_str_typed(toks) {
+            StrTyped::Str(_) => Some(STRING_IN_WIDE_DATA.to_string()),
+            StrTyped::Refuse(msg) => Some(msg),
+            StrTyped::NotStr => None,
+        }
     }
 
     /// The position of a FLOAT-typed leaf in `toks` — a literal that no
@@ -8315,11 +8696,25 @@ impl Asm {
             // is not scanned again (`dc.b substr("$\{abs(-5)}",0,0)` is `24 35`,
             // probe `v_interp_substr`; `dc.b s` with `s := "\\{n}"` is
             // `5C 7B 6E 7D`, probe `v_value_not_rescanned`).
-            if let Some(s) = self.eval_str(&expanded) {
-                let cs = &self.state.charset;
-                let bytes: Vec<u8> = s.chars().map(|c| cs.map_char(c)).collect();
-                self.emit(&bytes, vec![], span);
-                continue;
+            //
+            // A `Refuse` here is NOT allowed to fall through to the numeric
+            // path below. It marks a string-typed operand asl has no dependable
+            // answer for, and the numeric path would pack it into a plausible
+            // wrong byte at exit 0, which is the defect class this whole
+            // parcel closes, so re-opening it one directive down would be a
+            // poor trade.
+            match self.eval_str_typed(&expanded) {
+                StrTyped::Str(s) => {
+                    let cs = &self.state.charset;
+                    let bytes: Vec<u8> = s.chars().map(|c| cs.map_char(c)).collect();
+                    self.emit(&bytes, vec![], span);
+                    continue;
+                }
+                StrTyped::Refuse(msg) => {
+                    self.err(gspan, msg);
+                    continue;
+                }
+                StrTyped::NotStr => {}
             }
             // Fold any nested string comparison (`substr(...)="x"`) to 0/1 before
             // the numeric parse (mirrors `eval_all`; T5).
@@ -8393,6 +8788,10 @@ impl Asm {
             };
             if let Some(ssp) = Self::string_leaf(&expanded) {
                 self.err(ssp, STRING_IN_WIDE_DATA);
+                continue;
+            }
+            if let Some(msg) = self.wide_data_string_refusal(&expanded) {
+                self.err(gspan, msg);
                 continue;
             }
             let e = match crate::expr::parse_expr(&expanded, &self.ectx()) {
@@ -8491,6 +8890,10 @@ impl Asm {
                 self.err(ssp, STRING_IN_WIDE_DATA);
                 continue;
             }
+            if let Some(msg) = self.wide_data_string_refusal(&expanded) {
+                self.err(gspan, msg);
+                continue;
+            }
             let e = match crate::expr::parse_expr(&expanded, &self.ectx()) {
                 Some((e, [])) => e,
                 _ => {
@@ -8580,6 +8983,10 @@ impl Asm {
             };
             if let Some(ssp) = Self::string_leaf(&expanded) {
                 self.err(ssp, STRING_IN_WIDE_DATA);
+                continue;
+            }
+            if let Some(msg) = self.wide_data_string_refusal(&expanded) {
+                self.err(gspan, msg);
                 continue;
             }
             let e = match crate::expr::parse_expr(&expanded, &self.ectx()) {
@@ -8964,7 +9371,7 @@ impl Asm {
         let mut atoms = Vec::new();
         for g in groups {
             let written_indirect = crate::operands::is_whole_paren_group(g);
-            let expanded = self.expand_operand_builtins(g);
+            let expanded = self.expand_instruction_operand(g);
             let classified =
                 if !written_indirect && crate::operands::is_whole_paren_group(&expanded) {
                     crate::operands::classify_as_value(&expanded, span, &self.ectx())
@@ -9222,20 +9629,20 @@ impl Asm {
     fn expand_calls_m68k_operands(&mut self, toks: &[Token]) -> Vec<Token> {
         let held = crate::operands::m68k_ea_base_spans(toks);
         if held.is_empty() {
-            return self.expand_operand_builtins(toks);
+            return self.expand_instruction_operand(toks);
         }
         let mut out = Vec::new();
         let mut i = 0usize;
         for r in held {
             if r.start > i {
-                let head = self.expand_operand_builtins(&toks[i..r.start]);
+                let head = self.expand_instruction_operand(&toks[i..r.start]);
                 out.extend(head);
             }
             out.extend_from_slice(&toks[r.start..r.end]);
             i = r.end;
         }
         if i < toks.len() {
-            let tail = self.expand_operand_builtins(&toks[i..]);
+            let tail = self.expand_instruction_operand(&toks[i..]);
             out.extend(tail);
         }
         out
@@ -12333,48 +12740,79 @@ fn peel_parens(toks: &[Token]) -> Option<&[Token]> {
     Some(&toks[1..toks.len() - 1])
 }
 
-/// `toks` cut at every TOP-LEVEL `+`, or `None` when there is no such `+` or
-/// any piece would be empty. The operand list of a candidate string
-/// concatenation, for [`Asm::eval_str`].
+/// Split `toks` at the ROOT of its operator tree, when that root is a binary
+/// `+`. `None` for every other expression, which is what makes
+/// [`Asm::eval_str_typed`] answer `NotStr` for it.
 ///
-/// `None` rather than a one-element vector when there is no `+`: the caller
-/// recurses into each piece, and a single piece that is the whole input would
-/// not terminate.
+/// THE ROOT IS THE QUESTION, not "is there a `+` somewhere", and the measured
+/// pair that forces it is `dc.w "ab"+1-1` = `6162` (one word, an INTEGER)
+/// against `dc.w "ab"+(1-1)` = `0061 0062` (a two-character STRING). Both
+/// contain a top-level `+` and a string operand; they differ only in which
+/// operator ends up at the root. The predecessor of this function split at
+/// EVERY top-level `+` and had no way to tell them apart, which is why it could
+/// only ever handle an all-string chain.
 ///
-/// EVERY PIECE MUST BE NON-EMPTY, and that is the rule that keeps a nameless
-/// label out of here. AS spells a forward nameless label `+`, so `+`, `++` and
-/// a leading `+` are label syntax rather than addition; each of those leaves an
-/// empty piece and is declined, which sends the slice down the path that
-/// understands it. A trailing `+` (a malformed expression) is declined for the
-/// same reason and draws the numeric path's diagnostic.
+/// The root is the LOOSEST-binding top-level operator, and among equals the
+/// LAST one, every AS binary tier being left-associative. The binding powers
+/// are read out of [`crate::expr::infix_bp`], the same table
+/// [`crate::expr::parse_expr`] parses with, so this cannot drift from the
+/// parser's own ladder. That matters more than it looks in AS, whose ladder is
+/// NOT C's: `&` and `<<` bind TIGHTER than `+`, so `dc.w "ab"+1&$FF` is
+/// `0061 0063` (root `+`, a string) rather than `("ab"+1)&$FF`.
 ///
-/// Only `+`. A `-` is NOT a separator: asl's `-` over strings is not
-/// concatenation, and splitting on it would offer `eval_str` operands it would
-/// have to decline one at a time. `"a"+"b"-1` therefore declines as a whole and
-/// folds numerically.
-fn split_top_plus(toks: &[Token]) -> Option<Vec<&[Token]>> {
-    let mut parts = Vec::new();
+/// A `+` or `-` is a BINARY operator only where an operand has just ended,
+/// which is what keeps AS's nameless labels out of here: `+`, `++` and `+++`
+/// are forward-label syntax, and a leading `+` has no left operand, so each is
+/// declined and sent down the path that understands it. The same test tells
+/// AS's two meanings of `*` apart: after an operand it is multiplication, and
+/// anywhere else it is the current-PC atom, exactly as `parse_atom` reads it.
+fn split_root_plus(toks: &[Token]) -> Option<(&[Token], &[Token])> {
     let mut depth = 0i32;
-    let mut start = 0usize;
+    let mut best: Option<(usize, u8)> = None;
+    let mut after_operand = false;
     for (i, t) in toks.iter().enumerate() {
-        match t.tok {
-            Tok::Punct(Punct::LParen) | Tok::Punct(Punct::LBracket) => depth += 1,
-            Tok::Punct(Punct::RParen) | Tok::Punct(Punct::RBracket) => depth -= 1,
-            Tok::Punct(Punct::Plus) if depth == 0 => {
-                if i == start {
-                    return None;
-                }
-                parts.push(&toks[start..i]);
-                start = i + 1;
+        match &t.tok {
+            Tok::Punct(Punct::LParen) | Tok::Punct(Punct::LBracket) => {
+                depth += 1;
+                after_operand = false;
             }
-            _ => {}
+            Tok::Punct(Punct::RParen) | Tok::Punct(Punct::RBracket) => {
+                depth -= 1;
+                after_operand = true;
+            }
+            // The PC atom `*`, in the one position it can occupy: where no
+            // operand has just ended. It ENDS an operand itself.
+            Tok::Punct(Punct::Star) if !after_operand => {
+                after_operand = true;
+            }
+            Tok::Punct(p) if depth == 0 && after_operand => {
+                if let Some((bp, _)) = crate::expr::infix_bp(*p) {
+                    // `<=` and not `<`: among operators of equal binding power
+                    // the LAST is the root, because the tier is
+                    // left-associative and the last operator is applied to
+                    // everything before it.
+                    if best.is_none_or(|(_, b)| bp <= b) {
+                        best = Some((i, bp));
+                    }
+                }
+                after_operand = false;
+            }
+            Tok::Punct(_) => after_operand = false,
+            Tok::Int(_) | Tok::Str(_) | Tok::Ident(_) | Tok::Float(_) | Tok::Dollar => {
+                after_operand = true;
+            }
         }
     }
-    if parts.is_empty() || start == toks.len() {
+    let (idx, _) = best?;
+    if !matches!(toks[idx].tok, Tok::Punct(Punct::Plus)) {
         return None;
     }
-    parts.push(&toks[start..]);
-    Some(parts)
+    // A root with an empty side is a malformed expression, not a `+`; declining
+    // it draws the numeric path's own diagnostic rather than a string one.
+    if idx == 0 || idx + 1 >= toks.len() {
+        return None;
+    }
+    Some((&toks[..idx], &toks[idx + 1..]))
 }
 
 /// Length (in tokens) of the trailing string-expression at the END of `out`, or
@@ -18985,6 +19423,82 @@ const FLOAT_IN_INT_CONTEXT: &str =
 const STRING_IN_WIDE_DATA: &str =
     "string operand in a data directive wider than a byte: asl emits one \
      zero-extended element per character here, which is not implemented";
+
+/// The widest string asl's `string + integer` arithmetic has an answer for.
+///
+/// It is four because that arithmetic is 32-bit, the same window
+/// [`crate::expr::pack_str_value`] packs in, and it is a REFUSAL on both sides
+/// rather than a limit chosen here.
+const MAX_PACKED_STR_BYTES: usize = 4;
+
+/// `string + integer` where asl has no answer, measured 2026-09-15 and refused
+/// rather than reproduced.
+///
+/// THIS IS A SHAPE asl DECLINES SILENTLY, ON THE REFERENCE BUILD, AT EXIT 0:
+/// a fresh instance of the standing `ASL-SILENT-WRONG-ON-BOTH-BUILDS` hazard
+/// that `asl_ref.sh` documents. `dc.b "abcde"+1,$EE` emits NOTHING AT ALL with
+/// no diagnostic, and `dc.b "abcdefgh"+1,$EE` swallows the `$EE` with it. In an
+/// immediate slot it is not a value either: five consecutive runs of
+/// `move.w #"abcde"+1,d0` returned `5605`, `0000`, `564D`, `5608` and `55C6`,
+/// and with one accepted `move.w #$1234,d0` above it three runs all returned
+/// `1234`, the stale-slot echo.
+///
+/// So there is no byte here to match. Refusing is the only honest answer, and
+/// the alternative is not "match asl" but "invent a value and call it asl's".
+/// The empty string is refused by the same door: `dc.b ""+1,$EE` emits nothing
+/// on the same measurement.
+///
+/// string + STRING has no such cap and is not refused here: `dc.b "abcde"+"f"`
+/// is six bytes. The cap is on the arithmetic alone.
+const STRING_PLUS_INT_UNDEFINED: &str =
+    "`string + integer` is defined for a 1 to 4 character string: asl's own \
+     arithmetic is 32-bit, and outside that window it emits nothing at all \
+     (exit 0, no diagnostic) or a value that differs on every run, so there is \
+     no result to reproduce";
+
+/// `string + integer` under a `charset`, refused because the probe cannot say
+/// which of two readings asl uses and they differ in the emitted byte. See
+/// [`Asm::str_plus_int`] for the measurement and why guessing is worse than
+/// refusing.
+const STRING_PLUS_INT_CHARSET: &str =
+    "`string + integer` under a non-identity `charset` is refused: the \
+     arithmetic runs on the mapped bytes, but whether asl maps the result a \
+     second time is not decidable from any probe, and the two readings emit \
+     different bytes";
+
+/// asl's refusal for a string that an integer slot cannot take: length 0, or 5
+/// and longer. `error #1141: expected integer, but got string`, measured on
+/// `move.w #"",d0`, `move.w #"abcde",d0` and `move.l #"abcde",d0`, exit 2.
+///
+/// A 1-to-4 character string that simply does not FIT the slot is NOT this: it
+/// is an ordinary `#1320 range overflow` (`move.w #"abc",d0`,
+/// `move.b #"ab",d0`), which the caller's own range check raises. The two are
+/// kept apart here because they are kept apart in asl.
+fn string_not_an_integer(s: &str) -> String {
+    let n = s.chars().count();
+    format!(
+        "a {n}-character string has no integer value in this slot: asl packs 1 \
+         to 4 characters big-endian and refuses the rest (`expected integer, \
+         but got string`)"
+    )
+}
+
+/// asl's VALUE TYPE for an AS expression, the answer [`Asm::eval_str_typed`]
+/// gives. See that function for the three measured rules.
+///
+/// The third arm is the load-bearing one. A string-typed expression that asl
+/// has no dependable answer for must NOT be reported as "not a string", because
+/// the caller's integer path would then pack it and emit a plausible wrong
+/// value, which is the exact defect (`AS-STRING-PLUS-NUMERIC-CONTEXT`) this
+/// parcel exists to close, rebuilt one level up.
+enum StrTyped {
+    /// String-typed, and this is its value.
+    Str(String),
+    /// String-typed, and the caller must refuse with this text.
+    Refuse(String),
+    /// Not string-typed: the caller's integer path runs unchanged.
+    NotStr,
+}
 
 /// A front-end-only NUMBER: AS's expression evaluator is TYPED, and the
 /// distinction is byte-visible, not cosmetic.

@@ -641,6 +641,41 @@ fn build_disp_ea(disp: Expr, inner: &[Token]) -> Option<OperandAtom> {
     }
 }
 
+/// Whether a bare word in INSTRUCTION-OPERAND position names a register,
+/// register pair or condition on `cpu`, and so is never a symbol there.
+///
+/// asl settles the ambiguity by POSITION: it peels the addressing mode before
+/// it evaluates anything, so a register spelling is a register in an operand
+/// and an ordinary symbol in an expression. `eval.rs::pack_str_operand` asks
+/// this for exactly that reason, and the question has to be CPU-keyed in both
+/// directions: `l` is a Z80 register and a perfectly good 68000 symbol, `a0` is
+/// the reverse.
+///
+/// MEASURED, and this is why the guard exists rather than being a precaution.
+/// `s2disasm/s2.asm:14504` writes `l := lowstring("char")` inside an `irpc`, so
+/// `l` is a live string-valued symbol for the rest of the assembly, and
+/// `s2.sounddriver.asm` is Z80 and writes `ld l,(ix+zTrack.Detune)` 148 times.
+/// Without this, the string typing rewrote the REGISTER `l` into the packed
+/// character it was last assigned and s2 gained 24 errors of the shape
+/// `Ld, ops: [Imm8(99), Indexed { reg: Ix, disp: 3 }]`, 99 being `'c'`. The
+/// byte gate found it; nothing else would have.
+///
+/// The guard is positional and not global on purpose: the SAME file writes
+/// `dc.b l` two lines below the assignment, where `l` IS the string and asl
+/// emits its character. A guard in the string evaluator itself would break
+/// that, which is how this ended up here instead.
+pub(crate) fn is_operand_register_word(w: &str, cpu: sigil_ir::backend::Cpu) -> bool {
+    let w = w.to_ascii_lowercase();
+    match cpu {
+        sigil_ir::backend::Cpu::M68000 => {
+            is_m68k_areg_name(&w)
+                || is_m68k_dreg_name(&w)
+                || matches!(w.as_str(), "sp" | "pc" | "sr" | "ccr" | "usp")
+        }
+        _ => is_reg_or_cond_word(&w),
+    }
+}
+
 /// The bare words eval may interpret as a register, pair, or condition.
 fn is_reg_or_cond_word(w: &str) -> bool {
     matches!(

@@ -136,6 +136,24 @@ const MAX_PACKED_CHARS: usize = 4;
 /// operand not-an-expression, which the caller refuses out loud.
 pub(crate) fn string_to_int(s: &str, cs: &CodePage) -> Option<i64> {
     let s = crate::escape::unescape_plain(s).ok()?;
+    pack_str_value(&s, cs)
+}
+
+/// Pack an already-processed string VALUE, escapes resolved, to asl's integer.
+///
+/// This is [`string_to_int`]'s whole body, split out so a COMPUTED string
+/// (a concatenation, a `substr` chain, a string-valued symbol) packs by
+/// exactly the rule a literal packs by, rather than by a second copy of it
+/// that can drift. `string_to_int` is now the unescape step plus this.
+///
+/// The 1-to-4 character window is asl's own, and both ends of it are a
+/// measured refusal rather than a choice: a string of length 0 or 5 and
+/// longer in an integer slot is `error #1141: expected integer, but got
+/// string` (`move.w #"",d0`, `move.w #"abcde",d0`, exit 2, 2026-09-15). A
+/// 1-to-4 character string that does not FIT the slot is an ordinary
+/// `#1320 range overflow` instead (`move.w #"abc",d0`), which is the
+/// caller's range check and not this window.
+pub(crate) fn pack_str_value(s: &str, cs: &CodePage) -> Option<i64> {
     let mut packed: i64 = 0;
     let mut chars = 0usize;
     for c in s.chars() {
