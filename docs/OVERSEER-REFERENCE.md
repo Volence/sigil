@@ -3612,6 +3612,33 @@ read as an acceptance already in hand. This lane held, named the card's author, 
 withdrew the go and corrected its card within minutes. **When citing a decision as grounds, name
 who answered it in the same sentence.**
 
+### TWO GREENS DO NOT COMPOSE: RE-GATE THE MERGED TREE (2026-09-16, found in this lane and aeon's within one hour)
+
+**Each parcel's gate runs against its own branch. The merged tree carries a combination neither gate
+ever saw.** Two parcels landed here on 2026-09-16, one in the AS frontend and one in the emp
+frontend, each GREEN on its own branch. The merge is a third tree, and nothing had tested it.
+
+**Re-run the full landing gate on the MERGED tree before calling a landing done.** Measured here:
+GREEN, 490 suites, 5563 passed, reconcile exact at 5545 baseline plus 18 new. It passed, which is
+the point: **a green here is cheap and its absence is unfalsifiable after the fact.** Aeon re-verified
+their own parcel on a master that had moved nine commits under it, within the hour, independently.
+
+**Why it survives: each branch gate is individually correct, so nothing anywhere looks wrong.** This
+is the composition defect this file already carries for DOCUMENTS, where two sound sources contradict
+only in the artifact that pastes both, with the landing lane as its second spelling. The carrier is
+whoever merges.
+
+**Derive the expected count BEFORE the run, from the two branch figures, and treat a mismatch as a
+finding rather than a number to adopt.** `--baseline <previous landed total>` makes the gate check it
+instead of you: a bare pass count is not a result, and the verdict says so in its own reconciles line.
+
+**AND THE SIBLING THAT BIT AEON THE SAME DAY, worth reading here because its cost lands on the owner
+rather than on a gate: A PUSH FROM A LANDING WORKTREE DOES NOT MOVE THE MAIN CHECKOUT'S REF.** He was
+flying a ROM built from the main checkout, which still held the pre-fix build, while asking whether
+the fix worked. **The landed code and the code a person builds by hand are two different questions.**
+So after any landing, verify the MAIN checkout's HEAD equals the pushed tip and its tree is clean,
+which is one command and is the only thing that makes "it is landed" mean "it is what runs".
+
 ### A PARTIAL RUN IS NOT A LANDING GATE (2026-09-05)
 
 *(The strict red this came out of is CLOSED. Four of its five failures were this lane's own,

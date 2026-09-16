@@ -538,6 +538,9 @@ under that cut's heading.
   - *A MONITOR FILTER* (ref).
 - **Writing any commit**: *NEVER PASS A COMMIT MESSAGE THROUGH `-m "..."`* (ref).
 - **Landing anything that touches the AS frontend**: *A PARTIAL RUN IS NOT A LANDING GATE* (ref).
+- **Merging a second parcel, or calling any landing done**: *TWO GREENS DO NOT COMPOSE: RE-GATE THE
+  MERGED TREE* (ref), which also carries the sibling that a push from a landing worktree does not move
+  the main checkout's ref, so the landed code and the code a person builds by hand are two questions.
 - **Assembling a gate run by hand, or retyping a command out of one**: *I RAN A SUBSET OF THE LANDING
   GATE* (ref).
 - **Touching section alignment or the packing walk, landing anything this file describes as
