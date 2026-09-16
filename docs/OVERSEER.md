@@ -340,11 +340,36 @@ neither). **Over-pricing is the error direction that survives**, because an over
 never fails loudly — it just makes byte-movers get deferred. That ripple belongs to the
 aeon-owned lane.
 
-Provenance identity is **CRC32 + size**, never SHA1 — the campaign standard. **NAME THE CONVENTION
-WHEN YOU QUOTE ONE: this lane's figures are `cksum`**, and `python3 zlib.crc32` over the same bytes
-gives a DIFFERENT number (measured 2026-09-15 on one aeon shape: `cksum` 559008248, `zlib` 2445569172,
-identical file). Both are "CRC32" and both are right, so a bare figure is two lanes agreeing or
-disagreeing by luck. Size is the half that is unambiguous; quote it always.
+Provenance identity is **CRC32 + size**, never SHA1 — the campaign standard, and the implementation is
+**IEEE/zlib CRC-32 rendered as 8 hex digits**. Verified 2026-09-16 in both directions rather than
+assumed: `crates/sigil-harness/src/native.rs:4445` documents itself as *"CRC-32 (IEEE, the campaign
+provenance standard alongside byte-size)"*, and `golden/provenance.toml` carries `s4 =
+"91c46c94/820209"` while `python3 zlib.crc32` over a freshly built sonic4 plain gives `0x91c46c94` at
+820209 B. **This AGREES with the wire contract** (empyrean `origin/main`, `contract/protocol.md:1170`:
+`crc32` is IEEE/zlib CRC-32, 8-hex, `$defs/hash32`; line 5845 pins it to zlib over the file), so there
+is one convention here, not two, and nothing to reconcile at a lane boundary.
+
+**⚠ A DECIMAL CRC FIGURE IN THIS LANE IS A FOREIGN CONVENTION AND IS THE TELL.** `cksum` is a
+DIFFERENT checksum, not a different rendering: on that same file it gives 559008248 where zlib gives
+2445569172 (`0x91c46c94`). Every figure in `provenance.toml`, the chain and the lane log is 8 hex
+digits, so **a decimal checksum anywhere in this lane came from somewhere else and does not compare to
+the chain.**
+
+**THIS SEAT COMMITTED THE SPURIOUS-AGREEMENT FAILURE WITH IT, WITHIN AN HOUR OF THE HUB NAMING THAT
+CLASS, AND THAT IS THE ENTRY.** A subagent reported its 7-shape table in `cksum`. Checking its figure,
+this seat reproduced 559008248 **with `cksum`** and recorded that the agent's number "reproduces
+exactly" — **verifying a foreign number with the foreign tool and reading the match as corroboration.**
+The agreement was real and meant nothing about the lane's chain, which is the hub's own point made
+flesh: *a spurious DISAGREEMENT prompts an investigation, while a spurious AGREEMENT is
+indistinguishable from real corroboration.* The near-miss was that the lane's own hex convention was
+sitting in `provenance.toml` the whole time and one `grep` separated them.
+**THE BAR: check a peer's or an agent's figure with THIS LANE'S instrument, never with theirs.**
+Reproducing someone's number with their own tool tests transcription and nothing else.
+*(What survives unharmed: the byte-NEUTRALITY conclusion, which was established by building both arms
+and comparing directly, plus sizes that match `provenance.toml`. Identical is identical under any
+checksum. Only the quoted figures were in the wrong currency.)*
+Suite rule, adopted 2026-09-16 at empyrean `6f91aa4`: a checksum written into a record as evidence
+names its implementation.
 
 ## The autonomy directive — and its scope, which is the part that matters
 
