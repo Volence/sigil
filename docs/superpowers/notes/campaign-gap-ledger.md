@@ -5174,8 +5174,12 @@ looks like. It is a real empty string: in an integer slot `move.w #"a"+(0-97),d0
 
 **A STRING SYMBOL IS ITS LITERAL IN EVERY SLOT**, measured cell by cell with `S2 equ "ab"`, so
 `AS-STRING-SYMBOL-INT-SLOT` was a RESOLUTION gap and not a semantics one. `resolve_str_packed`
-answers LAST, after the integer environment, which makes it byte-neutral by construction: the only
-inputs it changes are ones that previously failed to assemble.
+answers LAST, after the integer environment, so a name bound in both resolves exactly as before.
+THE "BY CONSTRUCTION" CLAIM IS NOT QUITE TRUE AND IS NOT MADE: a name that is a string symbol AND a
+not-yet-defined forward label would, on an early pass, take the string where it used to poison and
+defer, and a different early-pass value can move a placement. Nothing in the corpus does that (all
+seven ROM shapes identical, all three disassembly corpora diagnostic-identical), so the claim here
+is MEASURED rather than structural, and that is the honest strength of it.
 
 **AND THE FIX RE-CREATED THIS CLUSTER'S OWN DEFECT CLASS ONE DIRECTIVE OVER.** Once a string symbol
 resolves, `dc.w S2` would reach the numeric fold, pack to `6162` and assemble CLEANLY where asl
