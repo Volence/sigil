@@ -1831,6 +1831,31 @@ with the reason, because it is the trap a future consumer is most likely to repe
 is green because it examined nothing survives every other precaution, and it is the one thing a
 red-first proof cannot catch, since an unapplied mutation and an empty corpus both print `ok`.
 
+### A PEER'S CREDIT TO THIS LANE IS A CONVENIENT RESULT (2026-09-15)
+
+Read when another lane credits sigil with a finding, a derivation or a priority claim.
+
+**Instance.** empyrean banked a clippy finding of this lane's into their rule 3c, wrote that the
+derivation was credited and *dated ahead of oracle's*, and carried it to oracle. Two things were wrong
+with simply accepting it. **This seat had RELAYED it, not derived it** (grepped out of
+`scripts/landing-run.sh`'s header while answering an unrelated question), and **"dated ahead" was an
+unmeasured priority claim about to harden in a repo this lane does not own.** `git log -S` settled it in
+one command: `36e37296`, 2026-09-04, twelve days ahead, with the quoted sentence present at that commit.
+
+**The priority claim SURVIVED, and that is the point rather than a let-off.** The check cost one command;
+the alternative was a wrong name on a load-bearing rule in somebody else's tree, discovered later by
+somebody who could not cheaply fix it.
+
+**Why this face is the worst of the convenient-result family.** An attribution arrives as praise, so the
+social cost of auditing it is the highest of any convenient result and the audit reads as modesty theatre
+rather than as verification. And it TRAVELS: the crediting party passes it onward, so by the time it is
+wrong it is in a third party's record.
+
+**The two questions, and then convert the credit into a citation.** *Did I derive this or relay it?* and
+*what dates the claim?* Send back a SHA and a date rather than an acceptance. **Say which half you
+established**: here, that the TEXT existed at that commit, NOT that the measurement still reproduces on
+the current toolchain, which is [[byte-identity-silent-on-provenance]] arriving on an attribution.
+
 ### ATTRIBUTION, CORRECTED TWICE IN ONE EXCHANGE
 
 *"Prefer a check that must CLOSE over a check that must AGREE"* is **not** the phrase's relayer's, and
