@@ -612,13 +612,19 @@ Stated as a measured requirement, from a population of one hand-rolled site at a
 
 ## Open questions and what could not be measured
 
-1. **`AcquireEnd` placement is a real choice with a real consequence and it is unresolved.**
-   Placing the slot inside `(enter, acquire_end)` buys re-entry protection via
-   `context.rs:374-378` and keeps `region_acquires_bus` working; placing it outside buys
-   nothing I can measure. Not a measurement gap; a design call that this note declines to
-   make.
-2. **The two definition-site checks at `eval/asm.rs:747-782` read the acquire by index.**
-   Finding Q2-b above. No gate added (instructed), no fix applied.
+1. **~~`AcquireEnd` placement is unresolved.~~ ANSWERED 2026-09-16 by the implementing
+   parcel, branch `parcel/emp-named-slot`: the slot is INSIDE `(enter, acquire_end)`.** It
+   falls there by construction rather than by a switch, because the acquire is one
+   expression and `AcquireEnd` is planted after the whole of it. Recorded in
+   `Region::in_acquire`'s own doc comment, which is where a future reader of the rule
+   stands.
+2. **~~The two definition-site checks read the acquire by index.~~ FIXED in the same
+   parcel.** Both now skip items authored `ItemAuthor::ContextSlot`. The filter is stated
+   as a COMPLEMENT ("everything but the slot") rather than as this note's proposed
+   allow-list of `Context`-authored items, and the difference is load-bearing: an acquire
+   may legally contain `AssertDesugar` items (an `assert` in the acquire) and
+   `Splice { .. }` items (a comptime template call in the acquire), and an allow-list
+   would newly and silently drop both from checks that see them today.
 3. **No check exists that a declared bus context is ever RECOGNISED as one.** Finding Q2-a.
    `bus_contexts` is a tree-wide union; if every site emitted through a register it would go
    empty and disable `[bus.released-at-return]` tree-wide with no diagnostic. Booked here.

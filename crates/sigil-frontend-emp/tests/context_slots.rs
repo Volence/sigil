@@ -192,6 +192,31 @@ fn a_tail_call_out_of_the_slot_escapes() {
     );
 }
 
+/// A CALL OUT OF THE SLOT IS NOT AN ESCAPE, and this is the control that says
+/// the escape rules are about LEAVING rather than about transferring. A `jbsr`
+/// comes back, and the edge builders say so: every call mnemonic gets its
+/// fall-through and nothing else. Without this test, a rule that fired on any
+/// transfer instruction would pass all three escape tests above.
+#[test]
+fn a_call_out_of_the_slot_is_not_an_escape() {
+    let r = analyze(&format!(
+        "module m\n{SLOT_CTX}\
+         pub proc Q () {{ rts }}\n\
+         pub proc P () clobbers(d0,d7) {{\n\
+             with z80_stopped(interleave: asm {{ jbsr Q }}) {{\n\
+                 nop\n\
+             }}\n\
+             rts\n\
+         }}\n"
+    ));
+    assert_eq!(
+        ctx_count(&r, "P", ContextFiringKind::Escape),
+        0,
+        "a call returns, so it never skips the release: {:?}",
+        r.context_firings
+    );
+}
+
 /// AN EXPORTED LABEL IN THE SLOT IS AN ENTRY POINT THIS PROC'S ITEM LIST CANNOT
 /// SEE: it takes the stable `Owner.name` symbol, so any other proc can branch
 /// straight past the bus request and run the rest of the hold without taking it.
@@ -464,6 +489,51 @@ fn a_filled_slot_adds_exactly_its_own_code_where_the_context_put_it() {
     // And WITHOUT the slot the spin sits where the slot went, so the two bytes
     // were inserted rather than appended somewhere convenient.
     assert_eq!(&a[6..8], &[0x08, 0x38], "unfilled, the spin follows the request: {a:02X?}");
+}
+
+/// A FALSE COMPTIME GATE TAKES THE SLOT WITH THE ACQUIRE, and this pins it
+/// because it is the one place where a consumer's own statement disappears on a
+/// condition the consumer wrote.
+///
+/// `with ctx(slot: …) if COND { … }` with COND false lowers the body verbatim
+/// and splices NEITHER half: there is no acquire, no release and no region, so
+/// the context is genuinely not held in that shape. The slot lives inside the
+/// acquire, so it goes with it. That is coherent rather than surprising once
+/// stated — the gate's whole purpose is "this bracket does not exist in that
+/// build shape" — but it is not obvious from the spelling, so it is a test and a
+/// line in the spec rather than something to be rediscovered in an OFF build.
+#[test]
+fn a_false_gate_takes_the_slot_with_the_acquire() {
+    let shape = |gate: &str| {
+        format!(
+            "module m\n{SLOT_CTX}\
+             proc P () clobbers(d0,d7) {{\n\
+                 with z80_stopped(interleave: asm {{ moveq #2, d7 }}) if {gate} {{\n\
+                     moveq #1, d0\n\
+                 }}\n\
+                 rts\n\
+             }}\n\
+             data Z80_BUS_REQUEST: [u8;2] = [$00, $00]\n"
+        )
+    };
+    let (off, d_off) = lower(&shape("0"));
+    let (on, d_on) = lower(&shape("1"));
+    for d in [&d_off, &d_on] {
+        let errs: Vec<_> = d.iter().filter(|x| x.level == Level::Error).collect();
+        assert!(errs.is_empty(), "both shapes are clean: {errs:?}");
+    }
+    let a = flatten(&off);
+    let b = flatten(&on);
+    // OFF: the body and the `rts`, and nothing else. `moveq #1, d0` = 70 01,
+    // `rts` = 4E 75, both derived from the source lines.
+    assert!(a.starts_with(&[0x70, 0x01, 0x4E, 0x75]), "the gated-off shape is the body: {a:02X?}");
+    assert!(
+        !a.windows(2).any(|w| w == [0x7E, 0x02]),
+        "the slot is gone with the acquire it lived in: {a:02X?}"
+    );
+    // ON: the request, then the slot, as the filled-slot test already pins.
+    assert_eq!(&b[0..4], &[0x31, 0xFC, 0x01, 0x00], "gated on, the request is emitted: {b:02X?}");
+    assert_eq!(&b[6..8], &[0x7E, 0x02], "gated on, the slot follows it: {b:02X?}");
 }
 
 // ---------------------------------------------------------------------------

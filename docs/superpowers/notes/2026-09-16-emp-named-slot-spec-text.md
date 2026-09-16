@@ -119,6 +119,18 @@ authorship it would have carried written in the bracket's body:
 * a value that came from a parameter's DEFAULT is the context author's code, written in
   the declaration, and is authored to the context like any other line of the acquire.
 
+### A false comptime gate takes the slot with the acquire
+
+`with ctx(slot: …) if COND { … }` with `COND` false lowers the body verbatim and splices
+NEITHER half: there is no acquire, no release and no region, because the context is
+genuinely not held in that shape. **The slot lives inside the acquire, so it goes with
+it**, and the arguments are not even evaluated.
+
+That is coherent once said (the gate's whole purpose is "this bracket does not exist in
+that build shape") and it is the one place where a consumer's own statement disappears on
+a condition the consumer wrote, so it is stated here rather than left to be met in an OFF
+build. Four of the corpus's 22 brackets carry such a gate today.
+
 ### Diagnostics
 
 | id | when |

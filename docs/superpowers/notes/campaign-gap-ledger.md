@@ -5647,3 +5647,37 @@ question about the aeon-paired half.** The landing gate the controller runs on t
 what answers it. **Kill:** provision an `AEON_DIR` worktree per the standing requirement (a clean
 worktree of a committed SHA, plus the gitignored artifacts a bare checkout lacks) before quoting a
 workspace figure from a lane again.
+
+### 2026-09-16, `EMP-Z80-HOLD-INTERLEAVE-FORM` (`d-33`): three things the named slot did not fix
+
+All three were MEASURED while building the slot, all three are pre-existing, and none of them
+blocks aeon's adoption at `engine/system/boot.emp`. They are here so the next person meets them as
+known rather than as a surprise.
+
+**1. A context field's expression cannot continue onto the next line.** `context_decl` parses
+`acquire = <expr>` and then `expect_line_end_or_rbrace`, so a `++` chain must keep its top-level
+operators on one line, with newlines appearing only inside `asm { }` braces. General to every
+context field and older than this parcel, but a context author spelling a slot meets it on their
+first line. **Kill:** teach the expression parser to skip a newline that is immediately followed by
+a binary operator, which is a language-wide newline change and wants its own parcel and its own
+corpus byte gate, not a fix smuggled into a context field.
+
+**2. A label in an `asm { }` VALUE is not reachable from the bracket's body, and vice versa.** A
+bracket body's `bne .mid` does not reach a `.mid` a slot argument defined; the same is already true
+of the acquire's own `.wait_z80`. It is not silent: the branch reads as a transfer out of the region
+and `[context.escape]` fires as an error, which is pinned by
+`context_slots.rs::a_body_branch_naming_a_slot_label_is_refused`. **Consequence for the proofs:** the
+BRANCH form of `[context.reacquire]` cannot be reached through a slot label, so the claim that the
+slot sits inside `(enter, acquire_end)` is carried by the exported-label entry-skip test (which needs
+no name resolution) and by the byte-position test, not by a reacquire test. **Kill:** if a consumer
+ever needs a slot label reachable from the body, the label scope a spliced `Code` value resolves in
+is the thing to change, and that is a `Code`-wide question rather than a slot one.
+
+**3. Nothing checks that a declared bus context is ever RECOGNISED as one.** Carried forward
+unchanged from the measurement note's finding Q2-a: `bus_contexts` is a tree-wide union over the
+regions `region_acquires_bus` recognises, and an empty union is indistinguishable from a tree with no
+bus contexts in it, so every `requires(z80_stopped)` proc would silently seed `Unknown` and the
+`[bus.*]` tier would go quiet with no diagnostic. The slot does not make this worse (a slot can only
+ADD a toggle to the acquire range, never remove the context's own), and it does not fix it.
+**Kill:** a corpus gate asserting that every context named by a `requires(...)` in the tree is in
+`bus_contexts`, which is a `[bus.*]`-tier parcel.
