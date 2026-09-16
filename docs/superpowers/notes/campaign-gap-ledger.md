@@ -5977,3 +5977,37 @@ bus contexts in it, so every `requires(z80_stopped)` proc would silently seed `U
 ADD a toggle to the acquire range, never remove the context's own), and it does not fix it.
 **Kill:** a corpus gate asserting that every context named by a `requires(...)` in the tree is in
 `bus_contexts`, which is a `[bus.*]`-tier parcel.
+
+### 2026-09-16, `BG-BANDS-HOLD-REPIN`: aeon added a cross-seam RAM name, and it bites on the next pin advance
+
+**Aeon landed its region background switch at aeon `7dc737ec`** (merge; the change entered on
+`parcel/region-bg-switch`, tip `d5abe318`). `engine/level/bg_anim.emp`'s `BgAnim_Update` now reads a
+NEW cross-seam RAM name, **`BG_Bands_Hold`**, and engine RAM grew **12 B ahead of `BgAnim_LastStep`**.
+Aeon's record: `git -C ../aeon show origin/master:docs/DEFERRED_WORK.md | grep -n -A6 'Cross-repo note:.*BG_Bands_Hold'`.
+
+**Their reading of what this lane needs is correct, verified here rather than taken.**
+`crates/sigil-cli/tests/bg_anim_port.rs` resolves its tree through `test_support::aeon_dir()`, supplies
+bg_anim's cross-seam address symbols by hand, and pins `BgAnim_LastStep` through
+`pins::BG_ANIM_LAST_STEP` (lines 90 and 423). So it will need `BG_Bands_Hold` added to its supplied
+symbols and `BG_ANIM_LAST_STEP` re-pinned.
+
+**IT DOES NOT BREAK THIS LANE TODAY, AND THAT IS A FACT ABOUT THE PIN, NOT ABOUT THE CHANGE.** Every
+gate here names `.aeon-sigil-ref`, detached at `ec640bcf`, where `bg_anim.emp` holds **0** references to
+`BG_Bands_Hold`; aeon's `origin/master` holds **1**. The obligation becomes live **the moment the
+reference pin advances past aeon `7dc737ec`**, and nothing will announce it except this test going red.
+
+**The two halves are not equal, and only one of them is generated.** `refreeze --freeze` regenerates
+`pins.rs`, so `BG_ANIM_LAST_STEP` moves by itself. **The supplied-symbol entry for `BG_Bands_Hold` is
+hand-written in the test and `refreeze` will not add it**, so a pin advance that only refreezes will go
+red on an unknown name rather than on an address, and the red will not say "add a symbol". Per the
+five-site ripple rule, the hand-typed literals in `tests/repin_pins.rs` also need deriving from the
+moved-section record, never copying from the regenerated `pins.rs`.
+
+**Falsifier, so this is checkable rather than remembered:**
+```sh
+git -C ~/sonic_hacks/.aeon-sigil-ref merge-base --is-ancestor 7dc737ec HEAD \
+  && echo "PIN HAS ADVANCED: BG-BANDS-HOLD-REPIN IS LIVE" || echo "pin predates 7dc737ec: not yet"
+```
+**Kill:** at the pin advance that crosses `7dc737ec`, add `BG_Bands_Hold` to the test's supplied
+symbols, refreeze, resync `repin_pins.rs` from the move record, and confirm the +12 B is the delta the
+move record states rather than the delta observed.
