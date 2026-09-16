@@ -58,6 +58,36 @@ not before the evidence.
    Record the coverage word in the packet alongside the verdict. A green whose coverage nobody
    wrote down is a green nobody can weigh later.
 
+   **⚠ NOBODY HAS RUN THIS AGAINST A LIVE SERVER YET, and the first person who does may get a
+   FALSE RED.** The check was built and proved entirely against a fake bus, deliberately: an
+   emulator cannot be driven from a background agent. Four things are therefore derived from the
+   wire contract and UNMEASURED, and you are probably the one measuring them:
+
+   - **The `region` string.** The total route compares `region` by exact equality to
+     `"cartridge ROM"`, because the mapper ruling makes `"cartridge ROM bank N"` a different
+     address space where the bus address is not an image offset, so a prefix match would compare
+     the wrong bytes and look right. If a real server spells the flat-image region differently,
+     the total route falls back and **the sampled route REFUSES**. That is a false red on a
+     correct cart, and it is the most likely way your first run goes wrong.
+   - **Whether `memory_hash` is advertised at all**, and whether `limits.maxHashLen` admits a
+     full ~850 KB image. If not, every run silently takes `coverage=sampled`. Loud in the output,
+     but no one has seen which path a real server takes.
+   - **The method spellings.** The instruments send bare `status` / `read_memory`; the contract
+     catalogues `emulator/*`. Bare is tried first and the prefix is retried on `-32601`.
+   - **The round-trip cost** (~200 versus 1) is derived from the contract's `len` caps, not timed.
+
+   **So a red here is not yet evidence about your cart.** Read the refusal text first: if it names
+   the region string or a missing method, suspect this list before you suspect the ROM. Confirm
+   the whole path with one command against a freshly built image, which exercises all four at once:
+
+   ```sh
+   python3 crates/sigil-harness/golden/ab/cart_check.py <a freshly built rom>
+   ```
+
+   Exit 0 with `coverage=total` retires the first three. **When you have run it, delete this block
+   and say so in the lane log** - it is an admission of what was never measured, not a standing
+   caveat, and leaving it here after it stops being true is worse than never writing it.
+
    **What it does NOT cover.** It proves the emulator's CART. It says nothing about the symbol
    listing (`load_symbols` is a separate path and a listing can disagree with the image), nothing
    about a save state loaded at the window, and nothing about whether the ROM on disk is the
