@@ -1,0 +1,30 @@
+=== RED CONTROL M4: stop deflecting the PC-relative atoms, so (d16,PC)/(d8,PC,Xn) would have to be read elsewhere ===
+tree: /home/volence/sonic_hacks/.wt-width-suffix  HEAD: 132fdce1e35666d508b3455709e8e44419c8d037  branch: parcel/as-width-suffix-bare-expr
+--- mutation quoted back from disk ---
+9858-        }
+9859-        if let Some(pc_idx) = atoms
+9860-            .iter()
+9861:            .position(|a| matches!(a, OperandAtom::M68kIdx { an, .. } if an == "ZZ-mutated"))
+9862-        {
+9863-            return self.lower_m68k_pcrel_idx(mnemonic, size, &atoms, pc_idx, span);
+9864-        }
+--- git diff HEAD --stat ---
+ crates/sigil-frontend-as/src/eval.rs | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+--- red run ---
+
+failures:
+
+---- pc_relative_is_still_pc_relative stdout ----
+
+thread 'pc_relative_is_still_pc_relative' (3743698) panicked at crates/sigil-frontend-as/tests/as_paren_abs_width.rs:77:28:
+front end accepts: [(4, "`(d8,PC,Xn)` indexed PC-relative addressing is not yet supported (only `(d16,PC)` lowers)")]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    pc_relative_is_still_pc_relative
+
+test result: FAILED. 12 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p sigil-frontend-as --test as_paren_abs_width`

@@ -1,0 +1,107 @@
+ AS V1.42 Beta [Bld 212] - Source File p1.asm - Page 1 - 09/16/2026 06:06:17 AM
+
+
+       1/       0 :                     	cpu	68000
+       2/       0 :                     	padding	off
+       3/       0 :                     	supmode	on
+       4/       0 :                     
+       5/       0 : =$1000               SmallW:	equ	$1000
+       6/       0 : =$A00000             BigL:	equ	$00A00000
+       7/       0 : =$7FFE               BoundW:	equ	$7FFE
+       8/       0 : =$8000               BoundL:	equ	$8000
+       9/       0 : =$FF8000             HiW:	equ	$FF8000
+      10/       0 : =$FFFFFE             HiTop:	equ	$FFFFFE
+      11/       0 :                     
+      12/       0 :                     	org	$000000
+      13/       0 :                     
+      14/       0 :                     ; --- bare vs parenthesised, small (abs.w expected)
+      15/       0 : 3038 1000           	move.w	SmallW,d0
+      16/       4 : 3038 1000           	move.w	(SmallW),d0
+      17/       8 : 3038 1000           	move.w	(SmallW).w,d0
+      18/       C :                     ; --- bare vs parenthesised, big (abs.l expected)
+      19/       C : 3039 00A0 0000      	move.w	BigL,d0
+      20/      12 : 3039 00A0 0000      	move.w	(BigL),d0
+      21/      18 :                     ; --- width boundaries
+      22/      18 : 3038 7FFE           	move.w	BoundW,d0
+      23/      1C : 3038 7FFE           	move.w	(BoundW),d0
+      24/      20 : 3039 0000 8000      	move.w	BoundL,d0
+      25/      26 : 3039 0000 8000      	move.w	(BoundL),d0
+      26/      2C : 3038 8000           	move.w	HiW,d0
+      27/      30 : 3038 8000           	move.w	(HiW),d0
+      28/      34 : 3038 FFFE           	move.w	HiTop,d0
+      29/      38 : 3038 FFFE           	move.w	(HiTop),d0
+      30/      3C :                     ; --- register indirect must stay register indirect
+      31/      3C : 3010                	move.w	(a0),d0
+      32/      3E : 3018                	move.w	(a0)+,d0
+      33/      40 : 3020                	move.w	-(a0),d0
+      34/      42 : 3028 0004           	move.w	(4,a0),d0
+      35/      46 : 3028 0004           	move.w	4(a0),d0
+      36/      4A :                     ; --- expression inside parens
+      37/      4A : 3038 1002           	move.w	(SmallW+2),d0
+      38/      4E : 3038 1002           	move.w	SmallW+2,d0
+      39/      52 : 3038 1000           	move.w	((SmallW)),d0
+      40/      56 :                     ; --- destination side
+      41/      56 : 31C0 1000           	move.w	d0,(SmallW)
+      42/      5A : 31C0 1000           	move.w	d0,SmallW
+      43/      5E : 33C0 00A0 0000      	move.w	d0,(BigL)
+      44/      64 :                     ; --- other mnemonics
+      45/      64 : 43F8 1000           	lea	(SmallW),a1
+      46/      68 : 43F8 1000           	lea	SmallW,a1
+      47/      6C : 43F9 00A0 0000      	lea	(BigL),a1
+      48/      72 : 4278 1000           	clr.w	(SmallW)
+      49/      76 : 4A39 00A0 0000      	tst.b	(BigL)
+      50/      7C : 13F8 1000 00A0      	move.b	(SmallW),(BigL)
+               82 : 0000             
+      51/      84 :                     ; --- forward reference
+      52/      84 : 3038 0090           	move.w	(FwdLab),d0
+      53/      88 : 3038 0090           	move.w	FwdLab,d0
+      54/      8C : 2238 0090           	move.l	(FwdLab),d1
+      55/      90 : 0000                FwdLab:	dc.w	0
+      56/      92 : 0000                	dc.w	0
+      57/      94 :                     
+ AS V1.42 Beta [Bld 212] - Source File p1.asm - Page 2 - 09/16/2026 06:06:17 AM
+
+
+  Symbol Table (* = unused):
+  --------------------------
+
+*ARCHITECTURE :                                      "x86_64-unknown-linux" - |
+*BIGENDIAN :                      0 - | *BRANCHEXT :                      0 - |
+ BigL :                      A00000 - |  BoundL :                      8000 - |
+ BoundW :                      7FFE - | *CASESENSITIVE :                  1 - |
+*COMPMODE :                       0 - | *CONSTPI :        3.141592653589793 - |
+*CUSTOM :                         0 - | *DATE :                "09/16/2026" - |
+*FALSE :                          0 - | *FULLPMMU :                       1 - |
+ FwdLab :                        90 C | *HAS64 :                          1 - |
+*HASDSP :                         0 - | *HASFPU :                         0 - |
+*HASPMMU :                        0 - |  HiTop :                     FFFFFE - |
+ HiW :                       FF8000 - | *INEXTMODE :                      0 - |
+*INLWORDMODE :                    0 - | *INMAXMODE :                      0 - |
+*INSRCMODE :                      0 - | *INSUPMODE :                      1 - |
+*LISTON :                         1 - | *MACEXP :                         7 - |
+*MOMCPU :                     68000 - | *MOMCPUNAME :               "68000" - |
+*NESTMAX :                      100 - | *PACKING :                        0 - |
+*PADDING :                        0 - | *RELAXED :                        0 - |
+ SmallW :                      1000 - | *TIME :               "06:06:17 AM" - |
+*TRUE :                           1 - | *VERSION :                     142F - |
+*Z80SYNTAX :                      0 - |
+
+     38 symbols
+     31 unused symbols
+
+ AS V1.42 Beta [Bld 212] - Source File p1.asm - Page 3 - 09/16/2026 06:06:17 AM
+
+
+  Code Pages:
+  ----------
+
+STANDARD (0 changed characters)
+
+1 code page
+
+0.00 seconds assembly time
+
+     57 lines source file
+      2 passes
+      0 errors
+      0 warnings
