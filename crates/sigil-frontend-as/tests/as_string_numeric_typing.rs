@@ -198,11 +198,16 @@ fn refused(name: &str) {
 }
 
 const HEAD: &str = "\tcpu 68000\n\tpadding off\n\torg 0\n";
+const Z80_HEAD: &str = "\tcpu z80undoc\n\tpadding off\n\torg 0\n";
 
 fn assemble(body: &str) -> Result<Vec<u8>, Vec<String>> {
+    assemble_with(HEAD, body)
+}
+
+fn assemble_with(head: &str, body: &str) -> Result<Vec<u8>, Vec<String>> {
     let dir = tempfile::tempdir().expect("tempdir");
     let path = dir.path().join("probe.asm");
-    std::fs::write(&path, format!("{HEAD}{body}\n\tend\n")).expect("write probe");
+    std::fs::write(&path, format!("{head}{body}\n\tend\n")).expect("write probe");
     match assemble_root_located(&path, &Options::default()) {
         Ok(m) => link_image(m),
         Err(f) => Err(f.diags.iter().map(|d| d.message.clone()).collect()),
@@ -552,5 +557,55 @@ fn plus_over_non_strings_stays_numeric() {
     assert_eq!(
         assemble("\tbra.s +\n\tnop\n+\n\tnop").expect("nameless label"),
         vec![0x60, 0x02, 0x4E, 0x71, 0x4E, 0x71]
+    );
+}
+
+/// A REGISTER in operand position is never a string symbol, however the name is
+/// bound elsewhere. `AS-STRING-SYMBOL-INT-SLOT`'s sharp edge, and a regression
+/// this parcel introduced and the corpus byte gate caught.
+///
+/// `s2disasm/s2.asm:14504` writes `l := lowstring("char")` inside an `irpc`, so
+/// `l` is a live string-valued symbol for the rest of the assembly, and
+/// `s2.sounddriver.asm` is Z80 and writes `ld l,(ix+zTrack.Detune)` 148 times.
+/// With the operand packing asked unconditionally, the REGISTER was rewritten
+/// into the packed character `l` had last been assigned and s2 gained 24 errors
+/// reading `Ld, ops: [Imm8(99), Indexed { reg: Ix, disp: 3 }]` (99 is `'c'`).
+///
+/// asl settles it by POSITION: it peels the addressing mode before it evaluates
+/// anything. So the same name is a register here and a symbol in an expression,
+/// and the last assertion is the one that keeps the fix honest — `dc.b l` two
+/// lines below that `:=` is the STRING, and a guard in the string evaluator
+/// would have traded one corpus regression for another.
+///
+/// The expected encodings are the Z80 and 68000 ones for the register forms,
+/// which is the point: any byte at all here means the operand was read as a
+/// register, and the defect produced no bytes but an `unsupported form`.
+#[test]
+fn a_register_in_operand_position_is_never_a_string_symbol() {
+    // `ld l,(ix+3)` = DD 6E 03, and `ld l,a` = 6F. Both operands matter: the
+    // whole-operand scan is what covers the register inside `(ix+3)` too.
+    assert_eq!(
+        assemble_with(Z80_HEAD, "l := \"c\"\n\tld l,(ix+3)\n\tld l,a")
+            .expect("a Z80 register operand is a register, whatever `l` is bound to"),
+        vec![0xDD, 0x6E, 0x03, 0x6F]
+    );
+    // The 68000 half, so the guard is not quietly Z80-only: `d0`/`a0` are
+    // register spellings there and `l` is an ordinary symbol.
+    assert_eq!(
+        assemble("d0 := \"c\"\n\tmove.w d0,d1").expect("a 68000 register operand is a register"),
+        vec![0x32, 0x00]
+    );
+    // AND THE OTHER HALF OF asl's POSITIONAL RULE, which is what makes this a
+    // guard on the operand path alone: in a DATA directive the same name is the
+    // STRING. s2 writes exactly this two lines below its `:=`, and it is in the
+    // 68000 half of s2, which is why the assertion is too.
+    //
+    // The Z80 spelling of this line is refused (`bad byte expression`), and
+    // that is PRE-EXISTING and not this parcel's: measured identical on the
+    // baseline binary and on this one, so a Z80 `dc.b l` never worked. It is
+    // ledgered rather than fixed here.
+    assert_eq!(
+        assemble("l := \"c\"\n\tdc.b l,$EE").expect("`dc.b l` is the string"),
+        vec![0x63, 0xEE]
     );
 }
