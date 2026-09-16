@@ -5247,7 +5247,8 @@ first on the panic itself.
 
 **SUITE, fail-fast off, `SIGIL_STRICT_GATE=1`, `AEON_DIR=.aeon-sigil-ref` (`ec640bcf`), each run
 stamped with its own tree and HEAD.** master `591bbd77`: 484 test binaries, 5464 passed, 1 failed,
-2 ignored. Branch tip: 485 binaries (this parcel's new one), 5476 passed, 1 failed, 2 ignored. The
+2 ignored. Branch tip `d5b99202`: 485 binaries (this parcel's new one), 5477 passed, 1 failed,
+2 ignored, and `as_string_numeric_typing` 13 of 13. The
 single failure is the SAME one in both arms and is an environment precondition rather than a
 result: `m1b_gate::oracle_loadfromaslisting_resolves_emit_listing` refuses because no `ORACLE_DIR`
 was named, and it refuses rather than measure against a tree it cannot attribute. `cargo clippy
