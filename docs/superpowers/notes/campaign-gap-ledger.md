@@ -5520,3 +5520,39 @@ invocation, with one caveat measured now rather than discovered later: it ships 
 (`buildSK.lua`, `buildS3.lua`, `buildS3Complete.lua`) building three different ROMs, and
 `derive_tool_args` reads the FIRST `build_rom_and_handle_failure` call in `build.lua`. It would need
 to be told which script, and there is no `build.lua` for it to read at all.
+
+### 2026-09-16, `SWITCH-MATRIX-SWEEP`: sigil has no odd-address lint on the AS route
+
+Over 422 legs covering the whole documented option space of both corpora, asl raises exactly one
+warning code sigil does not mirror: `warning #180: address is not properly aligned`, on
+`move.w (1).w,d0` at `s2.asm:30438`. That line sits inside `if gameRevision=0` and the disassembly
+annotates it `causes a crash because of the word operation at an odd address`, so it is deliberate
+REV00 behaviour, correctly assembled by both, and **the bytes agree**. What differs is that asl tells
+the person who ran it and sigil does not. No sigil output in the whole run contains the string
+`align`.
+
+**The capability exists on the other frontend.** `crates/sigil-frontend-emp/src/layout.rs` already
+carries an odd-field lint for `.emp` regions ("a u16 at an odd address"), so this is a lint the AS
+route does not run rather than one sigil cannot express.
+
+**Kill:** a word/long-operand alignment warning on the AS frontend, with the Sonic 2 site as its
+fixture. **Do not make it an error**: the corpus contains the construct on purpose, at a documented
+setting, and an error would refuse a ROM asl builds. Also worth knowing before building it: the
+sweep's warning-parity reconciliation is asserted equal in both directions, so adding the lint turns
+the `("s2disasm", "asl#180")` entry in `scripts/switch_matrix_sweep.py` stale and the sweep will say
+so, which is the intended way for that entry to die.
+
+### 2026-09-16, `SWITCH-MATRIX-SWEEP`: the corpora's own Lua build settings are a sweep axis nobody sweeps
+
+`s1disasm/build.lua` and `s2disasm/build.lua` each carry a local the sweep does not touch:
+`improved_dac_driver_compression` and `improved_sound_driver_compression`, both `false`, which select
+`kosinski` over `kosinski-optimised` and `saxman-bugged` over `saxman-optimised` in the `-z` argument
+handed to p2bin and to sigil. Flipping either exercises **a different compressor in sigil** on a real
+corpus, which is a squarely sigil-shaped question, and the comment beside them says the `false`
+setting exists only to reproduce the retail ROM.
+
+The sweep does not sweep them because they are Lua locals rather than `.asm` declarations, so the
+documented-declaration derivation cannot see them by construction. **Kill:** cheap, because
+`derive_tool_args` already evaluates the `<local boolean> and "a" or "b"` expression to resolve the
+algorithm name. It would need a second derivation step over `build.lua`'s locals and a second flip
+mechanism (edit the Lua, not the asm), and the same edit-proves-it-applied gate.

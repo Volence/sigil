@@ -20,29 +20,42 @@ clean).
 
 ## Headlines
 
-1. **The derivation reaches 16 arms across the two corpora without naming a
+1. **The brief's premise that a full cross product is infeasible is wrong, and
+   the whole product was run.** Sonic 1 has seven swept switches with domains
+   3,2,2,2,2,2,3 and Sonic 2 six with 3,2,2,2,2,2, which is 288 and 96 corners.
+   A leg costs 2.4 seconds measured, so the product is a quarter of an hour.
+   **The entire documented build-option space of both corpora is now measured,
+   not sampled.**
+2. **The derivation reaches 16 arms across the two corpora without naming a
    switch**, against the census's 11 hand-typed flips, and it found two of its
-   own holes before a single ROM was built (below).
-2. **Three of those 16 arms cannot be measured one at a time at all.** Sonic 1's
+   own holes before a single ROM was built.
+3. **Three of those 16 arms cannot be measured one at a time at all.** Sonic 1's
    `BackupSRAM` and `AddressSRAM` are read only inside code `EnableSRAM` opens,
    so flipping them alone moves no byte of the stock image. A one-at-a-time
    sweep reports them as agreement. That is not agreement, it is the only answer
    those legs could have given, and the runner now says `NOT-MEASURED` and then
    rescues them.
-4. **Every one of the 16 arms that can be measured agrees byte for byte, except
-   the two rows already open**, and both of those refuse loudly. No new silent
-   ROM was found. The unexplored arms specifically include Sonic 1 `Revision = 2`
-   (REVXB) and Sonic 2 `gameRevision = 2` (the theoretical REV02, which also
-   turns on `removeJmpTos` and `addsubOptimize` and turns off `relativeLea`),
-   neither of which anything had ever built with sigil.
-5. **Sonic 1 `FixBugs = 1` is one line.** Measured, not estimated: the refusal is
+4. **Every corner both toolchains can build agrees byte for byte**: 144 of Sonic
+   1's 288 and 48 of Sonic 2's 96, plus every measurable one-at-a-time arm. No
+   new silent ROM was found anywhere in the option space.
+5. **The cross product found a Sonic 1 defect nobody had.** `Revision = 0` +
+   `FixBugs = 1` + `AllOptimizations = 0` cannot be assembled by **asl**, 24 of
+   the 288 corners: `bra.w DisplaySprite` goes out of range. One at a time
+   neither option fails, which is why the census could not have found it.
+6. **sigil is silent where asl warns, once, and only once.** asl's
+   `warning #180: address is not properly aligned` fires on every leg with
+   `gameRevision = 0` and sigil says nothing on any of them. Bytes agree, so it
+   is a diagnostic gap and not a ROM fault, and the product is what licenses
+   "only once": it is the only asl warning code either corpus raises anywhere in
+   its option space.
+7. **Sonic 1 `FixBugs = 1` is one line.** Measured, not estimated: the refusal is
    at `_incObj/DebugMode.asm:245`, and with a single `.w` added to that one
    operand sigil's image is **byte-identical** to the stock ROM of the unpatched
    tree, CRC32 `888defef` / 551,288 bytes. There is no second site behind it.
-6. **The under-run direction of the driver-size check is not reachable from any
-   build option either corpus offers.** 16 arms and 18 rescue pairs produced
-   exactly one driver-size event and it was the over-run the previous parcel
-   closed. That is evidence for, not against, the asymmetry that parcel chose.
+8. **The under-run direction of the driver-size check is not reachable from any
+   build option either corpus offers.** 422 legs produced exactly one
+   driver-size event and it was the over-run the previous parcel closed. That is
+   evidence for, not against, the asymmetry that parcel chose.
 
 ## Provenance
 
@@ -52,7 +65,7 @@ clean).
 | corpora | `s1disasm f6ece657`, `s2disasm e45ebf332`, each extracted by `git archive` into scratch. |
 | references | `s1built.bin` CRC32 `afe05eee` / 524,288 B; `s2built.bin` CRC32 `7b905383` / 1,048,576 B, each from the corpus's own unmodified `build.lua`. Both reproduce the previous parcel's figures exactly, from a different method. |
 | runner | `scripts/switch_matrix_sweep.py`, committed. |
-| log | `/home/volence/sonic_hacks/.scratch/switch-matrix-sweep/logs/sweep-FINAL.log`, plus one `.lua.log` and one `.sigil.err` per leg. |
+| authoritative run | `--cross`, 422 legs launched and 422 reported, exit 0, `logs/cross-FINAL3.log`, plus one `.lua.log` and one `.sigil.err` per leg under the same directory. The 90-second run without `--cross` is 38 of those legs. |
 
 CRC32 throughout is IEEE/zlib, computed by `zlib.crc32` in CPython 3, rendered as
 eight hex digits, and quoted with the byte size.
@@ -85,7 +98,8 @@ A switch whose right-hand side names another identifier is **DERIVED**
 (`SkipChecksumCheck = 0|AllOptimizations`,
 `removeJmpTos = 0|(gameRevision>=2)|allOptimizations`). It is not independently
 settable and is never flipped directly. It is still counted, and it is exercised
-through the switches it reads: eight derived switches across the two corpora,
+through the switches it reads: seven derived switches across the two corpora
+(three in Sonic 1, four in Sonic 2),
 all of them functions of `AllOptimizations`/`allOptimizations` or
 `gameRevision`, all of which are swept.
 
@@ -111,10 +125,11 @@ all of them functions of `AllOptimizations`/`allOptimizations` or
   them, it was told about them by this note's author reading the prose.
 * **A value outside what the prose enumerates.** Nothing stops a hacker setting
   `Revision = 7`. The domain swept is the one the corpus documents.
-* **Interaction.** A full cross product is infeasible and is not attempted: the
-  derived arms alone give 2^9 and 2^7 corners, before the non-binary switches.
-  What IS done is a targeted rescue of the arms one-at-a-time cannot reach, and
-  its results are below.
+* **Second-order interaction between corpora or with the corpus's own Lua
+  settings.** `build.lua`'s `improved_sound_driver_compression` and
+  `improved_dac_driver_compression` are settings too, and they are not swept:
+  they are Lua locals, not `.asm` declarations, and flipping them changes the
+  reference toolchain's own behaviour rather than the source. Booked.
 * **Runtime.** Whether any of these ROMs plays is not a byte question. No
   emulator was touched. TAGGED for the controller.
 
@@ -174,7 +189,9 @@ findings in both directions. That table is empty because nothing needed it.
 
 ## The result table
 
-38 legs launched, 38 reported. 16 agree, 2 refuse and are acknowledged, 18 are
+These are the 38 one-at-a-time legs, which are a subset of the authoritative
+422-leg `--cross` run. 38 launched, 38 reported. 16 agree, 2 refuse and are
+acknowledged, 18 are
 `NOT-MEASURED` (the 3 vacuous arms plus the 15 rescue attempts that did not move
 the image), 2 are controls. Whole-image compare, no window, planted-byte control
 on every one.
@@ -252,12 +269,117 @@ the front-end row: the fix has no ROM-shaped risk behind it.
 (`FixBugs = 1` also pushes Sonic 1 past 512 KiB, to 551,288 bytes. The stock
 `fix_header` writes the end-of-ROM field accordingly and so does sigil.)
 
-## The controls, all six plus one, each shown red
+## The full cross product, which was assumed infeasible and is not
+
+The brief and this note's first draft both said a full cross product was
+infeasible. The arithmetic refutes it. Sonic 1's seven swept switches have
+domains 3,2,2,2,2,2,3 and Sonic 2's six have 3,2,2,2,2,2, which is **288 and 96
+corners**, and a leg costs 2.4 seconds measured (38 legs in 91 seconds). The
+whole product is about a quarter of an hour, and `--cross` runs it.
+
+It is not a bigger sample. It tests three things one-at-a-time cannot.
+
+**Composition, on the sigil side.** Phase 1 shows which single settings sigil
+refuses. The prediction is that a refusal is caused by one setting and composes,
+so whether sigil builds a corner is decided by whether the corner contains such
+a setting and by nothing else. The causes are read off the SAME run's phase 1,
+never from a table, so the prediction cannot be tuned to the answer it is tested
+against. **384 corners, 384 held, 0 broke.**
+
+**The stock toolchain's own reach.** See the finding below.
+
+**Agreement.** Every corner both toolchains built must agree byte for byte, and
+that is asserted per corner rather than read off a summary.
+
+| | Sonic 1 | Sonic 2 |
+|---|---|---|
+| corners | 288 | 96 |
+| composition prediction held | 288 | 96 |
+| both toolchains built | 144 | 48 |
+| ... of which agreed byte for byte | **144** | **48** |
+| sigil declined (the one open row per corpus) | 120 | 48 |
+| **the stock toolchain could not build** | **24** | 0 |
+| distinct stock images across the corners | 126 | 96 |
+
+Sonic 2's 96 corners produce 96 distinct stock ROMs, so no Sonic 2 corner is
+vacuous. Sonic 1's 288 produce 126, which is the SRAM switches collapsing, and
+is the same fact the one-at-a-time vacuity check found, seen from the other side.
+
+### The finding: two of Sonic 1's own build options cannot be combined
+
+24 of Sonic 1's 288 corners fail in **asl**, not in sigil, and they are exactly
+`Revision = 0` AND `FixBugs = 1` AND `AllOptimizations = 0`, free across the
+other four switches (2 x 2 x 2 x 3 = 24).
+
+```text
+87, 88, 89 Ending Sequence Sonic, Emeralds, Logo.asm(270):
+error #1370: jump distance too big
+  bra.w DisplaySprite    ; display sprite
+```
+
+Line 270 sits inside an `if Revision=0` arm and a `bra.w` reaches 32 KB.
+`FixBugs` adds enough code between the branch and `DisplaySprite` to put the
+target out of range, and `AllOptimizations` brings it back only because
+`PaddingOptimization` removes 3,314 bytes. So **two documented Sonic 1 build
+options cannot be combined unless a third is also set**, and the corpus does not
+say so anywhere.
+
+**One at a time neither fails**, which is exactly why a list of eleven single
+flips could not have found it and why the product could.
+
+This is a Sonic 1 defect and not a sigil one: the thing that fails is the stock
+toolchain. So those corners are their own category, covered by a rule in
+`ACK_STOCK_DECLINE` that states the partial assignment responsible rather than
+listing 24 tags. The covered set and the observed set are asserted equal in both
+directions, and a rule that covers zero corners is as loud as a corner covered by
+no rule, so the entry cannot outlive the defect.
+
+**What is NOT known, and is booked rather than guessed:** sigil stops on the
+width suffix before it ever reaches that branch, so whether sigil would ALSO
+refuse those 24 corners for the branch-range reason is unmeasured. An assembler
+that quietly assembled an out-of-range `bra.w` would be a silent wrong-ROM fault
+of exactly the class this campaign has been closing. It becomes measurable the
+day the width row lands.
+
+### Diagnostic parity: sigil is silent where asl warns, once
+
+Two toolchains can agree on every byte and disagree about what they told the
+person who ran them, so every leg where BOTH toolchains ran has its warnings
+compared. Over 422 legs there are exactly two parity keys:
+
+* **`asl#180`.** asl says `address is not properly aligned` about
+  `move.w (1).w,d0` at `s2.asm:30438`, which sits inside `if gameRevision=0` and
+  which the source itself annotates `causes a crash because of the word
+  operation at an odd address`. **sigil is silent.** The bytes agree, so this is
+  a diagnostic sigil does not have rather than a ROM fault.
+
+  The counts, stated apart because they measure different things: asl emits it
+  on **33** legs, which is every leg whose source has `gameRevision = 0` (32
+  cross corners plus the phase-1 arm). Parity is only measurable on the **17**
+  of those where sigil also built, the other 16 being the `fixBugs = 1` half
+  that sigil refuses, and on all 17 sigil says nothing. No sigil output in the
+  whole 422-leg run contains the string `align`.
+
+  It is the **only** asl warning code either corpus raises at any corner of its
+  option space, and that clause is what the product licenses and a sample could
+  not.
+* **`sigil-only:` the `shared` warning**, on all 56 Sonic 2 legs where both
+  toolchains ran, which is the standing `-c` residual and is not new.
+
+A near-miss worth recording because it was nearly filed as a finding: sigil
+emits `[as.warning] 'Revision = 2' is unnecessary with 'FixBugs' enabled` on 48
+Sonic 1 legs, and a grep that looked only for `warning #<n>` said asl did not.
+**asl does**, as a source `warning` directive rather than a coded warning
+(`sonic.asm(139): warning: ...`). Keying asl's coded warnings apart from source
+`warning` directives is what keeps that distinction, and it is why the parity
+measurement reports no gap there.
+
+## The controls, all eight, each shown red
 
 No figure above comes from a run whose controls did not pass, and every control
 has been shown firing on a mutation that was printed back from disk first. The
-runner runs C1 to C6 before it builds anything and aborts printing no table if
-any fails; C7 runs once per corpus inside the sweep.
+runner runs C1 to C6 and C8 before it builds anything and aborts printing no
+table if any fails; C7 runs once per corpus inside the sweep.
 
 | control | what it proves | how it was shown red |
 |---|---|---|
@@ -267,6 +389,7 @@ any fails; C7 runs once per corpus inside the sweep.
 | C4 blind comparer | a comparer that cannot see a planted byte is refused | in-runner, by substituting a comparer that always reports 0 |
 | C5 option outside the block | a documented declaration outside `ASSEMBLY OPTIONS` fails the cross-check | in-runner |
 | C6 one-element domain | a switch whose prose derives a single value fails rather than executing nothing | in-runner; this is the gate `padToPowerOfTwo` tripped |
+| C8 warning normaliser | a source `warning` directive both toolchains fire normalises to ONE string, while a coded asl warning and a sigil-only warning stay separate keys | in-runner, over the two real diagnostic shapes these corpora produce. It needs its own control because the shape that matters most occurs only at corners sigil refuses for the unrelated width reason, so **no leg in a passing run exercises it**, and an untested normaliser would report a parity it never checked |
 | **C7 end-to-end** | the reference build, the candidate build and the compare are three independent things, not one file read twice | see below |
 
 **C7** builds the reference from the shipped tree and then flips the source
@@ -299,6 +422,14 @@ baseline `9b3ae4f8` between runs, never over uncommitted work.
 | vacuity verdicts | disabled the rescue loop | three arms reported `UNMEASURABLE`, and the unmeasurable-acknowledgement set failed naming all three |
 | end-to-end control | handed sigil the reference's own source | `CONTROL C7 s1disasm: FAILED (AGREE)`, both corpora, run failed |
 | legs launched vs reported | incremented the launch count without a matching row | `2 legs launched but 1 reported; 1 produced no row at all` |
+| warning-parity set | renamed the `asl#180` acknowledgement | `found-not-acknowledged=[('s2disasm', 'asl#180')] acknowledged-not-found=[('s2disasm', 'asl#999-NOT-REAL')]` |
+
+Two more are asserted by `--cross` and were exercised by the first cross run
+rather than by a deliberate mutation, which is a weaker proof and is said so
+here: the **stock-decline rule coverage** (the first cross run had no rule, all
+24 corners reported as breaking the prediction, and adding the rule is what
+turned them green) and the **corner-count** check (`enumerated N corners, the
+domains give M`), which has never been seen red.
 
 ## Method notes, and one change from the census's method
 
@@ -329,18 +460,25 @@ independent path, not a restatement of it.
 
 * **`skdisasm`.** Out of scope, and see the corpus-agnosticism section for what
   running it would take.
-* **Interaction beyond the rescue.** The cross product is infeasible; the rescue
-  covers only arms that cannot otherwise be measured. Whether a pair of switches
-  that BOTH move the image can disagree in combination is unmeasured, and it is
-  booked in the gap ledger.
+* **The half of the space behind the two open rows.** 120 Sonic 1 corners and 48
+  Sonic 2 corners stop at the width suffix and at the driver-size constant
+  respectively. Those corners are **blocked, not absent**: the day the front-end
+  width row lands, `--cross` reaches them and nothing says what is in them.
+* **`build.lua`'s own Lua settings.** `improved_sound_driver_compression` and
+  `improved_dac_driver_compression` change the `-z` algorithm both toolchains
+  are given, so they are a real sweep axis and a cheap one, since
+  `derive_tool_args` already evaluates them. Not swept. Booked.
 * **Fault 3.** Diagnosed to one line and one round, not fixed. Front-end row.
+* **Whether sigil refuses the 24 corners asl cannot build.** Unmeasured because
+  sigil stops earlier. Booked.
 * **Runtime.** No emulator. TAGGED for the controller.
 
 ## Reproducing
 
 ```text
 CARGO_TARGET_DIR=<a path on disk, never /tmp> cargo build --release --bin sigil
-python3 scripts/switch_matrix_sweep.py --sigil <that binary>
+python3 scripts/switch_matrix_sweep.py --sigil <that binary>            # 90 s
+python3 scripts/switch_matrix_sweep.py --sigil <that binary> --cross    # 17 min
 ```
 
 Nothing else. The runner extracts the corpora itself with `git archive`, derives
@@ -348,3 +486,10 @@ the domain, builds every leg with both toolchains, and exits nonzero unless ever
 reconciliation holds. `--corpus name=path` points it at a different checkout;
 `--only <tag>` runs one leg and says loudly in its own output that the run is a
 probe and not a sweep result.
+
+The previous parcel's note ends with a Reproducing block naming
+`scripts/mk_gen_trees.sh` and `scripts/flip.sh`. Neither is under `scripts/`:
+`mk_gen_trees.sh` exists only inside the census note's own directory, and
+`flip.sh` exists nowhere in the repo (the census committed `switchflip.sh` and
+`switchflip2.sh`). That block is not runnable as written, and this runner
+replaces the workflow it describes.
