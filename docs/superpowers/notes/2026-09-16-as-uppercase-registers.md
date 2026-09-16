@@ -154,10 +154,15 @@ the same shape, all LOUD rather than silent, all now folded and pinned:
   exact match, so `move D6,CCR` was refused for want of a size suffix asl never
   needed. asl: `44C6` / `46FC 2700` / `4E66` (`probes/p16.asm` 6 to 8).
 * the half-register `reg_word` above.
+* and one more found by sweeping the crate for the shape rather than waiting to
+  trip over it: `classify` compared `w == "af'"` exactly, so `ex AF,AF'` was
+  refused where asl writes `08` (`probes/p17.asm`).
 
 **The lesson is the one in the memory note about names and behaviour: a fold in
 one function is not a fold in the paths that read its output.** The amendment
-has been rewritten to say what a run says.
+has been rewritten to say what a run says. The whole crate was then swept for
+the shape (a string comparison against a register-name literal outside a
+case-folded scrutinee) and the four above are all of them.
 
 ## What is NOT in this parcel, and is booked instead
 

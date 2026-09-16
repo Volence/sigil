@@ -175,6 +175,7 @@ fn z80_register_condition_and_index_names_fold_case() {
         ("\tld BC,01234h\n", "01 34 12"),
         ("\tjr NZ,$\n", "20 FE"),
         ("\tex (SP),HL\n", "E3"),
+        ("\tex AF,AF'\n", "08"),
     ] {
         assert_eq!(bytes(&format!("{Z80}{src}")), hex(asl), "{src}");
     }

@@ -155,7 +155,9 @@ pub fn classify(g: &[Token], at: Span, ctx: &ExprCtx<'_>) -> Result<OperandAtom,
         tok: Tok::Ident(w), ..
     }] = g
     {
-        if w == "af'" {
+        // `af'`, in any case: asl assembles `ex AF,AF'` as `08`, the same as
+        // `ex af,af'`.
+        if w.eq_ignore_ascii_case("af'") {
             return Ok(OperandAtom::AfShadow);
         }
         // The Z80 spellings, in any case on a Z80 (`ld B,C` is `41` on the
