@@ -5917,3 +5917,30 @@ file's fourth key exposes is genuinely EMPTY there rather than unsearched. They 
 apart because an in-enum check run hours earlier for a different purpose had established it
 independently, and they said plainly that without that accident of sequence they would have had no
 basis to distinguish "my pass finds none" from "my pass cannot see them".)*
+
+### 2026-09-16, `LANDING-LOG-CHECKER-SEES-HALF-A-RUN`: neither half of the artifact pair can pass it
+
+**`scripts/check_landing_log.py` cannot return a correct verdict on a real landing run, because
+`landing-run.sh` writes its evidence to TWO files and the checker reads one.** Measured on the
+genuinely green `AS-UPPERCASE-REGISTER-INDIRECT` run:
+
+- Pointed at the `.log` (the cargo output): **"NO VERDICT LINE. RED. the run started and did not
+  finish."** The verdict block is `echo`ed to stdout, so it is never in this file.
+- Pointed at the `.log.stdout` (the verdict capture): **"VERDICT: RESULT GREEN"** but
+  `CARGO_EXIT / CLIPPY_EXIT / LEDGER_EXIT NOT REPORTED (the gate did not run)`. Those three lines
+  are written into the `.log`, not the capture.
+
+**So one half reports a completed green run as an unfinished red one, and the other reports three
+gates that did run as gates that did not.** The run was green on both counts, confirmed independently
+through `landing-run.sh --verdict-only` over the log, which is the instrument that DOES work and is
+the one to use.
+
+**This cost this seat two wrong reads in one session**, the first on `docs/lane-log.jsonl`, which is
+not a landing log at all, and the second on the parcel's own `.log`. **The first was my error of
+subject; the second was not** - it was the right artifact, the right family, and still a false RED.
+A checker that says `RED` on a green run is the shape this lane already bans: firing on correct work
+trains a reader to discount it, and the next real red is the one that gets waved through.
+
+**Kill:** either have `landing-run.sh` tee the verdict block into the log so one file carries
+everything, or have the checker take the pair. Until then, **`--verdict-only` is the instrument and
+`check_landing_log.py` should not be pointed at either half.**
