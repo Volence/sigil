@@ -5456,3 +5456,103 @@ with no instrument pointed at it, and the failure it produces (a panic in the mi
 run) reads as a regression in whatever branch is checked out. **Kill:** make the intent explicit,
 `origin.wrapping_add(...)`, with the reason in a comment naming the phased RAM/foreign-space origins
 that reach it, and one dev-profile unit test over a high origin that panics today.
+
+### 2026-09-16, `SWITCH-MATRIX-SWEEP`: the sweep is a script, not a gate
+
+`scripts/switch_matrix_sweep.py` derives every build option both corpora declare, builds every arm
+with sigil and with the corpus's own `build.lua`, and compares whole images. It is re-runnable by a
+cold session and it passes today, but **nothing runs it**. It cannot be a `cargo test`: it needs
+`lua`, the corpora's native build-tool bundles, and about 90 seconds (a quarter of an hour with
+`--cross`), so it does not belong in the landing path.
+
+**Kill:** a nightly, beside `scripts/nightly_ref_drift.sh` and `scripts/nightly_source_gates.sh`,
+which already have the systemd units and the log-checking idiom (`scripts/check_landing_log.py`).
+The sweep already exits nonzero on any unreconciled result and prints `SWEEP_END`, which is the
+shape those units consume. Until then a change that breaks an arm is caught only when somebody
+remembers to run it, which is the class of obligation this campaign keeps retiring.
+
+### 2026-09-16, `SWITCH-MATRIX-SWEEP`: half of Sonic 1's corners are unreachable until the width row lands
+
+Every corner with `FixBugs = 1` (144 of Sonic 1's 288, 120 of them buildable by asl) stops at
+`_incObj/DebugMode.asm:245`, `move.w (v_limitright2),d0`, an absolute address operand with no
+`.w`/`.l` suffix. The same is true of all 48 Sonic 2 corners with `fixBugs = 1`, for the unrelated
+driver-size reason already booked.
+
+**This is not a request to fix it here**, it is the note that **the measurement is blocked, not
+absent**. Measured while diagnosing: adding a single `.w` at that one site makes sigil's image
+byte-identical to the stock ROM of the unpatched tree (CRC32 `888defef`, 551,288 bytes), and there
+is no second site behind it. **Kill:** the front-end width-selection row. On the day it lands, re-run
+`--cross` and 120 Sonic 1 corners and 48 Sonic 2 corners become measured for the first time. Nothing
+says what is in them.
+
+### 2026-09-16, `SWITCH-MATRIX-SWEEP`: sigil's reach beyond a corner the stock toolchain cannot build
+
+`Revision = 0` + `FixBugs = 1` + `AllOptimizations = 0` cannot be assembled by asl at all: `bra.w
+DisplaySprite` at `_incObj/87, 88, 89 Ending Sequence Sonic, Emeralds, Logo.asm:270` goes out of
+`bra.w`'s +/-32 KB range. sigil never reaches that instruction, because it stops on the width suffix
+first, so **whether sigil ALSO refuses those 24 corners for the branch-range reason is unknown**. An
+assembler that quietly assembled an out-of-range `bra.w` would be a silent wrong-ROM fault of
+exactly the class this campaign has been closing.
+
+**Kill:** after the width row lands, the `--cross` run will reach them, and the expected outcome
+becomes a refusal naming the branch. If it instead produces an image, that is a new fault and the
+corner tags are already in the log. Booked so nobody reads the current `BOTH-DECLINED` as agreement.
+
+### 2026-09-16, `SWITCH-MATRIX-SWEEP`: no runtime confirmation of any ROM the sweep built
+
+384 corners plus 38 one-at-a-time legs were compared byte for byte against what the stock toolchain
+builds. **Byte agreement with asl is not evidence that any of these ROMs plays.** In particular
+Sonic 1 `Revision = 2` (REVXB), Sonic 2 `gameRevision = 2` (documented as theoretical) and every
+`AddressSRAM` arm are settings whose RUNTIME behaviour nobody has observed on either toolchain, and
+nothing in this lane can observe it: no emulator was touched and none will be. TAGGED for the
+controller rather than attempted.
+
+### 2026-09-16, `SWITCH-MATRIX-SWEEP`: interaction is measured, second-order interaction is not
+
+`--cross` runs every corner of the SWEPT switches, which is the whole documented option space of both
+corpora. What it does not reach: `ZoneCount`, whose domain exists only as English (`Do not change,
+unless more zones get added`) and is acknowledged rather than swept; values outside what the prose
+enumerates (nothing stops a hacker writing `Revision = 7`); and `skdisasm`, which does not assemble
+under sigil at shipped settings yet, so every corner of it would fail behind the same known blocker.
+
+**Kill for `skdisasm`:** the day its shipped settings agree, `--corpus skdisasm=<path>` is the whole
+invocation, with one caveat measured now rather than discovered later: it ships three build scripts
+(`buildSK.lua`, `buildS3.lua`, `buildS3Complete.lua`) building three different ROMs, and
+`derive_tool_args` reads the FIRST `build_rom_and_handle_failure` call in `build.lua`. It would need
+to be told which script, and there is no `build.lua` for it to read at all.
+
+### 2026-09-16, `SWITCH-MATRIX-SWEEP`: sigil has no odd-address lint on the AS route
+
+Over 422 legs covering the whole documented option space of both corpora, asl raises exactly one
+warning code sigil does not mirror: `warning #180: address is not properly aligned`, on
+`move.w (1).w,d0` at `s2.asm:30438`. That line sits inside `if gameRevision=0` and the disassembly
+annotates it `causes a crash because of the word operation at an odd address`, so it is deliberate
+REV00 behaviour, correctly assembled by both, and **the bytes agree**. What differs is that asl tells
+the person who ran it and sigil does not. No sigil output in the whole run contains the string
+`align`.
+
+**The capability exists on the other frontend.** `crates/sigil-frontend-emp/src/layout.rs` already
+carries an odd-field lint for `.emp` regions ("a u16 at an odd address"), so this is a lint the AS
+route does not run rather than one sigil cannot express.
+
+**Kill:** a word/long-operand alignment warning on the AS frontend, with the Sonic 2 site as its
+fixture. **Do not make it an error**: the corpus contains the construct on purpose, at a documented
+setting, and an error would refuse a ROM asl builds. Also worth knowing before building it: the
+sweep's warning-parity reconciliation is asserted equal in both directions, so adding the lint turns
+the `("s2disasm", "asl#180")` entry in `scripts/switch_matrix_sweep.py` stale and the sweep will say
+so, which is the intended way for that entry to die.
+
+### 2026-09-16, `SWITCH-MATRIX-SWEEP`: the corpora's own Lua build settings are a sweep axis nobody sweeps
+
+`s1disasm/build.lua` and `s2disasm/build.lua` each carry a local the sweep does not touch:
+`improved_dac_driver_compression` and `improved_sound_driver_compression`, both `false`, which select
+`kosinski` over `kosinski-optimised` and `saxman-bugged` over `saxman-optimised` in the `-z` argument
+handed to p2bin and to sigil. Flipping either exercises **a different compressor in sigil** on a real
+corpus, which is a squarely sigil-shaped question, and the comment beside them says the `false`
+setting exists only to reproduce the retail ROM.
+
+The sweep does not sweep them because they are Lua locals rather than `.asm` declarations, so the
+documented-declaration derivation cannot see them by construction. **Kill:** cheap, because
+`derive_tool_args` already evaluates the `<local boolean> and "a" or "b"` expression to resolve the
+algorithm name. It would need a second derivation step over `build.lua`'s locals and a second flip
+mechanism (edit the Lua, not the asm), and the same edit-proves-it-applied gate.

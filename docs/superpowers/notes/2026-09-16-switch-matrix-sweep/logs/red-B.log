@@ -1,0 +1,353 @@
+=== RED B: the vacuity-rescue and end-to-end-control gates. mutation on the committed file at db8621d4:
+ scripts/switch_matrix_sweep.py | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+909:                             post_lua_edits=[])  # RED-B: control neutered
+950:                for (cs, cv) in []:  # RED-B: rescue disabled
+=== run:
+SIGIL sigil 0.1.0 (4f2b0cf6)
+SIGIL md5 ab3637357c1301e910f16610e0379b02
+CONTROL C1 no-op-edit: PASSED, gate fired (the edit changed no text at /home/volence/sonic_hacks/.scratch/switch-matrix-sweep/selftest/t.asm:1; an unappl)
+   C1 mutation on disk: 'Revision = 1'
+CONTROL C2 wrong-line: PASSED, gate fired (/home/volence/sonic_hacks/.scratch/switch-matrix-sweep/selftest/t.asm:1 does not declare `Revision`, it reads )
+   C3 mutation on disk: 'Revision = 2'
+CONTROL C3 shadowed-declaration: PASSED, gate fired (`Revision` is declared at column 0 on lines [1, 3], not only 1; a second declaration would shadow the edit)
+CONTROL C4 blind-comparer: PASSED, gate fired (the planted-byte control failed; this compare cannot report a difference and its figure is void)
+   C5 mutation on disk: other.asm 'B = 1'
+CONTROL C5 option-outside-block: PASSED, gate fired (selftest: the documented-declaration scan and the ASSEMBLY OPTIONS block disagree. scan-only=['B'] block-only=)
+   C6 mutation on disk: 'A = 5'
+CONTROL C6 one-element-domain: PASSED, gate fired (selftest: `A` derived the one-element domain [5] from its prose, so it would be counted as swept and execute n)
+CONTROL C8 warning-normaliser: PASSED, the source warning both toolchains fire normalises to one string and the coded and sigil-only ones stay apart
+SELF_TEST PASSED
+
+==============================================================================
+CORPUS s1disasm at f6ece657c1cf253404312137dfcb8ec15fa42318
+  extracted read-only by git archive into /home/volence/sonic_hacks/.scratch/switch-matrix-sweep/trees/s1disasm-pristine
+  build.lua says: root=sonic.asm output=s1built.bin p2bin/sigil args=-p=FF -z=0,kosinski,Size_of_DAC_driver_guess,after
+  DERIVED 11 documented switches, cross-checked against the ASSEMBLY OPTIONS block
+    Revision                 = 1   domain [0, 1, 2]    arms [0, 2]
+    FixBugs                  = 0   domain [0, 1]       arms [1]
+    CheatsEnabled            = 0   domain [0, 1]       arms [1]
+    AllOptimizations         = 0   domain [0, 1]       arms [1]
+    SkipChecksumCheck          DERIVED  right-hand side `0|AllOptimizations` names another switch, so this is not independently settable
+    ZeroOffsetOptimization     DERIVED  right-hand side `0|AllOptimizations` names another switch, so this is not independently settable
+    PaddingOptimization        DERIVED  right-hand side `0|AllOptimizations` names another switch, so this is not independently settable
+    EnableSRAM               = 0   domain [0, 1]       arms [1]
+    BackupSRAM               = 1   domain [0, 1]       arms [0]
+    AddressSRAM              = 3   domain [0, 2, 3]    arms [0, 2]
+    ZoneCount                  UNREADABLE prose next to the switch enumerates no values
+  RECONCILE switches: 11 derived = 7 swept + 4 excluded
+  RECONCILE legs: 9 arms -> 9 flip legs + 1 baseline
+
+-- LEG s1disasm-shipped   shipped
+   BUILD_LUA exit=0 wrote=True  (s1disasm-shipped.lua.log)
+   SIGIL exit=0 wrote=True  stderr lines=0 (s1disasm-shipped.sigil.err)
+   reference crc32=afe05eee size=524288
+   candidate crc32=afe05eee size=524288
+   DIFF 0 bytes in 0 runs
+   CONTROL planted at ['0x200', '0x40000', '0x7fffe'] -> 3 bytes in 3 runs: PASSED
+   LEG_REPORTED s1disasm-shipped
+   RESULT AGREE
+
+-- LEG s1disasm-Revision-0   Revision = 0
+   edit sonic.asm:14
+     before: 'Revision = 1'
+     after:  'Revision = 0'
+   BUILD_LUA exit=0 wrote=True  (s1disasm-Revision-0.lua.log)
+   SIGIL exit=0 wrote=True  stderr lines=0 (s1disasm-Revision-0.sigil.err)
+   reference crc32=f9394e97 size=524288
+   candidate crc32=f9394e97 size=524288
+   DIFF 0 bytes in 0 runs
+   CONTROL planted at ['0x200', '0x40000', '0x7fffe'] -> 3 bytes in 3 runs: PASSED
+   LEG_REPORTED s1disasm-Revision-0
+   RESULT AGREE
+
+-- LEG s1disasm-Revision-2   Revision = 2
+   edit sonic.asm:14
+     before: 'Revision = 1'
+     after:  'Revision = 2'
+   BUILD_LUA exit=0 wrote=True  (s1disasm-Revision-2.lua.log)
+   SIGIL exit=0 wrote=True  stderr lines=0 (s1disasm-Revision-2.sigil.err)
+   reference crc32=6382b2c5 size=524288
+   candidate crc32=6382b2c5 size=524288
+   DIFF 0 bytes in 0 runs
+   CONTROL planted at ['0x200', '0x40000', '0x7fffe'] -> 3 bytes in 3 runs: PASSED
+   LEG_REPORTED s1disasm-Revision-2
+   RESULT AGREE
+
+-- LEG s1disasm-FixBugs-1   FixBugs = 1
+   edit sonic.asm:20
+     before: 'FixBugs = 0'
+     after:  'FixBugs = 1'
+   BUILD_LUA exit=0 wrote=True  (s1disasm-FixBugs-1.lua.log)
+   SIGIL exit=1 wrote=False  stderr lines=1 (s1disasm-FixBugs-1.sigil.err)
+     sigil: _incObj/DebugMode.asm(245):3: error: absolute address operand `(expr)` needs an explicit `.w`/`.l` width suffix (width-selecting bare `(expr)` is out of scope)
+   LEG_REPORTED s1disasm-FixBugs-1
+   RESULT SIGIL-DECLINED
+
+-- LEG s1disasm-CheatsEnabled-1   CheatsEnabled = 1
+   edit sonic.asm:24
+     before: 'CheatsEnabled = 0'
+     after:  'CheatsEnabled = 1'
+   BUILD_LUA exit=0 wrote=True  (s1disasm-CheatsEnabled-1.lua.log)
+   SIGIL exit=0 wrote=True  stderr lines=0 (s1disasm-CheatsEnabled-1.sigil.err)
+   reference crc32=ac362f3d size=524288
+   candidate crc32=ac362f3d size=524288
+   DIFF 0 bytes in 0 runs
+   CONTROL planted at ['0x200', '0x40000', '0x7fffe'] -> 3 bytes in 3 runs: PASSED
+   LEG_REPORTED s1disasm-CheatsEnabled-1
+   RESULT AGREE
+
+-- LEG s1disasm-AllOptimizations-1   AllOptimizations = 1
+   edit sonic.asm:28
+     before: 'AllOptimizations = 0'
+     after:  'AllOptimizations = 1'
+   BUILD_LUA exit=0 wrote=True  (s1disasm-AllOptimizations-1.lua.log)
+   SIGIL exit=0 wrote=True  stderr lines=0 (s1disasm-AllOptimizations-1.sigil.err)
+   reference crc32=95dd2ddc size=520974
+   candidate crc32=95dd2ddc size=520974
+   DIFF 0 bytes in 0 runs
+   CONTROL planted at ['0x200', '0x3f987', '0x7f30c'] -> 3 bytes in 3 runs: PASSED
+   LEG_REPORTED s1disasm-AllOptimizations-1
+   RESULT AGREE
+
+-- LEG s1disasm-EnableSRAM-1   EnableSRAM = 1
+   edit sonic.asm:37
+     before: 'EnableSRAM = 0'
+     after:  'EnableSRAM = 1'
+   BUILD_LUA exit=0 wrote=True  (s1disasm-EnableSRAM-1.lua.log)
+   SIGIL exit=0 wrote=True  stderr lines=0 (s1disasm-EnableSRAM-1.sigil.err)
+   reference crc32=649236ea size=524288
+   candidate crc32=649236ea size=524288
+   DIFF 0 bytes in 0 runs
+   CONTROL planted at ['0x200', '0x40000', '0x7fffe'] -> 3 bytes in 3 runs: PASSED
+   LEG_REPORTED s1disasm-EnableSRAM-1
+   RESULT AGREE
+
+-- LEG s1disasm-BackupSRAM-0   BackupSRAM = 0
+   edit sonic.asm:39
+     before: 'BackupSRAM = 1'
+     after:  'BackupSRAM = 0'
+   BUILD_LUA exit=0 wrote=True  (s1disasm-BackupSRAM-0.lua.log)
+   SIGIL exit=0 wrote=True  stderr lines=0 (s1disasm-BackupSRAM-0.sigil.err)
+   reference crc32=afe05eee size=524288
+   candidate crc32=afe05eee size=524288
+   DIFF 0 bytes in 0 runs
+   CONTROL planted at ['0x200', '0x40000', '0x7fffe'] -> 3 bytes in 3 runs: PASSED
+   VACUOUS: the stock build of this leg is byte-identical to s1disasm-shipped.ref.bin (crc32 afe05eee), so the switch under study changed no source the build reached, and an agreement here would be an answer this leg could not have failed to give
+   LEG_REPORTED s1disasm-BackupSRAM-0
+   RESULT AGREE
+
+-- LEG s1disasm-AddressSRAM-0   AddressSRAM = 0
+   edit sonic.asm:41
+     before: 'AddressSRAM = 3'
+     after:  'AddressSRAM = 0'
+   BUILD_LUA exit=0 wrote=True  (s1disasm-AddressSRAM-0.lua.log)
+   SIGIL exit=0 wrote=True  stderr lines=0 (s1disasm-AddressSRAM-0.sigil.err)
+   reference crc32=afe05eee size=524288
+   candidate crc32=afe05eee size=524288
+   DIFF 0 bytes in 0 runs
+   CONTROL planted at ['0x200', '0x40000', '0x7fffe'] -> 3 bytes in 3 runs: PASSED
+   VACUOUS: the stock build of this leg is byte-identical to s1disasm-shipped.ref.bin (crc32 afe05eee), so the switch under study changed no source the build reached, and an agreement here would be an answer this leg could not have failed to give
+   LEG_REPORTED s1disasm-AddressSRAM-0
+   RESULT AGREE
+
+-- LEG s1disasm-AddressSRAM-2   AddressSRAM = 2
+   edit sonic.asm:41
+     before: 'AddressSRAM = 3'
+     after:  'AddressSRAM = 2'
+   BUILD_LUA exit=0 wrote=True  (s1disasm-AddressSRAM-2.lua.log)
+   SIGIL exit=0 wrote=True  stderr lines=0 (s1disasm-AddressSRAM-2.sigil.err)
+   reference crc32=afe05eee size=524288
+   candidate crc32=afe05eee size=524288
+   DIFF 0 bytes in 0 runs
+   CONTROL planted at ['0x200', '0x40000', '0x7fffe'] -> 3 bytes in 3 runs: PASSED
+   VACUOUS: the stock build of this leg is byte-identical to s1disasm-shipped.ref.bin (crc32 afe05eee), so the switch under study changed no source the build reached, and an agreement here would be an answer this leg could not have failed to give
+   LEG_REPORTED s1disasm-AddressSRAM-2
+   RESULT AGREE
+
+== CONTROL C7 s1disasm: reference built from the shipped tree, then Revision = 0 applied before sigil runs; the sweep must report a difference
+   BUILD_LUA exit=0 wrote=True  (s1disasm-CONTROL-divergent-source.lua.log)
+   SIGIL exit=0 wrote=True  stderr lines=0 (s1disasm-CONTROL-divergent-source.sigil.err)
+   reference crc32=afe05eee size=524288
+   candidate crc32=afe05eee size=524288
+   DIFF 0 bytes in 0 runs
+   CONTROL planted at ['0x200', '0x40000', '0x7fffe'] -> 3 bytes in 3 runs: PASSED
+   LEG_REPORTED s1disasm-CONTROL-divergent-source
+   CONTROL C7 s1disasm: FAILED (AGREE)
+
+== RESCUE s1disasm-BackupSRAM-0: phase 1 could not measure it; trying companions in declaration order
+   RESCUE s1disasm-BackupSRAM-0: UNMEASURABLE by any single companion   (companions tried: )
+
+== RESCUE s1disasm-AddressSRAM-0: phase 1 could not measure it; trying companions in declaration order
+   RESCUE s1disasm-AddressSRAM-0: UNMEASURABLE by any single companion   (companions tried: )
+
+== RESCUE s1disasm-AddressSRAM-2: phase 1 could not measure it; trying companions in declaration order
+   RESCUE s1disasm-AddressSRAM-2: UNMEASURABLE by any single companion   (companions tried: )
+
+==============================================================================
+CORPUS s2disasm at e45ebf332f39987424ca3102e50c717628f71269
+  extracted read-only by git archive into /home/volence/sonic_hacks/.scratch/switch-matrix-sweep/trees/s2disasm-pristine
+  build.lua says: root=s2.asm output=s2built.bin p2bin/sigil args=-p=0 -z=0,saxman-bugged,Size_of_Snd_driver_guess,after
+  DERIVED 10 documented switches, cross-checked against the ASSEMBLY OPTIONS block
+    gameRevision             = 1   domain [0, 1, 2]    arms [0, 2]
+    padToPowerOfTwo          = 1   domain [0, 1]       arms [0]
+    fixBugs                  = 0   domain [0, 1]       arms [1]
+    allOptimizations         = 0   domain [0, 1]       arms [1]
+    skipChecksumCheck        = 0   domain [0, 1]       arms [1]
+    zeroOffsetOptimization     DERIVED  right-hand side `0|allOptimizations` names another switch, so this is not independently settable
+    removeJmpTos               DERIVED  right-hand side `0|(gameRevision>=2)|allOptimizations` names another switch, so this is not independently settable
+    addsubOptimize             DERIVED  right-hand side `0|(gameRevision=2)|allOptimizations` names another switch, so this is not independently settable
+    relativeLea                DERIVED  right-hand side `0|(gameRevision<2)|allOptimizations` names another switch, so this is not independently settable
+    useFullWaterTables       = 0   domain [0, 1]       arms [1]
+  RECONCILE switches: 10 derived = 6 swept + 4 excluded
+  RECONCILE legs: 7 arms -> 7 flip legs + 1 baseline
+
+-- LEG s2disasm-shipped   shipped
+   BUILD_LUA exit=0 wrote=True  (s2disasm-shipped.lua.log)
+   SIGIL exit=0 wrote=True  stderr lines=0 (s2disasm-shipped.sigil.err)
+   reference crc32=7b905383 size=1048576
+   candidate crc32=7b905383 size=1048576
+   DIFF 0 bytes in 0 runs
+   CONTROL planted at ['0x200', '0x80000', '0xffffe'] -> 3 bytes in 3 runs: PASSED
+   LEG_REPORTED s2disasm-shipped
+   RESULT AGREE
+
+-- LEG s2disasm-gameRevision-0   gameRevision = 0
+   edit s2.asm:20
+     before: 'gameRevision = 1'
+     after:  'gameRevision = 0'
+   BUILD_LUA exit=1 wrote=True  (s2disasm-gameRevision-0.lua.log)
+   SIGIL exit=0 wrote=True  stderr lines=0 (s2disasm-gameRevision-0.sigil.err)
+   reference crc32=24ab4c3a size=1048576
+   candidate crc32=24ab4c3a size=1048576
+   DIFF 0 bytes in 0 runs
+   CONTROL planted at ['0x200', '0x80000', '0xffffe'] -> 3 bytes in 3 runs: PASSED
+   LEG_REPORTED s2disasm-gameRevision-0
+   RESULT AGREE
+
+-- LEG s2disasm-gameRevision-2   gameRevision = 2
+   edit s2.asm:20
+     before: 'gameRevision = 1'
+     after:  'gameRevision = 2'
+   BUILD_LUA exit=0 wrote=True  (s2disasm-gameRevision-2.lua.log)
+   SIGIL exit=0 wrote=True  stderr lines=0 (s2disasm-gameRevision-2.sigil.err)
+   reference crc32=d10a3a93 size=1048576
+   candidate crc32=d10a3a93 size=1048576
+   DIFF 0 bytes in 0 runs
+   CONTROL planted at ['0x200', '0x80000', '0xffffe'] -> 3 bytes in 3 runs: PASSED
+   LEG_REPORTED s2disasm-gameRevision-2
+   RESULT AGREE
+
+-- LEG s2disasm-padToPowerOfTwo-0   padToPowerOfTwo = 0
+   edit s2.asm:24
+     before: 'padToPowerOfTwo = 1'
+     after:  'padToPowerOfTwo = 0'
+   BUILD_LUA exit=0 wrote=True  (s2disasm-padToPowerOfTwo-0.lua.log)
+   SIGIL exit=0 wrote=True  stderr lines=0 (s2disasm-padToPowerOfTwo-0.sigil.err)
+   reference crc32=dd0ebd72 size=1048556
+   candidate crc32=dd0ebd72 size=1048556
+   DIFF 0 bytes in 0 runs
+   CONTROL planted at ['0x200', '0x7fff6', '0xfffea'] -> 3 bytes in 3 runs: PASSED
+   LEG_REPORTED s2disasm-padToPowerOfTwo-0
+   RESULT AGREE
+
+-- LEG s2disasm-fixBugs-1   fixBugs = 1
+   edit s2.asm:27
+     before: 'fixBugs = 0'
+     after:  'fixBugs = 1'
+   BUILD_LUA exit=0 wrote=True  (s2disasm-fixBugs-1.lua.log)
+   SIGIL exit=1 wrote=False  stderr lines=1 (s2disasm-fixBugs-1.sigil.err)
+     sigil: s2.sounddriver.asm(248):6: error: `-z=0,saxman-bugged,Size_of_Snd_driver_guess,after`: the blob [0x0, 0x134F) is 0xF88 bytes compressed as saxman-bugged, and `Size_of_Snd_driver_guess`, the size the source declares for it, is $F64; every byte the source computed from that name is short by 0x24, and p2bin's own message for this is to raise it, so set `Size_of_Snd_driver_guess` to $F88
+   LEG_REPORTED s2disasm-fixBugs-1
+   RESULT SIGIL-DECLINED
+
+-- LEG s2disasm-allOptimizations-1   allOptimizations = 1
+   edit s2.asm:31
+     before: 'allOptimizations = 0'
+     after:  'allOptimizations = 1'
+   BUILD_LUA exit=0 wrote=True  (s2disasm-allOptimizations-1.lua.log)
+   SIGIL exit=0 wrote=True  stderr lines=0 (s2disasm-allOptimizations-1.sigil.err)
+   reference crc32=6c8cbd9b size=1048576
+   candidate crc32=6c8cbd9b size=1048576
+   DIFF 0 bytes in 0 runs
+   CONTROL planted at ['0x200', '0x80000', '0xffffe'] -> 3 bytes in 3 runs: PASSED
+   LEG_REPORTED s2disasm-allOptimizations-1
+   RESULT AGREE
+
+-- LEG s2disasm-skipChecksumCheck-1   skipChecksumCheck = 1
+   edit s2.asm:34
+     before: 'skipChecksumCheck = 0'
+     after:  'skipChecksumCheck = 1'
+   BUILD_LUA exit=0 wrote=True  (s2disasm-skipChecksumCheck-1.lua.log)
+   SIGIL exit=0 wrote=True  stderr lines=0 (s2disasm-skipChecksumCheck-1.sigil.err)
+   reference crc32=f8425851 size=1048576
+   candidate crc32=f8425851 size=1048576
+   DIFF 0 bytes in 0 runs
+   CONTROL planted at ['0x200', '0x80000', '0xffffe'] -> 3 bytes in 3 runs: PASSED
+   LEG_REPORTED s2disasm-skipChecksumCheck-1
+   RESULT AGREE
+
+-- LEG s2disasm-useFullWaterTables-1   useFullWaterTables = 1
+   edit s2.asm:49
+     before: 'useFullWaterTables = 0'
+     after:  'useFullWaterTables = 1'
+   BUILD_LUA exit=0 wrote=True  (s2disasm-useFullWaterTables-1.lua.log)
+   SIGIL exit=0 wrote=True  stderr lines=0 (s2disasm-useFullWaterTables-1.sigil.err)
+   reference crc32=bbaffa38 size=1048576
+   candidate crc32=bbaffa38 size=1048576
+   DIFF 0 bytes in 0 runs
+   CONTROL planted at ['0x200', '0x80000', '0xffffe'] -> 3 bytes in 3 runs: PASSED
+   LEG_REPORTED s2disasm-useFullWaterTables-1
+   RESULT AGREE
+
+== CONTROL C7 s2disasm: reference built from the shipped tree, then gameRevision = 0 applied before sigil runs; the sweep must report a difference
+   BUILD_LUA exit=0 wrote=True  (s2disasm-CONTROL-divergent-source.lua.log)
+   SIGIL exit=0 wrote=True  stderr lines=0 (s2disasm-CONTROL-divergent-source.sigil.err)
+   reference crc32=7b905383 size=1048576
+   candidate crc32=7b905383 size=1048576
+   DIFF 0 bytes in 0 runs
+   CONTROL planted at ['0x200', '0x80000', '0xffffe'] -> 3 bytes in 3 runs: PASSED
+   LEG_REPORTED s2disasm-CONTROL-divergent-source
+   CONTROL C7 s2disasm: FAILED (AGREE)
+
+==============================================================================
+RECONCILE legs launched=20 reported=20
+RECONCILE diagnostics: 18 leg(s) where both toolchains ran, 2 warning-parity key(s) seen, 2 acknowledged
+  s2disasm asl#180 on 1 leg(s)
+  s2disasm sigil-only:`shared` is ignored on 8 leg(s)
+RECONCILE unreadable-domain: found=1 acknowledged=1 MATCH
+
+LEG                                        RESULT                         DETAIL
+s1disasm-shipped                           AGREE                          crc32 afe05eee size 524288
+s1disasm-Revision-0                        AGREE                          crc32 f9394e97 size 524288
+s1disasm-Revision-2                        AGREE                          crc32 6382b2c5 size 524288
+s1disasm-FixBugs-1                         SIGIL-DECLINED                 _incObj/DebugMode.asm(245):3: error: absolute address operand `(expr)` needs an explicit `
+s1disasm-CheatsEnabled-1                   AGREE                          crc32 ac362f3d size 524288
+s1disasm-AllOptimizations-1                AGREE                          crc32 95dd2ddc size 520974
+s1disasm-EnableSRAM-1                      AGREE                          crc32 649236ea size 524288
+s1disasm-BackupSRAM-0                      NOT-MEASURED                   crc32 afe05eee size 524288   [stock image unchanged by this flip; the compare reported AGREE and could not have reported otherwise]
+s1disasm-AddressSRAM-0                     NOT-MEASURED                   crc32 afe05eee size 524288   [stock image unchanged by this flip; the compare reported AGREE and could not have reported otherwise]
+s1disasm-AddressSRAM-2                     NOT-MEASURED                   crc32 afe05eee size 524288   [stock image unchanged by this flip; the compare reported AGREE and could not have reported otherwise]
+s1disasm-CONTROL-divergent-source          CONTROL/AGREE                  crc32 afe05eee size 524288
+s2disasm-shipped                           AGREE                          crc32 7b905383 size 1048576
+s2disasm-gameRevision-0                    AGREE                          crc32 24ab4c3a size 1048576
+s2disasm-gameRevision-2                    AGREE                          crc32 d10a3a93 size 1048576
+s2disasm-padToPowerOfTwo-0                 AGREE                          crc32 dd0ebd72 size 1048556
+s2disasm-fixBugs-1                         SIGIL-DECLINED                 s2.sounddriver.asm(248):6: error: `-z=0,saxman-bugged,Size_of_Snd_driver_guess,after`: the
+s2disasm-allOptimizations-1                AGREE                          crc32 6c8cbd9b size 1048576
+s2disasm-skipChecksumCheck-1               AGREE                          crc32 f8425851 size 1048576
+s2disasm-useFullWaterTables-1              AGREE                          crc32 bbaffa38 size 1048576
+s2disasm-CONTROL-divergent-source          CONTROL/AGREE                  crc32 7b905383 size 1048576
+RECONCILE vacuity: 3 phase-1 arm(s) exercised no changed source, 3 rescue verdict(s)
+  s1disasm-BackupSRAM-0: UNMEASURABLE
+  s1disasm-AddressSRAM-0: UNMEASURABLE
+  s1disasm-AddressSRAM-2: UNMEASURABLE
+
+RECONCILE outcomes: 2 non-agreeing, 2 acknowledged, 0 unacknowledged, 0 stale acknowledgements, 0 class mismatches
+
+SWEEP FAILED, 3 reason(s):
+  - s1disasm: the end-to-end control reported AGREE. The two builds are not independent and no agreement in this run means anything
+  - s2disasm: the end-to-end control reported AGREE. The two builds are not independent and no agreement in this run means anything
+  - unmeasurable acknowledgements are stale: found-not-acknowledged=[('s1disasm', 's1disasm-AddressSRAM-0'), ('s1disasm', 's1disasm-AddressSRAM-2'), ('s1disasm', 's1disasm-BackupSRAM-0')] acknowledged-not-found=[]
+SWEEP_END
+RED_B_EXIT=1

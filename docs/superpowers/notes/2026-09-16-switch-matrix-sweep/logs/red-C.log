@@ -1,0 +1,86 @@
+=== RED C: legs launched vs legs reported. mutation on the committed file at db8621d4:
+ scripts/switch_matrix_sweep.py | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+852:            launched += 2  # RED-C: one extra leg launched, none reported
+=== run:
+SIGIL sigil 0.1.0 (4f2b0cf6)
+SIGIL md5 ab3637357c1301e910f16610e0379b02
+CONTROL C1 no-op-edit: PASSED, gate fired (the edit changed no text at /home/volence/sonic_hacks/.scratch/switch-matrix-sweep/selftest/t.asm:1; an unappl)
+   C1 mutation on disk: 'Revision = 1'
+CONTROL C2 wrong-line: PASSED, gate fired (/home/volence/sonic_hacks/.scratch/switch-matrix-sweep/selftest/t.asm:1 does not declare `Revision`, it reads )
+   C3 mutation on disk: 'Revision = 2'
+CONTROL C3 shadowed-declaration: PASSED, gate fired (`Revision` is declared at column 0 on lines [1, 3], not only 1; a second declaration would shadow the edit)
+CONTROL C4 blind-comparer: PASSED, gate fired (the planted-byte control failed; this compare cannot report a difference and its figure is void)
+   C5 mutation on disk: other.asm 'B = 1'
+CONTROL C5 option-outside-block: PASSED, gate fired (selftest: the documented-declaration scan and the ASSEMBLY OPTIONS block disagree. scan-only=['B'] block-only=)
+   C6 mutation on disk: 'A = 5'
+CONTROL C6 one-element-domain: PASSED, gate fired (selftest: `A` derived the one-element domain [5] from its prose, so it would be counted as swept and execute n)
+CONTROL C8 warning-normaliser: PASSED, the source warning both toolchains fire normalises to one string and the coded and sigil-only ones stay apart
+SELF_TEST PASSED
+
+==============================================================================
+CORPUS s1disasm at f6ece657c1cf253404312137dfcb8ec15fa42318
+  extracted read-only by git archive into /home/volence/sonic_hacks/.scratch/switch-matrix-sweep/trees/s1disasm-pristine
+  build.lua says: root=sonic.asm output=s1built.bin p2bin/sigil args=-p=FF -z=0,kosinski,Size_of_DAC_driver_guess,after
+  DERIVED 11 documented switches, cross-checked against the ASSEMBLY OPTIONS block
+    Revision                 = 1   domain [0, 1, 2]    arms [0, 2]
+    FixBugs                  = 0   domain [0, 1]       arms [1]
+    CheatsEnabled            = 0   domain [0, 1]       arms [1]
+    AllOptimizations         = 0   domain [0, 1]       arms [1]
+    SkipChecksumCheck          DERIVED  right-hand side `0|AllOptimizations` names another switch, so this is not independently settable
+    ZeroOffsetOptimization     DERIVED  right-hand side `0|AllOptimizations` names another switch, so this is not independently settable
+    PaddingOptimization        DERIVED  right-hand side `0|AllOptimizations` names another switch, so this is not independently settable
+    EnableSRAM               = 0   domain [0, 1]       arms [1]
+    BackupSRAM               = 1   domain [0, 1]       arms [0]
+    AddressSRAM              = 3   domain [0, 2, 3]    arms [0, 2]
+    ZoneCount                  UNREADABLE prose next to the switch enumerates no values
+  RECONCILE switches: 11 derived = 7 swept + 4 excluded
+  RECONCILE legs: 9 arms -> 9 flip legs + 1 baseline
+
+-- LEG s1disasm-shipped   shipped
+   BUILD_LUA exit=0 wrote=True  (s1disasm-shipped.lua.log)
+   SIGIL exit=0 wrote=True  stderr lines=0 (s1disasm-shipped.sigil.err)
+   reference crc32=afe05eee size=524288
+   candidate crc32=afe05eee size=524288
+   DIFF 0 bytes in 0 runs
+   CONTROL planted at ['0x200', '0x40000', '0x7fffe'] -> 3 bytes in 3 runs: PASSED
+   LEG_REPORTED s1disasm-shipped
+   RESULT AGREE
+
+==============================================================================
+CORPUS s2disasm at e45ebf332f39987424ca3102e50c717628f71269
+  extracted read-only by git archive into /home/volence/sonic_hacks/.scratch/switch-matrix-sweep/trees/s2disasm-pristine
+  build.lua says: root=s2.asm output=s2built.bin p2bin/sigil args=-p=0 -z=0,saxman-bugged,Size_of_Snd_driver_guess,after
+  DERIVED 10 documented switches, cross-checked against the ASSEMBLY OPTIONS block
+    gameRevision             = 1   domain [0, 1, 2]    arms [0, 2]
+    padToPowerOfTwo          = 1   domain [0, 1]       arms [0]
+    fixBugs                  = 0   domain [0, 1]       arms [1]
+    allOptimizations         = 0   domain [0, 1]       arms [1]
+    skipChecksumCheck        = 0   domain [0, 1]       arms [1]
+    zeroOffsetOptimization     DERIVED  right-hand side `0|allOptimizations` names another switch, so this is not independently settable
+    removeJmpTos               DERIVED  right-hand side `0|(gameRevision>=2)|allOptimizations` names another switch, so this is not independently settable
+    addsubOptimize             DERIVED  right-hand side `0|(gameRevision=2)|allOptimizations` names another switch, so this is not independently settable
+    relativeLea                DERIVED  right-hand side `0|(gameRevision<2)|allOptimizations` names another switch, so this is not independently settable
+    useFullWaterTables       = 0   domain [0, 1]       arms [1]
+  RECONCILE switches: 10 derived = 6 swept + 4 excluded
+  RECONCILE legs: 7 arms -> 7 flip legs + 1 baseline
+
+==============================================================================
+RECONCILE legs launched=2 reported=1
+RECONCILE diagnostics: 1 leg(s) where both toolchains ran, 0 warning-parity key(s) seen, 2 acknowledged
+RECONCILE unreadable-domain: found=1 acknowledged=1 MATCH
+
+LEG                                        RESULT                         DETAIL
+s1disasm-shipped                           AGREE                          crc32 afe05eee size 524288
+RECONCILE vacuity: 0 phase-1 arm(s) exercised no changed source, 0 rescue verdict(s)
+
+RECONCILE outcomes: 0 non-agreeing, 2 acknowledged, 0 unacknowledged, 2 stale acknowledgements, 0 class mismatches
+  STALE ACKNOWLEDGEMENT s1disasm s1disasm-FixBugs-1: expected SIGIL-DECLINED, the leg agreed
+  STALE ACKNOWLEDGEMENT s2disasm s2disasm-fixBugs-1: expected SIGIL-DECLINED, the leg agreed
+
+PARTIAL RUN: --only was given, so legs outside ['s1disasm-shipped'] did not run and the outcome, unreadable-domain and leg-count reconciliations were not enforced. This run is a probe; it is not a sweep result and no table may be built from it.
+
+SWEEP FAILED, 1 reason(s):
+  - 2 legs launched but 1 reported; 1 produced no row at all
+SWEEP_END
+RED_C_EXIT=1
