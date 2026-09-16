@@ -5,8 +5,8 @@
 # value to reconcile.
 #
 #   introduced upstream at:  ba1de1f
-#   vendored here from:      658502e (verified an ancestor of their origin/main)
-#   content identity:        CRC32 bb7e374f, 9341 bytes
+#   vendored here from:      d631d18 (verified an ancestor of their origin/main)
+#   content identity:        CRC32 9c6b6df6, 12253 bytes
 #
 # CITED BY CONTENT, NOT ONLY BY SHA. An earlier header named 51a48d4 alone, the
 # revision the hub announced, which is a true statement about a revision where
@@ -19,48 +19,57 @@
 # with zlib.crc32 (IEEE, the campaign provenance standard); a decimal figure came
 # from a foreign tool and does not compare.
 #
-# THE PIN HAS FIRED THREE TIMES ON LEGITIMATE CHANGES, which is the only exercise
-# that tests the mechanism without also reporting a fault: a docstring correction
-# (37e98d6b -> c36dd014), the empty-time guard (-> 79f5187b), and the two fixes
-# below (-> bb7e374f). Each reconciled after checking, not after being told.
+# THE PIN HAS FIRED FOUR TIMES ON LEGITIMATE CHANGES, which is the only exercise
+# that tests it without also reporting a fault: a docstring correction, the
+# empty-time guard, the null and absent fixes, and the last-record fix below.
+# Each reconciled after checking, not after being told.
 #
-# WHAT THIS REFUSES, RE-PROVED HERE AT THESE BYTES rather than carried over, since
-# red-first custody attaches to the BYTES that were proved and not to a file name.
-# Every refusal md5-unchanged, every exit code read UNPIPED (zsh has no
-# PIPESTATUS, so a piped read reports the downstream command's status and turns a
-# refusal into a green that means nothing):
+# WHAT THIS REFUSES, RE-PROVED AT THESE BYTES rather than carried over, since
+# red-first custody attaches to the BYTES that were proved and not to a file
+# name. Every refusal md5-unchanged, every exit code read UNPIPED (zsh has no
+# PIPESTATUS, so a piped read reports the downstream command's status and turns
+# a refusal into a green that means nothing):
 #   a file whose last line does not parse  -> exit 1, nothing written
 #   a missing trailing newline             -> repaired, BOTH prior records intact
-#   a time field present and empty         -> exit 1
-#   a time field present and null          -> exit 1
-#   a time field absent                    -> exit 1, WHEN the ledger's own
-#                                             records all carry one
+#   a time field empty, blank or null      -> exit 1
+#   a time field absent                    -> exit 1 where the ledger evidences one
 #
-# THE GUARD'S ACTIVATION IS DATA-DERIVED AND THEREFORE SILENT. The tool has no
-# schema for any ledger, so it takes the ledger itself as the evidence: absent is
-# refused only when EVERY record already in the file carries a time field.
-# Measured consequences, and they are correct behaviour rather than defects, but
-# they are invisible from the output, so a lane can believe it is protected when
-# it is not:
-#   a MIXED file (one legacy record without a time field) accepts records
-#     without one, permanently, and says nothing;
-#   a NEW or EMPTY file constrains nothing, so a first record written without a
-#     time field leaves that ledger unconstrained for good.
-# CHECKED FOR THIS LANE AT ADOPTION, and this is the fact that goes stale, so
-# re-measure rather than trusting this line: docs/lane-log.jsonl 351 of 351 and
-# docs/decisions.jsonl 41 of 41 carry a time field, so the guard is ACTIVE on
-# both and all three bad shapes were refused against copies of the real files.
+# THE REQUIRED-KEY RULE IS MONOTONE (`any`), AND THE THIRD MEMBER OF THAT FAMILY
+# IS WHY THIS PARAGRAPH EXISTS. Evidence that a ledger keeps a time field cannot
+# be erased by adding a record that lacks one. Two earlier rules could be:
+#   ALL   this lane's first gate draft, reader-side. The candidate broke its own
+#         file's unanimity and dropped the file out of the judged set; 469
+#         records judged fell to 118 and the row still said ok.
+#   LAST  this tool at 658502e, which read
+#         `expected = [k for k in TIME_FIELDS if k in last_record]`. One bad
+#         record written through the one-line bypass became the reference and
+#         disabled the check for everything after it.
+# ⚠ THIS LANE TOLD THE AUTHOR THEIR TOOL WAS UNAFFECTED AND NOT TO CHANGE IT,
+# reasoning that a producer-side check evaluates the file before the candidate
+# joins it, which is true and was not the mechanism. The source was on disk here
+# and had been run three times; the function was never read. They checked anyway
+# and found it. The lesson is not the wrong guess, it is that a DO-NOT-CHANGE-IT
+# is a stronger act than a claim and this one was issued unmeasured.
+#
+# THE GUARD'S ACTIVATION IS STILL DATA-DERIVED. The tool has no schema for any
+# ledger and will not invent one, so absent is refused only where the ledger's
+# own records evidence a time field. MEASURED AT ADOPTION, and this is the part
+# that goes stale, so re-measure rather than trusting it: a MIXED ledger now
+# REFUSES (one record carrying a time field is enough), and only a ledger where
+# NO record carries one is unconstrained. docs/lane-log.jsonl and
+# docs/decisions.jsonl are both fully populated, so the guard is active on both.
+#
+# AND THE GUARANTEE IS NARROWER THAN "THE LEDGER IS SAFE": every refusal here is
+# skipped by `open(p, "a").write(...)`, which is one line and is what a hurried
+# seat reaches for. What this offers is that a record written THROUGH IT cannot
+# corrupt the previous one. The reader-side row in scripts/ledger_gate.py is what
+# judges entries however they arrived, and it is the half that cannot be walked
+# around.
 #
 # ADOPTED as the PREVENTION half of this lane's open row
-# LANE-LOG-APPEND-CORRUPTS-ON-MISSING-NEWLINE. scripts/ledger_gate.py is the
-# DETECTION half and stays: this refuses to corrupt, that refuses to land if
-# something else did.
-#
-# THE RESIDUAL: by aeon's removes-the-need-to-remember test this is first-best at
-# the WRITE and still carries an obligation one layer out, because somebody has
-# to remember to call it instead of hand-appending. Bounded, not closed. The row
-# closes when hand-appending is no longer something a seat can casually do, not
-# when this file merely exists.
+# LANE-LOG-APPEND-CORRUPTS-ON-MISSING-NEWLINE, whose closing condition is that
+# hand-appending stops being something a seat can casually do, not that this file
+# exists.
 """Append one record to a .jsonl ledger without being able to corrupt the previous one.
 
 THE HAZARD (sigil, 2026-09-16, row LANE-LOG-APPEND-CORRUPTS-ON-MISSING-NEWLINE):
@@ -73,6 +82,19 @@ never-backfilled, which is to say unreconstructable.
 
 Sigil built the DETECTION half (a gate that refuses a landing when a ledger line
 does not parse or a file lacks its trailing newline). This is the PREVENTION half.
+
+READ THIS BEFORE TRUSTING THIS FILE (aurora, 2026-09-16, and it is about this tool
+rather than about a caller): A PRODUCER-SIDE GUARD ON A PATH ANYONE CAN WALK AROUND
+IS A HABIT, NOT A GATE. Every refusal below is skipped entirely by
+`open(p, "a").write(...)` in a heredoc, which is how both aurora and this lane
+actually wrote entries earlier the same night -- aurora's got away with it because
+it happened to be well formed, which is luck reported as a pass. So the guarantee
+this file can honestly offer is: A RECORD WRITTEN THROUGH THIS TOOL CANNOT CORRUPT
+THE PREVIOUS ONE. It is NOT: the ledger is safe. Only a reader-side check on the
+committed file judges entries however they got there, and that is where the real
+gate lives -- aurora landed one (lane-records-are-strict-jsonl) after finding its
+own presence check could not tell `at: ""` from a good timestamp, since
+`typeof '' === 'string'`.
 
 CORRECTED 2026-09-16 ON SIGIL'S PUSHBACK, and the correction is the point. This
 docstring said "a gate needs someone to run it, a write that cannot corrupt needs
@@ -178,22 +200,47 @@ def check_timestamps(record: dict) -> None:
                      "own line first, then pass it. Nothing was written.")
 
 
-def check_conforms_to_ledger(record: dict, last_record: dict) -> None:
+def check_conforms_to_ledger(record: dict, existing: list) -> None:
     """Refuse a record missing a time field that this ledger's own records carry.
 
     See check_timestamps' docstring, point (2): an absent field was a hole in BOTH this
     tool and sigil's gate simultaneously. The population is the authority -- no schema is
     invented here.
+
+    ANY, NOT THE LAST RECORD, AND NOT ALL. Corrected 2026-09-16, measured against this
+    tool after sigil reported the mirror-image defect in its own gate and said this tool
+    was unaffected. It was affected, by a different mechanism, and only checking found it:
+
+      * The first version sampled THE LAST RECORD ONLY. One record with no time field --
+        landed through the bypass aurora proved anyone can walk (`open(p,"a").write(...)`,
+        which skips every check in this file) -- became the sample, and the guard then let
+        every subsequent record through. A CHECK WHOSE REFERENCE IS THE MOST RECENT WRITE
+        IS DISABLED BY ONE BAD WRITE, silently, and the file looks normal afterwards.
+      * ALL (unanimity) is what sigil tried and is SELF-DEFEATING READER-SIDE, for the
+        symmetric reason: a gate reads the file AFTER the candidate is in it, so the one
+        record with no time field breaks its own file's unanimity, drops the file out of
+        the judged set, and the check goes green on the exact shape it exists to catch.
+        Its judged population fell 469 -> 118 and the red would not fire.
+
+    So: ANY record establishing the field is enough to require it. That is monotone --
+    evidence of the convention cannot be erased by adding a bad record, which is the
+    property both broken versions lacked. The same rule is sound on one side of the write
+    and self-defeating on the other, decided entirely by WHICH SIDE IT RUNS ON, which is
+    why it must not be copied across that seam by anyone who saw it work in one place.
     """
-    if not isinstance(last_record, dict):
+    fields = set()
+    for rec in existing:
+        if isinstance(rec, dict):
+            fields.update(k for k in TIME_FIELDS if k in rec)
+    if not fields:
         return
-    expected = [k for k in TIME_FIELDS if k in last_record]
-    missing = [k for k in expected if k not in record]
+    missing = [k for k in TIME_FIELDS if k in fields and k not in record]
     if missing:
-        sys.exit(f"REFUSING: record omits {', '.join(missing)}, which every record already "
-                 "in this ledger carries. An absent time field must be a NAMED failure, not "
-                 "an implicit pass: 'I could not look' and 'I looked and it is empty' must "
-                 "not give the same answer. Nothing was written.")
+        sys.exit(f"REFUSING: record omits {', '.join(missing)}, which records already in "
+                 "this ledger establish (ANY record is enough -- deliberately not 'every', "
+                 "so one bad record cannot disable the check). An absent time field must be "
+                 "a NAMED failure, not an implicit pass: 'I could not look' and 'I looked "
+                 "and it is empty' must not give the same answer. Nothing was written.")
 
 
 def append(path: str, record: dict) -> None:
@@ -209,11 +256,17 @@ def append(path: str, record: dict) -> None:
             tail = [ln for ln in f.read().split("\n") if ln.strip()]
         if tail:
             try:
-                last = json.loads(tail[-1])
+                json.loads(tail[-1])
             except Exception as e:
                 sys.exit(f"REFUSING: {path} last line does not parse ({e}). "
                          "Repair it before appending; an append hides the damage.")
-            check_conforms_to_ledger(record, last)
+            existing = []
+            for ln in tail:
+                try:
+                    existing.append(json.loads(ln))
+                except Exception:
+                    continue  # a damaged earlier line is not this check's subject
+            check_conforms_to_ledger(record, existing)
     else:
         needs_nl = False
     with open(path, "a", encoding="utf-8") as f:

@@ -294,11 +294,27 @@ def check_time_fields(files: list[Path]) -> bool:
         # with no time field broke its own file's unanimity, dropped that file out of
         # the judged set, and the absent check went GREEN on the exact shape it exists
         # to catch -- 469 records judged fell to 118 and the row still said ok. The
-        # predicate disabled itself with the defect. Note the same rule is SOUND in
-        # empyrean's producer-side ledger_append.py, because that evaluates the file
-        # BEFORE the candidate joins it, so the candidate cannot dilute the population
-        # it is being judged against. Same rule, opposite soundness, decided by which
-        # side of the write it runs on.
+        # predicate disabled itself with the defect.
+        #
+        # THE PROPERTY, which is why `any` is right rather than merely different: it is
+        # MONOTONE. Evidence that a ledger keeps a time field cannot be erased by adding
+        # a record that lacks one. Any rule whose reference population can be moved by
+        # the bad record has the same hole wearing a different shape.
+        #
+        # ⚠ AN EARLIER VERSION OF THIS COMMENT ASSERTED THAT EMPYREAN'S PRODUCER-SIDE
+        # ledger_append.py USED THIS SAME UNANIMITY RULE AND WAS SOUND UNDER IT, because
+        # it evaluates the file before the candidate joins it. BOTH HALVES WERE FALSE and
+        # this lane wrote them without reading the function, having the file on disk and
+        # having run it three times. Checked afterwards: at empyrean 658502e that tool
+        # read `expected = [k for k in TIME_FIELDS if k in last_record]`, which samples
+        # the LAST RECORD and never the population, so one bad record written through the
+        # one-line bypass became the reference and disabled the check for everything after
+        # it. A third member of the same family, found by its author after this lane told
+        # them their tool was unaffected and not to change it. Fixed upstream at d631d18.
+        # Kept rather than deleted, because the defect is not the wrong guess: it is that
+        # this lane issued a DO-NOT-CHANGE-IT on a mechanism it had the source for and
+        # had not measured, in the same file where it had just withdrawn another
+        # unverified claim about another repo's tests for exactly that reason.
         required = [k for k in TIME_KEYS if any(k in obj for _, obj in records)]
         if not required:
             if records:
