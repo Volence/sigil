@@ -2349,8 +2349,39 @@ register-indirect destination is its documented soundness bailout, per the modul
 exception rather than document it. So it is `.emp` language surface and lands under propose,
 discuss, then land, never silently.
 
-**Nobody is held up by it.** It sits behind the owner's unanswered items and aeon's region planning
-does not wait on it.
+**⚠ THIS BLOCK WAS STALE AND ITS LAST LINE READ AS A LICENCE TO LEAVE THE ROW ALONE. Corrected
+2026-09-16 by reading aeon's artifact rather than this block.** Two things moved after it was
+written, both at aeon `origin/master`, `docs/DEFERRED_WORK.md`, the `| LS-13b |` row, which now
+carries an ANSWERED banner and an aeon correction under it:
+
+1. **The framing above is wrong and sigil is the lane that corrected it, on 2026-09-10.** The
+   register-indirect spelling is NOT what costs boot the three proofs. `[context.escape]`,
+   `[context.entry-skip]` and `[context.reacquire]` are context-BRACKET proofs recovered from a
+   CodeBuf's own marks, so they hold because the compiler EMITTED the acquire and the release. They
+   never recognise anything, and `(a1)` is invisible only to the SEPARATE inferred `[bus.*]` tier.
+   **The row conflated two tiers, so the barrier is a SHAPE question about one construct and touches
+   no soundness argument: the cheaper problem, not the harder one.**
+2. **Aeon then corrected sigil back, and this is the constraint that binds the design.** Measured at
+   their `engine/system/boot.emp:129-155`: there are **TWO** interleaves, and the far one **is not a
+   statement, it is a LOOP** (assert reset, `moveq #25,d2`, `.ym_delay: dbf d2,.ym_delay` for the
+   YM2612's >=192 cycles, release reset, then release the bus). **An interleave slot admitting only
+   straight-line statements does not fit the site the construct exists for**; it must admit a
+   labelled backward branch.
+
+**SO THE HEAD OF THIS CHAIN IS SIGIL, AND AEON'S BOARD IS RIGHT TO SAY `blockedBy: sigil`.** Their
+row's closing words are *"Routed to sigil the same day; their design is not yet written, so this is a
+constraint on it rather than a defect in it."* Nothing is URGENT, which is what the old line here
+meant, but **the next move is ours and no question has been put to the owner**, so this is work
+rather than a wait. That is the same shape already named on the `EMP-Z80-MNEMONIC-TABLE` row, now
+found twice.
+
+**The four constraints any form has to meet**, derived from the artifact rather than from this
+lane's earlier position: the compiler still owns the release on every exit path, since that is the
+property all three proofs rest on; the slot admits a labelled backward branch, not only statements;
+it emits through a **caller-supplied register**, because boot's `movem`-preloaded spelling exists for
+the reset path and a bracket emitting `abs.l` would move boot's bytes on the one path nobody can
+re-run to check; and it lands under propose, discuss, then land, because it adds a construct the
+game's source is written in.
 
 ### THE UX SEAT PAIR: WHAT ORACLE'S PILOT ALREADY REFUTED IN THE BRIEF (relayed 2026-09-09)
 
