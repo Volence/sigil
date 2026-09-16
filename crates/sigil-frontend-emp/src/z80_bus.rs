@@ -191,6 +191,14 @@ fn step(st: BusState, mnem: &str, ops: &[CodeOperand]) -> BusState {
 /// then be analyzed from a bogus held entry — blinding the `[bus.*]` crash-class
 /// check for that whole proc.
 ///
+/// SINCE `d-33` THE RANGE CAN ALSO HOLD CONSUMER CODE, and that is deliberate.
+/// A context may declare a `Code` parameter and splice it inside its acquire, so
+/// `Enter..AcquireEnd` may contain a bracket's slot argument as well as the
+/// context's own lines. It changes nothing here: this function asks whether the
+/// range CONTAINS a recognised bus toggle, and a context whose own acquire
+/// requests the bus still contains one wherever the slot sits. A slot could only
+/// add a toggle, never remove the context's.
+///
 /// This is how the DECLARED tier tells [`check_bus_state`] which contexts a
 /// `requires(...)` makes [`BusEntry::Held`] for.
 pub fn region_acquires_bus(items: &[CodeItem], region: &crate::context::Region) -> bool {

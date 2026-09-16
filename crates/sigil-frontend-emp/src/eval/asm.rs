@@ -68,6 +68,40 @@ fn splice_template_name(expr: &ast::Expr) -> String {
     }
 }
 
+/// One of a `with` bracket's arguments, bound to the context parameter it fills
+/// (d-33) and carried from the binder to the two splices and the tail checks.
+struct SlotArg {
+    /// The parameter's name, as the context declared it.
+    param: String,
+    /// The bound value, already marked
+    /// [`ItemAuthor::ContextSlot`](crate::value::ItemAuthor) when it is code the
+    /// CALLER supplied. A value that came from the parameter's default is
+    /// unmarked: a default is written in the declaration and belongs to the
+    /// context author like any other line of the acquire.
+    value: Value,
+    /// Where the argument was written, for a diagnostic about it. The bracket
+    /// header's span when the value came from a default.
+    arg_span: Span,
+    /// Did the caller's argument carry at least one INSTRUCTION? Only then is a
+    /// parameter the context never splices a dropped-code error rather than a
+    /// silent nothing.
+    carries_code: bool,
+}
+
+/// Is this item a consumer's slot code
+/// ([`ItemAuthor::ContextSlot`](crate::value::ItemAuthor))?
+///
+/// Used to EXCLUDE it from the two definition-site checks over the spliced
+/// acquire. Stated as a complement ("everything but the slot") rather than as
+/// an allow-list of `ItemAuthor::Context` on purpose: an acquire may legally
+/// contain `AssertDesugar` items (an `assert` in the acquire) and
+/// `Splice { .. }` items (a comptime template call in the acquire), both of
+/// which an allow-list would newly and silently drop from checks that see them
+/// today.
+fn is_slot_item(item: &CodeItem) -> bool {
+    matches!(item, CodeItem::Instr { author: crate::value::ItemAuthor::ContextSlot { .. }, .. })
+}
+
 impl Evaluator<'_> {
     /// Evaluate a raw `asm { }` body to a [`Value::Code`]. Its owner scope is the
     /// instantiation itself (a fresh `k`), so an exported label is stable per
@@ -563,8 +597,8 @@ impl Evaluator<'_> {
             AsmStmt::Invoke { iface, member, span } => {
                 self.lower_invoke(iface, member, *span, scope, buf, env);
             }
-            AsmStmt::With { ctx, cond, body, span } => {
-                self.lower_with(ctx, cond.as_ref(), body, *span, scope, buf, env);
+            AsmStmt::With { ctx, cond, body, args, span } => {
+                self.lower_with(ctx, cond.as_ref(), body, args, *span, scope, buf, env);
             }
         }
     }
@@ -588,6 +622,7 @@ impl Evaluator<'_> {
         ctx: &str,
         cond: Option<&ast::Expr>,
         body: &[AsmStmt],
+        args: &[ast::Arg],
         span: Span,
         scope: &LabelScope,
         buf: &mut CodeBuf,
@@ -663,6 +698,13 @@ impl Evaluator<'_> {
             ast::ReleaseSpec::Rte => None,
         };
         let rte = release.is_none();
+        // THE CONTEXT'S PARAMETERS (d-33), bound from this bracket's arguments.
+        // `bind` is EMPTY for every context declared without a parameter list
+        // and for every bracket written without an argument list, which is the
+        // whole corpus today: that path evaluates the halves in exactly the env
+        // it always did, plants exactly the marks it always planted, and emits
+        // exactly the bytes it always emitted.
+        let slots = self.bind_context_args(ctx, decl, args, span, env);
         buf.push(CodeItem::ContextMark {
             ctx: ctx.to_string(),
             kind: crate::value::ContextMarkKind::Enter,
@@ -670,7 +712,8 @@ impl Evaluator<'_> {
             released_by_rte: rte,
         });
         let acq_start = buf.items.len();
-        let acq_ok = self.splice_context_code(&acquire, ctx, ContextPhase::Acquire, span, buf, env);
+        let acq_ok =
+            self.splice_context_half(&acquire, ctx, ContextPhase::Acquire, span, buf, env, &slots);
         let acq_end = buf.items.len();
         buf.push(CodeItem::ContextMark {
             ctx: ctx.to_string(),
@@ -687,9 +730,15 @@ impl Evaluator<'_> {
         });
         let rel_start = buf.items.len();
         let rel_ok = match &release {
-            Some(release) => {
-                self.splice_context_code(release, ctx, ContextPhase::Release, span, buf, env)
-            }
+            Some(release) => self.splice_context_half(
+                release,
+                ctx,
+                ContextPhase::Release,
+                span,
+                buf,
+                env,
+                &slots,
+            ),
             None => true,
         };
         let rel_end = buf.items.len();
@@ -745,7 +794,7 @@ impl Evaluator<'_> {
         // fails to save. It is an ERROR, not a warning: nothing downstream
         // recovers from a shifted exception frame.
         if rte && acq_ok {
-            for item in &buf.items[acq_start..acq_end] {
+            for item in buf.items[acq_start..acq_end].iter().filter(|i| !is_slot_item(i)) {
                 let CodeItem::Instr { ops, span: isp, .. } = item else { continue };
                 if ops.iter().any(|o| matches!(o, CodeOperand::PreDec(Reg::A7))) {
                     self.error(
@@ -766,7 +815,10 @@ impl Evaluator<'_> {
             && acq_ok
             && rel_ok
             && !crate::lower::sr_writes_round_trip(
-                buf.items[acq_start..acq_end].iter().chain(&buf.items[rel_start..rel_end]),
+                buf.items[acq_start..acq_end]
+                    .iter()
+                    .chain(&buf.items[rel_start..rel_end])
+                    .filter(|i| !is_slot_item(i)),
             )
             && self.sr_reported_contexts.insert(ctx.to_string())
         {
@@ -780,6 +832,165 @@ impl Evaluator<'_> {
                 ),
             );
         }
+        // THE SLOT CODE BECOMES THE CONSUMER'S AGAIN, and it happens HERE
+        // rather than at the splice because the two checks above are the only
+        // readers that need the distinction: they run at the context's
+        // DECLARATION span, in another file, and charging a consumer's push or
+        // SR write to the context author would be a diagnostic pointing at the
+        // wrong person's code. Past this line the slot's instructions carry
+        // `ItemAuthor::User`, which is exactly what they would carry written in
+        // the bracket's body, so every consumer-side rule (`[proc.clobber-*]`,
+        // `[proc.sr-undeclared]`, the preserves model) sees them and none of
+        // them has to know this feature exists.
+        for slot in &slots {
+            let spliced =
+                crate::value::normalize_context_slots(&mut buf.items[acq_start..], &slot.param);
+            // A CONSUMER'S CODE THAT NEVER REACHED THE STREAM IS AN ERROR, not
+            // a silent nothing. The context author decides where a parameter is
+            // used; a parameter they declared and then never spliced accepts
+            // the caller's instructions and drops them, which at a bus hold is
+            // the difference between the sound chip's reset line being released
+            // and not. Reported only when the argument actually carried
+            // instructions, so an omitted slot (`asm {}`, the default) and a
+            // deliberately empty one stay silent.
+            if slot.carries_code && !spliced {
+                self.error(
+                    slot.arg_span,
+                    format!(
+                        "[context.slot-dropped] `context {ctx}` declares `{p}` but its \
+                         acquire/release never splice it, so the code passed here is \
+                         assembled into nothing. Use `{p}` in the context's `acquire = …` \
+                         (or `release = …`), or drop the argument",
+                        p = slot.param
+                    ),
+                );
+            }
+        }
+    }
+
+    /// Bind a bracket's arguments to its context's declared parameters (d-33),
+    /// returning one [`SlotArg`] per parameter the CALLER filled with code.
+    ///
+    /// Returns EMPTY, having evaluated nothing and diagnosed nothing, when the
+    /// context declares no parameters and the bracket passes no arguments,
+    /// the corpus's every bracket, which must keep lowering byte-for-byte as it
+    /// did before parameters existed.
+    fn bind_context_args(
+        &mut self,
+        ctx: &str,
+        decl: &ast::ContextDecl,
+        args: &[ast::Arg],
+        span: Span,
+        env: &mut Env,
+    ) -> Vec<SlotArg> {
+        if decl.params.is_empty() && args.is_empty() {
+            return Vec::new();
+        }
+        if decl.params.is_empty() {
+            // Said HERE rather than left to the binder's `too many arguments`,
+            // because the reader's question is "where do I declare one" and the
+            // answer is in a different file from the bracket they are looking at.
+            self.error(
+                span,
+                format!(
+                    "[context.no-parameters] `context {ctx}` declares no parameters, so this \
+                     bracket has nothing to pass to. A context takes a slot by declaring one: \
+                     `context {ctx}(name: Code = asm {{}}) {{ … }}`, and its `acquire` must \
+                     splice `name`"
+                ),
+            );
+            return Vec::new();
+        }
+        let (values, from_arg) = self.bind_params(&decl.params, args, span, env);
+        let mut slots = Vec::new();
+        for (i, value) in values.into_iter().enumerate() {
+            let param = decl.params[i].0.clone();
+            // A DEFAULT IS THE CONTEXT AUTHOR'S CODE, not the consumer's: it is
+            // written in the declaration, so it is re-authored to the context
+            // like any other line of the acquire. Only an argument is marked.
+            let Some(arg_span) = from_arg[i] else {
+                slots.push(SlotArg { param, value, arg_span: span, carries_code: false });
+                continue;
+            };
+            match value {
+                Value::Code(mut code) => {
+                    let carries_code =
+                        code.items.iter().any(|i| matches!(i, CodeItem::Instr { .. }));
+                    crate::value::reauthor_user_items(
+                        &mut code.items,
+                        &crate::value::ItemAuthor::ContextSlot {
+                            context: ctx.to_string(),
+                            param: param.clone(),
+                        },
+                    );
+                    slots.push(SlotArg {
+                        param,
+                        value: Value::Code(code),
+                        arg_span,
+                        carries_code,
+                    });
+                }
+                other => {
+                    // A non-Code argument is legal (a context may take an Int
+                    // that gates its acquire), and it simply carries no code to
+                    // mark. The one shape worth naming is a `Code`-DECLARED
+                    // parameter handed something else: without this the failure
+                    // surfaces as `[context.not-code]` against the context's
+                    // acquire, at the declaration, in another file.
+                    if !matches!(other, Value::Poison)
+                        && crate::eval::call::param_type_is_code(&decl.params[i].1)
+                    {
+                        self.error(
+                            arg_span,
+                            format!(
+                                "[context.slot-not-code] `context {ctx}`'s `{param}` is a \
+                                 `Code` slot, got {}. Pass an `asm {{ … }}` block",
+                                other.type_name()
+                            ),
+                        );
+                    }
+                    slots.push(SlotArg {
+                        param,
+                        value: other,
+                        arg_span,
+                        carries_code: false,
+                    });
+                }
+            }
+        }
+        slots
+    }
+
+    /// Splice one half of a context's bracket with the context's parameters in
+    /// scope (d-33), then take them back out.
+    ///
+    /// The parameter scope wraps the HALF and not the bracket: a context's
+    /// parameter names belong to the context, and a consumer's body must go on
+    /// meaning what it meant before the context author added one. So the same
+    /// bindings are pushed for the acquire and again for the release, and the
+    /// body between them is lowered in the consumer's own env exactly as
+    /// before.
+    #[allow(clippy::too_many_arguments)]
+    fn splice_context_half(
+        &mut self,
+        expr: &ast::Expr,
+        ctx: &str,
+        phase: ContextPhase,
+        span: Span,
+        buf: &mut CodeBuf,
+        env: &mut Env,
+        slots: &[SlotArg],
+    ) -> bool {
+        if slots.is_empty() {
+            return self.splice_context_code(expr, ctx, phase, span, buf, env);
+        }
+        env.push_scope();
+        for slot in slots {
+            env.define(slot.param.clone(), slot.value.clone(), /*mutable=*/ false);
+        }
+        let ok = self.splice_context_code(expr, ctx, phase, span, buf, env);
+        env.pop_scope();
+        ok
     }
 
     /// Lower a bracket's statements inline against the enclosing scope + buffer,

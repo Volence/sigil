@@ -218,6 +218,15 @@ impl Region {
     /// [`ItemAuthor::Context`](crate::value::ItemAuthor) `phase` — the range
     /// form exists for the reacquire edge rule, whose question is about an
     /// edge's TARGET index, not an item.)
+    ///
+    /// A `d-33` SLOT IS INSIDE THIS RANGE, and that is the stronger of the two
+    /// placements rather than an accident. The acquire is ONE expression and the
+    /// `AcquireEnd` mark is planted after the whole of it, so a context that
+    /// splices a consumer's `Code` parameter puts that code before this bound.
+    /// The consequence is the one worth having: a back-edge from the body into a
+    /// slot fires `[context.reacquire]`, because re-entering the slot re-runs the
+    /// consumer's pre-grant work with no matching release. Planting `AcquireEnd`
+    /// before the slot instead would leave that edge unchecked and buy nothing.
     pub fn in_acquire(&self, i: usize) -> bool {
         i > self.enter && i < self.acquire_end
     }
