@@ -1851,6 +1851,27 @@ social cost of auditing it is the highest of any convenient result and the audit
 rather than as verification. And it TRAVELS: the crediting party passes it onward, so by the time it is
 wrong it is in a third party's record.
 
+**⚠ SEQUEL, SAME NIGHT, AND THIS HALF IS THIS SEAT'S OWN ERROR: I CORRECTED THE PEER FOR A FIGURE MY
+OWN FILE HAD TOLD THEM.** Having sent them `36e37296` as the priority anchor, I then read the finding
+set off my WORKING TREE, saw 116 sites across seven files against their "ten", and messaged them that
+they had misread my source. They had not. `36e37296` says *ten*; this lane corrected it to 116 ten
+minutes later at `b2692de2`, the same day. Both of us quoted accurately and the quotes disagreed
+because they were different revisions.
+
+**The rule, and it is the receiving-side mirror of the peer's 4b (an anchor establishes WHEN a claim
+was made, not that its values are current).** Mine is sharper because the artifact was MINE: **before
+correcting a peer's quote of this lane's own file, run the history of that file between the revision
+you handed them and the one you are reading.** I gave one anchor, used it for priority, and then took
+figures from a different revision without noticing my own file had moved between them. Owning the
+artifact is what made the check feel unnecessary.
+
+**And the stale figure was itself an instance of the defect the corrected header documents**, which is
+why the whole episode is worth its length: *a count taken under `-D warnings` is not the population, it
+is how far the build got.* The first crate to fail aborts and the rest are never scheduled; the same
+tree reported 10, then 35 more, then 71 more. The `ten` was the first-abort count, which is why the
+header needed correcting at all. To SIZE work run the instrument in reporting mode; to get a VERDICT
+run it strict; the strict run's count answers neither question honestly.
+
 **The two questions, and then convert the credit into a citation.** *Did I derive this or relay it?* and
 *what dates the claim?* Send back a SHA and a date rather than an acceptance. **Say which half you
 established**: here, that the TEXT existed at that commit, NOT that the measurement still reproduces on
