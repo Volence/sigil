@@ -2091,6 +2091,35 @@ red** *(this lane's standing bar: the tell is who is expected to move)*. It reds
 whenever a push overlaps a run, which is the shape that trains people to weaken a check. Booked as
 its own row; not touched as part of a landing it was blocking.
 
+**⚠ THIRD INSTANCE, 2026-09-16, AND THE NEW FACT IS THAT THE RED OUTLIVED THE SESSION THAT CAUSED
+IT.** Same mechanism as the first: a merge at `c343601d`, a landing run started 3 seconds later, a
+ledger commit at `abd49d71` made 57 seconds into it, and
+`version_reports_the_head_of_the_tree_it_was_built_from` red. What is new is what happened next:
+**that session was cleared before it re-ran or pushed.** The successor booted to a tree where the
+work was MERGED, the gate log was RED, and `origin/master` was four commits behind, which is
+exactly the shape of a landing that failed for a real reason. The two are indistinguishable from
+the verdict line alone.
+
+**So the boot check is not "is the gate green", it is "was the gate's HEAD the tree's HEAD".** One
+command settles it, and it is the pair the log already stamps:
+
+```sh
+grep -E 'sigil HEAD|started \(UTC\)|finished \(UTC\)|CARGO_EXIT' "$LOG"; git rev-parse HEAD
+```
+
+A `sigil HEAD` that is an ANCESTOR of the checkout's HEAD means the tree moved under the run, and
+the disturbance is the leading hypothesis; equal means the red is about the code. **Neither reading
+is a verdict; the re-run is.** This one re-ran at a still HEAD and came back green with the total
+reconciling against the disturbed run's own count, which is what the push rested on; the red was
+never explained away.
+
+**AND THE RULE ITSELF IS UNCHANGED AND WAS SIMPLY NOT FOLLOWED.** It is stated above in its widest
+form, it names this exact test, and it has now cost three recovery cycles. The failure is not that
+the rule is unclear. It is that the commit which breaks it is always small, always adjacent to work
+just finished, and always feels like tidying up before stopping. **Treat "I am about to stop" as
+the moment of highest risk, not the lowest**: the run is still reading, and a session that stops
+cannot re-run.
+
 ### A MONITOR FILTER THAT MATCHES NON-FAILURES TRAINS YOU TO SKIM IT
 
 Same session, and it is the reason the above took three notifications to see. A filter watching for
