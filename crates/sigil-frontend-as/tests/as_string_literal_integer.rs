@@ -249,14 +249,34 @@ fn a_high_bit_is_a_value_not_a_sign() {
 /// `error #1141: expected integer, but got string`, exit 2 (probes `sc.asm`,
 /// `sb.asm`). The wording differs; the refusal is the point, and it is at the
 /// same line.
+///
+/// THE ASSERTION USED TO PIN THE WORDING `bad immediate expression`, which is
+/// the opposite of what the sentence above it says, and the string-typing parcel
+/// (`AS-STRING-*`, 2026-09-15) turned it red by giving the refusal asl's own
+/// REASON instead of the parse's symptom. The doc comment was right and the
+/// assertion was wrong, so this now requires what the comment always claimed:
+/// a refusal, naming the length that has no packed value.
+///
+/// It is STRONGER than the line it replaced, not weaker. `bad immediate
+/// expression` is what `parse_expr` says about any operand it cannot parse, so
+/// the old assertion passed for a dozen unrelated reasons; this one passes only
+/// if the refusal is about the string's length. The neighbour
+/// [`a_two_character_string_in_a_byte_is_a_range_complaint_not_a_parse_one`]
+/// holds the other side of asl's distinction (#1320, not #1141) and is
+/// untouched.
 #[test]
 fn an_empty_or_over_long_string_is_refused() {
-    for operand in ["\"\"", "\"ABCDE\""] {
+    for (operand, chars) in [("\"\"", "0-character"), ("\"ABCDE\"", "5-character")] {
         let src = format!("{HEAD}\tmove.l #{operand},d0\n\tend\n");
         let d = diags(&src);
         assert!(
-            d.iter().any(|m| m.contains("bad immediate expression")),
-            "{operand} must be refused, got {d:?}"
+            d.iter()
+                .any(|m| m.contains(chars) && m.contains("no integer value in this slot")),
+            "{operand} must be refused for its LENGTH, got {d:?}"
+        );
+        assert!(
+            !d.iter().any(|m| m.contains("out of range")),
+            "{operand} is asl's #1141, not a range complaint: {d:?}"
         );
     }
 }
