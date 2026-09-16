@@ -66,6 +66,28 @@ ACK_UNREADABLE = {
 # adjudicated and booked. The value must equal the class the run computes, so an
 # acknowledgement cannot quietly cover a result that changed underneath it.
 ACK_DISAGREE = {
+    ("s1disasm", "s1disasm-FixBugs-1"): "SIGIL-DECLINED",
+    # `_incObj/DebugMode.asm:245`, reachable only under FixBugs, reads
+    # `move.w (v_limitright2),d0`: an absolute address operand with no width
+    # suffix. asl selects a width; sigil refuses. Every other reference to that
+    # variable in the corpus writes `.w`, so this is the one bare site, and it
+    # is a front-end width-selection row, not a ROM-writing one. Booked by
+    # `SWITCH-SETTING-SILENT-ROMS` as fault 3 and deliberately untouched there.
+
+    ("s2disasm", "s2disasm-fixBugs-1"): "SIGIL-DECLINED",
+    # Under fixBugs the Saxman stream grows to $F88 while the source declares
+    # `Size_of_Snd_driver_guess = $F64`, so every byte computed from that name
+    # is short by $24. build.lua repairs the reference afterwards, reading the
+    # real size out of asl's share file and patching the image in
+    # `amend_sound_driver_size`; sigil writes no share file and so cannot, and
+    # refuses rather than write a ROM whose decompressor is told the wrong
+    # length. Chosen and argued in `SWITCH-SETTING-SILENT-ROMS`, fault 2.
+}
+
+# (corpus, leg tag of a phase-1 arm): an arm no single companion switch could
+# make visible in the stock image. An entry here is a declaration that the arm
+# is UNMEASURED, never that it agreed.
+ACK_UNMEASURABLE = {
 }
 
 
@@ -410,10 +432,16 @@ def compare_with_control(ref, cand, log):
 # One leg
 # ---------------------------------------------------------------------------
 
-def run_leg(cfg, tag, edits, log):
+def run_leg(cfg, tag, edits, log, vacuity_ref=None, post_lua_edits=()):
     """Copy the pristine tree, apply the edits, build with the corpus's own
     build.lua and with sigil, and compare. `edits` is a list of (switch, value);
-    an empty list is the shipped-settings baseline."""
+    an empty list is the shipped-settings baseline.
+
+    `vacuity_ref` is the stock image this leg's own stock image must differ
+    from for the leg to have exercised anything. For a one-switch leg that is
+    the shipped build; for a two-switch rescue leg it is the stock build of the
+    companion switch alone, so that what is being tested is still the one
+    switch under study."""
     tree = os.path.join(cfg["scratch"], "trees", "leg-" + tag)
     if os.path.isdir(tree):
         shutil.rmtree(tree)
@@ -430,7 +458,10 @@ def run_leg(cfg, tag, edits, log):
     r["lua_exit"] = lua.returncode
     refbin = os.path.join(tree, cfg["out_bin"])
     r["lua_wrote"] = os.path.isfile(refbin)
-    log("   BUILD_LUA exit=%d wrote=%s" % (lua.returncode, r["lua_wrote"]))
+    lualog = os.path.join(cfg["scratch"], "logs", tag + ".lua.log")
+    open(lualog, "w").write(lua.stdout + lua.stderr)
+    log("   BUILD_LUA exit=%d wrote=%s  (%s)"
+        % (lua.returncode, r["lua_wrote"], os.path.basename(lualog)))
     if not r["lua_wrote"]:
         for line in (lua.stdout + lua.stderr).split("\n"):
             if re.search(r"error|Error|ERROR|> >", line):
@@ -448,6 +479,14 @@ def run_leg(cfg, tag, edits, log):
         if f.endswith((".p", ".h", ".lst")):
             os.remove(os.path.join(tree, f))
 
+    # An end-to-end control edits the source AFTER the reference was built, so
+    # the two toolchains are handed different source and the run must report a
+    # difference. It is the proof that the reference build, the candidate build
+    # and the compare are three independent things rather than one file read
+    # twice.
+    for sw, val in post_lua_edits:
+        apply_edit(os.path.join(tree, sw["file"]), sw["line"], sw["name"], val, log)
+
     out = os.path.join(tree, "sigil.bin")
     sg = subprocess.run([cfg["sigil"], cfg["root_asm"], "-o", "sigil.bin"]
                         + cfg["p2bin_args"], cwd=tree,
@@ -456,7 +495,11 @@ def run_leg(cfg, tag, edits, log):
     r["sigil_wrote"] = os.path.isfile(out)
     r["sigil_stderr"] = [l for l in sg.stderr.split("\n")
                          if l.strip() and "`shared` is ignored" not in l]
-    log("   SIGIL exit=%d wrote=%s" % (sg.returncode, r["sigil_wrote"]))
+    siglog = os.path.join(cfg["scratch"], "logs", tag + ".sigil.err")
+    open(siglog, "w").write(sg.stderr)
+    log("   SIGIL exit=%d wrote=%s  stderr lines=%d (%s)"
+        % (sg.returncode, r["sigil_wrote"], len(r["sigil_stderr"]),
+           os.path.basename(siglog)))
     for line in r["sigil_stderr"][:4]:
         log("     sigil: " + line.strip())
 
@@ -477,13 +520,17 @@ def run_leg(cfg, tag, edits, log):
     # whose reference equals the shipped reference exercised nothing, and
     # reporting it as agreement would be reporting a measurement that could
     # only ever have given one answer.
-    if edits and r["lua_wrote"] and cfg.get("baseline_ref"):
-        _, base_crc, _ = ident(cfg["baseline_ref"])
+    if edits and r["lua_wrote"] and vacuity_ref:
+        _, base_crc, _ = ident(vacuity_ref)
         _, leg_crc, _ = ident(keep)
         r["vacuous"] = (base_crc == leg_crc)
+        r["vacuity_ref"] = os.path.basename(vacuity_ref)
         if r["vacuous"]:
-            log("   VACUOUS: the stock build of this flip is byte-identical to "
-                "the shipped build, so this leg exercises no changed source")
+            log("   VACUOUS: the stock build of this leg is byte-identical to %s "
+                "(crc32 %s), so the switch under study changed no source the "
+                "build reached, and an agreement here would be an answer this "
+                "leg could not have failed to give"
+                % (os.path.basename(vacuity_ref), base_crc))
     shutil.rmtree(tree)
     log("   LEG_REPORTED %s" % tag)
     return r
@@ -628,7 +675,7 @@ def main():
     else:
         failures.append("self-test skipped")
 
-    all_rows, launched, reported = [], 0, 0
+    all_rows, all_rescue, launched, reported = [], [], 0, 0
     unreadable_found = {}
 
     for corpus, src in corpora:
@@ -688,27 +735,135 @@ def main():
         log("  RECONCILE legs: %d arms -> %d flip legs + 1 baseline"
             % (n_arms, len(plan) - 1))
 
-        for tag, edits in plan:
-            if a.only and tag not in a.only:
-                continue
+        by_tag = {}
+
+        def do_leg(tag, edits, vacuity_ref):
+            nonlocal launched, reported
             log("")
             log("-- LEG %s   %s" % (tag, edits and
                                     ", ".join("%s = %d" % (s["name"], v)
                                               for s, v in edits) or "shipped"))
             launched += 1
             try:
-                r = run_leg(cfg, tag, edits, log)
-                reported += 1
-                all_rows.append(r)
-                if not edits and r.get("ref"):
-                    cfg["baseline_ref"] = r["ref"]
+                r = run_leg(cfg, tag, edits, log, vacuity_ref=vacuity_ref)
                 log("   RESULT %s" % r["klass"])
             except Fail as e:
-                all_rows.append({"tag": tag, "corpus": corpus,
-                                 "klass": "LEG-ERROR", "err": str(e)})
-                reported += 1
+                r = {"tag": tag, "corpus": corpus, "klass": "LEG-ERROR",
+                     "err": str(e)}
                 log("   LEG FAILED: %s" % e)
                 failures.append("%s: %s" % (tag, e))
+            reported += 1
+            all_rows.append(r)
+            by_tag[tag] = r
+            return r
+
+        # Phase 1: the shipped baseline, then one leg per arm of one switch.
+        for tag, edits in plan:
+            if a.only and tag not in a.only:
+                continue
+            do_leg(tag, edits, cfg.get("baseline_ref"))
+            if not edits and by_tag.get(tag, {}).get("ref"):
+                cfg["baseline_ref"] = by_tag[tag]["ref"]
+
+        # C7, the end-to-end control, once per corpus. The reference is built
+        # from the shipped tree and then the source is flipped underneath
+        # sigil, so a run that reports agreement here is a run whose two builds
+        # are not independent. The arm used is chosen by measurement, not by
+        # name: the first phase-1 arm whose own stock image differs from the
+        # shipped one, so the control cannot be run on a flip that moves
+        # nothing.
+        if not a.only:
+            base_crc = by_tag["%s-shipped" % corpus].get("ref_crc")
+            pick = None
+            for s in switches:
+                if s["kind"] != "swept":
+                    continue
+                for v in s["arms"]:
+                    row = by_tag.get("%s-%s-%d" % (corpus, s["name"], v))
+                    if row and row.get("ref") and \
+                            ident(row["ref"])[1] != base_crc:
+                        pick = (s, v)
+                        break
+                if pick:
+                    break
+            log("")
+            if not pick:
+                failures.append("%s: no arm moves the stock image, so the "
+                                "end-to-end control cannot be run" % corpus)
+                log("== CONTROL C7 %s: NOT RUNNABLE, no arm moves the stock "
+                    "image" % corpus)
+            else:
+                ctag = "%s-CONTROL-divergent-source" % corpus
+                log("== CONTROL C7 %s: reference built from the shipped tree, "
+                    "then %s = %d applied before sigil runs; the sweep must "
+                    "report a difference"
+                    % (corpus, pick[0]["name"], pick[1]))
+                launched += 1
+                cr = run_leg(cfg, ctag, [], log, vacuity_ref=None,
+                             post_lua_edits=[pick])
+                reported += 1
+                cr["control"] = True
+                all_rows.append(cr)
+                # Only DIFFER passes. A refusal would leave the compare itself
+                # unexercised, which is the thing this control exists to
+                # exercise, so it is not a substitute for a difference.
+                good = cr["klass"] == "DIFFER"
+                log("   CONTROL C7 %s: %s (%s)"
+                    % (corpus, "PASSED" if good else "FAILED", cr["klass"]))
+                if not good:
+                    failures.append(
+                        "%s: the end-to-end control reported %s. The two builds "
+                        "are not independent and no agreement in this run means "
+                        "anything" % (corpus, cr["klass"]))
+
+        # Phase 2: rescue the arms phase 1 could not measure. A vacuous leg is
+        # one whose flip moved no byte of the stock image, which happens when a
+        # switch is only reachable while another switch is set: Sonic 1's
+        # BackupSRAM and AddressSRAM are read only where EnableSRAM opens the
+        # code that reads them. Reporting those as agreement would be reporting
+        # a comparison of two builds of source neither toolchain assembled
+        # differently. So each vacuous arm is retried against one companion arm
+        # at a time, in declaration order, and the yardstick becomes the stock
+        # build of the companion ALONE, so what is still under test is the one
+        # switch. This is a targeted rescue, not a cross product: it runs only
+        # for arms phase 1 could not measure, and stops at the first companion
+        # that makes the stock image move.
+        rescue = []
+        if not a.only:
+            arms = [(s, v) for s in switches if s["kind"] == "swept"
+                    for v in s["arms"]]
+            for r in [x for x in all_rows
+                      if x.get("vacuous") and x["corpus"] == corpus
+                      and "+" not in x["tag"]]:
+                sw = next(s for s in switches if s["name"] == r["edits"][0][0])
+                val = r["edits"][0][1]
+                log("")
+                log("== RESCUE %s: phase 1 could not measure it; trying "
+                    "companions in declaration order" % r["tag"])
+                verdict, tried = None, []
+                for (cs, cv) in arms:
+                    if cs["name"] == sw["name"]:
+                        continue
+                    crow = by_tag.get("%s-%s-%d" % (corpus, cs["name"], cv))
+                    if not crow or not crow.get("ref"):
+                        tried.append("%s=%d(no stock image)" % (cs["name"], cv))
+                        continue
+                    ptag = "%s-%s-%d+%s-%d" % (corpus, sw["name"], val,
+                                               cs["name"], cv)
+                    pr = do_leg(ptag, [(sw, val), (cs, cv)], crow["ref"])
+                    tried.append("%s=%d%s" % (cs["name"], cv,
+                                              "" if pr.get("vacuous") else " MOVED"))
+                    if not pr.get("vacuous") and pr["klass"] != "LEG-ERROR":
+                        verdict = ptag
+                        break
+                rescue.append({"corpus": corpus, "arm": r["tag"],
+                               "rescued_by": verdict, "tried": tried})
+                log("   RESCUE %s: %s   (companions tried: %s)"
+                    % (r["tag"],
+                       "measured as %s" % verdict if verdict
+                       else "UNMEASURABLE by any single companion",
+                       ", ".join(tried)))
+        all_rescue.extend(rescue)
 
     log("")
     log("=" * 78)
@@ -728,7 +883,7 @@ def main():
            "MATCH" if ack_keys == got_keys else "MISMATCH"))
 
     log("")
-    log("%-34s %-26s %s" % ("LEG", "RESULT", "DETAIL"))
+    log("%-42s %-30s %s" % ("LEG", "RESULT", "DETAIL"))
     for r in all_rows:
         detail = ""
         if r["klass"] == "AGREE":
@@ -740,15 +895,47 @@ def main():
             detail = (r["sigil_stderr"] or ["no message"])[0][:90]
         elif r["klass"] == "LEG-ERROR":
             detail = r["err"].split("\n")[0][:90]
+        # The RESULT column never says AGREE for a leg that exercised nothing.
+        # "The build agreed" and "the build could not disagree" must not be the
+        # same word in a table anyone reads.
+        klass = r["klass"]
         if r.get("vacuous"):
-            detail += "   [VACUOUS: stock image unchanged by this flip]"
-        log("%-34s %-26s %s" % (r["tag"], r["klass"], detail))
+            klass = "NOT-MEASURED"
+            detail += "   [stock image unchanged by this flip; the compare "
+            detail += "reported %s and could not have reported otherwise]" \
+                % r["klass"]
+        if r.get("control"):
+            klass = "CONTROL/" + klass
+        log("%-42s %-30s %s" % (r["tag"], klass, detail))
+
+    # Every arm phase 1 could not measure must end with a verdict, and an arm
+    # that no single companion can reach is UNMEASURABLE and must be
+    # acknowledged rather than counted anywhere as agreement.
+    vac1 = [r for r in all_rows if r.get("vacuous") and "+" not in r["tag"]]
+    log("RECONCILE vacuity: %d phase-1 arm(s) exercised no changed source, "
+        "%d rescue verdict(s)" % (len(vac1), len(all_rescue)))
+    if len(vac1) != len(all_rescue) and not a.only:
+        failures.append("%d vacuous arms but %d rescue verdicts"
+                        % (len(vac1), len(all_rescue)))
+    unmeasurable = {(x["corpus"], x["arm"]) for x in all_rescue
+                    if not x["rescued_by"]}
+    for x in all_rescue:
+        log("  %s: %s" % (x["arm"], "measured as %s" % x["rescued_by"]
+                          if x["rescued_by"] else "UNMEASURABLE"))
+    if unmeasurable != set(ACK_UNMEASURABLE) and not a.only:
+        failures.append("unmeasurable acknowledgements are stale: "
+                        "found-not-acknowledged=%s acknowledged-not-found=%s"
+                        % (sorted(unmeasurable - set(ACK_UNMEASURABLE)),
+                           sorted(set(ACK_UNMEASURABLE) - unmeasurable)))
 
     # An outcome that is not agreement must be acknowledged, and an
-    # acknowledgement that no longer describes an outcome must be removed.
+    # acknowledgement that no longer describes an outcome must be removed. A
+    # vacuous leg is left out of this bookkeeping entirely: its agreement is
+    # not evidence of anything, so counting it as a pass is the exact error
+    # this program is here to prevent.
     bad = {}
     for r in all_rows:
-        if r["klass"] == "AGREE":
+        if r["klass"] == "AGREE" or r.get("vacuous") or r.get("control"):
             continue
         key = (r["corpus"], r["tag"])
         bad[key] = r["klass"]
