@@ -26,14 +26,21 @@
 //!   is refused;
 //! * every address no run writes holds the pad byte.
 //!
-//! `<constant>` is a name and nothing else: p2bin never reads its value, it
-//! only names it in the overflow message, and so does this module.
+//! `<constant>` is a name and nothing else TO p2bin, which has no symbol table:
+//! it never reads the value and only quotes the name in its overflow message.
+//! sigil assembled the program, so the value is on the section as an `EquSym`
+//! and this module DOES read it. That is a deliberate divergence and it is the
+//! last item below.
 //!
 //! On top of p2bin, this refuses what p2bin does silently: an instruction that
 //! names no second address space, a second address space left partly or wholly
-//! unplaced, a stored stream some other run would overwrite, and a stream that
+//! unplaced, a stored stream some other run would overwrite, a stream that
 //! does not decompress, through the decompressor the caller supplies (on the AS
-//! route, sigil's own), to exactly the bytes that were assembled.
+//! route, sigil's own), to exactly the bytes that were assembled, and a stream
+//! larger than the size `<constant>` declares for it. That last one is not the
+//! same check as the reservation above: the reservation is the physical gap,
+//! which is all p2bin can measure, and the constant is the number the SOURCE
+//! wrote down and computed other bytes from.
 
 use crate::LinkedImage;
 use sigil_ir::map::MemoryMap;

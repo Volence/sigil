@@ -196,6 +196,14 @@ fn sonic_1_with_cheats_enabled_still_builds_the_reference_rom() {
         sigil_link::header_checksum(&reference),
         "the reference ROM's own header checksum is not the sum over [0x200, EOF)"
     );
+    // The control on the control: the flip must have MOVED the checksum off the
+    // literal `sonic.asm` hardcodes for this `Revision`, or this row is comparing
+    // two ROMs that never disagreed and could not have failed.
+    assert_ne!(
+        u16::from_be_bytes([reference[0x18E], reference[0x18F]]),
+        0xAFC7,
+        "the flip did not move the checksum off `sonic.asm`'s hardcoded `dc.w $AFC7`, so this row is vacuous"
+    );
 
     let built = run_sigil(&tree, "sonic.asm", S1_INSTRUCTION);
     let stderr = String::from_utf8_lossy(&built.stderr);
