@@ -2361,12 +2361,22 @@ carries an ANSWERED banner and an aeon correction under it:
    never recognise anything, and `(a1)` is invisible only to the SEPARATE inferred `[bus.*]` tier.
    **The row conflated two tiers, so the barrier is a SHAPE question about one construct and touches
    no soundness argument: the cheaper problem, not the harder one.**
-2. **Aeon then corrected sigil back, and this is the constraint that binds the design.** Measured at
-   their `engine/system/boot.emp:129-155`: there are **TWO** interleaves, and the far one **is not a
-   statement, it is a LOOP** (assert reset, `moveq #25,d2`, `.ym_delay: dbf d2,.ym_delay` for the
-   YM2612's >=192 cycles, release reset, then release the bus). **An interleave slot admitting only
-   straight-line statements does not fit the site the construct exists for**; it must admit a
-   labelled backward branch.
+2. **Aeon corrected sigil back, then RETRACTED that correction, 2026-09-16, at their `2f540aa6`.**
+   The retracted claim was that boot has TWO interleaves, the far one a LOOP, so the slot must admit
+   a labelled backward branch. **Verified here firsthand against their `origin/master`
+   `engine/system/boot.emp:129-171` rather than taken on their word, and the retraction is right.**
+   Position by position: the assert-reset at `:129` is BEFORE the bus request and so outside the
+   region; `:130` is the acquire; **`:131` release-reset is the only thing between the acquire and the
+   grant spin, and it is ONE STATEMENT**; the `.wait_z80` poll follows; the blob copy and the whole
+   `.ym_delay` reset dance are ordinary BODY, in sequence, before the release at `:171`. **One slot,
+   one statement.** Both backward branches live in the body, which the bracket already admits.
+   **And the reason the backward edge was never the barrier is a fact about THIS lane's own rule**,
+   re-read at the moment of writing rather than cited from aeon's comment about it:
+   `crates/sigil-frontend-emp/src/context.rs` documents the region property as **reachability, not
+   dominance**, and `[context.entry-skip]` fires on *a branch or call from OUTSIDE the region
+   targeting a label inside it*. A backward edge within the region is not that. What IS load-bearing
+   is that `.ym_delay` stays a LOCAL label: `export` it and it becomes reachable from any proc, and
+   the check fires correctly. **That is a rule about the body, not a demand on the slot.**
 
 **SO THE HEAD OF THIS CHAIN IS SIGIL, AND AEON'S BOARD IS RIGHT TO SAY `blockedBy: sigil`.** Their
 row's closing words are *"Routed to sigil the same day; their design is not yet written, so this is a
@@ -2377,8 +2387,9 @@ found twice.
 
 **The four constraints any form has to meet**, derived from the artifact rather than from this
 lane's earlier position: the compiler still owns the release on every exit path, since that is the
-property all three proofs rest on; the slot admits a labelled backward branch, not only statements;
-it emits through a **caller-supplied register**, because boot's `movem`-preloaded spelling exists for
+property all three proofs rest on; the slot admits at least one statement between the acquire and
+the spliced poll, which is all boot demands (whether it should admit more is this lane's call, and
+no site asks for it); it emits through a **caller-supplied register**, because boot's `movem`-preloaded spelling exists for
 the reset path and a bracket emitting `abs.l` would move boot's bytes on the one path nobody can
 re-run to check; and it lands under propose, discuss, then land, because it adds a construct the
 game's source is written in.
