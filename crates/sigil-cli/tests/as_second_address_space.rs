@@ -386,4 +386,12 @@ fn a_constant_the_program_does_not_bind_leaves_the_declared_size_check_unmade() 
     // symbol that is not there: accepted, and the bytes are unchanged.
     let image = assemble_ok_with(src, &["-z=0,uncompressed,NoSuchName,after"]);
     assert_eq!(image[0x100..0x105], [0x4E, 0x71, 0xF3, 0x3E, 0x01]);
+
+    // And a name bound to something that is not a size at all. Comparing a
+    // length against a negative number refuses every program that names it,
+    // which is a refusal about the NAME rather than about the stream.
+    let negative = src.replace("Size1 equ 2", "Size1 equ -1");
+    assert!(negative.contains("Size1 equ -1"), "the fixture edit did not apply");
+    let image = assemble_ok_with(&negative, &["-z=0,uncompressed,Size1,after"]);
+    assert_eq!(image[0x100..0x105], [0x4E, 0x71, 0xF3, 0x3E, 0x01]);
 }

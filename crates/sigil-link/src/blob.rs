@@ -296,7 +296,10 @@ fn err(message: String, primary: Span) -> Diagnostic {
 /// that is not in the source at all), a name bound to a link expression rather
 /// than a number, or a name several sections bind to DIFFERENT numbers. Each of
 /// those is a program sigil cannot speak about, and the caller's check is skipped
-/// rather than taken on an invented value.
+/// rather than taken on an invented value. A NEGATIVE value is treated the same
+/// way: it is not a size, and comparing a length against it would refuse every
+/// program that named it, which is a refusal about the name rather than about the
+/// stream.
 fn declared_size(resolved: &[Section], name: &str) -> Option<i64> {
     let mut found: Option<i64> = None;
     for eq in resolved.iter().flat_map(|s| s.equ_syms.iter()).filter(|e| e.name == name) {
@@ -306,7 +309,7 @@ fn declared_size(resolved: &[Section], name: &str) -> Option<i64> {
             _ => found = Some(v),
         }
     }
-    found
+    found.filter(|&v| v >= 0)
 }
 
 fn space_span(space: AddressSpace) -> Span {
