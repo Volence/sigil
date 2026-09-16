@@ -69,7 +69,13 @@ produced nothing.
 *(Recovery, if it happens again: Dominion's `dominion/.dominion/changes.jsonl` carries per-row
 `added` / `left the queue` entries with the row's title text and prior state, and the
 `no longer waiting on you` entries carry dropped `blockedOnOwner` text. It holds titles and states;
-it does not hold sizes. Leave an unknown size ABSENT rather than guessing it.)*
+it does not hold sizes. Leave an unknown size ABSENT rather than guessing it. **This is now the
+SUITE CONTRACT rather than a local practice**, `contract/LANE_STATUS.md`'s `size` cell, amended at
+empyrean `77092db` on this lane's measurement and verified here as an ancestor of their `origin/main`
+and as the commit that changed the file: absent is a legitimate answer, because a guess there is
+indistinguishable from a measurement. The sentence is kept here because the RECOVERY instruction
+around it is local and the contract does not carry it, but on the size question the contract governs
+and this line must not be allowed to drift from it.)*
 
 ## `decisions.jsonl`: FOUR IDS REWRITTEN IN PLACE, DO NOT REPAIR (contract rule 8f)
 
