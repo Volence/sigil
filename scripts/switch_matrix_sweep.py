@@ -35,11 +35,17 @@ control, and the leg count launched is reconciled against the leg count reported
 Usage:
     python3 scripts/switch_matrix_sweep.py --sigil <path to sigil> [--scratch DIR]
                                            [--corpus NAME=PATH]... [--only TAG]...
+                                           [--cross]
+`--cross` additionally runs every corner of the switch space, which for these
+two corpora is 288 and 96 corners and about a quarter of an hour, and tests
+whether a refusal is caused by one setting and composes.
+
 Exit status is 0 only if the reconciliations hold and every leg's outcome is
 either agreement or an acknowledged disagreement.
 """
 
 import argparse
+import itertools
 import os
 import re
 import shutil
@@ -475,6 +481,7 @@ def run_leg(cfg, tag, edits, log, vacuity_ref=None, post_lua_edits=()):
     if r["lua_wrote"]:
         shutil.move(refbin, keep)
         r["ref"] = keep
+        r["ref_crc"] = ident(keep)[1]
     for f in os.listdir(tree):
         if f.endswith((".p", ".h", ".lst")):
             os.remove(os.path.join(tree, f))
@@ -641,6 +648,9 @@ def main():
                     help="NAME=PATH of a corpus checkout; repeatable")
     ap.add_argument("--only", action="append", default=None,
                     help="run only these leg tags")
+    ap.add_argument("--cross", action="store_true",
+                    help="also run every corner of the switch space, and test "
+                         "whether a refusal is caused by one setting and composes")
     ap.add_argument("--skip-self-test", action="store_true",
                     help="derivation only; no figure may be reported from a run "
                          "that used this")
@@ -675,7 +685,8 @@ def main():
     else:
         failures.append("self-test skipped")
 
-    all_rows, all_rescue, launched, reported = [], [], 0, 0
+    all_rows, all_rescue, all_cross = [], [], []
+    launched, reported = 0, 0
     unreadable_found = {}
 
     for corpus, src in corpora:
@@ -865,6 +876,91 @@ def main():
                        ", ".join(tried)))
         all_rescue.extend(rescue)
 
+        # Phase 3, optional: every corner of the switch space, not one arm at a
+        # time. This was assumed infeasible and it is not: the two corpora have
+        # 288 and 96 corners, and a leg costs about two and a half seconds, so
+        # the whole product is a quarter of an hour. What it tests that phase 1
+        # cannot is COMPOSITION: phase 1 shows which single settings sigil
+        # refuses, and the prediction under test here is that a refusal is
+        # caused by one setting and composes, so a corner's class is decided by
+        # whether it contains such a setting and by nothing else. The causes are
+        # read off this same run's phase 1, never from a table, so the
+        # prediction cannot be tuned to the answer.
+        if a.cross and not a.only:
+            swept = [s for s in switches if s["kind"] == "swept"]
+            domains = [s["domain"] for s in swept]
+            corners = list(itertools.product(*domains))
+            want = 1
+            for d in domains:
+                want *= len(d)
+            log("")
+            log("== CROSS %s: %d swept switches with domains %s -> %d corners"
+                % (corpus, len(swept), [len(d) for d in domains], want))
+            if len(corners) != want:
+                failures.append("%s: enumerated %d corners, the domains give %d"
+                                % (corpus, len(corners), want))
+            causes = {}
+            for s in swept:
+                for v in s["arms"]:
+                    row = by_tag.get("%s-%s-%d" % (corpus, s["name"], v))
+                    if row and row["klass"] != "AGREE" and not row.get("vacuous"):
+                        causes[(s["name"], v)] = row["klass"]
+            log("   causes read off this run's phase 1: %s"
+                % ({"%s=%d" % k: v for k, v in causes.items()} or "none"))
+
+            hits, miss, crcs = 0, [], {}
+            for corner in corners:
+                edits = [(s, v) for s, v in zip(swept, corner)
+                         if v != s["current"]]
+                tag = "%s-X-%s" % (corpus, "".join(str(v) for v in corner))
+                predicted = "AGREE"
+                for s, v in zip(swept, corner):
+                    if (s["name"], v) in causes:
+                        predicted = causes[(s["name"], v)]
+                        break
+                log("")
+                log("-- CORNER %s   %s   predict %s"
+                    % (tag, " ".join("%s=%d" % (s["name"], v)
+                                     for s, v in zip(swept, corner)), predicted))
+                launched += 1
+                try:
+                    r = run_leg(cfg, tag, edits, log)
+                except Fail as e:
+                    r = {"tag": tag, "corpus": corpus, "klass": "LEG-ERROR",
+                         "err": str(e)}
+                    failures.append("%s: %s" % (tag, e))
+                reported += 1
+                r["cross"] = True
+                r["predicted"] = predicted
+                all_rows.append(r)
+                if r.get("ref_crc"):
+                    crcs.setdefault(r["ref_crc"], tag)
+                if r.get("ref") and os.path.isfile(r["ref"]):
+                    os.remove(r["ref"])
+                if r["klass"] == predicted:
+                    hits += 1
+                else:
+                    miss.append((tag, predicted, r["klass"]))
+                log("   RESULT %s   prediction %s"
+                    % (r["klass"], "held" if r["klass"] == predicted else "BROKE"))
+
+            log("")
+            log("== CROSS %s: %d corners, %d matched the composition "
+                "prediction, %d did not" % (corpus, len(corners), hits, len(miss)))
+            log("   distinct stock images across the corners: %d" % len(crcs))
+            for t, p, g in miss:
+                log("   PREDICTION BROKE %s: predicted %s, ran %s" % (t, p, g))
+            if miss:
+                failures.append("%s: %d corner(s) broke the composition "
+                                "prediction" % (corpus, len(miss)))
+            if len(crcs) < 2:
+                failures.append("%s: the cross product produced %d distinct "
+                                "stock image(s); it measured nothing"
+                                % (corpus, len(crcs)))
+            all_cross.append({"corpus": corpus, "corners": len(corners),
+                              "hits": hits, "miss": len(miss),
+                              "distinct": len(crcs), "causes": dict(causes)})
+
     log("")
     log("=" * 78)
     log("RECONCILE legs launched=%d reported=%d" % (launched, reported))
@@ -884,7 +980,7 @@ def main():
 
     log("")
     log("%-42s %-30s %s" % ("LEG", "RESULT", "DETAIL"))
-    for r in all_rows:
+    for r in [x for x in all_rows if not x.get("cross")]:
         detail = ""
         if r["klass"] == "AGREE":
             detail = "crc32 %s size %d" % (r["sig_crc"], r["sig_size"])
@@ -935,7 +1031,8 @@ def main():
     # this program is here to prevent.
     bad = {}
     for r in all_rows:
-        if r["klass"] == "AGREE" or r.get("vacuous") or r.get("control"):
+        if r["klass"] == "AGREE" or r.get("vacuous") or r.get("control") \
+                or r.get("cross"):
             continue
         key = (r["corpus"], r["tag"])
         bad[key] = r["klass"]
