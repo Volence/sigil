@@ -2429,6 +2429,31 @@ the correction rather than by it: `d-33`'s detail (above) and the note's own lin
 the register requirement in the present tense 350 lines ahead of its refutation. Both bannered.
 **Three lanes, twelve instances, one grep each time.**
 
+**THE APPROACH, NOT ONLY THE DESTINATION — aeon, 2026-09-16, and it is the half this seat had
+missed.** Aeon bannered their own row because it CITES `d-33` and is therefore a path leading a
+reader to the stale text, while this lane had covered only where the wrong text lives. **A
+correction goes where the wrong path leads as well as where the wrong sentence sits**, so the sweep
+after a correction is `grep <the id or phrase>` over every artifact that could route somebody in,
+not just over the text you fixed.
+
+**AND THE SWEEP FOR APPROACH PATHS HAS A BLIND SPOT IN EXACTLY THIS LANE'S MOST-READ ARTIFACT.**
+`git grep -n 'd-33' -- docs/` returned eight hits and **none of them was `docs/lane-status.json`,
+which carries three** — the file is gitignored, so `git grep` cannot see it by construction. The
+board is the first thing a rotated session and the console read, and it held two live routes into
+the superseded detail (the `blockedOnOwner` entry and the queue row's `blockedBy`). **A clean
+`git grep` is therefore a VACUOUS zero for approach paths**, and the check must name the board
+explicitly with a plain `grep` alongside. Covered 2026-09-16 by pointing the row's `blockedBy` at
+this block. *(Sibling of this file's SHELL `grep -r` SKIPS GITIGNORED FILES rule, running the
+opposite way: there the shell instrument was blind to ignored files and here the git instrument is,
+so neither tool is the safe default and the question is always which population the instrument can
+see.)*
+
+**AEON'S OBSERVATION ABOUT ALL OF THEM, WHICH IS THE ONE TO CARRY: NEITHER LANE HAS EVER FOUND ONE
+OF THESE BY LOOKING FOR IT.** Every instance across both lanes arrived when a mechanical sweep was
+pointed at a surface that had just been certified by hand. That is the same shape as this file's
+rule that only a positive control catches a vacuous zero: **the hand-certification is what creates
+the confidence, and the confidence is what makes the sweep feel unnecessary.**
+
 
 
 Measured at sigil `26de6eb7`, `crates/sigil-frontend-emp/src/z80_bus.rs:153-166`. `bus_toggle`
