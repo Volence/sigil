@@ -778,20 +778,81 @@ def _case_unreadable_file_refuses(tmp):
 
 
 # Two real builds of the same engine, same byte count, different bytes: the shape the
-# contract calls out and the shape the filed incident had. Copied out of whatever
-# worktrees are on this machine, READ ONLY, and the case SKIPS LOUDLY when they are
-# gone, because a test that requires another lane's worktree goes red when somebody
-# prunes it. The synthetic cases are the gate; this one is corroboration on real data.
+# contract calls out and the shape the filed incident had. DISCOVERED through the suite
+# resolver, never named by a literal path (a hard-coded home directory resolves correctly
+# on one machine and by accident everywhere else, which is the defect `suite_paths.py`
+# exists to kill, and this lane's own lint catches it). Read-only, and the case SKIPS
+# LOUDLY when no pair is on this machine, because a case that requires another lane's
+# worktree goes red when somebody prunes it. The synthetic cases are the gate; this one
+# is corroboration on real data.
 REAL_PAIR_VARS = ("CART_CHECK_REAL_PAIR_A", "CART_CHECK_REAL_PAIR_B")
-REAL_PAIR_DEFAULT = (
-    "/home/volence/sonic_hacks/.aeon-sp5/s4.bin",
-    "/home/volence/sonic_hacks/.aeon-land-decouple/s4.bin",
-)
+
+# How wide the discovery looks before giving up. Bounded so a case never turns into a
+# filesystem crawl on a machine laid out differently than this one.
+_DISCOVER_MAX_FILES = 40
+
+
+def _named_pair():
+    a = os.environ.get(REAL_PAIR_VARS[0])
+    b = os.environ.get(REAL_PAIR_VARS[1])
+    return [(a, b)] if a and b else []
+
+
+def _discovered_candidates():
+    """Built ROM images beside the suite's checkouts, via the resolver's suite root.
+
+    Every engine checkout and scratch worktree hangs off one root, and each carries its
+    own build, so two of them are exactly the same-size different-bytes pair this case
+    wants. Any failure to resolve is a SKIP, never a refusal: the case is corroboration.
+    """
+    try:
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        from suite_paths import resolve_root  # noqa: E402
+
+        root = resolve_root()
+    except Exception:
+        return []
+    found = []
+    try:
+        entries = sorted(os.listdir(root))
+    except OSError:
+        return []
+    for entry in entries:
+        d = os.path.join(root, entry)
+        if not os.path.isdir(d):
+            continue
+        for name in ("s4.bin", "s4.debug.bin", "demo.bin"):
+            p = os.path.join(d, name)
+            if os.path.isfile(p):
+                found.append(p)
+            if len(found) >= _DISCOVER_MAX_FILES:
+                return found
+    return found
 
 
 def _real_pair():
-    a = os.environ.get(REAL_PAIR_VARS[0]) or REAL_PAIR_DEFAULT[0]
-    b = os.environ.get(REAL_PAIR_VARS[1]) or REAL_PAIR_DEFAULT[1]
+    """`(path_a, bytes_a, path_b, bytes_b)` for two builds of the same length that
+    differ, or None when this machine carries no such pair."""
+    for a, b in _named_pair():
+        pair = _load_pair(a, b)
+        if pair:
+            return pair
+    by_size = {}
+    for p in _discovered_candidates():
+        try:
+            by_size.setdefault((os.path.basename(p), os.path.getsize(p)), []).append(p)
+        except OSError:
+            continue
+    for paths in by_size.values():
+        for i in range(len(paths)):
+            for j in range(i + 1, len(paths)):
+                pair = _load_pair(paths[i], paths[j])
+                if pair:
+                    return pair
+    return None
+
+
+def _load_pair(a, b):
     if not (os.path.isfile(a) and os.path.isfile(b)):
         return None
     try:
