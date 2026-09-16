@@ -252,3 +252,39 @@ use lib.types._
 pub data D: [u8; 1] = [$11]
 EOF
 run_arm N main.emp "?"
+
+# O: does the arm-N remedy survive a NAME-LIST import? blank_import.rs says a
+#    name list injects a clone and does NOT elaborate the callee module, so a
+#    module-level `ensure` beside the declaration may never run.
+mkdir -p "$S/O/lib"
+echo "module lib.types
+$BAD_STRUCT
+ensure(sizeof(Sst) == 99, \"Sst is not 99 bytes\")" > "$S/O/lib/types.emp"
+cat > "$S/O/main.emp" <<'EOF'
+module main
+use lib.types.{Sst}
+pub data D: [u8; 1] = [$11]
+EOF
+run_arm O main.emp "?"
+
+# P: same remedy, name-list import, and the struct IS dereferenced.
+mkdir -p "$S/P/lib"
+cp "$S/O/lib/types.emp" "$S/P/lib/types.emp"
+cat > "$S/P/main.emp" <<'EOF'
+module main
+use lib.types.{Sst}
+proc tick (a0: *Sst) {
+    move.w x_pos(a0), d0
+    rts
+}
+EOF
+run_arm P main.emp "?"
+
+# Q: the remedy in the DECLARING module when that module is the TARGET (arm L's
+#    shape). This is the one an author can apply with no import discipline at all.
+mkdir -p "$S/Q"
+echo "module main
+$BAD_STRUCT
+ensure(sizeof(Sst) == 99, \"Sst is not 99 bytes\")
+pub data D: [u8; 1] = [\$11]" > "$S/Q/main.emp"
+run_arm Q main.emp "?"
