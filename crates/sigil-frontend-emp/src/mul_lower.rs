@@ -80,6 +80,19 @@ use sigil_backend_m68k::m68k_cycles::CycleCost;
 use sigil_ir::backend::Cpu;
 use sigil_span::{Diagnostic, Level, Span};
 
+/// THE u16 IMMEDIATE DOMAIN — the whole of it, named once.
+///
+/// `mul_const`'s multiplier and `mul_bounded`'s `#M` bound are both 16×16→32
+/// m68k multiply operands, so both accept exactly `0..=$FFFF` and both refuse
+/// outside it with `[mul.const-range]`. The bound is a NAMED constant rather
+/// than a literal spelled twice because the unit oracle in this file's `tests`
+/// module SWEEPS THE WHOLE DOMAIN and derives its sweep from THIS name: the
+/// set the oracle executes is therefore the set the accept check admits, by
+/// construction, with nothing in between to fall out of date. Widen the accept
+/// check and the oracle widens with it in the same edit; it cannot be widened
+/// while leaving the new multipliers unexecuted.
+const MUL_U16_IMM_MAX: i128 = 0xFFFF;
+
 /// Which of the two contracts a construct spelling selects (the suffix IS the
 /// name): bare `mul_const`/`mul_bounded` is [`MulWidth::Long`] (32-bit result),
 /// the `.w` spelling is [`MulWidth::Word`] (low word, upper undefined). Any
@@ -247,7 +260,7 @@ fn expand_mul_const(
             ));
         }
     };
-    if !(0..=0xFFFF).contains(&n) {
+    if !(0..=MUL_U16_IMM_MAX).contains(&n) {
         return Err(err(
             span,
             format!(
@@ -414,8 +427,8 @@ fn mul_const_candidates_word(
             // `move.w D,S / lsl.w #a,D / lsl.w #b,S / add.w S,D`: identical
             // bytes at b = 0 and strictly cheaper for every b ≥ 1, which
             // `word_two_power_arm_is_dominated_by_ltr` pins over the whole
-            // 2-set-bit domain. The oracle executes this arm across the 2-bit
-            // strides and the ≥ 3-bit multipliers (n = 11/19 in NS) with
+            // 2-set-bit domain. The oracle executes this arm at EVERY n it wins
+            // at — `every_multiplier()` sweeps the accepted domain whole — with
             // garbage-upper seeds.
             if n.count_ones() >= 2 {
                 let mut items =
@@ -473,7 +486,7 @@ fn expand_mul_bounded(
             ));
         }
     };
-    if !(0..=0xFFFF).contains(&bound) {
+    if !(0..=MUL_U16_IMM_MAX).contains(&bound) {
         return Err(err(
             span,
             format!(
@@ -965,17 +978,43 @@ mod tests {
         }
     }
 
-    // Every multiplier the corpus spells — 10 (`sizeof(band_entry)`), 26
-    // (`sizeof(EntityScanState)`), 36, 40, 66 (`sizeof(Sec)`), 80 and 160 —
-    // plus the small, boundary and
-    // chain-shape cases. An adopted constant belongs here: the executing
-    // oracles below are what prove its chosen lowering computes the product,
-    // and a multiplier the corpus emits but the oracle never runs is an
-    // unexecuted claim.
-    const NS: &[u32] = &[
-        0, 1, 2, 3, 5, 6, 7, 10, 11, 19, 26, 36, 40, 63, 64, 66, 80, 96, 160, 255,
-        256, 512, 4096, 0x8000, 0x8001, 0xAAAA, 0xFFFF,
-    ];
+    /// THE MULTIPLIER DOMAIN THE EXECUTING ORACLES SWEEP — all of it, derived
+    /// from [`MUL_U16_IMM_MAX`], which is the same name the accept check above
+    /// refuses outside of. Everything `mul_const` admits, the oracles execute.
+    ///
+    /// WHAT THIS REPLACED, AND WHY THE REPLACEMENT IS A DIFFERENT KIND OF THING.
+    /// This was a HAND-WRITTEN list of ~27 multipliers whose comment claimed it
+    /// held "every multiplier the corpus spells". Nothing checked that claim, and
+    /// by 2026-09-16 it was false in both directions, measured against aeon
+    /// `675ff528`: the corpus spelled 16 (`sizeof(band_record)/2` in the sonic4
+    /// shape), 22 (`sizeof(Region)`, grown from 16 by the regions work) and 32
+    /// (`sizeof(band_record)` in the sonic4 shape) and the list had none of them,
+    /// while the list named 66 as `sizeof(Sec)` when `Sec` is 26 bytes and no site
+    /// anywhere spells 66. Those three uncovered strides are not a soft gap: at
+    /// `.w`, the width every one of those sites spells, ×22 and ×26 each elect a
+    /// SIX-instruction left-to-right chain, the longest shapes this file emits and
+    /// the ones an oracle is most worth running over.
+    ///
+    /// The list rotted for a structural reason, not a careless one, and that is
+    /// why the fix is not a longer list. A corpus multiplier here is usually
+    /// `sizeof(T)`, so it moves whenever a struct gains or loses a field — an
+    /// ordinary, frequent, byte-changing act somewhere else entirely, whose author
+    /// has no reason to look in this file. Worse, `sizeof(band_record)` folds the
+    /// per-game build define `GAME_SCANLINE_CAPS`, so "the multiplier the corpus
+    /// spells" is not even a single number: it is 32 for sonic4 and 10 for demo,
+    /// out of ONE source line. A list that must name a set that varies per build
+    /// shape has no correct contents to be brought up to date with.
+    ///
+    /// Sweeping the domain retires the whole class. There is no set to maintain,
+    /// no corpus to consult, no reference tree to provision and therefore no
+    /// unmeasurable case to report: any multiplier any game in any shape can ever
+    /// spell is covered the moment it is accepted, because acceptance is what
+    /// defines the sweep. The price, measured rather than guessed on the debug
+    /// profile this runs under: `cargo test -p sigil-frontend-emp --lib` goes
+    /// from 1.0 s to 1.9 s over its 249 tests.
+    fn every_multiplier() -> impl Iterator<Item = u32> {
+        0..=(MUL_U16_IMM_MAX as u32)
+    }
     const XS: &[u16] = &[0, 1, 2, 0x1234, 0x7FFF, 0x8000, 0xABCD, 0xFFFE, 0xFFFF];
 
     // The pinned result contract, proven by execution: every chosen lowering —
@@ -983,7 +1022,7 @@ mod tests {
     // zx(x) × n over the sampled + boundary inputs.
     #[test]
     fn every_chosen_lowering_matches_mulu_semantics() {
-        for &n in NS {
+        for n in every_multiplier() {
             for &with_scratch in &[false, true] {
                 let mut ops = vec![reg(Reg::D0), imm(n)];
                 if with_scratch {
@@ -1037,9 +1076,20 @@ mod tests {
         }
     }
 
-    // The cost decision, pinned per encoding class. The corpus strides all
-    // resolve to mulu (the ×66 chain TIES mulu at 46 cycles and loses the byte
-    // tie-break 12 vs 4 — the R-B verdict as a computed fact).
+    // The cost decision, pinned per encoding class: at the LONG contract each of
+    // these n resolves to mulu (the ×66 chain TIES mulu at 46 cycles and loses the
+    // byte tie-break 12 vs 4 — the R-B verdict as a computed fact).
+    //
+    // THESE ARE COST-CLASS EXHIBITS, NOT A CENSUS OF THE CORPUS, and the name is
+    // kept only because the numbers came from there. Two of them have since parted
+    // company with it: 66 is spelled by no site in aeon `675ff528` (the comment
+    // that used to call it `sizeof(Sec)` was wrong — `Sec` is 26 bytes), and 36/40
+    // are LONG-form test-harness pitches. The strides the engine actually spells
+    // today are 6, 16, 22, 26, 32, 80 and 160, all but two of them at `.w`, and
+    // NOTHING HERE HAS TO TRACK THAT: the executing oracles sweep the whole
+    // accepted domain (`every_multiplier()`), so coverage never depends on a list
+    // in a comment being current. What this test pins is the CHOICE at these five
+    // encoding classes, which is a per-n fact no sweep can assert.
     #[test]
     fn corpus_strides_resolve_to_mulu() {
         for &n in &[36u32, 40, 66, 80, 160] {
@@ -1163,7 +1213,7 @@ mod tests {
     // Determinism: the same operands expand to the same items, every time.
     #[test]
     fn expansion_is_deterministic() {
-        for &n in NS {
+        for n in every_multiplier() {
             let a = expand_const(vec![reg(Reg::D3), imm(n), reg(Reg::D5)]).unwrap();
             let b = expand_const(vec![reg(Reg::D3), imm(n), reg(Reg::D5)]).unwrap();
             assert_eq!(a, b, "n={n}");
@@ -1175,7 +1225,7 @@ mod tests {
     // depend on a ceiling, which the chain contract never needs.
     #[test]
     fn every_straight_line_candidate_prices_exactly() {
-        for &n in NS {
+        for n in every_multiplier() {
             for width in [MulWidth::Long, MulWidth::Word] {
                 for cand in mul_const_candidates(Reg::D0, n, Some(Reg::D1), sp(), width) {
                     for item in &cand {
@@ -1285,7 +1335,7 @@ mod tests {
     // upper word — that is the contract's freedom.
     #[test]
     fn word_lowering_matches_low_word_and_leaves_upper_free() {
-        for &n in NS {
+        for n in every_multiplier() {
             for &with_scratch in &[false, true] {
                 let mut ops = vec![reg(Reg::D0), imm(n)];
                 if with_scratch {
@@ -1349,10 +1399,14 @@ mod tests {
         );
     }
 
-    // The corpus strides resolve to the left-to-right WORD chain (28/32/34 cycles
-    // vs mulu's 46), the cheapest candidate at each; the chain uses only word ops
-    // that leave dst's upper word free. ×66's trailing single double is the
-    // 4-cycle-cheaper `add.w d0,d0`, the same run-coding the long form uses.
+    // These resolve to the left-to-right WORD chain (28/32/34 cycles vs mulu's 46),
+    // the cheapest candidate at each; the chain uses only word ops that leave dst's
+    // upper word free. ×66's trailing single double is the 4-cycle-cheaper
+    // `add.w d0,d0`, the same run-coding the long form uses.
+    //
+    // As above: a cost-class exhibit, not a census. 80 and 160 are live engine
+    // strides; 66 is spelled nowhere in the corpus and never was `sizeof(Sec)`.
+    // Coverage of the strides that ARE live comes from the domain sweep, not here.
     #[test]
     fn word_corpus_strides_resolve_to_chains() {
         let c66 = expand_const_w(vec![reg(Reg::D0), imm(66), reg(Reg::D1)]).unwrap();
