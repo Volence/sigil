@@ -2805,6 +2805,26 @@ impl Asm {
     ///   `\{...}` interpolation.
     fn pack_str_operand(&mut self, toks: &[Token]) -> Option<Vec<Token>> {
         let (first, last) = (toks.first()?, toks.last()?);
+        // AN OPERAND CARRYING A REGISTER NAME IS AN ADDRESSING MODE, NOT A
+        // VALUE, and is left exactly as written. asl settles this by position:
+        // it peels the mode before it evaluates anything, so a register
+        // spelling is a register here and an ordinary symbol in an expression.
+        //
+        // This is not a precaution. `s2disasm/s2.asm:14504` writes
+        // `l := lowstring("char")` inside an `irpc`, which leaves `l` a live
+        // string-valued symbol for the rest of the assembly, and
+        // `s2.sounddriver.asm` is Z80 and writes `ld l,(ix+...)` 148 times.
+        // Without this the typing rule rewrote the REGISTER `l` into the packed
+        // character it was last assigned, and s2 gained 24 errors reading
+        // `Ld, ops: [Imm8(99), Indexed { reg: Ix, disp: 3 }]` (99 is `'c'`).
+        // The whole-operand scan, rather than a check on the bare identifier
+        // alone, is what also covers `(hl)` and `(ix+3)`, where the register
+        // sits inside parens or under a `+`.
+        if toks.iter().any(|t| {
+            matches!(&t.tok, Tok::Ident(w) if crate::operands::is_operand_register_word(w, self.state.cpu))
+        }) {
+            return None;
+        }
         if matches!(first.tok, Tok::Punct(Punct::Hash)) {
             let inner = self.pack_str_operand(&toks[1..])?;
             let mut out = vec![first.clone()];
