@@ -96,6 +96,27 @@ ACK_DISAGREE = {
 ACK_UNMEASURABLE = {
 }
 
+# (corpus, partial assignment, why): a combination of the corpus's own
+# documented build options that the CORPUS'S OWN toolchain cannot build. sigil
+# has nothing to agree with at such a corner, and calling it a sigil result
+# would be reading a corpus defect as ours. A rule states the partial
+# assignment responsible; `--cross` asserts that the corners the stock
+# toolchain declined and the corners some rule covers are the same set, and
+# that no rule covers zero corners.
+ACK_STOCK_DECLINE = [
+    ("s1disasm", {"Revision": 0, "FixBugs": 1, "AllOptimizations": 0},
+     "asl reports `87, 88, 89 Ending Sequence Sonic, Emeralds, Logo.asm(270): "
+     "error #1370: jump distance too big`. Line 270 is `bra.w DisplaySprite` "
+     "inside an `if Revision=0` arm, and a `bra.w` reaches +/-32 KB. FixBugs "
+     "adds enough code between the branch and `DisplaySprite` to put it out of "
+     "range, and AllOptimizations brings it back only because "
+     "PaddingOptimization removes 3,314 bytes. So two of Sonic 1's documented "
+     "options cannot be combined unless a third is also set, and this is a "
+     "Sonic 1 defect, not a sigil one: the stock toolchain is the thing that "
+     "fails. Free across the other four switches, so it covers 2*2*2*3 = 24 "
+     "of the 288 corners."),
+]
+
 
 class Fail(Exception):
     pass
@@ -876,16 +897,33 @@ def main():
                        ", ".join(tried)))
         all_rescue.extend(rescue)
 
-        # Phase 3, optional: every corner of the switch space, not one arm at a
-        # time. This was assumed infeasible and it is not: the two corpora have
-        # 288 and 96 corners, and a leg costs about two and a half seconds, so
-        # the whole product is a quarter of an hour. What it tests that phase 1
-        # cannot is COMPOSITION: phase 1 shows which single settings sigil
-        # refuses, and the prediction under test here is that a refusal is
-        # caused by one setting and composes, so a corner's class is decided by
-        # whether it contains such a setting and by nothing else. The causes are
-        # read off this same run's phase 1, never from a table, so the
-        # prediction cannot be tuned to the answer.
+        # Phase 3, optional: every corner of the switch space, not one arm at
+        # a time. This was assumed infeasible and it is not: the two corpora
+        # have 288 and 96 corners, and a leg costs about two and a half
+        # seconds, so the whole product is a quarter of an hour.
+        #
+        # It tests two things phase 1 structurally cannot.
+        #
+        # COMPOSITION, on the sigil side. Phase 1 shows which single settings
+        # sigil refuses; the prediction is that a refusal is caused by one
+        # setting and composes, so whether sigil builds a corner is decided by
+        # whether the corner contains such a setting and by nothing else. The
+        # causes are read off this same run's phase 1, never from a table, so
+        # the prediction cannot be tuned to the answer it is tested against.
+        #
+        # THE STOCK TOOLCHAIN'S OWN REACH. A corner is a combination of options
+        # the corpus documents, and there is no guarantee the corpus can build
+        # all of them. Where the stock build fails, sigil has nothing to agree
+        # with, and calling that a sigil result would be reading a corpus
+        # defect as ours. Those corners are their own category, and they must
+        # be covered by a rule in ACK_STOCK_DECLINE that states the partial
+        # assignment responsible: the covered set and the observed set are
+        # asserted equal in both directions, and a rule that covers no corner
+        # is as loud as a corner no rule covers.
+        #
+        # And where BOTH toolchains built, the corner must agree byte for byte.
+        # That is the whole point of the product and it is asserted, not read
+        # off a summary line.
         if a.cross and not a.only:
             swept = [s for s in switches if s["kind"] == "swept"]
             domains = [s["domain"] for s in swept]
@@ -903,25 +941,32 @@ def main():
             for s in swept:
                 for v in s["arms"]:
                     row = by_tag.get("%s-%s-%d" % (corpus, s["name"], v))
-                    if row and row["klass"] != "AGREE" and not row.get("vacuous"):
-                        causes[(s["name"], v)] = row["klass"]
-            log("   causes read off this run's phase 1: %s"
+                    if row and not row.get("vacuous") \
+                            and not row.get("sigil_wrote"):
+                        causes[(s["name"], v)] = (row["sigil_stderr"] or
+                                                  ["no message"])[0][:70]
+            log("   sigil-refusing settings, read off this run's phase 1: %s"
                 % ({"%s=%d" % k: v for k, v in causes.items()} or "none"))
+            rules = [(d, why) for (c, d, why) in ACK_STOCK_DECLINE if c == corpus]
+            log("   acknowledged stock-decline rules: %d" % len(rules))
 
-            hits, miss, crcs = 0, [], {}
+            comp_ok, comp_bad = 0, []
+            stock_bad, rule_hits = [], [0] * len(rules)
+            agreed, disagreed, crcs = 0, [], {}
             for corner in corners:
+                setting = {s["name"]: v for s, v in zip(swept, corner)}
                 edits = [(s, v) for s, v in zip(swept, corner)
                          if v != s["current"]]
                 tag = "%s-X-%s" % (corpus, "".join(str(v) for v in corner))
-                predicted = "AGREE"
-                for s, v in zip(swept, corner):
-                    if (s["name"], v) in causes:
-                        predicted = causes[(s["name"], v)]
-                        break
+                pred = "DECLINED" if any(k in causes for k in setting.items()) \
+                    else "BUILT"
+                covered = [i for i, (d, w) in enumerate(rules)
+                           if all(setting.get(k) == v for k, v in d.items())]
                 log("")
-                log("-- CORNER %s   %s   predict %s"
+                log("-- CORNER %s   %s   predict sigil %s%s"
                     % (tag, " ".join("%s=%d" % (s["name"], v)
-                                     for s, v in zip(swept, corner)), predicted))
+                                     for s, v in zip(swept, corner)), pred,
+                       ", stock decline acknowledged" if covered else ""))
                 launched += 1
                 try:
                     r = run_leg(cfg, tag, edits, log)
@@ -931,35 +976,75 @@ def main():
                     failures.append("%s: %s" % (tag, e))
                 reported += 1
                 r["cross"] = True
-                r["predicted"] = predicted
                 all_rows.append(r)
                 if r.get("ref_crc"):
                     crcs.setdefault(r["ref_crc"], tag)
                 if r.get("ref") and os.path.isfile(r["ref"]):
                     os.remove(r["ref"])
-                if r["klass"] == predicted:
-                    hits += 1
+
+                got = "BUILT" if r.get("sigil_wrote") else "DECLINED"
+                if got == pred:
+                    comp_ok += 1
                 else:
-                    miss.append((tag, predicted, r["klass"]))
-                log("   RESULT %s   prediction %s"
-                    % (r["klass"], "held" if r["klass"] == predicted else "BROKE"))
+                    comp_bad.append((tag, pred, got))
+                for i in covered:
+                    rule_hits[i] += 1
+                if not r.get("lua_wrote"):
+                    stock_bad.append((tag, bool(covered)))
+                elif r.get("sigil_wrote"):
+                    if r["klass"] == "AGREE":
+                        agreed += 1
+                    else:
+                        disagreed.append((tag, r["klass"]))
+                log("   RESULT %s   sigil %s (predicted %s)%s"
+                    % (r["klass"], got, pred,
+                       "   STOCK DECLINED" if not r.get("lua_wrote") else ""))
 
             log("")
-            log("== CROSS %s: %d corners, %d matched the composition "
-                "prediction, %d did not" % (corpus, len(corners), hits, len(miss)))
+            log("== CROSS %s: %d corners" % (corpus, len(corners)))
+            log("   composition prediction on the sigil side: %d held, %d broke"
+                % (comp_ok, len(comp_bad)))
+            for t, pd, g in comp_bad:
+                log("     BROKE %s: predicted sigil %s, sigil %s" % (t, pd, g))
+            log("   both toolchains built: %d corners, %d agreed byte for "
+                "byte, %d did not" % (agreed + len(disagreed), agreed,
+                                      len(disagreed)))
+            for t, k in disagreed:
+                log("     DISAGREED %s: %s" % (t, k))
+            log("   stock toolchain declined: %d corners, %d covered by an "
+                "acknowledged rule" % (len(stock_bad),
+                                       sum(1 for t, c in stock_bad if c)))
+            for t, c in stock_bad:
+                if not c:
+                    log("     UNACKNOWLEDGED STOCK DECLINE %s" % t)
+            for i, (d, w) in enumerate(rules):
+                log("   rule %s covered %d corner(s)" % (d, rule_hits[i]))
             log("   distinct stock images across the corners: %d" % len(crcs))
-            for t, p, g in miss:
-                log("   PREDICTION BROKE %s: predicted %s, ran %s" % (t, p, g))
-            if miss:
+
+            if comp_bad:
                 failures.append("%s: %d corner(s) broke the composition "
-                                "prediction" % (corpus, len(miss)))
+                                "prediction" % (corpus, len(comp_bad)))
+            if disagreed:
+                failures.append("%s: %d corner(s) built by both toolchains "
+                                "disagree" % (corpus, len(disagreed)))
+            uncov = [t for t, c in stock_bad if not c]
+            if uncov:
+                failures.append("%s: %d corner(s) the stock toolchain cannot "
+                                "build are covered by no rule: %s"
+                                % (corpus, len(uncov), uncov[:4]))
+            dead = [rules[i][0] for i in range(len(rules)) if rule_hits[i] == 0]
+            if dead:
+                failures.append("%s: %d stock-decline rule(s) cover no corner "
+                                "and are stale: %s" % (corpus, len(dead), dead))
             if len(crcs) < 2:
                 failures.append("%s: the cross product produced %d distinct "
                                 "stock image(s); it measured nothing"
                                 % (corpus, len(crcs)))
             all_cross.append({"corpus": corpus, "corners": len(corners),
-                              "hits": hits, "miss": len(miss),
-                              "distinct": len(crcs), "causes": dict(causes)})
+                              "comp_ok": comp_ok, "comp_bad": len(comp_bad),
+                              "agreed": agreed, "disagreed": len(disagreed),
+                              "stock_declined": len(stock_bad),
+                              "distinct": len(crcs)})
 
     log("")
     log("=" * 78)
