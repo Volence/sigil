@@ -1097,6 +1097,14 @@ distinguished it was a line in this file, which a sweep of aeon's worktree list 
 *Ownership is not conferred by registration* (aeon's formulation): being in a repo's worktree
 list is a fact about bookkeeping, not about who depends on it.
 
+**DO NOT SWEEP, AS OF 2026-09-16, RETENTION RULED BY THE HUB (empyrean `ca84198`):**
+`~/sonic_hacks/.sigil-outgoing-1532b72f/` and `~/sonic_hacks/.aeon-control-roms-0dc0ff11/` (the latter is
+AEON's, held on this lane's behalf), plus the pin worktrees `~/sonic_hacks/.sigil-pin-700177b1` and
+`~/sonic_hacks/.sigil-pin-1532b72f`. **Ends when aeon's step 0 is through E1 and E2 and its next build cycle
+runs clean, and then only on the hub's ruling — ask, do not infer.** Full reasons at *THE INSTALLED PAIR SINCE
+2026-09-15T23:52:38Z* below; the short one is that the outgoing pair is the recorded provenance for two days of
+aeon builds, so deleting it breaks no build and destroys the only explanation for why two ROMs differ.
+
 **THE PINNED ASSEMBLER `~/sonic_hacks/.pinned/`.** A second standing artifact, requested
 permanently by the AEON lane 2026-09-04: the sigil binary at `0a58f2ec`, copied out of the
 shared `target/release/sigil` before that path could be relinked. **It is the original, not a
@@ -1190,6 +1198,15 @@ Aeon copied the three controls aside to `~/sonic_hacks/.aeon-control-roms-0dc0ff
 **because the rebuild overwrites the originals in place and a divergence would otherwise have been detectable
 but not DIFFABLE** - the verdict without the byte ranges. They are kept there until this lane says it has no
 further use for them.
+
+**⚠ RETENTION IS RULED AND IS NOT THIS SEAT'S CALL TO REVERSE (hub, 2026-09-16, banked empyrean `ca84198`).**
+Keep BOTH `~/sonic_hacks/.sigil-outgoing-1532b72f/` and `~/sonic_hacks/.aeon-control-roms-0dc0ff11/` until
+aeon's step 0 is fully through E1 and E2 **and** its next build cycle has run clean; then **ask the hub, who
+rules.** The reason is not tidiness: **the outgoing pair is the recorded provenance for two days of aeon builds
+(2026-09-13 09:36Z to 2026-09-15 23:52Z), so if the owner ever asks why a ROM built on 09-14 differs from one
+built today, that directory is the answer.** A sweep that deletes it does not break a build; it destroys the
+only thing that could explain one. Same for the two pin worktrees named above, for the run-time size-table
+reason rather than this one.
 
 **And aeon flagged their own loose end rather than rounding it off, which is the practice worth copying:** 2689
 passed now against 2688 at the pre-swap reverify, **but that pair straddles two different commits** (`2e6709a1`
