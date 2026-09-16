@@ -4,44 +4,54 @@
 # disagreement, and a divergence between the two is a finding rather than a
 # value to reconcile.
 #
-# CITED BY CONTENT, NOT ONLY BY SHA, AND THE REASON IS A DEFECT THIS HEADER HAD.
-# It first named 51a48d4 alone, which is the revision the hub announced and the
-# one verified here as an ancestor of their origin/main. That is a true statement
-# about a revision where this content exists and it is NOT the commit that
-# introduced the file: `git log --all -- scripts/ledger_append.py` in empyrean
-# returns ba1de1f and does not return 51a48d4, so a successor tracing provenance
-# the obvious way would find a SHA that does not match the citation and have no
-# way to tell a rename from an error. Both are recorded below, distinguished.
-#
 #   introduced upstream at:  ba1de1f
-#   verified here at:        51a48d4 (content identical to their origin/main tip)
-#   content identity:        CRC32 37e98d6b, 2705 bytes
+#   vendored here from:      f150873 (verified an ancestor of their origin/main)
+#   content identity:        CRC32 c36dd014, 3899 bytes
 #
-# The DIGEST is the part that cannot rot. A SHA stops resolving across a rewrite
-# and says nothing about whether the bytes moved; CRC32 plus size answers the
-# only question a successor actually has, which is whether this copy still is
-# what was verified. Recompute it over empyrean's file with zlib.crc32 (IEEE, the
-# campaign provenance standard) and compare. A decimal figure is a foreign tool.
+# CITED BY CONTENT, NOT ONLY BY SHA, AND THE REASON IS A DEFECT THIS HEADER HAD.
+# It first named 51a48d4 alone, the revision the hub announced. That is a true
+# statement about a revision where the content existed and it is NOT the commit
+# that introduced the file: `git log --all -- scripts/ledger_append.py` in
+# empyrean returns ba1de1f and never returns 51a48d4, so a successor tracing
+# provenance the obvious way would find a SHA that did not match the citation
+# with no way to tell a rename from an error. The DIGEST is the part that cannot
+# rot: a SHA stops resolving across a rewrite and says nothing about whether the
+# bytes moved, while CRC32 plus size answers the only question a successor has,
+# which is whether this copy still is what was verified. Recompute over
+# empyrean's file with zlib.crc32 (IEEE, the campaign provenance standard) and
+# compare; a decimal figure came from a foreign tool and does not compare.
 #
-# ADOPTED 2026-09-16 as the PREVENTION half of this lane's open row
+# THIS PIN HAS ALREADY FIRED ONCE, ON A LEGITIMATE CHANGE, WHICH IS THE ONLY KIND
+# OF EXERCISE THAT TESTS THE MECHANISM WITHOUT ALSO REPORTING A FAULT. The first
+# vendoring pinned 37e98d6b/2705. Upstream then corrected its own docstring and
+# the pin diverged exactly as intended, rather than the two copies drifting
+# quietly. Reconciled here after checking, not after being told.
+#
+# RE-VERIFIED AT THIS REVISION rather than carried over from the last one, since
+# red-first custody attaches to the BYTES that were proved and not to the file
+# name:
+#   digest         recomputed here, agrees with the author's figure;
+#   no behaviour   executable code compared by parsed AST with docstrings
+#                  stripped, identical to the revision the arms were proved on,
+#                  so the author's "docstring only" claim is measured not taken;
+#   arm 1          no trailing newline -> repaired, BOTH prior records intact;
+#   arm 2          already-damaged tail -> exit 1, md5 identical before and
+#                  after. Exit code read UNPIPED: zsh has no PIPESTATUS and a
+#                  piped read would have reported head's status, not the tool's.
+#
+# ADOPTED as the PREVENTION half of this lane's open row
 # LANE-LOG-APPEND-CORRUPTS-ON-MISSING-NEWLINE. scripts/ledger_gate.py is the
 # DETECTION half and stays: this refuses to corrupt, that refuses to land if
 # something else did.
 #
-# BOTH ARMS RE-VERIFIED HERE rather than taken from the author's report, since a
-# peer's red-first is their custody and not this lane's:
-#   arm 1, no trailing newline -> repaired, 3 parseable lines, BOTH prior records
-#           intact ({"a":1} and {"b":2} recovered beside the new {"c":3});
-#   arm 2, already-damaged tail -> exit 1, and md5 identical before and after,
-#           which is the half the report asserted and did not show.
-#
-# THE RESIDUAL, NAMED RATHER THAN GLOSSED: by aeon's own removes-the-need-to-
-# remember test this tool is first-best at the WRITE and still carries an
-# obligation one layer out, because somebody has to remember to call it instead
-# of hand-appending. That residual is bounded, not closed: a hand-append that
-# corrupts is caught by ledger_gate.py at the next landing, before a push, and
-# the damage is recoverable by raw_decode-splitting the welded line, which this
-# lane has already done once. What is NOT recovered is the interval in between.
+# THE RESIDUAL, NAMED RATHER THAN GLOSSED: by aeon's removes-the-need-to-remember
+# test this tool is first-best at the WRITE and still carries an obligation one
+# layer out, because somebody has to remember to call it instead of hand-
+# appending. Bounded, not closed: a hand-append that corrupts is caught by
+# ledger_gate.py at the next landing before a push, and the welded line is
+# recoverable by raw_decode-splitting, which this lane has done once. What is not
+# recovered is the interval in between. The row closes when hand-appending is no
+# longer something a seat can casually do, not when this file merely exists.
 """Append one record to a .jsonl ledger without being able to corrupt the previous one.
 
 THE HAZARD (sigil, 2026-09-16, row LANE-LOG-APPEND-CORRUPTS-ON-MISSING-NEWLINE):
@@ -53,9 +63,27 @@ session's record, in files LANE_LOG.md and DECISIONS.md both call append-only an
 never-backfilled, which is to say unreconstructable.
 
 Sigil built the DETECTION half (a gate that refuses a landing when a ledger line
-does not parse or a file lacks its trailing newline). This is the PREVENTION half,
-which by aeon's test is the first-best shape: a gate needs someone to run it, a
-write that cannot corrupt needs nobody to remember anything.
+does not parse or a file lacks its trailing newline). This is the PREVENTION half.
+
+CORRECTED 2026-09-16 ON SIGIL'S PUSHBACK, and the correction is the point. This
+docstring said "a gate needs someone to run it, a write that cannot corrupt needs
+nobody to remember anything." That is true of the WRITE and false of the REACH:
+somebody still has to choose this tool over a hand-append, which is aeon's
+removes-the-need-to-remember test applied one layer out. So the pair -- this tool
+plus sigil's ledger_gate.py -- is detection PLUS prevention, genuinely better than
+either, and it is NOT closure. The residual is bounded, not deleted: a hand-append
+that corrupts is caught by the gate at the next landing before a push, and a welded
+line is recoverable by raw_decode-splitting; what is not recovered is the interval
+in between. THE CLOSING CONDITION IS SIGIL'S AND IT GOVERNS: this closes when
+hand-appending is no longer something a seat can casually do, not when the tool
+merely exists.
+
+ADOPTING THIS IS NOT A DOCS-ONLY COMMIT (sigil, on its first live adoption). It
+puts a new file in scripts/, and a docs-only exemption measured against one
+population says nothing about that one: sigil's clause rested on no Rust target
+reading docs/, and its repo turned out to have a tree-walking gate policing what
+scripts may contain. Run your own tree-walking gates rather than reasoning that a
+small utility cannot matter.
 
     python3 scripts/ledger_append.py docs/lane-log.jsonl '<json object>'
     python3 scripts/ledger_append.py docs/lane-log.jsonl --file rec.json
