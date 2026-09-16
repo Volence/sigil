@@ -13341,12 +13341,11 @@ fn m68k_disp_an_error(an: &str) -> String {
     }
 }
 
-/// `a0`..`a7` → `Some(0..=7)`; `sp` is the `a7` alias. Anything else → `None`.
 /// `true` iff `w` spells a 68k DATA or ADDRESS register, or `pc`, in ANY case
 /// (`a0`, `A0`, `d7`, `D7`, `sp`, `SP`, `pc`, `PC`).
 ///
 /// The case-folding one, used only by the `Mem` arm of
-/// [`Eval::convert_one_atom_m68k`] to keep a `(Reg)` that the operand
+/// [`Asm::convert_one_atom_m68k`] to keep a `(Reg)` that the operand
 /// classifier did not claim from being read as an absolute address. The
 /// lowercase-only [`m68k_addr_reg`] / [`m68k_data_reg`] stay as they are:
 /// they answer "which register is this", and widening them would newly
@@ -13367,6 +13366,7 @@ fn m68k_reg_name_any_case(w: &str) -> bool {
     w == "pc" || m68k_addr_reg(&w).is_some() || m68k_data_reg(&w).is_some()
 }
 
+/// `a0`..`a7` → `Some(0..=7)`; `sp` is the `a7` alias. Anything else → `None`.
 fn m68k_addr_reg(w: &str) -> Option<u8> {
     if w == "sp" {
         return Some(7);
