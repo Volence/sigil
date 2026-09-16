@@ -97,12 +97,30 @@ SENT to aeon 2026-09-06 with paths and SHAs; they book from the files, not from 
 
 **Its closing reason was written into PROSE-STATED-BOUNDS's body by the commit that closed four rows at once, so this row read `open` for three days while its own closure sat under an unrelated heading. Moved here 2026-09-09.**
 
-## STABILITY-RUNNER-MISSING-WHERE-CLAIMED
+## STABILITY-RUNNER-MISSING-WHERE-CLAIMED: SWEPT 2026-09-16, and the "five" is retired as unfounded
 
-- state at archive: `open`  size: `S`  project: `-`
+- state at archive: `open` -> swept  size: `S`  project: `-`
 - blockedBy: nothing
 
-Sweep owed, now with a named population: five notes from the same week state their ground truth as the UNRELIABLE copy cited by version banner, with no committed probe directory to re-run.
+Original text, kept verbatim: *"Sweep owed, now with a named population: five notes from the same
+week state their ground truth as the UNRELIABLE copy cited by version banner, with no committed
+probe directory to re-run."*
+
+**"Now with a named population" was not true: the row names none of the five, and no instrument
+returns five.** The 2026-09-08 staleness sweep reached the same conclusion and refused to invent a
+population; that refusal is upheld rather than overridden. **The count is retired as an unfounded
+figure** of the same family as the three premise-less rows found the same morning.
+
+**What was done instead**, note `docs/superpowers/notes/2026-09-16-asl-citation-form-sweep.md`,
+instrument `scripts/sweep_asl_citation_form.sh` (committed, which is this row's own standing fix
+applied to itself): all four `asl` binaries here print the same version banner, so a note citing its
+oracle by banner has named nothing. **22 notes cite the banner and never an md5.** The script prints
+the list and carries its own scope limits, a positive control, and the two workspace facts it depends
+on. Figures move when notes discussing the defect are edited, so the script is the authority.
+
+**Left open deliberately:** whether any of the 22 states a claim that actually DEPENDS on which
+binary produced it. That needs reading rather than grepping and is a separate parcel. The standing
+fix stands: a stability or provenance claim cites a committed script or an md5, or it is not made.
 
 ## S1-BUILD-PROFILE
 
