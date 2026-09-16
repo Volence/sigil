@@ -1815,6 +1815,14 @@ the executed domain BE the accepted domain.** For the sweep that means deriving 
 the corpus sources rather than typing one out, so the set exercised cannot drift from the set the
 corpora offer.
 
+**THE TEST TO APPLY WHEN CHOOSING THE FIX, and it will bite on this row specifically.** Aeon's, banked
+at their `57b8a1c3`, verified here as an ancestor of their `origin/master`: *when a standing claim rots,
+ask whether the fix REMOVES the need to remember or ADDS one.* A checker that verifies the header
+checksum is second best by that test, because it still needs someone to run it on the right settings,
+which is the same defect one layer out: **an obligation that must be remembered is the same class of
+thing as a list that must be maintained, and it hides better.** Aim at a shape where sigil cannot write
+a stale checksum at all, and fall back to a checker only after looking.
+
 **And the reason this block exists rather than a longer board row: this seat put the pointer in the
 row's `title` and blew contract rule 7's 240-character bound on four rows at once**, the longest at
 470, one of them grown from 131 to 255 in the same write. The board is a payload every lane's
