@@ -6,8 +6,9 @@ would agree if the change were a no-op). So every byte-changing parcel proves be
 on the **oracle** (the emulator) with **frame-anchored, named** observations, then
 re-freezes the goldens (`refreeze --freeze`). This file is the concrete procedure.
 
-The runner is the **agent** driving the oracle over MCP (`emulator_*`). The one
-mechanical helper is `region-hash.sh` (client-side hash + the length assert). Client-side
+The runner is the **agent** driving the oracle over MCP (`emulator_*`). Two mechanical
+helpers: `cart_check.py` (step 0, WHICH CART, and the one thing here with a `cargo test`
+gate behind it) and `region-hash.sh` (client-side hash + the length assert). Client-side
 hashing is deliberate (overseer ruling, OQ-3): a 14.4 KB region is one or a few
 `emulator_read_memory` calls; A/B events are rare, so determinism matters, speed does
 not. If this proves flaky in practice, STOP and revisit an oracle-side `memory_hash` —
@@ -15,11 +16,53 @@ not before the evidence.
 
 ## Determinism (binding on every A/B)
 
-0. **PROVE WHICH CART IS LOADED, BEFORE EITHER ARM, AND AGAIN AFTER EACH LOAD.** Hash the ROM
-   file on disk, load it, and read enough of the loaded cart back to confirm the emulator holds
-   THAT file. `emulator_reload_rom` recovers a stale one, but only for a runner who checks first.
-   Everything below this line hashes RAM, VRAM, CRAM and the plane: **nothing in this protocol
-   hashed the CART until 2026-09-12**, and that is the one input both arms share.
+0. **PROVE WHICH CART IS LOADED, BEFORE EITHER ARM, AND AGAIN AFTER EACH LOAD.** This is an
+   INSTRUMENT, not an instruction. Run it, do not re-derive it:
+
+   ```sh
+   python3 crates/sigil-harness/golden/ab/cart_check.py <the-rom-this-arm-means>
+   #   exit 0  CART PROVEN (coverage=total|sampled)  <path>  <crc32> / <bytes>
+   #   exit 1  CART CHECK REFUSED  <the reason, by name>
+   ```
+
+   All eighteen instruments in this directory call it themselves (`verify_cart_bus`), at step 0
+   and after every `reload_rom`, so a scripted arm needs nothing extra; the CLI is for a
+   hand-driven one. It was prose here from 2026-09-12 until it became an instrument, and prose
+   rides on the runner remembering to read step 0. `emulator_reload_rom` recovers a stale cart,
+   but only for a runner who checks first. Everything below this line hashes RAM, VRAM, CRAM and
+   the plane: **nothing in this protocol hashed the CART until 2026-09-12**, and that is the one
+   input both arms share.
+
+   **What it checks, and why the server's own caveat is not enough.** `status.romPath` IS the
+   intended file; `status.romBytes` equals its size on disk; the cart's own BYTES agree with the
+   file; and a `status.caveat` naming the cart refuses. The wire contract (item 27, §11.37) does
+   oblige a server to call a stale image out loud, including the required row where the sizes
+   match and the bytes differ. But that caveat answers only *has the file at `romPath` changed on
+   disk since it was loaded?* It is silent on *is this the cart THIS ARM MEANT?* An emulator
+   holding `/a/old.bin` while the arm intends `/b/new.bin`, with `/a/old.bin` unchanged, emits
+   **no caveat at all** and every region hash below still matches. So the caveat is one input,
+   never the check.
+
+   **WHAT A GREEN MEANS, and it is two different claims.** The passing line says which:
+
+   - `coverage=total` - every byte compared. One `memory_hash {addr:0, len:romBytes}` call; its
+     `crc32` is defined to equal zlib CRC32 over the same slice of the file. One round trip,
+     which is why it is preferred: a whole-image readback through `read_memory` (4096 B a call)
+     would be ~200 round trips for an 820 KB image.
+   - `coverage=sampled` - the fallback when a server does not serve `memory_hash`. Head, middle
+     and final windows only. It proves the cart is not one of the builds that differ INSIDE those
+     windows; **a targeted one-byte edit outside every window passes.** That is adequate against
+     the hazard actually filed (a stale build differing in ~43% of its bytes) and is NOT a general
+     identity proof. Export `CART_CHECK_REQUIRE_TOTAL=1` to make the fallback a refusal.
+
+   Record the coverage word in the packet alongside the verdict. A green whose coverage nobody
+   wrote down is a green nobody can weigh later.
+
+   **What it does NOT cover.** It proves the emulator's CART. It says nothing about the symbol
+   listing (`load_symbols` is a separate path and a listing can disagree with the image), nothing
+   about a save state loaded at the window, and nothing about whether the ROM on disk is the
+   build you meant to make: a freshly proven cart of a two-day-old build is still a two-day-old
+   build, which is the root cause the filed incident actually had.
 
    **Why this is step 0 and not a footnote: a stale cart makes an A/B agree, and agreement is the
    direction nobody audits.** If the emulator was started against some other ROM and neither arm
@@ -49,13 +92,17 @@ not before the evidence.
    **That makes it worse to leave unwritten, not better** — a hand-run instrument has no CI to
    catch it and no second reader.
 
-   **The coverage figure, which is the reason step 0 is a rule and not a reminder: of the 18
-   instruments here, 8 call `reload_rom` with an explicit path and ZERO verify the cart.** Not
-   one reads `romBytes` back or hashes it, against a control confirming all 18 are readable files
-   the matcher could have fired on, so the zero is the subject rather than a broken matcher.
-   `reload_rom` says *load this*, and nothing anywhere confirms the emulator holds it. **The eight
-   are defended against a stale PRELOAD; none of the eighteen is defended against a load that
-   silently did not take.**
+   **The coverage figure that made step 0 a rule and not a reminder, and where it stands now.**
+   As measured 2026-09-12: of the 18 instruments here, 8 called `reload_rom` with an explicit
+   path and **ZERO verified the cart**, against a control confirming all 18 are readable files
+   the matcher could have fired on, so the zero was the subject rather than a broken matcher.
+   `reload_rom` says *load this*, and nothing confirmed the emulator held it: the eight were
+   defended against a stale PRELOAD and none of the eighteen against a load that silently did not
+   take. **All 18 now call `cart_check.verify_cart_bus`, and the count is gated rather than
+   fixed once**: `every_bus_driving_instrument_calls_the_cart_check` in
+   `crates/sigil-harness/tests/ab_cart_check.rs` walks this directory, selects by the bus-client
+   import and fails naming any instrument that does not call it, so a new instrument cannot join
+   the population unwired.
 
    **Enumerate the population by the BUS CLIENT it imports (`from aether import` / `BusClient`),
    across the whole repo, and nothing else.** Three wrong populations preceded this one and each

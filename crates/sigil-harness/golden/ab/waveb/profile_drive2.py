@@ -11,6 +11,7 @@ import asyncio, json, os, sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from suite_paths import add_empyrean_clients, debug_listing  # noqa: E402
+from cart_check import verify_cart_bus  # noqa: E402
 add_empyrean_clients()
 from aether import BusClient
 
@@ -40,6 +41,11 @@ async def main():
     if _os.environ.get("SKIP_RELOAD"):
         # The GUI booted the ROM from disk (LastRomPath); verify identity via the
         # in-ROM end pointer instead of exercising the flaky loader at all.
+        # AB_PROTOCOL step 0: PROVE WHICH CART IS LOADED, before either arm. The
+        # in-ROM end-pointer check below reads the image's LENGTH out of the loaded
+        # cart; it cannot tell two builds of the same length apart, and that is the
+        # case that makes an A/B agree having compared nothing.
+        await verify_cart_bus(bus, ROM, label=f"{LABEL} step 0")
         want = _os.path.getsize(ROM); want += want % 2
         r = await call(bus, "read_memory", {"addr": "0x1A0", "len": 8})
         end = int(r["bytes"][8:], 16)
@@ -60,6 +66,10 @@ async def main():
         print(f"reload attempt {attempt+1} rejected: {r} — retrying in 6s")
         await asyncio.sleep(6)
     assert ok, "reload never installed the target ROM"
+    # reload_rom says LOAD THIS. This says the emulator HOLDS it (AB_PROTOCOL
+    # step 0, after each load): a load that silently did not take leaves both
+    # arms measuring the same wrong program, and every hash below still agrees.
+    await verify_cart_bus(bus, ROM, label=f"{LABEL} after reload")
     await call(bus, "load_symbols", {"path": LST})
     await run_body(bus)
 
