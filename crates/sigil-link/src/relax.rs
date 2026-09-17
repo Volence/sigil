@@ -753,7 +753,7 @@ fn shift_offset(map: &ShiftMap, orig_off: u32) -> u32 {
 /// run of bytes — so `fi`'s start is measured from the last org anchor before it.
 // TODO(perf): O(fi) prefix walk per ladder per pass; once ladders get dense, thread a
 // running accumulator through the selection loop + convergence sweep instead.
-fn frag_start_vma(sec: &Section, rungs: &[usize], origin: u32, fi: usize) -> u32 {
+fn frag_start_vma(sec: &Section, rungs: &[usize], fi: usize) -> u32 {
     let mut cur: u32 = 0;
     for (i, prev) in sec.fragments[..fi].iter().enumerate() {
         if let Fragment::Org { target, .. } = prev {
@@ -762,7 +762,7 @@ fn frag_start_vma(sec: &Section, rungs: &[usize], origin: u32, fi: usize) -> u32
             cur += frag_len(prev, rungs[i]);
         }
     }
-    origin + cur
+    sec.vma_at(cur)
 }
 
 /// jmp abs.w=4EF8/abs.l=4EF9, jsr abs.w=4EB8/abs.l=4EB9 (`.l` = `.w | 1`);
@@ -1078,10 +1078,9 @@ fn resolve_layout_impl(
         // (a) Build the symbol table with label VMAs shifted under current rungs.
         let mut syms = stubs.clone();
         for (si, sec) in placed.iter().enumerate() {
-            let origin = sec.vma_origin();
             let bps = shift_breakpoints(sec, &rungs[si]);
             for label in &sec.labels {
-                syms.define(&label.name, SymbolValue::Int((origin + shift_offset(&bps, label.offset)) as i64));
+                syms.define(&label.name, SymbolValue::Int(sec.vma_at(shift_offset(&bps, label.offset)) as i64));
             }
         }
 
@@ -1103,7 +1102,6 @@ fn resolve_layout_impl(
         // abs.w, both 4 bytes) is recorded but needs no relayout.
         let mut grew = false;
         for (si, sec) in placed.iter().enumerate() {
-            let origin = sec.vma_origin();
             // Site VMAs are read from the rungs as they stood when this pass
             // opened, not from the rungs this loop is still moving: a snapshot
             // keeps every fragment in the section measured against one layout,
@@ -1179,7 +1177,7 @@ fn resolve_layout_impl(
                             }
                             Fold::Fault(f) => return Err(vec![fault_diag("branch/ladder target", f, &sec.name, *span)]),
                         };
-                        let frag_start = frag_start_vma(sec, &pass_rungs, origin, fi);
+                        let frag_start = frag_start_vma(sec, &pass_rungs, fi);
                         // Minimal rung whose fixup kind reaches the target.
                         let mut min_reaching: Option<usize> = None;
                         for (k, cand) in candidates.iter().enumerate() {
@@ -1232,7 +1230,6 @@ fn resolve_layout_impl(
             // hard error naming the signed distance. Collect ALL such errors.
             let mut errs: Vec<Diagnostic> = Vec::new();
             for (si, sec) in placed.iter().enumerate() {
-                let origin = sec.vma_origin();
                 for fi in 0..sec.fragments.len() {
                     if let Fragment::RelaxLadder { candidates, target, span } = &sec.fragments[fi] {
                         // LABELS ONLY, matching the selection arm in (b): ladder
@@ -1244,7 +1241,7 @@ fn resolve_layout_impl(
                             // Reported in pass (b) already, both shapes.
                             Fold::Poison | Fold::Fault(_) => continue,
                         };
-                        let frag_start = frag_start_vma(sec, &rungs[si], origin, fi);
+                        let frag_start = frag_start_vma(sec, &rungs[si], fi);
                         let cand = &candidates[rungs[si][fi]];
                         match rung_reaches(cand, frag_start, v, dash_a, *span, &sec.name) {
                             Ok(true) => {}
@@ -3820,11 +3817,82 @@ mod tests {
         //   fi 3 (dc.b EE) : the org seeks the cursor to  -> 6
         let sec = backward_org_growth_section(vec![]);
         let rungs = vec![1usize, 0, 0, 0];
-        assert_eq!(frag_start_vma(&sec, &rungs, 0, 0), 0);
-        assert_eq!(frag_start_vma(&sec, &rungs, 0, 1), 6, "the grown jmp is 6 bytes, not 4");
-        assert_eq!(frag_start_vma(&sec, &rungs, 0, 3), 6, "the org anchors the post-org run");
+        assert_eq!(frag_start_vma(&sec, &rungs, 0), 0);
+        assert_eq!(frag_start_vma(&sec, &rungs, 1), 6, "the grown jmp is 6 bytes, not 4");
+        assert_eq!(frag_start_vma(&sec, &rungs, 3), 6, "the org anchors the post-org run");
         // ...and the section origin is added, not folded into the replay.
-        assert_eq!(frag_start_vma(&sec, &rungs, 0x2000, 1), 0x2006);
+        let at_2000 = Section { lma: 0x2000, ..sec.clone() };
+        assert_eq!(frag_start_vma(&at_2000, &rungs, 1), 0x2006);
+    }
+
+    #[test]
+    fn a_phased_section_running_past_the_top_of_the_address_space_wraps_to_zero() {
+        // s1disasm's RAM block is `phase ramaddr($FFFF0000)` over exactly $10000
+        // bytes, so its closing `v_ram_end:` sits at $FFFF0000 + $10000. asl gives
+        // that label 0 (and its own `if * > 0` guard relies on it), and the AS
+        // front end's `here()` is the same 32-bit sum, so every VMA derived from
+        // a phased origin is taken modulo 2^32. Each consumer is exercised past
+        // the wrap: the relaxation label table (an abs operand naming the label,
+        // and an equ whose rung depends on the label's high bits), a ladder's
+        // site VMA inside the phased section, a data fixup's site VMA there, and
+        // link()'s table.
+        //
+        //   ram  (vma $FFFF0000)  Reserve($10010)  Here @ $10000 -> 0
+        //                         jbra Here        site $10010   -> $10
+        //                         dc.w End         End  @ $10012 -> $12 (after the 2-byte bra.s)
+        //   code (lma 0)          move.w d0,(End)  End -> $12, abs.w
+        //                         move.w d0,(Hi)   Hi = End >> 17 = 0, abs.w
+        //
+        // Widening instead would make End $1_0000_0012 and Hi $8000, an abs.l
+        // rung (6 bytes); saturating would make End $FFFFFFFF.
+        use sigil_ir::expr::BinOp;
+        let ram = Section {
+            name: "ram".into(),
+            cpu: Cpu::M68000,
+            vma_base: Some(0xFFFF_0000),
+            lma: 0x1000,
+            labels: vec![
+                Label { name: "Here".into(), offset: 0x1_0000 },
+                Label { name: "End".into(), offset: 0x1_0012 },
+            ],
+            fragments: vec![
+                Fragment::Reserve { count: 0x1_0010, span: sp() },
+                jbra("Here"),
+                Fragment::Data(DataFragment {
+                    bytes: vec![0x00, 0x00],
+                    fixups: vec![Fixup { kind: FixupKind::Abs16Be, offset: 0, target: Expr::Sym("End".into()) }],
+                    span: sp(),
+                }),
+            ],
+            placement: sigil_ir::SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
+            bank: None,
+            space: sigil_ir::AddressSpace::Image,
+            equ_syms: vec![],
+        };
+        let code = Section {
+            name: "code".into(),
+            cpu: Cpu::M68000,
+            vma_base: None,
+            lma: 0,
+            labels: vec![],
+            fragments: vec![relax_move("End"), relax_move("Hi")],
+            placement: sigil_ir::SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
+            bank: None,
+            space: sigil_ir::AddressSpace::Image,
+            equ_syms: vec![equ(
+                "Hi",
+                Expr::Binary { op: BinOp::Shr, lhs: Box::new(Expr::Sym("End".into())), rhs: Box::new(Expr::Int(17)) },
+            )],
+        };
+        let out = resolve_layout(&[ram, code], &SymbolTable::new(), true).unwrap();
+        let linked = crate::link(&out, &SymbolTable::new()).unwrap();
+        // bra.s from the disp byte at $11: 0 - ($11 + 1) = -$12.
+        assert_eq!(linked.section("ram").unwrap().bytes[0x1_0010..], [0x60, 0xEE, 0x00, 0x12]);
+        assert_eq!(linked.section("code").unwrap().bytes, vec![0x31, 0xC0, 0x00, 0x12, 0x31, 0xC0, 0x00, 0x00]);
     }
 
     #[test]

@@ -283,6 +283,17 @@ impl Section {
         self.vma_base.unwrap_or(self.lma)
     }
 
+    /// The VMA of `offset` bytes into this section: [`Self::vma_origin`] plus
+    /// `offset`, modulo 2^32. A phased origin near the top of the space (the
+    /// 68k RAM aliases, `phase $FFFF0000`) runs past it at its closing label,
+    /// and asl and the AS front end's own `here()` both take that address as
+    /// the 32-bit sum (s1disasm's `v_ram_end` is 0). Every table and site VMA
+    /// the linker derives from a section origin is spelled through this, so
+    /// relaxation and the final link see one address for one label.
+    pub fn vma_at(&self, offset: u32) -> u32 {
+        self.vma_origin().wrapping_add(offset)
+    }
+
     /// The shared cursor-replay skeleton behind `vma_len`/`placement_span`
     /// (this file) and `final_size` (sigil-link's `relax.rs`): walk
     /// `self.fragments` with a write cursor, `Org { target, .. }` SEEKS the

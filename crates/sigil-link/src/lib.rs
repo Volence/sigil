@@ -68,11 +68,10 @@ pub fn link(sections: &[Section], stubs: &SymbolTable) -> Result<LinkedImage, Ve
     let mut diags: Vec<Diagnostic> = Vec::new();
 
     // Pass 1: build the symbol table — stubs first, then each section's labels
-    // at their phased VMA (vma_origin + offset).
+    // at their phased VMA (`Section::vma_at`).
     let mut syms = stubs.clone();
     let mut defined_here: std::collections::HashMap<String, String> = std::collections::HashMap::new();
     for sec in sections {
-        let origin = sec.vma_origin();
         for label in &sec.labels {
             if let Some(prev) = defined_here.insert(label.name.clone(), sec.name.clone()) {
                 diags.push(diag(
@@ -85,7 +84,7 @@ pub fn link(sections: &[Section], stubs: &SymbolTable) -> Result<LinkedImage, Ve
                     Span { source: sigil_span::SourceId(0), start: 0, end: 0 },
                 ));
             }
-            syms.define(&label.name, SymbolValue::Int((origin + label.offset) as i64));
+            syms.define(&label.name, SymbolValue::Int(sec.vma_at(label.offset) as i64));
         }
     }
 
@@ -188,7 +187,6 @@ pub fn link(sections: &[Section], stubs: &SymbolTable) -> Result<LinkedImage, Ve
     let mut linked = Vec::new();
     for sec in sections {
         let mut bytes = sec.image_bytes();
-        let origin = sec.vma_origin();
 
         // Walk fragments to find each Data fragment's byte offset within the
         // section image, so fixup offsets and site VMAs are correct. This walk
@@ -218,7 +216,7 @@ pub fn link(sections: &[Section], stubs: &SymbolTable) -> Result<LinkedImage, Ve
                             continue;
                         }
                         let site_abs = frag_img_off + fx.offset; // offset within section image
-                        let site_vma = origin + site_abs;
+                        let site_vma = sec.vma_at(site_abs);
                         apply_fixup(&mut bytes, site_abs, site_vma, fx, &syms, sec.name.as_str(), d.span, &mut diags);
                     }
                     frag_img_off += d.bytes.len() as u32;
@@ -255,7 +253,7 @@ fn diag(message: String, span: Span) -> Diagnostic {
 }
 
 /// Build the post-relaxation symbol table (D-H.6): `stubs` plus every section's
-/// labels at their phased VMA (`vma_origin + offset`) — IDENTICAL to `link()`'s
+/// labels at their phased VMA (`Section::vma_at`) — IDENTICAL to `link()`'s
 /// Pass-1 table. `sections` must already be `resolve_layout`-resolved (label
 /// offsets shifted to their final layout), so the values the deferred link
 /// assertions fold against are the SAME addresses `link()` resolved fixups
@@ -265,9 +263,8 @@ fn diag(message: String, span: Span) -> Diagnostic {
 fn build_symbol_table(sections: &[Section], stubs: &SymbolTable) -> SymbolTable {
     let mut syms = stubs.clone();
     for sec in sections {
-        let origin = sec.vma_origin();
         for label in &sec.labels {
-            syms.define(&label.name, SymbolValue::Int((origin + label.offset) as i64));
+            syms.define(&label.name, SymbolValue::Int(sec.vma_at(label.offset) as i64));
         }
     }
     // Task B3 (seam re-eval): also seed `equ_syms` — mirrors `link()`'s own
