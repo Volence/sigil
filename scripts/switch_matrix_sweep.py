@@ -716,6 +716,37 @@ def sigil_warnings(text):
     return texts, own, locs
 
 
+def diagnostic_parity(rows):
+    """Diagnostic parity over every leg where BOTH toolchains ran on the SAME
+    source. Returns (legs compared, {(corpus, key): legs}, {(corpus, pairing):
+    [legs, locations]}).
+
+    A leg one toolchain refused proves nothing about what the other would have
+    said, so it is excluded rather than counted as silence. The end-to-end
+    control leg (`control`) is excluded too: it edits the source AFTER the
+    reference build on purpose, so asl and sigil were handed different
+    programs and a diagnostic only one of them raises there is the control
+    working, not a parity gap. Measured: on the first cross run with the
+    alignment warning, that leg flipped `gameRevision` 1 to 0 after asl built,
+    and sigil correctly warned at s2.asm(30438) on the revision-0 source asl
+    never saw."""
+    gaps, pairs, both = {}, {}, 0
+    for r in rows:
+        if not (r.get("lua_wrote") and r.get("sigil_wrote")) or r.get("control"):
+            continue
+        both += 1
+        c = r["corpus"]
+        for key in warning_parity_keys(r):
+            gaps[(c, key)] = gaps.get((c, key), 0) + 1
+        for code, locs in sorted(r.get("asl_coded_locs", {}).items()):
+            if locs == r.get("sig_counterpart_locs", {}).get(code, set()):
+                p = pairs.setdefault((c, "asl#%s = %s" % (
+                    code, CODED_COUNTERPARTS[code])), [0, set()])
+                p[0] += 1
+                p[1] |= locs
+    return both, gaps, pairs
+
+
 def warning_parity_keys(r):
     """The warning-parity keys one leg where both toolchains ran contributes.
 
@@ -1132,6 +1163,27 @@ def self_test(scratch, log):
     ]
     pair_bad = [(name, want, got) for name, a_t, s_t, want in pair_cases
                 for got in [keys(a_t, s_t)] if got != want]
+    # Row level: a same-source leg where both warn at the same line is a
+    # pairing and no key; the end-to-end control leg, where sigil warns on
+    # source asl never saw, is not compared at all; a same-source leg where
+    # only sigil warns is still a key.
+    def row(tag, a_t, s_t, **extra):
+        c, t, l = asl_warnings(a_t)
+        s_t2, s_o, s_l = sigil_warnings(s_t)
+        return dict(tag=tag, corpus="s2disasm", lua_wrote=True, sigil_wrote=True,
+                    asl_coded=c, asl_text=t, asl_coded_locs=l, sig_text=s_t2,
+                    sig_own=s_o, sig_counterpart_locs=s_l, **extra)
+    sig180 = "s2.asm(30438):2: " + odd
+    n_both, row_gaps, row_pairs = diagnostic_parity([
+        row("paired", asl180, sig180),
+        row("CONTROL-divergent-source", "", sig180, control=True),
+    ])
+    rows_ok = (n_both == 1 and row_gaps == {}
+               and set(row_pairs) == {("s2disasm", "asl#180 = [as.odd-address]")})
+    _, row_gaps2, _ = diagnostic_parity([row("sigil-only", "", sig180)])
+    rows_ok = rows_ok and set(row_gaps2) == {("s2disasm", "sigil-only:[as.odd-address]")}
+    if not rows_ok:
+        pair_bad.append(("row level", (n_both, row_gaps, row_pairs), row_gaps2))
     c8 = shapes and not pair_bad
     log("CONTROL C8 warning-normaliser: %s"
         % ("PASSED, the source warning both toolchains fire normalises to one "
@@ -1731,25 +1783,7 @@ def main():
         failures.append("unreadable-domain acknowledgements are stale: "
                         "found-not-acknowledged=%s acknowledged-not-found=%s"
                         % (sorted(got_keys - ack_keys), sorted(ack_keys - got_keys)))
-    # Diagnostic parity, measured over every leg where BOTH toolchains ran. A
-    # leg one of them refused proves nothing about what the other would have
-    # said, so those are excluded rather than counted as silence.
-    gaps = {}
-    parity_pairs = {}
-    both = 0
-    for r in all_rows:
-        if not (r.get("lua_wrote") and r.get("sigil_wrote")):
-            continue
-        both += 1
-        c = r["corpus"]
-        for key in warning_parity_keys(r):
-            gaps[(c, key)] = gaps.get((c, key), 0) + 1
-        for code, locs in sorted(r.get("asl_coded_locs", {}).items()):
-            if locs == r.get("sig_counterpart_locs", {}).get(code, set()):
-                pairs = parity_pairs.setdefault((c, "asl#%s = %s" % (
-                    code, CODED_COUNTERPARTS[code])), [0, set()])
-                pairs[0] += 1
-                pairs[1] |= locs
+    both, gaps, parity_pairs = diagnostic_parity(all_rows)
     log("RECONCILE diagnostics: %d leg(s) where both toolchains ran, %d "
         "warning-parity key(s) seen, %d acknowledged"
         % (both, len(gaps), len(ACK_WARNING_GAP)))
