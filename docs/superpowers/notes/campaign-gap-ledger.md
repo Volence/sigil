@@ -5469,6 +5469,23 @@ run) reads as a regression in whatever branch is checked out. **Kill:** make the
 `origin.wrapping_add(...)`, with the reason in a comment naming the phased RAM/foreign-space origins
 that reach it, and one dev-profile unit test over a high origin that panics today.
 
+**CLOSED 2026-09-17** on `parcel/relax-u32-wrapping-add`. Reproduced first: the dev-profile row
+panicked at `relax.rs:1084:59`, reached by s1disasm's `v_ram_end` (origin `$FFFF0000`, offset
+`$10000`). **Wrap was chosen, not widen or saturate**, because every other reader already takes that
+address modulo 2^32: `link()`'s final tables (the same u32 sum, wrapping in release), the AS front
+end's `here()`, and asl, which gives `v_ram_end` the value 0 (s1disasm's `if * > 0` guard after it
+relies on that). The 2026-09-07 saturating fix (`23d76c8d`) is a different domain: an LMA cursor past
+the top must stay there for `check_image_bounds` to name it. The rule has one spelling,
+`Section::vma_at` (sigil-ir), and the class is routed through it: the relaxation label table,
+`frag_start_vma` (its free `origin` parameter removed), `link()`'s label table and fixup site VMA,
+and `build_symbol_table`. Byte-neutral: release had no overflow checks, so its sums already wrapped.
+Test: `relax::tests::a_phased_section_running_past_the_top_of_the_address_space_wraps_to_zero`,
+red under the unfixed sum (panic) and under a saturating sum (bytes). Left open, not panics: the
+ladder reach test measures `frag_start as i64 + offset` (widened) where `link()` wraps the site, which
+disagrees only for an instruction straddling 2^32; and a pc-relative branch from a wrapped low site
+to a `$FFFFxxxx` target measures in unsigned space where asl sign-extends. `blob.rs`'s run
+`sec.lma + cursor` sums are the LMA domain and were not examined for reachability.
+
 ### 2026-09-16, `SWITCH-MATRIX-SWEEP`: the sweep is a script, not a gate
 
 `scripts/switch_matrix_sweep.py` derives every build option both corpora declare, builds every arm
