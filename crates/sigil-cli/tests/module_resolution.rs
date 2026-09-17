@@ -2069,3 +2069,192 @@ fn private_equ_is_not_importable() {
         "stderr was: {stderr}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Declared struct sizes are checked in every module the build lowers (d-32).
+//
+// A struct that declares `(size: N)` is laid out and checked when its module is
+// lowered, whether or not anything forces its layout. A module outside the
+// entry's `use` closure is never lowered, so its declarations stay unchecked.
+// Each arm uses the same 12-byte struct with a wrong `(size: 99)`; the arm
+// letters match `scripts/probe_struct_size_closure.sh`.
+// ---------------------------------------------------------------------------
+
+const BAD_SST: &str = "pub struct Sst (size: 99) { id: u16, x_pos: u16, sst_custom: [u8; 8] }\n";
+const SST_HEADLINE: &str = "struct Sst: declared size 99 but fields total 12";
+
+/// Run `sigil emp <entry> --root <root>`; returns (success, stderr).
+fn emp_build(root: &std::path::Path, entry: &str) -> (bool, String) {
+    let out = Command::new(env!("CARGO_BIN_EXE_sigil"))
+        .args([
+            "emp",
+            root.join(entry).to_str().unwrap(),
+            "--root",
+            root.to_str().unwrap(),
+            "-o",
+            root.join("out.bin").to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    (out.status.success(), String::from_utf8_lossy(&out.stderr).into_owned())
+}
+
+/// The build failed, and the size-mismatch block appears exactly once, anchored
+/// in `home` (the declaring file).
+fn assert_size_fires_once(arm: &str, ok: bool, stderr: &str, home: &str) {
+    assert!(!ok, "arm {arm}: a wrong declared size must fail the build, stderr: {stderr}");
+    let lines: Vec<&str> = stderr.lines().filter(|l| l.contains(SST_HEADLINE)).collect();
+    assert_eq!(lines.len(), 1, "arm {arm}: the size diagnostic must appear exactly once, stderr: {stderr}");
+    assert!(lines[0].contains(home), "arm {arm}: anchor in {home}, got: {}", lines[0]);
+}
+
+#[test]
+fn declared_size_checked_behind_blank_import_arm_c() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    write(root, "lib/types.emp", &format!("module lib.types\n{BAD_SST}"));
+    write(root, "main.emp", "module main\nuse lib.types._\npub data D: [u8; 1] = [$11]\n");
+    let (ok, stderr) = emp_build(root, "main.emp");
+    assert_size_fires_once("C", ok, &stderr, "types.emp");
+}
+
+#[test]
+fn declared_size_checked_in_module_imported_for_another_name_arm_d() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    write(root, "lib/types.emp", &format!("module lib.types\npub const Marker: u8 = $EE\n{BAD_SST}"));
+    write(root, "main.emp", "module main\nuse lib.types.{Marker}\npub data D: [u8; 1] = [Marker]\n");
+    let (ok, stderr) = emp_build(root, "main.emp");
+    assert_size_fires_once("D", ok, &stderr, "types.emp");
+}
+
+#[test]
+fn declared_size_checked_when_imported_by_name_and_unused_arm_e() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    write(root, "lib/types.emp", &format!("module lib.types\n{BAD_SST}"));
+    write(root, "main.emp", "module main\nuse lib.types.{Sst}\npub data D: [u8; 1] = [$11]\n");
+    let (ok, stderr) = emp_build(root, "main.emp");
+    assert_size_fires_once("E", ok, &stderr, "types.emp");
+}
+
+#[test]
+fn declared_size_checked_through_an_intermediary_import_arm_j() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    write(root, "lib/types.emp", &format!("module lib.types\n{BAD_SST}"));
+    write(root, "lib/api.emp", "module lib.api\nuse lib.types.{Sst}\npub const AK: u8 = 1\n");
+    write(root, "main.emp", "module main\nuse lib.api.{AK}\npub data D: [u8; 1] = [AK]\n");
+    let (ok, stderr) = emp_build(root, "main.emp");
+    assert_size_fires_once("J", ok, &stderr, "types.emp");
+}
+
+#[test]
+fn declared_size_checked_in_the_entry_module_itself_arm_l() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    write(root, "main.emp", &format!("module main\n{BAD_SST}pub data D: [u8; 1] = [$11]\n"));
+    let (ok, stderr) = emp_build(root, "main.emp");
+    assert_size_fires_once("L", ok, &stderr, "main.emp");
+}
+
+/// Control for L: the entry both declares and dereferences the struct, so the
+/// item walk forces the layout AND the declared-size pass visits it. Once.
+#[test]
+fn declared_size_forced_and_walked_reports_once_arm_m() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    write(
+        root,
+        "main.emp",
+        &format!(
+            "module main\n{BAD_SST}pub data D: [u8; 1] = [$11]\n\
+             proc tick (a0: *Sst) {{\n    move.w x_pos(a0), d0\n    rts\n}}\n"
+        ),
+    );
+    let (ok, stderr) = emp_build(root, "main.emp");
+    assert_size_fires_once("M", ok, &stderr, "main.emp");
+}
+
+/// Control for the cross-module case: a consumer dereferences the struct and its
+/// home module is lowered too. Once, anchored in the home file.
+#[test]
+fn declared_size_forced_by_consumer_and_walked_reports_once_arm_b() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    write(root, "lib/types.emp", &format!("module lib.types\n{BAD_SST}"));
+    write(
+        root,
+        "main.emp",
+        "module main\nuse lib.types.{Sst}\nproc tick (a0: *Sst) {\n    move.w x_pos(a0), d0\n    rts\n}\n",
+    );
+    let (ok, stderr) = emp_build(root, "main.emp");
+    assert_size_fires_once("B", ok, &stderr, "types.emp");
+}
+
+/// A module outside the entry's `use` closure is never lowered, so its declared
+/// sizes stay unchecked. Arm C above is the same file reached by a blank import,
+/// which fires.
+#[test]
+fn declared_size_outside_the_use_closure_stays_unchecked_arm_a() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    write(root, "lib/types.emp", &format!("module lib.types\n{BAD_SST}"));
+    write(root, "main.emp", "module main\nproc tick (a0: *u8) {\n    move.w #1, d0\n    rts\n}\n");
+    let (ok, stderr) = emp_build(root, "main.emp");
+    assert!(ok, "arm A: an unreached module must not fail the build, stderr: {stderr}");
+    assert!(!stderr.contains("declared size"), "arm A: no size diagnostic expected, stderr: {stderr}");
+}
+
+/// Two entries under one root; the built one does not reach the struct's module.
+/// Same class as arm A: unchecked for this entry, checked for the other.
+#[test]
+fn declared_size_reached_only_by_the_other_entry_arm_i() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    write(root, "lib/types.emp", &format!("module lib.types\n{BAD_SST}"));
+    write(
+        root,
+        "debug.emp",
+        "module debug\nuse lib.types.{Sst}\nproc dtick (a0: *Sst) {\n    move.w x_pos(a0), d0\n    rts\n}\n",
+    );
+    write(root, "release.emp", "module release\npub data D: [u8; 1] = [$11]\n");
+    let (ok, stderr) = emp_build(root, "release.emp");
+    assert!(ok, "arm I: the release entry never reaches lib.types, stderr: {stderr}");
+    assert!(!stderr.contains("declared size"), "arm I: no size diagnostic expected, stderr: {stderr}");
+    let (ok, stderr) = emp_build(root, "debug.emp");
+    assert_size_fires_once("I (debug entry)", ok, &stderr, "types.emp");
+}
+
+/// An importer holds a CLONE of an imported struct, evaluated in the importer's
+/// scope, where the struct's own field types need not be in scope (`main` never
+/// imports `Inner`). The declared-size pass checks a struct only in its home
+/// module, so a correct struct imported this way still builds, and a wrong one
+/// reports once, from its home file.
+#[test]
+fn declared_size_is_checked_in_the_home_module_not_in_an_importer() {
+    for (declared, expect_ok) in [(4, true), (5, false)] {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        write(root, "lib/a.emp", "module lib.a\npub struct Inner { ix: u16 }\n");
+        write(
+            root,
+            "lib/b.emp",
+            &format!(
+                "module lib.b\nuse lib.a.{{Inner}}\npub struct Outer (size: {declared}) {{ o_in: Inner, o_y: u16 }}\n"
+            ),
+        );
+        write(root, "main.emp", "module main\nuse lib.b.{Outer}\npub data D: [u8; 1] = [$11]\n");
+        let (ok, stderr) = emp_build(root, "main.emp");
+        assert_eq!(ok, expect_ok, "Outer (size: {declared}), stderr: {stderr}");
+        assert!(!stderr.contains("unknown type"), "no importer-scope resolution failure, stderr: {stderr}");
+        if !expect_ok {
+            let lines: Vec<&str> = stderr
+                .lines()
+                .filter(|l| l.contains("struct Outer: declared size 5 but fields total 4"))
+                .collect();
+            assert_eq!(lines.len(), 1, "exactly once, stderr: {stderr}");
+            assert!(lines[0].contains("b.emp"), "anchor in lib/b.emp, got: {}", lines[0]);
+        }
+    }
+}
