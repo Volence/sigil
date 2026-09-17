@@ -542,6 +542,17 @@ taking the board at its word would have briefed an agent to add a warning with n
 one is missing. Re-derive against `asl` before working it, under this file's own opening rule that a
 stale open row does not read as stale, it reads as work.
 
+**Correction, 2026-09-17: the premise WAS in the tree; it was found by content, not by this row's id.**
+"Nothing in the tree records the measurement behind this" is wrong. The measurement is
+`docs/superpowers/notes/2026-09-16-switch-matrix-sweep.md`, section "Diagnostic parity: sigil is silent
+where asl warns, once", commit `6348b831`: asl's `warning #180: address is not properly aligned` on
+`move.w (1).w,d0` at `s2.asm:30438` over every `gameRevision=0` leg, sigil silent, bytes agreeing; the
+option is `gameRevision`, the other language is `.emp` (`[layout.odd-field]`), and the gap ledger row
+"sigil has no odd-address lint on the AS route" carried it. None of those name `ASL-WARN-PARITY-ALIGN`,
+which is why a search by row id found nothing. Worked on `parcel/as-warn-odd-address-align`: asl's rule
+re-derived by 51 probes, `[as.odd-address]` implemented on the AS front end, notes and probe table in
+`docs/superpowers/notes/2026-09-17-asl-warn-180/asl-warn-180.md`.
+
 ## S3K-FOUR-CLASSES: PREMISE UNVERIFIED, and its count collides with a real one
 
 - state at archive: `open`  size: `M`  project: `-`

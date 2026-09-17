@@ -5595,6 +5595,13 @@ sweep's warning-parity reconciliation is asserted equal in both directions, so a
 the `("s2disasm", "asl#180")` entry in `scripts/switch_matrix_sweep.py` stale and the sweep will say
 so, which is the intended way for that entry to die.
 
+**CLOSED 2026-09-17** on `parcel/as-warn-odd-address-align` (`ASL-WARN-PARITY-ALIGN`): the AS front end
+raises `[as.odd-address]` wherever the reference asl raises `#180` on the 42 probes both assemble, and
+nowhere else; the entry left `ACK_WARNING_GAP` and the sweep now pairs the two by location. asl's rule
+is wider than this row said (an instruction starting at an odd address fires too). Probes, rule and the
+undecided relocating half: `docs/superpowers/notes/2026-09-17-asl-warn-180/asl-warn-180.md`, and the
+row `AS-ODD-ADDRESS-RELOCATING-UNDECIDED` below.
+
 ### 2026-09-16, `SWITCH-MATRIX-SWEEP`: the corpora's own Lua build settings are a sweep axis nobody sweeps
 
 `s1disasm/build.lua` and `s2disasm/build.lua` each carry a local the sweep does not touch:
@@ -6079,3 +6086,25 @@ unreadable-domain acknowledgements as stale.** The reconciliation compares every
 key, not only keys of corpora the run measured. Harmless for the nightly (it always names both) and
 pre-existing for full runs. **Kill:** scope the acknowledgement sets to the corpora in the run, with
 a control that a subset run is not red on the absent corpus's entries.
+
+### 2026-09-17, `AS-ODD-ADDRESS-RELOCATING-UNDECIDED`: the alignment warning is not decided where addresses are provisional
+
+`[as.odd-address]` (asl `#180`, `docs/superpowers/notes/2026-09-17-asl-warn-180/asl-warn-180.md`) is
+decided by the AS front end from values it holds while assembling. On the deferral pass, which every
+relocating assembly returns (every chained aeon build) and a pinned build with a deferred cross-seam
+`jsr`/`jmp` reaches, section-label references stay symbolic because sections still move after
+assembly, so the parity of a label-derived or `$`-derived address, and of the location counter itself,
+is not known there. sigil does not guess: on that pass it skips the instruction-start rule and every
+operand whose address references a label or `$`. Constant addresses are still decided.
+
+**Uncovered probed cases, on that path only:** p13a and p23a/b/d/e/f/h/i/j (instruction at an odd
+address), p06 and p30 (odd label as an absolute operand), p19 (`jmp`/`jsr` to an odd label), p20 (a
+`phase` label), p27 (`*+1`). On the pinned, poison-free path `sigil <input.asm>` takes on the
+disassemblies, every probed case is decided. Measured on `.aeon-sigil-ref` `ec640bcf`: 0 firings on all
+seven shipped shapes, which counts the decided half only.
+
+**Kill:** decide these after placement, where the linker knows every final address: carry each
+candidate (instruction start, or an operand's address expression plus the instruction's access kind) as
+a post-link check next to the existing `LinkAssert` machinery, and emit the same `[as.odd-address]` text
+from there. Pinned by `the_relocating_path_decides_constants_and_leaves_labels_undecided` in
+`crates/sigil-frontend-as/tests/as_odd_address.rs`, which must be inverted when this closes.
