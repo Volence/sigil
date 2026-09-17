@@ -996,6 +996,36 @@ firing somewhere (delete the line and say so). Two ids carry `unpinned` director
 prefixes whose populations were measured to grow with the corpus; each prefix must carry
 its measurement, and the firings it swallows are printed on every run.
 
+## The switch-matrix sweep lane
+
+`scripts/nightly_switch_sweep.sh`, fired by `sigil-switch-sweep.timer` at 02:17 daily (units in
+`scripts/systemd/`, installed by copying, like the two lanes above). It runs
+`scripts/switch_matrix_sweep.py --cross`: every arm of every build option Sonic 1 and Sonic 2
+declare, built by the corpus's own `build.lua` and by sigil, compared whole-image, plus every
+corner of the option space. It is not a cargo test because it needs `lua` and both corpora.
+
+- **The option set is derived, never listed.** `.asm` ASSEMBLY OPTIONS by their `;...|` prose, and
+  `build.lua`'s `-- Settings --` block (a boolean local sweeps both values; any other literal is
+  UNREADABLE and must be acknowledged as `build.lua:<name>`). A toggle outside either place is a loud
+  failure. The verdict line prints the option, build-script-setting and corner counts per corpus.
+- **Three named commits.** sigil: a detached worktree of `origin/master` after a fetch at
+  `<suite>/.sigil-switch-sweep`, built into `<suite>/.sigil-switch-sweep-target`, and the binary's
+  own `revision:` must equal that SHA. Corpora: their committed `HEAD`, read by `git archive`, never
+  the working tree; the verdict prints each SHA beside the count of uncommitted entries it did not
+  measure. `SIGIL_SWITCH_SWEEP_REF`, `_S1_REF`, `_S2_REF`, `_HOME` and `_STATE` are for hand runs and
+  proofs; the timer sets none.
+- **Exit 0 green, 1 a finding, 2 could not run**, both nonzero notify. 2 includes `lua` missing, a
+  corpus or ref missing, a sigil build failure, a sweep abort, crash (an uncaught exception is 2, not
+  1), timeout or kill, and any run whose per-leg markers do not reconcile: `LEG_START` against
+  `LEG_REPORTED` + `LEG_ERROR`, both against the sweep's own launched/reported line, all against
+  the plan lines (baseline + arms + each end-to-end control + every corner), and one population
+  line, one cross product and one C7 verdict per corpus.
+- **A red is read in `~/.local/state/sigil-switch-sweep/sweep.log`**, the whole sweep output; the
+  `SWEEP FAILED` block names each reason. An `ACK_*` table entry is how an adjudicated outcome is
+  booked, and every table is asserted equal to the run in both directions, so a stale entry is also
+  red. Current acknowledgements and what would retire them: the tables' own comments, and the
+  `SWEEP-NIGHTLY` ledger row.
+
 ## Worktree and environment quirks
 
 - **Worktrees are agent-isolated but the registry is repo-global.** Every session's
