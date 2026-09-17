@@ -1,0 +1,13 @@
+	cpu 68000
+	padding off
+	org 0
+	move.w	#1,(1).w
+	addi.w	#1,(1).w
+	subi.l	#1,(1).w
+	andi.w	#1,(1).w
+	ori.w	#1,(1).w
+	eori.w	#1,(1).w
+	cmpi.l	#0,(1).w
+	cmpi.w	#0,(2).w
+	adda.w	(1).w,a0
+	cmpa.l	(1).w,a0

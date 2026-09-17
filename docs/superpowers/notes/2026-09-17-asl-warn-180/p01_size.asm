@@ -1,0 +1,9 @@
+	cpu 68000
+	padding off
+	org 0
+	move.b	(1).w,d0
+	move.w	(1).w,d0
+	move.l	(1).w,d0
+	move.b	(2).w,d0
+	move.w	(2).w,d0
+	move.l	(2).w,d0

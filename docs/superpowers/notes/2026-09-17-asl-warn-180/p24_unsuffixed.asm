@@ -1,0 +1,13 @@
+	cpu 68000
+	padding off
+	org 0
+	asl	(1).w
+	move	(1).w,ccr
+	jmp	1
+	jsr	1
+	lea	1,a0
+	pea	1
+	movem.w	1,d0-d1
+	movem.l	d0,(1)
+	jmp	(1)
+	tas	1

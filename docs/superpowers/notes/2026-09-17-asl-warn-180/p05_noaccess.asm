@@ -1,0 +1,11 @@
+	cpu 68000
+	padding off
+	org 0
+	lea	(1).w,a0
+	pea	(1).w
+	jmp	(1).w
+	jsr	(1).w
+	jmp	(1).l
+	jsr	(1).l
+	lea	(1).l,a0
+	pea	(1).l

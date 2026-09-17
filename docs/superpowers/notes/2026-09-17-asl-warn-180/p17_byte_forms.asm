@@ -1,0 +1,9 @@
+	cpu 68000
+	padding off
+	org 0
+	cmpi.b	#0,(1).w
+	addq.b	#1,(1).w
+	move.b	(1).w,(3).w
+	add.b	(1).w,d0
+	subi.b	#1,(1).w
+	move.b	#1,(1).w

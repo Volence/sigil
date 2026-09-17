@@ -1,0 +1,12 @@
+	cpu 68000
+	padding off
+	org 0
+	move.w	(1).l,d0
+	move.w	($FF0001).l,d0
+	move.w	(1),d0
+	move.w	1,d0
+	move.w	$FF0001,d0
+	move.b	$FF0001,d0
+	move.w	(-1).w,d0
+	move.w	($FFFFFFFF).w,d0
+	move.w	($FF0002).l,d0

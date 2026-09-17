@@ -1,0 +1,7 @@
+	cpu 68000
+	padding off
+	supmode on
+	org 0
+	move.w	(1).w,d0
+	move.l	d0,(3).w
+	jmp	(1).w
