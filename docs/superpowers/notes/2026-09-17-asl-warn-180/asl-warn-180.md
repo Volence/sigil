@@ -123,5 +123,21 @@ the path `sigil <input.asm>` takes on the disassemblies.
   pairs with `[as.odd-address]` by location (`CODED_COUNTERPARTS`, `warning_parity_keys`), and
   `EXPECT_WARNING_PARITY` asserts the pairing is observed. Control C8 keeps its fixture (the real
   `s2.asm(30438)` asl line) and gains sigil's rendering of it plus four pairing failure cases.
+- **The first `--cross` run with the warning went red, and the cause was the sweep, not the rule.**
+  Run at sigil `0446c80b` (script md5 `e8dc48d3`, identical at `d1a163f7`): 808 legs launched and
+  reported, `SWEEP FAILED` on one key, `("s2disasm", "sigil-only:[as.odd-address]")` on 1 leg. Per
+  leg, with the sweep's own parsers over its logs: 34 legs name `s2.asm(30438)`; 33 agree location
+  for location (17 both-built, the pairing the run reported); 32 are asl-only because sigil refused
+  the leg's `-z saxman-optimised` before assembling, which parity already excludes; and the one
+  both-built divergence is `s2disasm-CONTROL-divergent-source`, the end-to-end control that flips
+  `gameRevision` 1 to 0 AFTER the asl reference build. asl built revision 1 (no warning), sigil built
+  revision 0 and warned, correctly. That leg hands the toolchains different programs by design, so it
+  is now excluded from parity (`diagnostic_parity`, rows marked `control`), with C8 row-level cases
+  that go red if the exclusion or the pairing table is removed. Nothing was added to
+  `ACK_WARNING_GAP`.
+- **Re-run at `fc081ef0`** (`--cross`, sigil and script built and copied at that commit, 14:27Z to
+  14:48Z): 808 legs launched and reported, `SWEEP PASSED`. 347 legs where both ran (349 before, less
+  the two corpora's control legs); one gap key, the standing `shared` residual on 55 Sonic 2 legs
+  (56 before, less the control); pairing `asl#180 = [as.odd-address]` on 17 legs at `s2.asm(30438)`.
 - Warn-tier gates on aeon (`sigil-cli/tests/warn_tier_corpus.rs`): measured 0 firings on all seven
   shipped shapes of `.aeon-sigil-ref` at `ec640bcf`, so no baseline moves.
