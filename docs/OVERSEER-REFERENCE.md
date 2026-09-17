@@ -1153,9 +1153,14 @@ list is a fact about bookkeeping, not about who depends on it.
 `~/sonic_hacks/.sigil-outgoing-1532b72f/` and `~/sonic_hacks/.aeon-control-roms-0dc0ff11/` (the latter is
 AEON's, held on this lane's behalf), plus the pin worktrees `~/sonic_hacks/.sigil-pin-700177b1` and
 `~/sonic_hacks/.sigil-pin-1532b72f`. **Ends when aeon's step 0 is through E1 and E2 and its next build cycle
-runs clean, and then only on the hub's ruling — ask, do not infer.** Full reasons at *THE INSTALLED PAIR SINCE
+runs clean, and then only on the hub's ruling — ask, do not infer.** Full reasons at *THE INSTALLED PAIR FROM
 2026-09-15T23:52:38Z* below; the short one is that the outgoing pair is the recorded provenance for two days of
 aeon builds, so deleting it breaks no build and destroys the only explanation for why two ROMs differ.
+**Added 2026-09-17, same reasons, not yet covered by a hub retention ruling so ask the hub before retiring
+either:** `~/sonic_hacks/.sigil-outgoing-324d85d6/` (the 700177b1 pair, provenance for aeon builds from
+2026-09-15 23:52Z to 2026-09-17 08:11Z) and `~/sonic_hacks/.sigil-pin-d7e6aa15`, which the INSTALLED binary
+reads at run time, so deleting it breaks every build against the shared path. See *THE INSTALLED PAIR SINCE
+2026-09-17T08:11:55Z* below.
 
 **THE PINNED ASSEMBLER `~/sonic_hacks/.pinned/`.** A second standing artifact, requested
 permanently by the AEON lane 2026-09-04: the sigil binary at `0a58f2ec`, copied out of the
@@ -1200,8 +1205,27 @@ aeon build. Deleting the tree breaks placement, not only the `source:` field. De
 `docs/superpowers/notes/2026-09-11-aeon-source-digest-ask.md`, second amendment.
 **`.sigil-ls12-pin` is released once aeon confirms it is on the new pair — ask them, not this file.**
 
-**THE INSTALLED PAIR SINCE 2026-09-15T23:52:38Z IS THE 700177b1 BUILD, and it supersedes the 1532b72f
-paragraph below.** Swapped on the hub's OPEN (granted in the same minutes, with its reason: the owner had
+**THE INSTALLED PAIR SINCE 2026-09-17T08:11:55Z IS THE d7e6aa15 BUILD, and it supersedes the 700177b1
+paragraph below.** Swapped inside the window the hub opened (empyrean row `SIGIL-BINARY-REFRESH-WINDOW`),
+routed to this session after the requesting one was cleared; the hub had asked every consumer (oracle and aurora
+never use the path, aeon clear at its master `e917c771` with no agents). Outgoing md5 verified against the hub's
+figure before touching anything. Same method as below: `/proc` exe scan found 0 users of either file (the same
+scan counted 16 zsh, the positive control), outgoing pair `cp -p`'d aside first, each new file `cp -p`'d to a
+staging name in `sigil/target/release/` and `mv`'d over. Installed: `sigil` `8027e7ba7fba6ef5e3351aa3211e1520`,
+`emit_sound_blob` `5cc765c719324b47459a4d30d356324a`, built in the durable worktree
+`~/sonic_hacks/.sigil-pin-d7e6aa15` (porcelain 0; its own `target/`). The swap instant is the one in this
+heading, from `date -u` after both renames; the file mtimes are the build time. **Outgoing pair at
+`~/sonic_hacks/.sigil-outgoing-324d85d6/`** with `README-ASIDE.txt`. **Keep `.sigil-pin-d7e6aa15`** (the
+installed binary reads its size tables from it) **and `.sigil-pin-700177b1`** (the aside pair reads its tables
+from there). What this pair adds for aeon: `d-32`, a declared struct size is checked in every module a build
+lowers. **Behaviour proven, not the version string:** on a copy of `.aeon-sigil-ref` with `children.emp` line 82
+read back from disk as `pub struct SpawnDesc (size: 41) {`, the outgoing binary built sonic4 and demo at exit 0
+and the new one refused both at exit 1 with `children.emp:82:29: [Error] struct SpawnDesc: declared size 41 but
+fields total 4`; the unmutated copy builds at exit 0 on the new binary. The control ran on the pin-worktree build
+before install, and the installed md5s equal that build's.
+
+**THE INSTALLED PAIR FROM 2026-09-15T23:52:38Z TO 2026-09-17T08:11:55Z WAS THE 700177b1 BUILD, and it
+superseded the 1532b72f paragraph below.** Swapped on the hub's OPEN (granted in the same minutes, with its reason: the owner had
 just given the go for REGIONS part 2, so aeon was idle at a boundary and an hour later would not be) after
 aeon's explicit clear, which they gave firsthand and backed by verifying the outgoing md5s against the files
 on disk themselves. Method unchanged: `/proc` exe scan at 23:52:17Z found 0 users (the five cmdline hits were
