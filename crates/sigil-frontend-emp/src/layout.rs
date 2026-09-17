@@ -2746,6 +2746,60 @@ pub fn validate_overlay(
     })
 }
 
+/// Force the layout of every struct `file` itself declares with an explicit
+/// `(size: N)`, so the declared size (and the other declaration checks
+/// `layout_of_struct` runs on that struct) is verified whether or not anything in
+/// the build uses the struct. Writing the size down is how an author asks for the
+/// check; a module that is lowered at all gets it for every such struct.
+///
+/// Only the file's OWN declarations are walked. A resolve-pass synthetic file
+/// prepends clones of imported items, and a clone carries its home file's
+/// [`Span`]; a struct whose span source is not `file.module.span.source` belongs
+/// to another module, which checks it when it is lowered itself. Checking the
+/// clone here would evaluate it in the IMPORTING scope, where its own field types
+/// need not resolve. A struct shadowed by a later same-named declaration is
+/// skipped, since the evaluator's index resolves the name to the later one.
+///
+/// All structs share one evaluator, so a struct nested in another is laid out
+/// once. `defines` are seeded first, as for every other item evaluator.
+pub fn validate_declared_struct_sizes(
+    file: &ast::File,
+    defines: &[(String, i128)],
+) -> Vec<Diagnostic> {
+    let mut own: Vec<&ast::StructDecl> = Vec::new();
+    collect_sized_structs(&file.items, file.module.span.source, &mut own);
+    if own.is_empty() {
+        return Vec::new();
+    }
+    crate::eval::run_on_eval_stack(|| {
+        let mut ev = Evaluator::with_file(file);
+        ev.seed_defines(defines);
+        for decl in own {
+            let indexed = ev.structs.get(decl.name.as_str()).copied();
+            if indexed.is_some_and(|d| std::ptr::eq(d, decl)) {
+                ev.layout_of_struct(&decl.name, decl.span);
+            }
+        }
+        ev.diags
+    })
+}
+
+/// The structs in `items` (recursing into `section {}` bodies, as the evaluator's
+/// index does) that declare a `(size: N)` and whose declaration lives in `source`.
+fn collect_sized_structs<'f>(
+    items: &'f [ast::Item],
+    source: sigil_span::SourceId,
+    out: &mut Vec<&'f ast::StructDecl>,
+) {
+    for item in items {
+        match item {
+            ast::Item::Struct(s) if s.size.is_some() && s.span.source == source => out.push(s),
+            ast::Item::Section(sec) => collect_sized_structs(&sec.items, source, out),
+            _ => {}
+        }
+    }
+}
+
 /// Resolve the SST overlay `name`'s WINDOW against `file`'s own namespace (its
 /// DEFINING module), returning the binding (base struct + window offset/size) if
 /// it resolves cleanly (Plan 7 #8). Used by the resolve pass to STAMP the binding

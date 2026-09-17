@@ -37,7 +37,7 @@ use crate::ast;
 use crate::eval::eval_proc_body_lowering;
 use crate::layout::{
     eval_attr_int, eval_data_with_root_and_base, eval_dispatch_with_root, eval_offsets_with_root,
-    validate_overlay, HerePos,
+    validate_declared_struct_sizes, validate_overlay, HerePos,
 };
 use sigil_ir::backend::{Cpu, IrStreamer};
 use sigil_ir::{IrBuilder, Module};
@@ -325,9 +325,10 @@ fn lower_module_inner(
     // (Plan 7 #6). Overlay decl checks fire in EVERY evaluator that forces the
     // overlay's layout, and each per-item evaluator is fresh (own memo) — so an
     // erroring overlay that is also referenced via `sizeof`/`offsetof` in a data
-    // item would report twice (once per pass). The struct exemplar reports once
-    // only because lowering has NO always-on struct pass: its single forcing
-    // evaluator is the referencing item's. To match that once-per-compile
+    // item would report twice (once per pass). A struct forced by one item
+    // reports once: that item's evaluator is its first forcing one, and the
+    // declared-struct-size pass after the item walk adds only diagnostics not
+    // already present. To match that once-per-compile
     // behavior, `dedup_overlay_pass_diags` (end of this fn) drops later EXACT
     // copies (level+span+message) of the diagnostics collected here — exactness
     // means a genuinely distinct diagnostic can never be suppressed.
@@ -350,6 +351,10 @@ fn lower_module_inner(
     // whole-program duplicate-label detection).
     let module_id = file.module.path.segments.join(".");
     let mut here_anchor_counter: u32 = 0;
+
+    // Set when a failing `ensure_fatal` stopped the item walk, which also skips
+    // the declared-struct-size pass below (D5.3 stops the module's remaining work).
+    let mut fatal_stop = false;
 
     for (index, item) in file.items.iter().enumerate() {
         match item {
@@ -462,6 +467,7 @@ fn lower_module_inner(
                     &mut diags,
                 );
                 if !cont {
+                    fatal_stop = true;
                     break; // ensure_fatal: stop the module's remaining items (D5.3).
                 }
             }
@@ -532,6 +538,7 @@ fn lower_module_inner(
                 // Leave the named section open; the next item (or `finish`)
                 // folds its length.
                 if !cont {
+                    fatal_stop = true;
                     break; // a fatal guard inside the section stops the module (D5.3).
                 }
             }
@@ -606,6 +613,20 @@ fn lower_module_inner(
             // no deferred symbol) — the evaluator's `consts` index is where its
             // value lives; nothing to lower.
             _ => {}
+        }
+    }
+
+    // Every struct this module declares with a `(size: N)` has its layout forced,
+    // so the declared size is verified whether or not an item above used the
+    // struct. Runs after the item walk, and a diagnostic an item above already
+    // produced (same level, span and message) is not added again. Only this
+    // pass's own copies are dropped, so duplication among the items themselves
+    // is left as it was.
+    if !fatal_stop {
+        for d in validate_declared_struct_sizes(file, &opts.defines) {
+            if !diags.contains(&d) {
+                diags.push(d);
+            }
         }
     }
 

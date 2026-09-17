@@ -561,7 +561,7 @@ comptime fn epi() -> Code {
     }
 }
 newtype ScriptPc = u16
-struct S (size: $24) {
+struct S (size: $22) {
     _pad0: [u8; $20],
     resume: ScriptPc @ $20,
 }

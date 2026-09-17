@@ -5414,6 +5414,18 @@ Listed here ONLY so a later sigil probe that re-finds it can see it was routed r
 **the artifact is aeon's book, not this one**, and the general question of whether sigil should
 check such declarations at all is the owner's, filed as `d-32`.
 
+**[2026-09-17, closing note] Sigil side CLOSED by `parcel/struct-size-always`, under the owner's
+`d-32` answer `always-check`.** Every struct a lowered module declares with `(size: N)` now has
+its layout forced and its size checked whether or not anything uses it
+(`layout::validate_declared_struct_sizes`, called from `lower_module_inner`). A module outside the
+build's `use` closure is still not lowered and still not checked, per the ruling. Measured: the
+probe's silent inner-gate arms C, D, E, J and L now fail with the size diagnostic exactly once;
+A and I (outside the closure) stay silent. SpawnDesc mutated to 41 is refused by the new binary
+under `--game sonic4` and `--game demo`, at aeon `ec640bcf` and at aeon tip `83ec56d2`, while
+every shipped shape at both revisions builds byte-identical with identical stderr. The aeon-side
+`DEFERRED_WORK.md` row is aeon's to close; nothing in that tree needs a source change for this.
+Tables: `docs/superpowers/notes/2026-09-17-struct-size-always-reach.md`.
+
 ### 2026-09-16, `Z80-DRIVER-SIZE-UNDER-RUN-STAYS-SILENT`: the half of fault 2 a refusal cannot reach
 
 `SWITCH-SETTING-SILENT-ROMS` closed the direction that is checkable. `flatten_placing` now refuses a

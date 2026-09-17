@@ -265,13 +265,14 @@ fn overlay_signed_byte_array_window_rejected() {
 
 #[test]
 fn bare_window_scan_does_not_validate_unrelated_structs() {
-    // `Bad` is never referenced: its `[layout.odd-field]`-worthy layout (u16 at
-    // offset 1) must stay unvalidated, exactly as it would with no overlay in
-    // the module (struct decl checks fire only when a layout is FORCED). The
-    // bare-window candidate scan must match by AST field name, not by laying
-    // out every in-scope struct.
+    // `Bad` declares no size and is never referenced: its `[layout.odd-field]`-
+    // worthy layout (u16 at offset 1) must stay unvalidated, exactly as it would
+    // with no overlay in the module (a struct without `(size: N)` is checked only
+    // when its layout is FORCED; one that declares a size is always checked, so
+    // it would not isolate the scan). The bare-window candidate scan must match
+    // by AST field name, not by laying out every in-scope struct.
     let src = "module m\n\
-        struct Bad (size: 3) { a: u8, w: u16 }\n\
+        struct Bad { a: u8, w: u16 }\n\
         struct S (size: 9) { a: u8, win: [u8; 8] @ 1 }\n\
         vars V: win { t: u8 }\n";
     let d = msgs(src);
@@ -279,6 +280,20 @@ fn bare_window_scan_does_not_validate_unrelated_structs() {
         !d.iter().any(|m| m.contains("[layout.odd-field] struct Bad")),
         "declaring a bare-window overlay must not validate unrelated structs, got: {d:?}"
     );
+}
+
+#[test]
+fn unreferenced_struct_that_declares_a_size_is_validated_once() {
+    // The counterpart: the same unreferenced `Bad`, now declaring `(size: 3)`,
+    // is laid out by the lowered module's declared-size pass, so every layout
+    // check on it runs, the odd-field lint included, and reports exactly once.
+    let src = "module m\n\
+        struct Bad (size: 3) { a: u8, w: u16 }\n\
+        struct S (size: 9) { a: u8, win: [u8; 8] @ 1 }\n\
+        vars V: win { t: u8 }\n";
+    let d = msgs(src);
+    let hits = d.iter().filter(|m| m.contains("[layout.odd-field] struct Bad")).count();
+    assert_eq!(hits, 1, "a struct that declares a size is checked once when its module lowers, got: {d:?}");
 }
 
 // ---- offsetof on an overlay: unknown field -------------------------------
