@@ -28,14 +28,41 @@ A switch whose right-hand side mentions any identifier is DERIVED (`0|AllOptimiz
 it is not independently settable and is never flipped. It is still counted, and
 the switches it is derived FROM are swept, which is how it gets exercised.
 
+The corpus's build script is a second source of settings, and the `.asm` scan
+cannot see it by construction: `build.lua` chooses the compressor it hands to
+p2bin (and to sigil) from a Lua local. Those are derived the same way, again
+from no list of names:
+
+  L1. SETTINGS BLOCK: `build.lua`'s own `-- Settings --` ... `-- End of
+      settings --` block, located by those two comment lines. Every statement in
+      it must be a column-0 `local <name> = <literal>`; anything else in the
+      block is a loud failure rather than a setting silently skipped.
+  L2. CROSS-CHECK: every column-0 `local <name> = true|false` in EVERY `.lua`
+      file of the corpus must sit inside that block. A toggle declared anywhere
+      else is a loud failure, not a setting this sweep never reaches.
+  L3. DOMAIN FROM THE LITERAL: a boolean literal has the domain {false, true},
+      swept as 0 and 1. Any other literal (a number, a string) states no set of
+      legal values, so it is UNREADABLE and must be acknowledged in
+      ACK_UNREADABLE under the key `build.lua:<name>`, exactly like an `.asm`
+      switch whose prose enumerates nothing.
+
+A build-script setting is flipped by rewriting its Lua literal, with the same
+prove-it-applied gate, and every leg re-derives the p2bin arguments from ITS OWN
+edited `build.lua`, so sigil is handed what the stock build was handed.
+
 Every leg proves its own edit applied by printing the line before and after from
 disk and failing if they are equal, every image compare carries a planted-byte
 control, and the leg count launched is reconciled against the leg count reported.
 
 Usage:
     python3 scripts/switch_matrix_sweep.py --sigil <path to sigil> [--scratch DIR]
-                                           [--corpus NAME=PATH]... [--only TAG]...
-                                           [--cross]
+                                           [--corpus NAME=PATH[@REV]]...
+                                           [--only TAG]... [--cross] [--derive-only]
+A corpus is always read out of a COMMIT (`REV`, default `HEAD`, resolved to a
+full SHA and printed), extracted afresh by `git archive` on every run. Its
+working tree is never read, so uncommitted edits there cannot colour a result.
+`--derive-only` stops after the derivation and its acknowledgement
+reconciliation and launches no leg; it is a probe, never a sweep result.
 `--cross` additionally runs every corner of the switch space, which for these
 two corpora is 288 and 96 corners and about a quarter of an hour, and tests
 whether a refusal is caused by one setting and composes.
@@ -66,11 +93,25 @@ ACK_UNREADABLE = {
         "get added' and then names the six zones, so the corpus states a count, "
         "not a domain. Sweeping it would be sweeping a recompile of the zone "
         "tables, not a build option.",
+    ("s2disasm", "build.lua:music_buffer_address"):
+        "a number literal, and build.lua says it 'Should always match zMusicData "
+        "in s2.sounddriver.asm'. It describes where the sound driver already "
+        "put its Saxman buffer, so the only legal value is the one the driver "
+        "source fixes; it is a consistency constant, not a choice.",
+    ("s2disasm", "build.lua:music_buffer_size"):
+        "a number literal, and build.lua says it 'Should always be zStack minus "
+        "0x40'. Like music_buffer_address it restates a fact of the driver "
+        "source, so there is no second legal value to sweep.",
 }
 
 # (corpus, leg tag): an outcome other than byte agreement that is known,
 # adjudicated and booked. The value must equal the class the run computes, so an
 # acknowledgement cannot quietly cover a result that changed underneath it.
+#
+# The value is either the class alone or `(class, text)`. With `text`, the leg's
+# own diagnostic output must also contain that text: `SIGIL-DECLINED` is one class
+# for every reason sigil can refuse, and an acknowledgement of one refusal must not
+# go on covering the leg once it refuses for a neighbouring reason.
 ACK_DISAGREE = {
     # `("s1disasm", "s1disasm-FixBugs-1"): "SIGIL-DECLINED"` USED TO BE HERE and
     # is gone because the row closed, not because the leg stopped being run.
@@ -83,7 +124,8 @@ ACK_DISAGREE = {
     # this table is asserted equal to what the run finds in both directions, so
     # a stale entry is a loud failure and not a comment.
 
-    ("s2disasm", "s2disasm-fixBugs-1"): "SIGIL-DECLINED",
+    ("s2disasm", "s2disasm-fixBugs-1"):
+        ("SIGIL-DECLINED", "the size the source declares for it, is $F64"),
     # Under fixBugs the Saxman stream grows to $F88 while the source declares
     # `Size_of_Snd_driver_guess = $F64`, so every byte computed from that name
     # is short by $24. build.lua repairs the reference afterwards, reading the
@@ -91,6 +133,23 @@ ACK_DISAGREE = {
     # `amend_sound_driver_size`; sigil writes no share file and so cannot, and
     # refuses rather than write a ROM whose decompressor is told the wrong
     # length. Chosen and argued in `SWITCH-SETTING-SILENT-ROMS`, fault 2.
+
+    ("s1disasm", "s1disasm-build.lua:improved_dac_driver_compression-1"):
+        ("SIGIL-DECLINED", "`kosinski-optimised` is a p2bin format sigil does "
+                           "not implement"),
+    ("s2disasm", "s2disasm-build.lua:improved_sound_driver_compression-1"):
+        ("SIGIL-DECLINED", "`saxman-optimised` is a p2bin format sigil does "
+                           "not implement"),
+    # Each corpus's build.lua picks its sound-driver compressor from its own
+    # `improved_*_compression` local. At `true` the stock build compresses with
+    # p2bin's `kosinski-optimised` / `saxman-optimised` and its image moves
+    # (Sonic 1 afe05eee -> faa36f4d), while sigil implements only the authentic
+    # `kosinski` and `saxman-bugged` streams (`sigil-link/src/blob.rs`,
+    # `BlobFormat`) and refuses the `-z` argument by name before assembling.
+    # That is a loud refusal, not a wrong ROM, so the arm is acknowledged and
+    # its byte comparison stays UNMEASURED until the optimised compressors
+    # exist; booked in the campaign gap ledger as `SWEEP-NIGHTLY`. The text is
+    # pinned so a refusal for any other reason on these legs is a mismatch.
 }
 
 # (corpus, leg tag of a phase-1 arm): an arm no single companion switch could
@@ -264,6 +323,108 @@ def domain_from_prose(prose, current):
     return sorted(vals)
 
 
+# ---------------------------------------------------------------------------
+# Steps L1 to L3: derive the build script's own settings
+# ---------------------------------------------------------------------------
+
+LUA_BLOCK_OPEN = re.compile(r"^--[ \t]*settings[ \t]*--[ \t]*$", re.I)
+LUA_BLOCK_CLOSE = re.compile(r"^--[ \t]*end of settings[ \t]*--[ \t]*$", re.I)
+LUA_LOCAL = re.compile(r"^local[ \t]+([A-Za-z_]\w*)[ \t]*=[ \t]*(.*)$")
+LUA_BOOL_LOCAL = re.compile(r"^local[ \t]+([A-Za-z_]\w*)[ \t]*=[ \t]*(true|false)"
+                            r"[ \t]*(--.*)?$")
+
+
+def lua_literal(rest):
+    """Split the text after `local <name> =` into (kind, literal, trailing
+    comment). kind is `boolean`, `number` or `string`; None if the text is not
+    exactly one literal, optionally followed by a `--` comment."""
+    m = re.match(r"(true|false|0[xX][0-9A-Fa-f]+|\d+(?:\.\d+)?|\"[^\"\\\n]*\"|"
+                 r"'[^'\\\n]*')[ \t]*(--.*)?$", rest)
+    if not m:
+        return None
+    lit = m.group(1)
+    kind = ("boolean" if lit in ("true", "false")
+            else "string" if lit[0] in "\"'" else "number")
+    return kind, lit, m.group(2) or ""
+
+
+def lua_files(tree):
+    out = []
+    for root, dirs, files in os.walk(tree):
+        dirs[:] = [d for d in dirs if d != ".git"]
+        for f in files:
+            if f.endswith(".lua"):
+                out.append(os.path.join(root, f))
+    return sorted(out)
+
+
+def build_script_settings(tree, corpus):
+    """Steps L1 to L3 over the corpus's build.lua. Returns switch rows shaped
+    like the `.asm` ones, named `build.lua:<local>`, and the number of `.lua`
+    files the L2 cross-check read."""
+    path = os.path.join(tree, "build.lua")
+    L = read_lines(path)
+    opens = [i for i, l in enumerate(L) if LUA_BLOCK_OPEN.match(l)]
+    closes = [i for i, l in enumerate(L) if LUA_BLOCK_CLOSE.match(l)]
+    if len(opens) != 1 or len(closes) != 1 or closes[0] < opens[0]:
+        raise Fail("%s: build.lua must have exactly one `-- Settings --` line "
+                   "followed by one `-- End of settings --` line; found openers "
+                   "on lines %s and closers on lines %s, so its settings cannot "
+                   "be located" % (corpus, [i + 1 for i in opens],
+                                   [i + 1 for i in closes]))
+    rows = []
+    for i in range(opens[0] + 1, closes[0]):
+        line = L[i]
+        if not line.strip() or line.lstrip().startswith("--"):
+            continue
+        m = LUA_LOCAL.match(line)
+        lit = lua_literal(m.group(2)) if m else None
+        if not lit:
+            raise Fail("%s: build.lua:%d is inside the Settings block but is not a "
+                       "column-0 `local <name> = <literal>`, so its domain cannot be "
+                       "derived and skipping it would drop a setting silently: %r"
+                       % (corpus, i + 1, line))
+        kind, text, _ = lit
+        rows.append({"file": "build.lua", "line": i + 1, "lang": "lua",
+                     "local": m.group(1), "name": "build.lua:" + m.group(1),
+                     "rhs": text, "text": line, "lit_kind": kind})
+
+    # L2: a toggle anywhere else in the corpus's Lua is a setting this sweep
+    # would never reach.
+    scanned = lua_files(tree)
+    stray = []
+    for p in scanned:
+        for j, line in enumerate(read_lines(p)):
+            m = LUA_BOOL_LOCAL.match(line)
+            if not m:
+                continue
+            here = os.path.relpath(p, tree) == "build.lua" \
+                and opens[0] < j < closes[0]
+            if not here:
+                stray.append("%s:%d %s" % (os.path.relpath(p, tree), j + 1,
+                                          line.strip()))
+    if stray:
+        raise Fail("%s: a column-0 boolean local outside build.lua's Settings "
+                   "block is a toggle this sweep cannot reach: %s"
+                   % (corpus, stray))
+    names = [r["local"] for r in rows]
+    if len(names) != len(set(names)):
+        raise Fail("%s: a build.lua setting is declared twice: %s" % (corpus, names))
+
+    # L3: the domain, read off the literal.
+    for r in rows:
+        if r["lit_kind"] == "boolean":
+            r["kind"] = "swept"
+            r["current"] = 1 if r["rhs"] == "true" else 0
+            r["domain"] = [0, 1]
+            r["arms"] = [1 - r["current"]]
+        else:
+            r["kind"] = "unreadable"
+            r["why"] = ("`%s` is a %s literal; build.lua states no set of legal "
+                        "values for it" % (r["rhs"], r["lit_kind"]))
+    return rows, len(scanned)
+
+
 def classify(tree, corpus, root_asm):
     docs = documented_declarations(tree)
     block = options_block(tree, root_asm)
@@ -434,6 +595,55 @@ def apply_edit(path, lineno, name, want, log):
         raise Fail("%s:%d does not parse as `%s = %d`" % (path, lineno, name, want))
 
 
+def apply_lua_edit(path, lineno, local, want, log):
+    """Rewrite one build.lua boolean setting to `want` (0 false, 1 true), keeping
+    any trailing comment. The same refusals as `apply_edit`: a wrong line, a
+    second assignment that would override the edit, and a rewrite that changes
+    no text."""
+    L = read_lines(path)
+    if lineno > len(L):
+        raise Fail("%s has %d lines, cannot edit line %d" % (path, len(L), lineno))
+    before = L[lineno - 1]
+    m = LUA_BOOL_LOCAL.match(before)
+    if not m or m.group(1) != local:
+        raise Fail("%s:%d does not declare the boolean setting `%s`, it reads %r"
+                   % (path, lineno, local, before))
+    # Any statement that assigns the name, at any depth. A line ending in `,` is a
+    # table field or an argument (`{ name = name, }`), which reads the setting
+    # and cannot assign it, because no Lua statement ends in a comma.
+    assign = re.compile(r"^[ \t]*(local[ \t]+)?%s[ \t]*=(?!=)" % re.escape(local))
+    sites = [i + 1 for i, l in enumerate(L)
+             if assign.match(l) and not re.sub(r"--.*$", "", l).rstrip().endswith(",")]
+    if sites != [lineno]:
+        raise Fail("`%s` is assigned on lines %s, not only %d; a second assignment "
+                   "would override the edit" % (local, sites, lineno))
+    word = "true" if want else "false"
+    after = "local %s = %s%s" % (local, word,
+                                 (" " + m.group(3)) if m.group(3) else "")
+    L[lineno - 1] = after
+    open(path, "w", encoding="latin-1").write("\n".join(L))
+
+    back = read_lines(path)[lineno - 1]
+    log("   edit %s:%d" % (os.path.basename(path), lineno))
+    log("     before: %r" % before)
+    log("     after:  %r" % back)
+    if back == before:
+        raise Fail("the edit changed no text at %s:%d; an unapplied mutation "
+                   "and a real pass are the same artifact" % (path, lineno))
+    m2 = LUA_BOOL_LOCAL.match(back)
+    if back != after or not m2 or m2.group(1) != local or m2.group(2) != word:
+        raise Fail("%s:%d reads %r after the write, expected %r"
+                   % (path, lineno, back, after))
+
+
+def apply_switch_edit(tree, sw, want, log):
+    if sw.get("lang") == "lua":
+        apply_lua_edit(os.path.join(tree, sw["file"]), sw["line"], sw["local"],
+                       want, log)
+    else:
+        apply_edit(os.path.join(tree, sw["file"]), sw["line"], sw["name"], want, log)
+
+
 # ---------------------------------------------------------------------------
 # The compare, which carries its own positive control
 # ---------------------------------------------------------------------------
@@ -533,8 +743,9 @@ def run_leg(cfg, tag, edits, log, vacuity_ref=None, post_lua_edits=()):
         shutil.rmtree(tree)
     shutil.copytree(cfg["pristine"], tree, symlinks=True)
 
+    log("   LEG_START %s" % tag)
     for sw, val in edits:
-        apply_edit(os.path.join(tree, sw["file"]), sw["line"], sw["name"], val, log)
+        apply_switch_edit(tree, sw, val, log)
 
     r = {"tag": tag, "corpus": cfg["corpus"],
          "edits": [(s["name"], v) for s, v in edits]}
@@ -576,11 +787,24 @@ def run_leg(cfg, tag, edits, log, vacuity_ref=None, post_lua_edits=()):
     # and the compare are three independent things rather than one file read
     # twice.
     for sw, val in post_lua_edits:
-        apply_edit(os.path.join(tree, sw["file"]), sw["line"], sw["name"], val, log)
+        apply_switch_edit(tree, sw, val, log)
+
+    # The p2bin arguments are re-derived from THIS leg's build.lua, after every
+    # edit, because a build-script setting changes them. Reusing the shipped
+    # tree's arguments would hand sigil a compressor the stock build did not use.
+    root_asm, out_bin, p2bin_args = derive_tool_args(tree)
+    if (root_asm, out_bin) != (cfg["root_asm"], cfg["out_bin"]):
+        raise Fail("%s: build.lua names root %s / output %s on this leg, the "
+                   "shipped tree named %s / %s" % (tag, root_asm, out_bin,
+                                                   cfg["root_asm"], cfg["out_bin"]))
+    r["p2bin_args"] = p2bin_args
+    if p2bin_args != cfg["p2bin_args"]:
+        log("   p2bin/sigil args for this leg: %s  (shipped: %s)"
+            % (" ".join(p2bin_args), " ".join(cfg["p2bin_args"])))
 
     out = os.path.join(tree, "sigil.bin")
-    sg = subprocess.run([cfg["sigil"], cfg["root_asm"], "-o", "sigil.bin"]
-                        + cfg["p2bin_args"], cwd=tree,
+    sg = subprocess.run([cfg["sigil"], root_asm, "-o", "sigil.bin"]
+                        + p2bin_args, cwd=tree,
                         capture_output=True, text=True, timeout=1800)
     r["sigil_exit"] = sg.returncode
     r["sigil_wrote"] = os.path.isfile(out)
@@ -631,6 +855,23 @@ def run_leg(cfg, tag, edits, log, vacuity_ref=None, post_lua_edits=()):
 # ---------------------------------------------------------------------------
 # Controls on this program itself, proven red
 # ---------------------------------------------------------------------------
+
+def ack_mismatch(row, ack):
+    """Why an ACK_DISAGREE value does not describe this leg, or None if it does.
+    The value is a class, or `(class, text)` where the leg's diagnostic output
+    (sigil's stderr, or the error of a leg that could not run) must contain
+    `text`."""
+    klass, needle = (ack, None) if isinstance(ack, str) else ack
+    if row["klass"] != klass:
+        return "acknowledged %s" % klass
+    if needle is not None:
+        said = "\n".join(row.get("sigil_stderr") or []) + row.get("err", "")
+        if needle not in said:
+            return ("acknowledged %s with the text %r, which the leg's diagnostic "
+                    "does not contain; it said: %s"
+                    % (klass, needle, (said.split("\n") or [""])[0][:120]))
+    return None
+
 
 def reconcile_stock_declines(rows, ack):
     """Split the corners the STOCK toolchain could not build by what sigil did
@@ -811,6 +1052,72 @@ def self_test(scratch, log):
                 % (ag, un, pr, pr2)))
     ok = ok and c9_finds and c9_stale
 
+    # C10: the build-script derivation. A boolean local outside the Settings
+    # block must be a failure of the L2 cross-check, a statement in the block
+    # that is not a literal local must be refused, and a number literal in the
+    # block must derive UNREADABLE rather than be swept or dropped.
+    t10 = os.path.join(d, "tree10")
+    os.makedirs(os.path.join(t10, "tools"))
+    settings = ("-- Settings --\nlocal fast = false\nlocal addr = 0x10\n"
+                "-- End of settings --\n")
+    open(os.path.join(t10, "build.lua"), "w").write(settings)
+    open(os.path.join(t10, "tools", "x.lua"), "w").write("local extra = true\n")
+    log("   C10 mutation on disk: tools/x.lua %r"
+        % read_lines(os.path.join(t10, "tools", "x.lua"))[0])
+    expect_fail("C10a lua-toggle-outside-block",
+                lambda: build_script_settings(t10, "selftest"),
+                "outside build.lua's Settings")
+    os.remove(os.path.join(t10, "tools", "x.lua"))
+    rows10, _ = build_script_settings(t10, "selftest")
+    c10b = ([(x["name"], x["kind"], x.get("arms")) for x in rows10]
+            == [("build.lua:fast", "swept", [1]), ("build.lua:addr", "unreadable", None)])
+    log("CONTROL C10b lua-domains: %s" % ("PASSED, a boolean sweeps its other arm "
+                                         "and a number literal is unreadable"
+                                         if c10b else "FAILED: %s" % rows10))
+    ok = ok and c10b
+    open(os.path.join(t10, "build.lua"), "w").write(
+        settings.replace("local addr = 0x10\n", "local addr = 0x10\nfast2 = 1\n"))
+    expect_fail("C10c lua-block-statement",
+                lambda: build_script_settings(t10, "selftest"),
+                "is not a column-0")
+
+    # C11: the Lua edit's own refusals, on disk.
+    p11 = os.path.join(d, "t.lua")
+    open(p11, "w").write("local fast = true\n")
+    expect_fail("C11a lua-no-op-edit",
+                lambda: apply_lua_edit(p11, 1, "fast", 1, lambda s: None),
+                "changed no text")
+    open(p11, "w").write("local fast = false\nfast = true\n")
+    log("   C11b mutation on disk: %r" % read_lines(p11)[1])
+    expect_fail("C11b lua-overriding-assignment",
+                lambda: apply_lua_edit(p11, 1, "fast", 1, lambda s: None),
+                "would override the edit")
+    # ... and a table field that only READS the setting, the shape s2disasm's
+    # build.lua has at its line 53, must not be mistaken for an assignment.
+    open(p11, "w").write("local fast = false\nlocal t = {\n\tfast = fast,\n}\n")
+    try:
+        apply_lua_edit(p11, 1, "fast", 1, lambda s: None)
+        c11c = read_lines(p11)[0] == "local fast = true"
+    except Fail as e:
+        c11c = False
+        log("   C11c refused: %s" % e)
+    log("CONTROL C11c lua-table-field-is-a-read: %s"
+        % ("PASSED" if c11c else "FAILED, a table field blocked the edit"))
+    ok = ok and c11c
+
+    # C12: an acknowledgement carrying a diagnostic text must stop covering a leg
+    # that refuses for a different reason, while the class alone still matches.
+    row12 = {"klass": "SIGIL-DECLINED", "sigil_stderr": ["error: something else"]}
+    c12 = (ack_mismatch(row12, ("SIGIL-DECLINED", "format sigil does not implement"))
+           and ack_mismatch(row12, "SIGIL-DECLINED") is None
+           and ack_mismatch(dict(row12, sigil_stderr=[
+               "x: `kosinski-optimised` is a p2bin format sigil does not implement"]),
+               ("SIGIL-DECLINED", "format sigil does not implement")) is None)
+    log("CONTROL C12 ack-diagnostic-text: %s"
+        % ("PASSED, a refusal for a neighbouring reason is a mismatch"
+           if c12 else "FAILED"))
+    ok = ok and bool(c12)
+
     shutil.rmtree(d)
     log("SELF_TEST %s" % ("PASSED" if ok else "FAILED"))
     return ok
@@ -824,7 +1131,8 @@ def main():
     ap.add_argument("--scratch",
                     default="/home/volence/sonic_hacks/.scratch/switch-matrix-sweep")
     ap.add_argument("--corpus", action="append", default=None,
-                    help="NAME=PATH of a corpus checkout; repeatable")
+                    help="NAME=PATH[@REV] of a corpus checkout; the corpus is "
+                         "read out of commit REV (default HEAD); repeatable")
     ap.add_argument("--only", action="append", default=None,
                     help="run only these leg tags")
     ap.add_argument("--cross", action="store_true",
@@ -833,13 +1141,17 @@ def main():
     ap.add_argument("--skip-self-test", action="store_true",
                     help="derivation only; no figure may be reported from a run "
                          "that used this")
+    ap.add_argument("--derive-only", action="store_true",
+                    help="stop after the derivation and its acknowledgement "
+                         "reconciliation; launch no leg")
     a = ap.parse_args()
 
     corpora = []
     for spec in (a.corpus or ["s1disasm=/home/volence/sonic_hacks/s1disasm",
                               "s2disasm=/home/volence/sonic_hacks/s2disasm"]):
-        name, _, path = spec.partition("=")
-        corpora.append((name, path))
+        name, _, rest = spec.partition("=")
+        path, _, rev = rest.partition("@")
+        corpora.append((name, path, rev or "HEAD"))
 
     lines = []
 
@@ -849,6 +1161,7 @@ def main():
 
     os.makedirs(os.path.join(a.scratch, "trees"), exist_ok=True)
     os.makedirs(os.path.join(a.scratch, "images"), exist_ok=True)
+    os.makedirs(os.path.join(a.scratch, "logs"), exist_ok=True)
 
     ver = subprocess.run([a.sigil, "--version"], capture_output=True, text=True)
     log("SIGIL %s" % ver.stdout.split("\n")[0])
@@ -868,37 +1181,68 @@ def main():
     launched, reported = 0, 0
     unreadable_found = {}
 
-    for corpus, src in corpora:
+    for corpus, src, rev in corpora:
         log("")
         log("=" * 78)
-        head = subprocess.run(["git", "-C", src, "rev-parse", "HEAD"],
-                              capture_output=True, text=True).stdout.strip()
-        log("CORPUS %s at %s" % (corpus, head))
+        rp = subprocess.run(["git", "-C", src, "rev-parse", "--verify",
+                             rev + "^{commit}"], capture_output=True, text=True)
+        head = rp.stdout.strip()
+        if rp.returncode != 0 or not re.fullmatch(r"[0-9a-f]{40}", head):
+            raise Fail("%s: `%s` does not name a commit in %s: %s"
+                       % (corpus, rev, src, rp.stderr.strip()))
+        log("CORPUS %s at %s (%s)" % (corpus, head, rev))
+        # Extracted afresh from the named commit on every run. A tree kept from
+        # an earlier run would be measured under this run's revision line while
+        # holding whatever commit that earlier run extracted.
         pristine = os.path.join(a.scratch, "trees", corpus + "-pristine")
-        if not os.path.isdir(pristine):
-            os.makedirs(pristine)
-            tar = subprocess.Popen(["git", "-C", src, "archive",
-                                    "--format=tar", "HEAD"],
-                                   stdout=subprocess.PIPE)
-            subprocess.run(["tar", "-x", "-C", pristine], stdin=tar.stdout)
-            tar.wait()
-        log("  extracted read-only by git archive into %s" % pristine)
+        if os.path.isdir(pristine):
+            shutil.rmtree(pristine)
+        os.makedirs(pristine)
+        tar = subprocess.Popen(["git", "-C", src, "archive", "--format=tar", head],
+                               stdout=subprocess.PIPE)
+        untar = subprocess.run(["tar", "-x", "-C", pristine], stdin=tar.stdout)
+        tar.stdout.close()
+        if tar.wait() != 0 or untar.returncode != 0:
+            raise Fail("%s: extracting %s from %s failed (git archive exit %s, "
+                       "tar exit %s)" % (corpus, head, src, tar.returncode,
+                                         untar.returncode))
+        log("  extracted read-only by git archive of %s into %s" % (head, pristine))
 
         root_asm, out_bin, p2bin_args = derive_tool_args(pristine)
         log("  build.lua says: root=%s output=%s p2bin/sigil args=%s"
             % (root_asm, out_bin, " ".join(p2bin_args)))
 
-        switches = classify(pristine, corpus, root_asm)
+        asm_switches = classify(pristine, corpus, root_asm)
         log("  DERIVED %d documented switches, cross-checked against the "
-            "ASSEMBLY OPTIONS block" % len(switches))
+            "ASSEMBLY OPTIONS block" % len(asm_switches))
+        lua_switches, n_lua_files = build_script_settings(pristine, corpus)
+        log("  DERIVED %d build-script settings from build.lua's Settings block, "
+            "cross-checked against every column-0 boolean local in %d .lua file(s)"
+            % (len(lua_switches), n_lua_files))
+        switches = asm_switches + lua_switches
         for s in switches:
             if s["kind"] == "swept":
-                log("    %-24s = %-3d domain %-12s arms %s"
+                log("    %-40s = %-3d domain %-12s arms %s"
                     % (s["name"], s["current"], s["domain"], s["arms"]))
             else:
-                log("    %-24s   %-8s %s" % (s["name"], s["kind"].upper(), s["why"]))
+                log("    %-40s   %-8s %s" % (s["name"], s["kind"].upper(), s["why"]))
                 if s["kind"] == "unreadable":
                     unreadable_found[(corpus, s["name"])] = s["why"]
+
+        def population(rows):
+            return (len(rows), sum(1 for x in rows if x["kind"] == "swept"),
+                    sum(len(x["arms"]) for x in rows if x["kind"] == "swept"))
+        pa, pl = population(asm_switches), population(lua_switches)
+        corners_n = 1
+        for x in switches:
+            if x["kind"] == "swept":
+                corners_n *= len(x["domain"])
+        log("POPULATION %s asm_options=%d asm_swept=%d asm_arms=%d "
+            "build_script_settings=%d build_script_swept=%d build_script_arms=%d "
+            "lua_files=%d corners=%d"
+            % ((corpus,) + pa + pl + (n_lua_files, corners_n)))
+        if a.derive_only:
+            continue
 
         cfg = {"scratch": a.scratch, "pristine": pristine, "corpus": corpus,
                "sigil": a.sigil, "root_asm": root_asm, "out_bin": out_bin,
@@ -941,6 +1285,7 @@ def main():
                 r = {"tag": tag, "corpus": corpus, "klass": "LEG-ERROR",
                      "err": str(e)}
                 log("   LEG FAILED: %s" % e)
+                log("   LEG_ERROR %s" % tag)
                 failures.append("%s: %s" % (tag, e))
             reported += 1
             all_rows.append(r)
@@ -1132,6 +1477,8 @@ def main():
                 except Fail as e:
                     r = {"tag": tag, "corpus": corpus, "klass": "LEG-ERROR",
                          "err": str(e)}
+                    log("   LEG FAILED: %s" % e)
+                    log("   LEG_ERROR %s" % tag)
                     failures.append("%s: %s" % (tag, e))
                 reported += 1
                 r["cross"] = True
@@ -1235,6 +1582,27 @@ def main():
                               "stock_declined": len(stock_bad),
                               "distinct": len(crcs)})
 
+    ack_keys = set(ACK_UNREADABLE)
+    got_keys = set(unreadable_found)
+    if a.derive_only:
+        log("")
+        log("RECONCILE unreadable-domain: found=%d acknowledged=%d %s"
+            % (len(got_keys), len(ack_keys),
+               "MATCH" if ack_keys == got_keys else "MISMATCH"))
+        if ack_keys != got_keys:
+            failures.append("unreadable-domain acknowledgements are stale: "
+                            "found-not-acknowledged=%s acknowledged-not-found=%s"
+                            % (sorted(got_keys - ack_keys),
+                               sorted(ack_keys - got_keys)))
+        log("DERIVE-ONLY: no leg was launched. This run is a probe of the "
+            "derivation; it is not a sweep result.")
+        if failures:
+            log("SWEEP FAILED, %d reason(s):" % len(failures))
+            for f in failures:
+                log("  - %s" % f)
+        log("SWEEP_END")
+        return 1 if failures else 0
+
     log("")
     log("=" * 78)
     log("RECONCILE legs launched=%d reported=%d" % (launched, reported))
@@ -1242,8 +1610,6 @@ def main():
         failures.append("%d legs launched but %d reported; %d produced no row "
                         "at all" % (launched, reported, launched - reported))
 
-    ack_keys = set(ACK_UNREADABLE)
-    got_keys = set(unreadable_found)
     if ack_keys != got_keys and not a.only:
         failures.append("unreadable-domain acknowledgements are stale: "
                         "found-not-acknowledged=%s acknowledged-not-found=%s"
@@ -1338,17 +1704,23 @@ def main():
     # vacuous leg is left out of this bookkeeping entirely: its agreement is
     # not evidence of anything, so counting it as a pass is the exact error
     # this program is here to prevent.
-    bad = {}
+    bad, bad_rows = {}, {}
     for r in all_rows:
         if r["klass"] == "AGREE" or r.get("vacuous") or r.get("control") \
                 or r.get("cross"):
             continue
         key = (r["corpus"], r["tag"])
         bad[key] = r["klass"]
+        bad_rows[key] = r
     ackd = dict(ACK_DISAGREE)
     unack = {k: v for k, v in bad.items() if k not in ackd}
     stale = {k: v for k, v in ackd.items() if k not in bad}
-    wrong = {k: (bad[k], ackd[k]) for k in bad if k in ackd and bad[k] != ackd[k]}
+    wrong = {}
+    for k in bad:
+        if k in ackd:
+            why = ack_mismatch(bad_rows[k], ackd[k])
+            if why:
+                wrong[k] = (bad[k], why)
     log("")
     log("RECONCILE outcomes: %d non-agreeing, %d acknowledged, %d unacknowledged, "
         "%d stale acknowledgements, %d class mismatches"
@@ -1359,7 +1731,7 @@ def main():
         log("  STALE ACKNOWLEDGEMENT %s %s: expected %s, the leg agreed"
             % (k[0], k[1], v))
     for k, v in sorted(wrong.items()):
-        log("  CLASS MISMATCH %s %s: ran %s, acknowledged %s" % (k[0], k[1], v[0], v[1]))
+        log("  CLASS MISMATCH %s %s: ran %s, %s" % (k[0], k[1], v[0], v[1]))
     if not a.only:
         if unack:
             failures.append("%d unacknowledged non-agreeing legs" % len(unack))
@@ -1390,5 +1762,14 @@ if __name__ == "__main__":
         sys.exit(main())
     except Fail as e:
         print("SWEEP ABORTED: %s" % e)
+        print("SWEEP_END")
+        sys.exit(2)
+    except Exception:
+        # Python's own exit status for an uncaught exception is 1, which is this
+        # program's status for a FINDING. A crash is a run that measured nothing,
+        # so it is reported as an abort and never as a result.
+        import traceback
+        traceback.print_exc()
+        print("SWEEP ABORTED: uncaught exception, see the traceback above")
         print("SWEEP_END")
         sys.exit(2)
