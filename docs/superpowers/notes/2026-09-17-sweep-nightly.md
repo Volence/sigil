@@ -127,3 +127,18 @@ The lints that read `scripts/` and the lane files, run on the branch with `--no-
 `shared_target_defaults`, `skip_marker_lint`, `source_gate_classification`: 6 binaries, 39 passed,
 0 failed, 0 ignored. No Rust source changed. The sweep has no cargo regression test (it needs `lua`
 and the corpora); its own self-test ran green at the head of every run above.
+
+### The job's exit 1, through a complete run
+
+The finding path needs a sweep that runs to the end and fails, so the subject mutated is again the
+corpus: `S1DISASM_DIR` pointed at the scratch clone with `SIGIL_SWITCH_SWEEP_S1_REF=93ce9328` (the
+`local proof_compressor_name = "kosinski"` commit above), sigil `7728ba2e`. The clone's working tree
+still carried the uncommitted `local proof_stray_toggle = true`, which would abort the derivation if
+it were read. 2026-09-17T05:02:51-04:00 to 05:25:22, 22m31s, exit 1, notified:
+
+```
+SWEEP FINDING at sigil 7728ba2e (...) / s1disasm 93ce9328 (working tree: 1 uncommitted entries, not
+measured) / s2disasm e45ebf33 (...): unreadable-domain acknowledgements are stale:
+found-not-acknowledged=[('s1disasm', 'build.lua:proof_compressor_name')] acknowledged-not-found=[];
+808 legs (790 planned + 18 rescue, 0 errored); s1disasm: 11 options, 2 build-script settings, ...
+```
