@@ -1,0 +1,9 @@
+[Unit]
+Description=Run the sigil switch-matrix sweep nightly
+
+[Timer]
+OnCalendar=*-*-* 02:17:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

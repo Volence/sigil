@@ -55,3 +55,36 @@ Its exit codes are REPORTING codes and the unit declares all four as success:
 0 quiet, 1 drift observed, 2 nothing measured, 3 an unverified change. A landing
 consumes none of them — this lane blocks nothing by construction, and
 `crates/sigil-cli/tests/drift_nightly_harness.rs` asserts that rather than trusting it.
+
+# The switch-matrix sweep's runner
+
+`nightly_switch_sweep.sh` runs `switch_matrix_sweep.py --cross`: every arm of every build
+option Sonic 1 and Sonic 2 declare (their `.asm` ASSEMBLY OPTIONS and their `build.lua`
+Settings block), built by each corpus's own `build.lua` and by sigil, compared byte for
+byte, and every corner of the option space. It cannot be a cargo test: it needs `lua` and
+both corpora. `sigil-switch-sweep.{service,timer}` are what fire it.
+
+```sh
+cp scripts/systemd/sigil-switch-sweep.{service,timer} ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user enable --now sigil-switch-sweep.timer
+systemctl --user list-timers          # confirm NEXT is populated
+```
+
+Verify the notification path without running anything:
+
+```sh
+scripts/nightly_switch_sweep.sh --selftest-fail   # exits 1, notifies
+```
+
+`sigil-switch-sweep.timer` fires at 02:17, ahead of every other lane: aeon's
+`aeon-effects-gates.timer` (04:17), `sigil-source-gates.timer` (05:17) and
+`sigil-ref-drift.timer` (07:17). It is placed two hours clear of the first of those
+because it is the longest job of the four; read its measured wall time out of the
+verdict line in `~/.local/state/sigil-switch-sweep/nightly.log`, not out of this sentence.
+
+It builds its own sigil from a detached checkout of `origin/master` at
+`~/sonic_hacks/.sigil-switch-sweep` into `~/sonic_hacks/.sigil-switch-sweep-target`, and
+reads each corpus out of its committed `HEAD`, never its working tree. Exit codes follow
+the source-gate lane: 0 green, 1 a finding, 2 could not run; the unit declares all three
+as success because the job has already notified with the wording that tells them apart.

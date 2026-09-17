@@ -188,7 +188,11 @@ else
     (( $(count '^SWEEP FAILED') == 1 )) || short+=" exit 1 without a SWEEP FAILED line;"
 fi
 
-SIZE="$starts legs ($planned planned + $((starts - planned)) rescue, $errored errored); $options"
+if (( starts >= planned )); then
+    SIZE="$starts legs ($planned planned + $((starts - planned)) rescue, $errored errored); $options"
+else
+    SIZE="$starts legs ($planned planned, SHORT by $((planned - starts)), $errored errored); $options"
+fi
 if [[ -n $short ]]; then
     note "COULD NOT RUN: the sweep's run does not reconcile:$short at $AT; $SIZE; $WALL_TEXT; see $SWEEP_LOG"
     exit 2

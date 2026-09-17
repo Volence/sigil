@@ -1,0 +1,18 @@
+[Unit]
+Description=sigil switch-matrix sweep (every build option of Sonic 1 and Sonic 2, stock toolchain against sigil)
+
+[Service]
+Type=oneshot
+# `%h` is systemd's own home-directory substitution. What is still assumed is that the
+# suite lives at ~/sonic_hacks: systemd requires an absolute ExecStart, so something must
+# name a path before the script's own resolver can run.
+ExecStartPre=/usr/bin/env bash -c 'test -x "%h/sonic_hacks/sigil/scripts/nightly_switch_sweep.sh" || { echo "sigil-switch-sweep: %h/sonic_hacks/sigil/scripts/nightly_switch_sweep.sh is not an executable file; this unit assumes the suite is at ~/sonic_hacks" >&2; exit 1; }'
+ExecStart=%h/sonic_hacks/sigil/scripts/nightly_switch_sweep.sh
+# 1 (a finding) and 2 (could not run) are results the job has already notified with
+# wording that tells them apart, so they are not failures of this unit.
+SuccessExitStatus=0 1 2
+# The job bounds the sweep itself at four hours; this bounds everything around it
+# (the fetch, the sigil build) so a hang is reaped rather than holding the slot.
+TimeoutStartSec=5h
+# What the job cannot report on its own: a missing script, a kill, an OOM, a timeout.
+ExecStopPost=-/usr/bin/env bash -c 'case "$EXIT_STATUS" in 0|1|2) ;; *) notify-send -u critical "sigil switch sweep" "job runner exited $EXIT_STATUS ($SERVICE_RESULT)";; esac'
