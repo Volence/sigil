@@ -6023,3 +6023,42 @@ git -C ~/sonic_hacks/.aeon-sigil-ref merge-base --is-ancestor 7dc737ec HEAD \
 **Kill:** at the pin advance that crosses `7dc737ec`, add `BG_Bands_Hold` to the test's supplied
 symbols, refreeze, resync `repin_pins.rs` from the move record, and confirm the +12 B is the delta the
 move record states rather than the delta observed.
+
+### 2026-09-17, `SWEEP-NIGHTLY`: the Lua build-settings row CLOSED, and what the widened sweep found behind it
+
+**Closes** the 2026-09-16 `SWITCH-MATRIX-SWEEP` row "the corpora's own Lua build settings are a
+sweep axis nobody sweeps". `scripts/switch_matrix_sweep.py` now derives build.lua's Settings block
+(steps L1 to L3 in its docstring) and `scripts/nightly_switch_sweep.sh` runs it with `--cross` on the
+`sigil-switch-sweep` timer. Measurements: `docs/superpowers/notes/2026-09-17-sweep-nightly.md`.
+
+**Open 1: sigil implements neither optimised compressor, so the new arms are byte-UNMEASURED.**
+`s1disasm build.lua:improved_dac_driver_compression = true` hands `kosinski-optimised` to p2bin and
+`s2disasm build.lua:improved_sound_driver_compression = true` hands `saxman-optimised`. The stock
+image moves (Sonic 1 `afe05eee` to `faa36f4d`; every one of Sonic 2's 192 corners is a distinct stock
+image), and sigil refuses the `-z` argument by name: "is a p2bin format sigil does not implement".
+Both legs are acknowledged `SIGIL-DECLINED` with that text pinned, and in `--cross` half of each
+corpus's corners are sigil refusals for the same reason. A refusal, not a wrong ROM, but these arms
+have compared no byte. **Kill:** implement both formats in `sigil-link/src/blob.rs` (`BlobFormat`)
+with p2bin's own compressors as the reference, delete the two `ACK_DISAGREE` entries, and the next
+nightly compares them; the sweep's stale-acknowledgement check turns the run red until the entries
+go, which is the intended way for them to die.
+
+**Open 2: L2's reach is column-0 `local <name> = true|false` in `.lua` files.** A setting written as a
+global (`fast = false` with no `local`), as an indented local, or as a non-literal the build branches
+on (`local mode = os.getenv(...)`) is not seen by the cross-check, and a Settings block entry that is
+a non-literal is refused (L1) rather than swept. Neither corpus has such a shape today (5 `.lua`
+files each, one column-0 boolean local each, inside the block). **Kill:** when a corpus grows one,
+widen L2's pattern and add the shape to self-test C10.
+
+**Open 3: the corpora are measured at their committed local `HEAD`, not at upstream.** The job never
+fetches `sonicretro/s1disasm` or `s2disasm`, so a nightly green says nothing about an upstream change
+until someone pulls it into the checkout. Deliberate: a fetch-and-follow would make a corpus commit
+nobody here reviewed turn the lane red overnight. **Kill, if wanted:** `SIGIL_SWITCH_SWEEP_S1_REF` /
+`_S2_REF` already accept `origin/<branch>`; a second, non-notifying run at upstream would measure
+drift without owning it.
+
+**Open 4: `--derive-only` (and a full run) over a SUBSET of corpora reports the other corpus's
+unreadable-domain acknowledgements as stale.** The reconciliation compares every `ACK_UNREADABLE`
+key, not only keys of corpora the run measured. Harmless for the nightly (it always names both) and
+pre-existing for full runs. **Kill:** scope the acknowledgement sets to the corpora in the run, with
+a control that a subset run is not red on the absent corpus's entries.
