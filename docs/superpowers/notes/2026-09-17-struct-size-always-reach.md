@@ -113,3 +113,27 @@ checks a struct only in its home module (span source equal to the module's), whi
 its field types are in scope. Removing that filter makes a correct `Outer (size: 4)` imported
 alone fail with `unknown type: Inner` plus a bogus `declared size 4 but fields total 2`; the test
 `declared_size_is_checked_in_the_home_module_not_in_an_importer` pins it.
+
+## The other checks that ride along, and the two in-repo fixtures they caught
+
+Forcing a layout runs every declaration check `layout_of_struct` owns (size, `@offset`,
+`(align:)`, pad checks, the `[layout.odd-field]` warning), so a sized struct nothing uses now gets
+all of them. Engine reach of that: zero new diagnostics of any level at `ec640bcf` and at
+`83ec56d2` (stderr diffed whole). In this repo's own suite it caught two test fixtures:
+
+- `tests/script.rs` `comptime_call_inside_script_expands` declared `struct S (size: $24)` over 34
+  bytes of fields, a silent wrong size of exactly the class d-32 closes. Corrected to `$22`.
+- `tests/overlay.rs` `bare_window_scan_does_not_validate_unrelated_structs` used a sized decoy
+  whose odd-offset word now draws the odd-field warning. The decoy lost its `(size: 3)` so the test
+  still isolates the bare-window scan, and a counterpart pins that the sized form is checked once.
+
+## Full suite
+
+`scripts/landing-run.sh` with `.aeon-sigil-ref` @ `ec640bcf`, all four ROMs present.
+
+| tree | suites | passed | failed | ignored | skips | clippy | ledger | result |
+|---|---|---|---|---|---|---|---|---|
+| master `91993841` (detached worktree) | 490 | 5563 | 0 | 2 | 0 | 0 | 0 | GREEN |
+| branch `18c76c98` | 490 | 5574 | 0 | 2 | 0 | 0 | 0 | GREEN, 5563 + 11 new |
+
+Passing-test name sets differ by exactly the 11 added tests; none removed.
