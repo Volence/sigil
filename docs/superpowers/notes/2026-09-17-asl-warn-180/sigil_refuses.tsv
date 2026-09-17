@@ -1,0 +1,16 @@
+# Probes sigil refuses outright, for a reason that is not the alignment warning:
+# a processor its AS front end does not encode, or an instruction spelling it does
+# not accept. Their asl rows are still evidence about asl's rule; there is no sigil
+# warning to compare. Read by compare.py and by
+# crates/sigil-frontend-as/tests/as_odd_address.rs, which both require every row's
+# refusal to carry the stated text and every other probe to assemble.
+# probe<TAB>text the refusal must contain
+p10_cpu_68010	unsupported processor `68010`
+p10_cpu_68020	unsupported processor `68020`
+p10_cpu_68030	unsupported processor `68030`
+p10_cpu_68040	unsupported processor `68040`
+p10_cpu_68332	unsupported processor `68332`
+p23c_oddpc_68020	unsupported processor `68020`
+s01_sigil_refuses_unsuffixed	instruction needs an explicit size suffix
+s02_sigil_refuses_chk	`chk` is not a recognized 68000 mnemonic
+s03_sigil_refuses_nbcd	`nbcd` is not a recognized 68000 mnemonic

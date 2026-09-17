@@ -9681,6 +9681,7 @@ impl Asm {
         // Covers all instruction paths (branch/dbcc/movem/jmp-jsr/generic) since
         // it runs before the dispatch below.
         self.pad_word_align(span);
+        self.warn_odd_pc_instruction(span);
 
         if matches!(
             mnemonic,
@@ -9702,6 +9703,7 @@ impl Asm {
                     return;
                 }
             };
+            self.warn_odd_abs_operands(mnemonic, suffix_size, &atoms, span);
             // A bare symbol/expression target (no EA parens) is 68k absolute
             // addressing whose WIDTH (abs.w vs abs.l) is selected in the
             // front-end pass loop (M1.D T3) — see the block below. An EA
@@ -9826,6 +9828,7 @@ impl Asm {
                 return;
             }
         };
+        self.warn_odd_abs_operands(mnemonic, suffix_size, &atoms, span);
         self.lower_m68k_generic(mnemonic, suffix_size, atoms, span);
     }
 
@@ -10300,6 +10303,12 @@ impl Asm {
                 return;
             }
         };
+        self.warn_odd_abs_operands(
+            M68kMnemonic::Movem,
+            Some(size),
+            std::slice::from_ref(mem_atom),
+            span,
+        );
         let mut mem_op = match self.convert_one_atom_m68k(mem_atom, size, span) {
             Some(o) => o,
             None => return,
@@ -10537,6 +10546,104 @@ impl Asm {
             );
         }
         M68kOperand::AbsW((v & 0xFFFF) as i16)
+    }
+
+    /// asl's `warning #180: address is not properly aligned`, for an instruction
+    /// that STARTS at an odd address. The 68000 fetches opcodes a word at a time
+    /// and an odd program counter is an address error, so control reaching this
+    /// line crashes the machine.
+    ///
+    /// The rule is the one measured in
+    /// `docs/superpowers/notes/2026-09-17-asl-warn-180/`: it is the VMA (`$`,
+    /// after any `padding on` pad byte) that is tested, not the physical offset
+    /// (probes `p23j`, `p26a`); every instruction fires, whatever its operands
+    /// (`p23a`, `p23b`); `dc`/`ds` data and bare labels at an odd address never
+    /// fire (`p13b`, `p13c`, `p23g`); and under `padding on` the pad removes the
+    /// odd address before the test (`p13d`).
+    ///
+    /// Called after [`Self::pad_word_align`]. Not decided on the deferral pass
+    /// ([`Self::keep_labels_symbolic`]): there the location counter is
+    /// provisional, because sections still move after assembly, and a guess
+    /// about its parity is not a measurement. Gap row
+    /// `AS-ODD-ADDRESS-RELOCATING-UNDECIDED`.
+    fn warn_odd_pc_instruction(&mut self, span: Span) {
+        if self.keep_labels_symbolic() {
+            return;
+        }
+        let pc = self.here();
+        if pc & 1 == 1 {
+            self.diags.push(Diagnostic {
+                level: Level::Warning,
+                message: format!(
+                    "{ODD_ADDRESS_ID} this instruction starts at odd address ${pc:X}, and a \
+                     68000 cannot execute it: fetching an opcode from an odd address is an \
+                     address error. Put `even` before it (asl #180: {ASL_NOT_ALIGNED})"
+                ),
+                primary: span,
+            });
+        }
+    }
+
+    /// asl's `warning #180: address is not properly aligned`, for an ABSOLUTE
+    /// address operand whose value is odd, on an instruction that reads or
+    /// writes a word or long through it or jumps to it. The 68000 raises an
+    /// address error for a word or long access at an odd address, and for a
+    /// jump there.
+    ///
+    /// Which instructions and operands qualify is measured, not modelled; see
+    /// [`m68k_odd_address_access`] and the probe table in
+    /// `docs/superpowers/notes/2026-09-17-asl-warn-180/`. Every absolute
+    /// spelling counts (`(a).w`, `(a).l`, `(a)`, bare `a`; probes `p01` to
+    /// `p04`, `p24`), as do both operands of a two-operand instruction (`p02`)
+    /// and a symbol resolved by a forward reference (`p04`). A displacement,
+    /// a PC-relative operand and an immediate never count (`p06` to `p08`).
+    ///
+    /// ONE diagnostic per offending operand per line. asl prints the same
+    /// warning once per pass that evaluates the line, and twice per pass for
+    /// some mnemonics (`p18`, `p21`), which is a property of its pass loop
+    /// rather than of the source.
+    ///
+    /// Only an operand this pass can VALUE is decided. On the deferral pass an
+    /// operand derived from a section label or from `$` is provisional
+    /// ([`Self::keep_labels_symbolic`]) and is not guessed at; gap row
+    /// `AS-ODD-ADDRESS-RELOCATING-UNDECIDED`.
+    fn warn_odd_abs_operands(
+        &mut self,
+        mnemonic: M68kMnemonic,
+        suffix_size: Option<M68kSize>,
+        atoms: &[OperandAtom],
+        span: Span,
+    ) {
+        let Some(access) = m68k_odd_address_access(mnemonic, suffix_size, atoms) else {
+            return;
+        };
+        for a in atoms {
+            let Some(e) = m68k_absolute_address_expr(a) else { continue };
+            let qualified = self.qualify_expr(e);
+            if self.keep_labels_symbolic()
+                && (self.expr_refs_label(&qualified) || expr_refs_pc(&qualified))
+            {
+                continue;
+            }
+            let Fold::Value(v) = self.fold(&self.resolve_dollar(&qualified)) else { continue };
+            if v & 1 == 0 {
+                continue;
+            }
+            let addr = v as u32;
+            let message = match access {
+                OddAddressAccess::Data(width) => format!(
+                    "{ODD_ADDRESS_ID} {width} access at odd address ${addr:X}: on a 68000 a \
+                     word or long read or write at an odd address is an address error and \
+                     crashes the machine (asl #180: {ASL_NOT_ALIGNED})"
+                ),
+                OddAddressAccess::Jump => format!(
+                    "{ODD_ADDRESS_ID} jump to odd address ${addr:X}: on a 68000 fetching an \
+                     opcode from an odd address is an address error and crashes the machine \
+                     (asl #180: {ASL_NOT_ALIGNED})"
+                ),
+            };
+            self.diags.push(Diagnostic { level: Level::Warning, message, primary: span });
+        }
     }
 
     /// Convert one operand atom (see [`Self::convert_atoms_m68k`]).
@@ -13384,6 +13491,100 @@ fn m68k_disp_an_error(an: &str) -> String {
 /// question and are registers -- see the `Value(Sym)` arm.
 fn m68k_paren_reg_without_operand(w: &str) -> bool {
     w.eq_ignore_ascii_case("pc") || m68k_data_reg(w).is_some()
+}
+
+/// The lint id every odd-address alignment warning carries, the AS front end's
+/// counterpart of asl's `warning #180`.
+const ODD_ADDRESS_ID: &str = "[as.odd-address]";
+
+/// asl's own text for `warning #180`, quoted in sigil's message so a reader
+/// holding an asl log finds the same phrase.
+const ASL_NOT_ALIGNED: &str = "address is not properly aligned";
+
+/// How an instruction uses an absolute address operand, for the purpose of
+/// asl's `#180` alignment check.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum OddAddressAccess {
+    /// A word or long read or write through the operand; the name of the width.
+    Data(&'static str),
+    /// A `jmp`/`jsr` to the operand.
+    Jump,
+}
+
+/// Whether `mnemonic` can fall under asl's `#180` on an absolute operand, and
+/// how. `None` means the instruction never does, whatever its operands.
+///
+/// Measured on the reference asl (probes `p01`, `p05`, `p09`, `p17`, `p19`,
+/// `p24`, `p25` in `docs/superpowers/notes/2026-09-17-asl-warn-180/`):
+///
+/// - `jmp`/`jsr` fire: they jump to the address (`p05`, `p19`, `p24`).
+/// - `lea`/`pea` never fire: they compute the address and access nothing
+///   through it (`p05`, `p24`).
+/// - Branches and `DBcc` never fire, even to an odd label (`p19`); they are
+///   never handed here anyway, since their target is a displacement.
+/// - The bit operations on memory, `Scc` and `tas` never fire: each is a byte
+///   access (`p09`, `p25`). This is stated by mnemonic rather than read off
+///   the size slot because sigil's implicit size for `tas` is word.
+/// - Everything else fires exactly when its size is word or long, whether the
+///   size is a suffix (`p01`, `p25`), implicit in a special register
+///   (`move <ea>,ccr`, `p09`, `p24`) or the unsuffixed default (`p24`), and
+///   never at byte size (`p01`, `p17`).
+///
+/// No CPU test is needed: asl fires on 68000, 68008 and 68010 and not on
+/// 68020 and later (`p10_*`), and this front end accepts only `68000` and
+/// `68008`.
+fn m68k_odd_address_access(
+    mnemonic: M68kMnemonic,
+    suffix_size: Option<M68kSize>,
+    atoms: &[OperandAtom],
+) -> Option<OddAddressAccess> {
+    use M68kMnemonic::*;
+    match mnemonic {
+        Jmp | Jsr => return Some(OddAddressAccess::Jump),
+        Lea | Pea | Bra | Bsr | Bcc(_) | Dbcc(_) | Btst | Bset | Bclr | Bchg | Scc(_) | Tas => {
+            return None
+        }
+        _ => {}
+    }
+    let size = suffix_size
+        .or_else(|| m68k_special_reg_size(mnemonic, atoms))
+        .or_else(|| m68k_default_size(mnemonic))?;
+    match size {
+        M68kSize::W => Some(OddAddressAccess::Data("word")),
+        M68kSize::L => Some(OddAddressAccess::Data("long")),
+        M68kSize::B | M68kSize::S => None,
+    }
+}
+
+/// The address expression of an ABSOLUTE operand, or `None` for any other
+/// addressing mode. Mirrors the absolute arms of `convert_one_atom_m68k`: an
+/// explicit `(a).w`/`(a).l`, a parenthesised `(a)` that does not name a
+/// register, and a bare value that is not a register name.
+fn m68k_absolute_address_expr(a: &OperandAtom) -> Option<&Expr> {
+    match a {
+        OperandAtom::M68kAbs { addr, .. } => Some(addr),
+        OperandAtom::Mem(Expr::Sym(s)) if m68k_paren_reg_without_operand(s) => None,
+        OperandAtom::Mem(e) => Some(e),
+        OperandAtom::Value(Expr::Sym(name))
+            if m68k_data_reg(name).is_some()
+                || m68k_addr_reg(name).is_some()
+                || ["sr", "ccr", "usp"].iter().any(|r| name.eq_ignore_ascii_case(r)) =>
+        {
+            None
+        }
+        OperandAtom::Value(e) => Some(e),
+        _ => None,
+    }
+}
+
+/// Whether `e` reads the location counter (`$`, which `*` also parses to).
+fn expr_refs_pc(e: &Expr) -> bool {
+    match e {
+        Expr::Sym(name) => name == "$",
+        Expr::Binary { lhs, rhs, .. } => expr_refs_pc(lhs) || expr_refs_pc(rhs),
+        Expr::Unary { operand, .. } => expr_refs_pc(operand),
+        Expr::Int(_) => false,
+    }
 }
 
 /// `a0`..`a7` -> `Some(0..=7)`; `sp` is the `a7` alias. Anything else ->

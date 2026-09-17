@@ -30,22 +30,14 @@ import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 GUARD = os.path.join(HERE, "..", "asl-reference", "asl_ref.sh")
-# Probes sigil refuses outright, for a reason that is not this warning: a
-# processor it does not encode, or an instruction spelling it does not accept.
-# Their asl rows are still evidence about asl's rule; there is simply no sigil
-# warning to compare. Asserted in BOTH directions, and the refusal must name the
-# stated text, so an entry cannot outlive the refusal it describes.
-SIGIL_REFUSES = {
-    "p10_cpu_68010": "unsupported processor `68010`",
-    "p10_cpu_68020": "unsupported processor `68020`",
-    "p10_cpu_68030": "unsupported processor `68030`",
-    "p10_cpu_68040": "unsupported processor `68040`",
-    "p10_cpu_68332": "unsupported processor `68332`",
-    "p23c_oddpc_68020": "unsupported processor `68020`",
-    "s01_sigil_refuses_unsuffixed": "instruction needs an explicit size suffix",
-    "s02_sigil_refuses_chk": "`chk` is not a recognized 68000 mnemonic",
-    "s03_sigil_refuses_nbcd": "`nbcd` is not a recognized 68000 mnemonic",
-}
+# Probes sigil refuses outright, for a reason that is not this warning; see
+# sigil_refuses.tsv, which the Rust test reads too. Asserted in BOTH directions,
+# and the refusal must name the stated text, so an entry cannot outlive the
+# refusal it describes.
+SIGIL_REFUSES = dict(
+    line.rstrip("\n").split("\t", 1)
+    for line in open(os.path.join(HERE, "sigil_refuses.tsv"))
+    if line.strip() and not line.startswith("#"))
 
 LOC = r"^(?:> > > )?([^\s(]+\(\d+\)(?: [^:]*?)?)(?::\d+)?: warning"
 

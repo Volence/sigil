@@ -166,18 +166,28 @@ ACK_UNMEASURABLE = {
 # so a diagnostic either toolchain starts or stops emitting at any corner is
 # loud. This is a MEASUREMENT of parity, not a demand for it: sigil is a
 # drop-in for asl plus p2bin, not a reimplementation of asl's lint set.
+#
+# A coded asl warning with a sigil counterpart (CODED_COUNTERPARTS) is parity
+# only when both fire at the same SET of source locations on the leg; a location
+# only one of them names is the `asl#<code>` or `sigil-only:<id>` key.
 ACK_WARNING_GAP = {
-    ("s2disasm", "asl#180"):
-        "asl reports `address is not properly aligned` on `move.w (1).w,d0` at "
-        "s2.asm:30438, which sits inside `if gameRevision=0` and is annotated "
-        "in the source as deliberately crashing. sigil is silent. The bytes "
-        "agree, so this is a diagnostic sigil does not have rather than a ROM "
-        "fault, and it is the only asl warning code either corpus raises at any "
-        "corner.",
     ("s2disasm", "sigil-only:`shared` is ignored"):
         "sigil writes no share file, so it says so where s2's source uses the "
         "`shared` directive. asl without `-c` says the same thing; this fires "
         "on every Sonic 2 leg and is the standing `-c` residual.",
+}
+
+# (corpus, "asl#<code> = <sigil id>"): a coded asl warning the run must observe
+# sigil matching location for location on at least one leg. Asserted equal to
+# what the run sees in both directions, so a pairing that stops being exercised
+# (asl no longer raises the code anywhere) is as loud as a new one.
+EXPECT_WARNING_PARITY = {
+    ("s2disasm", "asl#180 = [as.odd-address]"):
+        "asl warns `address is not properly aligned` on `move.w (1).w,d0` at "
+        "s2.asm:30438, inside `if gameRevision=0`, a line the source annotates "
+        "as deliberately crashing. It is the only asl warning code either "
+        "corpus raises at any corner, and sigil's [as.odd-address] names the "
+        "same line.",
 }
 
 # (corpus, partial assignment, why): a combination of the corpus's own
@@ -648,26 +658,89 @@ def apply_switch_edit(tree, sw, want, log):
 # The compare, which carries its own positive control
 # ---------------------------------------------------------------------------
 
+# asl's warning code -> the lint id sigil prints for the same finding. Measured
+# rule and probe table: docs/superpowers/notes/2026-09-17-asl-warn-180/.
+CODED_COUNTERPARTS = {"180": "[as.odd-address]"}
+
+# The location a warning line names, in the spelling both toolchains share:
+# `file(line)` plus any macro or `rept` trail (`s2.asm(12) name(3)`), without
+# asl's `> > > ` lead or sigil's `:col`. Lazy up to the FIRST `(digits)`, so a
+# file name with commas or spaces (Sonic 1's ending-sequence file) survives.
+WARN_LOCATION = re.compile(r"^(?:> > > )?(.+?\(\d+\)(?: [^:\n]*?)?)(?::\d+)?: warning")
+
+# The location recorded for a counterpart-coded warning line WARN_LOCATION could
+# not read. sigil never names it, so an unreadable asl line is a parity gap
+# rather than a location silently dropped from the set.
+UNREADABLE_LOCATION = "<unreadable location>"
+
+
 def asl_warnings(text):
-    """asl's coded warnings, and the text of `warning` directives the SOURCE
-    wrote. Only the second has a counterpart sigil could emit, so they are
-    keyed apart rather than compared as one bag of strings."""
+    """asl's coded warnings, the text of `warning` directives the SOURCE wrote,
+    and, for each code with a sigil counterpart, the set of locations it fired
+    at. Coded warnings and source directives are keyed apart rather than
+    compared as one bag of strings."""
     coded = set(re.findall(r"warning #(\d+)", text))
     texts = {t.strip() for t in re.findall(r"warning: (?!#)([^\n]+)", text)}
-    return coded, texts
+    locs = {}
+    for line in text.split("\n"):
+        m = re.search(r"warning #(\d+)", line)
+        if not m or m.group(1) not in CODED_COUNTERPARTS:
+            continue
+        where = WARN_LOCATION.match(line)
+        locs.setdefault(m.group(1), set()).add(
+            where.group(1) if where else UNREADABLE_LOCATION)
+    return coded, texts, locs
 
 
 def sigil_warnings(text):
     """sigil's rendering of a source `warning` directive, which it prefixes
-    `[as.warning]`, separated from warnings sigil raises about itself."""
-    texts, own = set(), set()
-    for t in re.findall(r"warning: ([^\n]+)", text):
-        t = t.strip()
+    `[as.warning]`; the locations of each warning that is the counterpart of an
+    asl code, keyed by that code; and every other warning sigil raises about
+    itself."""
+    texts, own, locs = set(), set(), {}
+    counterpart = {v: k for k, v in CODED_COUNTERPARTS.items()}
+    for line in text.split("\n"):
+        m = re.search(r"warning: ([^\n]+)", line)
+        if not m:
+            continue
+        t = m.group(1).strip()
+        cid = next((i for i in counterpart if t.startswith(i + " ")), None)
         if t.startswith("[as.warning] "):
             texts.add(t[len("[as.warning] "):].strip())
+        elif cid is not None:
+            where = WARN_LOCATION.match(line)
+            locs.setdefault(counterpart[cid], set()).add(
+                where.group(1) if where else UNREADABLE_LOCATION)
         else:
             own.add(t.split(":")[0].strip())
-    return texts, own
+    return texts, own, locs
+
+
+def warning_parity_keys(r):
+    """The warning-parity keys one leg where both toolchains ran contributes.
+
+    `asl#<code>`: asl raised the code at a location sigil's counterpart does not
+    name, or the code has no counterpart at all. `sigil-only:<id>`: sigil's
+    counterpart names a location asl did not warn at. `asl-text:` /
+    `sigil-text:`: a source `warning` directive only one of them printed.
+    `sigil-only:<head>`: any other warning sigil raises about itself."""
+    keys = set()
+    alocs = r.get("asl_coded_locs", {})
+    slocs = r.get("sig_counterpart_locs", {})
+    for code in r.get("asl_coded", ()):
+        if code in CODED_COUNTERPARTS and alocs.get(code, set()) <= slocs.get(code, set()):
+            continue
+        keys.add("asl#" + code)
+    for code, locs in slocs.items():
+        if not locs <= alocs.get(code, set()):
+            keys.add("sigil-only:" + CODED_COUNTERPARTS[code])
+    for t in r.get("asl_text", set()) - r.get("sig_text", set()):
+        keys.add("asl-text:" + t[:60])
+    for t in r.get("sig_text", set()) - r.get("asl_text", set()):
+        keys.add("sigil-text:" + t[:60])
+    for t in r.get("sig_own", set()):
+        keys.add("sigil-only:" + t)
+    return keys
 
 
 def ident(path):
@@ -758,9 +831,11 @@ def run_leg(cfg, tag, edits, log, vacuity_ref=None, post_lua_edits=()):
     lualog = os.path.join(cfg["scratch"], "logs", tag + ".lua.log")
     open(lualog, "w").write(lua.stdout + lua.stderr)
     # asl distinguishes a coded warning of its own from a `warning` directive
-    # the source wrote. Only the second has a counterpart sigil could emit, so
-    # the two are keyed apart rather than compared as one bag of strings.
-    r["asl_coded"], r["asl_text"] = asl_warnings(lua.stdout + lua.stderr)
+    # the source wrote. The two are keyed apart rather than compared as one bag
+    # of strings, and a coded warning with a sigil counterpart keeps its
+    # locations so parity can be judged per site.
+    r["asl_coded"], r["asl_text"], r["asl_coded_locs"] = asl_warnings(
+        lua.stdout + lua.stderr)
     log("   BUILD_LUA exit=%d wrote=%s  (%s)"
         % (lua.returncode, r["lua_wrote"], os.path.basename(lualog)))
     if not r["lua_wrote"]:
@@ -812,7 +887,7 @@ def run_leg(cfg, tag, edits, log, vacuity_ref=None, post_lua_edits=()):
                          if l.strip() and "`shared` is ignored" not in l]
     siglog = os.path.join(cfg["scratch"], "logs", tag + ".sigil.err")
     open(siglog, "w").write(sg.stderr)
-    r["sig_text"], r["sig_own"] = sigil_warnings(sg.stderr)
+    r["sig_text"], r["sig_own"], r["sig_counterpart_locs"] = sigil_warnings(sg.stderr)
     log("   SIGIL exit=%d wrote=%s  stderr lines=%d (%s)"
         % (sg.returncode, r["sigil_wrote"], len(r["sigil_stderr"]),
            os.path.basename(siglog)))
@@ -1006,23 +1081,65 @@ def self_test(scratch, log):
     # occurs only at corners sigil refuses for an unrelated reason, so no leg
     # in a passing run ever exercises it: an untested normaliser would report
     # parity it never checked.
+    #
+    # The coded half is the same shape one step further: asl's `#180` and
+    # sigil's `[as.odd-address]` pair by LOCATION, and the pairing must be able
+    # to report each way it can go wrong, not only agreement. The fixtures are
+    # the real lines, asl's from a Sonic 2 build log and sigil's rendering of
+    # the same line, plus a macro-trail location from probe `p14_macro` and the
+    # comma-and-space file name Sonic 1 really has.
     asl_src = ("> > > sonic.asm(139): warning: 'Revision = 2' is unnecessary "
                "with 'FixBugs' enabled (use 'Revision = 1' instead).\n"
                "> > > s2.asm(30438): warning #180: address is not properly "
-               "aligned\n")
+               "aligned\n"
+               "> > > p14_macro.asm(7) rd(1): warning #180: address is not "
+               "properly aligned\n"
+               "> > > 87, 88, 89 Ending Sequence Sonic, Emeralds, Logo.asm(270): "
+               "warning #180: address is not properly aligned\n")
+    odd = ("warning: [as.odd-address] word access at odd address $1: on a 68000 "
+           "a word or long read or write at an odd address is an address error "
+           "and crashes the machine (asl #180: address is not properly aligned)\n")
     sig_src = ("sonic.asm(139):2: warning: [as.warning] 'Revision = 2' is "
                "unnecessary with 'FixBugs' enabled (use 'Revision = 1' "
                "instead).\n"
                "s2.asm(91275):2: warning: `shared` is ignored: sigil writes no "
-               "share file\n")
-    ac, at = asl_warnings(asl_src)
-    st, so = sigil_warnings(sig_src)
-    c8 = (ac == {"180"} and at == st and at and so == {"`shared` is ignored"})
+               "share file\n"
+               "s2.asm(30438):2: " + odd +
+               "p14_macro.asm(7) rd(1):2: " + odd +
+               "87, 88, 89 Ending Sequence Sonic, Emeralds, Logo.asm(270):2: " + odd)
+    ac, at, al = asl_warnings(asl_src)
+    st, so, sl = sigil_warnings(sig_src)
+    want_locs = {"s2.asm(30438)", "p14_macro.asm(7) rd(1)",
+                 "87, 88, 89 Ending Sequence Sonic, Emeralds, Logo.asm(270)"}
+    shapes = (ac == {"180"} and at == st and at and so == {"`shared` is ignored"}
+              and al == {"180": want_locs} and sl == {"180": want_locs})
+
+    def keys(asl_text, sig_text):
+        c, t, l = asl_warnings(asl_text)
+        s_t, s_o, s_l = sigil_warnings(sig_text)
+        return warning_parity_keys({"asl_coded": c, "asl_text": t, "asl_coded_locs": l,
+                                    "sig_text": s_t, "sig_own": s_o,
+                                    "sig_counterpart_locs": s_l})
+    asl180 = "> > > s2.asm(30438): warning #180: address is not properly aligned\n"
+    pair_cases = [
+        ("same line", asl180, "s2.asm(30438):2: " + odd, set()),
+        ("sigil silent", asl180, "", {"asl#180"}),
+        ("sigil on another line", asl180, "s2.asm(30439):2: " + odd,
+         {"asl#180", "sigil-only:[as.odd-address]"}),
+        ("asl silent", "", "s2.asm(30438):2: " + odd, {"sigil-only:[as.odd-address]"}),
+        ("asl line unreadable", "> > > warning #180: address is not properly aligned\n",
+         "s2.asm(30438):2: " + odd, {"asl#180", "sigil-only:[as.odd-address]"}),
+    ]
+    pair_bad = [(name, want, got) for name, a_t, s_t, want in pair_cases
+                for got in [keys(a_t, s_t)] if got != want]
+    c8 = shapes and not pair_bad
     log("CONTROL C8 warning-normaliser: %s"
         % ("PASSED, the source warning both toolchains fire normalises to one "
-           "string and the coded and sigil-only ones stay apart"
-           if c8 else "FAILED: asl coded=%s asl text=%s sigil text=%s "
-                      "sigil own=%s" % (ac, at, st, so)))
+           "string, the coded and sigil-only ones stay apart, and asl#180 pairs "
+           "with [as.odd-address] by location in all %d cases" % len(pair_cases)
+           if c8 else "FAILED: asl coded=%s asl text=%s asl locs=%s sigil text=%s "
+                      "sigil own=%s sigil locs=%s pairing failures=%s"
+                      % (ac, at, al, st, so, sl, pair_bad)))
     ok = ok and c8
 
     # C9: the stock-decline adjudicator. A corner only sigil builds has no
@@ -1618,24 +1735,21 @@ def main():
     # leg one of them refused proves nothing about what the other would have
     # said, so those are excluded rather than counted as silence.
     gaps = {}
+    parity_pairs = {}
     both = 0
     for r in all_rows:
         if not (r.get("lua_wrote") and r.get("sigil_wrote")):
             continue
         both += 1
         c = r["corpus"]
-        for code in r.get("asl_coded", ()):
-            gaps.setdefault((c, "asl#" + code), 0)
-            gaps[(c, "asl#" + code)] += 1
-        for t in r.get("asl_text", set()) - r.get("sig_text", set()):
-            k = (c, "asl-text:" + t[:60])
-            gaps[k] = gaps.get(k, 0) + 1
-        for t in r.get("sig_text", set()) - r.get("asl_text", set()):
-            k = (c, "sigil-text:" + t[:60])
-            gaps[k] = gaps.get(k, 0) + 1
-        for t in r.get("sig_own", set()):
-            k = (c, "sigil-only:" + t)
-            gaps[k] = gaps.get(k, 0) + 1
+        for key in warning_parity_keys(r):
+            gaps[(c, key)] = gaps.get((c, key), 0) + 1
+        for code, locs in sorted(r.get("asl_coded_locs", {}).items()):
+            if locs == r.get("sig_counterpart_locs", {}).get(code, set()):
+                pairs = parity_pairs.setdefault((c, "asl#%s = %s" % (
+                    code, CODED_COUNTERPARTS[code])), [0, set()])
+                pairs[0] += 1
+                pairs[1] |= locs
     log("RECONCILE diagnostics: %d leg(s) where both toolchains ran, %d "
         "warning-parity key(s) seen, %d acknowledged"
         % (both, len(gaps), len(ACK_WARNING_GAP)))
@@ -1648,6 +1762,17 @@ def main():
                         "found-not-acknowledged=%s acknowledged-not-found=%s"
                         % (sorted(set(gaps) - set(ACK_WARNING_GAP)),
                            sorted(set(ACK_WARNING_GAP) - set(gaps))))
+    log("RECONCILE coded-warning parity: %d pairing(s) seen, %d expected"
+        % (len(parity_pairs), len(EXPECT_WARNING_PARITY)))
+    for k in sorted(parity_pairs):
+        log("  %s %s at the same locations on %d leg(s): %s%s"
+            % (k[0], k[1], parity_pairs[k][0], ", ".join(sorted(parity_pairs[k][1])),
+               "" if k in EXPECT_WARNING_PARITY else "   UNEXPECTED"))
+    if set(parity_pairs) != set(EXPECT_WARNING_PARITY) and not a.only:
+        failures.append("coded-warning parity expectations are stale: "
+                        "seen-not-expected=%s expected-not-seen=%s"
+                        % (sorted(set(parity_pairs) - set(EXPECT_WARNING_PARITY)),
+                           sorted(set(EXPECT_WARNING_PARITY) - set(parity_pairs))))
 
     log("RECONCILE unreadable-domain: found=%d acknowledged=%d %s"
         % (len(got_keys), len(ack_keys),
