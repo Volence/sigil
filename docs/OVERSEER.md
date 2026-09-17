@@ -563,6 +563,8 @@ under that cut's heading.
   - *A DO-NOT-TOUCH RULE WITH NO NAMED OWNER* (ref).
   - *THE OWNERSHIP BAR I WROTE TODAY* (ref).
 - **Planning any work off the drift record**: *The drift watch's timer* (ref).
+- **A switch-sweep notification fires, or changing `scripts/switch_matrix_sweep.py` or its nightly job**:
+  *The switch-matrix sweep lane* (ref).
 
 ### Invoking `asl`, generated artifacts, and the version banner
 
