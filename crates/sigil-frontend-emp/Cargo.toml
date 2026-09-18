@@ -18,6 +18,13 @@ toml = { version = "0.8", features = ["preserve_order"] }
 
 [dev-dependencies]
 sigil-link = { path = "../sigil-link" }
+# `tests/z80_ed_block_ops.rs` derives its expected bytes by assembling the SAME
+# instruction through the OTHER front end rather than typing opcode literals: the
+# ED block-op grid differs by single bits across both its axes, so a hand-typed
+# table that transposed a row for a column still answers with legal, plausible
+# bytes. `sigil-frontend-as` depends only on ir/backends/span and never on this
+# crate, so the edge is acyclic in both profiles.
+sigil-frontend-as = { path = "../sigil-frontend-as" }
 # The two corpus censuses in `tests/cfg_blind_spots.rs` reach the reference tree,
 # and `contract/SUITE_PATHS.md` puts ONE resolver behind every such reach — a
 # private copy of the precedence is a second thing to keep in step. The harness
