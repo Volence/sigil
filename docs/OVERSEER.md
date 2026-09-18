@@ -497,6 +497,9 @@ under that cut's heading.
 
 - **Judging ANY returned agent work or peer report, as an unconditional step**: *REVIEW STEP,
   UNCONDITIONAL: RECOMPUTE EVERY QUOTED FIGURE WITH THIS LANE'S OWN INSTRUMENT* (ref).
+- **Judging ANY returned agent work, beside the recompute step**: *JUDGE A RETURNED REPORT BY ITS
+  SILENCES, NOT BY ITS EVIDENCE* (ref), which carries why naming the checks in the brief cannot
+  close the class and why a standing gate can.
 - **Building a proof, or judging a claim, a green, or a detached run**:
   - *Rules banked from closed findings* (ref).
   - *A re-baseline does not explain a green* (ref).
