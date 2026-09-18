@@ -1,0 +1,122 @@
+SIGIL sigil 0.1.0 (1960c7f6)
+SIGIL md5 daf8719166e99571a2dd781c35454941
+CONTROL C1 no-op-edit: PASSED, gate fired (the edit changed no text at /home/volence/sonic_hacks/.scratch-optcomp/sweep-only/selftest/t.asm:1; an unappli)
+   C1 mutation on disk: 'Revision = 1'
+CONTROL C2 wrong-line: PASSED, gate fired (/home/volence/sonic_hacks/.scratch-optcomp/sweep-only/selftest/t.asm:1 does not declare `Revision`, it reads ')
+   C3 mutation on disk: 'Revision = 2'
+CONTROL C3 shadowed-declaration: PASSED, gate fired (`Revision` is declared at column 0 on lines [1, 3], not only 1; a second declaration would shadow the edit)
+CONTROL C4 blind-comparer: PASSED, gate fired (the planted-byte control failed; this compare cannot report a difference and its figure is void)
+   C5 mutation on disk: other.asm 'B = 1'
+CONTROL C5 option-outside-block: PASSED, gate fired (selftest: the documented-declaration scan and the ASSEMBLY OPTIONS block disagree. scan-only=['B'] block-only=)
+   C6 mutation on disk: 'A = 5'
+CONTROL C6 one-element-domain: PASSED, gate fired (selftest: `A` derived the one-element domain [5] from its prose, so it would be counted as swept and execute n)
+CONTROL C8 warning-normaliser: PASSED, the source warning both toolchains fire normalises to one string, the coded and sigil-only ones stay apart, and asl#180 pairs with [as.odd-address] by location in all 5 cases
+CONTROL C9 stock-decline-adjudicator: PASSED, an image only sigil produced is a finding and an acknowledgement matching no corner is stale
+   C10 mutation on disk: tools/x.lua 'local extra = true'
+CONTROL C10a lua-toggle-outside-block: PASSED, gate fired (selftest: a column-0 boolean local outside build.lua's Settings block is a toggle this sweep cannot reach: ['t)
+CONTROL C10b lua-domains: PASSED, a boolean sweeps its other arm and a number literal is unreadable
+CONTROL C10c lua-block-statement: PASSED, gate fired (selftest: build.lua:4 is inside the Settings block but is not a column-0 `local <name> = <literal>`, so its do)
+CONTROL C11a lua-no-op-edit: PASSED, gate fired (the edit changed no text at /home/volence/sonic_hacks/.scratch-optcomp/sweep-only/selftest/t.lua:1; an unappli)
+   C11b mutation on disk: 'fast = true'
+CONTROL C11b lua-overriding-assignment: PASSED, gate fired (`fast` is assigned on lines [1, 2], not only 1; a second assignment would override the edit)
+CONTROL C11c lua-table-field-is-a-read: PASSED
+CONTROL C12 ack-diagnostic-text: PASSED, a refusal for a neighbouring reason is a mismatch
+SELF_TEST PASSED
+
+==============================================================================
+CORPUS s1disasm at f6ece657c1cf253404312137dfcb8ec15fa42318 (HEAD)
+  extracted read-only by git archive of f6ece657c1cf253404312137dfcb8ec15fa42318 into /home/volence/sonic_hacks/.scratch-optcomp/sweep-only/trees/s1disasm-pristine
+  build.lua says: root=sonic.asm output=s1built.bin p2bin/sigil args=-p=FF -z=0,kosinski,Size_of_DAC_driver_guess,after
+  DERIVED 11 documented switches, cross-checked against the ASSEMBLY OPTIONS block
+  DERIVED 1 build-script settings from build.lua's Settings block, cross-checked against every column-0 boolean local in 5 .lua file(s)
+    Revision                                 = 1   domain [0, 1, 2]    arms [0, 2]
+    FixBugs                                  = 0   domain [0, 1]       arms [1]
+    CheatsEnabled                            = 0   domain [0, 1]       arms [1]
+    AllOptimizations                         = 0   domain [0, 1]       arms [1]
+    SkipChecksumCheck                          DERIVED  right-hand side `0|AllOptimizations` names another switch, so this is not independently settable
+    ZeroOffsetOptimization                     DERIVED  right-hand side `0|AllOptimizations` names another switch, so this is not independently settable
+    PaddingOptimization                        DERIVED  right-hand side `0|AllOptimizations` names another switch, so this is not independently settable
+    EnableSRAM                               = 0   domain [0, 1]       arms [1]
+    BackupSRAM                               = 1   domain [0, 1]       arms [0]
+    AddressSRAM                              = 3   domain [0, 2, 3]    arms [0, 2]
+    ZoneCount                                  UNREADABLE prose next to the switch enumerates no values
+    build.lua:improved_dac_driver_compression = 0   domain [0, 1]       arms [1]
+POPULATION s1disasm asm_options=11 asm_swept=7 asm_arms=9 build_script_settings=1 build_script_swept=1 build_script_arms=1 lua_files=5 corners=576
+  RECONCILE switches: 12 derived = 8 swept + 4 excluded
+  RECONCILE legs: 10 arms -> 10 flip legs + 1 baseline
+
+-- LEG s1disasm-build.lua:improved_dac_driver_compression-1   build.lua:improved_dac_driver_compression = 1
+   LEG_START s1disasm-build.lua:improved_dac_driver_compression-1
+   edit build.lua:10
+     before: 'local improved_dac_driver_compression = false'
+     after:  'local improved_dac_driver_compression = true'
+   BUILD_LUA exit=0 wrote=True  (s1disasm-build.lua:improved_dac_driver_compression-1.lua.log)
+   p2bin/sigil args for this leg: -p=FF -z=0,kosinski-optimised,Size_of_DAC_driver_guess,after  (shipped: -p=FF -z=0,kosinski,Size_of_DAC_driver_guess,after)
+   SIGIL exit=0 wrote=True  stderr lines=0 (s1disasm-build.lua:improved_dac_driver_compression-1.sigil.err)
+   reference crc32=faa36f4d size=524288
+   candidate crc32=faa36f4d size=524288
+   DIFF 0 bytes in 0 runs
+   CONTROL planted at ['0x200', '0x40000', '0x7fffe'] -> 3 bytes in 3 runs: PASSED
+   LEG_REPORTED s1disasm-build.lua:improved_dac_driver_compression-1
+   RESULT AGREE
+
+==============================================================================
+CORPUS s2disasm at e45ebf332f39987424ca3102e50c717628f71269 (HEAD)
+  extracted read-only by git archive of e45ebf332f39987424ca3102e50c717628f71269 into /home/volence/sonic_hacks/.scratch-optcomp/sweep-only/trees/s2disasm-pristine
+  build.lua says: root=s2.asm output=s2built.bin p2bin/sigil args=-p=0 -z=0,saxman-bugged,Size_of_Snd_driver_guess,after
+  DERIVED 10 documented switches, cross-checked against the ASSEMBLY OPTIONS block
+  DERIVED 3 build-script settings from build.lua's Settings block, cross-checked against every column-0 boolean local in 5 .lua file(s)
+    gameRevision                             = 1   domain [0, 1, 2]    arms [0, 2]
+    padToPowerOfTwo                          = 1   domain [0, 1]       arms [0]
+    fixBugs                                  = 0   domain [0, 1]       arms [1]
+    allOptimizations                         = 0   domain [0, 1]       arms [1]
+    skipChecksumCheck                        = 0   domain [0, 1]       arms [1]
+    zeroOffsetOptimization                     DERIVED  right-hand side `0|allOptimizations` names another switch, so this is not independently settable
+    removeJmpTos                               DERIVED  right-hand side `0|(gameRevision>=2)|allOptimizations` names another switch, so this is not independently settable
+    addsubOptimize                             DERIVED  right-hand side `0|(gameRevision=2)|allOptimizations` names another switch, so this is not independently settable
+    relativeLea                                DERIVED  right-hand side `0|(gameRevision<2)|allOptimizations` names another switch, so this is not independently settable
+    useFullWaterTables                       = 0   domain [0, 1]       arms [1]
+    build.lua:improved_sound_driver_compression = 0   domain [0, 1]       arms [1]
+    build.lua:music_buffer_address             UNREADABLE `0x1380` is a number literal; build.lua states no set of legal values for it
+    build.lua:music_buffer_size                UNREADABLE `0x7C0` is a number literal; build.lua states no set of legal values for it
+POPULATION s2disasm asm_options=10 asm_swept=6 asm_arms=7 build_script_settings=3 build_script_swept=1 build_script_arms=1 lua_files=5 corners=192
+  RECONCILE switches: 13 derived = 7 swept + 6 excluded
+  RECONCILE legs: 8 arms -> 8 flip legs + 1 baseline
+
+-- LEG s2disasm-build.lua:improved_sound_driver_compression-1   build.lua:improved_sound_driver_compression = 1
+   LEG_START s2disasm-build.lua:improved_sound_driver_compression-1
+   edit build.lua:10
+     before: 'local improved_sound_driver_compression = false'
+     after:  'local improved_sound_driver_compression = true'
+   BUILD_LUA exit=0 wrote=True  (s2disasm-build.lua:improved_sound_driver_compression-1.lua.log)
+   p2bin/sigil args for this leg: -p=0 -z=0,saxman-optimised,Size_of_Snd_driver_guess,after  (shipped: -p=0 -z=0,saxman-bugged,Size_of_Snd_driver_guess,after)
+   SIGIL exit=0 wrote=True  stderr lines=0 (s2disasm-build.lua:improved_sound_driver_compression-1.sigil.err)
+   reference crc32=c4e244a2 size=1048576
+   candidate crc32=b8a9299a size=1048576
+   DIFF 2 bytes in 2 runs
+     [0x00018F,0x000190) ref 36 cand 50
+     [0x0EC051,0x0EC052) ref 4a cand 64
+   CONTROL planted at ['0x200', '0x80000', '0xffffe'] -> 5 bytes in 5 runs: PASSED
+   LEG_REPORTED s2disasm-build.lua:improved_sound_driver_compression-1
+   RESULT DIFFER
+
+==============================================================================
+RECONCILE legs launched=2 reported=2
+RECONCILE diagnostics: 2 leg(s) where both toolchains ran, 1 warning-parity key(s) seen, 1 acknowledged
+  s2disasm sigil-only:`shared` is ignored on 1 leg(s)
+RECONCILE coded-warning parity: 0 pairing(s) seen, 1 expected
+RECONCILE unreadable-domain: found=3 acknowledged=3 MATCH
+
+LEG                                        RESULT                         DETAIL
+s1disasm-build.lua:improved_dac_driver_compression-1 AGREE                          crc32 faa36f4d size 524288
+s2disasm-build.lua:improved_sound_driver_compression-1 DIFFER                         2 bytes in 2 runs at 0x18F 0xEC051
+RECONCILE vacuity: 0 phase-1 arm(s) exercised no changed source, 0 rescue verdict(s)
+
+RECONCILE outcomes: 1 non-agreeing, 1 acknowledged, 1 unacknowledged, 1 stale acknowledgements, 0 class mismatches
+  UNACKNOWLEDGED s2disasm s2disasm-build.lua:improved_sound_driver_compression-1: DIFFER
+  STALE ACKNOWLEDGEMENT s2disasm s2disasm-fixBugs-1: expected ('SIGIL-DECLINED', 'the size the source declares for it, is $F64'), the leg agreed
+
+PARTIAL RUN: --only was given, so legs outside ['s1disasm-build.lua:improved_dac_driver_compression-1', 's2disasm-build.lua:improved_sound_driver_compression-1'] did not run and the outcome, unreadable-domain and leg-count reconciliations were not enforced. This run is a probe; it is not a sweep result and no table may be built from it.
+
+SWEEP PASSED
+SWEEP_END

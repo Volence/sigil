@@ -62,28 +62,54 @@ pub const P2BIN_FORMATS: [&str; 7] = [
 /// 0x2001 refused, whatever the format.
 pub const MAX_BLOB: usize = 0x2000;
 
-/// The formats this module implements: the ones the Sonic 1, Sonic 2 and Sonic 3
-/// & Knuckles build scripts select.
+/// The formats this module implements: every format the Sonic 1, Sonic 2 and
+/// Sonic 3 & Knuckles build scripts can select, at either setting of the
+/// `improved_dac_driver_compression` / `improved_sound_driver_compression`
+/// locals their build scripts switch the compressor on. `kosinskiplus`, which
+/// no corpus here selects, is the one p2bin format left out.
+///
+/// The pairs are one container each: an `-optimised` stream is read by the same
+/// decompressor as its authentic sibling, and differs only in which matches the
+/// compressor chose. p2bin's authentic pair is Sega's own greedy compressors and
+/// its optimised pair is clownlzss's optimal parser, which is the library this
+/// workspace already vendors; both halves of that identity are measured against
+/// the p2bin binary in `sigil-clownlzss-sys`'s vector tests.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BlobFormat {
     /// `uncompressed`: the bytes as assembled.
     Uncompressed,
     /// `kosinski`: Sega's own Kosinski compressor, "Kosinski (authentic)".
     Kosinski,
+    /// `kosinski-optimised`: clownlzss's optimal-parse Kosinski compressor.
+    KosinskiOptimised,
+    /// `saxman`: Sega's own Saxman compressor, "Saxman (authentic)".
+    Saxman,
     /// `saxman-bugged`: Sega's own Saxman compressor, then one junk byte.
     SaxmanBugged,
+    /// `saxman-optimised`: clownlzss's optimal-parse Saxman compressor.
+    SaxmanOptimised,
 }
 
 impl BlobFormat {
-    /// Every implemented format.
-    pub const ALL: [BlobFormat; 3] = [BlobFormat::Uncompressed, BlobFormat::Kosinski, BlobFormat::SaxmanBugged];
+    /// Every implemented format, in the order p2bin's help text lists them.
+    pub const ALL: [BlobFormat; 6] = [
+        BlobFormat::Uncompressed,
+        BlobFormat::Kosinski,
+        BlobFormat::KosinskiOptimised,
+        BlobFormat::Saxman,
+        BlobFormat::SaxmanBugged,
+        BlobFormat::SaxmanOptimised,
+    ];
 
     /// The name p2bin gives the format.
     pub fn name(self) -> &'static str {
         match self {
             BlobFormat::Uncompressed => "uncompressed",
             BlobFormat::Kosinski => "kosinski",
+            BlobFormat::KosinskiOptimised => "kosinski-optimised",
+            BlobFormat::Saxman => "saxman",
             BlobFormat::SaxmanBugged => "saxman-bugged",
+            BlobFormat::SaxmanOptimised => "saxman-optimised",
         }
     }
 
@@ -717,19 +743,44 @@ mod tests {
     }
 
     /// The formats p2bin has and sigil does not are refused by name, with the
-    /// list sigil does implement, rather than guessed at.
+    /// list sigil does implement, rather than guessed at. `kosinskiplus` is the
+    /// only one left: no corpus here selects it, so nothing measures it.
     #[test]
     fn an_unimplemented_p2bin_format_is_refused_by_name() {
-        for name in ["kosinski-optimised", "saxman", "saxman-optimised", "kosinskiplus"] {
+        for name in ["kosinskiplus"] {
             let e = parse_blob(&format!("-z=0,{name},Guess,after")).expect_err(name);
             assert!(
                 e.contains(&format!("`{name}` is a p2bin format sigil does not implement"))
-                    && e.contains("uncompressed, kosinski, saxman-bugged"),
+                    && e.contains("uncompressed, kosinski, kosinski-optimised, saxman, saxman-bugged, saxman-optimised"),
                 "{name}: {e}"
             );
         }
         for f in BlobFormat::ALL {
             assert!(P2BIN_FORMATS.contains(&f.name()), "{} is not a p2bin name", f.name());
+        }
+    }
+
+    /// Every format p2bin names is either parsed to a distinct `BlobFormat` or
+    /// refused as unimplemented, so a name can neither go missing nor be read as
+    /// its neighbour. The two `-optimised` names are the ones a build script
+    /// reaches through `improved_dac_driver_compression` (Sonic 1) and
+    /// `improved_sound_driver_compression` (Sonic 2).
+    #[test]
+    fn every_p2bin_format_name_parses_to_its_own_format_or_is_refused() {
+        let mut seen: Vec<BlobFormat> = Vec::new();
+        for name in P2BIN_FORMATS {
+            match parse_blob(&format!("-z=0,{name},Guess,after")) {
+                Ok(z) => {
+                    assert_eq!(z.format.name(), name, "{name} parsed to another format");
+                    assert!(!seen.contains(&z.format), "{name} is a second name for one format");
+                    seen.push(z.format);
+                }
+                Err(e) => assert!(e.contains("sigil does not implement"), "{name}: {e}"),
+            }
+        }
+        assert_eq!(seen.len(), BlobFormat::ALL.len());
+        for name in ["kosinski-optimised", "saxman-optimised"] {
+            assert_eq!(parse_blob(&format!("-z=0,{name},Guess,after")).expect(name).format.name(), name);
         }
     }
 }

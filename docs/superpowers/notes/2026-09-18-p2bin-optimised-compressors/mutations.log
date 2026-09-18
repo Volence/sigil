@@ -1,0 +1,103 @@
+Red-first proof for the optimised-compressor parcel.
+
+Each mutation is applied on disk from the committed baseline, the mutated
+line is quoted back with its file and line number, the named cargo test is
+run, and the file is restored with 'git checkout --' from a clean tree.
+Every run is red; no mutation was applied-and-still-green.
+
+
+===== M1 kosinski-optimised stores the AUTHENTIC kosinski stream
+  APPLIED, git diff --stat:
+    crates/sigil-cli/src/p2bin_codec.rs | 2 +-
+     1 file changed, 1 insertion(+), 1 deletion(-)
+  ON DISK crates/sigil-cli/src/p2bin_codec.rs:44: BlobFormat::KosinskiOptimised => sigil_clownlzss_sys::accurate::compress_kosinski_authentic(data), // MUTATION M1
+  cargo exit 101
+    test a_two_driver_program_places_both_blobs_in_an_optimised_format ... FAILED
+    test the_optimised_formats_store_the_bytes_p2bin_stores ... FAILED
+    test the_optimised_compressors_place_a_blob_the_authentic_saxman_would_store_unreadably ... FAILED
+    test result: FAILED. 17 passed; 3 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+===== M2 saxman-optimised stores the HEADER-FRAMED stream
+  APPLIED, git diff --stat:
+    crates/sigil-cli/src/p2bin_codec.rs | 2 +-
+     1 file changed, 1 insertion(+), 1 deletion(-)
+  ON DISK crates/sigil-cli/src/p2bin_codec.rs:49: BlobFormat::SaxmanOptimised => expect_compressed(format, sigil_clownlzss_sys::compress_saxman(data, true)), // MUTATION M2
+  cargo exit 101
+    test a_two_driver_program_places_both_blobs_in_an_optimised_format ... FAILED
+    test the_optimised_formats_store_the_bytes_p2bin_stores ... FAILED
+    test the_optimised_compressors_place_a_blob_the_authentic_saxman_would_store_unreadably ... FAILED
+    test result: FAILED. 17 passed; 3 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+===== M3 saxman-optimised stores the AUTHENTIC saxman stream
+  APPLIED, git diff --stat:
+    crates/sigil-cli/src/p2bin_codec.rs | 2 +-
+     1 file changed, 1 insertion(+), 1 deletion(-)
+  ON DISK crates/sigil-cli/src/p2bin_codec.rs:49: BlobFormat::SaxmanOptimised => sigil_clownlzss_sys::accurate::compress_saxman_authentic(data), // MUTATION M3
+  cargo exit 101
+    test a_two_driver_program_places_both_blobs_in_an_optimised_format ... FAILED
+    test the_optimised_compressors_place_a_blob_the_authentic_saxman_would_store_unreadably ... FAILED
+    test the_optimised_formats_store_the_bytes_p2bin_stores ... FAILED
+    test result: FAILED. 17 passed; 3 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+===== M4 the optimised pair is read back by the WRONG decompressor
+  APPLIED, git diff --stat:
+    crates/sigil-cli/src/p2bin_codec.rs | 2 +-
+     1 file changed, 1 insertion(+), 1 deletion(-)
+  ON DISK crates/sigil-cli/src/p2bin_codec.rs:60: sigil_clownlzss_sys::decompress_kosplus(stored).map_err(|e| e.to_string()) // MUTATION M4
+  cargo exit 101
+    test kosinski_and_saxman_bugged_store_the_bytes_p2bin_stores ... FAILED
+    test a_two_driver_program_places_both_blobs_in_an_optimised_format ... FAILED
+    test a_stream_the_game_would_read_back_wrong_is_refused ... FAILED
+    test the_optimised_formats_store_the_bytes_p2bin_stores ... FAILED
+    test both_blobs_of_a_two_driver_program_are_placed_in_either_order ... FAILED
+    test the_optimised_compressors_place_a_blob_the_authentic_saxman_would_store_unreadably ... FAILED
+    test result: FAILED. 14 passed; 6 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+===== M5 saxman keeps saxman-bugged's junk-byte-trimming stored length
+  APPLIED, git diff --stat:
+    crates/sigil-cli/src/p2bin_codec.rs | 2 +-
+     1 file changed, 1 insertion(+), 1 deletion(-)
+  ON DISK crates/sigil-cli/src/p2bin_codec.rs:63: sigil_clownlzss_sys::decompress_saxman_no_header(stored, stored.len() - 1).map_err(|e| e.to_string()) // MUTATION M5
+  cargo exit 101
+    test a_two_driver_program_places_both_blobs_in_an_optimised_format ... FAILED
+    test the_optimised_formats_store_the_bytes_p2bin_stores ... FAILED
+    test result: FAILED. 18 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+===== M6 compress_kosinski is wired to the kosinskiplus shim
+  APPLIED, git diff --stat:
+    crates/sigil-clownlzss-sys/src/lib.rs | 2 +-
+     1 file changed, 1 insertion(+), 1 deletion(-)
+  ON DISK crates/sigil-clownlzss-sys/src/lib.rs:404: run_compress(data, clownlzss_kosinskiplus_compress) // MUTATION M6
+  cargo exit 101
+    test every_optimised_stream_decompresses_to_its_input_through_the_authentic_decoder ... FAILED
+    test clownlzss_kosinski_is_p2bins_kosinski_optimised ... FAILED
+    test result: FAILED. 4 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.94s
+
+===== M7 two format names swapped in BlobFormat::name
+  APPLIED, git diff --stat:
+    crates/sigil-link/src/blob.rs | 4 ++--
+     1 file changed, 2 insertions(+), 2 deletions(-)
+  ON DISK crates/sigil-link/src/blob.rs:109: BlobFormat::KosinskiOptimised => "saxman", // MUTATION M7
+  cargo exit 101
+    test blob::tests::an_unimplemented_p2bin_format_is_refused_by_name ... FAILED
+    test result: FAILED. 156 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+===== M8 kosinski-optimised loses its own name (two formats share one)
+  APPLIED, git diff --stat:
+    crates/sigil-link/src/blob.rs | 2 +-
+     1 file changed, 1 insertion(+), 1 deletion(-)
+  ON DISK crates/sigil-link/src/blob.rs:109: BlobFormat::KosinskiOptimised => "kosinski", // MUTATION M8
+  cargo exit 101
+    test blob::tests::every_p2bin_format_name_parses_to_its_own_format_or_is_refused ... FAILED
+    test blob::tests::an_unimplemented_p2bin_format_is_refused_by_name ... FAILED
+    test result: FAILED. 155 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+===== M9 header-less compress_saxman is wired to the header-framed shim
+  APPLIED, git diff --stat:
+    crates/sigil-clownlzss-sys/src/lib.rs | 2 +-
+     1 file changed, 1 insertion(+), 1 deletion(-)
+  ON DISK crates/sigil-clownlzss-sys/src/lib.rs:461: run_compress(data, clownlzss_saxman_compress_with_header)? // MUTATION M9
+  cargo exit 101
+    test every_optimised_stream_decompresses_to_its_input_through_the_authentic_decoder ... FAILED
+    test no_optimised_saxman_stream_straddles_the_start_on_the_inputs_where_the_authentic_one_does ... FAILED
+    test clownlzss_headerless_saxman_is_p2bins_saxman_optimised ... FAILED
+    test result: FAILED. 3 passed; 3 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.90s

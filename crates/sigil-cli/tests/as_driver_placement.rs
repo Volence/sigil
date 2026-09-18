@@ -349,6 +349,91 @@ fn kosinski_and_saxman_bugged_store_the_bytes_p2bin_stores() {
     }
 }
 
+/// p2bin's `-optimised` pair, which `improved_dac_driver_compression` (Sonic 1)
+/// and `improved_sound_driver_compression` (Sonic 2) select, and plain `saxman`
+/// beside them. Every image here is p2bin's, from the same probe sources
+/// (`docs/superpowers/notes/2026-09-18-p2bin-optimised-compressors/mk_expect_opt.py`,
+/// output beside it).
+///
+/// `kosinski` and `kosinski-optimised` on P_AFTER differ in the LAST stored
+/// byte, and only there: authentic Kosinski pads its stream to a multiple of 16
+/// and clownlzss's does not, so the optimised image ends `00 F0 00 FF` where the
+/// authentic one ends `00 F0 00 00`, the `FF` being the pad byte showing through
+/// one byte of gap. A placement that stored the authentic stream under the
+/// optimised name would differ by that byte and no other, so the pair is pinned
+/// together here rather than apart.
+#[test]
+fn the_optimised_formats_store_the_bytes_p2bin_stores() {
+    assert_eq!(
+        build(P_AFTER, &[], &["-p=FF", "-z=0,kosinski,Guess,after"]),
+        hex("0102030405060708ff0b1011121314151617181900f00000aabb")
+    );
+    assert_eq!(
+        build(P_AFTER, &[], &["-p=FF", "-z=0,kosinski-optimised,Guess,after"]),
+        hex("0102030405060708ff0b1011121314151617181900f000ffaabb")
+    );
+    // Ten bytes with no repeat: both Saxman parsers write ten literals, so the
+    // two agree here and the bigger probes below are what separate them.
+    for format in ["saxman", "saxman-optimised"] {
+        assert_eq!(
+            build(P_AFTER, &[], &["-p=FF", &format!("-z=0,{format},Guess,after")]),
+            hex("0102030405060708ff1011121314151617031819ffffffffaabb"),
+            "{format}"
+        );
+    }
+    for (format, want) in [
+        ("kosinski", 0xe004a55a_u32),
+        ("kosinski-optimised", 0xa8a0065c),
+        ("saxman", 0x3bf45ca3),
+        ("saxman-optimised", 0x5f8f3cd4),
+        ("saxman-bugged", 0xd72a6d1a),
+    ] {
+        let got = build(P_KOS, &[], &["-p=FF", &format!("-z=0,{format},Guess,after")]);
+        assert_eq!((got.len(), crc32(&got)), (522, want), "{format}");
+    }
+    // Every one of the five is a different image, so none of these pins could be
+    // met by storing a neighbouring format's stream.
+    let mut crcs = [0xe004a55a_u32, 0xa8a0065c, 0x3bf45ca3, 0x5f8f3cd4, 0xd72a6d1a];
+    crcs.sort_unstable();
+    crcs.windows(2).for_each(|w| assert_ne!(w[0], w[1], "two formats store the same image"));
+}
+
+/// The Sonic 3 & Knuckles shape, two drivers in one program, under the optimised
+/// pair: the format reaches both `-z` instructions, not just the first.
+#[test]
+fn a_two_driver_program_places_both_blobs_in_an_optimised_format() {
+    for (format, want) in [("kosinski-optimised", 0x32b9d7cc_u32), ("saxman-optimised", 0xb35d2c1a)] {
+        let args = [
+            "-p=FF".to_string(),
+            format!("-z=0,{format},Size_of_Snd_driver_guess,before"),
+            format!("-z=1300,{format},Size_of_Snd_driver2_guess,before"),
+        ];
+        let args: Vec<&str> = args.iter().map(String::as_str).collect();
+        let got = build(P_S3K, &[], &args);
+        assert_eq!((got.len(), crc32(&got)), (268, want), "{format}");
+    }
+}
+
+/// The blob that makes Sega's Saxman compressor emit a match reaching back past
+/// the start of the output, which the game reads as zeros: sigil refuses it
+/// under `saxman` for the same reason it already refuses it under
+/// `saxman-bugged`. clownlzss's parser never looks back past the start, so
+/// `saxman-optimised` on the SAME blob builds, and is placed as p2bin places it.
+/// The refusal is a property of the compressor, not of the blob.
+#[test]
+fn the_optimised_compressors_place_a_blob_the_authentic_saxman_would_store_unreadably() {
+    let p1 = hex(P1_BIN);
+    let files: [(&str, &[u8]); 1] = [("p1.bin", &p1)];
+    for format in ["saxman", "saxman-bugged"] {
+        let e = refused(P_STRADDLE, &files, &["-p=FF", &format!("-z=0,{format},Guess,after")]);
+        assert!(e.contains("does not decompress to the blob that was assembled"), "{format}: {e}");
+    }
+    for (format, want) in [("kosinski-optimised", 0x2ef69056_u32), ("saxman-optimised", 0x818aaafb)] {
+        let got = build(P_STRADDLE, &files, &["-p=FF", &format!("-z=0,{format},Guess,after")]);
+        assert_eq!((got.len(), crc32(&got)), (138, want), "{format}");
+    }
+}
+
 #[test]
 fn both_blobs_of_a_two_driver_program_are_placed_in_either_order() {
     let want = hex("10111213141516171819eeeeeeeeeeeeeeeeeeeeeeeeeeee202122232425ddddddddddddaabb");
@@ -456,7 +541,7 @@ fn a_p2bin_grammar_error_stops_the_run() {
     for (args, part) in [
         (vec!["-p=$FF"], "not a hexadecimal number"),
         (vec!["-p=100"], "FF or lower"),
-        (vec!["-z=0,kosinski-optimised,Guess,after"], "is a p2bin format sigil does not implement"),
+        (vec!["-z=0,kosinskiplus,Guess,after"], "is a p2bin format sigil does not implement"),
         (vec!["-z=0,Kosinski,Guess,after"], "is not a p2bin format"),
         (vec!["-z=0,kosinski,Guess"], "is written `-z=<address>,<format>,<constant>,<before|after>`"),
         (vec!["-pFF"], "unexpected argument '-pFF'"),
