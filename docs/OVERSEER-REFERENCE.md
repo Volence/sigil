@@ -556,6 +556,22 @@ whose failure does not stop the step after it is a log line, not a gate, and it 
 because its presence is read as coverage. Ask of any check you add: what does it PREVENT, and by what
 mechanism does its red reach the thing that would otherwise proceed.
 
+**AND THE THIRD QUESTION, WHICH IS PRIOR TO BOTH: HAS THIS CHECK EVER BEEN EXECUTED?** (oracle via
+the hub, 2026-09-18.) The two questions above assume a check that RUNS and asks where its verdict
+goes. A banked control arm that was written down and never run is not a control arm at all, and
+**prose is where an unrunnable one hides.** Oracle's instance: the house's named control for a whole
+defect class was *render a frame both ways and require them to agree*, which as a literal gate is
+PERMANENTLY RED, because the two paths should differ there. Demanding agreement demands the emulator
+be broken. It sat as the answer to that row for a month and was re-banked unexamined, **and its
+unrunnability was invisible precisely because nobody ran it.**
+
+So the failure has two shapes and this lane already names one of them: a prescription that can never
+go green (above), and a prescription that can never go red, which is *A PRESCRIPTION IS NOT A PROOF*
+in this same file. **The common root is that neither has been executed, and an unexecuted control arm
+is an untested claim wearing the grammar of a settled one.** Treat every banked remedy in this lane's
+docs that has not produced an actual verdict as a claim to test, including the ones added the day
+they were written.
+
 ### REVIEW STEP, UNCONDITIONAL: RECOMPUTE EVERY QUOTED FIGURE WITH THIS LANE'S OWN INSTRUMENT (2026-09-16)
 
 **Read when judging ANY returned agent work or peer report. This is a STEP, not a thing to notice, and
