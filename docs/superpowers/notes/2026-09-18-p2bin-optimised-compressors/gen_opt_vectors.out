@@ -1,0 +1,15 @@
+p2bin 4f2fff99c3347bafb93b12d5be1db754 asl 61e672562465725a8c102288a7da9098
+one           len=1     in=c0b506dd  kosinski=16/5b324c8a  kosinski-optimised=6/43b69185  saxman=2/4a75caee  saxman-optimised=2/4a75caee  saxman-bugged=3/95fa5538
+two           len=2     in=70819f5a  kosinski=16/f00aae39  kosinski-optimised=7/bff9ca43  saxman=3/cc5feaee  saxman-optimised=3/cc5feaee  saxman-bugged=4/0418138f
+small         len=17    in=1e75c736  kosinski=32/8e8d83a1  kosinski-optimised=23/2f35cce6  saxman=20/01bab608  saxman-optimised=20/01bab608  saxman-bugged=21/dcd8dd09
+odd_a         len=300   in=55865362  kosinski=80/24d2882b  kosinski-optimised=67/a98cf448  saxman=80/e34780ec  saxman-optimised=79/fc6f958c  saxman-bugged=81/7b5d065e
+odd_b         len=301   in=e81b9948  kosinski=96/108b0ab1  kosinski-optimised=81/9e0cf231  saxman=86/950d3d1c  saxman-optimised=86/914b82c7  saxman-bugged=87/c696beff
+odd_c         len=1000  in=55fe8a6b  kosinski=80/62bd057a  kosinski-optimised=77/83ba0b83  saxman=163/dd18ba79  saxman-optimised=162/d7f8dca1  saxman-bugged=164/6a625238
+window        len=5000  in=b6f239d7  kosinski=528/a813480a  kosinski-optimised=497/a31d44fc  saxman=855/fe61dede  saxman-optimised=844/ff3e5fac  saxman-bugged=856/22f31d17
+driver_sized  len=7110  in=a3fe4671  kosinski=800/2c307d91  kosinski-optimised=754/eaf77c28  saxman=1256/01f1afdb  saxman-optimised=1236/e8c28c91  saxman-bugged=1257/c302157e
+zeros_run     len=4100  in=2a96e5a8  kosinski=64/0ef8836a  kosinski-optimised=59/1b7301a1  saxman=485/1277e27e  saxman-optimised=485/48dfcaa2  saxman-bugged=486/f4c9a8c3
+limit         len=8192  in=e922cecf  kosinski=832/572df991  kosinski-optimised=786/5386cd98  saxman=1402/5838738c  saxman-optimised=1393/0965995d  saxman-bugged=1403/365418f5
+p1            len=100   in=44797df6  kosinski=32/f5a45899  kosinski-optimised=30/21d1e0a8  saxman=31/bdcf5925  saxman-optimised=32/6217c4e4  saxman-bugged=32/08df9804
+p2            len=101   in=205d6fd1  kosinski=48/1e9c321f  kosinski-optimised=34/f3d02705  saxman=33/a8ebe66e  saxman-optimised=34/d7bf8692  saxman-bugged=34/e9c424a3
+p3            len=102   in=81c2c99c  kosinski=32/373f7ae7  kosinski-optimised=29/be13b263  saxman=29/ac0229d2  saxman-optimised=27/36b725a1  saxman-bugged=30/2b1732cb
+p4            len=103   in=994d6b2f  kosinski=32/661230eb  kosinski-optimised=27/94984125  saxman=28/6c8baba9  saxman-optimised=26/70de5f32  saxman-bugged=29/7d647f6a
