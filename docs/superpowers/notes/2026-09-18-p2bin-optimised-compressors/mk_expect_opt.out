@@ -1,0 +1,57 @@
+p2bin 4f2fff99c3347bafb93b12d5be1db754 asl 61e672562465725a8c102288a7da9098
+== p_after -p=FF -z=0,kosinski,Guess,after
+   rc=0 
+   hex  0102030405060708ff0b1011121314151617181900f00000aabb
+   size 26 crc32 4b0408a0
+== p_kos -p=FF -z=0,kosinski,Guess,after
+   rc=0 
+   size 522 crc32 e004a55a
+== p_straddle -p=FF -z=0,kosinski,Guess,after
+   rc=0 
+   size 138 crc32 8f7c0179
+== p_after -p=FF -z=0,kosinski-optimised,Guess,after
+   rc=0 
+   hex  0102030405060708ff0b1011121314151617181900f000ffaabb
+   size 26 crc32 f59c3c4d
+== p_kos -p=FF -z=0,kosinski-optimised,Guess,after
+   rc=0 
+   size 522 crc32 a8a0065c
+== p_straddle -p=FF -z=0,kosinski-optimised,Guess,after
+   rc=0 
+   size 138 crc32 2ef69056
+== p_after -p=FF -z=0,saxman,Guess,after
+   rc=0 
+   hex  0102030405060708ff1011121314151617031819ffffffffaabb
+   size 26 crc32 ac16c52d
+== p_kos -p=FF -z=0,saxman,Guess,after
+   rc=0 
+   size 522 crc32 3bf45ca3
+== p_straddle -p=FF -z=0,saxman,Guess,after
+   rc=0 
+   size 138 crc32 87394ddb
+== p_after -p=FF -z=0,saxman-optimised,Guess,after
+   rc=0 
+   hex  0102030405060708ff1011121314151617031819ffffffffaabb
+   size 26 crc32 ac16c52d
+== p_kos -p=FF -z=0,saxman-optimised,Guess,after
+   rc=0 
+   size 522 crc32 5f8f3cd4
+== p_straddle -p=FF -z=0,saxman-optimised,Guess,after
+   rc=0 
+   size 138 crc32 818aaafb
+== p_after -p=FF -z=0,saxman-bugged,Guess,after
+   rc=0 
+   hex  0102030405060708ff101112131415161703181900ffffffaabb
+   size 26 crc32 48d26ee1
+== p_kos -p=FF -z=0,saxman-bugged,Guess,after
+   rc=0 
+   size 522 crc32 d72a6d1a
+== p_straddle -p=FF -z=0,saxman-bugged,Guess,after
+   rc=0 
+   size 138 crc32 517d7d29
+== p_s3k -p=FF -z=0,kosinski-optimised,Size_of_Snd_driver_guess,before -z=1300,kosinski-optimised,Size_of_Snd_driver2_guess,before
+   rc=0 
+   size 268 crc32 32b9d7cc
+== p_s3k -p=FF -z=0,saxman-optimised,Size_of_Snd_driver_guess,before -z=1300,saxman-optimised,Size_of_Snd_driver2_guess,before
+   rc=0 
+   size 268 crc32 b35d2c1a
