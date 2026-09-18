@@ -747,14 +747,16 @@ mod tests {
     /// only one left: no corpus here selects it, so nothing measures it.
     #[test]
     fn an_unimplemented_p2bin_format_is_refused_by_name() {
-        for name in ["kosinskiplus"] {
-            let e = parse_blob(&format!("-z=0,{name},Guess,after")).expect_err(name);
-            assert!(
-                e.contains(&format!("`{name}` is a p2bin format sigil does not implement"))
-                    && e.contains("uncompressed, kosinski, kosinski-optimised, saxman, saxman-bugged, saxman-optimised"),
-                "{name}: {e}"
-            );
-        }
+        // One name, written singly rather than as a list of one: the optimised
+        // parcel implemented the other four and clippy rejects the loop that is
+        // left. Restore the loop when a second unimplemented format joins it.
+        let name = "kosinskiplus";
+        let e = parse_blob(&format!("-z=0,{name},Guess,after")).expect_err(name);
+        assert!(
+            e.contains(&format!("`{name}` is a p2bin format sigil does not implement"))
+                && e.contains("uncompressed, kosinski, kosinski-optimised, saxman, saxman-bugged, saxman-optimised"),
+            "{name}: {e}"
+        );
         for f in BlobFormat::ALL {
             assert!(P2BIN_FORMATS.contains(&f.name()), "{} is not a p2bin name", f.name());
         }
