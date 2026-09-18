@@ -35,7 +35,7 @@
 use sigil_frontend_emp::lower::{lower_module, LowerOptions};
 use sigil_frontend_emp::parse_str;
 use sigil_ir::backend::Cpu;
-use sigil_ir::{Fragment, Module, SymbolTable};
+use sigil_ir::{Module, SymbolTable};
 use sigil_span::Level;
 
 // ---- the two front ends, each reduced to `snippet -> bytes` ----------------
@@ -71,7 +71,6 @@ fn section_bytes(module: &Module, name: &str) -> Vec<u8> {
     let resolved = sigil_link::resolve_layout(&module.sections, &SymbolTable::new(), true)
         .expect("resolve_layout");
     let linked = sigil_link::link(&resolved, &SymbolTable::new()).expect("link");
-    let _ = Fragment::Data as usize as u8; // keep the import honest across refactors
     linked.section(name).expect("linked section").bytes.clone()
 }
 
@@ -103,7 +102,7 @@ fn emp_bytes(snippet: &str) -> Vec<u8> {
 
 /// The emp lowering diagnostics for a snippet, WITHOUT asserting them empty.
 fn emp_diags(snippet: &str) -> Vec<sigil_span::Diagnostic> {
-    let (file, perrs) = parse_str(&emp_src(snippet));
+    let (_file, perrs) = parse_str(&emp_src(snippet));
     let parse_errs: Vec<_> = perrs.into_iter().filter(|d| d.level == Level::Error).collect();
     if !parse_errs.is_empty() {
         return parse_errs;

@@ -1504,6 +1504,7 @@ fn m68k_operand(op: &CodeOperand) -> Result<M68kOperand, String> {
         | CodeOperand::Z80IndBc
         | CodeOperand::Z80IndDe
         | CodeOperand::Z80IndSp
+        | CodeOperand::Z80IndC
         | CodeOperand::Z80Indexed { .. }
         | CodeOperand::Z80Mem { .. }
         | CodeOperand::Z80AfShadow
@@ -2005,6 +2006,9 @@ fn map_z80_operand(op: &CodeOperand, wants_imm16: bool) -> Result<Z80Operand, St
         // encoding arm (`z80.rs`) matches `[Pair(Sp), Pair(Hl)]` → `$E3`. The
         // emp-level distinctness (for `sp_hazard`) collapses here, byte-neutral.
         CodeOperand::Z80IndSp => Z80Operand::Pair(map_z80_pair(Z80Pair::Sp)),
+        // `(c)` — the C-addressed port. Its own ISA operand, NOT a `Mem`: the
+        // encoder picks the ED page from this shape alone.
+        CodeOperand::Z80IndC => Z80Operand::IndC,
         CodeOperand::Z80Indexed { reg, disp } => {
             // Defense-in-depth: the operand mapper (`map_ind_z80`) already checked
             // the i8 window; re-check at this byte-exactness seam.
@@ -2151,7 +2155,43 @@ pub(crate) fn z80_mnemonic(base: &str) -> Option<Z80Mnemonic> {
         "sra" => Sra,
         "neg" => Neg,
         "im" => Im,
+        // The ED block-op grid: four families (LD, CP, IN, OUT) crossed with
+        // four steppings (step-up, step-down, repeat-up, repeat-down). `ldir`
+        // and `ldi` are the two with a live population in the sound-driver
+        // corpus; the other fourteen are here so the grid has no holes for an
+        // author to fall into, which is the same reason the ISA enum carries
+        // them. These are the AS front end's own names, so a routine ported
+        // between the two source languages does not change instruction.
+        "ldi" => Ldi,
         "ldir" => Ldir,
+        "ldd" => Ldd,
+        "lddr" => Lddr,
+        "cpi" => Cpi,
+        "cpd" => Cpd,
+        "cpir" => Cpir,
+        "cpdr" => Cpdr,
+        "ini" => Ini,
+        "ind" => Ind,
+        "inir" => Inir,
+        "indr" => Indr,
+        "outi" => Outi,
+        "outd" => Outd,
+        "otir" => Otir,
+        "otdr" => Otdr,
+        // The port I/O pair. Each covers BOTH addressing modes — the ED
+        // register-indirect form through `(c)` and the unprefixed direct-port
+        // form against an 8-bit address — and the OPERAND SHAPE selects, so
+        // recognizing the name here commits to neither.
+        "in" => In,
+        "out" => Out,
+        // Return from interrupt / from NMI: distinct opcodes, not two spellings
+        // of one, and `reti` additionally signals the daisy chain.
+        "reti" => Reti,
+        "retn" => Retn,
+        // The two BCD nibble rotates through `(hl)` and the accumulator's low
+        // nibble, in opposite directions.
+        "rrd" => Rrd,
+        "rld" => Rld,
         _ => return None,
     })
 }
