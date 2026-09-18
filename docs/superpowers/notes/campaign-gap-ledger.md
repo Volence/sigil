@@ -6055,17 +6055,16 @@ sweep axis nobody sweeps". `scripts/switch_matrix_sweep.py` now derives build.lu
 (steps L1 to L3 in its docstring) and `scripts/nightly_switch_sweep.sh` runs it with `--cross` on the
 `sigil-switch-sweep` timer. Measurements: `docs/superpowers/notes/2026-09-17-sweep-nightly.md`.
 
-**Open 1: sigil implements neither optimised compressor, so the new arms are byte-UNMEASURED.**
-`s1disasm build.lua:improved_dac_driver_compression = true` hands `kosinski-optimised` to p2bin and
-`s2disasm build.lua:improved_sound_driver_compression = true` hands `saxman-optimised`. The stock
-image moves (Sonic 1 `afe05eee` to `faa36f4d`; every one of Sonic 2's 192 corners is a distinct stock
-image), and sigil refuses the `-z` argument by name: "is a p2bin format sigil does not implement".
-Both legs are acknowledged `SIGIL-DECLINED` with that text pinned, and in `--cross` half of each
-corpus's corners are sigil refusals for the same reason. A refusal, not a wrong ROM, but these arms
-have compared no byte. **Kill:** implement both formats in `sigil-link/src/blob.rs` (`BlobFormat`)
-with p2bin's own compressors as the reference, delete the two `ACK_DISAGREE` entries, and the next
-nightly compares them; the sweep's stale-acknowledgement check turns the run red until the entries
-go, which is the intended way for them to die.
+**Open 1: CLOSED 2026-09-18 by `P2BIN-OPTIMISED-COMPRESSORS`, and it left one row behind.**
+`BlobFormat` implements `kosinski-optimised` and `saxman-optimised` (and plain `saxman`, which came
+free), both identified against the p2bin binary rather than read off an algorithm: the optimised pair
+is clownlzss's optimal parser, which this workspace already vendored, and all fourteen blobs of the
+stage-2 vector set store byte for byte the same under both. Both `ACK_DISAGREE` entries are gone. A
+full sweep (40 legs launched, 40 reported, `SWEEP PASSED`) then measured what the refusals had been
+hiding: `s1disasm-build.lua:improved_dac_driver_compression-1` AGREES at crc32 `faa36f4d` / 524,288
+bytes, the whole ROM, exactly the image this row predicted the flip would move to;
+`s2disasm-build.lua:improved_sound_driver_compression-1` DIFFERS by two bytes, which is Open 5 below.
+Measurements: `docs/superpowers/notes/2026-09-18-p2bin-optimised-compressors/`.
 
 **Open 2: L2's reach is column-0 `local <name> = true|false` in `.lua` files.** A setting written as a
 global (`fast = false` with no `local`), as an indented local, or as a non-literal the build branches
@@ -6080,6 +6079,32 @@ until someone pulls it into the checkout. Deliberate: a fetch-and-follow would m
 nobody here reviewed turn the lane red overnight. **Kill, if wanted:** `SIGIL_SWITCH_SWEEP_S1_REF` /
 `_S2_REF` already accept `origin/<branch>`; a second, non-notifying run at upstream would measure
 drift without owning it.
+
+**Open 5: Sonic 2 under `improved_sound_driver_compression` writes a ROM that tells its own
+decompressor the wrong length, and it is not the compressor.** Now that the leg compares bytes it
+differs by exactly two: `0xEC051` and the header checksum at `0x18F` that follows from it.
+`Size_of_Snd_driver_guess = $F64` and the optimal parser stores `$F4A`, `$1A` fewer; Sonic 2 loads
+that constant into the `move.w` its Saxman decompressor reads as a byte count, and build.lua patches
+the immediate afterwards from the real size asl's share file reports (`amend_sound_driver_size`).
+sigil writes no share file, so the patch finds nothing and skips in silence. This is
+`SWITCH-SETTING-SILENT-ROMS` fault 2 in the direction sigil deliberately does NOT refuse: a stream
+SMALLER than its constant is what skdisasm ships, so refusing it would fire on a corpus at its
+shipped settings (the argument is at the `declared_size` check in `sigil-link/src/blob.rs`). The leg
+is acknowledged `DIFFER` with the byte count, run count and offsets pinned, so a difference that
+grows, spreads or moves stops being covered. **Kill:** give a build script the real stored size, which
+is the share-file question, not a compressor question. Until then this corner of Sonic 2 is a wrong
+ROM at exit 0 under a setting nobody ships.
+
+**Open 6: the corpora's generated `.sax` music blobs track a build setting only because every leg
+starts from a fresh extraction.** s2disasm's `improved_sound_driver_compression` also selects the `-a`
+flag of a STANDALONE `saxman` tool in `generate_music_data`, a different code path from p2bin's `-z`.
+Nothing is needed of sigil there: that step runs inside build.lua before either toolchain assembles,
+and the sweep deliberately leaves the generated inputs in the tree so sigil consumes the same `.sax`
+files the reference consumed. But build.lua's own change detection for those songs hashes the buffer
+address, the buffer size, the compressed-song list and `_smps2asm_inc.asm`, and NOT the setting that
+chooses the compressor. The blobs follow the flip only because `run_leg` copies a pristine
+`git archive` extraction with no hash cache. **Kill, if wanted:** a control that flips the setting in a
+REUSED tree and observes the `.sax` files change, or a leg assertion that they did.
 
 **Open 4: `--derive-only` (and a full run) over a SUBSET of corpora reports the other corpus's
 unreadable-domain acknowledgements as stale.** The reconciliation compares every `ACK_UNREADABLE`

@@ -1,0 +1,785 @@
+SIGIL sigil 0.1.0 (1960c7f6)
+SIGIL md5 daf8719166e99571a2dd781c35454941
+CONTROL C1 no-op-edit: PASSED, gate fired (the edit changed no text at /home/volence/sonic_hacks/.scratch-optcomp/sweep-full/selftest/t.asm:1; an unappli)
+   C1 mutation on disk: 'Revision = 1'
+CONTROL C2 wrong-line: PASSED, gate fired (/home/volence/sonic_hacks/.scratch-optcomp/sweep-full/selftest/t.asm:1 does not declare `Revision`, it reads ')
+   C3 mutation on disk: 'Revision = 2'
+CONTROL C3 shadowed-declaration: PASSED, gate fired (`Revision` is declared at column 0 on lines [1, 3], not only 1; a second declaration would shadow the edit)
+CONTROL C4 blind-comparer: PASSED, gate fired (the planted-byte control failed; this compare cannot report a difference and its figure is void)
+   C5 mutation on disk: other.asm 'B = 1'
+CONTROL C5 option-outside-block: PASSED, gate fired (selftest: the documented-declaration scan and the ASSEMBLY OPTIONS block disagree. scan-only=['B'] block-only=)
+   C6 mutation on disk: 'A = 5'
+CONTROL C6 one-element-domain: PASSED, gate fired (selftest: `A` derived the one-element domain [5] from its prose, so it would be counted as swept and execute n)
+CONTROL C8 warning-normaliser: PASSED, the source warning both toolchains fire normalises to one string, the coded and sigil-only ones stay apart, and asl#180 pairs with [as.odd-address] by location in all 5 cases
+CONTROL C9 stock-decline-adjudicator: PASSED, an image only sigil produced is a finding and an acknowledgement matching no corner is stale
+   C10 mutation on disk: tools/x.lua 'local extra = true'
+CONTROL C10a lua-toggle-outside-block: PASSED, gate fired (selftest: a column-0 boolean local outside build.lua's Settings block is a toggle this sweep cannot reach: ['t)
+CONTROL C10b lua-domains: PASSED, a boolean sweeps its other arm and a number literal is unreadable
+CONTROL C10c lua-block-statement: PASSED, gate fired (selftest: build.lua:4 is inside the Settings block but is not a column-0 `local <name> = <literal>`, so its do)
+CONTROL C11a lua-no-op-edit: PASSED, gate fired (the edit changed no text at /home/volence/sonic_hacks/.scratch-optcomp/sweep-full/selftest/t.lua:1; an unappli)
+   C11b mutation on disk: 'fast = true'
+CONTROL C11b lua-overriding-assignment: PASSED, gate fired (`fast` is assigned on lines [1, 2], not only 1; a second assignment would override the edit)
+CONTROL C11c lua-table-field-is-a-read: PASSED
+CONTROL C12 ack-diagnostic-text: PASSED, a refusal for a neighbouring reason is a mismatch
+CONTROL C12b ack-difference-text: PASSED, a difference of another size, shape or place is a mismatch
+SELF_TEST PASSED
+
+==============================================================================
+CORPUS s1disasm at f6ece657c1cf253404312137dfcb8ec15fa42318 (HEAD)
+  extracted read-only by git archive of f6ece657c1cf253404312137dfcb8ec15fa42318 into /home/volence/sonic_hacks/.scratch-optcomp/sweep-full/trees/s1disasm-pristine
+  build.lua says: root=sonic.asm output=s1built.bin p2bin/sigil args=-p=FF -z=0,kosinski,Size_of_DAC_driver_guess,after
+  DERIVED 11 documented switches, cross-checked against the ASSEMBLY OPTIONS block
+  DERIVED 1 build-script settings from build.lua's Settings block, cross-checked against every column-0 boolean local in 5 .lua file(s)
+    Revision                                 = 1   domain [0, 1, 2]    arms [0, 2]
+    FixBugs                                  = 0   domain [0, 1]       arms [1]
+    CheatsEnabled                            = 0   domain [0, 1]       arms [1]
+    AllOptimizations                         = 0   domain [0, 1]       arms [1]
+    SkipChecksumCheck                          DERIVED  right-hand side `0|AllOptimizations` names another switch, so this is not independently settable
+    ZeroOffsetOptimization                     DERIVED  right-hand side `0|AllOptimizations` names another switch, so this is not independently settable
+    PaddingOptimization                        DERIVED  right-hand side `0|AllOptimizations` names another switch, so this is not independently settable
+    EnableSRAM                               = 0   domain [0, 1]       arms [1]
+    BackupSRAM                               = 1   domain [0, 1]       arms [0]
+    AddressSRAM                              = 3   domain [0, 2, 3]    arms [0, 2]
+    ZoneCount                                  UNREADABLE prose next to the switch enumerates no values
+    build.lua:improved_dac_driver_compression = 0   domain [0, 1]       arms [1]
+POPULATION s1disasm asm_options=11 asm_swept=7 asm_arms=9 build_script_settings=1 build_script_swept=1 build_script_arms=1 lua_files=5 corners=576
+  RECONCILE switches: 12 derived = 8 swept + 4 excluded
+  RECONCILE legs: 10 arms -> 10 flip legs + 1 baseline
+
+-- LEG s1disasm-shipped   shipped
+   LEG_START s1disasm-shipped
+   BUILD_LUA exit=0 wrote=True  (s1disasm-shipped.lua.log)
+   SIGIL exit=0 wrote=True  stderr lines=0 (s1disasm-shipped.sigil.err)
+   reference crc32=afe05eee size=524288
+   candidate crc32=afe05eee size=524288
+   DIFF 0 bytes in 0 runs
+   CONTROL planted at ['0x200', '0x40000', '0x7fffe'] -> 3 bytes in 3 runs: PASSED
+   LEG_REPORTED s1disasm-shipped
+   RESULT AGREE
+
+-- LEG s1disasm-Revision-0   Revision = 0
+   LEG_START s1disasm-Revision-0
+   edit sonic.asm:14
+     before: 'Revision = 1'
+     after:  'Revision = 0'
+   BUILD_LUA exit=0 wrote=True  (s1disasm-Revision-0.lua.log)
+   SIGIL exit=0 wrote=True  stderr lines=0 (s1disasm-Revision-0.sigil.err)
+   reference crc32=f9394e97 size=524288
+   candidate crc32=f9394e97 size=524288
+   DIFF 0 bytes in 0 runs
+   CONTROL planted at ['0x200', '0x40000', '0x7fffe'] -> 3 bytes in 3 runs: PASSED
+   LEG_REPORTED s1disasm-Revision-0
+   RESULT AGREE
+
+-- LEG s1disasm-Revision-2   Revision = 2
+   LEG_START s1disasm-Revision-2
+   edit sonic.asm:14
+     before: 'Revision = 1'
+     after:  'Revision = 2'
+   BUILD_LUA exit=0 wrote=True  (s1disasm-Revision-2.lua.log)
+   SIGIL exit=0 wrote=True  stderr lines=0 (s1disasm-Revision-2.sigil.err)
+   reference crc32=6382b2c5 size=524288
+   candidate crc32=6382b2c5 size=524288
+   DIFF 0 bytes in 0 runs
+   CONTROL planted at ['0x200', '0x40000', '0x7fffe'] -> 3 bytes in 3 runs: PASSED
+   LEG_REPORTED s1disasm-Revision-2
+   RESULT AGREE
+
+-- LEG s1disasm-FixBugs-1   FixBugs = 1
+   LEG_START s1disasm-FixBugs-1
+   edit sonic.asm:20
+     before: 'FixBugs = 0'
+     after:  'FixBugs = 1'
+   BUILD_LUA exit=0 wrote=True  (s1disasm-FixBugs-1.lua.log)
+   SIGIL exit=0 wrote=True  stderr lines=0 (s1disasm-FixBugs-1.sigil.err)
+   reference crc32=888defef size=551288
+   candidate crc32=888defef size=551288
+   DIFF 0 bytes in 0 runs
+   CONTROL planted at ['0x200', '0x434bc', '0x86976'] -> 3 bytes in 3 runs: PASSED
+   LEG_REPORTED s1disasm-FixBugs-1
+   RESULT AGREE
+
+-- LEG s1disasm-CheatsEnabled-1   CheatsEnabled = 1
+   LEG_START s1disasm-CheatsEnabled-1
+   edit sonic.asm:24
+     before: 'CheatsEnabled = 0'
+     after:  'CheatsEnabled = 1'
+   BUILD_LUA exit=0 wrote=True  (s1disasm-CheatsEnabled-1.lua.log)
+   SIGIL exit=0 wrote=True  stderr lines=0 (s1disasm-CheatsEnabled-1.sigil.err)
+   reference crc32=ac362f3d size=524288
+   candidate crc32=ac362f3d size=524288
+   DIFF 0 bytes in 0 runs
+   CONTROL planted at ['0x200', '0x40000', '0x7fffe'] -> 3 bytes in 3 runs: PASSED
+   LEG_REPORTED s1disasm-CheatsEnabled-1
+   RESULT AGREE
+
+-- LEG s1disasm-AllOptimizations-1   AllOptimizations = 1
+   LEG_START s1disasm-AllOptimizations-1
+   edit sonic.asm:28
+     before: 'AllOptimizations = 0'
+     after:  'AllOptimizations = 1'
+   BUILD_LUA exit=0 wrote=True  (s1disasm-AllOptimizations-1.lua.log)
+   SIGIL exit=0 wrote=True  stderr lines=0 (s1disasm-AllOptimizations-1.sigil.err)
+   reference crc32=95dd2ddc size=520974
+   candidate crc32=95dd2ddc size=520974
+   DIFF 0 bytes in 0 runs
+   CONTROL planted at ['0x200', '0x3f987', '0x7f30c'] -> 3 bytes in 3 runs: PASSED
+   LEG_REPORTED s1disasm-AllOptimizations-1
+   RESULT AGREE
+
+-- LEG s1disasm-EnableSRAM-1   EnableSRAM = 1
+   LEG_START s1disasm-EnableSRAM-1
+   edit sonic.asm:37
+     before: 'EnableSRAM = 0'
+     after:  'EnableSRAM = 1'
+   BUILD_LUA exit=0 wrote=True  (s1disasm-EnableSRAM-1.lua.log)
+   SIGIL exit=0 wrote=True  stderr lines=0 (s1disasm-EnableSRAM-1.sigil.err)
+   reference crc32=649236ea size=524288
+   candidate crc32=649236ea size=524288
+   DIFF 0 bytes in 0 runs
+   CONTROL planted at ['0x200', '0x40000', '0x7fffe'] -> 3 bytes in 3 runs: PASSED
+   LEG_REPORTED s1disasm-EnableSRAM-1
+   RESULT AGREE
+
+-- LEG s1disasm-BackupSRAM-0   BackupSRAM = 0
+   LEG_START s1disasm-BackupSRAM-0
+   edit sonic.asm:39
+     before: 'BackupSRAM = 1'
+     after:  'BackupSRAM = 0'
+   BUILD_LUA exit=0 wrote=True  (s1disasm-BackupSRAM-0.lua.log)
+   SIGIL exit=0 wrote=True  stderr lines=0 (s1disasm-BackupSRAM-0.sigil.err)
+   reference crc32=afe05eee size=524288
+   candidate crc32=afe05eee size=524288
+   DIFF 0 bytes in 0 runs
+   CONTROL planted at ['0x200', '0x40000', '0x7fffe'] -> 3 bytes in 3 runs: PASSED
+   VACUOUS: the stock build of this leg is byte-identical to s1disasm-shipped.ref.bin (crc32 afe05eee), so the switch under study changed no source the build reached, and an agreement here would be an answer this leg could not have failed to give
+   LEG_REPORTED s1disasm-BackupSRAM-0
+   RESULT AGREE
+
+-- LEG s1disasm-AddressSRAM-0   AddressSRAM = 0
+   LEG_START s1disasm-AddressSRAM-0
+   edit sonic.asm:41
+     before: 'AddressSRAM = 3'
+     after:  'AddressSRAM = 0'
+   BUILD_LUA exit=0 wrote=True  (s1disasm-AddressSRAM-0.lua.log)
+   SIGIL exit=0 wrote=True  stderr lines=0 (s1disasm-AddressSRAM-0.sigil.err)
+   reference crc32=afe05eee size=524288
+   candidate crc32=afe05eee size=524288
+   DIFF 0 bytes in 0 runs
+   CONTROL planted at ['0x200', '0x40000', '0x7fffe'] -> 3 bytes in 3 runs: PASSED
+   VACUOUS: the stock build of this leg is byte-identical to s1disasm-shipped.ref.bin (crc32 afe05eee), so the switch under study changed no source the build reached, and an agreement here would be an answer this leg could not have failed to give
+   LEG_REPORTED s1disasm-AddressSRAM-0
+   RESULT AGREE
+
+-- LEG s1disasm-AddressSRAM-2   AddressSRAM = 2
+   LEG_START s1disasm-AddressSRAM-2
+   edit sonic.asm:41
+     before: 'AddressSRAM = 3'
+     after:  'AddressSRAM = 2'
+   BUILD_LUA exit=0 wrote=True  (s1disasm-AddressSRAM-2.lua.log)
+   SIGIL exit=0 wrote=True  stderr lines=0 (s1disasm-AddressSRAM-2.sigil.err)
+   reference crc32=afe05eee size=524288
+   candidate crc32=afe05eee size=524288
+   DIFF 0 bytes in 0 runs
+   CONTROL planted at ['0x200', '0x40000', '0x7fffe'] -> 3 bytes in 3 runs: PASSED
+   VACUOUS: the stock build of this leg is byte-identical to s1disasm-shipped.ref.bin (crc32 afe05eee), so the switch under study changed no source the build reached, and an agreement here would be an answer this leg could not have failed to give
+   LEG_REPORTED s1disasm-AddressSRAM-2
+   RESULT AGREE
+
+-- LEG s1disasm-build.lua:improved_dac_driver_compression-1   build.lua:improved_dac_driver_compression = 1
+   LEG_START s1disasm-build.lua:improved_dac_driver_compression-1
+   edit build.lua:10
+     before: 'local improved_dac_driver_compression = false'
+     after:  'local improved_dac_driver_compression = true'
+   BUILD_LUA exit=0 wrote=True  (s1disasm-build.lua:improved_dac_driver_compression-1.lua.log)
+   p2bin/sigil args for this leg: -p=FF -z=0,kosinski-optimised,Size_of_DAC_driver_guess,after  (shipped: -p=FF -z=0,kosinski,Size_of_DAC_driver_guess,after)
+   SIGIL exit=0 wrote=True  stderr lines=0 (s1disasm-build.lua:improved_dac_driver_compression-1.sigil.err)
+   reference crc32=faa36f4d size=524288
+   candidate crc32=faa36f4d size=524288
+   DIFF 0 bytes in 0 runs
+   CONTROL planted at ['0x200', '0x40000', '0x7fffe'] -> 3 bytes in 3 runs: PASSED
+   LEG_REPORTED s1disasm-build.lua:improved_dac_driver_compression-1
+   RESULT AGREE
+
+== CONTROL C7 s1disasm: reference built from the shipped tree, then Revision = 0 applied before sigil runs; the sweep must report a difference
+   LEG_START s1disasm-CONTROL-divergent-source
+   BUILD_LUA exit=0 wrote=True  (s1disasm-CONTROL-divergent-source.lua.log)
+   edit sonic.asm:14
+     before: 'Revision = 1'
+     after:  'Revision = 0'
+   SIGIL exit=0 wrote=True  stderr lines=0 (s1disasm-CONTROL-divergent-source.sigil.err)
+   reference crc32=afe05eee size=524288
+   candidate crc32=f9394e97 size=524288
+   DIFF 410881 bytes in 18594 runs
+     [0x000187,0x000188) ref 34 cand 31
+     [0x000189,0x00018A) ref 34 cand 30
+     [0x00018D,0x000190) ref 31 af c7 cand 30 26 4a
+     [0x00037D,0x00037E) ref ce cand d6
+     [0x000399,0x00039A) ref 3a cand 78
+     [0x00039D,0x00039E) ref 58 cand 7c
+     [0x0003A0,0x0003A2) ref 33 fe cand 34 02
+     [0x0003A5,0x0003A6) ref fa cand fe
+   CONTROL planted at ['0x200', '0x40000', '0x7fffe'] -> 410883 bytes in 18596 runs: PASSED
+   LEG_REPORTED s1disasm-CONTROL-divergent-source
+   CONTROL C7 s1disasm: PASSED (DIFFER)
+
+== RESCUE s1disasm-BackupSRAM-0: phase 1 could not measure it; trying companions in declaration order
+
+-- LEG s1disasm-BackupSRAM-0+Revision-0   BackupSRAM = 0, Revision = 0
+   LEG_START s1disasm-BackupSRAM-0+Revision-0
+   edit sonic.asm:39
+     before: 'BackupSRAM = 1'
+     after:  'BackupSRAM = 0'
+   edit sonic.asm:14
+     before: 'Revision = 1'
+     after:  'Revision = 0'
+   BUILD_LUA exit=0 wrote=True  (s1disasm-BackupSRAM-0+Revision-0.lua.log)
+   SIGIL exit=0 wrote=True  stderr lines=0 (s1disasm-BackupSRAM-0+Revision-0.sigil.err)
+   reference crc32=f9394e97 size=524288
+   candidate crc32=f9394e97 size=524288
+   DIFF 0 bytes in 0 runs
+   CONTROL planted at ['0x200', '0x40000', '0x7fffe'] -> 3 bytes in 3 runs: PASSED
+   VACUOUS: the stock build of this leg is byte-identical to s1disasm-Revision-0.ref.bin (crc32 f9394e97), so the switch under study changed no source the build reached, and an agreement here would be an answer this leg could not have failed to give
+   LEG_REPORTED s1disasm-BackupSRAM-0+Revision-0
+   RESULT AGREE
+
+-- LEG s1disasm-BackupSRAM-0+Revision-2   BackupSRAM = 0, Revision = 2
+   LEG_START s1disasm-BackupSRAM-0+Revision-2
+   edit sonic.asm:39
+     before: 'BackupSRAM = 1'
+     after:  'BackupSRAM = 0'
+   edit sonic.asm:14
+     before: 'Revision = 1'
+     after:  'Revision = 2'
+   BUILD_LUA exit=0 wrote=True  (s1disasm-BackupSRAM-0+Revision-2.lua.log)
+   SIGIL exit=0 wrote=True  stderr lines=0 (s1disasm-BackupSRAM-0+Revision-2.sigil.err)
+   reference crc32=6382b2c5 size=524288
+   candidate crc32=6382b2c5 size=524288
+   DIFF 0 bytes in 0 runs
+   CONTROL planted at ['0x200', '0x40000', '0x7fffe'] -> 3 bytes in 3 runs: PASSED
+   VACUOUS: the stock build of this leg is byte-identical to s1disasm-Revision-2.ref.bin (crc32 6382b2c5), so the switch under study changed no source the build reached, and an agreement here would be an answer this leg could not have failed to give
+   LEG_REPORTED s1disasm-BackupSRAM-0+Revision-2
+   RESULT AGREE
+
+-- LEG s1disasm-BackupSRAM-0+FixBugs-1   BackupSRAM = 0, FixBugs = 1
+   LEG_START s1disasm-BackupSRAM-0+FixBugs-1
+   edit sonic.asm:39
+     before: 'BackupSRAM = 1'
+     after:  'BackupSRAM = 0'
+   edit sonic.asm:20
+     before: 'FixBugs = 0'
+     after:  'FixBugs = 1'
+   BUILD_LUA exit=0 wrote=True  (s1disasm-BackupSRAM-0+FixBugs-1.lua.log)
+   SIGIL exit=0 wrote=True  stderr lines=0 (s1disasm-BackupSRAM-0+FixBugs-1.sigil.err)
+   reference crc32=888defef size=551288
+   candidate crc32=888defef size=551288
+   DIFF 0 bytes in 0 runs
+   CONTROL planted at ['0x200', '0x434bc', '0x86976'] -> 3 bytes in 3 runs: PASSED
+   VACUOUS: the stock build of this leg is byte-identical to s1disasm-FixBugs-1.ref.bin (crc32 888defef), so the switch under study changed no source the build reached, and an agreement here would be an answer this leg could not have failed to give
+   LEG_REPORTED s1disasm-BackupSRAM-0+FixBugs-1
+   RESULT AGREE
+
+-- LEG s1disasm-BackupSRAM-0+CheatsEnabled-1   BackupSRAM = 0, CheatsEnabled = 1
+   LEG_START s1disasm-BackupSRAM-0+CheatsEnabled-1
+   edit sonic.asm:39
+     before: 'BackupSRAM = 1'
+     after:  'BackupSRAM = 0'
+   edit sonic.asm:24
+     before: 'CheatsEnabled = 0'
+     after:  'CheatsEnabled = 1'
+   BUILD_LUA exit=0 wrote=True  (s1disasm-BackupSRAM-0+CheatsEnabled-1.lua.log)
+   SIGIL exit=0 wrote=True  stderr lines=0 (s1disasm-BackupSRAM-0+CheatsEnabled-1.sigil.err)
+   reference crc32=ac362f3d size=524288
+   candidate crc32=ac362f3d size=524288
+   DIFF 0 bytes in 0 runs
+   CONTROL planted at ['0x200', '0x40000', '0x7fffe'] -> 3 bytes in 3 runs: PASSED
+   VACUOUS: the stock build of this leg is byte-identical to s1disasm-CheatsEnabled-1.ref.bin (crc32 ac362f3d), so the switch under study changed no source the build reached, and an agreement here would be an answer this leg could not have failed to give
+   LEG_REPORTED s1disasm-BackupSRAM-0+CheatsEnabled-1
+   RESULT AGREE
+
+-- LEG s1disasm-BackupSRAM-0+AllOptimizations-1   BackupSRAM = 0, AllOptimizations = 1
+   LEG_START s1disasm-BackupSRAM-0+AllOptimizations-1
+   edit sonic.asm:39
+     before: 'BackupSRAM = 1'
+     after:  'BackupSRAM = 0'
+   edit sonic.asm:28
+     before: 'AllOptimizations = 0'
+     after:  'AllOptimizations = 1'
+   BUILD_LUA exit=0 wrote=True  (s1disasm-BackupSRAM-0+AllOptimizations-1.lua.log)
+   SIGIL exit=0 wrote=True  stderr lines=0 (s1disasm-BackupSRAM-0+AllOptimizations-1.sigil.err)
+   reference crc32=95dd2ddc size=520974
+   candidate crc32=95dd2ddc size=520974
+   DIFF 0 bytes in 0 runs
+   CONTROL planted at ['0x200', '0x3f987', '0x7f30c'] -> 3 bytes in 3 runs: PASSED
+   VACUOUS: the stock build of this leg is byte-identical to s1disasm-AllOptimizations-1.ref.bin (crc32 95dd2ddc), so the switch under study changed no source the build reached, and an agreement here would be an answer this leg could not have failed to give
+   LEG_REPORTED s1disasm-BackupSRAM-0+AllOptimizations-1
+   RESULT AGREE
+
+-- LEG s1disasm-BackupSRAM-0+EnableSRAM-1   BackupSRAM = 0, EnableSRAM = 1
+   LEG_START s1disasm-BackupSRAM-0+EnableSRAM-1
+   edit sonic.asm:39
+     before: 'BackupSRAM = 1'
+     after:  'BackupSRAM = 0'
+   edit sonic.asm:37
+     before: 'EnableSRAM = 0'
+     after:  'EnableSRAM = 1'
+   BUILD_LUA exit=0 wrote=True  (s1disasm-BackupSRAM-0+EnableSRAM-1.lua.log)
+   SIGIL exit=0 wrote=True  stderr lines=0 (s1disasm-BackupSRAM-0+EnableSRAM-1.sigil.err)
+   reference crc32=0b0a4c57 size=524288
+   candidate crc32=0b0a4c57 size=524288
+   DIFF 0 bytes in 0 runs
+   CONTROL planted at ['0x200', '0x40000', '0x7fffe'] -> 3 bytes in 3 runs: PASSED
+   LEG_REPORTED s1disasm-BackupSRAM-0+EnableSRAM-1
+   RESULT AGREE
+   RESCUE s1disasm-BackupSRAM-0: measured as s1disasm-BackupSRAM-0+EnableSRAM-1   (companions tried: Revision=0, Revision=2, FixBugs=1, CheatsEnabled=1, AllOptimizations=1, EnableSRAM=1 MOVED)
+
+== RESCUE s1disasm-AddressSRAM-0: phase 1 could not measure it; trying companions in declaration order
+
+-- LEG s1disasm-AddressSRAM-0+Revision-0   AddressSRAM = 0, Revision = 0
+   LEG_START s1disasm-AddressSRAM-0+Revision-0
+   edit sonic.asm:41
+     before: 'AddressSRAM = 3'
+     after:  'AddressSRAM = 0'
+   edit sonic.asm:14
+     before: 'Revision = 1'
+     after:  'Revision = 0'
+   BUILD_LUA exit=0 wrote=True  (s1disasm-AddressSRAM-0+Revision-0.lua.log)
+   SIGIL exit=0 wrote=True  stderr lines=0 (s1disasm-AddressSRAM-0+Revision-0.sigil.err)
+   reference crc32=f9394e97 size=524288
+   candidate crc32=f9394e97 size=524288
+   DIFF 0 bytes in 0 runs
+   CONTROL planted at ['0x200', '0x40000', '0x7fffe'] -> 3 bytes in 3 runs: PASSED
+   VACUOUS: the stock build of this leg is byte-identical to s1disasm-Revision-0.ref.bin (crc32 f9394e97), so the switch under study changed no source the build reached, and an agreement here would be an answer this leg could not have failed to give
+   LEG_REPORTED s1disasm-AddressSRAM-0+Revision-0
+   RESULT AGREE
+
+-- LEG s1disasm-AddressSRAM-0+Revision-2   AddressSRAM = 0, Revision = 2
+   LEG_START s1disasm-AddressSRAM-0+Revision-2
+   edit sonic.asm:41
+     before: 'AddressSRAM = 3'
+     after:  'AddressSRAM = 0'
+   edit sonic.asm:14
+     before: 'Revision = 1'
+     after:  'Revision = 2'
+   BUILD_LUA exit=0 wrote=True  (s1disasm-AddressSRAM-0+Revision-2.lua.log)
+   SIGIL exit=0 wrote=True  stderr lines=0 (s1disasm-AddressSRAM-0+Revision-2.sigil.err)
+   reference crc32=6382b2c5 size=524288
+   candidate crc32=6382b2c5 size=524288
+   DIFF 0 bytes in 0 runs
+   CONTROL planted at ['0x200', '0x40000', '0x7fffe'] -> 3 bytes in 3 runs: PASSED
+   VACUOUS: the stock build of this leg is byte-identical to s1disasm-Revision-2.ref.bin (crc32 6382b2c5), so the switch under study changed no source the build reached, and an agreement here would be an answer this leg could not have failed to give
+   LEG_REPORTED s1disasm-AddressSRAM-0+Revision-2
+   RESULT AGREE
+
+-- LEG s1disasm-AddressSRAM-0+FixBugs-1   AddressSRAM = 0, FixBugs = 1
+   LEG_START s1disasm-AddressSRAM-0+FixBugs-1
+   edit sonic.asm:41
+     before: 'AddressSRAM = 3'
+     after:  'AddressSRAM = 0'
+   edit sonic.asm:20
+     before: 'FixBugs = 0'
+     after:  'FixBugs = 1'
+   BUILD_LUA exit=0 wrote=True  (s1disasm-AddressSRAM-0+FixBugs-1.lua.log)
+   SIGIL exit=0 wrote=True  stderr lines=0 (s1disasm-AddressSRAM-0+FixBugs-1.sigil.err)
+   reference crc32=888defef size=551288
+   candidate crc32=888defef size=551288
+   DIFF 0 bytes in 0 runs
+   CONTROL planted at ['0x200', '0x434bc', '0x86976'] -> 3 bytes in 3 runs: PASSED
+   VACUOUS: the stock build of this leg is byte-identical to s1disasm-FixBugs-1.ref.bin (crc32 888defef), so the switch under study changed no source the build reached, and an agreement here would be an answer this leg could not have failed to give
+   LEG_REPORTED s1disasm-AddressSRAM-0+FixBugs-1
+   RESULT AGREE
+
+-- LEG s1disasm-AddressSRAM-0+CheatsEnabled-1   AddressSRAM = 0, CheatsEnabled = 1
+   LEG_START s1disasm-AddressSRAM-0+CheatsEnabled-1
+   edit sonic.asm:41
+     before: 'AddressSRAM = 3'
+     after:  'AddressSRAM = 0'
+   edit sonic.asm:24
+     before: 'CheatsEnabled = 0'
+     after:  'CheatsEnabled = 1'
+   BUILD_LUA exit=0 wrote=True  (s1disasm-AddressSRAM-0+CheatsEnabled-1.lua.log)
+   SIGIL exit=0 wrote=True  stderr lines=0 (s1disasm-AddressSRAM-0+CheatsEnabled-1.sigil.err)
+   reference crc32=ac362f3d size=524288
+   candidate crc32=ac362f3d size=524288
+   DIFF 0 bytes in 0 runs
+   CONTROL planted at ['0x200', '0x40000', '0x7fffe'] -> 3 bytes in 3 runs: PASSED
+   VACUOUS: the stock build of this leg is byte-identical to s1disasm-CheatsEnabled-1.ref.bin (crc32 ac362f3d), so the switch under study changed no source the build reached, and an agreement here would be an answer this leg could not have failed to give
+   LEG_REPORTED s1disasm-AddressSRAM-0+CheatsEnabled-1
+   RESULT AGREE
+
+-- LEG s1disasm-AddressSRAM-0+AllOptimizations-1   AddressSRAM = 0, AllOptimizations = 1
+   LEG_START s1disasm-AddressSRAM-0+AllOptimizations-1
+   edit sonic.asm:41
+     before: 'AddressSRAM = 3'
+     after:  'AddressSRAM = 0'
+   edit sonic.asm:28
+     before: 'AllOptimizations = 0'
+     after:  'AllOptimizations = 1'
+   BUILD_LUA exit=0 wrote=True  (s1disasm-AddressSRAM-0+AllOptimizations-1.lua.log)
+   SIGIL exit=0 wrote=True  stderr lines=0 (s1disasm-AddressSRAM-0+AllOptimizations-1.sigil.err)
+   reference crc32=95dd2ddc size=520974
+   candidate crc32=95dd2ddc size=520974
+   DIFF 0 bytes in 0 runs
+   CONTROL planted at ['0x200', '0x3f987', '0x7f30c'] -> 3 bytes in 3 runs: PASSED
+   VACUOUS: the stock build of this leg is byte-identical to s1disasm-AllOptimizations-1.ref.bin (crc32 95dd2ddc), so the switch under study changed no source the build reached, and an agreement here would be an answer this leg could not have failed to give
+   LEG_REPORTED s1disasm-AddressSRAM-0+AllOptimizations-1
+   RESULT AGREE
+
+-- LEG s1disasm-AddressSRAM-0+EnableSRAM-1   AddressSRAM = 0, EnableSRAM = 1
+   LEG_START s1disasm-AddressSRAM-0+EnableSRAM-1
+   edit sonic.asm:41
+     before: 'AddressSRAM = 3'
+     after:  'AddressSRAM = 0'
+   edit sonic.asm:37
+     before: 'EnableSRAM = 0'
+     after:  'EnableSRAM = 1'
+   BUILD_LUA exit=0 wrote=True  (s1disasm-AddressSRAM-0+EnableSRAM-1.lua.log)
+   SIGIL exit=0 wrote=True  stderr lines=0 (s1disasm-AddressSRAM-0+EnableSRAM-1.sigil.err)
+   reference crc32=4013c599 size=524288
+   candidate crc32=4013c599 size=524288
+   DIFF 0 bytes in 0 runs
+   CONTROL planted at ['0x200', '0x40000', '0x7fffe'] -> 3 bytes in 3 runs: PASSED
+   LEG_REPORTED s1disasm-AddressSRAM-0+EnableSRAM-1
+   RESULT AGREE
+   RESCUE s1disasm-AddressSRAM-0: measured as s1disasm-AddressSRAM-0+EnableSRAM-1   (companions tried: Revision=0, Revision=2, FixBugs=1, CheatsEnabled=1, AllOptimizations=1, EnableSRAM=1 MOVED)
+
+== RESCUE s1disasm-AddressSRAM-2: phase 1 could not measure it; trying companions in declaration order
+
+-- LEG s1disasm-AddressSRAM-2+Revision-0   AddressSRAM = 2, Revision = 0
+   LEG_START s1disasm-AddressSRAM-2+Revision-0
+   edit sonic.asm:41
+     before: 'AddressSRAM = 3'
+     after:  'AddressSRAM = 2'
+   edit sonic.asm:14
+     before: 'Revision = 1'
+     after:  'Revision = 0'
+   BUILD_LUA exit=0 wrote=True  (s1disasm-AddressSRAM-2+Revision-0.lua.log)
+   SIGIL exit=0 wrote=True  stderr lines=0 (s1disasm-AddressSRAM-2+Revision-0.sigil.err)
+   reference crc32=f9394e97 size=524288
+   candidate crc32=f9394e97 size=524288
+   DIFF 0 bytes in 0 runs
+   CONTROL planted at ['0x200', '0x40000', '0x7fffe'] -> 3 bytes in 3 runs: PASSED
+   VACUOUS: the stock build of this leg is byte-identical to s1disasm-Revision-0.ref.bin (crc32 f9394e97), so the switch under study changed no source the build reached, and an agreement here would be an answer this leg could not have failed to give
+   LEG_REPORTED s1disasm-AddressSRAM-2+Revision-0
+   RESULT AGREE
+
+-- LEG s1disasm-AddressSRAM-2+Revision-2   AddressSRAM = 2, Revision = 2
+   LEG_START s1disasm-AddressSRAM-2+Revision-2
+   edit sonic.asm:41
+     before: 'AddressSRAM = 3'
+     after:  'AddressSRAM = 2'
+   edit sonic.asm:14
+     before: 'Revision = 1'
+     after:  'Revision = 2'
+   BUILD_LUA exit=0 wrote=True  (s1disasm-AddressSRAM-2+Revision-2.lua.log)
+   SIGIL exit=0 wrote=True  stderr lines=0 (s1disasm-AddressSRAM-2+Revision-2.sigil.err)
+   reference crc32=6382b2c5 size=524288
+   candidate crc32=6382b2c5 size=524288
+   DIFF 0 bytes in 0 runs
+   CONTROL planted at ['0x200', '0x40000', '0x7fffe'] -> 3 bytes in 3 runs: PASSED
+   VACUOUS: the stock build of this leg is byte-identical to s1disasm-Revision-2.ref.bin (crc32 6382b2c5), so the switch under study changed no source the build reached, and an agreement here would be an answer this leg could not have failed to give
+   LEG_REPORTED s1disasm-AddressSRAM-2+Revision-2
+   RESULT AGREE
+
+-- LEG s1disasm-AddressSRAM-2+FixBugs-1   AddressSRAM = 2, FixBugs = 1
+   LEG_START s1disasm-AddressSRAM-2+FixBugs-1
+   edit sonic.asm:41
+     before: 'AddressSRAM = 3'
+     after:  'AddressSRAM = 2'
+   edit sonic.asm:20
+     before: 'FixBugs = 0'
+     after:  'FixBugs = 1'
+   BUILD_LUA exit=0 wrote=True  (s1disasm-AddressSRAM-2+FixBugs-1.lua.log)
+   SIGIL exit=0 wrote=True  stderr lines=0 (s1disasm-AddressSRAM-2+FixBugs-1.sigil.err)
+   reference crc32=888defef size=551288
+   candidate crc32=888defef size=551288
+   DIFF 0 bytes in 0 runs
+   CONTROL planted at ['0x200', '0x434bc', '0x86976'] -> 3 bytes in 3 runs: PASSED
+   VACUOUS: the stock build of this leg is byte-identical to s1disasm-FixBugs-1.ref.bin (crc32 888defef), so the switch under study changed no source the build reached, and an agreement here would be an answer this leg could not have failed to give
+   LEG_REPORTED s1disasm-AddressSRAM-2+FixBugs-1
+   RESULT AGREE
+
+-- LEG s1disasm-AddressSRAM-2+CheatsEnabled-1   AddressSRAM = 2, CheatsEnabled = 1
+   LEG_START s1disasm-AddressSRAM-2+CheatsEnabled-1
+   edit sonic.asm:41
+     before: 'AddressSRAM = 3'
+     after:  'AddressSRAM = 2'
+   edit sonic.asm:24
+     before: 'CheatsEnabled = 0'
+     after:  'CheatsEnabled = 1'
+   BUILD_LUA exit=0 wrote=True  (s1disasm-AddressSRAM-2+CheatsEnabled-1.lua.log)
+   SIGIL exit=0 wrote=True  stderr lines=0 (s1disasm-AddressSRAM-2+CheatsEnabled-1.sigil.err)
+   reference crc32=ac362f3d size=524288
+   candidate crc32=ac362f3d size=524288
+   DIFF 0 bytes in 0 runs
+   CONTROL planted at ['0x200', '0x40000', '0x7fffe'] -> 3 bytes in 3 runs: PASSED
+   VACUOUS: the stock build of this leg is byte-identical to s1disasm-CheatsEnabled-1.ref.bin (crc32 ac362f3d), so the switch under study changed no source the build reached, and an agreement here would be an answer this leg could not have failed to give
+   LEG_REPORTED s1disasm-AddressSRAM-2+CheatsEnabled-1
+   RESULT AGREE
+
+-- LEG s1disasm-AddressSRAM-2+AllOptimizations-1   AddressSRAM = 2, AllOptimizations = 1
+   LEG_START s1disasm-AddressSRAM-2+AllOptimizations-1
+   edit sonic.asm:41
+     before: 'AddressSRAM = 3'
+     after:  'AddressSRAM = 2'
+   edit sonic.asm:28
+     before: 'AllOptimizations = 0'
+     after:  'AllOptimizations = 1'
+   BUILD_LUA exit=0 wrote=True  (s1disasm-AddressSRAM-2+AllOptimizations-1.lua.log)
+   SIGIL exit=0 wrote=True  stderr lines=0 (s1disasm-AddressSRAM-2+AllOptimizations-1.sigil.err)
+   reference crc32=95dd2ddc size=520974
+   candidate crc32=95dd2ddc size=520974
+   DIFF 0 bytes in 0 runs
+   CONTROL planted at ['0x200', '0x3f987', '0x7f30c'] -> 3 bytes in 3 runs: PASSED
+   VACUOUS: the stock build of this leg is byte-identical to s1disasm-AllOptimizations-1.ref.bin (crc32 95dd2ddc), so the switch under study changed no source the build reached, and an agreement here would be an answer this leg could not have failed to give
+   LEG_REPORTED s1disasm-AddressSRAM-2+AllOptimizations-1
+   RESULT AGREE
+
+-- LEG s1disasm-AddressSRAM-2+EnableSRAM-1   AddressSRAM = 2, EnableSRAM = 1
+   LEG_START s1disasm-AddressSRAM-2+EnableSRAM-1
+   edit sonic.asm:41
+     before: 'AddressSRAM = 3'
+     after:  'AddressSRAM = 2'
+   edit sonic.asm:37
+     before: 'EnableSRAM = 0'
+     after:  'EnableSRAM = 1'
+   BUILD_LUA exit=0 wrote=True  (s1disasm-AddressSRAM-2+EnableSRAM-1.lua.log)
+   SIGIL exit=0 wrote=True  stderr lines=0 (s1disasm-AddressSRAM-2+EnableSRAM-1.sigil.err)
+   reference crc32=2d299aa6 size=524288
+   candidate crc32=2d299aa6 size=524288
+   DIFF 0 bytes in 0 runs
+   CONTROL planted at ['0x200', '0x40000', '0x7fffe'] -> 3 bytes in 3 runs: PASSED
+   LEG_REPORTED s1disasm-AddressSRAM-2+EnableSRAM-1
+   RESULT AGREE
+   RESCUE s1disasm-AddressSRAM-2: measured as s1disasm-AddressSRAM-2+EnableSRAM-1   (companions tried: Revision=0, Revision=2, FixBugs=1, CheatsEnabled=1, AllOptimizations=1, EnableSRAM=1 MOVED)
+
+==============================================================================
+CORPUS s2disasm at e45ebf332f39987424ca3102e50c717628f71269 (HEAD)
+  extracted read-only by git archive of e45ebf332f39987424ca3102e50c717628f71269 into /home/volence/sonic_hacks/.scratch-optcomp/sweep-full/trees/s2disasm-pristine
+  build.lua says: root=s2.asm output=s2built.bin p2bin/sigil args=-p=0 -z=0,saxman-bugged,Size_of_Snd_driver_guess,after
+  DERIVED 10 documented switches, cross-checked against the ASSEMBLY OPTIONS block
+  DERIVED 3 build-script settings from build.lua's Settings block, cross-checked against every column-0 boolean local in 5 .lua file(s)
+    gameRevision                             = 1   domain [0, 1, 2]    arms [0, 2]
+    padToPowerOfTwo                          = 1   domain [0, 1]       arms [0]
+    fixBugs                                  = 0   domain [0, 1]       arms [1]
+    allOptimizations                         = 0   domain [0, 1]       arms [1]
+    skipChecksumCheck                        = 0   domain [0, 1]       arms [1]
+    zeroOffsetOptimization                     DERIVED  right-hand side `0|allOptimizations` names another switch, so this is not independently settable
+    removeJmpTos                               DERIVED  right-hand side `0|(gameRevision>=2)|allOptimizations` names another switch, so this is not independently settable
+    addsubOptimize                             DERIVED  right-hand side `0|(gameRevision=2)|allOptimizations` names another switch, so this is not independently settable
+    relativeLea                                DERIVED  right-hand side `0|(gameRevision<2)|allOptimizations` names another switch, so this is not independently settable
+    useFullWaterTables                       = 0   domain [0, 1]       arms [1]
+    build.lua:improved_sound_driver_compression = 0   domain [0, 1]       arms [1]
+    build.lua:music_buffer_address             UNREADABLE `0x1380` is a number literal; build.lua states no set of legal values for it
+    build.lua:music_buffer_size                UNREADABLE `0x7C0` is a number literal; build.lua states no set of legal values for it
+POPULATION s2disasm asm_options=10 asm_swept=6 asm_arms=7 build_script_settings=3 build_script_swept=1 build_script_arms=1 lua_files=5 corners=192
+  RECONCILE switches: 13 derived = 7 swept + 6 excluded
+  RECONCILE legs: 8 arms -> 8 flip legs + 1 baseline
+
+-- LEG s2disasm-shipped   shipped
+   LEG_START s2disasm-shipped
+   BUILD_LUA exit=0 wrote=True  (s2disasm-shipped.lua.log)
+   SIGIL exit=0 wrote=True  stderr lines=0 (s2disasm-shipped.sigil.err)
+   reference crc32=7b905383 size=1048576
+   candidate crc32=7b905383 size=1048576
+   DIFF 0 bytes in 0 runs
+   CONTROL planted at ['0x200', '0x80000', '0xffffe'] -> 3 bytes in 3 runs: PASSED
+   LEG_REPORTED s2disasm-shipped
+   RESULT AGREE
+
+-- LEG s2disasm-gameRevision-0   gameRevision = 0
+   LEG_START s2disasm-gameRevision-0
+   edit s2.asm:20
+     before: 'gameRevision = 1'
+     after:  'gameRevision = 0'
+   BUILD_LUA exit=1 wrote=True  (s2disasm-gameRevision-0.lua.log)
+   SIGIL exit=0 wrote=True  stderr lines=1 (s2disasm-gameRevision-0.sigil.err)
+     sigil: s2.asm(30438):2: warning: [as.odd-address] word access at odd address $1: on a 68000 a word or long read or write at an odd address is an address error and crashes the machine (asl #180: address is not properly aligned)
+   reference crc32=24ab4c3a size=1048576
+   candidate crc32=24ab4c3a size=1048576
+   DIFF 0 bytes in 0 runs
+   CONTROL planted at ['0x200', '0x80000', '0xffffe'] -> 3 bytes in 3 runs: PASSED
+   LEG_REPORTED s2disasm-gameRevision-0
+   RESULT AGREE
+
+-- LEG s2disasm-gameRevision-2   gameRevision = 2
+   LEG_START s2disasm-gameRevision-2
+   edit s2.asm:20
+     before: 'gameRevision = 1'
+     after:  'gameRevision = 2'
+   BUILD_LUA exit=0 wrote=True  (s2disasm-gameRevision-2.lua.log)
+   SIGIL exit=0 wrote=True  stderr lines=0 (s2disasm-gameRevision-2.sigil.err)
+   reference crc32=d10a3a93 size=1048576
+   candidate crc32=d10a3a93 size=1048576
+   DIFF 0 bytes in 0 runs
+   CONTROL planted at ['0x200', '0x80000', '0xffffe'] -> 3 bytes in 3 runs: PASSED
+   LEG_REPORTED s2disasm-gameRevision-2
+   RESULT AGREE
+
+-- LEG s2disasm-padToPowerOfTwo-0   padToPowerOfTwo = 0
+   LEG_START s2disasm-padToPowerOfTwo-0
+   edit s2.asm:24
+     before: 'padToPowerOfTwo = 1'
+     after:  'padToPowerOfTwo = 0'
+   BUILD_LUA exit=0 wrote=True  (s2disasm-padToPowerOfTwo-0.lua.log)
+   SIGIL exit=0 wrote=True  stderr lines=0 (s2disasm-padToPowerOfTwo-0.sigil.err)
+   reference crc32=dd0ebd72 size=1048556
+   candidate crc32=dd0ebd72 size=1048556
+   DIFF 0 bytes in 0 runs
+   CONTROL planted at ['0x200', '0x7fff6', '0xfffea'] -> 3 bytes in 3 runs: PASSED
+   LEG_REPORTED s2disasm-padToPowerOfTwo-0
+   RESULT AGREE
+
+-- LEG s2disasm-fixBugs-1   fixBugs = 1
+   LEG_START s2disasm-fixBugs-1
+   edit s2.asm:27
+     before: 'fixBugs = 0'
+     after:  'fixBugs = 1'
+   BUILD_LUA exit=0 wrote=True  (s2disasm-fixBugs-1.lua.log)
+   SIGIL exit=1 wrote=False  stderr lines=1 (s2disasm-fixBugs-1.sigil.err)
+     sigil: s2.sounddriver.asm(248):6: error: `-z=0,saxman-bugged,Size_of_Snd_driver_guess,after`: the blob [0x0, 0x134F) is 0xF88 bytes compressed as saxman-bugged, and `Size_of_Snd_driver_guess`, the size the source declares for it, is $F64; every byte the source computed from that name is short by 0x24, and p2bin's own message for this is to raise it, so set `Size_of_Snd_driver_guess` to $F88
+   LEG_REPORTED s2disasm-fixBugs-1
+   RESULT SIGIL-DECLINED
+
+-- LEG s2disasm-allOptimizations-1   allOptimizations = 1
+   LEG_START s2disasm-allOptimizations-1
+   edit s2.asm:31
+     before: 'allOptimizations = 0'
+     after:  'allOptimizations = 1'
+   BUILD_LUA exit=0 wrote=True  (s2disasm-allOptimizations-1.lua.log)
+   SIGIL exit=0 wrote=True  stderr lines=0 (s2disasm-allOptimizations-1.sigil.err)
+   reference crc32=6c8cbd9b size=1048576
+   candidate crc32=6c8cbd9b size=1048576
+   DIFF 0 bytes in 0 runs
+   CONTROL planted at ['0x200', '0x80000', '0xffffe'] -> 3 bytes in 3 runs: PASSED
+   LEG_REPORTED s2disasm-allOptimizations-1
+   RESULT AGREE
+
+-- LEG s2disasm-skipChecksumCheck-1   skipChecksumCheck = 1
+   LEG_START s2disasm-skipChecksumCheck-1
+   edit s2.asm:34
+     before: 'skipChecksumCheck = 0'
+     after:  'skipChecksumCheck = 1'
+   BUILD_LUA exit=0 wrote=True  (s2disasm-skipChecksumCheck-1.lua.log)
+   SIGIL exit=0 wrote=True  stderr lines=0 (s2disasm-skipChecksumCheck-1.sigil.err)
+   reference crc32=f8425851 size=1048576
+   candidate crc32=f8425851 size=1048576
+   DIFF 0 bytes in 0 runs
+   CONTROL planted at ['0x200', '0x80000', '0xffffe'] -> 3 bytes in 3 runs: PASSED
+   LEG_REPORTED s2disasm-skipChecksumCheck-1
+   RESULT AGREE
+
+-- LEG s2disasm-useFullWaterTables-1   useFullWaterTables = 1
+   LEG_START s2disasm-useFullWaterTables-1
+   edit s2.asm:49
+     before: 'useFullWaterTables = 0'
+     after:  'useFullWaterTables = 1'
+   BUILD_LUA exit=0 wrote=True  (s2disasm-useFullWaterTables-1.lua.log)
+   SIGIL exit=0 wrote=True  stderr lines=0 (s2disasm-useFullWaterTables-1.sigil.err)
+   reference crc32=bbaffa38 size=1048576
+   candidate crc32=bbaffa38 size=1048576
+   DIFF 0 bytes in 0 runs
+   CONTROL planted at ['0x200', '0x80000', '0xffffe'] -> 3 bytes in 3 runs: PASSED
+   LEG_REPORTED s2disasm-useFullWaterTables-1
+   RESULT AGREE
+
+-- LEG s2disasm-build.lua:improved_sound_driver_compression-1   build.lua:improved_sound_driver_compression = 1
+   LEG_START s2disasm-build.lua:improved_sound_driver_compression-1
+   edit build.lua:10
+     before: 'local improved_sound_driver_compression = false'
+     after:  'local improved_sound_driver_compression = true'
+   BUILD_LUA exit=0 wrote=True  (s2disasm-build.lua:improved_sound_driver_compression-1.lua.log)
+   p2bin/sigil args for this leg: -p=0 -z=0,saxman-optimised,Size_of_Snd_driver_guess,after  (shipped: -p=0 -z=0,saxman-bugged,Size_of_Snd_driver_guess,after)
+   SIGIL exit=0 wrote=True  stderr lines=0 (s2disasm-build.lua:improved_sound_driver_compression-1.sigil.err)
+   reference crc32=c4e244a2 size=1048576
+   candidate crc32=b8a9299a size=1048576
+   DIFF 2 bytes in 2 runs
+     [0x00018F,0x000190) ref 36 cand 50
+     [0x0EC051,0x0EC052) ref 4a cand 64
+   CONTROL planted at ['0x200', '0x80000', '0xffffe'] -> 5 bytes in 5 runs: PASSED
+   LEG_REPORTED s2disasm-build.lua:improved_sound_driver_compression-1
+   RESULT DIFFER
+
+== CONTROL C7 s2disasm: reference built from the shipped tree, then gameRevision = 0 applied before sigil runs; the sweep must report a difference
+   LEG_START s2disasm-CONTROL-divergent-source
+   BUILD_LUA exit=0 wrote=True  (s2disasm-CONTROL-divergent-source.lua.log)
+   edit s2.asm:20
+     before: 'gameRevision = 1'
+     after:  'gameRevision = 0'
+   SIGIL exit=0 wrote=True  stderr lines=1 (s2disasm-CONTROL-divergent-source.sigil.err)
+     sigil: s2.asm(30438):2: warning: [as.odd-address] word access at odd address $1: on a 68000 a word or long read or write at an odd address is an address error and crashes the machine (asl #180: address is not properly aligned)
+   reference crc32=7b905383 size=1048576
+   candidate crc32=24ab4c3a size=1048576
+   DIFF 210513 bytes in 24226 runs
+     [0x000073,0x000074) ref 54 cand 48
+     [0x00007A,0x00007C) ref 04 08 cand 03 fc
+     [0x00018D,0x000190) ref 31 d9 51 cand 30 de b8
+     [0x000306,0x000307) ref 32 cand 08
+     [0x000309,0x00030A) ref c0 cand 06
+     [0x00030B,0x000325) ref 04 08 01 00 01 66 f4 08 cand a1 00 0d 67 0c 0c b8 69
+     [0x000326,0x000328) ref 00 4a cand 01 a4
+     [0x000329,0x00032B) ref 7c 00 cand 11 72
+   CONTROL planted at ['0x200', '0x80000', '0xffffe'] -> 210516 bytes in 24229 runs: PASSED
+   LEG_REPORTED s2disasm-CONTROL-divergent-source
+   CONTROL C7 s2disasm: PASSED (DIFFER)
+
+==============================================================================
+RECONCILE legs launched=40 reported=40
+RECONCILE diagnostics: 37 leg(s) where both toolchains ran, 1 warning-parity key(s) seen, 1 acknowledged
+  s2disasm sigil-only:`shared` is ignored on 8 leg(s)
+RECONCILE coded-warning parity: 1 pairing(s) seen, 1 expected
+  s2disasm asl#180 = [as.odd-address] at the same locations on 1 leg(s): s2.asm(30438)
+RECONCILE unreadable-domain: found=3 acknowledged=3 MATCH
+
+LEG                                        RESULT                         DETAIL
+s1disasm-shipped                           AGREE                          crc32 afe05eee size 524288
+s1disasm-Revision-0                        AGREE                          crc32 f9394e97 size 524288
+s1disasm-Revision-2                        AGREE                          crc32 6382b2c5 size 524288
+s1disasm-FixBugs-1                         AGREE                          crc32 888defef size 551288
+s1disasm-CheatsEnabled-1                   AGREE                          crc32 ac362f3d size 524288
+s1disasm-AllOptimizations-1                AGREE                          crc32 95dd2ddc size 520974
+s1disasm-EnableSRAM-1                      AGREE                          crc32 649236ea size 524288
+s1disasm-BackupSRAM-0                      NOT-MEASURED                   crc32 afe05eee size 524288   [stock image unchanged by this flip; the compare reported AGREE and could not have reported otherwise]
+s1disasm-AddressSRAM-0                     NOT-MEASURED                   crc32 afe05eee size 524288   [stock image unchanged by this flip; the compare reported AGREE and could not have reported otherwise]
+s1disasm-AddressSRAM-2                     NOT-MEASURED                   crc32 afe05eee size 524288   [stock image unchanged by this flip; the compare reported AGREE and could not have reported otherwise]
+s1disasm-build.lua:improved_dac_driver_compression-1 AGREE                          crc32 faa36f4d size 524288
+s1disasm-CONTROL-divergent-source          CONTROL/DIFFER                 410881 bytes in 18594 runs at 0x187 0x189 0x18D 0x37D 0x399 0x39D
+s1disasm-BackupSRAM-0+Revision-0           NOT-MEASURED                   crc32 f9394e97 size 524288   [stock image unchanged by this flip; the compare reported AGREE and could not have reported otherwise]
+s1disasm-BackupSRAM-0+Revision-2           NOT-MEASURED                   crc32 6382b2c5 size 524288   [stock image unchanged by this flip; the compare reported AGREE and could not have reported otherwise]
+s1disasm-BackupSRAM-0+FixBugs-1            NOT-MEASURED                   crc32 888defef size 551288   [stock image unchanged by this flip; the compare reported AGREE and could not have reported otherwise]
+s1disasm-BackupSRAM-0+CheatsEnabled-1      NOT-MEASURED                   crc32 ac362f3d size 524288   [stock image unchanged by this flip; the compare reported AGREE and could not have reported otherwise]
+s1disasm-BackupSRAM-0+AllOptimizations-1   NOT-MEASURED                   crc32 95dd2ddc size 520974   [stock image unchanged by this flip; the compare reported AGREE and could not have reported otherwise]
+s1disasm-BackupSRAM-0+EnableSRAM-1         AGREE                          crc32 0b0a4c57 size 524288
+s1disasm-AddressSRAM-0+Revision-0          NOT-MEASURED                   crc32 f9394e97 size 524288   [stock image unchanged by this flip; the compare reported AGREE and could not have reported otherwise]
+s1disasm-AddressSRAM-0+Revision-2          NOT-MEASURED                   crc32 6382b2c5 size 524288   [stock image unchanged by this flip; the compare reported AGREE and could not have reported otherwise]
+s1disasm-AddressSRAM-0+FixBugs-1           NOT-MEASURED                   crc32 888defef size 551288   [stock image unchanged by this flip; the compare reported AGREE and could not have reported otherwise]
+s1disasm-AddressSRAM-0+CheatsEnabled-1     NOT-MEASURED                   crc32 ac362f3d size 524288   [stock image unchanged by this flip; the compare reported AGREE and could not have reported otherwise]
+s1disasm-AddressSRAM-0+AllOptimizations-1  NOT-MEASURED                   crc32 95dd2ddc size 520974   [stock image unchanged by this flip; the compare reported AGREE and could not have reported otherwise]
+s1disasm-AddressSRAM-0+EnableSRAM-1        AGREE                          crc32 4013c599 size 524288
+s1disasm-AddressSRAM-2+Revision-0          NOT-MEASURED                   crc32 f9394e97 size 524288   [stock image unchanged by this flip; the compare reported AGREE and could not have reported otherwise]
+s1disasm-AddressSRAM-2+Revision-2          NOT-MEASURED                   crc32 6382b2c5 size 524288   [stock image unchanged by this flip; the compare reported AGREE and could not have reported otherwise]
+s1disasm-AddressSRAM-2+FixBugs-1           NOT-MEASURED                   crc32 888defef size 551288   [stock image unchanged by this flip; the compare reported AGREE and could not have reported otherwise]
+s1disasm-AddressSRAM-2+CheatsEnabled-1     NOT-MEASURED                   crc32 ac362f3d size 524288   [stock image unchanged by this flip; the compare reported AGREE and could not have reported otherwise]
+s1disasm-AddressSRAM-2+AllOptimizations-1  NOT-MEASURED                   crc32 95dd2ddc size 520974   [stock image unchanged by this flip; the compare reported AGREE and could not have reported otherwise]
+s1disasm-AddressSRAM-2+EnableSRAM-1        AGREE                          crc32 2d299aa6 size 524288
+s2disasm-shipped                           AGREE                          crc32 7b905383 size 1048576
+s2disasm-gameRevision-0                    AGREE                          crc32 24ab4c3a size 1048576
+s2disasm-gameRevision-2                    AGREE                          crc32 d10a3a93 size 1048576
+s2disasm-padToPowerOfTwo-0                 AGREE                          crc32 dd0ebd72 size 1048556
+s2disasm-fixBugs-1                         SIGIL-DECLINED                 s2.sounddriver.asm(248):6: error: `-z=0,saxman-bugged,Size_of_Snd_driver_guess,after`: the
+s2disasm-allOptimizations-1                AGREE                          crc32 6c8cbd9b size 1048576
+s2disasm-skipChecksumCheck-1               AGREE                          crc32 f8425851 size 1048576
+s2disasm-useFullWaterTables-1              AGREE                          crc32 bbaffa38 size 1048576
+s2disasm-build.lua:improved_sound_driver_compression-1 DIFFER                         2 bytes in 2 runs at 0x18F 0xEC051
+s2disasm-CONTROL-divergent-source          CONTROL/DIFFER                 210513 bytes in 24226 runs at 0x73 0x7A 0x18D 0x306 0x309 0x30B
+RECONCILE vacuity: 3 phase-1 arm(s) exercised no changed source, 3 rescue verdict(s)
+  s1disasm-BackupSRAM-0: measured as s1disasm-BackupSRAM-0+EnableSRAM-1
+  s1disasm-AddressSRAM-0: measured as s1disasm-AddressSRAM-0+EnableSRAM-1
+  s1disasm-AddressSRAM-2: measured as s1disasm-AddressSRAM-2+EnableSRAM-1
+
+RECONCILE outcomes: 2 non-agreeing, 2 acknowledged, 0 unacknowledged, 0 stale acknowledgements, 0 class mismatches
+
+SWEEP PASSED
+SWEEP_END
+FULL_SWEEP_EXIT=0
+MY_END_MARKER_OPTCOMP
