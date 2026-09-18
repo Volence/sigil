@@ -612,11 +612,22 @@ fn z80_zero_role(mnem: &str, ops: &[CodeOperand]) -> Option<FlagRole> {
         // reverse moves LD I, A and LD R, A (the ISA's `LdIA` / `LdRA`) affect
         // no flag.
         Ld if matches!(ops.get(1), Some(CodeOperand::Z80RegI | CodeOperand::Z80RegR)) => Writes,
+        // `IN A, (n)`: "Condition Bits Affected: None." Its sibling `IN r, (C)`
+        // DOES set Z, from the input byte, so the two `in` modes part company
+        // here and the operand shape is the only thing that tells them apart.
+        // Carved out ahead of the writer arm below, by shape and not by
+        // mnemonic, exactly as the `ld a,i` / `ld a,r` carve-out above.
+        //
+        // Not a conservative simplification to skip: `Writes` would both end the
+        // must-use window (missing a real unread result) and answer `may_change`
+        // (firing the invalid-edge diagnostic on correct code), so the merged
+        // answer is wrong in both directions rather than safe in one.
+        In if matches!(ops.get(1), Some(CodeOperand::Z80Mem { .. })) => Untouched,
         // Z set per the result (8-bit arithmetic and logic, ADC / SBC HL, DAA,
         // NEG, the CB shifts and rotates, RLD / RRD), the complement of the
         // tested bit (BIT), A = (HL) (the CP block), B - 1 = 0 or "Z is set"
-        // (the I/O block), or the input byte (IN r, (C); the IN A, (n) form
-        // affects no flag, and the `.emp` operand model spells neither form).
+        // (the I/O block), or the input byte (IN r, (C); the direct-port
+        // IN A, (n) is the arm directly above).
         Add | Adc | Sub | Sbc | And | Or | Xor | Cp | Inc | Dec | Daa | Neg | Rlc | Rl | Rrc
         | Rr | Sla | Sra | Srl | Rld | Rrd | Bit | Cpi | Cpir | Cpd | Cpdr | Ini | Inir | Ind
         | Indr | Outi | Otir | Outd | Otdr | In => Writes,
@@ -2246,5 +2257,89 @@ mod edge_model_tests {
             Cfg::build(&external_closing).z80_edges(0),
             vec![Edge::BranchOut, Edge::FallOff]
         );
+    }
+}
+
+#[cfg(test)]
+mod z80_port_flag_roles {
+    use super::{carry_role, zero_role, FlagRole};
+    use crate::value::{CodeOperand, Z80Reg8};
+    use sigil_ir::backend::Cpu;
+
+    fn a() -> CodeOperand {
+        CodeOperand::Z80Reg8(Z80Reg8::A)
+    }
+
+    /// The two `in` addressing modes have DIFFERENT flag effects, and the mode
+    /// is carried entirely by the operand shape.
+    ///
+    /// Zilog UM0080: `IN r,(C)` -- "S is set if input data is negative ... Z is
+    /// set if input data is 0"; `IN A,(n)` -- "Condition Bits Affected: None".
+    ///
+    /// Reading the direct-port form as a Z WRITER is not a conservative error in
+    /// this analyzer. `FlagRole::Writes` ends the must-use window (so a real
+    /// missed-use goes unreported) AND answers `may_change`, which is what the
+    /// invalid-edge walk asks of every instruction between a call and the branch
+    /// testing its result -- so it fires a diagnostic on correct code. Both
+    /// directions are wrong, which is why the form is split rather than left on
+    /// the safe side of a polarity.
+    #[test]
+    fn the_two_in_modes_are_not_the_same_z_writer() {
+        let ind_c = CodeOperand::Z80IndC;
+        let port = CodeOperand::Z80Mem { addr: 0x00FE };
+        assert_eq!(
+            zero_role("in", &[a(), ind_c.clone()], Cpu::Z80),
+            Some(FlagRole::Writes),
+            "`in r,(c)` sets Z from the input byte"
+        );
+        assert_eq!(
+            zero_role("in", &[a(), port.clone()], Cpu::Z80),
+            Some(FlagRole::Untouched),
+            "`in a,(n)` affects no condition bit"
+        );
+        // `out` writes no flag in either mode, so the split is on `in` alone and
+        // has not been smeared onto its neighbour.
+        assert_eq!(zero_role("out", &[ind_c.clone(), a()], Cpu::Z80), Some(FlagRole::Untouched));
+        assert_eq!(zero_role("out", &[port.clone(), a()], Cpu::Z80), Some(FlagRole::Untouched));
+        // Carry is untouched by every I/O form, in both modes: the split above is
+        // about Z only, and a copy-paste of it onto carry would be wrong.
+        for ops in [vec![a(), ind_c.clone()], vec![a(), port.clone()]] {
+            assert_eq!(carry_role("in", &ops, Cpu::Z80), Some(FlagRole::Untouched));
+        }
+        for ops in [vec![ind_c, a()], vec![port, a()]] {
+            assert_eq!(carry_role("out", &ops, Cpu::Z80), Some(FlagRole::Untouched));
+        }
+    }
+
+    /// Every one of the 21 newly spellable names has a role for BOTH tracked
+    /// flags. `None` means "the model does not know this word", which the walks
+    /// read as "leaves the flag alone" -- so a name that became spellable without
+    /// becoming modelled would silently disable the flag analysis on any routine
+    /// using it, rather than failing loudly.
+    #[test]
+    fn every_newly_spellable_name_is_modelled_for_both_flags() {
+        let names = [
+            "ldi", "ldd", "lddr", "cpi", "cpd", "cpir", "cpdr", "ini", "ind", "inir", "indr",
+            "outi", "outd", "otir", "otdr", "in", "out", "reti", "retn", "rrd", "rld",
+        ];
+        assert_eq!(names.len(), 21, "the name list lost a member");
+        let mut unmodelled = Vec::new();
+        for n in names {
+            // A no-operand probe suffices for the nineteen block/return/rotate
+            // forms; `in`/`out` are given their real operands so the shape-
+            // conditioned arms are the ones exercised.
+            let ops: Vec<CodeOperand> = match n {
+                "in" => vec![a(), CodeOperand::Z80IndC],
+                "out" => vec![CodeOperand::Z80IndC, a()],
+                _ => vec![],
+            };
+            if carry_role(n, &ops, Cpu::Z80).is_none() {
+                unmodelled.push(format!("{n} (carry)"));
+            }
+            if zero_role(n, &ops, Cpu::Z80).is_none() {
+                unmodelled.push(format!("{n} (zero)"));
+            }
+        }
+        assert!(unmodelled.is_empty(), "unmodelled by the flag analysis: {unmodelled:?}");
     }
 }

@@ -411,13 +411,23 @@ pub fn instr_cost(mnemonic: &str, ops: &[CodeOperand]) -> Cost {
             _ => Cost::Unknown,
         },
 
-        // --- the direct-port I/O forms (Zilog UM0080, "Input and Output Group") ---
-        // `in a,(n)` / `out (n),a` are 11 T. The register-indirect `(c)` forms are
-        // 12 T on the machine and are NOT priced here, because they have no
-        // spelling to price: `CodeOperand` has no `(c)` variant, so no emp
-        // instruction can carry that operand shape to this table at all.
+        // --- the I/O forms (Zilog UM0080, "Input and Output Group") ---
+        // The two addressing modes are priced apart because they COST apart and
+        // are the same LENGTH: `in a,(n)` / `out (n),a` are 11 T (3 M cycles,
+        // 4+3+4), while the ED-prefixed register-indirect `in r,(c)` /
+        // `out (c),r` are 12 T (3 M cycles, 4+4+4). Pricing the `(c)` forms at
+        // the direct port's 11 T would be a 1 T error per instruction on the
+        // exact forms a driver puts in a streaming loop, where the budget is
+        // being counted in single T-states.
+        //
+        // The `(c)` forms carried no price until `.emp` had a `(c)` operand to
+        // spell them with; `every_encodable_form_is_priced` failed on all four
+        // the moment `emp_image` mapped `IsaOp::IndC`, which is what put these
+        // two arms here rather than a later parcel's memory.
         ("in", [a, Z80Mem { .. }]) if is_a(a) => Cost::Fixed(11),
         ("out", [Z80Mem { .. }, a]) if is_a(a) => Cost::Fixed(11),
+        ("in", [r, Z80IndC]) if is_reg8(r) => Cost::Fixed(12),
+        ("out", [Z80IndC, r]) if is_reg8(r) => Cost::Fixed(12),
 
         // --- unconditional return: ret 10 ; reti/retn 14 (both ED-prefixed) ---
         ("ret", []) => Cost::Fixed(10),
@@ -899,6 +909,33 @@ mod tests {
         assert_eq!(instr_cost("ld", &[a(), port]), Cost::Fixed(13));
     }
 
+    // The C-addressed port is 12, one T-state MORE than the direct port's 11
+    // (Zilog UM0080, "Input and Output Group": `in r,(C)` and `out (C),r` are
+    // 3 M cycles of 4+4+4, the direct forms 4+3+4). The two are the same LENGTH
+    // in bytes and differ only by the ED prefix, so nothing about the encoding
+    // reminds a reader that the costs differ -- which is why the direct forms
+    // are asserted here beside them rather than only in the test above.
+    //
+    // `every_encodable_form_is_priced` cannot stand in for this: it asks only
+    // that a form is not `Cost::Unknown`, so it is satisfied by a `(c)` form
+    // priced at the direct port's 11. Only this assertion distinguishes 12 from
+    // 11, and it was written by mutating the arms to 11 and observing it fail.
+    #[test]
+    fn the_c_port_costs_one_more_than_the_direct_port() {
+        let ind_c = CodeOperand::Z80IndC;
+        let port = CodeOperand::Z80Mem { addr: 0x00FE };
+        assert_eq!(instr_cost("in", &[a(), ind_c.clone()]), Cost::Fixed(12));
+        assert_eq!(instr_cost("out", &[ind_c.clone(), a()]), Cost::Fixed(12));
+        // The register rides the opcode, not the cost: every register form is 12.
+        let b = CodeOperand::Z80Reg8(Z80Reg8::B);
+        assert_eq!(instr_cost("in", &[b.clone(), ind_c.clone()]), Cost::Fixed(12));
+        assert_eq!(instr_cost("out", &[ind_c, b]), Cost::Fixed(12));
+        // ... and the direct port stays 11, so a single value has not been
+        // smeared across both addressing modes.
+        assert_eq!(instr_cost("in", &[a(), port.clone()]), Cost::Fixed(11));
+        assert_eq!(instr_cost("out", &[port, a()]), Cost::Fixed(11));
+    }
+
     // `ex (sp),hl` moves four bytes and is 19; the two register renames that
     // share the mnemonic are 4. `ld sp,hl` is 6 and shares the operand pair with
     // `ex (sp),hl` under one of the two `(sp)` spellings, so both are asserted.
@@ -1032,12 +1069,13 @@ mod tests {
                 IsaOp::AfShadow => CodeOperand::Z80AfShadow,
                 IsaOp::RegI => CodeOperand::Z80RegI,
                 IsaOp::RegR => CodeOperand::Z80RegR,
-                // `(c)`. There is NO `CodeOperand` for the C-addressed port, so
-                // no emp instruction can carry this shape to the cost table, and
-                // the table cannot have an arm that matches it. Forms containing
-                // it are skipped, and the test asserts that this is the ONLY
-                // reason anything is skipped.
-                IsaOp::IndC => return None,
+                // `(c)`, the C-addressed port. It HAS an emp operand now, so
+                // every `in r,(c)` / `out (c),r` form places a real demand on
+                // the cost table below rather than being skipped. The skip
+                // branch is kept, and still asserts that a skip could only ever
+                // be a `(c)` form, so that the demand cannot shrink silently if
+                // some future operand loses its emp image.
+                IsaOp::IndC => CodeOperand::Z80IndC,
             })
         }
 
