@@ -527,7 +527,20 @@ its author had not thought to ask for. **So: for anything mechanisable, the answ
 check in the gate, and brief-level naming is the weaker second line for things a gate cannot judge.**
 The script says its own honest limit out loud, and that limit is the residue: a wrapper reduces the
 omission surface from remembering seven things to remembering one, and **nothing but a human invokes
-it**.
+it**. One thing to remember is not zero things.
+
+**⚠ AND DO NOT READ THIS AS "PREFER MECHANISMS TO PEOPLE". A MECHANISM'S EXISTENCE IS NOT ITS
+ENFORCEMENT, and the counter-instance is in this very block's own landing.** The script that banked
+the text above carried an `assert` for the index row. **The assertion FIRED, correctly, and the
+commit went through anyway** (`8180cc9b`, 33 insertions, the block with nothing pointing at it),
+because the `git add` sat on the next line of the same shell invocation rather than behind the
+Python's exit status. A person reading the output caught it and repaired it at `d0c596b8`. **So the
+check ran, was right, was recorded, and changed nothing.**
+
+**The rule that actually survives both halves: A CHECK'S VERDICT MUST GATE THE NEXT ACTION.** A check
+whose failure does not stop the step after it is a log line, not a gate, and it is WORSE than no check
+because its presence is read as coverage. Ask of any check you add: what does it PREVENT, and by what
+mechanism does its red reach the thing that would otherwise proceed.
 
 ### REVIEW STEP, UNCONDITIONAL: RECOMPUTE EVERY QUOTED FIGURE WITH THIS LANE'S OWN INSTRUMENT (2026-09-16)
 
