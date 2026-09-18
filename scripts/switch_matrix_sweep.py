@@ -134,6 +134,33 @@ ACK_DISAGREE = {
     # refuses rather than write a ROM whose decompressor is told the wrong
     # length. Chosen and argued in `SWITCH-SETTING-SILENT-ROMS`, fault 2.
 
+    ("s2disasm", "s2disasm-build.lua:improved_sound_driver_compression-1"):
+        ("DIFFER", "2 bytes in 2 runs at 0x18F 0xEC051"),
+    # NOT the compressor. sigil's saxman-optimised stream is p2bin's own, byte
+    # for byte (`sigil-clownlzss-sys`'s `p2bin_optimised_vectors.rs`), and the
+    # whole Sonic 1 ROM AGREES on the sibling leg with kosinski-optimised. What
+    # differs here is `amend_sound_driver_size`, the same fault as the fixBugs
+    # row above and in the other direction.
+    #
+    # `Size_of_Snd_driver_guess = $F64` and the optimal parser stores $F4A, $1A
+    # FEWER. Sonic 2 loads the constant into the `move.w` its Saxman
+    # decompressor reads as a byte count, and build.lua patches that immediate
+    # afterwards from the real size asl's share file reports. sigil writes no
+    # share file, so the patch finds nothing and skips, and sigil's image keeps
+    # the source's own $F64 where the reference holds $F4A: one byte at
+    # 0xEC051, plus the header checksum at 0x18F that follows from it.
+    #
+    # sigil does not refuse this direction, and that is measured rather than
+    # chosen: skdisasm SHIPS a stream smaller than its own
+    # `Size_of_Snd_driver_guess`, so refusing it would fire on a corpus at its
+    # shipped settings. See the long comment at the `declared_size` check in
+    # `sigil-link/src/blob.rs`. Closing it needs sigil to give a build script
+    # the real stored size, which is the share-file question and not this
+    # parcel; booked in the campaign gap ledger under `SWEEP-NIGHTLY`.
+    #
+    # The text pins the difference's size, shape and place, so a difference that
+    # grows, moves or spreads stops being covered (self-test C12b).
+
     # `("s1disasm", "s1disasm-build.lua:improved_dac_driver_compression-1")` and
     # `("s2disasm", "s2disasm-build.lua:improved_sound_driver_compression-1")`
     # USED TO BE HERE, both `SIGIL-DECLINED` with the text "is a p2bin format
@@ -958,18 +985,47 @@ def run_leg(cfg, tag, edits, log, vacuity_ref=None, post_lua_edits=()):
 # Controls on this program itself, proven red
 # ---------------------------------------------------------------------------
 
+def leg_report(row):
+    """What the leg itself reported, as one line, in the terms of its class.
+
+    This is the string the summary table prints in its DETAIL column AND the
+    string an acknowledgement's `text` is matched against, so an acknowledgement
+    is pinned to what a reader of the table sees rather than to a second,
+    privately computed rendering of the same leg.
+    """
+    if row["klass"] == "AGREE":
+        return "crc32 %s size %d" % (row["sig_crc"], row["sig_size"])
+    if row["klass"] == "DIFFER":
+        return "%d bytes in %d runs at %s" % (row["diff"], row["runs"],
+                                              " ".join(row["offsets"]))
+    if row["klass"] == "SIGIL-DECLINED":
+        said = "\n".join(row.get("sigil_stderr") or [])
+        return said if said else "no message"
+    if row["klass"] == "LEG-ERROR":
+        return row.get("err", "")
+    return ""
+
+
 def ack_mismatch(row, ack):
     """Why an ACK_DISAGREE value does not describe this leg, or None if it does.
-    The value is a class, or `(class, text)` where the leg's diagnostic output
-    (sigil's stderr, or the error of a leg that could not run) must contain
-    `text`."""
+
+    The value is a class, or `(class, text)` where the leg's own report must
+    contain `text`. What "its own report" is depends on the class, and
+    [`leg_report`] is the one place that decides: for a refusal it is sigil's
+    stderr (or the error of a leg that could not run), and for a DIFFER it is the
+    byte count, the run count and the offsets.
+
+    A DIFFER is the class that most needs the text. `SIGIL-DECLINED` at least
+    names one refusal out of many; `DIFFER` alone says only "the images are not
+    the same", which would go on covering the leg however far apart they drifted.
+    """
     klass, needle = (ack, None) if isinstance(ack, str) else ack
     if row["klass"] != klass:
         return "acknowledged %s" % klass
     if needle is not None:
-        said = "\n".join(row.get("sigil_stderr") or []) + row.get("err", "")
+        said = leg_report(row)
         if needle not in said:
-            return ("acknowledged %s with the text %r, which the leg's diagnostic "
+            return ("acknowledged %s with the text %r, which the leg's own report "
                     "does not contain; it said: %s"
                     % (klass, needle, (said.split("\n") or [""])[0][:120]))
     return None
@@ -1282,6 +1338,23 @@ def self_test(scratch, log):
         % ("PASSED, a refusal for a neighbouring reason is a mismatch"
            if c12 else "FAILED"))
     ok = ok and bool(c12)
+
+    # C12b: the same for a DIFFER, whose text is the byte count, the run count
+    # and the offsets. An acknowledged difference that grows a byte, moves, or
+    # spreads to a second run must stop being covered; the class alone must not
+    # be enough to keep covering it.
+    row12b = {"klass": "DIFFER", "diff": 2, "runs": 2,
+              "offsets": ["0x18F", "0xEC051"]}
+    pin = ("DIFFER", "2 bytes in 2 runs at 0x18F 0xEC051")
+    c12b = (ack_mismatch(row12b, pin) is None
+            and ack_mismatch(dict(row12b, diff=3), pin)
+            and ack_mismatch(dict(row12b, runs=3), pin)
+            and ack_mismatch(dict(row12b, offsets=["0x18F", "0xEC052"]), pin)
+            and ack_mismatch(row12b, ("SIGIL-DECLINED", "anything")))
+    log("CONTROL C12b ack-difference-text: %s"
+        % ("PASSED, a difference of another size, shape or place is a mismatch"
+           if c12b else "FAILED"))
+    ok = ok and bool(c12b)
 
     shutil.rmtree(d)
     log("SELF_TEST %s" % ("PASSED" if ok else "FAILED"))
@@ -1811,16 +1884,7 @@ def main():
     log("")
     log("%-42s %-30s %s" % ("LEG", "RESULT", "DETAIL"))
     for r in [x for x in all_rows if not x.get("cross")]:
-        detail = ""
-        if r["klass"] == "AGREE":
-            detail = "crc32 %s size %d" % (r["sig_crc"], r["sig_size"])
-        elif r["klass"] == "DIFFER":
-            detail = "%d bytes in %d runs at %s" % (r["diff"], r["runs"],
-                                                    " ".join(r["offsets"]))
-        elif r["klass"] == "SIGIL-DECLINED":
-            detail = (r["sigil_stderr"] or ["no message"])[0][:90]
-        elif r["klass"] == "LEG-ERROR":
-            detail = r["err"].split("\n")[0][:90]
+        detail = leg_report(r).split("\n")[0][:90]
         # The RESULT column never says AGREE for a leg that exercised nothing.
         # "The build agreed" and "the build could not disagree" must not be the
         # same word in a table anyone reads.
