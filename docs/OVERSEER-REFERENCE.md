@@ -496,6 +496,39 @@ it with 6(c) or it becomes face 2 with a number attached.
 
 ## Quality bars
 
+### JUDGE A RETURNED REPORT BY ITS SILENCES, NOT BY ITS EVIDENCE (2026-09-18)
+
+**Read when you are judging any returned agent work, beside the recompute step below.**
+
+**A check run and failed appears in the report. A check run and passed appears. A check NEVER
+CONSIDERED appears nowhere, and is indistinguishable from one that was irrelevant.** So the finding
+is never in what the report says; it is in the set difference between the checks the work should have
+touched and the checks the report mentions IN EITHER DIRECTION.
+
+**And the reader's confidence moves the wrong way, which is what makes this expensive.** The
+optimised-compressor parcel returned ten mutations each quoting its mutated line off disk, sweep logs
+stamping the binary's own revision and md5, and two self-reported errors including re-running every
+quoted figure after catching itself measuring the wrong binary. It never ran clippy and said nothing
+about clippy in either direction. **The better the report, the less likely anybody goes looking for
+what is absent from it**, because density reads as coverage.
+
+**THE HUB'S PROPOSED REMEDY IS HALF RIGHT AND THE OTHER HALF IS THE TRAP.** Its corollary was to name
+in the brief the checks whose ABSENCE would be a finding, so a silence becomes a reportable state.
+That helps, and **it cannot close this class, because it relocates the omission from the agent to the
+controller and the controller is the same seat that failed to think of the check.** Measured on this
+lane's own dispatch: the brief named the suite and the sweep by name and never said clippy. An agent
+obeying it perfectly still returns a report with the same hole. This is protocol bar 21 in a new
+costume, the rule applied where you are the author and skipped where you are the carrier.
+
+**WHAT ACTUALLY CLOSED IT IS A STANDING GATE WHOSE COVERAGE THE REPO OWNS, NOT THE DISPATCH.**
+`scripts/landing-run.sh` enumerates its own preconditions and runs on the MERGED tree, so what it
+checks does not depend on who wrote the brief or on what that person remembered. It caught the lint
+its author had not thought to ask for. **So: for anything mechanisable, the answer is to put the
+check in the gate, and brief-level naming is the weaker second line for things a gate cannot judge.**
+The script says its own honest limit out loud, and that limit is the residue: a wrapper reduces the
+omission surface from remembering seven things to remembering one, and **nothing but a human invokes
+it**.
+
 ### REVIEW STEP, UNCONDITIONAL: RECOMPUTE EVERY QUOTED FIGURE WITH THIS LANE'S OWN INSTRUMENT (2026-09-16)
 
 **Read when judging ANY returned agent work or peer report. This is a STEP, not a thing to notice, and
