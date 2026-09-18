@@ -247,6 +247,46 @@ ACK_STOCK_DECLINE = [
 ]
 
 
+# (corpus, partial assignment, pinned difference, why): a family of CROSS corners
+# where both toolchains build and the images differ for one known, adjudicated,
+# booked reason.
+#
+# `ACK_DISAGREE` above cannot reach a cross corner: it is keyed by a leg tag and
+# a cross corner's tag names a point in the switch space, not a switch. The shape
+# here is `ACK_STOCK_DECLINE`'s instead, because the thing being stated is the
+# same kind of thing: a partial assignment is what CAUSES the family, and the
+# whole family shares one cause. The partial assignment must be the smallest one
+# that names the cause, so that a corner differing for a second reason falls
+# outside it.
+#
+# `pinned` is the leg's own report (see `leg_report`), asserted to be IDENTICAL
+# at every covered corner, not merely contained: a family is only a family if its
+# members really do differ in the same way, and a rule that swallowed two sizes
+# of difference would be hiding the second. As with the other tables, the covered
+# set and the observed set are asserted equal in BOTH directions, so a rule that
+# covers no disagreeing corner is as loud as a corner no rule covers.
+ACK_CROSS_DISAGREE = [
+    ("s2disasm", {"build.lua:improved_sound_driver_compression": 1},
+     "2 bytes in 2 runs at 0x18F 0xEC051",
+     "`amend_sound_driver_size`, and not the compressor. The optimal Saxman "
+     "parser stores $F4A where `Size_of_Snd_driver_guess` declares $F64; Sonic "
+     "2 loads that constant into the `move.w` its decompressor reads as a byte "
+     "count, and build.lua patches the immediate afterwards from the real size "
+     "asl's share file reports. sigil writes no share file, so the patch finds "
+     "nothing and skips, and sigil's image keeps the source's own $F64: one "
+     "byte at 0xEC051, plus the header checksum at 0x18F that follows from it. "
+     "Identical at every corner it covers, because no other switch changes the "
+     "driver's own source. The same fault as the `fixBugs` entry in "
+     "ACK_DISAGREE, in the direction sigil deliberately does not refuse: a "
+     "stream SMALLER than its constant is what skdisasm ships, so refusing it "
+     "would fire on a corpus at its shipped settings (`sigil-link/src/blob.rs`, "
+     "at the `declared_size` check). Booked in the campaign gap ledger under "
+     "`SWEEP-NIGHTLY` Open 5. Free across the other five switches except "
+     "`fixBugs`, whose arm sigil refuses before any image exists, so it covers "
+     "3*2*1*2*2*2 = 48 of the 192 corners."),
+]
+
+
 class Fail(Exception):
     pass
 
@@ -1692,7 +1732,7 @@ def main():
             log("   acknowledged stock-decline rules: %d" % len(rules))
 
             comp_ok, comp_bad, comp_skipped = 0, [], 0
-            corner_rows = []
+            corner_rows, corner_settings = [], {}
             stock_bad, rule_hits = [], [0] * len(rules)
             agreed, disagreed, crcs = 0, [], {}
             for corner in corners:
@@ -1753,6 +1793,7 @@ def main():
                         agreed += 1
                     else:
                         disagreed.append((tag, r["klass"]))
+                corner_settings[tag] = setting
                 log("   RESULT %s   sigil %s (predicted %s)%s"
                     % (r["klass"], got, pred,
                        "   STOCK DECLINED" if not r.get("lua_wrote") else ""))
@@ -1798,9 +1839,50 @@ def main():
             if comp_bad:
                 failures.append("%s: %d corner(s) broke the composition "
                                 "prediction" % (corpus, len(comp_bad)))
-            if disagreed:
+            # A disagreeing corner is covered when a rule's partial assignment
+            # holds at it AND the leg reported exactly the rule's pinned
+            # difference. Both directions are asserted: an uncovered corner and
+            # a rule that covers nothing are equally loud.
+            xrules = [(d, pin, why) for (c, d, pin, why) in ACK_CROSS_DISAGREE
+                      if c == corpus]
+            xhits = [0] * len(xrules)
+            xuncovered, xwrong = [], []
+            for tag, klass in disagreed:
+                row = next(r for r in corner_rows if r["tag"] == tag)
+                setting = corner_settings[tag]
+                covered_by = [i for i, (d, pin, w) in enumerate(xrules)
+                              if all(setting.get(k) == v for k, v in d.items())]
+                if not covered_by:
+                    xuncovered.append(tag)
+                    continue
+                for i in covered_by:
+                    xhits[i] += 1
+                    if leg_report(row) != xrules[i][1]:
+                        xwrong.append((tag, xrules[i][1], leg_report(row)))
+            log("   of the %d that did not agree, %d are covered by an "
+                "acknowledged cross rule and %d are not"
+                % (len(disagreed), len(disagreed) - len(xuncovered),
+                   len(xuncovered)))
+            for i, (d, pin, w) in enumerate(xrules):
+                log("   cross rule %s pinned %r covered %d corner(s)"
+                    % (d, pin, xhits[i]))
+            for t in xuncovered:
+                log("     UNACKNOWLEDGED DISAGREEMENT %s" % t)
+            for t, want, got in xwrong:
+                log("     CROSS PIN MISMATCH %s: acknowledged %r, reported %r"
+                    % (t, want, got))
+            if xuncovered:
                 failures.append("%s: %d corner(s) built by both toolchains "
-                                "disagree" % (corpus, len(disagreed)))
+                                "disagree and no cross rule covers them: %s"
+                                % (corpus, len(xuncovered), xuncovered[:4]))
+            if xwrong:
+                failures.append("%s: %d corner(s) differ in a way their cross "
+                                "rule does not pin" % (corpus, len(xwrong)))
+            xdead = [xrules[i][0] for i in range(len(xrules)) if xhits[i] == 0]
+            if xdead:
+                failures.append("%s: %d cross rule(s) cover no disagreeing "
+                                "corner and are stale: %s"
+                                % (corpus, len(xdead), xdead))
             uncov = [t for t, c in stock_bad if not c]
             if uncov:
                 failures.append("%s: %d corner(s) the stock toolchain cannot "
