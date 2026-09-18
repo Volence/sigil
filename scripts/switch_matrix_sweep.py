@@ -267,7 +267,8 @@ ACK_STOCK_DECLINE = [
 # covers no disagreeing corner is as loud as a corner no rule covers.
 ACK_CROSS_DISAGREE = [
     ("s2disasm", {"build.lua:improved_sound_driver_compression": 1},
-     "2 bytes in 2 runs at 0x18F 0xEC051",
+     ("2 bytes in 2 runs at 0x18F 0xEC051",
+      "3 bytes in 2 runs at 0x18E 0xEC051"),
      "`amend_sound_driver_size`, and not the compressor. The optimal Saxman "
      "parser stores $F4A where `Size_of_Snd_driver_guess` declares $F64; Sonic "
      "2 loads that constant into the `move.w` its decompressor reads as a byte "
@@ -275,8 +276,12 @@ ACK_CROSS_DISAGREE = [
      "asl's share file reports. sigil writes no share file, so the patch finds "
      "nothing and skips, and sigil's image keeps the source's own $F64: one "
      "byte at 0xEC051, plus the header checksum at 0x18F that follows from it. "
-     "Identical at every corner it covers, because no other switch changes the "
-     "driver's own source. The same fault as the `fixBugs` entry in "
+     "One difference at every corner it covers, because no other switch "
+     "changes the driver's own source, in two renderings: the ROM checksum at "
+     "0x18E sometimes carries into its high byte and sometimes does not, which "
+     "is 3 bytes in 2 runs rather than 2, and 42 of the 48 corners are the "
+     "first shape and 6 the second. Both are measured and both must be "
+     "observed. The same fault as the `fixBugs` entry in "
      "ACK_DISAGREE, in the direction sigil deliberately does not refuse: a "
      "stream SMALLER than its constant is what skdisasm ships, so refusing it "
      "would fire on a corpus at its shipped settings (`sigil-link/src/blob.rs`, "
@@ -1075,22 +1080,28 @@ def reconcile_cross_disagreements(rules, tags, settings, rows):
     """Match each disagreeing CROSS corner against the cross rules.
 
     A corner is covered when a rule's partial assignment holds at it AND the
-    corner reported EXACTLY that rule's pinned difference. Returns
-    `(hits_per_rule, uncovered_tags, pin_mismatches)`; the caller asserts that
-    the uncovered list is empty, that no rule has zero hits, and that no pin
-    mismatched, so the covered set and the observed set are equal in both
-    directions.
+    corner reported one of that rule's pinned differences, EXACTLY. Returns
+    `(hits_per_rule, uncovered_tags, pin_mismatches, unseen_pins)`; the caller
+    asserts that the uncovered list is empty, that no rule has zero hits, that no
+    pin mismatched and that no pin went unseen, so the covered set and the
+    observed set are equal in both directions at both levels.
 
-    Identity, not containment, is deliberate. A rule states that a family of
-    corners differs in ONE way for ONE reason; if two of its members differed by
-    different amounts, the rule would be covering a second thing nobody
-    adjudicated, and containment would let it.
+    Identity, not containment. A rule states that a family of corners differs for
+    ONE reason, and containment would let a pin naming only the START of a
+    difference go on covering the corner as the rest of it moved.
+
+    A SET of pins rather than one, because one reason can still have more than
+    one rendering and the alternative to enumerating them is a looser match.
+    Every member must be observed, so the set cannot quietly grow a rendering
+    that stopped happening, and a corner reporting something outside the set is a
+    mismatch as before.
     """
     hits = [0] * len(rules)
+    seen = [set() for _ in rules]
     uncovered, wrong = [], []
     for tag in tags:
         setting = settings[tag]
-        covered_by = [i for i, (d, pin, why) in enumerate(rules)
+        covered_by = [i for i, (d, pins, why) in enumerate(rules)
                       if all(setting.get(k) == v for k, v in d.items())]
         if not covered_by:
             uncovered.append(tag)
@@ -1098,9 +1109,13 @@ def reconcile_cross_disagreements(rules, tags, settings, rows):
         for i in covered_by:
             hits[i] += 1
             said = leg_report(rows[tag])
-            if said != rules[i][1]:
+            if said in rules[i][1]:
+                seen[i].add(said)
+            else:
                 wrong.append((tag, rules[i][1], said))
-    return hits, uncovered, wrong
+    unseen = [(i, sorted(set(rules[i][1]) - seen[i])) for i in range(len(rules))
+              if set(rules[i][1]) - seen[i]]
+    return hits, uncovered, wrong, unseen
 
 
 def reconcile_stock_declines(rows, ack):
@@ -1435,24 +1450,24 @@ def self_test(scratch, log):
     # zero hits, which the caller reads as stale.
     def xrow(diff, runs, offs):
         return {"klass": "DIFFER", "diff": diff, "runs": runs, "offsets": offs}
-    xr = [({"opt": 1}, "2 bytes in 2 runs at 0x18F 0xEC051", "why")]
+    xr = [({"opt": 1}, ("2 bytes in 2 runs at 0x18F 0xEC051",), "why")]
     xset = {"a": {"opt": 1, "rev": 0}, "b": {"opt": 1, "rev": 1},
             "c": {"opt": 0, "rev": 1}}
     two = xrow(2, 2, ["0x18F", "0xEC051"])
-    hits, unc, bad = reconcile_cross_disagreements(
+    hits, unc, bad, uns = reconcile_cross_disagreements(
         xr, ["a", "b"], xset, {"a": two, "b": dict(two)})
-    c13a = (hits == [2] and unc == [] and bad == [])
+    c13a = (hits == [2] and unc == [] and bad == [] and uns == [])
     # a corner the rule does not reach
-    hits, unc, bad = reconcile_cross_disagreements(
+    hits, unc, bad, uns = reconcile_cross_disagreements(
         xr, ["a", "c"], xset, {"a": two, "c": two})
-    c13b = (hits == [1] and unc == ["c"] and bad == [])
+    c13b = (hits == [1] and unc == ["c"] and bad == [] and uns == [])
     # a covered corner that differs by a different amount
     three = xrow(3, 2, ["0x18F", "0xEC051"])
-    hits, unc, bad = reconcile_cross_disagreements(
+    hits, unc, bad, uns = reconcile_cross_disagreements(
         xr, ["a", "b"], xset, {"a": two, "b": three})
     c13c = (hits == [2] and unc == [] and len(bad) == 1 and bad[0][0] == "b")
     # a rule that covers nothing at all
-    hits, unc, bad = reconcile_cross_disagreements(
+    hits, unc, bad, uns = reconcile_cross_disagreements(
         xr, ["c"], xset, {"c": two})
     c13d = (hits == [0] and unc == ["c"])
     # A SHORT pin, which is what separates identity from containment. c13c above
@@ -1462,19 +1477,30 @@ def self_test(scratch, log):
     # the authoring mistake identity exists to catch: a pin that names only the
     # start of a difference would go on covering the corner as the rest of it
     # moved.
-    xshort = [({"opt": 1}, "2 bytes in 2 runs at 0x18F", "why")]
-    hits, unc, bad = reconcile_cross_disagreements(
+    xshort = [({"opt": 1}, ("2 bytes in 2 runs at 0x18F",), "why")]
+    hits, unc, bad, uns = reconcile_cross_disagreements(
         xshort, ["a"], xset, {"a": two})
     c13e = (hits == [1] and unc == [] and len(bad) == 1
-            and bad[0][1] == "2 bytes in 2 runs at 0x18F"
             and bad[0][2] == "2 bytes in 2 runs at 0x18F 0xEC051")
-    c13 = c13a and c13b and c13c and c13d and c13e
+    # A rule pinning two renderings covers a family showing both, and is stale
+    # the moment one of them stops happening: an unseen pin is as loud as an
+    # uncovered corner, so the set cannot outlive what it describes.
+    xboth = [({"opt": 1}, ("2 bytes in 2 runs at 0x18F 0xEC051",
+                           "3 bytes in 2 runs at 0x18F 0xEC051"), "why")]
+    hits, unc, bad, uns = reconcile_cross_disagreements(
+        xboth, ["a", "b"], xset, {"a": two, "b": three})
+    c13f = (hits == [2] and unc == [] and bad == [] and uns == [])
+    hits, unc, bad, uns = reconcile_cross_disagreements(
+        xboth, ["a", "b"], xset, {"a": two, "b": dict(two)})
+    c13g = (bad == [] and len(uns) == 1
+            and uns[0][1] == ["3 bytes in 2 runs at 0x18F 0xEC051"])
+    c13 = c13a and c13b and c13c and c13d and c13e and c13f and c13g
     log("CONTROL C13 cross-corner-acknowledgement: %s"
         % ("PASSED, a corner outside the rule, a corner differing by another "
-           "amount, a rule covering nothing and a pin that is only a prefix "
-           "are each caught" if c13
-           else "FAILED (a=%s b=%s c=%s d=%s e=%s)"
-                % (c13a, c13b, c13c, c13d, c13e)))
+           "amount, a rule covering nothing, a pin that is only a prefix and a "
+           "pin no corner reported are each caught" if c13
+           else "FAILED (a=%s b=%s c=%s d=%s e=%s f=%s g=%s)"
+                % (c13a, c13b, c13c, c13d, c13e, c13f, c13g)))
     ok = ok and bool(c13)
 
     shutil.rmtree(d)
@@ -1922,21 +1948,23 @@ def main():
                                 "prediction" % (corpus, len(comp_bad)))
             xrules = [(d, pin, why) for (c, d, pin, why) in ACK_CROSS_DISAGREE
                       if c == corpus]
-            xhits, xuncovered, xwrong = reconcile_cross_disagreements(
+            xhits, xuncovered, xwrong, xunseen = reconcile_cross_disagreements(
                 xrules, [t for t, k in disagreed], corner_settings,
                 {r["tag"]: r for r in corner_rows})
             log("   of the %d that did not agree, %d are covered by an "
                 "acknowledged cross rule and %d are not"
                 % (len(disagreed), len(disagreed) - len(xuncovered),
                    len(xuncovered)))
-            for i, (d, pin, w) in enumerate(xrules):
-                log("   cross rule %s pinned %r covered %d corner(s)"
-                    % (d, pin, xhits[i]))
+            for i, (d, pins, w) in enumerate(xrules):
+                log("   cross rule %s pinned %s covered %d corner(s)"
+                    % (d, list(pins), xhits[i]))
             for t in xuncovered:
                 log("     UNACKNOWLEDGED DISAGREEMENT %s" % t)
             for t, want, got in xwrong:
-                log("     CROSS PIN MISMATCH %s: acknowledged %r, reported %r"
-                    % (t, want, got))
+                log("     CROSS PIN MISMATCH %s: acknowledged %s, reported %r"
+                    % (t, list(want), got))
+            for i, pins in xunseen:
+                log("     CROSS PIN UNSEEN in rule %s: %s" % (xrules[i][0], pins))
             if xuncovered:
                 failures.append("%s: %d corner(s) built by both toolchains "
                                 "disagree and no cross rule covers them: %s"
@@ -1944,6 +1972,11 @@ def main():
             if xwrong:
                 failures.append("%s: %d corner(s) differ in a way their cross "
                                 "rule does not pin" % (corpus, len(xwrong)))
+            if xunseen:
+                failures.append("%s: %d cross rule(s) pin a difference no "
+                                "corner reported: %s"
+                                % (corpus, len(xunseen),
+                                   [(xrules[i][0], p) for i, p in xunseen]))
             xdead = [xrules[i][0] for i in range(len(xrules)) if xhits[i] == 0]
             if xdead:
                 failures.append("%s: %d cross rule(s) cover no disagreeing "
