@@ -1071,6 +1071,38 @@ def ack_mismatch(row, ack):
     return None
 
 
+def reconcile_cross_disagreements(rules, tags, settings, rows):
+    """Match each disagreeing CROSS corner against the cross rules.
+
+    A corner is covered when a rule's partial assignment holds at it AND the
+    corner reported EXACTLY that rule's pinned difference. Returns
+    `(hits_per_rule, uncovered_tags, pin_mismatches)`; the caller asserts that
+    the uncovered list is empty, that no rule has zero hits, and that no pin
+    mismatched, so the covered set and the observed set are equal in both
+    directions.
+
+    Identity, not containment, is deliberate. A rule states that a family of
+    corners differs in ONE way for ONE reason; if two of its members differed by
+    different amounts, the rule would be covering a second thing nobody
+    adjudicated, and containment would let it.
+    """
+    hits = [0] * len(rules)
+    uncovered, wrong = [], []
+    for tag in tags:
+        setting = settings[tag]
+        covered_by = [i for i, (d, pin, why) in enumerate(rules)
+                      if all(setting.get(k) == v for k, v in d.items())]
+        if not covered_by:
+            uncovered.append(tag)
+            continue
+        for i in covered_by:
+            hits[i] += 1
+            said = leg_report(rows[tag])
+            if said != rules[i][1]:
+                wrong.append((tag, rules[i][1], said))
+    return hits, uncovered, wrong
+
+
 def reconcile_stock_declines(rows, ack):
     """Split the corners the STOCK toolchain could not build by what sigil did
     there, and say which of those need acknowledging.
@@ -1395,6 +1427,40 @@ def self_test(scratch, log):
         % ("PASSED, a difference of another size, shape or place is a mismatch"
            if c12b else "FAILED"))
     ok = ok and bool(c12b)
+
+    # C13: the cross-corner acknowledgement, over synthetic corners. A rule
+    # covers a family only where its partial assignment holds; a corner outside
+    # every rule is uncovered; a covered corner whose difference is not the
+    # pinned one is a mismatch, not a pass; and a rule that covers nothing has
+    # zero hits, which the caller reads as stale.
+    def xrow(diff, runs, offs):
+        return {"klass": "DIFFER", "diff": diff, "runs": runs, "offsets": offs}
+    xr = [({"opt": 1}, "2 bytes in 2 runs at 0x18F 0xEC051", "why")]
+    xset = {"a": {"opt": 1, "rev": 0}, "b": {"opt": 1, "rev": 1},
+            "c": {"opt": 0, "rev": 1}}
+    two = xrow(2, 2, ["0x18F", "0xEC051"])
+    hits, unc, bad = reconcile_cross_disagreements(
+        xr, ["a", "b"], xset, {"a": two, "b": dict(two)})
+    c13a = (hits == [2] and unc == [] and bad == [])
+    # a corner the rule does not reach
+    hits, unc, bad = reconcile_cross_disagreements(
+        xr, ["a", "c"], xset, {"a": two, "c": two})
+    c13b = (hits == [1] and unc == ["c"] and bad == [])
+    # a covered corner that differs by a different amount
+    three = xrow(3, 2, ["0x18F", "0xEC051"])
+    hits, unc, bad = reconcile_cross_disagreements(
+        xr, ["a", "b"], xset, {"a": two, "b": three})
+    c13c = (hits == [2] and unc == [] and len(bad) == 1 and bad[0][0] == "b")
+    # a rule that covers nothing at all
+    hits, unc, bad = reconcile_cross_disagreements(
+        xr, ["c"], xset, {"c": two})
+    c13d = (hits == [0] and unc == ["c"])
+    c13 = c13a and c13b and c13c and c13d
+    log("CONTROL C13 cross-corner-acknowledgement: %s"
+        % ("PASSED, a corner outside the rule, a corner differing by another "
+           "amount, and a rule covering nothing are each caught" if c13
+           else "FAILED (a=%s b=%s c=%s d=%s)" % (c13a, c13b, c13c, c13d)))
+    ok = ok and bool(c13)
 
     shutil.rmtree(d)
     log("SELF_TEST %s" % ("PASSED" if ok else "FAILED"))
@@ -1839,26 +1905,11 @@ def main():
             if comp_bad:
                 failures.append("%s: %d corner(s) broke the composition "
                                 "prediction" % (corpus, len(comp_bad)))
-            # A disagreeing corner is covered when a rule's partial assignment
-            # holds at it AND the leg reported exactly the rule's pinned
-            # difference. Both directions are asserted: an uncovered corner and
-            # a rule that covers nothing are equally loud.
             xrules = [(d, pin, why) for (c, d, pin, why) in ACK_CROSS_DISAGREE
                       if c == corpus]
-            xhits = [0] * len(xrules)
-            xuncovered, xwrong = [], []
-            for tag, klass in disagreed:
-                row = next(r for r in corner_rows if r["tag"] == tag)
-                setting = corner_settings[tag]
-                covered_by = [i for i, (d, pin, w) in enumerate(xrules)
-                              if all(setting.get(k) == v for k, v in d.items())]
-                if not covered_by:
-                    xuncovered.append(tag)
-                    continue
-                for i in covered_by:
-                    xhits[i] += 1
-                    if leg_report(row) != xrules[i][1]:
-                        xwrong.append((tag, xrules[i][1], leg_report(row)))
+            xhits, xuncovered, xwrong = reconcile_cross_disagreements(
+                xrules, [t for t, k in disagreed], corner_settings,
+                {r["tag"]: r for r in corner_rows})
             log("   of the %d that did not agree, %d are covered by an "
                 "acknowledged cross rule and %d are not"
                 % (len(disagreed), len(disagreed) - len(xuncovered),
