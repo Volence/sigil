@@ -2178,11 +2178,27 @@ indistinguishable from a lane sitting idle.
 
 **What to do when it happens to you, in order:** (1) say which of the possibilities is true rather
 than defending the act, (2) evidence it from the journal's own gap plus the neighbouring lanes' boot
-writes in the same minutes, since four lanes booting together corroborates a sweep in a way one lane
+writes in the same minutes, since a whole sweep booting together corroborates it in a way one lane
 cannot, and (3) name that the peer's premise was a PRE-BOOT SNAPSHOT — the live card had already
 carried the new `awaiting`, `atBoundary` and `updatedAt` before the entry they cited. That is
 protocol bar 13 with the peer as carrier: two sources each correct alone, composed into a
 contradiction that exists in neither, **and the composition step is where it is fixed.**
+
+**⚠ THE FIGURES IN THIS BLOCK'S FIRST DRAFT WERE THE WRONG EVENT, corrected 2026-09-18 on the hub's
+tighter measurement and then re-derived here rather than taken from it.** The draft cited aurora
+23:25:17Z, aeon 23:27:05Z and empyrean 23:35:21Z as the neighbouring boot writes. **Only the first is
+a boot write.** The other two are each lane's SECOND and LATER rows; the instrument that produced
+them took each lane's first row matching a loose filter, which for a lane that was already writing
+before the sweep returns something downstream of the boot rather than the boot. The real sweep is
+five lanes inside 76 seconds: oracle 23:24:01Z, sigil 23:24:25Z, aeon 23:24:33Z, empyrean and aurora
+both 23:25:17Z. Re-derive it by listing EVERY row in a window
+(`23:20:00Z-23:30:00Z`) rather than the first row per lane, which is the query whose answer cannot
+distinguish a boot from an ordinary write.
+
+**And the corroboration is weaker than it reads: the hub and this lane both read
+`dominion/.dominion/changes.jsonl`.** Two readers of one file are one witness read twice, so their
+agreement tests transcription and not the fact. What would be independent is a source that does not
+derive from that journal at all.
 
 **The half worth keeping past this instance: being the SUBJECT of a snapshot-read is a different
 experience from being its reader, and the rule reads differently from here.** This lane's standing
