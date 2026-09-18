@@ -1455,11 +1455,26 @@ def self_test(scratch, log):
     hits, unc, bad = reconcile_cross_disagreements(
         xr, ["c"], xset, {"c": two})
     c13d = (hits == [0] and unc == ["c"])
-    c13 = c13a and c13b and c13c and c13d
+    # A SHORT pin, which is what separates identity from containment. c13c above
+    # does not: "2 bytes in ..." is not a substring of "3 bytes in ...", so a
+    # containment match would reject that one too and the case would pass under
+    # either rule. Here the pin IS a prefix of what the corner reported, which is
+    # the authoring mistake identity exists to catch: a pin that names only the
+    # start of a difference would go on covering the corner as the rest of it
+    # moved.
+    xshort = [({"opt": 1}, "2 bytes in 2 runs at 0x18F", "why")]
+    hits, unc, bad = reconcile_cross_disagreements(
+        xshort, ["a"], xset, {"a": two})
+    c13e = (hits == [1] and unc == [] and len(bad) == 1
+            and bad[0][1] == "2 bytes in 2 runs at 0x18F"
+            and bad[0][2] == "2 bytes in 2 runs at 0x18F 0xEC051")
+    c13 = c13a and c13b and c13c and c13d and c13e
     log("CONTROL C13 cross-corner-acknowledgement: %s"
         % ("PASSED, a corner outside the rule, a corner differing by another "
-           "amount, and a rule covering nothing are each caught" if c13
-           else "FAILED (a=%s b=%s c=%s d=%s)" % (c13a, c13b, c13c, c13d)))
+           "amount, a rule covering nothing and a pin that is only a prefix "
+           "are each caught" if c13
+           else "FAILED (a=%s b=%s c=%s d=%s e=%s)"
+                % (c13a, c13b, c13c, c13d, c13e)))
     ok = ok and bool(c13)
 
     shutil.rmtree(d)
