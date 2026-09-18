@@ -134,22 +134,18 @@ ACK_DISAGREE = {
     # refuses rather than write a ROM whose decompressor is told the wrong
     # length. Chosen and argued in `SWITCH-SETTING-SILENT-ROMS`, fault 2.
 
-    ("s1disasm", "s1disasm-build.lua:improved_dac_driver_compression-1"):
-        ("SIGIL-DECLINED", "`kosinski-optimised` is a p2bin format sigil does "
-                           "not implement"),
-    ("s2disasm", "s2disasm-build.lua:improved_sound_driver_compression-1"):
-        ("SIGIL-DECLINED", "`saxman-optimised` is a p2bin format sigil does "
-                           "not implement"),
-    # Each corpus's build.lua picks its sound-driver compressor from its own
-    # `improved_*_compression` local. At `true` the stock build compresses with
-    # p2bin's `kosinski-optimised` / `saxman-optimised` and its image moves
-    # (Sonic 1 afe05eee -> faa36f4d), while sigil implements only the authentic
-    # `kosinski` and `saxman-bugged` streams (`sigil-link/src/blob.rs`,
-    # `BlobFormat`) and refuses the `-z` argument by name before assembling.
-    # That is a loud refusal, not a wrong ROM, so the arm is acknowledged and
-    # its byte comparison stays UNMEASURED until the optimised compressors
-    # exist; booked in the campaign gap ledger as `SWEEP-NIGHTLY`. The text is
-    # pinned so a refusal for any other reason on these legs is a mismatch.
+    # `("s1disasm", "s1disasm-build.lua:improved_dac_driver_compression-1")` and
+    # `("s2disasm", "s2disasm-build.lua:improved_sound_driver_compression-1")`
+    # USED TO BE HERE, both `SIGIL-DECLINED` with the text "is a p2bin format
+    # sigil does not implement", and are gone because the rows closed, not
+    # because the legs stopped being run. Each corpus's build.lua picks its
+    # sound-driver compressor from its own `improved_*_compression` local, and at
+    # `true` that is p2bin's `kosinski-optimised` / `saxman-optimised`, which
+    # sigil refused by name. `sigil-link/src/blob.rs`'s `BlobFormat` now
+    # implements both (and plain `saxman` with them), so these legs compare
+    # bytes like any other. The entries have to go rather than be re-labelled:
+    # this table is asserted equal to what the run finds in both directions, so
+    # a stale entry is a loud failure and not a comment.
 }
 
 # (corpus, leg tag of a phase-1 arm): an arm no single companion switch could
