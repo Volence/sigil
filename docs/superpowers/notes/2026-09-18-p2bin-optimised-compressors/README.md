@@ -76,6 +76,54 @@ what a leg reported in the terms of its own class, read by both the summary
 table and `ack_mismatch`, so an acknowledgement's text is pinned to what a
 reader of the table sees. Self-test C12b covers it.
 
+## The cross corners, which is where this nearly went wrong
+
+The nightly runs `--cross`, and a cross corner is reconciled by a different
+path that `ACK_DISAGREE` cannot reach: it is keyed by a leg tag, and a cross
+corner's tag names a point in the switch space rather than a switch. Before this
+parcel, Sonic 2's `improved_sound_driver_compression=1` corners were sigil
+refusals and the cross run was green. Measured on this branch
+(`sweep-cross-s2.log`, 192 corners): 96 corners where both toolchains built, 48
+agreeing byte for byte and **48 differing**, every one of them the same cause as
+the phase-1 leg. With no acknowledgement path the nightly would have gone red
+every night on correct code, which is the shape that trains people to weaken a
+check.
+
+So `ACK_CROSS_DISAGREE` takes `ACK_STOCK_DECLINE`'s shape, which is the
+neighbouring mechanism for the same kind of statement: a partial assignment is
+what causes a family of corners, and the family shares one cause. Control C13
+covers the matching.
+
+**The identity pin earned its keep on its first real run.** The rule was written
+pinning one difference, and the cross run refused it: 42 of the 48 corners report
+`2 bytes in 2 runs at 0x18F 0xEC051` and 6 report `3 bytes in 2 runs at 0x18E
+0xEC051`, because the ROM checksum sometimes carries into its high byte. One
+cause, two renderings. A containment match would have hidden the second; the
+rule now pins a SET, asserted exhaustive in both directions, so a corner
+reporting something outside it is a mismatch and a member no corner reported is
+stale.
+
+## What was run, and what was not
+
+| Run | Result |
+|---|---|
+| `cargo test --release --workspace --no-fail-fast` | 5199 passed, 392 failed, 2 ignored. Every failure is the unprovisioned Aeon reference tree refusing to measure (389 directly, 3 mutex-poison cascades in the same binaries); the same 375 test names fail at master `5eaaab2f` in this same tree, and none fails only here. |
+| sweep, both corpora, no `--cross` | `SWEEP PASSED`, 40 legs launched, 40 reported, 0 unacknowledged, 0 stale, 0 class mismatches (`sweep-full.log`). |
+| sweep, `--cross`, s2disasm only | cross reconciliation green: 48 of 48 disagreeing corners covered, 0 uncovered, 0 pin mismatches, 0 unseen pins. The run's one remaining failure is the ledger's own Open 4, a SUBSET run reporting the other corpus's `ZoneCount` acknowledgement as stale, which the nightly does not hit because it names both corpora (`sweep-cross-s2.log`). |
+
+A `--cross` run over BOTH corpora (768 corners) is the nightly's own shape and is
+the gate a landing wants; see the commit that records it.
+
+## One method fault, recorded
+
+The first `--cross` attempt measured MASTER, not this branch. Running the
+baseline suite at `5eaaab2f` with the same `CARGO_TARGET_DIR` had relinked
+`release/sigil` in place, and the sweep's own `SIGIL sigil 0.1.0 (...)` and md5
+lines are what caught it: the log said `5eaaab2f` and its refusal text named the
+three formats master implements. Every sweep result quoted above was re-run
+against a binary copied out of the target directory first, and each log carries
+the version and md5 it used.
+
 ## Checked and NOT part of this
 
 s2disasm's build.lua hands the same local to a STANDALONE `saxman` tool for its

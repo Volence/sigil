@@ -6093,7 +6093,12 @@ shipped settings (the argument is at the `declared_size` check in `sigil-link/sr
 is acknowledged `DIFFER` with the byte count, run count and offsets pinned, so a difference that
 grows, spreads or moves stops being covered. **Kill:** give a build script the real stored size, which
 is the share-file question, not a compressor question. Until then this corner of Sonic 2 is a wrong
-ROM at exit 0 under a setting nobody ships.
+ROM at exit 0 under a setting nobody ships. In `--cross` it is 48 of Sonic 2's 192 corners (every
+`improved_sound_driver_compression=1` corner `fixBugs` does not already put beyond sigil), covered by
+a new `ACK_CROSS_DISAGREE` rule that pins the difference: `ACK_DISAGREE` cannot reach a cross corner,
+whose tag names a point in the switch space rather than a switch, so the rule takes
+`ACK_STOCK_DECLINE`'s partial-assignment shape instead. The rule pins a SET of two renderings, both
+measured: the ROM checksum carries into its high byte at 6 of the 48 and not at the other 42.
 
 **Open 6: the corpora's generated `.sax` music blobs track a build setting only because every leg
 starts from a fresh extraction.** s2disasm's `improved_sound_driver_compression` also selects the `-a`

@@ -1,8 +1,8 @@
-SIGIL sigil 0.1.0 (1960c7f6)
-SIGIL md5 daf8719166e99571a2dd781c35454941
-CONTROL C1 no-op-edit: PASSED, gate fired (the edit changed no text at /home/volence/sonic_hacks/.scratch-optcomp/sweep-full/selftest/t.asm:1; an unappli)
+SIGIL sigil 0.1.0 (c480edba)
+SIGIL md5 7b1b0958a9cd04cf3845ec02d2a73572
+CONTROL C1 no-op-edit: PASSED, gate fired (the edit changed no text at /home/volence/sonic_hacks/.scratch-optcomp/sweep-full2/selftest/t.asm:1; an unappl)
    C1 mutation on disk: 'Revision = 1'
-CONTROL C2 wrong-line: PASSED, gate fired (/home/volence/sonic_hacks/.scratch-optcomp/sweep-full/selftest/t.asm:1 does not declare `Revision`, it reads ')
+CONTROL C2 wrong-line: PASSED, gate fired (/home/volence/sonic_hacks/.scratch-optcomp/sweep-full2/selftest/t.asm:1 does not declare `Revision`, it reads )
    C3 mutation on disk: 'Revision = 2'
 CONTROL C3 shadowed-declaration: PASSED, gate fired (`Revision` is declared at column 0 on lines [1, 3], not only 1; a second declaration would shadow the edit)
 CONTROL C4 blind-comparer: PASSED, gate fired (the planted-byte control failed; this compare cannot report a difference and its figure is void)
@@ -16,17 +16,18 @@ CONTROL C9 stock-decline-adjudicator: PASSED, an image only sigil produced is a 
 CONTROL C10a lua-toggle-outside-block: PASSED, gate fired (selftest: a column-0 boolean local outside build.lua's Settings block is a toggle this sweep cannot reach: ['t)
 CONTROL C10b lua-domains: PASSED, a boolean sweeps its other arm and a number literal is unreadable
 CONTROL C10c lua-block-statement: PASSED, gate fired (selftest: build.lua:4 is inside the Settings block but is not a column-0 `local <name> = <literal>`, so its do)
-CONTROL C11a lua-no-op-edit: PASSED, gate fired (the edit changed no text at /home/volence/sonic_hacks/.scratch-optcomp/sweep-full/selftest/t.lua:1; an unappli)
+CONTROL C11a lua-no-op-edit: PASSED, gate fired (the edit changed no text at /home/volence/sonic_hacks/.scratch-optcomp/sweep-full2/selftest/t.lua:1; an unappl)
    C11b mutation on disk: 'fast = true'
 CONTROL C11b lua-overriding-assignment: PASSED, gate fired (`fast` is assigned on lines [1, 2], not only 1; a second assignment would override the edit)
 CONTROL C11c lua-table-field-is-a-read: PASSED
 CONTROL C12 ack-diagnostic-text: PASSED, a refusal for a neighbouring reason is a mismatch
 CONTROL C12b ack-difference-text: PASSED, a difference of another size, shape or place is a mismatch
+CONTROL C13 cross-corner-acknowledgement: PASSED, a corner outside the rule, a corner differing by another amount, a rule covering nothing, a pin that is only a prefix and a pin no corner reported are each caught
 SELF_TEST PASSED
 
 ==============================================================================
 CORPUS s1disasm at f6ece657c1cf253404312137dfcb8ec15fa42318 (HEAD)
-  extracted read-only by git archive of f6ece657c1cf253404312137dfcb8ec15fa42318 into /home/volence/sonic_hacks/.scratch-optcomp/sweep-full/trees/s1disasm-pristine
+  extracted read-only by git archive of f6ece657c1cf253404312137dfcb8ec15fa42318 into /home/volence/sonic_hacks/.scratch-optcomp/sweep-full2/trees/s1disasm-pristine
   build.lua says: root=sonic.asm output=s1built.bin p2bin/sigil args=-p=FF -z=0,kosinski,Size_of_DAC_driver_guess,after
   DERIVED 11 documented switches, cross-checked against the ASSEMBLY OPTIONS block
   DERIVED 1 build-script settings from build.lua's Settings block, cross-checked against every column-0 boolean local in 5 .lua file(s)
@@ -555,7 +556,7 @@ POPULATION s1disasm asm_options=11 asm_swept=7 asm_arms=9 build_script_settings=
 
 ==============================================================================
 CORPUS s2disasm at e45ebf332f39987424ca3102e50c717628f71269 (HEAD)
-  extracted read-only by git archive of e45ebf332f39987424ca3102e50c717628f71269 into /home/volence/sonic_hacks/.scratch-optcomp/sweep-full/trees/s2disasm-pristine
+  extracted read-only by git archive of e45ebf332f39987424ca3102e50c717628f71269 into /home/volence/sonic_hacks/.scratch-optcomp/sweep-full2/trees/s2disasm-pristine
   build.lua says: root=s2.asm output=s2built.bin p2bin/sigil args=-p=0 -z=0,saxman-bugged,Size_of_Snd_driver_guess,after
   DERIVED 10 documented switches, cross-checked against the ASSEMBLY OPTIONS block
   DERIVED 3 build-script settings from build.lua's Settings block, cross-checked against every column-0 boolean local in 5 .lua file(s)
@@ -781,5 +782,5 @@ RECONCILE outcomes: 2 non-agreeing, 2 acknowledged, 0 unacknowledged, 0 stale ac
 
 SWEEP PASSED
 SWEEP_END
-FULL_SWEEP_EXIT=0
-MY_END_MARKER_OPTCOMP
+FULL2_EXIT=0
+FULL2_END_MARKER_OPTCOMP
