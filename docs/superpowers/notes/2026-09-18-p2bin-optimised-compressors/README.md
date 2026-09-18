@@ -111,8 +111,13 @@ stale.
 | sweep, both corpora, no `--cross` | `SWEEP PASSED`, 40 legs launched, 40 reported, 0 unacknowledged, 0 stale, 0 class mismatches (`sweep-full.log`). |
 | sweep, `--cross`, s2disasm only | cross reconciliation green: 48 of 48 disagreeing corners covered, 0 uncovered, 0 pin mismatches, 0 unseen pins. The run's one remaining failure is the ledger's own Open 4, a SUBSET run reporting the other corpus's `ZoneCount` acknowledgement as stale, which the nightly does not hit because it names both corpora (`sweep-cross-s2.log`). |
 
-A `--cross` run over BOTH corpora (768 corners) is the nightly's own shape and is
-the gate a landing wants; see the commit that records it.
+| sweep, `--cross`, BOTH corpora, the nightly's own shape | **`SWEEP PASSED`**, exit 0, 808 legs launched and 808 reported (`sweep-cross-both.log`, per-corner lines elided). Sonic 1: 576 corners, 528 built by both toolchains, **528 agreed byte for byte and 0 did not**, 48 stock declines all covered by the existing rule, composition prediction 528 held and 0 broke. Sonic 2: 192 corners, 96 built by both, 48 agreed and 48 differed, all 48 covered by the cross rule with BOTH of its pinned renderings observed. |
+
+Sonic 1's half of that is the parcel's largest single result and the one nothing
+before it could see: 288 of those 576 corners sit at
+`improved_dac_driver_compression = 1`, where sigil previously refused the `-z`
+argument before assembling and therefore could not have produced an image to
+compare. Every one that the stock toolchain can build now agrees byte for byte.
 
 ## One method fault, recorded
 
