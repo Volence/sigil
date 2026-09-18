@@ -613,9 +613,25 @@ check the subject separately.**
 Rows keep their board state. Where a row's argument already lives in a committed note, the row
 points at it rather than restating it, so there is one copy to keep true.
 
-### SWEEP-OPTIMISED-COMPRESSORS
+### SWEEP-OPTIMISED-COMPRESSORS: LANDED
 
-- state: **doing** 2026-09-18, branch `parcel/p2bin-optimised-compressors`  size: `M`  project: `SIGIL-AS-REPLACEMENT`
+- state: **LANDED** 2026-09-18 at merge `ac314f5c` plus lint fix `a1d0975f`, pushed  size: `M`  project: `SIGIL-AS-REPLACEMENT`
+- Landing gate on the merged tree against `.aeon-sigil-ref` (aeon `ec640bcf`): 492 suites, 5,591
+  passed, 0 failed, 0 skips, 492 of 492 binaries launched and reported, reconciling 5,581 baseline
+  plus 10 new, clippy 0, GREEN, stamped tree `a1d0975f`.
+- **It was identification, not implementation.** Both optimised formats are clownlzss's optimal
+  parser, already vendored here, so they were byte-identical to p2bin on all 14 vectors first try
+  with no tie-break tail. Plain `saxman` fell out free. `kosinskiplus` is now the only refused
+  format and no corpus here selects it.
+- Sonic 1 under `improved_dac_driver_compression` AGREES end to end (crc32 `faa36f4d`, 524,288 B);
+  its cross product goes from 288 of 576 corners comparing nothing to 528 built by both, 528 agree.
+- **What the refusal was hiding, now the leg compares bytes:** Sonic 2 under
+  `improved_sound_driver_compression` differs by two, and it is not the compressor. Booked as
+  campaign-gap-ledger **Open 5**, offsets pinned. Deliberately not refused; the argument is there.
+- **The lint the parcel's own run never exercised:** implementing four of the five formats left a
+  single-element loop that clippy rejects under `-D warnings`. Population sized without that flag
+  at zero other sites, so one site was all of it. The agent reported no clippy run at all, which is
+  the gap worth remembering: a returned green that never ran the lint bar is not a landing gate.
 - Sonic 1 and Sonic 2 each ship a setting that squeezes data harder
   (`s1disasm/build.lua:10` `improved_dac_driver_compression`, `s2disasm/build.lua:10`
   `improved_sound_driver_compression`), selecting p2bin's `kosinski-optimised` and
