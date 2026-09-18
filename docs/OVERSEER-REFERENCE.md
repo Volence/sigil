@@ -537,6 +537,20 @@ because the `git add` sat on the next line of the same shell invocation rather t
 Python's exit status. A person reading the output caught it and repaired it at `d0c596b8`. **So the
 check ran, was right, was recorded, and changed nothing.**
 
+**THE CONCRETE REMEDY FOR THIS LANE'S OWN IDIOM, because the principle alone will not change
+anybody's muscle memory.** The shape that fails is a `python3 - <<'PY' ... PY` heredoc with
+`git add && git commit` on the FOLLOWING LINE of the same invocation: two statements, so the edit's
+exit status reaches nothing. Chain the commit behind the edit instead, so a fired assertion stops the
+commit by construction rather than by being read: `python3 <<'PY' ... PY` becomes
+`python3 edit.py && git add <path> && git commit -F <msgfile>`, with the edit in its OWN FILE. Writing
+the script to a file is not incidental: a heredoc whose text merely CONTAINS a heredoc marker is a
+shell syntax error, which is how this very paragraph failed on its first attempt.
+
+**Every bank made on the evening of 2026-09-18, here and at the hub, used the failing shape.** All of
+this lane's assertions happened to pass except one, and that one was caught by a person reading
+output. The hub tested the pattern directly rather than inspecting it and found the same defect under
+every contract edit it had made that night.
+
 **The rule that actually survives both halves: A CHECK'S VERDICT MUST GATE THE NEXT ACTION.** A check
 whose failure does not stop the step after it is a log line, not a gate, and it is WORSE than no check
 because its presence is read as coverage. Ask of any check you add: what does it PREVENT, and by what
