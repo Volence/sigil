@@ -593,3 +593,92 @@ queue.** The seat hand-certified the first artifact it found carrying the right-
 never swept for a sibling, which is the same defect the same seat had spent the hour correcting in
 two other places. The `ROW-HISTORY` section is kept, since the sweep and its lesson are real, and now
 points here for the live rows.
+
+## The 2026-09-18 durability census, and the seven rows it moved here
+
+`docs/lane-status.json` is gitignored in this repo, so a row that lives only on the board dies with
+the session. The hub raised it after aurora measured its own board and found 8 of 20 rows in no
+committed file at all. Census run here the same hour, one `git grep` per row id against
+`origin/master`: **16 rows, 9 already booked in a file that records OPEN work** (this file, or
+`docs/superpowers/notes/campaign-gap-ledger.md`), **7 not.** The seven are below.
+
+**The question is not "does the id appear" and the census is wrong in both directions if you ask
+it that way.** `docs/lane-log.jsonl` records what HAPPENED and `docs/decisions.jsonl` records a
+QUESTION; an id in either looks booked to a naive grep and books no work. In the other direction,
+`EDITOR-BINDING-COUPLING` has a whole committed note on its subject
+(`docs/superpowers/notes/2026-09-10-editor-binding-cross-repo-coupling.md`) that never says the id,
+so a grep calls it an orphan while the argument is durable. **Classify by what the FILE is for, then
+check the subject separately.**
+
+Rows keep their board state. Where a row's argument already lives in a committed note, the row
+points at it rather than restating it, so there is one copy to keep true.
+
+### SWEEP-OPTIMISED-COMPRESSORS
+
+- state: **doing** 2026-09-18, branch `parcel/p2bin-optimised-compressors`  size: `M`  project: `SIGIL-AS-REPLACEMENT`
+- Sonic 1 and Sonic 2 each ship a setting that squeezes data harder
+  (`s1disasm/build.lua:10` `improved_dac_driver_compression`, `s2disasm/build.lua:10`
+  `improved_sound_driver_compression`), selecting p2bin's `kosinski-optimised` and
+  `saxman-optimised`. sigil implements 3 of p2bin's 7 formats and refuses both by name, so half of
+  each corpus's swept corners record a refusal instead of comparing a byte.
+- Argument and kill condition: `docs/superpowers/notes/campaign-gap-ledger.md`, the 2026-09-17
+  `SWEEP-NIGHTLY` section, **Open 1**. Only the row ID was absent from a committed file; the work
+  was booked there all along.
+- Oracle: the corpora's own committed `build_tools/Linux-x86_64/p2bin`, which runs here.
+
+### BRA-W-RANGE-UNCHECKED
+
+- state: **open (watch)**  size: `S`
+- ANSWERED and good: where the old assembler refuses a too-far jump, we refuse too, same file and
+  line. No silent wrong ROM. Kept only until the standing check that now guards it
+  (`scripts/switch_matrix_sweep.py`) has run a few nights.
+- **Kill:** delete the row once the nightly has carried the check for several consecutive greens.
+  Nothing announces that; it is a date check, not a red.
+
+### SOUND-BLOB-REFREEZE-SP6
+
+- state: **blocked**  size: `M`  blockedBy: aeon, then the owner (their card `SP6-MODULATION-DIVERGENCE`)
+- Not a deadlock, though two boards read like one: the engine lane can merge on his ear alone, and
+  our pin follows and repairs their build. Three sites plus a refreeze, not one line.
+- Was booked ONLY in `docs/lane-log.jsonl`, which records landings and books nothing open.
+- The wait is aeon's to carry and the hub has the card in front of him as the suite's oldest; this
+  lane chases neither.
+
+### EDITOR-BINDING-COUPLING
+
+- state: **open**  size: `M`
+- Four places in our tool are keyed to a name the engine's own tools invent. Rename a scene binding
+  there and our checks break, with nothing in either repo saying why. Booked, not fixed.
+- Full argument, committed and durable:
+  `docs/superpowers/notes/2026-09-10-editor-binding-cross-repo-coupling.md`. That note does not
+  carry this id, which is why the census flagged it; the subject was never at risk.
+
+### EMP-RESIDENT-CONST-USE
+
+- state: **blocked**  size: `M`  blockedBy: the owner, card `d-31` (filed 2026-09-12)
+- Should a shared constant be importable between sound modules the way it already is elsewhere? A
+  language question for him: four options costed, one already works today.
+- Was booked ONLY in `docs/decisions.jsonl`. **A decision entry books the QUESTION; it does not book
+  the work that lands behind the answer**, and this row is where his go arrives.
+- Language surface, so it is propose-discuss-land under `d-6`: the design is this lane's, the
+  agreement is his.
+
+### DEB2-Z80-LABEL-IN-68K-TABLE
+
+- state: **open**  size: `S`
+- The debugger's name list files a sound-processor label at main-CPU address 0x8000, so a real label
+  there loses its name. Needs a check against the old assembler and a talk with the engine lane first.
+- Argument, and the reasons it was ranked out of `next` on 2026-09-12:
+  `docs/superpowers/notes/2026-09-12-deb2-minus-20-bytes.md`, which names this id and carries the
+  per-tree check (`grep -E ' : 8000 [A-Z] \|' <shape>.lst`). Booked in a dated note rather than
+  here, so nothing swept it.
+
+### PUB-STRUCT-SIZE-MANDATORY
+
+- state: **open**  size: unmeasured (absent rather than guessed)
+- The language spec says shared records must state their size, but nothing enforces it and 42 engine
+  records do not. Enforce it or drop the word: ours to propose to him once something depends on it.
+  Spec marks it open, empyrean `b5fe6efa`.
+- **The only row of the seven booked NOWHERE**, under any name. Adjacent but not the same subject:
+  `d-32` (answered) is about the size check running only when something else in the build happens to
+  use the record. Re-derive the 42 before quoting it; it is a snapshot.
