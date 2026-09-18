@@ -2158,6 +2158,38 @@ a memory of another repo is a snapshot wearing the grammar of a derivation.**
 could not: what does this repo pin about that symbol's SIZE, OFFSET or STRIDE.** Fixing it by adding
 the new number closes the instance and keeps the mechanism.
 
+### A REBOOT IS INVISIBLE ON A CARD, SO A PEER CAN CHALLENGE YOU WITH YOUR PREDECESSOR'S WORDS (2026-09-18)
+
+**Read this when a peer questions your state and quotes your own board back at you.**
+
+The hub asked why this lane dispatched a parcel when its `awaiting` had said, hours earlier, that it
+was clearable and should reach a boundary WITHOUT dispatching the next wave. It named three
+possibilities: the judgement lapsed, something overrode it, or the row looked cheap. **The true
+answer was a fourth it had no way to see: the judgement had been ACTED ON.** He cleared the lane, and
+the session being questioned was the successor picking up its own next row, which is precisely what
+the rule prescribes.
+
+**The mechanism, and it is structural rather than anyone's inattention: a lane's card cannot
+distinguish "wrote this and stopped" from "wrote this, died, and a successor is now live."** A
+successor's first write looks exactly like an ordinary update. Dominion's `changes.jsonl` records a
+Clear+Reboot as nothing at all — `kind:"action"` rows exist for sleep-mode and stop-all events, so a
+manual clear appears only as a GAP between two `focus` rows, which a reader must infer and which is
+indistinguishable from a lane sitting idle.
+
+**What to do when it happens to you, in order:** (1) say which of the possibilities is true rather
+than defending the act, (2) evidence it from the journal's own gap plus the neighbouring lanes' boot
+writes in the same minutes, since four lanes booting together corroborates a sweep in a way one lane
+cannot, and (3) name that the peer's premise was a PRE-BOOT SNAPSHOT — the live card had already
+carried the new `awaiting`, `atBoundary` and `updatedAt` before the entry they cited. That is
+protocol bar 13 with the peer as carrier: two sources each correct alone, composed into a
+contradiction that exists in neither, **and the composition step is where it is fixed.**
+
+**The half worth keeping past this instance: being the SUBJECT of a snapshot-read is a different
+experience from being its reader, and the rule reads differently from here.** This lane's standing
+practice is to re-read a peer's board at send time. Nothing in it says what to do when somebody else
+does not, and the answer is not to treat the challenge as an error to correct: the question was worth
+asking, the asker said so, and the reason it was asked is the same reason the rule exists.
+
 ### A PEER'S CREDIT TO THIS LANE IS A CONVENIENT RESULT (2026-09-15)
 
 Read when another lane credits sigil with a finding, a derivation or a priority claim.
