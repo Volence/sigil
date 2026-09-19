@@ -3517,13 +3517,6 @@ fn is_z80_control_flow(mnemonic: &str) -> bool {
     matches!(mnemonic, "jr" | "jp" | "call" | "ret")
 }
 
-/// The [`Z80Cond`] a control-flow operand names, or `None` if it is not a bare
-/// single-segment condition word (`nz`/`z`/`nc`/`c`/`po`/`pe`/`p`/`m`). A
-/// `(hl)` indirect (`jp (hl)`), an address expression (`jp Label`), or a
-/// comptime relative (`jr 5`) is NOT a bare cond path — those stay ordinary
-/// operands. Only reached for the leading operand of a control-flow mnemonic,
-/// so `c` here is unambiguously the carry cc (the C register never leads a
-/// control-flow form).
 /// Is this operand the literal `(c)` — the C-addressed I/O port? A
 /// single-part, unsized indirect over the bare single-segment path `c`.
 ///
@@ -3545,6 +3538,13 @@ fn is_z80_ind_c(op: &Operand) -> bool {
     p.segments.len() == 1 && p.segments[0].as_str() == "c"
 }
 
+/// The [`Z80Cond`] a control-flow operand names, or `None` if it is not a bare
+/// single-segment condition word (`nz`/`z`/`nc`/`c`/`po`/`pe`/`p`/`m`). A
+/// `(hl)` indirect (`jp (hl)`), an address expression (`jp Label`), or a
+/// comptime relative (`jr 5`) is NOT a bare cond path — those stay ordinary
+/// operands. Only reached for the leading operand of a control-flow mnemonic,
+/// so `c` here is unambiguously the carry cc (the C register never leads a
+/// control-flow form).
 fn z80_cc_operand(op: &Operand) -> Option<Z80Cond> {
     let Operand::Plain { expr: ast::Expr::Path(p), .. } = op else { return None };
     if p.segments.len() != 1 {
