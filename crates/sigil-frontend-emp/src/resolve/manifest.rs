@@ -157,6 +157,22 @@ impl SourceIndex {
         SourceIndex { map, paths }
     }
 
+    /// How many [`SourceId`]s this index covers: ids `0 .. len()`, every one of
+    /// which [`locate`](Self::locate) may answer for (with `None` for the ones
+    /// whose text did not read). Ids at or past it belong to no `.emp` source.
+    ///
+    /// Exposed for a build that mixes front ends: the `.emp` ids and the AS front
+    /// end's ids both count from 0, so the only way to give a chained build ONE
+    /// id space is to know where this one ends.
+    pub fn len(&self) -> usize {
+        self.paths.len()
+    }
+
+    /// True when this index covers no source at all.
+    pub fn is_empty(&self) -> bool {
+        self.paths.is_empty()
+    }
+
     /// `path:line:col` of `span`'s start, or `None` when `span`'s source is not a
     /// file this index knows (a synthetic module, or an unattributed diagnostic).
     pub fn locate(&self, span: Span) -> Option<String> {

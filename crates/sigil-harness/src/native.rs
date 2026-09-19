@@ -1604,6 +1604,7 @@ pub fn assemble_as_side(aeon: &Path, profile: &GameProfile) -> Result<AsSide, St
         .map(|a| AsSide {
             warnings: a.warnings.iter().map(|d| BuildWarning::from_as(d, &a.sources)).collect(),
             module: a.module,
+            sources: a.sources,
         })
         .map_err(|f| {
             format!(
@@ -1831,12 +1832,16 @@ pub struct BuildWarning {
 }
 
 impl BuildWarning {
-    /// Pair `d` with its location. The lint id is the leading `[...]` group, which
-    /// is the corpus convention for every classified diagnostic.
-    fn new(
-        d: &sigil_span::Diagnostic,
-        index: &sigil_frontend_emp::resolve::manifest::SourceIndex,
-    ) -> BuildWarning {
+    /// Pair `d` with the location `locate` gives its primary span. The lint id is
+    /// the leading `[...]` group, which is the corpus convention for every
+    /// classified diagnostic.
+    ///
+    /// The LOCATION AUTHORITY IS THE ARGUMENT, because there is more than one and
+    /// they are not interchangeable (see [`from_as`](Self::from_as)). Every
+    /// constructor below is this one with a particular authority named, so a new
+    /// caller has to say which map reads its spans instead of inheriting whichever
+    /// one happened to be in scope.
+    fn located(d: &sigil_span::Diagnostic, locate: &dyn Fn(sigil_span::Span) -> Option<String>) -> BuildWarning {
         let id = d
             .message
             .strip_prefix('[')
@@ -1846,7 +1851,7 @@ impl BuildWarning {
         BuildWarning {
             level: d.level,
             id,
-            location: index.locate(d.primary),
+            location: locate(d.primary),
             message: d.message.clone(),
             primary: d.primary,
         }
@@ -1862,19 +1867,7 @@ impl BuildWarning {
     /// the AS root and its `include` splices. Feeding one map's span to the
     /// other's index does not fail — it names a DIFFERENT FILE, confidently.
     fn from_as(d: &sigil_span::Diagnostic, sources: &sigil_span::SourceMap) -> BuildWarning {
-        let id = d
-            .message
-            .strip_prefix('[')
-            .and_then(|rest| rest.split_once(']'))
-            .map(|(id, _)| id.to_string())
-            .unwrap_or_default();
-        BuildWarning {
-            level: d.level,
-            id,
-            location: sources.label(d.primary),
-            message: d.message.clone(),
-            primary: d.primary,
-        }
+        BuildWarning::located(d, &|span| sources.label(span))
     }
 }
 
@@ -1891,6 +1884,185 @@ impl BuildWarning {
 pub struct AsSide {
     pub module: Module,
     pub warnings: Vec<BuildWarning>,
+    /// The AS front end's OWN [`SourceMap`](sigil_span::SourceMap): the only
+    /// authority that can read a span carried by one of `module`'s fragments.
+    ///
+    /// It used to be dropped here, and dropping it is what made the chained
+    /// build's mislocation unfixable rather than merely wrong: with the AS map
+    /// gone, the `.emp` manifest's index was the only authority left in scope
+    /// and every AS span was read through it. See [`ChainSources`].
+    pub sources: sigil_span::SourceMap,
+}
+
+/// THE CHAINED BUILD'S LOCATION AUTHORITY: both front ends' maps, plus the one id
+/// space that lets a bare [`Span`](sigil_span::Span) say which of them can read it.
+///
+/// # The defect this type exists to close
+///
+/// A chained build lowers ONE section list out of TWO front ends
+/// ([`resolve_chained`]: the AS module's sections, then the `.emp` ones), and every
+/// consumer downstream — the packing walk's width-flip report, the `resolve_layout`
+/// failure, the link failure, the warn tier — receives a `Span` and nothing else. A
+/// `Span` is an id and a byte range. AS file ids count the AS root and its `include`
+/// splices; `.emp` ids count the files the manifest scanned. **Both count from 0**,
+/// so the ranges overlap and reading an AS span through the `.emp` index does not
+/// fail — it answers with a real path, a real line, and the WRONG FILE, which is
+/// the failure mode [`BuildWarning::from_as`] already names for the warn tier.
+///
+/// # How the id space is made one
+///
+/// At the seam (and ONLY at the seam) every span carried by an AS-side section is
+/// REBASED by [`rebase_section`](Self::rebase_section): a file id `k` becomes
+/// `k + as_base`, where `as_base` is the number of ids the `.emp` index covers.
+/// After that, an id below `as_base` is an `.emp` file and an id at or above it is
+/// an AS file, for every span in the list, and [`locate`](Self::locate) needs no
+/// help from its caller to tell them apart. Adding a constant to every AS id is
+/// injective, so spans that were distinct stay distinct (the warn tier's
+/// `(level, message, span)` dedup key keeps its meaning) and spans that used to
+/// COLLIDE across the two front ends stop colliding.
+///
+/// EXPANSION ids are not rebased and do not need to be: they live in their own high
+/// range by construction ([`SourceId::is_expansion`](sigil_span::SourceId::is_expansion)),
+/// only the AS front end makes them (`sigil-frontend-as`'s `eval` is the sole caller of
+/// `SourceMap::add_expansion` in this workspace), and the AS map reads them at their own
+/// numbers. The no-source id (`SourceId(u32::MAX)`) is in that range too and answers
+/// `None` from the AS map exactly as it did from the `.emp` index — an unattributed
+/// diagnostic renders as the bare message under either authority.
+///
+/// # What this does NOT do
+///
+/// It does not make the two front ends' diagnostics render alike. An `.emp` span
+/// renders `path:line:col` and an AS span renders asl's own `file(line):col` with
+/// its call-site trail — the split ruled in `docs/OVERSEER.md`, and the same split
+/// [`BuildWarning::from_as`] has always produced. This type decides WHICH authority
+/// reads a span, never how that authority spells its answer.
+pub struct ChainSources {
+    /// The `.emp` manifest's index: ids `0 .. as_base`.
+    emp: sigil_frontend_emp::resolve::manifest::SourceIndex,
+    /// The AS front end's own map, at ITS own numbering. A rebased id is brought
+    /// back down before this map is asked anything.
+    as_map: sigil_span::SourceMap,
+    /// Where the `.emp` ids stop and the rebased AS ids start.
+    as_base: u32,
+}
+
+/// Whether `emp_len` `.emp` ids and `as_len` AS ids fit in one file-id space below
+/// the expansion range — the refusal [`ChainSources::join`] makes, taken as a
+/// function of the two SIZES alone so the boundary can be exercised at a value no
+/// `SourceIndex` could be built at.
+fn check_joined_space(emp_len: usize, as_len: usize) -> Result<(), String> {
+    let top = emp_len.saturating_add(as_len);
+    if top > u32::MAX as usize || sigil_span::SourceId(top as u32).is_expansion() {
+        return Err(format!(
+            "[chain.source-id-space] the chained build's joined source-id space \
+             ({emp_len} `.emp` ids + {as_len} AS ids) reaches the expansion range, so \
+             a rebased AS file id could not be told from a macro expansion and every \
+             diagnostic past the boundary would name the wrong source"
+        ));
+    }
+    Ok(())
+}
+
+impl ChainSources {
+    /// THE SEAM: join the two authorities and produce the chained section list —
+    /// the AS side moved into the joined id space, then the `.emp` side, which
+    /// already numbers in it. `emp` keeps ids `0 .. emp.len()`; the AS map's files
+    /// move to `emp.len() ..`, and so does every span the AS sections carry.
+    ///
+    /// THE THREE ACTS ARE ONE CONSTRUCTOR ON PURPOSE. A `ChainSources` that exists
+    /// beside un-rebased AS sections is worse than no `ChainSources` at all: it
+    /// reads every AS span as an `.emp` id and answers with the same confident
+    /// wrong file the type was built to stop. Because the list a caller goes on to
+    /// resolve comes OUT of here, there is no second list for it to use instead,
+    /// and the seam cannot be half-applied by someone who did not know there was a
+    /// second half. The concatenation order lives here too, beside the id rule it
+    /// has to agree with, rather than at the call site where the two could drift.
+    ///
+    /// LOUD ON UNMEASURABLE: if the joined space would reach the expansion range,
+    /// a rebased file id would be indistinguishable from an expansion and every
+    /// location past the boundary would be wrong in a new way. That is refused by
+    /// name rather than truncated, wrapped, or silently located
+    /// ([`check_joined_space`]). It takes 2^31 source files to provoke and has
+    /// never been seen; the refusal is here because the alternative is a wrong
+    /// file.
+    pub fn join(
+        emp: sigil_frontend_emp::resolve::manifest::SourceIndex,
+        as_map: sigil_span::SourceMap,
+        mut as_sections: Vec<Section>,
+        emp_sections: Vec<Section>,
+    ) -> Result<(ChainSources, Vec<Section>), String> {
+        let as_base = emp.len();
+        check_joined_space(as_base, as_map.len())?;
+        let chain = ChainSources { emp, as_map, as_base: as_base as u32 };
+        for sec in &mut as_sections {
+            chain.rebase_section(sec);
+        }
+        as_sections.extend(emp_sections);
+        Ok((chain, as_sections))
+    }
+
+    /// `span` with its AS file id moved into the joined space. An expansion id
+    /// (the no-source id included) is returned unchanged — see the type docs.
+    fn rebase(&self, span: sigil_span::Span) -> sigil_span::Span {
+        if span.source.is_expansion() {
+            return span;
+        }
+        sigil_span::Span { source: sigil_span::SourceId(span.source.0 + self.as_base), ..span }
+    }
+
+    /// Rebase every span an AS-SIDE section carries, in place.
+    ///
+    /// The `match` is EXHAUSTIVE ON PURPOSE — no `_` arm. A fragment variant added
+    /// with a span of its own must be named here, and until it is the crate does not
+    /// compile; a wildcard would let the next variant's spans travel unrebased and
+    /// land back on the `.emp` index, which is this whole defect again with a new
+    /// spelling. (`RelaxCandidate`'s `Fixup` carries no span of its own — the
+    /// fragment's span covers the instruction — so the candidate lists hold none.)
+    fn rebase_section(&self, sec: &mut Section) {
+        for frag in &mut sec.fragments {
+            match frag {
+                Fragment::Data(d) => d.span = self.rebase(d.span),
+                Fragment::Fill { span, .. }
+                | Fragment::Reserve { span, .. }
+                | Fragment::JmpJsrSym { span, .. }
+                | Fragment::RelaxAbsSym { span, .. }
+                | Fragment::RelaxLadder { span, .. }
+                | Fragment::Org { span, .. } => *span = self.rebase(*span),
+            }
+        }
+        for eq in &mut sec.equ_syms {
+            eq.span = self.rebase(eq.span);
+        }
+    }
+
+    /// Rebase an AS-side warning's primary span.
+    ///
+    /// Its rendered `location` is NOT touched: [`BuildWarning::from_as`] already
+    /// resolved it against the AS map at its own numbering, and that string is
+    /// correct. What moves is `primary`, which rides along for a consumer that
+    /// wants more than the string (a caret, an editor jump, a `-Werror`
+    /// promotion) — and such a consumer, in a chained build, will read it through
+    /// [`locate`](Self::locate). Leaving it un-rebased would make the one field
+    /// that is supposed to be re-readable the one field that lies.
+    fn rebase_warning(&self, w: &mut BuildWarning) {
+        w.primary = self.rebase(w.primary);
+    }
+
+    /// `span`'s location through the authority that can read it, or `None` when
+    /// neither can.
+    pub fn locate(&self, span: sigil_span::Span) -> Option<String> {
+        if span.source.is_expansion() {
+            // AS macro/loop expansions (and the no-source id, which answers None).
+            return self.as_map.label(span);
+        }
+        if (span.source.0 as usize) < self.as_base as usize {
+            return self.emp.locate(span);
+        }
+        self.as_map.label(sigil_span::Span {
+            source: sigil_span::SourceId(span.source.0 - self.as_base),
+            ..span
+        })
+    }
 }
 
 impl std::fmt::Display for BuildWarning {
@@ -2123,13 +2295,29 @@ pub fn collect_warnings(
     sources: &[&[sigil_span::Diagnostic]],
     generated: Option<sigil_span::SourceId>,
 ) -> Vec<BuildWarning> {
+    collect_warnings_located(&|span| index.locate(span), sources, generated)
+}
+
+/// [`collect_warnings`] with the LOCATION AUTHORITY named explicitly, for the
+/// chained build — where the diagnostics being collected were raised over a
+/// section list built out of BOTH front ends and the `.emp` manifest's index is
+/// therefore not the authority for all of them (see [`ChainSources`]).
+///
+/// Same filter, same dedup key, same order; only the map that answers
+/// `path:line:col` differs, which is exactly the thing a mixed build cannot leave
+/// implicit.
+pub fn collect_warnings_located(
+    locate: &dyn Fn(sigil_span::Span) -> Option<String>,
+    sources: &[&[sigil_span::Diagnostic]],
+    generated: Option<sigil_span::SourceId>,
+) -> Vec<BuildWarning> {
     let mut seen = std::collections::HashSet::new();
     sources
         .iter()
         .flat_map(|ds| ds.iter())
         .filter(|d| d.level != sigil_span::Level::Error && Some(d.primary.source) != generated)
         .filter(|d| seen.insert((d.level, d.message.clone(), d.primary)))
-        .map(|d| BuildWarning::new(d, index))
+        .map(|d| BuildWarning::located(d, locate))
         .collect()
 }
 
@@ -3777,8 +3965,10 @@ struct ChainedResolve {
     stubs: SymbolTable,
     /// The warn tier so far: AS residual, lowering, chain drift, link asserts.
     warnings: Vec<BuildWarning>,
-    /// The location authority the warnings and the link's own diagnostics render through.
-    sources: sigil_frontend_emp::resolve::manifest::SourceIndex,
+    /// The location authority the warnings and the link's own diagnostics render
+    /// through — BOTH front ends' maps over one id space, because the resolve
+    /// they describe ran over both front ends' sections.
+    sources: ChainSources,
     /// The game's memory map (`emit_rom` and the object-bank budget read it).
     map: sigil_ir::map::MemoryMap,
     /// The declared placement map (`validate_placement` confirms the walk against it).
@@ -3875,12 +4065,16 @@ impl GuardCensus {
 }
 
 /// Render a declared-chain stage's failure: the stage name, the diagnostic
-/// count, then every diagnostic located through the program's own index.
-fn render_declared_chain(
-    what: &str,
-    d: &[sigil_span::Diagnostic],
-    sources: &sigil_frontend_emp::resolve::manifest::SourceIndex,
-) -> String {
+/// count, then every diagnostic located through the authority that can read its
+/// span.
+///
+/// The stages this renders (`resolve_layout`, `link`) run over the CHAINED section
+/// list — AS-side sections and `.emp` sections in one vector — so the authority is
+/// [`ChainSources`] and not either front end's map alone. It took the `.emp`
+/// manifest's index until 2026-09-18, which meant a diagnostic arising in an
+/// AS-side section was located through the `.emp` index and named a different
+/// file, confidently.
+fn render_declared_chain(what: &str, d: &[sigil_span::Diagnostic], sources: &ChainSources) -> String {
     let all: Vec<&sigil_span::Diagnostic> = d.iter().collect();
     format!(
         "declared-chain: {what}: {} diag(s):\n{}",
@@ -3893,15 +4087,26 @@ fn resolve_chained(aeon: &Path, profile: &GameProfile) -> Result<ChainedResolve,
     if profile.sound_on {
         emit_generated(aeon)?;
     }
-    let as_side = assemble_as_side(aeon, profile)?;
+    let AsSide { module: as_module, warnings: mut as_warnings, sources: as_map } =
+        assemble_as_side(aeon, profile)?;
     let EmpProgram { sections: emp_sections, link_asserts, comptime_guards, mut warnings, sources } =
         build_emp(aeon, profile)?;
+    // THE SEAM. One section list out of two front ends, and therefore one location
+    // authority out of two maps: `ChainSources` joins them over a single id space
+    // and REBASES every span the AS-side sections carry into it. Without this, a
+    // diagnostic raised over the joined list is read through whichever map is in
+    // scope, and for an AS-side span that map names a different file with no error
+    // anywhere (the rule is stated on `BuildWarning::from_as`).
+    let (sources, sections) = ChainSources::join(sources, as_map, as_module.sections, emp_sections)?;
     // An author-written `warning` in the residual AS joins the build's warn tier
     // through the same vector as every `.emp` lint, so it reaches the CLI banner
-    // and the tally line rather than stopping at the seam.
-    warnings.extend(as_side.warnings);
-    let mut sections: Vec<Section> = as_side.module.sections;
-    sections.extend(emp_sections);
+    // and the tally line rather than stopping at the seam. Its rendered location
+    // is already right (`from_as` resolved it against the AS map); its `primary`
+    // is rebased so that re-reading it through `sources` agrees with the string.
+    for w in &mut as_warnings {
+        sources.rebase_warning(w);
+    }
+    warnings.extend(as_warnings);
 
     // Parcel K5: the per-game placement map (`games/<g>/map.toml`) is loaded UP FRONT — its
     // declared `order` DRIVES the packing walk (the frozen provisional bases no longer
@@ -3959,7 +4164,7 @@ fn resolve_chained(aeon: &Path, profile: &GameProfile) -> Result<ChainedResolve,
     // A `LinkAssert` carries its own severity: `[layout.odd-item]`'s data-item check
     // is `Level::Warning` and fails at LINK time, so the warn tier is only complete
     // once these join it.
-    warnings.extend(collect_warnings(&sources, &[&adiags], None));
+    warnings.extend(collect_warnings_located(&|span| sources.locate(span), &[&adiags], None));
     let inapplicable = declared_chain_drift_verdict(&adiags, &|span| sources.locate(span))?;
     enforce_inapplicable_allowlist_against(&inapplicable, &link_asserts, &profile.inapplicable_guards)?;
     let guards = GuardCensus::from_verdict(comptime_guards, &tally, &inapplicable)?;
@@ -6920,5 +7125,424 @@ mod phase_marker_tests {
             &SymbolTable::new(),
         );
         assert_eq!(phased[0].lma, Some(0xB8000));
+    }
+}
+
+#[cfg(test)]
+mod mixed_front_end_location_tests {
+    //! THE TWO LOCATION AUTHORITIES OF A CHAINED (MIXED `.asm` + `.emp`) BUILD.
+    //!
+    //! [`resolve_chained`] builds ONE section list out of BOTH front ends, and a
+    //! diagnostic raised over that list carries a bare [`sigil_span::Span`] — an id
+    //! and a byte range, with nothing in it saying which map can read it. The AS
+    //! front end's ids count its root and its `include` splices; the `.emp`
+    //! manifest's ids count the scanned `.emp` files. The ranges OVERLAP, so
+    //! locating an AS span through the `.emp` index does not fail: it names a
+    //! different file, confidently, and the build says so with no error anywhere.
+    //! (The rule is already stated on [`BuildWarning::from_as`]; these gates are
+    //! that rule for the chained path's own consumers.)
+    //!
+    //! The fixture is the smallest thing that can tell the two apart: an `.emp`
+    //! index whose id 1 is `second.emp`, and an AS map whose id 1 is `sound.asm`.
+    //! A span with id 1 therefore renders a DIFFERENT PATH under each authority,
+    //! so a gate here reads a path and never an id.
+    use super::{render_declared_chain, ChainSources, Fragment, Section};
+    use sigil_frontend_emp::resolve::manifest::{Manifest, SourceIndex};
+    use sigil_span::{Diagnostic, Level, SourceId, SourceMap, Span};
+
+    const EMP_TEXT: &str = "module m\n\nproc P () {\n}\n";
+    const ASM_TEXT: &str = "\tmove.w\td0,d1\n\n\tbra.s\t*\n";
+
+    /// The byte offset of `text`'s THIRD line — DERIVED from the fixture text
+    /// rather than counted by hand into a literal. Both fixtures have three lines
+    /// of different lengths, and hand-counting one of them wrong is how a gate ends
+    /// up asserting a column it never meant to.
+    fn third_line(text: &str) -> u32 {
+        text.match_indices('\n').nth(1).expect("the fixture has three lines").0 as u32 + 1
+    }
+
+    /// `first.emp` (id 0) and `second.emp` (id 1), both on disk: `SourceIndex`
+    /// READS each file to answer `path:line:col`, so a fixture that does not
+    /// exist would only exercise the degraded (`None`) arm and prove nothing.
+    fn emp_index(dir: &std::path::Path) -> SourceIndex {
+        let mut sources = std::collections::HashMap::new();
+        for (id, name) in [(0u32, "first.emp"), (1, "second.emp")] {
+            let p = dir.join(name);
+            std::fs::write(&p, EMP_TEXT).unwrap();
+            sources.insert(SourceId(id), p);
+        }
+        SourceIndex::new(&Manifest {
+            modules: Vec::new(),
+            by_id: std::collections::HashMap::new(),
+            sources,
+        })
+    }
+
+    /// The AS front end's own map: `boot.asm` (id 0) and `sound.asm` (id 1).
+    fn as_map() -> SourceMap {
+        let mut m = SourceMap::new();
+        m.add_named("boot.asm".to_string(), ASM_TEXT.to_string());
+        m.add_named("sound.asm".to_string(), ASM_TEXT.to_string());
+        m
+    }
+
+    fn diag(source: u32, at: u32, message: &str) -> Diagnostic {
+        Diagnostic {
+            level: Level::Error,
+            message: message.to_string(),
+            primary: Span { source: SourceId(source), start: at, end: at },
+        }
+    }
+
+    /// The chained authority under test, plus the fixture directory it reads from
+    /// (dropping the directory deletes the `.emp` files, so it must outlive the
+    /// index — `SourceIndex` reads each file to answer `path:line:col`).
+    fn chained(dir: &std::path::Path) -> ChainSources {
+        ChainSources::join(emp_index(dir), as_map(), Vec::new(), Vec::new())
+            .expect("two files plus two files must join")
+            .0
+    }
+
+    /// An AS-side span as it looks AFTER the seam rebased it: file `k` of the AS
+    /// map lives at `k + as_base` in the joined space, and `as_base` is the number
+    /// of ids the `.emp` index covers (2 here).
+    fn rebased_as_diag(chain: &ChainSources, as_file: u32, at: u32, message: &str) -> Diagnostic {
+        let d = diag(as_file, at, message);
+        Diagnostic { primary: chain.rebase(d.primary), ..d }
+    }
+
+    /// THE DEFECT. A `resolve_layout` diagnostic whose span came from an AS-side
+    /// section must name the `.asm` file it was written in. Before 2026-09-18 the
+    /// chained path located it through the `.emp` manifest's index, which answered
+    /// `second.emp` — a real path, a real line, and the wrong file.
+    ///
+    /// DERIVED, not copied from a neighbouring pin: `sound.asm` is AS id 1 and the
+    /// offset is `third_line(ASM_TEXT)`, computed from the fixture, so the expected
+    /// render is `sound.asm(3)` and nothing else. The `.emp` fixture's id 1 is a
+    /// DIFFERENT PATH, which is what makes this gate read a path rather than an id —
+    /// an id would be equal under both authorities and prove nothing.
+    #[test]
+    fn an_as_side_layout_diagnostic_names_its_own_asm_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let chain = chained(dir.path());
+        let ds = vec![rebased_as_diag(
+            &chain,
+            1,
+            third_line(ASM_TEXT),
+            "[layout.overlap] section `snd` overlaps `obj`",
+        )];
+
+        let got = render_declared_chain("resolve_layout", &ds, &chain);
+
+        assert!(
+            got.contains("sound.asm(3)"),
+            "an AS-side span must render through the AS front end's own map, got:\n{got}"
+        );
+        assert!(
+            !got.contains(".emp"),
+            "an AS-side span must not be attributed to any `.emp` file, got:\n{got}"
+        );
+    }
+
+    /// THE CASE THAT ALREADY WORKED, gated so the fix cannot buy the AS side by
+    /// spending the `.emp` side. An `.emp` span keeps `path:line:col` against the
+    /// manifest's own file.
+    #[test]
+    fn an_emp_diagnostic_still_names_its_own_emp_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let chain = chained(dir.path());
+        let ds = vec![diag(1, third_line(EMP_TEXT), "[link.unresolved] `Foo`")];
+
+        let got = render_declared_chain("resolve_layout", &ds, &chain);
+
+        assert!(
+            got.contains("second.emp:3:1"),
+            "an `.emp` span must keep its `path:line:col` under the joined authority, got:\n{got}"
+        );
+        assert!(!got.contains(".asm"), "an `.emp` span must not reach the AS map, got:\n{got}");
+    }
+
+    /// THE MIXED CASE — the normal one for this port, and the one neither
+    /// single-front-end gate can see. Two diagnostics that carried THE SAME raw id
+    /// on opposite sides of the seam each reach their own file in one render.
+    #[test]
+    fn mixed_diagnostics_each_reach_their_own_front_end() {
+        let dir = tempfile::tempdir().unwrap();
+        let chain = chained(dir.path());
+        let ds = vec![
+            diag(1, third_line(EMP_TEXT), "[link.unresolved] from the emp side"),
+            rebased_as_diag(&chain, 1, third_line(ASM_TEXT), "[layout.overlap] from the AS side"),
+        ];
+
+        let got = render_declared_chain("resolve_layout", &ds, &chain);
+
+        assert!(got.contains("second.emp:3:1"), "the emp half: {got}");
+        assert!(got.contains("sound.asm(3)"), "the AS half: {got}");
+        // NON-VACUITY: `render_diag_lines` falls back to `@ Span { .. }` for a span
+        // no authority reads, so its absence is the proof that BOTH lines located
+        // rather than one locating and the other degrading past the assertions.
+        assert!(!got.contains("@ Span"), "both diagnostics must locate: {got}");
+    }
+
+    /// The ledger's second half: an AS MACRO EXPANSION id. It is not a file id in
+    /// either map — it is in the expansion range by construction — so it is not
+    /// rebased, and the AS map renders asl's call-site trail for it. Through the
+    /// `.emp` index it named nothing at all.
+    #[test]
+    fn an_as_expansion_span_renders_its_call_site_trail() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut asm = as_map();
+        // `sound.asm` (id 1) is the body's backing file; the call is on its line 1.
+        let run = asm.add_expansion(
+            SourceId(1),
+            third_line(ASM_TEXT),
+            Span { source: SourceId(1), start: 0, end: 0 },
+            sigil_span::Frame::Macro("dbgout".into()),
+        );
+        let chain = ChainSources::join(emp_index(dir.path()), asm, Vec::new(), Vec::new()).unwrap().0;
+        assert!(run.is_expansion(), "an expansion id must be in the expansion range");
+        let ds = vec![Diagnostic {
+            level: Level::Error,
+            message: "[layout.overlap] inside a macro".to_string(),
+            primary: Span { source: run, start: third_line(ASM_TEXT), end: third_line(ASM_TEXT) },
+        }];
+
+        let got = render_declared_chain("resolve_layout", &ds, &chain);
+
+        assert!(got.contains("sound.asm(1)"), "the OUTERMOST call site: {got}");
+        assert!(got.contains("dbgout("), "the expansion frame: {got}");
+        assert!(!got.contains(".emp"), "an expansion is never an `.emp` file: {got}");
+    }
+
+    /// AN UNATTRIBUTED DIAGNOSTIC still renders as a bare message. The no-source id
+    /// is in the expansion range, so it routes to the AS map; that map answers
+    /// `None` for it exactly as the `.emp` index did, and the rendered line is the
+    /// `@ Span { .. }` fallback either way.
+    #[test]
+    fn an_unattributed_diagnostic_renders_the_same_bare_line() {
+        let dir = tempfile::tempdir().unwrap();
+        let chain = chained(dir.path());
+        let ds = vec![diag(u32::MAX, 0, "[link.internal] no line")];
+
+        let got = render_declared_chain("resolve_layout", &ds, &chain);
+
+        assert!(got.contains("@ Span"), "must degrade to the bare form, got:\n{got}");
+        assert!(chain.locate(ds[0].primary).is_none(), "and locate must say so");
+    }
+
+    /// THE SINGLE-FRONT-END INVARIANCE, byte-for-byte on the rendered text: a build
+    /// with NO AS side joins an EMPTY AS map, `as_base` swallows nothing, and every
+    /// `.emp` diagnostic renders the string the `.emp` index alone produced. This is
+    /// the gate that says the fix is inert where there is nothing to fix.
+    #[test]
+    fn with_no_as_side_the_text_is_exactly_what_the_emp_index_renders() {
+        let dir = tempfile::tempdir().unwrap();
+        let ds = [
+            diag(0, third_line(EMP_TEXT), "[a.b] one"),
+            diag(1, 0, "[c.d] two"),
+            diag(9, 0, "[e.f] off-index"),
+        ];
+
+        let before = crate::diag_render::render_diag_lines(
+            &ds.iter().collect::<Vec<_>>(),
+            &|span| emp_index(dir.path()).locate(span),
+        );
+        let chain = ChainSources::join(emp_index(dir.path()), SourceMap::new(), Vec::new(), Vec::new())
+            .unwrap()
+            .0;
+        let after = crate::diag_render::render_diag_lines(
+            &ds.iter().collect::<Vec<_>>(),
+            &|span| chain.locate(span),
+        );
+
+        assert_eq!(after, before, "a build with one front end must render identically");
+        assert!(before.contains("first.emp:3:1"), "non-vacuity: the comparison had content");
+    }
+
+    /// REBASING IS INJECTIVE — the property the warn tier's `(level, message, span)`
+    /// dedup key depends on. Distinct AS spans stay distinct, and an AS span can no
+    /// longer equal an `.emp` span it used to collide with.
+    #[test]
+    fn rebasing_separates_the_two_id_spaces_without_merging_anything() {
+        let dir = tempfile::tempdir().unwrap();
+        let chain = chained(dir.path());
+        let emp0 = Span { source: SourceId(0), start: 4, end: 4 };
+        let emp1 = Span { source: SourceId(1), start: 4, end: 4 };
+        let as0 = chain.rebase(emp0);
+        let as1 = chain.rebase(emp1);
+
+        assert_ne!(as0, emp0, "an AS span must not keep an id the `.emp` index answers for");
+        assert_ne!(as1, emp1);
+        assert_ne!(as0, as1, "distinct AS files stay distinct");
+        assert_eq!(as0.start, emp0.start, "only the id moves");
+        // And each now reaches its own authority.
+        assert!(chain.locate(emp0).unwrap().contains("first.emp"));
+        assert!(chain.locate(as0).unwrap().contains("boot.asm"));
+    }
+
+    /// LOUD ON UNMEASURABLE: a joined id space that would reach the expansion range
+    /// is REFUSED by name. It is never truncated, never wrapped, and never located
+    /// against whichever map the arithmetic happens to land in.
+    ///
+    /// Exercised through `check_joined_space`, which IS the decision
+    /// `ChainSources::join` makes, taken as a function of the two sizes — no
+    /// `SourceIndex` can be built at 2^31 files, and a gate that could only assert
+    /// the underlying predicate would never execute the refusal itself.
+    #[test]
+    fn a_joined_space_reaching_the_expansion_range_is_refused() {
+        use super::check_joined_space;
+        assert!(check_joined_space(2, 2).is_ok(), "the fixture-sized join must be accepted");
+        // The last accepted total, then the first refused one.
+        assert!(check_joined_space(0x7FFF_FFFF, 0).is_ok(), "one below the range is a file id");
+        let err = check_joined_space(0x7FFF_FFFF, 1)
+            .expect_err("a join reaching the expansion range must be refused");
+        assert!(err.contains("[chain.source-id-space]"), "{err}");
+        assert!(err.contains("expansion range"), "the refusal must say why: {err}");
+        assert!(check_joined_space(usize::MAX, 1).is_err(), "and it cannot be reached by wrapping");
+    }
+
+    /// A one-fragment section at `span`, named `name` — the smallest thing that can
+    /// stand in for a front end's contribution to the chained list.
+    fn one_frag_section(name: &str, span: Span) -> Section {
+        use sigil_ir::DataFragment;
+        Section {
+            name: name.to_string(),
+            cpu: sigil_ir::Cpu::M68000,
+            vma_base: None,
+            lma: 0,
+            space: sigil_ir::AddressSpace::Image,
+            labels: Vec::new(),
+            fragments: vec![Fragment::Data(DataFragment {
+                bytes: vec![0],
+                fixups: Vec::new(),
+                span,
+            })],
+            placement: sigil_ir::SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
+            bank: None,
+            equ_syms: Vec::new(),
+        }
+    }
+
+    /// THE SEAM'S OWN CONTRACT, over both halves at once. `join` returns the AS
+    /// sections first and the `.emp` sections after, the AS half moved into the
+    /// joined id space and the `.emp` half untouched — so a diagnostic raised over
+    /// the RETURNED list reaches the right file whichever half it came from.
+    ///
+    /// This is the gate that would go red if the rebase were dropped from the seam
+    /// while every isolated `ChainSources` gate stayed green: the two spans start
+    /// out EQUAL (same id, same range, one per side), and only the seam tells them
+    /// apart.
+    #[test]
+    fn the_seam_returns_the_as_half_rebased_and_the_emp_half_untouched() {
+        let dir = tempfile::tempdir().unwrap();
+        let shared = Span { source: SourceId(1), start: 0, end: 0 };
+        let (chain, all) = ChainSources::join(
+            emp_index(dir.path()),
+            as_map(),
+            vec![one_frag_section("as_side", shared)],
+            vec![one_frag_section("emp_side", shared)],
+        )
+        .expect("the fixture-sized join must be accepted");
+
+        let names: Vec<&str> = all.iter().map(|s| s.name.as_str()).collect();
+        assert_eq!(names, ["as_side", "emp_side"], "AS sections come first, then `.emp`");
+        let span_of = |i: usize| match &all[i].fragments[0] {
+            Fragment::Data(d) => d.span,
+            other => panic!("fixture fragment changed shape: {other:?}"),
+        };
+        assert_ne!(span_of(0), shared, "the AS half must have moved");
+        assert_eq!(span_of(1), shared, "the `.emp` half must not have moved");
+        assert!(
+            chain.locate(span_of(0)).is_some_and(|l| l.contains("sound.asm")),
+            "the AS half must reach the AS map, got {:?}",
+            chain.locate(span_of(0))
+        );
+        assert!(
+            chain.locate(span_of(1)).is_some_and(|l| l.contains("second.emp")),
+            "the `.emp` half must reach the `.emp` index, got {:?}",
+            chain.locate(span_of(1))
+        );
+    }
+
+    /// THE SEAM, and THE FRAGMENT FAMILY in one gate. Handing AS-side sections to
+    /// `ChainSources::join` must move EVERY span they carry into the joined space —
+    /// every span-carrying `Fragment` variant and the section's equates, not just
+    /// the variant the defect was found through.
+    ///
+    /// It goes through `join` rather than calling `rebase_section` directly because
+    /// that is the seam's own contract: a `ChainSources` and un-rebased AS sections
+    /// must not be able to coexist. A variant added later is caught by
+    /// `rebase_section`'s exhaustive `match` at COMPILE time; this is the run-time
+    /// half, and it fails if a variant is added to this list but not to the rebase.
+    #[test]
+    fn joining_rebases_every_span_an_as_side_section_carries() {
+        use sigil_ir::{DataFragment, EquSym, RelaxCandidate};
+        use sigil_ir::expr::Expr;
+        use sigil_ir::fixup::{Fixup, FixupKind};
+        let dir = tempfile::tempdir().unwrap();
+        let raw =
+            Span { source: SourceId(1), start: third_line(ASM_TEXT), end: third_line(ASM_TEXT) };
+        let cand = || RelaxCandidate {
+            bytes: vec![0, 0],
+            fixup: Fixup { kind: FixupKind::Abs16Be, offset: 0, target: Expr::Int(0) },
+        };
+        let sec = Section {
+            name: "as_side".to_string(),
+            cpu: sigil_ir::Cpu::M68000,
+            vma_base: None,
+            lma: 0,
+            space: sigil_ir::AddressSpace::Image,
+            labels: Vec::new(),
+            fragments: vec![
+                Fragment::Data(DataFragment { bytes: vec![0], fixups: Vec::new(), span: raw }),
+                Fragment::Fill { value: 0, count: 1, span: raw },
+                Fragment::Reserve { count: 1, span: raw },
+                Fragment::JmpJsrSym { is_jsr: false, target: Expr::Int(0), span: raw },
+                Fragment::RelaxAbsSym {
+                    short: cand(),
+                    long: cand(),
+                    target: Expr::Int(0),
+                    span: raw,
+                },
+                Fragment::RelaxLadder { candidates: vec![cand()], target: Expr::Int(0), span: raw },
+                Fragment::Org { target: 0, fill: 0, span: raw },
+            ],
+            placement: sigil_ir::SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
+            bank: None,
+            equ_syms: vec![EquSym { name: "E".to_string(), expr: Expr::Int(0), span: raw }],
+        };
+        let variants = sec.fragments.len();
+
+        let (chain, out) = ChainSources::join(emp_index(dir.path()), as_map(), vec![sec], Vec::new())
+            .expect("the fixture-sized join must be accepted");
+        let sec = &out[0];
+
+        let spans: Vec<Span> = sec
+            .fragments
+            .iter()
+            .map(|f| match f {
+                Fragment::Data(d) => d.span,
+                Fragment::Fill { span, .. }
+                | Fragment::Reserve { span, .. }
+                | Fragment::JmpJsrSym { span, .. }
+                | Fragment::RelaxAbsSym { span, .. }
+                | Fragment::RelaxLadder { span, .. }
+                | Fragment::Org { span, .. } => *span,
+            })
+            .chain(sec.equ_syms.iter().map(|e| e.span))
+            .collect();
+        assert_eq!(spans.len(), variants + 1, "every fragment plus the equate");
+        for (i, sp) in spans.iter().enumerate() {
+            assert_eq!(
+                chain.locate(*sp).as_deref(),
+                Some("sound.asm(3):1"),
+                "span {i} must reach the AS map after the rebase, not {:?}",
+                chain.locate(*sp)
+            );
+        }
     }
 }
