@@ -561,7 +561,9 @@ under that cut's heading.
   - *THE REFERENCE TREE IS `.aeon-sigil-ref`* (ref, inside *Worktree and environment quirks*).
 - **About to sweep, delete or rebuild trees under `~/sonic_hacks/`**: *STANDING ARTIFACTS THIS LANE
   DEPENDS ON* (ref).
-- **Pruning worktrees**: *WORKTREE PRUNING* (ref).
+- **Pruning worktrees, or taking `PRUNE-WORKTREE-MASS`**: *WORKTREE PRUNING* (ref), and *BEFORE YOU
+  PRUNE WORKTREES: THE LIST-BUILDING INSTRUMENT IS THE HAZARD* (ref), which is the one to read first
+  because it governs how the removal list is BUILT.
 - **About to touch the shared `target/release/sigil`**:
   - *A DO-NOT-TOUCH RULE WITH NO NAMED OWNER* (ref).
   - *THE OWNERSHIP BAR I WROTE TODAY* (ref).
