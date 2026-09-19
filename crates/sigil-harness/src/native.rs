@@ -1947,7 +1947,7 @@ pub struct ChainSources {
 }
 
 /// Whether `emp_len` `.emp` ids and `as_len` AS ids fit in one file-id space below
-/// the expansion range — the refusal [`ChainSources::new`] makes, taken as a
+/// the expansion range — the refusal [`ChainSources::join`] makes, taken as a
 /// function of the two SIZES alone so the boundary can be exercised at a value no
 /// `SourceIndex` could be built at.
 fn check_joined_space(emp_len: usize, as_len: usize) -> Result<(), String> {
@@ -1964,22 +1964,41 @@ fn check_joined_space(emp_len: usize, as_len: usize) -> Result<(), String> {
 }
 
 impl ChainSources {
-    /// Join the two authorities. `emp` keeps ids `0 .. emp.len()`; the AS map's
-    /// files move to `emp.len() ..`.
+    /// THE SEAM: join the two authorities and produce the chained section list —
+    /// the AS side moved into the joined id space, then the `.emp` side, which
+    /// already numbers in it. `emp` keeps ids `0 .. emp.len()`; the AS map's files
+    /// move to `emp.len() ..`, and so does every span the AS sections carry.
+    ///
+    /// THE THREE ACTS ARE ONE CONSTRUCTOR ON PURPOSE. A `ChainSources` that exists
+    /// beside un-rebased AS sections is worse than no `ChainSources` at all: it
+    /// reads every AS span as an `.emp` id and answers with the same confident
+    /// wrong file the type was built to stop. Because the list a caller goes on to
+    /// resolve comes OUT of here, there is no second list for it to use instead,
+    /// and the seam cannot be half-applied by someone who did not know there was a
+    /// second half. The concatenation order lives here too, beside the id rule it
+    /// has to agree with, rather than at the call site where the two could drift.
     ///
     /// LOUD ON UNMEASURABLE: if the joined space would reach the expansion range,
     /// a rebased file id would be indistinguishable from an expansion and every
     /// location past the boundary would be wrong in a new way. That is refused by
-    /// name rather than truncated, wrapped, or silently located. It takes 2^31
-    /// source files to provoke and has never been seen; the refusal is here
-    /// because the alternative to a refusal is a wrong file.
-    pub fn new(
+    /// name rather than truncated, wrapped, or silently located
+    /// ([`check_joined_space`]). It takes 2^31 source files to provoke and has
+    /// never been seen; the refusal is here because the alternative is a wrong
+    /// file.
+    pub fn join(
         emp: sigil_frontend_emp::resolve::manifest::SourceIndex,
         as_map: sigil_span::SourceMap,
-    ) -> Result<ChainSources, String> {
+        mut as_sections: Vec<Section>,
+        emp_sections: Vec<Section>,
+    ) -> Result<(ChainSources, Vec<Section>), String> {
         let as_base = emp.len();
         check_joined_space(as_base, as_map.len())?;
-        Ok(ChainSources { emp, as_map, as_base: as_base as u32 })
+        let chain = ChainSources { emp, as_map, as_base: as_base as u32 };
+        for sec in &mut as_sections {
+            chain.rebase_section(sec);
+        }
+        as_sections.extend(emp_sections);
+        Ok((chain, as_sections))
     }
 
     /// `span` with its AS file id moved into the joined space. An expansion id
@@ -4078,11 +4097,7 @@ fn resolve_chained(aeon: &Path, profile: &GameProfile) -> Result<ChainedResolve,
     // diagnostic raised over the joined list is read through whichever map is in
     // scope, and for an AS-side span that map names a different file with no error
     // anywhere (the rule is stated on `BuildWarning::from_as`).
-    let sources = ChainSources::new(sources, as_map)?;
-    let mut sections: Vec<Section> = as_module.sections;
-    for sec in &mut sections {
-        sources.rebase_section(sec);
-    }
+    let (sources, sections) = ChainSources::join(sources, as_map, as_module.sections, emp_sections)?;
     // An author-written `warning` in the residual AS joins the build's warn tier
     // through the same vector as every `.emp` lint, so it reaches the CLI banner
     // and the tally line rather than stopping at the seam. Its rendered location
@@ -4092,7 +4107,6 @@ fn resolve_chained(aeon: &Path, profile: &GameProfile) -> Result<ChainedResolve,
         sources.rebase_warning(w);
     }
     warnings.extend(as_warnings);
-    sections.extend(emp_sections);
 
     // Parcel K5: the per-game placement map (`games/<g>/map.toml`) is loaded UP FRONT — its
     // declared `order` DRIVES the packing walk (the frozen provisional bases no longer
@@ -7184,7 +7198,9 @@ mod mixed_front_end_location_tests {
     /// (dropping the directory deletes the `.emp` files, so it must outlive the
     /// index — `SourceIndex` reads each file to answer `path:line:col`).
     fn chained(dir: &std::path::Path) -> ChainSources {
-        ChainSources::new(emp_index(dir), as_map()).expect("two files plus two files must join")
+        ChainSources::join(emp_index(dir), as_map(), Vec::new(), Vec::new())
+            .expect("two files plus two files must join")
+            .0
     }
 
     /// An AS-side span as it looks AFTER the seam rebased it: file `k` of the AS
@@ -7283,7 +7299,7 @@ mod mixed_front_end_location_tests {
             Span { source: SourceId(1), start: 0, end: 0 },
             sigil_span::Frame::Macro("dbgout".into()),
         );
-        let chain = ChainSources::new(emp_index(dir.path()), asm).unwrap();
+        let chain = ChainSources::join(emp_index(dir.path()), asm, Vec::new(), Vec::new()).unwrap().0;
         assert!(run.is_expansion(), "an expansion id must be in the expansion range");
         let ds = vec![Diagnostic {
             level: Level::Error,
@@ -7331,7 +7347,9 @@ mod mixed_front_end_location_tests {
             &ds.iter().collect::<Vec<_>>(),
             &|span| emp_index(dir.path()).locate(span),
         );
-        let chain = ChainSources::new(emp_index(dir.path()), SourceMap::new()).unwrap();
+        let chain = ChainSources::join(emp_index(dir.path()), SourceMap::new(), Vec::new(), Vec::new())
+            .unwrap()
+            .0;
         let after = crate::diag_render::render_diag_lines(
             &ds.iter().collect::<Vec<_>>(),
             &|span| chain.locate(span),
@@ -7367,7 +7385,7 @@ mod mixed_front_end_location_tests {
     /// against whichever map the arithmetic happens to land in.
     ///
     /// Exercised through `check_joined_space`, which IS the decision
-    /// `ChainSources::new` makes, taken as a function of the two sizes — no
+    /// `ChainSources::join` makes, taken as a function of the two sizes — no
     /// `SourceIndex` can be built at 2^31 files, and a gate that could only assert
     /// the underlying predicate would never execute the refusal itself.
     #[test]
@@ -7383,25 +7401,94 @@ mod mixed_front_end_location_tests {
         assert!(check_joined_space(usize::MAX, 1).is_err(), "and it cannot be reached by wrapping");
     }
 
-    /// THE FRAGMENT FAMILY. Every span-carrying fragment variant an AS-side section
-    /// can hold moves into the joined space — not just the one the defect was found
-    /// through. A variant added later is caught by `rebase_section`'s exhaustive
-    /// `match` at COMPILE time; this gate is the run-time half, and it fails if a
-    /// variant is added to this list but not to the rebase.
+    /// A one-fragment section at `span`, named `name` — the smallest thing that can
+    /// stand in for a front end's contribution to the chained list.
+    fn one_frag_section(name: &str, span: Span) -> Section {
+        use sigil_ir::DataFragment;
+        Section {
+            name: name.to_string(),
+            cpu: sigil_ir::Cpu::M68000,
+            vma_base: None,
+            lma: 0,
+            space: sigil_ir::AddressSpace::Image,
+            labels: Vec::new(),
+            fragments: vec![Fragment::Data(DataFragment {
+                bytes: vec![0],
+                fixups: Vec::new(),
+                span,
+            })],
+            placement: sigil_ir::SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
+            bank: None,
+            equ_syms: Vec::new(),
+        }
+    }
+
+    /// THE SEAM'S OWN CONTRACT, over both halves at once. `join` returns the AS
+    /// sections first and the `.emp` sections after, the AS half moved into the
+    /// joined id space and the `.emp` half untouched — so a diagnostic raised over
+    /// the RETURNED list reaches the right file whichever half it came from.
+    ///
+    /// This is the gate that would go red if the rebase were dropped from the seam
+    /// while every isolated `ChainSources` gate stayed green: the two spans start
+    /// out EQUAL (same id, same range, one per side), and only the seam tells them
+    /// apart.
     #[test]
-    fn every_span_carrying_fragment_of_an_as_side_section_is_rebased() {
+    fn the_seam_returns_the_as_half_rebased_and_the_emp_half_untouched() {
+        let dir = tempfile::tempdir().unwrap();
+        let shared = Span { source: SourceId(1), start: 0, end: 0 };
+        let (chain, all) = ChainSources::join(
+            emp_index(dir.path()),
+            as_map(),
+            vec![one_frag_section("as_side", shared)],
+            vec![one_frag_section("emp_side", shared)],
+        )
+        .expect("the fixture-sized join must be accepted");
+
+        let names: Vec<&str> = all.iter().map(|s| s.name.as_str()).collect();
+        assert_eq!(names, ["as_side", "emp_side"], "AS sections come first, then `.emp`");
+        let span_of = |i: usize| match &all[i].fragments[0] {
+            Fragment::Data(d) => d.span,
+            other => panic!("fixture fragment changed shape: {other:?}"),
+        };
+        assert_ne!(span_of(0), shared, "the AS half must have moved");
+        assert_eq!(span_of(1), shared, "the `.emp` half must not have moved");
+        assert!(
+            chain.locate(span_of(0)).is_some_and(|l| l.contains("sound.asm")),
+            "the AS half must reach the AS map, got {:?}",
+            chain.locate(span_of(0))
+        );
+        assert!(
+            chain.locate(span_of(1)).is_some_and(|l| l.contains("second.emp")),
+            "the `.emp` half must reach the `.emp` index, got {:?}",
+            chain.locate(span_of(1))
+        );
+    }
+
+    /// THE SEAM, and THE FRAGMENT FAMILY in one gate. Handing AS-side sections to
+    /// `ChainSources::join` must move EVERY span they carry into the joined space —
+    /// every span-carrying `Fragment` variant and the section's equates, not just
+    /// the variant the defect was found through.
+    ///
+    /// It goes through `join` rather than calling `rebase_section` directly because
+    /// that is the seam's own contract: a `ChainSources` and un-rebased AS sections
+    /// must not be able to coexist. A variant added later is caught by
+    /// `rebase_section`'s exhaustive `match` at COMPILE time; this is the run-time
+    /// half, and it fails if a variant is added to this list but not to the rebase.
+    #[test]
+    fn joining_rebases_every_span_an_as_side_section_carries() {
         use sigil_ir::{DataFragment, EquSym, RelaxCandidate};
         use sigil_ir::expr::Expr;
         use sigil_ir::fixup::{Fixup, FixupKind};
         let dir = tempfile::tempdir().unwrap();
-        let chain = chained(dir.path());
         let raw =
             Span { source: SourceId(1), start: third_line(ASM_TEXT), end: third_line(ASM_TEXT) };
         let cand = || RelaxCandidate {
             bytes: vec![0, 0],
             fixup: Fixup { kind: FixupKind::Abs16Be, offset: 0, target: Expr::Int(0) },
         };
-        let mut sec = Section {
+        let sec = Section {
             name: "as_side".to_string(),
             cpu: sigil_ir::Cpu::M68000,
             vma_base: None,
@@ -7430,7 +7517,9 @@ mod mixed_front_end_location_tests {
         };
         let variants = sec.fragments.len();
 
-        chain.rebase_section(&mut sec);
+        let (chain, out) = ChainSources::join(emp_index(dir.path()), as_map(), vec![sec], Vec::new())
+            .expect("the fixture-sized join must be accepted");
+        let sec = &out[0];
 
         let spans: Vec<Span> = sec
             .fragments
