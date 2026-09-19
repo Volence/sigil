@@ -17,6 +17,19 @@ not this lane's tip. **Checked rather than assumed:** `d7e6aa15` is an ancestor 
 first diff hunk in `native.rs` between it and `1bfce22f` opens at line **1604** — above every line
 they cite, so the tip carries them identically.
 
+**⚠ TWO LINE NUMBERS, BOTH CORRECT, AND THE DISAGREEMENT IS WORTH MORE THAN EITHER.** Aeon's packet
+says the first change is at **1607**; this note said **1604**. Resolved from git objects at the named
+revisions rather than by either side conceding: `@@ -1604,6 +1604,7 @@` is where the HUNK opens,
+context included, and the INSERTED line (`+            sources: a.sources,`) lands at **1607**, the
+fourth line of that hunk, confirmed present at 1607 in the tip. **Both measurements are accurate and
+they measure adjacent quantities; both were reported as "the first change".** The equivalence
+conclusion is untouched either way, since both are above every cited line.
+
+Filed rather than quietly fixed because it is a NAMING collision, not a transcription error, and that
+is the harder kind: **both parties check their own number, both find it correct, and the conflict
+lives only in the shared phrase.** A reader meeting both records would otherwise have had to decide
+which of us was sloppy, and the answer is neither.
+
 | claim | verified in this tree |
 |---|---|
 | `harvest_engine_constants(aeon: &Path)` takes no profile | yes, `native.rs:1262` |
