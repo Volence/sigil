@@ -143,3 +143,30 @@ compared to `crates/sigil-harness/golden/`:
 Positive control on the comparison itself: `s4.bin` against the `s4.debug.bin`
 golden reports DIFFERS, so the check can go red. No golden, pin, or
 `repin.toml` was touched.
+
+## Landing run
+
+`scripts/landing-run.sh --baseline 5574 --aeon /home/volence/sonic_hacks/.aeon-sigil-ref`,
+started 2026-09-19T01:00:14Z, finished 01:07:22Z (machine uptime 3 days 1:00 at
+launch). Log stamp: HEAD `e9555a79`, branch `parcel/mixed-map-locate` (clean),
+aeon HEAD `ec640bcf` (clean), `SIGIL_STRICT_GATE=1`, target dir
+`.target-land` inside this worktree.
+
+```
+  suites          492
+  passed          5601
+  failed          0
+  ignored         2
+  skip lines      0
+  binaries        492 launched, 492 reported
+  test targets    492 expected launches, all launched
+  reconciles      5574 baseline + 27 new = 5601 observed
+  RESULT          GREEN
+  LEDGER_EXIT=0   CLIPPY_EXIT=0   CARGO_EXIT=0
+```
+
+**The +27 is not all mine.** This parcel adds TEN tests (harness lib 228 -> 238);
+the other 17 are master moving since the 5574 baseline was last stated
+(`.landing-relaxu32-094535.log`, 2026-09-17). The reconcile only fails on a
+SHORTFALL, so an overshoot is not evidence of anything and is recorded as what it
+is rather than claimed.
