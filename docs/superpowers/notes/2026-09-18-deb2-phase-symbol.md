@@ -33,6 +33,35 @@ So "sigil is compatible" rests on the booked description of sigil's behaviour in
 rather than on a fresh measurement of it. **A reader routing this row onward should say so**, and
 whoever takes the consuming side should measure both before pricing anything.
 
+## THE ROUTING, banked here because the board is not where a cross-lane obligation lives
+
+**Rule this discharges:** `contract/LANE_STATUS.md`, *The board is not where a cross-lane obligation
+lives* (empyrean `341e80e`), and this lane's own *A SPEC'S PAIRING CLAUSE OUTLIVES THE RULING THAT
+RETIRED IT*: a cross-lane obligation is banked in a COMMITTED file before it is worked, and **the
+message that created it does not count.** This lane's `docs/lane-status.json` is gitignored, so when
+the row left the queue it left no record in the repository at all; without this section the routing
+would exist only in a live session and a lane-log detail line.
+
+**What is owed, to whom, and by whom.** The finding is routed to the lane that CONSUMES sigil's
+symbol output — the debugger, which resolves symbols live over the bus. As of this commit the
+routing is **UNDELIVERED**: the hub (`empyrean`) holds it and has said it will carry it when that
+lane is able to receive it, which was not the night this was measured (its main was red from an
+unrelated CI failure). **If that session ends before delivering, this file is the record** and any
+sigil seat may hand it on directly.
+
+**The two caveats that MUST travel with it. A routing delivered without these is worse than none,
+because it arrives sounding settled:**
+
+1. **"Sigil is compatible" was not freshly measured.** It rests on the 2026-09-12 note's description
+   of sigil's own behaviour. What sigil prints for these same probes was in the parcel's brief and
+   was never reached.
+2. **Nobody has measured whether a live collision exists today.** The per-tree check is
+   `grep -E ' : 8000 [A-Z] \|' <shape>.lst`. This may be a latent defect with no current instance,
+   which changes its priority materially.
+
+**Whoever prices the consuming side measures both before costing anything.** The probes in this
+directory are committed so that work starts from a re-runnable artifact rather than from this prose.
+
 ## Provenance, and why it is unusual
 
 The probes and the first listings were built by a dispatched agent that **died with its work
