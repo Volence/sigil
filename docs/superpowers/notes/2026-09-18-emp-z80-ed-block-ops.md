@@ -68,7 +68,29 @@ nothing in the corpus noticed.
    is named like any of the 21. The identical loop finds 36 and 53 files for two
    control names, so the zero is a real zero and not a broken command. Note the
    failure mode if it ever happens is a LOUD error, never different bytes.
-3. **The sweep.** Full workspace suite, results in the parcel report.
+3. **The sweep, run as an A/B.** A green workspace suite was not available to
+   compare against: the aeon main tree is live-edited, so 169 reference-reading
+   tests in `sigil-cli`/`sigil-harness` already fail against it at master
+   (`repin_pins`: "442 pin values moved", `ASSEMBLED_LEN` Δ -0x284). A sweep
+   that merely reported those would have said nothing about this parcel. So the
+   whole workspace was run TWICE under one `AEON_DIR` — once at the branch tip,
+   once with `crates/sigil-frontend-emp` alone reverted to `515be271`:
+
+   | | suites | passed | failed |
+   |---|---|---|---|
+   | baseline (crate reverted) | 492 | 5422 | 169 |
+   | parcel | 493 | 5430 | 170 |
+
+   The failing TEST-NAME SETS are identical, 159 names each, except for one:
+   `version_reports_the_head_of_the_tree_it_was_built_from`. That one is an
+   artifact of this session, not of the parcel — the docs commit landed WHILE
+   the first sweep was in flight, so the binary's baked revision (`bbaf22e4`)
+   was one commit behind the checkout's HEAD (`f2f14b78`). The test names that
+   possibility itself and says to re-run to distinguish; re-run against a stable
+   HEAD it is 19 passed, 0 failed.
+
+   So: the same 169 pre-existing reference-tree failures on both sides, and +8
+   net passes (nine new tests, less the one transient above).
 
 ## The analyzer holes
 
