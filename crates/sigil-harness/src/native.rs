@@ -6922,3 +6922,83 @@ mod phase_marker_tests {
         assert_eq!(phased[0].lma, Some(0xB8000));
     }
 }
+
+#[cfg(test)]
+mod mixed_front_end_location_tests {
+    //! THE TWO LOCATION AUTHORITIES OF A CHAINED (MIXED `.asm` + `.emp`) BUILD.
+    //!
+    //! [`resolve_chained`] builds ONE section list out of BOTH front ends, and a
+    //! diagnostic raised over that list carries a bare [`sigil_span::Span`] — an id
+    //! and a byte range, with nothing in it saying which map can read it. The AS
+    //! front end's ids count its root and its `include` splices; the `.emp`
+    //! manifest's ids count the scanned `.emp` files. The ranges OVERLAP, so
+    //! locating an AS span through the `.emp` index does not fail: it names a
+    //! different file, confidently, and the build says so with no error anywhere.
+    //! (The rule is already stated on [`BuildWarning::from_as`]; these gates are
+    //! that rule for the chained path's own consumers.)
+    //!
+    //! The fixture is the smallest thing that can tell the two apart: an `.emp`
+    //! index whose id 1 is `second.emp`, and an AS map whose id 1 is `sound.asm`.
+    //! A span with id 1 therefore renders a DIFFERENT PATH under each authority,
+    //! so a gate here reads a path and never an id.
+    use super::render_declared_chain;
+    use sigil_frontend_emp::resolve::manifest::{Manifest, SourceIndex};
+    use sigil_span::{Diagnostic, Level, SourceId, SourceMap, Span};
+
+    /// `first.emp` (id 0) and `second.emp` (id 1), both on disk: `SourceIndex`
+    /// READS each file to answer `path:line:col`, so a fixture that does not
+    /// exist would only exercise the degraded (`None`) arm and prove nothing.
+    fn emp_index(dir: &std::path::Path) -> SourceIndex {
+        let mut sources = std::collections::HashMap::new();
+        for (id, name) in [(0u32, "first.emp"), (1, "second.emp")] {
+            let p = dir.join(name);
+            std::fs::write(&p, "module m\n\nproc P () {\n}\n").unwrap();
+            sources.insert(SourceId(id), p);
+        }
+        SourceIndex::new(&Manifest {
+            modules: Vec::new(),
+            by_id: std::collections::HashMap::new(),
+            sources,
+        })
+    }
+
+    /// The AS front end's own map: `boot.asm` (id 0) and `sound.asm` (id 1).
+    /// Third line starts at byte 10 in both, so offset 10 is line 3.
+    fn as_map() -> SourceMap {
+        let mut m = SourceMap::new();
+        m.add_named("boot.asm".to_string(), "\tmove.w\td0,d1\n\n\tbra.s\t*\n".to_string());
+        m.add_named("sound.asm".to_string(), "\tmove.w\td0,d1\n\n\tbra.s\t*\n".to_string());
+        m
+    }
+
+    fn diag(source: u32, at: u32, message: &str) -> Diagnostic {
+        Diagnostic {
+            level: Level::Error,
+            message: message.to_string(),
+            primary: Span { source: SourceId(source), start: at, end: at },
+        }
+    }
+
+    /// THE DEFECT. A `resolve_layout` diagnostic whose span came from an AS-side
+    /// section must name the `.asm` file it was written in. Today the chained
+    /// path locates it through the `.emp` manifest's index, which answers with
+    /// `second.emp` — a real path, a real line, and the wrong file.
+    #[test]
+    fn an_as_side_layout_diagnostic_names_its_own_asm_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let emp = emp_index(dir.path());
+        let _asm = as_map();
+        let ds = vec![diag(1, 10, "[layout.overlap] section `snd` overlaps `obj`")];
+
+        let got = render_declared_chain("resolve_layout", &ds, &emp);
+
+        assert!(
+            got.contains("sound.asm(3)"),
+            "an AS-side span must render through the AS front end's own map, got:\n{got}"
+        );
+        assert!(
+            !got.contains(".emp"),
+            "an AS-side span must not be attributed to any `.emp` file, got:\n{got}"
+        );
+    }
+}
