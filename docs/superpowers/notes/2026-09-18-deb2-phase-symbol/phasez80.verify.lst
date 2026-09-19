@@ -1,0 +1,73 @@
+ AS V1.42 Beta [Bld 212] - Source File phasez80.asm - Page 1 - 09/19/2026 12:06:11 AM
+
+
+       1/       0 :                     ; phasez80.asm -- the same question asked of a Z80 section, because the real
+       2/       0 :                     ; colliding symbol is described as "a Z80-space label".
+       3/       0 :                     ;
+       4/       0 :                     ; ⚠ FIRST VERSION OF THIS PROBE WAS REFUSED, and the refusal is the reason the
+       5/       0 :                     ; addresses below are small. It used the 68000 probe's `org 0B8000h`, and asl
+       6/       0 :                     ; answered `error #1925: address overflow` on the two UNPHASED `db` lines --
+       7/       0 :                     ; the Z80 address space is 16 bits, so a physical B8000 does not exist there.
+       8/       0 :                     ; That run exited 2, so by the standing rule no byte column and no symbol value
+       9/       0 :                     ; from it is quotable, INCLUDING the phased line that did not error. It was
+      10/       0 :                     ; re-shaped rather than read.
+      11/       0 :                     ;
+      12/       0 :                     ; Both candidates therefore live inside 16 bits, and are still unmistakable:
+      13/       0 :                     ;   phase answer     Z80PhasedHead : 8000
+      14/       0 :                     ;   physical answer  Z80PhasedHead : 1002
+      15/       0 :                     ; Controls, outside the bracket: Z80CtrlBefore 1000, Z80CtrlAfter 1004.
+      16/       0 :                     	cpu	z80
+      17/    1000 :                     	org	01000h
+      18/    1000 :                     Z80CtrlBefore:
+      19/    1000 : 11 11               	db	11h,11h
+      20/    8000 :                     	phase	08000h
+      21/    8000 :                     Z80PhasedHead:
+      22/    8000 : 22 22               	db	22h,22h
+      23/    1004 :                     	dephase
+      24/    1004 :                     Z80CtrlAfter:
+      25/    1004 : 33 33               	db	33h,33h
+      26/    1006 :                     	end
+ AS V1.42 Beta [Bld 212] - Source File phasez80.asm - Page 2 - 09/19/2026 12:06:11 AM
+
+
+  Symbol Table (* = unused):
+  --------------------------
+
+*ARCHITECTURE :                                      "x86_64-unknown-linux" - |
+*BIGENDIAN :                      0 - | *BRANCHEXT :                      0 - |
+*CASESENSITIVE :                  1 - | *COMPMODE :                       0 - |
+*CONSTPI :        3.141592653589793 - | *CUSTOM :                         0 - |
+*DATE :                "09/19/2026" - | *FALSE :                          0 - |
+*FULLPMMU :                       1 - | *HAS64 :                          1 - |
+*HASDSP :                         0 - | *HASFPU :                         0 - |
+*HASPMMU :                        0 - | *INEXTMODE :                      0 - |
+*INLWORDMODE :                    0 - | *INMAXMODE :                      0 - |
+*INSRCMODE :                      0 - | *INSUPMODE :                      0 - |
+*LISTON :                         1 - | *MACEXP :                         7 - |
+*MOMCPU :                        80 - | *MOMCPUNAME :                 "Z80" - |
+*NESTMAX :                      100 - | *PACKING :                        0 - |
+*PADDING :                        1 - | *RELAXED :                        0 - |
+*TIME :               "12:06:11 AM" - | *TRUE :                           1 - |
+*VERSION :                     142F - | *Z80CtrlAfter :                1004 C |
+*Z80CtrlBefore :               1000 C | *Z80PhasedHead :               8000 C |
+*Z80SYNTAX :                      0 - |
+
+     34 symbols
+     34 unused symbols
+
+ AS V1.42 Beta [Bld 212] - Source File phasez80.asm - Page 3 - 09/19/2026 12:06:11 AM
+
+
+  Code Pages:
+  ----------
+
+STANDARD (0 changed characters)
+
+1 code page
+
+0.00 seconds assembly time
+
+     27 lines source file
+      1 pass
+      0 errors
+      0 warnings

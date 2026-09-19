@@ -1,0 +1,75 @@
+ AS V1.42 Beta [Bld 212] - Source File phase68k.asm - Page 1 - 09/18/2026 09:38:09 PM
+
+
+       1/       0 :                     ; phase68k.asm -- THE QUESTION: when a label sits inside a PHASE block, what
+       2/       0 :                     ; address does asl print for it in its listing's symbol table -- the phase
+       3/       0 :                     ; (VMA) address, or the physical (LMA) one?
+       4/       0 :                     ;
+       5/       0 :                     ; Shaped after the real case this measures: aeon's `soundbankhead.emp` section
+       6/       0 :                     ; `(cpu: m68000, vma: $8000)` at map anchor lma $B8000, which the AS twin wrote
+       7/       0 :                     ; as a `phase 08000h` bracket around the 5 engine-table heads.
+       8/       0 :                     ;
+       9/       0 :                     ; THE TWO CANDIDATE ANSWERS ARE FIVE DIGITS APART AND CANNOT BE MISREAD:
+      10/       0 :                     ;   phase answer     PhasedHead : 8000
+      11/       0 :                     ;   physical answer  PhasedHead : B8002
+      12/       0 :                     ;
+      13/       0 :                     ; THE CONTROLS are outside any PHASE bracket at addresses derivable by hand:
+      14/       0 :                     ;   CtrlBefore : B8000   (org, first thing emitted)
+      15/       0 :                     ;   CtrlAfter  : B8004   (org + 2 + 2, PHASE moves no physical bytes)
+      16/       0 :                     ; A probe that listed nothing at all, or listed an empty table, is therefore
+      17/       0 :                     ; distinguishable from one that answered `8000`: the controls would be gone too.
+      18/       0 :                     	cpu	68000
+      19/   B8000 :                     	org	$B8000
+      20/   B8000 :                     CtrlBefore:
+      21/   B8000 : 1111                	dc.w	$1111
+      22/    8000 :                     	phase	$8000
+      23/    8000 :                     PhasedHead:
+      24/    8000 : 2222                	dc.w	$2222
+      25/   B8004 :                     	dephase
+      26/   B8004 :                     CtrlAfter:
+      27/   B8004 : 3333                	dc.w	$3333
+      28/   B8006 :                     	end
+ AS V1.42 Beta [Bld 212] - Source File phase68k.asm - Page 2 - 09/18/2026 09:38:09 PM
+
+
+  Symbol Table (* = unused):
+  --------------------------
+
+*ARCHITECTURE :                                      "x86_64-unknown-linux" - |
+*BIGENDIAN :                      0 - | *BRANCHEXT :                      0 - |
+*CASESENSITIVE :                  1 - | *COMPMODE :                       0 - |
+*CONSTPI :        3.141592653589793 - | *CUSTOM :                         0 - |
+*CtrlAfter :                  B8004 C | *CtrlBefore :                 B8000 C |
+*DATE :                "09/18/2026" - | *FALSE :                          0 - |
+*FULLPMMU :                       1 - | *HAS64 :                          1 - |
+*HASDSP :                         0 - | *HASFPU :                         0 - |
+*HASPMMU :                        0 - | *INEXTMODE :                      0 - |
+*INLWORDMODE :                    0 - | *INMAXMODE :                      0 - |
+*INSRCMODE :                      0 - | *INSUPMODE :                      0 - |
+*LISTON :                         1 - | *MACEXP :                         7 - |
+*MOMCPU :                     68000 - | *MOMCPUNAME :               "68000" - |
+*NESTMAX :                      100 - | *PACKING :                        0 - |
+*PADDING :                        1 - | *PhasedHead :                  8000 C |
+*RELAXED :                        0 - | *TIME :               "09:38:09 PM" - |
+*TRUE :                           1 - | *VERSION :                     142F - |
+*Z80SYNTAX :                      0 - |
+
+     34 symbols
+     34 unused symbols
+
+ AS V1.42 Beta [Bld 212] - Source File phase68k.asm - Page 3 - 09/18/2026 09:38:09 PM
+
+
+  Code Pages:
+  ----------
+
+STANDARD (0 changed characters)
+
+1 code page
+
+0.00 seconds assembly time
+
+     29 lines source file
+      1 pass
+      0 errors
+      0 warnings
