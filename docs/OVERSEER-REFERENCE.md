@@ -2158,6 +2158,42 @@ a memory of another repo is a snapshot wearing the grammar of a derivation.**
 could not: what does this repo pin about that symbol's SIZE, OFFSET or STRIDE.** Fixing it by adding
 the new number closes the instance and keeps the mechanism.
 
+### BEFORE YOU PRUNE WORKTREES: THE LIST-BUILDING INSTRUMENT IS THE HAZARD, NOT THE REMOVAL (2026-09-18)
+
+**Read this when you take `PRUNE-WORKTREE-MASS`, or touch any worktree removal.** It exists because
+the measurement that SIZED that row was, on its first attempt, a fabrication that looked like data.
+
+**What happened.** Building the on-disk worktree list with `ls -1d` produced paths carrying ANSI
+colour escapes (`ls` is `eza` here). `comm` then matched none of them against the registered list and
+reported **all 32 as orphaned**; `du` over those non-existent paths printed **`0 total`** rather than
+failing. Both outputs are well formed. Nothing downstream can type-check them.
+
+**Why this one is worse than an empty wrong answer, which is the hub's framing and is right.** The
+sibling traps in this family (a shell builtin that `xargs` cannot exec; a restricted `dmesg` piped to
+`grep -c`) produce a well-formed EMPTY result. **This one produces a well-formed POPULATED result**,
+and the population is fabricated. **A prune driven by that list is a deletion aimed at a
+fabrication.**
+
+**The two findings meet here, which is the reason this block exists at all.** The measurement that
+came out the other way is what saved it: only ONE directory is unregistered (114 MiB), so the mass is
+registered-but-finished worktrees and the instrument is `git worktree remove`, which has a refusal
+path. **Had the orphan figure been real, the indicated operation would have been `rm -rf` over 136 GB
+driven by a list built with the broken instrument.**
+
+**THE BAR, and it is not "be careful":**
+
+- **Build the list with `find <dir> -maxdepth 1 -mindepth 1 -type d`**, never `ls`. Count with
+  `find`, probe a single path with `[ -d ]`.
+- **Before any removal, run the both-lists control:** a path you KNOW is registered must appear in
+  the on-disk list AND in `git worktree list --porcelain`. If it appears in neither, your strings are
+  wrong and the whole list is suspect. That one probe caught all three of the night's traps.
+- **Distinguish ENTRIES from DIRECTORIES when you count.** `.claude/worktrees` held 44 entries, 29 of
+  them directories. Two populations, one directory, and neither number says which it is.
+- **`git worktree remove`, never `rm -rf`**, so a live or locked tree REFUSES rather than vanishing.
+  A lock names the dispatching session's pid and is a refusal, not a liveness test.
+- **Take it only at a boundary with nothing running**, and `du` before counting so the claimed
+  reclaim is measured rather than predicted.
+
 ### A REBOOT IS INVISIBLE ON A CARD, SO A PEER CAN CHALLENGE YOU WITH YOUR PREDECESSOR'S WORDS (2026-09-18)
 
 **Read this when a peer questions your state and quotes your own board back at you.**
