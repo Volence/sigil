@@ -20,6 +20,28 @@ const EXPANSION_LIMIT: u32 = !EXPANSION_BIT;
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub struct SourceId(pub u32);
 
+impl SourceId {
+    /// Whether this id names an EXPANSION rather than a file.
+    ///
+    /// The distinction is structural, not a property of any one map: file ids
+    /// count up from 0 and expansion ids live in their own high range (see
+    /// [`SourceMap`]'s "Expansions"), so this answers for an id from ANY map,
+    /// including one held by a different front end. A caller that has to route
+    /// an id between two maps needs exactly that — [`SourceMap::contains`]
+    /// answers "is this id mine", which a raw file id from another map can
+    /// satisfy by accident, and this answers "what KIND of id is it", which no
+    /// other map's numbering can change.
+    ///
+    /// The no-source id the front ends use for a diagnostic belonging to no
+    /// line (`SourceId(u32::MAX)`) is in the expansion range by construction,
+    /// so it answers `true`: it is not a file, and the accessors that take an
+    /// expansion id degrade to `None`/`""` for it exactly as they do for an
+    /// expansion index nobody allocated.
+    pub fn is_expansion(self) -> bool {
+        self.0 & EXPANSION_BIT != 0
+    }
+}
+
 /// Half-open byte range `[start, end)` within a source file.
 ///
 /// Hashable so a span can identify a diagnostic's site in a deduplication key.
