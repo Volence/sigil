@@ -810,9 +810,11 @@ points at it rather than restating it, so there is one copy to keep true.
   low; the branch refuses it. Four shapes byte-identical to the provenance tip. The note's `ld a,$15` at 0x41F
   is the YM timer rearm, not a bank id.
 
-### AS-REGISTER-SPELLED-LABEL-SILENT
+### AS-REGISTER-SPELLED-LABEL-SILENT: LANDED
 
-- state: **open**  size: `S`  project: `SIGIL-AS-REPLACEMENT`
+- **LANDED** 2026-09-25, fast-forward to `09af6350` (gate run at `29f64ad8`: 504 suites, 5728 passed, 0
+  failed, 5723 + 5 new). 47 over-accepts refused, one rule; aeon four shapes and five corpus ROMs unchanged.
+- was: state **open**  size: `S`  project: `SIGIL-AS-REPLACEMENT`
 - With a label named like a register (`A1:`), sigil assembles `#A1+Lab2` where the pinned asl refuses
   it as a register, so a program asl rejects builds here with a value. Pre-existing, measured by the
   `$$` parcel with a `$$`-free control: `docs/superpowers/notes/2026-09-25-s3k-dollar-labels.md` and
