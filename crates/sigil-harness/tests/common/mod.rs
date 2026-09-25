@@ -18,9 +18,13 @@ pub fn native_rs() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("src/native.rs")
 }
 
-/// The emitter names `ensure_generated` calls, read from its body. Every call in it
-/// is spelled `seam1::emit_…(` / `seam2::emit_…(`, so the scan is over that shape
-/// rather than over a list somebody maintains twice.
+/// The emitter names `ensure_generated` calls, read from the body of
+/// `native::emit_generated_in` (which `emit_generated` delegates to with no overlay).
+/// Every call in it is spelled `seam1::emit_…(` / `seam2::emit_…(`, so the scan is over
+/// that shape rather than over a list somebody maintains twice. A call to an overlay
+/// variant `emit_X_in` is reported as `emit_X`: `emit_X(aeon, out)` is
+/// `emit_X_in(aeon, None, out)`, so an arm driving `emit_X` runs the same body, guard
+/// included.
 ///
 /// Every way this can fail to measure panics with `UNMEASURABLE` instead of
 /// returning an empty set: an unreadable source, a renamed function, and a parse
@@ -37,13 +41,13 @@ pub fn emitters_named_by_ensure_generated() -> Vec<String> {
     });
 
     let body = src
-        .split_once("pub fn emit_generated(aeon: &Path) -> Result<(), String> {")
+        .split_once("pub fn emit_generated_in(")
         .map(|(_, rest)| rest)
         .unwrap_or_else(|| {
             panic!(
-                "UNMEASURABLE: no `pub fn emit_generated(aeon: &Path) -> Result<(), String> {{` \
-                 in {}. The function the emitter set is derived from was renamed or re-signed; \
-                 re-point the scan rather than letting it find nothing.",
+                "UNMEASURABLE: no `pub fn emit_generated_in(` in {}. The function the emitter \
+                 set is derived from was renamed; re-point the scan rather than letting it find \
+                 nothing.",
                 path.display()
             )
         });
@@ -57,6 +61,7 @@ pub fn emitters_named_by_ensure_generated() -> Vec<String> {
             let after = &rest[i + seam.len()..];
             let name: String =
                 after.chars().take_while(|c| c.is_alphanumeric() || *c == '_').collect();
+            let name = name.strip_suffix("_in").map(str::to_string).unwrap_or(name);
             if name.starts_with("emit_") && !found.contains(&name) {
                 found.push(name);
             }
