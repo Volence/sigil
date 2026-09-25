@@ -764,3 +764,14 @@ points at it rather than restating it, so there is one copy to keep true.
   silently places a row in every shape. Both aeon maps use only the two known values (per the pricing
   note, inferred from a read, not a build), so refusing unknown values should move no bytes. Folded
   into design A of `d-35`; worth doing alone if `d-35` waits.
+
+### BANK-ID-EMIT-VS-PLACE-UNCHECKED
+
+- state: **open**  size: `S`  project: `-`
+- `emit_sound_blob` bakes sound-bank ids into the resident Z80 blob and `dac_sample_tab.bin` (aeon
+  measured `ld a,$17 ; call SetBank` at blob 0x235, 0xD5E, 0xED4, 0x122C, `ld a,$15` at 0x41F, table
+  bytes 0x15/0x16) before `sigil build` places the banks. Nothing is known to check that the baked ids
+  equal the placed banks' ids, so a mismatch would play sound from the wrong bank silently. Our pricing
+  note flagged the cache half (the sound fold check covers MT/SFX addresses, not DAC bank ids). Add a
+  link-time check, proven red by moving a bank. Needed by `d-35-revised` either way; worth doing
+  alone. Source: aeon 3f208336, docs/research/2026-09-25-clip-own-anchor-pricing.md.
