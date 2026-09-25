@@ -568,6 +568,14 @@ has no artifact. The S3K hits under `docs/superpowers/notes/` are July handoffs 
 **Whether a real census was run and never written down, or the figure was absorbed from the adjacent
 one, is not decidable from here, and that is the finding.** Re-measure before sizing anything off it.
 
+**CORRECTED 2026-09-25: the premise IS in the tree, and the paragraph above is wrong about that.** The
+census is `docs/superpowers/notes/2026-09-16-as-corpus-census.md`, headline 5 and section *Q6. S3K, the
+next loud corpus*: 120 rows at sigil `72aca2e2`, skdisasm `2fcd861c`, in four classes (93 `$$name`
+labels, 19 `codepage`, 6 `abcd`/`subx`, 2 `(d8,PC,Xn)`), with its raw row multisets beside the note.
+The sweep that booked this looked under the right directory and missed it. Re-derive:
+`grep -n "120 rows in four" docs/superpowers/notes/2026-09-16-as-corpus-census.md`. The re-measure on
+current master is still owed and is step 0 of the parcel now working the row.
+
 ## OVER-ACCEPTANCE-THREE-SHAPES: PREMISE UNVERIFIED
 
 - state at archive: `open`  size: `S`  project: `SIGIL-AS-REPLACEMENT`
