@@ -115,18 +115,21 @@
 //! agree, and where a change of behaviour in either direction therefore reds a
 //! gate.
 //!
-//! Measured on the corpus as it stands: 88 probes, 14 ledgered divergences, so
-//! **74 live tripwires**: 51 probes both assemblers refuse, where sigil becoming
+//! Measured on the corpus as it stands: 88 probes, 11 ledgered divergences, so
+//! **77 live tripwires**: 54 probes both assemblers refuse, where sigil becoming
 //! looser goes red, and 23 both accept, where sigil becoming stricter goes red. `feed_control_the_ledger_is_not_an_escape_hatch` floors both
 //! numbers, so the way to get green after a widening is not to ledger it: that
 //! reds a second gate whose floor has to be moved by hand in the same diff.
 //!
-//! Ten of the fourteen ledgered rows were found by this gate rather than
-//! inherited. Three were known (the note's `c4`, `c5`, `d2`), four were already
-//! written down in the gap ledger with nothing watching them, and three were not
-//! known to anyone. Those last three are the evidence that deriving the
+//! The gate's first run found ten over-acceptances rather than inheriting them.
+//! Three were known (the note's `c4`, `c5`, `d2`), four were already written
+//! down in the gap ledger with nothing watching them, and three were not known
+//! to anyone: `dir_padding_not_on_off`, `expr_function_arg_count` and
+//! `save_missing_restore`. Those last three are the evidence that deriving the
 //! population from asl's catalogue rather than from our own findings was the
-//! load-bearing choice.
+//! load-bearing choice. All three now refuse as asl does and are live
+//! tripwires, not ledger rows (see
+//! `docs/superpowers/notes/2026-09-25-as-overaccept-silent-three.md`).
 //!
 //! ## Loud on unmeasurable
 //!
@@ -153,7 +156,7 @@ const MIN_ASL_REFUSAL_CLASSES: usize = 41;
 
 /// Probes both assemblers currently REFUSE. Each is a live tripwire for sigil
 /// becoming looser, and their number is the gate's real headroom.
-const MIN_AGREED_REFUSALS: usize = 51;
+const MIN_AGREED_REFUSALS: usize = 54;
 
 /// Probes both assemblers currently ACCEPT. Each is a live tripwire for sigil
 /// becoming stricter.

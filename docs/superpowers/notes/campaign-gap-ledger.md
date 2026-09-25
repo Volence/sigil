@@ -5046,16 +5046,26 @@ defect. This is the worst-shaped of the three: the over-acceptance is not merely
 that should not assemble, it is a file that assembles with a LAYOUT FLAG SET THE WRONG WAY
 by a typo. Probe `dir_padding_not_on_off`. **Kill:** `on_off` returns an option and the
 caller refuses a third spelling by name.
+CLOSED (AS-OVERACCEPT-SILENT-THREE, 2026-09-25): `Asm::on_off_arg` returns an option,
+refusing a non ON/OFF word (asl `#1520`) and a wrong argument count (asl `#1110`) for
+`padding` and `supmode` alike, and the caller leaves the flag untouched on a refusal. See
+`docs/superpowers/notes/2026-09-25-as-overaccept-silent-three.md`.
 
 **7. USER `function` CALLS ARE NOT ARITY-CHECKED.** A `function` declaring one parameter
 called with two arguments assembles; asl refuses with `#1490 wrong numbers of function
 arguments`. The extra argument is evaluated and discarded. Probe
 `expr_function_arg_count`. **Kill:** the call site compares actual against declared arity.
+CLOSED before AS-OVERACCEPT-SILENT-THREE reached it: `check_call_args` compares asl's
+argument count against the declared parameter count, both directions, since `1b8cb9ae`
+(2026-09-11, one day after this row). The ledger row stayed until 2026-09-25 because the
+gate reports a retirable row and does not fail on it.
 
 **8. THE SAVE STACK IS NOT CHECKED AT END OF UNIT.** A `save` with no matching `restore`
 assembles; asl refuses with `#1460 missing RESTORE`. Probe `save_missing_restore`.
 **Kill:** end-of-unit refuses a non-empty save stack, the way the block directives already
 refuse an unterminated `rept`.
+CLOSED (AS-OVERACCEPT-SILENT-THREE, 2026-09-25): `Asm::report_unrestored_saves` refuses
+each `save` still open when the unit ends, blamed on that `save` line.
 
 ### Four over-refusals, ledgered, all declared scope limits
 
@@ -6146,3 +6156,20 @@ candidate (instruction start, or an operand's address expression plus the instru
 a post-link check next to the existing `LinkAssert` machinery, and emit the same `[as.odd-address]` text
 from there. Pinned by `the_relocating_path_decides_constants_and_leaves_labels_undecided` in
 `crates/sigil-frontend-as/tests/as_odd_address.rs`, which must be inverted when this closes.
+
+### AS-OVERACCEPT-SILENT-THREE: two neighbours measured and left
+
+**`listing` VOCABULARY IS NOT CHECKED.** asl refuses `listing zqp_bogus` with `#1520 only
+ON/OFF allowed` (probe `l2.asm`, recorded in `directive_listing_control`'s doc), and sigil
+accepts it by a documented choice: asl's own accepted set is wider than its message says
+(`purecode`), and no consumer reads the value. It is not a caller of the ON/OFF helper and
+was left alone. No over-acceptance probe covers it, so nothing watches it. **Kill:** measure
+asl's full `listing` vocabulary, refuse outside it, and add the probe to
+`tests/over_acceptance/probes/`.
+
+**THE OVER-ACCEPTANCE CORPUS HAS NO `supmode` OR OPEN-`save`-IN-INCLUDE PROBE.** The three
+closed rows are live tripwires now, but each covers one shape (`padding maybe`, a lone
+`save`). `supmode`'s refusal and the unit-wide save stack are guarded by
+`tests/as_on_off_save_balance.rs`, not by the gate. **Kill:** add `supmode maybe` and an
+include-held open `save` as gate probes with minted verdicts.
+
