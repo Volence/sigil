@@ -596,6 +596,8 @@ ceiling = 0x20000
         assert!(e.contains("[map.overlay-parse]") && e.contains("order"), "{e}");
         let e = overlay_err("[[anchor]]\nat = 0xB8000\n");
         assert!(e.contains("[map.overlay-parse]") && e.contains("name"), "{e}");
+        let e = overlay_err("[[anchor]]\nname = \"dac_banks\"\nwhen = \"sound_on\"\n");
+        assert!(e.contains("[map.overlay-parse]") && e.contains("`at`"), "{e}");
         let e = overlay_err("not toml at all [");
         assert!(e.contains("[map.overlay-parse]"), "{e}");
         let e = overlay_err("# nothing\n");

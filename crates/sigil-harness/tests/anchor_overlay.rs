@@ -222,3 +222,24 @@ fn the_emit_binary_refuses_a_missing_overlay() {
     assert!(err.contains("[map.overlay-read]") && err.contains("no-such-anchors.toml"), "{err}");
     assert!(!out.exists(), "a refused emit wrote {}", out.display());
 }
+
+/// `emit_sound_blob` refuses the switch given twice (a usage error, exit 2), and writes
+/// nothing.
+#[test]
+fn the_emit_binary_refuses_two_overlays() {
+    let Some(aeon) = reference_tree_for_profile(&native::sonic4_profile(false)) else { return };
+    let scratch = Scratch::new("twice");
+    let out = scratch.0.join("generated");
+    let run = std::process::Command::new(env!("CARGO_BIN_EXE_emit_sound_blob"))
+        .arg("--aeon")
+        .arg(&aeon)
+        .arg("--out-dir")
+        .arg(&out)
+        .args(["--anchor-overlay", "a.toml", "--anchor-overlay", "b.toml"])
+        .output()
+        .expect("run emit_sound_blob");
+    let err = String::from_utf8_lossy(&run.stderr);
+    assert_eq!(run.status.code(), Some(2), "{err}");
+    assert!(err.contains("--anchor-overlay takes one file"), "{err}");
+    assert!(!out.exists(), "a refused emit wrote {}", out.display());
+}

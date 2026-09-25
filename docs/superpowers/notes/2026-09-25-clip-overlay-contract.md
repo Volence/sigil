@@ -148,3 +148,17 @@ emit forced to ignore the overlay while its placement used it (a mutation of sig
 against the reference tree at aeon `ec640bcf`), the overlay build fails there with 17 mismatched
 ids. No build.sh wiring can produce that disagreement, since the build
 never links the preflight emit's files without re-emitting them first.
+
+## Measured end to end (aeon `c53dde84`, clip `s2_ehz_cpz`, overlay on `sigil build` only)
+
+| shape | overlay `dac_banks` / `sound_bank` | ROM (CRC-32/size) | placed |
+|---|---|---|---|
+| plain, full build (every lane) | 0xB8000 / 0xC8000 | `72150726/887868` | `Dac_Temp_Blip` 0xB8000, `sound_tables_z80` 0xC8000 |
+| plain, `FAST=1` | 0xB8000 / 0xC8000 | `72150726/887868` | same |
+| DEBUG, `FAST=1` | 0xB8000 / 0xC8000 | `225ef3dd/914260` | same |
+| DEBUG, `FAST=1` | 0xC0000 / 0xD0000 | `9611338c/947026` | `Dac_Temp_Blip` 0xC0000, `sound_tables_z80` 0xD0000 |
+
+The full plain build ran the pre-build tool-suite lane green (3344 passed, 2 skipped, 33
+deselected) and every post-build gate. At this aeon revision the clip still fits the canonical
+positions in both shapes without the file (plain `073b25f4/822332`), so the file is not yet
+required there; it becomes required when the clip outgrows them.
