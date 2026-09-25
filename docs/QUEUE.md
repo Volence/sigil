@@ -68,7 +68,10 @@ meet the correction rather than find the row silently rewritten.
 
 Two rows that must land as ONE parcel, per the census. (a) sigil's message arm evaluates its string and discards it on EVERY pass, converged included, so it is not a pass question at all and the old row pairing it with warning was wrong. asl writes it to STDOUT, unprefixed and outside the diagnostic stream, so implementing it moves NO corpus diagnostic count while changing what a runner capturing stdout sees. 39 sites; two print under asl today and sigil prints neither. (b) the one corpus site that would fire needs an interpolation form sigil drops: \{(EndOfRom-StartOfRom)/1024.0} comes back UNINTERPOLATED, and that idiom is how all five s2disasm table-size messages are written. warning shares interp_string and inherits this the day a corpus site fires. Deleting the a_message_is_dropped pin is part of the work and is deliberate, not incidental.
 
-## EMP-Z80-MNEMONIC-TABLE
+## EMP-Z80-MNEMONIC-TABLE: LANDED
+
+- state: **LANDED** 2026-09-25 at merge `bc88480d`, pushed. Landed on `d-34`, answered `land-all-21` **by the HUB** under the owner's delegation (empyrean `796b508f`), not by him; he overturns it with one word at no cost while no game source uses the `(c)` port spelling. Landing run on the merged tree: 494 suites, 5611 passed, 0 failed.
+- history, kept:
 
 - state at archive: `open`  size: `S`  project: `SIGIL-AS-REPLACEMENT`
 - blockedBy: you: this is language surface, not assembler internals
@@ -677,7 +680,10 @@ points at it rather than restating it, so there is one copy to keep true.
   `docs/superpowers/notes/2026-09-10-editor-binding-cross-repo-coupling.md`. That note does not
   carry this id, which is why the census flagged it; the subject was never at risk.
 
-### EMP-RESIDENT-CONST-USE
+### EMP-RESIDENT-CONST-USE: CLOSED
+
+- **CLOSED 2026-09-25, nothing built:** `d-31` answered `by-name` **by the HUB** in the owner's place (empyrean `796b508f`), the route that already works. He can reopen it with one word.
+- history, kept:
 
 - state: **blocked**  size: `M`  blockedBy: the owner, card `d-31` (filed 2026-09-12)
 - Should a shared constant be importable between sound modules the way it already is elsewhere? A
