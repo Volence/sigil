@@ -753,7 +753,15 @@ points at it rather than restating it, so there is one copy to keep true.
 
 ### CLIP-OWN-ANCHOR-PRICING
 
-- state: **blocked** on card `d-35`  size: `M` to build  project: `-`
+- state: **open**, unblocked 2026-09-25: the owner answered `d-35-revised` = `clip-overlay-file` (record
+  `d-35-revised-answered` in `docs/decisions.jsonl`; heard directly by aeon, relayed ~14:20Z, and on
+  the console card). Build: a new `sigil build` switch naming a small positions file in the clip's own
+  folder, written the way `map.toml` writes anchors, applied only when passed; `map.toml` untouched.
+  Sigil lands first (switch + file format contract, and the emit must read the same positions),
+  then aeon adds the file and passes the switch. Aeon re-derives the values as the act grows (their
+  `7d409cdb` costing: one more CPZ section already needs 0xC0000/0xD0000 in DEBUG), so nothing here
+  pins them. The companion check is `BANK-ID-EMIT-VS-PLACE-UNCHECKED`.
+- was: state **blocked** on card `d-35`  size: `M` to build  project: `-`
 - Priced 2026-09-25 at merge `603087e0`: `docs/superpowers/notes/2026-09-25-clip-own-anchor-pricing.md`.
   Sigil cannot tell the S2CLIP build from canonical sonic4, so the hub's own-anchor ruling (empyrean
   `e229e1a3`) needs a new map.toml key plus a build flag (design A, recommended) or a narrower flag
