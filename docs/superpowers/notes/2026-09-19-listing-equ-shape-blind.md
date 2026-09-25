@@ -130,7 +130,8 @@ not a content change. `repin --check` prints `pins.rs unchanged`; nothing under 
 `repin.toml` or `tests/repin_pins.rs` moved.
 
 **The gate.** `crates/sigil-harness/tests/listing_equ_shape_aware.rs` (runner:
-`cargo test --release -p sigil-harness --test listing_equ_shape_aware`, and the workspace suite)
+`cargo test --release -p sigil-harness --test listing_equ_shape_aware`, the workspace suite, and the
+nightly lane, where it is a `SOURCE_GATES` member in `scripts/nightly_source_gates.sh`)
 builds `stress_evict`, reads the one `cmpi.w #imm, d6` inside `Level_LoadArt` out of the image, folds
 `constants.emp` under the profile's `shape_defines`, and requires the published `EQU` row, the ROM
 immediate and the fold to agree, then checks every other harvested constant with an `EQU` row the
