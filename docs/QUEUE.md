@@ -811,9 +811,10 @@ points at it rather than restating it, so there is one copy to keep true.
   `golden/`, so it is a comment-only edit announced to aeon, not a silent one. Found 2026-09-25 while
   checking aeon's consumer notice for `27684931`, which itself changes nothing we execute.
 
-### AS-MULTICHAR-SQUOTE-STRING
+### AS-MULTICHAR-SQUOTE-STRING: LANDED
 
-- state: **doing** from 2026-09-25  size: `S`  project: `SIGIL-AS-REPLACEMENT`
+- **LANDED** 2026-09-25 at `485fbd95`, pushed; Sonic 3 alone byte-identical (`9bc192ce`). 5699 passed, 0 failed.
+- was: state **doing** from 2026-09-25  size: `S`  project: `SIGIL-AS-REPLACEMENT`
 - The whole remaining gap for Sonic 3 alone (`buildS3.lua`): 6 rows, all a multi-character `'...'`
   in `dc.b`, which asl treats as a string (one charset-translated byte per character; `'AB'+1` gives
   `4143`) and sigil's lexer turns into one integer. Requoting those 6 operands gives the reference md5
