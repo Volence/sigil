@@ -9296,7 +9296,12 @@ impl Asm {
         if let Err(crate::state::CodePageError::UnknownBase(b)) =
             self.state.select_code_page(&name, base.as_deref())
         {
-            self.err(span, format!("codepage base `{b}` is an unknown codepage: no page of that name exists"));
+            let msg = if b.is_empty() {
+                "codepage base is empty, which names no page (asl: unknown codepage)".to_string()
+            } else {
+                format!("codepage base `{b}` is an unknown codepage: no page of that name exists")
+            };
+            self.err(span, msg);
         }
     }
 
