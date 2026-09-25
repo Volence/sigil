@@ -1,0 +1,32 @@
+aeon: /home/volence/sonic_hacks/.aeon-cli-define HEAD=ec640bcf70e263167223a33d987d4661ff221b7e status-lines=0
+tip:  sigil 0.1.0 (329bc9be)
+base: sigil 0.1.0 (1e146771)
+s4 tip: exit 0
+4b6445c672713020b14081a7a6d84096  crc32=91c46c94  size=820209  /home/volence/sonic_hacks/.scratch/as-cli-define/aeon4/s4-tip.bin
+s4 base: exit 0
+4b6445c672713020b14081a7a6d84096  crc32=91c46c94  size=820209  /home/volence/sonic_hacks/.scratch/as-cli-define/aeon4/s4-base.bin
+4b6445c672713020b14081a7a6d84096  crc32=91c46c94  size=820209  /home/volence/sonic_hacks/.aeon-cli-define/s4.bin
+s4: tip == base
+s4: tip == provisioned ROM
+s4.debug tip: exit 0
+bc457febdc10a90a64324a1ce629248b  crc32=8a378de6  size=846509  /home/volence/sonic_hacks/.scratch/as-cli-define/aeon4/s4.debug-tip.bin
+s4.debug base: exit 0
+bc457febdc10a90a64324a1ce629248b  crc32=8a378de6  size=846509  /home/volence/sonic_hacks/.scratch/as-cli-define/aeon4/s4.debug-base.bin
+bc457febdc10a90a64324a1ce629248b  crc32=8a378de6  size=846509  /home/volence/sonic_hacks/.aeon-cli-define/s4.debug.bin
+s4.debug: tip == base
+s4.debug: tip == provisioned ROM
+demo tip: exit 0
+57a24644a26a52f67f19115fdd6da482  crc32=1c7a34d3  size=96863  /home/volence/sonic_hacks/.scratch/as-cli-define/aeon4/demo-tip.bin
+demo base: exit 0
+57a24644a26a52f67f19115fdd6da482  crc32=1c7a34d3  size=96863  /home/volence/sonic_hacks/.scratch/as-cli-define/aeon4/demo-base.bin
+57a24644a26a52f67f19115fdd6da482  crc32=1c7a34d3  size=96863  /home/volence/sonic_hacks/.aeon-cli-define/demo.bin
+demo: tip == base
+demo: tip == provisioned ROM
+demo.debug tip: exit 0
+0b80c265664f8651f3b5a948c2f3a089  crc32=72e405a5  size=103185  /home/volence/sonic_hacks/.scratch/as-cli-define/aeon4/demo.debug-tip.bin
+demo.debug base: exit 0
+0b80c265664f8651f3b5a948c2f3a089  crc32=72e405a5  size=103185  /home/volence/sonic_hacks/.scratch/as-cli-define/aeon4/demo.debug-base.bin
+0b80c265664f8651f3b5a948c2f3a089  crc32=72e405a5  size=103185  /home/volence/sonic_hacks/.aeon-cli-define/demo.debug.bin
+demo.debug: tip == base
+demo.debug: tip == provisioned ROM
+AEON4_END

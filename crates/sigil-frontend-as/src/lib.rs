@@ -6,6 +6,7 @@
 
 mod ast;
 mod charset;
+pub mod cli_define;
 mod escape;
 mod eval;
 mod expand;
@@ -195,6 +196,14 @@ pub struct Options {
     /// author (the `.emp` module). Distinct from [`defines`] precisely because
     /// the code-gate/override defines DO coexist with in-file definitions.
     pub guarded_defines: Vec<(String, i64)>,
+    /// asl's command-line `-D` defines: each name is a SET variable, bound to
+    /// its value at the start of EVERY pass (a value a `set` gave it on the
+    /// previous pass does not carry into the next), so a later `set`/`:=`/`eval`
+    /// may rebind it and a later `=`/`equ`/label is refused as a variable
+    /// redefined as a constant. When a name appears twice, the first value
+    /// stands. [`cli_define::parse_define_arg`] reads the command-line spelling.
+    /// Unlike [`defines`], an in-file constant never silently wins over one.
+    pub cli_defines: Vec<(String, i64)>,
     /// Directory that `include` paths resolve against. Set automatically by
     /// [`assemble_root`] from the root file's parent when left `None`.
     pub include_root: Option<std::path::PathBuf>,

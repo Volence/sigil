@@ -1,0 +1,85 @@
+pwd=/home/volence/sonic_hacks/.scratch/as-cli-define/probes asl_md5=61e672562465725a8c102288a7da9098 sigil=/home/volence/sonic_hacks/.scratch/as-cli-define/bin-tip/sigil
+sigil 0.1.0 (329bc9be)
+  revision:  329bc9be7ea0c69c106741008e735aacef9d2167
+  branch:    parcel/as-cli-define
+  committed: 2026-09-25T06:16:23-04:00
+MATCH | value given | args: -D FOO=5 | asl: bytes 05 | sigil: bytes 05
+MATCH | no value | args: -D FOO | asl: bytes 01 | sigil: bytes 01
+MATCH | comma list | args: -D FOO=1,BAR=2 | asl: bytes 0102 | sigil: bytes 0102
+MATCH | hex value | args: -D FOO=$10 | asl: bytes 10 | sigil: bytes 10
+MATCH | in-file = after -D | args: -D FOO=5 | asl: refused rc=2 | sigil: refused rc=1 (d3.asm(2):1: error: variables cannot be redefined as constants: `FOO`)
+MATCH | case: -D FOO, use foo | args: -D FOO=5 | asl: refused rc=2 | sigil: refused rc=1 (d4.asm(2):2: error: unresolved symbol `foo` for fixup in section sec0 at offset 0)
+MATCH | if on -D, 0 | args: -D FOO=0 | asl: bytes 02 | sigil: bytes 02
+MATCH | if on -D, 1 | args: -D FOO=1 | asl: bytes 01 | sigil: bytes 01
+MATCH | in-file set after -D | args: -D FOO=5 | asl: bytes 07 | sigil: bytes 07
+MATCH | in-file equ after -D | args: -D FOO=5 | asl: refused rc=2 | sigil: refused rc=1 (d7.asm(2):1: error: variables cannot be redefined as constants: `FOO`)
+MATCH | use, set, use | args: -D FOO=5 | asl: bytes 0507 | sigil: bytes 0507
+MATCH | repeated flag, distinct | args: -D FOO=1 -D BAR=2 | asl: bytes 0102 | sigil: bytes 0102
+MATCH | repeated flag, same name | args: -D FOO=1 -D FOO=2 | asl: bytes 01 | sigil: bytes 01
+MATCH | same name twice in a list | args: -D FOO=1,FOO=2 | asl: bytes 01 | sigil: bytes 01
+MATCH | bare then valued | args: -D FOO -D FOO=2 | asl: bytes 01 | sigil: bytes 01
+MATCH | valued then bare | args: -D FOO=5 -D FOO | asl: bytes 05 | sigil: bytes 05
+MATCH | list, bare then valued | args: -D FOO,BAR=2 | asl: bytes 0102 | sigil: bytes 0102
+MATCH | list of three | args: -D FOO=1,BAR=2,BAZ=3 | asl: bytes 0102 | sigil: bytes 0102
+MATCH | trailing comma | args: -D FOO=5, | asl: bytes 05 | sigil: bytes 05
+MATCH | empty value | args: -D FOO= | asl: bytes 01 | sigil: bytes 01
+MATCH | space before value | args: -D FOO= 5 | asl: bytes 05 | sigil: bytes 05
+MATCH | trailing space in value | args: -D FOO=5  | asl: bytes 05 | sigil: bytes 05
+MATCH | value decimal | args: -D FOO=10 | asl: bytes 0a | sigil: bytes 0a
+MATCH | value lowercase hex | args: -D FOO=$ff | asl: bytes ff | sigil: bytes ff
+MATCH | value 0x hex | args: -D FOO=0x10 | asl: bytes 10 | sigil: bytes 10
+MATCH | value 10h | args: -D FOO=10h | asl: bytes 10 | sigil: bytes 10
+MATCH | value 0FFh | args: -D FOO=0FFh | asl: bytes ff | sigil: bytes ff
+MATCH | value %binary | args: -D FOO=%101 | asl: bytes 05 | sigil: bytes 05
+MATCH | value negative | args: -D FOO=-1 | asl: bytes ff | sigil: bytes ff
+MATCH | value ~1 | args: -D FOO=~1 | asl: bytes fe | sigil: bytes fe
+MATCH | value 1+2 | args: -D FOO=1+2 | asl: bytes 03 | sigil: bytes 03
+MATCH | value 1 + 2 | args: -D FOO=1 + 2 | asl: bytes 03 | sigil: bytes 03
+MATCH | value 1<<4 | args: -D FOO=1<<4 | asl: bytes 10 | sigil: bytes 10
+MATCH | value (3) | args: -D FOO=(3) | asl: bytes 03 | sigil: bytes 03
+MATCH | value 1=1 | args: -D FOO=1=1 | asl: bytes 01 | sigil: bytes 01
+MATCH | value $FFFFFFFF, dc.l | args: -D FOO=$FFFFFFFF | asl: bytes ffffffff | sigil: bytes ffffffff
+MATCH | value $100000000, dc.l | args: -D FOO=$100000000 | asl: refused rc=2 | sigil: refused rc=1 (ul.asm(2):7: error: operand 4294967296 out of range -2147483648..=4294967295)
+MATCH | value $123456789, >>32 | args: -D FOO=$123456789 | asl: bytes 00000001 | sigil: bytes 00000001
+MATCH | list with a space | args: -D FOO=1, BAR=2 | asl: refused rc=4 | sigil: refused rc=2 (error: -D 'FOO=1, BAR=2': ' BAR' is not a symbol name (a letter or `_`, then letters, digits, `_` or `.`))
+MATCH | empty middle part | args: -D FOO=1,,BAR=2 | asl: refused rc=4 | sigil: refused rc=2 (error: -D 'FOO=1,,BAR=2': an empty name (a list is NAME[=VALUE] parts separated by commas))
+MATCH | leading comma | args: -D ,FOO=5 | asl: refused rc=4 | sigil: refused rc=2 (error: -D ',FOO=5': an empty name (a list is NAME[=VALUE] parts separated by commas))
+MATCH | space before = | args: -D FOO =5 | asl: refused rc=4 | sigil: refused rc=2 (error: -D 'FOO =5': 'FOO ' is not a symbol name (a letter or `_`, then letters, digits, `_` or `.`))
+MATCH | empty argument | args: -D  | asl: refused rc=4 | sigil: refused rc=2 (error: -D expects NAME or NAME=VALUE, got '')
+MATCH | double equals | args: -D FOO==5 | asl: refused rc=4 | sigil: refused rc=2 (error: -D 'FOO==5': FOO==5: not an integer expression without symbols (decimal, $hex, %binary, 0x hex, and the source's own operators; a symbol or a float is not supported))
+MATCH | bare dollar | args: -D FOO=$ | asl: refused rc=4 | sigil: refused rc=2 (error: -D 'FOO=$': FOO=$: `$` with no hex digits)
+MATCH | value 5x | args: -D FOO=5x | asl: refused rc=4 | sigil: refused rc=2 (error: -D 'FOO=5x': FOO=5x: malformed number (hex needs a trailing `h`))
+MATCH | value 1+ | args: -D FOO=1+ | asl: refused rc=4 | sigil: refused rc=2 (error: -D 'FOO=1+': FOO=1+: not an integer expression without symbols (decimal, $hex, %binary, 0x hex, and the source's own operators; a symbol or a float is not supported))
+MATCH | value ff | args: -D FOO=ff | asl: refused rc=4 | sigil: refused rc=2 (error: -D 'FOO=ff': FOO=ff: not an integer expression without symbols (decimal, $hex, %binary, 0x hex, and the source's own operators; a symbol or a float is not supported))
+MATCH | value names a symbol | args: -D FOO=BAR | asl: refused rc=4 | sigil: refused rc=2 (error: -D 'FOO=BAR': FOO=BAR: not an integer expression without symbols (decimal, $hex, %binary, 0x hex, and the source's own operators; a symbol or a float is not supported))
+MATCH | value float, dc.b | args: -D FOO=1.5 | asl: refused rc=2 | sigil: refused rc=2 (error: -D 'FOO=1.5': FOO=1.5: not an integer expression without symbols (decimal, $hex, %binary, 0x hex, and the source's own operators; a symbol or a float is not supported))
+MATCH | name starts with a digit | args: -D 1FOO=1 | asl: refused rc=4 | sigil: refused rc=2 (error: -D '1FOO=1': '1FOO' is not a symbol name (a letter or `_`, then letters, digits, `_` or `.`))
+MATCH | empty name | args: -D =1 | asl: refused rc=4 | sigil: refused rc=2 (error: -D '=1': an empty name (a list is NAME[=VALUE] parts separated by commas))
+MATCH | name with a dash | args: -D FO-O=1 | asl: refused rc=4 | sigil: refused rc=2 (error: -D 'FO-O=1': 'FO-O' is not a symbol name (a letter or `_`, then letters, digits, `_` or `.`))
+MATCH | name FOO? | args: -D FOO?=1 | asl: refused rc=4 | sigil: refused rc=2 (error: -D 'FOO?=1': 'FOO?' is not a symbol name (a letter or `_`, then letters, digits, `_` or `.`))
+MATCH | name @FOO | args: -D @FOO=1 | asl: refused rc=4 | sigil: refused rc=2 (error: -D '@FOO=1': '@FOO' is not a symbol name (a letter or `_`, then letters, digits, `_` or `.`))
+MATCH | name with a dot, used | args: -D FOO.BAR=1 | asl: bytes 01 | sigil: bytes 01
+MATCH | underscore name, used | args: -D _FOO=1 | asl: bytes 01 | sigil: bytes 01
+MATCH | leading-dot name, .FOO used | args: -D .FOO=1 | asl: refused rc=2 | sigil: refused rc=2 (error: -D '.FOO=1': '.FOO' starts with `.`, a local name no source line can read as this define)
+MATCH | lowercase -D, FOO used | args: -D foo=5 | asl: refused rc=2 | sigil: refused rc=1 (u1.asm(2):2: error: unresolved symbol `FOO` for fixup in section sec0 at offset 0)
+MATCH | -D FOO, foo equ 3 coexist | args: -D FOO=5 | asl: bytes 0305 | sigil: bytes 0305
+MATCH | set first, then use | args: -D FOO=5 | asl: bytes 03 | sigil: bytes 03
+MATCH | ifndef-guarded set | args: -D FOO=5 | asl: bytes 05 | sigil: bytes 05
+MATCH | ifndef-guarded set, no -D | args:  | asl: bytes 03 | sigil: bytes 03
+MATCH | ifdef on -D name | args: -D FOO=5 | asl: bytes 01 | sigil: bytes 01
+MATCH | ifdef, -D FOO=0 | args: -D FOO=0 | asl: bytes 01 | sigil: bytes 01
+MATCH | ifndef on -D name | args: -D FOO=5 | asl: bytes 02 | sigil: bytes 02
+MATCH | defined() on -D name | args: -D FOO=0 | asl: bytes 01 | sigil: bytes 01
+MATCH | defined(), no -D | args:  | asl: bytes 00 | sigil: bytes 00
+MATCH | label FOO: after -D | args: -D FOO=5 | asl: refused rc=2 | sigil: refused rc=1 (label.asm(2):1: error: variables cannot be redefined as constants: `FOO`)
+MATCH | FOO := 7 after -D | args: -D FOO=5 | asl: bytes 07 | sigil: bytes 07
+MATCH | FOO eval 7 after -D | args: -D FOO=5 | asl: bytes 07 | sigil: bytes 07
+MATCH | use, set, use, 2 passes | args: -D FOO=5 | asl: bytes 050760000002 | sigil: bytes 050760000002
+MATCH | -D MOMCPU (a builtin) | args: -D MOMCPU=5 | asl: bytes 06 | sigil: bytes 06
+DIFFER | KNOWN: string value | args: -D FOO="A" | asl: bytes 41c1 | sigil: refused rc=2 (error: -D 'FOO="A"': FOO="A": a quoted value is not supported (asl accepts one, and emits different bytes for it on every run))
+DIFFER | KNOWN: char value | args: -D FOO='A' | asl: bytes 4d | sigil: refused rc=2 (error: -D 'FOO='A'': FOO='A': a quoted value is not supported (asl accepts one, and emits different bytes for it on every run))
+DIFFER | KNOWN: value 0b101 | args: -D FOO=0b101 | asl: bytes 05 | sigil: refused rc=2 (error: -D 'FOO=0b101': FOO=0b101: malformed number (hex needs a trailing `h`))
+DIFFER | KNOWN: value @17 | args: -D FOO=@17 | asl: bytes 0f | sigil: refused rc=2 (error: -D 'FOO=@17': FOO=@17: unexpected character '@')
+DIFFER | KNOWN: value $FFFFFFFFFFFFFFFF | args: -D FOO=$FFFFFFFFFFFFFFFF | asl: bytes ffffffff | sigil: refused rc=2 (error: -D 'FOO=$FFFFFFFFFFFFFFFF': FOO=$FFFFFFFFFFFFFFFF: malformed hex literal)
+DIFFER | KNOWN: leading-dot name, unused | args: -D .FOO=1 -D FOO=2 | asl: bytes 02 | sigil: refused rc=2 (error: -D '.FOO=1': '.FOO' starts with `.`, a local name no source line can read as this define)
+PARITY_END rows=79 match=73 differ=6

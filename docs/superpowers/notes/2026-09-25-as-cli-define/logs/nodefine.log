@@ -1,0 +1,19 @@
+tip:  sigil 0.1.0 (329bc9be) md5 a73fd0f428a3fa926a3a6777a611930f
+base: sigil 0.1.0 (1e146771) md5 774aada7dd20c061c789ba5c1d814d4d
+s1 tip: exit 0 stderr+stdout lines 2
+09dadb5071eb35050067a32462e39c5f  crc32=afe05eee  size=524288  /home/volence/sonic_hacks/.scratch/as-cli-define/s12/out/s1-tip.bin
+s1 base: exit 0 stderr+stdout lines 2
+09dadb5071eb35050067a32462e39c5f  crc32=afe05eee  size=524288  /home/volence/sonic_hacks/.scratch/as-cli-define/s12/out/s1-base.bin
+s1: tip == base
+s2 tip: exit 0 stderr+stdout lines 3
+9feeb724052c39982d432a7851c98d3e  crc32=7b905383  size=1048576  /home/volence/sonic_hacks/.scratch/as-cli-define/s12/out/s2-tip.bin
+s2 base: exit 0 stderr+stdout lines 3
+9feeb724052c39982d432a7851c98d3e  crc32=7b905383  size=1048576  /home/volence/sonic_hacks/.scratch/as-cli-define/s12/out/s2-base.bin
+s2: tip == base
+sk-wrapper tip: exit 0 stderr+stdout lines 1
+4ea493ea4e9f6c9ebfccbdb15110367e  crc32=0658f691  size=2097152  /home/volence/sonic_hacks/.scratch/as-cli-define/s12/out/sk-wrapper-tip.bin
+sk-wrapper base: exit 0 stderr+stdout lines 1
+4ea493ea4e9f6c9ebfccbdb15110367e  crc32=0658f691  size=2097152  /home/volence/sonic_hacks/.scratch/as-cli-define/s12/out/sk-wrapper-base.bin
+sk-wrapper: tip == base
+recorded: s1 09dadb5071eb35050067a32462e39c5f afe05eee; s2 9feeb724052c39982d432a7851c98d3e 7b905383; sk 4ea493ea4e9f6c9ebfccbdb15110367e 0658f691
+NODEFINE_END

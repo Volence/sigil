@@ -1605,6 +1605,7 @@ pub fn assemble_as_side(aeon: &Path, profile: &GameProfile) -> Result<AsSide, St
         defines,
         include_root: Some(aeon.to_path_buf()),
         guarded_defines,
+        cli_defines: Vec::new(),
     };
     // Every build CHAINS: sections move after assembly, so the residual AS must keep
     // section-label references SYMBOLIC to relocate (the row-94 parallax pointer).

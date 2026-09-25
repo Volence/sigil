@@ -1,0 +1,84 @@
+sigil worktree: pwd=/home/volence/sonic_hacks/sigil/.claude/worktrees/agent-a746dc1af1279ab3d HEAD=329bc9be7ea0c69c106741008e735aacef9d2167 branch=parcel/as-cli-define
+tip:  sigil 0.1.0 (329bc9be)   revision:  329bc9be7ea0c69c106741008e735aacef9d2167  md5 a73fd0f428a3fa926a3a6777a611930f
+base: sigil 0.1.0 (1e146771)   revision:  1e14677148765dd7f9fbd6fac4c18a86213547ec  md5 774aada7dd20c061c789ba5c1d814d4d
+0a4e468053abc841d867d130748629be  crc32=d00ce908  size=35594240  /home/volence/sonic_hacks/.scratch/as-cli-define/s3k/sk.tar
+  buildSK.lua: 28:common.build_rom_and_handle_failure("sonic3k", "skbuilt", "-D Sonic3_Complete=0", "-p=FF -z=0," .. compression .. ",Size_of_Snd_driver_guess,before -z=1300," .. compression .. ",Size_of_Snd_driver2_guess,before", false, "https://github.com/sonicretro/skdisasm")
+ref sk run 1 rc=0
+4ea493ea4e9f6c9ebfccbdb15110367e  crc32=0658f691  size=2097152  /home/volence/sonic_hacks/.scratch/as-cli-define/s3k/trees/ref-sk/skbuilt.bin
+ref sk run 2 rc=0
+4ea493ea4e9f6c9ebfccbdb15110367e  crc32=0658f691  size=2097152  /home/volence/sonic_hacks/.scratch/as-cli-define/s3k/trees/ref-sk/skbuilt.bin
+ref sk run 3 rc=0
+4ea493ea4e9f6c9ebfccbdb15110367e  crc32=0658f691  size=2097152  /home/volence/sonic_hacks/.scratch/as-cli-define/s3k/trees/ref-sk/skbuilt.bin
+  buildS3Complete.lua: 28:common.build_rom_and_handle_failure("sonic3k", "sonic3k", "-D Sonic3_Complete=1", "-p=FF -z=0," .. compression .. ",Size_of_Snd_driver_guess,before -z=1300," .. compression .. ",Size_of_Snd_driver2_guess,before", false, "https://github.com/sonicretro/skdisasm")
+ref s3c run 1 rc=0
+b23c88b46f5ec7377f1b6f109d97f5a5  crc32=a651623a  size=3360160  /home/volence/sonic_hacks/.scratch/as-cli-define/s3k/trees/ref-s3c/sonic3k.bin
+ref s3c run 2 rc=0
+b23c88b46f5ec7377f1b6f109d97f5a5  crc32=a651623a  size=3360160  /home/volence/sonic_hacks/.scratch/as-cli-define/s3k/trees/ref-s3c/sonic3k.bin
+ref s3c run 3 rc=0
+b23c88b46f5ec7377f1b6f109d97f5a5  crc32=a651623a  size=3360160  /home/volence/sonic_hacks/.scratch/as-cli-define/s3k/trees/ref-s3c/sonic3k.bin
+gen tree: 2791 files, 0 wrapper roots
+tip-sk-1: exit 0, stderr lines 0, error rows 0
+4ea493ea4e9f6c9ebfccbdb15110367e  crc32=0658f691  size=2097152  /home/volence/sonic_hacks/.scratch/as-cli-define/s3k/runs/tip-sk-1.bin
+reference: 2097152 bytes, crc32 0658f691
+candidate: 2097152 bytes, crc32 0658f691
+compare: 0 differing bytes, length mismatch False
+control: planted at [0, 1048576, 2097151], comparer reported [0, 1048576, 2097151]: OK
+control vs reference: 3 differing bytes (must be 3 when the compare is clean)
+compare sk run 1 rc=0
+tip-sk-2: exit 0, stderr lines 0, error rows 0
+4ea493ea4e9f6c9ebfccbdb15110367e  crc32=0658f691  size=2097152  /home/volence/sonic_hacks/.scratch/as-cli-define/s3k/runs/tip-sk-2.bin
+reference: 2097152 bytes, crc32 0658f691
+candidate: 2097152 bytes, crc32 0658f691
+compare: 0 differing bytes, length mismatch False
+control: planted at [0, 1048576, 2097151], comparer reported [0, 1048576, 2097151]: OK
+control vs reference: 3 differing bytes (must be 3 when the compare is clean)
+compare sk run 2 rc=0
+tip-sk-3: exit 0, stderr lines 0, error rows 0
+4ea493ea4e9f6c9ebfccbdb15110367e  crc32=0658f691  size=2097152  /home/volence/sonic_hacks/.scratch/as-cli-define/s3k/runs/tip-sk-3.bin
+reference: 2097152 bytes, crc32 0658f691
+candidate: 2097152 bytes, crc32 0658f691
+compare: 0 differing bytes, length mismatch False
+control: planted at [0, 1048576, 2097151], comparer reported [0, 1048576, 2097151]: OK
+control vs reference: 3 differing bytes (must be 3 when the compare is clean)
+compare sk run 3 rc=0
+tip-s3c-1: exit 0, stderr lines 0, error rows 0
+b23c88b46f5ec7377f1b6f109d97f5a5  crc32=a651623a  size=3360160  /home/volence/sonic_hacks/.scratch/as-cli-define/s3k/runs/tip-s3c-1.bin
+reference: 3360160 bytes, crc32 a651623a
+candidate: 3360160 bytes, crc32 a651623a
+compare: 0 differing bytes, length mismatch False
+control: planted at [0, 1680080, 3360159], comparer reported [0, 1680080, 3360159]: OK
+control vs reference: 3 differing bytes (must be 3 when the compare is clean)
+compare s3c run 1 rc=0
+tip-s3c-2: exit 0, stderr lines 0, error rows 0
+b23c88b46f5ec7377f1b6f109d97f5a5  crc32=a651623a  size=3360160  /home/volence/sonic_hacks/.scratch/as-cli-define/s3k/runs/tip-s3c-2.bin
+reference: 3360160 bytes, crc32 a651623a
+candidate: 3360160 bytes, crc32 a651623a
+compare: 0 differing bytes, length mismatch False
+control: planted at [0, 1680080, 3360159], comparer reported [0, 1680080, 3360159]: OK
+control vs reference: 3 differing bytes (must be 3 when the compare is clean)
+compare s3c run 2 rc=0
+tip-s3c-3: exit 0, stderr lines 0, error rows 0
+b23c88b46f5ec7377f1b6f109d97f5a5  crc32=a651623a  size=3360160  /home/volence/sonic_hacks/.scratch/as-cli-define/s3k/runs/tip-s3c-3.bin
+reference: 3360160 bytes, crc32 a651623a
+candidate: 3360160 bytes, crc32 a651623a
+compare: 0 differing bytes, length mismatch False
+control: planted at [0, 1680080, 3360159], comparer reported [0, 1680080, 3360159]: OK
+control vs reference: 3 differing bytes (must be 3 when the compare is clean)
+compare s3c run 3 rc=0
+tip-sk-late: exit 0, stderr lines 0, error rows 0
+4ea493ea4e9f6c9ebfccbdb15110367e  crc32=0658f691  size=2097152  /home/volence/sonic_hacks/.scratch/as-cli-define/s3k/runs/tip-sk-late.bin
+reference: 2097152 bytes, crc32 0658f691
+candidate: 2097152 bytes, crc32 0658f691
+compare: 0 differing bytes, length mismatch False
+control: planted at [0, 1048576, 2097151], comparer reported [0, 1048576, 2097151]: OK
+control vs reference: 3 differing bytes (must be 3 when the compare is clean)
+compare sk late-flag rc=0
+tip-sk-noD: exit 1, stderr lines 17, error rows 17
+  rows naming Sonic3_Complete, strip_padding or LockonHeader: 17
+base-sk-D: exit 2, stderr lines 9, error rows 1
+  error: unexpected argument '-D'
+  usage: sigil <input.asm> [-o <output.bin>] [--hex] [-p=<pad>]
+reference: 2097152 bytes, crc32 0658f691
+candidate: 3360160 bytes, crc32 a651623a
+compare: 1282377 differing bytes, length mismatch True
+S3K_DEFINE_END

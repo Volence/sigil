@@ -96,13 +96,18 @@ const ENTRIES: &[Entry] = &[
         usage: &[
             "usage: sigil <input.asm> [-o <output.bin>] [--hex] [-p=<pad>]",
             "                         [-z=<address>,<format>,<constant>,<before|after>]...",
+            "                         [-D NAME[=VALUE][,NAME[=VALUE]]...]...",
             "note:  -p and -z take p2bin's own spelling, so a build script's p2bin",
             "       instruction is passed as written. -p sets the byte every gap holds",
             "       (00 without it). Each -z places the Z80 code assembled at <address>",
             "       outside the image into the ROM, as <format>: uncompressed, kosinski",
             "       or saxman-bugged.",
+            "note:  -D is asl's: it defines each NAME as a set variable (VALUE is an",
+            "       integer expression, 1 when omitted) before every pass, so a later",
+            "       set may rebind it and a later =, equ or label of it is refused.",
+            "       When a NAME is given twice, its first VALUE stands.",
         ],
-        options: &[valued("-o"), flag("--hex"), attached("-p"), attached("-z")],
+        options: &[valued("-o"), flag("--hex"), attached("-p"), attached("-z"), valued("-D")],
         run: run_asm,
     },
     Entry {
@@ -474,7 +479,7 @@ fn unlisted_option<'a>(entry: &Entry, args: &'a [String]) -> Option<&'a str> {
     None
 }
 
-/// `sigil <input.asm> [-o <output.bin>] [--hex] [-p=<pad>] [-z=...]...`: assemble
+/// `sigil <input.asm> [-o <output.bin>] [--hex] [-p=<pad>] [-z=...]... [-D ...]...`: assemble
 /// one AS-syntax source file, write or print the image, and end stdout on a line
 /// saying how the run ended: [`emit_image`]'s `built:` line on success,
 /// [`fail_asm`]'s on failure.
@@ -486,6 +491,9 @@ fn run_asm(entry: &Entry, args: &[String]) {
     // p2bin) and every `-z` blob instruction, in the order given.
     let mut pad: Option<u8> = None;
     let mut blobs: Vec<sigil_link::BlobInstruction> = Vec::new();
+    // asl's `-D`, in its grammar: every pair of every flag, in the order given.
+    // A malformed one is a usage error, as asl stops at `Invalid option: -D`.
+    let mut cli_defines: Vec<(String, i64)> = Vec::new();
 
     let mut i = 0;
     while i < args.len() {
@@ -510,6 +518,13 @@ fn run_asm(entry: &Entry, args: &[String]) {
             },
             z if z == "-z" || z.starts_with("-z=") => match sigil_link::parse_blob(z) {
                 Ok(blob) => blobs.push(blob),
+                Err(e) => {
+                    eprintln!("error: {e}");
+                    process::exit(2);
+                }
+            },
+            "-D" => match sigil_frontend_as::cli_define::parse_define_arg(&flag_value(args, &mut i, "-D")) {
+                Ok(pairs) => cli_defines.extend(pairs),
                 Err(e) => {
                     eprintln!("error: {e}");
                     process::exit(2);
@@ -549,7 +564,7 @@ fn run_asm(entry: &Entry, args: &[String]) {
     // returns `Ok(Module)` and drops it, so the author's line would never reach
     // anyone — the failure mode is silent, which is the one the directive
     // exists to prevent.
-    let opts = sigil_frontend_as::Options::default();
+    let opts = sigil_frontend_as::Options { cli_defines, ..Default::default() };
     // The `SourceMap` is kept past the front end rather than dropped with the
     // `Assembled`: a LINK diagnostic carries a span into the same spliced files,
     // and rendering it without the map printed a bare `error: …` line that named

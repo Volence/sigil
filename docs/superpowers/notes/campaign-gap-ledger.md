@@ -6231,3 +6231,19 @@ delegates to the default hook everywhere else.
   mode); sigil refuses the same shapes at link with `(d8,PC,Xn) displacement out of range (N)`,
   a clearer text for the same verdict. Not a parity gap in bytes; noted in case a corpus-row
   diff ever keys on asl's wording. OPEN (no action)
+
+- [as-cli-define, 2026-09-25] **`-D` integer spellings asl's command line takes and sigil's source lexer does
+  not.** asl evaluates a `-D` value with every integer syntax at once: `0b101` is 5, `@17` is 15, and a hex
+  literal past `i64` wraps or truncates (`$FFFFFFFFFFFFFFFF` reads -1, `$10000000000000000` reads 0). sigil's
+  AS route folds the value with its own lexer and expression parser, which refuse all four, so `-D` refuses
+  them at the command line (exit 2, named). Loud. Probe rows `KNOWN:` in
+  `2026-09-25-as-cli-define/logs/parity-tip.log`. OPEN
+- [as-cli-define, 2026-09-25] **A quoted or float `-D` value is refused.** asl accepts `-D FOO="A"` and
+  `-D FOO='A'` and emits different bytes for the symbol on every run; `-D FOO=1.5` makes a float variable.
+  sigil refuses all three at the command line. Supporting them is an owner call (design fork recorded in the
+  note); nothing in the corpora needs it. OPEN
+- [as-cli-define, 2026-09-25] **`Options::defines` names are invisible to `defined()`.** `run_impl` seeds them
+  into the environment and not the defined-this-pass record, so `ifdef X` answers yes while `defined(X)`
+  answers 0 for the same define (measured: `dc.b defined(X)` then an `ifdef X` arm emits `00 01`).
+  `Options::cli_defines` goes through `define_sym` and emits `01 01`.
+  Aeon does not spell `defined(`; not changed, as ruled. OPEN
