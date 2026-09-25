@@ -92,3 +92,64 @@ reach a boundary without dispatching the next wave.
 
 Aeon-side handling that stays regardless: `evict_witness.py` prints both and goes with the ROM.
 Their full packet is at aeon `512548ce`, `docs/DEFERRED_WORK.md`.
+
+## LANDED: option 1, the engine-constants harvest is shape-aware (branch `parcel/listing-equ-shape-aware`, fix commit `df055bd1`)
+
+**What changed.** `harvest_engine_constants(aeon, profile)` now folds `engine/system/constants.emp`
+under `shape_defines(profile, aeon)`, the define set the `.emp` build lowers the same module under,
+instead of the hard-coded seed `[("STRESS_EVICT", 0)]`. `harvest_game_constants(aeon, rel, profile)`
+takes the profile too, because its engine seed was the same shape-blind fold (its `DEBUG` seed still
+reads `profile.debug`). The comment that said the harvested value "feeds the AS -D side only" is
+replaced by one naming all three readers. Option 2 was not touched: the listing's row set and
+published shape are unchanged.
+
+**Every consumer of the harvest's return value, enumerated by grep, not only the one in the report:**
+
+| consumer | reached through | shape-aware after the fix |
+|---|---|---|
+| residual AS comptime reads | `assemble_as_side` → `AsOptions.guarded_defines` → `eval.rs` seed env | yes |
+| guarded-name collision refusal | same → `eval.rs` guarded-define name set | names only, value-independent |
+| link `EquSym`s | `attach_guarded_equ_exports` (main and bonus module) → link symbol table, `blob.rs` `declared_size` | yes |
+| listing `EQU` rows | `resolved_equates` → `listing_from_resolved` → `emit_listing` | yes, the defect's row |
+| game-constant folds | `harvest_game_constants`' engine seed | yes |
+| `p5_constants_flip.rs`, `m1c_vector_table.rs` | direct calls | pass the plain sonic4 profile |
+
+**Byte impact, measured at aeon `ec640bcf`** (CRC32 zlib + size, before = master `6a4480d0`, after =
+`df055bd1`, every shape built to one output path so the digest's ROM-path line cannot differ):
+
+| shape | ROM before = after | listing |
+|---|---|---|
+| `s4` | `91c46c94/820209` | identical except the `DIGEST-ASSEMBLER` revision line |
+| `s4.debug` | `8a378de6/846509` | identical except the `DIGEST-ASSEMBLER` revision line |
+| `demo` | `1c7a34d3/96863` | identical except the `DIGEST-ASSEMBLER` revision line |
+| `demo.debug` | `72e405a5/103185` | identical except the `DIGEST-ASSEMBLER` revision line |
+| `stress_evict` | `6e3739dc/846509` | that line, plus `EQU PAGE_FRAMES_CLAMP = $0000000C` → `$00000009` |
+
+The `DIGEST-ASSEMBLER` line names the assembler's own revision, so it moves with any commit and is
+not a content change. `repin --check` prints `pins.rs unchanged`; nothing under `golden/`, `pins.rs`,
+`repin.toml` or `tests/repin_pins.rs` moved.
+
+**The gate.** `crates/sigil-harness/tests/listing_equ_shape_aware.rs` (runner:
+`cargo test --release -p sigil-harness --test listing_equ_shape_aware`, and the workspace suite)
+builds `stress_evict`, reads the one `cmpi.w #imm, d6` inside `Level_LoadArt` out of the image, folds
+`constants.emp` under the profile's `shape_defines`, and requires the published `EQU` row, the ROM
+immediate and the fold to agree, then checks every other harvested constant with an `EQU` row the
+same way. Non-vacuity: the stress fold must differ from the canonical debug fold, or the gate fails
+saying the fixture went inert. A build failure or a use site it cannot identify uniquely is a failure,
+not a skip. Red against the unfixed code and again against the mutation below (re-pinning the seed
+on disk, restored with `git checkout` from the committed fix):
+
+```
+-    let defines = shape_defines(profile, aeon)?;
++    let _ = profile;
++    let defines = vec![("STRESS_EVICT".to_string(), 0i128)];
+```
+
+```
+LISTING-EQU-SHAPE-BLIND: the stress listing publishes `EQU PAGE_FRAMES_CLAMP = $0000000C` but the
+ROM from the same build encodes `cmpi.w #$0009, d6` at $00902C.
+```
+
+**Aeon side.** `tools/evict_witness.py`'s "go with the ROM" handling stays correct and now sees the
+two agree. The aeon row can close once a sigil containing this fix is the installed assembler; that
+is aeon's call to make and is not changed here.
