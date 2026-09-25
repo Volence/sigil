@@ -1,0 +1,101 @@
+=== mutation run: pwd=/home/volence/sonic_hacks/sigil/.claude/worktrees/agent-a216a42e1f5962449 HEAD=c4ec39687a2218d9130e6b0adf2ffdf907f52c11 branch=parcel/as-multichar-squote
+--- M1 no operand is single-quoted: on-disk diff
+diff --git a/crates/sigil-frontend-as/src/eval.rs b/crates/sigil-frontend-as/src/eval.rs
+index ef249716..380c24c8 100644
+--- a/crates/sigil-frontend-as/src/eval.rs
++++ b/crates/sigil-frontend-as/src/eval.rs
+@@ -8738,7 +8738,7 @@ impl Asm {
+             return self.resolve_str_sym(name).is_some_and(|s| s.single_quoted);
+         }
+         let single = |t: Option<&Token>| matches!(t.map(|t| &t.tok), Some(Tok::Str(_, Quote::Single)));
+-        single(toks.first()) && single(toks.last())
++        false && single(toks.first()) && single(toks.last())
+     }
+ 
+     /// How a data directive whose elements are `width` bytes writes the operand
+
+M1 no operand is single-quoted: cargo rc=101 results=[('0', '3'), ('14', '0')] compile_error=False FAILED=['a_single_quoted_charset_target_with_no_packed_value_is_refused', 'every_case_matches_asl', 'refusals_name_their_reason']
+    thread 'a_single_quoted_charset_target_with_no_packed_value_is_refused' (1978924) panicked at crates/sigil-frontend-as/tests/as_single_quoted_string.rs:119:76:
+    thread 'refusals_name_their_reason' (1978926) panicked at crates/sigil-frontend-as/tests/as_single_quoted_string.rs:105:67:
+    thread 'every_case_matches_asl' (1978925) panicked at crates/sigil-frontend-as/tests/as_single_quoted_string.rs:87:5:
+    23 of 82 cases differ from asl:
+    w_fits: asl 4142, sigil 00410042
+    w_empty: asl 0000, sigil 
+    w_concat: asl 4142, sigil 00410042
+    w_concat_parens: asl 4142, sigil 00410042
+M1 no operand is single-quoted: restored from HEAD:crates/sigil-frontend-as/src/eval.rs, clean=True
+--- M2 the rule reads only the first token: on-disk diff
+diff --git a/crates/sigil-frontend-as/src/eval.rs b/crates/sigil-frontend-as/src/eval.rs
+index ef249716..7b61c60d 100644
+--- a/crates/sigil-frontend-as/src/eval.rs
++++ b/crates/sigil-frontend-as/src/eval.rs
+@@ -8738,7 +8738,7 @@ impl Asm {
+             return self.resolve_str_sym(name).is_some_and(|s| s.single_quoted);
+         }
+         let single = |t: Option<&Token>| matches!(t.map(|t| &t.tok), Some(Tok::Str(_, Quote::Single)));
+-        single(toks.first()) && single(toks.last())
++        single(toks.first())
+     }
+ 
+     /// How a data directive whose elements are `width` bytes writes the operand
+
+M2 the rule reads only the first token: cargo rc=101 results=[('2', '1'), ('14', '0')] compile_error=False FAILED=['every_case_matches_asl']
+    thread 'every_case_matches_asl' (1991128) panicked at crates/sigil-frontend-as/tests/as_single_quoted_string.rs:87:5:
+    9 of 82 cases differ from asl:
+    b_sum_zero_is_empty: asl ee, sigil 00ee
+    w_plus_int: asl 00410043, sigil 4143
+    w_plus_int_zero: asl 00410042, sigil 4142
+    w_paren_tail: asl 00410042, sigil 4142
+    w_double_tail: asl 00410042, sigil 4142
+    w_char_plus: asl 00010041, sigil 0141
+M2 the rule reads only the first token: restored from HEAD:crates/sigil-frontend-as/src/eval.rs, clean=True
+--- M3 Z80 dw zero-extends a character: on-disk diff
+diff --git a/crates/sigil-frontend-as/src/eval.rs b/crates/sigil-frontend-as/src/eval.rs
+index ef249716..4412fa56 100644
+--- a/crates/sigil-frontend-as/src/eval.rs
++++ b/crates/sigil-frontend-as/src/eval.rs
+@@ -20360,7 +20360,7 @@ impl DataUnit {
+             DataUnit::Byte => vec![b],
+             DataUnit::WordBe => vec![0, b],
+             DataUnit::LongBe => vec![0, 0, 0, b],
+-            DataUnit::WordLe => i16::from(b as i8).to_le_bytes().to_vec(),
++            DataUnit::WordLe => u16::from(b).to_le_bytes().to_vec(),
+         }
+     }
+ }
+
+M3 Z80 dw zero-extends a character: cargo rc=101 results=[('2', '1'), ('14', '0')] compile_error=False FAILED=['every_case_matches_asl']
+    thread 'every_case_matches_asl' (2005988) panicked at crates/sigil-frontend-as/tests/as_single_quoted_string.rs:87:5:
+    3 of 82 cases differ from asl:
+    z_dw_plus: asl 41004300c1ff, sigil 41004300c100
+    z_dw_sign: asl 99ff41007f0080ff, sigil 990041007f008000
+    z_dw_page: asl 99ff110022001199991122219922, sigil 9900110022001199991122219922
+M3 Z80 dw zero-extends a character: restored from HEAD:crates/sigil-frontend-as/src/eval.rs, clean=True
+--- M4 string+integer keeps the raw result bytes: on-disk diff
+diff --git a/crates/sigil-frontend-as/src/eval.rs b/crates/sigil-frontend-as/src/eval.rs
+index ef249716..ac9378db 100644
+--- a/crates/sigil-frontend-as/src/eval.rs
++++ b/crates/sigil-frontend-as/src/eval.rs
+@@ -3753,7 +3753,7 @@ impl Asm {
+         // LOWEST preimage is what the value holds: under `charset 'A',$11`
+         // alone, `('AB'+1)="\x11C"` is 1 and `('AB'+1)="AC"` is 0 (index $11 is
+         // below 'A'), and `lowstring('AB'+1)` is `11 63`.
+-        StrTyped::Str(out.into_iter().filter_map(|b| cs.lowest_preimage(b)).collect())
++        StrTyped::Str(out.into_iter().map(char::from).collect())
+     }
+ 
+     /// The ATOMS of a string expression: a literal, a string-valued symbol, or
+
+M4 string+integer keeps the raw result bytes: cargo rc=101 results=[('2', '1'), ('13', '1')] compile_error=False FAILED=['every_case_matches_asl', 'string_plus_integer_under_a_page_takes_the_lowest_preimage']
+    thread 'every_case_matches_asl' (2022418) panicked at crates/sigil-frontend-as/tests/as_single_quoted_string.rs:87:5:
+    2 of 82 cases differ from asl:
+    cs_plus_int_dropped: asl 11, sigil 1177
+    cs_target_string: asl 42, sigil 77
+    thread 'string_plus_integer_under_a_page_takes_the_lowest_preimage' (2022432) panicked at crates/sigil-frontend-as/tests/as_string_numeric_typing.rs:536:9:
+      left: [17, 119]
+M4 string+integer keeps the raw result bytes: restored from HEAD:crates/sigil-frontend-as/src/eval.rs, clean=True
+Traceback (most recent call last):
+  File "/home/volence/sonic_hacks/.scratch/as-squote/scripts/mutate.py", line 54, in <module>
+    assert n == 1, f"{name}: target occurs {n} times"
+           ^^^^^^
+AssertionError: M5 a string symbol forgets its quoting: target occurs 2 times

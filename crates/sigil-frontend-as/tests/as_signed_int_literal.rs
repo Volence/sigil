@@ -186,8 +186,8 @@ fn a_leading_plus_on_a_character_constant_is_refused() {
 /// A `Tok::Int` cannot say whether it came from numeric-literal syntax, so a
 /// builtin the evaluator folds to one integer before the parse looks like a
 /// literal here. asl sees the unfolded TEXT and raises `#1110` for all of them.
-/// ACCEPT-MORE in every case — sigil folds where asl refuses, never to a
-/// different value — so it cannot put a wrong byte in an image, and no source
+/// ACCEPT-MORE in every case: sigil folds where asl refuses, never to a
+/// different value, so it cannot put a wrong byte in an image, and no source
 /// carrying one of these shapes builds under asl at all.
 #[test]
 fn known_residual_a_packed_or_folded_int_also_takes_the_sign() {

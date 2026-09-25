@@ -1,0 +1,19 @@
+pwd=/home/volence/sonic_hacks/sigil/.claude/worktrees/agent-a216a42e1f5962449 date=2026-09-25T06:17:23-04:00
+luaref s1 run 1 rc=0
+09dadb5071eb35050067a32462e39c5f  crc32=afe05eee  size=524288  /home/volence/sonic_hacks/.scratch/as-squote/trees/luaref-s1/s1built.bin
+luaref s2 run 1 rc=0
+9feeb724052c39982d432a7851c98d3e  crc32=7b905383  size=1048576  /home/volence/sonic_hacks/.scratch/as-squote/trees/luaref-s2/s2built.bin
+luaref sk run 1 rc=0
+4ea493ea4e9f6c9ebfccbdb15110367e  crc32=0658f691  size=2097152  /home/volence/sonic_hacks/.scratch/as-squote/trees/luaref-sk/skbuilt.bin
+luaref s3c run 1 rc=0
+b23c88b46f5ec7377f1b6f109d97f5a5  crc32=a651623a  size=3360160  /home/volence/sonic_hacks/.scratch/as-squote/trees/luaref-s3c/sonic3k.bin
+luaref s3 run 1 rc=0
+d724ea4dd417fe330c9dcfd955c596b2  crc32=9bc192ce  size=2097152  /home/volence/sonic_hacks/.scratch/as-squote/trees/luaref-s3/s3built.bin
+luaref s3 run 2 rc=0
+d724ea4dd417fe330c9dcfd955c596b2  crc32=9bc192ce  size=2097152  /home/volence/sonic_hacks/.scratch/as-squote/trees/luaref-s3/s3built.bin
+luaref s3 run 3 rc=0
+d724ea4dd417fe330c9dcfd955c596b2  crc32=9bc192ce  size=2097152  /home/volence/sonic_hacks/.scratch/as-squote/trees/luaref-s3/s3built.bin
+s1-gen: 980 files
+s2-gen: 1232 files
+sk-gen: 2791 files
+MKTREES_END

@@ -1,0 +1,125 @@
+=== mutation run: pwd=/home/volence/sonic_hacks/sigil/.claude/worktrees/agent-a216a42e1f5962449 HEAD=c4ec39687a2218d9130e6b0adf2ffdf907f52c11 branch=parcel/as-multichar-squote
+--- M5 a string symbol forgets its quoting (equ and set both): on-disk diff
+diff --git a/crates/sigil-frontend-as/src/eval.rs b/crates/sigil-frontend-as/src/eval.rs
+index ef249716..5859d09c 100644
+--- a/crates/sigil-frontend-as/src/eval.rs
++++ b/crates/sigil-frontend-as/src/eval.rs
+@@ -8136,7 +8136,7 @@ impl Asm {
+         };
+         if let Some(s) = bound {
+             self.float_env.remove(&q);
+-            let single_quoted = self.single_quoted_operand(rest);
++            let single_quoted = false && self.single_quoted_operand(rest);
+             self.str_env.insert(q, StrSym { text: s, single_quoted });
+             self.open_binder_scope(name);
+             return;
+@@ -8529,7 +8529,7 @@ impl Asm {
+         };
+         if let Some(s) = bound {
+             self.float_env.remove(&q);
+-            let single_quoted = self.single_quoted_operand(rest);
++            let single_quoted = false && self.single_quoted_operand(rest);
+             self.str_env.insert(q, StrSym { text: s, single_quoted });
+             self.open_binder_scope(name);
+             return;
+
+M5 a string symbol forgets its quoting (equ and set both): cargo rc=101 results=[('2', '1'), ('14', '0')] compile_error=False FAILED=['every_case_matches_asl']
+    thread 'every_case_matches_asl' (2089068) panicked at crates/sigil-frontend-as/tests/as_single_quoted_string.rs:87:5:
+    6 of 82 cases differ from asl:
+    sym_equ: asl 414241424142, sigil 00410042414200410042
+    sym_equ_concat: asl 4142, sigil 00410042
+    sym_copy: asl 4142, sigil 00410042
+    sym_set: asl 4142203c00004142, sigil 00410042203c00004142
+    cs_symbol_before_page: asl 99119911, sigil 991100990011
+    cs_symbol_after_reset: asl 43414341, sigil 434100430041
+M5 a string symbol forgets its quoting (equ and set both): restored from HEAD:crates/sigil-frontend-as/src/eval.rs, clean=True
+--- M6 a single-quoted charset target is a table: on-disk diff
+diff --git a/crates/sigil-frontend-as/src/eval.rs b/crates/sigil-frontend-as/src/eval.rs
+index ef249716..9b341919 100644
+--- a/crates/sigil-frontend-as/src/eval.rs
++++ b/crates/sigil-frontend-as/src/eval.rs
+@@ -9526,7 +9526,7 @@ impl Asm {
+                 // `charset 'A','B'+0` (a string by the operand rule) maps it to
+                 // the raw `$42`; `charset $41,'BC'` is `#1320 range overflow`, not
+                 // a two-entry table.
+-                if self.single_quoted_operand(groups[1]) {
++                if false && self.single_quoted_operand(groups[1]) {
+                     let len = self.eval_str(groups[1]).map(|s| s.chars().count());
+                     if matches!(len, Some(n) if n == 0 || n > MAX_PACKED_STR_BYTES) {
+                         self.err(span, CHARSET_UNPACKABLE_TARGET);
+
+M6 a single-quoted charset target is a table: cargo rc=101 results=[('0', '3'), ('14', '0')] compile_error=False FAILED=['a_single_quoted_charset_target_with_no_packed_value_is_refused', 'every_case_matches_asl', 'refusals_name_their_reason']
+    thread 'a_single_quoted_charset_target_with_no_packed_value_is_refused' (2108485) panicked at crates/sigil-frontend-as/tests/as_single_quoted_string.rs:119:76:
+    thread 'refusals_name_their_reason' (2108488) panicked at crates/sigil-frontend-as/tests/as_single_quoted_string.rs:105:67:
+    thread 'every_case_matches_asl' (2108487) panicked at crates/sigil-frontend-as/tests/as_single_quoted_string.rs:87:5:
+    2 of 82 cases differ from asl:
+    cs_target_char: asl 7777, sigil 4242
+    r_charset_two: asl refused #1320, sigil 
+M6 a single-quoted charset target is a table: restored from HEAD:crates/sigil-frontend-as/src/eval.rs, clean=True
+--- M7 include opens a single-quoted path: on-disk diff
+diff --git a/crates/sigil-frontend-as/src/eval.rs b/crates/sigil-frontend-as/src/eval.rs
+index ef249716..c744046d 100644
+--- a/crates/sigil-frontend-as/src/eval.rs
++++ b/crates/sigil-frontend-as/src/eval.rs
+@@ -4795,7 +4795,7 @@ impl Asm {
+     /// than opened.
+     fn quoted_path(&mut self, rest: &[Token], directive: &str, span: Span) -> Option<String> {
+         let found = rest.iter().find_map(|t| match &t.tok {
+-            Tok::Str(s, Quote::Double) => Some(s.clone()),
++            Tok::Str(s, _) => Some(s.clone()),
+             _ => None,
+         });
+         if found.is_none() {
+
+M7 include opens a single-quoted path: cargo rc=101 results=[('2', '1'), ('14', '0')] compile_error=False FAILED=['refusals_name_their_reason']
+    thread 'refusals_name_their_reason' (2121835) panicked at crates/sigil-frontend-as/tests/as_single_quoted_string.rs:106:9:
+    r_include: refusal does not say "include needs a double-quoted path": cannot include /tmp/.tmpAPCqCB/p.inc: No such file or directory (os error 2)
+M7 include opens a single-quoted path: restored from HEAD:crates/sigil-frontend-as/src/eval.rs, clean=True
+--- M8 the fit is strictly shorter than the element: on-disk diff
+diff --git a/crates/sigil-frontend-as/src/eval.rs b/crates/sigil-frontend-as/src/eval.rs
+index ef249716..5d07903a 100644
+--- a/crates/sigil-frontend-as/src/eval.rs
++++ b/crates/sigil-frontend-as/src/eval.rs
+@@ -8765,7 +8765,7 @@ impl Asm {
+     fn data_string_value(&self, s: &str, single_quoted: bool, width: usize) -> DataStr {
+         let cs = &self.state.charset;
+         let bytes: Vec<u8> = s.chars().map(|c| cs.map_char(c)).collect();
+-        if single_quoted && bytes.len() <= width {
++        if single_quoted && bytes.len() < width {
+             DataStr::Packed(bytes.iter().fold(0i64, |v, b| (v << 8) | i64::from(*b)))
+         } else {
+             DataStr::Chars(bytes)
+
+M8 the fit is strictly shorter than the element: cargo rc=101 results=[('2', '1'), ('14', '0')] compile_error=False FAILED=['every_case_matches_asl']
+    thread 'every_case_matches_asl' (2135409) panicked at crates/sigil-frontend-as/tests/as_single_quoted_string.rs:87:5:
+    14 of 82 cases differ from asl:
+    w_fits: asl 4142, sigil 00410042
+    w_concat: asl 4142, sigil 00410042
+    w_concat_parens: asl 4142, sigil 00410042
+    w_parens: asl 4142, sigil 00410042
+    sym_equ: asl 414241424142, sigil 00410042414200410042
+    sym_equ_concat: asl 4142, sigil 00410042
+M8 the fit is strictly shorter than the element: restored from HEAD:crates/sigil-frontend-as/src/eval.rs, clean=True
+--- M9 the highest preimage instead of the lowest: on-disk diff
+diff --git a/crates/sigil-frontend-as/src/charset.rs b/crates/sigil-frontend-as/src/charset.rs
+index 3c9836bd..c06bc7ce 100644
+--- a/crates/sigil-frontend-as/src/charset.rs
++++ b/crates/sigil-frontend-as/src/charset.rs
+@@ -163,7 +163,7 @@ impl CodePage {
+     /// maps to it. This is how asl turns the bytes of a `string + integer`
+     /// result back into characters (`eval.rs::str_plus_int`).
+     pub fn lowest_preimage(&self, b: u8) -> Option<char> {
+-        self.map.iter().position(|&t| t == b).map(|i| char::from(i as u8))
++        self.map.iter().rposition(|&t| t == b).map(|i| char::from(i as u8))
+     }
+ 
+     /// Translate one source character to its byte.
+
+M9 the highest preimage instead of the lowest: cargo rc=101 results=[('2', '1'), ('13', '1')] compile_error=False FAILED=['every_case_matches_asl', 'string_plus_integer_under_a_page_takes_the_lowest_preimage']
+    thread 'every_case_matches_asl' (2143129) panicked at crates/sigil-frontend-as/tests/as_single_quoted_string.rs:87:5:
+    1 of 82 cases differ from asl:
+    cs_target_string: asl 42, sigil 77
+    thread 'string_plus_integer_under_a_page_takes_the_lowest_preimage' (2143143) panicked at crates/sigil-frontend-as/tests/as_string_numeric_typing.rs:536:9:
+      left: [1, 0]
+M9 the highest preimage instead of the lowest: restored from HEAD:crates/sigil-frontend-as/src/charset.rs, clean=True
+MUTATIONS_END
