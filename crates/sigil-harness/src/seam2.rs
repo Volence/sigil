@@ -1332,9 +1332,10 @@ pub struct MtBank {
 
 /// Lower + co-link `mt_bank.emp` at the map-derived bank pin (`$58628`) and return
 /// the bank body + the `SongTable`/`SongPatchTable` addresses. Supplies the same
-/// THREE cross-seam carriers `mt_port.rs` does — `MovingTrucks_Bank_Start` (label @
-/// the `sound_bank` anchor) + `SONG_MOVINGTRUCKS`=1 + `SONG_COUNT` (1 plain / 3 debug) —
-/// and checks the module's 7 link asserts (5 co-residency + 2 drift guards) all
+/// THREE cross-seam carriers `mt_port.rs` does ([`mt_bank_carrier_asm`]):
+/// `MovingTrucks_Bank_Start` (label @ the `sound_bank` anchor) + `SONG_MOVINGTRUCKS`
+/// + `SONG_COUNT`, both resolved from `games.sonic4.sound_ids` under the shape's
+/// `DEBUG`, and checks the module's 7 link asserts (5 co-residency + 2 drift guards) all
 /// PASS. Byte-deterministic from the tracked `.emp` + its embeds.
 pub fn emit_mt_bank(aeon: &Path, debug: bool) -> Result<MtBank, String> {
     emit_mt_bank_in(aeon, None, debug)
@@ -1383,10 +1384,14 @@ fn emit_mt_bank_at(
     }
     let link_asserts = module.link_asserts.clone();
 
+    // The `mt_bank` region runs from its LMA to the top of the sound bank's `$8000`
+    // window, the ceiling every in-bank artifact must fit under (mt_port.rs sizes
+    // its region the same way).
+    let mt_bank_room = mt_bank_room(bank_start, mt_bank_lma)?;
     let map_toml = format!(
         "fill = 0x00\n\n\
          [[region]]\nname = \"text\"\nlma_base = 0x0000\nsize = 0x10\nkind = \"rom\"\n\n\
-         [[region]]\nname = \"mt_bank\"\nlma_base = 0x{mt_bank_lma:X}\nsize = 0x79F9\nkind = \"rom\"\n"
+         [[region]]\nname = \"mt_bank\"\nlma_base = 0x{mt_bank_lma:X}\nsize = 0x{mt_bank_room:X}\nkind = \"rom\"\n"
     );
     let map = sigil_link::load_map(&map_toml).map_err(|d| format!("map load: {d:?}"))?;
     let mut sections = module.sections;
@@ -1396,13 +1401,10 @@ fn emit_mt_bank_at(
     }
 
     // The cross-seam carrier: MovingTrucks_Bank_Start label @ the caller-supplied
-    // `sound_bank` anchor VMA (where the head bank lands — the SAME bank mt_bank
-    // lands in) + the two song-id equs the drift guards read (SONG_COUNT is
-    // shape-dependent, per sound_ids.asm).
-    let song_count = if debug { 3 } else { 1 };
-    let carrier_asm = format!(
-        "cpu 68000\nphase ${bank_start:X}\nMovingTrucks_Bank_Start:\n\tdc.w 0\nSONG_MOVINGTRUCKS = 1\nSONG_COUNT = {song_count}\n"
-    );
+    // `sound_bank` anchor VMA (where the head bank lands, the SAME bank mt_bank
+    // lands in) + the two song-id equs the drift guards read, resolved from their
+    // authority under this shape's DEBUG.
+    let carrier_asm = mt_bank_carrier_asm(aeon, debug, bank_start)?;
     let mut carriers = assemble(
         &carrier_asm,
         &AsOptions { initial_cpu: Some(Cpu::M68000), ..AsOptions::default() },
@@ -1439,6 +1441,82 @@ fn emit_mt_bank_at(
     let song_table_off = off("SongTable")?;
     let song_patch_table_off = off("SongPatchTable")?;
     Ok(MtBank { bytes, song_table_off, song_patch_table_off })
+}
+
+/// The Sonic 4 song-id module, relative to the aeon tree: the sole authority for
+/// `SONG_MOVINGTRUCKS` and `SONG_COUNT`, the two values `mt_bank.emp`'s drift guards
+/// read cross-seam (`ensure(extern("SONG_COUNT") == SONG_COUNT, ..)`).
+pub const SOUND_IDS_REL: &str = "games/sonic4/config/sound_ids.emp";
+
+/// The song-id values the `mt_bank` cross-seam carrier supplies, as resolved from
+/// [`SOUND_IDS_REL`] in one build shape.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SongIdCarrier {
+    /// `SONG_MOVINGTRUCKS`, the id `mt_bank.emp`'s typed local mirror is guarded against.
+    pub song_movingtrucks: i64,
+    /// `SONG_COUNT`, the shape-dependent count that sizes `SongTable`/`SongPatchTable`.
+    pub song_count: i64,
+}
+
+/// Resolve [`SongIdCarrier`] from the aeon tree's song-id authority under the
+/// shape's `DEBUG` (`SONG_COUNT` is `if DEBUG == 1 { .. } else { .. }` there). The
+/// module's `pub const`s go through the real evaluator, so adding a song is an
+/// aeon-only change: the carrier supplies whatever count the authority declares.
+pub fn song_id_carrier(aeon: &Path, debug: bool) -> Result<SongIdCarrier, String> {
+    let path = aeon.join(SOUND_IDS_REL);
+    let src = sigil_span::read_set::read_to_string(&path).map_err(|e| format!("read {}: {e}", path.display()))?;
+    song_id_carrier_from_src(aeon, &src, debug)
+}
+
+/// [`song_id_carrier`]'s core over the authority's source text.
+fn song_id_carrier_from_src(aeon: &Path, src: &str, debug: bool) -> Result<SongIdCarrier, String> {
+    let (file, pdiags) = parse_str(src);
+    if pdiags.iter().any(|d| d.level == sigil_span::Level::Error) {
+        return Err(format!("{SOUND_IDS_REL} parse errors: {pdiags:?}"));
+    }
+    let defines = [("DEBUG".to_string(), if debug { 1 } else { 0 })];
+    let (vals, diags) = sigil_frontend_emp::eval::eval_all_pub_consts(&file, Some(aeon), &defines);
+    if diags.iter().any(|d| d.level == sigil_span::Level::Error) {
+        return Err(format!(
+            "{SOUND_IDS_REL} pub-const resolve errors: {:?}",
+            diags.iter().filter(|d| d.level == sigil_span::Level::Error).collect::<Vec<_>>()
+        ));
+    }
+    let get = |name: &str| -> Result<i64, String> {
+        vals.iter().find(|(n, _)| n == name).map(|(_, v)| *v).ok_or_else(|| {
+            format!("{SOUND_IDS_REL} must define `pub const {name}` (mt_bank.emp's drift guard reads it)")
+        })
+    };
+    Ok(SongIdCarrier { song_movingtrucks: get("SONG_MOVINGTRUCKS")?, song_count: get("SONG_COUNT")? })
+}
+
+/// The AS source of the `mt_bank` cross-seam carrier: `MovingTrucks_Bank_Start`
+/// `phase`d to `bank_start`, plus the `SONG_MOVINGTRUCKS`/`SONG_COUNT` equs.
+fn carrier_asm_for(ids: SongIdCarrier, bank_start: u32) -> String {
+    format!(
+        "cpu 68000\nphase ${bank_start:X}\nMovingTrucks_Bank_Start:\n\tdc.w 0\nSONG_MOVINGTRUCKS = {}\nSONG_COUNT = {}\n",
+        ids.song_movingtrucks, ids.song_count
+    )
+}
+
+/// The `mt_bank` cross-seam carrier source for one shape: the bank-start label at
+/// `bank_start` and the two song-id equs `mt_bank.emp`'s drift guards read,
+/// resolved from the tree at `aeon` ([`song_id_carrier`]). Every harness and test
+/// site that co-links `mt_bank.emp` supplies its carrier through this.
+pub fn mt_bank_carrier_asm(aeon: &Path, debug: bool, bank_start: u32) -> Result<String, String> {
+    Ok(carrier_asm_for(song_id_carrier(aeon, debug)?, bank_start))
+}
+
+/// The room the `mt_bank` region has: from its LMA to the top of the `$8000` bank
+/// window that starts at `bank_start`.
+fn mt_bank_room(bank_start: u32, mt_bank_lma: u32) -> Result<u32, String> {
+    let top = bank_start + BANK_WINDOW_SIZE;
+    if mt_bank_lma < bank_start || mt_bank_lma >= top {
+        return Err(format!(
+            "mt_bank LMA ${mt_bank_lma:X} is outside the sound bank window [${bank_start:X}, ${top:X})"
+        ));
+    }
+    Ok(top - mt_bank_lma)
 }
 
 /// Emit the Moving-Trucks bank build inputs to `out_dir` as a THREE-WAY SPLIT per
@@ -1557,5 +1635,46 @@ when = \"sound_on\"
         let doctored = GOOD_MAP.replace("\"Song_MovingTrucks\", ", "");
         let err = bank_anchors_from_str(&doctored, None).unwrap_err();
         assert!(err.contains("Song_MovingTrucks"), "got: {err}");
+    }
+
+    /// The `mt_bank` carrier follows the aeon tree's song-id authority: the real
+    /// `sound_ids.emp` with its `SONG_COUNT` line rewritten to counts that differ
+    /// from the tree's in BOTH shapes, and the carrier text must supply the rewritten
+    /// counts. A carrier that restates a count instead of reading it goes red here.
+    #[test]
+    fn mt_bank_carrier_song_count_follows_the_authority() {
+        let Some(aeon) = crate::test_support::reference_tree(&[SOUND_IDS_REL]) else {
+            return;
+        };
+        let src = std::fs::read_to_string(aeon.join(SOUND_IDS_REL)).expect("read sound_ids.emp");
+        let base_plain = song_id_carrier_from_src(&aeon, &src, false).expect("plain shape resolves");
+        let base_debug = song_id_carrier_from_src(&aeon, &src, true).expect("debug shape resolves");
+
+        let (want_plain, want_debug) = (base_plain.song_count + 1, base_debug.song_count + 2);
+        let lines: Vec<&str> = src.lines().filter(|l| l.trim_start().starts_with("pub const SONG_COUNT ")).collect();
+        assert_eq!(lines.len(), 1, "sound_ids.emp must declare `pub const SONG_COUNT` exactly once");
+        let mutated_line = format!("pub const SONG_COUNT = if DEBUG == 1 {{ {want_debug} }} else {{ {want_plain} }}");
+        let mutated = src.replacen(lines[0], &mutated_line, 1);
+        assert!(mutated.contains(&mutated_line), "the SONG_COUNT rewrite must apply");
+
+        for (debug, want, base) in [(false, want_plain, base_plain), (true, want_debug, base_debug)] {
+            let got = song_id_carrier_from_src(&aeon, &mutated, debug).expect("mutated authority resolves");
+            assert_eq!(got.song_count, want, "debug={debug}: SONG_COUNT must follow the authority");
+            assert_eq!(got.song_movingtrucks, base.song_movingtrucks, "debug={debug}: SONG_MOVINGTRUCKS untouched");
+            let asm = carrier_asm_for(got, 0xB8000);
+            assert!(
+                asm.contains(&format!("\nSONG_COUNT = {want}\n")),
+                "debug={debug}: the carrier must supply SONG_COUNT = {want}, got:\n{asm}"
+            );
+        }
+    }
+
+    /// The `mt_bank` region reaches exactly to the top of the sound bank window.
+    #[test]
+    fn mt_bank_room_reaches_the_bank_window_top() {
+        assert_eq!(mt_bank_room(0xB8000, 0xB8628).unwrap(), 0xC0000 - 0xB8628);
+        assert_eq!(mt_bank_room(0xB8000, 0xB8000).unwrap(), BANK_WINDOW_SIZE);
+        assert!(mt_bank_room(0xB8000, 0xC0000).is_err(), "an LMA at the window top has no room");
+        assert!(mt_bank_room(0xB8000, 0xB7FF8).is_err(), "an LMA below the window is outside it");
     }
 }
