@@ -174,7 +174,7 @@ fn sections(aeon: &std::path::Path) -> Vec<(&'static str, &'static str, Region, 
         // `use engine.bg.{BG_LAYOUT_SIZE}` — the module's BG-layout embed is
         // TYPED `[u8; BG_LAYOUT_SIZE]` (the length is the guard against a
         // wrong-geometry blob), so the standalone lower needs that one const.
-        // `use games.sonic4.ojz_clip_act_act1.{OJZ_CLIP_ACT}` — the clip-act switch
+        // `use games.sonic4.ojz_clip_act_act1.{OJZ_CLIP_ACT}`: the clip-act switch
         // its DEBUG test backgrounds are gated on (`clip_act_const_src`).
         "games/sonic4/data/levels/ojz/act1/act_assets.emp",
         "ojz_act_assets",
