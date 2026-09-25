@@ -775,3 +775,12 @@ points at it rather than restating it, so there is one copy to keep true.
   note flagged the cache half (the sound fold check covers MT/SFX addresses, not DAC bank ids). Add a
   link-time check, proven red by moving a bank. Needed by `d-35-revised` either way; worth doing
   alone. Source: aeon 3f208336, docs/research/2026-09-25-clip-own-anchor-pricing.md.
+
+### AS-REGISTER-SPELLED-LABEL-SILENT
+
+- state: **open**  size: `S`  project: `SIGIL-AS-REPLACEMENT`
+- With a label named like a register (`A1:`), sigil assembles `#A1+Lab2` where the pinned asl refuses
+  it as a register, so a program asl rejects builds here with a value. Pre-existing, measured by the
+  `$$` parcel with a `$$`-free control: `docs/superpowers/notes/2026-09-25-s3k-dollar-labels.md` and
+  its gap-ledger rows (which also carry the `.`-local scope not following `cpu`/`padding`/`supmode`/
+  `listing`/`restore`/`endstruct` as asl's does).
