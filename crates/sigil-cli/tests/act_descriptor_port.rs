@@ -264,8 +264,12 @@ fn as_seam_equs(debug: bool) -> Vec<Section> {
     // it is the debug shape's link that references it; the sweep carries it in
     // both because a supplied label the scope does not reference is inert while a
     // missing one is a red gate.
+    //
+    // `OJZ_Preset_` is the whole act preset family: the generated per-section
+    // `OJZ_Preset_Sec*` and the named presets (`_Plain`, `_Depth`, `_Night`, ...) the
+    // descriptor's region rows bind, which join as aeon authors them.
     const GENERATED: &[&str] =
-        &["EditorRaster_", "EditorCycle_", "EditorSceneBinding_", "EditorReel", "OJZ_Preset_Sec"];
+        &["EditorRaster_", "EditorCycle_", "EditorSceneBinding_", "EditorReel", "OJZ_Preset_"];
     let mut labels: Vec<(String, u32, u32)> =
         LABELS.iter().map(|(n, p, d)| ((*n).to_string(), *p, *d)).collect();
     let seen: std::collections::HashSet<String> =
@@ -283,6 +287,17 @@ fn as_seam_equs(debug: bool) -> Vec<Section> {
             panic!("`{name}` is in the plain listing but not the debug one")
         });
         labels.push((name, plain, d));
+    }
+    // The act's BG assets (`OJZ_Act1_BG_*`), swept from THIS shape's listing only: the
+    // descriptor's DEBUG-shape test backgrounds exist in the debug ROM alone, so the
+    // plain/debug pairing the generated sweep above checks does not apply to them. Rows
+    // already carried keep their pinned value.
+    let seen: std::collections::HashSet<String> =
+        labels.iter().map(|(n, _, _)| n.clone()).collect();
+    for (name, v) in sigil_harness::test_support::listing_symbols_with_prefix(debug, &["OJZ_Act1_BG_"]) {
+        if !seen.contains(&name) {
+            labels.push((name, v, v));
+        }
     }
 
     for (name, plain, dbg) in &labels {
