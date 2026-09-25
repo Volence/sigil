@@ -1359,6 +1359,20 @@ struct Asm {
     /// Persists across `enum` — only `enumconf` changes it (probe q12).
     enum_step: i64,
     scope: Option<String>,
+    /// The scope a `$$name` temporary symbol is keyed by: the bare name of the
+    /// most recent NON-temporary symbol this pass wrote. Empty before the first.
+    ///
+    /// It is asl's one "last global symbol", the same one that qualifies a
+    /// `.`-local, and it is written by the same events: [`Self::define_label`]'s
+    /// plain branch and [`Self::open_scope`] (a value binder, the `label`
+    /// directive, the last `enum` member), plus the directives that bind one of
+    /// asl's own symbols ([`Self::open_temp_scope`]). Unlike
+    /// [`Self::scope`] it has no expansion-private value and is never restored
+    /// when an expansion returns: asl reads it straight through a body (a body
+    /// that writes no label reads the caller's `$$x`) and a body's label is
+    /// still the scope after the call (a caller's `$$x` is then `#1010`).
+    /// Probes `d01`..`k07` in the 2026-09-25 `$$` note.
+    temp_scope: String,
     /// The scope in force where the OUTERMOST macro expansion currently on the
     /// stack was invoked — the nearest scope that is not itself an expansion.
     /// `None` outside any expansion, where [`Self::scope`] is already that scope.
@@ -1986,6 +2000,7 @@ impl Asm {
             enum_next: 0,
             enum_step: 1,
             scope: None,
+            temp_scope: String::new(),
             outer_scope: None,
             scope_epoch: 0,
             dot_label_cache: std::collections::BTreeMap::new(),
@@ -2390,7 +2405,7 @@ impl Asm {
                 // Only a `.`-local, or a plain name a live expansion owns,
                 // qualifies to something other than itself. Anything else has
                 // already been looked up above under its own key.
-                if !n.starts_with('.') && self.plain_label_scope(n).is_none() {
+                if !n.starts_with('.') && !is_temp_sym(n) && self.plain_label_scope(n).is_none() {
                     return false;
                 }
                 let key = self.sym_key(n);
@@ -2485,6 +2500,9 @@ impl Asm {
     }
 
     fn sym_key(&self, name: &str) -> String {
+        if is_temp_sym(name) {
+            return self.temp_sym_key(name);
+        }
         let q = if name.starts_with('.') {
             qualify(name, self.dot_scope(name))
         } else {
@@ -3327,7 +3345,7 @@ impl Asm {
     fn resolve_float_sym(&self, name: &str) -> Option<f64> {
         // The same key the assignment wrote, built by the same function, so a
         // reader can never disagree with its writer about where a name lives.
-        let key = qualify(name, self.dot_scope(name));
+        let key = self.value_ref_key(name);
         self.float_env.get(&key).copied()
     }
 
@@ -3515,7 +3533,7 @@ impl Asm {
     fn resolve_str(&self, name: &str) -> Option<String> {
         // The same key `directive_set` wrote, built by the same function, so a
         // reader can never disagree with its writer about where a name lives.
-        let key = qualify(name, self.dot_scope(name));
+        let key = self.value_ref_key(name);
         self.str_env.get(&key).cloned()
     }
 
@@ -4039,9 +4057,13 @@ impl Asm {
     fn defined_arg_is_defined(&self, args: &[Vec<Token>]) -> bool {
         match args {
             [one] => match &one[..] {
+                // A `$$name` is never DEFINED to asl, even on the line after its
+                // own label (probe `j01`: `defined($$x)` and `defined($$v)` are
+                // both 0 there, `defined(A1)` is 1). `ifdef` says the same
+                // ([`Self::cond_defined`]).
                 [Token {
                     tok: Tok::Ident(n), ..
-                }] => self.sym_defined_now(n),
+                }] => !is_temp_sym(n) && self.sym_defined_now(n),
                 _ => false,
             },
             _ => false,
@@ -6521,6 +6543,8 @@ impl Asm {
             }
         }
         self.define_struct_member(&name, sep, "len", off, span);
+        // `Str_len` is the scope after `endstruct` (probe `h01`, `Str_len.l12`).
+        self.open_temp_scope(&format!("{name}{sep}len"));
         self.structs.insert(name, StructDef { sep, len: off, elems });
         end + 1
     }
@@ -6754,8 +6778,11 @@ impl Asm {
         }
     }
 
+    /// `ifdef $$x` is false and `ifndef $$y` true whether or not the `$$`
+    /// name is bound, as asl's `DEFINED` is 0 for one (probe `i07`: `2222`,
+    /// and no `1111`, with `$$x:` two lines above).
     fn cond_defined(&self, arg_toks: &[Token]) -> bool {
-        matches!(arg_toks.first().map(|t| &t.tok), Some(Tok::Ident(n)) if self.resolve_sym(n).is_some())
+        matches!(arg_toks.first().map(|t| &t.tok), Some(Tok::Ident(n)) if !is_temp_sym(n) && self.resolve_sym(n).is_some())
     }
 
     /// `if MOMCPUNAME="Z80"` / `<lhs>="str"` / `"a"="a"` / `"a"<>"b"` string
@@ -6917,8 +6944,9 @@ impl Asm {
         // A `.`-local `label` qualifies against the CALLER's real scope, not the
         // expansion's — it is a value-binding form, and those all land in the
         // caller (see [`Self::real_scope`]). A global one OPENS its scope there.
-        let qualified = if name.starts_with('.') {
-            qualify(name, self.real_scope())
+        // A `$$x label *` opens none and is global even in a body (probe `k04`).
+        let qualified = if name.starts_with('.') || is_temp_sym(name) {
+            self.binder_key(name)
         } else {
             self.open_scope(name);
             name.to_string()
@@ -6945,6 +6973,7 @@ impl Asm {
     /// holds the expansion's own unspellable name — so writing `self.scope` there
     /// would be undone the moment the expansion returns.
     fn open_scope(&mut self, name: &str) {
+        self.temp_scope = name.to_string();
         self.scope_epoch += 1;
         if self.macro_frames.is_empty() {
             self.scope = Some(name.to_string());
@@ -7006,9 +7035,102 @@ impl Asm {
     /// already reported, purely to decide a scope, and double-reporting one line
     /// to match the spelling of a local inside a program both assemblers refuse.
     /// Population across the four corpora is zero.
+    ///
+    /// A `$$name` temporary opens nothing either: `$$v equ $$x+$21` leaves the
+    /// next `$$x` reading the one above it (probe `d08`, `1223`).
     fn open_binder_scope(&mut self, name: &str) {
-        if !name.starts_with('.') {
+        if !name.starts_with('.') && !is_temp_sym(name) {
             self.open_scope(name);
+        }
+    }
+
+    /// Move the temporary-symbol scope to `symbol` for a definition that
+    /// sigil's `.`-local scope does not follow: one of asl's own symbols, which
+    /// the directives that set one write as a symbol definition like any other,
+    /// and a struct's `NAME_len`, the last symbol `endstruct` writes. Read from
+    /// asl's symbol table (probe `h01`: the `.`-local after each directive
+    /// lists under the name given at its call site), and the scope
+    /// is the NAME, so two directives that end on the same symbol share one:
+    /// `cpu 68000` and `padding off` both end on `PADDING`, and a `$$x`
+    /// written after the first reads back after the second (`i01`, `1202`)
+    /// while two `$$x` labels either side of a second `cpu 68000` are `#1000`
+    /// (`g02`).
+    ///
+    /// This moves only the `$$` scope. asl moves the `.`-local scope at the
+    /// same points (`g03`: `.l` after `cpu 68000` is a new `PADDING.l`), and
+    /// sigil's `.`-local scope does not follow it there; that is a separate
+    /// row in the campaign gap ledger, kept out of this one because it moves
+    /// what existing `.`-locals resolve to.
+    fn open_temp_scope(&mut self, symbol: &str) {
+        self.temp_scope = symbol.to_string();
+    }
+
+    /// The symbol-table key a `$$name` BINDING files under outside any
+    /// expansion instance: the spelling plus the temporary-symbol scope it was
+    /// written in. The `@` keeps it out of the user's namespace, since no AS
+    /// identifier can contain one, and names the scope in any diagnostic that
+    /// prints the key. It deliberately has NO leading space: that prefix marks
+    /// a key private to an expansion instance, which exempts it from the
+    /// redefinition check, and two file-level `$$x:` in one scope are asl's
+    /// `#1000` (`e01`, `g02`).
+    fn temp_sym_base(&self, name: &str) -> String {
+        format!("{name}@{}", self.temp_scope)
+    }
+
+    /// The key a VALUE BINDING of `name` writes (`equ`, `=`, `set`, `:=`,
+    /// the `label` directive, an `enum` member outside an expansion, `popv`).
+    /// A `.`-local qualifies against the caller's real scope; a `$$name` files
+    /// under its scope and is global even inside an expansion, as a plain
+    /// value binding is (probe `k03`: a body's `$$v equ *+$20` reads back from
+    /// the caller as `1224`).
+    fn binder_key(&self, name: &str) -> String {
+        if is_temp_sym(name) {
+            self.temp_sym_base(name)
+        } else {
+            qualify(name, self.real_scope())
+        }
+    }
+
+    /// The key a string or float READ of `name` looks up, built so it cannot
+    /// disagree with [`Self::binder_key`] about where the value lives.
+    fn value_ref_key(&self, name: &str) -> String {
+        if is_temp_sym(name) {
+            self.temp_sym_key(name)
+        } else {
+            qualify(name, self.dot_scope(name))
+        }
+    }
+
+    /// The key for a REFERENCE to the temporary `name` from where the evaluator
+    /// stands: the innermost live expansion instance that has filed this
+    /// scope's `name` (this pass, or on the previous one) owns it, and
+    /// otherwise it is the file-level binding.
+    ///
+    /// Ownership is by spelling AND scope, not by spelling alone, which is why
+    /// the body scan [`scan_plain_labels`] is not consulted: a body that reads
+    /// `$$q` before its own `Lb:` / `$$q:` reads the CALLER's `$$q` (probe
+    /// `k02`, `1202`; `k06`, with no caller `$$q`, is `#1010`), because the
+    /// body's own `$$q` is filed under `Lb` and the read is under the caller's
+    /// label. A second expansion of the same body, entered with `Lb` still the
+    /// scope, reads its OWN forward `$$q` (`k07`, `1216`), which is the
+    /// previous-pass half below.
+    ///
+    /// Idempotent, as [`Self::sym_key`] must be: a name already carrying its
+    /// `@scope` is a key, and the fold's symbol closure hands it back here.
+    fn temp_sym_key(&self, name: &str) -> String {
+        if name.contains('@') {
+            return name.to_string();
+        }
+        let base = self.temp_sym_base(name);
+        let prev = self.prev_owned.get(&base);
+        match self
+            .expansion_labels
+            .iter()
+            .rev()
+            .find(|e| e.written.contains(&base) || prev.is_some_and(|p| p.contains(&e.key)))
+        {
+            Some(e) => format!("{}.{base}", e.key),
+            None => base,
         }
     }
 
@@ -7091,6 +7213,9 @@ impl Asm {
             //   12/ 1007 :                      label *
             // ```
             "label" => {}
+            // `save` writes no symbol (probe `g07`: a `$$x` above it reads back
+            // below it) and `restore` writes `MACEXP` last, whatever processor
+            // it brings back (probes `h01`, `h02`, `f12`).
             "save" => {
                 self.state.save();
                 self.save_sites.push(span);
@@ -7100,6 +7225,7 @@ impl Asm {
                 match self.state.restore() {
                     Ok(()) => {
                         self.save_sites.pop();
+                        self.open_temp_scope("MACEXP");
                     }
                     Err(m) => self.err(span, m),
                 }
@@ -7115,18 +7241,24 @@ impl Asm {
             "padding" => {
                 if let Some(v) = self.on_off_arg("padding", rest, span) {
                     self.state.padding = v;
+                    self.open_temp_scope("PADDING");
                 }
             }
             "supmode" => {
                 if let Some(v) = self.on_off_arg("supmode", rest, span) {
                     self.state.supmode = v;
+                    self.open_temp_scope("INSUPMODE");
                 }
             }
             // The LISTING-FILE controls. This front end emits no listing file,
             // so both accept their argument and change nothing about the
             // assembly. See `directive_listing_control` for what is and is not
             // checked, and why.
-            "listing" => self.directive_listing_control("listing", LISTING_ARG_COUNT, rest, span),
+            // `listing` writes `LISTON`; `page` writes none (probe `h01`).
+            "listing" => {
+                self.directive_listing_control("listing", LISTING_ARG_COUNT, rest, span);
+                self.open_temp_scope("LISTON");
+            }
             "page" => self.directive_listing_control("page", PAGE_ARG_COUNT, rest, span),
             "enum" => self.directive_enum(rest, span),
             "nextenum" => self.directive_nextenum(rest, span),
@@ -7500,7 +7632,21 @@ impl Asm {
     fn define_label(&mut self, name: &str, span: Span) -> String {
         self.open_section_if_needed();
         let value = self.here_i64();
-        let qualified = if name.starts_with('.') {
+        let qualified = if is_temp_sym(name) {
+            // A `$$x:` opens no scope of either kind (probes `d08`, `e07`: the
+            // next `.l` is still `Lab.l`) and, like a plain PC label, files in
+            // the innermost live expansion instance: two expansions each read
+            // their own (`i30`), and the caller cannot read a body's (`f10`).
+            let base = self.temp_sym_base(name);
+            match self.expansion_labels.last_mut() {
+                Some(e) => {
+                    e.written.insert(base.clone());
+                    self.expansion_label_used += 1;
+                    format!("{}.{base}", e.key)
+                }
+                None => base,
+            }
+        } else if name.starts_with('.') {
             // A `.x` under a label the body owns is the body's too (`a10`,
             // `dx2`); see [`Self::owned_by_head`]. Under a label no live
             // instance owns, a body's own `.x:` still stays in its expansion;
@@ -7528,6 +7674,10 @@ impl Asm {
             if !self.macro_frames.iter().all(|f| f.transparent) {
                 self.outer_scope = Some(name.to_string());
             }
+            // The `$$` scope is the BARE name even for a label the expansion
+            // owns: two expansions each writing `Lb:`, each followed by a
+            // caller `$$z:`, are `#1000` (probe `g01`).
+            self.temp_scope = name.to_string();
             self.scope_epoch += 1;
             // THE CENSUS INSTRUMENT, env-gated. It prints every plain label
             // defined inside an expansion and says whether the body SCAN claimed
@@ -7620,6 +7770,13 @@ impl Asm {
         // saved CPU through `set_cpu` and declares nothing.
         self.state.declare_cpu(cpu, z80_undocumented(&folded));
         self.close_section();
+        // The last of asl's own symbols a `cpu` line writes (probes `h01`,
+        // `h02`: `cpu 68000` ends on `PADDING`, `cpu z80` and `cpu z80undoc`
+        // on `INLWORDMODE`).
+        self.open_temp_scope(match cpu {
+            Cpu::Z80 => "INLWORDMODE",
+            _ => "PADDING",
+        });
     }
 
     /// asl `padding on` (68000) inserts a single `$00` byte before a word-or-
@@ -7908,7 +8065,7 @@ impl Asm {
         // leaves non-dotted global names unchanged. Inside a macro expansion the
         // scope is the CALLER's ([`Self::real_scope`]) — asl `-U`, `.eqs = 3`
         // inside a macro under `Base:` lists as `Base.eqs : 3`.
-        let q = qualify(name, self.real_scope());
+        let q = self.binder_key(name);
         // The P5 no-silent-shadowing guard: a guarded `.emp`-owned constant may
         // NOT be re-authored in the residual AS. An in-file `=`/`equ` of such a
         // name fails LOUD (never silently prefers either side) — the structural
@@ -8250,7 +8407,7 @@ impl Asm {
             // call continues from the body's last member).
             let q = match self.file_in_innermost(&name) {
                 Some(key) => key,
-                None => qualify(&name, self.real_scope()),
+                None => self.binder_key(&name),
             };
             // An `enum` member is asl's constant class: `enum Ar=5` then
             // `Ar set 2` is `#2030` and `enum Br=5` then `Br equ 2` is `#1000`
@@ -8310,7 +8467,7 @@ impl Asm {
         // ([`Self::real_scope`]). This is what carries `zoneOrderedTable`'s
         // `.cur_zone_str` / `.zone_entries_left` across to the separate
         // `zoneTableEntry` expansions that read and reassign them.
-        let q = qualify(name, self.real_scope());
+        let q = self.binder_key(name);
         // asl's reassignable class. A name this pass already declared with
         // `equ`/`=`/a label/`label`/`enum` is `#2030 constants cannot be
         // redefined as variables` and the existing binding stands (probe
@@ -11739,7 +11896,7 @@ impl Asm {
             self.err(span, format!("symbol undefined: `{name}` in `popv`"));
             return;
         };
-        let q = qualify(name, self.real_scope());
+        let q = self.binder_key(name);
         if value == PushedValue::Unresolved {
             return;
         }
@@ -14181,6 +14338,12 @@ fn scan_dot_labels(body: &[SrcLine]) -> std::collections::BTreeSet<String> {
 }
 
 /// Qualify a name: `.local` → `Scope.local` (if scope); else unchanged.
+/// Whether `name` is an AS named temporary symbol (`$$name`), which the lexer
+/// hands over as one identifier spelled with its `$$`.
+fn is_temp_sym(name: &str) -> bool {
+    name.starts_with("$$")
+}
+
 fn qualify(name: &str, scope: Option<&str>) -> String {
     if name.starts_with('.') {
         match scope {

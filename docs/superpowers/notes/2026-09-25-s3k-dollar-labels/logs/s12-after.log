@@ -1,0 +1,8 @@
+pwd=/home/volence/sonic_hacks/sigil/.claude/worktrees/agent-a620ff60a900c195e sigil: /home/volence/sonic_hacks/.scratch/s3k-dollar-labels/bin/sigil-after md5 32288022c5919cc0cb604840c4f9a5d7
+sigil 0.1.0 (9097415d)
+  revision:  9097415de7602996b2dd2c13103dab2e91a11662
+s1 rc=0 stderr lines 0
+  s1-after.bin md5 09dadb5071eb35050067a32462e39c5f crc32 afe05eee size 524288
+s2 rc=0 stderr lines 1
+  s2-after.bin md5 9feeb724052c39982d432a7851c98d3e crc32 7b905383 size 1048576
+S12_END_after

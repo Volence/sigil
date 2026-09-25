@@ -6195,3 +6195,26 @@ right either way (the tests still fail); only the explanation is lost. **Kill:**
 swapping the hook per probe: install one hook, once, that stays silent only on threads the
 probe runner names (run each probe on a named spawned thread and read its `JoinHandle`) and
 delegates to the default hook everywhere else.
+
+- [s3k-dollar-labels, 2026-09-25] **The `.`-local scope does not follow asl's own-symbol writers.** asl keeps
+  one "last global symbol" for `.`-locals and `$$` names, and `cpu` (`PADDING`/`INLWORDMODE`), `padding`,
+  `supmode`, `listing`, `restore` (`MACEXP`) and `endstruct` (`NAME_len`) write it (probes `h01`, `h02`: the
+  `.l` after each lists as `PADDING.l` and so on). sigil's `$$` scope follows all of them
+  (`eval.rs::open_temp_scope`); its `.`-local scope does not. Probe `g03` (`A1:`, `.l:`, `cpu 68000`, `.l:`)
+  assembles under asl and is `symbol double defined: A1.l` in sigil; the other direction, a `.l` read across
+  such a directive that asl calls `#1010` and sigil resolves under the label above, is an over-acceptance.
+  Kill: call `open_scope` instead of `open_temp_scope` at those sites and re-run the four corpora and aeon's
+  four shapes, since it moves what existing `.`-locals resolve to. OPEN
+- [s3k-dollar-labels, 2026-09-25] **A label spelled like a register is accepted in a value position.** With
+  `A1:` defined, `move.w #A1+Lab2,d1` assembles in sigil (`323C 2402`) where asl refuses `#1145 expected
+  integer ... but got register` (probe `z01`, no `$$` involved; same with `$$x` in `j07`, and asl's `#10000
+  internal error` in `i09`/`j08`). Without the `A1:` label sigil refuses it (`x06`). A silent
+  over-acceptance, pre-existing at `120be609`. Kill: the register check in the value fold must win over a
+  symbol of the same spelling. OPEN
+- [s3k-dollar-labels, 2026-09-25] **`$$` corners not measured.** `$$` names as `enum` members inside an
+  expansion body, and `pushv`/`popv` of a `$$` name, take the file-level key (`binder_key`); asl was not
+  probed on either (the `pushv` probes `g09`/`k05` had the wrong operand shape). `$$.name` is refused by name
+  (asl accepts the definition and calls the reference `#1010`). asl's symbol table names a `$$x` ` x` plus a
+  20-hex-digit per-scope suffix; sigil's key is `$$x@Scope`, so any future sigil listing or symbol export of a
+  `$$` label will not spell it as asl does. `s3.asm` (83 more `$$` lines) is outside the S3K wrapper root and
+  was not assembled. OPEN

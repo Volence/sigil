@@ -1,0 +1,9 @@
+	cpu z80
+	org 1200h
+A1:	nop
+$$x:	nop
+	jr	$$x
+	ld	hl,$$x
+	jr	$
+	dw	$+2,$$x
+	ld	a,($$x)
