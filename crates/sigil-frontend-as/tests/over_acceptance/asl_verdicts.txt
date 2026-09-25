@@ -92,6 +92,33 @@ macro_keyword_arg_ok	refuse	2	complete	#1107 undefined attribute
 macro_keyword_arg_undefined	refuse	2	complete	#1811 keyword argument not defined in macro
 macro_positional_after_keyword	refuse	2	complete	#1812 positional argument no longer allowed after keyword argument
 macro_recursive_call	refuse	2	complete	(exit 2, refused with no numbered diagnostic)
+reg_containing_a1x	accept	0	complete	
+reg_containing_dollar_temp	accept	0	complete	
+reg_containing_local	accept	0	complete	
+reg_equ_imm	refuse	2	complete	#1146 expected integer or string
+reg_label_bare_jsr	refuse	2	complete	#1350 addressing mode not allowed here
+reg_label_bare_move_is_register	accept	0	complete	
+reg_label_bra	refuse	2	complete	#1146 expected integer or string
+reg_label_dcl_forward	refuse	2	INCOMPLETE	#1145 expected integer, floating point number or string but got register
+reg_label_dcw_lone	accept	0	complete	
+reg_label_dcw_plus	refuse	2	complete	#1145 expected integer, floating point number or string but got register
+reg_label_defined_builtin	accept	0	complete	
+reg_label_defined_unused	accept	0	complete	
+reg_label_i09_dollar_minus	refuse	3	unknown	#10000 internal error
+reg_label_if_compare	refuse	2	complete	#1145 expected integer, floating point number or string but got register
+reg_label_ifdef	accept	0	complete	
+reg_label_imm_difference	refuse	3	unknown	#10000 internal error
+reg_label_imm_plus	refuse	2	complete	#1145 expected integer, floating point number or string but got register
+reg_label_in_macro_body	refuse	2	complete	#1145 expected integer, floating point number or string but got register
+reg_label_org	refuse	2	complete	#1145 expected integer, floating point number or string but got register
+reg_label_pcrel	refuse	2	complete	#1146 expected integer or string
+reg_label_read_before_definition	refuse	2	complete	#1145 expected integer, floating point number or string but got register
+reg_label_set_rhs	refuse	2	INCOMPLETE	#1145 expected integer, floating point number or string but got register
+reg_lower_sp_label_imm_plus	refuse	2	complete	#1145 expected integer, floating point number or string but got register
+reg_pc_label_dcw_plus	accept	0	complete	
+reg_usp_label_imm_plus	accept	0	complete	
+reg_z80_hl_label_dw	accept	0	complete	
+reg_z80_sp_label_ld	accept	0	complete	
 save_balanced_ok	accept	0	complete	
 save_missing_restore	refuse	2	complete	#1460 missing RESTORE
 save_restore_without_save	refuse	2	complete	#1450 RESTORE without SAVE

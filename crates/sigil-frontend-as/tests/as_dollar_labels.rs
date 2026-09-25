@@ -100,7 +100,11 @@ fn a_plain_label_ends_the_scope() {
 fn a_value_binder_ends_the_scope_and_reads_its_own_operand_in_the_old_one() {
     assert_refused(D05_SRC, "unresolved symbol `$$x@A2`");
     assert_refused(D06_SRC, "unresolved symbol `$$x@A2`");
-    assert_refused(G10_SRC, "unresolved symbol `$$x@V`");
+    // G10's `dc.w A1` reads the REGISTER `a1`, not the label `A1:` (asl emits
+    // nothing for that line; see as_register_spelled_label.rs), and sigil
+    // refuses that line by name before the `$$x@V` reference reaches the link.
+    // D06 carries the same `set`-ends-the-scope refusal without it.
+    assert_refused(G10_SRC, "`A1` is a register, not a value");
     assert_asl(E06_SRC, E06_ASL);
 }
 

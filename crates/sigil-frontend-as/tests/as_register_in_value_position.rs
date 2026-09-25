@@ -285,12 +285,15 @@ fn two_registers_in_one_expression_are_both_named() {
     );
 }
 
-/// THE CONTROL that keeps this from being a ban on the spelling. The check
-/// fires only on a name that does NOT resolve, so a program which defines a
-/// symbol called `a0` assembles exactly as it did.
+/// THE CONTROL that keeps this from being a ban on the spelling. DEFINING a
+/// symbol called `a0` is legal, and a name that only CONTAINS a register
+/// spelling is an ordinary symbol, so both assemble. Reading `a0` itself in an
+/// expression is the register even when the symbol exists, which is asl's
+/// reading; `as_register_spelled_label.rs` owns that half.
 #[test]
 fn a_symbol_that_happens_to_be_spelled_like_a_register_still_assembles() {
-    assert_eq!(bytes("\tcpu 68000\na0\tequ 5\n\tdc.l a0\n"), vec![0x00, 0x00, 0x00, 0x05]);
+    assert_eq!(bytes("\tcpu 68000\na0\tequ 5\n\tnop\n"), vec![0x4E, 0x71]);
+    assert_eq!(bytes("\tcpu 68000\na0x\tequ 5\n\tdc.l a0x\n"), vec![0x00, 0x00, 0x00, 0x05]);
 }
 
 /// THE CONTROL for the register's own syntax. `(a0)` is a register-indirect

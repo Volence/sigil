@@ -65,6 +65,16 @@ expr_minus_both_sides_of_multiply	over-acceptance	`dc.w -1*-1`. asl #1110. Same 
 # that the day one of them is implemented, the ledger reports it as retirable
 # instead of the gate saying nothing.
 
+# The row below is a standing ruling, not a scope limit: asl exits 0 and
+# SILENTLY EMITS NOTHING for a data directive whose operand is a lone 68000
+# register, and with `A1:` defined `dc.w A1` is that shape, because asl reads
+# the spelling as the register (the register-spelled-label note). sigil refuses
+# it by name, as it refuses `dc.l a0`
+# (`crates/sigil-frontend-as/tests/as_register_in_value_position.rs`): a `dc`
+# that emits zero bytes is the silent-wrong-answer class.
+
+reg_label_dcw_lone	over-refusal	`A1:` then `dc.w A1`. asl exits 0 and emits no bytes for the line. sigil refuses: `A1` in an expression is the register, and a data directive that silently emits nothing is not adopted.
+
 dir_unknown_codepage	over-refusal	The `codepage` directive is not implemented; sigil refuses it as an unrecognized mnemonic. asl accepts an unknown codepage name silently, which is itself the looser behaviour.
 expr_string_in_integer_slot	over-refusal	A string operand in a data directive wider than a byte. asl zero-extends one element per character; sigil refuses by name and says it is not implemented.
 m68k_insn_supported_on_68020	over-refusal	`cpu 68020` and a 68020 bitfield instruction. sigil's front end encodes 68000, 68008 and Z80 only, and refuses a wider processor rather than aliasing it onto a narrower one and mis-assembling silently.

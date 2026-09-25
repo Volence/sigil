@@ -36,8 +36,8 @@
 //!
 //! ## The probe population, and how it was derived
 //!
-//! 88 probes in `over_acceptance/probes/`. asl refuses 61 of them, covering 41
-//! distinct numbered refusal classes, and accepts the other 27.
+//! 115 probes in `over_acceptance/probes/`. asl refuses 76 of them, covering 44
+//! distinct numbered refusal classes, and accepts the other 39.
 //!
 //! **A corpus assembled from the shapes we already knew would be a gate that
 //! could not come out other than green.** It would pass on the day it landed,
@@ -49,6 +49,14 @@
 //! divergences are in the corpus, but as three members of 88 rather than as the
 //! corpus.
 //!
+//! The 27 `reg_*` probes are a third source: the register-spelled symbol shapes
+//! measured in `docs/superpowers/notes/2026-09-25-as-register-spelled-label.md`
+//! (a symbol named `A1`, `sp`, ... read in an expression, which asl reads as the
+//! register). 15 are asl refusals and 12 asl acceptances: definitions that are
+//! never read, a bare register operand, `ifdef`/`defined`, the `usp`/`pc`
+//! spellings asl does not treat as registers, names that only contain a
+//! register spelling, and two Z80 labels spelled like Z80 registers.
+//!
 //! Six probes come from a second source and are the exception that proves the
 //! rule about deriving from asl: `docs/superpowers/notes/campaign-gap-ledger.md`
 //! rows 3 and 4 name expression-tier divergences somebody had already measured
@@ -56,7 +64,7 @@
 //! asserted refused" as its own kill condition. Four of the six reproduce and
 //! are ledgered; two do not and are live tripwires instead.
 //!
-//! The 27 asl-ACCEPTED probes are not filler and the gate is unsound without
+//! The asl-ACCEPTED probes are not filler and the gate is unsound without
 //! them. Roughly half are the in-range twin of a refused probe (`dc.b 255`
 //! beside `dc.b 256`, `bit 7,a` beside `bit 8,a`, a short branch in range beside
 //! one out of range), which makes the corpus a boundary corpus and gives the
@@ -100,7 +108,7 @@
 //!
 //! `feed_control_every_probe_reached_both_assemblers` covers the FEED, which is
 //! the half a canary cannot reach. A scanner that silently processed one file
-//! instead of 88 prints "clean" with a working comparison behind it. So the
+//! instead of 115 prints "clean" with a working comparison behind it. So the
 //! probe count the run actually processed is asserted against a literal, and the
 //! probe-file name set and the verdict-table name set are asserted equal in both
 //! directions, so a probe with no verdict and a verdict with no probe are each a
@@ -115,9 +123,9 @@
 //! agree, and where a change of behaviour in either direction therefore reds a
 //! gate.
 //!
-//! Measured on the corpus as it stands: 88 probes, 11 ledgered divergences, so
-//! **77 live tripwires**: 54 probes both assemblers refuse, where sigil becoming
-//! looser goes red, and 23 both accept, where sigil becoming stricter goes red. `feed_control_the_ledger_is_not_an_escape_hatch` floors both
+//! Measured on the corpus as it stands: 115 probes, 12 ledgered divergences, so
+//! **103 live tripwires**: 69 probes both assemblers refuse, where sigil becoming
+//! looser goes red, and 34 both accept, where sigil becoming stricter goes red. `feed_control_the_ledger_is_not_an_escape_hatch` floors both
 //! numbers, so the way to get green after a widening is not to ledger it: that
 //! reds a second gate whose floor has to be moved by hand in the same diff.
 //!
@@ -146,21 +154,21 @@ use sigil_frontend_as::{assemble_root_located, Options};
 /// asserts the run reached it. It is not derived from the directory listing,
 /// because an expectation read off its own subject moves with the subject and
 /// can never disagree with it.
-const EXPECTED_PROBE_COUNT: usize = 88;
+const EXPECTED_PROBE_COUNT: usize = 115;
 
 /// The floor on distinct numbered asl refusal classes the corpus exercises.
 /// This is what stops the corpus being quietly gutted down to the handful of
 /// shapes that happen to be ledgered: a gate over four probes and a gate over
 /// eighty-two are different instruments with the same green.
-const MIN_ASL_REFUSAL_CLASSES: usize = 41;
+const MIN_ASL_REFUSAL_CLASSES: usize = 44;
 
 /// Probes both assemblers currently REFUSE. Each is a live tripwire for sigil
 /// becoming looser, and their number is the gate's real headroom.
-const MIN_AGREED_REFUSALS: usize = 54;
+const MIN_AGREED_REFUSALS: usize = 69;
 
 /// Probes both assemblers currently ACCEPT. Each is a live tripwire for sigil
 /// becoming stricter.
-const MIN_AGREED_ACCEPTANCES: usize = 23;
+const MIN_AGREED_ACCEPTANCES: usize = 34;
 
 // ---------------------------------------------------------------------------
 // Reading the committed inputs

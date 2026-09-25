@@ -2779,6 +2779,9 @@ impl Asm {
 
     fn fold(&self, e: &Expr) -> Fold {
         e.fold(&|name| {
+            if self.reads_as_register(name) {
+                return None;
+            }
             self.builtin_num(name)
                 .or_else(|| self.resolve_sym(name))
                 .or_else(|| self.resolve_str_packed(name))
@@ -2955,9 +2958,10 @@ impl Asm {
     /// the answer a `file(line)` at all, since the linker sees only a section
     /// and an offset.
     ///
-    /// It fires only on names that do NOT resolve, which is what keeps a program
-    /// that legitimately defines `a0` as a symbol (`a0 equ 5` then `dc.l a0`)
-    /// assembling exactly as before: a resolved name never reaches Poison.
+    /// It fires on every register spelling in `e`, including one a program has
+    /// also defined as a symbol (`a0 equ 5` then `dc.l a0+1`): asl reads the
+    /// register there too (see [`Self::reads_as_register`]), and the message
+    /// then says the symbol is shadowed rather than that nothing is defined.
     ///
     /// `true` is the caller's signal to take an error path rather than emit a
     /// placeholder and defer a fixup the linker can only refuse.
@@ -2970,10 +2974,39 @@ impl Asm {
             found = true;
             let (source, start, end) = self.site_key(span);
             if self.reg_faults_seen.insert((source, start, end, name.clone())) {
-                self.err(span, register_in_value_position(&name));
+                let message = if self.resolve_sym(&name).is_some()
+                    || self.resolve_float_sym(&name).is_some()
+                    || self.resolve_str(&name).is_some()
+                {
+                    register_shadows_symbol(&name)
+                } else {
+                    register_in_value_position(&name)
+                };
+                self.err(span, message);
             }
         }
         found
+    }
+
+    /// Whether `name`, read in an expression, is a 68000 register rather than
+    /// a symbol, WHETHER OR NOT a symbol of that spelling is defined.
+    ///
+    /// asl's rule, measured on the reference build (md5
+    /// `61e672562465725a8c102288a7da9098`, 114 probes at
+    /// `docs/superpowers/notes/2026-09-25-as-register-spelled-label/`): with
+    /// `A1:` defined, `move.w #A1+2,d0`, `dc.w A1+2`, `#Lab-A1`, `A1(pc)`,
+    /// `bra.w A1`, `org A1+8`, `if A1=$1200` and `X set A1+2` are all refused
+    /// as a register in value position, and `a1 equ 5` is no different. The
+    /// DEFINITION is legal and `ifdef A1` / `defined(A1)` see it, so the name
+    /// is only shadowed where an expression reads it; the definition side and
+    /// the symbol-name tests do not ask this.
+    ///
+    /// The set is [`is_expr_register_name`]'s: `d0`..`d7`, `a0`..`a7` and
+    /// `sp` in any case, on the 68000 only. `usp`/`sr`/`ccr`/`pc` labels and
+    /// every Z80 register spelling read as ordinary symbols (measured, same
+    /// probe set).
+    fn reads_as_register(&self, name: &str) -> bool {
+        is_expr_register_name(name, self.state.cpu)
     }
 
     /// Whether a register-in-value-position fault has already been reported at
@@ -3015,8 +3048,8 @@ impl Asm {
             match e {
                 Expr::Int(_) => {}
                 Expr::Sym(name) => {
-                    if this.builtin_num(name).is_none()
-                        && this.resolve_sym(name).is_none()
+                    if this.reads_as_register(name)
+                        || (this.builtin_num(name).is_none() && this.resolve_sym(name).is_none())
                     {
                         out.push(name.clone());
                     }
@@ -3324,6 +3357,9 @@ impl Asm {
                 Some((apply_num_builtin(name, inner)?, &rest[next..]))
             }
             Tok::Ident(name) => {
+                if self.reads_as_register(name) {
+                    return None;
+                }
                 // A float-valued symbol (`sample_rate_scale := 1.0`, S2's
                 // `dac_sample_metadata`) outranks the integer table: the two
                 // are disjoint by construction (an assignment writes one and
@@ -10643,7 +10679,10 @@ impl Asm {
             }
         };
         let target = match atoms.as_slice() {
-            [OperandAtom::Value(e)] => self.fixup_target(e),
+            [OperandAtom::Value(e)] => match self.fixup_target(e, span) {
+                Some(t) => t,
+                None => return,
+            },
             _ => {
                 self.err(span, "branch needs a single label target");
                 return;
@@ -10790,18 +10829,20 @@ impl Asm {
         // where the EA is a destination.
         let pc_op = match mem_atom {
             OperandAtom::M68kDisp { disp, an } if an.eq_ignore_ascii_case("pc") => {
-                Some((self.fixup_target(disp), M68kOperand::Pcd16(0), false))
+                let Some(target) = self.fixup_target(disp, span) else {
+                    return;
+                };
+                Some((target, M68kOperand::Pcd16(0), false))
             }
             OperandAtom::M68kIdx { disp, an, xn, xlong } if an.eq_ignore_ascii_case("pc") => {
                 let xn = match self.m68k_index_reg(xn, span) {
                     Some(x) => x,
                     None => return,
                 };
-                Some((
-                    self.fixup_target(disp),
-                    M68kOperand::Pcd8Xn { d: 0, xn, long: *xlong },
-                    true,
-                ))
+                let Some(target) = self.fixup_target(disp, span) else {
+                    return;
+                };
+                Some((target, M68kOperand::Pcd8Xn { d: 0, xn, long: *xlong }, true))
             }
             _ => None,
         };
@@ -10875,7 +10916,10 @@ impl Asm {
                     OperandAtom::M68kDisp { disp, .. } => disp,
                     _ => unreachable!("pc_idx must index a M68kDisp{{an: \"pc\"}} atom"),
                 };
-                target = Some(self.fixup_target(disp));
+                target = Some(match self.fixup_target(disp, span) {
+                    Some(t) => t,
+                    None => return,
+                });
                 ops.push(M68kOperand::Pcd16(0));
             } else {
                 match self.convert_one_atom_m68k(a, size, span) {
@@ -10925,7 +10969,10 @@ impl Asm {
                     Some(x) => x,
                     None => return,
                 };
-                target = Some(self.fixup_target(disp));
+                target = Some(match self.fixup_target(disp, span) {
+                    Some(t) => t,
+                    None => return,
+                });
                 ops.push(M68kOperand::Pcd8Xn {
                     d: 0,
                     xn,
@@ -11536,22 +11583,31 @@ impl Asm {
     /// where only its final value survives. A still-unresolved (forward) target
     /// stays fully-qualified-symbolic for the linker to resolve or reject — the
     /// branch width is fixed, so the placeholder never perturbs layout.
-    fn fixup_target(&self, e: &Expr) -> Expr {
+    ///
+    /// A 68000 register spelling in the target is reported here, with the
+    /// line's span, and answers `None`: the caller emits nothing. Left symbolic
+    /// it would reach the linker, which reads a label of that spelling as the
+    /// label (`bra.w A1` with `A1:` defined), where asl reads the register and
+    /// refuses (see [`Self::reads_as_register`]).
+    fn fixup_target(&mut self, e: &Expr, span: Span) -> Option<Expr> {
         let qualified = self.resolve_dollar(&self.qualify_expr(e));
+        if self.report_register_values(&qualified, span) {
+            return None;
+        }
         // On the deferral (bonus) pass, keep any subterm that names a section
         // LABEL symbolic instead of baking its this-pass VMA — see
         // `keep_labels_symbolic` / `relax_safe_fold`. This is what makes a
         // PC-relative branch whose target sits past a width-grown `JmpJsrSym`
         // resolve correctly in the combined link.
         if self.keep_labels_symbolic() && self.expr_refs_label(&qualified) {
-            return self.relax_safe_fold(&qualified);
+            return Some(self.relax_safe_fold(&qualified));
         }
-        match self.fold(&qualified) {
+        Some(match self.fold(&qualified) {
             Fold::Value(v) => Expr::Int(v),
             // A fault travels with the expression: the linker folds the same
             // tree and reports it at the fixup.
             Fold::Poison | Fold::Fault(_) => qualified,
-        }
+        })
     }
 
     /// Whether label references in a fixup target must be kept SYMBOLIC rather
@@ -14694,6 +14750,18 @@ fn body_mentions(body: &[Token], param: &str) -> bool {
 /// never missing.
 fn register_in_value_position(name: &str) -> String {
     format!("`{name}` is a register, not a value: expected an integer, floating point number or string")
+}
+
+/// [`register_in_value_position`]'s sentence when a symbol of the register's
+/// spelling IS defined, which is the one case where "not a value" reads as
+/// false to the writer: the label is right there. It says which reading wins.
+fn register_shadows_symbol(name: &str) -> String {
+    format!(
+        "{}. A symbol named `{name}` is defined, but in an expression that spelling is \
+         the 68000 register, as it is to asl, so the symbol's value cannot be read here: \
+         rename the symbol",
+        register_in_value_position(name)
+    )
 }
 
 fn is_expr_register_name(w: &str, cpu: Cpu) -> bool {
