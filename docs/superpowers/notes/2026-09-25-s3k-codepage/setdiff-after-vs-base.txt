@@ -1,0 +1,23 @@
+left: 19  codepage=19
+  left x1: sonic3k.asm(10553) levselstr(2):2: error: `codepage` is not a recognized 68000 mnemonic
+  left x1: sonic3k.asm(10554) levselstr(2):2: error: `codepage` is not a recognized 68000 mnemonic
+  left x1: sonic3k.asm(10555) levselstr(2):2: error: `codepage` is not a recognized 68000 mnemonic
+  left x1: sonic3k.asm(10556) levselstr(2):2: error: `codepage` is not a recognized 68000 mnemonic
+  left x1: sonic3k.asm(10557) levselstr(2):2: error: `codepage` is not a recognized 68000 mnemonic
+  left x1: sonic3k.asm(10558) levselstr(2):2: error: `codepage` is not a recognized 68000 mnemonic
+  left x1: sonic3k.asm(10559) levselstr(2):2: error: `codepage` is not a recognized 68000 mnemonic
+  left x1: sonic3k.asm(10560) levselstr(2):2: error: `codepage` is not a recognized 68000 mnemonic
+  left x1: sonic3k.asm(10561) levselstr(2):2: error: `codepage` is not a recognized 68000 mnemonic
+  left x1: sonic3k.asm(10562) levselstr(2):2: error: `codepage` is not a recognized 68000 mnemonic
+  left x1: sonic3k.asm(10563) levselstr(2):2: error: `codepage` is not a recognized 68000 mnemonic
+  left x1: sonic3k.asm(10564) levselstr(2):2: error: `codepage` is not a recognized 68000 mnemonic
+  left x1: sonic3k.asm(10565) levselstr(2):2: error: `codepage` is not a recognized 68000 mnemonic
+  left x1: sonic3k.asm(10566) levselstr(2):2: error: `codepage` is not a recognized 68000 mnemonic
+  left x1: sonic3k.asm(10567) levselstr(2):2: error: `codepage` is not a recognized 68000 mnemonic
+  left x1: sonic3k.asm(10568) levselstr(2):2: error: `codepage` is not a recognized 68000 mnemonic
+  left x1: sonic3k.asm(10569) levselstr(2):2: error: `codepage` is not a recognized 68000 mnemonic
+  left x1: sonic3k.asm(9951):3: error: `codepage` is not a recognized 68000 mnemonic
+  left x1: sonic3k.macros.asm(140):2: error: `codepage` is not a recognized 68000 mnemonic
+entered: 0  
+common: 101  abcd/subx=6, dollar-label=93, pc-indexed=2
+new totals per class: abcd/subx=6, dollar-label=93, pc-indexed=2

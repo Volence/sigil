@@ -1,0 +1,277 @@
+=== cp01 (4a3da1fe)
+ASL_EXIT=0
+ASL_DIAG=complete
+asl   bytes: 114233114233112233114233112233
+SIGIL_EXIT=0
+sigil bytes: 114233114233112233114233112233
+MATCH
+=== cp02 (bd967b2c)
+ASL_EXIT=0
+ASL_DIAG=complete
+asl   bytes: 112243114243
+SIGIL_EXIT=0
+sigil bytes: 112243114243
+MATCH
+=== cp03 (991dd1b4)
+ASL_EXIT=0
+ASL_DIAG=complete
+asl   bytes: 414241424142
+SIGIL_EXIT=0
+sigil bytes: 414241424142
+MATCH
+=== cp04 (6c729e9e)
+ASL_EXIT=0
+ASL_DIAG=complete
+asl   bytes: 11221142
+SIGIL_EXIT=0
+sigil bytes: 11221142
+MATCH
+=== cp05 (28c0ebc9)
+ASL_EXIT=0
+ASL_DIAG=complete
+asl   bytes: 112243112243114243112233
+SIGIL_EXIT=0
+sigil bytes: 112243112243114243112233
+MATCH
+=== cp06 (0c3a588e)
+ASL_EXIT=0
+ASL_DIAG=complete
+asl   bytes: 112241421142
+SIGIL_EXIT=0
+sigil bytes: 112241421142
+MATCH
+=== cp07 (b8c7b6be)
+ASL_EXIT=0
+ASL_DIAG=complete
+asl   bytes: 11421122
+SIGIL_EXIT=0
+sigil bytes: 11421122
+MATCH
+=== cp08 (d006a607)
+ASL_EXIT=0
+ASL_DIAG=complete
+asl   bytes: 1100303c0022323c112200124100303c0042
+SIGIL_EXIT=0
+sigil bytes: 1100303c0022323c112200124100303c0042
+MATCH
+=== cp09 (dce653b0)
+ASL_EXIT=0
+ASL_DIAG=complete
+asl   bytes: 112243
+SIGIL_EXIT=0
+sigil bytes: 112243
+MATCH
+=== cp10 (f498e38d)
+ASL_EXIT=0
+ASL_DIAG=complete
+asl   bytes: 4142414200064122
+SIGIL_EXIT=0
+sigil bytes: 4142414200064122
+MATCH
+=== cp11 (018c98b3)
+ASL_EXIT=0
+ASL_DIAG=complete
+asl   bytes: 114200041122
+SIGIL_EXIT=0
+sigil bytes: 114200041122
+MATCH
+=== cp12 (227d64cc)
+> > > cp12.asm(2): error #1110: wrong number of operands
+ASL_EXIT=2
+ASL_DIAG=complete
+  lines that assembled: an error stops the pass loop, so every forward
+asl   bytes: (asl exited 2; no value quoted)
+> > > cp12.asm(2): error #1110: wrong number of operands
+      1 error
+      0 warnings
+SIGIL_EXIT=1
+cp12.asm(2):2: error: codepage takes a page name and an optional base page, not 0 operands
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+=== cp13 (8b82f44a)
+> > > cp13.asm(2): error #1110: wrong number of operands
+ASL_EXIT=2
+ASL_DIAG=complete
+  lines that assembled: an error stops the pass loop, so every forward
+asl   bytes: (asl exited 2; no value quoted)
+> > > cp13.asm(2): error #1110: wrong number of operands
+      1 error
+      0 warnings
+SIGIL_EXIT=1
+cp13.asm(2):2: error: codepage takes a page name and an optional base page, not 3 operands
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+=== cp14 (120c33da)
+> > > cp14.asm(3):15: error #1610: unknown codepage
+ASL_EXIT=2
+ASL_DIAG=complete
+  lines that assembled: an error stops the pass loop, so every forward
+asl   bytes: (asl exited 2; no value quoted)
+> > > cp14.asm(3):15: error #1610: unknown codepage
+      1 error
+      0 warnings
+SIGIL_EXIT=1
+cp14.asm(3):2: error: codepage base `NOPE` is an unknown codepage: no page of that name exists
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+=== cp15 (a133cceb)
+> > > cp15.asm(3):11: error #1020: invalid symbol name
+ASL_EXIT=2
+ASL_DIAG=complete
+  lines that assembled: an error stops the pass loop, so every forward
+asl   bytes: (asl exited 2; no value quoted)
+> > > cp15.asm(3):11: error #1020: invalid symbol name
+      1 error
+      0 warnings
+SIGIL_EXIT=1
+cp15.asm(3):2: error: codepage name is not a valid symbol name (asl: invalid symbol name)
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+=== cp16 (f51e0231)
+> > > cp16.asm(3):11: error #1020: invalid symbol name
+ASL_EXIT=2
+ASL_DIAG=complete
+  lines that assembled: an error stops the pass loop, so every forward
+asl   bytes: (asl exited 2; no value quoted)
+> > > cp16.asm(3):11: error #1020: invalid symbol name
+      1 error
+      0 warnings
+SIGIL_EXIT=1
+cp16.asm(3):2: error: codepage name is not a valid symbol name (asl: invalid symbol name)
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+=== cp17 (1ac92256)
+ASL_EXIT=0
+ASL_DIAG=complete
+asl   bytes: 11221142
+SIGIL_EXIT=0
+sigil bytes: 11221142
+MATCH
+=== cp18 (0d29dfba)
+ASL_EXIT=0
+ASL_DIAG=complete
+asl   bytes: 1122051142
+SIGIL_EXIT=0
+sigil bytes: 1122051142
+MATCH
+=== cp19 (732a9d65)
+ASL_EXIT=0
+ASL_DIAG=complete
+asl   bytes: 112233112243114243
+SIGIL_EXIT=0
+sigil bytes: 112233112243114243
+MATCH
+=== cp20 (5f1c2b63)
+ASL_EXIT=0
+ASL_DIAG=complete
+asl   bytes: 11220000
+SIGIL_EXIT=0
+sigil bytes: 11220000
+MATCH
+=== cp21 (963d251d)
+> > > cp21.asm(3):11: error #1020: invalid symbol name
+ASL_EXIT=2
+ASL_DIAG=complete
+  lines that assembled: an error stops the pass loop, so every forward
+asl   bytes: (asl exited 2; no value quoted)
+> > > cp21.asm(3):11: error #1020: invalid symbol name
+      1 error
+      0 warnings
+SIGIL_EXIT=1
+cp21.asm(3):2: error: codepage name is not a valid symbol name (asl: invalid symbol name)
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+=== cp22 (0e492da7)
+> > > cp22.asm(3):15: error #1610: unknown codepage
+ASL_EXIT=2
+ASL_DIAG=complete
+  lines that assembled: an error stops the pass loop, so every forward
+asl   bytes: (asl exited 2; no value quoted)
+> > > cp22.asm(3):15: error #1610: unknown codepage
+      1 error
+      0 warnings
+SIGIL_EXIT=1
+cp22.asm(3):2: error: codepage base is empty, which names no page (asl: unknown codepage)
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+=== cp23 (c6d17909)
+ASL_EXIT=0
+ASL_DIAG=complete
+asl   bytes: 11221122
+SIGIL_EXIT=0
+sigil bytes: 11221122
+MATCH
+=== cp24 (7b181380)
+ASL_EXIT=0
+ASL_DIAG=complete
+asl   bytes: 1142
+SIGIL_EXIT=0
+sigil bytes: 1142
+MATCH
+=== cp25 (babdd812)
+> > > cp25.asm(3):11: error #1020: invalid symbol name
+ASL_EXIT=2
+ASL_DIAG=complete
+  lines that assembled: an error stops the pass loop, so every forward
+asl   bytes: (asl exited 2; no value quoted)
+> > > cp25.asm(3):11: error #1020: invalid symbol name
+      1 error
+      0 warnings
+SIGIL_EXIT=1
+cp25.asm(3):11: error: `$` with no hex digits
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+=== cp26 (29b6ebfa)
+> > > cp26.asm(3):15: error #1610: unknown codepage
+ASL_EXIT=2
+ASL_DIAG=complete
+  lines that assembled: an error stops the pass loop, so every forward
+asl   bytes: (asl exited 2; no value quoted)
+> > > cp26.asm(3):15: error #1610: unknown codepage
+      1 error
+      0 warnings
+SIGIL_EXIT=1
+cp26.asm(3):2: error: codepage base `PG1` is an unknown codepage: no page of that name exists
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+=== cp27 (e3564fef)
+ASL_EXIT=0
+ASL_DIAG=complete
+asl   bytes: 1122
+SIGIL_EXIT=0
+sigil bytes: 1122
+MATCH
+=== cp28 (515b0011)
+> > > cp28.asm(4):20: error #1610: unknown codepage
+ASL_EXIT=2
+ASL_DIAG=complete
+  lines that assembled: an error stops the pass loop, so every forward
+asl   bytes: (asl exited 2; no value quoted)
+> > > cp28.asm(4):20: error #1610: unknown codepage
+      1 error
+      0 warnings
+SIGIL_EXIT=1
+cp28.asm(4):2: error: codepage base `NOPE` is an unknown codepage: no page of that name exists
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+=== cp29 (da1ff199)
+ASL_EXIT=0
+ASL_DIAG=complete
+asl   bytes: 11221142
+SIGIL_EXIT=0
+sigil bytes: 11221142
+MATCH
+=== cp30 (dbed815a)
+ASL_EXIT=0
+ASL_DIAG=complete
+asl   bytes: 111122414142414142
+SIGIL_EXIT=0
+sigil bytes: 111122414142414142
+MATCH
+=== s3klevsel (2c065fae)
+ASL_EXIT=0
+ASL_DIAG=complete
+asl   bytes: 34fc000034bc001134bc001234bc000034bc001a33fc0013ffff018a33fc0014ffff01da2a415a617a30393a2e200b1e2b242229002630291e2b21082536212f2c202631360c2a1e2f1f292200241e2f21222b0d201e2f2b26331e29002b2624253105262022201e2d0a291e322b2025001f1e30220c2a3230252f2c2c2a00252629290d232936262b24001f1e3131222f3609301e2b212c2d2c29263008291e331e002f22222308291e331e002f2222230c30283600301e2b2031321e2f360721221e31252224240b31252200212c2c2a30211e36041f2c2b32300c302d2220261e290030311e24220c302c322b21003122303100001a2a415a617a30393a2e20
+SIGIL_EXIT=0
+sigil bytes: 34fc000034bc001134bc001234bc000034bc001a33fc0013ffff018a33fc0014ffff01da2a415a617a30393a2e200b1e2b242229002630291e2b21082536212f2c202631360c2a1e2f1f292200241e2f21222b0d201e2f2b26331e29002b2624253105262022201e2d0a291e322b2025001f1e30220c2a3230252f2c2c2a00252629290d232936262b24001f1e3131222f3609301e2b212c2d2c29263008291e331e002f22222308291e331e002f2222230c30283600301e2b2031321e2f360721221e31252224240b31252200212c2c2a30211e36041f2c2b32300c302d2220261e290030311e24220c302c322b21003122303100001a2a415a617a30393a2e20
+MATCH

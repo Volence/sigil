@@ -1,0 +1,12 @@
+	cpu 68000
+	charset $41,$11
+	charset $43,$33
+	dc.b "ABC"
+	codepage PG1
+	dc.b "ABC"
+	charset $42,$22
+	dc.b "ABC"
+	codepage STANDARD
+	dc.b "ABC"
+	codepage PG1
+	dc.b "ABC"

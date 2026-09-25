@@ -1,0 +1,11 @@
+	cpu 68000
+	codepage PG1
+	charset $41,$11
+	charset $42,$22
+	dc.b 'A'
+	move.w	#'B',d0
+	move.w	#"AB",d1
+	dc.w	'A'+1
+	codepage STANDARD
+	dc.b 'A'
+	move.w	#'B',d0
