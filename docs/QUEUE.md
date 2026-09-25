@@ -557,7 +557,11 @@ which is why a search by row id found nothing. Worked on `parcel/as-warn-odd-add
 re-derived by 51 probes, `[as.odd-address]` implemented on the AS front end, notes and probe table in
 `docs/superpowers/notes/2026-09-17-asl-warn-180/asl-warn-180.md`.
 
-## S3K-FOUR-CLASSES: PREMISE UNVERIFIED, and its count collides with a real one
+## S3K-FOUR-CLASSES: CLOSED, Sonic 3 & Knuckles builds whole and byte-identical
+
+- **CLOSED 2026-09-25.** All four classes landed (codepage `8de29c7f`, `$$` labels `f535d779`, bcd and PC-indexed `cbc81b99`); the whole S3K image equals the reference, CRC32 `0658f691`, 0 bytes differ (`docs/superpowers/notes/2026-09-25-s3k-whole-rom.md`). Sonic 3 Complete also identical.
+- history, kept:
+
 
 - state at archive: `open`  size: `M`  project: `-`
 - blockedBy: nothing, but see below
@@ -806,3 +810,19 @@ points at it rather than restating it, so there is one copy to keep true.
   here. Reword it to state our own reason without citing a peer's behaviour. The file sits under
   `golden/`, so it is a comment-only edit announced to aeon, not a silent one. Found 2026-09-25 while
   checking aeon's consumer notice for `27684931`, which itself changes nothing we execute.
+
+### AS-MULTICHAR-SQUOTE-STRING
+
+- state: **doing** from 2026-09-25  size: `S`  project: `SIGIL-AS-REPLACEMENT`
+- The whole remaining gap for Sonic 3 alone (`buildS3.lua`): 6 rows, all a multi-character `'...'`
+  in `dc.b`, which asl treats as a string (one charset-translated byte per character; `'AB'+1` gives
+  `4143`) and sigil's lexer turns into one integer. Requoting those 6 operands gives the reference md5
+  under sigil. Probes sq1 to sq4 in `docs/superpowers/notes/2026-09-25-s3k-whole-rom/`.
+
+### AS-CLI-DEFINE
+
+- state: **doing** from 2026-09-25  size: `S`  project: `SIGIL-AS-REPLACEMENT`
+- `-D NAME[=VALUE]` on the assembler path, asl-exact: a SET variable (later `set` may change it, `=`
+  and `equ` refused as asl #2035). Removes the S3K wrapper root. Ruled here, logged: NOT wired to
+  `Options.defines`, whose documented let-the-file-win semantics would accept two programs asl
+  refuses. Measured in `docs/superpowers/notes/2026-09-25-s3k-whole-rom.md`.
