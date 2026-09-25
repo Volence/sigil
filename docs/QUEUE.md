@@ -797,7 +797,7 @@ points at it rather than restating it, so there is one copy to keep true.
   (bytes and pins moved past the pin). **26 are unresolved-name failures in `*_port` tests** from aeon
   commits after the pin (`OJZ_Preset_Night`, `BG_VSCROLL_*`, `BG_Bands_Hold`, `GAME_SCANLINE_CAPS`,
   `CRASH_REPORT`, `MDDBG__ErrorHandler`/`DMA_Queue_End`, `Region_Resolve`/`Plane_Buffer_Peak`, and a
-  doubled `embed` path in `test_objects_port`). None is from `481ac02e`. These must be repaired
+  doubled `embed` path in `test_objects_port`). None is from `481ac02e`. Also re-check `parallax_port` for aeon `6e1a4f80`'s new `pub equ band_record_len = sizeof(band_record)` when the pin moves (inferred same-module, not run). These must be repaired
   before the pin next advances; they are the port tests' hand-assembled dependency seams drifting.
 
 ### CART-CHECK-CITES-STALE-PEER-BEHAVIOUR
