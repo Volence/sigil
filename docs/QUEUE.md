@@ -591,6 +591,15 @@ settle-everything-else half, so closing them would be a second call, not part of
 them, and its claim about which half of the owner's decision they fall in cannot be checked against
 the decision either.
 
+**CORRECTED 2026-09-25: the three shapes ARE in the tree.** `docs/superpowers/notes/2026-09-10-as-circular-split.md`,
+section 6: `c4` (a `rept`/`ds` count naming a forward constant), `c5` (one naming a forward label past
+an `org`) and `d2` (an `if` naming a forward label that settles), each refused by asl with *expression
+must be evaluatable in first pass* and left accepted because the circular-split ruling's own words put
+them in "everything else settles". They are watched: probes `firstpass_rept_forward_constant`,
+`firstpass_rept_org_separated`, `firstpass_if_settles_false` in `crates/sigil-frontend-as/tests/as_over_acceptance.rs`,
+rows of `over_acceptance/ledger.txt`. Closing them is a second decision, as the row says. Re-derive:
+`grep -n "Sigil accepts three shapes" docs/superpowers/notes/2026-09-10-as-circular-split.md`.
+
 ## Where these three came from, and the correction to where they were first filed
 
 Found 2026-09-16 by trying to start the `next` row and failing to locate its premise. Swept all 20
@@ -712,3 +721,15 @@ points at it rather than restating it, so there is one copy to keep true.
 - **The only row of the seven booked NOWHERE**, under any name. Adjacent but not the same subject:
   `d-32` (answered) is about the size check running only when something else in the build happens to
   use the record. Re-derive the 42 before quoting it; it is a snapshot.
+
+### AS-OVERACCEPT-SILENT-THREE
+
+- state: **doing** from 2026-09-25  size: `S`  project: `SIGIL-AS-REPLACEMENT`
+- The three over-acceptances the 2026-09-10 gate found that no ruling chose to keep:
+  `dir_padding_not_on_off` (`padding maybe` silently turns padding ON; `supmode` shares the helper),
+  `expr_function_arg_count` (no arity check on user `function` calls) and `save_missing_restore`
+  (the save stack is never checked at end of unit). Rows 44 to 46 of
+  `crates/sigil-frontend-as/tests/over_acceptance/ledger.txt`. Unlike `c4`/`c5`/`d2` these are not in
+  any ruling's keep-settling half: each is a typo or mistake asl refuses, and the first builds a ROM
+  with a layout flag set the wrong way. Refusing them the way asl does is assembler internals under
+  the autonomy directive, with a lane-log note.
