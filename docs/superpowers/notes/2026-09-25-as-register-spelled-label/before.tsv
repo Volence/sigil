@@ -1,0 +1,114 @@
+case_a1_read_A1	2	#1145 expected integer, floating point number or string but got register	-	1	probe.asm(4):2: error: `A1` is a register, not a value: expected an integer, floating point number or string	-	both-refuse	0
+case_A1_read_a1	2	#1145 expected integer, floating point number or string but got register	-	1	probe.asm(4):2: error: `a1` is a register, not a value: expected an integer, floating point number or string	-	both-refuse	0
+cont_A10	0		4e71303c12021200	0		4e71303c12021200	same	0
+cont_A1_2	0		4e71303c12021200	0		4e71303c12021200	same	0
+cont_A1A1	0		4e71303c12021200	0		4e71303c12021200	same	0
+cont_A1_dotw	2	#1010 symbol undefined	-	1	probe.asm(4):2: error: unresolved symbol `A1.w` in operand	-	both-refuse	0
+cont_A1_local	0		4e714e71303c12041202	0		4e714e71303c12041202	same	0
+cont_A1x	0		4e71303c12021200	0		4e71303c12021200	same	0
+cont_A8	0		4e71303c12021200	0		4e71303c12021200	same	0
+cont_D8	0		4e71303c12021200	0		4e71303c12021200	same	0
+cont_dollar_A1	0		4e714e71303c12041202	0		4e714e71303c12041202	same	0
+cont_SP2	0		4e71303c12021200	0		4e71303c12021200	same	0
+cont_XA1	0		4e71303c12021200	0		4e71303c12021200	same	0
+ctl_nodef_dcl	0		4e71	1	probe.asm(4):2: error: `A1` is a register, not a value: expected an integer, floating point number or string	-	OVER-REFUSE	0
+ctl_nodef_dcw_multi	0		4e7112001200	1	probe.asm(4):2: error: `d3` is a register, not a value: expected an integer, floating point number or string	-	OVER-REFUSE	0
+ctl_nodef_dcw_plus	2	#1145 expected integer, floating point number or string but got register	-	1	probe.asm(4):2: error: `A1` is a register, not a value: expected an integer, floating point number or string	-	both-refuse	0
+ctl_nodef_imm	2	#1146 expected integer or string	-	1	probe.asm(3):2: error: `A1` is a register, not a value: expected an integer, floating point number or string	-	both-refuse	0
+ctl_nodef_imm_plus	2	#1145 expected integer, floating point number or string but got register	-	1	probe.asm(4):2: error: `A1` is a register, not a value: expected an integer, floating point number or string	-	both-refuse	0
+dc_b	0		4e7100	1	probe.asm(4):7: error: operand 4608 out of range -128..=255	-	OVER-REFUSE	0
+dc_multi	0		4e714e7112021202	0		4e714e71120212001202	BYTES-DIFFER	0
+def_a1	0		4e714e71	0		4e714e71	same	0
+def_A1	0		4e714e71	0		4e714e71	same	0
+def_A1_equ	0		4e71	0		4e71	same	0
+def_A1_set	0		4e71	0		4e71	same	0
+def_A7	0		4e714e71	0		4e714e71	same	0
+def_CCR	0		4e714e71	0		4e714e71	same	0
+def_d0	0		4e714e71	0		4e714e71	same	0
+def_D0	0		4e714e71	0		4e714e71	same	0
+def_PC	0		4e714e71	0		4e714e71	same	0
+def_sp	0		4e714e71	0		4e714e71	same	0
+def_SP	0		4e714e71	0		4e714e71	same	0
+def_SR	0		4e714e71	0		4e714e71	same	0
+def_USP	0		4e714e71	0		4e714e71	same	0
+ds_count	3	#10000 internal error	-	0		4e71	OVER-ACCEPT	0
+equ_A1_dcw	0		(empty)	0		0005	BYTES-DIFFER	0
+equ_A1_dcw_plus	2	#1145 expected integer, floating point number or string but got register	-	0		0007	OVER-ACCEPT	0
+equ_A1_if	2	#1145 expected integer, floating point number or string but got register	-	0		4e71	OVER-ACCEPT	0
+equ_A1_imm	2	#1146 expected integer or string	-	0		303c0005	OVER-ACCEPT	0
+equ_A1_imm_plus	2	#1145 expected integer, floating point number or string but got register	-	0		303c0007	OVER-ACCEPT	0
+i09	3	#10000 internal error	-	0		4e714e71303c0002	OVER-ACCEPT	0
+i09_nodollar	3	#10000 internal error	-	0		4e714e71303c0002	OVER-ACCEPT	0
+lbl_a1_dcw_plus	2	#1145 expected integer, floating point number or string but got register	-	0		4e711202	OVER-ACCEPT	0
+lbl_a1_imm_plus	2	#1145 expected integer, floating point number or string but got register	-	0		4e71303c1202	OVER-ACCEPT	0
+lbl_A7_dcw_plus	2	#1145 expected integer, floating point number or string but got register	-	0		4e711202	OVER-ACCEPT	0
+lbl_A7_imm_plus	2	#1145 expected integer, floating point number or string but got register	-	0		4e71303c1202	OVER-ACCEPT	0
+lbl_absl	2	#1146 expected integer or string	-	1	probe.asm(5):9: error: trailing tokens in operand	-	both-refuse	0
+lbl_absw	2	#1146 expected integer or string	-	1	probe.asm(5):9: error: trailing tokens in operand	-	both-refuse	0
+lbl_bare_jsr	2	#1350 addressing mode not allowed here	-	0		4e714e714eb81200	OVER-ACCEPT	0
+lbl_bare_lea	2	#1350 addressing mode not allowed here	-	1	probe.asm(5):2: error: unsupported form: An is not a legal addressing mode for this operand position	-	both-refuse	0
+lbl_bare_move	0		4e714e713009	0		4e714e713009	same	0
+lbl_bra	2	#1146 expected integer or string	-	0		4e714e716000fffa	OVER-ACCEPT	0
+lbl_CCR_dcw_plus	0		4e711202	0		4e711202	same	0
+lbl_CCR_imm_plus	0		4e71303c1202	0		4e71303c1202	same	0
+lbl_d0_dcw_plus	2	#1145 expected integer, floating point number or string but got register	-	0		4e711202	OVER-ACCEPT	0
+lbl_D0_dcw_plus	2	#1145 expected integer, floating point number or string but got register	-	0		4e711202	OVER-ACCEPT	0
+lbl_d0_imm_plus	2	#1145 expected integer, floating point number or string but got register	-	0		4e71303c1202	OVER-ACCEPT	0
+lbl_D0_imm_plus	2	#1145 expected integer, floating point number or string but got register	-	0		4e71303c1202	OVER-ACCEPT	0
+lbl_dcb_plus	3	#10000 internal error	-	0		4e714e7100	OVER-ACCEPT	0
+lbl_dcl	0		4e714e71	0		4e714e7100001200	BYTES-DIFFER	0
+lbl_dcl_sub	3	#10000 internal error	-	0		4e714e7100000002	OVER-ACCEPT	0
+lbl_dcw	0		4e714e71	0		4e714e711200	BYTES-DIFFER	0
+lbl_dcw_plus	2	#1145 expected integer, floating point number or string but got register	-	0		4e714e711202	OVER-ACCEPT	0
+lbl_defined	0		4e714e714e71	0		4e714e714e71	same	0
+lbl_disp	2	#1146 expected integer or string	-	0		4e714e7130281200	OVER-ACCEPT	0
+lbl_disp_plus	2	#1145 expected integer, floating point number or string but got register	-	0		4e714e7130281202	OVER-ACCEPT	0
+lbl_equ_rhs	0		4e714e71	0		4e714e711200	BYTES-DIFFER	0
+lbl_if_cmp	2	#1145 expected integer, floating point number or string but got register	-	0		4e714e714e71	OVER-ACCEPT	0
+lbl_ifdef	0		4e714e714e71	0		4e714e714e71	same	0
+lbl_imm	2	#1146 expected integer or string	-	0		4e714e71303c1200	OVER-ACCEPT	0
+lbl_imm_lab	2	#1145 expected integer, floating point number or string but got register	-	0		4e714e71323c2402	OVER-ACCEPT	0
+lbl_imm_paren	2	#1146 expected integer or string	-	0		4e714e71303c1200	OVER-ACCEPT	0
+lbl_imm_plus	2	#1145 expected integer, floating point number or string but got register	-	0		4e714e71303c1202	OVER-ACCEPT	0
+lbl_imm_sub	3	#10000 internal error	-	0		4e714e71303c0002	OVER-ACCEPT	0
+lbl_org	2	#1145 expected integer, floating point number or string but got register	-	0		4e714e71000000004e71	OVER-ACCEPT	0
+lbl_PC_dcw_plus	0		4e711202	0		4e711202	same	0
+lbl_PC_imm_plus	0		4e71303c1202	0		4e71303c1202	same	0
+lbl_pcrel	2	#1146 expected integer or string	-	0		4e714e7141fafffa	OVER-ACCEPT	0
+lbl_set_rhs	2	#1145 expected integer, floating point number or string but got register	-	0		4e714e711202	OVER-ACCEPT	0
+lbl_sp_dcw_plus	2	#1145 expected integer, floating point number or string but got register	-	0		4e711202	OVER-ACCEPT	0
+lbl_SP_dcw_plus	2	#1145 expected integer, floating point number or string but got register	-	0		4e711202	OVER-ACCEPT	0
+lbl_sp_imm_plus	2	#1145 expected integer, floating point number or string but got register	-	0		4e71303c1202	OVER-ACCEPT	0
+lbl_SP_imm_plus	2	#1145 expected integer, floating point number or string but got register	-	0		4e71303c1202	OVER-ACCEPT	0
+lbl_SR_dcw_plus	0		4e711202	0		4e711202	same	0
+lbl_SR_imm_plus	0		4e71303c1202	0		4e71303c1202	same	0
+lbl_USP_dcw_plus	0		4e711202	0		4e711202	same	0
+lbl_USP_imm_plus	0		4e71303c1202	0		4e71303c1202	same	0
+macro_body_label	2	#1145 expected integer, floating point number or string but got register	-	0		4e71303c1202	OVER-ACCEPT	0
+set_a0_dcl	2	#1145 expected integer, floating point number or string but got register	-	0		00000006	OVER-ACCEPT	0
+z80_ctl_dw_hl	2	#1010 symbol undefined	-	1	probe.asm(4):2: error: unresolved target expression (dangling symbol(s) `hl`) for fixup in section sec4608 at offset 1	-	both-refuse	0
+z80_def_a	0		0000	0		0000	same	0
+z80_def_af	0		0000	0		0000	same	0
+z80_def_bc	0		0000	0		0000	same	0
+z80_def_hl	0		0000	0		0000	same	0
+z80_def_ix	0		0000	0		0000	same	0
+z80_def_sp	0		0000	0		0000	same	0
+z80_dw_a	0		000012	0		000012	same	0
+z80_dw_af	0		000012	0		000012	same	0
+z80_dw_bc	0		000012	0		000012	same	0
+z80_dw_hl	0		000012	0		000012	same	0
+z80_dw_ix	0		000012	0		000012	same	0
+z80_dwplus_a	0		000212	0		000212	same	0
+z80_dwplus_af	0		000212	0		000212	same	0
+z80_dwplus_bc	0		000212	0		000212	same	0
+z80_dwplus_hl	0		000212	0		000212	same	0
+z80_dwplus_ix	0		000212	0		000212	same	0
+z80_dwplus_sp	0		000212	0		000212	same	0
+z80_dw_sp	0		000012	0		000012	same	0
+z80_ld_hl_bare	2	#1500 instruction not supported on Z80	-	1	probe.asm(4):2: error: unsupported form: Instruction { mnemonic: Ld, ops: [Pair(Hl), Pair(Hl)] }	-	both-refuse	0
+z80_ldimm_a	0		00110212	0		00110212	same	0
+z80_ldimm_af	0		00110212	0		00110212	same	0
+z80_ldimm_bc	0		00110212	0		00110212	same	0
+z80_ldimm_hl	0		00110212	0		00110212	same	0
+z80_ldimm_ix	0		00110212	0		00110212	same	0
+z80_ldimm_sp	0		00110212	0		00110212	same	0
