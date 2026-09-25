@@ -177,7 +177,7 @@ pub fn require_reference_tree(aeon: &Path) -> Result<(), String> {
 
 /// Parse the two seam-2 anchors from [`SOUND_PLACEMENT_MAP_REL`] and check the
 /// emit's lay-down order is a subsequence of the map's declared `order`. Reuses the
-/// harness's map reader ([`load_placement_map`]) — no second map engine. With an
+/// harness's map reader ([`load_placement_map`]), no second map engine. With an
 /// anchor overlay, the anchors are the map's with the overlay applied
 /// ([`crate::map_placement::PlacementMap::with_overlay`]).
 fn bank_anchors(aeon: &Path, ov: Option<&AnchorOverlay>) -> Result<BankAnchors, String> {
@@ -902,7 +902,7 @@ fn emit_sfx_body_and_head_at(
 
     // The SFX block runs to the top of the sound bank, DERIVED from the map anchor
     // (`bank_start` + $8000, `bank_start` being the `sound_bank` anchor) rather than
-    // pinned — a hardcoded top would silently wrap this u32 subtraction into a ~4 GB
+    // pinned: a hardcoded top would silently wrap this u32 subtraction into a ~4 GB
     // region the moment the bank moves up.
     let bank_top = bank_start + BANK_WINDOW_SIZE;
     let sfx_size = bank_top.checked_sub(sfx_base).ok_or_else(|| {
