@@ -1,0 +1,90 @@
+ref s3c run 1 rc=0
+b23c88b46f5ec7377f1b6f109d97f5a5  crc32=a651623a  size=3360160  /home/volence/sonic_hacks/.scratch/s3k-whole-rom/trees/ref-s3c/sonic3k.bin
+ref s3c run 2 rc=0
+b23c88b46f5ec7377f1b6f109d97f5a5  crc32=a651623a  size=3360160  /home/volence/sonic_hacks/.scratch/s3k-whole-rom/trees/ref-s3c/sonic3k.bin
+no asl .log for s3c
+ref s3 run 1 rc=0
+d724ea4dd417fe330c9dcfd955c596b2  crc32=9bc192ce  size=2097152  /home/volence/sonic_hacks/.scratch/s3k-whole-rom/trees/ref-s3/s3built.bin
+ref s3 run 2 rc=0
+d724ea4dd417fe330c9dcfd955c596b2  crc32=9bc192ce  size=2097152  /home/volence/sonic_hacks/.scratch/s3k-whole-rom/trees/ref-s3/s3built.bin
+no asl .log for s3
+sigil md5: 41b5d2676ade740fd1c4e9d6a0869e72
+sigil rev:   revision:  ec860c7e4cd207bf1fefe9cea361759cdcb01bee
+tree: /home/volence/sonic_hacks/.scratch/s3k-whole-rom/trees/sig-flips root: wrapper1.asm
+args: -p=FF -z=0,kosinski,Size_of_Snd_driver_guess,before -z=1300,kosinski,Size_of_Snd_driver2_guess,before
+uptime:  05:55:58 up 1 day, 18:57,  1 user,  load average: 4.80, 8.68, 14.50
+SIGIL_EXIT=0 elapsed=2.44
+stderr lines: 0
+rows: 0
+b23c88b46f5ec7377f1b6f109d97f5a5  crc32=a651623a  size=3360160  /home/volence/sonic_hacks/.scratch/s3k-whole-rom/runs/s3c/image.bin
+RUN_END_s3c
+sigil md5: 41b5d2676ade740fd1c4e9d6a0869e72
+sigil rev:   revision:  ec860c7e4cd207bf1fefe9cea361759cdcb01bee
+tree: /home/volence/sonic_hacks/.scratch/s3k-whole-rom/trees/sig-flips root: s3.asm
+args: -p=FF -z=0,uncompressed,Size_of_Snd_driver_guess,before -z=1300,uncompressed,Size_of_Snd_driver2_guess,before
+uptime:  05:56:01 up 1 day, 18:57,  1 user,  load average: 4.80, 8.68, 14.50
+SIGIL_EXIT=1 elapsed=1.63
+stderr lines: 2582
+rows: 2582
+RUN_END_s3
+cp: cannot stat '/home/volence/sonic_hacks/.scratch/s3k-whole-rom/runs/s3/image.bin': No such file or directory
+Failed to open file 'fixed-s3.bin'!
+lua: ./build_tools/lua/common.lua:704: attempt to index a nil value (local 'rom')
+stack traceback:
+	./build_tools/lua/common.lua:704: in field 'fix_header'
+	(command line):1: in main chunk
+	[C]: in ?
+fix_header rc=1
+== s3c: header fields, reference then raw sigil ==
+checksum at 0x18E: image E790, fix_header computes E790: same
+end-of-ROM at 0x1A4: image 0033459F, fix_header computes 0033459F: same
+control: one bit flipped at 0x10000, required checksum becomes E890 (moves)
+checksum at 0x18E: image E790, fix_header computes E790: same
+end-of-ROM at 0x1A4: image 0033459F, fix_header computes 0033459F: same
+control: one bit flipped at 0x10000, required checksum becomes E890 (moves)
+== s3c: reference vs RAW sigil ==
+reference: 3360160 bytes, crc32 a651623a
+candidate: 3360160 bytes, crc32 a651623a
+compare: 0 differing bytes, length mismatch False
+control: planted at [0, 1680080, 3360159], comparer reported [0, 1680080, 3360159]: OK
+control vs reference: 3 differing bytes (must be 3 when the compare is clean)
+rc=0
+ranges: 0, bytes: 0, lengths 3360160 vs 3360160
+== s3c: reference vs sigil + fix_header ==
+reference: 3360160 bytes, crc32 a651623a
+candidate: 3360160 bytes, crc32 a651623a
+compare: 0 differing bytes, length mismatch False
+control: planted at [0, 1680080, 3360159], comparer reported [0, 1680080, 3360159]: OK
+control vs reference: 3 differing bytes (must be 3 when the compare is clean)
+rc=0
+cp: cannot stat '/home/volence/sonic_hacks/.scratch/s3k-whole-rom/trees/sig-flips/fixed-s3.bin': No such file or directory
+cp: cannot stat '/home/volence/sonic_hacks/.scratch/s3k-whole-rom/runs/s3/image.bin': No such file or directory
+== s3: header fields, reference then raw sigil ==
+checksum at 0x18E: image A8F2, fix_header computes A8F2: same
+end-of-ROM at 0x1A4: image 001FFFFF, fix_header computes 001FFFFF: same
+control: one bit flipped at 0x10000, required checksum becomes A9F2 (moves)
+Traceback (most recent call last):
+  File "/home/volence/sonic_hacks/.scratch/s3k-whole-rom/scripts/header.py", line 6, in <module>
+    d = bytearray(open(sys.argv[1], "rb").read())
+                  ~~~~^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/home/volence/sonic_hacks/.scratch/s3k-whole-rom/flips/sigil-raw-s3.bin'
+== s3: reference vs RAW sigil ==
+Traceback (most recent call last):
+  File "/home/volence/sonic_hacks/.scratch/s3k-whole-rom/scripts/compare.py", line 12, in <module>
+    cand = open(sys.argv[2], "rb").read()
+           ~~~~^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/home/volence/sonic_hacks/.scratch/s3k-whole-rom/flips/sigil-raw-s3.bin'
+rc=1
+Traceback (most recent call last):
+  File "/home/volence/sonic_hacks/.scratch/s3k-whole-rom/scripts/diffranges.py", line 5, in <module>
+    b = open(sys.argv[2], "rb").read()
+        ~~~~^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/home/volence/sonic_hacks/.scratch/s3k-whole-rom/flips/sigil-raw-s3.bin'
+== s3: reference vs sigil + fix_header ==
+Traceback (most recent call last):
+  File "/home/volence/sonic_hacks/.scratch/s3k-whole-rom/scripts/compare.py", line 12, in <module>
+    cand = open(sys.argv[2], "rb").read()
+           ~~~~^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/home/volence/sonic_hacks/.scratch/s3k-whole-rom/flips/sigil-fixed-s3.bin'
+rc=1
+FLIPS_END

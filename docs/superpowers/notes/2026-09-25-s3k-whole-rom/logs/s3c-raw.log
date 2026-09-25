@@ -1,0 +1,18 @@
+ASL_EXIT=0
+ASL_DIAG=complete
+asl rc=0
+no sonic3k.log
+p2bin rc=0
+f433c223ef0e770db96b66ad0c66f80d  crc32=dc2eec3c  size=3360160  /home/volence/sonic_hacks/.scratch/s3k-whole-rom/flips/asl-raw-s3c.bin
+b23c88b46f5ec7377f1b6f109d97f5a5  crc32=a651623a  size=3360160  /home/volence/sonic_hacks/.scratch/s3k-whole-rom/runs/s3c/image.bin
+b23c88b46f5ec7377f1b6f109d97f5a5  crc32=a651623a  size=3360160  /home/volence/sonic_hacks/.scratch/s3k-whole-rom/flips/ref-s3c-run2.bin
+--- raw asl+p2bin vs buildS3Complete.lua's fixed reference
+ranges: 1, bytes: 2, lengths 3360160 vs 3360160
+  0x00018E +2: dfb3 vs e790
+--- raw asl+p2bin vs sigil
+ranges: 1, bytes: 2, lengths 3360160 vs 3360160
+  0x00018E +2: dfb3 vs e790
+checksum at 0x18E: image DFB3, fix_header computes E790: DIFFERS
+end-of-ROM at 0x1A4: image 0033459F, fix_header computes 0033459F: same
+control: one bit flipped at 0x10000, required checksum becomes E890 (moves)
+S3CRAW_END
