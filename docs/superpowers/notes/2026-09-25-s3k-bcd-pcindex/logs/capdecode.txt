@@ -1,0 +1,146 @@
+capstone 5.0.7
+## x01 sigil==asl: True
+| `addx.b d3,d5` | db03 | db03 | `addx.b d3, d5` |
+| `addx.w d3,d5` | db43 | db43 | `addx.w d3, d5` |
+| `addx.l d3,d5` | db83 | db83 | `addx.l d3, d5` |
+| `addx d3,d5` | db43 | db43 | `addx.w d3, d5` |
+| `addx.b -(a3),-(a5)` | db0b | db0b | `addx.b -(a3), -(a5)` |
+| `addx.w -(a3),-(a5)` | db4b | db4b | `addx.w -(a3), -(a5)` |
+| `addx.l -(a3),-(a5)` | db8b | db8b | `addx.l -(a3), -(a5)` |
+| `addx -(a3),-(a5)` | db4b | db4b | `addx.w -(a3), -(a5)` |
+| `addx.w d6,d1` | d346 | d346 | `addx.w d6, d1` |
+| `addx.l -(sp),-(a6)` | dd8f | dd8f | `addx.l -(a7), -(a6)` |
+| `addx.w -(a1),-(a7)` | df49 | df49 | `addx.w -(a1), -(a7)` |
+| `subx.b d3,d5` | 9b03 | 9b03 | `subx.b d3, d5` |
+| `subx.w d3,d5` | 9b43 | 9b43 | `subx.w d3, d5` |
+| `subx.l d3,d5` | 9b83 | 9b83 | `subx.l d3, d5` |
+| `subx d3,d5` | 9b43 | 9b43 | `subx.w d3, d5` |
+| `subx.b -(a3),-(a5)` | 9b0b | 9b0b | `subx.b -(a3), -(a5)` |
+| `subx.w -(a3),-(a5)` | 9b4b | 9b4b | `subx.w -(a3), -(a5)` |
+| `subx.l -(a3),-(a5)` | 9b8b | 9b8b | `subx.l -(a3), -(a5)` |
+| `subx -(a3),-(a5)` | 9b4b | 9b4b | `subx.w -(a3), -(a5)` |
+| `subx.w d6,d1` | 9346 | 9346 | `subx.w d6, d1` |
+| `subx.l -(sp),-(a6)` | 9d8f | 9d8f | `subx.l -(a7), -(a6)` |
+| `ADDX.W D3,D5` | db43 | db43 | `addx.w d3, d5` |
+| `SUBX.L -(A3),-(A5)` | 9b8b | 9b8b | `subx.l -(a3), -(a5)` |
+## x02 sigil==asl: True
+| `abcd d3,d5` | cb03 | cb03 | `abcd.b d3, d5` |
+| `abcd.b d3,d5` | cb03 | cb03 | `abcd.b d3, d5` |
+| `abcd -(a3),-(a5)` | cb0b | cb0b | `abcd.b -(a3), -(a5)` |
+| `abcd.b -(a3),-(a5)` | cb0b | cb0b | `abcd.b -(a3), -(a5)` |
+| `abcd d6,d1` | c306 | c306 | `abcd.b d6, d1` |
+| `abcd -(a1),-(a2)` | c509 | c509 | `abcd.b -(a1), -(a2)` |
+| `abcd -(sp),-(a6)` | cd0f | cd0f | `abcd.b -(a7), -(a6)` |
+| `sbcd d3,d5` | 8b03 | 8b03 | `sbcd.b d3, d5` |
+| `sbcd.b d3,d5` | 8b03 | 8b03 | `sbcd.b d3, d5` |
+| `sbcd -(a3),-(a5)` | 8b0b8b0b | 8b0b8b0b | `sbcd -(a3), -(a5), #$8b0b` |
+| `sbcd.b -(a3),-(a5)` | 8306 | 8306 | `sbcd.b d6, d1` |
+| `sbcd d6,d1` | 8f09cb0b | 8f09cb0b | `sbcd -(a1), -(a7), #$cb0b` |
+| `sbcd -(a1),-(sp)` |  | (capstone: no decode) |
+| `ABCD -(A3),-(A5)` |  | (capstone: no decode) |
+## x03 sigil==asl: True
+| `negx.b d3` | 4003 | 4003 | `negx.b d3` |
+| `negx.w d3` | 4043 | 4043 | `negx.w d3` |
+| `negx.l d3` | 4083 | 4083 | `negx.l d3` |
+| `negx d5` | 4045 | 4045 | `negx.w d5` |
+| `negx.b (a3)` | 4013 | 4013 | `negx.b (a3)` |
+| `negx.w (a3)+` | 405b | 405b | `negx.w (a3)+` |
+| `negx.l -(a3)` | 40a3 | 40a3 | `negx.l -(a3)` |
+| `negx.w $1234(a5)` | 406d1234 | 406d1234 | `negx.w $1234(a5)` |
+| `negx.b -$12(a5,d6.w)` | 403560ee | 403560ee | `negx.b -$12(a5, d6.w)` |
+| `negx.l $12(a5,a2.l)` | 40b5a812 | 40b5a812 | `negx.l $12(a5, a2.l)` |
+| `negx.w ($1234).w` | 40781234 | 40781234 | `negx.w $1234.w` |
+| `negx.l ($123456).l` | 40b900123456 | 40b900123456 | `negx.l $123456.l` |
+| `nbcd d3` | 4803 | 4803 | `nbcd.b d3` |
+| `nbcd.b d5` | 4805 | 4805 | `nbcd.b d5` |
+| `nbcd (a3)` | 4813 | 4813 | `nbcd.b (a3)` |
+| `nbcd (a3)+` | 481b | 481b | `nbcd.b (a3)+` |
+| `nbcd -(a3)` | 4823 | 4823 | `nbcd.b -(a3)` |
+| `nbcd $1234(a5)` | 482d1234 | 482d1234 | `nbcd.b $1234(a5)` |
+| `nbcd -$12(a5,d6.w)` | 483560ee | 483560ee | `nbcd.b -$12(a5, d6.w)` |
+| `nbcd $12(a5,a2.l)` | 4835a812 | 4835a812 | `nbcd.b $12(a5, a2.l)` |
+| `nbcd ($1234).w` | 48381234 | 48381234 | `nbcd.b $1234.w` |
+| `nbcd ($123456).l` | 483900123456 | 483900123456 | `nbcd.b $123456.l` |
+## pcx01 sigil==asl: True
+| `move.b T(pc,d3.w),d5` | 1a3b306e | 1a3b306e | `move.b $70(pc, d3.w), d5` |
+| `move.w T(pc,d3.l),d5` | 3a3b386a | 3a3b386a | `move.w $70(pc, d3.l), d5` |
+| `move.l T(pc,a3.w),d5` | 2a3bb066 | 2a3bb066 | `move.l $70(pc, a3.w), d5` |
+| `move.w T(pc,a3.l),(a5)` | 3abbb862 | 3abbb862 | `move.w $70(pc, a3.l), (a5)` |
+| `move.l T(pc,d6.w),$1234(a5)` | 2b7b605e1234 | 2b7b605e1234 | `move.l $70(pc, d6.w), $1234(a5)` |
+| `movea.w T(pc,d3.w),a5` | 3a7b3058 | 3a7b3058 | `movea.w $70(pc, d3.w), a5` |
+| `movea.l T(pc,a2.l),a5` | 2a7ba854 | 2a7ba854 | `movea.l $70(pc, a2.l), a5` |
+| `move.w T(pc,d3.w),a5` | 3a7b3050 | 3a7b3050 | `movea.w $70(pc, d3.w), a5` |
+| `add.b T(pc,d3.w),d5` | da3b304c | da3b304c | `add.b $70(pc, d3.w), d5` |
+| `add.w T(pc,d3.l),d5` | da7b3848 | da7b3848 | `add.w $70(pc, d3.l), d5` |
+| `add.l T(pc,a3.w),d5` | dabbb044 | dabbb044 | `add.l $70(pc, a3.w), d5` |
+| `adda.w T(pc,d3.w),a5` | dafb3040 | dafb3040 | `adda.w $70(pc, d3.w), a5` |
+| `adda.l T(pc,d3.l),a5` | dbfb383c | dbfb383c | `adda.l $70(pc, d3.l), a5` |
+| `sub.w T(pc,d3.w),d5` | 9a7b3038 | 9a7b3038 | `sub.w $70(pc, d3.w), d5` |
+| `suba.l T(pc,a4.w),a5` | 9bfbc034 | 9bfbc034 | `suba.l $70(pc, a4.w), a5` |
+| `and.w T(pc,d3.w),d5` | ca7b3030 | ca7b3030 | `and.w $70(pc, d3.w), d5` |
+| `or.l T(pc,d3.l),d5` | 8abb382c | 8abb382c | `or.l $70(pc, d3.l), d5` |
+| `cmp.b T(pc,d3.w),d5` | ba3b3028 | ba3b3028 | `cmp.b $70(pc, d3.w), d5` |
+| `cmp.w T(pc,a3.l),d5` | ba7bb824 | ba7bb824 | `cmp.w $70(pc, a3.l), d5` |
+| `cmpa.w T(pc,d3.w),a5` | bafb3020 | bafb3020 | `cmpa.w $70(pc, d3.w), a5` |
+| `cmpa.l T(pc,d3.w),a5` | bbfb301c | bbfb301c | `cmpa.l $70(pc, d3.w), a5` |
+| `muls.w T(pc,d3.w),d5` | cbfb3018 | cbfb3018 | `muls.w $70(pc, d3.w), d5` |
+| `mulu.w T(pc,d3.l),d5` | cafb3814 | cafb3814 | `mulu.w $70(pc, d3.l), d5` |
+| `divs.w T(pc,a3.w),d5` | 8bfbb010 | 8bfbb010 | `divs.w $70(pc, a3.w), d5` |
+| `divu.w T(pc,d3.w),d5` | 8afb300c | 8afb300c | `divu.w $70(pc, d3.w), d5` |
+| `btst d5,T(pc,d3.w)` | 0b3b3008 | 0b3b3008 | `btst.l d5, $70(pc, d3.w)` |
+| `btst #3,T(pc,d3.l)` | 083b00033802 | 083b00033802 | `btst.b #$3, $6e(pc, d3.l)` |
+| `lea T(pc,d3.w),a5` | 4bfb30fc | 4bfb30fc | `lea.l $70(pc, d3.w), a5` |
+| `lea T(pc,a3.l),a5` | 4bfbb8f8 | 4bfbb8f8 | `lea.l $70(pc, a3.l), a5` |
+| `pea T(pc,d3.w)` | 487b30f4 | 487b30f4 | `pea.l $70(pc, d3.w)` |
+| `jmp T(pc,d3.w)` | 4efb30f0 | 4efb30f0 | `jmp $70(pc, d3.w)` |
+| `jsr T(pc,a3.l)` | 4ebbb8ec | 4ebbb8ec | `jsr $70(pc, a3.l)` |
+| `movem.w T(pc,d0.w),d2-d3` | 4cbb000c00e6 | 4cbb000c00e6 | `movem.w $6e(pc, d0.w), d2-d3` |
+| `movem.l T(pc,d3.l),d0-d2/a4` | 4cfb100738e0 | 4cfb100738e0 | `movem.l $6e(pc, d3.l), d0-d2/a4` |
+| `movem.w T(pc,a3.w),a0/d6` | 4cbb0140b0da | 4cbb0140b0da | `movem.w $6e(pc, a3.w), d6/a0` |
+| `movem.l T(pc,a2.l),d0-d7/a0-a6` | 4cfb7fffa8d4 | 4cfb7fffa8d4 | `movem.l $6e(pc, a2.l), d0-d7/a0-a6` |
+| `move.w T(pc,d3.w),ccr` | 44fb30d0 | 44fb30d0 | `move.w $70(pc, d3.w), ccr` |
+| `move.w T(pc,d3.w),sr` | 46fb30cc | 46fb30cc | `move.w $70(pc, d3.w), sr` |
+| `move T(pc,d3.w),ccr` | 44fb30c8 | 44fb30c8 | `move.w $70(pc, d3.w), ccr` |
+| `move.w T(pc,d3),d5` | 3a3b30c4 | 3a3b30c4 | `move.w $70(pc, d3.w), d5` |
+| `move.w T(PC,D3.W),d5` | 3a3b30c0 | 3a3b30c0 | `move.w $70(pc, d3.w), d5` |
+| `move.w T(Pc,d3.W),d5` | 3a3b30bc | 3a3b30bc | `move.w $70(pc, d3.w), d5` |
+| `move.w (T,pc,d3.w),d5` | 3a3b30b8 | 3a3b30b8 | `move.w $70(pc, d3.w), d5` |
+| `move.w (T,PC,a3.L),d5` | 3a3bb8b4 | 3a3bb8b4 | `move.w $70(pc, a3.l), d5` |
+| `move.w T(pc,sp.w),d5` | 3a3bf0b0 | 3a3bf0b0 | `move.w $70(pc, a7.w), d5` |
+| `move.w T(pc,a7.l),d5` | 3a3bf8ac | 3a3bf8ac | `move.w $70(pc, a7.l), d5` |
+| `movem.w (T,pc,d3.w),d2/d4` | 4cbb001430a6 | 4cbb001430a6 | `movem.w $6e(pc, d3.w), d2/d4` |
+| `movem.w T(pc,d3),d2/d4` | 4cbb001430a0 | 4cbb001430a0 | `movem.w $6e(pc, d3.w), d2/d4` |
+## pcx02 sigil==asl: True
+| `move.w B(pc,d3.w),d5` | 3a3b30fa | 3a3b30fa | `move.w $0(pc, d3.w), d5` |
+| `movem.w B(pc,d0.w),d2-d3` | 4cbb000c00f4 | 4cbb000c00f4 | `movem.w $fffffffe(pc, d0.w), d2-d3` |
+| `lea B(pc,a3.l),a5` | 4bfbb8f0 | 4bfbb8f0 | `lea.l $0(pc, a3.l), a5` |
+| `jmp B(pc,d6.w)` | 4efb60ec | 4efb60ec | `jmp $0(pc, d6.w)` |
+| `btst #7,B(pc,d3.w)` | 083b000730e6 | 083b000730e6 | `btst.b #$7, $fffffffe(pc, d3.w)` |
+## pcx03 sigil==asl: True
+| `movem.w word_82872(pc,d0.w),d2-d3` | 4cbb000c0010 | 4cbb000c0010 | `movem.w $12(pc, d0.w), d2-d3` |
+| `movem.w word_82832(pc,d0.w),d4-d5` | 4cbb00300002 | 4cbb00300002 | `movem.w $a(pc, d0.w), d4-d5` |
+## pcb01 sigil==asl: True
+| `move.w *+2+127(pc,d3.w),d5` | 3a3b307f | 3a3b307f | `move.w $81(pc, d3.w), d5` |
+| `move.w *+2-128(pc,d3.w),d5` | 3a3b3080 | 3a3b3080 | `move.w $ffffff86(pc, d3.w), d5` |
+| `movem.w *+4+127(pc,d3.w),d2-d3` | 4cbb000c307f | 4cbb000c307f | `movem.w $89(pc, d3.w), d2-d3` |
+| `movem.w *+4-128(pc,d3.w),d2-d3` | 4cbb000c3080 | 4cbb000c3080 | `movem.w $ffffff90(pc, d3.w), d2-d3` |
+| `lea *+2+127(pc,a3.l),a5` | 4bfbb87f | 4bfbb87f | `lea.l $95(pc, a3.l), a5` |
+| `lea *+2-128(pc,a3.l),a5` | 4bfbb880 | 4bfbb880 | `lea.l $ffffff9a(pc, a3.l), a5` |
+| `btst #3,*+4+127(pc,d3.w)` | 083b0003307f | 083b0003307f | `btst.b #$3, $9d(pc, d3.w)` |
+| `btst #3,*+4-128(pc,d3.w)` | 083b00033080 | 083b00033080 | `btst.b #$3, $ffffffa4(pc, d3.w)` |
+| `btst d5,*+2+127(pc,d3.w)` | 0b3b307f | 0b3b307f | `btst.l d5, $a9(pc, d3.w)` |
+| `jmp *+2-1(pc,d3.w)` | 4efb30ff | 4efb30ff | `jmp $2d(pc, d3.w)` |
+## pcd01 sigil==asl: True
+| `movem.w T(pc),d2-d3` | 4cba000c0008 | 4cba000c0008 | `movem.w $a(pc), d2-d3` |
+| `movem.l (T,pc),d0/a1` | 4cfa02010002 | 4cfa02010002 | `movem.l $a(pc), d0/a1` |
+| `movem.w T(pc),a2/d6` | 4cba0440fffa | 4cba0440fffa | `movem.w $a(pc), d6/a2` |
+## sk02 sigil==asl: True
+| `abcd	-(a1),-(a2)` | c509 | c509 | `abcd.b -(a1), -(a2)` |
+| `abcd	-(a1),-(a2)` | c509 | c509 | `abcd.b -(a1), -(a2)` |
+| `abcd	-(a1),-(a2)` | c509 | c509 | `abcd.b -(a1), -(a2)` |
+## sk03 sigil==asl: True
+| `subx.w	d2,d0` | 9142 | 9142 | `subx.w d2, d0` |
+## sk04 sigil==asl: True
+| `subx.w	d0,d2` | 9540 | 9540 | `subx.w d0, d2` |
+## sk05 sigil==asl: True
+| `subx.w	d0,d2` | 9540 | 9540 | `subx.w d0, d2` |

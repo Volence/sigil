@@ -1,0 +1,188 @@
+pwd=/home/volence/sonic_hacks/sigil/.claude/worktrees/agent-adae49c7bddc9a0a8 HEAD=c2cbaaea6083ff8b4e36021a1c25537b91a27c84 branch=parcel/s3k-bcd-pcindex
+=== M0: implementation files at base 120be60971c58e43e712b285f411db2c605b388f, test file kept
+  on disk:  4 files changed, 55 insertions(+), 205 deletions(-)
+test result: FAILED. 0 passed; 20 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+    RED test s3k_extract_subx_at_5a036 ... FAILED
+    RED test negx_and_nbcd_refuse_non_data_alterable_operands ... FAILED
+    RED test s3k_extract_subx_at_5a05a ... FAILED
+    RED test s3k_extract_the_three_abcd_sites ... FAILED
+    RED test negx_and_nbcd_over_the_data_alterable_modes ... FAILED
+    RED test abcd_and_sbcd_both_forms_bare_and_byte_suffixed ... FAILED
+    RED test addx_and_subx_every_size_both_forms_and_the_bare_word_default ... FAILED
+    RED test the_decimal_forms_are_byte_only ... FAILED
+    RED test movem_pc_indexed_refuses_a_bad_index_register ... FAILED
+    RED test the_pair_forms_are_dn_dn_or_predec_predec_only ... FAILED
+    RED test movem_refuses_a_pc_relative_destination ... FAILED
+    RED test movem_through_d16_pc ... FAILED
+    RED test a_second_pc_relative_operand_is_named_as_a_destination ... FAILED
+    RED test pc_indexed_displacement_one_past_either_end_is_refused ... FAILED
+    RED test pc_indexed_source_over_every_instruction_that_admits_it ... FAILED
+    RED test s3k_extract_subx_at_4d252 ... FAILED
+    RED test pc_indexed_displacement_boundaries_127_and_minus_128_accepted ... FAILED
+    RED test pc_indexed_backward_targets ... FAILED
+    RED test pc_indexed_movem_the_s3k_shape ... FAILED
+    RED test s3k_extract_both_movem_sites_and_their_tables ... FAILED
+    TXT thread 's3k_extract_subx_at_5a036' (3946070) panicked at crates/sigil-frontend-as/tests/as_bcd_pcindex.rs:65:19:
+    TXT expected asl's bytes 9540, got diagnostics: ["`subx` is not a recognized 68000 mnemonic"]
+    TXT thread 'negx_and_nbcd_refuse_non_data_alterable_operands' (3946062) panicked at crates/sigil-frontend-as/tests/as_bcd_pcindex.rs:80:9:
+    TXT refusal does not name `An is not a legal addressing mode`: `negx` is not a recognized 68000 mnemonic
+  restored; diff stat after restore: []
+=== M1 on crates/sigil-isa/src/m68k.rs
+  on disk:  1 file changed, 1 insertion(+), 1 deletion(-)
+  | -    let word: u16 = base | ((rx as u16) << 9) | (ss << 6) | (rm << 3) | (ry as u16);
+  | +    let word: u16 = base | ((ry as u16) << 9) | (ss << 6) | (rm << 3) | (rx as u16);
+test result: FAILED. 14 passed; 6 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+    RED test s3k_extract_subx_at_5a036 ... FAILED
+    RED test abcd_and_sbcd_both_forms_bare_and_byte_suffixed ... FAILED
+    RED test s3k_extract_the_three_abcd_sites ... FAILED
+    RED test addx_and_subx_every_size_both_forms_and_the_bare_word_default ... FAILED
+    RED test s3k_extract_subx_at_4d252 ... FAILED
+    RED test s3k_extract_subx_at_5a05a ... FAILED
+    TXT thread 's3k_extract_subx_at_5a036' (4005690) panicked at crates/sigil-frontend-as/tests/as_bcd_pcindex.rs:68:5:
+    TXT assertion `left == right` failed: sigil's image differs from asl's
+    TXT thread 'abcd_and_sbcd_both_forms_bare_and_byte_suffixed' (4005675) panicked at crates/sigil-frontend-as/tests/as_bcd_pcindex.rs:68:5:
+    TXT assertion `left == right` failed: sigil's image differs from asl's
+  restored; diff stat after restore: []
+=== M2 on crates/sigil-isa/src/m68k.rs
+  on disk:  1 file changed, 1 insertion(+), 1 deletion(-)
+  | -    let word: u16 = base | ((rx as u16) << 9) | (ss << 6) | (rm << 3) | (ry as u16);
+  | +    let word: u16 = base | ((rx as u16) << 9) | (ss << 6) | (ry as u16);
+test result: FAILED. 17 passed; 3 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+    RED test abcd_and_sbcd_both_forms_bare_and_byte_suffixed ... FAILED
+    RED test addx_and_subx_every_size_both_forms_and_the_bare_word_default ... FAILED
+    RED test s3k_extract_the_three_abcd_sites ... FAILED
+    TXT thread 'abcd_and_sbcd_both_forms_bare_and_byte_suffixed' (4057817) panicked at crates/sigil-frontend-as/tests/as_bcd_pcindex.rs:68:5:
+    TXT assertion `left == right` failed: sigil's image differs from asl's
+    TXT thread 'addx_and_subx_every_size_both_forms_and_the_bare_word_default' (4057822) panicked at crates/sigil-frontend-as/tests/as_bcd_pcindex.rs:68:5:
+    TXT assertion `left == right` failed: sigil's image differs from asl's
+  restored; diff stat after restore: []
+=== M3 on crates/sigil-isa/src/m68k.rs
+  on disk:  1 file changed, 1 insertion(+), 1 deletion(-)
+  | -                Mnemonic::Negx => 0x4000,
+  | +                Mnemonic::Negx => 0x4400,
+test result: FAILED. 19 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+    RED test negx_and_nbcd_over_the_data_alterable_modes ... FAILED
+    TXT thread 'negx_and_nbcd_over_the_data_alterable_modes' (4103620) panicked at crates/sigil-frontend-as/tests/as_bcd_pcindex.rs:68:5:
+    TXT assertion `left == right` failed: sigil's image differs from asl's
+  restored; diff stat after restore: []
+=== M4 on crates/sigil-isa/src/m68k.rs
+  on disk:  1 file changed, 1 deletion(-)
+  | -            byte_only(inst)?;
+test result: FAILED. 19 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+    RED test the_decimal_forms_are_byte_only ... FAILED
+    TXT thread 'the_decimal_forms_are_byte_only' (4139715) panicked at crates/sigil-frontend-as/tests/as_bcd_pcindex.rs:75:18:
+    TXT expected a refusal, got bytes: [48, 03]
+  restored; diff stat after restore: []
+=== M5 on crates/sigil-isa/src/m68k.rs
+  on disk:  1 file changed, 1 deletion(-)
+  | -            byte_only(inst)?;
+test result: FAILED. 19 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+    RED test the_decimal_forms_are_byte_only ... FAILED
+    TXT thread 'the_decimal_forms_are_byte_only' (4176219) panicked at crates/sigil-frontend-as/tests/as_bcd_pcindex.rs:75:18:
+    TXT expected a refusal, got bytes: [CB, 03]
+  restored; diff stat after restore: []
+=== M6 on crates/sigil-frontend-as/src/eval.rs
+  on disk:  1 file changed, 1 insertion(+), 1 deletion(-)
+  | -                    M68kOperand::Pcd8Xn { d: 0, xn, long: *xlong },
+  | +                    M68kOperand::Pcd8Xn { d: 0, xn, long: false },
+test result: FAILED. 19 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+    RED test pc_indexed_source_over_every_instruction_that_admits_it ... FAILED
+    TXT thread 'pc_indexed_source_over_every_instruction_that_admits_it' (31345) panicked at crates/sigil-frontend-as/tests/as_bcd_pcindex.rs:68:5:
+    TXT assertion `left == right` failed: sigil's image differs from asl's
+  restored; diff stat after restore: []
+=== M7 on crates/sigil-frontend-as/src/eval.rs
+  on disk:  1 file changed, 1 insertion(+), 1 deletion(-)
+  | -            let frag = if indexed {
+  | +            let frag = if !indexed {
+test result: FAILED. 13 passed; 7 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+    RED test movem_through_d16_pc ... FAILED
+    RED test s3k_extract_both_movem_sites_and_their_tables ... FAILED
+    RED test pc_indexed_backward_targets ... FAILED
+    RED test pc_indexed_displacement_boundaries_127_and_minus_128_accepted ... FAILED
+    RED test pc_indexed_displacement_one_past_either_end_is_refused ... FAILED
+    RED test pc_indexed_movem_the_s3k_shape ... FAILED
+    RED test pc_indexed_source_over_every_instruction_that_admits_it ... FAILED
+    TXT thread 'movem_through_d16_pc' (67654) panicked at crates/sigil-frontend-as/tests/as_bcd_pcindex.rs:68:5:
+    TXT assertion `left == right` failed: sigil's image differs from asl's
+    TXT thread 's3k_extract_both_movem_sites_and_their_tables' (67662) panicked at crates/sigil-frontend-as/tests/as_bcd_pcindex.rs:65:19:
+    TXT expected asl's bytes 4cbb000c0062314200183143001a4a40670a4cbb00300010d444d645334200183343001a4e75000000000000fd000000030000000000fd000000fde1fde1fde1021f0000000003000000021ffde1021f021f0000000000000000000000000000000000000000060000000000fa000000060000000000fa0
+  restored; diff stat after restore: []
+=== M8 on crates/sigil-frontend-as/src/eval.rs
+  on disk:  1 file changed, 1 insertion(+), 1 deletion(-)
+  | -        Addx | Subx | Negx => Some(M68kSize::W),
+  | +        Addx | Subx | Negx => Some(M68kSize::L),
+test result: FAILED. 18 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+    RED test addx_and_subx_every_size_both_forms_and_the_bare_word_default ... FAILED
+    RED test negx_and_nbcd_over_the_data_alterable_modes ... FAILED
+    TXT thread 'addx_and_subx_every_size_both_forms_and_the_bare_word_default' (103927) panicked at crates/sigil-frontend-as/tests/as_bcd_pcindex.rs:68:5:
+    TXT assertion `left == right` failed: sigil's image differs from asl's
+    TXT thread 'negx_and_nbcd_over_the_data_alterable_modes' (103931) panicked at crates/sigil-frontend-as/tests/as_bcd_pcindex.rs:68:5:
+    TXT assertion `left == right` failed: sigil's image differs from asl's
+  restored; diff stat after restore: []
+=== M9 on crates/sigil-frontend-as/src/eval.rs
+  on disk:  1 file changed, 2 insertions(+), 2 deletions(-)
+  | -                vec![M68kOperand::RegList(mask), op]
+  | -            } else {
+  | +            } else {
+  | +                vec![M68kOperand::RegList(mask), op]
+test result: FAILED. 12 passed; 8 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+    RED test movem_refuses_a_pc_relative_destination ... FAILED
+    RED test s3k_extract_both_movem_sites_and_their_tables ... FAILED
+    RED test pc_indexed_backward_targets ... FAILED
+    RED test movem_through_d16_pc ... FAILED
+    RED test pc_indexed_source_over_every_instruction_that_admits_it ... FAILED
+    RED test pc_indexed_movem_the_s3k_shape ... FAILED
+    RED test pc_indexed_displacement_boundaries_127_and_minus_128_accepted ... FAILED
+    RED test pc_indexed_displacement_one_past_either_end_is_refused ... FAILED
+    TXT thread 'movem_refuses_a_pc_relative_destination' (144970) panicked at crates/sigil-frontend-as/tests/as_bcd_pcindex.rs:75:18:
+    TXT expected a refusal, got bytes: [4C, BB, 00, 0C, 00, 02, 00, 01]
+    TXT thread 's3k_extract_both_movem_sites_and_their_tables' (144979) panicked at crates/sigil-frontend-as/tests/as_bcd_pcindex.rs:65:19:
+    TXT expected asl's bytes 4cbb000c0062314200183143001a4a40670a4cbb00300010d444d645334200183343001a4e75000000000000fd000000030000000000fd000000fde1fde1fde1021f0000000003000000021ffde1021f021f0000000000000000000000000000000000000000060000000000fa000000060000000000fa0
+  restored; diff stat after restore: []
+=== M10 on crates/sigil-frontend-as/src/eval.rs
+  on disk:  1 file changed, 1 insertion(+), 1 deletion(-)
+  | -        "subx" => Subx,
+  | +        "subx" => Addx,
+test result: FAILED. 16 passed; 4 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+    RED test addx_and_subx_every_size_both_forms_and_the_bare_word_default ... FAILED
+    RED test s3k_extract_subx_at_5a036 ... FAILED
+    RED test s3k_extract_subx_at_5a05a ... FAILED
+    RED test s3k_extract_subx_at_4d252 ... FAILED
+    TXT thread 'addx_and_subx_every_size_both_forms_and_the_bare_word_default' (183680) panicked at crates/sigil-frontend-as/tests/as_bcd_pcindex.rs:68:5:
+    TXT assertion `left == right` failed: sigil's image differs from asl's
+    TXT thread 's3k_extract_subx_at_5a036' (183694) panicked at crates/sigil-frontend-as/tests/as_bcd_pcindex.rs:68:5:
+    TXT assertion `left == right` failed: sigil's image differs from asl's
+  restored; diff stat after restore: []
+=== M11 on crates/sigil-link/src/lib.rs
+  on disk:  1 file changed, 1 insertion(+), 1 deletion(-)
+  | -            let disp = value - (site_vma as i64 - 1);
+  | +            let disp = value - (site_vma as i64 - 3);
+test result: FAILED. 14 passed; 6 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+    RED test pc_indexed_backward_targets ... FAILED
+    RED test pc_indexed_displacement_one_past_either_end_is_refused ... FAILED
+    RED test pc_indexed_displacement_boundaries_127_and_minus_128_accepted ... FAILED
+    RED test s3k_extract_both_movem_sites_and_their_tables ... FAILED
+    RED test pc_indexed_source_over_every_instruction_that_admits_it ... FAILED
+    RED test pc_indexed_movem_the_s3k_shape ... FAILED
+    TXT thread 'pc_indexed_backward_targets' (218209) panicked at crates/sigil-frontend-as/tests/as_bcd_pcindex.rs:68:5:
+    TXT assertion `left == right` failed: sigil's image differs from asl's
+    TXT thread 'pc_indexed_displacement_one_past_either_end_is_refused' (218211) panicked at crates/sigil-frontend-as/tests/as_bcd_pcindex.rs:80:9:
+    TXT refusal does not name `(128)`: (d8,PC,Xn) displacement out of range (130) in section sec0
+  restored; diff stat after restore: []
+=== M12 on crates/sigil-isa/src/m68k_decode.rs
+  on disk:  1 file changed, 1 insertion(+), 1 deletion(-)
+  | -        vec![Operand::PreDec(r0 as u8), Operand::PreDec(reg9 as u8)]
+  | +        vec![Operand::PreDec(reg9 as u8), Operand::PreDec(r0 as u8)]
+test result: FAILED. 62 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.50s
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+    RED test m68k_decode::tests::extended_and_decimal_family_decodes_to_its_instruction ... FAILED
+    RED test m68k_decode::tests::alias_words_do_not_decode_as_their_misspelling ... FAILED
+    RED test opcode_sweep_agrees_with_capstone ... FAILED
+    RED test every_decodable_word_reencodes_to_the_consumed_bytes ... FAILED
+    TXT thread 'm68k_decode::tests::extended_and_decimal_family_decodes_to_its_instruction' (224965) panicked at crates/sigil-isa/src/m68k_decode.rs:1007:13:
+    TXT thread 'm68k_decode::tests::alias_words_do_not_decode_as_their_misspelling' (224960) panicked at crates/sigil-isa/src/m68k_decode.rs:927:9:
+    TXT thread 'opcode_sweep_agrees_with_capstone' (225012) panicked at crates/sigil-isa/tests/support/capstone_diff.rs:1093:9:
+  restored; diff stat after restore: []
+final diff stat: []
+MUT_END

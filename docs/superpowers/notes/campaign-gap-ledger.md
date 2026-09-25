@@ -6154,3 +6154,16 @@ from there. Pinned by `the_relocating_path_decides_constants_and_leaves_labels_u
   interpolation) is refused loudly, never mis-assembled. Probe asl's full symbol-name character set and widen
   `eval.rs::codepage_name` to match when a corpus needs it. Also not built: asl's listing prints a code-page table
   (`STANDARD (N changed characters)`); sigil emits no listing, so nothing reports which pages exist. OPEN
+
+- [s3k-bcd-pcindex, 2026-09-25] **`.emp` does not spell `subx`/`abcd`/`sbcd`/`negx`/`nbcd`, nor `addx -(Ay),-(Ax)`.**
+  The ISA and the AS front end now encode all six in both pair forms; `.emp`'s mnemonic table
+  (`sigil-frontend-emp/src/lower/code.rs::m68k_mnemonic`) still spells only `addx`, and its
+  flag model already classifies the other five by name. Adding them is language surface and
+  waits for the owner. Also not built: cycle costs for the five (they price as `Unmodeled` in
+  `m68k_cycles.rs`; PRM Table 8-4/8-9 give SUBX as ADDX, ABCD/SBCD 6 / 18, NBCD 6 / 8+ea,
+  NEGX as NEG). OPEN
+- [s3k-bcd-pcindex, 2026-09-25] **asl reports an out-of-range `(d8,PC,Xn)` displacement as
+  `#1505 addressing mode not supported on 68000`** (it falls through to the 68020 full-format
+  mode); sigil refuses the same shapes at link with `(d8,PC,Xn) displacement out of range (N)`,
+  a clearer text for the same verdict. Not a parity gap in bytes; noted in case a corpus-row
+  diff ever keys on asl's wording. OPEN (no action)

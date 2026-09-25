@@ -1,0 +1,192 @@
+pwd=/home/volence/sonic_hacks/sigil/.claude/worktrees/agent-adae49c7bddc9a0a8 HEAD=120be60971c58e43e712b285f411db2c605b388f branch=parcel/s3k-bcd-pcindex
+ref-target: /home/volence/sonic_hacks/.scratch/s3k-bcd-pcindex/target (step 2: the caller's CARGO_TARGET_DIR)
+==> no SIGIL_BIN given; building the assembler from this tree
+   Compiling shlex v2.0.1
+   Compiling find-msvc-tools v0.1.9
+   Compiling proc-macro2 v1.0.106
+   Compiling quote v1.0.46
+   Compiling unicode-ident v1.0.24
+   Compiling serde_core v1.0.228
+   Compiling zmij v1.0.21
+   Compiling version_check v0.9.5
+   Compiling serde v1.0.228
+   Compiling serde_json v1.0.150
+   Compiling equivalent v1.0.2
+   Compiling typenum v1.20.1
+   Compiling sigil-span v0.1.0 (/home/volence/sonic_hacks/sigil/.claude/worktrees/agent-adae49c7bddc9a0a8/crates/sigil-span)
+   Compiling hashbrown v0.17.1
+   Compiling toml_write v0.1.2
+   Compiling sigil-isa v0.1.0 (/home/volence/sonic_hacks/sigil/.claude/worktrees/agent-adae49c7bddc9a0a8/crates/sigil-isa)
+   Compiling winnow v0.7.15
+   Compiling memchr v2.8.2
+   Compiling cc v1.2.66
+   Compiling itoa v1.0.18
+   Compiling generic-array v0.14.7
+   Compiling sigil-ir v0.1.0 (/home/volence/sonic_hacks/sigil/.claude/worktrees/agent-adae49c7bddc9a0a8/crates/sigil-ir)
+   Compiling cpufeatures v0.2.17
+   Compiling cfg-if v1.0.4
+   Compiling sigil-s4lz v0.1.0 (/home/volence/sonic_hacks/sigil/.claude/worktrees/agent-adae49c7bddc9a0a8/crates/sigil-s4lz)
+   Compiling indexmap v2.14.0
+   Compiling syn v2.0.118
+   Compiling sigil-backend-z80 v0.1.0 (/home/volence/sonic_hacks/sigil/.claude/worktrees/agent-adae49c7bddc9a0a8/crates/sigil-backend-z80)
+   Compiling sigil-backend-m68k v0.1.0 (/home/volence/sonic_hacks/sigil/.claude/worktrees/agent-adae49c7bddc9a0a8/crates/sigil-backend-m68k)
+   Compiling sigil-clownlzss-sys v0.1.0 (/home/volence/sonic_hacks/sigil/.claude/worktrees/agent-adae49c7bddc9a0a8/crates/sigil-clownlzss-sys)
+   Compiling sigil-salvador-sys v0.1.0 (/home/volence/sonic_hacks/sigil/.claude/worktrees/agent-adae49c7bddc9a0a8/crates/sigil-salvador-sys)
+   Compiling sigil-clownnemesis-sys v0.1.0 (/home/volence/sonic_hacks/sigil/.claude/worktrees/agent-adae49c7bddc9a0a8/crates/sigil-clownnemesis-sys)
+   Compiling sigil-frontend-as v0.1.0 (/home/volence/sonic_hacks/sigil/.claude/worktrees/agent-adae49c7bddc9a0a8/crates/sigil-frontend-as)
+   Compiling block-buffer v0.10.4
+   Compiling crypto-common v0.1.7
+   Compiling digest v0.10.7
+   Compiling sha2 v0.10.9
+   Compiling serde_derive v1.0.228
+   Compiling sigil-cli v0.1.0 (/home/volence/sonic_hacks/sigil/.claude/worktrees/agent-adae49c7bddc9a0a8/crates/sigil-cli)
+warning: sigil-clownlzss-sys@0.1.0: In file included from src/shim.cpp:114:
+warning: sigil-clownlzss-sys@0.1.0: In lambda function,
+warning: sigil-clownlzss-sys@0.1.0:     inlined from 'bool ClownLZSS::Internal::Enigma::Compress(const unsigned char*, std::size_t, ClownLZSS::CompressorOutput<T>&) [with T = std::basic_ostream<char>]' at src/../vendor/compressors/enigma.h:316:37:
+warning: sigil-clownlzss-sys@0.1.0: src/../vendor/compressors/enigma.h:253:110: warning: '*(int*)((char*)&run + offsetof(Run, Run::type))' may be used uninitialized [-Wmaybe-uninitialized]
+warning: sigil-clownlzss-sys@0.1.0:   253 |                                                 return (run.type == Run::Type::Increment || run.length == 1) && ReadWord(input) == special_values->lowest;
+warning: sigil-clownlzss-sys@0.1.0:       |                                                        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+warning: sigil-clownlzss-sys@0.1.0: src/../vendor/compressors/enigma.h: In function 'bool ClownLZSS::Internal::Enigma::Compress(const unsigned char*, std::size_t, ClownLZSS::CompressorOutput<T>&) [with T = std::basic_ostream<char>]':
+warning: sigil-clownlzss-sys@0.1.0: src/../vendor/compressors/enigma.h:263:45: note: '*(int*)((char*)&run + offsetof(Run, Run::type))' was declared here
+warning: sigil-clownlzss-sys@0.1.0:   263 |                                         Run run;
+warning: sigil-clownlzss-sys@0.1.0:       |                                             ^~~
+warning: sigil-clownlzss-sys@0.1.0: In lambda function,
+warning: sigil-clownlzss-sys@0.1.0:     inlined from 'bool ClownLZSS::Internal::Enigma::Compress(const unsigned char*, std::size_t, ClownLZSS::CompressorOutput<T>&) [with T = std::basic_ostream<char>]' at src/../vendor/compressors/enigma.h:316:37:
+warning: sigil-clownlzss-sys@0.1.0: src/../vendor/compressors/enigma.h:253:90: warning: 'run.ClownLZSS::Internal::Enigma::Compress<std::basic_ostream<char> >(const unsigned char*, std::size_t, ClownLZSS::CompressorOutput<std::basic_ostream<char> >&)::Run::length' may be used uninitialized [-Wmaybe-uninitialized]
+warning: sigil-clownlzss-sys@0.1.0:   253 |                                                 return (run.type == Run::Type::Increment || run.length == 1) && ReadWord(input) == special_values->lowest;
+warning: sigil-clownlzss-sys@0.1.0:       |                                                        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~~~~~~~~
+warning: sigil-clownlzss-sys@0.1.0: src/../vendor/compressors/enigma.h: In function 'bool ClownLZSS::Internal::Enigma::Compress(const unsigned char*, std::size_t, ClownLZSS::CompressorOutput<T>&) [with T = std::basic_ostream<char>]':
+warning: sigil-clownlzss-sys@0.1.0: src/../vendor/compressors/enigma.h:263:45: note: 'run.ClownLZSS::Internal::Enigma::Compress<std::basic_ostream<char> >(const unsigned char*, std::size_t, ClownLZSS::CompressorOutput<std::basic_ostream<char> >&)::Run::length' was declared here
+warning: sigil-clownlzss-sys@0.1.0:   263 |                                         Run run;
+warning: sigil-clownlzss-sys@0.1.0:       |                                             ^~~
+   Compiling toml_datetime v0.6.11
+   Compiling serde_spanned v0.6.9
+   Compiling toml_edit v0.22.27
+   Compiling toml v0.8.23
+   Compiling sigil-link v0.1.0 (/home/volence/sonic_hacks/sigil/.claude/worktrees/agent-adae49c7bddc9a0a8/crates/sigil-link)
+   Compiling sigil-frontend-emp v0.1.0 (/home/volence/sonic_hacks/sigil/.claude/worktrees/agent-adae49c7bddc9a0a8/crates/sigil-frontend-emp)
+   Compiling sigil-harness v0.1.0 (/home/volence/sonic_hacks/sigil/.claude/worktrees/agent-adae49c7bddc9a0a8/crates/sigil-harness)
+    Finished `release` profile [optimized] target(s) in 43.20s
+
+==> THE ASSEMBLER THIS RUN WILL JUDGE, built by this run from /home/volence/sonic_hacks/sigil/.claude/worktrees/agent-adae49c7bddc9a0a8
+    /home/volence/sonic_hacks/.scratch/s3k-bcd-pcindex/target/release/sigil
+    | sigil 0.1.0 (120be609)
+    |   revision:  120be60971c58e43e712b285f411db2c605b388f
+    |   branch:    parcel/s3k-bcd-pcindex
+    |   committed: 2026-09-25T04:02:11-04:00
+    |   tree:      clean at capture, no uncommitted changes
+    |   tree-tracked: 26/29 closure path(s) watched for edits; NOT PRESENT and so unwatchable (a trigger on a missing path makes every build dirty): .cargo rust-toolchain rust-toolchain.toml
+    |   source:    /home/volence/sonic_hacks/sigil/.claude/worktrees/agent-adae49c7bddc9a0a8
+    |   closure:   14 package(s), 29 path(s) derived from `cargo metadata --no-deps` at build time
+    |   closure-revision: 8de29c7fcf75f42098486b183698ce99dbd68ccc
+    |   closure-paths: .cargo Cargo.lock Cargo.toml crates/sigil-backend-m68k/Cargo.toml crates/sigil-backend-m68k/src crates/sigil-backend-z80/Cargo.toml crates/sigil-backend-z80/src crates/sigil-cli crates/sigil-clownlzss-sys crates/sigil-clownnemesis-sys crates/sigil-frontend-as/Cargo.toml crates/sigil-frontend-as/src crates/sigil-frontend-emp/Cargo.toml crates/sigil-frontend-emp/src crates/sigil-harness/Cargo.toml crates/sigil-harness/src crates/sigil-ir/Cargo.toml crates/sigil-ir/src crates/sigil-isa/Cargo.toml crates/sigil-isa/src crates/sigil-link/Cargo.toml crates/sigil-link/src crates/sigil-s4lz/Cargo.toml crates/sigil-s4lz/src crates/sigil-salvador-sys crates/sigil-span/Cargo.toml crates/sigil-span/src rust-toolchain rust-toolchain.toml
+    |   drift-check: git -C /home/volence/sonic_hacks/sigil/.claude/worktrees/agent-adae49c7bddc9a0a8 log -1 --format=%H HEAD -- .cargo Cargo.lock Cargo.toml crates/sigil-backend-m68k/Cargo.toml crates/sigil-backend-m68k/src crates/sigil-backend-z80/Cargo.toml crates/sigil-backend-z80/src crates/sigil-cli crates/sigil-clownlzss-sys crates/sigil-clownnemesis-sys crates/sigil-frontend-as/Cargo.toml crates/sigil-frontend-as/src crates/sigil-frontend-emp/Cargo.toml crates/sigil-frontend-emp/src crates/sigil-harness/Cargo.toml crates/sigil-harness/src crates/sigil-ir/Cargo.toml crates/sigil-ir/src crates/sigil-isa/Cargo.toml crates/sigil-isa/src crates/sigil-link/Cargo.toml crates/sigil-link/src crates/sigil-s4lz/Cargo.toml crates/sigil-s4lz/src crates/sigil-salvador-sys crates/sigil-span/Cargo.toml crates/sigil-span/src rust-toolchain rust-toolchain.toml
+    |   published: yes, this revision is contained in origin/master (120be60971c58e43e712b285f411db2c605b388f). origin/master is a LOCAL remote-tracking ref, refreshed only by `git fetch`, so it may itself be behind what is published
+    |   drift-check-published: git -C /home/volence/sonic_hacks/sigil/.claude/worktrees/agent-adae49c7bddc9a0a8 log -1 --format=%H origin/master -- .cargo Cargo.lock Cargo.toml crates/sigil-backend-m68k/Cargo.toml crates/sigil-backend-m68k/src crates/sigil-backend-z80/Cargo.toml crates/sigil-backend-z80/src crates/sigil-cli crates/sigil-clownlzss-sys crates/sigil-clownnemesis-sys crates/sigil-frontend-as/Cargo.toml crates/sigil-frontend-as/src crates/sigil-frontend-emp/Cargo.toml crates/sigil-frontend-emp/src crates/sigil-harness/Cargo.toml crates/sigil-harness/src crates/sigil-ir/Cargo.toml crates/sigil-ir/src crates/sigil-isa/Cargo.toml crates/sigil-isa/src crates/sigil-link/Cargo.toml crates/sigil-link/src crates/sigil-s4lz/Cargo.toml crates/sigil-s4lz/src crates/sigil-salvador-sys crates/sigil-span/Cargo.toml crates/sigil-span/src rust-toolchain rust-toolchain.toml
+    |   freshness: revision and tree state are both re-captured (cargo tracks HEAD,refs,packed-refs,manifests,sources).
+    |              tree state is still a build-time snapshot: the tracking is path-scoped, so
+    |              it can only under-report, and only where no mtime under a watched path
+    |              moves, dirt OUTSIDE the closure (so `clean` may stand where
+    |              `clean-sources` is true; neither word is a reason to distrust this
+    |              binary), a closure path that does not exist yet and so cannot be watched
+    |              (`tree-tracked` names any), an edit landing inside the cargo invocation
+    |              that captured this, and any change that alters content without moving an
+    |              mtime. A word beginning `dirty` is therefore trustworthy when it appears.
+    |              Compare `revision` against `git rev-parse HEAD` to check this binary
+    |              against a source tree.
+    |   drift:     `revision` moves on EVERY commit here, including ones no compilation can
+    |              see, so comparing it alone warns permanently and therefore says nothing.
+    |              `closure-paths` is what cargo compiles this binary from, walked from
+    |              cargo's own dependency graph rather than listed by hand, and
+    |              `closure-revision` is the last commit that touched it. To check this
+    |              binary against a tree, run the `drift-check` line above, it is a whole
+    |              command, paths included, and compare what it prints against
+    |              `closure-revision`. Equal means no commit in that tree can have reached
+    |              this binary. It is printed whole rather than as a recipe over
+    |              `closure-paths` because the obvious assembly of such a recipe puts the
+    |              list in a shell variable, and a shell that does not word-split an
+    |              unquoted parameter (zsh) passes it as ONE pathspec: it then matches
+    |              nothing, prints nothing, and exits 0, so a tree that was never looked at
+    |              reads as a tree with no drift.
+    |              The classification OVER-reports and never under-reports. A package
+    |              carrying a build script contributes its whole directory, since a build
+    |              script may read any file in it; a `#[cfg(test)]` body or a second binary
+    |              inside a source directory counts although neither reaches this
+    |              executable; and an underivable closure counts everything. A commit that
+    |              adds a package to the graph edits a manifest, which is itself in the
+    |              closure, so growth is reported rather than missed.
+    |              What this proves is `cannot affect this binary`, never `the output did
+    |              not change`, only a rebuild and a byte compare supports the second.
+    |   anchors:   the two drift checks differ only in what they ask ABOUT. `drift-check`
+    |              anchors at HEAD of the source tree named above; `drift-check-published`
+    |              anchors at the remote-tracking ref named in `published`. On a machine
+    |              where a sibling checkout is a peer's live working tree, that HEAD can be
+    |              ahead of, behind, or divergent from anything another lane can see, so
+    |              `behind HEAD` is not a fact until something names what it is behind,
+    |              which is why both lines say which revision they compare against rather
+    |              than leaving a reader to guess. The tracking ref is a LOCAL cache of the
+    |              remote: `git fetch` is what moves it, and `git ls-remote` is what would
+    |              ask the server. Neither line is a warning; both are positions.
+
+==> tool closure 8de29c7f == this tree's closure at HEAD, no commit here can have affected it
+    compared against HEAD 120be60971c58e43e712b285f411db2c605b388f on parcel/s3k-bcd-pcindex in /home/volence/sonic_hacks/sigil/.claude/worktrees/agent-adae49c7bddc9a0a8, that HEAD is contained in origin/master (120be60971c58e43e712b285f411db2c605b388f); origin/master is a LOCAL remote-tracking ref, refreshed only by `git fetch`
+    (that is 'cannot have affected', not 'the output is identical'; only a rebuild and a byte compare says the second)
+# AEON_DIR=/home/volence/sonic_hacks/aeon (step 3: sibling of this checkout via git --git-common-dir)
+==> reference tree : /home/volence/sonic_hacks/.aeon-bcd-pcindex
+==> aeon revision  : ec640bcf70e263167223a33d987d4661ff221b7e
+==> golden control : required (pinned revision is ec640bcf70e263167223a33d987d4661ff221b7e)
+Preparing worktree (detached HEAD ec640bcf)
+HEAD is now at ec640bcf fix(parallax): declare the discarded refused-carry instead of only commenting it
+==> placing and verifying reference ROMs
+    s4.bin           91c46c94/820209 OK
+    s4.debug.bin     8a378de6/846509 OK
+    demo.bin         1c7a34d3/96863 OK
+    demo.debug.bin   72e405a5/103185 OK
+==> salvador + compression vectors
+Compression self-test vectors OK -> /home/volence/sonic_hacks/.aeon-bcd-pcindex/engine/debug/generated (payload 744B, sum $92DF; plain 642B, dict 486B+256B, zx0 546B)
+==> emit_sound_blob + engine/sound/generated
+warning: sigil-clownlzss-sys@0.1.0: In file included from src/shim.cpp:114:
+warning: sigil-clownlzss-sys@0.1.0: In lambda function,
+warning: sigil-clownlzss-sys@0.1.0:     inlined from 'bool ClownLZSS::Internal::Enigma::Compress(const unsigned char*, std::size_t, ClownLZSS::CompressorOutput<T>&) [with T = std::basic_ostream<char>]' at src/../vendor/compressors/enigma.h:316:37:
+warning: sigil-clownlzss-sys@0.1.0: src/../vendor/compressors/enigma.h:253:110: warning: '*(int*)((char*)&run + offsetof(Run, Run::type))' may be used uninitialized [-Wmaybe-uninitialized]
+warning: sigil-clownlzss-sys@0.1.0:   253 |                                                 return (run.type == Run::Type::Increment || run.length == 1) && ReadWord(input) == special_values->lowest;
+warning: sigil-clownlzss-sys@0.1.0:       |                                                        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+warning: sigil-clownlzss-sys@0.1.0: src/../vendor/compressors/enigma.h: In function 'bool ClownLZSS::Internal::Enigma::Compress(const unsigned char*, std::size_t, ClownLZSS::CompressorOutput<T>&) [with T = std::basic_ostream<char>]':
+warning: sigil-clownlzss-sys@0.1.0: src/../vendor/compressors/enigma.h:263:45: note: '*(int*)((char*)&run + offsetof(Run, Run::type))' was declared here
+warning: sigil-clownlzss-sys@0.1.0:   263 |                                         Run run;
+warning: sigil-clownlzss-sys@0.1.0:       |                                             ^~~
+warning: sigil-clownlzss-sys@0.1.0: In lambda function,
+warning: sigil-clownlzss-sys@0.1.0:     inlined from 'bool ClownLZSS::Internal::Enigma::Compress(const unsigned char*, std::size_t, ClownLZSS::CompressorOutput<T>&) [with T = std::basic_ostream<char>]' at src/../vendor/compressors/enigma.h:316:37:
+warning: sigil-clownlzss-sys@0.1.0: src/../vendor/compressors/enigma.h:253:90: warning: 'run.ClownLZSS::Internal::Enigma::Compress<std::basic_ostream<char> >(const unsigned char*, std::size_t, ClownLZSS::CompressorOutput<std::basic_ostream<char> >&)::Run::length' may be used uninitialized [-Wmaybe-uninitialized]
+warning: sigil-clownlzss-sys@0.1.0:   253 |                                                 return (run.type == Run::Type::Increment || run.length == 1) && ReadWord(input) == special_values->lowest;
+warning: sigil-clownlzss-sys@0.1.0:       |                                                        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~~~~~~~~
+warning: sigil-clownlzss-sys@0.1.0: src/../vendor/compressors/enigma.h: In function 'bool ClownLZSS::Internal::Enigma::Compress(const unsigned char*, std::size_t, ClownLZSS::CompressorOutput<T>&) [with T = std::basic_ostream<char>]':
+warning: sigil-clownlzss-sys@0.1.0: src/../vendor/compressors/enigma.h:263:45: note: 'run.ClownLZSS::Internal::Enigma::Compress<std::basic_ostream<char> >(const unsigned char*, std::size_t, ClownLZSS::CompressorOutput<std::basic_ostream<char> >&)::Run::length' was declared here
+warning: sigil-clownlzss-sys@0.1.0:   263 |                                         Run run;
+warning: sigil-clownlzss-sys@0.1.0:       |                                             ^~~
+   Compiling sigil-harness v0.1.0 (/home/volence/sonic_hacks/sigil/.claude/worktrees/agent-adae49c7bddc9a0a8/crates/sigil-harness)
+    Finished `release` profile [optimized] target(s) in 0.43s
+==> building both shapes to emit the listings (and to control the ROMs)
+==> REF_BUILD_DEMO=1: the two demo shapes are built too, not copied
+    REBUILD CONTROL s4.bin           91c46c94/820209 MATCHES THE GOLDEN
+    REBUILD CONTROL s4.debug.bin     8a378de6/846509 MATCHES THE GOLDEN
+
+Provisioned. NOW PROVE IT, because "no errors" is not a witness:
+
+  cd "/home/volence/sonic_hacks/sigil/.claude/worktrees/agent-adae49c7bddc9a0a8" && \
+  AEON_DIR="/home/volence/sonic_hacks/.aeon-bcd-pcindex" \
+  SIGIL_EMIT="/home/volence/sonic_hacks/.scratch/s3k-bcd-pcindex/target/release/emit_sound_blob" \
+  CARGO_TARGET_DIR="/home/volence/sonic_hacks/.scratch/s3k-bcd-pcindex/target" \
+    cargo run --release -p sigil-harness --bin repin -- --check
+
+Expect the burndown warnings, then the zero-consumer pin list, then
+"pins.rs unchanged". That last line is the positive witness that this tree
+reproduces ec640bcf70e263167223a33d987d4661ff221b7e's placement. Anything else means the provisioning is wrong,
+NOT that the pins have drifted.
+
+Built by: /home/volence/sonic_hacks/.scratch/s3k-bcd-pcindex/target/release/sigil
+Its full --version self-report heads this log. Quote it, not this line, when the
+measurement is written up: a result is only about the compiler that produced it, and
+a CRC cannot say which one that was.
+PROV_RC=0
+PROV_END

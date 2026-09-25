@@ -1,0 +1,4 @@
+demo-debug.demo.debug.bin    sizes 103185/103185 differing bytes 0; planted control found [34395, 51592, 103178] (planted [34395, 51592, 103178])
+demo.demo.bin                sizes 96863/96863 differing bytes 0; planted control found [32287, 48431, 96856] (planted [32287, 48431, 96856])
+sonic4-debug.s4.debug.bin    sizes 846509/846509 differing bytes 0; planted control found [282169, 423254, 846502] (planted [282169, 423254, 846502])
+sonic4.s4.bin                sizes 820209/820209 differing bytes 0; planted control found [273403, 410104, 820202] (planted [273403, 410104, 820202])
