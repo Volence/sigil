@@ -188,7 +188,15 @@ fn banked_carriers() -> Vec<(&'static str, i64)> {
 /// offsets INSIDE `SoundTablesZ80_Head`, which `sound_layout` does not model.
 /// Those stay hand-maintained and unchecked — recorded here rather than implied.
 pub fn check_banked_carrier_drift(aeon: &Path) -> Result<(), String> {
-    let derived = crate::seam2::banked_head_vmas(aeon)?;
+    check_banked_carrier_drift_in(aeon, None)
+}
+
+/// [`check_banked_carrier_drift`] under an anchor overlay.
+pub fn check_banked_carrier_drift_in(
+    aeon: &Path,
+    ov: Option<&crate::map_placement::AnchorOverlay>,
+) -> Result<(), String> {
+    let derived = crate::seam2::banked_head_vmas_in(aeon, ov)?;
     let pinned = banked_carriers();
     let mut drift = Vec::new();
     for (name, want) in derived {
@@ -488,8 +496,17 @@ pub fn native_sound_blob(aeon: &Path, debug: bool) -> NativeSoundBlob {
 /// [`native_sound_blob`] with the blob's link verdict as a `Result` (see
 /// [`native_blob_checked`]), for the emitter, whose caller reports the error.
 pub fn native_sound_blob_checked(aeon: &Path, debug: bool) -> Result<NativeSoundBlob, String> {
+    native_sound_blob_checked_in(aeon, None, debug)
+}
+
+/// [`native_sound_blob_checked`] under an anchor overlay.
+pub fn native_sound_blob_checked_in(
+    aeon: &Path,
+    ov: Option<&crate::map_placement::AnchorOverlay>,
+    debug: bool,
+) -> Result<NativeSoundBlob, String> {
     Ok(NativeSoundBlob {
-        bytes: native_blob_checked(aeon, debug, None)?,
+        bytes: native_blob_checked_in(aeon, ov, debug, None)?,
         symbols: handler_symbols(aeon, debug),
     })
 }
@@ -541,6 +558,34 @@ const SIZE_ONLY_PRESETS: &[(&str, i64)] = &[
     ("SND_ENGINE_TABLE_BANK", SOUND_BANK_ID_SIZE_PROBE),
     ("SFX_BLOB_BANK", SOUND_BANK_ID_SIZE_PROBE),
 ];
+
+/// The map-derived consts (every name in [`SIZE_ONLY_PRESETS`]) at their real values
+/// under an anchor overlay, as presets for the lowering, so no module resolves them
+/// through [`resolve_consts`]'s lazy derivation, which reads the map as written. With
+/// no overlay this is empty and that lazy derivation supplies them.
+fn overlay_presets(
+    aeon: &Path,
+    ov: Option<&crate::map_placement::AnchorOverlay>,
+) -> Result<Vec<(&'static str, i64)>, String> {
+    let Some(ov) = ov else {
+        return Ok(Vec::new());
+    };
+    SIZE_ONLY_PRESETS
+        .iter()
+        .map(|&(name, _)| {
+            let v = match name {
+                "DacSampleTable" => crate::seam2::dac_sample_table_vma_in(aeon, Some(ov))?,
+                "SND_ENGINE_TABLE_BANK" | "SFX_BLOB_BANK" => crate::seam2::sound_bank_id_in(aeon, Some(ov))?,
+                other => {
+                    return Err(format!(
+                        "internal: map-derived const `{other}` has no derivation under an anchor overlay"
+                    ))
+                }
+            };
+            Ok((name, i64::from(v)))
+        })
+        .collect()
+}
 
 /// The 26 handler VMAs (`vma_base + offset`), per shape. The sequencer's base is
 /// DERIVED (the driver's emitted span), and its internal `if DEBUG==1` growth
@@ -755,9 +800,21 @@ pub fn native_blob_checked(
     debug: bool,
     doctor: Option<(&str, i64)>,
 ) -> Result<Vec<u8>, String> {
+    native_blob_checked_in(aeon, None, debug, doctor)
+}
+
+/// [`native_blob_checked`] under an anchor overlay: the map-derived consts come from
+/// [`overlay_presets`].
+pub fn native_blob_checked_in(
+    aeon: &Path,
+    ov: Option<&crate::map_placement::AnchorOverlay>,
+    debug: bool,
+    doctor: Option<(&str, i64)>,
+) -> Result<Vec<u8>, String> {
     let specs = file_specs();
     resident_import_verdict(aeon, &specs)?;
-    let (sections, _bases, spans, asserts) = place_resident_sections(aeon, debug, doctor, &[]);
+    let presets = overlay_presets(aeon, ov)?;
+    let (sections, _bases, spans, asserts) = place_resident_sections(aeon, debug, doctor, &presets);
 
     let resolved = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
         .unwrap_or_else(|d| panic!("resolve_layout failed: {d:?}"));
@@ -859,6 +916,15 @@ fn resident_link_verdict(
 /// longer emitted — the banked seq table is native and resolves those VMAs in-link,
 /// and no AS consumer of them survives; kill-list row 92.)
 pub fn emit_sound_blob(aeon: &Path, out_dir: &Path) -> Result<(), String> {
+    emit_sound_blob_in(aeon, None, out_dir)
+}
+
+/// [`emit_sound_blob`] under an anchor overlay.
+pub fn emit_sound_blob_in(
+    aeon: &Path,
+    ov: Option<&crate::map_placement::AnchorOverlay>,
+    out_dir: &Path,
+) -> Result<(), String> {
     // Before anything is created: `out_dir` lives under `aeon` in every build, so an
     // eager mkdir inside an absent reference tree would manufacture that tree's root
     // and flip the suite's root-probing skip guards. Validate, then read, then create.
@@ -872,10 +938,10 @@ pub fn emit_sound_blob(aeon: &Path, out_dir: &Path) -> Result<(), String> {
     // the derivation. They are baked into the operand bytes emitted below, so a
     // stale one produces a wrong blob whose only symptom is a broken golden — and
     // the natural remediation, refreeze, would bless it.
-    check_banked_carrier_drift(aeon)?;
+    check_banked_carrier_drift_in(aeon, ov)?;
 
-    let plain = native_sound_blob_checked(aeon, false)?;
-    let debug = native_sound_blob_checked(aeon, true)?;
+    let plain = native_sound_blob_checked_in(aeon, ov, false)?;
+    let debug = native_sound_blob_checked_in(aeon, ov, true)?;
     // TRIPWIRE (not an input — the module bases are derived): the emitted length
     // must still be the pinned `Z80_SOUND_SIZE`. A deliberate size change re-pins
     // BLOB_LEN_{PLAIN,DEBUG} here, in lockstep with the `Z80_SOUND_SIZE` mirrors
@@ -938,14 +1004,23 @@ pub fn blob_bank_id_sites(
     aeon: &Path,
     debug: bool,
 ) -> Result<BlobBankIdSites, String> {
-    let emitted = crate::seam2::sound_bank_id(aeon)?;
+    blob_bank_id_sites_in(aeon, None, debug)
+}
+
+/// [`blob_bank_id_sites`] under an anchor overlay.
+pub fn blob_bank_id_sites_in(
+    aeon: &Path,
+    ov: Option<&crate::map_placement::AnchorOverlay>,
+    debug: bool,
+) -> Result<BlobBankIdSites, String> {
+    let emitted = crate::seam2::sound_bank_id_in(aeon, ov)?;
     let emitted = u8::try_from(emitted)
         .map_err(|_| format!("sound bank id {emitted:#x} does not fit the Z80's 8-bit bank operand"))?;
     let probe = emitted ^ 0xFF;
-    let real = native_blob_checked(aeon, debug, None)?;
+    let real = native_blob_checked_in(aeon, ov, debug, None)?;
     let mut out = Vec::new();
     for &name in crate::sound_bank_ids::BLOB_BANK_ID_CONSTS {
-        let doc = native_blob_checked(aeon, debug, Some((name, i64::from(probe))))?;
+        let doc = native_blob_checked_in(aeon, ov, debug, Some((name, i64::from(probe))))?;
         let what = format!(
             "resident Z80 blob ({} shape), const {name}",
             if debug { "debug" } else { "plain" }

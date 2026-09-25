@@ -162,6 +162,13 @@ pub struct GameProfile {
     /// EMPTY in every shipping profile: a shape whose ROM depended on one would be
     /// a shape the `--extra-entry`-free build does not produce.
     pub extra_entries: Vec<String>,
+    /// ANCHOR OVERLAY (`sigil build --anchor-overlay <path>`): `[[anchor]]` rows that
+    /// replace the `at` of the map anchors of the same names for this build. With it,
+    /// the placement map, the frozen island rows, `validate_placement` and every sound
+    /// derivation read the overlaid anchors. `None` in every shipping profile; a clip
+    /// build adds it as an invocation's addition to the sonic4 shape. The contract is
+    /// `docs/superpowers/notes/2026-09-25-clip-overlay-contract.md`.
+    pub anchor_overlay: Option<crate::map_placement::AnchorOverlay>,
 }
 
 impl GameProfile {
@@ -178,6 +185,12 @@ impl GameProfile {
         S: Into<String>,
     {
         self.extra_entries = ids.into_iter().map(Into::into).collect();
+        self
+    }
+
+    /// This profile with `overlay` as its [`anchor_overlay`](Self::anchor_overlay).
+    pub fn with_anchor_overlay(mut self, overlay: crate::map_placement::AnchorOverlay) -> GameProfile {
+        self.anchor_overlay = Some(overlay);
         self
     }
 
@@ -705,6 +718,7 @@ pub fn sonic4_profile(debug: bool) -> GameProfile {
         }),
         fixture_placement: false,
         extra_entries: Vec::new(),
+        anchor_overlay: None,
     }
 }
 
@@ -752,6 +766,7 @@ pub fn demo_profile(debug: bool) -> GameProfile {
         }),
         fixture_placement: false,
         extra_entries: Vec::new(),
+        anchor_overlay: None,
     }
 }
 
@@ -809,6 +824,7 @@ pub fn config_b_profile() -> GameProfile {
         frozen_sizes: load_frozen_table("config_b.txt"),
         fixture_placement: false,
         extra_entries: Vec::new(),
+        anchor_overlay: None,
     }
 }
 
@@ -866,6 +882,7 @@ pub fn config_a_profile() -> GameProfile {
         frozen_sizes: load_frozen_table("config_a.txt"),
         fixture_placement: false,
         extra_entries: Vec::new(),
+        anchor_overlay: None,
     }
 }
 
@@ -918,6 +935,7 @@ pub fn lean_profile() -> GameProfile {
         frozen_sizes: load_frozen_table("lean.txt"),
         fixture_placement: false,
         extra_entries: Vec::new(),
+        anchor_overlay: None,
     }
 }
 
@@ -1211,18 +1229,28 @@ fn publicize_helper_comptime(manifest: &mut resolve::manifest::Manifest, helpers
 /// same exit status (1) every other build error uses. A panic would exit 101,
 /// which is a crash to any lane reading the status.
 pub fn emit_generated(aeon: &Path) -> Result<(), String> {
+    emit_generated_in(aeon, None)
+}
+
+/// [`emit_generated`] under an anchor overlay: every artifact whose bytes derive from
+/// the bank anchors is emitted from the overlaid ones. The seq-opcode table reads no
+/// anchor (its cells are resident handler VMAs), so it has no overlay variant.
+pub fn emit_generated_in(
+    aeon: &Path,
+    ov: Option<&crate::map_placement::AnchorOverlay>,
+) -> Result<(), String> {
     seam2::require_reference_tree(aeon)
         .map_err(|e| format!("ensure_generated writes into the reference tree: {e}"))?;
     let gen = aeon.join("engine/sound/generated");
-    seam1::emit_sound_blob(aeon, &gen).map_err(|e| format!("emit_sound_blob (blob): {e}"))?;
-    seam2::emit_dac_artifacts(aeon, &gen).map_err(|e| format!("emit_dac_artifacts: {e}"))?;
-    seam2::emit_mt_artifacts(aeon, &gen).map_err(|e| format!("emit_mt_artifacts: {e}"))?;
-    seam2::emit_sfx_artifacts(aeon, &gen).map_err(|e| format!("emit_sfx_artifacts: {e}"))?;
+    seam1::emit_sound_blob_in(aeon, ov, &gen).map_err(|e| format!("emit_sound_blob (blob): {e}"))?;
+    seam2::emit_dac_artifacts_in(aeon, ov, &gen).map_err(|e| format!("emit_dac_artifacts: {e}"))?;
+    seam2::emit_mt_artifacts_in(aeon, ov, &gen).map_err(|e| format!("emit_mt_artifacts: {e}"))?;
+    seam2::emit_sfx_artifacts_in(aeon, ov, &gen).map_err(|e| format!("emit_sfx_artifacts: {e}"))?;
     seam2::emit_seq_opcode_artifacts(aeon, &gen)
         .map_err(|e| format!("emit_seq_opcode_artifacts: {e}"))?;
-    seam2::emit_sound_tables_artifacts(aeon, &gen)
+    seam2::emit_sound_tables_artifacts_in(aeon, ov, &gen)
         .map_err(|e| format!("emit_sound_tables_artifacts: {e}"))?;
-    seam2::emit_pitchtable_artifacts(aeon, &gen)
+    seam2::emit_pitchtable_artifacts_in(aeon, ov, &gen)
         .map_err(|e| format!("emit_pitchtable_artifacts: {e}"))?;
     Ok(())
 }
@@ -3635,7 +3663,7 @@ fn validate_sound_fold(
     if !profile.sound_on {
         return Ok(()); // no sound bank in this shape; the layout is meaningless
     }
-    let layout = crate::seam2::sound_layout(aeon)?;
+    let layout = crate::seam2::sound_layout_in(aeon, profile.anchor_overlay.as_ref())?;
 
     // LMA, not vma_origin(): the sound-bank heads are phased (`vma: $8000`), so a
     // VMA read would hand back a window address and compare against nothing.
@@ -4094,7 +4122,7 @@ fn render_declared_chain(what: &str, d: &[sigil_span::Diagnostic], sources: &Cha
 
 fn resolve_chained(aeon: &Path, profile: &GameProfile) -> Result<ChainedResolve, String> {
     if profile.sound_on {
-        emit_generated(aeon)?;
+        emit_generated_in(aeon, profile.anchor_overlay.as_ref())?;
     }
     let AsSide { module: as_module, warnings: mut as_warnings, sources: as_map } =
         assemble_as_side(aeon, profile)?;
@@ -4126,8 +4154,9 @@ fn resolve_chained(aeon: &Path, profile: &GameProfile) -> Result<ChainedResolve,
         .map_err(|e| format!("read {}: {e}", map_path.display()))?;
     let map = sigil_link::load_map(&map_src)
         .map_err(|e| format!("load {}: {e}", map_path.display()))?;
-    let mut pmap = crate::map_placement::load_placement_map(&map_src)
+    let pmap = crate::map_placement::load_placement_map(&map_src)
         .map_err(|e| format!("placement {}: {e}", map_path.display()))?;
+    let (mut pmap, frozen) = overlaid_placement(pmap, profile)?;
 
     // FIXTURE-ONLY (stress-art) — the SECOND half of the fixture_placement waiver PAIR
     // (the first is the packing-guard waiver in `packed_true_bases`). The uniquified pool
@@ -4150,7 +4179,7 @@ fn resolve_chained(aeon: &Path, profile: &GameProfile) -> Result<ChainedResolve,
     // the CLI banner through the same path as every other warning.
     let true_bases = true_bases_by_index(
         &sections,
-        &profile.frozen_sizes,
+        &frozen,
         &pmap.order,
         profile.fixture_placement,
         &anchor_addrs,
@@ -4242,8 +4271,9 @@ pub fn build_rom_chained_with_listing(
     // against the banks as placed. First among the post-link checks: a moved bank also
     // trips the island checks below, and this names the bytes that would select the
     // wrong window.
-    crate::sound_bank_ids::validate_sound_bank_ids(
+    crate::sound_bank_ids::validate_sound_bank_ids_in(
         aeon,
+        profile.anchor_overlay.as_ref(),
         &resolved,
         &linked,
         profile.sound_on,
@@ -4301,13 +4331,38 @@ fn placement_map(aeon: &Path, profile: &GameProfile) -> Result<crate::map_placem
         .map_err(|e| format!("placement {}: {e}", map_path.display()))
 }
 
+/// The placement map and the frozen provisional table a build places with. Without an
+/// anchor overlay these are the map as written and the profile's own table, returned
+/// untouched. With one, the map's anchors take the overlay's addresses
+/// ([`crate::map_placement::PlacementMap::with_overlay`]) and each moved anchor's
+/// island row moves with it ([`crate::map_placement::move_island_rows`]), so the walk
+/// holds the island at the overlay address and `validate_placement` checks the
+/// overlaid set.
+fn overlaid_placement(
+    pmap: crate::map_placement::PlacementMap,
+    profile: &GameProfile,
+) -> Result<(crate::map_placement::PlacementMap, std::borrow::Cow<'_, HashMap<String, u32>>), String> {
+    let Some(ov) = profile.anchor_overlay.as_ref() else {
+        return Ok((pmap, std::borrow::Cow::Borrowed(&profile.frozen_sizes)));
+    };
+    let overlaid = pmap.with_overlay(ov)?;
+    let frozen = crate::map_placement::move_island_rows(
+        &profile.frozen_sizes,
+        &pmap,
+        &overlaid,
+        profile.sound_on,
+        &ov.origin,
+    )?;
+    Ok((overlaid, std::borrow::Cow::Owned(frozen)))
+}
+
 /// Resolve `profile`'s frozen-table chained layout into its final ROM sections (the
 /// SAME placement `build_rom_chained_with_listing` emits, minus the drift check / link /
 /// emit). The shared substrate for the placement gate and the P4a LMA-correct
 /// size-table derivation: both read `section.lma + label.offset` off these sections.
 fn resolve_frozen_sections(aeon: &Path, profile: &GameProfile) -> Result<Vec<Section>, String> {
     if profile.sound_on {
-        emit_generated(aeon)?;
+        emit_generated_in(aeon, profile.anchor_overlay.as_ref())?;
     }
     // Warnings are the BUILD's to print; this resolve is a placement helper and
     // renders nothing, so `as_side.warnings` is dropped here on purpose — the
@@ -4319,13 +4374,13 @@ fn resolve_frozen_sections(aeon: &Path, profile: &GameProfile) -> Result<Vec<Sec
     // islands — the SAME inputs the emit path feeds it, so this resolve and the build
     // never diverge on a stale provisional gap. Drift warnings are the build's to
     // print; here they go to a throwaway sink.
-    let pmap = placement_map(aeon, profile)?;
+    let (pmap, frozen) = overlaid_placement(placement_map(aeon, profile)?, profile)?;
     let anchor_addrs: std::collections::HashSet<u32> =
         pmap.anchors_for(profile.sound_on).map(|a| a.at).collect();
     let mut drift_sink = Vec::new();
     let true_bases = true_bases_by_index(
         &sections,
-        &profile.frozen_sizes,
+        &frozen,
         &pmap.order,
         profile.fixture_placement,
         &anchor_addrs,

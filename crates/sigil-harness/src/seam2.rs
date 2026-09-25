@@ -33,7 +33,7 @@ use sigil_ir::backend::Cpu;
 use sigil_ir::{Section, SectionPlacement, SymbolTable};
 
 use crate::diag_render::{link_assert_failure, SourceTexts};
-use crate::map_placement::load_placement_map;
+use crate::map_placement::{load_placement_map, AnchorOverlay};
 
 // ── The map-derived placement authority (Parcel A1) ─────────────────────────
 //
@@ -74,7 +74,7 @@ const SFX_LEN_PROBE_OFFSET: u32 = 0x2000;
 
 /// The two declared bank anchors from `games/<g>/map.toml`, validated against the
 /// declared byte-emitting `order`.
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 struct BankAnchors {
     /// `dac_banks` anchor LMA, the DAC blip bank head / bank island (`Dac_Temp_Blip`
     /// in `golden/offcanonical_sizes/*.txt` records it per shape).
@@ -177,17 +177,22 @@ pub fn require_reference_tree(aeon: &Path) -> Result<(), String> {
 
 /// Parse the two seam-2 anchors from [`SOUND_PLACEMENT_MAP_REL`] and check the
 /// emit's lay-down order is a subsequence of the map's declared `order`. Reuses the
-/// harness's map reader ([`load_placement_map`]) — no second map engine.
-fn bank_anchors(aeon: &Path) -> Result<BankAnchors, String> {
+/// harness's map reader ([`load_placement_map`]) — no second map engine. With an
+/// anchor overlay, the anchors are the map's with the overlay applied
+/// ([`crate::map_placement::PlacementMap::with_overlay`]).
+fn bank_anchors(aeon: &Path, ov: Option<&AnchorOverlay>) -> Result<BankAnchors, String> {
     let path = aeon.join(SOUND_PLACEMENT_MAP_REL);
     let src = sigil_span::read_set::read_to_string(&path).map_err(|e| format!("read {}: {e}", path.display()))?;
-    bank_anchors_from_str(&src)
+    bank_anchors_from_str(&src, ov)
 }
 
 /// [`bank_anchors`]'s pure core over a map source string (so the anchor-parse +
 /// order-subsequence validation is unit-testable without a real aeon tree).
-fn bank_anchors_from_str(src: &str) -> Result<BankAnchors, String> {
-    let map = load_placement_map(src)?;
+fn bank_anchors_from_str(src: &str, ov: Option<&AnchorOverlay>) -> Result<BankAnchors, String> {
+    let map = match ov {
+        None => load_placement_map(src)?,
+        Some(ov) => load_placement_map(src)?.with_overlay(ov)?,
+    };
 
     let anchor = |name: &str| -> Result<&crate::map_placement::Anchor, String> {
         map.anchors_for(true)
@@ -270,15 +275,23 @@ pub struct SoundLayout {
 /// input enters the alignment: the plain and debug SFX bases differ only by the MT
 /// body length ahead of them.
 pub fn sound_layout(aeon: &Path) -> Result<SoundLayout, String> {
-    static CACHE: std::sync::OnceLock<
-        std::sync::Mutex<std::collections::HashMap<std::path::PathBuf, SoundLayout>>,
-    > = std::sync::OnceLock::new();
+    sound_layout_in(aeon, None)
+}
+
+/// [`sound_layout`] under an anchor overlay (`None` is the map as written). The memo
+/// is keyed by the aeon root AND the two anchors the derivation starts from, so one
+/// process that derives the map's layout and an overlay's gets each its own, never
+/// the first one computed.
+pub fn sound_layout_in(aeon: &Path, ov: Option<&AnchorOverlay>) -> Result<SoundLayout, String> {
+    type Key = (std::path::PathBuf, BankAnchors);
+    static CACHE: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap<Key, SoundLayout>>> =
+        std::sync::OnceLock::new();
     let cache = CACHE.get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()));
-    if let Some(l) = cache.lock().unwrap().get(aeon) {
+    let a = bank_anchors(aeon, ov)?;
+    let key: Key = (aeon.to_path_buf(), a);
+    if let Some(l) = cache.lock().unwrap().get(&key) {
         return Ok(*l);
     }
-
-    let a = bank_anchors(aeon)?;
 
     let dac_blip_lma = a.dac_banks;
     let dac_shared_lma = a.dac_banks + DAC_INTRA_BANK_ALIGN;
@@ -288,17 +301,17 @@ pub fn sound_layout(aeon: &Path) -> Result<SoundLayout, String> {
     // `$8000` vma / other banks, not from their own head LMA), so measuring a head's
     // LENGTH via its public emitter — even before its real LMA is fixed — is exact.
     let sound_tables_z80_lma = a.sound_bank;
-    let l_stz = emit_sound_tables_z80(aeon)?.len() as u32;
+    let l_stz = sound_tables_z80_at(aeon, a.sound_bank, None)?.len() as u32;
 
     let pitchtable_lma = sound_tables_z80_lma + l_stz;
-    let l_pitch = emit_pitchtable(aeon)?.len() as u32;
+    let l_pitch = pitchtable_at(aeon, a.sound_bank, false)?.len() as u32;
 
     let sfx_win_tab_lma = pitchtable_lma + l_pitch;
     // The SFX window head's real body base isn't known yet (it needs the MT body
     // length, derived below); its LENGTH is placement-invariant, so measure it at a
     // scratch base.
     let l_sfxhead =
-        emit_sfx_body_and_head_at(aeon, a.sound_bank + SFX_LEN_PROBE_OFFSET, sfx_win_tab_lma)?
+        emit_sfx_body_and_head_at(aeon, a.sound_bank, a.sound_bank + SFX_LEN_PROBE_OFFSET, sfx_win_tab_lma)?
             .head
             .len() as u32;
 
@@ -342,7 +355,7 @@ pub fn sound_layout(aeon: &Path) -> Result<SoundLayout, String> {
         sfx_bank_lma_plain,
         sfx_bank_lma_debug,
     };
-    cache.lock().unwrap().insert(aeon.to_path_buf(), layout);
+    cache.lock().unwrap().insert(key, layout);
     Ok(layout)
 }
 
@@ -351,8 +364,13 @@ pub fn sound_layout(aeon: &Path) -> Result<SoundLayout, String> {
 /// driver (`-D DacSampleTable`); deriving it here ties the driver's window pointer
 /// to the same map authority the head placement flows from.
 pub fn dac_sample_table_vma(aeon: &Path) -> Result<u32, String> {
-    let a = bank_anchors(aeon)?;
-    let l = sound_layout(aeon)?;
+    dac_sample_table_vma_in(aeon, None)
+}
+
+/// [`dac_sample_table_vma`] under an anchor overlay.
+pub fn dac_sample_table_vma_in(aeon: &Path, ov: Option<&AnchorOverlay>) -> Result<u32, String> {
+    let a = bank_anchors(aeon, ov)?;
+    let l = sound_layout_in(aeon, ov)?;
     Ok(a.sound_bank_vma + (l.dac_sample_tab_lma - l.sound_tables_z80_lma))
 }
 
@@ -372,8 +390,16 @@ pub fn dac_sample_table_vma(aeon: &Path) -> Result<u32, String> {
 /// is the bug, not the fix — that is the lesson of the three unmaintained copies
 /// of the sound-bank addresses."
 pub fn banked_head_vmas(aeon: &Path) -> Result<Vec<(&'static str, u32)>, String> {
-    let a = bank_anchors(aeon)?;
-    let l = sound_layout(aeon)?;
+    banked_head_vmas_in(aeon, None)
+}
+
+/// [`banked_head_vmas`] under an anchor overlay.
+pub fn banked_head_vmas_in(
+    aeon: &Path,
+    ov: Option<&AnchorOverlay>,
+) -> Result<Vec<(&'static str, u32)>, String> {
+    let a = bank_anchors(aeon, ov)?;
+    let l = sound_layout_in(aeon, ov)?;
     let vma = |lma: u32| a.sound_bank_vma + (lma - l.sound_tables_z80_lma);
     Ok(vec![
         ("SndDefaultPitchTable", vma(l.pitchtable_lma)),
@@ -391,7 +417,12 @@ pub fn banked_head_vmas(aeon: &Path) -> Result<Vec<(&'static str, u32)>, String>
 /// `sigil-frontend-emp/src/eval/builtins.rs::eval_bankid`) — the value aeon's
 /// `bankid(MovingTrucks_Bank_Start)` co-residency ensures fold against.
 pub fn sound_bank_id(aeon: &Path) -> Result<u32, String> {
-    Ok(bank_id_of(sound_layout(aeon)?.sound_tables_z80_lma))
+    sound_bank_id_in(aeon, None)
+}
+
+/// [`sound_bank_id`] under an anchor overlay.
+pub fn sound_bank_id_in(aeon: &Path, ov: Option<&AnchorOverlay>) -> Result<u32, String> {
+    Ok(bank_id_of(sound_layout_in(aeon, ov)?.sound_tables_z80_lma))
 }
 
 /// The Genesis cartridge bank id of the `$8000` window holding `lma`: exactly
@@ -577,7 +608,15 @@ fn lower_emp_file(
 /// extern("DacSample_len"))` is checked against the engine's real values (10, 9)
 /// supplied as equ carriers (the same values `sound_constants.asm` defines).
 pub fn emit_dac_body_and_head(aeon: &Path) -> Result<DacBodyAndHead, String> {
-    let l = sound_layout(aeon)?;
+    emit_dac_body_and_head_in(aeon, None)
+}
+
+/// [`emit_dac_body_and_head`] under an anchor overlay.
+pub fn emit_dac_body_and_head_in(
+    aeon: &Path,
+    ov: Option<&AnchorOverlay>,
+) -> Result<DacBodyAndHead, String> {
+    let l = sound_layout_in(aeon, ov)?;
     emit_dac_body_and_head_at(aeon, l.dac_blip_lma, l.dac_shared_lma, l.dac_sample_tab_lma)
 }
 
@@ -704,7 +743,15 @@ pub struct DacHeadBankSites {
 /// of the moved LMA in the doctored one; any other changed byte is refused (see
 /// [`crate::sound_bank_ids::diff_id_sites`]).
 pub fn dac_head_bank_id_sites(aeon: &Path) -> Result<DacHeadBankSites, String> {
-    let l = sound_layout(aeon)?;
+    dac_head_bank_id_sites_in(aeon, None)
+}
+
+/// [`dac_head_bank_id_sites`] under an anchor overlay.
+pub fn dac_head_bank_id_sites_in(
+    aeon: &Path,
+    ov: Option<&AnchorOverlay>,
+) -> Result<DacHeadBankSites, String> {
+    let l = sound_layout_in(aeon, ov)?;
     let id = |lma: u32| -> Result<u8, String> {
         u8::try_from(bank_id_of(lma))
             .map_err(|_| format!("bank id of {lma:#x} does not fit the Z80's 8-bit bank operand"))
@@ -739,8 +786,17 @@ pub fn dac_head_bank_id_sites(aeon: &Path) -> Result<DacHeadBankSites, String> {
 /// is shape-INVARIANT (one blip + one shared + one head, no `-D`/`__DEBUG__`), so —
 /// unlike the resident blob — there is NO `_debug` variant.
 pub fn emit_dac_artifacts(aeon: &Path, out_dir: &Path) -> Result<(), String> {
+    emit_dac_artifacts_in(aeon, None, out_dir)
+}
+
+/// [`emit_dac_artifacts`] under an anchor overlay.
+pub fn emit_dac_artifacts_in(
+    aeon: &Path,
+    ov: Option<&AnchorOverlay>,
+    out_dir: &Path,
+) -> Result<(), String> {
     require_reference_tree(aeon)?;
-    let out = emit_dac_body_and_head(aeon)?;
+    let out = emit_dac_body_and_head_in(aeon, ov)?;
     std::fs::create_dir_all(out_dir).map_err(|e| format!("mkdir {}: {e}", out_dir.display()))?;
     let write = |name: &str, bytes: &[u8]| -> Result<(), String> {
         let p = out_dir.join(name);
@@ -775,9 +831,18 @@ pub struct SfxBodyAndHead {
 /// 1 co-residency + 3 drift guards; the head's 1 span guard). Byte-deterministic
 /// from the tracked `.emp` + its embeds.
 pub fn emit_sfx_body_and_head(aeon: &Path, debug: bool) -> Result<SfxBodyAndHead, String> {
-    let l = sound_layout(aeon)?;
+    emit_sfx_body_and_head_in(aeon, None, debug)
+}
+
+/// [`emit_sfx_body_and_head`] under an anchor overlay.
+pub fn emit_sfx_body_and_head_in(
+    aeon: &Path,
+    ov: Option<&AnchorOverlay>,
+    debug: bool,
+) -> Result<SfxBodyAndHead, String> {
+    let l = sound_layout_in(aeon, ov)?;
     let sfx_base = if debug { l.sfx_bank_lma_debug } else { l.sfx_bank_lma_plain };
-    emit_sfx_body_and_head_at(aeon, sfx_base, l.sfx_win_tab_lma)
+    emit_sfx_body_and_head_at(aeon, l.sound_tables_z80_lma, sfx_base, l.sfx_win_tab_lma)
 }
 
 /// [`emit_sfx_body_and_head`] with an optional composition-input doctor: when
@@ -796,7 +861,7 @@ pub fn emit_sfx_body_and_head_doctored(
     let l = sound_layout(aeon)?;
     let sfx_base = doctor_sfx_base
         .unwrap_or(if debug { l.sfx_bank_lma_debug } else { l.sfx_bank_lma_plain });
-    emit_sfx_body_and_head_at(aeon, sfx_base, l.sfx_win_tab_lma)
+    emit_sfx_body_and_head_at(aeon, l.sound_tables_z80_lma, sfx_base, l.sfx_win_tab_lma)
 }
 
 /// [`emit_sfx_body_and_head`]'s explicit-placement core: co-link the SFX block at
@@ -811,6 +876,7 @@ pub fn emit_sfx_body_and_head_doctored(
 /// caller passes.
 fn emit_sfx_body_and_head_at(
     aeon: &Path,
+    bank_start: u32,
     sfx_base: u32,
     head_lma: u32,
 ) -> Result<SfxBodyAndHead, String> {
@@ -835,9 +901,9 @@ fn emit_sfx_body_and_head_at(
     link_asserts.extend(head.link_asserts.clone());
 
     // The SFX block runs to the top of the sound bank, DERIVED from the map anchor
-    // (`sound_bank + $8000`) rather than pinned — a hardcoded top would silently
-    // wrap this u32 subtraction into a ~4 GB region the moment the bank moves up.
-    let bank_start = bank_anchors(aeon)?.sound_bank;
+    // (`bank_start` + $8000, `bank_start` being the `sound_bank` anchor) rather than
+    // pinned — a hardcoded top would silently wrap this u32 subtraction into a ~4 GB
+    // region the moment the bank moves up.
     let bank_top = bank_start + BANK_WINDOW_SIZE;
     let sfx_size = bank_top.checked_sub(sfx_base).ok_or_else(|| {
         format!(
@@ -999,6 +1065,11 @@ pub fn emit_sound_tables_z80(aeon: &Path) -> Result<Vec<u8>, String> {
     emit_sound_tables_z80_doctored(aeon, None)
 }
 
+/// [`emit_sound_tables_z80`] under an anchor overlay.
+pub fn emit_sound_tables_z80_in(aeon: &Path, ov: Option<&AnchorOverlay>) -> Result<Vec<u8>, String> {
+    sound_tables_z80_at(aeon, bank_anchors(aeon, ov)?.sound_bank, None)
+}
+
 /// [`emit_sound_tables_z80`] with an optional composition-input doctor: when
 /// `doctor_vma` is `Some(vma)`, the section's `$8000` window base is overridden
 /// to `vma`, so every intra-module `dc.w PsgVolEnv_XX`/`FmVolEnv_XX` pointer cell
@@ -1011,6 +1082,12 @@ pub fn emit_sound_tables_z80_doctored(
     aeon: &Path,
     doctor_vma: Option<u32>,
 ) -> Result<Vec<u8>, String> {
+    sound_tables_z80_at(aeon, bank_anchors(aeon, None)?.sound_bank, doctor_vma)
+}
+
+/// The sound-tables core, placed at `head_lma` (the `sound_bank` anchor). Takes the
+/// anchor as a parameter so [`sound_layout_in`] measures it without re-entry.
+fn sound_tables_z80_at(aeon: &Path, head_lma: u32, doctor_vma: Option<u32>) -> Result<Vec<u8>, String> {
     let dir = aeon.join("engine/sound");
     let mut texts = SourceTexts::new();
     let module =
@@ -1021,7 +1098,6 @@ pub fn emit_sound_tables_z80_doctored(
     // own `vma: $8000` window — the intra-module pointer cells fold from that window
     // base, so the head bytes are placement-invariant (the LMA only fixes where the
     // BINCLUDE lands in the whole-ROM link).
-    let head_lma = bank_anchors(aeon)?.sound_bank;
     let map_toml = format!(
         "fill = 0x00\n\n[[region]]\nname = \"sound_tables_z80\"\nlma_base = 0x{head_lma:X}\nsize = 0x400\nkind = \"rom\"\n"
     );
@@ -1055,8 +1131,17 @@ pub fn emit_sound_tables_z80_doctored(
 /// Emit the seam-2 sound-tables build input to `out_dir`: `sound_tables_z80.bin`
 /// (shape-invariant — one file serves both shapes).
 pub fn emit_sound_tables_artifacts(aeon: &Path, out_dir: &Path) -> Result<(), String> {
+    emit_sound_tables_artifacts_in(aeon, None, out_dir)
+}
+
+/// [`emit_sound_tables_artifacts`] under an anchor overlay.
+pub fn emit_sound_tables_artifacts_in(
+    aeon: &Path,
+    ov: Option<&AnchorOverlay>,
+    out_dir: &Path,
+) -> Result<(), String> {
     require_reference_tree(aeon)?;
-    let bytes = emit_sound_tables_z80(aeon)?;
+    let bytes = emit_sound_tables_z80_in(aeon, ov)?;
     std::fs::create_dir_all(out_dir).map_err(|e| format!("mkdir {}: {e}", out_dir.display()))?;
     let p = out_dir.join("sound_tables_z80.bin");
     sigil_span::read_set::write_generated(&p, &bytes).map_err(|e| format!("write {}: {e}", p.display()))?;
@@ -1088,6 +1173,17 @@ pub fn emit_pitchtable(aeon: &Path) -> Result<Vec<u8>, String> {
 /// DIVERGE from the frozen golden slice — proving the byte gate catches any
 /// table drift (the AS-side size guard only covers LENGTH drift).
 pub fn emit_pitchtable_doctored(aeon: &Path, doctor: bool) -> Result<Vec<u8>, String> {
+    pitchtable_at(aeon, bank_anchors(aeon, None)?.sound_bank, doctor)
+}
+
+/// [`emit_pitchtable`] under an anchor overlay.
+pub fn emit_pitchtable_in(aeon: &Path, ov: Option<&AnchorOverlay>) -> Result<Vec<u8>, String> {
+    pitchtable_at(aeon, bank_anchors(aeon, ov)?.sound_bank, false)
+}
+
+/// The pitch-table core, placed at `head_lma` (the `sound_bank` anchor). Takes the
+/// anchor as a parameter so [`sound_layout_in`] measures it without re-entry.
+fn pitchtable_at(aeon: &Path, head_lma: u32, doctor: bool) -> Result<Vec<u8>, String> {
     let dir = aeon.join("games/sonic4/data/sound");
     let emp = dir.join("movingtrucks_pitchtable.emp");
     let mut src =
@@ -1125,7 +1221,6 @@ pub fn emit_pitchtable_doctored(aeon: &Path, doctor: bool) -> Result<Vec<u8>, St
     // Pure `dc.b` with no intra-module refs → placement-invariant bytes; place at the
     // map-derived head-bank base (the `sound_bank` anchor). The real head LMA
     // (`$58357`) is [`sound_layout`]'s `pitchtable_lma`, consumed by the golden gate.
-    let head_lma = bank_anchors(aeon)?.sound_bank;
     let map_toml = format!(
         "fill = 0x00\n\n[[region]]\nname = \"movingtrucks_pitchtable\"\nlma_base = 0x{head_lma:X}\nsize = 0x200\nkind = \"rom\"\n"
     );
@@ -1150,8 +1245,17 @@ pub fn emit_pitchtable_doctored(aeon: &Path, doctor: bool) -> Result<Vec<u8>, St
 /// Emit the seam-2 pitch-table build input to `out_dir`:
 /// `movingtrucks_pitchtable.bin` (shape-invariant — one file serves both shapes).
 pub fn emit_pitchtable_artifacts(aeon: &Path, out_dir: &Path) -> Result<(), String> {
+    emit_pitchtable_artifacts_in(aeon, None, out_dir)
+}
+
+/// [`emit_pitchtable_artifacts`] under an anchor overlay.
+pub fn emit_pitchtable_artifacts_in(
+    aeon: &Path,
+    ov: Option<&AnchorOverlay>,
+    out_dir: &Path,
+) -> Result<(), String> {
     require_reference_tree(aeon)?;
-    let bytes = emit_pitchtable(aeon)?;
+    let bytes = emit_pitchtable_in(aeon, ov)?;
     std::fs::create_dir_all(out_dir).map_err(|e| format!("mkdir {}: {e}", out_dir.display()))?;
     let p = out_dir.join("movingtrucks_pitchtable.bin");
     sigil_span::read_set::write_generated(&p, &bytes).map_err(|e| format!("write {}: {e}", p.display()))?;
@@ -1184,13 +1288,22 @@ pub fn emit_seq_opcode_artifacts(aeon: &Path, out_dir: &Path) -> Result<(), Stri
 /// reads `SfxTable` — `sound_sfx.emp`'s `SfxBlobWinTab` reads are native (its
 /// address is a seam-1 banked carrier at $845F, unchanged by this unit).
 pub fn emit_sfx_artifacts(aeon: &Path, out_dir: &Path) -> Result<(), String> {
+    emit_sfx_artifacts_in(aeon, None, out_dir)
+}
+
+/// [`emit_sfx_artifacts`] under an anchor overlay.
+pub fn emit_sfx_artifacts_in(
+    aeon: &Path,
+    ov: Option<&AnchorOverlay>,
+    out_dir: &Path,
+) -> Result<(), String> {
     require_reference_tree(aeon)?;
     let mut artifacts = Vec::new();
     for (debug, body_name, head_name) in [
         (false, "sfx_bank.bin", "sfx_blob_win_tab.bin"),
         (true, "sfx_bank_debug.bin", "sfx_blob_win_tab_debug.bin"),
     ] {
-        let out = emit_sfx_body_and_head(aeon, debug)?;
+        let out = emit_sfx_body_and_head_in(aeon, ov, debug)?;
         artifacts.push((body_name, out.body));
         artifacts.push((head_name, out.head));
     }
@@ -1224,7 +1337,13 @@ pub struct MtBank {
 /// and checks the module's 7 link asserts (5 co-residency + 2 drift guards) all
 /// PASS. Byte-deterministic from the tracked `.emp` + its embeds.
 pub fn emit_mt_bank(aeon: &Path, debug: bool) -> Result<MtBank, String> {
-    emit_mt_bank_at(aeon, debug, sound_layout(aeon)?.mt_bank_lma, bank_anchors(aeon)?.sound_bank)
+    emit_mt_bank_in(aeon, None, debug)
+}
+
+/// [`emit_mt_bank`] under an anchor overlay.
+pub fn emit_mt_bank_in(aeon: &Path, ov: Option<&AnchorOverlay>, debug: bool) -> Result<MtBank, String> {
+    let l = sound_layout_in(aeon, ov)?;
+    emit_mt_bank_at(aeon, debug, l.mt_bank_lma, l.sound_tables_z80_lma)
 }
 
 /// [`emit_mt_bank`]'s explicit-placement core: place the Moving-Trucks bank at
@@ -1331,13 +1450,22 @@ fn emit_mt_bank_at(
 /// whole-ROM link resolves — no emitted equ artifact. SHAPE-DEPENDENT (the two songs
 /// the debug build adds), so each artifact has a `_debug` variant.
 pub fn emit_mt_artifacts(aeon: &Path, out_dir: &Path) -> Result<(), String> {
+    emit_mt_artifacts_in(aeon, None, out_dir)
+}
+
+/// [`emit_mt_artifacts`] under an anchor overlay.
+pub fn emit_mt_artifacts_in(
+    aeon: &Path,
+    ov: Option<&AnchorOverlay>,
+    out_dir: &Path,
+) -> Result<(), String> {
     require_reference_tree(aeon)?;
     let mut artifacts: Vec<(&str, Vec<u8>)> = Vec::new();
     for (debug, body_name, st_name, spt_name) in [
         (false, "mt_bank_body.bin", "mt_songtable.bin", "mt_songpatchtable.bin"),
         (true, "mt_bank_body_debug.bin", "mt_songtable_debug.bin", "mt_songpatchtable_debug.bin"),
     ] {
-        let mt = emit_mt_bank(aeon, debug)?;
+        let mt = emit_mt_bank_in(aeon, ov, debug)?;
         let st = mt.song_table_off;
         let spt = mt.song_patch_table_off;
         // The two tables are contiguous and end the blob: body | SongTable | SongPatchTable.
@@ -1392,7 +1520,7 @@ when = \"sound_on\"
 
     #[test]
     fn bank_anchors_reads_the_two_declared_anchors() {
-        let a = bank_anchors_from_str(GOOD_MAP).expect("valid map parses");
+        let a = bank_anchors_from_str(GOOD_MAP, None).expect("valid map parses");
         assert_eq!(a.dac_banks, 0x48000);
         assert_eq!(a.sound_bank, 0x58000);
         assert_eq!(a.sound_bank_vma, 0x8000);
@@ -1401,14 +1529,14 @@ when = \"sound_on\"
     #[test]
     fn missing_sound_bank_anchor_fails_loud() {
         let doctored = GOOD_MAP.replace("name = \"sound_bank\"", "name = \"sound_bank_renamed\"");
-        let err = bank_anchors_from_str(&doctored).unwrap_err();
+        let err = bank_anchors_from_str(&doctored, None).unwrap_err();
         assert!(err.contains("sound_bank"), "got: {err}");
     }
 
     #[test]
     fn sound_bank_anchor_without_vma_fails_loud() {
         let doctored = GOOD_MAP.replace("vma = 0x8000\n", "");
-        let err = bank_anchors_from_str(&doctored).unwrap_err();
+        let err = bank_anchors_from_str(&doctored, None).unwrap_err();
         assert!(err.contains("vma"), "got: {err}");
     }
 
@@ -1420,14 +1548,14 @@ when = \"sound_on\"
             "order = [\"Dac_Temp_Blip\", \"SoundTablesZ80_Head\", \"Song_MovingTrucks\", \"Sfx_33\"]",
             "order = [\"Dac_Temp_Blip\", \"SoundTablesZ80_Head\", \"Sfx_33\", \"Song_MovingTrucks\"]",
         );
-        let err = bank_anchors_from_str(&doctored).unwrap_err();
+        let err = bank_anchors_from_str(&doctored, None).unwrap_err();
         assert!(err.contains("desyncs the seam-2 chain"), "got: {err}");
     }
 
     #[test]
     fn missing_order_label_fails_loud() {
         let doctored = GOOD_MAP.replace("\"Song_MovingTrucks\", ", "");
-        let err = bank_anchors_from_str(&doctored).unwrap_err();
+        let err = bank_anchors_from_str(&doctored, None).unwrap_err();
         assert!(err.contains("Song_MovingTrucks"), "got: {err}");
     }
 }
