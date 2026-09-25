@@ -1333,8 +1333,8 @@ pub struct MtBank {
 /// Lower + co-link `mt_bank.emp` at the map-derived bank pin (`$58628`) and return
 /// the bank body + the `SongTable`/`SongPatchTable` addresses. Supplies the same
 /// THREE cross-seam carriers `mt_port.rs` does ([`mt_bank_carrier_asm`]):
-/// `MovingTrucks_Bank_Start` (label @ the `sound_bank` anchor) + `SONG_MOVINGTRUCKS`
-/// + `SONG_COUNT`, both resolved from `games.sonic4.sound_ids` under the shape's
+/// `MovingTrucks_Bank_Start` (label @ the `sound_bank` anchor), `SONG_MOVINGTRUCKS`
+/// and `SONG_COUNT`, both resolved from `games.sonic4.sound_ids` under the shape's
 /// `DEBUG`, and checks the module's 7 link asserts (5 co-residency + 2 drift guards) all
 /// PASS. Byte-deterministic from the tracked `.emp` + its embeds.
 pub fn emit_mt_bank(aeon: &Path, debug: bool) -> Result<MtBank, String> {
