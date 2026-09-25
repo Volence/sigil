@@ -140,6 +140,39 @@ fn lex_into(
                     span: span_at(start, i),
                 });
             }
+            // AS named temporary symbol: `$$` then a letter or `_`, then the
+            // identifier tail (`$$compareChars`, `$$a_b`, `$$c.d`). One
+            // identifier token under both CPUs, spelled with its `$$`, which is
+            // what tells the evaluator to key it by the temporary-symbol scope
+            // (`Asm::temp_sym_key`). asl, pinned build: `$$x` assembles under
+            // `cpu z80` as under `cpu 68000`, and `$$`, `$$1` are `#1020 invalid
+            // symbol name` under both, so a `$$` not followed by a name falls
+            // through to the arms below and keeps their refusals.
+            //
+            // `$$.name` is refused by name. asl accepts it as a label and then
+            // answers `#1010 symbol undefined` for the same spelling as a
+            // reference, so there is no reading of it both directions agree on.
+            b'$' if bytes.get(i + 1) == Some(&b'$') && bytes.get(i + 2) == Some(&b'.') => {
+                return Err(err(
+                    i,
+                    i + 3,
+                    "`$$.` does not start a temporary symbol name: follow `$$` with a letter or `_`",
+                ));
+            }
+            b'$' if bytes.get(i + 1) == Some(&b'$')
+                && bytes.get(i + 2).is_some_and(|&c| c.is_ascii_alphabetic() || c == b'_') =>
+            {
+                let start = i;
+                i += 2;
+                while i < bytes.len() && is_ident_tail(bytes[i]) {
+                    i += 1;
+                }
+                let s = std::str::from_utf8(&bytes[start..i]).unwrap().to_string();
+                out.push(Token {
+                    tok: Tok::Ident(s),
+                    span: span_at(start, i),
+                });
+            }
             b'$' if cpu == Cpu::Z80 => {
                 out.push(Token {
                     tok: Tok::Dollar,
@@ -425,6 +458,37 @@ mod tests {
             .into_iter()
             .map(|t| t.tok)
             .collect()
+    }
+
+    /// `$$name` is ONE identifier under both CPUs, and `$` keeps its own
+    /// meaning beside it: a hex prefix on the 68000, the location counter on
+    /// the Z80.
+    #[test]
+    fn a_temporary_symbol_is_one_identifier_under_both_cpus() {
+        assert_eq!(
+            kinds("dbf d2,$$compareChars", Cpu::M68000),
+            vec![
+                Tok::Ident("dbf".into()),
+                Tok::Ident("d2".into()),
+                Tok::Punct(Punct::Comma),
+                Tok::Ident("$$compareChars".into()),
+            ]
+        );
+        assert_eq!(
+            kinds("$$c.d_1+$1F", Cpu::M68000),
+            vec![Tok::Ident("$$c.d_1".into()), Tok::Punct(Punct::Plus), Tok::Int(0x1F)]
+        );
+        assert_eq!(
+            kinds("dw $+2,$$x", Cpu::Z80),
+            vec![
+                Tok::Ident("dw".into()),
+                Tok::Dollar,
+                Tok::Punct(Punct::Plus),
+                Tok::Int(2),
+                Tok::Punct(Punct::Comma),
+                Tok::Ident("$$x".into()),
+            ]
+        );
     }
 
     #[test]
