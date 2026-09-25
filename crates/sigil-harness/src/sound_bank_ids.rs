@@ -173,8 +173,9 @@ pub fn check_site_groups(
     }
     Err(format!(
         "[sound.bank-id-vs-placement] {} baked sound bank id(s) disagree with where the build \
-         placed the bank. The emit folded these ids from the map.toml `dac_banks`/`sound_bank` \
-         anchors (seam2::sound_layout) before placement; the chainer then placed the banks \
+         placed the bank. The emit folded these ids from the `dac_banks`/`sound_bank` anchors \
+         (map.toml, or its anchor overlay; seam2::sound_layout) before placement; the chainer \
+         then placed the banks \
          elsewhere, so the driver would select the wrong $8000 window and play from the wrong \
          bank:\n{}\nMake the map anchors and the placed banks agree; do not edit the ids.",
         mismatches.len(),
@@ -209,6 +210,20 @@ pub fn validate_sound_bank_ids(
     sound_on: bool,
     debug: bool,
 ) -> Result<usize, String> {
+    validate_sound_bank_ids_in(aeon, None, resolved, linked, sound_on, debug)
+}
+
+/// [`validate_sound_bank_ids`] for a build under an anchor overlay: the sites are
+/// located with the emit re-derived under the same overlay. The expected ids never
+/// come from the overlay; they are `bank_id_of` the banks as placed.
+pub fn validate_sound_bank_ids_in(
+    aeon: &Path,
+    ov: Option<&crate::map_placement::AnchorOverlay>,
+    resolved: &[Section],
+    linked: &LinkedImage,
+    sound_on: bool,
+    debug: bool,
+) -> Result<usize, String> {
     let placed = |label: &str| placed_lma(resolved, label);
     if !sound_on {
         let blob_len = match (placed(BLOB_START), placed(BLOB_END)) {
@@ -228,7 +243,7 @@ pub fn validate_sound_bank_ids(
     }
 
     let crate::seam1::BlobBankIdSites { by_const: blob_sites, blob_len } =
-        crate::seam1::blob_bank_id_sites(aeon, debug)?;
+        crate::seam1::blob_bank_id_sites_in(aeon, ov, debug)?;
     let placed_blob_len = match (placed(BLOB_START), placed(BLOB_END)) {
         (Some(s), Some(e)) => e.saturating_sub(s),
         _ => {
@@ -259,7 +274,7 @@ pub fn validate_sound_bank_ids(
             offsets,
         });
     }
-    let dac = crate::seam2::dac_head_bank_id_sites(aeon)?;
+    let dac = crate::seam2::dac_head_bank_id_sites_in(aeon, ov)?;
     groups.push(SiteGroup {
         artifact: "DacSampleTable head".to_string(),
         base_label: DAC_HEAD,

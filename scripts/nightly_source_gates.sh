@@ -210,6 +210,10 @@ SOURCE_GATES=(
     # from the tree's .emp sources and resolves the sonic4/demo layouts in memory; judged
     # against bank_id_of of placed labels, never a golden, a ROM or a listing
     sound_bank_id_check
+    # the anchor overlay: overlay builds of the tree's sonic4 shapes in a shadow copy,
+    # with every overlay derived from the tree's own map.toml; judged by the placed
+    # labels, the post-link checks and the emit binary's output, never a golden
+    anchor_overlay
     subcommands
     # THIS LANE'S OWN SKIP CHECK, kept from going blind. The grep below is only as
     # wide as the spelling it matches on, and 29 announced early returns spelled it

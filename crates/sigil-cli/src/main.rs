@@ -166,6 +166,10 @@ const ENTRIES: &[Entry] = &[
             "                   [--game sonic4|demo] [--debug] [--config-a|--config-b|--lean]",
             "                   [--report ram|contracts|indirect-cost]",
             "                   [--extra-entry <module|path.emp>]... [--check]",
+            "                   [--anchor-overlay <anchors.toml>]",
+            "note:  --anchor-overlay replaces the `at` of the map.toml anchors its [[anchor]]",
+            "       rows name, for this build only (a clip's own sound-bank positions); give",
+            "       emit_sound_blob the same file",
             "note:  --extra-entry evaluates the NAMED module's comptime guards; the",
             "       named module must emit nothing (its own imports are not checked)",
             "note:  --check decides every ensure and LinkAssert against final",
@@ -191,6 +195,7 @@ const ENTRIES: &[Entry] = &[
             flag("--stress-art"),
             valued("--extra-entry"),
             flag("--check"),
+            valued("--anchor-overlay"),
             valued("--report"),
         ],
         run: run_build,
@@ -2680,6 +2685,11 @@ struct BuildOpts {
     /// `--check`: decide every guard against the final placement and stop before
     /// the link. No ROM, no listing, no appendix. `false` builds.
     check: bool,
+    /// `--anchor-overlay <path>`: an anchor overlay file whose `[[anchor]]` rows replace
+    /// the `at` of the map anchors of the same names for this build (the clip builds'
+    /// own sound-bank positions). Resolved against the working directory. `None` builds
+    /// from the map as written.
+    anchor_overlay: Option<String>,
 }
 
 /// Parse `sigil build`'s argument slice. `--aeon <dir>` is required; `-o <path>`,
@@ -2700,6 +2710,11 @@ struct BuildOpts {
 /// module's own imports, so byte-neutrality is a property of the argument, not of its
 /// whole import closure.
 ///
+/// `--anchor-overlay <path>` names an anchor overlay file (resolved against the working
+/// directory) whose rows replace the `at` of the map anchors of the same names for this
+/// build. It rides the `--game`/`--debug` shapes and is refused with the fixed shapes
+/// (`--config-*`, `--lean`, `--stress-*`) and with `--report`.
+///
 /// `--check` runs the build's resolve over the same target (so `--game`, `--debug`,
 /// the `--config-*` shapes and `--extra-entry` all apply) and stops once every guard
 /// is decided. It writes nothing, so a ROM or listing destination beside it is
@@ -2717,6 +2732,7 @@ fn parse_build_args(args: &[String]) -> Result<BuildOpts, String> {
     let mut report: Option<ReportKind> = None;
     let mut extra_entries: Vec<String> = Vec::new();
     let mut check = false;
+    let mut anchor_overlay: Option<String> = None;
 
     let mut i = 0;
     while i < args.len() {
@@ -2744,6 +2760,12 @@ fn parse_build_args(args: &[String]) -> Result<BuildOpts, String> {
             // Repeatable, order-preserving: one module evaluated per occurrence.
             "--extra-entry" => extra_entries.push(next_value(args, &mut i, "--extra-entry")?),
             "--check" => check = true,
+            "--anchor-overlay" => {
+                if anchor_overlay.is_some() {
+                    return Err("--anchor-overlay takes one file; naming two applies only the last".into());
+                }
+                anchor_overlay = Some(next_value(args, &mut i, "--anchor-overlay")?);
+            }
             "--report" => {
                 let kind = ReportKind::parse(&next_value(args, &mut i, "--report")?)?;
                 if report.is_some_and(|prev| prev != kind) {
@@ -2802,7 +2824,32 @@ fn parse_build_args(args: &[String]) -> Result<BuildOpts, String> {
     if check && report.is_some() {
         return Err("--check and --report are different runs; pick one".into());
     }
-    Ok(BuildOpts { aeon, output, emit_lst, target, report, extra_entries, check })
+    // An overlay moves the anchors of the shape `--game`/`--debug` selects. The fixed
+    // shapes carry their own placement, and a report builds nothing to place.
+    if anchor_overlay.is_some() {
+        if !matches!(target, BuildTarget::Sonic4 { .. } | BuildTarget::Demo { .. }) {
+            return Err("--anchor-overlay applies to the --game/--debug shapes; do not combine with --config-*/--lean/--stress-*".into());
+        }
+        if report.is_some() {
+            return Err("--report prints instead of building; --anchor-overlay needs a build".into());
+        }
+    }
+    Ok(BuildOpts { aeon, output, emit_lst, target, report, extra_entries, check, anchor_overlay })
+}
+
+/// `profile` with the `--anchor-overlay` file read and attached, or `profile` itself
+/// when the flag is absent. The file is read through the build read set, so it is a
+/// row of the listing's source digest.
+fn with_anchor_overlay(
+    profile: sigil_harness::native::GameProfile,
+    opts: &BuildOpts,
+) -> Result<sigil_harness::native::GameProfile, String> {
+    match &opts.anchor_overlay {
+        None => Ok(profile),
+        Some(path) => Ok(profile.with_anchor_overlay(sigil_harness::map_placement::load_anchor_overlay(
+            std::path::Path::new(path),
+        )?)),
+    }
 }
 
 /// Consume the value after a value-taking flag at `args[*i]`, advancing `i`. A
@@ -2934,6 +2981,13 @@ fn run_check_native(aeon: &std::path::Path, opts: &BuildOpts) {
 
     let (label, profile) = opts.target.label_and_profile();
     let profile = profile.with_extra_entries(opts.extra_entries.iter().cloned());
+    let profile = match with_anchor_overlay(profile, opts) {
+        Ok(p) => p,
+        Err(err) => {
+            eprintln!("error: native check ({label}): {err}");
+            process::exit(1);
+        }
+    };
     eprintln!(
         "check: {label}: deciding every ensure and LinkAssert against final post-relaxation \
          placement, then stopping before the link: a green check proves nothing about region \
@@ -2994,10 +3048,16 @@ fn run_build_native(aeon: &std::path::Path, opts: &BuildOpts) {
     // size source anyway) when an extra entry has to reach `build_emp`.
     let extra = &opts.extra_entries;
     let with_extra = |p: native::GameProfile| p.with_extra_entries(extra.iter().cloned());
+    // `--anchor-overlay` also rides the profile. Parse-time refusals keep it to the
+    // `--game` shapes, the only arms that apply it; with it, canonical sonic4 leaves
+    // its own entry point for the chainer, as with an extra entry.
+    let overlaid = |p: native::GameProfile| -> Result<native::GameProfile, String> {
+        with_anchor_overlay(with_extra(p), opts)
+    };
     // (rom, listing) from the target's driver + the target's appendix floor + shape.
     let (debug, floor, built) = match &opts.target {
         // Canonical sonic4 → the PINNED driver (the `native_full_rom` gate path).
-        BuildTarget::Sonic4 { debug } if extra.is_empty() => (
+        BuildTarget::Sonic4 { debug } if extra.is_empty() && opts.anchor_overlay.is_none() => (
             *debug,
             native::SONIC4_APPENDIX_FLOOR,
             native::build_native_rom_with_listing(aeon, *debug),
@@ -3005,16 +3065,15 @@ fn run_build_native(aeon: &std::path::Path, opts: &BuildOpts) {
         BuildTarget::Sonic4 { debug } => (
             *debug,
             native::SONIC4_APPENDIX_FLOOR,
-            native::build_rom_chained_with_listing(
-                aeon,
-                &with_extra(native::sonic4_profile(*debug)),
-            ),
+            overlaid(native::sonic4_profile(*debug))
+                .and_then(|p| native::build_rom_chained_with_listing(aeon, &p)),
         ),
         // Off-canonical → the declared-order CHAINER (the `native_offcanonical_full` path).
         BuildTarget::Demo { debug } => (
             *debug,
             native::DEMO_APPENDIX_FLOOR,
-            native::build_rom_chained_with_listing(aeon, &with_extra(native::demo_profile(*debug))),
+            overlaid(native::demo_profile(*debug))
+                .and_then(|p| native::build_rom_chained_with_listing(aeon, &p)),
         ),
         BuildTarget::ConfigA => (
             true,
@@ -3778,6 +3837,47 @@ mod tests {
         refused(&["--aeon", "x", "--check", "-o", "r.bin"], "-o");
         refused(&["--aeon", "x", "--check", "--emit-lst", "r.lst"], "--emit-lst");
         refused(&["--aeon", "x", "--check", "--report", "ram"], "--report");
+    }
+
+    /// `--anchor-overlay` takes one value, rides the `--game`/`--debug` shapes and the
+    /// build modes, and is refused with the fixed shapes and with `--report`.
+    #[test]
+    fn parse_build_args_anchor_overlay_grammar() {
+        let s = |xs: &[&str]| xs.iter().map(|x| x.to_string()).collect::<Vec<_>>();
+        let ov = |extra: &[&str]| {
+            let mut a = vec!["--aeon", "x", "--anchor-overlay", "clips/c/anchors.toml"];
+            a.extend_from_slice(extra);
+            crate::parse_build_args(&s(&a))
+        };
+        // Accepted with the --game/--debug shapes, --check, --extra-entry, -o, --emit-lst.
+        for extra in [
+            &[][..],
+            &["--game", "sonic4", "--debug"],
+            &["--game", "demo"],
+            &["--check"],
+            &["--extra-entry", "games.a.one"],
+            &["-o", "r.bin", "--emit-lst", "r.lst"],
+        ] {
+            let o = ov(extra).unwrap_or_else(|e| panic!("{extra:?}: {e}"));
+            assert_eq!(o.anchor_overlay.as_deref(), Some("clips/c/anchors.toml"), "{extra:?}");
+        }
+        assert!(crate::parse_build_args(&s(&["--aeon", "x"])).unwrap().anchor_overlay.is_none());
+        // Refused with the fixed shapes and with a report.
+        for extra in [
+            &["--config-a"][..],
+            &["--config-b"],
+            &["--lean"],
+            &["--stress-evict"],
+            &["--stress-art"],
+            &["--report", "ram"],
+        ] {
+            let e = ov(extra).err().unwrap_or_else(|| panic!("{extra:?} accepted"));
+            assert!(e.contains("--anchor-overlay"), "{extra:?}: {e}");
+        }
+        // Given twice, or with no value.
+        let e = ov(&["--anchor-overlay", "b.toml"]).err().expect("a second --anchor-overlay is refused");
+        assert!(e.contains("one file"), "{e}");
+        assert!(crate::parse_build_args(&s(&["--aeon", "x", "--anchor-overlay"])).is_err());
     }
 
     /// `--extra-entry` is REPEATABLE and order-preserving (one module evaluated per

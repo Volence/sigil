@@ -12,18 +12,25 @@
 //! the `.asm` is gone.
 //!
 //! ```text
-//! emit_sound_blob --aeon <aeon-dir> --out-dir <dir>
+//! emit_sound_blob --aeon <aeon-dir> --out-dir <dir> [--anchor-overlay <anchors.toml>]
 //! ```
+//!
+//! `--anchor-overlay` names the same anchor overlay file `sigil build` takes (resolved
+//! against the working directory): every artifact whose bytes derive from the bank
+//! anchors is emitted from the overlaid ones.
 
 use std::path::Path;
 use std::process;
 
 use sigil_harness::stdout::println;
 
+const USAGE: &str = "usage: emit_sound_blob --aeon <dir> --out-dir <dir> [--anchor-overlay <anchors.toml>]";
+
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     let mut aeon: Option<String> = None;
     let mut out_dir: Option<String> = None;
+    let mut overlay: Option<String> = None;
     let mut i = 1;
     while i < args.len() {
         match args[i].as_str() {
@@ -35,16 +42,28 @@ fn main() {
                 i += 1;
                 out_dir = args.get(i).cloned();
             }
+            "--anchor-overlay" => {
+                if overlay.is_some() {
+                    eprintln!("error: --anchor-overlay takes one file; naming two applies only the last");
+                    process::exit(2);
+                }
+                i += 1;
+                let Some(path) = args.get(i).cloned() else {
+                    eprintln!("error: --anchor-overlay requires a value argument");
+                    process::exit(2);
+                };
+                overlay = Some(path);
+            }
             other => {
                 eprintln!("error: unexpected argument '{other}'");
-                eprintln!("usage: emit_sound_blob --aeon <dir> --out-dir <dir>");
+                eprintln!("{USAGE}");
                 process::exit(2);
             }
         }
         i += 1;
     }
     let (Some(aeon), Some(out_dir)) = (aeon, out_dir) else {
-        eprintln!("usage: emit_sound_blob --aeon <dir> --out-dir <dir>");
+        eprintln!("{USAGE}");
         process::exit(2);
     };
 
@@ -63,25 +82,35 @@ fn main() {
         std::env::set_var("AEON_DIR", aeon_path);
     }
 
-    if let Err(err) = sigil_harness::seam1::emit_sound_blob(aeon_path, out_path) {
+    let overlay = match overlay.as_deref().map(|p| sigil_harness::map_placement::load_anchor_overlay(Path::new(p))) {
+        None => None,
+        Some(Ok(ov)) => Some(ov),
+        Some(Err(err)) => {
+            eprintln!("error: emit_sound_blob: {err}");
+            process::exit(1);
+        }
+    };
+    let ov = overlay.as_ref();
+
+    if let Err(err) = sigil_harness::seam1::emit_sound_blob_in(aeon_path, ov, out_path) {
         eprintln!("error: emit_sound_blob (seam-1 resident blob) failed: {err}");
         process::exit(1);
     }
     // seam-2: the DAC bank bodies + the co-linked descriptor head (shape-invariant,
     // no `_debug` variant). Written alongside the resident blob for the DAC wire.
-    if let Err(err) = sigil_harness::seam2::emit_dac_artifacts(aeon_path, out_path) {
+    if let Err(err) = sigil_harness::seam2::emit_dac_artifacts_in(aeon_path, ov, out_path) {
         eprintln!("error: emit_sound_blob (seam-2 DAC artifacts) failed: {err}");
         process::exit(1);
     }
     // seam-2 stage-2c: the Moving-Trucks streaming bank, three-way split (shape-
     // dependent): body + SongTable + SongPatchTable, each a native embed member.
-    if let Err(err) = sigil_harness::seam2::emit_mt_artifacts(aeon_path, out_path) {
+    if let Err(err) = sigil_harness::seam2::emit_mt_artifacts_in(aeon_path, ov, out_path) {
         eprintln!("error: emit_sound_blob (seam-2 MT bank) failed: {err}");
         process::exit(1);
     }
     // seam-2 stage-2d: the SFX block body + the co-linked window-pointer head
     // (both shape-dependent — the SFX block sits after the shape-dependent songs).
-    if let Err(err) = sigil_harness::seam2::emit_sfx_artifacts(aeon_path, out_path) {
+    if let Err(err) = sigil_harness::seam2::emit_sfx_artifacts_in(aeon_path, ov, out_path) {
         eprintln!("error: emit_sound_blob (seam-2 SFX bank) failed: {err}");
         process::exit(1);
     }
@@ -92,13 +121,13 @@ fn main() {
         process::exit(1);
     }
     // seam-2 stage-3: the generated FM/PSG data tables (shape-invariant).
-    if let Err(err) = sigil_harness::seam2::emit_sound_tables_artifacts(aeon_path, out_path) {
+    if let Err(err) = sigil_harness::seam2::emit_sound_tables_artifacts_in(aeon_path, ov, out_path) {
         eprintln!("error: emit_sound_blob (seam-2 sound_tables_z80) failed: {err}");
         process::exit(1);
     }
     // flip Stage-0: the SndDefaultPitchTable banked head (the last AS sound head,
     // shape-invariant).
-    if let Err(err) = sigil_harness::seam2::emit_pitchtable_artifacts(aeon_path, out_path) {
+    if let Err(err) = sigil_harness::seam2::emit_pitchtable_artifacts_in(aeon_path, ov, out_path) {
         eprintln!("error: emit_sound_blob (pitchtable) failed: {err}");
         process::exit(1);
     }
