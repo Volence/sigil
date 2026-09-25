@@ -130,21 +130,27 @@ const DEBUG: Shape = Shape {
 
 /// The AS-side constants the .emp still reads through the link: the z80_bus
 /// template's bus register, the 2 typed-mirror SfxId drift-guard truths
-/// (config/sound_ids.asm), and #SONG_COUNT. The SND_* sound contract (slot
+/// (config/sound_ids.asm), and #SONG_COUNT, resolved from games.sonic4.sound_ids
+/// under the shape's DEBUG (`seam2::song_id_carrier`). The SND_* sound contract (slot
 /// addresses, immediate values, the MUSIC_PARAM RAM block) is authored in
 /// engine/sound/sound_constants.emp now (prepended in compile_real_file), so it
 /// folds at comptime — no AS equ seam. A trailing label+`dc.w` opens a section so
 /// the equs flush via `pending_equ_syms` (the collision_lookup pattern).
-fn as_constant_equs() -> Vec<Section> {
-    let asm = "cpu 68000\n\
-               Z80_BUS_REQUEST = $A11100\n\
-               SFXID_RING_RIGHT = $33\n\
-               SFXID_RING_LEFT = $34\n\
-               SONG_COUNT = 3\n\
-               Stub:\n\
-               \tdc.w 0\n";
+fn as_constant_equs(debug: bool) -> Vec<Section> {
+    let song_count = sigil_harness::seam2::song_id_carrier(&aeon_dir(), debug)
+        .unwrap_or_else(|e| panic!("SONG_COUNT from the song-id authority: {e}"))
+        .song_count;
+    let asm = format!(
+        "cpu 68000\n\
+         Z80_BUS_REQUEST = $A11100\n\
+         SFXID_RING_RIGHT = $33\n\
+         SFXID_RING_LEFT = $34\n\
+         SONG_COUNT = {song_count}\n\
+         Stub:\n\
+         \tdc.w 0\n"
+    );
     let opts = AsOptions { initial_cpu: Some(Cpu::M68000), ..AsOptions::default() };
-    assemble(asm, &opts).unwrap_or_else(|d| panic!("AS assemble (constant equs): {d:?}")).sections
+    assemble(&asm, &opts).unwrap_or_else(|d| panic!("AS assemble (constant equs): {d:?}")).sections
 }
 
 /// One synthetic AS-side label phased at `vma` (carrier LMA harness-private,
@@ -267,7 +273,7 @@ fn compile_real_file(
         "place_sections errors: {pdiags:?}"
     );
 
-    let mut equs = as_constant_equs();
+    let mut equs = as_constant_equs(shape.debug);
     for sec in &mut equs {
         sec.lma = 0x0100_0000;
         sec.placement = SectionPlacement::Pinned;

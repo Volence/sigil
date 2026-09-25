@@ -45,7 +45,7 @@ use sigil_frontend_emp::parse_str;
 use sigil_frontend_emp::resolve::place_sections;
 use sigil_ir::backend::Cpu;
 use sigil_ir::{Section, SectionPlacement, SymbolTable};
-use sigil_harness::seam2::{sound_layout, SoundLayout};
+use sigil_harness::seam2::{mt_bank_carrier_asm, sound_layout, SoundLayout};
 use sigil_link::load_map;
 use sigil_span::Level;
 use std::path::PathBuf;
@@ -100,10 +100,11 @@ fn real_mt_bank_src() -> Option<String> {
 /// probe (b) can plant it at a WRONG bank.
 fn as_bank_start_label_at(vma: u32) -> Vec<Section> {
     // Bank-start label PLUS the SONG_MOVINGTRUCKS/SONG_COUNT equs mt_bank.emp's
-    // drift guards read (retro-fix batch 2, item 10) — DEBUG=0 values (SONG_COUNT=1),
-    // matching the sole caller below. These resolve+PASS, so only the wrong-bank
+    // drift guards read, resolved from games.sonic4.sound_ids in the DEBUG=0 shape
+    // the sole caller below lowers. These resolve+PASS, so only the wrong-bank
     // co-residency ensures fire.
-    let asm = format!("cpu 68000\nphase ${vma:X}\nMovingTrucks_Bank_Start:\n\tdc.w 0\nSONG_MOVINGTRUCKS = 1\nSONG_COUNT = 1\n");
+    let asm = mt_bank_carrier_asm(&aeon_root(), false, vma)
+        .unwrap_or_else(|e| panic!("mt_bank carrier from the song-id authority: {e}"));
     let opts = AsOptions { initial_cpu: Some(Cpu::M68000), ..AsOptions::default() };
     assemble(&asm, &opts).unwrap_or_else(|d| panic!("AS assemble (cross-seam label): {d:?}")).sections
 }

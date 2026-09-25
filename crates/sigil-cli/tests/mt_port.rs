@@ -47,7 +47,7 @@ use sigil_frontend_as::{assemble, Options as AsOptions};
 use sigil_frontend_emp::lower::{lower_module, LowerOptions};
 use sigil_frontend_emp::parse_str;
 use sigil_frontend_emp::resolve::place_sections;
-use sigil_harness::seam2::{sound_layout, SoundLayout};
+use sigil_harness::seam2::{mt_bank_carrier_asm, sound_layout, SoundLayout};
 use sigil_harness::test_support::{reference_tree, strict_gate};
 use sigil_ir::backend::Cpu;
 use sigil_ir::{LinkAssert, Section, SectionPlacement, SymbolTable};
@@ -131,15 +131,13 @@ fn map_toml(sound_dir: &Path) -> String {
 /// (`ports.rs`), which proved a `bankid("Name")` ensure resolves against a label
 /// defined this way exactly as it would against the real cross-source symbol.
 fn as_bank_start_label(sound_dir: &Path, debug: i128) -> Vec<Section> {
-    // The bank-start label PLUS the config/sound_ids.asm song-id equs that
-    // mt_bank.emp's SONG_MOVINGTRUCKS/SONG_COUNT drift guards read cross-seam
-    // (retro-fix batch 2, item 10). SONG_COUNT is shape-dependent (3 debug / 1
-    // plain), matching sound_ids.asm's `ifdef __DEBUG__`.
-    let song_count = if debug != 0 { 3 } else { 1 };
+    // The bank-start label PLUS the song-id equs mt_bank.emp's
+    // SONG_MOVINGTRUCKS/SONG_COUNT drift guards read cross-seam, resolved from
+    // games.sonic4.sound_ids under this shape's DEBUG by the harness carrier.
+    let aeon = sound_dir.ancestors().nth(4).expect("games/sonic4/data/sound has an aeon root");
     let bank = layout(sound_dir).sound_tables_z80_lma;
-    let asm = format!(
-        "cpu 68000\nphase ${bank:X}\nMovingTrucks_Bank_Start:\n\tdc.w 0\nSONG_MOVINGTRUCKS = 1\nSONG_COUNT = {song_count}\n"
-    );
+    let asm = mt_bank_carrier_asm(aeon, debug != 0, bank)
+        .unwrap_or_else(|e| panic!("mt_bank carrier from the song-id authority: {e}"));
     let opts = AsOptions { initial_cpu: Some(Cpu::M68000), ..AsOptions::default() };
     assemble(&asm, &opts).unwrap_or_else(|d| panic!("AS assemble (cross-seam label): {d:?}")).sections
 }
