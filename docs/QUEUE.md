@@ -886,3 +886,30 @@ points at it rather than restating it, so there is one copy to keep true.
   and `equ` refused as asl #2035). Removes the S3K wrapper root. Ruled here, logged: NOT wired to
   `Options.defines`, whose documented let-the-file-win semantics would accept two programs asl
   refuses. Measured in `docs/superpowers/notes/2026-09-25-s3k-whole-rom.md`.
+
+### SEAM2-SONG-COUNT-LITERAL
+
+- state: **done in branch** `parcel/seam2-song-count`  size: `S`  project: `SIGIL-DECOUPLE`
+- Asked by aeon (Sonic 2 zone music): the `mt_bank` cross-seam carrier restated `SONG_COUNT` as
+  `if debug { 3 } else { 1 }` (and `SONG_MOVINGTRUCKS = 1`), so an aeon-only song addition fired
+  `mt_bank.emp`'s drift guard in sigil's emit. Now `seam2::song_id_carrier` evaluates
+  `games/sonic4/config/sound_ids.emp`'s `pub const`s through `eval_all_pub_consts` under the shape's
+  `DEBUG`; `seam2::mt_bank_carrier_asm` is the one carrier source. Same fix at every other consumer:
+  `mt_port.rs`, `mt_negative_probes.rs` (both carriers), `sound_api_port.rs` (`SONG_COUNT = 3` in both
+  shapes, now per shape).
+- `size = 0x79F9` was the room from the ORIGINAL `mt_bank` LMA `$58607` to its bank top `$60000`, never
+  re-derived when the LMA became map-derived: at the pin (LMA `0xB8630`) the region ended at `0xC0029`,
+  `0x29` past the `$8000` window. Now `(sound_bank + 0x8000) - mt_bank_lma` (`0x79D0` at the pin), the
+  bound `mt_port.rs` already used. Placement-only; no byte change.
+- Positive control, scratch copy of the pin tree, `emit_sound_blob` master vs branch: authority-only
+  debug arm 3 -> 5: master exit 0 (blind), branch fires `SONG_COUNT drifted ...: 3` (the local mirror
+  lags). Full aeon-side change (authority 5, mt_bank local 5, two more table rows): master fires
+  `SONG_COUNT drifted from games.sonic4.sound_ids: 5` (aeon's reported failure), branch exit 0 with
+  20-byte debug SongTable/SongPatchTable. Unmutated: master and branch emits identical (19 files).
+- Adding a song is still a TWO-file aeon change (`sound_ids.emp` and `mt_bank.emp`'s local
+  `SONG_COUNT` + table rows): the local mirror and its drift guard are aeon's design, not sigil's.
+- Not fixed, same class: `sound_api_port.rs` supplies `SFXID_RING_RIGHT/LEFT = $33/$34` as literals.
+- Proof at pin `ec640bcf` (`.aeon-songcount-pin`), code tip `8193dcaf`: `repin --check` "pins.rs
+  unchanged"; full strict suite 504 binaries launched / 504 reported, 5729 passed, 1 failed (the
+  environmental `m1b_gate::oracle_loadfromaslisting_resolves_emit_listing`), 2 ignored. Red-first:
+  both a formatter literal and a core literal turn `mt_bank_carrier_song_count_follows_the_authority` red.
