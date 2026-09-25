@@ -6283,3 +6283,10 @@ delegates to the default hook everywhere else.
   bank-id operands are 0x236 (`SND_ENGINE_TABLE_BANK`) and 0xD5F, 0xED5, 0x122D (`SFX_BLOB_BANK`); the note's
   offsets are the `ld` opcodes one byte earlier. Worth relaying so nobody pattern-scans for `3E nn` again.
   CLOSED (recorded)
+- [bank-id-check, 2026-09-25] **`lst_source_digest` leaves an aeon-tree copy under `$CARGO_TARGET_DIR/tmp`, and a
+  target directory inside the checkout whose name is neither dotted nor `target` exposes it.**
+  `scripts_name_their_tree`'s resolver scan skips only dot-dirs and `target`, so with
+  `CARGO_TARGET_DIR=<worktree>/target-parcel` it finds `tmp/lst_source_digest_content_<pid>/aeon/tools/suite_paths.py`
+  and six of its tests fail `COULD NOT MEASURE` (reproduced at master a9a00832 with `target-master`; passes once the
+  leftover is removed). `landing-run.sh`'s default `.target-land` hides it. Either the test cleans up, or the scan
+  also skips the directory `CARGO_TARGET_DIR` names. OPEN
