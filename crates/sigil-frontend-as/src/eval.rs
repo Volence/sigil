@@ -993,6 +993,7 @@ fn one_pass_with_defer(
     asm.label_ref_equs = seed_label_ref_equs.clone();
     asm.process(root_name, src);
     asm.report_unpopped_value_stacks();
+    asm.report_unrestored_saves();
     // The census behind `GLOBAL_MACRO_CAP` and `GLOBAL_REPT_CAP`: what one
     // pass over a real program actually drew on each budget, so the figures in
     // those constants' docs can be re-measured rather than believed.
@@ -1668,6 +1669,11 @@ struct Asm {
     /// is the default stack). Each entry is a saved value and the `pushv`
     /// line that saved it. See [`Self::directive_pushv`].
     value_stacks: std::collections::BTreeMap<String, Vec<(PushedValue, Span)>>,
+    /// The `save` line behind each entry of the state's `save`/`restore`
+    /// stack, innermost last. Pushed and popped in the same dispatch arms that
+    /// push and pop [`AsmState`]'s snapshot, so its length is the stack's
+    /// depth. See [`Self::report_unrestored_saves`].
+    save_sites: Vec<Span>,
     /// The statement [`Self::exec_one`] is executing, as `(text, base,
     /// source)`: the text a macro call's arguments are cut from
     /// ([`Self::call_args`]).
@@ -2033,6 +2039,7 @@ impl Asm {
             known_labels: std::collections::HashSet::new(),
             sym_class: std::collections::HashMap::new(),
             value_stacks: std::collections::BTreeMap::new(),
+            save_sites: Vec::new(),
             call_line: None,
             label_ref_equs: std::collections::HashSet::new(),
             set_sym_symbolic: std::collections::HashMap::new(),
@@ -7084,11 +7091,17 @@ impl Asm {
             //   12/ 1007 :                      label *
             // ```
             "label" => {}
-            "save" => self.state.save(),
+            "save" => {
+                self.state.save();
+                self.save_sites.push(span);
+            }
             "restore" => {
                 let before = self.state.cpu;
-                if let Err(m) = self.state.restore() {
-                    self.err(span, m);
+                match self.state.restore() {
+                    Ok(()) => {
+                        self.save_sites.pop();
+                    }
+                    Err(m) => self.err(span, m),
                 }
                 // A `restore` that changes the processor ends the section, as a
                 // `cpu` line does: a section holds one processor's bytes, and asl
@@ -7099,8 +7112,16 @@ impl Asm {
                     self.close_section();
                 }
             }
-            "padding" => self.state.padding = on_off(rest),
-            "supmode" => self.state.supmode = on_off(rest),
+            "padding" => {
+                if let Some(v) = self.on_off_arg("padding", rest, span) {
+                    self.state.padding = v;
+                }
+            }
+            "supmode" => {
+                if let Some(v) = self.on_off_arg("supmode", rest, span) {
+                    self.state.supmode = v;
+                }
+            }
             // The LISTING-FILE controls. This front end emits no listing file,
             // so both accept their argument and change nothing about the
             // assembly. See `directive_listing_control` for what is and is not
@@ -7725,6 +7746,57 @@ impl Asm {
                 format!("`{name}` takes {}, got {n}", arg_count_bound(&arg_count)),
             );
         }
+    }
+
+    /// The argument of an ON/OFF switch directive (`padding`, `supmode`):
+    /// `Some(true)` for ON, `Some(false)` for OFF, `None` after reporting a
+    /// refusal, in which case the caller leaves its flag untouched.
+    ///
+    /// The argument is a KEYWORD, not an expression, and asl measures it that
+    /// way (reference build md5 `61e672562465725a8c102288a7da9098`):
+    ///
+    /// - exactly one argument: a bare `padding` and `padding on,off` are both
+    ///   `#1110 wrong number of operands`;
+    /// - that argument is the word `on` or `off` in any case (`ON`, `Off`
+    ///   accepted) and nothing else: `maybe`, `onx`, `1`, `0`, `(on)`, `"on"`
+    ///   and an undefined name are each `#1520 only ON/OFF allowed`;
+    /// - a symbol that happens to be called `ON` does not change that: with
+    ///   `ON equ 5` in scope, `padding on` is still accepted as the keyword.
+    ///
+    /// `supmode` answers every one of those probes the same way.
+    fn on_off_arg(&mut self, name: &str, rest: &[Token], span: Span) -> Option<bool> {
+        // An EMPTY operand field is zero arguments; `split_top_commas` would
+        // answer one empty group for it.
+        let groups = if rest.is_empty() {
+            Vec::new()
+        } else {
+            split_top_commas(rest)
+        };
+        let [arg] = groups.as_slice() else {
+            self.err(
+                span,
+                format!(
+                    "`{name}` takes exactly one argument, ON or OFF, got {}",
+                    groups.len()
+                ),
+            );
+            return None;
+        };
+        if let [Token { tok: Tok::Ident(w), .. }] = arg {
+            match fold_kw(w).as_ref() {
+                "on" => return Some(true),
+                "off" => return Some(false),
+                _ => {}
+            }
+        }
+        self.err(
+            item_span(arg, span),
+            format!(
+                "`{name}` accepts only ON or OFF, not `{}`",
+                render_tokens(arg)
+            ),
+        );
+        None
     }
 
     /// AS `org <target>` (M1.C T6b). `target` is an ABSOLUTE address (like
@@ -11680,6 +11752,24 @@ impl Asm {
     /// (`warning #230: stack is not empty`; two stacks left, two warnings,
     /// probe `p4_leftover_two`). The warning points at the last `pushv` onto
     /// that stack.
+    /// A `save` still open when the unit ends is an error, one per open `save`,
+    /// blamed on that `save` line.
+    ///
+    /// asl refuses it as `#1460 missing RESTORE` (reference build md5
+    /// `61e672562465725a8c102288a7da9098`): a lone `save`, a `save` whose
+    /// `restore` never comes because the file has no `end`, a `save` in a macro
+    /// body with the `restore` nowhere, a `save` in an included file with no
+    /// `restore` anywhere, and `save; save; restore` are all refused. A `save`
+    /// in an included file matched by a `restore` in the root is accepted, as
+    /// is a `save` inside a false `if` arm, so the stack is the UNIT's and only
+    /// executed lines count. asl names no line for the refusal; this one names
+    /// the `save`, which is the line that has to change or gain a partner.
+    fn report_unrestored_saves(&mut self) {
+        for span in std::mem::take(&mut self.save_sites) {
+            self.err(span, "`save` with no matching `restore` before the end of the source");
+        }
+    }
+
     fn report_unpopped_value_stacks(&mut self) {
         let left: Vec<(String, usize, Span)> = self
             .value_stacks
@@ -14096,10 +14186,6 @@ fn split_dup_group(g: &[Token]) -> Option<(&[Token], &[Token])> {
         }
     }
     None
-}
-
-fn on_off(rest: &[Token]) -> bool {
-    !matches!(rest.first().map(|t| &t.tok), Some(Tok::Ident(w)) if fold_kw(w) == "off")
 }
 
 fn paren(p: Punct, span: Span) -> Token {
