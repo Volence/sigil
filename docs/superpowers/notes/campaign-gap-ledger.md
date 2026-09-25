@@ -6266,3 +6266,27 @@ delegates to the default hook everywhere else.
 - [as-multichar-squote, 2026-09-25] **A single-quoted `charset` target of 0 or 5+ characters** exits 0 under asl
   and changes neither probed character; its effect on the rest of the page is unmeasured, so sigil refuses it by
   name (`CHARSET_UNPACKABLE_TARGET`). A full-page dump probe would settle it. OPEN
+
+- [bank-id-check, 2026-09-25] **A DAC descriptor's bank is checked against its bank section, not its own
+  sample.** `[sound.bank-id-vs-placement]` classifies each `ds_bank` byte by which bank's move changes it, then
+  compares it with that bank's placed id. A `SND_KICK_BANK = bankid(Dac_Temp_Blip)` typo in `dac_samples.emp`
+  makes the kick row a blip site, which passes, while its `ds_ptr` points into the shared window. A per-row
+  check (the bank of the label under `bankid()` equals the bank of the label under `winptr()`) would close it;
+  `test_support::parse_dac_declarations` already reads both names. OPEN
+- [bank-id-check, 2026-09-25] **`sigil build --check` does not run `[sound.bank-id-vs-placement]`.** The check
+  reads baked bytes from the linked image and `check_chained` stops before link. A green `--check` already
+  disclaims overlap, budget and checksum; it now also says nothing about baked bank ids. OPEN (no action unless
+  `--check` grows a link)
+- [bank-id-check, 2026-09-25] **Aeon's pricing note (3f208336) lists `ld a,$15` at blob 0x41F as a bank id. It
+  is not.** At ec640bcf the bytes are `3E 27 32 00 40 3E 15 32 01 40`: YM register $27 written with
+  `SND_TIMERA_CTRL_REARM` ($15 = LOAD:A|ENBL:A|RST:A), equal to `bankid(0xA8000)` by coincidence. The blob's
+  bank-id operands are 0x236 (`SND_ENGINE_TABLE_BANK`) and 0xD5F, 0xED5, 0x122D (`SFX_BLOB_BANK`); the note's
+  offsets are the `ld` opcodes one byte earlier. Worth relaying so nobody pattern-scans for `3E nn` again.
+  CLOSED (recorded)
+- [bank-id-check, 2026-09-25] **`lst_source_digest` leaves an aeon-tree copy under `$CARGO_TARGET_DIR/tmp`, and a
+  target directory inside the checkout whose name is neither dotted nor `target` exposes it.**
+  `scripts_name_their_tree`'s resolver scan skips only dot-dirs and `target`, so with
+  `CARGO_TARGET_DIR=<worktree>/target-parcel` it finds `tmp/lst_source_digest_content_<pid>/aeon/tools/suite_paths.py`
+  and six of its tests fail `COULD NOT MEASURE` (reproduced at master a9a00832 with `target-master`; passes once the
+  leftover is removed). `landing-run.sh`'s default `.target-land` hides it. Either the test cleans up, or the scan
+  also skips the directory `CARGO_TARGET_DIR` names. OPEN

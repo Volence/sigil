@@ -101,6 +101,11 @@ pub mod game_defines;
 /// base) and `native::validate_resolved_alignment` (against the resolved layout).
 pub mod section_align;
 
+/// `[sound.bank-id-vs-placement]`: the sound bank ids the emit bakes into the resident
+/// Z80 blob and the DAC descriptor head, checked against the banks as placed. Run by
+/// every full chained build (`native::build_rom_chained_with_listing`).
+pub mod sound_bank_ids;
+
 /// Installing a file by rename rather than by truncation, so a consumer reading an
 /// artifact while sigil writes it sees the whole previous file or the whole new one
 /// and never a prefix. Every artifact this workspace hands to a consumer goes

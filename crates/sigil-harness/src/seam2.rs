@@ -391,7 +391,15 @@ pub fn banked_head_vmas(aeon: &Path) -> Result<Vec<(&'static str, u32)>, String>
 /// `sigil-frontend-emp/src/eval/builtins.rs::eval_bankid`) — the value aeon's
 /// `bankid(MovingTrucks_Bank_Start)` co-residency ensures fold against.
 pub fn sound_bank_id(aeon: &Path) -> Result<u32, String> {
-    Ok((sound_layout(aeon)?.sound_tables_z80_lma & 0x7F_8000) >> 15)
+    Ok(bank_id_of(sound_layout(aeon)?.sound_tables_z80_lma))
+}
+
+/// The Genesis cartridge bank id of the `$8000` window holding `lma`: exactly
+/// `bankid()`'s `(sym & $7F8000) >> 15` (`sigil-frontend-emp/src/eval/builtins.rs::
+/// eval_bankid`). Every sound bank id the emit bakes and every id the placement check
+/// expects goes through this one formula.
+pub fn bank_id_of(lma: u32) -> u32 {
+    (lma & 0x7F_8000) >> 15
 }
 
 /// The `DacSampleTable` byte length: 10 descriptors × 12 bytes, + the 3-byte
@@ -673,6 +681,54 @@ fn emit_dac_body_and_head_at(
     let shared = linked.section("dac_shared_bank").ok_or("missing dac_shared_bank")?.bytes.clone();
     let head = linked.section("dac_sample_tab").ok_or("missing dac_sample_tab")?.bytes.clone();
     Ok(DacBodyAndHead { blip, shared, head })
+}
+
+/// How far [`dac_head_bank_id_sites`] moves one DAC bank to find the head bytes that
+/// hold its id. A whole number of `$8000` windows, so a sample's window pointer
+/// (`winptr`) is unchanged and only its bank id moves; far enough past every real
+/// bank that the doctored regions overlap nothing.
+const DAC_BANK_PROBE_MOVE: u32 = 0x20_0000;
+
+/// The `DacSampleTable` head's bank-id bytes: which head offsets hold the blip bank's
+/// id and which the shared drum bank's.
+pub struct DacHeadBankSites {
+    /// Head offsets whose byte is `bankid` of the `dac_blip_bank` placement.
+    pub blip: Vec<u32>,
+    /// Head offsets whose byte is `bankid` of the `dac_shared_bank` placement.
+    pub shared: Vec<u32>,
+}
+
+/// Find the `DacSampleTable` head's bank-id bytes by re-linking the head with one
+/// DAC bank moved [`DAC_BANK_PROBE_MOVE`] and keeping the offsets that changed. Each
+/// site must hold `bankid` of the bank's emit-time LMA in the real head and `bankid`
+/// of the moved LMA in the doctored one; any other changed byte is refused (see
+/// [`crate::sound_bank_ids::diff_id_sites`]).
+pub fn dac_head_bank_id_sites(aeon: &Path) -> Result<DacHeadBankSites, String> {
+    let l = sound_layout(aeon)?;
+    let id = |lma: u32| -> Result<u8, String> {
+        u8::try_from(bank_id_of(lma))
+            .map_err(|_| format!("bank id of {lma:#x} does not fit the Z80's 8-bit bank operand"))
+    };
+    let real = emit_dac_body_and_head_at(aeon, l.dac_blip_lma, l.dac_shared_lma, l.dac_sample_tab_lma)?.head;
+    let moved_blip = l.dac_blip_lma + DAC_BANK_PROBE_MOVE;
+    let doc_blip = emit_dac_body_and_head_at(aeon, moved_blip, l.dac_shared_lma, l.dac_sample_tab_lma)?.head;
+    let moved_shared = l.dac_shared_lma + DAC_BANK_PROBE_MOVE;
+    let doc_shared = emit_dac_body_and_head_at(aeon, l.dac_blip_lma, moved_shared, l.dac_sample_tab_lma)?.head;
+    let blip = crate::sound_bank_ids::diff_id_sites(
+        &real,
+        &doc_blip,
+        id(l.dac_blip_lma)?,
+        id(moved_blip)?,
+        "DacSampleTable head, dac_blip_bank ids",
+    )?;
+    let shared = crate::sound_bank_ids::diff_id_sites(
+        &real,
+        &doc_shared,
+        id(l.dac_shared_lma)?,
+        id(moved_shared)?,
+        "DacSampleTable head, dac_shared_bank ids",
+    )?;
+    Ok(DacHeadBankSites { blip, shared })
 }
 
 /// Emit the seam-2 DAC build inputs to `out_dir` (the wire's artifacts, mirroring
