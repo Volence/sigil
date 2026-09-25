@@ -751,9 +751,12 @@ points at it rather than restating it, so there is one copy to keep true.
   the fixing commit) or whether reporting is enough; the evidence is the two weeks. Source:
   `docs/superpowers/notes/2026-09-25-as-overaccept-silent-three.md`.
 
-### CLIP-OWN-ANCHOR-PRICING
+### CLIP-OWN-ANCHOR-PRICING: LANDED
 
-- state: **open**, unblocked 2026-09-25: the owner answered `d-35-revised` = `clip-overlay-file` (record
+- **LANDED** 2026-09-25 at merge `011fcc5e`; merged-tree gate GREEN, 503 suites, 5723 passed, 0 failed
+  (5707 + 16 new). Aeon's end-to-end verdict at `a1ff8796`: the format works. Their half lands after
+  the shared binary is refreshed in the hub's window.
+- was: state **open**, unblocked 2026-09-25: the owner answered `d-35-revised` = `clip-overlay-file` (record
   `d-35-revised-answered` in `docs/decisions.jsonl`; heard directly by aeon, relayed ~14:20Z, and on
   the console card). Build: a new `sigil build` switch naming a small positions file in the clip's own
   folder, written the way `map.toml` writes anchors, applied only when passed; `map.toml` untouched.
@@ -776,9 +779,10 @@ points at it rather than restating it, so there is one copy to keep true.
   (C). That is surface the engine's layout file is written in, so it is `d-35`. Gates aeon's row 8
   zone work, nothing tonight. Sigil lands first; aeon then adds the rows and passes the flag.
 
-### MAP-WHEN-UNKNOWN-VALUE-SILENT
+### MAP-WHEN-UNKNOWN-VALUE-SILENT: LANDED
 
-- state: **open**  size: `S`  project: `SIGIL-AS-REPLACEMENT`
+- **LANDED** 2026-09-25 with CLIP-OWN-ANCHOR-PRICING, merge `011fcc5e`.
+- was: state **open**  size: `S`  project: `SIGIL-AS-REPLACEMENT`
 - `when_applies` in `crates/sigil-harness/src/map_placement.rs` treats any `when` value other than
   `sound_on`/`sound_off` as applying to every build (`Some(_) => true`). A typo in map.toml's `when`
   silently places a row in every shape. Both aeon maps use only the two known values (per the pricing
