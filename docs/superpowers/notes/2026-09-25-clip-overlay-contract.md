@@ -162,3 +162,19 @@ The full plain build ran the pre-build tool-suite lane green (3344 passed, 2 ski
 deselected) and every post-build gate. At this aeon revision the clip still fits the canonical
 positions in both shapes without the file (plain `073b25f4/822332`), so the file is not yet
 required there; it becomes required when the clip outgrows them.
+
+## What aeon reads from sigil's output, and therefore what sigil owes notice on
+
+Aeon's `tools/clip_anchors.py` reads the placed sound-bank address from the listing's section
+phase row, because the label's own listing line shows the Z80 window address (`$8000`), not the
+ROM address:
+
+    PHASE <section> VMA $XXXXXXXX LMA $XXXXXXXX
+
+Written at `crates/sigil-link/src/listing.rs` (the `format!` of `PHASE {} VMA ${:08X} LMA
+${:08X}`) and asserted by that file's unit test and by
+`crates/sigil-harness/tests/listing_phase_marker.rs`. **This row format is a dependency of
+aeon's clip build.** A change to its keyword, field order or hex width is a cross-lane change:
+tell the aeon lane in the same turn it lands, not after their clip build fails. The same holds
+for the `DIGEST-READ` row naming the overlay file, which aeon's gate requires whenever the file
+exists.
