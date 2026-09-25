@@ -206,6 +206,10 @@ SOURCE_GATES=(
     seam1_link_verdict
     seam2_colink_probe
     seam2_phased_head
+    # the baked sound bank ids against the placed banks: re-emits the blob and DAC head
+    # from the tree's .emp sources and resolves the sonic4/demo layouts in memory; judged
+    # against bank_id_of of placed labels, never a golden, a ROM or a listing
+    sound_bank_id_check
     subcommands
     # THIS LANE'S OWN SKIP CHECK, kept from going blind. The grep below is only as
     # wide as the spelling it matches on, and 29 announced early returns spelled it
