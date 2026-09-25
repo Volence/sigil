@@ -1,0 +1,155 @@
+pwd=/home/volence/sonic_hacks/sigil/.claude/worktrees/agent-a620ff60a900c195e HEAD=9097415de7602996b2dd2c13103dab2e91a11662 branch=parcel/s3k-dollar-labels
+=================== M1
+M1 applied to eval.rs:
+    format!("{name}@{}", "")
+on disk:  1 file changed, 1 insertion(+), 1 deletion(-)
+test a_value_binder_ends_the_scope_and_reads_its_own_operand_in_the_old_one ... FAILED
+test directives_ending_on_the_same_symbol_share_a_scope ... FAILED
+test a_plain_label_ends_the_scope ... FAILED
+test body_ownership_is_by_scope_not_by_spelling ... FAILED
+test directives_that_write_asl_symbols_end_the_scope ... FAILED
+test a_body_label_is_still_the_scope_after_the_call ... FAILED
+test temporary_symbols_work_under_z80 ... FAILED
+test the_scope_is_the_name_so_a_set_symbol_returns_to_its_names ... FAILED
+test a_macro_body_reads_the_callers_names_and_keeps_its_own ... FAILED
+test enum_members_and_endstruct_end_the_scope ... FAILED
+test names_are_case_sensitive_and_take_underscores_and_dots ... FAILED
+test temporary_value_bindings_are_scoped_and_end_nothing ... FAILED
+test two_routines_each_own_their_names_backward_and_forward ... FAILED
+test the_sonic_3_temporary_labels_match_asl ... FAILED
+expected a refusal naming "unresolved symbol `$$x@A2`", got 4614 bytes
+refusal does not name "symbol double defined: `$$x@PADDING`":
+expected a refusal naming "unresolved symbol `$$x@A1`", got 4616 bytes
+assertion `left == right` failed: sigil's image from $1200 differs from asl's
+expected a refusal naming "unresolved symbol `$$x@PADDING`", got 4614 bytes
+expected a refusal naming "unresolved symbol `$$x@Lb`", got 4616 bytes
+expected asl's bytes 000001120000000612, got diagnostics: ["symbol double defined: `$$x@`"]
+refusal does not name "symbol double defined: `$$x@V`":
+expected asl's bytes 4e714e714e7112024e714e714e714e71120c, got diagnostics: ["symbol double defined: `$$q@`"]
+expected a refusal naming "unresolved symbol `$$x@E2`", got 4614 bytes
+refusal does not name "unresolved symbol `$$X@A1`":
+expected asl's bytes 4e714e71122324044e714e71124d, got diagnostics: ["symbol double defined: `$$x@`", "symbol double defined: `$$v@`"]
+expected asl's bytes 12044e711204120812084e714e714e711210121412101214, got diagnostics: ["symbol double defined: `$$x@`", "symbol double defined: `$$y@`"]
+test result: FAILED. 8 passed; 14 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+restored: diff stat []
+=================== M2
+M2 applied to eval.rs:
+        fn open_temp_scope(&mut self, symbol: &str) {
+            let _ = symbol;
+on disk:  1 file changed, 1 insertion(+), 1 deletion(-)
+test enum_members_and_endstruct_end_the_scope ... FAILED
+test directives_ending_on_the_same_symbol_share_a_scope ... FAILED
+test directives_that_write_asl_symbols_end_the_scope ... FAILED
+expected a refusal naming "unresolved symbol `$$x@Str_len`", got 4614 bytes
+refusal does not name "symbol double defined: `$$x@PADDING`":
+expected a refusal naming "unresolved symbol `$$x@PADDING`", got 4614 bytes
+test result: FAILED. 19 passed; 3 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+restored: diff stat []
+=================== M3
+M3 applied to eval.rs:
+                // caller `$$z:`, are `#1000` (probe `g01`).
+                let _ = &self.temp_scope;
+on disk:  1 file changed, 1 insertion(+), 1 deletion(-)
+test a_body_label_is_still_the_scope_after_the_call ... FAILED
+test a_plain_label_ends_the_scope ... FAILED
+test directives_that_write_asl_symbols_end_the_scope ... FAILED
+test names_are_case_sensitive_and_take_underscores_and_dots ... FAILED
+test temporary_value_bindings_are_scoped_and_end_nothing ... FAILED
+test a_macro_body_reads_the_callers_names_and_keeps_its_own ... FAILED
+test two_routines_each_own_their_names_backward_and_forward ... FAILED
+test temporary_symbols_work_under_z80 ... FAILED
+test body_ownership_is_by_scope_not_by_spelling ... FAILED
+test the_sonic_3_temporary_labels_match_asl ... FAILED
+expected a refusal naming "unresolved symbol `$$x@Lb`", got 4616 bytes
+expected a refusal naming "unresolved symbol `$$x@A1`", got 4616 bytes
+expected a refusal naming "unresolved symbol `$$x@PADDING`", got 4614 bytes
+refusal does not name "unresolved symbol `$$X@A1`":
+expected asl's bytes 4e714e71122324044e714e71124d, got diagnostics: ["symbol double defined: `$$x@PADDING`", "symbol double defined: `$$v@PADDING`"]
+expected asl's bytes 4e714e714e7112024e714e714e714e71120c, got diagnostics: ["symbol double defined: `$$q@PADDING`"]
+expected asl's bytes 12044e711204120812084e714e714e711210121412101214, got diagnostics: ["symbol double defined: `$$x@PADDING`", "symbol double defined: `$$y@PADDING`"]
+expected asl's bytes 000001120000000612, got diagnostics: ["symbol double defined: `$$x@INLWORDMODE`"]
+assertion `left == right` failed: sigil's image from $1200 differs from asl's
+test result: FAILED. 12 passed; 10 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+restored: diff stat []
+=================== M4
+M4 applied to eval.rs:
+                match None::<&mut ExpansionLabelScope> {
+                    Some(e) => {
+                        e.written.insert(base.clone());
+on disk:  1 file changed, 1 insertion(+), 1 deletion(-)
+test a_nested_body_reads_the_enclosing_instance ... FAILED
+test a_macro_body_reads_the_callers_names_and_keeps_its_own ... FAILED
+test each_loop_iteration_owns_its_names ... FAILED
+test body_ownership_is_by_scope_not_by_spelling ... FAILED
+expected asl's bytes 4e714e714e714e714e7112064e714e714e71120e1202, got diagnostics: ["symbol `$$a@A1` redefined by section `sec4608` (already defined by section `sec4608`)", "symbol `$$a@A1` redefined by section `sec4608` (already defined by section `sec4608`)
+expected asl's bytes 4e714e714e7112044e714e71120a1202, got diagnostics: ["symbol `$$l@A1` redefined by section `sec4608` (already defined by section `sec4608`)"]
+expected asl's bytes 4e714e714e7112044e714e71120a, got diagnostics: ["symbol `$$r@A1` redefined by section `sec4608` (already defined by section `sec4608`)"]
+expected asl's bytes 4e714e714e7112044e714e714e71120c12164e714e714e711216, got diagnostics: ["symbol `$$q@Lb` redefined by section `sec4608` (already defined by section `sec4608`)"]
+test result: FAILED. 18 passed; 4 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+restored: diff stat []
+=================== M5
+M5 applied to eval.rs:
+    .find(|e| e.written.contains(&base) || (prev.is_some() && false))
+on disk:  1 file changed, 1 insertion(+), 1 deletion(-)
+test body_ownership_is_by_scope_not_by_spelling ... FAILED
+expected asl's bytes 4e714e714e7112044e714e714e71120c12164e714e714e711216, got diagnostics: ["unresolved symbol `$$q@Lb` for fixup in section sec4608 at offset 16"]
+test result: FAILED. 21 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+restored: diff stat []
+=================== M6
+M6 applied to eval.rs:
+    if self.resolve_sym(n).is_some())
+on disk:  1 file changed, 1 insertion(+), 1 deletion(-)
+test a_temporary_symbol_is_never_defined ... FAILED
+assertion `left == right` failed: sigil's image from $1200 differs from asl's
+test result: FAILED. 21 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+restored: diff stat []
+=================== M7
+M7 applied to eval.rs:
+    if !name.starts_with('.') {
+                self.open_scope(name);
+on disk:  1 file changed, 1 insertion(+), 1 deletion(-)
+test temporary_value_bindings_are_scoped_and_end_nothing ... FAILED
+test a_value_binding_in_a_body_is_global ... FAILED
+expected asl's bytes 4e714e71122324044e714e71124d, got diagnostics: ["unresolved symbol `$$v@$$v` for fixup in section sec4608 at offset 4", "unresolved target expression (dangling symbol(s) `$$x@$$v`) for fixup in section sec4608 at offset 6", "unresolved sym
+expected asl's bytes 4e714e7112241234, got diagnostics: ["unresolved symbol `$$v@$$w` for fixup in section sec4608 at offset 4", "unresolved symbol `$$w@$$w` for fixup in section sec4608 at offset 6"]
+test result: FAILED. 20 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+restored: diff stat []
+=================== M8
+M8 applied to eval.rs:
+    (deleted: if name.contains('@') { ...)
+on disk:  1 file changed, 3 deletions(-)
+test a_value_binding_in_a_body_is_global ... FAILED
+test temporary_symbols_work_in_every_operand_shape ... FAILED
+test temporary_value_bindings_are_scoped_and_end_nothing ... FAILED
+test the_sonic_3_temporary_labels_match_asl ... FAILED
+expected asl's bytes 4e714e7112241234, got diagnostics: ["unresolved symbol `$$w@Lab1` for fixup in section sec4608 at offset 6"]
+expected asl's bytes 4e714e71303c120241fafff83438120200011202, got diagnostics: ["unresolved long expression", "unresolved symbol `$$x@A1` in operand"]
+expected asl's bytes 4e711234, got diagnostics: ["unresolved symbol `$$v@Lab1` for fixup in section sec4608 at offset 2"]
+test result: FAILED. 18 passed; 4 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+restored: diff stat []
+=================== M9
+M9 applied to eval.rs:
+        fn open_scope(&mut self, name: &str) {
+on disk:  1 file changed, 1 deletion(-)
+test a_value_binder_ends_the_scope_and_reads_its_own_operand_in_the_old_one ... FAILED
+test a_plain_label_ends_the_scope ... FAILED
+test the_scope_is_the_name_so_a_set_symbol_returns_to_its_names ... FAILED
+test enum_members_and_endstruct_end_the_scope ... FAILED
+expected a refusal naming "unresolved symbol `$$x@A2`", got 4614 bytes
+expected a refusal naming "unresolved symbol `$$x@B1`", got 4614 bytes
+refusal does not name "symbol double defined: `$$x@V`":
+expected a refusal naming "unresolved symbol `$$x@E2`", got 4614 bytes
+test result: FAILED. 18 passed; 4 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+restored: diff stat []
+=================== M10
+M10 applied to lexer.rs:
+                b'$' if cpu == Cpu::M68000 && bytes.get(i + 1) == Some(&b'$')
+                    && bytes.get(i + 2)
+on disk:  1 file changed, 1 insertion(+), 1 deletion(-)
+test directives_that_write_asl_symbols_end_the_scope ... FAILED
+test temporary_symbols_work_under_z80 ... FAILED
+refusal does not name "unresolved symbol `$$x@PADDING`":
+expected asl's bytes 000001120000000612, got diagnostics: ["expected mnemonic, directive, or label", "bad word expression", "expected mnemonic, directive, or label", "bad word expression"]
+test result: FAILED. 20 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+restored: diff stat []
+MUTRUN_END

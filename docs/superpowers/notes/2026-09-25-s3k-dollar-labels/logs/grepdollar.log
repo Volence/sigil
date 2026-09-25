@@ -1,0 +1,12 @@
+aeon HEAD: ec640bcf70e263167223a33d987d4661ff221b7e
+aeon status lines: 0
+== /home/volence/sonic_hacks/.aeon-s3k-codepage: 205 source files; files with $$:
+  (none)
+== /home/volence/sonic_hacks/.scratch/s3k-dollar-labels/trees/sk-gen: 960 source files; files with $$:
+/home/volence/sonic_hacks/.scratch/s3k-dollar-labels/trees/sk-gen/sonic3k.asm:93
+/home/volence/sonic_hacks/.scratch/s3k-dollar-labels/trees/sk-gen/s3.asm:83
+== /home/volence/sonic_hacks/.scratch/s3k-dollar-labels/trees/s1disasm-gen: 459 source files; files with $$:
+  (none)
+== /home/volence/sonic_hacks/.scratch/s3k-dollar-labels/trees/s2disasm-gen: 371 source files; files with $$:
+  (none)
+GREP_END

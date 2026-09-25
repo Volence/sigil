@@ -1,0 +1,210 @@
+pwd=/home/volence/sonic_hacks/.scratch/s3k-dollar-labels/base-src tree=git archive 120be609 (tar md5 f5c439df7434477e444ce155da0e6607) plus the tests only
+eval.rs identical to base archive: yes
+   Compiling sigil-frontend-as v0.1.0 (/home/volence/sonic_hacks/.scratch/s3k-dollar-labels/base-src/crates/sigil-frontend-as)
+    Finished `release` profile [optimized] target(s) in 15.96s
+     Running tests/as_dollar_labels.rs (/home/volence/sonic_hacks/.scratch/s3k-dollar-labels/target/release/deps/as_dollar_labels-2fffe7f52e913ed6)
+
+running 22 tests
+test a_dollar_pair_without_a_name_is_refused ... FAILED
+test a_body_label_is_still_the_scope_after_the_call ... FAILED
+test a_nested_body_reads_the_enclosing_instance ... FAILED
+test body_ownership_is_by_scope_not_by_spelling ... FAILED
+test a_temporary_symbol_is_never_defined ... FAILED
+test directives_ending_on_the_same_symbol_share_a_scope ... FAILED
+test a_macro_body_reads_the_callers_names_and_keeps_its_own ... FAILED
+test directives_that_write_asl_symbols_end_the_scope ... FAILED
+test a_temporary_label_opens_no_local_scope ... FAILED
+test a_value_binding_in_a_body_is_global ... FAILED
+test a_value_binder_ends_the_scope_and_reads_its_own_operand_in_the_old_one ... FAILED
+test a_plain_label_ends_the_scope ... FAILED
+test locals_nameless_labels_and_non_symbol_directives_keep_the_scope ... FAILED
+test enum_members_and_endstruct_end_the_scope ... FAILED
+test each_loop_iteration_owns_its_names ... FAILED
+test temporary_symbols_work_in_every_operand_shape ... FAILED
+test temporary_symbols_work_under_z80 ... FAILED
+test temporary_value_bindings_are_scoped_and_end_nothing ... FAILED
+test two_routines_each_own_their_names_backward_and_forward ... FAILED
+test names_are_case_sensitive_and_take_underscores_and_dots ... FAILED
+test the_scope_is_the_name_so_a_set_symbol_returns_to_its_names ... FAILED
+test the_sonic_3_temporary_labels_match_asl ... FAILED
+
+failures:
+
+---- a_dollar_pair_without_a_name_is_refused stdout ----
+
+thread 'a_dollar_pair_without_a_name_is_refused' (2412633) panicked at crates/sigil-frontend-as/tests/as_dollar_labels.rs:82:5:
+refusal does not name "`$$.` does not start a temporary symbol name":
+`$` with no hex digits
+`$` with no hex digits
+`$` with no hex digits
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- a_body_label_is_still_the_scope_after_the_call stdout ----
+
+thread 'a_body_label_is_still_the_scope_after_the_call' (2412632) panicked at crates/sigil-frontend-as/tests/as_dollar_labels.rs:82:5:
+refusal does not name "unresolved symbol `$$x@Lb`":
+`$` with no hex digits
+`$` with no hex digits
+
+---- a_nested_body_reads_the_enclosing_instance stdout ----
+
+thread 'a_nested_body_reads_the_enclosing_instance' (2412641) panicked at crates/sigil-frontend-as/tests/as_dollar_labels.rs:67:19:
+expected asl's bytes 4e714e714e714e714e7112064e714e714e71120e1202, got diagnostics: ["`$` with no hex digits", "`$` with no hex digits", "`$` with no hex digits", "`$` with no hex digits", "`$` with no hex digits", "`$` with no hex digits"]
+
+---- body_ownership_is_by_scope_not_by_spelling stdout ----
+
+thread 'body_ownership_is_by_scope_not_by_spelling' (2412647) panicked at crates/sigil-frontend-as/tests/as_dollar_labels.rs:67:19:
+expected asl's bytes 4e714e7112024e714e71, got diagnostics: ["`$` with no hex digits", "`$` with no hex digits", "`$` with no hex digits"]
+
+---- a_temporary_symbol_is_never_defined stdout ----
+
+thread 'a_temporary_symbol_is_never_defined' (2412644) panicked at crates/sigil-frontend-as/tests/as_dollar_labels.rs:67:19:
+expected asl's bytes 4e714e71000000002222, got diagnostics: ["`$` with no hex digits", "`$` with no hex digits", "`$` with no hex digits", "`$` with no hex digits"]
+
+---- directives_ending_on_the_same_symbol_share_a_scope stdout ----
+
+thread 'directives_ending_on_the_same_symbol_share_a_scope' (2412648) panicked at crates/sigil-frontend-as/tests/as_dollar_labels.rs:67:19:
+expected asl's bytes 4e714e711202, got diagnostics: ["`$` with no hex digits", "`$` with no hex digits"]
+
+---- a_macro_body_reads_the_callers_names_and_keeps_its_own stdout ----
+
+thread 'a_macro_body_reads_the_callers_names_and_keeps_its_own' (2412640) panicked at crates/sigil-frontend-as/tests/as_dollar_labels.rs:67:19:
+expected asl's bytes 4e714e714e7112044e714e71120a1202, got diagnostics: ["`$` with no hex digits", "`$` with no hex digits", "`$` with no hex digits", "`$` with no hex digits", "`$` with no hex digits", "`$` with no hex digits"]
+
+---- directives_that_write_asl_symbols_end_the_scope stdout ----
+
+thread 'directives_that_write_asl_symbols_end_the_scope' (2412649) panicked at crates/sigil-frontend-as/tests/as_dollar_labels.rs:82:5:
+refusal does not name "unresolved symbol `$$x@PADDING`":
+`$` with no hex digits
+`$` with no hex digits
+
+---- a_temporary_label_opens_no_local_scope stdout ----
+
+thread 'a_temporary_label_opens_no_local_scope' (2412643) panicked at crates/sigil-frontend-as/tests/as_dollar_labels.rs:67:19:
+expected asl's bytes 4e714e714e7112041202, got diagnostics: ["`$` with no hex digits", "`$` with no hex digits"]
+
+---- a_value_binding_in_a_body_is_global stdout ----
+
+thread 'a_value_binding_in_a_body_is_global' (2412646) panicked at crates/sigil-frontend-as/tests/as_dollar_labels.rs:67:19:
+expected asl's bytes 4e714e7112241234, got diagnostics: ["`$` with no hex digits", "`$` with no hex digits", "`$` with no hex digits"]
+
+---- a_value_binder_ends_the_scope_and_reads_its_own_operand_in_the_old_one stdout ----
+
+thread 'a_value_binder_ends_the_scope_and_reads_its_own_operand_in_the_old_one' (2412645) panicked at crates/sigil-frontend-as/tests/as_dollar_labels.rs:82:5:
+refusal does not name "unresolved symbol `$$x@A2`":
+`$` with no hex digits
+`$` with no hex digits
+
+---- a_plain_label_ends_the_scope stdout ----
+
+thread 'a_plain_label_ends_the_scope' (2412642) panicked at crates/sigil-frontend-as/tests/as_dollar_labels.rs:82:5:
+refusal does not name "unresolved symbol `$$x@A1`":
+`$` with no hex digits
+`$` with no hex digits
+`$` with no hex digits
+
+---- locals_nameless_labels_and_non_symbol_directives_keep_the_scope stdout ----
+
+thread 'locals_nameless_labels_and_non_symbol_directives_keep_the_scope' (2412664) panicked at crates/sigil-frontend-as/tests/as_dollar_labels.rs:67:19:
+expected asl's bytes 4e714e7112024e711206, got diagnostics: ["`$` with no hex digits", "`$` with no hex digits", "`$` with no hex digits", "`$` with no hex digits"]
+
+---- enum_members_and_endstruct_end_the_scope stdout ----
+
+thread 'enum_members_and_endstruct_end_the_scope' (2412663) panicked at crates/sigil-frontend-as/tests/as_dollar_labels.rs:82:5:
+refusal does not name "unresolved symbol `$$x@E2`":
+`$` with no hex digits
+`$` with no hex digits
+
+---- each_loop_iteration_owns_its_names stdout ----
+
+thread 'each_loop_iteration_owns_its_names' (2412662) panicked at crates/sigil-frontend-as/tests/as_dollar_labels.rs:67:19:
+expected asl's bytes 4e714e714e7112044e714e71120a, got diagnostics: ["`$` with no hex digits", "`$` with no hex digits", "`$` with no hex digits", "`$` with no hex digits"]
+
+---- temporary_symbols_work_in_every_operand_shape stdout ----
+
+thread 'temporary_symbols_work_in_every_operand_shape' (2412666) panicked at crates/sigil-frontend-as/tests/as_dollar_labels.rs:67:19:
+expected asl's bytes 4e714e7112024e711202, got diagnostics: ["`$` with no hex digits", "`$` with no hex digits", "`$` with no hex digits"]
+
+---- temporary_symbols_work_under_z80 stdout ----
+
+thread 'temporary_symbols_work_under_z80' (2412667) panicked at crates/sigil-frontend-as/tests/as_dollar_labels.rs:67:19:
+expected asl's bytes 000001120000000612, got diagnostics: ["expected mnemonic, directive, or label", "bad word expression", "expected mnemonic, directive, or label", "bad word expression"]
+
+---- temporary_value_bindings_are_scoped_and_end_nothing stdout ----
+
+thread 'temporary_value_bindings_are_scoped_and_end_nothing' (2412668) panicked at crates/sigil-frontend-as/tests/as_dollar_labels.rs:67:19:
+expected asl's bytes 4e714e71122324044e714e71124d, got diagnostics: ["`$` with no hex digits", "`$` with no hex digits", "`$` with no hex digits", "`$` with no hex digits", "`$` with no hex digits", "`$` with no hex digits"]
+
+---- two_routines_each_own_their_names_backward_and_forward stdout ----
+
+thread 'two_routines_each_own_their_names_backward_and_forward' (2412671) panicked at crates/sigil-frontend-as/tests/as_dollar_labels.rs:67:19:
+expected asl's bytes 12044e711204120812084e714e714e711210121412101214, got diagnostics: ["`$` with no hex digits", "`$` with no hex digits", "`$` with no hex digits", "`$` with no hex digits", "`$` with no hex digits", "`$` with no hex digits"]
+
+---- names_are_case_sensitive_and_take_underscores_and_dots stdout ----
+
+thread 'names_are_case_sensitive_and_take_underscores_and_dots' (2412665) panicked at crates/sigil-frontend-as/tests/as_dollar_labels.rs:67:19:
+expected asl's bytes 4e714e714e7112021204, got diagnostics: ["`$` with no hex digits", "`$` with no hex digits", "`$` with no hex digits"]
+
+---- the_scope_is_the_name_so_a_set_symbol_returns_to_its_names stdout ----
+
+thread 'the_scope_is_the_name_so_a_set_symbol_returns_to_its_names' (2412669) panicked at crates/sigil-frontend-as/tests/as_dollar_labels.rs:67:19:
+expected asl's bytes 4e714e711200, got diagnostics: ["`$` with no hex digits", "`$` with no hex digits"]
+
+---- the_sonic_3_temporary_labels_match_asl stdout ----
+
+thread 'the_sonic_3_temporary_labels_match_asl' (2412670) panicked at crates/sigil-frontend-as/tests/as_dollar_labels.rs:262:48:
+diagnostics: ["`$` with no hex digits", "`$` with no hex digits", "`$` with no hex digits", "`$` with no hex digits", "`$` with no hex digits", "`$` with no hex digits", "`$` with no hex digits", "`$` with no hex digits", "`$` with no hex digits", "`$` with no hex digits", "`$` with no hex digits", "`$` with no hex digits", "`$` with no hex digits", "`$` with no hex digits", "`$` with no hex digits", "`$` with no hex digits", "`$` with no hex digits", "`$` with no hex digits", "`$` with no hex digits", "`$` with no hex digits", "`$` with no hex digits", "`$` with no hex digits", "`$` with no hex digits", "`$` with no hex digits", "`$` with no hex digits", "`$` with no hex digits", "`$` with no hex digits", "`$` with no hex digits", "`$` with no hex digits", "`$` with no hex digits", "`$` with no hex digits", "`$` with no hex digits", "`$` with no hex digits", "`$` with no hex digits", "`$` with no hex digits", "`$` with no hex digits", "`$` with no hex digits", "`$` with no hex digits", "`$` with no hex digits", "`$` with no hex digits", "`$` with no hex digits", "`$` with no hex digits", "`$` with no hex digits", "`$` with no hex digits", "`$` with no hex digits", "`$` with no hex digits", "`$` with no hex digits", "`$` with no hex digits", "`$` with no hex digits", "`$` with no hex digits", "`$` with no hex digits", "`$` with no hex digits", "`$` with no hex digits", "`$` with no hex digits", "`$` with no hex digits", "`$` with no hex digits", "`$` with no hex digits", "`$` with no hex digits", "`$` with no hex digits", "`$` with no hex digits", "`$` with no hex digits", "`$` with no hex digits", "`$` with no hex digits", "`$` with no hex digits", "`$` with no hex digits", "`$` with no hex digits", "`$` with no hex digits", "`$` with no hex digits", "`$` with no hex digits", "`$` with no hex digits", "`$` with no hex digits", "`$` with no hex digits", "`$` with no hex digits", "`$` with no hex digits", "`$` with no hex digits", "`$` with no hex digits", "`$` with no hex digits", "`$` with no hex digits", "`$` with no hex digits", "`$` with no hex digits", "`$` with no hex digits", "`$` with no hex digits", "`$` with no hex digits", "`$` with no hex digits", "`$` with no hex digits", "`$` with no hex digits", "`$` with no hex digits", "`$` with no hex digits", "`$` with no hex digits", "`$` with no hex digits", "`$` with no hex digits", "`$` with no hex digits", "`$` with no hex digits"]
+
+
+failures:
+    a_body_label_is_still_the_scope_after_the_call
+    a_dollar_pair_without_a_name_is_refused
+    a_macro_body_reads_the_callers_names_and_keeps_its_own
+    a_nested_body_reads_the_enclosing_instance
+    a_plain_label_ends_the_scope
+    a_temporary_label_opens_no_local_scope
+    a_temporary_symbol_is_never_defined
+    a_value_binder_ends_the_scope_and_reads_its_own_operand_in_the_old_one
+    a_value_binding_in_a_body_is_global
+    body_ownership_is_by_scope_not_by_spelling
+    directives_ending_on_the_same_symbol_share_a_scope
+    directives_that_write_asl_symbols_end_the_scope
+    each_loop_iteration_owns_its_names
+    enum_members_and_endstruct_end_the_scope
+    locals_nameless_labels_and_non_symbol_directives_keep_the_scope
+    names_are_case_sensitive_and_take_underscores_and_dots
+    temporary_symbols_work_in_every_operand_shape
+    temporary_symbols_work_under_z80
+    temporary_value_bindings_are_scoped_and_end_nothing
+    the_scope_is_the_name_so_a_set_symbol_returns_to_its_names
+    the_sonic_3_temporary_labels_match_asl
+    two_routines_each_own_their_names_backward_and_forward
+
+test result: FAILED. 0 passed; 22 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+error: test failed, to rerun pass `-p sigil-frontend-as --test as_dollar_labels`
+error: 1 target failed:
+    `-p sigil-frontend-as --test as_dollar_labels`
+   Compiling sigil-frontend-as v0.1.0 (/home/volence/sonic_hacks/.scratch/s3k-dollar-labels/base-src/crates/sigil-frontend-as)
+    Finished `release` profile [optimized] target(s) in 16.50s
+     Running unittests src/lib.rs (/home/volence/sonic_hacks/.scratch/s3k-dollar-labels/target/release/deps/sigil_frontend_as-5a901a32be4a6431)
+
+running 1 test
+test lexer::tests::a_temporary_symbol_is_one_identifier_under_both_cpus ... FAILED
+
+failures:
+
+---- lexer::tests::a_temporary_symbol_is_one_identifier_under_both_cpus stdout ----
+
+thread 'lexer::tests::a_temporary_symbol_is_one_identifier_under_both_cpus' (2457771) panicked at crates/sigil-frontend-as/src/lexer.rs:424:14:
+called `Result::unwrap()` on an `Err` value: Diagnostic { level: Error, message: "`$` with no hex digits", primary: Span { source: SourceId(0), start: 7, end: 8 } }
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    lexer::tests::a_temporary_symbol_is_one_identifier_under_both_cpus
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 310 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p sigil-frontend-as --lib`
+REDFIRST_END

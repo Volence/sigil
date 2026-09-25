@@ -1,0 +1,18 @@
+pwd=/home/volence/sonic_hacks/sigil/.claude/worktrees/agent-a620ff60a900c195e aeon HEAD: ec640bcf70e263167223a33d987d4661ff221b7e aeon status lines: 0
+sigil: /home/volence/sonic_hacks/.scratch/s3k-dollar-labels/bin/sigil-after md5 32288022c5919cc0cb604840c4f9a5d7
+emit:  /home/volence/sonic_hacks/.scratch/s3k-dollar-labels/bin/emit_sound_blob-after md5 fc77af0d999333326e64a1c4a611479c
+sigil 0.1.0 (9097415d)
+  revision:  9097415de7602996b2dd2c13103dab2e91a11662
+sonic4 build rc=0
+  produced s4.bin
+sonic4-debug build rc=0
+  produced s4.debug.bin
+demo build rc=0
+  produced demo.bin
+demo-debug build rc=0
+  produced demo.debug.bin
+demo-debug.demo.debug.bin    crc32 72e405a5 size 103185
+demo.demo.bin                crc32 1c7a34d3 size 96863
+sonic4-debug.s4.debug.bin    crc32 8a378de6 size 846509
+sonic4.s4.bin                crc32 91c46c94 size 820209
+FOUR_END_after
