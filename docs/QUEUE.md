@@ -767,6 +767,8 @@ points at it rather than restating it, so there is one copy to keep true.
   `docs/superpowers/notes/2026-09-25-clip-overlay-contract.md`. Aeon passes the switch to
   `sigil build` only: on the preflight emit it reds
   `test_check_does_not_perturb_generated_sound_artifacts` (measured, see the contract).
+  Canonical byte-neutral (s4, s4_debug, demo, demo_debug equal the provenance tip); landing run at
+  `eb73887d` GREEN, 5723 passed, 0 failed (baseline 5707 + 16 new).
 - was: state **blocked** on card `d-35`  size: `M` to build  project: `-`
 - Priced 2026-09-25 at merge `603087e0`: `docs/superpowers/notes/2026-09-25-clip-own-anchor-pricing.md`.
   Sigil cannot tell the S2CLIP build from canonical sonic4, so the hub's own-anchor ruling (empyrean
@@ -783,7 +785,8 @@ points at it rather than restating it, so there is one copy to keep true.
   note, inferred from a read, not a build), so refusing unknown values should move no bytes. Folded
   into design A of `d-35`; worth doing alone if `d-35` waits.
 - landed on branch `parcel/clip-overlay` (not merged, commit `0a383b11`): `when` is a closed enum
-  (`[map.when-unknown]`), and `[[anchor]]`/`[[hole]]` rows refuse an unknown key.
+  (`[map.when-unknown]`), and `[[anchor]]`/`[[hole]]` rows refuse an unknown key. Byte-neutral:
+  the four canonical shapes equal the provenance tip.
 
 ### BANK-ID-EMIT-VS-PLACE-UNCHECKED
 
