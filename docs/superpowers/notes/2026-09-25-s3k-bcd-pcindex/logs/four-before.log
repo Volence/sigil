@@ -1,0 +1,18 @@
+aeon HEAD: ec640bcf70e263167223a33d987d4661ff221b7e  status lines: 0
+sigil md5: 0e16fb431b6fdb84c75af8dac27d4483  emit md5: 4b5b7096251f50f9070dbf2d9f1726a1
+sigil 0.1.0 (120be609)
+  revision:  120be60971c58e43e712b285f411db2c605b388f
+  branch:    parcel/s3k-bcd-pcindex
+sonic4 build rc=0
+  produced s4.bin
+sonic4-debug build rc=0
+  produced s4.debug.bin
+demo build rc=0
+  produced demo.bin
+demo-debug build rc=0
+  produced demo.debug.bin
+demo-debug.demo.debug.bin    crc32 72e405a5 size 103185
+demo.demo.bin                crc32 1c7a34d3 size 96863
+sonic4-debug.s4.debug.bin    crc32 8a378de6 size 846509
+sonic4.s4.bin                crc32 91c46c94 size 820209
+FOUR_END_before

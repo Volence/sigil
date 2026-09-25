@@ -64,6 +64,17 @@ use std::collections::{BTreeMap, BTreeSet};
 ///   moving a whole EA into CCR.
 /// - `move-to-usp` / `move-from-usp`: supervisor-mode-only, and aeon never
 ///   leaves supervisor mode, so it has no user stack pointer to set.
+///
+/// The five below arrived together for the Sonic 3 & Knuckles corpus
+/// (2026-09-25, note `2026-09-25-s3k-bcd-pcindex.md`). Aeon's `.asm` and `.emp`
+/// sources contain none of them (grep over the reference tree at `ec640bcf`,
+/// with S3K as the positive control); its only extended-family instruction is
+/// `addx Dn,Dn`, which IS captured. `.emp` has no spelling for any of the five.
+/// Their coverage is the asl-probe tests in `as_bcd_pcindex.rs` and the
+/// capstone sweep.
+///
+/// - `subx` / `negx`: aeon's multi-word arithmetic only adds.
+/// - `abcd` / `sbcd` / `nbcd`: aeon keeps no BCD values.
 const NOT_IN_STREAM: &[&str] = &[
     "illegal",
     "bchg",
@@ -73,6 +84,11 @@ const NOT_IN_STREAM: &[&str] = &[
     "move-to-ccr",
     "move-to-usp",
     "move-from-usp",
+    "subx",
+    "negx",
+    "abcd",
+    "sbcd",
+    "nbcd",
 ];
 
 #[test]

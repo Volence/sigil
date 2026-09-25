@@ -1,0 +1,16 @@
+pwd=/home/volence/sonic_hacks/sigil/.claude/worktrees/agent-adae49c7bddc9a0a8 HEAD=0e8ab9f8479266a868849df4af3dd2262b429c0c branch=parcel/s3k-bcd-pcindex status=[18 lines]
+AEON_DIR=/home/volence/sonic_hacks/.aeon-bcd-pcindex aeon HEAD ec640bcf70e263167223a33d987d4661ff221b7e
+== repin --check
+  PAL_SONIC_TAILS
+  A pin here still earns its place: `pins_rs_is_current` compares the whole generated text, so an unconsumed pin whose engine symbol moves turns that gate red. Deleting one removes drift coverage of that symbol.
+pins.rs unchanged
+REPIN_RC=0
+== workspace tests
+SUITE_RC=101
+result lines: 498 passed: 5655 failed: 1 ignored: 2
+    oracle_loadfromaslisting_resolves_emit_listing
+test oracle_loadfromaslisting_resolves_emit_listing ... FAILED
+1
+== clippy
+CLIPPY_RC=0
+SUITE_END

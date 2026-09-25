@@ -1,0 +1,15 @@
+	cpu 68000
+	abcd d3,d5
+	abcd.b d3,d5
+	abcd -(a3),-(a5)
+	abcd.b -(a3),-(a5)
+	abcd d6,d1
+	abcd -(a1),-(a2)
+	abcd -(sp),-(a6)
+	sbcd d3,d5
+	sbcd.b d3,d5
+	sbcd -(a3),-(a5)
+	sbcd.b -(a3),-(a5)
+	sbcd d6,d1
+	sbcd -(a1),-(sp)
+	ABCD -(A3),-(A5)

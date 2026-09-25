@@ -1,0 +1,749 @@
+asl md5: 61e672562465725a8c102288a7da9098  sigil md5: 0e16fb431b6fdb84c75af8dac27d4483
+probes: 73
+=== pcb01 (4fd9b17f)
+ASL_EXIT=0
+ASL_DIAG=complete
+asl   bytes: 3a3b307f3a3b30804cbb000c307f4cbb000c30804bfbb87f4bfbb880083b0003307f083b000330800b3b307f4efb30ff
+SIGIL_EXIT=1
+pcb01.asm(4):2: error: `(d8,PC,Xn)` indexed PC-relative addressing is not yet supported (only `(d16,PC)` lowers)
+pcb01.asm(5):2: error: `(d8,PC,Xn)` indexed PC-relative addressing is not yet supported (only `(d16,PC)` lowers)
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 2 errors (reported on stderr)
+EXIT-MISMATCH
+=== pcbr01 (5c756a41)
+> > > pcbr01.asm(2):9: error #1505: addressing mode not supported on 68000
+ASL_EXIT=2
+ASL_DIAG=complete
+asl   bytes: (asl exited 2; no value quoted)
+SIGIL_EXIT=1
+pcbr01.asm(2):2: error: (d8,PC,Xn) displacement out of range (128) in section sec0
+this error list may be incomplete: sigil stopped at link, so the image checks did not run
+assembly failed: 1 error (reported on stderr)
+BOTH-REFUSE
+=== pcbr02 (8f46b713)
+> > > pcbr02.asm(2):9: error #1505: addressing mode not supported on 68000
+ASL_EXIT=2
+ASL_DIAG=complete
+asl   bytes: (asl exited 2; no value quoted)
+SIGIL_EXIT=1
+pcbr02.asm(2):2: error: (d8,PC,Xn) displacement out of range (-129) in section sec0
+this error list may be incomplete: sigil stopped at link, so the image checks did not run
+assembly failed: 1 error (reported on stderr)
+BOTH-REFUSE
+=== pcbr03 (f30302f3)
+> > > pcbr03.asm(2):10: error #1505: addressing mode not supported on 68000
+ASL_EXIT=2
+ASL_DIAG=complete
+asl   bytes: (asl exited 2; no value quoted)
+SIGIL_EXIT=1
+pcbr03.asm(2):2: error: `(d8,PC,Xn)` indexed PC-relative addressing is not yet supported (only `(d16,PC)` lowers)
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+BOTH-REFUSE
+=== pcbr04 (f69c4a14)
+> > > pcbr04.asm(2):10: error #1505: addressing mode not supported on 68000
+ASL_EXIT=2
+ASL_DIAG=complete
+asl   bytes: (asl exited 2; no value quoted)
+SIGIL_EXIT=1
+pcbr04.asm(2):2: error: `(d8,PC,Xn)` indexed PC-relative addressing is not yet supported (only `(d16,PC)` lowers)
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+BOTH-REFUSE
+=== pcbr05 (1dc0ab60)
+> > > pcbr05.asm(2):10: error #1505: addressing mode not supported on 68000
+ASL_EXIT=2
+ASL_DIAG=complete
+asl   bytes: (asl exited 2; no value quoted)
+SIGIL_EXIT=1
+pcbr05.asm(2):2: error: (d8,PC,Xn) displacement out of range (128) in section sec0
+this error list may be incomplete: sigil stopped at link, so the image checks did not run
+assembly failed: 1 error (reported on stderr)
+BOTH-REFUSE
+=== pcbr06 (7b1195fb)
+> > > pcbr06.asm(2):10: error #1505: addressing mode not supported on 68000
+ASL_EXIT=2
+ASL_DIAG=complete
+asl   bytes: (asl exited 2; no value quoted)
+SIGIL_EXIT=1
+pcbr06.asm(2):2: error: (d8,PC,Xn) displacement out of range (-129) in section sec0
+this error list may be incomplete: sigil stopped at link, so the image checks did not run
+assembly failed: 1 error (reported on stderr)
+BOTH-REFUSE
+=== pcbr07 (413cff06)
+> > > pcbr07.asm(2):6: error #1505: addressing mode not supported on 68000
+ASL_EXIT=2
+ASL_DIAG=complete
+asl   bytes: (asl exited 2; no value quoted)
+SIGIL_EXIT=1
+pcbr07.asm(2):2: error: (d8,PC,Xn) displacement out of range (128) in section sec0
+this error list may be incomplete: sigil stopped at link, so the image checks did not run
+assembly failed: 1 error (reported on stderr)
+BOTH-REFUSE
+=== pcbr08 (feec0a85)
+> > > pcbr08.asm(2):6: error #1505: addressing mode not supported on 68000
+ASL_EXIT=2
+ASL_DIAG=complete
+asl   bytes: (asl exited 2; no value quoted)
+SIGIL_EXIT=1
+pcbr08.asm(2):2: error: (d8,PC,Xn) displacement out of range (-129) in section sec0
+this error list may be incomplete: sigil stopped at link, so the image checks did not run
+assembly failed: 1 error (reported on stderr)
+BOTH-REFUSE
+=== pcd01 (96da3bb5)
+ASL_EXIT=0
+ASL_DIAG=complete
+asl   bytes: 4cba000c00084cfa0201000200014cba0440fffa
+SIGIL_EXIT=1
+pcd01.asm(2):2: error: `(d8,PC,Xn)` indexed PC-relative addressing is not yet supported (only `(d16,PC)` lowers)
+pcd01.asm(3):2: error: `(d8,PC,Xn)` indexed PC-relative addressing is not yet supported (only `(d16,PC)` lowers)
+pcd01.asm(5):2: error: `(d8,PC,Xn)` indexed PC-relative addressing is not yet supported (only `(d16,PC)` lowers)
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 3 errors (reported on stderr)
+EXIT-MISMATCH
+=== pcr01 (ddc45b74)
+> > > pcr01.asm(2):12: error #1350: addressing mode not allowed here
+ASL_EXIT=2
+ASL_DIAG=INCOMPLETE
+asl   bytes: (asl exited 2; no value quoted)
+SIGIL_EXIT=1
+pcr01.asm(2):2: error: illegal destination EA: (d8,PC,Xn)
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+BOTH-REFUSE
+=== pcr02 (3485d54f)
+> > > pcr02.asm(2):8: error #1350: addressing mode not allowed here
+ASL_EXIT=2
+ASL_DIAG=INCOMPLETE
+asl   bytes: (asl exited 2; no value quoted)
+SIGIL_EXIT=1
+pcr02.asm(2):2: error: illegal destination EA: (d8,PC,Xn)
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+BOTH-REFUSE
+=== pcr03 (10176c09)
+> > > pcr03.asm(2):8: error #1350: addressing mode not allowed here
+ASL_EXIT=2
+ASL_DIAG=INCOMPLETE
+asl   bytes: (asl exited 2; no value quoted)
+SIGIL_EXIT=1
+pcr03.asm(2):2: error: illegal destination EA: (d8,PC,Xn)
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+BOTH-REFUSE
+=== pcr04 (d4f844ca)
+> > > pcr04.asm(2):12: error #1350: addressing mode not allowed here
+ASL_EXIT=2
+ASL_DIAG=INCOMPLETE
+asl   bytes: (asl exited 2; no value quoted)
+SIGIL_EXIT=1
+pcr04.asm(2):2: error: illegal destination EA: (d8,PC,Xn)
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+BOTH-REFUSE
+=== pcr05 (9b61eddb)
+> > > pcr05.asm(2):12: error #1350: addressing mode not allowed here
+ASL_EXIT=2
+ASL_DIAG=INCOMPLETE
+asl   bytes: (asl exited 2; no value quoted)
+SIGIL_EXIT=1
+pcr05.asm(2):2: error: illegal destination EA: (d8,PC,Xn)
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+BOTH-REFUSE
+=== pcr06 (41a95c53)
+> > > pcr06.asm(2):11: error #1350: addressing mode not allowed here
+ASL_EXIT=2
+ASL_DIAG=INCOMPLETE
+asl   bytes: (asl exited 2; no value quoted)
+SIGIL_EXIT=1
+pcr06.asm(2):2: error: illegal destination EA: (d8,PC,Xn)
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+BOTH-REFUSE
+=== pcr07 (13691eeb)
+> > > pcr07.asm(2):16: error #1350: addressing mode not allowed here
+ASL_EXIT=2
+ASL_DIAG=INCOMPLETE
+asl   bytes: (asl exited 2; no value quoted)
+SIGIL_EXIT=1
+pcr07.asm(2):2: error: `(d8,PC,Xn)` indexed PC-relative addressing is not yet supported (only `(d16,PC)` lowers)
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+BOTH-REFUSE
+=== pcr08 (23c44b91)
+> > > pcr08.asm(2):10: error #1350: addressing mode not allowed here
+ASL_EXIT=2
+ASL_DIAG=INCOMPLETE
+asl   bytes: (asl exited 2; no value quoted)
+SIGIL_EXIT=1
+pcr08.asm(2):2: error: illegal destination EA: (d8,PC,Xn)
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+BOTH-REFUSE
+=== pcr09 (2fbf4b14)
+> > > pcr09.asm(2):8: error #1350: addressing mode not allowed here
+ASL_EXIT=2
+ASL_DIAG=INCOMPLETE
+asl   bytes: (asl exited 2; no value quoted)
+SIGIL_EXIT=1
+pcr09.asm(2):2: error: illegal destination EA: (d8,PC,Xn)
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+BOTH-REFUSE
+=== pcr10 (09476a58)
+> > > pcr10.asm(2):14: error #1350: addressing mode not allowed here
+ASL_EXIT=2
+ASL_DIAG=complete
+asl   bytes: (asl exited 2; no value quoted)
+SIGIL_EXIT=1
+pcr10.asm(2):2: error: `d3.b` is not a valid index register
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+BOTH-REFUSE
+=== pcr11 (0bfc46fc)
+> > > pcr11.asm(2): error #1350: addressing mode not allowed here
+ASL_EXIT=2
+ASL_DIAG=complete
+asl   bytes: (asl exited 2; no value quoted)
+SIGIL_EXIT=1
+pcr11.asm(2):2: error: `d8` is not a valid index register
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+BOTH-REFUSE
+=== pcr12 (d67e6acb)
+> > > pcr12.asm(2): error #1350: addressing mode not allowed here
+ASL_EXIT=2
+ASL_DIAG=complete
+asl   bytes: (asl exited 2; no value quoted)
+SIGIL_EXIT=1
+pcr12.asm(2):2: error: `pc` is not a valid index register
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+BOTH-REFUSE
+=== pcr13 (1381760f)
+> > > pcr13.asm(2):14: error #1505: addressing mode not supported on 68000
+ASL_EXIT=2
+ASL_DIAG=INCOMPLETE
+asl   bytes: (asl exited 2; no value quoted)
+SIGIL_EXIT=1
+pcr13.asm(2):9: error: trailing tokens in operand
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+BOTH-REFUSE
+=== pcr14 (c6820ec3)
+> > > pcr14.asm(2):15: error #1350: addressing mode not allowed here
+ASL_EXIT=2
+ASL_DIAG=complete
+asl   bytes: (asl exited 2; no value quoted)
+SIGIL_EXIT=1
+pcr14.asm(2):2: error: `(d8,PC,Xn)` indexed PC-relative addressing is not yet supported (only `(d16,PC)` lowers)
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+BOTH-REFUSE
+=== pcr15 (cee4dc73)
+> > > pcr15.asm(2): error #1350: addressing mode not allowed here
+ASL_EXIT=2
+ASL_DIAG=complete
+asl   bytes: (asl exited 2; no value quoted)
+SIGIL_EXIT=1
+pcr15.asm(2):2: error: `(d8,PC,Xn)` indexed PC-relative addressing is not yet supported (only `(d16,PC)` lowers)
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+BOTH-REFUSE
+=== pcr16 (a2a7bd3f)
+> > > pcr16.asm(2):7: error #1350: addressing mode not allowed here
+ASL_EXIT=2
+ASL_DIAG=INCOMPLETE
+asl   bytes: (asl exited 2; no value quoted)
+SIGIL_EXIT=1
+pcr16.asm(2):2: error: `nbcd` is not a recognized 68000 mnemonic
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+BOTH-REFUSE
+=== pcr17 (b0d64071)
+> > > pcr17.asm(2):9: error #1350: addressing mode not allowed here
+ASL_EXIT=2
+ASL_DIAG=INCOMPLETE
+asl   bytes: (asl exited 2; no value quoted)
+SIGIL_EXIT=1
+pcr17.asm(2):2: error: `negx` is not a recognized 68000 mnemonic
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+BOTH-REFUSE
+=== pcr18 (383fbe65)
+> > > pcr18.asm(2): error #1130: invalid operand size
+ASL_EXIT=2
+ASL_DIAG=complete
+asl   bytes: (asl exited 2; no value quoted)
+SIGIL_EXIT=1
+pcr18.asm(2):2: error: unsupported form: move to/from usp is long-only on the 68000, got size W
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+BOTH-REFUSE
+=== pcr19 (68e62953)
+> > > pcr19.asm(2):8: error #1350: addressing mode not allowed here
+ASL_EXIT=2
+ASL_DIAG=INCOMPLETE
+asl   bytes: (asl exited 2; no value quoted)
+SIGIL_EXIT=1
+pcr19.asm(2):2: error: illegal destination EA: (d8,PC,Xn)
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+BOTH-REFUSE
+=== pcr20 (993a9f58)
+> > > pcr20.asm(2):6: error #1350: addressing mode not allowed here
+ASL_EXIT=2
+ASL_DIAG=INCOMPLETE
+asl   bytes: (asl exited 2; no value quoted)
+SIGIL_EXIT=1
+pcr20.asm(2):2: error: illegal destination EA: (d8,PC,Xn)
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+BOTH-REFUSE
+=== pcr21 (4d659455)
+> > > pcr21.asm(2):15: error #1350: addressing mode not allowed here
+ASL_EXIT=2
+ASL_DIAG=INCOMPLETE
+asl   bytes: (asl exited 2; no value quoted)
+SIGIL_EXIT=1
+pcr21.asm(2):2: error: `(d8,PC,Xn)` indexed PC-relative addressing is not yet supported (only `(d16,PC)` lowers)
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+BOTH-REFUSE
+=== pcr22 (9361a114)
+> > > pcr22.asm(2):20: error #1350: addressing mode not allowed here
+ASL_EXIT=2
+ASL_DIAG=INCOMPLETE
+asl   bytes: (asl exited 2; no value quoted)
+SIGIL_EXIT=1
+pcr22.asm(2):2: error: `(d8,PC,Xn)` indexed PC-relative addressing is not yet supported (only `(d16,PC)` lowers)
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+BOTH-REFUSE
+=== pcr23 (249d34e7)
+> > > pcr23.asm(2):16: error #1350: addressing mode not allowed here
+ASL_EXIT=2
+ASL_DIAG=INCOMPLETE
+asl   bytes: (asl exited 2; no value quoted)
+SIGIL_EXIT=1
+pcr23.asm(2):2: error: `(d8,PC,Xn)` indexed PC-relative addressing is not yet supported (only `(d16,PC)` lowers)
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+BOTH-REFUSE
+=== pcx01 (5a387d3d)
+> > > pcx01.asm(40):2: warning #50: privileged instruction
+> > > pcx01.asm(40):2: warning #50: privileged instruction
+ASL_EXIT=0
+ASL_DIAG=complete
+asl   bytes: 1a3b306e3a3b386a2a3bb0663abbb8622b7b605e12343a7b30582a7ba8543a7b3050da3b304cda7b3848dabbb044dafb3040dbfb383c9a7b30389bfbc034ca7b30308abb382cba3b3028ba7bb824bafb3020bbfb301ccbfb3018cafb38148bfbb0108afb300c0b3b3008083b0003380200014bfb30fc4bfbb8f8487b30f44efb30f04ebbb8ec4cbb000c00e64cfb100738e04cbb0140b0da4cfb7fffa8d444fb30d046fb30cc44fb30c83a3b30c43a3b30c03a3b30bc3a3b30b83a3bb8b43a3bf0b03a3bf8ac4cbb001430a64cbb001430a0
+SIGIL_EXIT=1
+pcx01.asm(35):2: error: `(d8,PC,Xn)` indexed PC-relative addressing is not yet supported (only `(d16,PC)` lowers)
+pcx01.asm(36):2: error: `(d8,PC,Xn)` indexed PC-relative addressing is not yet supported (only `(d16,PC)` lowers)
+pcx01.asm(37):2: error: `(d8,PC,Xn)` indexed PC-relative addressing is not yet supported (only `(d16,PC)` lowers)
+pcx01.asm(38):2: error: `(d8,PC,Xn)` indexed PC-relative addressing is not yet supported (only `(d16,PC)` lowers)
+pcx01.asm(49):2: error: `(d8,PC,Xn)` indexed PC-relative addressing is not yet supported (only `(d16,PC)` lowers)
+pcx01.asm(50):2: error: `(d8,PC,Xn)` indexed PC-relative addressing is not yet supported (only `(d16,PC)` lowers)
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 6 errors (reported on stderr)
+EXIT-MISMATCH
+=== pcx02 (20aedb80)
+ASL_EXIT=0
+ASL_DIAG=complete
+asl   bytes: 111122223a3b30fa4cbb000c00f44bfbb8f04efb60ec083b000730e6
+SIGIL_EXIT=1
+pcx02.asm(4):2: error: `(d8,PC,Xn)` indexed PC-relative addressing is not yet supported (only `(d16,PC)` lowers)
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+EXIT-MISMATCH
+=== pcx03 (46241722)
+ASL_EXIT=0
+ASL_DIAG=complete
+asl   bytes: 4cbb000c00104cbb0030000200010002000300040005000600070008
+SIGIL_EXIT=1
+pcx03.asm(2):2: error: `(d8,PC,Xn)` indexed PC-relative addressing is not yet supported (only `(d16,PC)` lowers)
+pcx03.asm(3):2: error: `(d8,PC,Xn)` indexed PC-relative addressing is not yet supported (only `(d16,PC)` lowers)
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 2 errors (reported on stderr)
+EXIT-MISMATCH
+=== sk01 (1f845f28)
+ASL_EXIT=0
+ASL_DIAG=complete
+asl   bytes: 4cbb000c0062314200183143001a4a40670a4cbb00300010d444d645334200183343001a4e75000000000000fd000000030000000000fd000000fde1fde1fde1021f0000000003000000021ffde1021f021f0000000000000000000000000000000000000000060000000000fa000000060000000000fa000000fbc2fbc2fbc2043e0000000006000000043efbc2043e043e0000000000000000000000000000000000000000
+SIGIL_EXIT=1
+sk01.asm(5):3: error: `(d8,PC,Xn)` indexed PC-relative addressing is not yet supported (only `(d16,PC)` lowers)
+sk01.asm(12):3: error: `(d8,PC,Xn)` indexed PC-relative addressing is not yet supported (only `(d16,PC)` lowers)
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 2 errors (reported on stderr)
+EXIT-MISMATCH
+=== sk02 (d1b2919a)
+ASL_EXIT=0
+ASL_DIAG=complete
+asl   bytes: c509c509c509
+SIGIL_EXIT=1
+sk02.asm(5):3: error: `abcd` is not a recognized 68000 mnemonic
+sk02.asm(6):3: error: `abcd` is not a recognized 68000 mnemonic
+sk02.asm(7):3: error: `abcd` is not a recognized 68000 mnemonic
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 3 errors (reported on stderr)
+EXIT-MISMATCH
+=== sk03 (058ef0ae)
+ASL_EXIT=0
+ASL_DIAG=complete
+asl   bytes: 9142
+SIGIL_EXIT=1
+sk03.asm(5):3: error: `subx` is not a recognized 68000 mnemonic
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+EXIT-MISMATCH
+=== sk04 (fc23a847)
+ASL_EXIT=0
+ASL_DIAG=complete
+asl   bytes: 9540
+SIGIL_EXIT=1
+sk04.asm(5):3: error: `subx` is not a recognized 68000 mnemonic
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+EXIT-MISMATCH
+=== sk05 (b1eb3cd1)
+ASL_EXIT=0
+ASL_DIAG=complete
+asl   bytes: 9540
+SIGIL_EXIT=1
+sk05.asm(5):3: error: `subx` is not a recognized 68000 mnemonic
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+EXIT-MISMATCH
+=== x01 (5051a0af)
+ASL_EXIT=0
+ASL_DIAG=complete
+asl   bytes: db03db43db83db43db0bdb4bdb8bdb4bd346dd8fdf499b039b439b839b439b0b9b4b9b8b9b4b93469d8fdb439b8b
+SIGIL_EXIT=1
+x01.asm(5):2: error: instruction needs an explicit size suffix (.b/.w/.l)
+x01.asm(6):2: error: unsupported form: addx supports only the Dn,Dn form, got [PreDec(3), PreDec(5)]
+x01.asm(7):2: error: unsupported form: addx supports only the Dn,Dn form, got [PreDec(3), PreDec(5)]
+x01.asm(8):2: error: unsupported form: addx supports only the Dn,Dn form, got [PreDec(3), PreDec(5)]
+x01.asm(9):2: error: instruction needs an explicit size suffix (.b/.w/.l)
+x01.asm(11):2: error: unsupported form: addx supports only the Dn,Dn form, got [PreDec(7), PreDec(6)]
+x01.asm(12):2: error: unsupported form: addx supports only the Dn,Dn form, got [PreDec(1), PreDec(7)]
+x01.asm(13):2: error: `subx` is not a recognized 68000 mnemonic
+EXIT-MISMATCH
+=== x02 (dbe9e002)
+ASL_EXIT=0
+ASL_DIAG=complete
+asl   bytes: cb03cb03cb0bcb0bc306c509cd0f8b038b038b0b8b0b83068f09cb0b
+SIGIL_EXIT=1
+x02.asm(2):2: error: `abcd` is not a recognized 68000 mnemonic
+x02.asm(3):2: error: `abcd` is not a recognized 68000 mnemonic
+x02.asm(4):2: error: `abcd` is not a recognized 68000 mnemonic
+x02.asm(5):2: error: `abcd` is not a recognized 68000 mnemonic
+x02.asm(6):2: error: `abcd` is not a recognized 68000 mnemonic
+x02.asm(7):2: error: `abcd` is not a recognized 68000 mnemonic
+x02.asm(8):2: error: `abcd` is not a recognized 68000 mnemonic
+x02.asm(9):2: error: `sbcd` is not a recognized 68000 mnemonic
+EXIT-MISMATCH
+=== x03 (07e9ac9c)
+ASL_EXIT=0
+ASL_DIAG=complete
+asl   bytes: 40034043408340454013405b40a3406d1234403560ee40b5a8124078123440b900123456480348054813481b4823482d1234483560ee4835a81248381234483900123456
+SIGIL_EXIT=1
+x03.asm(2):2: error: `negx` is not a recognized 68000 mnemonic
+x03.asm(3):2: error: `negx` is not a recognized 68000 mnemonic
+x03.asm(4):2: error: `negx` is not a recognized 68000 mnemonic
+x03.asm(5):2: error: `negx` is not a recognized 68000 mnemonic
+x03.asm(6):2: error: `negx` is not a recognized 68000 mnemonic
+x03.asm(7):2: error: `negx` is not a recognized 68000 mnemonic
+x03.asm(8):2: error: `negx` is not a recognized 68000 mnemonic
+x03.asm(9):2: error: `negx` is not a recognized 68000 mnemonic
+EXIT-MISMATCH
+=== xr01 (65cd803b)
+> > > xr01.asm(2): error #1130: invalid operand size
+ASL_EXIT=2
+ASL_DIAG=complete
+asl   bytes: (asl exited 2; no value quoted)
+SIGIL_EXIT=1
+xr01.asm(2):2: error: `abcd` is not a recognized 68000 mnemonic
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+BOTH-REFUSE
+=== xr02 (d439d00b)
+> > > xr02.asm(2): error #1130: invalid operand size
+ASL_EXIT=2
+ASL_DIAG=complete
+asl   bytes: (asl exited 2; no value quoted)
+SIGIL_EXIT=1
+xr02.asm(2):2: error: `abcd` is not a recognized 68000 mnemonic
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+BOTH-REFUSE
+=== xr03 (c7d08f89)
+> > > xr03.asm(2):10: error #1350: addressing mode not allowed here
+ASL_EXIT=2
+ASL_DIAG=complete
+asl   bytes: (asl exited 2; no value quoted)
+SIGIL_EXIT=1
+xr03.asm(2):2: error: `abcd` is not a recognized 68000 mnemonic
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+BOTH-REFUSE
+=== xr04 (ab76128d)
+> > > xr04.asm(2):13: error #1350: addressing mode not allowed here
+ASL_EXIT=2
+ASL_DIAG=complete
+asl   bytes: (asl exited 2; no value quoted)
+SIGIL_EXIT=1
+xr04.asm(2):2: error: `abcd` is not a recognized 68000 mnemonic
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+BOTH-REFUSE
+=== xr05 (869b6a03)
+> > > xr05.asm(2):7: error #1350: addressing mode not allowed here
+ASL_EXIT=2
+ASL_DIAG=complete
+asl   bytes: (asl exited 2; no value quoted)
+SIGIL_EXIT=1
+xr05.asm(2):2: error: `abcd` is not a recognized 68000 mnemonic
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+BOTH-REFUSE
+=== xr06 (13a244d4)
+> > > xr06.asm(2):7: error #1350: addressing mode not allowed here
+ASL_EXIT=2
+ASL_DIAG=complete
+asl   bytes: (asl exited 2; no value quoted)
+SIGIL_EXIT=1
+xr06.asm(2):2: error: `abcd` is not a recognized 68000 mnemonic
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+BOTH-REFUSE
+=== xr07 (bfd3b571)
+> > > xr07.asm(2):10: error #1350: addressing mode not allowed here
+ASL_EXIT=2
+ASL_DIAG=complete
+asl   bytes: (asl exited 2; no value quoted)
+SIGIL_EXIT=1
+xr07.asm(2):2: error: instruction needs an explicit size suffix (.b/.w/.l)
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+BOTH-REFUSE
+=== xr08 (aa53c4ba)
+> > > xr08.asm(2):13: error #1350: addressing mode not allowed here
+ASL_EXIT=2
+ASL_DIAG=complete
+asl   bytes: (asl exited 2; no value quoted)
+SIGIL_EXIT=1
+xr08.asm(2):2: error: instruction needs an explicit size suffix (.b/.w/.l)
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+BOTH-REFUSE
+=== xr09 (28dd48b5)
+> > > xr09.asm(2):7: error #1350: addressing mode not allowed here
+ASL_EXIT=2
+ASL_DIAG=complete
+asl   bytes: (asl exited 2; no value quoted)
+SIGIL_EXIT=1
+xr09.asm(2):2: error: instruction needs an explicit size suffix (.b/.w/.l)
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+BOTH-REFUSE
+=== xr10 (94402595)
+> > > xr10.asm(2):7: error #1350: addressing mode not allowed here
+ASL_EXIT=2
+ASL_DIAG=complete
+asl   bytes: (asl exited 2; no value quoted)
+SIGIL_EXIT=1
+xr10.asm(2):2: error: instruction needs an explicit size suffix (.b/.w/.l)
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+BOTH-REFUSE
+=== xr11 (b052c3a9)
+> > > xr11.asm(2):7: error #1350: addressing mode not allowed here
+ASL_EXIT=2
+ASL_DIAG=complete
+asl   bytes: (asl exited 2; no value quoted)
+SIGIL_EXIT=1
+xr11.asm(2):2: error: instruction needs an explicit size suffix (.b/.w/.l)
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+BOTH-REFUSE
+=== xr12 (836ca03b)
+> > > xr12.asm(2):10: error #1350: addressing mode not allowed here
+ASL_EXIT=2
+ASL_DIAG=complete
+asl   bytes: (asl exited 2; no value quoted)
+SIGIL_EXIT=1
+xr12.asm(2):2: error: `subx` is not a recognized 68000 mnemonic
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+BOTH-REFUSE
+=== xr13 (d9db37d7)
+> > > xr13.asm(2):9: error #1350: addressing mode not allowed here
+ASL_EXIT=2
+ASL_DIAG=complete
+asl   bytes: (asl exited 2; no value quoted)
+SIGIL_EXIT=1
+xr13.asm(2):2: error: `subx` is not a recognized 68000 mnemonic
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+BOTH-REFUSE
+=== xr14 (e74615ed)
+> > > xr14.asm(2): error #1130: invalid operand size
+ASL_EXIT=2
+ASL_DIAG=complete
+asl   bytes: (asl exited 2; no value quoted)
+SIGIL_EXIT=1
+xr14.asm(2):2: error: `sbcd` is not a recognized 68000 mnemonic
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+BOTH-REFUSE
+=== xr15 (adbe72d0)
+> > > xr15.asm(2):7: error #1350: addressing mode not allowed here
+ASL_EXIT=2
+ASL_DIAG=complete
+asl   bytes: (asl exited 2; no value quoted)
+SIGIL_EXIT=1
+xr15.asm(2):2: error: `negx` is not a recognized 68000 mnemonic
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+BOTH-REFUSE
+=== xr16 (048e54fe)
+> > > xr16.asm(2):7: error #1350: addressing mode not allowed here
+ASL_EXIT=2
+ASL_DIAG=complete
+asl   bytes: (asl exited 2; no value quoted)
+SIGIL_EXIT=1
+xr16.asm(2):2: error: `negx` is not a recognized 68000 mnemonic
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+BOTH-REFUSE
+=== xr17 (2275c04f)
+> > > xr17.asm(2):7: error #1350: addressing mode not allowed here
+ASL_EXIT=2
+ASL_DIAG=complete
+asl   bytes: (asl exited 2; no value quoted)
+SIGIL_EXIT=1
+xr17.asm(2):2: error: `negx` is not a recognized 68000 mnemonic
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+BOTH-REFUSE
+=== xr18 (6de1e816)
+> > > xr18.asm(2): error #1110: wrong number of operands
+ASL_EXIT=2
+ASL_DIAG=complete
+asl   bytes: (asl exited 2; no value quoted)
+SIGIL_EXIT=1
+xr18.asm(2):2: error: `negx` is not a recognized 68000 mnemonic
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+BOTH-REFUSE
+=== xr19 (5a5dd668)
+> > > xr19.asm(2): error #1130: invalid operand size
+ASL_EXIT=2
+ASL_DIAG=complete
+asl   bytes: (asl exited 2; no value quoted)
+SIGIL_EXIT=1
+xr19.asm(2):2: error: `nbcd` is not a recognized 68000 mnemonic
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+BOTH-REFUSE
+=== xr20 (962129d3)
+> > > xr20.asm(2):7: error #1350: addressing mode not allowed here
+ASL_EXIT=2
+ASL_DIAG=complete
+asl   bytes: (asl exited 2; no value quoted)
+SIGIL_EXIT=1
+xr20.asm(2):2: error: `nbcd` is not a recognized 68000 mnemonic
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+BOTH-REFUSE
+=== xr21 (99ea48e5)
+> > > xr21.asm(2):7: error #1350: addressing mode not allowed here
+ASL_EXIT=2
+ASL_DIAG=complete
+asl   bytes: (asl exited 2; no value quoted)
+SIGIL_EXIT=1
+xr21.asm(2):2: error: `nbcd` is not a recognized 68000 mnemonic
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+BOTH-REFUSE
+=== xr22 (b686d4ec)
+> > > xr22.asm(2): error #1130: invalid operand size
+ASL_EXIT=2
+ASL_DIAG=complete
+asl   bytes: (asl exited 2; no value quoted)
+SIGIL_EXIT=1
+xr22.asm(2):2: error: `nbcd` is not a recognized 68000 mnemonic
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+BOTH-REFUSE
+=== xr23 (dcff3e59)
+> > > xr23.asm(2): error #1130: invalid operand size
+ASL_EXIT=2
+ASL_DIAG=complete
+asl   bytes: (asl exited 2; no value quoted)
+SIGIL_EXIT=1
+xr23.asm(2):2: error: unsupported form: ALU-EA form has no short (.s) size
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+BOTH-REFUSE
+=== xr24 (6019c435)
+> > > xr24.asm(2): error #1110: wrong number of operands
+ASL_EXIT=2
+ASL_DIAG=complete
+asl   bytes: (asl exited 2; no value quoted)
+SIGIL_EXIT=1
+xr24.asm(2):2: error: `abcd` is not a recognized 68000 mnemonic
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+BOTH-REFUSE
+=== xr25 (e4649668)
+> > > xr25.asm(2): error #1110: wrong number of operands
+ASL_EXIT=2
+ASL_DIAG=complete
+asl   bytes: (asl exited 2; no value quoted)
+SIGIL_EXIT=1
+xr25.asm(2):2: error: instruction needs an explicit size suffix (.b/.w/.l)
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+BOTH-REFUSE
+=== xr26 (e9bff608)
+> > > xr26.asm(2): error #1110: wrong number of operands
+ASL_EXIT=2
+ASL_DIAG=complete
+asl   bytes: (asl exited 2; no value quoted)
+SIGIL_EXIT=1
+xr26.asm(2):2: error: `negx` is not a recognized 68000 mnemonic
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+BOTH-REFUSE
+=== xr27 (30973d93)
+> > > xr27.asm(2):7: error #1350: addressing mode not allowed here
+ASL_EXIT=2
+ASL_DIAG=complete
+asl   bytes: (asl exited 2; no value quoted)
+SIGIL_EXIT=1
+xr27.asm(2):2: error: `nbcd` is not a recognized 68000 mnemonic
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+BOTH-REFUSE
+=== xr28 (58fbdd23)
+> > > xr28.asm(2):9: error #1350: addressing mode not allowed here
+ASL_EXIT=2
+ASL_DIAG=complete
+asl   bytes: (asl exited 2; no value quoted)
+SIGIL_EXIT=1
+xr28.asm(2):2: error: `subx` is not a recognized 68000 mnemonic
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+BOTH-REFUSE
+=== xr29 (ea46bf15)
+> > > xr29.asm(2):10: error #1350: addressing mode not allowed here
+ASL_EXIT=2
+ASL_DIAG=complete
+asl   bytes: (asl exited 2; no value quoted)
+SIGIL_EXIT=1
+xr29.asm(2):2: error: `sbcd` is not a recognized 68000 mnemonic
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+BOTH-REFUSE
+PROBE_END

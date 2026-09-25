@@ -1,0 +1,3 @@
+sk01 byte 5 flipped: planted==asl False, planted==rom False; unplanted==asl True
+sk02 byte 1 flipped: planted==asl False, planted==rom False; unplanted==asl True
+pcx01 byte 2 flipped: planted==asl False, planted==rom None; unplanted==asl True
