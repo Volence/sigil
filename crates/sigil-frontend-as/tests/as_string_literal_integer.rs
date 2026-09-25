@@ -310,23 +310,24 @@ fn a_byte_directive_string_is_still_a_character_sequence() {
     );
 }
 
-/// A data directive WIDER than a byte refuses a string operand rather than
-/// packing it.
+/// A data directive WIDER than a byte writes a string operand as a character
+/// sequence, one zero-extended element per character, rather than packing it.
 ///
-/// asl reads it as a character sequence at the directive's width, and an
-/// operator distributes over the elements rather than over a packed value
-/// (probe `sr.asm`, exit 0): `dc.w "AB"` is `0041 0042`, and `dc.w "AB"+0` is
-/// `0041 0042` too. The expression parser would pack both to `4142`, so these
-/// must not reach it. The character-sequence form is not implemented at these
-/// widths and no line in s1disasm, s2disasm, skdisasm or aeon writes one.
+/// asl, exit 0, these three lines verbatim after this file's `HEAD`: `dc.w "AB"`
+/// is `0041 0042`, `dc.w "AB"+0` is `0041 0042` too, and `dc.l "ABCD"` is
+/// `0000 0041 0000 0042 0000 0043 0000 0044`. The expression parser would pack
+/// the first two to `4142`, which is the silent class this guards.
 #[test]
-fn a_wide_data_directive_refuses_a_string_rather_than_packing_it() {
-    for line in ["\tdc.w \"AB\"\n", "\tdc.w \"AB\"+0\n", "\tdc.l \"ABCD\"\n"] {
+fn a_wide_data_directive_writes_a_string_per_character() {
+    for (line, want) in [
+        ("\tdc.w \"AB\"\n", vec![0, 0x41, 0, 0x42]),
+        ("\tdc.w \"AB\"+0\n", vec![0, 0x41, 0, 0x42]),
+        (
+            "\tdc.l \"ABCD\"\n",
+            vec![0, 0, 0, 0x41, 0, 0, 0, 0x42, 0, 0, 0, 0x43, 0, 0, 0, 0x44],
+        ),
+    ] {
         let src = format!("{HEAD}{line}\tend\n");
-        let d = diags(&src);
-        assert!(
-            d.iter().any(|m| m.contains("string operand in a data directive")),
-            "{line:?} must be refused, got {d:?}"
-        );
+        assert_eq!(bytes(&src), want, "{line:?}");
     }
 }

@@ -1,0 +1,130 @@
+pwd=/home/volence/sonic_hacks/.scratch/as-squote/red-base base tree = git archive 1e146771; test file = parcel HEAD's tests/as_single_quoted_string.rs
+1ca9d7830d7e7a52a2665d26d0e5271d  crates/sigil-frontend-as/tests/as_single_quoted_string.rs
+11ceca6200db9b1b377fe0f5188851df  crates/sigil-frontend-as/src/lexer.rs
+   Compiling proc-macro2 v1.0.106
+   Compiling quote v1.0.46
+   Compiling unicode-ident v1.0.24
+   Compiling serde_core v1.0.228
+   Compiling serde v1.0.228
+   Compiling sigil-span v0.1.0 (/home/volence/sonic_hacks/.scratch/as-squote/red-base/crates/sigil-span)
+   Compiling hashbrown v0.17.1
+   Compiling sigil-isa v0.1.0 (/home/volence/sonic_hacks/.scratch/as-squote/red-base/crates/sigil-isa)
+   Compiling libc v0.2.186
+   Compiling equivalent v1.0.2
+   Compiling rustix v1.1.4
+   Compiling getrandom v0.4.3
+   Compiling toml_write v0.1.2
+   Compiling winnow v0.7.15
+   Compiling bitflags v2.13.0
+   Compiling linux-raw-sys v0.12.1
+   Compiling cfg-if v1.0.4
+   Compiling fastrand v2.4.1
+   Compiling once_cell v1.21.4
+   Compiling sigil-ir v0.1.0 (/home/volence/sonic_hacks/.scratch/as-squote/red-base/crates/sigil-ir)
+   Compiling sigil-backend-z80 v0.1.0 (/home/volence/sonic_hacks/.scratch/as-squote/red-base/crates/sigil-backend-z80)
+   Compiling sigil-backend-m68k v0.1.0 (/home/volence/sonic_hacks/.scratch/as-squote/red-base/crates/sigil-backend-m68k)
+   Compiling indexmap v2.14.0
+   Compiling sigil-frontend-as v0.1.0 (/home/volence/sonic_hacks/.scratch/as-squote/red-base/crates/sigil-frontend-as)
+   Compiling syn v2.0.118
+   Compiling tempfile v3.27.0
+   Compiling serde_derive v1.0.228
+   Compiling serde_spanned v0.6.9
+   Compiling toml_datetime v0.6.11
+   Compiling toml_edit v0.22.27
+   Compiling toml v0.8.23
+   Compiling sigil-link v0.1.0 (/home/volence/sonic_hacks/.scratch/as-squote/red-base/crates/sigil-link)
+    Finished `release` profile [optimized] target(s) in 6.72s
+     Running tests/as_single_quoted_string.rs (/home/volence/sonic_hacks/.scratch/as-squote/target-red/release/deps/as_single_quoted_string-6bfd0b289afa7655)
+
+running 3 tests
+test refusals_name_their_reason ... FAILED
+test a_single_quoted_charset_target_with_no_packed_value_is_refused ... FAILED
+test every_case_matches_asl ... FAILED
+
+failures:
+
+---- refusals_name_their_reason stdout ----
+
+thread 'refusals_name_their_reason' (1859004) panicked at crates/sigil-frontend-as/tests/as_single_quoted_string.rs:105:67:
+r_imm_empty: [48, 60, 0, 0]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- a_single_quoted_charset_target_with_no_packed_value_is_refused stdout ----
+
+thread 'a_single_quoted_charset_target_with_no_packed_value_is_refused' (1859002) panicked at crates/sigil-frontend-as/tests/as_single_quoted_string.rs:119:76:
+'': []
+
+---- every_case_matches_asl stdout ----
+
+thread 'every_case_matches_asl' (1859003) panicked at crates/sigil-frontend-as/tests/as_single_quoted_string.rs:87:5:
+59 of 82 cases differ from asl:
+s3_region_block: asl 4a005545004a00000042005500000053004500000061000006444556454c4f50454420464f5220555345204f4e4c592057495448001226000f53595354454d532e000c4e545343204d454741204452495645000d4e5453432047454e45534953000450414c20414e44204652454e434820534543414d204d45474120445249564500, sigil refused ["operand 21829 out of range -128..=255", "operand 5641982428626637896 out of range -128..=255", "operand 6005923199480320814 out of range -128..=255", "operand 5134420527989478981 out of range -128..=255", "operand 2325903935033002323 out of range -128..=255", "operand 5134420527989478981 out of range -128..=255"]
+b_five: asl 4142434445, sigil refused ["operand 280284578885 out of range -128..=255"]
+b_list: asl 4a005545064142430051, sigil refused ["operand 21829 out of range -128..=255", "operand 4276803 out of range -128..=255"]
+b_plus_int: asl 4143, sigil refused ["operand 16707 out of range -128..=255"]
+b_int_plus: asl 4143, sigil refused ["operand 16707 out of range -128..=255"]
+b_plus_carry: asl 4242, sigil refused ["operand 16962 out of range -128..=255"]
+b_concat: asl 4142, sigil 83
+b_mixed_quotes: asl 4142434445, sigil refused ["operand 16706 out of range -128..=255"]
+b_semicolon_comma: asl 413b42412c4201, sigil refused ["operand 4275010 out of range -128..=255", "operand 4271170 out of range -128..=255"]
+b_escapes: asl 414243412742412242, sigil refused ["operand 4276803 out of range -128..=255", "operand 4269890 out of range -128..=255", "operand 4268610 out of range -128..=255"]
+b_interpolation: asl 413242, sigil refused ["string interpolation `\\{...}` is not supported in a character constant"]
+b_sum_zero_is_empty: asl ee, sigil 00ee
+b_dup: asl 41424142, sigil refused ["operand 16706 out of range -128..=255", "operand 16706 out of range -128..=255"]
+b_rept: asl 41424142, sigil refused ["operand 16706 out of range -128..=255", "operand 16706 out of range -128..=255"]
+b_macro_arg: asl 414243, sigil refused ["operand 4276803 out of range -128..=255"]
+b_strlen: asl 03, sigil refused ["strlen(): could not evaluate string builtin"]
+w_three: asl 004100420043, sigil refused ["operand 4276803 out of range -32768..=65535"]
+w_plus_int: asl 00410043, sigil 4143
+w_plus_int_zero: asl 00410042, sigil 4142
+w_concat: asl 4142, sigil 0083
+w_concat_parens: asl 4142, sigil 0083
+w_paren_head: asl 00410042, sigil 0083
+w_paren_tail: asl 00410042, sigil 0083
+w_double_tail: asl 00410042, sigil refused ["string operand in a data directive wider than a byte: asl emits one zero-extended element per character here, which is not implemented"]
+w_char_plus: asl 00010041, sigil 0141
+w_high_char: asl 004100990041, sigil refused ["operand 4299073 out of range -32768..=65535"]
+w_substr: asl 00410042, sigil refused ["bad word expression"]
+w_dup: asl 004100420043004100420043, sigil refused ["operand 4276803 out of range -32768..=65535", "operand 4276803 out of range -32768..=65535"]
+w_list: asl 00410042004300441234, sigil refused ["string operand in a data directive wider than a byte: asl emits one zero-extended element per character here, which is not implemented", "operand 4342596 out of range -32768..=65535"]
+l_five: asl 0000004100000042000000430000004400000045, sigil refused ["operand 280284578885 out of range -2147483648..=4294967295"]
+l_ends_quoted: asl 00414243, sigil refused ["string operand in a data directive wider than a byte: asl emits one zero-extended element per character here, which is not implemented"]
+l_ends_quoted_int: asl 00004243, sigil 00000085
+l_ends_quoted_paren: asl 00414243, sigil 000000c6
+l_ends_quoted_call: asl 00414244, sigil refused ["string operand in a data directive wider than a byte: asl emits one zero-extended element per character here, which is not implemented"]
+l_group_head: asl 000000410000004200000043, sigil 000000c6
+sym_equ: asl 414241424142, sigil refused ["operand 16706 out of range -128..=255"]
+sym_equ_long: asl 004100420043, sigil refused ["operand 4276803 out of range -32768..=65535"]
+sym_equ_concat: asl 4142, sigil 0083
+sym_equ_plus_int: asl 00410043, sigil 4143
+sym_in_concat: asl 00410042, sigil 0083
+sym_double: asl 00410042, sigil refused ["string operand in a data directive wider than a byte: asl emits one zero-extended element per character here, which is not implemented"]
+cs_bytes: asl 1122999922110022, sigil refused ["operand 1122969 out of range -128..=255", "operand 10035729 out of range -128..=255"]
+cs_word: asl 1122001100220099, sigil refused ["operand 1122969 out of range -32768..=65535"]
+cs_concat: asl 1122112299, sigil refused ["operand 4539 out of range -128..=255"]
+cs_plus_int_dropped: asl 11, sigil refused ["operand 4387 out of range -128..=255"]
+cs_plus_int_kept: asl 1124, sigil refused ["operand 4388 out of range -128..=255"]
+cs_symbol_before_page: asl 99119911, sigil refused ["operand 17217 out of range -128..=255"]
+cs_symbol_after_reset: asl 43414341, sigil refused ["operand 39185 out of range -128..=255"]
+cs_escape: asl 112299, sigil refused ["operand 1122969 out of range -128..=255"]
+cs_target_string: asl 42, sigil 77
+z_db: asl 41420043414300, sigil refused ["operand 16706 out of range -128..=255", "operand 16707 out of range -128..=255"]
+z_dw: asl 424141000000410042004300, sigil refused ["operand 4276803 out of range -32768..=65535"]
+z_dw_plus: asl 41004300c1ff, sigil 4341c100
+z_dw_sign: asl 99ff41007f0080ff, sigil refused ["string operand in a data directive wider than a byte: asl emits one zero-extended element per character here, which is not implemented", "string operand in a data directive wider than a byte: asl emits one zero-extended element per character here, which is not implemented"]
+z_dw_page: asl 99ff110022001199991122219922, sigil refused ["operand 10031394 out of range -32768..=65535", "operand 10031394 out of range -128..=255"]
+imm: asl 203c41424344303c4142303c4143, sigil 203c41424344303c0083303c4143
+fn_substitutes: asl 28363629, sigil 61
+switch_case: asl 02, sigil 01
+r_imm_empty: asl refused #1141, sigil 303c0000
+
+
+failures:
+    a_single_quoted_charset_target_with_no_packed_value_is_refused
+    every_case_matches_asl
+    refusals_name_their_reason
+
+test result: FAILED. 0 passed; 3 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p sigil-frontend-as --test as_single_quoted_string`
+TEST_END rc=101

@@ -39,14 +39,12 @@
 //!
 //! | # | site | shape | exercised by Sonic 1 |
 //! |---|---|---|---|
-//! | 1 | `eval.rs::directive_db` | `dc.b "AB"` | yes |
-//! | 2 | `expr.rs::string_to_int` | `move.w #"AB",d0` | no |
-//! | 3 | `lexer.rs` character constant | `dc.l 'INIT'` | no |
+//! | 1 | `eval.rs::data_string_value`, every data directive | `dc.b "AB"`, `dc.w 'ABC'` | yes |
+//! | 2 | `expr.rs::string_to_int` | `move.w #"AB",d0`, `dc.l 'INIT'` | no |
+//! | 3 | `eval.rs::str_plus_int`, the result's characters | `dc.b 'AB'+1` | no |
 //!
-//! asl has a fourth that sigil does not: its wide data directives distribute a
-//! string operand and translate each character (`dc.w "AB"` under a live page is
-//! `0011 0042`). sigil refuses that shape outright (`STRING_IN_WIDE_DATA`), so
-//! it is not a consumer here; if it is ever implemented it is one on day one.
+//! A character constant is a string token, so it reaches the page through 1 and
+//! 2 at the use, never at lex time.
 
 use sigil_frontend_as::{assemble_root_located, Options};
 

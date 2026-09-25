@@ -1,0 +1,90 @@
+import os
+P = "/home/volence/sonic_hacks/.scratch/as-squote/probes"
+M = "\tcpu 68000\n"
+Z = "\tcpu z80\n"
+probes = {
+ # single vs multi, each width, both quote kinds
+ "b1": M+"\tdc.b 'A'\n",
+ "b2": M+"\tdc.b 'AB'\n",
+ "b2d": M+"\tdc.b \"AB\"\n",
+ "b5": M+"\tdc.b 'ABCDE'\n",
+ "b9": M+"\tdc.b 'ABCDEFGHI'\n",
+ "w1": M+"\tdc.w 'A'\n",
+ "w2": M+"\tdc.w 'AB'\n",
+ "w2d": M+"\tdc.w \"AB\"\n",
+ "w3": M+"\tdc.w 'ABC'\n",
+ "w4": M+"\tdc.w 'ABCD'\n",
+ "w5": M+"\tdc.w 'ABCDE'\n",
+ "l1": M+"\tdc.l 'A'\n",
+ "l3": M+"\tdc.l 'ABC'\n",
+ "l4": M+"\tdc.l 'ABCD'\n",
+ "l4d": M+"\tdc.l \"ABCD\"\n",
+ "l5": M+"\tdc.l 'ABCDE'\n",
+ "l9": M+"\tdc.l 'ABCDEFGHI'\n",
+ # arithmetic
+ "bp1": M+"\tdc.b 'AB'+1\n",
+ "bp1d": M+"\tdc.b \"AB\"+1\n",
+ "bp100": M+"\tdc.b 'AB'+$100\n",
+ "b1p": M+"\tdc.b 1+'AB'\n",
+ "bneg": M+"\tdc.b -'AB'\n",
+ "bpar": M+"\tdc.b ('AB')\n",
+ "bmul": M+"\tdc.b 'AB'*2\n",
+ "bsub": M+"\tdc.b 'AB'-1\n",
+ "bss": M+"\tdc.b 'AB'+'CD'\n",
+ "bssd": M+"\tdc.b \"AB\"+\"CD\"\n",
+ "b1s": M+"\tdc.b 'A'+'B'\n",
+ "bint": M+"\tdc.b $4143\n",
+ "wp1": M+"\tdc.w 'AB'+1\n",
+ "wp1d": M+"\tdc.w \"AB\"+1\n",
+ "w3p1": M+"\tdc.w 'ABC'+1\n",
+ "lp1": M+"\tdc.l 'ABCD'+1\n",
+ "b5p1": M+"\tdc.b 'ABCDE'+1\n",
+ # expressions outside data
+ "imm4": M+"\tmove.l #'ABCD',d0\n",
+ "imm5": M+"\tmove.l #'ABCDE',d0\n",
+ "imm8": M+"\tmove.l #'ABCDEFGH'>>32,d0\n",
+ "immw": M+"\tmove.w #'AB'+1,d0\n",
+ "equ2": M+"X equ 'AB'\n\tdc.w X\n",
+ "equ2b": M+"X equ 'AB'\n\tdc.b X\n",
+ "equ2bd": M+"X equ \"AB\"\n\tdc.b X\n",
+ "set2b": M+"X set 'AB'\n\tdc.b X\n",
+ "equ5": M+"X equ 'ABCDE'\n\tdc.b X\n",
+ "if2": M+"\tif 'AB'=$4142\n\tdc.b 1\n\telse\n\tdc.b 2\n\tendif\n",
+ "if2s": M+"\tif 'AB'=\"AB\"\n\tdc.b 1\n\telse\n\tdc.b 2\n\tendif\n",
+ "if5": M+"\tif 'ABCDE'=\"ABCDE\"\n\tdc.b 1\n\telse\n\tdc.b 2\n\tendif\n",
+ # empty, quotes inside, escapes
+ "be": M+"\tdc.b ''\n",
+ "bed": M+"\tdc.b \"\"\n",
+ "we": M+"\tdc.w ''\n",
+ "imme": M+"\tmove.w #'',d0\n",
+ "bdq": M+"\tdc.b 'A\"B'\n",
+ "bsq2": M+"\tdc.b 'A''B'\n",
+ "besc": M+"\tdc.b 'A\\x42C'\n",
+ "besq": M+"\tdc.b 'A\\'B'\n",
+ "bescn": M+"\tdc.b 'A\\nB'\n",
+ "wesc": M+"\tdc.w 'A\\x42'\n",
+ # lists / mixes
+ "blist": M+"\tdc.b 'J',0,'UE'\n",
+ "bmix": M+"\tdc.b 'AB',\"CD\",'E'\n",
+ # macro argument
+ "mac": M+"m macro a\n\tdc.b a\n\tendm\n\tm 'AB'\n",
+ # string functions
+ "strlen": M+"\tdc.b strlen('ABC')\n",
+ "upstr": M+"\tdc.b upstring('abc')\n",
+ # Z80
+ "zdb1": Z+"\tdb 'A'\n",
+ "zdb2": Z+"\tdb 'AB'\n",
+ "zdb5": Z+"\tdb 'ABCDE'\n",
+ "zdbp": Z+"\tdb 'AB'+1\n",
+ "zdw2": Z+"\tdw 'AB'\n",
+ "zdw2d": Z+"\tdw \"AB\"\n",
+ "zdw3": Z+"\tdw 'ABC'\n",
+ "zdwp": Z+"\tdw 'AB'+1\n",
+ "zld": Z+"\tld hl,'AB'\n",
+ "zlda": Z+"\tld a,'A'\n",
+ "zdefb": Z+"\tdefb 'AB'\n",
+ "zdcb": Z+"\tdc.b 'AB'\n",
+}
+for k, v in probes.items():
+    open(os.path.join(P, k + ".asm"), "w").write(v)
+print(" ".join(probes))

@@ -6247,3 +6247,22 @@ delegates to the default hook everywhere else.
   answers 0 for the same define (measured: `dc.b defined(X)` then an `ifdef X` arm emits `00 01`).
   `Options::cli_defines` goes through `define_sym` and emits `01 01`.
   Aeon does not spell `defined(`; not changed, as ruled. OPEN
+
+- [as-multichar-squote, 2026-09-25] **A `+` whose integer side does not fold yet, in `dc.w`/`dc.l`/`dw`, with a
+  single-quoted string side, takes the numeric path.** asl writes the sum per character (`dc.w 'A'+$100` is
+  `0001 0041`); sigil writes one element when the integer side is a symbol it cannot fold at that point. Equal
+  whenever the sum fits one element (`dc.w 'A'+L` with a forward `L` is `0043` both ways, probe `lbl2`); silent
+  when it outgrows it. Refusing it would refuse that forward-label shape too. A double-quoted literal there is
+  refused (`STRING_IN_WIDE_DATA`). OPEN
+- [as-multichar-squote, 2026-09-25] **`dc.b`/`db` are accepted under `cpu z80`/`cpu 68000` alike, and `dw` under
+  `cpu 68000`.** asl refuses `dc.b` under Z80 and `dw` under 68000 with `#1200 unknown instruction` (probes
+  `zdcb2`: sigil `01 41 42`; `tdw68`: sigil `01 00`). Silent over-acceptance, pre-existing at `1e146771`. OPEN
+- [as-multichar-squote, 2026-09-25] **A string of 5+ characters under a non-`+` operator is its LENGTH to asl**
+  (`move.l #'ABCDEF'|0,d0` is `203C 0000 0006`, `'ABCDEFGHIJ'|0` is `...000A`, `"ABCDE"|0` the same), and
+  `'ABCDE'+1` / `'ABCDE'-1` in data emit nothing. sigil refuses all of these. Not implemented on purpose; recorded
+  so nobody reads the refusal as asl's. OPEN (no action)
+- [as-multichar-squote, 2026-09-25] **`upstring`, `defb`, `defw` are not implemented** (`dc.b upstring('abc')` is
+  `41 42 43`; `defb 'AB'` is `41 42`; `defw 'AB'` is `42 41` under Z80). Refused as unknown today. OPEN
+- [as-multichar-squote, 2026-09-25] **A single-quoted `charset` target of 0 or 5+ characters** exits 0 under asl
+  and changes neither probed character; its effect on the rest of the page is unmeasured, so sigil refuses it by
+  name (`CHARSET_UNPACKABLE_TARGET`). A full-page dump probe would settle it. OPEN

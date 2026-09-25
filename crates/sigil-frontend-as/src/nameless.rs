@@ -259,7 +259,7 @@ pub fn classify_def(body: &[Token], col1: bool) -> Option<(Def, usize)> {
 /// here.
 pub(crate) fn starts_atom(t: &Tok) -> bool {
     match t {
-        Tok::Int(_) | Tok::Float(_) | Tok::Str(_) | Tok::Dollar | Tok::Ident(_) => true,
+        Tok::Int(_) | Tok::Float(_) | Tok::Str(..) | Tok::Dollar | Tok::Ident(_) => true,
         // `*` in atom position is AS's other spelling of the program counter
         // (see `expr.rs::parse_atom`), so it does begin an operand.
         Tok::Punct(p) => matches!(

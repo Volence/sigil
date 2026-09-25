@@ -1,0 +1,47 @@
+== corpus run base: pwd=/home/volence/sonic_hacks/sigil/.claude/worktrees/agent-a216a42e1f5962449 date=2026-09-25T06:17:52-04:00
+sigil: /home/volence/sonic_hacks/.scratch/as-squote/target-base/release/sigil md5 6561f656cc3f708ac34ed17ac9276796
+sigil 0.1.0 (1e146771)
+  revision:  1e14677148765dd7f9fbd6fac4c18a86213547ec
+  branch:    parcel/as-multichar-squote
+  committed: 2026-09-25T06:03:27-04:00
+  tree:      clean at capture, no uncommitted changes
+-- s1: SIGIL_EXIT=0 rows=0 args=-p=FF -z=0,kosinski,Size_of_DAC_driver_guess,after
+   errors: 0
+09dadb5071eb35050067a32462e39c5f  crc32=afe05eee  size=524288  /home/volence/sonic_hacks/.scratch/as-squote/runs/base/s1/image.bin
+reference: 524288 bytes, crc32 afe05eee
+candidate: 524288 bytes, crc32 afe05eee
+compare: 0 differing bytes, length mismatch False
+control: planted at [0, 262144, 524287], comparer reported [0, 262144, 524287]: OK
+control vs reference: 3 differing bytes (must be 3 when the compare is clean)
+   compare rc=0
+-- s2: SIGIL_EXIT=0 rows=1 args=-p=0 -z=0,saxman-bugged,Size_of_Snd_driver_guess,after
+   errors: 0
+9feeb724052c39982d432a7851c98d3e  crc32=7b905383  size=1048576  /home/volence/sonic_hacks/.scratch/as-squote/runs/base/s2/image.bin
+reference: 1048576 bytes, crc32 7b905383
+candidate: 1048576 bytes, crc32 7b905383
+compare: 0 differing bytes, length mismatch False
+control: planted at [0, 524288, 1048575], comparer reported [0, 524288, 1048575]: OK
+control vs reference: 3 differing bytes (must be 3 when the compare is clean)
+   compare rc=0
+-- sk: SIGIL_EXIT=0 rows=0 args=-p=FF -z=0,kosinski,Size_of_Snd_driver_guess,before -z=1300,kosinski,Size_of_Snd_driver2_guess,before
+   errors: 0
+4ea493ea4e9f6c9ebfccbdb15110367e  crc32=0658f691  size=2097152  /home/volence/sonic_hacks/.scratch/as-squote/runs/base/sk/image.bin
+reference: 2097152 bytes, crc32 0658f691
+candidate: 2097152 bytes, crc32 0658f691
+compare: 0 differing bytes, length mismatch False
+control: planted at [0, 1048576, 2097151], comparer reported [0, 1048576, 2097151]: OK
+control vs reference: 3 differing bytes (must be 3 when the compare is clean)
+   compare rc=0
+-- s3c: SIGIL_EXIT=0 rows=0 args=-p=FF -z=0,kosinski,Size_of_Snd_driver_guess,before -z=1300,kosinski,Size_of_Snd_driver2_guess,before
+   errors: 0
+b23c88b46f5ec7377f1b6f109d97f5a5  crc32=a651623a  size=3360160  /home/volence/sonic_hacks/.scratch/as-squote/runs/base/s3c/image.bin
+reference: 3360160 bytes, crc32 a651623a
+candidate: 3360160 bytes, crc32 a651623a
+compare: 0 differing bytes, length mismatch False
+control: planted at [0, 1680080, 3360159], comparer reported [0, 1680080, 3360159]: OK
+control vs reference: 3 differing bytes (must be 3 when the compare is clean)
+   compare rc=0
+-- s3: SIGIL_EXIT=1 rows=2582 args=-p=FF -z=0,uncompressed,Size_of_Snd_driver_guess,before -z=1300,uncompressed,Size_of_Snd_driver2_guess,before
+   errors: 6
+   no image
+CORPUS_END_base

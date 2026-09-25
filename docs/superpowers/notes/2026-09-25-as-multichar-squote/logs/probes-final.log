@@ -1,0 +1,2249 @@
+pwd=/home/volence/sonic_hacks/.scratch/as-squote/probes base=  revision:  1e14677148765dd7f9fbd6fac4c18a86213547ec
+tip=  revision:  3e083f4695eb6915e5f89153ddd2bc3ddcb1ace3   branch:    parcel/as-multichar-squote   committed: 2026-09-25T06:49:02-04:00   tree:      clean at capture, no uncommitted changes 
+== b1.asm
+asl   (exit 0): 41
+sigil-base (exit 0): 41
+sigil-tip (exit 0): 41
+PROBE_END
+== b2.asm
+asl   (exit 0): 4142
+  base: b2.asm(2):7: error: operand 16706 out of range -128..=255
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+sigil-tip (exit 0): 4142
+PROBE_END
+== b2d.asm
+asl   (exit 0): 4142
+sigil-base (exit 0): 4142
+sigil-tip (exit 0): 4142
+PROBE_END
+== b5.asm
+asl   (exit 0): 4142434445
+  base: b5.asm(2):7: error: operand 280284578885 out of range -128..=255
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+sigil-tip (exit 0): 4142434445
+PROBE_END
+== b9.asm
+asl   (exit 0): 414243444546474849
+  base: b9.asm(2):7: error: operand 4774735094265366601 out of range -128..=255
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+sigil-tip (exit 0): 414243444546474849
+PROBE_END
+== w1.asm
+asl   (exit 0): 0041
+sigil-base (exit 0): 0041
+sigil-tip (exit 0): 0041
+PROBE_END
+== w2.asm
+asl   (exit 0): 4142
+sigil-base (exit 0): 4142
+sigil-tip (exit 0): 4142
+PROBE_END
+== w2d.asm
+asl   (exit 0): 00410042
+  base: w2d.asm(2):7: error: string operand in a data directive wider than a byte: asl emits one zero-extended element per character here, which is not implemented
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+sigil-tip (exit 0): 00410042
+PROBE_END
+== w3.asm
+asl   (exit 0): 004100420043
+  base: w3.asm(2):7: error: operand 4276803 out of range -32768..=65535
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+sigil-tip (exit 0): 004100420043
+PROBE_END
+== w4.asm
+asl   (exit 0): 0041004200430044
+  base: w4.asm(2):7: error: operand 1094861636 out of range -32768..=65535
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+sigil-tip (exit 0): 0041004200430044
+PROBE_END
+== w5.asm
+asl   (exit 0): 00410042004300440045
+  base: w5.asm(2):7: error: operand 280284578885 out of range -32768..=65535
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+sigil-tip (exit 0): 00410042004300440045
+PROBE_END
+== l1.asm
+asl   (exit 0): 00000041
+sigil-base (exit 0): 00000041
+sigil-tip (exit 0): 00000041
+PROBE_END
+== l3.asm
+asl   (exit 0): 00414243
+sigil-base (exit 0): 00414243
+sigil-tip (exit 0): 00414243
+PROBE_END
+== l4.asm
+asl   (exit 0): 41424344
+sigil-base (exit 0): 41424344
+sigil-tip (exit 0): 41424344
+PROBE_END
+== l4d.asm
+asl   (exit 0): 00000041000000420000004300000044
+  base: l4d.asm(2):7: error: string operand in a data directive wider than a byte: asl emits one zero-extended element per character here, which is not implemented
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+sigil-tip (exit 0): 00000041000000420000004300000044
+PROBE_END
+== l5.asm
+asl   (exit 0): 0000004100000042000000430000004400000045
+  base: l5.asm(2):7: error: operand 280284578885 out of range -2147483648..=4294967295
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+sigil-tip (exit 0): 0000004100000042000000430000004400000045
+PROBE_END
+== l9.asm
+asl   (exit 0): 000000410000004200000043000000440000004500000046000000470000004800000049
+  base: l9.asm(2):7: error: operand 4774735094265366601 out of range -2147483648..=4294967295
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+sigil-tip (exit 0): 000000410000004200000043000000440000004500000046000000470000004800000049
+PROBE_END
+== bp1.asm
+asl   (exit 0): 4143
+  base: bp1.asm(2):7: error: operand 16707 out of range -128..=255
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+sigil-tip (exit 0): 4143
+PROBE_END
+== bp1d.asm
+asl   (exit 0): 4143
+sigil-base (exit 0): 4143
+sigil-tip (exit 0): 4143
+PROBE_END
+== bp100.asm
+asl   (exit 0): 4242
+  base: bp100.asm(2):7: error: operand 16962 out of range -128..=255
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+sigil-tip (exit 0): 4242
+PROBE_END
+== b1p.asm
+asl   (exit 0): 4143
+  base: b1p.asm(2):7: error: operand 16707 out of range -128..=255
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+sigil-tip (exit 0): 4143
+PROBE_END
+== bneg.asm
+asl   exit 2: no bytes quoted
+> > > bneg.asm(2): error #1320: range overflow
+  lines that assembled: an error stops the pass loop, so every forward
+  base: bneg.asm(2):7: error: operand -16706 out of range -128..=255
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+  tip: bneg.asm(2):7: error: operand -16706 out of range -128..=255
+  tip: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  tip: assembly failed: 1 error (reported on stderr)
+sigil-tip exit 1: no image
+PROBE_END
+== bpar.asm
+asl   (exit 0): 4142
+  base: bpar.asm(2):7: error: operand 16706 out of range -128..=255
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+sigil-tip (exit 0): 4142
+PROBE_END
+== bmul.asm
+asl   exit 2: no bytes quoted
+> > > bmul.asm(2): error #1320: range overflow
+  lines that assembled: an error stops the pass loop, so every forward
+  base: bmul.asm(2):7: error: operand 33412 out of range -128..=255
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+  tip: bmul.asm(2):7: error: operand 33412 out of range -128..=255
+  tip: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  tip: assembly failed: 1 error (reported on stderr)
+sigil-tip exit 1: no image
+PROBE_END
+== bsub.asm
+asl   exit 2: no bytes quoted
+> > > bsub.asm(2): error #1320: range overflow
+  lines that assembled: an error stops the pass loop, so every forward
+  base: bsub.asm(2):7: error: operand 16705 out of range -128..=255
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+  tip: bsub.asm(2):7: error: operand 16705 out of range -128..=255
+  tip: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  tip: assembly failed: 1 error (reported on stderr)
+sigil-tip exit 1: no image
+PROBE_END
+== bss.asm
+asl   (exit 0): 41424344
+  base: bss.asm(2):7: error: operand 33926 out of range -128..=255
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+sigil-tip (exit 0): 41424344
+PROBE_END
+== bssd.asm
+asl   (exit 0): 41424344
+sigil-base (exit 0): 41424344
+sigil-tip (exit 0): 41424344
+PROBE_END
+== b1s.asm
+asl   (exit 0): 4142
+sigil-base (exit 0): 83
+sigil-tip (exit 0): 4142
+PROBE_END
+== bint.asm
+asl   exit 2: no bytes quoted
+> > > bint.asm(2): error #1320: range overflow
+  lines that assembled: an error stops the pass loop, so every forward
+  base: bint.asm(2):7: error: operand 16707 out of range -128..=255
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+  tip: bint.asm(2):7: error: operand 16707 out of range -128..=255
+  tip: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  tip: assembly failed: 1 error (reported on stderr)
+sigil-tip exit 1: no image
+PROBE_END
+== wp1.asm
+asl   (exit 0): 00410043
+sigil-base (exit 0): 4143
+sigil-tip (exit 0): 00410043
+PROBE_END
+== wp1d.asm
+asl   (exit 0): 00410043
+  base: wp1d.asm(2):7: error: string operand in a data directive wider than a byte: asl emits one zero-extended element per character here, which is not implemented
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+sigil-tip (exit 0): 00410043
+PROBE_END
+== w3p1.asm
+asl   (exit 0): 004100420044
+  base: w3p1.asm(2):7: error: operand 4276804 out of range -32768..=65535
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+sigil-tip (exit 0): 004100420044
+PROBE_END
+== lp1.asm
+asl   (exit 0): 00000041000000420000004300000045
+sigil-base (exit 0): 41424345
+sigil-tip (exit 0): 00000041000000420000004300000045
+PROBE_END
+== b5p1.asm
+asl   (exit 0): 
+  base: b5p1.asm(2):7: error: operand 280284578886 out of range -128..=255
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+  tip: b5p1.asm(2):7: error: `string + integer` is defined for a 1 to 4 character string: asl's own arithmetic is 32-bit, and outside that window it emits nothing at all (exit 0, no diagnostic) or a value that differs on every run, so there is no result to reproduce
+  tip: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  tip: assembly failed: 1 error (reported on stderr)
+sigil-tip exit 1: no image
+PROBE_END
+== imm4.asm
+asl   (exit 0): 203c41424344
+sigil-base (exit 0): 203c41424344
+sigil-tip (exit 0): 203c41424344
+PROBE_END
+== imm5.asm
+asl   exit 2: no bytes quoted
+> > > imm5.asm(2):10: error #1141: expected integer, but got string
+  lines that assembled: an error stops the pass loop, so every forward
+  base: imm5.asm(2):2: error: operand 280284578885 out of range -2147483648..=4294967295
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+  tip: imm5.asm(2):10: error: a 5-character string has no integer value in this slot: asl packs 1 to 4 characters big-endian and refuses the rest (`expected integer, but got string`)
+  tip: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  tip: assembly failed: 1 error (reported on stderr)
+sigil-tip exit 1: no image
+PROBE_END
+== imm8.asm
+asl   (exit 0): 203c00000000
+sigil-base (exit 0): 203c41424344
+  tip: imm8.asm(2):9: error: bad immediate expression
+  tip: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  tip: assembly failed: 1 error (reported on stderr)
+sigil-tip exit 1: no image
+PROBE_END
+== immw.asm
+asl   (exit 0): 303c4143
+sigil-base (exit 0): 303c4143
+sigil-tip (exit 0): 303c4143
+PROBE_END
+== equ2.asm
+asl   (exit 0): 4142
+sigil-base (exit 0): 4142
+sigil-tip (exit 0): 4142
+PROBE_END
+== equ2b.asm
+asl   (exit 0): 4142
+  base: equ2b.asm(3):7: error: operand 16706 out of range -128..=255
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+sigil-tip (exit 0): 4142
+PROBE_END
+== equ2bd.asm
+asl   (exit 0): 4142
+sigil-base (exit 0): 4142
+sigil-tip (exit 0): 4142
+PROBE_END
+== set2b.asm
+asl   (exit 0): 4142
+  base: set2b.asm(3):7: error: operand 16706 out of range -128..=255
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+sigil-tip (exit 0): 4142
+PROBE_END
+== equ5.asm
+asl   (exit 0): 4142434445
+  base: equ5.asm(3):7: error: operand 280284578885 out of range -128..=255
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+sigil-tip (exit 0): 4142434445
+PROBE_END
+== if2.asm
+asl   (exit 0): 01
+sigil-base (exit 0): 01
+sigil-tip (exit 0): 01
+PROBE_END
+== if2s.asm
+asl   (exit 0): 01
+sigil-base (exit 0): 01
+sigil-tip (exit 0): 01
+PROBE_END
+== if5.asm
+asl   (exit 0): 01
+  base: if5.asm(2):2: error: unresolved if condition: it does not evaluate, so it cannot decide whether the code it guards is assembled
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+sigil-tip (exit 0): 01
+PROBE_END
+== be.asm
+asl   (exit 0): 00
+sigil-base (exit 0): 00
+sigil-tip (exit 0): 00
+PROBE_END
+== bed.asm
+asl   (exit 0): 
+sigil-base (exit 0): 
+sigil-tip (exit 0): 
+PROBE_END
+== we.asm
+asl   (exit 0): 0000
+sigil-base (exit 0): 0000
+sigil-tip (exit 0): 0000
+PROBE_END
+== imme.asm
+asl   exit 2: no bytes quoted
+> > > imme.asm(2):10: error #1141: expected integer, but got string
+  lines that assembled: an error stops the pass loop, so every forward
+sigil-base (exit 0): 303c0000
+  tip: imme.asm(2):10: error: a 0-character string has no integer value in this slot: asl packs 1 to 4 characters big-endian and refuses the rest (`expected integer, but got string`)
+  tip: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  tip: assembly failed: 1 error (reported on stderr)
+sigil-tip exit 1: no image
+PROBE_END
+== bdq.asm
+asl   (exit 0): 412242
+  base: bdq.asm(2):7: error: operand 4268610 out of range -128..=255
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+sigil-tip (exit 0): 412242
+PROBE_END
+== bsq2.asm
+asl   exit 2: no bytes quoted
+> > > bsq2.asm(2):7: error #1020: invalid symbol name
+  lines that assembled: an error stops the pass loop, so every forward
+  base: bsq2.asm(2):7: error: bad byte expression
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+  tip: bsq2.asm(2):7: error: bad byte expression
+  tip: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  tip: assembly failed: 1 error (reported on stderr)
+sigil-tip exit 1: no image
+PROBE_END
+== besc.asm
+asl   (exit 0): 414243
+  base: besc.asm(2):7: error: operand 4276803 out of range -128..=255
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+sigil-tip (exit 0): 414243
+PROBE_END
+== besq.asm
+asl   (exit 0): 412742
+  base: besq.asm(2):7: error: operand 4269890 out of range -128..=255
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+sigil-tip (exit 0): 412742
+PROBE_END
+== bescn.asm
+asl   (exit 0): 410a42
+  base: bescn.asm(2):7: error: operand 4262466 out of range -128..=255
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+sigil-tip (exit 0): 410a42
+PROBE_END
+== wesc.asm
+asl   (exit 0): 4142
+sigil-base (exit 0): 4142
+sigil-tip (exit 0): 4142
+PROBE_END
+== blist.asm
+asl   (exit 0): 4a005545
+  base: blist.asm(2):13: error: operand 21829 out of range -128..=255
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+sigil-tip (exit 0): 4a005545
+PROBE_END
+== bmix.asm
+asl   (exit 0): 4142434445
+  base: bmix.asm(2):7: error: operand 16706 out of range -128..=255
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+sigil-tip (exit 0): 4142434445
+PROBE_END
+== mac.asm
+asl   (exit 0): 4142
+  base: mac.asm(5) m(1):7: error: operand 16706 out of range -128..=255
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+sigil-tip (exit 0): 4142
+PROBE_END
+== strlen.asm
+asl   (exit 0): 03
+  base: strlen.asm(2):7: error: strlen(): could not evaluate string builtin
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+sigil-tip (exit 0): 03
+PROBE_END
+== upstr.asm
+asl   (exit 0): 414243
+  base: upstr.asm(2):7: error: bad byte expression
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+  tip: upstr.asm(2):7: error: bad byte expression
+  tip: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  tip: assembly failed: 1 error (reported on stderr)
+sigil-tip exit 1: no image
+PROBE_END
+== zdb1.asm
+asl   (exit 0): 41
+sigil-base (exit 0): 41
+sigil-tip (exit 0): 41
+PROBE_END
+== zdb2.asm
+asl   (exit 0): 4142
+  base: zdb2.asm(2):5: error: operand 16706 out of range -128..=255
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+sigil-tip (exit 0): 4142
+PROBE_END
+== zdb5.asm
+asl   (exit 0): 4142434445
+  base: zdb5.asm(2):5: error: operand 280284578885 out of range -128..=255
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+sigil-tip (exit 0): 4142434445
+PROBE_END
+== zdbp.asm
+asl   (exit 0): 4143
+  base: zdbp.asm(2):5: error: operand 16707 out of range -128..=255
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+sigil-tip (exit 0): 4143
+PROBE_END
+== zdw2.asm
+asl   (exit 0): 4241
+sigil-base (exit 0): 4241
+sigil-tip (exit 0): 4241
+PROBE_END
+== zdw2d.asm
+asl   (exit 0): 41004200
+  base: zdw2d.asm(2):5: error: string operand in a data directive wider than a byte: asl emits one zero-extended element per character here, which is not implemented
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+sigil-tip (exit 0): 41004200
+PROBE_END
+== zdw3.asm
+asl   (exit 0): 410042004300
+  base: zdw3.asm(2):5: error: operand 4276803 out of range -32768..=65535
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+sigil-tip (exit 0): 410042004300
+PROBE_END
+== zdwp.asm
+asl   (exit 0): 41004300
+sigil-base (exit 0): 4341
+sigil-tip (exit 0): 41004300
+PROBE_END
+== zld.asm
+asl   (exit 0): 214241
+sigil-base (exit 0): 214241
+sigil-tip (exit 0): 214241
+PROBE_END
+== zlda.asm
+asl   (exit 0): 3e41
+sigil-base (exit 0): 3e41
+sigil-tip (exit 0): 3e41
+PROBE_END
+== zdefb.asm
+asl   (exit 0): 4142
+  base: zdefb.asm(2):2: error: unknown directive or mnemonic `defb`
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+  tip: zdefb.asm(2):2: error: unknown directive or mnemonic `defb`
+  tip: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  tip: assembly failed: 1 error (reported on stderr)
+sigil-tip exit 1: no image
+PROBE_END
+== zdcb.asm
+asl   exit 2: no bytes quoted
+> > > zdcb.asm(2):2: error #1200: unknown instruction
+  lines that assembled: an error stops the pass loop, so every forward
+  base: zdcb.asm(2):7: error: operand 16706 out of range -128..=255
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+sigil-tip (exit 0): 4142
+PROBE_END
+== pw1.asm
+asl   (exit 0): 4142
+sigil-base (exit 0): 4142
+sigil-tip (exit 0): 4142
+PROBE_END
+== pw2.asm
+asl   (exit 0): 004100420043
+  base: pw2.asm(2):7: error: operand 4276803 out of range -32768..=65535
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+sigil-tip (exit 0): 004100420043
+PROBE_END
+== pw3.asm
+asl   (exit 0): 4142
+sigil-base (exit 0): 4142
+sigil-tip (exit 0): 4142
+PROBE_END
+== sw1.asm
+asl   (exit 0): 00410042
+  base: sw1.asm(3):7: error: string operand in a data directive wider than a byte: asl emits one zero-extended element per character here, which is not implemented
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+sigil-tip (exit 0): 00410042
+PROBE_END
+== sw2.asm
+asl   (exit 0): 004100420043
+  base: sw2.asm(3):7: error: operand 4276803 out of range -32768..=65535
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+sigil-tip (exit 0): 004100420043
+PROBE_END
+== sw3.asm
+asl   (exit 0): 4142
+sigil-base (exit 0): 4142
+sigil-tip (exit 0): 4142
+PROBE_END
+== sw4.asm
+asl   (exit 0): 4142
+sigil-base (exit 0): 4142
+sigil-tip (exit 0): 4142
+PROBE_END
+== sw5.asm
+asl   (exit 0): 4142
+sigil-base (exit 0): 4142
+sigil-tip (exit 0): 4142
+PROBE_END
+== sw6.asm
+asl   (exit 0): 00004142
+sigil-base (exit 0): 00004142
+sigil-tip (exit 0): 00004142
+PROBE_END
+== sw7.asm
+asl   (exit 0): 0042
+sigil-base (exit 0): 0042
+sigil-tip (exit 0): 0042
+PROBE_END
+== fn1.asm
+asl   (exit 0): 00410042
+  base: fn1.asm(2):7: error: bad word expression
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+sigil-tip (exit 0): 00410042
+PROBE_END
+== fn2.asm
+asl   (exit 0): 00610062
+  base: fn2.asm(2):7: error: bad word expression
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+sigil-tip (exit 0): 00610062
+PROBE_END
+== fn3.asm
+asl   (exit 0): 00410042
+  base: fn3.asm(2):7: error: bad word expression
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+  tip: fn3.asm(2):7: error: bad word expression
+  tip: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  tip: assembly failed: 1 error (reported on stderr)
+sigil-tip exit 1: no image
+PROBE_END
+== fn4.asm
+asl   (exit 0): 0003
+  base: fn4.asm(2):7: error: strlen(): could not evaluate string builtin
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+sigil-tip (exit 0): 0003
+PROBE_END
+== cc1.asm
+asl   (exit 0): 4142
+sigil-base (exit 0): 0083
+sigil-tip (exit 0): 4142
+PROBE_END
+== cc2.asm
+asl   (exit 0): 303c4142
+sigil-base (exit 0): 303c0083
+sigil-tip (exit 0): 303c4142
+PROBE_END
+== cc3.asm
+asl   (exit 0): 00004142
+sigil-base (exit 0): 00000083
+sigil-tip (exit 0): 00004142
+PROBE_END
+== ar1.asm
+asl   (exit 0): 0141
+  base: ar1.asm(2):7: error: operand 321 out of range -128..=255
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+sigil-tip (exit 0): 0141
+PROBE_END
+== ar2.asm
+asl   (exit 0): 
+sigil-base (exit 0): 00
+sigil-tip (exit 0): 
+PROBE_END
+== ar3.asm
+asl   (exit 0): 42
+sigil-base (exit 0): 42
+sigil-tip (exit 0): 42
+PROBE_END
+== ar4.asm
+asl   (exit 0): 0042
+sigil-base (exit 0): 0042
+sigil-tip (exit 0): 0042
+PROBE_END
+== ar5.asm
+asl   (exit 0): 4141
+sigil-base (exit 0): 4141
+sigil-tip (exit 0): 4141
+PROBE_END
+== ar6.asm
+asl   (exit 0): 41424343
+sigil-base (exit 0): 41424343
+sigil-tip (exit 0): 41424343
+PROBE_END
+== ar7.asm
+asl   (exit 0): 0082
+sigil-base (exit 0): 0082
+sigil-tip (exit 0): 0082
+PROBE_END
+== ar8.asm
+asl   (exit 0): 00010041
+sigil-base (exit 0): 0141
+sigil-tip (exit 0): 00010041
+PROBE_END
+== ar9.asm
+asl   (exit 0): 00410042
+sigil-base (exit 0): 4142
+sigil-tip (exit 0): 00410042
+PROBE_END
+== ar10.asm
+asl   (exit 0): 4142
+sigil-base (exit 0): 4142
+sigil-tip (exit 0): 4142
+PROBE_END
+== lw1.asm
+asl   (exit 0): 00004142
+sigil-base (exit 0): 00004142
+sigil-tip (exit 0): 00004142
+PROBE_END
+== lw2.asm
+asl   (exit 0): 00000000
+sigil-base (exit 0): 00000000
+sigil-tip (exit 0): 00000000
+PROBE_END
+== lw3.asm
+asl   (exit 0): 0041
+sigil-base (exit 0): 0041
+sigil-tip (exit 0): 0041
+PROBE_END
+== lw4.asm
+asl   (exit 0): 4100
+sigil-base (exit 0): 4100
+sigil-tip (exit 0): 4100
+PROBE_END
+== big1.asm
+asl   (exit 0): 00000005
+  base: big1.asm(2):7: error: operand 280284578885 out of range -2147483648..=4294967295
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+  tip: big1.asm(2):7: error: bad long expression
+  tip: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  tip: assembly failed: 1 error (reported on stderr)
+sigil-tip exit 1: no image
+PROBE_END
+== big2.asm
+asl   (exit 0): 203c00000005
+  base: big2.asm(2):2: error: operand 280284578885 out of range -2147483648..=4294967295
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+  tip: big2.asm(2):9: error: bad immediate expression
+  tip: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  tip: assembly failed: 1 error (reported on stderr)
+sigil-tip exit 1: no image
+PROBE_END
+== big3.asm
+asl   (exit 0): 203c00000005
+  base: big3.asm(2):9: error: bad immediate expression
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+  tip: big3.asm(2):9: error: bad immediate expression
+  tip: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  tip: assembly failed: 1 error (reported on stderr)
+sigil-tip exit 1: no image
+PROBE_END
+== big4.asm
+asl   (exit 0): 
+  base: big4.asm(2):7: error: operand 280284578884 out of range -2147483648..=4294967295
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+  tip: big4.asm(2):7: error: bad long expression
+  tip: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  tip: assembly failed: 1 error (reported on stderr)
+sigil-tip exit 1: no image
+PROBE_END
+== big5.asm
+asl   exit 2: no bytes quoted
+> > > big5.asm(3):10: error #1141: expected integer, but got string
+  lines that assembled: an error stops the pass loop, so every forward
+  base: big5.asm(3):2: error: operand 280284578885 out of range -2147483648..=4294967295
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+  tip: big5.asm(3):10: error: a 5-character string has no integer value in this slot: asl packs 1 to 4 characters big-endian and refuses the rest (`expected integer, but got string`)
+  tip: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  tip: assembly failed: 1 error (reported on stderr)
+sigil-tip exit 1: no image
+PROBE_END
+== big6.asm
+asl   (exit 0): 05
+  base: big6.asm(2):7: error: operand 280284578885 out of range -128..=255
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+  tip: big6.asm(2):7: error: bad byte expression
+  tip: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  tip: assembly failed: 1 error (reported on stderr)
+sigil-tip exit 1: no image
+PROBE_END
+== cs1.asm
+asl   (exit 0): 112299
+  base: cs1.asm(6):7: error: operand 1122969 out of range -128..=255
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+sigil-tip (exit 0): 112299
+PROBE_END
+== cs2.asm
+asl   (exit 0): 1122
+sigil-base (exit 0): 1122
+sigil-tip (exit 0): 1122
+PROBE_END
+== cs3.asm
+asl   (exit 0): 001100220099
+  base: cs3.asm(6):7: error: operand 1122969 out of range -32768..=65535
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+sigil-tip (exit 0): 001100220099
+PROBE_END
+== cs4.asm
+asl   (exit 0): 00991122
+sigil-base (exit 0): 00991122
+sigil-tip (exit 0): 00991122
+PROBE_END
+== cs5.asm
+asl   (exit 0): 203c00991122
+sigil-base (exit 0): 203c00991122
+sigil-tip (exit 0): 203c00991122
+PROBE_END
+== cs6.asm
+asl   (exit 0): 11
+  base: cs6.asm(6):7: error: operand 4387 out of range -128..=255
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+sigil-tip (exit 0): 11
+PROBE_END
+== cs7.asm
+asl   (exit 0): 9922110022
+  base: cs7.asm(6):7: error: operand 10035729 out of range -128..=255
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+sigil-tip (exit 0): 9922110022
+PROBE_END
+== cs8.asm
+asl   (exit 0): 43414341
+  base: cs8.asm(8):7: error: operand 39185 out of range -128..=255
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+sigil-tip (exit 0): 43414341
+PROBE_END
+== cs9.asm
+asl   (exit 0): 99119911
+  base: cs9.asm(7):7: error: operand 17217 out of range -128..=255
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+sigil-tip (exit 0): 99119911
+PROBE_END
+== cs10.asm
+asl   (exit 0): 112299
+  base: cs10.asm(6):7: error: operand 1122969 out of range -128..=255
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+sigil-tip (exit 0): 112299
+PROBE_END
+== cs11.asm
+asl   (exit 0): 00
+sigil-base (exit 0): 00
+sigil-tip (exit 0): 00
+PROBE_END
+== cs12.asm
+asl   (exit 0): 1122
+sigil-base (exit 0): 0033
+sigil-tip (exit 0): 1122
+PROBE_END
+== cs13.asm
+asl   exit 2: no bytes quoted
+> > > cs13.asm(2):14: error #1020: invalid symbol name
+> > > cs13.asm(3):14: error #1020: invalid symbol name
+> > > cs13.asm(4):14: error #1020: invalid symbol name
+> > > cs13.asm(5):10: error #1020: invalid symbol name
+  lines that assembled: an error stops the pass loop, so every forward
+  base: cs13.asm(2):2: error: trailing tokens in expression
+  base: cs13.asm(2):2: error: unresolved charset operand
+  base: cs13.asm(3):2: error: trailing tokens in expression
+  base: cs13.asm(3):2: error: unresolved charset operand
+sigil-base exit 1: no image
+  tip: cs13.asm(2):2: error: trailing tokens in expression
+  tip: cs13.asm(2):2: error: unresolved charset operand
+  tip: cs13.asm(3):2: error: trailing tokens in expression
+  tip: cs13.asm(3):2: error: unresolved charset operand
+sigil-tip exit 1: no image
+PROBE_END
+== cs14.asm
+asl   (exit 0): 112299
+  base: cs14.asm(6):7: error: operand 4539 out of range -128..=255
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+sigil-tip (exit 0): 112299
+PROBE_END
+== q1.asm
+asl   (exit 0): 413b42
+  base: q1.asm(2):7: error: operand 4275010 out of range -128..=255
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+sigil-tip (exit 0): 413b42
+PROBE_END
+== q2.asm
+asl   (exit 0): 412c4201
+  base: q2.asm(2):7: error: operand 4271170 out of range -128..=255
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+sigil-tip (exit 0): 412c4201
+PROBE_END
+== q3.asm
+asl   (exit 0): 22
+sigil-base (exit 0): 22
+sigil-tip (exit 0): 22
+PROBE_END
+== q4.asm
+asl   (exit 0): 27
+sigil-base (exit 0): 27
+sigil-tip (exit 0): 27
+PROBE_END
+== q5.asm
+asl   (exit 0): 27
+sigil-base (exit 0): 27
+sigil-tip (exit 0): 27
+PROBE_END
+== q6.asm
+asl   exit 2: no bytes quoted
+> > > q6.asm(2):7: error #1020: invalid symbol name
+  lines that assembled: an error stops the pass loop, so every forward
+  base: q6.asm(2):10: error: unterminated character constant
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+  tip: q6.asm(2):10: error: unterminated character constant
+  tip: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  tip: assembly failed: 1 error (reported on stderr)
+sigil-tip exit 1: no image
+PROBE_END
+== q7.asm
+asl   exit 2: no bytes quoted
+> > > q7.asm(2):7: error #1020: invalid symbol name
+  lines that assembled: an error stops the pass loop, so every forward
+  base: q7.asm(2):7: error: unterminated character constant
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+  tip: q7.asm(2):7: error: unterminated character constant
+  tip: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  tip: assembly failed: 1 error (reported on stderr)
+sigil-tip exit 1: no image
+PROBE_END
+== esc1.asm
+asl   (exit 0): 4142
+  base: esc1.asm(2):7: error: operand 16706 out of range -128..=255
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+sigil-tip (exit 0): 4142
+PROBE_END
+== esc2.asm
+asl   (exit 0): 004100420043
+  base: esc2.asm(2):7: error: operand 4276803 out of range -32768..=65535
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+sigil-tip (exit 0): 004100420043
+PROBE_END
+== esc3.asm
+asl   exit 2: no bytes quoted
+> > > esc3.asm(2): error #2010: invalid escape sequence
+> > > esc3.asm(2):7: error #1020: invalid symbol name
+  lines that assembled: an error stops the pass loop, so every forward
+  base: esc3.asm(2):7: error: invalid escape sequence `\q`
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+  tip: esc3.asm(2):7: error: invalid escape sequence `\q`
+  tip: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  tip: assembly failed: 1 error (reported on stderr)
+sigil-tip exit 1: no image
+PROBE_END
+== esc4.asm
+asl   (exit 0): 413242
+  base: esc4.asm(2):7: error: string interpolation `\{...}` is not supported in a character constant
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+sigil-tip (exit 0): 413242
+PROBE_END
+== mw1.asm
+asl   (exit 0): 4142
+sigil-base (exit 0): 4142
+sigil-tip (exit 0): 4142
+PROBE_END
+== mw2.asm
+asl   (exit 0): 414243
+  base: mw2.asm(5) m(1):7: error: operand 4276803 out of range -128..=255
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+sigil-tip (exit 0): 414243
+PROBE_END
+== irp1.asm
+asl   (exit 0): 00410042
+sigil-base (exit 0): 00410042
+sigil-tip (exit 0): 00410042
+PROBE_END
+== irp2.asm
+asl   (exit 0): 4142
+sigil-base (exit 0): 4142
+sigil-tip (exit 0): 4142
+PROBE_END
+== rep1.asm
+asl   (exit 0): 41424142
+  base: rep1.asm(4) REPT 1(1):7: error: operand 16706 out of range -128..=255
+  base: rep1.asm(4) REPT 2(1):7: error: operand 16706 out of range -128..=255
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 2 errors (reported on stderr)
+sigil-base exit 1: no image
+sigil-tip (exit 0): 41424142
+PROBE_END
+== dup1.asm
+asl   (exit 0): 41424142
+  base: dup1.asm(2):10: error: operand 16706 out of range -128..=255
+  base: dup1.asm(2):10: error: operand 16706 out of range -128..=255
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 2 errors (reported on stderr)
+sigil-base exit 1: no image
+sigil-tip (exit 0): 41424142
+PROBE_END
+== dup2.asm
+asl   (exit 0): 41424142
+sigil-base (exit 0): 41424142
+sigil-tip (exit 0): 41424142
+PROBE_END
+== cmp1.asm
+asl   (exit 0): 01
+sigil-base (exit 0): 01
+sigil-tip (exit 0): 01
+PROBE_END
+== cmp2.asm
+asl   (exit 0): 01
+sigil-base (exit 0): 01
+sigil-tip (exit 0): 01
+PROBE_END
+== cmp3.asm
+asl   (exit 0): 01
+sigil-base (exit 0): 01
+sigil-tip (exit 0): 01
+PROBE_END
+== z1.asm
+asl   (exit 0): 4100
+sigil-base (exit 0): 4100
+sigil-tip (exit 0): 4100
+PROBE_END
+== z2.asm
+asl   (exit 0): 0000
+sigil-base (exit 0): 0000
+sigil-tip (exit 0): 0000
+PROBE_END
+== z3.asm
+asl   (exit 0): 4241
+  base: z3.asm(2):2: error: unknown directive or mnemonic `defw`
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+  tip: z3.asm(2):2: error: unknown directive or mnemonic `defw`
+  tip: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  tip: assembly failed: 1 error (reported on stderr)
+sigil-tip exit 1: no image
+PROBE_END
+== z4.asm
+asl   (exit 0): 00
+sigil-base (exit 0): 00
+sigil-tip (exit 0): 00
+PROBE_END
+== z5.asm
+asl   (exit 0): 41420043
+  base: z5.asm(2):5: error: operand 16706 out of range -128..=255
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+sigil-tip (exit 0): 41420043
+PROBE_END
+== z6.asm
+asl   exit 2: no bytes quoted
+> > > z6.asm(2):7: error #1320: range overflow
+  lines that assembled: an error stops the pass loop, so every forward
+  base: z6.asm(2):2: error: operand 16706 out of range -128..=255
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+  tip: z6.asm(2):2: error: operand 16706 out of range -128..=255
+  tip: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  tip: assembly failed: 1 error (reported on stderr)
+sigil-tip exit 1: no image
+PROBE_END
+== z7.asm
+asl   exit 2: no bytes quoted
+> > > z7.asm(2):8: error #1320: range overflow
+  lines that assembled: an error stops the pass loop, so every forward
+  base: z7.asm(2):2: error: operand 4276803 out of range -32768..=65535
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+  tip: z7.asm(2):2: error: operand 4276803 out of range -32768..=65535
+  tip: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  tip: assembly failed: 1 error (reported on stderr)
+sigil-tip exit 1: no image
+PROBE_END
+== z8.asm
+asl   (exit 0): 4141
+sigil-base (exit 0): 4141
+sigil-tip (exit 0): 4141
+PROBE_END
+== z9.asm
+asl   (exit 0): fe41
+sigil-base (exit 0): fe41
+sigil-tip (exit 0): fe41
+PROBE_END
+== dcbs.asm
+asl   exit 2: no bytes quoted
+> > > dcbs.asm(2):2: error #1200: unknown instruction
+  lines that assembled: an error stops the pass loop, so every forward
+  base: dcbs.asm(2):2: error: `dcb` is not a recognized 68000 mnemonic
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+  tip: dcbs.asm(2):2: error: `dcb` is not a recognized 68000 mnemonic
+  tip: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  tip: assembly failed: 1 error (reported on stderr)
+sigil-tip exit 1: no image
+PROBE_END
+== dcbs2.asm
+asl   exit 2: no bytes quoted
+> > > dcbs2.asm(2):2: error #1200: unknown instruction
+  lines that assembled: an error stops the pass loop, so every forward
+  base: dcbs2.asm(2):2: error: `dcb` is not a recognized 68000 mnemonic
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+  tip: dcbs2.asm(2):2: error: `dcb` is not a recognized 68000 mnemonic
+  tip: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  tip: assembly failed: 1 error (reported on stderr)
+sigil-tip exit 1: no image
+PROBE_END
+== dcbs3.asm
+asl   exit 2: no bytes quoted
+> > > dcbs3.asm(2):2: error #1200: unknown instruction
+  lines that assembled: an error stops the pass loop, so every forward
+  base: dcbs3.asm(2):2: error: `dcb` is not a recognized 68000 mnemonic
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+  tip: dcbs3.asm(2):2: error: `dcb` is not a recognized 68000 mnemonic
+  tip: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  tip: assembly failed: 1 error (reported on stderr)
+sigil-tip exit 1: no image
+PROBE_END
+== lbl1.asm
+asl   (exit 0): 41
+sigil-base (exit 0): 41
+sigil-tip (exit 0): 41
+PROBE_END
+== lbl2.asm
+asl   (exit 0): 0043
+sigil-base (exit 0): 0043
+sigil-tip (exit 0): 0043
+PROBE_END
+== lbl3.asm
+asl   (exit 0): 42
+sigil-base (exit 0): 42
+sigil-tip (exit 0): 42
+PROBE_END
+== cp1.asm
+asl   (exit 0): 1123
+  base: cp1.asm(5):7: error: operand 4387 out of range -128..=255
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+sigil-tip (exit 0): 1123
+PROBE_END
+== cp2.asm
+asl   (exit 0): 1124
+  base: cp2.asm(6):7: error: operand 4388 out of range -128..=255
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+sigil-tip (exit 0): 1124
+PROBE_END
+== cp3.asm
+asl   (exit 0): 4143
+  base: cp3.asm(3):7: error: operand 16707 out of range -128..=255
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+sigil-tip (exit 0): 4143
+PROBE_END
+== cp4.asm
+asl   (exit 0): 41
+  base: cp4.asm(3):7: error: operand 16707 out of range -128..=255
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+sigil-tip (exit 0): 41
+PROBE_END
+== cp5.asm
+asl   (exit 0): 1143
+  base: cp5.asm(3):7: error: operand 4419 out of range -128..=255
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+sigil-tip (exit 0): 1143
+PROBE_END
+== cp6.asm
+asl   (exit 0): 4123
+  base: cp6.asm(3):7: error: operand 16675 out of range -128..=255
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+sigil-tip (exit 0): 4123
+PROBE_END
+== cp7.asm
+asl   (exit 0): 5143
+  base: cp7.asm(3):7: error: operand 20803 out of range -128..=255
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+sigil-tip (exit 0): 5143
+PROBE_END
+== cp8.asm
+asl   (exit 0): 1123
+  base: cp8.asm(5):7: error: `string + integer` under a non-identity `charset` is refused: the arithmetic runs on the mapped bytes, but whether asl maps the result a second time is not decidable from any probe, and the two readings emit different bytes
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+sigil-tip (exit 0): 1123
+PROBE_END
+== zcs1.asm
+asl   (exit 0): 991122
+  base: zcs1.asm(5):5: error: operand 10031394 out of range -128..=255
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+sigil-tip (exit 0): 991122
+PROBE_END
+== zcs2.asm
+asl   (exit 0): 1199
+sigil-base (exit 0): 1199
+sigil-tip (exit 0): 1199
+PROBE_END
+== zcs3.asm
+asl   (exit 0): 219922
+sigil-base (exit 0): 219922
+sigil-tip (exit 0): 219922
+PROBE_END
+== zcs4.asm
+asl   (exit 0): 99ff11002200
+  base: zcs4.asm(5):5: error: operand 10031394 out of range -32768..=65535
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+sigil-tip (exit 0): 99ff11002200
+PROBE_END
+== ff1.asm
+asl   (exit 0): 00410042
+  base: ff1.asm(2):11: error: string operand in a data directive wider than a byte: asl emits one zero-extended element per character here, which is not implemented
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+sigil-tip (exit 0): 00410042
+PROBE_END
+== ff2.asm
+asl   (exit 0): 00410042
+  base: ff2.asm(2):7: error: string operand in a data directive wider than a byte: asl emits one zero-extended element per character here, which is not implemented
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+sigil-tip (exit 0): 00410042
+PROBE_END
+== ff3.asm
+asl   (exit 0): 0041
+sigil-base (exit 0): 0041
+sigil-tip (exit 0): 0041
+PROBE_END
+== ff4.asm
+asl   (exit 0): 4142
+sigil-base (exit 0): 4142
+sigil-tip (exit 0): 4142
+PROBE_END
+== ff5.asm
+asl   (exit 0): 004100420043
+  base: ff5.asm(2):7: error: operand 4276803 out of range -32768..=65535
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+sigil-tip (exit 0): 004100420043
+PROBE_END
+== ff6.asm
+asl   (exit 0): 4142
+sigil-base (exit 0): 0083
+sigil-tip (exit 0): 4142
+PROBE_END
+== ff7.asm
+asl   (exit 0): 4142
+sigil-base (exit 0): 0083
+sigil-tip (exit 0): 4142
+PROBE_END
+== ff8.asm
+asl   (exit 0): 00410043
+sigil-base (exit 0): 4143
+sigil-tip (exit 0): 00410043
+PROBE_END
+== ff9.asm
+asl   (exit 0): 41424344
+sigil-base (exit 0): 00008486
+sigil-tip (exit 0): 41424344
+PROBE_END
+== ff10.asm
+asl   (exit 0): 0000004100000042000000430000004400000045
+sigil-base (exit 0): 00438587
+sigil-tip (exit 0): 0000004100000042000000430000004400000045
+PROBE_END
+== ff11.asm
+asl   (exit 0): 00410042
+  base: ff11.asm(2):7: error: string operand in a data directive wider than a byte: asl emits one zero-extended element per character here, which is not implemented
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+sigil-tip (exit 0): 00410042
+PROBE_END
+== big7.asm
+asl   (exit 0): 203c00000006
+  base: big7.asm(2):2: error: operand 71752852194630 out of range -2147483648..=4294967295
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+  tip: big7.asm(2):9: error: bad immediate expression
+  tip: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  tip: assembly failed: 1 error (reported on stderr)
+sigil-tip exit 1: no image
+PROBE_END
+== big8.asm
+asl   (exit 0): 203c0000000a
+  base: big8.asm(2):2: error: operand 4847075267103443274 out of range -2147483648..=4294967295
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+  tip: big8.asm(2):9: error: bad immediate expression
+  tip: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  tip: assembly failed: 1 error (reported on stderr)
+sigil-tip exit 1: no image
+PROBE_END
+== big9.asm
+asl   (exit 0): 203c00000006
+  base: big9.asm(2):2: error: operand 97140791006805 out of range -2147483648..=4294967295
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+  tip: big9.asm(2):9: error: bad immediate expression
+  tip: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  tip: assembly failed: 1 error (reported on stderr)
+sigil-tip exit 1: no image
+PROBE_END
+== zdb.asm
+asl   (exit 0): 41424241
+sigil-base (exit 0): 838300
+sigil-tip (exit 0): 41424241
+PROBE_END
+== mw3.asm
+asl   (exit 0): 00410043
+sigil-base (exit 0): 4143
+sigil-tip (exit 0): 00410043
+PROBE_END
+== subs.asm
+asl   (exit 0): 00410042
+  base: subs.asm(3):7: error: bad word expression
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+sigil-tip (exit 0): 00410042
+PROBE_END
+== sym3.asm
+asl   (exit 0): 00410042
+sigil-base (exit 0): 0083
+sigil-tip (exit 0): 00410042
+PROBE_END
+== h1.asm
+asl   (exit 0): 00990041
+  base: h1.asm(2):7: error: string operand in a data directive wider than a byte: asl emits one zero-extended element per character here, which is not implemented
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+sigil-tip (exit 0): 00990041
+PROBE_END
+== h2.asm
+asl   (exit 0): 0000009900000041
+  base: h2.asm(2):7: error: string operand in a data directive wider than a byte: asl emits one zero-extended element per character here, which is not implemented
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+sigil-tip (exit 0): 0000009900000041
+PROBE_END
+== h3.asm
+asl   (exit 0): 99ff4100
+  base: h3.asm(2):5: error: string operand in a data directive wider than a byte: asl emits one zero-extended element per character here, which is not implemented
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+sigil-tip (exit 0): 99ff4100
+PROBE_END
+== h4.asm
+asl   (exit 0): 430099ff4100
+  base: h4.asm(2):5: error: operand 4430145 out of range -32768..=65535
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+sigil-tip (exit 0): 430099ff4100
+PROBE_END
+== h5.asm
+asl   (exit 0): 004100990041
+  base: h5.asm(2):7: error: operand 4299073 out of range -32768..=65535
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+sigil-tip (exit 0): 004100990041
+PROBE_END
+== h6.asm
+asl   (exit 0): 7f0080ff
+  base: h6.asm(2):5: error: string operand in a data directive wider than a byte: asl emits one zero-extended element per character here, which is not implemented
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+sigil-tip (exit 0): 7f0080ff
+PROBE_END
+== h7.asm
+asl   (exit 0): 0000004100000099000000410000004200000043
+  base: h7.asm(2):7: error: operand 281744065091 out of range -2147483648..=4294967295
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+sigil-tip (exit 0): 0000004100000099000000410000004200000043
+PROBE_END
+== h8.asm
+asl   (exit 0): 41004300
+sigil-base (exit 0): 4341
+sigil-tip (exit 0): 41004300
+PROBE_END
+== h9.asm
+asl   (exit 0): c1ff
+sigil-base (exit 0): c100
+sigil-tip (exit 0): c1ff
+PROBE_END
+== h10.asm
+asl   (exit 0): 00c1
+sigil-base (exit 0): 00c1
+sigil-tip (exit 0): 00c1
+PROBE_END
+== h11.asm
+asl   (exit 0): 41c2
+  base: h11.asm(2):5: error: operand 16834 out of range -128..=255
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+sigil-tip (exit 0): 41c2
+PROBE_END
+== h12.asm
+asl   (exit 0): 99ff4300
+sigil-base (exit 0): 4399
+sigil-tip (exit 0): 99ff4300
+PROBE_END
+== h13.asm
+asl   (exit 0): 00410042004300441234
+  base: h13.asm(2):7: error: string operand in a data directive wider than a byte: asl emits one zero-extended element per character here, which is not implemented
+  base: h13.asm(2):11: error: operand 4342596 out of range -32768..=65535
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 2 errors (reported on stderr)
+sigil-base exit 1: no image
+sigil-tip (exit 0): 00410042004300441234
+PROBE_END
+== h14.asm
+asl   (exit 0): 0140
+  base: h14.asm(2):7: error: operand 320 out of range -128..=255
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+sigil-tip (exit 0): 0140
+PROBE_END
+== h15.asm
+asl   (exit 0): 007f
+sigil-base (exit 0): 007f
+sigil-tip (exit 0): 007f
+PROBE_END
+== h16.asm
+asl   (exit 0): 00010042
+sigil-base (exit 0): 0142
+sigil-tip (exit 0): 00010042
+PROBE_END
+== h17.asm
+asl   (exit 0): 01004200
+sigil-base (exit 0): 4201
+sigil-tip (exit 0): 01004200
+PROBE_END
+== h18.asm
+asl   (exit 0): 004100420043004100420043
+  base: h18.asm(2):10: error: operand 4276803 out of range -32768..=65535
+  base: h18.asm(2):10: error: operand 4276803 out of range -32768..=65535
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 2 errors (reported on stderr)
+sigil-base exit 1: no image
+sigil-tip (exit 0): 004100420043004100420043
+PROBE_END
+== h19.asm
+asl   (exit 0): 0000
+sigil-base (exit 0): 0000
+sigil-tip (exit 0): 0000
+PROBE_END
+== h20.asm
+asl   (exit 0): 00
+sigil-base (exit 0): 00
+sigil-tip (exit 0): 00
+PROBE_END
+== h21.asm
+asl   (exit 0): 0001
+sigil-base (exit 0): 0001
+sigil-tip (exit 0): 0001
+PROBE_END
+== f1.asm
+asl   (exit 0): 00410042
+sigil-base (exit 0): 0083
+sigil-tip (exit 0): 00410042
+PROBE_END
+== f2.asm
+asl   (exit 0): 00410042
+sigil-base (exit 0): 0083
+sigil-tip (exit 0): 00410042
+PROBE_END
+== f3.asm
+asl   (exit 0): 00410042
+sigil-base (exit 0): 0083
+sigil-tip (exit 0): 00410042
+PROBE_END
+== f4.asm
+asl   (exit 0): 4142
+sigil-base (exit 0): 4142
+sigil-tip (exit 0): 4142
+PROBE_END
+== f5.asm
+asl   (exit 0): 00410042
+sigil-base (exit 0): 0083
+sigil-tip (exit 0): 00410042
+PROBE_END
+== f6.asm
+asl   (exit 0): 00410042
+sigil-base (exit 0): 0083
+sigil-tip (exit 0): 00410042
+PROBE_END
+== f7.asm
+asl   (exit 0): 00410042
+sigil-base (exit 0): 0083
+sigil-tip (exit 0): 00410042
+PROBE_END
+== f8.asm
+asl   (exit 0): 00414243
+sigil-base (exit 0): 000000c6
+sigil-tip (exit 0): 00414243
+PROBE_END
+== f9.asm
+asl   (exit 0): 000000410000004200000043
+sigil-base (exit 0): 000000c6
+sigil-tip (exit 0): 000000410000004200000043
+PROBE_END
+== f10.asm
+asl   (exit 0): 00410042
+  base: f10.asm(2):7: error: bad word expression
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+sigil-tip (exit 0): 00410042
+PROBE_END
+== f11.asm
+asl   (exit 0): 414200410042
+sigil-base (exit 0): 41424142
+sigil-tip (exit 0): 414200410042
+PROBE_END
+== f12.asm
+asl   (exit 0): 004100410042
+sigil-base (exit 0): 00410083
+sigil-tip (exit 0): 004100410042
+PROBE_END
+== f13.asm
+asl   (exit 0): 00410042
+sigil-base (exit 0): 4142
+sigil-tip (exit 0): 00410042
+PROBE_END
+== f14.asm
+asl   (exit 0): 00410042
+sigil-base (exit 0): 4142
+sigil-tip (exit 0): 00410042
+PROBE_END
+== f15.asm
+asl   (exit 0): 00410042
+  base: f15.asm(3):7: error: string operand in a data directive wider than a byte: asl emits one zero-extended element per character here, which is not implemented
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+sigil-tip (exit 0): 00410042
+PROBE_END
+== f16.asm
+asl   (exit 0): 00410042
+sigil-base (exit 0): 0083
+sigil-tip (exit 0): 00410042
+PROBE_END
+== t1.asm
+asl   (exit 0): 00414244
+  base: t1.asm(2):18: error: string operand in a data directive wider than a byte: asl emits one zero-extended element per character here, which is not implemented
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+sigil-tip (exit 0): 00414244
+PROBE_END
+== t2.asm
+asl   (exit 0): 00414243
+  base: t2.asm(2):11: error: string operand in a data directive wider than a byte: asl emits one zero-extended element per character here, which is not implemented
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+sigil-tip (exit 0): 00414243
+PROBE_END
+== t3.asm
+asl   (exit 0): 00414243
+sigil-base (exit 0): 000000c6
+sigil-tip (exit 0): 00414243
+PROBE_END
+== t4.asm
+asl   (exit 0): 00414243
+  base: t4.asm(3):7: error: string operand in a data directive wider than a byte: asl emits one zero-extended element per character here, which is not implemented
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+sigil-tip (exit 0): 00414243
+PROBE_END
+== t5.asm
+asl   (exit 0): 4142
+sigil-base (exit 0): 4142
+sigil-tip (exit 0): 4142
+PROBE_END
+== t6.asm
+asl   (exit 0): 4142
+sigil-base (exit 0): 4142
+sigil-tip (exit 0): 4142
+PROBE_END
+== t7.asm
+asl   (exit 0): 00420041
+sigil-base (exit 0): 0083
+sigil-tip (exit 0): 00420041
+PROBE_END
+== t8.asm
+asl   (exit 0): 00004243
+sigil-base (exit 0): 00000085
+sigil-tip (exit 0): 00004243
+PROBE_END
+== t9.asm
+asl   (exit 0): 00414243
+sigil-base (exit 0): 000000c6
+sigil-tip (exit 0): 00414243
+PROBE_END
+== t10.asm
+asl   (exit 0): 00000041
+sigil-base (exit 0): 00000041
+sigil-tip (exit 0): 00000041
+PROBE_END
+== t11.asm
+asl   (exit 0): 4142
+sigil-base (exit 0): 0083
+sigil-tip (exit 0): 4142
+PROBE_END
+== t12.asm
+asl   (exit 0): 4142
+sigil-base (exit 0): 4142
+sigil-tip (exit 0): 4142
+PROBE_END
+== t13.asm
+asl   (exit 0): 4142
+sigil-base (exit 0): 0083
+sigil-tip (exit 0): 4142
+PROBE_END
+== t14.asm
+asl   (exit 0): 0041
+sigil-base (exit 0): 0041
+sigil-tip (exit 0): 0041
+PROBE_END
+== t15.asm
+asl   (exit 0): 00410042
+sigil-base (exit 0): 0083
+sigil-tip (exit 0): 00410042
+PROBE_END
+== t16.asm
+asl   (exit 0): 00410042
+sigil-base (exit 0): 0083
+sigil-tip (exit 0): 00410042
+PROBE_END
+== t17.asm
+asl   (exit 0): 000000610000006200000043
+  base: t17.asm(2):7: error: bad long expression
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+sigil-tip (exit 0): 000000610000006200000043
+PROBE_END
+== t18.asm
+asl   (exit 0): 000000410000006200000063
+  base: t18.asm(2):7: error: bad long expression
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+sigil-tip (exit 0): 000000410000006200000063
+PROBE_END
+== t19.asm
+asl   (exit 0): 00416243
+  base: t19.asm(2):7: error: bad long expression
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+sigil-tip (exit 0): 00416243
+PROBE_END
+== cq1.asm
+asl   (exit 0): 77
+sigil-base (exit 0): 77
+sigil-tip (exit 0): 77
+PROBE_END
+== cq2.asm
+asl   exit 2: no bytes quoted
+> > > cq2.asm(2): error #1320: range overflow
+  lines that assembled: an error stops the pass loop, so every forward
+  base: cq2.asm(2):2: error: charset operand 4342596 out of range 0..=255
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+  tip: cq2.asm(2):2: error: charset operand 4342596 out of range 0..=255
+  tip: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  tip: assembly failed: 1 error (reported on stderr)
+sigil-tip exit 1: no image
+PROBE_END
+== cq3.asm
+asl   (exit 0): 999a9b
+sigil-base (exit 0): 999a9b
+sigil-tip (exit 0): 999a9b
+PROBE_END
+== cq4.asm
+asl   exit 2: no bytes quoted
+> > > cq4.asm(3): error #1320: range overflow
+  lines that assembled: an error stops the pass loop, so every forward
+  base: cq4.asm(3):2: error: charset operand 16981 out of range 0..=255
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+  tip: cq4.asm(3):2: error: charset operand 16981 out of range 0..=255
+  tip: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  tip: assembly failed: 1 error (reported on stderr)
+sigil-tip exit 1: no image
+PROBE_END
+== cq5.asm
+asl   (exit 0): 77
+sigil-base (exit 0): 77
+sigil-tip (exit 0): 77
+PROBE_END
+== cq6.asm
+asl   (exit 0): 42
+sigil-base (exit 0): 77
+sigil-tip (exit 0): 42
+PROBE_END
+== cq7.asm
+asl   (exit 0): 4177
+sigil-base (exit 0): 4177
+sigil-tip (exit 0): 4177
+PROBE_END
+== cq8.asm
+asl   (exit 0): 4142434445
+  base: cq8.asm(2):2: error: charset operand 284596389190 out of range 0..=255
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+  tip: cq8.asm(2):2: error: a single-quoted `charset` target must have 1 to 4 characters: asl reads it as an integer, and an empty or longer one has no integer value
+  tip: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  tip: assembly failed: 1 error (reported on stderr)
+sigil-tip exit 1: no image
+PROBE_END
+== cq9.asm
+asl   (exit 0): 4142
+sigil-base (exit 0): 0042
+  tip: cq9.asm(2):2: error: a single-quoted `charset` target must have 1 to 4 characters: asl reads it as an integer, and an empty or longer one has no integer value
+  tip: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  tip: assembly failed: 1 error (reported on stderr)
+sigil-tip exit 1: no image
+PROBE_END
+== cq10.asm
+asl   (exit 0): 4142
+sigil-base (exit 0): 4142
+sigil-tip (exit 0): 4142
+PROBE_END
+== cq11.asm
+asl   exit 2: no bytes quoted
+> > > cq11.asm(2): error #1320: range overflow
+  lines that assembled: an error stops the pass loop, so every forward
+  base: cq11.asm(2):2: error: charset operand 16706 out of range 0..=255
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+  tip: cq11.asm(2):2: error: charset operand 16706 out of range 0..=255
+  tip: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  tip: assembly failed: 1 error (reported on stderr)
+sigil-tip exit 1: no image
+PROBE_END
+== inc1.asm
+asl   exit 3: no bytes quoted
+> > > inc1.asm(2):10: error #10001: error in opening file
+fatal error, assembly terminated
+  from the listing. Absence of the warning is NOT completeness.)
+  lines that assembled: an error stops the pass loop, so every forward
+  asl:   from the listing. Absence of the warning is NOT completeness.)
+  base: inc1.asm(2):2: error: include needs a quoted path
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+  tip: inc1.asm(2):2: error: include needs a double-quoted path: asl reads a single-quoted operand as a character constant and cannot open it
+  tip: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  tip: assembly failed: 1 error (reported on stderr)
+sigil-tip exit 1: no image
+PROBE_END
+== bin1.asm
+asl   exit 3: no bytes quoted
+> > > bin1.asm(2):11: error #10001: error in opening file
+fatal error, assembly terminated
+  from the listing. Absence of the warning is NOT completeness.)
+  lines that assembled: an error stops the pass loop, so every forward
+  asl:   from the listing. Absence of the warning is NOT completeness.)
+  base: bin1.asm(2):2: error: BINCLUDE needs a quoted path
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+  tip: bin1.asm(2):2: error: BINCLUDE needs a double-quoted path: asl reads a single-quoted operand as a character constant and cannot open it
+  tip: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  tip: assembly failed: 1 error (reported on stderr)
+sigil-tip exit 1: no image
+PROBE_END
+== msg1.asm
+asl   (exit 0): 01
+sigil-base (exit 0): 01
+sigil-tip (exit 0): 01
+PROBE_END
+== msg2.asm
+asl   (exit 0): 01
+  asl: > > > msg2.asm(2): warning: hi
+  asl: > > >  warning 'hi'
+  base: msg2.asm(2):2: error: `warning` needs a quoted message
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+  tip: msg2.asm(2):2: warning: [as.warning] hi
+sigil-tip (exit 0): 01
+PROBE_END
+== sw1c.asm
+asl   (exit 0): 01
+sigil-base (exit 0): 02
+sigil-tip (exit 0): 01
+PROBE_END
+== fn5.asm
+asl   (exit 0): 28363629
+sigil-base (exit 0): 61
+sigil-tip (exit 0): 28363629
+PROBE_END
+== fn6.asm
+asl   (exit 0): 28363629
+sigil-base (exit 0): 28363629
+sigil-tip (exit 0): 28363629
+PROBE_END
+== rv1.asm
+asl   (exit 0): 0001
+sigil-base (exit 0): 0101
+sigil-tip (exit 0): 0001
+PROBE_END
+== rv2.asm
+asl   (exit 0): 1163
+  base: rv2.asm(3):7: error: bad byte expression
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+sigil-tip (exit 0): 1163
+PROBE_END
+== rv3.asm
+asl   (exit 0): 02
+  base: rv3.asm(3):7: error: strlen(): could not evaluate string builtin
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+sigil-tip (exit 0): 02
+PROBE_END
+== rv4.asm
+asl   (exit 0): 303c1143
+sigil-base (exit 0): 303c1143
+sigil-tip (exit 0): 303c1143
+PROBE_END
+== rv5.asm
+asl   (exit 0): 1143
+  base: rv5.asm(4):7: error: operand 4419 out of range -128..=255
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+sigil-tip (exit 0): 1143
+PROBE_END
+== ifq1.asm
+asl   (exit 0): 01
+sigil-base (exit 0): 01
+sigil-tip (exit 0): 01
+PROBE_END
+== ifq2.asm
+asl   (exit 0): 01
+sigil-base (exit 0): 01
+sigil-tip (exit 0): 01
+PROBE_END
+== ifq3.asm
+asl   (exit 0): 01
+sigil-base (exit 0): 01
+sigil-tip (exit 0): 01
+PROBE_END
+== ifq4.asm
+asl   (exit 0): 010101
+sigil-base (exit 0): 010101
+sigil-tip (exit 0): 010101
+PROBE_END
+== swq1.asm
+asl   (exit 0): 02
+sigil-base (exit 0): 01
+sigil-tip (exit 0): 02
+PROBE_END
+== cq8.asm
+asl   (exit 0): 4142434445
+  base: cq8.asm(2):2: error: charset operand 284596389190 out of range 0..=255
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+  tip: cq8.asm(2):2: error: a single-quoted `charset` target must have 1 to 4 characters: asl reads it as an integer, and an empty or longer one has no integer value
+  tip: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  tip: assembly failed: 1 error (reported on stderr)
+sigil-tip exit 1: no image
+PROBE_END
+== cq9.asm
+asl   (exit 0): 4142
+sigil-base (exit 0): 0042
+  tip: cq9.asm(2):2: error: a single-quoted `charset` target must have 1 to 4 characters: asl reads it as an integer, and an empty or longer one has no integer value
+  tip: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  tip: assembly failed: 1 error (reported on stderr)
+sigil-tip exit 1: no image
+PROBE_END
+== cq10.asm
+asl   (exit 0): 4142
+sigil-base (exit 0): 4142
+sigil-tip (exit 0): 4142
+PROBE_END
+== cq11.asm
+asl   exit 2: no bytes quoted
+> > > cq11.asm(2): error #1320: range overflow
+  lines that assembled: an error stops the pass loop, so every forward
+  base: cq11.asm(2):2: error: charset operand 16706 out of range 0..=255
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+  tip: cq11.asm(2):2: error: charset operand 16706 out of range 0..=255
+  tip: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  tip: assembly failed: 1 error (reported on stderr)
+sigil-tip exit 1: no image
+PROBE_END
+== zdcb2.asm
+asl   exit 2: no bytes quoted
+> > > zdcb2.asm(2):2: error #1200: unknown instruction
+  lines that assembled: an error stops the pass loop, so every forward
+sigil-base (exit 0): 014142
+sigil-tip (exit 0): 014142
+PROBE_END
+== csx.asm
+asl   (exit 0): 111200110012303c1112
+  base: csx.asm(4):7: error: string operand in a data directive wider than a byte: asl emits one zero-extended element per character here, which is not implemented
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+sigil-tip (exit 0): 111200110012303c1112
+PROBE_END
+== sgn1.asm
+asl   exit 2: no bytes quoted
+> > > sgn1.asm(6):7: error #1110: wrong number of operands
+  lines that assembled: an error stops the pass loop, so every forward
+sigil-base (exit 0): 00000041
+  tip: sgn1.asm(6):7: error: bad long expression
+  tip: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  tip: assembly failed: 1 error (reported on stderr)
+sigil-tip exit 1: no image
+PROBE_END
+== sgn2.asm
+asl   exit 2: no bytes quoted
+> > > sgn2.asm(6):7: error #1110: wrong number of operands
+  lines that assembled: an error stops the pass loop, so every forward
+sigil-base (exit 0): 00004142
+  tip: sgn2.asm(6):7: error: bad long expression
+  tip: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  tip: assembly failed: 1 error (reported on stderr)
+sigil-tip exit 1: no image
+PROBE_END
+== tdw68.asm
+asl   exit 2: no bytes quoted
+> > > tdw68.asm(4):2: error #1200: unknown instruction
+  lines that assembled: an error stops the pass loop, so every forward
+sigil-base (exit 0): 0100
+sigil-tip (exit 0): 0100
+PROBE_END
+== tw0.asm
+asl   (exit 0): 00610062
+  base: tw0.asm(6):7: error: string operand in a data directive wider than a byte: asl emits one zero-extended element per character here, which is not implemented
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+sigil-tip (exit 0): 00610062
+PROBE_END
+== tw1.asm
+asl   (exit 0): 00610063
+  base: tw1.asm(6):7: error: string operand in a data directive wider than a byte: asl emits one zero-extended element per character here, which is not implemented
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+sigil-tip (exit 0): 00610063
+PROBE_END
+== tw2.asm
+asl   (exit 0): 0061
+  base: tw2.asm(6):7: error: string operand in a data directive wider than a byte: asl emits one zero-extended element per character here, which is not implemented
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+sigil-tip (exit 0): 0061
+PROBE_END
+== tw3.asm
+asl   (exit 0): 0000006100000062
+  base: tw3.asm(6):7: error: string operand in a data directive wider than a byte: asl emits one zero-extended element per character here, which is not implemented
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+sigil-tip (exit 0): 0000006100000062
+PROBE_END
+== tw4.asm
+asl   (exit 0): 0000006100000063
+  base: tw4.asm(6):7: error: string operand in a data directive wider than a byte: asl emits one zero-extended element per character here, which is not implemented
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+sigil-tip (exit 0): 0000006100000063
+PROBE_END
+== tw5.asm
+asl   (exit 0): 00000061
+  base: tw5.asm(6):7: error: string operand in a data directive wider than a byte: asl emits one zero-extended element per character here, which is not implemented
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+sigil-tip (exit 0): 00000061
+PROBE_END
+== tw6.asm
+asl   exit 2: no bytes quoted
+> > > tw6.asm(6):2: error #1200: unknown instruction
+  lines that assembled: an error stops the pass loop, so every forward
+  base: tw6.asm(6):5: error: string operand in a data directive wider than a byte: asl emits one zero-extended element per character here, which is not implemented
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+sigil-tip (exit 0): 61006200
+PROBE_END
+== tw7.asm
+asl   exit 2: no bytes quoted
+> > > tw7.asm(6):2: error #1200: unknown instruction
+  lines that assembled: an error stops the pass loop, so every forward
+  base: tw7.asm(6):5: error: string operand in a data directive wider than a byte: asl emits one zero-extended element per character here, which is not implemented
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+sigil-tip (exit 0): 61006300
+PROBE_END
+== tw8.asm
+asl   exit 2: no bytes quoted
+> > > tw8.asm(6):2: error #1200: unknown instruction
+  lines that assembled: an error stops the pass loop, so every forward
+  base: tw8.asm(6):5: error: string operand in a data directive wider than a byte: asl emits one zero-extended element per character here, which is not implemented
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+sigil-tip (exit 0): 6100
+PROBE_END
+== tw9.asm
+asl   (exit 0): 6161
+sigil-base (exit 0): 6161
+sigil-tip (exit 0): 6161
+PROBE_END
+== tcs1.asm
+asl   (exit 0): 1163ee
+  base: tcs1.asm(5):7: error: `string + integer` under a non-identity `charset` is refused: the arithmetic runs on the mapped bytes, but whether asl maps the result a second time is not decidable from any probe, and the two readings emit different bytes
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+sigil-tip (exit 0): 1163ee
+PROBE_END
+== tcs2.asm
+asl   (exit 0): 1162ee
+sigil-base (exit 0): 1162ee
+sigil-tip (exit 0): 1162ee
+PROBE_END
+== tl0.asm
+asl   (exit 0): 00410042
+  base: tl0.asm(4):7: error: string operand in a data directive wider than a byte: asl emits one zero-extended element per character here, which is not implemented
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+sigil-tip (exit 0): 00410042
+PROBE_END
+== tl1.asm
+asl   (exit 0): 00410042
+  base: tl1.asm(4):7: error: string operand in a data directive wider than a byte: asl emits one zero-extended element per character here, which is not implemented
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+sigil-tip (exit 0): 00410042
+PROBE_END
+== tl2.asm
+asl   (exit 0): 00000041000000420000004300000044
+  base: tl2.asm(4):7: error: string operand in a data directive wider than a byte: asl emits one zero-extended element per character here, which is not implemented
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+sigil-tip (exit 0): 00000041000000420000004300000044
+PROBE_END
+== tz0.asm
+asl   (exit 0): 61006200
+  base: tz0.asm(5):5: error: string operand in a data directive wider than a byte: asl emits one zero-extended element per character here, which is not implemented
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+sigil-tip (exit 0): 61006200
+PROBE_END
+== tz1.asm
+asl   (exit 0): 61006300
+  base: tz1.asm(5):5: error: string operand in a data directive wider than a byte: asl emits one zero-extended element per character here, which is not implemented
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+sigil-tip (exit 0): 61006300
+PROBE_END
+== tz2.asm
+asl   (exit 0): 6100
+  base: tz2.asm(5):5: error: string operand in a data directive wider than a byte: asl emits one zero-extended element per character here, which is not implemented
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+sigil-tip (exit 0): 6100
+PROBE_END
+== tz3.asm
+asl   (exit 0): 6161
+sigil-base (exit 0): 6161
+sigil-tip (exit 0): 6161
+PROBE_END
+== tdw68.asm
+asl   exit 2: no bytes quoted
+> > > tdw68.asm(4):2: error #1200: unknown instruction
+  lines that assembled: an error stops the pass loop, so every forward
+sigil-base (exit 0): 0100
+sigil-tip (exit 0): 0100
+PROBE_END
+== tp0.asm
+asl   (exit 0): 1163ee
+  base: tp0.asm(5):7: error: `string + integer` under a non-identity `charset` is refused: the arithmetic runs on the mapped bytes, but whether asl maps the result a second time is not decidable from any probe, and the two readings emit different bytes
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+sigil-tip (exit 0): 1163ee
+PROBE_END
+== tp1.asm
+asl   (exit 0): 1123
+  base: tp1.asm(7):7: error: operand 4387 out of range -128..=255
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+sigil-tip (exit 0): 1123
+PROBE_END
+== tp2.asm
+asl   (exit 0): 11
+  base: tp2.asm(8):7: error: operand 4387 out of range -128..=255
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+sigil-tip (exit 0): 11
+PROBE_END
+== tp3.asm
+asl   (exit 0): 41
+  base: tp3.asm(5):7: error: operand 16707 out of range -128..=255
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+sigil-tip (exit 0): 41
+PROBE_END
+== tp4.asm
+asl   (exit 0): 1143
+  base: tp4.asm(6):7: error: operand 4419 out of range -128..=255
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+sigil-tip (exit 0): 1143
+PROBE_END
+== tp5.asm
+asl   (exit 0): 5143
+  base: tp5.asm(5):7: error: operand 20803 out of range -128..=255
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+sigil-tip (exit 0): 5143
+PROBE_END
+== tp6.asm
+asl   (exit 0): 0001
+sigil-base (exit 0): 0101
+sigil-tip (exit 0): 0001
+PROBE_END
+== tp7.asm
+asl   (exit 0): 1163
+  base: tp7.asm(5):7: error: bad byte expression
+  base: this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+  base: assembly failed: 1 error (reported on stderr)
+sigil-base exit 1: no image
+sigil-tip (exit 0): 1163
+PROBE_END
+== tp8.asm
+asl   (exit 0): 1162ee
+sigil-base (exit 0): 1162ee
+sigil-tip (exit 0): 1162ee
+PROBE_END
+RUNALL_END

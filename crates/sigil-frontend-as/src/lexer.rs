@@ -2,8 +2,7 @@
 
 // `lex_line` + helpers are consumed by the parser (next task); unused until then.
 
-use crate::charset::CodePage;
-use crate::token::{Punct, Tok, Token};
+use crate::token::{Punct, Quote, Tok, Token};
 use sigil_ir::backend::Cpu;
 use sigil_span::{Diagnostic, Level, SourceId, Span};
 
@@ -13,11 +12,10 @@ use sigil_span::{Diagnostic, Level, SourceId, Span};
 pub fn lex_line(
     line: &str,
     cpu: Cpu,
-    cs: &CodePage,
     source: SourceId,
     base: u32,
 ) -> Result<Vec<Token>, Diagnostic> {
-    let (toks, err) = lex_line_recover(line, cpu, cs, source, base);
+    let (toks, err) = lex_line_recover(line, cpu, source, base);
     match err {
         Some(d) => Err(d),
         None => Ok(toks),
@@ -43,12 +41,11 @@ pub fn lex_line(
 pub fn lex_line_recover(
     line: &str,
     cpu: Cpu,
-    cs: &CodePage,
     source: SourceId,
     base: u32,
 ) -> (Vec<Token>, Option<Diagnostic>) {
     let mut out = Vec::new();
-    let err = lex_into(line, cpu, cs, source, base, &mut out).err();
+    let err = lex_into(line, cpu, source, base, &mut out).err();
     (out, err)
 }
 
@@ -74,7 +71,6 @@ thread_local! {
 fn lex_into(
     line: &str,
     cpu: Cpu,
-    cs: &CodePage,
     source: SourceId,
     base: u32,
     out: &mut Vec<Token>,
@@ -136,7 +132,7 @@ fn lex_into(
                 let s = std::str::from_utf8(&bytes[i + 1..close]).unwrap().to_string();
                 i = close + 1;
                 out.push(Token {
-                    tok: Tok::Str(s),
+                    tok: Tok::Str(s, Quote::Double),
                     span: span_at(start, i),
                 });
             }
@@ -199,64 +195,33 @@ fn lex_into(
                     span: span_at(start, i),
                 });
             }
-            // AS character constant: `'…'` packs its bytes big-endian into an
-            // integer (`'A'` = 0x41, `'INIT'` = 0x494E4954). Distinct from a
-            // `"…"` string. A `'` reaching this arm is a genuine opener: an
-            // identifier greedily absorbs any trailing `'` as an ident tail
-            // (the z80 `af'` shadow-register form), so a leading `'` never
-            // follows an identifier char.
+            // AS character constant `'...'`: a STRING, as `"..."` is, kept in
+            // source form with its [`Quote`] so that the consumers which read a
+            // single-quoted operand as an integer can tell (see
+            // `eval.rs::single_quoted_operand`). asl, pinned build, exit 0:
+            // `dc.b 'ABCDE'` is `41 42 43 44 45`, `dc.b 'A'+'B'` is `41 42` (the
+            // concatenation, not `$83`) and `dc.b 'AB'+1` is `41 43`; in an
+            // integer slot it packs big-endian like any string (`move.l
+            // #'INIT',d0` is `203C 494E 4954`).
             //
-            // THE CHARACTERS GO THROUGH THE CODE PAGE, and this is the THIRD
-            // charset consumer — the one `expr.rs`'s seam note missed when it
-            // said `string_to_int` and `directive_db` "are the complete
-            // population". It is a distinct site because the packing happens
-            // HERE, at lex time, rather than in the expression parser, so a page
-            // wired only into the other two leaves it alone. asl, exit 0, with
-            // `charset $49,$11` live:
+            // Nothing is decoded here. Escapes, `\{...}` interpolations and the
+            // code page are applied where the value is used, so the page is the
+            // one live at the USE: asl assembles `X equ 'CA'`, a `charset`
+            // change, then `dc.b X` with the later page.
             //
-            // ```text
-            //       4/       0 : 114E 1154           	dc.l 'INIT'
-            //       5/       4 : 203C 114E 1154      	move.l #'INIT',d0
-            //       7/       C : 114E                	dc.w 'IN'
-            // ```
-            //
-            // Note what that shows about the SHAPE: a character constant is a
-            // packed INTEGER in every width, never a character sequence, so it
-            // is unlike a `"…"` string in a `dc.b` and must not take that path.
-            // `dc.b 'A'` is the integer `$11` folded as a numeric operand.
-            //
-            // Sonic 1 cannot detect this being wrong. Its menu text is written
-            // with double quotes and its own `charset` operands (`charset
-            // '0','9',$00`) never index a character an earlier `charset` moved,
-            // so a build that leaves this arm on the identity page emits Sonic
-            // 1's 504 bytes correctly.
-            //
-            // An ESCAPE yields a character that goes through the page too: with
-            // `charset $41,$11` live, asl assembles `dc.w '\x41'` as `0011` and
-            // `charset '\H',$99` under `charset $27,$55` remaps index `$55`. So
-            // the body is unescaped first and every resulting byte is mapped.
+            // A `'` reaching this arm is a genuine opener: an identifier greedily
+            // absorbs any trailing `'` as an ident tail (the z80 `af'`
+            // shadow-register form), so a leading `'` never follows an
+            // identifier char.
             b'\'' => {
                 let start = i;
                 let Some(close) = crate::escape::literal_end(bytes, i) else {
                     return Err(err(start, bytes.len(), "unterminated character constant"));
                 };
-                let body = crate::escape::unescape_bytes(&line[i + 1..close]).map_err(|e| {
-                    let msg = match e {
-                        crate::escape::EscapeError::Interp(_) => {
-                            "string interpolation `\\{...}` is not supported in a character constant"
-                                .to_string()
-                        }
-                        other => other.to_string(),
-                    };
-                    err(start, close + 1, &msg)
-                })?;
-                let mut v: i64 = 0;
-                for &ch in &body {
-                    v = (v << 8) | i64::from(cs.map_char(ch as char));
-                }
+                let s = std::str::from_utf8(&bytes[i + 1..close]).unwrap().to_string();
                 i = close + 1;
                 out.push(Token {
-                    tok: Tok::Int(v),
+                    tok: Tok::Str(s, Quote::Single),
                     span: span_at(start, i),
                 });
             }
@@ -447,13 +412,12 @@ fn punct(b: &[u8]) -> Option<(Punct, usize)> {
 #[cfg(test)]
 mod tests {
     use super::{lex_line, lex_line_recover};
-    use crate::charset::CodePage;
-    use crate::token::{Punct, Tok};
+    use crate::token::{Punct, Quote, Tok};
     use sigil_ir::backend::Cpu;
     use sigil_span::SourceId;
 
     fn kinds(src: &str, cpu: Cpu) -> Vec<Tok> {
-        lex_line(src, cpu, &CodePage::identity(), SourceId(0), 0)
+        lex_line(src, cpu, SourceId(0), 0)
             .unwrap()
             .into_iter()
             .map(|t| t.tok)
@@ -568,7 +532,7 @@ mod tests {
             kinds("nop ; trailing", Cpu::Z80),
             vec![Tok::Ident("nop".into())]
         );
-        assert_eq!(kinds("\"Z80\"", Cpu::Z80), vec![Tok::Str("Z80".into())]);
+        assert_eq!(kinds("\"Z80\"", Cpu::Z80), vec![Tok::Str("Z80".into(), Quote::Double)]);
         assert_eq!(
             kinds("(ix+sc_flags)", Cpu::Z80),
             vec![
@@ -587,24 +551,28 @@ mod tests {
         assert_eq!(kinds("%100001", Cpu::M68000), vec![Tok::Int(0b100001)]);
         assert_eq!(kinds("%0", Cpu::M68000), vec![Tok::Int(0)]);
         // `%` not followed by a binary digit is still an unexpected-char error.
-        assert!(lex_line("%x", Cpu::M68000, &CodePage::identity(), SourceId(0), 0).is_err());
+        assert!(lex_line("%x", Cpu::M68000, SourceId(0), 0).is_err());
     }
 
     #[test]
-    fn char_constant_packs_big_endian() {
-        // AS `'…'` character constant packs bytes big-endian (constants.asm
-        // `CROSS_RESET_MAGIC = 'INIT'`).
-        assert_eq!(kinds("'A'", Cpu::M68000), vec![Tok::Int(0x41)]);
-        assert_eq!(kinds("'INIT'", Cpu::M68000), vec![Tok::Int(0x494E4954)]);
+    fn char_constant_is_a_single_quoted_string_in_source_form() {
+        // AS `'...'` is a string token like `"..."`, marked single-quoted, its
+        // body kept as written (escapes and `\{...}` unprocessed); the value is
+        // computed, and packed where an integer is wanted, at the use.
+        assert_eq!(kinds("'A'", Cpu::M68000), vec![Tok::Str("A".into(), Quote::Single)]);
+        assert_eq!(kinds("'INIT'", Cpu::M68000), vec![Tok::Str("INIT".into(), Quote::Single)]);
+        assert_eq!(kinds("'A\\x42'", Cpu::M68000), vec![Tok::Str("A\\x42".into(), Quote::Single)]);
+        assert_eq!(kinds("'A\\{n}B'", Cpu::M68000), vec![Tok::Str("A\\{n}B".into(), Quote::Single)]);
+        assert_eq!(kinds("''", Cpu::M68000), vec![Tok::Str(String::new(), Quote::Single)]);
         // A trailing `'` on an identifier (z80 `af'`) is unaffected.
         assert_eq!(kinds("af'", Cpu::Z80), vec![Tok::Ident("af'".into())]);
-        assert!(lex_line("'unterminated", Cpu::M68000, &CodePage::identity(), SourceId(0), 0).is_err());
+        assert!(lex_line("'unterminated", Cpu::M68000, SourceId(0), 0).is_err());
     }
 
     #[test]
     fn malformed_number_is_a_diagnostic_not_a_panic() {
         // Digit-led run containing A–F with no trailing `h` under z80 is an error.
-        assert!(lex_line("1F", Cpu::Z80, &CodePage::identity(), SourceId(0), 0).is_err());
+        assert!(lex_line("1F", Cpu::Z80, SourceId(0), 0).is_err());
     }
 
     #[test]
@@ -646,7 +614,7 @@ mod tests {
     /// branch whose expression it never evaluates.
     #[test]
     fn lex_line_recover_keeps_the_head_before_a_bad_operand() {
-        let (toks, err) = lex_line_recover("	if ($)&1", Cpu::M68000, &CodePage::identity(), SourceId(0), 0);
+        let (toks, err) = lex_line_recover("	if ($)&1", Cpu::M68000, SourceId(0), 0);
         assert_eq!(
             toks.iter().map(|t| t.tok.clone()).collect::<Vec<_>>(),
             vec![Tok::Ident("if".into()), Tok::Punct(Punct::LParen)]
@@ -656,7 +624,7 @@ mod tests {
             Some("`$` with no hex digits".to_string())
         );
         // A clean line reports no error and lexes whole, exactly as before.
-        let (toks, err) = lex_line_recover("	if 1", Cpu::M68000, &CodePage::identity(), SourceId(0), 0);
+        let (toks, err) = lex_line_recover("	if 1", Cpu::M68000, SourceId(0), 0);
         assert!(err.is_none());
         assert_eq!(toks.len(), 2);
     }

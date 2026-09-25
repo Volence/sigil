@@ -8,7 +8,7 @@ use crate::expand::{
 use crate::lexer::{lex_line, lex_line_recover};
 use crate::operands::{parse_operands, OperandAtom};
 use crate::parser::parse_line_tokens;
-use crate::token::{Punct, Tok, Token};
+use crate::token::{Punct, Quote, Tok, Token};
 use crate::{cpu_for_spelling, unsupported_cpu, z80_undocumented, Failure, Options};
 use sigil_backend_m68k::m68k::{
     Cond as M68kCond, Instruction as M68kInstruction, Mnemonic as M68kMnemonic,
@@ -1325,7 +1325,7 @@ struct Asm {
     /// `resolve_str`). NOT carried across passes — asl `set` is a sequential
     /// per-pass assignment and every string symbol in the `__FSTRING` scan is
     /// assigned before it is read (probe p1/p4).
-    str_env: std::collections::HashMap<String, String>,
+    str_env: std::collections::HashMap<String, StrSym>,
     /// Front-end-only FLOAT-valued symbols (`sample_rate_scale := 1.0`, which
     /// is how `s2.sounddriver.asm`'s `dac_sample_metadata` macro carries an
     /// optional per-sample rate scale into `int(label.sample_rate*scale)`).
@@ -2878,7 +2878,7 @@ impl Asm {
         // WHETHER it has one, so this cannot move a byte. An escape this
         // cannot process (an invalid one, or a `\{...}` interpolation, which
         // has no value at this layer) is left to the path that understands it.
-        if let [Token { tok: Tok::Str(raw), span }] = toks {
+        if let [Token { tok: Tok::Str(raw, _), span }] = toks {
             if crate::expr::string_to_int(raw, &self.state.charset).is_none() {
                 if let Ok(value) = crate::escape::unescape_plain(raw) {
                     self.err(*span, string_not_an_integer(&value));
@@ -3490,7 +3490,7 @@ impl Asm {
     /// leaves an ordinary numeric comparison alone.
     fn leading_str_rhs(&self, toks: &[Token]) -> Option<(String, usize)> {
         match toks.first()?.tok {
-            Tok::Str(ref s) => Some((crate::escape::unescape_keep_interp(s).ok()?, 1)),
+            Tok::Str(ref s, _) => Some((crate::escape::unescape_keep_interp(s).ok()?, 1)),
             Tok::Punct(Punct::LParen) => {
                 let end = matching_rparen(toks, 0)?;
                 let v = self.eval_str(&toks[..=end])?;
@@ -3535,10 +3535,16 @@ impl Asm {
     /// string-valued `set` symbol. `.foo` → `"{scope}.foo"`, `A.b`/`foo` →
     /// verbatim, with the scope chosen by [`Self::dot_scope`].
     fn resolve_str(&self, name: &str) -> Option<String> {
+        self.resolve_str_sym(name).map(|s| s.text.clone())
+    }
+
+    /// [`Self::resolve_str`]'s whole binding, with the quoting of the operand
+    /// that bound it.
+    fn resolve_str_sym(&self, name: &str) -> Option<&StrSym> {
         // The same key `directive_set` wrote, built by the same function, so a
         // reader can never disagree with its writer about where a name lives.
         let key = self.value_ref_key(name);
-        self.str_env.get(&key).cloned()
+        self.str_env.get(&key)
     }
 
     /// Evaluate a front-end-only STRING expression: a plain `Tok::Str`
@@ -3678,20 +3684,8 @@ impl Asm {
     /// The arithmetic is 32-bit, which is where both refusals come from.
     fn str_plus_int(&self, s: &str, n: i64) -> StrTyped {
         let cs = &self.state.charset;
-        // THE ONE CELL THE PROBE COULD NOT SETTLE, refused rather than guessed.
-        // `charset 'a',$11` gives `dc.b "ab"` = `11 62` and `dc.b "ab"+1` =
-        // `11 63`, so the arithmetic runs on the MAPPED bytes. Whether the
-        // result bytes are then emitted raw or mapped a SECOND time is
-        // undecidable on that page, both bytes being fixed points of it, and
-        // the two readings differ in the emitted byte. Sigil does the packing
-        // through the page (as `string_to_int` does) and hands the caller
-        // characters that the caller maps again, so it implements the
-        // second reading; under a non-identity page that is a byte it cannot
-        // prove, so it refuses instead. No corpus writes a string in an
-        // arithmetic expression at all, let alone under a `charset`.
-        if !cs.is_identity() {
-            return StrTyped::Refuse(STRING_PLUS_INT_CHARSET.to_string());
-        }
+        // The arithmetic runs on the MAPPED bytes: `charset 'a',$11` gives
+        // `dc.b "ab"` = `11 62` and `dc.b "ab"+1` = `11 63`.
         let bytes: Vec<u8> = s.chars().map(|c| cs.map_char(c)).collect();
         // THE OPERAND must pack. asl declines a 5-character string here
         // whatever the addend: `dc.b "abcde"+1,$EE` and `dc.b "abcde"+0,$EE`
@@ -3740,11 +3734,30 @@ impl Asm {
             // the empty string, which is the measured `dc.b "a"+(0-97)`.
             be.iter().copied().skip_while(|b| *b == 0).collect()
         };
-        // `u8 as char` is U+0000..U+00FF, and the identity page maps each back
-        // to the same byte (`map_char` indexes `c as u8`), so the round trip
-        // through the caller's per-character emit is the identity. That
-        // equivalence is exactly what the non-identity refusal above protects.
-        StrTyped::Str(out.into_iter().map(char::from).collect())
+        // THE RESULT IS A STRING OF CHARACTERS, and each result byte becomes
+        // the LOWEST character the page maps to it; a byte no character maps
+        // to is DROPPED. The caller's per-character emit then maps each
+        // character forward again, which gives the byte back. On the identity
+        // page every byte is its own lowest preimage, so the value is the
+        // bytes themselves. asl, pinned build, exit 0, every page with
+        // non-repeating targets:
+        //
+        // ```text
+        //   page                                   dc.b 'AB'+1
+        //   'A'->$11 'B'->$22 'C'->$99              11 23
+        //   ... and $23->$77                        11          $23 has no preimage
+        //   $43->$77                                41          $43 has no preimage
+        //   'A'->$11, $11->$55                      11 43       $11 is 'A''s image
+        //   'A'->$51                                51 43       'A' is below 'Q'
+        // ```
+        //
+        // Rows 2 and 3 separate this from writing the result bytes raw (that
+        // would keep the `23` and the `43`); row 4 separates it from mapping
+        // each raw byte forward a second time (that would write `55 43`). The
+        // LOWEST preimage is what the value holds: under `charset 'A',$11`
+        // alone, `('AB'+1)="\x11C"` is 1 and `('AB'+1)="AC"` is 0 (index $11 is
+        // below 'A'), and `lowstring('AB'+1)` is `11 63`.
+        StrTyped::Str(out.into_iter().filter_map(|b| cs.lowest_preimage(b)).collect())
     }
 
     /// The ATOMS of a string expression: a literal, a string-valued symbol, or
@@ -3757,7 +3770,7 @@ impl Asm {
         // for the interpolation the binding sites run; `None` on an invalid
         // escape, which the caller refuses in its own words.
         if let [Token {
-            tok: Tok::Str(s), ..
+            tok: Tok::Str(s, _), ..
         }] = toks
         {
             return crate::escape::unescape_keep_interp(s).ok();
@@ -3874,7 +3887,7 @@ impl Asm {
     /// AS-EXPRESSION evaluator rather than a plain number parse (it resolves
     /// symbols, honors `$`-prefixed hex, arithmetic, …).
     fn fold_str_as_expr(&self, text: &str) -> Option<i64> {
-        let toks = lex_line(text, self.state.cpu, &self.state.charset, self.source, 0).ok()?;
+        let toks = lex_line(text, self.state.cpu, self.source, 0).ok()?;
         self.fold_const(&toks)
     }
 
@@ -3924,7 +3937,7 @@ impl Asm {
     fn def_function(&mut self, line: &SrcLine) {
         let substituted = self.subst_frame(line);
         let line = substituted.as_ref().unwrap_or(line);
-        let toks = match lex_line(&line.text, self.state.cpu, &self.state.charset, line.source, line.base) {
+        let toks = match lex_line(&line.text, self.state.cpu, line.source, line.base) {
             Ok(t) => t,
             Err(d) => {
                 self.diags.push(d);
@@ -4117,10 +4130,10 @@ impl Asm {
                     }
                 }
             }
-            if let Tok::Str(raw) = &t.tok {
+            if let Tok::Str(raw, q) = &t.tok {
                 if let Some(sub) = self.substitute_in_literal(raw, params, args, depth) {
                     out.push(Token {
-                        tok: Tok::Str(sub),
+                        tok: Tok::Str(sub, *q),
                         span: t.span,
                     });
                     continue;
@@ -4322,7 +4335,7 @@ impl Asm {
     /// ASCII letters and digits.
     fn literal_mentions(body: &[Token], param: &str) -> bool {
         body.iter().any(|t| match &t.tok {
-            Tok::Str(raw) => raw
+            Tok::Str(raw, _) => raw
                 .split(|c: char| !c.is_ascii_alphanumeric())
                 .any(|word| word == param),
             _ => false,
@@ -4385,7 +4398,7 @@ impl Asm {
         }
         // A string literal is one of AS's three legal argument types, and is
         // already a value: nothing to calculate.
-        if matches!(arg, [Token { tok: Tok::Str(_), .. }]) {
+        if matches!(arg, [Token { tok: Tok::Str(..), .. }]) {
             return;
         }
         // The same four layers `expand_operand_builtins` runs, spelled out:
@@ -4427,7 +4440,7 @@ impl Asm {
     /// asl refuses it, and the text is then reported as written.
     fn interp_string(&mut self, rest: &[Token]) -> String {
         let (raw, span) = match rest.iter().find_map(|t| {
-            if let Tok::Str(s) = &t.tok {
+            if let Tok::Str(s, _) = &t.tok {
                 Some((s.clone(), t.span))
             } else {
                 None
@@ -4552,13 +4565,13 @@ impl Asm {
     ) -> Result<Vec<Token>, (Span, crate::escape::EscapeError)> {
         let mut out = Vec::with_capacity(toks.len());
         for t in toks {
-            if let Tok::Str(raw) = &t.tok {
+            if let Tok::Str(raw, q) = &t.tok {
                 if raw.contains("\\{") {
                     let value = self
                         .literal_value(raw, keep_unresolved)
                         .map_err(|e| (t.span, e))?;
                     out.push(Token {
-                        tok: Tok::Str(crate::escape::quote(&value)),
+                        tok: Tok::Str(crate::escape::quote(&value, *q), *q),
                         span: t.span,
                     });
                     continue;
@@ -4632,7 +4645,7 @@ impl Asm {
     /// folded at their literals first ([`Self::fold_literal_interps`]); one
     /// with no value leaves this whole interpolation without one.
     fn render_interp_expr(&mut self, text: &str) -> Option<String> {
-        let toks = lex_line(text, self.state.cpu, &self.state.charset, self.source, 0).ok()?;
+        let toks = lex_line(text, self.state.cpu, self.source, 0).ok()?;
         let expanded = self.expand_calls(&toks, 0);
         if self.eval_str(&expanded).is_some() {
             let folded = self.fold_literal_interps(&expanded, false).ok()?;
@@ -4649,7 +4662,7 @@ impl Asm {
 
     /// Lex + fold a short expression string (for `\{…}` interpolation).
     fn fold_text(&mut self, text: &str) -> Option<i64> {
-        let toks = lex_line(text, self.state.cpu, &self.state.charset, self.source, 0).ok()?;
+        let toks = lex_line(text, self.state.cpu, self.source, 0).ok()?;
         self.eval_all(
             &toks,
             Span {
@@ -4759,11 +4772,11 @@ impl Asm {
     /// defining and reading sides only agree while both go through the string
     /// arm.
     fn eval_name_brace(&mut self, inner: &str, line: &SrcLine) -> Option<String> {
-        let toks = lex_line(inner, self.state.cpu, &self.state.charset, line.source, line.base).ok()?;
+        let toks = lex_line(inner, self.state.cpu, line.source, line.base).ok()?;
         if toks.is_empty() {
             return None;
         }
-        if let [Token { tok: Tok::Str(raw), .. }] = toks.as_slice() {
+        if let [Token { tok: Tok::Str(raw, _), .. }] = toks.as_slice() {
             return self.literal_value(raw, true).ok();
         }
         if let Some(s) = self.eval_str(&toks) {
@@ -4775,6 +4788,33 @@ impl Asm {
             end: line.base,
         };
         self.eval_all(&toks, span).map(|v| v.to_string())
+    }
+
+    /// The file path operand of `include`/`BINCLUDE`: the first DOUBLE-quoted
+    /// literal, or a refusal naming `directive`.
+    ///
+    /// A single-quoted operand is not a path to asl: `include 'p.inc'` and
+    /// `binclude 'p.bin'` are `error #10001: error in opening file` with the
+    /// file present beside the source. So it is refused by name here rather
+    /// than opened.
+    fn quoted_path(&mut self, rest: &[Token], directive: &str, span: Span) -> Option<String> {
+        let found = rest.iter().find_map(|t| match &t.tok {
+            Tok::Str(s, Quote::Double) => Some(s.clone()),
+            _ => None,
+        });
+        if found.is_none() {
+            if rest.iter().any(|t| matches!(t.tok, Tok::Str(_, Quote::Single))) {
+                self.err(
+                    span,
+                    format!(
+                        "{directive} needs a double-quoted path: asl reads a single-quoted operand as a character constant and cannot open it"
+                    ),
+                );
+            } else {
+                self.err(span, format!("{directive} needs a quoted path"));
+            }
+        }
+        found
     }
 
     /// `include "path"`: read a file relative to `include_root`, exec its lines
@@ -4817,18 +4857,8 @@ impl Asm {
     /// emits the bytes anyway and exits 2. sigil now emits the same bytes; the
     /// diagnostic is a property of its symbol table, not of this directive.
     fn directive_include(&mut self, rest: &[Token], span: Span) {
-        let rel = match rest.iter().find_map(|t| {
-            if let Tok::Str(s) = &t.tok {
-                Some(s.clone())
-            } else {
-                None
-            }
-        }) {
-            Some(p) => p,
-            None => {
-                self.err(span, "include needs a quoted path");
-                return;
-            }
+        let Some(rel) = self.quoted_path(rest, "include", span) else {
+            return;
         };
         let path = match &self.include_root {
             Some(root) => root.join(&rel),
@@ -4917,18 +4947,8 @@ impl Asm {
     /// the second copy.
     fn directive_binclude(&mut self, rest: &[Token], span: Span) {
         self.open_section_if_needed();
-        let rel = match rest.iter().find_map(|t| {
-            if let Tok::Str(s) = &t.tok {
-                Some(s.clone())
-            } else {
-                None
-            }
-        }) {
-            Some(p) => p,
-            None => {
-                self.err(span, "BINCLUDE needs a quoted path");
-                return;
-            }
+        let Some(rel) = self.quoted_path(rest, "BINCLUDE", span) else {
+            return;
         };
         let path = match &self.include_root {
             Some(root) => root.join(&rel),
@@ -5019,7 +5039,7 @@ impl Asm {
         // attribute there), which would otherwise truncate the composed name.
         let composed = self.subst_name_braces(line);
         let line = composed.as_ref().unwrap_or(line);
-        let toks = match lex_line(&line.text, self.state.cpu, &self.state.charset, line.source, line.base) {
+        let toks = match lex_line(&line.text, self.state.cpu, line.source, line.base) {
             Ok(t) => t,
             // A macro call's operand is TEXT, so a word the lexer cannot read
             // there is not an error ([`Self::macro_call_prefix`]).
@@ -5371,7 +5391,7 @@ impl Asm {
     /// The head is found by the rule [`Self::exec_one`] routes by: after a colon
     /// label, or the second word after a colon-less column-0 label.
     fn macro_call_prefix(&self, line: &SrcLine) -> Option<Vec<Token>> {
-        let (toks, _) = lex_line_recover(&line.text, self.state.cpu, &self.state.charset, line.source, line.base);
+        let (toks, _) = lex_line_recover(&line.text, self.state.cpu, line.source, line.base);
         let parsed = parse_line_tokens(&toks);
         let body: &[Token] = if parsed.label_colon.is_some() { &parsed.tokens } else { &toks };
         let names_macro = |t: Option<&Token>| {
@@ -5447,7 +5467,7 @@ impl Asm {
     ) -> Option<(String, usize, Vec<Token>, Option<Diagnostic>)> {
         let substituted = self.subst_frame_text(&line.text);
         let text = substituted.as_deref().unwrap_or(&line.text);
-        let (toks, lex_err) = lex_line_recover(text, self.state.cpu, &self.state.charset, line.source, line.base);
+        let (toks, lex_err) = lex_line_recover(text, self.state.cpu, line.source, line.base);
         let (kw, idx, body) = self.head_of_tokens(toks, line.base)?;
         Some((kw, idx, body, lex_err))
     }
@@ -5596,7 +5616,7 @@ impl Asm {
     fn head_label(&self, line: &SrcLine) -> Option<String> {
         let substituted = self.subst_frame_text(&line.text);
         let text = substituted.as_deref().unwrap_or(&line.text);
-        let (toks, _) = lex_line_recover(text, self.state.cpu, &self.state.charset, line.source, line.base);
+        let (toks, _) = lex_line_recover(text, self.state.cpu, line.source, line.base);
         if toks.is_empty() {
             return None;
         }
@@ -5654,7 +5674,7 @@ impl Asm {
         let substituted = self.subst_frame_text(&line.text);
         let text = substituted.as_deref().unwrap_or(&line.text);
         let (toks, _) =
-            lex_line_recover(text, self.state.cpu, &self.state.charset, line.source, line.base);
+            lex_line_recover(text, self.state.cpu, line.source, line.base);
         let first = toks.first()?;
         crate::nameless::classify_def(&toks, first.span.start == line.base)
     }
@@ -6446,7 +6466,7 @@ impl Asm {
         let head = self.subst_frame(&lines[start]);
         let head = head.as_ref().unwrap_or(&lines[start]);
         let toks = lex_line(
-            &head.text, self.state.cpu, &self.state.charset,
+            &head.text, self.state.cpu,
             lines[start].source,
             lines[start].base,
         )
@@ -6644,7 +6664,7 @@ impl Asm {
             // `zVar` by a byte.
             let substituted = self.subst_frame(line);
             let l = substituted.as_ref().unwrap_or(line);
-            match lex_line(&l.text, self.state.cpu, &self.state.charset, l.source, l.base) {
+            match lex_line(&l.text, self.state.cpu, l.source, l.base) {
                 Ok(toks) => return (!toks.is_empty()).then_some(StructMember::Unreadable),
                 Err(d) => {
                     self.diags.push(d);
@@ -6675,13 +6695,13 @@ impl Asm {
         let substituted = self.subst_frame(line);
         let line = substituted.as_ref().unwrap_or(line);
         if let Some((_, at)) = digit_led_member_label(&line.text) {
-            let toks = lex_line(&line.text[at..], self.state.cpu, &self.state.charset, line.source, line.base + at as u32).ok()?;
+            let toks = lex_line(&line.text[at..], self.state.cpu, line.source, line.base + at as u32).ok()?;
             return match toks.first().map(|t| &t.tok) {
                 Some(Tok::Ident(s)) if self.structs.contains_key(s) => Some(s.clone()),
                 _ => None,
             };
         }
-        let toks = lex_line(&line.text, self.state.cpu, &self.state.charset, line.source, line.base).ok()?;
+        let toks = lex_line(&line.text, self.state.cpu, line.source, line.base).ok()?;
         let parsed = parse_line_tokens(&toks);
         let head = if parsed.label_colon.is_some() {
             parsed.tokens.first()
@@ -6707,10 +6727,10 @@ impl Asm {
         // the member's symbol is `STRUCT.name`, and it is that whole name asl
         // validates. See [`digit_led_member_label`] for where it is accepted.
         if let Some((field, at)) = digit_led_member_label(&line.text) {
-            let rest = lex_line(&line.text[at..], self.state.cpu, &self.state.charset, line.source, line.base + at as u32).ok()?;
+            let rest = lex_line(&line.text[at..], self.state.cpu, line.source, line.base + at as u32).ok()?;
             return self.struct_field_width(field, &rest);
         }
-        let toks = lex_line(&line.text, self.state.cpu, &self.state.charset, line.source, line.base).ok()?;
+        let toks = lex_line(&line.text, self.state.cpu, line.source, line.base).ok()?;
         if toks.is_empty() {
             return None;
         }
@@ -6807,7 +6827,7 @@ impl Asm {
             .position(|t| matches!(t.tok, Tok::Punct(Punct::Eq) | Tok::Punct(Punct::Ne)))
         {
             if let Some(Token {
-                tok: Tok::Str(rhs), ..
+                tok: Tok::Str(rhs, _), ..
             }) = toks.get(pos + 1)
             {
                 // Both literals compare by VALUE, escapes processed: `"\x41"="A"`
@@ -6815,7 +6835,7 @@ impl Asm {
                 let rhs = crate::escape::unescape_keep_interp(rhs).ok();
                 let lhs = match &toks[..pos] {
                     [Token {
-                        tok: Tok::Str(s), ..
+                        tok: Tok::Str(s, _), ..
                     }] => crate::escape::unescape_keep_interp(s).ok(),
                     other => self.string_value(other),
                 };
@@ -7362,7 +7382,7 @@ impl Asm {
             // and ignores the rest, as its `error`/`fatal`/`message` siblings
             // already do) — a known gap, and the accepting direction.
             "warning" => {
-                if !rest.iter().any(|t| matches!(t.tok, Tok::Str(_))) {
+                if !rest.iter().any(|t| matches!(t.tok, Tok::Str(..))) {
                     self.err(span, "`warning` needs a quoted message");
                     return;
                 }
@@ -8128,7 +8148,7 @@ impl Asm {
         // rendered text rather than the source spelling. A bare literal takes
         // its escapes and its interpolations in one scan ([`Self::literal_value`]).
         let bound = match rest {
-            [Token { tok: Tok::Str(raw), span: lspan }] => match self.literal_value(raw, true) {
+            [Token { tok: Tok::Str(raw, _), span: lspan }] => match self.literal_value(raw, true) {
                 Ok(s) => Some(s),
                 Err(e) => {
                     self.err(*lspan, e.to_string());
@@ -8139,7 +8159,8 @@ impl Asm {
         };
         if let Some(s) = bound {
             self.float_env.remove(&q);
-            self.str_env.insert(q, s);
+            let single_quoted = self.single_quoted_operand(rest);
+            self.str_env.insert(q, StrSym { text: s, single_quoted });
             self.open_binder_scope(name);
             return;
         }
@@ -8520,7 +8541,7 @@ impl Asm {
         // 42 rather than a single digit. A bare literal takes its escapes and
         // its interpolations in one scan ([`Self::literal_value`]).
         let bound = match rest {
-            [Token { tok: Tok::Str(raw), span: lspan }] => match self.literal_value(raw, true) {
+            [Token { tok: Tok::Str(raw, _), span: lspan }] => match self.literal_value(raw, true) {
                 Ok(s) => Some(s),
                 Err(e) => {
                     self.err(*lspan, e.to_string());
@@ -8531,7 +8552,8 @@ impl Asm {
         };
         if let Some(s) = bound {
             self.float_env.remove(&q);
-            self.str_env.insert(q, s);
+            let single_quoted = self.single_quoted_operand(rest);
+            self.str_env.insert(q, StrSym { text: s, single_quoted });
             self.open_binder_scope(name);
             return;
         }
@@ -8690,44 +8712,104 @@ impl Asm {
         out
     }
 
-    /// The position of the first STRING literal in `toks`.
+    /// The position of the first DOUBLE-quoted literal in `toks`: see
+    /// [`STRING_IN_WIDE_DATA`] for why a wide data directive refuses one that
+    /// is standing inside an operand which is not string-typed as a whole.
     ///
-    /// Used by the data directives wider than a byte, which must refuse a string
-    /// operand rather than let the expression parser pack it: see
-    /// [`STRING_IN_WIDE_DATA`]. A string that a builtin was going to consume has
-    /// already been consumed by the time this is asked, so a `Tok::Str` still
-    /// standing here is a literal in a value position.
-    fn string_leaf(toks: &[Token]) -> Option<Span> {
+    /// A single-quoted literal there is not refused. It packs as an integer
+    /// leaf of the expression, which is asl's reading for every operator but a
+    /// `+`; the one `+` shape that reaches this check is named on
+    /// [`STRING_IN_WIDE_DATA`].
+    fn double_quoted_leaf(toks: &[Token]) -> Option<Span> {
         toks.iter()
-            .find(|t| matches!(t.tok, Tok::Str(_)))
+            .find(|t| matches!(t.tok, Tok::Str(_, Quote::Double)))
             .map(|t| t.span)
     }
 
-    /// Why a `dc.w`/`dc.l`/`dw` operand that is STRING-typed must be refused,
-    /// or `None` when it is not string-typed and the numeric path may run.
+    /// Whether asl reads the data or `charset` operand `toks` as SINGLE-QUOTED,
+    /// which is what lets a string value stand as an integer there.
     ///
-    /// [`Self::string_leaf`] catches a string LITERAL still standing in the
-    /// operand, and until this parcel that was the whole population, because a
-    /// string with no literal in it could not resolve at all. It can now: a
-    /// string-valued SYMBOL resolves through [`Self::resolve_str_packed`], and
-    /// a `+` over one is string-typed. So `dc.w S2` with `S2 equ "ab"` would
-    /// reach the numeric fold, pack to `6162`, and assemble CLEANLY where asl
-    /// writes `0061 0062`.
+    /// The property is the operand's TEXT, not a flag carried by the value
+    /// through the operators. After asl strips the parentheses that enclose the
+    /// whole operand, it is single-quoted when its text begins AND ends with a
+    /// `'`. Measured on the pinned asl, every value from an exit-0 run, `dc.w`
+    /// of a string of at most two characters:
     ///
-    /// That is this parcel's own defect class, re-created by its own fix, and
-    /// this guard is what keeps the fix from opening it. The per-character
-    /// rendering for these widths stays unimplemented; what changes is that the
-    /// refusal now covers the symbol form too, so the direction is a LOUDER
-    /// refusal and never a quieter one.
+    /// ```text
+    ///   dc.w 'A'+'B'          4142        dc.w ('A'+'B')        4142
+    ///   dc.l 'A'+"B"+'C'      00414243    dc.l 'A'+('B')+'C'    00414243
+    ///   dc.l 'A'+1+'C'        00004243    (the value is "BC")
+    ///   dc.w 'AB'+1           0041 0043   dc.w 'A'+"B"          0041 0042
+    ///   dc.w ('A')+'B'        0041 0042   dc.w (('A')+('B'))    0041 0042
+    /// ```
     ///
-    /// `dc.w S2-1` is deliberately NOT caught: its root is `-`, so it is an
-    /// INTEGER to asl (`6161`), and the numeric path now answers it correctly.
-    fn wide_data_string_refusal(&self, toks: &[Token]) -> Option<String> {
-        match self.eval_str_typed(toks) {
-            StrTyped::Str(_) => Some(STRING_IN_WIDE_DATA.to_string()),
-            StrTyped::Refuse(msg) => Some(msg),
-            StrTyped::NotStr => None,
+    /// A value-level flag combined by `+` cannot produce that table: it would
+    /// read `'A'+"B"+'C'` as unmarked and `('A')+'B'` as marked.
+    ///
+    /// The one other source is a bare string SYMBOL, which carries the
+    /// property of the operand that defined it: with `X equ 'AB'`, `dc.w X` and
+    /// `dc.w (X)` are `4142`, with `X equ 'A'+'B'` it is `4142` too, and with
+    /// `X equ "AB"` or `X equ 'AB'+1` it is `0041 0042` / `0041 0043`. A symbol
+    /// inside a larger operand does not lend it the property: `dc.w X+'B'` is
+    /// `0041 0042` with `X equ 'A'`.
+    fn single_quoted_operand(&self, toks: &[Token]) -> bool {
+        let mut toks = toks;
+        while let Some(inner) = peel_parens(toks) {
+            toks = inner;
         }
+        if let [Token { tok: Tok::Ident(name), .. }] = toks {
+            return self.resolve_str_sym(name).is_some_and(|s| s.single_quoted);
+        }
+        let single = |t: Option<&Token>| matches!(t.map(|t| &t.tok), Some(Tok::Str(_, Quote::Single)));
+        single(toks.first()) && single(toks.last())
+    }
+
+    /// How a data directive whose elements are `width` bytes writes the operand
+    /// `toks`, when it is string-typed.
+    ///
+    /// asl renders a string ONE ELEMENT PER CHARACTER at the directive's width
+    /// (`dc.w "AB"` is `0041 0042`, `dc.l "AB"` is `0000 0041 0000 0042`), each
+    /// character through the code page (`dc.w 'ABC'` under `charset 'A',$11`,
+    /// `'B',$22`, `'C',$99` is `0011 0022 0099`). The one exception is a
+    /// [single-quoted](Self::single_quoted_operand) operand whose string has at
+    /// most `width` characters: that is ONE element, the packed integer (`dc.w
+    /// 'AB'` is `4142`, `dc.l 'ABC'` is `0041 4243`, `dc.b ''` is `00`). One
+    /// character more and it is a string again: `dc.w 'ABC'` is
+    /// `0041 0042 0043` and `dc.b 'AB'` is `41 42`.
+    fn data_string_operand(&self, toks: &[Token], width: usize) -> DataStr {
+        match self.eval_str_typed(toks) {
+            StrTyped::NotStr => DataStr::NotStr,
+            StrTyped::Refuse(msg) => DataStr::Refuse(msg),
+            StrTyped::Str(s) => self.data_string_value(&s, self.single_quoted_operand(toks), width),
+        }
+    }
+
+    /// [`Self::data_string_operand`]'s rendering of the string VALUE `s`.
+    fn data_string_value(&self, s: &str, single_quoted: bool, width: usize) -> DataStr {
+        let cs = &self.state.charset;
+        let bytes: Vec<u8> = s.chars().map(|c| cs.map_char(c)).collect();
+        if single_quoted && bytes.len() <= width {
+            DataStr::Packed(bytes.iter().fold(0i64, |v, b| (v << 8) | i64::from(*b)))
+        } else {
+            DataStr::Chars(bytes)
+        }
+    }
+
+    /// Write the data operand `d` in elements of `unit`, or refuse it at
+    /// `gspan`. `false` when it is not string-typed, and the caller's integer
+    /// path must run.
+    fn emit_data_string(&mut self, d: DataStr, unit: DataUnit, gspan: Span, span: Span) -> bool {
+        let bytes: Vec<u8> = match d {
+            DataStr::NotStr => return false,
+            DataStr::Refuse(msg) => {
+                self.err(gspan, msg);
+                return true;
+            }
+            DataStr::Packed(v) => unit.element(v),
+            DataStr::Chars(chars) => chars.iter().flat_map(|&b| unit.char_element(b)).collect(),
+        };
+        self.emit(&bytes, vec![], span);
+        true
     }
 
     /// The position of a FLOAT-typed leaf in `toks` — a literal that no
@@ -8893,7 +8975,7 @@ impl Asm {
             // own branch further down, in the same one scan with its escapes. An
             // interpolation with no value is refused, as the bare branch refuses
             // it: written out, it would be its own source text in the image.
-            let called = if matches!(called.as_slice(), [Token { tok: Tok::Str(_), .. }]) {
+            let called = if matches!(called.as_slice(), [Token { tok: Tok::Str(..), .. }]) {
                 called
             } else {
                 match self.fold_literal_interps(&called, false) {
@@ -8933,12 +9015,16 @@ impl Asm {
             // `dc.b "A\x41\65"` is `11 11 11`. An invalid escape, or an
             // interpolation with no value, is refused rather than written as its
             // source text.
-            if let [Token { tok: Tok::Str(raw), .. }] = expanded.as_slice() {
+            //
+            // A single-quoted literal of at most one character is the packed
+            // integer instead ([`Self::data_string_operand`]), which differs from
+            // the character sequence only for the empty one: `dc.b ''` is `00`
+            // where `dc.b ""` writes nothing.
+            if let [Token { tok: Tok::Str(raw, q), .. }] = expanded.as_slice() {
                 match self.literal_value(raw, false) {
                     Ok(s) => {
-                        let cs = &self.state.charset;
-                        let bytes: Vec<u8> = s.chars().map(|c| cs.map_char(c)).collect();
-                        self.emit(&bytes, vec![], span);
+                        let d = self.data_string_value(&s, *q == Quote::Single, 1);
+                        self.emit_data_string(d, DataUnit::Byte, gspan, span);
                     }
                     Err(e) => self.err(gspan, e.to_string()),
                 }
@@ -8959,18 +9045,9 @@ impl Asm {
             // wrong byte at exit 0, which is the defect class this whole
             // parcel closes, so re-opening it one directive down would be a
             // poor trade.
-            match self.eval_str_typed(&expanded) {
-                StrTyped::Str(s) => {
-                    let cs = &self.state.charset;
-                    let bytes: Vec<u8> = s.chars().map(|c| cs.map_char(c)).collect();
-                    self.emit(&bytes, vec![], span);
-                    continue;
-                }
-                StrTyped::Refuse(msg) => {
-                    self.err(gspan, msg);
-                    continue;
-                }
-                StrTyped::NotStr => {}
+            let d = self.data_string_operand(&expanded, 1);
+            if self.emit_data_string(d, DataUnit::Byte, gspan, span) {
+                continue;
             }
             // Fold any nested string comparison (`substr(...)="x"`) to 0/1 before
             // the numeric parse (mirrors `eval_all`; T5).
@@ -9042,12 +9119,23 @@ impl Asm {
                     continue;
                 }
             };
-            if let Some(ssp) = Self::string_leaf(&expanded) {
-                self.err(ssp, STRING_IN_WIDE_DATA);
+            // A string-typed operand is written per character, or as one packed
+            // element when single-quoted and short enough
+            // ([`Self::data_string_operand`]). Its literals' interpolations are
+            // folded first, as `directive_db` folds them.
+            let expanded = match self.fold_literal_interps(&expanded, false) {
+                Ok(t) => t,
+                Err((_, e)) => {
+                    self.err(gspan, e.to_string());
+                    continue;
+                }
+            };
+            let d = self.data_string_operand(&expanded, 2);
+            if self.emit_data_string(d, DataUnit::WordLe, gspan, span) {
                 continue;
             }
-            if let Some(msg) = self.wide_data_string_refusal(&expanded) {
-                self.err(gspan, msg);
+            if let Some(ssp) = Self::double_quoted_leaf(&expanded) {
+                self.err(ssp, STRING_IN_WIDE_DATA);
                 continue;
             }
             let e = match crate::expr::parse_expr(&expanded, &self.ectx()) {
@@ -9142,12 +9230,23 @@ impl Asm {
                     continue;
                 }
             };
-            if let Some(ssp) = Self::string_leaf(&expanded) {
-                self.err(ssp, STRING_IN_WIDE_DATA);
+            // A string-typed operand is written per character, or as one packed
+            // element when single-quoted and short enough
+            // ([`Self::data_string_operand`]). Its literals' interpolations are
+            // folded first, as `directive_db` folds them.
+            let expanded = match self.fold_literal_interps(&expanded, false) {
+                Ok(t) => t,
+                Err((_, e)) => {
+                    self.err(gspan, e.to_string());
+                    continue;
+                }
+            };
+            let d = self.data_string_operand(&expanded, 2);
+            if self.emit_data_string(d, DataUnit::WordBe, gspan, span) {
                 continue;
             }
-            if let Some(msg) = self.wide_data_string_refusal(&expanded) {
-                self.err(gspan, msg);
+            if let Some(ssp) = Self::double_quoted_leaf(&expanded) {
+                self.err(ssp, STRING_IN_WIDE_DATA);
                 continue;
             }
             let e = match crate::expr::parse_expr(&expanded, &self.ectx()) {
@@ -9237,12 +9336,23 @@ impl Asm {
                     continue;
                 }
             };
-            if let Some(ssp) = Self::string_leaf(&expanded) {
-                self.err(ssp, STRING_IN_WIDE_DATA);
+            // A string-typed operand is written per character, or as one packed
+            // element when single-quoted and short enough
+            // ([`Self::data_string_operand`]). Its literals' interpolations are
+            // folded first, as `directive_db` folds them.
+            let expanded = match self.fold_literal_interps(&expanded, false) {
+                Ok(t) => t,
+                Err((_, e)) => {
+                    self.err(gspan, e.to_string());
+                    continue;
+                }
+            };
+            let d = self.data_string_operand(&expanded, 4);
+            if self.emit_data_string(d, DataUnit::LongBe, gspan, span) {
                 continue;
             }
-            if let Some(msg) = self.wide_data_string_refusal(&expanded) {
-                self.err(gspan, msg);
+            if let Some(ssp) = Self::double_quoted_leaf(&expanded) {
+                self.err(ssp, STRING_IN_WIDE_DATA);
                 continue;
             }
             let e = match crate::expr::parse_expr(&expanded, &self.ectx()) {
@@ -9431,8 +9541,28 @@ impl Asm {
                 // stored raw: Sonic 2's `charset 'A',"\x10\11\x12"` maps `A`,
                 // `B`, `C` to `10 0B 12`, three entries, not the twelve source
                 // characters.
+                //
+                // A SINGLE-QUOTED target ([`Self::single_quoted_operand`]) is the
+                // integer instead, packed through the page live now, whatever its
+                // length: asl, exit 0, under `charset 'B',$77`, reads `charset
+                // 'A','B'` and `charset 'A',('B')` as mapping `A` to `$77`, while
+                // `charset 'A','B'+0` (a string by the operand rule) maps it to
+                // the raw `$42`; `charset $41,'BC'` is `#1320 range overflow`, not
+                // a two-entry table.
+                if self.single_quoted_operand(groups[1]) {
+                    let len = self.eval_str(groups[1]).map(|s| s.chars().count());
+                    if matches!(len, Some(n) if n == 0 || n > MAX_PACKED_STR_BYTES) {
+                        self.err(span, CHARSET_UNPACKABLE_TARGET);
+                        return;
+                    }
+                    let Some(tgt) = self.charset_index(groups[1], span) else {
+                        return;
+                    };
+                    self.state.charset.set(src, tgt);
+                    return;
+                }
                 let target = match groups[1] {
-                    [Token { tok: Tok::Str(raw), span: lspan }] => {
+                    [Token { tok: Tok::Str(raw, _), span: lspan }] => {
                         match self.literal_value(raw, false) {
                             Ok(s) => Some(s),
                             Err(e) => {
@@ -9441,7 +9571,18 @@ impl Asm {
                             }
                         }
                     }
-                    g => self.eval_str(g),
+                    // A string-typed target asl has no dependable answer for (a
+                    // `+` over a 5-character string) is refused here: read as
+                    // not-a-string it would fall to the integer target below and
+                    // be packed into an entry asl never writes.
+                    g => match self.eval_str_typed(g) {
+                        StrTyped::Str(s) => Some(s),
+                        StrTyped::Refuse(msg) => {
+                            self.err(span, msg);
+                            return;
+                        }
+                        StrTyped::NotStr => None,
+                    },
                 };
                 if let Some(s) = target {
                     // A string target that would run past $FF is refused whole,
@@ -11669,7 +11810,7 @@ impl Asm {
         let head = self.subst_frame(&lines[start]);
         let head = head.as_ref().unwrap_or(&lines[start]);
         let toks = lex_line(
-            &head.text, self.state.cpu, &self.state.charset,
+            &head.text, self.state.cpu,
             lines[start].source,
             lines[start].base,
         )
@@ -11826,7 +11967,7 @@ impl Asm {
                 // Quoted so it re-lexes as one `Tok::Str` whose VALUE is `s`: a
                 // literal's escapes are processed where it is used, so a
                 // backslash or a quote in the value is written escaped.
-                return format!("\"{}\"", crate::escape::quote(&s));
+                return format!("\"{}\"", crate::escape::quote(&s, Quote::Double));
             }
             return qualify(&v, self.dot_scope(&v));
         }
@@ -12617,18 +12758,10 @@ fn slice_source(text: &str, base: u32, group: &[Token]) -> String {
 ///   21/       2 : =>TRUE               		elsecase
 /// ```
 ///
-/// sigil DIVERGES on that one spelling and this is the honest place to say so.
-/// Its lexer folds `'…'` to an integer for the whole language, deliberately and
-/// correctly for ordinary expressions (`'INIT'` is a packed longword in Aeon's
-/// sources), and the quote form does not survive into the token, so a
-/// single-quoted selector operand arrives here as an integer and compares as
-/// one. Closing it needs the token to carry both readings, which is a lexer
-/// change with every expression consumer downstream of it, not a decision this
-/// routine can make. No `switch` or `case` operand in s1disasm, s2disasm,
-/// skdisasm or aeon is spelled with single quotes (0 lines), so the divergence
-/// is unexercised today; the test
-/// `a_single_quoted_case_operand_compares_as_an_integer_which_asl_does_not` pins
-/// what sigil actually does so the gap stays visible instead of drifting.
+/// The lexer keeps `'...'` a string token marked single-quoted, which packs to
+/// the integer wherever an integer is wanted, so a single-quoted selector
+/// operand arrives here as the string it is to asl
+/// (`a_single_quoted_case_operand_is_a_string_as_asl_reads_it`).
 #[derive(Clone, PartialEq, Eq)]
 // REASON: the doc comment above quotes asl listings verbatim, and asl separates
 // its listing columns with TABS. The tabs ARE the evidence: reflowing them to
@@ -13343,7 +13476,7 @@ fn split_root_plus(toks: &[Token]) -> Option<(&[Token], &[Token])> {
                 after_operand = false;
             }
             Tok::Punct(_) => after_operand = false,
-            Tok::Int(_) | Tok::Str(_) | Tok::Ident(_) | Tok::Float(_) | Tok::Dollar => {
+            Tok::Int(_) | Tok::Str(..) | Tok::Ident(_) | Tok::Float(_) | Tok::Dollar => {
                 after_operand = true;
             }
         }
@@ -13380,7 +13513,7 @@ fn trailing_str_expr_len(out: &[Token]) -> Option<usize> {
     let last = out.last()?;
     let n = out.len();
     match &last.tok {
-        Tok::Str(_) | Tok::Ident(_) => Some(1),
+        Tok::Str(..) | Tok::Ident(_) => Some(1),
         Tok::Punct(Punct::RParen) => {
             // Walk back to the matching `(`; the ident before it must name a
             // string-producing builtin.
@@ -15183,7 +15316,7 @@ mod tests {
         use super::parse_reg_list;
         use crate::lexer::lex_line;
         let mask = |s: &str| {
-            let toks = lex_line(s, Cpu::M68000, &crate::charset::CodePage::identity(), sigil_span::SourceId(0), 0).unwrap();
+            let toks = lex_line(s, Cpu::M68000, sigil_span::SourceId(0), 0).unwrap();
             parse_reg_list(&toks)
         };
         // Single reg: bit0=D0..bit7=D7, bit8=A0..bit15=A7 (canonical order).
@@ -17176,23 +17309,14 @@ C:\n";
     }
 
     #[test]
-    fn a_single_quoted_case_operand_compares_as_an_integer_which_asl_does_not() {
-        // A KNOWN DIVERGENCE, pinned rather than asserted as correct, so that
-        // it stays visible. asl (probes `p14`/`p22`), `V = 65`: both `case 'B'`
-        // and `case 'A'` are `=>FALSE` and the `elsecase` is taken, emitting
-        // `EE`, because a quoted selector operand is a STRING to asl whichever
-        // quote form is used. sigil emits `22`: its lexer folds `'A'` to the
-        // integer $41 for the whole language, which is right for an ordinary
-        // expression (asl agrees there: probe `p21`, `dc.b 'A'+1` is `42`) but
-        // loses the spelling this one construct reads the type from.
-        //
-        // Not closed here because closing it means giving the token both
-        // readings and revisiting every expression consumer, which is a lexer
-        // design call and not one this seam can make. Unexercised today: 0
-        // `switch`/`case` operands are single-quoted across s1disasm,
-        // s2disasm, skdisasm and aeon. See the [`SwitchVal`] doc.
+    fn a_single_quoted_case_operand_is_a_string_as_asl_reads_it() {
+        // asl (probes `p14`/`p22`), `V = 65`: both `case 'B'` and `case 'A'`
+        // are `=>FALSE` and the `elsecase` is taken, emitting `EE`, because a
+        // quoted case operand is a STRING to asl whichever quote form is used,
+        // and the integer 65 matches no string. The lexer keeps `'A'` a
+        // single-quoted string token, so this reads the type from it.
         let src = "        cpu 68000\n        padding off\n        phase 0\nV       = 65\n        switch V\n        case 'B'\n        dc.b $11\n        case 'A'\n        dc.b $22\n        elsecase\n        dc.b $EE\n        endcase\n";
-        assert_eq!(image(src), vec![0x22], "asl emits EE here; see the comment");
+        assert_eq!(image(src), vec![0xEE]);
     }
 
     #[test]
@@ -20115,29 +20239,42 @@ C:\n";
 const FLOAT_IN_INT_CONTEXT: &str =
     "floating point value where an integer is required (wrap it in `int(...)`)";
 
-/// The diagnostic for a string operand reaching a data directive wider than a
-/// byte.
+/// The diagnostic for a DOUBLE-quoted literal standing inside a `dc.w`/`dc.l`/
+/// `dw` operand that is not string-typed as a whole.
 ///
-/// In a `dc`-family directive asl reads a string as a CHARACTER SEQUENCE, one
-/// element per character at the directive's own width, and an operator
-/// distributes over the elements: `dc.w "AB"` is `0041 0042`, and `dc.w "AB"+0`
-/// is `0041 0042` too, never the packed `4142`. That is the opposite of the
-/// EXPRESSION rule, where a one-to-four character string IS the packed integer
-/// (`expr.rs::string_to_int`).
+/// A string-typed operand is written per character before this is asked
+/// (`Asm::data_string_operand`). What is left is a literal under an operator
+/// that is not a string `+` (`dc.w "ab"-1`, an integer to asl, `6161`) and a
+/// string `+` whose integer side does not fold yet (`dc.w "ab"+X`), which asl
+/// renders as a string whose length depends on the sum. The expression parser
+/// would pack both, right for the first and silently wrong for the second when
+/// the sum outgrows one element, and this check cannot tell them apart, so it
+/// refuses both.
 ///
-/// The character-sequence form is not implemented for these widths. It is
-/// refused rather than folded through the expression parser, because that parser
-/// would pack it, and a packed word where asl writes two zero-extended ones is
-/// silently wrong bytes rather than a missing feature. `dc.b`/`db` DO carry the
-/// character-sequence form and consume it before the expression parser is
-/// reached, so only the wider directives arrive here.
-///
-/// Population, measured with the same command form on all four trees and proven
-/// to fire on a known-positive input: s1disasm, s2disasm, skdisasm and aeon
-/// contain no `dc.w`/`dc.l`/`dw` line with a string operand at all.
+/// A single-quoted literal in the same place is not refused: it packs as an
+/// integer leaf, which is asl's reading under every operator but `+`. Its one
+/// wrong shape is the second one above, a `+` whose integer side does not fold
+/// yet, where the sum outgrows one element; that is booked in
+/// `notes/campaign-gap-ledger.md` rather than refused, because refusing it
+/// would refuse `dc.w 'A'+L` with a forward label `L` that asl writes as the
+/// single word the numeric path gives (`0043`).
 const STRING_IN_WIDE_DATA: &str =
-    "string operand in a data directive wider than a byte: asl emits one \
-     zero-extended element per character here, which is not implemented";
+    "string operand in a data directive wider than a byte: a double-quoted string \
+     inside an integer expression here is not supported, because asl may write the \
+     result one element per character";
+
+/// The refusal for a single-quoted `charset` target that has no packed value:
+/// the empty one, or one of five characters or more.
+///
+/// asl reads a single-quoted target as an integer, and these two have none. It
+/// does not refuse them: `charset $41,''` and `charset $41,'BCDEF'` both exit 0
+/// and leave `dc.b "AB"` / `dc.b "ABCDE"` reading `41 42` / `41 42 43 44 45`, so
+/// they change nothing a probe of the named characters can see. What they do to
+/// the rest of the page is not established, so they are refused rather than
+/// read as no-ops.
+const CHARSET_UNPACKABLE_TARGET: &str =
+    "a single-quoted `charset` target must have 1 to 4 characters: asl reads it as an \
+     integer, and an empty or longer one has no integer value";
 
 /// The widest string asl's `string + integer` arithmetic has an answer for.
 ///
@@ -20171,16 +20308,6 @@ const STRING_PLUS_INT_UNDEFINED: &str =
      (exit 0, no diagnostic) or a value that differs on every run, so there is \
      no result to reproduce";
 
-/// `string + integer` under a `charset`, refused because the probe cannot say
-/// which of two readings asl uses and they differ in the emitted byte. See
-/// [`Asm::str_plus_int`] for the measurement and why guessing is worse than
-/// refusing.
-const STRING_PLUS_INT_CHARSET: &str =
-    "`string + integer` under a non-identity `charset` is refused: the \
-     arithmetic runs on the mapped bytes, but whether asl maps the result a \
-     second time is not decidable from any probe, and the two readings emit \
-     different bytes";
-
 /// asl's refusal for a string that an integer slot cannot take: length 0, or 5
 /// and longer. `error #1141: expected integer, but got string`, measured on
 /// `move.w #"",d0`, `move.w #"abcde",d0` and `move.l #"abcde",d0`, exit 2.
@@ -20213,6 +20340,70 @@ enum StrTyped {
     Refuse(String),
     /// Not string-typed: the caller's integer path runs unchanged.
     NotStr,
+}
+
+/// What a data directive writes for one operand, when the operand is
+/// string-typed; see `Asm::data_string_operand`.
+enum DataStr {
+    /// One element: this integer, which fits it.
+    Packed(i64),
+    /// One element per byte, each the code page's byte for a character.
+    Chars(Vec<u8>),
+    /// String-typed, and the caller must refuse with this text.
+    Refuse(String),
+    /// Not string-typed: the caller's integer path runs unchanged.
+    NotStr,
+}
+
+/// The element of a data directive a string operand is written in.
+#[derive(Clone, Copy)]
+enum DataUnit {
+    /// `dc.b`, `db`.
+    Byte,
+    /// 68000 `dc.w`: big-endian.
+    WordBe,
+    /// 68000 `dc.l`: big-endian.
+    LongBe,
+    /// Z80 `dw`: little-endian.
+    WordLe,
+}
+
+impl DataUnit {
+    /// The element holding `v`, an integer that fits it.
+    fn element(self, v: i64) -> Vec<u8> {
+        match self {
+            DataUnit::Byte => vec![v as u8],
+            DataUnit::WordBe => (v as u16).to_be_bytes().to_vec(),
+            DataUnit::LongBe => (v as u32).to_be_bytes().to_vec(),
+            DataUnit::WordLe => (v as u16).to_le_bytes().to_vec(),
+        }
+    }
+
+    /// The element holding one character's code-page byte `b`.
+    ///
+    /// The 68000 directives ZERO-extend it and the Z80 `dw` SIGN-extends it.
+    /// asl, exit 0: `dc.w "\x99\x41"` is `0099 0041` and `dc.l "\x99\x41"` is
+    /// `0000 0099 0000 0041`, while under `cpu z80` `dw "\x99\x41"` is
+    /// `99 FF 41 00` and `dw "\x7f\x80"` is `7F 00 80 FF`. A character the page
+    /// maps past `$7F` extends the same way: `dw 'CAB'` with `C` mapped to
+    /// `99h` is `99 FF 11 00 22 00`.
+    fn char_element(self, b: u8) -> Vec<u8> {
+        match self {
+            DataUnit::Byte => vec![b],
+            DataUnit::WordBe => vec![0, b],
+            DataUnit::LongBe => vec![0, 0, 0, b],
+            DataUnit::WordLe => i16::from(b as i8).to_le_bytes().to_vec(),
+        }
+    }
+}
+
+/// A string-valued symbol: its value, and whether the operand that bound it was
+/// single-quoted (see `Asm::single_quoted_operand`), which a data
+/// directive naming the symbol bare reads as that operand's.
+#[derive(Clone, Debug)]
+struct StrSym {
+    text: String,
+    single_quoted: bool,
 }
 
 /// A front-end-only NUMBER: AS's expression evaluator is TYPED, and the
