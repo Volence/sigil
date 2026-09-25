@@ -122,3 +122,6 @@ lbl_movem_pc	`A1:` label, `movem.l A1(pc),d0-d1`
 lbl_dcl_fwd	`A1:` label, `dc.l A1+Fwd`, `Fwd` defined after
 lbl_rept	`A1:` label, `rept A1-$11FF`
 lbl_imm_before_def	`#A1+2` read ABOVE the `A1:` definition
+alias_equ_d3	`X equ d3` then `move.w X,d0` (a register alias)
+alias_equ_A1_label	`A1:` label, `X equ A1`, `move.w X,d0`
+alias_reg_d3	`X reg d3` then `move.w X,d0`

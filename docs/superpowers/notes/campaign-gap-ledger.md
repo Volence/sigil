@@ -6210,7 +6210,9 @@ delegates to the default hook everywhere else.
   integer ... but got register` (probe `z01`, no `$$` involved; same with `$$x` in `j07`, and asl's `#10000
   internal error` in `i09`/`j08`). Without the `A1:` label sigil refuses it (`x06`). A silent
   over-acceptance, pre-existing at `120be609`. Kill: the register check in the value fold must win over a
-  symbol of the same spelling. OPEN
+  symbol of the same spelling. CLOSED on branch `parcel/as-register-label` (`63a678a5`): the fold, the
+  unresolved-name walk, the numeric `if` reader and `fixup_target` now read the register first; `z01`,
+  `j07`, `j08` and `i09` refuse (`docs/superpowers/notes/2026-09-25-as-register-spelled-label.md`).
 - [s3k-dollar-labels, 2026-09-25] **`$$` corners not measured.** `$$` names as `enum` members inside an
   expansion body, and `pushv`/`popv` of a `$$` name, take the file-level key (`binder_key`); asl was not
   probed on either (the `pushv` probes `g09`/`k05` had the wrong operand shape). `$$.name` is refused by name
@@ -6290,3 +6292,15 @@ delegates to the default hook everywhere else.
   and six of its tests fail `COULD NOT MEASURE` (reproduced at master a9a00832 with `target-master`; passes once the
   leftover is removed). `landing-run.sh`'s default `.target-land` hides it. Either the test cleans up, or the scan
   also skips the directory `CARGO_TARGET_DIR` names. OPEN
+- [as-register-label, 2026-09-25] **A data directive whose operand is a lone 68000 register emits nothing in
+  asl, and a symbol spelled like the register no longer rescues it in sigil.** `A1:` then `dc.w A1`, `dc.l A1`,
+  `dc.b A1,0`, `dc.w Lab,A1,Lab`: asl exit 0 with the register operand dropped (probes `lbl_dcw`, `lbl_dcl`,
+  `dc_b`, `dc_multi`). sigil wrote the label's value there before and refuses by name now, under the standing
+  ruling in `as_register_in_value_position.rs`; `reg_label_dcw_lone` is ledgered in the over-acceptance
+  corpus. A corpus line of that shape would stop building rather than change bytes; none exists in S1, S2,
+  S3K, S3C, S3 or aeon (all byte-identical). OPEN (ruling stands; re-decide only if a real source needs it)
+- [as-register-label, 2026-09-25] **A register spelling in a macro-body label keyed by the expansion is not
+  covered by name.** `reads_as_register` is asked of the name the expression carries. A body `A1:` read in
+  the same body is refused (probe `macro_body_label`), so the spelled name reaches the check there; a path
+  that hands the fold an already-qualified key (` exp#N.A1`) would slip past it. None was found by the 127
+  probes. OPEN (no action unless a probe finds one)

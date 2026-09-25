@@ -1,3 +1,6 @@
+alias_equ_A1_label	0		4e713009	0		4e7130381200	BYTES-DIFFER	0
+alias_equ_d3	0		3003	1	probe.asm(3):1: error: `d3` is a register, not a value: expected an integer, floating point number or string	-	OVER-REFUSE	0
+alias_reg_d3	0		3003	1	probe.asm(3):3: error: `reg` is not a recognized 68000 mnemonic	-	OVER-REFUSE	0
 case_a1_read_A1	2	#1145 expected integer, floating point number or string but got register	-	1	probe.asm(4):2: error: `A1` is a register, not a value: expected an integer, floating point number or string	-	both-refuse	0
 case_A1_read_a1	2	#1145 expected integer, floating point number or string but got register	-	1	probe.asm(4):2: error: `a1` is a register, not a value: expected an integer, floating point number or string	-	both-refuse	0
 cont_A10	0		4e71303c12021200	0		4e71303c12021200	same	0

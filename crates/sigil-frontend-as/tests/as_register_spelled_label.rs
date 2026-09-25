@@ -5,7 +5,7 @@
 //!
 //! Reference asl, md5 `61e672562465725a8c102288a7da9098`, through
 //! `docs/superpowers/notes/asl-reference/asl_ref.sh`'s `asl_run -xx -n -q -A -L -U
-//! -i .`, over the 124 probes of
+//! -i .`, over the 127 probes of
 //! `docs/superpowers/notes/2026-09-25-as-register-spelled-label/` (the note beside
 //! that directory tables every one):
 //!
@@ -24,7 +24,8 @@
 //!
 //! Every expected byte string below is asl's own image from a probe asl exited 0
 //! on with no diagnostic at all, then its `p2bin -p=0`, as hex from `$1200`, where
-//! every probe orgs. The probe sources are the `*_SRC` constants verbatim. A
+//! every probe orgs. Each source below, header plus body, is its probe file's
+//! text byte for byte (`probes/INDEX.tsv` there names the shapes). A
 //! refusal row quotes no asl byte: an asl run with any error is not a source of
 //! values.
 

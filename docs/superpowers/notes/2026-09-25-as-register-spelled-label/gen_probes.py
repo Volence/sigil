@@ -113,6 +113,11 @@ for k, (u, d) in more.items():
     p(f"lbl_{k}", L2 + u, desc=f"`A1:` label, {d}")
 p("lbl_imm_before_def", "\tmove.w\t#A1+2,d0\nA1:\tnop\n", desc="`#A1+2` read ABOVE the `A1:` definition")
 
+# --- register aliases: asl lets `equ`/`reg` name a register -----------------
+p("alias_equ_d3", "X\tequ\td3\n\tmove.w\tX,d0\n", desc="`X equ d3` then `move.w X,d0` (a register alias)")
+p("alias_equ_A1_label", "A1:\tnop\nX\tequ\tA1\n\tmove.w\tX,d0\n", desc="`A1:` label, `X equ A1`, `move.w X,d0`")
+p("alias_reg_d3", "X\treg\td3\n\tmove.w\tX,d0\n", desc="`X reg d3` then `move.w X,d0`")
+
 os.makedirs(OUT, exist_ok=True)
 with open(os.path.join(OUT, "INDEX.tsv"), "w") as idx:
     for n, (src, d) in P.items():

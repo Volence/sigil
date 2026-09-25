@@ -818,6 +818,23 @@ points at it rather than restating it, so there is one copy to keep true.
   `$$` parcel with a `$$`-free control: `docs/superpowers/notes/2026-09-25-s3k-dollar-labels.md` and
   its gap-ledger rows (which also carry the `.`-local scope not following `cpu`/`padding`/`supmode`/
   `listing`/`restore`/`endstruct` as asl's does).
+- On branch `parcel/as-register-label` (measurement `a2080de5` and `4d18bacc`, fix `63a678a5`): asl's rule
+  measured over 127 probes (`docs/superpowers/notes/2026-09-25-as-register-spelled-label.md`): on the 68000
+  `d0`-`d7`/`a0`-`a7`/`sp` in any case is the register in every expression whatever symbol exists. sigil now
+  reads it so: 47 over-accepts to 0 (i09, j07, j08, z01 all refused with a sentence naming the shadowed
+  symbol); the 58 accepted shapes keep asl's bytes; S1, S2, S3K, S3C, S3 byte-identical and refusal sets
+  unchanged. The 6 former BYTES-DIFFER rows are now named refusals (silent-empty `dc` ruling, and
+  `AS-REGISTER-ALIAS-SYMBOL` below).
+
+### AS-REGISTER-ALIAS-SYMBOL
+
+- state: **open**  size: `S`  project: `SIGIL-AS-REPLACEMENT`
+- asl lets `X equ d3` and `X reg d3` name a register: `move.w X,d0` is `3003` (exit 0). sigil refuses both
+  (`d3` is a register, not a value; `reg` is not a recognized 68000 mnemonic). With `A1:` defined,
+  `X equ A1` is the alias of `a1` to asl (`3009`); sigil wrote `3038 1200` there before
+  AS-REGISTER-SPELLED-LABEL-SILENT and refuses the line by name after it. Probes `alias_equ_d3`,
+  `alias_reg_d3`, `alias_equ_A1_label` in `docs/superpowers/notes/2026-09-25-as-register-spelled-label/`.
+  An over-refusal, never a wrong byte; no corpus or aeon source uses it (all build unchanged).
 
 ### PORT-TESTS-RED-AT-AEON-TIP
 
