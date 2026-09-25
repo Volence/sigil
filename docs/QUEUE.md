@@ -819,9 +819,10 @@ points at it rather than restating it, so there is one copy to keep true.
   `4143`) and sigil's lexer turns into one integer. Requoting those 6 operands gives the reference md5
   under sigil. Probes sq1 to sq4 in `docs/superpowers/notes/2026-09-25-s3k-whole-rom/`.
 
-### AS-CLI-DEFINE
+### AS-CLI-DEFINE: LANDED
 
-- state: **doing** from 2026-09-25  size: `S`  project: `SIGIL-AS-REPLACEMENT`
+- **LANDED** 2026-09-25 at `ae50976a`, pushed; 5694 passed, 0 failed.
+- was: state **doing** from 2026-09-25  size: `S`  project: `SIGIL-AS-REPLACEMENT`
 - `-D NAME[=VALUE]` on the assembler path, asl-exact: a SET variable (later `set` may change it, `=`
   and `equ` refused as asl #2035). Removes the S3K wrapper root. Ruled here, logged: NOT wired to
   `Options.defines`, whose documented let-the-file-win semantics would accept two programs asl
