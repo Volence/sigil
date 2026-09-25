@@ -1,0 +1,35 @@
+### value given: asl -D FOO=5 d1.asm   ( dc.b FOO|)
+  exit 0: 05
+### no value: asl -D FOO d1.asm   ( dc.b FOO|)
+  exit 0: 01
+### comma list: asl -D FOO=1,BAR=2 d2.asm   ( dc.b FOO,BAR|)
+  exit 0: 0102
+### hex value: asl -D FOO=$10 d1.asm   ( dc.b FOO|)
+  exit 0: 10
+### in-file = after -D: asl -D FOO=5 d3.asm   (FOO = 7| dc.b FOO|)
+  refused: ASL_EXIT=2
+    > > > d3.asm(2): error #2035: variables cannot be redefined as constants
+          1 error
+          0 warnings
+    > > > d3.asm(2): error #2035: variables cannot be redefined as constants
+### case (-U): -D FOO, use foo: asl -D FOO=5 d4.asm   ( dc.b foo|)
+  refused: ASL_EXIT=2
+    > > > d4.asm(2):7: error #1010: symbol undefined
+          1 error
+          0 warnings
+    > > > d4.asm(2):7: error #1010: symbol undefined
+### if on -D symbol, 0: asl -D FOO=0 d5.asm   ( if FOO| dc.b 1| else| dc.b 2| endif|)
+  exit 0: 02
+### if on -D symbol, 1: asl -D FOO=1 d5.asm   ( if FOO| dc.b 1| else| dc.b 2| endif|)
+  exit 0: 01
+### in-file set after -D: asl -D FOO=5 d6.asm   (FOO set 7| dc.b FOO|)
+  exit 0: 07
+### in-file equ after -D: asl -D FOO=5 d7.asm   (FOO equ 7| dc.b FOO|)
+  refused: ASL_EXIT=2
+    > > > d7.asm(2): error #2035: variables cannot be redefined as constants
+          1 error
+          0 warnings
+    > > > d7.asm(2): error #2035: variables cannot be redefined as constants
+### -D then use, set, use: asl -D FOO=5 d8.asm   ( dc.b FOO|FOO set 7| dc.b FOO|)
+  exit 0: 0507
+DPROBE_END
