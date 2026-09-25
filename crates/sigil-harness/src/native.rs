@@ -1259,7 +1259,17 @@ pub fn ensure_generated(aeon: &Path) {
 /// residual AS, one way (the module is self-contained — every `pub const` folds
 /// within it), so a single standalone lower suffices; it does not need the full
 /// emp build.
-pub fn harvest_engine_constants(aeon: &Path) -> Result<Vec<(String, i64)>, String> {
+///
+/// SHAPE: the fold is seeded with `profile`'s own comptime define set
+/// ([`shape_defines`]), the set the `.emp` build lowers `engine.constants` under,
+/// so a `pub const` that reads a build define (`PAGE_FRAMES_CLAMP` reads
+/// `STRESS_EVICT`) harvests to the value the ROM encodes in that shape. The result
+/// has three readers, and each sees the shape's value: the residual AS reads it as
+/// guarded `-D` defines; `attach_guarded_equ_exports` exports each entry as a link
+/// `EquSym`, which resolves bare link references and is published as an `EQU` row
+/// in the listing; and [`harvest_game_constants`] seeds it into the game modules'
+/// folds.
+pub fn harvest_engine_constants(aeon: &Path, profile: &GameProfile) -> Result<Vec<(String, i64)>, String> {
     let path = aeon.join("engine/system/constants.emp");
     let src = sigil_span::read_set::read_to_string(&path)
         .map_err(|e| format!("harvest_engine_constants: read {}: {e}", path.display()))?;
@@ -1267,17 +1277,14 @@ pub fn harvest_engine_constants(aeon: &Path) -> Result<Vec<(String, i64)>, Strin
     if pdiags.iter().any(|d| d.level == sigil_span::Level::Error) {
         return Err(format!("harvest_engine_constants: parse: {:?}", pdiags.first()));
     }
-    // STRESS_EVICT (Art-streaming Task-7 dev-fixture define) must be seeded: the new
-    // PAGE_FRAMES_CLAMP pub const references it, and eval_all_pub_consts folds EVERY
-    // pub const. This harvest is shape-agnostic and feeds the AS -D side only; the
-    // .emp build takes STRESS_EVICT from the shape_defines merge (where the
-    // profile's built-in rows carry it), so the harvested PAGE_FRAMES_CLAMP
-    // (== PAGE_FRAMES at the seed 0) is an unused AS define.
-    let (vals, diags) = sigil_frontend_emp::eval::eval_all_pub_consts(
-        &file,
-        Some(aeon),
-        &[("STRESS_EVICT".to_string(), 0)],
-    );
+    // eval_all_pub_consts folds EVERY pub const, so every build define a const reads
+    // (PAGE_FRAMES_CLAMP reads STRESS_EVICT) must be seeded at the value this shape
+    // builds with. The seed is the shape's full define set, the built-in profile rows
+    // merged with the game's map.toml rows: the same set the .emp build lowers this
+    // module under. Each harvested value is then the one the ROM encodes, and it is
+    // what the residual AS, the link EquSym table and the listing's EQU rows receive.
+    let defines = shape_defines(profile, aeon)?;
+    let (vals, diags) = sigil_frontend_emp::eval::eval_all_pub_consts(&file, Some(aeon), &defines);
     if diags.iter().any(|d| d.level == sigil_span::Level::Error) {
         return Err(format!("harvest_engine_constants: resolve: {:?}", diags.first()));
     }
@@ -1305,14 +1312,15 @@ pub fn harvest_engine_constants(aeon: &Path) -> Result<Vec<(String, i64)>, Strin
 /// value dependency is served by seeding the engine constants FIRST as defines
 /// (`eval_path` falls back to defines after consts/equs), the same pattern the
 /// `-D` seam already uses.
-pub fn harvest_game_constants(aeon: &Path, rel: &str, debug: bool) -> Result<Vec<(String, i64)>, String> {
-    // Seed the engine constants as defines so the game module's lone cross-module
-    // reference (`COLLECTED_MASK_BYTES`) folds inside the standalone eval. Also seed
-    // `DEBUG` (the build shape) — `sound_ids.emp`'s `SONG_COUNT = if DEBUG == 1 {..}`
-    // is shape-dependent; the constants module ignores it (harmless).
-    let engine = harvest_engine_constants(aeon)?;
+pub fn harvest_game_constants(aeon: &Path, rel: &str, profile: &GameProfile) -> Result<Vec<(String, i64)>, String> {
+    // Seed the engine constants, harvested in this shape, as defines so the game
+    // module's lone cross-module reference (`COLLECTED_MASK_BYTES`) folds inside the
+    // standalone eval. Also seed `DEBUG` (the build shape) — `sound_ids.emp`'s
+    // `SONG_COUNT = if DEBUG == 1 {..}` is shape-dependent; the constants module
+    // ignores it (harmless).
+    let engine = harvest_engine_constants(aeon, profile)?;
     let mut seed: Vec<(String, i128)> = engine.iter().map(|(n, v)| (n.clone(), *v as i128)).collect();
-    seed.push(("DEBUG".to_string(), if debug { 1 } else { 0 }));
+    seed.push(("DEBUG".to_string(), if profile.debug { 1 } else { 0 }));
 
     let path = aeon.join(rel);
     let src = sigil_span::read_set::read_to_string(&path)
@@ -1539,7 +1547,7 @@ pub fn assemble_as_side(aeon: &Path, profile: &GameProfile) -> Result<AsSide, St
     // constants FIRST, then seed them as GUARDED defines so the residual AS reads
     // them at comptime. `.emp` definitions flow into the AS assembly — the harvest
     // must precede the assemble (the ordering the flip makes real).
-    let mut guarded_defines = harvest_engine_constants(aeon)?;
+    let mut guarded_defines = harvest_engine_constants(aeon, profile)?;
     // The struct-offset sibling flip: the `.emp` struct twins are the sole author
     // of the object/section/DMA/parallax/VDP-shadow layouts (structs.asm deleted),
     // so their field offsets + sizes inject the same way the constants do.
@@ -1550,20 +1558,20 @@ pub fn assemble_as_side(aeon: &Path, profile: &GameProfile) -> Result<AsSide, St
     // `.emp`'s `ensure(extern("X") == X)` drift guards resolve against this
     // authority. `None` for AS-authored game config (demo, Parcel H).
     if let Some(rel) = profile.game_constants_rel {
-        guarded_defines.extend(harvest_game_constants(aeon, rel, profile.debug)?);
+        guarded_defines.extend(harvest_game_constants(aeon, rel, profile)?);
     }
     // Parcel F2: the game's `.emp` sound-id module (song / SFX ids + priority
     // ladder + SFXID_REV_LOOP) harvested the same way. Its `SONG_COUNT` is
     // shape-dependent, so the harvest seeds `DEBUG` from `profile.debug`.
     if let Some(rel) = profile.game_sound_ids_rel {
-        guarded_defines.extend(harvest_game_constants(aeon, rel, profile.debug)?);
+        guarded_defines.extend(harvest_game_constants(aeon, rel, profile)?);
     }
     // Parcel F2: the game's SFX-bank id counts (SFX_ID_BASE/SFX_COUNT/SFX_TABLE_LEN),
     // DERIVED in sfx_bank.emp from the SfxTable rows, harvested so the residual AS
     // soundBankHead reads SFX_TABLE_LEN. `eval_all_pub_consts` resolves the SfxTable
     // metadata standalone (shape-invariant), so the seed shape is immaterial.
     if let Some(rel) = profile.game_sfx_bank_rel {
-        guarded_defines.extend(harvest_game_constants(aeon, rel, profile.debug)?);
+        guarded_defines.extend(harvest_game_constants(aeon, rel, profile)?);
     }
     // Item #7b (Option B bridge, spec §9): seed engine RAM label ADDRESSES as
     // PLAIN value defines — the AS side folds its eager absolute-EA operands +

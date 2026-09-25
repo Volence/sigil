@@ -105,7 +105,10 @@ fn vector_table_matches_reference_rom_first_256_bytes() {
     // injects them as GUARDED AS `-D` defines so residual AS reads them at
     // comptime. Seed the same harvested guarded defines here, exactly as the real
     // harness does, so this standalone front-matter assembly resolves them.
-    let mut guarded_defines = sigil_harness::native::harvest_engine_constants(&aeon)
+    // The shape these harvests fold under: the plain sonic4 profile, matching the
+    // non-debug ASFLAGS above.
+    let plain = sigil_harness::native::sonic4_profile(false);
+    let mut guarded_defines = sigil_harness::native::harvest_engine_constants(&aeon, &plain)
         .expect("harvest engine constants");
     // Post the conv-a structs flip, structs.asm is gone too — ram.asm's `ds`
     // slot sizes (SST_len/DMAEntry_len/…) come from the struct-offset harvest.
@@ -120,7 +123,7 @@ fn vector_table_matches_reference_rom_first_256_bytes() {
         sigil_harness::native::harvest_game_constants(
             &aeon,
             "games/sonic4/config/constants.emp",
-            false,
+            &plain,
         )
         .expect("harvest game constants"),
     );
@@ -130,7 +133,7 @@ fn vector_table_matches_reference_rom_first_256_bytes() {
         sigil_harness::native::harvest_game_constants(
             &aeon,
             "games/sonic4/config/sound_ids.emp",
-            false,
+            &plain,
         )
         .expect("harvest game sound ids"),
     );
@@ -140,7 +143,7 @@ fn vector_table_matches_reference_rom_first_256_bytes() {
         sigil_harness::native::harvest_game_constants(
             &aeon,
             "games/sonic4/data/sound/sfx/sfx_bank.emp",
-            false,
+            &plain,
         )
         .expect("harvest sfx bank counts"),
     );

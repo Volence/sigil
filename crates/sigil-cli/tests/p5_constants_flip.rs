@@ -24,7 +24,7 @@ fn strict() -> bool {
 #[test]
 fn the_real_harvest_owns_the_flipped_constants() {
     let aeon = aeon();
-    let Ok(harvested) = harvest_engine_constants(Path::new(&aeon)) else {
+    let Ok(harvested) = harvest_engine_constants(Path::new(&aeon), &sigil_harness::native::sonic4_profile(false)) else {
         if strict() {
             panic!("SIGIL_STRICT_GATE set but harvest failed (set AEON_DIR to a real aeon)");
         }
@@ -47,7 +47,7 @@ fn the_real_harvest_owns_the_flipped_constants() {
 #[test]
 fn reintroducing_an_in_file_definition_is_a_hard_collision() {
     let aeon = aeon();
-    let Ok(harvested) = harvest_engine_constants(Path::new(&aeon)) else {
+    let Ok(harvested) = harvest_engine_constants(Path::new(&aeon), &sigil_harness::native::sonic4_profile(false)) else {
         if strict() {
             panic!("SIGIL_STRICT_GATE set but harvest failed (set AEON_DIR)");
         }
