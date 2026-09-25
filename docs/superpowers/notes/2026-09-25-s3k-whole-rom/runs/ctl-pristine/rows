@@ -1,0 +1,75 @@
+sonic3k.asm(201082) startDACBank(116) DAC_Setup(2) DAC_Setup(4):23: error: int(): could not evaluate float expression
+sonic3k.asm(201082) startDACBank(116) DAC_Setup(2) DAC_Setup(4):7: error: division by zero: 3579545 / 0
+sonic3k.asm(201082) startDACBank(117) DAC_Setup(4):23: error: int(): could not evaluate float expression
+sonic3k.asm(201082) startDACBank(117) DAC_Setup(4):7: error: division by zero: 3579545 / 0
+sonic3k.asm(201082) startDACBank(73) DAC_Setup(2) DAC_Setup(4):23: error: int(): could not evaluate float expression
+sonic3k.asm(201082) startDACBank(73) DAC_Setup(2) DAC_Setup(4):7: error: division by zero: 3579545 / 0
+sonic3k.asm(201082) startDACBank(74) DAC_Setup(2) DAC_Setup(4):23: error: int(): could not evaluate float expression
+sonic3k.asm(201082) startDACBank(74) DAC_Setup(2) DAC_Setup(4):7: error: division by zero: 3579545 / 0
+sonic3k.asm(201082) startDACBank(75) DAC_Setup(4):23: error: int(): could not evaluate float expression
+sonic3k.asm(201082) startDACBank(75) DAC_Setup(4):7: error: division by zero: 3579545 / 0
+sonic3k.asm(201082) startDACBank(76) DAC_Setup(4):23: error: int(): could not evaluate float expression
+sonic3k.asm(201082) startDACBank(76) DAC_Setup(4):7: error: division by zero: 3579545 / 0
+sonic3k.asm(201082) startDACBank(77) DAC_Setup(4):23: error: int(): could not evaluate float expression
+sonic3k.asm(201082) startDACBank(77) DAC_Setup(4):7: error: division by zero: 3579545 / 0
+sonic3k.asm(201082) startDACBank(78) DAC_Setup(2) DAC_Setup(4):23: error: int(): could not evaluate float expression
+sonic3k.asm(201082) startDACBank(78) DAC_Setup(2) DAC_Setup(4):7: error: division by zero: 3579545 / 0
+sonic3k.asm(201082) startDACBank(79) DAC_Setup(2) DAC_Setup(4):23: error: int(): could not evaluate float expression
+sonic3k.asm(201082) startDACBank(79) DAC_Setup(2) DAC_Setup(4):7: error: division by zero: 3579545 / 0
+sonic3k.asm(201082) startDACBank(80) DAC_Setup(2) DAC_Setup(4):23: error: int(): could not evaluate float expression
+sonic3k.asm(201082) startDACBank(80) DAC_Setup(2) DAC_Setup(4):7: error: division by zero: 3579545 / 0
+sonic3k.asm(201082) startDACBank(81) DAC_Setup(2) DAC_Setup(4):23: error: int(): could not evaluate float expression
+sonic3k.asm(201082) startDACBank(81) DAC_Setup(2) DAC_Setup(4):7: error: division by zero: 3579545 / 0
+sonic3k.asm(201082) startDACBank(82) DAC_Setup(2) DAC_Setup(4):23: error: int(): could not evaluate float expression
+sonic3k.asm(201082) startDACBank(82) DAC_Setup(2) DAC_Setup(4):7: error: division by zero: 3579545 / 0
+sonic3k.asm(201082) startDACBank(83) DAC_Setup(4):23: error: int(): could not evaluate float expression
+sonic3k.asm(201082) startDACBank(83) DAC_Setup(4):7: error: division by zero: 3579545 / 0
+sonic3k.asm(201082) startDACBank(84) DAC_Setup(2) DAC_Setup(4):23: error: int(): could not evaluate float expression
+sonic3k.asm(201082) startDACBank(84) DAC_Setup(2) DAC_Setup(4):7: error: division by zero: 3579545 / 0
+sonic3k.asm(201082) startDACBank(85) DAC_Setup(2) DAC_Setup(4):23: error: int(): could not evaluate float expression
+sonic3k.asm(201082) startDACBank(85) DAC_Setup(2) DAC_Setup(4):7: error: division by zero: 3579545 / 0
+sonic3k.asm(201082) startDACBank(86) DAC_Setup(4):23: error: int(): could not evaluate float expression
+sonic3k.asm(201082) startDACBank(86) DAC_Setup(4):7: error: division by zero: 3579545 / 0
+sonic3k.asm(201082) startDACBank(87) DAC_Setup(2) DAC_Setup(4):23: error: int(): could not evaluate float expression
+sonic3k.asm(201082) startDACBank(87) DAC_Setup(2) DAC_Setup(4):7: error: division by zero: 3579545 / 0
+sonic3k.asm(201082) startDACBank(88) DAC_Setup(2) DAC_Setup(4):23: error: int(): could not evaluate float expression
+sonic3k.asm(201082) startDACBank(88) DAC_Setup(2) DAC_Setup(4):7: error: division by zero: 3579545 / 0
+sonic3k.asm(201082) startDACBank(89) DAC_Setup(4):23: error: int(): could not evaluate float expression
+sonic3k.asm(201082) startDACBank(89) DAC_Setup(4):7: error: division by zero: 3579545 / 0
+sonic3k.asm(201082) startDACBank(90) DAC_Setup(4):23: error: int(): could not evaluate float expression
+sonic3k.asm(201082) startDACBank(90) DAC_Setup(4):7: error: division by zero: 3579545 / 0
+sonic3k.asm(201082) startDACBank(91) DAC_Setup(4):23: error: int(): could not evaluate float expression
+sonic3k.asm(201082) startDACBank(91) DAC_Setup(4):7: error: division by zero: 3579545 / 0
+sonic3k.asm(201082) startDACBank(92) DAC_Setup(2) DAC_Setup(4):23: error: int(): could not evaluate float expression
+sonic3k.asm(201082) startDACBank(92) DAC_Setup(2) DAC_Setup(4):7: error: division by zero: 3579545 / 0
+sonic3k.asm(201082) startDACBank(93) DAC_Setup(4):23: error: int(): could not evaluate float expression
+sonic3k.asm(201082) startDACBank(93) DAC_Setup(4):7: error: division by zero: 3579545 / 0
+sonic3k.asm(201082) startDACBank(94) DAC_Setup(4):23: error: int(): could not evaluate float expression
+sonic3k.asm(201082) startDACBank(94) DAC_Setup(4):7: error: division by zero: 3579545 / 0
+sonic3k.asm(201082) startDACBank(95) DAC_Setup(4):23: error: int(): could not evaluate float expression
+sonic3k.asm(201082) startDACBank(95) DAC_Setup(4):7: error: division by zero: 3579545 / 0
+sonic3k.asm(201082) startDACBank(96) DAC_Setup(2) DAC_Setup(4):23: error: int(): could not evaluate float expression
+sonic3k.asm(201082) startDACBank(96) DAC_Setup(2) DAC_Setup(4):7: error: division by zero: 3579545 / 0
+sonic3k.asm(201082) startDACBank(97) DAC_Setup(4):23: error: int(): could not evaluate float expression
+sonic3k.asm(201082) startDACBank(97) DAC_Setup(4):7: error: division by zero: 3579545 / 0
+sonic3k.asm(201082) startDACBank(98) DAC_Setup(4):23: error: int(): could not evaluate float expression
+sonic3k.asm(201082) startDACBank(98) DAC_Setup(4):7: error: division by zero: 3579545 / 0
+sonic3k.asm(201082) startDACBank(99) DAC_Setup(2) DAC_Setup(4):23: error: int(): could not evaluate float expression
+sonic3k.asm(201082) startDACBank(99) DAC_Setup(2) DAC_Setup(4):7: error: division by zero: 3579545 / 0
+sonic3k.asm(201084):15: error: cannot include Sound/DAC/generated/86.inc: No such file or directory (os error 2)
+sonic3k.asm(201085):15: error: cannot include Sound/DAC/generated/81.inc: No such file or directory (os error 2)
+sonic3k.asm(201086):23: error: cannot include Sound/DAC/generated/82-85.inc: No such file or directory (os error 2)
+sonic3k.asm(201087):23: error: cannot include Sound/DAC/generated/94-97.inc: No such file or directory (os error 2)
+sonic3k.asm(201088):23: error: cannot include Sound/DAC/generated/90-93.inc: No such file or directory (os error 2)
+sonic3k.asm(201089):15: error: cannot include Sound/DAC/generated/88.inc: No such file or directory (os error 2)
+sonic3k.asm(201090):18: error: cannot include Sound/DAC/generated/8A-8B.inc: No such file or directory (os error 2)
+sonic3k.asm(201091):15: error: cannot include Sound/DAC/generated/8C.inc: No such file or directory (os error 2)
+sonic3k.asm(201092):18: error: cannot include Sound/DAC/generated/8D-8E.inc: No such file or directory (os error 2)
+sonic3k.asm(201093):15: error: cannot include Sound/DAC/generated/87.inc: No such file or directory (os error 2)
+sonic3k.asm(201094):15: error: cannot include Sound/DAC/generated/8F.inc: No such file or directory (os error 2)
+sonic3k.asm(201095):15: error: cannot include Sound/DAC/generated/89.inc: No such file or directory (os error 2)
+sonic3k.asm(201096):20: error: cannot include Sound/DAC/generated/98-9A.inc: No such file or directory (os error 2)
+sonic3k.asm(201097):15: error: cannot include Sound/DAC/generated/9B.inc: No such file or directory (os error 2)
+sonic3k.asm(201098):18: error: cannot include Sound/DAC/generated/B2-B3 (Sonic & Knuckles).inc: No such file or directory (os error 2)
+sonic3k.asm(201111):11: error: cannot include Sound/PCM/generated/Sega.inc: No such file or directory (os error 2)
+Sound/Z80 Sound Driver.asm(4404):3: error: unresolved symbol `SEGA_PCM.sample_rate` in operand

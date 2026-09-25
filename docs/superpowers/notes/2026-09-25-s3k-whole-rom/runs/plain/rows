@@ -1,0 +1,17 @@
+sonic3k.asm(10862):2: error: unresolved if condition: `Sonic3_Complete` has no value, so this condition cannot decide whether the code it guards is assembled
+sonic3k.asm(16232):2: error: unresolved if condition: `Sonic3_Complete` has no value, so this condition cannot decide whether the code it guards is assembled
+sonic3k.asm(1673):2: error: unresolved if condition: `Sonic3_Complete` has no value, so this condition cannot decide whether the code it guards is assembled
+sonic3k.asm(1710):2: error: unresolved if condition: `Sonic3_Complete` has no value, so this condition cannot decide whether the code it guards is assembled
+sonic3k.asm(200194):2: error: unresolved if condition: `strip_padding` has no value, so this condition cannot decide whether the code it guards is assembled
+sonic3k.asm(200210):2: error: unresolved if condition: `Sonic3_Complete` has no value, so this condition cannot decide whether the code it guards is assembled
+sonic3k.asm(200642):2: error: unresolved if condition: `strip_padding` has no value, so this condition cannot decide whether the code it guards is assembled
+sonic3k.asm(200919):2: error: unresolved if condition: `strip_padding` has no value, so this condition cannot decide whether the code it guards is assembled
+sonic3k.asm(200927):2: error: unresolved if condition: `Sonic3_Complete` has no value, so this condition cannot decide whether the code it guards is assembled
+sonic3k.asm(201931):2: error: unresolved if condition: `strip_padding` has no value, so this condition cannot decide whether the code it guards is assembled
+sonic3k.asm(202157):2: error: unresolved if condition: `strip_padding` has no value, so this condition cannot decide whether the code it guards is assembled
+sonic3k.asm(203576):2: error: unresolved if condition: `strip_padding` has no value, so this condition cannot decide whether the code it guards is assembled
+sonic3k.asm(203583):2: error: unresolved if condition: `Sonic3_Complete` has no value, so this condition cannot decide whether the code it guards is assembled
+sonic3k.asm(289):2: error: unresolved if condition: `Sonic3_Complete` has no value, so this condition cannot decide whether the code it guards is assembled
+sonic3k.asm(315):3: error: unresolved symbol `LockonHeader` in operand
+sonic3k.asm(81):2: error: unresolved if condition: `Sonic3_Complete` has no value, so this condition cannot decide whether the code it guards is assembled
+sonic3k.asm(9548):2: error: unresolved if condition: `Sonic3_Complete` has no value, so this condition cannot decide whether the code it guards is assembled

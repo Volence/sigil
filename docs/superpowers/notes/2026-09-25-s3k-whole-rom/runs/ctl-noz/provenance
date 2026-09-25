@@ -1,0 +1,5 @@
+sigil md5: 41b5d2676ade740fd1c4e9d6a0869e72
+sigil rev:   revision:  ec860c7e4cd207bf1fefe9cea361759cdcb01bee
+tree: trees/sk-gen root: wrapper.asm
+args: -p=FF
+uptime:  05:53:57 up 1 day, 18:55,  1 user,  load average: 7.07, 10.51, 15.80

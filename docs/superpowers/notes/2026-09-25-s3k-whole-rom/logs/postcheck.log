@@ -1,0 +1,26 @@
+asl: /home/volence/sonic_hacks/s1disasm/build_tools/Linux-x86_64/asl md5 61e672562465725a8c102288a7da9098
+p2bin: /home/volence/sonic_hacks/s1disasm/build_tools/Linux-x86_64/p2bin md5 4f2fff99c3347bafb93b12d5be1db754
+== A: the buildSK line: asl -D Sonic3_Complete=0 sonic3k.asm; p2bin -p=FF -z... ==
+ASL_EXIT=0
+ASL_DIAG=complete
+asl rc=0
+no sonic3k.log (no diagnostics)
+      2 passes
+p2bin rc=0
+4ea493ea4e9f6c9ebfccbdb15110367e  crc32=0658f691  size=2097152  raw-A.bin
+== B: the same asl line on the wrapper root (no -D) ==
+ASL_EXIT=0
+ASL_DIAG=complete
+asl rc=0
+no wrapper.log (no diagnostics)
+p2bin rc=0
+4ea493ea4e9f6c9ebfccbdb15110367e  crc32=0658f691  size=2097152  raw-B.bin
+== fix_header, the toolchain's own lua, applied to copies ==
+lua rc=0
+4ea493ea4e9f6c9ebfccbdb15110367e  crc32=0658f691  size=2097152  raw-A.bin
+4ea493ea4e9f6c9ebfccbdb15110367e  crc32=0658f691  size=2097152  fixed-A.bin
+4ea493ea4e9f6c9ebfccbdb15110367e  crc32=0658f691  size=2097152  raw-B.bin
+4ea493ea4e9f6c9ebfccbdb15110367e  crc32=0658f691  size=2097152  /home/volence/sonic_hacks/.scratch/s3k-whole-rom/runs/wrapper/image.bin
+4ea493ea4e9f6c9ebfccbdb15110367e  crc32=0658f691  size=2097152  fixed-sigil.bin
+4ea493ea4e9f6c9ebfccbdb15110367e  crc32=0658f691  size=2097152  /home/volence/sonic_hacks/.scratch/s3k-whole-rom/ref.bin
+POSTCHECK_END

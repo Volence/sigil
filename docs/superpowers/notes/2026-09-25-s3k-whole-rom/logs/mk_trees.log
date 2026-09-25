@@ -1,0 +1,15 @@
+luaref run 1 rc=0
+4ea493ea4e9f6c9ebfccbdb15110367e  crc32=0658f691  size=2097152  skbuilt.bin
+luaref run 2 rc=0
+4ea493ea4e9f6c9ebfccbdb15110367e  crc32=0658f691  size=2097152  skbuilt.bin
+luaref run 3 rc=0
+4ea493ea4e9f6c9ebfccbdb15110367e  crc32=0658f691  size=2097152  skbuilt.bin
+sk-gen: 2792 files
+      1 Only in /home/volence/sonic_hacks/.scratch/s3k-whole-rom/trees
+     99 Only in /home/volence/sonic_hacks/.scratch/s3k-whole-rom/trees/sk-gen/Sound/DAC
+      3 Only in /home/volence/sonic_hacks/.scratch/s3k-whole-rom/trees/sk-gen/Sound/PCM
+luaref extra files vs pristine:
+      3 Only in /home/volence/sonic_hacks/.scratch/s3k-whole-rom/trees
+     99 Only in /home/volence/sonic_hacks/.scratch/s3k-whole-rom/trees/sk-luaref/Sound/DAC
+      3 Only in /home/volence/sonic_hacks/.scratch/s3k-whole-rom/trees/sk-luaref/Sound/PCM
+MKTREES_END
