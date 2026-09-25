@@ -733,3 +733,14 @@ points at it rather than restating it, so there is one copy to keep true.
   any ruling's keep-settling half: each is a typo or mistake asl refuses, and the first builds a ROM
   with a layout flag set the wrong way. Refusing them the way asl does is assembler internals under
   the autonomy directive, with a lane-log note.
+
+### OVERACCEPT-LEDGER-STALE-ROW-SILENT
+
+- state: **open**  size: `S`  project: `SIGIL-AS-REPLACEMENT`
+- The over-acceptance gate REPORTS a ledgered row that sigil now refuses and does not FAIL on it,
+  so a fixed over-acceptance can stay listed as open indefinitely. Measured 2026-09-25:
+  `expr_function_arg_count` was fixed at `1b8cb9ae` on 2026-09-11 and sat in
+  `crates/sigil-frontend-as/tests/over_acceptance/ledger.txt` for two weeks, and a parcel was
+  dispatched to fix it. Decide whether a retirable row should fail the gate (forcing retirement in
+  the fixing commit) or whether reporting is enough; the evidence is the two weeks. Source:
+  `docs/superpowers/notes/2026-09-25-as-overaccept-silent-three.md`.
