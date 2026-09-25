@@ -474,6 +474,8 @@ fn section_labels_for_link(debug: bool) -> Vec<(String, u32)> {
     if debug {
         sigil_harness::test_support::extend_from_listing_ram(&mut out, debug, &["Canopy_"]);
     }
+    // section.emp's region-resolver and BG-streamer seam, derived from the listing.
+    out.extend(sigil_harness::test_support::section_streamer_labels_if_defined(debug));
     out
 }
 
@@ -492,16 +494,12 @@ fn lower_and_place(
         initial_cpu: Cpu::M68000,
         include_root: Some(include_root),
         embed_base: None,
-        defines: vec![
-            ("DEBUG".to_string(), if debug { 1 } else { 0 }),
-            // Game-config -D inputs (engine/game split) the flipped modules read
-            // (entity_window / rings); sonic4 canonical values.
-            ("COLLECTED_WINDOW_SLOTS".to_string(), 9),
-            ("MAX_RING_BUFFER".to_string(), 128),
-            ("VRAM_RING_PLACEHOLDER".to_string(), 0x3E8),
-            // section.emp (flipped in) gates its RedrawPlanes sound bracket on this.
-            ("SOUND_DRIVER_ENABLED".to_string(), 1),
-        ],
+        // The shape's whole define env (profile rows plus the tree's own map.toml
+        // [defines]): the game-config inputs the flipped modules read
+        // (COLLECTED_WINDOW_SLOTS, MAX_RING_BUFFER, VRAM_RING_PLACEHOLDER), the
+        // SOUND_DRIVER_ENABLED gate on section.emp's RedrawPlanes sound bracket, and
+        // the GAME_SCANLINE_CAPS the engine.parallax consts section.emp imports fold.
+        defines: sigil_harness::test_support::sonic4_shape_defines(&aeon_dir(), debug),
     };
     let (module, ldiags) = lower_module(&file, &opts);
     assert!(
@@ -534,12 +532,15 @@ fn two_module_flip(shape: &Shape, debug: bool, rom_name: &str) {
     let sec_base = if debug { pins::SECTION.debug_base } else { pins::SECTION.plain_base };
     let (mut sec_sections, sec_asserts) = lower_and_place(
         &aeon.join("engine/level/section.emp"),
-        vec![
+        [
             parse_file(&aeon.join("engine/system/constants.emp")),
             parse_file(&aeon.join("engine/structs.emp")),
             parse_file(&aeon.join("engine/vdp.emp")),
             parse_file(&aeon.join("engine/z80_bus.emp")),
-        ],
+        ]
+        .into_iter()
+        .chain(sigil_harness::test_support::section_const_modules(&aeon))
+        .collect(),
         aeon.join("engine/level"),
         "section",
         sec_base,

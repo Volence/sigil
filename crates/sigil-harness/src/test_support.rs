@@ -671,6 +671,49 @@ pub fn listing_labels_if_defined(debug: bool, names: &[&str]) -> Vec<(String, u3
         .collect()
 }
 
+/// The cross-seam symbols `engine/level/section.emp` reaches in the painted-region
+/// resolver and the BG streamer, as [`listing_labels_if_defined`] rows.
+///
+/// Spelled once because three gates lower section.emp against a hand-built scope
+/// (`section_port`, and the `plane_buffer_port` / `entity_window_port` flips that
+/// co-lower it). A tree predating those subsystems neither references nor defines
+/// these names, so the rows are simply absent there.
+pub fn section_streamer_labels_if_defined(debug: bool) -> Vec<(String, u32)> {
+    listing_labels_if_defined(
+        debug,
+        &[
+            "Region_Resolve",
+            "BG_Bands_Hold",
+            "BG_Plane_Layout",
+            "BG_Plane_Top",
+            "BG_Tiles_Current",
+            "BG_Tiles_Offset",
+            "BG_Tiles_Target",
+            "BG_UploadTiles",
+            "BG_Wipe_Cursor",
+            "BgAnim_LastStep",
+            "Collision_GetType",
+            "DMA_Deferrable_DropDest",
+            "Parallax_Current_Vscroll_BG",
+            "TileCache_CopyBlockColumn",
+            "TileCache_FillRow",
+        ],
+    )
+}
+
+/// The zero-byte items of the two modules `engine/level/section.emp` imports consts
+/// from, `engine.parallax` (the Plane-B geometry) and `engine.bg` (the BG stream
+/// window), for a gate lowering section.emp standalone to PREPEND. Each const arrives
+/// with its defining expression and neither module emits bytes (see
+/// [`zero_byte_module`]). Their consts fold the game's `GAME_SCANLINE_CAPS` define
+/// where the tree declares one, so the caller lowers under [`sonic4_shape_defines`].
+pub fn section_const_modules(aeon: &std::path::Path) -> Vec<sigil_frontend_emp::ast::File> {
+    vec![
+        zero_byte_module(aeon, "engine/level/parallax.emp"),
+        zero_byte_module(aeon, "engine/level/bg.emp"),
+    ]
+}
+
 pub fn listing_vma(debug: bool, name: &str) -> u32 {
     let path = listing_path(debug);
     listing_symbol_addr(&path, name).unwrap_or_else(|| {
