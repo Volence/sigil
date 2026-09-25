@@ -947,3 +947,23 @@ points at it rather than restating it, so there is one copy to keep true.
      then `mv` it over the live name (a rename, so a running reader keeps the old inode).
   4. md5 the live pair against the candidate, run `target/release/sigil --version` (expect `f52609fe`,
      source `.sigil-pin-f52609fe`), freeze the outgoing directory, tell aeon and the hub.
+
+### SEAM1-BANKED-CARRIERS-DERIVE
+
+- state: **next**  size: `M`  project: `-`
+- Asked by aeon 2026-09-25; blocks their S2CLIP-REGION-MUSIC step 2 (Sonic 2 PSG envelopes). Same family as
+  SEAM2-SONG-COUNT-LITERAL.
+- Premise verified here at master `7c081077`: `crates/sigil-harness/src/seam1.rs` `banked_carriers()` hand-pins
+  ELEVEN `$8000`-window VMAs. `check_banked_carrier_drift` compares only the three HEAD-level ones
+  (`SeqOpcodeTable`, `SfxBlobWinTab`, `SndDefaultPitchTable`, derived by `seam2::banked_head_vmas`); its own doc
+  comment says the rest (`FmPitchTableZ`, `LogVolumeLutZ`, `CarrierMaskTableZ`, `PsgDivisorTableZ`,
+  `PsgVolEnv_Ids`, `PsgVolEnv_Ptrs`, `FmVolEnv_Ids`, `FmVolEnv_Ptrs`) are offsets inside `SoundTablesZ80_Head`
+  and "stay hand-maintained and unchecked". These literals are baked into the shipped resident driver's operand
+  bytes, so a stale one is a WRONG blob that a refreeze would bless. Also `seam2.rs` `SOUND_TABLES_Z80_LEN = 0x357`.
+- Aeon's measurement (theirs, not re-run here): their branch `parcel/s2-music-envelopes-table` at `f7dda3e2`
+  (pushed to aeon origin) appends 5 envelope bodies, table 855 -> 985 B; the drift check refuses on the three
+  head members, while `PsgVolEnv_Ptrs` 0x828F -> 0x8294, `FmVolEnv_Ids` -> 0x83B7, `FmVolEnv_Ptrs` -> 0x83BA move
+  silently. Updating only the three reported numbers would go green with every envelope read from a wrong address.
+- Ask: derive ALL eleven and the length from the lowered `sound_tables_z80.emp` (its own labels), so a table
+  change is aeon-only; retire or widen the drift check accordingly. Byte-neutral at the pin by construction.
+  Positive control: aeon `f7dda3e2` builds under the new code with correct envelope addresses; master refuses it.
