@@ -15,9 +15,13 @@
 //! nothing, so nothing can go red when it rots.
 //!
 //! ## Cross-seam symbols
-//! - No RAM labels at all — BG_Init reads only the Act descriptor (via a3)
-//!   and hardware ports. `Z80_BUS_REQUEST` is a bare link-resolved hardware
-//!   address (truth: engine/constants.asm), supplied as an equ.
+//! - BG_Init reads the Act descriptor (via a3) and hardware ports.
+//!   `Z80_BUS_REQUEST` is a bare link-resolved hardware address (truth:
+//!   engine/constants.asm), supplied as an equ.
+//! - Where the tree's `bg.emp` carries the BG streamer, its RAM cells and
+//!   outbound calls are read from the reference listing (`bg_addr_labels`), and
+//!   the V-scroll geometry it imports rides the zero-byte `engine.parallax`
+//!   prepend.
 //! - `engine.structs`/`engine.vdp` twins ride the ambient prepend; their
 //!   drift guards ride this gate.
 //!
@@ -125,11 +129,41 @@ fn bg_value_equs(doctor: Option<(&str, &str)>) -> Vec<Section> {
 /// the two blob entry points become real cross-seam fixups (sprites_port precedent).
 /// The pins are shape-invariant; the plain shape comptime-gates the assert away and
 /// simply leaves the carriers unreferenced.
-fn bg_addr_labels() -> Vec<Section> {
-    let table: [(&str, u32); 2] = [
-        ("MDDBG__ErrorHandler", pins::MDDBG_ERROR_HANDLER),
-        ("MDDBG__ErrorHandler_PagesController", pins::MDDBG_ERROR_HANDLER_PAGES_CONTROLLER),
+///
+/// Plus the BG streamer's cross-seam symbols, each read from the reference build's own
+/// listing and supplied only where that build defines it: the streaming RAM cells, the
+/// plane-buffer row writer and the deferrable DMA enqueue it calls, and the section,
+/// region and parallax state it reads. A tree whose `bg.emp` predates the streamer
+/// neither references nor defines them, so they are absent there rather than required.
+fn bg_addr_labels(debug: bool) -> Vec<Section> {
+    let mut table: Vec<(String, u32)> = vec![
+        ("MDDBG__ErrorHandler".to_string(), pins::MDDBG_ERROR_HANDLER),
+        ("MDDBG__ErrorHandler_PagesController".to_string(), pins::MDDBG_ERROR_HANDLER_PAGES_CONTROLLER),
     ];
+    table.extend(sigil_harness::test_support::listing_labels_if_defined(
+        debug,
+        &[
+            "BG_Bands_Hold",
+            "BG_Plane_Layout",
+            "BG_Plane_Top",
+            "BG_Tiles_Current",
+            "BG_Tiles_Offset",
+            "BG_Tiles_Target",
+            "BG_Wipe_Cursor",
+            "BG_Wipe_Row",
+            "BgAnim_LastStep",
+            "Camera_Init",
+            "Current_Act_Ptr",
+            "DMA_Deferrable_DestPending",
+            "Draw_BG_TileRow",
+            "Draw_TileColumn",
+            "OJZ_Act1_BG_Layout",
+            "Parallax_Current_Vscroll_BG",
+            "QueueDMA_Deferrable",
+            "Region_Current",
+            "Section_RedrawPlanes",
+        ],
+    ));
     let opts = AsOptions { initial_cpu: Some(Cpu::M68000), ..AsOptions::default() };
     let mut out = Vec::new();
     for (i, (name, vma)) in table.iter().enumerate() {
@@ -175,6 +209,11 @@ fn compile_real_file(
     // engine.constants: VRAM_SPRITE_TABLE hoisted to the shared twin at the
     // t21 buffers port (bg was its file-local first consumer).
     let consts_file = parse_file(&dir.parent().unwrap().join("system/constants.emp"));
+    // engine.parallax declares the BG V-scroll geometry bg.emp imports
+    // (`BG_VSCROLL_ROW_PX`, `BG_VSCROLL_MAX_STEP`); its zero-byte items carry
+    // those consts with their defining expressions and emit nothing into `bg`.
+    let parallax_file =
+        sigil_harness::test_support::zero_byte_module(&aeon_dir(), "engine/level/parallax.emp");
     let file = sigil_frontend_emp::ast::File {
         module: main.module.clone(),
         attrs: main.attrs.clone(),
@@ -184,6 +223,7 @@ fn compile_real_file(
             .chain(vdp_file.items)
             .chain(z80_bus_file.items)
             .chain(consts_file.items)
+            .chain(parallax_file.items)
             .chain(main.items)
             .collect(),
         docs: main.docs.clone(),
@@ -193,7 +233,7 @@ fn compile_real_file(
         initial_cpu: Cpu::M68000,
         include_root: Some(dir.clone()),
         embed_base: None,
-        defines: vec![("DEBUG".to_string(), i128::from(debug))],
+        defines: sigil_harness::test_support::sonic4_shape_defines(&aeon_dir(), debug),
     };
     let (module, ldiags) = lower_module(&file, &opts);
     assert!(
@@ -217,7 +257,7 @@ fn compile_real_file(
         sec.group = None;
     }
     sections.extend(equs);
-    sections.extend(bg_addr_labels());
+    sections.extend(bg_addr_labels(debug));
 
     let resolved = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
         .unwrap_or_else(|d| panic!("resolve_layout failed: {d:?}"));

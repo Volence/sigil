@@ -62,10 +62,16 @@ fn strict_gate() -> bool {
 // Region base/size sourced from `sigil_harness::pins` (regenerate via `repin`).
 const PLAIN_BASE: usize = pins::ACT_DESCRIPTOR.plain_base as usize;
 const DEBUG_BASE: usize = pins::ACT_DESCRIPTOR.debug_base as usize;
-const SIZE: usize = pins::ACT_DESCRIPTOR.plain_len;
+/// The region length for one shape. The descriptor is shape-DEPENDENT wherever the
+/// act binds DEBUG-only rows (test backgrounds, snapshot presets), so each shape is
+/// measured against its own pinned length.
+fn region_size(debug: bool) -> usize {
+    if debug { pins::ACT_DESCRIPTOR.debug_len } else { pins::ACT_DESCRIPTOR.plain_len }
+}
 
 fn map_toml(debug: bool) -> String {
     let base = if debug { pins::ACT_DESCRIPTOR.debug_base } else { pins::ACT_DESCRIPTOR.plain_base };
+    let size = region_size(debug);
     format!(
         "fill = 0x00\n\
          \n\
@@ -78,7 +84,7 @@ fn map_toml(debug: bool) -> String {
          [[region]]\n\
          name = \"act_descriptor\"\n\
          lma_base = {base:#x}\n\
-         size = {SIZE:#x}\n\
+         size = {size:#x}\n\
          kind = \"rom\"\n"
     )
 }
@@ -264,8 +270,12 @@ fn as_seam_equs(debug: bool) -> Vec<Section> {
     // it is the debug shape's link that references it; the sweep carries it in
     // both because a supplied label the scope does not reference is inert while a
     // missing one is a red gate.
+    //
+    // `OJZ_Preset_` is the whole act preset family: the generated per-section
+    // `OJZ_Preset_Sec*` and the named presets (`_Plain`, `_Depth`, `_Night`, ...) the
+    // descriptor's region rows bind, which join as aeon authors them.
     const GENERATED: &[&str] =
-        &["EditorRaster_", "EditorCycle_", "EditorSceneBinding_", "EditorReel", "OJZ_Preset_Sec"];
+        &["EditorRaster_", "EditorCycle_", "EditorSceneBinding_", "EditorReel", "OJZ_Preset_"];
     let mut labels: Vec<(String, u32, u32)> =
         LABELS.iter().map(|(n, p, d)| ((*n).to_string(), *p, *d)).collect();
     let seen: std::collections::HashSet<String> =
@@ -283,6 +293,17 @@ fn as_seam_equs(debug: bool) -> Vec<Section> {
             panic!("`{name}` is in the plain listing but not the debug one")
         });
         labels.push((name, plain, d));
+    }
+    // The act's BG assets (`OJZ_Act1_BG_*`), swept from THIS shape's listing only: the
+    // descriptor's DEBUG-shape test backgrounds exist in the debug ROM alone, so the
+    // plain/debug pairing the generated sweep above checks does not apply to them. Rows
+    // already carried keep their pinned value.
+    let seen: std::collections::HashSet<String> =
+        labels.iter().map(|(n, _, _)| n.clone()).collect();
+    for (name, v) in sigil_harness::test_support::listing_symbols_with_prefix(debug, &["OJZ_Act1_BG_"]) {
+        if !seen.contains(&name) {
+            labels.push((name, v, v));
+        }
     }
 
     for (name, plain, dbg) in &labels {
@@ -416,17 +437,18 @@ fn gate(debug: bool, rom_name: &str, base: usize) {
     let (resolved, linked, link_asserts) = compile_real_file(debug);
     assert_guards(debug, &resolved, &link_asserts);
 
-    let expected = &refrom[base..base + SIZE];
+    let size = region_size(debug);
+    let expected = &refrom[base..base + size];
     let section =
         linked.section("act_descriptor").expect("linked image must carry act_descriptor");
-    assert_eq!(section.bytes.len(), SIZE, "act_descriptor must emit exactly {SIZE:#x} bytes");
-    if let Some(i) = (0..SIZE).find(|&i| section.bytes[i] != expected[i]) {
+    assert_eq!(section.bytes.len(), size, "act_descriptor must emit exactly {size:#x} bytes");
+    if let Some(i) = (0..size).find(|&i| section.bytes[i] != expected[i]) {
         panic!(
             "act_descriptor ({}) first diff at region offset {i:#x} (item {}): got {:02x?}, expected {:02x?}",
             if debug { "debug" } else { "plain" },
             if i < 0x22 { "descriptor".to_string() } else { format!("Sec{}+{:#x}", (i - 0x22) / 0x42, (i - 0x22) % 0x42) },
-            &section.bytes[i.saturating_sub(4)..(i + 8).min(SIZE)],
-            &expected[i.saturating_sub(4)..(i + 8).min(SIZE)]
+            &section.bytes[i.saturating_sub(4)..(i + 8).min(size)],
+            &expected[i.saturating_sub(4)..(i + 8).min(size)]
         );
     }
 

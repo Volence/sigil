@@ -110,6 +110,10 @@ fn bg_anim_addr_labels(debug: bool) -> Vec<Section> {
     // keep their pinned value. See `test_support::extend_from_listing`.
     let mut table: Vec<(String, u32)> = table.into_iter().map(|(n, v)| (n.to_string(), v)).collect();
     sigil_harness::test_support::extend_from_listing_ram(&mut table, debug, &["Waterline_Art_"]);
+    // The BG streamer's band-hold flag bg_anim reads across the seam, supplied from the
+    // reference listing where that build defines it (a tree predating the streamer
+    // neither references nor defines it).
+    table.extend(sigil_harness::test_support::listing_labels_if_defined(debug, &["BG_Bands_Hold"]));
     let mut out = Vec::new();
     for (i, (name, vma)) in table.iter().enumerate() {
         let vma = *vma;
@@ -439,6 +443,13 @@ fn two_module_flip(debug: bool, rom_name: &str) {
         // P2c Task 8 byte cap — the shared .transfer core charges this cell (P-3:
         // this row was missing from the cap's landing; the ROM-presence skip hid it).
         ("DMA_Enq_Bytes_Frame", pick(pins::DMA_ENQ_BYTES_FRAME)),
+        // The queue block's end mark dma_queue.emp's layout ensure measures against,
+        // derived from the reference listing.
+        ("DMA_Queue_End", sigil_harness::test_support::listing_vma(debug, "DMA_Queue_End")),
+        // The MD Debugger carriers both modules' DEBUG asserts jsr/jmp to;
+        // shape-invariant, unreferenced in plain (the bg_port idiom).
+        ("MDDBG__ErrorHandler", pins::MDDBG_ERROR_HANDLER),
+        ("MDDBG__ErrorHandler_PagesController", pins::MDDBG_ERROR_HANDLER_PAGES_CONTROLLER),
     ];
     if debug {
         // DEBUG-only cells this composition's two modules reach across the seam, derived
@@ -449,11 +460,6 @@ fn two_module_flip(debug: bool, rom_name: &str) {
         labels.push(("Dbg_DMA_Straddle_Peak", sigil_harness::test_support::listing_vma(debug, "Dbg_DMA_Straddle_Peak")));
         labels.push(("DMA_Overflow_Count", pins::DMA_OVERFLOW_COUNT));
         labels.push(("Dbg_DMA_Enq_Capped", pins::DBG_DMA_ENQ_CAPPED));
-        labels.push(("MDDBG__ErrorHandler", pins::MDDBG_ERROR_HANDLER));
-        labels.push((
-            "MDDBG__ErrorHandler_PagesController",
-            pins::MDDBG_ERROR_HANDLER_PAGES_CONTROLLER,
-        ));
     }
 
 
@@ -468,6 +474,8 @@ fn two_module_flip(debug: bool, rom_name: &str) {
     // The waterline row-remap state bg_anim walks in both shapes (see
     // `bg_anim_addr_labels`).
     sigil_harness::test_support::extend_from_listing_ram(&mut labels, debug, &["Waterline_Art_"]);
+    // The BG streamer's band-hold flag (see `bg_anim_addr_labels`).
+    labels.extend(sigil_harness::test_support::listing_labels_if_defined(debug, &["BG_Bands_Hold"]));
     let mut lma = 0x0100_0000u32;
     let mut groups: Vec<Vec<Section>> = vec![flip_value_equs()];
     for (name, vma) in labels {

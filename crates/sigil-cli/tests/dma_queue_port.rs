@@ -130,6 +130,14 @@ fn addr_labels(debug: bool) -> Vec<Section> {
         // P2c Task 8 byte cap seam (P-3: missing since the cap landed; the
         // ROM-presence skip hid it).
         ("DMA_Enq_Bytes_Frame", pick(pins::DMA_ENQ_BYTES_FRAME)),
+        // The queue block's end mark, which the layout ensure measures the whole
+        // queue span against; derived from the reference listing.
+        ("DMA_Queue_End", sigil_harness::test_support::listing_vma(debug, "DMA_Queue_End")),
+        // The MD Debugger carriers a DEBUG-shape `assert.w` in the compaction path
+        // jsr/jmp to. Shape-invariant pins carried in BOTH shapes: in plain the assert
+        // is comptime-gated out and these simply go unreferenced (the bg_port idiom).
+        ("MDDBG__ErrorHandler", pins::MDDBG_ERROR_HANDLER),
+        ("MDDBG__ErrorHandler_PagesController", pins::MDDBG_ERROR_HANDLER_PAGES_CONTROLLER),
     ];
     if debug {
         // Debug shape only: the overflow counter exists only in debug RAM

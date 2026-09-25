@@ -843,7 +843,21 @@ points at it rather than restating it, so there is one copy to keep true.
 
 ### PORT-TESTS-RED-AT-AEON-TIP
 
-- state: **open**  size: `M`  project: `SIGIL-DECOUPLE`
+- state: **landed on branch** `parcel/port-tests-aeon-tip` (awaiting merge)  size: `M`  project: `SIGIL-DECOUPLE`
+- Outcome 2026-09-25 (`docs/superpowers/notes/2026-09-25-port-tests-aeon-tip.md`), pin `ec640bcf`,
+  tip held at aeon `8a6f92c4`: all 26 measured failures and the predicted `ojz_run_b_port` failure
+  were repaired. The `ojz_run_b_port` one was MASKED behind an earlier section's byte failure;
+  the gate now lowers every section first. None of the 14 port binaries fails on a name at the tip
+  (26 name-shaped lines on master@tip, 0 on the branch). All 14 are green at the pin, and the full
+  suite at the pin fails only the environmental `m1b_gate` row. Against pins regenerated at the tip
+  (scratch tree, committed `pins.rs` untouched) 38 of the 40 tests are byte-identical.
+  `test_objects_port` was a real bug, proven red-first: embeds joined the module directory instead
+  of the aeon root. Values are derived from the tree under test: `sonic4_shape_defines`, zero-byte
+  declaring modules, `listing_labels_if_defined`, family sweeps, and per-shape
+  `mddbg_entry_labels`.
+- OPEN for the pin advance: `ojz_run_b_port`'s declared `ojz_act_assets` shape delta (0xF) is
+  stale at the tip. The actual delta is 0x5EC2, the three `OJZ_DEBUG_TEST_BGS` backgrounds. Derive
+  it from the module; do not raise it. Masking in the other multi-section byte gates is unprobed.
 - Measured 2026-09-25 (`docs/superpowers/notes/2026-09-25-aeon-481ac02e-port-impact.md`): against aeon
   at `b2820dc3`/`481ac02e`, 167 sigil tests fail that pass at the pin `ec640bcf`. 141 are expected
   (bytes and pins moved past the pin). **26 are unresolved-name failures in `*_port` tests** from aeon

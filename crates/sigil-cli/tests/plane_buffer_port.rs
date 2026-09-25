@@ -184,6 +184,9 @@ fn plane_buffer_addr_labels(debug: bool) -> Vec<Section> {
     // CALL targets it must be given. (The two-module flip below composes section.emp itself
     // and so takes the work-RAM restriction instead, or it would redefine them.)
     sigil_harness::test_support::extend_from_listing(&mut table, debug, &["Canopy_"]);
+    // The `Plane_Buffer*` RAM family (the DEBUG-only high-water mark joins the buffer
+    // base and cursor pinned above), swept from the reference listing, work RAM only.
+    sigil_harness::test_support::extend_from_listing_ram(&mut table, debug, &["Plane_Buffer"]);
 
     for (i, (name, vma)) in table.iter().enumerate() {
         let asm = format!("cpu 68000\n\tphase ${vma:X}\n{name}:\n\tdc.b 0\n");
@@ -404,12 +407,11 @@ fn lower_and_place(
         initial_cpu: Cpu::M68000,
         include_root: Some(include_root),
         embed_base: None,
-        // section.emp (flipped in alongside plane_buffer) gates its RedrawPlanes
-        // sound bracket on SOUND_DRIVER_ENABLED; harmless for plane_buffer.emp.
-        defines: vec![
-            ("DEBUG".to_string(), i128::from(debug)),
-            ("SOUND_DRIVER_ENABLED".to_string(), 1),
-        ],
+        // The shape's whole define env: section.emp (flipped in alongside plane_buffer)
+        // gates its RedrawPlanes sound bracket on SOUND_DRIVER_ENABLED, and the
+        // engine.parallax consts it imports fold the game's GAME_SCANLINE_CAPS where
+        // the tree declares one.
+        defines: sigil_harness::test_support::sonic4_shape_defines(&aeon_dir(), debug),
     };
     let (module, ldiags) = lower_module(&file, &opts);
     assert!(
@@ -531,6 +533,10 @@ fn flip_labels(debug: bool) -> Vec<(String, u32)> {
     if debug {
         sigil_harness::test_support::extend_from_listing_ram(&mut v, debug, &["Canopy_"]);
     }
+    // plane_buffer.emp's `Plane_Buffer*` RAM family and section.emp's region-resolver
+    // and BG-streamer seam, both derived from the reference listing.
+    sigil_harness::test_support::extend_from_listing_ram(&mut v, debug, &["Plane_Buffer"]);
+    v.extend(sigil_harness::test_support::section_streamer_labels_if_defined(debug));
     v
 }
 
@@ -562,12 +568,15 @@ fn two_module_flip(debug: bool, rom_name: &str) {
     let sec_base = if debug { pins::SECTION.debug_base } else { pins::SECTION.plain_base };
     let (mut sec_sections, sec_asserts) = lower_and_place(
         &aeon.join("engine/level/section.emp"),
-        vec![
+        [
             parse_file(&aeon.join("engine/structs.emp")),
             parse_file(&aeon.join("engine/system/constants.emp")),
             parse_file(&aeon.join("engine/vdp.emp")),
             parse_file(&aeon.join("engine/z80_bus.emp")),
-        ],
+        ]
+        .into_iter()
+        .chain(sigil_harness::test_support::section_const_modules(&aeon))
+        .collect(),
         aeon.join("engine/level"),
         "section",
         sec_base,

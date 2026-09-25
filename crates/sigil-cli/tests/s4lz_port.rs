@@ -15,7 +15,7 @@
 //!
 //! ## Cross-seam symbols
 //! The module is SELF-CONTAINED (every branch/copy target is internal); the
-//! only seams are the debug shape's MDDBG handlers (the assert blobs) and the
+//! only seams are the MDDBG handlers (the assert blobs) and the
 //! `TILE_SIZE` VALUE mirror (file-local const + `ensure(extern(...))` drift
 //! lock — the negative probe doctors it).
 //!
@@ -82,17 +82,13 @@ fn value_equs(doctor: Option<&str>) -> Vec<Section> {
     sigil_harness::test_support::assemble_equ_pairs(&pairs)
 }
 
-/// The cross-seam ADDRESS symbols — debug shape only: the assert blobs'
-/// MDDBG error-handler entries (the rings_port precedent).
+/// The cross-seam ADDRESS symbols: the assert blobs' MDDBG error-handler entries,
+/// per shape from the tree (`test_support::mddbg_entry_labels`). Where the tree gates
+/// its assert blocks on `DEBUG == 1 || CRASH_REPORT == 1` the plain shape references
+/// them too, at the plain ROM's own handler address; where the plain ROM carries no
+/// handler, nothing in it references one and no row is supplied.
 fn addr_labels(debug: bool) -> Vec<Section> {
-    let mut table: Vec<(&str, u32)> = Vec::new();
-    if debug {
-        table.push(("MDDBG__ErrorHandler", pins::MDDBG_ERROR_HANDLER));
-        table.push((
-            "MDDBG__ErrorHandler_PagesController",
-            pins::MDDBG_ERROR_HANDLER_PAGES_CONTROLLER,
-        ));
-    }
+    let table = sigil_harness::test_support::mddbg_entry_labels(debug);
     let mut out = Vec::new();
     for (i, (name, vma)) in table.iter().enumerate() {
         let vma = *vma;
@@ -125,7 +121,7 @@ fn parse_file(path: &Path) -> sigil_frontend_emp::ast::File {
 }
 
 /// Lower the real `s4lz.emp`, place into the per-shape map, append
-/// the value equ + (debug) address labels, one `resolve_layout` -> `link`.
+/// the value equ + address labels, one `resolve_layout` -> `link`.
 fn compile_real_file(
     debug: bool,
     doctor: Option<&str>,
@@ -138,7 +134,7 @@ fn compile_real_file(
         initial_cpu: Cpu::M68000,
         include_root: Some(dir.clone()),
         embed_base: None,
-        defines: vec![("DEBUG".to_string(), i128::from(debug))],
+        defines: sigil_harness::test_support::sonic4_shape_defines(&aeon_dir(), debug),
     };
     let (module, ldiags) = lower_module(&file, &opts);
     assert!(

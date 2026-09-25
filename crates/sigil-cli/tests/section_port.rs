@@ -184,6 +184,10 @@ fn section_addr_labels(debug: bool) -> Vec<Section> {
     sigil_harness::test_support::extend_from_listing_ram(&mut table, debug, &["Cache_"]);
     sigil_harness::test_support::extend_from_listing_ram(&mut table, debug, &["Canopy_"]);
     }
+    // The painted-region resolver and the BG streamer's cells and entry points that
+    // section.emp reaches across the seam, read from the reference listing and
+    // supplied only where that build defines them.
+    table.extend(sigil_harness::test_support::section_streamer_labels_if_defined(debug));
 
     for (i, (name, vma)) in table.iter().enumerate() {
         let asm = format!("cpu 68000\n\tphase ${vma:X}\n{name}:\n\tdc.b 0\n");
@@ -255,6 +259,13 @@ fn compile_real_file(
         zdiags.iter().all(|d| d.level != sigil_span::Level::Error),
         "z80_bus.emp parse errors: {zdiags:?}"
     );
+    // section.emp `use`s the Plane-B geometry from engine.parallax and the BG stream
+    // window from engine.bg: both declaring modules ride along as their zero-byte items,
+    // so each const arrives with its defining expression and neither emits into `section`.
+    let aeon = sigil_harness::test_support::aeon_dir();
+    let const_items = sigil_harness::test_support::section_const_modules(&aeon)
+        .into_iter()
+        .flat_map(|f| f.items);
     let file = sigil_frontend_emp::ast::File {
         module: file.module.clone(),
         attrs: file.attrs.clone(),
@@ -264,6 +275,7 @@ fn compile_real_file(
             .chain(structs_file.items)
             .chain(vdp_file.items)
             .chain(z80_bus_file.items)
+            .chain(const_items)
             .chain(file.items)
             .collect(),
         docs: file.docs.clone(),
@@ -277,11 +289,10 @@ fn compile_real_file(
         // sound bracket (gated on SOUND_DRIVER_ENABLED) is present in the reference.
         // DEBUG is now load-bearing here too: the blanket-restore parcel added an
         // `if DEBUG == 1` IPL>=6 assert around the autoincrement excursions, so the
-        // shape must reach the lowerer or the name does not resolve at all.
-        defines: vec![
-            ("SOUND_DRIVER_ENABLED".to_string(), i128::from(1)),
-            ("DEBUG".to_string(), i128::from(debug)),
-        ],
+        // shape must reach the lowerer or the name does not resolve at all. The
+        // prepended engine.parallax consts fold the game's `GAME_SCANLINE_CAPS` define
+        // where the tree declares one, so the whole shape env is read, not two rows of it.
+        defines: sigil_harness::test_support::sonic4_shape_defines(&aeon, debug),
     };
     let (module, ldiags) = lower_module(&file, &opts);
     assert!(

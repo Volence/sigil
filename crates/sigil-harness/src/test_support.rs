@@ -633,6 +633,144 @@ pub fn listing_symbols_with_prefix(debug: bool, prefixes: &[&str]) -> Vec<(Strin
     out
 }
 
+/// A cross-seam symbol's address for a shape when the reference build DEFINES it, and
+/// `None` when that build does not.
+///
+/// For a seam that exists at one aeon revision and not at another: a port gate that
+/// must stay green on a tree predating a cross-seam callee (and so never references it)
+/// and also resolve that callee on a tree that has it. The build's own listing is the
+/// witness of which: a symbol the tree's source defines is in the listing its build
+/// wrote, and a tree without it has no row to supply. An ABSENT listing is still a hard
+/// error, exactly as in [`listing_vma`]: that is a tree nobody built, not a tree without
+/// the symbol, and reading it as `None` would quietly drop a label the lower needs.
+pub fn listing_vma_if_defined(debug: bool, name: &str) -> Option<u32> {
+    let path = listing_path(debug);
+    let text = sigil_span::read_set::read_to_string(&path).unwrap_or_else(|e| {
+        panic!(
+            "no listing at {} ({e}), this gate derives its cross-seam addresses from the \
+             listing beside the reference ROM, so a source-only checkout cannot serve it. \
+             Point AEON_DIR at a tree with the shapes built.",
+            path.display()
+        )
+    });
+    let needle = format!(" {name} : ");
+    text.lines().find_map(|line| {
+        let rest = line.strip_prefix(&needle)?;
+        u32::from_str_radix(rest.split_whitespace().next()?, 16).ok()
+    })
+}
+
+/// [`listing_vma_if_defined`] over a list: the `(name, address)` rows the reference
+/// build defines, in the order given, silently leaving out a name the build does not
+/// define. A label in the list that no link references is inert, so a scope may name a
+/// cross-seam symbol one aeon revision uses and another does not.
+pub fn listing_labels_if_defined(debug: bool, names: &[&str]) -> Vec<(String, u32)> {
+    names
+        .iter()
+        .filter_map(|n| listing_vma_if_defined(debug, n).map(|v| (n.to_string(), v)))
+        .collect()
+}
+
+/// The two MD Debugger entry points an `assert` expansion jsr/jmps
+/// (`MDDBG__ErrorHandler`, `MDDBG__ErrorHandler_PagesController`), for ONE shape, derived
+/// from the tree: each is read from `engine/debug/error_handler.emp`'s
+/// `pub equ NAME = extern("BLOB") [+ $OFF]` and its blob resolved in that shape's listing.
+///
+/// For a module whose PLAIN shape reaches the handler. The `pins::MDDBG_*` pair is one
+/// address for both shapes, which holds only while the handler island exists in the
+/// debug ROM alone and plain never references it. Once a tree also ships the island in
+/// the plain ROM (the crash-report profile, `CRASH_REPORT`), the two shapes place it
+/// at different addresses and a plain operand encoded from the shared pin is wrong.
+///
+/// A shape whose build does not define the blob (no island in that ROM) gets no rows:
+/// nothing in that shape can reference the handler. A missing or reshaped equ is loud.
+pub fn mddbg_entry_labels(debug: bool) -> Vec<(String, u32)> {
+    let path = aeon_dir().join("engine/debug/error_handler.emp");
+    let src = sigil_span::read_set::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("mddbg_entry_labels: cannot read {}: {e}", path.display()));
+    let equ = |name: &str| -> (String, u32) {
+        let prefix = format!("pub equ {name} = extern(\"");
+        let rest = src
+            .lines()
+            .find_map(|l| l.trim_start().strip_prefix(prefix.as_str()))
+            .unwrap_or_else(|| {
+                panic!(
+                    "mddbg_entry_labels: {} has no `pub equ {name} = extern(\"...\")`, the \
+                     entry point was renamed or re-expressed and this seam is derived from it",
+                    path.display()
+                )
+            });
+        let (blob, tail) = rest.split_once("\")").unwrap_or_else(|| {
+            panic!("mddbg_entry_labels: unterminated extern in `{name}` in {}", path.display())
+        });
+        let tail = tail.split("//").next().unwrap_or("").trim();
+        let off = if tail.is_empty() {
+            0
+        } else {
+            let hex = tail.strip_prefix('+').map(str::trim).and_then(|t| t.strip_prefix('$'));
+            hex.and_then(|h| u32::from_str_radix(h, 16).ok()).unwrap_or_else(|| {
+                panic!(
+                    "mddbg_entry_labels: `{name}` in {} is `extern(\"{blob}\") {tail}`, not \
+                     `extern(\"{blob}\")` or `+ $hex`; this reader cannot evaluate it",
+                    path.display()
+                )
+            })
+        };
+        (blob.to_string(), off)
+    };
+    let mut out = Vec::new();
+    for name in ["MDDBG__ErrorHandler", "MDDBG__ErrorHandler_PagesController"] {
+        let (blob, off) = equ(name);
+        if let Some(base) = listing_vma_if_defined(debug, &blob) {
+            out.push((name.to_string(), base + off));
+        }
+    }
+    out
+}
+
+/// The cross-seam symbols `engine/level/section.emp` reaches in the painted-region
+/// resolver and the BG streamer, as [`listing_labels_if_defined`] rows.
+///
+/// Spelled once because three gates lower section.emp against a hand-built scope
+/// (`section_port`, and the `plane_buffer_port` / `entity_window_port` flips that
+/// co-lower it). A tree predating those subsystems neither references nor defines
+/// these names, so the rows are simply absent there.
+pub fn section_streamer_labels_if_defined(debug: bool) -> Vec<(String, u32)> {
+    listing_labels_if_defined(
+        debug,
+        &[
+            "Region_Resolve",
+            "BG_Bands_Hold",
+            "BG_Plane_Layout",
+            "BG_Plane_Top",
+            "BG_Tiles_Current",
+            "BG_Tiles_Offset",
+            "BG_Tiles_Target",
+            "BG_UploadTiles",
+            "BG_Wipe_Cursor",
+            "BgAnim_LastStep",
+            "Collision_GetType",
+            "DMA_Deferrable_DropDest",
+            "Parallax_Current_Vscroll_BG",
+            "TileCache_CopyBlockColumn",
+            "TileCache_FillRow",
+        ],
+    )
+}
+
+/// The zero-byte items of the two modules `engine/level/section.emp` imports consts
+/// from, `engine.parallax` (the Plane-B geometry) and `engine.bg` (the BG stream
+/// window), for a gate lowering section.emp standalone to PREPEND. Each const arrives
+/// with its defining expression and neither module emits bytes (see
+/// [`zero_byte_module`]). Their consts fold the game's `GAME_SCANLINE_CAPS` define
+/// where the tree declares one, so the caller lowers under [`sonic4_shape_defines`].
+pub fn section_const_modules(aeon: &std::path::Path) -> Vec<sigil_frontend_emp::ast::File> {
+    vec![
+        zero_byte_module(aeon, "engine/level/parallax.emp"),
+        zero_byte_module(aeon, "engine/level/bg.emp"),
+    ]
+}
+
 pub fn listing_vma(debug: bool, name: &str) -> u32 {
     let path = listing_path(debug);
     listing_symbol_addr(&path, name).unwrap_or_else(|| {
@@ -1845,6 +1983,24 @@ pub fn bg_layout_size_const_src(aeon: &std::path::Path) -> String {
 pub fn engine_const_src(aeon: &std::path::Path, name: &str) -> String {
     let rhs = emp_const_rhs(&aeon.join("engine/system/constants.emp"), name);
     format!("module engine.constants_lifted\npub const {name} = {rhs}\n")
+}
+
+/// The comptime `-D` set a single-module port oracle lowers sonic4 code under at one
+/// shape: the shipping profile's built-in rows merged with the `[defines]` table of
+/// the aeon tree's own `games/sonic4/map.toml`, via [`crate::native::shape_defines`],
+/// the same merge the whole-program build reads.
+///
+/// A port that binds only `DEBUG` goes stale in one direction: the engine starts
+/// reading another build define (`CRASH_REPORT` from the profile,
+/// `GAME_SCANLINE_CAPS` from the game's map) and the standalone lower aborts with
+/// `unknown name` before it reaches the bytes it compares. Reading the merge instead
+/// hands the oracle every define the reference ROM was built with, and a tree whose
+/// map declares no `[defines]` table contributes no game rows, so an older tree gets
+/// exactly the env its own build used. Loud on a missing or malformed map.
+pub fn sonic4_shape_defines(aeon: &std::path::Path, debug: bool) -> Vec<(String, i128)> {
+    let profile = crate::native::sonic4_profile(debug);
+    crate::native::shape_defines(&profile, aeon)
+        .unwrap_or_else(|e| panic!("sonic4_shape_defines: {e}"))
 }
 
 /// The resolved game-contract env the raster / parallax / buffers oracles lower

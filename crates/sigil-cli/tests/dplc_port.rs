@@ -489,6 +489,13 @@ fn two_module_flip(debug: bool, rom_name: &str) {
         ("DMA_Budget_Remaining", pick(pins::DMA_BUDGET_REMAINING)),
         // P2c Task 8 byte cap seam (P-3 family).
         ("DMA_Enq_Bytes_Frame", pick(pins::DMA_ENQ_BYTES_FRAME)),
+        // The queue block's end mark dma_queue.emp's layout ensure measures against,
+        // derived from the reference listing.
+        ("DMA_Queue_End", sigil_harness::test_support::listing_vma(debug, "DMA_Queue_End")),
+        // The MD Debugger carriers dma_queue's DEBUG-shape `assert.w` jsr/jmp to;
+        // shape-invariant, unreferenced in plain (the bg_port idiom).
+        ("MDDBG__ErrorHandler", pins::MDDBG_ERROR_HANDLER),
+        ("MDDBG__ErrorHandler_PagesController", pins::MDDBG_ERROR_HANDLER_PAGES_CONTROLLER),
     ];
     if debug {
         // aeon's DMA straddle counter — the whole family, so a later cell needs no edit.

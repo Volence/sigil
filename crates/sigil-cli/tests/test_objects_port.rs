@@ -281,6 +281,8 @@ fn compile_real_files(
             sst(),
             constants(),
             zero_byte("games/sonic4/config/constants.emp"),
+            // games.sonic4.sound_ids, the sound-id authority (the spring's launch SFX).
+            zero_byte("games/sonic4/config/sound_ids.emp"),
             zero_byte("engine/objects/objdef.emp"),
             zero_byte("engine/objects/mapping_dsl.emp"),
             zero_byte("games/sonic4/player/player_common.emp"),
@@ -291,8 +293,13 @@ fn compile_real_files(
 
     let opts = LowerOptions {
         initial_cpu: Cpu::M68000,
-        include_root: Some(aeon.join("games/sonic4/objects")),
-        embed_base: None,
+        // The aeon ROOT, the base the whole-program build joins every module's
+        // `embed()` path to (`native::build_emp`'s `embed_base_for`): test_solid.emp
+        // spells its art and palette embeds root-relative
+        // (`embed("games/sonic4/data/generated/spring/art_spring.bin")`), so a base at
+        // the module's own directory resolves them to a path that does not exist.
+        include_root: Some(aeon.clone()),
+        embed_base: Some(aeon.clone()),
         // DEBUG is bound in both shapes (the house convention: the debug shape is
         // explicit); test_solid.emp reads it.
         defines: vec![("DEBUG".to_string(), i128::from(shape.debug))],
@@ -344,6 +351,14 @@ fn compile_real_files(
             "MDDBG__ErrorHandler_PagesController",
             pins::MDDBG_ERROR_HANDLER_PAGES_CONTROLLER,
         ));
+    }
+    // The spring's player-side flip entry, read from the reference listing and supplied
+    // only where that build defines it (a tree whose spring predates the flip neither
+    // calls nor defines it).
+    for (name, vma) in
+        sigil_harness::test_support::listing_labels_if_defined(shape.debug, &["Player_StartSpringFlip"])
+    {
+        groups.push(as_label_at(&name, vma));
     }
     for group in &mut groups {
         for sec in group.iter_mut() {
