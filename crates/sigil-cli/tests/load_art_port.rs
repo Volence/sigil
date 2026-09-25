@@ -574,14 +574,6 @@ fn two_module_flip(debug: bool, rom_name: &str) {
         ("DMA_Important", pick(pins::DMA_IMPORTANT)),
         ("DMA_Important_Slot", pick(pins::DMA_IMPORTANT_SLOT)),
     ];
-    // The co-lowered s4lz gates its assert blocks on `DEBUG == 1 || CRASH_REPORT == 1`
-    // where the tree defines `CRASH_REPORT`, so the plain shape can reference the
-    // error-handler entries too; where nothing references them they are inert.
-    table.push(("MDDBG__ErrorHandler", pins::MDDBG_ERROR_HANDLER));
-    table.push((
-        "MDDBG__ErrorHandler_PagesController",
-        pins::MDDBG_ERROR_HANDLER_PAGES_CONTROLLER,
-    ));
     if debug {
         table.push(("Lag_Frame_Count", pins::LAG_FRAME_COUNT));
         table.push(("DMA_Bytes_ThisFrame", pins::DMA_BYTES_THIS_FRAME));
@@ -599,6 +591,10 @@ fn two_module_flip(debug: bool, rom_name: &str) {
             &["Dbg_DMA_", "DMA_Peak_", "DMA_Split_"],
         );
     }
+    // The MD Debugger entry points, per shape from the tree: the co-lowered s4lz gates
+    // its asserts on `DEBUG == 1 || CRASH_REPORT == 1` where the tree defines
+    // `CRASH_REPORT`, so the plain shape reaches the plain ROM's own handler.
+    table.extend(sigil_harness::test_support::mddbg_entry_labels(debug));
 
     for (i, (name, vma)) in table.iter().enumerate() {
         let vma = *vma;

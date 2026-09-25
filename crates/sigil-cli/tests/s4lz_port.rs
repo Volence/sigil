@@ -82,16 +82,13 @@ fn value_equs(doctor: Option<&str>) -> Vec<Section> {
     sigil_harness::test_support::assemble_equ_pairs(&pairs)
 }
 
-/// The cross-seam ADDRESS symbols: the assert blobs' MDDBG error-handler entries
-/// (the rings_port precedent). Carried in BOTH shapes: where the tree gates its
-/// assert blocks on `DEBUG == 1 || CRASH_REPORT == 1` the plain shape references
-/// them too, and where it gates on `DEBUG` alone the plain-shape carriers simply go
-/// unreferenced (the bg_port idiom).
-fn addr_labels() -> Vec<Section> {
-    let table: Vec<(&str, u32)> = vec![
-        ("MDDBG__ErrorHandler", pins::MDDBG_ERROR_HANDLER),
-        ("MDDBG__ErrorHandler_PagesController", pins::MDDBG_ERROR_HANDLER_PAGES_CONTROLLER),
-    ];
+/// The cross-seam ADDRESS symbols: the assert blobs' MDDBG error-handler entries,
+/// per shape from the tree (`test_support::mddbg_entry_labels`). Where the tree gates
+/// its assert blocks on `DEBUG == 1 || CRASH_REPORT == 1` the plain shape references
+/// them too, at the plain ROM's own handler address; where the plain ROM carries no
+/// handler, nothing in it references one and no row is supplied.
+fn addr_labels(debug: bool) -> Vec<Section> {
+    let table = sigil_harness::test_support::mddbg_entry_labels(debug);
     let mut out = Vec::new();
     for (i, (name, vma)) in table.iter().enumerate() {
         let vma = *vma;
@@ -155,7 +152,7 @@ fn compile_real_file(
     );
 
     sections.extend(value_equs(doctor));
-    sections.extend(addr_labels());
+    sections.extend(addr_labels(debug));
 
     let resolved = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
         .unwrap_or_else(|d| panic!("resolve_layout failed: {d:?}"));

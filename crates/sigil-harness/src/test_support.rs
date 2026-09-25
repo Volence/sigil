@@ -671,6 +671,63 @@ pub fn listing_labels_if_defined(debug: bool, names: &[&str]) -> Vec<(String, u3
         .collect()
 }
 
+/// The two MD Debugger entry points an `assert` expansion jsr/jmps
+/// (`MDDBG__ErrorHandler`, `MDDBG__ErrorHandler_PagesController`), for ONE shape, derived
+/// from the tree: each is read from `engine/debug/error_handler.emp`'s
+/// `pub equ NAME = extern("BLOB") [+ $OFF]` and its blob resolved in that shape's listing.
+///
+/// For a module whose PLAIN shape reaches the handler. The `pins::MDDBG_*` pair is one
+/// address for both shapes, which holds only while the handler island exists in the
+/// debug ROM alone and plain never references it. Once a tree also ships the island in
+/// the plain ROM (the crash-report profile, `CRASH_REPORT`), the two shapes place it
+/// at different addresses and a plain operand encoded from the shared pin is wrong.
+///
+/// A shape whose build does not define the blob (no island in that ROM) gets no rows:
+/// nothing in that shape can reference the handler. A missing or reshaped equ is loud.
+pub fn mddbg_entry_labels(debug: bool) -> Vec<(String, u32)> {
+    let path = aeon_dir().join("engine/debug/error_handler.emp");
+    let src = sigil_span::read_set::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("mddbg_entry_labels: cannot read {}: {e}", path.display()));
+    let equ = |name: &str| -> (String, u32) {
+        let prefix = format!("pub equ {name} = extern(\"");
+        let rest = src
+            .lines()
+            .find_map(|l| l.trim_start().strip_prefix(prefix.as_str()))
+            .unwrap_or_else(|| {
+                panic!(
+                    "mddbg_entry_labels: {} has no `pub equ {name} = extern(\"...\")`, the \
+                     entry point was renamed or re-expressed and this seam is derived from it",
+                    path.display()
+                )
+            });
+        let (blob, tail) = rest.split_once("\")").unwrap_or_else(|| {
+            panic!("mddbg_entry_labels: unterminated extern in `{name}` in {}", path.display())
+        });
+        let tail = tail.split("//").next().unwrap_or("").trim();
+        let off = if tail.is_empty() {
+            0
+        } else {
+            let hex = tail.strip_prefix('+').map(str::trim).and_then(|t| t.strip_prefix('$'));
+            hex.and_then(|h| u32::from_str_radix(h, 16).ok()).unwrap_or_else(|| {
+                panic!(
+                    "mddbg_entry_labels: `{name}` in {} is `extern(\"{blob}\") {tail}`, not \
+                     `extern(\"{blob}\")` or `+ $hex`; this reader cannot evaluate it",
+                    path.display()
+                )
+            })
+        };
+        (blob.to_string(), off)
+    };
+    let mut out = Vec::new();
+    for name in ["MDDBG__ErrorHandler", "MDDBG__ErrorHandler_PagesController"] {
+        let (blob, off) = equ(name);
+        if let Some(base) = listing_vma_if_defined(debug, &blob) {
+            out.push((name.to_string(), base + off));
+        }
+    }
+    out
+}
+
 /// The cross-seam symbols `engine/level/section.emp` reaches in the painted-region
 /// resolver and the BG streamer, as [`listing_labels_if_defined`] rows.
 ///
