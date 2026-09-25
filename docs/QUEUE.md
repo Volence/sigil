@@ -70,6 +70,7 @@ Two rows that must land as ONE parcel, per the census. (a) sigil's message arm e
 
 ## EMP-Z80-MNEMONIC-TABLE: LANDED
 
+- **REOPENED 2026-09-25 as card `d-34-reopened`:** the hub withdrew its ruling at empyrean `8a8c29ad` (outside the delegation, d-6 reserves spellings to him). Stays LANDED until he answers; a revert moves no ROM byte.
 - state: **LANDED** 2026-09-25 at merge `bc88480d`, pushed. Landed on `d-34`, answered `land-all-21` **by the HUB** under the owner's delegation (empyrean `796b508f`), not by him; he overturns it with one word at no cost while no game source uses the `(c)` port spelling. Landing run on the merged tree: 494 suites, 5611 passed, 0 failed.
 - history, kept:
 
