@@ -120,32 +120,26 @@ const MAX_PACKED_CHARS: usize = 4;
 /// `ld hl,"ABCDE"` is the same `#1141`), so it belongs to asl's integer type and
 /// not to the target's word size.
 ///
+/// A `'...'` character constant is a string token too, and packs here by the
+/// same rule (`move.l #'INIT',d0` is `203C 494E 4954`).
+///
 /// **This rule is for EXPRESSIONS, and a `dc`-family directive is not one.** In
 /// a data directive a string is a CHARACTER SEQUENCE, one element per character
-/// at the directive's width, and an operator distributes over the elements
-/// rather than over a packed value: asl's `dc.w "AB"` is `0041 0042`, and so is
-/// `dc.w "AB"+0`. `directive_db` already consumes that shape before it reaches
-/// this parser; the wider directives refuse a string operand outright rather
-/// than let it arrive here and pack, because packing it would be silently wrong
-/// bytes rather than a loud refusal.
+/// at the directive's width: asl's `dc.w "AB"` is `0041 0042`, and so is
+/// `dc.w "AB"+0`. The data directives consume a string-typed operand before it
+/// reaches this parser (`eval.rs::data_string_operand`), including the one
+/// place a data directive does pack: a single-quoted operand that fits one
+/// element.
 ///
-/// **The `charset` seam**, now wired: `cs` IS the code page, and it replaces the
+/// **The `charset` seam**: `cs` IS the code page, and it replaces the
 /// character-to-byte step alone. The big-endian packing above sits on top of
 /// whatever byte a character maps to, so the two compose without either knowing
 /// about the other: under `charset 'A','X',$11`, asl reads `move.w #"AB",d0` as
 /// `303C 1112` and this function returns `$1112`.
 ///
-/// The page reaches THREE sites in this front end: this function,
-/// `eval.rs::directive_db`, and `lexer.rs`'s character constant, which packs
-/// `'AB'` at lex time and maps each character through `cs.map_char` as it goes.
-/// The count matters more than it looks: the sentence this replaced named a
-/// population of TWO, it was quoted into a dispatch brief as authoritative, and
-/// the third site was found only because the parcel enumerated instead of
-/// inheriting. asl has a FOURTH: its wide data directives
-/// distribute a string operand and translate each character (`dc.w "AB"` under
-/// that same `charset` is `0011 0042`). But sigil refuses a string operand to
-/// `dc.w`/`dc.l` outright (`STRING_IN_WIDE_DATA`), so that site does not exist
-/// here. If it is ever implemented, it is a code-page consumer on day one.
+/// The page reaches this function and every data directive's per-character
+/// write (`eval.rs::data_string_value`): `dc.b "AB"` and `dc.w "AB"` under that
+/// same `charset` are `11 12` and `0011 0012`.
 ///
 /// The page is threaded as an argument rather than held: this parser stays
 /// stateless, and every call site is named by the compiler instead of by a
@@ -359,15 +353,12 @@ fn parse_bp<'a>(
 ///
 /// **KNOWN RESIDUAL, measured and bounded.** Condition 2 asks the SPANS whether
 /// the number is adjacent, and a span cannot say whether its `Tok::Int` came
-/// from numeric-literal syntax. Two other things reach this parser already
-/// packed into a `Tok::Int`: the lexer's character constant (`'A'`), and the
-/// builtin folds in `eval.rs` that rewrite a whole call to one resolved integer
-/// (`defined(…)`, `abs(…)`, `strlen(…)`, the string comparisons). asl sees the
-/// unfolded TEXT, which is not a number, and raises `#1110` for all of them:
+/// from numeric-literal syntax. The builtin folds in `eval.rs` that rewrite a
+/// whole call to one resolved integer (`defined(…)`, `abs(…)`, `strlen(…)`, the
+/// string comparisons) reach this parser as a `Tok::Int`. asl sees the unfolded
+/// TEXT, which is not a number, and raises `#1110` for all of them:
 ///
 /// ```text
-///   +'A'            #1110      sigil: 00000041
-///   +'AB'           #1110      sigil: 00004142
 ///   +defined(SZ)    #1110      sigil: 00000001
 ///   +abs(-3)        #1110      sigil: 00000003
 ///   +strlen("ab")   #1110      sigil: 00000002
@@ -497,7 +488,7 @@ fn parse_atom<'a>(
         // A string literal in a primary-expression position is asl's packed
         // integer; see [`string_to_int`] for the rule and for why a `dc`-family
         // directive must never reach this arm.
-        Tok::Str(s) => string_to_int(s, ctx.cs).map(|v| (Expr::Int(v), rest)),
+        Tok::Str(s, _) => string_to_int(s, ctx.cs).map(|v| (Expr::Int(v), rest)),
         Tok::Dollar => Some((Expr::Sym("$".to_string()), rest)),
         // A standalone `*` in atom (primary-expression) position is AS's other
         // spelling of the current-PC symbol (used by `pscStart := *` etc. in
@@ -604,7 +595,7 @@ mod depth_guard_tests {
         let h = std::thread::Builder::new()
             .stack_size(4 * 1024 * 1024)
             .spawn(move || {
-                let toks = lex_line(&src, Cpu::M68000, &CodePage::identity(), SourceId(0), 0).expect("lex");
+                let toks = lex_line(&src, Cpu::M68000, SourceId(0), 0).expect("lex");
                 let cs = CodePage::identity();
                 let _ = tx.send(parse_expr(&toks, &ExprCtx::plain(&cs, sigil_ir::backend::Cpu::M68000)).is_some());
             })
@@ -677,7 +668,7 @@ mod tests {
     use sigil_span::SourceId;
 
     fn fold(src: &str, lookup: &dyn Fn(&str) -> Option<i64>) -> i64 {
-        let toks = lex_line(src, Cpu::Z80, &CodePage::identity(), SourceId(0), 0).unwrap();
+        let toks = lex_line(src, Cpu::Z80, SourceId(0), 0).unwrap();
         let cs = CodePage::identity();
         let (e, rest) = parse_expr(&toks, &ExprCtx::plain(&cs, sigil_ir::backend::Cpu::M68000)).unwrap();
         assert!(rest.is_empty(), "unconsumed tokens: {rest:?}");

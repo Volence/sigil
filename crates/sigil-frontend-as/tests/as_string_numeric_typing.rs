@@ -493,46 +493,97 @@ fn a_string_plus_integer_asl_declines_is_refused_not_guessed() {
             "{body:?}: refused, but not as a declined string+integer: {d:?}"
         );
     }
-    // Under a non-identity code page the arithmetic runs on the MAPPED bytes
-    // (`charset 'a',$11` gives `dc.b "ab"+1` = `11 63`), but no probe can say
-    // whether asl maps the RESULT bytes a second time, and the two readings
-    // emit different bytes. Refused rather than guessed.
-    let d = diags("\tcharset 'a',$11\n\tdc.b \"ab\"+1,$EE").join(" ");
-    assert!(
-        d.contains("non-identity `charset`"),
-        "string+integer under a charset is refused in its own words, got {d:?}"
-    );
-    // And the page itself still works: this is a refusal of the ARITHMETIC, not
-    // of strings under a `charset`.
+}
+
+/// `string + integer` under a non-identity code page. The arithmetic runs on
+/// the MAPPED bytes, and each result byte becomes the LOWEST character the
+/// page maps to it (dropped when none does), which the data directive then
+/// maps forward again. asl, exit 0, the probe sources below verbatim after
+/// `cpu 68000`, `padding off`, `org 0`:
+///
+/// ```text
+///   charset 'a',$11 / dc.b "ab"+1,$EE                                  11 63 EE
+///   charset 'A',$11 'B',$22 'C',$99 / dc.b 'AB'+1                      11 23
+///   ... and charset $23,$77 / dc.b 'AB'+1                              11
+///   charset $43,$77 / dc.b 'AB'+1                                      41
+///   charset 'A',$11 / charset $11,$55 / dc.b 'AB'+1                    11 43
+///   charset 'A',$51 / dc.b 'AB'+1                                      51 43
+///   charset 'A',$11 / dc.b ('AB'+1)="AC",('AB'+1)="\x11C"              00 01
+///   charset 'A',$11 / dc.b lowstring('AB'+1)                           11 63
+/// ```
+///
+/// Each row separates the reading from a neighbour: row 3 and 4 drop a byte
+/// that no character maps to, row 5 does NOT map a result byte forward a
+/// second time from its raw value (`$11` would become `$55`), row 6 takes the
+/// lower of two preimages, and the last two show the characters are the
+/// preimages, index `$11` below `A`.
+#[test]
+fn string_plus_integer_under_a_page_takes_the_lowest_preimage() {
+    const CS3: &str = "\tcharset 'A',$11\n\tcharset 'B',$22\n\tcharset 'C',$99\n";
+    for (body, want) in [
+        ("\tcharset 'a',$11\n\tdc.b \"ab\"+1,$EE".to_string(), vec![0x11, 0x63, 0xEE]),
+        (format!("{CS3}\tdc.b 'AB'+1"), vec![0x11, 0x23]),
+        (format!("{CS3}\tcharset $23,$77\n\tdc.b 'AB'+1"), vec![0x11]),
+        ("\tcharset $43,$77\n\tdc.b 'AB'+1".to_string(), vec![0x41]),
+        ("\tcharset 'A',$11\n\tcharset $11,$55\n\tdc.b 'AB'+1".to_string(), vec![0x11, 0x43]),
+        ("\tcharset 'A',$51\n\tdc.b 'AB'+1".to_string(), vec![0x51, 0x43]),
+        (
+            "\tcharset 'A',$11\n\tdc.b ('AB'+1)=\"AC\",('AB'+1)=\"\\x11C\"".to_string(),
+            vec![0x00, 0x01],
+        ),
+        ("\tcharset 'A',$11\n\tdc.b lowstring('AB'+1)".to_string(), vec![0x11, 0x63]),
+    ] {
+        assert_eq!(assemble(&body).expect("asl assembles it"), want, "{body:?}");
+    }
+    // The page itself: a plain string maps each character once.
     assert_eq!(
-        assemble("\tcharset 'a',$11\n\tdc.b \"ab\",$EE").expect("a plain string still maps"),
+        assemble("\tcharset 'a',$11\n\tdc.b \"ab\",$EE").expect("a plain string maps"),
         vec![0x11, 0x62, 0xEE]
     );
 }
 
-/// A string SYMBOL in `dc.w`/`dc.l`/`dw` stays LOUD, and this is the guard on
-/// the fix rather than on the defect.
+/// A string SYMBOL in `dc.w`/`dc.l`/`dw` is written one zero-extended element
+/// per character, as a string literal is. asl, exit 0, with `S1 equ "a"` and
+/// `S2 equ "ab"`:
 ///
-/// asl renders a string per character at these widths (`dc.w S2` is
-/// `0061 0062`), which sigil does not implement and refuses by name
-/// (`STRING_IN_WIDE_DATA`). That refusal used to key on a string LITERAL still
-/// standing in the operand, which was the whole population, because a string
-/// with no literal in it could not resolve at all.
+/// ```text
+///               S2              S2+1            S1
+///   dc.w        0061 0062       0061 0063       0061
+///   dc.l        0000 0061 ...   0000 0061 ...   0000 0061
+///   dw (z80)    61 00 62 00     61 00 63 00     61 00
+/// ```
 ///
-/// It can now. Once `resolve_str_packed` answers for a string symbol, `dc.w S2`
-/// would reach the numeric fold, pack to `6162`, and assemble CLEANLY where asl
-/// writes two zero-extended words. That is this parcel's own defect class, re-created
-/// by its own fix. Every width is checked because the guard is three call
-/// sites, not one.
+/// Packing the symbol instead would assemble `dc.w S2` cleanly to `6162`,
+/// which is the silent class this guards: the symbol resolves through
+/// `resolve_str_packed` in an integer slot, and must not here. Every width is
+/// checked because the directives are three call sites, not one.
 #[test]
-fn a_string_symbol_in_wide_data_stays_loud() {
-    for w in ["dc.w", "dc.l", "dw"] {
-        for expr in ["S2", "S2+1", "S1"] {
-            let d = diags(&format!("S1 equ \"a\"\nS2 equ \"ab\"\n\t{w} {expr}")).join(" ");
-            assert!(
-                d.contains("wider than a byte"),
-                "{w} {expr}: a string-typed operand must be refused by name, got {d:?}"
-            );
+fn a_string_symbol_in_wide_data_is_written_per_character() {
+    let syms = "S1 equ \"a\"\nS2 equ \"ab\"\n";
+    for (w, head, rows) in [
+        (
+            "dc.w",
+            HEAD,
+            [vec![0, 0x61, 0, 0x62], vec![0, 0x61, 0, 0x63], vec![0, 0x61]],
+        ),
+        (
+            "dc.l",
+            HEAD,
+            [
+                vec![0, 0, 0, 0x61, 0, 0, 0, 0x62],
+                vec![0, 0, 0, 0x61, 0, 0, 0, 0x63],
+                vec![0, 0, 0, 0x61],
+            ],
+        ),
+        (
+            "dw",
+            "\tcpu z80\n\torg 0\n",
+            [vec![0x61, 0, 0x62, 0], vec![0x61, 0, 0x63, 0], vec![0x61, 0]],
+        ),
+    ] {
+        for (expr, want) in ["S2", "S2+1", "S1"].into_iter().zip(rows) {
+            let got = assemble_with(head, &format!("{syms}\t{w} {expr}"));
+            assert_eq!(got, Ok(want), "{w} {expr}");
         }
     }
     // The integer-typed neighbour is NOT caught: `S2-1` has a `-` at its root,

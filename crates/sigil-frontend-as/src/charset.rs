@@ -154,16 +154,16 @@ impl CodePage {
     }
 
     /// `true` iff nothing has been remapped.
-    ///
-    /// This was `#[cfg(test)]`, with a note saying that a future non-test
-    /// caller should be a compile error here rather than silent dead weight.
-    /// It was, and this is that caller: `eval.rs::str_plus_int` refuses a
-    /// `string + integer` under a non-identity page, because the probe cannot
-    /// settle whether asl maps the arithmetic's RESULT bytes a second time and
-    /// the two readings emit different bytes. So the assembler does ask now,
-    /// and the guard did its job on the way in.
+    #[cfg(test)]
     pub fn is_identity(&self) -> bool {
         (0..256usize).all(|i| self.map[i] == i as u8)
+    }
+
+    /// The lowest character this page maps to `b`, or `None` when no character
+    /// maps to it. This is how asl turns the bytes of a `string + integer`
+    /// result back into characters (`eval.rs::str_plus_int`).
+    pub fn lowest_preimage(&self, b: u8) -> Option<char> {
+        self.map.iter().position(|&t| t == b).map(|i| char::from(i as u8))
     }
 
     /// Translate one source character to its byte.

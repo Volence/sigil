@@ -1,12 +1,12 @@
 //! escape: AS's backslash escape grammar inside string and character literals.
 //!
-//! A `"..."` string is stored by the lexer in its SOURCE form, backslashes and
-//! all: `Tok::Str` holds the text between the quotes verbatim. Its VALUE is that
-//! text with every escape replaced by the character it denotes, and this module
-//! computes it. A value that has to become a literal again (a string handed to a
-//! macro as an argument) goes back through [`quote`], so a token only ever
-//! carries the source form and no value is unescaped twice. A `'...'` character
-//! constant is packed at lex time and takes [`unescape_bytes`] there.
+//! A `"..."` string and a `'...'` character constant are stored by the lexer in
+//! their SOURCE form, backslashes and all: `Tok::Str` holds the text between the
+//! quotes verbatim. Its VALUE is that text with every escape replaced by the
+//! character it denotes, and this module computes it. A value that has to become
+//! a literal again (a string handed to a macro as an argument) goes back through
+//! [`quote`], so a token only ever carries the source form and no value is
+//! unescaped twice.
 //!
 //! # The grammar, measured against asl 1.42 Beta Bld 212
 //!
@@ -125,23 +125,6 @@ pub(crate) fn unescape_keep_interp(raw: &str) -> Result<String, EscapeError> {
     unescape(raw, &mut |e| Some(format!("\\{{{e}}}")))
 }
 
-/// The value of a character constant's body as BYTES: source text contributes
-/// its own bytes, an escape the one byte it denotes. A `\{expr}` is an
-/// [`EscapeError::Interp`]; the lexer that packs character constants has no
-/// evaluator.
-pub(crate) fn unescape_bytes(raw: &str) -> Result<Vec<u8>, EscapeError> {
-    let mut out = Vec::with_capacity(raw.len());
-    walk(raw, &mut |piece| {
-        match piece {
-            Piece::Text(t) => out.extend_from_slice(t.as_bytes()),
-            Piece::Byte(b) => out.push(b),
-            Piece::Interp(e) => return Err(EscapeError::Interp(e.to_string())),
-        }
-        Ok(())
-    })?;
-    Ok(out)
-}
-
 /// The index of the quote that closes the literal opened at `bytes[open]`, or
 /// `None` when the line ends first. A backslash consumes the byte after it, so
 /// an escaped quote does not close the literal.
@@ -185,13 +168,15 @@ pub(crate) fn interp_close(bytes: &[u8], start: usize) -> Option<usize> {
     None
 }
 
-/// The source form of a string value: the body a `"..."` literal needs so that
-/// [`unescape`] gives `value` back. A backslash and a double quote are the two
-/// characters that need an escape; every other character stands for itself.
-pub(crate) fn quote(value: &str) -> String {
+/// The source form of a string value: the body a literal delimited by `q`
+/// needs so that [`unescape`] gives `value` back. A backslash and the
+/// delimiter are the two characters that need an escape; every other character
+/// stands for itself.
+pub(crate) fn quote(value: &str, q: crate::token::Quote) -> String {
+    let delim = q.char();
     let mut out = String::with_capacity(value.len() + 2);
     for c in value.chars() {
-        if matches!(c, '\\' | '"') {
+        if c == '\\' || c == delim {
             out.push('\\');
         }
         out.push(c);

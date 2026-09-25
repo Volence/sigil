@@ -74,11 +74,36 @@ pub enum Tok {
     /// String literal contents in SOURCE form: quotes stripped, escapes NOT
     /// processed. The value, escapes processed, is computed where the string is
     /// used (`crate::escape`).
-    Str(String),
+    ///
+    /// Both quote characters make a STRING, and in an expression the two are
+    /// the same value. The [`Quote`] is kept because a few consumers read an
+    /// operand written in single quotes as an integer instead (a data
+    /// directive's element that fits, a `charset` target); see
+    /// `eval.rs::single_quoted_operand` for asl's rule.
+    Str(String, Quote),
     /// `$` location counter (Z80 context only).
     Dollar,
     /// A punctuation / operator.
     Punct(Punct),
+}
+
+/// The character that delimited a [`Tok::Str`] literal.
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum Quote {
+    /// `"..."`.
+    Double,
+    /// `'...'`, AS's character constant.
+    Single,
+}
+
+impl Quote {
+    /// The delimiter character itself.
+    pub fn char(self) -> char {
+        match self {
+            Quote::Double => '"',
+            Quote::Single => '\'',
+        }
+    }
 }
 
 /// A token plus its source span.

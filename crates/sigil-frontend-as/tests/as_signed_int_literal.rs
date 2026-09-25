@@ -169,22 +169,30 @@ fn unary_minus_is_untouched() {
     }
 }
 
+/// A character constant is not a numeric literal, so a leading `+` on one is
+/// refused as asl refuses it: `dc.l +'A'` and `dc.l +'AB'` are both `error
+/// #1110: wrong number of operands`, exit 2. The lexer keeps `'...'` a string
+/// token, which the signed-literal rule does not take.
+#[test]
+fn a_leading_plus_on_a_character_constant_is_refused() {
+    for expr in ["+'A'", "+'AB'"] {
+        assert!(is_refused(expr), "`{expr}` folded; asl refuses it with #1110");
+    }
+}
+
 /// The residual documented on `expr.rs::signed_int_literal`, pinned so it cannot
 /// move without a test saying so.
 ///
 /// A `Tok::Int` cannot say whether it came from numeric-literal syntax, so a
-/// character constant (packed by the lexer) and a builtin the evaluator folds to
-/// one integer before the parse both look like literals here. asl sees the
-/// unfolded TEXT and raises `#1110` for all of them. ACCEPT-MORE in every case —
-/// sigil folds where asl refuses, never to a different value — so it cannot put
-/// a wrong byte in an image, and no source carrying one of these shapes builds
-/// under asl at all.
+/// builtin the evaluator folds to one integer before the parse looks like a
+/// literal here. asl sees the unfolded TEXT and raises `#1110` for all of them.
+/// ACCEPT-MORE in every case — sigil folds where asl refuses, never to a
+/// different value — so it cannot put a wrong byte in an image, and no source
+/// carrying one of these shapes builds under asl at all.
 #[test]
 fn known_residual_a_packed_or_folded_int_also_takes_the_sign() {
     for (expr, folds_to) in [
-        ("+'A'", 0x41u32),
-        ("+'AB'", 0x4142),
-        ("+defined(SZ)", 1),
+        ("+defined(SZ)", 1u32),
         ("+abs(-3)", 3),
         ("+strlen(\"ab\")", 2),
     ] {
