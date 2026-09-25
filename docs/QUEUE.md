@@ -825,6 +825,9 @@ points at it rather than restating it, so there is one copy to keep true.
   symbol); the 58 accepted shapes keep asl's bytes; S1, S2, S3K, S3C, S3 byte-identical and refusal sets
   unchanged. The 6 former BYTES-DIFFER rows are now named refusals (silent-empty `dc` ruling, and
   `AS-REGISTER-ALIAS-SYMBOL` below).
+  Aeon's four shapes at `ec640bcf` match the provenance tip (s4 `91c46c94/820209`, s4.debug
+  `8a378de6/846509`, demo `1c7a34d3/96863`, demo.debug `72e405a5/103185`). Landing run at `29f64ad8`:
+  GREEN, 504 suites, 5728 passed (5723 + 5 new), 0 failed, 2 ignored, clippy and ledger clean.
 
 ### AS-REGISTER-ALIAS-SYMBOL
 
