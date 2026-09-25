@@ -10390,6 +10390,47 @@ impl Asm {
             std::slice::from_ref(mem_atom),
             span,
         );
+        // A PC-relative memory EA (`(d16,PC)` or `(d8,PC,Xn)`) is a symbolic
+        // displacement the linker resolves against the EA extension word, which
+        // for movem follows the register-mask word; the backend derives that
+        // offset. The encoder refuses it in the register-to-memory direction,
+        // where the EA is a destination.
+        let pc_op = match mem_atom {
+            OperandAtom::M68kDisp { disp, an } if an.eq_ignore_ascii_case("pc") => {
+                Some((self.fixup_target(disp), M68kOperand::Pcd16(0), false))
+            }
+            OperandAtom::M68kIdx { disp, an, xn, xlong } if an.eq_ignore_ascii_case("pc") => {
+                let xn = match self.m68k_index_reg(xn, span) {
+                    Some(x) => x,
+                    None => return,
+                };
+                Some((
+                    self.fixup_target(disp),
+                    M68kOperand::Pcd8Xn { d: 0, xn, long: *xlong },
+                    true,
+                ))
+            }
+            _ => None,
+        };
+        if let Some((target, op, indexed)) = pc_op {
+            let ops = if list_first {
+                vec![M68kOperand::RegList(mask), op]
+            } else {
+                vec![op, M68kOperand::RegList(mask)]
+            };
+            let inst = M68kInstruction {
+                mnemonic: M68kMnemonic::Movem,
+                size,
+                ops,
+            };
+            let frag = if indexed {
+                self.m68k.lower_pcrel_idx_ea(&inst, target, span)
+            } else {
+                self.m68k.lower_pcrel_ea(&inst, target, span)
+            };
+            self.emit_frag(frag, span);
+            return;
+        }
         let mut mem_op = match self.convert_one_atom_m68k(mem_atom, size, span) {
             Some(o) => o,
             None => return,
@@ -13346,6 +13387,11 @@ fn m68k_mnemonic(base: &str) -> Option<M68kMnemonic> {
         "movem" => Movem,
         "movep" => Movep,
         "addx" => Addx,
+        "subx" => Subx,
+        "abcd" => Abcd,
+        "sbcd" => Sbcd,
+        "negx" => Negx,
+        "nbcd" => Nbcd,
         "cmpm" => Cmpm,
         "exg" => Exg,
         "nop" => Nop,
@@ -13498,6 +13544,12 @@ fn m68k_default_size(m: M68kMnemonic) -> Option<M68kSize> {
         Asl | Asr | Lsl | Lsr | Rol | Ror | Roxl | Roxr => Some(M68kSize::W),
         Dbcc(_) => Some(M68kSize::W),
         Scc(_) => Some(M68kSize::B),
+        // The extended forms default to WORD and the decimal forms, which are
+        // byte-only, to BYTE: asl assembles `addx d3,d5` as `DB43`, `subx
+        // -(a3),-(a5)` as `9B4B`, `negx d5` as `4045` (each its `.w`), and
+        // `abcd d3,d5` as `CB03`, `nbcd d3` as `4803` (each its `.b`).
+        Addx | Subx | Negx => Some(M68kSize::W),
+        Abcd | Sbcd | Nbcd => Some(M68kSize::B),
         _ => None,
     }
 }
@@ -13530,14 +13582,15 @@ fn m68k_data_reg(w: &str) -> Option<u8> {
 
 /// The `an`-slot error for `(d,An)`/`(d,An,Xn)` when it's not a real address
 /// register. `pc` parses down the same `(expr,ident)` shape as `(d16,An)`/
-/// `(d8,An,Xn)` (see `classify`). `(d16,PC)` is intercepted and lowered
-/// earlier (see `lower_m68k_generic`'s pc-relative scan), so this only ever
-/// fires for the still-unsupported `(d8,PC,Xn)` indexed form (an `M68kIdx`
-/// atom) — hence its own naming diagnostic rather than the generic
-/// "not a valid address register" one.
+/// `(d8,An,Xn)` (see `classify`). Both PC-relative forms are intercepted and
+/// lowered earlier, one operand per instruction (`lower_m68k_generic`'s
+/// pc-relative scan and `lower_m68k_movem`), so a `pc` atom reaching this
+/// point is a SECOND PC-relative operand, which on the 68000 can only be a
+/// destination: asl refuses it as `#1350 addressing mode not allowed here`.
 fn m68k_disp_an_error(an: &str) -> String {
     if an.eq_ignore_ascii_case("pc") {
-        "`(d8,PC,Xn)` indexed PC-relative addressing is not yet supported (only `(d16,PC)` lowers)"
+        "a PC-relative operand (`(d16,PC)`/`(d8,PC,Xn)`) is allowed only as the source; \
+         this one is in a destination position"
             .to_string()
     } else {
         format!("`{an}` is not a valid address register in `(d,An)`/`(d,An,Xn)`")
