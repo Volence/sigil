@@ -180,6 +180,11 @@ SOURCE_GATES=(
     # that spelling on the whole file. Named here so a later reader does not conclude
     # the two were judged to have different inputs. They do not.
     listing_phase_marker
+    # the stress_evict shape's published EQU rows for the harvested engine constants
+    # against the immediate its in-memory ROM encodes and the fold under the profile's
+    # own defines. Source only, the same shape as the row above: it compiles the corpus
+    # in-process and opens no built ROM, no listing file and no golden.
+    listing_equ_shape_aware
     p5_constants_flip
     parcel_8b_stage_gen_touchers
     seam2_layout_derivation
