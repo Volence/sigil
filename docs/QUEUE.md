@@ -745,3 +745,21 @@ points at it rather than restating it, so there is one copy to keep true.
   dispatched to fix it. Decide whether a retirable row should fail the gate (forcing retirement in
   the fixing commit) or whether reporting is enough; the evidence is the two weeks. Source:
   `docs/superpowers/notes/2026-09-25-as-overaccept-silent-three.md`.
+
+### CLIP-OWN-ANCHOR-PRICING
+
+- state: **blocked** on card `d-35`  size: `M` to build  project: `-`
+- Priced 2026-09-25 at merge `603087e0`: `docs/superpowers/notes/2026-09-25-clip-own-anchor-pricing.md`.
+  Sigil cannot tell the S2CLIP build from canonical sonic4, so the hub's own-anchor ruling (empyrean
+  `e229e1a3`) needs a new map.toml key plus a build flag (design A, recommended) or a narrower flag
+  (C). That is surface the engine's layout file is written in, so it is `d-35`. Gates aeon's row 8
+  zone work, nothing tonight. Sigil lands first; aeon then adds the rows and passes the flag.
+
+### MAP-WHEN-UNKNOWN-VALUE-SILENT
+
+- state: **open**  size: `S`  project: `SIGIL-AS-REPLACEMENT`
+- `when_applies` in `crates/sigil-harness/src/map_placement.rs` treats any `when` value other than
+  `sound_on`/`sound_off` as applying to every build (`Some(_) => true`). A typo in map.toml's `when`
+  silently places a row in every shape. Both aeon maps use only the two known values (per the pricing
+  note, inferred from a read, not a build), so refusing unknown values should move no bytes. Folded
+  into design A of `d-35`; worth doing alone if `d-35` waits.
