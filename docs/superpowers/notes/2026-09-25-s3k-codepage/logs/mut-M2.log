@@ -1,0 +1,43 @@
+pwd: /home/volence/sonic_hacks/sigil/.claude/worktrees/agent-a08cead7e136bc593  HEAD: 191510f5e1ab1ed6491a232bb939e1b1d1bb7a19  branch: parcel/s3k-codepage
+M2 applied to state.rs
+ crates/sigil-frontend-as/src/state.rs | 3 +--
+ 1 file changed, 1 insertion(+), 2 deletions(-)
+-        self.select_code_page(&s.page, None)
+-            .expect("a page selected at `save` exists at `restore`");
++        let _ = &s.page;
+test a_dot_name_is_not_scoped_by_the_label_above_it ... ok
+test a_base_on_an_existing_page_copies_nothing ... ok
+test a_new_page_copies_the_selected_page ... ok
+test a_new_page_with_a_base_copies_the_base ... ok
+test a_name_that_is_not_a_symbol_name_is_refused ... ok
+test a_label_on_a_codepage_line_takes_the_address ... ok
+test a_register_spelling_is_a_page_name ... ok
+test one_or_two_operands_only ... ok
+test every_pass_starts_on_standard ... ok
+test nested_save_and_restore_bracket_each_selection ... FAILED
+test a_macro_argument_translates_where_it_is_used ... FAILED
+test an_unknown_base_is_refused ... ok
+test character_constants_and_expression_strings_use_the_selected_page ... ok
+test dotted_and_underscore_names_are_page_names ... ok
+test a_page_name_is_not_a_symbol ... ok
+test charset_edits_and_the_reset_touch_only_the_selected_page ... ok
+test page_names_are_case_sensitive ... ok
+test restore_brings_back_the_selection ... FAILED
+test a_selection_leaks_out_of_a_macro ... ok
+test switching_pages_changes_the_bytes_and_switching_back_restores_them ... ok
+test pages_are_rebuilt_every_pass ... ok
+test the_default_page_is_named_standard_exactly ... ok
+test the_sonic_3_level_select_text_matches_asl ... FAILED
+  left: "112233112233112233"
+ right: "112233112243114243"
+  left: "111122111122111122"
+ right: "111122414142414142"
+  left: "11221122"
+ right: "11221142"
+  left: "34fc000034bc001134bc001234bc000034bc001a33fc0013ffff018a33fc0014ffff01da1a1e371e3710191c1d000b1e2b242229002630291e2b21082536212f2c202631360c2a1e2f1f292200241e2f21222b0d201e2f2b26331e29002b2624253105262022201e2d0a291e322b2025001f1e30220c2a3230252f2c2c2a00252629290d232936262b24001f1e3131222f3609301e2b212c2d2c29263008291e331e002f22222308291e331e002f2222230c30283600301e2b2031321e2f360721221e31252224240b31252200212c2c2a30211e36041f2c2b32300c302d2220261e290030311e24220c302c322b21003122303100001a1a1e371e3710191c1d00"
+ right: "34fc000034bc001134bc001234bc000034bc001a33fc0013ffff018a33fc0014ffff01da2a415a617a30393a2e200b1e2b242229002630291e2b21082536212f2c202631360c2a1e2f1f292200241e2f21222b0d201e2f2b26331e29002b2624253105262022201e2d0a291e322b2025001f1e30220c2a3230252f2c2c2a00252629290d232936262b24001f1e3131222f3609301e2b212c2d2c29263008291e331e002f22222308291e331e002f2222230c30283600301e2b2031321e2f360721221e31252224240b31252200212c2c2a30211e36041f2c2b32300c302d2220261e290030311e24220c302c322b21003122303100001a2a415a617a30393a2e20"
+test result: FAILED. 19 passed; 4 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test state::tests::save_and_restore_bracket_the_selection_not_the_contents ... FAILED
+thread 'state::tests::save_and_restore_bracket_the_selection_not_the_contents' (178412) panicked at crates/sigil-frontend-as/src/state.rs:353:9:
+test result: FAILED. 8 passed; 1 failed; 0 ignored; 0 measured; 301 filtered out; finished in 0.00s
+restored; diff stat after: []

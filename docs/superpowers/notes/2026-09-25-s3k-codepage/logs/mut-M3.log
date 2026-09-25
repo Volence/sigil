@@ -1,0 +1,34 @@
+pwd: /home/volence/sonic_hacks/sigil/.claude/worktrees/agent-a08cead7e136bc593  HEAD: 191510f5e1ab1ed6491a232bb939e1b1d1bb7a19  branch: parcel/s3k-codepage
+M3 applied to state.rs
+ crates/sigil-frontend-as/src/state.rs | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+-            Some(i) => self.other_pages.swap_remove(i).1,
++            Some(i) => { let own = self.other_pages.swap_remove(i).1; base_page.clone().unwrap_or(own) }
+test a_base_on_an_existing_page_copies_nothing ... FAILED
+test a_new_page_with_a_base_copies_the_base ... ok
+test a_dot_name_is_not_scoped_by_the_label_above_it ... ok
+test a_new_page_copies_the_selected_page ... ok
+test a_macro_argument_translates_where_it_is_used ... ok
+test a_page_name_is_not_a_symbol ... ok
+test a_name_that_is_not_a_symbol_name_is_refused ... ok
+test a_label_on_a_codepage_line_takes_the_address ... ok
+test a_selection_leaks_out_of_a_macro ... ok
+test a_register_spelling_is_a_page_name ... ok
+test charset_edits_and_the_reset_touch_only_the_selected_page ... ok
+test character_constants_and_expression_strings_use_the_selected_page ... ok
+test one_or_two_operands_only ... ok
+test nested_save_and_restore_bracket_each_selection ... ok
+test page_names_are_case_sensitive ... ok
+test an_unknown_base_is_refused ... ok
+test pages_are_rebuilt_every_pass ... ok
+test every_pass_starts_on_standard ... ok
+test dotted_and_underscore_names_are_page_names ... ok
+test restore_brings_back_the_selection ... ok
+test switching_pages_changes_the_bytes_and_switching_back_restores_them ... ok
+test the_default_page_is_named_standard_exactly ... ok
+test the_sonic_3_level_select_text_matches_asl ... ok
+  left: "114233"
+ right: "112243"
+test result: FAILED. 22 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 301 filtered out; finished in 0.00s
+restored; diff stat after: []

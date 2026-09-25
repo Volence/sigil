@@ -1,0 +1,7 @@
+test abs_l_jmp_flows_through_emit_rom ... ok
+test multi_section_jsr_and_branch_link_correctly ... ok
+test header_checksum_reproduces_reference_rom_18e ... ok
+test oracle_loadfromaslisting_resolves_emit_listing ... FAILED
+test s4budget_parses_emit_listing ... ok
+NO REFERENCE TREE IS NAMED, so this run can measure nothing it could attribute, and STOPS. Nothing was derived either.
+test result: FAILED. 4 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s

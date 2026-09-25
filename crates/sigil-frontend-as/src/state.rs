@@ -103,19 +103,49 @@ pub struct AsmState {
     ///
     /// Reset to the identity page at the start of every pass, which happens for
     /// free because `Asm` rebuilds this whole struct per pass.
+    ///
+    /// This is the SELECTED page of the `codepage` set: `page_name` names it,
+    /// and the pages not selected wait in `other_pages`. Every consumer reads
+    /// this one field, so selecting a page is a swap here and no consumer
+    /// knows pages exist. The `save`/`restore` rule above is about the page's
+    /// CONTENTS; the SELECTION is bracketed (see `Saved::page`).
     // REASON: the doc comment above quotes asl listings verbatim, and asl separates
     // its listing columns with TABS. The tabs ARE the evidence: reflowing them to
     // spaces would silently edit a reference assembler's output that later parcels
     // compare against. Scoped to this item, never crate wide.
     #[allow(clippy::tabs_in_doc_comments)]
     pub charset: CodePage,
+    /// The name of the selected code page ([`Self::charset`]). A pass starts on
+    /// [`DEFAULT_PAGE`] with no other page defined; see
+    /// [`Self::select_code_page`] for the measured rules.
+    page_name: String,
+    /// The code pages that exist and are not selected, by exact name.
+    other_pages: Vec<(String, CodePage)>,
     saved: Vec<Saved>,
+}
+
+/// The code page every pass starts on. asl's name for it, case and all: the
+/// listing's code-page table prints `STANDARD (N changed characters)`, and
+/// `codepage standard` makes a NEW page rather than selecting this one.
+pub const DEFAULT_PAGE: &str = "STANDARD";
+
+/// Why a `codepage` selection was refused. Nothing is changed when it is.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum CodePageError {
+    /// The BASE operand names no existing page (asl `error #1610: unknown
+    /// codepage`). asl looks the base up even when the selected name already
+    /// exists and the base would copy nothing.
+    UnknownBase(String),
 }
 
 #[derive(Clone, Debug)]
 struct Saved {
     cpu: Cpu,
     z80_undoc: bool,
+    /// The code page selected at `save`, reselected by `restore`. Only the
+    /// SELECTION is saved: the page's contents are not, so an edit made inside
+    /// the bracket survives it (`as_charset.rs::save_and_restore_do_not_bracket_the_page`).
+    page: String,
 }
 
 impl AsmState {
@@ -136,6 +166,8 @@ impl AsmState {
             padding: default_padding(cpu),
             supmode: default_supmode(cpu),
             charset: CodePage::identity(),
+            page_name: DEFAULT_PAGE.to_string(),
+            other_pages: Vec::new(),
             saved: Vec::new(),
         }
     }
@@ -163,7 +195,11 @@ impl AsmState {
     /// these matter on `restore`; the padding/supmode reset is a side effect of
     /// the CPU re-application).
     pub fn save(&mut self) {
-        self.saved.push(Saved { cpu: self.cpu, z80_undoc: self.z80_undoc });
+        self.saved.push(Saved {
+            cpu: self.cpu,
+            z80_undoc: self.z80_undoc,
+            page: self.page_name.clone(),
+        });
     }
 
     /// `restore`: pop the last snapshot; Err if empty. Re-apply the saved CPU —
@@ -179,6 +215,43 @@ impl AsmState {
             self.set_cpu(s.cpu);
         }
         self.z80_undoc = s.z80_undoc;
+        // Pages are never deleted within a pass and `saved` is rebuilt with the
+        // state, so the saved name always exists and this cannot refuse.
+        self.select_code_page(&s.page, None)
+            .expect("a page selected at `save` exists at `restore`");
+        Ok(())
+    }
+
+    /// `codepage NAME[,BASE]`: select the page called `NAME`, creating it if it
+    /// does not exist. Measured against the pinned asl (probes in
+    /// `docs/superpowers/notes/2026-09-25-s3k-codepage.md`):
+    ///
+    /// - a NEW page with no base starts as a copy of the page selected now;
+    ///   with a base, as a copy of the base;
+    /// - an EXISTING page is selected with its own contents, and a base given
+    ///   then copies nothing;
+    /// - the base is looked up either way, and an unknown base refuses the
+    ///   whole directive with nothing changed;
+    /// - names compare exactly, case included.
+    pub fn select_code_page(&mut self, name: &str, base: Option<&str>) -> Result<(), CodePageError> {
+        let base_page = match base {
+            None => None,
+            Some(b) if b == self.page_name => Some(self.charset.clone()),
+            Some(b) => match self.other_pages.iter().find(|(n, _)| n == b) {
+                Some((_, p)) => Some(p.clone()),
+                None => return Err(CodePageError::UnknownBase(b.to_string())),
+            },
+        };
+        if name == self.page_name {
+            return Ok(());
+        }
+        let next = match self.other_pages.iter().position(|(n, _)| n == name) {
+            Some(i) => self.other_pages.swap_remove(i).1,
+            None => base_page.unwrap_or_else(|| self.charset.clone()),
+        };
+        let prev = std::mem::replace(&mut self.charset, next);
+        let prev_name = std::mem::replace(&mut self.page_name, name.to_string());
+        self.other_pages.push((prev_name, prev));
         Ok(())
     }
 }
@@ -264,6 +337,27 @@ mod tests {
             "restore must not bring the saved code page back (asl: `dc.b \"A\"` reads 44)"
         );
         assert!(!s.charset.is_identity());
+    }
+
+    /// `restore` reselects the page selected at `save` while an edit made to
+    /// that page's CONTENTS inside the bracket survives, the two halves of
+    /// asl's rule (probes `cp04` and the `charset` note's `p5`).
+    #[test]
+    fn save_and_restore_bracket_the_selection_not_the_contents() {
+        let mut s = AsmState::new(Some(Cpu::M68000));
+        s.charset.set(0x41, 0x11);
+        s.save();
+        s.select_code_page("PG1", None).unwrap();
+        assert_eq!(s.charset.map_char('A'), 0x11, "a new page copies the selected one");
+        s.charset.set(0x42, 0x22);
+        s.restore().unwrap();
+        assert_eq!(s.charset.map_char('B'), 0x42, "restore did not reselect STANDARD");
+        s.save();
+        s.charset.set(0x41, 0x44);
+        s.restore().unwrap();
+        assert_eq!(s.charset.map_char('A'), 0x44, "restore brought STANDARD's contents back");
+        s.select_code_page("PG1", None).unwrap();
+        assert_eq!(s.charset.map_char('B'), 0x22, "PG1 lost its own edit");
     }
 
     #[test]

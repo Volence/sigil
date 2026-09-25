@@ -1,0 +1,175 @@
+    Finished `release` profile [optimized] target(s) in 0.01s
+     Running tests/as_codepage.rs (/home/volence/sonic_hacks/.scratch/s3k-codepage/target/release/deps/as_codepage-93d3bcc5eba325c5)
+
+running 23 tests
+test a_dot_name_is_not_scoped_by_the_label_above_it ... FAILED
+test a_label_on_a_codepage_line_takes_the_address ... FAILED
+test a_new_page_with_a_base_copies_the_base ... FAILED
+test a_base_on_an_existing_page_copies_nothing ... FAILED
+test a_name_that_is_not_a_symbol_name_is_refused ... FAILED
+test a_macro_argument_translates_where_it_is_used ... FAILED
+test a_new_page_copies_the_selected_page ... FAILED
+test an_unknown_base_is_refused ... FAILED
+test a_page_name_is_not_a_symbol ... FAILED
+test a_register_spelling_is_a_page_name ... FAILED
+test a_selection_leaks_out_of_a_macro ... FAILED
+test charset_edits_and_the_reset_touch_only_the_selected_page ... FAILED
+test dotted_and_underscore_names_are_page_names ... FAILED
+test character_constants_and_expression_strings_use_the_selected_page ... FAILED
+test nested_save_and_restore_bracket_each_selection ... FAILED
+test one_or_two_operands_only ... FAILED
+test every_pass_starts_on_standard ... FAILED
+test the_default_page_is_named_standard_exactly ... FAILED
+test restore_brings_back_the_selection ... FAILED
+test switching_pages_changes_the_bytes_and_switching_back_restores_them ... FAILED
+test pages_are_rebuilt_every_pass ... FAILED
+test page_names_are_case_sensitive ... FAILED
+test the_sonic_3_level_select_text_matches_asl ... FAILED
+
+failures:
+
+---- a_dot_name_is_not_scoped_by_the_label_above_it stdout ----
+
+thread 'a_dot_name_is_not_scoped_by_the_label_above_it' (57550) panicked at crates/sigil-frontend-as/tests/as_codepage.rs:67:19:
+expected asl's bytes 1122, got diagnostics: ["`codepage` is not a recognized 68000 mnemonic", "`codepage` is not a recognized 68000 mnemonic", "`codepage` is not a recognized 68000 mnemonic"]
+
+---- a_label_on_a_codepage_line_takes_the_address stdout ----
+
+thread 'a_label_on_a_codepage_line_takes_the_address' (57551) panicked at crates/sigil-frontend-as/tests/as_codepage.rs:67:19:
+expected asl's bytes 11220000, got diagnostics: ["`codepage` is not a recognized 68000 mnemonic"]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- a_new_page_with_a_base_copies_the_base stdout ----
+
+thread 'a_new_page_with_a_base_copies_the_base' (57555) panicked at crates/sigil-frontend-as/tests/as_codepage.rs:67:19:
+expected asl's bytes 112243114243, got diagnostics: ["`codepage` is not a recognized 68000 mnemonic", "`codepage` is not a recognized 68000 mnemonic", "`codepage` is not a recognized 68000 mnemonic"]
+
+---- a_base_on_an_existing_page_copies_nothing stdout ----
+
+thread 'a_base_on_an_existing_page_copies_nothing' (57549) panicked at crates/sigil-frontend-as/tests/as_codepage.rs:67:19:
+expected asl's bytes 112243, got diagnostics: ["`codepage` is not a recognized 68000 mnemonic", "`codepage` is not a recognized 68000 mnemonic", "`codepage` is not a recognized 68000 mnemonic"]
+
+---- a_name_that_is_not_a_symbol_name_is_refused stdout ----
+
+thread 'a_name_that_is_not_a_symbol_name_is_refused' (57553) panicked at crates/sigil-frontend-as/tests/as_codepage.rs:82:9:
+refusal does not name "name": ["`codepage` is not a recognized 68000 mnemonic", "`codepage` is not a recognized 68000 mnemonic", "`codepage` is not a recognized 68000 mnemonic"]
+
+---- a_macro_argument_translates_where_it_is_used stdout ----
+
+thread 'a_macro_argument_translates_where_it_is_used' (57552) panicked at crates/sigil-frontend-as/tests/as_codepage.rs:67:19:
+expected asl's bytes 111122414142414142, got diagnostics: ["`codepage` is not a recognized 68000 mnemonic", "`codepage` is not a recognized 68000 mnemonic", "`codepage` is not a recognized 68000 mnemonic"]
+
+---- a_new_page_copies_the_selected_page stdout ----
+
+thread 'a_new_page_copies_the_selected_page' (57554) panicked at crates/sigil-frontend-as/tests/as_codepage.rs:67:19:
+expected asl's bytes 112243112243114243112233, got diagnostics: ["`codepage` is not a recognized 68000 mnemonic", "`codepage` is not a recognized 68000 mnemonic", "`codepage` is not a recognized 68000 mnemonic", "`codepage` is not a recognized 68000 mnemonic", "`codepage` is not a recognized 68000 mnemonic"]
+
+---- an_unknown_base_is_refused stdout ----
+
+thread 'an_unknown_base_is_refused' (57560) panicked at crates/sigil-frontend-as/tests/as_codepage.rs:82:9:
+refusal does not name "unknown": ["`codepage` is not a recognized 68000 mnemonic"]
+
+---- a_page_name_is_not_a_symbol stdout ----
+
+thread 'a_page_name_is_not_a_symbol' (57556) panicked at crates/sigil-frontend-as/tests/as_codepage.rs:67:19:
+expected asl's bytes 1122051142, got diagnostics: ["`codepage` is not a recognized 68000 mnemonic", "`codepage` is not a recognized 68000 mnemonic"]
+
+---- a_register_spelling_is_a_page_name stdout ----
+
+thread 'a_register_spelling_is_a_page_name' (57557) panicked at crates/sigil-frontend-as/tests/as_codepage.rs:67:19:
+expected asl's bytes 11221142, got diagnostics: ["`codepage` is not a recognized 68000 mnemonic", "`codepage` is not a recognized 68000 mnemonic"]
+
+---- a_selection_leaks_out_of_a_macro stdout ----
+
+thread 'a_selection_leaks_out_of_a_macro' (57558) panicked at crates/sigil-frontend-as/tests/as_codepage.rs:67:19:
+expected asl's bytes 11421122, got diagnostics: ["`codepage` is not a recognized 68000 mnemonic", "`codepage` is not a recognized 68000 mnemonic", "`codepage` is not a recognized 68000 mnemonic"]
+
+---- charset_edits_and_the_reset_touch_only_the_selected_page stdout ----
+
+thread 'charset_edits_and_the_reset_touch_only_the_selected_page' (57562) panicked at crates/sigil-frontend-as/tests/as_codepage.rs:67:19:
+expected asl's bytes 112241421142, got diagnostics: ["`codepage` is not a recognized 68000 mnemonic", "`codepage` is not a recognized 68000 mnemonic"]
+
+---- dotted_and_underscore_names_are_page_names stdout ----
+
+thread 'dotted_and_underscore_names_are_page_names' (57563) panicked at crates/sigil-frontend-as/tests/as_codepage.rs:67:19:
+expected asl's bytes 11221122, got diagnostics: ["`codepage` is not a recognized 68000 mnemonic", "`codepage` is not a recognized 68000 mnemonic", "`codepage` is not a recognized 68000 mnemonic"]
+
+---- character_constants_and_expression_strings_use_the_selected_page stdout ----
+
+thread 'character_constants_and_expression_strings_use_the_selected_page' (57561) panicked at crates/sigil-frontend-as/tests/as_codepage.rs:67:19:
+expected asl's bytes 1100303c0022323c112200124100303c0042, got diagnostics: ["`codepage` is not a recognized 68000 mnemonic", "`codepage` is not a recognized 68000 mnemonic"]
+
+---- nested_save_and_restore_bracket_each_selection stdout ----
+
+thread 'nested_save_and_restore_bracket_each_selection' (57565) panicked at crates/sigil-frontend-as/tests/as_codepage.rs:67:19:
+expected asl's bytes 112233112243114243, got diagnostics: ["`codepage` is not a recognized 68000 mnemonic", "`codepage` is not a recognized 68000 mnemonic"]
+
+---- one_or_two_operands_only stdout ----
+
+thread 'one_or_two_operands_only' (57566) panicked at crates/sigil-frontend-as/tests/as_codepage.rs:82:9:
+refusal does not name "operand": ["`codepage` is not a recognized 68000 mnemonic"]
+
+---- every_pass_starts_on_standard stdout ----
+
+thread 'every_pass_starts_on_standard' (57564) panicked at crates/sigil-frontend-as/tests/as_codepage.rs:67:19:
+expected asl's bytes 114200041122, got diagnostics: ["`codepage` is not a recognized 68000 mnemonic", "`codepage` is not a recognized 68000 mnemonic"]
+
+---- the_default_page_is_named_standard_exactly stdout ----
+
+thread 'the_default_page_is_named_standard_exactly' (57571) panicked at crates/sigil-frontend-as/tests/as_codepage.rs:67:19:
+expected asl's bytes 11221142, got diagnostics: ["`codepage` is not a recognized 68000 mnemonic", "`codepage` is not a recognized 68000 mnemonic", "`codepage` is not a recognized 68000 mnemonic"]
+
+---- restore_brings_back_the_selection stdout ----
+
+thread 'restore_brings_back_the_selection' (57569) panicked at crates/sigil-frontend-as/tests/as_codepage.rs:67:19:
+expected asl's bytes 11221142, got diagnostics: ["`codepage` is not a recognized 68000 mnemonic"]
+
+---- switching_pages_changes_the_bytes_and_switching_back_restores_them stdout ----
+
+thread 'switching_pages_changes_the_bytes_and_switching_back_restores_them' (57570) panicked at crates/sigil-frontend-as/tests/as_codepage.rs:67:19:
+expected asl's bytes 114233114233112233114233112233, got diagnostics: ["`codepage` is not a recognized 68000 mnemonic", "`codepage` is not a recognized 68000 mnemonic", "`codepage` is not a recognized 68000 mnemonic"]
+
+---- pages_are_rebuilt_every_pass stdout ----
+
+thread 'pages_are_rebuilt_every_pass' (57568) panicked at crates/sigil-frontend-as/tests/as_codepage.rs:67:19:
+expected asl's bytes 4142414200064122, got diagnostics: ["`codepage` is not a recognized 68000 mnemonic", "`codepage` is not a recognized 68000 mnemonic", "`codepage` is not a recognized 68000 mnemonic", "`codepage` is not a recognized 68000 mnemonic"]
+
+---- page_names_are_case_sensitive stdout ----
+
+thread 'page_names_are_case_sensitive' (57567) panicked at crates/sigil-frontend-as/tests/as_codepage.rs:67:19:
+expected asl's bytes 414241424142, got diagnostics: ["`codepage` is not a recognized 68000 mnemonic", "`codepage` is not a recognized 68000 mnemonic", "`codepage` is not a recognized 68000 mnemonic", "`codepage` is not a recognized 68000 mnemonic"]
+
+---- the_sonic_3_level_select_text_matches_asl stdout ----
+
+thread 'the_sonic_3_level_select_text_matches_asl' (57572) panicked at crates/sigil-frontend-as/tests/as_codepage.rs:67:19:
+expected asl's bytes 34fc000034bc001134bc001234bc000034bc001a33fc0013ffff018a33fc0014ffff01da2a415a617a30393a2e200b1e2b242229002630291e2b21082536212f2c202631360c2a1e2f1f292200241e2f21222b0d201e2f2b26331e29002b2624253105262022201e2d0a291e322b2025001f1e30220c2a3230252f2c2c2a00252629290d232936262b24001f1e3131222f3609301e2b212c2d2c29263008291e331e002f22222308291e331e002f2222230c30283600301e2b2031321e2f360721221e31252224240b31252200212c2c2a30211e36041f2c2b32300c302d2220261e290030311e24220c302c322b21003122303100001a2a415a617a30393a2e20, got diagnostics: ["`codepage` is not a recognized 68000 mnemonic", "`codepage` is not a recognized 68000 mnemonic", "`codepage` is not a recognized 68000 mnemonic", "`codepage` is not a recognized 68000 mnemonic", "`codepage` is not a recognized 68000 mnemonic", "`codepage` is not a recognized 68000 mnemonic", "`codepage` is not a recognized 68000 mnemonic", "`codepage` is not a recognized 68000 mnemonic", "`codepage` is not a recognized 68000 mnemonic", "`codepage` is not a recognized 68000 mnemonic", "`codepage` is not a recognized 68000 mnemonic", "`codepage` is not a recognized 68000 mnemonic", "`codepage` is not a recognized 68000 mnemonic", "`codepage` is not a recognized 68000 mnemonic", "`codepage` is not a recognized 68000 mnemonic", "`codepage` is not a recognized 68000 mnemonic", "`codepage` is not a recognized 68000 mnemonic", "`codepage` is not a recognized 68000 mnemonic", "`codepage` is not a recognized 68000 mnemonic"]
+
+
+failures:
+    a_base_on_an_existing_page_copies_nothing
+    a_dot_name_is_not_scoped_by_the_label_above_it
+    a_label_on_a_codepage_line_takes_the_address
+    a_macro_argument_translates_where_it_is_used
+    a_name_that_is_not_a_symbol_name_is_refused
+    a_new_page_copies_the_selected_page
+    a_new_page_with_a_base_copies_the_base
+    a_page_name_is_not_a_symbol
+    a_register_spelling_is_a_page_name
+    a_selection_leaks_out_of_a_macro
+    an_unknown_base_is_refused
+    character_constants_and_expression_strings_use_the_selected_page
+    charset_edits_and_the_reset_touch_only_the_selected_page
+    dotted_and_underscore_names_are_page_names
+    every_pass_starts_on_standard
+    nested_save_and_restore_bracket_each_selection
+    one_or_two_operands_only
+    page_names_are_case_sensitive
+    pages_are_rebuilt_every_pass
+    restore_brings_back_the_selection
+    switching_pages_changes_the_bytes_and_switching_back_restores_them
+    the_default_page_is_named_standard_exactly
+    the_sonic_3_level_select_text_matches_asl
+
+test result: FAILED. 0 passed; 23 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p sigil-frontend-as --test as_codepage`

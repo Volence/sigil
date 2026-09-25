@@ -6146,3 +6146,11 @@ candidate (instruction start, or an operand's address expression plus the instru
 a post-link check next to the existing `LinkAssert` machinery, and emit the same `[as.odd-address]` text
 from there. Pinned by `the_relocating_path_decides_constants_and_leaves_labels_undecided` in
 `crates/sigil-frontend-as/tests/as_odd_address.rs`, which must be inverted when this closes.
+
+- [s3k-codepage, 2026-09-25] **`codepage` names are a whitelist narrower than asl's symbol-name rule.** sigil
+  accepts one identifier token of letters, digits, `_` and `.` (not starting with a digit) and refuses anything
+  else by name; asl was probed only on `A.B`, `_x`, `.loc`, `d0` (accepted) and `"PG1"`, `1`, `PG1+1`, `$$x`
+  (refused). A name asl accepts outside that whitelist (other symbol characters, a name built by `{...}`
+  interpolation) is refused loudly, never mis-assembled. Probe asl's full symbol-name character set and widen
+  `eval.rs::codepage_name` to match when a corpus needs it. Also not built: asl's listing prints a code-page table
+  (`STANDARD (N changed characters)`); sigil emits no listing, so nothing reports which pages exist. OPEN

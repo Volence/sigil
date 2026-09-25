@@ -1,0 +1,9 @@
+	cpu 68000
+	codepage PG1
+	charset $41,$11
+	codepage STANDARD
+	dc.b "AB"
+	codepage pg1
+	dc.b "AB"
+	codepage Pg1
+	dc.b "AB"

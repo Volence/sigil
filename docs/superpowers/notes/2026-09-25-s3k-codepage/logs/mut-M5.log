@@ -1,0 +1,63 @@
+pwd: /home/volence/sonic_hacks/sigil/.claude/worktrees/agent-a08cead7e136bc593  HEAD: 191510f5e1ab1ed6491a232bb939e1b1d1bb7a19  branch: parcel/s3k-codepage
+M5 applied to eval.rs
+ crates/sigil-frontend-as/src/eval.rs | 1 +
+ 1 file changed, 1 insertion(+)
++        if !rest.is_empty() { return; }
+test a_label_on_a_codepage_line_takes_the_address ... ok
+test a_base_on_an_existing_page_copies_nothing ... FAILED
+test a_dot_name_is_not_scoped_by_the_label_above_it ... ok
+test a_new_page_copies_the_selected_page ... FAILED
+test a_register_spelling_is_a_page_name ... FAILED
+test a_new_page_with_a_base_copies_the_base ... FAILED
+test a_page_name_is_not_a_symbol ... FAILED
+test a_name_that_is_not_a_symbol_name_is_refused ... FAILED
+test a_macro_argument_translates_where_it_is_used ... FAILED
+test a_selection_leaks_out_of_a_macro ... FAILED
+test charset_edits_and_the_reset_touch_only_the_selected_page ... FAILED
+test character_constants_and_expression_strings_use_the_selected_page ... FAILED
+test an_unknown_base_is_refused ... FAILED
+test every_pass_starts_on_standard ... ok
+test nested_save_and_restore_bracket_each_selection ... FAILED
+test restore_brings_back_the_selection ... FAILED
+test one_or_two_operands_only ... FAILED
+test pages_are_rebuilt_every_pass ... FAILED
+test switching_pages_changes_the_bytes_and_switching_back_restores_them ... FAILED
+test page_names_are_case_sensitive ... FAILED
+test dotted_and_underscore_names_are_page_names ... ok
+test the_default_page_is_named_standard_exactly ... FAILED
+test the_sonic_3_level_select_text_matches_asl ... FAILED
+  left: "112233"
+ right: "112243"
+  left: "112243112233112233112233"
+ right: "112243112243114243112233"
+  left: "11221122"
+ right: "11221142"
+  left: "112243112243"
+ right: "112243114243"
+  left: "1122051122"
+ right: "1122051142"
+  left: "111122111122111122"
+ right: "111122414142414142"
+  left: "11221122"
+ right: "11421122"
+  left: "112241424142"
+ right: "112241421142"
+  left: "1100303c0022323c112200121100303c0022"
+ right: "1100303c0022323c112200124100303c0042"
+  left: "112233112233112233"
+ right: "112233112243114243"
+  left: "11221122"
+ right: "11221142"
+  left: "4142414200061122"
+ right: "4142414200064122"
+  left: "114233114233112233112233112233"
+ right: "114233114233112233114233112233"
+  left: "114211421142"
+ right: "414241424142"
+  left: "11221122"
+ right: "11221142"
+  left: "34fc000034bc001134bc001234bc000034bc001a33fc0013ffff018a33fc0014ffff01da1a1e371e3710191c1d000b1e2b242229002630291e2b21082536212f2c202631360c2a1e2f1f292200241e2f21222b0d201e2f2b26331e29002b2624253105262022201e2d0a291e322b2025001f1e30220c2a3230252f2c2c2a00252629290d232936262b24001f1e3131222f3609301e2b212c2d2c29263008291e331e002f22222308291e331e002f2222230c30283600301e2b2031321e2f360721221e31252224240b31252200212c2c2a30211e36041f2c2b32300c302d2220261e290030311e24220c302c322b21003122303100001a1a1e371e3710191c1d00"
+ right: "34fc000034bc001134bc001234bc000034bc001a33fc0013ffff018a33fc0014ffff01da2a415a617a30393a2e200b1e2b242229002630291e2b21082536212f2c202631360c2a1e2f1f292200241e2f21222b0d201e2f2b26331e29002b2624253105262022201e2d0a291e322b2025001f1e30220c2a3230252f2c2c2a00252629290d232936262b24001f1e3131222f3609301e2b212c2d2c29263008291e331e002f22222308291e331e002f2222230c30283600301e2b2031321e2f360721221e31252224240b31252200212c2c2a30211e36041f2c2b32300c302d2220261e290030311e24220c302c322b21003122303100001a2a415a617a30393a2e20"
+test result: FAILED. 4 passed; 19 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 301 filtered out; finished in 0.00s
+restored; diff stat after: []

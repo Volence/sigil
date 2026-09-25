@@ -1,0 +1,4 @@
+left: 0  
+entered: 0  
+common: 120  abcd/subx=6, codepage=19, dollar-label=93, pc-indexed=2
+new totals per class: abcd/subx=6, codepage=19, dollar-label=93, pc-indexed=2

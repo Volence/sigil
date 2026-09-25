@@ -7115,6 +7115,9 @@ impl Asm {
             // `dc.b` are the same routine), so this is deliberately ungated by
             // CPU exactly as `eval` is.
             "charset" => self.directive_charset(rest, span),
+            // Which code page `charset` edits and every character goes through.
+            // Processor-neutral for the same reason.
+            "codepage" => self.directive_codepage(rest, span),
             "db" | "dc.b" => self.directive_db(rest, span),
             "dw" => self.directive_dw(rest, span),
             "dc.w" => self.directive_dc_w(rest, span),
@@ -9240,6 +9243,84 @@ impl Asm {
                 format!("charset takes 0, 2 or 3 operands, not {n}"),
             ),
         }
+    }
+
+    /// `codepage NAME[,BASE]`: select the named code page, creating it if new.
+    ///
+    /// The page rules live on [`crate::state::AsmState::select_code_page`];
+    /// this is operand shape only, each refusal asl's own and each applying
+    /// nothing:
+    ///
+    /// ```text
+    ///   codepage              asl #1110 wrong number of operands
+    ///   codepage A,B,C        asl #1110 wrong number of operands
+    ///   codepage "PG1"        asl #1020 invalid symbol name
+    ///   codepage 1            asl #1020 invalid symbol name
+    ///   codepage PG1+1        asl #1020 invalid symbol name
+    ///   codepage PG2,NOPE     asl #1610 unknown codepage
+    ///   codepage PG1,         asl #1610 unknown codepage (an empty base)
+    /// ```
+    ///
+    /// A name is taken as the identifier's text, never evaluated: page names
+    /// are not symbols (`PG1 equ 5` and `codepage PG1` coexist), compare case
+    /// sensitively, and a `.loc` name is not qualified by the label above it.
+    fn directive_codepage(&mut self, rest: &[Token], span: Span) {
+        let groups: Vec<&[Token]> = if rest.is_empty() {
+            Vec::new()
+        } else {
+            split_top_commas(rest)
+        };
+        if !(1..=2).contains(&groups.len()) {
+            self.err(
+                span,
+                format!(
+                    "codepage takes a page name and an optional base page, not {} operands",
+                    groups.len()
+                ),
+            );
+            return;
+        }
+        let Some(name) = self.codepage_name(groups[0], span) else {
+            return;
+        };
+        let base = match groups.get(1) {
+            None => None,
+            // An empty base names no page. asl reads it as a lookup of the
+            // empty name and draws `unknown codepage`.
+            Some([]) => Some(String::new()),
+            Some(g) => match self.codepage_name(g, span) {
+                Some(b) => Some(b),
+                None => return,
+            },
+        };
+        if let Err(crate::state::CodePageError::UnknownBase(b)) =
+            self.state.select_code_page(&name, base.as_deref())
+        {
+            let msg = if b.is_empty() {
+                "codepage base is empty, which names no page (asl: unknown codepage)".to_string()
+            } else {
+                format!("codepage base `{b}` is an unknown codepage: no page of that name exists")
+            };
+            self.err(span, msg);
+        }
+    }
+
+    /// One `codepage` operand as a page name: a single identifier spelled with
+    /// letters, digits, `_` and `.`, not starting with a digit. `None` (with
+    /// the refusal raised) for anything else, which is asl's `invalid symbol
+    /// name` for every shape probed (a string, a number, an expression).
+    fn codepage_name(&mut self, toks: &[Token], span: Span) -> Option<String> {
+        if let [Token { tok: Tok::Ident(s), .. }] = toks {
+            let mut chars = s.chars();
+            let first_ok = chars
+                .next()
+                .is_some_and(|c| c.is_ascii_alphabetic() || c == '_' || c == '.');
+            if first_ok && chars.all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '.') {
+                return Some(s.clone());
+            }
+        }
+        self.err(span, "codepage name is not a valid symbol name (asl: invalid symbol name)");
+        None
     }
 
     /// One `charset` operand as a code-page index or target: fold it, then hold
@@ -13908,6 +13989,7 @@ fn scan_plain_labels(body: &[SrcLine]) -> std::collections::BTreeSet<String> {
                     | "listing"
                     | "page"
                     | "charset"
+                    | "codepage"
                     | "assume"
                     | "section"
                     | "endsection"
