@@ -34,17 +34,6 @@ firstpass_rept_forward_constant	over-acceptance	A `rept` count naming a forward 
 firstpass_rept_org_separated	over-acceptance	A `rept` count naming a forward label with an `org` between. asl #1820. Settles, and the intervening `org` breaks the address flow, so it is not circular; the note's `c5`.
 firstpass_if_settles_false	over-acceptance	An `if` condition naming a forward label, settling false. asl #1820. Not a layout-determining expression under the ruling's definition; the note's `d2`.
 
-# The three below were found BY THIS GATE on its first run, which is the whole
-# argument for deriving the corpus from asl's error catalogue rather than from
-# the shapes already known. None of them had been noticed. They are ledgered
-# rather than fixed because fixing them changes what sigil accepts, which is a
-# separate decision with its own landing gate; each is booked in
-# docs/superpowers/notes/campaign-gap-ledger.md.
-
-dir_padding_not_on_off	over-acceptance	`padding maybe`. asl #1520 only ON/OFF allowed. `on_off()` in eval.rs treats every token that is not literally `off` as ON, so a garbage argument silently turns the flag ON rather than being refused. `supmode` shares the helper and the defect.
-expr_function_arg_count	over-acceptance	A user `function` called with more arguments than it declares parameters. asl #1490 wrong numbers of function arguments. sigil does not arity-check `function` calls; the extra argument is evaluated and discarded.
-save_missing_restore	over-acceptance	A `save` with no matching `restore` at end of file. asl #1460 missing RESTORE. sigil does not check that the save stack is empty when the unit ends.
-
 # The four below were already MEASURED and written down, in
 # docs/superpowers/notes/campaign-gap-ledger.md row 4, and had no gate. That row
 # is the reason they are here: a divergence somebody documented and nothing
