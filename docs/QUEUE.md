@@ -761,6 +761,12 @@ points at it rather than restating it, so there is one copy to keep true.
   then aeon adds the file and passes the switch. Aeon re-derives the values as the act grows (their
   `7d409cdb` costing: one more CPZ section already needs 0xC0000/0xD0000 in DEBUG), so nothing here
   pins them. The companion check is `BANK-ID-EMIT-VS-PLACE-UNCHECKED`.
+- landed on branch `parcel/clip-overlay` (not merged): `--anchor-overlay <path>` on `sigil build`
+  and `emit_sound_blob`, one-pass apply over the map anchors and the frozen island rows, every
+  refusal with its id; contract for aeon in
+  `docs/superpowers/notes/2026-09-25-clip-overlay-contract.md`. Aeon passes the switch to
+  `sigil build` only: on the preflight emit it reds
+  `test_check_does_not_perturb_generated_sound_artifacts` (measured, see the contract).
 - was: state **blocked** on card `d-35`  size: `M` to build  project: `-`
 - Priced 2026-09-25 at merge `603087e0`: `docs/superpowers/notes/2026-09-25-clip-own-anchor-pricing.md`.
   Sigil cannot tell the S2CLIP build from canonical sonic4, so the hub's own-anchor ruling (empyrean
@@ -776,6 +782,8 @@ points at it rather than restating it, so there is one copy to keep true.
   silently places a row in every shape. Both aeon maps use only the two known values (per the pricing
   note, inferred from a read, not a build), so refusing unknown values should move no bytes. Folded
   into design A of `d-35`; worth doing alone if `d-35` waits.
+- landed on branch `parcel/clip-overlay` (not merged, commit `0a383b11`): `when` is a closed enum
+  (`[map.when-unknown]`), and `[[anchor]]`/`[[hole]]` rows refuse an unknown key.
 
 ### BANK-ID-EMIT-VS-PLACE-UNCHECKED
 

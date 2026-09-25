@@ -92,17 +92,59 @@ keys `name`/`at`/`vma`/`when` and `after`/`at`/`filled_by`/`when`, so neither ch
 1. Add `games/sonic4/data/clips/<id>/anchors.toml` for a clip that needs its own positions,
    values from the rule taken over both of that clip's shapes (the DEBUG shape binds). A clip
    without the file builds exactly as today.
-2. In build.sh's S2CLIP branch, when that file exists, pass `--anchor-overlay <path>` to BOTH
-   `sigil build` (`NATIVE_FLAGS`) and the `emit_sound_blob` call. `sigil build` re-emits the
-   sound artifacts itself before assembling, from its own switch, so its ROM does not depend
-   on the earlier emit; passing the switch to the emit keeps `engine/sound/generated`
-   consistent for anything that reads it between the two steps.
-3. `tools/bganim_room.py` reads the anchors by name (`anchor_addr`, around line 338) and needs
+2. In build.sh's S2CLIP branch, when that file exists, pass `--anchor-overlay <path>` to
+   `sigil build` (`NATIVE_FLAGS`) and to nothing else in build.sh. In particular do NOT pass it
+   to the preflight `emit_sound_blob` call (see "Why not the preflight emit" below). `sigil build`
+   re-emits every sound artifact into `engine/sound/generated` itself, from its own switch,
+   before it assembles, so its ROM never depends on the preflight emit.
+3. Check the wiring: after the S2CLIP build, require the listing's Source Digest to carry a
+   `DIGEST-READ ... path=games/sonic4/data/clips/<id>/anchors.toml` row whenever that file
+   exists. This is the only thing that notices the switch was dropped (see "The two one-binary
+   mistakes" below); `tools/artifact_provenance.py` already reads that digest.
+4. `tools/bganim_room.py` reads the anchors by name (`anchor_addr`, around line 338) and needs
    the same overlay, or its room and pair checks measure against the canonical anchors.
-4. The overlay file is read through sigil's build read set, so it appears as a row in the
-   listing's Source Digest with its CRC and size; `tools/artifact_provenance.py` can see which
-   positions a listing was built with from that row.
+5. After a clip build, `engine/sound/generated` holds the clip's overlay-emitted artifacts until
+   the next build's preflight emit rewrites them. Anything that reads that directory between
+   builds sees the last build's positions, which is how it behaves for every shape today.
 
-The end-to-end witness is `[sound.bank-id-vs-placement]`: every baked bank id is read out of
-the linked ROM and compared with the bank as placed, so a build whose emit and placement saw
-different positions fails there.
+`emit_sound_blob --anchor-overlay` stays available for a standalone emit of a clip's artifacts
+into a directory of the caller's choosing; build.sh has no step that needs it.
+
+## Why not the preflight emit (measured 2026-09-25, aeon `c53dde84`, clip `s2_ehz_cpz`)
+
+build.sh runs `emit_sound_blob` into `engine/sound/generated`, then the pre-build tool-suite
+lane, then the clip re-bake, then `sigil build`. Inside the tool-suite lane,
+`tools/test_extern_guard_reachability.py` runs `sigil build --check` over the canonical shapes
+(sonic4 plain and debug, demo plain and debug, `--config-a`) and
+`test_check_does_not_perturb_generated_sound_artifacts` digests `engine/sound/generated` on
+both sides of those checks. A `--check` on a sound-on shape runs sigil's own emit into that
+directory, from `map.toml` as written, because those shapes are canonical. So:
+
+- preflight emit WITH the overlay, then that test file: 1 failed, 4 passed. The canonical checks
+  rewrote `dac_sample_tab.bin`, `mt_songtable{,_debug}.bin`, `mt_songpatchtable{,_debug}.bin`
+  and `z80_sound_blob{,_debug}.bin`, every artifact that bakes a bank id or a bank address;
+- preflight emit WITHOUT the overlay, then the same file: 5 passed.
+
+This is the one failure the killed full build hit (1 failed, 3343 passed). It is not a sigil
+defect: a canonical `--check` emitting canonical artifacts is correct, and the test is right
+that the lane must not change what it rides in. It is the wiring: an overlay on the preflight
+emit puts non-canonical artifacts in front of a canonical lane. With the overlay on `sigil build`
+only, the preflight emit and the canonical checks agree, and the clip build re-emits its own.
+
+## The two one-binary mistakes (measured, same tree, `FAST=1`, plain)
+
+- Overlay on `sigil build` only: the ROM is byte-identical to the one built with the overlay on
+  both binaries, and `engine/sound/generated` ends up holding the overlay artifacts. This is the
+  wiring step 2 asks for.
+- Overlay on `emit_sound_blob` only: `sigil build` re-emits from `map.toml`, so the overlay is
+  silently dropped. The ROM is byte-identical to a build with no overlay at all, and
+  `[sound.bank-id-vs-placement]` has nothing to catch, because the build's own emit and its own
+  placement agree. The listing's Source Digest has no row for the overlay file; step 3 turns
+  that absence into a refusal.
+
+`[sound.bank-id-vs-placement]` is the witness for a disagreement INSIDE one build: every baked
+bank id is read out of the linked ROM and compared with the bank as placed. With the build's own
+emit forced to ignore the overlay while its placement used it (a mutation of sigil, measured
+against the reference tree at aeon `ec640bcf`), the overlay build fails there with 17 mismatched
+ids. No build.sh wiring can produce that disagreement, since the build
+never links the preflight emit's files without re-emitting them first.
