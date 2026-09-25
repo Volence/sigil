@@ -795,3 +795,14 @@ points at it rather than restating it, so there is one copy to keep true.
   `CRASH_REPORT`, `MDDBG__ErrorHandler`/`DMA_Queue_End`, `Region_Resolve`/`Plane_Buffer_Peak`, and a
   doubled `embed` path in `test_objects_port`). None is from `481ac02e`. These must be repaired
   before the pin next advances; they are the port tests' hand-assembled dependency seams drifting.
+
+### CART-CHECK-CITES-STALE-PEER-BEHAVIOUR
+
+- state: **open**  size: `S`  project: `-`
+- `crates/sigil-harness/golden/ab/cart_check.py:53` says aeon's `tools/evict_witness.py` "already runs
+  exactly this shape" (a whole-image `memory_hash` as its stale-binary guard). At aeon `origin/master`
+  that file no longer mentions `memory_hash` at all: `git -C ../aeon log -S memory_hash origin/master --
+  tools/evict_witness.py` names `8c83475a` as the commit that removed it. The claim decayed with no edit
+  here. Reword it to state our own reason without citing a peer's behaviour. The file sits under
+  `golden/`, so it is a comment-only edit announced to aeon, not a silent one. Found 2026-09-25 while
+  checking aeon's consumer notice for `27684931`, which itself changes nothing we execute.
