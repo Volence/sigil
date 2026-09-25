@@ -814,6 +814,12 @@ points at it rather than restating it, so there is one copy to keep true.
   `CRASH_REPORT`, `MDDBG__ErrorHandler`/`DMA_Queue_End`, `Region_Resolve`/`Plane_Buffer_Peak`, and a
   doubled `embed` path in `test_objects_port`). None is from `481ac02e`. Also re-check `parallax_port` for aeon `6e1a4f80`'s new `pub equ band_record_len = sizeof(band_record)` when the pin moves (inferred same-module, not run). These must be repaired
   before the pin next advances; they are the port tests' hand-assembled dependency seams drifting.
+- Predicted by aeon 2026-09-25, not run here: aeon `7c0baa73` (verified reachable from their
+  `origin/master`) adds `use games.sonic4.ojz_clip_act_act1.{OJZ_CLIP_ACT}` to
+  `games/sonic4/data/levels/ojz/act1/act_assets.emp`. `ojz_run_b_port` compiles that file standalone
+  supplying only `BG_LAYOUT_SIZE`, so at the next pin advance it should report `unknown name
+  OJZ_CLIP_ACT` unless the port supplies it, derived from aeon's neutral
+  `games/sonic4/data/generated/ojz/act1/clip_act.emp` (value 0 there), never a copied literal.
 
 ### CART-CHECK-CITES-STALE-PEER-BEHAVIOUR
 
