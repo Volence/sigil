@@ -5046,16 +5046,26 @@ defect. This is the worst-shaped of the three: the over-acceptance is not merely
 that should not assemble, it is a file that assembles with a LAYOUT FLAG SET THE WRONG WAY
 by a typo. Probe `dir_padding_not_on_off`. **Kill:** `on_off` returns an option and the
 caller refuses a third spelling by name.
+CLOSED (AS-OVERACCEPT-SILENT-THREE, 2026-09-25): `Asm::on_off_arg` returns an option,
+refusing a non ON/OFF word (asl `#1520`) and a wrong argument count (asl `#1110`) for
+`padding` and `supmode` alike, and the caller leaves the flag untouched on a refusal. See
+`docs/superpowers/notes/2026-09-25-as-overaccept-silent-three.md`.
 
 **7. USER `function` CALLS ARE NOT ARITY-CHECKED.** A `function` declaring one parameter
 called with two arguments assembles; asl refuses with `#1490 wrong numbers of function
 arguments`. The extra argument is evaluated and discarded. Probe
 `expr_function_arg_count`. **Kill:** the call site compares actual against declared arity.
+CLOSED before AS-OVERACCEPT-SILENT-THREE reached it: `check_call_args` compares asl's
+argument count against the declared parameter count, both directions, since `1b8cb9ae`
+(2026-09-11, one day after this row). The ledger row stayed until 2026-09-25 because the
+gate reports a retirable row and does not fail on it.
 
 **8. THE SAVE STACK IS NOT CHECKED AT END OF UNIT.** A `save` with no matching `restore`
 assembles; asl refuses with `#1460 missing RESTORE`. Probe `save_missing_restore`.
 **Kill:** end-of-unit refuses a non-empty save stack, the way the block directives already
 refuse an unterminated `rept`.
+CLOSED (AS-OVERACCEPT-SILENT-THREE, 2026-09-25): `Asm::report_unrestored_saves` refuses
+each `save` still open when the unit ends, blamed on that `save` line.
 
 ### Four over-refusals, ledgered, all declared scope limits
 
@@ -6154,3 +6164,34 @@ from there. Pinned by `the_relocating_path_decides_constants_and_leaves_labels_u
   interpolation) is refused loudly, never mis-assembled. Probe asl's full symbol-name character set and widen
   `eval.rs::codepage_name` to match when a corpus needs it. Also not built: asl's listing prints a code-page table
   (`STANDARD (N changed characters)`); sigil emits no listing, so nothing reports which pages exist. OPEN
+
+### AS-OVERACCEPT-SILENT-THREE: two neighbours measured and left
+
+**`listing` VOCABULARY IS NOT CHECKED.** asl refuses `listing zqp_bogus` with `#1520 only
+ON/OFF allowed` (probe `l2.asm`, recorded in `directive_listing_control`'s doc), and sigil
+accepts it by a documented choice: asl's own accepted set is wider than its message says
+(`purecode`), and no consumer reads the value. It is not a caller of the ON/OFF helper and
+was left alone. No over-acceptance probe covers it, so nothing watches it. **Kill:** measure
+asl's full `listing` vocabulary, refuse outside it, and add the probe to
+`tests/over_acceptance/probes/`.
+
+**THE OVER-ACCEPTANCE CORPUS HAS NO `supmode` OR OPEN-`save`-IN-INCLUDE PROBE.** The three
+closed rows are live tripwires now, but each covers one shape (`padding maybe`, a lone
+`save`). `supmode`'s refusal and the unit-wide save stack are guarded by
+`tests/as_on_off_save_balance.rs`, not by the gate. **Kill:** add `supmode maybe` and an
+include-held open `save` as gate probes with minted verdicts.
+
+
+**THE OVER-ACCEPTANCE GATE'S REDS ARRIVE WITH NO TEXT UNDER THE DEFAULT PARALLEL RUNNER.**
+`sigil_verdict` in `tests/as_over_acceptance.rs` swaps the PROCESS-WIDE panic hook for a
+silent one around each probe. The gate's tests all call `measure()`, and libtest runs them on
+parallel threads, so a failing assert in one test fires while another test holds the silent
+hook, and its message is never printed. Measured with `report_unrestored_saves` removed:
+the default run lists `no_unledgered_over_acceptance` and
+`feed_control_the_ledger_is_not_an_escape_hatch` under `failures:` with no stdout section
+and no message at all; the same run with `--test-threads=1` prints `sigil ACCEPTS 1
+program(s) asl REFUSES ... save_missing_restore ... #1460 missing RESTORE`. The verdict is
+right either way (the tests still fail); only the explanation is lost. **Kill:** stop
+swapping the hook per probe: install one hook, once, that stays silent only on threads the
+probe runner names (run each probe on a named spawned thread and read its `JoinHandle`) and
+delegates to the default hook everywhere else.
