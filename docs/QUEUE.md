@@ -930,7 +930,8 @@ points at it rather than restating it, so there is one copy to keep true.
 
 ### SHARED-PAIR-SWAP-F52609FE
 
-- state: **waiting**  size: `S`  project: `-`
+- state: **done 2026-09-25T23:07:11Z** (outgoing pair frozen at `.sigil-outgoing-1d19e60b`, md5s matched; the six steps were issued as one parallel batch rather than read one by one, outcome verified correct)
+- original state: **waiting**  size: `S`  project: `-`
 - Asked by the hub 2026-09-25 for aeon's music step 4. The candidate pair is built ASIDE from origin/master
   `f52609fe` in the durable detached worktree `/home/volence/sonic_hacks/.sigil-pin-f52609fe`
   (`target/release/sigil` md5 `cdf3ec1abe0d33d8042b7cf5092e5e64`, `emit_sound_blob` md5
