@@ -116,7 +116,7 @@ fn eval_value(text: &str) -> Result<i64, String> {
             .to_string()
     };
     let cs = CodePage::identity();
-    let toks = lex_line(text, Cpu::M68000, &cs, SourceId(0), 0).map_err(|d| d.message)?;
+    let toks = lex_line(text, Cpu::M68000, SourceId(0), 0).map_err(|d| d.message)?;
     let ctx = ExprCtx { cs: &cs, nameless: NamelessCounts::default(), cpu: Cpu::M68000 };
     let expr = match parse_expr(&toks, &ctx) {
         Some((e, [])) => e,
