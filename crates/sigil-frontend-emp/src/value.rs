@@ -722,6 +722,14 @@ pub enum CodeOperand {
         /// The displacement (already checked to fit i8).
         disp: i128,
     },
+    /// `(c)` — the C-addressed I/O port, produced ONLY under `in`/`out` (the
+    /// operand mapper conditions on the mnemonic exactly as the AS front end
+    /// does). Kept DISTINCT from [`Z80Mem`](CodeOperand::Z80Mem): `in a,(c)` is
+    /// the 2-byte ED form `ED 78` and `in a,(n)` the 2-byte unprefixed `DB nn`,
+    /// so collapsing the two would be a same-length, plausible-looking wrong
+    /// answer. The port ADDRESS is whatever `c` holds at run time, which is why
+    /// this carries no value: there is nothing comptime about it.
+    Z80IndC,
     /// `(nn)` — a comptime absolute memory address — rung 2/3.
     Z80Mem {
         /// The comptime address.

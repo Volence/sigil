@@ -1535,6 +1535,18 @@ impl Evaluator<'_> {
         // mnemonic, reads `c` as the register (the `map_operand` path below).
         let z80_control_flow =
             self.cpu == Some(sigil_ir::backend::Cpu::Z80) && is_z80_control_flow(&mnemonic);
+        // `(c)` — the C-addressed I/O port. Recognised ONLY under `in`/`out`,
+        // which is the AS front end's own rule (`"c" if matches!(m, In | Out)`),
+        // and for the same reason: `c` is an ordinary name everywhere else, so
+        // an unconditional arm would silently retarget any `(c)` that today
+        // means "the absolute address the const `c` holds". Conditioning on the
+        // mnemonic confines the new meaning to the two instructions this parcel
+        // adds, where no existing program can already have a spelling to lose.
+        //
+        // Unlike the cc rule above this is NOT position-conditioned: the port is
+        // operand 1 of `in r,(c)` and operand 0 of `out (c),r`.
+        let z80_port_io = self.cpu == Some(sigil_ir::backend::Cpu::Z80)
+            && matches!(mnemonic.as_str(), "in" | "out");
         let mut ops = Vec::with_capacity(instr.operands.len());
         for (i, op) in instr.operands.iter().enumerate() {
             if z80_control_flow && i == 0 {
@@ -1542,6 +1554,10 @@ impl Evaluator<'_> {
                     ops.push(CodeOperand::Z80Cc(cc));
                     continue;
                 }
+            }
+            if z80_port_io && is_z80_ind_c(op) {
+                ops.push(CodeOperand::Z80IndC);
+                continue;
             }
             ops.push(self.map_operand(op, scope, env, op_width)?);
         }
@@ -3499,6 +3515,27 @@ fn instr_moves_sp(mnem: &str, ops: &[CodeOperand]) -> bool {
 /// `control_flow` set for the `i == 0 ⇒ cc` disambiguation (rung-2 §13.3).
 fn is_z80_control_flow(mnemonic: &str) -> bool {
     matches!(mnemonic, "jr" | "jp" | "call" | "ret")
+}
+
+/// Is this operand the literal `(c)` — the C-addressed I/O port? A
+/// single-part, unsized indirect over the bare single-segment path `c`.
+///
+/// Only consulted under `in`/`out` (see the caller): elsewhere `c` in
+/// parentheses keeps whatever meaning it had, which is what makes this spelling
+/// byte-neutral for every program that already assembles. A `(c+1)`, a `(c)` of
+/// a multi-segment path, and a size-suffixed `(c).b` are all NOT the port — they
+/// fall through to the ordinary indirect mapper and its own diagnostics.
+fn is_z80_ind_c(op: &Operand) -> bool {
+    let Operand::Ind { parts, size, .. } = op else { return false };
+    if size.is_some() || parts.len() != 1 {
+        return false;
+    }
+    let (expr, psize) = &parts[0];
+    if psize.is_some() {
+        return false;
+    }
+    let ast::Expr::Path(p) = expr else { return false };
+    p.segments.len() == 1 && p.segments[0].as_str() == "c"
 }
 
 /// The [`Z80Cond`] a control-flow operand names, or `None` if it is not a bare
