@@ -569,7 +569,7 @@ fn decode_alu_ea(w: u16, rd: &mut Rd, fam: AluFamily) -> Result<Instruction, Dec
             Ok(inst(Mnemonic::Eor, size, vec![Operand::Dn(reg9 as u8), dst]))
         }
         AluFamily::Add => match mode {
-            // addx Dy,Dx / -(Ay),-(Ax) — reg9 is x (dest), r0 is y (source).
+            // addx Dy,Dx / -(Ay),-(Ax): reg9 is x (dest), r0 is y (source).
             0b000 | 0b001 => Ok(x_pair(Mnemonic::Addx, size, mode, reg9, r0)),
             _ => {
                 let dst = ea(rd, mode, r0, size, EaSet::MEMORY_ALTERABLE)?;
@@ -922,7 +922,7 @@ mod tests {
     /// `Unknown` or a DIFFERENT family the equality then rejects.
     #[test]
     fn alias_words_do_not_decode_as_their_misspelling() {
-        // `add.w d2,a1` once emitted D549 = addx.w -(a1),-(a2) — decodes as ADDX,
+        // `add.w d2,a1` once emitted D549 = addx.w -(a1),-(a2), which decodes as ADDX,
         // a different family, which the round-trip equality rejects.
         assert_eq!(
             dec(&[0xD5, 0x49]),

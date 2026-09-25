@@ -851,7 +851,7 @@ fn excl_roxr_byte_register_count(c: &Ctx) -> bool {
     other.ops[0] == format!("#{as_immediate:08X}")
 }
 
-/// `sbcd -(Ay),-(Ax)` — `1000 xxx 1 00 00 1 yyy`.
+/// `sbcd -(Ay),-(Ax)`: `1000 xxx 1 00 00 1 yyy`.
 ///
 /// MC68000 PRM, SBCD: one word in both forms, no extension word. asl agrees:
 /// `sbcd -(a3),-(a5)` then `sbcd.b -(a3),-(a5)` assemble to `8B0B 8B0B`, two
@@ -863,8 +863,8 @@ fn excl_roxr_byte_register_count(c: &Ctx) -> bool {
 /// The predicate demands that exact over-read AND capstone's own `sbcd`
 /// mnemonic, so any other disagreement on these words still fails.
 ///
-/// Class size: bits 11-9 (`x`) and 2-0 (`y`) free, every other bit fixed —
-/// 8 × 8 = **64 words**.
+/// Class size: bits 11-9 (`x`) and 2-0 (`y`) free, every other bit fixed:
+/// 8 x 8 = **64 words**.
 fn excl_sbcd_predec_length(c: &Ctx) -> bool {
     if c.kind != "length" || (c.word & 0xF1F8) != 0x8108 {
         return false;

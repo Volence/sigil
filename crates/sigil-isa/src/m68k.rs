@@ -82,7 +82,7 @@ pub enum Mnemonic {
 ///   `true`: their single operand is the destination.
 ///
 /// Mnemonics NOT YET in this enum but named by the spec — `link`/`unlk` (write
-/// `An` + `sp`) — are "covered by construction": when one is added to
+/// `An` + `sp`) are "covered by construction": when one is added to
 /// `Mnemonic`, this match stops compiling and forces its classification HERE.
 /// `link`/`unlk` write registers NOT expressible as "the last operand" and
 /// additionally need an operand-shape arm in the front-end's
