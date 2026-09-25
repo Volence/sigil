@@ -784,3 +784,14 @@ points at it rather than restating it, so there is one copy to keep true.
   `$$` parcel with a `$$`-free control: `docs/superpowers/notes/2026-09-25-s3k-dollar-labels.md` and
   its gap-ledger rows (which also carry the `.`-local scope not following `cpu`/`padding`/`supmode`/
   `listing`/`restore`/`endstruct` as asl's does).
+
+### PORT-TESTS-RED-AT-AEON-TIP
+
+- state: **open**  size: `M`  project: `SIGIL-DECOUPLE`
+- Measured 2026-09-25 (`docs/superpowers/notes/2026-09-25-aeon-481ac02e-port-impact.md`): against aeon
+  at `b2820dc3`/`481ac02e`, 167 sigil tests fail that pass at the pin `ec640bcf`. 141 are expected
+  (bytes and pins moved past the pin). **26 are unresolved-name failures in `*_port` tests** from aeon
+  commits after the pin (`OJZ_Preset_Night`, `BG_VSCROLL_*`, `BG_Bands_Hold`, `GAME_SCANLINE_CAPS`,
+  `CRASH_REPORT`, `MDDBG__ErrorHandler`/`DMA_Queue_End`, `Region_Resolve`/`Plane_Buffer_Peak`, and a
+  doubled `embed` path in `test_objects_port`). None is from `481ac02e`. These must be repaired
+  before the pin next advances; they are the port tests' hand-assembled dependency seams drifting.
