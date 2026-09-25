@@ -722,9 +722,10 @@ points at it rather than restating it, so there is one copy to keep true.
   `d-32` (answered) is about the size check running only when something else in the build happens to
   use the record. Re-derive the 42 before quoting it; it is a snapshot.
 
-### AS-OVERACCEPT-SILENT-THREE
+### AS-OVERACCEPT-SILENT-THREE: LANDED
 
-- state: **doing** from 2026-09-25  size: `S`  project: `SIGIL-AS-REPLACEMENT`
+- **LANDED** 2026-09-25 at gated merge `e5b6ee06`, pushed; 5640 passed, 0 failed. Function arity was already fixed at `1b8cb9ae`.
+- was: state **doing** from 2026-09-25  size: `S`  project: `SIGIL-AS-REPLACEMENT`
 - The three over-acceptances the 2026-09-10 gate found that no ruling chose to keep:
   `dir_padding_not_on_off` (`padding maybe` silently turns padding ON; `supmode` shares the helper),
   `expr_function_arg_count` (no arity check on user `function` calls) and `save_missing_restore`
