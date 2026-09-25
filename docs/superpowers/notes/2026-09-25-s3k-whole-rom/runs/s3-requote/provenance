@@ -1,0 +1,5 @@
+sigil md5: 41b5d2676ade740fd1c4e9d6a0869e72
+sigil rev:   revision:  ec860c7e4cd207bf1fefe9cea361759cdcb01bee
+tree: /home/volence/sonic_hacks/.scratch/s3k-whole-rom/trees/s3-requote root: s3.asm
+args: -p=FF -z=0,uncompressed,Size_of_Snd_driver_guess,before -z=1300,uncompressed,Size_of_Snd_driver2_guess,before
+uptime:  05:57:10 up 1 day, 18:58,  1 user,  load average: 4.24, 7.69, 13.73

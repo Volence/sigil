@@ -1,0 +1,29 @@
+10c10
+< local improved_sound_driver_compression = false
+---
+> local improved_sound_driver_compression = true
+ref run 1 rc=0
+296c10571cb0268a43170e6f43769465  crc32=9fe129b9  size=2097152  /home/volence/sonic_hacks/.scratch/s3k-whole-rom/trees/ref-kosopt/skbuilt.bin
+ref run 2 rc=0
+296c10571cb0268a43170e6f43769465  crc32=9fe129b9  size=2097152  /home/volence/sonic_hacks/.scratch/s3k-whole-rom/trees/ref-kosopt/skbuilt.bin
+sigil md5: 41b5d2676ade740fd1c4e9d6a0869e72
+sigil rev:   revision:  ec860c7e4cd207bf1fefe9cea361759cdcb01bee
+tree: /home/volence/sonic_hacks/.scratch/s3k-whole-rom/trees/sk-gen root: wrapper.asm
+args: -p=FF -z=0,kosinski-optimised,Size_of_Snd_driver_guess,before -z=1300,kosinski-optimised,Size_of_Snd_driver2_guess,before
+uptime:  06:01:24 up 1 day, 19:02,  1 user,  load average: 3.81, 5.78, 11.50
+SIGIL_EXIT=0 elapsed=1.95
+stderr lines: 0
+rows: 0
+296c10571cb0268a43170e6f43769465  crc32=9fe129b9  size=2097152  /home/volence/sonic_hacks/.scratch/s3k-whole-rom/runs/kosopt/image.bin
+RUN_END_kosopt
+reference: 2097152 bytes, crc32 9fe129b9
+candidate: 2097152 bytes, crc32 9fe129b9
+compare: 0 differing bytes, length mismatch False
+control: planted at [0, 1048576, 2097151], comparer reported [0, 1048576, 2097151]: OK
+control vs reference: 3 differing bytes (must be 3 when the compare is clean)
+compare rc=0
+ranges: 0, bytes: 0, lengths 2097152 vs 2097152
+ranges: 139, bytes: 4868, lengths 2097152 vs 2097152
+  0x00018E +2: dfb3 vs f657
+  0x0F6A26 +1: fa vs fd
+KOSOPT_END

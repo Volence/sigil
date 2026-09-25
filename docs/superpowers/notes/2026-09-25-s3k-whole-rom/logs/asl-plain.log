@@ -1,0 +1,36 @@
+ASL_EXIT=2
+ASL_DIAG=INCOMPLETE
+  asl stopped its PASS LOOP on an error, so the diagnostics from
+  the pass it refused to start were NEVER LOOKED FOR. Chiefly
+  'symbol undefined': a forward reference is only judged on a
+  later pass, so undefined symbols in this file are reported as
+  ZERO here whether there are none or thirty. The error count in
+  the footer counts what asl reached, not what is wrong.
+  THIS LINE MAKES THE GAP VISIBLE. IT DOES NOT FILL IT: fix the
+  reported error and assemble again to learn what was hidden.
+  Listing: sonic3k.lst
+REFUSED: asl exited 2, so this run FAILED.
+  NO BYTE COLUMN FROM THIS RUN IS A SOURCE OF VALUES, including the
+  lines that assembled: an error stops the pass loop, so every forward
+  reference is left at its unresolved pass-1 placeholder and the
+  listing prints them looking complete. See partial_failure.asm
+  beside asl_ref.sh, where one bad line leaves 6702 reading 67FE.
+  Fix the source, do not quote the listing.
+asl rc=2
+sonic3k.log rows: 18
+      9 error #1820: expression must be evaluatable in first pass
+--- first 12 lines
+> > > sonic3k.asm(81): error #1820: expression must be evaluatable in first pass
+> > >  if Sonic3_Complete
+> > > sonic3k.asm(289): error #1820: expression must be evaluatable in first pass
+> > >  if Sonic3_Complete
+> > > sonic3k.asm(1673): error #1820: expression must be evaluatable in first pass
+> > >  if Sonic3_Complete
+> > > sonic3k.asm(9548): error #1820: expression must be evaluatable in first pass
+> > >  if Sonic3_Complete=0
+> > > sonic3k.asm(10862): error #1820: expression must be evaluatable in first pass
+> > >  if Sonic3_Complete=0
+> > > sonic3k.asm(16232): error #1820: expression must be evaluatable in first pass
+> > >  if Sonic3_Complete=0
+no sonic3k.p (no object: asl refused)
+ASLPLAIN_END

@@ -1,0 +1,3 @@
+checksum at 0x18E: image DFB3, fix_header computes DFB3: same
+end-of-ROM at 0x1A4: image 001FFFFF, fix_header computes 001FFFFF: same
+control: one bit flipped at 0x10000, required checksum becomes E0B3 (moves)

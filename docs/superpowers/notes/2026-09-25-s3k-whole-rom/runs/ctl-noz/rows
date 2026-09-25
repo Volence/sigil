@@ -1,0 +1,2 @@
+Sound/Z80 Sound Driver.asm(226):4: error: section `sec0#2` [0x0, 0x116B) is assembled for the Z80 at origin 0x0, in a second address space this org opens outside the ROM image, and no -z instruction places it into the ROM
+Sound/Z80 Sound Driver.asm(4444):4: error: section `sec4864` [0x1300, 0x1B43) is assembled for the Z80 at origin 0x1300, in a second address space this org opens outside the ROM image, and no -z instruction places it into the ROM

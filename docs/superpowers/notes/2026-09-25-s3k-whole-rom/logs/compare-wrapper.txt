@@ -1,0 +1,5 @@
+reference: 2097152 bytes, crc32 0658f691
+candidate: 2097152 bytes, crc32 0658f691
+compare: 0 differing bytes, length mismatch False
+control: planted at [0, 1048576, 2097151], comparer reported [0, 1048576, 2097151]: OK
+control vs reference: 3 differing bytes (must be 3 when the compare is clean)

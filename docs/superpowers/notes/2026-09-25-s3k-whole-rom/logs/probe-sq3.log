@@ -1,0 +1,8 @@
+ASL_EXIT=0
+ASL_DIAG=complete
+asl   (exit 0): 1142111142
+sq3.asm(3):7: error: operand 4418 out of range -128..=255
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+sigil: no image
+PROBE_END

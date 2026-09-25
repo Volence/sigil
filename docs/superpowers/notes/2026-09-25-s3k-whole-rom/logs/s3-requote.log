@@ -1,0 +1,64 @@
+s3.asm:394: dc.b	'J',0,'UE'  ->  dc.b	'J',0,"UE"
+s3.asm:410: dc.b	6,           'DEVELOPED FOR USE ONLY WITH',0  ->  dc.b	6,           "DEVELOPED FOR USE ONLY WITH",0
+s3.asm:414: dc.b	15,                   'SYSTEMS.',0  ->  dc.b	15,                   "SYSTEMS.",0
+s3.asm:416: dc.b	12,                'NTSC MEGA DRIVE',0  ->  dc.b	12,                "NTSC MEGA DRIVE",0
+s3.asm:418: dc.b	13,                 'NTSC GENESIS',0  ->  dc.b	13,                 "NTSC GENESIS",0
+s3.asm:420: dc.b	4,         'PAL AND FRENCH SECAM MEGA DRIVE',0  ->  dc.b	4,         "PAL AND FRENCH SECAM MEGA DRIVE",0
+edits: 6
+--- diff on disk
+394c394
+< 		dc.b	'J',0,'UE'
+---
+> 		dc.b	'J',0,"UE"
+410c410
+< 		dc.b	6,           'DEVELOPED FOR USE ONLY WITH',0
+---
+> 		dc.b	6,           "DEVELOPED FOR USE ONLY WITH",0
+414c414
+< 		dc.b	15,                   'SYSTEMS.',0
+---
+> 		dc.b	15,                   "SYSTEMS.",0
+416c416
+< 		dc.b	12,                'NTSC MEGA DRIVE',0
+---
+> 		dc.b	12,                "NTSC MEGA DRIVE",0
+418c418
+< 		dc.b	13,                 'NTSC GENESIS',0
+---
+> 		dc.b	13,                 "NTSC GENESIS",0
+420c420
+< 		dc.b	4,         'PAL AND FRENCH SECAM MEGA DRIVE',0
+---
+> 		dc.b	4,         "PAL AND FRENCH SECAM MEGA DRIVE",0
+--- asl + p2bin on the edited tree (buildS3.lua's line)
+ASL_EXIT=0
+ASL_DIAG=complete
+asl rc=0
+no s3.log
+p2bin rc=0
+reference: 2097152 bytes, crc32 9bc192ce
+candidate: 2097152 bytes, crc32 9bc192ce
+compare: 0 differing bytes, length mismatch False
+control: planted at [0, 1048576, 2097151], comparer reported [0, 1048576, 2097151]: OK
+control vs reference: 3 differing bytes (must be 3 when the compare is clean)
+edit-neutral compare rc=0
+--- sigil on the edited tree
+sigil md5: 41b5d2676ade740fd1c4e9d6a0869e72
+sigil rev:   revision:  ec860c7e4cd207bf1fefe9cea361759cdcb01bee
+tree: /home/volence/sonic_hacks/.scratch/s3k-whole-rom/trees/s3-requote root: s3.asm
+args: -p=FF -z=0,uncompressed,Size_of_Snd_driver_guess,before -z=1300,uncompressed,Size_of_Snd_driver2_guess,before
+uptime:  05:57:10 up 1 day, 18:58,  1 user,  load average: 4.24, 7.69, 13.73
+SIGIL_EXIT=0 elapsed=1.71
+stderr lines: 0
+rows: 0
+d724ea4dd417fe330c9dcfd955c596b2  crc32=9bc192ce  size=2097152  /home/volence/sonic_hacks/.scratch/s3k-whole-rom/runs/s3-requote/image.bin
+RUN_END_s3-requote
+reference: 2097152 bytes, crc32 9bc192ce
+candidate: 2097152 bytes, crc32 9bc192ce
+compare: 0 differing bytes, length mismatch False
+control: planted at [0, 1048576, 2097151], comparer reported [0, 1048576, 2097151]: OK
+control vs reference: 3 differing bytes (must be 3 when the compare is clean)
+compare rc=0
+ranges: 0, bytes: 0, lengths 2097152 vs 2097152
+--- sigil rows by message
+S3REQUOTE_END

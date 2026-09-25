@@ -1,0 +1,18 @@
+> > > sonic3k.asm(81): error #1820: expression must be evaluatable in first pass
+> > >  if Sonic3_Complete
+> > > sonic3k.asm(289): error #1820: expression must be evaluatable in first pass
+> > >  if Sonic3_Complete
+> > > sonic3k.asm(1673): error #1820: expression must be evaluatable in first pass
+> > >  if Sonic3_Complete
+> > > sonic3k.asm(9548): error #1820: expression must be evaluatable in first pass
+> > >  if Sonic3_Complete=0
+> > > sonic3k.asm(10862): error #1820: expression must be evaluatable in first pass
+> > >  if Sonic3_Complete=0
+> > > sonic3k.asm(16232): error #1820: expression must be evaluatable in first pass
+> > >  if Sonic3_Complete=0
+> > > sonic3k.asm(200210): error #1820: expression must be evaluatable in first pass
+> > >  if Sonic3_Complete=0
+> > > sonic3k.asm(200927): error #1820: expression must be evaluatable in first pass
+> > >  if Sonic3_Complete=0
+> > > sonic3k.asm(203583): error #1820: expression must be evaluatable in first pass
+> > >  if Sonic3_Complete=0

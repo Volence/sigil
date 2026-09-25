@@ -1,0 +1,9 @@
+ASL_EXIT=0
+ASL_DIAG=complete
+asl   (exit 0): 4a0055450641424300515545303c5545
+sq1.asm(2):13: error: operand 21829 out of range -128..=255
+sq1.asm(3):9: error: operand 4276803 out of range -128..=255
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 2 errors (reported on stderr)
+sigil: no image
+PROBE_END
