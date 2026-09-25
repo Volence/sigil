@@ -112,3 +112,13 @@ ctl_nodef_dcw_multi	control: no label, `dc.w Lab,d3,Lab`
 ctl_nodef_imm	control: no label, `#A1`
 macro_body_label	`A1:` defined inside a macro body, `#A1+2` in the same body
 ds_count	`A1:` label, `ds.b A1-$11F0`
+lbl_abs_plus	`A1:` label, `move.w A1+2,d0`
+lbl_lea_plus	`A1:` label, `lea A1+2,a0`
+lbl_jsr_plus	`A1:` label, `jsr A1+2`
+lbl_jmp_absl	`A1:` label, `jmp (A1+2).l`
+lbl_dbf	`A1:` label, `dbf d0,A1`
+lbl_pcidx	`A1:` label, `lea A1(pc,d0.w),a0`
+lbl_movem_pc	`A1:` label, `movem.l A1(pc),d0-d1`
+lbl_dcl_fwd	`A1:` label, `dc.l A1+Fwd`, `Fwd` defined after
+lbl_rept	`A1:` label, `rept A1-$11FF`
+lbl_imm_before_def	`#A1+2` read ABOVE the `A1:` definition

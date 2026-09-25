@@ -96,6 +96,23 @@ p("ctl_nodef_imm", "\tmove.w\t#A1,d0\n", desc="control: no label, `#A1`")
 p("macro_body_label", "M\tmacro\nA1:\tnop\n\tmove.w\t#A1+2,d0\n\tendm\n\tM\n", desc="`A1:` defined inside a macro body, `#A1+2` in the same body")
 p("ds_count", "A1:\tnop\n\tds.b\tA1-$11F0\n", desc="`A1:` label, `ds.b A1-$11F0`")
 
+# --- more consumers of a value: absolute EAs, jumps, dbcc, pc-indexed, movem, forward -
+L2 = "A1:\tnop\nLab:\tnop\n"
+more = {
+    "abs_plus":   ("\tmove.w\tA1+2,d0\n", "`move.w A1+2,d0`"),
+    "lea_plus":   ("\tlea\tA1+2,a0\n", "`lea A1+2,a0`"),
+    "jsr_plus":   ("\tjsr\tA1+2\n", "`jsr A1+2`"),
+    "jmp_absl":   ("\tjmp\t(A1+2).l\n", "`jmp (A1+2).l`"),
+    "dbf":        ("\tdbf\td0,A1\n", "`dbf d0,A1`"),
+    "pcidx":      ("\tlea\tA1(pc,d0.w),a0\n", "`lea A1(pc,d0.w),a0`"),
+    "movem_pc":   ("\tmovem.l\tA1(pc),d0-d1\n", "`movem.l A1(pc),d0-d1`"),
+    "dcl_fwd":    ("\tdc.l\tA1+Fwd\nFwd:\tnop\n", "`dc.l A1+Fwd`, `Fwd` defined after"),
+    "rept":       ("\trept\tA1-$11FF\n\tnop\n\tendm\n", "`rept A1-$11FF`"),
+}
+for k, (u, d) in more.items():
+    p(f"lbl_{k}", L2 + u, desc=f"`A1:` label, {d}")
+p("lbl_imm_before_def", "\tmove.w\t#A1+2,d0\nA1:\tnop\n", desc="`#A1+2` read ABOVE the `A1:` definition")
+
 os.makedirs(OUT, exist_ok=True)
 with open(os.path.join(OUT, "INDEX.tsv"), "w") as idx:
     for n, (src, d) in P.items():

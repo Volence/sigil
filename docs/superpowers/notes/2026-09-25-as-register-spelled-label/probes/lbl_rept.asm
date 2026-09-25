@@ -1,0 +1,7 @@
+	cpu 68000
+	org $1200
+A1:	nop
+Lab:	nop
+	rept	A1-$11FF
+	nop
+	endm

@@ -44,6 +44,7 @@ lbl_a1_imm_plus	2	#1145 expected integer, floating point number or string but go
 lbl_A7_dcw_plus	2	#1145 expected integer, floating point number or string but got register	-	0		4e711202	OVER-ACCEPT	0
 lbl_A7_imm_plus	2	#1145 expected integer, floating point number or string but got register	-	0		4e71303c1202	OVER-ACCEPT	0
 lbl_absl	2	#1146 expected integer or string	-	1	probe.asm(5):9: error: trailing tokens in operand	-	both-refuse	0
+lbl_abs_plus	2	#1145 expected integer, floating point number or string but got register	-	0		4e714e7130381202	OVER-ACCEPT	0
 lbl_absw	2	#1146 expected integer or string	-	1	probe.asm(5):9: error: trailing tokens in operand	-	both-refuse	0
 lbl_bare_jsr	2	#1350 addressing mode not allowed here	-	0		4e714e714eb81200	OVER-ACCEPT	0
 lbl_bare_lea	2	#1350 addressing mode not allowed here	-	1	probe.asm(5):2: error: unsupported form: An is not a legal addressing mode for this operand position	-	both-refuse	0
@@ -55,8 +56,10 @@ lbl_d0_dcw_plus	2	#1145 expected integer, floating point number or string but go
 lbl_D0_dcw_plus	2	#1145 expected integer, floating point number or string but got register	-	0		4e711202	OVER-ACCEPT	0
 lbl_d0_imm_plus	2	#1145 expected integer, floating point number or string but got register	-	0		4e71303c1202	OVER-ACCEPT	0
 lbl_D0_imm_plus	2	#1145 expected integer, floating point number or string but got register	-	0		4e71303c1202	OVER-ACCEPT	0
+lbl_dbf	2	#1146 expected integer or string	-	0		4e714e7151c8fffa	OVER-ACCEPT	0
 lbl_dcb_plus	3	#10000 internal error	-	0		4e714e7100	OVER-ACCEPT	0
 lbl_dcl	0		4e714e71	0		4e714e7100001200	BYTES-DIFFER	0
+lbl_dcl_fwd	2	#1145 expected integer, floating point number or string but got register	-	0		4e714e71000024084e71	OVER-ACCEPT	0
 lbl_dcl_sub	3	#10000 internal error	-	0		4e714e7100000002	OVER-ACCEPT	0
 lbl_dcw	0		4e714e71	0		4e714e711200	BYTES-DIFFER	0
 lbl_dcw_plus	2	#1145 expected integer, floating point number or string but got register	-	0		4e714e711202	OVER-ACCEPT	0
@@ -67,14 +70,21 @@ lbl_equ_rhs	0		4e714e71	0		4e714e711200	BYTES-DIFFER	0
 lbl_if_cmp	2	#1145 expected integer, floating point number or string but got register	-	0		4e714e714e71	OVER-ACCEPT	0
 lbl_ifdef	0		4e714e714e71	0		4e714e714e71	same	0
 lbl_imm	2	#1146 expected integer or string	-	0		4e714e71303c1200	OVER-ACCEPT	0
+lbl_imm_before_def	2	#1145 expected integer, floating point number or string but got register	-	0		303c12064e71	OVER-ACCEPT	0
 lbl_imm_lab	2	#1145 expected integer, floating point number or string but got register	-	0		4e714e71323c2402	OVER-ACCEPT	0
 lbl_imm_paren	2	#1146 expected integer or string	-	0		4e714e71303c1200	OVER-ACCEPT	0
 lbl_imm_plus	2	#1145 expected integer, floating point number or string but got register	-	0		4e714e71303c1202	OVER-ACCEPT	0
 lbl_imm_sub	3	#10000 internal error	-	0		4e714e71303c0002	OVER-ACCEPT	0
+lbl_jmp_absl	2	#1145 expected integer, floating point number or string but got register	-	0		4e714e714ef900001202	OVER-ACCEPT	0
+lbl_jsr_plus	2	#1145 expected integer, floating point number or string but got register	-	0		4e714e714eb81202	OVER-ACCEPT	0
+lbl_lea_plus	2	#1145 expected integer, floating point number or string but got register	-	0		4e714e7141f81202	OVER-ACCEPT	0
+lbl_movem_pc	2	#1146 expected integer or string	-	0		4e714e714cfa0003fff8	OVER-ACCEPT	0
 lbl_org	2	#1145 expected integer, floating point number or string but got register	-	0		4e714e71000000004e71	OVER-ACCEPT	0
 lbl_PC_dcw_plus	0		4e711202	0		4e711202	same	0
+lbl_pcidx	2	#1146 expected integer or string	-	0		4e714e7141fb00fa	OVER-ACCEPT	0
 lbl_PC_imm_plus	0		4e71303c1202	0		4e71303c1202	same	0
 lbl_pcrel	2	#1146 expected integer or string	-	0		4e714e7141fafffa	OVER-ACCEPT	0
+lbl_rept	3	#10000 internal error	-	0		4e714e714e71	OVER-ACCEPT	0
 lbl_set_rhs	2	#1145 expected integer, floating point number or string but got register	-	0		4e714e711202	OVER-ACCEPT	0
 lbl_sp_dcw_plus	2	#1145 expected integer, floating point number or string but got register	-	0		4e711202	OVER-ACCEPT	0
 lbl_SP_dcw_plus	2	#1145 expected integer, floating point number or string but got register	-	0		4e711202	OVER-ACCEPT	0
