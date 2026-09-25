@@ -125,6 +125,28 @@ fn bg_anim_view_bytes(aeon: &std::path::Path) -> usize {
     total
 }
 
+/// The generated clip-act module act_assets.emp imports `OJZ_CLIP_ACT` from
+/// (`use games.sonic4.ojz_clip_act_act1.{OJZ_CLIP_ACT}`), relative to the aeon tree.
+const CLIP_ACT_EMP: &str = "games/sonic4/data/generated/ojz/act1/clip_act.emp";
+
+/// A synthesized prelude re-declaring the clip-act switch act_assets.emp gates its
+/// DEBUG test backgrounds on, the right-hand side copied verbatim out of the tree's
+/// generated clip module (`test_support::emp_const_rhs`, loud on a renamed or
+/// duplicated const) and folded by sigil's own evaluator.
+///
+/// A tree that has no clip module (one predating the clip act) yields a prelude that
+/// declares nothing: its act_assets.emp does not import the name, and a tree that
+/// imports it without the module fails the lower with `unknown name OJZ_CLIP_ACT`.
+fn clip_act_const_src(aeon: &std::path::Path) -> String {
+    let path = aeon.join(CLIP_ACT_EMP);
+    let mut src = String::from("module games.sonic4.ojz_clip_act_lifted\n");
+    if path.exists() {
+        let rhs = sigil_harness::test_support::emp_const_rhs(&path, "OJZ_CLIP_ACT");
+        src.push_str(&format!("pub const OJZ_CLIP_ACT = {rhs}\n"));
+    }
+    src
+}
+
 /// `(emp, section, pin, preludes, max cross-shape length divergence)`.
 ///
 /// THE FIFTH FIELD IS A CONTRACT, not a tolerance dial. Every section here emits
@@ -152,10 +174,15 @@ fn sections(aeon: &std::path::Path) -> Vec<(&'static str, &'static str, Region, 
         // `use engine.bg.{BG_LAYOUT_SIZE}` — the module's BG-layout embed is
         // TYPED `[u8; BG_LAYOUT_SIZE]` (the length is the guard against a
         // wrong-geometry blob), so the standalone lower needs that one const.
+        // `use games.sonic4.ojz_clip_act_act1.{OJZ_CLIP_ACT}` — the clip-act switch
+        // its DEBUG test backgrounds are gated on (`clip_act_const_src`).
         "games/sonic4/data/levels/ojz/act1/act_assets.emp",
         "ojz_act_assets",
         pins::OJZ_ACT_ASSETS,
-        &[sigil_harness::test_support::bg_layout_size_const_src as Prelude],
+        &[
+            sigil_harness::test_support::bg_layout_size_const_src as Prelude,
+            clip_act_const_src as Prelude,
+        ],
         ALIGN_PAD,
     ),
     (
@@ -260,7 +287,19 @@ fn gate(debug: bool, rom_name: &str) {
         return;
     };
 
-    for (emp_rel, section, region, preludes, max_shape_delta) in &sections(&aeon_root()) {
+    // Every section is lowered and linked BEFORE any is compared, so a scope failure in a
+    // later module (an `unknown name` from a new `use`) reports as itself instead of
+    // hiding behind an earlier module's byte difference.
+    let sections = sections(&aeon_root());
+    let images: Vec<sigil_link::LinkedImage> = sections
+        .iter()
+        .map(|(emp_rel, section, region, preludes, _)| {
+            let base = if debug { region.debug_base } else { region.plain_base };
+            let len = if debug { region.debug_len } else { region.plain_len };
+            compile_section(emp_rel, section, base, len, preludes, debug)
+        })
+        .collect();
+    for ((_, section, region, _, max_shape_delta), linked) in sections.iter().zip(images) {
         let base = if debug { region.debug_base } else { region.plain_base };
         let len = if debug { region.debug_len } else { region.plain_len };
         let (lo, hi) = (region.plain_len.min(region.debug_len), region.plain_len.max(region.debug_len));
@@ -274,7 +313,6 @@ fn gate(debug: bool, rom_name: &str) {
             region.debug_len
         );
 
-        let linked = compile_section(emp_rel, section, base, len, preludes, debug);
         let sec = linked
             .section(section)
             .unwrap_or_else(|| panic!("linked image must carry `{section}`"));
