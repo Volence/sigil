@@ -1,0 +1,176 @@
+pwd=/home/volence/sonic_hacks/sigil/.claude/worktrees/agent-a746dc1af1279ab3d HEAD=329bc9be7ea0c69c106741008e735aacef9d2167 branch=parcel/as-cli-define
+
+=================== M1 a bare -D defaults to 0
+--- on disk:
+diff --git a/crates/sigil-frontend-as/src/cli_define.rs b/crates/sigil-frontend-as/src/cli_define.rs
+index 2aeaa79d..6555b02c 100644
+--- a/crates/sigil-frontend-as/src/cli_define.rs
++++ b/crates/sigil-frontend-as/src/cli_define.rs
+@@ -85,7 +85,7 @@ fn parse_part(arg: &str, part: &str) -> Result<(String, i64), String> {
+         });
+     }
+     let value = match value.map(str::trim) {
+-        None | Some("") => 1,
++        None | Some("") => 0,
+         Some(text) => eval_value(text).map_err(|why| format!("-D '{arg}': {name}={text}: {why}"))?,
+     };
+     Ok((name.to_string(), value))
+--- runner 1: cargo test -p sigil-cli --test as_cli_define
+thread 'values_and_spellings' (3492050) panicked at crates/sigil-cli/tests/as_cli_define.rs:99:9:
+assertion `left == right` failed: ["-D", "FOO"] on
+	cpu 68000
+	dc.b	FOO
+test result: FAILED. 5 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+--- runner 2: cargo test -p sigil-frontend-as --lib cli_define
+thread 'cli_define::tests::a_repeated_name_keeps_its_first_value' (3492316) panicked at crates/sigil-frontend-as/src/cli_define.rs:204:9:
+assertion `left == right` failed
+  left: [("FOO", 0)]
+ right: [("FOO", 1)]
+thread 'cli_define::tests::accepts_what_asl_accepts_with_asls_value' (3492317) panicked at crates/sigil-frontend-as/src/cli_define.rs:147:9:
+assertion `left == right` failed
+  left: Ok([("FOO", 0)])
+ right: Ok([("FOO", 1)])
+test result: FAILED. 2 passed; 2 failed; 0 ignored; 0 measured; 311 filtered out; finished in 0.00s
+--- restored: 0 changed path(s)
+
+=================== M2 the define enters with no class, so = / equ / a label silently win
+--- on disk:
+diff --git a/crates/sigil-frontend-as/src/eval.rs b/crates/sigil-frontend-as/src/eval.rs
+index adac6941..421cce22 100644
+--- a/crates/sigil-frontend-as/src/eval.rs
++++ b/crates/sigil-frontend-as/src/eval.rs
+@@ -7595,7 +7595,6 @@ impl Asm {
+     fn seed_cli_defines(&mut self, defines: &[(String, i64)]) {
+         for (name, value) in crate::cli_define::first_wins(defines) {
+             self.define_sym(&name, SymbolValue::Int(value));
+-            self.sym_class.insert(name, SymClass::Var);
+         }
+     }
+ 
+--- runner 1: cargo test -p sigil-cli --test as_cli_define
+thread 'set_rebinds_and_constants_are_refused' (3492798) panicked at crates/sigil-cli/tests/as_cli_define.rs:61:5:
+["-D", "FOO=5"] must be refused.
+stderr:
+
+test result: FAILED. 5 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+--- runner 2: cargo test -p sigil-frontend-as --lib cli_define
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 311 filtered out; finished in 0.00s
+--- restored: 0 changed path(s)
+
+=================== M3 bound on the first pass only, carried after
+--- on disk:
+diff --git a/crates/sigil-frontend-as/src/eval.rs b/crates/sigil-frontend-as/src/eval.rs
+index adac6941..64b80f0a 100644
+--- a/crates/sigil-frontend-as/src/eval.rs
++++ b/crates/sigil-frontend-as/src/eval.rs
+@@ -991,7 +991,7 @@ fn one_pass_with_defer(
+     asm.functions = seed_functions.clone();
+     asm.known_labels = seed_labels.clone();
+     asm.label_ref_equs = seed_label_ref_equs.clone();
+-    asm.seed_cli_defines(&opts.cli_defines);
++    if mompass == FIRST_PASS { asm.seed_cli_defines(&opts.cli_defines); }
+     asm.process(root_name, src);
+     asm.report_unpopped_value_stacks();
+     asm.report_unrestored_saves();
+--- runner 1: cargo test -p sigil-cli --test as_cli_define
+thread 'defined_and_ifdef_see_it' (3493579) panicked at crates/sigil-cli/tests/as_cli_define.rs:141:5:
+assertion `left == right` failed
+  left: [0]
+ right: [1]
+thread 'rebound_at_every_pass' (3493582) panicked at crates/sigil-cli/tests/as_cli_define.rs:135:5:
+assertion `left == right` failed
+  left: [7, 7, 96, 0, 0, 2]
+ right: [5, 7, 96, 0, 0, 2]
+thread 'set_rebinds_and_constants_are_refused' (3493583) panicked at crates/sigil-cli/tests/as_cli_define.rs:110:5:
+assertion `left == right` failed
+  left: [7, 7]
+ right: [5, 7]
+test result: FAILED. 3 passed; 3 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+--- runner 2: cargo test -p sigil-frontend-as --lib cli_define
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 311 filtered out; finished in 0.00s
+--- restored: 0 changed path(s)
+
+=================== M4 a repeated name keeps its LAST value
+--- on disk:
+diff --git a/crates/sigil-frontend-as/src/cli_define.rs b/crates/sigil-frontend-as/src/cli_define.rs
+index 2aeaa79d..38e5d873 100644
+--- a/crates/sigil-frontend-as/src/cli_define.rs
++++ b/crates/sigil-frontend-as/src/cli_define.rs
+@@ -60,7 +60,7 @@ pub fn parse_define_arg(arg: &str) -> Result<Vec<(String, i64)>, String> {
+ /// for a name defined twice on its command line.
+ pub fn first_wins(defines: &[(String, i64)]) -> Vec<(String, i64)> {
+     let mut seen = std::collections::HashSet::new();
+-    defines.iter().filter(|(k, _)| seen.insert(k.as_str())).cloned().collect()
++    defines.iter().rev().filter(|(k, _)| seen.insert(k.as_str())).cloned().collect()
+ }
+ 
+ fn parse_part(arg: &str, part: &str) -> Result<(String, i64), String> {
+--- runner 1: cargo test -p sigil-cli --test as_cli_define
+thread 'values_and_spellings' (3494395) panicked at crates/sigil-cli/tests/as_cli_define.rs:99:9:
+assertion `left == right` failed: ["-D", "FOO=1", "-D", "FOO=2"] on
+	cpu 68000
+	dc.b	FOO
+test result: FAILED. 5 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+--- runner 2: cargo test -p sigil-frontend-as --lib cli_define
+thread 'cli_define::tests::a_repeated_name_keeps_its_first_value' (3494747) panicked at crates/sigil-frontend-as/src/cli_define.rs:201:9:
+assertion `left == right` failed
+  left: [("FOO", 3)]
+ right: [("FOO", 1)]
+test result: FAILED. 3 passed; 1 failed; 0 ignored; 0 measured; 311 filtered out; finished in 0.00s
+--- restored: 0 changed path(s)
+
+=================== M5 bound in env only, not recorded as defined this pass
+--- on disk:
+diff --git a/crates/sigil-frontend-as/src/eval.rs b/crates/sigil-frontend-as/src/eval.rs
+index adac6941..8bd9a6b9 100644
+--- a/crates/sigil-frontend-as/src/eval.rs
++++ b/crates/sigil-frontend-as/src/eval.rs
+@@ -7594,7 +7594,7 @@ impl Asm {
+     /// asl's does for a `-D` name (probe: `-D FOO=0`, `dc.b defined(FOO)` is `01`).
+     fn seed_cli_defines(&mut self, defines: &[(String, i64)]) {
+         for (name, value) in crate::cli_define::first_wins(defines) {
+-            self.define_sym(&name, SymbolValue::Int(value));
++            self.env.define(&name, SymbolValue::Int(value));
+             self.sym_class.insert(name, SymClass::Var);
+         }
+     }
+--- runner 1: cargo test -p sigil-cli --test as_cli_define
+thread 'defined_and_ifdef_see_it' (3495196) panicked at crates/sigil-cli/tests/as_cli_define.rs:141:5:
+assertion `left == right` failed
+  left: [0]
+ right: [1]
+test result: FAILED. 5 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+--- runner 2: cargo test -p sigil-frontend-as --lib cli_define
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 311 filtered out; finished in 0.00s
+--- restored: 0 changed path(s)
+
+=================== M6 a leading-dot name accepted
+--- on disk:
+diff --git a/crates/sigil-frontend-as/src/cli_define.rs b/crates/sigil-frontend-as/src/cli_define.rs
+index 2aeaa79d..ccfb2a6e 100644
+--- a/crates/sigil-frontend-as/src/cli_define.rs
++++ b/crates/sigil-frontend-as/src/cli_define.rs
+@@ -68,7 +68,7 @@ fn parse_part(arg: &str, part: &str) -> Result<(String, i64), String> {
+         Some((n, v)) => (n, Some(v)),
+         None => (part, None),
+     };
+-    if name.starts_with('.') {
++    if name.starts_with('.') && false {
+         return Err(format!(
+             "-D '{arg}': '{name}' starts with `.`, a local name no source line can read as this \
+              define"
+--- runner 1: cargo test -p sigil-cli --test as_cli_define
+thread 'malformed_arguments_are_usage_errors' (3495975) panicked at crates/sigil-cli/tests/as_cli_define.rs:157:9:
+assertion `left == right` failed: `-D .FOO=1`:
+/tmp/.tmpI4fQEf/root.asm(2):2: error: unresolved symbol `FOO` for fixup in section sec0 at offset 0
+
+test result: FAILED. 5 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+--- runner 2: cargo test -p sigil-frontend-as --lib cli_define
+thread 'cli_define::tests::refuses_the_documented_gaps' (3496359) panicked at crates/sigil-frontend-as/src/cli_define.rs:189:31:
+called `Result::unwrap_err()` on an `Ok` value: [(".FOO", 1)]
+
+test result: FAILED. 3 passed; 1 failed; 0 ignored; 0 measured; 311 filtered out; finished in 0.00s
+--- restored: 0 changed path(s)
+
+final: 0 changed path(s) under crates
+MUTATE_END

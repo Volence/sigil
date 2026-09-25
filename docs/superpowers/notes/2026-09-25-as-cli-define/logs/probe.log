@@ -1,0 +1,148 @@
+pwd=/home/volence/sonic_hacks/.scratch/as-cli-define/probes asl=/home/volence/sonic_hacks/s1disasm/build_tools/Linux-x86_64/asl md5=61e672562465725a8c102288a7da9098
+### attached -DFOO=5: asl [-DFOO=5] u1.asm   ( dc.b FOO|)
+Invalid option: -DFOO=5
+  refused: ASL_EXIT=4
+      lines that assembled: an error stops the pass loop, so every forward
+### attached -DFOO: asl [-DFOO] u1.asm   ( dc.b FOO|)
+Invalid option: -DFOO
+  refused: ASL_EXIT=4
+      lines that assembled: an error stops the pass loop, so every forward
+### repeated flag, distinct: asl [-D FOO=1 -D BAR=2] u2.asm   ( dc.b FOO,BAR|)
+  exit 0: 0102  [ASL_DIAG=complete] passes: 1pass
+### repeated flag, same name: asl [-D FOO=1 -D FOO=2] u1.asm   ( dc.b FOO|)
+  exit 0: 01  [ASL_DIAG=complete] passes: 1pass
+### same name twice in one list: asl [-D FOO=1,FOO=2] u1.asm   ( dc.b FOO|)
+  exit 0: 01  [ASL_DIAG=complete] passes: 1pass
+### list, bare then valued: asl [-D FOO,BAR=2] u2.asm   ( dc.b FOO,BAR|)
+  exit 0: 0102  [ASL_DIAG=complete] passes: 1pass
+### list with a space: asl [-D FOO=1, BAR=2] u2.asm   ( dc.b FOO,BAR|)
+Invalid option: -D
+  refused: ASL_EXIT=4
+      lines that assembled: an error stops the pass loop, so every forward
+### space before value: asl [-D FOO= 5] u1.asm   ( dc.b FOO|)
+  exit 0: 05  [ASL_DIAG=complete] passes: 1pass
+### empty value: asl [-D FOO=] u1.asm   ( dc.b FOO|)
+  exit 0: 01  [ASL_DIAG=complete] passes: 1pass
+### -D with nothing after it: asl [-D] u1.asm   ( dc.b FOO|)
+Source file? [.asm] Error: Could not open input file 'u1.p' for reading.
+xxd: u1.bin: No such file or directory
+grep: u1.lst: No such file or directory
+  exit 0:   [ASL_DIAG=complete] passes: 
+### value decimal: asl [-D FOO=10] u1.asm   ( dc.b FOO|)
+  exit 0: 0a  [ASL_DIAG=complete] passes: 1pass
+### value lowercase hex: asl [-D FOO=$ff] u1.asm   ( dc.b FOO|)
+  exit 0: ff  [ASL_DIAG=complete] passes: 1pass
+### value 0x hex: asl [-D FOO=0x10] u1.asm   ( dc.b FOO|)
+  exit 0: 10  [ASL_DIAG=complete] passes: 1pass
+### value 10h: asl [-D FOO=10h] u1.asm   ( dc.b FOO|)
+  exit 0: 10  [ASL_DIAG=complete] passes: 1pass
+### value %binary: asl [-D FOO=%101] u1.asm   ( dc.b FOO|)
+  exit 0: 05  [ASL_DIAG=complete] passes: 1pass
+### value negative: asl [-D FOO=-1] u1.asm   ( dc.b FOO|)
+  exit 0: ff  [ASL_DIAG=complete] passes: 1pass
+### value expression 1+2: asl [-D FOO=1+2] u1.asm   ( dc.b FOO|)
+  exit 0: 03  [ASL_DIAG=complete] passes: 1pass
+### value expression (3): asl [-D FOO=(3)] u1.asm   ( dc.b FOO|)
+  exit 0: 03  [ASL_DIAG=complete] passes: 1pass
+### value names a source symbol: asl [-D FOO=BAR] usebar.asm   (BAR equ 3| dc.b FOO|)
+Invalid option: -D
+  refused: ASL_EXIT=4
+      lines that assembled: an error stops the pass loop, so every forward
+### value double-quoted string: asl [-D FOO="ab"] strv.asm   ( dc.b FOO| dc.b strlen(FOO)|)
+  exit 0: b5a702  [ASL_DIAG=complete] passes: 1pass
+### value single-quoted char: asl [-D FOO='A'] u1.asm   ( dc.b FOO|)
+  exit 0: c6  [ASL_DIAG=complete] passes: 1pass
+### value float: asl [-D FOO=1.5] u1.asm   ( dc.b FOO|)
+  refused: ASL_EXIT=2
+    > > > u1.asm(2):7: error #1133: expected integer or string, but got floating point number
+      lines that assembled: an error stops the pass loop, so every forward
+    other: > > > u1.asm(2):7: error #1133: expected integer or string, but got floating point number
+    other: > > > FOO
+    other: > > >  dc.b FOO
+    other: > > >       ~~~
+### value $FFFFFFFF, dc.l: asl [-D FOO=$FFFFFFFF] ul.asm   ( dc.l FOO|)
+  exit 0: ffffffff  [ASL_DIAG=complete] passes: 1pass
+### value $100000000, dc.l: asl [-D FOO=$100000000] ul.asm   ( dc.l FOO|)
+  refused: ASL_EXIT=2
+    > > > ul.asm(2): error #1320: range overflow
+      lines that assembled: an error stops the pass loop, so every forward
+    other: > > > ul.asm(2): error #1320: range overflow
+    other: > > >  dc.l FOO
+### value $7FFFFFFFFFFFFFFF, dc.l: asl [-D FOO=$7FFFFFFFFFFFFFFF] ul.asm   ( dc.l FOO|)
+  refused: ASL_EXIT=2
+    > > > ul.asm(2): error #1320: range overflow
+      lines that assembled: an error stops the pass loop, so every forward
+    other: > > > ul.asm(2): error #1320: range overflow
+    other: > > >  dc.l FOO
+### value garbage: asl [-D FOO=5x] u1.asm   ( dc.b FOO|)
+Invalid option: -D
+  refused: ASL_EXIT=4
+      lines that assembled: an error stops the pass loop, so every forward
+### name starts with a digit: asl [-D 1FOO=1] u1.asm   ( dc.b FOO|)
+Invalid option: -D
+  refused: ASL_EXIT=4
+      lines that assembled: an error stops the pass loop, so every forward
+### empty name: asl [-D =1] u1.asm   ( dc.b FOO|)
+Invalid option: -D
+  refused: ASL_EXIT=4
+      lines that assembled: an error stops the pass loop, so every forward
+### name with a dot: asl [-D FOO.BAR=1] u1.asm   ( dc.b FOO|)
+  refused: ASL_EXIT=2
+    > > > u1.asm(2):7: error #1010: symbol undefined
+      lines that assembled: an error stops the pass loop, so every forward
+    other: > > > u1.asm(2):7: error #1010: symbol undefined
+    other: > > > FOO
+    other: > > >  dc.b FOO
+    other: > > >       ~~~
+### name with a dash: asl [-D FO-O=1] u1.asm   ( dc.b FOO|)
+Invalid option: -D
+  refused: ASL_EXIT=4
+      lines that assembled: an error stops the pass loop, so every forward
+### name starts with a dot: asl [-D .FOO=1] u1.asm   ( dc.b FOO|)
+  refused: ASL_EXIT=2
+    > > > u1.asm(2):7: error #1010: symbol undefined
+      lines that assembled: an error stops the pass loop, so every forward
+    other: > > > u1.asm(2):7: error #1010: symbol undefined
+    other: > > > FOO
+    other: > > >  dc.b FOO
+    other: > > >       ~~~
+### name starts with underscore: asl [-D _FOO=1] u1.asm   ( dc.b FOO|)
+  refused: ASL_EXIT=2
+    > > > u1.asm(2):7: error #1010: symbol undefined
+      lines that assembled: an error stops the pass loop, so every forward
+    other: > > > u1.asm(2):7: error #1010: symbol undefined
+    other: > > > FOO
+    other: > > >  dc.b FOO
+    other: > > >       ~~~
+### lowercase -D, FOO in source: asl [-D FOO=5] casefoo.asm   (foo equ 3| dc.b foo,FOO|)
+  exit 0: 0305  [ASL_DIAG=complete] passes: 1pass
+### set first, then use: asl [-D FOO=5] setfirst.asm   (FOO set 3| dc.b FOO|)
+  exit 0: 03  [ASL_DIAG=complete] passes: 1pass
+### ifndef-guarded set: asl [-D FOO=5] guard.asm   ( ifndef FOO|FOO set 3| endif| dc.b FOO|)
+  exit 0: 05  [ASL_DIAG=complete] passes: 1pass
+### ifndef-guarded set, no -D: asl [] guard.asm   ( ifndef FOO|FOO set 3| endif| dc.b FOO|)
+  exit 0: 03  [ASL_DIAG=complete] passes: 1pass
+### ifdef on -D name: asl [-D FOO=5] ifdef.asm   ( ifdef FOO| dc.b 1| else| dc.b 2| endif|)
+  exit 0: 01  [ASL_DIAG=complete] passes: 1pass
+### ifdef, -D FOO=0: asl [-D FOO=0] ifdef.asm   ( ifdef FOO| dc.b 1| else| dc.b 2| endif|)
+  exit 0: 01  [ASL_DIAG=complete] passes: 1pass
+### ifndef on -D name: asl [-D FOO=5] ifndef.asm   ( ifndef FOO| dc.b 1| else| dc.b 2| endif|)
+  exit 0: 02  [ASL_DIAG=complete] passes: 1pass
+### defined() on -D name: asl [-D FOO=0] defd.asm   ( dc.b defined(FOO)|)
+  exit 0: 01  [ASL_DIAG=complete] passes: 1pass
+### defined(), no -D: asl [] defd.asm   ( dc.b defined(FOO)|)
+  exit 0: 00  [ASL_DIAG=complete] passes: 1pass
+### label FOO: after -D: asl [-D FOO=5] label.asm   (FOO:| dc.b 1|)
+  refused: ASL_EXIT=2
+    > > > label.asm(2): error #2035: variables cannot be redefined as constants
+      lines that assembled: an error stops the pass loop, so every forward
+    other: > > > label.asm(2): error #2035: variables cannot be redefined as constants
+    other: > > > FOO
+    other: > > > FOO:
+### FOO := 7 after -D: asl [-D FOO=5] colonset.asm   (FOO := 7| dc.b FOO|)
+  exit 0: 07  [ASL_DIAG=complete] passes: 1pass
+### FOO eval 7 after -D: asl [-D FOO=5] evalset.asm   (FOO eval 7| dc.b FOO|)
+  exit 0: 07  [ASL_DIAG=complete] passes: 1pass
+### use, set, use, two passes: asl [-D FOO=5] mpass.asm   ( dc.b FOO|FOO set 7| dc.b FOO| bra.w fwd|fwd:|)
+  exit 0: 050760000002  [ASL_DIAG=complete] passes: 2passes
+PROBE_END

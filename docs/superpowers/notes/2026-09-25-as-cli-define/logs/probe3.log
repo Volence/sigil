@@ -1,0 +1,36 @@
+pwd=/home/volence/sonic_hacks/.scratch/as-cli-define/probes asl=/home/volence/sonic_hacks/s1disasm/build_tools/Linux-x86_64/asl md5=61e672562465725a8c102288a7da9098
+### empty middle part: asl [-D FOO=1,,BAR=2] u2.asm   ( dc.b FOO,BAR|)
+Invalid option: -D
+  refused: ASL_EXIT=4
+      lines that assembled: an error stops the pass loop, so every forward
+### space before =: asl [-D FOO =5] u1.asm   ( dc.b FOO|)
+Invalid option: -D
+  refused: ASL_EXIT=4
+      lines that assembled: an error stops the pass loop, so every forward
+### trailing space in value: asl [-D FOO=5 ] u1.asm   ( dc.b FOO|)
+  exit 0: 05  [ASL_DIAG=complete] passes: 1pass
+### empty argument: asl [-D ] u1.asm   ( dc.b FOO|)
+Invalid option: -D
+  refused: ASL_EXIT=4
+      lines that assembled: an error stops the pass loop, so every forward
+### value 1+ (incomplete): asl [-D FOO=1+] u1.asm   ( dc.b FOO|)
+Invalid option: -D
+  refused: ASL_EXIT=4
+      lines that assembled: an error stops the pass loop, so every forward
+### value 0FFh: asl [-D FOO=0FFh] u1.asm   ( dc.b FOO|)
+  exit 0: ff  [ASL_DIAG=complete] passes: 1pass
+### value ff (bare hex letters): asl [-D FOO=ff] u1.asm   ( dc.b FOO|)
+Invalid option: -D
+  refused: ASL_EXIT=4
+      lines that assembled: an error stops the pass loop, so every forward
+### value 0b101: asl [-D FOO=0b101] u1.asm   ( dc.b FOO|)
+  exit 0: 05  [ASL_DIAG=complete] passes: 1pass
+### value @17 octal: asl [-D FOO=@17] u1.asm   ( dc.b FOO|)
+  exit 0: 0f  [ASL_DIAG=complete] passes: 1pass
+### value 1=1 comparison: asl [-D FOO=1=1] u1.asm   ( dc.b FOO|)
+  exit 0: 01  [ASL_DIAG=complete] passes: 1pass
+### char value, run 3: asl [-D FOO='A'] u1.asm   ( dc.b FOO|)
+  exit 0: 21  [ASL_DIAG=complete] passes: 1pass
+### char value, run 4: asl [-D FOO='A'] u1.asm   ( dc.b FOO|)
+  exit 0: 82  [ASL_DIAG=complete] passes: 1pass
+PROBE3_END

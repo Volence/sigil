@@ -1,0 +1,54 @@
+pwd=/home/volence/sonic_hacks/sigil/.claude/worktrees/agent-a746dc1af1279ab3d HEAD=329bc9be7ea0c69c106741008e735aacef9d2167 branch=parcel/as-cli-define
+   Compiling sigil-frontend-as v0.1.0 (/home/volence/sonic_hacks/sigil/.claude/worktrees/agent-a746dc1af1279ab3d/crates/sigil-frontend-as)
+warning: sigil-clownlzss-sys@0.1.0: In file included from src/shim.cpp:114:
+warning: sigil-clownlzss-sys@0.1.0: In lambda function,
+warning: sigil-clownlzss-sys@0.1.0:     inlined from 'bool ClownLZSS::Internal::Enigma::Compress(const unsigned char*, std::size_t, ClownLZSS::CompressorOutput<T>&) [with T = std::basic_ostream<char>]' at src/../vendor/compressors/enigma.h:316:37:
+warning: sigil-clownlzss-sys@0.1.0: src/../vendor/compressors/enigma.h:253:110: warning: '*(int*)((char*)&run + offsetof(Run, Run::type))' may be used uninitialized [-Wmaybe-uninitialized]
+warning: sigil-clownlzss-sys@0.1.0:   253 |                                                 return (run.type == Run::Type::Increment || run.length == 1) && ReadWord(input) == special_values->lowest;
+warning: sigil-clownlzss-sys@0.1.0:       |                                                        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+warning: sigil-clownlzss-sys@0.1.0: src/../vendor/compressors/enigma.h: In function 'bool ClownLZSS::Internal::Enigma::Compress(const unsigned char*, std::size_t, ClownLZSS::CompressorOutput<T>&) [with T = std::basic_ostream<char>]':
+warning: sigil-clownlzss-sys@0.1.0: src/../vendor/compressors/enigma.h:263:45: note: '*(int*)((char*)&run + offsetof(Run, Run::type))' was declared here
+warning: sigil-clownlzss-sys@0.1.0:   263 |                                         Run run;
+warning: sigil-clownlzss-sys@0.1.0:       |                                             ^~~
+warning: sigil-clownlzss-sys@0.1.0: In lambda function,
+warning: sigil-clownlzss-sys@0.1.0:     inlined from 'bool ClownLZSS::Internal::Enigma::Compress(const unsigned char*, std::size_t, ClownLZSS::CompressorOutput<T>&) [with T = std::basic_ostream<char>]' at src/../vendor/compressors/enigma.h:316:37:
+warning: sigil-clownlzss-sys@0.1.0: src/../vendor/compressors/enigma.h:253:90: warning: 'run.ClownLZSS::Internal::Enigma::Compress<std::basic_ostream<char> >(const unsigned char*, std::size_t, ClownLZSS::CompressorOutput<std::basic_ostream<char> >&)::Run::length' may be used uninitialized [-Wmaybe-uninitialized]
+warning: sigil-clownlzss-sys@0.1.0:   253 |                                                 return (run.type == Run::Type::Increment || run.length == 1) && ReadWord(input) == special_values->lowest;
+warning: sigil-clownlzss-sys@0.1.0:       |                                                        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~~~~~~~~
+warning: sigil-clownlzss-sys@0.1.0: src/../vendor/compressors/enigma.h: In function 'bool ClownLZSS::Internal::Enigma::Compress(const unsigned char*, std::size_t, ClownLZSS::CompressorOutput<T>&) [with T = std::basic_ostream<char>]':
+warning: sigil-clownlzss-sys@0.1.0: src/../vendor/compressors/enigma.h:263:45: note: 'run.ClownLZSS::Internal::Enigma::Compress<std::basic_ostream<char> >(const unsigned char*, std::size_t, ClownLZSS::CompressorOutput<std::basic_ostream<char> >&)::Run::length' was declared here
+warning: sigil-clownlzss-sys@0.1.0:   263 |                                         Run run;
+warning: sigil-clownlzss-sys@0.1.0:       |                                             ^~~
+   Compiling sigil-harness v0.1.0 (/home/volence/sonic_hacks/sigil/.claude/worktrees/agent-a746dc1af1279ab3d/crates/sigil-harness)
+    Finished `release` profile [optimized] target(s) in 7.89s
+     Running `/home/volence/sonic_hacks/.scratch/as-cli-define/target-prov/release/repin --check`
+repin: built from and operating on the same tree: /home/volence/sonic_hacks/sigil/.claude/worktrees/agent-a746dc1af1279ab3d/crates/sigil-harness
+reference-tree: /home/volence/sonic_hacks/.aeon-cli-define (SUITE_PATHS step 1, named by AEON_DIR)
+repin: warning: region `player_climb` (plain): declared allotment, end `CharDef_Sonic` is the next placement, 0x2 byte(s) past section `player_instashield`'s last byte (0x11F54 vs 0x11F52). The pin's WIDTH IS NOT A SIZE and moves when the neighbour moves.
+repin: warning: region `player_climb` (debug): declared allotment, end `CharDef_Sonic` is the next placement, 0x4 byte(s) past section `player_instashield`'s last byte (0x12060 vs 0x1205C). The pin's WIDTH IS NOT A SIZE and moves when the neighbour moves.
+zero-consumer pins (reported, gated by nothing)
+  predicate: no `.rs` file outside `src/pins.rs` contains the constant's name as a whole identifier token
+  DUST_DATA
+  TAILS_ANIMS
+  KNUCKLES_ANIMS
+  TAILS_DATA
+  KNUCKLES_DATA
+  DUST_ANIMS
+  OBJECT_TEST_STATE
+  REPLAY_FIXTURE
+  EPILOGUE
+  OBJCODEBASE
+  KNUCKLES
+  DUST_PUFF
+  PLAYER_FLY
+  TEST_ENEMY_INIT
+  SEC_LEN
+  PARALLAX_STATE
+  PAGE_IN_FLUSH
+  PAGE_CACHE_ALLOC_FRAME
+  PAGE_CACHE_PUBLISH
+  ABILITY_NONE
+  PAL_SONIC_TAILS
+  A pin here still earns its place: `pins_rs_is_current` compares the whole generated text, so an unconsumed pin whose engine symbol moves turns that gate red. Deleting one removes drift coverage of that symbol.
+pins.rs unchanged
+REPIN_END rc=0

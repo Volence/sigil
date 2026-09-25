@@ -1,0 +1,22 @@
+use sigil_frontend_as::{assemble, Options};
+use sigil_ir::{Cpu, SectionPlacement, SymbolTable};
+
+#[test]
+fn tmp_defines_defined() {
+    for (label, opts) in [
+        ("defines", Options { initial_cpu: Some(Cpu::M68000), defines: vec![("X".into(), 0)], ..Default::default() }),
+        ("cli_defines", Options { initial_cpu: Some(Cpu::M68000), cli_defines: vec![("X".into(), 0)], ..Default::default() }),
+    ] {
+        let m = assemble("\tcpu 68000\n\tdc.b defined(X)\n\tifdef X\n\tdc.b 1\n\telse\n\tdc.b 2\n\tendif\n", &opts).expect("assemble");
+        let mut sections = m.sections;
+        for sec in &mut sections {
+            sec.lma = 0x0010_0000;
+            sec.placement = SectionPlacement::Pinned;
+            sec.group = None;
+        }
+        let resolved = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true).expect("layout");
+        let linked = sigil_link::link(&resolved, &SymbolTable::new()).expect("link");
+        let bytes: Vec<u8> = linked.sections.iter().flat_map(|s| s.bytes.clone()).collect();
+        eprintln!("TMP {label}: {bytes:02x?}");
+    }
+}

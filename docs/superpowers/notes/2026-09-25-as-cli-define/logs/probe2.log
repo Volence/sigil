@@ -1,0 +1,70 @@
+pwd=/home/volence/sonic_hacks/.scratch/as-cli-define/probes asl=/home/volence/sonic_hacks/s1disasm/build_tools/Linux-x86_64/asl md5=61e672562465725a8c102288a7da9098
+### name with a dot, used: asl [-D FOO.BAR=1] udot.asm   ( dc.b FOO.BAR|)
+  exit 0: 01  [ASL_DIAG=complete] passes: 1pass
+### name starting with dot, used: asl [-D .FOO=1] uldot.asm   ( dc.b .FOO|)
+  refused: ASL_EXIT=2
+    > > > uldot.asm(2):7: error #1010: symbol undefined
+      lines that assembled: an error stops the pass loop, so every forward
+    other: > > > uldot.asm(2):7: error #1010: symbol undefined
+    other: > > > .FOO
+    other: > > >  dc.b .FOO
+    other: > > >       ~~~~
+### underscore name, used: asl [-D _FOO=1] uus.asm   ( dc.b _FOO|)
+  exit 0: 01  [ASL_DIAG=complete] passes: 1pass
+### name FOO?, used: asl [-D FOO?=1] uq.asm   ( dc.b FOO?|)
+Invalid option: -D
+  refused: ASL_EXIT=4
+      lines that assembled: an error stops the pass loop, so every forward
+### name @FOO, used: asl [-D @FOO=1] uat.asm   ( dc.b @FOO|)
+Invalid option: -D
+  refused: ASL_EXIT=4
+      lines that assembled: an error stops the pass loop, so every forward
+### string value, run 1: asl [-D FOO="A"] strA.asm   ( dc.b "A"| dc.b FOO|)
+  exit 0: 4125  [ASL_DIAG=complete] passes: 1pass
+### string value, run 2: asl [-D FOO="A"] strA.asm   ( dc.b "A"| dc.b FOO|)
+  exit 0: 4164  [ASL_DIAG=complete] passes: 1pass
+### char value, run 2: asl [-D FOO='A'] u1.asm   ( dc.b FOO|)
+  exit 0: 41  [ASL_DIAG=complete] passes: 1pass
+### trailing comma: asl [-D FOO=5,] u1.asm   ( dc.b FOO|)
+  exit 0: 05  [ASL_DIAG=complete] passes: 1pass
+### leading comma: asl [-D ,FOO=5] u1.asm   ( dc.b FOO|)
+Invalid option: -D
+  refused: ASL_EXIT=4
+      lines that assembled: an error stops the pass loop, so every forward
+### double equals: asl [-D FOO==5] u1.asm   ( dc.b FOO|)
+Invalid option: -D
+  refused: ASL_EXIT=4
+      lines that assembled: an error stops the pass loop, so every forward
+### bare dollar: asl [-D FOO=$] u1.asm   ( dc.b FOO|)
+Invalid option: -D
+  refused: ASL_EXIT=4
+      lines that assembled: an error stops the pass loop, so every forward
+### value ~1: asl [-D FOO=~1] u1.asm   ( dc.b FOO|)
+  exit 0: fe  [ASL_DIAG=complete] passes: 1pass
+### value 1<<4: asl [-D FOO=1<<4] u1.asm   ( dc.b FOO|)
+  exit 0: 10  [ASL_DIAG=complete] passes: 1pass
+### value 64-bit, high half: asl [-D FOO=$123456789] uhi.asm   ( dc.l FOO>>32|)
+  exit 0: 00000001  [ASL_DIAG=complete] passes: 1pass
+### value > 64 bits: asl [-D FOO=$10000000000000000] uhi.asm   ( dc.l FOO>>32|)
+  exit 0: 00000000  [ASL_DIAG=complete] passes: 1pass
+### value $FFFFFFFFFFFFFFFF: asl [-D FOO=$FFFFFFFFFFFFFFFF] uhi.asm   ( dc.l FOO>>32|)
+  exit 0: ffffffff  [ASL_DIAG=complete] passes: 1pass
+### bare then valued, same name: asl [-D FOO -D FOO=2] u1.asm   ( dc.b FOO|)
+  exit 0: 01  [ASL_DIAG=complete] passes: 1pass
+### valued then bare, same name: asl [-D FOO=5 -D FOO] u1.asm   ( dc.b FOO|)
+  exit 0: 05  [ASL_DIAG=complete] passes: 1pass
+### -D MOMCPU (a builtin): asl [-D MOMCPU=5] umom.asm   ( dc.b MOMCPU>>16|)
+  exit 0: 06  [ASL_DIAG=complete] passes: 1pass
+### comma list three: asl [-D FOO=1,BAR=2,BAZ=3] u2.asm   ( dc.b FOO,BAR|)
+  exit 0: 0102  [ASL_DIAG=complete] passes: 1pass
+### value with a space inside: asl [-D FOO=1 + 2] u1.asm   ( dc.b FOO|)
+  exit 0: 03  [ASL_DIAG=complete] passes: 1pass
+### lowercase name via -D, upper in source: asl [-D foo=5] u1.asm   ( dc.b FOO|)
+  refused: ASL_EXIT=2
+    > > > u1.asm(2):7: error #1010: symbol undefined
+      lines that assembled: an error stops the pass loop, so every forward
+    other: > > > u1.asm(2):7: error #1010: symbol undefined
+    other: > > > FOO
+    other: > > >  dc.b FOO
+    other: > > >       ~~~
+PROBE2_END
