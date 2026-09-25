@@ -4238,6 +4238,17 @@ pub fn build_rom_chained_with_listing(
 
     let linked = sigil_link::link(&resolved, &stubs)
         .map_err(|d| render_declared_chain("link", &d, &sources))?;
+    // The sound bank ids the emit baked before placement, read out of the linked image,
+    // against the banks as placed. First among the post-link checks: a moved bank also
+    // trips the island checks below, and this names the bytes that would select the
+    // wrong window.
+    crate::sound_bank_ids::validate_sound_bank_ids(
+        aeon,
+        &resolved,
+        &linked,
+        profile.sound_on,
+        profile.debug,
+    )?;
     // Parcel K5: the map DROVE the order above; this post-resolve pass CONFIRMS the drive —
     // every byte-emitting section is declared (completeness) and the resolved layout honours
     // the declared sequence + island anchors + hole (a bug in the drive, or a section the map

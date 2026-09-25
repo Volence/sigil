@@ -917,6 +917,45 @@ pub fn emit_sound_blob(aeon: &Path, out_dir: &Path) -> Result<(), String> {
     Ok(())
 }
 
+/// The resident blob's bank-id operands, as [`blob_bank_id_sites`] finds them.
+pub struct BlobBankIdSites {
+    /// For each const in [`crate::sound_bank_ids::BLOB_BANK_ID_CONSTS`], the blob
+    /// offsets whose byte is that const's value.
+    pub by_const: Vec<(&'static str, Vec<u32>)>,
+    /// The emitted blob's byte length.
+    pub blob_len: usize,
+}
+
+/// The resident blob's bank-id operands for `debug`.
+///
+/// The offsets are found, not listed. The blob is re-linked with that one const
+/// doctored to a different legal 8-bit id, and every offset whose byte changed is a
+/// site, provided the real byte equals the emitted id and the doctored byte equals
+/// the probe (a changed byte that is not the id itself is refused, since the check
+/// could not say what it holds). A bank id reaches the Z80 only as an 8-bit
+/// immediate, so the doctored blob has the same length and every other byte stays.
+pub fn blob_bank_id_sites(
+    aeon: &Path,
+    debug: bool,
+) -> Result<BlobBankIdSites, String> {
+    let emitted = crate::seam2::sound_bank_id(aeon)?;
+    let emitted = u8::try_from(emitted)
+        .map_err(|_| format!("sound bank id {emitted:#x} does not fit the Z80's 8-bit bank operand"))?;
+    let probe = emitted ^ 0xFF;
+    let real = native_blob_checked(aeon, debug, None)?;
+    let mut out = Vec::new();
+    for &name in crate::sound_bank_ids::BLOB_BANK_ID_CONSTS {
+        let doc = native_blob_checked(aeon, debug, Some((name, i64::from(probe))))?;
+        let what = format!(
+            "resident Z80 blob ({} shape), const {name}",
+            if debug { "debug" } else { "plain" }
+        );
+        let sites = crate::sound_bank_ids::diff_id_sites(&real, &doc, emitted, probe, &what)?;
+        out.push((name, sites));
+    }
+    Ok(BlobBankIdSites { by_const: out, blob_len: real.len() })
+}
+
 // ===========================================================================
 // [call.clobbers-incomplete] — the transitive-clobbers-completeness diagnostic
 // over the linked resident blob (seam-1 design §4 · the t37 demand).
