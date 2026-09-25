@@ -9549,11 +9549,9 @@ impl Asm {
                         }
                     }
                     // A string-typed target asl has no dependable answer for (a
-                    // `+` under a non-identity page) is refused here: read as
+                    // `+` over a 5-character string) is refused here: read as
                     // not-a-string it would fall to the integer target below and
-                    // map the character through the page, which is `$77` where
-                    // asl writes `$42` for `charset 'A','B'+0` under
-                    // `charset 'B',$77`.
+                    // be packed into an entry asl never writes.
                     g => match self.eval_str_typed(g) {
                         StrTyped::Str(s) => Some(s),
                         StrTyped::Refuse(msg) => {
