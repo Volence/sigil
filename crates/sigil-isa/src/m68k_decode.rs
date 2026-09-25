@@ -419,15 +419,20 @@ fn decode_line4(w: u16, rd: &mut Rd, mode: u16, reg9: u16, r0: u16) -> Result<In
             return Ok(inst(Mnemonic::Pea, Size::L, vec![addr]));
         }
         0x4880 | 0x48C0 | 0x4C80 | 0x4CC0 => return decode_ext_movem(w, rd, mode, r0),
+        0x4800 => {
+            let dst = ea(rd, mode, r0, Size::B, EaSet::DATA_ALTERABLE)?;
+            return Ok(inst(Mnemonic::Nbcd, Size::B, vec![dst]));
+        }
         _ => {}
     }
     if w & 0xF1C0 == 0x41C0 {
         let src = ea(rd, mode, r0, Size::L, EaSet::CONTROL)?;
         return Ok(inst(Mnemonic::Lea, Size::L, vec![src, Operand::An(reg9 as u8)]));
     }
-    if let base @ (0x4200 | 0x4400 | 0x4600 | 0x4A00) = w & 0xFF00 {
+    if let base @ (0x4000 | 0x4200 | 0x4400 | 0x4600 | 0x4A00) = w & 0xFF00 {
         let size = data_size((w >> 6) & 0b11, w)?;
         let (mn, allowed) = match base {
+            0x4000 => (Mnemonic::Negx, EaSet::DATA_ALTERABLE),
             0x4200 => (Mnemonic::Clr, EaSet::DATA_ALTERABLE),
             0x4400 => (Mnemonic::Neg, EaSet::DATA_ALTERABLE),
             0x4600 => (Mnemonic::Not, EaSet::DATA_ALTERABLE),
@@ -564,27 +569,25 @@ fn decode_alu_ea(w: u16, rd: &mut Rd, fam: AluFamily) -> Result<Instruction, Dec
             Ok(inst(Mnemonic::Eor, size, vec![Operand::Dn(reg9 as u8), dst]))
         }
         AluFamily::Add => match mode {
-            // addx Dy,Dx — reg9 is Dx (dest), r0 is Dy (source).
-            0b000 => Ok(inst(
-                Mnemonic::Addx,
-                size,
-                vec![Operand::Dn(r0 as u8), Operand::Dn(reg9 as u8)],
-            )),
-            0b001 => Err(unknown(w, "addx -(Ay),-(Ax) is not in sigil's emitted set")),
+            // addx Dy,Dx / -(Ay),-(Ax): reg9 is x (dest), r0 is y (source).
+            0b000 | 0b001 => Ok(x_pair(Mnemonic::Addx, size, mode, reg9, r0)),
             _ => {
                 let dst = ea(rd, mode, r0, size, EaSet::MEMORY_ALTERABLE)?;
                 Ok(inst(Mnemonic::Add, size, vec![Operand::Dn(reg9 as u8), dst]))
             }
         },
         AluFamily::Sub => match mode {
-            0b000 | 0b001 => Err(unknown(w, "subx is not in sigil's emitted set")),
+            0b000 | 0b001 => Ok(x_pair(Mnemonic::Subx, size, mode, reg9, r0)),
             _ => {
                 let dst = ea(rd, mode, r0, size, EaSet::MEMORY_ALTERABLE)?;
                 Ok(inst(Mnemonic::Sub, size, vec![Operand::Dn(reg9 as u8), dst]))
             }
         },
         AluFamily::OrDiv => match mode {
-            0b000 | 0b001 => Err(unknown(w, "sbcd is not in sigil's emitted set")),
+            // opmode 100 is `sbcd`; 101/110 with a register-direct field are
+            // the 68020's `pack`/`unpk`.
+            0b000 | 0b001 if opmode == 0b100 => Ok(x_pair(Mnemonic::Sbcd, Size::B, mode, reg9, r0)),
+            0b000 | 0b001 => Err(unknown(w, "pack/unpk is not a 68000 instruction")),
             _ => {
                 let dst = ea(rd, mode, r0, size, EaSet::MEMORY_ALTERABLE)?;
                 Ok(inst(Mnemonic::Or, size, vec![Operand::Dn(reg9 as u8), dst]))
@@ -610,13 +613,25 @@ fn decode_alu_ea(w: u16, rd: &mut Rd, fam: AluFamily) -> Result<Instruction, Dec
                 Size::L,
                 vec![Operand::Dn(reg9 as u8), Operand::An(r0 as u8)],
             )),
-            0b000 | 0b001 => Err(unknown(w, "abcd is not in sigil's emitted set")),
+            0b000 | 0b001 if opmode == 0b100 => Ok(x_pair(Mnemonic::Abcd, Size::B, mode, reg9, r0)),
+            0b000 | 0b001 => Err(unknown(w, "line C register-direct word outside the 68000 set")),
             _ => {
                 let dst = ea(rd, mode, r0, size, EaSet::MEMORY_ALTERABLE)?;
                 Ok(inst(Mnemonic::And, size, vec![Operand::Dn(reg9 as u8), dst]))
             }
         },
     }
+}
+
+/// The register-pair extended forms: `mode` 000 is `Dy,Dx`, 001 is `-(Ay),-(Ax)`;
+/// `reg9` is the destination `x`, `r0` the source `y`.
+fn x_pair(mn: Mnemonic, size: Size, mode: u16, reg9: u16, r0: u16) -> Instruction {
+    let ops = if mode == 0b000 {
+        vec![Operand::Dn(r0 as u8), Operand::Dn(reg9 as u8)]
+    } else {
+        vec![Operand::PreDec(r0 as u8), Operand::PreDec(reg9 as u8)]
+    };
+    inst(mn, size, ops)
 }
 
 /// Line 1110: shifts/rotates — the word memory-shift form (bits 7–6 = 11) and
@@ -907,11 +922,12 @@ mod tests {
     /// `Unknown` or a DIFFERENT family the equality then rejects.
     #[test]
     fn alias_words_do_not_decode_as_their_misspelling() {
-        // `add.w d2,a1` once emitted D549 = addx.w -(a1),-(a2): outside the set.
-        assert!(matches!(
-            decode_exact(&[0xD5, 0x49]),
-            Err(DecodeError::Unknown { word: 0xD549, .. })
-        ));
+        // `add.w d2,a1` once emitted D549 = addx.w -(a1),-(a2), which decodes as ADDX,
+        // a different family, which the round-trip equality rejects.
+        assert_eq!(
+            dec(&[0xD5, 0x49]),
+            inst(Mnemonic::Addx, Size::W, vec![PreDec(1), PreDec(2)])
+        );
         // `eor.w d0,a1` once emitted B149 = cmpm.w (a1)+,(a0)+ — decodes as CMPM.
         let cmpm = dec(&[0xB1, 0x49]);
         assert_eq!(cmpm.mnemonic, Mnemonic::Cmpm);
@@ -939,17 +955,15 @@ mod tests {
         // two unassigned lines. Each must be a NAMED `Unknown`, never guessed
         // into a neighbouring family.
         //
-        //   subx.w d1,d0 (9141), abcd d1,d0 (C101), sbcd d1,d0 (8101),
-        //   nbcd d0 (4800), negx.w d0 (4040), chk.w d0,d1 (4380),
+        //   chk.w d0,d1 (4380),
         //   link a0,#0 (4E50 0000), unlk a0 (4E58), stop #0 (4E72 0000),
-        //   reset (4E70), trapv (4E76), rtr (4E77), line-A (A000), line-F (F000).
+        //   reset (4E70), trapv (4E76), rtr (4E77), line-A (A000), line-F (F000),
+        //   and the 68020's pack/unpk on the sbcd/abcd rows (8141, 8181, C181).
         for bytes in [
-            &[0x91, 0x41][..],
-            &[0xC1, 0x01],
-            &[0x81, 0x01],
-            &[0x48, 0x00],
-            &[0x40, 0x40],
-            &[0x43, 0x80],
+            &[0x43, 0x80][..],
+            &[0x81, 0x41, 0x00, 0x00],
+            &[0x81, 0x81, 0x00, 0x00],
+            &[0xC1, 0x81],
             &[0x4E, 0x50, 0x00, 0x00],
             &[0x4E, 0x58],
             &[0x4E, 0x72, 0x00, 0x00],
@@ -963,6 +977,34 @@ mod tests {
                 matches!(decode_exact(bytes), Err(DecodeError::Unknown { .. })),
                 "{bytes:02X?} must be Unknown"
             );
+        }
+    }
+
+    /// The extended/decimal family. Each word is the pinned asl's own output for
+    /// the source line beside it (`s1disasm/build_tools/Linux-x86_64/asl`, md5
+    /// `61e672562465725a8c102288a7da9098`, probes `x01`..`x03` of the
+    /// 2026-09-25 s3k-bcd-pcindex note), never the encoder's.
+    #[test]
+    fn extended_and_decimal_family_decodes_to_its_instruction() {
+        use Operand::*;
+        let cases: &[(&[u8], Instruction)] = &[
+            (&[0xDB, 0x03], inst(Mnemonic::Addx, Size::B, vec![Dn(3), Dn(5)])),
+            (&[0xDB, 0x8B], inst(Mnemonic::Addx, Size::L, vec![PreDec(3), PreDec(5)])),
+            (&[0xDF, 0x49], inst(Mnemonic::Addx, Size::W, vec![PreDec(1), PreDec(7)])),
+            (&[0x9B, 0x43], inst(Mnemonic::Subx, Size::W, vec![Dn(3), Dn(5)])),
+            (&[0x9B, 0x0B], inst(Mnemonic::Subx, Size::B, vec![PreDec(3), PreDec(5)])),
+            (&[0x9D, 0x8F], inst(Mnemonic::Subx, Size::L, vec![PreDec(7), PreDec(6)])),
+            (&[0xCB, 0x03], inst(Mnemonic::Abcd, Size::B, vec![Dn(3), Dn(5)])),
+            (&[0xC5, 0x09], inst(Mnemonic::Abcd, Size::B, vec![PreDec(1), PreDec(2)])),
+            (&[0x83, 0x06], inst(Mnemonic::Sbcd, Size::B, vec![Dn(6), Dn(1)])),
+            (&[0x8F, 0x09], inst(Mnemonic::Sbcd, Size::B, vec![PreDec(1), PreDec(7)])),
+            (&[0x40, 0x83], inst(Mnemonic::Negx, Size::L, vec![Dn(3)])),
+            (&[0x40, 0x35, 0x60, 0xEE], inst(Mnemonic::Negx, Size::B, vec![Disp8AnXn { d: -0x12, an: 5, xn: Xn::D(6), long: false }])),
+            (&[0x48, 0x03], inst(Mnemonic::Nbcd, Size::B, vec![Dn(3)])),
+            (&[0x48, 0x39, 0x00, 0x12, 0x34, 0x56], inst(Mnemonic::Nbcd, Size::B, vec![AbsL(0x0012_3456)])),
+        ];
+        for (bytes, want) in cases {
+            assert_eq!(&dec(bytes), want, "{bytes:02X?}");
         }
     }
 

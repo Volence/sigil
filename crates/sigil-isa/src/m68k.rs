@@ -40,6 +40,8 @@ pub enum Mnemonic {
     Jmp, Jsr, Lea, Pea, Nop, Rts, Rte, Trap, Swap, Ext, Illegal,
     Bra, Bsr, Bcc(Cond), Dbcc(Cond),
     Movem, Movep, Addx, Cmpm,
+    Subx, Abcd, Sbcd,     // the register-pair / predecrement-pair extended family
+    Negx, Nbcd,           // single data-alterable EA, extend-bit readers
     MoveToSr, MoveFromSr, // move.w <ea>,sr / move.w sr,<ea>
     MoveToCcr,            // move.w <ea>,ccr (there is no move-FROM-ccr on the 68000)
     AndiCcr, OriCcr,      // andi.b #imm,ccr / ori.b #imm,ccr
@@ -76,13 +78,15 @@ pub enum Mnemonic {
 ///   are the auto-dec bases, caught by the operand-shape effect.
 /// - `Movem` → `false`: reglist-destination effect (see scope above).
 ///
+/// - `Subx`/`Abcd`/`Sbcd` → `true`, the same shape as `Addx`; `Negx`/`Nbcd` →
+///   `true`: their single operand is the destination.
+///
 /// Mnemonics NOT YET in this enum but named by the spec — `link`/`unlk` (write
-/// `An` + `sp`), `negx`, `abcd`/`sbcd`/`nbcd` — are "covered by construction":
-/// when one is added to `Mnemonic`, this match stops compiling and forces its
-/// classification HERE. The bit/rotate/decimal forms (`negx`/`abcd`/…) are
-/// last-operand-register writes (`true`); `link`/`unlk` write registers NOT
-/// expressible as "the last operand" and additionally need an operand-shape arm
-/// in the front-end's `instr_written_regs` (the doc there records this).
+/// `An` + `sp`) are "covered by construction": when one is added to
+/// `Mnemonic`, this match stops compiling and forces its classification HERE.
+/// `link`/`unlk` write registers NOT expressible as "the last operand" and
+/// additionally need an operand-shape arm in the front-end's
+/// `instr_written_regs` (the doc there records this).
 ///
 /// `Exg` is the one variant here whose `true` is INCOMPLETE by construction:
 /// `exg Rx,Ry` writes BOTH registers, and the last-operand rule sees only `Ry`.
@@ -106,6 +110,9 @@ pub fn writes_last_operand(m: Mnemonic) -> bool {
         | Asl | Asr | Lsl | Lsr | Rol | Ror | Roxl | Roxr | Bset | Bclr | Bchg
         | Clr | Neg | Not
         | Tas | Scc(_) | Lea | Swap | Ext | Movep | Addx | MoveFromSr
+        // The extended/decimal family writes its `Dx` (or single `Dn`); the
+        // `-(Ay),-(Ax)` forms write memory and the auto-decremented bases.
+        | Subx | Abcd | Sbcd | Negx | Nbcd
         // `move.l usp,An` writes the An; `exg` writes its last operand too
         // (and its FIRST — see the doc above).
         | MoveFromUsp | Exg => true,
@@ -267,7 +274,8 @@ fn encode_dispatch(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
         Mnemonic::Dbcc(_) => encode_dbcc(inst),
         Mnemonic::Movem => encode_movem(inst),
         Mnemonic::Movep => encode_movep(inst),
-        Mnemonic::Addx => encode_addx(inst),
+        Mnemonic::Addx | Mnemonic::Subx | Mnemonic::Abcd | Mnemonic::Sbcd => encode_x_pair(inst),
+        Mnemonic::Negx | Mnemonic::Nbcd => encode_single_ea(inst),
         Mnemonic::Cmpm => encode_cmpm(inst),
     }
 }
@@ -1010,7 +1018,8 @@ fn encode_single_ea(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
             )))
         }
     };
-    // All of `tst`/`clr`/`neg`/`not`/`tas`/`Scc` take DATA ALTERABLE on the 68000.
+    // All of `tst`/`clr`/`neg`/`negx`/`nbcd`/`not`/`tas`/`Scc` take DATA ALTERABLE
+    // on the 68000.
     // `tst` reads rather than writes, but the 68000 still encodes only the alterable
     // subset for it — PC-relative and immediate operands arrived with the 68020, and
     // An with them (`sne a3` otherwise encodes 56CB = `dbne d3,…`, a backward branch
@@ -1019,8 +1028,9 @@ fn encode_single_ea(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
     let (ea_mode, ea_reg, ea_ext) = encode_ea(ea, allowed, inst.size)?;
     let ea_bits: u16 = ((ea_mode as u16) << 3) | (ea_reg as u16);
     let word: u16 = match inst.mnemonic {
-        Mnemonic::Clr | Mnemonic::Neg | Mnemonic::Not | Mnemonic::Tst => {
+        Mnemonic::Clr | Mnemonic::Neg | Mnemonic::Not | Mnemonic::Tst | Mnemonic::Negx => {
             let base: u16 = match inst.mnemonic {
+                Mnemonic::Negx => 0x4000,
                 Mnemonic::Clr => 0x4200,
                 Mnemonic::Neg => 0x4400,
                 Mnemonic::Not => 0x4600,
@@ -1030,6 +1040,11 @@ fn encode_single_ea(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
             base | (size_code(inst.size)? << 6) | ea_bits
         }
         Mnemonic::Tas => 0x4AC0 | ea_bits,
+        // `nbcd <ea>` = `0x4800 | ea`: byte only, no size field.
+        Mnemonic::Nbcd => {
+            byte_only(inst)?;
+            0x4800 | ea_bits
+        }
         Mnemonic::Scc(cond) => 0x50C0 | (cond.cc() << 8) | ea_bits,
         _ => unreachable!(),
     };
@@ -1381,24 +1396,55 @@ fn encode_movep(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
     Ok(out)
 }
 
-/// Encode `ADDX Dn,Dn` — extended add (register form only; the Aeon corpus uses no other).
+/// Encode the register-pair extended family: `addx`, `subx`, `abcd`, `sbcd`, each
+/// in its two 68000 forms, `Dy,Dx` and `-(Ay),-(Ax)`.
 ///
-/// Word: `1101 xxx 1 ss 00 0 yyy` = `0xD100 | (Rx<<9) | (ss<<6) | Ry`, where `Rx` is the
-/// destination Dn (second operand), `Ry` the source Dn (first operand), `ss` = `size_code`.
-/// The `-(An),-(An)` memory form is rejected with `UnsupportedForm`.
-fn encode_addx(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
-    let (ry, rx) = match inst.ops.as_slice() {
-        [Operand::Dn(s), Operand::Dn(d)] => (s & 0b111, d & 0b111),
+/// Word: `base | (Rx<<9) | (ss<<6) | (rm<<3) | Ry`, where `Rx` is the destination
+/// (second operand), `Ry` the source (first operand), `rm` is 0 for the data
+/// register pair and 1 for the predecrement pair, and `base` is `0xD100` (`addx`),
+/// `0x9100` (`subx`), `0xC100` (`abcd`) or `0x8100` (`sbcd`). `abcd`/`sbcd` are
+/// byte only and carry no size field (`ss` = 0). Mixed pairs (`Dy,-(Ax)`) and
+/// every other operand shape have no encoding and are refused.
+fn encode_x_pair(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
+    let (ry, rx, rm) = match inst.ops.as_slice() {
+        [Operand::Dn(s), Operand::Dn(d)] => (s & 0b111, d & 0b111, 0u16),
+        [Operand::PreDec(s), Operand::PreDec(d)] => (s & 0b111, d & 0b111, 1u16),
         _ => {
             return Err(IsaError::UnsupportedForm(format!(
-                "addx supports only the Dn,Dn form, got {:?}",
+                "{} takes Dy,Dx or -(Ay),-(Ax), got {:?}",
+                family_name(inst.mnemonic),
                 inst.ops
             )))
         }
     };
-    let ss = size_code(inst.size)?;
-    let word: u16 = 0xD100 | ((rx as u16) << 9) | (ss << 6) | (ry as u16);
+    let (base, ss): (u16, u16) = match inst.mnemonic {
+        Mnemonic::Addx => (0xD100, size_code(inst.size)?),
+        Mnemonic::Subx => (0x9100, size_code(inst.size)?),
+        Mnemonic::Abcd => {
+            byte_only(inst)?;
+            (0xC100, 0)
+        }
+        Mnemonic::Sbcd => {
+            byte_only(inst)?;
+            (0x8100, 0)
+        }
+        other => unreachable!("encode_x_pair dispatched for {other:?}"),
+    };
+    let word: u16 = base | ((rx as u16) << 9) | (ss << 6) | (rm << 3) | (ry as u16);
     Ok(word.to_be_bytes().to_vec())
+}
+
+/// The decimal forms (`abcd`/`sbcd`/`nbcd`) operate on bytes only.
+fn byte_only(inst: &Instruction) -> Result<(), IsaError> {
+    if inst.size == Size::B {
+        Ok(())
+    } else {
+        Err(IsaError::UnsupportedForm(format!(
+            "{} is byte-only on the 68000, got size {:?}",
+            family_name(inst.mnemonic),
+            inst.size
+        )))
+    }
 }
 
 /// Encode `CMPM (Ay)+,(Ax)+` — compare memory (postincrement form only).
@@ -1751,6 +1797,7 @@ pub fn family_name(m: Mnemonic) -> &'static str {
         Swap => "swap", Ext => "ext", Illegal => "illegal",
         Bra => "bra", Bsr => "bsr", Bcc(_) => "bcc", Dbcc(_) => "dbcc",
         Movem => "movem", Movep => "movep", Addx => "addx", Cmpm => "cmpm",
+        Subx => "subx", Abcd => "abcd", Sbcd => "sbcd", Negx => "negx", Nbcd => "nbcd",
         MoveToSr => "move-to-sr", MoveFromSr => "move-from-sr",
         MoveToCcr => "move-to-ccr",
         MoveToUsp => "move-to-usp", MoveFromUsp => "move-from-usp",
@@ -1776,6 +1823,7 @@ pub const ALL_FAMILY_NAMES: &[&str] = &[
     "illegal",
     "bra", "bsr", "bcc", "dbcc",
     "movem", "movep", "addx", "cmpm",
+    "subx", "abcd", "sbcd", "negx", "nbcd",
     "move-to-sr", "move-from-sr", "move-to-ccr",
     "move-to-usp", "move-from-usp",
     "andi-ccr", "ori-ccr", "exg",
@@ -1948,6 +1996,7 @@ mod vocab_tests {
             Trap, Swap, Ext, Illegal, Bra, Bsr, Bcc(Cond::Eq), Dbcc(Cond::Eq),
             Movem, Movep, Addx, Cmpm, MoveToSr, MoveFromSr, AndiCcr, OriCcr,
             Roxl, Roxr, Bchg, MoveToCcr, MoveToUsp, MoveFromUsp, Exg,
+            Subx, Abcd, Sbcd, Negx, Nbcd,
         ];
         let reached: std::collections::BTreeSet<&str> =
             every.iter().map(|m| family_name(*m)).collect();

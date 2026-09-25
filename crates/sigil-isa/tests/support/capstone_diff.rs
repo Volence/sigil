@@ -851,6 +851,27 @@ fn excl_roxr_byte_register_count(c: &Ctx) -> bool {
     other.ops[0] == format!("#{as_immediate:08X}")
 }
 
+/// `sbcd -(Ay),-(Ax)`: `1000 xxx 1 00 00 1 yyy`.
+///
+/// MC68000 PRM, SBCD: one word in both forms, no extension word. asl agrees:
+/// `sbcd -(a3),-(a5)` then `sbcd.b -(a3),-(a5)` assemble to `8B0B 8B0B`, two
+/// consecutive one-word instructions (probe `x02` of the 2026-09-25
+/// s3k-bcd-pcindex note), and the `abcd` twin on line C one-word in capstone
+/// too. Capstone names the instruction and its operands correctly but consumes
+/// a second word, so its length is sigil's plus exactly 2.
+///
+/// The predicate demands that exact over-read AND capstone's own `sbcd`
+/// mnemonic, so any other disagreement on these words still fails.
+///
+/// Class size: bits 11-9 (`x`) and 2-0 (`y`) free, every other bit fixed:
+/// 8 x 8 = **64 words**.
+fn excl_sbcd_predec_length(c: &Ctx) -> bool {
+    if c.kind != "length" || (c.word & 0xF1F8) != 0x8108 {
+        return false;
+    }
+    matches!(c.cap, Some(Cap::Ok { len, mnem, .. }) if *len == c.used + 2 && mnem == "sbcd")
+}
+
 pub fn exclusions() -> Vec<Exclusion> {
     vec![
         Exclusion {
@@ -888,6 +909,12 @@ pub fn exclusions() -> Vec<Exclusion> {
             derivation: "the PC base is the displacement's OWN extension word (asl-confirmed); capstone uses the first one",
             matches: excl_pc_base_after_extension,
             sweep_words: 6,
+        },
+        Exclusion {
+            name: "sbcd-predec-length",
+            derivation: "SBCD -(Ay),-(Ax) is one word (PRM; asl emits 8B0B 8B0B back to back); capstone consumes a second word",
+            matches: excl_sbcd_predec_length,
+            sweep_words: 64,
         },
     ]
 }

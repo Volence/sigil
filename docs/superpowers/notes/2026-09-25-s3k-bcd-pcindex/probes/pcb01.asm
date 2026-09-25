@@ -1,0 +1,11 @@
+	cpu 68000
+	move.w *+2+127(pc,d3.w),d5
+	move.w *+2-128(pc,d3.w),d5
+	movem.w *+4+127(pc,d3.w),d2-d3
+	movem.w *+4-128(pc,d3.w),d2-d3
+	lea *+2+127(pc,a3.l),a5
+	lea *+2-128(pc,a3.l),a5
+	btst #3,*+4+127(pc,d3.w)
+	btst #3,*+4-128(pc,d3.w)
+	btst d5,*+2+127(pc,d3.w)
+	jmp *+2-1(pc,d3.w)

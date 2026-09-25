@@ -227,8 +227,9 @@ fn m68k_carry_role(mnem: &str, ops: &[CodeOperand]) -> Option<FlagRole> {
         // SUBX, NEGX: "C: Set if a borrow occurs; cleared otherwise." SBCD, NBCD:
         // set by a decimal borrow; ABCD: "Set if a decimal carry was generated".
         // Each adds or subtracts the EXTEND bit, not C, so for a carry result it
-        // is a writer and never a reader (the G2.6 rider). The ISA enum carries
-        // only ADDX of this family.
+        // is a writer and never a reader (the G2.6 rider). `.emp`'s mnemonic
+        // table spells only ADDX of this family, so the rest are classified here
+        // by name; the ISA enum's arms below carry the same roles.
         "subx" | "negx" | "abcd" | "sbcd" | "nbcd" => return Some(FlagRole::Writes),
         _ => {}
     }
@@ -278,6 +279,9 @@ fn m68k_isa_carry_role(m: sigil_backend_m68k::m68k::Mnemonic, ops: &[CodeOperand
         | Muls | Mulu | Divs | Divu | Asl | Asr | Lsl | Lsr | Rol | Ror | Roxl | Roxr => Writes,
         // BTST, BSET, BCLR, BCHG: "C: Not affected." They write Z only.
         Btst | Bset | Bclr | Bchg => Untouched,
+        // SUBX, NEGX: set by a borrow; ABCD, SBCD, NBCD: by a decimal carry or
+        // borrow. The extend bit is their input, so for C they only write.
+        Subx | Negx | Abcd | Sbcd | Nbcd => Writes,
         // A call: the callee may write the condition codes.
         Jsr | Bsr => Writes,
         // RTE: "Set according to the condition code bits in the status register
@@ -498,7 +502,8 @@ fn m68k_zero_role(mnem: &str, ops: &[CodeOperand]) -> Option<FlagRole> {
         // The tail idioms and the niche-option marker, which emits no bytes.
         "jbra" | "jra" | "assume_some" => return Some(FlagRole::Untouched),
         // SUBX, NEGX, ABCD, SBCD, NBCD: "Cleared if the result is nonzero;
-        // unchanged otherwise" (the ISA enum carries only ADDX of this family).
+        // unchanged otherwise". Classified by name because `.emp`'s mnemonic
+        // table spells only ADDX of this family; the enum arms carry the same.
         "subx" | "negx" | "abcd" | "sbcd" | "nbcd" => return Some(FlagRole::ClearsOnly),
         _ => {}
     }
@@ -537,8 +542,9 @@ fn m68k_isa_zero_role(m: sigil_backend_m68k::m68k::Mnemonic, ops: &[CodeOperand]
         | Eori | Not | Neg | Clr | Cmp | Cmpa | Cmpi | Cmpm | Tst | Tas | Ext | Swap | Muls
         | Mulu | Divs | Divu | Asl | Asr | Lsl | Lsr | Rol | Ror | Roxl | Roxr | Btst | Bset
         | Bclr | Bchg => Writes,
-        // ADDX: "Cleared if the result is nonzero; unchanged otherwise."
-        Addx => ClearsOnly,
+        // ADDX, SUBX, NEGX, ABCD, SBCD, NBCD: "Cleared if the result is nonzero;
+        // unchanged otherwise."
+        Addx | Subx | Negx | Abcd | Sbcd | Nbcd => ClearsOnly,
         // A call: the callee may write the condition codes.
         Jsr | Bsr => Writes,
         // RTE loads SR from the stack (and returns).
