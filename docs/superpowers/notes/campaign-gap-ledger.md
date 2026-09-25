@@ -6173,3 +6173,17 @@ closed rows are live tripwires now, but each covers one shape (`padding maybe`, 
 `tests/as_on_off_save_balance.rs`, not by the gate. **Kill:** add `supmode maybe` and an
 include-held open `save` as gate probes with minted verdicts.
 
+
+**THE OVER-ACCEPTANCE GATE'S REDS ARRIVE WITH NO TEXT UNDER THE DEFAULT PARALLEL RUNNER.**
+`sigil_verdict` in `tests/as_over_acceptance.rs` swaps the PROCESS-WIDE panic hook for a
+silent one around each probe. The gate's tests all call `measure()`, and libtest runs them on
+parallel threads, so a failing assert in one test fires while another test holds the silent
+hook, and its message is never printed. Measured with `report_unrestored_saves` removed:
+the default run lists `no_unledgered_over_acceptance` and
+`feed_control_the_ledger_is_not_an_escape_hatch` under `failures:` with no stdout section
+and no message at all; the same run with `--test-threads=1` prints `sigil ACCEPTS 1
+program(s) asl REFUSES ... save_missing_restore ... #1460 missing RESTORE`. The verdict is
+right either way (the tests still fail); only the explanation is lost. **Kill:** stop
+swapping the hook per probe: install one hook, once, that stays silent only on threads the
+probe runner names (run each probe on a named spawned thread and read its `JoinHandle`) and
+delegates to the default hook everywhere else.
