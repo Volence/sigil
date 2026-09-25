@@ -1,0 +1,7 @@
+sigil: /home/volence/sonic_hacks/.scratch/s3k-bcd-pcindex/bin/sigil-base
+sigil md5: 0e16fb431b6fdb84c75af8dac27d4483
+sigil rev:   revision:  120be60971c58e43e712b285f411db2c605b388f
+tree: /home/volence/sonic_hacks/.scratch/s3k-bcd-pcindex/trees/sk-gen root: wrapper.asm
+SIGIL_EXIT=1
+stderr lines: 101
+rows: 101

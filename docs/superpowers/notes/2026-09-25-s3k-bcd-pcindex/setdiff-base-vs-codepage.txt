@@ -1,0 +1,4 @@
+left: 0  
+entered: 0  
+common: 101  abcd/subx=6, dollar-label=93, pc-indexed=2
+new totals per class: abcd/subx=6, dollar-label=93, pc-indexed=2
