@@ -779,6 +779,13 @@ points at it rather than restating it, so there is one copy to keep true.
   note flagged the cache half (the sound fold check covers MT/SFX addresses, not DAC bank ids). Add a
   link-time check, proven red by moving a bank. Needed by `d-35-revised` either way; worth doing
   alone. Source: aeon 3f208336, docs/research/2026-09-25-clip-own-anchor-pricing.md.
+- landed on branch `parcel/bank-id-emit-vs-place` (not merged): `[sound.bank-id-vs-placement]` in
+  `crates/sigil-harness/src/sound_bank_ids.rs`, run after link in every full chained build. It reads every baked
+  id out of the linked image, finding each site by re-emitting with the id moved, and compares it with
+  `bank_id_of` of the placed bank label. It measured a hole the existing checks miss: DAC relocated to a
+  consistent anchor plus an extra window in `dac_banks.emp` builds green at master with drums baked one bank
+  low; the branch refuses it. Four shapes byte-identical to the provenance tip. The note's `ld a,$15` at 0x41F
+  is the YM timer rearm, not a bank id.
 
 ### AS-REGISTER-SPELLED-LABEL-SILENT
 
