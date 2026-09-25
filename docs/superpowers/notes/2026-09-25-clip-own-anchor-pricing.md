@@ -94,7 +94,7 @@ MEASURED (`ls crates/sigil-harness/golden`, `grep` of the named files):
 | artifact | knows about banks? | knows shapes? | needs a row for S2CLIP? |
 |---|---|---|---|
 | `golden/offcanonical_sizes/s4.txt`, `s4_debug.txt` | YES: `Dac_Temp_Blip 0xa8000`, `SoundTablesZ80_Head 0xb8000` are the island PLACEMENT (provisional base = held base) | one table per shipped profile, loaded by a path compiled in via `CARGO_MANIFEST_DIR` (native.rs:232-252) | not under design A (the variant rewrites two rows in memory); yes under design B |
-| `src/pins.rs` (from `repin.toml`) | `DAC_BANKS` 0xA8000, `SOUNDBANKHEAD` 0xB8000 (pins.rs:276-286) | plain/debug of the canonical s4 listings only | no: a test oracle over canonical listings, never consulted by a build |
+| `src/pins.rs` (from `repin.toml`) | `DAC_BANKS` 0xA8000, `SOUNDBANKHEAD` 0xB8000 (pins.rs:276-286) | plain/debug of the canonical s4 listings only | no: its bank pins are test oracles over canonical listings. The one pin a build path reads is `BOOT_HEAD` (seam1.rs:67, the resident blob LMA), which the clip re-bake of the act slot does not move (INFERRED) |
 | `golden/provenance.toml` | no | s4, s4_debug, demo, demo_debug, config_a, config_b | no |
 | `src/section_align.rs` | `Dac_Temp_Blip` and `SoundTablesZ80_Head` require 0x8000 (124-125) | shape-independent | no: 0xB8000 and 0xC8000 satisfy it |
 
