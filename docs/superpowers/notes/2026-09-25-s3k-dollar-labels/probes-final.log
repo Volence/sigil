@@ -1,0 +1,1108 @@
+=== d01 (096dc315)
+ASL_EXIT=0
+ASL_DIAG=complete
+asl   bytes: 12044e711204120812084e714e714e711210121412101214
+SIGIL_EXIT=0
+sigil bytes: 12044e711204120812084e714e714e711210121412101214
+MATCH
+=== d02 (66720f00)
+ASL_EXIT=0
+ASL_DIAG=complete
+asl   bytes: 4e714e7112024e711206
+SIGIL_EXIT=0
+sigil bytes: 4e714e7112024e711206
+MATCH
+=== d03 (27ada098)
+ASL_EXIT=0
+ASL_DIAG=complete
+asl   bytes: 4e714e7112024e711202
+SIGIL_EXIT=0
+sigil bytes: 4e714e7112024e711202
+MATCH
+=== d04 (3ba49fd0)
+> > > d04.asm(6):7: error #1010: symbol undefined
+ASL_EXIT=2
+ASL_DIAG=complete
+  lines that assembled: an error stops the pass loop, so every forward
+asl   bytes: (asl exited 2; no value quoted)
+> > > d04.asm(6):7: error #1010: symbol undefined
+      1 error
+      0 warnings
+SIGIL_EXIT=1
+d04.asm(6):2: error: unresolved symbol `$$x@A1` for fixup in section sec4608 at offset 6
+this error list may be incomplete: sigil stopped at link, so the image checks did not run
+assembly failed: 1 error (reported on stderr)
+=== d05 (b5a3c94a)
+> > > d05.asm(6):7: error #1010: symbol undefined
+ASL_EXIT=2
+ASL_DIAG=complete
+  lines that assembled: an error stops the pass loop, so every forward
+asl   bytes: (asl exited 2; no value quoted)
+> > > d05.asm(6):7: error #1010: symbol undefined
+      1 error
+      0 warnings
+SIGIL_EXIT=1
+d05.asm(6):2: error: unresolved symbol `$$x@A2` for fixup in section sec4608 at offset 4
+this error list may be incomplete: sigil stopped at link, so the image checks did not run
+assembly failed: 1 error (reported on stderr)
+=== d06 (4b83e3f0)
+> > > d06.asm(6):7: error #1010: symbol undefined
+ASL_EXIT=2
+ASL_DIAG=complete
+  lines that assembled: an error stops the pass loop, so every forward
+asl   bytes: (asl exited 2; no value quoted)
+> > > d06.asm(6):7: error #1010: symbol undefined
+      1 error
+      0 warnings
+SIGIL_EXIT=1
+d06.asm(6):2: error: unresolved symbol `$$x@A2` for fixup in section sec4608 at offset 4
+this error list may be incomplete: sigil stopped at link, so the image checks did not run
+assembly failed: 1 error (reported on stderr)
+=== d07 (e254379d)
+> > > d07.asm(5):7: error #1010: symbol undefined
+ASL_EXIT=2
+ASL_DIAG=complete
+  lines that assembled: an error stops the pass loop, so every forward
+asl   bytes: (asl exited 2; no value quoted)
+> > > d07.asm(5):7: error #1010: symbol undefined
+      1 error
+      0 warnings
+SIGIL_EXIT=1
+d07.asm(5):2: error: unresolved symbol `$$X@A1` for fixup in section sec4608 at offset 4
+this error list may be incomplete: sigil stopped at link, so the image checks did not run
+assembly failed: 1 error (reported on stderr)
+=== d08 (42d3ac96)
+ASL_EXIT=0
+ASL_DIAG=complete
+asl   bytes: 4e714e71122324044e714e71124d
+SIGIL_EXIT=0
+sigil bytes: 4e714e71122324044e714e71124d
+MATCH
+=== d09 (4e10ffab)
+ASL_EXIT=0
+ASL_DIAG=complete
+asl   bytes: 4e714e7160fc670000044e714e71
+SIGIL_EXIT=0
+sigil bytes: 4e714e7160fc670000044e714e71
+MATCH
+=== d10 (1d0d3207)
+> > > d10.asm(5):10: error #1010: symbol undefined
+ASL_EXIT=2
+ASL_DIAG=complete
+  lines that assembled: an error stops the pass loop, so every forward
+asl   bytes: (asl exited 2; no value quoted)
+> > > d10.asm(5):10: error #1010: symbol undefined
+      1 error
+      0 warnings
+SIGIL_EXIT=1
+d10.asm(5):5: error: unresolved symbol `$$x@B1` for fixup in section sec4608 at offset 4
+this error list may be incomplete: sigil stopped at link, so the image checks did not run
+assembly failed: 1 error (reported on stderr)
+=== e01 (cf061705)
+> > > e01.asm(10): error #1000: symbol double defined
+ASL_EXIT=2
+ASL_DIAG=complete
+  lines that assembled: an error stops the pass loop, so every forward
+asl   bytes: (asl exited 2; no value quoted)
+> > > e01.asm(10): error #1000: symbol double defined
+      1 error
+      0 warnings
+SIGIL_EXIT=1
+e01.asm(10):1: error: symbol double defined: `$$x@V`
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+=== e02 (990305ab)
+ASL_EXIT=0
+ASL_DIAG=complete
+asl   bytes: 4e714e714e7112044e714e71120a1202
+SIGIL_EXIT=0
+sigil bytes: 4e714e714e7112044e714e71120a1202
+MATCH
+=== e03 (44778331)
+> > > e03.asm(9):7: error #1010: symbol undefined
+ASL_EXIT=2
+ASL_DIAG=complete
+  lines that assembled: an error stops the pass loop, so every forward
+asl   bytes: (asl exited 2; no value quoted)
+> > > e03.asm(9):7: error #1010: symbol undefined
+      1 error
+      0 warnings
+SIGIL_EXIT=1
+e03.asm(9):2: error: unresolved symbol `$$x@Lb` for fixup in section sec4608 at offset 6
+this error list may be incomplete: sigil stopped at link, so the image checks did not run
+assembly failed: 1 error (reported on stderr)
+=== e04 (8e06099d)
+ASL_EXIT=0
+ASL_DIAG=complete
+asl   bytes: 4e714e714e7112021202
+SIGIL_EXIT=1
+e04.asm(5):2: error: `section` is not a recognized 68000 mnemonic
+e04.asm(8):2: error: `endsection` is not a recognized 68000 mnemonic
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 2 errors (reported on stderr)
+=== e05 (fa27a677)
+ASL_EXIT=0
+ASL_DIAG=complete
+asl   bytes: 4e714e714e711202340412023404
+SIGIL_EXIT=0
+sigil bytes: 4e714e714e711202340412023404
+MATCH
+=== e06 (0216535f)
+ASL_EXIT=0
+ASL_DIAG=complete
+asl   bytes: 4e714e711202
+SIGIL_EXIT=0
+sigil bytes: 4e714e711202
+MATCH
+=== e07 (23731542)
+ASL_EXIT=0
+ASL_DIAG=complete
+asl   bytes: 4e714e714e7112041202
+SIGIL_EXIT=0
+sigil bytes: 4e714e714e7112041202
+MATCH
+=== e08 (7b0035a7)
+> > > e08.asm(6):7: error #1010: symbol undefined
+ASL_EXIT=2
+ASL_DIAG=complete
+  lines that assembled: an error stops the pass loop, so every forward
+asl   bytes: (asl exited 2; no value quoted)
+> > > e08.asm(6):7: error #1010: symbol undefined
+      1 error
+      0 warnings
+SIGIL_EXIT=1
+e08.asm(6):2: error: unresolved symbol `$$x@PADDING` for fixup in section sec4612 at offset 0
+this error list may be incomplete: sigil stopped at link, so the image checks did not run
+assembly failed: 1 error (reported on stderr)
+=== e09 (f88582c8)
+ASL_EXIT=0
+ASL_DIAG=complete
+asl   bytes: 4e7112342345
+SIGIL_EXIT=0
+sigil bytes: 4e7112342345
+MATCH
+=== e10 (8288fe6c)
+ASL_EXIT=0
+ASL_DIAG=complete
+asl   bytes: 4e714e714e7112021204
+SIGIL_EXIT=0
+sigil bytes: 4e714e714e7112021204
+MATCH
+=== e11 (ab75cfd4)
+ASL_EXIT=0
+ASL_DIAG=complete
+asl   bytes: 4e714e714e711202
+SIGIL_EXIT=0
+sigil bytes: 4e714e714e711202
+MATCH
+=== e12 (37715b7b)
+ASL_EXIT=0
+ASL_DIAG=complete
+asl   bytes: 4e714e711202
+SIGIL_EXIT=0
+sigil bytes: 4e714e711202
+MATCH
+=== e13 (86a42518)
+ASL_EXIT=0
+ASL_DIAG=complete
+asl   bytes: 4e714e714e714e711202
+SIGIL_EXIT=0
+sigil bytes: 4e714e714e714e711202
+MATCH
+=== e14 (42fbe68a)
+> > > e14.asm(4):1: error #1020: invalid symbol name
+> > > e14.asm(5):7: error #1020: invalid symbol name
+ASL_EXIT=2
+ASL_DIAG=complete
+  lines that assembled: an error stops the pass loop, so every forward
+asl   bytes: (asl exited 2; no value quoted)
+> > > e14.asm(4):1: error #1020: invalid symbol name
+> > > e14.asm(5):7: error #1020: invalid symbol name
+      2 errors
+      0 warnings
+SIGIL_EXIT=1
+e14.asm(4):1: error: `$` with no hex digits
+e14.asm(5):7: error: `$` with no hex digits
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 2 errors (reported on stderr)
+=== e15 (c23e3a29)
+> > > e15.asm(4):1: error #1020: invalid symbol name
+> > > e15.asm(5):7: error #1020: invalid symbol name
+ASL_EXIT=2
+ASL_DIAG=complete
+  lines that assembled: an error stops the pass loop, so every forward
+asl   bytes: (asl exited 2; no value quoted)
+> > > e15.asm(4):1: error #1020: invalid symbol name
+> > > e15.asm(5):7: error #1020: invalid symbol name
+      2 errors
+      0 warnings
+SIGIL_EXIT=1
+e15.asm(4):1: error: `$` with no hex digits
+e15.asm(5):7: error: `$` with no hex digits
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 2 errors (reported on stderr)
+=== e16 (25fd9cb6)
+> > > e16.asm(2):6: error #1020: invalid symbol name
+ASL_EXIT=2
+ASL_DIAG=complete
+  lines that assembled: an error stops the pass loop, so every forward
+asl   bytes: (asl exited 2; no value quoted)
+> > > e16.asm(2):6: error #1020: invalid symbol name
+      1 error
+      0 warnings
+SIGIL_EXIT=1
+e16.asm(2):2: error: trailing tokens in expression
+e16.asm(2):2: error: org needs a constant expression
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 2 errors (reported on stderr)
+=== e17 (9cc60529)
+> > > e17.asm(2):6: error #1020: invalid symbol name
+> > > e17.asm(5):5: error #1020: invalid symbol name
+ASL_EXIT=2
+ASL_DIAG=complete
+  lines that assembled: an error stops the pass loop, so every forward
+asl   bytes: (asl exited 2; no value quoted)
+> > > e17.asm(2):6: error #1020: invalid symbol name
+> > > e17.asm(5):5: error #1020: invalid symbol name
+      2 errors
+      0 warnings
+SIGIL_EXIT=1
+e17.asm(2):2: error: trailing tokens in expression
+e17.asm(2):2: error: org needs a constant expression
+e17.asm(5):5: error: bad word expression
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 3 errors (reported on stderr)
+=== e18 (aa26fe1a)
+> > > e18.asm(5):7: error #1020: invalid symbol name
+ASL_EXIT=2
+ASL_DIAG=complete
+  lines that assembled: an error stops the pass loop, so every forward
+asl   bytes: (asl exited 2; no value quoted)
+> > > e18.asm(5):7: error #1020: invalid symbol name
+      1 error
+      0 warnings
+SIGIL_EXIT=1
+e18.asm(5):7: error: `$` with no hex digits
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+=== e19 (19f863f6)
+ASL_EXIT=0
+ASL_DIAG=complete
+asl   bytes: 4e714e711202
+SIGIL_EXIT=0
+sigil bytes: 4e714e711202
+MATCH
+=== e20 (1bdc4cb0)
+> > > e20.asm(6):7: error #1010: symbol undefined
+ASL_EXIT=2
+ASL_DIAG=complete
+  lines that assembled: an error stops the pass loop, so every forward
+asl   bytes: (asl exited 2; no value quoted)
+> > > e20.asm(6):7: error #1010: symbol undefined
+      1 error
+      0 warnings
+SIGIL_EXIT=1
+e20.asm(6):2: error: unresolved symbol `$$z@A1` for fixup in section sec4608 at offset 6
+this error list may be incomplete: sigil stopped at link, so the image checks did not run
+assembly failed: 1 error (reported on stderr)
+=== f01 (65994d99)
+ASL_EXIT=0
+ASL_DIAG=complete
+asl   bytes: 4e714e711200
+SIGIL_EXIT=0
+sigil bytes: 4e714e711200
+MATCH
+=== f02 (911960cc)
+ASL_EXIT=0
+ASL_DIAG=complete
+asl   bytes: 4e714e714e711202
+SIGIL_EXIT=0
+sigil bytes: 4e714e714e711202
+MATCH
+=== f03 (3ecc5e87)
+ASL_EXIT=0
+ASL_DIAG=complete
+asl   bytes: 4e714e714e7112041202
+SIGIL_EXIT=0
+sigil bytes: 4e714e714e7112041202
+MATCH
+=== f04 (8be522b4)
+> > > f04.asm(8):7: error #1010: symbol undefined
+ASL_EXIT=2
+ASL_DIAG=complete
+  lines that assembled: an error stops the pass loop, so every forward
+asl   bytes: (asl exited 2; no value quoted)
+> > > f04.asm(8):7: error #1010: symbol undefined
+      1 error
+      0 warnings
+SIGIL_EXIT=1
+f04.asm(4):2: error: `section` is not a recognized 68000 mnemonic
+f04.asm(7):2: error: `endsection` is not a recognized 68000 mnemonic
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 2 errors (reported on stderr)
+=== f05 (583ef53f)
+ASL_EXIT=0
+ASL_DIAG=complete
+asl   bytes: 000001120000000612
+SIGIL_EXIT=0
+sigil bytes: 000001120000000612
+MATCH
+=== f06 (04284ef1)
+> > > f06.asm(5):5: error #1020: invalid symbol name
+ASL_EXIT=2
+ASL_DIAG=complete
+  lines that assembled: an error stops the pass loop, so every forward
+asl   bytes: (asl exited 2; no value quoted)
+> > > f06.asm(5):5: error #1020: invalid symbol name
+      1 error
+      0 warnings
+SIGIL_EXIT=1
+f06.asm(5):5: error: bad word expression
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+=== f07 (aa02d481)
+> > > f07.asm(6):7: error #1010: symbol undefined
+ASL_EXIT=2
+ASL_DIAG=complete
+  lines that assembled: an error stops the pass loop, so every forward
+asl   bytes: (asl exited 2; no value quoted)
+> > > f07.asm(6):7: error #1010: symbol undefined
+      1 error
+      0 warnings
+SIGIL_EXIT=1
+f07.asm(6):2: error: unresolved symbol `$$x@PADDING` for fixup in section sec4608 at offset 4
+this error list may be incomplete: sigil stopped at link, so the image checks did not run
+assembly failed: 1 error (reported on stderr)
+=== f08 (4af334c1)
+> > > f08.asm(6):7: error #1010: symbol undefined
+ASL_EXIT=2
+ASL_DIAG=complete
+  lines that assembled: an error stops the pass loop, so every forward
+asl   bytes: (asl exited 2; no value quoted)
+> > > f08.asm(6):7: error #1010: symbol undefined
+      1 error
+      0 warnings
+SIGIL_EXIT=1
+f08.asm(6):2: error: unresolved symbol `$$x@INSUPMODE` for fixup in section sec4608 at offset 4
+this error list may be incomplete: sigil stopped at link, so the image checks did not run
+assembly failed: 1 error (reported on stderr)
+=== f09 (55c0ff94)
+> > > f09.asm(6):7: error #1010: symbol undefined
+ASL_EXIT=2
+ASL_DIAG=complete
+  lines that assembled: an error stops the pass loop, so every forward
+asl   bytes: (asl exited 2; no value quoted)
+> > > f09.asm(6):7: error #1010: symbol undefined
+      1 error
+      0 warnings
+SIGIL_EXIT=1
+f09.asm(6):2: error: unresolved symbol `$$x@LISTON` for fixup in section sec4608 at offset 4
+this error list may be incomplete: sigil stopped at link, so the image checks did not run
+assembly failed: 1 error (reported on stderr)
+=== f10 (db770e0f)
+> > > f10.asm(9):7: error #1010: symbol undefined
+ASL_EXIT=2
+ASL_DIAG=complete
+  lines that assembled: an error stops the pass loop, so every forward
+asl   bytes: (asl exited 2; no value quoted)
+> > > f10.asm(9):7: error #1010: symbol undefined
+      1 error
+      0 warnings
+SIGIL_EXIT=1
+f10.asm(9):2: error: unresolved symbol `$$q@A1` for fixup in section sec4608 at offset 6
+this error list may be incomplete: sigil stopped at link, so the image checks did not run
+assembly failed: 1 error (reported on stderr)
+=== f11 (6891bfae)
+ASL_EXIT=0
+ASL_DIAG=complete
+asl   bytes: 4e714e7112064e71
+SIGIL_EXIT=0
+sigil bytes: 4e714e7112064e71
+MATCH
+=== f12 (898fdf27)
+> > > f12.asm(7):7: error #1010: symbol undefined
+ASL_EXIT=2
+ASL_DIAG=complete
+  lines that assembled: an error stops the pass loop, so every forward
+asl   bytes: (asl exited 2; no value quoted)
+> > > f12.asm(7):7: error #1010: symbol undefined
+      1 error
+      0 warnings
+SIGIL_EXIT=1
+f12.asm(7):2: error: unresolved symbol `$$x@MACEXP` for fixup in section sec4608 at offset 4
+this error list may be incomplete: sigil stopped at link, so the image checks did not run
+assembly failed: 1 error (reported on stderr)
+=== f13 (cba9f2d9)
+ASL_EXIT=0
+ASL_DIAG=complete
+asl   bytes: 4e714e714e711202
+SIGIL_EXIT=0
+sigil bytes: 4e714e714e711202
+MATCH
+=== f14 (ac3b8fa5)
+ASL_EXIT=0
+ASL_DIAG=complete
+asl   bytes: 4e714e714e7112044e714e714e71120c
+SIGIL_EXIT=0
+sigil bytes: 4e714e714e7112044e714e714e71120c
+MATCH
+=== f15 (e3910730)
+> > > f15.asm(6):7: error #1010: symbol undefined
+ASL_EXIT=2
+ASL_DIAG=complete
+  lines that assembled: an error stops the pass loop, so every forward
+asl   bytes: (asl exited 2; no value quoted)
+> > > f15.asm(6):7: error #1010: symbol undefined
+      1 error
+      0 warnings
+SIGIL_EXIT=1
+f15.asm(6):2: error: unresolved symbol `$$x.y@A1` for fixup in section sec4608 at offset 6
+this error list may be incomplete: sigil stopped at link, so the image checks did not run
+assembly failed: 1 error (reported on stderr)
+=== f16 (4a9d6e4f)
+> > > f16.asm(6):7: error #1010: symbol undefined
+ASL_EXIT=2
+ASL_DIAG=complete
+  lines that assembled: an error stops the pass loop, so every forward
+asl   bytes: (asl exited 2; no value quoted)
+> > > f16.asm(6):7: error #1010: symbol undefined
+      1 error
+      0 warnings
+SIGIL_EXIT=1
+f16.asm(6):2: error: unresolved symbol `$$x@B1` for fixup in section sec4608 at offset 4
+this error list may be incomplete: sigil stopped at link, so the image checks did not run
+assembly failed: 1 error (reported on stderr)
+=== f17 (34d95a17)
+ASL_EXIT=0
+ASL_DIAG=complete
+asl   bytes: 4e714e714e7112021204
+SIGIL_EXIT=0
+sigil bytes: 4e714e714e7112021204
+MATCH
+=== f18 (0aec1a07)
+ASL_EXIT=0
+ASL_DIAG=complete
+asl   bytes: 4e714e7112024e711202
+SIGIL_EXIT=0
+sigil bytes: 4e714e7112024e711202
+MATCH
+=== f19 (07703c96)
+ASL_EXIT=0
+ASL_DIAG=complete
+asl   bytes: 4e714e712402
+SIGIL_EXIT=0
+sigil bytes: 4e714e712402
+MATCH
+=== f20 (96e35c75)
+ASL_EXIT=0
+ASL_DIAG=complete
+asl   bytes: 4e714e710000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001202
+SIGIL_EXIT=0
+sigil bytes: 4e714e710000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001202
+MATCH
+=== g01 (fc993d37)
+> > > g01.asm(11): error #1000: symbol double defined
+ASL_EXIT=2
+ASL_DIAG=complete
+  lines that assembled: an error stops the pass loop, so every forward
+asl   bytes: (asl exited 2; no value quoted)
+> > > g01.asm(11): error #1000: symbol double defined
+      1 error
+      0 warnings
+SIGIL_EXIT=1
+g01.asm(11):1: error: symbol double defined: `$$z@Lb`
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+=== g02 (0bc72172)
+> > > g02.asm(7): error #1000: symbol double defined
+ASL_EXIT=2
+ASL_DIAG=complete
+  lines that assembled: an error stops the pass loop, so every forward
+asl   bytes: (asl exited 2; no value quoted)
+> > > g02.asm(7): error #1000: symbol double defined
+      1 error
+      0 warnings
+SIGIL_EXIT=1
+g02.asm(7):1: error: symbol double defined: `$$x@PADDING`
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+=== g03 (f43b81eb)
+ASL_EXIT=0
+ASL_DIAG=complete
+asl   bytes: 4e714e714e711204
+SIGIL_EXIT=1
+g03.asm(6):1: error: symbol double defined: `A1.l`
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+=== g04 (e48aa02e)
+> > > g04.asm(7): error #1000: symbol double defined
+ASL_EXIT=2
+ASL_DIAG=complete
+  lines that assembled: an error stops the pass loop, so every forward
+asl   bytes: (asl exited 2; no value quoted)
+> > > g04.asm(7): error #1000: symbol double defined
+      1 error
+      0 warnings
+SIGIL_EXIT=1
+g04.asm(7):1: error: symbol double defined: `$$x@PADDING`
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+=== g05 (fe310489)
+ASL_EXIT=0
+ASL_DIAG=complete
+asl   bytes: 4e714e711202
+SIGIL_EXIT=0
+sigil bytes: 4e714e711202
+MATCH
+=== g06 (32989c19)
+> > > g06.asm(6):7: error #1010: symbol undefined
+ASL_EXIT=2
+ASL_DIAG=complete
+  lines that assembled: an error stops the pass loop, so every forward
+asl   bytes: (asl exited 2; no value quoted)
+> > > g06.asm(6):7: error #1010: symbol undefined
+      1 error
+      0 warnings
+SIGIL_EXIT=1
+g06.asm(6):2: error: unresolved symbol `$$x@E2` for fixup in section sec4608 at offset 4
+this error list may be incomplete: sigil stopped at link, so the image checks did not run
+assembly failed: 1 error (reported on stderr)
+=== g07 (fef744e4)
+ASL_EXIT=0
+ASL_DIAG=complete
+asl   bytes: 4e714e711202
+SIGIL_EXIT=0
+sigil bytes: 4e714e711202
+MATCH
+=== g08 (734f5090)
+> > > g08.asm(5): error #1450: RESTORE without SAVE
+ASL_EXIT=2
+ASL_DIAG=complete
+  lines that assembled: an error stops the pass loop, so every forward
+asl   bytes: (asl exited 2; no value quoted)
+> > > g08.asm(5): error #1450: RESTORE without SAVE
+      1 error
+      0 warnings
+SIGIL_EXIT=1
+g08.asm(5):2: error: `restore` with no matching `save`
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+=== g09 (63d3df75)
+> > > g09.asm(5): error #1110: wrong number of operands
+> > > g09.asm(7): error #1110: wrong number of operands
+ASL_EXIT=2
+ASL_DIAG=complete
+  lines that assembled: an error stops the pass loop, so every forward
+asl   bytes: (asl exited 2; no value quoted)
+> > > g09.asm(5): error #1110: wrong number of operands
+> > > g09.asm(7): error #1110: wrong number of operands
+      2 errors
+      0 warnings
+SIGIL_EXIT=1
+g09.asm(5):2: error: `pushv` needs a stack name and at least one symbol: `pushv [stack],symbol[,symbol...]`
+g09.asm(7):2: error: `popv` needs a stack name and at least one symbol: `popv [stack],symbol[,symbol...]`
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 2 errors (reported on stderr)
+=== g10 (a428b3c5)
+> > > g10.asm(7):7: error #1010: symbol undefined
+ASL_EXIT=2
+ASL_DIAG=complete
+  lines that assembled: an error stops the pass loop, so every forward
+asl   bytes: (asl exited 2; no value quoted)
+> > > g10.asm(7):7: error #1010: symbol undefined
+      1 error
+      0 warnings
+SIGIL_EXIT=1
+g10.asm(7):2: error: unresolved symbol `$$x@V` for fixup in section sec4608 at offset 6
+this error list may be incomplete: sigil stopped at link, so the image checks did not run
+assembly failed: 1 error (reported on stderr)
+=== g11 (a4bedd0a)
+> > > g11.asm(6):7: error #1010: symbol undefined
+ASL_EXIT=2
+ASL_DIAG=complete
+  lines that assembled: an error stops the pass loop, so every forward
+asl   bytes: (asl exited 2; no value quoted)
+> > > g11.asm(6):7: error #1010: symbol undefined
+      1 error
+      0 warnings
+SIGIL_EXIT=1
+g11.asm(6):2: error: unresolved symbol `$$x@PADDING` for fixup in section sec4608 at offset 4
+this error list may be incomplete: sigil stopped at link, so the image checks did not run
+assembly failed: 1 error (reported on stderr)
+=== g12 (f6ad48bd)
+> > > g12.asm(6):7: error #1010: symbol undefined
+ASL_EXIT=2
+ASL_DIAG=complete
+  lines that assembled: an error stops the pass loop, so every forward
+asl   bytes: (asl exited 2; no value quoted)
+> > > g12.asm(6):7: error #1010: symbol undefined
+      1 error
+      0 warnings
+SIGIL_EXIT=1
+g12.asm(6):2: error: unresolved symbol `$$x@INSUPMODE` for fixup in section sec4608 at offset 4
+this error list may be incomplete: sigil stopped at link, so the image checks did not run
+assembly failed: 1 error (reported on stderr)
+=== g13 (5ee45937)
+> > > g13.asm(7):7: error #1010: symbol undefined
+ASL_EXIT=2
+ASL_DIAG=complete
+  lines that assembled: an error stops the pass loop, so every forward
+asl   bytes: (asl exited 2; no value quoted)
+> > > g13.asm(7):7: error #1010: symbol undefined
+      1 error
+      0 warnings
+SIGIL_EXIT=1
+g13.asm(7):2: error: unresolved symbol `$$x@LISTON` for fixup in section sec4608 at offset 4
+this error list may be incomplete: sigil stopped at link, so the image checks did not run
+assembly failed: 1 error (reported on stderr)
+=== g14 (93040839)
+> > > g14.asm(8):7: error #1010: symbol undefined
+ASL_EXIT=2
+ASL_DIAG=complete
+  lines that assembled: an error stops the pass loop, so every forward
+asl   bytes: (asl exited 2; no value quoted)
+> > > g14.asm(8):7: error #1010: symbol undefined
+      1 error
+      0 warnings
+SIGIL_EXIT=1
+g14.asm(8):2: error: unresolved symbol `$$x@Str_len` for fixup in section sec4608 at offset 4
+this error list may be incomplete: sigil stopped at link, so the image checks did not run
+assembly failed: 1 error (reported on stderr)
+=== g15 (aeddf09a)
+> > > g15.asm(5): warning #30: no sharefile created, SHARED ignored
+ASL_EXIT=0
+ASL_DIAG=complete
+asl   bytes: 4e714e711202
+SIGIL_EXIT=0
+g15.asm(5):2: warning: `shared` is ignored: sigil writes no share file (asl without `-c` says "no sharefile created, SHARED ignored")
+sigil bytes: 4e714e711202
+MATCH
+=== g16 (e30aab5b)
+> > > g16.asm(6):7: error #1010: symbol undefined
+ASL_EXIT=2
+ASL_DIAG=complete
+  lines that assembled: an error stops the pass loop, so every forward
+asl   bytes: (asl exited 2; no value quoted)
+> > > g16.asm(6):7: error #1010: symbol undefined
+      1 error
+      0 warnings
+SIGIL_EXIT=1
+g16.asm(6):2: error: unresolved symbol `$$x@E3` for fixup in section sec4608 at offset 4
+this error list may be incomplete: sigil stopped at link, so the image checks did not run
+assembly failed: 1 error (reported on stderr)
+=== g17 (09466764)
+ASL_EXIT=0
+ASL_DIAG=complete
+asl   bytes: 4e714e7112064e714e711206
+SIGIL_EXIT=0
+sigil bytes: 4e714e7112064e714e711206
+MATCH
+=== g18 (ea288ff5)
+> > > g18.asm(7):7: error #1020: invalid symbol name
+ASL_EXIT=2
+ASL_DIAG=complete
+  lines that assembled: an error stops the pass loop, so every forward
+asl   bytes: (asl exited 2; no value quoted)
+> > > g18.asm(7):7: error #1020: invalid symbol name
+      1 error
+      0 warnings
+SIGIL_EXIT=1
+g18.asm(7):7: error: bad word expression
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+=== g19 (b4055cae)
+ASL_EXIT=0
+ASL_DIAG=complete
+asl   bytes: 4e714e711202
+SIGIL_EXIT=0
+sigil bytes: 4e714e711202
+MATCH
+=== g20 (3284cf26)
+> > > g20.asm(7):7: error #1010: symbol undefined
+ASL_EXIT=2
+ASL_DIAG=complete
+  lines that assembled: an error stops the pass loop, so every forward
+asl   bytes: (asl exited 2; no value quoted)
+> > > g20.asm(7):7: error #1010: symbol undefined
+      1 error
+      0 warnings
+SIGIL_EXIT=1
+g20.asm(7):2: error: unresolved symbol `$$x@PADDING` for fixup in section sec4612 at offset 0
+this error list may be incomplete: sigil stopped at link, so the image checks did not run
+assembly failed: 1 error (reported on stderr)
+=== i01 (9e6bd6f7)
+ASL_EXIT=0
+ASL_DIAG=complete
+asl   bytes: 4e714e711202
+SIGIL_EXIT=0
+sigil bytes: 4e714e711202
+MATCH
+=== i02 (f5e09a3c)
+ASL_EXIT=0
+ASL_DIAG=complete
+asl   bytes: 4e714e714e7112044e714e71120a
+SIGIL_EXIT=0
+sigil bytes: 4e714e714e7112044e714e71120a
+MATCH
+=== i05 (523e64eb)
+ASL_EXIT=0
+ASL_DIAG=complete
+asl   bytes: 4e714e711204
+SIGIL_EXIT=0
+sigil bytes: 4e714e711204
+MATCH
+=== i07 (7e6b81cd)
+ASL_EXIT=0
+ASL_DIAG=complete
+asl   bytes: 4e714e71000000002222
+SIGIL_EXIT=0
+sigil bytes: 4e714e71000000002222
+MATCH
+=== i09 (4a5cebae)
+> > > i09.asm(6):14: error #10000: internal error
+fatal error, assembly terminated
+ASL_EXIT=3
+ASL_DIAG=unknown (i09.lst has no pass footer: the run died before
+  from the listing. Absence of the warning is NOT completeness.)
+  lines that assembled: an error stops the pass loop, so every forward
+asl   bytes: (asl exited 3; no value quoted)
+SIGIL_EXIT=0
+sigil bytes: 4e714e71303c1202323c001241fafff43438120200011202
+=== i10 (63c23599)
+ASL_EXIT=0
+ASL_DIAG=complete
+asl   bytes: 000018fd21011218fe0b1201123a0112
+SIGIL_EXIT=0
+sigil bytes: 000018fd21011218fe0b1201123a0112
+MATCH
+=== i16 (1f82e9d6)
+> > > i16.asm(4):7: error #1010: symbol undefined
+ASL_EXIT=2
+ASL_DIAG=INCOMPLETE
+  asl stopped its PASS LOOP on an error, so the diagnostics from
+  ZERO here whether there are none or thirty. The error count in
+  reported error and assemble again to learn what was hidden.
+  lines that assembled: an error stops the pass loop, so every forward
+asl   bytes: (asl exited 2; no value quoted)
+> > > i16.asm(4):7: error #1010: symbol undefined
+        errors, listing possibly incorrect.
+      1 error
+      0 warnings
+SIGIL_EXIT=1
+i16.asm(4):2: error: unresolved symbol `$$x@A1` for fixup in section sec4608 at offset 2
+this error list may be incomplete: sigil stopped at link, so the image checks did not run
+assembly failed: 1 error (reported on stderr)
+=== i25 (56c32809)
+ASL_EXIT=0
+ASL_DIAG=complete
+asl   bytes: 4e714e714e714e714e7112064e714e714e71120e1202
+SIGIL_EXIT=0
+sigil bytes: 4e714e714e714e714e7112064e714e714e71120e1202
+MATCH
+=== i26 (88cf9e17)
+> > > i26.asm(8):7: error #1010: symbol undefined
+ASL_EXIT=2
+ASL_DIAG=complete
+  lines that assembled: an error stops the pass loop, so every forward
+asl   bytes: (asl exited 2; no value quoted)
+> > > i26.asm(8):7: error #1010: symbol undefined
+      1 error
+      0 warnings
+SIGIL_EXIT=1
+i26.asm(8):2: error: unresolved symbol `$$x@PADDING` for fixup in section sec4613 at offset 1
+this error list may be incomplete: sigil stopped at link, so the image checks did not run
+assembly failed: 1 error (reported on stderr)
+=== i27 (fe71b22f)
+ASL_EXIT=0
+ASL_DIAG=complete
+asl   bytes: 4e714e714e7112024e714e714e714e71120c
+SIGIL_EXIT=0
+sigil bytes: 4e714e714e7112024e714e714e714e71120c
+MATCH
+=== i28 (52341c87)
+ASL_EXIT=0
+ASL_DIAG=complete
+asl   bytes: 4e714e714e714e711206
+SIGIL_EXIT=0
+sigil bytes: 4e714e714e714e711206
+MATCH
+=== i29 (0e37851c)
+> > > i29.asm(12):7: error #1010: symbol undefined
+ASL_EXIT=2
+ASL_DIAG=complete
+  lines that assembled: an error stops the pass loop, so every forward
+asl   bytes: (asl exited 2; no value quoted)
+> > > i29.asm(12):7: error #1010: symbol undefined
+      1 error
+      0 warnings
+SIGIL_EXIT=1
+i29.asm(12):2: error: unresolved symbol `$$y@W` for fixup in section sec4608 at offset 10
+this error list may be incomplete: sigil stopped at link, so the image checks did not run
+assembly failed: 1 error (reported on stderr)
+=== i30 (a358db16)
+ASL_EXIT=0
+ASL_DIAG=complete
+asl   bytes: 4e714e7112024e7112064e71120a
+SIGIL_EXIT=0
+sigil bytes: 4e714e7112024e7112064e71120a
+MATCH
+=== i31 (6b9501c3)
+ASL_EXIT=0
+ASL_DIAG=complete
+asl   bytes: 4e714e714e710c40120412041234
+SIGIL_EXIT=0
+sigil bytes: 4e714e714e710c40120412041234
+MATCH
+=== j01 (9a9f106f)
+ASL_EXIT=0
+ASL_DIAG=complete
+asl   bytes: 4e7100004e710000000000012222
+SIGIL_EXIT=0
+sigil bytes: 4e7100004e710000000000012222
+MATCH
+=== j02 (3205b5d7)
+ASL_EXIT=0
+ASL_DIAG=complete
+asl   bytes: 4e714e71303c120241fafff83438120200011202
+SIGIL_EXIT=0
+sigil bytes: 4e714e71303c120241fafff83438120200011202
+MATCH
+=== j03 (69ce832c)
+ASL_EXIT=0
+ASL_DIAG=complete
+asl   bytes: 4e714e710012
+SIGIL_EXIT=0
+sigil bytes: 4e714e710012
+MATCH
+=== j04 (5711eb53)
+ASL_EXIT=0
+ASL_DIAG=complete
+asl   bytes: 4e714e71323c0002343c0006
+SIGIL_EXIT=0
+sigil bytes: 4e714e71323c0002343c0006
+MATCH
+=== j05 (ac919dc7)
+ASL_EXIT=0
+ASL_DIAG=complete
+asl   bytes: 4e714e71323c1212
+SIGIL_EXIT=0
+sigil bytes: 4e714e71323c1212
+MATCH
+=== j06 (14ef8249)
+ASL_EXIT=0
+ASL_DIAG=complete
+asl   bytes: 4e714e7112004e714e714e711208
+SIGIL_EXIT=0
+sigil bytes: 4e714e7112004e714e714e711208
+MATCH
+=== j07 (cc764bbf)
+> > > j07.asm(5):10: error #1145: expected integer, floating point number or string but got register
+ASL_EXIT=2
+ASL_DIAG=complete
+  lines that assembled: an error stops the pass loop, so every forward
+asl   bytes: (asl exited 2; no value quoted)
+> > > j07.asm(5):10: error #1145: expected integer, floating point number or string but got register
+      1 error
+      0 warnings
+SIGIL_EXIT=0
+sigil bytes: 4e714e71323c2402
+=== j08 (25a5c6d4)
+> > > j08.asm(5):15: error #10000: internal error
+fatal error, assembly terminated
+ASL_EXIT=3
+ASL_DIAG=unknown (j08.lst has no pass footer: the run died before
+  from the listing. Absence of the warning is NOT completeness.)
+  lines that assembled: an error stops the pass loop, so every forward
+asl   bytes: (asl exited 3; no value quoted)
+SIGIL_EXIT=0
+sigil bytes: 4e714e71323c0002
+=== j03 (69ce832c)
+ASL_EXIT=0
+ASL_DIAG=complete
+asl   bytes: 4e714e710012
+SIGIL_EXIT=0
+sigil bytes: 4e714e710012
+MATCH
+=== j04 (5711eb53)
+ASL_EXIT=0
+ASL_DIAG=complete
+asl   bytes: 4e714e71323c0002343c0006
+SIGIL_EXIT=0
+sigil bytes: 4e714e71323c0002343c0006
+MATCH
+=== k01 (fe47b451)
+> > > k01.asm(6):12: error #1010: symbol undefined
+ASL_EXIT=2
+ASL_DIAG=complete
+  lines that assembled: an error stops the pass loop, so every forward
+asl   bytes: (asl exited 2; no value quoted)
+> > > k01.asm(6):12: error #1010: symbol undefined
+      1 error
+      0 warnings
+SIGIL_EXIT=1
+k01.asm(5):1: error: `$$.` does not start a temporary symbol name: follow `$$` with a letter or `_`
+k01.asm(6):12: error: `$$.` does not start a temporary symbol name: follow `$$` with a letter or `_`
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 2 errors (reported on stderr)
+=== k02 (dc57fef1)
+ASL_EXIT=0
+ASL_DIAG=complete
+asl   bytes: 4e714e7112024e714e71
+SIGIL_EXIT=0
+sigil bytes: 4e714e7112024e714e71
+MATCH
+=== k03 (8d73fba9)
+ASL_EXIT=0
+ASL_DIAG=complete
+asl   bytes: 4e714e7112241234
+SIGIL_EXIT=0
+sigil bytes: 4e714e7112241234
+MATCH
+=== k04 (52dd884c)
+ASL_EXIT=0
+ASL_DIAG=complete
+asl   bytes: 4e714e711204
+SIGIL_EXIT=0
+sigil bytes: 4e714e711204
+MATCH
+=== k05 (fc38caf5)
+> > > k05.asm(5): error #1110: wrong number of operands
+ASL_EXIT=2
+ASL_DIAG=complete
+  lines that assembled: an error stops the pass loop, so every forward
+asl   bytes: (asl exited 2; no value quoted)
+> > > k05.asm(5): error #1110: wrong number of operands
+      1 error
+      0 warnings
+SIGIL_EXIT=1
+k05.asm(5):2: error: `pushv` needs a stack name and at least one symbol: `pushv [stack],symbol[,symbol...]`
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+=== k06 (c96f8d93)
+> > > k06.asm(9) m(1):14: error #1010: symbol undefined
+ASL_EXIT=2
+ASL_DIAG=INCOMPLETE
+  asl stopped its PASS LOOP on an error, so the diagnostics from
+  ZERO here whether there are none or thirty. The error count in
+  reported error and assemble again to learn what was hidden.
+  lines that assembled: an error stops the pass loop, so every forward
+asl   bytes: (asl exited 2; no value quoted)
+> > > k06.asm(9) m(1):14: error #1010: symbol undefined
+        errors, listing possibly incorrect.
+      1 error
+      0 warnings
+SIGIL_EXIT=1
+k06.asm(9) m(1):2: error: unresolved symbol `$$q@Lab1` for fixup in section sec4608 at offset 2
+this error list may be incomplete: sigil stopped at link, so the image checks did not run
+assembly failed: 1 error (reported on stderr)
+=== k07 (f9e50fba)
+ASL_EXIT=0
+ASL_DIAG=complete
+asl   bytes: 4e714e714e7112044e714e714e71120c12164e714e714e711216
+SIGIL_EXIT=0
+sigil bytes: 4e714e714e7112044e714e714e71120c12164e714e714e711216
+MATCH
+=== h02 (ff1cacfa)
+ASL_EXIT=0
+ASL_DIAG=complete
+asl   bytes: 4e7100004e7100004e714e714e71
+SIGIL_EXIT=0
+sigil bytes: 4e7100004e7100004e714e714e71
+MATCH
+=== x01 (8523f759)
+ASL_EXIT=0
+ASL_DIAG=complete
+asl   bytes: 4e711234
+SIGIL_EXIT=0
+sigil bytes: 4e711234
+MATCH
+=== x02 (bff50c2c)
+ASL_EXIT=0
+ASL_DIAG=complete
+asl   bytes: 4e711234
+SIGIL_EXIT=0
+sigil bytes: 4e711234
+MATCH
+=== x03 (c7a916b3)
+ASL_EXIT=0
+ASL_DIAG=complete
+asl   bytes: 4e711234
+SIGIL_EXIT=0
+sigil bytes: 4e711234
+MATCH
+=== x04 (f13ff3ed)
+ASL_EXIT=0
+ASL_DIAG=complete
+asl   bytes: 4e7100011200
+SIGIL_EXIT=0
+sigil bytes: 4e7100011200
+MATCH
+=== x05 (243ba44c)
+ASL_EXIT=0
+ASL_DIAG=complete
+asl   bytes: 4e714e7100001202
+SIGIL_EXIT=0
+sigil bytes: 4e714e7100001202
+MATCH
+=== x06 (9b1a6f37)
+> > > x06.asm(5):10: error #1145: expected integer, floating point number or string but got register
+ASL_EXIT=2
+ASL_DIAG=complete
+  lines that assembled: an error stops the pass loop, so every forward
+asl   bytes: (asl exited 2; no value quoted)
+> > > x06.asm(5):10: error #1145: expected integer, floating point number or string but got register
+      1 error
+      0 warnings
+SIGIL_EXIT=1
+x06.asm(5):2: error: `A1` is a register, not a value: expected an integer, floating point number or string
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 1 error (reported on stderr)
+=== y01 (8523f759)
+ASL_EXIT=0
+ASL_DIAG=complete
+asl   bytes: 4e711234
+SIGIL_EXIT=0
+sigil bytes: 4e711234
+MATCH
+=== y02 (2f1f1767)
+ASL_EXIT=0
+ASL_DIAG=complete
+asl   bytes: 4e71303c1234
+SIGIL_EXIT=0
+sigil bytes: 4e71303c1234
+MATCH
+=== y03 (fbbd77c8)
+ASL_EXIT=0
+ASL_DIAG=complete
+asl   bytes: 4e711234
+SIGIL_EXIT=0
+sigil bytes: 4e711234
+MATCH
+=== y04 (9c092b87)
+ASL_EXIT=0
+ASL_DIAG=complete
+asl   bytes: 4e711234
+SIGIL_EXIT=0
+sigil bytes: 4e711234
+MATCH
+=== z01 (5a79b7e7)
+> > > z01.asm(5):10: error #1145: expected integer, floating point number or string but got register
+ASL_EXIT=2
+ASL_DIAG=complete
+  lines that assembled: an error stops the pass loop, so every forward
+asl   bytes: (asl exited 2; no value quoted)
+> > > z01.asm(5):10: error #1145: expected integer, floating point number or string but got register
+      1 error
+      0 warnings
+SIGIL_EXIT=0
+sigil bytes: 4e714e71323c2402
+=== z02 (df431ad3)
+ASL_EXIT=0
+ASL_DIAG=complete
+asl   bytes: 4e714e711200
+SIGIL_EXIT=1
+z02.asm(4):2: error: `section` is not a recognized 68000 mnemonic
+z02.asm(6):2: error: `endsection` is not a recognized 68000 mnemonic
+this error list may be incomplete: sigil stopped at the front end, so layout, link and the image checks did not run
+assembly failed: 2 errors (reported on stderr)
+PROBEALL_END

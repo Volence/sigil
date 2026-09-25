@@ -1,0 +1,33 @@
+== sonic4.s4.bin
+reference: 820209 bytes, crc32 91c46c94
+candidate: 820209 bytes, crc32 91c46c94
+compare: 0 differing bytes, length mismatch False
+control: planted at [0, 410104, 820208], comparer reported [0, 410104, 820208]: OK
+control vs reference: 3 differing bytes (must be 3 when the compare is clean)
+compare rc=0
+== sonic4-debug.s4.debug.bin
+reference: 846509 bytes, crc32 8a378de6
+candidate: 846509 bytes, crc32 8a378de6
+compare: 0 differing bytes, length mismatch False
+control: planted at [0, 423254, 846508], comparer reported [0, 423254, 846508]: OK
+control vs reference: 3 differing bytes (must be 3 when the compare is clean)
+compare rc=0
+== demo.demo.bin
+reference: 96863 bytes, crc32 1c7a34d3
+candidate: 96863 bytes, crc32 1c7a34d3
+compare: 0 differing bytes, length mismatch False
+control: planted at [0, 48431, 96862], comparer reported [0, 48431, 96862]: OK
+control vs reference: 3 differing bytes (must be 3 when the compare is clean)
+compare rc=0
+== demo-debug.demo.debug.bin
+reference: 103185 bytes, crc32 72e405a5
+candidate: 103185 bytes, crc32 72e405a5
+compare: 0 differing bytes, length mismatch False
+control: planted at [0, 51592, 103184], comparer reported [0, 51592, 103184]: OK
+control vs reference: 3 differing bytes (must be 3 when the compare is clean)
+compare rc=0
+restored /home/volence/sonic_hacks/.aeon-s3k-codepage/s4.bin 91c46c94 820209
+restored /home/volence/sonic_hacks/.aeon-s3k-codepage/s4.debug.bin 8a378de6 846509
+restored /home/volence/sonic_hacks/.aeon-s3k-codepage/demo.bin 1c7a34d3 96863
+restored /home/volence/sonic_hacks/.aeon-s3k-codepage/demo.debug.bin 72e405a5 103185
+IDENTITY_END

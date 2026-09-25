@@ -1,0 +1,8 @@
+sonic3k.asm(100959):3: error: `subx` is not a recognized 68000 mnemonic
+sonic3k.asm(119898):3: error: `subx` is not a recognized 68000 mnemonic
+sonic3k.asm(119919):3: error: `subx` is not a recognized 68000 mnemonic
+sonic3k.asm(174875):3: error: `(d8,PC,Xn)` indexed PC-relative addressing is not yet supported (only `(d16,PC)` lowers)
+sonic3k.asm(174882):3: error: `(d8,PC,Xn)` indexed PC-relative addressing is not yet supported (only `(d16,PC)` lowers)
+sonic3k.asm(62886):3: error: `abcd` is not a recognized 68000 mnemonic
+sonic3k.asm(62887):3: error: `abcd` is not a recognized 68000 mnemonic
+sonic3k.asm(62888):3: error: `abcd` is not a recognized 68000 mnemonic

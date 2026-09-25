@@ -1,0 +1,18 @@
+pwd=/home/volence/sonic_hacks/sigil/.claude/worktrees/agent-a620ff60a900c195e aeon HEAD: ec640bcf70e263167223a33d987d4661ff221b7e aeon status lines: 0
+sigil: /home/volence/sonic_hacks/.scratch/s3k-dollar-labels/bin/sigil-base md5 54ae38bc5ef73e8c0fa9eb993a4c8254
+emit:  /home/volence/sonic_hacks/.scratch/s3k-dollar-labels/bin/emit_sound_blob-base md5 ad6e2b8fbaec9a0a63aebc21c160588f
+sigil 0.1.0 (revision-unknown)
+  revision:  unknown, git rev-parse --path-format=absolute --git-dir --git-common-dir failed: fatal: not a git repository (or any of the parent directories): .git
+sonic4 build rc=0
+  produced s4.bin
+sonic4-debug build rc=0
+  produced s4.debug.bin
+demo build rc=0
+  produced demo.bin
+demo-debug build rc=0
+  produced demo.debug.bin
+demo-debug.demo.debug.bin    crc32 72e405a5 size 103185
+demo.demo.bin                crc32 1c7a34d3 size 96863
+sonic4-debug.s4.debug.bin    crc32 8a378de6 size 846509
+sonic4.s4.bin                crc32 91c46c94 size 820209
+FOUR_END_base

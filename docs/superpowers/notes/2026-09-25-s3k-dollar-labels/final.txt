@@ -1,0 +1,969 @@
+### d01
+	cpu 68000
+	org $1200
+A1:	dc.w $$x
+	nop
+$$x:	dc.w $$x,$$y
+$$y:	dc.w $$y
+B1:	nop
+	nop
+	nop
+$$x:	dc.w $$x
+	dc.w $$y
+$$y:	dc.w $$x,$$y
+### d02
+	cpu 68000
+	org $1200
+A1:	nop
+$$x:	nop
+.loc:	dc.w $$x
+$$x2:	nop
+.loc2:	dc.w $$x2
+### d03
+	cpu 68000
+	org $1200
+A1:	nop
+$$x:	nop
++	dc.w $$x
+-	nop
+	dc.w $$x
+### d04
+	cpu 68000
+	org $1200
+$$x:	nop
+	dc.w $$x
+A1:	nop
+	dc.w $$x
+### d05
+	cpu 68000
+	org $1200
+A1:	nop
+$$x:	nop
+A2	equ	$4321
+	dc.w $$x
+### d06
+	cpu 68000
+	org $1200
+A1:	nop
+$$x:	nop
+A2	set	$4321
+	dc.w $$x
+### d07
+	cpu 68000
+	org $1200
+A1:	nop
+$$x:	nop
+	dc.w $$X
+### d08
+	cpu 68000
+	org $1200
+A1:	nop
+$$x:	nop
+$$v	equ	$$x+$21
+	dc.w $$v,$$x*2
+B1:	nop
+$$x:	nop
+$$v	equ	$$x+$43
+	dc.w $$v
+### d09
+	cpu 68000
+	org $1200
+A1:	nop
+$$x:	nop
+	bra.s	$$x
+	beq.w	$$y
+	nop
+$$y:	nop
+### d10
+	cpu 68000
+	org $1200
+A1:	nop
+$$x:	nop
+B1:	dc.w $$x
+### e01
+	cpu 68000
+	org $1200
+V	set	1
+	nop
+$$x:	nop
+	dc.w $$x
+V	set	2
+	nop
+	nop
+$$x:	nop
+	dc.w $$x
+### e02
+	cpu 68000
+	org $1200
+m	macro
+$$l:	nop
+	dc.w $$l
+	endm
+A1:	nop
+$$x:	nop
+	m
+	nop
+	m
+	dc.w $$x
+### e03
+	cpu 68000
+	org $1200
+m	macro
+Lb:	nop
+	endm
+A1:	nop
+$$x:	nop
+	m
+	dc.w $$x
+### e04
+	cpu 68000
+	org $1200
+A1:	nop
+$$x:	nop
+	section S1
+	nop
+	dc.w $$x
+	endsection S1
+	dc.w $$x
+### e05
+	cpu 68000
+	org $1200
+A1:	nop
+$$x:	nop
+	phase $3400
+	nop
+	dc.w $$x
+$$y:	dc.w $$y
+	dephase
+	dc.w $$x,$$y
+### e06
+	cpu 68000
+	org $1200
+A1:	nop
+$$x:	nop
+B	equ	$$x
+	dc.w B
+### e07
+	cpu 68000
+	org $1200
+A1:	nop
+$$x:	nop
+.l:	nop
+	dc.w A1.l,$$x
+### e08
+	cpu 68000
+	org $1200
+A1:	nop
+$$x:	nop
+	cpu 68000
+	dc.w $$x
+### e09
+	cpu 68000
+	org $1200
+A1:	nop
+$$v	set	$1234
+	dc.w $$v
+$$v	set	$2345
+	dc.w $$v
+### e10
+	cpu 68000
+	org $1200
+A1:	nop
+$$x:	nop
+$$X:	nop
+	dc.w $$x,$$X
+### e11
+	cpu 68000
+	org $1200
+m2	macro arg
+	nop
+	dc.w arg
+	endm
+A1:	nop
+$$x:	nop
+	m2 $$x
+### e12
+	cpu 68000
+	org $1200
+A1:	nop
+$$x:	nop
+m3	macro
+	nop
+	endm
+	dc.w $$x
+### e13
+	cpu 68000
+	org $1200
+A1:	nop
+$$x:	nop
+	rept 2
+	nop
+	endm
+	dc.w $$x
+### e14
+	cpu 68000
+	org $1200
+A1:	nop
+$$:	nop
+	dc.w $$
+### e15
+	cpu 68000
+	org $1200
+A1:	nop
+$$1:	nop
+	dc.w $$1
+### e16
+	cpu z80
+	org $1200
+A1:	nop
+$$x:	nop
+	dw $$x
+### e17
+	cpu z80
+	org $1200
+A1:	nop
+	nop
+	dw $$
+### e18
+	cpu 68000
+	org $1200
+A1:	nop
+	nop
+	dc.w $$
+### e19
+	cpu 68000
+	org $1200
+A1:	nop
+$$x:	nop
+	charset $41,$11
+	dc.w $$x
+### e20
+	cpu 68000
+	org $1200
+A1:	nop
+$$x:	nop
+	dc.w $$x
+	dc.w $$z
+### f01
+	cpu 68000
+	org $1200
+V	set	1
+$$y:	nop
+W	set	1
+	nop
+V	set	2
+	dc.w $$y
+### f02
+	cpu 68000
+	org $1200
+m	macro
+	nop
+	dc.w $$x
+	endm
+A1:	nop
+$$x:	nop
+	m
+### f03
+	cpu 68000
+	org $1200
+m	macro
+$$x:	nop
+	dc.w $$x
+	endm
+A1:	nop
+$$x:	nop
+	m
+	dc.w $$x
+### f04
+	cpu 68000
+	org $1200
+A1:	nop
+	section S1
+	nop
+$$y:	nop
+	endsection S1
+	dc.w $$y
+### f05
+	cpu z80
+	org 1200h
+A1:	nop
+$$x:	nop
+	dw $$x
+B1:	nop
+	nop
+$$x:	nop
+	dw $$x
+### f06
+	cpu z80
+	org 1200h
+A1:	nop
+	nop
+	dw $$
+### f07
+	cpu 68000
+	org $1200
+A1:	nop
+$$x:	nop
+	padding off
+	dc.w $$x
+### f08
+	cpu 68000
+	org $1200
+A1:	nop
+$$x:	nop
+	supmode on
+	dc.w $$x
+### f09
+	cpu 68000
+	org $1200
+A1:	nop
+$$x:	nop
+	listing on
+	dc.w $$x
+### f10
+	cpu 68000
+	org $1200
+m	macro
+	nop
+$$q:	nop
+	endm
+A1:	nop
+	m
+	dc.w $$q
+### f11
+	cpu 68000
+	org $1200
+m	macro
+	nop
+	dc.w $$q
+	endm
+A1:	nop
+	m
+$$q:	nop
+### f12
+	cpu 68000
+	org $1200
+A1:	nop
+$$x:	nop
+	save
+	restore
+	dc.w $$x
+### f13
+	cpu 68000
+	org $1200
+A1:	nop
+$$x:	nop
+	if 1
+	nop
+	endif
+	dc.w $$x
+### f14
+	cpu 68000
+	org $1200
+m	macro
+Lb:	nop
+$$q:	nop
+	dc.w $$q
+	endm
+A1:	nop
+	m
+	nop
+	m
+### f15
+	cpu 68000
+	org $1200
+A1:	nop
+$$x:	nop
+	dc.w $$x
+	dc.w $$x.y
+### f16
+	cpu 68000
+	org $1200
+A1:	nop
+$$x:	nop
+B1	label	*
+	dc.w $$x
+### f17
+	cpu 68000
+	org $1200
+A1:	nop
+$$a_b:	nop
+$$c.d:	nop
+	dc.w $$a_b,$$c.d
+### f18
+	cpu 68000
+	org $1200
+A1:	nop
+$$x:	nop
+	dc.w $$x
+	nop
+	dc.w -$$x+$$x*2
+### f19
+	cpu 68000
+	org $1200
+	phase $2400
+A1:	nop
+$$x:	nop
+	dephase
+	dc.w $$x
+### f20
+	cpu 68000
+	org $1200
+A1:	nop
+$$x:	nop
+	org $1300
+	dc.w $$x
+### g01
+	cpu 68000
+	org $1200
+m	macro
+Lb:	nop
+	endm
+A1:	nop
+	m
+$$z:	nop
+	dc.w $$z
+	m
+$$z:	nop
+	dc.w $$z
+### g02
+	cpu 68000
+	org $1200
+A1:	nop
+	cpu 68000
+$$x:	nop
+	cpu 68000
+$$x:	nop
+	dc.w $$x
+### g03
+	cpu 68000
+	org $1200
+A1:	nop
+.l:	nop
+	cpu 68000
+.l:	nop
+	dc.w .l
+### g04
+	cpu 68000
+	org $1200
+A1:	nop
+	cpu 68000
+$$x:	nop
+	padding off
+$$x:	nop
+	dc.w $$x
+### g05
+	cpu 68000
+	org $1200
+A1:	nop
+$$x:	nop
+	page 0
+	dc.w $$x
+### g06
+	cpu 68000
+	org $1200
+A1:	nop
+$$x:	nop
+	enum	E1,E2
+	dc.w $$x
+### g07
+	cpu 68000
+	org $1200
+A1:	nop
+$$x:	nop
+	save
+	dc.w $$x
+	restore
+### g08
+	cpu 68000
+	org $1200
+A1:	nop
+$$x:	nop
+	restore
+### g09
+	cpu 68000
+	org $1200
+V	set	$12
+$$x:	nop
+	pushv	V
+	dc.w $$x
+	popv	V
+	dc.w $$x
+### g10
+	cpu 68000
+	org $1200
+A1:	nop
+$$x:	nop
+V	set	1
+	dc.w A1
+	dc.w $$x
+### g11
+	cpu 68000
+	org $1200
+A1:	nop
+$$x:	nop
+	padding on
+	dc.w $$x
+### g12
+	cpu 68000
+	org $1200
+A1:	nop
+$$x:	nop
+	supmode off
+	dc.w $$x
+### g13
+	cpu 68000
+	org $1200
+A1:	nop
+$$x:	nop
+	listing off
+	listing on
+	dc.w $$x
+### g14
+	cpu 68000
+	org $1200
+A1:	nop
+$$x:	nop
+Str	struct
+f1	ds.w	1
+Str	endstruct
+	dc.w $$x
+### g15
+	cpu 68000
+	org $1200
+A1:	nop
+$$x:	nop
+	shared	A1
+	dc.w $$x
+### g16
+	cpu 68000
+	org $1200
+A1:	nop
+$$x:	nop
+	nextenum	E3
+	dc.w $$x
+### g17
+	cpu 68000
+	org $1200
+m	macro
+	nop
+	dc.w $$x
+	endm
+A1:	nop
+	m
+$$x:	nop
+	m
+### g18
+	cpu 68000
+	org $1200
+A1:	nop
+	nop
+$$x:	nop
+	dc.w $$x
+	dc.w A1.$$x
+### g19
+	cpu 68000
+	org $1200
+.pre:	nop
+$$x:	nop
+	dc.w $$x
+### g20
+	cpu 68000
+	org $1200
+A1:	nop
+$$x:	nop
+	cpu z80
+	cpu 68000
+	dc.w $$x
+### i01
+	cpu 68000
+	org $1200
+A1:	nop
+	cpu 68000
+$$x:	nop
+	padding off
+	dc.w $$x
+### i02
+	cpu 68000
+	org $1200
+A1:	nop
+	rept 2
+	nop
+$$r:	nop
+	dc.w $$r
+	endm
+### i05
+	cpu 68000
+	org $1200
+A1:	nop
+	nop
+$$x	label	*
+	dc.w $$x
+### i07
+	cpu 68000
+	org $1200
+A1:	nop
+$$x:	nop
+	dc.w defined($$x),defined($$y)
+	ifdef $$x
+	dc.w $1111
+	endif
+	ifndef $$y
+	dc.w $2222
+	endif
+### i09
+	cpu 68000
+	org $1200
+A1:	nop
+$$x:	nop
+	move.w	#$$x,d0
+	move.w	#$$x-A1+$10,d1
+	lea	$$x(pc),a0
+	move.w	($$x).w,d2
+	dc.l	$$x+$10000
+### i10
+	cpu z80
+	org 1200h
+A1:	nop
+$$x:	nop
+	jr	$$x
+	ld	hl,$$x
+	jr	$
+	dw	$+2,$$x
+	ld	a,($$x)
+### i16
+	cpu 68000
+	org $1200
+A1:	nop
+	dc.w $$x
+B1:	nop
+$$x:	nop
+### i25
+	cpu 68000
+	org $1200
+inner	macro
+	nop
+	dc.w $$a
+	endm
+outer	macro
+	nop
+$$a:	nop
+	inner
+	endm
+A1:	nop
+$$a:	nop
+	outer
+	outer
+	dc.w $$a
+### i26
+	cpu 68000
+	org $1200
+A1:	nop
+$$x:	nop
+	cpu z80
+$$x:	nop
+	cpu 68000
+	dc.w $$x
+### i27
+	cpu 68000
+	org $1200
+m	macro
+	nop
+	dc.w $$q
+	endm
+A1:	nop
+$$q:	nop
+	m
+B1:	nop
+	nop
+$$q:	nop
+	m
+### i28
+	cpu 68000
+	org $1200
+m	macro
+Lb:	nop
+	endm
+A1:	nop
+$$x:	nop
+	m
+A1b	set	1
+$$x:	nop
+	dc.w $$x
+### i29
+	cpu 68000
+	org $1200
+V	set	$10
+$$x:	nop
+W	set	$20
+	nop
+V	set	$30
+	dc.w $$x
+	nop
+$$y:	nop
+W	set	$40
+	dc.w $$y
+V	set	$50
+	dc.w $$y
+### i30
+	cpu 68000
+	org $1200
+m	macro
+$$x:	nop
+	dc.w $$x
+	endm
+A1:	nop
+	m
+	m
+	m
+### i31
+	cpu 68000
+	org $1200
+A1:	nop
+	nop
+$$x:	nop
+	cmpi.w	#$$x,d0
+	dc.w $$x,$1234
+### j01
+	cpu 68000
+	org $1200
+A1:	nop
+	dc.w defined($$x)
+$$x:	nop
+$$v	set	5
+	dc.w defined($$x),defined($$v),defined(A1)
+	if defined($$v)
+	dc.w $1111
+	else
+	dc.w $2222
+	endif
+### j02
+	cpu 68000
+	org $1200
+A1:	nop
+$$x:	nop
+	move.w	#$$x,d0
+	lea	$$x(pc),a0
+	move.w	($$x).w,d2
+	dc.l	$$x+$10000
+### j03
+	cpu 68000
+	org $1200
+A1:	nop
+$$x:	nop
+	dc.w	$$x-A1+$10
+### j04
+	cpu 68000
+	org $1200
+A1:	nop
+$$x:	nop
+	move.w	#$$x-A1,d1
+### j05
+	cpu 68000
+	org $1200
+A1:	nop
+$$x:	nop
+	move.w	#$$x+$10,d1
+### j06
+	cpu 68000
+	org $1200
+V	set	$10
+$$x:	nop
+W	set	$20
+	nop
+V	set	$30
+	dc.w $$x
+	nop
+$$y:	nop
+W	set	$40
+	nop
+V	set	$50
+	dc.w $$y
+### j07
+	cpu 68000
+	org $1200
+A1:	nop
+$$x:	nop
+	move.w	#A1+$$x,d1
+### j08
+	cpu 68000
+	org $1200
+A1:	nop
+$$x:	nop
+	move.w	#($$x-A1),d1
+### j03
+	cpu 68000
+	org $1200
+Lab1:	nop
+$$x:	nop
+	dc.w	$$x-Lab1+$10
+### j04
+	cpu 68000
+	org $1200
+Lab1:	nop
+$$x:	nop
+	move.w	#$$x-Lab1,d1
+	move.w	#($$x-Lab1)*3,d2
+### k01
+	cpu 68000
+	org $1200
+Lab1:	nop
+$$_x:	nop
+$$.y:	nop
+	dc.w $$_x,$$.y
+### k02
+	cpu 68000
+	org $1200
+m	macro
+	dc.w $$q
+Lb:	nop
+$$q:	nop
+	endm
+Lab1:	nop
+$$q:	nop
+	m
+### k03
+	cpu 68000
+	org $1200
+m	macro
+	nop
+$$v	equ	*+$20
+$$w	set	*+$30
+	endm
+Lab1:	nop
+	m
+	dc.w $$v,$$w
+### k04
+	cpu 68000
+	org $1200
+m	macro
+	nop
+$$x	label	*
+	endm
+Lab1:	nop
+	m
+	dc.w $$x
+### k05
+	cpu 68000
+	org $1200
+Lab1:	nop
+$$x:	nop
+	pushv	Lab1
+	dc.w $$x
+### k06
+	cpu 68000
+	org $1200
+m	macro
+	dc.w $$q
+Lb:	nop
+$$q:	nop
+	endm
+Lab1:	nop
+	m
+### k07
+	cpu 68000
+	org $1200
+m	macro
+	dc.w $$q
+Lb:	nop
+	nop
+$$q:	nop
+	dc.w $$q
+	endm
+Lab1:	nop
+	nop
+$$q:	nop
+	m
+	m
+### h02
+	cpu 68000
+	org $1200
+A1:	nop
+	save
+	cpu z80undoc
+.l1:	nop
+	restore
+.l2:	nop
+	cpu 68000
+	save
+	cpu z80
+.l3:	nop
+	restore
+.l4:	nop
+	supmode off
+.l5:	nop
+	padding on
+.l6:	nop
+### x01
+	cpu 68000
+	org $1200
+Lab1:	nop
+$$v	set	$1234
+	dc.w $$v
+### x02
+	cpu 68000
+	org $1200
+Lab1:	nop
+$$v	equ	$1234
+	dc.w $$v
+### x03
+	cpu 68000
+	org $1200
+Lab1:	nop
+Vv	set	$1234
+	dc.w Vv
+### x04
+	cpu 68000
+	org $1200
+Lab1:	nop
+	dc.l	Lab1+$10000
+### x05
+	cpu 68000
+	org $1200
+Lab1:	nop
+$$x:	nop
+	dc.l	$$x
+### x06
+	cpu 68000
+	org $1200
+Lab1:	nop
+Lab2:	nop
+	move.w	#A1+Lab2,d1
+### y01
+	cpu 68000
+	org $1200
+Lab1:	nop
+$$v	set	$1234
+	dc.w $$v
+### y02
+	cpu 68000
+	org $1200
+Lab1:	nop
+$$v	set	$1234
+	move.w	#$$v,d0
+### y03
+	cpu 68000
+	org $1200
+Lab1:	nop
+$$v	:=	$1234
+	dc.w $$v
+### y04
+	cpu 68000
+	org $1200
+Lab1:	nop
+$$v	=	$1234
+	dc.w $$v
+### z01
+	cpu 68000
+	org $1200
+A1:	nop
+Lab2:	nop
+	move.w	#A1+Lab2,d1
+### z02
+	cpu 68000
+	org $1200
+Lab1:	nop
+	section S1
+	nop
+	endsection S1
+	dc.w Lab1
