@@ -197,13 +197,8 @@ fn parallax_addr_labels(debug: bool) -> Vec<Section> {
     // a VDP_Dirty_Mask sibling until the blanket-restore parcel deleted that symbol.)
     // Camera_X/Y now pin-sourced (they carry the −4 too; matches Current_Act_Ptr style).
     let mut table: Vec<(&str, u32, u32)> = vec![
-        // The role-swap flag parallax.emp reads across the seam; derived like every
-        // other `Parallax_*` cell here rather than pinned.
-        ram_block_vma("Parallax_Roles_Swapped"),
         // The VDP register writer parallax.emp calls across the seam.
         ram_block_vma("Set_VDP_Reg"),
-        // The row-remap state cell parallax.emp reads across the seam.
-        ram_block_vma("Parallax_Remap_State"),
         // The MD Debugger carriers the DEBUG-shape asserts jsr/jmp (the section_port /
         // sprites_port precedent). Shape-invariant pins carried in BOTH shapes: in plain
         // the assert is comptime-gated out and these simply go unreferenced.
@@ -235,39 +230,8 @@ fn parallax_addr_labels(debug: bool) -> Vec<Section> {
             pins::EFFECTS_INSTALL_PRESET.plain,
             pins::EFFECTS_INSTALL_PRESET.debug,
         ),
-        // The `Parallax_*` RAM state block, every address read from the reference
-        // build's own listing — see `ram_block_vma`, which carries the reason. The
-        // block is capability-sized in `engine/ram.emp`
-        // (`104 + (28 + 4 * BAND_DRIFT_N) * MAX_PARALLAX_BANDS` at the shipped set),
-        // so its interior is not a constant this file can hold; three of its arrays
-        // resize together and the symbols below them all move.
-        //
-        // `parallax.emp` pins the last three by ADJACENT-SYMBOL DIFFERENCE
-        // (`Curve_Carry - Drift_Acc`, `Shadow_Bands - Curve_Carry`,
-        // `Shadow_Scroll_A - Shadow_Bands`) so a short reservation names itself, and
-        // `ram.emp` records that inserting a field between any two of those three
-        // breaks the pin it splits. Deriving the addresses keeps this scope agreeing
-        // with that layout by construction instead of by transcription.
-        ram_block_vma("Parallax_State"),
-        ram_block_vma("Parallax_State_End"),
-        ram_block_vma("Parallax_Current_Config"),
-        ram_block_vma("Parallax_Target_Config"),
-        ram_block_vma("Parallax_Transition_Frames"),
-        ram_block_vma("Parallax_Snap_Pending"),
-        ram_block_vma("Parallax_Prev_Sec_X"),
-        ram_block_vma("Parallax_Prev_Sec_Y"),
-        ram_block_vma("Parallax_Current_Scroll_A"),
-        ram_block_vma("Parallax_Current_Scroll_B"),
-        ram_block_vma("Parallax_Current_Vscroll_BG"),
-        ram_block_vma("Parallax_Deform_Phase_FG"),
-        ram_block_vma("Parallax_Deform_Phase_BG"),
-        ram_block_vma("Parallax_V_Deform_Phase_BG"),
-        ram_block_vma("Parallax_Vscroll_Column_Buf"),
-        ram_block_vma("Parallax_Drift_Acc"),
-        ram_block_vma("Parallax_Curve_Carry"),
-        ram_block_vma("Parallax_Shadow_Bands"),
-        ram_block_vma("Parallax_Shadow_Scroll_A"),
-        ram_block_vma("Parallax_Shadow_Scroll_B"),
+        // The `Parallax_*` RAM state block is swept from the reference listing below
+        // rather than enumerated here.
         ("Camera_X", pins::CAMERA_X.plain, pins::CAMERA_X.debug),
         ("Camera_Y", pins::CAMERA_Y.plain, pins::CAMERA_Y.debug),
         // Sourced from pins — this RAM cell rides the tail of the shifting RAM map
@@ -327,33 +291,33 @@ fn parallax_addr_labels(debug: bool) -> Vec<Section> {
             pins::MATH.debug_base + pins::SINE_TABLE_OFF as u32,
         ),
     ];
-    // The vertical-parallax camera latch (`Parallax_VP_Prev_Cam_X`), engine RAM in
-    // both shapes, derived like every other `Parallax_*` cell.
-    table.push(ram_block_vma("Parallax_VP_Prev_Cam_X"));
-    table.push(ram_block_vma("Parallax_VP_Lean"));
     // The waterline strip row the row-remap arm reads (owned by engine.ram, shared
-    // with bg_anim), derived the same way.
+    // with bg_anim), derived from the listing.
     table.push(ram_block_vma("Waterline_Art_Row"));
-    if debug {
-        // The live-effects scratch config the arm installs from; debug RAM only.
-        table.push((
-            "Parallax_Scratch_Config",
-            0,
-            sigil_harness::test_support::listing_vma(true, "Parallax_Scratch_Config"),
-        ));
-        // The live-effects scratch arm Parallax_Update services in its DEBUG-only
-        // step 0 (an Aether client pokes it; see parallax.emp). It exists in the debug
-        // RAM map only, so it is read from the debug listing alone, the bg_anim_port
-        // precedent for a debug-only cell.
-        table.push((
-            "Parallax_Scratch_Arm",
-            0,
-            sigil_harness::test_support::listing_vma(true, "Parallax_Scratch_Arm"),
-        ));
-    }
+    let mut table: Vec<(String, u32)> = table
+        .into_iter()
+        .map(|(name, plain, dbg)| (name.to_string(), if debug { dbg } else { plain }))
+        .collect();
+    // The `Parallax_*` RAM state block, swept as a FAMILY from this shape's reference
+    // listing (`extend_from_listing_ram`: work RAM only, so the `Parallax_*` procs
+    // this module defines stay out). The block is capability-sized in `engine/ram.emp`,
+    // so its interior is not a constant this file can hold, and its membership is
+    // aeon's to change: cells join (the vertical-parallax latch, the row-remap state,
+    // the DEBUG-only live-effects scratch arm and config that exist in the debug RAM
+    // map alone) and cells retire (the painted-regions section latch), and a sweep
+    // follows both where a transcribed list goes red on the first one it misses.
+    //
+    // `parallax.emp` pins the drift, curve and shadow cells by ADJACENT-SYMBOL
+    // DIFFERENCE so a short reservation names itself; reading every address from the
+    // listing keeps this scope agreeing with that layout by construction.
+    sigil_harness::test_support::extend_from_listing_ram(&mut table, debug, &["Parallax_"]);
+    // The painted-region state cells (`Region_Cur_*`, `Region_Current`) the region
+    // resolver in this module caches its hit in, owned by engine.ram: the same family
+    // sweep, work RAM only, so `Region_Resolve` (a proc this module defines) stays out.
+    sigil_harness::test_support::extend_from_listing_ram(&mut table, debug, &["Region_"]);
     let mut out = Vec::new();
-    for (i, (name, plain, dbg)) in table.iter().enumerate() {
-        let vma = if debug { *dbg } else { *plain };
+    for (i, (name, vma)) in table.iter().enumerate() {
+        let vma = *vma;
         let asm = format!("cpu 68000\n\tphase ${vma:X}\n{name}:\n\tdc.b 0\n");
         let opts = AsOptions { initial_cpu: Some(Cpu::M68000), ..AsOptions::default() };
         let mut secs = assemble(&asm, &opts)
@@ -441,7 +405,7 @@ fn compile_real_file(
         initial_cpu: Cpu::M68000,
         include_root: Some(dir.clone()),
         embed_base: None,
-        defines: vec![("DEBUG".to_string(), i128::from(debug))],
+        defines: sigil_harness::test_support::sonic4_shape_defines(&aeon_dir(), debug),
     };
     // The game-contract env: parallax.emp gates several blocks on
     // `Game.SCANLINE_CAPS & CAP_*`, which the whole-program bind pass resolves and a

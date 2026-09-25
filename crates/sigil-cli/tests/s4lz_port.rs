@@ -15,7 +15,7 @@
 //!
 //! ## Cross-seam symbols
 //! The module is SELF-CONTAINED (every branch/copy target is internal); the
-//! only seams are the debug shape's MDDBG handlers (the assert blobs) and the
+//! only seams are the MDDBG handlers (the assert blobs) and the
 //! `TILE_SIZE` VALUE mirror (file-local const + `ensure(extern(...))` drift
 //! lock — the negative probe doctors it).
 //!
@@ -82,17 +82,16 @@ fn value_equs(doctor: Option<&str>) -> Vec<Section> {
     sigil_harness::test_support::assemble_equ_pairs(&pairs)
 }
 
-/// The cross-seam ADDRESS symbols — debug shape only: the assert blobs'
-/// MDDBG error-handler entries (the rings_port precedent).
-fn addr_labels(debug: bool) -> Vec<Section> {
-    let mut table: Vec<(&str, u32)> = Vec::new();
-    if debug {
-        table.push(("MDDBG__ErrorHandler", pins::MDDBG_ERROR_HANDLER));
-        table.push((
-            "MDDBG__ErrorHandler_PagesController",
-            pins::MDDBG_ERROR_HANDLER_PAGES_CONTROLLER,
-        ));
-    }
+/// The cross-seam ADDRESS symbols: the assert blobs' MDDBG error-handler entries
+/// (the rings_port precedent). Carried in BOTH shapes: where the tree gates its
+/// assert blocks on `DEBUG == 1 || CRASH_REPORT == 1` the plain shape references
+/// them too, and where it gates on `DEBUG` alone the plain-shape carriers simply go
+/// unreferenced (the bg_port idiom).
+fn addr_labels() -> Vec<Section> {
+    let table: Vec<(&str, u32)> = vec![
+        ("MDDBG__ErrorHandler", pins::MDDBG_ERROR_HANDLER),
+        ("MDDBG__ErrorHandler_PagesController", pins::MDDBG_ERROR_HANDLER_PAGES_CONTROLLER),
+    ];
     let mut out = Vec::new();
     for (i, (name, vma)) in table.iter().enumerate() {
         let vma = *vma;
@@ -125,7 +124,7 @@ fn parse_file(path: &Path) -> sigil_frontend_emp::ast::File {
 }
 
 /// Lower the real `s4lz.emp`, place into the per-shape map, append
-/// the value equ + (debug) address labels, one `resolve_layout` -> `link`.
+/// the value equ + address labels, one `resolve_layout` -> `link`.
 fn compile_real_file(
     debug: bool,
     doctor: Option<&str>,
@@ -138,7 +137,7 @@ fn compile_real_file(
         initial_cpu: Cpu::M68000,
         include_root: Some(dir.clone()),
         embed_base: None,
-        defines: vec![("DEBUG".to_string(), i128::from(debug))],
+        defines: sigil_harness::test_support::sonic4_shape_defines(&aeon_dir(), debug),
     };
     let (module, ldiags) = lower_module(&file, &opts);
     assert!(
@@ -156,7 +155,7 @@ fn compile_real_file(
     );
 
     sections.extend(value_equs(doctor));
-    sections.extend(addr_labels(debug));
+    sections.extend(addr_labels());
 
     let resolved = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
         .unwrap_or_else(|d| panic!("resolve_layout failed: {d:?}"));

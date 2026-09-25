@@ -267,7 +267,7 @@ fn compile_real_file(
         embed_base: None,
         // STRESS_EVICT=0 (chained engine.constants ambient comptime-ensures a
         // STRESS_EVICT-derived const) is now seeded by `lower_module_inner` itself.
-        defines: vec![("DEBUG".to_string(), i128::from(debug))],
+        defines: sigil_harness::test_support::sonic4_shape_defines(&sigil_harness::test_support::aeon_dir(), debug),
     };
     let (module, ldiags) = lower_module(&file, &opts);
     assert!(
@@ -445,7 +445,7 @@ fn lower_and_place(
         embed_base: None,
         // STRESS_EVICT=0 (chained engine.constants ambient comptime-ensures a
         // STRESS_EVICT-derived const) is now seeded by `lower_module_inner` itself.
-        defines: vec![("DEBUG".to_string(), i128::from(debug))],
+        defines: sigil_harness::test_support::sonic4_shape_defines(&sigil_harness::test_support::aeon_dir(), debug),
     };
     let (module, ldiags) = lower_module(&file, &opts);
     assert!(
@@ -484,7 +484,7 @@ fn tile_cache_value_pairs() -> Vec<(&'static str, &'static str)> {
 /// tile_cache.emp's cross-seam ADDRESS labels for the two-module link — the byte
 /// gate's list MINUS `Tile_Cache_GetCollision` (owned by tile_cache.emp here).
 /// (tile_cache's list never synthesized it — it is internal — so this is just
-/// the same 24 base labels + the 2 debug MDDBG handlers.)
+/// the same 24 base labels + the 2 MDDBG handlers.)
 fn tile_cache_labels_for_link(debug: bool) -> Vec<(&'static str, u32)> {
     let pick = |p: pins::Pin| -> u32 { if debug { p.debug } else { p.plain } };
     let mut v: Vec<(&'static str, u32)> = vec![
@@ -556,9 +556,12 @@ fn tile_cache_labels_for_link(debug: bool) -> Vec<(&'static str, u32)> {
         // P2c Task 10: the two demand-stall exits set the camera soft-clamp bits.
         ("Camera_Art_Hold", pick(pins::CAMERA_ART_HOLD)),
     ];
+    // The co-lowered s4lz gates its assert blocks on `DEBUG == 1 || CRASH_REPORT == 1`
+    // where the tree defines `CRASH_REPORT`, so the plain shape can reference the
+    // error-handler entries too; where nothing references them they are inert.
+    v.push(("MDDBG__ErrorHandler", pins::MDDBG_ERROR_HANDLER));
+    v.push(("MDDBG__ErrorHandler_PagesController", pins::MDDBG_ERROR_HANDLER_PAGES_CONTROLLER));
     if debug {
-        v.push(("MDDBG__ErrorHandler", pins::MDDBG_ERROR_HANDLER));
-        v.push(("MDDBG__ErrorHandler_PagesController", pins::MDDBG_ERROR_HANDLER_PAGES_CONTROLLER));
         v.push(("Page_Audit_Ticks", pins::PAGE_AUDIT_TICKS));
         v.push(("Cache_Stall_Watchdog", pins::CACHE_STALL_WATCHDOG));
     }

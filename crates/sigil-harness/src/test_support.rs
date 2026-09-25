@@ -633,6 +633,44 @@ pub fn listing_symbols_with_prefix(debug: bool, prefixes: &[&str]) -> Vec<(Strin
     out
 }
 
+/// A cross-seam symbol's address for a shape when the reference build DEFINES it, and
+/// `None` when that build does not.
+///
+/// For a seam that exists at one aeon revision and not at another: a port gate that
+/// must stay green on a tree predating a cross-seam callee (and so never references it)
+/// and also resolve that callee on a tree that has it. The build's own listing is the
+/// witness of which: a symbol the tree's source defines is in the listing its build
+/// wrote, and a tree without it has no row to supply. An ABSENT listing is still a hard
+/// error, exactly as in [`listing_vma`]: that is a tree nobody built, not a tree without
+/// the symbol, and reading it as `None` would quietly drop a label the lower needs.
+pub fn listing_vma_if_defined(debug: bool, name: &str) -> Option<u32> {
+    let path = listing_path(debug);
+    let text = sigil_span::read_set::read_to_string(&path).unwrap_or_else(|e| {
+        panic!(
+            "no listing at {} ({e}), this gate derives its cross-seam addresses from the \
+             listing beside the reference ROM, so a source-only checkout cannot serve it. \
+             Point AEON_DIR at a tree with the shapes built.",
+            path.display()
+        )
+    });
+    let needle = format!(" {name} : ");
+    text.lines().find_map(|line| {
+        let rest = line.strip_prefix(&needle)?;
+        u32::from_str_radix(rest.split_whitespace().next()?, 16).ok()
+    })
+}
+
+/// [`listing_vma_if_defined`] over a list: the `(name, address)` rows the reference
+/// build defines, in the order given, silently leaving out a name the build does not
+/// define. A label in the list that no link references is inert, so a scope may name a
+/// cross-seam symbol one aeon revision uses and another does not.
+pub fn listing_labels_if_defined(debug: bool, names: &[&str]) -> Vec<(String, u32)> {
+    names
+        .iter()
+        .filter_map(|n| listing_vma_if_defined(debug, n).map(|v| (n.to_string(), v)))
+        .collect()
+}
+
 pub fn listing_vma(debug: bool, name: &str) -> u32 {
     let path = listing_path(debug);
     listing_symbol_addr(&path, name).unwrap_or_else(|| {
@@ -1845,6 +1883,24 @@ pub fn bg_layout_size_const_src(aeon: &std::path::Path) -> String {
 pub fn engine_const_src(aeon: &std::path::Path, name: &str) -> String {
     let rhs = emp_const_rhs(&aeon.join("engine/system/constants.emp"), name);
     format!("module engine.constants_lifted\npub const {name} = {rhs}\n")
+}
+
+/// The comptime `-D` set a single-module port oracle lowers sonic4 code under at one
+/// shape: the shipping profile's built-in rows merged with the `[defines]` table of
+/// the aeon tree's own `games/sonic4/map.toml`, via [`crate::native::shape_defines`],
+/// the same merge the whole-program build reads.
+///
+/// A port that binds only `DEBUG` goes stale in one direction: the engine starts
+/// reading another build define (`CRASH_REPORT` from the profile,
+/// `GAME_SCANLINE_CAPS` from the game's map) and the standalone lower aborts with
+/// `unknown name` before it reaches the bytes it compares. Reading the merge instead
+/// hands the oracle every define the reference ROM was built with, and a tree whose
+/// map declares no `[defines]` table contributes no game rows, so an older tree gets
+/// exactly the env its own build used. Loud on a missing or malformed map.
+pub fn sonic4_shape_defines(aeon: &std::path::Path, debug: bool) -> Vec<(String, i128)> {
+    let profile = crate::native::sonic4_profile(debug);
+    crate::native::shape_defines(&profile, aeon)
+        .unwrap_or_else(|e| panic!("sonic4_shape_defines: {e}"))
 }
 
 /// The resolved game-contract env the raster / parallax / buffers oracles lower

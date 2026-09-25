@@ -220,7 +220,7 @@ fn compile_real_file(
         initial_cpu: Cpu::M68000,
         include_root: Some(dir.clone()),
         embed_base: None,
-        defines: vec![("DEBUG".to_string(), i128::from(debug))],
+        defines: sigil_harness::test_support::sonic4_shape_defines(&aeon_dir(), debug),
     };
     let (module, ldiags) = lower_module(&file, &opts);
     assert!(
@@ -434,7 +434,7 @@ fn two_module_flip(debug: bool, rom_name: &str) {
         "load_art",
         la_base,
         la_len,
-        vec![("DEBUG".to_string(), dbg)],
+        sigil_harness::test_support::sonic4_shape_defines(&aeon, debug),
     );
     let (vb_sections, vb_asserts) = flip_lower(
         parse_file(&aeon.join("engine/system/vblank.emp")),
@@ -469,7 +469,7 @@ fn two_module_flip(debug: bool, rom_name: &str) {
         "s4lz",
         s4_base,
         s4_len,
-        vec![("DEBUG".to_string(), dbg)],
+        sigil_harness::test_support::sonic4_shape_defines(&aeon, debug),
     );
     sections.extend(s4_sections);
     asserts.extend(s4_asserts);
@@ -574,12 +574,15 @@ fn two_module_flip(debug: bool, rom_name: &str) {
         ("DMA_Important", pick(pins::DMA_IMPORTANT)),
         ("DMA_Important_Slot", pick(pins::DMA_IMPORTANT_SLOT)),
     ];
+    // The co-lowered s4lz gates its assert blocks on `DEBUG == 1 || CRASH_REPORT == 1`
+    // where the tree defines `CRASH_REPORT`, so the plain shape can reference the
+    // error-handler entries too; where nothing references them they are inert.
+    table.push(("MDDBG__ErrorHandler", pins::MDDBG_ERROR_HANDLER));
+    table.push((
+        "MDDBG__ErrorHandler_PagesController",
+        pins::MDDBG_ERROR_HANDLER_PAGES_CONTROLLER,
+    ));
     if debug {
-        table.push(("MDDBG__ErrorHandler", pins::MDDBG_ERROR_HANDLER));
-        table.push((
-            "MDDBG__ErrorHandler_PagesController",
-            pins::MDDBG_ERROR_HANDLER_PAGES_CONTROLLER,
-        ));
         table.push(("Lag_Frame_Count", pins::LAG_FRAME_COUNT));
         table.push(("DMA_Bytes_ThisFrame", pins::DMA_BYTES_THIS_FRAME));
         table.push(("Dbg_PageIn_Preempts", pins::DBG_PAGE_IN_PREEMPTS));
