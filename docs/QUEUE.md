@@ -927,3 +927,22 @@ points at it rather than restating it, so there is one copy to keep true.
   unchanged"; full strict suite 504 binaries launched / 504 reported, 5729 passed, 1 failed (the
   environmental `m1b_gate::oracle_loadfromaslisting_resolves_emit_listing`), 2 ignored. Red-first:
   both a formatter literal and a core literal turn `mt_bank_carrier_song_count_follows_the_authority` red.
+
+### SHARED-PAIR-SWAP-F52609FE
+
+- state: **waiting**  size: `S`  project: `-`
+- Asked by the hub 2026-09-25 for aeon's music step 4. The candidate pair is built ASIDE from origin/master
+  `f52609fe` in the durable detached worktree `/home/volence/sonic_hacks/.sigil-pin-f52609fe`
+  (`target/release/sigil` md5 `cdf3ec1abe0d33d8042b7cf5092e5e64`, `emit_sound_blob` md5
+  `ed45bedb7ab47972d570536b8d215d22`; `--version` clean, closure-revision `f52609fe`). The outgoing shared
+  pair at `/home/volence/sonic_hacks/sigil/target/release/` is `1d19e60b` (sigil `fed84c1967b3b92a57402e86d494cc89`,
+  emit_sound_blob `3f2e7322d1cdb1e41dec32ed1637d5e8`). Re-measure all four md5s before acting.
+- **Swap ONLY when both are true:** aeon reports its two running builds done and its byte-identical control
+  against the candidate clean, AND the hub opens the window. A control difference is a finding: stop.
+- **Each step is its own tool call, read before the next; never a `set -e` chain** (zsh does not stop on it):
+  1. `mkdir /home/volence/sonic_hacks/.sigil-outgoing-1d19e60b` and copy the live pair into it.
+  2. md5 the copies and compare with the live pair. Do not continue unless both match.
+  3. Copy each candidate binary into `target/release/` under a temporary name, md5 it against the candidate,
+     then `mv` it over the live name (a rename, so a running reader keeps the old inode).
+  4. md5 the live pair against the candidate, run `target/release/sigil --version` (expect `f52609fe`,
+     source `.sigil-pin-f52609fe`), freeze the outgoing directory, tell aeon and the hub.
