@@ -16,14 +16,49 @@
 
 use serde::Deserialize;
 
-/// One declared island anchor. `when` gates a shape-conditional anchor
-/// (`"sound_on"` / `"sound_off"`); `None` ⇒ every shape.
+/// The shape gate a `when` key names. The vocabulary is closed: a value outside it is
+/// refused at load (`[map.when-unknown]`), because a gate the reader does not know
+/// cannot be told to exclude anything, and applying the row to every shape instead
+/// is how a mistyped gate would move a canonical anchor.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum When {
+    /// `"sound_on"`: only the shapes that build the sound driver.
+    SoundOn,
+    /// `"sound_off"`: only the shapes that do not.
+    SoundOff,
+}
+
+impl When {
+    /// Parse a `when` value, naming the row it came from on refusal.
+    fn parse(value: &str, row: &str) -> Result<When, String> {
+        match value {
+            "sound_on" => Ok(When::SoundOn),
+            "sound_off" => Ok(When::SoundOff),
+            other => Err(format!(
+                "[map.when-unknown] {row} has `when = \"{other}\"`, but `when` takes only \
+                 `sound_on` or `sound_off`; an unknown gate is refused rather than applied to \
+                 every shape"
+            )),
+        }
+    }
+
+    /// Whether a row with this gate belongs to a shape with sound `sound_on`.
+    pub fn applies(self, sound_on: bool) -> bool {
+        match self {
+            When::SoundOn => sound_on,
+            When::SoundOff => !sound_on,
+        }
+    }
+}
+
+/// One declared island anchor. `when` gates a shape-conditional anchor; `None` means
+/// every shape.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Anchor {
     pub name: String,
     pub at: u32,
     pub vma: Option<u32>,
-    pub when: Option<String>,
+    pub when: Option<When>,
 }
 
 /// One declared mid-image hole (K1 = data; K2 enforces). The module named by
@@ -33,7 +68,7 @@ pub struct Hole {
     pub after: String,
     pub at: u32,
     pub filled_by: String,
-    pub when: Option<String>,
+    pub when: Option<When>,
 }
 
 /// One declared per-region byte ceiling (checked at pack time). `cursor` names the
@@ -62,11 +97,11 @@ pub struct PlacementMap {
 impl PlacementMap {
     /// The anchors whose `when` matches this shape (`sound_on`).
     pub fn anchors_for(&self, sound_on: bool) -> impl Iterator<Item = &Anchor> {
-        self.anchors.iter().filter(move |a| when_applies(a.when.as_deref(), sound_on))
+        self.anchors.iter().filter(move |a| when_applies(a.when, sound_on))
     }
     /// The holes whose `when` matches this shape.
     pub fn holes_for(&self, sound_on: bool) -> impl Iterator<Item = &Hole> {
-        self.holes.iter().filter(move |h| when_applies(h.when.as_deref(), sound_on))
+        self.holes.iter().filter(move |h| when_applies(h.when, sound_on))
     }
 }
 
@@ -88,13 +123,8 @@ pub fn section_row_key(name: &str) -> String {
     format!("{SECTION_ROW_PREFIX}{name}")
 }
 
-fn when_applies(when: Option<&str>, sound_on: bool) -> bool {
-    match when {
-        None => true,
-        Some("sound_on") => sound_on,
-        Some("sound_off") => !sound_on,
-        Some(_) => true, // unknown gate: informational, does not exclude
-    }
+fn when_applies(when: Option<When>, sound_on: bool) -> bool {
+    when.is_none_or(|w| w.applies(sound_on))
 }
 
 #[derive(Deserialize)]
@@ -109,6 +139,7 @@ struct MapDoc {
     order: Vec<String>,
 }
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct AnchorDoc {
     #[serde(default)]
     name: String,
@@ -119,6 +150,7 @@ struct AnchorDoc {
     when: Option<String>,
 }
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct HoleDoc {
     after: String,
     at: u32,
@@ -146,17 +178,26 @@ pub fn load_placement_map(toml_src: &str) -> Result<PlacementMap, String> {
             "[map.order-section-row-empty] `order` row `{row}` names no section, spell it `section:<name>`"
         ));
     }
+    let when = |w: Option<String>, row: String| w.map(|v| When::parse(&v, &row)).transpose();
+    let anchors = doc
+        .anchor
+        .into_iter()
+        .map(|a| {
+            let when = when(a.when, format!("anchor `{}`", a.name))?;
+            Ok(Anchor { name: a.name, at: a.at, vma: a.vma, when })
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    let holes = doc
+        .hole
+        .into_iter()
+        .map(|h| {
+            let when = when(h.when, format!("hole after `{}`", h.after))?;
+            Ok(Hole { after: h.after, at: h.at, filled_by: h.filled_by, when })
+        })
+        .collect::<Result<Vec<_>, String>>()?;
     Ok(PlacementMap {
-        anchors: doc
-            .anchor
-            .into_iter()
-            .map(|a| Anchor { name: a.name, at: a.at, vma: a.vma, when: a.when })
-            .collect(),
-        holes: doc
-            .hole
-            .into_iter()
-            .map(|h| Hole { after: h.after, at: h.at, filled_by: h.filled_by, when: h.when })
-            .collect(),
+        anchors,
+        holes,
         budgets: doc
             .budget
             .into_iter()
@@ -209,6 +250,30 @@ ceiling = 0x20000
         assert_eq!(p.anchors_for(true).count(), 2);
         assert_eq!(p.holes_for(false).count(), 1);
         assert_eq!(p.holes_for(true).count(), 0);
+    }
+
+    #[test]
+    fn unknown_when_value_is_refused_not_applied_everywhere() {
+        let e = load_placement_map("[[anchor]]\nname = \"x\"\nat = 0x8000\nwhen = \"s2clip\"\n")
+            .unwrap_err();
+        assert!(e.contains("[map.when-unknown]") && e.contains("\"s2clip\""), "{e}");
+        let e = load_placement_map(
+            "[[hole]]\nafter = \"A\"\nat = 0x400\nfilled_by = \"m\"\nwhen = \"sound\"\n",
+        )
+        .unwrap_err();
+        assert!(e.contains("[map.when-unknown]") && e.contains("\"sound\""), "{e}");
+    }
+
+    #[test]
+    fn unknown_anchor_or_hole_key_is_refused_not_dropped() {
+        let e = load_placement_map("[[anchor]]\nname = \"x\"\nat = 0x8000\nvariant = \"s2clip\"\n")
+            .unwrap_err();
+        assert!(e.contains("unknown field") && e.contains("variant"), "{e}");
+        let e = load_placement_map(
+            "[[hole]]\nafter = \"A\"\nat = 0x400\nfilled_by = \"m\"\nsize = 4\n",
+        )
+        .unwrap_err();
+        assert!(e.contains("unknown field") && e.contains("size"), "{e}");
     }
 
     #[test]
