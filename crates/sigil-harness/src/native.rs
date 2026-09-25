@@ -1315,7 +1315,7 @@ pub fn harvest_engine_constants(aeon: &Path, profile: &GameProfile) -> Result<Ve
 pub fn harvest_game_constants(aeon: &Path, rel: &str, profile: &GameProfile) -> Result<Vec<(String, i64)>, String> {
     // Seed the engine constants, harvested in this shape, as defines so the game
     // module's lone cross-module reference (`COLLECTED_MASK_BYTES`) folds inside the
-    // standalone eval. Also seed `DEBUG` (the build shape) — `sound_ids.emp`'s
+    // standalone eval. Also seed `DEBUG` (the build shape): `sound_ids.emp`'s
     // `SONG_COUNT = if DEBUG == 1 {..}` is shape-dependent; the constants module
     // ignores it (harmless).
     let engine = harvest_engine_constants(aeon, profile)?;
