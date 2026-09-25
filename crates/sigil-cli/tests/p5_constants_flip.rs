@@ -61,6 +61,7 @@ fn reintroducing_an_in_file_definition_is_a_hard_collision() {
         initial_cpu: Some(Cpu::M68000),
         defines: vec![],
         guarded_defines: harvested.clone(),
+        cli_defines: vec![],
         include_root: None,
     };
     let diags = assemble(src, &opts)
@@ -79,6 +80,7 @@ fn reintroducing_an_in_file_definition_is_a_hard_collision() {
         initial_cpu: Some(Cpu::M68000),
         defines: vec![],
         guarded_defines: harvested,
+        cli_defines: vec![],
         include_root: None,
     };
     let module = assemble(clean, &opts2).expect("undoctored residual AS must assemble");

@@ -991,6 +991,7 @@ fn one_pass_with_defer(
     asm.functions = seed_functions.clone();
     asm.known_labels = seed_labels.clone();
     asm.label_ref_equs = seed_label_ref_equs.clone();
+    asm.seed_cli_defines(&opts.cli_defines);
     asm.process(root_name, src);
     asm.report_unpopped_value_stacks();
     asm.report_unrestored_saves();
@@ -1678,6 +1679,9 @@ struct Asm {
     /// redefinition already fails loud with its own `[defines.collision]`
     /// message in `directive_equate`, and calling them variables would refuse
     /// the one spelling that guard exists to permit.
+    ///
+    /// [`Options::cli_defines`] are asl's `-D` and enter as [`SymClass::Var`],
+    /// re-entered at the start of every pass ([`Self::seed_cli_defines`]).
     sym_class: std::collections::HashMap<String, SymClass>,
     /// The `pushv`/`popv` stacks of THIS pass, by stack name (the empty name
     /// is the default stack). Each entry is a saved value and the `pushv`
@@ -7573,6 +7577,25 @@ impl Asm {
                 self.sym_class.insert(q.to_string(), class);
                 true
             }
+        }
+    }
+
+    /// Bind every [`Options::cli_defines`] name as asl's `-D` does, before the
+    /// pass's first line: a SET variable holding its command-line value.
+    ///
+    /// Run at the start of EVERY pass, over whatever the previous pass left in
+    /// the name. asl, `-D FOO=5` on `dc.b FOO` / `FOO set 7` / `dc.b FOO` with a
+    /// forward branch forcing a second pass, emits `05 07` on both passes: the
+    /// first read is the command-line value again, not the `7` pass 1 ended on.
+    /// The class goes in as [`SymClass::Var`], so `FOO set 7` rebinds and
+    /// `FOO equ 7`, `FOO = 7` or `FOO:` is `#2035` through [`Self::declare_class`].
+    /// When a name is given twice, the first value stands. It goes through
+    /// [`Self::define_sym`], so `defined(FOO)` answers 1 from the first line, as
+    /// asl's does for a `-D` name (probe: `-D FOO=0`, `dc.b defined(FOO)` is `01`).
+    fn seed_cli_defines(&mut self, defines: &[(String, i64)]) {
+        for (name, value) in crate::cli_define::first_wins(defines) {
+            self.define_sym(&name, SymbolValue::Int(value));
+            self.sym_class.insert(name, SymClass::Var);
         }
     }
 
@@ -15268,6 +15291,7 @@ mod tests {
             defines: vec![],
             include_root: None,
             guarded_defines: vec![],
+            cli_defines: vec![],
         };
         let m = run(src, &opts).expect("assemble");
         let resolved = sigil_link::resolve_layout(&m.sections, &sigil_ir::SymbolTable::new(), true)
@@ -15289,6 +15313,7 @@ mod tests {
             defines: vec![],
             include_root: None,
             guarded_defines: vec![],
+            cli_defines: vec![],
         };
         let m = run(src, &opts).expect("assemble");
         let resolved = sigil_link::resolve_layout(&m.sections, &sigil_ir::SymbolTable::new(), true)
@@ -15307,7 +15332,7 @@ mod tests {
         //   divs.w d0,d1      = 83 C0
         //   divs.w ($1234).w,d0 = 81 F8 12 34
         let src = "    cpu 68000\n    divs.w d4,d2\n    divs.w #10,d2\n    divs.w d0,d1\n    divs.w ($1234).w,d0\n";
-        let opts = Options { initial_cpu: Some(Cpu::M68000), defines: vec![], include_root: None, guarded_defines: vec![], };
+        let opts = Options { initial_cpu: Some(Cpu::M68000), defines: vec![], include_root: None, guarded_defines: vec![], cli_defines: vec![], };
         let m = run(src, &opts).expect("assemble");
         let resolved = sigil_link::resolve_layout(&m.sections, &sigil_ir::SymbolTable::new(), true)
             .expect("resolve_layout");
@@ -15325,7 +15350,7 @@ mod tests {
         //   divu.w d4,d2 = 84 C4
         //   divu.w d3,d5 = 8A C3
         let src = "    cpu 68000\n    divu.w d4,d2\n    divu.w d3,d5\n";
-        let opts = Options { initial_cpu: Some(Cpu::M68000), defines: vec![], include_root: None, guarded_defines: vec![], };
+        let opts = Options { initial_cpu: Some(Cpu::M68000), defines: vec![], include_root: None, guarded_defines: vec![], cli_defines: vec![], };
         let m = run(src, &opts).expect("assemble");
         let resolved = sigil_link::resolve_layout(&m.sections, &sigil_ir::SymbolTable::new(), true)
             .expect("resolve_layout");
@@ -15345,6 +15370,7 @@ mod tests {
             defines: vec![],
             include_root: None,
             guarded_defines: vec![],
+            cli_defines: vec![],
         };
         let m = run(src, &opts).expect("assemble");
         let resolved = sigil_link::resolve_layout(&m.sections, &sigil_ir::SymbolTable::new(), true)
@@ -15365,6 +15391,7 @@ mod tests {
             defines: vec![],
             include_root: None,
             guarded_defines: vec![],
+            cli_defines: vec![],
         };
         let diags = run(src, &opts)
             .expect_err("branch without a size suffix must be rejected, not lowered");
@@ -15388,6 +15415,7 @@ mod tests {
             defines: vec![],
             include_root: None,
             guarded_defines: vec![],
+            cli_defines: vec![],
         };
         let m = run(src, &opts).expect("assemble");
         let resolved = sigil_link::resolve_layout(&m.sections, &sigil_ir::SymbolTable::new(), true)
@@ -15412,6 +15440,7 @@ mod tests {
             defines: vec![],
             include_root: None,
             guarded_defines: vec![],
+            cli_defines: vec![],
         };
         let m = run(src, &opts).expect("assemble");
         assert!(matches!(
@@ -15434,6 +15463,7 @@ mod tests {
             defines: vec![],
             include_root: None,
             guarded_defines: vec![],
+            cli_defines: vec![],
         };
         let diags = run(src, &opts).expect_err("missing size suffix must be rejected");
         assert!(
@@ -15487,6 +15517,7 @@ mod tests {
             defines: vec![("SOUND_DRIVER_ENABLED".into(), 1)],
             include_root: None,
             guarded_defines: vec![],
+            cli_defines: vec![],
         };
         let m = run(src, &opts).expect("assemble");
         let bytes = m
@@ -15536,6 +15567,7 @@ mod tests {
             defines: vec![],
             include_root: None,
             guarded_defines: vec![],
+            cli_defines: vec![],
         };
         let m = run(src, &opts).expect("assemble");
         let bytes = m
@@ -15557,6 +15589,7 @@ mod tests {
             defines: vec![],
             include_root: None,
             guarded_defines: vec![],
+            cli_defines: vec![],
         };
         let m = run(src, &opts).expect("assemble");
         let bytes = m
@@ -15578,6 +15611,7 @@ mod tests {
             defines: vec![],
             include_root: None,
             guarded_defines: vec![],
+            cli_defines: vec![],
         };
         let m = run(src, &opts).expect("assemble");
         let bytes = m
@@ -17499,7 +17533,7 @@ C:\n";
         // No `GetSineCosine` anywhere in this source — exactly the shape a
         // real cross-seam `.emp` proc call takes from the AS side.
         let src = "    cpu 68000\nConsumer:\n    jsr GetSineCosine\n    rts\n";
-        let opts = Options { initial_cpu: Some(Cpu::M68000), defines: vec![], include_root: None, guarded_defines: vec![], };
+        let opts = Options { initial_cpu: Some(Cpu::M68000), defines: vec![], include_root: None, guarded_defines: vec![], cli_defines: vec![], };
         let m = run(src, &opts).unwrap_or_else(|d| {
             panic!("expected a deferred compile, not a hard error: {d:?}")
         });
@@ -17518,7 +17552,7 @@ C:\n";
         // section that DOES define the target — the end-to-end proof (mirrors
         // `math_port.rs`'s outbound-consumer harness pattern).
         let src = "    cpu 68000\nConsumer:\n    jsr GetSineCosine\n    rts\n";
-        let opts = Options { initial_cpu: Some(Cpu::M68000), defines: vec![], include_root: None, guarded_defines: vec![], };
+        let opts = Options { initial_cpu: Some(Cpu::M68000), defines: vec![], include_root: None, guarded_defines: vec![], cli_defines: vec![], };
         let m = run(src, &opts).expect("deferred compile must succeed");
 
         let target_src = "    cpu 68000\n    phase $2468\nGetSineCosine:\n    rts\n";
@@ -17549,7 +17583,7 @@ C:\n";
         // Same source/expectation as
         // `m68k_jmp_jsr_bare_symbol_selects_width_in_front_end`, but for jsr.
         let src = "    cpu 68000\n    phase 0\nLbl:\n    jsr Lbl\n";
-        let opts = Options { initial_cpu: Some(Cpu::M68000), defines: vec![], include_root: None, guarded_defines: vec![], };
+        let opts = Options { initial_cpu: Some(Cpu::M68000), defines: vec![], include_root: None, guarded_defines: vec![], cli_defines: vec![], };
         let m = run(src, &opts).expect("assemble");
         assert!(
             matches!(m.sections[0].fragments[0], sigil_ir::Fragment::Data(_)),
@@ -17572,7 +17606,7 @@ C:\n";
         // (which named the symbol) to this link-time arm, so the link-time
         // wording must be at least as good.
         let src = "    cpu 68000\nConsumer:\n    jsr TotallyUndefined\n    rts\n";
-        let opts = Options { initial_cpu: Some(Cpu::M68000), defines: vec![], include_root: None, guarded_defines: vec![], };
+        let opts = Options { initial_cpu: Some(Cpu::M68000), defines: vec![], include_root: None, guarded_defines: vec![], cli_defines: vec![], };
         let m = run(src, &opts).expect("deferred compile must succeed (front-end no longer errors)");
         let err = sigil_link::resolve_layout(&m.sections, &sigil_ir::SymbolTable::new(), true)
             .expect_err("a target defined nowhere must still fail at resolve_layout");

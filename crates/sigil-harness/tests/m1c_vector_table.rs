@@ -165,6 +165,7 @@ fn vector_table_matches_reference_rom_first_256_bytes() {
         defines,
         include_root: Some(aeon.clone()),
         guarded_defines,
+        cli_defines: vec![],
     };
 
     let module = match assemble_root(&root, &opts) {
