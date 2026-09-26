@@ -931,7 +931,20 @@ points at it rather than restating it, so there is one copy to keep true.
 
 ### MODULE-REGISTRY-HARDCODES-AEON-FILES
 
-- state: **next**  size: `M`  project: `SIGIL-DECOUPLE`  asked by: aeon (HOLDING its deletion on us)
+- state: **done in branch** (`parcel/module-registry-derive`)  size: `M`  project: `SIGIL-DECOUPLE`  asked by: aeon (HOLDING its deletion on us)
+- 2026-09-26 DONE IN BRANCH: `registry()` / `demo_registry()` and the config_a/config_b push/filter edits are deleted.
+  The build's module roots derive from `games/<g>/map.toml` `order` over the scanned tree
+  (`crates/sigil-harness/src/module_roots.rs`): a label row names the in-scope module defining it (private heads
+  included), `section:<name>` the module declaring it, `__align$<module>$N` its module; a row nothing defines is
+  `[map.order-orphan]`, a doubly-defined row is settled by the `use` graph or `[map.order-ambiguous]`. Enumeration
+  table + measurements: `docs/superpowers/notes/2026-09-26-module-registry-derivation.md`. RESIDUE kept in sigil and
+  named: `SHAPE_GATES` (21 modules only some shapes place; the map's union `order` cannot say which; proposed home a
+  per-row `when` on `order`), `ENGINE_TERMINUS` (`engine.epilogue`: the demo map has no `EndOfRom` row), and
+  `SIGIL_PROBE_FIXTURES` (sigil's own `sigil_objroutine_probe`, which duplicates `TestSolid_Init`). `DECLARED` is left
+  as is: a stale row is inert (measured), but a NEW section still needs a row by the R7 ruling; deriving it needs a
+  ruling. Pinned tree ec640bcf rebuilds at the provenance tip in all four shapes; the path_swap-deleted aeon tree
+  (file + map row + objects.json entry + level re-bake stamps) builds in all four shapes. Aeon may delete once this
+  lands and the shared pair is rebuilt.
 - 2026-09-26: aeon wants to delete `games/sonic4/objects/path_swap.emp` (owner ruling: layer lines are the only layer-switch
   mechanism; aeon confirmed the path is `games/sonic4/objects/path_swap.emp`; aeon's half is booked blocked on this row) plus its `map.toml` row and
   `objects.json` entry. The build refuses, because sigil's whole-program module list is hard-coded:
