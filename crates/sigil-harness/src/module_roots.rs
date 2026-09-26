@@ -254,6 +254,70 @@ fn use_closure(manifest: &Manifest, seeds: &[usize]) -> HashSet<usize> {
     seen
 }
 
+/// The lookups an `order` row resolves through, over one game's in-scope modules.
+pub struct RowIndex<'m> {
+    manifest: &'m Manifest,
+    game_scope: String,
+    by_label: HashMap<String, Vec<usize>>,
+    by_section: HashMap<String, Vec<usize>>,
+}
+
+impl<'m> RowIndex<'m> {
+    /// Index `manifest`'s modules under `engine.*` and `<game_prefix>.*`, minus
+    /// [`SIGIL_PROBE_FIXTURES`].
+    pub fn new(manifest: &'m Manifest, game_prefix: &str) -> RowIndex<'m> {
+        let mut index = RowIndex {
+            manifest,
+            game_scope: format!("{game_prefix}."),
+            by_label: HashMap::new(),
+            by_section: HashMap::new(),
+        };
+        for (i, pm) in manifest.modules.iter().enumerate() {
+            if !index.in_scope(&pm.id) {
+                continue;
+            }
+            let mut labels = Vec::new();
+            item_labels(&pm.file.items, &mut labels);
+            for l in labels {
+                let owners = index.by_label.entry(l).or_default();
+                if !owners.contains(&i) {
+                    owners.push(i);
+                }
+            }
+            for sec in declared_sections(&pm.file) {
+                index.by_section.entry(sec).or_default().push(i);
+            }
+        }
+        index
+    }
+
+    /// Is `id` a module this game's rows may name?
+    pub fn in_scope(&self, id: &str) -> bool {
+        (id.starts_with("engine.") || id.starts_with(&self.game_scope))
+            && !SIGIL_PROBE_FIXTURES.contains(&id)
+    }
+
+    /// The manifest indices of every in-scope module that defines `row`, before any
+    /// shape gate. Empty means the row names nothing.
+    pub fn candidates(&self, row: &str) -> Vec<usize> {
+        if let Some(sec) = section_row(row) {
+            self.by_section.get(sec).cloned().unwrap_or_default()
+        } else if let Some(owner) = minted_owner(row) {
+            match self.manifest.by_id.get(owner) {
+                Some(&i) if self.in_scope(owner) => vec![i],
+                _ => Vec::new(),
+            }
+        } else {
+            self.by_label.get(row).cloned().unwrap_or_default()
+        }
+    }
+
+    /// The module ids [`Self::candidates`] names.
+    pub fn owners(&self, row: &str) -> Vec<&'m str> {
+        self.candidates(row).into_iter().map(|i| self.manifest.modules[i].id.as_str()).collect()
+    }
+}
+
 /// Derive the build's module roots from `order` (the game map's `order` array) over
 /// `manifest` (the scanned tree).
 ///
@@ -273,31 +337,7 @@ pub fn derive_module_roots(
     seeds: &[&str],
     map_name: &str,
 ) -> Result<Vec<ModuleSpec>, String> {
-    let game_scope = format!("{game_prefix}.");
-    let in_scope = |id: &str| {
-        (id.starts_with("engine.") || id.starts_with(&game_scope)) && !SIGIL_PROBE_FIXTURES.contains(&id)
-    };
-
-    // The two lookups a row resolves through, over in-scope modules only.
-    let mut by_label: HashMap<String, Vec<usize>> = HashMap::new();
-    let mut by_section: HashMap<String, Vec<usize>> = HashMap::new();
-    for (i, pm) in manifest.modules.iter().enumerate() {
-        if !in_scope(&pm.id) {
-            continue;
-        }
-        let mut labels = Vec::new();
-        item_labels(&pm.file.items, &mut labels);
-        for l in labels {
-            let owners = by_label.entry(l).or_default();
-            if !owners.contains(&i) {
-                owners.push(i);
-            }
-        }
-        for s in declared_sections(&pm.file) {
-            by_section.entry(s).or_default().push(i);
-        }
-    }
-
+    let index = RowIndex::new(manifest, game_prefix);
     let admitted = |i: usize| gate_of(&manifest.modules[i].id).is_none_or(|g| g.admits(shape));
 
     let mut orphans: Vec<String> = Vec::new();
@@ -307,16 +347,7 @@ pub fn derive_module_roots(
     let mut picked: Vec<(usize, usize)> = Vec::new();
 
     for (ri, row) in order.iter().enumerate() {
-        let candidates: Vec<usize> = if let Some(sec) = section_row(row) {
-            by_section.get(sec).cloned().unwrap_or_default()
-        } else if let Some(owner) = minted_owner(row) {
-            match manifest.by_id.get(owner) {
-                Some(&i) if in_scope(owner) => vec![i],
-                _ => Vec::new(),
-            }
-        } else {
-            by_label.get(row.as_str()).cloned().unwrap_or_default()
-        };
+        let candidates = index.candidates(row);
         if candidates.is_empty() {
             orphans.push(row.clone());
             continue;
