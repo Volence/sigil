@@ -948,7 +948,25 @@ points at it rather than restating it, so there is one copy to keep true.
 
 ### INSTALLED-BINARY-READS-BUILD-TREE
 
-- state: **open**  size: `S`  project: `SIGIL-DECOUPLE`
+- state: **done in branch**  size: `S`  project: `SIGIL-DECOUPLE`
+- 2026-09-26, branch `parcel/installed-binary-selfcontained` (tip in the parcel report). The seven
+  `golden/offcanonical_sizes/*.txt` tables are compiled in (`native::FROZEN_TABLES`, `include_str!`); rejected:
+  resolving them from a named location at run time, which moves the dependency instead of removing it. Enumeration
+  (binary strings + source grep, classified), consumers and evidence: `docs/superpowers/notes/2026-09-26-installed-binary-selfcontained.md`.
+  The only run-time read of the build tree on either binary's path was `load_frozen_table`, and only `sigil` reached
+  it: master's `emit_sound_blob` emits byte-identically with its tree removed. Falsifier, binaries built in a
+  throwaway worktree that was then removed: master `c024aba8` fails all four aeon shapes with `read frozen table ...
+  No such file`; the parcel builds all four at the provenance tip's CRC32/size. Consequences: the `.lst` digest loses
+  its one `root=sigil` row (the table is now part of the assembler, covered by `DIGEST-ASSEMBLER revision=`), so
+  aeon's `artifact_provenance.py` no longer opens anything in the sigil tree either; the `--version` closure now
+  follows include/path references to their files (38 paths, was 29); a prebuilt `REPIN_BIN` in `refreeze` step 3 now
+  keeps the tables it was compiled with (default `cargo run` recompiles). Gates: `installed_binary_needs_no_build_tree`
+  (sigil-cli and sigil-harness, `bwrap` hides the checkout), `frozen_tables_embedded`, the extended
+  `version_provenance` closure mirror; each red first.
+- The standing rule below ("lock the build tree at swap time") is UNNECESSARY for a pair built from this change or
+  later. It still binds the pair installed today (built at `4ce2509d`): keep `.worktrees/land-4ce2509d` locked until
+  a pair built from this change is swapped in. The unlock is the overseer's. Heads-up for aeon at that swap: the
+  digest's `reads=` drops by one (the `root=sigil` row).
 - 2026-09-26: the shared `target/release/sigil` reads `<build tree>/crates/sigil-harness/golden/offcanonical_sizes/*.txt`
   at RUNTIME through a baked `CARGO_MANIFEST_DIR`-style path. The pair was built at `.worktrees/land-4ce2509d`; removing
   that worktree after the swap broke every aeon demo build ("read frozen table ... demo.txt: No such file", exit 101)
