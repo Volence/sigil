@@ -907,6 +907,13 @@ points at it rather than restating it, so there is one copy to keep true.
   `emit_sound_blob` and tell aeon the SHA. Branch `parcel/blob-len-off-emit-path`; agent tree
   `/home/volence/sonic_hacks/.aeon-sigil-ref-blob` (remove after).
 
+### OJZ-RUN-B-SHAPE-DELTA-BOUND: LANDED
+
+- **LANDED** 2026-09-26 at merge `0631e755` (tip `a45cb079`), pushed. `crates/sigil-cli/tests/ojz_run_b_port.rs`:
+  `ojz_act_assets`' plain/debug span allowance is `ALIGN_PAD` plus the debug-only bytes `act_assets.emp` declares
+  through `[u8; LEN]` types (evaluated both shapes). Pin: 0 extra. Aeon origin/master: 24,258 extra; the real delta
+  there is estimated, not measured, until the pin advances. Red-first proven.
+
 ### CART-CHECK-CITES-STALE-PEER-BEHAVIOUR: LANDED
 
 - **LANDED** 2026-09-26 at `375ad832`, pushed. The comment now states our own reasons (one round trip, whole-image coverage) and cites the contract's `memory_hash` entry (section 6) and 11.48 by section, naming no peer tool. `ab_cart_check` 24 passed, 0 failed. Announced to aeon.
