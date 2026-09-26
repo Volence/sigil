@@ -1006,3 +1006,17 @@ points at it rather than restating it, so there is one copy to keep true.
   `banked_table_carriers_follow_the_table_labels` red while the pin's blob byte gate stays green (the blind
   spot); an absent label mapped to 0, a `PsgVolEnv_Ptrs` off by one (byte gate red at `ld de` `+0x16A1`), a
   doctor that skips `FmVolEnv_Ids`, and a head member off by one each turn their gate red.
+
+### SHARED-PAIR-SWAP-AB0A5FE1
+
+- state: **waiting**  size: `S`  project: `-`
+- For aeon's Sonic 2 envelopes (their S2CLIP-REGION-MUSIC step 2), which need SEAM1-BANKED-CARRIERS-DERIVE in the
+  shared pair. The candidate is built ASIDE from origin/master `ab0a5fe1` in the durable detached worktree
+  `/home/volence/sonic_hacks/.sigil-pin-ab0a5fe1` (`target/release/sigil` md5 `3fb7c0b35df4ce3e5cd4dfdbb83710d8`,
+  `emit_sound_blob` md5 `f0fedab42d72ad1b5cf734591c18a57f`; `--version` clean, revision `ab0a5fe1`). The outgoing
+  shared pair is `f52609fe` (sigil `cdf3ec1abe0d33d8042b7cf5092e5e64`, emit_sound_blob
+  `ed45bedb7ab47972d570536b8d215d22`). Re-measure all four md5s before acting.
+- Swap ONLY when aeon reports its byte-identical four-shape control against the candidate clean and no aeon build
+  is running. A control difference is a finding: stop.
+- Same steps as SHARED-PAIR-SWAP-F52609FE above, with `1d19e60b` read as `f52609fe` and `f52609fe` as `ab0a5fe1`.
+  Each step is its own tool call, read before the next.
