@@ -998,3 +998,11 @@ points at it rather than restating it, so there is one copy to keep true.
   `pitchtable_lma` encodes 855) and refreshes with the pin; `PITCHTABLE_LEN = 264` and the `size = 0x400`
   sound-tables region are hand values; the 2026-08-26 note in `tests/repin_pins.rs` still describes the
   carriers as unchecked (a dated record, left as written).
+- Proof at pin `ec640bcf` (`.aeon-sigil-ref`), full strict suite, `ORACLE_DIR` named, target dir outside the
+  checkout: before (code `ec0a6106`) 504 result lines, 5730 passed / 0 failed / 2 ignored, exit 0; after (tip
+  `d2fe50b9`) 504 result lines, 5732 / 0 / 2, exit 0 (two drift tests retired, two derivation tests and two unit
+  tests added). `repin --check` "pins.rs unchanged" before and after; clippy `-D warnings` exit 0. Red-first,
+  each mutation shown then restored from the commit: a restated `FmVolEnv_Ptrs` turns
+  `banked_table_carriers_follow_the_table_labels` red while the pin's blob byte gate stays green (the blind
+  spot); an absent label mapped to 0, a `PsgVolEnv_Ptrs` off by one (byte gate red at `ld de` `+0x16A1`), a
+  doctor that skips `FmVolEnv_Ids`, and a head member off by one each turn their gate red.
