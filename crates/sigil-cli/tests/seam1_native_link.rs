@@ -115,9 +115,14 @@ fn native_blob_matches_reference_debug() {
 }
 
 /// The debug blob is longer than plain by the delta this test asserts below —
-/// read it there rather than from prose. These constants are a size
-/// TRIPWIRE, not a placement input — the module bases are derived (see
-/// `module_bases_are_a_gapless_cursor`).
+/// read it there rather than from prose. These constants pin the frozen corpus's
+/// blob lengths; they are not a placement input (the module bases are derived, see
+/// `module_bases_are_a_gapless_cursor`) and the production emit does not read them.
+/// This test checks the constants against each other and a literal; the emitted
+/// length is compared to them by the byte gates above, by
+/// `module_bases_are_a_gapless_cursor`, and by
+/// `emitted_blob_lengths_are_the_pinned_corpus_lengths`, which reads the files the
+/// emitter wrote.
 ///
 /// NOTE these are the BLOB lengths, which since aeon `5526113` are no longer
 /// necessarily equal to `Z80_SOUND_SIZE`: aeon aligns the blob to an even length
@@ -131,6 +136,29 @@ fn native_blob_matches_reference_debug() {
 fn blob_lengths_are_canonical() {
     assert_eq!(BLOB_LEN_DEBUG - BLOB_LEN_PLAIN, 0x82, "debug grows +$82 over plain (pkg 4 D7 added a 4 B debug-only operand-0 trap)");
     assert_eq!(BLOB_LEN_PLAIN, 0x1820, "plain resident blob length = 6176 B; the debug shape is this + $82");
+}
+
+/// THE CORPUS LENGTH PIN, on the emitted artifact: the two files `emit_sound_blob`
+/// writes from the pinned tree have exactly `BLOB_LEN_{PLAIN,DEBUG}` bytes. The
+/// emitter itself holds the blob to no length, so a change to the pinned tree's
+/// resident blob length goes red here and in the byte gates above, not in aeon's
+/// build.
+#[test]
+fn emitted_blob_lengths_are_the_pinned_corpus_lengths() {
+    let Some(aeon) = sound_tree() else { return };
+    let out = tempfile::tempdir().unwrap();
+    seam1::emit_sound_blob(&aeon, out.path()).unwrap_or_else(|e| panic!("emit failed: {e}"));
+    let len = |name: &str| {
+        let p = out.path().join(name);
+        std::fs::metadata(&p).unwrap_or_else(|e| panic!("the emitter did not write {}: {e}", p.display())).len()
+            as usize
+    };
+    let (plain, debug) = (len("z80_sound_blob.bin"), len("z80_sound_blob_debug.bin"));
+    assert!(
+        plain == BLOB_LEN_PLAIN && debug == BLOB_LEN_DEBUG,
+        "emitted resident blob is {plain} B plain / {debug} B debug; the pinned corpus is \
+         BLOB_LEN_PLAIN {BLOB_LEN_PLAIN} / BLOB_LEN_DEBUG {BLOB_LEN_DEBUG}"
+    );
 }
 
 /// The PLACEMENT contract, stated structurally instead of by re-pinned addresses:
@@ -161,7 +189,7 @@ fn module_bases_are_a_gapless_cursor() {
         }
         // The blob is a CONCATENATION, so the last base + its span == the total.
         let blob = native_sound_blob(&aeon, debug).bytes;
-        assert_eq!(blob.len(), len, "blob length tripwire (debug={debug})");
+        assert_eq!(blob.len(), len, "blob length vs the pinned corpus length (debug={debug})");
         assert!(
             (bases[4].1 as usize) < len,
             "the last module must start inside the blob (debug={debug})"

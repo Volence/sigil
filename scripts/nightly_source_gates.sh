@@ -201,6 +201,9 @@ SOURCE_GATES=(
     # the resident modules' import check: one planted `use` line fed from memory over
     # the tree's .emp files, judged by the refusal text; compares against no golden
     seam1_import_check
+    # the emitter writes a resident blob grown in memory over the tree's .emp files,
+    # judged against the same tree's unmodified emit; compares against no golden or pin
+    seam1_emit_length
     # the resident blob's link verdict, driven from in-memory sources over the tree's
     # .emp files; compares against its own pristine output, never a golden
     seam1_link_verdict
