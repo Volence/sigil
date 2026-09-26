@@ -929,9 +929,18 @@ points at it rather than restating it, so there is one copy to keep true.
 - Suites at `6cd988ea`: pin 504 binaries, 5732 passed, 0 failed, 2 ignored; `repin --check`
   says `pins.rs unchanged`. Tip: the same 176 failures as before the parcel, 12 name lines both.
 
-### BLOB-LEN-PIN-OFF-EMIT-PATH
+### BLOB-LEN-PIN-OFF-EMIT-PATH: LANDED
 
-- state: **doing** from 2026-09-26  size: `S`  project: `SIGIL-DECOUPLE`
+- **LANDED** 2026-09-26 at merge `4ce2509d` (tip `4fc0ccfa`), pushed. The emit writes the resident blob at the tree's
+  length (no length refusal, `SIGIL_BLOB_LEN_DRIFT` removed); `BLOB_LEN_*` are pinned-corpus test assertions
+  (`emitted_blob_lengths_are_the_pinned_corpus_lengths`, sigil-cli); `seam1_emit_length` (nightly source-gate list)
+  proves a grown blob emits. No ceiling in the emit: aeon's `ensure(Z80_SOUND_SIZE <= SND_STATE_BASE)` is in
+  `engine/system/boot_data.emp` (not `sound_constants.emp`, which holds only the comment). Merged-tree re-gate 23/23.
+  Shared pair rebuilt from a clean worktree at `4ce2509d` and swapped by rename: sigil `1edd31eb`, emit_sound_blob
+  `3c3bd0ba`; previous pair (ab0a5fe1) kept at `~/sonic_hacks/.sigil-pair-archive/ab0a5fe1/`. Old vs new emit on
+  ec640bcf: 19/19 files byte-identical; with +17 B in `Psg_HwCh` old refuses, new writes 6193/6323. Aeon told.
+- For PIN-ADVANCE: once aeon's hi-hat change lands, `BLOB_LEN_*` and the Z80_SOUND_SIZE mirrors move with the pin.
+- was: state **doing** from 2026-09-26  size: `S`  project: `SIGIL-DECOUPLE`
 - Asked by aeon 2026-09-26: a PSG envelope fix (`PsgEnvUpdate` once in `Seq_HookNoteOn`, +17 B resident; evidence
   aeon `67a7a374` `docs/research/2026-09-26-s2-music-volume.md`) is refused by `emit_sound_blob`: "plain blob is 6193
   bytes, expected 6176". `seam1::BLOB_LEN_PLAIN`/`BLOB_LEN_DEBUG` is both the pinned-corpus length assertion and a
