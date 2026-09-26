@@ -1065,6 +1065,12 @@ points at it rather than restating it, so there is one copy to keep true.
 - Measured at aeon `d7103d30` (with committed AND tip-regenerated pins): `docs/superpowers/notes/2026-09-26-port-music-names.md`,
   section PIN-ADVANCE. All five items confirmed; `soundbankhead_port` stays red after a repin (its length is a `repin.toml` literal).
 
+- Sequencing, 2026-09-26: aeon says the advance (including the `repin.toml` `soundbankhead` `len` 0x630 -> 0x6B0 edit)
+  is sigil's to schedule under the retired paired-freeze ruling, holds nothing for it, and will measure any aeon-side
+  fact on request. That settles WHO sequences it, not WHETHER: advancing the pin is a decision, tested against the
+  hub's 2026-09-02 ruling that the pin exists so the corpus does NOT track tip (`docs/OVERSEER-REFERENCE.md`, *A TASK
+  RELAYED AS ROUTINE*). Run `refreeze --check` first to know whether it is a repair or a decision.
+
 ### PORT-TESTS-MUSIC-NAMES-AT-TIP
 
 - state: **done in branch** `parcel/port-music-names` (awaiting merge)  size: `S`  project: `SIGIL-DECOUPLE`
