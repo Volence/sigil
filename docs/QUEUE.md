@@ -1058,3 +1058,14 @@ points at it rather than restating it, so there is one copy to keep true.
   window base (emitted .bin unchanged per their cmp).
 - Ask when it is worked: derive what can be derived (the SEAM1 pattern), leave the pin-frozen ones to the refreeze,
   and re-derive the list from the tree at the commit rather than from this row.
+
+### PORT-TESTS-MUSIC-NAMES-AT-TIP
+
+- state: **open**  size: `S`  project: `SIGIL-DECOUPLE`
+- From PORT-TESTS-HIDDEN-NAME-FAILURES' open item 1 (`docs/superpowers/notes/2026-09-26-port-hidden-names.md`):
+  at aeon `9caa1368` twelve tests fail on VISIBLE names from aeon commits after `8a6f92c4`. `Music_Service`:
+  `game_loop_port` x4, `game_debug_port`'s flip, two `tranche5` probes. `Music_Want`: `parallax_port` x2,
+  `sound_api_port` x2, one `tranche5` probe. Same derive-from-the-tree-under-test repair as
+  PORT-TESTS-RED-AT-AEON-TIP. `game_debug`'s link step at the tip stays unmeasured until this is done.
+- A provisioned tip tree exists at `/home/volence/sonic_hacks/.aeon-hidden-tip` (aeon `9caa1368`, s4 shapes built
+  there, demo pair copied from the pin's goldens); re-provision at the newer tip if aeon has moved.
