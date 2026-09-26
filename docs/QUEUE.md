@@ -1021,3 +1021,16 @@ points at it rather than restating it, so there is one copy to keep true.
   alone is not a go. A control difference is a finding: stop.
 - Same steps as SHARED-PAIR-SWAP-F52609FE above, with `1d19e60b` read as `f52609fe` and `f52609fe` as `ab0a5fe1`.
   Each step is its own tool call, read before the next.
+
+### PIN-ADVANCE-S2-ENVELOPE-RESTATEMENTS
+
+- state: **open**  size: `S`  project: `SIGIL-DECOUPLE`
+- Aeon's heads-up 2026-09-26 (their agent's reading, NOT verified here): once aeon lands
+  `parcel/s2-music-envelopes-table-2` (tip `6c3cd4cf`), these sigil-side restatements go red when our pin reaches
+  it: `seam2.rs` `DAC_SAMPLE_TAB_LEN = 127` and `seam2_dac_head_colink.rs` (the table is now 120 B; the 8-byte pad
+  moved into `soundbankhead.emp`, sized from the heads' `.len`); `seam2_layout_derivation.rs` pins `pitchtable_lma
+  0xB8357` and the later heads; `pins::SOUNDBANKHEAD` length used by `soundbankhead_port` (head now `$6B0`); the
+  "VMA $8357" comment in `seam2_pitchtable.rs`. Also aeon `movingtrucks_pitchtable.emp` vma moved `$8357` -> `$8000`
+  window base (emitted .bin unchanged per their cmp).
+- Ask when it is worked: derive what can be derived (the SEAM1 pattern), leave the pin-frozen ones to the refreeze,
+  and re-derive the list from the tree at the commit rather than from this row.
