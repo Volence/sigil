@@ -143,7 +143,7 @@ SOURCE_GATES=(
     tranche24_spelling_probes
     z80_clobbers_incomplete
     # source-derived drift and derivation gates
-    banked_carrier_drift
+    banked_carrier_derivation
     # the derived-layout invariants, read off the same source resolve the ROM comes from
     derived_layout
     # the placement contract's `[[hole]]` half over each shipped shape's own map.toml and
@@ -408,10 +408,10 @@ the read rule has no pattern, so every file would falsely look like it reads not
         # REFUSE TO RUN. Both reproduced against a controlled tree before this was written.
         #
         # The artifact test above is deliberately NOT decommented, and that asymmetry is
-        # measured rather than assumed: SIX files in this tree (`dac_port`,
+        # measured rather than assumed: FIVE files in this tree (`dac_port`,
         # `diag_assert_vector`, `game_debug_port`, `native_object_bank_budget`,
-        # `banked_carrier_drift`, `subcommands`) match the artifact pattern ONLY in prose.
-        # Decommenting there would push all six out of the artifact bucket and into exactly
+        # `subcommands`) match the artifact pattern ONLY in prose.
+        # Decommenting there would push all five out of the artifact bucket and into exactly
         # the refusal this change exists to prevent. Blast radius of the change that WAS
         # made: zero — no file in this tree currently reads the tree by comment alone.
         decommented=$(sed 's@^[[:space:]]*//.*@@' "$f")

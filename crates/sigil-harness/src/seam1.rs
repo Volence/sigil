@@ -148,77 +148,47 @@ fn file_specs() -> Vec<FileSpec> {
     ]
 }
 
-/// The BANKED `$8000`-window symbols (LUTs / opcode + win tables) — genuinely
-/// external seam-2 data, shape-INVARIANT. Supplied as equ carriers for the
-/// STANDALONE blob (`native_sound_blob`); in the whole-ROM link they instead
-/// resolve against the AS side. `DacSampleTable` is a driver `-D`, not here.
-fn banked_carriers() -> Vec<(&'static str, i64)> {
-    vec![
-        // SeqOpcodeTable sits immediately AFTER SfxBlobWinTab in the head, so its
-        // VMA moves whenever the SFX id range grows: 0x856D -> 0x8571 when $BA/$BB
-        // extended the range to $BB (+2 cells = +4 bytes of win table). Everything
-        // below it in this list is upstream of the win table and does not move.
-        ("SeqOpcodeTable", 0x8571),
-        ("SfxBlobWinTab", 0x845F),
-        ("FmPitchTableZ", 0x8000),
-        ("LogVolumeLutZ", 0x817C),
-        ("CarrierMaskTableZ", 0x827C),
-        ("SndDefaultPitchTable", 0x8357),
-        ("PsgDivisorTableZ", 0x80BE),
-        ("PsgVolEnv_Ids", 0x8284),
-        ("PsgVolEnv_Ptrs", 0x828F),
-        ("FmVolEnv_Ids", 0x8335),
-        ("FmVolEnv_Ptrs", 0x8338),
-    ]
-}
-
-/// Cross-check the hand-written [`banked_carriers`] VMAs against the derivation
-/// in [`crate::seam2::banked_head_vmas`], which computes the same addresses from
-/// the map authority the placement actually flows from.
+/// The BANKED `$8000`-window symbols the resident driver reads (LUTs, vol-env
+/// tables, the opcode and SFX window tables): genuinely external seam-2 data,
+/// shape-INVARIANT. Supplied as equ carriers for the STANDALONE blob
+/// (`native_sound_blob`); in the whole-ROM link they instead resolve against the
+/// banked side. `DacSampleTable` is a driver `-D`, not here.
 ///
-/// These literals are baked into the SHIPPED resident driver's operand bytes, and
-/// until this check existed nothing compared them to anything. The failure mode is
-/// specific and nasty: an SFX id-range growth moves the derived head, the literal
-/// stays put, the whole-ROM golden byte gate breaks — and the natural remediation,
-/// refreeze, blesses the WRONG blob. seam-1's own comment records the
-/// `0x856D -> 0x8571` bump, i.e. that move having already happened once, caught by
-/// hand (lens sweep, seat LINK, finding S9).
-///
-/// Only the three HEAD-level members are derivable: the remaining carriers are
-/// offsets INSIDE `SoundTablesZ80_Head`, which `sound_layout` does not model.
-/// Those stay hand-maintained and unchecked — recorded here rather than implied.
-pub fn check_banked_carrier_drift(aeon: &Path) -> Result<(), String> {
-    check_banked_carrier_drift_in(aeon, None)
-}
-
-/// [`check_banked_carrier_drift`] under an anchor overlay.
-pub fn check_banked_carrier_drift_in(
+/// Every value is DERIVED ([`crate::seam2::banked_carrier_vmas_in`]): the three
+/// head-bank members from the map-derived head layout, the eight table labels
+/// from the lowered `sound_tables_z80.emp`'s own labels. They are baked into the
+/// shipped driver's operand bytes, so a table or head change in the aeon tree
+/// moves them with no edit here, and a label the table no longer defines is an
+/// error naming it.
+fn banked_carriers(
     aeon: &Path,
     ov: Option<&crate::map_placement::AnchorOverlay>,
-) -> Result<(), String> {
-    let derived = crate::seam2::banked_head_vmas_in(aeon, ov)?;
-    let pinned = banked_carriers();
-    let mut drift = Vec::new();
-    for (name, want) in derived {
-        let Some((_, got)) = pinned.iter().find(|(n, _)| *n == name) else {
-            return Err(format!(
-                "banked_carriers is missing `{name}`, which seam-2 derives, the carrier list \
-                 and the layout have diverged in SHAPE, not just value"
-            ));
-        };
-        if *got as u32 != want {
-            drift.push(format!("{name}: pinned {got:#06x}, derived {want:#06x}"));
-        }
-    }
-    if drift.is_empty() {
-        return Ok(());
-    }
-    Err(format!(
-        "banked_carriers has drifted from the seam-2 derivation: {}. These literals are baked \
-         into the shipped resident driver's operand bytes, so a stale one produces a WRONG blob \
-         that a refreeze would bless. Update `banked_carriers` to the derived values.",
-        drift.join("; ")
-    ))
+) -> Result<Vec<(&'static str, i64)>, String> {
+    Ok(crate::seam2::banked_carrier_vmas_in(aeon, ov)?.into_iter().map(|(n, v)| (n, i64::from(v))).collect())
+}
+
+/// The placeholder VMA every banked carrier takes on the SIZE-ONLY placement path.
+///
+/// WHY THIS IS SOUND: the blob lowering does not define the carriers (they stay
+/// symbolic and resolve at link against [`carrier_sections`]), so no comptime
+/// branch can read them; they reach the driver only as fixed-width 16-bit Z80
+/// operands, whose encoding length is value-independent. The only length-variable
+/// Z80 fragment is the intra-section `jr e -> jp nn` ladder, chosen from a
+/// RELATIVE distance inside its own section. So spans and label offsets are
+/// identical under any placeholder, and the placeholder never reaches emitted
+/// bytes: every emit links the derived values from [`banked_carriers`]. The
+/// size-only path needs it because the head members derive through
+/// `seam2::sound_layout`, which itself runs the size-only path (the handler VMAs),
+/// so deriving there would re-enter that derivation.
+const BANKED_CARRIER_SIZE_PROBE: i64 = 0x8000;
+
+/// Every banked carrier name at [`BANKED_CARRIER_SIZE_PROBE`], for the size-only path.
+fn banked_carrier_size_probes() -> Vec<(&'static str, i64)> {
+    crate::seam2::BANKED_HEAD_MEMBERS
+        .into_iter()
+        .chain(crate::seam2::SOUND_TABLES_BANKED_LABELS)
+        .map(|n| (n, BANKED_CARRIER_SIZE_PROBE))
+        .collect()
 }
 
 thread_local! {
@@ -478,8 +448,9 @@ fn lower_one(
 
 /// The STANDALONE native-linked blob: bytes + the exported-symbol contract. Used by
 /// the `emit_sound_blob` bin (Option A) and the whole-blob byte gate. The banked
-/// `$8000` tables are supplied as carriers here (shape-invariant fixed values, so
-/// the blob is self-contained); the intra-blob externs resolve internally.
+/// `$8000` tables are supplied as carriers here (shape-invariant values derived from
+/// the aeon tree, [`banked_carriers`], so the blob is self-contained); the intra-blob
+/// externs resolve internally.
 pub struct NativeSoundBlob {
     /// The flattened blob bytes (driver→seq→sfx→fm→psg), `Z80_SOUND_SIZE` long.
     pub bytes: Vec<u8>,
@@ -602,15 +573,17 @@ fn overlay_presets(
 ///
 /// The whole five-module set is placed and resolved here (not the sequencer alone)
 /// because relaxation needs every cross-module `call` target resolvable. The driver
-/// rides the `DacSampleTable` placeholder so seam-2's `sound_layout` derivation is
-/// not re-entered; the sequencer does not fold that const at all, so its bytes and
-/// label offsets are placeholder-INVARIANT (see [`DAC_SAMPLE_TABLE_SIZE_PROBE`]).
+/// rides the `DacSampleTable` placeholder and every banked carrier rides
+/// [`BANKED_CARRIER_SIZE_PROBE`], so seam-2's `sound_layout` derivation is not
+/// re-entered; the sequencer does not fold that const at all and reads the carriers
+/// only as fixed-width operands, so its label offsets are placeholder-INVARIANT (see
+/// [`DAC_SAMPLE_TABLE_SIZE_PROBE`] and [`BANKED_CARRIER_SIZE_PROBE`]).
 fn handler_symbols(aeon: &Path, debug: bool) -> Vec<(String, u32)> {
     let specs = file_specs();
     let seq_idx =
         specs.iter().position(|s| s.section == "sound_sequencer").expect("sequencer spec");
     let (sections, bases, _spans, _asserts) =
-        place_resident_sections(aeon, debug, None, SIZE_ONLY_PRESETS);
+        place_resident_sections(aeon, debug, None, SIZE_ONLY_PRESETS, &banked_carrier_size_probes());
     let resolved = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
         .unwrap_or_else(|d| panic!("resolve_layout (handler symbols) failed: {d:?}"));
     let sec = resolved
@@ -630,11 +603,12 @@ fn handler_symbols(aeon: &Path, debug: bool) -> Vec<(String, u32)> {
     out
 }
 
-/// The banked `$8000`-window symbols as equ-carrier sections at harness-private
-/// LMAs, with the optional single-symbol doctor applied.
-fn carrier_sections(doctor: Option<(&str, i64)>) -> Vec<Section> {
-    let carrier_pairs: Vec<(String, String)> = banked_carriers()
-        .into_iter()
+/// The banked `$8000`-window symbols `carriers` as equ-carrier sections at
+/// harness-private LMAs, with the optional single-symbol doctor applied.
+fn carrier_sections(carriers: &[(&'static str, i64)], doctor: Option<(&str, i64)>) -> Vec<Section> {
+    let carrier_pairs: Vec<(String, String)> = carriers
+        .iter()
+        .copied()
         .map(|(n, v)| {
             let v = match doctor {
                 Some((dn, dv)) if dn == n => dv,
@@ -673,7 +647,9 @@ fn stamp_cursor_bases(modules: &mut [Section], spans: &[u32], debug: bool) -> Ve
 }
 
 /// The five resident modules, LOWERED and PLACED at DERIVED bases (a running
-/// cursor — module N starts where module N-1 ended), plus the banked carriers.
+/// cursor: module N starts where module N-1 ended), plus the banked `carriers`
+/// (the derived [`banked_carriers`] on every emit path, the
+/// [`banked_carrier_size_probes`] on the size-only path).
 /// Returns `(sections, base VMAs, emitted spans, each module's link asserts)`, the
 /// last three in blob order.
 ///
@@ -690,6 +666,7 @@ fn place_resident_sections(
     debug: bool,
     doctor: Option<(&str, i64)>,
     presets: &[(&'static str, i64)],
+    carriers: &[(&'static str, i64)],
 ) -> (Vec<Section>, Vec<u32>, Vec<u32>, Vec<Vec<LinkAssert>>) {
     let specs = file_specs();
     resident_import_verdict(aeon, &specs).unwrap_or_else(|e| panic!("{e}"));
@@ -701,7 +678,7 @@ fn place_resident_sections(
     let upper: Vec<u32> = lowered.iter().map(|s| s.placement_span()).collect();
     let mut probe = lowered.clone();
     stamp_cursor_bases(&mut probe, &upper, debug);
-    probe.extend(carrier_sections(doctor));
+    probe.extend(carrier_sections(carriers, doctor));
     let sized = sigil_link::resolve_layout(&probe, &SymbolTable::new(), true)
         .unwrap_or_else(|d| panic!("resolve_layout (sizing pass) failed: {d:?}"));
     // `resolve_layout` lowers every relaxable fragment to concrete Data and shifts
@@ -720,14 +697,15 @@ fn place_resident_sections(
     // --- real pass: derived bases -------------------------------------------
     let mut sections = lowered;
     let bases = stamp_cursor_bases(&mut sections, &spans, debug);
-    sections.extend(carrier_sections(doctor));
+    sections.extend(carrier_sections(carriers, doctor));
     (sections, bases, spans, asserts)
 }
 
 /// The DERIVED base VMA of each resident module, in blob order
 /// (driver→sequencer→sfx→fm→psg).
 fn module_base_vmas(aeon: &Path, debug: bool, presets: &[(&'static str, i64)]) -> Vec<u32> {
-    place_resident_sections(aeon, debug, None, presets).1
+    let carriers = banked_carriers(aeon, None).unwrap_or_else(|e| panic!("{e}"));
+    place_resident_sections(aeon, debug, None, presets, &carriers).1
 }
 
 /// The DERIVED base VMA of each resident module, in blob order, as
@@ -774,7 +752,7 @@ pub fn resident_sound_modules(
                     .map(|(n, v)| (n.to_string(), v as i128))
                     .collect();
             if with_banked_carriers {
-                for (n, v) in banked_carriers() {
+                for (n, v) in banked_carriers(aeon, None).unwrap_or_else(|e| panic!("{e}")) {
                     defines.push((n.to_string(), v as i128));
                 }
             }
@@ -814,7 +792,9 @@ pub fn native_blob_checked_in(
     let specs = file_specs();
     resident_import_verdict(aeon, &specs)?;
     let presets = overlay_presets(aeon, ov)?;
-    let (sections, _bases, spans, asserts) = place_resident_sections(aeon, debug, doctor, &presets);
+    let carriers = banked_carriers(aeon, ov)?;
+    let (sections, _bases, spans, asserts) =
+        place_resident_sections(aeon, debug, doctor, &presets, &carriers);
 
     let resolved = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
         .unwrap_or_else(|d| panic!("resolve_layout failed: {d:?}"));
@@ -933,12 +913,6 @@ pub fn emit_sound_blob_in(
     // other callers have no error channel), and this is the caller with one.
     resident_import_verdict(aeon, &file_specs())?;
     let out_dir: PathBuf = out_dir.to_path_buf();
-
-    // Before any bytes: the hand-written banked-head VMAs must still agree with
-    // the derivation. They are baked into the operand bytes emitted below, so a
-    // stale one produces a wrong blob whose only symptom is a broken golden — and
-    // the natural remediation, refreeze, would bless it.
-    check_banked_carrier_drift_in(aeon, ov)?;
 
     let plain = native_sound_blob_checked_in(aeon, ov, false)?;
     let debug = native_sound_blob_checked_in(aeon, ov, true)?;
@@ -1209,6 +1183,7 @@ pub fn z80_clobbers_report_doctored(
     let mut nodes: BTreeMap<String, ProcNode> = BTreeMap::new();
     let mut counter: u32 = 0;
     let mut dropped = 0usize;
+    let carriers = banked_carriers(aeon, None).unwrap_or_else(|e| panic!("{e}"));
     for spec in &file_specs() {
         let (file, _dir) = parse_one(aeon, spec);
         let inv_units = expand(&module_invariant_reglist(&file));
@@ -1216,8 +1191,8 @@ pub fn z80_clobbers_report_doctored(
             .into_iter()
             .map(|(n, v)| (n.to_string(), v as i128))
             .collect();
-        for (n, v) in banked_carriers() {
-            defines.push((n.to_string(), v as i128));
+        for (n, v) in &carriers {
+            defines.push((n.to_string(), *v as i128));
         }
         defines.push(("DEBUG".to_string(), if debug { 1 } else { 0 }));
         collect_nodes(

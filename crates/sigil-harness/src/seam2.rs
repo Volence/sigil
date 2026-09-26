@@ -374,38 +374,36 @@ pub fn dac_sample_table_vma_in(aeon: &Path, ov: Option<&AnchorOverlay>) -> Resul
     Ok(a.sound_bank_vma + (l.dac_sample_tab_lma - l.sound_tables_z80_lma))
 }
 
-/// The `$8000`-window VMAs of the head-bank members seam-1 supplies as equ
-/// carriers — derived from the same [`sound_layout`] the placement flows from,
-/// exactly as [`dac_sample_table_vma`] is.
+/// The head-bank members seam 1 supplies as banked carriers, in head order. Their
+/// addresses come from [`sound_layout`] ([`banked_carrier_vmas`]).
+pub const BANKED_HEAD_MEMBERS: [&str; 3] = ["SndDefaultPitchTable", "SfxBlobWinTab", "SeqOpcodeTable"];
+
+/// Every `$8000`-window VMA seam 1 supplies to the resident driver as a banked
+/// carrier: the three head-bank members ([`BANKED_HEAD_MEMBERS`], from the same
+/// [`sound_layout`] the placement flows from, exactly as [`dac_sample_table_vma`]
+/// is) and the eight labels inside the `sound_tables_z80` head
+/// ([`SOUND_TABLES_BANKED_LABELS`], read off the lowered table).
 ///
-/// seam-1 carries these as HAND-WRITTEN literals (`banked_carriers`), and those
-/// literals are baked into the shipped resident driver's operand bytes. Nothing
-/// compared the two, so the failure mode was: an SFX id-range growth moves the
-/// derived head, the literal stays put, the golden byte gate breaks, and the
-/// natural remediation — refreeze — blesses the WRONG blob. The `0x856D ->
-/// 0x8571` bump recorded in seam-1's own comment is that exact move having
-/// happened once already (lens sweep, seat LINK, finding S9).
-///
-/// `native.rs` states the rule this restores: "a second copy of this arithmetic
-/// is the bug, not the fix — that is the lesson of the three unmaintained copies
-/// of the sound-bank addresses."
-pub fn banked_head_vmas(aeon: &Path) -> Result<Vec<(&'static str, u32)>, String> {
-    banked_head_vmas_in(aeon, None)
+/// These values are baked into the shipped resident driver's operand bytes, so they
+/// are derived here and nowhere restated: a hand copy that goes stale produces a
+/// wrong blob that a refreeze would bless. `native.rs` states the rule: "a second
+/// copy of this arithmetic is the bug, not the fix".
+pub fn banked_carrier_vmas(aeon: &Path) -> Result<Vec<(&'static str, u32)>, String> {
+    banked_carrier_vmas_in(aeon, None)
 }
 
-/// [`banked_head_vmas`] under an anchor overlay.
-pub fn banked_head_vmas_in(
+/// [`banked_carrier_vmas`] under an anchor overlay.
+pub fn banked_carrier_vmas_in(
     aeon: &Path,
     ov: Option<&AnchorOverlay>,
 ) -> Result<Vec<(&'static str, u32)>, String> {
     let a = bank_anchors(aeon, ov)?;
     let l = sound_layout_in(aeon, ov)?;
     let vma = |lma: u32| a.sound_bank_vma + (lma - l.sound_tables_z80_lma);
-    Ok(vec![
-        ("SndDefaultPitchTable", vma(l.pitchtable_lma)),
-        ("SfxBlobWinTab", vma(l.sfx_win_tab_lma)),
-        ("SeqOpcodeTable", vma(l.seq_opcode_tab_lma)),
-    ])
+    let head = [vma(l.pitchtable_lma), vma(l.sfx_win_tab_lma), vma(l.seq_opcode_tab_lma)];
+    let mut out: Vec<(&'static str, u32)> = BANKED_HEAD_MEMBERS.into_iter().zip(head).collect();
+    out.extend(sound_tables_banked_vmas_in(aeon, ov)?);
+    Ok(out)
 }
 
 /// The Genesis cartridge BANK ID of the sound bank — the `$8000`-window page the
@@ -580,7 +578,21 @@ fn lower_emp_file(
     texts: &mut SourceTexts,
 ) -> Result<sigil_ir::Module, String> {
     let src = sigil_span::read_set::read_to_string(path).map_err(|e| format!("read {}: {e}", path.display()))?;
-    let (file, pdiags) = parse_file(&src, texts.add(path, &src));
+    lower_emp_src(aeon, path, &src, dir, initial_cpu, defines, texts)
+}
+
+/// [`lower_emp_file`]'s core over the file's source text, so a caller can lower an
+/// in-memory variant of a real module under that module's own path.
+fn lower_emp_src(
+    aeon: &Path,
+    path: &Path,
+    src: &str,
+    dir: &Path,
+    initial_cpu: Cpu,
+    defines: Vec<(String, i128)>,
+    texts: &mut SourceTexts,
+) -> Result<sigil_ir::Module, String> {
+    let (file, pdiags) = parse_file(src, texts.add(path, src));
     if pdiags.iter().any(|d| d.level == sigil_span::Level::Error) {
         return Err(format!("{} parse errors: {pdiags:?}", path.display()));
     }
@@ -1049,11 +1061,50 @@ pub fn emit_seq_opcode_tab_doctored(
     Ok(linked.section("seq_opcode_tab").ok_or("missing seq_opcode_tab in linked image")?.bytes.clone())
 }
 
-/// The `sound_tables_z80` byte length (`FmPitchTableZ` .. `FmVolEnv_03` end).
-/// SHAPE-INVARIANT (pure-math LUTs + fixed vol-env data; 855 bytes both shapes).
-/// Its LMA is the `sound_bank` anchor (`$58000`), the FIRST head in the head bank;
-/// see [`sound_layout`]'s `sound_tables_z80_lma`.
-pub const SOUND_TABLES_Z80_LEN: usize = 0x357;
+/// The aeon-relative path of the generated sound-tables module.
+pub const SOUND_TABLES_Z80_REL: &str = "engine/sound/sound_tables_z80.emp";
+
+/// The `sound_tables_z80` labels the resident FM/PSG writers read through the
+/// `$8000` window, supplied to seam 1 as banked carriers. Their addresses are
+/// read off the lowered table ([`sound_tables_banked_vmas`]); only the NAMES are
+/// listed here, and a name the table does not define is an error naming it.
+pub const SOUND_TABLES_BANKED_LABELS: [&str; 8] = [
+    "FmPitchTableZ",
+    "LogVolumeLutZ",
+    "CarrierMaskTableZ",
+    "PsgDivisorTableZ",
+    "PsgVolEnv_Ids",
+    "PsgVolEnv_Ptrs",
+    "FmVolEnv_Ids",
+    "FmVolEnv_Ptrs",
+];
+
+/// The `sound_tables_z80` head as lowered and linked: its bytes, the window base
+/// its section declares, and each label's window VMA. The length of the table is
+/// `bytes.len()` and each label's address is read off the RESOLVED section, so
+/// both follow the aeon source with nothing restated here.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SoundTablesZ80 {
+    /// The linked section bytes (the `sound_tables_z80.bin` head artifact).
+    pub bytes: Vec<u8>,
+    /// The section's `vma:` window base, the address its label VMAs count from.
+    pub window_base: u32,
+    /// `(label, window VMA)` for every label the resolved section carries.
+    pub labels: Vec<(String, u32)>,
+}
+
+impl SoundTablesZ80 {
+    /// The window VMA of `name`, or an error naming the label: a label the table
+    /// does not define is never rendered as an address.
+    pub fn label_vma(&self, name: &str) -> Result<u32, String> {
+        self.labels.iter().find(|(n, _)| n == name).map(|(_, v)| *v).ok_or_else(|| {
+            format!(
+                "{SOUND_TABLES_Z80_REL} defines no label `{name}`, which the resident driver reads \
+                 as a banked carrier; the table and the carrier list have diverged"
+            )
+        })
+    }
+}
 
 /// Lower `sound_tables_z80.emp` (the 4 pure-math FM/PSG LUTs + the vol-env
 /// id-lists, pointer tables, and bodies) placed at VMA `$8000`, so its
@@ -1085,13 +1136,36 @@ pub fn emit_sound_tables_z80_doctored(
     sound_tables_z80_at(aeon, bank_anchors(aeon, None)?.sound_bank, doctor_vma)
 }
 
-/// The sound-tables core, placed at `head_lma` (the `sound_bank` anchor). Takes the
+/// The sound-tables bytes, placed at `head_lma` (the `sound_bank` anchor). Takes the
 /// anchor as a parameter so [`sound_layout_in`] measures it without re-entry.
 fn sound_tables_z80_at(aeon: &Path, head_lma: u32, doctor_vma: Option<u32>) -> Result<Vec<u8>, String> {
-    let dir = aeon.join("engine/sound");
+    Ok(sound_tables_z80_linked_at(aeon, head_lma, doctor_vma)?.bytes)
+}
+
+/// The sound-tables head lowered from the aeon tree's [`SOUND_TABLES_Z80_REL`] and
+/// linked at `head_lma`: bytes, window base and label VMAs ([`SoundTablesZ80`]).
+fn sound_tables_z80_linked_at(
+    aeon: &Path,
+    head_lma: u32,
+    doctor_vma: Option<u32>,
+) -> Result<SoundTablesZ80, String> {
+    let path = aeon.join(SOUND_TABLES_Z80_REL);
+    let src = sigil_span::read_set::read_to_string(&path).map_err(|e| format!("read {}: {e}", path.display()))?;
+    sound_tables_z80_linked_from_src(aeon, &src, head_lma, doctor_vma)
+}
+
+/// [`sound_tables_z80_linked_at`]'s core over the module's source text (lowered
+/// under the module's own path, so diagnostics locate in it).
+fn sound_tables_z80_linked_from_src(
+    aeon: &Path,
+    src: &str,
+    head_lma: u32,
+    doctor_vma: Option<u32>,
+) -> Result<SoundTablesZ80, String> {
+    let path = aeon.join(SOUND_TABLES_Z80_REL);
+    let dir = path.parent().ok_or("sound_tables_z80 path has no parent")?.to_path_buf();
     let mut texts = SourceTexts::new();
-    let module =
-        lower_emp_file(aeon, &dir.join("sound_tables_z80.emp"), &dir, Cpu::M68000, vec![], &mut texts)?;
+    let module = lower_emp_src(aeon, &path, src, &dir, Cpu::M68000, vec![], &mut texts)?;
     let link_asserts = module.link_asserts.clone();
 
     // Place at the map-derived head LMA (the `sound_bank` anchor) with the section's
@@ -1124,8 +1198,58 @@ fn sound_tables_z80_at(aeon: &Path, head_lma: u32, doctor_vma: Option<u32>) -> R
     // ignored, matching the co-link emitters).
     let assert_diags = sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), &link_asserts);
     link_assert_failure("sound_tables_z80 guards fired", &assert_diags, &|s| texts.locate(s))?;
+    // Label VMAs come off the RESOLVED section, whose labels sit at their final
+    // offsets, and count from the window base the section itself declares.
+    let sec = resolved
+        .iter()
+        .find(|s| s.name == "sound_tables_z80")
+        .ok_or("missing sound_tables_z80 in the resolved layout")?;
+    let window_base = sec
+        .vma_base
+        .ok_or("sound_tables_z80 declares no `vma:` window base; its labels have no $8000-window address")?;
+    let labels = sec.labels.iter().map(|l| (l.name.clone(), window_base + l.offset)).collect();
     let linked = sigil_link::link(&resolved, &SymbolTable::new()).map_err(|d| format!("link: {d:?}"))?;
-    Ok(linked.section("sound_tables_z80").ok_or("missing sound_tables_z80 in linked image")?.bytes.clone())
+    let bytes =
+        linked.section("sound_tables_z80").ok_or("missing sound_tables_z80 in linked image")?.bytes.clone();
+    Ok(SoundTablesZ80 { bytes, window_base, labels })
+}
+
+/// The `$8000`-window VMA of each [`SOUND_TABLES_BANKED_LABELS`] member, read off
+/// `table`'s own labels. `sound_bank_vma` is the window the map maps the head bank
+/// at; the table folds its intra-module pointer cells from its section's own
+/// `vma:`, so the two must agree or every label address would be relative to a
+/// window the driver does not see, which is refused rather than rebased.
+fn sound_tables_banked_vmas_of(
+    table: &SoundTablesZ80,
+    sound_bank_vma: u32,
+    names: &[&'static str],
+) -> Result<Vec<(&'static str, u32)>, String> {
+    if table.window_base != sound_bank_vma {
+        return Err(format!(
+            "{SOUND_TABLES_Z80_REL} places its section at window ${:X}, but the map's `sound_bank` \
+             anchor maps the head bank at ${sound_bank_vma:X}; the table's labels and pointer cells \
+             would address a window the driver does not see",
+            table.window_base
+        ));
+    }
+    names.iter().map(|&n| Ok((n, table.label_vma(n)?))).collect()
+}
+
+/// The `$8000`-window VMAs of the [`SOUND_TABLES_BANKED_LABELS`] members, derived
+/// from the lowered `sound_tables_z80.emp` in the aeon tree. A table edit moves
+/// them with no change on this side.
+pub fn sound_tables_banked_vmas(aeon: &Path) -> Result<Vec<(&'static str, u32)>, String> {
+    sound_tables_banked_vmas_in(aeon, None)
+}
+
+/// [`sound_tables_banked_vmas`] under an anchor overlay.
+pub fn sound_tables_banked_vmas_in(
+    aeon: &Path,
+    ov: Option<&AnchorOverlay>,
+) -> Result<Vec<(&'static str, u32)>, String> {
+    let a = bank_anchors(aeon, ov)?;
+    let table = sound_tables_z80_linked_at(aeon, a.sound_bank, None)?;
+    sound_tables_banked_vmas_of(&table, a.sound_bank_vma, &SOUND_TABLES_BANKED_LABELS)
 }
 
 /// Emit the seam-2 sound-tables build input to `out_dir`: `sound_tables_z80.bin`
@@ -1676,5 +1800,89 @@ when = \"sound_on\"
         assert_eq!(mt_bank_room(0xB8000, 0xB8000).unwrap(), BANK_WINDOW_SIZE);
         assert!(mt_bank_room(0xB8000, 0xC0000).is_err(), "an LMA at the window top has no room");
         assert!(mt_bank_room(0xB8000, 0xB7FF8).is_err(), "an LMA below the window is outside it");
+    }
+
+    /// The real `sound_tables_z80.emp`, the tree it came from, and its anchors:
+    /// `None` (skip, or a strict-mode panic) when the reference tree is absent.
+    fn real_sound_tables() -> Option<(std::path::PathBuf, String, BankAnchors)> {
+        let aeon = crate::test_support::reference_tree(&[SOUND_TABLES_Z80_REL, SOUND_PLACEMENT_MAP_REL])?;
+        let src = std::fs::read_to_string(aeon.join(SOUND_TABLES_Z80_REL)).expect("read sound_tables_z80.emp");
+        let a = bank_anchors(&aeon, None).expect("the map declares the bank anchors");
+        Some((aeon, src, a))
+    }
+
+    /// `src` with `extra` appended to the first data line of `proc <name>`.
+    fn append_to_proc_data(src: &str, name: &str, extra: &str) -> String {
+        let lines: Vec<&str> = src.lines().collect();
+        let at = lines
+            .iter()
+            .position(|l| l.trim_start().starts_with(&format!("proc {name} ")))
+            .unwrap_or_else(|| panic!("sound_tables_z80.emp must declare `proc {name}`"));
+        let data = lines[at + 1];
+        assert!(data.trim_start().starts_with("dc."), "`proc {name}` must open with a data line, got: {data}");
+        let mutated_line = format!("{data}{extra}");
+        let out = src.replacen(data, &mutated_line, 1);
+        assert!(out.contains(&mutated_line), "the `{name}` rewrite must apply");
+        out
+    }
+
+    /// The eight banked table carriers follow the table's own labels. One id and one
+    /// pointer are appended to the real table's PSG vol-env lists (the shape of an
+    /// envelope addition, which keeps the table's own id/ptr count guard true), and
+    /// each label must move by exactly what precedes it: `PsgVolEnv_Ptrs` by the one
+    /// id byte, every label past it by that byte plus the two-byte pointer, the rest
+    /// not at all, and the table length by three. A carrier restated instead of read
+    /// off the lowered table goes red here.
+    #[test]
+    fn banked_table_carriers_follow_the_table_labels() {
+        let Some((aeon, src, a)) = real_sound_tables() else {
+            return;
+        };
+        let base = sound_tables_z80_linked_from_src(&aeon, &src, a.sound_bank, None).expect("real table lowers");
+        let base_vmas = sound_tables_banked_vmas_of(&base, a.sound_bank_vma, &SOUND_TABLES_BANKED_LABELS)
+            .expect("every banked label is defined");
+
+        let mutated = append_to_proc_data(&src, "PsgVolEnv_Ids", ", $7F");
+        let mutated = append_to_proc_data(&mutated, "PsgVolEnv_Ptrs", ", PsgVolEnv_01");
+        let grown = sound_tables_z80_linked_from_src(&aeon, &mutated, a.sound_bank, None)
+            .expect("the grown table lowers, its id/ptr count guard still holding");
+        let grown_vmas = sound_tables_banked_vmas_of(&grown, a.sound_bank_vma, &SOUND_TABLES_BANKED_LABELS)
+            .expect("every banked label is still defined");
+
+        assert_eq!(grown.bytes.len(), base.bytes.len() + 3, "the table grows by one id byte and one pointer");
+        let ids = base.label_vma("PsgVolEnv_Ids").unwrap();
+        let ptrs = base.label_vma("PsgVolEnv_Ptrs").unwrap();
+        for ((name, was), (gname, now)) in base_vmas.iter().zip(&grown_vmas) {
+            assert_eq!(name, gname);
+            let want = if *was <= ids {
+                *was
+            } else if *was <= ptrs {
+                was + 1
+            } else {
+                was + 3
+            };
+            assert_eq!(*now, want, "{name}: was {was:#06x}, now {now:#06x}, want {want:#06x}");
+        }
+        let moved: Vec<&str> =
+            base_vmas.iter().zip(&grown_vmas).filter(|(b, g)| b.1 != g.1).map(|(b, _)| b.0).collect();
+        assert!(moved.contains(&"PsgVolEnv_Ptrs") && moved.contains(&"FmVolEnv_Ptrs"), "moved: {moved:?}");
+    }
+
+    /// A carrier name the table does not define is an error NAMING it, never an
+    /// address; and a table whose section window disagrees with the map's
+    /// `sound_bank` window is refused rather than rebased.
+    #[test]
+    fn banked_table_carriers_refuse_what_they_cannot_measure() {
+        let Some((aeon, src, a)) = real_sound_tables() else {
+            return;
+        };
+        let table = sound_tables_z80_linked_from_src(&aeon, &src, a.sound_bank, None).expect("real table lowers");
+        let err = sound_tables_banked_vmas_of(&table, a.sound_bank_vma, &["FmPitchTableZ", "NoSuchTableLabel"])
+            .unwrap_err();
+        assert!(err.contains("`NoSuchTableLabel`"), "the error must name the missing label, got: {err}");
+
+        let err = sound_tables_banked_vmas_of(&table, a.sound_bank_vma + 0x1000, &SOUND_TABLES_BANKED_LABELS)
+            .unwrap_err();
+        assert!(err.contains("window"), "a window mismatch must be refused, got: {err}");
     }
 }

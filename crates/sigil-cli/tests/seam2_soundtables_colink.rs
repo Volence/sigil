@@ -9,9 +9,10 @@
 //! addresses. SELF-CONTAINED (no external symbols — the pointer cells reference
 //! this module's own body labels). The table is proven BYTE-IDENTICAL to the
 //! reference ROM slice at the `SoundTablesZ80_Head` LMA `sound_layout` derives
-//! (`sound_tables_z80_lma`, the `sound_bank` map anchor; 855 bytes).
+//! (`sound_tables_z80_lma`, the `sound_bank` map anchor). Its length is the lowered
+//! table's own emitted length, not a restated constant.
 //!
-//! SHAPE-INVARIANT (pure-math LUTs + fixed vol-env data; 855 bytes both shapes),
+//! SHAPE-INVARIANT (pure-math LUTs + fixed vol-env data; one length both shapes),
 //! so one emission serves both — gated against BOTH reference ROMs.
 //!
 //! ```text
@@ -20,7 +21,6 @@
 
 use sigil_harness::seam2::{
     emit_sound_tables_artifacts, emit_sound_tables_z80, emit_sound_tables_z80_doctored, sound_layout,
-    SOUND_TABLES_Z80_LEN,
 };
 use std::path::PathBuf;
 
@@ -40,8 +40,11 @@ fn golden(name: &str) -> Vec<u8> {
 }
 
 /// THE HEAD BYTE GATE: the emitted `sound_tables_z80` == the reference ROM slice
-/// at `sound_tables_z80_lma`, in BOTH shapes (shape-invariant, so the same 855
-/// bytes match both).
+/// at `sound_tables_z80_lma`, in BOTH shapes (shape-invariant, so the same bytes
+/// match both). The slice length is the emitted table's; the head that follows it
+/// (`SndDefaultPitchTable`) is placed at `sound_tables_z80_lma` plus that length and
+/// gated against the same goldens, so a length that disagreed with the ROM would
+/// misplace that head.
 #[test]
 fn sound_tables_z80_matches_the_reference_rom_slice_both_shapes() {
     if !strict_gate() {
@@ -50,12 +53,12 @@ fn sound_tables_z80_matches_the_reference_rom_slice_both_shapes() {
     }
     let aeon = aeon_dir();
     let out = emit_sound_tables_z80(&aeon).expect("emit_sound_tables_z80");
-    assert_eq!(out.len(), SOUND_TABLES_Z80_LEN, "sound_tables_z80 is 855 bytes ($357)");
+    assert!(!out.is_empty(), "sound_tables_z80 emitted no bytes");
     let lma = sound_layout(&aeon).expect("sound_layout derives sound_tables_z80_lma").sound_tables_z80_lma;
     for rom_name in ["s4.bin", "s4.debug.bin"] {
         let rom = golden(rom_name);
         let lo = lma as usize;
-        let refslice = &rom[lo..lo + SOUND_TABLES_Z80_LEN];
+        let refslice = &rom[lo..lo + out.len()];
         if let Some(i) = (0..out.len()).find(|&i| out[i] != refslice[i]) {
             panic!(
                 "sound_tables_z80 differs from {rom_name} @ byte {i:#x}: emp {:#04x} vs rom {:#04x}\n  emp: {:02x?}\n  rom: {:02x?}",
@@ -87,7 +90,7 @@ fn sound_tables_diverge_when_window_moved() {
     let doctored = emit_sound_tables_z80_doctored(&aeon, Some(0x9000)).expect("doctored emit");
     let rom = golden("s4.bin");
     let lo = sound_layout(&aeon).expect("sound_layout").sound_tables_z80_lma as usize;
-    let refslice = &rom[lo..lo + SOUND_TABLES_Z80_LEN];
+    let refslice = &rom[lo..lo + doctored.len()];
     assert_ne!(
         doctored, refslice,
         "the sound_tables_z80 gate is vacuous if a moved $8000 window still matches the golden slice"
