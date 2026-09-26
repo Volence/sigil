@@ -950,7 +950,7 @@ points at it rather than restating it, so there is one copy to keep true.
 
 ### SEAM1-BANKED-CARRIERS-DERIVE
 
-- state: **next**  size: `M`  project: `-`
+- state: **done in branch** `parcel/seam1-banked-derive`  size: `M`  project: `-`
 - Asked by aeon 2026-09-25; blocks their S2CLIP-REGION-MUSIC step 2 (Sonic 2 PSG envelopes). Same family as
   SEAM2-SONG-COUNT-LITERAL.
 - Premise verified here at master `7c081077`: `crates/sigil-harness/src/seam1.rs` `banked_carriers()` hand-pins
@@ -967,3 +967,34 @@ points at it rather than restating it, so there is one copy to keep true.
 - Ask: derive ALL eleven and the length from the lowered `sound_tables_z80.emp` (its own labels), so a table
   change is aeon-only; retire or widen the drift check accordingly. Byte-neutral at the pin by construction.
   Positive control: aeon `f7dda3e2` builds under the new code with correct envelope addresses; master refuses it.
+- Outcome: all eleven carriers and the table length are derived. `seam2` lowers and links
+  `sound_tables_z80.emp` once and reads each label's window VMA off the RESOLVED section (section `vma:` plus
+  final label offset); `seam2::banked_carrier_vmas_in` = the three head members from `sound_layout` then the
+  eight table labels (`SOUND_TABLES_BANKED_LABELS`, names only). `seam1::banked_carriers(aeon, ov)` is that
+  derivation on every emit path, under the caller's anchor overlay. An absent label is an error naming it; a
+  table `vma:` that disagrees with the map's `sound_bank` window is refused. The size-only path (run from
+  inside `sound_layout`) links every carrier at a `$8000` placeholder (`BANKED_CARRIER_SIZE_PROBE`, same
+  argument as `DAC_SAMPLE_TABLE_SIZE_PROBE`). `SOUND_TABLES_Z80_LEN` is gone; the colink gate slices by the
+  emitted length.
+- Drift check RETIRED, not widened: with the carriers derived from the authority it compared against, it
+  could only compare a derivation with itself. Replaced by `seam2` unit tests (the real table with one id and
+  one pointer appended in memory: each carrier moves by exactly what precedes it; absent label and window
+  mismatch refused by name) and `tests/banked_carrier_derivation.rs` (renamed from `banked_carrier_drift.rs`,
+  `nightly_source_gates.sh` follows): all eleven produced in order, table labels inside the table, and each of
+  the eleven moves the linked resident blob when doctored (every one is read by the driver).
+- Byte-neutral by construction at the pin `ec640bcf`: the derivation yields exactly the eleven retired literals
+  and 855; `emit_sound_blob` master vs branch, 19 artifacts byte-identical.
+- Positive control at aeon `f7dda3e2`: master `emit_sound_blob` refuses naming only the head three; the branch
+  derives `PsgVolEnv_Ptrs` 0x8294, `FmVolEnv_Ids` 0x83B7, `FmVolEnv_Ptrs` 0x83BA, head 0x83D9/0x84E1/0x85F3,
+  length 985 (0x3D9): aeon's figures, and an independent Python count of the `.emp` agrees. The emitted blob
+  carries each at its `ld hl`/`ld de` operand (plain blob `+0x16A1`: `11 94 82`), and the `ld b` scan count
+  `PSGVOLENV_COUNT` reads 16.
+- FOR AEON, f7dda3e2 still does not build: aeon restates the table length itself.
+  `soundbankhead.emp` walls `_sound_tables.len == $357` and `_dacsamp.len == $7F`, and `dac_sample_tab.emp`
+  has `DAC_HEAD_PREFIX = $357 + ...` (which sizes `DacHeadPad`, 7 -> 5 at 985 B). All loud (the walls fire).
+  With those three edited in a scratch copy, `sigil build --native --game sonic4` builds (crc 8b9761e2, 822231
+  B), the listing places the heads at 83D9/84E1/85F3/8633, and ROM `$B8000` holds the 985-byte table.
+- Not fixed, same class: `seam2_layout_derivation.rs` pins the layout as frozen literals by design (its
+  `pitchtable_lma` encodes 855) and refreshes with the pin; `PITCHTABLE_LEN = 264` and the `size = 0x400`
+  sound-tables region are hand values; the 2026-08-26 note in `tests/repin_pins.rs` still describes the
+  carriers as unchecked (a dated record, left as written).
