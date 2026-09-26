@@ -296,12 +296,20 @@ fn two_module_flip_resolves_debug_music_toggle() {
     sections.extend(addr_carriers(0x0100_0000));
     sections.extend(value_carriers());
     // game_loop's other cross-seam callees (VSync_Wait/Sound_DrainSfxRing/
-    // Game_State) — synthetic carriers so the game_loop region links.
-    for (i, (name, vma)) in
-        [("VSync_Wait", 0x900u32), ("Sound_DrainSfxRing", 0x920), ("Input_Tick", 0x940), ("Palette_Compose", 0x960), ("Logic_Tick", 0xFFFF8004), ("Game_State", 0xFFFF8008)]
-            .iter()
-            .enumerate()
-    {
+    // Game_State/Music_Service): synthetic carriers so the game_loop region links.
+    // This test compares no bytes against a ROM, so every position is harness-private
+    // (the ROM ones within bsr.w reach of game_loop's $800). A tree whose game_loop
+    // does not call a name leaves its carrier unreferenced, which is inert.
+    let callees = [
+        ("VSync_Wait", 0x900u32),
+        ("Sound_DrainSfxRing", 0x920),
+        ("Input_Tick", 0x940),
+        ("Palette_Compose", 0x960),
+        ("Music_Service", 0x980),
+        ("Logic_Tick", 0xFFFF8004),
+        ("Game_State", 0xFFFF8008),
+    ];
+    for (i, (name, vma)) in callees.iter().enumerate() {
         let asm = format!("cpu 68000\n\tphase ${vma:X}\n{name}:\n\tdc.b 0\n");
         let opts = AsOptions { initial_cpu: Some(Cpu::M68000), ..AsOptions::default() };
         let mut secs =

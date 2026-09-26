@@ -98,10 +98,20 @@ fn strict_gate() -> bool {
     sigil_harness::test_support::strict_gate()
 }
 
+/// The sound-service callee GameLoop reaches under `SOUND_DRIVER_ENABLED`, where the
+/// tree defines one: `Music_Service` (engine/sound/sound_api.emp), read from this
+/// shape's reference listing. A tree predating region music neither calls nor defines
+/// it, so the row is absent there. `jbsr` lowers to a pc-relative `bsr.w` when the
+/// target is in reach, so the address is the shape's real one, not a stand-in.
+fn sound_service_labels(debug: bool) -> Vec<(String, u32)> {
+    sigil_harness::test_support::listing_labels_if_defined(debug, &["Music_Service"])
+}
+
 /// Per-shape gate geometry: the region base and the true VMAs of the two
 /// pc-relative call targets (sourced from `sigil_harness::pins` — regenerate
 /// via repin).
 struct Shape {
+    debug: bool,
     base: u32,
     len: usize,
     vsync_wait: u32,
@@ -116,6 +126,7 @@ struct Shape {
 }
 
 const PLAIN: Shape = Shape {
+    debug: false,
     base: pins::GAME_LOOP.plain_base,
     len: pins::GAME_LOOP.plain_len,
     vsync_wait: pins::V_SYNC_WAIT.plain,
@@ -124,6 +135,7 @@ const PLAIN: Shape = Shape {
     palette_compose: pins::PALETTE_COMPOSE.plain,
 };
 const DEBUG: Shape = Shape {
+    debug: true,
     base: pins::GAME_LOOP.debug_base,
     // input-6button: the +0xB0 shift landed S4LZ_DecompressDict misaligned in
     // PLAIN only, so the two lens now differ (plain carries a 2-byte align
@@ -150,6 +162,7 @@ fn compile_emp(
     input_tick: u32,
     palette_compose: u32,
     dbg_toggle: u32,
+    extra_labels: &[(String, u32)],
     with_consumer: bool,
 ) -> (Vec<Section>, sigil_link::LinkedImage) {
     let dir = aeon_dir().join("engine/system");
@@ -203,7 +216,7 @@ fn compile_emp(
     // Synthetic AS-side cross-seam labels, each phased at its true (or
     // matrix-chosen) VMA; carrier LMAs are harness-private.
     let mut lma = 0x0200_0000u32;
-    for (name, vma) in [
+    let fixed = [
         ("VSync_Wait", vsync_wait),
         ("Sound_DrainSfxRing", drain),
         ("Input_Tick", input_tick),              // I3: jbsr Input_Tick (replay seam)
@@ -211,7 +224,9 @@ fn compile_emp(
         ("Debug_MusicToggle", dbg_toggle),
         ("Logic_Tick", pins::LOGIC_TICK.plain),  // I2: addq.l #1, Logic_Tick (shape-invariant RAM)
         ("Game_State", pins::GAME_STATE.plain),
-    ] {
+    ];
+    let extra = extra_labels.iter().map(|(n, v)| (n.as_str(), *v));
+    for (name, vma) in fixed.into_iter().chain(extra) {
         let asm = format!(
             "cpu 68000\n\
              phase ${vma:X}\n\
@@ -343,6 +358,7 @@ fn reference_gate(shape: &Shape, rom_name: &str) {
             shape.input_tick,
             shape.palette_compose,
             0x3000,
+            &sound_service_labels(shape.debug),
             true,
         );
 
@@ -607,6 +623,7 @@ fn two_module_flip(debug: bool, rom_name: &str) {
     if debug {
         sigil_harness::test_support::extend_from_listing(&mut table, debug, &["Dbg_DMA_", "DMA_Peak_", "DMA_Split_"]);
     }
+    table.extend(sound_service_labels(debug));
     for (i, (name, vma)) in table.iter().enumerate() {
         let vma = *vma;
         let asm = format!("cpu 68000\n\tphase ${vma:X}\n{name}:\n\tdc.b 0\n");
