@@ -929,6 +929,18 @@ points at it rather than restating it, so there is one copy to keep true.
 - Suites at `6cd988ea`: pin 504 binaries, 5732 passed, 0 failed, 2 ignored; `repin --check`
   says `pins.rs unchanged`. Tip: the same 176 failures as before the parcel, 12 name lines both.
 
+### INSTALLED-BINARY-READS-BUILD-TREE
+
+- state: **open**  size: `S`  project: `SIGIL-DECOUPLE`
+- 2026-09-26: the shared `target/release/sigil` reads `<build tree>/crates/sigil-harness/golden/offcanonical_sizes/*.txt`
+  at RUNTIME through a baked `CARGO_MANIFEST_DIR`-style path. The pair was built at `.worktrees/land-4ce2509d`; removing
+  that worktree after the swap broke every aeon demo build ("read frozen table ... demo.txt: No such file", exit 101)
+  until it was recreated at the same path and commit. It is now `git worktree lock`ed with a reason. STANDING until
+  fixed: the tree an installed pair was built from is part of the install; lock it at swap time and remove it only
+  after a later pair is swapped in from elsewhere. The fix: embed the frozen tables (`include_str!`) or resolve them
+  from a named reference tree at run time, and grep the binary for every other baked build path (`strings | grep
+  .worktrees`) before choosing. Found by aeon.
+
 ### BLOB-LEN-PIN-OFF-EMIT-PATH: LANDED
 
 - **LANDED** 2026-09-26 at merge `4ce2509d` (tip `4fc0ccfa`), pushed. The emit writes the resident blob at the tree's
