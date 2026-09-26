@@ -240,14 +240,50 @@ impl GameProfile {
     }
 }
 
-/// Load a frozen off-canonical size table (`golden/offcanonical_sizes/<name>.txt`):
-/// the committed `LABEL 0xADDR` rows (comment lines skipped) → a `label → addr` map.
+/// The committed off-canonical size tables (`golden/offcanonical_sizes/<name>`), compiled
+/// INTO the binary, one row per file in that directory.
+///
+/// They are compiled in rather than read at run time because the installed `sigil` and
+/// `emit_sound_blob` must not depend on the checkout they were compiled in: a run-time
+/// read resolved against the compile-time manifest directory, so removing that checkout
+/// broke every build of every shape (2026-09-26). The consequences, each deliberate:
+///
+///  * a table edit takes effect on the next compile, never on a run of an existing binary.
+///    `cargo` tracks every embedded file, so any `cargo build`/`cargo run`/`cargo test`
+///    after an edit recompiles; a prebuilt binary keeps the tables it was built with, the
+///    same as it keeps its code;
+///  * a table is therefore part of the assembler, not an input of a build: it is not a
+///    `DIGEST-READ` row of the `.lst` source digest, and the assembler's own identity
+///    (`DIGEST-ASSEMBLER revision=`, the `--version` closure) covers it instead. The
+///    closure derivation in `crates/sigil-cli/build.rs` follows these embeds to the files
+///    they reach, so an edit to a table moves the closure revision and the tree word the
+///    way an edit to this source file does.
+///
+/// `frozen_tables_embed_every_committed_table` holds this list to the directory.
+pub const FROZEN_TABLES: [(&str, &str); 7] = [
+    ("config_a.txt", include_str!("../golden/offcanonical_sizes/config_a.txt")),
+    ("config_b.txt", include_str!("../golden/offcanonical_sizes/config_b.txt")),
+    ("demo.txt", include_str!("../golden/offcanonical_sizes/demo.txt")),
+    ("demo_debug.txt", include_str!("../golden/offcanonical_sizes/demo_debug.txt")),
+    ("lean.txt", include_str!("../golden/offcanonical_sizes/lean.txt")),
+    ("s4.txt", include_str!("../golden/offcanonical_sizes/s4.txt")),
+    ("s4_debug.txt", include_str!("../golden/offcanonical_sizes/s4_debug.txt")),
+];
+
+/// Load a frozen off-canonical size table (`golden/offcanonical_sizes/<name>`, compiled in
+/// as [`FROZEN_TABLES`]): the committed `LABEL 0xADDR` rows (comment lines skipped) → a
+/// `label → addr` map.
+///
+/// An unknown name PANICS, naming the tables this binary carries: a profile asking for a
+/// table nobody committed is a regression, not an empty table.
 pub fn load_frozen_table(name: &str) -> HashMap<String, u32> {
-    let p = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("golden/offcanonical_sizes")
-        .join(name);
-    let txt = sigil_span::read_set::read_to_string(&p)
-        .unwrap_or_else(|e| panic!("read frozen table {}: {e}", p.display()));
+    let txt = FROZEN_TABLES.iter().find(|(n, _)| *n == name).map(|(_, t)| *t).unwrap_or_else(|| {
+        let carried: Vec<&str> = FROZEN_TABLES.iter().map(|(n, _)| *n).collect();
+        panic!(
+            "frozen table `{name}` is not compiled into this binary; it carries {carried:?} \
+             (golden/offcanonical_sizes/, see FROZEN_TABLES)"
+        )
+    });
     let mut m = HashMap::new();
     for line in txt.lines() {
         let line = line.trim();

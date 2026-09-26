@@ -487,6 +487,7 @@ fn cargo_closure() -> (Vec<String>, usize) {
             .into_owned()
     };
 
+    let mut compiled_dirs: Vec<std::path::PathBuf> = Vec::new();
     let mut paths: std::collections::BTreeSet<String> =
         ["Cargo.toml", "Cargo.lock", ".cargo", "rust-toolchain", "rust-toolchain.toml"]
             .iter()
@@ -519,9 +520,31 @@ fn cargo_closure() -> (Vec<String>, usize) {
             let src = std::path::PathBuf::from(
                 target["src_path"].as_str().expect("a target has a source path"),
             );
-            paths.insert(rel(src.parent().expect("a source path has a directory")));
+            let dir = src.parent().expect("a source path has a directory");
+            paths.insert(rel(dir));
+            compiled_dirs.push(dir.to_path_buf());
         }
     }
+
+    // A file a compiled source names by path (an embedded table, a module by path
+    // attribute) is compiled into the binary too, so the closure follows it to the file.
+    // Read with THIS file's own scanner, `referenced_paths`, so the build script's rule
+    // and the escape gate's rule are held to one reading of the source.
+    let mut followed: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    for dir in &compiled_dirs {
+        for file in rust_sources(dir) {
+            let text = std::fs::read_to_string(&file)
+                .unwrap_or_else(|e| panic!("cannot read {} to follow its references: {e}", file.display()));
+            let parent = file.parent().expect("a source file has a directory");
+            for referenced in referenced_paths(&text) {
+                let target = rel(&normalise(&parent.join(&referenced)));
+                if !paths.iter().any(|p| target == *p || target.starts_with(&format!("{p}/"))) {
+                    followed.insert(target);
+                }
+            }
+        }
+    }
+    paths.extend(followed);
 
     // Any path an ancestor already covers is redundant; the banner prints the
     // pruned form, so prune here too or the two lists differ over nothing.

@@ -14,8 +14,14 @@ use sigil_span::read_set::Snapshot;
 use std::collections::BTreeSet;
 use std::path::{Component, Path, PathBuf};
 
-/// The root of the sigil checkout this crate was compiled from: the tree the assembler
-/// reads its committed off-canonical size tables from at run time (`load_frozen_table`).
+/// The root of the sigil checkout this crate was compiled from: the `root=sigil` digest
+/// root, where a recorded read under that checkout would be placed.
+///
+/// No `sigil build` path reads there. The one build input that lived there, the
+/// off-canonical size tables, is compiled in (`native::FROZEN_TABLES`), and
+/// `installed_binary_needs_no_build_tree` runs the built binary with this directory
+/// hidden. The root stays in the grammar so a digest naming it still parses; this
+/// function only computes a path and never requires it to exist.
 pub fn sigil_source_root() -> PathBuf {
     let crate_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
     let root = crate_dir.parent().and_then(Path::parent).unwrap_or(crate_dir);

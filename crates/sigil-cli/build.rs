@@ -49,7 +49,10 @@
 //! Within each closure package the material set is narrowed by cargo's own
 //! target declarations — a package's compile inputs are the module trees rooted
 //! at its non-dev targets' `src_path`s, so `tests/`, `benches/` and fixture
-//! directories are outside it.
+//! directories are outside it. One widening follows: a file a compiled source names
+//! by path at compile time (a path attribute or an include macro, such as the
+//! off-canonical size tables `sigil-harness` embeds from its `golden/` directory) is
+//! compiled in too, so the closure follows each such reference to its file.
 //!
 //! Two deliberate over-approximations, both in the safe direction:
 //!
@@ -736,6 +739,10 @@ fn closure(manifest_dir: &Path, repo_root: &str) -> Closure {
     .map(|s| s.to_string())
     .collect();
 
+    // The source directories narrowed to below, whose compile-time references are
+    // followed once the walk is done.
+    let mut compiled_dirs: Vec<PathBuf> = Vec::new();
+
     let mut manifests: Vec<PathBuf> = Vec::new();
     manifests.push(workspace_root.join("Cargo.toml"));
     let lock = workspace_root.join("Cargo.lock");
@@ -814,6 +821,7 @@ fn closure(manifest_dir: &Path, repo_root: &str) -> Closure {
             match relative(&workspace_root, dir) {
                 Some(rel) => {
                     paths.insert(rel);
+                    compiled_dirs.push(dir.to_path_buf());
                 }
                 None => {
                     return Closure::undetermined(format!(
@@ -822,6 +830,17 @@ fn closure(manifest_dir: &Path, repo_root: &str) -> Closure {
                 }
             }
         }
+    }
+
+    // A compiled source can read a file outside its own directory at COMPILE time
+    // (a path attribute, and the three include macros). Such a file is compiled into this
+    // executable as surely as the source that names it, so the closure follows each
+    // reference to the file it reaches. The embedded off-canonical size tables under
+    // `crates/sigil-harness/golden/` are the case this exists for: without it an edit
+    // to one would change the binary while the closure called it harmless.
+    match reached_files(&workspace_root, &compiled_dirs, &paths) {
+        Ok(reached) => paths.extend(reached),
+        Err(why) => return Closure::undetermined(why),
     }
 
     manifests.sort();
@@ -834,6 +853,96 @@ fn closure(manifest_dir: &Path, repo_root: &str) -> Closure {
         manifests,
         error: String::new(),
     }
+}
+
+/// The compile-time reference forms. Spelled in pieces so this file's own text holds
+/// none of them: the closure gate in `tests/version_provenance.rs` scans every compiled
+/// source for these forms, and this file is one.
+const REFERENCE_FORMS: [&str; 4] =
+    [concat!("#[", "path"), concat!("include", "_str!"), concat!("include", "_bytes!"), concat!("include", "!")];
+
+/// Every file a source under `dirs` names through a [`REFERENCE_FORMS`] reference that
+/// `covered` does not already reach, repository-relative.
+///
+/// The rule is the one `no_compiled_source_reaches_a_file_outside_the_closure` checks
+/// with: the first string literal after the form, resolved against the naming file's
+/// directory. A reference that leaves the repository is refused rather than dropped,
+/// because a closure that silently omits a compile input is the false "cannot affect
+/// this binary" the classification must never give.
+fn reached_files(root: &Path, dirs: &[PathBuf], covered: &BTreeSet<String>) -> Result<BTreeSet<String>, String> {
+    let covers = |rel: &str| covered.iter().any(|p| rel == p || rel.starts_with(&format!("{p}/")));
+    let mut out = BTreeSet::new();
+    for dir in dirs {
+        for file in rust_files(dir)? {
+            let text = std::fs::read_to_string(&file)
+                .map_err(|e| format!("cannot read {} to follow its references: {e}", file.display()))?;
+            let Some(parent) = file.parent() else { continue };
+            for referenced in quoted_references(&text) {
+                let target = lexically_normal(&parent.join(&referenced));
+                let Some(rel) = relative(root, &target) else {
+                    return Err(format!(
+                        "{} reaches {referenced}, outside the repository, so the closure cannot name it",
+                        file.display()
+                    ));
+                };
+                if !covers(&rel) {
+                    out.insert(rel);
+                }
+            }
+        }
+    }
+    Ok(out)
+}
+
+/// Every `.rs` file under `dir`, recursively, in a stable order.
+fn rust_files(dir: &Path) -> Result<Vec<PathBuf>, String> {
+    let mut out = Vec::new();
+    let mut stack = vec![dir.to_path_buf()];
+    while let Some(d) = stack.pop() {
+        let entries = std::fs::read_dir(&d).map_err(|e| format!("cannot list {}: {e}", d.display()))?;
+        for entry in entries {
+            let path = entry.map_err(|e| format!("cannot list {}: {e}", d.display()))?.path();
+            if path.is_dir() {
+                stack.push(path);
+            } else if path.extension().is_some_and(|x| x == "rs") {
+                out.push(path);
+            }
+        }
+    }
+    out.sort();
+    Ok(out)
+}
+
+/// The first string literal after each [`REFERENCE_FORMS`] occurrence in `text`.
+fn quoted_references(text: &str) -> Vec<String> {
+    let mut found = Vec::new();
+    for form in REFERENCE_FORMS {
+        let mut rest = text;
+        while let Some(at) = rest.find(form) {
+            rest = &rest[at + form.len()..];
+            let Some(open) = rest.find('"') else { break };
+            let after = &rest[open + 1..];
+            let Some(close) = after.find('"') else { break };
+            found.push(after[..close].to_string());
+            rest = &after[close..];
+        }
+    }
+    found
+}
+
+/// Resolve `.` and `..` textually; the referenced file need not exist to be named.
+fn lexically_normal(path: &Path) -> PathBuf {
+    let mut out = PathBuf::new();
+    for part in path.components() {
+        match part {
+            std::path::Component::ParentDir => {
+                out.pop();
+            }
+            std::path::Component::CurDir => {}
+            other => out.push(other),
+        }
+    }
+    out
 }
 
 /// A path expressed relative to `root`, or `None` when it is not under it.
