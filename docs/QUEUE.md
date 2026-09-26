@@ -1056,6 +1056,10 @@ points at it rather than restating it, so there is one copy to keep true.
   0xB8357` and the later heads; `pins::SOUNDBANKHEAD` length used by `soundbankhead_port` (head now `$6B0`); the
   "VMA $8357" comment in `seam2_pitchtable.rs`. Also aeon `movingtrucks_pitchtable.emp` vma moved `$8357` -> `$8000`
   window base (emitted .bin unchanged per their cmp).
+- Second heads-up 2026-09-26 (aeon's reading, NOT verified here): aeon `b90cd650` adds the two Sonic 2 songs and
+  renumbers song ids (`SONG_S2_EHZ=2`, `SONG_S2_CPZ=3`, DrumTest 2 -> 4, HCZ2 3 -> 5; `SONG_COUNT` 3 plain / 5 debug).
+  Our `SONG_COUNT` derivation took it unchanged, but any sigil test or off-canonical golden (`--config-a`/`-b`, the
+  hotkeys profile) naming song ids by number, or pinning song-bank offsets or sizes, moves when the pin reaches it.
 - Ask when it is worked: derive what can be derived (the SEAM1 pattern), leave the pin-frozen ones to the refreeze,
   and re-derive the list from the tree at the commit rather than from this row.
 
