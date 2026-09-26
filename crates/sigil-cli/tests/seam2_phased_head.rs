@@ -153,8 +153,11 @@ fn phased_head_cells_resolve_to_resident_vmas_bytes_at_bank_lma() {
         return;
     }
     let head_lma = derived_seq_tab_lma();
-    for debug in [false, true] {
-        let (phased_bytes, phased_lma, seqtab_vma) = link_head_at(&map_phased(head_lma), debug);
+    // Both shapes are lowered and linked BEFORE either is compared, so a scope failure
+    // in the debug shape reports as itself instead of hiding behind a plain difference.
+    let shapes = [false, true];
+    let heads: Vec<_> = shapes.iter().map(|&debug| link_head_at(&map_phased(head_lma), debug)).collect();
+    for (debug, (phased_bytes, phased_lma, seqtab_vma)) in shapes.into_iter().zip(heads) {
 
         // (2) the head's bytes land at the bank LMA (physical placement in the sound bank).
         assert_eq!(
@@ -199,9 +202,17 @@ fn phased_head_emits_identical_bytes_to_the_windowed_oracle() {
     // table as the windowed oracle (VMA==LMA==window). So the scale-1 byte gate
     // (`seq_opcode_tab_port`) carries to the scale-2 placement, no new drift.
     let head_lma = derived_seq_tab_lma();
-    for debug in [false, true] {
-        let (windowed, windowed_lma, windowed_seqtab) = link_head_at(MAP_WINDOWED, debug);
-        let (phased, phased_lma, phased_seqtab) = link_head_at(&map_phased(head_lma), debug);
+    // Both placements of both shapes are lowered and linked BEFORE any is compared, so a
+    // scope failure in the debug shape reports as itself instead of hiding behind a plain
+    // difference.
+    let shapes = [false, true];
+    let links: Vec<_> = shapes
+        .iter()
+        .map(|&debug| (link_head_at(MAP_WINDOWED, debug), link_head_at(&map_phased(head_lma), debug)))
+        .collect();
+    for (debug, ((windowed, windowed_lma, windowed_seqtab), (phased, phased_lma, phased_seqtab))) in
+        shapes.into_iter().zip(links)
+    {
         assert_eq!(windowed, phased, "phased head bytes must equal the windowed oracle (debug={debug})");
         // The placements DIFFER only in the physical LMA; the window VMA is identical.
         assert_ne!(windowed_lma, phased_lma, "the two placements have distinct LMAs (debug={debug})");

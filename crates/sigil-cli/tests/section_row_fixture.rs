@@ -133,10 +133,21 @@ fn both_spellings_of_the_section_row_build_the_same_rom() {
     }
     let tmp = tempfile::tempdir().expect("tempdir");
     doctored_aeon(tmp.path(), |_current, other| other.to_string());
-    for (debug, key) in [(false, "s4"), (true, "s4_debug")] {
+    // Both shapes are built in both spellings BEFORE any is compared, so a scope failure
+    // in the debug build reports as itself instead of hiding behind a plain difference.
+    let shapes = [(false, "s4"), (true, "s4_debug")];
+    let builds: Vec<(Vec<u8>, Vec<u8>)> = shapes
+        .iter()
+        .map(|&(debug, key)| {
+            let live = native::build_native_full_file(&aeon_dir(), debug)
+                .unwrap_or_else(|e| panic!("{key} live: {e}"));
+            let other = native::build_native_full_file(tmp.path(), debug)
+                .unwrap_or_else(|e| panic!("{key} other spelling: {e}"));
+            (live, other)
+        })
+        .collect();
+    for ((_, key), (live, other)) in shapes.into_iter().zip(builds) {
         let (want_crc, want_len) = expected_full(key);
-        let live = native::build_native_full_file(&aeon_dir(), debug).unwrap_or_else(|e| panic!("{key} live: {e}"));
-        let other = native::build_native_full_file(tmp.path(), debug).unwrap_or_else(|e| panic!("{key} other spelling: {e}"));
         assert!(live == other, "{key}: the two spellings of the `{SECTION}` row must build the same ROM");
         let got_crc = native::crc32(&other);
         assert_eq!(
