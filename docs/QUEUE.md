@@ -126,6 +126,27 @@ on. Figures move when notes discussing the defect are edited, so the script is t
 binary produced it. That needs reading rather than grepping and is a separate parcel. The standing
 fix stands: a stability or provenance claim cites a committed script or an md5, or it is not made.
 
+**2026-09-26: the open question is answered.** The sweep at `9212d6e0` returns 22; read against
+what is actually known to differ between the four builds, and re-run on all four where the input
+survived or could be rebuilt: **3 DEPENDS, 19 DOES-NOT-DEPEND, 0 UNDETERMINED**, and every DEPENDS
+row is already settled or superseded. Note
+`docs/superpowers/notes/2026-09-26-asl-banner-citation-dependence.md`, probes and the all-builds
+runner beside it. The three are booked below.
+
+### ASL-BANNER-DEPENDS-THREE
+
+- state: `open`, for the overseer to close at landing: no re-run is owed  size: `S`  project: `-`
+- blockedBy: nothing
+
+Three banner-only notes state a claim that depends on which `asl` produced it. Each is settled or
+superseded in `docs/superpowers/notes/2026-09-26-asl-banner-citation-dependence.md`:
+`2026-09-03-as-macrosetup-three-sites.md` (a whole-Sonic-2 run's silence at 34 lines, on
+`0dee1f98`; superseded, `AS-WORD-IMM-RAM-LABEL` closed at `2026-09-04-as-end-probes/README.md`),
+`2026-09-07-as-nesting-relex.md` (asl timing, taken through `asl_run`, which accepts only
+`61e67256`; settled), `2026-09-08-extra-traversal-measure.md` (asl timing and a whole-`s2.asm`
+success; identified as `61e67256` for s1disasm and `0dee1f98` for s2disasm from its surviving
+scratch copies; settled). The notes themselves are historical and were not edited.
+
 ## S1-BUILD-PROFILE
 
 - state at archive: `open`  size: `S`  project: `SIGIL-AS-REPLACEMENT`
