@@ -1058,14 +1058,21 @@ points at it rather than restating it, so there is one copy to keep true.
   window base (emitted .bin unchanged per their cmp).
 - Ask when it is worked: derive what can be derived (the SEAM1 pattern), leave the pin-frozen ones to the refreeze,
   and re-derive the list from the tree at the commit rather than from this row.
+- Measured at aeon `d7103d30` (with committed AND tip-regenerated pins): `docs/superpowers/notes/2026-09-26-port-music-names.md`,
+  section PIN-ADVANCE. All five items confirmed; `soundbankhead_port` stays red after a repin (its length is a `repin.toml` literal).
 
 ### PORT-TESTS-MUSIC-NAMES-AT-TIP
 
-- state: **open**  size: `S`  project: `SIGIL-DECOUPLE`
-- From PORT-TESTS-HIDDEN-NAME-FAILURES' open item 1 (`docs/superpowers/notes/2026-09-26-port-hidden-names.md`):
-  at aeon `9caa1368` twelve tests fail on VISIBLE names from aeon commits after `8a6f92c4`. `Music_Service`:
-  `game_loop_port` x4, `game_debug_port`'s flip, two `tranche5` probes. `Music_Want`: `parallax_port` x2,
-  `sound_api_port` x2, one `tranche5` probe. Same derive-from-the-tree-under-test repair as
-  PORT-TESTS-RED-AT-AEON-TIP. `game_debug`'s link step at the tip stays unmeasured until this is done.
-- A provisioned tip tree exists at `/home/volence/sonic_hacks/.aeon-hidden-tip` (aeon `9caa1368`, s4 shapes built
-  there, demo pair copied from the pin's goldens); re-provision at the newer tip if aeon has moved.
+- state: **done in branch** `parcel/port-music-names` (awaiting merge)  size: `S`  project: `SIGIL-DECOUPLE`
+- Outcome 2026-09-26 (`docs/superpowers/notes/2026-09-26-port-music-names.md`), pin `ec640bcf`, tip held at aeon
+  `d7103d30` (`.aeon-music-tip`): THIRTEEN tests stopped on a name, not twelve. The thirteenth,
+  `tranche5::misspelled_extern_slot_is_loud`, hid `Music_Want` behind a bool control (it failed the same way at
+  `9caa1368`); its control now reports the messages, proven red-first. Repaired from the tree under test:
+  `Music_Service` from each shape's listing (`game_loop_port`), `Music_Want` and `Music_Current` (the second was behind
+  the first) from the listing (`parallax_port`, `sound_api_port`), harness-private carriers in the synthetic probes
+  (`game_debug` flip, `tranche5`). `drain_define_is_load_bearing` asserted a literal 4-byte delta; the tip gates two
+  calls, so the delta is now counted from `game_loop.emp`. `game_debug`'s flip link stage, measured at the tip: green.
+- Name-shaped lines at the tip 12 -> 0; failing set 191 -> 186, none left fails on a name (byte, length, golden,
+  pin or provenance drift, plus the S2 restatements the PIN-ADVANCE row covers, not all of which a repin clears).
+  Against pins regenerated at the tip (scratch copy) all 15 tests in the five binaries pass.
+  Suites at `9d38e63d`: pin 504 binaries, 5732 passed, 0 failed, 2 ignored, `repin --check` says `pins.rs unchanged`.
