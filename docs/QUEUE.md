@@ -932,8 +932,8 @@ points at it rather than restating it, so there is one copy to keep true.
 ### MODULE-REGISTRY-HARDCODES-AEON-FILES
 
 - state: **next**  size: `M`  project: `SIGIL-DECOUPLE`  asked by: aeon (HOLDING its deletion on us)
-- 2026-09-26: aeon wants to delete `engine/objects/path_swap.emp` (owner ruling: layer lines are the only layer-switch
-  mechanism; aeon calls it `games/sonic4/objects/path_swap.emp` elsewhere, confirm the path) plus its `map.toml` row and
+- 2026-09-26: aeon wants to delete `games/sonic4/objects/path_swap.emp` (owner ruling: layer lines are the only layer-switch
+  mechanism; aeon confirmed the path is `games/sonic4/objects/path_swap.emp`; aeon's half is booked blocked on this row) plus its `map.toml` row and
   `objects.json` entry. The build refuses, because sigil's whole-program module list is hard-coded:
   `crates/sigil-harness/src/native.rs` `registry()` (the `m!("games.sonic4.path_swap", "path_swap")` row) and
   `section_align.rs` `DECLARED` (`d("ObjDef_PathSwap", 2, WORD)`). Checked here 2026-09-26. `pins.rs` `PATH_SWAP`,
