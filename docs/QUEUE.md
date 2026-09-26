@@ -1016,7 +1016,8 @@ points at it rather than restating it, so there is one copy to keep true.
   `emit_sound_blob` md5 `f0fedab42d72ad1b5cf734591c18a57f`; `--version` clean, revision `ab0a5fe1`). The outgoing
   shared pair is `f52609fe` (sigil `cdf3ec1abe0d33d8042b7cf5092e5e64`, emit_sound_blob
   `ed45bedb7ab47972d570536b8d215d22`). Re-measure all four md5s before acting.
-- Swap ONLY when aeon reports its byte-identical four-shape control against the candidate clean and no aeon build
-  is running. A control difference is a finding: stop.
+- **Swap ONLY when both are true:** aeon reports its byte-identical four-shape control against the candidate clean
+  with no aeon build running, AND the hub opens the window (it polls aurora and oracle, then says go). Aeon's report
+  alone is not a go. A control difference is a finding: stop.
 - Same steps as SHARED-PAIR-SWAP-F52609FE above, with `1d19e60b` read as `f52609fe` and `f52609fe` as `ab0a5fe1`.
   Each step is its own tool call, read before the next.
