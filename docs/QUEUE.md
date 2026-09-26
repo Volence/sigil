@@ -892,6 +892,8 @@ points at it rather than restating it, so there is one copy to keep true.
 - OPEN: 12 tests fail on VISIBLE names at `9caa1368` (`Music_Service` in `game_loop`,
   `Music_Want` in `parallax`/`sound_api`), from aeon commits after `8a6f92c4`. They need the
   derive-from-the-tree repair before the pin advances past them.
+- Suites at `6cd988ea`: pin 504 binaries, 5732 passed, 0 failed, 2 ignored; `repin --check`
+  says `pins.rs unchanged`. Tip: the same 176 failures as before the parcel, 12 name lines both.
 
 ### CART-CHECK-CITES-STALE-PEER-BEHAVIOUR
 

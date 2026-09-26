@@ -150,10 +150,17 @@ Launched = `Running` + `Doc-tests` headers; reported = `test result:` lines.
 | before @pin | `7bd90670` | pin `ec640bcf` | 504 | 504 | 5732 | 0 | 2 |
 | before @tip | `7bd90670` | tip `9caa1368` | 504 | 504 | 5556 | 176 | 2 |
 | after @pin | `a6691120` | pin `ec640bcf` | 504 | 504 | 5732 | 0 | 2 |
+| final @pin | `6cd988ea` | pin `ec640bcf` | 504 | 504 | 5732 | 0 | 2 |
+| final @tip | `6cd988ea` | tip `9caa1368` | 504 | 504 | 5556 | 176 | 2 |
 
 Name-shaped lines at the tip before (`grep -cE 'unknown name|unresolved symbol|not defined in
 this link|embed.not-found|unresolved branch'`): 12, all `Music_Service` or `Music_Want`, all
 visible, in 12 tests (Open, item 1).
+
+The failing set at the tip is identical before (`7bd90670`) and after (`6cd988ea`), 176
+tests, empty diff both ways, and so is the name-shaped count (12 and 12). The first messages
+match line for line except `sfx_bank_port`, whose two tests trade which one reports the
+`PoisonError` (the first to panic poisons the shared lock; this parcel does not touch it).
 
 A run at `a6691120` against the tip is VOID and not cited: during it this parcel committed
 `79c1cd94` and rebuilt two test binaries into the same target, which relinked the `sigil` it
