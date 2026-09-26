@@ -1149,6 +1149,11 @@ points at it rather than restating it, so there is one copy to keep true.
   fact on request. That settles WHO sequences it, not WHETHER: advancing the pin is a decision, tested against the
   hub's 2026-09-02 ruling that the pin exists so the corpus does NOT track tip (`docs/OVERSEER-REFERENCE.md`, *A TASK
   RELAYED AS ROUTINE*). Run `refreeze --check` first to know whether it is a repair or a decision.
+- Third heads-up 2026-09-26 (aeon's agent's reading, NOT verified here): aeon `f136c486` (slope landing fix) adds a
+  cross-module name `Player_SensorLand` (`games/sonic4/player/player_sensors.emp`, used from `player_air.emp`); the
+  port tests run against aeon master report it as the only unresolved name, 39 failed / 24 passed, same at their base
+  and tip. Needs the derive-from-the-tree repair before the pin passes it. Possibly coming, only if the owner picks it:
+  `LayerLine`, `Act.act_layer_lines`, `Player_LayerLines` (geometry constants in `engine/system/constants.emp`).
 
 ### PORT-TESTS-MUSIC-NAMES-AT-TIP
 
