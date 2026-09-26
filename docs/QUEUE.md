@@ -895,6 +895,18 @@ points at it rather than restating it, so there is one copy to keep true.
 - Suites at `6cd988ea`: pin 504 binaries, 5732 passed, 0 failed, 2 ignored; `repin --check`
   says `pins.rs unchanged`. Tip: the same 176 failures as before the parcel, 12 name lines both.
 
+### BLOB-LEN-PIN-OFF-EMIT-PATH
+
+- state: **doing** from 2026-09-26  size: `S`  project: `SIGIL-DECOUPLE`
+- Asked by aeon 2026-09-26: a PSG envelope fix (`PsgEnvUpdate` once in `Seq_HookNoteOn`, +17 B resident; evidence
+  aeon `67a7a374` `docs/research/2026-09-26-s2-music-volume.md`) is refused by `emit_sound_blob`: "plain blob is 6193
+  bytes, expected 6176". `seam1::BLOB_LEN_PLAIN`/`BLOB_LEN_DEBUG` is both the pinned-corpus length assertion and a
+  hard refusal in the emit path aeon's build runs, so a re-pin reds our pinned tests. Ruled here: the refusal leaves
+  the emit path (a ceiling only if derived from the tree), the exact length stays a test assertion against the pinned
+  tree. Aeon guards the real hazard itself (`Z80_SOUND_SIZE <= SND_STATE_BASE`). After landing: rebuild the shared
+  `emit_sound_blob` and tell aeon the SHA. Branch `parcel/blob-len-off-emit-path`; agent tree
+  `/home/volence/sonic_hacks/.aeon-sigil-ref-blob` (remove after).
+
 ### CART-CHECK-CITES-STALE-PEER-BEHAVIOUR: LANDED
 
 - **LANDED** 2026-09-26 at `375ad832`, pushed. The comment now states our own reasons (one round trip, whole-image coverage) and cites the contract's `memory_hash` entry (section 6) and 11.48 by section, naming no peer tool. `ab_cart_check` 24 passed, 0 failed. Announced to aeon.
