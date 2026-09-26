@@ -51,8 +51,17 @@ fn colinked_seq_opcode_tab_matches_the_reference_rom_slice_both_shapes() {
     }
     let aeon = aeon_dir();
     let lma = sound_layout(&aeon).expect("sound_layout derives seq_opcode_tab_lma").seq_opcode_tab_lma;
-    for (debug, shape) in [(false, "plain"), (true, "debug")] {
-        let head = emit_seq_opcode_tab(&aeon, debug).expect("emit_seq_opcode_tab co-links");
+    // Both shapes are co-linked BEFORE either is compared, so a scope failure in the
+    // debug shape reports as itself instead of hiding behind a plain byte difference.
+    let shapes = [(false, "plain"), (true, "debug")];
+    let heads: Vec<Vec<u8>> = shapes
+        .iter()
+        .map(|&(debug, shape)| {
+            emit_seq_opcode_tab(&aeon, debug)
+                .unwrap_or_else(|e| panic!("emit_seq_opcode_tab co-links ({shape}): {e}"))
+        })
+        .collect();
+    for ((debug, shape), head) in shapes.into_iter().zip(heads) {
         assert_eq!(head.len(), SEQ_OPCODE_TAB_LEN, "SeqOpcodeTable is 32 × 2 = 64 bytes");
         let rom = golden(if debug { "s4.debug.bin" } else { "s4.bin" });
         let lo = lma as usize;

@@ -331,9 +331,11 @@ fn two_module_flip_resolves_debug_music_toggle() {
         }
         found.expect("game_debug.emp must export Debug_MusicToggle")
     };
-    assert_eq!(dmt_vma, BASE, "Debug_MusicToggle is the game_debug region's first proc (at BASE)");
+    // The link runs BEFORE the placement comparison, so an `unresolved symbol` in either
+    // module reports as itself instead of hiding behind a moved proc.
     let linked = sigil_link::link(&resolved, &SymbolTable::new())
         .unwrap_or_else(|d| panic!("flip link failed: {d:?}"));
+    assert_eq!(dmt_vma, BASE, "Debug_MusicToggle is the game_debug region's first proc (at BASE)");
     // The `jsr Debug_MusicToggle` in GameLoop: find the abs operand in game_loop's
     // bytes that equals dmt_vma. jsr abs.w = 4E B8 <word>; abs.l = 4E B9 <long>.
     let gl = linked.section("game_loop").expect("game_loop region");

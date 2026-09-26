@@ -80,8 +80,17 @@ fn colinked_sfx_head_matches_the_reference_rom_slice_both_shapes() {
     let aeon = aeon_dir();
     let layout = sound_layout(&aeon).expect("sound_layout derives the SFX LMAs");
     let win_lma = layout.sfx_win_tab_lma;
-    for (debug, shape) in [(false, "plain"), (true, "debug")] {
-        let out = emit_sfx_body_and_head(&aeon, debug).expect("emit_sfx_body_and_head co-links");
+    // Both shapes are co-linked BEFORE either is compared, so a scope failure in the
+    // debug shape reports as itself instead of hiding behind a plain byte difference.
+    let shapes = [(false, "plain"), (true, "debug")];
+    let outs: Vec<_> = shapes
+        .iter()
+        .map(|&(debug, shape)| {
+            emit_sfx_body_and_head(&aeon, debug)
+                .unwrap_or_else(|e| panic!("emit_sfx_body_and_head co-links ({shape}): {e}"))
+        })
+        .collect();
+    for ((debug, shape), out) in shapes.into_iter().zip(outs) {
         assert_eq!(out.head.len(), SFX_WIN_TAB_LEN, "SfxBlobWinTab is 137 × 2 = 274 bytes");
         assert_eq!(out.body.len(), SFX_BODY_LEN, "sfx_bank body is {SFX_BODY_LEN} bytes");
 

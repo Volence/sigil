@@ -137,9 +137,17 @@ fn soundbankhead_pin_is_the_lma_not_the_vma() {
     let Some(aeon) = reference_tree_for_profile(&native::sonic4_profile(false)) else {
         return;
     };
-    for debug in [false, true] {
-        let resolved = native::resolve_canonical_sections(&aeon, debug)
-            .unwrap_or_else(|e| panic!("resolve_canonical_sections(debug={debug}): {e}"));
+    // Both shapes are resolved BEFORE either is compared, so a scope failure in the debug
+    // build reports as itself instead of hiding behind a plain pin difference.
+    let shapes = [false, true];
+    let layouts: Vec<_> = shapes
+        .iter()
+        .map(|&debug| {
+            native::resolve_canonical_sections(&aeon, debug)
+                .unwrap_or_else(|e| panic!("resolve_canonical_sections(debug={debug}): {e}"))
+        })
+        .collect();
+    for (debug, resolved) in shapes.into_iter().zip(layouts) {
         let sec = resolved
             .iter()
             .find(|s| s.name == "soundbankhead")
