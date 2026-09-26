@@ -50,9 +50,11 @@ WHAT IS CHECKED, AND WHY EACH ROW IS LOAD-BEARING
      same slice of the ROM file". That is a WHOLE-IMAGE comparison in ONE round
      trip, which is why it is preferred over a readback: `read_memory` caps at 4096
      bytes a call, so pulling an 820 KB image back would be ~200 round trips, while
-     the hash is one. Aeon's `tools/evict_witness.py` already runs exactly this
-     shape as its stale-binary guard, and the contract names that use as the reason
-     the crc32 sentence exists.
+     the hash is one. It also covers every byte of the image, where the fallback
+     below covers only its windows. The quoted guarantee is the crc32 sentence in
+     the contract's `memory_hash` entry (contract/protocol.md, section 6, "memory &
+     Z80"), and section 11.48 of the same file records a cart freshness guard of
+     this shape as the use that sentence exists for.
    - **SAMPLED (fallback, when the server does not serve `memory_hash`).** A byte
      sample read back through `read_memory` at offsets derived from the file's own
      size: a head window, a middle window and the final window.
