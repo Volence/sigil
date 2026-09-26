@@ -929,6 +929,23 @@ points at it rather than restating it, so there is one copy to keep true.
 - Suites at `6cd988ea`: pin 504 binaries, 5732 passed, 0 failed, 2 ignored; `repin --check`
   says `pins.rs unchanged`. Tip: the same 176 failures as before the parcel, 12 name lines both.
 
+### MODULE-REGISTRY-HARDCODES-AEON-FILES
+
+- state: **next**  size: `M`  project: `SIGIL-DECOUPLE`  asked by: aeon (HOLDING its deletion on us)
+- 2026-09-26: aeon wants to delete `engine/objects/path_swap.emp` (owner ruling: layer lines are the only layer-switch
+  mechanism; aeon calls it `games/sonic4/objects/path_swap.emp` elsewhere, confirm the path) plus its `map.toml` row and
+  `objects.json` entry. The build refuses, because sigil's whole-program module list is hard-coded:
+  `crates/sigil-harness/src/native.rs` `registry()` (the `m!("games.sonic4.path_swap", "path_swap")` row) and
+  `section_align.rs` `DECLARED` (`d("ObjDef_PathSwap", 2, WORD)`). Checked here 2026-09-26. `pins.rs` `PATH_SWAP`,
+  `repin.toml`'s path_swap region and anchors, and `test_g4_final_objects_port.rs` describe the PINNED tree (ec640bcf,
+  which has the file) and do not block aeon; they move with PIN-ADVANCE.
+- The trap: deleting the registry row breaks builds of the pinned tree, which still ships the module. So the list must be
+  derived from the tree being built, most likely from `map.toml`'s sections, which aeon edits anyway; never from a
+  file's mere presence. Same class as BLOB-LEN-PIN-OFF-EMIT-PATH: a pinned-corpus fact sitting on the build path.
+  First step: enumerate every other hard-coded aeon module or anchor on the build path, not just this one. Order agreed
+  with aeon: sigil lands first and rebuilds the shared pair (from a durable path, then LOCK it, see
+  INSTALLED-BINARY-READS-BUILD-TREE), then aeon deletes.
+
 ### INSTALLED-BINARY-READS-BUILD-TREE
 
 - state: **open**  size: `S`  project: `SIGIL-DECOUPLE`
@@ -1160,6 +1177,10 @@ points at it rather than restating it, so there is one copy to keep true.
   `OJZ_CLIP_LAYER_LINE_ROWS`/`ojz_clip_act_layer_lines` (generated clip act). A struct-size move touches every port
   that lays out `Act`. Coming: `Player_LoopCrossover`, `CrossoverTable`, `XOVER_*` retire in favour of lines (owner
   ruling, per aeon).
+- Fifth heads-up 2026-09-26 (aeon's reading, NOT verified here): aeon `19978b00` REMOVES `Player_LoopCrossover`,
+  `CrossoverTable` (named by our `test_p1_player_port.rs`, `repin.toml`, `pins.rs`), and `XOVER_NONE`/`XOVER_TO_A`/
+  `XOVER_TO_B`/`XOVER_LAYER_BIAS`; `PlayerBlock` is 8 B shorter (`ll_prev` @20, `ll_cursor` @24); ADDS `OJZ_Act1_LayerLines`
+  and module `games.sonic4.ojz_layer_lines_act1` (`OJZ_ACT1_LAYER_LINE_ROWS`).
 
 ### PORT-TESTS-MUSIC-NAMES-AT-TIP
 
