@@ -14,8 +14,9 @@
 //!   stub (`u16 = 0`) + the empty BgAnim_Banks base. `BgAnim_Table` .. `Map_TestObj`.
 //!
 //! Each section is byte-compared against the reference ROM at its pin base
-//! (sourced from `sigil_harness::pins` — regenerate via repin). Content is
-//! shape-invariant; the debug shape is the same bytes at the +0x88 offset.
+//! (sourced from `sigil_harness::pins`, regenerate via repin), each shape lowered
+//! under its own `DEBUG` define. A section's plain and debug spans may differ only
+//! by what `sections()` declares for it, derived from the module itself.
 //!
 //! ```text
 //! SIGIL_STRICT_GATE=1 AEON_DIR=/path/to/aeon cargo test -p sigil-cli --test ojz_run_b_port
@@ -147,13 +148,105 @@ fn clip_act_const_src(aeon: &std::path::Path) -> String {
     src
 }
 
+/// The act's palette/BG module, relative to the aeon tree.
+const ACT_ASSETS_EMP: &str = "games/sonic4/data/levels/ojz/act1/act_assets.emp";
+
+/// `use engine.bg.{BG_LAYOUT_SIZE}`: the module's BG-layout embed is TYPED
+/// `[u8; BG_LAYOUT_SIZE]` (the length is the guard against a wrong-geometry blob),
+/// so the standalone lower needs that one const.
+/// `use games.sonic4.ojz_clip_act_act1.{OJZ_CLIP_ACT}`: the clip-act switch its
+/// DEBUG test backgrounds are gated on (`clip_act_const_src`).
+const ACT_ASSETS_PRELUDES: &[Prelude] = &[
+    sigil_harness::test_support::bg_layout_size_const_src as Prelude,
+    clip_act_const_src as Prelude,
+];
+
+/// The bytes a module's TYPED data items add in the DEBUG shape over the plain one,
+/// as the module itself declares them.
+///
+/// `act_assets.emp` gates its DEBUG-only test backgrounds by their type: each is
+/// `data NAME: [u8; LEN] = if GATE == 1 { embed(..) } else { [] }` with
+/// `LEN = if GATE == 1 { .. } else { 0 }`, so the declared length IS the per-shape
+/// size and a blob of the wrong size is a build error, not a different number. This
+/// reader takes every top-level `data` item typed `[ELEM; LEN]`, folds `LEN` with
+/// sigil's own evaluator under `DEBUG = 1` and under `DEBUG = 0` (the same define the
+/// byte gate lowers with, and the same preludes), and sums the element width times the
+/// difference. A shape-invariant typed item (the `[u8; BG_LAYOUT_SIZE]` layout)
+/// contributes zero; a tree whose module gates nothing on the shape yields zero.
+///
+/// Only TYPED lengths are counted. DEBUG-only content the module does not declare
+/// through its type (an untyped `if DEBUG` embed) is not explained here, so it shows
+/// up as span growth past the allowance and the gate goes red.
+///
+/// Fails by name on a length that does not fold to an integer, an element type with
+/// no known width, or a DEBUG shape that declares LESS than the plain one (the span
+/// assert models debug-only growth, not shrinkage).
+fn typed_debug_only_bytes(aeon: &std::path::Path, emp_rel: &str, preludes: &[Prelude]) -> usize {
+    use sigil_frontend_emp::ast::{Item, Type};
+    use sigil_frontend_emp::value::Value;
+    let file = module_with_preludes(aeon, emp_rel, preludes);
+    let width = |elem: &Type| -> usize {
+        match elem {
+            Type::Named(p) if p.segments.len() == 1 => match p.segments[0].as_str() {
+                "u8" | "i8" => 1,
+                "u16" | "i16" => 2,
+                "u32" | "i32" => 4,
+                other => panic!(
+                    "typed_debug_only_bytes: element type `{other}` in {emp_rel} has no width \
+                     this reader knows"
+                ),
+            },
+            Type::Ptr(_) => 4,
+            other => panic!(
+                "typed_debug_only_bytes: element type {other:?} in {emp_rel} has no width this \
+                 reader knows"
+            ),
+        }
+    };
+    let fold = |name: &str, len: &sigil_frontend_emp::ast::Expr, debug: bool| -> i128 {
+        let defines = [("DEBUG".to_string(), i128::from(debug))];
+        let (v, diags) = sigil_frontend_emp::eval::eval_expr_in_file(&file, len, &defines);
+        assert!(
+            diags.iter().all(|d| d.level != sigil_span::Level::Error),
+            "typed_debug_only_bytes: the length of `{name}` in {emp_rel} does not fold at \
+             DEBUG={}: {diags:?}",
+            u8::from(debug)
+        );
+        match v {
+            Value::Int(n) => n,
+            other => panic!(
+                "typed_debug_only_bytes: the length of `{name}` in {emp_rel} folds to {other:?} \
+                 at DEBUG={}, not an integer",
+                u8::from(debug)
+            ),
+        }
+    };
+    let mut total: i128 = 0;
+    for item in &file.items {
+        let Item::Data(d) = item else { continue };
+        let Some(Type::Array(elem, len)) = &d.ty else { continue };
+        let (plain, debug) = (fold(&d.name, len, false), fold(&d.name, len, true));
+        assert!(
+            debug >= plain,
+            "typed_debug_only_bytes: `{}` in {emp_rel} declares {debug} elements in the DEBUG \
+             shape and {plain} in the plain one; the span assert models debug-only growth only",
+            d.name
+        );
+        total += (debug - plain) * width(elem) as i128;
+    }
+    usize::try_from(total).expect("a non-negative sum of non-negative terms")
+}
+
 /// `(emp, section, pin, preludes, max cross-shape length divergence)`.
 ///
-/// THE FIFTH FIELD IS A CONTRACT, not a tolerance dial. Every section here emits
-/// shape-invariant content, so its plain and debug spans may differ only by the short
-/// alignment pad a changed successor leaves — `ALIGN_PAD`. A section that legitimately
-/// emits DIFFERENT BYTES per shape declares exactly how many, and the assert is then
-/// tight against that number rather than loosened for everyone.
+/// THE FIFTH FIELD IS A CONTRACT, not a tolerance dial. A section that emits
+/// shape-invariant content may differ across shapes only by the short alignment pad a
+/// changed successor leaves, `ALIGN_PAD`. A section that legitimately emits DIFFERENT
+/// BYTES per shape declares exactly how many, derived from its own module, and the
+/// assert is then tight against that number rather than loosened for everyone:
+/// `ojz_bg_anim` by its view records (`bg_anim_view_bytes`), `ojz_act_assets` by its
+/// typed DEBUG-only test backgrounds (`typed_debug_only_bytes`) plus the pad, since its
+/// span also ends in one.
 fn sections(aeon: &std::path::Path) -> Vec<(&'static str, &'static str, Region, &'static [Prelude], usize)> {
     vec![
     (
@@ -171,19 +264,11 @@ fn sections(aeon: &std::path::Path) -> Vec<(&'static str, &'static str, Region, 
         ALIGN_PAD,
     ),
     (
-        // `use engine.bg.{BG_LAYOUT_SIZE}` — the module's BG-layout embed is
-        // TYPED `[u8; BG_LAYOUT_SIZE]` (the length is the guard against a
-        // wrong-geometry blob), so the standalone lower needs that one const.
-        // `use games.sonic4.ojz_clip_act_act1.{OJZ_CLIP_ACT}`: the clip-act switch
-        // its DEBUG test backgrounds are gated on (`clip_act_const_src`).
-        "games/sonic4/data/levels/ojz/act1/act_assets.emp",
+        ACT_ASSETS_EMP,
         "ojz_act_assets",
         pins::OJZ_ACT_ASSETS,
-        &[
-            sigil_harness::test_support::bg_layout_size_const_src as Prelude,
-            clip_act_const_src as Prelude,
-        ],
-        ALIGN_PAD,
+        ACT_ASSETS_PRELUDES,
+        ALIGN_PAD + typed_debug_only_bytes(aeon, ACT_ASSETS_EMP, ACT_ASSETS_PRELUDES),
     ),
     (
         "games/sonic4/data/generated/ojz/act1/bg_anim.emp",
@@ -207,6 +292,36 @@ fn map_toml(section: &str, base: u32, len: usize) -> String {
     )
 }
 
+/// The module at `emp_rel` parsed, with the synthesized dep items of `preludes`
+/// prepended (consts only, so they emit no bytes and the byte comparison still sees
+/// exactly this module's image). The raster_port/parallax_port idiom.
+fn module_with_preludes(
+    aeon: &std::path::Path,
+    emp_rel: &str,
+    preludes: &[Prelude],
+) -> sigil_frontend_emp::ast::File {
+    let path = aeon.join(emp_rel);
+    let src = std::fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()));
+    let (main, pdiags) = parse_str(&src);
+    assert!(
+        pdiags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "{emp_rel} parse errors: {pdiags:?}"
+    );
+    let mut items = Vec::new();
+    for prelude in preludes {
+        let psrc = prelude(aeon);
+        let (pfile, pdiags) = parse_str(&psrc);
+        assert!(
+            pdiags.iter().all(|d| d.level != sigil_span::Level::Error),
+            "{emp_rel} prelude parse errors: {pdiags:?}\n--- prelude ---\n{psrc}"
+        );
+        items.extend(pfile.items);
+    }
+    items.extend(main.items);
+    sigil_frontend_emp::ast::File { module: main.module, attrs: main.attrs, items, docs: main.docs }
+}
+
 fn compile_section(
     emp_rel: &str,
     section: &str,
@@ -216,35 +331,7 @@ fn compile_section(
     debug: bool,
 ) -> sigil_link::LinkedImage {
     let aeon = aeon_root();
-    let path = aeon.join(emp_rel);
-    let src = std::fs::read_to_string(&path)
-        .unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()));
-    let (main, pdiags) = parse_str(&src);
-    assert!(
-        pdiags.iter().all(|d| d.level != sigil_span::Level::Error),
-        "{emp_rel} parse errors: {pdiags:?}"
-    );
-
-    // Prepend the synthesized dep items (consts only — they emit no bytes, so
-    // the byte comparison below still sees exactly this module's image). The
-    // raster_port/parallax_port idiom.
-    let mut items = Vec::new();
-    for prelude in preludes {
-        let psrc = prelude(&aeon);
-        let (pfile, pdiags) = parse_str(&psrc);
-        assert!(
-            pdiags.iter().all(|d| d.level != sigil_span::Level::Error),
-            "{emp_rel} prelude parse errors: {pdiags:?}\n--- prelude ---\n{psrc}"
-        );
-        items.extend(pfile.items);
-    }
-    items.extend(main.items.clone());
-    let file = sigil_frontend_emp::ast::File {
-        module: main.module.clone(),
-        attrs: main.attrs.clone(),
-        items,
-        docs: main.docs.clone(),
-    };
+    let file = module_with_preludes(&aeon, emp_rel, preludes);
 
     // embed() paths in these modules are aeon-root-relative.
     let opts = LowerOptions {
