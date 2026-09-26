@@ -14,8 +14,10 @@ entry's `use` lines) now derive from `games/<g>/map.toml`'s `order` over the sca
 * `section:<name>` row: the module declaring the section (`module … in <name>` or a nested
   `section <name> { … }`).
 * compiler-minted `__align$<module>$N`: the module between the first two `$`.
-* A row nothing defines: `[map.order-orphan]`, named. Two definitions: the one the other
-  roots' `use` closure reaches, else `[map.order-ambiguous]`.
+* A label row nothing defines: `[map.order-orphan]`, named. A `section:` row nothing
+  declares is left to the existing `[map.order-unknown-section]` placement refusal, so one
+  mistake gets one diagnostic. Two definitions: the one the other roots' `use` closure
+  reaches, else `[map.order-ambiguous]`.
 
 ## Enumeration: hard-coded aeon module / section / anchor / file lists
 

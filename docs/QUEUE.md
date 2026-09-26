@@ -942,9 +942,14 @@ points at it rather than restating it, so there is one copy to keep true.
   per-row `when` on `order`), `ENGINE_TERMINUS` (`engine.epilogue`: the demo map has no `EndOfRom` row), and
   `SIGIL_PROBE_FIXTURES` (sigil's own `sigil_objroutine_probe`, which duplicates `TestSolid_Init`). `DECLARED` is left
   as is: a stale row is inert (measured), but a NEW section still needs a row by the R7 ruling; deriving it needs a
-  ruling. Pinned tree ec640bcf rebuilds at the provenance tip in all four shapes; the path_swap-deleted aeon tree
-  (file + map row + objects.json entry + level re-bake stamps) builds in all four shapes. Aeon may delete once this
-  lands and the shared pair is rebuilt.
+  ruling. Pinned tree ec640bcf, branch sigil f94cc693, all four shapes at the provenance tip: s4 91c46c94/820209,
+  s4.debug 8a378de6/846509, demo 1c7a34d3/96863, demo.debug 72e405a5/103185. Aeon origin/master d3b98868 with
+  path_swap deleted (the `.emp`, its `order` row, its objects.json entry, plus the two stamp files
+  `tools/regenerate-level.sh` rewrites; generated level data unchanged): master sigil refuses (`no module
+  games.sonic4.path_swap found under the scan root`); this branch builds s4 cf8606bb/829140, s4.debug
+  08e41ec3/856276, demo 259fb22b/99127, demo.debug 8f135bcb/106273 (demo equals the undeleted control). Full landing
+  run at f94cc693 GREEN: 506 suites, 5742 passed, 0 failed, 2 ignored. Aeon may delete once this lands and the
+  shared pair is rebuilt.
 - 2026-09-26: aeon wants to delete `games/sonic4/objects/path_swap.emp` (owner ruling: layer lines are the only layer-switch
   mechanism; aeon confirmed the path is `games/sonic4/objects/path_swap.emp`; aeon's half is booked blocked on this row) plus its `map.toml` row and
   `objects.json` entry. The build refuses, because sigil's whole-program module list is hard-coded:
