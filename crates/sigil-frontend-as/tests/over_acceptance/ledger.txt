@@ -7,8 +7,9 @@
 #
 # `crates/sigil-frontend-as/tests/as_over_acceptance.rs` reads this file. A
 # divergence observed and NOT listed here is a hard failure. A row listed here
-# that has started agreeing with asl is REPORTED and not a failure: good news
-# should be retired deliberately, not arrive as a red.
+# that has started agreeing with asl is ALSO a hard failure (`no_stale_ledger_row`):
+# delete the row in the same commit as the fix, so this file only ever lists
+# divergences that are still open.
 #
 # Adding a row is a decision to tolerate. It is not a way to get green, and the
 # reason column is what a later reader uses to decide whether the toleration
@@ -62,8 +63,8 @@ expr_minus_both_sides_of_multiply	over-acceptance	`dc.w -1*-1`. asl #1110. Same 
 # than disagreements about the language. Each refuses with a diagnostic that
 # says so, which is the behaviour this repo wants from an unimplemented
 # construct: a named refusal, never a silent mis-assembly. They are ledgered so
-# that the day one of them is implemented, the ledger reports it as retirable
-# instead of the gate saying nothing.
+# that the day one of them is implemented, the gate names its row and the row
+# is deleted in the implementing commit.
 
 # The row below is a standing ruling, not a scope limit: asl exits 0 and
 # SILENTLY EMITS NOTHING for a data directive whose operand is a lone 68000

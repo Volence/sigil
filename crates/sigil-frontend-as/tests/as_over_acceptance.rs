@@ -23,11 +23,13 @@
 //! - **over-acceptance**: probes asl refuses and sigil accepts.
 //! - **over-refusal**: probes asl accepts and sigil refuses.
 //!
-//! `observed \ ledger` must be EMPTY, in both directions, and that is the hard
-//! gate: a divergence nobody wrote down is a regression. `ledger \ observed` is
-//! computed and REPORTED and deliberately not asserted, because a ledger row
-//! that has quietly started agreeing with asl is good news to be retired on
-//! purpose, not a red on arrival.
+//! The gate is a two-way currency check on the ledger. `observed \ ledger` must
+//! be EMPTY, in both directions: a divergence nobody wrote down is a regression.
+//! `ledger \ observed` must be EMPTY too: a ledger row whose probe now agrees
+//! with asl is a fixed divergence still listed as open, and it fails the gate
+//! until the row is deleted from `ledger.txt`, in the same commit as the fix.
+//! A stale row is not harmless: a ledger that lists a fixed divergence as open
+//! sends work at something already done.
 //!
 //! The comparison is a set difference in both directions and never a count.
 //! Two populations can differ by one member in each direction and total
@@ -104,7 +106,9 @@
 //! `positive_control_the_comparison_can_fire` proves the comparison FIRES: it
 //! runs the same `divergences` function the gate runs, over a synthetic table
 //! carrying an unledgered over-acceptance and an unledgered over-refusal, and
-//! requires both to be reported. A canary covers the rule.
+//! requires both to be reported. `positive_control_a_stale_row_is_named` does
+//! the same for the other direction of the currency check, driving the same
+//! `stale_ledger_rows` function the gate drives. A canary covers the rule.
 //!
 //! `feed_control_every_probe_reached_both_assemblers` covers the FEED, which is
 //! the half a canary cannot reach. A scanner that silently processed one file
@@ -294,6 +298,29 @@ fn probe_paths() -> Vec<(String, PathBuf)> {
 // Running sigil
 // ---------------------------------------------------------------------------
 
+thread_local! {
+    /// Set while this thread is assembling a probe, so a panic inside sigil is
+    /// captured as `SigilVerdict::Panic` without printing.
+    static QUIET_PROBE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Install, once per process, a panic hook that is silent only on a thread
+/// currently assembling a probe and defers to the previous hook everywhere
+/// else. The tests in this file run in parallel, and swapping the global hook
+/// per probe lets one thread restore another's silent hook, which then
+/// swallows the assertion message of every gate that fails afterwards.
+fn install_quiet_probe_hook() {
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    ONCE.call_once(|| {
+        let previous = std::panic::take_hook();
+        std::panic::set_hook(Box::new(move |info| {
+            if !QUIET_PROBE.with(|q| q.get()) {
+                previous(info);
+            }
+        }));
+    });
+}
+
 /// What sigil did with one probe. `Panic` is a third state on purpose: a panic
 /// is neither an acceptance nor a refusal, and folding it into either would let
 /// a crash read as agreement with asl.
@@ -310,8 +337,8 @@ enum SigilVerdict {
 /// A refusal at any stage is a refusal.
 fn sigil_verdict(path: &Path) -> SigilVerdict {
     let p = path.to_path_buf();
-    let hook = std::panic::take_hook();
-    std::panic::set_hook(Box::new(|_| {}));
+    install_quiet_probe_hook();
+    QUIET_PROBE.with(|q| q.set(true));
     let r = std::panic::catch_unwind(move || {
         match assemble_root_located(&p, &Options::default()) {
             Ok(m) => {
@@ -355,7 +382,7 @@ fn sigil_verdict(path: &Path) -> SigilVerdict {
             ),
         }
     });
-    std::panic::set_hook(hook);
+    QUIET_PROBE.with(|q| q.set(false));
     match r {
         Ok(v) => v,
         Err(e) => {
@@ -399,6 +426,36 @@ fn divergences(
         }
     }
     (over_acceptance, over_refusal)
+}
+
+/// Ledger rows whose divergence is no longer observed, as `(name, direction)`.
+///
+/// A row is stale when its probe is not in the observed set for the row's
+/// direction. Probes in `unmeasured` (sigil panicked on them) are skipped: a
+/// panic is not a verdict, `no_probe_panics_sigil` reports it by name, and
+/// calling its row stale would send the reader to delete a row for a crash.
+///
+/// Pure on purpose, for the same reason as `divergences`: the positive control
+/// drives this function, not a copy of it.
+fn stale_ledger_rows(
+    ledger: &BTreeMap<String, LedgerRow>,
+    over_acceptance: &BTreeSet<String>,
+    over_refusal: &BTreeSet<String>,
+    unmeasured: &BTreeSet<String>,
+) -> Vec<(String, String)> {
+    ledger
+        .iter()
+        .filter(|(name, _)| !unmeasured.contains(*name))
+        .filter(|(name, row)| {
+            let observed = match row.direction.as_str() {
+                "over-acceptance" => over_acceptance.contains(*name),
+                "over-refusal" => over_refusal.contains(*name),
+                _ => unreachable!("direction validated at read time"),
+            };
+            !observed
+        })
+        .map(|(name, row)| (name.clone(), row.direction.clone()))
+        .collect()
 }
 
 /// The whole measurement, run once and shared by the tests that read it.
@@ -614,6 +671,42 @@ fn positive_control_the_comparison_can_fire() {
     );
 }
 
+/// Proof that the stale-row half of the currency check can come out red,
+/// driving the same `stale_ledger_rows` the gate drives.
+///
+/// Five rows: one live row per direction, which must NOT be reported; one stale
+/// row per direction, which must be; and one row whose probe panicked, which
+/// must not be reported as stale because a crash is not a fix.
+#[test]
+fn positive_control_a_stale_row_is_named() {
+    let row = |direction: &str| LedgerRow {
+        direction: direction.to_string(),
+        reason: "control".to_string(),
+    };
+    let ledger: BTreeMap<String, LedgerRow> = [
+        ("live_over_acceptance".to_string(), row("over-acceptance")),
+        ("live_over_refusal".to_string(), row("over-refusal")),
+        ("stale_over_acceptance".to_string(), row("over-acceptance")),
+        ("stale_over_refusal".to_string(), row("over-refusal")),
+        ("panicked".to_string(), row("over-acceptance")),
+    ]
+    .into_iter()
+    .collect();
+    let over_acceptance = BTreeSet::from(["live_over_acceptance".to_string()]);
+    let over_refusal = BTreeSet::from(["live_over_refusal".to_string()]);
+    let unmeasured = BTreeSet::from(["panicked".to_string()]);
+
+    let stale = stale_ledger_rows(&ledger, &over_acceptance, &over_refusal, &unmeasured);
+    assert_eq!(
+        stale,
+        vec![
+            ("stale_over_acceptance".to_string(), "over-acceptance".to_string()),
+            ("stale_over_refusal".to_string(), "over-refusal".to_string()),
+        ],
+        "the stale-row check reported the wrong set of ledger rows"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // THE GATE
 // ---------------------------------------------------------------------------
@@ -692,18 +785,20 @@ fn no_probe_panics_sigil() {
     );
 }
 
-/// `ledger \ observed`, computed and REPORTED and not asserted.
+/// `ledger \ observed` must be empty: the other half of the currency check.
 ///
-/// A ledger row that has started agreeing with asl is good news. Reddening on it
-/// would make the arrival of good news look like a defect and would train the
-/// next reader to delete rows to get green, which is exactly how a ledger stops
-/// describing anything.
+/// A ledger row whose probe now agrees with asl describes a divergence that no
+/// longer exists. Left in place it tells the next reader the divergence is still
+/// open, and work gets dispatched at something already fixed. So it fails here,
+/// and the fix for the red is deleting the row in the same commit as the change
+/// that made sigil agree. Deleting the row is correct exactly because the probe
+/// stays in the corpus: it becomes a live tripwire, and a regression reds
+/// `no_unledgered_over_acceptance` or `no_unledgered_over_refusal`.
 ///
-/// What IS asserted is that every ledger row names a probe that exists. A row
-/// pointing at a deleted probe is dead weight that can never be retired by
-/// observation, because the observation that would retire it can never be made.
+/// Every ledger row must also name a probe that exists. A row pointing at a
+/// deleted probe can never be checked, because the observation is impossible.
 #[test]
-fn ledger_rows_that_have_started_agreeing_are_reported() {
+fn no_stale_ledger_row() {
     let run = measure();
 
     let probe_names: BTreeSet<String> = run.sigil.keys().cloned().collect();
@@ -718,30 +813,40 @@ fn ledger_rows_that_have_started_agreeing_are_reported() {
          never be retired by observation, because the observation is impossible."
     );
 
-    let mut stale = Vec::new();
-    for (name, row) in &run.ledger {
-        let observed = match row.direction.as_str() {
-            "over-acceptance" => run.over_acceptance.contains(name),
-            "over-refusal" => run.over_refusal.contains(name),
-            _ => unreachable!("direction validated at read time"),
-        };
-        if !observed {
-            stale.push(format!(
-                "  {name} ({}) now AGREES with asl. Reason on file: {}",
-                row.direction, row.reason
-            ));
-        }
-    }
-    if stale.is_empty() {
-        println!("ledger: every row still diverges; nothing to retire.");
-    } else {
-        println!(
-            "ledger: {} row(s) have started agreeing with asl and can be retired \
-             from over_acceptance/ledger.txt:\n{}",
-            stale.len(),
-            stale.join("\n")
-        );
-    }
+    let unmeasured: BTreeSet<String> = run
+        .sigil
+        .iter()
+        .filter(|(_, v)| matches!(v, SigilVerdict::Panic(_)))
+        .map(|(n, _)| n.clone())
+        .collect();
+    let stale: Vec<String> =
+        stale_ledger_rows(&run.ledger, &run.over_acceptance, &run.over_refusal, &unmeasured)
+            .into_iter()
+            .map(|(name, direction)| {
+                let (asl_says, sigil_says) = if direction == "over-acceptance" {
+                    ("asl refuses it", "sigil now REFUSES it too")
+                } else {
+                    ("asl accepts it", "sigil now ACCEPTS it too")
+                };
+                format!(
+                    "  {name} (ledgered as {direction})\n    {asl_says}; {sigil_says}\n    \
+                     reason on file: {}",
+                    run.ledger[&name].reason
+                )
+            })
+            .collect();
+    assert!(
+        stale.is_empty(),
+        "{} ledger row(s) no longer diverge from asl:\n{}\n\n\
+         Each row names a divergence that has been fixed. Delete each named row \
+         from crates/sigil-frontend-as/tests/over_acceptance/ledger.txt in the \
+         same commit as the fix. The probe stays in the corpus as a live \
+         tripwire, and MIN_AGREED_REFUSALS or MIN_AGREED_ACCEPTANCES can rise by \
+         one per retired row. A fixed divergence left in the ledger reads as \
+         open work.",
+        stale.len(),
+        stale.join("\n")
+    );
 }
 
 /// The measurement itself, printed. NOT AN ASSERTION, and it has no red-first
