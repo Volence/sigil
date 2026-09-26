@@ -740,9 +740,10 @@ points at it rather than restating it, so there is one copy to keep true.
   with a layout flag set the wrong way. Refusing them the way asl does is assembler internals under
   the autonomy directive, with a lane-log note.
 
-### OVERACCEPT-LEDGER-STALE-ROW-SILENT
+### OVERACCEPT-LEDGER-STALE-ROW-SILENT: LANDED
 
-- state: **open**  size: `S`  project: `SIGIL-AS-REPLACEMENT`
+- **LANDED** 2026-09-26 at merge `538382a0` (tip `53749139`), pushed. Ruled: a ledger row that no longer diverges from asl FAILS the gate (`no_stale_ledger_row`), both directions, naming the row. First run retired `dir_unknown_codepage`. 1046 passed, 0 failed.
+- was: state **open**  size: `S`  project: `SIGIL-AS-REPLACEMENT`
 - The over-acceptance gate REPORTS a ledgered row that sigil now refuses and does not FAIL on it,
   so a fixed over-acceptance can stay listed as open indefinitely. Measured 2026-09-25:
   `expr_function_arg_count` was fixed at `1b8cb9ae` on 2026-09-11 and sat in
