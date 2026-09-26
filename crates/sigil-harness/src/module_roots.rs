@@ -26,7 +26,8 @@
 //! tree carries FOR sigil's own negative-probe tests, frozen copies of a live object
 //! that define its labels by construction and are never part of any build.
 //!
-//! A row nothing in scope defines is refused by name (`[map.order-orphan]`): a map
+//! A label row nothing in scope defines is refused by name (`[map.order-orphan]`; a
+//! `section:` row is left to `[map.order-unknown-section]`, which owns it): a map
 //! row whose module was deleted without the row is a stale map, and dropping it
 //! silently would hide exactly the edit this derivation exists to make safe. A row
 //! two in-scope modules define (a test fixture that copies a shipped object) is
@@ -349,7 +350,13 @@ pub fn derive_module_roots(
     for (ri, row) in order.iter().enumerate() {
         let candidates = index.candidates(row);
         if candidates.is_empty() {
-            orphans.push(row.clone());
+            // A `section:` row that names no section is refused later, by the placement
+            // check that owns that row kind (`[map.order-unknown-section]`), with the
+            // same row in its text. Refusing it here too would put two diagnostics on one
+            // mistake; a LABEL row has no such later owner, so it is refused here.
+            if section_row(row).is_none() {
+                orphans.push(row.clone());
+            }
             continue;
         }
         let live: Vec<usize> = candidates.into_iter().filter(|&i| admitted(i)).collect();

@@ -267,7 +267,6 @@ fn choose_victim(aeon: &Path, profile: &native::GameProfile, map_src: &str) -> V
             && !row.starts_with("__")
         {
             let source_rel = pm.path.strip_prefix(aeon).unwrap().to_string_lossy().into_owned();
-            eprintln!("victim: row `{row}` -> module `{module}` ({source_rel}) in {}", aeon.display());
             return Victim { module: module.to_string(), row: row.clone(), source_rel };
         }
     }
@@ -283,6 +282,7 @@ fn the_pinned_tree_without_a_map_row_derives_exactly_the_smaller_list() {
     let map_rel = "games/sonic4/map.toml";
     let map_src = std::fs::read_to_string(aeon.join(map_rel)).unwrap();
     let victim = choose_victim(&aeon, &profile, &map_src);
+    eprintln!("doctored: row `{}` of module `{}` ({})", victim.row, victim.module, victim.source_rel);
 
     let before = native::module_registry(&aeon, &profile).expect("the pinned tree derives");
     assert!(
