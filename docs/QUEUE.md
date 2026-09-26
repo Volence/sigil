@@ -1154,6 +1154,12 @@ points at it rather than restating it, so there is one copy to keep true.
   port tests run against aeon master report it as the only unresolved name, 39 failed / 24 passed, same at their base
   and tip. Needs the derive-from-the-tree repair before the pin passes it. Possibly coming, only if the owner picks it:
   `LayerLine`, `Act.act_layer_lines`, `Player_LayerLines` (geometry constants in `engine/system/constants.emp`).
+- Fourth heads-up 2026-09-26 (aeon's reading, NOT verified here): that branch LANDED at aeon `332cc1ba`. New cross-module
+  names: `LayerLine` (engine/structs.emp), `Act.act_layer_lines` (Act 46 -> 50 B), `LL_*` (engine/system/constants.emp),
+  `PlayerBlock.ll_prev`/`ll_cursor` (games/sonic4/config/ram.emp), `Player_LayerLines` (player_common.emp),
+  `OJZ_CLIP_LAYER_LINE_ROWS`/`ojz_clip_act_layer_lines` (generated clip act). A struct-size move touches every port
+  that lays out `Act`. Coming: `Player_LoopCrossover`, `CrossoverTable`, `XOVER_*` retire in favour of lines (owner
+  ruling, per aeon).
 
 ### PORT-TESTS-MUSIC-NAMES-AT-TIP
 
