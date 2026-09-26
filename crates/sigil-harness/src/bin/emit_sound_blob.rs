@@ -2,8 +2,13 @@
 //! build inputs that asl packs after the five `.asm` twins are deleted.
 //!
 //! Writes to `<out-dir>` (plus the seam-2 banked artifacts):
-//!   * `z80_sound_blob.bin`       — the plain-shape native-linked blob ($181C B)
-//!   * `z80_sound_blob_debug.bin` — the debug-shape blob ($189A B = +$7E)
+//!   * `z80_sound_blob.bin`:       the plain-shape native-linked blob
+//!   * `z80_sound_blob_debug.bin`: the debug-shape blob
+//!
+//! Each is written at the length the `--aeon` tree produces; this binary does not
+//! hold the resident driver to a fixed size. The fit in Z80 RAM is the consuming
+//! tree's link check (aeon's `boot_data.emp` ensures `Z80_SOUND_SIZE <=
+//! SND_STATE_BASE`).
 //!
 //! Byte-DETERMINISTIC from the tracked `.emp` sources + the sigil toolchain
 //! version. The canonical ROM CRC is the provenance bar (the blob is tracked the

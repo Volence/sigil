@@ -89,7 +89,7 @@ fn golden(name: &str) -> Option<Vec<u8>> {
 ///   frozen goldens (`golden/s4.bin`, `golden/s4.debug.bin`). It is a driver
 ///   SIZE, not an address, so it moves only when the Z80 driver itself changes;
 ///   a cartridge re-layout leaves it alone. `seam1::BLOB_LEN_{PLAIN,DEBUG}`
-///   holds the same measurement as its own tripwire — see the note on
+///   pins the same measurement for the test suite; see the note on
 ///   `seam1_native_link::blob_lengths_are_canonical` for why the two are not
 ///   automatically equal (the blob is padded to an even length inside the
 ///   `Z80_Sound_Start`/`_End` brackets).

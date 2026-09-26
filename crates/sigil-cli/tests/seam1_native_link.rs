@@ -115,9 +115,13 @@ fn native_blob_matches_reference_debug() {
 }
 
 /// The debug blob is longer than plain by the delta this test asserts below —
-/// read it there rather than from prose. These constants are a size
-/// TRIPWIRE, not a placement input — the module bases are derived (see
-/// `module_bases_are_a_gapless_cursor`).
+/// read it there rather than from prose. These constants pin the frozen corpus's
+/// blob lengths; they are not a placement input (the module bases are derived, see
+/// `module_bases_are_a_gapless_cursor`) and the production emit does not read them.
+/// This test checks the constants against each other and a literal; the emitted
+/// length is compared to them by the byte gates above, by
+/// `module_bases_are_a_gapless_cursor`, and by `sigil-harness`'s
+/// `seam1_emit_length`, which reads the files the emitter wrote.
 ///
 /// NOTE these are the BLOB lengths, which since aeon `5526113` are no longer
 /// necessarily equal to `Z80_SOUND_SIZE`: aeon aligns the blob to an even length
@@ -161,7 +165,7 @@ fn module_bases_are_a_gapless_cursor() {
         }
         // The blob is a CONCATENATION, so the last base + its span == the total.
         let blob = native_sound_blob(&aeon, debug).bytes;
-        assert_eq!(blob.len(), len, "blob length tripwire (debug={debug})");
+        assert_eq!(blob.len(), len, "blob length vs the pinned corpus length (debug={debug})");
         assert!(
             (bases[4].1 as usize) < len,
             "the last module must start inside the blob (debug={debug})"

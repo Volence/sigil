@@ -30,11 +30,19 @@ use sigil_ir::{LinkAssert, Section, SectionPlacement, SymbolTable};
 /// value rounded UP to even and is pinned separately in `boot_port.rs`. 6176 is
 /// even, so the plain shape carries no pad and `Z80_SOUND_SIZE` equals this value.
 ///
-/// TRIPWIRE, NOT AN INPUT. Module bases are DERIVED from a running cursor
-/// ([`place_resident_sections`]), so nothing here participates in placement;
-/// this is purely the "the reclaim moved the number I expected" check that
-/// [`emit_sound_blob`] asserts the emitted blob against. When a module
-/// legitimately grows or shrinks, re-pin this to the new measured length.
+/// A PIN OF THE FROZEN CORPUS, NOT AN INPUT AND NOT A BUILD GATE. It is the
+/// length the resident blob has at the aeon revision the golden corpus is pinned
+/// to (the `aeon_rev` of the last `golden/provenance.toml` entry), and only tests
+/// read it: they compare the blob emitted from that tree against it, so a change
+/// to the pinned tree's blob length goes red there. Module bases are DERIVED from
+/// a running cursor ([`place_resident_sections`]), so nothing here participates
+/// in placement, and [`emit_sound_blob`] does not read it: the production emit
+/// writes whatever length the tree it is handed produces, because aeon's tip is
+/// not the pinned tree and its driver size is aeon's to change. Whether a blob
+/// of that length fits Z80 RAM is aeon's own link check, `boot_data.emp`'s
+/// `ensure(Z80_SOUND_SIZE <= SND_STATE_BASE)`, which runs where the blob is
+/// embedded. When the pinned revision's blob legitimately grows or shrinks,
+/// re-pin this to the new measured length.
 ///
 /// The `Z80_SOUND_SIZE` mirrors in the boot/tranche gates move only when the
 /// PADDED length moves, which is a weaker condition than this pin moving: the
@@ -55,8 +63,8 @@ use sigil_ir::{LinkAssert, Section, SectionPlacement, SymbolTable};
 pub const BLOB_LEN_PLAIN: usize = 0x1820;
 /// The debug blob length: plain + `$82`, the sequencer's `if DEBUG==1` bodies.
 /// **6306 B** (`$18A2`), also even, so the debug shape carries no pad either.
-/// Same TRIPWIRE-not-input status as [`BLOB_LEN_PLAIN`]. Debug headroom against
-/// the `$18F0` ceiling is 78 B.
+/// Same pinned-corpus, test-only status as [`BLOB_LEN_PLAIN`]. Debug headroom
+/// against the pinned tree's `SND_STATE_BASE` (`$18F0`) is 78 B.
 pub const BLOB_LEN_DEBUG: usize = 0x1820 + 0x82;
 
 /// The blob's LMA base = `Z80_Sound_Start` = `BootData + 54`. SHAPE-DEPENDENT: the
@@ -895,6 +903,15 @@ fn resident_link_verdict(
 /// toolchain version. (The old `z80_sound_syms.asm` handler-VMA contract file is no
 /// longer emitted — the banked seq table is native and resolves those VMAs in-link,
 /// and no AS consumer of them survives; kill-list row 92.)
+///
+/// The emit refuses what makes the blob wrong (an unresolved import, a failed
+/// link-time check in a resident module) and writes the blob at whatever length
+/// the tree produces. It does not compare that length to [`BLOB_LEN_PLAIN`] /
+/// [`BLOB_LEN_DEBUG`], which pin the frozen corpus and are asserted by tests
+/// against the pinned tree. The resident ceiling is checked by the tree that
+/// embeds the blob: aeon's `boot_data.emp` ensures `Z80_SOUND_SIZE <=
+/// SND_STATE_BASE` at the ROM link, so an overrun fails that build rather than
+/// this emit.
 pub fn emit_sound_blob(aeon: &Path, out_dir: &Path) -> Result<(), String> {
     emit_sound_blob_in(aeon, None, out_dir)
 }
@@ -916,36 +933,6 @@ pub fn emit_sound_blob_in(
 
     let plain = native_sound_blob_checked_in(aeon, ov, false)?;
     let debug = native_sound_blob_checked_in(aeon, ov, true)?;
-    // TRIPWIRE (not an input — the module bases are derived): the emitted length
-    // must still be the pinned `Z80_SOUND_SIZE`. A deliberate size change re-pins
-    // BLOB_LEN_{PLAIN,DEBUG} here, in lockstep with the `Z80_SOUND_SIZE` mirrors
-    // in the boot/tranche gates.
-    // `SIGIL_BLOB_LEN_DRIFT=warn` downgrades both checks to stderr warnings. This
-    // exists for deliberate multi-commit SIZE CAMPAIGNS (aeon's wave-4 Z80 sound
-    // reclaim moves ~250 B across ~15 commits): there, every build changes the
-    // length on purpose, so the tripwire carries zero signal and costs a two-
-    // constant edit plus a full Rust rebuild per aeon build. It is a development
-    // affordance ONLY — the strict suite and `refreeze --check` do not read the
-    // variable, so a campaign still has to land on re-pinned constants to freeze.
-    let drift_warn = std::env::var("SIGIL_BLOB_LEN_DRIFT").as_deref() == Ok("warn");
-    let check_len = |shape: &str, got: usize, want: usize, konst: &str| -> Result<(), String> {
-        if got == want {
-            return Ok(());
-        }
-        let msg = format!(
-            "{shape} blob is {got} bytes, expected {want} (${want:X}), the module bases are \
-             DERIVED, so this is the size tripwire, not a placement input: if the size change \
-             is intended, re-pin {konst} and the Z80_SOUND_SIZE mirrors"
-        );
-        if drift_warn {
-            eprintln!("warning: {msg} [SIGIL_BLOB_LEN_DRIFT=warn]");
-            Ok(())
-        } else {
-            Err(msg)
-        }
-    };
-    check_len("plain", plain.bytes.len(), BLOB_LEN_PLAIN, "BLOB_LEN_PLAIN")?;
-    check_len("debug", debug.bytes.len(), BLOB_LEN_DEBUG, "BLOB_LEN_DEBUG")?;
 
     std::fs::create_dir_all(&out_dir).map_err(|e| format!("mkdir {}: {e}", out_dir.display()))?;
     let write = |name: &str, bytes: &[u8]| -> Result<(), String> {
