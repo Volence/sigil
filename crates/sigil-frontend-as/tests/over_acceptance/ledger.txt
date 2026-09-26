@@ -59,7 +59,7 @@ expr_minus_both_sides_of_multiply	over-acceptance	`dc.w -1*-1`. asl #1110. Same 
 # OVER-REFUSAL
 # ---------------------------------------------------------------------------
 #
-# All four are declared scope limits of the AS-compatibility front end rather
+# All three are declared scope limits of the AS-compatibility front end rather
 # than disagreements about the language. Each refuses with a diagnostic that
 # says so, which is the behaviour this repo wants from an unimplemented
 # construct: a named refusal, never a silent mis-assembly. They are ledgered so
@@ -76,7 +76,6 @@ expr_minus_both_sides_of_multiply	over-acceptance	`dc.w -1*-1`. asl #1110. Same 
 
 reg_label_dcw_lone	over-refusal	`A1:` then `dc.w A1`. asl exits 0 and emits no bytes for the line. sigil refuses: `A1` in an expression is the register, and a data directive that silently emits nothing is not adopted.
 
-dir_unknown_codepage	over-refusal	The `codepage` directive is not implemented; sigil refuses it as an unrecognized mnemonic. asl accepts an unknown codepage name silently, which is itself the looser behaviour.
 expr_string_in_integer_slot	over-refusal	A string operand in a data directive wider than a byte. asl zero-extends one element per character; sigil refuses by name and says it is not implemented.
 m68k_insn_supported_on_68020	over-refusal	`cpu 68020` and a 68020 bitfield instruction. sigil's front end encodes 68000, 68008 and Z80 only, and refuses a wider processor rather than aliasing it onto a narrower one and mis-assembling silently.
 sect_balanced_ok	over-refusal	The `section`/`endsection` directives are not implemented; sigil refuses them as unrecognized mnemonics. No corpus in the suite uses them.

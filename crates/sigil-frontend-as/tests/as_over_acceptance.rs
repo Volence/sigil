@@ -127,9 +127,9 @@
 //! agree, and where a change of behaviour in either direction therefore reds a
 //! gate.
 //!
-//! Measured on the corpus as it stands: 115 probes, 12 ledgered divergences, so
-//! **103 live tripwires**: 69 probes both assemblers refuse, where sigil becoming
-//! looser goes red, and 34 both accept, where sigil becoming stricter goes red. `feed_control_the_ledger_is_not_an_escape_hatch` floors both
+//! Measured on the corpus as it stands: 115 probes, 11 ledgered divergences, so
+//! **104 live tripwires**: 69 probes both assemblers refuse, where sigil becoming
+//! looser goes red, and 35 both accept, where sigil becoming stricter goes red. `feed_control_the_ledger_is_not_an_escape_hatch` floors both
 //! numbers, so the way to get green after a widening is not to ledger it: that
 //! reds a second gate whose floor has to be moved by hand in the same diff.
 //!
@@ -172,7 +172,7 @@ const MIN_AGREED_REFUSALS: usize = 69;
 
 /// Probes both assemblers currently ACCEPT. Each is a live tripwire for sigil
 /// becoming stricter.
-const MIN_AGREED_ACCEPTANCES: usize = 34;
+const MIN_AGREED_ACCEPTANCES: usize = 35;
 
 // ---------------------------------------------------------------------------
 // Reading the committed inputs
