@@ -133,9 +133,9 @@ row is already settled or superseded. Note
 `docs/superpowers/notes/2026-09-26-asl-banner-citation-dependence.md`, probes and the all-builds
 runner beside it. The three are booked below.
 
-### ASL-BANNER-DEPENDS-THREE
+### ASL-BANNER-DEPENDS-THREE: CLOSED 2026-09-26 at landing (merge `7478f0fe`), no re-run owed
 
-- state: `open`, for the overseer to close at landing: no re-run is owed  size: `S`  project: `-`
+- was: state `open`  size: `S`  project: `-`
 - blockedBy: nothing
 
 Three banner-only notes state a claim that depends on which `asl` produced it. Each is settled or
@@ -146,6 +146,18 @@ superseded in `docs/superpowers/notes/2026-09-26-asl-banner-citation-dependence.
 `61e67256`; settled), `2026-09-08-extra-traversal-measure.md` (asl timing and a whole-`s2.asm`
 success; identified as `61e67256` for s1disasm and `0dee1f98` for s2disasm from its surviving
 scratch copies; settled). The notes themselves are historical and were not edited.
+
+
+### ASL-CITATION-SWEEP-FOLLOWUPS
+
+- state: `open`  size: `S`  project: `-`
+- Three findings from `docs/superpowers/notes/2026-09-26-asl-banner-citation-dependence.md`, none acted on:
+  (1) `scripts/sweep_asl_citation_form.sh` misses digests written as 8-character md5 prefixes and counts notes that
+  only MENTION the banner, so its banner-only population over-counts (`2026-09-05-asl-silent-decline-regime.md` is in
+  it only for that reason); (2) `asl-reference/README.md` gives `a8cd8b80`'s second banner line as x86_64, the binary
+  prints `(i386-unknown-linux)`; (3) the enum probe README's row 13 "value folds to 0" is not a rule (one byte above
+  the line gives `0101` on all four builds, from a run that exited with errors). Also: banner line 2 separates three
+  families, so only `0dee1f98` and `aa6de52f` are banner-indistinguishable.
 
 ## S1-BUILD-PROFILE
 
