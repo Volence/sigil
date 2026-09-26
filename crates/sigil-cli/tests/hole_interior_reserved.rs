@@ -89,7 +89,9 @@ fn every_live_hole_holds_only_its_filler() {
         };
         let resolved = native::resolve_frozen_layout(&aeon, &profile)
             .unwrap_or_else(|e| panic!("{name}: resolve: {e}"));
-        native::validate_placement(&resolved, &m, profile.sound_on, &profile.registry)
+        let registry = native::module_registry(&aeon, &profile)
+            .unwrap_or_else(|e| panic!("{name}: module roots: {e}"));
+        native::validate_placement(&resolved, &m, profile.sound_on, &registry)
             .unwrap_or_else(|e| panic!("{name}: {e}"));
         checked += 1;
     }
@@ -117,6 +119,8 @@ fn a_right_edge_past_the_post_hole_data_is_refused() {
         };
         let resolved = native::resolve_frozen_layout(&aeon, &profile)
             .unwrap_or_else(|e| panic!("{name}: resolve: {e}"));
+        let registry = native::module_registry(&aeon, &profile)
+            .unwrap_or_else(|e| panic!("{name}: module roots: {e}"));
 
         // Index into `m.holes` (not into the gated view), so the doctored right edge
         // lands on the hole this iteration is about.
@@ -131,11 +135,10 @@ fn a_right_edge_past_the_post_hole_data_is_refused() {
             let hole = &m.holes[i];
             // The sections this hole permits inside itself, from the shape's registry —
             // the same derivation the predicate makes.
-            let permitted: Vec<&str> = profile
-                .registry
+            let permitted: Vec<&str> = registry
                 .iter()
                 .filter(|ms| ms.module_id == hole.filled_by)
-                .map(|ms| ms.section)
+                .map(|ms| ms.section.as_str())
                 .collect();
             assert!(
                 !permitted.is_empty(),
@@ -170,7 +173,7 @@ fn a_right_edge_past_the_post_hole_data_is_refused() {
                 &resolved,
                 &doctored,
                 profile.sound_on,
-                &profile.registry,
+                &registry,
             )
             .expect_err(&format!(
                 "{name}: `{section}` at [{lma:#X},{doctored_at:#X}) is inside the \
@@ -189,7 +192,7 @@ fn a_right_edge_past_the_post_hole_data_is_refused() {
 
             // CONTROL, the other direction: the undoctored map over the identical
             // resolve passes, so the red is the moved right edge and nothing else.
-            native::validate_placement(&resolved, &m, profile.sound_on, &profile.registry)
+            native::validate_placement(&resolved, &m, profile.sound_on, &registry)
                 .unwrap_or_else(|e| panic!("{name}: control: {e}"));
             proven += 1;
         }
