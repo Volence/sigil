@@ -300,6 +300,14 @@ fn compile_real_file(
             pins::MDDBG_ERROR_HANDLER_PAGES_CONTROLLER,
         ));
     }
+    // The region-music cells Music_Service reads and writes (owned by engine.ram),
+    // where the tree defines them. A tree predating region music neither references
+    // nor defines them, so the rows are absent there.
+    let music = sigil_harness::test_support::listing_labels_if_defined(
+        shape.debug,
+        &["Music_Want", "Music_Current"],
+    );
+    labels.extend(music.iter().map(|(n, v)| (n.as_str(), *v)));
     for (name, vma) in labels {
         let mut secs = as_label_at(name, vma);
         for sec in &mut secs {

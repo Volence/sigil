@@ -153,6 +153,8 @@ fn misspelled_cross_seam_symbol_is_loud() {
         // resolve/link failed, so any unrelated unresolved name satisfies it for the
         // wrong reason and the probe silently stops testing the misspelling.
         "Palette_Compose",
+        // Region music: GameLoop's sound-on `jbsr Music_Service`. Same vacuity hazard.
+        "Music_Service",
         "Logic_Tick",
         "Game_State",
     ]));
@@ -198,6 +200,8 @@ fn oversize_combo_overlapping_resume_bytes_is_loud() {
         // resolve/link failed, so an unresolved Palette_Compose would "pass" it without
         // the resume-byte overlap ever being exercised.
         "Palette_Compose",
+        // Region music: GameLoop's sound-on `jbsr Music_Service`, the same hazard.
+        "Music_Service",
         "Logic_Tick",
         "Game_State",
         "Debug_MusicToggle",
@@ -230,16 +234,47 @@ fn oversize_combo_overlapping_resume_bytes_is_loud() {
     );
 }
 
+/// The `jbsr` calls `game_loop.emp` gates on `if SOUND_DRIVER_ENABLED == 1 { ... }`,
+/// read from the tree under test: the calls a sound-off build must drop. The scan
+/// strips `//` comments and follows brace depth, so a nested block stays inside its
+/// gate. A gated statement that is not a `jbsr` is not counted, and the byte delta
+/// below then disagrees with the count and fails naming it.
+fn sound_gated_calls(src: &str) -> Vec<String> {
+    let mut calls = Vec::new();
+    let mut depth = 0usize; // brace depth inside a sound gate; 0 = outside every gate
+    for line in src.lines() {
+        let code = line.split("//").next().unwrap_or("").trim();
+        if depth == 0 {
+            if code.starts_with("if SOUND_DRIVER_ENABLED == 1") && code.ends_with('{') {
+                depth = 1;
+            }
+            continue;
+        }
+        if let Some(target) = code.strip_prefix("jbsr") {
+            calls.push(target.trim().to_string());
+        }
+        depth += code.matches('{').count();
+        depth -= code.matches('}').count().min(depth);
+    }
+    calls
+}
+
 /// (c) `SOUND_DRIVER_ENABLED=0` genuinely changes the bytes (the comptime
-/// `if` is load-bearing): the off-combo body is 4 bytes shorter than the
-/// pinned reference window.
+/// `if` is load-bearing): the off-combo body is shorter by one 4-byte `bsr.w`
+/// per call the source gates on the define.
 #[test]
 fn drain_define_is_load_bearing() {
     let Some(src) = real_src() else { return };
+    let gated = sound_gated_calls(&src);
+    assert!(
+        gated.iter().any(|c| c == "Sound_DrainSfxRing"),
+        "game_loop.emp gates no `jbsr Sound_DrainSfxRing` on SOUND_DRIVER_ENABLED (found \
+         {gated:?}); the scan or the source changed shape, and this probe measures nothing"
+    );
     // Emit the real GameLoop region for a given SOUND_DRIVER_ENABLED value and
     // return its byte length. Comparing on-vs-off directly is robust against the
-    // GAME_LOOP region pin's trailing align pad (0x1C = 0x1A emitted + a 2-byte pad
-    // post-I3; the padded pin would make a literal `- 4` wrong).
+    // GAME_LOOP region pin's trailing align pad (the padded pin would make a
+    // literal difference against it wrong).
     let emitted = |sound_on: i128| -> usize {
         let (mut sections, diags) = lower_and_place(
             &src,
@@ -247,16 +282,26 @@ fn drain_define_is_load_bearing() {
             pins::GAME_LOOP.plain_len as u32,
         );
         assert!(diags.iter().all(|d| d.level != Level::Error), "lower/place: {diags:?}");
-        sections.extend(synthetic_labels(&["VSync_Wait", "Sound_DrainSfxRing", "Input_Tick", "Palette_Compose", "Logic_Tick", "Game_State"]));
+        sections.extend(synthetic_labels(&[
+            "VSync_Wait",
+            "Sound_DrainSfxRing",
+            "Input_Tick",
+            "Palette_Compose",
+            "Music_Service",
+            "Logic_Tick",
+            "Game_State",
+        ]));
         let resolved = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
             .expect("resolve_layout");
         let linked = sigil_link::link(&resolved, &SymbolTable::new()).expect("link");
         linked.section("game_loop").expect("game_loop section").bytes.len()
     };
+    // Every synthetic target sits at $4000, in bsr.w reach of the region, so each
+    // gated `jbsr` is one 4-byte `bsr.w`.
     assert_eq!(
         emitted(1) - emitted(0),
-        4,
-        "the sound-off combo must drop exactly the 4-byte bsr.w drain line"
+        4 * gated.len(),
+        "the sound-off combo must drop exactly one 4-byte bsr.w per gated call {gated:?}"
     );
 }
 
@@ -389,6 +434,10 @@ fn sound_api_truth_sections() -> Vec<sigil_ir::Section> {
                \tdc.b 0\n\
                Sfx_Ring_Rd:\n\
                \tdc.b 0\n\
+               Music_Want:\n\
+               \tdc.b 0\n\
+               Music_Current:\n\
+               \tdc.b 0\n\
                dephase\n\
                phase $63AE0\n\
                SongTable:\n\
@@ -456,6 +505,10 @@ fn typed_extern_has_no_mirror_so_a_missing_authority_is_loud() {
                \tdc.b 0\n\
                Sfx_Ring_Rd:\n\
                \tdc.b 0\n\
+               Music_Want:\n\
+               \tdc.b 0\n\
+               Music_Current:\n\
+               \tdc.b 0\n\
                dephase\n\
                phase $63AE0\n\
                SongTable:\n\
@@ -508,30 +561,42 @@ fn typed_extern_has_no_mirror_so_a_missing_authority_is_loud() {
 fn misspelled_extern_slot_is_loud() {
     let Some(src) = sound_api_src() else { return };
 
-    fn resolves(src: &str) -> bool {
+    // The error messages of the lower, placement, resolve or link that stopped the
+    // composition, or `Ok` when it links. Returning the messages rather than a bool
+    // lets the control say WHICH name failed instead of only that something did.
+    fn resolves(src: &str) -> Result<(), Vec<String>> {
+        let errors = |diags: &[sigil_span::Diagnostic]| -> Vec<String> {
+            diags.iter().filter(|d| d.level == Level::Error).map(|d| d.message.clone()).collect()
+        };
         let (module, _asserts, diags) = lower_sound_api(src);
         if diags.iter().any(|d| d.level == Level::Error) {
-            return false;
+            return Err(errors(&diags));
         }
         let mut sections = module.sections;
         let map_toml = sound_api_map_toml();
         let map = sigil_link::load_map(&map_toml).expect("map must load");
         let pdiags = place_sections(&mut sections, &map);
         if pdiags.iter().any(|d| d.level == Level::Error) {
-            return false;
+            return Err(errors(&pdiags));
         }
         sections.extend(sound_api_truth_sections());
         match sigil_link::resolve_layout(&sections, &SymbolTable::new(), true) {
-            Err(_) => false,
-            Ok(resolved) => sigil_link::link(&resolved, &SymbolTable::new()).is_ok(),
+            Err(d) => Err(errors(&d)),
+            Ok(resolved) => sigil_link::link(&resolved, &SymbolTable::new())
+                .map(|_| ())
+                .map_err(|d| errors(&d)),
         }
     }
 
-    assert!(resolves(&src), "control: the undoctored source must resolve against the truth");
+    if let Err(msgs) = resolves(&src) {
+        panic!("control: the undoctored source must resolve against the truth: {msgs:?}");
+    }
     let doctored = src.replace("SND_Z80_BASE + SND_REQ_MUSIC", "SND_Z80_BASE + SND_REQ_MUSICC");
     assert_ne!(src, doctored, "the probe must actually doctor the source");
+    let msgs = resolves(&doctored).err().unwrap_or_default();
     assert!(
-        !resolves(&doctored),
-        "the misspelled sound constant must fail loudly while every correct name resolves"
+        msgs.iter().any(|m| m.contains("SND_REQ_MUSICC")),
+        "the misspelled sound constant must fail loudly, naming the typo, while every \
+         correct name resolves: {msgs:?}"
     );
 }

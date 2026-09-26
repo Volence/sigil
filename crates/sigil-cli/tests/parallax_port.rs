@@ -315,6 +315,14 @@ fn parallax_addr_labels(debug: bool) -> Vec<Section> {
     // resolver in this module caches its hit in, owned by engine.ram: the same family
     // sweep, work RAM only, so `Region_Resolve` (a proc this module defines) stays out.
     sigil_harness::test_support::extend_from_listing_ram(&mut table, debug, &["Region_"]);
+    // The region-music cells the crossing reads and writes (`Music_Want`,
+    // `Music_Current`, owned by engine.ram, serviced by engine.sound_api), where the
+    // tree defines them. A tree predating region music neither references nor defines
+    // them, so the rows are absent there.
+    table.extend(sigil_harness::test_support::listing_labels_if_defined(
+        debug,
+        &["Music_Want", "Music_Current"],
+    ));
     let mut out = Vec::new();
     for (i, (name, vma)) in table.iter().enumerate() {
         let vma = *vma;
