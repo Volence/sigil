@@ -940,6 +940,8 @@ points at it rather than restating it, so there is one copy to keep true.
   after a later pair is swapped in from elsewhere. The fix: embed the frozen tables (`include_str!`) or resolve them
   from a named reference tree at run time, and grep the binary for every other baked build path (`strings | grep
   .worktrees`) before choosing. Found by aeon.
+- Correction from aeon, same day: sonic4 shapes broke too while the tree was missing (a panic reading
+  `offcanonical_sizes/s4.txt`), not only demo. The frozen tables of every shape are read at run time.
 
 ### BLOB-LEN-PIN-OFF-EMIT-PATH: LANDED
 
@@ -951,7 +953,9 @@ points at it rather than restating it, so there is one copy to keep true.
   Shared pair rebuilt from a clean worktree at `4ce2509d` and swapped by rename: sigil `1edd31eb`, emit_sound_blob
   `3c3bd0ba`; previous pair (ab0a5fe1) kept at `~/sonic_hacks/.sigil-pair-archive/ab0a5fe1/`. Old vs new emit on
   ec640bcf: 19/19 files byte-identical; with +17 B in `Psg_HwCh` old refuses, new writes 6193/6323. Aeon told.
-- For PIN-ADVANCE: once aeon's hi-hat change lands, `BLOB_LEN_*` and the Z80_SOUND_SIZE mirrors move with the pin.
+- For PIN-ADVANCE: aeon `e6a00773` landed the PSG envelope fix on this pair: blob 6194 B plain / 6324 B debug,
+  `Z80_SOUND_SIZE` `$1832` / `$18B4` (aeon's figures, not measured here), no new cross-seam names. `BLOB_LEN_*` and the
+  Z80_SOUND_SIZE mirrors move with the pin when it passes that commit.
 - was: state **doing** from 2026-09-26  size: `S`  project: `SIGIL-DECOUPLE`
 - Asked by aeon 2026-09-26: a PSG envelope fix (`PsgEnvUpdate` once in `Seq_HookNoteOn`, +17 B resident; evidence
   aeon `67a7a374` `docs/research/2026-09-26-s2-music-volume.md`) is refused by `emit_sound_blob`: "plain blob is 6193
