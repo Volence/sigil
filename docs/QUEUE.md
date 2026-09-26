@@ -872,6 +872,29 @@ points at it rather than restating it, so there is one copy to keep true.
   OJZ_CLIP_ACT` unless the port supplies it, derived from aeon's neutral
   `games/sonic4/data/generated/ojz/act1/clip_act.emp` (value 0 there), never a copied literal.
 
+### PORT-TESTS-HIDDEN-NAME-FAILURES
+
+- state: **done in branch** `parcel/port-hidden-names` (awaiting merge)  size: `M`  project: `SIGIL-DECOUPLE`
+- Outcome 2026-09-26 (`docs/superpowers/notes/2026-09-26-port-hidden-names.md`), pin `ec640bcf`,
+  tip held at aeon `9caa1368`: a static scan of all 4511 tests (`mask_scan.py`, banked beside the
+  note; positive control: it flags `ojz_run_b_port` at `78f5c7ca^` and clears it at HEAD) flagged
+  66 aeon-reading tests; hand triage found NINE, in seven files, where a comparison that can fail
+  on aeon drift ran before another module, shape or link was produced: `ojz_run_a_port` (2),
+  `seam2_seq_colink` and `seam2_sfx_head_colink` both-shapes gates, `soundbankhead_port`'s pin
+  test, `game_debug_port`'s flip, `seam2_phased_head` (2), `section_row_fixture`'s both-spellings
+  gate. All nine now produce every part first (`a6691120`, `79c1cd94`), green at the pin, and
+  red-first proven: the same mutations (earlier part wrong, a real unknown name in the later part)
+  hide the name in the old structure and report it in the new one.
+- At `9caa1368` nothing was hidden: every restructured gate reports the same first failure as
+  before, or stays green. `game_debug`'s link stage is unmeasured there (resolve stops first on
+  a visible name). The other 57 flags are single-unit, same-source reruns, or invariant checks;
+  the note classifies each.
+- OPEN: 12 tests fail on VISIBLE names at `9caa1368` (`Music_Service` in `game_loop`,
+  `Music_Want` in `parallax`/`sound_api`), from aeon commits after `8a6f92c4`. They need the
+  derive-from-the-tree repair before the pin advances past them.
+- Suites at `6cd988ea`: pin 504 binaries, 5732 passed, 0 failed, 2 ignored; `repin --check`
+  says `pins.rs unchanged`. Tip: the same 176 failures as before the parcel, 12 name lines both.
+
 ### CART-CHECK-CITES-STALE-PEER-BEHAVIOUR
 
 - state: **open**  size: `S`  project: `-`

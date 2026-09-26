@@ -239,7 +239,19 @@ fn gate(debug: bool, rom_name: &str) {
         return;
     };
 
-    for (emp_rel, section, region, seam) in sections() {
+    // Every section is lowered and linked BEFORE any is compared, so a scope failure in a
+    // later module (an `unknown name` from a new `use`) reports as itself instead of
+    // hiding behind an earlier module's byte difference. Each compile reads the plain
+    // region length, the module's own emitted length (see `len` below).
+    let sections = sections();
+    let images: Vec<sigil_link::LinkedImage> = sections
+        .iter()
+        .map(|(emp_rel, section, region, seam)| {
+            let base = if debug { region.debug_base } else { region.plain_base };
+            compile_section(emp_rel, section, base, region.plain_len, *seam, debug)
+        })
+        .collect();
+    for ((_, section, region, _), linked) in sections.into_iter().zip(images) {
         let base = if debug { region.debug_base } else { region.plain_base };
         // The MODULE'S OWN emitted length. Both modules here are generated and carry
         // no shape conditionals, and `compile_section` lowers them with
@@ -295,7 +307,6 @@ fn gate(debug: bool, rom_name: &str) {
             if debug { "debug" } else { "plain" }
         );
 
-        let linked = compile_section(emp_rel, section, base, len, seam, debug);
         let sec = linked
             .section(section)
             .unwrap_or_else(|| panic!("linked image must carry `{section}`"));
