@@ -895,9 +895,10 @@ points at it rather than restating it, so there is one copy to keep true.
 - Suites at `6cd988ea`: pin 504 binaries, 5732 passed, 0 failed, 2 ignored; `repin --check`
   says `pins.rs unchanged`. Tip: the same 176 failures as before the parcel, 12 name lines both.
 
-### CART-CHECK-CITES-STALE-PEER-BEHAVIOUR
+### CART-CHECK-CITES-STALE-PEER-BEHAVIOUR: LANDED
 
-- state: **open**  size: `S`  project: `-`
+- **LANDED** 2026-09-26 at `375ad832`, pushed. The comment now states our own reasons (one round trip, whole-image coverage) and cites the contract's `memory_hash` entry (section 6) and 11.48 by section, naming no peer tool. `ab_cart_check` 24 passed, 0 failed. Announced to aeon.
+- was: state **open**  size: `S`  project: `-`
 - `crates/sigil-harness/golden/ab/cart_check.py:53` says aeon's `tools/evict_witness.py` "already runs
   exactly this shape" (a whole-image `memory_hash` as its stale-binary guard). At aeon `origin/master`
   that file no longer mentions `memory_hash` at all: `git -C ../aeon log -S memory_hash origin/master --
