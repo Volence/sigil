@@ -1009,7 +1009,8 @@ points at it rather than restating it, so there is one copy to keep true.
 
 ### SHARED-PAIR-SWAP-AB0A5FE1
 
-- state: **waiting**  size: `S`  project: `-`
+- state: **done 2026-09-26T03:20:12Z** on the hub's go, each step its own call (outgoing pair frozen at `.sigil-outgoing-f52609fe`, file and directory, refusal observed; md5s matched)
+- original state: **waiting**  size: `S`  project: `-`
 - For aeon's Sonic 2 envelopes (their S2CLIP-REGION-MUSIC step 2), which need SEAM1-BANKED-CARRIERS-DERIVE in the
   shared pair. The candidate is built ASIDE from origin/master `ab0a5fe1` in the durable detached worktree
   `/home/volence/sonic_hacks/.sigil-pin-ab0a5fe1` (`target/release/sigil` md5 `3fb7c0b35df4ce3e5cd4dfdbb83710d8`,
