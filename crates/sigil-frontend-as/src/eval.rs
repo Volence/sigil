@@ -15332,10 +15332,16 @@ mod tests {
     }
 
     /// Address-register-destination ALU hygiene (effects-P2 corruption fix,
-    /// 2026-08-12). End-to-end: `add/sub dN,aM` must FAIL to assemble (they alias
-    /// ADDX/SUBX — `D549`-style silent memory corruption), matching this file's
-    /// stated "left to fail loud" intent for add/sub. `cmp` An-dest is asl's `cmpa`
-    /// spelling (promoted). The explicit `adda`/`suba`/`cmpa` spellings assemble.
+    /// 2026-08-12). `add/sub dN,aM` must never reach the ISA's `Dn,<ea>` arm,
+    /// which aliases ADDX/SUBX (`D549`-style silent memory corruption). On the
+    /// AS route they are asl's spellings of `adda`/`suba` and emit exactly those
+    /// words: `add.w d2,a1` = `D2C2`, `sub.l d0,a1` = `93C0` (asl_run, md5
+    /// `61e67256`, exit 0, probes `add_w_d2_a1`/`sub_l_dn_an` in
+    /// `docs/superpowers/notes/2026-09-27-as-author-forms-exact-probes/`). The
+    /// ISA itself still refuses them, and `.emp` reaches that refusal
+    /// (`sigil-frontend-emp/tests/as_author_forms_stay_off_emp.rs`). `cmp` An-dest
+    /// is asl's `cmpa` spelling. The explicit `adda`/`suba`/`cmpa` spellings
+    /// assemble.
     #[test]
     fn alu_address_register_destination_spelling_probes() {
         let head = "        cpu 68000\n        padding off\n        phase 0\n";
@@ -15345,11 +15351,9 @@ mod tests {
         assert_eq!(image(&format!("{head}        cmpa.l a0,a1\n")), vec![0xB3, 0xC8]);
         // `cmp.l a0,a1` promotes to cmpa (asl parity — the debugger `assert` macro).
         assert_eq!(image(&format!("{head}        cmp.l a0,a1\n")), vec![0xB3, 0xC8]);
-        // `add.w dN,aM` / `sub` now FAIL LOUD (were silent ADDX garbage).
-        assert!(run(&format!("{head}        add.w d2,a1\n"), &Options::default()).is_err(),
-                "add.w d2,a1 must fail to assemble (needs adda)");
-        assert!(run(&format!("{head}        sub.l d0,a1\n"), &Options::default()).is_err(),
-                "sub.l d0,a1 must fail to assemble (needs suba)");
+        // `add.w dN,aM` / `sub` are adda/suba, asl's bytes, never an ADDX/SUBX word.
+        assert_eq!(image(&format!("{head}        add.w d2,a1\n")), vec![0xD2, 0xC2]);
+        assert_eq!(image(&format!("{head}        sub.l d0,a1\n")), vec![0x93, 0xC0]);
     }
 
     /// Every `EquSym` named `name` across all sections of an assembled module
