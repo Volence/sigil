@@ -228,10 +228,33 @@ pub struct Assembled {
     /// by `if MOMPASS=2`, so a pass that is not the last one has nothing to
     /// say that the last one does not say better.
     pub messages: Vec<String>,
+    /// Every symbol a `shared` directive named on the converged pass, in the
+    /// order written, when [`Options::share_file`](crate::Options::share_file)
+    /// is set; empty otherwise. See [`SharedSymbol`].
+    pub shared: Vec<SharedSymbol>,
     /// The root source and every `include`d file, under the ids the warnings'
     /// spans carry — the half a caller cannot reconstruct, exactly as for
     /// [`Failure`].
     pub sources: sigil_span::SourceMap,
+}
+
+/// One symbol a `shared` directive named, for the share file asl's `-c` writes.
+///
+/// asl writes each name as the `shared` line spells it, with the value the name
+/// has AT that line on the final pass: a `set` symbol rebound after the line
+/// is written with its earlier value, a label defined after the line with its
+/// address, and a name listed twice is written twice (probe `sh5`, reference
+/// build md5 `61e672562465725a8c102288a7da9098`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SharedSymbol {
+    /// The name as the `shared` line wrote it.
+    pub name: String,
+    /// Its value: an integer, or, on a pass that keeps section labels symbolic
+    /// for the linker, an expression over them that the caller folds against
+    /// the linked symbol table.
+    pub value: Expr,
+    /// The name's own span on the `shared` line.
+    pub span: Span,
 }
 
 pub fn run(src: &str, opts: &Options) -> Result<Module, Vec<Diagnostic>> {
@@ -332,6 +355,7 @@ fn run_impl(
             terminal_fatal,
             author_warnings,
             messages,
+            shared,
             labels: pass_labels,
             label_ref_equs: pass_label_ref_equs,
             sources,
@@ -483,7 +507,7 @@ fn run_impl(
                 return if diags.iter().any(|d| d.level == Level::Error) {
                     Err(Failure { diags, messages, sources: last_sources })
                 } else {
-                    Ok(Assembled { module, warnings: diags, messages, sources: last_sources })
+                    Ok(Assembled { module, warnings: diags, messages, shared, sources: last_sources })
                 };
             }
             let bonus = one_pass_with_defer(
@@ -529,6 +553,7 @@ fn run_impl(
                     module: bonus_module,
                     warnings: diags,
                     messages: bonus.messages,
+                    shared: bonus.shared,
                     sources: bonus.sources,
                 })
             };
@@ -858,6 +883,8 @@ struct PassOutput {
     /// Every line the `message` directive produced this pass. See
     /// [`Asm::messages`].
     messages: Vec<String>,
+    /// Every symbol a `shared` directive named this pass. See [`Asm::shared`].
+    shared: Vec<SharedSymbol>,
     /// Every fully-qualified label name defined this pass (grown from the seed).
     /// Threaded into the next pass so a forward-referenced label is known before
     /// its definition line — see [`Asm::known_labels`].
@@ -1086,6 +1113,7 @@ fn one_pass_with_defer(
         terminal_fatal: asm.terminal_fatal,
         author_warnings: asm.author_warnings,
         messages: asm.messages,
+        shared: asm.shared,
         labels: asm.known_labels,
         label_ref_equs: asm.label_ref_equs,
         sources: asm.sources,
@@ -1641,6 +1669,13 @@ struct Asm {
     /// as asl prints it three times). Only the converged pass's list leaves
     /// [`run_impl`]; see [`Assembled::messages`].
     messages: Vec<String>,
+    /// Whether a share file is being written (asl's `-c`), which decides what
+    /// a `shared` directive does. See [`Self::directive_shared`].
+    share_file: bool,
+    /// Every symbol a `shared` directive named on THIS pass, in execution
+    /// order. Only the converged pass's list leaves [`run_impl`]; see
+    /// [`Assembled::shared`].
+    shared: Vec<SharedSymbol>,
     /// The value the `MOMPASS` builtin reports on THIS pass: 1 on the first,
     /// 2 on every later one. See [`Asm::builtin_num`] for why it saturates
     /// rather than counting.
@@ -2054,6 +2089,8 @@ impl Asm {
             terminal_fatal: None,
             author_warnings: Vec::new(),
             messages: Vec::new(),
+            share_file: opts.share_file,
+            shared: Vec::new(),
             mompass: LATER_PASS,
             known_labels: std::collections::HashSet::new(),
             sym_class: std::collections::HashMap::new(),
@@ -7483,7 +7520,7 @@ impl Asm {
             "shift" => self.directive_shift(span),
             "pushv" => self.directive_pushv(rest, span),
             "popv" => self.directive_popv(rest, span),
-            "shared" => self.directive_shared(span),
+            "shared" => self.directive_shared(rest, span),
             // Unreachable for a plain dispatch (the precedence check at the top
             // of this function has already expanded it) and correctly dead for a
             // forced-builtin one; kept as the explicit statement that a macro
@@ -12226,25 +12263,65 @@ impl Asm {
     }
 
     /// asl's `shared symbol[,symbol...]` writes the symbols to the share file
-    /// `-c` names, and without `-c` it does nothing but say so: every `shared`
-    /// line is `warning #30: no sharefile created, SHARED ignored` at exit 0,
-    /// whatever its operands are, an undefined name or none at all included
-    /// (probes `s7_*`). sigil writes no share file, so it is asl without `-c`:
-    /// the line is accepted, its operands are not evaluated, and every line
-    /// says so rather than being dropped silently.
+    /// `-c` names ([`Options::share_file`](crate::Options::share_file)).
+    ///
+    /// With a share file, each operand is a symbol name, recorded with its value
+    /// at this line (see [`SharedSymbol`]); a name with no value is refused as
+    /// asl refuses it (`error #1010: symbol undefined`, probe `sh4`), and a bare
+    /// `shared` records nothing, as asl writes nothing for it (`sh5`).
+    ///
+    /// Without one, asl does nothing but say so: every `shared` line is
+    /// `warning #30: no sharefile created, SHARED ignored` at exit 0, whatever
+    /// its operands are, an undefined name or none at all included (probes
+    /// `s7_*`). So does this: the line is accepted, its operands are not
+    /// evaluated, and every line says so rather than being dropped silently.
     ///
     /// Sonic 2 ends with `shared movewZ80CompSize`, and its build script reads
     /// the share file to patch the sound driver's compressed size into the
-    /// `move.w` at that address after `p2bin`. sigil does not perform that
-    /// patch; at the census revision it writes the value already there.
-    fn directive_shared(&mut self, span: Span) {
-        self.diags.push(Diagnostic {
-            level: Level::Warning,
-            message: "`shared` is ignored: sigil writes no share file \
-                      (asl without `-c` says \"no sharefile created, SHARED ignored\")"
-                .to_string(),
-            primary: span,
-        });
+    /// `move.w` at that address after `p2bin`.
+    fn directive_shared(&mut self, rest: &[Token], span: Span) {
+        if !self.share_file {
+            self.diags.push(Diagnostic {
+                level: Level::Warning,
+                message: "`shared` is ignored: sigil writes no share file \
+                          (asl without `-c` says \"no sharefile created, SHARED ignored\")"
+                    .to_string(),
+                primary: span,
+            });
+            return;
+        }
+        if rest.is_empty() {
+            return;
+        }
+        for g in split_top_commas(rest) {
+            let (name, name_span) = match g {
+                [Token { tok: Tok::Ident(s), span: s_span }] => (s.clone(), *s_span),
+                _ => {
+                    let at = g.first().map(|t| t.span).unwrap_or(span);
+                    self.err(at, "`shared` takes symbol names, and this is not one".to_string());
+                    continue;
+                }
+            };
+            let e = self.resolve_dollar(&self.qualify_expr(&Expr::Sym(name.clone())));
+            // Folded without `fold`'s register reading: an operand of `shared`
+            // is a symbol name by the directive's own grammar, so `shared A1`
+            // names the symbol `A1`, as it does to asl, never the register.
+            let value = if self.keep_labels_symbolic() && self.expr_refs_label(&e) {
+                Some(self.relax_safe_fold(&e))
+            } else {
+                let lookup = |n: &str| {
+                    self.builtin_num(n).or_else(|| self.resolve_sym(n)).or_else(|| self.resolve_str_packed(n))
+                };
+                match e.fold(&lookup) {
+                    Fold::Value(v) => Some(Expr::Int(v)),
+                    Fold::Poison | Fold::Fault(_) => None,
+                }
+            };
+            match value {
+                Some(value) => self.shared.push(SharedSymbol { name, value, span: name_span }),
+                None => self.err(name_span, format!("`shared {name}`: symbol undefined")),
+            }
+        }
     }
 
     /// asl warns once per stack still holding values when the source ends
@@ -15493,6 +15570,7 @@ mod tests {
             include_root: None,
             guarded_defines: vec![],
             cli_defines: vec![],
+            share_file: false,
         };
         let m = run(src, &opts).expect("assemble");
         let resolved = sigil_link::resolve_layout(&m.sections, &sigil_ir::SymbolTable::new(), true)
@@ -15515,6 +15593,7 @@ mod tests {
             include_root: None,
             guarded_defines: vec![],
             cli_defines: vec![],
+            share_file: false,
         };
         let m = run(src, &opts).expect("assemble");
         let resolved = sigil_link::resolve_layout(&m.sections, &sigil_ir::SymbolTable::new(), true)
@@ -15533,7 +15612,7 @@ mod tests {
         //   divs.w d0,d1      = 83 C0
         //   divs.w ($1234).w,d0 = 81 F8 12 34
         let src = "    cpu 68000\n    divs.w d4,d2\n    divs.w #10,d2\n    divs.w d0,d1\n    divs.w ($1234).w,d0\n";
-        let opts = Options { initial_cpu: Some(Cpu::M68000), defines: vec![], include_root: None, guarded_defines: vec![], cli_defines: vec![], };
+        let opts = Options { initial_cpu: Some(Cpu::M68000), defines: vec![], include_root: None, guarded_defines: vec![], cli_defines: vec![], share_file: false, };
         let m = run(src, &opts).expect("assemble");
         let resolved = sigil_link::resolve_layout(&m.sections, &sigil_ir::SymbolTable::new(), true)
             .expect("resolve_layout");
@@ -15551,7 +15630,7 @@ mod tests {
         //   divu.w d4,d2 = 84 C4
         //   divu.w d3,d5 = 8A C3
         let src = "    cpu 68000\n    divu.w d4,d2\n    divu.w d3,d5\n";
-        let opts = Options { initial_cpu: Some(Cpu::M68000), defines: vec![], include_root: None, guarded_defines: vec![], cli_defines: vec![], };
+        let opts = Options { initial_cpu: Some(Cpu::M68000), defines: vec![], include_root: None, guarded_defines: vec![], cli_defines: vec![], share_file: false, };
         let m = run(src, &opts).expect("assemble");
         let resolved = sigil_link::resolve_layout(&m.sections, &sigil_ir::SymbolTable::new(), true)
             .expect("resolve_layout");
@@ -15572,6 +15651,7 @@ mod tests {
             include_root: None,
             guarded_defines: vec![],
             cli_defines: vec![],
+            share_file: false,
         };
         let m = run(src, &opts).expect("assemble");
         let resolved = sigil_link::resolve_layout(&m.sections, &sigil_ir::SymbolTable::new(), true)
@@ -15593,6 +15673,7 @@ mod tests {
             include_root: None,
             guarded_defines: vec![],
             cli_defines: vec![],
+            share_file: false,
         };
         let diags = run(src, &opts)
             .expect_err("branch without a size suffix must be rejected, not lowered");
@@ -15617,6 +15698,7 @@ mod tests {
             include_root: None,
             guarded_defines: vec![],
             cli_defines: vec![],
+            share_file: false,
         };
         let m = run(src, &opts).expect("assemble");
         let resolved = sigil_link::resolve_layout(&m.sections, &sigil_ir::SymbolTable::new(), true)
@@ -15642,6 +15724,7 @@ mod tests {
             include_root: None,
             guarded_defines: vec![],
             cli_defines: vec![],
+            share_file: false,
         };
         let m = run(src, &opts).expect("assemble");
         assert!(matches!(
@@ -15665,6 +15748,7 @@ mod tests {
             include_root: None,
             guarded_defines: vec![],
             cli_defines: vec![],
+            share_file: false,
         };
         let diags = run(src, &opts).expect_err("missing size suffix must be rejected");
         assert!(
@@ -15719,6 +15803,7 @@ mod tests {
             include_root: None,
             guarded_defines: vec![],
             cli_defines: vec![],
+            share_file: false,
         };
         let m = run(src, &opts).expect("assemble");
         let bytes = m
@@ -15769,6 +15854,7 @@ mod tests {
             include_root: None,
             guarded_defines: vec![],
             cli_defines: vec![],
+            share_file: false,
         };
         let m = run(src, &opts).expect("assemble");
         let bytes = m
@@ -15791,6 +15877,7 @@ mod tests {
             include_root: None,
             guarded_defines: vec![],
             cli_defines: vec![],
+            share_file: false,
         };
         let m = run(src, &opts).expect("assemble");
         let bytes = m
@@ -15813,6 +15900,7 @@ mod tests {
             include_root: None,
             guarded_defines: vec![],
             cli_defines: vec![],
+            share_file: false,
         };
         let m = run(src, &opts).expect("assemble");
         let bytes = m
@@ -17725,7 +17813,7 @@ C:\n";
         // No `GetSineCosine` anywhere in this source — exactly the shape a
         // real cross-seam `.emp` proc call takes from the AS side.
         let src = "    cpu 68000\nConsumer:\n    jsr GetSineCosine\n    rts\n";
-        let opts = Options { initial_cpu: Some(Cpu::M68000), defines: vec![], include_root: None, guarded_defines: vec![], cli_defines: vec![], };
+        let opts = Options { initial_cpu: Some(Cpu::M68000), defines: vec![], include_root: None, guarded_defines: vec![], cli_defines: vec![], share_file: false, };
         let m = run(src, &opts).unwrap_or_else(|d| {
             panic!("expected a deferred compile, not a hard error: {d:?}")
         });
@@ -17744,7 +17832,7 @@ C:\n";
         // section that DOES define the target — the end-to-end proof (mirrors
         // `math_port.rs`'s outbound-consumer harness pattern).
         let src = "    cpu 68000\nConsumer:\n    jsr GetSineCosine\n    rts\n";
-        let opts = Options { initial_cpu: Some(Cpu::M68000), defines: vec![], include_root: None, guarded_defines: vec![], cli_defines: vec![], };
+        let opts = Options { initial_cpu: Some(Cpu::M68000), defines: vec![], include_root: None, guarded_defines: vec![], cli_defines: vec![], share_file: false, };
         let m = run(src, &opts).expect("deferred compile must succeed");
 
         let target_src = "    cpu 68000\n    phase $2468\nGetSineCosine:\n    rts\n";
@@ -17775,7 +17863,7 @@ C:\n";
         // Same source/expectation as
         // `m68k_jmp_jsr_bare_symbol_selects_width_in_front_end`, but for jsr.
         let src = "    cpu 68000\n    phase 0\nLbl:\n    jsr Lbl\n";
-        let opts = Options { initial_cpu: Some(Cpu::M68000), defines: vec![], include_root: None, guarded_defines: vec![], cli_defines: vec![], };
+        let opts = Options { initial_cpu: Some(Cpu::M68000), defines: vec![], include_root: None, guarded_defines: vec![], cli_defines: vec![], share_file: false, };
         let m = run(src, &opts).expect("assemble");
         assert!(
             matches!(m.sections[0].fragments[0], sigil_ir::Fragment::Data(_)),
@@ -17798,7 +17886,7 @@ C:\n";
         // (which named the symbol) to this link-time arm, so the link-time
         // wording must be at least as good.
         let src = "    cpu 68000\nConsumer:\n    jsr TotallyUndefined\n    rts\n";
-        let opts = Options { initial_cpu: Some(Cpu::M68000), defines: vec![], include_root: None, guarded_defines: vec![], cli_defines: vec![], };
+        let opts = Options { initial_cpu: Some(Cpu::M68000), defines: vec![], include_root: None, guarded_defines: vec![], cli_defines: vec![], share_file: false, };
         let m = run(src, &opts).expect("deferred compile must succeed (front-end no longer errors)");
         let err = sigil_link::resolve_layout(&m.sections, &sigil_ir::SymbolTable::new(), true)
             .expect_err("a target defined nowhere must still fail at resolve_layout");

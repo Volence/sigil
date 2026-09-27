@@ -32,6 +32,9 @@ mod tree_class;
 /// The compressors the AS route's `-z` placement uses.
 mod p2bin_codec;
 
+/// The drop-in `asl`: what this executable does when its program name is `asl`.
+mod asl_mode;
+
 /// One entry point of the command line: the words that select it, how help
 /// names it, what it does, its full usage text, and the function that runs it.
 ///
@@ -248,6 +251,11 @@ fn top_level_help() -> String {
     out.push('\n');
     out.push_str("For one command's arguments, run `sigil <command> --help`, for example\n");
     out.push_str("`sigil emp --help`. `sigil help <command>` prints the same thing.\n");
+    out.push('\n');
+    out.push_str("Run under the program name asl (a copy or link named asl or asl.exe), it takes\n");
+    out.push_str("asl's command line instead, as a drop-in for a disassembly's own build script:\n");
+    out.push_str("it writes the object file X.p for p2bin, the share file X.h under -c and the\n");
+    out.push_str("log X.log under -E, and refuses any option that script does not pass.\n");
     out
 }
 
@@ -406,6 +414,13 @@ fn unknown_command(word: &str, read_as_command: bool) -> ! {
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
+
+    // Under the program name `asl` this executable is asl, for a disassembly's
+    // own build script; [`ENTRIES`] is the command line of every other name.
+    if args.first().is_some_and(|a| asl_mode::invoked_as_asl(a)) {
+        asl_mode::run(&args[1..]);
+    }
+
     let first = args.get(1).map(String::as_str);
 
     // `sigil --help`, `sigil -h`, `sigil help`, and `sigil help <command>`.

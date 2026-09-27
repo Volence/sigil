@@ -26,6 +26,11 @@ pub use blob::{
     P2BIN_FORMATS,
 };
 
+mod code_file;
+pub use code_file::{
+    asl_cpu_id, code_file_records, decode_code_file, encode_code_file, CodeRecord, CODE_FILE_MAGIC, MAX_RECORD,
+};
+
 mod map_load;
 pub use map_load::load_map;
 
