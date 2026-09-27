@@ -200,6 +200,18 @@ scratch copies; settled). The notes themselves are historical and were not edite
 - sigil is 2.0x to 2.5x slower than `asl`+`p2bin` and uses 5x to 18x the memory on the `.asm` route (load 9 to
   11 at the time, note section 6). No profiler here; per-phase timing is a code change, so measure first.
 
+### INOUT-PROOF-INVOKE-HOOK
+
+- state: **open, unverified**  size: absent (not measured)  project: `-`  reported by: aeon, 2026-09-27
+- aeon's agent reports that while landing their merge `9496bbb3` (verified on aeon `origin/master` here), our
+  contract checker treated `invoke Game.ring_frame` inside `DrawRings` as an unknown callee and failed its
+  `inout` proof (d5/a4), so they moved the tick into its own proc. A hook call has a declared clobber bound,
+  so an `inout` proof across it should be decidable. **Unreproduced here.** Stage 0: rebuild the pre-workaround
+  shape (aeon's `parcel/vram-tier1` history, or a minimal `.emp` with an `invoke` of an interface hook inside a
+  proc carrying an `inout` claim) and see whether the refusal is real and whether it is the right answer.
+- Related, not a defect: their `rings_port` byte change reaches us only at the next pin advance
+  (`PIN-ADVANCE-S2-ENVELOPE-RESTATEMENTS`); the reference tree stays at `ec640bcf`.
+
 ### PHASE-ROW-CPU
 
 - state: **open, parked**  size: `S` to `M`  project: `-`  asked by: oracle, 2026-09-27
