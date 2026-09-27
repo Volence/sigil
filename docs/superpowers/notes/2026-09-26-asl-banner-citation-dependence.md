@@ -212,11 +212,12 @@ The figures above are this note's record at `9212d6e0` and stay as written.
 * **Enum row 13.** Corrected in `2026-09-04-as-enum-probes/README.md`, with two more probes beside
   `all4.sh`: `enum_fwd_stale3.asm` lists `0303`, `enum_fwd_org40.asm` lists `4040`, identical and
   stable on all four builds, every run exit 2.
-* **`asl-reference/README.md`'s i386 banner line.** Still not edited, and the reason is
-  `2026-09-05-asl-silent-decline-regime.md`'s: that file "is the subject of its own standing rule
-  and an edit to it wants its own review". Re-measured: `a8cd8b80b765686b2e9266c31ffa6987`, at both
+* **`asl-reference/README.md`'s i386 banner line.** Corrected in the same parcel, after the review
+  that `2026-09-05-asl-silent-decline-regime.md` asks for ("an edit to it wants its own review"):
+  the parcel agent measured and proposed, and the overseer re-ran all seven paths in the table and
+  applied the two cells below plus a dated line. Re-measured: `a8cd8b80b765686b2e9266c31ffa6987`, at both
   `s1disasm` and `skdisasm` `build_tools/Linux-x86/asl`, prints `(i386-unknown-linux)` as its second
-  banner line. The correction proposed for that review: in the binary table, the
+  banner line. The correction applied: in the binary table, the
   `s1disasm/build_tools/Linux-x86/asl` row's last cell `(x86_64-unknown-linux)` becomes
   `(i386-unknown-linux)`, and the `skdisasm/build_tools/Linux-x86/asl` row's last cell (a
   dash today) becomes `(i386-unknown-linux)` (the same binary, measured).
