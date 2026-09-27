@@ -10380,6 +10380,11 @@ impl Asm {
             }
         };
 
+        if let Some(msg) = m68k_suffix_refusal(mnemonic, base, suffix_size) {
+            self.err(span, msg);
+            return;
+        }
+
         // Every 68k instruction is word-aligned: under `padding on` at an odd `$`,
         // asl prefixes a $00 pad byte (asl-verified — `instr_odd_pad_on` probe).
         // Covers all instruction paths (branch/dbcc/movem/jmp-jsr/generic) since
@@ -14091,6 +14096,14 @@ fn m68k_mnemonic(base: &str) -> Option<M68kMnemonic> {
         "rts" => Rts,
         "rte" => Rte,
         "trap" => Trap,
+        "trapv" => Trapv,
+        "illegal" => Illegal,
+        "reset" => Reset,
+        "rtr" => Rtr,
+        "stop" => Stop,
+        "chk" => Chk,
+        "link" => Link,
+        "unlk" => Unlk,
         "bra" => Bra,
         "bsr" => Bsr,
         "jmp" => Jmp,
@@ -14158,6 +14171,66 @@ fn m68k_cond(w: &str) -> Option<M68kCond> {
 fn m68k_out_of_scope(_base: &str) -> Option<&'static str> {
     None
 }
+
+/// The refusal for a size suffix asl refuses on a mnemonic with a fixed size,
+/// or `None` when the suffix (or its absence) is one asl accepts. `base` is
+/// the mnemonic as written, for the message. Measured on the pinned asl
+/// (probes in `docs/superpowers/notes/2026-09-27-as-author-forms-exact-probes/`):
+///
+/// - `swap`: bare and `.l` assemble (`4840`); `.b`, `.w` and `.s` are `error
+///   #1130: invalid operand size` (`swap_b`, `swap_w`, `swap_s`).
+/// - `reset`, `rtr`, `trapv`, `stop`, `illegal`: any suffix is `error #1100:
+///   useless attribute` (`*_w`, `rtr_l`, `stop_l`).
+/// - `unlk`: any suffix is `#1130` (`unlk_w`, `unlk_l`).
+/// - `link`: `.w` assembles, the same bytes as bare; `.b`, `.l` and `.s` are
+///   refused (`link_b`, `link_l`, `link_s`).
+/// - `chk`: `.w` assembles; `.b` and `.s` are `#1130` (`chk_b`, `chk_s`).
+///   `chk.l` is refused HERE although asl assembles it (`4300`) under `cpu
+///   68000`: that word is the MC68020's `chk.l`, which a 68000 does not
+///   decode, so emitting it would be a program that traps on the target.
+fn m68k_suffix_refusal(
+    mnemonic: M68kMnemonic,
+    base: &str,
+    suffix: Option<M68kSize>,
+) -> Option<String> {
+    use M68kMnemonic::*;
+    let suffix = suffix?;
+    let written = |c: char| format!("`{base}.{c}`");
+    let letter = match suffix {
+        M68kSize::B => 'b',
+        M68kSize::W => 'w',
+        M68kSize::L => 'l',
+        M68kSize::S => 's',
+    };
+    match mnemonic {
+        Swap if suffix != M68kSize::L => Some(format!(
+            "{} is refused, as asl refuses it (invalid operand size): `swap` exchanges \
+             the two halves of a data register and has no size field, write `{base}`",
+            written(letter)
+        )),
+        Reset | Rtr | Trapv | Stop | Illegal | Unlk => Some(format!(
+            "{} is refused, as asl refuses it: `{base}` has no size field, write `{base}` \
+             with no suffix",
+            written(letter)
+        )),
+        Link if suffix != M68kSize::W => Some(format!(
+            "{} is refused, as asl refuses it: `link` is word only on the 68000, write \
+             `{base}` or `{base}.w`",
+            written(letter)
+        )),
+        Chk if suffix == M68kSize::L => Some(format!(
+            "{} is the MC68020's long form, which a 68000 does not decode: the 68000 \
+             has only `chk.w`",
+            written(letter)
+        )),
+        Chk if suffix != M68kSize::W => Some(format!(
+            "{} is refused, as asl refuses it (invalid operand size): the 68000 has only \
+             `chk.w`",
+            written(letter)
+        )),
+        _ => None,
+    }
+}
 /// The default size for a bare `move` whose operand list names one of the
 /// 68000's non-EA special registers.
 ///
@@ -14213,6 +14286,14 @@ fn m68k_default_size(m: M68kMnemonic) -> Option<M68kSize> {
         Lea | Pea => Some(M68kSize::L),
         Swap | Nop | Rts | Rte | Tas | Trap => Some(M68kSize::W),
         Jmp | Jsr => Some(M68kSize::W),
+        // Single-size forms with no size field, the same shape as `nop`/`trap`:
+        // `link` is word-only on the 68000 (asl: `link a6,#-8` = `4E56 FFF8`,
+        // the same as `link.w`), and the rest take no suffix at all.
+        // `chk` is deliberately absent: it is word-only too, but so are
+        // `muls`/`mulu`/`divs`/`divu`, which this front-end also refuses
+        // unsuffixed, and the unsuffixed-default question is open for all of
+        // them together.
+        Link | Unlk | Reset | Rtr | Trapv | Stop | Illegal => Some(M68kSize::W),
         // Bit ops (`btst`/`bset`/`bclr`) carry NO suffix in real 68k syntax:
         // the operation size is implicit in the destination (long for a `Dn`
         // target, byte for a memory target) and the encoder (`encode_bit`)
