@@ -196,7 +196,7 @@ scratch copies; settled). The notes themselves are historical and were not edite
 
 ### AS-AUTHOR-FORMS-EXACT
 
-- state: **open**  size: `S`  project: `SIGIL-AS-REPLACEMENT`
+- state: **next**  size: `S`  project: `SIGIL-AS-REPLACEMENT`
 - 31 of 167 common 68000 spellings a hack author writes are refused by sigil and accepted by `asl`; the three
   disassemblies use none, so no corpus test sees it (note section 4). Twenty are plain, plus unquoted
   `binclude` and refusing `swap.w`. Stage 0: check whether refusing the `adda`/`eori` shorthand was a ruling;
@@ -212,11 +212,11 @@ scratch copies; settled). The notes themselves are historical and were not edite
 
 ### AS-DIAG-FATAL-FIRST
 
-- state: **next**  size: `S`  project: `SIGIL-AS-REPLACEMENT`
+- state: **landed** (merge `cf520369`, landing run GREEN 5770 passed 0 failed)  size: `S`  project: `SIGIL-AS-REPLACEMENT`
 - When the source's own `fatal` fires (S3K, a FixMusicAndSFXDataBugs build), sigil prints 563 error lines and
   the cause is line 468; `asl` prints one (note section 5). Report the `fatal` first and drop the unresolved
   follow-ons it caused.
-- 2026-09-27, on branch `parcel/as-diag-fatal-first` (not merged): the `fatal` is printed first; an error
+- 2026-09-27, on branch `parcel/as-diag-fatal-first`, since merged: the `fatal` is printed first; an error
   is dropped, and counted in one note, when a second assembly that does not stop at the `fatal` no longer
   raises it. S3K leg: 563 lines with the cause 468th became the `fatal` plus `562 further errors not
   reported`, exit 1 both. Tests: `sigil-cli/tests/as_fatal_reported_first.rs`.
