@@ -239,22 +239,22 @@ pub fn parse_blob(arg: &str) -> Result<BlobInstruction, String> {
 /// A stretch of bytes one section writes at consecutive addresses: the unit
 /// p2bin calls a record.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct Run {
+pub(crate) struct Run {
     /// Index of the section in program order.
-    sec: usize,
+    pub(crate) sec: usize,
     /// Offset of the run's first byte in the section's image bytes.
-    offset: u32,
+    pub(crate) offset: u32,
     /// Load address of the run's first byte.
-    start: u32,
+    pub(crate) start: u32,
     /// Load address one past its last byte.
-    end: u32,
-    cpu: Cpu,
-    space: AddressSpace,
+    pub(crate) end: u32,
+    pub(crate) cpu: Cpu,
+    pub(crate) space: AddressSpace,
 }
 
 /// Every run of `sections`, in program order. A reservation or a seek ends a
 /// run; the next byte starts another, as the next record in asl's object file.
-fn runs(sections: &[Section]) -> Vec<Run> {
+pub(crate) fn runs(sections: &[Section]) -> Vec<Run> {
     let mut out = Vec::new();
     for (si, sec) in sections.iter().enumerate() {
         let mut cursor: u32 = 0;

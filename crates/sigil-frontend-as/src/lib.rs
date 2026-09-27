@@ -24,7 +24,7 @@ use sigil_ir::backend::Cpu;
 use sigil_ir::Module;
 use sigil_span::{Diagnostic, SourceMap};
 
-pub use eval::Assembled;
+pub use eval::{Assembled, SharedSymbol};
 
 /// A failed assembly: the diagnostics, plus the [`SourceMap`] their spans resolve
 /// against.
@@ -207,6 +207,11 @@ pub struct Options {
     /// Directory that `include` paths resolve against. Set automatically by
     /// [`assemble_root`] from the root file's parent when left `None`.
     pub include_root: Option<std::path::PathBuf>,
+    /// Whether the caller writes a share file, asl's `-c`. With it, each
+    /// `shared` directive records its symbols in [`Assembled::shared`]; without
+    /// it, each `shared` line is a warning that nothing was shared, as asl
+    /// without `-c` warns.
+    pub share_file: bool,
 }
 
 

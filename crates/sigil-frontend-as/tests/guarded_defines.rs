@@ -21,6 +21,7 @@ fn emit(src: &str, guarded: &[(&str, i64)]) -> Vec<u8> {
         defines: vec![],
         guarded_defines: guarded.iter().map(|(k, v)| (k.to_string(), *v)).collect(),
         cli_defines: vec![],
+        share_file: false,
         include_root: None,
     };
     let module = assemble(src, &opts).unwrap_or_else(|d| panic!("assemble: {d:?}"));
@@ -97,6 +98,7 @@ fn guarded_define_redefined_in_file_is_a_hard_collision() {
         defines: vec![],
         guarded_defines: vec![("K".into(), 96), ("K_SHIFT".into(), 3)],
         cli_defines: vec![],
+        share_file: false,
         include_root: None,
     };
     let diags = assemble(&src, &opts).expect_err("a guarded name redefined in-file must fail");
@@ -121,6 +123,7 @@ fn ordinary_defines_keep_silent_override_semantics() {
         defines: vec![("X".into(), 99)], // ordinary define, same name as in-file
         guarded_defines: vec![],
         cli_defines: vec![],
+        share_file: false,
         include_root: None,
     };
     let module = assemble(src, &opts).expect("ordinary define coexisting in-file must not error");

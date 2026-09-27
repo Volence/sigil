@@ -32,6 +32,9 @@ mod tree_class;
 /// The compressors the AS route's `-z` placement uses.
 mod p2bin_codec;
 
+/// The drop-in `asl`: what this executable does when its program name is `asl`.
+mod asl_mode;
+
 /// One entry point of the command line: the words that select it, how help
 /// names it, what it does, its full usage text, and the function that runs it.
 ///
@@ -406,6 +409,13 @@ fn unknown_command(word: &str, read_as_command: bool) -> ! {
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
+
+    // Under the program name `asl` this executable is asl, for a disassembly's
+    // own build script; [`ENTRIES`] is the command line of every other name.
+    if args.first().is_some_and(|a| asl_mode::invoked_as_asl(a)) {
+        asl_mode::run(&args[1..]);
+    }
+
     let first = args.get(1).map(String::as_str);
 
     // `sigil --help`, `sigil -h`, `sigil help`, and `sigil help <command>`.
