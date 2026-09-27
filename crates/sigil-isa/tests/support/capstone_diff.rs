@@ -259,8 +259,9 @@ fn sigil_family(m: Mnemonic) -> String {
         | Mnemonic::MoveToCcr
         | Mnemonic::MoveToUsp
         | Mnemonic::MoveFromUsp => "move".into(),
-        Mnemonic::AndiCcr => "andi".into(),
-        Mnemonic::OriCcr => "ori".into(),
+        Mnemonic::AndiCcr | Mnemonic::AndiSr => "andi".into(),
+        Mnemonic::OriCcr | Mnemonic::OriSr => "ori".into(),
+        Mnemonic::EoriCcr | Mnemonic::EoriSr => "eori".into(),
         other => family_name(other).to_string(),
     }
 }

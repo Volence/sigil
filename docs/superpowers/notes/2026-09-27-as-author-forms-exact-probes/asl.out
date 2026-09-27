@@ -1,0 +1,126 @@
+add_b_dn_an      exit 2  REFUSED  ./.out.56Jx/add_b_dn_an.lst:> > > add_b_dn_an.asm(2): error #1130: invalid operand size
+add_l_dn_an      exit 0   D3C0
+add_w_an_an      exit 0   D2C8
+add_w_d2_a1      exit 0   D2C2
+add_w_dn_an      exit 0   D2C0
+add_w_dn_sp      exit 0   DEC0
+add_w_imm_an     exit 0   D2FC0001
+add_w_mem_an     exit 0   D2D0
+andi_b_ccr       exit 0   023C00FE
+andi_b_sr        exit 2  REFUSED  ./.out.56Jx/andi_b_sr.lst:> > > andi_b_sr.asm(2): error #1130: invalid operand size
+andi_ccr         exit 0   023C00FE
+andi_ccr_big     exit 2  REFUSED  ./.out.56Jx/andi_ccr_big.lst:> > > andi_ccr_big.asm(2):8: error #1320: range overflow
+andi_ccr_up      exit 0   023C00FE
+andi_l_sr        exit 2  REFUSED  ./.out.56Jx/andi_l_sr.lst:> > > andi_l_sr.asm(2): error #1130: invalid operand size
+andi_sr          exit 0   027CF8FF
+andi_sr_big      exit 2  REFUSED  ./.out.56Jx/andi_sr_big.lst:> > > andi_sr_big.asm(2):8: error #1320: range overflow
+andi_sr_ff       exit 0   027C00FF
+andi_w_ccr       exit 2  REFUSED  ./.out.56Jx/andi_w_ccr.lst:> > > andi_w_ccr.asm(2): error #1130: invalid operand size
+andi_w_ccr_up    exit 2  REFUSED  ./.out.56Jx/andi_w_ccr_up.lst:> > > andi_w_ccr_up.asm(2): error #1130: invalid operand size
+andi_w_sr        exit 0   027CF8FF
+andi_w_sr_ff     exit 0   027C00FF
+and_w_dn_an      exit 2  REFUSED  ./.out.56Jx/and_w_dn_an.lst:> > > and_w_dn_an.asm(2):11: error #1350: addressing mode not allowed here
+beq_b            exit 0   67024E71
+beq_s            exit 0   67024E71
+binclude_case    exit 0   5A
+binclude_cmt     exit 0   12345678
+binclude_dir     exit 0   ABCD
+binclude_off     exit 0   3456
+binclude_q_4args exit 2  REFUSED  ./.out.56Jx/binclude_q_4args.lst:> > > binclude_q_4args.asm(2): error #1110: wrong number of operands
+binclude_q       exit 0   12345678
+binclude_q_len0  exit 0   
+binclude_q_lenbig exit 0   12345678
+binclude_q_lenneg2 exit 2  REFUSED  ./.out.56Jx/binclude_q_lenneg2.lst:> > > binclude_q_lenneg2.asm(2): error #1600: unexpected end of file
+binclude_q_lenneg exit 0   345678
+binclude_q_lenpast exit 2  REFUSED  ./.out.56Jx/binclude_q_lenpast.lst:> > > binclude_q_lenpast.asm(2): error #1600: unexpected end of file
+binclude_q_off1  exit 0   5678
+binclude_q_off   exit 0   3456
+binclude_q_offend exit 0   
+binclude_q_offexpr exit 0   56
+binclude_q_offneg exit 2  REFUSED  ./.out.56Jx/binclude_q_offneg.lst:> > > binclude_q_offneg.asm(2): error #1600: unexpected end of file
+binclude_q_offpast exit 2  REFUSED  ./.out.56Jx/binclude_q_offpast.lst:> > > binclude_q_offpast.asm(2): error #1600: unexpected end of file
+binclude_unq     exit 0   12345678
+BINCLUDE_up      exit 0   12345678
+bra_b            exit 0   60024E71
+bra_b_back       exit 0   4E7160FC
+bra_b_far        exit 2  REFUSED  ./.out.56Jx/bra_b_far.lst:> > > bra_b_far.asm(2): error #1370: jump distance too big
+bra_b_next       exit 0   4E714E71
+bra_s_next       exit 0   4E714E71
+bsr_b            exit 0   61024E71
+chk_bare         exit 0   4380
+chk_b            exit 2  REFUSED  ./.out.56Jx/chk_b.lst:> > > chk_b.asm(2): error #1130: invalid operand size
+chk_imm          exit 0   43BC0100
+chk_l            exit 0   4300
+chk_s            exit 2  REFUSED  ./.out.56Jx/chk_s.lst:> > > chk_s.asm(2): error #1130: invalid operand size
+chk_w            exit 0   4380
+chk_w_ind        exit 0   4390
+dc_absw          exit 2  REFUSED  ./.out.56Jx/dc_absw.lst:> > > dc_absw.asm(2):7: error #1020: invalid symbol name
+eor_b_imm_dn     exit 0   0A000001
+eori_b_ccr       exit 0   0A3C0001
+eori_ccr         exit 0   0A3C0001
+eori_l_ccr       exit 2  REFUSED  ./.out.56Jx/eori_l_ccr.lst:> > > eori_l_ccr.asm(2): error #1130: invalid operand size
+eori_sr          exit 0   0A7C2000
+eori_w_sr        exit 0   0A7C2000
+eor_l_imm_dn     exit 0   0A8000000001
+eor_w_imm_dn     exit 0   0A400001
+illegal          exit 0   4AFC
+illegal_w        exit 2  REFUSED  ./.out.56Jx/illegal_w.lst:> > > illegal_w.asm(2): error #1100: useless attribute
+jmp_absl         exit 0   4EF900001234
+jmp_absw         exit 0   4EF81234
+jmp_absw_hi      exit 2  REFUSED  ./.out.56Jx/jmp_absw_hi.lst:> > > jmp_absw_hi.asm(2): error #1340: short addressing not allowed
+jmp_absw_neg     exit 0   4EF88000
+jmp_absw_up      exit 0   4EF81234
+jmp_expr_w       exit 0   4EF81234
+jmp_paren_up     exit 0   4EF81234
+jmp_paren_w      exit 0   4EF81234
+jmp_sym_w        exit 0   4EF81234
+jsr_absw         exit 0   4EB81234
+lea_absw         exit 0   41F81234
+link             exit 0   4E560008
+link_b           exit 2  REFUSED  ./.out.56Jx/link_b.lst:> > > link_b.asm(2): error #1130: invalid operand size
+link_big         exit 0   4E568000
+link_dn          exit 2  REFUSED  ./.out.56Jx/link_dn.lst:> > > link_dn.asm(2):7: error #1350: addressing mode not allowed here
+link_ffff        exit 0   4E56FFFF
+link_l           exit 2  REFUSED  ./.out.56Jx/link_l.lst:> > > link_l.asm(2):2: error #1500: instruction not supported on 68000
+link_min         exit 0   4E568000
+link_neg         exit 0   4E56FFF8
+link_s           exit 2  REFUSED  ./.out.56Jx/link_s.lst:> > > link_s.asm(2): error #1130: invalid operand size
+link_w           exit 0   4E56FFF8
+move_absl        exit 0   303900001234
+move_absw        exit 0   30381234
+move_absw_dst    exit 2  REFUSED  ./.out.56Jx/move_absw_dst.lst:> > > move_absw_dst.asm(2): error #1340: short addressing not allowed
+move_absw_ffff   exit 0   30388000
+ori_b_sr         exit 2  REFUSED  ./.out.56Jx/ori_b_sr.lst:> > > ori_b_sr.asm(2): error #1130: invalid operand size
+ori_ccr          exit 0   003C0001
+ori_sr           exit 0   007C0700
+ori_w_sr         exit 0   007C0700
+paren_reg_w      exit 2  REFUSED  ./.out.56Jx/paren_reg_w.lst:> > > paren_reg_w.asm(2):9: error #1146: expected integer or string
+paren_sp_w       exit 2  REFUSED  ./.out.56Jx/paren_sp_w.lst:> > > paren_sp_w.asm(2):9: error #1146: expected integer or string
+reg_space_w      exit 2  REFUSED  ./.out.56Jx/reg_space_w.lst:> > > reg_space_w.asm(2):6: error #1146: expected integer or string
+reset            exit 0   4E70
+reset_w          exit 2  REFUSED  ./.out.56Jx/reset_w.lst:> > > reset_w.asm(2): error #1100: useless attribute
+rtr              exit 0   4E77
+rtr_l            exit 2  REFUSED  ./.out.56Jx/rtr_l.lst:> > > rtr_l.asm(2): error #1100: useless attribute
+rtr_op           exit 2  REFUSED  ./.out.56Jx/rtr_op.lst:> > > rtr_op.asm(2): error #1110: wrong number of operands
+rtr_w            exit 2  REFUSED  ./.out.56Jx/rtr_w.lst:> > > rtr_w.asm(2): error #1100: useless attribute
+stop             exit 0   4E722700
+stop_big         exit 2  REFUSED  ./.out.56Jx/stop_big.lst:> > > stop_big.asm(2):8: error #1320: range overflow
+stop_dn          exit 2  REFUSED  ./.out.56Jx/stop_dn.lst:> > > stop_dn.asm(2): error #1120: addressing mode must be immediate
+stop_l           exit 2  REFUSED  ./.out.56Jx/stop_l.lst:> > > stop_l.asm(2): error #1100: useless attribute
+stop_neg         exit 0   4E72FFFF
+stop_w           exit 2  REFUSED  ./.out.56Jx/stop_w.lst:> > > stop_w.asm(2): error #1100: useless attribute
+sub_l_dn_an      exit 0   93C0
+sub_w_dn_an      exit 0   92C0
+sub_w_imm_an     exit 0   92FC0001
+swap             exit 0   4840
+swap_b           exit 2  REFUSED  ./.out.56Jx/swap_b.lst:> > > swap_b.asm(2): error #1130: invalid operand size
+swap_l           exit 0   4840
+swap_s           exit 2  REFUSED  ./.out.56Jx/swap_s.lst:> > > swap_s.asm(2): error #1130: invalid operand size
+swap_w           exit 2  REFUSED  ./.out.56Jx/swap_w.lst:> > > swap_w.asm(2): error #1130: invalid operand size
+trapv            exit 0   4E76
+trapv_w          exit 2  REFUSED  ./.out.56Jx/trapv_w.lst:> > > trapv_w.asm(2): error #1100: useless attribute
+unlk             exit 0   4E5E
+unlk_dn          exit 2  REFUSED  ./.out.56Jx/unlk_dn.lst:> > > unlk_dn.asm(2):7: error #1350: addressing mode not allowed here
+unlk_l           exit 2  REFUSED  ./.out.56Jx/unlk_l.lst:> > > unlk_l.asm(2): error #1130: invalid operand size
+unlk_sp          exit 0   4E5F
+unlk_w           exit 2  REFUSED  ./.out.56Jx/unlk_w.lst:> > > unlk_w.asm(2): error #1130: invalid operand size

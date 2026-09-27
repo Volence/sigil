@@ -5160,31 +5160,98 @@ impl Asm {
         }
     }
 
-    /// `BINCLUDE "path"`: read a file's raw bytes and emit them verbatim —
-    /// opaque binary data, no parsing (asl-verified: a file containing `ABCD`
-    /// emits `41 42 43 44`). Path resolves via `include_root` exactly like
-    /// `include` (real Aeon source paths are relative to the aeon root, e.g.
-    /// `BINCLUDE "games/sonic4/data/collision/heightmaps.bin"`). Unlike
-    /// `include`, this is NOT re-entrancy-guarded by `self.visited` — every
-    /// real usage in Aeon is a bare, single-use `BINCLUDE "path"` (no
-    /// offset/length args; verified via `grep -rn BINCLUDE` over
-    /// `aeon/games` + `aeon/engine`, all 43 call sites bare), and unlike
-    /// `include` (which execs the file's lines and so must not re-enter a
-    /// cycle), re-BINCLUDEing the same path is a legitimate way to place the
-    /// same blob at two different labels — a DAG guard would silently drop
-    /// the second copy.
+    /// `BINCLUDE path[,offset[,length]]`: read a file's raw bytes and emit
+    /// them verbatim, opaque binary data with no parsing (asl-verified: a file
+    /// containing `ABCD` emits `41 42 43 44`). The path resolves via
+    /// `include_root` exactly like `include` (Aeon's paths are relative to the
+    /// aeon root, e.g. `BINCLUDE "games/sonic4/data/collision/heightmaps.bin"`).
+    /// Re-BINCLUDEing one path is a legitimate way to place the same blob at
+    /// two labels, so nothing here guards re-entry.
+    ///
+    /// The path is double-quoted or written bare. A bare path is the operand's
+    /// own text as written, directory separators and case included (asl:
+    /// `binclude blob.bin`, `binclude sub/blob2.bin` and `binclude MixCase.bin`
+    /// each emit that file, probes `binclude_unq`, `binclude_dir`,
+    /// `binclude_case`).
+    ///
+    /// The optional offset and length select a slice, measured on the pinned
+    /// asl with a 4-byte file `12 34 56 78` (probes `binclude_q_*`):
+    ///
+    /// - `,1,2` is `34 56`; `,2` alone is `56 78` (to the end); `,4` (the
+    ///   file's size) and `,1,0` are empty;
+    /// - a length of `-1`, or `$FFFFFFFF`, means "to the end" (`,1,-1` is
+    ///   `34 56 78`); any other negative length is refused;
+    /// - a negative offset, an offset past the end, and a slice that runs past
+    ///   the end are refused (`error #1600: unexpected end of file`);
+    /// - a fourth operand is refused (`error #1110: wrong number of operands`).
     fn directive_binclude(&mut self, rest: &[Token], span: Span) {
         self.open_section_if_needed();
-        let Some(rel) = self.quoted_path(rest, "BINCLUDE", span) else {
+        let groups = split_top_commas(rest);
+        if groups.len() > 3 {
+            self.err(span, "BINCLUDE takes a path, an offset and a length, and no more operands");
+            return;
+        }
+        let Some(rel) = self.binclude_path(groups[0], span) else {
             return;
         };
         let path = match &self.include_root {
             Some(root) => root.join(&rel),
             None => std::path::PathBuf::from(&rel),
         };
-        match sigil_span::read_set::read(&path) {
-            Ok(bytes) => self.emit(&bytes, vec![], span),
-            Err(e) => self.err(span, format!("cannot BINCLUDE {}: {e}", path.display())),
+        let mut window = [None, None];
+        for (i, g) in groups.iter().enumerate().skip(1) {
+            let what = if i == 1 { "offset" } else { "length" };
+            match self.eval_all(g, span) {
+                Some(v) => window[i - 1] = Some(v),
+                None => {
+                    if !self.register_reported_at(span) {
+                        self.err(span, format!("unresolved BINCLUDE {what}"));
+                    }
+                    return;
+                }
+            }
+        }
+        let bytes = match sigil_span::read_set::read(&path) {
+            Ok(bytes) => bytes,
+            Err(e) => {
+                self.err(span, format!("cannot BINCLUDE {}: {e}", path.display()));
+                return;
+            }
+        };
+        match binclude_slice(bytes.len(), window[0], window[1]) {
+            Ok((start, end)) => self.emit(&bytes[start..end], vec![], span),
+            Err(why) => self.err(
+                span,
+                format!("BINCLUDE {}: {why}, the file is {} bytes", path.display(), bytes.len()),
+            ),
+        }
+    }
+
+    /// The path operand of `BINCLUDE`: a double-quoted literal, or the bare
+    /// operand's text exactly as written on the line. A single-quoted operand
+    /// keeps [`Self::quoted_path`]'s refusal, since asl cannot open it either.
+    fn binclude_path(&mut self, g: &[Token], span: Span) -> Option<String> {
+        match g {
+            [] => {
+                self.err(span, "BINCLUDE needs a path");
+                None
+            }
+            [Token { tok: Tok::Str(..), .. }] => self.quoted_path(g, "BINCLUDE", span),
+            _ if g.iter().any(|t| matches!(t.tok, Tok::Str(..))) => {
+                self.quoted_path(g, "BINCLUDE", span)
+            }
+            _ => {
+                let gs = group_span(g)?;
+                let raw = self.call_line.as_ref().and_then(|(text, base, source)| {
+                    if gs.source != *source {
+                        return None;
+                    }
+                    let lo = gs.start.checked_sub(*base)? as usize;
+                    let hi = gs.end.checked_sub(*base)? as usize;
+                    text.get(lo..hi).map(str::to_string)
+                });
+                Some(raw.unwrap_or_else(|| render_tokens(g)))
+            }
         }
     }
 
@@ -10380,6 +10447,11 @@ impl Asm {
             }
         };
 
+        if let Some(msg) = m68k_suffix_refusal(mnemonic, base, suffix_size) {
+            self.err(span, msg);
+            return;
+        }
+
         // Every 68k instruction is word-aligned: under `padding on` at an odd `$`,
         // asl prefixes a $00 pad byte (asl-verified — `instr_odd_pad_on` probe).
         // Covers all instruction paths (branch/dbcc/movem/jmp-jsr/generic) since
@@ -10587,6 +10659,19 @@ impl Asm {
             None => return,
         };
         let mnemonic = refine_m68k_mnemonic(mnemonic, &ops);
+        // The CCR immediates are byte only. asl refuses `andi.w #$FE,ccr`
+        // (probe `andi_w_ccr`, `error #1130: invalid operand size`), and the
+        // encoder's `AndiCcr`/`OriCcr` accept any size and emit the byte form,
+        // so the refusal is made here. The SR forms police their own size.
+        if matches!(mnemonic, M68kMnemonic::AndiCcr | M68kMnemonic::OriCcr | M68kMnemonic::EoriCcr)
+            && size != M68kSize::B
+        {
+            self.err(
+                span,
+                "an immediate to `ccr` is byte only, as asl requires: write it with `.b` or with no suffix",
+            );
+            return;
+        }
         let inst = M68kInstruction {
             mnemonic,
             size,
@@ -10844,7 +10929,9 @@ impl Asm {
 
     /// `bra`/`bsr`/`Bcc <target>`: Aeon pins the branch width by an explicit
     /// `.s`/`.w` suffix (no relaxation), so `suffix_size` MUST be present and
-    /// MUST be `S` or `W`. The target is qualified (`.local` → `Scope.local`)
+    /// MUST be `S` or `W`. `.b` is asl's other spelling of the short form and
+    /// reads as `S` (probes `beq_b`/`bra_b`/`bsr_b`/`bra_b_back`: asl emits the
+    /// `.s` bytes for each). The target is qualified (`.local` → `Scope.local`)
     /// and `$`-resolved, then handed to the backend's `lower_branch`, which
     /// builds the opcode + a `PcRel8`/`PcRelDisp16` fixup for the linker.
     fn lower_m68k_branch(
@@ -10856,8 +10943,9 @@ impl Asm {
     ) {
         let size = match suffix_size {
             Some(s @ (M68kSize::S | M68kSize::W)) => s,
+            Some(M68kSize::B) => M68kSize::S,
             Some(_) => {
-                self.err(span, "branch size suffix must be `.s` or `.w`");
+                self.err(span, "branch size suffix must be `.s`, `.b` or `.w`");
                 return;
             }
             None => {
@@ -14091,6 +14179,14 @@ fn m68k_mnemonic(base: &str) -> Option<M68kMnemonic> {
         "rts" => Rts,
         "rte" => Rte,
         "trap" => Trap,
+        "trapv" => Trapv,
+        "illegal" => Illegal,
+        "reset" => Reset,
+        "rtr" => Rtr,
+        "stop" => Stop,
+        "chk" => Chk,
+        "link" => Link,
+        "unlk" => Unlk,
         "bra" => Bra,
         "bsr" => Bsr,
         "jmp" => Jmp,
@@ -14149,6 +14245,32 @@ fn m68k_cond(w: &str) -> Option<M68kCond> {
     })
 }
 
+/// The `[start, end)` byte range a `BINCLUDE` of a `len`-byte file takes, given
+/// its optional offset and length, or the reason asl refuses the pair. The
+/// rules and their probes are on [`Asm::directive_binclude`].
+fn binclude_slice(len: usize, offset: Option<i64>, length: Option<i64>) -> Result<(usize, usize), String> {
+    let len = len as i64;
+    let start = offset.unwrap_or(0);
+    if start < 0 {
+        return Err(format!("offset {start} is negative"));
+    }
+    if start > len {
+        return Err(format!("offset {start} is past the end of the file"));
+    }
+    let end = match length {
+        None | Some(-1) | Some(0xFFFF_FFFF) => len,
+        Some(n) if n < 0 => return Err(format!("length {n} is negative")),
+        Some(n) => {
+            let end = start + n;
+            if end > len {
+                return Err(format!("offset {start} and length {n} run past the end of the file"));
+            }
+            end
+        }
+    };
+    Ok((start as usize, end as usize))
+}
+
 /// If `base` names a real 68000 mnemonic that this front-end deliberately does
 /// not implement yet, name the family for the diagnostic; else `None`
 /// (genuinely unrecognized). Nothing remains out of scope — `movem`/`movep`
@@ -14157,6 +14279,66 @@ fn m68k_cond(w: &str) -> Option<M68kCond> {
 /// family.
 fn m68k_out_of_scope(_base: &str) -> Option<&'static str> {
     None
+}
+
+/// The refusal for a size suffix asl refuses on a mnemonic with a fixed size,
+/// or `None` when the suffix (or its absence) is one asl accepts. `base` is
+/// the mnemonic as written, for the message. Measured on the pinned asl
+/// (probes in `docs/superpowers/notes/2026-09-27-as-author-forms-exact-probes/`):
+///
+/// - `swap`: bare and `.l` assemble (`4840`); `.b`, `.w` and `.s` are `error
+///   #1130: invalid operand size` (`swap_b`, `swap_w`, `swap_s`).
+/// - `reset`, `rtr`, `trapv`, `stop`, `illegal`: any suffix is `error #1100:
+///   useless attribute` (`*_w`, `rtr_l`, `stop_l`).
+/// - `unlk`: any suffix is `#1130` (`unlk_w`, `unlk_l`).
+/// - `link`: `.w` assembles, the same bytes as bare; `.b`, `.l` and `.s` are
+///   refused (`link_b`, `link_l`, `link_s`).
+/// - `chk`: `.w` assembles; `.b` and `.s` are `#1130` (`chk_b`, `chk_s`).
+///   `chk.l` is refused HERE although asl assembles it (`4300`) under `cpu
+///   68000`: that word is the MC68020's `chk.l`, which a 68000 does not
+///   decode, so emitting it would be a program that traps on the target.
+fn m68k_suffix_refusal(
+    mnemonic: M68kMnemonic,
+    base: &str,
+    suffix: Option<M68kSize>,
+) -> Option<String> {
+    use M68kMnemonic::*;
+    let suffix = suffix?;
+    let written = |c: char| format!("`{base}.{c}`");
+    let letter = match suffix {
+        M68kSize::B => 'b',
+        M68kSize::W => 'w',
+        M68kSize::L => 'l',
+        M68kSize::S => 's',
+    };
+    match mnemonic {
+        Swap if suffix != M68kSize::L => Some(format!(
+            "{} is refused, as asl refuses it (invalid operand size): `swap` exchanges \
+             the two halves of a data register and has no size field, write `{base}`",
+            written(letter)
+        )),
+        Reset | Rtr | Trapv | Stop | Illegal | Unlk => Some(format!(
+            "{} is refused, as asl refuses it: `{base}` has no size field, write `{base}` \
+             with no suffix",
+            written(letter)
+        )),
+        Link if suffix != M68kSize::W => Some(format!(
+            "{} is refused, as asl refuses it: `link` is word only on the 68000, write \
+             `{base}` or `{base}.w`",
+            written(letter)
+        )),
+        Chk if suffix == M68kSize::L => Some(format!(
+            "{} is the MC68020's long form, which a 68000 does not decode: the 68000 \
+             has only `chk.w`",
+            written(letter)
+        )),
+        Chk if suffix != M68kSize::W => Some(format!(
+            "{} is refused, as asl refuses it (invalid operand size): the 68000 has only \
+             `chk.w`",
+            written(letter)
+        )),
+        _ => None,
+    }
 }
 /// The default size for a bare `move` whose operand list names one of the
 /// 68000's non-EA special registers.
@@ -14174,6 +14356,22 @@ fn m68k_out_of_scope(_base: &str) -> Option<&'static str> {
 /// `move #$2700,sr` = `46FC 2700`, `move a6,usp` = `4E66`). The suffixed
 /// spellings are unaffected: `suffix_size` wins.
 fn m68k_special_reg_size(m: M68kMnemonic, atoms: &[OperandAtom]) -> Option<M68kSize> {
+    // `andi`/`ori`/`eori` to `ccr` are byte ops and to `sr` word ops, and each
+    // has exactly one legal size, so asl takes the bare spelling: `andi
+    // #$FE,ccr` = `023C 00FE`, `ori #$0700,sr` = `007C 0700` (probes
+    // `andi_ccr` .. `eori_sr`).
+    if matches!(m, M68kMnemonic::Andi | M68kMnemonic::Ori | M68kMnemonic::Eori) {
+        return match atoms.last() {
+            Some(OperandAtom::Value(Expr::Sym(name))) => {
+                match name.to_ascii_lowercase().as_str() {
+                    "ccr" => Some(M68kSize::B),
+                    "sr" => Some(M68kSize::W),
+                    _ => None,
+                }
+            }
+            _ => None,
+        };
+    }
     if m != M68kMnemonic::Move {
         return None;
     }
@@ -14213,6 +14411,14 @@ fn m68k_default_size(m: M68kMnemonic) -> Option<M68kSize> {
         Lea | Pea => Some(M68kSize::L),
         Swap | Nop | Rts | Rte | Tas | Trap => Some(M68kSize::W),
         Jmp | Jsr => Some(M68kSize::W),
+        // Single-size forms with no size field, the same shape as `nop`/`trap`:
+        // `link` is word-only on the 68000 (asl: `link a6,#-8` = `4E56 FFF8`,
+        // the same as `link.w`), and the rest take no suffix at all.
+        // `chk` is deliberately absent: it is word-only too, but so are
+        // `muls`/`mulu`/`divs`/`divu`, which this front-end also refuses
+        // unsuffixed, and the unsuffixed-default question is open for all of
+        // them together.
+        Link | Unlk | Reset | Rtr | Trapv | Stop | Illegal => Some(M68kSize::W),
         // Bit ops (`btst`/`bset`/`bclr`) carry NO suffix in real 68k syntax:
         // the operation size is implicit in the destination (long for a `Dn`
         // target, byte for a memory target) and the encoder (`encode_bit`)
@@ -14518,6 +14724,10 @@ fn refine_m68k_mnemonic(mnemonic: M68kMnemonic, ops: &[M68kOperand]) -> M68kMnem
         (Move, [M68kOperand::Usp, _]) => MoveFromUsp,
         (Andi, [_, M68kOperand::Ccr]) => AndiCcr,
         (Ori, [_, M68kOperand::Ccr]) => OriCcr,
+        (Eori, [_, M68kOperand::Ccr]) => EoriCcr,
+        (Andi, [_, M68kOperand::Sr]) => AndiSr,
+        (Ori, [_, M68kOperand::Sr]) => OriSr,
+        (Eori, [_, M68kOperand::Sr]) => EoriSr,
         // An immediate source into a MEMORY destination on the ALU forms is
         // asl's spelling of the corresponding `xxxi` immediate instruction:
         // `cmp #imm,(abs)` ≡ `cmpi`, `and #imm,(abs)` ≡ `andi`, etc. (byte-exact
@@ -14529,10 +14739,23 @@ fn refine_m68k_mnemonic(mnemonic: M68kMnemonic, ops: &[M68kOperand]) -> M68kMnem
         // `cmpa` (probe `probe_cmpa` 2026-07-05: `cmp.l a0,a1` == `cmpa.l a0,a1`
         // == `B3C8`). Only `debugger.asm`'s `assert` macro (`cmp.ATTRIBUTE
         // dest,src` with an An `dest`) exercises this — latent until __DEBUG__
-        // (M1.D T5). `add`/`sub` have the analogous `adda`/`suba` aliases, but no
-        // An-dest form of them appears in either build, so they are left to fail
-        // loud if one ever does (never silently mis-encoded).
+        // (M1.D T5).
         (Cmp, [_, M68kOperand::An(_)]) => Cmpa,
+        // `add`/`sub` with an address-register destination are asl's spellings
+        // of `adda`/`suba`, for every source mode: `add.w d0,a1` = `D2C0`,
+        // `add.l d0,a1` = `D3C0`, `add.w (a0),a1` = `D2D0`, `add.w #1,a1` =
+        // `D2FC 0001`, `sub.w d0,a1` = `92C0` (probes `add_*_an`, `sub_*_an`).
+        // The ISA refuses `add Dn,An` itself, loud, because its `Dn,<ea>` arm
+        // would otherwise emit an ADDX word; this rewrite is the AS front-end's
+        // alone, and `.emp` keeps that refusal. `.b` still refuses, in the
+        // encoder (`adda` is word/long only), as asl refuses it.
+        (Add, [_, M68kOperand::An(_)]) => Adda,
+        (Sub, [_, M68kOperand::An(_)]) => Suba,
+        // `eor #imm,Dn` is asl's spelling of `eori` (`eor.w #1,d0` = `0A40 0001`,
+        // probes `eor_*_imm_dn`): EOR has no `<ea>,Dn` form, so an immediate
+        // source can only mean the immediate instruction. The memory-destination
+        // case is the arm below.
+        (Eor, [M68kOperand::Imm(_), M68kOperand::Dn(_)]) => Eori,
         (And, [M68kOperand::Imm(_), d]) if is_mem_dest(d) => Andi,
         (Or, [M68kOperand::Imm(_), d]) if is_mem_dest(d) => Ori,
         (Add, [M68kOperand::Imm(_), d]) if is_mem_dest(d) => Addi,
@@ -15109,10 +15332,16 @@ mod tests {
     }
 
     /// Address-register-destination ALU hygiene (effects-P2 corruption fix,
-    /// 2026-08-12). End-to-end: `add/sub dN,aM` must FAIL to assemble (they alias
-    /// ADDX/SUBX — `D549`-style silent memory corruption), matching this file's
-    /// stated "left to fail loud" intent for add/sub. `cmp` An-dest is asl's `cmpa`
-    /// spelling (promoted). The explicit `adda`/`suba`/`cmpa` spellings assemble.
+    /// 2026-08-12). `add/sub dN,aM` must never reach the ISA's `Dn,<ea>` arm,
+    /// which aliases ADDX/SUBX (`D549`-style silent memory corruption). On the
+    /// AS route they are asl's spellings of `adda`/`suba` and emit exactly those
+    /// words: `add.w d2,a1` = `D2C2`, `sub.l d0,a1` = `93C0` (asl_run, md5
+    /// `61e67256`, exit 0, probes `add_w_d2_a1`/`sub_l_dn_an` in
+    /// `docs/superpowers/notes/2026-09-27-as-author-forms-exact-probes/`). The
+    /// ISA itself still refuses them, and `.emp` reaches that refusal
+    /// (`sigil-frontend-emp/tests/as_author_forms_stay_off_emp.rs`). `cmp` An-dest
+    /// is asl's `cmpa` spelling. The explicit `adda`/`suba`/`cmpa` spellings
+    /// assemble.
     #[test]
     fn alu_address_register_destination_spelling_probes() {
         let head = "        cpu 68000\n        padding off\n        phase 0\n";
@@ -15122,11 +15351,9 @@ mod tests {
         assert_eq!(image(&format!("{head}        cmpa.l a0,a1\n")), vec![0xB3, 0xC8]);
         // `cmp.l a0,a1` promotes to cmpa (asl parity — the debugger `assert` macro).
         assert_eq!(image(&format!("{head}        cmp.l a0,a1\n")), vec![0xB3, 0xC8]);
-        // `add.w dN,aM` / `sub` now FAIL LOUD (were silent ADDX garbage).
-        assert!(run(&format!("{head}        add.w d2,a1\n"), &Options::default()).is_err(),
-                "add.w d2,a1 must fail to assemble (needs adda)");
-        assert!(run(&format!("{head}        sub.l d0,a1\n"), &Options::default()).is_err(),
-                "sub.l d0,a1 must fail to assemble (needs suba)");
+        // `add.w dN,aM` / `sub` are adda/suba, asl's bytes, never an ADDX/SUBX word.
+        assert_eq!(image(&format!("{head}        add.w d2,a1\n")), vec![0xD2, 0xC2]);
+        assert_eq!(image(&format!("{head}        sub.l d0,a1\n")), vec![0x93, 0xC0]);
     }
 
     /// Every `EquSym` named `name` across all sections of an assembled module

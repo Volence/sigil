@@ -75,6 +75,22 @@ use std::collections::{BTreeMap, BTreeSet};
 ///
 /// - `subx` / `negx`: aeon's multi-word arithmetic only adds.
 /// - `abcd` / `sbcd` / `nbcd`: aeon keeps no BCD values.
+///
+/// The eleven below arrived together for hack authors writing new code in a
+/// disassembly (2026-09-27, `docs/superpowers/notes/2026-09-27-as-author-forms-exact-probes/`).
+/// None of them had an encoding before, so no shipped shape could emit one,
+/// and `.emp` has no spelling for any of them (`.emp` spells `eori`/`andi`/`ori`
+/// to `ccr`/`sr` as the plain mnemonic, which its lowering does not refine to
+/// these). Their coverage is the asl-probe tests in `as_author_forms.rs`, the
+/// decoder's `author_forms_lines_decode_to_their_instruction` and the capstone
+/// sweep.
+///
+/// - `chk` / `trapv`: aeon raises no bounds or overflow traps.
+/// - `link` / `unlk`: aeon keeps no stack frames through a frame pointer.
+/// - `reset` / `stop`: aeon never resets the peripherals or halts the CPU.
+/// - `rtr`: aeon returns with `rts`/`rte`, never restoring CCR from the stack.
+/// - `eori-ccr` / `andi-sr` / `ori-sr` / `eori-sr`: aeon sets and clears carry
+///   with `andi-ccr`/`ori-ccr` and masks interrupts with `move-to-sr`.
 const NOT_IN_STREAM: &[&str] = &[
     "illegal",
     "bchg",
@@ -89,6 +105,17 @@ const NOT_IN_STREAM: &[&str] = &[
     "abcd",
     "sbcd",
     "nbcd",
+    "chk",
+    "trapv",
+    "link",
+    "unlk",
+    "reset",
+    "stop",
+    "rtr",
+    "eori-ccr",
+    "andi-sr",
+    "ori-sr",
+    "eori-sr",
 ];
 
 #[test]

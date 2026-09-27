@@ -12,4 +12,3 @@ p10_cpu_68040	unsupported processor `68040`
 p10_cpu_68332	unsupported processor `68332`
 p23c_oddpc_68020	unsupported processor `68020`
 s01_sigil_refuses_unsuffixed	instruction needs an explicit size suffix
-s02_sigil_refuses_chk	`chk` is not a recognized 68000 mnemonic

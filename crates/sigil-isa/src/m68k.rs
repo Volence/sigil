@@ -45,8 +45,14 @@ pub enum Mnemonic {
     MoveToSr, MoveFromSr, // move.w <ea>,sr / move.w sr,<ea>
     MoveToCcr,            // move.w <ea>,ccr (there is no move-FROM-ccr on the 68000)
     AndiCcr, OriCcr,      // andi.b #imm,ccr / ori.b #imm,ccr
+    EoriCcr,              // eori.b #imm,ccr
+    AndiSr, OriSr, EoriSr, // andi.w / ori.w / eori.w #imm,sr (privileged)
     MoveToUsp, MoveFromUsp, // move.l An,usp / move.l usp,An
     Exg,                  // exg.l Rx,Ry — the three register-pair forms
+    Chk,                  // chk.w <ea>,Dn (the 68000 has only the word form)
+    Link, Unlk,           // link An,#d16 / unlk An
+    Reset, Rtr, Trapv,    // fixed no-operand words
+    Stop,                 // stop #imm16 (privileged)
 }
 
 /// Does this mnemonic WRITE its last operand when that operand is a register —
@@ -81,12 +87,12 @@ pub enum Mnemonic {
 /// - `Subx`/`Abcd`/`Sbcd` → `true`, the same shape as `Addx`; `Negx`/`Nbcd` →
 ///   `true`: their single operand is the destination.
 ///
-/// Mnemonics NOT YET in this enum but named by the spec — `link`/`unlk` (write
-/// `An` + `sp`) are "covered by construction": when one is added to
-/// `Mnemonic`, this match stops compiling and forces its classification HERE.
-/// `link`/`unlk` write registers NOT expressible as "the last operand" and
-/// additionally need an operand-shape arm in the front-end's
-/// `instr_written_regs` (the doc there records this).
+/// - `Link` → `false` and `Unlk` → `true`: `link An,#d` writes `An` (its FIRST
+///   operand) and `sp`; `unlk An` writes `An` (its only operand) and `sp`. The
+///   `sp` write, and `link`'s `An`, are not expressible as "the last operand",
+///   so a front-end that lints register writes needs an operand-shape arm for
+///   both. The `.emp` front-end has no spelling for either, so its
+///   `instr_written_regs` carries no such arm.
 ///
 /// `Exg` is the one variant here whose `true` is INCOMPLETE by construction:
 /// `exg Rx,Ry` writes BOTH registers, and the last-operand rule sees only `Ry`.
@@ -126,7 +132,20 @@ pub fn writes_last_operand(m: Mnemonic) -> bool {
         | Rte | Trap | Illegal | Bra | Bsr | Bcc(_) | Dbcc(_) | Movem
         // `MoveToUsp`/`MoveToCcr` write USP/CCR, neither a general-purpose
         // register the clobber lint tracks.
-        | MoveToSr | MoveToCcr | MoveToUsp | AndiCcr | OriCcr => false,
+        | MoveToSr | MoveToCcr | MoveToUsp | AndiCcr | OriCcr
+        // The remaining SR/CCR immediates write SR/CCR only.
+        | EoriCcr | AndiSr | OriSr | EoriSr
+        // `chk` reads its operands and traps; `reset`/`rtr`/`trapv`/`stop`
+        // write no general-purpose register (`rtr` pops CCR and PC).
+        | Chk | Reset | Rtr | Trapv | Stop
+        // `link An,#d` writes An and SP, and An is its FIRST operand, so the
+        // last-operand rule cannot see it: this is the operand-shape case the
+        // doc above names, and a consumer that lints register writes must
+        // model it itself.
+        | Link => false,
+        // `unlk An` writes its only operand (and SP, which the rule cannot
+        // see, as for `link`).
+        Unlk => true,
     }
 }
 
@@ -262,14 +281,18 @@ fn encode_dispatch(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
         | Mnemonic::Bchg => encode_bit(inst),
         Mnemonic::Clr | Mnemonic::Neg | Mnemonic::Not | Mnemonic::Tst
         | Mnemonic::Tas | Mnemonic::Scc(_) => encode_single_ea(inst),
-        Mnemonic::AndiCcr | Mnemonic::OriCcr => encode_ccr_imm(inst),
+        Mnemonic::AndiCcr | Mnemonic::OriCcr | Mnemonic::EoriCcr
+        | Mnemonic::AndiSr | Mnemonic::OriSr | Mnemonic::EoriSr => encode_ccr_imm(inst),
+        Mnemonic::Chk => encode_chk(inst),
         Mnemonic::MoveToSr | Mnemonic::MoveFromSr => encode_move_sr(inst),
         Mnemonic::MoveToCcr => encode_move_to_ccr(inst),
         Mnemonic::MoveToUsp | Mnemonic::MoveFromUsp => encode_move_usp(inst),
         Mnemonic::Exg => encode_exg(inst),
         Mnemonic::Jmp | Mnemonic::Jsr | Mnemonic::Lea | Mnemonic::Pea
         | Mnemonic::Nop | Mnemonic::Rts | Mnemonic::Rte | Mnemonic::Trap
-        | Mnemonic::Swap | Mnemonic::Ext | Mnemonic::Illegal => encode_control(inst),
+        | Mnemonic::Swap | Mnemonic::Ext | Mnemonic::Illegal
+        | Mnemonic::Reset | Mnemonic::Rtr | Mnemonic::Trapv | Mnemonic::Stop
+        | Mnemonic::Link | Mnemonic::Unlk => encode_control(inst),
         Mnemonic::Bra | Mnemonic::Bsr | Mnemonic::Bcc(_) => encode_branch(inst),
         Mnemonic::Dbcc(_) => encode_dbcc(inst),
         Mnemonic::Movem => encode_movem(inst),
@@ -540,26 +563,99 @@ fn encode_alu_imm(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
     Ok(out)
 }
 
-/// Encode `andi.b #imm,ccr` (`023C`) / `ori.b #imm,ccr` (`003C`) + one imm word.
+/// Encode the immediate-to-CCR and immediate-to-SR forms: one fixed opcode
+/// word and one immediate extension word.
+///
+/// | form | opcode | size |
+/// |---|---|---|
+/// | `ori.b #imm,ccr` | `003C` | byte |
+/// | `andi.b #imm,ccr` | `023C` | byte |
+/// | `eori.b #imm,ccr` | `0A3C` | byte |
+/// | `ori.w #imm,sr` | `007C` | word |
+/// | `andi.w #imm,sr` | `027C` | word |
+/// | `eori.w #imm,sr` | `0A7C` | word |
+///
+/// The CCR forms store the immediate in the low byte of the extension word.
+/// The SR forms are WORD-ONLY and police the size before any byte is built,
+/// for the reason `encode_move_sr` gives: a wider size would imply a wider
+/// immediate the CPU does not read as one. `EoriCcr` is byte-only for the same
+/// reason. `AndiCcr`/`OriCcr` accept any size and emit the byte form, which is
+/// the contract their existing callers rely on.
 fn encode_ccr_imm(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
+    let (to_sr, opcode): (bool, u16) = match inst.mnemonic {
+        Mnemonic::OriCcr => (false, 0x003C),
+        Mnemonic::AndiCcr => (false, 0x023C),
+        Mnemonic::EoriCcr => (false, 0x0A3C),
+        Mnemonic::OriSr => (true, 0x007C),
+        Mnemonic::AndiSr => (true, 0x027C),
+        Mnemonic::EoriSr => (true, 0x0A7C),
+        _ => unreachable!(),
+    };
+    let target = if to_sr { Operand::Sr } else { Operand::Ccr };
     let imm = match inst.ops.as_slice() {
-        [Operand::Imm(v), Operand::Ccr] => *v,
+        [Operand::Imm(v), t] if *t == target => *v,
         _ => {
             return Err(IsaError::UnsupportedForm(format!(
-                "{:?} requires #imm,ccr operands, got {:?}",
-                inst.mnemonic, inst.ops
+                "{:?} requires #imm,{} operands, got {:?}",
+                inst.mnemonic,
+                if to_sr { "sr" } else { "ccr" },
+                inst.ops
             )))
         }
     };
-    let opcode: u16 = match inst.mnemonic {
-        Mnemonic::AndiCcr => 0x023C,
-        Mnemonic::OriCcr => 0x003C,
-        _ => unreachable!(),
-    };
-    let imm_word = (imm as u16) & 0x00FF;
+    match inst.mnemonic {
+        Mnemonic::OriSr | Mnemonic::AndiSr | Mnemonic::EoriSr if inst.size != Size::W => {
+            return Err(IsaError::UnsupportedForm(format!(
+                "{:?} is word only (.w), got {:?}",
+                inst.mnemonic, inst.size
+            )))
+        }
+        Mnemonic::EoriCcr if inst.size != Size::B => {
+            return Err(IsaError::UnsupportedForm(format!(
+                "EoriCcr is byte only (.b), got {:?}",
+                inst.size
+            )))
+        }
+        _ => {}
+    }
+    let imm_word = if to_sr { imm as u16 } else { (imm as u16) & 0x00FF };
     let mut out = Vec::with_capacity(4);
     out.extend_from_slice(&opcode.to_be_bytes());
     out.extend_from_slice(&imm_word.to_be_bytes());
+    Ok(out)
+}
+
+/// Encode `chk.w <ea>,Dn` = `0x4180 | (dn<<9) | ea` + the source EA's extension
+/// words. The 68000 has only the word form (the `.l` form, opmode 100, is an
+/// MC68020 addition), and the source is any DATA mode.
+fn encode_chk(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
+    let (src, dn) = match inst.ops.as_slice() {
+        [src, Operand::Dn(n)] => (src, (n & 0b111) as u16),
+        [_, other] => {
+            return Err(IsaError::UnsupportedForm(format!(
+                "chk requires a Dn destination, got {other:?}"
+            )))
+        }
+        _ => {
+            return Err(IsaError::OperandCount(format!(
+                "chk expects 2 operands, got {}",
+                inst.ops.len()
+            )))
+        }
+    };
+    if inst.size != Size::W {
+        return Err(IsaError::UnsupportedForm(format!(
+            "chk is word only (.w) on the 68000, got {:?}",
+            inst.size
+        )));
+    }
+    let (ea_mode, ea_reg, ea_ext) = encode_ea(src, EaSet::DATA, Size::W)?;
+    let word: u16 = 0x4180 | (dn << 9) | ((ea_mode as u16) << 3) | (ea_reg as u16);
+    let mut out = Vec::with_capacity(2 + 2 * ea_ext.len());
+    out.extend_from_slice(&word.to_be_bytes());
+    for w in ea_ext {
+        out.extend_from_slice(&w.to_be_bytes());
+    }
     Ok(out)
 }
 
@@ -1066,6 +1162,9 @@ fn encode_single_ea(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
 /// - `trap #n`=`0x4E40 | (n & 0xF)`; `n` must be an `Imm` in `0..=15`.
 /// - `swap Dn`=`0x4840 | dn` (shares its base word with `pea`; dispatched by mnemonic).
 /// - `ext.w Dn`=`0x4880 | dn`, `ext.l Dn`=`0x48C0 | dn`.
+/// - Fixed no-operand words: `reset`=`0x4E70`, `trapv`=`0x4E76`, `rtr`=`0x4E77`.
+/// - `link An,#d16`=`0x4E50 | an` + d16; `unlk An`=`0x4E58 | an`;
+///   `stop #imm16`=`0x4E72` + imm16.
 fn encode_control(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
     // No-operand fixed words first.
     let fixed: Option<u16> = match inst.mnemonic {
@@ -1073,6 +1172,9 @@ fn encode_control(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
         Mnemonic::Rts => Some(0x4E75),
         Mnemonic::Rte => Some(0x4E73),
         Mnemonic::Illegal => Some(0x4AFC),
+        Mnemonic::Reset => Some(0x4E70),
+        Mnemonic::Trapv => Some(0x4E76),
+        Mnemonic::Rtr => Some(0x4E77),
         _ => None,
     };
     if let Some(word) = fixed {
@@ -1086,7 +1188,36 @@ fn encode_control(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
         return Ok(word.to_be_bytes().to_vec());
     }
 
-    // `lea` is the only two-operand form.
+    // `link An,#d16` = `0x4E50 | an` + the displacement word. The stored field
+    // is 16 bits; the front-end validates the range (see the module contract).
+    if inst.mnemonic == Mnemonic::Link {
+        let (an, d) = match inst.ops.as_slice() {
+            [Operand::An(n), Operand::Imm(d)] => ((n & 0b111) as u16, *d),
+            [a, b] => {
+                return Err(IsaError::UnsupportedForm(format!(
+                    "link requires An,#imm operands, got {a:?},{b:?}"
+                )))
+            }
+            _ => {
+                return Err(IsaError::OperandCount(format!(
+                    "link expects 2 operands, got {}",
+                    inst.ops.len()
+                )))
+            }
+        };
+        if inst.size != Size::W {
+            return Err(IsaError::UnsupportedForm(format!(
+                "link is word only (.w) on the 68000, got {:?}",
+                inst.size
+            )));
+        }
+        let mut out = Vec::with_capacity(4);
+        out.extend_from_slice(&(0x4E50 | an).to_be_bytes());
+        out.extend_from_slice(&(d as u16).to_be_bytes());
+        return Ok(out);
+    }
+
+    // `lea` is the only other two-operand form.
     if inst.mnemonic == Mnemonic::Lea {
         let (src, an) = match inst.ops.as_slice() {
             [src, Operand::An(n)] => (src, (n & 0b111) as u16),
@@ -1194,6 +1325,34 @@ fn encode_control(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
                 }
             };
             Ok((base | dn).to_be_bytes().to_vec())
+        }
+        // `unlk An` = `0x4E58 | an`.
+        Mnemonic::Unlk => {
+            let an = match op {
+                Operand::An(n) => (n & 0b111) as u16,
+                other => {
+                    return Err(IsaError::UnsupportedForm(format!(
+                        "unlk requires An operand, got {other:?}"
+                    )))
+                }
+            };
+            Ok((0x4E58 | an).to_be_bytes().to_vec())
+        }
+        // `stop #imm16` = `0x4E72` + the immediate word, which the CPU loads
+        // into SR.
+        Mnemonic::Stop => {
+            let v = match op {
+                Operand::Imm(v) => *v,
+                other => {
+                    return Err(IsaError::UnsupportedForm(format!(
+                        "stop requires #imm operand, got {other:?}"
+                    )))
+                }
+            };
+            let mut out = Vec::with_capacity(4);
+            out.extend_from_slice(&0x4E72u16.to_be_bytes());
+            out.extend_from_slice(&(v as u16).to_be_bytes());
+            Ok(out)
         }
         _ => unreachable!(),
     }
@@ -1801,8 +1960,11 @@ pub fn family_name(m: Mnemonic) -> &'static str {
         MoveToSr => "move-to-sr", MoveFromSr => "move-from-sr",
         MoveToCcr => "move-to-ccr",
         MoveToUsp => "move-to-usp", MoveFromUsp => "move-from-usp",
-        AndiCcr => "andi-ccr", OriCcr => "ori-ccr",
+        AndiCcr => "andi-ccr", OriCcr => "ori-ccr", EoriCcr => "eori-ccr",
+        AndiSr => "andi-sr", OriSr => "ori-sr", EoriSr => "eori-sr",
         Exg => "exg",
+        Chk => "chk", Link => "link", Unlk => "unlk",
+        Reset => "reset", Rtr => "rtr", Trapv => "trapv", Stop => "stop",
     }
 }
 
@@ -1826,7 +1988,8 @@ pub const ALL_FAMILY_NAMES: &[&str] = &[
     "subx", "abcd", "sbcd", "negx", "nbcd",
     "move-to-sr", "move-from-sr", "move-to-ccr",
     "move-to-usp", "move-from-usp",
-    "andi-ccr", "ori-ccr", "exg",
+    "andi-ccr", "ori-ccr", "eori-ccr", "andi-sr", "ori-sr", "eori-sr", "exg",
+    "chk", "link", "unlk", "reset", "rtr", "trapv", "stop",
 ];
 
 /// Encode-stream capture: a process-global tap on [`encode`] for the round-trip
@@ -1997,6 +2160,7 @@ mod vocab_tests {
             Movem, Movep, Addx, Cmpm, MoveToSr, MoveFromSr, AndiCcr, OriCcr,
             Roxl, Roxr, Bchg, MoveToCcr, MoveToUsp, MoveFromUsp, Exg,
             Subx, Abcd, Sbcd, Negx, Nbcd,
+            EoriCcr, AndiSr, OriSr, EoriSr, Chk, Link, Unlk, Reset, Rtr, Trapv, Stop,
         ];
         let reached: std::collections::BTreeSet<&str> =
             every.iter().map(|m| family_name(*m)).collect();
@@ -2030,6 +2194,7 @@ mod vocab_tests {
         // The named U1 escapees now covered by the ISA model.
         assert!(writes_last_operand(Movep), "movep (load form writes Dn)");
         assert!(writes_last_operand(Addx), "addx (Dy,Dx writes Dx)");
+        assert!(writes_last_operand(Unlk), "unlk writes its only operand, An");
         // The set-cc family (every condition).
         for c in [Cond::T, Cond::Eq, Cond::Ne, Cond::Cs, Cond::Vc, Cond::Le] {
             assert!(writes_last_operand(Scc(c)), "s{c:?} should be a write-form");
@@ -2038,6 +2203,10 @@ mod vocab_tests {
         for m in [
             Cmp, Cmpa, Cmpi, Cmpm, Btst, Tst, Jmp, Jsr, Pea, Nop, Rts, Rte,
             Trap, Illegal, Bra, Bsr, MoveToSr, AndiCcr, OriCcr,
+            EoriCcr, AndiSr, OriSr, EoriSr, Chk, Reset, Rtr, Trapv, Stop,
+            // link writes its FIRST operand, which the last-operand rule
+            // cannot express.
+            Link,
             // Movem/Dbcc are modeled by the front-end's operand-shape effects,
             // not the last-operand predicate.
             Movem,

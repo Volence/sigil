@@ -1,0 +1,126 @@
+add_b_dn_an      exit 1  REFUSED  add_b_dn_an.asm(2):2: error: unsupported form: Add.B with an address-register destination is not encodable, write `adda` (address arithmetic
+add_l_dn_an      exit 1  REFUSED  add_l_dn_an.asm(2):2: error: unsupported form: Add.L with an address-register destination is not encodable, write `adda` (address arithmetic
+add_w_an_an      exit 1  REFUSED  add_w_an_an.asm(2):2: error: unsupported form: Add requires a Dn operand, got An(0),An(1)
+add_w_d2_a1      exit 1  REFUSED  add_w_d2_a1.asm(2):2: error: unsupported form: Add.W with an address-register destination is not encodable, write `adda` (address arithmetic
+add_w_dn_an      exit 1  REFUSED  add_w_dn_an.asm(2):2: error: unsupported form: Add.W with an address-register destination is not encodable, write `adda` (address arithmetic
+add_w_dn_sp      exit 1  REFUSED  add_w_dn_sp.asm(2):2: error: unsupported form: Add.W with an address-register destination is not encodable, write `adda` (address arithmetic
+add_w_imm_an     exit 1  REFUSED  add_w_imm_an.asm(2):2: error: unsupported form: Add requires a Dn operand, got Imm(1),An(1)
+add_w_mem_an     exit 1  REFUSED  add_w_mem_an.asm(2):2: error: unsupported form: Add requires a Dn operand, got Ind(0),An(1)
+andi_b_ccr       exit 0   023C00FE
+andi_b_sr        exit 1  REFUSED  andi_b_sr.asm(2):2: error: unsupported form: sr is not a general EA
+andi_ccr         exit 1  REFUSED  andi_ccr.asm(2):2: error: instruction needs an explicit size suffix (.b/.w/.l)
+andi_ccr_big     exit 1  REFUSED  andi_ccr_big.asm(2):2: error: instruction needs an explicit size suffix (.b/.w/.l)
+andi_ccr_up      exit 1  REFUSED  andi_ccr_up.asm(2):2: error: instruction needs an explicit size suffix (.b/.w/.l)
+andi_l_sr        exit 1  REFUSED  andi_l_sr.asm(2):2: error: unsupported form: sr is not a general EA
+andi_sr          exit 1  REFUSED  andi_sr.asm(2):2: error: instruction needs an explicit size suffix (.b/.w/.l)
+andi_sr_big      exit 1  REFUSED  andi_sr_big.asm(2):2: error: instruction needs an explicit size suffix (.b/.w/.l)
+andi_sr_ff       exit 1  REFUSED  andi_sr_ff.asm(2):2: error: instruction needs an explicit size suffix (.b/.w/.l)
+andi_w_ccr       exit 0   023C00FE
+andi_w_ccr_up    exit 0   023C00FE
+andi_w_sr        exit 1  REFUSED  andi_w_sr.asm(2):2: error: unsupported form: sr is not a general EA
+andi_w_sr_ff     exit 1  REFUSED  andi_w_sr_ff.asm(2):2: error: unsupported form: sr is not a general EA
+and_w_dn_an      exit 1  REFUSED  and_w_dn_an.asm(2):2: error: unsupported form: And.W with an address-register destination is not encodable, no address-register-destination 
+beq_b            exit 1  REFUSED  beq_b.asm(2):2: error: branch size suffix must be `.s` or `.w`
+beq_s            exit 0   67024E71
+binclude_case    exit 1  REFUSED  binclude_case.asm(2):2: error: BINCLUDE needs a quoted path
+binclude_cmt     exit 1  REFUSED  binclude_cmt.asm(2):2: error: BINCLUDE needs a quoted path
+binclude_dir     exit 1  REFUSED  binclude_dir.asm(2):2: error: BINCLUDE needs a quoted path
+binclude_off     exit 1  REFUSED  binclude_off.asm(2):2: error: BINCLUDE needs a quoted path
+binclude_q_4args exit 0   12345678
+binclude_q       exit 0   12345678
+binclude_q_len0  exit 0   12345678
+binclude_q_lenbig exit 0   12345678
+binclude_q_lenneg2 exit 0   12345678
+binclude_q_lenneg exit 0   12345678
+binclude_q_lenpast exit 0   12345678
+binclude_q_off1  exit 0   12345678
+binclude_q_off   exit 0   12345678
+binclude_q_offend exit 0   12345678
+binclude_q_offexpr exit 0   12345678
+binclude_q_offneg exit 0   12345678
+binclude_q_offpast exit 0   12345678
+binclude_unq     exit 1  REFUSED  binclude_unq.asm(2):2: error: BINCLUDE needs a quoted path
+BINCLUDE_up      exit 1  REFUSED  BINCLUDE_up.asm(2):2: error: BINCLUDE needs a quoted path
+bra_b            exit 1  REFUSED  bra_b.asm(2):2: error: branch size suffix must be `.s` or `.w`
+bra_b_back       exit 1  REFUSED  bra_b_back.asm(3):2: error: branch size suffix must be `.s` or `.w`
+bra_b_far        exit 1  REFUSED  bra_b_far.asm(2):2: error: branch size suffix must be `.s` or `.w`
+bra_b_next       exit 1  REFUSED  bra_b_next.asm(2):2: error: branch size suffix must be `.s` or `.w`
+bra_s_next       exit 1  REFUSED  bra_s_next.asm(2):2: error: bra.s/Bcc.s displacement is 0 in section sec0, a 0x00 byte displacement is the 68000 word-form escape, not a bra
+bsr_b            exit 1  REFUSED  bsr_b.asm(2):2: error: branch size suffix must be `.s` or `.w`
+chk_bare         exit 1  REFUSED  chk_bare.asm(2):2: error: `chk` is not a recognized 68000 mnemonic
+chk_b            exit 1  REFUSED  chk_b.asm(2):2: error: `chk` is not a recognized 68000 mnemonic
+chk_imm          exit 1  REFUSED  chk_imm.asm(2):2: error: `chk` is not a recognized 68000 mnemonic
+chk_l            exit 1  REFUSED  chk_l.asm(2):2: error: `chk` is not a recognized 68000 mnemonic
+chk_s            exit 1  REFUSED  chk_s.asm(2):2: error: `chk` is not a recognized 68000 mnemonic
+chk_w            exit 1  REFUSED  chk_w.asm(2):2: error: `chk` is not a recognized 68000 mnemonic
+chk_w_ind        exit 1  REFUSED  chk_w_ind.asm(2):2: error: `chk` is not a recognized 68000 mnemonic
+dc_absw          exit 1  REFUSED  dc_absw.asm(2):7: error: bad word expression
+eor_b_imm_dn     exit 1  REFUSED  eor_b_imm_dn.asm(2):2: error: unsupported form: eor requires Dn source, got Imm(1)
+eori_b_ccr       exit 1  REFUSED  eori_b_ccr.asm(2):2: error: unsupported form: ccr is not a general EA
+eori_ccr         exit 1  REFUSED  eori_ccr.asm(2):2: error: instruction needs an explicit size suffix (.b/.w/.l)
+eori_l_ccr       exit 1  REFUSED  eori_l_ccr.asm(2):2: error: unsupported form: ccr is not a general EA
+eori_sr          exit 1  REFUSED  eori_sr.asm(2):2: error: instruction needs an explicit size suffix (.b/.w/.l)
+eori_w_sr        exit 1  REFUSED  eori_w_sr.asm(2):2: error: unsupported form: sr is not a general EA
+eor_l_imm_dn     exit 1  REFUSED  eor_l_imm_dn.asm(2):2: error: unsupported form: eor requires Dn source, got Imm(1)
+eor_w_imm_dn     exit 1  REFUSED  eor_w_imm_dn.asm(2):2: error: unsupported form: eor requires Dn source, got Imm(1)
+illegal          exit 1  REFUSED  illegal.asm(2):2: error: `illegal` is not a recognized 68000 mnemonic
+illegal_w        exit 1  REFUSED  illegal_w.asm(2):2: error: `illegal` is not a recognized 68000 mnemonic
+jmp_absl         exit 1  REFUSED  jmp_absl.asm(2):6: error: trailing tokens in operand
+jmp_absw         exit 1  REFUSED  jmp_absw.asm(2):6: error: trailing tokens in operand
+jmp_absw_hi      exit 1  REFUSED  jmp_absw_hi.asm(2):6: error: trailing tokens in operand
+jmp_absw_neg     exit 1  REFUSED  jmp_absw_neg.asm(2):6: error: trailing tokens in operand
+jmp_absw_up      exit 1  REFUSED  jmp_absw_up.asm(2):6: error: trailing tokens in operand
+jmp_expr_w       exit 1  REFUSED  jmp_expr_w.asm(2):6: error: trailing tokens in operand
+jmp_paren_up     exit 1  REFUSED  jmp_paren_up.asm(2):6: error: trailing tokens in operand
+jmp_paren_w      exit 0   4EF81234
+jmp_sym_w        exit 1  REFUSED  jmp_sym_w.asm(3):2: error: unresolved jmp/jsr target in section sec0 references symbol `Foo.w` not defined in this link, expected when compi
+jsr_absw         exit 1  REFUSED  jsr_absw.asm(2):6: error: trailing tokens in operand
+lea_absw         exit 1  REFUSED  lea_absw.asm(2):6: error: trailing tokens in operand
+link             exit 1  REFUSED  link.asm(2):2: error: `link` is not a recognized 68000 mnemonic
+link_b           exit 1  REFUSED  link_b.asm(2):2: error: `link` is not a recognized 68000 mnemonic
+link_big         exit 1  REFUSED  link_big.asm(2):2: error: `link` is not a recognized 68000 mnemonic
+link_dn          exit 1  REFUSED  link_dn.asm(2):2: error: `link` is not a recognized 68000 mnemonic
+link_ffff        exit 1  REFUSED  link_ffff.asm(2):2: error: `link` is not a recognized 68000 mnemonic
+link_l           exit 1  REFUSED  link_l.asm(2):2: error: `link` is not a recognized 68000 mnemonic
+link_min         exit 1  REFUSED  link_min.asm(2):2: error: `link` is not a recognized 68000 mnemonic
+link_neg         exit 1  REFUSED  link_neg.asm(2):2: error: `link` is not a recognized 68000 mnemonic
+link_s           exit 1  REFUSED  link_s.asm(2):2: error: `link` is not a recognized 68000 mnemonic
+link_w           exit 1  REFUSED  link_w.asm(2):2: error: `link` is not a recognized 68000 mnemonic
+move_absl        exit 1  REFUSED  move_absl.asm(2):9: error: trailing tokens in operand
+move_absw        exit 1  REFUSED  move_absw.asm(2):9: error: trailing tokens in operand
+move_absw_dst    exit 1  REFUSED  move_absw_dst.asm(2):12: error: trailing tokens in operand
+move_absw_ffff   exit 1  REFUSED  move_absw_ffff.asm(2):9: error: trailing tokens in operand
+ori_b_sr         exit 1  REFUSED  ori_b_sr.asm(2):2: error: unsupported form: sr is not a general EA
+ori_ccr          exit 1  REFUSED  ori_ccr.asm(2):2: error: instruction needs an explicit size suffix (.b/.w/.l)
+ori_sr           exit 1  REFUSED  ori_sr.asm(2):2: error: instruction needs an explicit size suffix (.b/.w/.l)
+ori_w_sr         exit 1  REFUSED  ori_w_sr.asm(2):2: error: unsupported form: sr is not a general EA
+paren_reg_w      exit 1  REFUSED  paren_reg_w.asm(2):9: error: trailing tokens in operand
+paren_sp_w       exit 1  REFUSED  paren_sp_w.asm(2):9: error: trailing tokens in operand
+reg_space_w      exit 1  REFUSED  reg_space_w.asm(2):6: error: trailing tokens in operand
+reset            exit 1  REFUSED  reset.asm(2):2: error: `reset` is not a recognized 68000 mnemonic
+reset_w          exit 1  REFUSED  reset_w.asm(2):2: error: `reset` is not a recognized 68000 mnemonic
+rtr              exit 1  REFUSED  rtr.asm(2):2: error: `rtr` is not a recognized 68000 mnemonic
+rtr_l            exit 1  REFUSED  rtr_l.asm(2):2: error: `rtr` is not a recognized 68000 mnemonic
+rtr_op           exit 1  REFUSED  rtr_op.asm(2):2: error: `rtr` is not a recognized 68000 mnemonic
+rtr_w            exit 1  REFUSED  rtr_w.asm(2):2: error: `rtr` is not a recognized 68000 mnemonic
+stop             exit 1  REFUSED  stop.asm(2):2: error: `stop` is not a recognized 68000 mnemonic
+stop_big         exit 1  REFUSED  stop_big.asm(2):2: error: `stop` is not a recognized 68000 mnemonic
+stop_dn          exit 1  REFUSED  stop_dn.asm(2):2: error: `stop` is not a recognized 68000 mnemonic
+stop_l           exit 1  REFUSED  stop_l.asm(2):2: error: `stop` is not a recognized 68000 mnemonic
+stop_neg         exit 1  REFUSED  stop_neg.asm(2):2: error: `stop` is not a recognized 68000 mnemonic
+stop_w           exit 1  REFUSED  stop_w.asm(2):2: error: `stop` is not a recognized 68000 mnemonic
+sub_l_dn_an      exit 1  REFUSED  sub_l_dn_an.asm(2):2: error: unsupported form: Sub.L with an address-register destination is not encodable, write `suba` (address arithmetic
+sub_w_dn_an      exit 1  REFUSED  sub_w_dn_an.asm(2):2: error: unsupported form: Sub.W with an address-register destination is not encodable, write `suba` (address arithmetic
+sub_w_imm_an     exit 1  REFUSED  sub_w_imm_an.asm(2):2: error: unsupported form: Sub requires a Dn operand, got Imm(1),An(1)
+swap             exit 0   4840
+swap_b           exit 0   4840
+swap_l           exit 0   4840
+swap_s           exit 0   4840
+swap_w           exit 0   4840
+trapv            exit 1  REFUSED  trapv.asm(2):2: error: `trapv` is not a recognized 68000 mnemonic
+trapv_w          exit 1  REFUSED  trapv_w.asm(2):2: error: `trapv` is not a recognized 68000 mnemonic
+unlk             exit 1  REFUSED  unlk.asm(2):2: error: `unlk` is not a recognized 68000 mnemonic
+unlk_dn          exit 1  REFUSED  unlk_dn.asm(2):2: error: `unlk` is not a recognized 68000 mnemonic
+unlk_l           exit 1  REFUSED  unlk_l.asm(2):2: error: `unlk` is not a recognized 68000 mnemonic
+unlk_sp          exit 1  REFUSED  unlk_sp.asm(2):2: error: `unlk` is not a recognized 68000 mnemonic
+unlk_w           exit 1  REFUSED  unlk_w.asm(2):2: error: `unlk` is not a recognized 68000 mnemonic
