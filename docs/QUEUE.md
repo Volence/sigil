@@ -148,6 +148,58 @@ success; identified as `61e67256` for s1disasm and `0dee1f98` for s2disasm from 
 scratch copies; settled). The notes themselves are historical and were not edited.
 
 
+### AS-REPLACEMENT-STATE: LANDED
+
+- state: **LANDED** 2026-09-27 at merge `6128bb1e`, pushed  size: `M`  project: `SIGIL-AS-REPLACEMENT`
+- Measurement only: `docs/superpowers/notes/2026-09-27-as-replacement-state.md`. Headline: all five stock entry
+  points build byte-identical through sigil's own command; no disassembly's own build script can use sigil as
+  `asl` today. The note's section 8 is the source of the five rows below; re-derive before dispatching any.
+- Overseer re-check at landing: S1 `afe05eee`/524288 and S3K `0658f691`/2097152 rebuilt both ways from fresh
+  archives (s1disasm `f6ece65`, skdisasm `2fcd861`), zlib CRC-32, cmp identical, planted-byte control seen.
+- The first run of this parcel died uncommitted in the 2026-09-27T09:14Z lane restart; its worktree
+  `agent-a83b3b56407567d30` (branch `parcel/as-replacement-state`) holds only scratch and can be pruned.
+
+### AS-DROPIN-ASL-CONTRACT
+
+- state: **next**  size: `M`  project: `SIGIL-AS-REPLACEMENT`
+- Let a disassembly's unmodified `build.lua` run sigil in place of `asl`: accept asl's flags
+  (`-xx -n -q -A -L -U -E -i . -c -D`), write a `.p` the stock `p2bin` accepts, the `-c` share file and the
+  `-E` log. Sized off the shim (5/5 stock ROMs) and the `.p` writer probe (3/3 with p2bin md5 `4f2fff99`),
+  note sections 3 and 8. Measured constraints: records keep emission order, and the run just before each Z80
+  record stays separate. Should also retire both S2 `ACK_DISAGREE` legs (share file), proved by the option
+  sweep through the drop-in.
+- Invocation shape is forced by the goal (the script must not be edited), so it is this lane's call under
+  `d-2`, logged as a notable call when made, not an owner blocker. No `.emp` surface.
+
+### AS-AUTHOR-FORMS-EXACT
+
+- state: **open**  size: `S`  project: `SIGIL-AS-REPLACEMENT`
+- 31 of 167 common 68000 spellings a hack author writes are refused by sigil and accepted by `asl`; the three
+  disassemblies use none, so no corpus test sees it (note section 4). Twenty are plain, plus unquoted
+  `binclude` and refusing `swap.w`. Stage 0: check whether refusing the `adda`/`eori` shorthand was a ruling;
+  if it was, those rows go to the owner.
+
+### AS-UNSIZED-DEFAULTS
+
+- state: **open, owner question**  size: `M`  project: `SIGIL-AS-REPLACEMENT`
+- `asl` silently defaults an unsized instruction to `.w`, accepts bare `ds`, and sizes unsized branches itself;
+  sigil refuses all three (note section 4). Matching `asl` means accepting a silent default in the AS frontend,
+  against this lane's refuse-by-name stance (AS-DEFAULT-CPU ruling). Mechanics exist (`RelaxLadder`); the
+  question is direction, so it is put to the owner before any dispatch.
+
+### AS-DIAG-FATAL-FIRST
+
+- state: **open**  size: `S`  project: `SIGIL-AS-REPLACEMENT`
+- When the source's own `fatal` fires (S3K, a FixMusicAndSFXDataBugs build), sigil prints 563 error lines and
+  the cause is line 468; `asl` prints one (note section 5). Report the `fatal` first and drop the unresolved
+  follow-ons it caused.
+
+### AS-PERF-MEASURE
+
+- state: **open**  size: `S` (measurement)  project: `SIGIL-AS-REPLACEMENT`
+- sigil is 2.0x to 2.5x slower than `asl`+`p2bin` and uses 5x to 18x the memory on the `.asm` route (load 9 to
+  11 at the time, note section 6). No profiler here; per-phase timing is a code change, so measure first.
+
 ### PHASE-ROW-CPU
 
 - state: **open, parked**  size: `S` to `M`  project: `-`  asked by: oracle, 2026-09-27
