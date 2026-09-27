@@ -25,7 +25,7 @@ planted-byte control that `cmp -l` saw as exactly 1 differing byte.
 
 ## 1. What builds, byte-identical, by which entry point (stock settings)
 
-Measured 2026-09-27T09:19Z to 09:19:54Z, load average 6.7 to 10.0 (see section 5 for why timing
+Measured 2026-09-27T09:19Z to 09:19:54Z, load average 6.7 to 10.0 (see section 6 for why timing
 under this load is only indicative).
 
 | corpus | stock build script, stock tools | sigil, direct one command | sigil dropped in as `asl` | sigil behind a two-file shim |
@@ -223,3 +223,132 @@ are 27 more full sigil runs. The first run's "about 2x" reproduces (it measured 
 is installed and the AS route has no phase timing. Build time is the complaint the community
 repeats most (four respondents), so sigil is currently slower on the one axis users named
 first.
+
+## 7. The gap list
+
+"Does sigil build Sonic 1 and Sonic 2" is **yes** for anyone who runs sigil's own one-line
+command: every stock entry point of all three disassemblies, and every documented build option
+the sweep derives, byte-identical, except S2's two share-file legs. The gap is everywhere else a
+user touches:
+
+| # | gap | who hits it | loud or silent | where |
+|---|---|---|---|---|
+| G1 | sigil cannot stand in for `asl` in the corpora's own build scripts: no asl flags, no `.p`, no `.log`, no `-c` share file | every user who swaps the binary, all five scripts | loud (script fails) | sections 1, 3 |
+| G2 | S2 compressed-driver size is not handed back (`fixBugs=1` refused, `improved_sound_driver_compression` 2 bytes wrong) | S2 users flipping either option | `fixBugs` loud; `improved` **silent**, a ROM whose decompressor reads the wrong byte count | section 2 |
+| G3 | 31 common 68000 author spellings refused, 1 accepted that asl refuses | anyone writing new code | loud (refused), `swap.w` silent | section 4 |
+| G4 | a source `fatal` is buried under hundreds of false `unresolved` cascades | anyone whose build fails on a guard | loud but misleading | section 5 |
+| G5 | 2.0x to 2.5x slower than asl+p2bin, 5x to 18x the memory | everyone, on the complaint the community ranks first | n/a | section 6 |
+| G6 | no AS listing (`-L`), which the pipeline leaves beside the ROM for debugging | users who read `sonic.lst` | loud (absent) | section 3 |
+| G7 | `sigil <input.asm> --help` lists `-z` formats `uncompressed, kosinski or saxman-bugged`; it also takes `kosinski-optimised`, `saxman-optimised`, `saxman` (`p2bin_codec.rs`), which the sweep exercised | users reading the help | stale text | this run |
+| G8 | no Windows build (the community notes most of the scene is on Windows) | Windows users | n/a | not measured, section 9 |
+
+## 8. Ranked next-parcel candidates
+
+Ranked by what a disassembly user gains per unit of risk. **Anything marked OWNER changes a
+user-visible spelling or behaviour and goes to the owner before landing.** None of them adds
+`.emp` language surface.
+
+**1. AS-DROPIN-ASL-CONTRACT (closes G1, and should close G2 for build-script users). Size M.**
+Accept the asl flag set `common.lua` passes (`-xx -n -q -A -L -U -E -i <dir> -c -D`, the
+cosmetic ones accepted and ignored, as the shim does), and on that route write `X.p` for the
+stock `p2bin`, `X.h` for `shared` under `-c` (asl's three-line `#define` layout, which `p2bin`
+then extends with `comp_z80_size`), and diagnostics to `X.log` under `-E`. Then one replaced
+file makes all five scripts work, and the stock `p2bin` and `build.lua` do the S2 size patch
+themselves, so both S2 exceptions should become agreements (hypothesis: verify by running the
+switch sweep through the drop-in, which is the acceptance bar, not the five shipped ROMs).
+*Sized off*: the shim (two files, about 60 lines) already reproduces all five stock ROMs through
+the unmodified scripts; the `.p` feasibility probe shows a writer of about 30 lines that the
+stock `p2bin` accepts and that reproduces S1, S2 (with the `.h` round trip) and S3K, once it
+keeps emission order and the run before each Z80 record. *Risk*: record boundaries carry
+meaning to `p2bin` and two such rules are now measured; option legs may show more, which is why
+the sweep is the bar. On this route sigil's own `-z` compressors and header fold are bypassed,
+so identity rests on the stock `p2bin`, which is the point of a drop-in. *Needs from the
+owner* (OWNER): how sigil knows it is being asked to be `asl` (an `argv[0]` of `asl`/`asw`, or
+any asl-only flag, or an explicit `--asl`); that is a user-visible CLI spelling.
+
+**2. AS-AUTHOR-FORMS-EXACT (closes most of G3). Size S.** The encodings asl gives without any
+policy question: the eight missing mnemonics (`chk illegal link unlk reset rtr stop trapv`),
+`.b` as a branch-size synonym for `.s`, `andi/ori/eori` to `ccr`/`sr` with the size implied,
+`add/sub <ea>,An` emitted as `adda/suba` and `eor #imm` as `eori` (asl's own aliasing), a `.w`
+suffix on a literal absolute (`$1234.w`), unquoted `binclude`, and refusing `swap.w`. *Sized
+off*: 20 of the 31 over-refusals plus two probe forms, each with its asl bytes already in
+`logs-isa.txt` from exit-0 runs, so every test has an oracle value and none needs a new rule.
+*Risk*: low; all are new acceptances of shapes sigil refuses today, so no existing byte moves
+(the corpora contain none of them, measured). Not OWNER, unless the `adda`/`eori` aliasing is
+judged a policy question (the frontend today refuses them with a message telling the user to
+write `adda`, which reads as deliberate: if it is a ruling, this item goes OWNER).
+
+**3. AS-UNSIZED-DEFAULTS (the rest of G3). Size M. OWNER.** asl's defaults where the source
+names no size: `.w` for sized operations (`move add addq cmp clr tst ext` in the sweep) and for
+bare `ds`, and relaxation of unsized `Bcc`/`bra`/`bsr` (and `bra.l`, which asl emits as the
+word form). The refusal text today says "Aeon pins branch width, no relaxation", which is
+Aeon's policy spoken by the AS frontend, so lifting it is a behaviour change for the owner.
+*Sized off*: the machinery exists (`Fragment::RelaxLadder`, used by `.emp`'s `jbra`, lowered by
+`resolve_layout`, which the AS route already runs), so the frontend work is wiring; the cost is
+parity. *Risk*: asl chooses widths by its pass loop and sigil by a monotonic fixpoint, and the
+two can disagree; each accepted shape needs asl-probe byte checks, including forward and
+backward targets at the `.s` reach boundary. No aeon byte can move (aeon's AS files cannot
+contain a refused form).
+
+**4. AS-DIAG-FATAL-FIRST (G4). Size S.** When a `fatal` or `error` directive fires, lead with it
+and do not report forward references the stopped pass never reached as unresolved. *Sized off*:
+563 lines against 1 on the S3K leg, and the two-line `fatal2.asm` reproducer. Diagnostic
+ordering and wording, which the autonomy directive's just-do-it clause names. *Risk*: must not
+hide a real unresolved symbol; the discriminator is whether the pass that raised it completed.
+
+**5. AS-PERF-MEASURE (G5). Size S to measure; the fix is unsized until measured.** Phase timing
+on the AS route (front-end passes, layout/relaxation, link, flatten and compression), reported
+per corpus, then a sized follow-up. *Sized off*: 2.0x to 2.5x wall and 5x to 18x RSS against
+asl, with no phase split available (no profiler installed here). This ranks fifth only because
+it cannot be sized yet; for adoption it is the first thing people will measure.
+
+**6. Later, not yet sized**: an AS listing for `-L` (G6; `sigil-link/src/listing.rs` already
+writes the AS symbol-table section for aeon, the line listing does not exist); a Windows build
+and timing (G8); the stale `-z` help text (G7, trivial, can ride with item 1).
+
+**On G2 without item 1**: if the drop-in is not taken, the direct route still needs its own
+answer to the S2 share file, and the three shapes the 2026-09-16 census listed remain (sigil
+patches the immediate itself, sigil writes the share file, or sigil refuses when the hardcoded
+value disagrees). Item 1 makes that question moot for build-script users; the direct route can
+keep refusing `fixBugs` but still writes the `improved=true` ROM silently wrong.
+
+## 9. What this run could not measure, and why
+
+- **Where sigil's time goes.** No `perf`, `valgrind` or `samply` on the machine, no phase timing
+  in the CLI, and adding either is a code change this parcel may not make.
+- **A Windows build.** No `rustup`, no Windows target installed; the three `-sys` crates build C
+  and would need a cross C toolchain.
+- **Whether the ROMs run.** Byte identity to the stock ROM is the only bar used; nothing was run
+  in an emulator (standing rule 1). None needed here: every claim is a byte compare against a
+  stock build.
+- **Other community disassemblies and hacks** (for example ones with their own macros or
+  `-L`-consuming tools): only the three pinned corpora exist on this machine.
+- **The drop-in's behaviour on errors and warnings.** Derived from `common.lua`, not run, since
+  sigil cannot be dropped in.
+
+## 10. Reproduction
+
+Scratch lives in the uncommitted `scratch-r2/` of this parcel's worktree: `phase1.sh` (refs,
+direct, drop-in, shim), `refpin2.sh`, `sweep.sh`, `skflips.sh`, `s2improved.sh`, `pfeas.sh` with
+`prewrite.py` / `prewrite2.py`, `probes/run.sh` and `probes/isa_sweep.py`, `formcount.py`,
+`timing.sh` with `tm.py`; each writes a `logs-*.txt` with an end marker. The first run's
+scratch (`agent-a83b3b56407567d30/scratch/`) was read and copied, never written.
+
+## 11. What in the brief turned out wrong or needs amending
+
+- **"Cite every asl result by md5 `61e67256`" cannot hold for Sonic 2's whole ROM.** That build
+  cannot assemble `s2.asm` (section 1). S2's reference ROM here, like the census before it, comes
+  from S2's own `0dee1f98` build; every per-line value in this note (sections 4 and 5) comes from
+  `61e67256` through `asl_run`.
+- **The two S2 "candidate defects" are not candidates.** Both are acknowledged, adjudicated rows
+  in `switch_matrix_sweep.py`'s `ACK_DISAGREE` (the share-file residual), and the nightly sweep
+  reports them every night.
+- **The first run's `unsized_count.py` zero was vacuous** (a `CPU Z80` line inside `sonic.asm`
+  switches it off for the rest of the file); the corrected census agrees on zero but only now
+  with a control that could have seen otherwise.
+- **The brief frames `-xx -n -q -A -L -U -i .` as the flags to check.** The scripts also pass
+  `-E` (the `.log` their failure path reads) and, for S2, `-c` (the share file behind G2); those
+  two are the load-bearing ones, the rest are cosmetic to a drop-in.
+- **"Stock source vs every build option" as a hypothesised gap is closed for S1/S2** by the
+  nightly sweep, and this run found the S3K family in the same state; the gaps are the pipeline
+  contract, author-written code, diagnostics and speed.
