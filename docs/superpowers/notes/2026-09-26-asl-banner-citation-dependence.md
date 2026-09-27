@@ -197,3 +197,26 @@ git -C /home/volence/sonic_hacks/aeon show 5e1b2b9d^:tools/asl | md5sum
 ```
 
 `all4.sh` writes under `.work/` beside itself, never `/tmp`, and nothing under `.work/` is committed.
+
+## Addendum (2026-09-27, `ASL-CITATION-SWEEP-FOLLOWUPS`): what became of "Found on the way"
+
+The figures above are this note's record at `9212d6e0` and stay as written.
+
+* **The sweep.** `scripts/sweep_asl_citation_form.sh` now treats any of the four digests, in full or
+  as an 8-hex prefix, as identifying, and excludes a reviewed mention-only list (one entry, note 15).
+  It still computes the rule this note ran under and prints it as the "historical count", with the
+  files that moved and why. At `702b2397`, before any edit in that parcel: historical count 22,
+  count 20; the two that left are notes 15 and 20, as predicted above. The enum README (note 16)
+  then gained a digest identification in the same parcel, so from that commit on the script reads
+  historical 21, count 19. The script's output is the authority; these are snapshots.
+* **Enum row 13.** Corrected in `2026-09-04-as-enum-probes/README.md`, with two more probes beside
+  `all4.sh`: `enum_fwd_stale3.asm` lists `0303`, `enum_fwd_org40.asm` lists `4040`, identical and
+  stable on all four builds, every run exit 2.
+* **`asl-reference/README.md`'s i386 banner line.** Still not edited, and the reason is
+  `2026-09-05-asl-silent-decline-regime.md`'s: that file "is the subject of its own standing rule
+  and an edit to it wants its own review". Re-measured: `a8cd8b80b765686b2e9266c31ffa6987`, at both
+  `s1disasm` and `skdisasm` `build_tools/Linux-x86/asl`, prints `(i386-unknown-linux)` as its second
+  banner line. The correction proposed for that review: in the binary table, the
+  `s1disasm/build_tools/Linux-x86/asl` row's last cell `(x86_64-unknown-linux)` becomes
+  `(i386-unknown-linux)`, and the `skdisasm/build_tools/Linux-x86/asl` row's last cell (a
+  dash today) becomes `(i386-unknown-linux)` (the same binary, measured).

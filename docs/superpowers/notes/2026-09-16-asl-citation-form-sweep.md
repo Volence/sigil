@@ -76,3 +76,14 @@ instrument rather than the auditor of someone else's.**
 A stability or provenance claim about the reference assembler **cites a committed script or an md5,
 or it is not made**. The row's own remedy applied to the row: the sweep that finds the defect is now
 a committed script rather than a sentence asserting that somebody swept.
+
+## Addendum (2026-09-27): the instrument's rule changed; the figures above did not
+
+The scope stated above ("the literal banner text against two known md5s") was the script's rule
+until 2026-09-27. It missed digests written as 8-hex prefixes and counted a note that only MENTIONS
+the banner, found by `2026-09-26-asl-banner-citation-dependence.md`. The script now matches all
+four digests, full or prefix, less a reviewed mention-only list, and still prints this note's rule
+as its "historical count". Re-derived with `git grep -l` against the commit itself, the old rule
+gives 51 banner, 79 md5, 22 banner-only at `946e83c9` and 52, 91, 22 at `9212d6e0`, the figures the
+two notes recorded. Under the new rule the population at `702b2397` is 20. The script's header
+carries the rule; its output is the authority.

@@ -33,7 +33,8 @@
 #
 # TWO THINGS ABOUT THIS WORKSPACE THAT THIS SCRIPT DEPENDS ON.
 #   * `grep` here is ugrep (7.8.4), not GNU grep. Everything below sticks to flags
-#     the two agree on (-c, -l, -x, -v and basic regex). Do not reach for a GNU
+#     the two agree on (-c, -l, -x, -F, -v and basic regex; the one extended
+#     regex, IDENT, goes to `git grep -E`, not to grep). Do not reach for a GNU
 #     extension without checking it against `grep --version` on the box.
 #   * Run it BY PATH (`./scripts/sweep_asl_citation_form.sh`). Invoking it through
 #     process substitution (`bash <(git show HEAD:...)`) makes `$0` a /dev/fd entry,
