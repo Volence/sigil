@@ -1217,6 +1217,12 @@ points at it rather than restating it, so there is one copy to keep true.
   `CrossoverTable` (named by our `test_p1_player_port.rs`, `repin.toml`, `pins.rs`), and `XOVER_NONE`/`XOVER_TO_A`/
   `XOVER_TO_B`/`XOVER_LAYER_BIAS`; `PlayerBlock` is 8 B shorter (`ll_prev` @20, `ll_cursor` @24); ADDS `OJZ_Act1_LayerLines`
   and module `games.sonic4.ojz_layer_lines_act1` (`OJZ_ACT1_LAYER_LINE_ROWS`).
+- Sixth heads-up 2026-09-26 (aeon's reading, NOT verified here; "nothing owed"): aeon `b62f559c` renames the page cache.
+  ADDS RAM `Page_Live_Masks`, `Page_Live_RowPtr`, `Page_Live_Unit`, `Page_Live_Seen`, `Page_Live_Forced` (DEBUG only);
+  constants `PAGE_LIVE_UNITS`, `PAGE_LIVE_COL_OFFSET`; procs `PageCache_PickVictim`, `LiveSweep`, `LiveSweepAll`,
+  `LiveReset`, `LiveUnion`, `ReleaseHolds`. CHANGES `PatchRun_Col` (new `d1` input). REMOVES `PageCache_ResetRefcounts`,
+  `PF_EVICTABLE`, `PF_EVICTABLE_BIT`, `Page_Audit_Scratch`; `pf_refcount` renamed `pf_pad`. Their agent notes our
+  `tile_cache_port` name list lacks these, as it already lacked GPL-2's `PageCache_DemandHoldTick`; untested.
 
 ### PORT-TESTS-MUSIC-NAMES-AT-TIP
 
