@@ -19,9 +19,11 @@ the selfcheck that proves the guard refuses.
 | `skdisasm/build_tools/Linux-x86_64/asl` | `61e672562465725a8c102288a7da9098` | same binary | `(x86_64-unknown-linux)` |
 | `sonic_hack/tools/as/asl` | `61e672562465725a8c102288a7da9098` | same binary | `(x86_64-unknown-linux)` |
 | `s2disasm/build_tools/Linux-x86_64/asl` | `0dee1f98e6480a4783d27ffd8b90896f` | flamewing | `(x86_64-Linux)` |
-| `s1disasm/build_tools/Linux-x86/asl` | `a8cd8b80b765686b2e9266c31ffa6987` | upstream, genuine i386 | `(x86_64-unknown-linux)` |
-| `skdisasm/build_tools/Linux-x86/asl` | `a8cd8b80b765686b2e9266c31ffa6987` | same binary | — |
+| `s1disasm/build_tools/Linux-x86/asl` | `a8cd8b80b765686b2e9266c31ffa6987` | upstream, genuine i386 | `(i386-unknown-linux)` |
+| `skdisasm/build_tools/Linux-x86/asl` | `a8cd8b80b765686b2e9266c31ffa6987` | same binary | `(i386-unknown-linux)` |
 | `s2disasm/build_tools/Linux-x86/asl` | `aa6de52f266cef0a7f60a748919ab1d3` | flamewing, **ELF 64-bit in the 32-bit slot** | `(x86_64-Linux)` |
+
+*Corrected 2026-09-27, reviewed by the sigil overseer:* the two `a8cd8b80` rows' second banner line read `(x86_64-unknown-linux)` and a dash; running either binary prints `(i386-unknown-linux)`. Every other row was re-run the same day and matches.
 
 `61e67256…` is the **reference build**. Every other digest is **refused**.
 
