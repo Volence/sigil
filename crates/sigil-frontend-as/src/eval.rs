@@ -14646,10 +14646,23 @@ fn refine_m68k_mnemonic(mnemonic: M68kMnemonic, ops: &[M68kOperand]) -> M68kMnem
         // `cmpa` (probe `probe_cmpa` 2026-07-05: `cmp.l a0,a1` == `cmpa.l a0,a1`
         // == `B3C8`). Only `debugger.asm`'s `assert` macro (`cmp.ATTRIBUTE
         // dest,src` with an An `dest`) exercises this — latent until __DEBUG__
-        // (M1.D T5). `add`/`sub` have the analogous `adda`/`suba` aliases, but no
-        // An-dest form of them appears in either build, so they are left to fail
-        // loud if one ever does (never silently mis-encoded).
+        // (M1.D T5).
         (Cmp, [_, M68kOperand::An(_)]) => Cmpa,
+        // `add`/`sub` with an address-register destination are asl's spellings
+        // of `adda`/`suba`, for every source mode: `add.w d0,a1` = `D2C0`,
+        // `add.l d0,a1` = `D3C0`, `add.w (a0),a1` = `D2D0`, `add.w #1,a1` =
+        // `D2FC 0001`, `sub.w d0,a1` = `92C0` (probes `add_*_an`, `sub_*_an`).
+        // The ISA refuses `add Dn,An` itself, loud, because its `Dn,<ea>` arm
+        // would otherwise emit an ADDX word; this rewrite is the AS front-end's
+        // alone, and `.emp` keeps that refusal. `.b` still refuses, in the
+        // encoder (`adda` is word/long only), as asl refuses it.
+        (Add, [_, M68kOperand::An(_)]) => Adda,
+        (Sub, [_, M68kOperand::An(_)]) => Suba,
+        // `eor #imm,Dn` is asl's spelling of `eori` (`eor.w #1,d0` = `0A40 0001`,
+        // probes `eor_*_imm_dn`): EOR has no `<ea>,Dn` form, so an immediate
+        // source can only mean the immediate instruction. The memory-destination
+        // case is the arm below.
+        (Eor, [M68kOperand::Imm(_), M68kOperand::Dn(_)]) => Eori,
         (And, [M68kOperand::Imm(_), d]) if is_mem_dest(d) => Andi,
         (Or, [M68kOperand::Imm(_), d]) if is_mem_dest(d) => Ori,
         (Add, [M68kOperand::Imm(_), d]) if is_mem_dest(d) => Addi,

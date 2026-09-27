@@ -220,6 +220,30 @@ fn immediates_to_ccr_and_sr_take_their_one_size() {
 }
 
 #[test]
+fn add_sub_to_an_address_register_and_eor_immediate_are_asls_aliases() {
+    assert_rows(&[
+        ("add_w_dn_an", "\tadd.w\td0,a1", "D2C0"),
+        ("add_l_dn_an", "\tadd.l\td0,a1", "D3C0"),
+        ("sub_w_dn_an", "\tsub.w\td0,a1", "92C0"),
+        ("sub_l_dn_an", "\tsub.l\td0,a1", "93C0"),
+        ("add_w_mem_an", "\tadd.w\t(a0),a1", "D2D0"),
+        ("add_w_imm_an", "\tadd.w\t#1,a1", "D2FC0001"),
+        ("add_w_an_an", "\tadd.w\ta0,a1", "D2C8"),
+        ("add_w_dn_sp", "\tadd.w\td0,sp", "DEC0"),
+        ("sub_w_imm_an", "\tsub.w\t#1,a1", "92FC0001"),
+        ("eor_w_imm_dn", "\teor.w\t#1,d0", "0A400001"),
+        ("eor_b_imm_dn", "\teor.b\t#1,d0", "0A000001"),
+        ("eor_l_imm_dn", "\teor.l\t#1,d0", "0A8000000001"),
+    ]);
+    assert_refusals(&[
+        // asl `#1130 invalid operand size`: `adda` has no byte form.
+        ("add_b_dn_an", "\tadd.b\td0,a1", "word/long only"),
+        // asl `#1350`: there is no `anda`.
+        ("and_w_dn_an", "\tand.w\td0,a1", "address-register destination"),
+    ]);
+}
+
+#[test]
 fn swap_refuses_every_suffix_asl_refuses() {
     assert_rows(&[
         ("swap", "\tswap\td0", "4840"),
