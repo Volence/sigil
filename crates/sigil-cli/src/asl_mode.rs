@@ -41,8 +41,6 @@
 use std::path::{Path, PathBuf};
 use std::process;
 
-use sigil_harness::stdout::println;
-
 /// Whether `argv0`, the path this executable was run as, names asl: a file
 /// name of `asl`, or `asl.exe` with the extension in any case. Only the file
 /// name counts, so a copy or a symlink named `asl` anywhere is the drop-in, and
@@ -325,16 +323,12 @@ pub(crate) fn run(args: &[String]) -> ! {
     let assembled = match sigil_frontend_as::assemble_root_located_warned(Path::new(&source), &opts) {
         Ok(assembled) => assembled,
         Err(failure) => {
-            for m in &failure.messages {
-                println!("{m}");
-            }
+            super::render_as_messages(&failure.messages);
             sink.render(&failure.diags, &failure.sources);
             fail(&mut sink, super::Shown::default().plus(&failure.diags), super::Stage::Frontend);
         }
     };
-    for m in &assembled.messages {
-        println!("{m}");
-    }
+    super::render_as_messages(&assembled.messages);
     sink.render(&assembled.warnings, &assembled.sources);
     let shown = super::Shown::default().plus(&assembled.warnings);
     let sources = &assembled.sources;
