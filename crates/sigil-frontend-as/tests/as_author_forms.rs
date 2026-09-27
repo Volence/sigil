@@ -267,6 +267,35 @@ fn a_width_suffix_on_an_unparenthesised_absolute() {
 }
 
 #[test]
+fn binclude_takes_a_bare_path_and_a_window() {
+    assert_rows(&[
+        ("binclude_unq", "\tbinclude\tblob.bin", "12345678"),
+        ("binclude_dir", "\tbinclude\tsub/blob2.bin", "ABCD"),
+        ("binclude_case", "\tbinclude\tMixCase.bin", "5A"),
+        ("binclude_cmt", "\tbinclude\tblob.bin\t; trailing comment", "12345678"),
+        ("BINCLUDE_up", "\tBINCLUDE\tblob.bin", "12345678"),
+        ("binclude_off", "\tbinclude\tblob.bin,1,2", "3456"),
+        ("binclude_q", "\tbinclude\t\"blob.bin\"", "12345678"),
+        ("binclude_q_off", "\tbinclude\t\"blob.bin\",1,2", "3456"),
+        ("binclude_q_off1", "\tbinclude\t\"blob.bin\",2", "5678"),
+        ("binclude_q_offend", "\tbinclude\t\"blob.bin\",4", ""),
+        ("binclude_q_len0", "\tbinclude\t\"blob.bin\",1,0", ""),
+        ("binclude_q_lenneg", "\tbinclude\t\"blob.bin\",1,-1", "345678"),
+        ("binclude_q_lenbig", "\tbinclude\t\"blob.bin\",0,$FFFFFFFF", "12345678"),
+        ("binclude_q_offexpr", "O = 1\n\tbinclude\t\"blob.bin\",O+1,O", "56"),
+    ]);
+    assert_refusals(&[
+        // asl `#1600 unexpected end of file`.
+        ("binclude_q_offneg", "\tbinclude\t\"blob.bin\",-1", "negative"),
+        ("binclude_q_offpast", "\tbinclude\t\"blob.bin\",5", "past the end"),
+        ("binclude_q_lenpast", "\tbinclude\t\"blob.bin\",1,10", "past the end"),
+        ("binclude_q_lenneg2", "\tbinclude\t\"blob.bin\",1,-2", "negative"),
+        // asl `#1110 wrong number of operands`.
+        ("binclude_q_4args", "\tbinclude\t\"blob.bin\",1,1,1", "no more operands"),
+    ]);
+}
+
+#[test]
 fn swap_refuses_every_suffix_asl_refuses() {
     assert_rows(&[
         ("swap", "\tswap\td0", "4840"),

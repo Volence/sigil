@@ -5160,31 +5160,98 @@ impl Asm {
         }
     }
 
-    /// `BINCLUDE "path"`: read a file's raw bytes and emit them verbatim —
-    /// opaque binary data, no parsing (asl-verified: a file containing `ABCD`
-    /// emits `41 42 43 44`). Path resolves via `include_root` exactly like
-    /// `include` (real Aeon source paths are relative to the aeon root, e.g.
-    /// `BINCLUDE "games/sonic4/data/collision/heightmaps.bin"`). Unlike
-    /// `include`, this is NOT re-entrancy-guarded by `self.visited` — every
-    /// real usage in Aeon is a bare, single-use `BINCLUDE "path"` (no
-    /// offset/length args; verified via `grep -rn BINCLUDE` over
-    /// `aeon/games` + `aeon/engine`, all 43 call sites bare), and unlike
-    /// `include` (which execs the file's lines and so must not re-enter a
-    /// cycle), re-BINCLUDEing the same path is a legitimate way to place the
-    /// same blob at two different labels — a DAG guard would silently drop
-    /// the second copy.
+    /// `BINCLUDE path[,offset[,length]]`: read a file's raw bytes and emit
+    /// them verbatim, opaque binary data with no parsing (asl-verified: a file
+    /// containing `ABCD` emits `41 42 43 44`). The path resolves via
+    /// `include_root` exactly like `include` (Aeon's paths are relative to the
+    /// aeon root, e.g. `BINCLUDE "games/sonic4/data/collision/heightmaps.bin"`).
+    /// Re-BINCLUDEing one path is a legitimate way to place the same blob at
+    /// two labels, so nothing here guards re-entry.
+    ///
+    /// The path is double-quoted or written bare. A bare path is the operand's
+    /// own text as written, directory separators and case included (asl:
+    /// `binclude blob.bin`, `binclude sub/blob2.bin` and `binclude MixCase.bin`
+    /// each emit that file, probes `binclude_unq`, `binclude_dir`,
+    /// `binclude_case`).
+    ///
+    /// The optional offset and length select a slice, measured on the pinned
+    /// asl with a 4-byte file `12 34 56 78` (probes `binclude_q_*`):
+    ///
+    /// - `,1,2` is `34 56`; `,2` alone is `56 78` (to the end); `,4` (the
+    ///   file's size) and `,1,0` are empty;
+    /// - a length of `-1`, or `$FFFFFFFF`, means "to the end" (`,1,-1` is
+    ///   `34 56 78`); any other negative length is refused;
+    /// - a negative offset, an offset past the end, and a slice that runs past
+    ///   the end are refused (`error #1600: unexpected end of file`);
+    /// - a fourth operand is refused (`error #1110: wrong number of operands`).
     fn directive_binclude(&mut self, rest: &[Token], span: Span) {
         self.open_section_if_needed();
-        let Some(rel) = self.quoted_path(rest, "BINCLUDE", span) else {
+        let groups = split_top_commas(rest);
+        if groups.len() > 3 {
+            self.err(span, "BINCLUDE takes a path, an offset and a length, and no more operands");
+            return;
+        }
+        let Some(rel) = self.binclude_path(groups[0], span) else {
             return;
         };
         let path = match &self.include_root {
             Some(root) => root.join(&rel),
             None => std::path::PathBuf::from(&rel),
         };
-        match sigil_span::read_set::read(&path) {
-            Ok(bytes) => self.emit(&bytes, vec![], span),
-            Err(e) => self.err(span, format!("cannot BINCLUDE {}: {e}", path.display())),
+        let mut window = [None, None];
+        for (i, g) in groups.iter().enumerate().skip(1) {
+            let what = if i == 1 { "offset" } else { "length" };
+            match self.eval_all(g, span) {
+                Some(v) => window[i - 1] = Some(v),
+                None => {
+                    if !self.register_reported_at(span) {
+                        self.err(span, format!("unresolved BINCLUDE {what}"));
+                    }
+                    return;
+                }
+            }
+        }
+        let bytes = match sigil_span::read_set::read(&path) {
+            Ok(bytes) => bytes,
+            Err(e) => {
+                self.err(span, format!("cannot BINCLUDE {}: {e}", path.display()));
+                return;
+            }
+        };
+        match binclude_slice(bytes.len(), window[0], window[1]) {
+            Ok((start, end)) => self.emit(&bytes[start..end], vec![], span),
+            Err(why) => self.err(
+                span,
+                format!("BINCLUDE {}: {why}, the file is {} bytes", path.display(), bytes.len()),
+            ),
+        }
+    }
+
+    /// The path operand of `BINCLUDE`: a double-quoted literal, or the bare
+    /// operand's text exactly as written on the line. A single-quoted operand
+    /// keeps [`Self::quoted_path`]'s refusal, since asl cannot open it either.
+    fn binclude_path(&mut self, g: &[Token], span: Span) -> Option<String> {
+        match g {
+            [] => {
+                self.err(span, "BINCLUDE needs a path");
+                None
+            }
+            [Token { tok: Tok::Str(..), .. }] => self.quoted_path(g, "BINCLUDE", span),
+            _ if g.iter().any(|t| matches!(t.tok, Tok::Str(..))) => {
+                self.quoted_path(g, "BINCLUDE", span)
+            }
+            _ => {
+                let gs = group_span(g)?;
+                let raw = self.call_line.as_ref().and_then(|(text, base, source)| {
+                    if gs.source != *source {
+                        return None;
+                    }
+                    let lo = gs.start.checked_sub(*base)? as usize;
+                    let hi = gs.end.checked_sub(*base)? as usize;
+                    text.get(lo..hi).map(str::to_string)
+                });
+                Some(raw.unwrap_or_else(|| render_tokens(g)))
+            }
         }
     }
 
@@ -14176,6 +14243,32 @@ fn m68k_cond(w: &str) -> Option<M68kCond> {
         "le" => Le,
         _ => return None,
     })
+}
+
+/// The `[start, end)` byte range a `BINCLUDE` of a `len`-byte file takes, given
+/// its optional offset and length, or the reason asl refuses the pair. The
+/// rules and their probes are on [`Asm::directive_binclude`].
+fn binclude_slice(len: usize, offset: Option<i64>, length: Option<i64>) -> Result<(usize, usize), String> {
+    let len = len as i64;
+    let start = offset.unwrap_or(0);
+    if start < 0 {
+        return Err(format!("offset {start} is negative"));
+    }
+    if start > len {
+        return Err(format!("offset {start} is past the end of the file"));
+    }
+    let end = match length {
+        None | Some(-1) | Some(0xFFFF_FFFF) => len,
+        Some(n) if n < 0 => return Err(format!("length {n} is negative")),
+        Some(n) => {
+            let end = start + n;
+            if end > len {
+                return Err(format!("offset {start} and length {n} run past the end of the file"));
+            }
+            end
+        }
+    };
+    Ok((start as usize, end as usize))
 }
 
 /// If `base` names a real 68000 mnemonic that this front-end deliberately does
