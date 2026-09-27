@@ -58,6 +58,7 @@ Usage:
     python3 scripts/switch_matrix_sweep.py --sigil <path to sigil> [--scratch DIR]
                                            [--corpus NAME=PATH[@REV]]...
                                            [--only TAG]... [--cross] [--derive-only]
+                                           [--route direct|dropin]
 A corpus is always read out of a COMMIT (`REV`, default `HEAD`, resolved to a
 full SHA and printed), extracted afresh by `git archive` on every run. Its
 working tree is never read, so uncommitted edits there cannot colour a result.
@@ -66,6 +67,16 @@ reconciliation and launches no leg; it is a probe, never a sweep result.
 `--cross` additionally runs every corner of the switch space, which for these
 two corpora is 288 and 96 corners and about a quarter of an hour, and tests
 whether a refusal is caused by one setting and composes.
+
+`--route` chooses how sigil builds each leg's candidate image. `direct`, the
+default, runs `sigil <root.asm> -o sigil.bin` with the p2bin arguments build.lua
+would pass, so sigil places and compresses itself. `dropin` copies sigil into the
+leg tree as the build script's own `asl` and runs the unmodified build.lua a
+second time, so sigil writes asl's object file and share file and the stock
+p2bin and the script's own post-steps finish the ROM: the route a disassembly
+user takes by replacing one file. The acknowledgements in DIRECT_ROUTE_ONLY
+describe the direct route and are left out of a dropin run's tables, which are
+then asserted in both directions like any other.
 
 Exit status is 0 only if the reconciliations hold and every leg's outcome is
 either agreement or an acknowledged disagreement.
@@ -290,6 +301,36 @@ ACK_CROSS_DISAGREE = [
      "`fixBugs`, whose arm sigil refuses before any image exists, so it covers "
      "3*2*1*2*2*2 = 48 of the 192 corners."),
 ]
+
+
+# The acknowledgements above that describe the DIRECT route only, and why the
+# drop-in route has no such outcome. All three are the share-file residual:
+# `sigil <root.asm>` writes no share file, so build.lua's
+# `amend_sound_driver_size` finds nothing to patch the compressed driver size
+# from. Run as the script's own `asl` with `-c`, sigil writes `s2.h`, the stock
+# p2bin appends `comp_z80_size` to it, and build.lua patches the ROM exactly as
+# after asl, so on `--route dropin` these legs are expected to agree and are
+# asserted to, since an entry left in a dropin run's tables would be stale.
+DIRECT_ROUTE_ONLY = {
+    "ACK_DISAGREE": {("s2disasm", "s2disasm-fixBugs-1"),
+                     ("s2disasm", "s2disasm-build.lua:improved_sound_driver_compression-1")},
+    "ACK_WARNING_GAP": {("s2disasm", "sigil-only:`shared` is ignored")},
+    "ACK_CROSS_DISAGREE": {("s2disasm", (("build.lua:improved_sound_driver_compression", 1),))},
+}
+
+
+def select_route(route):
+    """Narrow the acknowledgement tables to the ones that describe `route`."""
+    global ACK_DISAGREE, ACK_WARNING_GAP, ACK_CROSS_DISAGREE
+    if route == "direct":
+        return
+    ACK_DISAGREE = {k: v for k, v in ACK_DISAGREE.items()
+                    if k not in DIRECT_ROUTE_ONLY["ACK_DISAGREE"]}
+    ACK_WARNING_GAP = {k: v for k, v in ACK_WARNING_GAP.items()
+                       if k not in DIRECT_ROUTE_ONLY["ACK_WARNING_GAP"]}
+    ACK_CROSS_DISAGREE = [x for x in ACK_CROSS_DISAGREE
+                          if (x[0], tuple(sorted(x[1].items())))
+                          not in DIRECT_ROUTE_ONLY["ACK_CROSS_DISAGREE"]]
 
 
 class Fail(Exception):
@@ -900,6 +941,46 @@ def compare_with_control(ref, cand, log):
 # One leg
 # ---------------------------------------------------------------------------
 
+# Where build.lua's `find_tools` looks for its tools on this platform
+# (`common.lua`, `get_platform_specific_info`): the drop-in replaces the `asl`
+# there and nothing else.
+DROPIN_TOOLS = os.path.join("build_tools", "Linux-x86_64")
+
+
+def run_dropin(cfg, tree, out, log):
+    """The drop-in candidate: sigil copied over the leg tree's own `asl`, then
+    the leg's own, unmodified build.lua run again. Returns (exit, wrote, the
+    diagnostic stream), the stream being build.lua's output, which is where the
+    script prints the log sigil writes under `-E`.
+
+    Proves the substitution took rather than assuming it: the file at the path
+    the script runs must be byte-identical to sigil afterwards, and the output
+    must hold no line in asl's own `> > >` diagnostic format, which only the
+    stock asl writes."""
+    asl = os.path.join(tree, DROPIN_TOOLS, "asl")
+    if not os.path.isfile(asl):
+        raise Fail("no %s in the leg tree, so there is no asl to replace" % asl)
+    shutil.copy(cfg["sigil"], asl)
+    lua = subprocess.run(["lua", "build.lua"], cwd=tree,
+                         capture_output=True, text=True, timeout=1800)
+    if open(asl, "rb").read() != open(cfg["sigil"], "rb").read():
+        raise Fail("after the drop-in run, %s is not sigil" % asl)
+    stream = lua.stdout + lua.stderr
+    if re.search(r"^> > > ", stream, re.M):
+        raise Fail("the drop-in run printed asl-format diagnostics, so the stock "
+                   "asl ran, not sigil")
+    built = os.path.join(tree, cfg["out_bin"])
+    wrote = os.path.isfile(built)
+    if wrote:
+        shutil.move(built, out)
+    log("   DROPIN lua build.lua with asl := sigil: exit=%d wrote=%s"
+        % (lua.returncode, wrote))
+    # The script's own progress lines (sample conversion) are not sigil's.
+    said = "\n".join(l for l in stream.split("\n")
+                     if not l.startswith("Converting WAV file"))
+    return lua.returncode, wrote, said
+
+
 def run_leg(cfg, tag, edits, log, vacuity_ref=None, post_lua_edits=()):
     """Copy the pristine tree, apply the edits, build with the corpus's own
     build.lua and with sigil, and compare. `edits` is a list of (switch, value);
@@ -977,18 +1058,22 @@ def run_leg(cfg, tag, edits, log, vacuity_ref=None, post_lua_edits=()):
             % (" ".join(p2bin_args), " ".join(cfg["p2bin_args"])))
 
     out = os.path.join(tree, "sigil.bin")
-    sg = subprocess.run([cfg["sigil"], root_asm, "-o", "sigil.bin"]
-                        + p2bin_args, cwd=tree,
-                        capture_output=True, text=True, timeout=1800)
-    r["sigil_exit"] = sg.returncode
-    r["sigil_wrote"] = os.path.isfile(out)
-    r["sigil_stderr"] = [l for l in sg.stderr.split("\n")
+    if cfg["route"] == "dropin":
+        r["sigil_exit"], r["sigil_wrote"], stream = run_dropin(cfg, tree, out, log)
+    else:
+        sg = subprocess.run([cfg["sigil"], root_asm, "-o", "sigil.bin"]
+                            + p2bin_args, cwd=tree,
+                            capture_output=True, text=True, timeout=1800)
+        r["sigil_exit"] = sg.returncode
+        r["sigil_wrote"] = os.path.isfile(out)
+        stream = sg.stderr
+    r["sigil_stderr"] = [l for l in stream.split("\n")
                          if l.strip() and "`shared` is ignored" not in l]
     siglog = os.path.join(cfg["scratch"], "logs", tag + ".sigil.err")
-    open(siglog, "w").write(sg.stderr)
-    r["sig_text"], r["sig_own"], r["sig_counterpart_locs"] = sigil_warnings(sg.stderr)
+    open(siglog, "w").write(stream)
+    r["sig_text"], r["sig_own"], r["sig_counterpart_locs"] = sigil_warnings(stream)
     log("   SIGIL exit=%d wrote=%s  stderr lines=%d (%s)"
-        % (sg.returncode, r["sigil_wrote"], len(r["sigil_stderr"]),
+        % (r["sigil_exit"], r["sigil_wrote"], len(r["sigil_stderr"]),
            os.path.basename(siglog)))
     for line in r["sigil_stderr"][:4]:
         log("     sigil: " + line.strip())
@@ -1526,10 +1611,15 @@ def main():
     ap.add_argument("--skip-self-test", action="store_true",
                     help="derivation only; no figure may be reported from a run "
                          "that used this")
+    ap.add_argument("--route", choices=("direct", "dropin"), default="direct",
+                    help="how sigil builds each candidate: `direct` runs sigil "
+                         "on the root with build.lua's p2bin arguments; "
+                         "`dropin` runs build.lua with sigil as its asl")
     ap.add_argument("--derive-only", action="store_true",
                     help="stop after the derivation and its acknowledgement "
                          "reconciliation; launch no leg")
     a = ap.parse_args()
+    select_route(a.route)
 
     corpora = []
     for spec in (a.corpus or ["s1disasm=/home/volence/sonic_hacks/s1disasm",
@@ -1552,6 +1642,7 @@ def main():
     log("SIGIL %s" % ver.stdout.split("\n")[0])
     log("SIGIL md5 %s" % subprocess.run(
         ["md5sum", a.sigil], capture_output=True, text=True).stdout.split()[0])
+    log("ROUTE %s" % a.route)
 
     failures = []
     if not a.skip_self_test:
@@ -1631,7 +1722,7 @@ def main():
 
         cfg = {"scratch": a.scratch, "pristine": pristine, "corpus": corpus,
                "sigil": a.sigil, "root_asm": root_asm, "out_bin": out_bin,
-               "p2bin_args": p2bin_args}
+               "p2bin_args": p2bin_args, "route": a.route}
 
         # The shipped-settings baseline, which is also the vacuity yardstick.
         plan = [("%s-shipped" % corpus, [])]

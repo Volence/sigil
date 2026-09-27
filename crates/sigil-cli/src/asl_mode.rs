@@ -352,13 +352,7 @@ pub(crate) fn run(args: &[String]) -> ! {
         sink.render(&bounds, sources);
         fail(&mut sink, shown.plus(&bounds), super::Stage::Image);
     }
-    let records = match sigil_link::code_file_records(&resolved, &linked) {
-        Ok(r) => r,
-        Err(diags) => {
-            sink.render(&diags, sources);
-            fail(&mut sink, shown.plus(&diags), super::Stage::Image);
-        }
-    };
+    let records = sigil_link::code_file_records(&resolved, &linked);
 
     // The share file's values: a symbol the front end could not fold (a label
     // kept symbolic for the linker) is folded against the linked program.

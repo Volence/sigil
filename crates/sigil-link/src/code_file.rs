@@ -28,15 +28,25 @@
 //! `p2bin`'s records (a stretch of bytes one section writes at consecutive
 //! addresses, in program order), which is the model that reproduces the stock
 //! ROM of every disassembly build on sigil's direct route. A run longer than a
-//! record can hold is split into consecutive records, which changes no address;
-//! the one run that cannot be split is a run followed by code for the other CPU,
-//! because a `before` blob is stored from that record's start. Such a run is
-//! refused rather than written with a start the direct route would not use.
+//! record can hold is split into consecutive records from its start, which is
+//! the direction asl fills its own records in: asl starts a new record when the
+//! next statement's bytes would take the current one past `0xFFFF`
+//! (`s2disasm` and `skdisasm` show records of `0xFF00`, `0xFFFC`, `0xFFFE` and
+//! `0xFFFF` bytes, each continued by the next).
+//!
+//! Splitting changes no address, and it changes nothing an `after` blob reads,
+//! which is where the record before it ENDS. It can change what a `before` blob
+//! reads when the run before the blob is longer than one record: asl's last
+//! record there starts at a statement boundary sigil does not track, and this
+//! writer's starts at a multiple of `0xFFFF` bytes into the run. That shape
+//! stores the blob over code rather than over the filler every corpus puts
+//! there, so it is a broken source under either tool; it is named here, and in
+//! `docs/superpowers/notes/2026-09-27-as-dropin-asl-contract.md`, as the one
+//! place the record boundaries are sigil's own.
 
 use crate::blob::runs;
 use crate::LinkedImage;
 use sigil_ir::{Cpu, Section};
-use sigil_span::{Diagnostic, Level, Span};
 
 /// The two bytes every asl object file starts with.
 pub const CODE_FILE_MAGIC: [u8; 2] = [0x89, 0x14];
@@ -69,34 +79,11 @@ pub struct CodeRecord {
 /// `resolved` is `resolve_layout`'s output and `linked` is `link`'s image of it,
 /// one linked section per resolved section in the same order, exactly as
 /// [`crate::flatten_placing`] takes them.
-pub fn code_file_records(resolved: &[Section], linked: &LinkedImage) -> Result<Vec<CodeRecord>, Vec<Diagnostic>> {
+pub fn code_file_records(resolved: &[Section], linked: &LinkedImage) -> Vec<CodeRecord> {
     assert_eq!(resolved.len(), linked.sections.len(), "one linked section per resolved section");
-    let runs = runs(resolved);
-    let mut diags = Vec::new();
     let mut out = Vec::new();
-    for (k, r) in runs.iter().enumerate() {
+    for r in runs(resolved) {
         let bytes = &linked.sections[r.sec].bytes[r.offset as usize..(r.offset + (r.end - r.start)) as usize];
-        if let Some(next) = runs.get(k + 1).filter(|n| n.cpu != r.cpu) {
-            if bytes.len() > MAX_RECORD {
-                diags.push(Diagnostic {
-                    level: Level::Error,
-                    message: format!(
-                        "the {} code at [{:#X}, {:#X}) is {:#X} bytes in one run and is followed by {} code at {:#X}; \
-                         p2bin places a -z blob against the record just before it, from that record's start for \
-                         `before`, and one record of asl's object file holds at most {MAX_RECORD:#X} bytes, so this \
-                         run cannot be written as the record p2bin would need",
-                        cpu_name(r.cpu),
-                        r.start,
-                        r.end,
-                        bytes.len(),
-                        cpu_name(next.cpu),
-                        next.start
-                    ),
-                    primary: Span { source: sigil_span::SourceId(u32::MAX), start: 0, end: 0 },
-                });
-                continue;
-            }
-        }
         for (i, chunk) in bytes.chunks(MAX_RECORD).enumerate() {
             out.push(CodeRecord {
                 cpu: asl_cpu_id(r.cpu),
@@ -105,18 +92,7 @@ pub fn code_file_records(resolved: &[Section], linked: &LinkedImage) -> Result<V
             });
         }
     }
-    if diags.is_empty() {
-        Ok(out)
-    } else {
-        Err(diags)
-    }
-}
-
-fn cpu_name(cpu: Cpu) -> &'static str {
-    match cpu {
-        Cpu::M68000 => "68000",
-        Cpu::Z80 => "Z80",
-    }
+    out
 }
 
 /// The object file holding `records` in the order given, closed by `creator`.
