@@ -174,6 +174,20 @@ fn chk_long_and_unsuffixed_chk_stay_refused() {
 }
 
 #[test]
+fn dot_b_is_the_short_branch() {
+    assert_rows(&[
+        ("beq_b", "\tbeq.b\tt\n\tnop\nt:", "67024E71"),
+        ("bra_b", "\tbra.b\tt\n\tnop\nt:", "60024E71"),
+        ("bsr_b", "\tbsr.b\tt\n\tnop\nt:", "61024E71"),
+        ("bra_b_back", "t:\tnop\n\tbra.b\tt", "4E7160FC"),
+        // The `.s` spelling of the same probe, for the pair.
+        ("beq_s", "\tbeq.s\tt\n\tnop\nt:", "67024E71"),
+    ]);
+    // asl `#1370 jump distance too big`.
+    assert_refusals(&[("bra_b_far", "\tbra.b\tt\n\tds.b\t200\nt:\tnop", "out of range")]);
+}
+
+#[test]
 fn swap_refuses_every_suffix_asl_refuses() {
     assert_rows(&[
         ("swap", "\tswap\td0", "4840"),

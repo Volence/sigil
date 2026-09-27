@@ -10849,7 +10849,9 @@ impl Asm {
 
     /// `bra`/`bsr`/`Bcc <target>`: Aeon pins the branch width by an explicit
     /// `.s`/`.w` suffix (no relaxation), so `suffix_size` MUST be present and
-    /// MUST be `S` or `W`. The target is qualified (`.local` → `Scope.local`)
+    /// MUST be `S` or `W`. `.b` is asl's other spelling of the short form and
+    /// reads as `S` (probes `beq_b`/`bra_b`/`bsr_b`/`bra_b_back`: asl emits the
+    /// `.s` bytes for each). The target is qualified (`.local` → `Scope.local`)
     /// and `$`-resolved, then handed to the backend's `lower_branch`, which
     /// builds the opcode + a `PcRel8`/`PcRelDisp16` fixup for the linker.
     fn lower_m68k_branch(
@@ -10861,8 +10863,9 @@ impl Asm {
     ) {
         let size = match suffix_size {
             Some(s @ (M68kSize::S | M68kSize::W)) => s,
+            Some(M68kSize::B) => M68kSize::S,
             Some(_) => {
-                self.err(span, "branch size suffix must be `.s` or `.w`");
+                self.err(span, "branch size suffix must be `.s`, `.b` or `.w`");
                 return;
             }
             None => {
