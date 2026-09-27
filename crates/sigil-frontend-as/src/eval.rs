@@ -12303,10 +12303,16 @@ impl Asm {
                 }
             };
             let e = self.resolve_dollar(&self.qualify_expr(&Expr::Sym(name.clone())));
+            // Folded without `fold`'s register reading: an operand of `shared`
+            // is a symbol name by the directive's own grammar, so `shared A1`
+            // names the symbol `A1`, as it does to asl, never the register.
             let value = if self.keep_labels_symbolic() && self.expr_refs_label(&e) {
                 Some(self.relax_safe_fold(&e))
             } else {
-                match self.fold(&e) {
+                let lookup = |n: &str| {
+                    self.builtin_num(n).or_else(|| self.resolve_sym(n)).or_else(|| self.resolve_str_packed(n))
+                };
+                match e.fold(&lookup) {
                     Fold::Value(v) => Some(Expr::Int(v)),
                     Fold::Poison | Fold::Fault(_) => None,
                 }

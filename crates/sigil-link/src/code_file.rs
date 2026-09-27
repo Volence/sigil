@@ -157,3 +157,45 @@ pub fn decode_code_file(bytes: &[u8]) -> Result<(Vec<CodeRecord>, String), Strin
         records.push(CodeRecord { cpu, start, bytes: take(&mut i, len)?.to_vec() });
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_written_file_reads_back_record_for_record_in_order() {
+        let records = vec![
+            CodeRecord { cpu: 0x01, start: 0x10, bytes: vec![1, 2, 3] },
+            CodeRecord { cpu: 0x51, start: 0, bytes: vec![0x3E, 0x01] },
+            CodeRecord { cpu: 0x01, start: 0, bytes: vec![0xAA; MAX_RECORD] },
+        ];
+        let file = encode_code_file(&records, "sigil test");
+        assert_eq!(&file[..6], &[0x89, 0x14, 0x81, 0x01, 0x01, 0x01]);
+        assert_eq!(decode_code_file(&file), Ok((records, "sigil test".to_string())));
+    }
+
+    /// asl writes a 68000 record in the older shape too, its header byte the CPU
+    /// itself, and an entry point as `80` and a `u32`; `p2bin` reads both.
+    #[test]
+    fn the_older_record_shape_and_an_entry_point_read() {
+        let mut file = vec![0x89, 0x14, 0x01, 0x00, 0x02, 0x00, 0x00, 0x02, 0x00, 0x4E, 0x75];
+        file.extend_from_slice(&[0x80, 0x00, 0x02, 0x00, 0x00]);
+        file.extend_from_slice(b"\x00AS 1.42");
+        let (records, creator) = decode_code_file(&file).unwrap();
+        assert_eq!(records, vec![CodeRecord { cpu: 0x01, start: 0x200, bytes: vec![0x4E, 0x75] }]);
+        assert_eq!(creator, "AS 1.42");
+    }
+
+    #[test]
+    fn a_truncated_file_or_another_segment_is_refused() {
+        assert!(decode_code_file(&[0x89, 0x14, 0x81, 0x01, 0x01, 0x01, 0, 0]).is_err());
+        assert!(decode_code_file(&[0x89, 0x14, 0x81, 0x01, 0x02, 0x01, 0, 0, 0, 0, 0, 0, 0]).is_err());
+        assert!(decode_code_file(b"ELF").is_err());
+    }
+
+    #[test]
+    #[should_panic(expected = "a record holds at most")]
+    fn a_record_longer_than_the_format_holds_is_never_written() {
+        encode_code_file(&[CodeRecord { cpu: 0x01, start: 0, bytes: vec![0; MAX_RECORD + 1] }], "x");
+    }
+}

@@ -251,8 +251,15 @@ pub(crate) fn run(args: &[String]) -> ! {
         }
     };
     let log = log_path(&a.log);
+    // With no source there is no `X.log` for the script to read, and a file `-E`
+    // named is more likely the source asl's own grammar swallowed (`-E x.asm`
+    // reads `x.asm` as the log's name) than a log: nothing is written to it.
     let Some(input) = a.input.clone() else {
-        refuse("no source file: sigil run as asl assembles the one source named on its command line".to_string(), log)
+        let named = a.log.clone().flatten().map(|f| format!(" (`-E {f}` names {f} as the log, as asl reads it)")).unwrap_or_default();
+        refuse(
+            format!("no source file{named}: sigil run as asl assembles the one source named on its command line"),
+            None,
+        )
     };
     let stem = output_stem(&input).to_string();
     let object = format!("{stem}.p");
@@ -268,6 +275,15 @@ pub(crate) fn run(args: &[String]) -> ! {
         );
     }
     let source = source_path(&input);
+    if let Some(path) = &log {
+        let same = match (std::fs::canonicalize(path), std::fs::canonicalize(&source)) {
+            (Ok(x), Ok(y)) => x == y,
+            _ => Path::new(path) == Path::new(&source),
+        };
+        if same {
+            refuse(format!("-E {path} names the source file as the log, which would overwrite or remove it"), None);
+        }
+    }
     let source_dir = match Path::new(&source).parent() {
         Some(p) if !p.as_os_str().is_empty() => p.to_path_buf(),
         _ => PathBuf::from("."),
