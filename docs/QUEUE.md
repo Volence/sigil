@@ -209,6 +209,10 @@ scratch copies; settled). The notes themselves are historical and were not edite
   so an `inout` proof across it should be decidable. **Unreproduced here.** Stage 0: rebuild the pre-workaround
   shape (aeon's `parcel/vram-tier1` history, or a minimal `.emp` with an `invoke` of an interface hook inside a
   proc carrying an `inout` claim) and see whether the refusal is real and whether it is the right answer.
+- **Reproduction pointer (aeon, verified here):** the only record is the body of aeon `3d369bc7`, reachable from
+  their `origin/master`, lines 16 to 17: the inlined `invoke` fired `[proc.inout-unverified] DrawRings ::
+  inout(d5)/inout(a4)`. The failing file was never committed; rebuild it by inlining `Rings_AnimTick`'s body
+  (its `invoke Game.ring_frame`) back into `DrawRings` in `engine/objects/rings.emp` at `3d369bc7`.
 - Related, not a defect: their `rings_port` byte change reaches us only at the next pin advance
   (`PIN-ADVANCE-S2-ENVELOPE-RESTATEMENTS`); the reference tree stays at `ec640bcf`.
 
