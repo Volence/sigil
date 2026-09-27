@@ -171,6 +171,17 @@ sigil "not a recognized 68000 mnemonic") and unquoted `binclude blob.bin` (sigil
 a quoted path"). The one over-acceptance is `swap.w d0` (asl refuses, sigil emits `4840`).
 Bare absolute operands (`jmp Label`, `jsr`, `lea`, `move.w Label,d0`) AGREE (`4EF8 0010` etc.).
 
+**Amended 2026-09-27 by AS-AUTHOR-FORMS-EXACT's edge probes** (126 probes, same `asl_run`, bytes from exit-0
+runs only, `2026-09-27-as-author-forms-exact-probes/`). The picture above was narrower than the truth in
+five places. (1) The `ccr`/`sr` row was not only unsuffixed: sigil also refused the SUFFIXED `eori.b #1,ccr`
+and `andi.w`/`ori.w`/`eori.w #,sr` (no ISA row), and it ACCEPTED `andi.w #$FE,ccr`, which asl refuses.
+(2) `swap.w` is one of three over-acceptances: asl refuses `swap.b`, `swap.w` and `swap.s` and accepts
+`swap.l`. (3) `binclude` with an offset and length emitted the whole file with no diagnostic
+(`binclude "f",1,2` gave all four bytes of a 4-byte file where asl gives two): silent wrong bytes, quoted or
+not. (4) asl folds the width suffix's case, so `jmp ($1234).W` was refused too. (5) asl assembles `chk.l`
+(`4300`, the 68020 form) under `cpu 68000`, and turns a `.s` branch to the next instruction into `4E71`
+(a NOP); sigil refuses both.
+
 **None of these appear in the three corpora, so no corpus measurement can see them.** A census
 of every `.asm`/`.inc` line (`formcount.py`, textual, comment-stripped, dead arms included):
 S1 459 files / 74,403 lines, S2 371 / 130,111, S3K 959 / 410,221: **0** unsized branches, **0**

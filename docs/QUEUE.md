@@ -196,11 +196,35 @@ scratch copies; settled). The notes themselves are historical and were not edite
 
 ### AS-AUTHOR-FORMS-EXACT
 
-- state: **next**  size: `S`  project: `SIGIL-AS-REPLACEMENT`
+- state: **built on branch, awaiting review** (`parcel/as-author-forms-exact`, not merged)  size: `S`  project: `SIGIL-AS-REPLACEMENT`
 - 31 of 167 common 68000 spellings a hack author writes are refused by sigil and accepted by `asl`; the three
   disassemblies use none, so no corpus test sees it (note section 4). Twenty are plain, plus unquoted
   `binclude` and refusing `swap.w`. Stage 0: check whether refusing the `adda`/`eori` shorthand was a ruling;
   if it was, those rows go to the owner.
+- Stage 0 answered: the ISA's refusal of `add Dn,An` is the `01121362` fix for a silent ADDX mis-encode, not
+  a ruling against the alias. It stays on the `.emp` route; the AS route rewrites to `adda`/`suba` as asl does.
+- 2026-09-27, on the branch: every form byte-identical to the pinned asl (md5 `61e67256`, `asl_run`, exit 0),
+  probes in `docs/superpowers/notes/2026-09-27-as-author-forms-exact-probes/`, tests
+  `sigil-frontend-as/tests/as_author_forms.rs`.
+  - ISA (both routes' encoder, `.emp` spelling unchanged): `chk.w`, `link`, `unlk`, `reset`, `rtr`, `stop`,
+    `trapv`, and `eori.b #,ccr`, `andi.w`/`ori.w`/`eori.w #,sr`, which sigil refused even SUFFIXED. Decoder
+    and capstone sweep agree, no new exclusion.
+  - AS route only: the eight mnemonics; `.b` branch suffix; unsuffixed `andi`/`ori`/`eori` to `ccr`/`sr`;
+    `add`/`sub` to An as `adda`/`suba` (every source mode) and `eor #imm,Dn` as `eori`; `$1234.w`/`.l`
+    unparenthesised, and `.W`/`.L` in either form; bare `binclude` paths.
+  - Refusals added, each an asl refusal sigil accepted: `swap.b`/`.w`/`.s` (asl takes bare and `.l`),
+    `andi.w`/`ori.w`/`eori.l` to `ccr`, and suffixes on `reset`/`rtr`/`trapv`/`stop`/`illegal`/`unlk`.
+  - A silent-wrong-bytes defect found beside item 6: `binclude "f",off,len` ignored `off` and `len` and
+    emitted the whole file. Now sliced as asl slices it. No shipped source or corpus uses the operands.
+  - `.emp` unchanged, pinned against master `3ceed19b`: `sigil-frontend-emp/tests/as_author_forms_stay_off_emp.rs`.
+- Left open, each recorded not guessed:
+  - `chk.l` assembles under asl (`4300`, the 68020 form) and sigil refuses it by name; bare `chk` assembles
+    under asl (`4380`) and sigil refuses it with bare `muls`/`divs`, under AS-UNSIZED-DEFAULTS.
+  - A `.s`/`.b` branch to the next instruction: asl emits `4E71` (a NOP) and sigil refuses the zero
+    displacement. Unchanged here.
+  - `jmp Foo.w` with `Foo` a symbol assembles under asl (`4EF8 1234`); sigil lexes `Foo.w` as one name.
+  - `.emp` spelling of the seven new mnemonics: needs `link`/`unlk` in the clobber model and `rtr` in the
+    terminator set, and is an owner-reviewed language change.
 
 ### AS-UNSIZED-DEFAULTS
 

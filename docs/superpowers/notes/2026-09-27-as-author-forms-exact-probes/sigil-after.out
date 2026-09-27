@@ -1,0 +1,126 @@
+add_b_dn_an      exit 1  REFUSED  add_b_dn_an.asm(2):2: error: unsupported form: Adda is word/long only
+add_l_dn_an      exit 0   D3C0
+add_w_an_an      exit 0   D2C8
+add_w_d2_a1      exit 0   D2C2
+add_w_dn_an      exit 0   D2C0
+add_w_dn_sp      exit 0   DEC0
+add_w_imm_an     exit 0   D2FC0001
+add_w_mem_an     exit 0   D2D0
+andi_b_ccr       exit 0   023C00FE
+andi_b_sr        exit 1  REFUSED  andi_b_sr.asm(2):2: error: unsupported form: AndiSr is word only (.w), got B
+andi_ccr         exit 0   023C00FE
+andi_ccr_big     exit 1  REFUSED  andi_ccr_big.asm(2):2: error: operand 510 out of range -128..=255
+andi_ccr_up      exit 0   023C00FE
+andi_l_sr        exit 1  REFUSED  andi_l_sr.asm(2):2: error: unsupported form: AndiSr is word only (.w), got L
+andi_sr          exit 0   027CF8FF
+andi_sr_big      exit 1  REFUSED  andi_sr_big.asm(2):2: error: operand 131071 out of range -32768..=65535
+andi_sr_ff       exit 0   027C00FF
+andi_w_ccr       exit 1  REFUSED  andi_w_ccr.asm(2):2: error: an immediate to `ccr` is byte only, as asl requires: write it with `.b` or with no suffix
+andi_w_ccr_up    exit 1  REFUSED  andi_w_ccr_up.asm(2):2: error: an immediate to `ccr` is byte only, as asl requires: write it with `.b` or with no suffix
+andi_w_sr        exit 0   027CF8FF
+andi_w_sr_ff     exit 0   027C00FF
+and_w_dn_an      exit 1  REFUSED  and_w_dn_an.asm(2):2: error: unsupported form: And.W with an address-register destination is not encodable, no address-register-destination 
+beq_b            exit 0   67024E71
+beq_s            exit 0   67024E71
+binclude_case    exit 0   5A
+binclude_cmt     exit 0   12345678
+binclude_dir     exit 0   ABCD
+binclude_off     exit 0   3456
+binclude_q_4args exit 1  REFUSED  binclude_q_4args.asm(2):2: error: BINCLUDE takes a path, an offset and a length, and no more operands
+binclude_q       exit 0   12345678
+binclude_q_len0  exit 0   
+binclude_q_lenbig exit 0   12345678
+binclude_q_lenneg2 exit 1  REFUSED  binclude_q_lenneg2.asm(2):2: error: BINCLUDE blob.bin: length -2 is negative, the file is 4 bytes
+binclude_q_lenneg exit 0   345678
+binclude_q_lenpast exit 1  REFUSED  binclude_q_lenpast.asm(2):2: error: BINCLUDE blob.bin: offset 1 and length 10 run past the end of the file, the file is 4 bytes
+binclude_q_off1  exit 0   5678
+binclude_q_off   exit 0   3456
+binclude_q_offend exit 0   
+binclude_q_offexpr exit 0   56
+binclude_q_offneg exit 1  REFUSED  binclude_q_offneg.asm(2):2: error: BINCLUDE blob.bin: offset -1 is negative, the file is 4 bytes
+binclude_q_offpast exit 1  REFUSED  binclude_q_offpast.asm(2):2: error: BINCLUDE blob.bin: offset 5 is past the end of the file, the file is 4 bytes
+binclude_unq     exit 0   12345678
+BINCLUDE_up      exit 0   12345678
+bra_b            exit 0   60024E71
+bra_b_back       exit 0   4E7160FC
+bra_b_far        exit 1  REFUSED  bra_b_far.asm(2):2: error: bra.s/Bcc.s displacement out of range (200) in section sec0
+bra_b_next       exit 1  REFUSED  bra_b_next.asm(2):2: error: bra.s/Bcc.s displacement is 0 in section sec0, a 0x00 byte displacement is the 68000 word-form escape, not a bra
+bra_s_next       exit 1  REFUSED  bra_s_next.asm(2):2: error: bra.s/Bcc.s displacement is 0 in section sec0, a 0x00 byte displacement is the 68000 word-form escape, not a bra
+bsr_b            exit 0   61024E71
+chk_bare         exit 1  REFUSED  chk_bare.asm(2):2: error: instruction needs an explicit size suffix (.b/.w/.l)
+chk_b            exit 1  REFUSED  chk_b.asm(2):2: error: `chk.b` is refused, as asl refuses it (invalid operand size): the 68000 has only `chk.w`
+chk_imm          exit 0   43BC0100
+chk_l            exit 1  REFUSED  chk_l.asm(2):2: error: `chk.l` is the MC68020's long form, which a 68000 does not decode: the 68000 has only `chk.w`
+chk_s            exit 1  REFUSED  chk_s.asm(2):2: error: `chk.s` is refused, as asl refuses it (invalid operand size): the 68000 has only `chk.w`
+chk_w            exit 0   4380
+chk_w_ind        exit 0   4390
+dc_absw          exit 1  REFUSED  dc_absw.asm(2):7: error: bad word expression
+eor_b_imm_dn     exit 0   0A000001
+eori_b_ccr       exit 0   0A3C0001
+eori_ccr         exit 0   0A3C0001
+eori_l_ccr       exit 1  REFUSED  eori_l_ccr.asm(2):2: error: an immediate to `ccr` is byte only, as asl requires: write it with `.b` or with no suffix
+eori_sr          exit 0   0A7C2000
+eori_w_sr        exit 0   0A7C2000
+eor_l_imm_dn     exit 0   0A8000000001
+eor_w_imm_dn     exit 0   0A400001
+illegal          exit 0   4AFC
+illegal_w        exit 1  REFUSED  illegal_w.asm(2):2: error: `illegal.w` is refused, as asl refuses it: `illegal` has no size field, write `illegal` with no suffix
+jmp_absl         exit 0   4EF900001234
+jmp_absw         exit 0   4EF81234
+jmp_absw_hi      exit 1  REFUSED  jmp_absw_hi.asm(2):2: error: address $8000 does not fit abs.w: only $0..=$7FFF and $FF8000..=$FFFFFF have a short spelling (asl: short addre
+jmp_absw_neg     exit 0   4EF88000
+jmp_absw_up      exit 0   4EF81234
+jmp_expr_w       exit 0   4EF81234
+jmp_paren_up     exit 0   4EF81234
+jmp_paren_w      exit 0   4EF81234
+jmp_sym_w        exit 1  REFUSED  jmp_sym_w.asm(3):2: error: unresolved jmp/jsr target in section sec0 references symbol `Foo.w` not defined in this link, expected when compi
+jsr_absw         exit 0   4EB81234
+lea_absw         exit 0   41F81234
+link             exit 0   4E560008
+link_b           exit 1  REFUSED  link_b.asm(2):2: error: `link.b` is refused, as asl refuses it: `link` is word only on the 68000, write `link` or `link.w`
+link_big         exit 0   4E568000
+link_dn          exit 1  REFUSED  link_dn.asm(2):2: error: unsupported form: link requires An,#imm operands, got Dn(0),Imm(8)
+link_ffff        exit 0   4E56FFFF
+link_l           exit 1  REFUSED  link_l.asm(2):2: error: `link.l` is refused, as asl refuses it: `link` is word only on the 68000, write `link` or `link.w`
+link_min         exit 0   4E568000
+link_neg         exit 0   4E56FFF8
+link_s           exit 1  REFUSED  link_s.asm(2):2: error: `link.s` is refused, as asl refuses it: `link` is word only on the 68000, write `link` or `link.w`
+link_w           exit 0   4E56FFF8
+move_absl        exit 0   303900001234
+move_absw        exit 0   30381234
+move_absw_dst    exit 1  REFUSED  move_absw_dst.asm(2):2: error: address $FF00 does not fit abs.w: only $0..=$7FFF and $FF8000..=$FFFFFF have a short spelling (asl: short add
+move_absw_ffff   exit 0   30388000
+ori_b_sr         exit 1  REFUSED  ori_b_sr.asm(2):2: error: unsupported form: OriSr is word only (.w), got B
+ori_ccr          exit 0   003C0001
+ori_sr           exit 0   007C0700
+ori_w_sr         exit 0   007C0700
+paren_reg_w      exit 1  REFUSED  paren_reg_w.asm(2):9: error: trailing tokens in operand
+paren_sp_w       exit 1  REFUSED  paren_sp_w.asm(2):9: error: trailing tokens in operand
+reg_space_w      exit 1  REFUSED  reg_space_w.asm(2):6: error: trailing tokens in operand
+reset            exit 0   4E70
+reset_w          exit 1  REFUSED  reset_w.asm(2):2: error: `reset.w` is refused, as asl refuses it: `reset` has no size field, write `reset` with no suffix
+rtr              exit 0   4E77
+rtr_l            exit 1  REFUSED  rtr_l.asm(2):2: error: `rtr.l` is refused, as asl refuses it: `rtr` has no size field, write `rtr` with no suffix
+rtr_op           exit 1  REFUSED  rtr_op.asm(2):2: error: operand count: Rtr expects 0 operands, got 1
+rtr_w            exit 1  REFUSED  rtr_w.asm(2):2: error: `rtr.w` is refused, as asl refuses it: `rtr` has no size field, write `rtr` with no suffix
+stop             exit 0   4E722700
+stop_big         exit 1  REFUSED  stop_big.asm(2):2: error: operand 74565 out of range -32768..=65535
+stop_dn          exit 1  REFUSED  stop_dn.asm(2):2: error: unsupported form: stop requires #imm operand, got Dn(0)
+stop_l           exit 1  REFUSED  stop_l.asm(2):2: error: `stop.l` is refused, as asl refuses it: `stop` has no size field, write `stop` with no suffix
+stop_neg         exit 0   4E72FFFF
+stop_w           exit 1  REFUSED  stop_w.asm(2):2: error: `stop.w` is refused, as asl refuses it: `stop` has no size field, write `stop` with no suffix
+sub_l_dn_an      exit 0   93C0
+sub_w_dn_an      exit 0   92C0
+sub_w_imm_an     exit 0   92FC0001
+swap             exit 0   4840
+swap_b           exit 1  REFUSED  swap_b.asm(2):2: error: `swap.b` is refused, as asl refuses it (invalid operand size): `swap` exchanges the two halves of a data register an
+swap_l           exit 0   4840
+swap_s           exit 1  REFUSED  swap_s.asm(2):2: error: `swap.s` is refused, as asl refuses it (invalid operand size): `swap` exchanges the two halves of a data register an
+swap_w           exit 1  REFUSED  swap_w.asm(2):2: error: `swap.w` is refused, as asl refuses it (invalid operand size): `swap` exchanges the two halves of a data register an
+trapv            exit 0   4E76
+trapv_w          exit 1  REFUSED  trapv_w.asm(2):2: error: `trapv.w` is refused, as asl refuses it: `trapv` has no size field, write `trapv` with no suffix
+unlk             exit 0   4E5E
+unlk_dn          exit 1  REFUSED  unlk_dn.asm(2):2: error: unsupported form: unlk requires An operand, got Dn(0)
+unlk_l           exit 1  REFUSED  unlk_l.asm(2):2: error: `unlk.l` is refused, as asl refuses it: `unlk` has no size field, write `unlk` with no suffix
+unlk_sp          exit 0   4E5F
+unlk_w           exit 1  REFUSED  unlk_w.asm(2):2: error: `unlk.w` is refused, as asl refuses it: `unlk` has no size field, write `unlk` with no suffix
