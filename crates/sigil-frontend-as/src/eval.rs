@@ -287,6 +287,118 @@ fn run_impl(
     opts: &Options,
     force_relocate: bool,
 ) -> Result<Assembled, Failure> {
+    let stopped = run_passes(src, root_name, opts, force_relocate, false);
+    let failure = match stopped.result {
+        Ok(a) => return Ok(a),
+        Err(f) => f,
+    };
+    if stopped.fatals.is_empty() {
+        return Err(failure);
+    }
+    // A `fatal` that stopped the RETURNING pass leaves every name defined past
+    // it without a value, and every reference to such a name written BEFORE it
+    // raised an `unresolved` error that is not true of the program. Assemble
+    // again with `fatal` not stopping the pass, to learn which errors those
+    // are. A `fatal` that fired only on an earlier pass stopped nothing the
+    // returned pass depends on, so there is nothing to learn and no second run.
+    let past = if stopped.stopped_at_fatal {
+        let past = run_passes(src, root_name, opts, force_relocate, true);
+        past.settled.then_some(past.result)
+    } else {
+        None
+    };
+    Err(drop_stop_follow_ons(failure, &stopped.fatals, past))
+}
+
+/// What one run of the pass loop produced, plus the two facts [`run_impl`]
+/// needs to decide whether its errors were caused by a `fatal` stopping it.
+struct PassRun {
+    result: Result<Assembled, Failure>,
+    /// Every distinct `fatal` any pass raised, in raise order.
+    fatals: Vec<Carried>,
+    /// Whether the pass whose diagnostics are returned was itself stopped by a
+    /// `fatal`. Only then can a returned error be a consequence of the stop.
+    stopped_at_fatal: bool,
+    /// Whether the loop reached a converged pass. A run that never settled,
+    /// or refused a circular layout, returns a whole-run failure rather than a
+    /// pass's diagnostics, so it cannot vouch for which errors are real.
+    settled: bool,
+}
+
+/// Put every `fatal` first, and drop from `failure` each error that exists
+/// only because a `fatal` stopped the pass, counting them in one note.
+///
+/// `past` is the same source assembled with `fatal` not stopping the pass
+/// ([`Asm::look_past_fatal`]), or `None` when that run did not happen or did
+/// not settle. An error of the stopped run is a consequence of the stop when
+/// the continued run does NOT raise it, at the same `file(line):col` with the
+/// same text: it went away once the rest of the source was assembled. Every
+/// other error stays, which is what keeps a bad operand before the `fatal`
+/// and a symbol defined nowhere at all: neither goes away. Nothing the
+/// continued run raises is added, because what lies past the `fatal` is
+/// exactly what the author's `fatal` said must not be assembled, and asl
+/// never reaches it either.
+///
+/// With no `past` to compare against, nothing is dropped; the `fatal` still
+/// comes first. Warnings and notes are never dropped.
+fn drop_stop_follow_ons(
+    failure: Failure,
+    fatals: &[Carried],
+    past: Option<Result<Assembled, Failure>>,
+) -> Failure {
+    let Failure { diags, messages, sources } = failure;
+    let key = |d: &Diagnostic, map: &sigil_span::SourceMap| {
+        (map.label(d.primary), d.level == Level::Error, d.message.clone())
+    };
+    let is_fatal = |d: &Diagnostic| {
+        d.level == Level::Error
+            && fatals.iter().any(|c| {
+                (sources.physical(d.primary) == c.physical && d.message == c.message)
+                    || c.label.as_ref().is_some_and(|l| d.message == format!("{l}: {}", c.message))
+            })
+    };
+    let past_keys: Option<std::collections::HashSet<_>> = past.map(|r| match r {
+        Ok(a) => a.warnings.iter().map(|d| key(d, &a.sources)).collect(),
+        Err(f) => f.diags.iter().map(|d| key(d, &f.sources)).collect(),
+    });
+    let (mut out, rest): (Vec<Diagnostic>, Vec<Diagnostic>) = diags.into_iter().partition(is_fatal);
+    let mut dropped = 0usize;
+    for d in rest {
+        let caused_by_stop = d.level == Level::Error
+            && past_keys.as_ref().is_some_and(|k| !k.contains(&key(&d, &sources)));
+        if caused_by_stop {
+            dropped += 1;
+        } else {
+            out.push(d);
+        }
+    }
+    if dropped > 0 {
+        let message = if dropped == 1 {
+            "1 further error not reported: it disappears when assembly continues past the \
+             fatal, so it exists only because assembly stopped there"
+                .to_string()
+        } else {
+            format!(
+                "{dropped} further errors not reported: each disappears when assembly \
+                 continues past the fatal, so each exists only because assembly stopped there"
+            )
+        };
+        out.push(Diagnostic {
+            level: Level::Note,
+            message,
+            primary: Span { source: SourceId(u32::MAX), start: 0, end: 0 },
+        });
+    }
+    Failure { diags: out, messages, sources }
+}
+
+fn run_passes(
+    src: &str,
+    root_name: &str,
+    opts: &Options,
+    force_relocate: bool,
+    look_past_fatal: bool,
+) -> PassRun {
     // Seed pass 0 with the provided defines; each later pass is seeded with the
     // previous pass's discovered symbols so forward references resolve. Macro and
     // function definitions are carried forward too, so an `ifndef`-guarded
@@ -369,6 +481,7 @@ fn run_impl(
             &labels,
             &label_ref_equs,
             if pass == 0 { FIRST_PASS } else { LATER_PASS },
+            look_past_fatal,
         );
         last_sources = sources;
         // A PROVEN circular layout expression is TERMINAL, and it has to be.
@@ -391,7 +504,12 @@ fn run_impl(
             // Rendered against THIS pass's map, which is the map that produced
             // the span, so the `file(line)` is this pass's own reading.
             diags.push(Diagnostic { level: Level::Error, message, primary: span });
-            return Err(Failure { diags, messages: Vec::new(), sources: last_sources });
+            return PassRun {
+                result: Err(Failure { diags, messages: Vec::new(), sources: last_sources }),
+                fatals: carried_fatals,
+                stopped_at_fatal: false,
+                settled: false,
+            };
         }
         // A `fatal` raised on ANY pass survives to the returned diagnostics.
         //
@@ -419,6 +537,7 @@ fn run_impl(
         // make a run louder and never quieter, and the three-way measurement
         // over all six roots shows it changes nothing anywhere that does not
         // have a dropped `fatal` to begin with.
+        let pass_stopped_at_fatal = terminal_fatal.is_some();
         if let Some(f) = terminal_fatal {
             carry_fatal(&mut carried_fatals, f);
         }
@@ -504,10 +623,16 @@ fn run_impl(
                 // prints a `message` when it is reached and the failure comes
                 // later (s1disasm prints its driver size and then fails on
                 // an unrelated line).
-                return if diags.iter().any(|d| d.level == Level::Error) {
+                let result = if diags.iter().any(|d| d.level == Level::Error) {
                     Err(Failure { diags, messages, sources: last_sources })
                 } else {
                     Ok(Assembled { module, warnings: diags, messages, shared, sources: last_sources })
+                };
+                return PassRun {
+                    result,
+                    fatals: carried_fatals,
+                    stopped_at_fatal: pass_stopped_at_fatal,
+                    settled: true,
                 };
             }
             let bonus = one_pass_with_defer(
@@ -521,6 +646,7 @@ fn run_impl(
                 &pass_label_ref_equs,
                 true,
                 LATER_PASS,
+                look_past_fatal,
             );
             let mut diags = bonus.diags;
             for (name, span) in bonus.poison {
@@ -535,6 +661,7 @@ fn run_impl(
             attach_guarded_equ_exports(&mut bonus_module, &opts.guarded_defines);
             // The bonus pass raises its own `fatal`s and `warning`s too, and it
             // is a pass like any other for this purpose.
+            let bonus_stopped_at_fatal = bonus.terminal_fatal.is_some();
             if let Some(f) = bonus.terminal_fatal {
                 carry_fatal(&mut carried_fatals, f);
             }
@@ -546,7 +673,7 @@ fn run_impl(
                 merge_carried_author_warnings(diags, &carried_author_warnings, &bonus.sources);
             // The bonus pass is the last one to run, so its `message` lines
             // are the run's, as for the poison-free return above.
-            return if diags.iter().any(|d| d.level == Level::Error) {
+            let result = if diags.iter().any(|d| d.level == Level::Error) {
                 Err(Failure { diags, messages: bonus.messages, sources: bonus.sources })
             } else {
                 Ok(Assembled {
@@ -556,6 +683,12 @@ fn run_impl(
                     shared: bonus.shared,
                     sources: bonus.sources,
                 })
+            };
+            return PassRun {
+                result,
+                fatals: carried_fatals,
+                stopped_at_fatal: bonus_stopped_at_fatal,
+                settled: true,
             };
         }
         // THE OSCILLATION PROOF. `one_pass` is deterministic and its only
@@ -575,7 +708,12 @@ fn run_impl(
                 message: format!("assembly never settles: {moving}"),
                 primary: Span { source: SourceId(u32::MAX), start: 0, end: 0 },
             });
-            return Err(Failure { diags, messages: Vec::new(), sources: last_sources });
+            return PassRun {
+                result: Err(Failure { diags, messages: Vec::new(), sources: last_sources }),
+                fatals: carried_fatals,
+                stopped_at_fatal: false,
+                settled: false,
+            };
         }
         // `prev` already holds the previous pass's environment, so it MOVES into
         // the history rather than being cloned a second time: the loop pays one
@@ -615,7 +753,12 @@ fn run_impl(
     });
     // No pass converged, so no pass's `message` lines are final: none are
     // returned, the same rule that keeps a non-final pass's lines out above.
-    Err(Failure { diags, messages: Vec::new(), sources: last_sources })
+    PassRun {
+        result: Err(Failure { diags, messages: Vec::new(), sources: last_sources }),
+        fatals: carried_fatals,
+        stopped_at_fatal: false,
+        settled: false,
+    }
 }
 
 /// Render what moved between two environments: the symbols whose values differ,
@@ -985,10 +1128,11 @@ fn one_pass(
     seed_labels: &std::collections::HashSet<String>,
     seed_label_ref_equs: &std::collections::HashSet<String>,
     mompass: i64,
+    look_past_fatal: bool,
 ) -> PassOutput {
     one_pass_with_defer(
         src, root_name, opts, seed_env, seed_macros, seed_functions, seed_labels,
-        seed_label_ref_equs, false, mompass,
+        seed_label_ref_equs, false, mompass, look_past_fatal,
     )
 }
 
@@ -1008,9 +1152,11 @@ fn one_pass_with_defer(
     seed_label_ref_equs: &std::collections::HashSet<String>,
     defer_unresolved_jsr_jmp: bool,
     mompass: i64,
+    look_past_fatal: bool,
 ) -> PassOutput {
     let mut asm = Asm::new_with_defer(opts, defer_unresolved_jsr_jmp);
     asm.mompass = mompass;
+    asm.look_past_fatal = look_past_fatal;
     asm.env = seed_env.clone();
     asm.prev_owned = index_instance_owned(seed_env);
     asm.macros = seed_macros.clone();
@@ -1652,6 +1798,14 @@ struct Asm {
     /// every well-formed corpus file uses and which is not a refusal at all.
     /// See [`run_impl`] for what the run does with it.
     terminal_fatal: Option<Carried>,
+    /// When `true`, `fatal` is still raised and still recorded as
+    /// [`terminal_fatal`](Asm::terminal_fatal), but it does not stop the pass.
+    ///
+    /// Only [`run_impl`]'s second assembly of a source whose `fatal` fired sets
+    /// it. That assembly exists to answer one question, which errors of the
+    /// real run exist only because the pass stopped, and nothing it produces
+    /// is returned. See [`drop_stop_follow_ons`].
+    look_past_fatal: bool,
     /// Every distinct SITE at which this pass ran the `warning` DIRECTIVE, with
     /// the text it produced there and the `file(line)` label THIS pass's own
     /// source map renders for it. See [`run_impl`] for what the run does with
@@ -2087,6 +2241,7 @@ impl Asm {
             deferred_assign_names: std::collections::HashSet::new(),
             defer_unresolved_jsr_jmp,
             terminal_fatal: None,
+            look_past_fatal: false,
             author_warnings: Vec::new(),
             messages: Vec::new(),
             share_file: opts.share_file,
@@ -7406,7 +7561,9 @@ impl Asm {
             "fatal" => {
                 let m = self.interp_string(rest);
                 self.err(span, m.clone());
-                self.aborted = true;
+                if !self.look_past_fatal {
+                    self.aborted = true;
+                }
                 if self.terminal_fatal.is_none() {
                     // The label is captured HERE, against THIS pass's own source
                     // map, because the map is rebuilt per pass and a `fatal` that
