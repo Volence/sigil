@@ -10592,6 +10592,19 @@ impl Asm {
             None => return,
         };
         let mnemonic = refine_m68k_mnemonic(mnemonic, &ops);
+        // The CCR immediates are byte only. asl refuses `andi.w #$FE,ccr`
+        // (probe `andi_w_ccr`, `error #1130: invalid operand size`), and the
+        // encoder's `AndiCcr`/`OriCcr` accept any size and emit the byte form,
+        // so the refusal is made here. The SR forms police their own size.
+        if matches!(mnemonic, M68kMnemonic::AndiCcr | M68kMnemonic::OriCcr | M68kMnemonic::EoriCcr)
+            && size != M68kSize::B
+        {
+            self.err(
+                span,
+                "an immediate to `ccr` is byte only, as asl requires: write it with `.b` or with no suffix",
+            );
+            return;
+        }
         let inst = M68kInstruction {
             mnemonic,
             size,
@@ -14250,6 +14263,22 @@ fn m68k_suffix_refusal(
 /// `move #$2700,sr` = `46FC 2700`, `move a6,usp` = `4E66`). The suffixed
 /// spellings are unaffected: `suffix_size` wins.
 fn m68k_special_reg_size(m: M68kMnemonic, atoms: &[OperandAtom]) -> Option<M68kSize> {
+    // `andi`/`ori`/`eori` to `ccr` are byte ops and to `sr` word ops, and each
+    // has exactly one legal size, so asl takes the bare spelling: `andi
+    // #$FE,ccr` = `023C 00FE`, `ori #$0700,sr` = `007C 0700` (probes
+    // `andi_ccr` .. `eori_sr`).
+    if matches!(m, M68kMnemonic::Andi | M68kMnemonic::Ori | M68kMnemonic::Eori) {
+        return match atoms.last() {
+            Some(OperandAtom::Value(Expr::Sym(name))) => {
+                match name.to_ascii_lowercase().as_str() {
+                    "ccr" => Some(M68kSize::B),
+                    "sr" => Some(M68kSize::W),
+                    _ => None,
+                }
+            }
+            _ => None,
+        };
+    }
     if m != M68kMnemonic::Move {
         return None;
     }
@@ -14602,6 +14631,10 @@ fn refine_m68k_mnemonic(mnemonic: M68kMnemonic, ops: &[M68kOperand]) -> M68kMnem
         (Move, [M68kOperand::Usp, _]) => MoveFromUsp,
         (Andi, [_, M68kOperand::Ccr]) => AndiCcr,
         (Ori, [_, M68kOperand::Ccr]) => OriCcr,
+        (Eori, [_, M68kOperand::Ccr]) => EoriCcr,
+        (Andi, [_, M68kOperand::Sr]) => AndiSr,
+        (Ori, [_, M68kOperand::Sr]) => OriSr,
+        (Eori, [_, M68kOperand::Sr]) => EoriSr,
         // An immediate source into a MEMORY destination on the ALU forms is
         // asl's spelling of the corresponding `xxxi` immediate instruction:
         // `cmp #imm,(abs)` ≡ `cmpi`, `and #imm,(abs)` ≡ `andi`, etc. (byte-exact

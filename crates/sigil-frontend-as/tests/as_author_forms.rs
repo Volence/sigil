@@ -188,6 +188,38 @@ fn dot_b_is_the_short_branch() {
 }
 
 #[test]
+fn immediates_to_ccr_and_sr_take_their_one_size() {
+    assert_rows(&[
+        ("andi_ccr", "\tandi\t#$FE,ccr", "023C00FE"),
+        ("ori_ccr", "\tori\t#1,ccr", "003C0001"),
+        ("eori_ccr", "\teori\t#1,ccr", "0A3C0001"),
+        ("andi_sr", "\tandi\t#$F8FF,sr", "027CF8FF"),
+        ("ori_sr", "\tori\t#$0700,sr", "007C0700"),
+        ("eori_sr", "\teori\t#$2000,sr", "0A7C2000"),
+        ("andi_sr_ff", "\tandi\t#$FF,sr", "027C00FF"),
+        ("andi_w_sr_ff", "\tandi.w\t#$FF,sr", "027C00FF"),
+        ("andi_b_ccr", "\tandi.b\t#$FE,ccr", "023C00FE"),
+        ("eori_b_ccr", "\teori.b\t#1,ccr", "0A3C0001"),
+        ("andi_w_sr", "\tandi.w\t#$F8FF,sr", "027CF8FF"),
+        ("ori_w_sr", "\tori.w\t#$0700,sr", "007C0700"),
+        ("eori_w_sr", "\teori.w\t#$2000,sr", "0A7C2000"),
+        ("andi_ccr_up", "\tANDI\t#$FE,CCR", "023C00FE"),
+    ]);
+    assert_refusals(&[
+        // asl `#1130 invalid operand size`.
+        ("andi_w_ccr", "\tandi.w\t#$FE,ccr", "byte only"),
+        ("andi_w_ccr_up", "\tANDI.W\t#$FE,CCR", "byte only"),
+        ("eori_l_ccr", "\teori.l\t#1,ccr", "byte only"),
+        ("andi_b_sr", "\tandi.b\t#$FF,sr", "word only"),
+        ("andi_l_sr", "\tandi.l\t#$FF,sr", "word only"),
+        ("ori_b_sr", "\tori.b\t#1,sr", "word only"),
+        // asl `#1320 range overflow`.
+        ("andi_ccr_big", "\tandi\t#$1FE,ccr", "out of range"),
+        ("andi_sr_big", "\tandi\t#$1FFFF,sr", "out of range"),
+    ]);
+}
+
+#[test]
 fn swap_refuses_every_suffix_asl_refuses() {
     assert_rows(&[
         ("swap", "\tswap\td0", "4840"),
