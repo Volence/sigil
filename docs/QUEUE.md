@@ -148,6 +148,29 @@ success; identified as `61e67256` for s1disasm and `0dee1f98` for s2disasm from 
 scratch copies; settled). The notes themselves are historical and were not edited.
 
 
+### PHASE-ROW-CPU
+
+- state: **open, parked**  size: `S` to `M`  project: `-`  asked by: oracle, 2026-09-27
+- **The ask:** a trailing token on each listing `PHASE` row naming the processor, so oracle stops guessing
+  whether a phased VMA is a Z80 or a 68000 address (it named real 68000 code at `$8000` as
+  `SoundTablesZ80_Head+...`).
+- **Why it is parked, found at step 0 and verified by the overseer at the remote tips 2026-09-27:**
+  (1) `Section.cpu` names the ENCODER (`crates/sigil-ir/src/lib.rs`, "which CPU this section's instruction
+  bytes target"), not the bus the VMA belongs to. All six live rows come from aeon
+  `games/sonic4/data/sound/soundbankhead.emp:58`, `section soundbankhead (cpu: m68000, vma: $8000)`, which is
+  68000-assembled data in the Z80 bank window, so threading `sec.cpu` prints the wrong answer on every live
+  row. What oracle needs is the VMA's ADDRESS SPACE, which no `.emp` section records
+  (`AddressSpace::Foreign` is set only by the AS frontend and describes the LMA). Recording it is a new section
+  attribute, so language surface: propose, discuss, land.
+  (2) Two readers break on a trailing token: oracle `crates/oracle-core/src/symbols.rs:1537` matches exactly six
+  tokens (origin/main `980d0d7d`), and aeon `tools/clip_anchors.py:107` is `\s*$`-anchored (origin/master
+  `aa9cb67b`). Both loosen first, before any row bytes change.
+  (3) Spelling, if it lands: `.emp` says `z80`/`m68000` (d-27, `m68k` refused), the AS frontend and linker
+  diagnostics say `Z80`/`68000`. Undecided.
+- **Oracle's interim rule** (VMA != LMA means the VMA is a Z80-window address, the 68000 address is the LMA) is
+  right for the whole live population. **Kill condition / trigger:** a phased 68000 block whose VMA is a 68000
+  address (code copied to RAM) appears in aeon; then this row becomes a language proposal to the owner.
+
 ### ASL-CITATION-SWEEP-FOLLOWUPS: LANDED
 
 - **LANDED 2026-09-27 at merge `103c2771`.** All three done: the sweep script sees 8-hex prefixes and
