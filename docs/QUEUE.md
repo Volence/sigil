@@ -196,7 +196,7 @@ scratch copies; settled). The notes themselves are historical and were not edite
 
 ### AS-AUTHOR-FORMS-EXACT
 
-- state: **built on branch, awaiting review** (`parcel/as-author-forms-exact`, not merged)  size: `S`  project: `SIGIL-AS-REPLACEMENT`
+- state: **LANDED** 2026-09-27 at merge `cb5ab42b`, pushed; landing run GREEN 5784 passed 0 failed (5770 + 14 new), clippy clean  size: `S`  project: `SIGIL-AS-REPLACEMENT`
 - 31 of 167 common 68000 spellings a hack author writes are refused by sigil and accepted by `asl`; the three
   disassemblies use none, so no corpus test sees it (note section 4). Twenty are plain, plus unquoted
   `binclude` and refusing `swap.w`. Stage 0: check whether refusing the `adda`/`eori` shorthand was a ruling;
