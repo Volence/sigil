@@ -148,9 +148,17 @@ success; identified as `61e67256` for s1disasm and `0dee1f98` for s2disasm from 
 scratch copies; settled). The notes themselves are historical and were not edited.
 
 
-### ASL-CITATION-SWEEP-FOLLOWUPS
+### ASL-CITATION-SWEEP-FOLLOWUPS: LANDED
 
-- state: `open`  size: `S`  project: `-`
+- **LANDED 2026-09-27 at merge `103c2771`.** All three done: the sweep script sees 8-hex prefixes and
+  all four digests and excludes a reviewed mention-only list, printing the old rule as its "historical
+  count" (22 at `702b2397`; corrected 20 there, 19 from this parcel on, because the enum README now names
+  its oracle by digest). Row 13 of the enum probe README is corrected with two more probes. The
+  asl-reference README's two `a8cd8b80` rows now read `(i386-unknown-linux)`, applied after the
+  overseer's review re-ran all seven table paths. **The "22" quoted in the row above and in the
+  2026-09-16 and 2026-09-26 lane-log entries is the historical rule's figure and stays as recorded**;
+  the script's output is the authority for the current count.
+- state at landing: `open`  size: `S`  project: `-`
 - Three findings from `docs/superpowers/notes/2026-09-26-asl-banner-citation-dependence.md`, none acted on:
   (1) `scripts/sweep_asl_citation_form.sh` misses digests written as 8-character md5 prefixes and counts notes that
   only MENTION the banner, so its banner-only population over-counts (`2026-09-05-asl-silent-decline-regime.md` is in
