@@ -251,6 +251,11 @@ fn top_level_help() -> String {
     out.push('\n');
     out.push_str("For one command's arguments, run `sigil <command> --help`, for example\n");
     out.push_str("`sigil emp --help`. `sigil help <command>` prints the same thing.\n");
+    out.push('\n');
+    out.push_str("Run under the program name asl (a copy or link named asl or asl.exe), it takes\n");
+    out.push_str("asl's command line instead, as a drop-in for a disassembly's own build script:\n");
+    out.push_str("it writes the object file X.p for p2bin, the share file X.h under -c and the\n");
+    out.push_str("log X.log under -E, and refuses any option that script does not pass.\n");
     out
 }
 
