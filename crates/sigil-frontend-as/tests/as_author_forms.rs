@@ -244,6 +244,29 @@ fn add_sub_to_an_address_register_and_eor_immediate_are_asls_aliases() {
 }
 
 #[test]
+fn a_width_suffix_on_an_unparenthesised_absolute() {
+    assert_rows(&[
+        ("jmp_absw", "\tjmp\t$1234.w", "4EF81234"),
+        ("jsr_absw", "\tjsr\t$1234.w", "4EB81234"),
+        ("jmp_absl", "\tjmp\t$1234.l", "4EF900001234"),
+        ("move_absw", "\tmove.w\t$1234.w,d0", "30381234"),
+        ("move_absl", "\tmove.w\t$1234.l,d0", "303900001234"),
+        ("lea_absw", "\tlea\t$1234.w,a0", "41F81234"),
+        ("jmp_absw_neg", "\tjmp\t$FFFF8000.w", "4EF88000"),
+        ("move_absw_ffff", "\tmove.w\t$FFFF8000.w,d0", "30388000"),
+        ("jmp_expr_w", "\tjmp\t$1000+$234.w", "4EF81234"),
+        ("jmp_absw_up", "\tjmp\t$1234.W", "4EF81234"),
+        ("jmp_paren_up", "\tjmp\t($1234).W", "4EF81234"),
+        ("jmp_paren_w", "\tjmp\t($1234).w", "4EF81234"),
+    ]);
+    // asl `#1340 short addressing not allowed`.
+    assert_refusals(&[
+        ("jmp_absw_hi", "\tjmp\t$8000.w", "does not fit abs.w"),
+        ("move_absw_dst", "\tmove.w\td0,$FF00.w", "does not fit abs.w"),
+    ]);
+}
+
+#[test]
 fn swap_refuses_every_suffix_asl_refuses() {
     assert_rows(&[
         ("swap", "\tswap\td0", "4840"),

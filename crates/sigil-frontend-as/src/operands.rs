@@ -243,12 +243,7 @@ pub fn classify(g: &[Token], at: Span, ctx: &ExprCtx<'_>) -> Result<OperandAtom,
             }),
         ) = (g.first(), g.last(), g.get(g.len() - 2))
         {
-            let long = match suf.as_str() {
-                ".w" => Some(false),
-                ".l" => Some(true),
-                _ => None,
-            };
-            if let Some(long) = long {
+            if let Some(long) = abs_width_suffix(suf) {
                 let inner = &g[1..g.len() - 2];
                 // `().w` is address 0 (asl: `move.w ().w,d0` is `3038 0000`).
                 if inner.is_empty() {
@@ -433,10 +428,42 @@ pub fn classify(g: &[Token], at: Span, ctx: &ExprCtx<'_>) -> Result<OperandAtom,
     }
     // Bare expression.
     let (e, rest) = parse_expr(g, ctx).ok_or_else(|| err(span, "bad operand expression"))?;
+    // `expr.w` / `expr.l` with no parentheses: the same explicit-width absolute
+    // as `(expr).w` / `(expr).l`. asl applies the suffix to the WHOLE operand
+    // (`jmp $1000+$234.w` = `4EF8 1234`, probe `jmp_expr_w`), which is what
+    // taking the parsed expression and then the one trailing width token does.
+    // A NAME followed by `.w` never reaches here: the lexer folds `Foo.w` into
+    // one identifier, so this arm serves a literal or an expression that does
+    // not end in a name.
+    if ctx.cpu == Cpu::M68000 {
+        if let [Token {
+            tok: Tok::Ident(suf),
+            ..
+        }] = rest
+        {
+            if let Some(long) = abs_width_suffix(suf) {
+                return Ok(OperandAtom::M68kAbs { addr: e, long });
+            }
+        }
+    }
     if !rest.is_empty() {
         return Err(err(span, "trailing tokens in operand"));
     }
     Ok(OperandAtom::Value(e))
+}
+
+/// The explicit absolute width a `.w`/`.l` token names, in either case (asl:
+/// `jmp ($1234).W` and `jmp $1234.W` are both `4EF8 1234`, probes
+/// `jmp_paren_up`/`jmp_absw_up`): `Some(false)` for word, `Some(true)` for long,
+/// `None` for anything else.
+fn abs_width_suffix(suf: &str) -> Option<bool> {
+    if suf.eq_ignore_ascii_case(".w") {
+        Some(false)
+    } else if suf.eq_ignore_ascii_case(".l") {
+        Some(true)
+    } else {
+        None
+    }
 }
 
 /// Parse an index displacement: tokens after `ix`/`iy`, beginning with `+`/`-`.
