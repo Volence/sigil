@@ -216,6 +216,10 @@ scratch copies; settled). The notes themselves are historical and were not edite
 - When the source's own `fatal` fires (S3K, a FixMusicAndSFXDataBugs build), sigil prints 563 error lines and
   the cause is line 468; `asl` prints one (note section 5). Report the `fatal` first and drop the unresolved
   follow-ons it caused.
+- 2026-09-27, on branch `parcel/as-diag-fatal-first` (not merged): the `fatal` is printed first; an error
+  is dropped, and counted in one note, when a second assembly that does not stop at the `fatal` no longer
+  raises it. S3K leg: 563 lines with the cause 468th became the `fatal` plus `562 further errors not
+  reported`, exit 1 both. Tests: `sigil-cli/tests/as_fatal_reported_first.rs`.
 
 ### AS-PERF-MEASURE
 
