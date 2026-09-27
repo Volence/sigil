@@ -5,6 +5,12 @@ documentation. The oracle is S1's own binary,
 `s1disasm/build_tools/Linux-x86_64/asl` — `Macro Assembler 1.42 Beta [Bld 212]
 (x86_64-unknown-linux)` — invoked with S1's own flags, `-xx -n -q -A -L -U -i .`.
 
+*Identified 2026-09-27:* that path's binary is md5
+`61e672562465725a8c102288a7da9098`, unchanged in git since 2026-06-17, so these
+rows were read off the reference build; `run.sh` has sourced
+`../asl-reference/asl_ref.sh` since 2026-09-05 and refuses any other digest (see
+`../2026-09-26-asl-banner-citation-dependence.md`, row 16).
+
 `run.sh <file.asm>` reruns any probe. The listing annotation `=$X..$Y` on an
 `enum`/`nextenum` line is AS reporting the first and last value the line bound;
 it is the single most useful thing in the listing and every table row cites it.
@@ -35,7 +41,7 @@ That is the whole of it. Everything below is a consequence.
 | 11a | does `enum` reset the COUNTER? | `enum a=5,b` then `enum c,d` | **yes** — `c=0`, not `$7`. This is the only thing separating `enum` from `nextenum` | `=$5..$6` then `=$0..$1` / `0506 0001` (q11) |
 | 11b | both at once | `enumconf 3` / `enum a=5,b` / `enum c,d` / `nextenum e,f` | `5,8 · 0,3 · 6,9` — counter reset, step kept | `=$5..$8`, `=$0..$3`, `=$6..$9` (q12) |
 | 12 | redefinition | `enum a=1,b` then `enum a=9,c` | `error #1000: symbol double defined`; **the first value is kept** (`a=1`) but **the counter still takes the new value** (`c=$A`) | `=$9..$A` / `0102 0A` |
-| 13 | forward reference in the value | `enum a=fw,b` with `fw EQU 4` below | `error #1820: expression must be evaluatable in first pass`; value folds to 0 | q10 |
+| 13 | forward reference in the value | `enum a=fw,b` with `fw EQU 4` below | `error #1820: expression must be evaluatable in first pass`, and nothing else: the run exits 2 with `Additional necessary passes not started`, so it is **not a source of values** and the member has no value to report. *(Corrected 2026-09-27; this cell used to read "value folds to 0", see below the table.)* | q10 |
 | 14 | member referenced above its own `enum` line | `dc.b z` then `enum z=7` | resolves — `07`. It is an ordinary two-pass symbol | q9 |
 | 15 | expression as the start | `k EQU 3` / `enum a=k*2,b` | `6,7` — arbitrary expression | `=$6..$7` |
 | 16 | member value's kind | symbol table | a plain integer constant, listed exactly as an `EQU` is (`a : 1`) | q1 symbol table |
@@ -43,6 +49,33 @@ That is the whole of it. Everything below is a consequence.
 | 18 | `enumconf`'s second argument | `enumconf 1,CODE` accepted; `enumconf 2,DATA` and `enumconf 1,2` rejected | a **segment name**, not a second number — `error #1961: unknown segment` | — |
 | 19 | `enum` arity | `enum` with 0 args | `error #1110` / `expected between 1 and 476 arguments but got 0` | — |
 | 20 | mnemonic case | `ENUM` / `NEXTENUM` | recognized — head folding is case-insensitive even under `-U` | — |
+
+### Row 13, corrected 2026-09-27: the zero was not a rule
+
+This row used to say the refused member's "value folds to 0". That was one
+listing: `q10.asm` lists `dc.b a,b` as `0000`. But q10 exits 2 and its footer
+reads `Additional necessary passes not started due to errors, listing possibly
+incorrect`, and **a run carrying any error is not a source of values** (see
+`../asl-reference/README.md`, "The run: `asl_run`"). Varying only what sits
+above the refused line moves the listed byte. Measured with
+`../2026-09-26-asl-banner-citation-dependence-probes/all4.sh`, three runs on each
+of the four builds (`61e67256`, `0dee1f98`, `a8cd8b80`, `aa6de52f`), every run
+exit 2, identical and stable on all four:
+
+| probe | above the `enum` line | `dc.b a,b` lists |
+|---|---|---|
+| `q10.asm` | nothing, `org 0` | `0000` |
+| `enum_fwd_stale.asm` | `dc.b $5A` | `0101` |
+| `enum_fwd_stale3.asm` | `dc.b $5A,$33,$44` | `0303` |
+| `enum_fwd_org40.asm` | nothing, `org $40` | `4040` |
+
+(the last three live beside `all4.sh`). On these four points both members list
+the address of the `enum` line, and `b` is not `a+1`; four points do not make
+that a rule either, and it is not one to implement. Sigil implements neither
+reading: it reports the unresolvable start expression as an error and does not
+bind the refused member (`enum_members` in
+`crates/sigil-frontend-as/src/eval.rs`), so its run fails as asl's does, and
+what either side would list for the members is not an answer.
 
 ## Rows 7 and 12 are the two that a plausible implementation gets wrong
 
