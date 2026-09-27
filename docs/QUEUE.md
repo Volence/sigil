@@ -159,8 +159,14 @@ scratch copies; settled). The notes themselves are historical and were not edite
 - The first run of this parcel died uncommitted in the 2026-09-27T09:14Z lane restart; its worktree
   `agent-a83b3b56407567d30` (branch `parcel/as-replacement-state`) holds only scratch and can be pruned.
 
-### AS-DROPIN-ASL-CONTRACT
+### AS-DROPIN-ASL-CONTRACT: LANDED
 
+- state: **LANDED** 2026-09-27 at merge `31c65791`, pushed. Full record: the merge body and
+  `docs/superpowers/notes/2026-09-27-as-dropin-asl-contract.md`. Deviations ratified: `-U` required in asl
+  mode; the two S2 `ACK_DISAGREE` entries scoped to the direct route rather than removed. Left open, per the
+  note: `-L` writes no listing, `-i` takes only the source's own directory, one source per call, a `before`
+  blob after a run over 0xFFFF bytes may be placed differently (no corpus has it), no Windows build.
+- original row, kept:
 - state: **next**  size: `M`  project: `SIGIL-AS-REPLACEMENT`
 - Let a disassembly's unmodified `build.lua` run sigil in place of `asl`: accept asl's flags
   (`-xx -n -q -A -L -U -E -i . -c -D`), write a `.p` the stock `p2bin` accepts, the `-c` share file and the
@@ -170,6 +176,23 @@ scratch copies; settled). The notes themselves are historical and were not edite
   sweep through the drop-in.
 - Invocation shape is forced by the goal (the script must not be edited), so it is this lane's call under
   `d-2`, logged as a notable call when made, not an owner blocker. No `.emp` surface.
+
+### AS-DROPIN-NIGHTLY
+
+- state: **open**  size: `S`  project: `SIGIL-AS-REPLACEMENT`
+- The nightly switch sweep runs only the direct route; `--route dropin` exists since `31c65791` (40/40, and
+  808/808 with `--cross`, on 2026-09-27). Add a drop-in pass so the route a disassembly user takes is watched
+  every night. The direct route's S2 share-file gap stays acknowledged there.
+
+### LANDING-LOG-CHECKER-READS-THE-WRONG-FILE
+
+- state: **open**  size: `S`
+- `scripts/check_landing_log.py <log>` reports NO VERDICT, RED on the log `landing-run.sh` writes (`$LOG`),
+  because the script echoes its verdict block to stdout only and writes just the `*_EXIT=` lines into `$LOG`.
+  Measured 2026-09-27 on the drop-in parcel's `landing-2.log` and on `.landing-audit-194834.log`; the
+  `.stdout` capture passes the checker while it reports every exit gate NOT REPORTED. `landing-run.sh
+  --verdict-only <log>` judges `$LOG` correctly. Make one artifact carry both, or point the checker's docs
+  at `--verdict-only`; either way the two instruments must agree on one file.
 
 ### AS-AUTHOR-FORMS-EXACT
 
@@ -189,7 +212,7 @@ scratch copies; settled). The notes themselves are historical and were not edite
 
 ### AS-DIAG-FATAL-FIRST
 
-- state: **open**  size: `S`  project: `SIGIL-AS-REPLACEMENT`
+- state: **next**  size: `S`  project: `SIGIL-AS-REPLACEMENT`
 - When the source's own `fatal` fires (S3K, a FixMusicAndSFXDataBugs build), sigil prints 563 error lines and
   the cause is line 468; `asl` prints one (note section 5). Report the `fatal` first and drop the unresolved
   follow-ons it caused.
