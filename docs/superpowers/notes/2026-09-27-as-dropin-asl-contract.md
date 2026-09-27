@@ -64,7 +64,7 @@ on probes in this parcel's scratch; each is also a test in
 
 ## Proof 1: the five scripts, unmodified
 
-Final binary: sigil `e6d2e221`, md5 `5c79cbd4c679532de4c41222c12318db`, copied to
+Binary: sigil `e6d2e221`, md5 `5c79cbd4c679532de4c41222c12318db` (and again on the final `ecbaff2a`, below), copied to
 `build_tools/Linux-x86_64/asl` in a fresh extraction of each disassembly (`git archive` of
 the revision below). Stock: the same extraction with its shipped tools. `cmp` over the whole
 file, each with a planted-byte control that saw exactly 1 difference. No script printed a
@@ -85,7 +85,7 @@ The reference figures of this morning's note all reproduce.
 `scripts/switch_matrix_sweep.py --route dropin`, new in this parcel: sigil copied over the
 leg tree's own `asl` and the leg's own `build.lua` run a second time, the substitution
 proven by the file being byte-identical to sigil afterwards and by no asl-format `> > >`
-line in the output. S1 and S2, 40 legs, binary `41888c46` (`db106274`):
+line in the output. S1 and S2, 40 legs, binary md5 `ba80534a` (the build that became `4d0ab783`), repeated with the same outcome on the final `ecbaff2a` (md5 `1bc9606b`):
 `SELF_TEST PASSED`, `RECONCILE legs launched=40 reported=40`, both C7 controls PASSED
 (DIFFER), outcomes **0 non-agreeing**, warning-parity keys 0, the `asl#180 = [as.odd-address]`
 pairing seen, `SWEEP PASSED`. The two S2 legs this morning's note called the share-file
@@ -201,4 +201,20 @@ and restored from HEAD; the list is in commit `e6d2e221`'s message.
 
 ## Landing run
 
-LANDING_PLACEHOLDER
+`scripts/landing-run.sh --baseline 5745 --aeon /home/volence/sonic_hacks/.aeon-sigil-ref`
+(the baseline is the most recent landing log found on this machine, `land-modreg`,
+2026-09-26, 5745 passed), aeon `ec640bcf`.
+
+- Run 1, HEAD `d937961b`: 5766 passed, **1 failed**, 2 ignored, 0 skip lines, clippy 0,
+  ledger 0. The failure was `stdout_writer_population`: `asl_mode.rs` printed `message`
+  lines with its own `println!`, which that gate counts as a library file writing to
+  stdout outside the broken-pipe rule. Fixed in `ecbaff2a` by printing through main.rs's
+  `render_as_messages`, the direct route's own function.
+- Run 2, HEAD `ecbaff2a` (tracked files clean; the stamp's DIRTY is the untracked scratch
+  directory): **5767 passed, 0 failed, 2 ignored, 0 skip lines**, CARGO_EXIT 0,
+  CLIPPY_EXIT 0, LEDGER_EXIT 0, reconciles 5745 + 22 new, **RESULT GREEN**.
+  `asl_dropin.rs` ran in it. This worktree's `repin --check` prints `pins.rs unchanged`.
+
+On `ecbaff2a` (sigil md5 `1bc9606b37c12b0af54367e1b042c27f`) the five scripts were run
+again (all IDENTICAL, same CRCs as the table above), and so were the error proof (the same
+output) and the drop-in sweep (40/40, 0 non-agreeing, SWEEP PASSED).
