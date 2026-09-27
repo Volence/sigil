@@ -3106,7 +3106,7 @@ fn run_build_native(aeon: &std::path::Path, opts: &BuildOpts) {
             native::build_rom_chained_with_listing(aeon, &with_extra(native::stress_art_profile())),
         ),
     };
-    let native::RomBuild { rom, listing, warnings } = match built {
+    let native::RomBuild { rom, listing, warnings, registry } = match built {
         Ok(build) => build,
         Err(err) => {
             eprintln!("error: native build ({label}): {err}");
@@ -3132,7 +3132,7 @@ fn run_build_native(aeon: &std::path::Path, opts: &BuildOpts) {
     // `declares_error_handler_island` reconciles the profile's crash-report axis with
     // the module list its build is handed and refuses when they disagree, so this
     // site and `append_deb2_appendix`'s blob-label check read the same answer.
-    let island = match native::declares_error_handler_island(&opts.target.label_and_profile().1) {
+    let island = match native::declares_error_handler_island(&opts.target.label_and_profile().1, &registry) {
         Ok(v) => v,
         Err(err) => {
             eprintln!("error: native build ({label}) fault-handler shape: {err}");

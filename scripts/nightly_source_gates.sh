@@ -168,6 +168,11 @@ SOURCE_GATES=(
     # from the build. Source only — it compiles the corpus and reads symbol NAMES; no
     # byte is compared to anything committed.
     error_handler_island_membership
+    # the build's module roots, derived from the tree's own map.toml `order`: a shadow copy
+    # with one row removed (source kept) derives exactly the smaller list, and one with
+    # the source removed (row kept) is refused by name. The doctored module is chosen
+    # from the tree. Source only: it compares derived lists, never a ROM or a golden.
+    module_roots_derivation
     # every shipped shape's listing declares which of its addresses are phased (VMA
     # != LMA) and which are not, judged against the sections the resolve produced.
     # Source only, and the same shape as the row above: it compiles the corpus and

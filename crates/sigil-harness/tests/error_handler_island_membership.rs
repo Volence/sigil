@@ -18,13 +18,13 @@
 //! it judges asserts that the output agrees with itself, which is worth nothing. The
 //! declared answer here comes from `native::declares_error_handler_island`, which
 //! reads no build output at all: it reconciles the profile's `debug || crash_report`
-//! axis with whether `profile.registry` carries `engine.debug.error_handler`. The
-//! registry is the module list the build is HANDED — upstream of every section, label
-//! and listing row it goes on to produce, and downstream of nothing it decides. The
-//! two are independent enough to disagree (a profile may build its registry from a
-//! different `(debug, crash_report)` pair than it stores, and `config_b_profile` and
-//! `lean_profile` both call `registry()` with explicit arguments), which is why that
-//! function reports a disagreement rather than picking a winner.
+//! axis with whether the shape's module roots (`native::module_registry`, derived from
+//! the game's map through the shape gates) carry `engine.debug.error_handler`. The
+//! roots are the module list the build lowers, upstream of every section, label and
+//! listing row it goes on to produce. The two are independent enough to disagree (a
+//! map that lost the island's row, or a tree that lost the module, derives roots
+//! without it while the axis still says island), which is why that function reports a
+//! disagreement rather than picking a winner.
 //!
 //! WHAT THIS CANNOT CATCH, stated rather than implied. A change that removes the
 //! registry row AND clears `crash_report` for the same shape moves both answers
@@ -77,7 +77,7 @@ fn membership_faults(rows: &[Shape]) -> Vec<String> {
                 format!(
                     "shape `{}`: declares NO error_handler island, yet its build \
                      defines `{}` among {} listing symbol(s). The island and the lean \
-                     fault handler are the two arms of one registry `if` sharing a \
+                     fault handler are the two arms of one shape gate sharing a \
                      placement slot, so this shape has lost the split, and it takes \
                      the no-appendix path, so the blob it now carries would find no \
                      symbol table at all.",
@@ -94,7 +94,9 @@ fn membership_faults(rows: &[Shape]) -> Vec<String> {
 /// answer (its own build's listing). Every shape is measured before any is judged, so
 /// a run names every disagreeing shape rather than the first.
 fn measure(aeon: &Path, label: &str, profile: &GameProfile) -> Result<Shape, String> {
-    let declared = native::declares_error_handler_island(profile)?;
+    let registry = native::module_registry(aeon, profile)
+        .map_err(|e| format!("shape `{label}`: module roots: {e}"))?;
+    let declared = native::declares_error_handler_island(profile, &registry)?;
     let built = native::build_rom_chained_with_listing(aeon, profile)
         .map_err(|e| format!("shape `{label}`: build failed, so nothing was measured: {e}"))?;
     Ok(Shape {
@@ -203,8 +205,10 @@ const ISLAND_SOURCE_REL: &str = "engine/debug/error_handler.emp";
 fn renaming_the_blob_label_in_the_engine_tree_makes_the_gate_red() {
     let profile = native::demo_profile(true);
     let Some(aeon) = reference_tree_for_profile(&profile) else { return };
+    let registry = native::module_registry(&aeon, &profile).expect("demo debug module roots");
     assert!(
-        native::declares_error_handler_island(&profile).expect("the demo debug shape is coherent"),
+        native::declares_error_handler_island(&profile, &registry)
+            .expect("the demo debug shape is coherent"),
         "control: this witness needs a shape that DECLARES the island"
     );
 
@@ -256,11 +260,15 @@ fn renaming_the_blob_label_in_the_engine_tree_makes_the_gate_red() {
 #[test]
 fn a_shape_that_declares_no_island_but_emits_one_is_named() {
     let shapes = native::shipped_shapes();
+    let Some(aeon) = reference_tree_for_profile(&shapes[0].1) else { return };
     let (label, profile) = shapes
         .iter()
-        .find(|(_, p)| native::declares_error_handler_island(p).unwrap_or(false))
+        .find(|(_, p)| {
+            native::module_registry(&aeon, p)
+                .and_then(|r| native::declares_error_handler_island(p, &r))
+                .unwrap_or(false)
+        })
         .expect("a shipped shape declares the island");
-    let Some(aeon) = reference_tree_for_profile(profile) else { return };
 
     let built = native::build_rom_chained_with_listing(&aeon, profile)
         .unwrap_or_else(|e| panic!("shape `{label}`: {e}"));
@@ -283,16 +291,20 @@ fn a_shape_that_declares_no_island_but_emits_one_is_named() {
 
 /// The declared answer is a RECONCILIATION of two records, and this proves it is live
 /// in both of its failure modes. Neither probe touches the tree: they doctor a shipped
-/// profile in memory.
+/// profile's derived module list, or its axis, in memory.
 #[test]
 fn the_declared_answer_refuses_a_profile_whose_two_records_disagree() {
+    let sonic4 = native::sonic4_profile(false);
+    let Some(aeon) = reference_tree_for_profile(&sonic4) else { return };
+    let derived = native::module_registry(&aeon, &sonic4).expect("sonic4 plain module roots");
+
     // A profile that keeps the crash-report axis but loses the registry row: the two
     // records now say different things about one shape, and neither is authoritative
     // over the other.
-    let mut half_removed = native::sonic4_profile(false);
-    assert!(half_removed.crash_report, "control: this profile's axis says it carries the island");
-    half_removed.registry.retain(|m| m.module_id != native::ERROR_HANDLER_MODULE_ID);
-    let e = native::declares_error_handler_island(&half_removed)
+    assert!(sonic4.crash_report, "control: this profile's axis says it carries the island");
+    let mut half_removed = derived.clone();
+    half_removed.retain(|m| m.module_id != native::ERROR_HANDLER_MODULE_ID);
+    let e = native::declares_error_handler_island(&sonic4, &half_removed)
         .expect_err("axis says island, registry places neither handler");
     assert!(
         e.contains("EXCLUSIVE"),
@@ -303,28 +315,30 @@ fn the_declared_answer_refuses_a_profile_whose_two_records_disagree() {
     // Both arms placed: the split is gone the other way. The control first proves the
     // island IS in this profile's registry, so the pushed second arm is what breaks the
     // split rather than an empty registry passing for one.
-    let mut both_arms = native::sonic4_profile(false);
+    let mut both_arms = derived.clone();
     assert!(
-        both_arms.registry.iter().any(|m| m.module_id == native::ERROR_HANDLER_MODULE_ID),
+        both_arms.iter().any(|m| m.module_id == native::ERROR_HANDLER_MODULE_ID),
         "control: the island is in this profile's registry"
     );
-    both_arms.registry.push(native::ModuleSpec {
-        module_id: native::RELEASE_FAULT_MODULE_ID,
-        section: "release_fault",
+    both_arms.push(native::ModuleSpec {
+        module_id: native::RELEASE_FAULT_MODULE_ID.to_string(),
+        section: "release_fault".to_string(),
     });
-    let e = native::declares_error_handler_island(&both_arms)
+    let e = native::declares_error_handler_island(&sonic4, &both_arms)
         .expect_err("a registry placing both fault handlers has lost the split");
     assert!(e.contains("BOTH"), "must say which way the split broke; got: {e}");
 
     // The split intact but the axis cleared: the two records disagree, and this is the
     // arm that catches a registry re-gate that forgot the profile field.
     let mut axis_cleared = native::lean_profile();
+    let lean_registry = native::module_registry(&aeon, &axis_cleared).expect("lean module roots");
     assert!(
-        !native::declares_error_handler_island(&axis_cleared).expect("lean is coherent"),
+        !native::declares_error_handler_island(&axis_cleared, &lean_registry)
+            .expect("lean is coherent"),
         "control: the lean profile declares no island"
     );
     axis_cleared.crash_report = true;
-    let e = native::declares_error_handler_island(&axis_cleared)
+    let e = native::declares_error_handler_island(&axis_cleared, &lean_registry)
         .expect_err("axis says island, registry places the lean handler");
     assert!(
         e.contains("AXIS and the REGISTRY disagree"),

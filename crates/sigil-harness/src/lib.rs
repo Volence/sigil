@@ -101,6 +101,11 @@ pub mod game_defines;
 /// base) and `native::validate_resolved_alignment` (against the resolved layout).
 pub mod section_align;
 
+/// The build's module roots, DERIVED from the game's placement map (`order` rows name
+/// the modules a shape places) plus the shape-gate residue the map cannot say yet.
+/// Read by `native::build_emp` (the synthetic entry's `use` roots).
+pub mod module_roots;
+
 /// `[sound.bank-id-vs-placement]`: the sound bank ids the emit bakes into the resident
 /// Z80 blob and the DAC descriptor head, checked against the banks as placed. Run by
 /// every full chained build (`native::build_rom_chained_with_listing`).

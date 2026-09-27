@@ -370,11 +370,12 @@ fn main() {
             bind_diags.iter().filter(|d| d.level == sigil_span::Level::Error).count();
         assert_eq!(bind_errs, 0, "shape `{label}`: {bind_errs} L1 bind errors");
 
-        // THE SHIPPED MODULE SET: the shape's own placement registry, plus the
-        // game RAM / manifest modules the synthetic entry pulls in. A module not
-        // in this set contributes no bytes to this shape's ROM.
+        // THE SHIPPED MODULE SET: the shape's module roots (derived from its game
+        // map), plus the game RAM / manifest modules the synthetic entry pulls in. A
+        // module not in this set contributes no bytes to this shape's ROM.
+        let registry = native::module_registry(&aeon, &profile).expect("module roots");
         let mut want: BTreeSet<String> =
-            profile.registry.iter().map(|m| m.module_id.to_string()).collect();
+            registry.iter().map(|m| m.module_id.to_string()).collect();
         want.insert(profile.game_ram_module.to_string());
         want.insert(profile.manifest_module.to_string());
         let mut missing: Vec<String> = Vec::new();
