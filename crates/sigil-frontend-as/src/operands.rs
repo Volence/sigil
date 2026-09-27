@@ -435,7 +435,14 @@ pub fn classify(g: &[Token], at: Span, ctx: &ExprCtx<'_>) -> Result<OperandAtom,
     // A NAME followed by `.w` never reaches here: the lexer folds `Foo.w` into
     // one identifier, so this arm serves a literal or an expression that does
     // not end in a name.
-    if ctx.cpu == Cpu::M68000 {
+    //
+    // Two shapes are left to the refusal below rather than read as addresses.
+    // A whole parenthesised group before the suffix is the `(expr).w` form,
+    // whose arm above already declined it because the group holds a register
+    // (`(a0).w` is asl's `#1146`, not an address), and a bare register before
+    // the suffix is a register, not a value.
+    let head = &g[..g.len() - rest.len()];
+    if ctx.cpu == Cpu::M68000 && !is_whole_paren_group(head) && !is_bare_register_token(head) {
         if let [Token {
             tok: Tok::Ident(suf),
             ..

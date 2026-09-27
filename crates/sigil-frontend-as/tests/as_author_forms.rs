@@ -259,10 +259,15 @@ fn a_width_suffix_on_an_unparenthesised_absolute() {
         ("jmp_paren_up", "\tjmp\t($1234).W", "4EF81234"),
         ("jmp_paren_w", "\tjmp\t($1234).w", "4EF81234"),
     ]);
-    // asl `#1340 short addressing not allowed`.
     assert_refusals(&[
+        // asl `#1340 short addressing not allowed`.
         ("jmp_absw_hi", "\tjmp\t$8000.w", "does not fit abs.w"),
         ("move_absw_dst", "\tmove.w\td0,$FF00.w", "does not fit abs.w"),
+        // asl `#1146 expected integer or string`: a register, parenthesised or
+        // not, is not an address a width suffix can apply to.
+        ("paren_reg_w", "\tmove.w\t(a0).w,d0", "trailing tokens in operand"),
+        ("paren_sp_w", "\tmove.w\t(SP).w,d0", "trailing tokens in operand"),
+        ("reg_space_w", "\tjmp\td0 .w", "trailing tokens in operand"),
     ]);
 }
 
