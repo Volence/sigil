@@ -3,7 +3,7 @@
 //! inverting `m68k::encode`'s code, so a single encoder bug cannot survive the
 //! round trip. Scope: exactly the instruction/EA forms `m68k::encode` can emit.
 //! Anything outside that set — including REAL 68000 instructions sigil never
-//! emits (`addx -(An),-(An)`, `subx`, `abcd`, `exg`, `roxl`, `bchg`, `chk`, …)
+//! emits (the 68020's `chk.l`, `pack`, `unpk`, the line-A and line-F words, …)
 //! — decodes to a loud [`DecodeError::Unknown`] naming the word. That strictness
 //! is the point: the motivating defect class is an encoder arm silently emitting
 //! a NEIGHBOUR opcode (`add.w d2,a1` → `D549` = `ADDX -(An),-(An)`), and a
@@ -282,13 +282,23 @@ fn decode_word(w: u16, rd: &mut Rd) -> Result<Instruction, DecodeError> {
     }
 }
 
-/// Line 0000: ALU-immediate, CCR immediates, bit ops (static + dynamic), movep.
+/// Line 0000: ALU-immediate, CCR/SR immediates, bit ops (static + dynamic), movep.
 fn decode_line0(w: u16, rd: &mut Rd, mode: u16, reg9: u16, r0: u16) -> Result<Instruction, DecodeError> {
-    // andi/ori to CCR: exact opcode words, one byte-immediate extension.
-    if w == 0x023C || w == 0x003C {
-        let mn = if w == 0x023C { Mnemonic::AndiCcr } else { Mnemonic::OriCcr };
-        let imm = imm_ext(rd, Size::B)?;
-        return Ok(inst(mn, Size::B, vec![Operand::Imm(imm), Operand::Ccr]));
+    // andi/ori/eori to CCR (byte immediate) and to SR (word immediate): exact
+    // opcode words, one extension word. These sit where the ALU-immediate rows
+    // would put an immediate DESTINATION, which the general path refuses.
+    let special = match w {
+        0x003C => Some((Mnemonic::OriCcr, Size::B, Operand::Ccr)),
+        0x023C => Some((Mnemonic::AndiCcr, Size::B, Operand::Ccr)),
+        0x0A3C => Some((Mnemonic::EoriCcr, Size::B, Operand::Ccr)),
+        0x007C => Some((Mnemonic::OriSr, Size::W, Operand::Sr)),
+        0x027C => Some((Mnemonic::AndiSr, Size::W, Operand::Sr)),
+        0x0A7C => Some((Mnemonic::EoriSr, Size::W, Operand::Sr)),
+        _ => None,
+    };
+    if let Some((mn, size, target)) = special {
+        let imm = imm_ext(rd, size)?;
+        return Ok(inst(mn, size, vec![Operand::Imm(imm), target]));
     }
     if w & 0x0100 != 0 {
         // Bit 8 set: movep (EA-field 001) or a dynamic bit op.
@@ -375,7 +385,28 @@ fn decode_line4(w: u16, rd: &mut Rd, mode: u16, reg9: u16, r0: u16) -> Result<In
         0x4E73 => return Ok(inst(Mnemonic::Rte, Size::W, vec![])),
         0x4E75 => return Ok(inst(Mnemonic::Rts, Size::W, vec![])),
         0x4AFC => return Ok(inst(Mnemonic::Illegal, Size::W, vec![])),
+        0x4E70 => return Ok(inst(Mnemonic::Reset, Size::W, vec![])),
+        0x4E76 => return Ok(inst(Mnemonic::Trapv, Size::W, vec![])),
+        0x4E77 => return Ok(inst(Mnemonic::Rtr, Size::W, vec![])),
+        0x4E72 => {
+            let v = rd.word()? as i32;
+            return Ok(inst(Mnemonic::Stop, Size::W, vec![Operand::Imm(v)]));
+        }
         _ => {}
+    }
+    // `link An,#d16` (`4E50 | an` + d16) and `unlk An` (`4E58 | an`).
+    if w & 0xFFF8 == 0x4E50 {
+        let d = rd.word()? as i16 as i32;
+        return Ok(inst(Mnemonic::Link, Size::W, vec![Operand::An(r0 as u8), Operand::Imm(d)]));
+    }
+    if w & 0xFFF8 == 0x4E58 {
+        return Ok(inst(Mnemonic::Unlk, Size::W, vec![Operand::An(r0 as u8)]));
+    }
+    // `chk.w <ea>,Dn`: bits 8-6 = 110. The 68020's `chk.l` (bits 8-6 = 100)
+    // is not a 68000 instruction and stays Unknown.
+    if w & 0xF1C0 == 0x4180 {
+        let src = ea(rd, mode, r0, Size::W, EaSet::DATA)?;
+        return Ok(inst(Mnemonic::Chk, Size::W, vec![src, Operand::Dn(reg9 as u8)]));
     }
     if w & 0xFFF0 == 0x4E40 {
         return Ok(inst(Mnemonic::Trap, Size::W, vec![Operand::Imm((w & 0xF) as i32)]));
@@ -684,8 +715,9 @@ fn canonical_size(m: Mnemonic, ops: &[Operand]) -> Option<Size> {
             Some(Operand::Dn(_)) => Size::L,
             _ => Size::B,
         }),
-        Tas | Scc(_) | AndiCcr | OriCcr => Some(Size::B),
-        MoveToSr | MoveFromSr | MoveToCcr => Some(Size::W),
+        Tas | Scc(_) | AndiCcr | OriCcr | EoriCcr => Some(Size::B),
+        MoveToSr | MoveFromSr | MoveToCcr | AndiSr | OriSr | EoriSr => Some(Size::W),
+        Chk | Link | Unlk | Reset | Rtr | Trapv | Stop => Some(Size::W),
         // USP moves and `exg` have no size field: long by construction.
         MoveToUsp | MoveFromUsp | Exg => Some(Size::L),
         Jmp | Jsr | Lea | Pea => Some(Size::L),
@@ -801,7 +833,7 @@ fn canonicalize_imms(m: Mnemonic, size: Size, ops: &mut [Operand]) {
             | Add | Adda | Sub | Suba | And | Or | Eor | Cmp | Cmpa
             | Muls | Mulu | Divs | Divu
             | Addi | Subi | Andi | Ori | Eori | Cmpi
-            | MoveToSr
+            | MoveToSr | AndiSr | OriSr | EoriSr | Link | Stop
     );
     if width_checked {
         // Only a SOURCE-position immediate exists for these forms; the loop is
@@ -809,8 +841,10 @@ fn canonicalize_imms(m: Mnemonic, size: Size, ops: &mut [Operand]) {
         for op in ops.iter_mut() {
             if let Operand::Imm(v) = op {
                 *v = match m {
-                    // mul/div/move-to-sr are word ops regardless of `size`.
-                    Muls | Mulu | Divs | Divu | MoveToSr => *v & 0xFFFF,
+                    // mul/div and the SR, `link` and `stop` words are word
+                    // fields regardless of `size`.
+                    Muls | Mulu | Divs | Divu | MoveToSr | AndiSr | OriSr | EoriSr | Link
+                    | Stop => *v & 0xFFFF,
                     _ => match size {
                         Size::B => *v & 0xFF,
                         Size::W => *v & 0xFFFF,
@@ -820,7 +854,7 @@ fn canonicalize_imms(m: Mnemonic, size: Size, ops: &mut [Operand]) {
             }
         }
     }
-    if matches!(m, AndiCcr | OriCcr) {
+    if matches!(m, AndiCcr | OriCcr | EoriCcr) {
         if let Some(Operand::Imm(v)) = ops.first_mut() {
             *v &= 0xFF;
         }
@@ -951,25 +985,18 @@ mod tests {
 
     #[test]
     fn unknown_real_instructions_are_named_not_guessed() {
-        // Real 68000 instructions still outside sigil's emitted set, plus the
-        // two unassigned lines. Each must be a NAMED `Unknown`, never guessed
-        // into a neighbouring family.
+        // Words outside sigil's emitted set: the two unassigned lines and
+        // 68020 additions that sit on 68000 rows. Each must be a NAMED
+        // `Unknown`, never guessed into a neighbouring family.
         //
-        //   chk.w d0,d1 (4380),
-        //   link a0,#0 (4E50 0000), unlk a0 (4E58), stop #0 (4E72 0000),
-        //   reset (4E70), trapv (4E76), rtr (4E77), line-A (A000), line-F (F000),
-        //   and the 68020's pack/unpk on the sbcd/abcd rows (8141, 8181, C181).
+        //   line-A (A000), line-F (F000), the 68020's pack/unpk on the
+        //   sbcd/abcd rows (8141, 8181, C181), and the 68020's `chk.l d0,d1`
+        //   (4300) on the `chk.w` row.
         for bytes in [
-            &[0x43, 0x80][..],
-            &[0x81, 0x41, 0x00, 0x00],
+            &[0x81, 0x41, 0x00, 0x00][..],
             &[0x81, 0x81, 0x00, 0x00],
             &[0xC1, 0x81],
-            &[0x4E, 0x50, 0x00, 0x00],
-            &[0x4E, 0x58],
-            &[0x4E, 0x72, 0x00, 0x00],
-            &[0x4E, 0x70],
-            &[0x4E, 0x76],
-            &[0x4E, 0x77],
+            &[0x43, 0x00],
             &[0xA0, 0x00],
             &[0xF0, 0x00],
         ] {
@@ -1054,6 +1081,43 @@ mod tests {
             dec(&[0x4E, 0x68]),
             inst(Mnemonic::MoveFromUsp, Size::L, vec![Usp, An(0)])
         );
+    }
+
+    /// The eleven 68000 words the AS-author-forms parcel added. Each byte string
+    /// is the pinned asl's own output (`s1disasm/build_tools/Linux-x86_64/asl`,
+    /// md5 `61e672562465725a8c102288a7da9098`, `asl_run -xx -n -q -A -L -U`,
+    /// exit 0) for the probe named beside it in
+    /// `docs/superpowers/notes/2026-09-27-as-author-forms-exact-probes/`.
+    #[test]
+    fn author_forms_lines_decode_to_their_instruction() {
+        use Operand::*;
+        let cases: &[(&[u8], Instruction)] = &[
+            // chk_w: `chk.w d0,d1`; chk_w_ind: `chk.w (a0),d1`; chk_imm:
+            // `chk.w #$100,d1`.
+            (&[0x43, 0x80], inst(Mnemonic::Chk, Size::W, vec![Dn(0), Dn(1)])),
+            (&[0x43, 0x90], inst(Mnemonic::Chk, Size::W, vec![Ind(0), Dn(1)])),
+            (&[0x43, 0xBC, 0x01, 0x00], inst(Mnemonic::Chk, Size::W, vec![Imm(0x100), Dn(1)])),
+            // link_neg: `link a6,#-8`; unlk: `unlk a6`.
+            (&[0x4E, 0x56, 0xFF, 0xF8], inst(Mnemonic::Link, Size::W, vec![An(6), Imm(-8)])),
+            (&[0x4E, 0x5E], inst(Mnemonic::Unlk, Size::W, vec![An(6)])),
+            // reset, trapv, rtr, stop: `stop #$2700`.
+            (&[0x4E, 0x70], inst(Mnemonic::Reset, Size::W, vec![])),
+            (&[0x4E, 0x76], inst(Mnemonic::Trapv, Size::W, vec![])),
+            (&[0x4E, 0x77], inst(Mnemonic::Rtr, Size::W, vec![])),
+            (&[0x4E, 0x72, 0x27, 0x00], inst(Mnemonic::Stop, Size::W, vec![Imm(0x2700)])),
+            // eori_b_ccr: `eori.b #1,ccr`.
+            (&[0x0A, 0x3C, 0x00, 0x01], inst(Mnemonic::EoriCcr, Size::B, vec![Imm(1), Ccr])),
+            // andi_w_sr: `andi.w #$F8FF,sr`; ori_w_sr: `ori.w #$0700,sr`;
+            // eori_w_sr: `eori.w #$2000,sr`.
+            (&[0x02, 0x7C, 0xF8, 0xFF], inst(Mnemonic::AndiSr, Size::W, vec![Imm(0xF8FF), Sr])),
+            (&[0x00, 0x7C, 0x07, 0x00], inst(Mnemonic::OriSr, Size::W, vec![Imm(0x0700), Sr])),
+            (&[0x0A, 0x7C, 0x20, 0x00], inst(Mnemonic::EoriSr, Size::W, vec![Imm(0x2000), Sr])),
+        ];
+        for (bytes, want) in cases {
+            assert_eq!(&dec(bytes), want, "{bytes:02X?}");
+            // And the encoder reproduces asl's bytes from the decoded form.
+            assert_eq!(&encode(want).expect("encodes"), bytes, "{want:?}");
+        }
     }
 
     #[test]

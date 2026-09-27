@@ -261,6 +261,9 @@ fn m68k_isa_carry_role(m: sigil_backend_m68k::m68k::Mnemonic, ops: &[CodeOperand
         Andi if to_ccr_or_sr => ccr_imm_c_role(CcrImmOp::And, ops),
         Ori if to_ccr_or_sr => ccr_imm_c_role(CcrImmOp::Or, ops),
         Eori if to_ccr_or_sr => ccr_imm_c_role(CcrImmOp::Eor, ops),
+        EoriCcr | EoriSr => ccr_imm_c_role(CcrImmOp::Eor, ops),
+        AndiSr => ccr_imm_c_role(CcrImmOp::And, ops),
+        OriSr => ccr_imm_c_role(CcrImmOp::Or, ops),
         // An address-register destination is MOVEA / ADDA / SUBA ("Not
         // affected"), and ADDQ / SUBQ to one: "the condition codes are not
         // affected when the destination is an address register".
@@ -287,6 +290,9 @@ fn m68k_isa_carry_role(m: sigil_backend_m68k::m68k::Mnemonic, ops: &[CodeOperand
         // RTE: "Set according to the condition code bits in the status register
         // value restored from the stack" (and returns).
         Rte => Writes,
+        // RTR: "Set to the condition codes popped from the stack." STOP: "Set
+        // according to the immediate operand." CHK: "C: Undefined."
+        Rtr | Stop | Chk => Writes,
         // Bcc / Scc / DBcc read C exactly when their condition's test does.
         Bcc(c) | Scc(c) | Dbcc(c) => {
             if m68k_cond_reads_c(c) {
@@ -297,7 +303,7 @@ fn m68k_isa_carry_role(m: sigil_backend_m68k::m68k::Mnemonic, ops: &[CodeOperand
         }
         // "Condition Codes: Not affected."
         Movea | Adda | Suba | Lea | Pea | Movem | Movep | Exg | Nop | Jmp | Bra | Rts | Trap
-        | Illegal | MoveToUsp | MoveFromUsp => Untouched,
+        | Illegal | MoveToUsp | MoveFromUsp | Link | Unlk | Reset | Trapv => Untouched,
     }
 }
 
@@ -531,6 +537,8 @@ fn m68k_isa_zero_role(m: sigil_backend_m68k::m68k::Mnemonic, ops: &[CodeOperand]
         OriCcr => ccr_imm_z_role(false, ops),
         Andi if to_ccr_or_sr => ccr_imm_z_role(true, ops),
         Ori | Eori if to_ccr_or_sr => ccr_imm_z_role(false, ops),
+        AndiSr => ccr_imm_z_role(true, ops),
+        EoriCcr | OriSr | EoriSr => ccr_imm_z_role(false, ops),
         // An address-register destination is MOVEA / ADDA / SUBA ("Not
         // affected"), and ADDQ / SUBQ to one: "the condition codes are not
         // affected when the destination is an address register".
@@ -549,6 +557,9 @@ fn m68k_isa_zero_role(m: sigil_backend_m68k::m68k::Mnemonic, ops: &[CodeOperand]
         Jsr | Bsr => Writes,
         // RTE loads SR from the stack (and returns).
         Rte => Writes,
+        // RTR pops the condition codes, STOP loads SR from its immediate, and
+        // CHK leaves Z "Undefined": none of them leaves the old Z standing.
+        Rtr | Stop | Chk => Writes,
         // Bcc / Scc / DBcc read Z exactly when their condition's test does.
         Bcc(c) | Scc(c) | Dbcc(c) => {
             if m68k_cond_reads_z(c) {
@@ -559,7 +570,7 @@ fn m68k_isa_zero_role(m: sigil_backend_m68k::m68k::Mnemonic, ops: &[CodeOperand]
         }
         // "Condition Codes: Not affected."
         Movea | Adda | Suba | Lea | Pea | Movem | Movep | Exg | Nop | Jmp | Bra | Rts | Trap
-        | Illegal | MoveToUsp | MoveFromUsp => Untouched,
+        | Illegal | MoveToUsp | MoveFromUsp | Link | Unlk | Reset | Trapv => Untouched,
     }
 }
 
@@ -1776,19 +1787,42 @@ mod zero_model_tests {
             "move-from-sr" => vec![("move".into(), vec![CodeOperand::Sr, CodeOperand::Reg(Reg::D0)])],
             "andi-ccr" => vec![("andi".into(), imm_to(CodeOperand::Ccr))],
             "ori-ccr" => vec![("ori".into(), imm_to(CodeOperand::Ccr))],
+            "eori-ccr" => vec![("eori".into(), imm_to(CodeOperand::Ccr))],
+            "andi-sr" => vec![("andi".into(), imm_to(CodeOperand::Sr))],
+            "ori-sr" => vec![("ori".into(), imm_to(CodeOperand::Sr))],
+            "eori-sr" => vec![("eori".into(), imm_to(CodeOperand::Sr))],
             plain => vec![(plain.to_string(), vec![])],
         }
     }
 
+    /// The ISA families no `.emp` CodeBuf can hold, each for a named reason.
+    ///
+    /// - `move-to-usp` / `move-from-usp`: the `.emp` operand model has no `usp`
+    ///   operand.
+    /// - `chk`, `link`, `unlk`, `reset`, `rtr`, `trapv`, `stop`: `.emp`'s
+    ///   mnemonic table has no spelling for them (they are reached from the AS
+    ///   front-end only). Spelling them in `.emp` is an owner-reviewed language
+    ///   change, and it also needs `link`/`unlk` in the clobber model and `rtr`
+    ///   in the terminator set, which the last-operand rule cannot supply.
+    const UNSPELLABLE: &[&str] = &[
+        "move-to-usp",
+        "move-from-usp",
+        "chk",
+        "link",
+        "unlk",
+        "reset",
+        "rtr",
+        "trapv",
+        "stop",
+    ];
+
     /// Every family `sigil-isa` encodes has a zero role through the walk's string
-    /// path. The USP moves are the one exception, named: the `.emp` operand model
-    /// has no `usp` operand, so no CodeBuf can hold one.
+    /// path, except the families [`UNSPELLABLE`] names, which no CodeBuf can hold.
     #[test]
     fn every_encodable_68k_family_has_a_zero_role() {
-        let unspellable = ["move-to-usp", "move-from-usp"];
         let mut checked = 0;
         for family in sigil_backend_m68k::m68k::ALL_FAMILY_NAMES {
-            if unspellable.contains(family) {
+            if UNSPELLABLE.contains(family) {
                 continue;
             }
             for (mnem, ops) in spellings(family) {
@@ -1816,13 +1850,12 @@ mod zero_model_tests {
     }
 
     /// Every family `sigil-isa` encodes has a carry role through the walk's
-    /// string path, with the same named USP exception as the zero sweep.
+    /// string path, with the same [`UNSPELLABLE`] exceptions as the zero sweep.
     #[test]
     fn every_encodable_68k_family_has_a_carry_role() {
-        let unspellable = ["move-to-usp", "move-from-usp"];
         let mut checked = 0;
         for family in sigil_backend_m68k::m68k::ALL_FAMILY_NAMES {
-            if unspellable.contains(family) {
+            if UNSPELLABLE.contains(family) {
                 continue;
             }
             for (mnem, ops) in spellings(family) {
