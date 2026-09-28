@@ -263,6 +263,7 @@ pub fn assemble_root_relocating_warned(
 }
 
 fn assemble_root_impl(root: &Path, opts: &Options, relocate: bool) -> Result<Assembled, Failure> {
+    let t_root = sigil_span::phase::clock();
     let text = sigil_span::read_set::read_to_string(root).map_err(|e| Failure {
         diags: vec![sigil_span::Diagnostic {
             level: sigil_span::Level::Error,
@@ -284,6 +285,7 @@ fn assemble_root_impl(root: &Path, opts: &Options, relocate: bool) -> Result<Ass
         o.include_root = root.parent().map(|p| p.to_path_buf());
     }
     let name = root.display().to_string();
+    sigil_span::phase::phase("frontend.read_root", t_root, &format!("bytes={}", text.len()));
     if relocate {
         eval::run_relocating(&text, &name, &o)
     } else {

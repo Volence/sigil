@@ -44,8 +44,10 @@ pub fn lex_line_recover(
     source: SourceId,
     base: u32,
 ) -> (Vec<Token>, Option<Diagnostic>) {
+    let t0 = sigil_span::phase::clock();
     let mut out = Vec::new();
     let err = lex_into(line, cpu, source, base, &mut out).err();
+    sigil_span::phase::accumulate(sigil_span::phase::Acc::Lex, t0, line.len() as u64);
     (out, err)
 }
 

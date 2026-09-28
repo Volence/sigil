@@ -310,6 +310,64 @@ fn run_impl(
     Err(drop_stop_follow_ons(failure, &stopped.fatals, past))
 }
 
+/// The `SIGIL_PHASE_TIMING` line for pass `pass` of [`run_passes`]: its wall time
+/// and peak, the size of the environment it produced, how that environment differs
+/// from the one the pass was seeded with (names added, removed and changed, the
+/// difference that decides whether another pass runs, with a few of each), and what
+/// the oscillation history holds (`history_key_bytes` is the text of every retained
+/// name; the map nodes around them are not counted). Nothing when timing is off.
+fn phase_pass_line(
+    pass: usize,
+    t_pass: Option<std::time::Instant>,
+    env: &SymbolTable,
+    seed: &SymbolTable,
+    history: &[SymbolTable],
+    outcome: &str,
+) {
+    if t_pass.is_none() {
+        return;
+    }
+    let entries: usize = history.iter().map(|t| t.iter().count()).sum();
+    let key_bytes: usize = history.iter().flat_map(|t| t.iter()).map(|(k, _)| k.len()).sum();
+    let old: std::collections::BTreeMap<&String, &SymbolValue> = seed.iter().collect();
+    let new: std::collections::BTreeMap<&String, &SymbolValue> = env.iter().collect();
+    let added: Vec<&str> = new.keys().filter(|k| !old.contains_key(*k)).map(|k| k.as_str()).collect();
+    let removed: Vec<&str> = old.keys().filter(|k| !new.contains_key(*k)).map(|k| k.as_str()).collect();
+    let changed: Vec<String> = new
+        .iter()
+        .filter_map(|(k, v)| match old.get(k) {
+            Some(o) if o != v => Some(format!("{k}:{o:?}->{v:?}")),
+            _ => None,
+        })
+        .collect();
+    // The changed name with the lowest previous value: for addresses, where a shift
+    // between the two passes begins.
+    let lowest_changed = new
+        .iter()
+        .filter_map(|(k, v)| match (old.get(k), v) {
+            (Some(SymbolValue::Int(o)), SymbolValue::Int(n)) if o != n => Some((*o, *n, k.as_str())),
+            _ => None,
+        })
+        .min()
+        .map_or(String::new(), |(o, n, k)| format!("{k}:{o:#x}->{n:#x}"));
+    let sample = |v: &[&str]| v.iter().take(6).copied().collect::<Vec<_>>().join(",");
+    let changed_sample = changed.iter().take(6).cloned().collect::<Vec<_>>().join(",");
+    sigil_span::phase::phase(
+        &format!("pass{pass}"),
+        t_pass,
+        &format!(
+            "outcome={outcome}\tenv_entries={}\tenv_added={}\tenv_removed={}\tenv_changed={}\thistory_tables={}\thistory_entries={entries}\thistory_key_bytes={key_bytes}\tadded_sample={}\tremoved_sample={}\tchanged_sample={changed_sample}\tlowest_changed={lowest_changed}",
+            env.iter().count(),
+            added.len(),
+            removed.len(),
+            changed.len(),
+            history.len(),
+            sample(&added),
+            sample(&removed),
+        ),
+    );
+}
+
 /// What one run of the pass loop produced, plus the two facts [`run_impl`]
 /// needs to decide whether its errors were caused by a `fatal` stopping it.
 struct PassRun {
@@ -456,6 +514,7 @@ fn run_passes(
     // outlives its pass and an assembler-raised one does not.
     let mut carried_author_warnings: Vec<Carried> = Vec::new();
     for pass in 0..SETTLE_GUARD {
+        let t_pass = sigil_span::phase::clock();
         let PassOutput {
             module,
             env,
@@ -551,7 +610,10 @@ fn run_passes(
                 }
             }
         }
-        if pass > 0 && env == prev {
+        let t_cmp = sigil_span::phase::clock();
+        let converged = pass > 0 && env == prev;
+        sigil_span::phase::step("  pass.converge_check", t_cmp, "");
+        if converged {
             // Converged: this pass's env is authoritative. A final bonus pass (seeded
             // from it, `defer_unresolved_jsr_jmp` set) does two things the ordinary
             // passes cannot: (1) a `jsr`/`jmp` bare-symbol target still folding to Poison
@@ -628,6 +690,7 @@ fn run_passes(
                 } else {
                     Ok(Assembled { module, warnings: diags, messages, shared, sources: last_sources })
                 };
+                phase_pass_line(pass, t_pass, &env, &prev, &history, "converged");
                 return PassRun {
                     result,
                     fatals: carried_fatals,
@@ -635,6 +698,8 @@ fn run_passes(
                     settled: true,
                 };
             }
+            phase_pass_line(pass, t_pass, &env, &prev, &history, "converged-bonus-follows");
+            let t_bonus = sigil_span::phase::clock();
             let bonus = one_pass_with_defer(
                 src,
                 root_name,
@@ -673,6 +738,7 @@ fn run_passes(
                 merge_carried_author_warnings(diags, &carried_author_warnings, &bonus.sources);
             // The bonus pass is the last one to run, so its `message` lines
             // are the run's, as for the poison-free return above.
+            sigil_span::phase::phase("bonus", t_bonus, "");
             let result = if diags.iter().any(|d| d.level == Level::Error) {
                 Err(Failure { diags, messages: bonus.messages, sources: bonus.sources })
             } else {
@@ -698,7 +764,10 @@ fn run_passes(
         // exists, and saying so needs no count of attempts. `j == passes - 1` is
         // the ordinary convergence case and was already returned above, so a
         // match here is a cycle of length two or more.
-        if let Some(j) = history.iter().position(|e| *e == env) {
+        let t_osc = sigil_span::phase::clock();
+        let oscillation = history.iter().position(|e| *e == env);
+        sigil_span::phase::step("  pass.oscillation_check", t_osc, "");
+        if let Some(j) = oscillation {
             let moving = moving_symbols(&history[j], &prev);
             let diags = merge_carried_fatals(Vec::new(), &carried_fatals, &last_sources);
             let mut diags =
@@ -719,7 +788,11 @@ fn run_passes(
         // the history rather than being cloned a second time: the loop pays one
         // `SymbolTable` clone per pass, exactly as it did before this check
         // existed.
+        let t_hist = sigil_span::phase::clock();
         history.push(std::mem::replace(&mut prev, env.clone()));
+        sigil_span::phase::step("  pass.history_push", t_hist, "");
+        let before = history.last().unwrap_or(&prev);
+        phase_pass_line(pass, t_pass, &env, before, &history, "continue");
         seed = env;
         macros = m;
         functions = f;
@@ -1154,6 +1227,7 @@ fn one_pass_with_defer(
     mompass: i64,
     look_past_fatal: bool,
 ) -> PassOutput {
+    let t_seed = sigil_span::phase::clock();
     let mut asm = Asm::new_with_defer(opts, defer_unresolved_jsr_jmp);
     asm.mompass = mompass;
     asm.look_past_fatal = look_past_fatal;
@@ -1165,7 +1239,13 @@ fn one_pass_with_defer(
     asm.known_labels = seed_labels.clone();
     asm.label_ref_equs = seed_label_ref_equs.clone();
     asm.seed_cli_defines(&opts.cli_defines);
+    sigil_span::phase::step("  pass.seed", t_seed, "");
+    let t_exec = sigil_span::phase::clock();
     asm.process(root_name, src);
+    if t_exec.is_some() {
+        sigil_span::phase::step("  pass.exec", t_exec, &sigil_span::phase::drain());
+    }
+    let t_finish = sigil_span::phase::clock();
     asm.report_unpopped_value_stacks();
     asm.report_unrestored_saves();
     // The census behind `GLOBAL_MACRO_CAP` and `GLOBAL_REPT_CAP`: what one
@@ -1221,6 +1301,20 @@ fn one_pass_with_defer(
     if let Some(pos) = diags.iter().position(|d| d.message == crate::CPU_UNDECLARED) {
         let d = diags.remove(pos);
         diags.insert(0, d);
+    }
+    if t_finish.is_some() {
+        let files = asm.sources.len();
+        let source_bytes: usize =
+            (0..files).map(|i| asm.sources.text(SourceId(i as u32)).len()).sum();
+        let fragments: usize = module.sections.iter().map(|s| s.fragments.len()).sum();
+        sigil_span::phase::step(
+            "  pass.finish",
+            t_finish,
+            &format!(
+                "sections={}\tfragments={fragments}\tsource_files={files}\tsource_bytes={source_bytes}",
+                module.sections.len()
+            ),
+        );
     }
     // REACHABILITY WITNESS, not a diagnostic: how many expansion instances this
     // pass gave a non-empty plain-label namespace to. A tree that writes no
@@ -4658,7 +4752,9 @@ impl Asm {
     fn process(&mut self, root_name: &str, src: &str) {
         let id = self.sources.add_named(root_name.to_string(), src.to_string());
         self.source = id;
+        let t0 = sigil_span::phase::clock();
         let lines = split_src_lines(src, id);
+        sigil_span::phase::accumulate(sigil_span::phase::Acc::SplitLines, t0, src.len() as u64);
         self.exec(&lines);
     }
 
@@ -5117,7 +5213,11 @@ impl Asm {
             self.aborted = true;
             return;
         }
-        match sigil_span::read_set::read_to_string(&path) {
+        let t_read = sigil_span::phase::clock();
+        let read = sigil_span::read_set::read_to_string(&path);
+        let read_len = read.as_ref().map_or(0, |t| t.len() as u64);
+        sigil_span::phase::accumulate(sigil_span::phase::Acc::IncludeRead, t_read, read_len);
+        match read {
             Ok(text) => {
                 // The included file gets its OWN SourceId, so a diagnostic raised
                 // while executing it names that file and its own line number
@@ -5144,7 +5244,9 @@ impl Asm {
                 // the same inside a loop iteration (`in6`). `m14.asm`'s `#1000`
                 // for a header included twice is a FILE-LEVEL include, where no
                 // instance is live and the name is global either way.
+                let t_split = sigil_span::phase::clock();
                 let lines = split_src_lines(self.sources.text(id), id);
+                sigil_span::phase::accumulate(sigil_span::phase::Acc::SplitLines, t_split, read_len);
                 self.include_census.executed += 1;
                 // Paired with the decrement below rather than with a guard type:
                 // `exec` cannot unwind past here (it returns on `aborted`, it
@@ -5211,7 +5313,11 @@ impl Asm {
                 }
             }
         }
-        let bytes = match sigil_span::read_set::read(&path) {
+        let t_read = sigil_span::phase::clock();
+        let read = sigil_span::read_set::read(&path);
+        let read_len = read.as_ref().map_or(0, |b| b.len() as u64);
+        sigil_span::phase::accumulate(sigil_span::phase::Acc::BincludeRead, t_read, read_len);
+        let bytes = match read {
             Ok(bytes) => bytes,
             Err(e) => {
                 self.err(span, format!("cannot BINCLUDE {}: {e}", path.display()));
