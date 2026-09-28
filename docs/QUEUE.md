@@ -194,13 +194,26 @@ scratch copies; settled). The notes themselves are historical and were not edite
 
 ### LANDING-LOG-CHECKER-READS-THE-WRONG-FILE
 
-- state: **open**  size: `S`
+- state: **done in branch, awaiting merge** (fix `28e51dc8`)  size: `S`
 - `scripts/check_landing_log.py <log>` reports NO VERDICT, RED on the log `landing-run.sh` writes (`$LOG`),
   because the script echoes its verdict block to stdout only and writes just the `*_EXIT=` lines into `$LOG`.
   Measured 2026-09-27 on the drop-in parcel's `landing-2.log` and on `.landing-audit-194834.log`; the
   `.stdout` capture passes the checker while it reports every exit gate NOT REPORTED. `landing-run.sh
   --verdict-only <log>` judges `$LOG` correctly. Make one artifact carry both, or point the checker's docs
   at `--verdict-only`; either way the two instruments must agree on one file.
+- 2026-09-28, on the branch: a run appends its verdict block to its own `$LOG` inside a
+  `##### VERDICT SPAN` with `LANDING_EXIT=<exit code>`, computed first and appended after, so the verdict
+  never reads a growing file; a failed append exits 2. The verdict is one function over the RUN RECORD, the
+  log above that span, because the block quotes run-shaped text (a silent binary's own `Running` line) that
+  a re-judge reading the span would count again. `--verdict-only` writes nothing. The checker reads RESULT
+  from the one span only and the exit lines from the record; exit 0 needs a recorded GREEN, `LANDING_EXIT=0`
+  and all three gate exits 0. Refused with exit 2: a pre-span log (naming `--verdict-only <log>`), a captured
+  stdout (naming the log), two spans, a truncated span, and a GREEN its exit lines contradict. Header (9a),
+  usage and the checker docstring now name the log and both instruments.
+- Verified: `landing_verdict.rs` 23 to 29 tests; three run the real script in run mode against a stub
+  toolchain (stub cargo on PATH, stub ledger and census). Red-first: pre-fix append (2 red), run record
+  reading the whole file (1 red, 2 launched read back as 3), `--verdict-only` appending (1 red), pre-fix
+  checker (5 red). Mutation evidence is in the commit bodies.
 
 ### AS-AUTHOR-FORMS-EXACT
 
