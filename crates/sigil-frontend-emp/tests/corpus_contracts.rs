@@ -255,12 +255,13 @@ fn direct_jsr_and_bsr_call_edges_propagate() {
 // absolute-long `jsr (sym).l` (proven in the `game_contract` tests:
 // `bound_hook_emits_absolute_jsr`), which then propagates its target's clobbers
 // through the SAME direct-call path proven by `direct_jsr_and_bsr_call_edges`.
-// It is NOT exercised end-to-end here: the corpus contract walk uses the EMPTY
-// interface env, under which an `invoke` emits nothing, so there is no edge in
-// the gate to charge — and the corpus's only abs-long calls are the contract-less
-// vendored debugger entries. Wiring the invoke edge into the closure (env-threaded
-// + resolvable-vs-⊤ abs-long handling) is L1 game-contract-seam work. See the
-// scope note on `call_target_sym` in corpus_contracts.rs.
+// It is NOT exercised end-to-end in THIS file: its `analyze` helper walks under
+// the EMPTY interface env, where an `invoke` emits nothing. The build's per-shape
+// walk (`analyze_corpus_with_contracts`, fed the bound env by the CLI and the
+// sigil-cli corpus tests) does see the edge and charges the bound proc. The
+// caller-side readers at a bound invoke (inout, D1b, D1c, slot types) are pinned
+// in `tests/inout_invoke_hook.rs`. See the scope note on `call_target_sym` in
+// corpus_contracts.rs.
 
 /// S2-D6 U4 — the `@allow("clobbers.unanalyzable", "<reason>")` escape hatch: a
 /// genuinely-unanalyzable computed dispatch opts OUT of the `unbounded` firing.

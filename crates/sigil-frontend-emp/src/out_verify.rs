@@ -456,13 +456,10 @@ fn produce(st: &mut State, reg: Reg, w: OutWidth) {
     }
 }
 
-/// The bare `Sym` target of a direct call/tail (`jbsr Foo` / `jbra Foo`), or
-/// `None` for an indirect / local-label (`$`-mangled) target.
+/// The proc a direct call/tail names (the shared
+/// [`crate::flag_check::direct_proc_target`] reading).
 fn direct_target(ops: &[CodeOperand]) -> Option<&str> {
-    match ops {
-        [CodeOperand::Sym(name)] if !name.contains('$') => Some(name.as_str()),
-        _ => None,
-    }
+    crate::flag_check::direct_proc_target(ops)
 }
 
 /// Apply instruction `idx`'s effect to `st`: gen each production at the width it
