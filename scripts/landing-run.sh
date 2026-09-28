@@ -183,7 +183,9 @@
 #   verdict rules can be exercised and tested without a suite run. The stamp lines,
 #   `CARGO_EXIT=`, `CLIPPY_EXIT=` and `LEDGER_EXIT=` are read out of the log; a log
 #   carrying no exit lines is refused, because a verdict over an unfinished run is not a
-#   verdict.
+#   verdict. It reads only the run record, the part of the log above the verdict span a
+#   run appends, and it never appends one itself, so re-judging a log leaves it
+#   byte-identical and gives the same verdict every time.
 #
 # WHICH REFERENCE TREE A BARE RUN USES — there is no longer a built-in answer.
 #   A run that names no tree does NOT fall back to a live checkout. It resolves one by the
@@ -250,12 +252,24 @@
 #     verdict must read as RED, never as missing information.** Absence is the class:
 #     a command that failed and a command that found nothing produce the same output.
 #
-#     So do not read the log by eye. Run `scripts/check_landing_log.py <log>`, which is
-#     built so that EVERY failure mode of its own subject resolves to non-zero: missing
-#     file, empty file, no verdict line, a truncated run, or a verdict that is not
-#     GREEN. Exit 0 only for a GREEN verdict line that exists. Proven on four controls,
-#     including a green that does pass, because a checker that cannot come out green is
-#     the always-red defect rather than a gate.
+#     So do not read the log by eye. A run APPENDS ITS VERDICT BLOCK TO ITS OWN LOG (the
+#     file named on its `log ->` line, never a captured stdout), inside a
+#     `##### VERDICT SPAN` that also records this script's exit code as `LANDING_EXIT=`.
+#     Two instruments read that one file and agree on it:
+#
+#       scripts/check_landing_log.py <log>          reads the verdict the run RECORDED
+#       scripts/landing-run.sh --verdict-only <log> RECOMPUTES it from the run record
+#                                                   above the span, and writes nothing
+#
+#     The checker is built so that EVERY failure mode of its own subject resolves to
+#     non-zero: missing file, empty file, no verdict span, a span without its RESULT or
+#     its exit code, a truncated run, a GREEN its own exit lines contradict, or a verdict
+#     that is not GREEN. The two can differ only when a verdict rule changed between the
+#     run and the re-judge, and then `--verdict-only` is the stricter reading. A LOG
+#     WRITTEN BEFORE THE SPAN EXISTED has no recorded verdict: the checker refuses it
+#     (exit 2) and names `--verdict-only`, which judges it. The controls, including a
+#     green that does pass and a real run against a stub toolchain, are in
+#     `crates/sigil-harness/tests/landing_verdict.rs`.
 #
 #     (9b) DO NOT EDIT THE TREE WHILE THIS RUNS. NOT EVEN DOCS. Oracle edited two docs
 #     mid-run and their G10 gate turned an otherwise-green landing RED, CORRECTLY: one of
@@ -272,7 +286,8 @@
 #      exited 0
 #   1  the suite FAILED (red tests, cargo exited nonzero, or a `skip:` line survived
 #      SIGIL_STRICT_GATE=1), or THE LINT BAR IS RED, or THE LEDGER GATE IS RED
-#   2  the run COULD NOT RUN or could not be measured — never green, never a count
+#   2  the run COULD NOT RUN or could not be measured, never green, never a count; also
+#      a run whose verdict could not be appended to its log, whatever the verdict was
 #   3  the suite passed but the total does NOT reconcile with --baseline
 
 set -uo pipefail
@@ -342,19 +357,29 @@ fi
 # --verdict-only: the verdict's inputs, read out of a finished log instead of produced by
 # a run. Every value the verdict block prints or tests is set here from the stamp this
 # script writes, so the SAME verdict code runs over a log whether the run happened in
-# this process or in one that finished last week. Nothing below writes to the log.
+# this process or in one that finished last week. Nothing on this path writes to the log:
+# the verdict span is appended by a RUN, once, and re-judging never adds a second one.
 # ---------------------------------------------------------------------------------------
+# THE RUN RECORD: the log up to, and not including, the verdict span a run appends to it.
+# Every verdict input below is read out of THIS, never out of the whole file. The verdict
+# block quotes things that look like run output (a silent binary is listed by its own
+# `Running` line, a skip-bar reason spells `skip:`), so a verdict that read its own
+# previous verdict back in would change on the second reading. A log written before the
+# span existed has no span and its record is the whole file.
+run_record() { awk '/^##### VERDICT SPAN,/ { exit } { print }' "$LOG"; }
+
 # The stamp line for a key, with the key and its padding stripped. Empty when absent.
-stamp() { sed -n "s/^# $1 *//p" "$LOG" | head -n 1; }
+stamp() { sed -n "s/^# $1 *//p" <<< "$RECORD" | head -n 1; }
 
 load_verdict_inputs() {
     LOG=$(abspath "$1")
     [[ -f $LOG ]] || die "--verdict-only: $LOG is not a readable log file"
+    RECORD=$(run_record)
     # The two exit lines are the run's own verdict inputs, and a log without them is a
     # run that did not finish (or a fixture that forgot them). Refused BY NAME rather than
     # defaulted to 0, because a defaulted exit code is a green that nobody measured.
-    CARGO_RC=$(sed -n 's/^CARGO_EXIT=//p' "$LOG" | tail -n 1)
-    CLIPPY_RC=$(sed -n 's/^CLIPPY_EXIT=//p' "$LOG" | tail -n 1)
+    CARGO_RC=$(sed -n 's/^CARGO_EXIT=//p' <<< "$RECORD" | tail -n 1)
+    CLIPPY_RC=$(sed -n 's/^CLIPPY_EXIT=//p' <<< "$RECORD" | tail -n 1)
     [[ $CARGO_RC =~ ^[0-9]+$ ]] \
         || die "--verdict-only: $LOG carries no \`CARGO_EXIT=<n>\` line, the test span never
        finished, so there is no verdict to give over it."
@@ -365,7 +390,7 @@ load_verdict_inputs() {
     # ledger gate that did not run is not a ledger gate that found nothing, and this is
     # the file's own history: the check it wraps sat committed and uncalled for weeks
     # while the number it measures doubled.
-    LEDGER_RC=$(sed -n 's/^LEDGER_EXIT=//p' "$LOG" | tail -n 1)
+    LEDGER_RC=$(sed -n 's/^LEDGER_EXIT=//p' <<< "$RECORD" | tail -n 1)
     [[ $LEDGER_RC =~ ^[0-9]+$ ]] \
         || die "--verdict-only: $LOG carries no \`LEDGER_EXIT=<n>\` line, the ledger gate was
        never measured, so there is no verdict to give over it."
@@ -785,14 +810,11 @@ FINISHED=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 echo "# finished (UTC) $FINISHED" >> "$LOG"
 }
 
-# THE ONE DISPATCH. Both branches leave the same variables set and fall through to the
-# same verdict code; there is no second verdict.
-if [[ -n $VERDICT_ONLY ]]; then
-    load_verdict_inputs "$VERDICT_ONLY"
-else
-    run_landing
-fi
-
+# THE VERDICT, one function, called from both branches of the one dispatch at the foot of
+# this file; there is no second verdict. It reads the run record and prints the verdict
+# block, and its `exit` is the script's exit code. The body is left at its column, as
+# run_landing's is.
+judge_record() {
 # ---------------------------------------------------------------------------------------
 # (7) Failures first, WITH the names. No `head`, no tail excerpt.
 # ---------------------------------------------------------------------------------------
@@ -811,7 +833,7 @@ read -r SUITES PASSED FAILED IGNORED < <(awk '
             }
         }
     }
-    END { print n+0, p+0, f+0, g+0 }' "$LOG")
+    END { print n+0, p+0, f+0, g+0 }' <<< "$RECORD")
 LEDGER_SILENT=0
 # Every lint site, named. `error: could not compile …` is clippy's TALLY line, not a
 # finding, so counting bare `^error:` reports one more site than exists, and a verdict
@@ -826,7 +848,7 @@ mapfile -t CLIPPY_SITES < <(awk '
         print loc "  " msg
         msg = ""
     }
-    /^##### CLIPPY SPAN,/ { inspan = 1 }' "$LOG")
+    /^##### CLIPPY SPAN,/ { inspan = 1 }' <<< "$RECORD")
 # The ledger gate's own report, lifted out of ITS span so the number it measured is
 # visible in the verdict a merge reads rather than only in the log body. Scoped to the
 # span for the same reason the skip counter is: `LEDGER:` is a literal a lint or a test
@@ -835,7 +857,7 @@ mapfile -t CLIPPY_SITES < <(awk '
 mapfile -t LEDGER_LINES < <(awk '
     /^##### LEDGER SPAN ENDS/ { inspan = 0 }
     inspan && /^LEDGER:/ { print substr($0, 9) }
-    /^##### LEDGER SPAN,/ { inspan = 1 }' "$LOG")
+    /^##### LEDGER SPAN,/ { inspan = 1 }' <<< "$RECORD")
 
 # BOTH spellings. The landing bar greps `skip:`, and 27 sites say `skipping` instead —
 # invisible to that grep while reporting green. A matcher inheriting the same blind spot
@@ -851,7 +873,7 @@ mapfile -t LEDGER_LINES < <(awk '
 SKIPS=$(awk '
     /^##### TEST SPAN,/ { inspan = 1; next }
     inspan && /skip:|skipping/ { n++ }
-    END { print n+0 }' "$LOG")
+    END { print n+0 }' <<< "$RECORD")
 
 # ---------------------------------------------------------------------------------------
 # (7b) WHICH BINARIES LAUNCHED, AND WHICH OF THEM REPORTED.
@@ -882,7 +904,7 @@ SKIPS=$(awk '
 LAUNCHED=$(awk '
     /^##### TEST SPAN,/ { inspan = 1; next }
     inspan && (/^ *Running / || /^ *Doc-tests /) { n++ }
-    END { print n+0 }' "$LOG")
+    END { print n+0 }' <<< "$RECORD")
 mapfile -t SILENT_BINARIES < <(awk '
     /^##### TEST SPAN,/ { inspan = 1; next }
     !inspan { next }
@@ -892,7 +914,7 @@ mapfile -t SILENT_BINARIES < <(awk '
         next
     }
     /^test result:/ { pending = "" }
-    END { if (pending != "") print pending }' "$LOG")
+    END { if (pending != "") print pending }' <<< "$RECORD")
 # The third state, and it is LOUD rather than 0. A log whose test span reports suites but
 # records no launches is a log this check cannot measure, and rendering an unmeasurable
 # population as a satisfied one is the defect this whole block exists to close.
@@ -919,7 +941,7 @@ CENSUS_UNMEASURED=0
 [[ $CENSUS_STATE == unmeasured ]] && CENSUS_UNMEASURED=1
 
 # Every failing name, sorted and deduped. All of them.
-mapfile -t FAILING < <(grep -E '^test .* \.\.\. FAILED$' "$LOG" \
+mapfile -t FAILING < <(grep -E '^test .* \.\.\. FAILED$' <<< "$RECORD" \
     | sed -E 's/^test (.*) \.\.\. FAILED$/\1/' | sort -u)
 
 echo
@@ -1087,7 +1109,7 @@ for name in "${EXPECT[@]:-}"; do
     [[ -z $name ]] && continue
     # Literal, not a regex: a test name carrying `::` or `[` must match as text.
     awk -v n="$name" 'index($0,"test ")==1 && index($0,n) && index($0," ... ") {f=1}
-                      END {exit !f}' "$LOG" || MISSING_EXPECT+=("$name")
+                      END {exit !f}' <<< "$RECORD" || MISSING_EXPECT+=("$name")
 done
 if (( ${#MISSING_EXPECT[@]} )); then
     echo
@@ -1244,3 +1266,44 @@ echo
 echo "  RESULT          GREEN"
 echo "==================================================================================="
 exit 0
+}
+
+# ---------------------------------------------------------------------------------------
+# THE ONE DISPATCH, and where the verdict is written.
+#
+# --verdict-only prints the verdict and writes nothing: it judges the record it was
+# handed, so judging a log twice gives the same answer twice and leaves the file as it
+# found it.
+#
+# A RUN WRITES ITS VERDICT INTO ITS OWN LOG as well as to stdout, inside a
+# `##### VERDICT SPAN` with the script's exit code as `LANDING_EXIT=`. Until this did,
+# the verdict existed only on stdout: the log held the exit lines and no RESULT, a
+# captured stdout held the RESULT and no exit lines, and scripts/check_landing_log.py,
+# which wants both in one file, read a green run's log as NO VERDICT (RED) and its
+# stdout as GREEN with every gate NOT REPORTED. The log is the artifact a run leaves
+# behind; it now carries the whole of it.
+#
+# The block is captured and appended AFTER it is computed, not tee'd while it prints,
+# so the verdict never reads a file that is growing under it. A log the verdict cannot
+# be appended to is a run whose record says nothing about its result, so that exits 2
+# whatever the verdict was: the log and this script's status would otherwise disagree.
+# ---------------------------------------------------------------------------------------
+if [[ -n $VERDICT_ONLY ]]; then
+    load_verdict_inputs "$VERDICT_ONLY"
+    judge_record
+    exit $?
+fi
+
+run_landing
+RECORD=$(run_record)
+VERDICT_TEXT=$(judge_record)
+VERDICT_RC=$?
+printf '%s\n' "$VERDICT_TEXT"
+{
+    echo "##### VERDICT SPAN, written by the run; --verdict-only re-judges the record above it and writes nothing"
+    printf '%s\n' "$VERDICT_TEXT"
+    echo "LANDING_EXIT=$VERDICT_RC"
+    echo "##### VERDICT SPAN ENDS"
+} >> "$LOG" || die "the verdict (exit $VERDICT_RC) could not be appended to $LOG. The log is
+       the run's record and it now carries no verdict, so this is not a landing."
+exit "$VERDICT_RC"

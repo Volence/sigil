@@ -854,3 +854,384 @@ fn a_required_features_target_is_excluded_by_name_not_silently() {
     );
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+// ----------------------------------------------------------------------------------------
+// ONE FILE, ONE VERDICT: THE RUN'S LOG CARRIES ITS OWN RESULT.
+//
+// A run wrote its exit lines into its log and its verdict block to stdout only, so
+// `scripts/check_landing_log.py`, which wants the RESULT and the exit lines in ONE file,
+// read a green run's log as `NO VERDICT LINE` (RED) and its captured stdout as GREEN with
+// all three gates `NOT REPORTED`. `--verdict-only` re-judged the log correctly, so the two
+// instruments disagreed on every real landing. A run now appends its verdict block to its
+// log inside a `##### VERDICT SPAN` with `LANDING_EXIT=`; `--verdict-only` reads only the
+// record ABOVE that span and writes nothing.
+//
+// THE RUN PATH IS EXERCISED FOR REAL, against a stub toolchain. The defect lived in run
+// mode, which no `--verdict-only` fixture reaches, so these tests run the real script in
+// run mode from a throwaway checkout whose `cargo` is a stub on PATH that replays a
+// fixture test span, and whose ledger gate and census are stubs. Every line of
+// landing-run.sh between argument parsing and the verdict executes; only what cargo,
+// the ledger gate and the census print is supplied. WHAT THE FIXTURE SUPPLIES THAT
+// REALITY DOES NOT: the tool outputs themselves, and a reference tree that is four empty
+// ROM files. Neither is read by the code under test here, which is the verdict's route to
+// the log and the checker's reading of it.
+// ----------------------------------------------------------------------------------------
+
+fn checker() -> PathBuf {
+    let p = repo_root().join("scripts/check_landing_log.py");
+    assert!(p.is_file(), "COULD NOT MEASURE: the checker is not at {}", p.display());
+    p
+}
+
+/// Run `check_landing_log.py <log>` and return (exit code, merged output).
+fn check(log: &Path) -> (i32, String) {
+    let out = Command::new("python3")
+        .arg(checker())
+        .arg(log)
+        .output()
+        .expect("COULD NOT MEASURE: python3 could not run the checker");
+    let mut text = String::from_utf8_lossy(&out.stdout).into_owned();
+    text.push_str(&String::from_utf8_lossy(&out.stderr));
+    let code = out.status.code().unwrap_or_else(|| panic!("the checker was killed by a signal:\n{text}"));
+    (code, text)
+}
+
+/// `--verdict-only`, stdout alone: the verdict block and nothing the wrapper says aside.
+fn judge_stdout(log: &Path) -> (i32, String) {
+    let out = Command::new("bash")
+        .arg(script())
+        .arg("--verdict-only")
+        .arg(log)
+        .current_dir(repo_root())
+        .output()
+        .expect("COULD NOT MEASURE: bash could not run the wrapper");
+    let code = out.status.code().expect("the wrapper was killed by a signal");
+    (code, String::from_utf8_lossy(&out.stdout).into_owned())
+}
+
+fn write_exec(path: &Path, body: &str) {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::write(path, body).unwrap_or_else(|e| panic!("write {}: {e}", path.display()));
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).unwrap();
+}
+
+fn git(dir: &Path, args: &[&str]) {
+    let out = Command::new("git")
+        .args(["-c", "user.name=fixture", "-c", "user.email=fixture@invalid", "-c", "commit.gpgsign=false"])
+        .args(args)
+        .current_dir(dir)
+        .env_remove("GIT_DIR")
+        .env_remove("GIT_WORK_TREE")
+        .env_remove("GIT_INDEX_FILE")
+        .output()
+        .expect("COULD NOT MEASURE: git could not run");
+    assert!(out.status.success(), "git {args:?} in {}: {}", dir.display(), String::from_utf8_lossy(&out.stderr));
+}
+
+/// The stub `cargo`. `clippy --version` answers, `clippy` prints a finished line (plus one
+/// lint site when the fixture asks for a red bar), and `test` replays the fixture's span.
+/// Anything else is an unexpected call and fails loudly rather than passing quietly.
+const FAKE_CARGO: &str = r#"#!/usr/bin/env bash
+case "$1" in
+    clippy)
+        if [[ ${2:-} == --version ]]; then echo "clippy 0.0.0 (fixture)"; exit 0; fi
+        if [[ ${FIXTURE_CLIPPY_RC:-0} != 0 ]]; then
+            echo "error: fixture lint"
+            echo "  --> crates/fixture/src/lib.rs:1:1"
+        fi
+        echo "    Finished \`release\` profile [optimized] target(s) in 0.01s"
+        exit "${FIXTURE_CLIPPY_RC:-0}" ;;
+    test)
+        cat "$FIXTURE_TEST_SPAN"
+        exit "${FIXTURE_CARGO_RC:-0}" ;;
+    *)  echo "fixture cargo: unexpected call: $*" >&2; exit 97 ;;
+esac
+"#;
+
+/// What a stub run looks like: the test span cargo prints, cargo's exit code, clippy's.
+struct StubRun<'a> {
+    test_span: &'a str,
+    launches: usize,
+    cargo_rc: i32,
+    clippy_rc: i32,
+}
+
+/// A green three-test span from one binary.
+const GREEN_SPAN: &str = "\
+     Running tests/gates.rs (/fixture/.target-land/release/deps/gates-0123456789abcdef)
+
+running 3 tests
+test a_gate ... ok
+test b_gate ... ok
+test c_gate ... ok
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+";
+
+/// Run the REAL landing-run.sh in run mode from a throwaway checkout under `dir`, and
+/// return (exit code, stdout, the log path).
+fn stub_run(dir: &Path, run: &StubRun) -> (i32, String, PathBuf) {
+    let root = dir.join("checkout");
+    std::fs::create_dir_all(root.join("scripts/lib")).unwrap();
+    std::fs::write(root.join("Cargo.toml"), "[workspace]\n").unwrap();
+    std::fs::copy(repo_root().join("scripts/lib/suite_paths.sh"), root.join("scripts/lib/suite_paths.sh"))
+        .expect("COULD NOT MEASURE: copy suite_paths.sh");
+    write_exec(
+        &root.join("scripts/ledger_gate.py"),
+        "#!/usr/bin/env python3\nprint('LEDGER: result    ok (fixture)')\n",
+    );
+    write_exec(
+        &root.join("scripts/test_target_census.py"),
+        &format!(
+            "#!/usr/bin/env python3\nprint('runnable {}')\nprint('doctest 0')\nprint('excluded-required-features 0')\n",
+            run.launches
+        ),
+    );
+    git(&root, &["init", "-q"]);
+    git(&root, &["add", "."]);
+    git(&root, &["commit", "-q", "-m", "fixture"]);
+
+    let aeon = dir.join("aeon");
+    std::fs::create_dir_all(&aeon).unwrap();
+    std::fs::write(aeon.join("build.sh"), "").unwrap();
+    for rom in ["s4.bin", "s4.debug.bin", "demo.bin", "demo.debug.bin"] {
+        std::fs::write(aeon.join(rom), "").unwrap();
+    }
+    let oracle = dir.join("oracle-old");
+    std::fs::create_dir_all(oracle.join(".git")).unwrap();
+    std::fs::create_dir_all(oracle.join("linux-port/gui")).unwrap();
+    std::fs::create_dir_all(oracle.join("Devices")).unwrap();
+    std::fs::write(oracle.join("linux-port/gui/Symbols.cpp"), "").unwrap();
+
+    let bin = dir.join("bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    write_exec(&bin.join("cargo"), FAKE_CARGO);
+    let span = dir.join("test-span.txt");
+    std::fs::write(&span, run.test_span).unwrap();
+    let log = dir.join("run.log");
+    let path = format!("{}:{}", bin.display(), std::env::var("PATH").unwrap_or_default());
+
+    let out = Command::new("bash")
+        .arg(script())
+        .args(["--baseline", "3", "--aeon"])
+        .arg(&aeon)
+        .arg("--target")
+        .arg(dir.join("target"))
+        .arg("--log")
+        .arg(&log)
+        .current_dir(&root)
+        .env("PATH", path)
+        .env("ORACLE_DIR", &oracle)
+        .env("SIGIL_BUILD", bin.join("cargo"))
+        .env("SIGIL_EMIT", bin.join("cargo"))
+        .env("FIXTURE_TEST_SPAN", &span)
+        .env("FIXTURE_CARGO_RC", run.cargo_rc.to_string())
+        .env("FIXTURE_CLIPPY_RC", run.clippy_rc.to_string())
+        .env_remove("AEON_DIR")
+        .env_remove("EMPYREAN_SUITE_ROOT")
+        .env_remove("SIGIL_LANDING_TARGET")
+        .env_remove("GIT_DIR")
+        .env_remove("GIT_WORK_TREE")
+        .env_remove("GIT_INDEX_FILE")
+        .output()
+        .expect("COULD NOT MEASURE: bash could not run the wrapper");
+    let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
+    let code = out.status.code().unwrap_or_else(|| {
+        panic!("the wrapper was killed by a signal:\n{stdout}{}", String::from_utf8_lossy(&out.stderr))
+    });
+    assert!(
+        log.is_file(),
+        "COULD NOT MEASURE: the stub run wrote no log, it was refused before stamping:\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    (code, stdout, log)
+}
+
+/// The verdict block the log carries: the span body without its markers or `LANDING_EXIT=`.
+fn recorded_block(log_text: &str) -> String {
+    let mut out = String::new();
+    let mut inspan = false;
+    for line in log_text.lines() {
+        if line.starts_with("##### VERDICT SPAN ENDS") {
+            inspan = false;
+        } else if line.starts_with("##### VERDICT SPAN,") {
+            inspan = true;
+        } else if inspan && !line.starts_with("LANDING_EXIT=") {
+            out.push_str(line);
+            out.push('\n');
+        }
+    }
+    out
+}
+
+/// THE GREEN RUN: the log carries the verdict, both instruments read it GREEN, and the
+/// block in the log is byte-for-byte the block `--verdict-only` computes from the log.
+#[test]
+fn a_green_run_records_its_verdict_and_both_instruments_agree_on_the_log() {
+    let dir = scratch("run-green");
+    let (code, stdout, log) =
+        stub_run(&dir, &StubRun { test_span: GREEN_SPAN, launches: 1, cargo_rc: 0, clippy_rc: 0 });
+    let text = std::fs::read_to_string(&log).unwrap();
+    assert_eq!(code, 0, "the stub green run must exit 0, got {code}:\n{stdout}\n--- log ---\n{text}");
+    assert!(stdout.contains("RESULT          GREEN"), "the verdict still goes to stdout:\n{stdout}");
+    assert_eq!(
+        text.matches("##### VERDICT SPAN,").count(),
+        1,
+        "a run writes exactly one verdict span into its log:\n{text}"
+    );
+    assert!(text.contains("LANDING_EXIT=0\n##### VERDICT SPAN ENDS\n"), "{text}");
+
+    let (ccode, cout) = check(&log);
+    assert_eq!(ccode, 0, "the checker must read a green run's LOG as green, got {ccode}:\n{cout}");
+    assert!(cout.contains("VERDICT: RESULT GREEN"), "{cout}");
+    for gate in ["CARGO_EXIT=0", "CLIPPY_EXIT=0", "LEDGER_EXIT=0", "LANDING_EXIT=0"] {
+        assert!(cout.contains(gate), "the checker must report {gate} from the same file:\n{cout}");
+    }
+    assert!(!cout.contains("NOT REPORTED"), "{cout}");
+
+    let (vcode, vout) = judge_stdout(&log);
+    assert_eq!(vcode, 0, "--verdict-only on the same log must agree (exit 0), got {vcode}:\n{vout}");
+    assert_eq!(
+        recorded_block(&text),
+        vout,
+        "the verdict recorded in the log and the verdict --verdict-only computes from it differ"
+    );
+    assert!(stdout.ends_with(&vout), "the run's stdout verdict and the recorded one differ:\n{stdout}");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A second binary that launches and never reports. Its verdict LISTS the silent binary by
+/// its own `Running` line, which is run-output-shaped text inside the verdict span, so this
+/// is the log on which a verdict that read its own span back would change.
+const SILENT_SPAN_TAIL: &str = "\
+     Running tests/oom_victim.rs (/fixture/.target-land/release/deps/oom_victim-fedcba9876543210)
+
+running 40 tests
+test victim_one ... ok
+";
+
+/// THE RED RUN, TWO WAYS, and a re-judge that is idempotent on each. Cargo exits 101 with
+/// a silent binary (a red RESULT with `CARGO_EXIT` nonzero), and separately the lint bar
+/// alone is red (a red RESULT with `CARGO_EXIT=0`). Both instruments say not-green on
+/// the log, `--verdict-only` twice gives the same block as the one recorded, and the log's
+/// bytes do not move.
+#[test]
+fn a_red_run_records_its_verdict_and_rejudging_it_twice_changes_nothing() {
+    let dir = scratch("run-red");
+    let cases = [
+        ("silent", format!("{GREEN_SPAN}{SILENT_SPAN_TAIL}"), 2usize, 101, 0, "CARGO_EXIT=101"),
+        ("lint", GREEN_SPAN.to_string(), 1usize, 0, 101, "CLIPPY_EXIT=101"),
+    ];
+    for (tag, span, launches, cargo_rc, clippy_rc, gate) in cases {
+        let sub = dir.join(tag);
+        std::fs::create_dir_all(&sub).unwrap();
+        let (code, stdout, log) =
+            stub_run(&sub, &StubRun { test_span: &span, launches, cargo_rc, clippy_rc });
+        let before = std::fs::read(&log).unwrap();
+        let text = String::from_utf8_lossy(&before).into_owned();
+        assert_eq!(code, 1, "[{tag}] the stub red run must exit 1, got {code}:\n{stdout}");
+        assert!(text.contains("LANDING_EXIT=1\n"), "[{tag}] {text}");
+
+        let (ccode, cout) = check(&log);
+        assert_eq!(ccode, 1, "[{tag}] the checker must read the red log as an explicit red (1):\n{cout}");
+        assert!(cout.contains("VERDICT: RESULT FAILED"), "[{tag}] {cout}");
+        assert!(cout.contains(gate), "[{tag}] the checker must show {gate} from the log:\n{cout}");
+
+        let (v1, out1) = judge_stdout(&log);
+        let (v2, out2) = judge_stdout(&log);
+        assert_eq!((v1, v2), (1, 1), "[{tag}] --verdict-only must agree (exit 1) both times:\n{out1}\n{out2}");
+        assert_eq!(out1, out2, "[{tag}] re-judging the same log gave two different verdicts");
+        assert_eq!(
+            recorded_block(&text),
+            out1,
+            "[{tag}] --verdict-only read something other than the run record: its verdict \
+             differs from the one the run recorded"
+        );
+        assert_eq!(
+            std::fs::read(&log).unwrap(),
+            before,
+            "[{tag}] --verdict-only wrote to the log it was judging"
+        );
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A captured STDOUT is not the log. It carries the RESULT and none of the exit lines, and
+/// the checker used to read it as GREEN with every gate NOT REPORTED. It is refused now,
+/// and the refusal names the log.
+#[test]
+fn a_captured_stdout_is_refused_and_the_log_is_named() {
+    let dir = scratch("run-stdout");
+    let (code, stdout, log) =
+        stub_run(&dir, &StubRun { test_span: GREEN_SPAN, launches: 1, cargo_rc: 0, clippy_rc: 0 });
+    assert_eq!(code, 0, "{stdout}");
+    let captured = dir.join("run.log.stdout");
+    std::fs::write(&captured, &stdout).unwrap();
+    let (ccode, cout) = check(&captured);
+    assert_eq!(ccode, 2, "a captured stdout must not read as a verdict, got {ccode}:\n{cout}");
+    assert!(cout.contains("captured"), "{cout}");
+    assert!(
+        cout.contains(&log.display().to_string()),
+        "the refusal must name the log the run wrote:\n{cout}"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A LOG WRITTEN BEFORE THE VERDICT SPAN EXISTED. It is a complete run record, so
+/// `--verdict-only` judges it (the stock fixture is exactly this shape, and it is GREEN);
+/// the checker has no recorded verdict to read and says so, exit 2, naming the command
+/// that does judge it. A RESULT line sitting in the TEST span (a test that printed a
+/// verdict under `--nocapture`) is not a recorded verdict and must not make it GREEN.
+#[test]
+fn a_log_from_before_the_verdict_span_is_not_green_to_the_checker() {
+    let dir = scratch("pre-span");
+    let old = fixture(&dir, "pre-span.log", "");
+    let (ccode, cout) = check(&old);
+    assert_eq!(ccode, 2, "a pre-span log must not read as green to the checker, got {ccode}:\n{cout}");
+    assert!(cout.contains("NO RECORDED VERDICT"), "{cout}");
+    assert!(
+        cout.contains(&format!("--verdict-only {}", old.display())),
+        "the refusal must hand the reader the command that judges this log:\n{cout}"
+    );
+    let (vcode, vout) = judge_stdout(&old);
+    assert_eq!(vcode, 0, "--verdict-only judges the same pre-span record green:\n{vout}");
+
+    let quoted = fixture(&dir, "quoted-result.log", "  RESULT          GREEN\n");
+    let (ccode, cout) = check(&quoted);
+    assert_eq!(
+        ccode, 2,
+        "a RESULT line quoted inside the test span must not be read as the verdict, got {ccode}:\n{cout}"
+    );
+    assert!(!cout.contains("VERDICT: RESULT GREEN"), "{cout}");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A RECORDED GREEN THAT ITS OWN EXIT LINES CONTRADICT is not green. The script cannot
+/// write this; a hand-edited or spliced log can, and the checker is the last reader.
+#[test]
+fn a_recorded_green_over_a_nonzero_cargo_exit_is_not_green() {
+    let dir = scratch("contradicted");
+    let good = dir.join("good.log");
+    let block = "\n  RESULT          GREEN\n";
+    std::fs::write(
+        &good,
+        format!("{STAMP}{TAIL}##### VERDICT SPAN, fixture\n{block}LANDING_EXIT=0\n##### VERDICT SPAN ENDS\n"),
+    )
+    .unwrap();
+    let (ccode, cout) = check(&good);
+    assert_eq!(ccode, 0, "the CONTROL, an uncontradicted recorded green, must pass:\n{cout}");
+
+    let bad = dir.join("bad.log");
+    std::fs::write(&bad, std::fs::read_to_string(&good).unwrap().replace("CARGO_EXIT=0\n", "CARGO_EXIT=101\n"))
+        .unwrap();
+    let (ccode, cout) = check(&bad);
+    assert_eq!(ccode, 2, "a GREEN over CARGO_EXIT=101 must not pass, got {ccode}:\n{cout}");
+    assert!(cout.contains("INCONSISTENT"), "{cout}");
+
+    let twice = dir.join("twice.log");
+    let t = std::fs::read_to_string(&good).unwrap();
+    let span = &t[t.find("##### VERDICT SPAN,").unwrap()..];
+    std::fs::write(&twice, format!("{t}{span}")).unwrap();
+    let (ccode, cout) = check(&twice);
+    assert_eq!(ccode, 2, "a log carrying two verdict spans is ambiguous, got {ccode}:\n{cout}");
+    let _ = std::fs::remove_dir_all(&dir);
+}
