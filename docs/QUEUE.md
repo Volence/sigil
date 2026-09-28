@@ -1414,8 +1414,11 @@ points at it rather than restating it, so there is one copy to keep true.
 
 ### SONG-BANK-2-STUB-PROBE
 
-- state: **open, aeon is waiting on it** (their shape arrived 2026-09-27; not dispatched only because the seat that
-  received it was past the clear line)  size: `M` (S rows + M seam-2 + S probe)  project: `-`
+- state: **LANDED 2026-09-28 at merge `599008e8`** (parcel tip `4fe49de3`), sent to aeon  size: `M`  project: `-`
+- Results: `docs/superpowers/notes/2026-09-28-song-bank-2-probe.md`. Without the anchor plain/debug refuse
+  `[map.undeclared-island]` at 0xC0000; with it every shape builds, head at 0xC0000; a refreeze does not pin it.
+  Debug has 1,508 B of bank-1 growth before `[map.anchor-absent]` (aeon quoted 1,509: the test is strict).
+- *(The ask as filed, kept below.)*
 - The ask, from aeon's overseer, full reasoning at aeon `f49dd2bd` `docs/research/2026-09-27-song-bank.md`, section
   "Our side: which shape". Shape (a): a plain-address bank (vma == lma), `$8000`-aligned, placed in `map.toml` order
   right after `Sfx_33` and before `GameState_ObjectTest_Init`, so seam-2's predicted chain is untouched.
