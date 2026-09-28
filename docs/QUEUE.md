@@ -194,7 +194,7 @@ scratch copies; settled). The notes themselves are historical and were not edite
 
 ### LANDING-LOG-CHECKER-READS-THE-WRONG-FILE
 
-- state: **done in branch, awaiting merge** (fix `28e51dc8`)  size: `S`
+- state: **LANDED** 2026-09-28, fast-forward to `17361152` (fix `28e51dc8`), pushed; landing run GREEN at `f37dfc77`, 5852 passed 0 failed  size: `S`
 - `scripts/check_landing_log.py <log>` reports NO VERDICT, RED on the log `landing-run.sh` writes (`$LOG`),
   because the script echoes its verdict block to stdout only and writes just the `*_EXIT=` lines into `$LOG`.
   Measured 2026-09-27 on the drop-in parcel's `landing-2.log` and on `.landing-audit-194834.log`; the
