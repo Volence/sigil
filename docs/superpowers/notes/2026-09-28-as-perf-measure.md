@@ -368,3 +368,93 @@ here rather than committed.
 6. `sample.py` and `symbolize.py`: the sampling profiler described under Instruments. The
    selected-function table is the share of samples whose symbolised stack contains the name.
 7. asl's pass count: the same asl command without `-q`; it prints `N passes`.
+
+## After AS-PERF-FIX-PEAK, 2026-09-28
+
+Queue row `AS-PERF-FIX-PEAK`: item 3 of the ranked proposal, then items 5 and 6.
+
+### In plain language
+
+- **Peak memory is down by a quarter to a third, and layout no longer sets it.** sigil used to
+  hold the whole program three times at the end of layout: the front end's copy, layout's
+  working copy, and the lowered result. It now hands the front end's copy to layout, which
+  lowers it in place. Peak resident memory: S1 72 to 49 MB, S2 110 to 94 MB, S3K 244 to 185
+  MB. The process peak is now the front end's last pass on all three, as predicted.
+- **Wall time is down 13 to 17 percent**, from the two small front-end fixes: macro
+  parameter substitution now copies stretches of a line that cannot hold a name in one
+  step, and operands with no function-call shape skip the builtin scans. Layout itself
+  also got faster (S3K 85 to 35 ms) because it no longer copies every fragment.
+- **Every image is byte-identical to the stock asl+p2bin ROM**, all 168 timed runs across
+  the four comparisons.
+- Against the asl+p2bin figures measured earlier in this note (not re-measured here), sigil
+  is now about 1.6x to 2.2x asl's wall time and about 3x to 10x its memory. The remaining gap is the extra passes (`AS-PERF-FIX-PASSES`) and the front end's per-pass
+  memory growth, which this row did not touch.
+
+### What changed
+
+| commit | change | why it is safe |
+|---|---|---|
+| `3d9bdd21` | `resolve_layout_impl` owns its working copy and its final lowering consumes it, moving every fragment, label and folded equ list; `resolve_layout_placing` takes `Vec<Section>`, and `run_asm` and asl mode pass the front end's sections by value; new `resolve_layout_owned` | ownership only: placement rewrites only `lma`, the pre-fixpoint checks read the same sections, the lowering picks the same candidate by the same rung index. Structural test `relax::tests::owned_layout_moves_fragments_and_labels_rather_than_copying_them` (same heap buffers in and out) |
+| `589b9976` | `substitute_frame` copies runs of bytes no candidate can start with in one step; `ARGCOUNT` text formatted only on a match; `ALLARGS` borrowed | at a byte where a candidate can start, the same candidates are tried in the same order with the same boundary rule, so the single-pass rule is untouched. Test `expand::tests::copied_runs_never_skip_a_candidate_start` |
+| `4cd23814` | `expand_operand_builtins` skips the call and builtin layers when no identifier stands before a `(`, and the comparison layer too when there is no `=`/`<>` | those layers are the identity (a copy, no diagnostic) on such a slice. Test `eval::tests::operand_builtin_layers_still_run_where_they_can_act` |
+
+### Figures
+
+Interleaved rounds, order alternating per round, every child timed by wall clock and its own
+`os.wait4` rusage with `SIGIL_PHASE_TIMING` unset (so `ru_maxrss` is the process peak). Master
+`e1761831` is md5 `94b4a7db`; the tip binary is md5 `17b8a49a`.
+
+Master against the tip, 7 rounds, 05:17:38 to 05:18:57, load 10.9 to 16.8 (a spike to 16.8 at
+the start):
+
+| corpus | wall, master | wall, tip | wall ratio per round (med) | peak, master | peak, tip | peak ratio per round (med) | CRC |
+|---|---|---|---|---|---|---|---|
+| S1 | 0.97 to 1.29 s (1.05) | 0.84 to 0.99 s (0.88) | 0.718 to 0.941 (0.842) | 70.0 to 72.0 MB | 45.9 to 50.0 MB | 0.640 to 0.713 (0.683) | `afe05eee/524288` |
+| S2 | 2.59 to 2.85 s (2.72) | 2.15 to 2.40 s (2.26) | 0.775 to 0.901 (0.835) | 109.8 to 111.5 MB | 92.3 to 95.1 MB | 0.829 to 0.865 (0.848) | `7b905383/1048576` |
+| S3K | 2.17 to 2.94 s (2.28) | 1.88 to 2.15 s (1.97) | 0.640 to 0.966 (0.867) | 243.4 to 244.4 MB | 184.1 to 186.0 MB | 0.754 to 0.764 (0.757) | `0658f691/2097152` |
+
+Each commit against its parent, 7 rounds each (median ratios; ranges in the commit bodies):
+
+| step | load | S1 wall | S2 wall | S3K wall | S1 peak | S2 peak | S3K peak |
+|---|---|---|---|---|---|---|---|
+| layout by value | 10.9 to 11.9 | 0.995 | 1.021 | 0.977 | 0.684 | 0.846 | 0.757 |
+| substitution runs | 9.2 to 10.3 | 0.901 | 0.892 | 0.990 | 0.986 | 1.002 | 0.992 |
+| builtin-scan skip | 8.0 to 8.7 | 0.974 | 0.932 | 0.940 | 1.006 | 1.003 | 0.998 |
+
+Where the peak is now (`SIGIL_PHASE_TIMING=1`, one run each, 05:19, load 10.3; phase `hwm_kb`
+in MB):
+
+| corpus | last pass, master | layout, master | last pass, tip | layout, tip |
+|---|---|---|---|---|
+| S1 | 49.8 | 72.5 | 46.8 (pass 1) | 46.0 |
+| S2 | 93.8 | 110.1 | 92.6 | 90.2 |
+| S3K | 186.7 | 243.5 | 185.5 | 140.7 |
+
+The estimate in the proposal (S3K about 190, S2 about 95, S1 about 50 MB) holds.
+
+Item 6 saved less than its profiled share (12.8 percent on S3K, measured 6): the per-operand
+comma split and string packing in `expand_instruction_operand` still run and still copy.
+Item 5's S3K share (5.6 percent) is inside the noise at this load.
+
+### The `.emp` route
+
+The same shape was on `sigil build`: `resolve_chained` and `resolve_frozen_sections` in
+`sigil-harness/src/native.rs` built an owned section list, passed it to `resolve_layout` by
+reference and never read it again. Both now call `resolve_layout_owned`. Every other
+`resolve_layout` caller also gains, since the lowering no longer clones (two copies where
+there were three). aeon's bytes are covered by the strict suite's byte gates (the landing
+run's report names them).
+
+Left as they are, listed only: `link_to_image` in `sigil-cli/src/main.rs` (`sigil emp`,
+single file) borrows `module.sections` through `link_sections`; `measure_sections` in
+`native.rs` builds a tagged copy (`tagged`) it could hand over by value, but its
+`resolve_layout_measuring` has no owned form. Neither is a whole-program peak on any corpus
+measured here.
+
+### Reproduction
+
+As in the Reproduction section above, with the scratch in an uncommitted `.peak-scratch/`
+of this worktree: corpora from `git archive` at the SHAs in the Instruments table, stock
+script run once each for the reference ROM, `timing.py` (per round, each binary on each
+corpus, `os.wait4` rusage, whole-image compare, `/proc/loadavg` before and after),
+`summarize.py` for the ranges and per-round ratios, `phases.sh` for the phase lines.

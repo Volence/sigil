@@ -320,7 +320,7 @@ pub(crate) fn run(args: &[String]) -> ! {
     };
 
     let opts = sigil_frontend_as::Options { cli_defines: a.defines.clone(), share_file: a.share, ..Default::default() };
-    let assembled = match sigil_frontend_as::assemble_root_located_warned(Path::new(&source), &opts) {
+    let mut assembled = match sigil_frontend_as::assemble_root_located_warned(Path::new(&source), &opts) {
         Ok(assembled) => assembled,
         Err(failure) => {
             super::render_as_messages(&failure.messages);
@@ -343,7 +343,10 @@ pub(crate) fn run(args: &[String]) -> ! {
         .map(|s| s.lma)
         .collect();
     let empty = sigil_ir::SymbolTable::new();
-    let resolved = match sigil_link::resolve_layout_placing(&assembled.module.sections, &empty, true, &placed) {
+    // Layout takes the sections by value and lowers them in place, so the
+    // program is never held twice.
+    let sections = std::mem::take(&mut assembled.module.sections);
+    let resolved = match sigil_link::resolve_layout_placing(sections, &empty, true, &placed) {
         Ok(secs) => secs,
         Err(diags) => {
             sink.render(&diags, sources);

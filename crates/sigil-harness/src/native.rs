@@ -3844,7 +3844,7 @@ fn resolve_chained(aeon: &Path, profile: &GameProfile) -> Result<ChainedResolve,
     let all = apply_declared_chain(sections, &true_bases, &spans);
 
     let stubs = SymbolTable::new();
-    let resolved = sigil_link::resolve_layout(&all, &stubs, true)
+    let resolved = sigil_link::resolve_layout_owned(all, &stubs, true)
         .map_err(|d| render_declared_chain("resolve_layout", &d, &sources))?;
     // Same drift partition as the pinned driver: real Value(0) drift is a hard fail;
     // gated-off-twin (unresolvable-extern) guards are inapplicable here.
@@ -4043,7 +4043,7 @@ fn resolve_frozen_sections(aeon: &Path, profile: &GameProfile) -> Result<Vec<Sec
     let spans = declared_spans_by_index(&sections, &true_bases)?;
     let all = apply_declared_chain(sections, &true_bases, &spans);
     let stubs = SymbolTable::new();
-    sigil_link::resolve_layout(&all, &stubs, true)
+    sigil_link::resolve_layout_owned(all, &stubs, true)
         .map_err(|d| format!("frozen resolve: resolve_layout: {} diag(s); first {:?}", d.len(), d.first()))
 }
 

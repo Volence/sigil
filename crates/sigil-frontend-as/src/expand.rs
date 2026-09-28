@@ -142,12 +142,43 @@ pub(crate) fn substitute_frame(
     const ALLARGS: &str = "ALLARGS";
     const LABEL: &str = "__LABEL__";
     const ARGCOUNT: &str = "ARGCOUNT";
-    let arg_count_text = arg_count.to_string();
+
+    // Every byte at which some candidate could begin: both cases of each
+    // built-in's first letter (they fold case), and each parameter's own first
+    // byte. A run of bytes outside this set cannot hold a match and is copied
+    // whole, so a line with nothing to substitute is one scan and one copy.
+    // Every byte in the set is ASCII or the first byte of a UTF-8 sequence, so
+    // a run always ends on a character boundary.
+    let mut starts = [false; 256];
+    let mut mark_folded = |name: &str| {
+        let b = name.as_bytes()[0];
+        starts[usize::from(b.to_ascii_lowercase())] = true;
+        starts[usize::from(b.to_ascii_uppercase())] = true;
+    };
+    if attribute.is_some() {
+        mark_folded(ATTRIBUTE);
+    }
+    mark_folded(ALLARGS);
+    if int_label.is_some() {
+        mark_folded(LABEL);
+    }
+    mark_folded(ARGCOUNT);
+    for p in params {
+        if let Some(&b) = p.as_bytes().first() {
+            starts[usize::from(b)] = true;
+        }
+    }
 
     let bytes = text.as_bytes();
     let mut out = String::with_capacity(text.len());
     let mut i = 0usize;
     'outer: while i < bytes.len() {
+        if !starts[usize::from(bytes[i])] {
+            let end = bytes[i..].iter().position(|&b| starts[usize::from(b)]).map_or(bytes.len(), |k| i + k);
+            out.push_str(&text[i..end]);
+            i = end;
+            continue;
+        }
         let rest = &text[i..];
         for (name, value) in [
             (ATTRIBUTE, attribute),
@@ -174,7 +205,7 @@ pub(crate) fn substitute_frame(
         // built-in (probe `p9.asm` case 9b). Reaching here means no parameter
         // claimed this position, so the built-in is free to.
         if folded_match(rest, ARGCOUNT) && boundary_ok(text, i, ARGCOUNT) {
-            out.push_str(&arg_count_text);
+            out.push_str(&arg_count.to_string());
             i += ARGCOUNT.len();
             continue 'outer;
         }
@@ -535,4 +566,30 @@ pub(crate) fn group_span(g: &[Token]) -> Option<Span> {
     let first = g.first()?.span;
     let last = g.last()?.span;
     Some(Span { source: first.source, start: first.start, end: last.end })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::substitute_frame;
+
+    /// The runs `substitute_frame` copies without looking must never swallow the
+    /// start of a candidate: a built-in in either case, a parameter right after
+    /// a multi-byte character, and text with nothing to substitute at all. The
+    /// expected lines follow the rules the function's own doc quotes from asl:
+    /// built-ins fold case, a parameter matches only its declared spelling, and
+    /// an alphanumeric neighbour blocks a match while `-` and a space do not.
+    #[test]
+    fn copied_runs_never_skip_a_candidate_start() {
+        let params = vec!["pp".to_string()];
+        let bound = vec!["Zz".to_string()];
+        let sub = |text: &str| substitute_frame(text, Some(".w"), "A1,B2", Some("Lbl"), &params, &bound, 2);
+
+        assert_eq!(
+            sub("dc.b \"\u{e9}-pp allargs.attribute __label__ argcount\""),
+            "dc.b \"\u{e9}-Zz A1,B2.w Lbl 2\""
+        );
+        assert_eq!(sub("ALLARGS .ATTRIBUTE __LABEL__ ARGCOUNT"), "A1,B2 .w Lbl 2");
+        assert_eq!(sub("Pp xpp ppx \u{e9}pp"), "Pp xpp ppx \u{e9}pp");
+        assert_eq!(sub("move.l d0,(a1)+ ; \u{2014} no names here"), "move.l d0,(a1)+ ; \u{2014} no names here");
+    }
 }

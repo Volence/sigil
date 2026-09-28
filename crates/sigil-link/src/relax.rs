@@ -887,6 +887,17 @@ pub fn resolve_layout(
     stubs: &SymbolTable,
     dash_a: bool,
 ) -> Result<Vec<Section>, Vec<Diagnostic>> {
+    resolve_layout_impl(sections.to_vec(), stubs, dash_a, true, &[])
+}
+
+/// [`resolve_layout`] taking the sections BY VALUE: they are lowered in place, so
+/// a caller that has no further use for its section list does not hold a second
+/// copy of the program while layout runs.
+pub fn resolve_layout_owned(
+    sections: Vec<Section>,
+    stubs: &SymbolTable,
+    dash_a: bool,
+) -> Result<Vec<Section>, Vec<Diagnostic>> {
     resolve_layout_impl(sections, stubs, dash_a, true, &[])
 }
 
@@ -895,8 +906,14 @@ pub fn resolve_layout(
 /// refused for want of a ROM placement, because [`crate::flatten_placing`]
 /// places it and checks the placement. Every other check is
 /// [`resolve_layout`]'s, unchanged.
+///
+/// Takes the sections BY VALUE and lowers them in place, so a caller that is
+/// done with its module never holds a second copy of the program while layout
+/// runs. On a whole disassembly the section list is tens of megabytes, and the
+/// front end's copy coexisting with layout's working copy set the process's peak
+/// memory.
 pub fn resolve_layout_placing(
-    sections: &[Section],
+    sections: Vec<Section>,
     stubs: &SymbolTable,
     dash_a: bool,
     placed_origins: &[u32],
@@ -925,11 +942,15 @@ pub fn resolve_layout_measuring(
     stubs: &SymbolTable,
     dash_a: bool,
 ) -> Result<Vec<Section>, Vec<Diagnostic>> {
-    resolve_layout_impl(sections, stubs, dash_a, false, &[])
+    resolve_layout_impl(sections.to_vec(), stubs, dash_a, false, &[])
 }
 
+/// The fixpoint and lowering behind every `resolve_layout*` entry. It owns its
+/// working copy: placement rewrites each section's `lma` in `placed`, and the
+/// final lowering consumes `placed`, moving every fragment that needs no
+/// lowering rather than copying it.
 fn resolve_layout_impl(
-    sections: &[Section],
+    mut placed: Vec<Section>,
     stubs: &SymbolTable,
     dash_a: bool,
     check_image: bool,
@@ -941,7 +962,7 @@ fn resolve_layout_impl(
     // or break the grow-only length argument (a decreasing pair would let a rung
     // grow while the fragment SHRINKS, corrupting the prefix-sum layout math).
     let mut construction_errs: Vec<Diagnostic> = Vec::new();
-    for sec in sections {
+    for sec in &placed {
         for frag in &sec.fragments {
             if let Fragment::RelaxLadder { candidates, span, .. } = frag {
                 debug_assert!(!candidates.is_empty(), "RelaxLadder must have ≥1 candidate");
@@ -996,7 +1017,7 @@ fn resolve_layout_impl(
     // the resolved VMA offset from the physical image offset and the patch lands
     // on the wrong byte. Latent today (parallax sections are pure `dc.b`, no
     // `ds`), but fail loudly rather than mislink silently.
-    for sec in sections {
+    for sec in &placed {
         let has_org = sec.fragments.iter().any(|f| matches!(f, Fragment::Org { .. }));
         if !has_org {
             continue;
@@ -1033,15 +1054,16 @@ fn resolve_layout_impl(
     // Per-section, per-fragment RUNG index; all entries start at rung 0 (minimum
     // encoding). For `JmpJsrSym`/`RelaxAbsSym` rung 0 = abs.w.
     let mut rungs: Vec<Vec<usize>> =
-        sections.iter().map(|s| vec![0usize; s.fragments.len()]).collect();
+        placed.iter().map(|s| vec![0usize; s.fragments.len()]).collect();
 
-    // The joint placement⇄relaxation fixpoint (R7p.3) operates on a MUTABLE copy:
-    // each outer pass re-derives every chained section's lma from the current
-    // rungs (the placement pass, R7p.2), so `placed`'s lmas are truth-telling
-    // final addresses. `rungs` persists across passes and is grow-only (the
-    // existing ladder invariant); placement is a deterministic function of
-    // rungs + pins, so once rungs stabilize one final placement is fixed.
-    let mut placed: Vec<Section> = sections.to_vec();
+    // The joint placement⇄relaxation fixpoint (R7p.3) works on `placed`, which
+    // it owns: each outer pass re-derives every chained section's lma from the
+    // current rungs (the placement pass, R7p.2), so `placed`'s lmas are
+    // truth-telling final addresses. `rungs` persists across passes and is
+    // grow-only (the existing ladder invariant); placement is a deterministic
+    // function of rungs + pins, so once rungs stabilize one final placement is
+    // fixed. Placement changes only `lma`; fragments and labels are untouched
+    // until the lowering at convergence.
 
     // Provably-sufficient pass cap: each pass that reports `grew` advances at
     // least one relaxable fragment's rung by ≥1 (a length change), and each
@@ -1053,7 +1075,7 @@ fn resolve_layout_impl(
     // `PASS_GUARD_FLOOR` is the floor for a small input; the guard itself is
     // derived from the input's own flip budget, so no input can outrun it and the
     // non-convergence report below is unreachable while grow-only holds.
-    let total_flips: usize = sections
+    let total_flips: usize = placed
         .iter()
         .flat_map(|s| s.fragments.iter())
         .map(|f| rung_count(f) - 1)
@@ -1312,25 +1334,44 @@ fn resolve_layout_impl(
             // equ). An unresolvable equ (after the pass cap) or a cycle is a loud
             // link error naming the symbol and its first unresolved dependency.
             let folded = fold_equ_syms(&placed, &syms)?;
+            debug_assert_eq!(folded.len(), placed.len(), "one folded equ list per section");
 
             // (d) Converged & every ladder reaches: lower fragments + shift labels.
+            // `placed` is consumed: a fragment that needs no lowering moves into
+            // the result, and a relaxable one is replaced by the candidate the
+            // fixpoint chose, so no second copy of the program is built.
             let out = placed
-                .iter()
+                .into_iter()
+                .zip(folded)
                 .enumerate()
-                .map(|(si, sec)| {
-                    let bps = shift_breakpoints(sec, &rungs[si]);
-                    let labels = sec
-                        .labels
-                        .iter()
-                        .map(|l| Label { name: l.name.clone(), offset: shift_offset(&bps, l.offset) })
+                .map(|(si, (sec, folded_equs))| {
+                    let bps = shift_breakpoints(&sec, &rungs[si]);
+                    // Every field named, so a field added to `Section` fails to
+                    // compile here until this rebuild decides what to do with it.
+                    let Section {
+                        name,
+                        cpu,
+                        vma_base,
+                        lma,
+                        labels,
+                        fragments,
+                        placement,
+                        reserved_span,
+                        group,
+                        bank,
+                        space,
+                        equ_syms: _,
+                    } = sec;
+                    let labels = labels
+                        .into_iter()
+                        .map(|l| Label { name: l.name, offset: shift_offset(&bps, l.offset) })
                         .collect();
-                    let fragments = sec
-                        .fragments
-                        .iter()
+                    let fragments = fragments
+                        .into_iter()
                         .enumerate()
                         .map(|(fi, frag)| match frag {
                             Fragment::JmpJsrSym { is_jsr, target, span } => {
-                                lower_jmp_jsr(*is_jsr, target.clone(), rung_width(rungs[si][fi]), *span)
+                                lower_jmp_jsr(is_jsr, target, rung_width(rungs[si][fi]), span)
                             }
                             // SELECT the width candidate the fixpoint chose and emit
                             // it verbatim (no m68k encoding in the linker): the abs.w
@@ -1342,47 +1383,47 @@ fn resolve_layout_impl(
                                     AbsWidth::L => long,
                                 };
                                 Fragment::Data(DataFragment {
-                                    bytes: cand.bytes.clone(),
-                                    fixups: vec![cand.fixup.clone()],
-                                    span: *span,
+                                    bytes: cand.bytes,
+                                    fixups: vec![cand.fixup],
+                                    span,
                                 })
                             }
-                            // Lower the chosen ladder rung — the same shape as the
+                            // Lower the chosen ladder rung, the same shape as the
                             // RelaxAbsSym arm: the candidate's bytes + its single
                             // fixup as a Data fragment; the linker encodes nothing.
-                            Fragment::RelaxLadder { candidates, span, .. } => {
-                                let cand = &candidates[rungs[si][fi]];
+                            Fragment::RelaxLadder { mut candidates, span, .. } => {
+                                let cand = candidates.swap_remove(rungs[si][fi]);
                                 Fragment::Data(DataFragment {
-                                    bytes: cand.bytes.clone(),
-                                    fixups: vec![cand.fixup.clone()],
-                                    span: *span,
+                                    bytes: cand.bytes,
+                                    fixups: vec![cand.fixup],
+                                    span,
                                 })
                             }
-                            other => other.clone(),
+                            other => other,
                         })
                         .collect();
                     Section {
-                        name: sec.name.clone(),
-                        cpu: sec.cpu,
-                        vma_base: sec.vma_base,
-                        lma: sec.lma,
+                        name,
+                        cpu,
+                        vma_base,
+                        lma,
                         labels,
                         fragments,
                         // Provenance is carried through the relax rebuild verbatim
                         // (R7p.1): relaxation only lowers fragments/shifts labels;
                         // it never re-places a section. `bank` (R7m.1) is the same
-                        // kind of provenance — carried verbatim for Task 2's
+                        // kind of provenance, carried verbatim for Task 2's
                         // placement seam to read.
-                        placement: sec.placement,
-                        reserved_span: sec.reserved_span,
-                        group: sec.group.clone(),
-                        bank: sec.bank,
-                        space: sec.space,
+                        placement,
+                        reserved_span,
+                        group,
+                        bank,
+                        space,
                         // R-T0.3: each equ's `expr` is REPLACED by its folded
                         // integer (`Expr::Int(v)`), computed above against the
                         // final label VMAs. `link()` re-folds these (now trivial)
                         // and defines them before fixups.
-                        equ_syms: folded[si].clone(),
+                        equ_syms: folded_equs,
                     }
                 })
                 .collect();
@@ -1392,7 +1433,7 @@ fn resolve_layout_impl(
 
     // Point at a fragment that moved on the final pass (the likely culprit); fall
     // back to the first fragment's span if nothing did.
-    let fallback = sections.iter().flat_map(|s| s.fragments.iter()).map(frag_span).next();
+    let fallback = placed.iter().flat_map(|s| s.fragments.iter()).map(frag_span).next();
     Err(vec![unsettled_diag(&rung_moves, &lma_moves, fallback)])
 }
 
@@ -4167,5 +4208,61 @@ mod tests {
         let out = resolve_layout_measuring(&[image, driver], &SymbolTable::new(), true)
             .expect("measuring skips the image checks");
         assert_eq!(out[1].space, z80_space(40), "the space survives the relax rebuild");
+    }
+
+    /// Layout by value lowers the program in place: a fragment that needs no
+    /// lowering, a label name, and the chosen candidate of each relaxable all
+    /// reach the result as the SAME heap buffers the caller handed in. A copy
+    /// anywhere on that path would put a second copy of the whole program in
+    /// memory for the duration of layout, which on a whole disassembly is what
+    /// set the process's peak.
+    #[test]
+    fn owned_layout_moves_fragments_and_labels_rather_than_copying_them() {
+        let data = Fragment::Data(DataFragment { bytes: vec![0x4E, 0x71, 0x4E, 0x71], fixups: vec![], span: sp() });
+        let abs = relax_move("Here");
+        let ladder = Fragment::RelaxLadder {
+            candidates: vec![bra_s("Here"), bra_w("Here")],
+            target: Expr::Sym("Here".into()),
+            span: sp(),
+        };
+        let data_ptr = match &data {
+            Fragment::Data(d) => d.bytes.as_ptr(),
+            _ => unreachable!(),
+        };
+        let abs_short_ptr = match &abs {
+            Fragment::RelaxAbsSym { short, .. } => short.bytes.as_ptr(),
+            _ => unreachable!(),
+        };
+        let ladder_short_ptr = match &ladder {
+            Fragment::RelaxLadder { candidates, .. } => candidates[0].bytes.as_ptr(),
+            _ => unreachable!(),
+        };
+        let label = Label { name: "Here".into(), offset: 0 };
+        let label_ptr = label.name.as_ptr();
+        let sec = Section {
+            name: "moved".into(),
+            cpu: Cpu::M68000,
+            vma_base: None,
+            lma: 0x200,
+            labels: vec![label],
+            fragments: vec![data, abs, ladder],
+            placement: sigil_ir::SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
+            bank: None,
+            space: sigil_ir::AddressSpace::Image,
+            equ_syms: vec![],
+        };
+
+        let out = resolve_layout_owned(vec![sec], &SymbolTable::new(), true).expect("a near target settles");
+
+        let bytes_ptr = |i: usize| match &out[0].fragments[i] {
+            Fragment::Data(d) => d.bytes.as_ptr(),
+            other => panic!("fragment {i} was not lowered to data: {other:?}"),
+        };
+        assert_eq!(bytes_ptr(0), data_ptr, "a plain data fragment must be moved, not copied");
+        assert_eq!(bytes_ptr(1), abs_short_ptr, "the chosen abs.w candidate must be moved, not copied");
+        assert_eq!(bytes_ptr(2), ladder_short_ptr, "the chosen bra.s rung must be moved, not copied");
+        assert_eq!(out[0].labels[0].name.as_ptr(), label_ptr, "a label name must be moved, not copied");
     }
 }
