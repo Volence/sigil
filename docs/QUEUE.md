@@ -1667,3 +1667,7 @@ points at it rather than restating it, so there is one copy to keep true.
   aeon; (3) aeon renames and lands. The old id's row is retired at the pin advance that passes their rename, together
   with the `warn_tier_corpus.rs` known-site row for `mt_bank.emp`, which goes red then by design.
 - Takes precedence over SEAM2-TABLE-REGION-UNENFORCED's fix because a peer is holding a landing on it.
+- Aeon (2026-09-28) holds the rename on branch `fix/mt-bank-module-name` until we say the tolerant row is in the
+  installed pair, and its agent is measuring what the CURRENT pair (`1173bb31`) does with the renamed id (demo debug
+  and canonical shapes: bytes, refusal or nothing). Asked to commit that result in their tree and send the SHA; read
+  it there, not from mail, before step 1.
