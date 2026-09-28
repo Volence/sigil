@@ -144,7 +144,10 @@ the second PAGE_FRAMES_CLAMP site, the with-census, and mt_bank.emp's module id.
 
 ## Final gate
 
-See the QUEUE row for the landing-run totals at the tip.
+`scripts/landing-run.sh --aeon .aeon-sigil-ref-1ee78b88 --baseline 5858` at `9b0a9d80`:
+RESULT GREEN, 520 of 520 binaries launched and reported, 5858 passed, 0 failed,
+2 ignored, 0 skip lines, clippy 0, ledger 0. The baseline run counted 5859 tests
+(5657 + 202); the one fewer is the retired `mt_negative_probes` probe (b).
 
 ## For the controller
 

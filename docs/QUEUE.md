@@ -1418,6 +1418,7 @@ points at it rather than restating it, so there is one copy to keep true.
 - Outcome 2026-09-28 (`docs/superpowers/notes/2026-09-28-pin-advance-s2.md`): refrozen at aeon `1ee78b88`, entry
   `pin-advance-s2`, chain len 207; s4 `50401674/845398` and s4.debug `198fd717/865722` equal aeon's figures.
   Baseline at unmodified master against the new tree 202 failed; after the freeze 52; after the repairs 0.
+  Landing run at `9b0a9d80` against `.aeon-sigil-ref-1ee78b88`: GREEN, 520 suites, 5858 passed, 0 failed, 2 ignored.
   `repin.toml` `soundbankhead` now ends at `section:soundbankhead` (0x6B0, aeon's reading confirmed, no literal).
   `repin --check`: `pins.rs unchanged`. Findings for aeon: `mt_bank.emp`'s module id (`[module.path-mismatch]`),
   and `tools/test_extern_guard_reachability.py` is present at the new pin.
