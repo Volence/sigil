@@ -1080,6 +1080,16 @@ its measurement, and the firings it swallows are printed on every run.
 declare, built by the corpus's own `build.lua` and by sigil, compared whole-image, plus every
 corner of the option space. It is not a cargo test because it needs `lua` and both corpora.
 
+- **Two passes, one per route.** `--route direct` (sigil run by its own command, placing and
+  compressing itself) then `--route dropin` (sigil copied in as the script's `asl`, `build.lua`
+  run unchanged: the route a disassembly user takes). Each pass has its own log and scratch and is
+  reconciled on its own by every rule below. The dropin pass runs even when the direct pass could
+  not, since they share only what was checked before either started. Both together get a
+  four-hour budget inside the unit's five; each pass's timeout is what the passes before it left,
+  and a pass left under a minute is not started and is 2. The direct route's acknowledgements
+  (`DIRECT_ROUTE_ONLY`, the S2 share-file residual) stay in the direct pass and are left out of
+  the dropin pass's tables, which then assert those legs agree.
+
 - **The option set is derived, never listed.** `.asm` ASSEMBLY OPTIONS by their `;...|` prose, and
   `build.lua`'s `-- Settings --` block (a boolean local sweeps both values; any other literal is
   UNREADABLE and must be acknowledged as `build.lua:<name>`). A toggle outside either place is a loud
@@ -1088,15 +1098,20 @@ corner of the option space. It is not a cargo test because it needs `lua` and bo
   `<suite>/.sigil-switch-sweep`, built into `<suite>/.sigil-switch-sweep-target`, and the binary's
   own `revision:` must equal that SHA. Corpora: their committed `HEAD`, read by `git archive`, never
   the working tree; the verdict prints each SHA beside the count of uncommitted entries it did not
-  measure. `SIGIL_SWITCH_SWEEP_REF`, `_S1_REF`, `_S2_REF`, `_HOME` and `_STATE` are for hand runs and
-  proofs; the timer sets none.
-- **Exit 0 green, 1 a finding, 2 could not run**, both nonzero notify. 2 includes `lua` missing, a
-  corpus or ref missing, a sigil build failure, a sweep abort, crash (an uncaught exception is 2, not
-  1), timeout or kill, and any run whose per-leg markers do not reconcile: `LEG_START` against
-  `LEG_REPORTED` + `LEG_ERROR`, both against the sweep's own launched/reported line, all against
-  the plan lines (baseline + arms + each end-to-end control + every corner), and one population
-  line, one cross product and one C7 verdict per corpus.
-- **A red is read in `~/.local/state/sigil-switch-sweep/sweep.log`**, the whole sweep output; the
+  measure. All three are resolved once and handed to both passes. `SIGIL_SWITCH_SWEEP_REF`,
+  `_S1_REF`, `_S2_REF`, `_HOME`, `_STATE` and `_BUDGET_SECS` are for hand runs and proofs; the timer
+  sets none.
+- **Exit 0 green, 1 a finding, 2 could not run**, per pass and for the job: 2 if either pass is 2,
+  else 1 if either is 1. One verdict line names both routes, each with its word, leg counts and
+  wall time; its header names the routes at the job's exit status. Both nonzero notify. 2 includes
+  `lua` missing, a corpus or ref missing, a sigil build failure, a sweep abort, crash (an uncaught
+  exception is 2, not 1), timeout or kill, and any pass whose per-leg markers do not reconcile:
+  `LEG_START` against `LEG_REPORTED` + `LEG_ERROR`, both against the sweep's own launched/reported
+  line, all against the plan lines (baseline + arms + each end-to-end control + every corner), one
+  population line, one cross product and one C7 verdict per corpus, and one `ROUTE` line naming
+  the pass's own route.
+- **A red is read in `~/.local/state/sigil-switch-sweep/sweep.log`** (direct) or
+  **`sweep-dropin.log`** (dropin), the whole output of the pass the verdict line names; the
   `SWEEP FAILED` block names each reason. An `ACK_*` table entry is how an adjudicated outcome is
   booked, and every table is asserted equal to the run in both directions, so a stale entry is also
   red. Current acknowledgements and what would retire them: the tables' own comments, and the
