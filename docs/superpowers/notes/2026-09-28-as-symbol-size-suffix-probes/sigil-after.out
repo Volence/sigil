@@ -1,0 +1,97 @@
+areg_l           exit 1  REFUSED  areg_l.asm(2):2: error: unresolved symbol `a0.l` in operand
+back_label_w     exit 0   4E714EF80000
+bra_dot_loop_w   exit 1  REFUSED  bra_dot_loop_w.asm(4):2: error: unresolved symbol `T.loop.w` for fixup in section sec0 at offset 5
+bra_local_w      exit 0   4E714E7160FC
+bra_sym_w        exit 1  REFUSED  bra_sym_w.asm(2):2: error: unresolved symbol `T.w` for fixup in section sec0 at offset 2
+bsr_local_l      exit 0   4E714E716100FFFC
+btst_sym_w       exit 0   08380001F600
+clr_sym_w        exit 0   4278F600
+dbf_local_w      exit 0   4E714E7151C8FFFC
+dbf_sym_w        exit 1  REFUSED  dbf_sym_w.asm(2):2: error: unresolved symbol `T.w` in operand
+dc_dot_w_defined exit 0   5678
+dc_sym_w         exit 1  REFUSED  dc_sym_w.asm(3):2: error: unresolved symbol `Foo.w` for fixup in section sec0 at offset 0
+disp_collide     exit 0   30280004
+disp_dot_w_defined exit 1  REFUSED  disp_dot_w_defined.asm(3):2: error: unresolved symbol `Foo` in operand
+disp_num_w       exit 0   30280004
+disp_sym_b       exit 1  REFUSED  disp_sym_b.asm(3):9: error: `.b` is not a displacement width this addressing mode takes on the 68000; the only width written here is `.w`
+disp_sym_l       exit 1  REFUSED  disp_sym_l.asm(3):9: error: `.l` is not a displacement width this addressing mode takes on the 68000; the only width written here is `.w`
+disp_sym_s       exit 1  REFUSED  disp_sym_s.asm(3):9: error: `.s` is not a displacement width this addressing mode takes on the 68000; the only width written here is `.w`
+disp_sym_w       exit 0   30280004
+disp_sym_W       exit 0   30280004
+disp_sym_w_big   exit 1  REFUSED  disp_sym_w_big.asm(3):2: error: operand 32768 out of range -32768..=32767
+dot_b_defined    exit 1  REFUSED  dot_b_defined.asm(3):6: error: `.b` is not an absolute address width on the 68000; write `.w` or `.l`
+dot_equ_collide  exit 0   4EF81234
+dot_equ_def      exit 0   1234
+dot_equ_w_def    exit 0   0000
+dot_equ_w_use    exit 1  REFUSED  dot_equ_w_use.asm(3):2: error: unresolved symbol `Foo` in operand
+dot_w_w          exit 0   4EF85678
+dreg_w           exit 1  REFUSED  dreg_w.asm(2):2: error: unresolved symbol `d0.w` in operand
+expr_mid_dot     exit 0   4EF80012
+expr_tail_sym    exit 0   4EF80012
+fwd_equ_l        exit 0   4EB900001234
+fwd_equ_move     exit 0   3038F600
+fwd_equ_w        exit 0   4EF81234
+fwd_equ_w_hi     exit 1  REFUSED  fwd_equ_w_hi.asm(2):2: error: address $8000 does not fit abs.w: only $0..=$7FFF and $FF8000..=$FFFFFF have a short spelling (asl: short addr
+fwd_label_l      exit 0   4EF9000000084E71
+fwd_label_w      exit 0   4EF800064E71
+fwd_label_w_hi   exit 1  REFUSED  fwd_label_w_hi.asm(2):2: error: address $8004 does not fit abs.w: only $0..=$7FFF and $FF8000..=$FFFFFF have a short spelling (asl: short ad
+idx_collide      exit 0   32300004
+idx_num_b        exit 0   32300004
+idx_sym_b        exit 0   32300004
+idx_sym_w        exit 1  REFUSED  idx_sym_w.asm(3):9: error: `.w` is not a displacement width this addressing mode takes on the 68000; the only width written here is `.b`
+imm_dot_w_defined exit 0   303C5678
+imm_sym_w        exit 1  REFUSED  imm_sym_w.asm(3):2: error: unresolved symbol `Foo.w` in operand
+jmp_sym_b        exit 1  REFUSED  jmp_sym_b.asm(3):6: error: `.b` is not an absolute address width on the 68000; write `.w` or `.l`
+jmp_sym_expr_w   exit 0   4EF81234
+jmp_sym_paren_w  exit 0   4EF81234
+jmp_sym_s        exit 1  REFUSED  jmp_sym_s.asm(3):6: error: `.s` is not an absolute address width on the 68000; write `.w` or `.l`
+jmp_sym_w        exit 0   4EF81234
+jmp_sym_W        exit 0   4EF81234
+jmp_sym_w_big    exit 1  REFUSED  jmp_sym_w_big.asm(3):2: warning: [as.odd-address] jump to odd address $12345: on a 68000 fetching an opcode from an odd address is an addres
+jmp_sym_w_hi     exit 1  REFUSED  jmp_sym_w_hi.asm(3):2: error: address $8000 does not fit abs.w: only $0..=$7FFF and $FF8000..=$FFFFFF have a short spelling (asl: short addr
+jmp_sym_w_m2     exit 0   4EF8FFFE
+jmp_sym_w_neg    exit 0   4EF88000
+jsr_sym_l        exit 0   4EB900001234
+jsr_sym_L        exit 0   4EB900001234
+lea_sym_w        exit 0   41F81234
+local_full_dc    exit 0   4E714E710002
+local_full_l     exit 0   4E714E714EF900000002
+local_full_w     exit 0   4E714E714EF80002
+local_l_collide  exit 0   4E714E714EB900000000
+local_loop_w     exit 0   4E714E714EF80002
+local_w_bare     exit 0   4E714E714EF80002
+local_w_collide  exit 0   4E714E714EF80000
+macro_param_w    exit 0   4EF81234
+move_imm_sym_w   exit 0   31FC0001F600
+movem_sym_w      exit 0   4CF80003F600
+movem_sym_w_dst  exit 0   48F80003F600
+move_sym_both    exit 0   31F812348000
+move_sym_l_dst   exit 0   23C000001234
+move_sym_w_dst   exit 0   31C0F600
+move_sym_w_hi    exit 1  REFUSED  move_sym_w_hi.asm(3):2: error: address $FF00 does not fit abs.w: only $0..=$7FFF and $FF8000..=$FFFFFF have a short spelling (asl: short add
+move_sym_w_src   exit 0   30381234
+num_space_w      exit 0   4EF81234
+paren_abs_dot    exit 0   4EF81234
+paren_disp_collide exit 0   30280004
+paren_disp_dot   exit 1  REFUSED  paren_disp_dot.asm(3):2: error: unresolved symbol `Foo` in operand
+paren_disp_num   exit 0   30280004
+paren_disp_sym   exit 0   30280004
+paren_disp_sym_b exit 1  REFUSED  paren_disp_sym_b.asm(3):9: error: `.b` is not a displacement width this addressing mode takes on the 68000; the only width written here is `
+paren_disp_sym_l exit 1  REFUSED  paren_disp_sym_l.asm(3):9: error: `.l` is not a displacement width this addressing mode takes on the 68000; the only width written here is `
+paren_dot_w_defined exit 0   4EF85678
+paren_idx_sym_b  exit 1  REFUSED  paren_idx_sym_b.asm(3):9: error: `.b` is not a displacement width this addressing mode takes on the 68000; write the displacement without a 
+paren_idx_sym_w  exit 1  REFUSED  paren_idx_sym_w.asm(3):9: error: `.w` is not a displacement width this addressing mode takes on the 68000; write the displacement without a 
+paren_move_sym_w exit 0   3038F600
+paren_num_w      exit 0   4EF81234
+paren_sym_b      exit 1  REFUSED  paren_sym_b.asm(3):6: error: `.b` is not an absolute address width on the 68000; write `.w` or `.l`
+paren_sym_l      exit 0   4EF900001234
+paren_sym_w      exit 0   4EF81234
+paren_sym_w_hi   exit 1  REFUSED  paren_sym_w_hi.asm(3):2: error: address $8000 does not fit abs.w: only $0..=$7FFF and $FF8000..=$FFFFFF have a short spelling (asl: short ad
+pcidx_sym_b      exit 0   4E71323B00FC
+pcrel_num_w      exit 0   4E71303AFFFC
+pcrel_sym_w      exit 0   4E71303AFFFC
+pea_sym_l        exit 0   487900001234
+sym_areg_name_w  exit 0   4EF81234
+sym_imm_expr_w   exit 0   4EF81234
+sym_space_w      exit 0   4EF81234
+undef_sym_w      exit 1  REFUSED  undef_sym_w.asm(2):2: error: unresolved symbol `Undef` in operand

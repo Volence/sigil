@@ -11200,7 +11200,7 @@ impl Asm {
                 return;
             }
         };
-        let atoms = match parse_operands(rest, span, &self.ectx()) {
+        let atoms = match crate::operands::parse_target_operands(rest, span, &self.ectx()) {
             Ok(a) => a,
             Err(d) => {
                 self.diags.push(d);
@@ -11237,7 +11237,7 @@ impl Asm {
     /// `self_address - (self_address + 2)`) and against real `asl` (see
     /// `m68k_dbf_d0_self`/`m68k_dbeq_d1_self` in `tests/snippets_golden.txt`).
     fn lower_m68k_dbcc(&mut self, mnemonic: M68kMnemonic, rest: &[Token], span: Span) {
-        let atoms = match parse_operands(rest, span, &self.ectx()) {
+        let atoms = match crate::operands::parse_target_operands(rest, span, &self.ectx()) {
             Ok(a) => a,
             Err(d) => {
                 self.diags.push(d);

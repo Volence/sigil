@@ -73,3 +73,34 @@ fn the_other_as_rewrites_do_not_reach_emp() {
         assert_unchanged(m, &[&format!("`{word}` is not a recognized 68000 mnemonic")]);
     }
 }
+
+/// AS-SYMBOL-SIZE-SUFFIX's AS-route reading (`jmp Foo.w` is `Foo` at word
+/// width, `.w`/`.b` on a displacement, a branch target read whole) does not
+/// reach `.emp`, whose front end never calls the AS operand classifier. Pinned
+/// against sigil master `4915361c`, the branch point of that parcel, measured
+/// with this file's `lowered_errors`.
+#[test]
+fn a_width_suffix_on_a_name_is_what_it_was() {
+    for m in [
+        "jmp P.w",
+        "jmp P.W",
+        "jsr P.l",
+        "lea P.w,a0",
+        "move.w P.w,d0",
+        "move.l d0,P.l",
+        "jmp (P).w",
+        "bra.s P.w",
+        "dbf d0,P.w",
+    ] {
+        assert_unchanged(m, &[]);
+    }
+    assert_unchanged(
+        "move.w (P.w),d0",
+        &[
+            "unknown name `P`",
+            "instruction dropped, a mnemonic, size, or operand did not resolve \
+             (a missing import or type in scope?)",
+        ],
+    );
+    assert_unchanged("jmp $1234.w", &["illegal destination EA: #imm"]);
+}

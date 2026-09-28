@@ -75,6 +75,177 @@ pub fn parse_operands(
     Ok(out)
 }
 
+/// [`parse_operands`] for a 68000 branch or `dbcc`, whose target is a LABEL and
+/// not an effective address: a name ending in `.w`/`.l`/`.b`/`.s` is read
+/// whole there, never as a name plus a width suffix. asl reads
+/// `T: nop / .w: nop / bra.s T.w` as a branch to the local label `T.w`
+/// (`60FC`, probe `bra_local_w`) and `dbf d0,T.w` likewise (`51C8 FFFC`,
+/// probe `dbf_local_w`), where `jmp T.w` is `T` with a word width.
+pub fn parse_target_operands(
+    toks: &[Token],
+    at: Span,
+    ctx: &ExprCtx<'_>,
+) -> Result<Vec<OperandAtom>, Diagnostic> {
+    if toks.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut out = Vec::new();
+    for group in split_commas(toks) {
+        out.push(classify_in(group, at, ctx, NameWidth::Whole)?);
+    }
+    Ok(out)
+}
+
+/// How a 68000 operand reads a name that ends in a width suffix (`Foo.w`,
+/// `.loop.l`, `Foo.b`), which the lexer delivers as ONE identifier because `.`
+/// is an identifier character (local labels are spelled `Parent.local`).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum NameWidth {
+    /// Effective-address position: asl reads the trailing `.w`/`.l`/`.b`/`.s`
+    /// as the width of the address or displacement and looks up the rest, so
+    /// `jmp Foo.w` is `Foo` at word width even when a symbol spelled `Foo.w`
+    /// exists (probes `dot_equ_collide`, `local_w_collide`).
+    Suffix,
+    /// Branch and `dbcc` target position: the name is read whole.
+    Whole,
+}
+
+/// The width a `.b`/`.w`/`.l`/`.s` suffix names, in either case.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum WidthSuffix {
+    B,
+    W,
+    L,
+    S,
+}
+
+impl WidthSuffix {
+    fn parse(s: &str) -> Option<WidthSuffix> {
+        match s.to_ascii_lowercase().as_str() {
+            ".b" => Some(WidthSuffix::B),
+            ".w" => Some(WidthSuffix::W),
+            ".l" => Some(WidthSuffix::L),
+            ".s" => Some(WidthSuffix::S),
+            _ => None,
+        }
+    }
+
+    fn spelling(self) -> &'static str {
+        match self {
+            WidthSuffix::B => ".b",
+            WidthSuffix::W => ".w",
+            WidthSuffix::L => ".l",
+            WidthSuffix::S => ".s",
+        }
+    }
+}
+
+/// Split the width suffix asl reads off the END of a 68000 address or
+/// displacement expression, returning the expression's tokens and the suffix.
+///
+/// The suffix arrives two ways. After a number or a close paren the lexer has
+/// already made it its own token (`$1234.w`, `Foo .w`). After a name it is
+/// glued on (`Foo.w`, `.loop.w`, `Foo.loop.w`), and is split here: the name
+/// before it is what asl looks up (probes `jmp_sym_w`, `local_full_w`,
+/// `dot_w_w`, where `Foo.w.w` is the symbol `Foo.w` at word width).
+///
+/// Declined, so the caller reads the tokens as before:
+/// - a lone `.w` with nothing before it, which is a local label of that name
+///   (asl: `jmp .w` is the local, probe `local_w_bare`);
+/// - a register name before the suffix (`d0.w`, `sp.l`): a register is not an
+///   address, and asl refuses `move.w d0.w,d1` (`#1146`, probe `dreg_w`);
+/// - a whole parenthesised group or a bare register before a separate suffix
+///   token, which the callers' own guards already settle.
+fn peel_width_suffix(toks: &[Token]) -> Option<(Vec<Token>, WidthSuffix)> {
+    let (last, before) = toks.split_last()?;
+    let Tok::Ident(w) = &last.tok else {
+        return None;
+    };
+    if let Some(suf) = WidthSuffix::parse(w) {
+        if before.is_empty() || is_whole_paren_group(before) || is_bare_register_token(before) {
+            return None;
+        }
+        return Some((before.to_vec(), suf));
+    }
+    let cut = w.len().checked_sub(2)?;
+    if !w.is_char_boundary(cut) {
+        return None;
+    }
+    let (head, tail) = w.split_at(cut);
+    let suf = WidthSuffix::parse(tail)?;
+    if head.is_empty() || head == "." || is_operand_register_word(head, Cpu::M68000) {
+        return None;
+    }
+    let mut out = before.to_vec();
+    out.push(Token {
+        tok: Tok::Ident(head.to_string()),
+        span: last.span,
+    });
+    Some((out, suf))
+}
+
+/// The refusals for a displacement written inside the parens, `(d,An[,Xn])`.
+const PAREN_DISP_MSGS: (&str, &str) =
+    ("bad displacement expression", "trailing tokens in displacement");
+
+/// The refusals for a displacement written before the parens, `d(An[,Xn])`.
+const OUTER_DISP_MSGS: (&str, &str) = (
+    "bad displacement expression in `disp(An)`",
+    "trailing tokens in `disp(An)` displacement",
+);
+
+/// Parse a displacement expression that may carry a width suffix, and require
+/// the suffix, if any, to be the one width asl accepts in that position:
+/// `.w` before a lone base (`Foo.w(a0)`, `(Foo.w,a0)`, `Foo.w(pc)`), `.b`
+/// before an indexed base written outside the parens (`Foo.b(a0,d0.w)`).
+/// Every other suffix is refused, each an asl refusal or worse: `.l` is
+/// `#1505` (the 68020 forms), `.s` is `#1130`, `.w` on an index form is
+/// `#1505`, and inside the parens of an index form asl refuses `.b` too
+/// (`#1350`). `Foo.b(a0)` is refused here although asl exits 0 on it: asl
+/// emits NO BYTES for that line and says nothing (probe `disp_sym_b`), which
+/// is not an answer to match.
+fn parse_disp(
+    toks: &[Token],
+    ctx: &ExprCtx<'_>,
+    names: NameWidth,
+    allowed: Option<WidthSuffix>,
+    span: Span,
+    (bad, trailing): (&str, &str),
+) -> Result<Expr, Diagnostic> {
+    let peeled = if ctx.cpu == Cpu::M68000 && names == NameWidth::Suffix {
+        peel_width_suffix(toks)
+    } else {
+        None
+    };
+    let Some((head, suf)) = peeled else {
+        let (disp, rest) =
+            parse_expr(toks, ctx).ok_or_else(|| err(span, bad))?;
+        if !rest.is_empty() {
+            return Err(err(span, trailing));
+        }
+        return Ok(disp);
+    };
+    if Some(suf) != allowed {
+        return Err(err(
+            span,
+            &format!(
+                "`{}` is not a displacement width this addressing mode takes on the 68000; {}",
+                suf.spelling(),
+                match allowed {
+                    Some(a) => format!("the only width written here is `{}`", a.spelling()),
+                    None => "write the displacement without a width".to_string(),
+                }
+            ),
+        ));
+    }
+    let (disp, rest) =
+        parse_expr(&head, ctx).ok_or_else(|| err(span, bad))?;
+    if !rest.is_empty() {
+        return Err(err(span, trailing));
+    }
+    Ok(disp)
+}
+
 /// Split on commas not nested inside parentheses.
 pub fn split_commas(toks: &[Token]) -> Vec<&[Token]> {
     let mut groups = Vec::new();
@@ -137,7 +308,23 @@ pub fn classify_as_value(
 /// Structurally classify one already-comma-split operand group. `at` stands in
 /// for an empty group's missing span, as in [`parse_operands`].
 pub fn classify(g: &[Token], at: Span, ctx: &ExprCtx<'_>) -> Result<OperandAtom, Diagnostic> {
+    classify_in(g, at, ctx, NameWidth::Suffix)
+}
+
+fn classify_in(
+    g: &[Token],
+    at: Span,
+    ctx: &ExprCtx<'_>,
+    names: NameWidth,
+) -> Result<OperandAtom, Diagnostic> {
     let span = g.first().map(|t| t.span).unwrap_or(at);
+    let peel = |toks: &[Token]| {
+        if ctx.cpu == Cpu::M68000 && names == NameWidth::Suffix {
+            peel_width_suffix(toks)
+        } else {
+            None
+        }
+    };
     // `#expr` — 68k immediate marker.
     if let Some(Token {
         tok: Tok::Punct(Punct::Hash),
@@ -353,11 +540,10 @@ pub fn classify(g: &[Token], at: Span, ctx: &ExprCtx<'_>) -> Result<OperandAtom,
                         return Ok(atom);
                     }
                 }
-                let (disp, rest) = parse_expr(inner_groups[0], ctx)
-                    .ok_or_else(|| err(span, "bad displacement expression"))?;
-                if !rest.is_empty() {
-                    return Err(err(span, "trailing tokens in displacement"));
-                }
+                // `(Foo.w,a0)` is `Foo` at word width (probe `paren_disp_sym`);
+                // `.l` and `.b` are asl's `#1505` and `#1350`.
+                let disp =
+                    parse_disp(inner_groups[0], ctx, names, Some(WidthSuffix::W), span, PAREN_DISP_MSGS)?;
                 let an = match inner_groups[1] {
                     [Token {
                         tok: Tok::Ident(w), ..
@@ -367,11 +553,10 @@ pub fn classify(g: &[Token], at: Span, ctx: &ExprCtx<'_>) -> Result<OperandAtom,
                 return Ok(OperandAtom::M68kDisp { disp, an });
             }
             if inner_groups.len() == 3 {
-                let (disp, rest) = parse_expr(inner_groups[0], ctx)
-                    .ok_or_else(|| err(span, "bad displacement expression"))?;
-                if !rest.is_empty() {
-                    return Err(err(span, "trailing tokens in displacement"));
-                }
+                // Inside the parens of an index form asl takes no width at all:
+                // `(Foo.b,a0,d0.w)` is `#1350` and `(Foo.w,a0,d0.w)` is `#1505`
+                // (probes `paren_idx_sym_b`, `paren_idx_sym_w`).
+                let disp = parse_disp(inner_groups[0], ctx, names, None, span, PAREN_DISP_MSGS)?;
                 let an = match inner_groups[1] {
                     [Token {
                         tok: Tok::Ident(w), ..
@@ -390,6 +575,26 @@ pub fn classify(g: &[Token], at: Span, ctx: &ExprCtx<'_>) -> Result<OperandAtom,
                     xn,
                     xlong,
                 });
+            }
+            // `(nn.w)` / `(nn.l)`: asl reads a width suffix at the end of the
+            // parenthesised address as that address's width, the same as
+            // `(nn).w` (`jmp (Foo.w)` is `4EF8 1234` with `Foo = $1234` even
+            // when a symbol spelled `Foo.w` exists, probes `paren_sym_w`,
+            // `paren_abs_dot`). `.b` is its `#1350`; `.s` is refused with it.
+            if let Some((head, suf)) = peel(inner) {
+                let long = match suf {
+                    WidthSuffix::W => false,
+                    WidthSuffix::L => true,
+                    WidthSuffix::B | WidthSuffix::S => {
+                        return Err(err(span, &width_not_absolute(suf)));
+                    }
+                };
+                let (e, rest) =
+                    parse_expr(&head, ctx).ok_or_else(|| err(span, "bad address expression"))?;
+                if !rest.is_empty() {
+                    return Err(err(span, "trailing tokens in (address)"));
+                }
+                return Ok(OperandAtom::M68kAbs { addr: e, long });
             }
             // (nn) absolute
             let (e, rest) = parse_expr(inner, ctx).ok_or_else(|| err(span, "bad address expression"))?;
@@ -414,12 +619,17 @@ pub fn classify(g: &[Token], at: Span, ctx: &ExprCtx<'_>) -> Result<OperandAtom,
                 // Only commit to this form when the trailing group is a valid
                 // `An`/`An,Xn` base; otherwise fall through to the plain
                 // expression parse (and its diagnostic).
-                if build_disp_ea(Expr::Int(0), inner).is_some() {
-                    let (disp, rest) = parse_expr(&g[..open], ctx)
-                        .ok_or_else(|| err(span, "bad displacement expression in `disp(An)`"))?;
-                    if !rest.is_empty() {
-                        return Err(err(span, "trailing tokens in `disp(An)` displacement"));
-                    }
+                if let Some(shape) = build_disp_ea(Expr::Int(0), inner) {
+                    // The one width asl takes here is the mode's own: `.w`
+                    // before a lone base (`Foo.w(a0)`, `Foo.w(pc)`), `.b` before
+                    // an index form (`Foo.b(a0,d0.w)`); probes `disp_sym_w`,
+                    // `pcrel_sym_w`, `idx_sym_b`.
+                    let allowed = match shape {
+                        OperandAtom::M68kIdx { .. } => WidthSuffix::B,
+                        _ => WidthSuffix::W,
+                    };
+                    let disp =
+                        parse_disp(&g[..open], ctx, names, Some(allowed), span, OUTER_DISP_MSGS)?;
                     // `build_disp_ea` already validated the group shape above.
                     return Ok(build_disp_ea(disp, inner).expect("validated (An)/(An,Xn) group"));
                 }
@@ -427,20 +637,33 @@ pub fn classify(g: &[Token], at: Span, ctx: &ExprCtx<'_>) -> Result<OperandAtom,
         }
     }
     // Bare expression.
-    let (e, rest) = parse_expr(g, ctx).ok_or_else(|| err(span, "bad operand expression"))?;
+    //
     // `expr.w` / `expr.l` with no parentheses: the same explicit-width absolute
     // as `(expr).w` / `(expr).l`. asl applies the suffix to the WHOLE operand
-    // (`jmp $1000+$234.w` = `4EF8 1234`, probe `jmp_expr_w`), which is what
-    // taking the parsed expression and then the one trailing width token does.
-    // A NAME followed by `.w` never reaches here: the lexer folds `Foo.w` into
-    // one identifier, so this arm serves a literal or an expression that does
-    // not end in a name.
+    // (`jmp $1000+$234.w` = `4EF8 1234`, probe `jmp_expr_w`; `jmp 2+Foo.w` =
+    // `4EF8 0012`, probe `expr_tail_sym`), which is what parsing the tokens
+    // before the one trailing width does. A name carries the suffix glued on
+    // (`Foo.w`), and asl looks up the name without it (`jmp Foo.w` = `4EF8
+    // 1234` for `Foo = $1234`, probe `jmp_sym_w`). `.b` and `.s` are asl's
+    // `#1130` on an absolute.
     //
-    // Two shapes are left to the refusal below rather than read as addresses.
-    // A whole parenthesised group before the suffix is the `(expr).w` form,
-    // whose arm above already declined it because the group holds a register
-    // (`(a0).w` is asl's `#1146`, not an address), and a bare register before
-    // the suffix is a register, not a value.
+    // Two shapes are left to the refusal below rather than read as addresses
+    // (`peel_width_suffix` declines them). A whole parenthesised group before
+    // the suffix is the `(expr).w` form, whose arm above already declined it
+    // because the group holds a register (`(a0).w` is asl's `#1146`, not an
+    // address), and a register before the suffix is a register, not a value.
+    if let Some((head, suf)) = peel(g) {
+        if let Some((e, [])) = parse_expr(&head, ctx) {
+            return match suf {
+                WidthSuffix::W => Ok(OperandAtom::M68kAbs { addr: e, long: false }),
+                WidthSuffix::L => Ok(OperandAtom::M68kAbs { addr: e, long: true }),
+                WidthSuffix::B | WidthSuffix::S => Err(err(span, &width_not_absolute(suf))),
+            };
+        }
+    }
+    let (e, rest) = parse_expr(g, ctx).ok_or_else(|| err(span, "bad operand expression"))?;
+    // A branch or `dbcc` target reads a glued name whole, and keeps the
+    // separate-token `.w`/`.l` reading it had (its caller refuses an absolute).
     let head = &g[..g.len() - rest.len()];
     if ctx.cpu == Cpu::M68000 && !is_whole_paren_group(head) && !is_bare_register_token(head) {
         if let [Token {
@@ -457,6 +680,17 @@ pub fn classify(g: &[Token], at: Span, ctx: &ExprCtx<'_>) -> Result<OperandAtom,
         return Err(err(span, "trailing tokens in operand"));
     }
     Ok(OperandAtom::Value(e))
+}
+
+/// The refusal for a `.b` or `.s` width on an absolute address: the 68000 has
+/// only the word and long forms, and asl refuses both (`jmp Foo.b` and `jmp
+/// Foo.s` are `#1130 invalid operand size`, `jmp (Foo.b)` is `#1350`; probes
+/// `jmp_sym_b`, `jmp_sym_s`, `paren_sym_b`).
+fn width_not_absolute(suf: WidthSuffix) -> String {
+    format!(
+        "`{}` is not an absolute address width on the 68000; write `.w` or `.l`",
+        suf.spelling()
+    )
 }
 
 /// The explicit absolute width a `.w`/`.l` token names, in either case (asl:
