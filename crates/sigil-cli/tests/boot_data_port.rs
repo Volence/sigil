@@ -40,13 +40,15 @@ fn assert_window(shape: &str, rom: &[u8], gold: &[u8], lo: usize, hi: usize) {
     );
 }
 
-/// SOUND-OFF (config_b, sonic4 game): the hole is LIVE. BootData @ $392, the
-/// 54-byte head ends at $3c8, the engine.z80_init idle (40 B, declared WORD so it
-/// packs flush) fills $3c8..$3f0, the tail (BootData_PostBlob) resumes at $3f0,
-/// BootData_End = $3fe. No pins exist for the off-canonical shape, so these stay
-/// literal — the golden window compare above each assert is the loud control. The
-/// idle window is non-empty (a real Z80 program), and the tail's first byte is the
-/// $9F PSG silence — proving the idle landed IN the hole and the tail resumed AFTER it.
+/// SOUND-OFF (config_b, sonic4 game): the hole is LIVE. The BootData head is followed
+/// by the engine.z80_init idle program (declared WORD so it packs flush) in the hole,
+/// then the tail (BootData_PostBlob) resumes, and BootData_End closes it. Every
+/// address is read from config_b's frozen boundary table
+/// (`golden/offcanonical_sizes/config_b.txt`, derived from sigil's own layout at the
+/// freeze), so a boot-size shift cannot rot it; the golden window compare is the loud
+/// control. The idle window is non-empty (a real Z80 program), and the tail's first
+/// byte is the $9F PSG silence, proving the idle landed IN the hole and the tail
+/// resumed AFTER it.
 #[test]
 fn config_b_boot_data_hole_filled() {
     let profile = native::config_b_profile();
@@ -54,22 +56,29 @@ fn config_b_boot_data_hole_filled() {
         return;
     };
     let _g = LOCK.lock().unwrap_or_else(|p| p.into_inner());
+    let table = native::load_frozen_table("config_b.txt");
+    let at = |name: &str| -> usize {
+        *table.get(name).unwrap_or_else(|| panic!("config_b.txt carries no `{name}` row")) as usize
+    };
+    let (boot_data, boot_data_end) = (at("BootData"), at("BootData_End"));
+    let (idle, idle_end) = (at("Z80_IdleProgram"), at("Z80_IdleProgram_End"));
+    assert!(boot_data < idle && idle < idle_end && idle_end < boot_data_end, "config_b boot rows out of order");
     let rom = native::build_rom_chained(&aeon, &profile)
         .unwrap_or_else(|e| panic!("build config_b: {e}"));
     let gold = golden("config_b.bin");
-    // BootData ($392) .. BootData_End ($3fe): head + idle-in-hole + tail, byte-exact.
-    assert_window("config_b", &rom, &gold, 0x392, 0x3fe);
-    // The idle program fills the $3c8..$3f0 hole (not zero-fill — a real 40-byte
-    // Z80 program; its first opcode is `xor a` = $AF).
-    assert_eq!(rom[0x3c8], 0xAF, "config_b: z80 idle head opcode at the $3c8 hole start");
-    let idle_nonzero = (0x3c8..0x3f0).any(|i| rom[i] != 0);
-    assert!(idle_nonzero, "config_b: the $3c8..$3f0 hole is empty, z80_init did not fill it");
-    // The tail resumes at $3f0 with the first PSG-silence byte ($9F).
-    assert_eq!(rom[0x3f0], 0x9F, "config_b: boot_tail did not resume at $3f0 (post-hole PSG byte)");
+    // BootData .. BootData_End: head + idle-in-hole + tail, byte-exact.
+    assert_window("config_b", &rom, &gold, boot_data, boot_data_end);
+    // The idle program fills the hole (not zero-fill: a real Z80 program whose first
+    // opcode is `xor a` = $AF).
+    assert_eq!(rom[idle], 0xAF, "config_b: z80 idle head opcode at the hole start {idle:#x}");
+    let idle_nonzero = (idle..idle_end).any(|i| rom[i] != 0);
+    assert!(idle_nonzero, "config_b: the {idle:#x}..{idle_end:#x} hole is empty, z80_init did not fill it");
+    // The tail resumes after the idle program with the first PSG-silence byte ($9F).
+    assert_eq!(rom[idle_end], 0x9F, "config_b: boot_tail did not resume at {idle_end:#x} (post-hole PSG byte)");
 }
 
 /// SOUND-ON (s4): no hole — the resident driver blob rides boot_head. BootData =
-/// pins::BOOT_HEAD.plain_base, the blob begins at BootData+54 (non-zero Z80 code),
+/// pins::BOOT_HEAD.plain_base, the blob begins at pins::Z80_SOUND_START (non-zero Z80 code),
 /// the tail follows it (pins::BOOT_TAIL). The whole BootData region is
 /// byte-identical to the golden. Pin-sourced so boot-size shifts don't rot this.
 #[test]
@@ -87,8 +96,10 @@ fn s4_boot_data_blob_present() {
     let tail = pins::BOOT_TAIL.plain_base as usize;
     let boot_data_end = tail + pins::BOOT_TAIL.plain_len;
     assert_window("s4", &rom, &gold, boot_data, boot_data_end);
-    // The resident blob begins at BootData+54 and is non-empty Z80 code.
-    let blob_nonzero = (boot_data + 54..tail).any(|i| rom[i] != 0);
+    // The resident blob begins at Z80_Sound_Start and is non-empty Z80 code.
+    let blob = pins::Z80_SOUND_START.plain as usize;
+    assert!(boot_data < blob && blob < tail, "s4: Z80_Sound_Start {blob:#x} lies outside BootData");
+    let blob_nonzero = (blob..tail).any(|i| rom[i] != 0);
     assert!(blob_nonzero, "s4: the resident sound blob region is empty");
     // The post-blob tail resumes at Z80_Sound_End (= BOOT_TAIL base) with the $9F PSG byte.
     assert_eq!(rom[tail], 0x9F, "s4: boot_tail did not resume after the blob");

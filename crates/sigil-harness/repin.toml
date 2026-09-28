@@ -2784,3 +2784,9 @@ name = "Player_Bound_Bottom"
 # anchor needs this pin.
 [[symbol]]
 name = "DustSpindash_Spawn"
+# The resident Z80 driver blob's ROM base (boot_data.emp's `Z80_Sound_Start`), where
+# seam-1 stamps the blob's LMA and seam1_native_link reads its reference window. Its
+# offset inside BootData is whatever the boot data ahead of it spans, so the pin is
+# the label itself rather than `BOOT_HEAD` plus a typed offset.
+[[symbol]]
+name = "Z80_Sound_Start"

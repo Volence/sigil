@@ -136,7 +136,7 @@ use sigil_link::LinkedImage;
 // `REGION_B_LMA` were deleted for that reason, each having drifted off its authority
 // while no consumer remained to notice:
 //   * Region A (the resident phase-0 Z80 driver) — `seam1::blob_lma(debug)`, i.e.
-//     `pins::BOOT_HEAD.<shape>_base + 54` (`Z80_Sound_Start`), so a boot-size shift
+//     `pins::Z80_SOUND_START.<shape>`, the label's own pin, so a boot-size shift
 //     cannot rot it and the shape-dependence stays explicit.
 //   * Region B (the phase-`08000h` Moving-Trucks / SFX engine-table bank) — the
 //     `sound_bank` anchor in `games/<g>/map.toml`, read by `seam2::bank_anchors` /
