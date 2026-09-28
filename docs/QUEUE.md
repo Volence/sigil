@@ -1513,3 +1513,13 @@ points at it rather than restating it, so there is one copy to keep true.
   computed paths refuse loudly. Record: `docs/superpowers/notes/2026-09-28-song-bank-2-embed-root.md`. Aeon owes
   its own pytest audits a respelling (`tools/test_smps_import.py`, three in `tools/test_song_packer.py` look for
   the literal `embed("song_*.bin")`).
+
+### PAIR-REBUILD-AFTER-AEON-STEP1
+
+- state: **blocked on aeon** (their song-bank-2 step 1 landing; they send the SHA)  size: `S`  owed to: aeon, 2026-09-28
+- Rebuild the shared pair at our then-current master once aeon's step 1 (native song tables, root-relative embeds,
+  ensures deleted) lands, so they build under the loud fold gate (`a8b1d9a5`). Held back on purpose so the stricter
+  gate did not land mid-step. Their shape: `Song_MovingTrucks` first in `mt_bank`; the tables at the tail of
+  `sfx_bank_blob` after `Sfx_33`; neither head renamed. If the gate then refuses their tree, it is a finding on
+  their side. Method: the pair paragraph in `docs/OVERSEER-REFERENCE.md` (locked build tree, outgoing copy kept,
+  /proc scan, stage and `mv`).
