@@ -247,7 +247,10 @@ scratch copies; settled). The notes themselves are historical and were not edite
 
 ### AS-PERF-MEASURE
 
-- state: **open**  size: `S` (measurement)  project: `SIGIL-AS-REPLACEMENT`
+- state: **LANDED 2026-09-28 at merge `4bbc972b`** (tip `e01364c8`), measurement done  size: `S`  project: `SIGIL-AS-REPLACEMENT`
+- Answer: `docs/superpowers/notes/2026-09-28-as-perf-measure.md`. Extra front-end passes (S1/S2/S3K 3/4/3 vs asl 2)
+  are 94 to 98 percent of wall; layout's second copy of every section sets peak RSS. The candidates below measured
+  under 0.5 percent each. The fixes are booked as `AS-PERF-FIX-PEAK` (next) and `AS-PERF-FIX-PASSES`.
 - sigil is 2.0x to 2.5x slower than `asl`+`p2bin` and uses 5x to 18x the memory on the `.asm` route (load 9 to
   11 at the time, note section 6). No profiler here; per-phase timing is a code change, so measure first.
 - 2026-09-27, CORRECTED 2026-09-28: the first dispatch was NOT dead. Its transcript went quiet for 14 hours while it
@@ -1456,3 +1459,19 @@ points at it rather than restating it, so there is one copy to keep true.
 - Their notice the same day: aeon `d33fa8d0` adds 8 B inside `Parallax_State` (every later RAM address moves) and
   three cross-module RAM names (`Parallax_Shadow_Key_Config`, `_VS`, `_K`); relevant at our next reference-tree pin
   advance, not before (reference tree stays at `ec640bcf`).
+
+### AS-PERF-FIX-PEAK
+
+- state: **open, next**  size: `S`  project: `SIGIL-AS-REPLACEMENT`  from: AS-PERF-MEASURE fix 3
+- `run_asm` keeps the front end's whole module alive while layout builds a second copy of every section. Drop or
+  consume it first. Estimated peak cut 15 to 30 percent (S3K 243 to about 190 MB). Low risk; byte identity on
+  S1/S2/S3K and aeon is the bar. Then fixes 5 and 6 (substitution fast path, builtin-scan skip), both small.
+
+### AS-PERF-FIX-PASSES
+
+- state: **open**  size: `M`  project: `SIGIL-AS-REPLACEMENT`  from: AS-PERF-MEASURE fixes 1, 2, 4
+- (1) converge when no value a pass READ changed (S2/S3K third/fourth passes follow only ADDED names, each assigned
+  before read); needs a complete read log including `defined`/`ifdef`; about 25 to 30 percent. (2) why pass 1 lays
+  out differently (S1 first move `EEgg_Wait`, S2 `paddingSoFar`); investigate first, size S. (4) macro block
+  structure computed once. High risk: a pass stopped early is a silent wrong ROM, so every step needs byte identity
+  on all three corpora and aeon plus a planted control that an early stop is caught.
