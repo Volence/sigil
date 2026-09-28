@@ -1311,6 +1311,17 @@ aeon build. Deleting the tree breaks placement, not only the `source:` field. De
 `docs/superpowers/notes/2026-09-11-aeon-source-digest-ask.md`, second amendment.
 **`.sigil-ls12-pin` is released once aeon confirms it is on the new pair — ask them, not this file.**
 
+**THE INSTALLED PAIR SINCE 2026-09-28T08:16:25Z IS THE 7051ff7a BUILD, and it supersedes every pair
+paragraph below.** Requested by aeon (their song-bank step needs seam-2's tolerance, 599008e8). Built in
+the LOCKED detached worktree `~/sonic_hacks/.sigil-pair-7051ff7a` (porcelain 0 before and after,
+`--locked`, target `~/sonic_hacks/.scratch/pair-7051ff7a/target`); `sigil` `422658ccee5b163526d70d4aecef8b4f`,
+`emit_sound_blob` `4a7c36e0a64d680d85775cbebdd97c98`. `/proc` exe scan 0 users (15 zsh control), each file
+`cp -p` to a staging name in `sigil/target/release/` and `mv`'d over. Outgoing 80bcaf72 pair (`5a68be69...`,
+`776e087f...`) kept at `~/sonic_hacks/.sigil-outgoing-80bcaf72/`. **Found at the swap: the outgoing pair's
+build tree `sigil/.worktrees/pair-80bcaf72` had already been removed**, the 09-26 incident below repeated
+by an unlocked tree; check `git worktree list` for the installed pair's `source:` path at every boot that
+touches the pair. Remove `.sigil-pair-7051ff7a` only after a later pair is swapped in from another path.
+
 **THE INSTALLED PAIR SINCE 2026-09-17T08:11:55Z IS THE d7e6aa15 BUILD, and it supersedes the 700177b1
 paragraph below.** Swapped inside the window the hub opened (empyrean row `SIGIL-BINARY-REFRESH-WINDOW`),
 routed to this session after the requesting one was cleared; the hub had asked every consumer (oracle and aurora
