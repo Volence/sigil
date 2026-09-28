@@ -1499,3 +1499,11 @@ points at it rather than restating it, so there is one copy to keep true.
   equals seam-2's prediction goes quiet with nothing red. After aeon's song-bank-2 change the fold gate is one of
   the four checks standing in for the deleted co-residency ensures, so a vacuous pass there matters more. Stage 0:
   confirm the skip, then make a missing expected label loud (a planted rename must go red).
+
+### SONG-BANK-2-EMBED-ROOT
+
+- state: **LANDED 2026-09-28 at merge `116aa23e`** (tip `6b878e3e`; onto master as `5c483786`)  size: `S`  asked by: aeon
+- seam-2 lowers `mt_bank.emp` with its embeds relative to the aeon root or the sound dir; ambiguous, mixed and
+  computed paths refuse loudly. Record: `docs/superpowers/notes/2026-09-28-song-bank-2-embed-root.md`. Aeon owes
+  its own pytest audits a respelling (`tools/test_smps_import.py`, three in `tools/test_song_packer.py` look for
+  the literal `embed("song_*.bin")`).
