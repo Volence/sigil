@@ -1389,3 +1389,14 @@ points at it rather than restating it, so there is one copy to keep true.
   pin or provenance drift, plus the S2 restatements the PIN-ADVANCE row covers, not all of which a repin clears).
   Against pins regenerated at the tip (scratch copy) all 15 tests in the five binaries pass.
   Suites at `9d38e63d`: pin 504 binaries, 5732 passed, 0 failed, 2 ignored, `repin --check` says `pins.rs unchanged`.
+
+### SONG-BANK-2-STUB-PROBE
+
+- state: **blocked on aeon** (they send the bank's shape first)  size: `S` (probe)  project: `-`
+- aeon wants a second 0x8000-aligned Z80 song bank. This lane's source reading (sigil `2209c525`, aeon `a2400d79`,
+  not probed) is banked on their side in aeon `docs/research/2026-09-27-song-bank.md`, final section. Minimum: a
+  `section_align.rs` row (an undeclared head label is refused). If phased (vma 0x8000), it is an island: a frozen row
+  plus their `[[anchor]]`, landed together. If seam-2 bakes pointers into it, `seam2::sound_layout` must predict a
+  third base (`validate_sound_fold` is always-on).
+- Offered, and accepted by aeon 2026-09-27: once they send the shape (island or LMA-only, emit_sound_blob or linker
+  embeds, order position), build a COPY of their tree with a stub second bank and report which gates fire.
