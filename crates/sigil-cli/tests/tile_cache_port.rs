@@ -115,6 +115,28 @@ fn tile_cache_value_equs() -> Vec<Section> {
     sigil_harness::test_support::assemble_equ_pairs(&pairs)
 }
 
+/// Cross-seam names tile_cache.emp references that carry no pin: each address is read
+/// from the reference build's own listing (`test_support::listing_vma_if_defined`), so
+/// a name the build defines arrives at the address the reference ROM encodes, and a
+/// name a given aeon revision does not define is simply absent.
+const LISTED_CROSS_SEAM: &[&str] = &[
+    "Cache_H_Pfx_Run",
+    "PageIn_WaitIdle",
+    "PageCache_LiveReset",
+    "Page_Demand_Held",
+    "PageCache_DemandHoldTick",
+    "PageCache_Direct_Map",
+    "Page_Live_Masks",
+    "Page_Live_RowPtr",
+];
+
+fn listed_cross_seam(debug: bool) -> Vec<(&'static str, u32)> {
+    LISTED_CROSS_SEAM
+        .iter()
+        .filter_map(|n| sigil_harness::test_support::listing_vma_if_defined(debug, n).map(|v| (*n, v)))
+        .collect()
+}
+
 /// The cross-seam ADDRESS symbols — RAM labels + the `S4LZ_DecompressDict` ROM
 /// transfer target — each a `phase`d one-byte carrier at its true per-shape VMA
 /// (label position is load-bearing: abs.w/abs.l width selection, the PC-rel
@@ -191,6 +213,7 @@ fn tile_cache_addr_labels(debug: bool) -> Vec<Section> {
         // P2c Task 10: the two demand-stall exits set the camera soft-clamp bits.
         ("Camera_Art_Hold", pick(pins::CAMERA_ART_HOLD)),
     ];
+    table.extend(listed_cross_seam(debug));
     if debug {
         table.push(("MDDBG__ErrorHandler", pins::MDDBG_ERROR_HANDLER));
         table.push(("MDDBG__ErrorHandler_PagesController", pins::MDDBG_ERROR_HANDLER_PAGES_CONTROLLER));
@@ -556,6 +579,7 @@ fn tile_cache_labels_for_link(debug: bool) -> Vec<(&'static str, u32)> {
         // P2c Task 10: the two demand-stall exits set the camera soft-clamp bits.
         ("Camera_Art_Hold", pick(pins::CAMERA_ART_HOLD)),
     ];
+    v.extend(listed_cross_seam(debug));
     if debug {
         v.push(("Page_Audit_Ticks", pins::PAGE_AUDIT_TICKS));
         v.push(("Cache_Stall_Watchdog", pins::CACHE_STALL_WATCHDOG));

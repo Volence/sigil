@@ -76,6 +76,14 @@ use sigil_frontend_emp::lower::{lower_module_with_contracts, LowerOptions};
 /// reference ROM this oracle byte-gates against carries. A hand-written stub
 /// would restate the interface here and go stale the day the engine grows a
 /// member game_loop names.
+
+/// Cross-seam names this scope's modules reference that carry no pin, each read from
+/// the reference build's own listing (`test_support::extend_from_listing_names`).
+const LISTED_CROSS_SEAM: &[&str] = &[
+    "PageCache_Audit",
+    "PageCache_LiveSweep",
+];
+
 fn game_loop_contract_env() -> sigil_frontend_emp::contract::InterfaceEnv {
     let profile = sigil_harness::native::sonic4_profile(false);
     let defines: Vec<(String, i128)> =
@@ -409,6 +417,20 @@ fn game_loop_debug_region_matches_reference() {
 // plane_buffer/entity_window flip-test template, t20 dplc/bg_anim shape).
 // ---------------------------------------------------------------------------
 
+/// The consts `engine/structs.emp` imports from `engine.constants`, as a parsed module
+/// to prepend beside it: its `use` names a module this standalone lower does not carry,
+/// so its ensures would otherwise abort with `unknown name`. Derived from the tree by
+/// `test_support::engine_constants_imported_by`.
+fn structs_imported_constants() -> sigil_frontend_emp::ast::File {
+    let src = sigil_harness::test_support::engine_constants_imported_by(
+        &sigil_harness::test_support::aeon_dir(),
+        "engine/structs.emp",
+    );
+    let (file, diags) = parse_str(&src);
+    assert!(diags.iter().all(|d| d.level != sigil_span::Level::Error), "lifted constants: {diags:?}");
+    file
+}
+
 fn flip_parse(path: &std::path::Path) -> sigil_frontend_emp::ast::File {
     let src = std::fs::read_to_string(path)
         .unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()));
@@ -508,6 +530,7 @@ fn two_module_flip(debug: bool, rom_name: &str) {
             // m1-budget-fix: VInt_Level's Critical-charge walk uses DMAEntry
             // (sizeof + SizeH field), so engine.structs must be in scope.
             flip_parse(&aeon.join("engine/structs.emp")),
+            structs_imported_constants(),
         ],
         aeon.join("engine/system"),
         "vblank",
@@ -525,11 +548,13 @@ fn two_module_flip(debug: bool, rom_name: &str) {
     // Value seam (ONE equ blob — a second assemble would redefine `Stub:`).
     // SND_Z80_BASE / SND_CTRL_DMA_ACTIVE are authored in sound_constants.emp now
     // (prepended above), so only the z80_bus register stays a link extern.
-    let pairs: Vec<(&str, &str)> = vec![
-        ("Z80_BUS_REQUEST", "$A11100"),
-        // NEW-1 (defect-batch-8): VInt_Lag's $8F02 re-assert names VDP_CTRL.
-        ("VDP_CTRL", "$C00004"),
-    ];
+    // vblank.emp's own `use engine.constants.{..}` names (VDP_CTRL for VInt_Lag's
+    // $8F02 re-assert, PAGE_AUDIT_IDLE for the idle audit slot), each at the value
+    // engine/system/constants.emp gives it.
+    let imported =
+        sigil_harness::test_support::engine_constant_equs_imported_by(&aeon, "engine/system/vblank.emp");
+    let mut pairs: Vec<(&str, &str)> = vec![("Z80_BUS_REQUEST", "$A11100")];
+    pairs.extend(imported.iter().map(|(n, v)| (n.as_str(), v.as_str())));
     sections.extend(sigil_harness::test_support::assemble_equ_pairs(&pairs));
 
     // Address seam: everything both modules still read cross-seam.
@@ -620,6 +645,7 @@ fn two_module_flip(debug: bool, rom_name: &str) {
     // See `test_support::extend_from_listing`.
     let mut table: Vec<(String, u32)> =
         table.into_iter().map(|(n, v)| (n.to_string(), v)).collect();
+    sigil_harness::test_support::extend_from_listing_names(&mut table, debug, LISTED_CROSS_SEAM);
     if debug {
         sigil_harness::test_support::extend_from_listing(&mut table, debug, &["Dbg_DMA_", "DMA_Peak_", "DMA_Split_"]);
     }

@@ -36,6 +36,13 @@ const COMMON_SOURCES: &[&str] = &[
 /// `Some(aeon_root)` when the tree carries the common sources AND the one state
 /// file `state_rel` names; `None` — skip green — when it does not (a panic under
 /// `SIGIL_STRICT_GATE=1`).
+
+/// Cross-seam names the player modules reference that carry no pin, each read from
+/// the reference build's own listing (`test_support::listing_labels_if_defined`).
+const LISTED_CROSS_SEAM: &[&str] = &[
+    "Player_SensorLand",
+];
+
 fn player_tree(state_rel: &str) -> Option<PathBuf> {
     let mut rels = COMMON_SOURCES.to_vec();
     rels.push(state_rel);
@@ -456,6 +463,14 @@ fn compile_region(
             continue;
         }
         groups.push(as_label_at(name, addr));
+    }
+    for (name, addr) in
+        sigil_harness::test_support::listing_labels_if_defined(shape.debug, LISTED_CROSS_SEAM)
+    {
+        if locals.contains(&name.as_str()) || labels.iter().any(|(n, _)| *n == name) {
+            continue;
+        }
+        groups.push(as_label_at(&name, addr));
     }
 
     let mut lma = 0x0100_0000u32;
