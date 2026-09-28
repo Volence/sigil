@@ -1392,11 +1392,29 @@ points at it rather than restating it, so there is one copy to keep true.
 
 ### SONG-BANK-2-STUB-PROBE
 
-- state: **blocked on aeon** (they send the bank's shape first)  size: `S` (probe)  project: `-`
-- aeon wants a second 0x8000-aligned Z80 song bank. This lane's source reading (sigil `2209c525`, aeon `a2400d79`,
-  not probed) is banked on their side in aeon `docs/research/2026-09-27-song-bank.md`, final section. Minimum: a
-  `section_align.rs` row (an undeclared head label is refused). If phased (vma 0x8000), it is an island: a frozen row
-  plus their `[[anchor]]`, landed together. If seam-2 bakes pointers into it, `seam2::sound_layout` must predict a
-  third base (`validate_sound_fold` is always-on).
-- Offered, and accepted by aeon 2026-09-27: once they send the shape (island or LMA-only, emit_sound_blob or linker
-  embeds, order position), build a COPY of their tree with a stub second bank and report which gates fire.
+- state: **open, aeon is waiting on it** (their shape arrived 2026-09-27; not dispatched only because the seat that
+  received it was past the clear line)  size: `M` (S rows + M seam-2 + S probe)  project: `-`
+- The ask, from aeon's overseer, full reasoning at aeon `f49dd2bd` `docs/research/2026-09-27-song-bank.md`, section
+  "Our side: which shape". Shape (a): a plain-address bank (vma == lma), `$8000`-aligned, placed in `map.toml` order
+  right after `Sfx_33` and before `GameState_ObjectTest_Init`, so seam-2's predicted chain is untouched.
+  1. `section_align.rs` DECLARED: `d("SongBank2_Head", 0x8000, Z80_BANK_WINDOW)`. The label is a placeholder until they
+     write the module, so check whether anything refuses a row whose label no shape defines.
+  2. `module_roots.rs` SHAPE_GATES: `("games.sonic4.song_bank2", ShapeGate::SoundOn)` (the hand list
+     `ORDER-WHEN-SHAPE-GATES` would retire; a 22nd row is acceptable meanwhile).
+  3. seam-2 stops owning the song tables: aeon makes `SongTable`/`SongPatchTable` ordinary linker-resolved label arrays;
+     seam-2 drops the `SongTable` export requirement (`seam2.rs:1562`) and the three-way split, and keeps measuring the
+     MT length for the `Sfx_33` prediction. Land a TOLERANT version first (accepts either), so their byte-identical step
+     lands alone. Expected movers: `mt_bank_port`, `mt_dual_carrier`, `seam2_layout_derivation`.
+  4. Confirm a refreeze will not pin `SongBank2_Head` (no frozen row; the walk places it by alignment).
+  5. Then the stub-bank probe: a COPY of their tree, stub bank 2 after `Sfx_33`, with and without the anchor.
+- Verified by this lane 2026-09-27 (source reading at `b1c9bb58`): their two corrections both HOLD. (i) A gap over
+  `ANCHOR_GAP` (0x400) before a section makes it an inferred island that needs a declared `[[anchor]]`
+  (`native.rs:3406`, `[map.undeclared-island]`), so shape (a) needs their anchor at 0xC0000 and no frozen row. (ii)
+  seam-2 refuses an `mt_bank` without `SongTable` (`seam2.rs:1562`).
+- **Hazard to put in the brief and to aeon: a gap-inferred anchor is content-dependent in both directions.** Their
+  measured gaps are 9,277 B plain and 2,533 B debug. If bank-1 content grows to within 0x400 of 0xC0000, no island is
+  inferred and the declared anchor fires `[map.anchor-absent]`; past 0xC0000 the bank jumps to 0xC8000 and fires too.
+  Both are loud, never silent, but a routine song edit can break the build with an error about placement.
+- `section_alignment_declared.rs::the_requirements_above_16_are_declared_for_the_anchored_sections` and the header of
+  `section_align.rs` say every row above 16 is an anchored island. The new row is the first `$8000` section the
+  walk ROUNDS rather than holds, so both texts need amending in the same parcel.
