@@ -1356,6 +1356,13 @@ points at it rather than restating it, so there is one copy to keep true.
 ### PIN-ADVANCE-S2-ENVELOPE-RESTATEMENTS
 
 - state: **open**  size: `S`  project: `SIGIL-DECOUPLE`
+- **Also red at the next pin advance (measured 2026-09-28 by the SONG-BANK-2-EMBED-ROOT agent against aeon
+  `478fa091`, not re-run here):** `mt_negative_probes.rs` wrong-bank probe expects 5 co-residency ensures to fire
+  (aeon master has 9, 0 once aeon deletes them); `mt_port.rs` guard count expects 7 (aeon has 11, 2 after). Once
+  aeon respells `mt_bank.emp`'s embeds root-relative, the probes that lower it with the sound dir themselves also
+  break (`mt_negative_probes` straddle and wrong-bank, two `mt_port` region tests, `sfx_negative_probes` (e));
+  `mt_bank_port.rs` reads `mt_bank_blob.emp`, which aeon deletes. Record:
+  `docs/superpowers/notes/2026-09-28-song-bank-2-embed-root.md`.
 - **Aeon landing notices to fold in at the next pin advance (2026-09-28, their words, not verified here):**
   `d33fa8d0` (+8 B inside `Parallax_State`, every later RAM address moves; new names `Parallax_Shadow_Key_Config`,
   `_VS`, `_K`); `2d006c4c` (new `Cache_H_Pfx_Run: u16` in ram.emp, `H_PFX_ARM = 128` plus an ensure in
@@ -1482,3 +1489,13 @@ points at it rather than restating it, so there is one copy to keep true.
   out differently (S1 first move `EEgg_Wait`, S2 `paddingSoFar`); investigate first, size S. (4) macro block
   structure computed once. High risk: a pass stopped early is a silent wrong ROM, so every step needs byte identity
   on all three corpora and aeon plus a planted control that an early stop is caught.
+
+### SOUND-FOLD-GATE-SILENT-SKIP
+
+- state: **open**  size: `S`  project: `-`  found: SONG-BANK-2-EMBED-ROOT review, 2026-09-28 (agent's reading, not
+  re-verified here)
+- `validate_sound_fold` (`crates/sigil-harness/src/native.rs`, about line 3307) silently skips a label it cannot
+  find. If `Song_MovingTrucks` is renamed or stops being its section's first item, the check that the placed MT bank
+  equals seam-2's prediction goes quiet with nothing red. After aeon's song-bank-2 change the fold gate is one of
+  the four checks standing in for the deleted co-residency ensures, so a vacuous pass there matters more. Stage 0:
+  confirm the skip, then make a missing expected label loud (a planted rename must go red).
