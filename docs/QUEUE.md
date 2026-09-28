@@ -255,7 +255,7 @@ scratch copies; settled). The notes themselves are historical and were not edite
 
 ### AS-SYMBOL-SIZE-SUFFIX
 
-- state: **done in branch, awaiting merge** (branch `worktree-agent-a61fc6da310013817`)  size: `S`  project: `SIGIL-AS-REPLACEMENT`
+- state: **LANDED** 2026-09-28, fast-forward to `5bc05325` (fix `88eb2e35`), pushed; landing run GREEN at `94df424e`, 5859 passed 0 failed  size: `S`  project: `SIGIL-AS-REPLACEMENT`
 - From AS-AUTHOR-FORMS-EXACT's "Left open": `jmp Foo.w` with `Foo` a symbol. sigil's lexer makes `Foo.w` one
   identifier (`.` is an identifier character, `Parent.local` a local label), so sigil refused it, and read
   the dotted name SILENTLY where one existed (a `Foo.w` equate, or a local `.w` under `Foo`).
