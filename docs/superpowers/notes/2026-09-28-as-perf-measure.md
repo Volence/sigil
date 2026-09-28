@@ -458,3 +458,155 @@ of this worktree: corpora from `git archive` at the SHAs in the Instruments tabl
 script run once each for the reference ROM, `timing.py` (per round, each binary on each
 corpus, `os.wait4` rusage, whole-image compare, `/proc/loadavg` before and after),
 `summarize.py` for the ranges and per-round ratios, `phases.sh` for the phase lines.
+
+## Passes: after AS-PERF-FIX-PASSES, 2026-09-28
+
+Queue row `AS-PERF-FIX-PASSES`: items 2 and 1 of the ranked proposal (stages A and B).
+Item 4 (stage C) was not attempted.
+
+### In plain language
+
+- **sigil now takes 2 passes on all three disassemblies, the same as asl.** It took 3, 4
+  and 3 before (S1, S2, S3K). Wall time is down about a quarter on S1 and S3K and nearly
+  half on S2 against master; S3K's peak memory is down about a tenth because its last pass
+  no longer runs.
+- **Why the first pass laid code out differently (stage A).** Two instructions per
+  corpus that name a symbol defined further down. When sigil did not yet know such a
+  symbol it used 0 as a stand-in, and 0 happened to change the instruction's size: a
+  `(d16,An)` displacement of 0 shrinks to `(An)` (S1, `move.b d0,tcha_juggledir(a1)`),
+  and `addq #0` is not encodable at all, so the instruction vanished for a pass (S2,
+  `addq.w #PLCID_MilesLife-PLCID_MilesLife2P,d0`). asl documents that on its first pass
+  an unknown symbol stands for the current program counter, which is almost never 0.
+  sigil now uses the program counter for the displacement (the size then matches asl's
+  first pass exactly) and 1 for an unknown immediate (inside every immediate's range).
+  After this the second pass moves no value on any corpus.
+- **Why a pass was run that changed nothing anyone used (stage B).** sigil ran another
+  pass whenever the symbol table differed at all, and the differences left were names
+  first defined on the second pass that nothing read before defining them (S3K's
+  `._headpos`, S2's `APM_*_Len`, S1's `ArtTile_*`). sigil now records every answer a pass
+  took from the previous pass's tables, and stops when each of those answers is still the
+  same. The record is kept where the tables are, so no reader can skip it.
+- **Every image is byte-identical to the stock asl+p2bin ROM**, and a planted test
+  program whose second pass must run still gets it; with the record deliberately
+  damaged, that test (and one older test) produce the wrong bytes, which is how we know
+  the record is what carries the decision.
+
+### Stage A: the mechanism, bisected
+
+The first moved address was located with a temporary per-pass environment dump
+(uncommitted) and read against each tree's own asl listing.
+
+| corpus | first moved | instruction before it | pass 0 | later passes |
+|---|---|---|---|---|
+| S1 | `EEgg_Wait` 0x5a9a to 0x5a9c | `move.b d0,tcha_juggledir(a1)` at 0x5a7e, `tcha_juggledir equ objoff_3E` 42 lines later | placeholder 0, collapsed to `(An)`, 2 bytes | `1340 003E`, 4 bytes |
+| S2 | ` nameless+#68` 0x3f3a to 0x3f3c | `addq.w #PLCID_MilesLife-PLCID_MilesLife2P,d0` at 0x3f3a, the `PLCID_*` are `id(PLCptr_*)` of later labels | placeholder 0, out of addq's 1..8, instruction not encoded, 0 bytes | `5240`, 2 bytes |
+
+The note's earlier "`paddingSoFar` 0x84f to 0x661" was the lowest PREVIOUS value among
+changed names; `paddingSoFar` is a padding accumulator, not an address.
+
+asl's rule, documented (manual section 2.11, "Forward References and Other Disasters"):
+"If an unknown symbol is detected in the first pass, the formula parser delivers the
+program counter's current value as result!" Measured on md5 `61e67256` with `message
+"\{*}"` probes: `move.b d0,Fwd(a1)` with `Fwd equ $3E` below it is 2 bytes on pass 1 at
+`*` = 0 and at `*` = `$10000` (3 passes), and 4 bytes at `*` = 2 (2 passes); so the
+collapse reads the low 16 bits of the location counter. `addq.w #Fwd-Fwd2,d0` ahead of
+its equates: 2 passes, `5240`.
+
+The fix (commit `61f66464`): `fold_disp16` gives an unknown `(d16,An)` displacement on
+the first pass the location counter's low 16 bits, at both `(d16,An)` sites; an unknown
+68000 immediate takes 1. Neither placeholder can reach an image (a symbol still unknown on
+the returned pass is an error, unchanged). After it, pass 1 changes 0 values on every
+corpus (S1 was 6286, S2 18037); what is left is names only added on pass 1 (S1 91, S2 536,
+S3K 18). Passes S1 3, S2 4 to 3, S3K 3.
+
+### Stage B: the read log
+
+Commit `446519d2`. The argument: a pass is a deterministic function of the source, the
+options, the pass number and its seed (the tables the previous pass produced). Pass N+1
+executes exactly as pass N did when every answer pass N took from its seed is the answer
+pass N's output gives, because every other value either pass computes is computed from
+those answers. So when that holds, pass N's module is the fixpoint.
+
+Where the choke point is: `crates/sigil-frontend-as/src/seed.rs`. Every seeded table (the
+symbol environment and the previous pass's instance index derived from it, the label set,
+the label-equ set, the macro table, the function table) is held in a `Seeded` or
+`SeededEnv` whose fields are private to that module. Every method that returns something
+the seed decides calls `Seeded::note` first (the index read records itself in
+`SeededEnv::owners`). `eval.rs` cannot read a seed without being recorded, because it
+cannot reach one; the compiler enforces it. `ifdef`/`ifndef` read the environment and are
+recorded; `DEFINED()` reads what THIS pass has bound, which is not a seed read. A macro or
+function answer is the definition itself, compared by text and position.
+
+The rule (`run_passes`): converged when (a) the environment equals the seed, the original
+test, or (b) no recorded read is answered differently by the produced tables. (b) is used
+only when the pass's own module is returned; a run that goes on to the bonus pass
+(`force_relocate`, or leftover poison on a run that has not failed) keeps (a), because the
+bonus pass runs with other flags and may read what the pass did not. The oscillation proof
+and history are unchanged; its tests (`non_convergence.rs`, `circular_layout.rs`) pass.
+
+With `SIGIL_PHASE_TIMING=1` each pass line now carries `converged_by` (`env`, `reads` or
+`none`), `first_read_change` and the per-table read counts, and `frontend.passes` gives the
+count. On the returned pass (env, owners, labels, label-equs, macros, functions): S1 8091,
+4689, 221, 134, 2841, 2345; S2 17699, 13033, 1291, 242, 10163, 3112; S3K 28414, 5647, 91,
+47, 1836, 2278. Every corpus converges by reads after pass 1 with no change.
+
+The planted controls (`eval::pass_count_tests`): `ifdef B` where `B` is only added on pass
+1 must force pass 2 (3 passes, `BB 00`); a value decided by `ifndef` of such a name must be
+carried (3 passes, `02`, and the record is also what stops the run at pass 2 although the
+value moved). The mutation, on disk against `446519d2`:
+
+```diff
+     pub(crate) fn resolve(&self, key: &str) -> Option<i64> {
+-        self.note(key);
+-        self.table.answer(key)
++        let v = self.table.answer(key);
++        if v.is_some() {
++            self.note(key);
++        }
++        v
+     }
+```
+
+drops every "not defined" answer from the record. Under it the lib tests are 324 passed,
+5 failed: both controls return pass 1 with the wrong bytes (`(2, [0])` for `(3, [BB 00])`,
+`(2, [1])` for `(3, [2])`), the older `two_level_forward_chain_resolves` gives `[0]` for
+`[7]`, and two `seed` unit tests. Restored with `git checkout 446519d2 -- seed.rs`: 329
+passed, 0 failed.
+
+### Figures
+
+7 interleaved rounds, order alternating per round, every child timed by wall clock and its
+own `os.wait4` rusage with `SIGIL_PHASE_TIMING` unset (so `ru_maxrss` is the process peak),
+06:02:53 to 06:04:35, load 10.5 to 14.9. Binaries: master `911ebb9c` md5 `bfde6e9b`; stage
+A md5 `41cdf02e` (stage A's code, before the `frontend.passes` line); tip md5 `37ad89a3`.
+Ratios are per round against master.
+
+| corpus | passes master, A, tip | wall master (med) | wall A (med, ratio) | wall tip (med, ratio range, med) | peak master | peak tip (ratio med) | CRC |
+|---|---|---|---|---|---|---|---|
+| S1 | 3, 3, 2 | 0.89 to 1.59 s (0.97) | 0.90, 0.965 | 0.67 to 1.31 s (0.69), 0.686 to 0.828, 0.739 | 45.8 to 48.5 MB | 47.3 to 49.4 MB (1.021) | `afe05eee/524288` |
+| S2 | 4, 3, 2 | 2.25 to 2.97 s (2.32) | 1.72, 0.748 | 1.22 to 2.43 s (1.28), 0.499 to 0.819, 0.562 | 91.2 to 94.5 MB | 88.1 to 91.9 MB (0.973) | `7b905383/1048576` |
+| S3K | 3, 3, 2 | 1.96 to 3.55 s (2.17) | 2.09, 0.937 | 1.49 to 2.41 s (1.53), 0.499 to 0.780, 0.717 | 183.7 to 186.1 MB | 162.8 to 166.8 MB (0.894) | `0658f691/2097152` |
+
+All 63 images are cmp-identical to the stock ROM. S1's peak rises about 2 percent (the
+record keeps a copy of each macro and function definition it answered with); S3K's falls
+because its third pass, the largest, no longer runs. Against the asl+p2bin figures at the
+top of this note (not re-measured), sigil is now about 1.2x to 1.7x asl's wall time.
+
+### Not done, listed only
+
+- Stage C (item 4, macro block structure computed once) was not attempted.
+- Rule (a) compares environments only, so a pass whose macro or label tables changed with
+  an unchanged environment is accepted, as before this row. Probe: a macro called before a
+  definition guarded by `ifdef A` (`A` defined below) fails on pass 1 under sigil, as under
+  asl (`#1200 unknown instruction`); rule (b) alone would run a third pass and succeed,
+  which asl does not.
+- asl's first-pass program-counter stand-in also bears on absolute-address width
+  (abs.w/abs.l) of an unknown symbol; sigil keeps its optimistic abs.w there. No corpus
+  needed it.
+
+### Reproduction
+
+Scratch in the uncommitted `.passes-scratch/` of this worktree: corpora from `git archive`
+at the SHAs in the Instruments table, stock scripts run once for the reference ROMs;
+`one.sh` (build and compare), `passes.sh` (the pass lines), `probe/run.sh` and
+`probe/asl.sh` (asl against sigil on the probes), `timing.py` and `summ.py`.
