@@ -250,6 +250,9 @@ scratch copies; settled). The notes themselves are historical and were not edite
 - state: **open**  size: `S` (measurement)  project: `SIGIL-AS-REPLACEMENT`
 - sigil is 2.0x to 2.5x slower than `asl`+`p2bin` and uses 5x to 18x the memory on the `.asm` route (load 9 to
   11 at the time, note section 6). No profiler here; per-phase timing is a code change, so measure first.
+- 2026-09-27: the first dispatch died about a minute in (corpus extracts and a base build log, no commits, nothing
+  lost) and was not noticed until the hub's liveness check 14 hours later. Re-dispatch from this row; the brief is
+  ordinary, nothing in it caused the death that anyone can see.
 
 ### INOUT-PROOF-INVOKE-HOOK
 
