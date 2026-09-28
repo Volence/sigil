@@ -179,7 +179,7 @@ scratch copies; settled). The notes themselves are historical and were not edite
 
 ### AS-DROPIN-NIGHTLY
 
-- state: **done in branch** `parcel/as-dropin-nightly` (awaiting merge)  size: `S`  project: `SIGIL-AS-REPLACEMENT`
+- state: **LANDED** 2026-09-28 at merge `38d6aead`, pushed; landing run GREEN 5846 passed 0 failed (5846 + 0 new, scripts and docs only). First two-route nightly: 02:17 2026-09-29, read `~/.local/state/sigil-switch-sweep/nightly.log`  size: `S`  project: `SIGIL-AS-REPLACEMENT`
 - The nightly switch sweep runs only the direct route; `--route dropin` exists since `31c65791` (40/40, and
   808/808 with `--cross`, on 2026-09-27). Add a drop-in pass so the route a disassembly user takes is watched
   every night. The direct route's S2 share-file gap stays acknowledged there.
