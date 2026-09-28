@@ -9054,7 +9054,19 @@ impl Asm {
     /// `PSGFrequencies`. A builtin that works at one width and not another is
     /// not a missing feature so much as a trap, so the widths share one
     /// function rather than three parallel pipelines.
+    ///
+    /// The first three layers act only at an identifier written immediately
+    /// before a `(` (a user function, `DEFINED`, a numeric or string builtin),
+    /// and are the identity on a slice with none; the comparison layer acts only
+    /// at a `=` or `<>`. Most operands have neither, and skip the layers that
+    /// cannot touch them.
     fn expand_operand_builtins(&mut self, toks: &[Token]) -> Vec<Token> {
+        if !has_call_shape(toks) {
+            if !toks.iter().any(|t| matches!(t.tok, Tok::Punct(Punct::Eq) | Tok::Punct(Punct::Ne))) {
+                return toks.to_vec();
+            }
+            return self.expand_str_comparisons(toks);
+        }
         let expanded = self.expand_calls_checked(toks);
         let expanded = self.expand_int_builtin(&expanded);
         let expanded = self.expand_str_builtins(&expanded);
@@ -13978,6 +13990,15 @@ fn split_root_plus(toks: &[Token]) -> Option<(&[Token], &[Token])> {
     Some((&toks[..idx], &toks[idx + 1..]))
 }
 
+/// Whether `toks` holds an identifier immediately followed by `(`: the one
+/// shape at which a user `function`, `DEFINED` or a numeric or string builtin
+/// can be called. Without it, `expand_calls` and the builtin scans leave
+/// every token as it is.
+fn has_call_shape(toks: &[Token]) -> bool {
+    toks.windows(2)
+        .any(|w| matches!((&w[0].tok, &w[1].tok), (Tok::Ident(_), Tok::Punct(Punct::LParen))))
+}
+
 /// Length (in tokens) of the trailing string-expression at the END of `out`, or
 /// `None` if the last token can't begin a string comparison LHS. Used by
 /// [`Evaluator::expand_str_comparisons`] to find the operand to the left of a
@@ -16323,6 +16344,18 @@ mod tests {
         // through sigil_ir::Expr — strings are not an IR concept, §7.4).
         let src = "        cpu z80\n        phase 0\n        if \"a\"=\"a\"\n        db 1\n        else\n        db 0\n        endif\n        if \"a\"=\"b\"\n        db 1\n        else\n        db 0\n        endif\n        if \"a\"<>\"b\"\n        db 1\n        else\n        db 0\n        endif\n        if \"a\"<>\"a\"\n        db 1\n        else\n        db 0\n        endif\n";
         assert_eq!(image(src), vec![0x01, 0x00, 0x01, 0x00]);
+    }
+
+    /// An operand with no call shape skips the call and builtin layers but must
+    /// still reach the string-comparison layer, and one with a call shape must
+    /// still reach the builtins. `dc.w (sv="ab")` is a comparison only that
+    /// layer folds (a string-valued symbol on the left, and the wide directive
+    /// refuses a string it has not folded): `0001`, and `<>` gives `0000`.
+    /// `move.b #imm,d0` is `103C` with the immediate in the next word's low byte.
+    #[test]
+    fn operand_builtin_layers_still_run_where_they_can_act() {
+        let src = "        cpu 68000\nsv = \"ab\"\n        dc.w (sv=\"ab\")\n        dc.w (sv<>\"ab\")\n        move.b #strlen(\"abc\"),d0\n";
+        assert_eq!(image(src), vec![0x00, 0x01, 0x00, 0x00, 0x10, 0x3C, 0x00, 0x03]);
     }
 
     #[test]
