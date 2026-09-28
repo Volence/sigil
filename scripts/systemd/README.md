@@ -61,8 +61,10 @@ consumes none of them — this lane blocks nothing by construction, and
 `nightly_switch_sweep.sh` runs `switch_matrix_sweep.py --cross`: every arm of every build
 option Sonic 1 and Sonic 2 declare (their `.asm` ASSEMBLY OPTIONS and their `build.lua`
 Settings block), built by each corpus's own `build.lua` and by sigil, compared byte for
-byte, and every corner of the option space. It cannot be a cargo test: it needs `lua` and
-both corpora. `sigil-switch-sweep.{service,timer}` are what fire it.
+byte, and every corner of the option space. It runs that twice, once per route: `direct`
+(sigil by its own command) and `dropin` (sigil in place of the script's `asl`, the route a
+disassembly user takes). It cannot be a cargo test: it needs `lua` and both corpora.
+`sigil-switch-sweep.{service,timer}` are what fire it.
 
 ```sh
 cp scripts/systemd/sigil-switch-sweep.{service,timer} ~/.config/systemd/user/
@@ -85,6 +87,10 @@ verdict line in `~/.local/state/sigil-switch-sweep/nightly.log`, not out of this
 
 It builds its own sigil from a detached checkout of `origin/master` at
 `~/sonic_hacks/.sigil-switch-sweep` into `~/sonic_hacks/.sigil-switch-sweep-target`, and
-reads each corpus out of its committed `HEAD`, never its working tree. Exit codes follow
-the source-gate lane: 0 green, 1 a finding, 2 could not run; the unit declares all three
-as success because the job has already notified with the wording that tells them apart.
+reads each corpus out of its committed `HEAD`, never its working tree; both passes measure
+that one binary and those two commits. The two passes together are bounded at four hours,
+inside the unit's `TimeoutStartSec=5h`. Each pass writes its own log beside `nightly.log`
+(`sweep.log` for direct, `sweep-dropin.log` for dropin), and the one verdict line names
+both. Exit codes follow the source-gate lane: 0 green, 1 a finding, 2 could not run, the
+job's being the worse of the two passes'; the unit declares all three as success because
+the job has already notified with the wording that tells them apart.
