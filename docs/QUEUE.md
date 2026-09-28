@@ -1651,3 +1651,19 @@ points at it rather than restating it, so there is one copy to keep true.
   derived from the bank room in the same landing. Record, fix options and population:
   `docs/superpowers/notes/2026-09-28-seam2-region-unenforced.md`; measurement test
   `crates/sigil-harness/tests/seam2_region_unenforced.rs`.
+
+### MT-BANK-RENAME-PAIR
+
+- state: **next**, not started  size: `S`  asked by: aeon, 2026-09-28 (they HOLD their rename until we say the pair is ready)
+- Aeon will rename `games/sonic4/data/sound/mt_bank.emp`'s declaration from `module games.sonic4.mt_bank_blob` to
+  `games.sonic4.mt_bank` (fixes the `[module.path-mismatch]` we reported; zero bytes on their side). Load-bearing on
+  ours: `crates/sigil-harness/src/module_roots.rs:151`, the `SHAPE_GATES` row `("games.sonic4.mt_bank_blob",
+  ShapeGate::SoundOn)`, matched by exact id in `gate_of`; `None` means every shape places the module, so after the
+  rename the bank would be rooted in sound-off shapes, with the installed pair (`1173bb31`) as affected as our tests.
+  Mechanism read from code, not run.
+- Sequence agreed with aeon: (1) land a tolerant row gating BOTH ids `SoundOn` (byte-neutral at the pin: no module has
+  the new id there); prove it red-first by showing a sound-off shape roots the renamed module without the row;
+  (2) rebuild the shared pair from that master (method: the pair paragraph in `docs/OVERSEER-REFERENCE.md`) and tell
+  aeon; (3) aeon renames and lands. The old id's row is retired at the pin advance that passes their rename, together
+  with the `warn_tier_corpus.rs` known-site row for `mt_bank.emp`, which goes red then by design.
+- Takes precedence over SEAM2-TABLE-REGION-UNENFORCED's fix because a peer is holding a landing on it.
