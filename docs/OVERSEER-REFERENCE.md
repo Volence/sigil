@@ -1311,6 +1311,13 @@ aeon build. Deleting the tree breaks placement, not only the `source:` field. De
 `docs/superpowers/notes/2026-09-11-aeon-source-digest-ask.md`, second amendment.
 **`.sigil-ls12-pin` is released once aeon confirms it is on the new pair — ask them, not this file.**
 
+**THE INSTALLED PAIR SINCE 2026-09-28T09:53:01Z IS THE d39ed4c3 BUILD, and it supersedes the 7051ff7a paragraph
+below.** Same method: locked detached tree `~/sonic_hacks/.sigil-pair-d39ed4c3`, target
+`~/sonic_hacks/.scratch/pair-d39ed4c3/target`, `--locked`, porcelain 0; `sigil` `60cd7cc7467fc461c99baa4752bc5079`,
+`emit_sound_blob` `8007f935ef8fedac81b8a9b025921208`. First /proc scan found ONE live user (an aeon build step, gone
+by the rescan a minute later, 0 users); aeon told of the possible straddle. Outgoing 7051ff7a pair at
+`~/sonic_hacks/.sigil-outgoing-7051ff7a/`; `.sigil-pair-7051ff7a` is kept while that copy may be used.
+
 **THE INSTALLED PAIR SINCE 2026-09-28T08:16:25Z IS THE 7051ff7a BUILD, and it supersedes every pair
 paragraph below.** Requested by aeon (their song-bank step needs seam-2's tolerance, 599008e8). Built in
 the LOCKED detached worktree `~/sonic_hacks/.sigil-pair-7051ff7a` (porcelain 0 before and after,
