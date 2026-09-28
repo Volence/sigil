@@ -1439,23 +1439,36 @@ pub fn emit_sfx_artifacts_in(
     Ok(())
 }
 
-/// The Moving-Trucks bank body + the byte offsets at which its two pointer tables
-/// begin (`SongTable`/`SongPatchTable`, read cross-seam by `sound_api.emp`). The
-/// offsets partition `bytes` into the three artifacts the split emits.
+/// The lowered Moving-Trucks bank, and where its two song pointer tables begin when
+/// the module still carries them.
 pub struct MtBank {
-    /// `mt_bank` @ `$58628` — song streams + pitch table + patch bank + the two
-    /// pointer tables, shape-dependent length.
+    /// The `mt_bank` section's bytes: song streams + pitch table + patch banks, then the
+    /// two pointer tables when present. Shape-dependent length; its length is what
+    /// [`sound_layout`] measures to predict the `Sfx_33` base.
     pub bytes: Vec<u8>,
-    /// Byte offset within `bytes` where `SongTable` begins (a `SONG_COUNT`*4-byte
-    /// table). Everything before it is the body.
+    /// `Some` when `mt_bank.emp` exports `SongTable`/`SongPatchTable` (read cross-seam
+    /// by `sound_api.emp`); the offsets then partition `bytes` into the three artifacts
+    /// the split emits. `None` when the module exports neither, because the tables are
+    /// ordinary linker-resolved label arrays in another module; `bytes` is then all
+    /// body. A module that exports one without the other is refused
+    /// (`[sound.mt-half-tables]`), never read as either shape.
+    pub tables: Option<MtTables>,
+}
+
+/// Where the two song pointer tables begin inside [`MtBank::bytes`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct MtTables {
+    /// Byte offset where `SongTable` begins (a `SONG_COUNT`*4-byte table). Everything
+    /// before it is the body.
     pub song_table_off: usize,
-    /// Byte offset within `bytes` where `SongPatchTable` begins (the parallel
-    /// `SONG_COUNT`*4-byte table, contiguous after `SongTable`, ending the blob).
+    /// Byte offset where `SongPatchTable` begins (the parallel `SONG_COUNT`*4-byte
+    /// table, contiguous after `SongTable`, ending the blob).
     pub song_patch_table_off: usize,
 }
 
 /// Lower + co-link `mt_bank.emp` at the map-derived bank pin (`$58628`) and return
-/// the bank body + the `SongTable`/`SongPatchTable` addresses. Supplies the same
+/// the bank bytes + the `SongTable`/`SongPatchTable` offsets when the module carries
+/// them ([`MtBank::tables`]). Supplies the same
 /// THREE cross-seam carriers `mt_port.rs` does ([`mt_bank_carrier_asm`]):
 /// `MovingTrucks_Bank_Start` (label @ the `sound_bank` anchor), `SONG_MOVINGTRUCKS`
 /// and `SONG_COUNT`, both resolved from `games.sonic4.sound_ids` under the shape's
@@ -1550,21 +1563,37 @@ fn emit_mt_bank_at(
 
     let bytes = linked.section("mt_bank").ok_or("missing mt_bank in linked image")?.bytes.clone();
     // Read SongTable/SongPatchTable offsets from the PLACED section's labels.
-    // mt_bank is pure data — resolve_layout does not move byte offsets — so a
+    // mt_bank is pure data (resolve_layout does not move byte offsets), so a
     // label's `offset` (relative to the section head) is its final index into
     // `bytes` (the section head is byte 0 of the linked image slice).
     let placed = sections.iter().find(|s| s.name == "mt_bank").ok_or("missing placed mt_bank")?;
-    let off = |want: &str| -> Result<usize, String> {
-        let label = placed
-            .labels
-            .iter()
-            .find(|l| l.name == want)
-            .ok_or_else(|| format!("mt_bank must export `{want}` (sound_api.emp consumes it)"))?;
-        Ok(label.offset as usize)
-    };
-    let song_table_off = off("SongTable")?;
-    let song_patch_table_off = off("SongPatchTable")?;
-    Ok(MtBank { bytes, song_table_off, song_patch_table_off })
+    let off = |want: &str| placed.labels.iter().find(|l| l.name == want).map(|l| l.offset as usize);
+    let tables = mt_tables(off("SongTable"), off("SongPatchTable"))?;
+    Ok(MtBank { bytes, tables })
+}
+
+/// The table shape of a lowered `mt_bank`, from the offsets of its `SongTable` and
+/// `SongPatchTable` labels. Both present is a module that carries the tables; both
+/// absent is one whose tables live in another module. One without the other is
+/// refused: the two are parallel arrays indexed by one song id, so a module carrying
+/// half the pair would hand `sound_api.emp` a table whose partner is missing or comes
+/// from somewhere else.
+fn mt_tables(song_table: Option<usize>, song_patch_table: Option<usize>) -> Result<Option<MtTables>, String> {
+    match (song_table, song_patch_table) {
+        (Some(song_table_off), Some(song_patch_table_off)) => {
+            Ok(Some(MtTables { song_table_off, song_patch_table_off }))
+        }
+        (None, None) => Ok(None),
+        (have, _) => {
+            let (present, missing) =
+                if have.is_some() { ("SongTable", "SongPatchTable") } else { ("SongPatchTable", "SongTable") };
+            Err(format!(
+                "[sound.mt-half-tables] mt_bank exports `{present}` but not `{missing}`. The two \
+                 song pointer tables are parallel arrays indexed by one song id, so mt_bank \
+                 carries both or neither"
+            ))
+        }
+    }
 }
 
 /// The Sonic 4 song-id module, relative to the aeon tree: the sole authority for
@@ -1643,14 +1672,22 @@ fn mt_bank_room(bank_start: u32, mt_bank_lma: u32) -> Result<u32, String> {
     Ok(top - mt_bank_lma)
 }
 
-/// Emit the Moving-Trucks bank build inputs to `out_dir` as a THREE-WAY SPLIT per
-/// shape: `mt_bank_body{,_debug}.bin` (the song streams + heads, bytes
-/// `[0, SongTable)`), `mt_songtable{,_debug}.bin` (the `SONG_COUNT`*4-byte song
-/// pointer table), and `mt_songpatchtable{,_debug}.bin` (the parallel patch-pointer
-/// table that ends the blob). `mt_bank_blob.emp` embeds the three as contiguous
-/// labeled members, so `SongTable`/`SongPatchTable` are native section labels the
-/// whole-ROM link resolves — no emitted equ artifact. SHAPE-DEPENDENT (the two songs
-/// the debug build adds), so each artifact has a `_debug` variant.
+/// Emit the Moving-Trucks bank build inputs to `out_dir`, per shape.
+///
+/// When `mt_bank.emp` carries the song pointer tables, a THREE-WAY SPLIT:
+/// `mt_bank_body{,_debug}.bin` (the song streams + heads, bytes `[0, SongTable)`),
+/// `mt_songtable{,_debug}.bin` (the `SONG_COUNT`*4-byte song pointer table), and
+/// `mt_songpatchtable{,_debug}.bin` (the parallel patch-pointer table that ends the
+/// blob). `mt_bank_blob.emp` embeds the three as contiguous labeled members, so
+/// `SongTable`/`SongPatchTable` are native section labels the whole-ROM link resolves.
+///
+/// When it carries neither table, `mt_bank_body{,_debug}.bin` is the whole bank and no
+/// table artifact is written. A table artifact an earlier emit left in `out_dir` is
+/// removed, so a consumer still embedding one fails on the missing file instead of
+/// linking pointers from a bank that no longer has them.
+///
+/// SHAPE-DEPENDENT (the two songs the debug build adds), so each artifact has a
+/// `_debug` variant.
 pub fn emit_mt_artifacts(aeon: &Path, out_dir: &Path) -> Result<(), String> {
     emit_mt_artifacts_in(aeon, None, out_dir)
 }
@@ -1663,13 +1700,17 @@ pub fn emit_mt_artifacts_in(
 ) -> Result<(), String> {
     require_reference_tree(aeon)?;
     let mut artifacts: Vec<(&str, Vec<u8>)> = Vec::new();
+    let mut absent: Vec<&str> = Vec::new();
     for (debug, body_name, st_name, spt_name) in [
         (false, "mt_bank_body.bin", "mt_songtable.bin", "mt_songpatchtable.bin"),
         (true, "mt_bank_body_debug.bin", "mt_songtable_debug.bin", "mt_songpatchtable_debug.bin"),
     ] {
         let mt = emit_mt_bank_in(aeon, ov, debug)?;
-        let st = mt.song_table_off;
-        let spt = mt.song_patch_table_off;
+        let Some(MtTables { song_table_off: st, song_patch_table_off: spt }) = mt.tables else {
+            artifacts.push((body_name, mt.bytes));
+            absent.extend([st_name, spt_name]);
+            continue;
+        };
         // The two tables are contiguous and end the blob: body | SongTable | SongPatchTable.
         if !(st <= spt && spt <= mt.bytes.len()) {
             return Err(format!(
@@ -1697,6 +1738,14 @@ pub fn emit_mt_artifacts_in(
     for (name, data) in artifacts {
         let path = out_dir.join(name);
         sigil_span::read_set::write_generated(&path, &data).map_err(|e| format!("write {}: {e}", path.display()))?;
+    }
+    for name in absent {
+        let path = out_dir.join(name);
+        match std::fs::remove_file(&path) {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => return Err(format!("remove stale {}: {e}", path.display())),
+        }
     }
     Ok(())
 }
