@@ -214,6 +214,11 @@ scratch copies; settled). The notes themselves are historical and were not edite
   toolchain (stub cargo on PATH, stub ledger and census). Red-first: pre-fix append (2 red), run record
   reading the whole file (1 red, 2 launched read back as 3), `--verdict-only` appending (1 red), pre-fix
   checker (5 red). Mutation evidence is in the commit bodies.
+- Landing run at `f37dfc77` (clean), reference `.aeon-sigil-ref` @ `ec640bcf`: GREEN, 5852 passed 0 failed
+  2 ignored, 519 suites, 519 launched = 519 reported = census, 5846 + 6 new, clippy and ledger clean. On
+  its `$LOG`: `check_landing_log.py` exit 0 `RESULT GREEN` with `LANDING_EXIT=0` and all three gate exits 0;
+  `--verdict-only` exit 0 `RESULT GREEN` twice, byte-identical to each other and to the recorded block, log
+  md5 unchanged.
 
 ### AS-AUTHOR-FORMS-EXACT
 
