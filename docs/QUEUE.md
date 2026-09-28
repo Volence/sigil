@@ -1630,7 +1630,7 @@ points at it rather than restating it, so there is one copy to keep true.
 
 ### SEAM2-TABLE-REGION-UNENFORCED
 
-- state: **open**, not started  size: `S`  found by: aeon's agent, 2026-09-28 (their observation, not reproduced here)
+- state: **measured**, fix not started  size: `S`  found by: aeon's agent, 2026-09-28 (reproduced 2026-09-28, branch `parcel/seam2-region-unenforced`)
 - `crates/sigil-harness/src/seam2.rs` (about line 1200, in the sound-tables placement) builds a synthetic map region
   `sound_tables_z80` with `size = 0x400`, yet aeon reports the tables at 1,116 B (after `parcel/song-bank-wfz-ooz`,
   tip `39a2b4dd`) with nothing refusing. So either `place_sections` does not refuse a section larger than its region
@@ -1638,3 +1638,16 @@ points at it rather than restating it, so there is one copy to keep true.
   Either way the 0x400 is a check that cannot fail. First step: reproduce with a section over 0x400 through that
   function and through `sigil_link::place_sections` directly, then fix the class, not the literal (derive the
   size, or make an overflow refuse loudly). Sequence after PIN-ADVANCE-S2 lands, since that parcel edits seam-2.
+- Outcome (measurement, 2026-09-28): reproduced. The real table is 1,116 B at aeon `4523ca5f` (985 B at the
+  reference `1ee78b88`) and `seam2::emit_sound_tables_z80` returns Ok. Cause: `place_sections` (in
+  `sigil-frontend-emp`, not `sigil_link`) reads no region size; only `emit_rom`'s `validate_section` does, and the
+  seam-2 emitters never call `emit_rom`, so all seven seam-2 synthetic region sizes are unenforced. The path is
+  product code (`sigil build --native` reaches it through `native::emit_generated_in`), but it is not a silent ROM
+  overflow: the tables reach the ROM through the whole-ROM layout, which places every follower from the measured
+  length and bounds the bank by the `song_bank_2` anchor and the SFX co-residency ensure. Found on the way, a real
+  linker gap: `validate_section` picks the region by LMA, so `emit_rom` accepts a spill that starts at the next
+  region's base, and any overflow of a region nested in an earlier covering ROM region. Census: only
+  `sound_tables_z80` is over today, so a `place_sections` refusal would break aeon master unless the literal is
+  derived from the bank room in the same landing. Record, fix options and population:
+  `docs/superpowers/notes/2026-09-28-seam2-region-unenforced.md`; measurement test
+  `crates/sigil-harness/tests/seam2_region_unenforced.rs`.
