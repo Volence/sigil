@@ -13419,12 +13419,13 @@ impl MacroFrame {
         self.params.len() as i64 - self.shifted.min(self.shift_cap) as i64
     }
 
-    /// `ALLARGS` for the current shift state.
-    fn all_args(&self) -> String {
+    /// `ALLARGS` for the current shift state: the raw argument text, borrowed,
+    /// until a `shift` makes it the remaining groups rejoined.
+    fn all_args(&self) -> std::borrow::Cow<'_, str> {
         if self.shifted == 0 {
-            self.all_raw.clone()
+            std::borrow::Cow::Borrowed(&self.all_raw)
         } else {
-            self.all.join(",")
+            std::borrow::Cow::Owned(self.all.join(","))
         }
     }
 
