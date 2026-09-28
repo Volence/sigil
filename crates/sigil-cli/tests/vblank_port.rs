@@ -37,7 +37,6 @@ use sigil_ir::backend::Cpu;
 use sigil_ir::{Section, SectionPlacement, SymbolTable};
 use std::path::{Path, PathBuf};
 
-
 /// Cross-seam names this scope's modules reference that carry no pin, each read from
 /// the reference build's own listing (`test_support::extend_from_listing_names`).
 const LISTED_CROSS_SEAM: &[&str] = &[

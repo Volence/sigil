@@ -76,14 +76,6 @@ use sigil_frontend_emp::lower::{lower_module_with_contracts, LowerOptions};
 /// reference ROM this oracle byte-gates against carries. A hand-written stub
 /// would restate the interface here and go stale the day the engine grows a
 /// member game_loop names.
-
-/// Cross-seam names this scope's modules reference that carry no pin, each read from
-/// the reference build's own listing (`test_support::extend_from_listing_names`).
-const LISTED_CROSS_SEAM: &[&str] = &[
-    "PageCache_Audit",
-    "PageCache_LiveSweep",
-];
-
 fn game_loop_contract_env() -> sigil_frontend_emp::contract::InterfaceEnv {
     let profile = sigil_harness::native::sonic4_profile(false);
     let defines: Vec<(String, i128)> =
@@ -96,6 +88,13 @@ use sigil_harness::pins;
 use sigil_ir::backend::Cpu;
 use sigil_ir::{Section, SectionPlacement, SymbolTable};
 use std::path::PathBuf;
+
+/// Cross-seam names this scope's modules reference that carry no pin, each read from
+/// the reference build's own listing (`test_support::extend_from_listing_names`).
+const LISTED_CROSS_SEAM: &[&str] = &[
+    "PageCache_Audit",
+    "PageCache_LiveSweep",
+];
 
 fn aeon_dir() -> PathBuf {
     sigil_harness::test_support::aeon_dir()

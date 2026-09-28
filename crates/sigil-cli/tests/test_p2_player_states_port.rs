@@ -23,6 +23,12 @@ use sigil_ir::backend::Cpu;
 use sigil_ir::{Section, SectionPlacement, SymbolTable};
 use std::path::{Path, PathBuf};
 
+/// Cross-seam names the player modules reference that carry no pin, each read from
+/// the reference build's own listing (`test_support::listing_labels_if_defined`).
+const LISTED_CROSS_SEAM: &[&str] = &[
+    "Player_SensorLand",
+];
+
 /// The aeon-relative sources EVERY state-file compile reads: the player_common
 /// keystone plus the four ambient engine modules.
 const COMMON_SOURCES: &[&str] = &[
@@ -36,13 +42,6 @@ const COMMON_SOURCES: &[&str] = &[
 /// `Some(aeon_root)` when the tree carries the common sources AND the one state
 /// file `state_rel` names; `None` — skip green — when it does not (a panic under
 /// `SIGIL_STRICT_GATE=1`).
-
-/// Cross-seam names the player modules reference that carry no pin, each read from
-/// the reference build's own listing (`test_support::listing_labels_if_defined`).
-const LISTED_CROSS_SEAM: &[&str] = &[
-    "Player_SensorLand",
-];
-
 fn player_tree(state_rel: &str) -> Option<PathBuf> {
     let mut rels = COMMON_SOURCES.to_vec();
     rels.push(state_rel);
