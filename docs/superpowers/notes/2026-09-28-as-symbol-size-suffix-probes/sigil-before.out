@@ -1,0 +1,97 @@
+areg_l           exit 1  REFUSED  areg_l.asm(2):2: error: unresolved symbol `a0.l` in operand
+back_label_w     exit 1  REFUSED  back_label_w.asm(3):2: error: unresolved jmp/jsr target in section sec0 references symbol `T.w` not defined in this link, expected when comp
+bra_dot_loop_w   exit 1  REFUSED  bra_dot_loop_w.asm(4):2: error: unresolved symbol `T.loop.w` for fixup in section sec0 at offset 5
+bra_local_w      exit 0   4E714E7160FC
+bra_sym_w        exit 1  REFUSED  bra_sym_w.asm(2):2: error: unresolved symbol `T.w` for fixup in section sec0 at offset 2
+bsr_local_l      exit 0   4E714E716100FFFC
+btst_sym_w       exit 1  REFUSED  btst_sym_w.asm(3):2: error: unresolved symbol `Foo.w` in operand
+clr_sym_w        exit 1  REFUSED  clr_sym_w.asm(3):2: error: unresolved symbol `Foo.w` in operand
+dbf_local_w      exit 0   4E714E7151C8FFFC
+dbf_sym_w        exit 1  REFUSED  dbf_sym_w.asm(2):2: error: unresolved symbol `T.w` in operand
+dc_dot_w_defined exit 0   5678
+dc_sym_w         exit 1  REFUSED  dc_sym_w.asm(3):2: error: unresolved symbol `Foo.w` for fixup in section sec0 at offset 0
+disp_collide     exit 0   30280006
+disp_dot_w_defined exit 0   30280004
+disp_num_w       exit 1  REFUSED  disp_num_w.asm(2):9: error: trailing tokens in `disp(An)` displacement
+disp_sym_b       exit 1  REFUSED  disp_sym_b.asm(3):2: error: unresolved symbol `Foo.b` in operand
+disp_sym_l       exit 1  REFUSED  disp_sym_l.asm(3):2: error: unresolved symbol `Foo.l` in operand
+disp_sym_s       exit 1  REFUSED  disp_sym_s.asm(3):2: error: unresolved symbol `Foo.s` in operand
+disp_sym_w       exit 1  REFUSED  disp_sym_w.asm(3):2: error: unresolved symbol `Foo.w` in operand
+disp_sym_W       exit 1  REFUSED  disp_sym_W.asm(3):2: error: unresolved symbol `Foo.W` in operand
+disp_sym_w_big   exit 1  REFUSED  disp_sym_w_big.asm(3):2: error: unresolved symbol `Foo.w` in operand
+dot_b_defined    exit 0   4EF81234
+dot_equ_collide  exit 0   4EF85678
+dot_equ_def      exit 0   1234
+dot_equ_w_def    exit 0   0000
+dot_equ_w_use    exit 0   4EF85678
+dot_w_w          exit 1  REFUSED  dot_w_w.asm(3):2: error: unresolved jmp/jsr target in section sec0 references symbol `Foo.w.w` not defined in this link, expected when compi
+dreg_w           exit 1  REFUSED  dreg_w.asm(2):2: error: unresolved symbol `d0.w` in operand
+expr_mid_dot     exit 0   4EF80012
+expr_tail_sym    exit 1  REFUSED  expr_tail_sym.asm(3):2: error: unresolved jmp/jsr target in section sec0 references symbol `Foo.w` not defined in this link, expected when c
+fwd_equ_l        exit 1  REFUSED  fwd_equ_l.asm(2):2: error: unresolved jmp/jsr target in section sec0 references symbol `Foo.l` not defined in this link, expected when compi
+fwd_equ_move     exit 1  REFUSED  fwd_equ_move.asm(2):2: error: unresolved symbol `Foo.w` in operand
+fwd_equ_w        exit 1  REFUSED  fwd_equ_w.asm(2):2: error: unresolved jmp/jsr target in section sec0 references symbol `Foo.w` not defined in this link, expected when compi
+fwd_equ_w_hi     exit 1  REFUSED  fwd_equ_w_hi.asm(2):2: error: unresolved jmp/jsr target in section sec0 references symbol `Foo.w` not defined in this link, expected when co
+fwd_label_l      exit 1  REFUSED  fwd_label_l.asm(2):2: error: unresolved jmp/jsr target in section sec0 references symbol `T.l` not defined in this link, expected when compi
+fwd_label_w      exit 1  REFUSED  fwd_label_w.asm(2):2: error: unresolved jmp/jsr target in section sec0 references symbol `T.w` not defined in this link, expected when compi
+fwd_label_w_hi   exit 1  REFUSED  fwd_label_w_hi.asm(2):2: error: unresolved jmp/jsr target in section sec0 references symbol `T.w` not defined in this link, expected when co
+idx_collide      exit 0   32300006
+idx_num_b        exit 1  REFUSED  idx_num_b.asm(2):9: error: trailing tokens in `disp(An)` displacement
+idx_sym_b        exit 1  REFUSED  idx_sym_b.asm(3):2: error: unresolved symbol `Foo.b` in operand
+idx_sym_w        exit 1  REFUSED  idx_sym_w.asm(3):2: error: unresolved symbol `Foo.w` in operand
+imm_dot_w_defined exit 0   303C5678
+imm_sym_w        exit 1  REFUSED  imm_sym_w.asm(3):2: error: unresolved symbol `Foo.w` in operand
+jmp_sym_b        exit 1  REFUSED  jmp_sym_b.asm(3):2: error: unresolved jmp/jsr target in section sec0 references symbol `Foo.b` not defined in this link, expected when compi
+jmp_sym_expr_w   exit 0   4EF81234
+jmp_sym_paren_w  exit 0   4EF81234
+jmp_sym_s        exit 1  REFUSED  jmp_sym_s.asm(3):2: error: unresolved jmp/jsr target in section sec0 references symbol `Foo.s` not defined in this link, expected when compi
+jmp_sym_w        exit 1  REFUSED  jmp_sym_w.asm(3):2: error: unresolved jmp/jsr target in section sec0 references symbol `Foo.w` not defined in this link, expected when compi
+jmp_sym_W        exit 1  REFUSED  jmp_sym_W.asm(3):2: error: unresolved jmp/jsr target in section sec0 references symbol `Foo.W` not defined in this link, expected when compi
+jmp_sym_w_big    exit 1  REFUSED  jmp_sym_w_big.asm(3):2: error: unresolved jmp/jsr target in section sec0 references symbol `Foo.w` not defined in this link, expected when c
+jmp_sym_w_hi     exit 1  REFUSED  jmp_sym_w_hi.asm(3):2: error: unresolved jmp/jsr target in section sec0 references symbol `Foo.w` not defined in this link, expected when co
+jmp_sym_w_m2     exit 1  REFUSED  jmp_sym_w_m2.asm(3):2: error: unresolved jmp/jsr target in section sec0 references symbol `Foo.w` not defined in this link, expected when co
+jmp_sym_w_neg    exit 1  REFUSED  jmp_sym_w_neg.asm(3):2: error: unresolved jmp/jsr target in section sec0 references symbol `Foo.w` not defined in this link, expected when c
+jsr_sym_l        exit 1  REFUSED  jsr_sym_l.asm(3):2: error: unresolved jmp/jsr target in section sec0 references symbol `Foo.l` not defined in this link, expected when compi
+jsr_sym_L        exit 1  REFUSED  jsr_sym_L.asm(3):2: error: unresolved jmp/jsr target in section sec0 references symbol `Foo.L` not defined in this link, expected when compi
+lea_sym_w        exit 1  REFUSED  lea_sym_w.asm(3):2: error: unresolved symbol `Foo.w` in operand
+local_full_dc    exit 0   4E714E710002
+local_full_l     exit 1  REFUSED  local_full_l.asm(4):2: error: unresolved jmp/jsr target in section sec0 references symbol `Foo.loop.l` not defined in this link, expected wh
+local_full_w     exit 1  REFUSED  local_full_w.asm(4):2: error: unresolved jmp/jsr target in section sec0 references symbol `Foo.loop.w` not defined in this link, expected wh
+local_l_collide  exit 0   4E714E714EB80002
+local_loop_w     exit 1  REFUSED  local_loop_w.asm(4):2: error: unresolved jmp/jsr target in section sec0 references symbol `Foo.loop.w` not defined in this link, expected wh
+local_w_bare     exit 0   4E714E714EF80002
+local_w_collide  exit 0   4E714E714EF80002
+macro_param_w    exit 1  REFUSED  macro_param_w.asm(6) jw(1):2: error: unresolved jmp/jsr target in section sec0 references symbol `Foo.w` not defined in this link, expected 
+move_imm_sym_w   exit 1  REFUSED  move_imm_sym_w.asm(3):2: error: unresolved symbol `Foo.w` in operand
+movem_sym_w      exit 1  REFUSED  movem_sym_w.asm(3):2: error: unresolved symbol `Foo.w` in operand
+movem_sym_w_dst  exit 1  REFUSED  movem_sym_w_dst.asm(3):2: error: unresolved symbol `Foo.w` in operand
+move_sym_both    exit 1  REFUSED  move_sym_both.asm(4):2: error: unresolved symbol `Foo.w` in operand
+move_sym_l_dst   exit 1  REFUSED  move_sym_l_dst.asm(3):2: error: unresolved symbol `Foo.l` in operand
+move_sym_w_dst   exit 1  REFUSED  move_sym_w_dst.asm(3):2: error: unresolved symbol `Foo.w` in operand
+move_sym_w_hi    exit 1  REFUSED  move_sym_w_hi.asm(3):2: error: unresolved symbol `Foo.w` in operand
+move_sym_w_src   exit 1  REFUSED  move_sym_w_src.asm(3):2: error: unresolved symbol `Foo.w` in operand
+num_space_w      exit 0   4EF81234
+paren_abs_dot    exit 0   4EF85678
+paren_disp_collide exit 0   30280006
+paren_disp_dot   exit 0   30280004
+paren_disp_num   exit 1  REFUSED  paren_disp_num.asm(2):9: error: trailing tokens in displacement
+paren_disp_sym   exit 1  REFUSED  paren_disp_sym.asm(3):2: error: unresolved symbol `Foo.w` in operand
+paren_disp_sym_b exit 1  REFUSED  paren_disp_sym_b.asm(3):2: error: unresolved symbol `Foo.b` in operand
+paren_disp_sym_l exit 1  REFUSED  paren_disp_sym_l.asm(3):2: error: unresolved symbol `Foo.l` in operand
+paren_dot_w_defined exit 0   4EF85678
+paren_idx_sym_b  exit 1  REFUSED  paren_idx_sym_b.asm(3):2: error: unresolved symbol `Foo.b` in operand
+paren_idx_sym_w  exit 1  REFUSED  paren_idx_sym_w.asm(3):2: error: unresolved symbol `Foo.w` in operand
+paren_move_sym_w exit 1  REFUSED  paren_move_sym_w.asm(3):2: error: unresolved symbol `Foo.w` in operand
+paren_num_w      exit 1  REFUSED  paren_num_w.asm(2):6: error: trailing tokens in (address)
+paren_sym_b      exit 1  REFUSED  paren_sym_b.asm(3):2: error: unresolved symbol `Foo.b` in operand
+paren_sym_l      exit 1  REFUSED  paren_sym_l.asm(3):2: error: unresolved symbol `Foo.l` in operand
+paren_sym_w      exit 1  REFUSED  paren_sym_w.asm(3):2: error: unresolved symbol `Foo.w` in operand
+paren_sym_w_hi   exit 1  REFUSED  paren_sym_w_hi.asm(3):2: error: unresolved symbol `Foo.w` in operand
+pcidx_sym_b      exit 1  REFUSED  pcidx_sym_b.asm(3):2: error: unresolved symbol `Foo.b` for fixup in section sec0 at offset 5
+pcrel_num_w      exit 1  REFUSED  pcrel_num_w.asm(3):9: error: trailing tokens in `disp(An)` displacement
+pcrel_sym_w      exit 1  REFUSED  pcrel_sym_w.asm(3):2: error: unresolved symbol `Foo.w` for fixup in section sec0 at offset 4
+pea_sym_l        exit 1  REFUSED  pea_sym_l.asm(3):2: error: unresolved symbol `Foo.l` in operand
+sym_areg_name_w  exit 1  REFUSED  sym_areg_name_w.asm(3):2: error: unresolved jmp/jsr target in section sec0 references symbol `A9.w` not defined in this link, expected when 
+sym_imm_expr_w   exit 0   4EF81234
+sym_space_w      exit 0   4EF81234
+undef_sym_w      exit 1  REFUSED  undef_sym_w.asm(2):2: error: unresolved jmp/jsr target in section sec0 references symbol `Undef.w` not defined in this link, expected when c
