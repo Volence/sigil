@@ -55,18 +55,24 @@ fn an_overlay_build_names_the_overlay_in_its_source_digest() {
     let pmap = sigil_harness::map_placement::load_placement_map(&src).expect("map");
     let at = |n: &str| pmap.anchors_for(true).find(|a| a.name == n).unwrap_or_else(|| panic!("{n}")).at;
     let (dac, snd) = (at("dac_banks"), at("sound_bank"));
-    let (to_dac, to_snd) = (snd, snd + (snd - dac));
+    // Every sound-on anchor from the DAC banks up moves by the same whole-bank delta,
+    // so the banks keep their order and spacing: the DAC banks take the sound bank's
+    // place and everything after them (the sound bank, any later song bank) moves up
+    // with them. Which anchors those are is read from the map, not listed here.
+    let delta = snd - dac;
     let shadow = shadow_aeon_tree(&aeon, &[]).expect("shadow tree");
     let scratch = Scratch::new("digest");
     let overlay = scratch.0.join("anchors.toml");
-    std::fs::write(
-        &overlay,
-        format!(
-            "[[anchor]]\nname = \"dac_banks\"\nat = {to_dac:#x}\nwhen = \"sound_on\"\n\n\
-             [[anchor]]\nname = \"sound_bank\"\nat = {to_snd:#x}\nvma = 0x8000\nwhen = \"sound_on\"\n"
-        ),
-    )
-    .expect("write overlay");
+    let mut rows = String::new();
+    for a in pmap.anchors_for(true).filter(|a| a.at >= dac) {
+        rows.push_str(&format!("[[anchor]]\nname = \"{}\"\nat = {:#x}\n", a.name, a.at + delta));
+        if let Some(vma) = a.vma {
+            rows.push_str(&format!("vma = {vma:#x}\n"));
+        }
+        rows.push_str("when = \"sound_on\"\n\n");
+    }
+    assert!(rows.contains("\"sound_bank\""), "the overlay must move the sound bank");
+    std::fs::write(&overlay, rows).expect("write overlay");
     let (rom, lst) = (scratch.0.join("r.bin"), scratch.0.join("r.lst"));
     let run = Command::new(SIGIL)
         .args(["build", "--aeon"])

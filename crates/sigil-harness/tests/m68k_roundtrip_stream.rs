@@ -45,8 +45,8 @@ use std::collections::{BTreeMap, BTreeSet};
 /// - `illegal`: the deliberate-trap word; nothing in the shipped games plants
 ///   one.
 ///
-/// The seven below arrived together when the missing 68000 instruction lines
-/// were encoded for the Sonic 1 corpus (2026-09-03). Aeon is a different source
+/// The six below were encoded with the missing 68000 instruction lines for the
+/// Sonic 1 corpus (2026-09-03). Aeon is a different source
 /// tree and uses none of them — verified by grep over the reference tree at
 /// `4f5ad5a1`: the only textual hits are a COMMENT (`player_climb.emp:363`
 /// describing a `bchg` that is not written) and two `debugger.asm` equates
@@ -56,7 +56,6 @@ use std::collections::{BTreeMap, BTreeSet};
 ///
 /// - `bchg`: aeon's bit work is `bset`/`bclr`/`btst`, all three of which ARE
 ///   captured; nothing toggles a bit.
-/// - `exg`: no register exchange anywhere in the engine or either game.
 /// - `roxl` / `roxr`: aeon shifts and rotates without the X bit
 ///   (`asl`/`asr`/`lsl`/`lsr`/`rol`/`ror` are all captured).
 /// - `move-to-ccr`: aeon sets carry with `andi.b #$FE,ccr` / `ori.b #1,ccr`
@@ -94,7 +93,6 @@ use std::collections::{BTreeMap, BTreeSet};
 const NOT_IN_STREAM: &[&str] = &[
     "illegal",
     "bchg",
-    "exg",
     "roxl",
     "roxr",
     "move-to-ccr",

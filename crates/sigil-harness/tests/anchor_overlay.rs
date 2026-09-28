@@ -6,8 +6,8 @@
 //!
 //! Every overlay here is DERIVED from the tree's own `map.toml` anchors, never typed:
 //! the clip case moves `dac_banks` onto the map's `sound_bank` address and
-//! `sound_bank` one DAC-to-sound distance above it, which is the collision a one-pass
-//! substitution has to get right. Every overlay build runs in a shadow tree, because
+//! `sound_bank` (and any later sound-on anchor) one DAC-to-sound distance above it,
+//! which is the collision a one-pass substitution has to get right. Every overlay build runs in a shadow tree, because
 //! a build writes its sound artifacts into the tree, and the reference tree's are
 //! shared with every canonical test running beside this one.
 
@@ -36,11 +36,32 @@ fn bank_overlay(dac: u32, snd: u32) -> AnchorOverlay {
 }
 
 /// The clip case: `dac_banks` onto the map's `sound_bank`, `sound_bank` one
-/// DAC-to-sound distance above it.
+/// DAC-to-sound distance above it, and every later sound-on anchor (a second song
+/// bank) moved up by the same distance, so the banks keep their order and spacing.
+/// Which anchors lie above the DAC banks is read from the map, not listed here.
 fn clip_overlay(aeon: &Path) -> (u32, u32, AnchorOverlay) {
     let (dac, snd) = map_bank_anchors(aeon);
-    let (to_dac, to_snd) = (snd, snd + (snd - dac));
-    (to_dac, to_snd, bank_overlay(to_dac, to_snd))
+    let delta = snd - dac;
+    let (to_dac, to_snd) = (snd, snd + delta);
+    let src = std::fs::read_to_string(aeon.join("games/sonic4/map.toml")).expect("read map.toml");
+    let pmap = load_placement_map(&src).expect("map");
+    let mut text = String::new();
+    for a in pmap.anchors_for(true).filter(|a| a.at >= dac) {
+        text.push_str(&format!("[[anchor]]\nname = \"{}\"\nat = {:#x}\n", a.name, a.at + delta));
+        if let Some(v) = a.vma {
+            text.push_str(&format!("vma = {v:#x}\n"));
+        }
+        if let Some(w) = a.when {
+            text.push_str(&format!("when = \"{}\"\n", w.as_str()));
+        }
+        text.push('\n');
+    }
+    let ov = parse_anchor_overlay(&text, "fixture/anchors.toml").expect("fixture overlay parses");
+    assert!(
+        ov.rows.iter().any(|a| a.name == "dac_banks") && ov.rows.iter().any(|a| a.name == "sound_bank"),
+        "the clip overlay must move both bank anchors"
+    );
+    (to_dac, to_snd, ov)
 }
 
 /// Canonical, then overlay, then canonical, in one process: three layouts, the first

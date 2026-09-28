@@ -1278,9 +1278,11 @@ fn corpus_context_requirements_are_satisfied_the_error_gate() {
     // 21 since aeon LS-12 (157e59bf): Sound_PlayMusic's slot capture is bracketed
     // `with ints_off { with z80_stopped { .. } }`, one more `ints_off` region (the
     // acquire is what needs the mask, see that site's comment).
+    // 22 since aeon LS-13b (62cad7b7): boot's Z80 bus hold is a `with z80_stopped`
+    // bracket, a second z80_stopped region in EntryPoint.
     assert_eq!(
         r.context_regions.len(),
-        21,
+        22,
         "the `with` bracket census moved, corpus adoption changed. Update deliberately: {:?}",
         r.context_regions
     );
