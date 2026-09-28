@@ -1,0 +1,7 @@
+refreeze: built from and operating on the same tree: /home/volence/sonic_hacks/sigil/.worktrees/pin-advance-s2/crates/sigil-harness
+refreeze --check: reachability · sigil: 34 revision(s) vs origin/master ee4089f803672ee30dae7133ef571a666df04f51, 32 reachable, 0 OBJECT ABSENT, 0 AHEAD OF REMOTE, 2 DIVERGENT, 0 COULD NOT MEASURE
+refreeze --check: reachability · aeon: 74 revision(s) vs origin/master 7f457111e72d81048fe43c0926138ac5cc395614, 74 reachable, 0 OBJECT ABSENT, 0 AHEAD OF REMOTE, 0 DIVERGENT, 0 COULD NOT MEASURE
+refreeze --check: reachability · 2 revision(s), DIVERGENT: present in this clone, but NOT reachable from origin/master (ee4089f803672ee30dae7133ef571a666df04f51), and origin/master (ee4089f803672ee30dae7133ef571a666df04f51) does not reach it either, the two histories have diverged. Orphaned by a rebase or a force-push. PERMANENT: fetching cannot fix this, because the history that carried this commit is not the history the branch has.
+refreeze --check: reachability ·   entry #181 `rebake-after-repaint` · strict.sigil_rev · sigil bfbedc11fb52183c08631034a0108be9df01f8bf
+refreeze --check: reachability ·   entry #201 `corpus-pin-advance` · strict.sigil_rev · sigil 47c97b35a72d768ac86d3c978dcc56da742403d9
+refreeze --check: OK (tip `link-zero-byte-move-placement`, chain len 206)

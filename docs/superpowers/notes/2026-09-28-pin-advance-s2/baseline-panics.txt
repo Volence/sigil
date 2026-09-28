@@ -1,0 +1,207 @@
+act_descriptor_port | crates/sigil-cli/tests/act_descriptor_port.rs:444:5: | assertion `left == right` failed: act_descriptor must emit exactly 0x15a bytes
+act_descriptor_port | crates/sigil-cli/tests/act_descriptor_port.rs:444:5: | assertion `left == right` failed: act_descriptor must emit exactly 0x15a bytes
+animate_port | crates/sigil-cli/tests/animate_port.rs:347:9: | animate vs s4.bin[0x33d6..0x356a]: first diff at offset 0x0 (region-relative)
+animate_port | crates/sigil-cli/tests/animate_port.rs:347:9: | animate vs s4.debug.bin[0x3c26..0x3ede]: first diff at offset 0x0 (region-relative)
+bg_anim_port | crates/sigil-cli/tests/bg_anim_port.rs:245:5: | assertion `left == right` failed: bg_anim (plain): length mismatch, candidate 252 bytes, expected 244 bytes
+bg_anim_port | crates/sigil-cli/tests/bg_anim_port.rs:245:5: | assertion `left == right` failed: bg_anim (debug): length mismatch, candidate 464 bytes, expected 456 bytes
+bg_anim_port | crates/sigil-cli/tests/bg_anim_port.rs:245:5: | assertion `left == right` failed: bg_anim (plain flip): length mismatch, candidate 252 bytes, expected 244 bytes
+bg_anim_port | crates/sigil-cli/tests/bg_anim_port.rs:245:5: | assertion `left == right` failed: bg_anim (debug flip): length mismatch, candidate 464 bytes, expected 456 bytes
+bg_port | crates/sigil-cli/tests/bg_port.rs:300:5: | assertion `left == right` failed: bg (plain): length mismatch, candidate 712 bytes, expected 212 bytes
+bg_port | crates/sigil-cli/tests/bg_port.rs:300:5: | assertion `left == right` failed: bg (debug): length mismatch, candidate 1000 bytes, expected 308 bytes
+boot_data_port | crates/sigil-cli/tests/boot_data_port.rs:33:5: | config_b: BootData region [0x392,0x3fe) diverges from golden at 99 offset(s); first 0x392 (rom 0x9d != golden 0x80)
+boot_data_port | crates/sigil-cli/tests/boot_data_port.rs:33:5: | s4: BootData region [0x398,0x1bfc) diverges from golden at 6047 offset(s); first 0x398 (rom 0x00 != golden 0x80)
+boot_port | crates/sigil-cli/tests/boot_port.rs:384:5: | assertion `left == right` failed: boot (debug): length mismatch, candidate 434 bytes, expected 416 bytes
+boot_port | crates/sigil-cli/tests/boot_port.rs:384:5: | assertion `left == right` failed: boot (plain): length mismatch, candidate 426 bytes, expected 408 bytes
+buffers_port | crates/sigil-cli/tests/buffers_port.rs:288:9: | buffers (debug): first diff at offset 0x0 (region-relative)
+buffers_port | crates/sigil-cli/tests/buffers_port.rs:288:9: | buffers (plain): first diff at offset 0x0 (region-relative)
+build_anchor_overlay | crates/sigil-cli/tests/build_anchor_overlay.rs:82:5: | warning: 20 warnings, module.path-mismatch 20; SIGIL_WARNINGS=full to list
+camera_port | crates/sigil-cli/tests/camera_port.rs:320:9: | camera (debug): first diff at offset 0x0 (region-relative)
+camera_port | crates/sigil-cli/tests/camera_port.rs:320:9: | camera (plain): first diff at offset 0x0 (region-relative)
+children_port | crates/sigil-cli/tests/children_port.rs:251:9: | children vs s4.bin[0x431c..0x4608]: first diff at offset 0x0 (region-relative)
+children_port | crates/sigil-cli/tests/children_port.rs:241:5: | assertion `left == right` failed: children vs s4.debug.bin[0x516c..0x5508]: length mismatch, candidate 1100 bytes, expected 924 bytes
+collision_data_port | crates/sigil-cli/tests/collision_data_port.rs:127:5: | assertion `left == right` failed: collision_data must emit 0x1d304 bytes
+collision_data_port | crates/sigil-cli/tests/collision_data_port.rs:127:5: | assertion `left == right` failed: collision_data must emit 0x1d304 bytes
+collision_lookup_port | crates/sigil-cli/tests/collision_lookup_port.rs:336:5: | assertion `left == right` failed: collision_lookup (debug) vs the pinned debug window: length mismatch, candidate 100 bytes, expected 104 bytes
+collision_lookup_port | crates/sigil-cli/tests/collision_lookup_port.rs:336:5: | assertion `left == right` failed: collision_lookup (plain) vs the pinned plain window: length mismatch, candidate 100 bytes, expected 104 bytes
+collision_port | crates/sigil-cli/tests/collision_port.rs:373:5: | assertion `left == right` failed: collision vs s4.bin[0x356a..0x3870]: length mismatch, candidate 812 bytes, expected 774 bytes
+collision_port | crates/sigil-cli/tests/collision_port.rs:373:5: | assertion `left == right` failed: collision vs s4.debug.bin[0x3ede..0x41ec]: length mismatch, candidate 820 bytes, expected 782 bytes
+compression_selftest_port | crates/sigil-cli/tests/compression_selftest_port.rs:236:9: | compression_selftest (debug): first diff at 0x0
+contract_closure_corpus | crates/sigil-cli/tests/contract_closure_corpus.rs:1281:5: | assertion `left == right` failed: the `with` bracket census moved, corpus adoption changed. Update deliberately: [("BG_Init", "z80_stopped"), ("BG_Init", "z80_stopped"), ("EntryPoint", "z80_stopped"), ("EntryPoint", "z80_stopped")
+controllers_port | crates/sigil-cli/tests/controllers_port.rs:416:9: | controllers (plain) vs the s4.bin window at pins::CONTROLLERS: first diff at offset 0x0 (region-relative)
+controllers_port | crates/sigil-cli/tests/controllers_port.rs:416:9: | controllers (debug) vs the s4.debug.bin window at pins::CONTROLLERS: first diff at offset 0x0 (region-relative)
+core_port | crates/sigil-cli/tests/core_port.rs:351:5: | assertion `left == right` failed: core vs s4.bin[0x2cce..0x2fbc]: length mismatch, candidate 752 bytes, expected 750 bytes
+core_port | crates/sigil-cli/tests/core_port.rs:351:5: | assertion `left == right` failed: core vs s4.debug.bin[0x2fb2..0x36f2]: length mismatch, candidate 1858 bytes, expected 1856 bytes
+core_port | crates/sigil-cli/tests/core_port.rs:493:5: | plain shape must emit the pinned span modulo a short align pad (emitted 0x2f0, pin 0x2ee)
+demo_native_port | crates/sigil-cli/tests/demo_native_port.rs:74:13: | demo module `demo_box` first diff at window offset 0x2 (ROM 0x10004): got [4e, f8, 18, 88], want [4e, f8, 17, 7a]
+demo_native_port | crates/sigil-cli/tests/demo_native_port.rs:74:13: | demo_debug module `demo_box` first diff at window offset 0x3 (ROM 0x10005): got [4e, f8, 1e, ea], want [4e, f8, 1e, 28]
+dma_queue_port | crates/sigil-cli/tests/dma_queue_port.rs:278:5: | assertion `left == right` failed: dma_queue (plain): length mismatch, candidate 982 bytes, expected 812 bytes
+dma_queue_port | crates/sigil-cli/tests/dma_queue_port.rs:278:5: | assertion `left == right` failed: dma_queue (debug): length mismatch, candidate 1102 bytes, expected 838 bytes
+dplc_port | crates/sigil-cli/tests/dplc_port.rs:296:9: | dplc vs s4.bin[0x2c2a..0x2cce]: first diff at offset 0x0 (region-relative)
+dplc_port | crates/sigil-cli/tests/dplc_port.rs:296:9: | dplc vs s4.debug.bin[0x2f0e..0x2fb2]: first diff at offset 0x0 (region-relative)
+dplc_port | crates/sigil-cli/tests/dplc_port.rs:296:9: | dplc (plain flip): first diff at offset 0x0 (region-relative)
+dplc_port | crates/sigil-cli/tests/dplc_port.rs:296:9: | dplc (debug flip): first diff at offset 0x0 (region-relative)
+entity_window_port | crates/sigil-cli/tests/entity_window_port.rs:332:5: | assertion `left == right` failed: entity_window vs s4.bin[0x3a2e..0x431c]: length mismatch, candidate 2288 bytes, expected 2286 bytes
+entity_window_port | crates/sigil-cli/tests/entity_window_port.rs:332:5: | assertion `left == right` failed: entity_window vs s4.debug.bin[0x4410..0x516c]: length mismatch, candidate 3524 bytes, expected 3420 bytes
+entity_window_port | crates/sigil-cli/tests/entity_window_port.rs:332:5: | assertion `left == right` failed: section (two-module flip): length mismatch, candidate 1320 bytes, expected 1120 bytes
+entity_window_port | crates/sigil-cli/tests/entity_window_port.rs:332:5: | assertion `left == right` failed: section (two-module flip): length mismatch, candidate 2392 bytes, expected 2192 bytes
+error_handler_port | crates/sigil-cli/tests/error_handler_port.rs:147:9: | error_handler vs s4.debug.bin[0xc0444..0xc14f4]: first diff at region offset 0x0
+error_handler_port | crates/sigil-cli/tests/error_handler_port.rs:147:9: | error_handler vs s4.bin[0xbcbe2..0xbdc92]: first diff at region offset 0x0
+extra_entry | crates/sigil-cli/tests/extra_entry.rs:390:5: | assertion `left == right` failed: full-file size vs the frozen golden
+game_loop_port | crates/sigil-cli/tests/game_loop_port.rs:314:5: | assertion `left == right` failed: game_loop vs s4.bin[0x255a..0x2576]: length mismatch, candidate 32 bytes, expected 28 bytes
+game_loop_port | crates/sigil-cli/tests/game_loop_port.rs:314:5: | assertion `left == right` failed: game_loop vs s4.debug.bin[0x2684..0x26a2]: length mismatch, candidate 36 bytes, expected 30 bytes
+game_loop_port | crates/sigil-cli/tests/game_loop_port.rs:452:5: | flip lower errors (vblank): [Diagnostic { level: Warning, message: "[layout.odd-field] struct DacSample: field ds_ptr (2-byte) at odd offset 3", primary: Span { source: SourceId(0), start: 17271, end: 17277 } }, Diagnostic { level
+game_loop_port | crates/sigil-cli/tests/game_loop_port.rs:452:5: | flip lower errors (vblank): [Diagnostic { level: Warning, message: "[layout.odd-field] struct DacSample: field ds_ptr (2-byte) at odd offset 3", primary: Span { source: SourceId(0), start: 17271, end: 17277 } }, Diagnostic { level
+hblank_port | crates/sigil-cli/tests/hblank_port.rs:264:9: | hblank (plain) vs reference window: first diff at offset 0x0 (region-relative)
+hblank_port | crates/sigil-cli/tests/hblank_port.rs:264:9: | hblank (debug) vs reference window: first diff at offset 0x0 (region-relative)
+keystone_flip_relocation | crates/sigil-cli/tests/keystone_flip_relocation.rs:129:5: | labeled placement regressed (independent of the fold check)
+keystone_flip_relocation | crates/sigil-cli/tests/keystone_flip_relocation.rs:63:5: | assertion `left == right` failed: flipped config_a: assembled length
+load_art_port | crates/sigil-cli/tests/load_art_port.rs:244:29: | resolve_layout failed: [Diagnostic { level: Error, message: "unresolved branch/ladder target in section load_art (symbol `PageIn_WaitIdle`)", primary: Span { source: SourceId(0), start: 9272, end: 9295 } }]
+load_art_port | crates/sigil-cli/tests/load_art_port.rs:244:29: | resolve_layout failed: [Diagnostic { level: Error, message: "unresolved branch/ladder target in section load_art (symbol `PageIn_WaitIdle`)", primary: Span { source: SourceId(0), start: 9272, end: 9295 } }]
+load_art_port | crates/sigil-cli/tests/load_art_port.rs:372:5: | flip lower errors (vblank): [Diagnostic { level: Warning, message: "[layout.odd-field] struct DacSample: field ds_ptr (2-byte) at odd offset 3", primary: Span { source: SourceId(0), start: 17271, end: 17277 } }, Diagnostic { level
+load_art_port | crates/sigil-cli/tests/load_art_port.rs:372:5: | flip lower errors (vblank): [Diagnostic { level: Warning, message: "[layout.odd-field] struct DacSample: field ds_ptr (2-byte) at odd offset 3", primary: Span { source: SourceId(0), start: 17271, end: 17277 } }, Diagnostic { level
+load_object_port | crates/sigil-cli/tests/load_object_port.rs:219:9: | load_object vs s4.debug.bin[0x5508..0x5590]: first diff at offset 0x0 (region-relative)
+load_object_port | crates/sigil-cli/tests/load_object_port.rs:219:9: | load_object vs s4.bin[0x4608..0x4690]: first diff at offset 0x0 (region-relative)
+mt_bank_port | crates/sigil-harness/src/test_support.rs:1604:9: | SIGIL_STRICT_GATE set but reference missing: /home/volence/sonic_hacks/.aeon-sigil-ref-1ee78b88/games/sonic4/data/sound/mt_bank_blob.emp
+mt_bank_port | crates/sigil-harness/src/test_support.rs:1604:9: | SIGIL_STRICT_GATE set but reference missing: /home/volence/sonic_hacks/.aeon-sigil-ref-1ee78b88/games/sonic4/data/sound/mt_bank_blob.emp
+mt_bank_port | crates/sigil-cli/tests/mt_bank_port.rs:60:65: | read: No such file or directory (os error 2)
+mt_bank_port | crates/sigil-cli/tests/mt_bank_port.rs:85:30: | called `Result::unwrap()` on an `Err` value: PoisonError { .. }
+mt_negative_probes | crates/sigil-cli/tests/mt_negative_probes.rs:149:5: | lower errors: [Diagnostic { level: Error, message: "[embed.not-found] cannot read /home/volence/sonic_hacks/.aeon-sigil-ref-1ee78b88/games/sonic4/data/sound/games/sonic4/data/sound/song_movingtrucks.bin", primary: Span { source: S
+mt_negative_probes | crates/sigil-cli/tests/mt_negative_probes.rs:225:5: | lower errors: [Diagnostic { level: Error, message: "[embed.not-found] cannot read /home/volence/sonic_hacks/.aeon-sigil-ref-1ee78b88/games/sonic4/data/sound/games/sonic4/data/sound/song_movingtrucks.bin", primary: Span { source: S
+mt_port | crates/sigil-cli/tests/mt_port.rs:173:5: | lower errors (embed/ensure): [Diagnostic { level: Error, message: "[embed.not-found] cannot read /home/volence/sonic_hacks/.aeon-sigil-ref-1ee78b88/games/sonic4/data/sound/games/sonic4/data/sound/song_movingtrucks.bin", primary: S
+mt_port | crates/sigil-cli/tests/mt_port.rs:173:5: | lower errors (embed/ensure): [Diagnostic { level: Error, message: "[embed.not-found] cannot read /home/volence/sonic_hacks/.aeon-sigil-ref-1ee78b88/games/sonic4/data/sound/games/sonic4/data/sound/song_movingtrucks.bin", primary: S
+native_full_rom | crates/sigil-cli/tests/native_full_rom.rs:345:5: | assertion `left == right` failed: control: undoctored BusError
+native_full_rom | crates/sigil-cli/tests/native_full_rom.rs:243:5: | assertion `left == right` failed: plain: assembled length
+native_full_rom | crates/sigil-cli/tests/native_full_rom.rs:243:5: | assertion `left == right` failed: debug: assembled length
+native_offcanonical_full | crates/sigil-cli/tests/native_offcanonical_full.rs:121:9: | assertion `left == right` failed: demo_debug: `GameLoop` resolved to 0xED2, size table says 0xDAC
+native_offcanonical_full | crates/sigil-cli/tests/native_offcanonical_full.rs:97:9: | assertion `left == right` failed: config_a: deb2 magic at EndOfRom
+native_offcanonical_full | crates/sigil-cli/tests/native_offcanonical_full.rs:97:9: | assertion `left == right` failed: config_b: deb2 magic at EndOfRom
+native_offcanonical_full | crates/sigil-cli/tests/native_offcanonical_full.rs:121:9: | assertion `left == right` failed: demo: `GameLoop` resolved to 0xDC6, size table says 0xD08
+native_offcanonical_full | crates/sigil-cli/tests/native_offcanonical_full.rs:100:9: | assertion `left == right` failed: lean: a CRASH_REPORT=0 profile must ship NOTHING past EndOfRom, found 0x4f10 bytes (has the deb2 symbol appendix leaked into lean?)
+native_offcanonical_placement | crates/sigil-cli/tests/native_offcanonical_placement.rs:73:8 | derive_frozen_table(config_a): 1 committed boundary label(s) absent from the resolved layout (first: Some("ObjDef_PathSwap")), a real regression, not a silent drop
+native_offcanonical_placement | crates/sigil-cli/tests/native_offcanonical_placement.rs:233: | control: undoctored config_b anchor must match the golden
+native_offcanonical_placement | crates/sigil-cli/tests/native_offcanonical_placement.rs:74:5 | assertion `left == right` failed: demo_debug: LMA-native derivation diverged from the committed table (re-derive the offcanonical_sizes/*.txt with `derive_offcanon`?)
+native_offcanonical_placement | crates/sigil-cli/tests/native_offcanonical_placement.rs:42:5 | config_b frozen chainer misplaced 58 declared section(s); first: Some(("BootData", 932, 914))
+native_offcanonical_placement | crates/sigil-cli/tests/native_offcanonical_placement.rs:73:8 | derive_frozen_table(config_b): 1 committed boundary label(s) absent from the resolved layout (first: Some("ObjDef_PathSwap")), a real regression, not a silent drop
+native_offcanonical_placement | crates/sigil-cli/tests/native_offcanonical_placement.rs:73:8 | derive_frozen_table(lean): 1 committed boundary label(s) absent from the resolved layout (first: Some("ObjDef_PathSwap")), a real regression, not a silent drop
+native_offcanonical_placement | crates/sigil-cli/tests/native_offcanonical_placement.rs:74:5 | assertion `left == right` failed: demo: LMA-native derivation diverged from the committed table (re-derive the offcanonical_sizes/*.txt with `derive_offcanon`?)
+native_offcanonical_rom | crates/sigil-cli/tests/native_offcanonical_rom.rs:75:5: | demo: anchor diverges from golden at 24760 offset(s); first 0x72 (sig 0xb1 != gold 0xb2)
+native_offcanonical_rom | crates/sigil-cli/tests/native_offcanonical_rom.rs:72:5: | assertion `left == right` failed: config_b: assembled length
+native_offcanonical_rom | crates/sigil-cli/tests/native_offcanonical_rom.rs:72:5: | assertion `left == right` failed: lean: assembled length
+native_offcanonical_rom | crates/sigil-cli/tests/native_offcanonical_rom.rs:72:5: | assertion `left == right` failed: config_a: assembled length
+native_offcanonical_rom | crates/sigil-cli/tests/native_offcanonical_rom.rs:75:5: | demo_debug: anchor diverges from golden at 38132 offset(s); first 0x72 (sig 0xb1 != gold 0xb3)
+native_rom | crates/sigil-harness/src/lib.rs:260:5: | assertion `left == right` failed: native all-gates (debug) vs s4.debug.bin (assembled-ROM bar) ROM length changed (dropped/added section, or an org skip lost content?); expected EndOfRom 0xc14f4
+native_rom | crates/sigil-harness/src/lib.rs:260:5: | assertion `left == right` failed: native all-gates (plain) vs s4.bin (assembled-ROM bar) ROM length changed (dropped/added section, or an org skip lost content?); expected EndOfRom 0xbdc92
+objdef_port | crates/sigil-cli/tests/objdef_port.rs:480:9: | objdefs vs s4.bin: first diff at region offset 0x0 (record 0, field-off 0x0)
+objdef_port | crates/sigil-cli/tests/objdef_port.rs:480:9: | objdefs vs s4.debug.bin: first diff at region offset 0x0 (record 0, field-off 0x0)
+ojz_run_a_port | crates/sigil-cli/tests/ojz_run_a_port.rs:313:9: | assertion `left == right` failed: `entity_data` must emit exactly 0x188 bytes
+ojz_run_a_port | crates/sigil-cli/tests/ojz_run_a_port.rs:313:9: | assertion `left == right` failed: `entity_data` must emit exactly 0x188 bytes
+ojz_run_b_port | crates/sigil-cli/tests/ojz_run_b_port.rs:432:9: | assertion `left == right` failed: `sec_block_blobs` must emit exactly 0xb72e bytes (modulo a short align pad)
+ojz_run_b_port | crates/sigil-cli/tests/ojz_run_b_port.rs:432:9: | assertion `left == right` failed: `sec_block_blobs` must emit exactly 0xb72e bytes (modulo a short align pad)
+parallax_port | crates/sigil-cli/tests/parallax_port.rs:487:5: | assertion `left == right` failed: parallax (plain): length mismatch, candidate 3412 bytes, expected 2776 bytes
+parallax_port | crates/sigil-cli/tests/parallax_port.rs:487:5: | assertion `left == right` failed: parallax (debug): length mismatch, candidate 3654 bytes, expected 3000 bytes
+particle_anims_port | crates/sigil-cli/tests/particle_anims_port.rs:250:5: | assertion `left == right` failed: particle_anims (debug) vs s4.debug.bin[0x2BCC8..0x2BCCF]
+plane_buffer_port | crates/sigil-cli/tests/plane_buffer_port.rs:317:5: | assertion `left == right` failed: plane_buffer (plain): length mismatch, candidate 796 bytes, expected 794 bytes
+plane_buffer_port | crates/sigil-cli/tests/plane_buffer_port.rs:317:5: | assertion `left == right` failed: plane_buffer (debug): length mismatch, candidate 1338 bytes, expected 1206 bytes
+plane_buffer_port | crates/sigil-cli/tests/plane_buffer_port.rs:317:5: | assertion `left == right` failed: plane_buffer (two-module flip): length mismatch, candidate 796 bytes, expected 794 bytes
+plane_buffer_port | crates/sigil-cli/tests/plane_buffer_port.rs:317:5: | assertion `left == right` failed: plane_buffer (two-module flip): length mismatch, candidate 1338 bytes, expected 1206 bytes
+raster_negative_probes | crates/sigil-cli/tests/raster_negative_probes.rs:308:5: | assertion `left == right` failed: the CLEAN build must match the reference
+raster_port | crates/sigil-cli/tests/raster_port.rs:364:9: | raster (plain) vs reference window: first diff at offset 0x0 (region-relative)
+raster_port | crates/sigil-cli/tests/raster_port.rs:364:9: | raster (debug) vs reference window: first diff at offset 0x0 (region-relative)
+rings_port | crates/sigil-cli/tests/rings_port.rs:430:5: | assertion `left == right` failed: rings vs s4.bin[0x3870..0x3a2e]: length mismatch, candidate 444 bytes, expected 446 bytes
+rings_port | crates/sigil-cli/tests/rings_port.rs:430:5: | assertion `left == right` failed: rings vs s4.debug.bin[0x41ec..0x4410]: length mismatch, candidate 546 bytes, expected 548 bytes
+s4lz_port | crates/sigil-cli/tests/s4lz_port.rs:186:5: | assertion `left == right` failed: s4lz (plain): length mismatch, candidate 326 bytes, expected 248 bytes
+s4lz_port | crates/sigil-cli/tests/s4lz_port.rs:186:5: | assertion `left == right` failed: s4lz (debug): length mismatch, candidate 410 bytes, expected 512 bytes
+scene_registry_port | crates/sigil-cli/tests/scene_registry_port.rs:89:9: | parallax_configs (plain) first diff at region offset 0x0: got [00, 00, 00, 00, 00, 00, 00, 00], expected [24, 78, bd, 0e, 70, 00, 10, 2a]
+scene_registry_port | crates/sigil-cli/tests/scene_registry_port.rs:89:9: | parallax_configs (debug) first diff at region offset 0x0: got [00, 00, 00, 00, 00, 00, 00, 00], expected [11, 11, 11, 11, 66, 66, 66, 66]
+seam1_native_link | crates/sigil-cli/tests/seam1_native_link.rs:67:5: | assertion `left == right` failed: native blob (debug) vs the s4.debug.bin window at blob_lma(true): length mismatch (blob 6358 vs reference 6306)
+seam1_native_link | crates/sigil-cli/tests/seam1_native_link.rs:67:5: | assertion `left == right` failed: native blob (plain) vs the s4.bin window at blob_lma(false): length mismatch (blob 6228 vs reference 6176)
+seam1_native_link | crates/sigil-cli/tests/seam1_native_link.rs:192:9: | assertion `left == right` failed: blob length vs the pinned corpus length (debug=false)
+seam1_native_link | crates/sigil-cli/tests/seam1_native_link.rs:157:5: | emitted resident blob is 6228 B plain / 6358 B debug; the pinned corpus is BLOB_LEN_PLAIN 6176 / BLOB_LEN_DEBUG 6306
+seam2_dac_head_colink | crates/sigil-cli/tests/seam2_dac_head_colink.rs:65:5: | assertion `left == right` failed: DacSampleTable is 10 × 12 + the head-tail align pad = 127 bytes
+seam2_layout_derivation | crates/sigil-cli/tests/seam2_layout_derivation.rs:65:5: | assertion `left == right` failed: map-derived seam-2 placement drifted from the frozen chain-22 addresses
+seam2_layout_derivation | crates/sigil-cli/tests/seam2_layout_derivation.rs:132:40: | derivation succeeds with the moved anchor: "mt_bank.emp lower errors: [Diagnostic { level: Error, message: \"[sandbox.path-escape] embed/import path must stay within the source directory\", primary: Span { source: SourceId(0), sta
+seam2_mt_tables_optional | crates/sigil-cli/tests/seam2_mt_tables_optional.rs:68:9: | assertion `left == right` failed: the reference games/sonic4/data/sound/mt_bank.emp carries `data SongPatchTable` 0 times in section mt_bank; this test derives its input by cutting it out, so it cannot build that input
+seam2_mt_tables_optional | crates/sigil-cli/tests/seam2_mt_tables_optional.rs:68:9: | assertion `left == right` failed: the reference games/sonic4/data/sound/mt_bank.emp carries `data SongTable` 0 times in section mt_bank; this test derives its input by cutting it out, so it cannot build that input
+seam2_mt_tables_optional | crates/sigil-cli/tests/seam2_mt_tables_optional.rs:68:9: | assertion `left == right` failed: the reference games/sonic4/data/sound/mt_bank.emp carries `data SongTable` 0 times in section mt_bank; this test derives its input by cutting it out, so it cannot build that input
+seam2_mt_tables_optional | crates/sigil-cli/tests/seam2_mt_tables_optional.rs:68:9: | assertion `left == right` failed: the reference games/sonic4/data/sound/mt_bank.emp carries `data SongTable` 0 times in section mt_bank; this test derives its input by cutting it out, so it cannot build that input
+seam2_pitchtable | crates/sigil-cli/tests/seam2_pitchtable.rs:59:13: | movingtrucks_pitchtable differs from s4.bin @ byte 0x0: emp 0x00 vs rom 0x3f
+seam2_seq_colink | crates/sigil-cli/tests/seam2_seq_colink.rs:71:13: | co-linked SeqOpcodeTable differs from plain reference @ slot 0 byte 0: emp 0xf6 vs rom 0x0e
+seam2_sfx_head_colink | crates/sigil-cli/tests/seam2_sfx_head_colink.rs:95:9: | assertion `left == right` failed: sfx_bank body is 2284 bytes
+seam2_soundtables_colink | crates/sigil-cli/tests/seam2_soundtables_colink.rs:63:13: | sound_tables_z80 differs from s4.bin @ byte 0x28f: emp 0x41 vs rom 0xa5
+section_port | crates/sigil-cli/tests/section_port.rs:360:5: | assertion `left == right` failed: section (plain): length mismatch, candidate 1320 bytes, expected 1120 bytes
+section_port | crates/sigil-cli/tests/section_port.rs:360:5: | assertion `left == right` failed: section (debug): length mismatch, candidate 2392 bytes, expected 2192 bytes
+section_row_fixture | crates/sigil-cli/tests/section_row_fixture.rs:153:9: | assertion `left == right` failed: s4: must reproduce the provenance tip (91c46c94/820209); got 50401674/845398
+sfx_bank_port | crates/sigil-cli/tests/sfx_bank_port.rs:63:73: | link: [Diagnostic { level: Error, message: "unresolved symbol `Song_MovingTrucks` for fixup in section sfx_bank_blob at offset 1604", primary: Span { source: SourceId(0), start: 6452, end: 6686 } }, Diagnostic { level: Error, mess
+sfx_bank_port | crates/sigil-cli/tests/sfx_bank_port.rs:67:30: | called `Result::unwrap()` on an `Err` value: PoisonError { .. }
+sfx_negative_probes | crates/sigil-cli/tests/sfx_negative_probes.rs:522:5: | mt lower: [Diagnostic { level: Error, message: "[embed.not-found] cannot read /home/volence/sonic_hacks/.aeon-sigil-ref-1ee78b88/games/sonic4/data/sound/games/sonic4/data/sound/song_movingtrucks.bin", primary: Span { source: Sourc
+sfx_port | crates/sigil-cli/tests/sfx_port.rs:245:9: | sfx_bank (plain) vs s4.bin[0xBD568..0xBDBAB]: first diff at offset 0x0 (region-relative)
+sfx_port | crates/sigil-cli/tests/sfx_port.rs:245:9: | sfx_bank (debug) vs s4.debug.bin[0xBEFB0..0xBF5F3]: first diff at offset 0x0 (region-relative)
+sonic_anims_port | crates/sigil-cli/tests/sonic_anims_port.rs:264:9: | sonic_anims (plain) first diff at region offset 0x1: got [00, 30, 00, 3a, 00, 40, 00, 4a, 00], expected [00, 03, ff, ec, 08, 00, 00, 00, ff]
+sonic_anims_port | crates/sigil-cli/tests/sonic_anims_port.rs:264:9: | sonic_anims (debug) first diff at region offset 0x0: got [00, 30, 00, 3a, 00, 40, 00, 4a], expected [64, 5e, 64, 5e, 64, 5e, 64, 5d]
+sound_api_port | crates/sigil-cli/tests/sound_api_port.rs:400:5: | assertion `left == right` failed: sound_api vs s4.bin[0x8246..0x84f6]: length mismatch, candidate 726 bytes, expected 688 bytes
+sound_api_port | crates/sigil-cli/tests/sound_api_port.rs:400:5: | assertion `left == right` failed: sound_api vs s4.debug.bin[0xb47e..0xb8d8]: length mismatch, candidate 1152 bytes, expected 1114 bytes
+soundbankhead_port | crates/sigil-cli/tests/soundbankhead_port.rs:101:5: | assertion `left == right` failed: soundbankhead must emit 0x630 bytes ($8000..$8628)
+soundbankhead_port | crates/sigil-cli/tests/soundbankhead_port.rs:101:5: | assertion `left == right` failed: soundbankhead must emit 0x630 bytes ($8000..$8628)
+sprites_port | crates/sigil-cli/tests/sprites_port.rs:361:5: | assertion `left == right` failed: sprites vs s4.bin[0x2fbc..0x33d6]: length mismatch, candidate 1040 bytes, expected 1050 bytes
+sprites_port | crates/sigil-cli/tests/sprites_port.rs:361:5: | assertion `left == right` failed: sprites vs s4.debug.bin[0x36f2..0x3c26]: length mismatch, candidate 1330 bytes, expected 1332 bytes
+test_g1_objects_port | crates/sigil-cli/tests/test_g1_objects_port.rs:303:9: | test_static vs s4.bin: first diff at offset 0x0 (region-relative)
+test_g1_objects_port | crates/sigil-cli/tests/test_g1_objects_port.rs:439:5: | assertion `left == right` failed: undoctored test_animated must match
+test_g1_objects_port | crates/sigil-cli/tests/test_g1_objects_port.rs:303:9: | test_static vs s4.debug.bin: first diff at offset 0x0 (region-relative)
+test_g2_objects_port | crates/sigil-cli/tests/test_g2_objects_port.rs:479:5: | assertion `left == right` failed: undoctored test_churn must match
+test_g2_objects_port | crates/sigil-cli/tests/test_g2_objects_port.rs:354:9: | test_emitter vs s4.debug.bin: first diff at offset 0x0 (region-relative)
+test_g3_objects_port | crates/sigil-cli/tests/test_g3_objects_port.rs:304:9: | test_parent vs s4.debug.bin: first diff at offset 0x0 (region-relative)
+test_g3_objects_port | crates/sigil-cli/tests/test_g3_objects_port.rs:403:5: | assertion `left == right` failed: undoctored test_parent must match
+test_g4_final_objects_port | crates/sigil-cli/tests/test_g4_final_objects_port.rs:154:29: | cannot read /home/volence/sonic_hacks/.aeon-sigil-ref-1ee78b88/games/sonic4/objects/path_swap.emp: No such file or directory (os error 2)
+test_g4_final_objects_port | crates/sigil-cli/tests/test_g4_final_objects_port.rs:154:29: | cannot read /home/volence/sonic_hacks/.aeon-sigil-ref-1ee78b88/games/sonic4/objects/path_swap.emp: No such file or directory (os error 2)
+test_g4_final_objects_port | crates/sigil-cli/tests/test_g4_final_objects_port.rs:154:29: | cannot read /home/volence/sonic_hacks/.aeon-sigil-ref-1ee78b88/games/sonic4/objects/path_swap.emp: No such file or directory (os error 2)
+test_g4_final_objects_port | crates/sigil-cli/tests/test_g4_final_objects_port.rs:154:29: | cannot read /home/volence/sonic_hacks/.aeon-sigil-ref-1ee78b88/games/sonic4/objects/path_swap.emp: No such file or directory (os error 2)
+test_mappings_port | crates/sigil-cli/tests/test_mappings_port.rs:158:9: | test_mappings (debug) first diff at region offset 0x0: got [00, 06, 00, 14, 00, 22, f8, 08], expected [64, 04, 64, 05, 64, 06, 64, 00]
+test_mappings_port | crates/sigil-cli/tests/test_mappings_port.rs:158:9: | test_mappings (plain) first diff at region offset 0x0: got [00, 06, 00, 14, 00, 22, f8, 08], expected [ff, fc, 0d, 00, 00, 03, ff, f2]
+test_objects_port | crates/sigil-cli/tests/test_objects_port.rs:374:29: | resolve_layout failed: [Diagnostic { level: Error, message: "sections `test_solid` [0x123C6, 0x128AC) and `test_particle` [0x124E8, 0x12540) overlap in the image (colliding pins)", primary: Span { source: SourceId(0), start: 2037,
+test_objects_port | crates/sigil-cli/tests/test_objects_port.rs:374:29: | resolve_layout failed: [Diagnostic { level: Error, message: "sections `test_solid` [0x128CC, 0x12E0C) and `test_particle` [0x12A48, 0x12AA0) overlap in the image (colliding pins)", primary: Span { source: SourceId(0), start: 2037,
+test_p1_player_port | crates/sigil-cli/tests/test_p1_player_port.rs:199:5: | assertion `left == right` failed: player_common (plain): length mismatch, candidate 2502 bytes, expected 1888 bytes
+test_p1_player_port | crates/sigil-cli/tests/test_p1_player_port.rs:843:9: | assertion `left == right` failed: undoctored player_common must match the reference window
+test_p1_player_port | crates/sigil-cli/tests/test_p1_player_port.rs:199:5: | assertion `left == right` failed: player_common (debug): length mismatch, candidate 2780 bytes, expected 2166 bytes
+test_p1_player_port | crates/sigil-cli/tests/test_p1_player_port.rs:209:9: | sonic (plain): first diff at offset 0x0 (region-relative)
+test_p1_player_port | crates/sigil-cli/tests/test_p1_player_port.rs:209:9: | sonic (debug): first diff at offset 0x1 (region-relative)
+test_p2_player_states_port | crates/sigil-cli/tests/test_p2_player_states_port.rs:514:9: | assertion `left == right` failed: undoctored player_spindash must match the reference window
+test_p2_player_states_port | crates/sigil-cli/tests/test_p2_player_states_port.rs:262:5: | assertion `left == right` failed: player_spindash (plain): length mismatch, candidate 222 bytes, expected 160 bytes
+test_p2_player_states_port | crates/sigil-cli/tests/test_p2_player_states_port.rs:262:5: | assertion `left == right` failed: player_spindash (debug): length mismatch, candidate 218 bytes, expected 156 bytes
+test_p2_player_states_port | crates/sigil-cli/tests/test_p2_player_states_port.rs:473:29: | player_air resolve_layout failed: [Diagnostic { level: Error, message: "unresolved branch/ladder target in section player_air (symbol `Player_SensorLand`)", primary: Span { source: SourceId(0), start: 29766, end: 29791 } }]
+test_p2_player_states_port | crates/sigil-cli/tests/test_p2_player_states_port.rs:473:29: | player_air resolve_layout failed: [Diagnostic { level: Error, message: "unresolved branch/ladder target in section player_air (symbol `Player_SensorLand`)", primary: Span { source: SourceId(0), start: 29766, end: 29791 } }]
+test_p2_player_states_port | crates/sigil-cli/tests/test_p2_player_states_port.rs:473:29: | player_air resolve_layout failed: [Diagnostic { level: Error, message: "unresolved branch/ladder target in section player_air (symbol `Player_SensorLand`)", primary: Span { source: SourceId(0), start: 29766, end: 29791 } }]
+test_p2_player_states_port | crates/sigil-cli/tests/test_p2_player_states_port.rs:473:29: | player_air resolve_layout failed: [Diagnostic { level: Error, message: "unresolved branch/ladder target in section player_air (symbol `Player_SensorLand`)", primary: Span { source: SourceId(0), start: 29766, end: 29791 } }]
+test_p2_player_states_port | crates/sigil-cli/tests/test_p2_player_states_port.rs:629:9: | assertion `left == right` failed: undoctored player_ground must match the reference window
+test_p2_player_states_port | crates/sigil-cli/tests/test_p2_player_states_port.rs:262:5: | assertion `left == right` failed: player_ground (debug): length mismatch, candidate 1224 bytes, expected 1162 bytes
+test_p2_player_states_port | crates/sigil-cli/tests/test_p2_player_states_port.rs:262:5: | assertion `left == right` failed: player_ground (plain): length mismatch, candidate 1228 bytes, expected 1168 bytes
+test_p4_player_sensors_port | crates/sigil-cli/tests/test_p4_player_sensors_port.rs:152:5: | assertion `left == right` failed: player_sensors (plain): length mismatch, candidate 1340 bytes, expected 1268 bytes
+test_p4_player_sensors_port | crates/sigil-cli/tests/test_p4_player_sensors_port.rs:299:9: | assertion `left == right` failed: undoctored player_sensors must match the reference window
+test_p4_player_sensors_port | crates/sigil-cli/tests/test_p4_player_sensors_port.rs:152:5: | assertion `left == right` failed: player_sensors (debug): length mismatch, candidate 1340 bytes, expected 1268 bytes
+tile_cache_port | crates/sigil-cli/tests/tile_cache_port.rs:298:29: | resolve_layout failed: [Diagnostic { level: Error, message: "unresolved symbolic absolute operand in section tile_cache references symbol `Cache_H_Pfx_Run` not defined in this link, expected when compiling a cross-seam module stan
+tile_cache_port | crates/sigil-cli/tests/tile_cache_port.rs:298:29: | resolve_layout failed: [Diagnostic { level: Error, message: "unresolved symbolic absolute operand in section tile_cache references symbol `Cache_H_Pfx_Run` not defined in this link, expected when compiling a cross-seam module stan
+tile_cache_port | crates/sigil-cli/tests/tile_cache_port.rs:669:29: | resolve_layout failed: [Diagnostic { level: Error, message: "unresolved symbolic absolute operand in section tile_cache references symbol `Cache_H_Pfx_Run` not defined in this link, expected when compiling a cross-seam module stan
+tile_cache_port | crates/sigil-cli/tests/tile_cache_port.rs:669:29: | resolve_layout failed: [Diagnostic { level: Error, message: "unresolved symbolic absolute operand in section tile_cache references symbol `Cache_H_Pfx_Run` not defined in this link, expected when compiling a cross-seam module stan
+tranche3_negative_probes | crates/sigil-cli/tests/tranche3_negative_probes.rs:568:5: | assertion `left == right` failed: the genuine fixtures must reproduce the reference window, otherwise every assert_ne! probe in this file passes for the wrong reason
+tranche3_negative_probes | crates/sigil-cli/tests/tranche3_negative_probes.rs:585:5: | assertion `left == right` failed: the genuine fixtures must reproduce the reference window, otherwise every assert_ne! probe in this file passes for the wrong reason
+tranche4_negative_probes | crates/sigil-cli/tests/tranche4_negative_probes.rs:154:5: | assertion `left == right` failed: control: the UNDOCTORED compile must byte-match s4.debug.bin[0x2BCC8..0x2BCCF], if it does not, the window address is wrong and the doctored arm below proves nothing
+vblank_port | crates/sigil-cli/tests/vblank_port.rs:239:5: | vblank.emp lower errors: [Diagnostic { level: Warning, message: "[layout.odd-field] struct DacSample: field ds_ptr (2-byte) at odd offset 3", primary: Span { source: SourceId(0), start: 17271, end: 17277 } }, Diagnostic { level: W
+vblank_port | crates/sigil-cli/tests/vblank_port.rs:239:5: | vblank.emp lower errors: [Diagnostic { level: Warning, message: "[layout.odd-field] struct DacSample: field ds_ptr (2-byte) at odd offset 3", primary: Span { source: SourceId(0), start: 17271, end: 17277 } }, Diagnostic { level: W
+vdp_init_port | crates/sigil-cli/tests/vdp_init_port.rs:405:9: | vdp_init (debug) vs the pinned s4.debug.bin window: first diff at offset 0x0 (region-relative)
+vdp_init_port | crates/sigil-cli/tests/vdp_init_port.rs:405:9: | vdp_init (plain) vs the pinned s4.bin window: first diff at offset 0x0 (region-relative)
+vectors_port | crates/sigil-cli/tests/vectors_port.rs:191:9: | vectors vs s4.debug.bin[0..0x100]: first diff at 0xa
+vectors_port | crates/sigil-cli/tests/vectors_port.rs:191:9: | vectors vs s4.bin[0..0x100]: first diff at 0x9
+warn_tier_corpus | crates/sigil-cli/tests/warn_tier_corpus.rs:631:5: | an admitted warn-tier lint fired in 7 place(s) no SITE_WATCH row lists. Either the class reached code it had never reached (adjudicate it and, if it stays, pin the file), or aeon renamed a file that was already pinned, in which ca
+sigil_harness | crates/sigil-harness/src/test_support.rs:224:28: | with_engine_constant_override: `NOT_A_CONSTANT` is not an engine constant
+anchor_overlay | crates/sigil-harness/tests/anchor_overlay.rs:89:33: | the overlay build (debug=false) failed:
+listing_equ_shape_aware | crates/sigil-harness/tests/listing_equ_shape_aware.rs:151:5: | assertion `left == right` failed: UNMEASURED: expected exactly one `cmpi.w #imm, d6` in `Level_LoadArt` [$00984A, $009914), found [(986C, 9), (987A, 9)]. The use site cannot be identified
+m1c_vector_table | crates/sigil-harness/tests/m1c_vector_table.rs:201:9: | vector table first diff at offset 0x9: sigil 0x0b != golden 0x0c
+m68k_roundtrip_stream | crates/sigil-harness/tests/m68k_roundtrip_stream.rs:233:5: | NOT_IN_STREAM rows that ARE now emitted: ["exg"], delete the stale rows so their coverage claim stays true
+provenance_chain | crates/sigil-harness/tests/provenance_chain.rs:181:5: | AEON_DIR pairing: /home/volence/sonic_hacks/.aeon-sigil-ref-1ee78b88 is at aeon 1ee78b88b003da5ffbd8fa061eab7d56505c201a, but the goldens were frozen from aeon ec640bcf70e263167223a33d987d4661ff221b7e (provenance tip `link-zero-by
+reference_tree_write_guard | crates/sigil-harness/src/native.rs:863:45: | ensure_generated writes into the reference tree: reference tree not at /tmp/sigil-absent-aeon-2100218-ensure-generated-1790608447737295666 (no games/sonic4/map.toml), set AEON_DIR to an aeon checkout. Nothing was created: a sound 
+region_end_contracts | crates/sigil-harness/tests/region_end_contracts.rs:160:9: | the refusal names the region: region `test_particle` plain_anchor: symbol `ObjDef_PathSwap` not found in the listing symbol table
+region_end_contracts | crates/sigil-harness/tests/region_end_contracts.rs:107:29: | a region's end contract is violated:
+repin_pins | crates/sigil-harness/tests/repin_pins.rs:63:74: | resolve: region `test_particle` plain_anchor: symbol `ObjDef_PathSwap` not found in the listing symbol table
+s8_seam_size | crates/sigil-harness/tests/s8_seam_size.rs:172:17: | assertion `left == right` failed: a seam declares a total of 30 over rows summing to 31 -- the report contradicts itself:
+sound_fold_heads | crates/sigil-harness/tests/sound_fold_heads.rs:191:5: | assertion `left == right` failed: `pub data Song_MovingTrucks ` must be defined by exactly one sound module, found []
+sigil_link | crates/sigil-link/src/code_file.rs:105:9: | a record holds at most 0xFFFF bytes
+sigil_s4lz | crates/sigil-s4lz/src/lib.rs:266:19: | sigil_s4lz::compress: DictTileDeltaExclusive

@@ -1,0 +1,3 @@
+repin: built from and operating on the same tree: /home/volence/sonic_hacks/sigil/.worktrees/pin-advance-s2/crates/sigil-harness
+reference-tree: /home/volence/sonic_hacks/.aeon-sigil-ref-1ee78b88 (SUITE_PATHS step 1, named by AEON_DIR)
+repin: region `test_particle` plain_anchor: symbol `ObjDef_PathSwap` not found in the listing symbol table
