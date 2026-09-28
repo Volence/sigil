@@ -145,12 +145,13 @@ pub const SHAPE_GATES: &[(&str, ShapeGate)] = &[
     // under `debug || crash_report`, the lean handler under the `else`.
     (ERROR_HANDLER_MODULE_ID, ShapeGate::FaultIsland),
     (RELEASE_FAULT_MODULE_ID, ShapeGate::LeanFault),
-    // Sound-on only: the sound caller and the four Z80 bank sections.
+    // Sound-on only: the sound caller and the Z80 bank sections.
     ("engine.sound_api", ShapeGate::SoundOn),
     ("games.sonic4.dac_banks", ShapeGate::SoundOn),
     ("games.sonic4.mt_bank_blob", ShapeGate::SoundOn),
     ("games.sonic4.sfx_bank_blob", ShapeGate::SoundOn),
     ("games.sonic4.soundbankhead", ShapeGate::SoundOn),
+    ("games.sonic4.song_bank2", ShapeGate::SoundOn),
     // Sound-off only: the Z80 idle program (the map's `[[hole]]` it fills is
     // `when = "sound_off"` too).
     ("engine.z80_init", ShapeGate::SoundOff),

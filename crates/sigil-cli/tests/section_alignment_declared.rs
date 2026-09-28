@@ -185,11 +185,13 @@ fn the_requirements_above_16_are_declared_held_or_rounded() {
         }
     }
     for (label, _) in ROUNDED_ABOVE_16 {
-        let rows = frozen_in(label);
+        let rows: Vec<String> =
+            frozen_in(label).into_iter().map(|(shape, a)| format!("{shape} {a:#x}")).collect();
         assert!(
             rows.is_empty(),
-            "ROUNDED `{label}` has a frozen row {rows:?}; the walk would hold it there as an \
-             island rather than round it"
+            "ROUNDED `{label}` has a frozen row ({}); the walk would hold it there as an \
+             island rather than round it",
+            rows.join(", ")
         );
     }
 }
