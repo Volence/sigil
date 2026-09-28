@@ -311,13 +311,16 @@ fn run_impl(
 }
 
 /// The `SIGIL_PHASE_TIMING` line for pass `pass` of [`run_passes`]: its wall time
-/// and peak, the size of the environment it produced, and what the oscillation
-/// history holds (`history_key_bytes` is the text of every retained name; the
-/// map nodes around them are not counted). Nothing when timing is off.
+/// and peak, the size of the environment it produced, how that environment differs
+/// from the one the pass was seeded with (names added, removed and changed, the
+/// difference that decides whether another pass runs, with a few of each), and what
+/// the oscillation history holds (`history_key_bytes` is the text of every retained
+/// name; the map nodes around them are not counted). Nothing when timing is off.
 fn phase_pass_line(
     pass: usize,
     t_pass: Option<std::time::Instant>,
     env: &SymbolTable,
+    seed: &SymbolTable,
     history: &[SymbolTable],
     outcome: &str,
 ) {
@@ -326,13 +329,41 @@ fn phase_pass_line(
     }
     let entries: usize = history.iter().map(|t| t.iter().count()).sum();
     let key_bytes: usize = history.iter().flat_map(|t| t.iter()).map(|(k, _)| k.len()).sum();
+    let old: std::collections::BTreeMap<&String, &SymbolValue> = seed.iter().collect();
+    let new: std::collections::BTreeMap<&String, &SymbolValue> = env.iter().collect();
+    let added: Vec<&str> = new.keys().filter(|k| !old.contains_key(*k)).map(|k| k.as_str()).collect();
+    let removed: Vec<&str> = old.keys().filter(|k| !new.contains_key(*k)).map(|k| k.as_str()).collect();
+    let changed: Vec<String> = new
+        .iter()
+        .filter_map(|(k, v)| match old.get(k) {
+            Some(o) if o != v => Some(format!("{k}:{o:?}->{v:?}")),
+            _ => None,
+        })
+        .collect();
+    // The changed name with the lowest previous value: for addresses, where a shift
+    // between the two passes begins.
+    let lowest_changed = new
+        .iter()
+        .filter_map(|(k, v)| match (old.get(k), v) {
+            (Some(SymbolValue::Int(o)), SymbolValue::Int(n)) if o != n => Some((*o, *n, k.as_str())),
+            _ => None,
+        })
+        .min()
+        .map_or(String::new(), |(o, n, k)| format!("{k}:{o:#x}->{n:#x}"));
+    let sample = |v: &[&str]| v.iter().take(6).copied().collect::<Vec<_>>().join(",");
+    let changed_sample = changed.iter().take(6).cloned().collect::<Vec<_>>().join(",");
     sigil_span::phase::phase(
         &format!("pass{pass}"),
         t_pass,
         &format!(
-            "outcome={outcome}\tenv_entries={}\thistory_tables={}\thistory_entries={entries}\thistory_key_bytes={key_bytes}",
+            "outcome={outcome}\tenv_entries={}\tenv_added={}\tenv_removed={}\tenv_changed={}\thistory_tables={}\thistory_entries={entries}\thistory_key_bytes={key_bytes}\tadded_sample={}\tremoved_sample={}\tchanged_sample={changed_sample}\tlowest_changed={lowest_changed}",
             env.iter().count(),
-            history.len()
+            added.len(),
+            removed.len(),
+            changed.len(),
+            history.len(),
+            sample(&added),
+            sample(&removed),
         ),
     );
 }
@@ -659,7 +690,7 @@ fn run_passes(
                 } else {
                     Ok(Assembled { module, warnings: diags, messages, shared, sources: last_sources })
                 };
-                phase_pass_line(pass, t_pass, &env, &history, "converged");
+                phase_pass_line(pass, t_pass, &env, &prev, &history, "converged");
                 return PassRun {
                     result,
                     fatals: carried_fatals,
@@ -667,7 +698,7 @@ fn run_passes(
                     settled: true,
                 };
             }
-            phase_pass_line(pass, t_pass, &env, &history, "converged-bonus-follows");
+            phase_pass_line(pass, t_pass, &env, &prev, &history, "converged-bonus-follows");
             let t_bonus = sigil_span::phase::clock();
             let bonus = one_pass_with_defer(
                 src,
@@ -760,7 +791,8 @@ fn run_passes(
         let t_hist = sigil_span::phase::clock();
         history.push(std::mem::replace(&mut prev, env.clone()));
         sigil_span::phase::step("  pass.history_push", t_hist, "");
-        phase_pass_line(pass, t_pass, &env, &history, "continue");
+        let before = history.last().unwrap_or(&prev);
+        phase_pass_line(pass, t_pass, &env, before, &history, "continue");
         seed = env;
         macros = m;
         functions = f;

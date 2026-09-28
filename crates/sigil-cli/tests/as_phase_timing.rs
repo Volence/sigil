@@ -102,6 +102,16 @@ fn lines_appear_with_the_variable_set() {
     let passes = names.iter().filter(|n| n.starts_with("pass") && !n.contains('.')).count();
     let execs: Vec<_> = lines.iter().filter(|(n, _)| n == "  pass.exec").collect();
     assert_eq!(execs.len(), passes, "one exec step per pass.\nstderr:\n{stderr}");
+    // Pass 0 is seeded empty, so everything it defines is added; the converged pass
+    // produced the environment it was given, so it adds, removes and changes nothing.
+    let pass_line = |name: &str| &lines.iter().find(|(n, _)| n == name).expect("pass line").1;
+    let first = pass_line("pass0");
+    assert_eq!(field(first, "env_added"), field(first, "env_entries"), "stderr:\n{stderr}");
+    let last = pass_line(&format!("pass{}", passes - 1));
+    assert_eq!(field(last, "outcome"), Some("converged"), "stderr:\n{stderr}");
+    for key in ["env_added", "env_removed", "env_changed"] {
+        assert_eq!(field(last, key), Some("0"), "{key} on the converged pass.\nstderr:\n{stderr}");
+    }
     for (_, fields) in execs {
         assert_eq!(field(fields, "include_read_calls"), Some("1"), "stderr:\n{stderr}");
         assert_eq!(field(fields, "binclude_read_calls"), Some("1"), "stderr:\n{stderr}");
