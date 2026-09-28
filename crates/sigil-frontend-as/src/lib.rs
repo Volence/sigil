@@ -15,6 +15,7 @@ mod lexer;
 mod nameless;
 mod operands;
 mod parser;
+mod seed;
 mod state;
 mod token;
 

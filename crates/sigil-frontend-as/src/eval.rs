@@ -100,6 +100,14 @@ impl Clone for SrcLine {
     }
 }
 
+/// Two lines are equal when their text and position are: the memo is a cache
+/// of what the text answers, not part of the line.
+impl PartialEq for SrcLine {
+    fn eq(&self, other: &Self) -> bool {
+        self.text == other.text && self.base == other.base && self.source == other.source
+    }
+}
+
 /// The span a loop is entered from: its CLOSING line. asl collects the whole
 /// block before it runs it, so the enclosing frame names the `endm`, not the
 /// line that opened the loop and not the line inside it: `mymac(3) REPT 1(1)`
@@ -149,7 +157,7 @@ pub(crate) fn next_stamp() -> u64 {
 type MacroTable = std::collections::BTreeMap<String, MacroDef>;
 
 /// One captured macro definition.
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 struct MacroDef {
     /// Declared parameter names, in order. A `{INTLABEL}` group is NOT one of
     /// them: it declares a capture, not a slot, and consumes no argument
@@ -287,7 +295,9 @@ fn run_impl(
     opts: &Options,
     force_relocate: bool,
 ) -> Result<Assembled, Failure> {
+    let t_count = sigil_span::phase::clock();
     let stopped = run_passes(src, root_name, opts, force_relocate, false);
+    sigil_span::phase::step("frontend.passes", t_count, &format!("passes={}", stopped.passes));
     let failure = match stopped.result {
         Ok(a) => return Ok(a),
         Err(f) => f,
@@ -323,6 +333,7 @@ fn phase_pass_line(
     seed: &SymbolTable,
     history: &[SymbolTable],
     outcome: &str,
+    reads_note: &str,
 ) {
     if t_pass.is_none() {
         return;
@@ -356,7 +367,7 @@ fn phase_pass_line(
         &format!("pass{pass}"),
         t_pass,
         &format!(
-            "outcome={outcome}\tenv_entries={}\tenv_added={}\tenv_removed={}\tenv_changed={}\thistory_tables={}\thistory_entries={entries}\thistory_key_bytes={key_bytes}\tadded_sample={}\tremoved_sample={}\tchanged_sample={changed_sample}\tlowest_changed={lowest_changed}",
+            "outcome={outcome}\tenv_entries={}\tenv_added={}\tenv_removed={}\tenv_changed={}\thistory_tables={}\thistory_entries={entries}\thistory_key_bytes={key_bytes}\tadded_sample={}\tremoved_sample={}\tchanged_sample={changed_sample}\tlowest_changed={lowest_changed}{reads_note}",
             env.iter().count(),
             added.len(),
             removed.len(),
@@ -381,6 +392,8 @@ struct PassRun {
     /// or refused a circular layout, returns a whole-run failure rather than a
     /// pass's diagnostics, so it cannot vouch for which errors are real.
     settled: bool,
+    /// How many ordinary passes ran (the bonus pass is not counted).
+    passes: usize,
 }
 
 /// Put every `fatal` first, and drop from `failure` each error that exists
@@ -530,6 +543,7 @@ fn run_passes(
             labels: pass_labels,
             label_ref_equs: pass_label_ref_equs,
             sources,
+            reads,
         } = one_pass(
             src,
             root_name,
@@ -568,6 +582,7 @@ fn run_passes(
                 fatals: carried_fatals,
                 stopped_at_fatal: false,
                 settled: false,
+                passes: pass + 1,
             };
         }
         // A `fatal` raised on ANY pass survives to the returned diagnostics.
@@ -611,7 +626,53 @@ fn run_passes(
             }
         }
         let t_cmp = sigil_span::phase::clock();
-        let converged = pass > 0 && env == prev;
+        let already_failed =
+            !carried_fatals.is_empty() || diags.iter().any(|d| d.level == Level::Error);
+        // Whether the converged branch below would return this pass's own module
+        // rather than run the bonus pass.
+        let returns_this_pass = !force_relocate && (poison.is_empty() || already_failed);
+        // CONVERGENCE. Pass N+1 would be seeded with this pass's tables. It
+        // executes exactly as this pass did, and so produces this pass's
+        // module, diagnostics and tables, when either
+        //
+        // (a) the environment is the one this pass was seeded with, the
+        //     original test; or
+        // (b) every answer this pass took from its seed (a symbol's value,
+        //     whether a name is defined, a label or label-equ membership, a
+        //     macro or function lookup, the previous pass's instance index) is
+        //     the answer this pass's output gives. Every read of a seed is
+        //     recorded, structurally: the seeded tables live in
+        //     `crate::seed`, whose fields nothing else can reach, and whose
+        //     every reading method records before it answers. A name ADDED
+        //     this pass that nothing read before defining it changes no
+        //     answer, which is the whole of the saving.
+        //
+        // (b) is used only where this pass's module is returned. The bonus
+        // pass runs with different flags and can read what this pass did not,
+        // so a run that goes on to it keeps test (a) alone.
+        let env_settled = env == prev;
+        let read_change = if pass > 0 && !env_settled && returns_this_pass {
+            reads.first_change(&env, &pass_labels, &pass_label_ref_equs, &m, &f)
+        } else {
+            Some(String::new())
+        };
+        let converged = pass > 0 && (env_settled || read_change.is_none());
+        let reads_note = if t_cmp.is_some() {
+            let by = if !converged {
+                "none"
+            } else if env_settled {
+                "env"
+            } else {
+                "reads"
+            };
+            format!(
+                "\tconverged_by={by}\tfirst_read_change={}\t{}",
+                read_change.as_deref().unwrap_or(""),
+                reads.census()
+            )
+        } else {
+            String::new()
+        };
         sigil_span::phase::step("  pass.converge_check", t_cmp, "");
         if converged {
             // Converged: this pass's env is authoritative. A final bonus pass (seeded
@@ -653,9 +714,7 @@ fn run_passes(
             // conjunct, so the CHAINED path that legitimately hands those fragments
             // to a composition never reaches this reasoning at all.
             // `failed_run_reports_everything.rs` pins both directions.
-            let already_failed =
-                !carried_fatals.is_empty() || diags.iter().any(|d| d.level == Level::Error);
-            if !force_relocate && (poison.is_empty() || already_failed) {
+            if returns_this_pass {
                 let mut module = module;
                 restore_missing_equ_exports(&mut module, &ever_exported, &env);
                 attach_guarded_equ_exports(&mut module, &opts.guarded_defines);
@@ -690,15 +749,16 @@ fn run_passes(
                 } else {
                     Ok(Assembled { module, warnings: diags, messages, shared, sources: last_sources })
                 };
-                phase_pass_line(pass, t_pass, &env, &prev, &history, "converged");
+                phase_pass_line(pass, t_pass, &env, &prev, &history, "converged", &reads_note);
                 return PassRun {
                     result,
                     fatals: carried_fatals,
                     stopped_at_fatal: pass_stopped_at_fatal,
                     settled: true,
+                    passes: pass + 1,
                 };
             }
-            phase_pass_line(pass, t_pass, &env, &prev, &history, "converged-bonus-follows");
+            phase_pass_line(pass, t_pass, &env, &prev, &history, "converged-bonus-follows", &reads_note);
             let t_bonus = sigil_span::phase::clock();
             let bonus = one_pass_with_defer(
                 src,
@@ -755,6 +815,7 @@ fn run_passes(
                 fatals: carried_fatals,
                 stopped_at_fatal: bonus_stopped_at_fatal,
                 settled: true,
+                passes: pass + 1,
             };
         }
         // THE OSCILLATION PROOF. `one_pass` is deterministic and its only
@@ -782,6 +843,7 @@ fn run_passes(
                 fatals: carried_fatals,
                 stopped_at_fatal: false,
                 settled: false,
+                passes: pass + 1,
             };
         }
         // `prev` already holds the previous pass's environment, so it MOVES into
@@ -792,7 +854,7 @@ fn run_passes(
         history.push(std::mem::replace(&mut prev, env.clone()));
         sigil_span::phase::step("  pass.history_push", t_hist, "");
         let before = history.last().unwrap_or(&prev);
-        phase_pass_line(pass, t_pass, &env, before, &history, "continue");
+        phase_pass_line(pass, t_pass, &env, before, &history, "continue", &reads_note);
         seed = env;
         macros = m;
         functions = f;
@@ -831,6 +893,7 @@ fn run_passes(
         fatals: carried_fatals,
         stopped_at_fatal: false,
         settled: false,
+        passes: SETTLE_GUARD,
     }
 }
 
@@ -1083,6 +1146,8 @@ struct PassOutput {
     env: SymbolTable,
     macros: MacroTable,
     functions: FunctionTable,
+    /// Every answer this pass took from the tables it was seeded with.
+    reads: crate::seed::SeedReads<MacroDef, (Vec<String>, Vec<Token>)>,
     diags: Vec<Diagnostic>,
     /// Operand symbols that folded to Poison this pass (name + site span).
     poison: Vec<(String, Span)>,
@@ -1231,13 +1296,14 @@ fn one_pass_with_defer(
     let mut asm = Asm::new_with_defer(opts, defer_unresolved_jsr_jmp);
     asm.mompass = mompass;
     asm.look_past_fatal = look_past_fatal;
-    asm.env = seed_env.clone();
-    asm.prev_owned = index_instance_owned(seed_env);
-    asm.macros = seed_macros.clone();
+    asm.env = crate::seed::SeededEnv::new(seed_env.clone());
+    asm.macros = crate::seed::Seeded::new(seed_macros.clone());
     asm.macros_gen = next_stamp();
-    asm.functions = seed_functions.clone();
-    asm.known_labels = seed_labels.clone();
-    asm.label_ref_equs = seed_label_ref_equs.clone();
+    asm.functions = crate::seed::Seeded::new(seed_functions.clone());
+    asm.known_labels = crate::seed::Seeded::new(seed_labels.clone());
+    asm.label_ref_equs = crate::seed::Seeded::new(seed_label_ref_equs.clone());
+    asm.predefined =
+        opts.defines.iter().chain(&opts.guarded_defines).map(|(k, _)| k.clone()).collect();
     asm.seed_cli_defines(&opts.cli_defines);
     sigil_span::phase::step("  pass.seed", t_seed, "");
     let t_exec = sigil_span::phase::clock();
@@ -1342,11 +1408,23 @@ fn one_pass_with_defer(
             asm.include_census.refused_too_deep,
         );
     }
+    let (env, env_reads) = asm.env.finish();
+    let (macros, macro_reads) = asm.macros.finish();
+    let (functions, function_reads) = asm.functions.finish();
+    let (labels, label_reads) = asm.known_labels.finish();
+    let (label_ref_equs, label_ref_equ_reads) = asm.label_ref_equs.finish();
     PassOutput {
         module,
-        env: asm.env,
-        macros: asm.macros,
-        functions: asm.functions,
+        env,
+        macros,
+        functions,
+        reads: crate::seed::SeedReads {
+            env: env_reads,
+            labels: label_reads,
+            label_ref_equs: label_ref_equ_reads,
+            macros: macro_reads,
+            functions: function_reads,
+        },
         diags,
         circular_layout: asm.circular_layout,
         poison: asm.poison_refs,
@@ -1354,8 +1432,8 @@ fn one_pass_with_defer(
         author_warnings: asm.author_warnings,
         messages: asm.messages,
         shared: asm.shared,
-        labels: asm.known_labels,
-        label_ref_equs: asm.label_ref_equs,
+        labels,
+        label_ref_equs,
         sources: asm.sources,
     }
 }
@@ -1586,7 +1664,10 @@ struct Asm {
     z80: Z80Backend,
     m68k: M68kBackend,
     state: crate::state::AsmState,
-    env: SymbolTable,
+    /// The symbol environment: the previous pass's, with this pass's bindings on
+    /// top. Every read of what the previous pass left is recorded (see
+    /// [`crate::seed`]).
+    env: crate::seed::SeededEnv,
     /// Front-end-only string-valued symbols (`.__str set "BUS ERROR"`).
     /// §7.4: strings NEVER enter `sigil_ir::SymbolValue`; they live here in the
     /// evaluator. Keyed by fully-qualified name exactly like `env` (see
@@ -1695,8 +1776,8 @@ struct Asm {
     /// what turns a span into `file(line)`; without it a diagnostic's offset has
     /// nothing to resolve against.
     sources: sigil_span::SourceMap,
-    functions: FunctionTable,
-    macros: MacroTable,
+    functions: crate::seed::Seeded<FunctionTable>,
+    macros: crate::seed::Seeded<MacroTable>,
     /// The [`HeadKey::macros_gen`] stamp: renewed whenever [`Self::macros`]
     /// changes, so a keyword memoised against one table answers only while
     /// that table stands.
@@ -1763,12 +1844,6 @@ struct Asm {
     /// names that scope owns; see [`scan_plain_labels`] for the measurement and
     /// [`Asm::plain_label_scope`] for the lookup rule.
     expansion_labels: Vec<ExpansionLabelScope>,
-    /// Which instances filed each name on the PREVIOUS pass: bare name to the
-    /// instance keys (` exp#N`) the seed environment carries it under. Built
-    /// once per pass by [`index_instance_owned`]; read by
-    /// [`Asm::plain_label_scope`] so a forward reference inside a body finds a
-    /// definition the body scan could not claim.
-    prev_owned: std::collections::HashMap<String, Vec<String>>,
     /// Monotonic instance counter behind the keys in `expansion_labels`. It
     /// counts iterations as well as expansions, so two iterations of one `rept`
     /// get two namespaces, which is what `p7` measures. Per-`Asm`, hence per
@@ -1939,7 +2014,12 @@ struct Asm {
     /// Baking is kept only for env-only `equ`/`set` targets the linker cannot
     /// see. Labels vs. `equ`s are indistinguishable in `env` (both hold an
     /// `Int`), so this dedicated name set is the discriminator.
-    known_labels: std::collections::HashSet<String>,
+    known_labels: crate::seed::Seeded<std::collections::HashSet<String>>,
+    /// The names the caller defines before the source runs
+    /// ([`Options::defines`], [`Options::guarded_defines`]). They seed the
+    /// environment without being bound by any line, and `ifdef` counts them as
+    /// defined from the first line of every pass.
+    predefined: std::collections::HashSet<String>,
     /// The [`SymClass`] each fully-qualified name was DECLARED with, **in this
     /// pass only**.
     ///
@@ -1989,7 +2069,7 @@ struct Asm {
     /// label reference (kept symbolic). A pure-constant equ never enters this
     /// set and keeps baking. Threaded across passes so a forward reference
     /// through such an equ is recognized before its definition line.
-    label_ref_equs: std::collections::HashSet<String>,
+    label_ref_equs: crate::seed::Seeded<std::collections::HashSet<String>>,
     /// Every REASSIGNABLE set-symbol (`set`/`:=`) whose CURRENT value derives
     /// from a section LABEL (`P_DBG := DeformTable`, or a chain `P_DFG :=
     /// PC_FG_T` onto another such set), mapped to the `relax_safe_fold`ed
@@ -2007,27 +2087,6 @@ struct Asm {
     /// unchanged. A set reassigned to a label-free value clears its entry and
     /// reverts to baking.
     set_sym_symbolic: std::collections::HashMap<String, Expr>,
-    /// Every fully-qualified symbol name this pass has DEFINED so far, in
-    /// traversal order of definition, and never seeded from a previous pass.
-    ///
-    /// This is what `DEFINED(NAME)` answers from, and it exists because `env`
-    /// cannot answer the question. `env` IS seeded from the previous pass (that
-    /// is how a forward reference gets a value), so it holds every symbol the
-    /// program will ever define from the first line of every pass after the
-    /// first, and asking it "is this defined yet" gets a yes for a label a
-    /// hundred lines below.
-    ///
-    /// asl's own answer is positional and RESETS each pass, which is measured
-    /// rather than assumed: in a two-pass file whose `jmp Later` resolves to
-    /// `Later`'s address on pass 2, `dc.b DEFINED(Later)` above it is `00` on
-    /// pass 2 just as it was on pass 1 (probe `db.asm`, `2 passes`, `0 errors`,
-    /// exit 0). Carrying the value forward and carrying the DEFINEDNESS forward
-    /// are separate, and asl carries only the first.
-    ///
-    /// Populated by [`Asm::define_sym`], which is the single writer for every
-    /// symbol-defining form, so a form that binds a name without going through
-    /// it would be invisible here and not merely late.
-    defined_this_pass: std::collections::HashSet<String>,
     /// Symbols a LAYOUT-DETERMINING expression named while they were still
     /// undefined at that point in this pass, keyed by the qualified name, with
     /// every site that named them. A `rept` count and a `ds` count are the two
@@ -2281,7 +2340,7 @@ impl Asm {
             z80: Z80Backend,
             m68k: M68kBackend,
             state: crate::state::AsmState::new(opts.initial_cpu),
-            env: SymbolTable::new(),
+            env: crate::seed::SeededEnv::new(SymbolTable::new()),
             str_env: std::collections::HashMap::new(),
             float_env: std::collections::HashMap::new(),
             enum_next: 0,
@@ -2300,8 +2359,8 @@ impl Asm {
             diags: Vec::new(),
             source: SourceId(0),
             sources: sigil_span::SourceMap::new(),
-            functions: std::collections::BTreeMap::new(),
-            macros: std::collections::BTreeMap::new(),
+            functions: crate::seed::Seeded::new(std::collections::BTreeMap::new()),
+            macros: crate::seed::Seeded::new(std::collections::BTreeMap::new()),
             macros_gen: next_stamp(),
             pending_int_label: None,
             macro_depth: 0,
@@ -2317,7 +2376,6 @@ impl Asm {
             exit_expansion: false,
             expansion_depth: 0,
             expansion_labels: Vec::new(),
-            prev_owned: std::collections::HashMap::new(),
             expansion_label_seq: 0,
             nameless: Default::default(),
             plain_label_cache: std::collections::HashMap::new(),
@@ -2341,14 +2399,14 @@ impl Asm {
             share_file: opts.share_file,
             shared: Vec::new(),
             mompass: LATER_PASS,
-            known_labels: std::collections::HashSet::new(),
+            known_labels: crate::seed::Seeded::new(std::collections::HashSet::new()),
+            predefined: std::collections::HashSet::new(),
             sym_class: std::collections::HashMap::new(),
             value_stacks: std::collections::BTreeMap::new(),
             save_sites: Vec::new(),
             call_line: None,
-            label_ref_equs: std::collections::HashSet::new(),
+            label_ref_equs: crate::seed::Seeded::new(std::collections::HashSet::new()),
             set_sym_symbolic: std::collections::HashMap::new(),
-            defined_this_pass: std::collections::HashSet::new(),
             layout_watch: std::collections::HashMap::new(),
             pc_derived: std::collections::HashSet::new(),
             flow_epoch: 0,
@@ -2530,7 +2588,7 @@ impl Asm {
         if self.expansion_labels.is_empty() {
             return None;
         }
-        let prev = self.prev_owned.get(name);
+        let prev = self.env.owners(name);
         self.expansion_labels
             .iter()
             .rev()
@@ -2625,7 +2683,6 @@ impl Asm {
     /// together or they drift apart silently.
     fn define_sym(&mut self, key: &str, value: SymbolValue) {
         self.env.define(key, value);
-        self.defined_this_pass.insert(key.to_string());
     }
 
     /// Conjuncts (a) and (b): watch every symbol a LAYOUT-DETERMINING expression
@@ -2786,7 +2843,7 @@ impl Asm {
     /// ([`Self::sym_key`]), so a local `.loc` asks about the same key the
     /// definition wrote.
     fn sym_defined_now(&self, name: &str) -> bool {
-        self.builtin_num(name).is_some() || self.defined_this_pass.contains(&self.sym_key(name))
+        self.builtin_num(name).is_some() || self.env.defined_this_pass(&self.sym_key(name))
     }
 
     fn sym_key(&self, name: &str) -> String {
@@ -2813,7 +2870,7 @@ impl Asm {
         // is first written and the answer cannot change between two returned
         // passes.
         let k = self.owned_by_head(q.clone());
-        if k != q && self.env.resolve(&k, Some("")).is_none() && !self.defined_this_pass.contains(&k) {
+        if k != q && self.env.resolve(&k).is_none() && !self.env.defined_this_pass(&k) {
             q
         } else {
             k
@@ -2832,7 +2889,7 @@ impl Asm {
     /// scope to rebuild it with. Passing `None` there makes every `.v` in a
     /// scopeless file unresolvable — measured, as four `asl_snippets` fixups.
     fn resolve_sym(&self, name: &str) -> Option<i64> {
-        self.env.resolve(&self.sym_key(name), Some(""))
+        self.env.resolve(&self.sym_key(name))
     }
 
     /// Push a namespace for one expansion INSTANCE and return its key. The
@@ -2978,7 +3035,7 @@ impl Asm {
         self.open_section_if_needed();
         let value = self.here_i64();
         let key = self.file_in_innermost(name).unwrap_or_else(|| name.to_string());
-        if self.defined_this_pass.contains(&key) {
+        if self.env.defined_this_pass(&key) {
             self.err(
                 span,
                 format!(
@@ -3217,7 +3274,64 @@ impl Asm {
     /// is genuinely undefined rather than a pending forward ref). A fault is
     /// reported here and now, with the same 0 placeholder.
     fn fold_imm(&mut self, e: &Expr, span: Span, lo: i64, hi: i64) -> i64 {
-        match self.fold(e) {
+        let folded = self.fold(e);
+        self.settle_imm(folded, e, span, lo, hi)
+    }
+
+    /// Fold a `(d16,An)` displacement, which differs from [`Self::fold_imm`]
+    /// only in the placeholder an unknown symbol takes on the FIRST pass.
+    ///
+    /// asl documents that "if an unknown symbol is detected in the first pass,
+    /// the formula parser delivers the program counter's current value as
+    /// result" (manual section 2.11, "Forward References and Other
+    /// Disasters"). The displacement's value there decides only one thing that
+    /// outlives the pass: whether [`collapse_zero_disp`] drops the extension
+    /// word.
+    ///
+    /// The stand-in is per SYMBOL, not per expression: each unknown name takes
+    /// the location counter and the expression is then evaluated, so
+    /// `Fwd-2(a1)` at `*` = 2 is 0 and collapses, as it does under asl.
+    /// Measured on the reference asl: `move.b d0,Fwd(a1)` with `Fwd equ $3E`
+    /// later is laid out 2 bytes long on pass 1 at `*` = 0 and at `*` =
+    /// `$10000`, and 4 bytes long at `*` = 2, so the collapse reads the low 16
+    /// bits of the value. A 0 placeholder collapsed every forward displacement
+    /// on pass 0 and moved every address after it on pass 1, which is a whole
+    /// extra pass on Sonic 1.
+    ///
+    /// On a later pass an unknown symbol is either an error or a name no pass
+    /// has defined yet, and the ordinary 0 placeholder stands.
+    fn fold_disp16(&mut self, e: &Expr, span: Span) -> i64 {
+        let folded = self.fold(e);
+        if self.mompass == FIRST_PASS && matches!(folded, Fold::Poison) {
+            self.route_poison_names(e, span);
+            return match self.fold_unknown_as_pc(e) {
+                Fold::Value(v) => v as i16 as i64,
+                _ => self.here_i64() as i16 as i64,
+            };
+        }
+        self.settle_imm(folded, e, span, i16::MIN as i64, i16::MAX as i64)
+    }
+
+    /// [`Self::fold`] with asl's first-pass rule for a name that has no value
+    /// yet: it stands for the location counter. A register name still has no
+    /// value.
+    fn fold_unknown_as_pc(&self, e: &Expr) -> Fold {
+        let pc = self.here_i64();
+        e.fold(&|name| {
+            if self.reads_as_register(name) {
+                return None;
+            }
+            self.builtin_num(name)
+                .or_else(|| self.resolve_sym(name))
+                .or_else(|| self.resolve_str_packed(name))
+                .or(Some(pc))
+        })
+    }
+
+    /// The range check and placeholder half of [`Self::fold_imm`], for a fold
+    /// already taken.
+    fn settle_imm(&mut self, folded: Fold, e: &Expr, span: Span, lo: i64, hi: i64) -> i64 {
+        match folded {
             Fold::Value(v) if v >= lo && v <= hi => v,
             Fold::Value(v) => {
                 self.err(span, format!("operand {v} out of range {lo}..={hi}"));
@@ -7206,8 +7320,23 @@ impl Asm {
     /// `ifdef $$x` is false and `ifndef $$y` true whether or not the `$$`
     /// name is bound, as asl's `DEFINED` is 0 for one (probe `i07`: `2222`,
     /// and no `1111`, with `$$x:` two lines above).
+    ///
+    /// The answer is POSITIONAL: a name counts only once THIS pass has bound it
+    /// (or the caller predefined it), never because an earlier pass did. asl,
+    /// measured: `ifdef B` above `B = 1` is false on every pass (`c3`, 1 pass,
+    /// `00`), and a name only an earlier pass's layout bound is not seen
+    /// (`a12`, `a16`). Reading the environment instead, which carries every
+    /// name any earlier pass bound, answered `ifdef` from a previous pass.
     fn cond_defined(&self, arg_toks: &[Token]) -> bool {
-        matches!(arg_toks.first().map(|t| &t.tok), Some(Tok::Ident(n)) if !is_temp_sym(n) && self.resolve_sym(n).is_some())
+        let Some(Tok::Ident(n)) = arg_toks.first().map(|t| &t.tok) else {
+            return false;
+        };
+        if is_temp_sym(n) {
+            return false;
+        }
+        let key = self.sym_key(n);
+        (self.env.defined_this_pass(&key) || self.predefined.contains(&key))
+            && self.resolve_sym(n).is_some()
     }
 
     /// `if MOMCPUNAME="Z80"` / `<lhs>="str"` / `"a"="a"` / `"a"<>"b"` string
@@ -7547,7 +7676,7 @@ impl Asm {
             return name.to_string();
         }
         let base = self.temp_sym_base(name);
-        let prev = self.prev_owned.get(&base);
+        let prev = self.env.owners(&base);
         match self
             .expansion_labels
             .iter()
@@ -10993,7 +11122,7 @@ impl Asm {
                 // opcode word, 4-byte imm32, d16 word).
                 let n = m68k_addr_reg(an)?;
                 let qd = self.qualify_expr(disp);
-                let d = self.fold_imm(&qd, span, i16::MIN as i64, i16::MAX as i64);
+                let d = self.fold_disp16(&qd, span);
                 // Zero-offset fold: `Sym(a1)` with Sym == 0 (e.g. SST_code_addr)
                 // encodes (An) mode 2 — no dest ext word — exactly as asl's
                 // zeroOffsetOptimization does on the eager path. That fold runs
@@ -11618,7 +11747,28 @@ impl Asm {
         Some(match a {
             OperandAtom::Imm(e) => {
                 let (lo, hi) = m68k_imm_bounds(size);
-                let v = self.fold_imm(e, span, lo, hi);
+                // An unknown immediate takes the placeholder 1, not 0. The
+                // placeholder never reaches an image (a symbol still unknown
+                // on the returned pass is an error), so the one thing it
+                // decides is whether the instruction encodes at all this
+                // pass, and so how many bytes it lays out. 0 is outside the
+                // quick forms' range (`addq`/`subq` and the shift counts take
+                // 1 to 8), so `addq.w #Fwd,d0` used to lay out as nothing and
+                // move every address after it on the next pass. 1 is inside
+                // the range of every 68000 immediate operand. asl's own
+                // first-pass value (each unknown name standing for `*`) can
+                // be anything, and asl lays the instruction out whatever it
+                // is: `addq.w #Fwd+20,d0` at `*` = 2 is 22 there, out of
+                // range, and asl still takes 2 passes with `5440`. An
+                // immediate's value never changes a 68000 instruction's
+                // size, so any encodable stand-in lays out what asl's does.
+                let folded = self.fold(e);
+                let v = if matches!(folded, Fold::Poison) {
+                    self.route_poison_names(e, span);
+                    1
+                } else {
+                    self.settle_imm(folded, e, span, lo, hi)
+                };
                 M68kOperand::Imm(v as i32)
             }
             OperandAtom::RegOrCond(w) => {
@@ -11756,7 +11906,7 @@ impl Asm {
                         return None;
                     }
                 };
-                let d = self.fold_imm(disp, span, i16::MIN as i64, i16::MAX as i64);
+                let d = self.fold_disp16(disp, span);
                 M68kOperand::Disp16An(d as i16, n)
             }
             OperandAtom::M68kIdx {
@@ -15101,28 +15251,6 @@ fn scan_plain_labels(body: &[SrcLine]) -> std::collections::BTreeSet<String> {
         if colon || !indented {
             out.insert(name.to_string());
         }
-    }
-    out
-}
-
-/// Index an environment's instance-filed keys by the name they file:
-/// ` exp#7.Lp` contributes `Lp -> [" exp#7"]`, ` exp#3. nameless+#2` contributes
-/// ` nameless+#2 -> [" exp#3"]`. A name several instances filed (a macro invoked
-/// twice) maps to every one of them; the reader picks the one that is live.
-///
-/// Only ` exp#` keys are read: the `.`-local scopes a macro expansion opens
-/// (` macro#N`) have their own resolution rule and are not instances.
-fn index_instance_owned(env: &SymbolTable) -> std::collections::HashMap<String, Vec<String>> {
-    const PREFIX: &str = " exp#";
-    let mut out: std::collections::HashMap<String, Vec<String>> = std::collections::HashMap::new();
-    for (key, _) in env.iter() {
-        let Some(rest) = key.strip_prefix(PREFIX) else { continue };
-        let Some(dot) = rest.find('.') else { continue };
-        if dot == 0 || !rest[..dot].bytes().all(|b| b.is_ascii_digit()) {
-            continue;
-        }
-        let instance = &key[..PREFIX.len() + dot];
-        out.entry(rest[dot + 1..].to_string()).or_default().push(instance.to_string());
     }
     out
 }
@@ -21462,4 +21590,141 @@ fn apply_num_builtin(name: &str, arg: Num) -> Option<Num> {
     }
     let y = float_builtin(name)?(arg.as_f64());
     y.is_finite().then_some(Num::Float(y))
+}
+
+#[cfg(test)]
+mod pass_count_tests {
+    use super::run_passes;
+    use crate::Options;
+    use sigil_ir::backend::Cpu;
+
+    /// Assemble `src` through the pass loop and return how many ordinary
+    /// passes ran and the flattened image.
+    fn passes_and_bytes(src: &str) -> (usize, Vec<u8>) {
+        let opts = Options { initial_cpu: Some(Cpu::M68000), ..Options::default() };
+        let run = run_passes(src, "t.asm", &opts, false, false);
+        let passes = run.passes;
+        let m = match run.result {
+            Ok(a) => a.module,
+            Err(f) => panic!(
+                "assembly failed: {:?}",
+                f.diags.iter().map(|d| &d.message).collect::<Vec<_>>()
+            ),
+        };
+        let resolved = sigil_link::resolve_layout(&m.sections, &sigil_ir::SymbolTable::new(), true)
+            .expect("resolve_layout");
+        let linked = sigil_link::link(&resolved, &sigil_ir::SymbolTable::new()).expect("link");
+        (passes, sigil_link::flatten(&linked, 0x00).unwrap())
+    }
+
+    /// asl gives an unknown symbol the location counter on its first pass, so a
+    /// forward `(d16,An)` displacement away from `*` = 0 is laid out long on
+    /// pass 1 and the layout never moves: 2 passes under asl, `0006 1340 003E
+    /// 4E71`. A 0 placeholder laid it out short and took a third pass.
+    #[test]
+    fn a_forward_displacement_away_from_zero_is_long_on_the_first_pass() {
+        let src = "\tcpu 68000\n\tdc.w After\n\tmove.b d0,Fwd(a1)\nAfter:\tnop\nFwd\tequ $3E\n";
+        assert_eq!(
+            passes_and_bytes(src),
+            (2, vec![0x00, 0x06, 0x13, 0x40, 0x00, 0x3E, 0x4E, 0x71])
+        );
+    }
+
+    /// The other half of asl's rule: at `*` = 0 the placeholder IS zero, the
+    /// displacement collapses to `(An)` on the first pass, and the next pass
+    /// grows it, moving `After` from 2 to 4. asl takes 3 passes on this source
+    /// because a value moved. sigil takes 2: pass 1 reads `After` only after
+    /// defining it and `Fwd` gives it the same answer as before, so nothing
+    /// pass 1 read from pass 0 changed.
+    #[test]
+    fn a_forward_displacement_at_zero_collapses_on_the_first_pass_as_asl_does() {
+        let src = "\tcpu 68000\n\tmove.b d0,Fwd(a1)\nAfter:\tnop\n\tdc.w After\nFwd\tequ $3E\n";
+        assert_eq!(
+            passes_and_bytes(src),
+            (2, vec![0x13, 0x40, 0x00, 0x3E, 0x4E, 0x71, 0x00, 0x04])
+        );
+    }
+
+    /// An unknown quick immediate still lays out its instruction: `addq.w
+    /// #Fwd-Fwd2,d0` ahead of its equates is 2 bytes on every pass, so `X` never
+    /// moves. asl: 2 passes, `5240 4E71 0002`.
+    #[test]
+    fn an_unknown_quick_immediate_still_lays_out_its_instruction() {
+        let src = "\tcpu 68000\n\taddq.w #Fwd-Fwd2,d0\nX:\tnop\n\tdc.w X\nFwd\tequ 7\nFwd2\tequ 6\n";
+        assert_eq!(passes_and_bytes(src), (2, vec![0x52, 0x40, 0x4E, 0x71, 0x00, 0x02]));
+    }
+
+    /// PLANTED CONTROL for read-set convergence. `dc.w After` reads a label
+    /// before this pass defines it. On pass 0 the displacement `Fwd-2` is 0 (each
+    /// unknown name stands for `*` = 2) and collapses, so `After` is 4; pass 1
+    /// lays the move out long and `After` becomes 6. The record that pass 1
+    /// read `After` as 4 is what sends the run to pass 2; without it pass 1 is
+    /// returned with `0004`. Expected bytes and pass count are asl's
+    /// (md5 61e67256): 3 passes, `0006 1340 003E 4E71`.
+    #[test]
+    fn control_a_label_read_before_its_definition_forces_the_next_pass() {
+        let src = "\tcpu 68000\n\tdc.w After\n\tmove.b d0,Fwd-2(a1)\nAfter:\tnop\nFwd\tequ $40\n";
+        assert_eq!(
+            passes_and_bytes(src),
+            (3, vec![0x00, 0x06, 0x13, 0x40, 0x00, 0x3E, 0x4E, 0x71])
+        );
+    }
+
+    /// PLANTED CONTROL, through an equate: `Y equ After+1` is read before its
+    /// definition and moves with `After`. asl: 3 passes, `0007 1340 003E 4E71`.
+    #[test]
+    fn control_an_equate_read_before_its_definition_forces_the_next_pass() {
+        let src = "\tcpu 68000\n\tdc.w Y\n\tmove.b d0,Fwd-2(a1)\nAfter:\tnop\nY\tequ After+1\nFwd\tequ $40\n";
+        assert_eq!(
+            passes_and_bytes(src),
+            (3, vec![0x00, 0x07, 0x13, 0x40, 0x00, 0x3E, 0x4E, 0x71])
+        );
+    }
+
+    /// A name added on pass 1 (`B`, under `if After=6`) that nothing reads
+    /// before its definition costs no pass: 2, where asl and whole-environment
+    /// comparison take 3. Bytes are asl's: `4E71 1340 003E 01 00`.
+    #[test]
+    fn an_added_name_nobody_reads_early_does_not_cost_a_pass() {
+        let src = "\tcpu 68000\n\tnop\n\tmove.b d0,Fwd-2(a1)\nAfter:\n\tif After=6\nB = 1\n\tendif\n\tdc.b B\n\tdc.b 0\nFwd\tequ $40\n";
+        assert_eq!(
+            passes_and_bytes(src),
+            (2, vec![0x4E, 0x71, 0x13, 0x40, 0x00, 0x3E, 0x01, 0x00])
+        );
+    }
+
+    /// `ifdef` is positional within the pass, as asl's is: `ifdef B` above
+    /// `B = 1` is false on every pass. asl: `00` (probe `c1`).
+    #[test]
+    fn ifdef_does_not_see_a_name_defined_further_down() {
+        let src = "\tcpu 68000\n\tifdef B\n\tdc.b $BB\n\tendif\n\tifdef A\nB = 1\n\tendif\nA = 1\n\tdc.b 0\n";
+        assert_eq!(passes_and_bytes(src).1, vec![0x00]);
+    }
+
+    /// The value shape of the same rule: `ifndef B` above a conditional
+    /// `B = 1` takes the `V = 1` arm. asl: `01` (probe `c2`).
+    #[test]
+    fn ifndef_decides_a_value_positionally() {
+        let src = "\tcpu 68000\n\tifndef B\nV = 1\n\telse\nV = 2\n\tendif\n\tdc.b V\n\tifdef A\nB = 1\n\tendif\nA = 1\n";
+        assert_eq!(passes_and_bytes(src).1, vec![0x01]);
+    }
+
+    /// A name only pass 0's layout bound is not seen by `ifdef` on a later
+    /// pass, although the environment still holds it. asl: `4E71 1280 00`
+    /// (probe `a16`).
+    #[test]
+    fn ifdef_does_not_see_a_name_only_an_earlier_pass_bound() {
+        let src = "\tcpu 68000\n\tnop\n\tmove.b d0,Fwd(a1)\nAfter:\n\tif After=6\nStale = 1\n\tendif\n\tifdef Stale\n\tdc.b $AA\n\tendif\n\tdc.b 0\nFwd\tequ 0\n";
+        assert_eq!(passes_and_bytes(src).1, vec![0x4E, 0x71, 0x12, 0x80, 0x00]);
+    }
+
+    /// The first-pass stand-in is per symbol: `Fwd-2(a1)` at `*` = 2 is 0 on
+    /// the first pass and collapses. The source has two self-consistent
+    /// layouts, so the first pass decides which is kept. asl: `4E71 1280 4E71`
+    /// (probe `a2`).
+    #[test]
+    fn the_first_pass_stand_in_is_per_symbol() {
+        let src = "\tcpu 68000\n\tnop\n\tmove.b d0,Fwd-2(a1)\nAfter:\tnop\nFwd\tequ After-2\n";
+        assert_eq!(passes_and_bytes(src).1, vec![0x4E, 0x71, 0x12, 0x80, 0x4E, 0x71]);
+    }
 }
