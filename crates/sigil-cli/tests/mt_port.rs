@@ -3,27 +3,20 @@
 //! `dac_port.rs`'s sibling (Task 6): compiles the ACTUAL ported file from
 //! aeon's tree — `games/sonic4/data/sound/mt_bank.emp` — through the
 //! production parse -> lower -> place -> resolve -> link pipeline, with
-//! `include_root` set to the module's OWN directory (so the six `embed(...)`
-//! blobs resolve), and asserts the `mt_bank` section's flattened bytes equal
+//! `include_root` set to the base seam-2 picks from the module's own embed
+//! literals (`seam2::mt_bank_embed_root`), and asserts the `mt_bank` section's flattened bytes equal
 //! the reference ROM window at the pinned addresses, in BOTH build shapes
 //! (`-D DEBUG=0` / `-D DEBUG=1`).
 //!
-//! ## The cross-seam symbol
+//! ## The cross-seam symbols
 //!
-//! `mt_bank.emp` carries five link-time `ensure`s, each of the shape
-//! `ensure(bankid("X") == bankid("MovingTrucks_Bank_Start"), "...")` — see the
-//! module's own header comment for why the ensures read the LABEL rather than
-//! the `SND_ENGINE_TABLE_BANK` equ directly (a bare unquoted equ name is not a
-//! legal `bankid()` operand outside a call-argument position; the label folds
-//! to the identical value since the equ IS that label's address >> 15, and the
-//! label is bank-aligned). So the ONLY external symbol this test must supply
-//! is `MovingTrucks_Bank_Start` — proven via the T0 `ports.rs::probe_b`
-//! technique: a synthetic AS unit that `phase`s a label to the exact VMA the
-//! real `.asm` head pins it at ($58000, main.asm:129's `align $8000`), placed
-//! at a harness-private LMA that cannot collide with the `mt_bank`/`text`
-//! map regions, then concatenated with the `.emp` sections before ONE
-//! `resolve_layout` + `link` + `check_link_asserts` pass — mirroring exactly
-//! what the real mixed build's cross-seam resolution does (Task 7).
+//! The harness carrier (`seam2::mt_bank_carrier_asm`) supplies the
+//! `MovingTrucks_Bank_Start` label at the `sound_bank` anchor plus the song-id
+//! equs, phased at a harness-private LMA clear of both map regions, then ONE
+//! `resolve_layout` + `link` + `check_link_asserts` pass, mirroring the real
+//! mixed build's cross-seam resolution. Whatever link-time `ensure`s the module
+//! carries (counted from its source by `link_time_ensures_in_source`) must be
+//! captured by the lower and must all pass.
 //!
 //! ## Reference windows
 //!
@@ -163,9 +156,15 @@ fn compile_real_file(
         "parse errors: {pdiags:?}"
     );
 
+    // The module's embed paths resolve against the base seam-2 itself picks from the
+    // module's own literals (the aeon root, as the ROM build reads them, or the module's
+    // directory), so this gate lowers exactly what the production emit lowers.
+    let aeon = dir.ancestors().nth(4).expect("games/sonic4/data/sound has an aeon root");
+    let embed_root = sigil_harness::seam2::mt_bank_embed_root(aeon, dir, &src)
+        .unwrap_or_else(|e| panic!("mt_bank.emp embed root: {e}"));
     let opts = LowerOptions {
         initial_cpu: Cpu::M68000,
-        include_root: Some(dir.to_path_buf()),
+        include_root: Some(embed_root),
         embed_base: None,
         defines: vec![("DEBUG".to_string(), debug)],
     };
@@ -210,6 +209,48 @@ fn compile_real_file(
 /// parity asserts that now also ride module.link_asserts. Shared idiom in
 /// `sigil_harness::test_support`.
 use sigil_harness::test_support::guard_assert_count;
+
+/// How many of `mt_bank.emp`'s module-level `ensure`s are LINK-time, read from the
+/// source: an `ensure(` whose condition names `bankid(` or `extern(` cannot fold at
+/// comptime, so it rides `module.link_asserts`; every other ensure folds during the
+/// lower. The count the lowered module must carry, derived rather than typed, so a
+/// module that adds or drops a link-time ensure moves the expectation with it.
+fn link_time_ensures_in_source(dir: &Path) -> usize {
+    let src = std::fs::read_to_string(dir.join("mt_bank.emp")).expect("read mt_bank.emp");
+    let code: String = src
+        .lines()
+        .map(|l| l.split("//").next().unwrap_or(""))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let mut n = 0;
+    for (i, _) in code.match_indices("ensure(") {
+        // The condition runs to the first `,` at paren depth 1 (the message follows).
+        let mut depth = 0i32;
+        let mut end = code.len();
+        for (j, c) in code[i..].char_indices() {
+            match c {
+                '(' => depth += 1,
+                ')' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        end = i + j;
+                        break;
+                    }
+                }
+                ',' if depth == 1 => {
+                    end = i + j;
+                    break;
+                }
+                _ => {}
+            }
+        }
+        let cond = &code[i..end];
+        if cond.contains("bankid(") || cond.contains("extern(") {
+            n += 1;
+        }
+    }
+    n
+}
 
 
 /// On mismatch, report the first differing offset plus 8 bytes of context on
@@ -266,12 +307,12 @@ fn mt_bank_region_matches_reference() {
     let (_resolved, linked, assert_diags, link_asserts) = compile_real_file(&dir, 0);
     assert_eq!(
         guard_assert_count(&link_asserts),
-        7,
-        "mt_bank.emp's ensures must be captured (5 co-residency + SONG_MOVINGTRUCKS/SONG_COUNT drift guards, item 10)"
+        link_time_ensures_in_source(&dir),
+        "every link-time ensure in mt_bank.emp's source must be captured by the lower"
     );
     assert!(
         assert_diags.iter().all(|d| d.level != sigil_span::Level::Error),
-        "the five cross-seam co-residency ensures must all PASS (link succeeded): {assert_diags:?}"
+        "mt_bank.emp's link-time ensures must all PASS (link succeeded): {assert_diags:?}"
     );
 
     // The window is the SECTION's own length from its derived base (the packer's
@@ -293,12 +334,12 @@ fn mt_bank_debug_region_matches_reference() {
     let (_resolved, linked, assert_diags, link_asserts) = compile_real_file(&dir, 1);
     assert_eq!(
         guard_assert_count(&link_asserts),
-        7,
-        "mt_bank.emp's ensures must be captured (5 co-residency + SONG_MOVINGTRUCKS/SONG_COUNT drift guards, item 10)"
+        link_time_ensures_in_source(&dir),
+        "every link-time ensure in mt_bank.emp's source must be captured by the lower"
     );
     assert!(
         assert_diags.iter().all(|d| d.level != sigil_span::Level::Error),
-        "the five cross-seam co-residency ensures must all PASS (link succeeded): {assert_diags:?}"
+        "mt_bank.emp's link-time ensures must all PASS (link succeeded): {assert_diags:?}"
     );
 
     // The window is the SECTION's own length from its derived base (the packer's

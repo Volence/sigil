@@ -455,17 +455,21 @@ pub fn bank_id_of(lma: u32) -> u32 {
     (lma & 0x7F_8000) >> 15
 }
 
-/// The `DacSampleTable` byte length: 10 descriptors × 12 bytes, + the 3-byte
-/// head-tail alignment pad aeon's `dac_sample_tab.emp` appends (`DacHeadPad`),
-/// which is 7 bytes since the SFX id range reached $BB — so 120 + 7 = 127.
-///
-/// Was `10 × 9 = 90` until sound-pkg-3 (2026-08-10) grew the descriptor to 12
-/// bytes (`ds_vol` + the mix-cursor reserve appended, so no existing offset
-/// moved). This constant was not re-pinned then, which is what has kept the
-/// `seam2_*` family red under `SIGIL_STRICT_GATE=1` ever since; corrected
-/// 2026-08-11. It tracks the EMITTED span including the pad, so it moves again if
-/// the pad re-rounds — as it does whenever a head upstream of the table resizes.
-pub const DAC_SAMPLE_TAB_LEN: usize = 127;
+/// The `DacSampleTable` byte length: `DAC_SAMPLE_COUNT` descriptors × `DacSample_len`
+/// bytes, both read from the sound-constants authority, the same two values the head's
+/// size guard folds. The head-tail 8-alignment pad is not part of it: that pad rides the
+/// engine-table head in `soundbankhead.emp`, sized from the heads' measured lengths.
+pub fn dac_sample_tab_len(aeon: &Path) -> usize {
+    let auth = crate::seam1::sound_authority_consts(aeon);
+    let get = |n: &str| -> usize {
+        let v = auth
+            .get(n)
+            .copied()
+            .unwrap_or_else(|| panic!("sound_constants.emp must define `{n}` (the DacSampleTable size)"));
+        usize::try_from(v).unwrap_or_else(|_| panic!("`{n}` = {v} is not a byte count"))
+    };
+    get("DAC_SAMPLE_COUNT") * get("DacSample_len")
+}
 
 /// The two DAC bank payloads, emitted from `dac_samples.emp` — the exact bytes
 /// asl would BINCLUDE at `$48000` / `$50000` (each after an `align $8000`).
@@ -1297,12 +1301,13 @@ pub fn emit_sound_tables_artifacts_in(
 }
 
 /// The `movingtrucks_pitchtable` byte length (2 * PITCHTAB_COUNT = 2 * 132).
-/// SHAPE-INVARIANT. Its LMA — right after `sound_tables_z80` (`$58357`), inside the
-/// `soundBankHead` window — is map-derived; see [`sound_layout`]'s `pitchtable_lma`.
+/// SHAPE-INVARIANT. Its LMA, right after `sound_tables_z80` inside the engine-table head
+/// window, is map-derived; see [`sound_layout`]'s `pitchtable_lma`.
 pub const PITCHTABLE_LEN: usize = 264;
 
 /// Lower `movingtrucks_pitchtable.emp` (the `SndDefaultPitchTable` banked head — the
-/// exact Zyrinx "Moving Trucks" 132-entry two-page fnum table) placed at VMA `$8357`.
+/// exact Zyrinx "Moving Trucks" 132-entry two-page fnum table), its section vma the
+/// `$8000` window base.
 /// SELF-CONTAINED — pure `dc.b` data with no external symbols and no intra-module
 /// references, so no co-link is needed (the SndDefaultPitchTable/MovingTrucks_PitchTable
 /// labels are provided by `sound_bank.inc`'s AS side ahead of the BINCLUDE, like the
@@ -1367,8 +1372,8 @@ fn pitchtable_at(aeon: &Path, head_lma: u32, doctor: bool) -> Result<Vec<u8>, St
     let link_asserts = module.link_asserts.clone();
 
     // Pure `dc.b` with no intra-module refs → placement-invariant bytes; place at the
-    // map-derived head-bank base (the `sound_bank` anchor). The real head LMA
-    // (`$58357`) is [`sound_layout`]'s `pitchtable_lma`, consumed by the golden gate.
+    // map-derived head-bank base (the `sound_bank` anchor). The real head LMA is
+    // [`sound_layout`]'s `pitchtable_lma`, consumed by the golden gate.
     let map_toml = format!(
         "fill = 0x00\n\n[[region]]\nname = \"movingtrucks_pitchtable\"\nlma_base = 0x{head_lma:X}\nsize = 0x200\nkind = \"rom\"\n"
     );
@@ -1620,7 +1625,7 @@ fn emit_mt_bank_at(
 /// The paths are read off the module's tokens (`embed` or `import`, `(`, a string), so
 /// the answer is fixed before anything lowers and does not depend on which lowering
 /// fails first.
-fn mt_bank_embed_root(aeon: &Path, sound_dir: &Path, src: &str) -> Result<std::path::PathBuf, String> {
+pub fn mt_bank_embed_root(aeon: &Path, sound_dir: &Path, src: &str) -> Result<std::path::PathBuf, String> {
     use sigil_frontend_emp::lexer::{lex, Tok};
     let (toks, _) = lex(src, sigil_span::SourceId(0));
     let toks: Vec<_> = toks.into_iter().filter(|t| !matches!(t.tok, Tok::Newline | Tok::DocLine(_))).collect();

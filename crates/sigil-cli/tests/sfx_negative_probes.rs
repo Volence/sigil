@@ -514,7 +514,12 @@ fn grown_mt_section_past_the_sfx_base_is_a_loud_overlap_error() {
         &mt_file,
         &LowerOptions {
             initial_cpu: Cpu::M68000,
-            include_root: Some(sound_dir()),
+            // The base seam-2 itself picks from the module's own embed literals, so
+            // the probe lowers mt_bank.emp exactly as the production emit does.
+            include_root: Some(
+                sigil_harness::seam2::mt_bank_embed_root(&aeon_root(), &sound_dir(), &mt_src)
+                    .unwrap_or_else(|e| panic!("mt_bank.emp embed root: {e}")),
+            ),
             embed_base: None,
             defines: vec![("DEBUG".to_string(), 0)],
         },
