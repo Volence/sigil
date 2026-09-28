@@ -382,9 +382,17 @@ impl PlacementMap {
 /// pass: when an overlay address equals another anchor's base address, the row found
 /// there is that other anchor's own island and moves with it, never twice.
 ///
+/// A moved anchor whose base address holds NO frozen row is walk-held: the packing walk
+/// places its section by the section's declared alignment, not by any table row, so
+/// there is no row to move and the table is left as it is. Its overlay address is then
+/// a claim the post-resolve `native::validate_placement` checks against the island the
+/// walk actually produced, so a mistaken address is refused there
+/// (`[map.undeclared-island]` for the island it did not name, or `[map.anchor-absent]`
+/// for the address where nothing landed).
+///
 /// Refused (`[map.overlay-island-ambiguous]`) when a moved anchor's base address holds
-/// no frozen row or more than one, or when a row the overlay did not move already sits
-/// at a moved anchor's new address: in each case which section is the island cannot be
+/// more than one frozen row, or when a row the overlay did not move already sits at a
+/// moved anchor's new address: in each case which section is the island cannot be
 /// said.
 pub fn move_island_rows(
     frozen: &HashMap<String, u32>,
@@ -412,14 +420,16 @@ pub fn move_island_rows(
         let mut at_base: Vec<&str> =
             frozen.iter().filter(|(_, &v)| v == from).map(|(k, _)| k.as_str()).collect();
         at_base.sort_unstable();
-        let [label] = at_base.as_slice() else {
-            return Err(format!(
+        let label = match at_base.as_slice() {
+            [] => continue,
+            [label] => label,
+            _ => return Err(format!(
                 "[map.overlay-island-ambiguous] anchor overlay {origin} moves `{name}` from \
                  {from:#x} to {to:#x}, but the frozen table holds {} section(s) at {from:#x} \
                  ({}), so the island it holds cannot be said",
                 at_base.len(),
                 at_base.join(", ")
-            ));
+            )),
         };
         out.insert((*label).to_string(), to);
         moved.push(label);
@@ -635,11 +645,6 @@ ceiling = 0x20000
         let eff = base
             .with_overlay(&parse_anchor_overlay(&overlay_src(0xC0000, 0xD0000), "fx").unwrap())
             .unwrap();
-        // No frozen row at the DAC anchor's base address.
-        let mut f = frozen();
-        f.remove("Dac_Temp_Blip");
-        let e = move_island_rows(&f, &base, &eff, true, "fx").unwrap_err();
-        assert!(e.contains("[map.overlay-island-ambiguous]") && e.contains("0 section(s)"), "{e}");
         // Two rows at it.
         let mut f = frozen();
         f.insert("Dac_Twin".into(), BASE_DAC);
@@ -650,6 +655,105 @@ ceiling = 0x20000
         f.insert("Squatter".into(), 0xC0000);
         let e = move_island_rows(&f, &base, &eff, true, "fx").unwrap_err();
         assert!(e.contains("[map.overlay-island-ambiguous]") && e.contains("Squatter"), "{e}");
+    }
+
+    const BASE_BANK2: u32 = BASE_SND + 0x8000;
+
+    /// The base map plus a walk-held anchor: `song_bank_2`, whose section no frozen table
+    /// names, so the frozen table holds no row at its address.
+    fn base_map_with_bank2() -> PlacementMap {
+        let mut m = base_map();
+        let mut a = m.anchors[2].clone();
+        a.name = "song_bank_2".to_string();
+        a.at = BASE_BANK2;
+        m.anchors.push(a);
+        m
+    }
+
+    fn overlay_with_bank2(dac: u32, snd: u32, bank2: u32) -> String {
+        format!(
+            "{}[[anchor]]\nname = \"song_bank_2\"\nat = {bank2:#x}\nwhen = \"sound_on\"\n",
+            overlay_src(dac, snd)
+        )
+    }
+
+    /// A walk-held anchor (no frozen row at its base address) moves with the overlaid map
+    /// and leaves the frozen table as the held islands alone make it. The overlay here is
+    /// the clip shape: every bank one pair up, bank 2 onto the base sound bank's successor.
+    #[test]
+    fn island_rows_move_a_walk_held_anchor_without_a_row() {
+        let base = base_map_with_bank2();
+        let (dac, snd, bank2) = (BASE_SND, BASE_SND + PAIR, BASE_SND + PAIR + 0x8000);
+        let eff = base
+            .with_overlay(&parse_anchor_overlay(&overlay_with_bank2(dac, snd, bank2), "fx").unwrap())
+            .unwrap();
+        let at = |m: &PlacementMap, n: &str| m.anchors.iter().find(|a| a.name == n).unwrap().at;
+        assert_eq!(at(&eff, "song_bank_2"), bank2, "the overlaid map carries the new address");
+        let f = frozen();
+        let moved = move_island_rows(&f, &base, &eff, true, "fx").unwrap();
+        let mut want = f.clone();
+        want.insert("Dac_Temp_Blip".into(), dac);
+        want.insert("SoundTablesZ80_Head".into(), snd);
+        assert_eq!(moved, want, "only the two held islands' rows move; bank 2 has none");
+        // The sound bank moved ONTO bank 2's base address, bank 2 one bank above it: the
+        // rows are read from the original table, so bank 2 still holds none and the
+        // sound head at its old address is not taken for bank 2's island.
+        let eff = base
+            .with_overlay(
+                &parse_anchor_overlay(&overlay_with_bank2(BASE_SND, BASE_BANK2, BASE_BANK2 + 0x8000), "fx")
+                    .unwrap(),
+            )
+            .unwrap();
+        let moved = move_island_rows(&f, &base, &eff, true, "fx").unwrap();
+        assert_eq!(moved["SoundTablesZ80_Head"], BASE_BANK2);
+        assert_eq!(moved["Dac_Temp_Blip"], BASE_SND);
+        assert_eq!(moved.len(), f.len(), "no row is added for bank 2");
+        // Moving ONLY the walk-held anchor leaves the frozen table exactly as it was.
+        let only = base
+            .with_overlay(
+                &parse_anchor_overlay(
+                    "[[anchor]]\nname = \"song_bank_2\"\nat = 0xd8000\nwhen = \"sound_on\"\n",
+                    "fx",
+                )
+                .unwrap(),
+            )
+            .unwrap();
+        assert_eq!(move_island_rows(&f, &base, &only, true, "fx").unwrap(), f);
+    }
+
+    /// The 0-row acceptance is the only loosening: more than one row at a walk-held
+    /// anchor's base, or an unmoved row already at its new address, is still refused.
+    #[test]
+    fn island_rows_still_refuse_twins_and_squatters_for_a_walk_held_anchor() {
+        let base = base_map_with_bank2();
+        let only = |to: u32| {
+            base.with_overlay(
+                &parse_anchor_overlay(
+                    &format!("[[anchor]]\nname = \"song_bank_2\"\nat = {to:#x}\nwhen = \"sound_on\"\n"),
+                    "fx",
+                )
+                .unwrap(),
+            )
+            .unwrap()
+        };
+        let eff = only(0xD8000);
+        let mut f = frozen();
+        f.insert("Bank2_A".into(), BASE_BANK2);
+        f.insert("Bank2_B".into(), BASE_BANK2);
+        let e = move_island_rows(&f, &base, &eff, true, "fx").unwrap_err();
+        assert!(
+            e.contains("[map.overlay-island-ambiguous]") && e.contains("2 section(s)")
+                && e.contains("Bank2_A, Bank2_B"),
+            "{e}"
+        );
+        let mut f = frozen();
+        f.insert("Squatter".into(), 0xD8000);
+        let e = move_island_rows(&f, &base, &eff, true, "fx").unwrap_err();
+        assert!(
+            e.contains("[map.overlay-island-ambiguous]") && e.contains("`song_bank_2`")
+                && e.contains("Squatter"),
+            "{e}"
+        );
     }
 
     #[test]

@@ -5494,6 +5494,76 @@ mod placement_validation_tests {
         assert!(e.contains("map.undeclared-island") && e.contains("0x58000"), "{e}");
     }
 
+    /// A walk-held anchor under an anchor overlay, end to end: overlay, island rows,
+    /// packing walk, post-resolve lint. `SongBank2_Head` has no frozen row and a baked
+    /// lma of 0, so the walk places it by its declared 0x8000 alignment past the object
+    /// bank, never at an anchor address. The overlay's address for it is therefore a
+    /// claim the lint checks, and a mistaken one is refused by name.
+    #[test]
+    fn walk_held_anchor_overlay_is_checked_end_to_end() {
+        use crate::map_placement::{move_island_rows, parse_anchor_overlay};
+        // `obj_len` sizes the object bank, which is what the walk rounds bank 2 past.
+        let place = |obj_len: usize, overlay: Option<&str>| -> Result<(u32, Vec<Section>), String> {
+            // The run head carries a frozen label here, as the shipped tables' `Vectors`
+            // row does, so the label-less-blob ladder does not rank it after bank 2.
+            let mut secs = layout();
+            secs[0] = sec("Vectors", 0x0, 0x100);
+            secs[2] = sec("ObjCodeBase", 0x10000, obj_len);
+            let mut bank2 = sec("SongBank2_Head", 0x0, 0x8);
+            bank2.name = "song_bank2".to_string();
+            secs.push(bank2);
+            let base = load_placement_map(
+                "order = [\"Vectors\", \"GameLoop\", \"ObjCodeBase\", \"SongBank2_Head\"]\n\
+                 [[anchor]]\nname=\"boot_head\"\nat=0x0\n\
+                 [[anchor]]\nname=\"object_bank\"\nat=0x10000\n\
+                 [[anchor]]\nname=\"song_bank_2\"\nat=0x18000\nwhen=\"sound_on\"\n",
+            )
+            .unwrap();
+            let frozen: std::collections::HashMap<String, u32> =
+                std::collections::HashMap::from([
+                    ("Vectors".to_string(), 0x0),
+                    ("GameLoop".to_string(), 0x100),
+                    ("ObjCodeBase".to_string(), 0x10000),
+                ]);
+            let (pmap, frozen) = match overlay {
+                None => (base, frozen),
+                Some(src) => {
+                    let eff = base.with_overlay(&parse_anchor_overlay(src, "fx")?)?;
+                    let moved = move_island_rows(&frozen, &base, &eff, true, "fx")?;
+                    assert_eq!(moved, frozen, "bank 2 holds no row, so no row moves");
+                    (eff, moved)
+                }
+            };
+            let anchors: std::collections::HashSet<u32> = pmap.anchors_for(true).map(|a| a.at).collect();
+            let bases = super::true_bases_by_index(
+                &secs, &frozen, &pmap.order, false, &anchors, &mut Vec::new(), &|_| None,
+            )?;
+            for (s, b) in secs.iter_mut().zip(&bases) {
+                s.lma = b.unwrap();
+            }
+            validate_placement(&secs, &pmap, true, &[])?;
+            Ok((secs[3].lma, secs))
+        };
+        let ov = |at: u32| format!("[[anchor]]\nname = \"song_bank_2\"\nat = {at:#x}\nwhen = \"sound_on\"\n");
+
+        // Canonical: the head rounds to 0x18000, where map.toml declares it.
+        assert_eq!(place(0x10, None).unwrap().0, 0x18000);
+        // The clip shape: a larger object bank rounds the head to 0x20000. The overlay
+        // names that address and the build passes.
+        assert_eq!(place(0x8010, Some(&ov(0x20000))).unwrap().0, 0x20000);
+        // The clip shape without the overlay row: the head is an island nothing declares.
+        let e = place(0x8010, None).unwrap_err();
+        assert!(e.contains("[map.undeclared-island]") && e.contains("0x20000"), "{e}");
+        // A mistaken overlay address: the walk does not follow it (the head still lands
+        // at 0x20000), so the real island is undeclared and the build is refused.
+        let e = place(0x8010, Some(&ov(0x28000))).unwrap_err();
+        assert!(e.contains("[map.undeclared-island]") && e.contains("0x20000"), "{e}");
+        // A mistaken address when the head packs within 0x400 of the object bank's end
+        // (no inferred island there): nothing lands at the named address.
+        let e = place(0x7D00, Some(&ov(0x28000))).unwrap_err();
+        assert!(e.contains("[map.anchor-absent]") && e.contains("`song_bank_2`") && e.contains("0x28000"), "{e}");
+    }
+
     // ── The `[[hole]]` half (HOLE-INTERIOR-RESERVED) ────────────────────────────────
     //
     // Synthetic geometry modelled on the real one: a head section, then the hole's
