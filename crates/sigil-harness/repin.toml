@@ -512,7 +512,7 @@ start = "TestParticle"
 end = "section:test_particle"
 # objtest-gate (2026-08-05): DEBUG-only module (registry if-debug); plain carries zero bytes
 debug_only = true
-plain_anchor = "ObjDef_PathSwap"
+plain_anchor = "DeformTable_Zero"
 gate = "SIGIL_EMP_TEST_OBJECTS"
 
 # G1 (t29): the trivial display/animate objects. Bank windows shape-invariant;
@@ -542,7 +542,7 @@ start = "TestEmitter"
 end = "section:test_emitter"
 # objtest-gate (2026-08-05): DEBUG-only module (registry if-debug); plain carries zero bytes
 debug_only = true
-plain_anchor = "ObjDef_PathSwap"
+plain_anchor = "DeformTable_Zero"
 gate = "SIGIL_EMP_TEST_EMITTER"
 
 [[region]]
@@ -551,7 +551,7 @@ start = "TestStressEmitter"
 end = "section:test_stress_emitter"
 # objtest-gate (2026-08-05): DEBUG-only module (registry if-debug); plain carries zero bytes
 debug_only = true
-plain_anchor = "ObjDef_PathSwap"
+plain_anchor = "DeformTable_Zero"
 gate = "SIGIL_EMP_TEST_STRESS_EMITTER"
 
 [[region]]
@@ -560,7 +560,7 @@ start = "TestChurnObj"
 end = "section:test_churn"
 # objtest-gate (2026-08-05): DEBUG-only module (registry if-debug); plain carries zero bytes
 debug_only = true
-plain_anchor = "ObjDef_PathSwap"
+plain_anchor = "DeformTable_Zero"
 gate = "SIGIL_EMP_TEST_CHURN"
 
 # G3 (t31): the struct-overlay object. Bank window shape-invariant. test_parent's
@@ -574,15 +574,13 @@ start = "TestChildPart"
 end = "section:test_parent"
 # objtest-gate (2026-08-05): DEBUG-only module (registry if-debug); plain carries zero bytes
 debug_only = true
-plain_anchor = "ObjDef_PathSwap"
+plain_anchor = "DeformTable_Zero"
 gate = "SIGIL_EMP_TEST_PARENT"
 
-# t39 (the FINAL three objects — the object bank closes ALL-.emp). test_player and
-# test_enemy are shape-INVARIANT (internal-gated AS twins keep their zero-byte
-# headers). path_swap is SHAPE-DEPENDENT (2 __DEBUG__ blocks: the reserved-bit
-# RaiseError guard + the debug jmp Draw_Sprite vs release rts tail; debug +$68) —
-# start/end symbols auto-derive its per-shape lengths, end anchor DeformTable_Zero
-# is gameDataIncludes' first label (ojz_default.asm), the next placement.
+# t39. test_player and test_enemy are shape-INVARIANT (internal-gated AS twins keep
+# their zero-byte headers). The debug-only object regions whose plain anchor is
+# DeformTable_Zero sit just before it in the debug image; in plain that label is
+# the next placement after ObjDef_Spring.
 [[region]]
 name = "test_player"
 start = "TestPlayer"
@@ -600,12 +598,6 @@ end = "section:test_enemy"
 debug_only = true
 plain_anchor = "TestSolid_Init"
 gate = "SIGIL_EMP_TEST_ENEMY"
-
-[[region]]
-name = "path_swap"
-start = "ObjDef_PathSwap"
-end = "section:path_swap"
-gate = "SIGIL_EMP_PATH_SWAP"
 
 # ── Game data (main.asm gates) ──────────────────────────────────────────────
 
@@ -942,18 +934,18 @@ start = "Sfx_33"
 end = "section:sfx_bank_blob"
 gate = "SIGIL_EMP_SFX"
 
-# Parcel K4 inc-5 Stage 4b — the engine-table bank HEAD, native (soundbankhead.emp
-# places the 5 heads as a PHASE-BANK section, LMA $58000 / VMA $8000). Was the
-# soundBankHead macro (sound_bank.inc, DELETED). Literal len 0x628 (the head is
-# $8000..$8628 contiguous; shape-invariant size, shape-dependent content; grew
-# $607→$625 at sound-pkg3 (DacSampleTable 9→12 B/descriptor) then →$628 at v2's
-# DacHeadPad mod-8 rounding). gate
-# SIGIL_EMP_SOUNDBANKHEAD holes out the AS phase block + org-skip. start
-# SoundTablesZ80_Head (already a frozen key + the `sound_bank` map anchor).
+# Parcel K4 inc-5 Stage 4b: the engine-table bank HEAD, native (soundbankhead.emp
+# places the 5 heads plus the head-tail 8-alignment pad as a PHASE-BANK section, VMA
+# $8000, LMA at the map's `sound_bank` anchor). The listing has no end label after
+# the pad (it rides DacSampleTable), so the region ends at the section's OWN end:
+# `lma + image_len` is the five embedded heads plus the pad, and a head that grows or
+# shrinks moves the pin with no edit here. Shape-invariant size, shape-dependent
+# content. gate SIGIL_EMP_SOUNDBANKHEAD holes out the AS phase block + org-skip.
+# start SoundTablesZ80_Head (already a frozen key + the `sound_bank` map anchor).
 [[region]]
 name = "soundbankhead"
 start = "SoundTablesZ80_Head"
-len = 0x630
+end = "section:soundbankhead"
 gate = "SIGIL_EMP_SOUNDBANKHEAD"
 
 # Parcel K4 B1 — the ROM terminus (engine.epilogue). A zero-length section whose
@@ -1054,17 +1046,6 @@ name = "EditorRaster_OJZ_Act1_ojz_sec3_shimmer"
 
 [[symbol]]
 name = "EditorCycle_OJZ_Act1_ojz_sec3_shimmer"
-
-# Chain 208's read side made `games.sonic4.player_common` reference two names for the
-# first time — `Collision_GetType` and `CrossoverTable` — so the standalone p1 port scope
-# must supply them. `Collision_GetType` was ALREADY pinned (the AS collision-lookup block
-# below) and only needed wiring into that scope; only `CrossoverTable` is new here. The port-flip rule again: a new cross-seam ref in an engine module is
-# invisible to build.sh and surfaces as an unresolved branch/ladder target the moment a
-# port test lowers that module alone. Surfaced here when the corpus pin advanced past
-# chain 208; the aeon lane's own agent had reported both and they did not reach this lane,
-# which is the notification half of the same rule.
-[[symbol]]
-name = "CrossoverTable"
 
 # Effects P3 Parcel C2 — the crossing's single effects consumer. Replaces the three
 # per-field pins (Palette_LoadSection / Raster_InstallSection /
