@@ -1443,3 +1443,16 @@ points at it rather than restating it, so there is one copy to keep true.
 - `section_alignment_declared.rs::the_requirements_above_16_are_declared_for_the_anchored_sections` and the header of
   `section_align.rs` say every row above 16 is an anchored island. The new row is the first `$8000` section the
   walk ROUNDS rather than holds, so both texts need amending in the same parcel.
+
+### PPB-1-DECODE-FACTOR-PIN
+
+- state: **open**, scheduled with aeon when they want it  size: `S`  project: `-`  asked by: aeon, 2026-09-28
+- aeon's PPB-1: inlining `Parallax_Update`'s `Decode_Factor_A`/`Decode_Factor_B` calls saves about 0.5k cycles a
+  tick, but `crates/sigil-harness/src/contract_baseline.rs` pins those call sites (`Parallax_Update` @
+  `Decode_Factor_A` :: d2 in the invariant list, the `_B` twin in `D1C_DEMO_EXTRA`). The ratchet is two-way BY
+  DESIGN (module header: a vanished row can mean the closure narrowed and a live save now reads dead), so their
+  inline is refused until the rows go. Not a tolerant-form fix: remove both rows in a landing paired with theirs,
+  after confirming the rows vanish because the calls are gone, not because the analysis narrowed.
+- Their notice the same day: aeon `d33fa8d0` adds 8 B inside `Parallax_State` (every later RAM address moves) and
+  three cross-module RAM names (`Parallax_Shadow_Key_Config`, `_VS`, `_K`); relevant at our next reference-tree pin
+  advance, not before (reference tree stays at `ec640bcf`).
