@@ -60,8 +60,20 @@ const BANK_WINDOW_SIZE: u32 = 0x8000;
 /// head bank, then the Moving-Trucks streaming bank, then the SFX block. A map
 /// reorder that breaks this relative order desyncs the derived chain and must fail
 /// loud (checked in [`bank_anchors`] against the map's `order` slice).
-const SOUND_BANK_ORDER: [&str; 4] =
-    ["Dac_Temp_Blip", "SoundTablesZ80_Head", "Song_MovingTrucks", "Sfx_33"];
+const SOUND_BANK_ORDER: [&str; 4] = ["Dac_Temp_Blip", "SoundTablesZ80_Head", MT_BANK_HEAD, SFX_BANK_HEAD];
+
+/// Head label of the Moving-Trucks streaming bank section. [`sound_layout`] predicts
+/// that section's base under this name, and the packing walk places it under the same
+/// name, so the fold gate looks it up by this constant and nothing else.
+pub const MT_BANK_HEAD: &str = "Song_MovingTrucks";
+
+/// Head label of the SFX block section; the same role as [`MT_BANK_HEAD`].
+pub const SFX_BANK_HEAD: &str = "Sfx_33";
+
+/// Every section head [`sound_layout`] folds absolute pointers against, in chain
+/// order. A sound-on build must place each one as its section's head; a sound-off
+/// build must place none.
+pub const FOLDED_BANK_HEADS: [&str; 2] = [MT_BANK_HEAD, SFX_BANK_HEAD];
 
 /// Offset from the `sound_bank` anchor to an even, in-bank scratch base used ONLY
 /// to measure the shape-invariant SFX window-head LENGTH before the real SFX-block
@@ -260,6 +272,18 @@ pub struct SoundLayout {
     pub sfx_bank_lma_debug: u32,
 }
 
+impl SoundLayout {
+    /// The section bases this layout folded absolute pointers against in one shape,
+    /// keyed by [`FOLDED_BANK_HEADS`] in the same order: each head label with the base
+    /// the chainer must place its section at for the folded pointers to be right.
+    pub fn folded_heads(&self, debug: bool) -> [(&'static str, u32); 2] {
+        let sfx = if debug { self.sfx_bank_lma_debug } else { self.sfx_bank_lma_plain };
+        let out = [(MT_BANK_HEAD, self.mt_bank_lma), (SFX_BANK_HEAD, sfx)];
+        debug_assert_eq!(out.map(|(l, _)| l), FOLDED_BANK_HEADS);
+        out
+    }
+}
+
 /// Derive the seam-2 banked placement from `games/<g>/map.toml` + the emit's own
 /// artifact lengths. The head-bank members' LMAs are the `sound_bank` anchor plus
 /// the running byte-offsets of the heads THIS emit produces; `mt_bank` follows the
@@ -335,12 +359,12 @@ pub fn sound_layout_in(aeon: &Path, ov: Option<&AnchorOverlay>) -> Result<SoundL
     // So predict with the walk's OWN function, keyed by the walk's own head labels,
     // rather than restate its arithmetic or its input.
     let mt_bank_lma =
-        crate::native::packed_chained_base(dac_sample_tab_lma + l_dach, "Song_MovingTrucks")?;
+        crate::native::packed_chained_base(dac_sample_tab_lma + l_dach, MT_BANK_HEAD)?;
     let l_mt_plain = emit_mt_bank_at(aeon, false, mt_bank_lma, a.sound_bank)?.bytes.len() as u32;
     let l_mt_debug = emit_mt_bank_at(aeon, true, mt_bank_lma, a.sound_bank)?.bytes.len() as u32;
 
-    let sfx_bank_lma_plain = crate::native::packed_chained_base(mt_bank_lma + l_mt_plain, "Sfx_33")?;
-    let sfx_bank_lma_debug = crate::native::packed_chained_base(mt_bank_lma + l_mt_debug, "Sfx_33")?;
+    let sfx_bank_lma_plain = crate::native::packed_chained_base(mt_bank_lma + l_mt_plain, SFX_BANK_HEAD)?;
+    let sfx_bank_lma_debug = crate::native::packed_chained_base(mt_bank_lma + l_mt_debug, SFX_BANK_HEAD)?;
 
     let _ = a.sound_bank_vma; // consumed by seam1's DacSampleTable window derivation
     let layout = SoundLayout {
