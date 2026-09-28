@@ -248,9 +248,41 @@ scratch copies; settled). The notes themselves are historical and were not edite
     under asl (`4380`) and sigil refuses it with bare `muls`/`divs`, under AS-UNSIZED-DEFAULTS.
   - A `.s`/`.b` branch to the next instruction: asl emits `4E71` (a NOP) and sigil refuses the zero
     displacement. Unchanged here.
-  - `jmp Foo.w` with `Foo` a symbol assembles under asl (`4EF8 1234`); sigil lexes `Foo.w` as one name.
+  - ~~`jmp Foo.w` with `Foo` a symbol assembles under asl (`4EF8 1234`); sigil lexes `Foo.w` as one name.~~
+    Done in `AS-SYMBOL-SIZE-SUFFIX` below.
   - `.emp` spelling of the seven new mnemonics: needs `link`/`unlk` in the clobber model and `rtr` in the
     terminator set, and is an owner-reviewed language change.
+
+### AS-SYMBOL-SIZE-SUFFIX
+
+- state: **done in branch, awaiting merge** (branch `worktree-agent-a61fc6da310013817`)  size: `S`  project: `SIGIL-AS-REPLACEMENT`
+- From AS-AUTHOR-FORMS-EXACT's "Left open": `jmp Foo.w` with `Foo` a symbol. sigil's lexer makes `Foo.w` one
+  identifier (`.` is an identifier character, `Parent.local` a local label), so sigil refused it, and read
+  the dotted name SILENTLY where one existed (a `Foo.w` equate, or a local `.w` under `Foo`).
+- Stage 0, pinned asl (md5 `61e67256`, `asl_run`), 97 probes in
+  `docs/superpowers/notes/2026-09-28-as-symbol-size-suffix-probes/` (`asl.out`, `sigil-before.out`,
+  `sigil-after.out`). asl peels a trailing `.w`/`.l`/`.b`/`.s` off an effective-address operand BEFORE the
+  lookup: `jmp Foo.w` is `Foo` at word width even when `Foo.w` exists; out-of-window values are #1340
+  (no silent truncation, forward or not); `.b`/`.s` on an absolute are refused. It reads the name WHOLE in
+  `dc`, `#imm`, `(Foo.w).w`, `Foo.w+2`, and in branch and `dbcc` targets (`bra.s T.w` goes to the local
+  `T.w`). The peel also covers `(Foo.w)` and displacements (`.w` before `(An)`/`(pc)` and in `(d,An)`, `.b`
+  before `(An,Xn)`). The three disassemblies and the aeon reference tree spell none of this (scan: 0 hits
+  each, 2 of 2 in a planted control), so their builds could not move.
+- Changed (AS route, `operands.rs`): `peel_width_suffix` applied to absolute, `(abs)` and displacement
+  operands with the width asl accepts there, every other width refused by name; branch and `dbcc` go
+  through `parse_target_operands`, which reads the name whole. Numbers take the same peel, so `4.w(a0)`,
+  `(4.w,a0)`, `0.w(pc)`, `4.b(a0,d0.w)` and `($1234.w)` now assemble, each measured. `.emp` unchanged.
+- Divergence, recorded not matched: `move.w Foo.b(a0),d0` exits 0 under asl with no diagnostic and NO BYTES
+  for the line; sigil refuses it.
+- Verified: `sigil-frontend-as/tests/as_symbol_size_suffix.rs`, 6 tests over all 97 probes, bytes from
+  `asl.out` only; sigil agrees with asl on 96 of 97 (41 before, with 11 probes exit 0 on bytes or acceptance
+  asl does not give), the 97th being the divergence above. `.emp` pinned at `4915361c` in
+  `as_author_forms_stay_off_emp.rs`. Red-first: pre-fix `operands.rs`/`eval.rs` (5 of 6 red), branch
+  targets through the peel (1 red: `bra_local_w`, `bsr_local_l`, `dbf_local_w`), any displacement width
+  accepted (1 red), and an altered `.emp` pin expectation (1 red). Landing run at `94df424e`, reference
+  `.aeon-sigil-ref` @ `ec640bcf`: GREEN, 5859 passed 0 failed 2 ignored, 520 suites launched = reported =
+  census, 5852 + 7 new, clippy and ledger clean; `check_landing_log.py` and `--verdict-only` both GREEN.
+  Switch sweep (s1disasm, s2disasm): 40 legs launched = reported, 0 unacknowledged, SWEEP PASSED.
 
 ### AS-UNSIZED-DEFAULTS
 
