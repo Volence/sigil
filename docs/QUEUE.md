@@ -1454,6 +1454,15 @@ points at it rather than restating it, so there is one copy to keep true.
   layout (suggested after their PPB4 and woven sizing) and confirm the sound bank head span there. We advance to THAT
   SHA, never to tip, and edit `repin.toml` `soundbankhead` `len` to match it. Aeon sets the timing; nothing is held.
   Resume when their reply names the revision.
+- AEON ANSWERED 2026-09-28: advance to aeon `1ee78b88` (verified here: reachable from their origin/master, contains
+  song bank 2 `e03c6f1d` and PPB-4 `bf6557ef`). They report nothing in flight that moves sound bytes or
+  Parallax_State/PlayerBlock/Act sizes, and will warn first if that changes. Their FAST build there on our `1173bb31`
+  pair: s4 `50401674/845398`, s4.debug `198fd717/865722` (their CRCs, NOT recomputed here). Soundbankhead span, their
+  READING, not a measurement: no end symbol in the listing; `PHASE SoundTablesZ80_Head VMA $8000 LMA $B8000`, last
+  data label DacSampleTable at VMA $8633, next placed label Song_MovingTrucks at LMA $B86B0, so len 0x6B0 counting
+  the pad. Song bank 2 did NOT lengthen soundbankhead (it is a separate section, SongBank2_Head at LMA $C0000); the
+  ask sent to them wrongly guessed it would. Check our derivation against theirs, never copy it; the missing end
+  symbol is why the row suggests re-expressing the `repin.toml` region with an end symbol. Row is UNBLOCKED.
 - Third heads-up 2026-09-26 (aeon's agent's reading, NOT verified here): aeon `f136c486` (slope landing fix) adds a
   cross-module name `Player_SensorLand` (`games/sonic4/player/player_sensors.emp`, used from `player_air.emp`); the
   port tests run against aeon master report it as the only unresolved name, 39 failed / 24 passed, same at their base
