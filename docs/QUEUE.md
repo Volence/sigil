@@ -1654,7 +1654,7 @@ points at it rather than restating it, so there is one copy to keep true.
 
 ### MT-BANK-RENAME-PAIR
 
-- state: **next**, not started  size: `S`  asked by: aeon, 2026-09-28 (they HOLD their rename until we say the pair is ready)
+- state: **step 1 landed on branch** `parcel/mt-bank-rename-pair`, awaiting merge; step 2 not started  size: `S`  asked by: aeon, 2026-09-28 (they HOLD their rename until we say the pair is ready)
 - Aeon will rename `games/sonic4/data/sound/mt_bank.emp`'s declaration from `module games.sonic4.mt_bank_blob` to
   `games.sonic4.mt_bank` (fixes the `[module.path-mismatch]` we reported; zero bytes on their side). Load-bearing on
   ours: `crates/sigil-harness/src/module_roots.rs:151`, the `SHAPE_GATES` row `("games.sonic4.mt_bank_blob",
@@ -1671,3 +1671,11 @@ points at it rather than restating it, so there is one copy to keep true.
   installed pair, and its agent is measuring what the CURRENT pair (`1173bb31`) does with the renamed id (demo debug
   and canonical shapes: bytes, refusal or nothing). Asked to commit that result in their tree and send the SHA; read
   it there, not from mail, before step 1.
+- Step 1 (2026-09-28, commit `07f9caaa`): `SHAPE_GATES` gates both `games.sonic4.mt_bank_blob` and
+  `games.sonic4.mt_bank` `SoundOn`. The mechanism is confirmed by running it: with the new row removed, the pinned
+  tree shadowed with the bank's declaration renamed roots section `mt_bank` in Config-B (sound off), and the
+  hermetic twin roots `games.sonic4.mt_bank` in a sound-off shape; both tests
+  (`module_roots_derivation.rs`, through `derive_module_roots`) go red without the row and green with it. Landing
+  run against `.aeon-sigil-ref-1ee78b88`: 521 suites, 5867 passed, 0 failed, 3 ignored, 5865 baseline + 2 new,
+  GREEN; `pins_rs_is_current` passed in-suite. Aeon's measurement of the current pair with the renamed id was not
+  found committed on `fix/mt-bank-module-name` when step 1 ran.
