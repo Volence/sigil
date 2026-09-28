@@ -1490,6 +1490,8 @@ pub fn emit_mt_bank_in(aeon: &Path, ov: Option<&AnchorOverlay>, debug: bool) -> 
 /// PARAMETERS — this core is map-derivation-free so [`sound_layout`] can measure
 /// the (shape-dependent) bank length that fixes the following SFX-block base
 /// without re-entering itself; do not reach for `bank_anchors`/`sound_layout` here.
+/// The module's `embed` paths resolve against the directory [`mt_bank_embed_root`]
+/// picks (the aeon root the ROM build uses, or the module's own directory).
 fn emit_mt_bank_at(
     aeon: &Path,
     debug: bool,
@@ -1506,9 +1508,10 @@ fn emit_mt_bank_at(
     }
     import_verdict(aeon, &file, "mt_bank.emp", &|s| texts.locate(s))?;
     let debug_val: i128 = if debug { 1 } else { 0 };
+    let embed_root = mt_bank_embed_root(aeon, &dir, &src)?;
     let opts = LowerOptions {
         initial_cpu: Cpu::M68000,
-        include_root: Some(dir.clone()),
+        include_root: Some(embed_root),
         embed_base: None,
         defines: vec![("DEBUG".to_string(), debug_val)],
     };
@@ -1570,6 +1573,102 @@ fn emit_mt_bank_at(
     let off = |want: &str| placed.labels.iter().find(|l| l.name == want).map(|l| l.offset as usize);
     let tables = mt_tables(off("SongTable"), off("SongPatchTable"))?;
     Ok(MtBank { bytes, tables })
+}
+
+/// The directory `mt_bank.emp`'s relative `embed`/`import` paths resolve against: the
+/// aeon ROOT (how the ROM build resolves every module's paths) or the module's own
+/// `sound_dir`. The module may be written either way, and each literal path decides by
+/// where it names a file:
+///
+/// - every path that names a file names it under ONE of the two directories, and all
+///   of them agree on which: that directory is the answer. A path naming no file in
+///   either leaves the choice to the others; when none names a file (or the module
+///   reads none), the root is the answer, so the lowerer's `[embed.not-found]` names
+///   the path the ROM build would read.
+/// - a path naming a file under BOTH directories is refused as
+///   `[sound.mt-embed-ambiguous]`, unless the two are one file: either choice would
+///   read a real file, and nothing says which one the author meant.
+/// - paths that disagree (one only under the root, another only under `sound_dir`)
+///   are refused as `[sound.mt-embed-mixed]`: the module lowers against one base.
+/// - an `embed`/`import` whose path is not a plain string literal is refused as
+///   `[sound.mt-embed-computed]`, because the check above cannot see where it points.
+///
+/// The paths are read off the module's tokens (`embed` or `import`, `(`, a string), so
+/// the answer is fixed before anything lowers and does not depend on which lowering
+/// fails first.
+fn mt_bank_embed_root(aeon: &Path, sound_dir: &Path, src: &str) -> Result<std::path::PathBuf, String> {
+    use sigil_frontend_emp::lexer::{lex, Tok};
+    let (toks, _) = lex(src, sigil_span::SourceId(0));
+    let toks: Vec<_> = toks.into_iter().filter(|t| !matches!(t.tok, Tok::Newline | Tok::DocLine(_))).collect();
+    let mut under_root: Vec<String> = Vec::new();
+    let mut under_sound: Vec<String> = Vec::new();
+    for (i, t) in toks.iter().enumerate() {
+        let Tok::Ident(name) = &t.tok else { continue };
+        if name != "embed" && name != "import" {
+            continue;
+        }
+        if i > 0 && toks[i - 1].tok == Tok::Dot {
+            continue;
+        }
+        if toks.get(i + 1).map(|t| &t.tok) != Some(&Tok::LParen) {
+            continue;
+        }
+        let closes = matches!(toks.get(i + 3).map(|t| &t.tok), Some(Tok::RParen | Tok::Comma));
+        let path = match toks.get(i + 2).map(|t| &t.tok) {
+            Some(Tok::Str(p)) if closes && !p.contains('{') => p.clone(),
+            _ => {
+                return Err(format!(
+                    "[sound.mt-embed-computed] mt_bank.emp calls `{name}` with a path that is not a \
+                     plain string literal. seam-2 resolves this module's paths against the aeon root \
+                     or games/sonic4/data/sound, chosen by where each literal path names a file, so \
+                     it cannot place a path it cannot read before lowering. Write the path as a \
+                     string literal"
+                ));
+            }
+        };
+        let rel = Path::new(&path);
+        if rel.is_absolute() {
+            continue;
+        }
+        let at_root = aeon.join(rel);
+        let at_sound = sound_dir.join(rel);
+        match (at_root.is_file(), at_sound.is_file()) {
+            (true, true) => {
+                let same = match (std::fs::canonicalize(&at_root), std::fs::canonicalize(&at_sound)) {
+                    (Ok(a), Ok(b)) => a == b,
+                    _ => false,
+                };
+                if !same {
+                    return Err(format!(
+                        "[sound.mt-embed-ambiguous] mt_bank.emp's `{name}(\"{path}\")` names two \
+                         different files: {} (resolved from the aeon root, as the ROM build \
+                         resolves it) and {} (resolved from the module's own directory). seam-2 \
+                         will not pick one. Remove the file that is not meant, or spell the path \
+                         so only one of them matches",
+                        at_root.display(),
+                        at_sound.display()
+                    ));
+                }
+                under_root.push(path.clone());
+                under_sound.push(path);
+            }
+            (true, false) => under_root.push(path),
+            (false, true) => under_sound.push(path),
+            (false, false) => {}
+        }
+    }
+    let only_root: Vec<&String> = under_root.iter().filter(|p| !under_sound.contains(p)).collect();
+    let only_sound: Vec<&String> = under_sound.iter().filter(|p| !under_root.contains(p)).collect();
+    match (only_root.is_empty(), only_sound.is_empty()) {
+        (false, false) => Err(format!(
+            "[sound.mt-embed-mixed] mt_bank.emp mixes path spellings: {only_root:?} name files only \
+             under the aeon root, {only_sound:?} only under games/sonic4/data/sound. The module \
+             lowers against one base, so write every path relative to the aeon root (as the ROM \
+             build resolves it) or every path relative to the module's directory"
+        )),
+        (true, false) => Ok(sound_dir.to_path_buf()),
+        _ => Ok(aeon.to_path_buf()),
+    }
 }
 
 /// The table shape of a lowered `mt_bank`, from the offsets of its `SongTable` and
