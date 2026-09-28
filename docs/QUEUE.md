@@ -1413,7 +1413,14 @@ points at it rather than restating it, so there is one copy to keep true.
 
 ### PIN-ADVANCE-S2-ENVELOPE-RESTATEMENTS
 
-- state: **open**  size: `S`  project: `SIGIL-DECOUPLE`
+- state: **done in branch** `parcel/pin-advance-s2` (awaiting merge; the standing reference must move with it, see
+  the note's last section)  size: was `S`, measured `L` (2161 aeon commits)  project: `SIGIL-DECOUPLE`
+- Outcome 2026-09-28 (`docs/superpowers/notes/2026-09-28-pin-advance-s2.md`): refrozen at aeon `1ee78b88`, entry
+  `pin-advance-s2`, chain len 207; s4 `50401674/845398` and s4.debug `198fd717/865722` equal aeon's figures.
+  Baseline at unmodified master against the new tree 202 failed; after the freeze 52; after the repairs 0.
+  `repin.toml` `soundbankhead` now ends at `section:soundbankhead` (0x6B0, aeon's reading confirmed, no literal).
+  `repin --check`: `pins.rs unchanged`. Findings for aeon: `mt_bank.emp`'s module id (`[module.path-mismatch]`),
+  and `tools/test_extern_guard_reachability.py` is present at the new pin.
 - **Also red at the next pin advance (measured 2026-09-28 by the SONG-BANK-2-EMBED-ROOT agent against aeon
   `478fa091`, not re-run here):** `mt_negative_probes.rs` wrong-bank probe expects 5 co-residency ensures to fire
   (aeon master has 9, 0 once aeon deletes them); `mt_port.rs` guard count expects 7 (aeon has 11, 2 after). Once
@@ -1487,7 +1494,7 @@ points at it rather than restating it, so there is one copy to keep true.
 
 ### PORT-TESTS-MUSIC-NAMES-AT-TIP
 
-- state: **done in branch** `parcel/port-music-names` (awaiting merge)  size: `S`  project: `SIGIL-DECOUPLE`
+- state: **LANDED 2026-09-26 at merge `354fcac4`** (parcel tip `fd08b99a`)  size: `S`  project: `SIGIL-DECOUPLE`
 - Outcome 2026-09-26 (`docs/superpowers/notes/2026-09-26-port-music-names.md`), pin `ec640bcf`, tip held at aeon
   `d7103d30` (`.aeon-music-tip`): THIRTEEN tests stopped on a name, not twelve. The thirteenth,
   `tranche5::misspelled_extern_slot_is_loud`, hid `Music_Want` behind a bool control (it failed the same way at
