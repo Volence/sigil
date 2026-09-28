@@ -1684,3 +1684,4 @@ points at it rather than restating it, so there is one copy to keep true.
   `[sound.fold-head-sound-off]` (`Song_MovingTrucks`, section `mt_bank`); the new pair builds it, and plain, debug
   and `--config-b` are byte-identical renamed and unrenamed (`193507d9/850296`, `ce326232/870560`,
   `d888a312/617813`). Step 3, aeon renames and lands, is theirs; tell them the pair is ready.
+- Step 3 LANDED on aeon origin/master at merge `b295559d` (tip `97d139ca`), built with our `30793305` pair (their figures). At the next pin advance past `b295559d`: retire the `games.sonic4.mt_bank_blob` SHAPE_GATES row and the `warn_tier_corpus.rs` known-site row for `mt_bank.emp` (it goes red then by design).
