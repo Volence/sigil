@@ -1318,8 +1318,12 @@ the LOCKED detached worktree `~/sonic_hacks/.sigil-pair-7051ff7a` (porcelain 0 b
 `emit_sound_blob` `4a7c36e0a64d680d85775cbebdd97c98`. `/proc` exe scan 0 users (15 zsh control), each file
 `cp -p` to a staging name in `sigil/target/release/` and `mv`'d over. Outgoing 80bcaf72 pair (`5a68be69...`,
 `776e087f...`) kept at `~/sonic_hacks/.sigil-outgoing-80bcaf72/`. **Found at the swap: the outgoing pair's
-build tree `sigil/.worktrees/pair-80bcaf72` had already been removed**, the 09-26 incident below repeated
-by an unlocked tree; check `git worktree list` for the installed pair's `source:` path at every boot that
+build tree `sigil/.worktrees/pair-80bcaf72` had already been removed**, by an unlocked tree. **It did NOT
+break builds this time:** an A/B the same day built all four shapes of aeon `478fa091` with that binary and no
+tree, rc 0 and byte-identical to the new pair (plain `d2c5842a/829987`, debug `1000eded/856982`, demo
+`3bd1f8e2/99719`, demo_debug `6e95b260/106701`); only `build.sh`'s "COULD NOT CHECK the assembler against its
+source" banner fired. So the 09-26 runtime read of the frozen tables is not on today's demo path; the provenance
+loss is real, the placement break was not. Still check `git worktree list` for the installed pair's `source:` path at every boot that
 touches the pair. Remove `.sigil-pair-7051ff7a` only after a later pair is swapped in from another path.
 
 **THE INSTALLED PAIR SINCE 2026-09-17T08:11:55Z IS THE d7e6aa15 BUILD, and it supersedes the 700177b1
