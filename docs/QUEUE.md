@@ -1516,7 +1516,7 @@ points at it rather than restating it, so there is one copy to keep true.
 
 ### PAIR-REBUILD-AFTER-AEON-STEP1
 
-- state: **blocked on aeon** (their song-bank-2 step 1 landing; they send the SHA)  size: `S`  owed to: aeon, 2026-09-28
+- state: **DONE 2026-09-28T11:51:59Z**, pair `1173bb31`, after aeon `cd262846`; pre-checked on their tree  size: `S`  owed to: aeon, 2026-09-28
 - Rebuild the shared pair at our then-current master once aeon's step 1 (native song tables, root-relative embeds,
   ensures deleted) lands, so they build under the loud fold gate (`a8b1d9a5`). Held back on purpose so the stricter
   gate did not land mid-step. Their shape: `Song_MovingTrucks` first in `mt_bank`; the tables at the tail of

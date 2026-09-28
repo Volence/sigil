@@ -1311,6 +1311,14 @@ aeon build. Deleting the tree breaks placement, not only the `source:` field. De
 `docs/superpowers/notes/2026-09-11-aeon-source-digest-ask.md`, second amendment.
 **`.sigil-ls12-pin` is released once aeon confirms it is on the new pair — ask them, not this file.**
 
+**THE INSTALLED PAIR SINCE 2026-09-28T11:51:59Z IS THE 1173bb31 BUILD, and it supersedes the d39ed4c3 paragraph
+below.** Asked by aeon after their song-bank step 1 (`cd262846`); carries the overlay fix and the loud fold gate.
+Locked tree `~/sonic_hacks/.sigil-pair-1173bb31`, target `~/sonic_hacks/.scratch/pair-1173bb31/target`, `--locked`,
+porcelain 0; `sigil` `958da7088c697de24dcd4a709a597fd8`, `emit_sound_blob` `a124d7317435db5a5c35a020e5faedfb`.
+**Pre-checked before the swap** on a clean copy of aeon `cd262846`: FAST plain `7a5c1312/830370`, debug
+`c415fde5/857439`, their canonical CRCs; do this for any pair that tightens a gate. One live user (an aeon agent
+build) at the first scan; waited ~30 s for 0, then swapped. Outgoing at `~/sonic_hacks/.sigil-outgoing-d39ed4c3/`.
+
 **THE INSTALLED PAIR SINCE 2026-09-28T09:53:01Z IS THE d39ed4c3 BUILD, and it supersedes the 7051ff7a paragraph
 below.** Same method: locked detached tree `~/sonic_hacks/.sigil-pair-d39ed4c3`, target
 `~/sonic_hacks/.scratch/pair-d39ed4c3/target`, `--locked`, porcelain 0; `sigil` `60cd7cc7467fc461c99baa4752bc5079`,
