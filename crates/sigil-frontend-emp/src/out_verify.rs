@@ -456,11 +456,18 @@ fn produce(st: &mut State, reg: Reg, w: OutWidth) {
     }
 }
 
-/// The bare `Sym` target of a direct call/tail (`jbsr Foo` / `jbra Foo`), or
-/// `None` for an indirect / local-label (`$`-mangled) target.
+/// The proc a direct call/tail names: the bare `Sym` of `jbsr Foo` / `jbra Foo`,
+/// or the `AbsSym` of the pinned absolute form `jsr (Foo).l` / `jmp (Foo).w`,
+/// which is what a bound `invoke Iface.hook` lowers to. `None` for an indirect
+/// target, a local label (`$`-mangled), or a `SymOff` (`jsr Item.field`): a
+/// field offset names an address INSIDE `Item`, not `Item`'s entry, so `Item`'s
+/// contract says nothing about what that call does. A name this returns is only
+/// a lookup key: a callee absent from the caller-supplied maps still credits
+/// nothing and still reads as an unknown callee.
 fn direct_target(ops: &[CodeOperand]) -> Option<&str> {
     match ops {
         [CodeOperand::Sym(name)] if !name.contains('$') => Some(name.as_str()),
+        [CodeOperand::AbsSym { target, .. }] if !target.contains('$') => Some(target.as_str()),
         _ => None,
     }
 }

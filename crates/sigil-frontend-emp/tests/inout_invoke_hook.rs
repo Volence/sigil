@@ -1,15 +1,10 @@
-//! INOUT-PROOF-INVOKE-HOOK (Stage 0 probe). `invoke Iface.hook` with a BOUND hook
-//! lowers to `jsr (Sym).l`, an `AbsSym` operand. The inout verifier resolves a
-//! call's callee through `out_verify::direct_target`, which reads only a bare
-//! `Sym`, so a bound hook site reaches `inout_call_disposition` with no target and
-//! is charged as an unknown callee, even when the bound proc is a known key of
-//! the effective-clobber map. These tests pin that gap, one direction each, and a
-//! bare-`jsr` control that proves the callee maps are correct.
-//!
-//! The gap test, `invoke_of_preserving_hook_is_charged_unknown`, asserts the
-//! CURRENT (gap) behaviour. A fix that lets the verifier resolve an `AbsSym`
-//! target turns it red; the fix then flips that assertion to "verifies", and the
-//! include-direction test must stay green unchanged.
+//! INOUT-PROOF-INVOKE-HOOK. `invoke Iface.hook` with a BOUND hook lowers to
+//! `jsr (Sym).l`, an `AbsSym` operand. The inout verifier resolves a call's
+//! callee through `out_verify::direct_target`, which reads the `AbsSym` target as
+//! the named proc, so a bound hook site is judged by the bound proc's effective
+//! clobbers exactly as a bare `jsr` of that proc is. These tests hold both
+//! directions: a preserving bound proc verifies, a clobbering one fires, and a
+//! bound name the verifier has no contract for is still an unknown callee.
 
 use sigil_frontend_emp::ast::Item;
 use sigil_frontend_emp::contract::{InterfaceEnv, ResolvedInterface, ResolvedMember};
@@ -94,21 +89,38 @@ fn bare_jsr_of_preserving_callee_verifies() {
     assert_eq!(d5_status(&items, &["d0", "d1", "d2", "d3", "d4", "a1", "a2"]), None);
 }
 
-/// THE GAP (exclude direction): the bound hook's proc does not clobber d5, and
-/// the verifier still fires, with the unknown-callee reason.
+/// Exclude direction: the bound hook's proc does not clobber d5, so the invoke
+/// preserves it and the inout proof verifies, the same verdict as the bare-`jsr`
+/// control above.
 #[test]
-fn invoke_of_preserving_hook_is_charged_unknown() {
+fn invoke_of_preserving_hook_verifies() {
     let items = eval_proc(INVOKER, "P", &env_with_bound_hook());
+    assert_eq!(d5_status(&items, &["d0", "d1", "d2", "d3", "d4", "a1", "a2"]), None);
+}
+
+/// A bound proc with no entry in the effective-clobber map stays an unknown
+/// callee: naming the target is only a lookup key, never a proof by itself.
+#[test]
+fn invoke_of_uncontracted_bound_proc_is_unknown() {
+    let members = HashMap::from([(
+        "tick".to_string(),
+        ResolvedMember::Hook(Some("Elsewhere".to_string())),
+    )]);
+    let env = InterfaceEnv {
+        interfaces: HashMap::from([("Game".to_string(), ResolvedInterface { members })]),
+    };
+    let items = eval_proc(INVOKER, "P", &env);
     let st = d5_status(&items, &["d0", "d1", "d2", "d3", "d4", "a1", "a2"]);
-    let reason = st.expect("GAP PINNED: the invoke of a d5-preserving hook currently fires");
+    let reason = st.expect("an invoke of a proc with no contract must break inout(d5)");
     assert!(reason.contains("indirect or unknown callee"), "reason: {reason}");
 }
 
-/// Include direction: a bound proc that clobbers d5 must fire, before and after
-/// any fix. Only the reason may change (unknown callee now, callee clobber after).
+/// Include direction: a bound proc that clobbers d5 fires, charged to the callee
+/// clobber rather than to an unknown callee.
 #[test]
 fn invoke_of_clobbering_hook_fires() {
     let items = eval_proc(INVOKER, "P", &env_with_bound_hook());
     let st = d5_status(&items, &["d0", "d5"]);
-    assert!(st.is_some(), "a d5-clobbering hook must break inout(d5)");
+    let reason = st.expect("a d5-clobbering hook must break inout(d5)");
+    assert!(!reason.contains("unknown callee"), "charged to the callee's clobber: {reason}");
 }
