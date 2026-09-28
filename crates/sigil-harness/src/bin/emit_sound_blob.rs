@@ -107,8 +107,9 @@ fn main() {
         eprintln!("error: emit_sound_blob (seam-2 DAC artifacts) failed: {err}");
         process::exit(1);
     }
-    // seam-2 stage-2c: the Moving-Trucks streaming bank, three-way split (shape-
-    // dependent): body + SongTable + SongPatchTable, each a native embed member.
+    // seam-2 stage-2c: the Moving-Trucks streaming bank (shape-dependent): body +
+    // SongTable + SongPatchTable, each a native embed member, or the body alone when
+    // mt_bank carries no song tables.
     if let Err(err) = sigil_harness::seam2::emit_mt_artifacts_in(aeon_path, ov, out_path) {
         eprintln!("error: emit_sound_blob (seam-2 MT bank) failed: {err}");
         process::exit(1);
@@ -139,7 +140,7 @@ fn main() {
     println!(
         "emitted seam-1 resident blob (z80_sound_blob{{,_debug}}.bin) \
          + seam-2 DAC artifacts (dac_blip_bank.bin + dac_shared_bank.bin + dac_sample_tab.bin) \
-         + seam-2 MT bank split (mt_bank_body{{,_debug}}.bin + mt_songtable{{,_debug}}.bin + mt_songpatchtable{{,_debug}}.bin) \
+         + seam-2 MT bank (mt_bank_body{{,_debug}}.bin, + mt_songtable{{,_debug}}.bin + mt_songpatchtable{{,_debug}}.bin when mt_bank carries them) \
          + seam-2 SFX bank (sfx_bank{{,_debug}}.bin + sfx_blob_win_tab{{,_debug}}.bin) \
          + seam-2 head (seq_opcode_tab{{,_debug}}.bin + sound_tables_z80.bin) \
          + pitchtable (movingtrucks_pitchtable.bin) -> {out_dir}"

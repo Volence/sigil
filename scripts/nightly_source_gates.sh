@@ -193,6 +193,12 @@ SOURCE_GATES=(
     p5_constants_flip
     parcel_8b_stage_gen_touchers
     seam2_layout_derivation
+    # seam-2 with and without the song pointer tables in mt_bank.emp: a scratch copy of
+    # the tree's engine/ and games/sonic4/ with the table items cut by their parsed
+    # spans, judged against the same tree's unmodified emit and the walk's own
+    # packed_chained_base. Source only: the .bin names it reads are the emitter's own
+    # outputs in that scratch copy, never a built ROM, a listing or a golden.
+    seam2_mt_tables_optional
     structs_module
     # source-only compile and round-trip oracles
     dac_port
