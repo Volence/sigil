@@ -1228,6 +1228,21 @@ corner of the option space. It is not a cargo test because it needs `lua` and bo
 
 ### THE REFERENCE TREE IS `.aeon-sigil-ref`, AND ITS EXCLUSIVITY IS INCIDENTAL (2026-09-09)
 
+**⚠ MOVED 2026-09-28, AND THE TREE THIS HEADING NAMES IS NOW THE WRONG ONE.** The pin advanced to aeon
+`1ee78b88` at merge `b4472d9c` (provenance entry `pin-advance-s2`, chain len 207). The standing
+reference is now **`/home/volence/sonic_hacks/.aeon-sigil-ref-1ee78b88`**, detached at `1ee78b88`,
+provisioned by `scripts/provision-aeon-ref.sh`. Its four shapes, recomputed here with python `zlib.crc32`:
+s4 `50401674/845398`, s4.debug `198fd717/865722`, demo `2f9e2d4c/99994`, demo.debug `64717bac/106981`.
+The merged tree's landing run against it: 520 suites, 5858 passed, 0 failed, 2 ignored. **Any run
+against the old `.aeon-sigil-ref` (ec640bcf) now goes red, which is correct and not a finding.**
+Re-derive: `git -C /home/volence/sonic_hacks/.aeon-sigil-ref-1ee78b88 rev-parse HEAD` against the
+last `aeon_rev` in `golden/provenance.toml`.
+**The exposure the block below predicted has arrived:** `tools/test_extern_guard_reachability.py`
+is present at `1ee78b88`, and the pin-advance agent observed that `capture_goldens.sh` builds with aeon's
+lint lanes on, so aeon's pytest ran INSIDE the reference tree during both captures (tree `git status`
+clean afterwards). So this lane's own freeze is now one of the tree's writers, as well as anything running
+aeon's pytest from inside it. Everything below is the 2026-09-09 text, unedited.
+
 **Provisioned at `/home/volence/sonic_hacks/.aeon-sigil-ref`**, detached at aeon `ec640bcf`, by
 `scripts/provision-aeon-ref.sh`, with the assembler built from this checkout rather than the shared
 binary. Both rebuild controls matched the goldens, all four shapes verify against the provenance tip
