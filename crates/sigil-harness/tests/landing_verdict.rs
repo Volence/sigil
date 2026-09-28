@@ -996,6 +996,11 @@ fn stub_run(dir: &Path, run: &StubRun) -> (i32, String, PathBuf) {
     for rom in ["s4.bin", "s4.debug.bin", "demo.bin", "demo.debug.bin"] {
         std::fs::write(aeon.join(rom), "").unwrap();
     }
+    // A checkout of its own, so the stamp's `aeon HEAD` names this fixture rather than
+    // whatever repository the scratch directory happens to sit inside.
+    git(&aeon, &["init", "-q"]);
+    git(&aeon, &["add", "."]);
+    git(&aeon, &["commit", "-q", "-m", "fixture"]);
     let oracle = dir.join("oracle-old");
     std::fs::create_dir_all(oracle.join(".git")).unwrap();
     std::fs::create_dir_all(oracle.join("linux-port/gui")).unwrap();
@@ -1179,8 +1184,7 @@ fn a_captured_stdout_is_refused_and_the_log_is_named() {
 /// A LOG WRITTEN BEFORE THE VERDICT SPAN EXISTED. It is a complete run record, so
 /// `--verdict-only` judges it (the stock fixture is exactly this shape, and it is GREEN);
 /// the checker has no recorded verdict to read and says so, exit 2, naming the command
-/// that does judge it. A RESULT line sitting in the TEST span (a test that printed a
-/// verdict under `--nocapture`) is not a recorded verdict and must not make it GREEN.
+/// that does judge it.
 #[test]
 fn a_log_from_before_the_verdict_span_is_not_green_to_the_checker() {
     let dir = scratch("pre-span");
@@ -1194,7 +1198,15 @@ fn a_log_from_before_the_verdict_span_is_not_green_to_the_checker() {
     );
     let (vcode, vout) = judge_stdout(&old);
     assert_eq!(vcode, 0, "--verdict-only judges the same pre-span record green:\n{vout}");
+    let _ = std::fs::remove_dir_all(&dir);
+}
 
+/// A RESULT line sitting in the TEST span (a test that printed a verdict under
+/// `--nocapture`) is not a recorded verdict. On a pre-span log it must not make the
+/// checker say GREEN; the earlier checker took the last RESULT line anywhere in the file.
+#[test]
+fn a_result_line_quoted_in_the_test_span_is_not_a_recorded_verdict() {
+    let dir = scratch("quoted-result");
     let quoted = fixture(&dir, "quoted-result.log", "  RESULT          GREEN\n");
     let (ccode, cout) = check(&quoted);
     assert_eq!(
