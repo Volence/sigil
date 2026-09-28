@@ -185,6 +185,33 @@ fn a_shape_gate_filters_the_derived_list() {
     assert!(ids(&dbg).contains(&"engine.compression_selftest".to_string()), "{dbg:?}");
 }
 
+/// The bank-1 song bank is gated `SoundOn` under both ids its module may carry: a
+/// sound-off shape roots neither, a sound-on shape roots each. A module with no gate
+/// row is one every shape places, so an id missing from the gates shows up here as
+/// the bank rooted in the sound-off shape.
+#[test]
+fn the_song_bank_is_sound_on_only_under_both_ids() {
+    let mut files = base_files();
+    files.push((
+        "games/sonic4/data/sound/mt_bank.emp",
+        "module games.sonic4.mt_bank in mt_bank\n\npub data MtBankHead: u16 = 0\n",
+    ));
+    files.push((
+        "games/sonic4/data/sound/mt_bank_blob.emp",
+        "module games.sonic4.mt_bank_blob in mt_bank_blob\n\npub data MtBankBlobHead: u16 = 0\n",
+    ));
+    let root = mini_tree("song_bank_ids", &files);
+    let m = scan(&root);
+    let order = rows(&["GameHeader", "MtBankHead", "MtBankBlobHead"]);
+    let sound_off = Shape { sound_on: false, ..PLAIN };
+    let off = ids(&derive_module_roots(&m, &order, "games.sonic4", &sound_off, &[], "map").unwrap());
+    let on = ids(&derive_module_roots(&m, &order, "games.sonic4", &PLAIN, &[], "map").unwrap());
+    for id in ["games.sonic4.mt_bank", "games.sonic4.mt_bank_blob"] {
+        assert!(!off.contains(&id.to_string()), "a sound-off shape must not root `{id}`: {off:?}");
+        assert!(on.contains(&id.to_string()), "a sound-on shape must root `{id}`: {on:?}");
+    }
+}
+
 /// Two in-scope definitions of one label: the one the rest of the build `use`s is the
 /// one placed; with neither reached, the row is refused naming both.
 #[test]
@@ -325,4 +352,33 @@ fn the_pinned_tree_with_a_row_but_no_source_is_refused_by_name() {
     assert!(e.contains("[map.order-orphan]"), "{e}");
     assert!(e.contains(&format!("- {}", victim.row)), "must name row `{}`: {e}", victim.row);
     assert!(e.contains("map.toml"), "must name the map: {e}");
+}
+
+/// The pinned tree with the song bank declared `module games.sonic4.mt_bank`, the id
+/// its path names: the sound-off shape (Config-B) does not root it, the sound-on
+/// shape (plain sonic4) does, through the build's own derivation.
+#[test]
+fn the_pinned_tree_roots_the_song_bank_by_its_path_id_only_when_sound_is_on() {
+    let plain = native::sonic4_profile(false);
+    let Some(aeon) = reference_tree_for_profile(&plain) else { return };
+    let bank_rel = "games/sonic4/data/sound/mt_bank.emp";
+    let new_id = "games.sonic4.mt_bank";
+    let src = std::fs::read_to_string(aeon.join(bank_rel))
+        .unwrap_or_else(|e| panic!("the song bank `{bank_rel}` must be in the tree: {e}"));
+    let old_decl = "\nmodule games.sonic4.mt_bank_blob\n";
+    let new_decl = format!("\nmodule {new_id}\n");
+    let doctored = if src.contains(old_decl) { src.replacen(old_decl, &new_decl, 1) } else { src.clone() };
+    assert!(doctored.contains(&new_decl), "control: `{bank_rel}` declares `{new_id}` in the copy");
+    let shadow = shadow_aeon_tree(&aeon, &[(bank_rel, &doctored)]).unwrap();
+
+    let on = native::module_registry(shadow.root(), &plain).expect("the sound-on shape derives");
+    assert!(
+        on.iter().any(|s| s.module_id == new_id),
+        "control: the sound-on shape roots `{new_id}`"
+    );
+    let off = native::module_registry(shadow.root(), &native::config_b_profile())
+        .expect("the sound-off shape derives");
+    let rooted: Vec<&str> =
+        off.iter().filter(|s| s.module_id == new_id).map(|s| s.section.as_str()).collect();
+    assert!(rooted.is_empty(), "the sound-off shape must not root `{new_id}`, it placed {rooted:?}");
 }

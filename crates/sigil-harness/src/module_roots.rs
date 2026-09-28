@@ -148,7 +148,11 @@ pub const SHAPE_GATES: &[(&str, ShapeGate)] = &[
     // Sound-on only: the sound caller and the Z80 bank sections.
     ("engine.sound_api", ShapeGate::SoundOn),
     ("games.sonic4.dac_banks", ShapeGate::SoundOn),
+    // The bank-1 song bank carries one of two ids: `mt_bank_blob`, or `mt_bank`, the
+    // id its path (`games/sonic4/data/sound/mt_bank.emp`) names. Both rows gate it, so
+    // no sound-off shape roots the bank under either id.
     ("games.sonic4.mt_bank_blob", ShapeGate::SoundOn),
+    ("games.sonic4.mt_bank", ShapeGate::SoundOn),
     ("games.sonic4.sfx_bank_blob", ShapeGate::SoundOn),
     ("games.sonic4.soundbankhead", ShapeGate::SoundOn),
     ("games.sonic4.song_bank2", ShapeGate::SoundOn),
