@@ -3366,6 +3366,7 @@ pub fn check_sound_fold(resolved: &[Section], folded: Option<&[(&str, u32)]>) ->
         return Ok(0);
     };
 
+    let mut compared = 0;
     for &(label, predicted) in folded {
         let Some((sec, off)) = placed(label) else {
             return Err(format!(
@@ -3406,8 +3407,9 @@ pub fn check_sound_fold(resolved: &[Section], folded: Option<&[(&str, u32)]>) ->
                 actual as i64 - predicted as i64
             ));
         }
+        compared += 1;
     }
-    Ok(folded.len())
+    Ok(compared)
 }
 
 /// The post-resolve placement contract: the resolved layout against the shape's
