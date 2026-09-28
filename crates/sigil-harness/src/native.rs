@@ -3304,36 +3304,91 @@ pub fn build_rom_chained(aeon: &Path, profile: &GameProfile) -> Result<Vec<u8>, 
 /// ALWAYS-ON, deliberately, and NOT behind `SIGIL_STRICT_GATE` — the previous
 /// instance of this failure (sound package 3, a persistent silent -2) shipped
 /// precisely because the checks that would have caught it were opt-in.
-fn validate_sound_fold(
+///
+/// EVERY FOLDED HEAD IS ACCOUNTED FOR. The labels compared are the ones seam-2 folded
+/// against (`SoundLayout::folded_heads`, keyed by `seam2::FOLDED_BANK_HEADS`), never a
+/// list typed here, and the shape decides which way they must be found (see
+/// [`check_sound_fold`]). A head the layout does not place, or places behind another
+/// label, is a refusal naming it, never a comparison skipped.
+///
+/// Returns the number of heads compared: every folded head on a sound-on shape, zero on
+/// a sound-off shape that places none.
+pub fn validate_sound_fold(
     aeon: &Path,
     resolved: &[Section],
     profile: &GameProfile,
-) -> Result<(), String> {
+) -> Result<usize, String> {
     if !profile.sound_on {
-        return Ok(()); // no sound bank in this shape; the layout is meaningless
+        return check_sound_fold(resolved, None);
     }
     let layout = crate::seam2::sound_layout_in(aeon, profile.anchor_overlay.as_ref())?;
+    check_sound_fold(resolved, Some(&layout.folded_heads(profile.debug)))
+}
 
-    // LMA, not vma_origin(): the sound-bank heads are phased (`vma: $8000`), so a
-    // VMA read would hand back a window address and compare against nothing.
-    let placed = |label: &str| -> Option<u32> {
-        resolved.iter().find_map(|sec| {
-            sec.labels
-                .iter()
-                .find(|l| l.name == label)
-                .map(|l| sec.lma + l.offset)
-        })
+/// The fold-vs-placement comparison over a resolved layout. `folded` is seam-2's
+/// prediction for the shape, `(head label, folded base)` per bank, or `None` for a
+/// sound-off shape, which folds nothing and must place none of
+/// `seam2::FOLDED_BANK_HEADS`.
+///
+/// Per folded head, each case refuses under its own code:
+///   - `[sound.fold-head-absent]`: no resolved section carries the label, so there is
+///     no placed base to compare the folded one against.
+///   - `[sound.fold-head-not-first]`: the label is placed but is not its section's head.
+///     The packing walk aligns a section by its head label's declaration and seam-2
+///     predicted this base by this label's, so the two no longer describe one base,
+///     whatever the addresses happen to say.
+///   - `[sound.fold-vs-placement]`: the head's placed base differs from the folded one.
+///   - `[sound.fold-head-sound-off]`: a sound-off shape places a folded head, whose
+///     pointers nothing in this shape predicted.
+///
+/// LMA, not vma_origin(): the sound-bank heads are phased (`vma: $8000`), so a VMA
+/// read would hand back a window address and compare against nothing.
+pub fn check_sound_fold(resolved: &[Section], folded: Option<&[(&str, u32)]>) -> Result<usize, String> {
+    let placed = |label: &str| -> Option<(&Section, u32)> {
+        resolved
+            .iter()
+            .find_map(|sec| sec.labels.iter().find(|l| l.name == label).map(|l| (sec, l.offset)))
     };
 
-    let sfx_predicted = if profile.debug {
-        layout.sfx_bank_lma_debug
-    } else {
-        layout.sfx_bank_lma_plain
+    let Some(folded) = folded else {
+        for label in crate::seam2::FOLDED_BANK_HEADS {
+            if let Some((sec, off)) = placed(label) {
+                return Err(format!(
+                    "[sound.fold-head-sound-off] this shape declares sound off, so seam-2 \
+                     folded no pointers for it, yet its layout places `{label}` (section `{}`, \
+                     {:#x}). The bytes under that label carry absolute pointers nothing in this \
+                     shape predicted; the shape's sound flag and its registry disagree",
+                    sec.name,
+                    sec.lma + off
+                ));
+            }
+        }
+        return Ok(0);
     };
-    for (label, predicted) in
-        [("Song_MovingTrucks", layout.mt_bank_lma), ("Sfx_33", sfx_predicted)]
-    {
-        let Some(actual) = placed(label) else { continue }; // not in this shape
+
+    for &(label, predicted) in folded {
+        let Some((sec, off)) = placed(label) else {
+            return Err(format!(
+                "[sound.fold-head-absent] seam-2 folded absolute pointers against `{label}` = \
+                 {predicted:#x}, but no section in this sound-on layout carries that label, so \
+                 the placed base cannot be compared with the folded one. The label is the \
+                 section head seam-2 predicts under (seam2::FOLDED_BANK_HEADS); a rename or a \
+                 removal of it must be made in both places"
+            ));
+        };
+        let head = head_label(sec).unwrap_or("<none>");
+        if head != label {
+            return Err(format!(
+                "[sound.fold-head-not-first] seam-2 folded absolute pointers against `{label}` \
+                 = {predicted:#x} as the head of its section, but section `{}` is headed by \
+                 `{head}` and places `{label}` at offset {off:#x}. The packing walk aligns the \
+                 section by `{head}`'s declared alignment while seam-2 predicted by `{label}`'s, \
+                 so the fold and the placement no longer describe one base. Keep `{label}` the \
+                 first item of its section",
+                sec.name
+            ));
+        }
+        let actual = sec.lma + off;
         if actual != predicted {
             let quantum = crate::section_align::required_for(label)
                 .map(|d| d.required.to_string())
@@ -3352,7 +3407,7 @@ fn validate_sound_fold(
             ));
         }
     }
-    Ok(())
+    Ok(folded.len())
 }
 
 /// The post-resolve placement contract: the resolved layout against the shape's

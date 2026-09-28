@@ -229,6 +229,12 @@ SOURCE_GATES=(
     # from the tree's .emp sources and resolves the sonic4/demo layouts in memory; judged
     # against bank_id_of of placed labels, never a golden, a ROM or a listing
     sound_bank_id_check
+    # the fold gate accounts for every head seam-2 folded against: the shipped shapes'
+    # resolves pass comparing each one, the same resolves planted in memory (a head
+    # renamed, moved, or put behind another label) are refused by name, and a head
+    # renamed in a scratch copy of the tree's source fails the build. Source only:
+    # judged against seam-2's own prediction, never a golden, a ROM or a listing
+    sound_fold_heads
     # the anchor overlay: overlay builds of the tree's sonic4 shapes in a shadow copy,
     # with every overlay derived from the tree's own map.toml; judged by the placed
     # labels, the post-link checks and the emit binary's output, never a golden
