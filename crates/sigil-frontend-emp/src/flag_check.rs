@@ -684,6 +684,23 @@ pub(crate) fn transfer_target_sym(ops: &[CodeOperand]) -> Option<&str> {
     })
 }
 
+/// The proc a direct call/tail CALLS: the bare `Sym` of `jbsr Foo` / `jbra Foo`,
+/// or the `AbsSym` of the pinned absolute form `jsr (Foo).l` / `jmp (Foo).w`,
+/// which is what a bound `invoke Iface.hook` lowers to. `None` for an indirect
+/// target, a local label (`$`-mangled), or a `SymOff` (`jsr Item.field`): a field
+/// offset names an address INSIDE `Item`, not `Item`'s entry, so `Item`'s
+/// contract says nothing about that call. Narrower than [`transfer_target_sym`],
+/// which names the link symbol a transfer touches rather than the proc it enters.
+/// The name is a lookup key into a caller's contract maps: a callee absent from
+/// them stays an unknown callee to every reader.
+pub(crate) fn direct_proc_target(ops: &[CodeOperand]) -> Option<&str> {
+    match ops {
+        [CodeOperand::Sym(name)] if !name.contains('$') => Some(name.as_str()),
+        [CodeOperand::AbsSym { target, .. }] if !target.contains('$') => Some(target.as_str()),
+        _ => None,
+    }
+}
+
 /// A resolved per-proc control-flow view over a CodeBuf's items. Exposed
 /// `pub(crate)` so the §5 verified-`preserves` dataflow ([`crate::preserves`])
 /// REUSES this exact CFG substrate (spec §11 Q1: extend G2's CFG, do not

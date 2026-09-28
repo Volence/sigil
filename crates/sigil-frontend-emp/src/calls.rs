@@ -45,18 +45,16 @@ const CALL_MNEMONICS: [&str; 3] = ["jsr", "jbsr", "bsr"];
 /// runs after a tail transfer).
 const TAIL_MNEMONICS: [&str; 3] = ["jmp", "bra", "jbra"];
 
-/// The bare GLOBAL-symbol target of a DIRECT call/tail (`jbsr Foo` / `jbra Foo`),
-/// or `None` for an indirect (`jsr (a1)`), a non-call, or a local-label target
-/// (hygiene mangles those with `$`). Mirrors [`crate::corpus_contracts`]'s
-/// `call_target_sym` so the callee key matches the contract maps.
+/// The proc a DIRECT call/tail names (`jbsr Foo` / `jbra Foo`, or the absolute
+/// `jsr (Foo).l` a bound `invoke` lowers to), or `None` for a non-call, an
+/// indirect (`jsr (a1)`), a local-label, or a `SymOff` target. The shared
+/// [`crate::flag_check::direct_proc_target`] reading, gated on the call/tail
+/// mnemonics.
 fn direct_target<'a>(mnem: &str, ops: &'a [CodeOperand]) -> Option<&'a str> {
     if !CALL_MNEMONICS.contains(&mnem) && !TAIL_MNEMONICS.contains(&mnem) {
         return None;
     }
-    match ops {
-        [CodeOperand::Sym(name)] if !name.contains('$') => Some(name.as_str()),
-        _ => None,
-    }
+    crate::flag_check::direct_proc_target(ops)
 }
 
 /// SHARED call-aware primitive for the caller-side ERROR gates (D1b must-def §6
