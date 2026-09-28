@@ -287,7 +287,9 @@ fn run_impl(
     opts: &Options,
     force_relocate: bool,
 ) -> Result<Assembled, Failure> {
+    let t_count = sigil_span::phase::clock();
     let stopped = run_passes(src, root_name, opts, force_relocate, false);
+    sigil_span::phase::step("frontend.passes", t_count, &format!("passes={}", stopped.passes));
     let failure = match stopped.result {
         Ok(a) => return Ok(a),
         Err(f) => f,
@@ -381,6 +383,8 @@ struct PassRun {
     /// or refused a circular layout, returns a whole-run failure rather than a
     /// pass's diagnostics, so it cannot vouch for which errors are real.
     settled: bool,
+    /// How many ordinary passes ran (the bonus pass is not counted).
+    passes: usize,
 }
 
 /// Put every `fatal` first, and drop from `failure` each error that exists
@@ -568,6 +572,7 @@ fn run_passes(
                 fatals: carried_fatals,
                 stopped_at_fatal: false,
                 settled: false,
+                passes: pass + 1,
             };
         }
         // A `fatal` raised on ANY pass survives to the returned diagnostics.
@@ -696,6 +701,7 @@ fn run_passes(
                     fatals: carried_fatals,
                     stopped_at_fatal: pass_stopped_at_fatal,
                     settled: true,
+                    passes: pass + 1,
                 };
             }
             phase_pass_line(pass, t_pass, &env, &prev, &history, "converged-bonus-follows");
@@ -755,6 +761,7 @@ fn run_passes(
                 fatals: carried_fatals,
                 stopped_at_fatal: bonus_stopped_at_fatal,
                 settled: true,
+                passes: pass + 1,
             };
         }
         // THE OSCILLATION PROOF. `one_pass` is deterministic and its only
@@ -782,6 +789,7 @@ fn run_passes(
                 fatals: carried_fatals,
                 stopped_at_fatal: false,
                 settled: false,
+                passes: pass + 1,
             };
         }
         // `prev` already holds the previous pass's environment, so it MOVES into
@@ -831,6 +839,7 @@ fn run_passes(
         fatals: carried_fatals,
         stopped_at_fatal: false,
         settled: false,
+        passes: SETTLE_GUARD,
     }
 }
 
@@ -3217,7 +3226,40 @@ impl Asm {
     /// is genuinely undefined rather than a pending forward ref). A fault is
     /// reported here and now, with the same 0 placeholder.
     fn fold_imm(&mut self, e: &Expr, span: Span, lo: i64, hi: i64) -> i64 {
-        match self.fold(e) {
+        let folded = self.fold(e);
+        self.settle_imm(folded, e, span, lo, hi)
+    }
+
+    /// Fold a `(d16,An)` displacement, which differs from [`Self::fold_imm`]
+    /// only in the placeholder an unknown symbol takes on the FIRST pass.
+    ///
+    /// asl documents that "if an unknown symbol is detected in the first pass,
+    /// the formula parser delivers the program counter's current value as
+    /// result" (manual section 2.11, "Forward References and Other
+    /// Disasters"). The displacement's value there decides only one thing that
+    /// outlives the pass: whether [`collapse_zero_disp`] drops the extension
+    /// word. Measured on the reference asl: `move.b d0,Fwd(a1)` with `Fwd equ
+    /// $3E` later is laid out 2 bytes long on pass 1 at `*` = 0 and at `*` =
+    /// `$10000`, and 4 bytes long at `*` = 2, so the collapse reads the low 16
+    /// bits of the location counter. A 0 placeholder collapsed every forward
+    /// displacement on pass 0 and moved every address after it on pass 1,
+    /// which is a whole extra pass on Sonic 1.
+    ///
+    /// On a later pass an unknown symbol is either an error or a name no pass
+    /// has defined yet, and the ordinary 0 placeholder stands.
+    fn fold_disp16(&mut self, e: &Expr, span: Span) -> i64 {
+        let folded = self.fold(e);
+        if self.mompass == FIRST_PASS && matches!(folded, Fold::Poison) {
+            self.route_poison_names(e, span);
+            return self.here_i64() as i16 as i64;
+        }
+        self.settle_imm(folded, e, span, i16::MIN as i64, i16::MAX as i64)
+    }
+
+    /// The range check and placeholder half of [`Self::fold_imm`], for a fold
+    /// already taken.
+    fn settle_imm(&mut self, folded: Fold, e: &Expr, span: Span, lo: i64, hi: i64) -> i64 {
+        match folded {
             Fold::Value(v) if v >= lo && v <= hi => v,
             Fold::Value(v) => {
                 self.err(span, format!("operand {v} out of range {lo}..={hi}"));
@@ -10993,7 +11035,7 @@ impl Asm {
                 // opcode word, 4-byte imm32, d16 word).
                 let n = m68k_addr_reg(an)?;
                 let qd = self.qualify_expr(disp);
-                let d = self.fold_imm(&qd, span, i16::MIN as i64, i16::MAX as i64);
+                let d = self.fold_disp16(&qd, span);
                 // Zero-offset fold: `Sym(a1)` with Sym == 0 (e.g. SST_code_addr)
                 // encodes (An) mode 2 — no dest ext word — exactly as asl's
                 // zeroOffsetOptimization does on the eager path. That fold runs
@@ -11618,7 +11660,25 @@ impl Asm {
         Some(match a {
             OperandAtom::Imm(e) => {
                 let (lo, hi) = m68k_imm_bounds(size);
-                let v = self.fold_imm(e, span, lo, hi);
+                // An unknown immediate takes the placeholder 1, not 0. The
+                // placeholder never reaches an image (a symbol still unknown
+                // on the returned pass is an error), so the one thing it
+                // decides is whether the instruction encodes at all this
+                // pass, and so how many bytes it lays out. 0 is outside the
+                // quick forms' range (`addq`/`subq` and the shift counts take
+                // 1 to 8), so `addq.w #Fwd,d0` used to lay out as nothing and
+                // move every address after it on the next pass. 1 is inside
+                // the range of every 68000 immediate operand. asl emits the
+                // instruction on its first pass whatever the placeholder's
+                // range (`addq.w #Fwd-Fwd2,d0` ahead of its equates is 2
+                // passes under asl).
+                let folded = self.fold(e);
+                let v = if matches!(folded, Fold::Poison) {
+                    self.route_poison_names(e, span);
+                    1
+                } else {
+                    self.settle_imm(folded, e, span, lo, hi)
+                };
                 M68kOperand::Imm(v as i32)
             }
             OperandAtom::RegOrCond(w) => {
@@ -11756,7 +11816,7 @@ impl Asm {
                         return None;
                     }
                 };
-                let d = self.fold_imm(disp, span, i16::MIN as i64, i16::MAX as i64);
+                let d = self.fold_disp16(disp, span);
                 M68kOperand::Disp16An(d as i16, n)
             }
             OperandAtom::M68kIdx {
@@ -21462,4 +21522,64 @@ fn apply_num_builtin(name: &str, arg: Num) -> Option<Num> {
     }
     let y = float_builtin(name)?(arg.as_f64());
     y.is_finite().then_some(Num::Float(y))
+}
+
+#[cfg(test)]
+mod pass_count_tests {
+    use super::run_passes;
+    use crate::Options;
+    use sigil_ir::backend::Cpu;
+
+    /// Assemble `src` through the pass loop and return how many ordinary
+    /// passes ran and the flattened image.
+    fn passes_and_bytes(src: &str) -> (usize, Vec<u8>) {
+        let opts = Options { initial_cpu: Some(Cpu::M68000), ..Options::default() };
+        let run = run_passes(src, "t.asm", &opts, false, false);
+        let passes = run.passes;
+        let m = match run.result {
+            Ok(a) => a.module,
+            Err(f) => panic!(
+                "assembly failed: {:?}",
+                f.diags.iter().map(|d| &d.message).collect::<Vec<_>>()
+            ),
+        };
+        let resolved = sigil_link::resolve_layout(&m.sections, &sigil_ir::SymbolTable::new(), true)
+            .expect("resolve_layout");
+        let linked = sigil_link::link(&resolved, &sigil_ir::SymbolTable::new()).expect("link");
+        (passes, sigil_link::flatten(&linked, 0x00).unwrap())
+    }
+
+    /// asl gives an unknown symbol the location counter on its first pass, so a
+    /// forward `(d16,An)` displacement away from `*` = 0 is laid out long on
+    /// pass 1 and the layout never moves: 2 passes under asl, `0006 1340 003E
+    /// 4E71`. A 0 placeholder laid it out short and took a third pass.
+    #[test]
+    fn a_forward_displacement_away_from_zero_is_long_on_the_first_pass() {
+        let src = "\tcpu 68000\n\tdc.w After\n\tmove.b d0,Fwd(a1)\nAfter:\tnop\nFwd\tequ $3E\n";
+        assert_eq!(
+            passes_and_bytes(src),
+            (2, vec![0x00, 0x06, 0x13, 0x40, 0x00, 0x3E, 0x4E, 0x71])
+        );
+    }
+
+    /// The other half of asl's rule: at `*` = 0 the placeholder IS zero, the
+    /// displacement collapses to `(An)` on the first pass, and the next pass
+    /// grows it. asl takes 3 passes on this source, and so does sigil.
+    #[test]
+    fn a_forward_displacement_at_zero_collapses_on_the_first_pass_as_asl_does() {
+        let src = "\tcpu 68000\n\tmove.b d0,Fwd(a1)\nAfter:\tnop\n\tdc.w After\nFwd\tequ $3E\n";
+        assert_eq!(
+            passes_and_bytes(src),
+            (3, vec![0x13, 0x40, 0x00, 0x3E, 0x4E, 0x71, 0x00, 0x04])
+        );
+    }
+
+    /// An unknown quick immediate still lays out its instruction: `addq.w
+    /// #Fwd-Fwd2,d0` ahead of its equates is 2 bytes on every pass, so `X` never
+    /// moves. asl: 2 passes, `5240 4E71 0002`.
+    #[test]
+    fn an_unknown_quick_immediate_still_lays_out_its_instruction() {
+        let src = "\tcpu 68000\n\taddq.w #Fwd-Fwd2,d0\nX:\tnop\n\tdc.w X\nFwd\tequ 7\nFwd2\tequ 6\n";
+        assert_eq!(passes_and_bytes(src), (2, vec![0x52, 0x40, 0x4E, 0x71, 0x00, 0x02]));
+    }
 }
