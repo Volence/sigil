@@ -199,6 +199,11 @@ SOURCE_GATES=(
     # packed_chained_base. Source only: the .bin names it reads are the emitter's own
     # outputs in that scratch copy, never a built ROM, a listing or a golden.
     seam2_mt_tables_optional
+    # seam-2's mt_bank.emp embed base: a scratch copy of the tree's engine/ and
+    # games/sonic4/ with the module's embed literals respelled root-relative (or a file
+    # planted at the root), judged against the same tree's unmodified emit. Source only:
+    # it reads the tree's committed .bin inputs, never a built ROM, a listing or a golden.
+    seam2_mt_embed_root
     structs_module
     # source-only compile and round-trip oracles
     dac_port
