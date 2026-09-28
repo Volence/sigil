@@ -1523,3 +1523,10 @@ points at it rather than restating it, so there is one copy to keep true.
   `sfx_bank_blob` after `Sfx_33`; neither head renamed. If the gate then refuses their tree, it is a finding on
   their side. Method: the pair paragraph in `docs/OVERSEER-REFERENCE.md` (locked build tree, outgoing copy kept,
   /proc scan, stage and `mv`).
+
+### SONG-BANK-2-OVERLAY-UNFROZEN-ANCHOR
+
+- state: **LANDED 2026-09-28 at merge `bced52d4`** (tip `468f557b`)  size: `S`  asked by: aeon
+- A clip overlay may move an anchor that holds no frozen row (bank 2 is walk-placed); the overlaid map is what
+  `validate_placement` checks the placed head against, so a wrong overlay address refuses
+  `[map.undeclared-island]`. Record: `docs/superpowers/notes/2026-09-28-overlay-unfrozen-anchor.md`.
