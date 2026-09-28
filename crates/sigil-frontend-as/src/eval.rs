@@ -1302,6 +1302,8 @@ fn one_pass_with_defer(
     asm.functions = crate::seed::Seeded::new(seed_functions.clone());
     asm.known_labels = crate::seed::Seeded::new(seed_labels.clone());
     asm.label_ref_equs = crate::seed::Seeded::new(seed_label_ref_equs.clone());
+    asm.predefined =
+        opts.defines.iter().chain(&opts.guarded_defines).map(|(k, _)| k.clone()).collect();
     asm.seed_cli_defines(&opts.cli_defines);
     sigil_span::phase::step("  pass.seed", t_seed, "");
     let t_exec = sigil_span::phase::clock();
@@ -2013,6 +2015,11 @@ struct Asm {
     /// see. Labels vs. `equ`s are indistinguishable in `env` (both hold an
     /// `Int`), so this dedicated name set is the discriminator.
     known_labels: crate::seed::Seeded<std::collections::HashSet<String>>,
+    /// The names the caller defines before the source runs
+    /// ([`Options::defines`], [`Options::guarded_defines`]). They seed the
+    /// environment without being bound by any line, and `ifdef` counts them as
+    /// defined from the first line of every pass.
+    predefined: std::collections::HashSet<String>,
     /// The [`SymClass`] each fully-qualified name was DECLARED with, **in this
     /// pass only**.
     ///
@@ -2393,6 +2400,7 @@ impl Asm {
             shared: Vec::new(),
             mompass: LATER_PASS,
             known_labels: crate::seed::Seeded::new(std::collections::HashSet::new()),
+            predefined: std::collections::HashSet::new(),
             sym_class: std::collections::HashMap::new(),
             value_stacks: std::collections::BTreeMap::new(),
             save_sites: Vec::new(),
@@ -3278,12 +3286,17 @@ impl Asm {
     /// result" (manual section 2.11, "Forward References and Other
     /// Disasters"). The displacement's value there decides only one thing that
     /// outlives the pass: whether [`collapse_zero_disp`] drops the extension
-    /// word. Measured on the reference asl: `move.b d0,Fwd(a1)` with `Fwd equ
-    /// $3E` later is laid out 2 bytes long on pass 1 at `*` = 0 and at `*` =
+    /// word.
+    ///
+    /// The stand-in is per SYMBOL, not per expression: each unknown name takes
+    /// the location counter and the expression is then evaluated, so
+    /// `Fwd-2(a1)` at `*` = 2 is 0 and collapses, as it does under asl.
+    /// Measured on the reference asl: `move.b d0,Fwd(a1)` with `Fwd equ $3E`
+    /// later is laid out 2 bytes long on pass 1 at `*` = 0 and at `*` =
     /// `$10000`, and 4 bytes long at `*` = 2, so the collapse reads the low 16
-    /// bits of the location counter. A 0 placeholder collapsed every forward
-    /// displacement on pass 0 and moved every address after it on pass 1,
-    /// which is a whole extra pass on Sonic 1.
+    /// bits of the value. A 0 placeholder collapsed every forward displacement
+    /// on pass 0 and moved every address after it on pass 1, which is a whole
+    /// extra pass on Sonic 1.
     ///
     /// On a later pass an unknown symbol is either an error or a name no pass
     /// has defined yet, and the ordinary 0 placeholder stands.
@@ -3291,9 +3304,28 @@ impl Asm {
         let folded = self.fold(e);
         if self.mompass == FIRST_PASS && matches!(folded, Fold::Poison) {
             self.route_poison_names(e, span);
-            return self.here_i64() as i16 as i64;
+            return match self.fold_unknown_as_pc(e) {
+                Fold::Value(v) => v as i16 as i64,
+                _ => self.here_i64() as i16 as i64,
+            };
         }
         self.settle_imm(folded, e, span, i16::MIN as i64, i16::MAX as i64)
+    }
+
+    /// [`Self::fold`] with asl's first-pass rule for a name that has no value
+    /// yet: it stands for the location counter. A register name still has no
+    /// value.
+    fn fold_unknown_as_pc(&self, e: &Expr) -> Fold {
+        let pc = self.here_i64();
+        e.fold(&|name| {
+            if self.reads_as_register(name) {
+                return None;
+            }
+            self.builtin_num(name)
+                .or_else(|| self.resolve_sym(name))
+                .or_else(|| self.resolve_str_packed(name))
+                .or(Some(pc))
+        })
     }
 
     /// The range check and placeholder half of [`Self::fold_imm`], for a fold
@@ -7288,8 +7320,23 @@ impl Asm {
     /// `ifdef $$x` is false and `ifndef $$y` true whether or not the `$$`
     /// name is bound, as asl's `DEFINED` is 0 for one (probe `i07`: `2222`,
     /// and no `1111`, with `$$x:` two lines above).
+    ///
+    /// The answer is POSITIONAL: a name counts only once THIS pass has bound it
+    /// (or the caller predefined it), never because an earlier pass did. asl,
+    /// measured: `ifdef B` above `B = 1` is false on every pass (`c3`, 1 pass,
+    /// `00`), and a name only an earlier pass's layout bound is not seen
+    /// (`a12`, `a16`). Reading the environment instead, which carries every
+    /// name any earlier pass bound, answered `ifdef` from a previous pass.
     fn cond_defined(&self, arg_toks: &[Token]) -> bool {
-        matches!(arg_toks.first().map(|t| &t.tok), Some(Tok::Ident(n)) if !is_temp_sym(n) && self.resolve_sym(n).is_some())
+        let Some(Tok::Ident(n)) = arg_toks.first().map(|t| &t.tok) else {
+            return false;
+        };
+        if is_temp_sym(n) {
+            return false;
+        }
+        let key = self.sym_key(n);
+        (self.env.defined_this_pass(&key) || self.predefined.contains(&key))
+            && self.resolve_sym(n).is_some()
     }
 
     /// `if MOMCPUNAME="Z80"` / `<lhs>="str"` / `"a"="a"` / `"a"<>"b"` string
@@ -11708,10 +11755,13 @@ impl Asm {
                 // quick forms' range (`addq`/`subq` and the shift counts take
                 // 1 to 8), so `addq.w #Fwd,d0` used to lay out as nothing and
                 // move every address after it on the next pass. 1 is inside
-                // the range of every 68000 immediate operand. asl emits the
-                // instruction on its first pass whatever the placeholder's
-                // range (`addq.w #Fwd-Fwd2,d0` ahead of its equates is 2
-                // passes under asl).
+                // the range of every 68000 immediate operand. asl's own
+                // first-pass value (each unknown name standing for `*`) can
+                // be anything, and asl lays the instruction out whatever it
+                // is: `addq.w #Fwd+20,d0` at `*` = 2 is 22 there, out of
+                // range, and asl still takes 2 passes with `5440`. An
+                // immediate's value never changes a 68000 instruction's
+                // size, so any encodable stand-in lays out what asl's does.
                 let folded = self.fold(e);
                 let v = if matches!(folded, Fold::Poison) {
                     self.route_poison_names(e, span);
@@ -21604,33 +21654,77 @@ mod pass_count_tests {
         assert_eq!(passes_and_bytes(src), (2, vec![0x52, 0x40, 0x4E, 0x71, 0x00, 0x02]));
     }
 
-    /// PLANTED CONTROL for read-set convergence: a name only ADDED on pass 1,
-    /// read on pass 1 by `ifdef` before it is defined. No value changes between
-    /// pass 0's and pass 1's environments except the added `B`, so the only
-    /// thing that can send the run to pass 2 is the record that pass 1 asked
-    /// `ifdef B` and got "not defined". Without that record pass 1 is returned
-    /// and the `$BB` is missing.
+    /// PLANTED CONTROL for read-set convergence. `dc.w After` reads a label
+    /// before this pass defines it. On pass 0 the displacement `Fwd-2` is 0 (each
+    /// unknown name stands for `*` = 2) and collapses, so `After` is 4; pass 1
+    /// lays the move out long and `After` becomes 6. The record that pass 1
+    /// read `After` as 4 is what sends the run to pass 2; without it pass 1 is
+    /// returned with `0004`. Expected bytes and pass count are asl's
+    /// (md5 61e67256): 3 passes, `0006 1340 003E 4E71`.
     #[test]
-    fn control_an_added_name_read_by_ifdef_still_forces_the_next_pass() {
-        let src = "\tcpu 68000\n\tifdef B\n\tdc.b $BB\n\tendif\n\tifdef A\nB = 1\n\tendif\nA = 1\n\tdc.b 0\n";
-        assert_eq!(passes_and_bytes(src), (3, vec![0xBB, 0x00]));
+    fn control_a_label_read_before_its_definition_forces_the_next_pass() {
+        let src = "\tcpu 68000\n\tdc.w After\n\tmove.b d0,Fwd-2(a1)\nAfter:\tnop\nFwd\tequ $40\n";
+        assert_eq!(
+            passes_and_bytes(src),
+            (3, vec![0x00, 0x06, 0x13, 0x40, 0x00, 0x3E, 0x4E, 0x71])
+        );
     }
 
-    /// PLANTED CONTROL, the value shape: `V` takes its value from `ifndef B`,
-    /// and `B` is only added on pass 1. Pass 2 changes `V` (1 to 2), and the
-    /// read record is also what stops the run there: nothing pass 2 read from
-    /// its seed changed, so there is no fourth pass although `V` moved.
+    /// PLANTED CONTROL, through an equate: `Y equ After+1` is read before its
+    /// definition and moves with `After`. asl: 3 passes, `0007 1340 003E 4E71`.
     #[test]
-    fn control_a_value_decided_by_an_added_name_is_carried_to_the_next_pass() {
-        let src = "\tcpu 68000\n\tifndef B\nV = 1\n\telse\nV = 2\n\tendif\n\tdc.b V\n\tifdef A\nB = 1\n\tendif\nA = 1\n";
-        assert_eq!(passes_and_bytes(src), (3, vec![0x02]));
+    fn control_an_equate_read_before_its_definition_forces_the_next_pass() {
+        let src = "\tcpu 68000\n\tdc.w Y\n\tmove.b d0,Fwd-2(a1)\nAfter:\tnop\nY\tequ After+1\nFwd\tequ $40\n";
+        assert_eq!(
+            passes_and_bytes(src),
+            (3, vec![0x00, 0x07, 0x13, 0x40, 0x00, 0x3E, 0x4E, 0x71])
+        );
     }
 
-    /// A name added on pass 1 that nothing reads before its definition no
-    /// longer costs a pass: 2 passes, where comparing whole environments took 3.
+    /// A name added on pass 1 (`B`, under `if After=6`) that nothing reads
+    /// before its definition costs no pass: 2, where asl and whole-environment
+    /// comparison take 3. Bytes are asl's: `4E71 1340 003E 01 00`.
     #[test]
     fn an_added_name_nobody_reads_early_does_not_cost_a_pass() {
-        let src = "\tcpu 68000\n\tifdef A\nB = 1\n\tendif\nA = 1\n\tdc.b B\n";
-        assert_eq!(passes_and_bytes(src), (2, vec![0x01]));
+        let src = "\tcpu 68000\n\tnop\n\tmove.b d0,Fwd-2(a1)\nAfter:\n\tif After=6\nB = 1\n\tendif\n\tdc.b B\n\tdc.b 0\nFwd\tequ $40\n";
+        assert_eq!(
+            passes_and_bytes(src),
+            (2, vec![0x4E, 0x71, 0x13, 0x40, 0x00, 0x3E, 0x01, 0x00])
+        );
+    }
+
+    /// `ifdef` is positional within the pass, as asl's is: `ifdef B` above
+    /// `B = 1` is false on every pass. asl: `00` (probe `c1`).
+    #[test]
+    fn ifdef_does_not_see_a_name_defined_further_down() {
+        let src = "\tcpu 68000\n\tifdef B\n\tdc.b $BB\n\tendif\n\tifdef A\nB = 1\n\tendif\nA = 1\n\tdc.b 0\n";
+        assert_eq!(passes_and_bytes(src).1, vec![0x00]);
+    }
+
+    /// The value shape of the same rule: `ifndef B` above a conditional
+    /// `B = 1` takes the `V = 1` arm. asl: `01` (probe `c2`).
+    #[test]
+    fn ifndef_decides_a_value_positionally() {
+        let src = "\tcpu 68000\n\tifndef B\nV = 1\n\telse\nV = 2\n\tendif\n\tdc.b V\n\tifdef A\nB = 1\n\tendif\nA = 1\n";
+        assert_eq!(passes_and_bytes(src).1, vec![0x01]);
+    }
+
+    /// A name only pass 0's layout bound is not seen by `ifdef` on a later
+    /// pass, although the environment still holds it. asl: `4E71 1280 00`
+    /// (probe `a16`).
+    #[test]
+    fn ifdef_does_not_see_a_name_only_an_earlier_pass_bound() {
+        let src = "\tcpu 68000\n\tnop\n\tmove.b d0,Fwd(a1)\nAfter:\n\tif After=6\nStale = 1\n\tendif\n\tifdef Stale\n\tdc.b $AA\n\tendif\n\tdc.b 0\nFwd\tequ 0\n";
+        assert_eq!(passes_and_bytes(src).1, vec![0x4E, 0x71, 0x12, 0x80, 0x00]);
+    }
+
+    /// The first-pass stand-in is per symbol: `Fwd-2(a1)` at `*` = 2 is 0 on
+    /// the first pass and collapses. The source has two self-consistent
+    /// layouts, so the first pass decides which is kept. asl: `4E71 1280 4E71`
+    /// (probe `a2`).
+    #[test]
+    fn the_first_pass_stand_in_is_per_symbol() {
+        let src = "\tcpu 68000\n\tnop\n\tmove.b d0,Fwd-2(a1)\nAfter:\tnop\nFwd\tequ After-2\n";
+        assert_eq!(passes_and_bytes(src).1, vec![0x4E, 0x71, 0x12, 0x80, 0x4E, 0x71]);
     }
 }
