@@ -1450,6 +1450,10 @@ points at it rather than restating it, so there is one copy to keep true.
   fact on request. That settles WHO sequences it, not WHETHER: advancing the pin is a decision, tested against the
   hub's 2026-09-02 ruling that the pin exists so the corpus does NOT track tip (`docs/OVERSEER-REFERENCE.md`, *A TASK
   RELAYED AS ROUTINE*). Run `refreeze --check` first to know whether it is a repair or a decision.
+- Asked aeon 2026-09-28 (sigil session message, on the hub's steer): name a quiet aeon revision for sound and RAM
+  layout (suggested after their PPB4 and woven sizing) and confirm the sound bank head span there. We advance to THAT
+  SHA, never to tip, and edit `repin.toml` `soundbankhead` `len` to match it. Aeon sets the timing; nothing is held.
+  Resume when their reply names the revision.
 - Third heads-up 2026-09-26 (aeon's agent's reading, NOT verified here): aeon `f136c486` (slope landing fix) adds a
   cross-module name `Player_SensorLand` (`games/sonic4/player/player_sensors.emp`, used from `player_air.emp`); the
   port tests run against aeon master report it as the only unresolved name, 39 failed / 24 passed, same at their base
