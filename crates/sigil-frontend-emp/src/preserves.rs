@@ -48,7 +48,7 @@
 //! place that decides.
 
 use crate::closure::RegEffect;
-use crate::flag_check::{entry_instr_idx, instr_span, transfer_target_sym, Cfg, Edge};
+use crate::flag_check::{direct_proc_target, entry_instr_idx, instr_span, transfer_target_sym, Cfg, Edge};
 use crate::lower::instr_written_regs;
 use crate::value::{CodeItem, CodeOperand, ItemAuthor, Reg, Width};
 use sigil_span::Span;
@@ -945,8 +945,12 @@ fn transfer(
     // policy). Its effect on the ENTRY-value bits is the CALLEE-PRESERVES ORACLE
     // ([`CallPolicy`]): a register the callee provably preserves keeps its entry
     // bit; every other is clobbered.
+    // The callee is the proc the call enters ([`direct_proc_target`]): a bare
+    // `jsr Foo` or the `jsr (Foo).l` a bound `invoke` lowers to. A local helper
+    // (`jbsr .L`), a mid-item entry (`jsr Item.field`) or an indirect target names
+    // no proc and reads as `None`, which the oracle charges as clobber-all.
     if is_call(mnem) {
-        apply_callee_effect(st, policy, call_target(ops));
+        apply_callee_effect(st, policy, direct_proc_target(ops));
         return None;
     }
 
@@ -1621,9 +1625,12 @@ fn ds_transfer(
 
     // A call: it clobbers every saved register in its effective set (that save is
     // then needed); it PRESERVES the rest (recorded as a bracketed callee). Nets
-    // zero on the stack.
+    // zero on the stack. The callee is the proc the call enters
+    // ([`direct_proc_target`]), a bare `jsr Foo` or a bound `invoke`'s
+    // `jsr (Foo).l`; a local helper, a mid-item entry or an indirect target names
+    // no proc and makes every live save needed.
     if is_call(mnem) {
-        if let Some(callee) = call_target(ops) {
+        if let Some(callee) = direct_proc_target(ops) {
             for slot in st.stack.iter_mut() {
                 slot.callees.insert(callee.to_string());
                 if let Some(r) = slot.reg {
@@ -1633,7 +1640,7 @@ fn ds_transfer(
                 }
             }
         } else {
-            // An indirect call — unknown effect; every live save is needed.
+            // No proc named: unknown effect; every live save is needed.
             for slot in st.stack.iter_mut() {
                 slot.clobbered = true;
             }
@@ -1728,15 +1735,6 @@ fn record_restore(
     });
     rec.callees.extend(slot.callees.iter().cloned());
     rec.any_clobbered |= slot.clobbered;
-}
-
-/// The call target symbol (the last `Sym` operand), or `None` for an indirect
-/// call.
-fn call_target(ops: &[CodeOperand]) -> Option<&str> {
-    ops.iter().rev().find_map(|o| match o {
-        CodeOperand::Sym(name) => Some(name.as_str()),
-        _ => None,
-    })
 }
 
 /// Join `other` into `acc` for the dead-save dataflow. Differing depth ⇒ bail.
