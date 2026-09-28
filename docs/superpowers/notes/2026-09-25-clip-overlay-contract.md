@@ -75,7 +75,7 @@ Each is a build error naming the file:
 | `[map.when-unknown]` | a `when` other than `sound_on`/`sound_off` (this also applies to `map.toml` itself now, see below) |
 | `[map.overlay-off-grid]` | an `at` not on the 0x8000 bank grid |
 | `[map.overlay-anchor-collision]` | after the overlay, two anchors of one shape sit at one address |
-| `[map.overlay-island-ambiguous]` | sigil's frozen table does not hold exactly one section at the replaced anchor's `map.toml` address, so which section is the island cannot be said |
+| `[map.overlay-island-ambiguous]` | sigil's frozen table holds more than one section at the replaced anchor's `map.toml` address, or a section the overlay did not move already sits at the new address, so which section is the island cannot be said. An anchor with NO frozen row at its `map.toml` address (a walk-held island such as `song_bank_2`) is not refused here: the overlay moves only the anchor, and `validate_placement` checks the new address (see `2026-09-28-overlay-unfrozen-anchor.md`) |
 | usage error | the switch given twice, or combined with `--config-a`, `--config-b`, `--lean`, `--stress-evict`, `--stress-art` or `--report` |
 
 It is accepted with `--game sonic4|demo`, `--debug`, `--check`, `--extra-entry`, `-o` and
