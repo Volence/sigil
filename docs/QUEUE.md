@@ -268,7 +268,14 @@ scratch copies; settled). The notes themselves are historical and were not edite
 
 ### INOUT-PROOF-INVOKE-HOOK
 
-- state: **open, unverified**  size: absent (not measured)  project: `-`  reported by: aeon, 2026-09-27
+- state: **LANDED 2026-09-28 at merge `87cdb675`** (tip `f1c7b70a`)  size: `S`  project: `-`  reported by: aeon, 2026-09-27
+- Reproduced and real: three checkers read only a bare `Sym` as a call target, and a bound `invoke` lowers to
+  `jsr (Proc).l` (`AbsSym`). One shared reader, `flag_check::direct_proc_target`, now takes both. Full record:
+  `docs/superpowers/notes/2026-09-28-inout-proof-invoke-hook.md`. aeon's `Rings_AnimTick` split is now optional.
+- **Booked from it, open:** `preserves.rs` `call_target` is a fifth `Sym`-only reader feeding the dead-save walk; a
+  fix there can move bytes, so it is its own parcel. Also: the worktree tree-walk tests skip only a dir named
+  `target`, so a cargo target dir named anything else leaves scratch copies that red `scripts_name_their_tree`.
+- *(Report as filed, kept below.)*
 - aeon's agent reports that while landing their merge `9496bbb3` (verified on aeon `origin/master` here), our
   contract checker treated `invoke Game.ring_frame` inside `DrawRings` as an unknown callee and failed its
   `inout` proof (d5/a4), so they moved the tick into its own proc. A hook call has a declared clobber bound,
