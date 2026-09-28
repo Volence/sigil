@@ -1606,3 +1606,16 @@ points at it rather than restating it, so there is one copy to keep true.
 - A clip overlay may move an anchor that holds no frozen row (bank 2 is walk-placed); the overlaid map is what
   `validate_placement` checks the placed head against, so a wrong overlay address refuses
   `[map.undeclared-island]`. Record: `docs/superpowers/notes/2026-09-28-overlay-unfrozen-anchor.md`.
+
+### GPP-SEAM-WITNESSES
+
+- state: **open**, not started  size: unmeasured  asked by: aeon, 2026-09-28 (offered, not owed)
+- Aeon's `effects_seam_gate --lst` step 3 cannot tell whether the act descriptor's call into
+  `games.sonic4.ojz_effects_editor_act1` is reached: the call is byte-neutral, the module is `use`d by four other
+  modules, so its witness equates appear in the listing either way. Aeon measured it (descriptor's `use` and call
+  removed, ROM crc unchanged, all six witnesses present). A real witness needs something that exists only through
+  that call, which means sigil support (for example a listing record of which call sites a comptime function was
+  reached from) or a generator change on their side. Evidence, read at aeon `origin/master` (reachable, notice
+  commit `20187520`): `docs/DEFERRED_WORK.md` row 2 "GPP-SEAM-WITNESSES", and
+  `docs/research/2026-09-26-gate-predicate-audit.md` line 60. Any new listing word is language surface: propose,
+  discuss, land.
