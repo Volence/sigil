@@ -1466,7 +1466,10 @@ points at it rather than restating it, so there is one copy to keep true.
 
 ### AS-PERF-FIX-PEAK
 
-- state: **open, next**  size: `S`  project: `SIGIL-AS-REPLACEMENT`  from: AS-PERF-MEASURE fix 3
+- state: **LANDED 2026-09-28 at merge `a1bfb6fb`** (tip `809b2a35`), with fixes 5 and 6  size: `S`  project: `SIGIL-AS-REPLACEMENT`  from: AS-PERF-MEASURE fix 3
+- Peak RSS S1/S2/S3K 72->49, 110->94, 244->185 MB; wall ratios 0.842 / 0.835 / 0.867 (load 10.9 to 16.8). Record:
+  the note's "After AS-PERF-FIX-PEAK" section. Left open there: `sigil emp` single-file link still lends sections;
+  the front end's per-pass growth (S3K 141 -> 163 -> 190 MB) has no owner measurement.
 - `run_asm` keeps the front end's whole module alive while layout builds a second copy of every section. Drop or
   consume it first. Estimated peak cut 15 to 30 percent (S3K 243 to about 190 MB). Low risk; byte identity on
   S1/S2/S3K and aeon is the bar. Then fixes 5 and 6 (substitution fast path, builtin-scan skip), both small.
