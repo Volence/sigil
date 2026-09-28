@@ -18,7 +18,9 @@ use sigil_span::{Diagnostic, Level, Span};
 pub const EXTERN_UNKNOWN_ID: &str = "[extern.unknown]";
 
 mod relax;
-pub use relax::{asl_width_rule, resolve_layout, resolve_layout_measuring, resolve_layout_placing, AbsWidth};
+pub use relax::{
+    asl_width_rule, resolve_layout, resolve_layout_measuring, resolve_layout_owned, resolve_layout_placing, AbsWidth,
+};
 
 mod blob;
 pub use blob::{

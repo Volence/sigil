@@ -599,7 +599,7 @@ fn run_asm(entry: &Entry, args: &[String]) {
     // them too: they are on stderr above that stage's errors, and a line that
     // counted only the failing stage's list would report `1 error` over a
     // stream holding a warning as well.
-    let (module, sources, shown) = match sigil_frontend_as::assemble_root_located_warned(
+    let (sections, sources, shown) = match sigil_frontend_as::assemble_root_located_warned(
         std::path::Path::new(&input),
         &opts,
     ) {
@@ -610,7 +610,7 @@ fn run_asm(entry: &Entry, args: &[String]) {
             render_as_warnings(&a);
             let shown = Shown::default().plus(&a.warnings);
             sigil_span::phase::phase("cli.render", t_render, "");
-            (a.module, a.sources, shown)
+            (a.module.sections, a.sources, shown)
         }
         Err(failure) => {
             render_as_messages(&failure.messages);
@@ -642,7 +642,9 @@ fn run_asm(entry: &Entry, args: &[String]) {
     let empty = sigil_ir::SymbolTable::new();
     let placed: Vec<u32> = blobs.iter().map(|b| b.address).collect();
     let t_layout = sigil_span::phase::clock();
-    let resolved = match sigil_link::resolve_layout_placing(&module.sections, &empty, true, &placed) {
+    // The front end's sections are handed to layout by value: layout lowers them
+    // in place, so the program is never held twice.
+    let resolved = match sigil_link::resolve_layout_placing(sections, &empty, true, &placed) {
         Ok(secs) => secs,
         Err(diags) => {
             render_located_diags(&diags, &sources);
@@ -734,7 +736,7 @@ fn run_asm(entry: &Entry, args: &[String]) {
     sigil_span::phase::phase("emit", t_emit, "");
     if sigil_span::phase::on() {
         let t_drop = sigil_span::phase::clock();
-        drop((image, linked, resolved, module, sources));
+        drop((image, linked, resolved, sources));
         sigil_span::phase::phase("teardown", t_drop, "");
         sigil_span::phase::total();
     }
