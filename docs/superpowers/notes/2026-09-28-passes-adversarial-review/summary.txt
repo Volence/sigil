@@ -1,0 +1,221 @@
+== a10_stale_name_pass1_layout
+base  rc=0 passes=3  converged/                   4e711340003eaa00
+new   rc=0 passes=2  converged/env                4e711340003e00
+asl   rc=0 3 pass                                4e711340003e00
+== a11_stale_name_base
+base  rc=0 passes=3  converged/                   4e7113400040aa00
+new   rc=0 passes=2  converged/env                4e711340004000
+asl   rc=0 2 pass                                4e711340004000
+== a12_stale_name_pc0
+base  rc=0 passes=3  converged/                   13400040aa00
+new   rc=0 passes=2  converged/reads              13400040aa00
+asl   rc=0 3 pass                                1340004000
+== a13_multifix_absw_highpc
+base  rc=0 passes=2  converged/                   30387fff4e71
+new   rc=0 passes=2  converged/env                30387fff4e71
+asl   rc=0 2 pass                                3039000080014e71
+== a14_multifix_d16_difference
+base  rc=0 passes=2  converged/                   4e7112804e71
+new   rc=0 passes=2  converged/env                4e71134000024e71
+asl   rc=0 2 pass                                4e7112804e71
+== a15_d16_difference_passcount
+base  rc=0 passes=3  converged/                   4e71134000404e710006
+new   rc=0 passes=2  converged/env                4e71134000404e710006
+asl   rc=0 3 pass                                4e71134000404e710006
+== a16_stale_name_new_pass0
+base  rc=0 passes=2  converged/                   4e71128000
+new   rc=0 passes=2  converged/reads              4e711280aa00
+asl   rc=0 3 pass                                4e71128000
+== a17_stale_label_value
+base  rc=1 passes=2  converged/                   ERR(a17_stale_label_value.asm(8):2: error: unresolved symbol )
+new   rc=0 passes=2  converged/reads              4e7112800006
+asl   rc=0 3 pass                                4e7112800006
+== a18_stale_macro
+base  rc=1 passes=2  converged/                   ERR(a18_stale_macro.asm(14):2: error: `StaleMac` is not a rec)
+new   rc=0 passes=2  converged/reads              4e71128000aa
+asl   rc=0 3 pass                                4e71128000aa
+== a19_stale_label_per_symbol
+base  rc=0 passes=3  converged/                   4e711340003e0004
+new   rc=1 passes=2  converged/env                ERR(a19_stale_label_per_symbol.asm(8):2: error: unresolved sy)
+asl   rc=0 3 pass                                4e711340003e0004
+== a1_multifix_d16
+base  rc=0 passes=2  converged/                   4e7112804e71
+new   rc=0 passes=2  converged/env                4e71134000024e71
+asl   rc=0 2 pass                                4e71134000024e71
+== a2_multifix_d16_offset
+base  rc=0 passes=2  converged/                   4e7112804e71
+new   rc=0 passes=2  converged/env                4e71134000024e71
+asl   rc=0 2 pass                                4e7112804e71
+== a3_multifix_d16_plus
+base  rc=0 passes=2  converged/                   4e7112804e71
+new   rc=0 passes=2  converged/env                4e71134000024e71
+asl   rc=0 2 pass                                4e71134000024e71
+== a4_d16_expr_value
+base  rc=0 passes=2  converged/                   4e7112804e71
+new   rc=0 passes=2  converged/reads              4e7112804e71
+asl   rc=0 2 pass                                4e7112804e71
+== a5_multifix_bra
+base  rc=1 passes=2  converged/                   ERR(a5_multifix_bra.asm(3):2: error: branch needs an explicit)
+new   rc=1 passes=2  converged/env                ERR(a5_multifix_bra.asm(3):2: error: branch needs an explicit)
+asl   rc=0 2 pass                                4e71607e4e71
+== a6_multifix_absw
+base  rc=0 passes=2  converged/                   4e7130387fff4e71
+new   rc=0 passes=2  converged/env                4e7130387fff4e71
+asl   rc=0 2 pass                                4e7130387fff4e71
+== a7_d16_pc10000
+base  rc=1 passes=3  converged/                   ERR(a7_d16_pc10000.asm(5):7: error: operand 65540 out of rang)
+new   rc=1 passes=2  converged/reads              ERR(a7_d16_pc10000.asm(5):7: error: operand 65540 out of rang)
+asl   rc=2 1 pass                                ERR(asl.log:> > > a.asm(5): error: range overflow
+a.lst:> > > a.asm(5): error: range overflow)
+== a8_addq_range_error
+base  rc=1 passes=2  converged/                   ERR(a8_addq_range_error.asm(3):2: error: unsupported form: Ad)
+new   rc=1 passes=2  converged/reads              ERR(a8_addq_range_error.asm(3):2: error: unsupported form: Ad)
+asl   rc=2 2 pass                                ERR(asl.log:> > > a.asm(3): error: operand must be in range
+a.lst:> > > a.asm(3): error: operand must be in range 1)
+== a9_d16_offset_passcount
+base  rc=0 passes=3  converged/                   4e711340003e4e710006
+new   rc=0 passes=2  converged/env                4e711340003e4e710006
+asl   rc=0 3 pass                                4e711340003e4e710006
+== b10_align_forward
+base  rc=0 passes=2  converged/                   0100000202
+new   rc=0 passes=2  converged/env                0100000202
+asl   rc=136                                       ERR()
+== b11_org_forward
+base  rc=0 passes=2  converged/                   0100000002
+new   rc=0 passes=2  converged/env                0100000002
+asl   rc=2 1 pass                                ERR(asl.log:> > > a.asm(3):6: error: expression must be evaluat
+a.lst:> > > a.asm(3):6: error: expression must be evaluatab)
+== b12_macro_cond_def_used_after
+base  rc=0 passes=2  converged/                   aa
+new   rc=0 passes=2  converged/env                aa
+asl   rc=2 1 pass                                ERR(asl.log:> > > a.asm(7):2: error: unknown inst
+a.lst:> > > a.asm(7):2: error: unknown instru)
+== b13_function_cond
+base  rc=0 passes=2  converged/                   06
+new   rc=0 passes=2  converged/env                06
+asl   rc=2 1 pass                                ERR(asl.log:> > > a.asm(5):7: error: unknown function
+a.lst:> > > a.asm(5):7: error: unknown function)
+== b16_fatal_forward
+base  rc=0 passes=2  converged/                   01
+new   rc=0 passes=2  converged/env                01
+asl   rc=3                                       ERR(asl.log:> > > a.asm(2): error: expression must be evaluat
+a.lst:> > > a.asm(2): error: expression must be evaluatab)
+== b17_cond_label
+base  rc=0 passes=3  converged/                   010200000004
+new   rc=0 passes=3  converged/env                010200000004
+asl   rc=2 1 pass                                ERR(asl.log:> > > a.asm(2): error: expression must be evaluatabl
+a.lst:> > > a.asm(2): error: expression must be evaluatable )
+== b18_string_forward
+base  rc=1 passes=2  converged/                   ERR(b18_string_forward.asm(2):2: error: unresolved symbol `S`)
+new   rc=1 passes=2  converged/env                ERR(b18_string_forward.asm(2):2: error: unresolved symbol `S`)
+asl   rc=0 2 pass                                41
+== b1_defined_after_cond_def
+base  rc=0 passes=3  converged/                   bb00
+new   rc=0 passes=2  converged/reads              bb00
+asl   rc=0 1 pass                                00
+== b20_chain
+base  rc=0 passes=3  converged/                   a200
+new   rc=0 passes=2  converged/reads              a200
+asl   rc=0 1 pass                                00
+== b22_label_equ
+base  rc=0 passes=3  converged/                   4ef9000000064e71
+new   rc=0 passes=3  converged/env                4ef9000000064e71
+asl   rc=2 2 pass                                ERR(asl.log:> > > a.asm(2):7: error: symbol undefined
+a.lst:> > > a.asm(2):7: error: symbol undefined)
+== b2_defined_before
+base  rc=0 passes=3  converged/                   cc
+new   rc=0 passes=2  converged/reads              cc
+asl   rc=0 1 pass                                cc
+== b30_include_forward
+base  rc=0 passes=2  converged/                   b2b20002
+new   rc=0 passes=2  converged/env                b2b20002
+asl   rc=3                                       ERR(asl.log:> > > a.asm(2): error: expression must be evalu
+a.lst:> > > a.asm(2): error: expression must be evaluat)
+== b31_binclude_forward
+base  rc=0 passes=3  converged/                   44450002
+new   rc=0 passes=2  converged/reads              44450002
+asl   rc=2 1 pass                                ERR(asl.log:> > > a.asm(2): error: expression must be eval
+a.lst:> > > a.asm(2): error: expression must be evalua)
+== b32_charset_forward
+base  rc=0 passes=2  converged/                   30
+new   rc=0 passes=2  converged/env                30
+asl   rc=0 2 pass                                30
+== b33_local_label
+base  rc=0 passes=3  converged/                   6000000400004e710006
+new   rc=0 passes=3  converged/env                6000000400004e710006
+asl   rc=2 1 pass                                ERR(asl.log:> > > a.asm(4): error: expression must be evaluatab
+a.lst:> > > a.asm(4): error: expression must be evaluatable)
+== b34_macro_local_forward
+base  rc=0 passes=3  converged/                   6000000411114e7100066000000411114e710010
+new   rc=0 passes=3  converged/env                6000000411114e7100066000000411114e710010
+asl   rc=2 1 pass                                ERR(asl.log:> > > a.asm(10) M(2): error: expression mus
+a.lst:> > > a.asm(10) M(2): error: expression must )
+== b35_macro_plain_label_forward
+base  rc=0 passes=3  converged/                   000411114e71000a11114e71
+new   rc=0 passes=3  converged/env                000411114e71000a11114e71
+asl   rc=2 1 pass                                ERR(asl.log:> > > a.asm(9) M(2): error: expressio
+a.lst:> > > a.asm(9) M(2): error: expression )
+== b36_rept_labels_forward
+base  rc=0 passes=3  converged/                   0004010100080101000c0101
+new   rc=0 passes=3  converged/env                0004010100080101000c0101
+asl   rc=2 1 pass                                ERR(asl.log:> > > a.asm(8) REPT 1(2): error: expression
+a.lst:> > > a.asm(8) REPT 1(2): error: expression m)
+== b37_while_forward
+base  rc=1 passes=2  converged/                   ERR(b37_while_forward.asm(3):1: error: `while` is never close)
+new   rc=1 passes=2  converged/env                ERR(b37_while_forward.asm(3):1: error: `while` is never close)
+asl   rc=2 1 pass                                ERR(asl.log:> > > INTERNAL: error: WHILE without ENDM
+a.lst:> > > INTERNAL: error: WHILE without ENDM)
+== b38_phase_forward
+base  rc=0 passes=3  converged/                   00000100
+new   rc=0 passes=2  converged/reads              00000100
+asl   rc=0 3 pass                                00000100
+== b39_padding
+base  rc=0 passes=2  converged/                   03004e710004
+new   rc=0 passes=2  converged/env                03004e710004
+asl   rc=0 2 pass                                03004e710004
+== b3_set_twice
+base  rc=0 passes=3  converged/                   050105
+new   rc=0 passes=3  converged/env                050105
+asl   rc=0 2 pass                                010105
+== b40_save_restore
+base  rc=0 passes=3  converged/                   02
+new   rc=0 passes=2  converged/reads              02
+asl   rc=2 1 pass                                ERR(asl.log:> > > a.asm(4): error: expression must be evaluata
+a.lst:> > > a.asm(4): error: expression must be evaluatabl)
+== b41_nameless_fixed
+base  rc=0 passes=3  converged/                   6000000400004e716000fffe
+new   rc=0 passes=3  converged/env                6000000400004e716000fffe
+asl   rc=2 1 pass                                ERR(asl.log:> > > a.asm(3): error: expression must be evalua
+a.lst:> > > a.asm(3): error: expression must be evaluata)
+== b4_rept_forward
+base  rc=0 passes=3  converged/                   111111000004
+new   rc=0 passes=2  converged/reads              111111000004
+asl   rc=2 1 pass                                ERR(asl.log:> > > a.asm(2):7: error: expression must be evaluat
+a.lst:> > > a.asm(2):7: error: expression must be evaluatab)
+== b5_switch_forward
+base  rc=0 passes=2  converged/                   02
+new   rc=0 passes=2  converged/env                02
+asl   rc=2 1 pass                                ERR(asl.log:> > > a.asm(2): error: expression must be evaluat
+a.lst:> > > a.asm(2): error: expression must be evaluatab)
+== b6_macro_if_labels
+base  rc=0 passes=2  converged/                   01000000010000040008
+new   rc=0 passes=2  converged/env                01000000010000040008
+asl   rc=2 1 pass                                ERR(asl.log:> > > a.asm(10) M(1): error: expression must be 
+a.lst:> > > a.asm(10) M(1): error: expression must be ev)
+== b7_nameless
+base  rc=1 passes=3  converged/                   ERR(b7_nameless.asm(7):2: error: unresolved symbol ` nameless)
+new   rc=1 passes=3  converged/env                ERR(b7_nameless.asm(7):2: error: unresolved symbol ` nameless)
+asl   rc=2 1 pass                                ERR(asl.log:> > > a.asm(3): error: expression must be evaluatable i
+a.lst:> > > a.asm(3): error: expression must be evaluatable in )
+== c1_control_ifdef
+base  rc=0 passes=3  converged/                   bb00
+new   rc=0 passes=3  converged/env                bb00
+asl   rc=0 1 pass                                00
+== c2_control_ifndef_value
+base  rc=0 passes=4  converged/                   02
+new   rc=0 passes=3  converged/reads              02
+asl   rc=0 1 pass                                01
+== c3_ifdef_forward_plain
+base  rc=0 passes=2  converged/                   bb00
+new   rc=0 passes=2  converged/env                bb00
+asl   rc=0 1 pass                                00
