@@ -250,9 +250,21 @@ scratch copies; settled). The notes themselves are historical and were not edite
 - state: **open**  size: `S` (measurement)  project: `SIGIL-AS-REPLACEMENT`
 - sigil is 2.0x to 2.5x slower than `asl`+`p2bin` and uses 5x to 18x the memory on the `.asm` route (load 9 to
   11 at the time, note section 6). No profiler here; per-phase timing is a code change, so measure first.
-- 2026-09-27: the first dispatch died about a minute in (corpus extracts and a base build log, no commits, nothing
-  lost) and was not noticed until the hub's liveness check 14 hours later. Re-dispatch from this row; the brief is
-  ordinary, nothing in it caused the death that anyone can see.
+- 2026-09-27, CORRECTED 2026-09-28: the first dispatch was NOT dead. Its transcript went quiet for 14 hours while it
+  waited on its own backgrounded release build (the brief forbade waiting on a notification; it did anyway), and the
+  overseer removed its worktree on the transcript's silence alone, without checking for a live process. It then
+  reported the loss. Nothing committed was lost; its read-only findings, below, are the head start.
+- Environment facts it measured: no `perf`, `valgrind`, `samply`, `heaptrack`, `hyperfine` or `/usr/bin/time`, so CPU
+  seconds come from `getrusage` in-process. The worktree-isolation hook refuses compound shell commands mentioning git;
+  single plain commands pass. Tell the next agent both, and to run its build in the FOREGROUND.
+- Code candidates (read, NOT measured), `crates/sigil-frontend-as/src/eval.rs`: `one_pass_with_defer` builds a fresh
+  `Asm` and clones the whole symbol environment, macro, function and known-label tables every pass; every `include`
+  is re-read from disk each pass through `sigil_span::read_set` (CRC-32, canonicalise, mutex), given a fresh
+  `SourceMap` entry and re-lexed by `split_src_lines`; `run_passes` keeps a whole `SymbolTable` per pass in `history`
+  for the oscillation proof (a peak-RSS candidate growing with pass count); a converged run with `force_relocate` or
+  leftover poison runs a bonus pass. CLI phases after the front end (`run_asm`, `sigil-cli/src/main.rs`):
+  `resolve_layout_placing`, `link`, `check_image_bounds`, `flatten_placing` (compression), `apply_sega_header`,
+  `emit_image`. Its planned instrument: env var `SIGIL_PHASE_TIMING`, read once via `OnceLock` like `SIGIL_CENSUS_*`.
 
 ### INOUT-PROOF-INVOKE-HOOK
 
