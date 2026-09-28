@@ -100,6 +100,14 @@ impl Clone for SrcLine {
     }
 }
 
+/// Two lines are equal when their text and position are: the memo is a cache
+/// of what the text answers, not part of the line.
+impl PartialEq for SrcLine {
+    fn eq(&self, other: &Self) -> bool {
+        self.text == other.text && self.base == other.base && self.source == other.source
+    }
+}
+
 /// The span a loop is entered from: its CLOSING line. asl collects the whole
 /// block before it runs it, so the enclosing frame names the `endm`, not the
 /// line that opened the loop and not the line inside it: `mymac(3) REPT 1(1)`
@@ -149,7 +157,7 @@ pub(crate) fn next_stamp() -> u64 {
 type MacroTable = std::collections::BTreeMap<String, MacroDef>;
 
 /// One captured macro definition.
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 struct MacroDef {
     /// Declared parameter names, in order. A `{INTLABEL}` group is NOT one of
     /// them: it declares a capture, not a slot, and consumes no argument
@@ -325,6 +333,7 @@ fn phase_pass_line(
     seed: &SymbolTable,
     history: &[SymbolTable],
     outcome: &str,
+    reads_note: &str,
 ) {
     if t_pass.is_none() {
         return;
@@ -358,7 +367,7 @@ fn phase_pass_line(
         &format!("pass{pass}"),
         t_pass,
         &format!(
-            "outcome={outcome}\tenv_entries={}\tenv_added={}\tenv_removed={}\tenv_changed={}\thistory_tables={}\thistory_entries={entries}\thistory_key_bytes={key_bytes}\tadded_sample={}\tremoved_sample={}\tchanged_sample={changed_sample}\tlowest_changed={lowest_changed}",
+            "outcome={outcome}\tenv_entries={}\tenv_added={}\tenv_removed={}\tenv_changed={}\thistory_tables={}\thistory_entries={entries}\thistory_key_bytes={key_bytes}\tadded_sample={}\tremoved_sample={}\tchanged_sample={changed_sample}\tlowest_changed={lowest_changed}{reads_note}",
             env.iter().count(),
             added.len(),
             removed.len(),
@@ -534,6 +543,7 @@ fn run_passes(
             labels: pass_labels,
             label_ref_equs: pass_label_ref_equs,
             sources,
+            reads,
         } = one_pass(
             src,
             root_name,
@@ -616,7 +626,53 @@ fn run_passes(
             }
         }
         let t_cmp = sigil_span::phase::clock();
-        let converged = pass > 0 && env == prev;
+        let already_failed =
+            !carried_fatals.is_empty() || diags.iter().any(|d| d.level == Level::Error);
+        // Whether the converged branch below would return this pass's own module
+        // rather than run the bonus pass.
+        let returns_this_pass = !force_relocate && (poison.is_empty() || already_failed);
+        // CONVERGENCE. Pass N+1 would be seeded with this pass's tables. It
+        // executes exactly as this pass did, and so produces this pass's
+        // module, diagnostics and tables, when either
+        //
+        // (a) the environment is the one this pass was seeded with, the
+        //     original test; or
+        // (b) every answer this pass took from its seed (a symbol's value,
+        //     whether a name is defined, a label or label-equ membership, a
+        //     macro or function lookup, the previous pass's instance index) is
+        //     the answer this pass's output gives. Every read of a seed is
+        //     recorded, structurally: the seeded tables live in
+        //     `crate::seed`, whose fields nothing else can reach, and whose
+        //     every reading method records before it answers. A name ADDED
+        //     this pass that nothing read before defining it changes no
+        //     answer, which is the whole of the saving.
+        //
+        // (b) is used only where this pass's module is returned. The bonus
+        // pass runs with different flags and can read what this pass did not,
+        // so a run that goes on to it keeps test (a) alone.
+        let env_settled = env == prev;
+        let read_change = if pass > 0 && !env_settled && returns_this_pass {
+            reads.first_change(&env, &pass_labels, &pass_label_ref_equs, &m, &f)
+        } else {
+            Some(String::new())
+        };
+        let converged = pass > 0 && (env_settled || read_change.is_none());
+        let reads_note = if t_cmp.is_some() {
+            let by = if !converged {
+                "none"
+            } else if env_settled {
+                "env"
+            } else {
+                "reads"
+            };
+            format!(
+                "\tconverged_by={by}\tfirst_read_change={}\t{}",
+                read_change.as_deref().unwrap_or(""),
+                reads.census()
+            )
+        } else {
+            String::new()
+        };
         sigil_span::phase::step("  pass.converge_check", t_cmp, "");
         if converged {
             // Converged: this pass's env is authoritative. A final bonus pass (seeded
@@ -658,9 +714,7 @@ fn run_passes(
             // conjunct, so the CHAINED path that legitimately hands those fragments
             // to a composition never reaches this reasoning at all.
             // `failed_run_reports_everything.rs` pins both directions.
-            let already_failed =
-                !carried_fatals.is_empty() || diags.iter().any(|d| d.level == Level::Error);
-            if !force_relocate && (poison.is_empty() || already_failed) {
+            if returns_this_pass {
                 let mut module = module;
                 restore_missing_equ_exports(&mut module, &ever_exported, &env);
                 attach_guarded_equ_exports(&mut module, &opts.guarded_defines);
@@ -695,7 +749,7 @@ fn run_passes(
                 } else {
                     Ok(Assembled { module, warnings: diags, messages, shared, sources: last_sources })
                 };
-                phase_pass_line(pass, t_pass, &env, &prev, &history, "converged");
+                phase_pass_line(pass, t_pass, &env, &prev, &history, "converged", &reads_note);
                 return PassRun {
                     result,
                     fatals: carried_fatals,
@@ -704,7 +758,7 @@ fn run_passes(
                     passes: pass + 1,
                 };
             }
-            phase_pass_line(pass, t_pass, &env, &prev, &history, "converged-bonus-follows");
+            phase_pass_line(pass, t_pass, &env, &prev, &history, "converged-bonus-follows", &reads_note);
             let t_bonus = sigil_span::phase::clock();
             let bonus = one_pass_with_defer(
                 src,
@@ -800,7 +854,7 @@ fn run_passes(
         history.push(std::mem::replace(&mut prev, env.clone()));
         sigil_span::phase::step("  pass.history_push", t_hist, "");
         let before = history.last().unwrap_or(&prev);
-        phase_pass_line(pass, t_pass, &env, before, &history, "continue");
+        phase_pass_line(pass, t_pass, &env, before, &history, "continue", &reads_note);
         seed = env;
         macros = m;
         functions = f;
@@ -1092,6 +1146,8 @@ struct PassOutput {
     env: SymbolTable,
     macros: MacroTable,
     functions: FunctionTable,
+    /// Every answer this pass took from the tables it was seeded with.
+    reads: crate::seed::SeedReads<MacroDef, (Vec<String>, Vec<Token>)>,
     diags: Vec<Diagnostic>,
     /// Operand symbols that folded to Poison this pass (name + site span).
     poison: Vec<(String, Span)>,
@@ -1240,13 +1296,12 @@ fn one_pass_with_defer(
     let mut asm = Asm::new_with_defer(opts, defer_unresolved_jsr_jmp);
     asm.mompass = mompass;
     asm.look_past_fatal = look_past_fatal;
-    asm.env = seed_env.clone();
-    asm.prev_owned = index_instance_owned(seed_env);
-    asm.macros = seed_macros.clone();
+    asm.env = crate::seed::SeededEnv::new(seed_env.clone());
+    asm.macros = crate::seed::Seeded::new(seed_macros.clone());
     asm.macros_gen = next_stamp();
-    asm.functions = seed_functions.clone();
-    asm.known_labels = seed_labels.clone();
-    asm.label_ref_equs = seed_label_ref_equs.clone();
+    asm.functions = crate::seed::Seeded::new(seed_functions.clone());
+    asm.known_labels = crate::seed::Seeded::new(seed_labels.clone());
+    asm.label_ref_equs = crate::seed::Seeded::new(seed_label_ref_equs.clone());
     asm.seed_cli_defines(&opts.cli_defines);
     sigil_span::phase::step("  pass.seed", t_seed, "");
     let t_exec = sigil_span::phase::clock();
@@ -1351,11 +1406,23 @@ fn one_pass_with_defer(
             asm.include_census.refused_too_deep,
         );
     }
+    let (env, env_reads) = asm.env.finish();
+    let (macros, macro_reads) = asm.macros.finish();
+    let (functions, function_reads) = asm.functions.finish();
+    let (labels, label_reads) = asm.known_labels.finish();
+    let (label_ref_equs, label_ref_equ_reads) = asm.label_ref_equs.finish();
     PassOutput {
         module,
-        env: asm.env,
-        macros: asm.macros,
-        functions: asm.functions,
+        env,
+        macros,
+        functions,
+        reads: crate::seed::SeedReads {
+            env: env_reads,
+            labels: label_reads,
+            label_ref_equs: label_ref_equ_reads,
+            macros: macro_reads,
+            functions: function_reads,
+        },
         diags,
         circular_layout: asm.circular_layout,
         poison: asm.poison_refs,
@@ -1363,8 +1430,8 @@ fn one_pass_with_defer(
         author_warnings: asm.author_warnings,
         messages: asm.messages,
         shared: asm.shared,
-        labels: asm.known_labels,
-        label_ref_equs: asm.label_ref_equs,
+        labels,
+        label_ref_equs,
         sources: asm.sources,
     }
 }
@@ -1595,7 +1662,10 @@ struct Asm {
     z80: Z80Backend,
     m68k: M68kBackend,
     state: crate::state::AsmState,
-    env: SymbolTable,
+    /// The symbol environment: the previous pass's, with this pass's bindings on
+    /// top. Every read of what the previous pass left is recorded (see
+    /// [`crate::seed`]).
+    env: crate::seed::SeededEnv,
     /// Front-end-only string-valued symbols (`.__str set "BUS ERROR"`).
     /// §7.4: strings NEVER enter `sigil_ir::SymbolValue`; they live here in the
     /// evaluator. Keyed by fully-qualified name exactly like `env` (see
@@ -1704,8 +1774,8 @@ struct Asm {
     /// what turns a span into `file(line)`; without it a diagnostic's offset has
     /// nothing to resolve against.
     sources: sigil_span::SourceMap,
-    functions: FunctionTable,
-    macros: MacroTable,
+    functions: crate::seed::Seeded<FunctionTable>,
+    macros: crate::seed::Seeded<MacroTable>,
     /// The [`HeadKey::macros_gen`] stamp: renewed whenever [`Self::macros`]
     /// changes, so a keyword memoised against one table answers only while
     /// that table stands.
@@ -1772,12 +1842,6 @@ struct Asm {
     /// names that scope owns; see [`scan_plain_labels`] for the measurement and
     /// [`Asm::plain_label_scope`] for the lookup rule.
     expansion_labels: Vec<ExpansionLabelScope>,
-    /// Which instances filed each name on the PREVIOUS pass: bare name to the
-    /// instance keys (` exp#N`) the seed environment carries it under. Built
-    /// once per pass by [`index_instance_owned`]; read by
-    /// [`Asm::plain_label_scope`] so a forward reference inside a body finds a
-    /// definition the body scan could not claim.
-    prev_owned: std::collections::HashMap<String, Vec<String>>,
     /// Monotonic instance counter behind the keys in `expansion_labels`. It
     /// counts iterations as well as expansions, so two iterations of one `rept`
     /// get two namespaces, which is what `p7` measures. Per-`Asm`, hence per
@@ -1948,7 +2012,7 @@ struct Asm {
     /// Baking is kept only for env-only `equ`/`set` targets the linker cannot
     /// see. Labels vs. `equ`s are indistinguishable in `env` (both hold an
     /// `Int`), so this dedicated name set is the discriminator.
-    known_labels: std::collections::HashSet<String>,
+    known_labels: crate::seed::Seeded<std::collections::HashSet<String>>,
     /// The [`SymClass`] each fully-qualified name was DECLARED with, **in this
     /// pass only**.
     ///
@@ -1998,7 +2062,7 @@ struct Asm {
     /// label reference (kept symbolic). A pure-constant equ never enters this
     /// set and keeps baking. Threaded across passes so a forward reference
     /// through such an equ is recognized before its definition line.
-    label_ref_equs: std::collections::HashSet<String>,
+    label_ref_equs: crate::seed::Seeded<std::collections::HashSet<String>>,
     /// Every REASSIGNABLE set-symbol (`set`/`:=`) whose CURRENT value derives
     /// from a section LABEL (`P_DBG := DeformTable`, or a chain `P_DFG :=
     /// PC_FG_T` onto another such set), mapped to the `relax_safe_fold`ed
@@ -2016,27 +2080,6 @@ struct Asm {
     /// unchanged. A set reassigned to a label-free value clears its entry and
     /// reverts to baking.
     set_sym_symbolic: std::collections::HashMap<String, Expr>,
-    /// Every fully-qualified symbol name this pass has DEFINED so far, in
-    /// traversal order of definition, and never seeded from a previous pass.
-    ///
-    /// This is what `DEFINED(NAME)` answers from, and it exists because `env`
-    /// cannot answer the question. `env` IS seeded from the previous pass (that
-    /// is how a forward reference gets a value), so it holds every symbol the
-    /// program will ever define from the first line of every pass after the
-    /// first, and asking it "is this defined yet" gets a yes for a label a
-    /// hundred lines below.
-    ///
-    /// asl's own answer is positional and RESETS each pass, which is measured
-    /// rather than assumed: in a two-pass file whose `jmp Later` resolves to
-    /// `Later`'s address on pass 2, `dc.b DEFINED(Later)` above it is `00` on
-    /// pass 2 just as it was on pass 1 (probe `db.asm`, `2 passes`, `0 errors`,
-    /// exit 0). Carrying the value forward and carrying the DEFINEDNESS forward
-    /// are separate, and asl carries only the first.
-    ///
-    /// Populated by [`Asm::define_sym`], which is the single writer for every
-    /// symbol-defining form, so a form that binds a name without going through
-    /// it would be invisible here and not merely late.
-    defined_this_pass: std::collections::HashSet<String>,
     /// Symbols a LAYOUT-DETERMINING expression named while they were still
     /// undefined at that point in this pass, keyed by the qualified name, with
     /// every site that named them. A `rept` count and a `ds` count are the two
@@ -2290,7 +2333,7 @@ impl Asm {
             z80: Z80Backend,
             m68k: M68kBackend,
             state: crate::state::AsmState::new(opts.initial_cpu),
-            env: SymbolTable::new(),
+            env: crate::seed::SeededEnv::new(SymbolTable::new()),
             str_env: std::collections::HashMap::new(),
             float_env: std::collections::HashMap::new(),
             enum_next: 0,
@@ -2309,8 +2352,8 @@ impl Asm {
             diags: Vec::new(),
             source: SourceId(0),
             sources: sigil_span::SourceMap::new(),
-            functions: std::collections::BTreeMap::new(),
-            macros: std::collections::BTreeMap::new(),
+            functions: crate::seed::Seeded::new(std::collections::BTreeMap::new()),
+            macros: crate::seed::Seeded::new(std::collections::BTreeMap::new()),
             macros_gen: next_stamp(),
             pending_int_label: None,
             macro_depth: 0,
@@ -2326,7 +2369,6 @@ impl Asm {
             exit_expansion: false,
             expansion_depth: 0,
             expansion_labels: Vec::new(),
-            prev_owned: std::collections::HashMap::new(),
             expansion_label_seq: 0,
             nameless: Default::default(),
             plain_label_cache: std::collections::HashMap::new(),
@@ -2350,14 +2392,13 @@ impl Asm {
             share_file: opts.share_file,
             shared: Vec::new(),
             mompass: LATER_PASS,
-            known_labels: std::collections::HashSet::new(),
+            known_labels: crate::seed::Seeded::new(std::collections::HashSet::new()),
             sym_class: std::collections::HashMap::new(),
             value_stacks: std::collections::BTreeMap::new(),
             save_sites: Vec::new(),
             call_line: None,
-            label_ref_equs: std::collections::HashSet::new(),
+            label_ref_equs: crate::seed::Seeded::new(std::collections::HashSet::new()),
             set_sym_symbolic: std::collections::HashMap::new(),
-            defined_this_pass: std::collections::HashSet::new(),
             layout_watch: std::collections::HashMap::new(),
             pc_derived: std::collections::HashSet::new(),
             flow_epoch: 0,
@@ -2539,7 +2580,7 @@ impl Asm {
         if self.expansion_labels.is_empty() {
             return None;
         }
-        let prev = self.prev_owned.get(name);
+        let prev = self.env.owners(name);
         self.expansion_labels
             .iter()
             .rev()
@@ -2634,7 +2675,6 @@ impl Asm {
     /// together or they drift apart silently.
     fn define_sym(&mut self, key: &str, value: SymbolValue) {
         self.env.define(key, value);
-        self.defined_this_pass.insert(key.to_string());
     }
 
     /// Conjuncts (a) and (b): watch every symbol a LAYOUT-DETERMINING expression
@@ -2795,7 +2835,7 @@ impl Asm {
     /// ([`Self::sym_key`]), so a local `.loc` asks about the same key the
     /// definition wrote.
     fn sym_defined_now(&self, name: &str) -> bool {
-        self.builtin_num(name).is_some() || self.defined_this_pass.contains(&self.sym_key(name))
+        self.builtin_num(name).is_some() || self.env.defined_this_pass(&self.sym_key(name))
     }
 
     fn sym_key(&self, name: &str) -> String {
@@ -2822,7 +2862,7 @@ impl Asm {
         // is first written and the answer cannot change between two returned
         // passes.
         let k = self.owned_by_head(q.clone());
-        if k != q && self.env.resolve(&k, Some("")).is_none() && !self.defined_this_pass.contains(&k) {
+        if k != q && self.env.resolve(&k).is_none() && !self.env.defined_this_pass(&k) {
             q
         } else {
             k
@@ -2841,7 +2881,7 @@ impl Asm {
     /// scope to rebuild it with. Passing `None` there makes every `.v` in a
     /// scopeless file unresolvable — measured, as four `asl_snippets` fixups.
     fn resolve_sym(&self, name: &str) -> Option<i64> {
-        self.env.resolve(&self.sym_key(name), Some(""))
+        self.env.resolve(&self.sym_key(name))
     }
 
     /// Push a namespace for one expansion INSTANCE and return its key. The
@@ -2987,7 +3027,7 @@ impl Asm {
         self.open_section_if_needed();
         let value = self.here_i64();
         let key = self.file_in_innermost(name).unwrap_or_else(|| name.to_string());
-        if self.defined_this_pass.contains(&key) {
+        if self.env.defined_this_pass(&key) {
             self.err(
                 span,
                 format!(
@@ -7589,7 +7629,7 @@ impl Asm {
             return name.to_string();
         }
         let base = self.temp_sym_base(name);
-        let prev = self.prev_owned.get(&base);
+        let prev = self.env.owners(&base);
         match self
             .expansion_labels
             .iter()
@@ -15165,28 +15205,6 @@ fn scan_plain_labels(body: &[SrcLine]) -> std::collections::BTreeSet<String> {
     out
 }
 
-/// Index an environment's instance-filed keys by the name they file:
-/// ` exp#7.Lp` contributes `Lp -> [" exp#7"]`, ` exp#3. nameless+#2` contributes
-/// ` nameless+#2 -> [" exp#3"]`. A name several instances filed (a macro invoked
-/// twice) maps to every one of them; the reader picks the one that is live.
-///
-/// Only ` exp#` keys are read: the `.`-local scopes a macro expansion opens
-/// (` macro#N`) have their own resolution rule and are not instances.
-fn index_instance_owned(env: &SymbolTable) -> std::collections::HashMap<String, Vec<String>> {
-    const PREFIX: &str = " exp#";
-    let mut out: std::collections::HashMap<String, Vec<String>> = std::collections::HashMap::new();
-    for (key, _) in env.iter() {
-        let Some(rest) = key.strip_prefix(PREFIX) else { continue };
-        let Some(dot) = rest.find('.') else { continue };
-        if dot == 0 || !rest[..dot].bytes().all(|b| b.is_ascii_digit()) {
-            continue;
-        }
-        let instance = &key[..PREFIX.len() + dot];
-        out.entry(rest[dot + 1..].to_string()).or_default().push(instance.to_string());
-    }
-    out
-}
-
 fn scan_dot_labels(body: &[SrcLine]) -> std::collections::BTreeSet<String> {
     let mut out = std::collections::BTreeSet::new();
     let mut nested = 0usize;
@@ -21564,13 +21582,16 @@ mod pass_count_tests {
 
     /// The other half of asl's rule: at `*` = 0 the placeholder IS zero, the
     /// displacement collapses to `(An)` on the first pass, and the next pass
-    /// grows it. asl takes 3 passes on this source, and so does sigil.
+    /// grows it, moving `After` from 2 to 4. asl takes 3 passes on this source
+    /// because a value moved. sigil takes 2: pass 1 reads `After` only after
+    /// defining it and `Fwd` gives it the same answer as before, so nothing
+    /// pass 1 read from pass 0 changed.
     #[test]
     fn a_forward_displacement_at_zero_collapses_on_the_first_pass_as_asl_does() {
         let src = "\tcpu 68000\n\tmove.b d0,Fwd(a1)\nAfter:\tnop\n\tdc.w After\nFwd\tequ $3E\n";
         assert_eq!(
             passes_and_bytes(src),
-            (3, vec![0x13, 0x40, 0x00, 0x3E, 0x4E, 0x71, 0x00, 0x04])
+            (2, vec![0x13, 0x40, 0x00, 0x3E, 0x4E, 0x71, 0x00, 0x04])
         );
     }
 
@@ -21581,5 +21602,35 @@ mod pass_count_tests {
     fn an_unknown_quick_immediate_still_lays_out_its_instruction() {
         let src = "\tcpu 68000\n\taddq.w #Fwd-Fwd2,d0\nX:\tnop\n\tdc.w X\nFwd\tequ 7\nFwd2\tequ 6\n";
         assert_eq!(passes_and_bytes(src), (2, vec![0x52, 0x40, 0x4E, 0x71, 0x00, 0x02]));
+    }
+
+    /// PLANTED CONTROL for read-set convergence: a name only ADDED on pass 1,
+    /// read on pass 1 by `ifdef` before it is defined. No value changes between
+    /// pass 0's and pass 1's environments except the added `B`, so the only
+    /// thing that can send the run to pass 2 is the record that pass 1 asked
+    /// `ifdef B` and got "not defined". Without that record pass 1 is returned
+    /// and the `$BB` is missing.
+    #[test]
+    fn control_an_added_name_read_by_ifdef_still_forces_the_next_pass() {
+        let src = "\tcpu 68000\n\tifdef B\n\tdc.b $BB\n\tendif\n\tifdef A\nB = 1\n\tendif\nA = 1\n\tdc.b 0\n";
+        assert_eq!(passes_and_bytes(src), (3, vec![0xBB, 0x00]));
+    }
+
+    /// PLANTED CONTROL, the value shape: `V` takes its value from `ifndef B`,
+    /// and `B` is only added on pass 1. Pass 2 changes `V` (1 to 2), and the
+    /// read record is also what stops the run there: nothing pass 2 read from
+    /// its seed changed, so there is no fourth pass although `V` moved.
+    #[test]
+    fn control_a_value_decided_by_an_added_name_is_carried_to_the_next_pass() {
+        let src = "\tcpu 68000\n\tifndef B\nV = 1\n\telse\nV = 2\n\tendif\n\tdc.b V\n\tifdef A\nB = 1\n\tendif\nA = 1\n";
+        assert_eq!(passes_and_bytes(src), (3, vec![0x02]));
+    }
+
+    /// A name added on pass 1 that nothing reads before its definition no
+    /// longer costs a pass: 2 passes, where comparing whole environments took 3.
+    #[test]
+    fn an_added_name_nobody_reads_early_does_not_cost_a_pass() {
+        let src = "\tcpu 68000\n\tifdef A\nB = 1\n\tendif\nA = 1\n\tdc.b B\n";
+        assert_eq!(passes_and_bytes(src), (2, vec![0x01]));
     }
 }
