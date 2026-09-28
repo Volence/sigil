@@ -1,0 +1,97 @@
+areg_l           exit 2  REFUSED  ./.out.N5Hn/areg_l.lst:> > > areg_l.asm(2):9: error #1146: expected integer or string
+back_label_w     exit 0   4E714EF80000
+bra_dot_loop_w   exit 2  REFUSED  ./.out.N5Hn/bra_dot_loop_w.lst:> > > bra_dot_loop_w.asm(4):8: error #1010: symbol undefined
+bra_local_w      exit 0   4E714E7160FC
+bra_sym_w        exit 2  REFUSED  ./.out.N5Hn/bra_sym_w.lst:> > > bra_sym_w.asm(2):8: error #1010: symbol undefined
+bsr_local_l      exit 0   4E714E716100FFFC
+btst_sym_w       exit 0   08380001F600
+clr_sym_w        exit 0   4278F600
+dbf_local_w      exit 0   4E714E7151C8FFFC
+dbf_sym_w        exit 2  REFUSED  ./.out.N5Hn/dbf_sym_w.lst:> > > dbf_sym_w.asm(2):9: error #1010: symbol undefined
+dc_dot_w_defined exit 0   5678
+dc_sym_w         exit 2  REFUSED  ./.out.N5Hn/dc_sym_w.lst:> > > dc_sym_w.asm(3):7: error #1010: symbol undefined
+disp_collide     exit 0   30280004
+disp_dot_w_defined exit 2  REFUSED  ./.out.N5Hn/disp_dot_w_defined.lst:> > > disp_dot_w_defined.asm(3):9: error #1010: symbol undefined
+disp_num_w       exit 0   30280004
+disp_sym_b       exit 0   
+disp_sym_l       exit 2  REFUSED  ./.out.N5Hn/disp_sym_l.lst:> > > disp_sym_l.asm(3):9: error #1505: addressing mode not supported on 68000
+disp_sym_s       exit 2  REFUSED  ./.out.N5Hn/disp_sym_s.lst:> > > disp_sym_s.asm(3): error #1130: invalid operand size
+disp_sym_w       exit 0   30280004
+disp_sym_W       exit 0   30280004
+disp_sym_w_big   exit 2  REFUSED  ./.out.N5Hn/disp_sym_w_big.lst:> > > disp_sym_w_big.asm(3):9: error #1320: range overflow
+dot_b_defined    exit 2  REFUSED  ./.out.N5Hn/dot_b_defined.lst:> > > dot_b_defined.asm(3): error #1130: invalid operand size
+dot_equ_collide  exit 0   4EF81234
+dot_equ_def      exit 0   1234
+dot_equ_w_def    exit 0   0000
+dot_equ_w_use    exit 2  REFUSED  ./.out.N5Hn/dot_equ_w_use.lst:> > > dot_equ_w_use.asm(3):6: error #1010: symbol undefined
+dot_w_w          exit 0   4EF85678
+dreg_w           exit 2  REFUSED  ./.out.N5Hn/dreg_w.lst:> > > dreg_w.asm(2):9: error #1146: expected integer or string
+expr_mid_dot     exit 0   4EF80012
+expr_tail_sym    exit 0   4EF80012
+fwd_equ_l        exit 0   4EB900001234
+fwd_equ_move     exit 0   3038F600
+fwd_equ_w        exit 0   4EF81234
+fwd_equ_w_hi     exit 2  REFUSED  ./.out.N5Hn/fwd_equ_w_hi.lst:> > > fwd_equ_w_hi.asm(2): error #1340: short addressing not allowed
+fwd_label_l      exit 0   4EF9000000084E71
+fwd_label_w      exit 0   4EF800064E71
+fwd_label_w_hi   exit 2  REFUSED  ./.out.N5Hn/fwd_label_w_hi.lst:> > > fwd_label_w_hi.asm(2): error #1340: short addressing not allowed
+idx_collide      exit 0   32300004
+idx_num_b        exit 0   32300004
+idx_sym_b        exit 0   32300004
+idx_sym_w        exit 2  REFUSED  ./.out.N5Hn/idx_sym_w.lst:> > > idx_sym_w.asm(3):9: error #1505: addressing mode not supported on 68000
+imm_dot_w_defined exit 0   303C5678
+imm_sym_w        exit 2  REFUSED  ./.out.N5Hn/imm_sym_w.lst:> > > imm_sym_w.asm(3):10: error #1010: symbol undefined
+jmp_sym_b        exit 2  REFUSED  ./.out.N5Hn/jmp_sym_b.lst:> > > jmp_sym_b.asm(3): error #1130: invalid operand size
+jmp_sym_expr_w   exit 0   4EF81234
+jmp_sym_paren_w  exit 0   4EF81234
+jmp_sym_s        exit 2  REFUSED  ./.out.N5Hn/jmp_sym_s.lst:> > > jmp_sym_s.asm(3): error #1130: invalid operand size
+jmp_sym_w        exit 0   4EF81234
+jmp_sym_W        exit 0   4EF81234
+jmp_sym_w_big    exit 2  REFUSED  ./.out.N5Hn/jmp_sym_w_big.lst:> > > jmp_sym_w_big.asm(3): error #1340: short addressing not allowed
+jmp_sym_w_hi     exit 2  REFUSED  ./.out.N5Hn/jmp_sym_w_hi.lst:> > > jmp_sym_w_hi.asm(3): error #1340: short addressing not allowed
+jmp_sym_w_m2     exit 0   4EF8FFFE
+jmp_sym_w_neg    exit 0   4EF88000
+jsr_sym_l        exit 0   4EB900001234
+jsr_sym_L        exit 0   4EB900001234
+lea_sym_w        exit 0   41F81234
+local_full_dc    exit 0   4E714E710002
+local_full_l     exit 0   4E714E714EF900000002
+local_full_w     exit 0   4E714E714EF80002
+local_l_collide  exit 0   4E714E714EB900000000
+local_loop_w     exit 0   4E714E714EF80002
+local_w_bare     exit 0   4E714E714EF80002
+local_w_collide  exit 0   4E714E714EF80000
+macro_param_w    exit 0   4EF81234
+move_imm_sym_w   exit 0   31FC0001F600
+movem_sym_w      exit 0   4CF80003F600
+movem_sym_w_dst  exit 0   48F80003F600
+move_sym_both    exit 0   31F812348000
+move_sym_l_dst   exit 0   23C000001234
+move_sym_w_dst   exit 0   31C0F600
+move_sym_w_hi    exit 2  REFUSED  ./.out.N5Hn/move_sym_w_hi.lst:> > > move_sym_w_hi.asm(3): error #1340: short addressing not allowed
+move_sym_w_src   exit 0   30381234
+num_space_w      exit 0   4EF81234
+paren_abs_dot    exit 0   4EF81234
+paren_disp_collide exit 0   30280004
+paren_disp_dot   exit 2  REFUSED  ./.out.N5Hn/paren_disp_dot.lst:> > > paren_disp_dot.asm(3):10: error #1010: symbol undefined
+paren_disp_num   exit 0   30280004
+paren_disp_sym   exit 0   30280004
+paren_disp_sym_b exit 2  REFUSED  ./.out.N5Hn/paren_disp_sym_b.lst:> > > paren_disp_sym_b.asm(3):10: error #1350: addressing mode not allowed here
+paren_disp_sym_l exit 2  REFUSED  ./.out.N5Hn/paren_disp_sym_l.lst:> > > paren_disp_sym_l.asm(3):9: error #1505: addressing mode not supported on 68000
+paren_dot_w_defined exit 0   4EF85678
+paren_idx_sym_b  exit 2  REFUSED  ./.out.N5Hn/paren_idx_sym_b.lst:> > > paren_idx_sym_b.asm(3):10: error #1350: addressing mode not allowed here
+paren_idx_sym_w  exit 2  REFUSED  ./.out.N5Hn/paren_idx_sym_w.lst:> > > paren_idx_sym_w.asm(3):9: error #1505: addressing mode not supported on 68000
+paren_move_sym_w exit 0   3038F600
+paren_num_w      exit 0   4EF81234
+paren_sym_b      exit 2  REFUSED  ./.out.N5Hn/paren_sym_b.lst:> > > paren_sym_b.asm(3):7: error #1350: addressing mode not allowed here
+paren_sym_l      exit 0   4EF900001234
+paren_sym_w      exit 0   4EF81234
+paren_sym_w_hi   exit 2  REFUSED  ./.out.N5Hn/paren_sym_w_hi.lst:> > > paren_sym_w_hi.asm(3): error #1340: short addressing not allowed
+pcidx_sym_b      exit 0   4E71323B00FC
+pcrel_num_w      exit 0   4E71303AFFFC
+pcrel_sym_w      exit 0   4E71303AFFFC
+pea_sym_l        exit 0   487900001234
+sym_areg_name_w  exit 0   4EF81234
+sym_imm_expr_w   exit 0   4EF81234
+sym_space_w      exit 0   4EF81234
+undef_sym_w      exit 2  REFUSED  ./.out.N5Hn/undef_sym_w.lst:> > > undef_sym_w.asm(2):6: error #1010: symbol undefined
