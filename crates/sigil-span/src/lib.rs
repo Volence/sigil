@@ -3,6 +3,7 @@
 use std::fmt;
 use std::sync::{Arc, OnceLock};
 
+pub mod phase;
 pub mod read_set;
 
 /// The bit that marks a [`SourceId`] as an EXPANSION rather than a file. File

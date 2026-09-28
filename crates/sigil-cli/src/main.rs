@@ -504,6 +504,7 @@ fn unlisted_option<'a>(entry: &Entry, args: &'a [String]) -> Option<&'a str> {
 /// saying how the run ended: [`emit_image`]'s `built:` line on success,
 /// [`fail_asm`]'s on failure.
 fn run_asm(entry: &Entry, args: &[String]) {
+    let t_args = sigil_span::phase::clock();
     let mut input: Option<String> = None;
     let mut output: Option<String> = None;
     let mut hex = false;
@@ -585,6 +586,8 @@ fn run_asm(entry: &Entry, args: &[String]) {
     // anyone — the failure mode is silent, which is the one the directive
     // exists to prevent.
     let opts = sigil_frontend_as::Options { cli_defines, ..Default::default() };
+    sigil_span::phase::phase("cli.args", t_args, "");
+    let t_front = sigil_span::phase::clock();
     // The `SourceMap` is kept past the front end rather than dropped with the
     // `Assembled`: a LINK diagnostic carries a span into the same spliced files,
     // and rendering it without the map printed a bare `error: …` line that named
@@ -601,9 +604,12 @@ fn run_asm(entry: &Entry, args: &[String]) {
         &opts,
     ) {
         Ok(a) => {
+            sigil_span::phase::phase("frontend", t_front, "");
+            let t_render = sigil_span::phase::clock();
             render_as_messages(&a.messages);
             render_as_warnings(&a);
             let shown = Shown::default().plus(&a.warnings);
+            sigil_span::phase::phase("cli.render", t_render, "");
             (a.module, a.sources, shown)
         }
         Err(failure) => {
@@ -635,6 +641,7 @@ fn run_asm(entry: &Entry, args: &[String]) {
     // want of a ROM placement: `flatten_placing` below places it and checks it.
     let empty = sigil_ir::SymbolTable::new();
     let placed: Vec<u32> = blobs.iter().map(|b| b.address).collect();
+    let t_layout = sigil_span::phase::clock();
     let resolved = match sigil_link::resolve_layout_placing(&module.sections, &empty, true, &placed) {
         Ok(secs) => secs,
         Err(diags) => {
@@ -642,6 +649,8 @@ fn run_asm(entry: &Entry, args: &[String]) {
             fail_asm(shown.plus(&diags), Stage::Layout);
         }
     };
+    sigil_span::phase::phase("layout", t_layout, "");
+    let t_link = sigil_span::phase::clock();
     let linked = match sigil_link::link(&resolved, &empty) {
         Ok(img) => img,
         Err(diags) => {
@@ -654,6 +663,8 @@ fn run_asm(entry: &Entry, args: &[String]) {
     // emitted its byte: `file(line): error: section ...`. `flatten` sizes its
     // buffer from the window, so a refusal here is what stands between an
     // `org -1` and a 4 GiB allocation.
+    sigil_span::phase::phase("link", t_link, "");
+    let t_bounds = sigil_span::phase::clock();
     let bounds = sigil_link::check_image_bounds(&linked, &resolved);
     if !bounds.is_empty() {
         render_located_diags(&bounds, &sources);
@@ -663,6 +674,8 @@ fn run_asm(entry: &Entry, args: &[String]) {
     // only the bytes the program writes, each blob stored where its instruction
     // says, and the pad byte everywhere else, including a reservation's gap
     // inside a section. Without either, the plain flatten, zero-filled.
+    sigil_span::phase::phase("bounds", t_bounds, "");
+    let t_flatten = sigil_span::phase::clock();
     let mut image = if pad.is_some() || !blobs.is_empty() {
         match sigil_link::flatten_placing(&resolved, &linked, &blobs, pad.unwrap_or(0x00), &p2bin_codec::Codec) {
             Ok(image) => image,
@@ -706,13 +719,24 @@ fn run_asm(entry: &Entry, args: &[String]) {
     // that literal is part of), so there is nothing a reader could do with the
     // news except see it on every build of a tree whose author does not maintain
     // a field sigil now maintains for them.
+    sigil_span::phase::phase("flatten", t_flatten, &format!("image_bytes={}", image.len()));
+    let t_header = sigil_span::phase::clock();
     sigil_link::apply_sega_header(&mut image);
+    sigil_span::phase::phase("header", t_header, "");
 
     // The same tail as `sigil emp`, so the two routes report a finished image in
     // one shape. Its write failure is already on stderr; ending the run is left
     // here so it goes through `fail_asm` like every other failure on this route.
+    let t_emit = sigil_span::phase::clock();
     if emit_image(&image, output.as_deref(), hex).is_err() {
         fail_asm(shown.plus_printed_error(), Stage::Image);
+    }
+    sigil_span::phase::phase("emit", t_emit, "");
+    if sigil_span::phase::on() {
+        let t_drop = sigil_span::phase::clock();
+        drop((image, linked, resolved, module, sources));
+        sigil_span::phase::phase("teardown", t_drop, "");
+        sigil_span::phase::total();
     }
 }
 
