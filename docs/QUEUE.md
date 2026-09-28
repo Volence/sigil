@@ -1356,6 +1356,10 @@ points at it rather than restating it, so there is one copy to keep true.
 ### PIN-ADVANCE-S2-ENVELOPE-RESTATEMENTS
 
 - state: **open**  size: `S`  project: `SIGIL-DECOUPLE`
+- **Aeon landing notices to fold in at the next pin advance (2026-09-28, their words, not verified here):**
+  `d33fa8d0` (+8 B inside `Parallax_State`, every later RAM address moves; new names `Parallax_Shadow_Key_Config`,
+  `_VS`, `_K`); `2d006c4c` (new `Cache_H_Pfx_Run: u16` in ram.emp, `H_PFX_ARM = 128` plus an ensure in
+  constants.emp; canonical s4 `80dc4338/830244`, debug `3a8a8e5a/857227`). `*_port` lists may need the new names.
 - Aeon's heads-up 2026-09-26 (their agent's reading, NOT verified here): once aeon lands
   `parcel/s2-music-envelopes-table-2` (tip `6c3cd4cf`), these sigil-side restatements go red when our pin reaches
   it: `seam2.rs` `DAC_SAMPLE_TAB_LEN = 127` and `seam2_dac_head_colink.rs` (the table is now 120 B; the 8-byte pad
