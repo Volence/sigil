@@ -23,11 +23,11 @@ use sigil_frontend_emp::parse_str;
 use sigil_ir::backend::Cpu;
 use sigil_ir::{LinkAssert, Section, SectionPlacement, SymbolTable};
 
-/// The plain-shape resident blob length: **6176 B** (`$1820`).
+/// The plain-shape resident blob length: **6228 B** (`$1854`).
 ///
 /// This is the BLOB length, not `Z80_SOUND_SIZE`: aeon pads the blob to an even
 /// length inside the `Z80_Sound_Start`/`_End` brackets, so `Z80_SOUND_SIZE` is this
-/// value rounded UP to even and is pinned separately in `boot_port.rs`. 6176 is
+/// value rounded UP to even and is pinned separately in `boot_port.rs`. 6228 is
 /// even, so the plain shape carries no pad and `Z80_SOUND_SIZE` equals this value.
 ///
 /// A PIN OF THE FROZEN CORPUS, NOT AN INPUT AND NOT A BUILD GATE. It is the
@@ -48,7 +48,7 @@ use sigil_ir::{LinkAssert, Section, SectionPlacement, SymbolTable};
 /// PADDED length moves, which is a weaker condition than this pin moving: the
 /// mirror is this value rounded UP to even, so a change that leaves the rounded
 /// value alone does not reach it. A shrink of one from an even length is the
-/// case in point, 6176 to 6175 rounds back to 6176 and the mirrors stand.
+/// case in point, 6228 to 6227 rounds back to 6228 and the mirrors stand.
 /// Derive the rounded value both sides of the change rather than re-pinning the
 /// mirrors reflexively.
 ///
@@ -60,20 +60,19 @@ use sigil_ir::{LinkAssert, Section, SectionPlacement, SymbolTable};
 /// this length says, so a real module change is a golden refreeze with a
 /// provenance entry, sequenced AFTER the aeon revision that causes it is merged,
 /// never before.
-pub const BLOB_LEN_PLAIN: usize = 0x1820;
+pub const BLOB_LEN_PLAIN: usize = 0x1854;
 /// The debug blob length: plain + `$82`, the sequencer's `if DEBUG==1` bodies.
-/// **6306 B** (`$18A2`), also even, so the debug shape carries no pad either.
+/// **6358 B** (`$18D6`), also even, so the debug shape carries no pad either.
 /// Same pinned-corpus, test-only status as [`BLOB_LEN_PLAIN`]. Debug headroom
-/// against the pinned tree's `SND_STATE_BASE` (`$18F0`) is 78 B.
-pub const BLOB_LEN_DEBUG: usize = 0x1820 + 0x82;
+/// against the pinned tree's `SND_STATE_BASE` (`$18F0`) is 26 B.
+pub const BLOB_LEN_DEBUG: usize = 0x1854 + 0x82;
 
-/// The blob's LMA base = `Z80_Sound_Start` = `BootData + 54`. SHAPE-DEPENDENT: the
-/// debug shape grows +4 UPSTREAM of BootData (boot `__DEBUG__` content). Pin-sourced
-/// (BOOT_HEAD base = BootData) so boot-size shifts can't rot it — the pal-ntsc-only
-/// -0x10 shrink caught the old literals ($3DE/$3E2, now $3CE/$3D2 via the pins).
+/// The blob's LMA base: `Z80_Sound_Start`, read from its own pin. SHAPE-DEPENDENT:
+/// the boot code and data ahead of it differ per shape. Pin-sourced from the label
+/// itself, so neither a boot-size shift nor a change to the boot data ahead of the
+/// blob inside BootData can rot it.
 pub fn blob_lma(debug: bool) -> u32 {
-    let base = if debug { crate::pins::BOOT_HEAD.debug_base } else { crate::pins::BOOT_HEAD.plain_base };
-    base + 54
+    if debug { crate::pins::Z80_SOUND_START.debug } else { crate::pins::Z80_SOUND_START.plain }
 }
 
 /// The exported-symbol CONTRACT: the sequencer opcode handlers the banked

@@ -11670,3 +11670,58 @@ demo_debug = "72e405a5/103185"
 lean = "302ea1ee/773136"
 s4 = "91c46c94/820209"
 s4_debug = "8a378de6/846509"
+
+[[entry]]
+name = "pin-advance-s2"
+ab = "sigil-side corpus pin advance ec640bcf to 1ee78b88, the quiet revision aeon named; s4 and s4.debug reproduce aeon own figures"
+aeon_rev = "1ee78b88b003da5ffbd8fa061eab7d56505c201a"
+note = "advances the reference pin 2161 aeon commits past ec640bcf; path-swap and crossover retired upstream"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "a7cfccbb"
+full_size = 866074
+anchor_crc = "58f3037a"
+anchor_end = 0xc49b0
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "d888a312"
+full_size = 617813
+anchor_crc = "13690654"
+anchor_end = 0x8b634
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "2f9e2d4c"
+full_size = 99994
+anchor_crc = "f3be0fa8"
+anchor_end = 0x1121a
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "64717bac"
+full_size = 106981
+anchor_crc = "276b7c7e"
+anchor_end = 0x1121a
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "9f0d4de3"
+full_size = 793376
+anchor_crc = "77414976"
+anchor_end = 0xc1b20
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "50401674"
+full_size = 845398
+anchor_crc = "3b1c8b69"
+anchor_end = 0xc2ba2
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "198fd717"
+full_size = 865722
+anchor_crc = "306be70e"
+anchor_end = 0xc49b0

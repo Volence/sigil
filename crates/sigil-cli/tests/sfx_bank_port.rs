@@ -1,12 +1,13 @@
-//! Parcel K4 inc-5 Stage 4 (P2 SFX probe) — the SFX block, region-level byte gate,
+//! Parcel K4 inc-5 Stage 4 (P2 SFX probe): the SFX block, region-level byte gate,
 //! EMIT-FIRST.
 //!
-//! The BINCLUDE at $5BAE8/$5D53A in `games/sonic4/main.asm` (the SFX block, after the
-//! native MT body) is now a native `.emp` `embed()` section (`games.sonic4.sfx_bank_blob`)
-//! — the P2 path: it embeds the seam-2-emitted sfx_bank{,_debug}.bin at its per-shape
-//! LMA. Head label Sfx_33; shape-INVARIANT size (0x748), shape-DEPENDENT start (the MT
-//! body before it differs) and content (the SfxTable pointer cells hold the per-shape
-//! Sfx_NN addresses). NO cross-seam labels (no surviving code reads SfxTable).
+//! `games.sonic4.sfx_bank_blob` embeds the seam-2-emitted sfx_bank{,_debug}.bin at its
+//! per-shape LMA (head label Sfx_33), then carries the song pointer tables
+//! `SongTable` / `SongPatchTable`, `SONG_COUNT` cells each. Start, size and content are
+//! all SHAPE-DEPENDENT: the MT body before it differs, the SfxTable cells hold the
+//! per-shape Sfx_NN addresses, and SONG_COUNT differs per shape. The tables name the
+//! song and patch labels of the song banks: those are cross-seam labels, read from the
+//! reference build's listing.
 //!
 //! EMIT-FIRST: the embedded `.bin` are gitignored build artifacts, so the gate runs
 //! `ensure_generated` FIRST, then compares.
@@ -33,6 +34,35 @@ fn strict_gate() -> bool {
     sigil_harness::test_support::strict_gate()
 }
 
+/// The labels the module names by quoted string (`["Song_MovingTrucks", ...]`, the
+/// song tables' cells) that it does not define itself, each at the address the
+/// reference build's listing gives it. Which names is read from the module source, so a
+/// song added to the tables arrives with no edit here; a name the listing lacks for
+/// this shape is left out (a shape-gated table row names it only where it exists).
+fn song_table_labels(src: &str, sections: &[sigil_ir::Section], debug: bool) -> Vec<(String, u32)> {
+    let defined: std::collections::HashSet<&str> =
+        sections.iter().flat_map(|s| s.labels.iter().map(|l| l.name.as_str())).collect();
+    let mut names: Vec<String> = Vec::new();
+    for line in src.lines().map(|l| l.split("//").next().unwrap_or("")) {
+        let mut rest = line;
+        while let Some(i) = rest.find('"') {
+            let tail = &rest[i + 1..];
+            let Some(j) = tail.find('"') else { break };
+            let word = &tail[..j];
+            let is_ident = !word.is_empty()
+                && word.chars().next().is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+                && word.chars().all(|c| c.is_ascii_alphanumeric() || c == '_');
+            if is_ident && !defined.contains(word) && !names.iter().any(|n| n == word) {
+                names.push(word.to_string());
+            }
+            rest = &tail[j + 1..];
+        }
+    }
+    assert!(!names.is_empty(), "sfx_bank_blob.emp names no label by string, the table seam would be empty");
+    let refs: Vec<&str> = names.iter().map(String::as_str).collect();
+    sigil_harness::test_support::listing_labels_if_defined(debug, &refs)
+}
+
 static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 fn compile(base: u32, len: usize, debug: bool) -> sigil_link::LinkedImage {
@@ -51,6 +81,7 @@ fn compile(base: u32, len: usize, debug: bool) -> sigil_link::LinkedImage {
     };
     let (module, ld) = lower_module(&file, &opts);
     assert!(ld.iter().all(|d| d.level != sigil_span::Level::Error), "lower: {ld:?}");
+    let cross_seam = song_table_labels(&src, &module.sections, debug);
     let map = format!(
         "fill = 0x00\n\n[[region]]\nname = \"sfx_bank_blob\"\nlma_base = {base:#x}\nsize = {len:#x}\nkind = \"rom\"\n"
     );
@@ -58,6 +89,21 @@ fn compile(base: u32, len: usize, debug: bool) -> sigil_link::LinkedImage {
     let mut sections = module.sections;
     let pd = place_sections(&mut sections, &map);
     assert!(pd.iter().all(|d| d.level != sigil_span::Level::Error), "place: {pd:?}");
+    let mut asm = String::from("cpu 68000\n");
+    for (name, addr) in &cross_seam {
+        asm.push_str(&format!("{name} = ${addr:X}\n"));
+    }
+    asm.push_str("Stub:\n\tdc.w 0\n");
+    let opts = sigil_frontend_as::Options { initial_cpu: Some(Cpu::M68000), ..Default::default() };
+    for mut sec in sigil_frontend_as::assemble(&asm, &opts)
+        .unwrap_or_else(|d| panic!("AS assemble (cross-seam labels): {d:?}"))
+        .sections
+    {
+        sec.lma = 0x0100_0000;
+        sec.placement = sigil_ir::SectionPlacement::Pinned;
+        sec.group = None;
+        sections.push(sec);
+    }
     let resolved = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
         .unwrap_or_else(|d| panic!("resolve: {d:?}"));
     sigil_link::link(&resolved, &SymbolTable::new()).unwrap_or_else(|d| panic!("link: {d:?}"))
@@ -74,8 +120,7 @@ fn gate(debug: bool, rom_name: &str) {
         return;
     };
     let base = if debug { pins::SFX_BANK_BLOB.debug_base } else { pins::SFX_BANK_BLOB.plain_base };
-    let len = pins::SFX_BANK_BLOB.plain_len;
-    assert_eq!(pins::SFX_BANK_BLOB.debug_len, len, "SFX block len must be shape-invariant");
+    let len = if debug { pins::SFX_BANK_BLOB.debug_len } else { pins::SFX_BANK_BLOB.plain_len };
 
     let linked = compile(base, len, debug);
     let sec = linked.section("sfx_bank_blob").expect("linked image must carry sfx_bank_blob");

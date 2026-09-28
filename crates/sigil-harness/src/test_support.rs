@@ -671,6 +671,19 @@ pub fn listing_labels_if_defined(debug: bool, names: &[&str]) -> Vec<(String, u3
         .collect()
 }
 
+/// Extend a scope's cross-seam label set with NAMED symbols read from the reference
+/// build's listing ([`listing_vma_if_defined`]), skipping names it already carries and
+/// names the build does not define. For a cross-seam callee or cell that carries no pin:
+/// its address is the one the reference ROM encodes, and a name one aeon revision
+/// defines and another does not is simply absent where it is not.
+pub fn extend_from_listing_names(labels: &mut Vec<(String, u32)>, debug: bool, names: &[&str]) {
+    for (name, vma) in listing_labels_if_defined(debug, names) {
+        if !labels.iter().any(|(n, _)| *n == name) {
+            labels.push((name, vma));
+        }
+    }
+}
+
 /// The two MD Debugger entry points an `assert` expansion jsr/jmps
 /// (`MDDBG__ErrorHandler`, `MDDBG__ErrorHandler_PagesController`), for ONE shape, derived
 /// from the tree: each is read from `engine/debug/error_handler.emp`'s
@@ -1983,6 +1996,86 @@ pub fn bg_layout_size_const_src(aeon: &std::path::Path) -> String {
 pub fn engine_const_src(aeon: &std::path::Path, name: &str) -> String {
     let rhs = emp_const_rhs(&aeon.join("engine/system/constants.emp"), name);
     format!("module engine.constants_lifted\npub const {name} = {rhs}\n")
+}
+
+/// The `pub const` items a module imports by name from `engine.constants`, lifted out of
+/// `engine/system/constants.emp` into one synthesized module's source.
+///
+/// For a port oracle that prepends a module's ITEMS into a standalone lower: the
+/// module's own `use engine.constants.{..}` then names a module that is not in scope,
+/// and its ensures abort with `unknown name`. Which names are needed is read from the
+/// module's own `use` list and each right-hand side is copied verbatim by
+/// [`emp_const_rhs`], so a const the module starts importing arrives with no edit here
+/// and a renamed or removed one fails loud. A module that imports nothing from
+/// `engine.constants` yields a module with no consts.
+pub fn engine_constants_imported_by(aeon: &std::path::Path, rel: &str) -> String {
+    use sigil_frontend_emp::ast::{Item, UseNames};
+    let path = aeon.join(rel);
+    let src = sigil_span::read_set::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("engine_constants_imported_by: cannot read {}: {e}", path.display()));
+    let (file, diags) = sigil_frontend_emp::parse_str(&src);
+    assert!(
+        diags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "engine_constants_imported_by: {} parse errors: {diags:?}",
+        path.display()
+    );
+    let constants = aeon.join("engine/system/constants.emp");
+    let mut out = String::from("module engine.constants_lifted\n");
+    for item in &file.items {
+        let Item::Use(u) = item else { continue };
+        if u.base.segments != ["engine", "constants"] {
+            continue;
+        }
+        let UseNames::List(names) = &u.names else {
+            panic!(
+                "engine_constants_imported_by: {} imports engine.constants other than by a name \
+                 list; this helper lifts named consts only",
+                path.display()
+            )
+        };
+        for name in names {
+            out.push_str(&format!("pub const {name} = {}\n", emp_const_rhs(&constants, name)));
+        }
+    }
+    out
+}
+
+/// The consts a module imports by name from `engine.constants`, as `(name, "$HEX")`
+/// AS equ rows for a port oracle's value seam: the standalone lower leaves such a name
+/// as a link symbol, and this supplies it at the value `engine/system/constants.emp`
+/// gives it ([`emp_const_literal`], so a computed right-hand side is refused by name).
+/// Which names is read from the module's own `use` list, as in
+/// [`engine_constants_imported_by`].
+pub fn engine_constant_equs_imported_by(aeon: &std::path::Path, rel: &str) -> Vec<(String, String)> {
+    use sigil_frontend_emp::ast::{Item, UseNames};
+    let path = aeon.join(rel);
+    let src = sigil_span::read_set::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("engine_constant_equs_imported_by: cannot read {}: {e}", path.display()));
+    let (file, diags) = sigil_frontend_emp::parse_str(&src);
+    assert!(
+        diags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "engine_constant_equs_imported_by: {} parse errors: {diags:?}",
+        path.display()
+    );
+    let constants = aeon.join("engine/system/constants.emp");
+    let mut out = Vec::new();
+    for item in &file.items {
+        let Item::Use(u) = item else { continue };
+        if u.base.segments != ["engine", "constants"] {
+            continue;
+        }
+        let UseNames::List(names) = &u.names else {
+            panic!(
+                "engine_constant_equs_imported_by: {} imports engine.constants other than by a \
+                 name list; this helper supplies named consts only",
+                path.display()
+            )
+        };
+        for name in names {
+            out.push((name.clone(), format!("${:X}", emp_const_literal(&constants, name))));
+        }
+    }
+    out
 }
 
 /// The comptime `-D` set a single-module port oracle lowers sonic4 code under at one

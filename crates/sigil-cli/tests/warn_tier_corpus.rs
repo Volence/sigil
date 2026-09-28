@@ -190,11 +190,15 @@ const SITE_WATCH: &[SiteWatch] = &[
         why_unpinned: "all 14 firings are generated level modules or anchor-sweep \
                        fixtures; 4 of the files were added within 30 days, every one \
                        inside these prefixes",
-        // EMPTY, and that is the assertion: no HAND-WRITTEN module in the corpus has a
-        // header that disagrees with its file. The lint's actual subject is exactly
-        // that, so this row watches the whole of it — 188 of the corpus's 202 `.emp`
-        // files lie outside the prefixes above and any of them firing fails here.
-        files: &[],
+        // The lint's actual subject is a HAND-WRITTEN module whose header disagrees with
+        // its file, so this row watches the whole of that: every `.emp` outside the
+        // prefixes above firing fails here unless it is listed. ONE is, adjudicated at
+        // the 1ee78b88 pin and reported to aeon as a finding: song bank 2 made
+        // `mt_bank.emp` the ROM-placed module and deleted `mt_bank_blob.emp`, and the
+        // module kept the deleted file's id, `games.sonic4.mt_bank_blob`. It changes no
+        // byte; a rename on aeon's side retires this row (the row's own honesty check
+        // then names it as no longer firing).
+        files: &["games/sonic4/data/sound/mt_bank.emp"],
     },
     SiteWatch {
         id: "module.unreachable",

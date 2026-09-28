@@ -41,33 +41,29 @@ fn sound_layout_derives_the_frozen_addresses() {
         dac_blip_lma: 0xA8000,
         dac_shared_lma: 0xB0000,
         sound_tables_z80_lma: 0xB8000,
-        pitchtable_lma: 0xB8357,
-        sfx_win_tab_lma: 0xB845F,
-        seq_opcode_tab_lma: 0xB8571,
-        dac_sample_tab_lma: 0xB85B1,
-        // The three below moved TWICE on 2026-08-11, and the split matters:
-        //   * sound-pkg-3 (2026-08-10) grew the DAC descriptor 9 -> 12 bytes, taking
-        //     DacSampleTable 90 -> 123 and pushing mt_bank +0x21 / both SFX bases
-        //     +0x28. Those frozen values were never updated, which kept this target
-        //     red under SIGIL_STRICT_GATE=1 for six chains (fixed in 2c49f538).
-        //   * sfx-flight added the $BA/$BB SFX, widening SfxBlobWinTab by 4 bytes and
-        //     re-rounding DacHeadPad 3 -> 7, so the head grew 8 and everything after
-        //     it followed. seq_opcode_tab and dac_sample_tab are +4 from that alone.
+        // The five heads lie contiguously from the sound_bank anchor, each at the running
+        // sum of the heads before it (sound_tables_z80, pitchtable, SfxBlobWinTab,
+        // SeqOpcodeTable, DacSampleTable).
+        pitchtable_lma: 0xB83D9,
+        sfx_win_tab_lma: 0xB84E1,
+        seq_opcode_tab_lma: 0xB85F3,
+        dac_sample_tab_lma: 0xB8633,
         // The MT and SFX bases are ALIGNED values, not sums: the packing walk rounds
         // each section's base up to its DECLARED alignment (8 for both, aeon's mod-8
-        // fold wall — section_align::DECLARED), and sound_layout predicts that through
+        // fold wall, section_align::DECLARED), and sound_layout predicts that through
         // the walk's own native::packed_chained_base rather than assuming a contiguous
-        // pack. Nothing upstream of seq_opcode_tab_lma moved in either step.
-        mt_bank_lma: 0xB8630,
-        sfx_bank_lma_plain: 0xBBB18,
-        sfx_bank_lma_debug: 0xBD568,
+        // pack. The head ends 8-aligned (soundbankhead.emp's tail pad), so mt_bank
+        // starts where it ends.
+        mt_bank_lma: 0xB86B0,
+        sfx_bank_lma_plain: 0xBD568,
+        sfx_bank_lma_debug: 0xBEFB0,
     };
     assert_eq!(got, want, "map-derived seam-2 placement drifted from the frozen chain-22 addresses");
 }
 
 /// Materialize a doctored aeon: `engine/` COPIED from the real tree, `games/` a real
 /// dir whose `sonic4/` children are all symlinks to the real tree EXCEPT a doctored
-/// `map.toml`. `sound_layout` reads only `engine/` (via seam-1) and `games/sonic4/`,
+/// `map.toml` and `data/sound/`, copied. `sound_layout` reads only `engine/` (via seam-1) and `games/sonic4/`,
 /// so this is a faithful whole-derivation substrate.
 ///
 /// `engine/` is a real copy, not a symlink: the seam-2 import check resolves a `use`
@@ -83,10 +79,25 @@ fn doctored_aeon(root: &Path, doctor: impl FnOnce(String) -> String) {
     for entry in std::fs::read_dir(real.join("games/sonic4")).unwrap() {
         let entry = entry.unwrap();
         let name = entry.file_name();
-        if name == "map.toml" {
+        if name == "map.toml" || name == "data" {
             continue;
         }
         std::os::unix::fs::symlink(entry.path(), s4.join(&name)).unwrap();
+    }
+    // `data/` is a real directory whose children are symlinks EXCEPT `sound/`, which is
+    // copied: mt_bank.emp's embeds resolve against the aeon root and the lowerer
+    // refuses a path that leaves that root (`[sandbox.path-escape]`), which a symlink
+    // into the real tree does once canonicalized.
+    let data = s4.join("data");
+    std::fs::create_dir_all(&data).unwrap();
+    for entry in std::fs::read_dir(real.join("games/sonic4/data")).unwrap() {
+        let entry = entry.unwrap();
+        let name = entry.file_name();
+        if name == "sound" {
+            copy_tree(&entry.path(), &data.join(&name));
+        } else {
+            std::os::unix::fs::symlink(entry.path(), data.join(&name)).unwrap();
+        }
     }
     let real_map = std::fs::read_to_string(real.join("games/sonic4/map.toml")).unwrap();
     std::fs::write(s4.join("map.toml"), doctor(real_map)).unwrap();

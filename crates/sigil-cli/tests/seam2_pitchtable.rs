@@ -4,7 +4,8 @@
 //! table) — the LAST AS sound head to go native.
 //!
 //! `sigil_harness::seam2::emit_pitchtable` lowers the REAL
-//! `games/sonic4/data/sound/movingtrucks_pitchtable.emp` placed at VMA `$8357`.
+//! `games/sonic4/data/sound/movingtrucks_pitchtable.emp` (its section vma is the
+//! `$8000` window base; the bytes are position-independent).
 //! SELF-CONTAINED — pure `dc.b` data, no external symbols and no intra-module
 //! references (the labels are provided by `sound_bank.inc`'s AS side ahead of the
 //! BINCLUDE). Proven BYTE-IDENTICAL to the reference ROM slice at the

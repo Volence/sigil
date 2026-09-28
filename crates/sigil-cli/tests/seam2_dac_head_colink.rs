@@ -10,7 +10,7 @@
 //!
 //! This gate proves the co-linked head is BYTE-IDENTICAL to the `DacSampleTable`
 //! slice of the assembled reference ROM (`s4.bin` at the LMA `sound_layout` derives,
-//! `dac_sample_tab_lma`; `DAC_SAMPLE_TAB_LEN` bytes), the
+//! `dac_sample_tab_lma`; `dac_sample_tab_len` bytes), the
 //! "twins present, both paths byte-identical" dual proof that must be GREEN before
 //! `dac_samples.asm` + `dac_sample_tab.asm` can be retired together (rows 5-dac + 57).
 //!
@@ -28,8 +28,8 @@
 //! ```
 
 use sigil_harness::seam2::{
-    emit_dac_artifacts, emit_dac_body_and_head, emit_dac_body_and_head_doctored, sound_layout,
-    DAC_SAMPLE_TAB_LEN,
+    dac_sample_tab_len, emit_dac_artifacts, emit_dac_body_and_head, emit_dac_body_and_head_doctored,
+    sound_layout,
 };
 use std::path::PathBuf;
 
@@ -52,7 +52,7 @@ fn golden(name: &str) -> Vec<u8> {
 
 /// THE HEAD BYTE GATE: the co-linked `DacSampleTable` == the reference ROM slice at
 /// `dac_sample_tab_lma`, in BOTH shapes (the head is shape-invariant, so the same
-/// `DAC_SAMPLE_TAB_LEN` bytes match both).
+/// `dac_sample_tab_len` bytes match both).
 #[test]
 fn colinked_dac_head_matches_the_reference_rom_slice_both_shapes() {
     if !strict_gate() {
@@ -62,14 +62,15 @@ fn colinked_dac_head_matches_the_reference_rom_slice_both_shapes() {
     let aeon = aeon_dir();
     let out = emit_dac_body_and_head(&aeon).expect("emit_dac_body_and_head co-links");
 
-    assert_eq!(out.head.len(), DAC_SAMPLE_TAB_LEN, "DacSampleTable is 10 × 12 + the head-tail align pad = 127 bytes");
+    let tab_len = dac_sample_tab_len(&aeon);
+    assert_eq!(out.head.len(), tab_len, "DacSampleTable is DAC_SAMPLE_COUNT × DacSample_len bytes");
 
     // The head is shape-invariant: gate against BOTH frozen goldens at the same LMA.
     let lma = sound_layout(&aeon).expect("sound_layout derives dac_sample_tab_lma").dac_sample_tab_lma;
     for (rom_name, shape) in [("s4.bin", "plain"), ("s4.debug.bin", "debug")] {
         let rom = golden(rom_name);
         let lo = lma as usize;
-        let head_ref = &rom[lo..lo + DAC_SAMPLE_TAB_LEN];
+        let head_ref = &rom[lo..lo + tab_len];
         if let Some(i) = (0..out.head.len()).find(|&i| out.head[i] != head_ref[i]) {
             // Byte index plus the ROM address it sits at, with an 8-byte window on
             // each side; the descriptor stride is the emitter's to know, not this
@@ -126,7 +127,7 @@ fn dac_head_diverges_when_blip_bank_moved() {
         emit_dac_body_and_head_doctored(&aeon, Some(moved)).expect("doctored co-link");
     let rom = golden("s4.bin");
     let lo = sound_layout(&aeon).expect("sound_layout").dac_sample_tab_lma as usize;
-    let head_ref = &rom[lo..lo + DAC_SAMPLE_TAB_LEN];
+    let head_ref = &rom[lo..lo + dac_sample_tab_len(&aeon)];
     assert_ne!(
         doctored.head, head_ref,
         "the DAC head gate is vacuous if a moved blip bank still matches the golden slice"

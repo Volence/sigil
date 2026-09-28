@@ -11,11 +11,14 @@
 //! (a) straddle — doctor `mt_port.rs`'s map so the `mt_bank` region's base is
 //!     NOT $8000-aligned, forcing the real ported section to cross a bank
 //!     boundary → the section's `bank: $8000` no-straddle diagnostic fires.
-//! (b) wrong-bank ensure — supply the synthetic `MovingTrucks_Bank_Start`
-//!     cross-seam label at $60000 (bank $C) instead of the real $58000
-//!     (bank $B) where `mt_bank` actually lands ($58607, bank $B) → the five
-//!     `bankid(...) == bankid("MovingTrucks_Bank_Start")` co-residency
-//!     ensures fire, each carrying its own message text.
+//! (b) wrong-bank ensure: RETIRED. `mt_bank.emp` carries no co-residency
+//!     `ensure(bankid(..) == bankid("MovingTrucks_Bank_Start"))` any more; the
+//!     same invariant (every byte of the section in the engine-table head's bank)
+//!     is held by the head's declared $8000 alignment (`section_align`), seam-2's
+//!     window check on the predicted base (`seam2::mt_bank_room`, its unit tests),
+//!     the fold gate against the placed `Song_MovingTrucks`
+//!     (`native::validate_sound_fold`), and the section's `bank: $8000`
+//!     no-straddle property, which probe (a) exercises.
 //! (c) table-length mismatch, MT composition context — Task 2's P3
 //!     (`crates/sigil-frontend-emp/tests/lower_data.rs`) already pins the
 //!     GENERIC shape (`const N = if D == 1 {3} else {1}` driving `[*u8; N]`,
@@ -39,13 +42,12 @@
 //!     escape clause — see the note below probe (d) for the redundancy
 //!     argument in full.
 
-use sigil_frontend_as::{assemble, Options as AsOptions};
 use sigil_frontend_emp::lower::{lower_module, LowerOptions};
 use sigil_frontend_emp::parse_str;
 use sigil_frontend_emp::resolve::place_sections;
 use sigil_ir::backend::Cpu;
-use sigil_ir::{Section, SectionPlacement, SymbolTable};
-use sigil_harness::seam2::{mt_bank_carrier_asm, sound_layout, SoundLayout};
+use sigil_ir::SymbolTable;
+use sigil_harness::seam2::{sound_layout, SoundLayout};
 use sigil_link::load_map;
 use sigil_span::Level;
 use std::path::PathBuf;
@@ -80,6 +82,14 @@ fn strict_gate() -> bool {
     sigil_harness::test_support::strict_gate()
 }
 
+/// The base `mt_bank.emp`'s embed paths resolve against: the one seam-2 itself picks
+/// from the module's own literals (`seam2::mt_bank_embed_root`), so a probe lowers the
+/// module exactly as the production emit does, however its paths are spelled.
+fn mt_embed_root(src: &str) -> PathBuf {
+    sigil_harness::seam2::mt_bank_embed_root(&aeon_root(), &sound_dir(), src)
+        .unwrap_or_else(|e| panic!("mt_bank.emp embed root: {e}"))
+}
+
 /// The real `mt_bank.emp` source text, or a strict-gate panic / soft skip if
 /// the sibling `aeon` tree isn't present (mirrors `mt_port.rs`'s reference-
 /// dependent gating exactly — these probes read the SAME file Task 6 does).
@@ -95,19 +105,6 @@ fn real_mt_bank_src() -> Option<String> {
     }
 }
 
-/// The synthetic AS-side cross-seam `MovingTrucks_Bank_Start` label, `phase`d
-/// to `vma` — `mt_port.rs::as_bank_start_label`'s technique, parameterized so
-/// probe (b) can plant it at a WRONG bank.
-fn as_bank_start_label_at(vma: u32) -> Vec<Section> {
-    // Bank-start label PLUS the SONG_MOVINGTRUCKS/SONG_COUNT equs mt_bank.emp's
-    // drift guards read, resolved from games.sonic4.sound_ids in the DEBUG=0 shape
-    // the sole caller below lowers. These resolve+PASS, so only the wrong-bank
-    // co-residency ensures fire.
-    let asm = mt_bank_carrier_asm(&aeon_root(), false, vma)
-        .unwrap_or_else(|e| panic!("mt_bank carrier from the song-id authority: {e}"));
-    let opts = AsOptions { initial_cpu: Some(Cpu::M68000), ..AsOptions::default() };
-    assemble(&asm, &opts).unwrap_or_else(|d| panic!("AS assemble (cross-seam label): {d:?}")).sections
-}
 
 // ===========================================================================
 // Probe (a) — STRADDLE: the `mt_bank` region pinned at a base that is NOT
@@ -141,7 +138,7 @@ fn straddle_doctored_map_base_is_a_loud_bank_boundary_error() {
     assert!(pdiags.iter().all(|d| d.level != Level::Error), "parse errors: {pdiags:?}");
     let opts = LowerOptions {
         initial_cpu: Cpu::M68000,
-        include_root: Some(sound_dir()),
+        include_root: Some(mt_embed_root(&src)),
         embed_base: None,
         defines: vec![("DEBUG".to_string(), 0)],
     };
@@ -185,122 +182,6 @@ fn straddle_doctored_map_base_is_a_loud_bank_boundary_error() {
             d.level == Level::Error && d.message.contains("mt_bank") && d.message.contains("straddle")
         }),
         "expected a straddle error naming `mt_bank`, got: {err:?}"
-    );
-}
-
-// ===========================================================================
-// Probe (b) — WRONG-BANK ENSURE: the real `mt_bank.emp`, correctly placed at
-// its real address, but the cross-seam `MovingTrucks_Bank_Start` symbol
-// supplied at the WRONG bank.
-// ===========================================================================
-
-/// `mt_bank` genuinely lands at $58607 (bank $B, `bankid = (0x58607 &
-/// $7F8000) >> 15 = 0xB`). Supplying the synthetic `MovingTrucks_Bank_Start`
-/// label at $60000 (bank $C) instead of the real $58000 (also bank $B) means
-/// every one of the five `ensure(bankid("X") == bankid("MovingTrucks_Bank_
-/// Start"), "...")` co-residency guards compares bank $B against bank $C —
-/// a genuine mismatch, not a vacuous always-pass. `check_link_asserts` must
-/// report ALL FIVE as loud `Error`s, each carrying its own message text (the
-/// module's real "not co-located with the engine-table bank" family of
-/// strings) — asserted against one of the five verbatim, per the task.
-///
-/// Falsification (recorded per the task): re-ran with the label restored to
-/// the real $58000 — `check_link_asserts` returns an EMPTY diagnostic list
-/// (all five pass); confirmed by temporarily asserting `.is_empty()` at the
-/// real address and observing it hold, then reverting to the wrong address
-/// and the "all five fire" assertion below.
-#[test]
-fn wrong_bank_cross_seam_label_fires_all_five_co_residency_ensures() {
-    let Some(src) = real_mt_bank_src() else { return };
-
-    let (file, pdiags) = parse_str(&src);
-    assert!(pdiags.iter().all(|d| d.level != Level::Error), "parse errors: {pdiags:?}");
-    let opts = LowerOptions {
-        initial_cpu: Cpu::M68000,
-        include_root: Some(sound_dir()),
-        embed_base: None,
-        defines: vec![("DEBUG".to_string(), 0)],
-    };
-    let (module, ldiags) = lower_module(&file, &opts);
-    assert!(ldiags.iter().all(|d| d.level != Level::Error), "lower errors: {ldiags:?}");
-
-    // The real MT base (`sound_layout().mt_bank_lma`) sized to the sound bank's
-    // top — both derived from the live map.
-    let (bank, top) = sound_bank_window();
-    let real = layout().mt_bank_lma;
-    let map = load_map(&format!(
-        "fill = 0x00\n\
-         [[region]]\n\
-         name = \"text\"\n\
-         lma_base = 0x0000\n\
-         size = 0x10\n\
-         kind = \"rom\"\n\
-         \n\
-         [[region]]\n\
-         name = \"mt_bank\"\n\
-         lma_base = 0x{real:X}\n\
-         size = 0x{:X}\n\
-         kind = \"rom\"\n",
-        top - real
-    ))
-    .expect("map must load");
-
-    let mut sections = module.sections;
-    let pdiags = place_sections(&mut sections, &map);
-    assert!(pdiags.iter().all(|d| d.level != Level::Error), "place_sections: {pdiags:?}");
-
-    // WRONG bank: the window ABOVE the sound bank (bank id + 1) instead of the real
-    // bank start where mt_bank lands. Derived, so the mismatch is real at any
-    // layout — asserted here rather than assumed.
-    let wrong = bank + 0x8000;
-    assert_ne!((wrong & 0x7F_8000) >> 15, (real & 0x7F_8000) >> 15, "the wrong bank must differ");
-    let mut cross_seam = as_bank_start_label_at(wrong);
-    for sec in &mut cross_seam {
-        sec.lma = 0x0100_0000;
-        sec.placement = SectionPlacement::Pinned;
-        sec.group = None;
-    }
-    sections.extend(cross_seam);
-
-    let resolved = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
-        .unwrap_or_else(|d| panic!("resolve_layout must still succeed (only the ensures should fail): {d:?}"));
-    sigil_link::link(&resolved, &SymbolTable::new())
-        .unwrap_or_else(|d| panic!("link must still succeed (only the ensures should fail): {d:?}"));
-
-    let assert_diags =
-        sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), &module.link_asserts);
-    // Count ERRORS only: since sound-pkg3 v2 the mt body carries odd-sized mod-8
-    // tail pads (`_sfx_align_*`), so THIS probe's doctored $60000 base also lands
-    // SongTable/SongPatchTable odd and two `[layout.odd-item]` WARNINGS ride along
-    // (impossible at the real placed base — the pads exist precisely to keep the
-    // real base ≡ 0 mod 8). The probe's claim is about the five co-residency
-    // ensures, which are error-tier.
-    let errors: Vec<_> = assert_diags
-        .iter()
-        .filter(|d| d.level == sigil_span::Level::Error)
-        .collect();
-    assert_eq!(
-        errors.len(),
-        5,
-        "expected all five co-residency ensures to fire (wrong bank), got: {assert_diags:?}"
-    );
-    assert!(
-        assert_diags
-            .iter()
-            .filter(|d| !d.message.contains("[layout.odd-item]"))
-            .all(|d| d.level == Level::Error),
-        "every firing ENSURE must be Level::Error (the doctored-base [layout.odd-item] \
-         warnings are the pads' expected shadow, not ensures): {assert_diags:?}"
-    );
-    assert!(
-        assert_diags
-            .iter()
-            .any(|d| d.message.contains("not co-located with the engine-table bank")),
-        "expected the Moving Trucks stream ensure's exact message substring, got: {assert_diags:?}"
-    );
-    assert!(
-        assert_diags.iter().any(|d| d.message.contains("MT patch bank not co-located")),
-        "expected the MT patch bank ensure's exact message substring, got: {assert_diags:?}"
     );
 }
 
@@ -387,7 +268,7 @@ fn missing_debug_define_is_a_clean_unknown_name_error_not_a_panic() {
     assert!(pdiags.iter().all(|d| d.level != Level::Error), "parse errors: {pdiags:?}");
     let opts = LowerOptions {
         initial_cpu: Cpu::M68000,
-        include_root: Some(sound_dir()),
+        include_root: Some(mt_embed_root(&src)),
         embed_base: None,
         defines: vec![], // no -D DEBUG= at all
     };

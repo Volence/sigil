@@ -37,6 +37,14 @@ use sigil_ir::backend::Cpu;
 use sigil_ir::{Section, SectionPlacement, SymbolTable};
 use std::path::{Path, PathBuf};
 
+/// Cross-seam names this scope's modules reference that carry no pin, each read from
+/// the reference build's own listing (`test_support::extend_from_listing_names`).
+const LISTED_CROSS_SEAM: &[&str] = &[
+    "PageIn_WaitIdle",
+    "PageCache_Audit",
+    "PageCache_LiveSweep",
+];
+
 fn region_base(debug: bool) -> u32 {
     if debug { pins::LOAD_ART.debug_base } else { pins::LOAD_ART.plain_base }
 }
@@ -157,6 +165,7 @@ fn addr_labels(debug: bool) -> Vec<Section> {
     // already pinned above keep their value. See `test_support::extend_from_listing`.
     let mut table: Vec<(String, u32)> =
         table.into_iter().map(|(n, v)| (n.to_string(), v)).collect();
+    sigil_harness::test_support::extend_from_listing_names(&mut table, debug, LISTED_CROSS_SEAM);
     if debug {
         sigil_harness::test_support::extend_from_listing(&mut table, debug, &["Dbg_DMA_", "DMA_Peak_", "DMA_Split_"]);
     }
@@ -180,6 +189,20 @@ fn addr_labels(debug: bool) -> Vec<Section> {
 }
 
 /// Parse a .emp file, panicking on parse errors.
+/// The consts `engine/structs.emp` imports from `engine.constants`, as a parsed module
+/// to prepend beside it: its `use` names a module this standalone lower does not carry,
+/// so its ensures would otherwise abort with `unknown name`. Derived from the tree by
+/// `test_support::engine_constants_imported_by`.
+fn structs_imported_constants() -> sigil_frontend_emp::ast::File {
+    let src = sigil_harness::test_support::engine_constants_imported_by(
+        &sigil_harness::test_support::aeon_dir(),
+        "engine/structs.emp",
+    );
+    let (file, diags) = parse_str(&src);
+    assert!(diags.iter().all(|d| d.level != sigil_span::Level::Error), "lifted constants: {diags:?}");
+    file
+}
+
 fn parse_file(path: &Path) -> sigil_frontend_emp::ast::File {
     let src = std::fs::read_to_string(path)
         .unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()));
@@ -445,6 +468,7 @@ fn two_module_flip(debug: bool, rom_name: &str) {
             parse_file(&aeon.join("engine/irq.emp")),
             // m1-budget-fix: VInt_Level's Critical-charge walk uses DMAEntry.
             parse_file(&aeon.join("engine/structs.emp")),
+            structs_imported_constants(),
         ],
         aeon.join("engine/system"),
         "vblank",
@@ -479,12 +503,13 @@ fn two_module_flip(debug: bool, rom_name: &str) {
     // SND_Z80_BASE / SND_CTRL_DMA_ACTIVE are authored in sound_constants.emp now
     // (prepended into the vblank leg above), so only the z80_bus register + the
     // TILE_SIZE constants stay link externs.
-    let mut pairs: Vec<(&str, &str)> = vec![
-        ("Z80_BUS_REQUEST", "$A11100"),
-        ("TILE_SIZE", "32"),
-        // NEW-1 (defect-batch-8): VInt_Lag's $8F02 re-assert names VDP_CTRL.
-        ("VDP_CTRL", "$C00004"),
-    ];
+    // vblank.emp's own `use engine.constants.{..}` names (VDP_CTRL for VInt_Lag's
+    // $8F02 re-assert, PAGE_AUDIT_IDLE for the idle audit slot), each at the value
+    // engine/system/constants.emp gives it.
+    let imported =
+        sigil_harness::test_support::engine_constant_equs_imported_by(&aeon, "engine/system/vblank.emp");
+    let mut pairs: Vec<(&str, &str)> = vec![("Z80_BUS_REQUEST", "$A11100"), ("TILE_SIZE", "32")];
+    pairs.extend(imported.iter().map(|(n, v)| (n.as_str(), v.as_str())));
     pairs.extend(sigil_harness::test_support::engine_constant_equs());
     pairs.extend(sigil_harness::test_support::act_sec_field_equs());
     sections.extend(sigil_harness::test_support::assemble_equ_pairs(&pairs));
@@ -584,6 +609,7 @@ fn two_module_flip(debug: bool, rom_name: &str) {
     // pinned above keep their value. See `test_support::extend_from_listing`.
     let mut table: Vec<(String, u32)> =
         table.into_iter().map(|(n, v)| (n.to_string(), v)).collect();
+    sigil_harness::test_support::extend_from_listing_names(&mut table, debug, LISTED_CROSS_SEAM);
     if debug {
         sigil_harness::test_support::extend_from_listing(
             &mut table,

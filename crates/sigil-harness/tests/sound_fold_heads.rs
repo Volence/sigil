@@ -176,11 +176,12 @@ fn copy_tree(from: &Path, to: &Path) {
     }
 }
 
-/// Replace the one whole-token definition `pub data <head> ` in the module under `dir`
-/// that defines it, and the head's row in the map `order`. Returns the module edited.
+/// Replace the one whole-token definition `data <head> ` (exported or section-local) in
+/// the sound module that defines it, and the head's row in the map `order`. Returns the
+/// module edited.
 fn rename_in_source(root: &Path, head: &str, to: &str) -> PathBuf {
     let sound = root.join("games/sonic4/data/sound");
-    let def = format!("pub data {head} ");
+    let def = format!("data {head} ");
     let mut hits = Vec::new();
     for entry in std::fs::read_dir(&sound).unwrap() {
         let p = entry.unwrap().path();
@@ -192,7 +193,7 @@ fn rename_in_source(root: &Path, head: &str, to: &str) -> PathBuf {
     let module = hits.pop().unwrap();
     let src = std::fs::read_to_string(&module).unwrap();
     assert_eq!(src.matches(&def).count(), 1);
-    std::fs::write(&module, src.replace(&def, &format!("pub data {to} "))).unwrap();
+    std::fs::write(&module, src.replace(&def, &format!("data {to} "))).unwrap();
 
     let map = root.join(seam2::SOUND_PLACEMENT_MAP_REL);
     let text = std::fs::read_to_string(&map).unwrap();
@@ -214,7 +215,7 @@ fn head_renamed_in_source_fails_the_build() {
             copy_tree(&real, tmp.path());
             let to = format!("{head}_Renamed");
             let module = rename_in_source(tmp.path(), head, &to);
-            assert!(std::fs::read_to_string(&module).unwrap().contains(&format!("pub data {to} ")));
+            assert!(std::fs::read_to_string(&module).unwrap().contains(&format!("data {to} ")));
             let err = native::build_rom_chained(tmp.path(), &profile)
                 .err()
                 .unwrap_or_else(|| panic!("{}: renaming `{head}` in source built green", profile.name));

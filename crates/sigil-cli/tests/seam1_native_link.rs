@@ -135,7 +135,7 @@ fn native_blob_matches_reference_debug() {
 #[test]
 fn blob_lengths_are_canonical() {
     assert_eq!(BLOB_LEN_DEBUG - BLOB_LEN_PLAIN, 0x82, "debug grows +$82 over plain (pkg 4 D7 added a 4 B debug-only operand-0 trap)");
-    assert_eq!(BLOB_LEN_PLAIN, 0x1820, "plain resident blob length = 6176 B; the debug shape is this + $82");
+    assert_eq!(BLOB_LEN_PLAIN, 0x1854, "plain resident blob length = 6228 B; the debug shape is this + $82");
 }
 
 /// THE CORPUS LENGTH PIN, on the emitted artifact: the two files `emit_sound_blob`

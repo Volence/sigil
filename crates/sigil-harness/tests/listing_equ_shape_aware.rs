@@ -15,8 +15,8 @@
 //! value DERIVED, none transcribed:
 //!
 //!  1. `PAGE_FRAMES_CLAMP`'s published `EQU` value equals the immediate the ROM
-//!     actually encodes at its one use site (`cmpi.w #PAGE_FRAMES_CLAMP, d6` inside
-//!     `Level_LoadArt`, read out of the built image);
+//!     actually encodes at its use sites (every `cmpi.w #PAGE_FRAMES_CLAMP, d6` inside
+//!     `Level_LoadArt`, counted from the source and read out of the built image);
 //!  2. that immediate equals the fold of `constants.emp` under the profile's own
 //!     define set (`shape_defines`), so the ROM half and the define half agree;
 //!  3. every other harvested engine constant that has an `EQU` row publishes the
@@ -97,6 +97,24 @@ fn cmpi_d6_immediates(rom: &[u8], start: usize, end: usize) -> Vec<(usize, u16)>
     out
 }
 
+/// The number of `cmpi.w #PAGE_FRAMES_CLAMP, d6` lines in `engine/level/load_art.emp`,
+/// comments excluded: the use sites the image must carry inside `Level_LoadArt`.
+fn source_use_sites(aeon: &Path) -> usize {
+    let path = aeon.join("engine/level/load_art.emp");
+    let src = std::fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("UNMEASURED: read {}: {e}", path.display()));
+    src.lines()
+        .map(|l| l.split("//").next().unwrap_or(""))
+        .filter(|l| {
+            let words: Vec<&str> = l.split_whitespace().collect();
+            words.len() == 3
+                && words[0] == "cmpi.w"
+                && words[1] == format!("#{CLAMP},")
+                && words[2] == "d6"
+        })
+        .count()
+}
+
 #[test]
 fn stress_shape_listing_publishes_the_harvested_constant_the_rom_encodes() {
     let profile = native::stress_evict_profile();
@@ -148,11 +166,24 @@ fn stress_shape_listing_publishes_the_harvested_constant_the_rom_encodes() {
         .min()
         .unwrap_or_else(|| panic!("UNMEASURED: no label follows `{USE_SITE}`"));
     let sites = cmpi_d6_immediates(&build.rom, start as usize, end as usize);
+    // How many use sites there are is read from the source: every
+    // `cmpi.w #PAGE_FRAMES_CLAMP, d6` in `engine/level/load_art.emp`, where
+    // `Level_LoadArt` lives. The image must carry exactly that many `cmpi.w #imm, d6`
+    // in the routine, all with the same immediate, or the use sites cannot be told
+    // from some other comparison against d6.
+    let want_sites = source_use_sites(&aeon);
+    assert!(want_sites > 0, "UNMEASURED: load_art.emp spells no `cmpi.w #{CLAMP}, d6`");
     assert_eq!(
         sites.len(),
-        1,
-        "UNMEASURED: expected exactly one `cmpi.w #imm, d6` in `{USE_SITE}` \
-         [${start:06X}, ${end:06X}), found {sites:X?}. The use site cannot be identified"
+        want_sites,
+        "UNMEASURED: expected {want_sites} `cmpi.w #imm, d6` in `{USE_SITE}` \
+         [${start:06X}, ${end:06X}) (the source's use sites), found {sites:X?}. The use \
+         sites cannot be identified"
+    );
+    assert!(
+        sites.iter().all(|&(_, imm)| imm == sites[0].1),
+        "UNMEASURED: the `cmpi.w #imm, d6` sites in `{USE_SITE}` carry different immediates \
+         {sites:X?}, so they are not all `{CLAMP}`"
     );
     let (site_at, rom_imm) = sites[0];
 

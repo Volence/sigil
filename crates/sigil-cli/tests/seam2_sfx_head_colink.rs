@@ -62,10 +62,12 @@ const SFX_WIN_TAB_LEN: usize = 274; // 137 dense ids ($33..=$BB) × 2 bytes
 /// The co-linked `sfx_bank` body length, in bytes. A TRIPWIRE: it does not feed the
 /// co-link, it asserts that the emitted body is the size this gate was last taught.
 ///
-/// Re-pin it whenever the SFX set changes. It tracks `pins::SFX_BANK_BLOB`'s `plain_len`
-/// exactly (2284 == 0x8EC today), which is the cheap way to check it: if those two
+/// Re-pin it whenever the SFX set changes. The cheap cross-check is
+/// `pins::SFX_BANK_BLOB`: the placed section is this body, the even-alignment pad byte
+/// when the body is odd, then the two song pointer tables of `4 * SONG_COUNT` bytes
+/// each (1603 + 1 + 32 == 0x664 plain, 1603 + 1 + 48 == 0x674 debug). If those
 /// disagree, this constant is stale, not the emitter.
-const SFX_BODY_LEN: usize = 2284;
+const SFX_BODY_LEN: usize = 1603;
 
 /// THE HEAD BYTE GATE: the co-linked `SfxBlobWinTab` == the reference ROM slice
 /// at `sfx_win_tab_lma`, in BOTH shapes (each vs its own ROM; the head is

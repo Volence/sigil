@@ -37,6 +37,13 @@ use sigil_ir::backend::Cpu;
 use sigil_ir::{Section, SectionPlacement, SymbolTable};
 use std::path::{Path, PathBuf};
 
+/// Cross-seam names this scope's modules reference that carry no pin, each read from
+/// the reference build's own listing (`test_support::extend_from_listing_names`).
+const LISTED_CROSS_SEAM: &[&str] = &[
+    "PageCache_Audit",
+    "PageCache_LiveSweep",
+];
+
 fn region_base(debug: bool) -> u32 {
     if debug { pins::VBLANK.debug_base } else { pins::VBLANK.plain_base }
 }
@@ -59,8 +66,15 @@ fn strict_gate() -> bool {
 /// authored in engine/sound/sound_constants.emp (prepended in lower_vblank), so
 /// they are comptime consts, not link externs.
 fn value_equs() -> Vec<Section> {
-    // VDP_CTRL: NEW-1 (defect-batch-8) — VInt_Lag's $8F02 re-assert names it.
-    let pairs: Vec<(&str, &str)> = vec![("Z80_BUS_REQUEST", "$A11100"), ("VDP_CTRL", "$C00004")];
+    // vblank.emp's own `use engine.constants.{..}` names (VDP_CTRL for VInt_Lag's
+    // $8F02 re-assert, PAGE_AUDIT_IDLE for the idle audit slot), each at the value
+    // engine/system/constants.emp gives it.
+    let imported = sigil_harness::test_support::engine_constant_equs_imported_by(
+        &sigil_harness::test_support::aeon_dir(),
+        "engine/system/vblank.emp",
+    );
+    let mut pairs: Vec<(&str, &str)> = vec![("Z80_BUS_REQUEST", "$A11100")];
+    pairs.extend(imported.iter().map(|(n, v)| (n.as_str(), v.as_str())));
     sigil_harness::test_support::assemble_equ_pairs(&pairs)
 }
 
@@ -154,6 +168,7 @@ fn addr_labels(debug: bool) -> Vec<Section> {
     // already pinned above keep their value. See `test_support::extend_from_listing`.
     let mut table: Vec<(String, u32)> =
         table.into_iter().map(|(n, v)| (n.to_string(), v)).collect();
+    sigil_harness::test_support::extend_from_listing_names(&mut table, debug, LISTED_CROSS_SEAM);
     if debug {
         sigil_harness::test_support::extend_from_listing(&mut table, debug, &["Dbg_DMA_", "DMA_Peak_", "DMA_Split_"]);
     }
@@ -177,6 +192,20 @@ fn addr_labels(debug: bool) -> Vec<Section> {
 }
 
 /// Parse a .emp file, panicking on parse errors.
+/// The consts `engine/structs.emp` imports from `engine.constants`, as a parsed module
+/// to prepend beside it: its `use` names a module this standalone lower does not carry,
+/// so its ensures would otherwise abort with `unknown name`. Derived from the tree by
+/// `test_support::engine_constants_imported_by`.
+fn structs_imported_constants() -> sigil_frontend_emp::ast::File {
+    let src = sigil_harness::test_support::engine_constants_imported_by(
+        &sigil_harness::test_support::aeon_dir(),
+        "engine/structs.emp",
+    );
+    let (file, diags) = parse_str(&src);
+    assert!(diags.iter().all(|d| d.level != sigil_span::Level::Error), "lifted constants: {diags:?}");
+    file
+}
+
 fn parse_file(path: &Path) -> sigil_frontend_emp::ast::File {
     let src = std::fs::read_to_string(path)
         .unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()));
@@ -216,6 +245,7 @@ fn lower_vblank(
             .items
             .into_iter()
             .chain(structs_file.items.into_iter().filter(|it| !matches!(it, sigil_frontend_emp::ast::Item::Use(_))))
+            .chain(structs_imported_constants().items)
             .chain(z80_file.items)
             .chain(irq_file.items)
             .chain(main.items)

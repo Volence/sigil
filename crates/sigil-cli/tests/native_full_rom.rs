@@ -185,29 +185,25 @@ const LOAD_BEARING: &[(&str, u32, u32)] = &[
     // Written as base + offset rather than as two literals: the base is pin-sourced,
     // so a future slide ahead of this region cannot rot the row, and only a change
     // INSIDE the region has to be re-derived here — which is the whole tripwire.
-    // THE INTRA-REGION OFFSET IS PER-SHAPE, and the reason is an addressing-mode width
-    // difference rather than a source difference. Two `Sound_PlaySFX` call sites in
-    // player_ground precede this label, and what each costs depends on how far the
-    // target sits from them:
-    //   * PLAIN: Sound_PlaySFX at 0x81A8, roughly 0x87D8 below the sites — outside
-    //     bsr.w's +/-32K reach, so both assemble as `jsr abs.l`, 6 bytes each.
-    //   * DEBUG: Sound_PlaySFX at 0xB4EA, roughly 0x55EC below them — within reach, so
-    //     both take `bsr.w`, 4 bytes each.
-    // The 2 x 2 bytes of plain-only width is the whole of the gap: 0x2F8 plain against
-    // 0x2F4 debug. THIS PAIR OSCILLATES, and a reader who finds them equal has not found
-    // a mistake: whenever the plain shape's sound region crosses $8000 the plain site
-    // encoding changes with it and the two offsets converge or diverge by exactly 4.
-    // Re-derive from the shipped listings rather than assuming either state.
-    // Both offsets come from the golden ROM's own encodings at those two sites, never
-    // read off this label's resolved address — the row stays UNPINNED so it remains an
-    // independent check of the convsym resolve path, and pinning it to
-    // `Ground_Move_Cap` would make the assertion circular.
-    ("Ground_Move_Cap", pins::P_STATE_GROUND.plain + 0x2F8, pins::P_STATE_GROUND.debug + 0x2F4),
+    // THE INTRA-REGION OFFSET CAN DIFFER PER SHAPE, and the reason is an addressing-mode
+    // width difference rather than a source difference. Two `Sound_PlaySFX` call sites in
+    // player_ground precede this label, and what each costs depends on how far the target
+    // sits from them: within bsr.w's +/-32K reach they take `bsr.w`, 4 bytes each;
+    // outside it, `jsr abs.l`, 6 bytes each. THIS PAIR OSCILLATES: whenever one shape's
+    // sound region crosses the reach boundary the two offsets converge or diverge by
+    // exactly 4, so a reader who finds them equal or unequal has not found a mistake.
+    // Today both shapes take `bsr.w` at both sites (the golden ROMs encode $6100 at
+    // $109F0/$10A6A plain and $10B06/$10B80 debug, each reaching Sound_PlaySFX), so the
+    // offsets are equal: 0x330 in both.
+    // Re-derive from the shipped encodings rather than assuming either state.
+    ("Ground_Move_Cap", pins::P_STATE_GROUND.plain + 0x330, pins::P_STATE_GROUND.debug + 0x330),
     ("Section_Init", pins::SECTION.plain_base, pins::SECTION.debug_base), // a level proc (rides the m1-budget-fix vblank growth; pin-sourced so downstream shifts don't rot the fixture)
     ("BG_Init", pins::BG.plain_base, pins::BG.debug_base),                // a level proc (after PARALLAX + SECTION, so it rides their growth; pin-sourced)
     ("AnimateSprite", pins::ANIMATE.plain_base, pins::ANIMATE.debug_base), // an objects keystone (pin-sourced)
     ("TouchResponse", pins::COLLISION.plain_base, pins::COLLISION.debug_base), // a collision keystone (pin-sourced)
-    ("Z80_Sound_Start", pins::BOOT_HEAD.plain_base + 0x36, pins::BOOT_HEAD.debug_base + 0x36), // Z80-adjacent = BootData+54 (pin-sourced)
+    // Z80-adjacent: BootData + 0x32, the boot data table ahead of the blob (both shapes;
+    // the golden ROMs carry the blob's leading `jp` $C3 $3B at $3DE plain and $3E4 debug).
+    ("Z80_Sound_Start", pins::BOOT_HEAD.plain_base + 0x32, pins::BOOT_HEAD.debug_base + 0x32),
 ];
 
 /// The golden directory (holds the frozen blobs + `provenance.toml`, the single source

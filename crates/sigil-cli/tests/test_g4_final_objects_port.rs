@@ -1,22 +1,18 @@
-//! Tranche 39 — the FINAL three game objects: the REAL `test_player.emp` +
-//! `test_enemy.emp` + `path_swap.emp` ports, region-level byte gates in BOTH
-//! shapes, modelled on `test_g1_objects_port.rs`. After t39 the object bank is
-//! ALL-.emp.
+//! Tranche 39: the REAL `test_player.emp` + `test_enemy.emp` ports, region-level
+//! byte gates, modelled on `test_g1_objects_port.rs`.
 //!
-//! ## What this port opens
+//! ## What this port covers
 //!
-//! - **Three per-file object-bank gates** (`SIGIL_EMP_TEST_PLAYER` /
-//!   `SIGIL_EMP_TEST_ENEMY` / `SIGIL_EMP_PATH_SWAP`). test_player and test_enemy
-//!   are shape-INVARIANT ($270 / $48 both shapes); **path_swap is SHAPE-DEPENDENT**
-//!   ($92 plain / $FA debug — 2 `__DEBUG__` blocks: the reserved-bit `raise_error`
-//!   guard + the debug `jmp Draw_Sprite` vs release `rts` tail).
-//! - **Two GUARDED overlays** — test_player's `TPlayerV` (dplc_ptr/art_base/
-//!   debug_flag; the AS twin's internal-gated header survives) and one UNGUARDED
-//!   overlay each for test_enemy (`TEnemyV`) and path_swap (`PathSwapV`).
-//! - **The DEBUG-shape `raise_error` seam** (path_swap): the error-handler entry
-//!   points MDDBG__ErrorHandler(_PagesController), the load_art_port precedent.
-//! - **path_swap's inline `ObjDef_PathSwap`** objdef descriptor (26 B) + the two
-//!   procs, and its `dc.l ObjDef_PathSwap` outbound consumers (act_descriptor).
+//! - **Two per-file object-bank gates** (`SIGIL_EMP_TEST_PLAYER` /
+//!   `SIGIL_EMP_TEST_ENEMY`). Both modules are DEBUG-only (registry if-debug), so
+//!   their plain pins are empty and only `s4.debug.bin` carries their bytes
+//!   ($270 / $48). The plain arm still compiles both, at harness-private bases,
+//!   so a plain-only lowering defect stays loud.
+//! - **The overlays**: test_player's GUARDED `TPlayerV` (dplc_ptr/art_base/
+//!   debug_flag; the AS twin's internal-gated header survives) and test_enemy's
+//!   UNGUARDED `TEnemyV`.
+//! - **The outbound consumer**: `dc.w objroutine(TestEnemy_Init)` resolves to the
+//!   `.emp`-owned bank offset.
 //! - **Zero externs / zero extern-proc**: every callee (ObjectMove/ObjectMoveX/
 //!   AnimateSprite/Perform_DPLC/Player_SensorFloor/Draw_Sprite) is a bare link
 //!   symbol resolved by the shared link.
@@ -70,17 +66,11 @@ struct Shape {
     /// test_player expands `lea`s it, so it is a cross-seam RAM operand of
     /// this region now.
     player_blocks: u32,
-    /// C1: path_swap follows `Camera_Target` (the leader SST pointer in engine
-    /// RAM) instead of a hardwired `Player_1`, so the follow works for whichever
-    /// character is leading.
-    camera_target: u32,
     cheat_flags: u32,
     player_base: u32,
     player_len: usize,
     enemy_base: u32,
     enemy_len: usize,
-    swap_base: u32,
-    swap_len: usize,
 }
 
 const PLAIN: Shape = Shape {
@@ -99,14 +89,11 @@ const PLAIN: Shape = Shape {
     map_test_obj: pins::MAP_TEST_OBJ.plain,
     player_1: pins::PLAYER_1.plain,
     player_blocks: pins::PLAYER_BLOCKS.plain,
-    camera_target: pins::CAMERA_TARGET.plain,
     cheat_flags: pins::CHEAT_FLAGS.plain,
     player_base: pins::TEST_PLAYER.plain_base,
     player_len: pins::TEST_PLAYER.plain_len,
     enemy_base: pins::TEST_ENEMY.plain_base,
     enemy_len: pins::TEST_ENEMY.plain_len,
-    swap_base: pins::PATH_SWAP.plain_base,
-    swap_len: pins::PATH_SWAP.plain_len,
 };
 const DEBUG: Shape = Shape {
     debug: true,
@@ -124,21 +111,18 @@ const DEBUG: Shape = Shape {
     map_test_obj: pins::MAP_TEST_OBJ.debug,
     player_1: pins::PLAYER_1.debug,
     player_blocks: pins::PLAYER_BLOCKS.debug,
-    camera_target: pins::CAMERA_TARGET.debug,
     cheat_flags: pins::CHEAT_FLAGS.debug,
     player_base: pins::TEST_PLAYER.debug_base,
     player_len: pins::TEST_PLAYER.debug_len,
     enemy_base: pins::TEST_ENEMY.debug_base,
     enemy_len: pins::TEST_ENEMY.debug_len,
-    swap_base: pins::PATH_SWAP.debug_base,
-    swap_len: pins::PATH_SWAP.debug_len,
 };
 
 // objtest-gate (2026-08-05): the PLAIN compile shape. test_player/test_enemy are
-// DEBUG-only — their plain pins collapse onto the plain_anchor (overlapping) — so
+// DEBUG-only: their plain pins collapse onto the plain_anchor (overlapping), so
 // the plain-arm COMPILE pins them at harness-private scratch bases while every
-// carrier + path_swap keeps its true plain address. Only path_swap's bytes are
-// compared against s4.bin; the gated pair just has to keep compiling.
+// carrier keeps its true plain address. s4.bin carries none of their bytes, so
+// the plain arm compiles, links and checks guards and the outbound word only.
 const PLAIN_COMPILE: Shape = Shape {
     // Scratch bases INSIDE the 64KB object bank window (objroutine link words are
     // `X - ObjCodeBase` and must fit 16 bits) but past all real plain content.
@@ -246,14 +230,12 @@ fn as_label_at(name: &str, vma: u32) -> Vec<Section> {
     assemble(&asm, &opts).unwrap_or_else(|d| panic!("AS assemble (synthetic {name}): {d:?}")).sections
 }
 
-/// The AS-side OUTBOUND consumers: `dc.w objroutine(TestEnemy_Init)` (objdef) and
-/// `dc.l ObjDef_PathSwap` (act_descriptor / objdef type table) — both symbols
-/// UNDEFINED in-unit (the `.emp` owns them).
+/// The AS-side OUTBOUND consumer: `dc.w objroutine(TestEnemy_Init)` (objdef), the
+/// symbol UNDEFINED in-unit (the `.emp` owns it).
 fn as_outbound_consumer() -> Vec<Section> {
     let asm = "cpu 68000\n\
                Consumer:\n\
-               \tdc.w TestEnemy_Init-ObjCodeBase\n\
-               \tdc.l ObjDef_PathSwap\n";
+               \tdc.w TestEnemy_Init-ObjCodeBase\n";
     let opts = AsOptions { initial_cpu: Some(Cpu::M68000), ..AsOptions::default() };
     assemble(asm, &opts).unwrap_or_else(|d| panic!("AS assemble (outbound consumer): {d:?}")).sections
 }
@@ -278,16 +260,9 @@ fn map_toml(shape: &Shape) -> String {
          name = \"test_enemy\"\n\
          lma_base = {:#x}\n\
          size = {:#x}\n\
-         kind = \"rom\"\n\
-         \n\
-         [[region]]\n\
-         name = \"path_swap\"\n\
-         lma_base = {:#x}\n\
-         size = {:#x}\n\
          kind = \"rom\"\n",
         shape.player_base, shape.player_len,
         shape.enemy_base, shape.enemy_len,
-        shape.swap_base, shape.swap_len,
     )
 }
 
@@ -296,7 +271,6 @@ struct Compiled {
     linked: sigil_link::LinkedImage,
     player_guards: usize,
     enemy_guards: usize,
-    swap_guards: usize,
     link_asserts: Vec<sigil_ir::LinkAssert>,
 }
 
@@ -311,14 +285,12 @@ fn compile_real_files(shape: &Shape) -> Compiled {
 
     let player = parse_file(&aeon.join("games/sonic4/objects/test_player.emp"));
     let enemy = parse_file(&aeon.join("games/sonic4/objects/test_enemy.emp"));
-    let swap = parse_file(&aeon.join("games/sonic4/objects/path_swap.emp"));
 
     let player_file = with_ambient(
         vec![types(), sst(), constants(), objdef(), game_consts(), player_block_ambient(&aeon)],
         player,
     );
     let enemy_file = with_ambient(vec![types(), sst(), constants()], enemy);
-    let swap_file = with_ambient(vec![types(), sst(), constants(), objdef(), game_consts()], swap);
 
     let opts = LowerOptions {
         initial_cpu: Cpu::M68000,
@@ -330,10 +302,7 @@ fn compile_real_files(shape: &Shape) -> Compiled {
     let mut link_asserts = Vec::new();
     let mut player_guards = 0;
     let mut enemy_guards = 0;
-    let mut swap_guards = 0;
-    for (file, what) in
-        [(player_file, "test_player"), (enemy_file, "test_enemy"), (swap_file, "path_swap")]
-    {
+    for (file, what) in [(player_file, "test_player"), (enemy_file, "test_enemy")] {
         let (module, ldiags) = lower_module(&file, &opts);
         assert!(
             ldiags.iter().all(|d| d.level != sigil_span::Level::Error),
@@ -342,8 +311,7 @@ fn compile_real_files(shape: &Shape) -> Compiled {
         let g = sigil_harness::test_support::guard_assert_count(&module.link_asserts);
         match what {
             "test_player" => player_guards = g,
-            "test_enemy" => enemy_guards = g,
-            _ => swap_guards = g,
+            _ => enemy_guards = g,
         }
         sections.extend(module.sections);
         link_asserts.extend(module.link_asserts);
@@ -371,17 +339,8 @@ fn compile_real_files(shape: &Shape) -> Compiled {
         as_label_at("Art_Sonic", shape.art_sonic),
         as_label_at("Map_TestObj", shape.map_test_obj),
         as_label_at("Player_Blocks", shape.player_blocks),
-        as_label_at("Camera_Target", shape.camera_target),
         as_outbound_consumer(),
     ];
-    if shape.debug {
-        // path_swap's DEBUG-only raise_error error-handler entry points.
-        groups.push(as_label_at("MDDBG__ErrorHandler", pins::MDDBG_ERROR_HANDLER));
-        groups.push(as_label_at(
-            "MDDBG__ErrorHandler_PagesController",
-            pins::MDDBG_ERROR_HANDLER_PAGES_CONTROLLER,
-        ));
-    }
 
     let mut lma = 0x0100_0000u32;
     for group in groups.iter_mut() {
@@ -398,7 +357,7 @@ fn compile_real_files(shape: &Shape) -> Compiled {
         .unwrap_or_else(|d| panic!("resolve_layout failed: {d:?}"));
     let linked = sigil_link::link(&resolved, &SymbolTable::new())
         .unwrap_or_else(|d| panic!("link failed: {d:?}"));
-    Compiled { resolved, linked, player_guards, enemy_guards, swap_guards, link_asserts }
+    Compiled { resolved, linked, player_guards, enemy_guards, link_asserts }
 }
 
 fn assert_region_matches(candidate: &[u8], expected: &[u8], what: &str) {
@@ -456,8 +415,8 @@ fn ref_window(rom_name: &str, base: usize, len: usize) -> Option<Vec<u8>> {
 }
 
 fn reference_gate(shape: &Shape, rom_name: &str) {
-    // objtest-gate: in PLAIN, test_player/test_enemy carry zero bytes — compile
-    // via the hybrid shape and byte-gate ONLY path_swap (which still ships).
+    // objtest-gate: in PLAIN, test_player/test_enemy carry zero bytes. Compile via
+    // the hybrid shape; there is no plain window to byte-gate.
     let plain_gated = !shape.debug;
     let compile_shape = if plain_gated { &PLAIN_COMPILE } else { shape };
     let (player_ref, enemy_ref) = if plain_gated {
@@ -470,20 +429,16 @@ fn reference_gate(shape: &Shape, rom_name: &str) {
         };
         (p, ref_window(rom_name, shape.enemy_base as usize, shape.enemy_len).unwrap())
     };
-    let Some(swap_ref) = ref_window(rom_name, shape.swap_base as usize, shape.swap_len) else {
-        return;
-    };
 
     let c = compile_real_files(compile_shape);
 
     // sst.emp's SST_* wall retired at the conv-a structs flip; the constants
-    // twin's guards remain. test_player's own VRAM_TEST_SONIC and path_swap's own
-    // VRAM_TEST_OBJ mirror guards retired at conv-f (config constants flipped to
-    // `.emp`, `use`d now); test_player's _dplc_ptr/_art_base overlay guards had
-    // already retired at conv-d #48. test_enemy carries an unguarded overlay.
+    // twin's guards remain. test_player's own VRAM_TEST_SONIC mirror guard retired
+    // at conv-f (config constants flipped to `.emp`, `use`d now); its
+    // _dplc_ptr/_art_base overlay guards had already retired at conv-d #48.
+    // test_enemy carries an unguarded overlay.
     assert_eq!(c.player_guards, twin_guards(), "test_player constants twin guards (own VRAM_TEST_SONIC guard retired at conv-f)");
     assert_eq!(c.enemy_guards, twin_guards(), "test_enemy guards (unguarded overlay)");
-    assert_eq!(c.swap_guards, twin_guards(), "path_swap constants twin guards (own VRAM_TEST_OBJ guard retired at conv-f)");
     let diags = sigil_link::check_link_asserts(&c.resolved, &SymbolTable::new(), &c.link_asserts);
     assert!(
         diags.iter().all(|d| d.level != sigil_span::Level::Error),
@@ -496,11 +451,9 @@ fn reference_gate(shape: &Shape, rom_name: &str) {
         let enemy_sec = c.linked.section("test_enemy").expect("linked test_enemy");
         assert_region_matches(&enemy_sec.bytes, &enemy_ref, &format!("test_enemy vs {rom_name}"));
     }
-    let swap_sec = c.linked.section("path_swap").expect("linked path_swap");
-    assert_region_matches(&swap_sec.bytes, &swap_ref, &format!("path_swap vs {rom_name}"));
 
-    // Outbound proof: the AS objroutine(TestEnemy_Init) word + the dc.l
-    // ObjDef_PathSwap resolve to the .emp-owned addresses.
+    // Outbound proof: the AS objroutine(TestEnemy_Init) word resolves to the
+    // .emp-owned bank offset.
     // Located by its `Consumer:` label, not by an ordinal into the harness-private
     // LMA ladder: that index silently pointed at the wrong section the moment C1
     // added two cross-seam label groups ahead of it.
@@ -522,26 +475,16 @@ fn reference_gate(shape: &Shape, rom_name: &str) {
         (compile_shape.enemy_base - OBJ_CODE_BASE) as u16,
         "objdef objroutine(TestEnemy_Init) must resolve to the bank offset"
     );
-    let path_swap_addr = u32::from_be_bytes([
-        consumer.bytes[2],
-        consumer.bytes[3],
-        consumer.bytes[4],
-        consumer.bytes[5],
-    ]);
-    assert_eq!(
-        path_swap_addr, shape.swap_base,
-        "dc.l ObjDef_PathSwap must resolve to the .emp-owned region base"
-    );
 }
 
-/// (plain) all three regions == `s4.bin` windows.
+/// (plain) both modules compile, link and pass their guards; s4.bin carries none
+/// of their bytes.
 #[test]
 fn g4_objects_regions_match_reference() {
     reference_gate(&PLAIN, "s4.bin");
 }
 
-/// (debug) all three regions == `s4.debug.bin` windows (path_swap's per-shape
-/// $FA length + the raise_error block).
+/// (debug) both regions == `s4.debug.bin` windows.
 #[test]
 fn g4_objects_debug_regions_match_reference() {
     reference_gate(&DEBUG, "s4.debug.bin");
@@ -550,32 +493,34 @@ fn g4_objects_debug_regions_match_reference() {
 // ---- negative probe + positive control (the t24 rule) -------------------
 
 /// The UNDOCTORED compile equals the reference window (positive control):
-/// path_swap's SHAPE-DEPENDENT plain window.
+/// test_enemy's debug window.
 #[test]
 fn g4_undoctored_compile_equals_the_reference_window() {
-    let shape = &PLAIN;
-    let Some(swap_ref) = ref_window("s4.bin", shape.swap_base as usize, shape.swap_len) else {
+    let shape = &DEBUG;
+    let Some(enemy_ref) = ref_window("s4.debug.bin", shape.enemy_base as usize, shape.enemy_len)
+    else {
         return;
     };
-    let c = compile_real_files(&PLAIN_COMPILE);
-    let swap_sec = c.linked.section("path_swap").expect("linked path_swap");
-    // Same align-fill tolerance as the reference gate (defect-batch-8: the parcel's
-    // shift left 2 pad bytes inside the pin span, which a raw assert_eq! read as a
-    // mismatch while g4_objects_regions_match_reference — using the tolerant
-    // comparator — stayed green).
-    assert_region_matches(&swap_sec.bytes, &swap_ref, "undoctored path_swap");
+    let c = compile_real_files(shape);
+    let enemy_sec = c.linked.section("test_enemy").expect("linked test_enemy");
+    // Same align-fill tolerance as the reference gate (defect-batch-8: a shift can
+    // leave pad bytes inside the pin span, which a raw assert_eq! reads as a
+    // mismatch while the tolerant comparator stays green).
+    assert_region_matches(&enemy_sec.bytes, &enemy_ref, "undoctored test_enemy");
 }
 
 /// A doctored reference window must NOT match the compiled bytes (the gate can
 /// actually fail). Pins-derived.
 #[test]
 fn g4_doctored_reference_diverges() {
-    let shape = &PLAIN;
-    let Some(mut swap_ref) = ref_window("s4.bin", shape.swap_base as usize, shape.swap_len) else {
+    let shape = &DEBUG;
+    let Some(mut enemy_ref) =
+        ref_window("s4.debug.bin", shape.enemy_base as usize, shape.enemy_len)
+    else {
         return;
     };
-    let c = compile_real_files(&PLAIN_COMPILE);
-    let swap_sec = c.linked.section("path_swap").expect("linked path_swap");
-    swap_ref[0] ^= 0xFF;
-    assert_ne!(swap_sec.bytes, swap_ref, "a doctored reference must diverge from the compiled bytes");
+    let c = compile_real_files(shape);
+    let enemy_sec = c.linked.section("test_enemy").expect("linked test_enemy");
+    enemy_ref[0] ^= 0xFF;
+    assert_ne!(enemy_sec.bytes, enemy_ref, "a doctored reference must diverge from the compiled bytes");
 }
