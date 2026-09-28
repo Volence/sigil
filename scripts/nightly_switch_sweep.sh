@@ -286,7 +286,7 @@ done
 # The derivation is the same in both passes, so its counts are printed once when the
 # two agree and per route when they do not.
 if [[ ${RESULT_OPTIONS[direct]} == "${RESULT_OPTIONS[dropin]}" ]]; then
-    options=${RESULT_OPTIONS[direct]}
+    options=${RESULT_OPTIONS[direct]:-no population lines from either pass}
 else
     options="direct: ${RESULT_OPTIONS[direct]:-none}; dropin: ${RESULT_OPTIONS[dropin]:-none}"
 fi
