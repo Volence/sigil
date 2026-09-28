@@ -902,18 +902,17 @@ start = "Dac_Temp_Blip"
 end = "section:dac_banks"
 gate = "SIGIL_EMP_DAC"
 
-# Parcel K4 inc-5 Stage 3 — the Moving-Trucks streaming bank BODY, native
-# (mt_bank_blob.emp embeds the seam-2 mt_bank{,_debug}.bin @ $58628, after the phased
-# soundBankHead). Shape-INVARIANT start ($58628), shape-DEPENDENT size (debug adds
-# DrumTest + HCZ2): literal len 0x34E8 plain, debug_len 0x4F38 (sound-pkg3 v2: the
-# mod-8 _sfx_align_* tail pads land in the body split-bin, +7 plain / +5 debug).
-# No end label (the SFX block follows at a per-shape address). gate SIGIL_EMP_MT
+# Parcel K4 inc-5 Stage 3: the Moving-Trucks streaming bank, native. mt_bank.emp
+# (module games.sonic4.mt_bank_blob) places its `mt_bank` section at the
+# `Song_MovingTrucks` map row, right after the phased engine-table head.
+# Shape-INVARIANT start, shape-DEPENDENT size (debug adds DrumTest + HCZ2). There is
+# no end label (the SFX block follows at a per-shape address), so the region ends at
+# the section's OWN end and follows the songs with no literal. gate SIGIL_EMP_MT
 # holes out the AS org-skip.
 [[region]]
 name = "mt_bank_blob"
 start = "Song_MovingTrucks"
-len = 0x34E8
-debug_len = 0x4F38
+end = "section:mt_bank"
 gate = "SIGIL_EMP_MT"
 
 # Parcel K4 inc-5 Stage 4 — the SFX block, native (sfx_bank_blob.emp embeds the seam-2
