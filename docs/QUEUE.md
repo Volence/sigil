@@ -1496,7 +1496,9 @@ points at it rather than restating it, so there is one copy to keep true.
 
 ### SOUND-FOLD-GATE-SILENT-SKIP
 
-- state: **open**  size: `S`  project: `-`  found: SONG-BANK-2-EMBED-ROOT review, 2026-09-28 (agent's reading, not
+- state: **LANDED 2026-09-28 at merge `a8b1d9a5`** (tip `e5f2a458`); record
+  `docs/superpowers/notes/2026-09-28-sound-fold-gate-silent-skip.md`. Open from it: a head label defined in two
+  sections takes the first match, not refused.  size: `S`  project: `-`  found: SONG-BANK-2-EMBED-ROOT review, 2026-09-28 (agent's reading, not
   re-verified here)
 - `validate_sound_fold` (`crates/sigil-harness/src/native.rs`, about line 3307) silently skips a label it cannot
   find. If `Song_MovingTrucks` is renamed or stops being its section's first item, the check that the placed MT bank
