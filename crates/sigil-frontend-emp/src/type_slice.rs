@@ -99,13 +99,10 @@ fn dest_reg(ops: &[CodeOperand]) -> Option<Reg> {
     }
 }
 
-/// The bare `Sym` target of a direct call/tail, or `None` for an indirect /
-/// local-label (`$`-mangled) target.
+/// The proc a direct call/tail names (the shared
+/// [`crate::flag_check::direct_proc_target`] reading).
 fn direct_target(ops: &[CodeOperand]) -> Option<&str> {
-    match ops {
-        [CodeOperand::Sym(name)] if !name.contains('$') => Some(name.as_str()),
-        _ => None,
-    }
+    crate::flag_check::direct_proc_target(ops)
 }
 
 /// The registers a returning call leaves in a KNOWN state: `out(dN: T)` slots

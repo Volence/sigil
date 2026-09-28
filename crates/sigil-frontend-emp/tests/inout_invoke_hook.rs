@@ -15,6 +15,7 @@ use sigil_frontend_emp::contract::{InterfaceEnv, ResolvedInterface, ResolvedMemb
 use sigil_frontend_emp::eval::eval_proc_body;
 use sigil_frontend_emp::out_verify::{verify_inout, InoutCallees, OutClaim, OutWidth, OutWidths};
 use sigil_frontend_emp::parse_str;
+use sigil_frontend_emp::type_slice::check_slot_types;
 use sigil_frontend_emp::value::{CodeItem, Reg};
 use sigil_ir::backend::Cpu;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
@@ -170,4 +171,74 @@ fn d1c_sees_a_live_value_clobbered_by_the_bound_proc() {
     let f = check_live_clobbered("P", &BTreeSet::new(), &items, &eff, &none, &none);
     let got: Vec<(String, String)> = f.into_iter().map(|x| (x.callee, x.reg)).collect();
     assert_eq!(got, vec![("Bound".to_string(), "d3".to_string())]);
+}
+
+// ---- type_slice: `[call.slot-type-mismatch]` ----
+
+/// Run the slot check on P's items. `Bound` declares `clobbers(bound_clobbers)`
+/// and, when `bound_takes_gridx`, a `d2: GridX` param; `Need` always takes
+/// `d2: GridX`. `own` seeds P's own typed params. Returns `(callee, reg)` firings.
+fn slot_firings(
+    items: &[CodeItem],
+    bound_clobbers: &[&str],
+    bound_takes_gridx: bool,
+    own: &[(usize, String)],
+) -> Vec<(String, String)> {
+    let mut typed_params = BTreeMap::from([("Need".to_string(), vec![(2, "GridX".to_string())])]);
+    if bound_takes_gridx {
+        typed_params.insert("Bound".to_string(), vec![(2, "GridX".to_string())]);
+    }
+    let clob = BTreeMap::from([
+        ("Bound".to_string(), Some(regset(bound_clobbers))),
+        ("Need".to_string(), Some(BTreeSet::new())),
+    ]);
+    let newtypes = BTreeSet::from(["GridX".to_string()]);
+    check_slot_types(
+        "P",
+        items,
+        &typed_params,
+        &BTreeMap::new(),
+        &BTreeMap::new(),
+        &clob,
+        &newtypes,
+        &BTreeMap::new(),
+        own,
+    )
+    .into_iter()
+    .map(|f| (f.callee, f.reg))
+    .collect()
+}
+
+const SLOT_THROUGH: &str =
+    "module m\n proc P (d2: u8) clobbers(d0-d7) {\n invoke Game.tick\n jbsr Need\n rts\n }\n";
+
+/// The bound proc's typed slot is checked at the invoke: an untyped d2 fires.
+#[test]
+fn slot_check_reaches_the_bound_proc_at_an_invoke() {
+    let src = "module m\n proc P () clobbers(d0-d7) {\n moveq #5, d2\n invoke Game.tick\n rts\n }\n";
+    let items = eval_proc(src, "P", &env_with_bound_hook());
+    assert_eq!(
+        slot_firings(&items, &["d0"], true, &[]),
+        vec![("Bound".to_string(), "d2".to_string())]
+    );
+}
+
+/// A GridX in d2 survives an invoke whose bound proc's declared clobbers leave
+/// d2 alone, so the later `jbsr Need` is satisfied.
+#[test]
+fn a_type_survives_an_invoke_that_preserves_it() {
+    let items = eval_proc(SLOT_THROUGH, "P", &env_with_bound_hook());
+    let own = [(2usize, "GridX".to_string())];
+    assert_eq!(slot_firings(&items, &["d0"], false, &own), Vec::<(String, String)>::new());
+}
+
+/// Control: a bound proc that clobbers d2 degrades it, so `Need` fires.
+#[test]
+fn a_type_dies_at_an_invoke_that_clobbers_it() {
+    let items = eval_proc(SLOT_THROUGH, "P", &env_with_bound_hook());
+    let own = [(2usize, "GridX".to_string())];
+    assert_eq!(
+        slot_firings(&items, &["d2"], false, &own),
+        vec![("Need".to_string(), "d2".to_string())]
+    );
 }
