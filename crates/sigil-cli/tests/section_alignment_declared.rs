@@ -125,21 +125,71 @@ fn a_doctored_pin_residue_does_not_move_a_packed_section() {
     assert_eq!(built.rom, control.rom, "the doctored pin must not move a byte");
 }
 
-/// THE REQUIREMENTS ABOVE 16, as declared. The two Z80 bank heads require `$8000` (one
-/// `SetBank` window, `bankid() = (lma & $7F8000) >> 15`) and `ObjCodeBase` requires
-/// `$10000` (aeon's R1 ruling). All three are declared `[[anchor]]` islands the walk
-/// holds absolute, so the declaration is enforced on them by `validate_resolved_alignment`
-/// and by nothing else — this pins the three rows a residue-of-address reading could
-/// never have expressed.
+/// The rows above 16 the walk HOLDS: a frozen row equal to a declared `[[anchor]]` (or a
+/// phase bank) places them absolute, and only `validate_resolved_alignment` measures
+/// them against the declaration.
+const HELD_ABOVE_16: &[(&str, u32)] =
+    &[("Dac_Temp_Blip", 0x8000), ("SoundTablesZ80_Head", 0x8000), ("ObjCodeBase", 0x10000)];
+
+/// The rows above 16 the walk ROUNDS: no frozen row names them, so the running cursor
+/// is rounded up to the declaration by `native::packed_chained_base`, and an aeon
+/// `[[anchor]]` at the landing address is a lint, not a placement input.
+const ROUNDED_ABOVE_16: &[(&str, u32)] = &[("SongBank2_Head", 0x8000)];
+
+/// THE REQUIREMENTS ABOVE 16, as declared, and the rule that places each. The Z80 bank
+/// heads require `$8000` (one `SetBank` window, `bankid() = (lma & $7F8000) >> 15`) and
+/// `ObjCodeBase` requires `$10000` (aeon's R1 ruling). Every row above 16 is either HELD
+/// or ROUNDED, and the two are told apart by the one input that decides it: whether a
+/// committed frozen table names the label. A HELD row with no frozen row anywhere would
+/// pack by rounding and drift off its anchor; a ROUNDED row that gained a frozen row
+/// would become a frozen-held island, so every later move would need a paired
+/// frozen-row and anchor edit. The partition is read off `DECLARED` itself, so a new
+/// row above 16 fails here until it is classified.
 #[test]
-fn the_requirements_above_16_are_declared_for_the_anchored_sections() {
-    for (label, want) in [
-        ("Dac_Temp_Blip", 0x8000u32),
-        ("SoundTablesZ80_Head", 0x8000),
-        ("ObjCodeBase", 0x10000),
-    ] {
+fn the_requirements_above_16_are_declared_held_or_rounded() {
+    for (label, want) in HELD_ABOVE_16.iter().chain(ROUNDED_ABOVE_16) {
         let decl = section_align::required_for(label)
             .unwrap_or_else(|| panic!("`{label}` must be declared"));
-        assert_eq!(decl.required, want, "`{label}`'s declared requirement");
+        assert_eq!(decl.required, *want, "`{label}`'s declared requirement");
+    }
+
+    let classified: Vec<&str> =
+        HELD_ABOVE_16.iter().chain(ROUNDED_ABOVE_16).map(|(l, _)| *l).collect();
+    let unclassified: Vec<&str> = section_align::DECLARED
+        .iter()
+        .filter(|d| d.required > 16 && !classified.contains(&d.label))
+        .map(|d| d.label)
+        .collect();
+    assert!(unclassified.is_empty(), "rows above 16 classified neither HELD nor ROUNDED: {unclassified:?}");
+
+    let shapes = native::shipped_shapes();
+    assert!(!shapes.is_empty(), "shipped_shapes() enumerated nothing, the frozen-row check would read no table");
+    let frozen_in = |label: &str| -> Vec<(String, u32)> {
+        shapes
+            .iter()
+            .filter_map(|(shape, p)| p.frozen_sizes.get(label).map(|a| (shape.to_string(), *a)))
+            .collect()
+    };
+    for (label, want) in HELD_ABOVE_16 {
+        let rows = frozen_in(label);
+        assert!(
+            !rows.is_empty(),
+            "HELD `{label}` has no frozen row in any shipped shape, so the walk would round it \
+             instead of holding it at its anchor"
+        );
+        for (shape, addr) in rows {
+            assert!(
+                addr.is_multiple_of(*want),
+                "HELD `{label}`'s frozen row in `{shape}` is {addr:#x}, not a multiple of {want:#x}"
+            );
+        }
+    }
+    for (label, _) in ROUNDED_ABOVE_16 {
+        let rows = frozen_in(label);
+        assert!(
+            rows.is_empty(),
+            "ROUNDED `{label}` has a frozen row {rows:?}; the walk would hold it there as an \
+             island rather than round it"
+        );
     }
 }

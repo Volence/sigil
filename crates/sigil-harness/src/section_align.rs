@@ -29,11 +29,22 @@
 //! next (`BG_Init`: 16, 32, 512; `Tile_Cache_GetTile`: 16, 32, 64, 256, 2048) — which
 //! is what coincidence looks like.
 //!
-//! The three sections that require more than 16 require **`$8000`** (the two Z80 bank
-//! heads, one `SetBank` window) and **`$10000`** (`ObjCodeBase`, aeon's R1 ruling) —
-//! never 32. All three are held at declared `[[anchor]]` addresses, so the walk never
-//! rounds them; the rows exist so `validate_resolved_alignment` measures the anchors
-//! against what the sections actually need.
+//! The sections that require more than 16 require **`$8000`** (the Z80 bank heads, one
+//! `SetBank` window) and **`$10000`** (`ObjCodeBase`, aeon's R1 ruling), never 32. They
+//! reach that base by one of two rules, and each row above 16 is one or the other:
+//!
+//!   * HELD: `Dac_Temp_Blip`, `SoundTablesZ80_Head` and `ObjCodeBase` carry a frozen row
+//!     equal to a declared `[[anchor]]` (or are a phase bank), so the walk places them
+//!     absolute and never rounds them. The row exists so `validate_resolved_alignment`
+//!     measures the anchor against what the section actually needs.
+//!   * ROUNDED: `SongBank2_Head` (aeon's second song bank, a plain LMA section with
+//!     `bank: $8000`) carries no frozen row, so the walk rounds the running cursor up to
+//!     the `$8000` declared here, through `native::packed_chained_base`. An aeon
+//!     `[[anchor]]` at the address it lands on is then a lint the post-resolve island
+//!     inference checks, not a placement input.
+//!
+//! `section_alignment_declared.rs` holds the partition: a new row above 16 must be
+//! classified as one or the other before the suite goes green.
 //!
 //! ── HOW THE REQUIREMENT IS CHECKED ── (`native::validate_declared_alignment`,
 //! `native::validate_resolved_alignment`)
@@ -120,9 +131,10 @@ const fn d(label: &'static str, required: u32, why: &'static str) -> AlignDecl {
 ///
 /// No count is written here. The list is the count.
 pub const DECLARED: &[AlignDecl] = &[
-    // ── The Z80 banks: the only requirements above 16 in the corpus ──
+    // ── The Z80 banks: with ObjCodeBase, the only requirements above 16 ──
     d("Dac_Temp_Blip", 0x8000, Z80_BANK_WINDOW),        // dac_banks
     d("SoundTablesZ80_Head", 0x8000, Z80_BANK_WINDOW),  // soundbankhead (phase bank)
+    d("SongBank2_Head", 0x8000, Z80_BANK_WINDOW),       // song_bank2 (walk-rounded)
     // ── The sound fold's mod-8 chain ──
     d("Sfx_33", 8, SFX_MOD8),            // sfx_bank_blob
     d("Song_MovingTrucks", 8, MT_MOD8),  // mt_bank_blob
