@@ -1487,7 +1487,12 @@ points at it rather than restating it, so there is one copy to keep true.
 
 ### AS-PERF-FIX-PASSES
 
-- state: **open**  size: `M`  project: `SIGIL-AS-REPLACEMENT`  from: AS-PERF-MEASURE fixes 1, 2, 4
+- state: **LANDED 2026-09-28 at merge `b7d80a2b`** (tip `9664f887`; review record `8772017f`), fixes 1 and 2; fix 4
+  (macro block structure once) NOT done, still open  size: `M`  project: `SIGIL-AS-REPLACEMENT`
+- Two passes on S1/S2/S3K like asl; ifdef now positional as in asl. An adversarial review broke the first version
+  (silent wrong bytes); the rework passed a second round. Record: the perf note's "Passes" section and
+  `docs/superpowers/notes/2026-09-28-passes-adversarial-review.md`. Pre-existing sigil-vs-asl differences it lists
+  (abs.w stand-in, forward values accepted in if/rept/org, case-insensitive ifdef, string equates) are unbooked.
 - (1) converge when no value a pass READ changed (S2/S3K third/fourth passes follow only ADDED names, each assigned
   before read); needs a complete read log including `defined`/`ifdef`; about 25 to 30 percent. (2) why pass 1 lays
   out differently (S1 first move `EEgg_Wait`, S2 `paddingSoFar`); investigate first, size S. (4) macro block
