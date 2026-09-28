@@ -202,3 +202,126 @@ argument:
 The weak premise is not the record but what it records: `ifdef` reads the persistent
 environment, where asl answers positionally. The record faithfully proves "the next pass
 would do the same", which is all rule (b) claims.
+
+## Addendum: round 2, the rework at `9664f887` (rework commit `6bfa6a89`)
+
+Tip built release into `.target-new`; base `911ebb9c` unchanged in `.target-base`; asl and
+p2bin as above. Probes and scripts in `2026-09-28-passes-adversarial-review/round2/`
+(`summary-round1-probes-at-tip.txt` is the round 1 set rerun, `summary3.txt` the round 2
+set). Verdict: nothing broke. No probe, old or new, where base matched asl and the tip
+does not; no probe where the tip's read-set convergence gave different bytes from base.
+
+### Round 1 probes rerun at the tip
+
+Comparing the image (or error text) with asl's: base matches on 12 of 50, the tip on 24 (last field of each line compared; `summary-round1-probes-at-tip.txt`).
+Every base match is kept. The tip newly matches a1, a3, a10, a11, a12, a17, a18, b1, b20,
+c1, c2, c3; a16 and a19 (the F2 and F3 regressions of `df96a977`) match again. The
+author's "23 of 57 / 37 of 57" counts a different set (7 of their own probes), so the
+figures differ from mine but the claim that matters, no base match lost, holds on my 50.
+Error-versus-error pairs count as mismatches in my comparison (the texts differ); b12
+and b13 now error as asl does, where base accepted them.
+
+### Round 2 probes (48); base / tip / asl
+
+Per-symbol first-pass stand-in, each built as a two-layout source so the first pass
+decides the bytes, unless noted. All: tip = asl.
+
+| probe | what | result |
+|---|---|---|
+| d10 | three unknowns `Fa+Fb-Fc*2(a1)` | all `1280`, HELD |
+| d11 | nested parens `((Fa-2)*(Fb+1))(a1)` | all `1280`, HELD |
+| d12 | unknown through a function `ff(Fa)(a1)` | all `1280`, HELD |
+| d13 | unknown in a macro argument | all `1280`, HELD |
+| d14 | known minus unknown `K-Fa(a1)` | all `1280`, HELD |
+| d15 | `(d8,An,Xn)` forward | same bytes, HELD |
+| d17 | `ds.b Fwd` | base 3, tip 2 passes, same bytes; asl errors (pre-existing tolerance) |
+| d18 | `movem.l` to `Fa-2(a1)` | all 3 passes, same bytes, HELD |
+| d19 | `move.l #Ptr,Fa-2(a1)` (the deferred path) | all 3 passes, same bytes, HELD |
+| d20 | `Fa-Fa(a1)` | all collapse, HELD |
+| d21 | `Fwd>>16(a1)` | base 3, tip 2, asl 3, same bytes, HELD |
+| d22 | per-symbol at `phase $10002` (low 16 bits of `$10000`) | all collapse, HELD |
+| d23 | `lea Fa-2(a1),a2` | all `45d1`, HELD |
+| d24 | `Fa-2(pc)` | same, HELD |
+| d25 | `addq #Fwd+20` (probe's own range error) | all error, HELD |
+| d26 | `Fwd-*(a1)` | all `1280`, HELD |
+| d27 | `Fwd-$(a1)` | all refuse the spelling, HELD |
+| d28 | local `.fwd` defined after a new global label | all error, HELD |
+| d29 | unknown defined by `set` | all `1280`, HELD |
+
+Positional `ifdef`/`ifndef`. All: tip = asl except where asl has no comparable result or
+the row says pre-existing.
+
+| probe | what | base | tip | asl |
+|---|---|---|---|---|
+| e10 | `set` and `=` names, before and after | `a1a2a3a4` | `a2a4` | `a2a4` |
+| e11 | macro-local label, ifdef above/below it in two expansions | `a100a2a100a2` | `00a200a2` | `00a200a2` |
+| e12 | `.local` above/below, then a new scope | `a100a2` | `00a2` | `00a2` |
+| e13 | `-D Dx=3`, ifdef above and below `Dx set 5` (`rund.sh`) | `a1a205` | `a1a205` | `a1a205` |
+| e14 | name defined in an included file; ifdef inside it of a later name | `a1b1a200` | `a200` | `a200` |
+| e15 | ifdef in a macro expanded before and after the definition | `0101` | `0201` | `0201` |
+| e16 | name bound between `save` and `restore` | `a100` | `a100` | `a100` |
+| e17 | label on the ifdef's own line | `a100` | `a100` | `a100` |
+| e18 | `X equ Fwd`, Fwd later | `a100` (3) | `a100` (2) | `a100` (2) |
+| e19 | `X equ Fwd`, two-link chain | `a100` (4) | `a100` (3) | error |
+| e20 | include-guard idiom | `07` | `07` | `07` |
+| e21 | `dc.w L` above `ifndef L / L:` | `0004` (block dropped) | `00044e714e71` | `00044e714e71` |
+| e22 | name bound only by pass 0's layout, read through ifdef then by value | error | `4e71128002` | `4e71128002` |
+| e23 | macro label read from outside | error | error | error |
+| e24 | `ifdef TRUE`/`MOMCPU` | `00` | `00` | `a2a300` (pre-existing) |
+| e25 | `ifdef x` for `X` (asl case-insensitive by default) | `00` | `00` | `a100` (pre-existing) |
+| e26 | `reg` alias (sigil lacks `reg`) | error | error | error |
+| e27 | string equate | `00` | `00` | `a200` (pre-existing) |
+| e28 | `enum` members | `a1a200` | `a100` | `a100` |
+| e29 | inside `rept`, `set` after the ifdef | `a1a100` | `a100` | `a100` |
+| e30 | ifdef of a name whose value needs the block it guards | error | error | error |
+| e31 | `-D` name read by ifdef inside a macro (`rund.sh`) | `a1a100` | `a1a100` | `a1a100` |
+| e32 | ifdef of an equ of a forward, arms define the forward | `a101` (4) | `a101` (3) | `a101` (4) |
+| e33 | name defined only under an ifdef of a later name | `a100` | `00` | `00` |
+| e34 | ifdef of an equ of a forward label | same bytes (4) | (3) | (4) |
+
+Stale-value and pass-count channels (f1 to f4): `f1` builds a stale name through the
+abs.w/abs.l stand-in (sigil optimistic abs.w, asl `*` at `phase $9000` picks abs.l on
+pass 1): base and tip error `unresolved symbol StaleLab`, asl succeeds. Pre-existing,
+the same in both revisions; the note's "not done" item. `f2` (`jsr` to a far forward
+label): base 3, tip 2 passes by reads, bytes same as asl. `f3` near `jsr`: same. `f4`
+(`ifndef Seen / Seen = After` capturing layout): all `0004`.
+
+Caller-predefined names (`Options::defines`, `guarded_defines`, the path aeon's native
+driver uses for `__DEBUG__` and `__MDDBG__`) cannot be passed on the command line, so
+they were checked with a scratch integration test run against the tip's source and then
+deleted (not committed): `ifdef PD`/`ifdef GD` true at file level and inside a macro
+expanded twice, `ifndef PD` false, and with no defines both false and `ifndef` true.
+1 passed.
+
+### The b12/b13 shape in real sources
+
+A b12/b13 refusal needs an `ifdef`/`ifndef` (or `DEFINED()`) whose answer changes when
+it stops reading earlier passes. The three corpora, as extracted at the SHAs of the perf
+note, contain no `ifdef` or `ifndef` in any `.asm` file; `DEFINED(` appears only as
+`(MOMPASS=1)&&(DEFINED(loc))` in each `_smps2asm_inc.asm`, and `DEFINED()` did not change.
+aeon has 3 tracked `.asm` files; their `ifdef`s name only `__DEBUG__` (five sites, in
+the `ifdebug` and assert macros in `engine/debug/debugger.asm`) and `__MDDBG__`
+(`games/*/game_root.asm`), both pushed through `defines` by
+`sigil-harness/src/native.rs` and so predefined, which the scratch test covers.
+The tip builds all three corpora cmp-identical to their stock ROMs, 2 passes each
+(`corpora.sh`, outputs written only to this worktree): S1 `09dadb50`, S2 `9feeb724`,
+S3K `4ea493ea` (md5 prefixes, equal to the reference). Not rebuilt: aeon itself, and the
+S3K `Sonic3_Complete=1` variant; neither has an `ifdef` beyond those named here.
+
+### Judgement on the new code
+
+`fold_unknown_as_pc` substitutes per name inside `Expr::fold`, so functions (expanded to
+tokens before the fold), macro arguments (substituted before the fold), parens and
+several unknowns all reach it as plain names, which the d probes confirm. It is used only
+for the first-pass `(d16,An)` displacement; the other size-deciding first-pass value,
+abs.w/abs.l, still differs from asl (a13, f1), as the note already says, and did before
+this change.
+
+`cond_defined` now reads `defined_this_pass` (this pass's own writes) and `predefined`
+(fixed per run); its `resolve_sym` is reached only for a key this pass wrote (not a seed
+read) or a predefined key (recorded, and a later redefinition in the source moves the
+recorded answer, so it forces the next pass as it should). So `ifdef` no longer depends
+on the seed except through `sym_key`, whose `owners`/`resolve` reads are recorded. The
+read-log argument of round 1 still holds. Remaining ifdef differences from asl are
+pre-existing and the same at base: builtins (`TRUE`, `MOMCPU`), string equates, and asl's
+default case-insensitivity.
