@@ -1619,3 +1619,14 @@ points at it rather than restating it, so there is one copy to keep true.
   commit `20187520`): `docs/DEFERRED_WORK.md` row 2 "GPP-SEAM-WITNESSES", and
   `docs/research/2026-09-26-gate-predicate-audit.md` line 60. Any new listing word is language surface: propose,
   discuss, land.
+
+### SEAM2-TABLE-REGION-UNENFORCED
+
+- state: **open**, not started  size: `S`  found by: aeon's agent, 2026-09-28 (their observation, not reproduced here)
+- `crates/sigil-harness/src/seam2.rs` (about line 1200, in the sound-tables placement) builds a synthetic map region
+  `sound_tables_z80` with `size = 0x400`, yet aeon reports the tables at 1,116 B (after `parcel/song-bank-wfz-ooz`,
+  tip `39a2b4dd`) with nothing refusing. So either `place_sections` does not refuse a section larger than its region
+  (a linker-level question, the serious reading), or that placement is not on the path that measures the tables.
+  Either way the 0x400 is a check that cannot fail. First step: reproduce with a section over 0x400 through that
+  function and through `sigil_link::place_sections` directly, then fix the class, not the literal (derive the
+  size, or make an overflow refuse loudly). Sequence after PIN-ADVANCE-S2 lands, since that parcel edits seam-2.
