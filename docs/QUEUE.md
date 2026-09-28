@@ -1654,7 +1654,7 @@ points at it rather than restating it, so there is one copy to keep true.
 
 ### MT-BANK-RENAME-PAIR
 
-- state: **step 1 landed on branch** `parcel/mt-bank-rename-pair`, awaiting merge; step 2 not started  size: `S`  asked by: aeon, 2026-09-28 (they HOLD their rename until we say the pair is ready)
+- state: **steps 1 and 2 done** (merged `30793305`, pair installed 2026-09-28T21:37:22Z); step 3 is aeon's  size: `S`  asked by: aeon, 2026-09-28 (they HOLD their rename until we say the pair is ready)
 - Aeon will rename `games/sonic4/data/sound/mt_bank.emp`'s declaration from `module games.sonic4.mt_bank_blob` to
   `games.sonic4.mt_bank` (fixes the `[module.path-mismatch]` we reported; zero bytes on their side). Load-bearing on
   ours: `crates/sigil-harness/src/module_roots.rs:151`, the `SHAPE_GATES` row `("games.sonic4.mt_bank_blob",
@@ -1679,3 +1679,8 @@ points at it rather than restating it, so there is one copy to keep true.
   run against `.aeon-sigil-ref-1ee78b88`: 521 suites, 5867 passed, 0 failed, 3 ignored, 5865 baseline + 2 new,
   GREEN; `pins_rs_is_current` passed in-suite. Aeon's measurement of the current pair with the renamed id was not
   found committed on `fix/mt-bank-module-name` when step 1 ran.
+- Step 2 (2026-09-28): the `30793305` pair is installed (method and figures: the 30793305 paragraph in
+  `docs/OVERSEER-REFERENCE.md`). On aeon's rename tip `97d139ca`, the outgoing pair refuses `--config-b` with
+  `[sound.fold-head-sound-off]` (`Song_MovingTrucks`, section `mt_bank`); the new pair builds it, and plain, debug
+  and `--config-b` are byte-identical renamed and unrenamed (`193507d9/850296`, `ce326232/870560`,
+  `d888a312/617813`). Step 3, aeon renames and lands, is theirs; tell them the pair is ready.

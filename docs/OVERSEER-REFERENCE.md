@@ -1341,6 +1341,20 @@ aeon build. Deleting the tree breaks placement, not only the `source:` field. De
 `docs/superpowers/notes/2026-09-11-aeon-source-digest-ask.md`, second amendment.
 **`.sigil-ls12-pin` is released once aeon confirms it is on the new pair — ask them, not this file.**
 
+**THE INSTALLED PAIR SINCE 2026-09-28T21:37:22Z IS THE 30793305 BUILD, and it supersedes the 1173bb31 paragraph
+below.** MT-BANK-RENAME-PAIR step 2: gates the song bank `SoundOn` under both `games.sonic4.mt_bank_blob` and
+`games.sonic4.mt_bank`. Locked tree `~/sonic_hacks/.sigil-pair-30793305`, target
+`~/sonic_hacks/.scratch/pair-30793305/target`, `--locked`, porcelain 0 before and after; `sigil`
+`04cfaeeb3795a6652302e51798c6f50c`, `emit_sound_blob` `d45e453dbcb8b7399cc3b935085c8eb0`. **Pre-checked before the
+swap** (python `zlib.crc32`/size, each build's `Assembler:` line confirmed) on a clean copy of aeon `8618ba3b` and of
+its rename branch tip `97d139ca` (differs by the `module` line, one comment and `lane-status.json`): canonical
+`./build.sh` plain `193507d9/850296`, `DEBUG=1` `ce326232/870560`, and `sigil build --native --config-b` (the
+sound-off shape build.sh refuses) `d888a312/617813`, identical under the outgoing pair unrenamed, the new pair
+unrenamed and the new pair renamed. The red: the outgoing pair on the renamed tree refuses `--config-b` rc 1 with
+`[sound.fold-head-sound-off]` naming `Song_MovingTrucks` in section `mt_bank`. `/proc` exe scan 0 users (11 zsh
+control), each file `cp -p` to a staging name in `sigil/target/release/` and `mv`'d over. Outgoing at
+`~/sonic_hacks/.sigil-outgoing-1173bb31/`; `.sigil-pair-1173bb31` kept.
+
 **THE INSTALLED PAIR SINCE 2026-09-28T11:51:59Z IS THE 1173bb31 BUILD, and it supersedes the d39ed4c3 paragraph
 below.** Asked by aeon after their song-bank step 1 (`cd262846`); carries the overlay fix and the loud fold gate.
 Locked tree `~/sonic_hacks/.sigil-pair-1173bb31`, target `~/sonic_hacks/.scratch/pair-1173bb31/target`, `--locked`,
