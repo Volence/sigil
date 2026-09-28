@@ -179,10 +179,18 @@ scratch copies; settled). The notes themselves are historical and were not edite
 
 ### AS-DROPIN-NIGHTLY
 
-- state: **open**  size: `S`  project: `SIGIL-AS-REPLACEMENT`
+- state: **done in branch** `parcel/as-dropin-nightly` (awaiting merge)  size: `S`  project: `SIGIL-AS-REPLACEMENT`
 - The nightly switch sweep runs only the direct route; `--route dropin` exists since `31c65791` (40/40, and
   808/808 with `--cross`, on 2026-09-27). Add a drop-in pass so the route a disassembly user takes is watched
   every night. The direct route's S2 share-file gap stays acknowledged there.
+- 2026-09-28, on the branch: `nightly_switch_sweep.sh` runs `--cross` twice, `--route direct` (log
+  `sweep.log`) then `--route dropin` (`sweep-dropin.log`), one sigil build and one pair of corpus SHAs for
+  both; each pass reconciled by the direct pass's rules plus its own `ROUTE` line; the dropin pass runs even
+  when the direct one could not; both share a four-hour budget inside the unit's five; one verdict line names
+  both routes, exit the worse of the two. Hand run at `f79c0059`, GREEN: direct 808 legs (790 planned + 18
+  rescue) 22m23s, dropin 808 legs (790 + 18) 24m38s, 47m19s job wall. Reds proved through a log-replaying
+  stub sweep: dropin marker dropped exit 2, dropin finding exit 1, dropin log naming the wrong route exit 2,
+  direct abort exit 2 with the dropin pass still run green, budget spent exit 2 with dropin not started.
 
 ### LANDING-LOG-CHECKER-READS-THE-WRONG-FILE
 
