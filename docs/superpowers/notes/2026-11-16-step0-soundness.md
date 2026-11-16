@@ -114,3 +114,16 @@ The cmp script leaves `SIGIL_CONTRACTS` unset, so the new gate ran in all 14 bui
 
 No run printed `contract closure gate SKIPPED` and none printed a `zero-firing by contract` refusal:
 the three families fire 0 times in every aeon shape, now as an enforced fact rather than a printed one.
+
+### SS (`scripts/landing-run.sh --aeon .aeon-sigil-ref-936439fa`), candidate against base
+
+| Tree | suites (launched/reported) | passed | failed | ignored | RESULT | wall-clock |
+|---|---|---|---|---|---|---|
+| `339054c6` (this task) | 522 / 522 | 5,803 | 67 | 3 | FAILED, cargo 101, clippy 0, ledger 0 | 511 s |
+| `94cf811d` (base) | 521 / 521 | 5,800 | 67 | 3 | FAILED, cargo 101, clippy 0, ledger 0 | 511 s |
+
+The 67 failing test names are IDENTICAL in both runs (sorted `diff` empty): golden/reference drift at aeon
+`936439fa` (region/anchor/full-file goldens pinned at `1ee78b88`, the A9 item, plus provenance-tip and
+pins currency), not this task. The delta is exactly the new suite, `printed_families_gate`, 3/3 passing.
+No SS output contains a `zero-firing by contract` refusal. SS is therefore not GREEN at aeon HEAD before
+or after this task; Task 6 (A9) owns it.
