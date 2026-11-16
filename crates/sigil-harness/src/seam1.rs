@@ -1154,6 +1154,7 @@ pub fn z80_clobbers_report_doctored(
                             requires: p.requires.iter().map(|(n, _)| n.clone()).collect(),
                             grants: p.grants.iter().map(|(n, _)| n.clone()).collect(),
                             unanalyzable_allowed: false,
+                            decl_span: Some(p.span),
                         },
                     );
                 }

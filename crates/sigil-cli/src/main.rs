@@ -2233,19 +2233,24 @@ fn run_contract_gate(aeon: &std::path::Path, target: &BuildTarget) {
 
     // The families CI already asserts EMPTY. Gating only the four baselined ones
     // would have made "the closure gates the build" true of a quarter of it.
-    let mut empty_gate = |name: &str, n: usize| {
+    // Each row returns whether it refused, so a located row (`refuse_located`)
+    // and a count-only row are spelled the same way and sit in the same order.
+    let empty_gate = |name: &str, n: usize| -> bool {
         if n != 0 {
             eprintln!("error: {name}, {n} firing(s); this family is zero-firing by contract.");
-            failed = true;
         }
+        n != 0
     };
-    empty_gate("unresolved callees (missing extern proc?)", report.closure.unresolved_callees.len());
-    empty_gate("extern/proc collisions", report.extern_collisions.len());
-    empty_gate("[proc.clobber-undeclared] closure firings", report.firings.len());
-    empty_gate("[proc.preserves-unverifiable] word-facet firings", report.word_preserve_firings.len());
-    empty_gate("[context.escape]/[context.entry-skip]/[context.reacquire]", report.context_firings.len());
-    empty_gate("unknown context references", report.unknown_context_refs.len());
-    empty_gate("[call.input-undefined] firings", report.input_firings.len());
+    failed |= empty_gate("unresolved callees (missing extern proc?)", report.closure.unresolved_callees.len());
+    failed |= empty_gate("extern/proc collisions", report.extern_collisions.len());
+    // Located (A7): each firing names the proc, the register, what brings it, and
+    // the proc's declaration. Kept on ONE line on purpose: the red-first proof
+    // swaps this line back to the count-only `empty_gate` row.
+    failed |= refuse_located("[proc.clobber-undeclared] closure firings", &report.firings, |f| f.span, |f| describe_clobber(f, "[proc.clobber-undeclared]"), &src_index);
+    failed |= empty_gate("[proc.preserves-unverifiable] word-facet firings", report.word_preserve_firings.len());
+    failed |= empty_gate("[context.escape]/[context.entry-skip]/[context.reacquire]", report.context_firings.len());
+    failed |= empty_gate("unknown context references", report.unknown_context_refs.len());
+    failed |= empty_gate("[call.input-undefined] firings", report.input_firings.len());
 
     // The three families that used to be computed and PRINTED (`--report
     // contracts`) but never stopped a build (A3). Each is zero-firing over the
@@ -2430,20 +2435,64 @@ fn refuse_located<T>(
     describe: impl Fn(&T) -> String,
     src_index: &sigil_frontend_emp::resolve::manifest::SourceIndex,
 ) -> bool {
-    if firings.is_empty() {
-        return false;
+    let lines = located_refusal(header, firings, span_of, describe, src_index);
+    for line in &lines {
+        eprintln!("{line}");
     }
-    eprintln!(
+    !lines.is_empty()
+}
+
+/// The lines [`refuse_located`] prints, header first; empty when `firings` is.
+/// Kept apart from the printing so the rendering (the `(no span recorded)`
+/// fallback especially) is testable without capturing stderr.
+fn located_refusal<T>(
+    header: &str,
+    firings: &[T],
+    span_of: impl Fn(&T) -> Option<sigil_span::Span>,
+    describe: impl Fn(&T) -> String,
+    src_index: &sigil_frontend_emp::resolve::manifest::SourceIndex,
+) -> Vec<String> {
+    if firings.is_empty() {
+        return Vec::new();
+    }
+    let mut lines = vec![format!(
         "error: {header}, {} firing(s); this family is zero-firing by contract:",
         firings.len()
-    );
+    )];
     for f in firings {
-        match span_of(f).and_then(|sp| src_index.locate(sp)) {
-            Some(loc) => eprintln!("  {loc}: {}", describe(f)),
-            None => eprintln!("  (no span recorded): {}", describe(f)),
-        }
+        lines.push(match span_of(f).and_then(|sp| src_index.locate(sp)) {
+            Some(loc) => format!("  {loc}: {}", describe(f)),
+            None => format!("  (no span recorded): {}", describe(f)),
+        });
     }
-    true
+    lines
+}
+
+/// One closure firing as the build gate renders it: the proc, the register, and
+/// what brings the register in (a callee or successor, a bounded indirect call,
+/// or the proc's own body), or the ⊤ remedy for an unbounded one. `code` is the
+/// diagnostic id it is reported under, so a second consumer of the same firing
+/// shape words it identically under its own id.
+fn describe_clobber(f: &sigil_frontend_emp::closure::Firing, code: &str) -> String {
+    let proc = &f.proc;
+    if f.unbounded {
+        return format!(
+            "{code} `{proc}` reaches an indirect call with no declared bound, so it may \
+             destroy every register; bound the call with `as Type` or declare \
+             `@allow(\"clobbers.unanalyzable\", \"<reason>\")`"
+        );
+    }
+    let reg = f.reg.as_deref().unwrap_or("?");
+    match &f.via {
+        Some(via) => format!(
+            "{code} `{proc}` destroys `{reg}` through `{via}`, which its clobbers(...) does not \
+             declare"
+        ),
+        None => format!(
+            "{code} `{proc}` destroys `{reg}` in its own body, which its clobbers(...) does not \
+             declare"
+        ),
+    }
 }
 
 /// The bare diagnostic code of a `[bus.*]` firing.
@@ -2534,7 +2583,12 @@ fn print_contract_report(report: &sigil_frontend_emp::corpus_contracts::Contract
         } else {
             format!("direct     {}", f.reg.as_deref().unwrap_or("?"))
         };
-        println!("  {:<28} {kind}", f.proc);
+        // The same `via` the build gate names (A7), so the report and the
+        // refusal point at the same carrier.
+        match &f.via {
+            Some(via) => println!("  {:<28} {kind} via {via}", f.proc),
+            None => println!("  {:<28} {kind}", f.proc),
+        }
     }
 
     use sigil_frontend_emp::flag_check::FlagSiteOutcome as O;
@@ -3802,6 +3856,48 @@ mod help_gates {
 #[cfg(test)]
 mod tests {
     use std::path::Path;
+
+    /// `refuse_located`'s rendering: a firing whose span resolves prints
+    /// `file:line:col`; one with NO span (e.g. a synthetic node), and one whose
+    /// span names a source the index cannot read, both print `(no span
+    /// recorded)` with the same description; no firings print nothing.
+    #[test]
+    fn located_refusal_renders_the_no_span_fallback() {
+        use sigil_frontend_emp::resolve::manifest::{Manifest, SourceIndex};
+        use sigil_span::{SourceId, Span};
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("m.emp");
+        std::fs::write(&path, "line one\n  second\n").unwrap();
+        let manifest = Manifest {
+            modules: Vec::new(),
+            by_id: Default::default(),
+            sources: [(SourceId(0), path.clone())].into_iter().collect(),
+        };
+        let index = SourceIndex::new(&manifest);
+        let at_second = Span { source: SourceId(0), start: 11, end: 17 };
+        let unknown_source = Span { source: SourceId(7), start: 0, end: 1 };
+        let firings: Vec<(Option<Span>, &str)> =
+            vec![(Some(at_second), "located"), (None, "spanless"), (Some(unknown_source), "unread")];
+        let lines = super::located_refusal(
+            "[x.y] firings",
+            &firings,
+            |f| f.0,
+            |f| format!("[x.y] {}", f.1),
+            &index,
+        );
+        assert_eq!(
+            lines,
+            vec![
+                "error: [x.y] firings, 3 firing(s); this family is zero-firing by contract:".to_string(),
+                format!("  {}:2:3: [x.y] located", path.display()),
+                "  (no span recorded): [x.y] spanless".to_string(),
+                "  (no span recorded): [x.y] unread".to_string(),
+            ]
+        );
+        let none: Vec<(Option<Span>, &str)> = Vec::new();
+        assert!(super::located_refusal("[x.y] firings", &none, |f| f.0, |f| f.1.to_string(), &index)
+            .is_empty());
+    }
 
     /// `compile_emp` must resolve an `embed(...)` in the source against the
     /// file's own directory (the include-root the CLI supplies) and lower it to

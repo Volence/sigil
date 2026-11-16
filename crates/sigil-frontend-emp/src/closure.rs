@@ -32,6 +32,8 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use sigil_span::Span;
+
 /// A register-effect lattice element — the set of registers a proc's execution
 /// may clobber, seen by the caller. `top` is ⊤ ("all registers"): an unbounded
 /// indirect call contributes ⊤ (§1's load-bearing fact — `RunObjects`'s
@@ -137,6 +139,10 @@ pub struct ProcNode {
     /// register under-declaration (a named register in the effective set still
     /// fires).
     pub unanalyzable_allowed: bool,
+    /// The span of the proc's (or extern's) declaration, so a firing on this
+    /// node can say WHERE (A7). `None` for a node built with no source behind
+    /// it (a synthetic test node); the gate then renders `(no span recorded)`.
+    pub decl_span: Option<Span>,
 }
 
 /// The result of the closure fixpoint.
@@ -194,11 +200,18 @@ impl RegEffect {
 // tests a would-be hole against the SAME resolver the closure's own hole
 // determination uses (below), never a hand-rolled second copy.
 pub(crate) fn resolve_callee_key<'a>(procs: &BTreeMap<String, ProcNode>, callee: &'a str) -> &'a str {
-    if procs.contains_key(callee) {
+    resolve_key_in(procs, callee)
+}
+
+/// [`resolve_callee_key`] over any map keyed by proc name (the proc map itself,
+/// or [`Closure::effective`], whose keys are the proc map's): ONE resolver, so
+/// [`first_carrier`] names a carrier by the same rule the fixpoint charged it.
+fn resolve_key_in<'a, V>(map: &BTreeMap<String, V>, callee: &'a str) -> &'a str {
+    if map.contains_key(callee) {
         return callee;
     }
     if let Some((owner, _label)) = callee.split_once('.') {
-        if procs.contains_key(owner) {
+        if map.contains_key(owner) {
             return owner;
         }
     }
@@ -385,6 +398,37 @@ pub struct Firing {
     /// `true` when the proc's effective set is ⊤ (an unbounded indirect leaked
     /// through) yet it declares a bounded `clobbers` contract.
     pub unbounded: bool,
+    /// The offending proc's declaration span ([`ProcNode::decl_span`]), so the
+    /// gate can say where (A7).
+    pub span: Option<Span>,
+    /// What brings `reg` into the proc: the [`first_carrier`] callee (or
+    /// `falls_into` successor), else, for a register that arrives only through a
+    /// bounded indirect call, that call (`jsr (aN) as Type`). `None` means the
+    /// proc writes the register in its own body (and for an `unbounded` firing).
+    pub via: Option<String>,
+}
+
+/// The callee that brings `reg` into `node`'s effective set: the first callee in
+/// SORTED `direct_callees` whose effective set holds `reg`, else the
+/// `falls_into` successor if its effective set holds it, else `None` (the
+/// register is the proc's own write, or arrives only through an indirect call).
+/// Callee names resolve exactly as the fixpoint resolved them (an
+/// `Owner.label` entry is charged `Owner`'s effect), and a ⊤ callee holds every
+/// register. The name returned is the call site's own spelling.
+pub fn first_carrier(node: &ProcNode, closure: &Closure, reg: &str) -> Option<String> {
+    let holds = |callee: &str| {
+        closure
+            .effective
+            .get(resolve_key_in(&closure.effective, callee))
+            .is_some_and(|e| e.top || e.regs.contains(reg))
+    };
+    let mut callees: Vec<&String> = node.direct_callees.iter().collect();
+    callees.sort();
+    callees.dedup();
+    if let Some(c) = callees.into_iter().find(|c| holds(c)) {
+        return Some(c.clone());
+    }
+    node.falls_into.as_ref().filter(|s| holds(s)).cloned()
 }
 
 /// A proc/contract-type's register partition, for the §4 subcontract relation.
@@ -543,20 +587,112 @@ pub fn check_firings(procs: &BTreeMap<String, ProcNode>, closure: &Closure) -> V
                     reg: None,
                     transitive: true,
                     unbounded: true,
+                    span: node.decl_span,
+                    via: None,
                 });
             }
             continue;
         }
         for r in &effective.regs {
             if !allowed.contains(r) {
+                let transitive = !node.local_writes.contains(r);
+                // A transitive register no direct callee or successor carries
+                // arrived through a bounded indirect call (the only other edge
+                // the fixpoint unions); name that call rather than claim the
+                // proc's own body.
+                let via = first_carrier(node, closure, r).or_else(|| {
+                    if !transitive {
+                        return None;
+                    }
+                    node.indirect_sites
+                        .iter()
+                        .flatten()
+                        .next()
+                        .map(|ty| format!("jsr (aN) as {ty}"))
+                });
                 firings.push(Firing {
                     proc: name.clone(),
                     reg: Some(r.clone()),
-                    transitive: !node.local_writes.contains(r),
+                    transitive,
                     unbounded: false,
+                    span: node.decl_span,
+                    via,
                 });
             }
         }
     }
     firings
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn regs(rs: &[&str]) -> BTreeSet<String> {
+        rs.iter().map(|r| r.to_string()).collect()
+    }
+
+    /// `P` writes `d0` itself and calls `Q`, which writes `d1`: `d1` is carried
+    /// by `Q`; `d0` no callee carries, so it is the proc's own write.
+    #[test]
+    fn first_carrier_names_the_callee_that_brings_the_register() {
+        let mut procs = BTreeMap::new();
+        procs.insert(
+            "P".to_string(),
+            ProcNode {
+                local_writes: regs(&["d0"]),
+                direct_callees: vec!["Q".to_string()],
+                ..Default::default()
+            },
+        );
+        procs.insert("Q".to_string(), ProcNode { local_writes: regs(&["d1"]), ..Default::default() });
+        let closure = compute_closure(&procs, &BTreeMap::new());
+        assert_eq!(first_carrier(&procs["P"], &closure, "d1"), Some("Q".to_string()));
+        assert_eq!(first_carrier(&procs["P"], &closure, "d0"), None);
+    }
+
+    /// Sorted order picks the carrier deterministically, an `Owner.label` entry
+    /// is charged its owner's effect, and the `falls_into` successor carries only
+    /// when no direct callee does.
+    #[test]
+    fn first_carrier_is_sorted_label_aware_and_falls_back_to_the_successor() {
+        let mut procs = BTreeMap::new();
+        procs.insert(
+            "P".to_string(),
+            ProcNode {
+                direct_callees: vec!["Zed".to_string(), "Alpha.entry".to_string()],
+                falls_into: Some("Succ".to_string()),
+                ..Default::default()
+            },
+        );
+        procs.insert("Zed".to_string(), ProcNode { local_writes: regs(&["d3"]), ..Default::default() });
+        procs.insert("Alpha".to_string(), ProcNode { local_writes: regs(&["d3"]), ..Default::default() });
+        procs.insert("Succ".to_string(), ProcNode { local_writes: regs(&["d4"]), ..Default::default() });
+        let closure = compute_closure(&procs, &BTreeMap::new());
+        assert_eq!(first_carrier(&procs["P"], &closure, "d3"), Some("Alpha.entry".to_string()));
+        assert_eq!(first_carrier(&procs["P"], &closure, "d4"), Some("Succ".to_string()));
+        assert_eq!(first_carrier(&procs["P"], &closure, "d5"), None);
+    }
+
+    /// A transitive register that only a bounded indirect call brings is named
+    /// as that call, never as the proc's own body.
+    #[test]
+    fn a_register_brought_by_a_bounded_indirect_call_names_that_call() {
+        let mut procs = BTreeMap::new();
+        procs.insert(
+            "P".to_string(),
+            ProcNode {
+                indirect_sites: vec![Some("Hook".to_string())],
+                has_clobber_contract: true,
+                ..Default::default()
+            },
+        );
+        let mut types = BTreeMap::new();
+        types.insert("Hook".to_string(), RegEffect { top: false, regs: regs(&["d2"]) });
+        let closure = compute_closure(&procs, &types);
+        let f = check_firings(&procs, &closure);
+        assert_eq!(f.len(), 1);
+        assert_eq!(f[0].via.as_deref(), Some("jsr (aN) as Hook"));
+        assert!(f[0].transitive);
+    }
 }

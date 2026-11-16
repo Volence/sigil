@@ -2397,6 +2397,7 @@ fn proc_node(
         requires: p.requires.iter().map(|(n, _)| n.clone()).collect(),
         grants: p.grants.iter().map(|(n, _)| n.clone()).collect(),
         unanalyzable_allowed: unanalyzable_reason_in_force(file, p).is_some(),
+        decl_span: Some(p.span),
     };
     (node, buf, dropped, unresolved)
 }
@@ -2451,6 +2452,7 @@ fn extern_node(e: &ExternProcDecl) -> ProcNode {
         inout,
         has_clobber_contract: e.sig.clobbers.is_some(),
         requires: e.sig.requires.iter().map(|(n, _)| n.clone()).collect(),
+        decl_span: Some(e.span),
         ..Default::default()
     }
 }

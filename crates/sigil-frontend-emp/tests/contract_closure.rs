@@ -344,6 +344,8 @@ fn direct_under_declaration_fires() {
             reg: Some("d7".to_string()),
             transitive: false,
             unbounded: false,
+            span: None,
+            via: None,
         }]
     );
 }
@@ -377,6 +379,9 @@ fn transitive_leak_fires_as_transitive() {
             reg: Some("d1".to_string()),
             transitive: true,
             unbounded: false,
+            span: None,
+            // The callee that brings d1 is named (A7).
+            via: Some("Scribbler".to_string()),
         }]
     );
 }
@@ -424,7 +429,7 @@ fn a_written_param_is_not_excused() {
     let c = compute_closure(&procs, &BTreeMap::new());
     assert_eq!(
         check_firings(&procs, &c),
-        vec![Firing { proc: "TrashInput".to_string(), reg: Some("a0".to_string()), transitive: false, unbounded: false }]
+        vec![Firing { proc: "TrashInput".to_string(), reg: Some("a0".to_string()), transitive: false, unbounded: false, span: None, via: None }]
     );
 }
 
