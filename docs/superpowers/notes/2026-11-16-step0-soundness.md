@@ -51,3 +51,66 @@ A missing reference tree prints `COULD NOT RUN setup: ...`, rc 2.
 | A5 corpus | 27 procs excluded (26 `Seq_Op_*` + `Seq_ContinueFetch`, `engine/sound/sound_sequencer.emp`); `@allow("clobbers.computed-dispatch", ...)` builds exit 0 today |
 | A8 cause | CI red since `b4472d9c` (2026-09-28); one test, `g4_objects_regions_match_reference`, panics at `test_g4_final_objects_port.rs:138` with no reference guard |
 | A9 drift | goldens pin aeon `1ee78b88`; aeon 64 commits ahead. s4, demo, config_b equal goldens; lean `60a3552b` moved |
+
+## Task 1 (A3): the three printed check families gate the build
+
+Commit `339054c6`. `run_contract_gate` (`crates/sigil-cli/src/main.rs`) refuses `[bus.*]`,
+`[branch.condition-constant]` and `[call.slot-type-mismatch]`/`[option.unguarded-use]` as zero-firing
+families through `refuse_located`, one `file:line:col: <describe>` line per firing. Measured before gating:
+0 firings of each in all 7 shapes (table above), so no aeon change. Closes ledger row
+`BUS-NET-BUILD-GATE-ROW` (`campaign-gap-ledger.md`). No `docs/QUEUE.md` row carried this item; the
+ledger row is the one the plan meant.
+
+Test `crates/sigil-cli/tests/printed_families_gate.rs`: RED before the gate (first test panicked at the
+bus-header assertion, `printed_families_gate.rs:132`; the two controls passed), GREEN 3/3 after.
+
+### RF proof (invariant 8)
+
+```
+$ git status --short
+$ sed -i 's/if refuse_located("\[bus\.\*\]/if false \&\& refuse_located("[bus.*]/' crates/sigil-cli/src/main.rs
+$ git diff --stat
+ crates/sigil-cli/src/main.rs | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+$ grep -n 'if false && refuse_located' crates/sigil-cli/src/main.rs
+2255:    if false && refuse_located("[bus.*] Z80-bus machine-state firings",
+$ cargo test -p sigil-cli --test printed_families_gate
+test the_build_gate_refuses_each_printed_family_with_its_location ... FAILED
+panicked at crates/sigil-cli/tests/printed_families_gate.rs:132:5:
+the gate must refuse the bus family with its count, got:
+error: [branch.condition-constant] firings, 1 firing(s); ...
+error: [call.slot-type-mismatch]/[option.unguarded-use] firings, 1 firing(s); ...
+test result: FAILED. 2 passed; 1 failed; 0 ignored
+$ git restore --source=HEAD -- crates/sigil-cli/src/main.rs
+$ git status --short
+$ cargo test -p sigil-cli --test printed_families_gate
+test result: ok. 3 passed; 0 failed; 0 ignored
+```
+
+### BN (candidate `sigil 0.1.0 (339054c6)`, wall-clock 35.3 s)
+
+```
+SHAPE plain 193507d9/850296 193507d9/850296 SAME
+SHAPE debug ce326232/870560 ce326232/870560 SAME
+SHAPE demo 2f9e2d4c/99994 2f9e2d4c/99994 SAME
+SHAPE demo_debug 64717bac/106981 64717bac/106981 SAME
+SHAPE config_a 6be62db3/870972 6be62db3/870972 SAME
+SHAPE config_b d888a312/617813 d888a312/617813 SAME
+SHAPE lean 60a3552b/798202 60a3552b/798202 SAME
+SHAPES 7/7 IDENTICAL
+STEP0_CMP_END rc=0
+```
+The cmp script leaves `SIGIL_CONTRACTS` unset, so the new gate ran in all 14 builds and refused none.
+
+### AG (throwaway aeon worktree at `936439fa`, `SIGIL_BUILD`/`SIGIL_EMIT` = `.target-land` `339054c6`)
+
+| Run | exit | wall-clock |
+|---|---|---|
+| `tools/landing_build.sh` | 0, `finished=0` (pytest 35 ran / 0 failed / 1 exempted) | ~7.8 min |
+| `./build.sh` | 0 | 380 s |
+| `DEBUG=1 ./build.sh` | 0 | 401 s |
+| `./build.sh demo` | 0 | 405 s |
+| `DEBUG=1 ./build.sh demo` | 0 | 370 s |
+
+No run printed `contract closure gate SKIPPED` and none printed a `zero-firing by contract` refusal:
+the three families fire 0 times in every aeon shape, now as an enforced fact rather than a printed one.
