@@ -4537,7 +4537,15 @@ build` shape (level token present, located); the AS dialect stays as ruled. Owne
 diagnostics are tool text; the split itself is an internals call. Remaining `{:?}` / first-only sites
 in the native path are listed by line in the parcel note; none are guards.
 
-### `BUS-NET-BUILD-GATE-ROW`: the `[bus.*]` inference net is reported, not gated (2026-09-07)
+### `BUS-NET-BUILD-GATE-ROW`: the `[bus.*]` inference net is reported, not gated (2026-09-07) -- CLOSED 2026-11-16
+
+**CLOSED 2026-11-16 on `parcel/step0-soundness` (step 0 task A3).** `run_contract_gate` now refuses
+`[bus.*]`, and with it the other two print-only families `[branch.condition-constant]` and
+`[call.slot-type-mismatch]`/`[option.unguarded-use]`, each zero-firing by contract with one located
+`file:line:col` line per firing (`refuse_located`, `crates/sigil-cli/src/main.rs`; test
+`crates/sigil-cli/tests/printed_families_gate.rs`). Measured before gating: 0 firings of all three in all
+seven step-0 shapes. Aeon's LS-14a "no mechanical statement" is therefore wrong for sigil from this
+commit on. The original row text follows.
 
 `crates/sigil-frontend-emp/src/.../z80_bus.rs` names itself the absorption of aeon's retired s4lint
 E006/E007/E008/E011 and is reported by `--report contracts`, but it is not in the build gate's

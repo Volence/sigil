@@ -2247,6 +2247,48 @@ fn run_contract_gate(aeon: &std::path::Path, target: &BuildTarget) {
     empty_gate("unknown context references", report.unknown_context_refs.len());
     empty_gate("[call.input-undefined] firings", report.input_firings.len());
 
+    // The three families that used to be computed and PRINTED (`--report
+    // contracts`) but never stopped a build (A3). Each is zero-firing over the
+    // corpus (measured 0 in all 7 shapes), so each is asserted EMPTY, located.
+    // Each header sits on its `if refuse_located(` line on purpose: the red-first
+    // proof disables one family with a one-line edit of that line.
+    if refuse_located("[bus.*] Z80-bus machine-state firings",
+        &report.bus_firings,
+        |f| Some(f.span),
+        |f| format!("{} in `{}`", bus_code(f.kind), f.proc),
+        &src_index,
+    ) {
+        failed = true;
+    }
+    if refuse_located("[branch.condition-constant] firings",
+        &report.branch_const_firings,
+        |f| Some(f.span),
+        |f| {
+            let dir = if f.always_taken { "ALWAYS" } else { "NEVER" };
+            format!(
+                "[branch.condition-constant] `{}` b{} is statically decided ({dir} taken)",
+                f.proc, f.cc
+            )
+        },
+        &src_index,
+    ) {
+        failed = true;
+    }
+    if refuse_located("[call.slot-type-mismatch]/[option.unguarded-use] firings",
+        &report.slot_firings,
+        |f| Some(f.span),
+        |f| {
+            let (id, found, remedy) = slot_firing_parts(f);
+            format!(
+                "{id} `{}` calls `{}`: slot {} expects {} but found {found}{remedy}",
+                f.proc, f.callee, f.reg, f.expected
+            )
+        },
+        &src_index,
+    ) {
+        failed = true;
+    }
+
     let out_got: Vec<(String, String)> =
         report.out_firings.iter().map(|f| (f.proc.clone(), f.reg.clone())).collect();
     let d = bl::diff_out_unverified(&out_got);
@@ -2373,6 +2415,72 @@ fn run_contract_gate(aeon: &std::path::Path, target: &BuildTarget) {
         );
         process::exit(1);
     }
+}
+
+/// Refuse a zero-firing contract family with each firing's location.
+///
+/// Prints `error: {header}, {n} firing(s); this family is zero-firing by contract:`
+/// then one `  {file:line:col}: {describe}` line per firing (`  (no span
+/// recorded): {describe}` when the firing has no span, or the span does not
+/// resolve to a file). Returns `n != 0`, so the caller sets the gate's verdict.
+fn refuse_located<T>(
+    header: &str,
+    firings: &[T],
+    span_of: impl Fn(&T) -> Option<sigil_span::Span>,
+    describe: impl Fn(&T) -> String,
+    src_index: &sigil_frontend_emp::resolve::manifest::SourceIndex,
+) -> bool {
+    if firings.is_empty() {
+        return false;
+    }
+    eprintln!(
+        "error: {header}, {} firing(s); this family is zero-firing by contract:",
+        firings.len()
+    );
+    for f in firings {
+        match span_of(f).and_then(|sp| src_index.locate(sp)) {
+            Some(loc) => eprintln!("  {loc}: {}", describe(f)),
+            None => eprintln!("  (no span recorded): {}", describe(f)),
+        }
+    }
+    true
+}
+
+/// The bare diagnostic code of a `[bus.*]` firing.
+fn bus_code(kind: sigil_frontend_emp::z80_bus::BusFiringKind) -> &'static str {
+    use sigil_frontend_emp::z80_bus::BusFiringKind::*;
+    match kind {
+        DoubleStop => "[bus.double-stop]",
+        StartWithoutStop => "[bus.start-without-stop]",
+        StoppedAtReturn => "[bus.stopped-at-return]",
+        VdpWriteUnstopped => "[bus.vdp-write-unstopped]",
+        ReleasedAtReturn => "[bus.released-at-return]",
+    }
+}
+
+/// A G5 slot firing's id, its found type (or "an untyped value"), and its remedy
+/// suffix: the parts both the contract report and the build gate render, so the
+/// two never word the same firing differently.
+fn slot_firing_parts(
+    f: &sigil_frontend_emp::type_slice::SlotTypeMismatch,
+) -> (&'static str, &str, String) {
+    use sigil_frontend_emp::type_slice::FiringKind;
+    let found = f.found.as_deref().unwrap_or("an untyped value");
+    let id = match f.kind {
+        FiringKind::OptionUnguarded => "[option.unguarded-use]",
+        FiringKind::SlotType => "[call.slot-type-mismatch]",
+    };
+    // The option firing carries its own remedy — the whole point of giving it
+    // a distinct id is telling the author the ONE thing that fixes it.
+    let remedy = match f.kind {
+        FiringKind::OptionUnguarded => format!(
+            ", the sentinel is never ruled out on this path; guard it \
+             (`cmpi #{}.none, {}` / branch away) then `assume_some! {}, {}`",
+            found, f.reg, f.reg, f.expected
+        ),
+        FiringKind::SlotType => String::new(),
+    };
+    (id, found, remedy)
 }
 
 /// Render a [`ContractReport`](sigil_frontend_emp::corpus_contracts::ContractReport) as
@@ -2526,22 +2634,7 @@ fn print_contract_report(report: &sigil_frontend_emp::corpus_contracts::Contract
         report.slot_firings.len()
     );
     for f in &report.slot_firings {
-        use sigil_frontend_emp::type_slice::FiringKind;
-        let found = f.found.as_deref().unwrap_or("an untyped value");
-        let id = match f.kind {
-            FiringKind::OptionUnguarded => "[option.unguarded-use]",
-            FiringKind::SlotType => "[call.slot-type-mismatch]",
-        };
-        // The option firing carries its own remedy — the whole point of giving it
-        // a distinct id is telling the author the ONE thing that fixes it.
-        let remedy = match f.kind {
-            FiringKind::OptionUnguarded => format!(
-                ", the sentinel is never ruled out on this path; guard it \
-                 (`cmpi #{}.none, {}` / branch away) then `assume_some! {}, {}`",
-                found, f.reg, f.reg, f.expected
-            ),
-            FiringKind::SlotType => String::new(),
-        };
+        let (id, found, remedy) = slot_firing_parts(f);
         println!(
             "  {id:<26} {:<28} calls {:<24} slot {} expects {} but found {}{}",
             f.proc, f.callee, f.reg, f.expected, found, remedy
@@ -2566,6 +2659,8 @@ fn print_contract_report(report: &sigil_frontend_emp::corpus_contracts::Contract
     );
     for f in &report.bus_firings {
         use sigil_frontend_emp::z80_bus::BusFiringKind::*;
+        // The report keeps its column layout and E-numbers; the bare code is
+        // `bus_code`, shared with the build gate.
         let code = match f.kind {
             DoubleStop => "[bus.double-stop]      (E011)",
             StartWithoutStop => "[bus.start-without-stop] (E008)",
@@ -2573,6 +2668,7 @@ fn print_contract_report(report: &sigil_frontend_emp::corpus_contracts::Contract
             VdpWriteUnstopped => "[bus.vdp-write-unstopped](E006)",
             ReleasedAtReturn => "[bus.released-at-return]     ",
         };
+        debug_assert!(code.starts_with(bus_code(f.kind)));
         println!("  {:<28} {code} @ {}..{}", f.proc, f.span.start, f.span.end);
     }
 
