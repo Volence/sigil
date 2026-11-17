@@ -298,6 +298,7 @@ fn main() {
 /// rust 1.100.0 ships, `3acc79c0`):
 ///   * legacy: `OUT_DIR = build/<pkg>-<hash>/out`, stdout at `build/<pkg>-<hash>/output`;
 ///   * new:    `OUT_DIR = build/<pkg>/<hash>/out`, stdout at `build/<pkg>/<hash>/run/stdout`.
+///
 /// The one-layout derivation (`OUT_DIR/../output`) sent CI run 44013571220 to a file
 /// that does not exist under the new layout. A shape that is neither is reported
 /// as `unavailable`, which the reading test turns into a failure, never a skip.
