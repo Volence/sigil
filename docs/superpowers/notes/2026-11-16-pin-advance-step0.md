@@ -137,3 +137,12 @@ are the existing `provenance_chain_holds` and `refreeze --check`.
 - The attest record on entry #207 names sigil `503e4689`: merge, do not rebase or squash, or the record is
   orphaned (DIVERGENT, like #181 and #201).
 - `.aeon-sigil-ref-936439fa-t6` is a disposable copy; `git -C aeon worktree remove` it after landing.
+
+## Final gate
+
+`scripts/landing-run.sh --aeon <t6>` at `2ec622da` (tree clean): **RESULT GREEN**, 525 of 525 binaries
+launched and reported (census 525: 512 runnable + 13 doctest), **5,917 passed, 0 failed, 3 ignored**,
+0 skip lines, clippy 0, ledger 0, CI-shaped leg 0 (525 suites, 5,917 passed, 0 failed);
+`scripts/check_landing_log.py` exit 0. 09:04:03 -> 09:12:47 UTC (8m44s). The baseline counted 5,917
+tests (5,850 + 67); the final run passes the same 5,917. BN at `2ec622da`: `SHAPES 7/7 IDENTICAL`,
+`STEP0_CMP_END rc=0`. `refreeze --check` OK, tip `pin-advance-step0`, chain len 208.

@@ -615,4 +615,4 @@ demo, demo.debug, config_b unchanged; config_a `6be62db3/870972`, lean `60a3552b
 moved: the goldens now equal what the branch binary already produced at 936439fa (BN 7/7, rc 0).
 
 SS: baseline at `503e4689` 5,850 / 67 / 3 (the 67 = `.scratch-t1/failed_base.txt`); after the freeze
-5,914 / 3 / 3; after the repairs, see the final gate in the pin-advance note.
+5,914 / 3 / 3; after the repairs (`2ec622da`) RESULT GREEN, 525/525, 5,917 / 0 / 3, CI-shaped leg 0, BN 7/7.
