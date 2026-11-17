@@ -27,6 +27,7 @@ pub mod z80_preserves;
 pub mod type_slice;
 pub mod value;
 pub mod z80_bus;
+pub mod z80_closure;
 pub mod z80_cycles;
 pub mod z80_out_verify;
 

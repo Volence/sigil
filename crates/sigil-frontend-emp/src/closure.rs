@@ -139,6 +139,13 @@ pub struct ProcNode {
     /// register under-declaration (a named register in the effective set still
     /// fires).
     pub unanalyzable_allowed: bool,
+    /// The A5 Z80 scope boundary: the proc declares
+    /// `@allow("clobbers.computed-dispatch", "<reason>")`, i.e. it is reached only
+    /// through a computed dispatch the direct-call closure cannot traverse, so its
+    /// transitive effect cannot be soundly verified. The closure still computes
+    /// it; [`crate::z80_closure`] reports its firings apart from the in-scope ones
+    /// and lists the proc as excluded. Read by nothing on the 68k side.
+    pub computed_dispatch: bool,
     /// The span of the proc's (or extern's) declaration, so a firing on this
     /// node can say WHERE (A7). `None` for a node built with no source behind
     /// it (a synthetic test node); the gate then renders `(no span recorded)`.

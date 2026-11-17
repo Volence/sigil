@@ -478,6 +478,71 @@ fn corpus_closure_residue_is_empty_the_error_gate() {
     }
 }
 
+/// The procs carrying `@allow("clobbers.computed-dispatch", …)`, read from the
+/// SOURCE TEXT rather than from the analysis under test: each attribute line names
+/// the first `proc NAME` after it, past blank, comment and other attribute lines.
+fn computed_dispatch_annotated(srcs: &[(PathBuf, String)]) -> Vec<String> {
+    let mut out = Vec::new();
+    for (path, src) in srcs {
+        let lines: Vec<&str> = src.lines().map(str::trim).collect();
+        for (i, l) in lines.iter().enumerate() {
+            if !l.starts_with("@allow(\"clobbers.computed-dispatch\"") {
+                continue;
+            }
+            let decl = lines[i + 1..]
+                .iter()
+                .find(|l| !l.is_empty() && !l.starts_with("//") && !l.starts_with('@'))
+                .unwrap_or_else(|| panic!("{}:{}: attribute precedes nothing", path.display(), i + 1));
+            let name = decl
+                .trim_start_matches("pub ")
+                .strip_prefix("proc ")
+                .and_then(|r| r.split(|c: char| !(c.is_alphanumeric() || c == '_')).next())
+                .unwrap_or_else(|| panic!("{}:{}: not a proc: {decl}", path.display(), i + 1));
+            out.push(name.to_string());
+        }
+    }
+    out.sort();
+    out
+}
+
+/// A5 — THE Z80 ERROR GATE. The Z80 transitive clobber closure
+/// (`[call.clobbers-incomplete]`, the build gate's `(Z80)` row) is EMPTY in every
+/// shipped shape, it is not blind (0 register-relevant drops, 0 holes), and the
+/// procs it excludes are exactly the ones annotated
+/// `@allow("clobbers.computed-dispatch", …)` in source.
+#[test]
+fn corpus_z80_clobber_closure_is_empty_the_error_gate() {
+    let Some(srcs) = corpus_sources() else { return };
+    let annotated = computed_dispatch_annotated(&srcs);
+    assert!(
+        !annotated.is_empty(),
+        "no `@allow(\"clobbers.computed-dispatch\")` in the corpus, so the excluded-set \
+         check below is against nothing (an aeon tree older than the A5 pair?)"
+    );
+    for (label, _profile, r) in analyze_every_shape(&srcs) {
+        assert_eq!(
+            r.z80_dropped_instrs, 0,
+            "shape `{label}`: register-relevant Z80 drops: {:?}",
+            r.z80_dropped_by_proc
+        );
+        assert!(
+            r.z80_clobber_unresolved.is_empty(),
+            "shape `{label}`: Z80 closure holes: {:?}",
+            r.z80_clobber_unresolved
+        );
+        let fired: Vec<_> = r
+            .z80_clobber_firings
+            .iter()
+            .map(|f| (f.proc.clone(), f.reg.clone().unwrap_or_default(), f.via.clone()))
+            .collect();
+        assert!(fired.is_empty(), "shape `{label}`: Z80 under-claims: {fired:?}");
+        assert_eq!(
+            r.z80_clobber_excluded, annotated,
+            "shape `{label}`: the excluded set must be exactly the annotated procs"
+        );
+    }
+}
+
 /// LIVENESS — the closure analysis is a live analysis WITH REAL SUBJECTS in every
 /// shape, not only in the three that assemble the shape-sensitivity probe's arm.
 ///

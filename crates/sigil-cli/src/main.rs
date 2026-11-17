@@ -2223,6 +2223,31 @@ fn run_contract_gate(aeon: &std::path::Path, target: &BuildTarget) {
         }
         failed = true;
     }
+    // The Z80 closure's own blindness (A5): a dropped Z80 instruction is a write the
+    // `[call.clobbers-incomplete]` row never sees, and a hole is a callee whose
+    // effect it never charges. Either turns that row's zero into a guess.
+    if report.z80_dropped_instrs != 0 {
+        eprintln!(
+            "error: the Z80 clobber closure DROPPED {} instruction(s), so its \
+             [call.clobbers-incomplete] row is under-approximating.",
+            report.z80_dropped_instrs
+        );
+        for (proc, n) in &report.z80_dropped_by_proc {
+            eprintln!("  {proc}: {n}");
+        }
+        failed = true;
+    }
+    if !report.z80_clobber_unresolved.is_empty() {
+        eprintln!(
+            "error: the Z80 clobber closure has {} unresolved callee(s), whose effect it \
+             cannot charge:",
+            report.z80_clobber_unresolved.len()
+        );
+        for h in &report.z80_clobber_unresolved {
+            eprintln!("  {h}");
+        }
+        failed = true;
+    }
     if failed {
         eprintln!(
             "error: contract closure gate FAILED, the analysis is blind. Fix the drops \
@@ -2247,6 +2272,9 @@ fn run_contract_gate(aeon: &std::path::Path, target: &BuildTarget) {
     // the proc's declaration. Kept on ONE line on purpose: the red-first proof
     // swaps this line back to the count-only `empty_gate` row.
     failed |= refuse_located("[proc.clobber-undeclared] closure firings", &report.firings, |f| f.span, |f| describe_clobber(f, "[proc.clobber-undeclared]"), &src_index);
+    // The Z80 twin (A5): the same closure over `(cpu: z80)` procs, minus the ones
+    // declaring `@allow("clobbers.computed-dispatch", …)`. One line, as above.
+    failed |= refuse_located("[call.clobbers-incomplete] (Z80) closure firings", &report.z80_clobber_firings, |f| f.span, |f| describe_clobber(f, "[call.clobbers-incomplete]"), &src_index);
     failed |= empty_gate("[proc.preserves-unverifiable] word-facet firings", report.word_preserve_firings.len());
     failed |= empty_gate("[context.escape]/[context.entry-skip]/[context.reacquire]", report.context_firings.len());
     failed |= empty_gate("unknown context references", report.unknown_context_refs.len());
@@ -2589,6 +2617,36 @@ fn print_contract_report(report: &sigil_frontend_emp::corpus_contracts::Contract
             Some(via) => println!("  {:<28} {kind} via {via}", f.proc),
             None => println!("  {:<28} {kind}", f.proc),
         }
+    }
+
+    // A5: the Z80 twin, with the procs its scope excludes listed under it so the
+    // boundary stays audited, and the Z80 pass's own drops and holes.
+    println!(
+        "\n-- [call.clobbers-incomplete] (Z80) closure firings ({}), {} excluded by \
+         @allow(\"clobbers.computed-dispatch\") --",
+        report.z80_clobber_firings.len(),
+        report.z80_clobber_excluded.len()
+    );
+    for f in &report.z80_clobber_firings {
+        let reg = f.reg.as_deref().unwrap_or("?");
+        let kind = if f.transitive { format!("transitive {reg}") } else { format!("direct     {reg}") };
+        match &f.via {
+            Some(via) => println!("  {:<28} {kind} via {via}", f.proc),
+            None => println!("  {:<28} {kind}", f.proc),
+        }
+    }
+    for name in &report.z80_clobber_excluded {
+        println!("  EXCLUDED  {name}");
+    }
+    println!(
+        "  (Z80 pass: {} dropped instruction(s), {} unresolved callee(s); both must be 0. \
+         {} dropped `dc` data cell(s), which write no register)",
+        report.z80_dropped_instrs,
+        report.z80_clobber_unresolved.len(),
+        report.z80_dropped_data_cells
+    );
+    for h in &report.z80_clobber_unresolved {
+        println!("  HOLE  {h}");
     }
 
     use sigil_frontend_emp::flag_check::FlagSiteOutcome as O;

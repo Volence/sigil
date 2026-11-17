@@ -335,6 +335,32 @@ pub struct ContractReport {
     /// out claims it ranged over, and this is that set (a Z80 out is a DECLARATION,
     /// not comptime-conditional, so it is shape-independent).
     pub z80_out_claims: Vec<(String, String)>,
+    /// A5: the `[call.clobbers-incomplete]` firings of the Z80 transitive clobber
+    /// closure ([`crate::z80_closure`]): a `(cpu: z80)` proc whose declared
+    /// `clobbers` misses a register its body or a reachable callee destroys. IN
+    /// SCOPE only: procs declaring `@allow("clobbers.computed-dispatch")` are in
+    /// [`Self::z80_clobber_excluded`] instead. Zero-firing by contract. Sorted
+    /// (proc, register).
+    pub z80_clobber_firings: Vec<Firing>,
+    /// The Z80 procs excluded from [`Self::z80_clobber_firings`] by
+    /// `@allow("clobbers.computed-dispatch", …)`, sorted: the audited scope
+    /// boundary, printed beside the firings.
+    pub z80_clobber_excluded: Vec<String>,
+    /// The Z80 closure's holes: direct callees that resolve to no Z80 proc or
+    /// extern. A hole contributes nothing, so the closure is blind past it; the
+    /// gate refuses a non-empty set (the analysis must see before it can pass).
+    pub z80_clobber_unresolved: BTreeSet<String>,
+    /// Instructions the Z80 pass DROPPED (unresolved mnemonic/operand) that could
+    /// hide a register write. A dropped write is a write the closure never sees,
+    /// so like the 68k [`Self::dropped_instrs`] this must be 0 for the Z80 row to
+    /// mean anything. `dc` data cells are counted apart, in
+    /// [`Self::z80_dropped_data_cells`] ([`crate::z80_closure::split_z80_drops`]).
+    pub z80_dropped_instrs: usize,
+    /// Dropped Z80 `dc` data cells: they emit bytes and write no register, so they
+    /// do not blind the closure. Reported, not gated.
+    pub z80_dropped_data_cells: usize,
+    /// [`Self::z80_dropped_instrs`] per proc, `(proc, n)` in walk order.
+    pub z80_dropped_by_proc: Vec<(String, usize)>,
 }
 
 /// Analyze the parsed corpus with the canonical no-`-D` config (census-parity).
@@ -796,15 +822,20 @@ pub fn analyze_corpus_with_contracts(
     let mut z80_declared_out: Z80OutMap = BTreeMap::new();
     let mut z80_falls_into: BTreeMap<String, String> = BTreeMap::new();
     let mut z80_extern_names: BTreeSet<String> = BTreeSet::new();
+    let mut z80_closure_inputs = Z80ClosureInputs::default();
     for file in files {
         if module_is_z80(&file.module) {
             collect_z80_flag_procs(
                 &file.items, file, &mut counter, defines, &env, &mut z80_flag_callees,
                 &mut z80_proc_bufs, &mut comptime_unresolved, contracts,
                 &mut z80_declared_out, &mut z80_falls_into, &mut z80_extern_names,
+                &mut z80_closure_inputs,
             );
         }
     }
+    // A5: the Z80 transitive clobber closure over every `(cpu: z80)` proc the walk
+    // above collected, split by the computed-dispatch annotation.
+    let z80_partition = crate::z80_closure::z80_clobber_partition(&z80_closure_inputs.nodes);
     for pb in &z80_proc_bufs {
         let (mut unused, sites) = check_flag_unused_sites(
             &pb.name,
@@ -1373,6 +1404,12 @@ pub fn analyze_corpus_with_contracts(
         z80_out_firings,
         z80_verified_out,
         z80_out_claims,
+        z80_clobber_firings: z80_partition.in_scope,
+        z80_clobber_excluded: z80_partition.excluded,
+        z80_clobber_unresolved: z80_partition.unresolved_callees,
+        z80_dropped_instrs: z80_closure_inputs.dropped,
+        z80_dropped_data_cells: z80_closure_inputs.dropped_data_cells,
+        z80_dropped_by_proc: z80_closure_inputs.dropped_by_proc,
     }
 }
 
@@ -2205,13 +2242,28 @@ fn collect_items(
     }
 }
 
+/// What the Z80 walk collects for the A5 clobber closure.
+#[derive(Default)]
+struct Z80ClosureInputs {
+    /// Every Z80 proc / extern as a closure node, by name.
+    nodes: BTreeMap<String, ProcNode>,
+    /// Register-relevant instructions the Z80 body evaluation dropped, in total
+    /// and per proc ([`crate::z80_closure::split_z80_drops`]).
+    dropped: usize,
+    dropped_by_proc: Vec<(String, usize)>,
+    /// Dropped `dc` data cells: counted, never register-relevant.
+    dropped_data_cells: usize,
+}
+
 /// rung-2 §13.3 sub-part 3 — walk a `(cpu: z80)` module's items (recursing
 /// sections), collecting each proc/extern's `out(carry: …)` flag contract into
 /// `z80_flag_callees` and each body-bearing proc's Cpu::Z80-evaluated CodeBuf
 /// (with its `@discards` spans) into `z80_proc_bufs`. The whole-corpus flag
 /// must-use check needs both sides (callee contract + caller body); this pass
 /// supplies them WITHOUT feeding the 68k closure — keeping the register-contract
-/// half of the PASS-2 Z80 skip intact.
+/// half of the PASS-2 Z80 skip intact. The same walk builds the Z80 clobber
+/// closure's nodes (A5, [`crate::z80_closure`]) into `z80.nodes`, from the SAME
+/// evaluated body, and counts the instructions that evaluation dropped.
 #[allow(clippy::too_many_arguments)] // mirrors collect_items' collector-state set
 fn collect_z80_flag_procs(
     items: &[Item],
@@ -2226,7 +2278,9 @@ fn collect_z80_flag_procs(
     z80_declared_out: &mut Z80OutMap,
     z80_falls_into: &mut BTreeMap<String, String>,
     z80_extern_names: &mut BTreeSet<String>,
+    z80: &mut Z80ClosureInputs,
 ) {
+    let inv_units = crate::z80_closure::module_invariant_units(file);
     for item in items {
         match item {
             Item::Proc(p) => {
@@ -2246,10 +2300,20 @@ fn collect_z80_flag_procs(
                 if let Some(succ) = &p.falls_into {
                     z80_falls_into.insert(p.name.clone(), succ.clone());
                 }
-                let (buf, _diags, next, _dropped, unresolved) = crate::eval::eval_proc_body_env(
+                let (buf, diags, next, dropped, unresolved) = crate::eval::eval_proc_body_env(
                     file, &p.name, &p.params, &p.body, p.span, *counter, Cpu::Z80, defines, env, contracts,
                 );
                 *counter = next;
+                let (dropped, data_cells) = crate::z80_closure::split_z80_drops(&p.body, dropped, &diags);
+                z80.dropped += dropped;
+                z80.dropped_data_cells += data_cells;
+                if dropped != 0 {
+                    z80.dropped_by_proc.push((p.name.clone(), dropped));
+                }
+                z80.nodes.insert(
+                    p.name.clone(),
+                    crate::z80_closure::z80_proc_node(p, buf.as_ref(), &inv_units, None),
+                );
                 // A Z80 module's comptime conditions read the SAME define set —
                 // a lost toggle must be as loud here as in a 68k module.
                 comptime_unresolved
@@ -2287,6 +2351,7 @@ fn collect_z80_flag_procs(
                 // Z80 proc crediting an extern out (call / tail / falls_into) can
                 // ground its own claim in it.
                 z80_extern_names.insert(e.name.clone());
+                z80.nodes.insert(e.name.clone(), crate::z80_closure::z80_extern_node(e));
                 let out_units = e.sig.unconditional_outs(crate::regfile::RegFile::Z80);
                 if !out_units.is_empty() {
                     z80_declared_out.insert(e.name.clone(), out_units);
@@ -2295,7 +2360,7 @@ fn collect_z80_flag_procs(
             Item::Section(s) => collect_z80_flag_procs(
                 &s.items, file, counter, defines, env, z80_flag_callees, z80_proc_bufs,
                 comptime_unresolved, contracts, z80_declared_out, z80_falls_into,
-                z80_extern_names,
+                z80_extern_names, z80,
             ),
             _ => {}
         }
@@ -2397,6 +2462,9 @@ fn proc_node(
         requires: p.requires.iter().map(|(n, _)| n.clone()).collect(),
         grants: p.grants.iter().map(|(n, _)| n.clone()).collect(),
         unanalyzable_allowed: unanalyzable_reason_in_force(file, p).is_some(),
+        // The computed-dispatch scope boundary is the Z80 closure's (A5); the 68k
+        // closure has no such exclusion, so a 68k node never carries it.
+        computed_dispatch: false,
         decl_span: Some(p.span),
     };
     (node, buf, dropped, unresolved)
