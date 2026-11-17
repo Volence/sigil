@@ -1785,7 +1785,8 @@ Two smaller items booked here as well:
   sees the pre-A4 clones exactly. A name bound only by the importer is refused,
   `[name.unbound-at-definition]`. `sigil build --report name-env` lists the rows (EMP language audit
   finding 1/2; aeon EMP_PITFALLS §2 and §8 retired in the pair).
-- PAIR: aeon `parcel/step0-soundness-pair` `6b5f8d8d` imports `PalCycleScript1/2` in `palette_dsl.emp`
+- Fix `5fea0ad2`: prelude items map back in each importer; hidden structs are not bare-window candidates.
+- PAIR: aeon `parcel/step0-soundness-pair` `6b5f8d8d` (+ `3fd291f3`) imports `PalCycleScript1/2` in `palette_dsl.emp`
   (the 2 distinct unbound rows the report found at `936439fa`); byte-neutral (BN base column). Without it
   the candidate refuses the tree. Docs `c4c1fb0b` (pitfalls retired, `EMP-A4-PINS-REMOVABLE` booked aeon-side).
 - Booked, OPEN (not in A4's scope):

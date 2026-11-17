@@ -746,7 +746,8 @@ with, the sigil merge; the standing ref tree then needs re-provisioning past it 
 ## Task 8 (A4): one name environment per declaration
 
 Commits (sigil): `7759b2d7` (step 1, the report, no behaviour change), `b35a2d38` (the 8 RED
-fixtures), `a312c74a` (implementation), this note; paired with aeon `parcel/step0-soundness-pair` `6b5f8d8d`
+fixtures), `a312c74a` (implementation), `85792b6b` (this note), `5fea0ad2` (fix after the first SS,
+below); paired with aeon `3fd291f3` (the AG fix, below) on top of `parcel/step0-soundness-pair` `6b5f8d8d`
 (`palette_dsl.emp` imports `PalCycleScript1/2`) and `c4c1fb0b` (EMP_PITFALLS §2/§8 retired;
 DEFERRED_WORK `EMP-A4-PINS-REMOVABLE`).
 
@@ -803,3 +804,32 @@ Base `94cf811d` vs candidate `a312c74a` over `.aeon-t8-pairref` (936439fa + the 
 identical ensure/LinkAssert counts (plain 89,905 / 698); the only difference is
 `layout.provisional-drift` (4 plain, 5 debug) present under the base only: the base binary carries the
 pre-Task-6 frozen tables (`offcanonical_sizes/s4*.txt` changed `94cf811d..68bfd8af`).
+
+### First SS and AG were RED; fixed (`5fea0ad2`; aeon `3fd291f3`)
+
+SS at `85792b6b`: RESULT FAILED, 6 tests. (1) Four pitcher-plant/tranche-0 example builds:
+`[overlay.ambiguous-window] window `sst_custom` is ambiguous across $prelude$Sst.sst_custom,
+Sst.sst_custom`: the prelude's own items were hidden at their definition and an importer binds a prelude
+name as global, so they never mapped back. `localize` now maps a hidden PRELUDE item back when the
+importer binds the name through the prelude; `resolve_bare_window` also skips `$`-named structs (not
+names in scope). aeon has no prelude, so BN could not see this. (2) `sandbox_hermeticity`: the report
+tests in `hygiene.rs` wrote files; moved to `tests/name_env_report.rs`. (3) `tranche7`'s
+`imported_fn_referencing_home_private_const_fails_loudly` pinned the pre-A4 contract (F3's deep case
+fails loudly); A4 closes it: now `..._resolves_where_defined`, `06 40 00 07 4E 75`.
+
+AG at aeon `6b5f8d8d`: `tools/landing_build.sh` exit 1, `finished=1`, one tool test:
+`test_citation_form.py::test_live_citations_resolve_to_something`, `docs/EFFECTS_AUTHORING.md:561 cites
+engine/effects/palette_dsl.emp:32 -- blank line` (the reworded comment grew a line). Aeon `3fd291f3`
+restores the comment's line count; DEFERRED_WORK cites `scene_registry.emp` by name.
+
+Re-proved at `5fea0ad2`: RF both gates (`rf2.txt`, `rf2b.txt`: 70 0C red / 8/8; refusal 7/1 / 8/8);
+report 0 differ / 0 unbound in all 7 shapes, byte-identical to the pre-fix report; BN base `94cf811d`
+vs cand `5fea0ad2` over `.aeon-t8-pairref` (aeon content = pair `3fd291f3`) **7/7 IDENTICAL, rc 0**, 31 s,
+the same rows as above.
+
+### SS (`scripts/landing-run.sh --aeon .aeon-t8-pairref`, tree `5fea0ad2` clean, 663 s)
+
+RESULT GREEN: 528/528 launched and reported, **5,947 passed / 0 failed / 3 ignored**, 0 skip lines,
+clippy 0, ledger 0, CI-shaped leg 0 (528 suites, 5,947 passed). Delta vs Task 7 fix round (526, 5,933):
++2 suites (`one_name_env`, `name_env_report`), +14 tests (8 + 2 + 4 unit). The reference is a detached
+aeon worktree at `936439fa` + the ref tree's ignored artifacts + the 3 pair files (`DIRTY` by those only).
