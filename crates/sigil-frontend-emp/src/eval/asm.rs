@@ -1785,7 +1785,7 @@ impl Evaluator<'_> {
                 // silent SymRef.
                 Value::Label(name)
                     if reg_from_name(&name).is_some()
-                        || matches!(name.as_str(), "sp" | "pc" | "sr" | "ccr") =>
+                        || matches!(name.as_str(), "sp" | "pc" | "sr" | "ccr" | "usp") =>
                 {
                     // A register-class word is not a valid `dc` element — keep it
                     // the loud `unknown name` error (consistent with
@@ -2687,6 +2687,10 @@ impl Evaluator<'_> {
             // `(sr).w` would otherwise resolve as an ordinary SYMBOL named
             // `sr` and fail only at link — steer early, matching the
             // register-class-words-win rule the bare path applies.
+            if p.segments.len() == 1 && p.segments[0] == "usp" {
+                self.error(span, "[operand.usp-unsupported] `usp` is the 68000 user stack pointer, never a symbol; `.emp` has no `move` to or from `usp` yet (EMP-USP-CCR-SURFACE)".to_string());
+                return None;
+            }
             if p.segments.len() == 1 && matches!(p.segments[0].as_str(), "sr" | "ccr") {
                 self.error(
                     span,
@@ -3245,6 +3249,14 @@ impl Evaluator<'_> {
                 if seg == "ccr" {
                     return Some(CodeOperand::Ccr);
                 }
+                // `usp` is a register word too, but `.emp` has no operand for
+                // it yet. It must never fall through to a SYMBOL: beside an
+                // item named `usp`, `move.l a2, usp` assembled `21CA 0000`, a
+                // move to `($0000).w` (A6 fix round 1, EMP-USP-READ-AS-SYMBOL).
+                if seg == "usp" {
+                    self.error(expr_span(expr), "[operand.usp-unsupported] `usp` is the 68000 user stack pointer, never a symbol; `.emp` has no `move` to or from `usp` yet (EMP-USP-CCR-SURFACE)".to_string());
+                    return None;
+                }
                 // S2-D12(e) — the forgotten-`#`: this bare name is about to
                 // become an ABSOLUTE ADDRESS. If it is a plain-valued
                 // `const`/`equ` in scope, say so
@@ -3563,7 +3575,7 @@ fn bare_symbol_seg(e: &ast::Expr) -> Option<&str> {
         return None;
     }
     let seg = p.segments[0].as_str();
-    if reg_from_name(seg).is_some() || seg == "sr" || seg == "ccr" {
+    if reg_from_name(seg).is_some() || seg == "sr" || seg == "ccr" || seg == "usp" {
         return None;
     }
     Some(seg)

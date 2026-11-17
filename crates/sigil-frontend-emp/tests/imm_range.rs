@@ -200,12 +200,12 @@ fn link_time_word_immediate_still_accepts_a_ram_address() {
 /// `andi.w #65535, ccr` against the `.w` bounds and the encoder emitted the
 /// byte form, `023C 00FF` (the value truncated); `.s` used the long bounds, so
 /// `ori.s #256, ccr` assembled `003C 0000`. The AS front end refuses every
-/// non-`.b` size with this message, as asl does (`error #1130: invalid operand
+/// non-`.b` size, as asl does (`error #1130: invalid operand
 /// size`, `frontend-as/src/eval.rs`, `andi_w_ccr`).
 #[test]
 fn ccr_immediates_are_byte_only() {
     const MSG: &str =
-        "an immediate to `ccr` is byte only, as asl requires: write it with `.b` or with no suffix";
+        "an immediate to `ccr` is byte only, as asl requires: write it with `.b`";
     assert_eq!(err("andi.w  #65535, ccr"), [MSG]);
     assert_eq!(err("andi.w  #1, ccr"), [MSG]);
     assert_eq!(err("andi.l  #-1, ccr"), [MSG]);

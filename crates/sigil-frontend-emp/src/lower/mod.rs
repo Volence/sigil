@@ -222,6 +222,7 @@ fn lower_module_inner(
     validate_allow_attrs(file, &mut diags);
     validate_comptime_tests(&file.items, &mut diags);
     validate_shadowed_mnemonics(&file.items, &mut diags);
+    validate_reserved_register_words(&file.items, &mut diags);
     validate_shadowed_imports(&file.items, &mut diags);
     validate_out_types(&file.items, &mut diags);
     // Niche-option `[option.niche-overlap]` (spec §1): a sentinel that overlaps
@@ -2619,6 +2620,99 @@ fn validate_shadowed_mnemonics(items: &[ast::Item], diags: &mut Vec<Diagnostic>)
                 });
             }
             ast::Item::Section(sec) => validate_shadowed_mnemonics(&sec.items, diags),
+            _ => {}
+        }
+    }
+}
+
+/// Once-per-compile `[name.reserved-register]` (A6 fix round 1,
+/// `EMP-USP-READ-AS-SYMBOL`): no item, field or parameter may be named `usp`.
+///
+/// `usp` is the 68000 user stack pointer, a register word, but `.emp` has no
+/// operand for it yet. Before this, a bare `usp` operand resolved as a SYMBOL,
+/// so beside an item named `usp`, `move.l a2, usp` assembled `21CA 0000` (a
+/// move to `($0000).w`) where asl assembles `4E62`. The operand side now
+/// refuses `usp` outright (`[operand.usp-unsupported]`); this refuses the
+/// declaration where it is written, so the name can never exist to be reached.
+/// `d0`..`a7`/`sp`/`sr`/`ccr` need no such rule: they already win over any
+/// symbol in operand position, so an item of that name cannot change bytes.
+fn validate_reserved_register_words(items: &[ast::Item], diags: &mut Vec<Diagnostic>) {
+    fn check(name: &str, span: Span, diags: &mut Vec<Diagnostic>) {
+        if name == "usp" {
+            diags.push(Diagnostic {
+                level: Level::Error,
+                message: "[name.reserved-register] `usp` is the 68000 user stack pointer, a \
+                          register word, and cannot name an item: a bare `usp` operand would \
+                          otherwise read it as an address"
+                    .to_string(),
+                primary: span,
+            });
+        }
+    }
+    fn check_region_fields(fields: &[ast::RegionField], diags: &mut Vec<Diagnostic>) {
+        for f in fields {
+            match f {
+                ast::RegionField::Typed(v) => check(&v.name, v.span, diags),
+                ast::RegionField::Mark { name, span } | ast::RegionField::Alias { name, span, .. } => {
+                    check(name, *span, diags)
+                }
+                ast::RegionField::Group { then_body, else_body, .. } => {
+                    check_region_fields(then_body, diags);
+                    check_region_fields(else_body, diags);
+                }
+                ast::RegionField::Pad { .. } => {}
+            }
+        }
+    }
+    for item in items {
+        match item {
+            ast::Item::Const(d) => check(&d.name, d.span, diags),
+            ast::Item::Equ(d) => check(&d.name, d.span, diags),
+            ast::Item::Enum(d) => check(&d.name, d.span, diags),
+            ast::Item::Bitfield(d) => check(&d.name, d.span, diags),
+            ast::Item::Struct(d) => check(&d.name, d.span, diags),
+            ast::Item::Offsets(d) => check(&d.name, d.span, diags),
+            ast::Item::Table(d) => check(&d.name, d.span, diags),
+            ast::Item::Dispatch(d) => check(&d.name, d.span, diags),
+            ast::Item::Region(d) => check(&d.name, d.span, diags),
+            ast::Item::Data(d) => check(&d.name, d.span, diags),
+            ast::Item::ExternProc(d) => check(&d.name, d.span, diags),
+            ast::Item::ExternConst(d) => check(&d.name, d.span, diags),
+            ast::Item::Newtype(d) => check(&d.name, d.span, diags),
+            ast::Item::Vars(d) => {
+                if let Some(n) = &d.name {
+                    check(n, d.span, diags);
+                }
+                for f in &d.fields {
+                    check(&f.name, f.span, diags);
+                }
+                check_region_fields(&d.region_body, diags);
+            }
+            ast::Item::Proc(d) => {
+                check(&d.name, d.span, diags);
+                for (n, _, sp) in &d.params {
+                    check(n, *sp, diags);
+                }
+            }
+            ast::Item::ComptimeFn(d) => {
+                check(&d.name, d.span, diags);
+                for (n, _, sp, _) in &d.params {
+                    check(n, *sp, diags);
+                }
+            }
+            ast::Item::Script(d) => {
+                check(&d.name, d.span, diags);
+                for (n, _, sp) in &d.params {
+                    check(n, *sp, diags);
+                }
+            }
+            ast::Item::Context(d) => {
+                check(&d.name, d.span, diags);
+                for (n, _, sp, _) in &d.params {
+                    check(n, *sp, diags);
+                }
+            }
+            ast::Item::Section(sec) => validate_reserved_register_words(&sec.items, diags),
             _ => {}
         }
     }

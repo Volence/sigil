@@ -1457,14 +1457,15 @@ fn check_imm_ranges(inst: &M68kInst) -> Result<(), String> {
     // An immediate to `ccr` is a BYTE field whatever the spelled size: the
     // encoder's `AndiCcr`/`OriCcr`/`EoriCcr` emit the byte form for any size,
     // so `andi.w #$FFFF, ccr` passed the `.w` bounds and encoded `023C 00FF`
-    // (A6 finding, the front-end differential). Same refusal and text as the
-    // AS front end (`frontend-as/src/eval.rs`, asl `error #1130`).
+    // (A6 finding, the front-end differential). Same refusal as the AS front
+    // end (`frontend-as/src/eval.rs`, asl `error #1130`); the text leaves out
+    // its "or with no suffix", which `.emp` refuses (A6 review M3).
     if matches!(
         inst.mnemonic,
         M68kMnemonic::AndiCcr | M68kMnemonic::OriCcr | M68kMnemonic::EoriCcr
     ) && inst.size != M68kSize::B
     {
-        return Err("an immediate to `ccr` is byte only, as asl requires: write it with `.b` or with no suffix".into());
+        return Err("an immediate to `ccr` is byte only, as asl requires: write it with `.b`".into());
     }
     let is_bit_op = matches!(
         inst.mnemonic,
