@@ -137,7 +137,11 @@ fn canary_cases_assemble_to_their_encodings_on_both_routes() {
         // bra.s tgt: 6000 | disp -4
         (Case { family: "bra", size: Some('s'), src: Ea::Label, dst: None }, &[0x60, 0xFC]),
     ];
+    // Each canary is a member of the generated matrix (re-review N4), so its
+    // spelling is one the gate itself compares, not a hand-built neighbour.
+    let all = cases_m68k();
     for (c, mid) in rows {
+        assert!(all.contains(c), "canary `{}` is not a generated case", label(c));
         let want = frame(mid);
         assert_eq!(emp_assemble(&emp_spelling(c)).as_deref(), Ok(&want[..]), "emp `{}`", label(c));
         assert_eq!(as_assemble(&as_spelling(c)).as_deref(), Ok(&want[..]), "AS `{}`", label(c));
