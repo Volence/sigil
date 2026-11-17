@@ -1817,3 +1817,64 @@ Two smaller items booked here as well:
     (review M5): a dependent type or default naming an earlier parameter is treated as free. Unconfirmed
     against the evaluator's binding order; no corpus case.
 - Evidence: the Task 8 section of `docs/superpowers/notes/2026-11-16-step0-soundness.md`.
+
+## FRONTEND-DIFFERENTIAL-GATE: LANDED IN BRANCH 2026-11-17 (step-0 Task 9 / A6, branch `parcel/step0-soundness`)
+
+- Closed by A6 (`6fdcfbee`, `9fe5b744`, `94802e92`): the `.emp` and AS front ends are compared on a generated matrix,
+  `crates/sigil-cli/tests/frontend_differential.rs` over `tests/support/frontend_diff.rs`. Every
+  `ALL_FAMILY_NAMES` family with an operand (78 of 85) x sizes {none, .b, .w, .l, .s} x sources (each EA
+  class, its field's boundary values, `#imm` {lo-1, lo, -1, 0, 1, hi, hi+1}) x destinations (each EA class,
+  none). n = 155,292, computed from the tables. SameBytes 4,978 / BothRefuse 149,345 / excluded 969 /
+  Disagree 0. Z80 `ld r,n`, `ld rr,nn`, `cp n`: 98 cases, 0 Disagree. Every out-of-range sized immediate
+  (6,084) is refused by both. Ten named EXCLUSIONS rows, each a narrow predicate, each used.
+- Coverage (`crates/sigil-harness/tests/frontend_differential_coverage.rs`, reference-dependent): the 481
+  `(family, size, EA classes)` triples the 7 shipped shapes encode (102,518 encodes) are all generated.
+- RF: Task 3's checks disabled -> `move.b #256, d6`: emp `1C3C 0000`, AS `operand 256 out of range
+  -128..=255` (Sigil finding 2), 627 Disagree; `Ea::Disp` dropped -> 82 missing `(d16,An)` triples.
+- Finding fixed in branch (`85dd7a05`, A1 class, byte-neutral): `.emp` truncated `andi/ori #imm, ccr` at
+  `.w/.l/.s` (`andi.w #65535, ccr` -> `023C 00FF`); now refused with the AS text.
+- Booked below: `EMP-USP-READ-AS-SYMBOL`, `AS-MOVE-B-NEG-TO-CCR`, `EMP-FRONTEND-DIFF-GAPS`.
+- Evidence: the Task 9 section of `docs/superpowers/notes/2026-11-16-step0-soundness.md`.
+
+## EMP-USP-READ-AS-SYMBOL: OPEN (found by A6, 2026-11-17)
+
+- `.emp` has no `usp` register word, so `move.l a2, usp` reads `usp` as a SYMBOL. Standalone the link
+  refuses it unresolved, but beside any item named `usp` (probe: `proc usp() { rts }`) it assembles
+  `21CA 0000`, `move.l a2, ($0000).w`. asl and the AS route assemble `4E62`. A silent wrong instruction,
+  the finding-2 direction, gated today only by nobody naming a symbol `usp`. aeon has no such name and
+  no `usp` word in any `.emp` file (grep), and the s4 plain/debug encode probe has no `usp` operand.
+- Not fixed in A6: not A1 class. Smallest fix: make `usp` a reserved register word in operand position
+  and refuse it until `EMP-USP-CCR-SURFACE` exposes the form. The differential's `emp-lacks-usp` row
+  then stops matching and must be removed with the fix (`every_exclusion_is_used` forces it).
+
+## AS-MOVE-B-NEG-TO-CCR: OPEN (found by A6's asl grounding, 2026-11-17)
+
+- The AS route encodes `move.b #-128, ccr` as `44FC FF80` and `move.b #-1, ccr` as `44FC FFFF`; asl 1.42
+  (Bld 212) emits `44FC 0080` and `44FC 00FF` (it zero-extends the byte immediate into the word field).
+  `move.w`/unsized agree with asl (`44FC FFFF`). The 68000 reads only the low byte, so the CPU effect is
+  the same, but the AS route's contract is asl's bytes. No aeon site (0 `move… ,ccr` in the tree).
+- Outside A6's gate (`.emp` refuses `move <ea>,ccr`, so the pair never compares); found by re-running
+  every A6 disagreement through real asl.
+
+## EMP-FRONTEND-DIFF-GAPS: OPEN (booked by A6, 2026-11-17)
+
+`.emp` refuses forms asl and the AS route assemble. None emits a wrong byte (each is a refusal, or bytes
+proven equal to the AS route's legal spelling); each is one named EXCLUSIONS row in
+`crates/sigil-cli/tests/support/frontend_diff.rs`, so closing a gap fails `every_exclusion_is_used`
+until its row is removed.
+
+- `emp-requires-a-size-suffix` (377): no default size for shifts/rotates on memory, `move`/`andi`/`ori`/
+  `eori` to sr/ccr, `bchg`, `exg`, `addx`. `btst`/`bset`/`bclr` default to `.b` but `bchg` does not
+  (`m68k_default_size`), an inconsistency.
+- `emp-lacks-mnemonic` (161): `abcd`, `sbcd`, `nbcd`, `negx`, `subx`, `chk`, `stop`, `link`, `unlk`.
+- `emp-lacks-sr-ccr-form` (70): `move <ea>,ccr`, `eori #,ccr`, `andi`/`ori`/`eori #,sr` (see `EMP-USP-CCR-SURFACE`).
+- `emp-no-implicit-variant` (119): `add`/`sub <ea>,An` (asl: `adda`/`suba`), `eor #imm,Dn` (asl: `eori`).
+- `emp-label-operand-gap` (45): a label as a straight-line operand, beside another extension word, or as a
+  `movem` pc-relative source. The last refuses with `internal: a PC-relative operand reached the generic
+  operand mapper`, an internal message reaching the author; it should be a located refusal.
+- `emp-lacks-usp` (2): see `EMP-USP-READ-AS-SYMBOL`.
+- `branch-b-suffix` (3): `bra.b` (asl: `.s`).
+- `unsized-branch-aeon-pin` (3): the AS route refuses an unsized branch by Aeon policy; asl relaxes it and
+  `.emp` assembles the short form. A policy split between the two routes, not a defect of either.
+- `sized-swap` (3): `.emp` accepts `swap.b/.w/.s` (asl: `invalid operand size`); bytes equal `swap`.
+  Refusing it is a spelling-parity fix; aeon writes no sized `swap` (grep), so it would be byte-neutral.

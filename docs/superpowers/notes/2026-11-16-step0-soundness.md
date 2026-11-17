@@ -899,3 +899,115 @@ Review `task-8-review.md`: 0 Critical, 4 Important, 7 Minor. Every probe in it r
 - Left open: M1 (report rows top-level only) and M5 (param scoping order), booked in QUEUE `EMP-ONE-NAME-ENV`;
   M3 (the define half of report concern 2 is moot: `[defines.collision]` refuses an item named like a define);
   M4 (evidence, no change); M7 (process nits; `rf.sh` now prints the restore command).
+
+## Task 9 (A6): front-end differential gate
+
+Commits: `85dd7a05` (finding fix), `6fdcfbee` (gate), `9fe5b744` (Z80 count from tables; RF recorded).
+Reference tree `.aeon-t9-pairref`: detached aeon worktree at `936439fa` (the provenance tip) plus the four
+pair files from `6269c7fd` (`map.toml`, `sound_sequencer.emp`, `palette_dsl.emp`, `EMP_PITFALLS.md`),
+uncommitted, ignored artifacts from `.aeon-t8-pairref`; `diff -rq` against `.aeon-t8-pairref` empty.
+Artifacts: `.aeon-v2-harness-out/t9/`.
+
+### The generator (`crates/sigil-cli/tests/support/frontend_diff.rs`)
+
+- Families: `ALL_FAMILY_NAMES` minus the 7 that take no operand (`nop rts rte illegal reset rtr trapv`; the
+  coverage test asserts the build never emits one with an operand). 67 vary both operands; 9 hold the
+  destination (`move-to-sr/ccr/usp`, `andi/ori/eori-sr/ccr`), 2 hold the source (`move-from-sr/usp`).
+- Sizes: none, `.b`, `.w`, `.l`, `.s` (`.s` and none added to the brief's three: the build emits `.s`
+  branches, and unsized is how source spells `lea`/`moveq`/`btst`).
+- Sources: 22 non-immediate (`Dn An (An) (An)+ -(An)`, `(d16,An)` at `i16::MIN/0/i16::MAX`, `(xxx).w` at
+  `$0000/$7FFF/$8000/$FFFF`, `(xxx).l` at `0/$00FFFFFF/$FFFFFFFF`, `(d8,An,Xn)` at `i8::MIN/0/i8::MAX`,
+  `(d16,PC)`, `(d8,PC,Xn)`, a register list, a label) plus `#imm` `{lo-1, lo, -1, 0, 1, hi, hi+1}` with
+  `(lo, hi)` from `i8::MIN/u8::MAX`, `i16::MIN/u16::MAX`, `i32::MIN/u32::MAX` (unsized: the union, 15
+  values; `.s`: the byte set). Destinations: each class once, and none (15).
+- `Ea` gained `Idx PcDisp PcIdx RegList Label Sr Ccr Usp` beyond the brief's nine, because the s4 plain/debug
+  encode probe (`t9/probe-triples.txt`) emits indexed, pc-relative, register-list, branch and sr/ccr operands.
+- n = 67·153·15 + 9·153 + 2·5·15 = **155,292** (`expected_case_count`, from the tables).
+- Z80: `ld r,n` (7 regs), `ld rr,nn` (6), `cp n`, 7 values each: 98 cases.
+
+### Result (release, `9fe5b744`)
+
+`TOTAL n=155292 same=4978 refuse=149345 excluded=969 disagree=0`; Z80 0 disagreements; 6,084 out-of-range
+sized immediates, all `BothRefuse`. Per-family table: `t9/per-family.txt`. Debug-profile run (CI shape): 37 s.
+
+The first run had 817 `Disagree` beyond Task 3's row. Every one was re-run through real asl 1.42 Bld 212
+(`sonic_hack/tools/as/asl`, `t9/asl-verdicts.tsv`): the AS route matched asl's verdict and bytes on all of
+them except two (`AS-MOVE-B-NEG-TO-CCR`). They split into:
+
+- **Fixed, A1 class** (`85dd7a05`): 34 `.emp`-bytes cases, `andi/ori #imm, ccr` at `.w/.l/.s` truncated
+  to the byte field (`andi.w #65535, ccr` -> `023C 00FF`, `ori.s #256, ccr` -> `003C 0000`); AS and asl
+  refuse. `check_imm_ranges` now refuses `AndiCcr/OriCcr/EoriCcr` at any size but `.b`, the AS text.
+  aeon spells all 20 ccr immediates `.b`. TDD: `imm_range.rs` `ccr_immediates_are_byte_only` RED then
+  10/10.
+- **Booked, not fixed**: `.emp` reads `usp` as a symbol (`EMP-USP-READ-AS-SYMBOL`: beside a proc named
+  `usp`, `move.l a2, usp` assembles `21CA 0000`); `.emp` accepts `swap.b/.w/.s`.
+- **Capability gaps** (`.emp` refuses, AS and asl assemble): `EMP-FRONTEND-DIFF-GAPS`.
+
+EXCLUSIONS (each a named predicate on families, the exact `.emp` message class and which side refuses;
+the two `.emp`-assembles rows also prove the bytes equal the AS route's legal spelling), hits:
+`bit-number-past-width` 186, `emp-requires-a-size-suffix` 377, `emp-lacks-mnemonic` 161,
+`emp-lacks-sr-ccr-form` 70, `emp-no-implicit-variant` 119, `emp-label-operand-gap` 45, `emp-lacks-usp` 2,
+`branch-b-suffix` 3, `unsized-branch-aeon-pin` 3, `sized-swap` 3.
+
+### Coverage (`crates/sigil-harness/tests/frontend_differential_coverage.rs`)
+
+All 7 shipped shapes built under one `CaptureSession`: **481 emitted triples** (102,518 encodes, 59
+families with operands) against **71,130 generated triples**: 0 missing. Single-test file (process-global
+tap). Skips without the reference, panics under `SIGIL_STRICT_GATE=1`.
+
+### RF (invariant 8; `t9/rf/rf1.sh`, `rf2.sh`, logs `rf1.log`, `rf2.log`)
+
+```
+RF 1  runner: CARGO_TARGET_DIR=.target-land cargo test --release -p sigil-cli --test frontend_differential
+--- HEAD 6fdcfbee branch parcel/step0-soundness; git status --short: (empty)
+--- git diff --stat
+ crates/sigil-frontend-emp/src/lower/code.rs | 2 ++
+--- mutated lines
+1422:    return Ok(()); // RF-MUTATION     (first line of check_code_imm_ranges)
+1458:    return Ok(()); // RF-MUTATION     (first line of check_imm_ranges)
+--- red run
+533 of 6084 out-of-range immediates not refused by both front ends
+TOTAL n=155292 same=5164 refuse=148718 excluded=783 disagree=627
+  `move.b #256, d6`: emp bytes 4E711C3C00004E75 | AS refused ["operand 256 out of range -128..=255"]
+EXCLUSIONS rows that match no disagreement: ["bit-number-past-width"]
+test result: FAILED. 2 passed; 3 failed
+--- restore: git restore --source=HEAD -- crates/sigil-frontend-emp/src/lower/code.rs; status (empty)
+TOTAL n=155292 same=4978 refuse=149345 excluded=969 disagree=0
+test result: ok. 5 passed; 0 failed
+
+RF 2  runner: SIGIL_STRICT_GATE=1 AEON_DIR=.aeon-t9-pairref cargo test --release -p sigil-harness
+      --test frontend_differential_coverage
+--- git diff --stat
+ crates/sigil-cli/tests/support/frontend_diff.rs | 8 ++++----
+--- mutated lines (the four Ea::Disp rows commented out)
+158:    // RF-MUTATION     Ea::Disp(i16::MIN, 1),
+159:    // RF-MUTATION     Ea::Disp(0, 1),
+160:    // RF-MUTATION     Ea::Disp(i16::MAX, 1),
+191:    // RF-MUTATION     Some(Ea::Disp(8, 4)),
+--- red run
+frontend-differential coverage: 481 emitted triples (102518 encodes), 61695 generated triples, 82 missing
+(lea, Some('l'), [(d16,An), An]) x705, e.g. in `sonic4 plain`   (first of 82 (d16,An) rows)
+test result: FAILED. 0 passed; 1 failed
+--- restore; status (empty); 71130 generated triples, 0 missing; test result: ok. 1 passed
+```
+
+### BN (`t9/bn.log`, base `94cf811d` vs cand `9fe5b744`, `.aeon-t9-pairref`, 74 s)
+
+`SHAPES 7/7 IDENTICAL`, `STEP0_CMP_END rc=0`; rows equal the goldens (plain 193507d9/850296 ... lean
+60a3552b/798202).
+
+### First SS RED, fixed (`94802e92`)
+
+`landing-run.sh --aeon .aeon-t9-pairref` at `9fe5b744`: RESULT FAILED, 3 red, all from the coverage file
+(530/530 binaries, 5,962 passed, clippy 0, ledger 0): `source_gate_classification` x2 (the file reads the tree
+but was in no run list; now in `scripts/nightly_source_gates.sh` beside `m68k_capstone_stream`) and
+`skip_marker_lint` (the summary line said `missing`, skip vocabulary; now `not generated`). The run's one skip
+line was that lint's own message quoting the marker.
+
+### SS (`scripts/landing-run.sh --aeon .aeon-t9-pairref`, tree `94802e92` clean, 17:44:50Z -> 18:13:52Z)
+
+**RESULT GREEN.** 530/530 binaries launched and reported; **5,965 passed / 0 failed / 3 ignored**, 0 skip
+lines; CLIPPY 0, LEDGER 0; CI-shaped leg 0 (530 suites, 5,965 passed). Delta vs Task 8 fix round (528 /
+5,958): +2 suites (`frontend_differential`, `frontend_differential_coverage`), +7 tests (5 + 1 + `imm_range`
+`ccr_immediates_are_byte_only`). Log `.target-land/landing-20261117T174450Z.log`. AG not run: no aeon change,
+and BN shows no byte moved.
