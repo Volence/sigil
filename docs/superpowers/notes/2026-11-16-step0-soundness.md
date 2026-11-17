@@ -1,6 +1,8 @@
 # Step 0 soundness parcel (branch `parcel/step0-soundness`)
 
-Plan: `.superpowers/sdd/2026-11-16-sigil-soundness/`. Goal: a green `sigil build` is trustworthy.
+Plan: `docs/superpowers/plans/2026-11-16-sigil-soundness.md` (the per-task briefs, reports and reviews
+under `.superpowers/sdd/2026-11-16-sigil-soundness/` are a gitignored working dir, not part of the
+record). Goal: a green `sigil build` is trustworthy.
 Not byte-changing: every task ends with `scripts/step0_shapes_cmp.sh` printing `SHAPES 7/7 IDENTICAL`.
 
 ## Task 0: baseline and byte-neutral harness
@@ -1050,3 +1052,42 @@ and BN shows no byte moved.
 - BN (`t9/bn4.log`, cand `a6473695`): `SHAPES 7/7 IDENTICAL`, rc 0.
 - SS (`landing-run.sh --aeon .aeon-t9-pairref`, tree `a6473695` clean, 19:29:49Z -> 20:02:42Z): **RESULT GREEN**, 532/532, **5,978 passed / 0 failed / 3 ignored**, 0 skips, clippy 0, ledger 0, CI leg 0 (532 suites, 5,978). Delta +1 suite (`register_word_splice`), +6 tests. Log `.target-land/landing-20261117T192949Z.log`.
 - Booked: `EMP-REGISTER-NAMES-CASE-SENSITIVE` (latent; aeon count 0).
+
+## Wave 3 landing checklist (final review I4; order is load-bearing)
+
+Sigil at wave 3 (A5, A4, A6 and the fix wave) refuses every aeon tree that lacks the pair
+`parcel/step0-soundness-pair` (A5's Z80 annotations, A4's `use` lines), measured by the final review on
+unpaired `936439fa`: 66 located `[call.clobbers-incomplete] (Z80)` firings. Four consumers read different
+refs, so the order below is what keeps each of them green. Do not reorder.
+
+1. **Aeon local master merges the pair FIRST**, before sigil local master receives wave 3.
+   `sigil-source-gates.timer` (05:17) reads LOCAL `master` of both repos (`nightly_source_gates.sh`); a
+   sigil master with wave 3 beside an aeon master without the pair fails that night. The final review
+   checked `git merge-tree master 6269c7fd` in aeon: clean.
+2. **Merge, not squash or cherry-pick**, for the aeon pair (merge or fast-forward). The Task 6 attest and
+   the review trail name pair SHAs; a squash makes them point at commits master never has. (The Z80
+   remedy hint no longer names a SHA, fix wave, so it no longer depends on this.)
+3. **AG on that merge** (the plan's "re-run AG with the shared pair"): `tools/landing_build.sh` with its
+   `finished=` stamp, then the four `build.sh` shapes, `SIGIL_BUILD`/`SIGIL_EMIT` = this branch's build.
+   Aeon master has moved `build.sh` since the pair's AG runs (190 lines), so the pair's own AG does not
+   stand in for this one.
+4. **Push aeon** (owner approval). Aeon local master is well ahead of origin with other plans' work;
+   pushing the pair means pushing those too, or cherry-picking, which breaks rule 2. Owner call.
+5. **Then sigil wave 3**: merge `parcel/step0-soundness` into sigil local master, CI green at the final
+   tip (the pinned workflow has never run; record the A6 runtime on CI's runner, final review M7), push.
+   `sigil-ref-drift.timer` (07:17) reads ORIGIN master of both repos: sigil origin with wave 3 before aeon
+   origin with the pair exits 2 (NOTHING MEASURED). Steps 4 then 5 keep it measuring.
+6. **Do not rebuild the shared `sigil/target/release/sigil` from wave-3 master before aeon master has the
+   pair** (step 1). `aeon-effects-gates.timer` (`nightly_effects_gates.sh`) and every aeon `build.sh` run
+   without `SIGIL_BUILD` use that binary; rebuilt early, it refuses aeon master.
+7. **The goldens pin and the standing reference.** The pin stays at `936439fa` (provenance #208), and a
+   provisioned `936439fa` tree is red on the Z80 rows by design. `provision-aeon-ref.sh` refuses
+   non-origin commits, so until the pair is on aeon origin every SS runs against the hand-made overlay
+   `.aeon-t9-pairref` (`936439fa` + the pair's source files as working-tree changes), which is not
+   reproducible from a SHA. After step 4: pin-advance to the pushed aeon revision, provision
+   `.aeon-sigil-ref-<rev>`, update `docs/OVERSEER-REFERENCE.md`'s standing-reference paragraph, and retire
+   `.aeon-t9-pairref`, `.aeon-sigil-ref-936439fa-t6` and (when no lane builds a pre-`97d139ca` tree)
+   `.aeon-sigil-ref-1ee78b88`.
+8. Record `merge-base --is-ancestor` of each tip in each master (invariant 12), and the A-task notes
+   (`status`, `branch`, one Progress line with SHA) in empyrean.
+

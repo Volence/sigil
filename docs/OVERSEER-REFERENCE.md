@@ -1228,6 +1228,30 @@ corner of the option space. It is not a cargo test because it needs `lua` and bo
 
 ### THE REFERENCE TREE IS `.aeon-sigil-ref`, AND ITS EXCLUSIVITY IS INCIDENTAL (2026-09-09)
 
+**⚠ MOVED AGAIN 2026-11-17 (step 0, Task 6 M5), AND IT IS IN TRANSITION.** Read this before the
+2026-09-28 paragraph below, which names a tree that is now two pins old.
+
+- **The pin is aeon `936439fa`** (provenance entry `pin-advance-step0`, the last `aeon_rev` in
+  `crates/sigil-harness/golden/provenance.toml`, chain len 208). Its provisioned tree is
+  **`/home/volence/sonic_hacks/.aeon-sigil-ref-936439fa`**, detached and clean, made by
+  `scripts/provision-aeon-ref.sh`. Shape CRCs and sizes live in that provenance entry only.
+- **Sigil at or past step-0 wave 3 cannot build that tree.** Wave 3 (A5 Z80 clobber gate, A4 one name
+  environment) refuses an aeon tree without the pair `parcel/step0-soundness-pair`: on a plain
+  `936439fa` tree the Z80 clobber rows are red BY DESIGN (QUEUE `Z80-CLOBBER-BUILD-GATE`). So until
+  the pair reaches aeon origin, every post-wave-3 landing run uses the hand-made overlay
+  **`/home/volence/sonic_hacks/.aeon-t9-pairref`**: `936439fa` with the pair's source files
+  (`map.toml`, `sound_sequencer.emp`, `palette_dsl.emp`, plus `EMP_PITFALLS.md`) as working-tree
+  changes, byte-equal to pair tip `6269c7fd`'s copies. That tree is not reproducible from a SHA, so a result against it is attributed to
+  "`936439fa` + the pair branch tip", stated with the run. `provision-aeon-ref.sh` refuses non-origin
+  commits, which is why it is not provisioned the normal way.
+- **Exit from the transition** (the parcel note's "Wave 3 landing checklist"): once the pair is on aeon
+  origin, pin-advance to that pushed revision, provision `.aeon-sigil-ref-<rev>` with
+  `provision-aeon-ref.sh`, rewrite this paragraph to name it, and retire `.aeon-t9-pairref`,
+  `.aeon-sigil-ref-936439fa-t6` (Task 6's scratch copy) and `.aeon-sigil-ref-1ee78b88` (still the
+  attest tree for entry #207 until no lane builds a pre-`97d139ca` tree, QUEUE row on `mt_bank_blob`).
+- Re-derive: `git -C <tree> rev-parse HEAD` against the last `aeon_rev` in the provenance file, and
+  `git -C <tree> status --short` (empty for a provisioned tree; the pair's files for the overlay).
+
 **⚠ MOVED 2026-09-28, AND THE TREE THIS HEADING NAMES IS NOW THE WRONG ONE.** The pin advanced to aeon
 `1ee78b88` at merge `b4472d9c` (provenance entry `pin-advance-s2`, chain len 207). The standing
 reference is now **`/home/volence/sonic_hacks/.aeon-sigil-ref-1ee78b88`**, detached at `1ee78b88`,
