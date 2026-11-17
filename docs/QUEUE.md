@@ -1729,3 +1729,22 @@ Two smaller items booked here as well:
 - The CI-shaped leg runs inside the suite checkout, and here a real suite root sits beside it. CI has
   none. The suite-root readers (the second skip class in `ci.yml`) can therefore resolve differently
   in the two places.
+
+## Z80-CLOBBER-BUILD-GATE: LANDED IN BRANCH 2026-11-17 (step-0 Task 7 / A5, branch `parcel/step0-soundness`)
+
+- Closed by A5 (`ffb0c18a`): `[call.clobbers-incomplete] (Z80) closure firings` is a located,
+  zero-firing row of `run_contract_gate`, computed by `sigil-frontend-emp/src/z80_closure.rs` over every
+  `(cpu: z80)` proc in the corpus. Before, the Z80 closure ran only in a reference-dependent test over the
+  five resident sound modules, and a Z80 under-claim built green (Sigil audit, reviewer B's e8). The
+  computed-dispatch boundary is DECLARED in source, `@allow("clobbers.computed-dispatch", "<reason>")`,
+  and excluded by annotation; seam-1's name test `is_opcode_dispatch_proc` is deleted.
+- PAIR: aeon `parcel/step0-soundness-pair` `eb634bbc` carries the 27 annotations (the 26 `Seq_Op_*` and
+  `Seq_ContinueFetch`). Sigil with this gate REFUSES an aeon tree without them (66 firings at
+  `936439fa`), so the aeon commit must reach aeon origin/master before, or with, the sigil merge, and the
+  standing reference tree (provenance tip `pin-advance-step0` = `936439fa`) then needs the next pin
+  advance to a revision carrying them. Until then a strict run against the plain `936439fa` ref tree is
+  red on the Z80 rows by design.
+- Booked: the corpus walk drops 10 `dc` cells in `DacSampleTable` (`bankid`/`winptr` equs of link
+  symbols). `split_z80_drops` counts them apart (a `dc` writes no register); a define set that resolves
+  them would let the Z80 drop count be an exact 0.
+- Evidence: the Task 7 section of `docs/superpowers/notes/2026-11-16-step0-soundness.md`.

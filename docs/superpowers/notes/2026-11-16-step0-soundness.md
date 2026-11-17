@@ -616,3 +616,99 @@ moved: the goldens now equal what the branch binary already produced at 936439fa
 
 SS: baseline at `503e4689` 5,850 / 67 / 3 (the 67 = `.scratch-t1/failed_base.txt`); after the freeze
 5,914 / 3 / 3; after the repairs (`2ec622da`) RESULT GREEN, 525/525, 5,917 / 0 / 3, CI-shaped leg 0, BN 7/7.
+
+## Task 7 (A5): Z80 code under the clobber gate
+
+Commit `ffb0c18a` (sigil), paired with aeon `parcel/step0-soundness-pair` `eb634bbc` (27 x
+`@allow("clobbers.computed-dispatch", "reached only through SeqOpcodeTable's ex (sp),hl dispatch")` in
+`engine/sound/sound_sequencer.emp`: the 26 `Seq_Op_*` and `Seq_ContinueFetch`; declarations only).
+Before: the Z80 transitive clobber closure ran only in `z80_clobbers_incomplete.rs` over the five
+resident sound modules, reference-dependent; `sigil build` had no Z80 row at any warning level, so
+reviewer B's e8 (`Audit_P () clobbers(a, f)` calling `Audit_Q () clobbers(a, b, f)`) built green.
+Now:
+
+- `sigil-frontend-emp/src/z80_closure.rs` (from `seam1.rs`): `z80_proc_node`, `z80_extern_node`,
+  `z80_transfer_target`, `module_invariant_units`, `z80_clobber_partition`, and
+  `z80_clobber_firings(procs) -> (firings, excluded)`. `ProcNode.computed_dispatch` is set from the
+  proc's own `@allow("clobbers.computed-dispatch", …)`; the exclusion is by annotation and
+  `is_opcode_dispatch_proc` is deleted. `first_carrier(name, …)` is used unchanged (via `check_firings`).
+- The corpus Z80 pass (the one feeding `compute_verified_z80_outs`) builds the nodes from the same
+  evaluated bodies. `ContractReport`: `z80_clobber_firings`, `z80_clobber_excluded`,
+  `z80_clobber_unresolved`, `z80_dropped_instrs` (+ `_by_proc`), `z80_dropped_data_cells`.
+- `run_contract_gate`: `[call.clobbers-incomplete] (Z80) closure firings` via `refuse_located` +
+  `describe_clobber(f, "[call.clobbers-incomplete]")`; Z80 register-relevant drops and holes join the
+  blindness check. `--report contracts`: `-- [call.clobbers-incomplete] (Z80) closure firings (n), m
+  excluded by @allow("clobbers.computed-dispatch") --`, the rows, `EXCLUDED` lines, Z80 drop/hole counts.
+- Found on the way: the corpus walk drops 10 `dc` cells in `DacSampleTable` (operands are
+  `bankid`/`winptr` equs of link symbols; seam-1 resolves them with its banked carriers, the build's
+  define set does not). `split_z80_drops` counts a dropped `dc` apart (it writes no register); only
+  register-relevant drops are gated, 0 in every shape.
+
+Step 1 (seam-1 harness at HEAD `1847c484`, `AEON_DIR=.aeon-sigil-ref-936439fa`, strict): 5/5 pass;
+in-scope firings 0 both shapes; dispatch firings 66 on 17 of the 27 procs, both shapes; 0 dropped,
+0 unresolved. The corpus walk agrees: ref `936439fa` 66 firings / 0 excluded in all 7 shapes; ref +
+pair annotations 0 / 27 excluded in all 7. `Seq_Op_*` count from source: 26.
+
+TDD: `z80_clobber_gate.rs` RED 2 failed (`the_build_gate_refuses…` at :95, `the_contract_report_prints…`
+at :153) / 2 passed (the two negative controls); GREEN 4/4.
+
+### RF proof (invariant 8)
+
+```
+$ git status --short                       (no tracked change, HEAD ffb0c18a)
+$ git diff --stat
+ crates/sigil-cli/src/main.rs | 2 +-
+$ grep -n 'false && refuse_located("\[call.clobbers-incomplete\] (Z80)' crates/sigil-cli/src/main.rs
+2277:    failed |= false && refuse_located("[call.clobbers-incomplete] (Z80) closure firings", &report.z80_clobber_firings, |f| f.span, |f| describe_clobber(f, "[call.clobbers-incomplete]"), &src_index);
+$ cargo test -p sigil-cli --test z80_clobber_gate
+test the_build_gate_refuses_a_z80_clobber_underclaim_with_its_location ... FAILED   (:95, the header assert)
+test result: FAILED. 3 passed; 1 failed
+$ git restore --source=HEAD -- crates/sigil-cli/src/main.rs; git status --short   (empty)
+test result: ok. 4 passed; 0 failed
+```
+
+Whole build (e8), run-unique copy of the pair tree, `Audit_Q`/`Audit_P` appended to section
+`sound_psg` (with one `nop` in `Audit_Q`; see below), each side's own `emit_sound_blob` first:
+base `94cf811d` **exit 0** (`crc=017def01 len=850282`); candidate `ffb0c18a` **exit 1**:
+``.../engine/sound/sound_psg.emp:734:9: [call.clobbers-incomplete] `Audit_P` destroys `b` through `Audit_Q`, which its clobbers(...) does not declare``.
+Candidate with `SIGIL_CONTRACTS=0`: exit 0, the same `017def01`. Without the `nop` the resident blob is
+odd-sized and BOTH binaries refuse the build (`[sound.bank-id-vs-placement] cannot measure: placed 6238,
+emitted 6237`), a pre-existing behaviour, not this gate. Unannotated ref `936439fa`, candidate: exit 1, 66
+located lines.
+
+### BN
+
+Aeon first (inert): base=cand=base `94cf811d` over ref `936439fa` + pair files, 7/7 rc 0 (30 s), the ref
+rows. Base vs candidate `ffb0c18a` over the same pair tree, 7/7, `STEP0_CMP_END rc=0` (30 s):
+plain 193507d9/850296, debug ce326232/870560, demo 2f9e2d4c/99994, demo_debug 64717bac/106981,
+config_a 6be62db3/870972, config_b d888a312/617813, lean 60a3552b/798202.
+
+### SS (`scripts/landing-run.sh --aeon .aeon-t7-pairref`, tree `ffb0c18a` clean, 550 s)
+
+The reference is a detached aeon worktree at `936439fa` (the provenance tip) with the ref tree's
+ignored artifacts and the two pair files applied (`DIRTY` by those two files only). RESULT GREEN:
+526/526 launched and reported, **5,926 passed / 0 failed / 3 ignored**, 0 skip lines, clippy 0, ledger
+0, CI-shaped leg 0 (526 suites, 5,926 passed). Delta vs Task 6 (525, 5,917): +1 suite
+(`z80_clobber_gate`), +9 tests. A first run with the pair tree INSIDE the sigil checkout was RESULT
+FAILED on 3 environment tests only (`installed_binary_needs_no_build_tree` x2: reference inside the
+compiling checkout; `aeon_dir_matches_the_provenance_tip`: `git` read the sigil HEAD), discarded.
+
+### AG (throwaway detached worktree of pair tip `eb634bbc`, binaries copied from `.target-land` `ffb0c18a`, removed after)
+
+| Run | exit | wall-clock |
+|---|---|---|
+| `tools/landing_build.sh` | 0, `finished=0` (needs_build 35 ran / 0 failed / 1 exempted; land-gate stamp head `eb634bbc3017`) | 910 s |
+| `./build.sh` | 0 (crc 193507d9 / 850,296) | 433 s |
+| `DEBUG=1 ./build.sh` | 0 (ce326232 / 870,560) | 443 s |
+| `./build.sh demo` | 0 (2f9e2d4c / 99,994) | 387 s |
+| `DEBUG=1 ./build.sh demo` | 0 (64717bac / 106,981) | 369 s |
+
+Every log names `sigil ffb0c18af4af`; `sigil`/`emit_sound_blob` md5 `0c4dc50b…`/`9c7f7679…` at the end
+(copies, not rebuilt during the run). Ran concurrently with SS, hence the longer walls.
+
+### Landing order (PAIR)
+
+The candidate refuses any aeon tree without the annotations (66 located firings at `936439fa`, both
+the builds and the strict suite's Z80 rows). Aeon `eb634bbc` must reach aeon origin/master before, or
+with, the sigil merge; the standing ref tree then needs re-provisioning past it (QUEUE
+`Z80-CLOBBER-BUILD-GATE`).
