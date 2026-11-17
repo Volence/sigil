@@ -263,11 +263,10 @@ fn main() {
     // computed beside the emission survives the emission being deleted, which is
     // the vacuous shape of gate this whole feature exists to argue against.
     // Derived from cargo's own OUT_DIR, never a hardcoded layout.
-    let build_output = std::env::var("OUT_DIR")
-        .ok()
-        .and_then(|out| PathBuf::from(out).parent().map(|p| p.join("output")))
-        .map(|p| p.display().to_string())
-        .unwrap_or_else(|| "unavailable, cargo set no OUT_DIR".to_string());
+    let build_output = match std::env::var("OUT_DIR") {
+        Ok(out) => build_script_stdout_path(&PathBuf::from(out)),
+        Err(_) => "unavailable, cargo set no OUT_DIR".to_string(),
+    };
 
     let p = probe(&manifest_dir);
 
@@ -289,6 +288,39 @@ fn main() {
     emit("SIGIL_DRIFT_CHECK_PUBLISHED", &p.drift_check_published);
     emit("SIGIL_BUILD_SCRIPT_OUTPUT", &build_output);
     emit("SIGIL_PROVENANCE_ERROR", &p.error);
+}
+
+/// Where cargo records this build script's stdout, read off the shape of OUT_DIR.
+///
+/// TWO LAYOUTS, and cargo 1.100 (rustc 1.100.0, 2026-11-09) switched CI to the
+/// second (`cargo/src/compiler/custom_build.rs` `BuildScriptRunFiles::for_unit`,
+/// `compilation_files.rs` `pkg_dir`/`out_dir_new_layout`, at the cargo revision
+/// rust 1.100.0 ships, `3acc79c0`):
+///   * legacy: `OUT_DIR = build/<pkg>-<hash>/out`, stdout at `build/<pkg>-<hash>/output`;
+///   * new:    `OUT_DIR = build/<pkg>/<hash>/out`, stdout at `build/<pkg>/<hash>/run/stdout`.
+/// The one-layout derivation (`OUT_DIR/../output`) sent CI run 44013571220 to a file
+/// that does not exist under the new layout. A shape that is neither is reported
+/// as `unavailable`, which the reading test turns into a failure, never a skip.
+fn build_script_stdout_path(out_dir: &std::path::Path) -> String {
+    let pkg = std::env::var("CARGO_PKG_NAME").unwrap_or_default();
+    let unit = out_dir.parent();
+    let unit_name = unit.and_then(|u| u.file_name()).and_then(|n| n.to_str());
+    let pkg_dir_name = unit
+        .and_then(|u| u.parent())
+        .and_then(|p| p.file_name())
+        .and_then(|n| n.to_str());
+    match (unit, unit_name, pkg_dir_name) {
+        (Some(u), _, Some(name)) if !pkg.is_empty() && name == pkg => {
+            u.join("run").join("stdout").display().to_string()
+        }
+        (Some(u), Some(name), _) if !pkg.is_empty() && name.starts_with(&format!("{pkg}-")) => {
+            u.join("output").display().to_string()
+        }
+        _ => format!(
+            "unavailable, OUT_DIR {} is in neither cargo build-dir layout",
+            out_dir.display()
+        ),
+    }
 }
 
 fn emit(key: &str, value: &str) {
