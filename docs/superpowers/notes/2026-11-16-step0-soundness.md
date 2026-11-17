@@ -603,3 +603,16 @@ BN (`eab19132`): pair tree 7/7 rc 0 (30 s), control `936439fa` 7/7 rc 0 (31 s), 
 test target, each under `timeout 590` (0 capped, 1,706 s total), `AEON_DIR` = control: sigil-ir 61/0,
 sigil-link 173/0, sigil-harness 64 binaries 610 passed / 2 failed / 2 ignored, sigil-cli 186 binaries
 855 / 57 / 1; all failing names are in `.scratch-t1/failed_base.txt` (0 new).
+
+## Task 6 (A9): goldens at aeon 936439fa
+
+Full account: `docs/superpowers/notes/2026-11-16-pin-advance-step0.md`. Commits `a8973000` (attest of the
+`pin-advance-s2` tip, a precondition the freeze enforced: passed vs aeon 1ee78b88, 525 suites, 5,917 / 0 /
+3), `fa042108` (freeze `pin-advance-step0`, chain len 208), `7dc3c1cf` (three port gates repaired by
+derivation; the `module.path-mismatch` SITE_WATCH row for `mt_bank.emp` retired after aeon `97d139ca`).
+`repin.toml`: no row changed. s4 `193507d9/850296` and s4.debug `ce326232/870560` equal aeon's figures;
+demo, demo.debug, config_b unchanged; config_a `6be62db3/870972`, lean `60a3552b/798202`. No shipping byte
+moved: the goldens now equal what the branch binary already produced at 936439fa (BN 7/7, rc 0).
+
+SS: baseline at `503e4689` 5,850 / 67 / 3 (the 67 = `.scratch-t1/failed_base.txt`); after the freeze
+5,914 / 3 / 3; after the repairs, see the final gate in the pin-advance note.

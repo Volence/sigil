@@ -1493,6 +1493,15 @@ points at it rather than restating it, so there is one copy to keep true.
   `PF_EVICTABLE`, `PF_EVICTABLE_BIT`, `Page_Audit_Scratch`; `pf_refcount` renamed `pf_pad`. Their agent notes our
   `tile_cache_port` name list lacks these, as it already lacked GPL-2's `PageCache_DemandHoldTick`; untested.
 
+### PIN-ADVANCE-STEP0 (A9)
+
+- state: **done in branch** `parcel/step0-soundness` (lands with wave 2; the standing reference moves with it)
+  project: Empyrean v2 step 0
+- Outcome 2026-11-17 (`docs/superpowers/notes/2026-11-16-pin-advance-step0.md`): refrozen at aeon `936439fa`,
+  entry `pin-advance-step0`, chain len 208; s4 and s4.debug equal aeon's figures. `repin.toml` unchanged.
+  The tip `pin-advance-s2` was attested first (passed vs 1ee78b88), because the freeze refused to append on an
+  unattested tip. Baseline 67 failed; after the freeze 3; after the repairs 0 (final gate in the note).
+
 ### PORT-TESTS-MUSIC-NAMES-AT-TIP
 
 - state: **LANDED 2026-09-26 at merge `354fcac4`** (parcel tip `fd08b99a`)  size: `S`  project: `SIGIL-DECOUPLE`
@@ -1699,6 +1708,7 @@ points at it rather than restating it, so there is one copy to keep true.
   and `--config-b` are byte-identical renamed and unrenamed (`193507d9/850296`, `ce326232/870560`,
   `d888a312/617813`). Step 3, aeon renames and lands, is theirs; tell them the pair is ready.
 - Step 3 LANDED on aeon origin/master at merge `b295559d` (tip `97d139ca`), built with our `30793305` pair (their figures). At the next pin advance past `b295559d`: retire the `games.sonic4.mt_bank_blob` SHAPE_GATES row and the `warn_tier_corpus.rs` known-site row for `mt_bank.emp` (it goes red then by design).
+- 2026-11-17 (step 0 Task 6, pin advance to aeon `936439fa`, branch `parcel/step0-soundness`): the `warn_tier_corpus.rs` row went red as designed and is retired (`files: &[]`). The `games.sonic4.mt_bank_blob` SHAPE_GATES row is deliberately KEPT: dead at 936439fa, but the 1ee78b88 reference tree (still the attest tree for entry #207) carries the old id. Retire it once no lane builds a pre-`97d139ca` tree.
 
 ## CI-TOOLCHAIN-FLOATS: BOOKED 2026-11-16 (Task 4 / A8)
 
