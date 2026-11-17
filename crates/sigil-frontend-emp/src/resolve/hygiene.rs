@@ -54,6 +54,12 @@ pub fn hidden_name(def_id: &str, name: &str) -> String {
     format!("${def_id}${name}")
 }
 
+/// Whether `s` is a [`hidden_name`] (`$def_id$name`): an injected copy of another
+/// module's item, never a name source can spell.
+pub(crate) fn is_hidden_name(s: &str) -> bool {
+    split_hidden(s).is_some()
+}
+
 /// Split a [`hidden_name`] back into `(def_id, name)`. `None` for a plain name.
 fn split_hidden(s: &str) -> Option<(&str, &str)> {
     s.strip_prefix('$')?.split_once('$')

@@ -61,6 +61,16 @@ pub fn validate_const_arity(
             if seen.contains(&span) {
                 continue;
             }
+            // A4's hidden copy of a dependency (`$def$name`, `resolve/hygiene.rs`
+            // `hidden_name`) is the defining module's declaration, injected into an
+            // importer so a `pub comptime fn` reads it where it was defined. The
+            // defining module is in the `use` closure, so it is lowered and checks
+            // the original under its own name. Checking the copy too printed the same
+            // refusal a second time, in a name source cannot spell ("in
+            // '$helper$Y'"; final review M1).
+            if crate::resolve::hygiene::is_hidden_name(name) {
+                continue;
+            }
             seen.push(span);
             ev.check_const_arity(name, ty, span);
         }
