@@ -249,71 +249,52 @@ fn fold_const_literal(
 /// parse time — so a single level of recursion is exhaustive), matching `pred`.
 /// Mirrors `imports::collect_exported`/`collect_defined`'s recursion shape.
 ///
-/// `def_file` is the DEFINING module's file — the namespace an injected overlay's
-/// window must resolve against (Plan 7 #8). Each collected `pub vars` overlay clone
-/// has its window resolved here and STAMPED (`resolved_window`), so the consumer
-/// binds it at the definition site verbatim rather than re-scanning its own structs.
-// 8 args: `def_id` identifies the defining module for the fold memo, which is
-// keyed by (module, const) — see `ConstFoldCache`.
-#[allow(clippy::too_many_arguments)]
+/// Each collected name is injected through [`hygiene::hygienic_closure`] (A4): the
+/// item under its public name with its free names bound in the DEFINING module's
+/// environment, plus its hidden dependencies. That is also where a `pub vars`
+/// overlay's window is stamped against its defining file (Plan 7 #8) and a `pub
+/// const` is folded at the definition site where it folds (see [`ConstFoldCache`]).
+/// A `pub data` item of struct type contributes a TYPE-ONLY stub (D-PP.5).
+///
+/// `out` receives each item with the `(defining module, name)` its analysis is
+/// keyed by — the public pair for a top item, the hidden pair for a dependency —
+/// which [`hygiene::localize`] reads to fit the set to the importer.
 fn collect_pub_comptime(
-    def_id: &str,
-    def_file: &ast::File,
+    def: &ParsedModule,
     items: &[ast::Item],
     pred: &impl Fn(&str) -> bool,
-    defines: &[(String, i128)],
-    include_root: Option<&Path>,
-    folds: &RefCell<ConstFoldCache>,
-    out: &mut Vec<ast::Item>,
+    manifest: &Manifest,
+    memo: &mut hygiene::HygieneMemo,
+    out: &mut Vec<(ast::Item, String, String)>,
 ) {
-    for item in items {
-        // A `pub data` item of struct type (D-PP.5): inject a TYPE-ONLY clone so
-        // the consumer's evaluator learns its struct type for `Item.field`
-        // field-address operands, WITHOUT re-emitting its bytes. This is the
-        // data-item analogue of the comptime-item injection below — a data item
-        // emits, so it cannot ride the `pub_comptime_name` path; the `type_only`
-        // flag strips its bytes at lowering while keeping its name+type visible.
-        if let Some(name) = pub_struct_data_name(item) {
-            if pred(name) {
-                out.push(data_type_stub(item));
-            }
+    let mut names = Vec::new();
+    injectable_pub_names(items, &mut names);
+    for name in names.into_iter().filter(|n| pred(n)) {
+        for it in hygiene::hygienic_closure(def, &name, manifest, memo) {
+            let key = match ast_item_name(&it).and_then(|n| {
+                n.strip_prefix('$').and_then(|r| r.split_once('$'))
+            }) {
+                Some((o, n)) => (o.to_string(), n.to_string()),
+                None => (def.id.clone(), name.clone()),
+            };
+            out.push((it, key.0, key.1));
         }
-        if pub_comptime_name(item).is_some_and(pred) {
-            let mut cloned = item.clone();
-            // TODO(perf): this stamp re-resolves the overlay's window PER CONSUMER
-            // module — each call spins a fresh eval-stack thread and re-indexes the
-            // whole defining file, so M imported overlays across N consumers cost
-            // M×N resolutions. Intended fix: resolve each defining module's
-            // overlays ONCE (a per-module cache keyed by overlay name, built in
-            // `build_program`) and reuse across consumers (deferred — imported
-            // overlay counts are small today, like the own-items clone note in
-            // `build_program`).
-            stamp_overlay_window(def_file, &mut cloned);
-            // A `const NAME: T = EXPR`'s initializer resolves in its DEFINING
-            // module's scope, where its sibling consts are visible. A `use`d
-            // consumer sees only the named import, not those siblings, so a
-            // derived initializer (`= OTHER_CONST + n`) would fail `unknown name`
-            // when the injected clone's expression re-evaluates in the consumer.
-            // Fold the value HERE, at the definition site (the const-value analogue
-            // of `stamp_overlay_window`): resolve it against `def_file` and replace
-            // the injected clone's expression with the resolved literal, so the
-            // consumer reads a self-contained value and no sibling name leaks into
-            // its scope. Best-effort — a value that does not resolve cleanly to an
-            // `i64` (a cross-module reference `def_file` alone cannot see, a
-            // non-int, an out-of-range magnitude) keeps its original expression, so
-            // behavior is unchanged for every const the consumer already resolved.
-            if let ast::Item::Const(c) = &mut cloned {
-                let folded =
-                    folds.borrow_mut().folded(def_id, def_file, &c.name, defines, include_root);
-                if let Some(lit) = folded {
-                    c.value = ast::Expr::Int(lit, c.span);
-                }
-            }
-            out.push(cloned);
-        }
-        if let ast::Item::Section(sec) = item {
-            collect_pub_comptime(def_id, def_file, &sec.items, pred, defines, include_root, folds, out);
-        }
+    }
+}
+
+/// The name an injectable item carries (its hidden spelling, for a dependency).
+fn ast_item_name(item: &ast::Item) -> Option<&str> {
+    match item {
+        ast::Item::Const(d) => Some(&d.name),
+        ast::Item::Struct(d) => Some(&d.name),
+        ast::Item::Enum(d) => Some(&d.name),
+        ast::Item::Bitfield(d) => Some(&d.name),
+        ast::Item::Newtype(d) => Some(&d.name),
+        ast::Item::ComptimeFn(d) => Some(&d.name),
+        ast::Item::Context(d) => Some(&d.name),
+        ast::Item::Vars(d) => d.name.as_deref(),
+        ast::Item::Data(d) => Some(&d.name),
+        _ => None,
     }
 }
 
@@ -391,16 +372,14 @@ fn ambient_items(
     module: &ParsedModule,
     prelude: Option<&ParsedModule>,
     manifest: &Manifest,
-    defines: &[(String, i128)],
-    include_root: Option<&Path>,
-    folds: &RefCell<ConstFoldCache>,
+    memo: &mut hygiene::HygieneMemo,
 ) -> Vec<ast::Item> {
     let mut out = Vec::new();
 
     // Prelude first (own items, added in Part B, shadow these via last-wins).
     if let Some(p) = prelude {
         if p.id != module.id {
-            collect_pub_comptime(&p.id, &p.file, &p.file.items, &|_| true, defines, include_root, folds, &mut out);
+            collect_pub_comptime(p, &p.file.items, &|_| true, manifest, memo, &mut out);
         }
     }
 
@@ -408,19 +387,19 @@ fn ambient_items(
     // the prelude<use precedence; own items shadow both via Part B ordering).
     // Recurses one level into `section {}` bodies so a section-nested `use` is
     // honored too, not just top-level ones.
-    ambient_from_uses(&module.file.items, module, manifest, defines, include_root, folds, &mut out);
+    ambient_from_uses(&module.file.items, module, manifest, memo, &mut out);
 
-    out
+    // A4: fit the injected set to THIS importer (hidden dependencies it binds to the
+    // same item map back to their plain names) and refuse a name only it binds.
+    hygiene::localize(module, out, manifest, memo)
 }
 
 fn ambient_from_uses(
     items: &[ast::Item],
     module: &ParsedModule,
     manifest: &Manifest,
-    defines: &[(String, i128)],
-    include_root: Option<&Path>,
-    folds: &RefCell<ConstFoldCache>,
-    out: &mut Vec<ast::Item>,
+    memo: &mut hygiene::HygieneMemo,
+    out: &mut Vec<(ast::Item, String, String)>,
 ) {
     for item in items {
         match item {
@@ -438,31 +417,20 @@ fn ambient_from_uses(
                     // import binds nothing at all, and both leave the closure edge
                     // (`enqueue_uses`) to do the work, so neither injects here.
                     ast::UseNames::Whole | ast::UseNames::Blank => {}
-                    ast::UseNames::Glob => collect_pub_comptime(
-                        &base_mod.id,
-                        &base_mod.file,
-                        &base_mod.file.items,
-                        &|_| true,
-                        defines,
-                        include_root,
-                        folds,
-                        out,
-                    ),
+                    ast::UseNames::Glob => {
+                        collect_pub_comptime(base_mod, &base_mod.file.items, &|_| true, manifest, memo, out)
+                    }
                     ast::UseNames::List(names) => collect_pub_comptime(
-                        &base_mod.id,
-                        &base_mod.file,
+                        base_mod,
                         &base_mod.file.items,
                         &|n| names.iter().any(|w| w == n),
-                        defines,
-                        include_root,
-                        folds,
+                        manifest,
+                        memo,
                         out,
                     ),
                 }
             }
-            ast::Item::Section(sec) => {
-                ambient_from_uses(&sec.items, module, manifest, defines, include_root, folds, out)
-            }
+            ast::Item::Section(sec) => ambient_from_uses(&sec.items, module, manifest, memo, out),
             _ => {}
         }
     }
@@ -496,6 +464,7 @@ pub fn build_ram_report(
     let mut diags: Vec<Diagnostic> = Vec::new();
     // Scoped to THIS report and dropped with it — see `ConstFoldCache`.
     let folds = RefCell::new(ConstFoldCache::default());
+    let mut memo = hygiene::HygieneMemo::new(None, &opts.defines, opts.include_root.as_deref(), &folds);
 
     // Gather each named module, ambient-prepended so its `use`d comptime sizes resolve.
     let mut region_modules: Vec<(&str, ast::File)> = Vec::new();
@@ -519,8 +488,7 @@ pub fn build_ram_report(
             });
             continue;
         }
-        let ambient =
-            ambient_items(pm, None, manifest, &opts.defines, opts.include_root.as_deref(), &folds);
+        let ambient = ambient_items(pm, None, manifest, &mut memo);
         let file = if ambient.is_empty() {
             pm.file.clone()
         } else {
@@ -549,6 +517,7 @@ pub fn build_ram_report(
 
     // Definition-site fold faults from the ambient prepends above. This path never
     // lowers the defining modules, so nothing else here would ever raise them.
+    diags.append(&mut memo.take_faults());
     diags.append(&mut folds.borrow_mut().take_faults());
     (rows, diags)
 }
@@ -758,6 +727,9 @@ fn build_program_with(
     let mut comptime_guards: usize = 0;
     // Scoped to THIS build and dropped with it — see `ConstFoldCache`.
     let folds = RefCell::new(ConstFoldCache::default());
+    // A4: the definition-site analysis of every injected comptime item, once per
+    // program (scoped to this build like the fold memo).
+    let mut memo = hygiene::HygieneMemo::new(prelude_id, &opts.defines, opts.include_root.as_deref(), &folds);
     // Deferred link-time assertions (D-H.4) from every reachable module,
     // concatenated (post-rename) — the whole-program list the linker decides.
     let mut link_asserts: Vec<sigil_ir::LinkAssert> = Vec::new();
@@ -876,7 +848,7 @@ fn build_program_with(
                 return None;
             }
             let ambient =
-                ambient_items(pm, prelude_pm, manifest, &opts.defines, opts.include_root.as_deref(), &folds);
+                ambient_items(pm, prelude_pm, manifest, &mut memo);
             let file = if ambient.is_empty() {
                 pm.file.clone()
             } else {
@@ -912,14 +884,7 @@ fn build_program_with(
             if !file_declares_implement(&pm.file) {
                 return None;
             }
-            let ambient = ambient_items(
-                pm,
-                prelude_pm,
-                manifest,
-                &opts.defines,
-                opts.include_root.as_deref(),
-                &folds,
-            );
+            let ambient = ambient_items(pm, prelude_pm, manifest, &mut memo);
             if ambient.is_empty() {
                 return None;
             }
@@ -990,7 +955,7 @@ fn build_program_with(
         };
 
         let ambient =
-            ambient_items(pm, prelude_pm, manifest, &opts.defines, opts.include_root.as_deref(), &folds);
+            ambient_items(pm, prelude_pm, manifest, &mut memo);
         let (mut module, ldiags) = if ambient.is_empty() {
             // zero-clone common path; `region_ends` is empty for region-free builds.
             lower_module_with_region_ends_and_contracts(&pm.file, opts, &region_ends, &iface_env)
@@ -1061,6 +1026,9 @@ fn build_program_with(
     // consumer's lowering already reported the identical diagnostic (same level,
     // message and span — a cloned item keeps its home span), this adds nothing.
     // So the change is strictly additive, and only where the build was silent.
+    // A4: `[name.unbound-at-definition]` refusals, each reported once per
+    // (defining module, item, name) however many importers bind the name.
+    diags.extend(memo.take_faults());
     let fold_faults: Vec<Diagnostic> = folds
         .borrow_mut()
         .take_faults()

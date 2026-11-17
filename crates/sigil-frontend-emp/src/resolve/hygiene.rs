@@ -814,6 +814,18 @@ fn set_item_name(item: &mut ast::Item, to: &str) {
     *slot = to.to_string();
 }
 
+/// The first public injectable item named `name` in `def` (top level or one
+/// `section` deep), as written.
+fn public_item<'m>(def: &'m ParsedModule, name: &str) -> Option<&'m ast::Item> {
+    let sections = def.file.items.iter().filter_map(|i| match i {
+        ast::Item::Section(s) => Some(s.items.iter()),
+        _ => None,
+    });
+    def.file.items.iter().chain(sections.flatten()).find(|it| {
+        super::pub_comptime_name(it).or_else(|| super::pub_struct_data_name(it)) == Some(name)
+    })
+}
+
 /// The public item(s) named `name` in `def`, under their public name, with each free
 /// name bound in the DEFINING module's environment renamed to its [`hidden_name`],
 /// plus every such dependency (renamed the same way in ITS defining module), each
@@ -825,6 +837,10 @@ pub(crate) fn hygienic_closure(
     manifest: &Manifest,
     memo: &mut HygieneMemo,
 ) -> Vec<ast::Item> {
+    let Some(item) = public_item(def, name) else {
+        return Vec::new();
+    };
+    debug_assert!(item_name(item) == Some(name));
     let node = memo.node(&def.id, name, manifest);
     let mut out: Vec<ast::Item> = node
         .items
