@@ -213,6 +213,9 @@ SOURCE_GATES=(
     # same corpus as the row above, judged by capstone instead of by sigil's own
     # encoder — source only, no ROM and no golden
     m68k_capstone_stream
+    # the front-end differential's generator against every (family, size, EA)
+    # triple the shipped shapes encode; source only, no ROM and no golden
+    frontend_differential_coverage
     native_object_bank_budget
     # the resident modules' import check: one planted `use` line fed from memory over
     # the tree's .emp files, judged by the refusal text; compares against no golden

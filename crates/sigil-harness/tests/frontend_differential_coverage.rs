@@ -126,7 +126,7 @@ fn generator_covers_every_family_size_ea_the_aeon_build_emits() {
         })
         .collect();
     eprintln!(
-        "frontend-differential coverage: {} emitted triples ({} encodes), {} generated triples, {} missing",
+        "frontend-differential coverage: {} emitted triples ({} encodes), {} generated triples, {} not generated",
         emitted.len(),
         emitted.values().map(|(n, _)| n).sum::<usize>(),
         generated.len(),
