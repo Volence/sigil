@@ -833,3 +833,17 @@ RESULT GREEN: 528/528 launched and reported, **5,947 passed / 0 failed / 3 ignor
 clippy 0, ledger 0, CI-shaped leg 0 (528 suites, 5,947 passed). Delta vs Task 7 fix round (526, 5,933):
 +2 suites (`one_name_env`, `name_env_report`), +14 tests (8 + 2 + 4 unit). The reference is a detached
 aeon worktree at `936439fa` + the ref tree's ignored artifacts + the 3 pair files (`DIRTY` by those only).
+
+### AG (throwaway detached worktree of pair tip `3fd291f3`, binaries copied from `.target-land` `5fea0ad2`, removed after)
+
+| Run | exit | wall-clock |
+|---|---|---|
+| `tools/landing_build.sh` | 0, `finished=0` (needs_build 35 ran / 0 failed / 1 exempted; land-gate stamp head `3fd291f3dec9`) | 528 s |
+| `./build.sh` | 0 (crc 193507d9 / 850,296) | 444 s |
+| `DEBUG=1 ./build.sh` | 0 (ce326232 / 870,560) | 489 s |
+| `./build.sh demo` | 0 (2f9e2d4c / 99,994) | 513 s |
+| `DEBUG=1 ./build.sh demo` | 0 (64717bac / 106,981) | 517 s |
+
+`sigil`/`emit_sound_blob` md5 `41886c8f…`/`7ddb94d3…` at the end (copies). Ran concurrently with SS.
+Landing order: aeon `6b5f8d8d`, `c4c1fb0b`, `3fd291f3` (after A5's `eb634bbc`, `168bb908`) must reach aeon
+master before, or with, the sigil merge; the candidate refuses a tree without `palette_dsl`'s import.
