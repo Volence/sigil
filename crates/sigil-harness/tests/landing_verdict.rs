@@ -84,13 +84,42 @@ running 3 tests
 test a_gate ... ok
 ";
 
-const TAIL: &str = "\
+/// THE STOCK FIXTURE'S CI-SHAPED SPAN, everything after the strict span's `CARGO_EXIT=`.
+/// It is GREEN and it carries a `skip:` line on purpose: a CI-shaped run skips every
+/// reference-dependent row, so a strict-span reader that leaked into this span would count
+/// that line and fail every control below. A macro rather than a `const` so [`TAIL`] and
+/// [`CI_GREEN_TAIL`] are one text (`concat!` takes literals only).
+macro_rules! ci_green_span {
+    () => {
+"##### TEST SPAN ENDS
+##### CI-SHAPED SPAN, env -u AEON_DIR -u EMPYREAN_SUITE_ROOT SIGIL_ALLOW_PARTIAL=1 cargo test --no-fail-fast --workspace -- --nocapture
+     Running tests/ci_gates.rs (/fixture/.target-land/debug/deps/ci_gates-0123456789abcdef)
+
+running 2 tests
+skip: reference not at /nonexistent/SIGIL_ALLOW_PARTIAL-no-reference-tree-was-named/s4.bin (set AEON_DIR)
+test ci_a ... ok
+test ci_b ... ok
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+CI_EXIT=0
+##### CI-SHAPED SPAN ENDS
+"
+    };
+}
+
+/// The green CI-shaped span alone, for fixtures that build their own strict span.
+const CI_GREEN_TAIL: &str = ci_green_span!();
+
+const TAIL: &str = concat!(
+    "\
 test b_gate ... ok
 test c_gate ... ok
 test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
 CARGO_EXIT=0
-# finished (UTC) 2026-09-07T00:01:00Z
-";
+",
+    ci_green_span!(),
+    "# finished (UTC) 2026-09-07T00:01:00Z
+"
+);
 
 /// A three-test green log; `middle` is spliced between the first and second test lines.
 fn fixture(dir: &Path, name: &str, middle: &str) -> PathBuf {
@@ -353,6 +382,177 @@ fn a_log_without_an_exit_line_is_refused_not_judged() {
 }
 
 // ----------------------------------------------------------------------------------------
+// THE CI-SHAPED LEG (A8). GitHub CI runs this repo ALONE: no aeon tree, no suite root,
+// `SIGIL_ALLOW_PARTIAL=1`. A strict landing run measures a different environment, so a
+// test that reads aeon files without a reference guard is green locally and red in CI;
+// that is how master's CI sat red from 2026-09-28 (`g4_objects_regions_match_reference`)
+// while every landing read GREEN. The wrapper now runs the CI shape as a second leg after
+// the strict span, and a red leg is a red landing.
+// ----------------------------------------------------------------------------------------
+
+/// The stock fixture with its CI-shaped leg red the way CI was: one test panics reading a
+/// file under the partial-run sentinel path, cargo exits 101.
+fn with_red_ci_leg() -> String {
+    format!("{STAMP}{TAIL}")
+        .replace(
+            "test ci_b ... ok\ntest result: ok. 2 passed; 0 failed;",
+            "test ci_b ... FAILED\n\nfailures:\n\n---- ci_b stdout ----\n\
+             cannot read /nonexistent/SIGIL_ALLOW_PARTIAL-no-reference-tree-was-named/games/sonic4/objects/test_player.emp\n\n\
+             failures:\n    ci_b\n\ntest result: FAILED. 1 passed; 1 failed;",
+        )
+        .replace("CI_EXIT=0\n", "CI_EXIT=101\n")
+}
+
+/// THE GATE. A strict span that is entirely green and a CI-shaped span ending
+/// `test result: FAILED` is a FAILED landing, exit 1, and the RESULT line names the
+/// CI-shaped leg. The stock fixture (same strict span, green CI leg) is the control.
+#[test]
+fn a_red_ci_shaped_leg_fails_the_landing() {
+    let dir = scratch("ci-red");
+    let clean = fixture(&dir, "clean.log", "");
+    let (code, text) = judge(&clean, &[]);
+    assert_eq!(code, 0, "the CONTROL (green CI-shaped leg) must be GREEN, got {code}:\n{text}");
+    assert!(text.contains("ci-shaped leg   0"), "the control must report the leg's exit:\n{text}");
+
+    let p = dir.join("ci-red.log");
+    std::fs::write(&p, with_red_ci_leg()).unwrap();
+    let (code, text) = judge(&p, &[]);
+    assert_eq!(code, 1, "a red CI-shaped leg must fail the landing (exit 1), got {code}:\n{text}");
+    assert!(text.contains("ci-shaped leg   101"), "the verdict must report the leg's exit:\n{text}");
+    assert!(
+        text.contains("RESULT          FAILED, the CI-SHAPED LEG is red"),
+        "the RESULT line must name the CI-shaped leg as the reason:\n{text}"
+    );
+    assert!(text.contains("    ci_b  (ci_gates)\n"), "the leg's failing test must be named:\n{text}");
+    assert!(!text.contains("RESULT          GREEN"), "{text}");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// UNMEASURED IS NOT GREEN. A log with no `CI_EXIT=` line never ran the CI-shaped leg:
+/// refused by name (exit 2), never defaulted to 0.
+#[test]
+fn a_log_without_a_ci_exit_line_is_refused_not_judged() {
+    let dir = scratch("no-ci-exit");
+    let p = dir.join("no-ci.log");
+    std::fs::write(&p, format!("{STAMP}{TAIL}").replace("CI_EXIT=0\n", "")).unwrap();
+    let (code, out) = judge(&p, &[]);
+    assert_eq!(code, 2, "a log with no CI-shaped exit must be REFUSED, got {code}:\n{out}");
+    assert!(out.contains("CI_EXIT"), "the refusal must name the missing line:\n{out}");
+    assert!(!out.contains("RESULT          GREEN"), "{out}");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A CI-shaped leg that exited 0 and reported no `test result:` line measured nothing;
+/// that is a red landing, not a green one.
+#[test]
+fn a_ci_shaped_leg_that_reported_nothing_is_not_green() {
+    let dir = scratch("ci-silent");
+    let p = dir.join("ci-silent.log");
+    let text = format!("{STAMP}{TAIL}").replace(
+        "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s\n",
+        "",
+    );
+    std::fs::write(&p, text).unwrap();
+    let (code, out) = judge(&p, &[]);
+    assert_eq!(code, 1, "a CI-shaped leg with no test result must fail, got {code}:\n{out}");
+    assert!(out.contains("CI-SHAPED LEG"), "{out}");
+    assert!(!out.contains("RESULT          GREEN"), "{out}");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// THE FAILING LIST COUNTS WHAT CARGO LISTS. Two binaries, six failing tests, one name
+/// (`mt_bank_matches_reference`) red in BOTH. In the first binary a concurrent panic
+/// message lands between `test mt_bank_debug_matches_reference ... ` and its `FAILED` (the
+/// exact interleave in landing log 20261117T000459Z), so a list built from
+/// `^test .* ... FAILED$` lines drops it, and deduping bare names merges the shared one:
+/// Task 2 measured 63 listed against cargo's 67. The list is now built from cargo's own
+/// `failures:` blocks, one entry per (name, binary), so it reports six.
+#[test]
+fn the_failing_list_names_every_test_cargo_lists_across_binaries() {
+    let dir = scratch("failing-list");
+    let p = dir.join("two-binaries.log");
+    std::fs::write(
+        &p,
+        format!(
+            "{STAMP}\
+test b_gate ... ok
+test c_gate ... ok
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/mt_bank_port.rs (/fixture/.target-land/release/deps/mt_bank_port-2d83623b701a83c5)
+
+running 4 tests
+
+thread 'mt_bank_debug_matches_reference' (1) panicked at crates/sigil-cli/tests/mt_bank_port.rs:104:9:
+first diff at region offset 0x0
+test mt_bank_debug_matches_reference ... 
+thread 'split_artifacts_plain' (3) panicked at crates/sigil-cli/tests/mt_bank_port.rs:129:30:
+called `Result::unwrap()` on an `Err` value: PoisonError {{ .. }}
+FAILED
+test mt_bank_matches_reference ... FAILED
+test split_artifacts_plain ... FAILED
+test split_artifacts_debug ... FAILED
+
+failures:
+
+failures:
+    mt_bank_debug_matches_reference
+    mt_bank_matches_reference
+    split_artifacts_debug
+    split_artifacts_plain
+
+test result: FAILED. 0 passed; 4 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/second.rs (/fixture/.target-land/release/deps/second-00112233445566)
+
+running 2 tests
+test second_one ... FAILED
+test mt_bank_matches_reference ... FAILED
+
+failures:
+
+---- second_one stdout ----
+    indented_stdout_that_is_not_a_name
+
+---- mt_bank_matches_reference stdout ----
+boom
+
+failures:
+    mt_bank_matches_reference
+    second_one
+
+test result: FAILED. 0 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+CARGO_EXIT=101
+{CI_GREEN_TAIL}# finished (UTC) 2026-09-07T00:01:00Z
+"
+        ),
+    )
+    .unwrap();
+    let (code, text) = judge(&p, &[]);
+    assert_eq!(code, 1, "six red tests must fail the run, got {code}:\n{text}");
+    assert!(
+        text.contains("FAILING TESTS (6), all of them:"),
+        "the list must count the six names cargo's `failures:` blocks carry:\n{text}"
+    );
+    for entry in [
+        "mt_bank_debug_matches_reference  (mt_bank_port)",
+        "mt_bank_matches_reference  (mt_bank_port)",
+        "split_artifacts_debug  (mt_bank_port)",
+        "split_artifacts_plain  (mt_bank_port)",
+        "mt_bank_matches_reference  (second)",
+        "second_one  (second)",
+    ] {
+        assert!(text.contains(&format!("    {entry}\n")), "{entry} missing from the list:\n{text}");
+    }
+    assert!(
+        !text.contains("indented_stdout_that_is_not_a_name"),
+        "a captured-stdout line inside the FIRST `failures:` block is not a name:\n{text}"
+    );
+    assert!(!text.contains("ci_gates"), "the CI-shaped span's tests are not the strict span's:\n{text}");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+// ----------------------------------------------------------------------------------------
 // COMPLETENESS: A BINARY THAT LAUNCHED AND NEVER REPORTED.
 //
 // The totals are sums over `test result:` lines and nothing said what that count should
@@ -584,7 +784,7 @@ test after_one ... ok
 
 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
 CARGO_EXIT=0
-# finished (UTC) 2026-09-07T00:01:00Z
+{CI_GREEN_TAIL}# finished (UTC) 2026-09-07T00:01:00Z
 "
         ),
     )
@@ -942,6 +1142,14 @@ case "$1" in
         echo "    Finished \`release\` profile [optimized] target(s) in 0.01s"
         exit "${FIXTURE_CLIPPY_RC:-0}" ;;
     test)
+        # The CI-shaped leg is the call made with SIGIL_ALLOW_PARTIAL=1 (the strict leg
+        # unsets it). It reports the environment it was handed, so a test can read
+        # whether the leg really ran without the reference tree.
+        if [[ ${SIGIL_ALLOW_PARTIAL:-} == 1 ]]; then
+            echo "fixture-ci-env AEON_DIR=${AEON_DIR-<unset>} SUITE=${EMPYREAN_SUITE_ROOT-<unset>} STRICT=${SIGIL_STRICT_GATE-<unset>} ARGS=$*"
+            cat "${FIXTURE_CI_SPAN:-$FIXTURE_TEST_SPAN}"
+            exit "${FIXTURE_CI_RC:-0}"
+        fi
         cat "$FIXTURE_TEST_SPAN"
         exit "${FIXTURE_CARGO_RC:-0}" ;;
     *)  echo "fixture cargo: unexpected call: $*" >&2; exit 97 ;;
@@ -954,6 +1162,8 @@ struct StubRun<'a> {
     launches: usize,
     cargo_rc: i32,
     clippy_rc: i32,
+    /// The CI-shaped leg's span and exit code; `None` replays `test_span` with exit 0.
+    ci: Option<(&'a str, i32)>,
 }
 
 /// A green three-test span from one binary.
@@ -1014,6 +1224,14 @@ fn stub_run(dir: &Path, run: &StubRun) -> (i32, String, PathBuf) {
     std::fs::write(&span, run.test_span).unwrap();
     let log = dir.join("run.log");
     let path = format!("{}:{}", bin.display(), std::env::var("PATH").unwrap_or_default());
+    let (ci_span_path, ci_rc) = match run.ci {
+        Some((ci_span, rc)) => {
+            let p = dir.join("ci-span.txt");
+            std::fs::write(&p, ci_span).unwrap();
+            (p, rc)
+        }
+        None => (span.clone(), 0),
+    };
 
     let out = Command::new("bash")
         .arg(script())
@@ -1031,6 +1249,11 @@ fn stub_run(dir: &Path, run: &StubRun) -> (i32, String, PathBuf) {
         .env("FIXTURE_TEST_SPAN", &span)
         .env("FIXTURE_CARGO_RC", run.cargo_rc.to_string())
         .env("FIXTURE_CLIPPY_RC", run.clippy_rc.to_string())
+        .env("FIXTURE_CI_SPAN", &ci_span_path)
+        .env("FIXTURE_CI_RC", ci_rc.to_string())
+        // Set in the CALLER's environment on purpose: the CI-shaped leg must strip it,
+        // exactly as it strips AEON_DIR, or it is not the shape CI runs.
+        .env("SIGIL_STRICT_GATE", "1")
         .env_remove("AEON_DIR")
         .env_remove("EMPYREAN_SUITE_ROOT")
         .env_remove("SIGIL_LANDING_TARGET")
@@ -1074,7 +1297,7 @@ fn recorded_block(log_text: &str) -> String {
 fn a_green_run_records_its_verdict_and_both_instruments_agree_on_the_log() {
     let dir = scratch("run-green");
     let (code, stdout, log) =
-        stub_run(&dir, &StubRun { test_span: GREEN_SPAN, launches: 1, cargo_rc: 0, clippy_rc: 0 });
+        stub_run(&dir, &StubRun { test_span: GREEN_SPAN, launches: 1, cargo_rc: 0, clippy_rc: 0, ci: None });
     let text = std::fs::read_to_string(&log).unwrap();
     assert_eq!(code, 0, "the stub green run must exit 0, got {code}:\n{stdout}\n--- log ---\n{text}");
     assert!(stdout.contains("RESULT          GREEN"), "the verdict still goes to stdout:\n{stdout}");
@@ -1130,7 +1353,7 @@ fn a_red_run_records_its_verdict_and_rejudging_it_twice_changes_nothing() {
         let sub = dir.join(tag);
         std::fs::create_dir_all(&sub).unwrap();
         let (code, stdout, log) =
-            stub_run(&sub, &StubRun { test_span: &span, launches, cargo_rc, clippy_rc });
+            stub_run(&sub, &StubRun { test_span: &span, launches, cargo_rc, clippy_rc, ci: None });
         let before = std::fs::read(&log).unwrap();
         let text = String::from_utf8_lossy(&before).into_owned();
         assert_eq!(code, 1, "[{tag}] the stub red run must exit 1, got {code}:\n{stdout}");
@@ -1167,7 +1390,7 @@ fn a_red_run_records_its_verdict_and_rejudging_it_twice_changes_nothing() {
 fn a_captured_stdout_is_refused_and_the_log_is_named() {
     let dir = scratch("run-stdout");
     let (code, stdout, log) =
-        stub_run(&dir, &StubRun { test_span: GREEN_SPAN, launches: 1, cargo_rc: 0, clippy_rc: 0 });
+        stub_run(&dir, &StubRun { test_span: GREEN_SPAN, launches: 1, cargo_rc: 0, clippy_rc: 0, ci: None });
     assert_eq!(code, 0, "{stdout}");
     let captured = dir.join("run.log.stdout");
     std::fs::write(&captured, &stdout).unwrap();
@@ -1245,5 +1468,53 @@ fn a_recorded_green_over_a_nonzero_cargo_exit_is_not_green() {
     std::fs::write(&twice, format!("{t}{span}")).unwrap();
     let (ccode, cout) = check(&twice);
     assert_eq!(ccode, 2, "a log carrying two verdict spans is ambiguous, got {ccode}:\n{cout}");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// THE LEG RUNS IN RUN MODE, IN THE CI SHAPE. The stub cargo prints the environment the
+/// CI-shaped call was handed: no AEON_DIR, no suite root, no strict flag (set in the
+/// caller's environment by `stub_run` and stripped by the wrapper), and the debug profile
+/// CI builds. A red leg makes the run itself exit 1 with the strict span green.
+#[test]
+fn a_run_mode_ci_shaped_leg_runs_unstrict_and_its_red_fails_the_run() {
+    let dir = scratch("run-ci");
+    let green = dir.join("green");
+    std::fs::create_dir_all(&green).unwrap();
+    let (code, stdout, log) =
+        stub_run(&green, &StubRun { test_span: GREEN_SPAN, launches: 1, cargo_rc: 0, clippy_rc: 0, ci: None });
+    let text = std::fs::read_to_string(&log).unwrap();
+    assert_eq!(code, 0, "the CONTROL run must be green, got {code}:\n{stdout}\n--- log ---\n{text}");
+    assert!(text.contains("##### CI-SHAPED SPAN,"), "the run must write a CI-shaped span:\n{text}");
+    assert!(
+        text.contains("fixture-ci-env AEON_DIR=<unset> SUITE=<unset> STRICT=<unset> ARGS=test "),
+        "the CI-shaped leg must run with no reference tree and no strict flag:\n{text}"
+    );
+    assert!(
+        !text.lines().any(|l| l.starts_with("fixture-ci-env") && l.contains("--release")),
+        "the CI-shaped leg must build the profile CI builds (debug), not --release:\n{text}"
+    );
+    assert!(text.contains("CI_EXIT=0\n"), "{text}");
+
+    let red = dir.join("red");
+    std::fs::create_dir_all(&red).unwrap();
+    let red_ci = "\
+     Running tests/ci_gates.rs (/fixture/target/debug/deps/ci_gates-0123456789abcdef)
+
+running 1 test
+test ci_only ... FAILED
+
+failures:
+    ci_only
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+";
+    let (code, stdout, log) = stub_run(
+        &red,
+        &StubRun { test_span: GREEN_SPAN, launches: 1, cargo_rc: 0, clippy_rc: 0, ci: Some((red_ci, 101)) },
+    );
+    let text = std::fs::read_to_string(&log).unwrap();
+    assert_eq!(code, 1, "a red CI-shaped leg must fail the run, got {code}:\n{stdout}\n--- log ---\n{text}");
+    assert!(stdout.contains("RESULT          FAILED, the CI-SHAPED LEG is red"), "{stdout}");
+    assert!(text.contains("CI_EXIT=101\n"), "{text}");
     let _ = std::fs::remove_dir_all(&dir);
 }

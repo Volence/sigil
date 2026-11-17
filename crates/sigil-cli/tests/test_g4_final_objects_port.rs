@@ -25,6 +25,7 @@ use sigil_frontend_emp::lower::{lower_module, LowerOptions};
 use sigil_frontend_emp::parse_str;
 use sigil_frontend_emp::resolve::place_sections;
 use sigil_harness::pins;
+use sigil_harness::test_support::reference_tree;
 use sigil_ir::backend::Cpu;
 use sigil_ir::{Section, SectionPlacement, SymbolTable};
 use std::path::PathBuf;
@@ -133,6 +134,33 @@ const PLAIN_COMPILE: Shape = Shape {
     ..PLAIN
 };
 
+// THE AEON FILES THIS PORT READS, one list. `compile_real_files` and
+// `player_block_ambient` read them through these names and `reference_gate` guards on
+// `REAL_FILES`, so the guard cannot drift from the reads. Without the guard the plain
+// arm (which reads no ROM, so `ref_window` never skips it) panicked in CI on the first
+// read: master's CI was red on exactly that from 2026-09-28 (run 36488380435).
+const TYPES_EMP: &str = "engine/system/types.emp";
+const SST_EMP: &str = "engine/objects/sst.emp";
+const CONSTANTS_EMP: &str = "engine/system/constants.emp";
+const OBJDEF_EMP: &str = "engine/objects/objdef.emp";
+const GAME_CONSTANTS_EMP: &str = "games/sonic4/config/constants.emp";
+const TEST_PLAYER_EMP: &str = "games/sonic4/objects/test_player.emp";
+const TEST_ENEMY_EMP: &str = "games/sonic4/objects/test_enemy.emp";
+/// The C1 ambient pair `player_block_ambient` filters items out of.
+const RAM_EMP: &str = "games/sonic4/config/ram.emp";
+const PLAYER_COMMON_EMP: &str = "games/sonic4/player/player_common.emp";
+const REAL_FILES: [&str; 9] = [
+    TYPES_EMP,
+    SST_EMP,
+    CONSTANTS_EMP,
+    OBJDEF_EMP,
+    GAME_CONSTANTS_EMP,
+    TEST_PLAYER_EMP,
+    TEST_ENEMY_EMP,
+    RAM_EMP,
+    PLAYER_COMMON_EMP,
+];
+
 fn parse_file(path: &std::path::Path) -> sigil_frontend_emp::ast::File {
     let src = std::fs::read_to_string(path)
         .unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()));
@@ -157,14 +185,14 @@ fn parse_file(path: &std::path::Path) -> sigil_frontend_emp::ast::File {
 /// single-module compile whose bytes are being compared against a ROM window.
 fn player_block_ambient(aeon: &std::path::Path) -> sigil_frontend_emp::ast::File {
     use sigil_frontend_emp::ast::Item;
-    let mut ram = parse_file(&aeon.join("games/sonic4/config/ram.emp"));
+    let mut ram = parse_file(&aeon.join(RAM_EMP));
     let mut items: Vec<Item> = ram
         .items
         .drain(..)
         .filter(|it| matches!(it, Item::Struct(d) if d.name == "PlayerBlock"))
         .collect();
     items.extend(
-        parse_file(&aeon.join("games/sonic4/player/player_common.emp"))
+        parse_file(&aeon.join(PLAYER_COMMON_EMP))
             .items
             .into_iter()
             .filter(|it| matches!(it, Item::ComptimeFn(d) if d.name == "player_block")),
@@ -276,15 +304,15 @@ struct Compiled {
 
 fn compile_real_files(shape: &Shape) -> Compiled {
     let aeon = aeon_dir();
-    let types = || parse_file(&aeon.join("engine/system/types.emp"));
-    let sst = || parse_file(&aeon.join("engine/objects/sst.emp"));
-    let constants = || parse_file(&aeon.join("engine/system/constants.emp"));
-    let objdef = || parse_file(&aeon.join("engine/objects/objdef.emp"));
+    let types = || parse_file(&aeon.join(TYPES_EMP));
+    let sst = || parse_file(&aeon.join(SST_EMP));
+    let constants = || parse_file(&aeon.join(CONSTANTS_EMP));
+    let objdef = || parse_file(&aeon.join(OBJDEF_EMP));
     // VRAM_TEST_SONIC / VRAM_TEST_OBJ authority (Parcel F: config/constants.asm → `.emp`).
-    let game_consts = || parse_file(&aeon.join("games/sonic4/config/constants.emp"));
+    let game_consts = || parse_file(&aeon.join(GAME_CONSTANTS_EMP));
 
-    let player = parse_file(&aeon.join("games/sonic4/objects/test_player.emp"));
-    let enemy = parse_file(&aeon.join("games/sonic4/objects/test_enemy.emp"));
+    let player = parse_file(&aeon.join(TEST_PLAYER_EMP));
+    let enemy = parse_file(&aeon.join(TEST_ENEMY_EMP));
 
     let player_file = with_ambient(
         vec![types(), sst(), constants(), objdef(), game_consts(), player_block_ambient(&aeon)],
@@ -415,6 +443,7 @@ fn ref_window(rom_name: &str, base: usize, len: usize) -> Option<Vec<u8>> {
 }
 
 fn reference_gate(shape: &Shape, rom_name: &str) {
+    let Some(_) = reference_tree(&REAL_FILES) else { return };
     // objtest-gate: in PLAIN, test_player/test_enemy carry zero bytes. Compile via
     // the hybrid shape; there is no plain window to byte-gate.
     let plain_gated = !shape.debug;

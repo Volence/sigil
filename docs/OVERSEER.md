@@ -296,6 +296,22 @@ Taken from empyrean `274d26d2`.
 perform another. Triggers: a peer cites a bar you don't recognise, before dispatching a wave, at any
 landing. (The measured drift that earned it: `docs/OVERSEER-LOG.md`, 2026-09-04 cut.)
 
+## EVERY LOOP READS CI (A8, 2026-11-16): a red master run is the top row until fixed
+
+Each loop of this lane, at boot and again before picking each next row, runs:
+
+```sh
+gh run list --branch master --limit 1 --json conclusion,headSha,createdAt
+```
+
+A `failure` conclusion is the **top row until fixed**, above every queue row: open it with
+`gh run view <id> --log-failed`, name the red test, fix it on a branch, land it. Master's CI sat
+red from 2026-09-28 (merge `b4472d9c`) to 2026-11-16 on one unguarded port test while every
+local landing read GREEN, because nothing in this loop looked. An empty `conclusion` is a run
+still in flight, not a green: read it again next loop. `scripts/landing-run.sh` now runs the
+CI-shaped leg too, so a landing over a CI red fails locally first; this read is what catches
+the reds that leg cannot see (runner toolchain, workflow changes).
+
 ## Landing-lane division — THE rule for this repo
 
 The aeon↔sigil landing lane has **one owner, and it is the aeon overseer** (owner

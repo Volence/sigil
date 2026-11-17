@@ -172,6 +172,17 @@
 #     census that could not be taken fails too; a log written before the stamp existed says
 #     NOT STATED and does not.
 #
+#     A RED CI-SHAPED LEG IS A RED RUN (A8). After the strict span the same suite runs again
+#     in the shape GitHub CI runs it: this repo alone (`env -u AEON_DIR -u
+#     EMPYREAN_SUITE_ROOT -u SIGIL_STRICT_GATE`, plus the tool paths CI never sets),
+#     `SIGIL_ALLOW_PARTIAL=1`, the debug profile, into the same target dir. A test that
+#     reads aeon files without a reference guard is green under the strict flag and red
+#     there; master's CI sat red on exactly that from 2026-09-28 while every landing here
+#     read GREEN. The leg's exit is recorded as `CI_EXIT=` inside its own `##### CI-SHAPED
+#     SPAN`; every strict-span reader is kept out of that span (its ~400 `skip:` lines are
+#     the CI shape working, not strict gates that measured nothing), and a log without
+#     `CI_EXIT=` is refused by name.
+#
 # USAGE
 #   scripts/landing-run.sh --baseline 4156
 #   scripts/landing-run.sh --baseline 4156 --aeon ~/sonic_hacks/.aeon-landing
@@ -393,6 +404,12 @@ load_verdict_inputs() {
     LEDGER_RC=$(sed -n 's/^LEDGER_EXIT=//p' <<< "$RECORD" | tail -n 1)
     [[ $LEDGER_RC =~ ^[0-9]+$ ]] \
         || die "--verdict-only: $LOG carries no \`LEDGER_EXIT=<n>\` line, the ledger gate was
+       never measured, so there is no verdict to give over it."
+    # The CI-shaped leg (A8), refused by name like the three above: a leg that did not
+    # run is not a leg that was green, and "CI would be green" is the claim it carries.
+    CI_RC=$(sed -n 's/^CI_EXIT=//p' <<< "$RECORD" | tail -n 1)
+    [[ $CI_RC =~ ^[0-9]+$ ]] \
+        || die "--verdict-only: $LOG carries no \`CI_EXIT=<n>\` line, the CI-shaped leg was
        never measured, so there is no verdict to give over it."
     ROOT=$(stamp pwd);                 ROOT=${ROOT:-?}
     HEAD_SHA=$(stamp 'sigil HEAD');    HEAD_SHA=${HEAD_SHA:-?}
@@ -678,6 +695,22 @@ else
 fi
 CARGO_ARGS+=(-- --nocapture)
 
+# THE CI-SHAPED LEG'S ARGUMENTS: the workflow's own `cargo test --workspace --no-fail-fast
+# -- --nocapture` (.github/workflows/ci.yml), in the DEBUG profile CI builds, because a
+# debug-only panic (overflow checks, debug_assert) is a CI red a --release leg cannot see.
+# It follows --scoped as the strict leg does: a scoped run is CI-shaped over its own scope.
+CI_ARGS=(test --no-fail-fast --manifest-path "$ROOT/Cargo.toml")
+if (( SCOPED )); then
+    CI_ARGS+=("${CARGO_EXTRA[@]}")
+else
+    CI_ARGS+=(--workspace)
+fi
+CI_ARGS+=(-- --nocapture)
+# What CI's environment lacks, stripped from the child. AEON_DIR and EMPYREAN_SUITE_ROOT are
+# the two that could name a reference tree; SIGIL_STRICT_GATE is refused beside
+# SIGIL_ALLOW_PARTIAL by the resolver; the tool paths are set by nothing in the workflow.
+CI_UNSET=(-u AEON_DIR -u EMPYREAN_SUITE_ROOT -u SIGIL_STRICT_GATE -u ORACLE_DIR -u SIGIL_BUILD -u SIGIL_EMIT)
+
 # THE LINT BAR'S OWN ARGUMENTS, and they do not follow --scoped. `--scoped` narrows which
 # TESTS run; it says nothing about which code has to lint, and a scoped run that also
 # narrowed the lint bar would be a second spelling of the omission this closes. The bar is
@@ -748,6 +781,7 @@ say "test-target census: $CENSUS_LINE"
     echo "# python3        $PYTHON_VERSION"
     echo "# ledger command python3 ${LEDGER_ARGS[*]}"
     echo "# command        SIGIL_STRICT_GATE=1 env -u SIGIL_ALLOW_PARTIAL cargo ${CARGO_ARGS[*]}"
+    echo "# ci-shaped      env ${CI_UNSET[*]} SIGIL_ALLOW_PARTIAL=1 cargo ${CI_ARGS[*]}"
     echo
 } > "$LOG" || die "cannot stamp the log $LOG"
 
@@ -805,9 +839,69 @@ SIGIL_EMIT="$SIGIL_EMIT_RESOLVED" \
 # this line exists to close.
 CARGO_RC=${PIPESTATUS[0]}
 echo "CARGO_EXIT=$CARGO_RC" >> "$LOG"
+echo "##### TEST SPAN ENDS" >> "$LOG"
+
+# ---------------------------------------------------------------------------------------
+# (10) THE CI-SHAPED LEG (A8). The suite again, as GitHub CI runs it: no reference tree, no
+# strict flag, SIGIL_ALLOW_PARTIAL=1, debug profile, same target dir. Collecting half only,
+# like the ledger gate: the DECIDING half is `CI_RED` in the `RESULT FAILED` condition at
+# the foot of this file. Its output lives in its own span so no strict-span reader sees it.
+# ---------------------------------------------------------------------------------------
+echo "##### CI-SHAPED SPAN, env ${CI_UNSET[*]} SIGIL_ALLOW_PARTIAL=1 cargo ${CI_ARGS[*]}" >> "$LOG"
+say "ci-shaped leg: env ${CI_UNSET[*]} SIGIL_ALLOW_PARTIAL=1 cargo ${CI_ARGS[*]}"
+CARGO_TARGET_DIR="$TARGET" \
+SIGIL_ALLOW_PARTIAL=1 \
+    env "${CI_UNSET[@]}" cargo "${CI_ARGS[@]}" 2>&1 | tee -a "$LOG"
+# PIPESTATUS[0] for the reason (6) gives.
+CI_RC=${PIPESTATUS[0]}
+echo "CI_EXIT=$CI_RC" >> "$LOG"
+echo "##### CI-SHAPED SPAN ENDS" >> "$LOG"
 
 FINISHED=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 echo "# finished (UTC) $FINISHED" >> "$LOG"
+}
+
+# EVERY FAILING TEST IN A SPAN (stdin), one `<name>  (<binary>)` line each, sorted and
+# deduped on the PAIR, from TWO producers.
+#
+# (a) cargo's own `failures:` blocks, the primary. libtest prints the names list as the
+#     LAST `failures:` block of each binary, four-space indented, one name per line, just
+#     before that binary's `test result:`. Taking the last block per binary (a later
+#     header resets the list) keeps an indented line of captured stdout in the FIRST
+#     block, `---- name stdout ----`, from being read as a name.
+# (b) `test <name> ... FAILED` lines, for a binary killed before it printed a block.
+#
+# (b) alone is what this list was, and it under-reported twice over. Under --nocapture a
+# concurrent panic message can land between `test X ... ` and its `FAILED`, so the line
+# never matches; and deduping bare names merged one name failing in several binaries into
+# one entry. Measured (Task 2, landing log 20261117T000459Z): 63 listed against cargo's 67,
+# `mt_bank_debug_matches_reference` dropped by the interleave and
+# `two_module_ownership_flip_debug` (red in four binaries) counted once. The binary is the
+# test executable's stem out of cargo's `Running … (<path>/deps/<stem>-<hash>)` line, or
+# `doctest <crate>`, so the count equals the summed `failed` of the `test result:` lines.
+failing_names() {
+    awk '
+        function stem(line,   p) {
+            if (match(line, /\([^()]*\)$/)) {
+                p = substr(line, RSTART + 1, RLENGTH - 2)
+                sub(/.*\//, "", p); sub(/-[0-9a-f]+$/, "", p)
+                return p
+            }
+            sub(/^ *Running /, "", line)
+            return line
+        }
+        /^ *Running / { bin = stem($0); n = 0; inblk = 0; next }
+        /^ *Doc-tests / { bin = $0; sub(/^ *Doc-tests /, "doctest ", bin); n = 0; inblk = 0; next }
+        /^failures:$/ { inblk = 1; n = 0; next }
+        inblk && /^    [^ \t]+$/ { names[n++] = substr($0, 5); next }
+        inblk && /^$/ && n == 0 { next }
+        inblk { inblk = 0 }
+        /^test result:/ { for (i = 0; i < n; i++) print names[i] "  (" bin ")"; n = 0; inblk = 0; next }
+        /^test .* \.\.\. FAILED$/ {
+            t = $0; sub(/^test /, "", t); sub(/ \.\.\. FAILED$/, "", t)
+            print t "  (" bin ")"
+        }
+    ' | sort -u
 }
 
 # THE VERDICT, one function, called from both branches of the one dispatch at the foot of
@@ -815,6 +909,34 @@ echo "# finished (UTC) $FINISHED" >> "$LOG"
 # block, and its `exit` is the script's exit code. The body is left at its column, as
 # run_landing's is.
 judge_record() {
+# ---------------------------------------------------------------------------------------
+# (10b) THE CI-SHAPED SPAN, lifted OUT of the record before any strict-span reader runs.
+# That leg skips ~400 reference-dependent rows by design and prints its own `test result:`
+# and `Running` lines; read as strict output they would be skip lines that survived the
+# strict flag, extra suites, and extra launches. Everything below reads RECORD, which no
+# longer holds the span; the CI verdict reads CI_RECORD.
+# ---------------------------------------------------------------------------------------
+CI_RECORD=$(awk '/^##### CI-SHAPED SPAN,/ { on = 1 } on { print } /^##### CI-SHAPED SPAN ENDS/ { on = 0 }' <<< "$RECORD")
+RECORD=$(awk '/^##### CI-SHAPED SPAN,/ { off = 1 } !off { print } /^##### CI-SHAPED SPAN ENDS/ { off = 0 }' <<< "$RECORD")
+read -r CI_SUITES CI_PASSED CI_FAILED < <(awk '
+    /^test result:/ {
+        n++
+        for (i = 1; i < NF; i++) {
+            lbl = $(i+1); sub(/;$/, "", lbl)
+            if ($i ~ /^[0-9]+$/) {
+                if (lbl == "passed") p += $i
+                if (lbl == "failed") f += $i
+            }
+        }
+    }
+    END { print n+0, p+0, f+0 }' <<< "$CI_RECORD")
+# Loud on unmeasurable: a leg that reported no `test result:` line measured nothing,
+# whatever its exit code says.
+CI_UNMEASURED=0
+(( CI_SUITES == 0 )) && CI_UNMEASURED=1
+CI_RED=0
+(( CI_RC != 0 || CI_FAILED > 0 || CI_UNMEASURED )) && CI_RED=1
+mapfile -t CI_FAILING < <(failing_names <<< "$CI_RECORD")
 # ---------------------------------------------------------------------------------------
 # (7) Failures first, WITH the names. No `head`, no tail excerpt.
 # ---------------------------------------------------------------------------------------
@@ -940,9 +1062,9 @@ fi
 CENSUS_UNMEASURED=0
 [[ $CENSUS_STATE == unmeasured ]] && CENSUS_UNMEASURED=1
 
-# Every failing name, sorted and deduped. All of them.
-mapfile -t FAILING < <(grep -E '^test .* \.\.\. FAILED$' <<< "$RECORD" \
-    | sed -E 's/^test (.*) \.\.\. FAILED$/\1/' | sort -u)
+# Every failing test, one line per (name, binary), sorted and deduped. All of them. See
+# failing_names for why the `^test … FAILED$` lines alone under-reported.
+mapfile -t FAILING < <(failing_names <<< "$RECORD")
 
 echo
 echo "=============================== LANDING RUN VERDICT ==============================="
@@ -958,6 +1080,13 @@ case $LEDGER_RC in
     2) echo "  LEDGER_EXIT     $LEDGER_RC   (LEDGER GATE UNMEASURABLE, which is not a clean ledger)" ;;
     *) echo "  LEDGER_EXIT     $LEDGER_RC   (LEDGER GATE RED)" ;;
 esac
+if (( ! CI_RED )); then
+    echo "  ci-shaped leg   $CI_RC   (CI shape green: $CI_SUITES suite(s), $CI_PASSED passed, 0 failed)"
+elif (( CI_UNMEASURED )); then
+    echo "  ci-shaped leg   $CI_RC   (CI-SHAPED LEG REPORTED NO TEST RESULT, it measured nothing)"
+else
+    echo "  ci-shaped leg   $CI_RC   (CI-SHAPED LEG RED: $CI_FAILED failed over $CI_SUITES suite(s))"
+fi
 (( SCOPED )) && echo "  ** SCOPED RUN, PARTIAL. This is not a landing verdict. **"
 
 # ALWAYS PRINTED, GREEN OR RED. The renderability figure is a TREND and a verdict that
@@ -1102,6 +1231,11 @@ if (( ${#FAILING[@]} )); then
     echo "  FAILING TESTS (${#FAILING[@]}), all of them:"
     for t in "${FAILING[@]}"; do echo "    $t"; done
 fi
+if (( ${#CI_FAILING[@]} )); then
+    echo
+    echo "  CI-SHAPED FAILING TESTS (${#CI_FAILING[@]}), all of them:"
+    for t in "${CI_FAILING[@]}"; do echo "    $t"; done
+fi
 
 # Named expectations: a green log lacking the landed code's own test is about other code.
 MISSING_EXPECT=()
@@ -1194,10 +1328,26 @@ fi
 # `absent` state is NOT in this condition, deliberately: it is a log written before the
 # stamp existed, and a rule that failed every historical log would be a rule people learn
 # to route around rather than a bar.
+#
+# A RED CI-SHAPED LEG IS A RED RUN (A8), and an unmeasured one is too (`CI_RED` carries
+# both). THIS IS THE DECIDING HALF OF (10). Each informative branch below says "every other
+# bar is clean", so each one also requires `! CI_RED`.
 if (( CARGO_RC != 0 || FAILED > 0 || CLIPPY_RC != 0 || SKIPS > 0 || LEDGER_RC != 0 || LEDGER_SILENT \
-      || ${#SILENT_BINARIES[@]} > 0 || COMPLETENESS_UNMEASURED || CENSUS_SHORT || CENSUS_UNMEASURED )); then
+      || ${#SILENT_BINARIES[@]} > 0 || COMPLETENESS_UNMEASURED || CENSUS_SHORT || CENSUS_UNMEASURED \
+      || CI_RED )); then
     echo
-    if (( LEDGER_RC != 0 && CARGO_RC == 0 && FAILED == 0 && SKIPS == 0 && CLIPPY_RC == 0 )); then
+    if (( CI_RED && CARGO_RC == 0 && FAILED == 0 && SKIPS == 0 && CLIPPY_RC == 0 && LEDGER_RC == 0 \
+          && ! LEDGER_SILENT && ${#SILENT_BINARIES[@]} == 0 && ! COMPLETENESS_UNMEASURED \
+          && ! CENSUS_SHORT && ! CENSUS_UNMEASURED )); then
+        if (( CI_UNMEASURED )); then
+            echo "  RESULT          FAILED, the CI-SHAPED LEG is red: it exited $CI_RC and reported no"
+            echo "                  \`test result:\` line, so it measured nothing. The strict run is clean."
+        else
+            echo "  RESULT          FAILED, the CI-SHAPED LEG is red (exit $CI_RC, $CI_FAILED test(s) failed)."
+            echo "                  The strict run is clean; this is the shape GitHub CI runs (this repo"
+            echo "                  alone, SIGIL_ALLOW_PARTIAL=1), so CI would be red. Do not land on this."
+        fi
+    elif (( LEDGER_RC != 0 && CARGO_RC == 0 && FAILED == 0 && SKIPS == 0 && CLIPPY_RC == 0 && ! CI_RED )); then
         # The informative case again: nothing about the code is red, and the run still is
         # not a landing because the owner's decision ledger moved somewhere he cannot read.
         if (( LEDGER_RC == 2 )); then
@@ -1210,23 +1360,23 @@ if (( CARGO_RC != 0 || FAILED > 0 || CLIPPY_RC != 0 || SKIPS > 0 || LEDGER_RC !=
             echo "                  passed and the lint bar is clean; the suite is not the reason this"
             echo "                  is not green. The report above names the lines. Do not land on this."
         fi
-    elif (( LEDGER_SILENT && CARGO_RC == 0 && FAILED == 0 && SKIPS == 0 && CLIPPY_RC == 0 )); then
+    elif (( LEDGER_SILENT && CARGO_RC == 0 && FAILED == 0 && SKIPS == 0 && CLIPPY_RC == 0  && ! CI_RED )); then
         echo "  RESULT          FAILED, the LEDGER GATE reported nothing. Every other bar is clean;"
         echo "                  a gate with no measurement behind its exit code is why this is not"
         echo "                  green. Do not land on this."
-    elif (( CLIPPY_RC != 0 && CARGO_RC == 0 && FAILED == 0 && SKIPS == 0 && LEDGER_RC == 0 && ! LEDGER_SILENT )); then
+    elif (( CLIPPY_RC != 0 && CARGO_RC == 0 && FAILED == 0 && SKIPS == 0 && LEDGER_RC == 0 && ! LEDGER_SILENT  && ! CI_RED )); then
         # Named separately because the two halves disagreeing is the informative case, and
         # "$FAILED test(s) red" printed as 0 over a red run reads as a script mistake.
         echo "  RESULT          FAILED, the LINT BAR is red (clippy exit $CLIPPY_RC,"
         echo "                  ${#CLIPPY_SITES[@]} site(s)). Every test that ran passed; the suite is not"
         echo "                  the reason this is not green. Do not land on this."
-    elif (( SKIPS > 0 && CARGO_RC == 0 && FAILED == 0 && CLIPPY_RC == 0 && LEDGER_RC == 0 && ! LEDGER_SILENT )); then
+    elif (( SKIPS > 0 && CARGO_RC == 0 && FAILED == 0 && CLIPPY_RC == 0 && LEDGER_RC == 0 && ! LEDGER_SILENT  && ! CI_RED )); then
         # The same informative case for the third bar: nothing was red, and the run is
         # still not a landing because $SKIPS gate(s) never measured their subject.
         echo "  RESULT          FAILED, $SKIPS skip line(s) survived SIGIL_STRICT_GATE=1. Every test"
         echo "                  that ran passed and the lint bar is clean; a gate that measured"
         echo "                  nothing is why this is not green. Do not land on this."
-    elif (( ${#SILENT_BINARIES[@]} > 0 && CARGO_RC == 0 && FAILED == 0 && SKIPS == 0 && CLIPPY_RC == 0 && LEDGER_RC == 0 && ! LEDGER_SILENT )); then
+    elif (( ${#SILENT_BINARIES[@]} > 0 && CARGO_RC == 0 && FAILED == 0 && SKIPS == 0 && CLIPPY_RC == 0 && LEDGER_RC == 0 && ! LEDGER_SILENT  && ! CI_RED )); then
         # The informative case for the fourth bar, and the one worth naming loudest: every
         # bar the run measures is clean and the run is still not a landing, because the
         # POPULATION it measured them over is short. Nothing else in this verdict would
@@ -1236,11 +1386,11 @@ if (( CARGO_RC != 0 || FAILED > 0 || CLIPPY_RC != 0 || SKIPS > 0 || LEDGER_RC !=
         echo "                  exited 0; the tests inside those binaries are simply not in the counts"
         echo "                  above. This is not a green run with a smaller number, it is a run whose"
         echo "                  population is unknown. Do not land on this."
-    elif (( COMPLETENESS_UNMEASURED && CARGO_RC == 0 && FAILED == 0 && SKIPS == 0 && CLIPPY_RC == 0 && LEDGER_RC == 0 && ! LEDGER_SILENT )); then
+    elif (( COMPLETENESS_UNMEASURED && CARGO_RC == 0 && FAILED == 0 && SKIPS == 0 && CLIPPY_RC == 0 && LEDGER_RC == 0 && ! LEDGER_SILENT  && ! CI_RED )); then
         echo "  RESULT          FAILED, the completeness check could not measure. Every other bar is"
         echo "                  clean; this log records no binary launches, so how many binaries should"
         echo "                  have reported is unknown, and an unknown population is not a green one."
-    elif (( CENSUS_SHORT && CARGO_RC == 0 && FAILED == 0 && SKIPS == 0 && CLIPPY_RC == 0 && LEDGER_RC == 0 && ! LEDGER_SILENT && ${#SILENT_BINARIES[@]} == 0 )); then
+    elif (( CENSUS_SHORT && CARGO_RC == 0 && FAILED == 0 && SKIPS == 0 && CLIPPY_RC == 0 && LEDGER_RC == 0 && ! LEDGER_SILENT && ${#SILENT_BINARIES[@]} == 0  && ! CI_RED )); then
         # The informative case for the census: every binary that launched also reported,
         # so the log is internally consistent and still describes fewer targets than the
         # manifests do. Only a figure from outside the log can say that.
@@ -1250,7 +1400,7 @@ if (( CARGO_RC != 0 || FAILED > 0 || CLIPPY_RC != 0 || SKIPS > 0 || LEDGER_RC !=
         echo "                  with itself; it is the workspace it does not agree with. Do not land"
         echo "                  on this."
     else
-        echo "  RESULT          FAILED, $FAILED test(s) red, ${#SILENT_BINARIES[@]} silent binary/binaries, $SKIPS skip line(s), cargo exit $CARGO_RC, clippy exit $CLIPPY_RC, ledger exit $LEDGER_RC, census $CENSUS_STATE."
+        echo "  RESULT          FAILED, $FAILED test(s) red, ${#SILENT_BINARIES[@]} silent binary/binaries, $SKIPS skip line(s), cargo exit $CARGO_RC, clippy exit $CLIPPY_RC, ledger exit $LEDGER_RC, census $CENSUS_STATE, ci-shaped exit $CI_RC."
     fi
     echo "==================================================================================="
     exit 1

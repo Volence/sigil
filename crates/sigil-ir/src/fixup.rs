@@ -68,9 +68,10 @@ pub enum FixupKind {
     /// the LOW 16 bits of a value whose high 16 bits must be a consistent
     /// extension — either all-zero (an unsigned/positive value like an
     /// objroutine offset in `[0, 0xFFFF]`) OR all-one (a sign-extended RAM
-    /// address like `$FFFF9EDE`). This is exactly AS's rule for a word
-    /// immediate (`move.w #$FFFF9EDE, d0` and `move.w #$F800, d0` both assemble;
-    /// `move.w #$00019EDE, d0` errors). [`Value16Be`](Self::Value16Be) rejects
+    /// address like `$FFFF9EDE`, `move.w #RamLabel, d0`). This is wider than the
+    /// pinned asl's rule for a LITERAL, which refuses `move.w #$FFFF9EDE, d0`
+    /// (`range overflow`; the comptime check refuses it too); `move.w #$F800, d0`
+    /// assembles and `#$00019EDE` errors. [`Value16Be`](Self::Value16Be) rejects
     /// the sign-extended address (negative); [`Abs16Be`](Self::Abs16Be) rejects
     /// the `[0x8000, 0xFFFF]` upper-unsigned half — a word immediate needs the
     /// UNION. Writes the low 16 bits verbatim big-endian; a value whose high

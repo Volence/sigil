@@ -756,16 +756,16 @@ fn lower_m68k_movem(
 /// mirror of the AS front-end's `try_defer_long_imm`): `movea.l #SONG_TABLE,
 /// a0` / `move.w #ROUTINE_OFF, (a0)` where the value is an extern()/equ
 /// residual that cannot fold until link. The instruction encodes ONCE with a
-/// zero-imm placeholder and ONE `Value32Be` (`.l`) / `Value16Be` (`.w`) fixup
+/// zero-imm placeholder and ONE `Value32Be` (`.l`) / `ImmWord16Be` (`.w`) fixup
 /// at offset 2 (the imm field always directly follows the one-word opcode:
 /// the imm is the SOURCE, so its ext words come first; any destination ext
 /// words follow the hole and don't move it).
 ///
 /// The `.w` width's demand site is the object-bank dispatch store (tranche 6:
 /// `move.w #(Main - ObjCodeBase), Sst.code_addr(a0)` — objroutine): a
-/// link-time symbol DIFFERENCE in a word immediate. `Value16Be` range-checks
-/// the folded value to the unsigned 16-bit window at link, so a negative or
-/// oversize difference is loud, not wrapped.
+/// link-time symbol DIFFERENCE in a word immediate. `ImmWord16Be` checks the
+/// folded value's high half is all-0 or all-1 at link (so a RAM label at
+/// `$FFFF9EDE` assembles), so an oversize value is loud, not wrapped.
 ///
 /// The `.b` width's demand site is boot's game-contract id store (tranche 23:
 /// `move.b #GAME_ENTRY_ID, (Game_State_ID).w` — a game-side equ read from
@@ -955,8 +955,9 @@ fn lower_m68k_imm_link(
     // EA address: it holds the low 16 bits of a value whose high half must be a
     // consistent extension — all-zero (an objroutine offset in `[0, 0xFFFF]`)
     // or all-one (a sign-extended RAM address like `$FFFF9EDE`, core's
-    // free-stack SP writes). `ImmWord16Be` is exactly that union — AS's
-    // word-immediate rule. `Value16Be` rejects the sign-extended address;
+    // free-stack SP writes). `ImmWord16Be` is exactly that union (wider than
+    // asl's rule for a literal, which refuses `#$FFFF9EDE`). `Value16Be`
+    // rejects the sign-extended address;
     // `Abs16Be` rejects the `[0x8000, 0xFFFF]` upper-unsigned half (a valid
     // objroutine offset). `.l` stays a verbatim `Value32Be` (a full 32-bit
     // address fits without truncation).
