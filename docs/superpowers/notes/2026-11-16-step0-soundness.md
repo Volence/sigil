@@ -459,4 +459,4 @@ Branch `parcel/step0-soundness` pushed (owner-approved; never master):
 | `44014834372` | `6a0cd3ff` | failure | test step GREEN (524, 5,894 passed, 0 failed, 3 ignored, 474 skips). clippy step red: clippy 1.100 `needless_range_loop` at `sigil-clownlzss-sys/src/accurate.rs:201,204` (fixed `417dc819`) |
 | **`44015583371`** | `417dc819` | **success** | every step green: test (524 suites, 5,894 passed, 0 failed, 3 ignored), skip report (473), clippy, crate-graph guard (1 passed); 04:12:44Z to 04:17:28Z |
 
-Master run after the merge: **MASTER_RUN_ID_PLACEHOLDER, recorded by the controller at landing** (also owed: the A8 task note `empyrean/docs/v2/tasks/A8 CI green and watched.md`, status/branch/Progress with both run ids). Booked: `docs/QUEUE.md` `CI-TOOLCHAIN-FLOATS`.
+Master run after the merge: **`44017120477` at `457f2763`: success** (wave 1 landing, 2026-11-16; A8 task note updated). Booked: `docs/QUEUE.md` `CI-TOOLCHAIN-FLOATS`.
