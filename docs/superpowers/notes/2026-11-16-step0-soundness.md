@@ -1033,3 +1033,20 @@ and BN shows no byte moved.
   Delta +1 suite (`usp_reserved`), +7 tests. Log `.target-land/landing-20261117T184207Z.log`.
 - Left: M5 (asl byte table not committed as a fixture), M6 (round-0 ccr RED only in its commit message), M7
   (runtime figures vary with host load; fan-out mostly nominal).
+
+### Fix round 2 (`a8dcdbd7`, `a6473695`; re-review `task-9-rereview-1.md`: I1, M1-M4 addressed, N1 Important)
+
+- N1: a spliced label/string naming a register word is refused (`classify_operand_splice`), and a `Label`
+  argument naming one is refused at the call (`check_arg_class`). Refusal only.
+- N2: `usp_reserved` gains the `(usp).w/.l`, `dc.l/.w usp` and `usp+-k` refusals. N4: canaries must be
+  generated cases. N3 left (unsized fallback not bounded).
+- RF (`.aeon-v2-harness-out/t9/rf/rf4.sh`, `rf4.log`; baseline `a6473695`, restore `git restore --source=HEAD`):
+  splice guard off -> `register_word_splice` 2/5, `21CA 1234 4E75` and Z80 `21 3412 C9`; Label check off ->
+  1 fails (the splice still refuses, so the located call-site error is what goes); both off -> 1/5, the
+  reviewer's `21CA 1234`; dc refusal off -> `usp_reserved` 5/6 (`dc.l usp` assembled `0000 1234`); a canary
+  off the matrix -> `moveq #2, d6 is not a generated case`. All green after restore.
+- Gate: TOTAL n=155292 same=4978 refuse=149345 excluded=969 disagree=0, 7/7. Coverage 480/481 + swap unsized.
+  `sigil-frontend-emp`: 140 suites, 2,822 passed, 0 failed.
+- BN (`t9/bn4.log`, cand `a6473695`): `SHAPES 7/7 IDENTICAL`, rc 0.
+- SS (`landing-run.sh --aeon .aeon-t9-pairref`, tree `a6473695` clean, 19:29:49Z -> 20:02:42Z): **RESULT GREEN**, 532/532, **5,978 passed / 0 failed / 3 ignored**, 0 skips, clippy 0, ledger 0, CI leg 0 (532 suites, 5,978). Delta +1 suite (`register_word_splice`), +6 tests. Log `.target-land/landing-20261117T192949Z.log`.
+- Booked: `EMP-REGISTER-NAMES-CASE-SENSITIVE` (latent; aeon count 0).

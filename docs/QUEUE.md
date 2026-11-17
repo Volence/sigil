@@ -1838,9 +1838,21 @@ Two smaller items booked here as well:
   floor (SameBytes > 0 for every family except the 16 derived as having no `.emp` form) and 5 canaries; the
   coverage test also requires a SameBytes case per emitted triple (480/481 at size, `swap` unsized). Open
   from the review: M5 (no committed asl byte oracle for the excluded population).
+- Fix round 2 (`a8dcdbd7`, `a6473695`; re-review N1, N2, N4): a spliced label/string naming a register word
+  never becomes a symbol (see `EMP-USP-READ-AS-SYMBOL`); the three other usp refusals have tests; each
+  canary must be a generated case. Left: N3 (the coverage test's unsized fallback is not bounded to
+  implicit-size families; today it holds only `(swap, .w, [Dn])`).
 - Evidence: the Task 9 section of `docs/superpowers/notes/2026-11-16-step0-soundness.md`.
 
-## EMP-USP-READ-AS-SYMBOL: CLOSED IN BRANCH 2026-11-17 (A6 fix round 1, `f456fbc3` + `93c207fe`)
+## EMP-USP-READ-AS-SYMBOL: CLOSED IN BRANCH 2026-11-17 (A6 fix rounds 1-2, `f456fbc3` + `93c207fe` + `a8dcdbd7`)
+
+- Fix round 2 (re-review N1): the comptime splice was a second route. `classify_operand_splice` mapped a
+  `Label`/string straight to a symbol, so `put usp` through `asm { move.l a2, {p} }`, or `const N = "usp"`
+  spliced as `{N}`, assembled `21CA 1234` beside an outside `usp` (asl `4E62`); `sr`/`ccr` the same, and a
+  `use`-imported `usp` reached an operand this way. Now a spliced label/string naming a register word is
+  refused (`usp`: `[operand.usp-unsupported]`; `d0`-`a7`/`sp`/`sr`/`ccr`: `[asm.splice-register-word]`;
+  Z80 words in a Z80 section), and a `Label` argument naming one is refused at the call like `put d0`.
+  Fixture `crates/sigil-frontend-emp/tests/register_word_splice.rs`.
 
 - Closed: `usp` is reserved in `.emp`. `[operand.usp-unsupported]` refuses it in every operand position
   (never a symbol); `[name.reserved-register]` refuses an item, vars/region field or parameter named `usp`
@@ -1889,3 +1901,18 @@ until its row is removed.
   `.emp` assembles the short form. A policy split between the two routes, not a defect of either.
 - `sized-swap` (3): `.emp` accepts `swap.b/.w/.s` (asl: `invalid operand size`); bytes equal `swap`.
   Refusing it is a spelling-parity fix; aeon writes no sized `swap` (grep), so it would be byte-neutral.
+
+## EMP-REGISTER-NAMES-CASE-SENSITIVE: OPEN, LATENT (booked by A6 fix round 2, 2026-11-17)
+
+- `.emp` knows register words in lowercase only (`Reg::from_name`, `value.rs`), while the AS route and asl
+  are case-insensitive. So an upper- or mixed-case name shadows a register: with an outside `USP` symbol,
+  `move.l a2, USP` assembles `21CA 1234` (AS/asl `4E62`); `data SR: u16` + `move.w SR, d0` gives
+  `3038 0000` (AS `40C0`). `.emp` may declare `data USP`, `D0`, `SR`, `CCR`; `[name.reserved-register]`
+  and the splice refusal are lowercase-exact. The differential spells only lowercase, so it cannot see this.
+- Latent: aeon declares no item (and writes no operand) named a register word in another case. Grep of
+  every `.emp` file, comments stripped, for `[dDaA][0-7]|[sS][pPrR]|[cC][cC][rR]|[uU][sS][pP]|[pP][cC]` as
+  a whole word other than the lowercase spelling: **0** at the reference tree `936439fa` (208 files) and
+  **0** at the live tree `d9b51660` (the only `SR` hits are in comments, a string, and the substring of
+  `PageIn_Saved_SR`).
+- Needs a language ruling: refuse case variants of register words as names and operands, or fold them.
+
