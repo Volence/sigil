@@ -742,3 +742,64 @@ with, the sigil merge; the standing ref tree then needs re-provisioning past it 
   `168bb908` (inert); M3 seam1 reads the invariant through `z80_closure::module_invariant_units`;
   M4 Z80 name collisions are a located zero-firing row; M5 module doc says the walk keys on the module
   `cpu`; M6 the 66-firing claim now has its artifact; M7 booked `SOUND-BANKID-ODD-RESIDENT-BLOB`.
+
+## Task 8 (A4): one name environment per declaration
+
+Commits (sigil): `7759b2d7` (step 1, the report, no behaviour change), `b35a2d38` (the 8 RED
+fixtures), `a312c74a` (implementation), this note; paired with aeon `parcel/step0-soundness-pair` `6b5f8d8d`
+(`palette_dsl.emp` imports `PalCycleScript1/2`) and `c4c1fb0b` (EMP_PITFALLS §2/§8 retired;
+DEFERRED_WORK `EMP-A4-PINS-REMOVABLE`).
+
+Before: an imported comptime item was injected as a verbatim clone, so its free names resolved in
+the IMPORTER (reviewer A probes: p8b `sizeof(S)` 12 not 6; p2d `9, 9` not `5, 5`; p2e 6 not 4; p8 an
+error at `a.emp`). Now `resolve::hygiene` resolves each free name in the DEFINING module (own items,
+private included, then its own `use`s), renames a comptime-bound one to `$def$name`, injects that
+dependency under the hidden name (recursively, memoized per program), and maps a hidden dependency back
+to its plain name in each importer that binds it to the same item. A name bound only by the importer is
+refused: ``[name.unbound-at-definition] `X` in `f` is not bound in module `m`; add a `use` there``.
+
+### Step 2: the corpus measurement (`sigil build --report name-env`, step-1 binary)
+
+| Shape | rows (936439fa + A5 pair) | differ | unbound | rows (+ A4 pair) | differ | unbound |
+|---|---|---|---|---|---|---|
+| plain | 46,181 | 0 | 4 | 46,417 | 0 | 0 |
+| debug | 51,045 | 0 | 4 | 51,307 | 0 | 0 |
+| demo | 24,841 | 0 | 2 | 24,973 | 0 | 0 |
+| demo_debug | 25,585 | 0 | 2 | 25,721 | 0 | 0 |
+| config_a | 51,804 | 0 | 4 | 52,070 | 0 | 0 |
+| config_b | 44,310 | 0 | 4 | 44,536 | 0 | 0 |
+| lean | 46,181 | 0 | 4 | 46,417 | 0 | 0 |
+
+The unbound rows (2 distinct): `engine.effects.palette_dsl.cycle_script1` names `PalCycleScript1` and
+`cycle_script2` names `PalCycleScript2`, both defined in `engine.effects.palette`, bound only by the
+importers `engine.effects.palette`, `games.sonic4.ojz_effects`, `games.sonic4.ojz_effects_editor_act1`.
+The candidate binary's report over the pair tree is byte-identical to the step-1 binary's in all 7 shapes.
+
+### RF (invariant 8), `.aeon-v2-harness-out/sigil-t8/rf.txt`
+
+```
+$ git status --short                     (empty, HEAD a312c74a)
+$ git diff --stat
+ crates/sigil-frontend-emp/src/resolve/hygiene.rs | 1 +
+$ grep -n 'return vec!\[item.clone()\];' crates/sigil-frontend-emp/src/resolve/hygiene.rs
+844:    return vec![item.clone()];
+$ cargo test -p sigil-cli --test one_name_env
+test struct_layout_is_computed_in_its_defining_module ... FAILED   left: [112, 12, 78, 117] (70 0C)
+test result: FAILED. 1 passed; 7 failed
+$ git restore --source=HEAD -- crates/sigil-frontend-emp/src/resolve/hygiene.rs; git status --short   (empty)
+test result: ok. 8 passed; 0 failed
+```
+
+Second gate, the refusal: `hygiene.rs:900` `if false && memo.reported.insert(…)` →
+`a_name_unbound_at_definition_is_refused` FAILED (`:238`), 7/1; restored, 8/8.
+
+### BN (`.aeon-v2-harness-out/sigil-t8/bn1-*.log`, 34 s)
+
+Base `94cf811d` vs candidate `a312c74a` over `.aeon-t8-pairref` (936439fa + the A5 pair files + the A4
+`palette_dsl.emp`): **SHAPES 7/7 IDENTICAL, rc 0**; both columns equal the Task 6 goldens (plain
+193507d9/850296, debug ce326232/870560, demo 2f9e2d4c/99994, demo_debug 64717bac/106981, config_a
+6be62db3/870972, config_b d888a312/617813, lean 60a3552b/798202). The base column proves the aeon
+`use` line byte-neutral under the shipping sigil. `--check` base vs candidate (plain, debug, demo):
+identical ensure/LinkAssert counts (plain 89,905 / 698); the only difference is
+`layout.provisional-drift` (4 plain, 5 debug) present under the base only: the base binary carries the
+pre-Task-6 frozen tables (`offcanonical_sizes/s4*.txt` changed `94cf811d..68bfd8af`).

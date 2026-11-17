@@ -1775,3 +1775,32 @@ Two smaller items booked here as well:
   odd-sized resident blob is placed padded to even and the check compares the padded span with the
   unpadded emission: a padding/measurement mismatch, not a real overlap. An otherwise valid sound edit is
   refused. Evidence: `.aeon-v2-harness-out/sigil-t7/e8.txt` (odd, both refuse), `e8b.txt` (even, builds).
+
+## EMP-ONE-NAME-ENV: LANDED IN BRANCH 2026-11-17 (step-0 Task 8 / A4, branch `parcel/step0-soundness`)
+
+- Closed by A4 (`a312c74a`): an imported comptime item resolves its free names where it is DEFINED.
+  `resolve::hygiene` (`free_names`, `rename_free`, `hidden_name`, `HygieneMemo`, `hygienic_closure`,
+  `localize`); `collect_pub_comptime` injects the closure, each dependency under `$def$name`, and each
+  importer maps back the dependencies it binds to the same item, so an importer whose names already agreed
+  sees the pre-A4 clones exactly. A name bound only by the importer is refused,
+  `[name.unbound-at-definition]`. `sigil build --report name-env` lists the rows (EMP language audit
+  finding 1/2; aeon EMP_PITFALLS §2 and §8 retired in the pair).
+- PAIR: aeon `parcel/step0-soundness-pair` `6b5f8d8d` imports `PalCycleScript1/2` in `palette_dsl.emp`
+  (the 2 distinct unbound rows the report found at `936439fa`); byte-neutral (BN base column). Without it
+  the candidate refuses the tree. Docs `c4c1fb0b` (pitfalls retired, `EMP-A4-PINS-REMOVABLE` booked aeon-side).
+- Booked, OPEN (not in A4's scope):
+  - The contract gate's corpus type environment is FLAT and last-writer-wins
+    (`corpus_contracts.rs:489-497`, `collect_env` over every file; Sigil audit finding 12): a same-named
+    declaration in two modules resolves to whichever file came last, for every file's walk.
+  - The native build's hand-kept 14-module `COMPTIME_HELPERS` list (`sigil-harness/src/native.rs:1817`),
+    publicized and glob-injected into every module. With A4 a helper's private items travel with the
+    items that need them, so the publicize step and the list are removable; aeon must first drop the
+    importer-side workarounds (aeon `EMP-A4-PINS-REMOVABLE`).
+  - Ambient paths outside `collect_pub_comptime` are not hygienic: `layout_struct_ambient` (the struct-offset
+    harvest), `eval_expr_in_file_ambient` (contract bind), the corpus walk above, and the seam-1/seam-2
+    sound lowering. Each builds its own environment.
+  - A `{name}` interpolation inside an `ensure`/`raise` message string is evaluated where the message is
+    evaluated; strings are not renamed.
+  - Labels (procs, data, equs, region fields) named inside an injected comptime fn's `asm` body resolve
+    through the link rename, not this rule.
+- Evidence: the Task 8 section of `docs/superpowers/notes/2026-11-16-step0-soundness.md`.
