@@ -1175,6 +1175,22 @@ impl Z80RegClass {
     }
 }
 
+/// A 68000 register word: a name the bare-operand path reads as a register and
+/// never as a symbol (`d0`..`d7`, `a0`..`a7`, `sp`, `sr`, `ccr`, `usp`). A label
+/// or string carrying one of these names must not become a symbol operand
+/// through a `{splice}` or a `Label` argument (A6 fix round 2, re-review N1).
+pub fn is_m68k_register_word(name: &str) -> bool {
+    Reg::from_name(name).is_some() || matches!(name, "sr" | "ccr" | "usp")
+}
+
+/// A Z80 register word: a name the bare Z80-operand path reads as a register
+/// (an 8-bit register, a pair including `sp`/`af`, or an index register).
+pub fn is_z80_register_word(name: &str) -> bool {
+    Z80Reg8::from_name(name).is_some()
+        || Z80Pair::from_name(name).is_some()
+        || Z80Index::from_name(name).is_some()
+}
+
 impl fmt::Display for Z80RegClass {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {

@@ -496,6 +496,22 @@ impl<'a> Evaluator<'a> {
             ),
             _ => {}
         }
+        // A `Label` carrying a register WORD (`usp`, `sr`, `ccr`) is the same
+        // mistake as `put d0`: the bare word is a register wherever it is
+        // written, so it is never a label argument (A6 fix round 2, N1).
+        if let Value::Label(n) = v {
+            if !param_is_reg && crate::value::is_m68k_register_word(n) {
+                self.error(
+                    span,
+                    format!(
+                        "a register is not a valid `{}` argument: `{n}` is a register word, \
+                         never a label",
+                        type_display(pty)
+                    ),
+                );
+                return;
+            }
+        }
         // Label class (D-PP.3), symmetric to the register check apart from the
         // null-symbol carve-out (D-25): `0` is a legal `Label`.
         let param_is_label = param_type_is_label(pty);

@@ -106,3 +106,26 @@ fn names_containing_usp_are_ordinary() {
     let src = "module m\nproc usp_save() {\n    rts\n}\nproc f() {\n    jsr usp_save\n    move.l a2, a3\n    rts\n}\n";
     assert!(emp(src, &SymbolTable::new()).is_ok());
 }
+
+/// Re-review N2: the three other fix-round-1 refusals, each with an outside
+/// `usp` in the link environment so a regression would assemble rather than
+/// fail to link.
+/// - `(usp).w` / `(usp).l`: the sized-absolute path (`[operand.usp-unsupported]`).
+/// - `dc.l usp` / `dc.w usp`: a register word is not a `dc` element (`unknown name`).
+/// - `usp+0`, `usp-0`, `0+usp`: `bare_symbol_seg` skips `usp`, so the sum never
+///   becomes a `SymOff` (`unknown name`).
+#[test]
+fn sized_absolute_dc_and_offset_spellings_of_usp_are_refused() {
+    let mut env = SymbolTable::new();
+    env.define("usp", SymbolValue::Int(0x1234));
+    for inst in ["move.l a2, (usp).w", "move.l a2, (usp).l", "move.l (usp).w, a3"] {
+        let src = format!("module m\nproc f() {{\n    {inst}\n    rts\n}}\n");
+        let e = refused(&src, &env);
+        assert!(has(&e, OPERAND), "`{inst}`: {e:?}");
+    }
+    for inst in ["dc.l usp", "dc.w usp", "move.l a2, usp+0", "move.l a2, usp-0", "move.l a2, 0+usp"] {
+        let src = format!("module m\nproc f() {{\n    {inst}\n    rts\n}}\n");
+        let e = refused(&src, &env);
+        assert!(has(&e, "unknown name `usp`"), "`{inst}`: {e:?}");
+    }
+}

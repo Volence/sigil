@@ -2688,7 +2688,7 @@ impl Evaluator<'_> {
             // `sr` and fail only at link — steer early, matching the
             // register-class-words-win rule the bare path applies.
             if p.segments.len() == 1 && p.segments[0] == "usp" {
-                self.error(span, "[operand.usp-unsupported] `usp` is the 68000 user stack pointer, never a symbol; `.emp` has no `move` to or from `usp` yet (EMP-USP-CCR-SURFACE)".to_string());
+                self.error(span, USP_UNSUPPORTED.to_string());
                 return None;
             }
             if p.segments.len() == 1 && matches!(p.segments[0].as_str(), "sr" | "ccr") {
@@ -3254,7 +3254,7 @@ impl Evaluator<'_> {
                 // item named `usp`, `move.l a2, usp` assembled `21CA 0000`, a
                 // move to `($0000).w` (A6 fix round 1, EMP-USP-READ-AS-SYMBOL).
                 if seg == "usp" {
-                    self.error(expr_span(expr), "[operand.usp-unsupported] `usp` is the 68000 user stack pointer, never a symbol; `.emp` has no `move` to or from `usp` yet (EMP-USP-CCR-SURFACE)".to_string());
+                    self.error(expr_span(expr), USP_UNSUPPORTED.to_string());
                     return None;
                 }
                 // S2-D12(e) — the forgotten-`#`: this bare name is about to
@@ -3448,7 +3448,39 @@ impl Evaluator<'_> {
             // `lea {p}, a1`) produces the same symbol operand as the string form
             // (D-PP.3) — a link-time reference, byte-identical to `jsr {t}` with
             // a `string` param.
-            Value::FnRef(n) | Value::Str(n) | Value::Label(n) => Some(CodeOperand::Sym(n)),
+            //
+            // A register WORD never becomes a symbol this way (A6 fix round 2,
+            // re-review N1). The unspliced spelling reads `usp`/`sr`/`ccr`/`d0`
+            // as a register, so `put usp` through `jsr {p}`-style templates, or
+            // `const N = "usp"` spliced as `{N}`, assembled `move.l a2, usp` as
+            // `21CA 1234`, a move to the absolute address of an outside `usp`
+            // symbol (asl: `4E62`). Refused, never reclassified: `usp` keeps its
+            // unspliced `[operand.usp-unsupported]`; the others get
+            // `[asm.splice-register-word]`. Refusal only, so byte-neutral.
+            Value::FnRef(n) | Value::Str(n) | Value::Label(n) => {
+                let reg_word = if is_z80 {
+                    crate::value::is_z80_register_word(&n)
+                } else {
+                    crate::value::is_m68k_register_word(&n)
+                };
+                if !reg_word {
+                    return Some(CodeOperand::Sym(n));
+                }
+                if n == "usp" && !is_z80 {
+                    self.error(span, USP_UNSUPPORTED.to_string());
+                } else {
+                    self.error(
+                        span,
+                        format!(
+                            "[asm.splice-register-word] `{n}` is a register word, never a symbol: \
+                             a spliced label or string naming it would assemble as an absolute \
+                             address. Write the register in the template, or pass it to a `Reg` \
+                             parameter"
+                        ),
+                    );
+                }
+                None
+            }
             other => {
                 if let Some(n) = other.as_stored_int() {
                     Some(CodeOperand::Imm(n))
@@ -3486,6 +3518,9 @@ fn z80_regclass_operand(rc: Z80RegClass) -> CodeOperand {
         Z80RegClass::Index(Z80Index::Iy) => CodeOperand::Z80Pair(Z80Pair::Iy),
     }
 }
+
+/// The one `usp` refusal text, shared by every operand path that meets the word.
+const USP_UNSUPPORTED: &str = "[operand.usp-unsupported] `usp` is the 68000 user stack pointer, never a symbol; `.emp` has no `move` to or from `usp` yet (EMP-USP-CCR-SURFACE)";
 
 /// A literal size-suffix string (`b`/`w`/`l`/`s`) to its [`Width`].
 fn width_from_text(t: &str) -> Option<Width> {
