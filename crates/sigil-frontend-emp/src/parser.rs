@@ -407,6 +407,24 @@ impl Parser {
                 );
             }
         }
+        // A5: the Z80 computed-dispatch scope hatch takes its reason under the same
+        // rule. The hatch removes a proc's own under-claims from the build gate, so
+        // it is never taken silently.
+        let is_dispatch_allow = attr.name == "allow"
+            && attr.args.first().and_then(Arg::str_value) == Some("clobbers.computed-dispatch");
+        if is_dispatch_allow {
+            let has_reason =
+                attr.args.get(1).and_then(Arg::str_value).is_some_and(|s| !s.is_empty());
+            if attr.args.len() != 2 || !has_reason {
+                self.diag_at(
+                    attr.span,
+                    "[clobbers.computed-dispatch-reason-required] \
+                     `@allow(\"clobbers.computed-dispatch\", ...)` needs a non-empty reason \
+                     string: `@allow(\"clobbers.computed-dispatch\", \"which computed dispatch \
+                     reaches this proc\")`",
+                );
+            }
+        }
     }
 
     // ---- file ----

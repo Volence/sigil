@@ -509,7 +509,8 @@ fn computed_dispatch_annotated(srcs: &[(PathBuf, String)]) -> Vec<String> {
 /// (`[call.clobbers-incomplete]`, the build gate's `(Z80)` row) is EMPTY in every
 /// shipped shape, it is not blind (0 register-relevant drops, 0 holes), and the
 /// procs it excludes are exactly the ones annotated
-/// `@allow("clobbers.computed-dispatch", …)` in source.
+/// `@allow("clobbers.computed-dispatch", …)` in source; no annotated proc is
+/// `call`ed from outside the annotated set; no Z80 name is declared twice.
 #[test]
 fn corpus_z80_clobber_closure_is_empty_the_error_gate() {
     let Some(srcs) = corpus_sources() else { return };
@@ -536,6 +537,12 @@ fn corpus_z80_clobber_closure_is_empty_the_error_gate() {
             .map(|f| (f.proc.clone(), f.reg.clone().unwrap_or_default(), f.via.clone()))
             .collect();
         assert!(fired.is_empty(), "shape `{label}`: Z80 under-claims: {fired:?}");
+        assert!(
+            r.z80_dispatch_called.is_empty(),
+            "shape `{label}`: annotated procs called from outside the annotated set: {:?}",
+            r.z80_dispatch_called
+        );
+        assert!(r.z80_collisions.is_empty(), "shape `{label}`: Z80 name collisions: {:?}", r.z80_collisions);
         assert_eq!(
             r.z80_clobber_excluded, annotated,
             "shape `{label}`: the excluded set must be exactly the annotated procs"

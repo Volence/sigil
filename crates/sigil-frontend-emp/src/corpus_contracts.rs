@@ -361,6 +361,17 @@ pub struct ContractReport {
     pub z80_dropped_data_cells: usize,
     /// [`Self::z80_dropped_instrs`] per proc, `(proc, n)` in walk order.
     pub z80_dropped_by_proc: Vec<(String, usize)>,
+    /// `[clobbers.computed-dispatch-called]`: annotated procs a proc OUTSIDE the
+    /// annotated set reaches with a returning `call`/`rst`, which bounds the hatch
+    /// ([`crate::z80_closure::computed_dispatch_called`]). Zero-firing by contract.
+    pub z80_dispatch_called: Vec<crate::z80_closure::DispatchCalled>,
+    /// The in-scope [`Self::z80_clobber_firings`] procs no Z80 proc reaches by a
+    /// direct edge (the computed-dispatch shape); the gate's remedy hint names them.
+    pub z80_clobber_no_direct_caller: Vec<String>,
+    /// Z80 names declared twice (two procs, or a proc and an extern), each at the
+    /// later declaration: the closure keys nodes by name, so one went unchecked.
+    /// Zero-firing by contract.
+    pub z80_collisions: Vec<(String, Span)>,
 }
 
 /// Analyze the parsed corpus with the canonical no-`-D` config (census-parity).
@@ -1410,6 +1421,12 @@ pub fn analyze_corpus_with_contracts(
         z80_dropped_instrs: z80_closure_inputs.dropped,
         z80_dropped_data_cells: z80_closure_inputs.dropped_data_cells,
         z80_dropped_by_proc: z80_closure_inputs.dropped_by_proc,
+        z80_dispatch_called: crate::z80_closure::computed_dispatch_called(
+            &z80_closure_inputs.nodes,
+            &z80_closure_inputs.calls,
+        ),
+        z80_clobber_no_direct_caller: z80_partition.firing_without_direct_caller,
+        z80_collisions: z80_closure_inputs.collisions,
     }
 }
 
@@ -2253,6 +2270,11 @@ struct Z80ClosureInputs {
     dropped_by_proc: Vec<(String, usize)>,
     /// Dropped `dc` data cells: counted, never register-relevant.
     dropped_data_cells: usize,
+    /// Each body-bearing proc's returning `call`/`rst` targets.
+    calls: BTreeMap<String, Vec<String>>,
+    /// A Z80 name declared twice (proc/extern or two modules): the second
+    /// declaration overwrote the first node, so one of them went unchecked.
+    collisions: Vec<(String, Span)>,
 }
 
 /// rung-2 §13.3 sub-part 3 — walk a `(cpu: z80)` module's items (recursing
@@ -2310,10 +2332,13 @@ fn collect_z80_flag_procs(
                 if dropped != 0 {
                     z80.dropped_by_proc.push((p.name.clone(), dropped));
                 }
-                z80.nodes.insert(
-                    p.name.clone(),
-                    crate::z80_closure::z80_proc_node(p, buf.as_ref(), &inv_units, None),
-                );
+                if let Some(b) = &buf {
+                    z80.calls.insert(p.name.clone(), crate::z80_closure::z80_call_targets(b));
+                }
+                let node = crate::z80_closure::z80_proc_node(p, buf.as_ref(), &inv_units, None);
+                if z80.nodes.insert(p.name.clone(), node).is_some() {
+                    z80.collisions.push((p.name.clone(), p.span));
+                }
                 // A Z80 module's comptime conditions read the SAME define set —
                 // a lost toggle must be as loud here as in a 68k module.
                 comptime_unresolved
@@ -2351,7 +2376,9 @@ fn collect_z80_flag_procs(
                 // Z80 proc crediting an extern out (call / tail / falls_into) can
                 // ground its own claim in it.
                 z80_extern_names.insert(e.name.clone());
-                z80.nodes.insert(e.name.clone(), crate::z80_closure::z80_extern_node(e));
+                if z80.nodes.insert(e.name.clone(), crate::z80_closure::z80_extern_node(e)).is_some() {
+                    z80.collisions.push((e.name.clone(), e.span));
+                }
                 let out_units = e.sig.unconditional_outs(crate::regfile::RegFile::Z80);
                 if !out_units.is_empty() {
                     z80_declared_out.insert(e.name.clone(), out_units);

@@ -248,25 +248,12 @@ fn parse_one(aeon: &Path, spec: &FileSpec) -> (ast::File, PathBuf) {
 /// `validate_module_invariants` reader). Unioned into an imported callee's stub so
 /// a consumer credits the inherited-preserve (e.g. fm/psg's module `preserves(ix)`).
 fn module_invariant_reglist(file: &ast::File) -> Vec<(String, Option<String>)> {
-    for (name, expr) in &file.module.attrs {
-        if name != "invariant" {
-            continue;
-        }
-        if let ast::Expr::Call { callee, args, .. } = expr {
-            if callee.segments.last().map(String::as_str) == Some("preserves") {
-                return args
-                    .iter()
-                    .filter_map(|a| match &a.value {
-                        ast::Expr::Path(p) if p.segments.len() == 1 => {
-                            Some((p.segments[0].clone(), None))
-                        }
-                        _ => None,
-                    })
-                    .collect();
-            }
-        }
-    }
-    Vec::new()
+    // ONE reader of the rule: the closure's own (`z80_closure::module_invariant_units`),
+    // re-spelled as single-register segments for the stub's reglist.
+    sigil_frontend_emp::z80_closure::module_invariant_units(file)
+        .into_iter()
+        .map(|u| (u, None))
+        .collect()
 }
 
 /// The cross-module import-resolution table: every `pub proc` across the five

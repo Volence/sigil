@@ -361,6 +361,25 @@ fn unanalyzable_allow_requires_reason() {
     );
 }
 
+/// A5 — `@allow("clobbers.computed-dispatch")` WITHOUT a reason (or with an empty
+/// one) is `[clobbers.computed-dispatch-reason-required]`, the same rule as the
+/// `clobbers.unanalyzable` hatch; WITH one it parses clean.
+#[test]
+fn computed_dispatch_allow_requires_reason() {
+    const CODE: &str = "[clobbers.computed-dispatch-reason-required]";
+    for attr in ["@allow(\"clobbers.computed-dispatch\")", "@allow(\"clobbers.computed-dispatch\", \"\")"] {
+        let src = format!(
+            "module engine.z (cpu: z80)\nsection z (cpu: z80) {{\n    {attr}\n    pub proc H () clobbers(a) {{\n        ret\n    }}\n}}\n"
+        );
+        let (_f, diags) = parse_str(&src);
+        assert!(diags.iter().any(|d| d.message.contains(CODE)), "{attr} must be rejected: {diags:?}");
+    }
+    let (_f, diags) = parse_str(
+        "module engine.z (cpu: z80)\nsection z (cpu: z80) {\n    @allow(\"clobbers.computed-dispatch\", \"table\")\n    pub proc H () clobbers(a) {\n        ret\n    }\n}\n",
+    );
+    assert!(!diags.iter().any(|d| d.message.contains(CODE)), "a reason is accepted: {diags:?}");
+}
+
 // ---------------------------------------------------------------------------
 // Byte-neutrality: extern proc / contract types / @scaffolding emit NOTHING and
 // never change a real proc's bytes (the G1 invariant — contract text is inert).

@@ -2275,6 +2275,16 @@ fn run_contract_gate(aeon: &std::path::Path, target: &BuildTarget) {
     // The Z80 twin (A5): the same closure over `(cpu: z80)` procs, minus the ones
     // declaring `@allow("clobbers.computed-dispatch", …)`. One line, as above.
     failed |= refuse_located("[call.clobbers-incomplete] (Z80) closure firings", &report.z80_clobber_firings, |f| f.span, |f| describe_clobber(f, "[call.clobbers-incomplete]"), &src_index);
+    // The remedy a firing of the computed-dispatch SHAPE needs is not a wider
+    // `clobbers(...)`: derived from the firing (no direct caller anywhere in the
+    // Z80 corpus), never from a list of names.
+    if !report.z80_clobber_firings.is_empty() && !report.z80_clobber_no_direct_caller.is_empty() {
+        eprintln!("{}", z80_dispatch_hint(&report.z80_clobber_no_direct_caller));
+    }
+    // The hatch's bound: an annotated proc a non-annotated proc `call`s is a
+    // subroutine whose callers rely on the contract the annotation leaves unchecked.
+    failed |= refuse_located("[clobbers.computed-dispatch-called] firings", &report.z80_dispatch_called, |f| f.span, |f| format!("[clobbers.computed-dispatch-called] `{}` declares @allow(\"clobbers.computed-dispatch\") but `{}` calls it directly, so its clobbers(...) is relied on and must be verified; drop the annotation", f.proc, f.caller), &src_index);
+    failed |= refuse_located("Z80 name collisions", &report.z80_collisions, |(_, sp)| Some(*sp), |(n, _)| format!("`{n}` is declared twice among the Z80 procs/externs, so the clobber closure checked only one of them"), &src_index);
     failed |= empty_gate("[proc.preserves-unverifiable] word-facet firings", report.word_preserve_firings.len());
     failed |= empty_gate("[context.escape]/[context.entry-skip]/[context.reacquire]", report.context_firings.len());
     failed |= empty_gate("unknown context references", report.unknown_context_refs.len());
@@ -2501,6 +2511,19 @@ fn located_refusal<T>(
 /// or the proc's own body), or the ⊤ remedy for an unbounded one. `code` is the
 /// diagnostic id it is reported under, so a second consumer of the same firing
 /// shape words it identically under its own id.
+/// The one-line remedy hint printed under the Z80 clobber refusal when some firing
+/// proc has no direct caller in the Z80 corpus (the computed-dispatch shape).
+fn z80_dispatch_hint(no_direct_caller: &[String]) -> String {
+    format!(
+        "  hint: {} ha{} no direct caller in the Z80 corpus. If a proc is reached only through a \
+         computed dispatch (a jump table), declare \
+         `@allow(\"clobbers.computed-dispatch\", \"<reason>\")` on it rather than widening its \
+         clobbers(...) (aeon carries these on the sequencer opcode handlers since eb634bbc).",
+        no_direct_caller.iter().map(|n| format!("`{n}`")).collect::<Vec<_>>().join(", "),
+        if no_direct_caller.len() == 1 { "s" } else { "ve" }
+    )
+}
+
 fn describe_clobber(f: &sigil_frontend_emp::closure::Firing, code: &str) -> String {
     let proc = &f.proc;
     if f.unbounded {
@@ -2637,6 +2660,12 @@ fn print_contract_report(report: &sigil_frontend_emp::corpus_contracts::Contract
     }
     for name in &report.z80_clobber_excluded {
         println!("  EXCLUDED  {name}");
+    }
+    for c in &report.z80_dispatch_called {
+        println!("  CALLED    {} (annotated) is called by {}: [clobbers.computed-dispatch-called]", c.proc, c.caller);
+    }
+    for (n, _) in &report.z80_collisions {
+        println!("  COLLISION {n} (declared twice among the Z80 procs/externs)");
     }
     println!(
         "  (Z80 pass: {} dropped instruction(s), {} unresolved callee(s); both must be 0. \

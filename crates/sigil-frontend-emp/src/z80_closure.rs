@@ -19,9 +19,26 @@
 //! (aeon's sequencer opcode handlers, entered through `SeqOpcodeTable`'s
 //! `ex (sp),hl; ret` trampoline) has a transitive effect that depends on an edge
 //! the closure cannot traverse, so it cannot be soundly verified. Such a proc
-//! DECLARES that: `@allow("clobbers.computed-dispatch", "<reason>")`. The exclusion
-//! is by annotation, never by name, and the excluded set is reported beside the
-//! firings so it stays audited.
+//! DECLARES that: `@allow("clobbers.computed-dispatch", "<reason>")` (the reason
+//! is parse-enforced). The exclusion is by annotation, never by name, and the
+//! excluded set is reported beside the firings so it stays audited. The hatch is
+//! bounded ([`computed_dispatch_called`]): an annotated proc that a proc OUTSIDE the
+//! annotated set reaches with a returning `call`/`rst` is refused, because such a
+//! caller is a subroutine client that relies on the declared contract the
+//! annotation leaves unverified. A direct JUMP into an annotated proc is allowed:
+//! the closure charges the jumping proc the target's full computed effect, so no
+//! one relies on the target's declared set along that edge (aeon's
+//! `Sequencer_NextOpcode` `jp z, Seq_Op_Ext` intercept is the one such edge).
+//!
+//! NOT ENFORCED (booked, QUEUE `Z80-CLOBBER-BUILD-GATE`): the computed transfer
+//! itself. `ex (sp),hl; ret` and `jp (hl)` have no symbolic target, so they add
+//! nothing to the dispatching proc's effect; the dispatcher is not charged what
+//! its table's handlers write. The 68k closure reads an unbounded indirect call as
+//! ⊤; this one does not yet.
+//!
+//! The walk ([`crate::corpus_contracts`]) selects Z80 code by the MODULE's
+//! `cpu: z80` attribute; a `(cpu: z80)` section inside a 68k module is not walked
+//! (none exists in the corpus).
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -158,6 +175,59 @@ pub fn z80_extern_node(e: &ExternProcDecl) -> ProcNode {
     }
 }
 
+/// The returning direct-call targets of a Z80 body: the `call`/`rst` subset of
+/// [`z80_transfer_target`]'s edges (a jump does not return to its source).
+pub fn z80_call_targets(buf: &CodeBuf) -> Vec<String> {
+    buf.items
+        .iter()
+        .filter_map(|ci| match ci {
+            CodeItem::Instr { mnemonic, ops, .. } if matches!(mnemonic.as_str(), "call" | "rst") => {
+                z80_transfer_target(mnemonic, ops)
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+/// An annotated proc reached by a returning direct call from outside the
+/// annotated set: `[clobbers.computed-dispatch-called]`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DispatchCalled {
+    /// The `@allow("clobbers.computed-dispatch")` proc.
+    pub proc: String,
+    /// The unannotated proc that `call`s/`rst`s it.
+    pub caller: String,
+    /// The annotated proc's declaration.
+    pub span: Option<Span>,
+}
+
+/// Every annotated proc a proc outside the annotated set reaches with a returning
+/// `call`/`rst` (`calls`: proc name -> its [`z80_call_targets`]). Sorted, deduped.
+pub fn computed_dispatch_called(
+    procs: &BTreeMap<String, ProcNode>,
+    calls: &BTreeMap<String, Vec<String>>,
+) -> Vec<DispatchCalled> {
+    let mut out = Vec::new();
+    for (caller, targets) in calls {
+        if procs.get(caller).is_some_and(|n| n.computed_dispatch) {
+            continue;
+        }
+        for t in targets {
+            let key = crate::closure::resolve_callee_key(procs, t);
+            if let Some(node) = procs.get(key).filter(|n| n.computed_dispatch) {
+                out.push(DispatchCalled {
+                    proc: key.to_string(),
+                    caller: caller.clone(),
+                    span: node.decl_span,
+                });
+            }
+        }
+    }
+    out.sort_by(|a, b| (&a.proc, &a.caller).cmp(&(&b.proc, &b.caller)));
+    out.dedup();
+    out
+}
+
 /// The Z80 closure's full answer: every firing split by scope, the excluded procs,
 /// and the holes.
 #[derive(Clone, Debug, Default)]
@@ -172,6 +242,11 @@ pub struct Z80ClobberPartition {
     pub excluded: Vec<String>,
     /// Direct callees that resolve to no Z80 proc or extern: holes in the closure.
     pub unresolved_callees: BTreeSet<String>,
+    /// The in-scope firing procs that NO Z80 proc reaches by a direct edge (call,
+    /// jump, or `falls_into`): the shape of a computed-dispatch target, so the
+    /// refusal names the `@allow("clobbers.computed-dispatch", …)` remedy for them.
+    /// Sorted.
+    pub firing_without_direct_caller: Vec<String>,
 }
 
 /// Run the closure over `procs` and split its firings by the computed-dispatch
@@ -186,11 +261,22 @@ pub fn z80_clobber_partition(procs: &BTreeMap<String, ProcNode>) -> Z80ClobberPa
         .filter(|(_, n)| n.computed_dispatch)
         .map(|(k, _)| k.clone())
         .collect();
+    let reached: BTreeSet<&str> = procs
+        .values()
+        .flat_map(|n| n.direct_callees.iter().chain(n.falls_into.iter()))
+        .map(|c| crate::closure::resolve_callee_key(procs, c))
+        .collect();
+    let firing_without_direct_caller: BTreeSet<String> = in_scope
+        .iter()
+        .filter(|f| !reached.contains(f.proc.as_str()))
+        .map(|f| f.proc.clone())
+        .collect();
     Z80ClobberPartition {
         in_scope,
         excluded_firings,
         excluded,
         unresolved_callees: closure.unresolved_callees,
+        firing_without_direct_caller: firing_without_direct_caller.into_iter().collect(),
     }
 }
 
@@ -227,8 +313,9 @@ fn dc_spans(body: &[AsmStmt], out: &mut Vec<Span>) {
 ///
 /// A dropped `dc` data cell (typically a cell whose operand names a link-time
 /// constant the contract walk's define set does not carry, e.g. aeon's
-/// `DacSampleTable` sample pointers) emits bytes and writes no register, so it
-/// cannot hide an effect from this closure. Every other drop can. The evaluator
+/// `DacSampleTable` sample pointers) is not decoded as code by this closure
+/// whether it drops or not (an inline-encoded opcode in a `dc` is invisible to it
+/// either way), so its drop adds no blindness. Every other drop can. The evaluator
 /// reports each drop with an `instruction dropped` diagnostic at the instruction's
 /// own span, which is what identifies a drop as a `dc` here; a drop it reports any
 /// other way stays register-relevant, the safe direction.
