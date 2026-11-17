@@ -1081,6 +1081,9 @@ impl<'a> Evaluator<'a> {
         let mut hits: Vec<(u32, String)> = self
             .structs
             .iter()
+            // A hidden (`$def$name`) struct is an injected dependency of an
+            // imported item (A4, `resolve::hygiene`), not a name in this scope.
+            .filter(|(sname, _)| !sname.starts_with('$'))
             .filter(|(_, decl)| decl.fields.iter().any(|f| f.name == w))
             .map(|(sname, decl)| (decl.span.start, sname.to_string()))
             .collect();

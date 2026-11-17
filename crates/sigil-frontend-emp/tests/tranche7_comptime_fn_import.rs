@@ -197,16 +197,16 @@ fn imported_template_with_caller_local_label_hygiene() {
     assert!(next >= 1, "expected the caller's .next_object label, got {next}");
 }
 
-// ---- F3 scope boundary: the DEEP case fails LOUDLY --------------------------
+// ---- F3 scope boundary, CLOSED by step-0 A4 ----------------------------------
 //
 // The SIMPLE case shipped here is a comptime fn whose body uses only its params
 // (aabb_axis_test's exact shape). A fn body that references its HOME module's
-// own consts is a DEEPER resolution problem — the ambient injection makes the fn
-// DECL visible in the consumer, but the fn body then evaluates in the CONSUMER's
-// namespace, where the home module's (un-imported) private const is unknown. The
-// contract is that this case fails LOUDLY (naming the symbol), never silently
-// miscompiles. Flagged in the tranche-7 report as a follow-up (canonicalizing an
-// injected fn body's home-module references is a rename-pass extension).
+// own consts was the DEEPER case: the injected decl's body evaluated in the
+// CONSUMER's namespace, where the home module's private const was unknown, and
+// this test pinned that it failed LOUDLY rather than miscompiling. A4 ("one name
+// environment per declaration", `resolve::hygiene`) resolves the body's free names
+// in the HOME module, so the private const now travels with the fn under a hidden
+// name and the call assembles `addi.w #7, d0`.
 
 const A_DEEP: &str = "\
 module a
@@ -225,11 +225,10 @@ pub proc Consumer () {
 ";
 
 #[test]
-fn imported_fn_referencing_home_private_const_fails_loudly() {
-    let (_secs, diags) = build(&[("a.emp", A_DEEP), ("b.emp", B_DEEP)], "b");
+fn imported_fn_referencing_home_private_const_resolves_where_defined() {
+    let (secs, diags) = build(&[("a.emp", A_DEEP), ("b.emp", B_DEEP)], "b");
     let errs = errors(&diags);
-    assert!(
-        errs.iter().any(|e| e.contains("HIDDEN")),
-        "the deep cross-ref case must fail LOUDLY naming the symbol, got: {errs:?}"
-    );
+    assert!(errs.is_empty(), "the home-private const must resolve in its home module, got: {errs:?}");
+    // addi.w #7, d0 = 0640 0007; then rts.
+    assert_eq!(flatten(&secs), [0x06, 0x40, 0x00, 0x07, 0x4E, 0x75]);
 }
