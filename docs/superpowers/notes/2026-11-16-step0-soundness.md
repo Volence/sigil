@@ -1060,14 +1060,16 @@ Sigil at wave 3 (A5, A4, A6 and the fix wave) refuses every aeon tree that lacks
 unpaired `936439fa`: 66 located `[call.clobbers-incomplete] (Z80)` firings. Four consumers read different
 refs, so the order below is what keeps each of them green. Do not reorder.
 
-1. **Aeon local master merges the pair FIRST**, before sigil local master receives wave 3.
+1. **Aeon local master takes the pair FIRST**, before sigil local master receives wave 3. Make the merge
+   commit in a THROWAWAY worktree, run step 3's AG on that exact commit, and only then fast-forward aeon
+   local master to it (re-review N2a): a failed AG then leaves master untouched.
    `sigil-source-gates.timer` (05:17) reads LOCAL `master` of both repos (`nightly_source_gates.sh`); a
    sigil master with wave 3 beside an aeon master without the pair fails that night. The final review
    checked `git merge-tree master 6269c7fd` in aeon: clean.
 2. **Merge, not squash or cherry-pick**, for the aeon pair (merge or fast-forward). The Task 6 attest and
    the review trail name pair SHAs; a squash makes them point at commits master never has. (The Z80
    remedy hint no longer names a SHA, fix wave, so it no longer depends on this.)
-3. **AG on that merge** (the plan's "re-run AG with the shared pair"): `tools/landing_build.sh` with its
+3. **AG on that merge commit, before master moves** (the plan's "re-run AG with the shared pair"): `tools/landing_build.sh` with its
    `finished=` stamp, then the four `build.sh` shapes, `SIGIL_BUILD`/`SIGIL_EMIT` = this branch's build.
    Aeon master has moved `build.sh` since the pair's AG runs (190 lines), so the pair's own AG does not
    stand in for this one.
@@ -1079,7 +1081,12 @@ refs, so the order below is what keeps each of them green. Do not reorder.
    origin with the pair exits 2 (NOTHING MEASURED). Steps 4 then 5 keep it measuring.
 6. **Do not rebuild the shared `sigil/target/release/sigil` from wave-3 master before aeon master has the
    pair** (step 1). `aeon-effects-gates.timer` (`nightly_effects_gates.sh`) and every aeon `build.sh` run
-   without `SIGIL_BUILD` use that binary; rebuilt early, it refuses aeon master.
+   without `SIGIL_BUILD` use that binary; rebuilt early, it refuses aeon master. Step 1 is safe for it:
+   the shared binary (`7630ba0d`) has no `crates/` diff from BN's base `94cf811d`, which builds the paired
+   tree (BN 7/7).
+6b. **After step 5, DO rebuild the shared `sigil/target/release` from merged sigil master** (re-review N2b):
+   check `sigil --version`'s `closure-revision` is the merged code revision (`760eb2eb` unless code lands
+   after this note) and record it, so the nightlies and plain `build.sh` stop running the pre-wave-3 binary.
 7. **The goldens pin and the standing reference.** The pin stays at `936439fa` (provenance #208), and a
    provisioned `936439fa` tree is red on the Z80 rows by design. `provision-aeon-ref.sh` refuses
    non-origin commits, so until the pair is on aeon origin every SS runs against the hand-made overlay
