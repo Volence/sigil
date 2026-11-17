@@ -4534,6 +4534,14 @@ input the narrow cast changes.
   on memory, `[lower.bit-number]`), and a const typed as a bare primitive is range-checked
   (`[const.out-of-range]`). Tests `crates/sigil-frontend-emp/tests/imm_range.rs`. The other
   residual sites above stay open.
+  Fix round 1: the first cut checked the encoder's `i32`, after `m68k_operand`'s `n as i32`, so
+  `$80000000..=$FFFFFFFF` wrapped and passed (`move.w #$FFFF8000, d0` was `303C 8000`,
+  `move.b #$FFFFFFFF, d0` `103C 00FF`, `const W: u32 = $FFFF9EDE` + `move.w #W, d0` `303C 9EDE`).
+  Measured with an instrumented build: 0 corpus lines in that band in each of the 7 shapes. Closed
+  by `check_code_imm_ranges` on the i128 source value before narrowing.
+  RESIDUAL (open): a scalar out of range NESTED in a typed const aggregate (struct field, tuple or
+  array element) or a const typed as a newtype/refinement is not range-checked by
+  `const_arity.rs`; emission catches it only if the value is emitted into data.
 
 ### `DIAG-DIALECT-THIRD`: one binary, more than the two ruled dialects (2026-09-07)
 

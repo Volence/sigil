@@ -250,6 +250,13 @@ fn lower_m68k_instr(
             }
         },
     };
+    // A1: the SOURCE value, before `m68k_operand` narrows it to `i32` (which
+    // would let `move.w #$FFFF8000` through as `8000`). Every route below
+    // (imm-link, disp-sym, abs-sym, generic) starts from these operands.
+    if let Err(msg) = check_code_imm_ranges(m, size, ops) {
+        push_err(diags, span, msg);
+        return;
+    }
     // A single symbolic absolute-address operand defers its width (abs.w/abs.l)
     // to the linker via a relaxable fragment (rather than the fixed generic path).
     // A `SymOff` (the D-PP.5 `Item.field` field-address form) is the SAME abs seam
@@ -579,6 +586,10 @@ fn lower_m68k_pcrel(
             "[lower.pcrel-operand] two PC-relative operands in one instruction is not \
              supported",
         );
+        return;
+    }
+    if let Err(msg) = check_code_imm_ranges(m, size, ops) {
+        push_err(diags, span, msg);
         return;
     }
     let mut mops = Vec::with_capacity(ops.len());
@@ -1400,12 +1411,47 @@ fn lower_inst_checked(inst: &M68kInst, span: Span) -> Result<DataFragment, Strin
     M68kBackend.lower_inst(inst, span).map_err(|e| e.message)
 }
 
+/// [`check_imm_ranges`] on the SOURCE operands, before `m68k_operand` narrows
+/// a `#imm` to the encoder's `i32`. That narrowing wraps `$80000000..=$FFFFFFFF`
+/// to a negative `i32`, so a check on the encoded instruction alone accepts
+/// `move.w #$FFFF8000` (`303C 8000`) and `move.b #$FFFFFFFF` (`103C 00FF`),
+/// which the AS front end refuses. Same bounds, same messages, on the value
+/// the author wrote.
+fn check_code_imm_ranges(m: M68kMnemonic, size: M68kSize, ops: &[CodeOperand]) -> Result<(), String> {
+    let is_bit_op =
+        matches!(m, M68kMnemonic::Btst | M68kMnemonic::Bset | M68kMnemonic::Bclr | M68kMnemonic::Bchg);
+    for (i, op) in ops.iter().enumerate() {
+        let CodeOperand::Imm(v) = *op else { continue };
+        if is_bit_op && i == 0 && ops.len() == 2 {
+            let hi: i128 = match ops[1] {
+                CodeOperand::Reg(r) if !reg_kind(r).0 => 31,
+                _ => 7,
+            };
+            if !(0..=hi).contains(&v) {
+                return Err(format!("[lower.bit-number] bit number {v} out of range 0..={hi}"));
+            }
+            continue;
+        }
+        let (lo, hi) = imm_bounds(size);
+        if v < i128::from(lo) || v > i128::from(hi) {
+            return Err(format!("operand {v} out of range {lo}..={hi}"));
+        }
+    }
+    Ok(())
+}
+
 /// Every `#imm` operand of `inst` against its size's bounds ([`imm_bounds`]),
 /// and a bit instruction's source bit number against [`bit_bound`]. Messages
 /// are the AS front end's (`operand {v} out of range {lo}..={hi}`); a bit
 /// number has no AS equivalent (asl accepts `btst #40, d0`) and carries its
 /// own tag. A link-time immediate (`ImmLink`) is NOT seen here: its path
 /// encodes a zero placeholder and the linker's fixup kind owns its range.
+///
+/// This reads the ENCODER's `i32`, so on its own it cannot see a source value
+/// in `$80000000..=$FFFFFFFF` (wrapped negative by `m68k_operand`); the
+/// source-value check is [`check_code_imm_ranges`], run before narrowing on
+/// every route. This one is the seam's backstop for instructions built here
+/// (placeholders, probes), so nothing reaches the encoder unchecked.
 fn check_imm_ranges(inst: &M68kInst) -> Result<(), String> {
     let is_bit_op = matches!(
         inst.mnemonic,
@@ -1431,8 +1477,10 @@ fn check_imm_ranges(inst: &M68kInst) -> Result<(), String> {
 
 /// Bounds for a `#imm` at `size` — generous enough to admit the signed OR the
 /// bit-pattern-equivalent unsigned spelling (`.b #-128` and `.b #255` both
-/// legal). The AS front end's `m68k_imm_bounds` (`frontend-as/src/eval.rs`),
-/// so the two front ends refuse the same lines. `S` (branch) has no immediate;
+/// legal). The AS front end's `m68k_imm_bounds` (`frontend-as/src/eval.rs`).
+/// Applied to the SOURCE value by [`check_code_imm_ranges`], so a sized
+/// immediate the AS front end refuses is refused here too (bit numbers are the
+/// one deliberate difference: asl accepts `btst #40, d0`). `S` (branch) has no immediate;
 /// it falls back to the long bounds like AS.
 fn imm_bounds(size: M68kSize) -> (i64, i64) {
     match size {
@@ -1788,6 +1836,7 @@ pub(crate) fn encoded_len_m68k(
         Some(w) => width_to_size(w),
         None => m68k_default_size(m)?,
     };
+    check_code_imm_ranges(m, size, ops).ok()?;
     let mut mops = Vec::with_capacity(ops.len());
     for op in ops {
         mops.push(m68k_operand(op).ok()?);

@@ -17,6 +17,15 @@ use sigil_span::Level;
 
 /// Lower and link `src`: the linked bytes, or every ERROR message (no location).
 fn emp(src: &str) -> Result<Vec<u8>, Vec<String>> {
+    let module = lowered(src)?;
+    let resolved = sigil_link::resolve_layout(&module.sections, &SymbolTable::new(), true)
+        .expect("resolve_layout");
+    let linked = sigil_link::link(&resolved, &SymbolTable::new()).expect("link");
+    Ok(linked.sections.iter().flat_map(|s| s.bytes.clone()).collect())
+}
+
+/// Lower `src` (no link): the module, or every ERROR message.
+fn lowered(src: &str) -> Result<sigil_ir::Module, Vec<String>> {
     let (file, perrs) = parse_str(src);
     assert!(perrs.is_empty(), "parse diagnostics: {perrs:?}");
     let (module, diags) = lower_module(
@@ -33,10 +42,7 @@ fn emp(src: &str) -> Result<Vec<u8>, Vec<String>> {
     if !errs.is_empty() {
         return Err(errs);
     }
-    let resolved = sigil_link::resolve_layout(&module.sections, &SymbolTable::new(), true)
-        .expect("resolve_layout");
-    let linked = sigil_link::link(&resolved, &SymbolTable::new()).expect("link");
-    Ok(linked.sections.iter().flat_map(|s| s.bytes.clone()).collect())
+    Ok(module)
 }
 
 fn one(inst: &str) -> String {
@@ -88,6 +94,29 @@ fn sr_and_memory_destinations_are_checked() {
     assert_eq!(err("addi.w  #-32769, d0"), ["operand -32769 out of range -32768..=65535"]);
 }
 
+/// The i32-wrap band (fix round 1): a value in `$80000000..=$FFFFFFFF` used to
+/// narrow to a negative `i32` before the check and pass as its low bits. The
+/// message names the value the author wrote, not the wrapped one.
+#[test]
+fn wrapped_32_bit_values_in_byte_and_word_slots_are_refused() {
+    assert_eq!(
+        err("move.w  #4294967295, d0"),
+        ["operand 4294967295 out of range -32768..=65535"]
+    );
+    assert_eq!(err("move.w  #$FFFF8000, d0"), ["operand 4294934528 out of range -32768..=65535"]);
+    assert_eq!(err("move.w  #$FFFF7FFF, d0"), ["operand 4294934527 out of range -32768..=65535"]);
+    assert_eq!(err("move.b  #$FFFFFFFF, d0"), ["operand 4294967295 out of range -128..=255"]);
+    assert_eq!(
+        err("btst    #$FFFFFFFF, d0"),
+        ["[lower.bit-number] bit number 4294967295 out of range 0..=31"]
+    );
+    assert_eq!(
+        emp("module m in m\nconst W: u32 = $FFFF9EDE\npub proc f() {\n        move.w  #W, d0\n        rts\n}\n")
+            .unwrap_err(),
+        ["operand 4294942430 out of range -32768..=65535"]
+    );
+}
+
 #[test]
 fn long_message_matches_the_as_front_end() {
     assert_eq!(
@@ -109,6 +138,8 @@ fn boundary_spellings_assemble() {
 fn bit_numbers_are_checked() {
     assert_eq!(err("btst    #40, d0"), ["[lower.bit-number] bit number 40 out of range 0..=31"]);
     assert_eq!(err("bset    #9, (a0)"), ["[lower.bit-number] bit number 9 out of range 0..=7"]);
+    assert_eq!(err("btst    #9, f(pc)"), ["[lower.bit-number] bit number 9 out of range 0..=7"]);
+    assert_eq!(err("btst    #-1, d0"), ["[lower.bit-number] bit number -1 out of range 0..=31"]);
     assert_eq!(ok("btst    #31, d0"), [0x08, 0x00, 0x00, 0x1F]);
     assert_eq!(ok("bset    #7, (a0)"), [0x08, 0xD0, 0x00, 0x07]);
 }
@@ -144,6 +175,22 @@ const RAM_FIXTURE: &str = "module m in m\n\
 
 #[test]
 fn link_time_word_immediate_still_accepts_a_ram_address() {
+    // It IS the link-time path: the lowered fragment carries an `ImmWord16Be`
+    // fixup at the imm field (offset 2), not a folded comptime value (which
+    // would be in `.w` range only by the i32 wrap, and is now refused).
+    let module = lowered(RAM_FIXTURE).unwrap_or_else(|e| panic!("RAM fixture refused: {e:?}"));
+    let fixups: Vec<_> = module
+        .sections
+        .iter()
+        .flat_map(|s| s.fragments.iter())
+        .filter_map(|f| match f {
+            sigil_ir::Fragment::Data(df) => Some(df.fixups.iter()),
+            _ => None,
+        })
+        .flatten()
+        .map(|fx| (fx.kind, fx.offset))
+        .collect();
+    assert_eq!(fixups, [(sigil_ir::FixupKind::ImmWord16Be, 2)]);
     let b = emp(RAM_FIXTURE).unwrap_or_else(|e| panic!("RAM fixture refused: {e:?}"));
     assert_eq!(b, [0x30, 0x3C, 0x9E, 0xDE, 0x4E, 0x75]);
 }
