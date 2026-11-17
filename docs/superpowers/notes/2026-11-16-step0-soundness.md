@@ -892,7 +892,10 @@ Review `task-8-review.md`: 0 Critical, 4 Important, 7 Minor. Every probe in it r
 - SS (`scripts/landing-run.sh --aeon .aeon-t8-pairref`, tree `31367919` clean, 861 s): GREEN, 528/528,
   **5,958 passed / 0 failed / 3 ignored**, 0 skips, clippy 0, ledger 0, CI leg 0. Delta +11 (10 fixtures, 1 unit).
 - AG (detached worktree of pair tip `6269c7fd`, binaries copied from `.target-land` `31367919`):
-  `tools/landing_build.sh` exit 0, `finished=0` (35 ran / 0 failed / 1 exempted), 606 s.
+  `tools/landing_build.sh` exit 0, `finished=0` (35 ran / 0 failed / 1 exempted), 606 s; `./build.sh` 0
+  (193507d9/850,296, 609 s); `DEBUG=1 ./build.sh` 0 (ce326232/870,560, 439 s); `./build.sh demo` 0
+  (2f9e2d4c/99,994, 409 s); `DEBUG=1 ./build.sh demo` 0 (64717bac/106,981, 395 s). md5 `41bbb60b…`/`45cebf7a…`.
+  Worktree removed.
 - Left open: M1 (report rows top-level only) and M5 (param scoping order), booked in QUEUE `EMP-ONE-NAME-ENV`;
   M3 (the define half of report concern 2 is moot: `[defines.collision]` refuses an item named like a define);
   M4 (evidence, no change); M7 (process nits; `rf.sh` now prints the restore command).
