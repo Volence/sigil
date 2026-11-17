@@ -1085,7 +1085,7 @@ refs, so the order below is what keeps each of them green. Do not reorder.
    the shared binary (`7630ba0d`) has no `crates/` diff from BN's base `94cf811d`, which builds the paired
    tree (BN 7/7).
 6b. **After step 5, DO rebuild the shared `sigil/target/release` from merged sigil master** (re-review N2b):
-   check `sigil --version`'s `closure-revision` is the merged code revision (`760eb2eb` unless code lands
+   check `sigil --version`'s `closure-revision` is the merged code revision (`51ed3ed8` unless code lands
    after this note) and record it, so the nightlies and plain `build.sh` stop running the pre-wave-3 binary.
 7. **The goldens pin and the standing reference.** The pin stays at `936439fa` (provenance #208), and a
    provisioned `936439fa` tree is red on the Z80 rows by design. `provision-aeon-ref.sh` refuses
@@ -1132,3 +1132,14 @@ both lines printed. Transcripts `rf-*.log`.
   md5 unchanged at end, removed after): `tools/landing_build.sh` 0, `finished=0` (35 needs_build ran, 1
   exempted), 931 s; `./build.sh` 0 (193507d9), `DEBUG=1` 0 (ce326232), demo 0 (2f9e2d4c), demo debug 0
   (64717bac).
+
+### Follow-up: re-review N1 and N2
+
+- **N1** (`51ed3ed8`): the wrapped spelling `({t})(pc)` / `({t})(pc,Xn)` / `jmp ({t})(pc)` still linked the
+  parameter name (`parser.rs` wrapped-displacement branch hard-coded `disp_spliced: false`). Now passes the
+  group's `first_spliced`. Fixture has all eight forms. RF (`fixwave/rf-n1.log`): reverting to `false` gives
+  `lea ({t})(pc),a0` = `41FA FFFA` (decoy) vs `41FA FFFC`, 2/4 red; restored, 4/4 green.
+  `sigil-frontend-emp`: 144 suites, 2829 passed, 0 failed. BN (cand `15ffa0d7`, code = `51ed3ed8`):
+  SHAPES 7/7 IDENTICAL.
+- **N2** (`15ffa0d7` + this commit): checklist step 1 merges in a throwaway worktree, AG first, then
+  fast-forward; step 6b rebuilds the shared binary after the sigil merge (closure-revision `51ed3ed8`).
