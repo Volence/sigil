@@ -7,9 +7,9 @@
 # post-flip golden re-baseline these re-derive from sigil (nothing requires asl).
 # target=lean
 # reproduces_golden=lean.bin
-# golden_crc32=9f0d4de3
-# assembled_anchor=77414976
-# assembled_end=0xc1b20
+# golden_crc32=60a3552b
+# assembled_anchor=1a446df8
+# assembled_end=0xc2dfa
 # labels=67
 Ani_Sonic 0x28f8c
 Ani_Tails 0x29096
@@ -29,10 +29,10 @@ Collision_GetType 0x5a62
 Collision_ProbeDown 0x5ac6
 Dac_Temp_Blip 0xa8000
 DeformTable_Zero 0x12bcc
-EndOfRom 0xc1b20
+EndOfRom 0xc2dfa
 EntryPoint 0x200
 GameLoop 0x264e
-GameState_OJZScroll_Init 0xc12ac
+GameState_OJZScroll_Init 0xc2586
 GetSineCosine 0x292c
 HBlank_Install 0x2510
 HeightMaps 0x6c9f8
@@ -61,13 +61,13 @@ Plane_Buffer_Reset 0x47a6
 Player_Init 0x10002
 PopulateSpawnedPieceCount 0x4432
 Read_Controllers 0x2540
-ReleaseFault 0xc1af2
-Replay_OJZ_Fixture 0xc1892
+ReleaseFault 0xc2dcc
+Replay_OJZ_Fixture 0xc2b6c
 RingBuffer_Add 0x3986
 S4LZ_DecompressDict 0x27bc
 Section_Init 0x6002
-Sfx_33 0xbd568
-Song_MovingTrucks 0xb86b0
+Sfx_33 0xbd5e8
+Song_MovingTrucks 0xb8730
 SoundTablesZ80_Head 0xb8000
 Sound_PostByte 0x8e20
 TailsAppendage_Refresh 0x12360

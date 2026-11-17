@@ -39,9 +39,9 @@ pub struct ShapeOffset {
 // ── ROM end (the listing `END` line address, per shape) ──
 
 /// Assembled (pre-convsym) ROM length, plain shape.
-pub const ASSEMBLED_LEN: usize = 0xC2BA2;
+pub const ASSEMBLED_LEN: usize = 0xC3E7C;
 /// Assembled (pre-convsym) ROM length, `__DEBUG__` shape.
-pub const DEBUG_ASSEMBLED_LEN: usize = 0xC49B0;
+pub const DEBUG_ASSEMBLED_LEN: usize = 0xC5C8A;
 
 // ── Regions (manifest order) ──
 
@@ -259,31 +259,31 @@ pub const OJZ_BG_ANIM: Region = Region { plain_base: 0x26354, debug_base: 0x2CCC
 pub const OBJDEFS: Region = Region { plain_base: 0x14F24, debug_base: 0x1597A, plain_len: 0x34, debug_len: 0x34 };
 
 /// `GameState_ObjectTest_Init` .. `section:object_test_state` (debug-only region; plain empty at `GameState_OJZScroll_Init`), gate `SIGIL_EMP_OBJECT_TEST_STATE`.
-pub const OBJECT_TEST_STATE: Region = Region { plain_base: 0xC12AC, debug_base: 0xC12AC, plain_len: 0x0, debug_len: 0x384 };
+pub const OBJECT_TEST_STATE: Region = Region { plain_base: 0xC2586, debug_base: 0xC2586, plain_len: 0x0, debug_len: 0x384 };
 
 /// `GameState_OJZScroll_Init` .. `section:ojz_scroll_test`, gate `SIGIL_EMP_OJZ_SCROLL_TEST`.
-pub const OJZ_SCROLL_TEST: Region = Region { plain_base: 0xC12AC, debug_base: 0xC1630, plain_len: 0x5E2, debug_len: 0x2070 };
+pub const OJZ_SCROLL_TEST: Region = Region { plain_base: 0xC2586, debug_base: 0xC290A, plain_len: 0x5E2, debug_len: 0x2070 };
 
 /// `Replay_OJZ_Fixture` .. `section:replay_fixture`.
-pub const REPLAY_FIXTURE: Region = Region { plain_base: 0xC1892, debug_base: 0xC36A0, plain_len: 0x260, debug_len: 0x260 };
+pub const REPLAY_FIXTURE: Region = Region { plain_base: 0xC2B6C, debug_base: 0xC497A, plain_len: 0x260, debug_len: 0x260 };
 
 /// `BusError` .. `section:error_handler`, gate `SIGIL_EMP_ERROR_HANDLER`.
-pub const ERROR_HANDLER: Region = Region { plain_base: 0xC1AF2, debug_base: 0xC3900, plain_len: 0x10B0, debug_len: 0x10B0 };
+pub const ERROR_HANDLER: Region = Region { plain_base: 0xC2DCC, debug_base: 0xC4BDA, plain_len: 0x10B0, debug_len: 0x10B0 };
 
 /// `Dac_Temp_Blip` .. `section:dac_banks`, gate `SIGIL_EMP_DAC`.
 pub const DAC_BANKS: Region = Region { plain_base: 0xA8000, debug_base: 0xA8000, plain_len: 0xE49A, debug_len: 0xE49A };
 
 /// `Song_MovingTrucks` .. `section:mt_bank`, gate `SIGIL_EMP_MT`.
-pub const MT_BANK_BLOB: Region = Region { plain_base: 0xB86B0, debug_base: 0xB86B0, plain_len: 0x4EB8, debug_len: 0x6900 };
+pub const MT_BANK_BLOB: Region = Region { plain_base: 0xB8730, debug_base: 0xB8730, plain_len: 0x4EB8, debug_len: 0x6900 };
 
 /// `Sfx_33` .. `section:sfx_bank_blob`, gate `SIGIL_EMP_SFX`.
-pub const SFX_BANK_BLOB: Region = Region { plain_base: 0xBD568, debug_base: 0xBEFB0, plain_len: 0x664, debug_len: 0x674 };
+pub const SFX_BANK_BLOB: Region = Region { plain_base: 0xBD5E8, debug_base: 0xBF030, plain_len: 0x674, debug_len: 0x684 };
 
 /// `SoundTablesZ80_Head` .. `section:soundbankhead`, gate `SIGIL_EMP_SOUNDBANKHEAD`.
-pub const SOUNDBANKHEAD: Region = Region { plain_base: 0xB8000, debug_base: 0xB8000, plain_len: 0x6B0, debug_len: 0x6B0 };
+pub const SOUNDBANKHEAD: Region = Region { plain_base: 0xB8000, debug_base: 0xB8000, plain_len: 0x730, debug_len: 0x730 };
 
 /// `EndOfRom` .. start + 0x0 plain / 0x0 debug (literal, no end symbol), gate `SIGIL_EMP_EPILOGUE`.
-pub const EPILOGUE: Region = Region { plain_base: 0xC2BA2, debug_base: 0xC49B0, plain_len: 0x0, debug_len: 0x0 };
+pub const EPILOGUE: Region = Region { plain_base: 0xC3E7C, debug_base: 0xC5C8A, plain_len: 0x0, debug_len: 0x0 };
 
 /// `ObjCodeBase` .. start + 0x2 plain / 0x2 debug (literal, no end symbol), gate `SIGIL_EMP_OBJCODEBASE`.
 pub const OBJCODEBASE: Region = Region { plain_base: 0x10000, debug_base: 0x10000, plain_len: 0x2, debug_len: 0x2 };
@@ -417,40 +417,40 @@ pub const GET_SINE_COSINE: Pin = Pin { plain: 0x297A, debug: 0x2C10 };
 pub const ENTRY_POINT: Pin = Pin { plain: 0x200, debug: 0x200 };
 
 /// `BusError`, debug-shape consumer only (`debug_only`).
-pub const BUS_ERROR: u32 = 0xC3900;
+pub const BUS_ERROR: u32 = 0xC4BDA;
 
 /// `AddressError`, debug-shape consumer only (`debug_only`).
-pub const ADDRESS_ERROR: u32 = 0xC3918;
+pub const ADDRESS_ERROR: u32 = 0xC4BF2;
 
 /// `IllegalInstr`, debug-shape consumer only (`debug_only`).
-pub const ILLEGAL_INSTR: u32 = 0xC3934;
+pub const ILLEGAL_INSTR: u32 = 0xC4C0E;
 
 /// `ZeroDivide`, debug-shape consumer only (`debug_only`).
-pub const ZERO_DIVIDE: u32 = 0xC3956;
+pub const ZERO_DIVIDE: u32 = 0xC4C30;
 
 /// `ChkInstr`, debug-shape consumer only (`debug_only`).
-pub const CHK_INSTR: u32 = 0xC3970;
+pub const CHK_INSTR: u32 = 0xC4C4A;
 
 /// `TrapvInstr`, debug-shape consumer only (`debug_only`).
-pub const TRAPV_INSTR: u32 = 0xC398E;
+pub const TRAPV_INSTR: u32 = 0xC4C68;
 
 /// `PrivilegeViol`, debug-shape consumer only (`debug_only`).
-pub const PRIVILEGE_VIOL: u32 = 0xC39AE;
+pub const PRIVILEGE_VIOL: u32 = 0xC4C88;
 
 /// `Trace`, debug-shape consumer only (`debug_only`).
-pub const TRACE: u32 = 0xC39D0;
+pub const TRACE: u32 = 0xC4CAA;
 
 /// `Line1010Emu`, debug-shape consumer only (`debug_only`).
-pub const LINE1010_EMU: u32 = 0xC39E4;
+pub const LINE1010_EMU: u32 = 0xC4CBE;
 
 /// `Line1111Emu`, debug-shape consumer only (`debug_only`).
-pub const LINE1111_EMU: u32 = 0xC3A04;
+pub const LINE1111_EMU: u32 = 0xC4CDE;
 
 /// `ErrorExcept`, debug-shape consumer only (`debug_only`).
-pub const ERROR_EXCEPT: u32 = 0xC3A24;
+pub const ERROR_EXCEPT: u32 = 0xC4CFE;
 
 /// `ErrorTrap`, debug-shape consumer only (`debug_only`).
-pub const ERROR_TRAP: u32 = 0xC3A42;
+pub const ERROR_TRAP: u32 = 0xC4D1C;
 
 /// `VBlank_Handler`.
 pub const V_BLANK_HANDLER: Pin = Pin { plain: 0x2328, debug: 0x247E };
@@ -762,10 +762,10 @@ pub const ENTITY_LOADED_CLEAR: Pin = Pin { plain: 0x3DE4, debug: 0x4986 };
 pub const SOUND_PLAY_RING: Pin = Pin { plain: 0x910E, debug: 0xC94E };
 
 /// `MDDBG__ErrorHandler`, debug-shape consumer only (`debug_only`).
-pub const MDDBG_ERROR_HANDLER: u32 = 0xC3A5A;
+pub const MDDBG_ERROR_HANDLER: u32 = 0xC4D34;
 
 /// `MDDBG__ErrorHandler_PagesController`, debug-shape consumer only (`debug_only`).
-pub const MDDBG_ERROR_HANDLER_PAGES_CONTROLLER: u32 = 0xC4820;
+pub const MDDBG_ERROR_HANDLER_PAGES_CONTROLLER: u32 = 0xC5AFA;
 
 /// `DMA_Critical`.
 pub const DMA_CRITICAL: Pin = Pin { plain: 0xFFFF804A, debug: 0xFFFF804A };
@@ -966,10 +966,10 @@ pub const SFX_RING_WR: Pin = Pin { plain: 0xFFFFB52E, debug: 0xFFFFB5A2 };
 pub const SFX_RING_RD: Pin = Pin { plain: 0xFFFFB52F, debug: 0xFFFFB5A3 };
 
 /// `SongTable`.
-pub const SONG_TABLE: Pin = Pin { plain: 0xBDBAC, debug: 0xBF5F4 };
+pub const SONG_TABLE: Pin = Pin { plain: 0xBDC2C, debug: 0xBF674 };
 
 /// `SongPatchTable`.
-pub const SONG_PATCH_TABLE: Pin = Pin { plain: 0xBDBBC, debug: 0xBF60C };
+pub const SONG_PATCH_TABLE: Pin = Pin { plain: 0xBDC44, debug: 0xBF694 };
 
 /// `OJZ_Palette`.
 pub const OJZ_PALETTE: Pin = Pin { plain: 0x21AD2, debug: 0x2257C };
