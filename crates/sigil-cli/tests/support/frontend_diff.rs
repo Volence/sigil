@@ -311,8 +311,10 @@ pub fn cases_z80() -> Vec<Z80Case> {
     out
 }
 
+/// From the tables: one value set per `ld r,n` register, per `ld rr,nn`
+/// register pair, and one for `cp n`.
 pub fn expected_z80_case_count() -> usize {
-    7 * (Z80_R8.len() + Z80_R16.len() + 1)
+    z80_set(0, 0).len() * (Z80_R8.len() + Z80_R16.len() + 1)
 }
 
 // ── spelling ────────────────────────────────────────────────────────────────
