@@ -243,3 +243,219 @@ pub comptime fn lim() -> int {
         "stderr:\n{stderr}"
     );
 }
+
+// ---- fix round 1 (task-8 review I1-I4, M2) -----------------------------------
+
+const PROC_MOVEQ_F: &str = "section s (cpu: m68000, vma: $0) {
+  proc P () clobbers(d0) {
+        moveq   #f(), d0
+        rts
+  }
+}
+";
+
+/// I1: an `equ` is read as a comptime value, so a private equ of the defining
+/// module binds there; the importer's own `E = 9` does not capture it.
+#[test]
+fn a_private_equ_resolves_where_defined() {
+    let main = format!("module main\nuse helper.{{f}}\nconst E = 9\n{PROC_MOVEQ_F}");
+    let helper = "module helper
+equ E = 3
+pub comptime fn f() -> int { return E }
+";
+    assert_eq!(build(&[("main.emp", &main), ("helper.emp", helper)]), [0x70, 0x03, 0x4E, 0x75]);
+}
+
+/// I1: the same for a struct field length spelled with a private equ.
+#[test]
+fn a_private_equ_sizes_a_struct_where_defined() {
+    let main = "module main
+use a.{S}
+const N = 9
+section s (cpu: m68000, vma: $0) {
+  proc P () clobbers(d0) {
+        moveq   #sizeof(S), d0
+        rts
+  }
+}
+";
+    let a = "module a
+equ N = 3
+pub struct S { x: [u8; N] }
+";
+    assert_eq!(build(&[("main.emp", main), ("a.emp", a)]), [0x70, 0x03, 0x4E, 0x75]);
+}
+
+/// I1: the refusal sees an importer binding spelled as an `equ` too.
+#[test]
+fn a_name_the_importer_binds_only_by_equ_is_refused() {
+    let main = "module main
+use helper.{lim}
+equ LIMIT = 9
+section s (cpu: m68000, vma: $0) {
+  proc P () clobbers(d0) {
+        moveq   #lim(), d0
+        rts
+  }
+}
+";
+    let helper = "module helper
+pub comptime fn lim() -> int {
+    return LIMIT
+}
+";
+    let (ok, stderr, _) = run(&[("main.emp", main), ("helper.emp", helper)]);
+    assert!(!ok, "an equ bound only by the importer must be refused; stderr:\n{stderr}");
+    assert!(
+        stderr.contains(
+            "[name.unbound-at-definition] `LIMIT` in `lim` is not bound in module `helper`; add a `use` there"
+        ),
+        "stderr:\n{stderr}"
+    );
+}
+
+/// I2: a discriminant is evaluated in the module environment, where a variant is
+/// only `K.A`, so `A = A` names `a.A = 7` and `K.B` is 8, not the importer's 20 + 1.
+#[test]
+fn an_enum_discriminant_names_the_module_const_not_a_variant() {
+    let a = "module a
+const A = 7
+pub enum K: u8 { A = A, B }
+";
+    let main = "module main
+use a.{K}
+const A = 20
+section s (cpu: m68000, vma: $0) {
+  data X: K = K.B
+}
+";
+    assert_eq!(build(&[("main.emp", main), ("a.emp", a)]), [0x08]);
+}
+
+const OVL_S: &str = "module s
+pub struct Sst { id: u16, sst_custom: [u8; 8] }
+";
+const OVL_TICK: &str = "proc tick () {
+    tst.b V.timer(a1)
+    rts
+}
+";
+
+/// I3: a dotted overlay window `Sst.sst_custom` names `s.Sst` (window at `$2`) where
+/// the overlay is defined, not the importer's own `Sst` (window at `$A`).
+#[test]
+fn a_dotted_overlay_window_resolves_where_defined() {
+    let lib = "module lib\nuse s.{Sst}\npub vars V: Sst.sst_custom { timer: u8 }\n";
+    let main = format!(
+        "module main\nuse lib.{{V}}\nstruct Sst {{ hp: u32, filler: [u8; 6], sst_custom: [u8; 4] }}\n{OVL_TICK}"
+    );
+    let img = build(&[("main.emp", &main), ("lib.emp", lib), ("s.emp", OVL_S)]);
+    assert_eq!(img, [0x4A, 0x29, 0x00, 0x02, 0x4E, 0x75]);
+    // The importer needs no `Sst` of its own (the retired EMP_PITFALLS §8 rule).
+    let main = format!("module main\nuse lib.{{V}}\n{OVL_TICK}");
+    let img = build(&[("main.emp", &main), ("lib.emp", lib), ("s.emp", OVL_S)]);
+    assert_eq!(img, [0x4A, 0x29, 0x00, 0x02, 0x4E, 0x75]);
+}
+
+/// I3: a BARE window over an imported struct binds in the defining module's
+/// environment too: not the importer's unrelated `Other.sst_custom` (`$A`), and
+/// with no struct in the importer at all.
+#[test]
+fn a_bare_overlay_window_resolves_where_defined() {
+    let lib = "module lib\nuse s.{Sst}\npub vars V: sst_custom { timer: u8 }\n";
+    let main = format!(
+        "module main\nuse lib.{{V}}\nstruct Other {{ hp: u32, filler: [u8; 6], sst_custom: [u8; 4] }}\n{OVL_TICK}"
+    );
+    let img = build(&[("main.emp", &main), ("lib.emp", lib), ("s.emp", OVL_S)]);
+    assert_eq!(img, [0x4A, 0x29, 0x00, 0x02, 0x4E, 0x75]);
+    let main = format!("module main\nuse lib.{{V}}\n{OVL_TICK}");
+    let img = build(&[("main.emp", &main), ("lib.emp", lib), ("s.emp", OVL_S)]);
+    assert_eq!(img, [0x4A, 0x29, 0x00, 0x02, 0x4E, 0x75]);
+}
+
+const WIN_A: &str = "module a
+struct T { id: u32, w: [u8; 4] }
+pub comptime fn f() -> int { return sizeof(T) }
+";
+
+/// I4: an injected hidden struct (`$a$T`, a dependency of `f`) is not a bare-window
+/// candidate. With the importer's own `M` the window binds `M.w` (`$2`)...
+#[test]
+fn a_hidden_struct_is_not_a_bare_window_candidate() {
+    let main = "module main
+use a.{f}
+struct M { q: u16, w: [u8; 4] }
+vars V: w { t: u8 }
+proc tick () {
+    moveq #f(), d0
+    tst.b V.t(a1)
+    rts
+}
+";
+    assert_eq!(build(&[("main.emp", main), ("a.emp", WIN_A)]), [0x70, 0x08, 0x4A, 0x29, 0x00, 0x02, 0x4E, 0x75]);
+}
+
+/// I4: ...and with no struct of its own, the window is unknown, loudly, rather than
+/// binding silently to `$a$T.w`, a struct the importer never named.
+#[test]
+fn a_hidden_struct_never_binds_a_bare_window_silently() {
+    let main = "module main
+use a.{f}
+vars V: w { t: u8 }
+proc tick () {
+    moveq #f(), d0
+    tst.b V.t(a1)
+    rts
+}
+";
+    let (ok, stderr, _) = run(&[("main.emp", main), ("a.emp", WIN_A)]);
+    assert!(!ok, "a window only a hidden struct has must not bind; stderr:\n{stderr}");
+    assert!(
+        stderr.contains("[overlay.unknown-window] no in-scope struct has a `[u8; N]` field named `w`"),
+        "stderr:\n{stderr}"
+    );
+}
+
+const MAP_A: &str = "module a
+pub newtype Px = u16
+pub comptime fn add1(p: Px) -> Px { return p + Px(1) }
+";
+
+/// M2: an importer that imports `Px` itself gets `add1`'s hidden `$a$Px` mapped
+/// back to its own `Px` (the same item), so the two values mix: 3 + 1 + 2 = 6.
+#[test]
+fn a_hidden_dependency_the_importer_also_imports_maps_back() {
+    let main = "module main
+use a.{Px, add1}
+section s (cpu: m68000, vma: $0) {
+  data X: [u8; 1] = [add1(Px(3)) + Px(2)]
+}
+";
+    assert_eq!(build(&[("main.emp", main), ("a.emp", MAP_A)]), [0x06]);
+}
+
+/// M2, the negative: a DIFFERENT item under the same plain name is never mapped
+/// back (`f` sizes `a.S`, 3; the importer's `S` is `b.S`, 8).
+#[test]
+fn a_different_item_of_the_same_name_is_not_mapped_back() {
+    let a = "module a
+pub struct S { x: [u8; 3] }
+pub comptime fn f() -> int { return sizeof(S) }
+";
+    let b = "module b\npub struct S { x: [u8; 8] }\n";
+    let main = "module main
+use a.{f}
+use b.{S}
+section s (cpu: m68000, vma: $0) {
+  proc P () clobbers(d0-d1) {
+        moveq   #f(), d0
+        moveq   #sizeof(S), d1
+        rts
+  }
+}
+";
+    assert_eq!(
+        build(&[("main.emp", main), ("a.emp", a), ("b.emp", b)]),
+        [0x70, 0x03, 0x72, 0x08, 0x4E, 0x75]
+    );
+}

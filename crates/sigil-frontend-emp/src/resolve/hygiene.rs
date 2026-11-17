@@ -45,6 +45,11 @@ use std::rc::Rc;
 /// The `mangled_equ` shape (`resolve/imports.rs`): unspellable from source (the
 /// lexer has no `$` identifier start), and unique, because a module has one item
 /// per name and kind.
+///
+/// It is the SAME spelling as a private equ's link symbol. That is safe only
+/// because every hidden item is comptime and emits no link symbol: an equ
+/// dependency is injected as a hidden `const` (A4 I1), never as an equ. Injecting
+/// one as an equ would collide with its own mangled symbol (review M6).
 pub fn hidden_name(def_id: &str, name: &str) -> String {
     format!("${def_id}${name}")
 }
@@ -413,7 +418,9 @@ impl Walker<'_> {
                 if let Some(r) = &mut e.repr {
                     self.ty(r);
                 }
-                self.scope.extend(e.variants.iter().map(|v| v.name.clone()));
+                // Variant names are NOT in scope here: the evaluator reads each
+                // discriminant (and payload type) in the MODULE environment, where
+                // a variant is only `K.V`, so `A = A` names the module's `A` (A4 I2).
                 for v in &mut e.variants {
                     if let Some(x) = &mut v.value {
                         self.expr(x);
@@ -449,6 +456,11 @@ impl Walker<'_> {
                 }
             }
             I::Vars(v) if v.name.is_some() => {
+                // The dotted window `Struct.window` names a struct, resolved in the
+                // module environment like a type (A4 I3); a bare window names a field.
+                if let [s, _] = v.region.as_mut_slice() {
+                    self.name(s);
+                }
                 v.fields.iter_mut().for_each(|f| self.vars_field(f));
                 v.region_body.iter_mut().for_each(|r| self.region_field(r));
             }
@@ -534,7 +546,11 @@ impl Binding {
 fn is_comptime_kind(item: &ast::Item) -> bool {
     matches!(
         item,
+        // An `equ` is a link symbol AND a comptime value: `eval_path` reads it
+        // exactly like a `const` (consts-or-equs, ahead of defines and the link
+        // fallback), so a value position binds it here like one (A4 I1).
         ast::Item::Const(_)
+            | ast::Item::Equ(_)
             | ast::Item::Struct(_)
             | ast::Item::Enum(_)
             | ast::Item::Bitfield(_)
@@ -740,10 +756,31 @@ impl<'f> HygieneMemo<'f> {
             }
             if let Some(n) = super::pub_comptime_name(it) {
                 debug_assert_eq!(n, name);
-                items.push(self.prepare(def, it));
+                items.push(self.prepare(def, it, &env, manifest));
                 public.push(true);
+            } else if let ast::Item::Equ(e) = it {
+                // An equ dependency is injected as a hidden CONST (A4 I1): the value
+                // the evaluator would read at the definition, and no link symbol, so
+                // `$def$name` cannot collide with the equ's own mangled symbol.
+                let value = match super::fold_const_literal(
+                    &def.file,
+                    &e.name,
+                    &self.defines,
+                    self.include_root.as_deref(),
+                ) {
+                    super::ConstFold::Literal(n) => ast::Expr::Int(n, e.span),
+                    _ => e.value.clone(),
+                };
+                items.push(ast::Item::Const(ast::ConstDecl {
+                    public: false,
+                    name: e.name.clone(),
+                    ty: None,
+                    value,
+                    span: e.span,
+                }));
+                public.push(false);
             } else if is_comptime_kind(it) {
-                items.push(self.prepare(def, it));
+                items.push(self.prepare(def, it, &env, manifest));
                 public.push(false);
             } else if super::pub_struct_data_name(it).is_some() {
                 items.push(super::data_type_stub(it));
@@ -775,9 +812,52 @@ impl<'f> HygieneMemo<'f> {
 
     /// One item as it is injected: an overlay's window stamped against its defining
     /// file, a `const` folded at the definition site where it folds.
-    fn prepare(&mut self, def: &ParsedModule, item: &ast::Item) -> ast::Item {
+    ///
+    /// A BARE-window overlay whose window the defining file alone cannot resolve
+    /// (its struct is imported) is qualified to `Struct.window` with the one
+    /// struct of the defining module's environment that has that field, so the
+    /// walker then binds `Struct` where the overlay was defined (A4 I3). Zero or
+    /// several candidates leave it as written: the defining module reports that
+    /// itself.
+    fn prepare(
+        &mut self,
+        def: &ParsedModule,
+        item: &ast::Item,
+        env: &HashMap<String, Binding>,
+        manifest: &Manifest,
+    ) -> ast::Item {
         let mut cloned = item.clone();
         super::stamp_overlay_window(&def.file, &mut cloned);
+        if let ast::Item::Vars(v) = &mut cloned {
+            if v.name.is_some() && v.resolved_window.is_none() && v.region.len() == 1 {
+                let w = v.region[0].clone();
+                let prelude = self.prelude_id.clone();
+                let mut hits: Vec<&str> = env
+                    .iter()
+                    .filter(|(n, b)| {
+                        let origin = match b {
+                            Binding::Item { origin, comptime: true } => Some(origin.as_str()),
+                            Binding::Global("prelude") => prelude.as_deref(),
+                            _ => None,
+                        };
+                        origin
+                            .and_then(|o| manifest.by_id.get(o))
+                            .and_then(|&i| {
+                                let m = &manifest.modules[i];
+                                if m.id == def.id { own_struct(m, n) } else { public_item(m, n) }
+                            })
+                            .is_some_and(|it| {
+                                matches!(it, ast::Item::Struct(sd) if sd.fields.iter().any(|f| f.name == w))
+                            })
+                    })
+                    .map(|(n, _)| n.as_str())
+                    .collect();
+                hits.dedup();
+                if let [only] = hits.as_slice() {
+                    v.region = vec![only.to_string(), w];
+                }
+            }
+        }
         if let ast::Item::Const(c) = &mut cloned {
             let folded = self.folds.borrow_mut().folded(
                 &def.id,
@@ -812,6 +892,19 @@ fn set_item_name(item: &mut ast::Item, to: &str) {
         _ => return,
     };
     *slot = to.to_string();
+}
+
+/// The struct named `name` declared in `def` itself (top level or one `section` deep).
+fn own_struct<'m>(def: &'m ParsedModule, name: &str) -> Option<&'m ast::Item> {
+    let sections = def.file.items.iter().filter_map(|i| match i {
+        ast::Item::Section(s) => Some(s.items.iter()),
+        _ => None,
+    });
+    def.file
+        .items
+        .iter()
+        .chain(sections.flatten())
+        .find(|it| matches!(it, ast::Item::Struct(sd) if sd.name == name))
 }
 
 /// The first public injectable item named `name` in `def` (top level or one
@@ -1023,6 +1116,21 @@ mod tests {
 
     fn names(v: &[&str]) -> BTreeSet<String> {
         v.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn free_names_sees_enum_discriminants_and_dotted_windows() {
+        // A4 I2: a variant is not a bare name inside its own enum, so `A = A` reads
+        // the module's `A`. A4 I3: a dotted overlay window names its struct.
+        let it = items(
+            "module m\n\
+             enum K: u8 { A = A, B = Q }\n\
+             vars V: Sst.sst_custom { t: u8 }\n\
+             vars W: sst_custom { t: u8 }\n",
+        );
+        assert_eq!(free_names(&it[0]), names(&["A", "Q", "u8"]));
+        assert_eq!(free_names(&it[1]), names(&["Sst", "u8"]));
+        assert_eq!(free_names(&it[2]), names(&["u8"]));
     }
 
     #[test]
