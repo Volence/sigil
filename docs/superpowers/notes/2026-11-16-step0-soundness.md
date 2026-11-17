@@ -243,3 +243,103 @@ sigil-cli 850 passed / 57 failed (all baseline names); BN 7/7 IDENTICAL at `5284
 
 - Dropping the 63 per-file `[proc.clobber-undeclared]` warnings the closure finds clean (Sigil audit
   plan item 5, second half). Unowned in step 0; candidate for a later QUEUE row.
+
+## Task 3 (A1): sized immediates, bit numbers and typed consts are range-checked
+
+Commit `86272767`. The `.emp` front end narrowed every 68k `#imm` to its field silently (plan baseline:
+`move.w #$12345` `303C 2345`, `btst #40, d0` `0800 0028`, all exit 0). Now:
+
+- `lower/code.rs`: every `M68kBackend.lower_inst` call (the 12 sites) goes through
+  `lower_inst_checked` = `check_imm_ranges` then encode. `imm_bounds(size)` is the AS front end's
+  `m68k_imm_bounds`; the message is its `operand {v} out of range {lo}..={hi}`, and the 32-bit narrowing
+  message in `m68k_operand` takes the same form. A bit op's source bit number: 0..=31 on `Dn`, 0..=7
+  otherwise, `[lower.bit-number] bit number {n} out of range 0..={hi}`. The pc-relative path
+  (`lower_pcrel_ea`, not `lower_inst`, so not in the plan's 12) runs the same check, for
+  `btst #n, Sym(pc)`. `ImmLink` paths encode a zero placeholder, so the check never sees a link-time value.
+- `eval/const_arity.rs`: a const typed as a bare primitive is range-checked,
+  `[const.out-of-range] {v} does not fit {ty} ({lo}..={hi}), in '{name}'`.
+- Test `crates/sigil-frontend-emp/tests/imm_range.rs`: RED 6 failed / 2 passed (the two legality guards:
+  boundary spellings and the RAM-label `ImmLink` fixture), GREEN 8/8. No existing test asserted the old
+  32-bit message.
+
+### RF proof (invariant 8)
+
+```
+$ git status --short            (no tracked change)
+$ (insert first body line of check_imm_ranges)
+$ git diff --stat
+ crates/sigil-frontend-emp/src/lower/code.rs | 1 +
+ 1 file changed, 1 insertion(+)
+$ grep -n RF-MUTATION crates/sigil-frontend-emp/src/lower/code.rs
+1410:    return Ok(()); // RF-MUTATION
+$ cargo test -p sigil-frontend-emp --test imm_range
+test byte_immediate_past_range_is_refused ... FAILED   (`move.b  #300, d1` assembled to [12, 3C, 00, 2C, 4E, 75]; expected a refusal)
+test word_immediate_past_range_is_refused ... FAILED
+test sr_and_memory_destinations_are_checked ... FAILED
+test bit_numbers_are_checked ... FAILED
+test result: FAILED. 4 passed; 4 failed
+$ git restore --source=HEAD -- crates/sigil-frontend-emp/src/lower/code.rs
+$ git status --short            (no tracked change)
+$ cargo test -p sigil-frontend-emp --test imm_range
+test result: ok. 8 passed; 0 failed
+```
+The 4 still green under the mutation are the two legality guards, the long-message test (that check is
+in `m68k_operand`, not `check_imm_ranges`) and the const test (`const_arity.rs`).
+
+Live-path probe: in a throwaway copy of the ref tree, `move.w #$12345, d0` and `btst #40, d0` added to
+`engine/sound/sound_api.emp:115`, `SIGIL_CONTRACTS=0 sigil build`: candidate exit 1 with
+`sound_api.emp:115:9: [Error] operand 74565 out of range -32768..=65535` and
+`sound_api.emp:116:9: [Error] [lower.bit-number] bit number 40 out of range 0..=31`; base exit 0.
+
+### Corpus and BN (candidate `sigil 0.1.0 (86272767)`, wall-clock 31.5 s)
+
+Every shape built with exit 0 on the candidate, so 0 refusals in each of the 7 (the 584 sites grep
+could not resolve are decided: none out of range).
+
+```
+SHAPE plain 193507d9/850296 193507d9/850296 SAME
+SHAPE debug ce326232/870560 ce326232/870560 SAME
+SHAPE demo 2f9e2d4c/99994 2f9e2d4c/99994 SAME
+SHAPE demo_debug 64717bac/106981 64717bac/106981 SAME
+SHAPE config_a 6be62db3/870972 6be62db3/870972 SAME
+SHAPE config_b d888a312/617813 d888a312/617813 SAME
+SHAPE lean 60a3552b/798202 60a3552b/798202 SAME
+SHAPES 7/7 IDENTICAL
+STEP0_CMP_END rc=0
+```
+
+### AG (throwaway aeon worktree at `936439fa`, `.target-land` `86272767`, removed after)
+
+| Run | exit | wall-clock |
+|---|---|---|
+| `tools/landing_build.sh` | 0, `finished=0` (needs_build lane 35 ran / 0 failed / 1 exempted) | 547 s |
+| `./build.sh` | 0 | 480 s |
+| `DEBUG=1 ./build.sh` | 0 | 641 s |
+| `./build.sh demo` | 0 | 658 s |
+| `DEBUG=1 ./build.sh demo` | 0 | 483 s |
+
+Every log names `sigil 862727673158`; `sigil`/`emit_sound_blob` md5 equal at start and end. A first
+`landing_build.sh` attempt under a foreground `timeout 590` was killed at 590 s (machine shared with
+other sessions) and is not counted; the counted run was detached with its own end marker.
+
+### Tests (per crate, `--no-fail-fast`, `AEON_DIR` = ref tree)
+
+| Scope | passed | failed | ignored |
+|---|---|---|---|
+| `sigil-frontend-emp` (139 binaries, 14 s) | 2,797 | 0 | 0 |
+| `sigil-cli` (per test target, 1,396 s) | 850 | 57 | 1 |
+| the other 12 crates (per crate; `sigil-harness` per target, `ORACLE_DIR` set; 566 s) | 2,182 | 2 | 2 |
+
+All 59 failing names are in `.scratch-t1/failed_base.txt`; 0 new. Eight baseline names passed in this
+per-crate environment (7 `sigil-cli` seam-2 slice tests and `aeon_dir_matches_the_provenance_tip`);
+that is the environment, not this change. `frontend-emp` +1 binary, +8 passed vs Task 2.
+
+### Booked, not in scope
+
+- `move.w $FFFF8000, d0` accepted as an immediate (EMP finding 3, third bullet; 0 corpus hits by grep).
+- The check reads the encoder's `i32` immediate, so a value in `$80000000..=$FFFFFFFF` arrives
+  sign-wrapped: `.w #$FFFF8000..$FFFFFFFF` and `.b #$FFFFFF80..$FFFFFFFF` are accepted as the
+  sign-extended pattern (the same rule the linker's `ImmWord16Be` applies to a link-time word), where
+  the AS front end refuses them. Owner call whether to tighten (corpus hits not measured).
+- A scalar out of range NESTED in a const aggregate, or under a newtype, is still unchecked by
+  `const_arity.rs` (emission owns it when the value is emitted).
