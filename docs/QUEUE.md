@@ -1953,3 +1953,35 @@ until its row is removed.
   `games/sonic4/player/player_sensors.emp:215`), so byte-neutral; BN 7/7.
 - Fixture `crates/sigil-frontend-emp/tests/spliced_disp_target.rs`: each form's spliced bytes equal its
   unspliced spelling's (the oracle, pinned for two forms), register words refused in all five, integers.
+
+## MAP-BANK-WINDOW-GATE-DISAGREES: CLOSED IN BRANCH 2026-11-17 (step-0 fix wave; Task 5 residual, final review M2)
+
+- Residual from Task 5 fix round 1 (ruling "accept: a window matching only gated-off anchors is dropped for
+  that shape"): `bank_windows_for_shape` silently DROPPED a `z80_bank` region whose base was the `at` only
+  of anchors not in force in the shape. Its stated reason: the literal rule refused `config_b` on an
+  unpaired aeon tree (`936439fa`, no region `when`), which "would break sigil on aeon master until the pair
+  lands". That reason no longer holds: wave 3 (A5's Z80 clobber gate, A4's one name environment) already
+  refuses every aeon tree without the pair, so the concession kept nothing buildable and only hid a map
+  whose region and anchor gates disagree (residual (c) in the Task 5 re-review).
+- Closed: that case is refused, `[map.bank-window-gate-disagrees] z80_bank region R at B is in force in
+  this shape, but its anchor A is not ... Give the region its anchor's when`. On the paired map the region
+  carries `when = "sound_on"`, so `map_for_shape` removes it from sound-off shapes before this check and it
+  never fires: refusal only, BN 7/7, AG green. Red-first by restoring the drop.
+- Tests (`map_placement.rs`): `a_window_in_force_where_its_anchor_is_not_is_refused` (ungated region,
+  sound-off); `todays_sonic4_bank_window_is_accepted_in_every_shape` now covers the paired map in both
+  shapes and the ungated region where its anchor is in force.
+- Still open from the same Task 5 minor list: no unit test for residual (a) on sound-off; overlay +
+  sound-off + unpaired false refusal (fails closed, and unpaired trees are refused anyway now).
+
+## SEAM1-STUBS-CREDIT-HATCHED-PROCS: OPEN, LATENT (booked by the step-0 fix wave from Task 7 re-review, 2026-11-17)
+
+- `crates/sigil-harness/src/seam1.rs` `collect_pub_proc_stubs` credits every `pub proc` with "preserves
+  everything not clobbered", citing `[call.clobbers-incomplete]` as what makes that sound. That includes
+  procs carrying `@allow("clobbers.computed-dispatch", ...)`, whose `clobbers(...)` is exactly what that
+  rule does NOT verify. A harness consumer module that called or tail-jumped into such a pub proc would be
+  credited from an unverified contract. In the build gate, `[clobbers.computed-dispatch-called]` blocks
+  the call case; nothing blocks the tail-jump (`jp`) case in the harness stubs.
+- Latent: no such cross-module edge exists in the corpus today (Task 7 re-review, measured).
+- Fix, small: skip `computed_dispatch` procs when building the stubs (a consumer then sees no contract and
+  is charged ⊤ for the edge), or say in the stub doc that the hatch's procs are credited unverified. Pair
+  with Task 7 N1 (no test that a jumper into an annotated proc is charged).

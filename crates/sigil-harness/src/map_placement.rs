@@ -302,10 +302,14 @@ pub fn move_bank_regions(
 /// - its base is the `at` of two or more anchors in force: refused as ambiguous;
 /// - its base is the `at` of exactly one anchor in force: that anchor's `vma` must equal
 ///   the region's `vma_base`, else refused;
-/// - its base is the `at` only of anchors NOT in force in this shape: the bank does not
-///   exist in this shape, so neither does its window, and the region is dropped (the
-///   window inherits its anchor's gate; a region `when` is applied before this by
-///   [`map_for_shape`] and agrees with it on aeon's map).
+/// - its base is the `at` only of anchors NOT in force in this shape: refused
+///   (`[map.bank-window-gate-disagrees]`). The bank does not exist in this shape, so the
+///   region's own `when` must already have removed its window ([`map_for_shape`] applies
+///   it before this). A region in force where its anchor is not is a map whose two gates
+///   disagree; it used to be DROPPED silently here, a step-0 Task 5 concession so sigil
+///   could still build aeon trees without the pair's region `when`. Wave 3 refuses those
+///   trees anyway (A4/A5), so the concession bought nothing and hid a disagreement
+///   (step-0 fix wave, final review M2).
 ///
 /// `map` is the shape's map after [`move_bank_regions`]; `pmap` the (overlaid) placement
 /// map the build places with.
@@ -323,7 +327,22 @@ pub fn bank_windows_for_shape(
         }
         let in_force: Vec<&Anchor> = pmap.anchors_for(sound_on).filter(|a| a.at == r.lma_base).collect();
         match in_force.as_slice() {
-            [] if pmap.anchors.iter().any(|a| a.at == r.lma_base) => continue, // gated off here
+            [] if pmap.anchors.iter().any(|a| a.at == r.lma_base) => {
+                let gated: Vec<String> = pmap
+                    .anchors
+                    .iter()
+                    .filter(|a| a.at == r.lma_base)
+                    .map(|a| format!("`{}`", a.name))
+                    .collect();
+                return Err(format!(
+                    "[map.bank-window-gate-disagrees] z80_bank region `{}` at {:#X} is in force in this \
+                     shape, but its anchor {} is not: the bank does not exist here, so its window must \
+                     not either. Give the region its anchor's `when`",
+                    r.name,
+                    r.lma_base,
+                    gated.join(", ")
+                ));
+            }
             [] => {
                 let nearest = pmap
                     .anchors_for(sound_on)
@@ -1000,19 +1019,34 @@ ceiling = 0x20000
 
     #[test]
     fn todays_sonic4_bank_window_is_accepted_in_every_shape() {
-        for region_when in [true, false] {
-            let (map, pmap) = bank_maps(region_when, 0xB8000, "");
-            for sound_on in [true, false] {
-                let shaped = map_for_shape(&map, &pmap, sound_on);
-                let out = bank_windows_for_shape(&shaped, &pmap, sound_on)
-                    .unwrap_or_else(|e| panic!("when={region_when} sound_on={sound_on}: {e}"));
-                assert_eq!(
-                    out.region_by_name("z80_sound_bank").is_some(),
-                    sound_on,
-                    "the window is in force exactly where its anchor is (when={region_when})"
-                );
-            }
+        // The paired map (region `when = "sound_on"`, as aeon's map carries it since the
+        // step-0 pair): the window is in force exactly where its anchor is.
+        let (map, pmap) = bank_maps(true, 0xB8000, "");
+        for sound_on in [true, false] {
+            let shaped = map_for_shape(&map, &pmap, sound_on);
+            let out = bank_windows_for_shape(&shaped, &pmap, sound_on)
+                .unwrap_or_else(|e| panic!("sound_on={sound_on}: {e}"));
+            assert_eq!(out.region_by_name("z80_sound_bank").is_some(), sound_on);
         }
+        // An ungated region agrees with its anchor where the anchor is in force.
+        let (map, pmap) = bank_maps(false, 0xB8000, "");
+        let out = bank_windows_for_shape(&map_for_shape(&map, &pmap, true), &pmap, true).unwrap();
+        assert!(out.region_by_name("z80_sound_bank").is_some());
+    }
+
+    /// Final review M2 / Task 5 residual: an ungated region in a sound-off shape, where its
+    /// only anchor (`sound_bank`, `when = "sound_on"`) is gated off, is a gate
+    /// disagreement. It used to be dropped silently; it is refused.
+    #[test]
+    fn a_window_in_force_where_its_anchor_is_not_is_refused() {
+        let (map, pmap) = bank_maps(false, 0xB8000, "");
+        let err = bank_windows_for_shape(&map_for_shape(&map, &pmap, false), &pmap, false).unwrap_err();
+        assert_eq!(
+            err,
+            "[map.bank-window-gate-disagrees] z80_bank region `z80_sound_bank` at 0xB8000 is in force in \
+             this shape, but its anchor `sound_bank` is not: the bank does not exist here, so its window \
+             must not either. Give the region its anchor's `when`"
+        );
     }
 
     #[test]
