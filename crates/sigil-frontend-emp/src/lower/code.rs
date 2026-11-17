@@ -337,9 +337,9 @@ fn lower_m68k_instr(
     }
     let m = refine_m68k_mnemonic(m, &mops);
     let inst = M68kInst { mnemonic: m, size, ops: mops };
-    match M68kBackend.lower_inst(&inst, span) {
+    match lower_inst_checked(&inst, span) {
         Ok(df) => emit_data_frag(builder, df),
-        Err(e) => push_err(diags, span, e.message),
+        Err(e) => push_err(diags, span, e),
     }
 }
 
@@ -613,6 +613,11 @@ fn lower_m68k_pcrel(
     let target = target.expect("caller guarantees exactly one PC-relative operand");
     let refined = refine_m68k_mnemonic(m, &mops);
     let inst = M68kInst { mnemonic: refined, size, ops: mops };
+    // `btst #n, Sym(pc)` carries a bit number the same A1 check owns.
+    if let Err(msg) = check_imm_ranges(&inst) {
+        push_err(diags, span, msg);
+        return;
+    }
     let result = if is_indexed {
         M68kBackend.lower_pcrel_idx_ea(&inst, target, span)
     } else {
@@ -709,13 +714,13 @@ fn lower_m68k_movem(
         let list_op = M68kOperand::RegList(mask);
         let ops = if list_first { vec![list_op, abs_op] } else { vec![abs_op, list_op] };
         let inst = M68kInst { mnemonic: M68kMnemonic::Movem, size, ops };
-        match M68kBackend.lower_inst(&inst, span) {
+        match lower_inst_checked(&inst, span) {
             Ok(mut df) => {
                 let kind = if *long { FixupKind::Abs32Be } else { FixupKind::Abs16Be };
                 df.fixups.push(Fixup { kind, offset: 4, target: Expr::Sym(n.clone()) });
                 emit_data_frag(builder, df);
             }
-            Err(e) => push_err(diags, span, e.message),
+            Err(e) => push_err(diags, span, e),
         }
         return;
     }
@@ -730,9 +735,9 @@ fn lower_m68k_movem(
     let list_op = M68kOperand::RegList(mask);
     let ops = if list_first { vec![list_op, mem_op] } else { vec![mem_op, list_op] };
     let inst = M68kInst { mnemonic: M68kMnemonic::Movem, size, ops };
-    match M68kBackend.lower_inst(&inst, span) {
+    match lower_inst_checked(&inst, span) {
         Ok(df) => emit_data_frag(builder, df),
-        Err(e) => push_err(diags, span, e.message),
+        Err(e) => push_err(diags, span, e),
     }
 }
 
@@ -812,13 +817,13 @@ fn lower_m68k_imm_link(
             size,
             ops: vec![M68kOperand::Imm(0), reg_op],
         };
-        match M68kBackend.lower_inst(&inst, span) {
+        match lower_inst_checked(&inst, span) {
             Ok(mut df) => {
                 debug_assert_eq!(df.bytes.len(), 2, "moveq is a single opcode word");
                 df.fixups.push(Fixup { kind: FixupKind::ImmSigned8, offset: 1, target });
                 emit_data_frag(builder, df);
             }
-            Err(e) => push_err(diags, span, e.message),
+            Err(e) => push_err(diags, span, e),
         }
         return;
     }
@@ -925,10 +930,10 @@ fn lower_m68k_imm_link(
     let target = target.expect("guarded above: ops[0] is the ImmLink");
     let refined = refine_m68k_mnemonic(m, &enc_ops);
     let inst = M68kInst { mnemonic: refined, size, ops: enc_ops };
-    let df = match M68kBackend.lower_inst(&inst, span) {
+    let df = match lower_inst_checked(&inst, span) {
         Ok(df) => df,
         Err(e) => {
-            push_err(diags, span, e.message);
+            push_err(diags, span, e);
             return;
         }
     };
@@ -1013,10 +1018,10 @@ fn lower_m68k_two_pinned_abs(
     let enc_ops = vec![abs_op(src_long), abs_op(dst_long)];
     let refined = refine_m68k_mnemonic(m, &enc_ops);
     let inst = M68kInst { mnemonic: refined, size, ops: enc_ops };
-    let mut df = match M68kBackend.lower_inst(&inst, span) {
+    let mut df = match lower_inst_checked(&inst, span) {
         Ok(df) => df,
         Err(e) => {
-            push_err(diags, span, e.message);
+            push_err(diags, span, e);
             return;
         }
     };
@@ -1132,10 +1137,10 @@ fn lower_m68k_disp_sym(
     let ds_index = ds_index.expect("set alongside target");
     let refined = refine_m68k_mnemonic(m, &mops);
     let inst = M68kInst { mnemonic: refined, size, ops: mops.clone() };
-    let bytes = match M68kBackend.lower_inst(&inst, span) {
+    let bytes = match lower_inst_checked(&inst, span) {
         Ok(df) => df.bytes,
         Err(e) => {
-            push_err(diags, span, e.message);
+            push_err(diags, span, e);
             return;
         }
     };
@@ -1144,10 +1149,10 @@ fn lower_m68k_disp_sym(
     let mut probe_ops = mops;
     probe_ops[ds_index] = M68kOperand::Disp16An(0x0100, ds_reg);
     let probe = M68kInst { mnemonic: refined, size, ops: probe_ops };
-    let offset = match M68kBackend.lower_inst(&probe, span) {
+    let offset = match lower_inst_checked(&probe, span) {
         Ok(df) => bytes.iter().zip(df.bytes.iter()).position(|(a, b)| a != b),
         Err(e) => {
-            push_err(diags, span, e.message);
+            push_err(diags, span, e);
             return;
         }
     };
@@ -1257,17 +1262,17 @@ fn lower_m68k_abs_sym(
     let refined = refine_m68k_mnemonic(m, &short_ops);
     let short_inst = M68kInst { mnemonic: refined, size, ops: short_ops };
     let long_inst = M68kInst { mnemonic: refined, size, ops: long_ops };
-    let short_bytes = match M68kBackend.lower_inst(&short_inst, span) {
+    let short_bytes = match lower_inst_checked(&short_inst, span) {
         Ok(df) => df.bytes,
         Err(e) => {
-            push_err(diags, span, e.message);
+            push_err(diags, span, e);
             return;
         }
     };
-    let long_bytes = match M68kBackend.lower_inst(&long_inst, span) {
+    let long_bytes = match lower_inst_checked(&long_inst, span) {
         Ok(df) => df.bytes,
         Err(e) => {
-            push_err(diags, span, e.message);
+            push_err(diags, span, e);
             return;
         }
     };
@@ -1306,10 +1311,10 @@ fn lower_m68k_abs_sym(
         probe_ops[ai] =
             if long { M68kOperand::AbsL(0x0100_0000) } else { M68kOperand::AbsW(0x0100) };
         let probe = M68kInst { mnemonic: refined, size, ops: probe_ops };
-        let offset = match M68kBackend.lower_inst(&probe, span) {
+        let offset = match lower_inst_checked(&probe, span) {
             Ok(df) => bytes.iter().zip(df.bytes.iter()).position(|(a, b)| a != b),
             Err(e) => {
-                push_err(diags, span, e.message);
+                push_err(diags, span, e);
                 return;
             }
         };
@@ -1385,6 +1390,69 @@ fn collapse_zero_disp(op: &mut M68kOperand) {
     }
 }
 
+/// The ONE door to the 68k encoder from this front end (A1): range-check the
+/// instruction's immediates, then encode. The encoder masks an immediate to
+/// its field ("validation is the front-end's responsibility", `sigil-isa`
+/// m68k operand contract), so every `lower_inst` call here goes through this
+/// wrapper — before it, `move.w #$12345, d0` assembled to `303C 2345`.
+fn lower_inst_checked(inst: &M68kInst, span: Span) -> Result<DataFragment, String> {
+    check_imm_ranges(inst)?;
+    M68kBackend.lower_inst(inst, span).map_err(|e| e.message)
+}
+
+/// Every `#imm` operand of `inst` against its size's bounds ([`imm_bounds`]),
+/// and a bit instruction's source bit number against [`bit_bound`]. Messages
+/// are the AS front end's (`operand {v} out of range {lo}..={hi}`); a bit
+/// number has no AS equivalent (asl accepts `btst #40, d0`) and carries its
+/// own tag. A link-time immediate (`ImmLink`) is NOT seen here: its path
+/// encodes a zero placeholder and the linker's fixup kind owns its range.
+fn check_imm_ranges(inst: &M68kInst) -> Result<(), String> {
+    let is_bit_op = matches!(
+        inst.mnemonic,
+        M68kMnemonic::Btst | M68kMnemonic::Bset | M68kMnemonic::Bclr | M68kMnemonic::Bchg
+    );
+    for (i, op) in inst.ops.iter().enumerate() {
+        let M68kOperand::Imm(v) = *op else { continue };
+        let v = i64::from(v);
+        if is_bit_op && i == 0 && inst.ops.len() == 2 {
+            let hi = bit_bound(&inst.ops[1]);
+            if !(0..=hi).contains(&v) {
+                return Err(format!("[lower.bit-number] bit number {v} out of range 0..={hi}"));
+            }
+            continue;
+        }
+        let (lo, hi) = imm_bounds(inst.size);
+        if v < lo || v > hi {
+            return Err(format!("operand {v} out of range {lo}..={hi}"));
+        }
+    }
+    Ok(())
+}
+
+/// Bounds for a `#imm` at `size` — generous enough to admit the signed OR the
+/// bit-pattern-equivalent unsigned spelling (`.b #-128` and `.b #255` both
+/// legal). The AS front end's `m68k_imm_bounds` (`frontend-as/src/eval.rs`),
+/// so the two front ends refuse the same lines. `S` (branch) has no immediate;
+/// it falls back to the long bounds like AS.
+fn imm_bounds(size: M68kSize) -> (i64, i64) {
+    match size {
+        M68kSize::B => (-128, 0xFF),
+        M68kSize::W => (-0x8000, 0xFFFF),
+        M68kSize::L | M68kSize::S => (i32::MIN as i64, u32::MAX as i64),
+    }
+}
+
+/// The highest bit number a bit instruction can name on `dest`: 31 on a data
+/// register (a long operation), 7 on memory (a byte operation). The encoder
+/// would otherwise mask `#40` to the 8-bit field and the CPU take it modulo
+/// 32 / 8 — a different bit than written.
+fn bit_bound(dest: &M68kOperand) -> i64 {
+    match dest {
+        M68kOperand::Dn(_) => 31,
+        _ => 7,
+    }
+}
+
 fn m68k_operand(op: &CodeOperand) -> Result<M68kOperand, String> {
     match op {
         CodeOperand::ImmLink { .. } => {
@@ -1396,11 +1464,14 @@ fn m68k_operand(op: &CodeOperand) -> Result<M68kOperand, String> {
         CodeOperand::Imm(n) => {
             let n = *n;
             // A 32-bit immediate field admits either the signed or the
-            // bit-pattern-equivalent unsigned spelling (i32::MIN..=u32::MAX); the
-            // encoder does the size-specific business-rule check. Beyond that
-            // range the value cannot be represented — diagnose, don't wrap.
-            if n < i32::MIN as i128 || n > u32::MAX as i128 {
-                return Err(format!("immediate out of range for a 32-bit operand: {n}"));
+            // bit-pattern-equivalent unsigned spelling (i32::MIN..=u32::MAX).
+            // Beyond that range the value cannot be represented — diagnose,
+            // don't wrap. The SIZE-specific bound (`.b`/`.w`) is
+            // `check_imm_ranges`, at the encode seam. Same text as the AS
+            // front end's `settle_imm`.
+            let (lo, hi) = imm_bounds(M68kSize::L);
+            if n < lo as i128 || n > hi as i128 {
+                return Err(format!("operand {n} out of range {lo}..={hi}"));
             }
             Ok(M68kOperand::Imm(n as i32))
         }
@@ -1723,9 +1794,9 @@ pub(crate) fn encoded_len_m68k(
     }
     let m = refine_m68k_mnemonic(m, &mops);
     let inst = M68kInst { mnemonic: m, size, ops: mops };
-    let df = M68kBackend
-        .lower_inst(&inst, Span { source: sigil_span::SourceId(0), start: 0, end: 0 })
-        .ok()?;
+    let df =
+        lower_inst_checked(&inst, Span { source: sigil_span::SourceId(0), start: 0, end: 0 })
+            .ok()?;
     Some(df.bytes.len())
 }
 

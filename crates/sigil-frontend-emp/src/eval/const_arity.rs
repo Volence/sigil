@@ -18,12 +18,13 @@
 //! This mirrors the sibling `validate_option_newtypes` / `validate_defines`
 //! drivers.
 //!
-//! SCOPE: array LENGTH only. The walk descends through struct fields, tuple
+//! SCOPE: array LENGTH, plus (A1) the natural range of a const typed as a bare
+//! primitive (`const LIMIT: u8 = 300` is `[const.out-of-range]`). The walk descends through struct fields, tuple
 //! elements, arrays-of-arrays and newtype/refinement wrappers to reach every
 //! array position a value can occupy, and reports a length mismatch with the same
 //! wording the emitting path uses. It deliberately reports nothing else — a
-//! wrong-TYPE field or an out-of-range scalar in a const is a separate contract
-//! that emission owns today.
+//! wrong-TYPE field, or an out-of-range scalar NESTED in a const aggregate
+//! (or under a newtype), is a separate contract that emission owns today.
 use super::{run_on_eval_stack, Evaluator};
 use crate::ast;
 use crate::layout::Ty;
@@ -103,7 +104,8 @@ impl Evaluator<'_> {
             self.diags.truncate(before);
             return;
         }
-        if matches!(resolved, Ty::Poison) || !ty_has_array(&resolved) {
+        let scalar = matches!(resolved, Ty::Prim { .. });
+        if matches!(resolved, Ty::Poison) || !(scalar || ty_has_array(&resolved)) {
             return;
         }
         let fresh = !self.const_memo.contains_key(name);
@@ -112,6 +114,23 @@ impl Evaluator<'_> {
             self.diags.truncate(before);
             if fresh {
                 self.const_memo.remove(name);
+            }
+            return;
+        }
+        if let (Ty::Prim { width, signed, .. }, Value::Int(v)) = (&resolved, &value) {
+            // A1: a typed scalar const's declared type is a range contract,
+            // exactly as it is for a `data` cell (`[emit.out-of-range]`).
+            // Before this a `const LIMIT: u8 = 300` bound 300 silently and
+            // every `.b` use site truncated it.
+            let (lo, hi) = crate::layout::prim_bounds(*width, *signed);
+            if *v < lo || *v > hi {
+                let ty_desc = resolved.describe();
+                self.error(
+                    span,
+                    format!(
+                        "[const.out-of-range] {v} does not fit {ty_desc} ({lo}..={hi}), in '{name}'"
+                    ),
+                );
             }
             return;
         }

@@ -4526,6 +4526,14 @@ fixed there: `.emp` `pub equ` lowering through `Expr::Int(n as i64)` at three si
 is a documented exception, not a defect); link-time `>> n` for n in 64..128 refused where comptime
 i128 answers it. Each is a narrowing or a duplicated rule; fix by the same idiom, red-first with an
 input the narrow cast changes.
+  -- **One site of this class FIXED 2026-11-16** on `parcel/step0-soundness` (Task 3, Empyrean v2 A1):
+  the `.emp` sized 68k immediate. `lower/code.rs` narrowed every `#imm` to its `.b`/`.w` field
+  silently (`move.w #$12345, d0` assembled to `303C 2345`); every `lower_inst` call now goes through
+  `lower_inst_checked` (`check_imm_ranges`: `imm_bounds(size)`, the AS front end's
+  `m68k_imm_bounds`, same `operand N out of range lo..=hi` text; bit numbers 0..=31 on `Dn`, 0..=7
+  on memory, `[lower.bit-number]`), and a const typed as a bare primitive is range-checked
+  (`[const.out-of-range]`). Tests `crates/sigil-frontend-emp/tests/imm_range.rs`. The other
+  residual sites above stay open.
 
 ### `DIAG-DIALECT-THIRD`: one binary, more than the two ruled dialects (2026-09-07)
 
