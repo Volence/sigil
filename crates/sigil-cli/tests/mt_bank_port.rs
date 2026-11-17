@@ -1,7 +1,7 @@
 //! Parcel K4 inc-5 Stage 3 (P2 MT probe): the Moving-Trucks streaming bank,
 //! region-level byte gate against the reference ROM.
 //!
-//! `games/sonic4/data/sound/mt_bank.emp` (module `games.sonic4.mt_bank_blob`) is the
+//! `games/sonic4/data/sound/mt_bank.emp` (module `games.sonic4.mt_bank` since aeon 97d139ca) is the
 //! ROM-placed module: its `mt_bank` section sits at the `Song_MovingTrucks` map row,
 //! non-phased, directly above the engine-table head, and embeds the song blobs by
 //! aeon-root-relative paths, as the ROM build lowers it. SHAPE-DEPENDENT size (debug

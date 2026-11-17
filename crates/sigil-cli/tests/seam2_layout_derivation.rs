@@ -44,19 +44,28 @@ fn sound_layout_derives_the_frozen_addresses() {
         // The five heads lie contiguously from the sound_bank anchor, each at the running
         // sum of the heads before it (sound_tables_z80, pitchtable, SfxBlobWinTab,
         // SeqOpcodeTable, DacSampleTable).
-        pitchtable_lma: 0xB83D9,
-        sfx_win_tab_lma: 0xB84E1,
-        seq_opcode_tab_lma: 0xB85F3,
-        dac_sample_tab_lma: 0xB8633,
+        //
+        // pin-advance-step0 (aeon 936439fa): sound_tables_z80 grew 985 -> 1,116 B (aeon
+        // 70027733, the S2 PSG envelope fTone_0C; the emitted sound_tables_z80.bin and the
+        // listing's PitchTable VMA $845C agree), so every head after it moves +0x83. The
+        // other four heads hold: pitchtable 264, SfxBlobWinTab 274, SeqOpcodeTable 64,
+        // DacSampleTable 120 (the emitted bins).
+        pitchtable_lma: 0xB845C,   // 0xB8000 + 1116
+        sfx_win_tab_lma: 0xB8564,  // + 264
+        seq_opcode_tab_lma: 0xB8676, // + 274
+        dac_sample_tab_lma: 0xB86B6, // + 64
         // The MT and SFX bases are ALIGNED values, not sums: the packing walk rounds
         // each section's base up to its DECLARED alignment (8 for both, aeon's mod-8
         // fold wall, section_align::DECLARED), and sound_layout predicts that through
         // the walk's own native::packed_chained_base rather than assuming a contiguous
         // pack. The head ends 8-aligned (soundbankhead.emp's tail pad), so mt_bank
         // starts where it ends.
-        mt_bank_lma: 0xB86B0,
-        sfx_bank_lma_plain: 0xBD568,
-        sfx_bank_lma_debug: 0xBEFB0,
+        // 0xB86B6 + 120 = 0xB872E, rounded up to 8 = 0xB8730.
+        mt_bank_lma: 0xB8730,
+        // + the generated mt_bank_body.bin 20,152 B (0x4EB8) / mt_bank_body_debug.bin
+        // 26,880 B (0x6900); both sums are already 8-aligned.
+        sfx_bank_lma_plain: 0xBD5E8,
+        sfx_bank_lma_debug: 0xBF030,
     };
     assert_eq!(got, want, "map-derived seam-2 placement drifted from the frozen chain-22 addresses");
 }

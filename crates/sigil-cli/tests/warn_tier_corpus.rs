@@ -192,13 +192,13 @@ const SITE_WATCH: &[SiteWatch] = &[
                        inside these prefixes",
         // The lint's actual subject is a HAND-WRITTEN module whose header disagrees with
         // its file, so this row watches the whole of that: every `.emp` outside the
-        // prefixes above firing fails here unless it is listed. ONE is, adjudicated at
-        // the 1ee78b88 pin and reported to aeon as a finding: song bank 2 made
-        // `mt_bank.emp` the ROM-placed module and deleted `mt_bank_blob.emp`, and the
-        // module kept the deleted file's id, `games.sonic4.mt_bank_blob`. It changes no
-        // byte; a rename on aeon's side retires this row (the row's own honesty check
-        // then names it as no longer firing).
-        files: &["games/sonic4/data/sound/mt_bank.emp"],
+        // prefixes above firing fails here unless it is listed. NONE is. The one entry
+        // adjudicated at the 1ee78b88 pin (`games/sonic4/data/sound/mt_bank.emp`, whose
+        // header kept the deleted `mt_bank_blob.emp`'s id) was retired at the
+        // pin-advance-step0 pin: aeon 97d139ca renamed the module to
+        // `games.sonic4.mt_bank`, and the row's honesty check named it as firing in no
+        // shape (path-mismatch 20 -> 19 per shape, all 19 inside the prefixes above).
+        files: &[],
     },
     SiteWatch {
         id: "module.unreachable",

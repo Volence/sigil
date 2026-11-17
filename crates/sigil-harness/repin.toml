@@ -903,7 +903,7 @@ end = "section:dac_banks"
 gate = "SIGIL_EMP_DAC"
 
 # Parcel K4 inc-5 Stage 3: the Moving-Trucks streaming bank, native. mt_bank.emp
-# (module games.sonic4.mt_bank_blob) places its `mt_bank` section at the
+# (module games.sonic4.mt_bank since aeon 97d139ca) places its `mt_bank` section at the
 # `Song_MovingTrucks` map row, right after the phased engine-table head.
 # Shape-INVARIANT start, shape-DEPENDENT size (debug adds DrumTest + HCZ2). There is
 # no end label (the SFX block follows at a per-shape address), so the region ends at
