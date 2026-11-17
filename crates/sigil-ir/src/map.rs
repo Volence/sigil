@@ -112,8 +112,9 @@ impl MemoryMap {
     /// Enforce one declared budget: `cursor_lma` (a link-resolved end marker, e.g. the
     /// object bank's data-region head) must not exceed `ceiling`, the `[[budget]]`
     /// row's declared cap. Returns the used byte count (`cursor_lma - lma_base`) on
-    /// success. The region must exist: a budget against a region the map does not
-    /// declare cannot be measured, and is refused rather than read as within budget.
+    /// success. The region must exist, the ceiling must lie inside it, and the cursor must
+    /// not lie below its base: each of those budgets cannot be measured, and is refused
+    /// (`[map.budget-unmeasurable]`) rather than read as within budget.
     /// Overflow is an actionable Err naming the region, its cap, and the overshoot
     /// (the AS `\{*-$20000}` message, map-owned).
     pub fn check_budget(&self, region_name: &str, ceiling: u32, cursor_lma: u32) -> Result<u32, String> {
@@ -122,6 +123,19 @@ impl MemoryMap {
                 "[map.budget-unmeasurable] budget row `{region_name}` names no map region, so its ceiling {ceiling:#X} cannot be measured"
             ));
         };
+        let region_end = r.lma_base as u64 + r.size as u64;
+        if ceiling as u64 > region_end {
+            return Err(format!(
+                "[map.budget-unmeasurable] budget row `{}` ceiling {ceiling:#X} is past its region's end {region_end:#X}; a budget caps bytes inside its region",
+                r.name
+            ));
+        }
+        if cursor_lma < r.lma_base {
+            return Err(format!(
+                "[map.budget-unmeasurable] budget row `{}` cursor {cursor_lma:#X} is below its region's base {:#X}, so its use cannot be measured",
+                r.name, r.lma_base
+            ));
+        }
         if cursor_lma > ceiling {
             return Err(format!(
                 "budget region `{}` [{:#X},{ceiling:#X}) overflows, cursor {cursor_lma:#X} over by {} bytes",
@@ -130,7 +144,7 @@ impl MemoryMap {
                 cursor_lma - ceiling
             ));
         }
-        Ok(cursor_lma.saturating_sub(r.lma_base))
+        Ok(cursor_lma - r.lma_base)
     }
 
     /// Verify a section `[lma, lma+len)` against the map. Three rules, each one a
@@ -293,6 +307,28 @@ mod tests {
         let bare = MemoryMap::new(vec![rom("rom", 0, 0x400000)], 0x00);
         let err = bare.check_budget("object_bank", 0x20000, 0x99999).unwrap_err();
         assert!(err.starts_with("[map.budget-unmeasurable] budget row `object_bank`"), "{err}");
+    }
+
+    #[test]
+    fn a_budget_cursor_below_its_region_is_unmeasurable() {
+        let m = MemoryMap::new(vec![rom("rom", 0, 0x400000), objbank(0x10000, 0x10000)], 0x00);
+        let err = m.check_budget("object_bank", 0x20000, 0xFFFE).unwrap_err();
+        assert_eq!(
+            err,
+            "[map.budget-unmeasurable] budget row `object_bank` cursor 0xFFFE is below its region's base 0x10000, so its use cannot be measured"
+        );
+        assert_eq!(m.check_budget("object_bank", 0x20000, 0x10000).unwrap(), 0, "a cursor at the base uses 0");
+    }
+
+    #[test]
+    fn a_budget_ceiling_past_its_region_is_unmeasurable() {
+        let m = MemoryMap::new(vec![rom("rom", 0, 0x400000), objbank(0x10000, 0x10000)], 0x00);
+        let err = m.check_budget("object_bank", 0x20001, 0x11000).unwrap_err();
+        assert_eq!(
+            err,
+            "[map.budget-unmeasurable] budget row `object_bank` ceiling 0x20001 is past its region's end 0x20000; a budget caps bytes inside its region"
+        );
+        assert!(m.check_budget("object_bank", 0x20000, 0x11000).is_ok(), "the region's end is a legal ceiling (both games)");
     }
 
     #[test]

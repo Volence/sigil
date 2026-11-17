@@ -261,9 +261,11 @@ pub fn map_for_shape(
 /// anchor. A `z80_bank` region is declared AT an anchor (aeon's `z80_sound_bank` sits at
 /// the `sound_bank` anchor: the map writes the relationship as the two addresses being
 /// equal), so the window a section is held to is the bank the build actually placed. A
-/// region whose base is the `at` of an anchor of `base` takes that anchor's `at` in
-/// `overlaid` (the overlay keeps the anchor list's length and order, so the two lists
-/// pair by index). A region at no anchor, or an anchor the overlay did not move, stays.
+/// region whose base is the `at` of EXACTLY ONE in-force anchor of `base` (the anchors
+/// whose `when` applies to `sound_on`) takes that anchor's `at` in `overlaid` (the overlay
+/// keeps the anchor list's length and order, so the two lists pair by index). A region at
+/// no anchor, or at two, is left where it is for [`bank_windows_for_shape`] to refuse; an
+/// anchor the overlay did not move leaves its region where it is.
 /// Without this an overlay that moves `sound_bank` (the S2CLIP clips) would hold the map's
 /// `$B8000` window: no check on the bank the overlay placed, and a false refusal of the
 /// DAC banks the overlay moved INTO `$B8000`.
@@ -271,20 +273,99 @@ pub fn move_bank_regions(
     map: &sigil_ir::map::MemoryMap,
     base: &PlacementMap,
     overlaid: &PlacementMap,
+    sound_on: bool,
 ) -> sigil_ir::map::MemoryMap {
     let mut out = map.clone();
     for r in out.regions.iter_mut().filter(|r| r.kind == sigil_ir::map::RegionKind::Z80Bank) {
-        let moved = base
+        let matches: Vec<u32> = base
             .anchors
             .iter()
             .zip(&overlaid.anchors)
-            .find(|(b, _)| b.at == r.lma_base)
-            .map(|(_, o)| o.at);
-        if let Some(at) = moved {
-            r.lma_base = at;
+            .filter(|(b, _)| when_applies(b.when, sound_on) && b.at == r.lma_base)
+            .map(|(_, o)| o.at)
+            .collect();
+        if let [at] = matches.as_slice() {
+            r.lma_base = *at;
         }
     }
     out
+}
+
+/// The shape's map with every Z80 bank window tied to its anchor, or a refusal
+/// (`[map.bank-window-unanchored]`). The window is a CONTAINER the build holds bank
+/// sections to (`MemoryMap::validate_section` rule 2), and the anchor is what places the
+/// bank; a window whose base is no anchor's `at` checks bytes the bank does not occupy and
+/// passes, which is "could not measure" rendered green (the row sat at `0x60000`, inside
+/// `Map_Tails`, for months). For each `z80_bank` region of `map`:
+/// - its base is the `at` of NO anchor (in force or not): refused, naming the nearest
+///   anchor in force;
+/// - its base is the `at` of two or more anchors in force: refused as ambiguous;
+/// - its base is the `at` of exactly one anchor in force: that anchor's `vma` must equal
+///   the region's `vma_base`, else refused;
+/// - its base is the `at` only of anchors NOT in force in this shape: the bank does not
+///   exist in this shape, so neither does its window, and the region is dropped (the
+///   window inherits its anchor's gate; a region `when` is applied before this by
+///   [`map_for_shape`] and agrees with it on aeon's map).
+///
+/// `map` is the shape's map after [`move_bank_regions`]; `pmap` the (overlaid) placement
+/// map the build places with.
+pub fn bank_windows_for_shape(
+    map: &sigil_ir::map::MemoryMap,
+    pmap: &PlacementMap,
+    sound_on: bool,
+) -> Result<sigil_ir::map::MemoryMap, String> {
+    let hex = |v: Option<u32>| v.map_or("none".to_string(), |v| format!("{v:#X}"));
+    let mut keep = Vec::with_capacity(map.regions.len());
+    for r in &map.regions {
+        if r.kind != sigil_ir::map::RegionKind::Z80Bank {
+            keep.push(r.clone());
+            continue;
+        }
+        let in_force: Vec<&Anchor> = pmap.anchors_for(sound_on).filter(|a| a.at == r.lma_base).collect();
+        match in_force.as_slice() {
+            [] if pmap.anchors.iter().any(|a| a.at == r.lma_base) => continue, // gated off here
+            [] => {
+                let nearest = pmap
+                    .anchors_for(sound_on)
+                    .min_by_key(|a| (a.at as i64 - r.lma_base as i64).unsigned_abs())
+                    .map_or("none (the shape declares no anchor)".to_string(), |a| {
+                        format!("`{}` at {:#X}", a.name, a.at)
+                    });
+                return Err(format!(
+                    "[map.bank-window-unanchored] z80_bank region `{}` at {:#X} is at no anchor; the nearest \
+                     in force is {nearest}. A bank window is declared at its bank's anchor: make the region's \
+                     lma_base equal that anchor's `at`",
+                    r.name, r.lma_base
+                ));
+            }
+            [a] => {
+                if a.vma != r.vma_base {
+                    return Err(format!(
+                        "[map.bank-window-unanchored] z80_bank region `{}` at {:#X} has vma_base {} but its \
+                         anchor `{}` has vma {}; the window and its anchor must describe the same bank",
+                        r.name,
+                        r.lma_base,
+                        hex(r.vma_base),
+                        a.name,
+                        hex(a.vma)
+                    ));
+                }
+                keep.push(r.clone());
+            }
+            many => {
+                let names: Vec<String> = many.iter().map(|a| format!("`{}`", a.name)).collect();
+                return Err(format!(
+                    "[map.bank-window-unanchored] z80_bank region `{}` at {:#X} is at {} anchors ({}); \
+                     which bank it holds is ambiguous",
+                    r.name,
+                    r.lma_base,
+                    many.len(),
+                    names.join(", ")
+                ));
+            }
+        }
+    }
+    Ok(sigil_ir::map::MemoryMap::new(keep, map.fill))
 }
 
 /// The cartridge bank grid an overlay anchor must sit on: one `$8000` SetBank window.
@@ -886,12 +967,86 @@ ceiling = 0x20000
         let base = base_map();
         let ov = parse_anchor_overlay(&overlay_src(BASE_SND, BASE_SND + PAIR), "fx/anchors.toml").unwrap();
         let overlaid = base.with_overlay(&ov).unwrap();
-        let moved = move_bank_regions(&map, &base, &overlaid);
+        let moved = move_bank_regions(&map, &base, &overlaid, true);
         let at = |m: &MemoryMap, n: &str| m.region_by_name(n).unwrap().lma_base;
         assert_eq!(at(&moved, "z80_sound_bank"), BASE_SND + PAIR, "the window follows `sound_bank`");
         assert_eq!(at(&moved, "z80_loose"), 0x200000, "a window at no anchor stays");
         assert_eq!(at(&moved, "rom"), 0, "a rom region is never moved");
         // No overlay: the map as written.
-        assert_eq!(move_bank_regions(&map, &base, &base), map);
+        assert_eq!(move_bank_regions(&map, &base, &base, true), map);
+    }
+
+    // ── fix round 1: the window is tied to exactly one anchor ──
+    const SONIC4_REGIONS: &str = "[[region]]\nname = \"rom\"\nlma_base = 0\nsize = 0x400000\nkind = \"rom\"\n\
+         [[region]]\nname = \"object_bank\"\nlma_base = 0x10000\nsize = 0x10000\nkind = \"object_bank\"\n\
+         [[region]]\nname = \"z80_sound_bank\"\nlma_base = 0xB8000\nsize = 0x8000\nkind = \"z80_bank\"\nvma_base = 0x8000\n";
+
+    /// The sonic4 anchor rows around the bank (`sound_bank` at `0xB8000`, vma `$8000`,
+    /// `when = "sound_on"`), with `sound_bank` at `snd` and an optional extra row.
+    fn bank_maps(region_when: bool, snd: u32, extra: &str) -> (sigil_ir::map::MemoryMap, PlacementMap) {
+        let mut src = SONIC4_REGIONS.to_string();
+        if region_when {
+            src.push_str("when = \"sound_on\"\n");
+        }
+        src.push_str(&format!(
+            "[[anchor]]\nname = \"boot_head\"\nat = 0x0\n\
+             [[anchor]]\nname = \"object_bank\"\nat = 0x10000\n\
+             [[anchor]]\nname = \"dac_banks\"\nat = 0xA8000\nwhen = \"sound_on\"\n\
+             [[anchor]]\nname = \"sound_bank\"\nat = {snd:#x}\nvma = 0x8000\nwhen = \"sound_on\"\n\
+             [[anchor]]\nname = \"song_bank_2\"\nat = 0xC0000\nwhen = \"sound_on\"\n{extra}"
+        ));
+        (sigil_link::load_map(&src).unwrap(), load_placement_map(&src).unwrap())
+    }
+
+    #[test]
+    fn todays_sonic4_bank_window_is_accepted_in_every_shape() {
+        for region_when in [true, false] {
+            let (map, pmap) = bank_maps(region_when, 0xB8000, "");
+            for sound_on in [true, false] {
+                let shaped = map_for_shape(&map, &pmap, sound_on);
+                let out = bank_windows_for_shape(&shaped, &pmap, sound_on)
+                    .unwrap_or_else(|e| panic!("when={region_when} sound_on={sound_on}: {e}"));
+                assert_eq!(
+                    out.region_by_name("z80_sound_bank").is_some(),
+                    sound_on,
+                    "the window is in force exactly where its anchor is (when={region_when})"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn moving_the_anchor_alone_is_refused() {
+        let (map, pmap) = bank_maps(true, 0xC8000, "");
+        let err = bank_windows_for_shape(&map_for_shape(&map, &pmap, true), &pmap, true).unwrap_err();
+        assert!(
+            err.starts_with(
+                "[map.bank-window-unanchored] z80_bank region `z80_sound_bank` at 0xB8000 is at no anchor; \
+                 the nearest in force is `song_bank_2` at 0xC0000"
+            ),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn a_window_at_two_anchors_is_ambiguous() {
+        let (map, pmap) = bank_maps(true, 0xB8000, "[[anchor]]\nname = \"probe\"\nat = 0xB8000\nvma = 0x8000\n");
+        let err = bank_windows_for_shape(&map_for_shape(&map, &pmap, true), &pmap, true).unwrap_err();
+        assert_eq!(
+            err,
+            "[map.bank-window-unanchored] z80_bank region `z80_sound_bank` at 0xB8000 is at 2 anchors \
+             (`sound_bank`, `probe`); which bank it holds is ambiguous"
+        );
+        // ...and the overlay move does not pick one of the two.
+        let moved = move_bank_regions(&map, &pmap, &pmap, true);
+        assert_eq!(moved.region_by_name("z80_sound_bank").unwrap().lma_base, 0xB8000);
+    }
+
+    #[test]
+    fn a_window_whose_vma_differs_from_its_anchor_is_refused() {
+        let (mut map, pmap) = bank_maps(true, 0xB8000, "");
+        map.regions.iter_mut().find(|r| r.name == "z80_sound_bank").unwrap().vma_base = Some(0x9000);
+        let err = bank_windows_for_shape(&map, &pmap, true).unwrap_err();
+        assert!(err.contains("has vma_base 0x9000 but its anchor `sound_bank` has vma 0x8000"), "{err}");
     }
 }

@@ -3874,7 +3874,10 @@ fn resolve_chained(aeon: &Path, profile: &GameProfile) -> Result<ChainedResolve,
     let base_pmap = pmap.clone();
     let (mut pmap, frozen) = overlaid_placement(pmap, profile)?;
     // ...and each Z80 bank window sits where the overlay (if any) put its anchor.
-    let map = crate::map_placement::move_bank_regions(&map, &base_pmap, &pmap);
+    let map = crate::map_placement::move_bank_regions(&map, &base_pmap, &pmap, profile.sound_on);
+    // ...and every Z80 bank window is tied to exactly one anchor in force (else refused), so
+    // the window the sections are held to is the bank the walk places (fix round 1).
+    let map = crate::map_placement::bank_windows_for_shape(&map, &pmap, profile.sound_on)?;
 
     // FIXTURE-ONLY (stress-art) — the SECOND half of the fixture_placement waiver PAIR
     // (the first is the packing-guard waiver in `packed_true_bases`). The uniquified pool
