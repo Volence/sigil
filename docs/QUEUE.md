@@ -1985,3 +1985,17 @@ until its row is removed.
 - Fix, small: skip `computed_dispatch` procs when building the stubs (a consumer then sees no contract and
   is charged ⊤ for the edge), or say in the stub doc that the hatch's procs are credited unverified. Pair
   with Task 7 N1 (no test that a jumper into an annotated proc is charged).
+
+## FRONTEND-DIFF-Z80-COVERAGE: OPEN (booked by the step-0 fix wave from final review M3, 2026-11-17)
+
+- A6's differential (`crates/sigil-cli/tests/frontend_differential.rs`) compares 98 Z80 cases, `ld r,n` /
+  `ld rr,nn` / `cp n` only (`support/frontend_diff.rs` `cases_z80`), and its coverage test
+  (`crates/sigil-harness/tests/frontend_differential_coverage.rs`) asserts that every 68k
+  family/size/EA the aeon build emits is generated. Nothing asserts the same for Z80. That matches the
+  plan's A6 scope, but A5 now gates Z80 code, so a Z80 form the build emits and the differential never
+  compares is a front-end disagreement nothing would see.
+- No silent path is known: the final review's Z80 sweep (imm8 in `ld/add/and/sub/ld (hl)/ld (ix+d),n`,
+  `(ix+d)` displacement, port, `bit/set`, `im`, `rst`, imm16, `(nn)`, `jp/call nn`, link `ld hl,Far`)
+  found every out-of-range form refused loudly.
+- Work: a Z80 counterpart of the coverage test (the Z80 forms the aeon sound driver emits, by
+  mnemonic/operand shape, each generated), then widen `cases_z80` to cover it.
