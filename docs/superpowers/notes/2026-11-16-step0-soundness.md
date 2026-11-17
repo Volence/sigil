@@ -337,9 +337,50 @@ that is the environment, not this change. `frontend-emp` +1 binary, +8 passed vs
 ### Booked, not in scope
 
 - `move.w $FFFF8000, d0` accepted as an immediate (EMP finding 3, third bullet; 0 corpus hits by grep).
-- The check reads the encoder's `i32` immediate, so a value in `$80000000..=$FFFFFFFF` arrives
-  sign-wrapped: `.w #$FFFF8000..$FFFFFFFF` and `.b #$FFFFFF80..$FFFFFFFF` are accepted as the
-  sign-extended pattern (the same rule the linker's `ImmWord16Be` applies to a link-time word), where
-  the AS front end refuses them. Owner call whether to tighten (corpus hits not measured).
+- (CLOSED in fix round 1, below.) The first cut read the encoder's `i32`, so `$80000000..=$FFFFFFFF`
+  wrapped and passed.
 - A scalar out of range NESTED in a const aggregate, or under a newtype, is still unchecked by
   `const_arity.rs` (emission owns it when the value is emitted).
+
+### Fix round 1 (`1acf0518`, test fixture `HEAD`)
+
+Review: the i32-wrap band still truncated silently (`move.w #4294967295, d0` `303C FFFF`,
+`move.w #$FFFF8000, d0` `303C 8000`, `move.b #$FFFFFFFF, d0` `103C 00FF`, `const W: u32 = $FFFF9EDE` +
+`move.w #W, d0` `303C 9EDE`; all exit 0, and the AS front end and asl (`range overflow`) refuse each).
+
+Measured first: an instrumented build (uncommitted, `.target-instr`) printed every source immediate
+outside `imm_bounds` that the encoder-side check accepted. Over the ref tree `936439fa`: plain 0, debug 0,
+demo 0, demo_debug 0, config_a 0, config_b 0, lean 0, every CRC equal to base; a positive control
+(`move.w #$FFFF8000, d0` added, `SIGIL_CONTRACTS=0`) printed 1. So the band is closed:
+`check_code_imm_ranges` checks the i128 `CodeOperand` value before `m68k_operand` narrows it, on the
+generic route (which covers imm-link, disp-sym, abs-sym and generic), the pc-relative route and
+`encoded_len_m68k`. Messages now name the source value (`operand 4294934527`, `bit number 4294967295`).
+The encoder-side `check_imm_ranges` stays as the seam backstop.
+
+Tests: `wrapped_32_bit_values_in_byte_and_word_slots_are_refused` (RED at `86272767`, GREEN); `btst #9,
+f(pc)` and `btst #-1, d0` added to `bit_numbers_are_checked`; the RAM fixture now asserts the lowered
+module carries exactly `[(ImmWord16Be, 2)]` (the `.w` imm-link kind; `Value16Be` is the data kind and
+rejects `$FFFF9EDE`, so it would not be the right assertion).
+
+RF: `return Ok(()); // RF-MUTATION` as the first line of `check_code_imm_ranges` (code.rs:1421):
+`wrapped_32_bit_values_in_byte_and_word_slots_are_refused` FAILED (8 passed / 1 failed); restored with
+`git restore --source=HEAD`, 9/9.
+
+One existing test changed input: `sigil-cli` `tranche20_spelling_probes`
+`named_drain_label_jump_table_matches_as_arith_rept` wrote `move.w #QBASE` with `QBASE` a comptime `equ`
+`$FFFF8000`, exactly the band, and failed `operand 4294934528 out of range -32768..=65535`. It now says
+`#(QBASE & $FFFF)` (same bytes `31FC 8000 9000`, AS twin unchanged). The real `dma_queue.emp` site names a
+RAM label (link-time, `ImmWord16Be`) and is unaffected.
+
+BN (`sigil 0.1.0 (1acf0518)`, 33 s): `SHAPES 7/7 IDENTICAL`, `STEP0_CMP_END rc=0`, CRCs as above.
+
+AG (throwaway aeon worktree at `936439fa`, `.target-land` `1acf0518`, removed after; run detached
+alongside the suites, so walls are inflated): `tools/landing_build.sh` exit 0, `finished=0`, stamp key
+`3696a3447b0e95b0` (1,884 s); `./build.sh` 0 (614 s); `DEBUG=1 ./build.sh` 0 (476 s); `./build.sh demo`
+0 (397 s); `DEBUG=1 ./build.sh demo` 0 (714 s). Every log names `sigil 1acf05185999`; binary md5 equal at
+start and end.
+
+Tests (per crate / per target, `--no-fail-fast`, `AEON_DIR` + `ORACLE_DIR`): `sigil-frontend-emp` 2,798 /
+0 / 0 (139 binaries); `sigil-cli` 849 / 58 / 1 at `1acf0518`, the one new name being the tranche20 probe
+above, 6/6 after its fixture change; other 12 crates 2,182 / 2 / 2. Failing names after the fixture
+change: 59, all in `.scratch-t1/failed_base.txt`, 0 new.
