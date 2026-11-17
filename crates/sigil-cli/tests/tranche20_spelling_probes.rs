@@ -232,6 +232,11 @@ fn jmp_local_label_disp_over_an_matches_as() {
 // P5 — the D3 named-drain-label jump-table shape (miniature, 3 slots) vs the
 // AS twin's arithmetic `bra.w .drain_end-.c*8` rept. Byte-identity here is
 // the proof that naming the drain entry points changes NOTHING in the bytes.
+// The word immediate is spelled `#(QBASE & $FFFF)`: QBASE is a comptime
+// `equ` ($FFFF8000), and since A1 (step 0) a comptime value outside the `.w`
+// window is refused, as AS and asl refuse `move.w #$FFFF8000` (`range
+// overflow`). The real `dma_queue.emp` site names a RAM LABEL, a link-time
+// immediate (`ImmWord16Be`), which keeps the sign-extended spelling.
 // ---------------------------------------------------------------------------
 
 const EMP_JT: &str = "\
@@ -272,7 +277,7 @@ pub proc Probe () {
         send_entry()
     .drain_1:
         send_entry()
-        move.w  #QBASE, SLOTVAR
+        move.w  #(QBASE & $FFFF), SLOTVAR
     .done:
         rts
 }
