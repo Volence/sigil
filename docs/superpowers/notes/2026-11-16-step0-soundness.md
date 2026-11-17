@@ -712,3 +712,33 @@ The candidate refuses any aeon tree without the annotations (66 located firings 
 the builds and the strict suite's Z80 rows). Aeon `eb634bbc` must reach aeon origin/master before, or
 with, the sigil merge; the standing ref tree then needs re-provisioning past it (QUEUE
 `Z80-CLOBBER-BUILD-GATE`).
+
+### Fix round 1 (`b436b12b`; aeon `168bb908`)
+
+- I2: `[clobbers.computed-dispatch-reason-required]` (parser, same rule as `clobbers.unanalyzable`;
+  `contract_grammar::computed_dispatch_allow_requires_reason`). Bound: `[clobbers.computed-dispatch-called]`
+  refuses an annotated proc that an UNannotated proc `call`s/`rst`s. The "no direct call or jump" limit is
+  disproved by the corpus: `Sequencer_NextOpcode`'s `jp z, Seq_Op_Ext` (`sound_sequencer.emp:1167`) is
+  the one direct edge from outside the annotated set into it (5 more run between annotated procs). A jump is
+  charged the target's full computed effect, so its declared set is relied on by no one along that edge;
+  a call returns to a client that relies on it. Corpus: 0 firings, all 7 shapes.
+- I3: chose (b), booked in QUEUE `Z80-CLOBBER-BUILD-GATE` with the two computed-transfer sites. W021 row
+  corrected. (a) is not sound here: the table is named only in a comment, and spotting `ex (sp),hl; ret`
+  as a dispatch from code is a heuristic.
+- I4: one `  hint:` line under the Z80 row naming the firing procs with no direct caller in the Z80 corpus
+  (derived from the closure's edges). Old aeon `936439fa`: 66 firings, hint names 15 handlers
+  (`Seq_Op_Ext`, jumped to, and `Seq_ContinueFetch`, jr'd to, are not named). Artifact:
+  `.aeon-v2-harness-out/sigil-t7/unannotated-ref-build.log` (exit 1, sigil `b436b12b`).
+- I1 + the new rows, RF each (from `.aeon-v2-harness-out/sigil-t7/rf-fix1.txt`): mutation `if false && …`
+  (or `failed |= false && …`), `git diff --stat` `main.rs | 2 +-`, red on the named test, restored with
+  `git restore --source=HEAD`, 10/10 again:
+  - `main.rs:2229` `if false && report.z80_dropped_instrs != 0 {` -> `a_register_relevant_z80_drop_is_refused_as_blindness` FAILED (:234), 9/1;
+  - `main.rs:2240` `if false && !report.z80_clobber_unresolved.is_empty() {` -> `a_z80_hole_is_refused_as_blindness` FAILED (:250), 9/1;
+  - `main.rs:2286` `failed |= false && refuse_located("[clobbers.computed-dispatch-called] firings"…` -> `an_annotated_proc_with_a_direct_caller_is_refused` FAILED (:278), 9/1;
+  - `main.rs:2287` `failed |= false && refuse_located("Z80 name collisions"…` -> `a_z80_name_declared_twice_is_refused` FAILED (:318), 9/1;
+  - `main.rs:2281` hint `if false && …` -> `a_firing_with_no_direct_caller_carries_the_dispatch_hint` FAILED (:267), 9/1;
+  - `parser.rs:418` `if false && attr.args.len() != 2 || false && !has_reason {` -> `computed_dispatch_allow_requires_reason` FAILED (:375), 31/1; restored 32/32.
+- Minors: M1 `dc` wording fixed (doc + QUEUE); M2 `Seq_ContinueFetch` reason re-worded in aeon
+  `168bb908` (inert); M3 seam1 reads the invariant through `z80_closure::module_invariant_units`;
+  M4 Z80 name collisions are a located zero-firing row; M5 module doc says the walk keys on the module
+  `cpu`; M6 the 66-firing claim now has its artifact; M7 booked `SOUND-BANKID-ODD-RESIDENT-BLOB`.

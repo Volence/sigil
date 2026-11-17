@@ -1745,6 +1745,33 @@ Two smaller items booked here as well:
   advance to a revision carrying them. Until then a strict run against the plain `936439fa` ref tree is
   red on the Z80 rows by design.
 - Booked: the corpus walk drops 10 `dc` cells in `DacSampleTable` (`bankid`/`winptr` equs of link
-  symbols). `split_z80_drops` counts them apart (a `dc` writes no register); a define set that resolves
-  them would let the Z80 drop count be an exact 0.
+  symbols). `split_z80_drops` counts them apart (a `dc` is not decoded as code by the closure, dropped or
+  not); a define set that resolves them would let the Z80 drop count be an exact 0.
+- Booked, OPEN (review I3, fix round 1 chose (b)): a Z80 COMPUTED transfer charges nothing. `ex (sp),hl;
+  ret` and `jp (hl)` have no symbolic target, so `z80_proc_node` gives them no edge and no indirect site.
+  Sites at aeon `eb634bbc`: `Sequencer_NextOpcode` (`engine/sound/sound_sequencer.emp:1180`, the
+  `SeqOpcodeTable` trampoline) and `Z80_IdleProgram` (`engine/system/z80_init.emp:139`, `jp (hl)`, no
+  `clobbers`, so unchecked anyway). The dispatcher, and `Sequencer_Channel` through it, is never charged
+  what the 26 handlers write; its declared clobbers there are a convention. Why not (a) now: the table is
+  named only in a COMMENT (`// [dispatch.trampoline: SeqOpcodeTable …]`), and recognising `ex (sp),hl; ret`
+  as a dispatch (versus its other uses) from code is a heuristic. The sound close: a declared dispatch
+  bound on the transfer (the Z80 twin of the 68k `jsr (aN) as Type`), naming the table, so the site is
+  charged the union of the table cells' effective sets, and an unbounded Z80 computed transfer reads ⊤
+  as on the 68k side (with a Z80 `clobbers.unanalyzable` hatch). That is a grammar + aeon pair parcel.
+- Bound on the hatch (fix round 1): `[clobbers.computed-dispatch-called]` refuses an annotated proc that an
+  unannotated proc `call`s/`rst`s. A direct jump is allowed: the corpus has one (`Sequencer_NextOpcode`
+  `jp z, Seq_Op_Ext`), and the closure charges the jumper the target's full effect.
 - Evidence: the Task 7 section of `docs/superpowers/notes/2026-11-16-step0-soundness.md`.
+
+## SOUND-BANKID-ODD-RESIDENT-BLOB: BOOKED 2026-11-17 (found by step-0 Task 7 / A5, e8 run)
+
+- state: **measured**, not started  size: `S?`
+- Appending 9 bytes of Z80 code (two procs, `ld b,0 / ld a,0 / ret` and `call / ret`) to section
+  `sound_psg` of aeon `936439fa` (+ the A5 pair files) makes `sigil build` refuse the plain shape on BOTH
+  the shipping `94cf811d` and the A5 candidate (also with `SIGIL_CONTRACTS=0`), after a fresh
+  `emit_sound_blob`: ``error: native build (sonic4 plain): [sound.bank-id-vs-placement] cannot measure:
+  the placed resident blob spans 6238 bytes but the emitted blob is 6237, so its bank-id offsets do not
+  locate bytes in the ROM``. One more byte (a `nop`) and both build (`crc=017def01 len=850282`). So an
+  odd-sized resident blob is placed padded to even and the check compares the padded span with the
+  unpadded emission: a padding/measurement mismatch, not a real overlap. An otherwise valid sound edit is
+  refused. Evidence: `.aeon-v2-harness-out/sigil-t7/e8.txt` (odd, both refuse), `e8b.txt` (even, builds).
