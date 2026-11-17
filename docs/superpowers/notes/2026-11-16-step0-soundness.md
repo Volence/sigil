@@ -1091,3 +1091,37 @@ refs, so the order below is what keeps each of them green. Do not reorder.
 8. Record `merge-base --is-ancestor` of each tip in each master (invariant 12), and the A-task notes
    (`status`, `branch`, one Progress line with SHA) in empyrean.
 
+
+## Final fix wave (final whole-branch review, "With fixes")
+
+Report: `.superpowers/sdd/2026-11-16-sigil-soundness/final-fix-report.md` (gitignored working dir); logs
+`/home/volence/sonic_hacks/.aeon-v2-harness-out/fixwave/`.
+
+| Finding | Commit | Outcome |
+|---|---|---|
+| I1 link-time `.w` immediate truncation | `2ab4aadf` | fixed: `ImmWord16Be` = `-$8000..=$FFFF` or `$FFFF8000..=$FFFFFFFF`; `Abs32Be` width-checked |
+| I2 spliced Label in `({x}).w/.l`, `{x}(pc)`, `{x}(pc,Xn)`, `jmp {x}(pc)` | `9de7535a` | fixed: the value, as its unspliced spelling; QUEUE `EMP-SPLICED-DISP-LINKS-PARAM-NAME` closed |
+| I3 toolchain floats | `c7238397` | fixed: `rust-toolchain.toml` 1.99.1, CI reads it, landing pre-flight; `CI-TOOLCHAIN-FLOATS` closed |
+| I4 landing order | `02ee5a68` | written: "Wave 3 landing checklist" above |
+| Task 7 N3 SHA in hint | `1adfd5fd` | fixed: names the site and the doc |
+| Task 6 M5 standing-ref docs | `02ee5a68` | fixed: `OVERSEER-REFERENCE.md` transition paragraph |
+| Task 5 region-vs-anchor residual (M2) | `fe2bcad2` | fixed: `[map.bank-window-gate-disagrees]`; QUEUE row closed |
+| Task 7 seam1 stub note | `fe2bcad2` | booked `SEAM1-STUBS-CREDIT-HATCHED-PROCS` |
+| M1 hidden names + repeat | `760eb2eb` | fixed: hidden copies skipped by the const range check |
+| M3 Z80 coverage | `13bb2a8f` | booked `FRONTEND-DIFF-Z80-COVERAGE` |
+| M4 plan path | `02ee5a68` | fixed |
+| M6, M7, M8 | none | left: M6 not trivial (3 helper signatures), M7 needs the CI run, M8 cosmetic |
+
+RF (each mutation on disk, red, restored from the committed fix, green): I1 4 tests red; I2 two mutations,
+3/4 red each (decoy `t` bytes `2038 0000` / `41FA FFFA` vs oracle `2038 0002` / `41FA FFFC`); pin pre-flight
+`REFUSING ... pins 1.98.0`, exit 2; N3 `the hint names a commit ["eb634bbc"]`; gate-disagreement 1 red; M1
+both lines printed. Transcripts `rf-*.log`.
+
+- **SS** (`scripts/landing-run.sh --aeon .aeon-t9-pairref`, tree `13bb2a8f` clean, 20:55:29Z -> 21:08:19Z):
+  RESULT GREEN, 534 suites, 5988 passed, 0 failed, 3 ignored, 534/534 launched/reported, CI-shaped leg green
+  (5988/0), CLIPPY_EXIT 0, `rustc matches the pin (1.99.1)`.
+- **BN** (base `94cf811d` vs cand `760eb2eb`, `.aeon-t9-pairref`): SHAPES 7/7 IDENTICAL, rc=0.
+- **AG** (throwaway detached worktree of pair tip `6269c7fd`, binaries copied from `.target-land` `760eb2eb`,
+  md5 unchanged at end, removed after): `tools/landing_build.sh` 0, `finished=0` (35 needs_build ran, 1
+  exempted), 931 s; `./build.sh` 0 (193507d9), `DEBUG=1` 0 (ce326232), demo 0 (2f9e2d4c), demo debug 0
+  (64717bac).
