@@ -230,6 +230,15 @@ release binary at `f97406ea` mid-run, so its `./build.sh` began on `76a2f5cd` an
 `f97406ea`. It was killed and the whole AG rerun with no cargo in flight (lesson for later tasks: do not
 overlap SS with AG on the same target dir).
 
+### Fix round 1 (`5284af4c`)
+
+Review finding: a self-recursive proc named itself as the carrier (`S destroys d3 through S`). Under the
+controller ruling, `first_carrier(name, ..)` now returns `None` when the proc writes `reg` itself; otherwise
+it takes the first sorted callee holding `reg`, skipping self-edges, then `falls_into`, then the bounded-indirect
+fallback. New tests cover self-recursion and mutual recursion, the fixture's `S`, and the `--report contracts`
+`via` row. RF: removing both guards turns 3 tests red; after the restore they are green. frontend-emp 2789/0;
+sigil-cli 850 passed / 57 failed (all baseline names); BN 7/7 IDENTICAL at `5284af4c`.
+
 ### Booked, not in scope
 
 - Dropping the 63 per-file `[proc.clobber-undeclared]` warnings the closure finds clean (Sigil audit
