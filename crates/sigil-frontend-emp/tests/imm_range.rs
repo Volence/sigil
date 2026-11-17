@@ -194,3 +194,24 @@ fn link_time_word_immediate_still_accepts_a_ram_address() {
     let b = emp(RAM_FIXTURE).unwrap_or_else(|e| panic!("RAM fixture refused: {e:?}"));
     assert_eq!(b, [0x30, 0x3C, 0x9E, 0xDE, 0x4E, 0x75]);
 }
+
+/// A6 finding (the front-end differential, Task 9): an immediate to `ccr` is a
+/// BYTE field whatever the spelled size. Before this, `.emp` range-checked
+/// `andi.w #65535, ccr` against the `.w` bounds and the encoder emitted the
+/// byte form, `023C 00FF` (the value truncated); `.s` used the long bounds, so
+/// `ori.s #256, ccr` assembled `003C 0000`. The AS front end refuses every
+/// non-`.b` size with this message, as asl does (`error #1130: invalid operand
+/// size`, `frontend-as/src/eval.rs`, `andi_w_ccr`).
+#[test]
+fn ccr_immediates_are_byte_only() {
+    const MSG: &str =
+        "an immediate to `ccr` is byte only, as asl requires: write it with `.b` or with no suffix";
+    assert_eq!(err("andi.w  #65535, ccr"), [MSG]);
+    assert_eq!(err("andi.w  #1, ccr"), [MSG]);
+    assert_eq!(err("andi.l  #-1, ccr"), [MSG]);
+    assert_eq!(err("ori.w   #-32768, ccr"), [MSG]);
+    assert_eq!(err("ori.s   #256, ccr"), [MSG]);
+    assert_eq!(err("andi.s  #-129, ccr"), [MSG]);
+    assert_eq!(ok("andi.b  #$FE, ccr"), [0x02, 0x3C, 0x00, 0xFE]);
+    assert_eq!(ok("ori.b   #1, ccr"), [0x00, 0x3C, 0x00, 0x01]);
+}
