@@ -847,3 +847,52 @@ aeon worktree at `936439fa` + the ref tree's ignored artifacts + the 3 pair file
 `sigil`/`emit_sound_blob` md5 `41886c8f…`/`7ddb94d3…` at the end (copies). Ran concurrently with SS.
 Landing order: aeon `6b5f8d8d`, `c4c1fb0b`, `3fd291f3` (after A5's `eb634bbc`, `168bb908`) must reach aeon
 master before, or with, the sigil merge; the candidate refuses a tree without `palette_dsl`'s import.
+
+### Fix round 1 (`31367919`; aeon `6269c7fd`)
+
+Review `task-8-review.md`: 0 Critical, 4 Important, 7 Minor. Every probe in it re-run on the candidate:
+`equ` `70 03`, `equs` `70 03`, `unbeq` refused, `enumv` `08`, `ovl` and `ovlc` `4A29 0002`, `win` `70 08 4A29 0002`,
+`win0` loud `[overlay.unknown-window]`, `diff` `70 03 72 08` (before: `70 09`, `70 09`, built, `15`, `$A`/error).
+
+- I1: `is_comptime_kind` includes `Item::Equ` (`eval_path` reads an equ like a const). An equ dependency is
+  injected as a hidden CONST: the definition-site fold where it folds, else its value with free names renamed.
+  It emits no link symbol, so the `$def$name` spelling cannot collide with the equ's own mangled symbol
+  (M6, noted on `hidden_name`). An importer equ now counts for `[name.unbound-at-definition]`, and
+  `--report name-env` sees the class. Aeon pair `6269c7fd`: EMP_PITFALLS §2's "labels (procs, data, equs)
+  resolve through the link" corrected, same line count (`tools/test_citation_form.py` 3 passed).
+- I2: the walker no longer scopes variant names over discriminants and payload types.
+- I3: a dotted window's struct (`region[0]`) is a walked name. A bare window the defining FILE cannot stamp
+  (its struct is imported) is qualified in `HygieneMemo::prepare` to `Struct.window` with the one struct
+  of the defining module's environment (own, `use`d, prelude) that has the field; 0 or 2+ candidates are
+  left as written, for the defining module to report.
+- I4 and M2: fixtures (below).
+- Fixtures, `crates/sigil-cli/tests/one_name_env.rs` (8 -> 18): `a_private_equ_resolves_where_defined`,
+  `a_private_equ_sizes_a_struct_where_defined`, `a_name_the_importer_binds_only_by_equ_is_refused`,
+  `an_enum_discriminant_names_the_module_const_not_a_variant`, `a_dotted_overlay_window_resolves_where_defined`
+  (with and without an importer `Sst`), `a_bare_overlay_window_resolves_where_defined` (with an unrelated
+  importer struct, and with none), `a_hidden_struct_is_not_a_bare_window_candidate` (`win`),
+  `a_hidden_struct_never_binds_a_bare_window_silently` (`win0`),
+  `a_hidden_dependency_the_importer_also_imports_maps_back` (newtype `Px`: without map-back,
+  `[cross-type mix] cannot mix Px and $a$Px`), `a_different_item_of_the_same_name_is_not_mapped_back` (`diff`).
+  Unit: `free_names_sees_enum_discriminants_and_dotted_windows`.
+- RF (`.aeon-v2-harness-out/sigil-t8/fr1/rf.sh`, log `fr1/rf.log`), runner
+  `cargo test -p sigil-cli --test one_name_env`; each mutation shown by `git diff --stat` and `grep -n`, then
+  `git restore --source=HEAD`:
+  - I1 `hygiene.rs:552` `ast::Item::Const(_) /*RF-I1*/` (Equ dropped): 3 FAILED (`left: [112, 9, 78, 117]` x2, refusal not raised), 15/3;
+  - I2 `hygiene.rs:424` scope extend re-added: `an_enum_discriminant…` FAILED `left: [21]`, 17/1;
+  - I3 `hygiene.rs:462` `let _ = s;`: dotted and bare FAILED (`left: [74, 41, 0, 10, 78, 117]`), 16/2;
+  - I3 `hygiene.rs:857` qualification removed: bare FAILED (`$A`), 17/1;
+  - I4 `layout.rs:1086` filter deleted: `win` FAILED (false ambiguity) and `win0` FAILED (built silently), 16/2;
+  - M2 `hygiene.rs:981` `false && o == origin`: map-back FAILED (cross-type mix), 17/1;
+  - green at HEAD `31367919`: 18/18; `resolve::hygiene` unit 5/5.
+- BN (`fr1/../bn3-*.log`, base `94cf811d` vs cand `31367919`, `.aeon-t8-pairref`): 7/7 IDENTICAL, rc 0, the
+  golden CRCs. Name-env (cand `31367919`, all 7 shapes): 0 differ, 0 unbound; rows plain 46,428, debug 51,320,
+  demo 24,973, demo_debug 25,721, config_a 52,083, config_b 44,547, lean 46,428 (+11/+13/0/0/+13/+11/+11
+  vs Step 2: the equ and dotted-window rows now visible).
+- SS (`scripts/landing-run.sh --aeon .aeon-t8-pairref`, tree `31367919` clean, 861 s): GREEN, 528/528,
+  **5,958 passed / 0 failed / 3 ignored**, 0 skips, clippy 0, ledger 0, CI leg 0. Delta +11 (10 fixtures, 1 unit).
+- AG (detached worktree of pair tip `6269c7fd`, binaries copied from `.target-land` `31367919`):
+  `tools/landing_build.sh` exit 0, `finished=0` (35 ran / 0 failed / 1 exempted), 606 s.
+- Left open: M1 (report rows top-level only) and M5 (param scoping order), booked in QUEUE `EMP-ONE-NAME-ENV`;
+  M3 (the define half of report concern 2 is moot: `[defines.collision]` refuses an item named like a define);
+  M4 (evidence, no change); M7 (process nits; `rf.sh` now prints the restore command).

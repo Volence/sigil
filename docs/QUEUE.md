@@ -1786,6 +1786,11 @@ Two smaller items booked here as well:
   `[name.unbound-at-definition]`. `sigil build --report name-env` lists the rows (EMP language audit
   finding 1/2; aeon EMP_PITFALLS §2 and §8 retired in the pair).
 - Fix `5fea0ad2`: prelude items map back in each importer; hidden structs are not bare-window candidates.
+- Fix round 1 `31367919` (task-8 review I1-I4, M2, M6): an `equ` binds as a VALUE like a const (a private
+  equ dependency is injected as a hidden const, so no link symbol; an importer equ trips the refusal); enum
+  variants are not in scope in their own discriminants/payloads; an overlay's dotted window struct is a walked
+  name, and a bare window over an imported struct is qualified at the definition; fixtures pin the hidden-struct
+  window filter and map-back. Corpus: BN 7/7, name-env 0 differ / 0 unbound in all 7 shapes. Pair doc `6269c7fd`.
 - PAIR: aeon `parcel/step0-soundness-pair` `6b5f8d8d` (+ `3fd291f3`) imports `PalCycleScript1/2` in `palette_dsl.emp`
   (the 2 distinct unbound rows the report found at `936439fa`); byte-neutral (BN base column). Without it
   the candidate refuses the tree. Docs `c4c1fb0b` (pitfalls retired, `EMP-A4-PINS-REMOVABLE` booked aeon-side).
@@ -1802,6 +1807,13 @@ Two smaller items booked here as well:
     sound lowering. Each builds its own environment.
   - A `{name}` interpolation inside an `ensure`/`raise` message string is evaluated where the message is
     evaluated; strings are not renamed.
-  - Labels (procs, data, equs, region fields) named inside an injected comptime fn's `asm` body resolve
-    through the link rename, not this rule.
+  - Labels (procs, data, region fields) named inside an injected comptime fn's `asm` body resolve
+    through the link rename, not this rule. (An `equ` binds like a const since fix round 1.)
+  - `--report name-env` lists only the TOP injected items' free names, not their hidden dependencies', and only
+    names whose definition binds a comptime item or that only the importer binds (review M1). The build's
+    refusal checks every injected dependency, so the report's `u` can under-count; the green build is the
+    stronger check.
+  - The walker walks a comptime fn's return type and parameter types/defaults before scoping any parameter
+    (review M5): a dependent type or default naming an earlier parameter is treated as free. Unconfirmed
+    against the evaluator's binding order; no corpus case.
 - Evidence: the Task 8 section of `docs/superpowers/notes/2026-11-16-step0-soundness.md`.
