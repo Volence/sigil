@@ -127,3 +127,110 @@ The 67 failing test names are IDENTICAL in both runs (sorted `diff` empty): gold
 pins currency), not this task. The delta is exactly the new suite, `printed_families_gate`, 3/3 passing.
 No SS output contains a `zero-firing by contract` refusal. SS is therefore not GREEN at aeon HEAD before
 or after this task; Task 6 (A9) owns it.
+
+## Task 2 (A7): the `[proc.clobber-undeclared]` refusal says where
+
+Commits `76a2f5cd` (feature) and `f97406ea` (test fixture fix, below). The closure gate used to refuse
+with `N firing(s)` and nothing else. It now refuses through `refuse_located`, one line per firing:
+
+```
+error: [proc.clobber-undeclared] closure firings, 3 firing(s); this family is zero-firing by contract:
+  <file>:7:5: [proc.clobber-undeclared] `P` destroys `d1` through `Q`, which its clobbers(...) does not declare
+  <file>:11:5: [proc.clobber-undeclared] `R` destroys `d2` in its own body, which its clobbers(...) does not declare
+  <file>:15:5: [proc.clobber-undeclared] `U` reaches an indirect call with no declared bound, so it may destroy every register; bound the call with `as Type` or declare `@allow("clobbers.unanalyzable", "<reason>")`
+```
+
+- `ProcNode.decl_span` (68k proc, extern, and the Z80 seam-1 node: `seam1.rs` is a sixth path the plan
+  did not list, needed because that literal names every field); `Firing` gains `span` and `via`.
+- `closure::first_carrier`: first callee in sorted `direct_callees` whose effective set holds the
+  register, else `falls_into`, else `None`; it resolves names with the fixpoint's own rule
+  (`resolve_key_in`, which `resolve_callee_key` now delegates to). A transitive register no callee
+  carries can only have come through a BOUNDED indirect site; it is named `jsr (aN) as Type` rather than
+  falsely "in its own body" (plan text had no form for this case; unit-tested).
+- `describe_clobber(f, code)` in `main.rs` for Task 7; `--report contracts` prints `... via <carrier>`.
+- `empty_gate` rows now return `bool` (`failed |= ...`) so the located row keeps its place, on one line.
+- `refuse_located` = `located_refusal` (pure render) + print; its `(no span recorded)` branch is
+  unit-tested (Task 1 review carry-over), both for `span: None` and a span whose source does not read.
+- Finding: a proc declaration span starts at `proc`, after `pub` (column 5 in the fixture).
+
+Corpus: 0 closure firings in all 7 shapes (plan baseline, MEASURED), so nothing new fires.
+
+Test `crates/sigil-cli/tests/clobber_gate_location.rs`: RED before (panicked at the header assertion,
+`clobber_gate_location.rs:100`, stderr showing the old `3 firing(s); ... by contract.` line; both
+controls passed), GREEN 3/3 after. `sigil-frontend-emp --no-fail-fast` (with `AEON_DIR` = the ref
+tree): 138 binaries, 2,787 passed, 0 failed.
+
+### RF proof (invariant 8)
+
+```
+$ git status --short
+$ sed -i 's|refuse_located("\[proc.clobber-undeclared\] closure firings".*|empty_gate("[proc.clobber-undeclared] closure firings", report.firings.len());|' crates/sigil-cli/src/main.rs
+$ git diff --stat
+ crates/sigil-cli/src/main.rs | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+$ grep -n 'empty_gate("\[proc.clobber-undeclared\]' crates/sigil-cli/src/main.rs
+2249:    failed |= empty_gate("[proc.clobber-undeclared] closure firings", report.firings.len());
+$ cargo test -p sigil-cli --test clobber_gate_location
+test the_clobber_refusal_names_proc_register_path_and_line ... FAILED
+panicked at crates/sigil-cli/tests/clobber_gate_location.rs:99:5:
+error: [proc.clobber-undeclared] closure firings, 3 firing(s); this family is zero-firing by contract.
+test result: FAILED. 2 passed; 1 failed; 0 ignored
+$ git restore --source=HEAD -- crates/sigil-cli/src/main.rs
+$ git status --short
+$ cargo test -p sigil-cli --test clobber_gate_location
+test result: ok. 3 passed; 0 failed; 0 ignored
+```
+The plan expected the FAIL on the `P` line; it fires one assertion earlier, on the located header
+(`...by contract:` vs the old `...by contract.`), which precedes it. Same mutation, same cause.
+
+### BN (candidate `sigil 0.1.0 (f97406ea)`, wall-clock ~30 s; also 7/7 at `76a2f5cd`)
+
+```
+SHAPE plain 193507d9/850296 193507d9/850296 SAME
+SHAPE debug ce326232/870560 ce326232/870560 SAME
+SHAPE demo 2f9e2d4c/99994 2f9e2d4c/99994 SAME
+SHAPE demo_debug 64717bac/106981 64717bac/106981 SAME
+SHAPE config_a 6be62db3/870972 6be62db3/870972 SAME
+SHAPE config_b d888a312/617813 d888a312/617813 SAME
+SHAPE lean 60a3552b/798202 60a3552b/798202 SAME
+SHAPES 7/7 IDENTICAL
+STEP0_CMP_END rc=0
+```
+
+### SS (`scripts/landing-run.sh --aeon .aeon-sigil-ref-936439fa`)
+
+| Tree | suites (launched/reported) | passed | failed | ignored | RESULT | wall-clock |
+|---|---|---|---|---|---|---|
+| `76a2f5cd` | 523 / 523 | 5,809 | 68 | 3 | FAILED, cargo 101, clippy 0, ledger 0 | 476 s |
+| `f97406ea` (tip) | 523 / 523 | 5,810 | 67 | 3 | FAILED, cargo 101, clippy 0, ledger 0 | 431 s |
+
+At `76a2f5cd` one NEW name against Task 1's 67: `no_source_in_this_crate_writes_a_file_by_truncation`
+(`atomic_output_gate.rs` scans `#[cfg(test)]` modules too; the new `refuse_located` unit test wrote its
+fixture with `std::fs::write`). `f97406ea` routes it through `install_artifact`. At the tip the 67
+failing names (taken from cargo's `failures:` lists, as a multiset; the script's own deduplicated
+`FAILING TESTS (63)` list drops `mt_bank_debug_matches_reference`, whose `test ... FAILED` line was
+interleaved) are IDENTICAL to `.scratch-t1/failed_base.txt`. Delta vs Task 1: +1 suite, +7 passed (the
+3 integration, 3 `closure::tests`, 1 `located_refusal` unit test). No SS output contains a
+`zero-firing by contract` refusal.
+
+### AG (throwaway aeon worktree at `936439fa`, `SIGIL_BUILD`/`SIGIL_EMIT` = `.target-land` `f97406ea`)
+
+| Run | exit | wall-clock |
+|---|---|---|
+| `tools/landing_build.sh` | 0, `finished=0` (pytest 35 ran / 0 failed / 1 exempted) | 473 s |
+| `./build.sh` | 0 | 381 s |
+| `DEBUG=1 ./build.sh` | 0 | 394 s |
+| `./build.sh demo` | 0 | 362 s |
+| `DEBUG=1 ./build.sh demo` | 0 | 386 s |
+
+Every log names `sigil f97406ead25f` and no other assembler revision; both binaries' md5 at the end
+equal their md5 at the start; no run printed `contract closure gate SKIPPED` or a `zero-firing by
+contract` refusal. A FIRST AG attempt was discarded: the SS run shared `.target-land` and rebuilt the
+release binary at `f97406ea` mid-run, so its `./build.sh` began on `76a2f5cd` and its gates read
+`f97406ea`. It was killed and the whole AG rerun with no cargo in flight (lesson for later tasks: do not
+overlap SS with AG on the same target dir).
+
+### Booked, not in scope
+
+- Dropping the 63 per-file `[proc.clobber-undeclared]` warnings the closure finds clean (Sigil audit
+  plan item 5, second half). Unowned in step 0; candidate for a later QUEUE row.
