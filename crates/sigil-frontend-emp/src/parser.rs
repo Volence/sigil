@@ -3443,15 +3443,19 @@ impl Parser {
                 // displacement; `(a0, d0.w)(...)` is not valid 68k, so it is left
                 // for the line-end error rather than mis-read as a displacement.
                 if self.at(&Tok::LParen) {
-                    if let Operand::Ind { parts, size: None, .. } = &inner {
+                    if let Operand::Ind { parts, size: None, first_spliced, .. } = &inner {
                         if parts.len() == 1 && parts[0].1.is_none() {
                             let disp = parts[0].0.clone();
+                            // `({t})(pc)`: the wrapped displacement is a splice when
+                            // its one part was, so the mapper reads its VALUE, not the
+                            // parameter's name (final re-review N1, the I2 class).
+                            let disp_spliced = *first_spliced;
                             let real_inner = self.paren_operand(splices_allowed, self.span());
                             let span = start.merge(self.prev_span());
                             return Operand::DispInd {
                                 disp,
                                 inner: Box::new(real_inner),
-                                disp_spliced: false,
+                                disp_spliced,
                                 field_size_override: None,
                                 span,
                             };

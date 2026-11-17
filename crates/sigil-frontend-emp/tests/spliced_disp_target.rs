@@ -44,12 +44,17 @@ fn emp(src: &str) -> Result<Vec<u8>, Vec<String>> {
 }
 
 /// The five forms, each with `{t}` where the operand names its target.
-const FORMS: [&str; 5] = [
+/// The last three are the WRAPPED displacement spellings (final re-review N1):
+/// `({t})(pc)` reached the pc-relative mapper with `disp_spliced: false`.
+const FORMS: [&str; 8] = [
     "move.l  ({t}).w, d0",
     "move.l  ({t}).l, d0",
     "lea     {t}(pc), a0",
     "move.w  {t}(pc,d0.w), d1",
     "jmp     {t}(pc)",
+    "lea     ({t})(pc), a0",
+    "move.w  ({t})(pc,d0.w), d1",
+    "jmp     ({t})(pc)",
 ];
 
 /// A module whose `main` runs `line` once through a comptime template. The
@@ -94,9 +99,12 @@ fn the_unspliced_oracle_targets_target() {
     // lea (Target,pc), a0: ext word at 6, disp = 2 - 6 = -4.
     let b = emp(&module(FORMS[2], false)).unwrap();
     assert_eq!(&b[4..], [0x41, 0xFA, 0xFF, 0xFC, 0x4E, 0x75]);
+    // The wrapped spelling `(Target)(pc)` is the same instruction.
+    let b = emp(&module(FORMS[5], false)).unwrap();
+    assert_eq!(&b[4..], [0x41, 0xFA, 0xFF, 0xFC, 0x4E, 0x75]);
 }
 
-/// A string naming a register word is refused in every form, as `jsr {p}`
+/// A string naming a register word is refused in every form (all eight), as `jsr {p}`
 /// refuses it (A6 fix round 2): never a symbol named `sr`.
 #[test]
 fn a_register_word_is_still_refused_in_every_form() {

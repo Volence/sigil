@@ -1934,7 +1934,13 @@ until its row is removed.
 - Needs a language ruling: refuse case variants of register words as names and operands, or fold them.
 
 
-## EMP-SPLICED-DISP-LINKS-PARAM-NAME: CLOSED IN BRANCH 2026-11-17 (final review I2, fix wave, `parcel/step0-soundness`)
+## EMP-SPLICED-DISP-LINKS-PARAM-NAME: CLOSED IN BRANCH 2026-11-17 (final review I2 + re-review N1, fix wave, `parcel/step0-soundness`)
+
+- All EIGHT forms, each now its spliced value: `({x}).w`, `({x}).l`, `{x}(pc)`, `{x}(pc,Xn)`, `jmp {x}(pc)`
+  (I2), and the wrapped displacement spellings `({x})(pc)`, `({x})(pc,Xn)`, `jmp ({x})(pc)` (final
+  re-review N1: `parser.rs`'s wrapped-displacement branch hard-coded `disp_spliced: false`, so
+  `lea ({t})(pc),a0` still gave `41FA FFFA` at a decoy `t` instead of `41FA FFFC`; it now passes the inner
+  group's `first_spliced` through). The fixture lists all eight.
 
 - Finding (final whole-branch review I2; first noted as a Task 9 out-of-scope line with no row): in five
   forms a spliced `Label` was ignored and the parameter's NAME was linked: `({x}).w`, `({x}).l`, `{x}(pc)`,
