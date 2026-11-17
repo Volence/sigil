@@ -455,7 +455,7 @@ Branch `parcel/step0-soundness` pushed (owner-approved; never master):
 
 | run | head | conclusion | what |
 |---|---|---|---|
-| `44013571220` | `a6b6653a` | failure | test step: 524 suites, 5,893 passed, **1 failed**, 3 ignored, 475 skips. `g4_objects_regions_match_reference` ok. The red was `version_provenance` `every_closure_path_that_exists_is_watched_for_edits`: CI's `stable` is now rustc 1.100.0 (2026-11-09) and its new cargo build-dir layout moves the build script's recorded stdout (fixed `6a0cd3ff`) |
+| `44013571220` | `a6b6653a` | failure | test step: 524 suites, 5,893 passed, **1 failed**, 3 ignored, 475 skips. `g4_objects_regions_match_reference` ok. The red was `version_provenance` `every_closure_path_that_exists_is_watched_for_edits`: CI's `stable` is now rustc 1.100.0 (2026-11-09) and its new cargo build-dir layout moves the build script's recorded stdout (fixed `7d0aed5c`) |
 | `44014834372` | `6a0cd3ff` | failure | test step GREEN (524, 5,894 passed, 0 failed, 3 ignored, 474 skips). clippy step red: clippy 1.100 `needless_range_loop` at `sigil-clownlzss-sys/src/accurate.rs:201,204` (fixed `417dc819`) |
 | **`44015583371`** | `417dc819` | **success** | every step green: test (524 suites, 5,894 passed, 0 failed, 3 ignored), skip report (473), clippy, crate-graph guard (1 passed); 04:12:44Z to 04:17:28Z |
 
