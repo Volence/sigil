@@ -11,6 +11,9 @@
 //! blocks.
 mod asm;
 mod builtins;
+/// Re-exported for the resolver's hygiene walk (`resolve::hygiene`), which must
+/// not rename a builtin method's name.
+pub(crate) use builtins::is_builtin;
 mod call;
 mod classic_compress;
 mod compress_common;

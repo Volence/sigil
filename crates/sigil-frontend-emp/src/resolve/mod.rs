@@ -1,6 +1,7 @@
 //! Cross-module resolution driver (Spec 2 §3): gather modules, resolve
 //! `use`/prelude names, place items, and produce one linkable Vec<Section>.
 pub mod contract;
+pub mod hygiene;
 pub mod imports;
 pub mod manifest;
 pub mod rename;
@@ -84,7 +85,7 @@ fn pub_struct_data_name(item: &ast::Item) -> Option<&str> {
 /// cannot catch (the same argument that ruled out cross-invocation incremental
 /// caching; lens sweep findings S15/S22).
 #[derive(Default)]
-struct ConstFoldCache {
+pub(crate) struct ConstFoldCache {
     by_const: HashMap<(String, String), Option<i64>>,
     /// Error-level diagnostics from probes that failed on a fault in the const's
     /// own definition ([`ConstFold::Failed`]), accumulated once per `(module,
@@ -274,15 +275,7 @@ fn collect_pub_comptime(
         // flag strips its bytes at lowering while keeping its name+type visible.
         if let Some(name) = pub_struct_data_name(item) {
             if pred(name) {
-                if let ast::Item::Data(d) = item {
-                    let mut stub = d.clone();
-                    stub.type_only = true;
-                    // The stub carries only its name + `ty`; blank the initializer
-                    // to a Unit so a stray eval can never read the (absent) value.
-                    stub.value = ast::Expr::TupleLit { elems: vec![], span: d.span };
-                    stub.max_size = None;
-                    out.push(ast::Item::Data(stub));
-                }
+                out.push(data_type_stub(item));
             }
         }
         if pub_comptime_name(item).is_some_and(pred) {
@@ -321,6 +314,22 @@ fn collect_pub_comptime(
         if let ast::Item::Section(sec) = item {
             collect_pub_comptime(def_id, def_file, &sec.items, pred, defines, include_root, folds, out);
         }
+    }
+}
+
+/// The TYPE-ONLY stub injected for a `pub data` item of struct type (D-PP.5): its
+/// name and `ty`, `type_only` set so lowering strips its bytes, the initializer
+/// blanked to a Unit so a stray eval can never read the (absent) value.
+fn data_type_stub(item: &ast::Item) -> ast::Item {
+    match item {
+        ast::Item::Data(d) => {
+            let mut stub = d.clone();
+            stub.type_only = true;
+            stub.value = ast::Expr::TupleLit { elems: vec![], span: d.span };
+            stub.max_size = None;
+            ast::Item::Data(stub)
+        }
+        other => other.clone(),
     }
 }
 
@@ -540,6 +549,84 @@ pub fn build_ram_report(
 
     // Definition-site fold faults from the ambient prepends above. This path never
     // lowers the defining modules, so nothing else here would ever raise them.
+    diags.append(&mut folds.borrow_mut().take_faults());
+    (rows, diags)
+}
+
+/// Every injectable public name `file` offers an importer (top level and one
+/// `section` deep): the names [`collect_pub_comptime`] would inject.
+fn injectable_pub_names(items: &[ast::Item], out: &mut Vec<String>) {
+    for item in items {
+        if let Some(n) = pub_comptime_name(item).or_else(|| pub_struct_data_name(item)) {
+            if !out.iter().any(|o| o == n) {
+                out.push(n.to_string());
+            }
+        }
+        if let ast::Item::Section(sec) = item {
+            injectable_pub_names(&sec.items, out);
+        }
+    }
+}
+
+/// The `(defining module, item name)` pairs injected into `module`: the prelude's
+/// public comptime items, then every `use`-imported one, in injection order.
+fn injected_tops<'m>(
+    module: &ParsedModule,
+    prelude: Option<&'m ParsedModule>,
+    manifest: &'m Manifest,
+) -> Vec<(&'m ParsedModule, String)> {
+    let mut out = Vec::new();
+    if let Some(p) = prelude {
+        if p.id != module.id {
+            let mut names = Vec::new();
+            injectable_pub_names(&p.file.items, &mut names);
+            out.extend(names.into_iter().map(|n| (p, n)));
+        }
+    }
+    for u in imports::use_decls(&module.file.items) {
+        let base = u.base.segments.join(".");
+        let Some(&bi) = manifest.by_id.get(&base) else { continue };
+        let bm = &manifest.modules[bi];
+        if bm.id == module.id {
+            continue;
+        }
+        let mut names = Vec::new();
+        injectable_pub_names(&bm.file.items, &mut names);
+        match &u.names {
+            ast::UseNames::Whole | ast::UseNames::Blank => {}
+            ast::UseNames::Glob => out.extend(names.into_iter().map(|n| (bm, n))),
+            ast::UseNames::List(want) => out.extend(
+                names.into_iter().filter(|n| want.iter().any(|w| w == n)).map(|n| (bm, n)),
+            ),
+        }
+    }
+    out
+}
+
+/// `--report name-env` (A4): for every module the build lowers, every comptime item
+/// injected into it, and every free name of that item, what the name is bound to at
+/// the item's DEFINITION and what it is bound to in the IMPORTER. A row is listed
+/// when the definition binds the name to a comptime item, or binds it nowhere while
+/// the importer binds it to one. Pure analysis: nothing is lowered.
+pub fn name_env_report(
+    manifest: &Manifest,
+    entry_id: &str,
+    prelude_id: Option<&str>,
+    opts: &LowerOptions,
+) -> (Vec<hygiene::NameEnvRow>, Vec<Diagnostic>) {
+    let mut diags = Vec::new();
+    let folds = RefCell::new(ConstFoldCache::default());
+    let mut memo =
+        hygiene::HygieneMemo::new(prelude_id, &opts.defines, opts.include_root.as_deref(), &folds);
+    let reachable = reachable_modules(manifest, entry_id, prelude_id, &mut diags);
+    let prelude_pm = prelude_id.and_then(|pid| manifest.by_id.get(pid)).map(|&i| &manifest.modules[i]);
+    let mut rows = Vec::new();
+    for &i in &reachable {
+        let pm = &manifest.modules[i];
+        for (def, name) in injected_tops(pm, prelude_pm, manifest) {
+            hygiene::report_rows(pm, &def.id, &name, manifest, &mut memo, &mut rows);
+        }
+    }
     diags.append(&mut folds.borrow_mut().take_faults());
     (rows, diags)
 }

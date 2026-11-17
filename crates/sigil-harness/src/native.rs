@@ -1786,7 +1786,22 @@ pub fn module_registry(aeon: &Path, profile: &GameProfile) -> Result<Vec<ModuleS
 /// every reportable non-error diagnostic the lowering produced. The placement map
 /// bases are COSMETIC (the chainer recomputes every base from the frozen table), so a
 /// nominal one-region-per-section map suffices.
-pub fn build_emp(aeon: &Path, profile: &GameProfile) -> Result<EmpProgram, String> {
+/// The whole-program build's inputs, exactly as [`build_emp`] lowers them: the scanned
+/// manifest after the helper-import rewrite and with the synthetic entry minted, the
+/// shape's lowering options, and what the scan and the entry parse reported. Shared
+/// with [`name_env_report`] so a report reads the SAME program the build lowers.
+struct PreparedProgram {
+    manifest: resolve::manifest::Manifest,
+    mdiags: Vec<sigil_span::Diagnostic>,
+    pdiags: Vec<sigil_span::Diagnostic>,
+    source: sigil_span::SourceId,
+    registry: Vec<ModuleSpec>,
+    removed_import_errors: Vec<(usize, sigil_span::Diagnostic)>,
+    entry_id: String,
+    opts: LowerOptions,
+}
+
+fn prepare_program(aeon: &Path, profile: &GameProfile) -> Result<PreparedProgram, String> {
     let (mut manifest, mdiags) = resolve::manifest::Manifest::scan(aeon);
     let merr: Vec<_> = mdiags.iter().filter(|d| d.level == sigil_span::Level::Error).collect();
     if !merr.is_empty() {
@@ -1888,6 +1903,22 @@ pub fn build_emp(aeon: &Path, profile: &GameProfile) -> Result<EmpProgram, Strin
         embed_base: Some(aeon.to_path_buf()),
         defines,
     };
+    Ok(PreparedProgram { manifest, mdiags, pdiags, source, registry, removed_import_errors, entry_id, opts })
+}
+
+/// `sigil build --report name-env` (A4): the name-environment rows of the program
+/// [`build_emp`] would lower for `profile` (see `resolve::name_env_report`).
+pub fn name_env_report(
+    aeon: &Path,
+    profile: &GameProfile,
+) -> Result<(Vec<sigil_frontend_emp::resolve::hygiene::NameEnvRow>, Vec<sigil_span::Diagnostic>), String> {
+    let p = prepare_program(aeon, profile)?;
+    Ok(resolve::name_env_report(&p.manifest, &p.entry_id, None, &p.opts))
+}
+
+pub fn build_emp(aeon: &Path, profile: &GameProfile) -> Result<EmpProgram, String> {
+    let PreparedProgram { manifest, mdiags, pdiags, source, registry, removed_import_errors, entry_id, opts } =
+        prepare_program(aeon, profile)?;
 
     // OPEN program: the `.emp` engine references AS-residual symbols (RAM labels,
     // proc seams) resolved only in the joint link — defer them, don't error here.

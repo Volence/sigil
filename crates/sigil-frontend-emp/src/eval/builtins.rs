@@ -1138,7 +1138,7 @@ impl<'a> Evaluator<'a> {
 /// Whether `name` is a §6.8 builtin method (D-P2.10 — the closed, non-user-
 /// shadowable set). `len` overlaps the array/range and string sets; the receiver
 /// type disambiguates at dispatch.
-pub(super) fn is_builtin(name: &str) -> bool {
+pub(crate) fn is_builtin(name: &str) -> bool {
     matches!(name, "len" | "map" | "filter" | "fold" | "find" | "slice" | "val")
 }
 

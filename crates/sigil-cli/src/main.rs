@@ -167,7 +167,7 @@ const ENTRIES: &[Entry] = &[
         usage: &[
             "usage: sigil build --aeon <dir> [-o <out.bin>] [--emit-lst <lst>]",
             "                   [--game sonic4|demo] [--debug] [--config-a|--config-b|--lean]",
-            "                   [--report ram|contracts|indirect-cost]",
+            "                   [--report ram|contracts|indirect-cost|name-env]",
             "                   [--extra-entry <module|path.emp>]... [--check]",
             "                   [--anchor-overlay <anchors.toml>]",
             "note:  --anchor-overlay replaces the `at` of the map.toml anchors its [[anchor]]",
@@ -1882,6 +1882,7 @@ fn run_build(entry: &Entry, args: &[String]) {
         Some(ReportKind::Ram) => run_ram_report(aeon_path, &opts.target),
         Some(ReportKind::Contracts) => run_contract_report(aeon_path, &opts.target),
         Some(ReportKind::IndirectCost) => run_indirect_cost_report(aeon_path, &opts.target),
+        Some(ReportKind::NameEnv) => run_name_env_report(aeon_path, &opts.target),
         None if opts.check => run_check_native(aeon_path, &opts),
         None => run_build_native(aeon_path, &opts),
     }
@@ -2084,6 +2085,65 @@ fn run_indirect_cost_report(aeon: &std::path::Path, target: &BuildTarget) {
         "\n-- COST OF THE FLIP: {} engine contract(s) would have to be corrected --",
         forced.saturating_sub(trusting)
     );
+}
+
+/// `--report name-env` (A4): one row per (importing module, injected comptime item,
+/// free name) of the program the build lowers for the selected target, with the
+/// name's binding at the item's definition and in the importer, then the totals
+/// line `-- name-env: {n} differ, {u} unbound-at-definition --`.
+///
+/// `differs`: the definition binds the name to a comptime item and the importer
+/// binds it to something else, so the injected item used to MEAN the importer's
+/// binding. `unbound`: bound nowhere at the definition, bound to a comptime item by
+/// the importer, so the item only ever worked through the importer's imports.
+/// A row is listed only when the definition binds the name to a comptime item, or
+/// binds it nowhere while the importer binds it to one; the `rows` count says how
+/// many that was, so an empty table is a measured zero rather than a silent one.
+fn run_name_env_report(aeon: &std::path::Path, target: &BuildTarget) {
+    let (label, profile) = target.label_and_profile();
+    let defines = shape_defines_or_exit(&profile, aeon);
+    let (rows, diags) = match sigil_harness::native::name_env_report(aeon, &profile) {
+        Ok(r) => r,
+        Err(e) => {
+            eprintln!("error: {e}");
+            process::exit(1);
+        }
+    };
+    let errors: Vec<_> =
+        diags.iter().filter(|d| d.level == sigil_span::Level::Error).cloned().collect();
+    if !errors.is_empty() {
+        for d in &errors {
+            eprintln!("error: {}", d.message);
+        }
+        process::exit(1);
+    }
+    print_report_header("name environment", &label, &defines);
+    println!(
+        "{:<44} {:<36} {:<28} {:<44} {:<44} {}",
+        "IMPORTER", "INJECTED ITEM", "FREE NAME", "BOUND-AT-DEFINITION", "CALLER-BINDING", "DIFFERS"
+    );
+    for r in &rows {
+        let flag = if r.differs {
+            "yes"
+        } else if r.unbound {
+            "unbound-at-definition"
+        } else {
+            "no"
+        };
+        println!(
+            "{:<44} {:<36} {:<28} {:<44} {:<44} {}",
+            r.importer,
+            format!("{}.{}", r.def, r.item),
+            r.name,
+            r.at_def,
+            r.caller,
+            flag
+        );
+    }
+    let n = rows.iter().filter(|r| r.differs).count();
+    let u = rows.iter().filter(|r| r.unbound).count();
+    println!("-- name-env rows: {} --", rows.len());
+    println!("-- name-env: {n} differ, {u} unbound-at-definition --");
 }
 
 /// The one closure both `--report contracts` and the build gate run, so a build
@@ -2872,6 +2932,9 @@ enum ReportKind {
     /// What the trusted `jsr (aN) as Type` narrowing costs the warn tier, and the
     /// dispatch sites it ranges over.
     IndirectCost,
+    /// One name environment per declaration (A4): every injected comptime item's
+    /// free names, bound at the definition and in the importer.
+    NameEnv,
 }
 
 impl ReportKind {
@@ -2882,8 +2945,9 @@ impl ReportKind {
             "ram" => Ok(ReportKind::Ram),
             "contracts" => Ok(ReportKind::Contracts),
             "indirect-cost" => Ok(ReportKind::IndirectCost),
+            "name-env" => Ok(ReportKind::NameEnv),
             other => Err(format!(
-                "unknown --report '{other}' (want ram, contracts or indirect-cost)"
+                "unknown --report '{other}' (want ram, contracts, indirect-cost or name-env)"
             )),
         }
     }
