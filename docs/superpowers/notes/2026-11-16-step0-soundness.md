@@ -1011,3 +1011,25 @@ lines; CLIPPY 0, LEDGER 0; CI-shaped leg 0 (530 suites, 5,965 passed). Delta vs 
 5,958): +2 suites (`frontend_differential`, `frontend_differential_coverage`), +7 tests (5 + 1 + `imm_range`
 `ccr_immediates_are_byte_only`). Log `.target-land/landing-20261117T174450Z.log`. AG not run: no aeon change,
 and BN shows no byte moved.
+
+### Fix round 1 (`f456fbc3`, `93c207fe`; review `task-9-review.md`: 0 Critical, 1 Important, 7 Minor)
+
+- I1: `usp` reserved in `.emp` (`[operand.usp-unsupported]`, `[name.reserved-register]`); the differential's
+  frames link against a defined `usp = $1234`. RED before the fix: `usp_reserved` 1/4 (`proc usp` + `move.l
+  a2, usp` -> `4E75 21CA 0000 4E75`); the gate with the new frame `disagree=82` (`move.l a2, usp`: emp
+  `21CA 1234`, AS `4E62`). After: 5/5, gate `disagree=0`, `emp-lacks-usp` 4 hits.
+- M1: coverage also requires a SameBytes case per emitted triple: 480/481 at size, `(swap, .w, [Dn])` unsized.
+- M2: four rows name closed family lists. M3: the `.emp` ccr text drops "or with no suffix".
+- M4: `every_family_with_a_legal_emp_form_compared_bytes` (SameBytes > 0 except the 16 families derived from
+  the exclusion lists, which must have 0) and 5 encoding canaries.
+- RF (`.aeon-v2-harness-out/t9/rf/rf3.sh`, `rf3.log`; baseline `93c207fe`, restore `git restore --source=HEAD`):
+  operand refusal off (`asm.rs:3256`) -> gate `disagree=84`, `move.l a2, usp` emp `21CA 1234` vs AS `4E62`,
+  usp_reserved 2/3; declaration refusal off (`mod.rs:2641`) -> usp_reserved 2/3; both frames `BROKEN` ->
+  `same=0`, floor and canaries FAILED; `(d16,An)` misspelled on both routes -> coverage `82 emitted triple(s)
+  have no SameBytes case`. All green after restore.
+- BN (`t9/bn3.log`, cand `93c207fe`): `SHAPES 7/7 IDENTICAL`, rc 0.
+- SS (`landing-run.sh --aeon .aeon-t9-pairref`, tree `93c207fe` clean, 18:42:07Z -> 19:08:19Z): **RESULT GREEN**,
+  531/531, **5,972 passed / 0 failed / 3 ignored**, 0 skips, clippy 0, ledger 0, CI leg 0 (531 suites, 5,972).
+  Delta +1 suite (`usp_reserved`), +7 tests. Log `.target-land/landing-20261117T184207Z.log`.
+- Left: M5 (asl byte table not committed as a fixture), M6 (round-0 ccr RED only in its commit message), M7
+  (runtime figures vary with host load; fan-out mostly nominal).

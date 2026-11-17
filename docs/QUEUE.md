@@ -1833,10 +1833,21 @@ Two smaller items booked here as well:
   -128..=255` (Sigil finding 2), 627 Disagree; `Ea::Disp` dropped -> 82 missing `(d16,An)` triples.
 - Finding fixed in branch (`85dd7a05`, A1 class, byte-neutral): `.emp` truncated `andi/ori #imm, ccr` at
   `.w/.l/.s` (`andi.w #65535, ccr` -> `023C 00FF`); now refused with the AS text.
-- Booked below: `EMP-USP-READ-AS-SYMBOL`, `AS-MOVE-B-NEG-TO-CCR`, `EMP-FRONTEND-DIFF-GAPS`.
+- Booked below: `EMP-USP-READ-AS-SYMBOL` (closed in fix round 1), `AS-MOVE-B-NEG-TO-CCR`, `EMP-FRONTEND-DIFF-GAPS`.
+- Fix round 1 (`f456fbc3`, `93c207fe`; review I1, M1-M4): `usp` reserved; four rows family-scoped; a measurement
+  floor (SameBytes > 0 for every family except the 16 derived as having no `.emp` form) and 5 canaries; the
+  coverage test also requires a SameBytes case per emitted triple (480/481 at size, `swap` unsized). Open
+  from the review: M5 (no committed asl byte oracle for the excluded population).
 - Evidence: the Task 9 section of `docs/superpowers/notes/2026-11-16-step0-soundness.md`.
 
-## EMP-USP-READ-AS-SYMBOL: OPEN (found by A6, 2026-11-17)
+## EMP-USP-READ-AS-SYMBOL: CLOSED IN BRANCH 2026-11-17 (A6 fix round 1, `f456fbc3` + `93c207fe`)
+
+- Closed: `usp` is reserved in `.emp`. `[operand.usp-unsupported]` refuses it in every operand position
+  (never a symbol); `[name.reserved-register]` refuses an item, vars/region field or parameter named `usp`
+  at its declaration. Refusal only; BN 7/7. The differential's frames now link against a defined `usp`
+  symbol (`link_env`), so a regression is a gate failure (`21CA 1234` vs `4E62`), not an exclusion hit.
+  Fixture `crates/sigil-frontend-emp/tests/usp_reserved.rs`. Exposing `move usp` itself stays
+  `EMP-USP-CCR-SURFACE`. Original finding text follows.
 
 - `.emp` has no `usp` register word, so `move.l a2, usp` reads `usp` as a SYMBOL. Standalone the link
   refuses it unresolved, but beside any item named `usp` (probe: `proc usp() { rts }`) it assembles
@@ -1863,7 +1874,7 @@ proven equal to the AS route's legal spelling); each is one named EXCLUSIONS row
 `crates/sigil-cli/tests/support/frontend_diff.rs`, so closing a gap fails `every_exclusion_is_used`
 until its row is removed.
 
-- `emp-requires-a-size-suffix` (377): no default size for shifts/rotates on memory, `move`/`andi`/`ori`/
+- `emp-requires-a-size-suffix` (375): no default size for shifts/rotates on memory, `move`/`andi`/`ori`/
   `eori` to sr/ccr, `bchg`, `exg`, `addx`. `btst`/`bset`/`bclr` default to `.b` but `bchg` does not
   (`m68k_default_size`), an inconsistency.
 - `emp-lacks-mnemonic` (161): `abcd`, `sbcd`, `nbcd`, `negx`, `subx`, `chk`, `stop`, `link`, `unlk`.
@@ -1872,7 +1883,7 @@ until its row is removed.
 - `emp-label-operand-gap` (45): a label as a straight-line operand, beside another extension word, or as a
   `movem` pc-relative source. The last refuses with `internal: a PC-relative operand reached the generic
   operand mapper`, an internal message reaching the author; it should be a located refusal.
-- `emp-lacks-usp` (2): see `EMP-USP-READ-AS-SYMBOL`.
+- `emp-lacks-usp` (4): `.emp` refuses `move usp` (`[operand.usp-unsupported]`); exposing it is `EMP-USP-CCR-SURFACE`.
 - `branch-b-suffix` (3): `bra.b` (asl: `.s`).
 - `unsized-branch-aeon-pin` (3): the AS route refuses an unsized branch by Aeon policy; asl relaxes it and
   `.emp` assembles the short form. A policy split between the two routes, not a defect of either.
