@@ -198,12 +198,8 @@ impl Lzss {
             match_position: 0,
             match_length: 0,
         };
-        for i in LZ_N + 1..=LZ_N + 256 {
-            t.rson[i] = LZ_NIL;
-        }
-        for i in 0..LZ_N {
-            t.dad[i] = LZ_NIL;
-        }
+        t.rson[LZ_N + 1..=LZ_N + 256].fill(LZ_NIL);
+        t.dad[..LZ_N].fill(LZ_NIL);
         t
     }
 
