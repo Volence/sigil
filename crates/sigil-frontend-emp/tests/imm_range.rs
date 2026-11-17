@@ -195,6 +195,59 @@ fn link_time_word_immediate_still_accepts_a_ram_address() {
     assert_eq!(b, [0x30, 0x3C, 0x9E, 0xDE, 0x4E, 0x75]);
 }
 
+/// Lower and link `src` (no expect on the link): the bytes, or every lowering
+/// or LINK error message.
+fn emp_link(src: &str) -> Result<Vec<u8>, Vec<String>> {
+    let module = lowered(src)?;
+    let resolved = sigil_link::resolve_layout(&module.sections, &SymbolTable::new(), true)
+        .expect("resolve_layout");
+    let linked = sigil_link::link(&resolved, &SymbolTable::new())
+        .map_err(|e| e.iter().map(|d| d.message.clone()).collect::<Vec<_>>())?;
+    Ok(linked.sections.iter().flat_map(|s| s.bytes.clone()).collect())
+}
+
+/// Final review I1: a LINK-TIME `.w` immediate whose value has an all-ones
+/// high half but bit 15 clear does not fit. `Lo` at `$FFFF0000` and `Hi` at
+/// `$FFFF9C40` (`$9C40` = 40000), so `Lo - Hi` = −40000, which as a u32 is
+/// `$FFFF63C0`. The old linker test (`(value as u32) >> 16` is 0 or `$FFFF`)
+/// accepted it and wrote `303C 63C0`, i.e. `move.w #25536, d0`.
+const BAND_FIXTURE: &str = "module m in m\n\
+     region lo @ $FFFF0000 .. $FFFF0010\n\
+     vars lo {\n\
+         Lo: u16,\n\
+     }\n\
+     region hi @ $FFFF9C40 .. $FFFF9C50\n\
+     vars hi {\n\
+         Hi: u16,\n\
+     }\n\
+     pub proc f() {\n\
+             move.w  #(Lo - Hi), d0\n\
+             rts\n\
+     }\n";
+
+#[test]
+fn link_time_word_immediate_refuses_a_negative_past_the_signed_word() {
+    let errs = emp_link(BAND_FIXTURE).expect_err("Lo - Hi = -40000 must not assemble");
+    assert!(
+        errs.iter().any(|m| m.contains("does not fit a 16-bit immediate")),
+        "{errs:?}"
+    );
+}
+
+/// The same band reached by a RAM label below `$FFFF8000`: its word would
+/// sign-extend to `$0000xxxx`, not to the label.
+#[test]
+fn link_time_word_immediate_refuses_a_ram_label_below_ffff8000() {
+    let src = RAM_FIXTURE.replace("$FFFF9EDE", "$FFFF0100");
+    let errs = emp_link(&src).expect_err("a $FFFF0100 label has no .w immediate spelling");
+    assert!(
+        errs.iter().any(|m| m.contains("does not fit a 16-bit immediate")),
+        "{errs:?}"
+    );
+    // The legal side of the edge is untouched (globals Review Focus 1).
+    assert_eq!(emp_link(RAM_FIXTURE).unwrap(), [0x30, 0x3C, 0x9E, 0xDE, 0x4E, 0x75]);
+}
+
 /// A6 finding (the front-end differential, Task 9): an immediate to `ccr` is a
 /// BYTE field whatever the spelled size. Before this, `.emp` range-checked
 /// `andi.w #65535, ccr` against the `.w` bounds and the encoder emitted the

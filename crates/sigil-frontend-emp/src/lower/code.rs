@@ -763,9 +763,10 @@ fn lower_m68k_movem(
 ///
 /// The `.w` width's demand site is the object-bank dispatch store (tranche 6:
 /// `move.w #(Main - ObjCodeBase), Sst.code_addr(a0)` — objroutine): a
-/// link-time symbol DIFFERENCE in a word immediate. `ImmWord16Be` checks the
-/// folded value's high half is all-0 or all-1 at link (so a RAM label at
-/// `$FFFF9EDE` assembles), so an oversize value is loud, not wrapped.
+/// link-time symbol DIFFERENCE in a word immediate. `ImmWord16Be` checks at
+/// link that the folded value is a word, `-$8000..=$FFFF`, or a RAM address
+/// `$FFFF8000..=$FFFFFFFF` (so a RAM label at `$FFFF9EDE` assembles), so an
+/// oversize value is loud, not wrapped (final review I1).
 ///
 /// The `.b` width's demand site is boot's game-contract id store (tranche 23:
 /// `move.b #GAME_ENTRY_ID, (Game_State_ID).w` — a game-side equ read from

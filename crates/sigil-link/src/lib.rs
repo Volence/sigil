@@ -755,20 +755,32 @@ fn apply_fixup(
             bytes[site_abs as usize + 1] = (w & 0xFF) as u8;
         }
         FixupKind::ImmWord16Be => {
-            // A `#imm16` word immediate holds the LOW 16 bits of a value whose
-            // high 16 bits must be a consistent extension — all-zero (unsigned
-            // value / objroutine offset in [0, 0xFFFF]) or all-one (sign-extended
-            // RAM address like $FFFF9EDE). This is AS's word-immediate rule; it
-            // is the UNION of Value16Be (rejects the address) and Abs16Be
-            // (rejects the [0x8000, 0xFFFF] upper-unsigned half). Truncating to
-            // u32 first canonicalizes both the sign-extended-i64 ($…FFFF9E8E)
-            // and raw-u32 ($FFFF9E8E) representations of a RAM address.
-            let hi = (value as u32) >> 16;
-            if hi != 0 && hi != 0xFFFF {
+            // A `#imm16` word immediate holds the LOW 16 bits of a value that
+            // must be one of two spellings of a word:
+            //   * a signed or unsigned 16-bit value, `-$8000..=$FFFF` (an
+            //     objroutine offset in the upper bank half, a negative delta, a
+            //     sign-extended RAM address carried as a negative i64);
+            //   * a RAM address carried as a raw u32 whose high half is all ones
+            //     AND whose bit 15 is set, `$FFFF8000..=$FFFFFFFF`, the value the
+            //     stored word sign-extends back to (`move.w #RamLabel, d0`, the
+            //     label at `$FFFF9EDE`).
+            // This is the UNION of Value16Be (rejects the address) and Abs16Be
+            // (rejects the `[$8000, $FFFF]` upper-unsigned half). Nothing else
+            // fits: `$FFFF0000..=$FFFF7FFF` (−65536..−32769 as a raw u32) has
+            // an all-ones high half but its low word sign-extends to
+            // `$0000xxxx`, and a value at or past 2^32 or below −2^31 has bits
+            // no 32-bit spelling carries. Both used to be accepted by testing
+            // `(value as u32) >> 16`, the cast discarding the high bits first
+            // and the test ignoring bit 15 (`move.w #(Lo - Hi), d0` with
+            // Lo − Hi = −40000 assembled `303C 63C0`, +25536; final review I1).
+            let fits = (-0x8000..=0xFFFF).contains(&value)
+                || (0xFFFF_8000..=0xFFFF_FFFF).contains(&value);
+            if !fits {
                 diags.push(diag(
                     format!(
-                        "value {value:#X} does not fit a 16-bit immediate \
-                         (high half neither zero- nor sign-extension) in section {section}"
+                        "value {value:#X} does not fit a 16-bit immediate (legal: \
+                         -$8000..=$FFFF, or a RAM address $FFFF8000..=$FFFFFFFF) in \
+                         section {section}"
                     ),
                     span,
                 ));
@@ -779,6 +791,21 @@ fn apply_fixup(
             bytes[site_abs as usize + 1] = (w & 0xFF) as u8;
         }
         FixupKind::Abs32Be => {
+            // An abs.l / `dc.l` address cell: the signed∪unsigned 32-bit union
+            // `write_value` applies to `Value32Be` (a sign-extended RAM address
+            // folded as a negative i64 is legal). A value outside it has bits the
+            // cell cannot carry; `value as u32` used to discard them silently
+            // (final review I1, the same class one width up).
+            if !(-(1i64 << 31)..(1i64 << 32)).contains(&value) {
+                diags.push(diag(
+                    format!(
+                        "value {value:#X}{target_name} does not fit a 32-bit address cell \
+                         (-$80000000..=$FFFFFFFF) in section {section}"
+                    ),
+                    span,
+                ));
+                return;
+            }
             let w = value as u32;
             bytes[site_abs as usize] = (w >> 24) as u8;
             bytes[site_abs as usize + 1] = (w >> 16) as u8;
@@ -2315,6 +2342,82 @@ mod tests {
             err.iter().any(|d| d.message.contains("16-bit immediate")),
             "got: {:?}", err
         );
+    }
+
+    /// Final review I1: the all-ones high half is legal only with bit 15 set,
+    /// and nothing past 32 bits is legal. Each value below was accepted by the
+    /// old `(value as u32) >> 16` test and its low word written.
+    #[test]
+    fn imm_word16_be_refuses_the_band_and_the_wide_values() {
+        let mut stubs = SymbolTable::new();
+        // Lo − Hi = −40000: −40000 as u32 = $FFFF63C0 (bit 15 clear); the old
+        // test wrote `63C0`, +25536.
+        stubs.define("Neg40000", SymbolValue::Int(-40000));
+        stubs.define("BandLo", SymbolValue::Int(0xFFFF_0000)); // RAM in $FF0000-$FF7FFF
+        stubs.define("BandHi", SymbolValue::Int(0xFFFF_7FFF));
+        stubs.define("Wide", SymbolValue::Int(0x1_0000_1234)); // low word 1234
+        stubs.define("WideNeg", SymbolValue::Int(-0x1_0000_0000 + 0x1234));
+        // The edges that stay legal.
+        stubs.define("MinS16", SymbolValue::Int(-0x8000));
+        stubs.define("RamEdge", SymbolValue::Int(0xFFFF_8000));
+        stubs.define("RamTop", SymbolValue::Int(0xFFFF_FFFF));
+        let write = |sym: &str| {
+            let sec = Section {
+                name: "s".to_string(), cpu: Cpu::M68000, vma_base: None, lma: 0x400, labels: vec![],
+                fragments: vec![Fragment::Data(DataFragment {
+                    bytes: vec![0, 0],
+                    fixups: vec![Fixup {
+                        kind: FixupKind::ImmWord16Be, offset: 0, target: Expr::Sym(sym.into()),
+                    }],
+                    span: span(),
+                })],
+                placement: SectionPlacement::Pinned,
+                space: sigil_ir::AddressSpace::Image,
+                reserved_span: 0, group: None, bank: None, equ_syms: Vec::new(),
+            };
+            link(&[sec], &stubs).map(|img| img.section("s").unwrap().bytes.clone())
+        };
+        for sym in ["Neg40000", "BandLo", "BandHi", "Wide", "WideNeg"] {
+            let err = write(sym).expect_err(sym);
+            assert!(
+                err.iter().any(|d| d.message.contains("does not fit a 16-bit immediate")),
+                "{sym}: {err:?}"
+            );
+        }
+        assert_eq!(write("MinS16").unwrap(), vec![0x80, 0x00]);
+        assert_eq!(write("RamEdge").unwrap(), vec![0x80, 0x00]);
+        assert_eq!(write("RamTop").unwrap(), vec![0xFF, 0xFF]);
+    }
+
+    /// Final review I1, the same class one width up: an abs.l / `dc.l` cell
+    /// refuses a value with bits past 32 instead of writing its low 32.
+    #[test]
+    fn abs32_be_refuses_a_value_wider_than_32_bits() {
+        let mut stubs = SymbolTable::new();
+        stubs.define("Wide", SymbolValue::Int(0x1_00FF_0000));
+        stubs.define("TooNeg", SymbolValue::Int(-(1i64 << 31) - 1));
+        stubs.define("Ram", SymbolValue::Int(-0x6122)); // $FFFF9EDE sign-extended
+        stubs.define("RamU", SymbolValue::Int(0xFFFF_9EDE));
+        let write = |sym: &str| {
+            let sec = Section {
+                name: "s".to_string(), cpu: Cpu::M68000, vma_base: None, lma: 0x400, labels: vec![],
+                fragments: vec![Fragment::Data(DataFragment {
+                    bytes: vec![0, 0, 0, 0],
+                    fixups: vec![Fixup { kind: FixupKind::Abs32Be, offset: 0, target: Expr::Sym(sym.into()) }],
+                    span: span(),
+                })],
+                placement: SectionPlacement::Pinned,
+                space: sigil_ir::AddressSpace::Image,
+                reserved_span: 0, group: None, bank: None, equ_syms: Vec::new(),
+            };
+            link(&[sec], &stubs).map(|img| img.section("s").unwrap().bytes.clone())
+        };
+        for sym in ["Wide", "TooNeg"] {
+            let err = write(sym).expect_err(sym);
+            assert!(err.iter().any(|d| d.message.contains("32-bit address cell")), "{sym}: {err:?}");
+        }
+        assert_eq!(write("Ram").unwrap(), vec![0xFF, 0xFF, 0x9E, 0xDE]);
+        assert_eq!(write("RamU").unwrap(), vec![0xFF, 0xFF, 0x9E, 0xDE]);
     }
 
     #[test]
