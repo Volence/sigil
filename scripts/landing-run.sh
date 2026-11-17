@@ -614,6 +614,24 @@ CLIPPY_VERSION=$(cargo clippy --version 2>/dev/null) \
        \`rustup component add clippy\` and re-run."
 say "clippy available: $CLIPPY_VERSION"
 
+# (7b) THE COMPILER MUST BE THE PINNED ONE. `rust-toolchain.toml` pins the channel CI
+# installs (QUEUE CI-TOOLCHAIN-FLOATS, closed by the commit adding the file). A rustup
+# cargo reads the file and obeys it; a host cargo (this machine's distro rust) ignores it,
+# so a landing on a host whose rustc moved would measure a toolchain CI does not run, the
+# exact split that turned CI red twice. Checked here, from the workspace root so a rustup
+# directory override applies, and refused BY NAME rather than discovered as a CI red.
+PINNED_CHANNEL=$(sed -n 's/^channel = "\(.*\)"$/\1/p' "$ROOT/rust-toolchain.toml" 2>/dev/null)
+[[ -n $PINNED_CHANNEL ]] \
+    || die "$ROOT/rust-toolchain.toml names no \`channel\`, so the landing cannot say which
+       compiler CI runs. Restore the file."
+RUSTC_VERSION=$(cd "$ROOT" && rustc --version 2>/dev/null) \
+    || die "\`rustc\` is not on PATH."
+[[ $RUSTC_VERSION == "rustc $PINNED_CHANNEL "* ]] \
+    || die "this host's compiler is \`$RUSTC_VERSION\`, but rust-toolchain.toml pins
+       $PINNED_CHANNEL, the compiler CI runs. A landing on another compiler measures a
+       toolchain CI does not. Install $PINNED_CHANNEL, or move the pin in its own commit."
+say "rustc matches the pin ($PINNED_CHANNEL): $RUSTC_VERSION"
+
 # (8) THE LEDGER GATE MUST EXIST AND BE RUNNABLE BEFORE ANYTHING SPENDS TIME, for the
 # reason clippy is checked above: "the gate could not be measured" and "the gate is red"
 # are different facts, and only one of them is about the ledger. Refused here BY NAME

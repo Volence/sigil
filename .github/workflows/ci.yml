@@ -17,9 +17,23 @@ jobs:
       CARGO_TARGET_DIR: ${{ github.workspace }}/.target-ci
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy
+      # THE TOOLCHAIN IS `rust-toolchain.toml`'s, not a floating `stable`. Stable
+      # moving under the branch turned CI red twice on code green at the pinned
+      # local compiler (QUEUE CI-TOOLCHAIN-FLOATS, closed by the commit that added
+      # the file). The channel is read FROM the file so there is one place to bump
+      # it; the install is explicit (works on every rustup, no reliance on
+      # auto-install), and the version check makes a pin that did not take effect
+      # a red step here rather than a quietly different compiler below.
+      - name: toolchain (rust-toolchain.toml)
+        run: |
+          set -euo pipefail
+          channel=$(sed -n 's/^channel = "\(.*\)"$/\1/p' rust-toolchain.toml)
+          test -n "${channel}" || { echo "rust-toolchain.toml names no channel"; exit 1; }
+          rustup toolchain install "${channel}" --profile minimal --component clippy
+          rustc --version
+          cargo clippy --version
+          rustc --version | grep -F "rustc ${channel} " \
+            || { echo "rustc is not the pinned ${channel}"; exit 1; }
 
       # WHAT A GREEN BADGE ON THIS WORKFLOW MEANS — and what it does not.
       #

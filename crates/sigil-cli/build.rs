@@ -149,8 +149,9 @@
 //!     costs a consumer nothing;
 //!   * a derived closure path that **does not exist yet** and therefore cannot be
 //!     watched (`SIGIL_TREE_TRACKED` names them). In practice the two instances
-//!     are `.cargo` and `rust-toolchain*`, and creating either changes rustflags
-//!     or the compiler itself, which invalidates cargo's own fingerprints — but
+//!     are `.cargo` and `rust-toolchain` (`rust-toolchain.toml` exists since the
+//!     step-0 toolchain pin, so it is watched), and creating either changes
+//!     rustflags or the compiler itself, which invalidates cargo's own fingerprints — but
 //!     that is a mitigation, not a guarantee, and it is named here rather than
 //!     relied on silently;
 //!   * an edit landing inside the same cargo invocation that captured this;

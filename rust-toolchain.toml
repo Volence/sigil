@@ -1,0 +1,13 @@
+# The toolchain every sigil build uses: CI (`.github/workflows/ci.yml` installs
+# exactly this channel and checks `rustc --version` against it) and local
+# landings (a rustup-managed cargo reads this file; a host cargo must report the
+# same version, which `scripts/landing-run.sh`'s banner records).
+#
+# Pinned by proxy ruling (step-0 A8 / QUEUE CI-TOOLCHAIN-FLOATS, closed by the
+# commit that added this file): a floating `stable` turned the branch's CI red
+# twice on code that was green locally. An upgrade is its own commit: bump the
+# channel, fix what the new clippy/cargo finds in that commit, nothing else.
+[toolchain]
+channel = "1.99.1"
+components = ["clippy"]
+profile = "minimal"

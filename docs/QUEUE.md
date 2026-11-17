@@ -1710,7 +1710,24 @@ points at it rather than restating it, so there is one copy to keep true.
 - Step 3 LANDED on aeon origin/master at merge `b295559d` (tip `97d139ca`), built with our `30793305` pair (their figures). At the next pin advance past `b295559d`: retire the `games.sonic4.mt_bank_blob` SHAPE_GATES row and the `warn_tier_corpus.rs` known-site row for `mt_bank.emp` (it goes red then by design).
 - 2026-11-17 (step 0 Task 6, pin advance to aeon `936439fa`, branch `parcel/step0-soundness`): the `warn_tier_corpus.rs` row went red as designed and is retired (`files: &[]`). The `games.sonic4.mt_bank_blob` SHAPE_GATES row is deliberately KEPT: dead at 936439fa, but the 1ee78b88 reference tree (still the attest tree for entry #207) carries the old id. Retire it once no lane builds a pre-`97d139ca` tree.
 
-## CI-TOOLCHAIN-FLOATS: BOOKED 2026-11-16 (Task 4 / A8)
+## CI-TOOLCHAIN-FLOATS: CLOSED IN BRANCH 2026-11-17 (step-0 fix wave, final review I3; the commit adding `rust-toolchain.toml`)
+
+- Closed by the proxy ruling recorded in the A8 task note (pin `rust-toolchain.toml` to 1.99.1 for CI and
+  local use; upgrades in dedicated commits), which the final review found unimplemented (I3: no file, and
+  this row still called it the owner's call). Now:
+  - `rust-toolchain.toml`: channel `1.99.1`, components `clippy`, profile minimal. CI runs no rustfmt step.
+  - `.github/workflows/ci.yml`: the `dtolnay/rust-toolchain@stable` step is gone; a step reads the channel
+    from the file, `rustup toolchain install`s it with clippy, and fails unless `rustc --version` is that
+    channel. One place to bump.
+  - `scripts/landing-run.sh` pre-flight (7b): a host cargo ignores the file (this machine's rust is the
+    distro's, no rustup), so the landing refuses BY NAME when `rustc --version` is not the pinned channel.
+    Red-first proved by moving the pin; the `landing_verdict` fixture checkout carries the pin and a stub
+    `rustc` reporting it.
+  - Clippy under the pin: `cargo clippy --workspace --all-targets -- -D warnings`, release and debug, clean.
+- An upgrade is its own commit: bump the channel, fix what the new clippy/cargo finds, nothing else.
+- The two smaller items below stay open as written.
+
+Original row text follows.
 
 CI installs `dtolnay/rust-toolchain@stable`. Local landings use the host's rustc, which was 1.99.1 on
 2026-11-16. Stable moved to 1.100.0 on 2026-11-09, and that version turned the branch's CI red twice

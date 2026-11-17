@@ -1156,6 +1156,13 @@ case "$1" in
 esac
 "#;
 
+/// The stub `rustc`: reports the channel the checkout's `rust-toolchain.toml` pins, as a
+/// rustup-managed compiler in that directory would (the script asks from the workspace root).
+const FAKE_RUSTC: &str = r#"#!/usr/bin/env bash
+ch=$(sed -n 's/^channel = "\(.*\)"$/\1/p' rust-toolchain.toml)
+echo "rustc ${ch} (fixture)"
+"#;
+
 /// What a stub run looks like: the test span cargo prints, cargo's exit code, clippy's.
 struct StubRun<'a> {
     test_span: &'a str,
@@ -1185,6 +1192,10 @@ fn stub_run(dir: &Path, run: &StubRun) -> (i32, String, PathBuf) {
     std::fs::write(root.join("Cargo.toml"), "[workspace]\n").unwrap();
     std::fs::copy(repo_root().join("scripts/lib/suite_paths.sh"), root.join("scripts/lib/suite_paths.sh"))
         .expect("COULD NOT MEASURE: copy suite_paths.sh");
+    // The pinned-toolchain pre-flight (7b) reads the checkout's own pin; the stub
+    // `rustc` below reports that same channel, so the fixture passes it.
+    std::fs::copy(repo_root().join("rust-toolchain.toml"), root.join("rust-toolchain.toml"))
+        .expect("COULD NOT MEASURE: copy rust-toolchain.toml");
     write_exec(
         &root.join("scripts/ledger_gate.py"),
         "#!/usr/bin/env python3\nprint('LEDGER: result    ok (fixture)')\n",
@@ -1220,6 +1231,7 @@ fn stub_run(dir: &Path, run: &StubRun) -> (i32, String, PathBuf) {
     let bin = dir.join("bin");
     std::fs::create_dir_all(&bin).unwrap();
     write_exec(&bin.join("cargo"), FAKE_CARGO);
+    write_exec(&bin.join("rustc"), FAKE_RUSTC);
     let span = dir.join("test-span.txt");
     std::fs::write(&span, run.test_span).unwrap();
     let log = dir.join("run.log");
