@@ -29,7 +29,7 @@ use sigil_isa::m68k;
 #[path = "../../sigil-cli/tests/support/frontend_diff.rs"]
 mod frontend_diff;
 
-use frontend_diff::{case_triples, NO_OPERAND_FAMILIES};
+use frontend_diff::{case_triple, case_triples, cases_m68k, compare, Case, Outcome, NO_OPERAND_FAMILIES};
 use m68k::capture::CaptureSession;
 use m68k::{family_name, Instruction, Operand, Size};
 use sigil_harness::native;
@@ -139,5 +139,49 @@ fn generator_covers_every_family_size_ea_the_aeon_build_emits() {
         "the generator misses {} triple(s) the aeon build emits (extend its tables):\n{}",
         missing.len(),
         missing.join("\n")
+    );
+
+    // Spelled is not compared (review M1): most generated triples are
+    // `BothRefuse`. Every emitted triple must have at least one case on which
+    // BOTH front ends produced the same bytes, at the emitted size, or else
+    // at the unsized spelling of the same operands: that is how the source
+    // writes an implicit-size family (`swap` encodes `.w`, and `swap.w` is
+    // refused by asl and the AS route, `sized-swap`). The capture session is
+    // closed, so these encodes record nothing.
+    let mut by_triple: BTreeMap<Triple, Vec<Case>> = BTreeMap::new();
+    for c in cases_m68k() {
+        by_triple.entry(case_triple(&c)).or_default().push(c);
+    }
+    let compares = |t: &Triple| {
+        by_triple.get(t).is_some_and(|cs| cs.iter().any(|c| compare(c) == Outcome::SameBytes))
+    };
+    let mut unsized_only = Vec::new();
+    let mut uncompared = Vec::new();
+    for ((f, z, ops), (n, shape)) in &emitted {
+        let t = (f.clone(), *z, ops.clone());
+        if compares(&t) {
+            continue;
+        }
+        let bare = (f.clone(), None, ops.clone());
+        let row = format!("({f}, {z:?}, [{}]) x{n}, e.g. in `{shape}`", ops.join(", "));
+        if compares(&bare) {
+            unsized_only.push(row);
+        } else {
+            uncompared.push(row);
+        }
+    }
+    eprintln!(
+        "compared with bytes: {} of {} emitted triples at their size, {} only unsized: {:?}",
+        emitted.len() - unsized_only.len() - uncompared.len(),
+        emitted.len(),
+        unsized_only.len(),
+        unsized_only
+    );
+    assert!(
+        uncompared.is_empty(),
+        "{} emitted triple(s) have no SameBytes case at their size or unsized, so the two front \
+         ends never compared bytes on them:\n{}",
+        uncompared.len(),
+        uncompared.join("\n")
     );
 }

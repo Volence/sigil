@@ -441,6 +441,21 @@ fn guarded(f: impl FnOnce() -> Result<Vec<u8>, Vec<String>> + std::panic::Unwind
     }
 }
 
+/// The link environment both frames see: one symbol defined OUTSIDE the
+/// module, named `usp`, the way an AS module or another unit could define it.
+/// `.emp` cannot declare `usp` itself (`[name.reserved-register]`), so this is
+/// the one way a `usp` symbol reaches an `.emp` operand. Before the A6 fix round
+/// a bare `usp` operand resolved to it and `move.l a2, usp` assembled
+/// `21F8 1234` (a move to `($1234).w`); asl assembles `4E62`. With the symbol
+/// in scope the gate itself sees that direction.
+pub const USP_SYMBOL_VALUE: i64 = 0x1234;
+
+fn link_env() -> SymbolTable {
+    let mut t = SymbolTable::new();
+    t.define("usp", sigil_ir::SymbolValue::Int(USP_SYMBOL_VALUE));
+    t
+}
+
 /// `.emp`: `parse_str` + `lower_module` + resolve + link + flatten. The bytes,
 /// or every ERROR message.
 pub fn emp_assemble(src: &str) -> Result<Vec<u8>, Vec<String>> {
@@ -466,9 +481,10 @@ pub fn emp_assemble(src: &str) -> Result<Vec<u8>, Vec<String>> {
         if !errs.is_empty() {
             return Err(errs);
         }
-        let resolved = sigil_link::resolve_layout(&m.sections, &SymbolTable::new(), true)
+        let env = link_env();
+        let resolved = sigil_link::resolve_layout(&m.sections, &env, true)
             .map_err(|e| vec![format!("resolve_layout: {e:?}")])?;
-        let linked = sigil_link::link(&resolved, &SymbolTable::new())
+        let linked = sigil_link::link(&resolved, &env)
             .map_err(|e| vec![format!("link: {e:?}")])?;
         sigil_link::flatten(&linked, 0x00).map_err(|e| vec![format!("flatten: {e}")])
     })
@@ -481,7 +497,7 @@ pub fn as_assemble(src: &str) -> Result<Vec<u8>, Vec<String>> {
         let opts = sigil_frontend_as::Options::default();
         let module = sigil_frontend_as::assemble(&src, &opts)
             .map_err(|ds| ds.iter().map(|d| d.message.clone()).collect::<Vec<_>>())?;
-        let linked = sigil_link::link(&module.sections, &SymbolTable::new())
+        let linked = sigil_link::link(&module.sections, &link_env())
             .map_err(|e| vec![format!("link: {e:?}")])?;
         sigil_link::flatten(&linked, 0x00).map_err(|e| vec![format!("flatten: {e}")])
     })
@@ -593,10 +609,11 @@ pub const EXCLUSIONS: &[(&str, &str)] = &[
     ),
     (
         "emp-lacks-usp",
-        "`move.l An,usp` / `move.l usp,An`: `.emp` has no `usp` register word, so it reads `usp` as \
-         a SYMBOL and the standalone link refuses it unresolved (`unresolved symbolic absolute \
-         operand ... symbol `usp``). asl and the AS route assemble `4E6x`. Booked as a finding: \
-         beside a label named `usp`, `.emp` would assemble an absolute-address move instead.",
+        "`move.l An,usp` / `move.l usp,An`: `.emp` has no `usp` operand yet and refuses it \
+         (`[operand.usp-unsupported]`, A6 fix round 1); asl and the AS route assemble `4E6x`. \
+         The frame's link environment DEFINES a `usp` symbol (`link_env`), so a `.emp` that read \
+         `usp` as a symbol again would assemble bytes (`21F8 1234`) and fail the gate instead \
+         of matching this row.",
     ),
     (
         "branch-b-suffix",
@@ -631,6 +648,38 @@ fn is_branch_family(f: &str) -> bool {
 /// closed list: a newly unrecognised mnemonic is a new disagreement.
 pub const EMP_ABSENT_MNEMONICS: &[&str] =
     &["abcd", "sbcd", "nbcd", "negx", "subx", "chk", "stop", "link", "unlk"];
+
+/// The families row `emp-requires-a-size-suffix` may name: those `.emp` has no
+/// default size for. Closed, so a NEW unsized refusal is a new disagreement.
+pub const SIZE_DEFAULT_GAP_FAMILIES: &[&str] = &[
+    "addx", "asl", "asr", "lsl", "lsr", "rol", "ror", "roxl", "roxr", "bchg", "exg",
+    "andi-ccr", "andi-sr", "ori-ccr", "ori-sr", "eori-ccr", "eori-sr",
+    "move-to-sr", "move-from-sr", "move-to-ccr",
+];
+
+/// The families row `emp-lacks-sr-ccr-form` may name.
+pub const SR_CCR_GAP_FAMILIES: &[&str] = &["move-to-ccr", "eori-ccr", "andi-sr", "ori-sr", "eori-sr"];
+
+/// The families row `emp-lacks-usp` may name.
+pub const USP_FAMILIES: &[&str] = &["move-to-usp", "move-from-usp"];
+
+/// The families row `emp-label-operand-gap` may name.
+pub const LABEL_GAP_FAMILIES: &[&str] = &["move", "movem"];
+
+/// The families with NO form `.emp` assembles, derived from the exclusion
+/// tables above (absent mnemonics, the sr/ccr forms, usp). The measurement
+/// floor (`every_family_with_a_legal_emp_form_compared_bytes`) holds every
+/// OTHER family to at least one `SameBytes` case, and these to none.
+pub fn families_without_an_emp_form() -> BTreeSet<&'static str> {
+    families()
+        .into_iter()
+        .filter(|f| {
+            EMP_ABSENT_MNEMONICS.contains(&mnemonic(f))
+                || SR_CCR_GAP_FAMILIES.contains(f)
+                || USP_FAMILIES.contains(f)
+        })
+        .collect()
+}
 
 fn emp_err_only(emp: &Result<Vec<u8>, Vec<String>>) -> Option<&[String]> {
     match emp {
@@ -672,6 +721,7 @@ pub fn exclusion_matches(pattern: &str, c: &Case, o: &Outcome) -> bool {
         }
         "emp-requires-a-size-suffix" => {
             c.size.is_none()
+                && SIZE_DEFAULT_GAP_FAMILIES.contains(&c.family)
                 && emp_refuses_as_assembles(&|s| s == "instruction needs an explicit size suffix (.b/.w/.l)")
         }
         "emp-lacks-mnemonic" => {
@@ -686,7 +736,7 @@ pub fn exclusion_matches(pattern: &str, c: &Case, o: &Outcome) -> bool {
                 })
         }
         "emp-lacks-sr-ccr-form" => {
-            matches!(c.family, "move-to-ccr" | "eori-ccr" | "andi-sr" | "ori-sr" | "eori-sr")
+            SR_CCR_GAP_FAMILIES.contains(&c.family)
                 && emp_refuses_as_assembles(&|s| {
                     s == "unsupported form: ccr is not a general EA"
                         || s == "unsupported form: sr is not a general EA"
@@ -711,7 +761,7 @@ pub fn exclusion_matches(pattern: &str, c: &Case, o: &Outcome) -> bool {
             }
         }
         "emp-label-operand-gap" => {
-            !is_branch_family(c.family)
+            LABEL_GAP_FAMILIES.contains(&c.family)
                 && has_label_operand(c)
                 && emp_refuses_as_assembles(&|s| {
                     (s.starts_with("symbolic operand `")
@@ -721,11 +771,14 @@ pub fn exclusion_matches(pattern: &str, c: &Case, o: &Outcome) -> bool {
                 })
         }
         "emp-lacks-usp" => {
-            matches!(c.family, "move-to-usp" | "move-from-usp")
+            // The operand refusal, plus the lowering's generic follow-on for
+            // the instruction it dropped; the refusal itself must be there.
+            USP_FAMILIES.contains(&c.family)
+                && emp_err_only(emp)
+                    .is_some_and(|m| m.iter().any(|s| s.starts_with("[operand.usp-unsupported] ")))
                 && emp_refuses_as_assembles(&|s| {
-                    s.starts_with("resolve_layout: ")
-                        && s.contains("unresolved symbolic absolute operand")
-                        && s.contains("symbol `usp`")
+                    s.starts_with("[operand.usp-unsupported] ")
+                        || s.starts_with("instruction dropped, a mnemonic, size, or operand did not resolve")
                 })
         }
         "branch-b-suffix" => {
@@ -881,16 +934,16 @@ pub fn ea_class(ea: &Ea) -> &'static str {
     }
 }
 
-/// `(family, spelled size, EA class per operand)` for every generated case.
+/// `(family, spelled size, EA class per operand)` of one case.
+pub fn case_triple(c: &Case) -> (String, Option<char>, Vec<&'static str>) {
+    let mut ops = vec![ea_class(&c.src)];
+    if let Some(d) = &c.dst {
+        ops.push(ea_class(d));
+    }
+    (c.family.to_string(), c.size, ops)
+}
+
+/// The triple of every generated case.
 pub fn case_triples() -> BTreeSet<(String, Option<char>, Vec<&'static str>)> {
-    cases_m68k()
-        .iter()
-        .map(|c| {
-            let mut ops = vec![ea_class(&c.src)];
-            if let Some(d) = &c.dst {
-                ops.push(ea_class(d));
-            }
-            (c.family.to_string(), c.size, ops)
-        })
-        .collect()
+    cases_m68k().iter().map(case_triple).collect()
 }

@@ -15,7 +15,8 @@ mod frontend_diff;
 
 use frontend_diff::{
     cases_m68k, cases_z80, compare, compare_z80, expected_case_count, expected_z80_case_count,
-    is_out_of_range, label, report, report_z80, run_all, Outcome, RunResult, EXCLUSIONS,
+    emp_assemble, emp_spelling, as_assemble, as_spelling, families_without_an_emp_form, families,
+    is_out_of_range, label, report, report_z80, run_all, Case, Ea, Outcome, RunResult, EXCLUSIONS,
 };
 use std::sync::OnceLock;
 
@@ -97,4 +98,48 @@ fn generator_is_deterministic_and_matches_its_tables() {
     let a = cases_m68k();
     assert_eq!(a, cases_m68k());
     assert_eq!(a.len(), expected_case_count());
+}
+
+/// The measurement floor (review M4): a shared breakage (the frame, link or
+/// flatten) would turn every case into `BothRefuse` and read as agreement.
+/// Every family with a form `.emp` assembles must have compared at least one
+/// byte string, and the families with none are exactly the ones the exclusion
+/// tables say `.emp` lacks (derived, `families_without_an_emp_form`).
+#[test]
+fn every_family_with_a_legal_emp_form_compared_bytes() {
+    let r = matrix();
+    let none = families_without_an_emp_form();
+    let mut wrong = Vec::new();
+    for f in families() {
+        let same = r.per_family.get(f).map_or(0, |t| t.same);
+        if (same == 0) != none.contains(f) {
+            wrong.push(format!("{f}: {same} SameBytes, expected {}", if none.contains(f) { "0" } else { ">0" }));
+        }
+    }
+    assert!(wrong.is_empty(), "measurement floor:\n{}", wrong.join("\n"));
+}
+
+/// Canaries: a handful of cases whose bytes are known from the MC68000
+/// encoding tables, so agreement is also CORRECTNESS on these, not just two
+/// front ends broken the same way. The frame is `nop` + inst + `rts`.
+#[test]
+fn canary_cases_assemble_to_their_encodings_on_both_routes() {
+    let frame = |mid: &[u8]| [&[0x4E, 0x71][..], mid, &[0x4E, 0x75][..]].concat();
+    let rows: &[(Case, &[u8])] = &[
+        // moveq #1,d6: 0111 110 0 00000001
+        (Case { family: "moveq", size: None, src: Ea::Imm(1), dst: Some(Ea::D(6)) }, &[0x7C, 0x01]),
+        // move.b #255,d6: 00 01 110 000 111 100, imm word 00FF
+        (Case { family: "move", size: Some('b'), src: Ea::Imm(255), dst: Some(Ea::D(6)) }, &[0x1C, 0x3C, 0x00, 0xFF]),
+        // move.w d1,(a1): 00 11 001 010 000 001
+        (Case { family: "move", size: Some('w'), src: Ea::D(1), dst: Some(Ea::Ind(1)) }, &[0x32, 0x81]),
+        // lea (a3),a4: 0100 100 111 010 011
+        (Case { family: "lea", size: None, src: Ea::Ind(3), dst: Some(Ea::A(4)) }, &[0x49, 0xD3]),
+        // bra.s tgt: 6000 | disp -4
+        (Case { family: "bra", size: Some('s'), src: Ea::Label, dst: None }, &[0x60, 0xFC]),
+    ];
+    for (c, mid) in rows {
+        let want = frame(mid);
+        assert_eq!(emp_assemble(&emp_spelling(c)).as_deref(), Ok(&want[..]), "emp `{}`", label(c));
+        assert_eq!(as_assemble(&as_spelling(c)).as_deref(), Ok(&want[..]), "AS `{}`", label(c));
+    }
 }
