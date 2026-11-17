@@ -574,4 +574,32 @@ text. Delta vs Task 4: +1 suite (`region_enforcement`), +17 passed (the new test
 ### Booked, not in scope
 
 - `sigil build --check` stops before link, so it runs no region or budget check (its doc says so).
-- `sigil emp --map` has no shape, so a `when` on a region there is ignored (the region is in force).
+- `sigil emp --map` DOES reach `check_regions` (`link_rom` -> `emit_rom`, `crates/sigil-cli/src/main.rs:1825`);
+  it has no shape, so it ignores a region's `when` and holds every region: it fails closed. (Corrected in
+  fix round 1; the first cut of this line read as a gap.)
+
+### Fix round 1 (`eab19132`): the bank window is tied to its anchor
+
+Review (Important): a `z80_bank` region whose `lma_base` drifted from its anchor checked a window over
+the wrong bytes and passed, with or without an overlay. `resolve_chained` now runs
+`map_placement::bank_windows_for_shape` after `move_bank_regions` (which uses the same unique in-force
+match): `[map.bank-window-unanchored]` when the base is no anchor's `at` (names the nearest in force), is
+the `at` of 2+ in-force anchors, or its one anchor's `vma` differs from `vma_base`. A base that is only
+the `at` of anchors NOT in force in the shape drops the window (it inherits its anchor's gate). The
+literal "no in-force anchor -> refuse" was measured first and refused `config_b` on the unpaired control
+(`936439fa`, no region `when`): ``z80_sound_bank` at 0xB8000 is at no anchor in force``, which would have
+made sigil unable to build aeon master's sound-off shapes before the pair lands.
+Live probe (pair tree, `sound_bank` anchor alone moved to `0xC8000`): exit 1,
+``[map.bank-window-unanchored] z80_bank region `z80_sound_bank` at 0xB8000 is at no anchor; the nearest in force is `song_bank_2` at 0xC0000``.
+`check_budget` also refuses a cursor below the region base and a ceiling past the region end (both
+games' rows, ceiling `0x20000` = `object_bank` end, pass).
+
+RF: `[] if pmap.anchors.iter().any(|a| a.at == r.lma_base) => continue,` mutated on disk to
+`[] => continue, // RF-MUTATION` (`git diff --stat`: `map_placement.rs | 2 +-`) ->
+`moving_the_anchor_alone_is_refused ... FAILED`, 17 passed / 1 failed; `git restore --source=HEAD`;
+18 passed.
+
+BN (`eab19132`): pair tree 7/7 rc 0 (30 s), control `936439fa` 7/7 rc 0 (31 s), the Task 5 rows. Per
+test target, each under `timeout 590` (0 capped, 1,706 s total), `AEON_DIR` = control: sigil-ir 61/0,
+sigil-link 173/0, sigil-harness 64 binaries 610 passed / 2 failed / 2 ignored, sigil-cli 186 binaries
+855 / 57 / 1; all failing names are in `.scratch-t1/failed_base.txt` (0 new).
