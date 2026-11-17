@@ -2572,13 +2572,17 @@ fn located_refusal<T>(
 /// diagnostic id it is reported under, so a second consumer of the same firing
 /// shape words it identically under its own id.
 /// The one-line remedy hint printed under the Z80 clobber refusal when some firing
-/// proc has no direct caller in the Z80 corpus (the computed-dispatch shape).
+/// proc has no direct caller in the Z80 corpus (the computed-dispatch shape). It names
+/// the annotation's aeon site and the contract doc, never a commit: a SHA in the hint
+/// is wrong the moment the pair lands by anything but a merge (final review I4.4, Task
+/// 7 N3).
 fn z80_dispatch_hint(no_direct_caller: &[String]) -> String {
     format!(
         "  hint: {} ha{} no direct caller in the Z80 corpus. If a proc is reached only through a \
          computed dispatch (a jump table), declare \
          `@allow(\"clobbers.computed-dispatch\", \"<reason>\")` on it rather than widening its \
-         clobbers(...) (aeon carries these on the sequencer opcode handlers since eb634bbc).",
+         clobbers(...). aeon's sequencer opcode handlers (`engine/sound/sound_sequencer.emp`) \
+         carry this annotation; the contract is sigil `docs/QUEUE.md` `Z80-CLOBBER-BUILD-GATE`.",
         no_direct_caller.iter().map(|n| format!("`{n}`")).collect::<Vec<_>>().join(", "),
         if no_direct_caller.len() == 1 { "s" } else { "ve" }
     )

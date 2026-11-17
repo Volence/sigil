@@ -268,6 +268,17 @@ fn a_firing_with_no_direct_caller_carries_the_dispatch_hint() {
     assert!(hint.starts_with("  hint: `Audit_P` has no direct caller in the Z80 corpus."), "{hint}");
     assert!(hint.contains("`@allow(\"clobbers.computed-dispatch\", \"<reason>\")`"), "{hint}");
     assert!(!hint.contains("Audit_Q"), "{hint}");
+    // Names the annotation's site and the doc, never a commit (Task 7 N3, final review
+    // I4.4): a SHA goes stale if the aeon pair lands by squash or cherry-pick.
+    assert!(hint.contains("engine/sound/sound_sequencer.emp"), "{hint}");
+    assert!(hint.contains("Z80-CLOBBER-BUILD-GATE"), "{hint}");
+    let sha_like = hint
+        .split(|c: char| !c.is_ascii_alphanumeric())
+        .filter(|w| (7..=40).contains(&w.len()))
+        .filter(|w| w.chars().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()))
+        .filter(|w| w.chars().any(|c| c.is_ascii_digit()))
+        .collect::<Vec<_>>();
+    assert!(sha_like.is_empty(), "the hint names a commit {sha_like:?}: {hint}");
 }
 
 #[test]
