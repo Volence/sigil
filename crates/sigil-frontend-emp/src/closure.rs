@@ -408,19 +408,30 @@ pub struct Firing {
     pub via: Option<String>,
 }
 
-/// The callee that brings `reg` into `node`'s effective set: the first callee in
-/// SORTED `direct_callees` whose effective set holds `reg`, else the
-/// `falls_into` successor if its effective set holds it, else `None` (the
-/// register is the proc's own write, or arrives only through an indirect call).
+/// The callee that brings `reg` into proc `name`'s effective set, in this order
+/// (controller ruling, A7 fix round 1, so the answer says WHERE):
+///
+/// 1. `node.local_writes` holds `reg` → `None`: the proc's own write wins
+///    ("in its own body"), even when a callee also writes it;
+/// 2. else the first callee in SORTED `direct_callees` whose effective set
+///    holds `reg`, SKIPPING any callee that resolves to `name` itself (a
+///    self-recursive call carries nothing the proc did not already have);
+/// 3. else the `falls_into` successor (same self-skip) if it holds `reg`;
+/// 4. else `None`. A caller with a TRANSITIVE firing then falls back to the
+///    bounded indirect site ([`check_firings`]).
+///
 /// Callee names resolve exactly as the fixpoint resolved them (an
 /// `Owner.label` entry is charged `Owner`'s effect), and a ⊤ callee holds every
-/// register. The name returned is the call site's own spelling.
-pub fn first_carrier(node: &ProcNode, closure: &Closure, reg: &str) -> Option<String> {
+/// register. The name returned is the call site's own spelling. Residual: in a
+/// cycle through a THIRD proc (`P → A → P`, `P → Q` writing `reg`), `A` holds
+/// `reg` only via `P` and may be named before `Q`; it is still a real path.
+pub fn first_carrier(name: &str, node: &ProcNode, closure: &Closure, reg: &str) -> Option<String> {
+    if node.local_writes.contains(reg) {
+        return None;
+    }
     let holds = |callee: &str| {
-        closure
-            .effective
-            .get(resolve_key_in(&closure.effective, callee))
-            .is_some_and(|e| e.top || e.regs.contains(reg))
+        let key = resolve_key_in(&closure.effective, callee);
+        key != name && closure.effective.get(key).is_some_and(|e| e.top || e.regs.contains(reg))
     };
     let mut callees: Vec<&String> = node.direct_callees.iter().collect();
     callees.sort();
@@ -600,7 +611,7 @@ pub fn check_firings(procs: &BTreeMap<String, ProcNode>, closure: &Closure) -> V
                 // arrived through a bounded indirect call (the only other edge
                 // the fixpoint unions); name that call rather than claim the
                 // proc's own body.
-                let via = first_carrier(node, closure, r).or_else(|| {
+                let via = first_carrier(name, node, closure, r).or_else(|| {
                     if !transitive {
                         return None;
                     }
@@ -647,8 +658,8 @@ mod tests {
         );
         procs.insert("Q".to_string(), ProcNode { local_writes: regs(&["d1"]), ..Default::default() });
         let closure = compute_closure(&procs, &BTreeMap::new());
-        assert_eq!(first_carrier(&procs["P"], &closure, "d1"), Some("Q".to_string()));
-        assert_eq!(first_carrier(&procs["P"], &closure, "d0"), None);
+        assert_eq!(first_carrier("P", &procs["P"], &closure, "d1"), Some("Q".to_string()));
+        assert_eq!(first_carrier("P", &procs["P"], &closure, "d0"), None);
     }
 
     /// Sorted order picks the carrier deterministically, an `Owner.label` entry
@@ -669,9 +680,62 @@ mod tests {
         procs.insert("Alpha".to_string(), ProcNode { local_writes: regs(&["d3"]), ..Default::default() });
         procs.insert("Succ".to_string(), ProcNode { local_writes: regs(&["d4"]), ..Default::default() });
         let closure = compute_closure(&procs, &BTreeMap::new());
-        assert_eq!(first_carrier(&procs["P"], &closure, "d3"), Some("Alpha.entry".to_string()));
-        assert_eq!(first_carrier(&procs["P"], &closure, "d4"), Some("Succ".to_string()));
-        assert_eq!(first_carrier(&procs["P"], &closure, "d5"), None);
+        assert_eq!(first_carrier("P", &procs["P"], &closure, "d3"), Some("Alpha.entry".to_string()));
+        assert_eq!(first_carrier("P", &procs["P"], &closure, "d4"), Some("Succ".to_string()));
+        assert_eq!(first_carrier("P", &procs["P"], &closure, "d5"), None);
+    }
+
+    /// Self-recursion: `S` writes `d3` and calls itself. Its own write wins; the
+    /// self-edge is never named (the reviewer's `S destroys d3 through S`).
+    #[test]
+    fn a_self_recursive_proc_is_never_its_own_carrier() {
+        let mut procs = BTreeMap::new();
+        procs.insert(
+            "S".to_string(),
+            ProcNode {
+                local_writes: regs(&["d0", "d3"]),
+                direct_callees: vec!["S".to_string()],
+                declared_clobbers: regs(&["d0"]),
+                has_clobber_contract: true,
+                ..Default::default()
+            },
+        );
+        let closure = compute_closure(&procs, &BTreeMap::new());
+        assert_eq!(first_carrier("S", &procs["S"], &closure, "d3"), None);
+        let f = check_firings(&procs, &closure);
+        assert_eq!(f.len(), 1);
+        assert_eq!((f[0].reg.as_deref(), f[0].via.as_deref()), (Some("d3"), None));
+    }
+
+    /// Mutual recursion `P ⇄ Q`: P writes `d0` itself (its own body, though Q
+    /// holds `d0` through the cycle), and `d5`, which only Q writes, names Q.
+    #[test]
+    fn mutual_recursion_prefers_the_own_write_and_names_the_other_proc() {
+        let mut procs = BTreeMap::new();
+        procs.insert(
+            "P".to_string(),
+            ProcNode {
+                local_writes: regs(&["d0"]),
+                direct_callees: vec!["Q".to_string()],
+                has_clobber_contract: true,
+                ..Default::default()
+            },
+        );
+        procs.insert(
+            "Q".to_string(),
+            ProcNode {
+                local_writes: regs(&["d5"]),
+                direct_callees: vec!["P".to_string()],
+                has_clobber_contract: true,
+                ..Default::default()
+            },
+        );
+        let closure = compute_closure(&procs, &BTreeMap::new());
+        assert!(closure.effective["Q"].regs.contains("d0"), "the cycle gives Q d0 too");
+        assert_eq!(first_carrier("P", &procs["P"], &closure, "d0"), None);
+        assert_eq!(first_carrier("P", &procs["P"], &closure, "d5"), Some("Q".to_string()));
+        assert_eq!(first_carrier("Q", &procs["Q"], &closure, "d0"), Some("P".to_string()));
+        assert_eq!(first_carrier("Q", &procs["Q"], &closure, "d5"), None);
     }
 
     /// A transitive register that only a bounded indirect call brings is named

@@ -16,7 +16,8 @@ use std::process::Command;
 
 /// `Q` declares what it writes. `P` declares `d0` but calls `Q`, which brings
 /// `d1` (a transitive firing, carried by `Q`). `R` writes `d2` itself (a direct
-/// firing). `U` makes an unbounded indirect call (the ⊤ firing).
+/// firing). `U` makes an unbounded indirect call (the ⊤ firing). `S` writes
+/// `d3` and calls ITSELF: its own body, never "through `S`" (A7 fix round 1).
 const FIXTURE: &str = "module engine.clobfix
 pub proc Q () clobbers(d0-d1) {
     moveq   #0, d0
@@ -33,6 +34,14 @@ pub proc R () clobbers(d0) {
 }
 pub proc U () clobbers(d0) {
     jsr     (a0)
+    rts
+}
+pub proc S () clobbers(d0) {
+    moveq   #0, d3
+    tst.w   d0
+    beq     .out
+    jbsr    S
+.out:
     rts
 }
 ";
@@ -98,7 +107,7 @@ fn the_clobber_refusal_names_proc_register_path_and_line() {
 
     assert!(
         err.contains(
-            "error: [proc.clobber-undeclared] closure firings, 3 firing(s); this family is \
+            "error: [proc.clobber-undeclared] closure firings, 4 firing(s); this family is \
              zero-firing by contract:"
         ),
         "the gate must refuse the closure family with its count, got:\n{err}"
@@ -122,9 +131,16 @@ fn the_clobber_refusal_names_proc_register_path_and_line() {
         loc(&f, FIXTURE, "proc U")
     );
     assert!(err.contains(&u), "missing refusal line\n{u}\ngot:\n{err}");
+    let s = format!(
+        "  {}: [proc.clobber-undeclared] `S` destroys `d3` in its own body, which its \
+         clobbers(...) does not declare",
+        loc(&f, FIXTURE, "proc S")
+    );
+    assert!(err.contains(&s), "missing refusal line\n{s}\ngot:\n{err}");
+    assert!(!err.contains("through `S`"), "a proc is never its own carrier, got:\n{err}");
     // The old location-free form is gone.
     assert!(
-        !err.contains("closure firings, 3 firing(s); this family is zero-firing by contract.\n"),
+        !err.contains("closure firings, 4 firing(s); this family is zero-firing by contract.\n"),
         "the old count-only refusal must not print, got:\n{err}"
     );
 }
@@ -153,4 +169,23 @@ fn sigil_contracts_0_still_skips_the_clobber_refusal() {
         "the opt-out must say it skipped, got:\n{err}"
     );
     assert!(!err.contains(HEADER), "no closure refusal expected when skipped, in:\n{err}");
+}
+
+/// `--report contracts` names the same carrier the refusal does: `P`'s row reads
+/// `transitive d1 via Q`, `R`'s direct row carries no `via`.
+#[test]
+fn the_contract_report_names_the_same_carrier() {
+    let tmp = tempfile::tempdir().unwrap();
+    tree(tmp.path(), FIXTURE);
+    let out = Command::new(env!("CARGO_BIN_EXE_sigil"))
+        .args(["build", "--aeon"])
+        .arg(tmp.path())
+        .args(["--native", "--game", "sonic4", "--report", "contracts"])
+        .env_remove("SIGIL_CONTRACTS")
+        .output()
+        .expect("run sigil build --report contracts");
+    let report = String::from_utf8_lossy(&out.stdout);
+    let rows: Vec<&str> = report.lines().map(str::trim_end).collect();
+    assert!(rows.contains(&format!("  {:<28} transitive d1 via Q", "P").as_str()), "got:\n{report}");
+    assert!(rows.contains(&format!("  {:<28} direct     d2", "R").as_str()), "got:\n{report}");
 }
