@@ -525,6 +525,9 @@ fn g4_objects_debug_regions_match_reference() {
 /// test_enemy's debug window.
 #[test]
 fn g4_undoctored_compile_equals_the_reference_window() {
+    // Every caller of compile_real_files guards on the files it reads, not only on the
+    // ROM window (a tree can carry the ROM and not the sources).
+    let Some(_aeon) = reference_tree(&REAL_FILES) else { return };
     let shape = &DEBUG;
     let Some(enemy_ref) = ref_window("s4.debug.bin", shape.enemy_base as usize, shape.enemy_len)
     else {
@@ -542,6 +545,9 @@ fn g4_undoctored_compile_equals_the_reference_window() {
 /// actually fail). Pins-derived.
 #[test]
 fn g4_doctored_reference_diverges() {
+    // Every caller of compile_real_files guards on the files it reads, not only on the
+    // ROM window (a tree can carry the ROM and not the sources).
+    let Some(_aeon) = reference_tree(&REAL_FILES) else { return };
     let shape = &DEBUG;
     let Some(mut enemy_ref) =
         ref_window("s4.debug.bin", shape.enemy_base as usize, shape.enemy_len)
