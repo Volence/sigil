@@ -460,3 +460,118 @@ Branch `parcel/step0-soundness` pushed (owner-approved; never master):
 | **`44015583371`** | `417dc819` | **success** | every step green: test (524 suites, 5,894 passed, 0 failed, 3 ignored), skip report (473), clippy, crate-graph guard (1 passed); 04:12:44Z to 04:17:28Z |
 
 Master run after the merge: **`44017120477` at `457f2763`: success** (wave 1 landing, 2026-11-16; A8 task note updated). Booked: `docs/QUEUE.md` `CI-TOOLCHAIN-FLOATS`.
+
+## Task 5 (A2): region sizes enforced, Z80 bank windows included
+
+Commit `53484dfe` (sigil), paired with aeon `parcel/step0-soundness-pair` `ea39c166` + `0f7305cc`
+(`games/sonic4/map.toml`: `[[region]] z80_sound_bank` gains `when = "sound_on"`; comment-only follow-up).
+Before: a section could overflow a declared region and the build succeeded, three ways (Sigil audit
+finding 8): `validate_section` held a section to the FIRST `rom` region holding its LMA (aeon's map lists
+`rom` `[0,0x400000)` first, so nothing smaller was ever checked); `z80_bank` regions were read by nothing;
+the seam-2 tails never ran a region check and their seven sizes were literals (`sound_tables_z80` 1,116 B
+in `0x400`). Now:
+
+- `MemoryMap::validate_section(name, placed_in, lma, len)`: (1) the region the section's placement group
+  names (any kind; a group naming no region, the native `declchain{n}`, is ignored); (2) every `z80_bank`
+  window holding `lma` must hold the end (a section starting at the window's end is outside it); (3) the
+  first `rom` region holding `lma`. `object_bank` is a budget, never a container. Refusal text unchanged:
+  ``section `N` [a,b) overflows region `R` (ends E), over by K bytes``.
+- `LinkedSection.region` (= `Section.group`); `sigil_link::check_regions` is `emit_rom`'s loop; all seven
+  seam-2 tails end in `seam2::check_placed_regions` (the map-placed sections only; the pinned carriers at
+  `$1000000`+ are not the map's). Literal sizes replaced by `seam2::bank_room(lma) = 0x8000 - (lma & 0x7FFF)`.
+- `native::check_budgets`: every `[[budget]]` row against its own `ceiling` (replaces
+  `check_object_bank_budget` and the `"object_bank"` literal). A row with no region, no cursor, or a cursor
+  no section defines is refused (`[map.budget-unmeasurable]`), not read as 0.
+- `[[region]] when` (`PlacementMap.region_when`, `map_for_shape`): the native build checks the shape's map.
+- Found on the way (`anchor_overlay.rs`, the clip-shaped overlay build, refused with ``section `dac_banks`
+  [0xB8000,0xC649A) overflows region `z80_sound_bank` ``): an overlay moves the `sound_bank` anchor but not
+  the region. `map_placement::move_bank_regions` moves a `z80_bank` region whose base is an anchor's `at` to
+  that anchor's overlay address. Aeon's comment now says the equality is load-bearing.
+- TDD. RED (stubs in place, signatures only): `map.rs` 4 failed / 9 passed (the boundary-accept tests
+  pass: exact fill's first half, start-at-window-end, `object_bank` budget-not-container);
+  `seam2_region_enforced` 6 failed / 2 passed; `native::budget_tests` 3 failed; `region_enforcement`
+  3 failed / 2 passed (`nested_region_overflow_is_refused`: exit 0, the audit's z3). GREEN: all pass;
+  `measure_real_sound_tables_z80_through_seam2 --ignored` at the ref tree: 1,116 B, head `0xB8000`,
+  derived room 32,768.
+
+### RF proof (invariant 8), two gates
+
+```
+(a) $ git status --short                 (no tracked change)
+    $ git diff  crates/sigil-ir/src/map.rs  (3 deletions)
+    -        for r in self.regions.iter().filter(|r| r.kind == RegionKind::Z80Bank && r.contains(lma)) {
+    -            held(r)?;
+    -        }
+    $ cargo test -p sigil-ir --lib map::
+    test map::tests::z80_bank_containment_refuses_a_section_crossing_the_window ... FAILED
+      (called `Result::unwrap_err()` on an `Ok` value: ())
+    test map::tests::z80_bank_exact_fill_is_accepted ... FAILED
+    test result: FAILED. 12 passed; 2 failed
+    $ git restore --source=HEAD -- crates/sigil-ir/src/map.rs; git status --short   (empty)
+    test result: ok. 14 passed; 0 failed
+(b) $ git diff  crates/sigil-link/src/lib.rs  (check_regions)
+    -        map.validate_section(&s.name, s.region.as_deref(), s.lma, len)?;
+    +        map.validate_section(&s.name, None, s.lma, len)?;
+    $ cargo test -p sigil-ir --lib validate_placed     -> 2 passed (unit level is blind to this mutation)
+    $ cargo test -p sigil-cli --test region_enforcement
+    test nested_region_overflow_is_refused ... FAILED  (left: 0, right: 1: the nested overflow built)
+    test result: FAILED. 4 passed; 1 failed
+    $ git restore --source=HEAD -- crates/sigil-link/src/lib.rs; git status --short   (empty)
+    test result: ok. 5 passed; 0 failed
+```
+
+### Whole-build red-first (reviewer B's e5 + e7)
+
+Run-unique on-disk copy of the provisioned pair tree (ref `936439fa` + the pair `map.toml`), deleted after:
+8 x `data _padxN = embed("games/sonic4/data/sound/song_s2_ooz.bin")` (2,876 B each, 23,008 B) appended to
+`games/sonic4/data/sound/sfx_bank_blob.emp`, `song_bank_2` anchor `0xC0000` -> `0xC8000`.
+
+- base `94cf811d`: **exit 0**, `built: sonic4 plain native ROM, crc=23ad4d05 len=883143` (the audit's e7 figure).
+- candidate `53484dfe`: **exit 1**, no ROM written:
+  ``error: native build (sonic4 plain): declared-chain: emit_rom: section `sfx_bank_blob` [0xBD5E8,0xC363C) overflows region `z80_sound_bank` (ends 0xC0000), over by 13884 bytes``.
+  The plan predicted 13,888 (bank 1 "to `0xC3640`"); the section's last byte is `0xC363B`, the 4 B to
+  `0xC3640` are the next section's alignment fill, not the section.
+
+### Corpus and BN (candidate `sigil 0.1.0 (53484dfe)`)
+
+0 refusals: every shape builds on the candidate. Pair tree (provisioned: ref `936439fa` + pair
+`map.toml`; the pair branch differs from `936439fa` by docs + that file), 31.4 s, and the unpaired
+control `.aeon-sigil-ref-936439fa`, 30.9 s, both:
+
+```
+SHAPE plain 193507d9/850296 193507d9/850296 SAME
+SHAPE debug ce326232/870560 ce326232/870560 SAME
+SHAPE demo 2f9e2d4c/99994 2f9e2d4c/99994 SAME
+SHAPE demo_debug 64717bac/106981 64717bac/106981 SAME
+SHAPE config_a 6be62db3/870972 6be62db3/870972 SAME
+SHAPE config_b d888a312/617813 d888a312/617813 SAME
+SHAPE lean 60a3552b/798202 60a3552b/798202 SAME
+SHAPES 7/7 IDENTICAL
+STEP0_CMP_END rc=0
+```
+Step 3 (aeon first, inert): base=cand=base over the pair tree, the same 7 rows, 7/7, rc 0 (104 s).
+
+### AG (throwaway worktree of pair tip `0f7305cc`, binaries copied from `.target-land` `53484dfe`, removed after)
+
+| Run | exit | wall-clock |
+|---|---|---|
+| `tools/landing_build.sh` | 0, `finished=0` (needs_build 35 ran / 0 failed / 1 exempted; land-gate stamp head `0f7305ccebe2`) | 591 s |
+| `./build.sh` | 0 | 706 s |
+| `DEBUG=1 ./build.sh` | 0 | 652 s |
+| `./build.sh demo` | 0 | 413 s |
+| `DEBUG=1 ./build.sh demo` | 0 | 383 s |
+
+Every log names `sigil 53484dfed745`; `sigil`/`emit_sound_blob` md5 equal at start and end.
+
+### SS (`scripts/landing-run.sh --aeon .aeon-sigil-ref-936439fa`, tree `53484dfe` clean, 633 s)
+
+525/525 binaries launched and reported (census 525), **5,844 passed / 67 failed / 3 ignored**, 0 skip
+lines; clippy 0, ledger 0, `ci-shaped leg 0 (525 suite(s), 5911 passed, 0 failed)`. `FAILING TESTS (67)`
+sorted against `.scratch-t1/failed_base.txt`: `diff` empty, **0 new**; no log line carries an A2 refusal
+text. Delta vs Task 4: +1 suite (`region_enforcement`), +17 passed (the new tests). RESULT FAILED on the
+67 Task 6 baseline names only.
+
+### Booked, not in scope
+
+- `sigil build --check` stops before link, so it runs no region or budget check (its doc says so).
+- `sigil emp --map` has no shape, so a `when` on a region there is ignored (the region is in force).
