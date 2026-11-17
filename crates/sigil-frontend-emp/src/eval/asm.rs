@@ -1087,6 +1087,7 @@ impl Evaluator<'_> {
                             None,
                         )],
                         size: Some(TextOrSplice::Text("l".into())),
+                        first_spliced: false,
                         span,
                     }],
                     span,
@@ -2063,7 +2064,7 @@ impl Evaluator<'_> {
                 }
             }
             Operand::Plain { expr, .. } => self.map_plain(expr, scope, env),
-            Operand::Ind { parts, size, span } => {
+            Operand::Ind { parts, size, first_spliced, span } => {
                 // Two-part `(An,Xn[.size])` — An-indexed with zero displacement
                 // (68k `(d8,An,Xn)`, d=0). Checked before the single-register
                 // path so the two-part form stops diagnosing as unsupported.
@@ -2075,7 +2076,14 @@ impl Evaluator<'_> {
                 // (Volence-ratified, tranche 3). A sized REGISTER indirect
                 // (`(a0).w`) is not a 68000 form and is rejected inside.
                 if size.is_some() && parts.len() == 1 {
-                    return self.map_pinned_abs(&parts[0].0, size.as_ref(), scope, env, *span);
+                    return self.map_pinned_abs(
+                        &parts[0].0,
+                        size.as_ref(),
+                        *first_spliced,
+                        scope,
+                        env,
+                        *span,
+                    );
                 }
                 let r = self.ind_single_reg(parts, *span, env)?;
                 Some(CodeOperand::Ind(r))
@@ -2109,7 +2117,7 @@ impl Evaluator<'_> {
                 // displacement (that eager eval is exactly what makes
                 // `Sym(pc,d0.w)` fail as "unknown name" today).
                 if let Some(shape) = pc_rel_shape(inner) {
-                    return self.map_pcrel_operand(disp, shape, scope, env, *span);
+                    return self.map_pcrel_operand(disp, *disp_spliced, shape, scope, env, *span);
                 }
                 // A LOCAL-LABEL displacement over An (`jmp .jump_table(a1)` —
                 // the jump-table dispatch idiom: the table's abs.w-reachable
@@ -2288,7 +2296,7 @@ impl Evaluator<'_> {
                 }
             }
             Operand::Plain { expr, .. } => self.map_plain_z80(expr, scope, env),
-            Operand::Ind { parts, size, span } => {
+            Operand::Ind { parts, size, span, .. } => {
                 if size.is_some() {
                     self.error(
                         *span,
@@ -2534,11 +2542,24 @@ impl Evaluator<'_> {
     fn map_pcrel_operand(
         &mut self,
         disp: &ast::Expr,
+        disp_spliced: bool,
         shape: PcRelShape<'_>,
         scope: &LabelScope,
         env: &mut Env,
         span: Span,
     ) -> Option<CodeOperand> {
+        // A SPLICED target (`{x}(pc)`, `{x}(pc,d0.w)`, final review I2) is the
+        // VALUE of `x`, exactly as `jsr {x}` reads it: a label/string naming
+        // a symbol targets that symbol, as the unspliced `Target(pc)` would.
+        // Reading the braces' path as a symbol name (the unspliced rule below)
+        // linked the parameter's own NAME, silently, whenever a symbol of that
+        // name existed. Anything that is not a symbol is refused: an integer
+        // has no unspliced pc-relative spelling either.
+        if disp_spliced {
+            let v = self.eval_expr(disp, env);
+            let target = self.spliced_symbol(v, expr_span(disp), "a PC-relative target (a label)")?;
+            return self.pcrel_from_target(target, 0, shape, span, env);
+        }
         // `Sym±n(pc[,Xn])` — a comptime addend on the symbolic target (the
         // dispatch-table anchor idiom, tranche 9: `jmp .cc_table-4(pc,d0.w)`
         // where the adjusted address lands INSIDE the jmp itself, so no
@@ -2579,6 +2600,20 @@ impl Evaluator<'_> {
             return None;
         };
         let target = scope.resolve_ref(&p.segments.join("."));
+        self.pcrel_from_target(target, addend, shape, span, env)
+    }
+
+    /// Build the `(d16,PC)` / `(d8,PC,Xn)` operand for a resolved target
+    /// symbol, shared by the spelled and the spliced target paths of
+    /// [`Self::map_pcrel_operand`].
+    fn pcrel_from_target(
+        &mut self,
+        target: String,
+        addend: i64,
+        shape: PcRelShape<'_>,
+        span: Span,
+        env: &mut Env,
+    ) -> Option<CodeOperand> {
         match shape {
             PcRelShape::Plain => Some(CodeOperand::PcRel { target, addend }),
             PcRelShape::Indexed { xn_expr, xn_size } => {
@@ -2649,6 +2684,7 @@ impl Evaluator<'_> {
         &mut self,
         expr: &ast::Expr,
         size: Option<&TextOrSplice>,
+        spliced: bool,
         scope: &LabelScope,
         env: &mut Env,
         span: Span,
@@ -2675,6 +2711,21 @@ impl Evaluator<'_> {
             }
             None => return None,
         };
+        // A SPLICED address (`({x}).w`, final review I2) is the VALUE of `x`:
+        // a label/string naming a symbol pins that symbol, as `(Target).w`
+        // would; an integer, register or anything else takes the evaluated
+        // path below, as the unspliced spelling of that value would. Only the
+        // bare-path-is-a-symbol shortcut is skipped, because it read the
+        // braces' path as a symbol NAME and linked the parameter itself.
+        if spliced {
+            let v = self.eval_expr(expr, env);
+            if matches!(v, Value::FnRef(_) | Value::Str(_) | Value::Label(_)) {
+                let target =
+                    self.spliced_symbol(v, expr_span(expr), "an absolute address or a label")?;
+                return Some(CodeOperand::AbsSym { target, long });
+            }
+            return self.pinned_abs_value(v, long, span);
+        }
         if let ast::Expr::Path(p) = expr {
             if p.segments.len() == 1 && reg_from_name(&p.segments[0]).is_some() {
                 self.error(
@@ -2705,6 +2756,13 @@ impl Evaluator<'_> {
             return Some(CodeOperand::AbsSym { target, long });
         }
         let v = self.eval_expr(expr, env);
+        self.pinned_abs_value(v, long, span)
+    }
+
+    /// The evaluated half of [`Self::map_pinned_abs`]: an integer address
+    /// (window-checked) → [`CodeOperand::AbsInt`]; a register, a provisional
+    /// value or a non-integer is refused.
+    fn pinned_abs_value(&mut self, v: Value, long: bool, span: Span) -> Option<CodeOperand> {
         if matches!(v, Value::Poison) {
             return None;
         }
@@ -3458,28 +3516,7 @@ impl Evaluator<'_> {
             // unspliced `[operand.usp-unsupported]`; the others get
             // `[asm.splice-register-word]`. Refusal only, so byte-neutral.
             Value::FnRef(n) | Value::Str(n) | Value::Label(n) => {
-                let reg_word = if is_z80 {
-                    crate::value::is_z80_register_word(&n)
-                } else {
-                    crate::value::is_m68k_register_word(&n)
-                };
-                if !reg_word {
-                    return Some(CodeOperand::Sym(n));
-                }
-                if n == "usp" && !is_z80 {
-                    self.error(span, USP_UNSUPPORTED.to_string());
-                } else {
-                    self.error(
-                        span,
-                        format!(
-                            "[asm.splice-register-word] `{n}` is a register word, never a symbol: \
-                             a spliced label or string naming it would assemble as an absolute \
-                             address. Write the register in the template, or pass it to a `Reg` \
-                             parameter"
-                        ),
-                    );
-                }
-                None
+                self.splice_symbol_name(n, span).map(CodeOperand::Sym)
             }
             other => {
                 if let Some(n) = other.as_stored_int() {
@@ -3492,6 +3529,56 @@ impl Evaluator<'_> {
                     self.splice_kind_err(span, "int, Reg, or Sym", &other);
                     None
                 }
+            }
+        }
+    }
+
+    /// A spliced label/string/fn-ref NAME as a link symbol, unless it names a
+    /// register word of this section's CPU (A6 fix round 2, re-review N1): the
+    /// unspliced spelling reads `usp`/`sr`/`ccr`/`d0` as a register, so a
+    /// symbol of that name is refused, never reclassified. `usp` keeps its
+    /// unspliced `[operand.usp-unsupported]`; the others get
+    /// `[asm.splice-register-word]`. Shared by the bare `{x}` operand and the
+    /// spliced displacement / sized-absolute forms (final review I2).
+    fn splice_symbol_name(&mut self, n: String, span: Span) -> Option<String> {
+        let is_z80 = self.cpu == Some(sigil_ir::backend::Cpu::Z80);
+        let reg_word = if is_z80 {
+            crate::value::is_z80_register_word(&n)
+        } else {
+            crate::value::is_m68k_register_word(&n)
+        };
+        if !reg_word {
+            return Some(n);
+        }
+        if n == "usp" && !is_z80 {
+            self.error(span, USP_UNSUPPORTED.to_string());
+        } else {
+            self.error(
+                span,
+                format!(
+                    "[asm.splice-register-word] `{n}` is a register word, never a symbol: \
+                     a spliced label or string naming it would assemble as an absolute \
+                     address. Write the register in the template, or pass it to a `Reg` \
+                     parameter"
+                ),
+            );
+        }
+        None
+    }
+
+    /// A spliced value that must name a link symbol (a pc-relative target or a
+    /// sized absolute): a label/string/fn-ref goes through
+    /// [`Self::splice_symbol_name`]; anything else is `[asm.splice-kind]`
+    /// naming `expected` (final review I2).
+    fn spliced_symbol(&mut self, v: Value, span: Span, expected: &str) -> Option<String> {
+        match v {
+            Value::Poison => None,
+            Value::FnRef(n) | Value::Str(n) | Value::Label(n) => self.splice_symbol_name(n, span),
+            other => {
+                if self.reject_if_provisional(&other, span).is_none() {
+                    self.splice_kind_err(span, expected, &other);
+                }
+                None
             }
         }
     }

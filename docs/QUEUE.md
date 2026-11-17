@@ -1916,3 +1916,23 @@ until its row is removed.
   `PageIn_Saved_SR`).
 - Needs a language ruling: refuse case variants of register words as names and operands, or fold them.
 
+
+## EMP-SPLICED-DISP-LINKS-PARAM-NAME: CLOSED IN BRANCH 2026-11-17 (final review I2, fix wave, `parcel/step0-soundness`)
+
+- Finding (final whole-branch review I2; first noted as a Task 9 out-of-scope line with no row): in five
+  forms a spliced `Label` was ignored and the parameter's NAME was linked: `({x}).w`, `({x}).l`, `{x}(pc)`,
+  `{x}(pc,Xn)` and `jmp {x}(pc)`. With `t: Label = Target` and a proc named `t`, `lea {t}(pc),a0` gave
+  `41FA 0008` (aimed at `t`) and `move.l ({t}).l,d0` gave `2039 0000 0008`: wrong bytes, green build,
+  the `usp`/register-word direction. Without a same-named symbol it was a confusing `unresolved symbol x`.
+  `#{x}` and bare `{x}` were correct.
+- Cause: `map_pcrel_operand` and `map_pinned_abs` (`eval/asm.rs`) resolve a bare path as a symbol name and
+  never read the parser's `disp_spliced`; `({x})` lost its braces in `paren_operand`, so `({x}).w` and
+  `(x).w` were the same AST.
+- Closed: `Operand::Ind` carries `first_spliced`; both mappers evaluate a spliced target and use its
+  value, exactly as the unspliced spelling of that value assembles. A label/string goes through the same
+  register-word refusal `jsr {p}` uses (`[asm.splice-register-word]`, `usp` keeps
+  `[operand.usp-unsupported]`); a non-symbol pc-relative target is `[asm.splice-kind]`; an integer in a
+  sized absolute is the address, as `($1234).w` is. Reachability: 0 aeon sites (the only match is a comment,
+  `games/sonic4/player/player_sensors.emp:215`), so byte-neutral; BN 7/7.
+- Fixture `crates/sigil-frontend-emp/tests/spliced_disp_target.rs`: each form's spliced bytes equal its
+  unspliced spelling's (the oracle, pinned for two forms), register words refused in all five, integers.

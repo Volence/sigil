@@ -818,6 +818,7 @@ fn yield_store(ordinal: i64, offset: i64, reg: &str, span: Span) -> AsmStmt {
     let inner = Operand::Ind {
         parts: vec![(path_expr(reg, span), None)],
         size: None,
+        first_spliced: false,
         span,
     };
     AsmStmt::Instr(InstrLine {

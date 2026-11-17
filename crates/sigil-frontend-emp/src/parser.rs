@@ -3543,7 +3543,7 @@ impl Parser {
                         let ispan = span.merge(self.prev_span());
                         return Operand::DispInd {
                             disp: Expr::Path(callee.clone()),
-                            inner: Box::new(Operand::Ind { parts, size, span: ispan }),
+                            inner: Box::new(Operand::Ind { parts, size, first_spliced: false, span: ispan }),
                             disp_spliced: false,
                             field_size_override,
                             span: ispan,
@@ -3582,11 +3582,13 @@ impl Parser {
     fn paren_operand(&mut self, splices_allowed: bool, start: Span) -> Operand {
         self.expect(&Tok::LParen, "`(`");
         let mut parts = Vec::new();
+        let mut first_spliced = false;
         loop {
             let e = if self.at(&Tok::LBrace) && splices_allowed {
                 self.bump();
                 let e = self.expr();
                 self.expect(&Tok::RBrace, "`}`");
+                first_spliced |= parts.is_empty();
                 e
             } else {
                 self.expr()
@@ -3599,7 +3601,7 @@ impl Parser {
         }
         self.expect(&Tok::RParen, "`)`");
         let size = self.trailing_size(splices_allowed);
-        Operand::Ind { parts, size, span: start.merge(self.prev_span()) }
+        Operand::Ind { parts, size, first_spliced, span: start.merge(self.prev_span()) }
     }
 
     /// Re-fold a size suffix directly after a spliced value (`{off}.w`) onto the

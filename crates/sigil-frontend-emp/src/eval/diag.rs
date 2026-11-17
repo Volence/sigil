@@ -440,6 +440,7 @@ fn sp_ind(span: Span) -> Operand {
     Operand::Ind {
         parts: vec![(Expr::Path(ast::Path { segments: vec!["sp".into()], span }), None)],
         size: None,
+        first_spliced: false,
         span,
     }
 }
@@ -472,6 +473,7 @@ fn pcrel(label: &str, span: Span) -> Operand {
         inner: Box::new(Operand::Ind {
             parts: vec![(Expr::Path(ast::Path { segments: vec!["pc".into()], span }), None)],
             size: None,
+            first_spliced: false,
             span,
         }),
         disp_spliced: false,
@@ -487,6 +489,7 @@ fn abs_l(sym: &str, span: Span) -> Operand {
     Operand::Ind {
         parts: vec![(Expr::Path(ast::Path { segments: vec![sym.to_string()], span }), None)],
         size: Some(TextOrSplice::Text("l".into())),
+        first_spliced: false,
         span,
     }
 }

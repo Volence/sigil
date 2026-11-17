@@ -2379,6 +2379,13 @@ pub enum Operand {
         parts: Vec<(Expr, Option<TextOrSplice>)>,
         /// The optional trailing size suffix.
         size: Option<TextOrSplice>,
+        /// The FIRST part arrived as a `{splice}` (`({x}).w`), not a literal
+        /// spelling. The parser unwraps the braces, so without this flag
+        /// `({x}).w` and `(x).w` are the same AST, and the sized-absolute
+        /// mapping (a bare path there is always a symbol) linked the
+        /// parameter's NAME instead of its value (final review I2). Only that
+        /// one-part sized form reads it; every other form evaluates its parts.
+        first_spliced: bool,
         /// Span of the whole operand.
         span: Span,
     },
