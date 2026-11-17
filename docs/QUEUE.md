@@ -1685,3 +1685,23 @@ points at it rather than restating it, so there is one copy to keep true.
   and `--config-b` are byte-identical renamed and unrenamed (`193507d9/850296`, `ce326232/870560`,
   `d888a312/617813`). Step 3, aeon renames and lands, is theirs; tell them the pair is ready.
 - Step 3 LANDED on aeon origin/master at merge `b295559d` (tip `97d139ca`), built with our `30793305` pair (their figures). At the next pin advance past `b295559d`: retire the `games.sonic4.mt_bank_blob` SHAPE_GATES row and the `warn_tier_corpus.rs` known-site row for `mt_bank.emp` (it goes red then by design).
+
+## CI-TOOLCHAIN-FLOATS: BOOKED 2026-11-16 (Task 4 / A8)
+
+CI installs `dtolnay/rust-toolchain@stable`. Local landings use the host's rustc, which was 1.99.1 on
+2026-11-16. Stable moved to 1.100.0 on 2026-11-09, and that version turned the branch's CI red twice
+on code that was green here: the new cargo build-dir layout (`build.rs`, fixed `7d0aed5c`) and new
+clippy firings (`needless_range_loop`, fixed `417dc819`). The landing's CI-shaped leg reproduces CI's
+ENVIRONMENT (no reference tree, `SIGIL_ALLOW_PARTIAL=1`, debug profile). It cannot reproduce CI's
+TOOLCHAIN. Two ways to close this, and choosing between them is the owner's call: pin CI to the
+toolchain landings use (`rust-toolchain.toml`, which the version banner already watches), or have the
+landing install and run CI's stable. Until one lands, the `gh run list` read in `docs/OVERSEER.md` is
+the only thing that catches this class.
+
+Two smaller items booked here as well:
+- `scripts/check_landing_log.py` reads `CARGO_EXIT=`/`CLIPPY_EXIT=`/`LEDGER_EXIT=` and not `CI_EXIT=`.
+  The recorded verdict already fails on a red leg, so a missing `CI_EXIT=` costs one cross-check of
+  defence in depth.
+- The CI-shaped leg runs inside the suite checkout, and here a real suite root sits beside it. CI has
+  none. The suite-root readers (the second skip class in `ci.yml`) can therefore resolve differently
+  in the two places.

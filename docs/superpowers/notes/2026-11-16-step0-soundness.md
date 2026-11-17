@@ -384,3 +384,79 @@ Tests (per crate / per target, `--no-fail-fast`, `AEON_DIR` + `ORACLE_DIR`): `si
 0 / 0 (139 binaries); `sigil-cli` 849 / 58 / 1 at `1acf0518`, the one new name being the tranche20 probe
 above, 6/6 after its fixture change; other 12 crates 2,182 / 2 / 2. Failing names after the fixture
 change: 59, all in `.scratch-t1/failed_base.txt`, 0 new.
+
+## Task 4 (A8): CI green, and watched
+
+Cause reproduced first (CI env, `.target-land` debug): `env -u AEON_DIR -u EMPYREAN_SUITE_ROOT
+SIGIL_ALLOW_PARTIAL=1 cargo test -p sigil-cli --test test_g4_final_objects_port` gave 3 passed / 1
+failed, `g4_objects_regions_match_reference` panicking at `test_g4_final_objects_port.rs:138`, `cannot
+read /nonexistent/SIGIL_ALLOW_PARTIAL-no-reference-tree-was-named/games/sonic4/objects/test_player.emp`,
+as CI run `36488380435`.
+
+- Port test: one `REAL_FILES` list feeds every read and the guard
+  `let Some(_) = reference_tree(&REAL_FILES) else { return };` at the top of `reference_gate`. It has 9
+  entries, not the plan's 7: `player_block_ambient` also reads `games/sonic4/config/ram.emp` and
+  `games/sonic4/player/player_common.emp`, and a guard that leaves out two of the reads can drift from
+  them. The two other `compile_real_files` callers guard on the same list (`a6b6653a`). CI env: 4 passed
+  with `skip:` lines. Strict, with the ref tree: 4 passed.
+- `landing-run.sh` CI-SHAPED leg after the strict span: `env -u AEON_DIR -u EMPYREAN_SUITE_ROOT -u
+  SIGIL_STRICT_GATE -u ORACLE_DIR -u SIGIL_BUILD -u SIGIL_EMIT SIGIL_ALLOW_PARTIAL=1 cargo test
+  --no-fail-fast --workspace -- --nocapture`. It uses the debug profile, as CI does, and the same target
+  dir. `CI_EXIT=` sits in its own `##### CI-SHAPED SPAN` and no strict-span reader looks inside it.
+  `CI_RED` (non-zero exit, a failed test, or no `test result:` line) is part of the `RESULT FAILED`
+  condition. The verdict line is `ci-shaped leg <rc>`, and `--verdict-only` refuses a log with no
+  `CI_EXIT=`.
+- `FAILING TESTS` comes from cargo's `failures:` blocks plus the `test ... FAILED` lines, one entry per
+  (name, binary). On landing log `20261117T000459Z` the list said 63; it now says 67, the same multiset
+  as `.scratch-t1/failed_base.txt`. The old list lost `mt_bank_debug_matches_reference` to an
+  interleaved line, and `two_module_ownership_flip_debug`, red in 4 binaries, counted once. Fixture test
+  `the_failing_list_names_every_test_cargo_lists_across_binaries`: 6 across two binaries reports 6.
+- `docs/OVERSEER.md`: each loop runs `gh run list --branch master --limit 1 --json
+  conclusion,headSha,createdAt`, and a `failure` stays the top row until fixed.
+- Doc sync carried from Task 3, no byte change: `fixup.rs` `ImmWord16Be` no longer claims asl
+  assembles the literal `move.w #$FFFF9EDE, d0` (asl refuses it, `range overflow`). The
+  `lower_m68k_imm_link` doc now names `ImmWord16Be` for `.w`.
+
+TDD: 5 new `landing_verdict.rs` tests. The stock fixture's CI span carries a `skip:` line, so every
+older control also proves the strict readers stay out of it. RED against the old script: 14 passed /
+20 failed. GREEN: 34/34.
+
+### RF proof (invariant 8)
+
+Committed baseline `a6b6653a`, `git status --short` empty. Mutation:
+`sed -i '/let Some(_) = reference_tree(&REAL_FILES)/d' crates/sigil-cli/tests/test_g4_final_objects_port.rs`,
+`git diff --stat` = `test_g4_final_objects_port.rs | 1 -` (the deleted line:
+`-    let Some(_) = reference_tree(&REAL_FILES) else { return };`). Results with the mutation in place:
+
+- the Step 1 command FAILED: 3 passed / 1 failed, `g4_objects_regions_match_reference`, `cannot read …/test_player.emp`;
+- `scripts/landing-run.sh --scoped --aeon .aeon-sigil-ref-936439fa -- -p sigil-cli --test
+  test_g4_final_objects_port` gave `CARGO_EXIT 0`, `CLIPPY_EXIT 0`, `LEDGER_EXIT 0`, `ci-shaped leg 101`,
+  `CI-SHAPED FAILING TESTS (1) g4_objects_regions_match_reference (test_g4_final_objects_port)`, and
+  `RESULT FAILED, the CI-SHAPED LEG is red (exit 101, 1 test(s) failed)`, exit 1.
+
+Restored with `git restore --source=HEAD -- crates/sigil-cli/tests/test_g4_final_objects_port.rs`, status
+empty. After the restore: Step 1 command 4 passed. The scoped landing with `--baseline 4` gave
+`ci-shaped leg 0` and `RESULT GREEN`, exit 0.
+
+### Totals
+
+- Partial workspace, CI-shaped (`a6b6653a`, 253 s): 524 suites, 5,894 passed, 0 failed, 3 ignored, 457
+  `skip:` lines, exit 0. The 67 golden-drift names (Task 6) skip in this shape.
+- Full landing (`scripts/landing-run.sh --aeon .aeon-sigil-ref-936439fa`, `a6b6653a`, 600 s wall): strict
+  span 524/524 binaries, 5,827 passed, 67 failed, 3 ignored, 0 skip lines, census 524. `FAILING TESTS
+  (67)` is the same multiset as the baseline, so there are 0 new failures. Clippy 0, ledger 0,
+  `ci-shaped leg 0 (524 suite(s), 5894 passed, 0 failed)`. RESULT FAILED on the 67 baseline names only.
+- clippy `--workspace --all-targets -D warnings`, debug and release: 0 (local clippy 1.99.1).
+- BN `SHAPES 7/7 IDENTICAL`, `STEP0_CMP_END rc=0` at `a6b6653a`, `6a0cd3ff` and `417dc819`.
+
+### CI proof
+
+Branch `parcel/step0-soundness` pushed (owner-approved; never master):
+
+| run | head | conclusion | what |
+|---|---|---|---|
+| `44013571220` | `a6b6653a` | failure | test step: 524 suites, 5,893 passed, **1 failed**, 3 ignored, 475 skips. `g4_objects_regions_match_reference` ok. The red was `version_provenance` `every_closure_path_that_exists_is_watched_for_edits`: CI's `stable` is now rustc 1.100.0 (2026-11-09) and its new cargo build-dir layout moves the build script's recorded stdout (fixed `6a0cd3ff`) |
+| `44014834372` | `6a0cd3ff` | failure | test step GREEN (524, 5,894 passed, 0 failed, 3 ignored, 474 skips). clippy step red: clippy 1.100 `needless_range_loop` at `sigil-clownlzss-sys/src/accurate.rs:201,204` (fixed `417dc819`) |
+| **`44015583371`** | `417dc819` | **success** | every step green: test (524 suites, 5,894 passed, 0 failed, 3 ignored), skip report (473), clippy, crate-graph guard (1 passed); 04:12:44Z to 04:17:28Z |
+
+Master run after the merge: **MASTER_RUN_ID_PLACEHOLDER, recorded by the controller at landing** (also owed: the A8 task note `empyrean/docs/v2/tasks/A8 CI green and watched.md`, status/branch/Progress with both run ids). Booked: `docs/QUEUE.md` `CI-TOOLCHAIN-FLOATS`.
