@@ -6,11 +6,15 @@
 pub enum RegionKind {
     Rom,
     M68kRam,
+    /// A Z80 `SetBank` window (`$8000` bytes of cartridge the Z80 reads through its
+    /// bank register). A CONTAINER for whatever starts in it: a section whose first
+    /// byte lies in the window must end in it (`validate_section` rule 2). It places
+    /// no image bytes of its own; the enclosing `Rom` region does.
     Z80Bank,
     /// A BUDGET sub-window (e.g. the 64KB object code bank at `$10000`). It does NOT
     /// participate in section containment (`region_for` matches only `Rom`; the sections
     /// live inside the enclosing `Rom` region) — it declares a `[lma_base, lma_base+size)`
-    /// budget the link checks a named cursor against (`check_budget`). This is the
+    /// budget the link checks a `[[budget]]` row's cursor against (`check_budget`). This is the
     /// map-owned form of the AS-side `if * > $20000 / error` object-bank overflow guard.
     ObjectBank,
 }
@@ -105,34 +109,84 @@ impl MemoryMap {
         self.regions.iter().find(|r| r.name == name)
     }
 
-    /// Enforce a named BUDGET region's cap: `cursor_lma` (a link-resolved end marker,
-    /// e.g. the object bank's `__BUDGET_DATA`) must not exceed `lma_base + size`. Returns
-    /// the used byte count (`cursor_lma - lma_base`) on success. A region that is absent
-    /// or not an `ObjectBank` is a NO-OP (`Ok(0)`) — the check is additive, so a map that
-    /// declares no budget simply isn't guarded. Overflow is an actionable Err naming the
-    /// region, its cap, and the overshoot (the AS `\{*-$20000}` message, map-owned).
-    pub fn check_budget(&self, region_name: &str, cursor_lma: u32) -> Result<u32, String> {
+    /// Enforce one declared budget: `cursor_lma` (a link-resolved end marker, e.g. the
+    /// object bank's data-region head) must not exceed `ceiling`, the `[[budget]]`
+    /// row's declared cap. Returns the used byte count (`cursor_lma - lma_base`) on
+    /// success. The region must exist: a budget against a region the map does not
+    /// declare cannot be measured, and is refused rather than read as within budget.
+    /// Overflow is an actionable Err naming the region, its cap, and the overshoot
+    /// (the AS `\{*-$20000}` message, map-owned).
+    pub fn check_budget(&self, region_name: &str, ceiling: u32, cursor_lma: u32) -> Result<u32, String> {
         let Some(r) = self.region_by_name(region_name) else {
-            return Ok(0);
-        };
-        if r.kind != RegionKind::ObjectBank {
-            return Ok(0);
-        }
-        let cap = r.lma_base as u64 + r.size as u64;
-        if cursor_lma as u64 > cap {
             return Err(format!(
-                "budget region `{}` [{:#X},{cap:#X}) overflows, cursor {cursor_lma:#X} over by {} bytes",
-                r.name, r.lma_base, cursor_lma as u64 - cap
+                "[map.budget-unmeasurable] budget row `{region_name}` names no map region, so its ceiling {ceiling:#X} cannot be measured"
+            ));
+        };
+        if cursor_lma > ceiling {
+            return Err(format!(
+                "budget region `{}` [{:#X},{ceiling:#X}) overflows, cursor {cursor_lma:#X} over by {} bytes",
+                r.name,
+                r.lma_base,
+                cursor_lma - ceiling
             ));
         }
         Ok(cursor_lma.saturating_sub(r.lma_base))
     }
 
-    /// Verify a section `[lma, lma+len)` lies entirely within one `Rom` region.
-    /// A refusal names what the LMA did land in: the non-ROM region holding it
-    /// when one does (work RAM, a Z80 bank), else every ROM window it could have
-    /// used.
-    pub fn validate_section(&self, name: &str, lma: u32, len: u32) -> Result<(), String> {
+    /// Verify a section `[lma, lma+len)` against the map. Three rules, each one a
+    /// refusal in the form ``section `{name}` [{lma},{end}) overflows region
+    /// `{region}` (ends {region_end}), over by {n} bytes``, checked in order:
+    ///
+    /// 1. `placed_in` names a map region (any kind): the section must lie inside THAT
+    ///    region. `place_sections` records the region a section was placed into as
+    ///    its `group`; a group that names no region (the native declared chain's
+    ///    `declchain{n}`) is ignored. Without this a spill packed at the region's end
+    ///    is checked against whatever region starts there, and an overflow of a region
+    ///    nested in an earlier, wider `rom` region is checked against the wider one.
+    /// 2. every `Z80Bank` region whose window holds `lma` must hold the section's
+    ///    end: a section that starts in a Z80 `SetBank` window and crosses its top is
+    ///    read through the wrong bank at runtime. A section starting exactly at the
+    ///    window's end is outside it.
+    /// 3. the first `Rom` region holding `lma` must hold the end (only `Rom` regions
+    ///    place image bytes).
+    ///
+    /// `ObjectBank` regions are budgets ([`Self::check_budget`]), never containers:
+    /// apart from rule 1 they hold nothing (data runs on past the object bank's end).
+    /// A refusal under rule 3 for an LMA no ROM region holds names what it did land
+    /// in: the non-ROM region holding it when one does (work RAM, a Z80 bank), else
+    /// every ROM window it could have used.
+    pub fn validate_section(&self, name: &str, placed_in: Option<&str>, lma: u32, len: u32) -> Result<(), String> {
+        let end = lma as u64 + len as u64;
+        let held = |r: &Region| -> Result<(), String> {
+            let region_end = r.lma_base as u64 + r.size as u64;
+            if lma < r.lma_base {
+                return Err(format!(
+                    "section `{name}` [{lma:#X},{end:#X}) starts below region `{}` (base {:#X}), under by {} bytes",
+                    r.name,
+                    r.lma_base,
+                    r.lma_base - lma
+                ));
+            }
+            if end > region_end {
+                // §7.3: report the overflow amount ("over by N bytes") so the budget
+                // miss is actionable, naming the region and its end address.
+                return Err(format!(
+                    "section `{name}` [{lma:#X},{end:#X}) overflows region `{}` (ends {region_end:#X}), over by {} bytes",
+                    r.name,
+                    end - region_end
+                ));
+            }
+            Ok(())
+        };
+        // Rule 1: the region the section was placed into.
+        if let Some(r) = placed_in.and_then(|g| self.region_by_name(g)) {
+            held(r)?;
+        }
+        // Rule 2: every Z80 bank window the section starts in.
+        for r in self.regions.iter().filter(|r| r.kind == RegionKind::Z80Bank && r.contains(lma)) {
+            held(r)?;
+        }
+        // Rule 3: the ROM region that holds the first byte.
         let Some(r) = self.region_for(lma) else {
             if let Some(other) = self.regions.iter().find(|r| r.kind != RegionKind::Rom && r.contains(lma)) {
                 return Err(format!(
@@ -152,17 +206,7 @@ impl MemoryMap {
             let windows = if windows.is_empty() { "(none)".to_string() } else { windows.join(", ") };
             return Err(format!("section `{name}` LMA {lma:#X} is in no ROM region; ROM regions: {windows}"));
         };
-        let end = lma as u64 + len as u64;
-        let region_end = r.lma_base as u64 + r.size as u64;
-        if end > region_end {
-            // §7.3: report the overflow amount ("over by N bytes") so the budget
-            // miss is actionable, naming the region and its end address.
-            return Err(format!(
-                "section `{name}` [{lma:#X},{end:#X}) overflows region `{}` (ends {region_end:#X}), over by {} bytes",
-                r.name, end - region_end
-            ));
-        }
-        Ok(())
+        held(r)
     }
 }
 
@@ -185,9 +229,9 @@ mod tests {
     #[test]
     fn validate_section_rejects_region_overflow() {
         let m = MemoryMap::new(vec![rom("main", 0, 0x1000)], 0x00);
-        assert!(m.validate_section("ok", 0, 0x1000).is_ok());
-        assert!(m.validate_section("over", 0xF00, 0x200).is_err());
-        assert!(m.validate_section("outside", 0x2000, 4).is_err());
+        assert!(m.validate_section("ok", None, 0, 0x1000).is_ok());
+        assert!(m.validate_section("over", None, 0xF00, 0x200).is_err());
+        assert!(m.validate_section("outside", None, 0x2000, 4).is_err());
     }
 
     #[test]
@@ -204,7 +248,7 @@ mod tests {
     #[test]
     fn a_refusal_names_the_non_rom_region_holding_the_lma() {
         let m = MemoryMap::mega_drive();
-        let err = m.validate_section("s", M68K_RAM_LMA_BASE, 1).unwrap_err();
+        let err = m.validate_section("s", None, M68K_RAM_LMA_BASE, 1).unwrap_err();
         assert_eq!(
             err,
             "section `s` LMA 0xFF0000 lies in non-ROM region `work_ram` (m68k_ram) [0xFF0000,0x1000000); its 1 byte(s) have no place in the image"
@@ -214,18 +258,18 @@ mod tests {
     #[test]
     fn a_refusal_outside_every_region_lists_the_rom_windows() {
         let m = MemoryMap::mega_drive();
-        let err = m.validate_section("s", 0xFFFF_FFFF, 1).unwrap_err();
+        let err = m.validate_section("s", None, 0xFFFF_FFFF, 1).unwrap_err();
         assert_eq!(err, "section `s` LMA 0xFFFFFFFF is in no ROM region; ROM regions: `cartridge` [0x0,0x400000)");
         let bare = MemoryMap::new(vec![], 0x00);
-        assert_eq!(bare.validate_section("s", 0, 1).unwrap_err(), "section `s` LMA 0x0 is in no ROM region; ROM regions: (none)");
+        assert_eq!(bare.validate_section("s", None, 0, 1).unwrap_err(), "section `s` LMA 0x0 is in no ROM region; ROM regions: (none)");
     }
 
     #[test]
     fn the_last_cartridge_byte_fits_and_the_next_overflows_by_one() {
         let m = MemoryMap::mega_drive();
         let last = CARTRIDGE_LMA_BASE + CARTRIDGE_SIZE - 1;
-        assert!(m.validate_section("s", last, 1).is_ok());
-        let err = m.validate_section("s", last, 2).unwrap_err();
+        assert!(m.validate_section("s", None, last, 1).is_ok());
+        let err = m.validate_section("s", None, last, 2).unwrap_err();
         assert_eq!(err, "section `s` [0x3FFFFF,0x400001) overflows region `cartridge` (ends 0x400000), over by 1 bytes");
     }
 
@@ -235,16 +279,91 @@ mod tests {
 
     #[test]
     fn check_budget_reports_usage_and_catches_overflow() {
-        // The object bank at $10000, 64KB — a cursor at $1128C uses $128C, well within.
+        // The object bank at $10000, ceiling $20000 — a cursor at $1128C uses $128C.
         let m = MemoryMap::new(vec![rom("rom", 0, 0x400000), objbank(0x10000, 0x10000)], 0x00);
-        assert_eq!(m.check_budget("object_bank", 0x1128C).unwrap(), 0x128C);
-        assert_eq!(m.check_budget("object_bank", 0x20000).unwrap(), 0x10000); // exact fit
-        let err = m.check_budget("object_bank", 0x20002).unwrap_err();
-        assert!(err.contains("over by 2 bytes"), "{err}");
+        assert_eq!(m.check_budget("object_bank", 0x20000, 0x1128C).unwrap(), 0x128C);
+        assert_eq!(m.check_budget("object_bank", 0x20000, 0x20000).unwrap(), 0x10000); // exact fit
+        let err = m.check_budget("object_bank", 0x20000, 0x20002).unwrap_err();
+        assert_eq!(err, "budget region `object_bank` [0x10000,0x20000) overflows, cursor 0x20002 over by 2 bytes");
+        // The cap is the declared ceiling, not the region's end.
+        assert!(m.check_budget("object_bank", 0x18000, 0x18001).is_err());
         // An ObjectBank region does NOT participate in section containment.
         assert_eq!(m.region_for(0x10000).unwrap().name, "rom");
-        // A map with no budget region is a no-op.
+        // A budget against a region the map does not declare is unmeasurable: refused.
         let bare = MemoryMap::new(vec![rom("rom", 0, 0x400000)], 0x00);
-        assert_eq!(bare.check_budget("object_bank", 0x99999).unwrap(), 0);
+        let err = bare.check_budget("object_bank", 0x20000, 0x99999).unwrap_err();
+        assert!(err.starts_with("[map.budget-unmeasurable] budget row `object_bank`"), "{err}");
+    }
+
+    #[test]
+    fn a_placed_section_below_its_region_is_refused() {
+        let m = MemoryMap::new(vec![rom("rom", 0, 0x8000), rom("drv_pcm", 0x300, 4)], 0x00);
+        assert_eq!(
+            m.validate_section("drv_pcm", Some("drv_pcm"), 0x2FE, 4).unwrap_err(),
+            "section `drv_pcm` [0x2FE,0x302) starts below region `drv_pcm` (base 0x300), under by 2 bytes"
+        );
+    }
+
+    fn z80bank(name: &str, base: u32, size: u32) -> Region {
+        Region { name: name.into(), lma_base: base, size, kind: RegionKind::Z80Bank, vma_base: Some(0x8000) }
+    }
+
+    /// The `z80probe` z3 shape: a whole-window `rom` region listed FIRST, then the
+    /// small `drv_pcm` region nested inside it. The named region is the one held.
+    #[test]
+    fn validate_placed_checks_the_named_region() {
+        let m = MemoryMap::new(vec![rom("rom", 0, 0x8000), rom("drv_pcm", 0x300, 4)], 0x00);
+        assert_eq!(
+            m.validate_section("drv_pcm", Some("drv_pcm"), 0x300, 7).unwrap_err(),
+            "section `drv_pcm` [0x300,0x307) overflows region `drv_pcm` (ends 0x304), over by 3 bytes"
+        );
+        assert!(m.validate_section("drv_pcm", Some("drv_pcm"), 0x300, 4).is_ok(), "exact fill");
+        // A group that names no region (the native chain's `declchain{n}`) is no region.
+        assert!(m.validate_section("drv_pcm", Some("declchain3"), 0x300, 7).is_ok());
+    }
+
+    /// A spill packed at the named region's end, which is the next region's base, is
+    /// outside the region it was placed in.
+    #[test]
+    fn validate_placed_refuses_a_spill_into_the_next_region() {
+        let m = MemoryMap::new(vec![rom("a", 0x1000, 0x400), rom("b", 0x1400, 0x400)], 0x00);
+        assert_eq!(
+            m.validate_section("a", Some("a"), 0x1400, 0x10).unwrap_err(),
+            "section `a` [0x1400,0x1410) overflows region `a` (ends 0x1400), over by 16 bytes"
+        );
+    }
+
+    /// Bank 1 at aeon HEAD runs `$B8000-$BDC5C`; a section starting at its end that
+    /// crosses `$C0000` would be read through the wrong Z80 window at runtime.
+    #[test]
+    fn z80_bank_containment_refuses_a_section_crossing_the_window() {
+        let m = MemoryMap::new(vec![rom("rom", 0, 0x400000), z80bank("z80_sound_bank", 0xB8000, 0x8000)], 0x00);
+        let err = m.validate_section("sfx", None, 0xBDC5C, 0x3000).unwrap_err();
+        assert!(
+            err.ends_with("overflows region `z80_sound_bank` (ends 0xC0000), over by 3164 bytes"),
+            "{err}"
+        );
+        assert_eq!(err, "section `sfx` [0xBDC5C,0xC0C5C) overflows region `z80_sound_bank` (ends 0xC0000), over by 3164 bytes");
+    }
+
+    #[test]
+    fn z80_bank_exact_fill_is_accepted() {
+        let m = MemoryMap::new(vec![rom("rom", 0, 0x400000), z80bank("z80_sound_bank", 0xB8000, 0x8000)], 0x00);
+        assert!(m.validate_section("b1", None, 0xB8000, 0x8000).is_ok());
+        assert!(m.validate_section("b1", None, 0xB8000, 0x8001).is_err(), "one byte more crosses");
+    }
+
+    #[test]
+    fn a_section_starting_at_the_window_end_is_outside_it() {
+        let m = MemoryMap::new(vec![rom("rom", 0, 0x400000), z80bank("z80_sound_bank", 0xB8000, 0x8000)], 0x00);
+        assert!(m.validate_section("SongBank2_Head", None, 0xC0000, 0x100).is_ok());
+    }
+
+    /// `OJZ_Sec8_Blocks` starts at `$1FF86` and runs past `$20000` today: the object
+    /// bank is a budget (`check_budget`), never a container.
+    #[test]
+    fn object_bank_is_a_budget_not_a_container() {
+        let m = MemoryMap::new(vec![rom("rom", 0, 0x400000), objbank(0x10000, 0x10000)], 0x00);
+        assert!(m.validate_section("OJZ_Sec8_Blocks", None, 0x1FF86, 0x1660).is_ok());
     }
 }

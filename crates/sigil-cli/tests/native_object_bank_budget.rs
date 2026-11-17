@@ -3,9 +3,9 @@
 //! `games/sonic4/map.toml`'s `object_bank` region ($10000, size $10000) is the map-owned
 //! successor to `engine.inc`'s deleted `if * > $20000 / error` (K5: the per-game map is
 //! the sole region owner; sigil.map.toml retired). Every native build runs
-//! `native::check_object_bank_budget` (the declared budget cursor — the data-region head
-//! `DeformTable_Zero`, K4 inc-6B's successor to the retired `__BUDGET_DATA` marker — vs the
-//! region cap) before `emit_rom`. This gate proves the check is (a) SATISFIED on the real
+//! `native::check_budgets` (step-0 A2: every `[[budget]]` row; here the one row, whose
+//! cursor is the data-region head `DeformTable_Zero`, K4 inc-6B's successor to the retired
+//! `__BUDGET_DATA` marker, vs the row's declared `ceiling`) before `emit_rom`. This gate proves the check is (a) SATISFIED on the real
 //! canonical layout with headroom, and (b) genuinely LOAD-BEARING — a doctored (shrunk)
 //! budget on the SAME resolved layout fails loudly (t24).
 //!
@@ -63,16 +63,22 @@ fn canonical_object_bank_within_budget() {
     let resolved = native::resolve_canonical_sections(&aeon, false).unwrap_or_else(|e| panic!("{e}"));
     let map = native::project_memory_map(&aeon).unwrap_or_else(|e| panic!("{e}"));
     let pmap = placement_map();
-    let used =
-        native::check_object_bank_budget(&resolved, &map, &pmap).unwrap_or_else(|e| panic!("{e}"));
+    let rows = native::check_budgets(&resolved, &map, &pmap).unwrap_or_else(|e| panic!("{e}"));
+    let used = rows
+        .iter()
+        .find(|(r, _)| r == "object_bank")
+        .map(|(_, u)| *u)
+        .expect("the sonic4 map declares an object_bank budget row");
     eprintln!("object bank used = {used:#x} / 0x10000");
     assert!(used > 0, "object bank cursor not found (is the budget cursor label present?)");
     assert!(used < 0x10000, "object bank over budget on the real layout: {used:#x}");
 }
 
-/// t24 — the budget is load-bearing: doctoring the map's `object_bank` region to a tiny
-/// cap makes the SAME resolved layout fail the check (the deleted AS `error` guard's job,
-/// now map-owned). Proves a real object-bank overflow would fail the build, not slip past.
+/// t24 — the budget is load-bearing: doctoring the map's `object_bank` budget row to a
+/// tiny ceiling makes the SAME resolved layout fail the check (the deleted AS `error`
+/// guard's job, now map-owned). Proves a real object-bank overflow would fail the build,
+/// not slip past. (A2: the cap is the row's `ceiling`, so the row is doctored, not the
+/// region's size.)
 #[test]
 fn doctored_tiny_budget_fails_the_check() {
     let aeon = aeon_dir();
@@ -81,22 +87,21 @@ fn doctored_tiny_budget_fails_the_check() {
     }
     let _g = LOCK.lock().unwrap_or_else(|p| p.into_inner());
     let resolved = native::resolve_canonical_sections(&aeon, false).unwrap_or_else(|e| panic!("{e}"));
+    let map = native::project_memory_map(&aeon).unwrap_or_else(|e| panic!("{e}"));
     let pmap = placement_map();
 
     // Baseline: the real map passes.
-    let real = native::project_memory_map(&aeon).unwrap_or_else(|e| panic!("{e}"));
-    native::check_object_bank_budget(&resolved, &real, &pmap)
-        .unwrap_or_else(|e| panic!("control: real map must pass, got {e}"));
+    native::check_budgets(&resolved, &map, &pmap).unwrap_or_else(|e| panic!("control: real map must pass, got {e}"));
 
-    // Doctor: shrink the object_bank region to 0x100 bytes — the cursor now overflows.
-    let mut doctored = real;
-    let region = doctored
-        .regions
+    // Doctor: shrink the object_bank row's ceiling to 0x100 bytes past the bank base.
+    let mut doctored = pmap;
+    let row = doctored
+        .budgets
         .iter_mut()
-        .find(|r| r.name == "object_bank")
-        .expect("map must declare object_bank");
-    region.size = 0x100;
-    let err = native::check_object_bank_budget(&resolved, &doctored, &pmap)
+        .find(|b| b.region == "object_bank")
+        .expect("map must declare an object_bank budget row");
+    row.ceiling = 0x10100;
+    let err = native::check_budgets(&resolved, &map, &doctored)
         .expect_err("t24: a 0x100 object-bank budget must overflow, the check is vacuous otherwise");
     assert!(err.contains("over by"), "expected an actionable overflow message, got: {err}");
 }

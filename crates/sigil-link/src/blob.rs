@@ -589,7 +589,7 @@ pub fn flatten_placing(
                 continue;
             }
         }
-        if let Err(message) = MemoryMap::mega_drive().validate_section(&z.text, at, stored.len() as u32) {
+        if let Err(message) = MemoryMap::mega_drive().validate_section(&z.text, None, at, stored.len() as u32) {
             diags.push(err(message, span));
             continue;
         }

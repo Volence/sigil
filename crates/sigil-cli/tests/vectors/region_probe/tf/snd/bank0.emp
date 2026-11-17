@@ -1,0 +1,5 @@
+module tf.snd.bank0
+
+section pcm_bank0 (cpu: m68000, bank: $8000) {
+    pub data Wave0: [u8; 4] = [1, 2, 3, 4]
+}

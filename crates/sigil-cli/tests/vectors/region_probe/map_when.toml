@@ -1,0 +1,18 @@
+# A2 fixture: the games/sonic4/map.toml region shape in miniature. The whole-cartridge
+# `rom` region comes first; the Z80 sound-bank window is in force only in the shapes
+# that build the sound driver (`when = "sound_on"`).
+fill = 0x00
+
+[[region]]
+name = "rom"
+lma_base = 0
+size = 0x400000
+kind = "rom"
+
+[[region]]
+name = "z80_sound_bank"
+lma_base = 0xB8000
+size = 0x8000
+kind = "z80_bank"
+vma_base = 0x8000
+when = "sound_on"

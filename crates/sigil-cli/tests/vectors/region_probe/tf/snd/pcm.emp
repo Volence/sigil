@@ -1,0 +1,10 @@
+module tf.snd.pcm (cpu: z80)
+
+section drv_pcm (cpu: z80, vma: $100) {
+    pub proc Pcm_Tick () clobbers(af, hl) {
+        ld      hl, $4000
+        ld      a, $2A
+        ld      (hl), a
+        ret
+    }
+}

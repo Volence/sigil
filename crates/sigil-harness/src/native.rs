@@ -3714,7 +3714,8 @@ struct ChainedResolve {
     /// through — BOTH front ends' maps over one id space, because the resolve
     /// they describe ran over both front ends' sections.
     sources: ChainSources,
-    /// The game's memory map (`emit_rom` and the object-bank budget read it).
+    /// The game's memory map in force in this shape (`map_for_shape`; `emit_rom` and the
+    /// `[[budget]]` rows read it).
     map: sigil_ir::map::MemoryMap,
     /// The declared placement map (`validate_placement` confirms the walk against it).
     pmap: crate::map_placement::PlacementMap,
@@ -3866,7 +3867,14 @@ fn resolve_chained(aeon: &Path, profile: &GameProfile) -> Result<ChainedResolve,
         .map_err(|e| format!("load {}: {e}", map_path.display()))?;
     let pmap = crate::map_placement::load_placement_map(&map_src)
         .map_err(|e| format!("placement {}: {e}", map_path.display()))?;
+    // A2: the regions in force in THIS shape. A `[[region]]` row gated `when = "sound_on"`
+    // (the sonic4 Z80 sound-bank window) holds nothing in a sound-off shape, so the map
+    // `emit_rom` and the budgets read is the shape's, not the file's.
+    let map = crate::map_placement::map_for_shape(&map, &pmap, profile.sound_on);
+    let base_pmap = pmap.clone();
     let (mut pmap, frozen) = overlaid_placement(pmap, profile)?;
+    // ...and each Z80 bank window sits where the overlay (if any) put its anchor.
+    let map = crate::map_placement::move_bank_regions(&map, &base_pmap, &pmap);
 
     // FIXTURE-ONLY (stress-art) — the SECOND half of the fixture_placement waiver PAIR
     // (the first is the packing-guard waiver in `packed_true_bases`). The uniquified pool
@@ -3992,14 +4000,14 @@ pub fn build_rom_chained_with_listing(
     // Parcel K5: the map DROVE the order above; this post-resolve pass CONFIRMS the drive —
     // every byte-emitting section is declared (completeness) and the resolved layout honours
     // the declared sequence + island anchors + hole (a bug in the drive, or a section the map
-    // omits, fails loud). Its regions drive emit_rom + the object-bank budget.
+    // omits, fails loud). Its regions drive emit_rom + every `[[budget]]` row.
     validate_placement(&resolved, &pmap, profile.sound_on, &registry)?;
     // R7: the declared per-section alignment against the base each section ACTUALLY
     // lands on — the independent instrument for the sections the walk places by a rule
     // other than the declaration (anchors, phase banks, label-less blobs).
     validate_resolved_alignment(&resolved)?;
     validate_sound_fold(aeon, &resolved, profile)?;
-    check_object_bank_budget(&resolved, &map, &pmap)?;
+    check_budgets(&resolved, &map, &pmap)?;
     let rom = sigil_link::emit_rom(&linked, &map).map_err(|e| format!("declared-chain: emit_rom: {e}"))?;
     Ok(RomBuild { rom, listing, warnings, registry })
 }
@@ -4452,33 +4460,39 @@ pub fn object_bank_cursor(resolved: &[Section], cursor_head: &str) -> Option<u32
     None
 }
 
-/// The `object_bank` budget's declared cursor head-label from a placement map, if any.
-fn object_bank_cursor_head(pmap: &crate::map_placement::PlacementMap) -> Option<&str> {
-    pmap.budgets
-        .iter()
-        .find(|b| b.region == "object_bank")
-        .and_then(|b| b.cursor.as_deref())
-}
-
-/// Enforce the object-code-bank budget the map's `object_bank` region declares: the used
-/// cursor (the resolved LMA of the placement map's declared budget cursor label) must not
-/// exceed `lma_base + size` (`$20000`). Returns the used byte count. A missing region,
-/// undeclared cursor, or absent cursor label is a no-op (`Ok(0)`) — additive, so this is
-/// the map-owned successor to `engine.inc`'s `if * > $20000 / error`, not a new gate that
-/// can spuriously fail a game that declares neither. Runs on every native build (both the
-/// pinned canonical driver and the off-canonical chainer feed it their resolved sections).
-pub fn check_object_bank_budget(
+/// Enforce EVERY `[[budget]]` row of the placement map: the row's cursor (the resolved
+/// LMA of its declared head label, [`object_bank_cursor`]) must not exceed the row's
+/// declared `ceiling`. Returns `(region, used bytes)` per row, in map order. This is the
+/// map-owned successor to `engine.inc`'s `if * > $20000 / error`, generalised from the
+/// one row spelled `object_bank` to every row the map declares.
+///
+/// A row that cannot be measured is refused (`[map.budget-unmeasurable]`), never read
+/// as within budget: a row naming no map region, a row with no `cursor`, or a cursor
+/// label the resolved layout does not define. A map with no `[[budget]]` row checks
+/// nothing (`Ok(vec![])`). Runs on every native build (both the pinned canonical
+/// driver and the off-canonical chainer feed it their resolved sections).
+pub fn check_budgets(
     resolved: &[Section],
     map: &sigil_ir::map::MemoryMap,
     pmap: &crate::map_placement::PlacementMap,
-) -> Result<u32, String> {
-    let Some(head) = object_bank_cursor_head(pmap) else {
-        return Ok(0);
-    };
-    match object_bank_cursor(resolved, head) {
-        Some(cursor) => map.check_budget("object_bank", cursor),
-        None => Ok(0),
+) -> Result<Vec<(String, u32)>, String> {
+    let mut used = Vec::with_capacity(pmap.budgets.len());
+    for b in &pmap.budgets {
+        let Some(head) = b.cursor.as_deref() else {
+            return Err(format!(
+                "[map.budget-unmeasurable] budget row `{}` declares no `cursor`, so its ceiling {:#X} cannot be measured",
+                b.region, b.ceiling
+            ));
+        };
+        let Some(cursor) = object_bank_cursor(resolved, head) else {
+            return Err(format!(
+                "[map.budget-unmeasurable] budget row `{}` cursor `{head}` is defined by no resolved section, so its ceiling {:#X} cannot be measured",
+                b.region, b.ceiling
+            ));
+        };
+        used.push((b.region.clone(), map.check_budget(&b.region, b.ceiling, cursor)?));
     }
+    Ok(used)
 }
 
 /// CRC-32 (IEEE, the campaign provenance standard alongside byte-size): the one
@@ -7392,5 +7406,99 @@ mod mixed_front_end_location_tests {
                 chain.locate(*sp)
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod budget_tests {
+    //! A2: every `[[budget]]` row is enforced against its own `ceiling`, not only the
+    //! row whose region is spelled `object_bank`.
+    use super::check_budgets;
+    use crate::map_placement::load_placement_map;
+    use sigil_ir::map::{MemoryMap, Region, RegionKind};
+    use sigil_ir::{Cpu, DataFragment, Fragment, Label, Section, SectionPlacement};
+
+    fn sec(label: &str, lma: u32) -> Section {
+        Section {
+            name: format!("sec{lma}"),
+            cpu: Cpu::M68000,
+            vma_base: None,
+            lma,
+            labels: vec![Label { name: label.into(), offset: 0 }],
+            fragments: vec![Fragment::Data(DataFragment {
+                bytes: vec![0u8; 2],
+                fixups: vec![],
+                span: sigil_span::Span { source: sigil_span::SourceId(0), start: 0, end: 0 },
+            })],
+            placement: SectionPlacement::Pinned,
+            reserved_span: 2,
+            group: None,
+            bank: None,
+            space: sigil_ir::AddressSpace::Image,
+            equ_syms: Vec::new(),
+        }
+    }
+
+    fn region(name: &str, base: u32, size: u32, kind: RegionKind) -> Region {
+        Region { name: name.into(), lma_base: base, size, kind, vma_base: None }
+    }
+
+    fn two_budget_map() -> MemoryMap {
+        MemoryMap::new(
+            vec![
+                region("rom", 0, 0x400000, RegionKind::Rom),
+                region("object_bank", 0x10000, 0x10000, RegionKind::ObjectBank),
+                region("art_bank", 0x40000, 0x8000, RegionKind::ObjectBank),
+            ],
+            0x00,
+        )
+    }
+
+    const TWO_ROWS: &str = "[[budget]]\nregion = \"object_bank\"\nceiling = 0x20000\ncursor = \"ObjEnd\"\n\
+                            [[budget]]\nregion = \"art_bank\"\nceiling = 0x48000\ncursor = \"ArtEnd\"\n";
+
+    #[test]
+    fn every_budget_row_is_enforced() {
+        let pmap = load_placement_map(TWO_ROWS).unwrap();
+        // Both rows in budget: each reports its used bytes.
+        let ok = check_budgets(&[sec("ObjEnd", 0x1128C), sec("ArtEnd", 0x48000)], &two_budget_map(), &pmap)
+            .expect("both rows fit");
+        assert_eq!(ok, vec![("object_bank".to_string(), 0x128C), ("art_bank".to_string(), 0x8000)]);
+        // The second row overflows by one byte: refused, naming the second row's region.
+        let err = check_budgets(&[sec("ObjEnd", 0x1128C), sec("ArtEnd", 0x48001)], &two_budget_map(), &pmap)
+            .expect_err("the second row overflows by 1");
+        assert_eq!(err, "budget region `art_bank` [0x40000,0x48000) overflows, cursor 0x48001 over by 1 bytes");
+    }
+
+    /// The cap is the row's declared `ceiling`, not the region's end.
+    #[test]
+    fn the_cap_is_the_rows_ceiling() {
+        let pmap = load_placement_map(
+            "[[budget]]\nregion = \"object_bank\"\nceiling = 0x18000\ncursor = \"ObjEnd\"\n",
+        )
+        .unwrap();
+        let err = check_budgets(&[sec("ObjEnd", 0x18002)], &two_budget_map(), &pmap).unwrap_err();
+        assert_eq!(err, "budget region `object_bank` [0x10000,0x18000) overflows, cursor 0x18002 over by 2 bytes");
+    }
+
+    /// A budget that cannot be measured is refused, never read as within budget: a row
+    /// naming no map region, a row with no cursor, a cursor label the layout lacks.
+    #[test]
+    fn an_unmeasurable_budget_row_is_refused() {
+        let layout = [sec("ObjEnd", 0x11000)];
+        let m = two_budget_map();
+        let no_region =
+            load_placement_map("[[budget]]\nregion = \"nope\"\nceiling = 0x20000\ncursor = \"ObjEnd\"\n").unwrap();
+        let e = check_budgets(&layout, &m, &no_region).unwrap_err();
+        assert!(e.starts_with("[map.budget-unmeasurable] budget row `nope`"), "{e}");
+        let no_cursor = load_placement_map("[[budget]]\nregion = \"object_bank\"\nceiling = 0x20000\n").unwrap();
+        let e = check_budgets(&layout, &m, &no_cursor).unwrap_err();
+        assert!(e.starts_with("[map.budget-unmeasurable] budget row `object_bank`"), "{e}");
+        let absent = load_placement_map(
+            "[[budget]]\nregion = \"object_bank\"\nceiling = 0x20000\ncursor = \"Missing\"\n",
+        )
+        .unwrap();
+        let e = check_budgets(&layout, &m, &absent).unwrap_err();
+        assert!(e.contains("`Missing`"), "{e}");
     }
 }

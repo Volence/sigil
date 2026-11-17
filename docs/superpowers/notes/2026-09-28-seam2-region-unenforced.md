@@ -1,5 +1,9 @@
 # SEAM2-TABLE-REGION-UNENFORCED: measurement (2026-09-28)
 
+> CLOSED 2026-11-16 by step-0 Task 5 (A2): the gaps below are refused now. The test is renamed
+> `crates/sigil-harness/tests/seam2_region_enforced.rs` and its `gap_*` tests are inverted; see the Task 5
+> section of `docs/superpowers/notes/2026-11-16-step0-soundness.md`.
+
 Branch `parcel/seam2-region-unenforced`, cut from master `cde38353`. Measurement only, no fix.
 Measurement test: `crates/sigil-harness/tests/seam2_region_unenforced.rs` (commit `a848dbac`).
 Aeon trees read: `/home/volence/sonic_hacks/.aeon-seam2-region-4523ca5f` (my own detached worktree at aeon

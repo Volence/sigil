@@ -15,7 +15,7 @@
 //! order once the synthetic-named AS residual is gone (K5, post-K4).
 
 use serde::Deserialize;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
 
 /// The shape gate a `when` key names. The vocabulary is closed: a value outside it is
@@ -102,6 +102,9 @@ pub struct PlacementMap {
     pub budgets: Vec<Budget>,
     /// Byte-emitting section head-labels / module-ids, canonical union order.
     pub order: Vec<String>,
+    /// The `when` gate of each `[[region]]` row that declares one, by region name. A
+    /// region absent here is in force in every shape.
+    pub region_when: BTreeMap<String, When>,
 }
 
 impl PlacementMap {
@@ -147,6 +150,17 @@ struct MapDoc {
     budget: Vec<BudgetDoc>,
     #[serde(default)]
     order: Vec<String>,
+    #[serde(default)]
+    region: Vec<RegionDoc>,
+}
+/// The one placement fact a `[[region]]` row carries: its `when` gate. The geometry
+/// keys are `sigil_link::load_map`'s, so the rest of the row is ignored here.
+#[derive(Deserialize)]
+struct RegionDoc {
+    #[serde(default)]
+    name: String,
+    #[serde(default)]
+    when: Option<String>,
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -205,6 +219,12 @@ pub fn load_placement_map(toml_src: &str) -> Result<PlacementMap, String> {
             Ok(Hole { after: h.after, at: h.at, filled_by: h.filled_by, when })
         })
         .collect::<Result<Vec<_>, String>>()?;
+    let mut region_when = BTreeMap::new();
+    for r in doc.region {
+        if let Some(w) = when(r.when, format!("region `{}`", r.name))? {
+            region_when.insert(r.name, w);
+        }
+    }
     Ok(PlacementMap {
         anchors,
         holes,
@@ -214,7 +234,57 @@ pub fn load_placement_map(toml_src: &str) -> Result<PlacementMap, String> {
             .map(|b| Budget { region: b.region, ceiling: b.ceiling, cursor: b.cursor })
             .collect(),
         order: doc.order,
+        region_when,
     })
+}
+
+/// The memory map in force in one shape: `map` without the regions whose `[[region]]`
+/// row's `when` does not apply to a shape with sound `sound_on`. A region with no
+/// `when` is in force in every shape. The sonic4 Z80 sound-bank window is
+/// `when = "sound_on"`: in the sound-off shapes nothing places there, and ordinary code
+/// that flows through `$B8000-$BFFFF` must not be held to the window.
+pub fn map_for_shape(
+    map: &sigil_ir::map::MemoryMap,
+    pmap: &PlacementMap,
+    sound_on: bool,
+) -> sigil_ir::map::MemoryMap {
+    let regions = map
+        .regions
+        .iter()
+        .filter(|r| when_applies(pmap.region_when.get(&r.name).copied(), sound_on))
+        .cloned()
+        .collect();
+    sigil_ir::map::MemoryMap::new(regions, map.fill)
+}
+
+/// The memory map with each Z80 bank window moved to where an anchor overlay put its
+/// anchor. A `z80_bank` region is declared AT an anchor (aeon's `z80_sound_bank` sits at
+/// the `sound_bank` anchor: the map writes the relationship as the two addresses being
+/// equal), so the window a section is held to is the bank the build actually placed. A
+/// region whose base is the `at` of an anchor of `base` takes that anchor's `at` in
+/// `overlaid` (the overlay keeps the anchor list's length and order, so the two lists
+/// pair by index). A region at no anchor, or an anchor the overlay did not move, stays.
+/// Without this an overlay that moves `sound_bank` (the S2CLIP clips) would hold the map's
+/// `$B8000` window: no check on the bank the overlay placed, and a false refusal of the
+/// DAC banks the overlay moved INTO `$B8000`.
+pub fn move_bank_regions(
+    map: &sigil_ir::map::MemoryMap,
+    base: &PlacementMap,
+    overlaid: &PlacementMap,
+) -> sigil_ir::map::MemoryMap {
+    let mut out = map.clone();
+    for r in out.regions.iter_mut().filter(|r| r.kind == sigil_ir::map::RegionKind::Z80Bank) {
+        let moved = base
+            .anchors
+            .iter()
+            .zip(&overlaid.anchors)
+            .find(|(b, _)| b.at == r.lma_base)
+            .map(|(_, o)| o.at);
+        if let Some(at) = moved {
+            r.lma_base = at;
+        }
+    }
+    out
 }
 
 /// The cartridge bank grid an overlay anchor must sit on: one `$8000` SetBank window.
@@ -789,5 +859,39 @@ ceiling = 0x20000
             .collect();
         assert_eq!(idents, ["section", "foo"]);
         assert!(toks.iter().any(|t| matches!(t.tok, Tok::Colon)));
+    }
+
+    /// A2: the Z80 bank window declared at the `sound_bank` anchor moves with the anchor
+    /// under an overlay; a window at no anchor, and the other regions, stay. Trap 1's
+    /// overlay puts the DAC banks on the base sound-bank address: the window must not
+    /// stay there to hold them.
+    #[test]
+    fn a_bank_window_moves_with_its_anchor_under_an_overlay() {
+        use sigil_ir::map::{MemoryMap, Region, RegionKind};
+        let region = |name: &str, base: u32, kind: RegionKind| Region {
+            name: name.into(),
+            lma_base: base,
+            size: if kind == RegionKind::Rom { 0x400000 } else { 0x8000 },
+            kind,
+            vma_base: None,
+        };
+        let map = MemoryMap::new(
+            vec![
+                region("rom", 0, RegionKind::Rom),
+                region("z80_sound_bank", BASE_SND, RegionKind::Z80Bank),
+                region("z80_loose", 0x200000, RegionKind::Z80Bank),
+            ],
+            0x00,
+        );
+        let base = base_map();
+        let ov = parse_anchor_overlay(&overlay_src(BASE_SND, BASE_SND + PAIR), "fx/anchors.toml").unwrap();
+        let overlaid = base.with_overlay(&ov).unwrap();
+        let moved = move_bank_regions(&map, &base, &overlaid);
+        let at = |m: &MemoryMap, n: &str| m.region_by_name(n).unwrap().lma_base;
+        assert_eq!(at(&moved, "z80_sound_bank"), BASE_SND + PAIR, "the window follows `sound_bank`");
+        assert_eq!(at(&moved, "z80_loose"), 0x200000, "a window at no anchor stays");
+        assert_eq!(at(&moved, "rom"), 0, "a rom region is never moved");
+        // No overlay: the map as written.
+        assert_eq!(move_bank_regions(&map, &base, &base), map);
     }
 }

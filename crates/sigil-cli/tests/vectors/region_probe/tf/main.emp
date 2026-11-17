@@ -1,0 +1,13 @@
+module tf.main
+use tf.snd.core.{Drv_Entry}
+use tf.snd.pcm.{Pcm_Tick}
+use tf.snd.bank0.{Wave0}
+
+section text (cpu: m68000) {
+    pub proc Boot () clobbers(d0, a0, a1) {
+        lea     Drv_Entry, a0
+        lea     Wave0, a1
+        moveq   #0, d0
+        rts
+    }
+}

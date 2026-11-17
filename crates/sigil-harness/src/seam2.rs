@@ -524,12 +524,14 @@ fn emit_dac_banks_at(aeon: &Path, blip_lma: u32, shared_lma: u32) -> Result<DacB
     }
 
     // The map-derived two-bank layout ($48000/$50000). `text` is the zero-byte
-    // equ carrier's benign home (the SND_* are equs, not data cells).
+    // equ carrier's benign home (the SND_* are equs, not data cells). Each bank's
+    // region is the rest of its `$8000` window (`bank_room`).
+    let (blip_room, shared_room) = (bank_room(blip_lma), bank_room(shared_lma));
     let map_toml = format!(
         "fill = 0x00\n\n\
          [[region]]\nname = \"text\"\nlma_base = 0x0000\nsize = 0x10\nkind = \"rom\"\n\n\
-         [[region]]\nname = \"dac_blip_bank\"\nlma_base = 0x{blip_lma:X}\nsize = 0x8000\nkind = \"rom\"\n\n\
-         [[region]]\nname = \"dac_shared_bank\"\nlma_base = 0x{shared_lma:X}\nsize = 0x8000\nkind = \"rom\"\n"
+         [[region]]\nname = \"dac_blip_bank\"\nlma_base = 0x{blip_lma:X}\nsize = 0x{blip_room:X}\nkind = \"rom\"\n\n\
+         [[region]]\nname = \"dac_shared_bank\"\nlma_base = 0x{shared_lma:X}\nsize = 0x{shared_room:X}\nkind = \"rom\"\n"
     );
     let map = sigil_link::load_map(&map_toml).map_err(|d| format!("map load: {d:?}"))?;
     let mut sections = module.sections;
@@ -542,6 +544,7 @@ fn emit_dac_banks_at(aeon: &Path, blip_lma: u32, shared_lma: u32) -> Result<DacB
         .map_err(|d| format!("resolve_layout (bank straddle / ensure?): {d:?}"))?;
     let linked = sigil_link::link(&resolved, &SymbolTable::new())
         .map_err(|d| format!("link: {d:?}"))?;
+    check_placed_regions(&linked, &map)?;
 
     let blip = linked
         .section("dac_blip_bank")
@@ -731,12 +734,15 @@ fn emit_dac_body_and_head_at(
     // The co-link map: the equ carriers ("text", zero-byte, stacked), the two DAC
     // banks, and the phased head at its `$585AD` song-bank LMA (its `vma: $8000`
     // window is owned by the section attr — a map vma_base would be overridden).
+    // Every region is the rest of its `$8000` window (`bank_room`).
+    let (blip_room, shared_room, sample_tab_room) =
+        (bank_room(blip_lma), bank_room(shared_lma), bank_room(sample_tab_lma));
     let map_toml = format!(
         "fill = 0x00\n\n\
          [[region]]\nname = \"text\"\nlma_base = 0x0000\nsize = 0x40\nkind = \"rom\"\n\n\
-         [[region]]\nname = \"dac_blip_bank\"\nlma_base = 0x{blip_lma:X}\nsize = 0x8000\nkind = \"rom\"\n\n\
-         [[region]]\nname = \"dac_shared_bank\"\nlma_base = 0x{shared_lma:X}\nsize = 0x8000\nkind = \"rom\"\n\n\
-         [[region]]\nname = \"dac_sample_tab\"\nlma_base = 0x{sample_tab_lma:X}\nsize = 0x100\nkind = \"rom\"\n"
+         [[region]]\nname = \"dac_blip_bank\"\nlma_base = 0x{blip_lma:X}\nsize = 0x{blip_room:X}\nkind = \"rom\"\n\n\
+         [[region]]\nname = \"dac_shared_bank\"\nlma_base = 0x{shared_lma:X}\nsize = 0x{shared_room:X}\nkind = \"rom\"\n\n\
+         [[region]]\nname = \"dac_sample_tab\"\nlma_base = 0x{sample_tab_lma:X}\nsize = 0x{sample_tab_room:X}\nkind = \"rom\"\n"
     );
     let map = sigil_link::load_map(&map_toml).map_err(|d| format!("map load: {d:?}"))?;
     let pd = place_sections(&mut sections, &map);
@@ -755,6 +761,7 @@ fn emit_dac_body_and_head_at(
     link_assert_failure("dac_sample_tab size-guard fired", &assert_diags, &|s| texts.locate(s))?;
     let linked = sigil_link::link(&resolved, &SymbolTable::new())
         .map_err(|d| format!("link: {d:?}"))?;
+    check_placed_regions(&linked, &map)?;
 
     let blip = linked.section("dac_blip_bank").ok_or("missing dac_blip_bank")?.bytes.clone();
     let shared = linked.section("dac_shared_bank").ok_or("missing dac_shared_bank")?.bytes.clone();
@@ -957,12 +964,14 @@ fn emit_sfx_body_and_head_at(
 
     // The co-link map: the equ carriers ("text", zero-byte), the SFX body at its
     // per-shape base, and the phased head at its `$5845F` bank LMA (its `vma:
-    // $8000` window is owned by the section attr).
+    // $8000` window is owned by the section attr). The head's region is the rest of
+    // its `$8000` window (`bank_room`).
+    let head_room = bank_room(head_lma);
     let map_toml = format!(
         "fill = 0x00\n\n\
          [[region]]\nname = \"text\"\nlma_base = 0x0000\nsize = 0x40\nkind = \"rom\"\n\n\
          [[region]]\nname = \"sfx_bank\"\nlma_base = 0x{sfx_base:X}\nsize = 0x{sfx_size:X}\nkind = \"rom\"\n\n\
-         [[region]]\nname = \"sfx_blob_win_tab\"\nlma_base = 0x{head_lma:X}\nsize = 0x200\nkind = \"rom\"\n"
+         [[region]]\nname = \"sfx_blob_win_tab\"\nlma_base = 0x{head_lma:X}\nsize = 0x{head_room:X}\nkind = \"rom\"\n"
     );
     let map = sigil_link::load_map(&map_toml).map_err(|d| format!("map load: {d:?}"))?;
     let pd = place_sections(&mut sections, &map);
@@ -1003,6 +1012,7 @@ fn emit_sfx_body_and_head_at(
     let assert_diags = sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), &link_asserts);
     link_assert_failure("sfx co-residency/drift/span guards fired", &assert_diags, &|s| texts.locate(s))?;
     let linked = sigil_link::link(&resolved, &SymbolTable::new()).map_err(|d| format!("link: {d:?}"))?;
+    check_placed_regions(&linked, &map)?;
 
     let body_bytes = linked.section("sfx_bank").ok_or("missing sfx_bank in linked image")?.bytes.clone();
     let head_bytes = linked.section("sfx_blob_win_tab").ok_or("missing sfx_blob_win_tab in linked image")?.bytes.clone();
@@ -1042,10 +1052,13 @@ pub fn emit_seq_opcode_tab_doctored(
     let link_asserts = module.link_asserts.clone();
 
     // The table places at VMA $8000; its cell VALUES (resident Seq_Op_* addresses)
-    // do not depend on its own placement, so a nominal region suffices.
-    let map_toml =
-        "fill = 0x00\n\n[[region]]\nname = \"seq_opcode_tab\"\nlma_base = 0x8000\nsize = 0x100\nkind = \"rom\"\n";
-    let map = sigil_link::load_map(map_toml).map_err(|d| format!("map load: {d:?}"))?;
+    // do not depend on its own placement, so a nominal region at `$8000` suffices,
+    // sized to the rest of its `$8000` window (`bank_room`).
+    let map_toml = format!(
+        "fill = 0x00\n\n[[region]]\nname = \"seq_opcode_tab\"\nlma_base = 0x8000\nsize = 0x{:X}\nkind = \"rom\"\n",
+        bank_room(0x8000)
+    );
+    let map = sigil_link::load_map(&map_toml).map_err(|d| format!("map load: {d:?}"))?;
     let mut sections = module.sections;
     let pd = place_sections(&mut sections, &map);
     if pd.iter().any(|d| d.level == sigil_span::Level::Error) {
@@ -1086,6 +1099,7 @@ pub fn emit_seq_opcode_tab_doctored(
     let assert_diags = sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), &link_asserts);
     link_assert_failure("seq_opcode_tab guards fired", &assert_diags, &|s| texts.locate(s))?;
     let linked = sigil_link::link(&resolved, &SymbolTable::new()).map_err(|d| format!("link: {d:?}"))?;
+    check_placed_regions(&linked, &map)?;
     Ok(linked.section("seq_opcode_tab").ok_or("missing seq_opcode_tab in linked image")?.bytes.clone())
 }
 
@@ -1199,9 +1213,12 @@ fn sound_tables_z80_linked_from_src(
     // Place at the map-derived head LMA (the `sound_bank` anchor) with the section's
     // own `vma: $8000` window — the intra-module pointer cells fold from that window
     // base, so the head bytes are placement-invariant (the LMA only fixes where the
-    // BINCLUDE lands in the whole-ROM link).
+    // BINCLUDE lands in the whole-ROM link). The region is the rest of the head's
+    // `$8000` window (`bank_room`): the pre-A2 literal `0x400` was smaller than the
+    // 1,116 B table and never read.
+    let head_room = bank_room(head_lma);
     let map_toml = format!(
-        "fill = 0x00\n\n[[region]]\nname = \"sound_tables_z80\"\nlma_base = 0x{head_lma:X}\nsize = 0x400\nkind = \"rom\"\n"
+        "fill = 0x00\n\n[[region]]\nname = \"sound_tables_z80\"\nlma_base = 0x{head_lma:X}\nsize = 0x{head_room:X}\nkind = \"rom\"\n"
     );
     let map = sigil_link::load_map(&map_toml).map_err(|d| format!("map load: {d:?}"))?;
     let mut sections = module.sections;
@@ -1237,6 +1254,7 @@ fn sound_tables_z80_linked_from_src(
         .ok_or("sound_tables_z80 declares no `vma:` window base; its labels have no $8000-window address")?;
     let labels = sec.labels.iter().map(|l| (l.name.clone(), window_base + l.offset)).collect();
     let linked = sigil_link::link(&resolved, &SymbolTable::new()).map_err(|d| format!("link: {d:?}"))?;
+    check_placed_regions(&linked, &map)?;
     let bytes =
         linked.section("sound_tables_z80").ok_or("missing sound_tables_z80 in linked image")?.bytes.clone();
     Ok(SoundTablesZ80 { bytes, window_base, labels })
@@ -1373,9 +1391,11 @@ fn pitchtable_at(aeon: &Path, head_lma: u32, doctor: bool) -> Result<Vec<u8>, St
 
     // Pure `dc.b` with no intra-module refs → placement-invariant bytes; place at the
     // map-derived head-bank base (the `sound_bank` anchor). The real head LMA is
-    // [`sound_layout`]'s `pitchtable_lma`, consumed by the golden gate.
+    // [`sound_layout`]'s `pitchtable_lma`, consumed by the golden gate. The region is
+    // the rest of the head's `$8000` window (`bank_room`).
+    let head_room = bank_room(head_lma);
     let map_toml = format!(
-        "fill = 0x00\n\n[[region]]\nname = \"movingtrucks_pitchtable\"\nlma_base = 0x{head_lma:X}\nsize = 0x200\nkind = \"rom\"\n"
+        "fill = 0x00\n\n[[region]]\nname = \"movingtrucks_pitchtable\"\nlma_base = 0x{head_lma:X}\nsize = 0x{head_room:X}\nkind = \"rom\"\n"
     );
     let map = sigil_link::load_map(&map_toml).map_err(|d| format!("map load: {d:?}"))?;
     let mut sections = module.sections;
@@ -1388,6 +1408,7 @@ fn pitchtable_at(aeon: &Path, head_lma: u32, doctor: bool) -> Result<Vec<u8>, St
     let assert_diags = sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), &link_asserts);
     link_assert_failure("movingtrucks_pitchtable guards fired", &assert_diags, &|s| texts.locate(s))?;
     let linked = sigil_link::link(&resolved, &SymbolTable::new()).map_err(|d| format!("link: {d:?}"))?;
+    check_placed_regions(&linked, &map)?;
     Ok(linked
         .section("movingtrucks_pitchtable")
         .ok_or("missing movingtrucks_pitchtable in linked image")?
@@ -1592,6 +1613,7 @@ fn emit_mt_bank_at(
     let assert_diags = sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), &link_asserts);
     link_assert_failure("mt_bank co-residency/drift guards fired", &assert_diags, &|s| texts.locate(s))?;
     let linked = sigil_link::link(&resolved, &SymbolTable::new()).map_err(|d| format!("link: {d:?}"))?;
+    check_placed_regions(&linked, &map)?;
 
     let bytes = linked.section("mt_bank").ok_or("missing mt_bank in linked image")?.bytes.clone();
     // Read SongTable/SongPatchTable offsets from the PLACED section's labels.
@@ -1790,6 +1812,34 @@ pub fn mt_bank_carrier_asm(aeon: &Path, debug: bool, bank_start: u32) -> Result<
 
 /// The room the `mt_bank` region has: from its LMA to the top of the `$8000` bank
 /// window that starts at `bank_start`.
+/// The bytes from `lma` to the top of its `$8000` Z80 `SetBank` window: the room every
+/// seam-2 artifact placed at `lma` must fit in (the [`mt_bank_room`] precedent, without
+/// a named window base). Each seam-2 synthetic map sizes its regions with this instead
+/// of a hand-typed literal: a literal smaller than the artifact was never read (the
+/// pre-A2 `0x400` for a 1,116 B `sound_tables_z80`), and one larger would let an
+/// artifact cross into the next window.
+pub fn bank_room(lma: u32) -> u32 {
+    BANK_WINDOW_SIZE - (lma & (BANK_WINDOW_SIZE - 1))
+}
+
+/// The region check every seam-2 per-artifact tail ends in (`place_sections` +
+/// `resolve_layout` + `link` never emit a ROM, so `emit_rom`'s check never ran on
+/// them): each linked section the synthetic map PLACED (its group names one of the
+/// map's regions) must fit that region ([`sigil_link::check_regions`]). The
+/// cross-seam carriers the tails pin outside the map (`group = None`, at
+/// `$1000000`+) are not the map's and are not checked against it.
+pub fn check_placed_regions(linked: &sigil_link::LinkedImage, map: &sigil_ir::map::MemoryMap) -> Result<(), String> {
+    let placed = sigil_link::LinkedImage {
+        sections: linked
+            .sections
+            .iter()
+            .filter(|s| s.region.as_deref().is_some_and(|g| map.region_by_name(g).is_some()))
+            .cloned()
+            .collect(),
+    };
+    sigil_link::check_regions(&placed, map)
+}
+
 fn mt_bank_room(bank_start: u32, mt_bank_lma: u32) -> Result<u32, String> {
     let top = bank_start + BANK_WINDOW_SIZE;
     if mt_bank_lma < bank_start || mt_bank_lma >= top {

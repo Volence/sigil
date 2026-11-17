@@ -49,6 +49,11 @@ pub struct LinkedSection {
     pub name: String,
     pub lma: u32,
     pub bytes: Vec<u8>,
+    /// The placement group the section was linked under (`Section::group`): the map
+    /// region `place_sections` named it into, or a group that names no region (the
+    /// native declared chain's `declchain{n}`), or `None`. [`check_regions`] holds a
+    /// section whose group names a map region to THAT region.
+    pub region: Option<String>,
 }
 
 /// The result of a successful link: per-section resolved bytes.
@@ -245,7 +250,7 @@ pub fn link(sections: &[Section], stubs: &SymbolTable) -> Result<LinkedImage, Ve
             }
         }
 
-        linked.push(LinkedSection { name: sec.name.clone(), lma: sec.lma, bytes });
+        linked.push(LinkedSection { name: sec.name.clone(), lma: sec.lma, bytes, region: sec.group.clone() });
     }
 
     if diags.is_empty() {
@@ -952,7 +957,7 @@ fn window_refusal(window: &MemoryMap, s: &LinkedSection) -> Option<String> {
             s.bytes.len()
         ));
     };
-    window.validate_section(&s.name, s.lma, len).err()
+    window.validate_section(&s.name, None, s.lma, len).err()
 }
 
 /// The length of the flat image `image` materializes to: the end of its
@@ -1034,24 +1039,42 @@ pub fn flatten_checked(image: &LinkedImage, fill: u8) -> Result<Vec<u8>, String>
     flatten(image, fill)
 }
 
+/// Hold every byte-emitting section of `image` to the regions of `map`
+/// ([`MemoryMap::validate_section`]): the map region its placement group names
+/// (`LinkedSection::region`), every Z80 bank window its first byte lies in, and the
+/// ROM region that holds it. The first refusal is returned, in the map's
+/// `section … overflows region …, over by N bytes` form.
+///
+/// EMPTY sections place no bytes and so are excluded (see `flatten`): a
+/// reserve-only RAM section (a region-form `vars` block phased to `$FFFF0000`+)
+/// carries labels + a high VMA/LMA but zero image bytes, and must NEVER be
+/// range-checked against a ROM region — it occupies none. A non-empty section
+/// outside every ROM region is still the hard error.
+///
+/// [`emit_rom`] runs this before it flattens; a link that never emits a ROM (the
+/// seam-2 per-artifact tails) calls it directly, so a region overflow is refused
+/// on every path that places a section into a declared region.
+pub fn check_regions(image: &LinkedImage, map: &MemoryMap) -> Result<(), String> {
+    for s in emitting_sections(image) {
+        let Ok(len) = u32::try_from(s.bytes.len()) else {
+            return Err(format!(
+                "section `{}` emits {} bytes, more than the 32-bit address space holds",
+                s.name,
+                s.bytes.len()
+            ));
+        };
+        map.validate_section(&s.name, s.region.as_deref(), s.lma, len)?;
+    }
+    Ok(())
+}
+
 /// The single-image ROM output (`p2bin` + `fixheader` replacement):
 /// validate each section against the map, place bytes at LMA, gap-fill with the
 /// map default, append NOTHING (the `convsym` no-op), then apply the header
 /// checksum as the final pass. The ROM ends at the last section byte — no
 /// power-of-two padding.
 pub fn emit_rom(image: &LinkedImage, map: &MemoryMap) -> Result<Vec<u8>, String> {
-    for s in &image.sections {
-        // EMPTY sections place no bytes and so are excluded from the flattened
-        // image (see `flatten`): a reserve-only RAM section (a region-form `vars`
-        // block phased to `$FFFF0000`+) carries labels + a high VMA/LMA but zero
-        // image bytes, and must NEVER be range-checked against a ROM region — it
-        // occupies none. Skip it here for the same reason `flatten` does; a
-        // non-empty section outside every ROM region is still the hard error.
-        if s.bytes.is_empty() {
-            continue;
-        }
-        map.validate_section(&s.name, s.lma, s.bytes.len() as u32)?;
-    }
+    check_regions(image, map)?;
     let mut rom = flatten_checked(image, map.fill)?;
     // convsym no-op: append nothing.
     apply_header_checksum(&mut rom); // Task 6
@@ -2339,8 +2362,8 @@ mod tests {
     fn flatten_refuses_a_byte_outside_the_cartridge_window_by_name() {
         let img = LinkedImage {
             sections: vec![
-                LinkedSection { name: "code".to_string(), lma: 0, bytes: vec![0x4E, 0x71] },
-                LinkedSection { name: "stray".to_string(), lma: 0xFFFF_FFFF, bytes: vec![0x01] },
+                LinkedSection { name: "code".to_string(), lma: 0, bytes: vec![0x4E, 0x71], region: None },
+                LinkedSection { name: "stray".to_string(), lma: 0xFFFF_FFFF, bytes: vec![0x01], region: None },
             ],
         };
         let err = refused(flatten(&img, 0x00));
@@ -2355,13 +2378,13 @@ mod tests {
     fn flatten_refuses_a_work_ram_byte_and_ignores_a_reserve_only_ram_section() {
         let reserve_only = LinkedImage {
             sections: vec![
-                LinkedSection { name: "code".to_string(), lma: 0, bytes: vec![0x4E, 0x71] },
-                LinkedSection { name: "vars".to_string(), lma: 0xFFFF_0000, bytes: vec![] },
+                LinkedSection { name: "code".to_string(), lma: 0, bytes: vec![0x4E, 0x71], region: None },
+                LinkedSection { name: "vars".to_string(), lma: 0xFFFF_0000, bytes: vec![], region: None },
             ],
         };
         assert_eq!(flatten(&reserve_only, 0x00).unwrap(), vec![0x4E, 0x71]);
         let ram_byte = LinkedImage {
-            sections: vec![LinkedSection { name: "vars".to_string(), lma: 0xFF_0000, bytes: vec![0x01] }],
+            sections: vec![LinkedSection { name: "vars".to_string(), lma: 0xFF_0000, bytes: vec![0x01], region: None }],
         };
         assert_eq!(
             refused(flatten(&ram_byte, 0x00)),
@@ -2375,7 +2398,7 @@ mod tests {
     fn flatten_accepts_the_last_cartridge_byte_and_refuses_the_straddle() {
         let last = sigil_ir::map::CARTRIDGE_LMA_BASE + sigil_ir::map::CARTRIDGE_SIZE - 1;
         let fits = LinkedImage {
-            sections: vec![LinkedSection { name: "tail".to_string(), lma: last, bytes: vec![0x01] }],
+            sections: vec![LinkedSection { name: "tail".to_string(), lma: last, bytes: vec![0x01], region: None }],
         };
         assert_eq!(image_extent(&fits).unwrap(), sigil_ir::map::CARTRIDGE_SIZE as usize);
         let image = flatten(&fits, 0xFF).unwrap();
@@ -2383,7 +2406,7 @@ mod tests {
         assert_eq!(image[last as usize], 0x01);
         assert_eq!(image[0], 0xFF);
         let straddle = LinkedImage {
-            sections: vec![LinkedSection { name: "tail".to_string(), lma: last, bytes: vec![0x01, 0x02] }],
+            sections: vec![LinkedSection { name: "tail".to_string(), lma: last, bytes: vec![0x01, 0x02], region: None }],
         };
         assert_eq!(
             refused(flatten(&straddle, 0x00)),
@@ -2417,9 +2440,9 @@ mod tests {
         ];
         let img = LinkedImage {
             sections: vec![
-                LinkedSection { name: "code".to_string(), lma: 0, bytes: vec![0x4E, 0x71] },
-                LinkedSection { name: "stray".to_string(), lma: 0x40_0000, bytes: vec![0x01] },
-                LinkedSection { name: "orphan".to_string(), lma: 0xFF_0000, bytes: vec![0x02] },
+                LinkedSection { name: "code".to_string(), lma: 0, bytes: vec![0x4E, 0x71], region: None },
+                LinkedSection { name: "stray".to_string(), lma: 0x40_0000, bytes: vec![0x01], region: None },
+                LinkedSection { name: "orphan".to_string(), lma: 0xFF_0000, bytes: vec![0x02], region: None },
             ],
         };
         let diags = check_image_bounds(&img, &sections);
@@ -2429,7 +2452,7 @@ mod tests {
         assert_eq!(diags[0].primary, at(20), "the Reserve fragment emits no byte and is skipped");
         assert!(diags[1].message.starts_with("section `orphan` LMA 0xFF0000 lies in non-ROM region `work_ram`"), "{}", diags[1].message);
         assert_eq!(diags[1].primary.source, sigil_span::SourceId(u32::MAX));
-        let fits = LinkedImage { sections: vec![LinkedSection { name: "code".to_string(), lma: 0, bytes: vec![0x4E, 0x71] }] };
+        let fits = LinkedImage { sections: vec![LinkedSection { name: "code".to_string(), lma: 0, bytes: vec![0x4E, 0x71], region: None }] };
         assert!(check_image_bounds(&fits, &sections).is_empty());
     }
 
@@ -2438,8 +2461,8 @@ mod tests {
         // Two sections: lma 0 len 4 ([0,4)) and lma 2 len 4 ([2,6)) overlap.
         let img = LinkedImage {
             sections: vec![
-                LinkedSection { name: "a".to_string(), lma: 0, bytes: vec![0x11, 0x22, 0x33, 0x44] },
-                LinkedSection { name: "b".to_string(), lma: 2, bytes: vec![0x55, 0x66, 0x77, 0x88] },
+                LinkedSection { name: "a".to_string(), lma: 0, bytes: vec![0x11, 0x22, 0x33, 0x44], region: None },
+                LinkedSection { name: "b".to_string(), lma: 2, bytes: vec![0x55, 0x66, 0x77, 0x88], region: None },
             ],
         };
         let err = flatten_checked(&img, 0x00).unwrap_err();
@@ -2451,8 +2474,8 @@ mod tests {
         // lma 0 len 2 ([0,2)) and lma 2 len 2 ([2,4)) are adjacent, not overlapping.
         let img = LinkedImage {
             sections: vec![
-                LinkedSection { name: "a".to_string(), lma: 0, bytes: vec![0xAA, 0xBB] },
-                LinkedSection { name: "b".to_string(), lma: 2, bytes: vec![0xCC, 0xDD] },
+                LinkedSection { name: "a".to_string(), lma: 0, bytes: vec![0xAA, 0xBB], region: None },
+                LinkedSection { name: "b".to_string(), lma: 2, bytes: vec![0xCC, 0xDD], region: None },
             ],
         };
         assert_eq!(flatten_checked(&img, 0x00).unwrap(), vec![0xAA, 0xBB, 0xCC, 0xDD]);
@@ -2467,8 +2490,8 @@ mod tests {
         );
         let img = LinkedImage {
             sections: vec![
-                LinkedSection { name: "a".into(), lma: 2, bytes: vec![0xAA, 0xBB] },
-                LinkedSection { name: "b".into(), lma: 6, bytes: vec![0xCC] },
+                LinkedSection { name: "a".into(), lma: 2, bytes: vec![0xAA, 0xBB], region: None },
+                LinkedSection { name: "b".into(), lma: 6, bytes: vec![0xCC], region: None },
             ],
         };
         // head 0,1 filled; bytes at 2..4; gap at 4,5; byte at 6. Terminus = 7 (no padding).
@@ -2482,7 +2505,7 @@ mod tests {
             vec![Region { name: "rom".into(), lma_base: 0, size: 4, kind: RegionKind::Rom, vma_base: None }],
             0x00,
         );
-        let img = LinkedImage { sections: vec![LinkedSection { name: "a".into(), lma: 8, bytes: vec![1] }] };
+        let img = LinkedImage { sections: vec![LinkedSection { name: "a".into(), lma: 8, bytes: vec![1], region: None }] };
         assert!(emit_rom(&img, &map).is_err());
     }
 

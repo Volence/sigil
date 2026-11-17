@@ -1628,9 +1628,23 @@ points at it rather than restating it, so there is one copy to keep true.
   `docs/research/2026-09-26-gate-predicate-audit.md` line 60. Any new listing word is language surface: propose,
   discuss, land.
 
-### SEAM2-TABLE-REGION-UNENFORCED
+### SEAM2-TABLE-REGION-UNENFORCED: CLOSED 2026-11-16 (step-0 Task 5 / A2, branch `parcel/step0-soundness`)
 
-- state: **measured**, fix not started  size: `S`  found by: aeon's agent, 2026-09-28 (reproduced 2026-09-28, branch `parcel/seam2-region-unenforced`)
+- Closed by A2: `MemoryMap::validate_section(name, placed_in, lma, len)` holds a section to (1) the map
+  region its placement group names, (2) every `z80_bank` window its first byte lies in, (3) the ROM
+  region holding it; `object_bank` is a budget, never a container. `sigil_link::check_regions` is the
+  loop `emit_rom` runs, and every seam-2 tail now ends in it (`seam2::check_placed_regions`); the seven
+  seam-2 literal sizes are derived (`seam2::bank_room`, the room to the `$8000` window top). Every
+  `[[budget]]` row is enforced against its own `ceiling` (`native::check_budgets`), and an unmeasurable
+  row is refused. A `[[region]]` row may carry `when` (`map_for_shape`); aeon's `z80_sound_bank` row is
+  `when = "sound_on"` (the aeon half of the pair). Under an anchor overlay a `z80_bank` region whose
+  base equals an anchor's `at` moves with that anchor (`map_placement::move_bank_regions`): without it
+  the clip-shaped overlay build (`anchor_overlay.rs`) was refused, its DAC banks moved into the map's
+  fixed `$B8000` window. The measurement test is now
+  `crates/sigil-harness/tests/seam2_region_enforced.rs` (the four `gap_*` tests inverted); CLI gate
+  `crates/sigil-cli/tests/region_enforcement.rs`. Evidence: the Task 5 section of
+  `docs/superpowers/notes/2026-11-16-step0-soundness.md`.
+- state (before A2): **measured**, fix not started  size: `S`  found by: aeon's agent, 2026-09-28 (reproduced 2026-09-28, branch `parcel/seam2-region-unenforced`)
 - `crates/sigil-harness/src/seam2.rs` (about line 1200, in the sound-tables placement) builds a synthetic map region
   `sound_tables_z80` with `size = 0x400`, yet aeon reports the tables at 1,116 B (after `parcel/song-bank-wfz-ooz`,
   tip `39a2b4dd`) with nothing refusing. So either `place_sections` does not refuse a section larger than its region

@@ -1,0 +1,18 @@
+module tf.snd.core (cpu: z80)
+use tf.snd.pcm.{Pcm_Tick}
+use tf.snd.bank0.{Wave0}
+
+section drv_core (cpu: z80, vma: $0) {
+    @noreturn
+    pub proc Drv_Entry () {
+        di
+        ld      sp, $1FFE
+    .loop:
+        call    Pcm_Tick
+        ld      hl, WaveTab
+        ld      a, (hl)
+        jr      .loop
+    }
+    pub data WaveTab: [u16le; 1] = [winptr(Wave0)]
+    pub data WaveBank: [u8; 1] = [bankid(Wave0)]
+}
