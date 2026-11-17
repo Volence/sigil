@@ -3867,7 +3867,9 @@ mod tests {
         use sigil_span::{SourceId, Span};
         let tmp = tempfile::tempdir().unwrap();
         let path = tmp.path().join("m.emp");
-        std::fs::write(&path, "line one\n  second\n").unwrap();
+        // Through the crate's one output-installing helper, never a truncating
+        // write (`tests/atomic_output_gate.rs` scans test modules too).
+        super::install_artifact(path.to_str().unwrap(), b"line one\n  second\n").unwrap();
         let manifest = Manifest {
             modules: Vec::new(),
             by_id: Default::default(),
