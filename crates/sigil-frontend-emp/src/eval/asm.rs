@@ -157,21 +157,30 @@ fn item_span_mut(item: &mut CodeItem) -> &mut Span {
     }
 }
 
-/// Record one splice run of `items` at `call` in `map`, and move every item's span to
-/// it (G0a spec 4.4, the AS front end's expansion model).
+/// Record one splice run of `items` at `call` in `map`, and move the items' spans to
+/// it where it can (G0a spec 4.4; modelled on, not proved equal to, the AS front end's
+/// macro expansions).
 ///
 /// An item written in a FILE (a template body, a `const`'s `asm {}`, a Code value built
-/// anywhere) moves to one fresh `Frame::Template(template)` expansion per file, entered
-/// at `call`. An item already inside an expansion (a template that itself spliced one)
-/// gets a COPY of that expansion whose call is moved the same way, recursively, so the
-/// chain reads outermost-first exactly as an AS macro called from a macro does: the
-/// inner run entered at its splice line, that line inside the outer run, the outer run
-/// entered at `call`. `SourceMap::outermost` then lands on `call`'s line.
+/// anywhere) moves to a fresh `Frame::Template(template)` expansion entered at `call`:
+/// one per source file per run, shared by every item from that file. An item already
+/// inside an expansion this map holds (a template that itself spliced one) moves to a
+/// COPY of that expansion whose own call is moved the same way, recursively, so the
+/// chain reads outermost-first: the inner run entered at its splice line, that line
+/// inside the outer run, the outer run entered at `call`. When `call` is itself in a
+/// file or in an expansion the map holds, `SourceMap::outermost` of a moved item is
+/// `call`'s location; the evaluator does not check that here.
 ///
-/// A file expansion's `body_start` is the earliest byte this splice carries from that
-/// file (an item's, or a call its chain passes through): the body's first spliced line,
-/// which is what a frame counts from. An item at the no-source id, or at an expansion id
-/// this map never issued, is left as it is: there is nothing to chain it to.
+/// A file expansion's `body_start` is the earliest byte this run carries from that
+/// file (an item's, or a call its chain passes through). A copied expansion keeps the
+/// original's `body_start` and frame.
+///
+/// Some items are NOT moved and keep their span: an item at the no-source id, one at
+/// an expansion id this map never issued, and one whose chain reaches either of those
+/// (a copy is made only after its call's chain has moved, so a failed chain records
+/// nothing). Once the map is full (`EXPANSION_LIMIT`), `add_expansion` hands back the
+/// body's file id: a file item keeps its span, and an item from an expansion lands on
+/// the file line it was written on, without its chain.
 pub(crate) fn attribute_splice(map: &mut SourceMap, items: &mut [CodeItem], call: Span, template: &str) {
     // The earliest spliced byte of each file, over items and the calls their chains
     // pass through. Linear vectors: a splice carries a handful of sources.
@@ -356,7 +365,7 @@ impl Evaluator<'_> {
         self.dropped_instrs += mds.len();
         self.diags.extend(mds);
 
-        Value::Code(buf)
+        Value::Code(buf) // code-value: build
     }
 
     /// Lower ONE proc/asm statement into `buf`, resolving labels against
@@ -461,7 +470,7 @@ impl Evaluator<'_> {
                 }
                 self.note_if_comptime_error(watermark, expr_span(expr));
                 match v {
-                    Value::Code(mut inner) => {
+                    Value::Code(mut inner) => { // splice-site: call
                         let template = splice_template_name(expr);
                         self.splice_items( // splice-site: call
                             &mut inner.items,
@@ -692,7 +701,7 @@ impl Evaluator<'_> {
                 let v = self.eval_expr(expr, env);
                 self.note_if_comptime_error(watermark, expr_span(expr));
                 match v {
-                    Value::Code(mut inner) => {
+                    Value::Code(mut inner) => { // splice-site: expr
                         let template = splice_template_name(expr);
                         self.splice_items( // splice-site: expr
                             &mut inner.items,
@@ -1071,7 +1080,7 @@ impl Evaluator<'_> {
                 continue;
             };
             match value {
-                Value::Code(mut code) => {
+                Value::Code(mut code) => { // splice-site: context-slot-arg
                     let carries_code =
                         code.items.iter().any(|i| matches!(i, CodeItem::Instr { .. }));
                     crate::value::reauthor_user_items( // splice-site: context-slot-arg
@@ -1083,7 +1092,7 @@ impl Evaluator<'_> {
                     );
                     slots.push(SlotArg {
                         param,
-                        value: Value::Code(code),
+                        value: Value::Code(code), // splice-site: context-slot-arg
                         arg_span,
                         carries_code,
                     });
@@ -1201,7 +1210,7 @@ impl Evaluator<'_> {
         let v = self.eval_expr(expr, env);
         self.note_if_comptime_error(watermark, span);
         match v {
-            Value::Code(mut inner) => {
+            Value::Code(mut inner) => { // splice-site: context-half
                 self.splice_items( // splice-site: context-half
                     &mut inner.items,
                     &crate::value::ItemAuthor::Context { name: ctx.to_string(), phase },
@@ -1559,7 +1568,7 @@ impl Evaluator<'_> {
             let v = self.eval_call(&callee, &args, instr.span, env);
             self.note_if_comptime_error(watermark, instr.span);
             match v {
-                Value::Code(mut inner) => {
+                Value::Code(mut inner) => { // splice-site: bare-call
                     // The splice boundary claims the template's own lines
                     // ([`crate::value::ItemAuthor::Splice`]); a finer
                     // compiler-authored fact inside the template survives.

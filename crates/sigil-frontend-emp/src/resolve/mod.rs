@@ -7,7 +7,7 @@ pub mod manifest;
 pub mod rename;
 
 use crate::ast;
-use crate::lower::{lower_module_recording_expansions, LowerOptions};
+use crate::lower::{lower_module_recording_expansions, lower_module_with_region_ends_and_contracts, LowerOptions};
 use imports::{ExportIndex, ResolveEnv};
 use manifest::{Manifest, ParsedModule};
 use sigil_ir::map::MemoryMap;
@@ -609,15 +609,44 @@ pub fn name_env_report(
 ///
 /// Returns the concatenated sections plus every diagnostic collected. A
 /// `Level::Error` diagnostic means the caller must not link.
+///
+/// Records NO template expansions: this returns no map, so a span it rewrote
+/// would reach a later diagnostic (a link or placement failure over these
+/// sections) that no `SourceIndex` could locate. A caller that wants the
+/// expansions takes [`build_program_recorded`] and locates through
+/// `SourceIndex::with_expansions`. The same holds for every wrapper here that
+/// drops [`BuiltProgram::expansions`].
 pub fn build_program(
     manifest: &Manifest,
     entry_id: &str,
     prelude_id: Option<&str>,
     opts: &LowerOptions,
 ) -> (Vec<Section>, Vec<sigil_ir::LinkAssert>, Vec<Diagnostic>) {
-    let BuiltProgram { sections, link_asserts, diags, .. } =
-        build_program_with(manifest, entry_id, prelude_id, opts, true, true, &|_| opts.embed_base.clone());
+    let BuiltProgram { sections, link_asserts, diags, .. } = build_program_with(
+        manifest,
+        entry_id,
+        prelude_id,
+        opts,
+        true,
+        true,
+        false,
+        &|_| opts.embed_base.clone(),
+    );
     (sections, link_asserts, diags)
+}
+
+/// [`build_program`] keeping the whole [`BuiltProgram`], template expansions
+/// included (G0a spec 4.4): the sections' spliced spans carry expansion ids, and
+/// every later diagnostic over them is located through
+/// `SourceIndex::with_expansions(manifest, &built.expansions)`. `sigil emp
+/// --root` builds through this.
+pub fn build_program_recorded(
+    manifest: &Manifest,
+    entry_id: &str,
+    prelude_id: Option<&str>,
+    opts: &LowerOptions,
+) -> BuiltProgram {
+    build_program_with(manifest, entry_id, prelude_id, opts, true, true, true, &|_| opts.embed_base.clone())
 }
 
 /// [`build_program`] for an OPEN program — one whose `.emp` modules reference
@@ -634,8 +663,16 @@ pub fn build_program_open(
     prelude_id: Option<&str>,
     opts: &LowerOptions,
 ) -> (Vec<Section>, Vec<sigil_ir::LinkAssert>, Vec<Diagnostic>) {
-    let BuiltProgram { sections, link_asserts, diags, .. } =
-        build_program_with(manifest, entry_id, prelude_id, opts, false, true, &|_| opts.embed_base.clone());
+    let BuiltProgram { sections, link_asserts, diags, .. } = build_program_with(
+        manifest,
+        entry_id,
+        prelude_id,
+        opts,
+        false,
+        true,
+        false,
+        &|_| opts.embed_base.clone(),
+    );
     (sections, link_asserts, diags)
 }
 
@@ -667,15 +704,18 @@ pub fn build_program_open_embed(
     opts: &LowerOptions,
     embed_base_for: &dyn Fn(&str) -> Option<PathBuf>,
 ) -> (Vec<Section>, Vec<sigil_ir::LinkAssert>, Vec<Diagnostic>) {
+    // Not `_counted`: that one records expansions, and this drops them (see
+    // `build_program`).
     let BuiltProgram { sections, link_asserts, diags, .. } =
-        build_program_open_embed_counted(manifest, entry_id, prelude_id, opts, embed_base_for);
+        build_program_with(manifest, entry_id, prelude_id, opts, false, false, false, embed_base_for);
     (sections, link_asserts, diags)
 }
 
 /// [`build_program_open_embed`] keeping the whole-program guard census: the
 /// deferred asserts AND how many `ensure` evaluations the reachable modules
 /// decided at comptime. The check-only build reads both counts so a run that
-/// decided zero of a family says so.
+/// decided zero of a family says so. Records template expansions
+/// ([`BuiltProgram::expansions`]); the caller locates through them.
 pub fn build_program_open_embed_counted(
     manifest: &Manifest,
     entry_id: &str,
@@ -683,7 +723,7 @@ pub fn build_program_open_embed_counted(
     opts: &LowerOptions,
     embed_base_for: &dyn Fn(&str) -> Option<PathBuf>,
 ) -> BuiltProgram {
-    build_program_with(manifest, entry_id, prelude_id, opts, false, false, embed_base_for)
+    build_program_with(manifest, entry_id, prelude_id, opts, false, false, true, embed_base_for)
 }
 
 /// A built multi-module program: its placed-to-be sections, the deferred link
@@ -718,7 +758,11 @@ pub struct BuiltProgram {
 /// name it references (CLI `sigil emp`); an open one defers them to the joint link.
 /// `rename` gates the canonical-rename pass: a pure-`.emp` program module-qualifies
 /// its cross-module symbols, while the mixed AS+`.emp` build keeps them bare.
-/// `embed_base_for` overrides `opts.embed_base` per module.
+/// `embed_base_for` overrides `opts.embed_base` per module. `record` gates the
+/// template-expansion recording: on only for a caller that receives
+/// [`BuiltProgram::expansions`] and locates through it; off, every span stays as
+/// written and the returned map is empty.
+#[allow(clippy::too_many_arguments)]
 fn build_program_with(
     manifest: &Manifest,
     entry_id: &str,
@@ -726,6 +770,7 @@ fn build_program_with(
     opts: &LowerOptions,
     closed: bool,
     rename: bool,
+    record: bool,
     embed_base_for: &dyn Fn(&str) -> Option<PathBuf>,
 ) -> BuiltProgram {
     let mut diags = Vec::new();
@@ -966,11 +1011,18 @@ fn build_program_with(
             &per_module_opts
         };
 
+        let lower_one = |file: &ast::File, expansions: &mut sigil_span::SourceMap| {
+            if record {
+                lower_module_recording_expansions(file, opts, &region_ends, &iface_env, expansions)
+            } else {
+                lower_module_with_region_ends_and_contracts(file, opts, &region_ends, &iface_env)
+            }
+        };
         let ambient =
             ambient_items(pm, prelude_pm, manifest, &mut memo);
         let (mut module, ldiags) = if ambient.is_empty() {
             // zero-clone common path; `region_ends` is empty for region-free builds.
-            lower_module_recording_expansions(&pm.file, opts, &region_ends, &iface_env, &mut expansions)
+            lower_one(&pm.file, &mut expansions)
         } else {
             // The own-items clone here could later be avoided by having the
             // evaluator index a separate ambient slice (deferred — preludes are
@@ -989,7 +1041,7 @@ fn build_program_with(
                 // attach only).
                 docs: pm.file.docs.clone(),
             };
-            lower_module_recording_expansions(&synthetic, opts, &region_ends, &iface_env, &mut expansions)
+            lower_one(&synthetic, &mut expansions)
         };
         // A diagnostic about a spliced line names the line as WRITTEN, the template
         // body, exactly as before splices recorded expansions: the expansion ids are

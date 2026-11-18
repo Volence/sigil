@@ -1050,9 +1050,9 @@ impl<'a> Evaluator<'a> {
             // already resolved them — concat composes fragments, it does not
             // re-scope (the aabb template's conditional-head shape:
             // `let head = if ... { asm {...} } else { asm { } }; head ++ asm {...}`).
-            (Value::Code(mut a), Value::Code(b)) => {
+            (Value::Code(mut a), Value::Code(b)) => { // code-value: concat
                 a.items.extend(b.items);
-                Value::Code(a)
+                Value::Code(a) // code-value: concat
             }
             (a, b) => self.binop_type_error(span, "++", &a, &b),
         }
@@ -1427,7 +1427,7 @@ fn eq_compatible(a: &Value, b: &Value) -> Result<(), (String, String)> {
         | (Value::Lambda { .. }, Value::Lambda { .. })
         | (Value::FnRef(_), Value::FnRef(_))
         | (Value::Data(_), Value::Data(_))
-        | (Value::Code(_), Value::Code(_))
+        | (Value::Code(_), Value::Code(_)) // code-value: compare
         | (Value::Width(_), Value::Width(_))
         | (Value::Cc(_), Value::Cc(_))
         | (Value::Reg(_), Value::Reg(_))

@@ -2134,7 +2134,7 @@ fn eval_proc_body_full(
             }
         }
         let buf = match ev.eval_asm_owned(body, span, &mut env, Some(name)) {
-            Value::Code(buf) => Some(buf),
+            Value::Code(buf) => Some(buf), // code-value: proc-body
             _ => None,
         };
         let asserts = ev.take_link_asserts();

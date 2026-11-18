@@ -314,6 +314,12 @@ fn data_span_at(built: &BuiltProgram, lma: u32) -> sigil_span::Span {
 /// `SPLICE_SITES` (which sits beside the rewrite helper and says, per site, how its
 /// bytes are attributed), and every entry is tagged somewhere. A new splice site
 /// without a decision is untagged, and this goes red.
+///
+/// The call-name scan sees only the boundary helpers, so a second scan (fix round
+/// 1, item 3b) covers the values themselves: every `Value::Code(` line in
+/// `eval/*.rs` (a destructure that could splice, and the constructors with it)
+/// carries either a registered `// splice-site: NAME` or one `// code-value: WHY`
+/// from [`NOT_A_SPLICE`]. A new place that takes Code apart has to say which it is.
 #[test]
 fn splice_site_census_is_complete() {
     let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../sigil-frontend-emp/src/eval/asm.rs");
@@ -342,6 +348,114 @@ fn splice_site_census_is_complete() {
             problems.push(format!("SPLICE_SITES lists `{name}` ({how}) but no line in asm.rs is tagged with it"));
         }
     }
-    eprintln!("CENSUS boundaries={seen} sites={} tagged={tagged:?}", sites.len());
+    // Second scan: every `Value::Code(` in the evaluator.
+    let eval_dir = path.parent().expect("eval/");
+    let mut files: Vec<_> = std::fs::read_dir(eval_dir)
+        .expect("read eval/")
+        .map(|e| e.expect("dir entry").path())
+        .filter(|p| p.extension().is_some_and(|x| x == "rs"))
+        .collect();
+    files.sort();
+    let mut values = 0;
+    let mut whys = std::collections::BTreeMap::<&str, usize>::new();
+    for file in &files {
+        let text = std::fs::read_to_string(file).unwrap_or_else(|e| panic!("{}: {e}", file.display()));
+        let short = file.file_name().unwrap().to_string_lossy().into_owned();
+        for (i, line) in text.lines().enumerate() {
+            let code = line.split("//").next().unwrap_or("");
+            if !code.contains("Value::Code(") {
+                continue;
+            }
+            values += 1;
+            let tag = |key: &str| line.split(key).nth(1).map(|t| t.split_whitespace().next().unwrap_or("").to_string());
+            match (tag("// splice-site: "), tag("// code-value: ")) {
+                (Some(name), None) if sites.iter().any(|(n, _)| *n == name) => {
+                    *tagged.entry(sites.iter().find(|(n, _)| *n == name).unwrap().0).or_default() += 1
+                }
+                (None, Some(why)) if NOT_A_SPLICE.iter().any(|(w, _)| *w == why) => {
+                    *whys.entry(NOT_A_SPLICE.iter().find(|(w, _)| *w == why).unwrap().0).or_default() += 1
+                }
+                _ => problems.push(format!(
+                    "{short}:{}: `Value::Code(` without one registered `splice-site:` or `code-value:` tag: {}",
+                    i + 1,
+                    line.trim()
+                )),
+            }
+        }
+    }
+    assert!(values > 0, "no `Value::Code(` found under eval/: the second scan measures nothing");
+    eprintln!(
+        "CENSUS boundaries={seen} code_values={values} sites={} tagged={tagged:?} not_a_splice={whys:?}",
+        sites.len()
+    );
     assert!(problems.is_empty(), "splice-site census:\n{}", problems.join("\n"));
+}
+
+/// Why a `Value::Code(` line hands no Code to the stream, for the census's second
+/// scan. Each reason is a claim the census cannot check itself, so the list is
+/// short and each entry says why its spans need no rewrite.
+const NOT_A_SPLICE: &[(&str, &str)] = &[
+    ("build", "constructs a Code value; its items keep their written spans until a splice site takes it"),
+    ("concat", "`++` joins two Code values; each side keeps its spans and the splice of the result attributes them"),
+    ("compare", "a type-equality arm; the items are not touched"),
+    ("measure", "`span(proc)` lowers a throwaway body with the expansion map set aside; nothing is emitted"),
+    ("proc-body", "a proc's own body: written in place, emitted where written"),
+];
+
+/// `sigil emp --root`: a LINK diagnostic over spliced bytes still names the
+/// template-body line it was written on (fix round 1, item 1). The splice gives
+/// the `bra.s` an expansion span; the link tail renders through the manifest's
+/// `SourceIndex`, and an index built without the program's expansions cannot
+/// place that span, so the error printed with no location at all. The fixture is
+/// the reviewer's: `far()` holds `bra.s Far` on line 4, column 9, and 200 `nop`s
+/// put `Far` out of short range.
+#[test]
+fn sigil_emp_link_diagnostic_inside_a_splice_names_the_body_line() {
+    let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/vectors/template_link_diag/root");
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let root = tmp.path().join("root");
+    std::fs::create_dir(&root).expect("mkdir root");
+    std::fs::copy(fixture.join("m.emp"), root.join("m.emp")).expect("copy fixture");
+    let out = std::process::Command::new(env!("CARGO_BIN_EXE_sigil"))
+        .current_dir(tmp.path())
+        .args(["emp", "root/m.emp", "--root", "root", "-o"])
+        .arg(tmp.path().join("out.bin"))
+        .output()
+        .expect("spawn sigil");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(!out.status.success(), "the out-of-range bra.s must fail the link.\nstderr:\n{stderr}");
+    let want = "m.emp:4:9: error: bra.s/Bcc.s displacement to `m.Far` out of range (402)";
+    assert!(
+        stderr.lines().any(|l| l.contains(want)),
+        "the link error must name the template-body line `{want}`.\nstderr:\n{stderr}"
+    );
+}
+
+const MEASURED: &str = "\
+module m
+comptime fn pair() -> Code {
+    return asm {
+        dc.b 1, 2
+    }
+}
+proc T () {
+    pair() // @splice
+}
+proc p () {
+    moveq #span(T), d0 // @measure
+    rts
+}
+";
+
+/// `span(T)` lowers `T`'s body as a throwaway measurement. That throwaway splice
+/// must record nothing (fix round 1, item 3a): the only expansion is `T`'s real
+/// splice, and the measured byte stays on the `span` line as written.
+#[test]
+fn a_span_measurement_records_no_orphan_expansion() {
+    let (rows, built, _chain) = build(MEASURED);
+    let l = |m| line_of(MEASURED, m);
+    assert_eq!(line_at(&rows, 0), l("@splice"), "{rows:?}");
+    assert_eq!(line_at(&rows, 2), l("@measure"), "{rows:?}");
+    assert_eq!(built.expansions.expansion_count(), 1, "only T's own splice records an expansion");
 }

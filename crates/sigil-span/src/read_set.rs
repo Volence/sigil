@@ -269,17 +269,18 @@ pub fn sha256(data: &[u8]) -> [u8; 32] {
     let mut h: [u32; 8] = [
         0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19,
     ];
-    let mut tail = data.chunks_exact(64).remainder().to_vec();
+    let (blocks, rest) = data.as_chunks::<64>();
+    let mut tail = rest.to_vec();
     tail.push(0x80);
     while tail.len() % 64 != 56 {
         tail.push(0);
     }
     tail.extend_from_slice(&((data.len() as u64) * 8).to_be_bytes());
-    let full = data.chunks_exact(64).chain(tail.chunks_exact(64));
+    let full = blocks.iter().chain(tail.as_chunks::<64>().0);
     for block in full {
         let mut w = [0u32; 64];
-        for (i, c) in block.chunks_exact(4).enumerate() {
-            w[i] = u32::from_be_bytes([c[0], c[1], c[2], c[3]]);
+        for (i, c) in block.as_chunks::<4>().0.iter().enumerate() {
+            w[i] = u32::from_be_bytes(*c);
         }
         for i in 16..64 {
             let s0 = w[i - 15].rotate_right(7) ^ w[i - 15].rotate_right(18) ^ (w[i - 15] >> 3);

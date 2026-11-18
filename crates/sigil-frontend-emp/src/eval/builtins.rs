@@ -886,7 +886,7 @@ impl<'a> Evaluator<'a> {
                 author: crate::value::ItemAuthor::User,
             });
         }
-        Value::Code(CodeBuf { items })
+        Value::Code(CodeBuf { items }) // code-value: build
     }
 
     /// Mint the next hidden branch-target label for a DENSE
@@ -956,16 +956,22 @@ impl<'a> Evaluator<'a> {
             return Value::Poison;
         };
         // Measure as a pure query: snapshot the diagnostic + dropped-instruction
-        // state so the throwaway lowering leaves neither behind.
+        // state so the throwaway lowering leaves neither behind. The expansion map
+        // is set aside the same way: a splice inside the measured body would
+        // otherwise record an expansion no emitted byte ever names, and the
+        // throwaway items keep their written spans (so `[span.not-data]` below
+        // points at the line as written).
         let diags_len = self.diags.len();
         let asserts_len = self.link_asserts.len();
         let dropped_before = self.dropped_instrs;
+        let expansions = self.expansions.take();
         let code = self.eval_asm_owned(&decl.body, decl.span, env, Some(&name));
+        self.expansions = expansions;
         let measured_dropped = self.dropped_instrs > dropped_before;
         self.diags.truncate(diags_len);
         self.link_asserts.truncate(asserts_len);
         self.dropped_instrs = dropped_before;
-        let Value::Code(buf) = code else {
+        let Value::Code(buf) = code else { // code-value: measure
             // eval_asm_owned yields Code unless the evaluation aborted (budget);
             // propagate the abort silently.
             return Value::Poison;

@@ -570,7 +570,7 @@ mod tests {
         let s = sec("s", 0, vec![data(2, 5), org(2)]);
         // Past the end, on a non-Data fragment, and in a section that is not there.
         for m in [mark("s", 0..3), mark("s", 1..2), mark("t", 0..1)] {
-            let err = walk_lines(&[s.clone()], &loc(), &[], &[m.clone()]).unwrap_err();
+            let err = walk_lines(std::slice::from_ref(&s), &loc(), &[], std::slice::from_ref(&m)).unwrap_err();
             assert!(matches!(&err, ExportError::CodeMark { section, .. } if *section == m.0), "{m:?}: {err:?}");
         }
     }

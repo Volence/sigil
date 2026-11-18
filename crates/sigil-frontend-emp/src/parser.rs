@@ -3191,8 +3191,9 @@ impl Parser {
         self.block_depth += 1;
         self.expect(&Tok::LBrace, "`{`");
         let body = self.asm_body(splices_allowed);
-        self.expect(&Tok::RBrace, "`}` to close the `with` bracket");
-        let close = self.prev_span();
+        // The release locates at the `}` only when there is one: on a missing `}`
+        // `prev_span` is whatever the body last consumed, so fall back to the header.
+        let close = if self.expect(&Tok::RBrace, "`}` to close the `with` bracket") { self.prev_span() } else { span };
         self.trailing_junk_after_brace();
         self.block_depth -= 1;
         AsmStmt::With { ctx, cond, body, args, span, close }

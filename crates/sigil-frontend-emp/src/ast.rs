@@ -2299,8 +2299,9 @@ pub enum AsmStmt {
         span: Span,
         /// Span of the bracket's closing `}`: the line its `release` is spliced at,
         /// so the release's bytes locate there (G0a spec 4.4), as the acquire's
-        /// locate to the header. The header span on a bracket whose body did not
-        /// parse.
+        /// locate to the header. When there is no `}` to point at (the closing `}`
+        /// is missing, or the bracket nested too deep to parse) it is the header
+        /// span; either case is already a parse error, so no byte is located by it.
         close: Span,
     },
     /// `invoke Iface.hook` (L1) — an engine-side call of a game-implemented hook.

@@ -1742,12 +1742,16 @@ fn run_emp_program(
 
     // `link_asserts`: deferred link-time guards (D-H.4), decided by the link tails
     // below against the post-relaxation symbol table.
-    let (mut sections, link_asserts, mut pdiags) =
-        resolve::build_program(&manifest, &entry_id, prelude, &opts);
+    // Recorded: a template splice gives its bytes expansion spans (G0a spec 4.4),
+    // and every diagnostic from here on — lowering, placement, link — is located
+    // through the SAME expansions, or a spliced span renders with no location.
+    let resolve::BuiltProgram { mut sections, link_asserts, diags: mut pdiags, expansions, .. } =
+        resolve::build_program_recorded(&manifest, &entry_id, prelude, &opts);
     diags.append(&mut pdiags);
     promote_todo_holes(&mut diags, deny_todo);
 
-    render_program_diags(&manifest, &diags);
+    let index = resolve::manifest::SourceIndex::with_expansions(&manifest, &expansions);
+    render_indexed_diags(&index, &diags);
     if diags.iter().any(|d| d.level == sigil_span::Level::Error) {
         process::exit(1);
     }
@@ -1772,17 +1776,17 @@ fn run_emp_program(
                 }
             };
             let pdiags = resolve::place_sections(&mut sections, &map);
-            render_program_diags(&manifest, &pdiags);
+            render_indexed_diags(&index, &pdiags);
             if pdiags.iter().any(|d| d.level == sigil_span::Level::Error) {
                 process::exit(1);
             }
             match link_rom(&sections, &link_asserts, &map) {
                 Ok((rom, warns)) => {
-                    render_program_diags(&manifest, &warns);
+                    render_indexed_diags(&index, &warns);
                     rom
                 }
                 Err(ds) => {
-                    render_program_diags(&manifest, &ds);
+                    render_indexed_diags(&index, &ds);
                     process::exit(1);
                 }
             }
@@ -1796,11 +1800,11 @@ fn run_emp_program(
             resolve::place_sequential(&mut sections, 0);
             match link_sections(&sections, &link_asserts) {
                 Ok((image, warns)) => {
-                    render_program_diags(&manifest, &warns);
+                    render_indexed_diags(&index, &warns);
                     image
                 }
                 Err(ds) => {
-                    render_program_diags(&manifest, &ds);
+                    render_indexed_diags(&index, &ds);
                     process::exit(1);
                 }
             }
@@ -1839,7 +1843,16 @@ fn render_program_diags(
     if diags.is_empty() {
         return;
     }
-    let index = sigil_frontend_emp::resolve::manifest::SourceIndex::new(manifest);
+    render_indexed_diags(&sigil_frontend_emp::resolve::manifest::SourceIndex::new(manifest), diags);
+}
+
+/// [`render_program_diags`] through a caller's index — the one a caller that
+/// built with template expansions recorded must use, so a diagnostic over a
+/// spliced span still names the line it was written on.
+fn render_indexed_diags(
+    index: &sigil_frontend_emp::resolve::manifest::SourceIndex,
+    diags: &[sigil_span::Diagnostic],
+) {
     for d in diags {
         match index.locate(d.primary) {
             Some(loc) => eprintln!("{loc}: {}: {}", d.level, d.message),
