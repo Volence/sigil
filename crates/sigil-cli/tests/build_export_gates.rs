@@ -384,19 +384,23 @@ fn tool_revision_names_the_checkout_head() {
     for b in all {
         assert_eq!(b.export["tool"]["revision"], json!(rev), "shape {}: tool.revision differs between shapes", b.name);
     }
-    if rev == "unknown" {
-        eprintln!("T10 tool.revision is the honest `unknown`");
-        return;
-    }
-    assert!(rev.len() == 40 && rev.bytes().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()), "tool.revision `{rev}` is not a full lowercase commit id");
-    let root = sigil_harness::source_digest::sigil_source_root();
-    let head = Command::new("git").arg("-C").arg(&root).args(["rev-parse", "HEAD"]).output();
-    match head {
-        Ok(o) if o.status.success() => {
-            let head = String::from_utf8_lossy(&o.stdout).trim().to_string();
-            assert_eq!(rev, head, "STALE tool.revision: the binary was built from {rev} but the checkout is at {head}; its build script did not re-run");
-            eprintln!("T10 tool.revision {rev} == checkout HEAD");
+    // The honest `unknown` (a build outside a git checkout) is allowed and checks no more.
+    if rev != "unknown" {
+        assert!(
+            rev.len() == 40 && rev.bytes().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()),
+            "tool.revision `{rev}` is not a full lowercase commit id"
+        );
+        let root = sigil_harness::source_digest::sigil_source_root();
+        let head = Command::new("git").arg("-C").arg(&root).args(["rev-parse", "HEAD"]).output();
+        match head {
+            Ok(o) if o.status.success() => {
+                let head = String::from_utf8_lossy(&o.stdout).trim().to_string();
+                assert_eq!(rev, head, "STALE tool.revision: the binary was built from {rev} but the checkout is at {head}; its build script did not re-run");
+                eprintln!("T10 tool.revision {rev} == checkout HEAD");
+            }
+            _ => panic!("tool.revision is {rev} but `git rev-parse HEAD` cannot be asked in {}: cannot verify it", root.display()),
         }
-        _ => panic!("tool.revision is {rev} but `git rev-parse HEAD` cannot be asked in {}: cannot verify it", root.display()),
+    } else {
+        eprintln!("T10 tool.revision is the honest `unknown`");
     }
 }
