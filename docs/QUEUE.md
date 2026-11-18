@@ -2068,6 +2068,20 @@ until its row is removed.
   rendering it is a diagnostics-surface change for its own ruling (it would also make two splices' identical errors
   distinct, which the dedup keys then have to agree with).
 
+## G0A-EXPORT-LAYOUT-COVERAGE
+
+- state: **OPEN** 2026-11-18  size: `S`  project: `G0A-BUILD-EXPORT`
+- Found in G0a Task 8. Three things the export cannot show you from the real tree alone. (1) The aeon tree
+  declares no plain `enum` and no `bitfield` (only `comptime enum`s, which have no data layout and are not exported),
+  so those two layout kinds, and enum-valued constants, are exercised by the front-end fixture
+  (`sigil-frontend-emp/tests/export_layouts.rs`) only; the real sidecar has `struct` layouts and integer constants.
+  (2) Layouts, overlays and constants are exported for the modules a shape LOWERS (the `use` closure): sonic4 plain
+  has 62 structs and 3 overlays, debug 63 and 10 (the test objects' `vars X: Sst.sst_custom`). A module outside the
+  closure exports nothing, as it emits nothing. (3) The registry pass (`ProgramLayouts::record_importer`) re-reads
+  every importer's view of every item in a second evaluator, about +0.8 s CPU on a 3.3 s sonic4 build (release,
+  measured once, not a benchmark). It is the same pass A4's two-layouts detector needs; if it matters, the cheap
+  cut is to cross-check only injected clones and leave each module's own items to one view.
+
 ## G0A-LINE-KIND-CODE
 
 - state: **CLOSED** 2026-11-18 (G0a Task 6 fix round 1)  size: `M`  project: `G0A-BUILD-EXPORT`
