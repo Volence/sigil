@@ -703,6 +703,9 @@ pub struct BuiltProgram {
     /// outside this pass (a `use` it removed before the pass ran) scopes that
     /// check to this set, the set whose code the build contains.
     pub lowered: Vec<String>,
+    /// What the lowering knew about every symbol it defined (module, procedure
+    /// extent, `pub`), for the build export ([`crate::export_side`]).
+    pub symbols: crate::export_side::ProgramSymbols,
 }
 
 /// Shared body of [`build_program`] / [`build_program_open`]. `closed` gates the
@@ -733,6 +736,7 @@ fn build_program_with(
     // Deferred link-time assertions (D-H.4) from every reachable module,
     // concatenated (post-rename) — the whole-program list the linker decides.
     let mut link_asserts: Vec<sigil_ir::LinkAssert> = Vec::new();
+    let mut symbols = crate::export_side::ProgramSymbols::default();
 
     // 1. Reachability BFS over `use` edges from the entry (and the prelude seed).
     let reachable = reachable_modules(manifest, entry_id, prelude_id, &mut diags);
@@ -999,6 +1003,8 @@ fn build_program_with(
         if rename {
             rename::rename_module(&mut module, env.rename_map());
         }
+        let pub_equs: HashSet<String> = imports::pub_equ_names(&pm.file).into_iter().collect();
+        symbols.record_module(&pm.id, &module, &pub_equs);
         sections.extend(module.sections);
         link_asserts.extend(module.link_asserts);
         comptime_guards += module.comptime_guards;
@@ -1038,7 +1044,7 @@ fn build_program_with(
     diags.extend(fold_faults);
 
     let lowered = reachable.iter().map(|&i| manifest.modules[i].id.clone()).collect();
-    BuiltProgram { sections, link_asserts, comptime_guards, diags, lowered }
+    BuiltProgram { sections, link_asserts, comptime_guards, diags, lowered, symbols }
 }
 
 /// Assign each section a physical LMA from the memory map, keyed by SECTION NAME

@@ -10,6 +10,7 @@ pub mod context;
 pub mod contract;
 pub mod corpus_contracts;
 pub mod cycle_budget;
+pub mod export_side;
 pub mod eval;
 pub mod flag_check;
 pub mod layout;

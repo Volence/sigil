@@ -1,7 +1,7 @@
 //! `IrBuilder`: the concrete `IrStreamer` that materialises a `Module`.
 
 use crate::backend::{Cpu, IrStreamer};
-use crate::{DataFragment, EquSym, Fixup, Fragment, Label, LinkAssert, Module, Section, SectionPlacement};
+use crate::{DataFragment, EquSym, Fixup, Fragment, Label, LinkAssert, Module, ProcMark, Section, SectionPlacement};
 use sigil_span::{Diagnostic, Span};
 
 /// One section under construction: metadata + a running byte cursor.
@@ -58,6 +58,8 @@ pub struct IrBuilder {
     /// placement pass instead of being compacted (`org_forward_new_section`).
     /// Cleared once consumed.
     force_next_pinned: bool,
+    /// Procedure extents the front end recorded ([`Module::procs`]).
+    procs: Vec<ProcMark>,
 }
 
 impl IrBuilder {
@@ -238,6 +240,19 @@ impl IrBuilder {
         self.link_asserts.push(assert);
     }
 
+    /// Where the next fragment lands: the open section's ordinal among the
+    /// sections this builder has produced, and how many fragments it holds. `None`
+    /// when no section is open. A front end reads it before and after lowering a
+    /// procedure to record a [`ProcMark`].
+    pub fn fragment_position(&self) -> Option<(usize, usize)> {
+        self.open.as_ref().map(|o| (self.done.len(), o.fragments.len()))
+    }
+
+    /// Record a lowered procedure's extent (see [`ProcMark`]).
+    pub fn mark_proc(&mut self, mark: ProcMark) {
+        self.procs.push(mark);
+    }
+
     /// Record `n` comptime guard verdicts (see [`Module::comptime_guards`]).
     pub fn add_comptime_guards(&mut self, n: usize) {
         self.comptime_guards += n;
@@ -251,6 +266,7 @@ impl IrBuilder {
                 sections: self.done,
                 link_asserts: self.link_asserts,
                 comptime_guards: self.comptime_guards,
+                procs: self.procs,
             },
             self.diags,
         )

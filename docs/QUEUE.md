@@ -2043,3 +2043,14 @@ until its row is removed.
   (`sigil-harness/src/export_files.rs`) leaves reads under exactly that directory out of the export; any other read
   under `tools/` is an error naming the path. The hole is DELETED when G0b scopes the module scan to the engine and
   game roots; then the constant and its test go with it.
+
+## G0A-SOUND-BANK-LABEL-SPACE
+
+- state: **OPEN** 2026-11-18  size: `S`  project: `G0A-BUILD-EXPORT`
+- Found in G0a Task 5. The export's `space` for a label is its section's CPU (`PlacedSymbols::new`,
+  `sigil-link/src/export/placed.rs`). The sound-on shapes place 68000-CPU data sections phased into the Z80 bank
+  window (`games.sonic4.soundbankhead`: `SoundTablesZ80_Head` VMA `$8000` LMA `$B8000`, and the other `PHASE` rows of
+  the listing). Their VMA is a Z80 window address, so `space: m68k` is the wrong space for a reader that looks a
+  68000 address up: `$8000` in m68k space is ROM, not this table. They do carry `lma` (phased rule), so nothing is
+  lost, and gate 5 holds (the listing has no space). Task 9 (the Z80 bridge, banks) decides the space of a phased
+  bank-window section and moves these rows with it; the schema then requires `lma` on them, which they already have.

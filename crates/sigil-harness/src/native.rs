@@ -1775,6 +1775,9 @@ pub struct EmpProgram {
     /// The module roots this build placed, derived from the game's map over the
     /// scanned tree ([`crate::module_roots`]).
     pub registry: Vec<ModuleSpec>,
+    /// The lowering's symbol side table (module, procedure extent, `pub`) for the
+    /// build export.
+    pub symbols: sigil_frontend_emp::export_side::ProgramSymbols,
 }
 
 /// The shape `profile` builds, as the module-root gates read it.
@@ -1969,7 +1972,7 @@ pub fn build_emp(aeon: &Path, profile: &GameProfile) -> Result<EmpProgram, Strin
     // root-relative path would then join onto the module dir and resolve one level deep.
     let aeon_root = aeon.to_path_buf();
     let embed_base_for = move |_id: &str| -> Option<std::path::PathBuf> { Some(aeon_root.clone()) };
-    let resolve::BuiltProgram { mut sections, link_asserts, comptime_guards, diags: mut bdiags, lowered } =
+    let resolve::BuiltProgram { mut sections, link_asserts, comptime_guards, diags: mut bdiags, lowered, symbols } =
         resolve::build_program_open_embed_counted(&manifest, &entry_id, None, &opts, &embed_base_for);
     // The helper imports `normalize_helper_imports` removed, checked above against
     // the pre-rewrite tree, reported for the modules this build contains.
@@ -2025,7 +2028,7 @@ pub fn build_emp(aeon: &Path, profile: &GameProfile) -> Result<EmpProgram, Strin
     let warnings =
         collect_warnings(&index, &[&mdiags, &pdiags, &bdiags, &place_diags], Some(source));
 
-    Ok(EmpProgram { sections, link_asserts, comptime_guards, warnings, sources: index, registry })
+    Ok(EmpProgram { sections, link_asserts, comptime_guards, warnings, sources: index, registry, symbols })
 }
 
 /// Location-resolve and deduplicate every non-error diagnostic in `sources`,
@@ -3768,24 +3771,42 @@ pub struct RomBuild {
     pub export_inputs: ExportInputs,
 }
 
-/// The sidecar's symbols as the listing states them. This is the interim source
-/// (G0a Task 5 replaces it with the front ends' own tables): one row per listing
-/// symbol, no module, no extent.
-fn symbols_from_listing(listing: &[sigil_link::ListingSymbol]) -> Vec<SymbolRecord> {
-    listing
-        .iter()
-        .map(|l| SymbolRecord {
-            name: l.name.clone(),
-            demangled: None,
-            space: None,
-            vma: l.value,
-            lma: l.lma,
-            kind: if l.is_equate { SymbolKind::Equ } else { SymbolKind::Label },
-            size: None,
-            module: None,
-            public: false,
-        })
-        .collect()
+/// The sidecar's symbols (G0a spec 4.5): each front end's side table placed against
+/// the resolved sections, `.emp` first (it knows modules, procedures and `pub`), then
+/// the AS residual, then the build-supplied defines, which no front end defines (they
+/// come from the shape, `game_defines::define_listing_rows`). A name two populations
+/// both claim is kept once, from the first; its address comes from the one placed
+/// index either way, so the choice never moves an address.
+fn export_symbols(
+    emp: &sigil_frontend_emp::export_side::ProgramSymbols,
+    as_side: &sigil_frontend_as::export_side::AsSymbols,
+    defines: &[sigil_link::ListingSymbol],
+    resolved: &[Section],
+    stubs: &SymbolTable,
+) -> Result<Vec<SymbolRecord>, String> {
+    let placed = sigil_link::export::PlacedSymbols::new(resolved, stubs);
+    let mut out = sigil_frontend_emp::export_side::emp_symbols(emp, &placed)
+        .map_err(|e| format!("build export: {e}"))?;
+    let mut seen: std::collections::HashSet<String> = out.iter().map(|s| s.name.clone()).collect();
+    let as_recs = sigil_frontend_as::export_side::as_symbols(as_side, &placed)
+        .map_err(|e| format!("build export: {e}"))?;
+    out.extend(as_recs.into_iter().filter(|s| seen.insert(s.name.clone())));
+    for d in defines {
+        if seen.insert(d.name.clone()) {
+            out.push(SymbolRecord {
+                name: d.name.clone(),
+                demangled: None,
+                space: None,
+                vma: d.value,
+                lma: None,
+                kind: SymbolKind::Equ,
+                size: None,
+                module: None,
+                public: false,
+            });
+        }
+    }
+    Ok(out)
 }
 
 /// The chained build's program, placed and guard-decided: everything
@@ -3815,6 +3836,11 @@ struct ChainedResolve {
     guards: GuardCensus,
     /// The module roots the `.emp` program was lowered from.
     registry: Vec<ModuleSpec>,
+    /// The `.emp` lowering's symbol side table.
+    emp_symbols: sigil_frontend_emp::export_side::ProgramSymbols,
+    /// The names the AS residual defined, taken before its sections joined the
+    /// `.emp` ones.
+    as_symbols: sigil_frontend_as::export_side::AsSymbols,
 }
 
 /// How many guards a resolve decided, by family. Every figure is OBSERVED at the
@@ -3929,8 +3955,10 @@ fn resolve_chained(aeon: &Path, profile: &GameProfile) -> Result<ChainedResolve,
     }
     let AsSide { module: as_module, warnings: mut as_warnings, sources: as_map } =
         assemble_as_side(aeon, profile)?;
-    let EmpProgram { sections: emp_sections, link_asserts, comptime_guards, mut warnings, sources, registry } =
+    let EmpProgram { sections: emp_sections, link_asserts, comptime_guards, mut warnings, sources, registry, symbols: emp_symbols } =
         build_emp(aeon, profile)?;
+    // The AS front end's side table, while its sections are still its own.
+    let as_symbols = sigil_frontend_as::export_side::AsSymbols::from_sections(&as_module.sections);
     // THE SEAM. One section list out of two front ends, and therefore one location
     // authority out of two maps: `ChainSources` joins them over a single id space
     // and REBASES every span the AS-side sections carry into it. Without this, a
@@ -4019,7 +4047,7 @@ fn resolve_chained(aeon: &Path, profile: &GameProfile) -> Result<ChainedResolve,
     let inapplicable = declared_chain_drift_verdict(&adiags, &|span| sources.locate(span))?;
     enforce_inapplicable_allowlist_against(&inapplicable, &link_asserts, &profile.inapplicable_guards)?;
     let guards = GuardCensus::from_verdict(comptime_guards, &tally, &inapplicable)?;
-    Ok(ChainedResolve { resolved, stubs, warnings, sources, map, pmap, guards, registry })
+    Ok(ChainedResolve { resolved, stubs, warnings, sources, map, pmap, guards, registry, emp_symbols, as_symbols })
 }
 
 /// What a check-only run reports: the guard census and the warn tier.
@@ -4051,7 +4079,7 @@ pub fn build_rom_chained_with_listing(
     aeon: &Path,
     profile: &GameProfile,
 ) -> Result<RomBuild, String> {
-    let ChainedResolve { resolved, stubs, warnings, sources, map, pmap, guards: _, registry } =
+    let ChainedResolve { resolved, stubs, warnings, sources, map, pmap, guards: _, registry, emp_symbols, as_symbols } =
         resolve_chained(aeon, profile)?;
 
     // Sigil-canonical listing from the resolved image: one `C` row per label VMA
@@ -4065,7 +4093,7 @@ pub fn build_rom_chained_with_listing(
     // for sonic4 and 16 for demo, and a tool that wants the ceiling had to hardcode
     // one of the two and be wrong for the other. Listing-only, and refused on a
     // collision — see `game_defines::define_listing_rows`.
-    let listing = {
+    let (listing, define_rows) = {
         let mut listing = listing_from_resolved(&resolved, &stubs);
         let defines = shape_defines(profile, aeon)?;
         let rows = crate::game_defines::define_listing_rows(
@@ -4074,9 +4102,12 @@ pub fn build_rom_chained_with_listing(
             &listing,
             &profile.map_path(aeon).display().to_string(),
         )?;
-        listing.extend(rows);
-        listing
+        listing.extend(rows.iter().cloned());
+        (listing, rows)
     };
+    // The export's symbols, from the front ends' side tables (spec 4.5), placed
+    // against the same resolved sections the listing reads.
+    let symbols = export_symbols(&emp_symbols, &as_symbols, &define_rows, &resolved, &stubs)?;
 
     let linked = sigil_link::link(&resolved, &stubs)
         .map_err(|d| render_declared_chain("link", &d, &sources))?;
@@ -4104,7 +4135,7 @@ pub fn build_rom_chained_with_listing(
     validate_sound_fold(aeon, &resolved, profile)?;
     check_budgets(&resolved, &map, &pmap)?;
     let rom = sigil_link::emit_rom(&linked, &map).map_err(|e| format!("declared-chain: emit_rom: {e}"))?;
-    let side = SideTables { symbols: symbols_from_listing(&listing), ..SideTables::default() };
+    let side = SideTables { symbols, ..SideTables::default() };
     let export_inputs = ExportInputs { sections: resolved, locator: Box::new(sources), side };
     Ok(RomBuild { rom, listing, warnings, registry, export_inputs })
 }

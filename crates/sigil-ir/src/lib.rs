@@ -498,6 +498,27 @@ pub struct Module {
     /// data initializers), so a guard evaluated there is counted here or deferred
     /// there, never both and never neither. Zero for every non-`.emp` front-end.
     pub comptime_guards: usize,
+    /// The procedures the front end lowered, one [`ProcMark`] each, for the build
+    /// export's symbol table (G0a). Emits nothing and is read by no link step. Empty
+    /// for every front end that has no notion of a procedure.
+    pub procs: Vec<ProcMark>,
+}
+
+/// One procedure a front end lowered: where its body starts and ends, as FRAGMENT
+/// indices into the section that holds its label. Fragment indices, not byte offsets,
+/// because relaxation changes lengths and never the fragment sequence (`resolve_layout`
+/// lowers each relaxable fragment in place), so the post-resolve extent is the
+/// replayed cursor over `[start_fragment, end_fragment)` of the same section.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProcMark {
+    /// The procedure's label, as the section's `labels` spell it.
+    pub name: String,
+    /// Whether the front end exports it (`.emp` `pub proc`).
+    pub public: bool,
+    /// The section's fragment count when the label was defined.
+    pub start_fragment: usize,
+    /// The section's fragment count after the body's last fragment.
+    pub end_fragment: usize,
 }
 
 /// Trait for types that can receive a stream of raw bytes from a front-end.
@@ -551,6 +572,7 @@ impl ModuleBuilder {
             }],
             link_asserts: Vec::new(),
             comptime_guards: 0,
+            procs: Vec::new(),
         }
     }
 }

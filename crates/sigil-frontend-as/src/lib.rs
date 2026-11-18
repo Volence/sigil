@@ -8,6 +8,7 @@ mod ast;
 mod charset;
 pub mod cli_define;
 mod escape;
+pub mod export_side;
 mod eval;
 mod expand;
 mod expr;

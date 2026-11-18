@@ -84,6 +84,12 @@ pub fn rename_module(module: &mut Module, map: &HashMap<String, String>) {
             rename_fragment(frag, map);
         }
     }
+    // A procedure's mark names its label, so it is renamed with the label.
+    for p in &mut module.procs {
+        if let Some(canon) = canonicalize_name(&p.name, map) {
+            p.name = canon;
+        }
+    }
     // Deferred link-time assertions (D-H.4) reference symbols too — the guard's
     // condition and any lazy `{expr}` message parts. Their anonymous `here()`
     // anchors carry `$` (never in `map`, module-qualified already), but a cond

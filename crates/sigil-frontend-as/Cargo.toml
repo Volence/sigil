@@ -5,6 +5,8 @@ edition = "2021"
 
 [dependencies]
 sigil-ir = { path = "../sigil-ir" }
+# The build export's SymbolRecord and the placed-symbol index (G0a Task 5, `export_side`).
+sigil-link = { path = "../sigil-link" }
 sigil-backend-z80 = { path = "../sigil-backend-z80" }
 sigil-backend-m68k = { path = "../sigil-backend-m68k" }
 sigil-span = { path = "../sigil-span" }

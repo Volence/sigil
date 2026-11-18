@@ -8,10 +8,12 @@ pub mod entry;
 pub mod inputs;
 pub mod json;
 pub mod locate;
+pub mod placed;
 
 pub use entry::{build_export, ExportInputs, SideTables, Z80Bridge};
 pub use inputs::{inputs_sha256, inputs_text, InputRead, ToolExe};
 pub use json::{sha256_hex, sha256_of, to_json, ExportError};
+pub use placed::{PlacedLabel, PlacedSymbols};
 
 /// Everything the export file holds. Field order is the JSON key order of §4.6.
 #[derive(Clone, Debug, Eq, PartialEq)]

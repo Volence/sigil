@@ -112,6 +112,7 @@ pub(super) fn lower_proc(
     asm_counter: &mut u32,
 ) {
     // 1. Label + body → IR. Params emit no code (declarative register bindings).
+    let start = builder.fragment_position();
     builder.define_label(&proc.name);
     // D2.29 amendment: a 68k proc at an odd final address is an address-error
     // crash — error-tier [layout.odd-item] parity check on the proc's label.
@@ -142,6 +143,19 @@ pub(super) fn lower_proc(
     }
     let Some(buf) = buf else { return };
     super::lower_code_buf(&buf, ctx.cpu, ctx.as_compat, builder, diags);
+    // The proc's extent for the build export: the fragments its body emitted, in the
+    // section that holds its label. A body that ended in another section (none does
+    // today) records nothing rather than an extent across two sections.
+    if let (Some((sec, first)), Some((sec_end, end))) = (start, builder.fragment_position()) {
+        if sec == sec_end {
+            builder.mark_proc(sigil_ir::ProcMark {
+                name: proc.name.clone(),
+                public: proc.public,
+                start_fragment: first,
+                end_fragment: end,
+            });
+        }
+    }
 
     // Exported EXTENT symbol (bookmark ask 2): a `@resumable` proc gets a linkable
     // `Proc.__end` label at the byte immediately past its body, so a consumer
