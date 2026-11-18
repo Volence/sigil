@@ -91,11 +91,31 @@ fn layout(l: &LayoutRecord) -> Value {
     ])
 }
 
-fn lines(t: &LineTable) -> Value {
+/// Why an export cannot be rendered. A keyed JSON object cannot hold two entries under
+/// one key, and silently keeping one would drop rows the completeness gate counts on.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ExportError {
+    DuplicateKey { what: &'static str, key: String },
+}
+
+impl std::fmt::Display for ExportError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ExportError::DuplicateKey { what, key } => write!(f, "duplicate {what} key `{key}` in the export"),
+        }
+    }
+}
+
+impl std::error::Error for ExportError {}
+
+fn lines(t: &LineTable) -> Result<Value, ExportError> {
     let mut secs: Vec<&LineSection> = t.sections.iter().collect();
     secs.sort_by(|a, b| a.name.cmp(&b.name));
     let mut m = Map::new();
     for s in secs {
+        if m.contains_key(&s.name) {
+            return Err(ExportError::DuplicateKey { what: "line section", key: s.name.clone() });
+        }
         let mut rows: Vec<&LineRow> = s.rows.iter().collect();
         rows.sort_by_key(|r| r.lma); // stable: equal lma keeps model order
         let rows: Vec<Value> = rows
@@ -104,16 +124,17 @@ fn lines(t: &LineTable) -> Value {
             .collect();
         m.insert(s.name.clone(), obj(vec![("space", json!(s.space.as_str())), ("rows", Value::Array(rows))]));
     }
-    obj(vec![
+    Ok(obj(vec![
         ("columns", json!(["vma", "lma", "len", "file", "line", "kind"])),
         ("sections", Value::Object(m)),
-    ])
+    ]))
 }
 
 /// Render the export: keys in the order of spec §4.6, collections sorted
 /// (symbols by `(space, vma, name)`, files by `(root, path)`, layouts and consts by
-/// `(module, name)`, line rows by `lma`), compact, final newline.
-pub fn to_json(e: &BuildExport) -> String {
+/// `(module, name)`, line rows by `lma`), compact, final newline. Refuses a duplicate
+/// line-section name or define name rather than dropping one.
+pub fn to_json(e: &BuildExport) -> Result<String, ExportError> {
     let mut symbols: Vec<&SymbolRecord> = e.symbols.iter().collect();
     symbols.sort_by(|a, b| (a.space, a.vma, &a.name).cmp(&(b.space, b.vma, &b.name)));
     let mut files: Vec<&FileRecord> = e.files.iter().collect();
@@ -127,6 +148,9 @@ pub fn to_json(e: &BuildExport) -> String {
     let mut d: Vec<&(String, i64)> = e.shape.defines.iter().collect();
     d.sort();
     for (k, v) in d {
+        if defines.contains_key(k) {
+            return Err(ExportError::DuplicateKey { what: "define", key: k.clone() });
+        }
         defines.insert(k.clone(), json!(v));
     }
 
@@ -203,11 +227,11 @@ pub fn to_json(e: &BuildExport) -> String {
                     .collect(),
             ),
         ),
-        ("lines", lines(&e.lines)),
+        ("lines", lines(&e.lines)?),
     ]);
     let mut s = serde_json::to_string(&root).expect("a Value always serialises");
     s.push('\n');
-    s
+    Ok(s)
 }
 
 #[cfg(test)]
@@ -256,8 +280,8 @@ mod tests {
     #[test]
     fn to_json_is_deterministic_and_ordered() {
         let e = sample();
-        let a = to_json(&e);
-        let b = to_json(&e);
+        let a = to_json(&e).unwrap();
+        let b = to_json(&e).unwrap();
         assert_eq!(a, b);
         assert!(
             a.starts_with(r#"{"format":"empyrean.build","version":{"major":1,"minor":0},"rom":"#),
@@ -278,5 +302,19 @@ mod tests {
             keys,
             ["format", "version", "rom", "inputsSha256", "tool", "shape", "spaces", "files", "symbols", "layouts", "consts", "lines"]
         );
+    }
+
+    #[test]
+    fn to_json_refuses_duplicate_section_and_define_keys() {
+        let mut e = sample();
+        let dup = e.lines.sections[0].clone();
+        e.lines.sections.push(dup);
+        assert_eq!(
+            to_json(&e),
+            Err(ExportError::DuplicateKey { what: "line section", key: "rom".into() })
+        );
+        let mut e = sample();
+        e.shape.defines.push(("DEBUG".into(), 1));
+        assert_eq!(to_json(&e), Err(ExportError::DuplicateKey { what: "define", key: "DEBUG".into() }));
     }
 }

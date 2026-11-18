@@ -3612,7 +3612,14 @@ fn export_spike(
         lines: LineTable { sections: vec![LineSection { name: "rom".into(), space: Space::M68k, rows }] },
     };
     let path = format!("{out_path}.spike.json");
-    if let Err(err) = install_artifact(&path, to_json(&export).as_bytes()) {
+    let text = match to_json(&export) {
+        Ok(t) => t,
+        Err(err) => {
+            eprintln!("error: export spike: {err}");
+            process::exit(1);
+        }
+    };
+    if let Err(err) = install_artifact(&path, text.as_bytes()) {
         eprintln!("error: cannot write {path}: {err}");
         process::exit(1);
     }

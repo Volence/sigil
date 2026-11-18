@@ -7,7 +7,7 @@
 pub mod json;
 pub mod locate;
 
-pub use json::{sha256_hex, sha256_of, to_json};
+pub use json::{sha256_hex, sha256_of, to_json, ExportError};
 
 /// Everything the export file holds. Field order is the JSON key order of §4.6.
 #[derive(Clone, Debug, Eq, PartialEq)]
